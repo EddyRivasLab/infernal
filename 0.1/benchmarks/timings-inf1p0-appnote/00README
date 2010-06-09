@@ -1,0 +1,267 @@
+Instructions for reproducing timing statistics in Table 1 of Infernal
+1.0 applications note.
+
+Supplementary material for "Infernal 1.0: inference of RNA alignments"
+applications note in Bioinformatics (Nawrocki, Kolbe, and Eddy, 2009).
+Eric Nawrocki
+EPN, Mon Dec 15 14:10:10 2008
+
+---------------------------------------------------------------
+This directory includes the following files and subdirectories:
+
+Training alignment files:
+-------------------------
+trna.stk :      tRNA training alignment, this is the RF00005 seed
+	        alignment from Rfam 9.0. 
+
+5s.stk :        5S rRNA training alignment, this is the RF00001 seed
+	        alignment from Rfam 9.0.  
+
+lysine.stk :    Lysine riboswitch training alignment, this is the
+	        RF00168 seed alignment from Rfam 9.0.  
+
+srp.stk :       Eukarya/Archaea SRP training alignment, this is the
+	        RF00017 seed alignment from Rfam 9.0.  
+
+rnasep.stk :    Bacterial RNaseP type B training alignment, this is
+	        the RF00011 seed alignment from Rfam 9.0.  
+
+ssu.stk :       Bacterial SSU alignment from the Comparative RNA
+	        Website (CRW) [see ref at bottom of 00README] with the
+	        secondary structure of the E. coli reference sequence
+	        imposed as the consensus structure. Alignment
+	        downloaded July 21, 2005 and converted to Stockholm
+	        format. The alignment was filtered to remove
+	        redundancy by filtering out sequences that were more
+	        than 90% identical using the 'weight' program of Sean
+	        Eddy's squid package with the command 'weight -f 0.9
+	        -o ssu.stk ssu.orig.stk' with the original CRW
+	        alignment in 'ssu.orig.stk'.
+
+lsu.stk :       Bacterial LSU alignment from the Comparative RNA
+	        Website (CRW) [see ref at bottom of 00README] with the
+	        secondary structure of the E. coli reference sequence
+	        imposed as the consensus structure. Alignment
+	        downloaded Jan 10, 2006 and converted to Stockholm
+	        format. Filtered to 90% identity as described above
+	        for ssu.stk.
+
+
+CM files:
+---------
+trna.cm :      Calibrated CM file built from trna.stk
+5s.cm :        Calibrated CM file built from 5s.stk
+lysine.cm :    Calibrated CM file built from lysine.stk
+srp.cm :       Calibrated CM file built from srp.stk
+rnasep.cm :    Calibrated CM file built from rnasep.stk
+ssu.cm :       Calibrated CM file built from ssu.stk
+lsu.cm :       Calibrated CM file built from lsu.stk
+
+Note:  <foo>.cm was built from <foo>.stk using cmbuild from
+       Infernal 1.0 with default parameters with 'cmbuild foo.cm
+       foo.stk'. The CM files were then calibrated using Infernal
+       1.0's cmcalibrate with default parameters and preset
+       random number generator seed 367 using the command:
+       'cmcalibrate -s 367 foo.cm foo.stk'.
+
+Subdirectories:
+---------------
+alignments/   : directory in which to reproduce 'alignment' column of
+	        Table 1. 
+calibrations/ : directory in which to reproduce 'calibration' column
+	        of Table 1.
+searches/     : directory in which to reproduce 'searches' column of
+	        Table 1.
+
+-----------------------------------------------------------
+Instructions for reproducing timing experiments in Table 1:
+-----------------------------------------------------------
+
+***Important***: for these instructions to work, the programs
+'cmalign', 'cmbuild', 'cmcalibrate', 'cmsearch' and 'cmemit' of
+Infernal 1.0 must be in your path. For example, when you issue the
+command 'cmemit -h' you should see:
+
+# cmemit :: generate sequences from a covariance model
+# INFERNAL 1.0 (January 2009)
+# Copyright (C) 2009 HHMI Janelia Farm Research Campus
+# Freely distributed under the GNU General Public License (GPL)
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Usage: cmemit [-options] <cmfile> <sequence output file>
+
+where general options are:
+  -h        : show brief help on version and usage
+  -n <n>    : generate <n> sequences  [10]  (n>0)
+  -u        : write generated sequences as unaligned FASTA  [default]
+  -a        : write generated sequences as a STOCKHOLM alignment
+  -c        : generate a single "consensus" sequence only
+  -l        : local; emit from a locally configured model
+  -s <n>    : set random number generator seed to <n>  (n>0)
+  --devhelp : show list of otherwise undocumented developer options
+
+miscellaneous output options are:
+  --rna       : output alignment as RNA sequence data  [default]
+  --dna       : output alignment as DNA (not RNA) sequence data
+  --tfile <f> : dump parsetrees to file <f>
+
+expert options:
+  --exp <x>   : exponentiate CM probabilities by <x> before emitting  (x>0)
+  --begin <n> : truncate alignment, begin at match column <n>  (n>=1)
+  --end <n>   : truncate alignment,   end at match column <n>  (n>=1)
+
+
+----------------------------------------
+Instructions for reproducing alignments:
+----------------------------------------
+Within the 'alignments/' subdirectory reproduce the alignment timing
+experiment for family <foo> by performing two steps:
+
+1. 'sh <foo>.emit.sh'
+2. 'sh <foo>.align.sh'
+
+Step 1 uses Infernal 1.0's cmemit program to generate 100 sequences
+from the <foo>.cm CM file for family <foo> from the directory one
+level up. These are synthetic sequences, but suitable for timing
+experiments. 
+
+Step 2 aligns the generated sequences to the model and outputs two
+files: <foo>.100.stk and <foo>.100.cmalign. The final line of
+<foo>.100.cmalign will show the running time of the 'cmalign' program.
+
+After completing both steps for all seven families, you can generate
+a quick list of times by using the perl script
+'list2times_alignment.pl' in this dir with the input file
+'appnote_alignments.list'. 
+
+For example:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> perl list2times_alignment.pl appnote_alignments.list 
+trna                          0.02 sec/seq
+5s                            0.03 sec/seq
+lysine                        0.06 sec/seq
+srp                           0.18 sec/seq
+rnasep                        0.19 sec/seq
+ssu                           1.10 sec/seq
+lsu                           3.34 sec/seq
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+------------------------------------------
+Instructions for reproducing calibrations:
+------------------------------------------
+Within the 'calibrations/' subdirectory reproduce the calibration timing
+experiment for family <foo> with the command:
+
+1. 'sh <foo>.calibrate.sh'
+
+As indicated in Table 1 of the Infernal 1.0 applications note, each
+calibration will take at least several hours to complete. 
+
+A non-calibrated version of each CM file from the parent directory
+have been copied to this dir. When you run '<foo>.calibrate.sh' the
+file <foo>.cm will be overwritten (upon completion of the calibration)
+with a new file of the same name that includes parameters for E-value
+statistics and HMM filter thresholds.
+
+You can reproduce the building of the non-calibrated CM files using
+the 'build.sh' shell script in this directory.
+
+To get timings of the calibrations after all seven have completed you
+can use the script 'list2times_cmcalibrate.pl' with the file
+'appnote_calibrate.list' as input with: 
+
+> perl list2times_cmcalibrate.pl appnote_calibrate.list
+
+The file 'mpi.calibrate.all7.janelia.sh' is an example script for
+doing the timings in MPI mode. It contains commands to submit all 7
+'cmcalibrate' runs to the Janelia farm cluster with OpenMPI (using
+system specific syntax and commands). The jobs will run on 32 CPUs at
+once, and will finish roughly 32X faster. These exact commands will
+probably not work on other clusters besides Janelia Farms', but this
+script is provided as a possible starting point for other
+clusters. After these 7 jobs finish you can get the timings for these
+runs in total CPU hours (corrected for using multiple CPUs) with the
+command:
+
+> perl list2times_cmcalibrate.pl mpi.appnote_calibrate.list
+
+
+--------------------------------------
+Instructions for reproducing searches:
+--------------------------------------
+Within the 'searches/' subdirectory reproduce the non-filtered (column
+labelled 'no filters' in Table 1) search timing experiment for family
+<foo> with the command:
+
+1. 'sh <foo>.nf.search.sh'
+
+This will search the file 1Mb.fa using the calibrated CM file <foo>.cm
+in the parent directory without using filters. The 1Mb.fa file is a
+sequence file containing 1 sequence of 1,000,000 residues (generated
+as explained below). Note the time required for each search experiment
+is twice the time shown in the Table, because those times are
+minutes/Mb and the search space in 1Mb.fa is actually 2 Mb (1 Mb for
+each strand of the sequence in the file).
+
+Reproduce the filtered search (column labelled 'w/filters' in Table 1)
+experiment for family <foo> with the command:
+
+2. 'sh <foo>.f.search.sh'
+
+This will search the file 10Mb.fa using the calibrated CM file
+<foo>.cm in the parent directory without using filters. The 10Mb.fa
+file is a sequence file containing 10 sequences of 1,000,000 residues
+(generated as explained below). Note the time required for each search
+experiment is 20 times as long as the time shown in the Table, because
+those times are minutes/Mb and the search space in 10Mb.fa is actually
+20 Mb (10 Mb on each strand of the sequences in the file).
+
+Each search will create a new file called either <foo>.nf.cmsearch
+(for a non-filtered search) or <foo>.f.cmsearch (for a filtered
+search). The final line of that file contains information on the
+running time.
+
+To get timings of the calibrations after all 14 have completed you
+can use the script 'list2times_search.pl' script:
+
+> perl list2times_search.pl appnote_filtered_search.list 20 
+> perl list2times_search.pl appnote_nonfiltered_search.list 2 
+
+The '20' and '2' input arguments tell the script that 20 Mb were
+searched in the searches in the filtered list, and 2 Mb were searched
+in the searches in the non-filtered list.
+
+The file 'mpi.search.all7.janelia.sh' is an example script for doing
+the timings in MPI mode. It contains commands to submit all 14 (7
+filtered and 7 non-filtered) 'cmsearch' runs to the Janelia farm
+cluster with OpenMPI (using system specific syntax and commands). The
+jobs will run on 32 CPUs at once, and will finish roughly 32X
+faster. These exact commands will probably not work on other clusters
+besides Janelia Farms', but this script is provided as a possible
+starting point for other clusters. After these 14 jobs finish you can
+get the timings for these runs in total CPU hours (corrected for using
+multiple CPUs) with the command:
+
+> perl list2times_search.pl mpi.appnote_filtered_search.list 20 
+> perl list2times_search.pl mpi.appnote_nonfiltered_search.list 2 
+
+The 1Mb.fa and 10Mb.fa sequence files were created using the
+'hmm_generate_only.pl' script described in the rmark-2 benchmark
+00README from 'infernal-1.0/benchmarks/cmsearch-rmark-2/00README'. See
+that file for more information. The commands used to create the files
+were: 
+
+'perl ~/infernal/benchmarks/cmsearch-rmark-2/hmm_generate_only.pl
+~/infernal/benchmarks/cmsearch-rmark-2/real.15.hmm 1 1000000 1Mb 28'
+
+'perl ~/infernal/benchmarks/cmsearch-rmark-2/hmm_generate_only.pl
+~/infernal/benchmarks/cmsearch-rmark-2/real.15.hmm 10 1000000 10Mb 33'
+
+---------------------------------------
+
+Comparative RNA Website Reference (source of SSU and LSU alignments): 
+
+Cannone J.J., Subramanian S., Schnare M.N., Collett
+J.R., D'Souza L.M., Du Y., Feng B., Lin N., Madabusi L.V., Muller
+K.M., Pande N., Shang Z., Yu N., and Gutell R.R. (2002).  BioMed
+Central Bioinformatics, 3:2. [Correction: BioMed Central
+Bioinformatics. 3:15.]

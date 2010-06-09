@@ -1,0 +1,7 @@
+mpi.trna   mpi.trna.f.cmsearch 32
+mpi.5s     mpi.5s.f.cmsearch 32 
+mpi.lysine mpi.lysine.f.cmsearch 32
+mpi.srp    mpi.srp.f.cmsearch 32 
+mpi.rnasep mpi.rnasep.f.cmsearch 32
+mpi.ssu    mpi.ssu.f.cmsearch 32
+mpi.lsu    mpi.lsu.f.cmsearch 32

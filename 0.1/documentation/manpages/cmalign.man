@@ -1,0 +1,608 @@
+.TH "cmalign" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
+
+.SH NAME
+.TP 
+cmalign - use a CM to make a structured RNA multiple alignment
+
+.SH SYNOPSIS
+
+.TP
+.B cmalign
+.I [options]
+.I cmfile
+.I seqfile
+
+.SH DESCRIPTION
+
+.B cmalign
+aligns the RNA sequences in
+.I seqfile
+to the covariance model (CM) in
+.I cmfile,
+and outputs a multiple sequence alignment.
+
+.PP
+The sequence file 
+.I seqfile
+must be in FASTA or Genbank format.
+
+.PP
+CMs are profiles of RNA consensus sequence and secondary structure. A
+CM file is produced by the 
+.B cmbuild 
+program, from a given RNA sequence alignment of known 
+consensus structure.
+
+.PP
+The alignment that 
+.B cmalign
+makes is written in Pfam Stockholm format in which each sequence
+appears on a single line. It can be redirected to a file
+using the
+.B -o
+option. Interleaved Stockholm format (which was created by earlier
+versions of 
+.B cmalign
+) can be created with 
+.B --ileaved,
+but note that 
+.B cmalign 
+often requires more RAM when this option is used, so it is discouraged
+if you're creating very large alignments (tens or hundreds of thousands of
+sequences of a large RNA family with consensus length more than 1000). 
+
+.PP
+.B cmalign 
+uses an HMM banding technique to accelerate alignment by default as
+described below for the
+.B --hbanded 
+option. HMM banding can be turned off with the 
+.B --nonbanded
+option.
+
+.PP
+By default, 
+.B cmalign
+computes the alignment with maximum
+expected accuracy that is consistent with constraints (bands) derived
+from an HMM, using a banded version of the Durbin/Holmes optimal accuracy algorithm.
+This behavior can be changed, as described below and in
+the User's Guide, with
+the 
+.B --cyk, 
+.B --sample,
+or
+.B --viterbi 
+options.
+
+.PP
+It is possible to include the fixed training alignment used to build
+the CM within the output alignment of
+.B cmalign.
+This is done using the 
+.B --withali 
+option, as described below and in the User's Guide.
+
+.PP
+It is also possible to merge two or more alignments created by the
+same CM using the Easel miniapp 
+.B esl-alimerge
+(included in the easel/miniapp/ subdirectory of infernal). Previous
+versions of 
+.B cmalign 
+included options to merge alignments but they were deprecated upon development
+of
+.B esl-alimerge, 
+which is significantly more memory efficient. 
+
+.SH OUTPUT
+
+.B cmalign
+first outputs tabular information on the scores of each sequence being
+aligned, then the alignment itself is printed. The alignment can be
+redirected to an output file 
+.I <f>
+with the 
+.BI -o " <f>"
+option. 
+
+
+The tabular output section includes one line per sequences and seven
+fields per line: "seq idx": the index of the sequence in the input
+file, "seq name": the sequence name, "len": the length of the
+sequence, "total": the total bit score of the sequence, "struct": an
+approximation of the contribution of the secondary structure to the
+bit score, "avg prob": the average posterior probability (confidence
+estimate) of each aligned residue, and "elapsed": the wall time spent
+aligning the sequence.
+
+The fields can change if different options are selected. For example
+if the 
+.B "--cyk"
+option is enabled, the "avg prob" field disappears because
+posterior probabilities are not calculated by the CYK algorithm.
+
+The output alignment will be annotated with posterior probabilities
+which estimate the confidence level of each aligned residue.  This
+annotation appears as lines beginning with "#=GR <seq name> PP", one
+per sequence, each immediately below the corresponding aligned
+sequence "<seq name>". Characters in PP lines have 12 possible values:
+"0-9", "*", or ".". If ".", the position corresponds to a gap in the
+sequence. A value of "0" indicates a posterior probability of between
+0.0 and 0.05, "1" indicates between 0.05 and 0.15, "2" indicates between 0.15
+and 0.25 and so on up to "9" which indicates between 0.85 and 0.95. A
+value of "*" indicates a posterior probability of between 0.95 and
+1.0. Higher posterior probabilities correspond to greater confidence
+that the aligned residue belongs where it appears in the alignment.
+With
+.B --nonbanded, 
+the calculation of the posterior probabilities
+considers all possible alignments of the target sequence to the
+CM. Without 
+.B --nonbanded
+(in HMM banded mode), the calculation considers only possible
+alignments within the HMM bands. The posterior annotation can be
+turned off with the 
+.B --no-prob 
+option. If 
+.B --small
+or 
+.B --viterbi 
+is enabled, posterior annotation must also be turned off using
+.B --no-prob.
+
+.SH OPTIONS
+
+.TP
+.B -h
+Print brief help; includes version number and summary of
+all options, including expert options.
+
+.TP
+.BI -o " <f>"
+Save the alignment in Stockholm format to a file
+.I <f>.
+The default is to write it to standard output.
+
+.TP
+.B -l
+Turn on the local alignment algorithm, which allows the alignment
+to span two or more subsequences if necessary (i.e. if the structures
+of the query model and target sequence are only partially shared),
+allowing certain large insertions and deletions in the structure
+to be penalized differently than normal indels.
+The default is to globally align the query model to the target
+sequences.
+
+.TP
+.B -q
+Quiet; suppress the verbose banner, and only print the resulting
+alignment to stdout. This allows piping the alignment to the input 
+of other programs, for example.
+
+.TP 
+.B --ileaved
+Output the alignment in interleaved Stockholm format of a fixed width
+that may be more convenient for reading. This was the default output
+alignment format of previous versions of 
+.B cmalign.
+Note that 
+.B cmalign 
+often requires more RAM when this option is used, so it is discouraged
+if you're creating very large alignments (tens or hundreds of thousands of
+sequences of a large RNA family with consensus length more than 1000). 
+
+.TP
+.BI --no-prob
+Do not annotate the output alignment with posterior probabilities.
+
+.TP
+.BI --informat " <s>"
+Assert that the input 
+.I seqfile
+is in format
+.I <s>.
+Do not run Babelfish format autodection. This increases
+the reliability of the program somewhat, because 
+the Babelfish can make mistakes; particularly
+recommended for unattended, high-throughput runs
+of @PACKAGE@. 
+Acceptable formats are: FASTA, GENBANK, and DDBJ.
+.I <s>
+is case-insensitive.
+
+.TP
+.BI --chunk " <n>"
+Specify number of sequences for each temporary alignment as
+.I <n>. 
+By default,
+.I <n>
+is 1000. If the target sequence file contains more than 
+.I <n>
+sequences, it will be split up into chunks of 
+.I <n>
+sequences, each chunk will be aligned, the alignment will be written to a
+temporary file, and the alignment data will be freed. When all
+sequences from the target file have been aligned. 
+.B cmalign
+reads the temporary alignment file, merges all alignments into one and
+outputs it. This saves memory and allows
+.B cmalign 
+to be used to create very large alignments. If there are fewer
+than 
+.I <n>
+sequences in the target sequence file, this memory saving mode is
+disabled and no temporary file is created. The memory saving mode
+cannot be used with 
+.B --ileaved,
+so this option cannot be used together with
+.B --ileaved.
+
+.TP
+.B --devhelp
+Print help, as with  
+.B "-h",
+but also include undocumented developer options. These options are not
+listed below, are under development or experimental, and are not
+guaranteed to even work correctly. Use developer options at your own
+risk. The only resources for understanding what they actually do are
+the brief one-line description printed when
+.B "--devhelp"
+is enabled, and the source code.
+
+.TP
+.BI --mpi
+Run as an MPI parallel program. This option will only be available if
+@PACKAGE@
+has been configured and built with the "--enable-mpi" flag (see User's
+Guide for details).
+
+.SH EXPERT OPTIONS
+
+.TP
+.B --optacc
+Align sequences using the Durbin/Holmes optimal accuracy
+algorithm. This is default behavior, so this option is probably useless. 
+The optimal accuracy alignment will be constrained by HMM bands for acceleration
+unless the
+.B --nonbanded 
+option is enabled. 
+The optimal accuracy algorithm determines the alignment that
+maximizes the posterior probabilities of the aligned residues within it.
+The posterior probabilites are determined using (possibly HMM banded)  
+variants of the Inside and Outside algorithms. 
+
+.TP
+.B --cyk
+Do not use the Durbin/Holmes optimal accuracy alignment to align the
+sequences, instead use the CYK algorithm which determines the
+optimally scoring alignment of the sequence to the model. 
+
+.TP
+.B --sample
+Sample an alignment from the posterior distribution of alignments.
+The posterior distribution is determined using an HMM banded (unless 
+.B --nonbanded)  
+variant of the Inside algorithm. 
+
+.TP
+.BI -s " <n>"
+Seed the random number generator with
+.I <n>,
+an integer >= 0. 
+This option can only be used in combination with 
+.B --sample. 
+If 
+.I <n> 
+is nonzero, stochastic sampling of alignments will be reproducible; the same
+command will give the same results.
+If 
+.I <n>
+is 0, the random number generator is seeded arbitrarily, and
+stochastic samplings may vary from run to run of the same command.
+The default seed is 181.
+
+.TP
+.B --viterbi
+Do not use the CM to align the sequences, instead use
+the HMM Viterbi algorithm to align with a CM Plan 9 HMM. The HMM is
+automatically constructed to be maximally similar to the CM. 
+This HMM alignment is faster than CM alignment, but can be less accurate because the
+structure of the RNA family is ignored. 
+
+.TP
+.BI --sub
+Turn on the sub model construction and alignment procedure. For each
+sequence, an HMM is first used to predict the model start and end
+consensus columns, and a new sub CM is constructed that only models
+consensus columns from start to end. The sequence is then aligned to this sub CM.
+This option is useful for aligning sequences that are known to
+truncated, non-full length sequences.
+This "sub CM" procedure is not the same as the "sub CMs" described by
+Weinberg and Ruzzo.
+
+.TP
+.B --small
+Use the divide and conquer CYK alignment algorithm described in SR
+Eddy, BMC Bioinformatics 3:18, 2002. The 
+.B --nonbanded
+option must be used in combination with this options.
+Also, it is recommended whenever
+.B --nonbanded
+is used that 
+.B --small 
+is also used  because standard CM alignment without HMM banding requires a lot of
+memory, especially for large RNAs.
+.B --small
+allows CM alignment within practical memory limits,
+reducing the memory required for alignment LSU rRNA, the largest known
+RNAs, from 150 Gb to less than 300 Mb.
+This option can only be used in combination with
+.B --nonbanded 
+and
+.B --cyk.
+
+.TP
+.B --hbanded
+This option is turned on by default.
+Accelerate alignment by pruning away regions of the CM DP matrix that
+are deemed negligible by an HMM. 
+First, each sequence is scored with a CM plan 9 HMM derived from the CM 
+using the Forward and Backward HMM algorithms and calculate posterior
+probabilities that each residue aligns to each state of the HMM. These 
+posterior probabilities are used to derive constraints (bands) on the CM DP
+matrix. Finally, the target sequence is aligned to the CM using the
+banded DP matrix, during which cells outside the bands are ignored. Usually most
+of the full DP matrix lies outside the bands 
+(often more than 95%), making this technique faster because
+fewer DP calculations are required, and more memory efficient because
+only cells within the bands need be allocated. 
+
+Importantly, HMM banding sacrifices the guarantee of determining the
+optimally accurarte or optimal alignment, which will be missed if it lies outside the
+bands. The tau paramater (analagous to the beta parameter for QDB
+calculation in 
+.B cmsearch
+) is the amount of probability mass
+considered negligible during HMM band calculation; lower
+values of tau yield greater speedups but also a greater chance of missing
+the optimal alignment. The default tau is 1E-7, determined
+empirically as a good tradeoff between sensitivity and speed, though
+this value can be changed with the
+.B --tau " <x>" 
+option. The level of acceleration increases with both the
+length and primary sequence conservation level of the family. For
+example, with 
+the default tau of 1E-7, tRNA models (low primary sequence
+conservation with length of about 75 residues) show about 10X acceleration,
+and SSU bacterial rRNA models (high primary sequence conservation with
+length of about 1500 residues) show about 700X. 
+HMM banding can be turned off with the 
+.B --nonbanded 
+option.
+
+.TP
+.B --nonbanded
+Turns off HMM banding. The returned alignment is guaranteed to be the
+globally optimally accurate one (by default) or the globally optimally
+scoring one (if 
+.B --cyk
+is enabled).
+The 
+.B --small
+option is recommended in combination with this option, because
+standard alignment without HMM banding requires a lot of memory (see
+.B --small
+).
+
+.TP
+.BI --tau " <x>"
+Set the tail loss probability used during HMM band calculation to
+.I <x>. 
+This is the amount of probability mass within the HMM posterior
+probabilities that is considered negligible. The default value is 1E-7.
+In general, higher values will result in greater acceleration, but
+increase the chance of missing the optimal alignment due to the HMM
+bands.
+
+.TP
+.BI --mxsize " <x>"
+Set the maximum allowable DP matrix size to 
+.I <x>
+megabytes. By default this size is 2,048 Mb. 
+This should be large enough for the vast majority of alignments, 
+however if it is not 
+.B cmalign 
+will exit prematurely and report an error message that 
+the matrix exceeded it's maximum allowable size. In this case, the
+.B --mxsize 
+can be used to raise the limit.
+This is most likely to occur when the
+.B --nonbanded
+option is used without the
+.B --small 
+option, but can still occur when
+.B --nonbanded 
+is not used.
+
+.TP
+.BI --rna
+Output the alignments as RNA sequence alignments. This is true by default.
+
+.TP
+.BI --dna
+Output the alignments as DNA sequence alignments. 
+
+.TP
+.B --matchonly
+Only include match columns in the output alignment, do not include
+any insertions relative to the consensus model. This option may
+be useful when creating very large alignments that require a lot of
+RAM and disk space, most of which is necessary only to deal with insert
+columns that are mainly gaps in most sequences.
+
+.TP 
+.BI --withali " <f>"
+Reads an alignment from file 
+.I <f>
+and aligns it as a single object to the CM; e.g. the alignment in 
+.I <f> 
+is held fixed.
+This allows you to align sequences to a model with 
+.B cmalign
+and view them in the context of an existing trusted multiple alignment.
+The alignment in the file
+.I <f> 
+must be exactly the alignment that the CM was built from, or a subset
+of it with the following special property: the definition of consensus
+columns and consensus secondary structure must be identical between 
+.I <f>
+and the alignment the CM was built from. One easy way to achieve this
+is to use the 
+.B --rf
+option to 
+.B cmbuild
+(see man page for 
+.B cmbuild
+) and to maintain the "#=GC RF" annotation in the alignment when
+removing sequences to create the subset alignment 
+.I <f>. 
+To specify that the
+.B --rf
+option to 
+.B cmbuild
+was used, enable the
+.B --rf
+option to 
+.B cmalign
+(see 
+.B --rf 
+below).
+
+.TP 
+.B --withpknots
+Must be used in combination with 
+.BI --withali " <f>".
+Propogate structural information for any pseudoknots that exist in
+.I <f> 
+to the output alignment. 
+
+.TP 
+.B --rf
+Must be used in combination with 
+.BI --withali " <f>".
+Specify that the alignment in 
+.I <f> 
+has the same "#=GC RF" annotation as the alignment file the CM was
+built from using
+.B cmbuild
+and further that the 
+.B --rf 
+option was supplied to 
+.B cmbuild
+when the CM was constructed.
+
+.TP 
+.BI --gapthresh " <x>"
+Must be used in combination with 
+.BI --withali " <f>".
+Specify that the 
+.BI --gapthresh " <x>"
+option was supplied to 
+.B cmbuild
+when the CM was constructed from the alignment file
+.I <f>.
+
+.TP 
+.BI --cm-idx " <n>"
+If 
+.I cmfile
+contains more than 1 CM, specify that only CM number 
+.I <n>
+be used for alignment.
+
+.TP 
+.BI --cm-name " <s>"
+If 
+.I cmfile
+contains more than 1 CM, specify that only the CM named
+.I <s>
+be used for alignment.
+
+
+.TP 
+.BI --sseq " <n>"
+Specify that the first sequence to align from
+.I seqfile
+is sequence number
+.I <n>.
+The first 
+.I <n>
+minus 1 sequences will not be aligned.
+
+.TP 
+.BI --eseq " <n>"
+Specify that the final sequence to align from
+.I seqfile
+is sequence number
+.I <n>.
+All sequences occuring after sequence
+.I <n>
+will not be aligned.
+
+.TP
+.BI --tfile " <f>"
+Dump tabular sequence tracebacks for each individual
+sequence to a file 
+.I <f>.
+Primarily useful for debugging.
+
+.TP
+.BI --ifile " <f>"
+Dump per-sequence insert information to file
+.I <f>.
+The format of the file is described by "#"-prefixed comment lines
+included at the top of the file
+.I <f>.
+The insert information is valid even when the 
+.B --matchonly 
+option is used.
+
+.TP
+.BI --elfile " <f>"
+Must be used in combination with 
+.B -l. 
+Dump per-sequence EL state (local end) insert information to file
+.I <f>.
+The format of the file is described by "#"-prefixed comment lines
+included at the top of the file
+.I <f>.
+The EL insert information is valid even when the 
+.B --matchonly 
+option is used.
+
+.TP
+.BI --sfile " <f>"
+Dump per-sequence alignment score information to file
+.I <f>.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

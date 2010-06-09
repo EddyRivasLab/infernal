@@ -1,0 +1,331 @@
+Checklist for an Infernal release.
+SRE, Fri Jun 20 10:22:03 2008
+-------------------------------------
+
+When editing this 00CHECKLIST, it is best to edit it only in the
+trunk, not in a release branch. It isn't included in releases anyway.
+
+Subversion repository:  https://svn.janelia.org/eddylab/eddys/src/infernal
+Trunk:                  https://svn.janelia.org/eddylab/eddys/src/infernal/trunk/
+
+Easel follows an 'unstable trunk' policy.
+Each major release goes onto a stable branch.
+Every release (even minor ones) is tagged.
+
+There's three types of releases: major releases, minor releases, and
+snapshots. A major release gets its own branch. A minor release puts
+bug fixes into a major branch. A snapshot is straight from the
+development trunk.
+
+Version naming:                                        example
+major              <lineage>.<major-release>                      1.0
+minor              <lineage>.<major-release>.<minor-release>      1.0.1
+alpha              <lineage>.<major-release>a<n>                  1.0a1
+beta               <lineage>.<major-release>b<n>                  1.0b1
+release candidate  <lineage>.<major-release>rc<n>                 1.0rc1
+snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap20080325
+
+1. Announce the intent to release to all developers. 
+   Commit working copies on all machines (including Easel).
+   Example of checking for stray or uncommitted files:
+	 ./configure
+         make distclean
+         svn update
+	 svn status
+   Clean up any stray files identified by 'svn status'.
+   'svn add' and 'svn commit' as needed to commit new or modified files.
+
+2. For a major release (where we're about to create a new branch):
+   First test the development trunk.
+   Compile should be entirely clean when compiled -Wall.
+   [MPI builds require being on login-eddy]
+   
+
+        ssh login-eddy
+        ./configure --enable-debugging --enable-mpi --prefix=/groups/eddy/home/eddys/tmp/infernal
+        make
+        (cd documentation/userguide; make) 
+        make check
+	make install
+	make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/trunk RELEASE=snapxxx dist
+
+   When trunk is clean,
+        svn commit
+   We're (usually) next going to move out of the trunk to the release branch.
+
+
+3. For a major release, create stable release branches for Infernal and Easel.
+   All subsequent bugfix releases will happen in this branch, while trunk keeps moving.
+   [Query replace the version # here]
+         svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/trunk\
+                 https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0\
+                 -m "created 1.0 release branch"          
+         svn copy https://svn.janelia.org/eddylab/eddys/easel/trunk\
+                 https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0\
+                 -m "created Infernal 1.0 release branch"          
+
+
+4. Move into a working copy of the release branch.
+
+   For a dev snapshot, this is the normal working copy.
+   For a major or minor release, this is a fresh working copy of the appropriate branch:
+       cd ~/releases
+       svn checkout https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0 infernal-release
+
+   Don't call this working directory infernal-xx, nor infernal! Call it
+   infernal-release, because later "make dist" is going to try to create
+   infernal-xx as its release, and because you want to recognize that
+   it's different from src/infernal.  
+
+   If this is the first time (a new release branch), you also need to update the "svn:externals"
+   so Easel is checked out from the appropriate stable branch too.
+
+         svn proplist --verbose https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0
+         svn propedit svn:externals infernal
+           easel   https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0
+         cd infernal
+         svn update
+	 svn commit
+
+   Note the hassle with svn:externals, because it currently only accepts
+   absolute URLs. Relative paths are supposed to become available in
+   Subversion 1.5, which may help.
+
+
+4.5 [For minor bugfix releases, on branches]:
+
+   Figure out what bug fixes need to be merged from the development trunk.
+   For Infernal 1.0rc2, this is r2497,2498; Easel r277
+
+   Then in a working copy of the 1.0 branch, merge from trunk:
+
+   svn update
+   svn merge -r 2496:2498 https://svn.janelia.org/eddylab/eddys/src/infernal/trunk
+   cd easel
+   svn merge -r 276:277 https://svn.janelia.org/eddylab/eddys/easel/trunk
+   
+
+5. Test.
+   The infernal testsuite is currently relatively weak. It needs to include
+   valgrind tests for memory leaks, for example.
+
+   But even so, don't rely solely on the automated exercises and bug tests.
+   Run some anecdotal examples by hand too.
+
+   On login-eddy, because we need mpicc:
+
+    	 autoconf
+         (cd easel; autoconf)
+         (cd testsuite; ln -s ../easel/devkit/sqc .)
+     	 env CFLAGS="-g -Wall" ./configure --enable-mpi --prefix=/groups/eddy/home/eddys/tmp/infernal
+         make
+         make check
+
+   Make a new DicF model in this version's format, for
+   backwards compatibility testing:
+         cd testsuite
+         ../src/cmbuild DicF-$RELEASE.cm DicF.seed
+         svn add DicF-$RELEASE.cm
+   Add a line to exercises.sqc.
+
+   Run some anecdotes. Examples:
+        ../src/cmbuild foo.cm ../intro/trna.sto
+        ../src/cmsearch foo.cm trna-regression.fa
+   Run those with valgrind, too.
+
+   Check the User's Guide.
+      cd documentation/userguide
+      make
+
+
+6. Write (or update) release notes.
+   For the first time on a new release branch, it's handy to look
+   at the svn log. Replace "1534" below with the last release's SVN rev.
+	 svn log -r 1534:HEAD | more
+         cd easel
+         svn log -r 314:HEAD | more
+         emacs documentation/release-notes/RELEASE-${RELEASE}
+	 svn add documentation/release-notes/RELEASE-${RELEASE}
+
+                 sre/src                sre/easel
+   Release   from-rev   to-rev      from-rev    to-rev    
+   -------   --------   ------      --------    ------
+   0.6:       875        1477          ?          72
+   0.7:       1477       1534         72          84
+   0.71:      1534       1725         84         139
+   0.72:      1725       1862        139         149
+   0.8:       1862       1968        149         174
+       0.81 - bugfix release on 0.8 branch
+   1.0rc1     1968       2485        174         272    [1.0 branch]
+   1.0rc2     2485       2499        272         278    [1.0 branch] 
+   1.0rc3     2499       2594        278         293    [1.0 branch]
+   1.0rc4     2594       2633        293         303    [1.0 branch]
+   1.0rc5     2633       2670        303         309    [1.0 branch]            
+   1.0        2670       2700        309         314    [1.0 branch]
+   1.0.1      2700       2995        314         420    [1.0 branch]
+   1.0.2      2995       3019        420         426    [1.0 branch]
+   
+   These release notes will be merged back into the trunk later, if
+   we're in a branch.
+
+
+7. Update the copyright, year stamps. 
+	- configure.ac (release, relcode, date)
+	- COPYRIGHT (year only)
+
+8. Commit to SVN; include release number in the log message
+	 svn commit
+    Remember to separately commit in Easel if changes were made there.
+
+9. Tag.
+   We don't bother to tag snapshots.
+   For a new major release, or a bugfix minor release,
+   the tags are made from the relevant stable branch:
+
+      svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0 \
+               https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0.2 \
+               -m "tagged Infernal 1.0.2 release, from 1.0 stable branch"          
+      svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0\
+               https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/1.0.2\
+                 -m "tagged Easel for Infernal 1.0.2 release, from 1.0 stable branch"          
+
+   Note: if you screw up somewhere below, and need to come back and
+   re-tag, you must delete the previous tagged versions first:
+     svn delete https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0.1 \
+               -m "needed to make more changes; deleted tag; new tag coming"
+     svn delete https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/1.0.1\
+               -m "needed to make more changes; deleted tag; new tag coming"
+
+10. Make a distribution tarball.
+   (Remaking configure scripts w/ autoconf is needed)
+	 make distclean
+         autoconf
+         (cd easel; autoconf)
+	 ./configure          <-- makes a Makefile (needed for "make dist")
+
+    major or minor:
+	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0.2 dist
+    snapshot:
+	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/trunk RELEASE=snap20080325 dist
+
+   Alternatively, make -n dist' and execute commands yourself one at a
+   time, under a Bourne shell like 'bash' so the for loops work.
+
+   This exports into a infernal-$RELEASE directory, alongside the
+   infernal working directory in ~/releases/. The tarball is also
+   left in ~/releases/.
+   
+   Go into infernal-$RELEASE and make sure it looks good from the 
+   perspective of a new user: start by reading the README's.
+
+11. Build for our system (on login-eddy)
+	 cd releases/infernal-xxx
+	 setenv OMPI_CC      "icc"
+	 setenv OMPI_CFLAGS  "-O3"
+	 ./configure --enable-mpi --prefix=/usr/local/infernal-1.0.2/
+	 make
+	 make check
+         (cd testsuite; ./sqc -p ../squid/ -r ../../infernal-0.52/src 4 regressions.sqc ../src/)
+                                                  ^^^^ replace w/ latest old version
+         
+   Didn't run regressions at the 0.71 or later releases. Need to leave
+   old release in the releases subdir for the regressions test above to work.
+
+   Currently, I don't have permission to install software on login-eddy, so 
+   just email Goran at this point.
+
+
+12. Put on the FTP site. (on selab)
+          scp 00README                  selab:/opt/www/ftp/pub/software/infernal/
+          scp documentation/release-notes/RELEASE-1.0.2  selab:/opt/www/ftp/pub/software/infernal/00RELEASE
+          scp COPYRIGHT                 selab:/opt/www/ftp/pub/software/infernal
+          scp LICENSE                   selab:/opt/www/ftp/pub/software/infernal/
+          scp Userguide.pdf             selab:/opt/www/ftp/pub/software/infernal/
+          scp ../infernal-1.0.2.tar.gz  selab:/opt/www/ftp/pub/software/infernal/
+          ssh selab  rm -f /opt/www/ftp/pub/software/infernal/infernal.tar.gz
+          ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-1.0.2.tar.gz infernal.tar.gz)"
+
+13. Update the web site
+	 cd ~/web/infernal/
+         emacs index.html 
+         make
+	 texclean
+         svn commit
+
+14. Clean up. Don't remove the old directory though, we will (should) use it for regression testing 
+    at the next release.
+	cd ~/releases
+        mv infernal-1.0.2.tar.gz ~/Archives/
+        cd infernal-release
+	make distclean
+        cd ../infernal-1.0.2
+	make distclean
+
+15. Merge the changes from the "stabilized" release branch back into the trunk.
+
+    If you're doing a minor bugfix release on a stable branch, you know the
+    revs that introduced the bugfixes; merge them explicitly. For example:
+       cd ~/src/infernal
+       svn update
+       svn merge -r 3019:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0
+    
+    If you're doing a major release on a new stable branch:
+    First identify the rev #'s for when we made the release branch.
+    In the release working copy:
+       svn log --verbose --stop-on-copy      <-- ssdk, squid are the same
+       cd easel
+       svn log --verbose --stop-on-copy 
+           infernal     easel
+    0.6:  (r1465; Easel is r72.)
+    0.7:  (r1522; Easel is r81.)
+    0.71: (r1723; Easel is r139.)
+    0.8:   r1966       r1967     r1968   r173
+    1.0rc1 r2485        r272
+
+    Go back to working copies of the trunks, and merge the release branches into it.
+       cd ~/src/infernal
+       svn update
+       svn merge -r 2485:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0
+
+       cd ../easel
+       svn update
+       svn merge -r 272:HEAD https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0
+       
+    Now, the merge will always screw up the svn:externals for Infernal. Reset them.
+       cd ..
+       svn propedit svn:externals .
+          easel   https://svn.janelia.org/eddylab/eddys/easel/trunk
+    [didn't screw up on 1.0rc1?]
+
+
+    1.0rc2-1.0rc5,1.0
+    For subsequent rc's, the only thing that has changed is the release notes; so:
+      cd ~/src/infernal/documentation/release-notes
+      cp ~/releases/infernal-release/documentation/release-notes/RELEASE-1.0.1 .
+
+
+    Commits.
+       svn commit 
+       ( cd easel ; svn commit )
+
+0.3    - SRE, Thu Jul  4 10:27:16 2002
+0.5    - SRE, Sun Oct  6 14:22:47 2002
+0.51   - SRE, Wed Oct  9 09:43:50 2002
+0.52   - SRE, Mon Oct 14 2002
+0.53   - SRE, Thu Jan  2 14:24:07 2003
+0.54   - SRE, Sun Jan  5 18:17:55 2003
+0.55   - SRE, Wed Apr  2 18:12:23 2003   r875
+0.6    - SRE, Tue Nov  1 17:13:00 2005   r1477  Easel:r72
+0.7    - SRE, Tue Dec 13 14:54:30 2005   r1534  Easel:r84
+0.71   - SRE, Thu Nov 30 11:43:57 2006   r1730  Easel:r142
+0.72   - SRE, Sat Jan 27 10:44:46 2007   r1862  Easel:r149
+0.8    - SRE, Sun Apr 29 11:55:56 2007   r1984  Easel:r176
+0.81   - SRE, Tue May  1 10:36:10 2007   r1995  Easel:r179
+1.0rc1 - SRE, Fri Jun 20 13:38:46 2008   r2492  Easel:r276
+1.0rc2 - SRE, Sat Jul 12 09:26:29 2008   r2502  Easel:r280
+1.0rc3 - SRE, Wed Sep 24 14:33:59 2008   r2596  Easel:r294
+1.0rc4 - SRE, Mon Nov 24 17:43:07 2008   r2635  Easel:r304
+1.0rc5 - SRE, Wed Dec 17 17:59:01 2008   r2673  Easel:r310
+1.0    - SRE, Tue Jan 13 14:33:16 2009   r2710  Easel:r317
+1.0.1  - SRE, Sat Oct 24 10:12:50 2009   r2997  Easel:r422
+1.0.2  - SRE, Fri Oct 30 13:57:33 2009   r3021  Easel:r428

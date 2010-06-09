@@ -1,0 +1,369 @@
+.TH "cmstat" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
+
+.SH NAME
+.TP 
+cmstat - display summary statistics for a CM
+
+.SH SYNOPSIS
+.B cmstat
+.I [options]
+.I cmfile
+
+.SH DESCRIPTION
+
+.B cmstat
+calculates and displays various types of statistics describing the 
+covariance models (CMs) in
+.I cmfile. 
+
+.PP
+CMs are profiles of RNA consensus sequence and secondary structure. A
+CM file is produced by the 
+.B cmbuild 
+program, from a given RNA sequence alignment of known 
+consensus structure.
+CM files can be calibrated with the 
+.B cmcalibrate 
+program. Searches with calibrated CM files will include
+E-values and will use appropriate filter thresholds for
+faster speed. It is strongly recommended to calibrate your 
+CM files before using 
+.B cmsearch.
+CM calibration is described in more detail below
+and in chapters 5 and 6 of the User's Guide.
+.B cmstat
+is useful for determining statistics on calibrated or
+non-calibrated CM files.
+
+By default,
+.B cmstat
+prints general statistics of the model and the alignment it was built
+from. If the model(s) in 
+.I cmfile
+have been calibrated with 
+.B cmcalibrate
+the 
+.B --le
+and
+.B --ge
+options can be used to print statistics on the 
+the exponential tails used for calculating E-values for the various
+possible search modes for locally (
+.B --le
+) and globally configured (
+.B --ge
+) models in
+.B cmsearch.
+If 
+.I cmfile
+is calibrated, HMM filter threshold statistics can be printed for 
+local inside CM search with 
+.B --lfi,
+for glocal inside CM search with
+.B --gfi,
+for local CYK CM search with 
+.B --lfc, 
+and for glocal CYK CM search with 
+.B --gfc.
+
+The
+.B --search
+option causes
+.B cmstat
+performing a timing experiment for homology search. Statistics will be
+printed on how many kilobases can be scanned per second for the
+different possible algorithms in
+.B cmsearch.
+
+.SH OPTIONS
+
+.TP
+.B -h
+Print brief help; includes version number and summary of
+all options, including expert options.
+
+.TP
+.B -g 
+Turn on the 'glocal' alignment algorithm, local with respect to the
+target database, and global with respect to the model. By default, 
+the model is configured for local alignment which is local with respect to
+both the target sequence and the model. 
+
+.TP
+.B -m 
+print general statistics on the models in 
+.I cmfile 
+and the alignment it was built from.
+
+.TP
+.BI -Z " <x>"
+Calculate E-values as if the target database size was 
+.I <x> 
+megabases (Mb). Ignore the actual size of the database. This option
+is only valid if the CM file has been calibrated.
+
+.TP 
+.B --all
+print all available statistics 
+
+.TP 
+.B --le
+print local E-value statistics. This option only works if 
+.I cmfile 
+has been calibrated with 
+.B cmcalibrate.
+
+.TP 
+.B --ge
+print glocal E-value statistics. This option only works if 
+.I cmfile 
+has been calibrated with 
+.B cmcalibrate.
+
+.TP 
+.BI --beta " <x>"
+With the 
+.B --search 
+option set the beta parameter for the query-dependent banding
+algorithm stages to  
+.I <x>
+. 
+Beta is the probability
+mass considered negligible during band calculation. 
+The default is 1E-7.
+
+
+.TP 
+.BI --qdbfile " <f>"
+Save the query-dependent bands (QDBs) for each state to 
+file 
+.I <f>
+.
+
+.SH EXPERT OPTIONS
+
+.TP 
+.B --lfi
+Print the HMM filter thresholds for the range of relevant CM bit score
+cutoffs for searches with locally configured models using the Inside algorithm.
+
+.TP 
+.B --gfi
+Print the HMM filter thresholds for the range of relevant CM bit score
+cutoffs for searches with globally configured models using the Inside algorithm.
+
+.TP 
+.B --lfc
+Print the HMM filter thresholds for the range of relevant CM bit score
+cutoffs for searches with locally configured models using the CYK algorithm.
+
+.TP 
+.B --gfc
+Print the HMM filter thresholds for the range of relevant CM bit score
+cutoffs for searches with globally configured models using the CYK algorithm.
+
+.TP 
+.BI -E " <x>"
+Print filter threshold statistics for an HMM filter if a final CM E-value
+cutoff of
+.I <x>
+were to be used for a run of 
+.B cmsearch 
+on 1 MB of sequence. (Remember 
+.B cmsearch 
+considers a 500,000 nucleotide
+sequence file as 1 MB of sequence because by default 
+both strands of the sequence are searched).
+The size 1 MB of sequence can be changed to the size of a given
+database in file
+.I <f>
+using the 
+.BI --seqfile " <f>" 
+option.
+
+.TP 
+.BI -T " <x>"
+Print filter threshold statistics for an HMM filter if a final CM bit
+score cutoff of
+.I <x>
+were to be used for a run of 
+.B cmsearch. 
+
+.TP 
+.B --nc
+Print filter threshold statistics for an HMM filter if a CM bit score cutoff
+equal to the Rfam NC cutoff were to be used for a run of 
+.B cmsearch.
+The NC cutoff is defined as 
+.I <x>
+bits in the original
+Stockholm alignment the model was built from 
+with a line:
+.I "#=GF NC <x>"
+positioned before the sequence alignment. If such a line existed in the
+alignment provided to 
+.B cmbuild
+then the 
+.B --nc
+option will be available in 
+.B cmstat
+If no such line existed when
+.B cmbuild
+was run, then using the
+.B --nc 
+option to 
+.B cmstat
+will cause the program to print an error message and exit.
+
+.TP 
+.B --ga
+Print filter threshold statistics for an HMM filter if a CM bit score
+cutoff of Rfam GA cutoff value were to be used for a run of
+.B cmsearch.
+The GA cutoff is defined in a stockholm
+file used to build the model in the same way as the NC cutoff (see above),
+but with a line:
+.I "#=GF GA <x>"
+.
+
+.TP 
+.B --tc
+Print filter threshold statistics for an HMM filter if a CM bit score
+cutoff equal to the Rfam TC cutoff value were to be used for a run of
+.B cmsearch.
+The TC cutoff is defined in a stockholm
+file used to build the model in the same way as the NC cutoff (see above),
+but with a line:
+.I "#=GF TC <x>"
+.
+
+.TP 
+.BI --seqfile " <x>"
+With the 
+.B "-E"
+option, use the database size of the database in
+.I <x> 
+instead of the default database size of 1 MB.
+.
+
+.TP 
+.B --toponly
+In combination with 
+.BI --seqfile " <x>"
+option, only consider the top strand of the database in
+.I <x> 
+instead of both strands.
+
+
+.TP 
+.B --search
+perform an experiment to determine how fast the CM(s) can search with
+different search algorithms.
+
+.TP
+.BI -s " <n>"
+Seed the random number generator with
+.I <n>,
+an integer >= 0. 
+This option can only be used in combination with 
+.B --search. 
+If 
+.I <n> 
+is nonzero, stochastic sampling of sequences for the search experiment will be reproducible; the same
+command should yield roughly the same timings.
+If 
+.I <n>
+is 0, the random number generator is seeded arbitrarily, and
+stochastic samplings will vary from run to run of the same command.
+The default seed is 181.
+
+.TP 
+.BI --cmL " <n>"
+With the 
+.B --search 
+option set the length of sequence to search with CM algorithms as 
+.I <n>
+residues. By default, 
+.I <n>
+is 1000.
+
+.TP 
+.BI --hmmL " <n>"
+With the 
+.B --search 
+option set the length of sequence to search with HMM algorithms as 
+.I <n>
+residues. By default, 
+.I <n> 
+is 100,000.
+
+.TP 
+.BI --efile " <f>"
+Save a plot of 
+.B cmsearch 
+HMM filter E value cutoffs versus CM E value cutoffs in 
+xmgrace format to file
+.I <f>.
+This option must be used in combination with
+.B --lfi, --gfi, --lfc
+or 
+.B --gfc.
+
+.TP 
+.BI --bfile " <f>"
+Save a plot of 
+.B cmsearch 
+HMM bit score cutoffs versus CM bit score cutoffs in 
+xmgrace format to file
+.I <f>.
+This option must be used in combination with 
+.B --lfi, --gfi, --lfc
+or 
+.B --gfc.
+
+.TP 
+.BI --sfile " <f>"
+Save a plot of 
+.B cmsearch 
+predicted survival fraction from the HMM filter versus CM
+E value cutoff in xmgrace format to file
+.I <f>.
+This option must be used in combination with 
+.B --lfi, --gfi, --lfc
+or 
+.B --gfc.
+
+.TP 
+.BI --xfile " <f>"
+Save a plot of 'xhmm' versus CM
+E value cutoff in xmgrace format to file
+.I <f>
+ 'xhmm' is the ratio of the number of dynamic programming calculations
+predicted to be required for the HMM filter and the CM search of the
+filter survivors versus the number of dynamic programming calculations
+for the filter alone. So, an 'xhmm' value of 2.0 means the filter
+stage of a search requires the same number of calculations as the CM search
+of the filter survivors does.
+This option must be used in combination with 
+.B --lfi, --gfi, --lfc
+or 
+.B --gfc.
+
+.TP 
+.BI --afile " <f>"
+Save a plot of the predicted acceleration for an HMM filtered search versus 
+CM E value cutoff in xmgrace format to file
+.I <f>.
+This option must be used in combination with 
+.B --lfi, --gfi, --lfc
+or 
+.B --gfc.
+
+.TP 
+.BI --bits
+With 
+.B --efile, --sfile, --xfile, 
+and 
+.B --afile 
+use CM bit score cutoffs instead of CM E value cutoffs for the x-axis
+values of the plot.

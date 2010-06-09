@@ -1,0 +1,18 @@
+IMPORTANT DISCLAIMER REGARDING PACKAGES INCLUDED WITHIN INFERNAL
+
+This note concerns installation of the 'rigfilters' sub-package.
+The rigorous filtering programs written by Zasha Weinberg relies
+on an external library.  CFSQP is a non-linear programming
+library; its license terms do not allow us to distribute the
+complete library in this package - the primary source file must
+be obtained by the end-user (freely available for academic
+purposes, though).  http://www.aemdesign.com
+
+Compilation of the source for the rigfilters executables (cm2hmm
+and cm2hmmsearch) requires that CFSQP must be obtained separately
+and specified at configuration time.
+
+These options to configure are required to enable rigorous filters:
+./configure --with-rigfilters --with-cfsqp=/path/to/cfsqp
+If the configure script cannot locate cfsqp based on the given path
+rigorous filters will be disabled.

@@ -1,0 +1,261 @@
+# STOCKHOLM 1.0
+#=GF ID    tmRNA
+#=GF AC    RF00023
+#=GF DE    tmRNA
+#=GF AU    Griffiths-Jones SR
+#=GF GA    30.0
+#=GF NC    27.5
+#=GF TC    30.1
+
+AF440330.1/1-315                     ......................AAGAUUCAC.....GAAACCC.AAGGUG
+U68076.1/22-334                      ......................GGAAUUCAA.....GAAGCCC.GAGGUG
+AP001118.1/202977-202612             GGGGCUGUUUUUGGA.UUUGACAAAAUUAUC.....AACAAAGUAAAGUG
+D90888.1/18478-18840                 GGGGCUGAUUCUGGA.UUCGACGGGAUUUGC.....GAAACCC.AAGGUG
+AE005491.1/9259-9621                 GGGGCUGAUUCUGGA.UUCGACGGGAUUUGC.....GAAACCC.AAGGUG
+AF440353.1/1-310                     ......................GGGAUUUGC.....GAAACCC.AAGGUG
+AL627276.1/57262-57624               GGGGCUGAUUCUGGA.UUCGACGGGAUUUGC.....GAAACCC.AAGGUG
+AF389960.1/20-340                    ....................ACGGGAUUUGC.....GAAACCC.AAGGUG
+U32808.1/436-71                      GGGGCUGAUUCUGGA.UUCGACGGGAUUAGC.....GAAGCCC.AAGGUG
+AE006115.1/421-55                    GGGGCUGAUUCUGGA.UUCGACGGGAUUAGC.....GAAGCCC.AAGGUG
+AY040837.1/1-325                     ......................AGGAUCACG.....AAGGCUU.GUGGAG
+AE004170.1/3459-3093                 GGGGCUGAUUCAGGA.UUCGACGGGAAUUUU.....GCAGUCU.GAGGUG
+AF389968.1/20-335                    ....................ACAAGAUUCAC.....GAAACCC.AAGGUG
+AF389962.1/20-338                    ....................ACGGGAUUUGC.....GAAACCC.AAGGUG
+AF389985.1/20-331                    ....................ACAGGAUUCAC.....GAAACCC.UGGGAG
+AF389951.1/20-337                    ....................ACGGGAUUUGC.....GAAACCC.AAGGUG
+AF389943.1/20-338                    ....................ACAGGAUUUGC.....AAAGCCC.UAGGAG
+AF389942.1/20-339                    ....................ACAAGAUUCAC.....GAAACCC.AAGGUG
+AF389978.1/20-335                    ....................ACGGGACACUC.....GAAACCC.AAGGUG
+#=GC SS_cons                         <<<<<<<..............<<<<<<<<........<<<.<<.<<<<<<
+
+AF440330.1/1-315                     CAUGC..CGAGG..UGCGGUAG.GCCUCGUUAAC.......AAACCGCA.
+U68076.1/22-334                      CAUGU..CGAGG..UGCGGUUU.GCCUCGUAAAA.......AAGCCGCA.
+AP001118.1/202977-202612             CAUGC..CGAGG..AACGGUUU.GCCUCGAUAA........AAGCCGUA.
+D90888.1/18478-18840                 CAUGC..CGAGG..GGCGGUUG.GCCUCGUAAAA........AGCCGCA.
+AE005491.1/9259-9621                 CAUGC..CGAGG..GGCGGUUG.GCCUCGUAAAA........AGCCGCA.
+AF440353.1/1-310                     CAUGC..CGAGG..GGCGGUUG.GCCUCGUAAAA........AGCCGCA.
+AL627276.1/57262-57624               CAUGC..CGAGG..GGCGGUUG.GCCUCGUAAAA........AGCCGCA.
+AF389960.1/20-340                    CAUGC..CGAGG.GGCUGGUUG.GCCUCGUAAAA........AGCCGCA.
+U32808.1/436-71                      CACGU..CGAGG..UGCGGUAG.GCCUCGUAAAU.......AAACCGCA.
+AE006115.1/421-55                    CACGU..CGAGG..UGCGGUAG.GCCUCGUAAAU.......AAACCGCA.
+AY040837.1/1-325                     CAUGU..CGAGG..UGCGGUUU.GCCUCGUUAAA.......CAGCCGCA.
+AE004170.1/3459-3093                 CAUGC..CGAGG..UGCGGUAG.GCCUCGUUAAC.......AAACCGCA.
+AF389968.1/20-335                    CAUGC..CGAGG..UGCGGUAG.GCCUCGUUAAC.......AAACCGCA.
+AF389962.1/20-338                    CAUGC..CGAGG..GGCGGUUG.GCCGCGUAAAA........AGCCGCA.
+AF389985.1/20-331                    CAUGC..CGAGG..GGCGGUUG.GCCUCGU.AAA.......AAGCCGCA.
+AF389951.1/20-337                    CAUGC..CGAGG..GGCGGUUG.GCCUCGUAAAA........AGCCGCA.
+AF389943.1/20-338                    CAUGC..CGAGG..GGCGGUUU.GCCUCGUAAAA........AGCCGCA.
+AF389942.1/20-339                    CAUGC..CGAGG..UGCGGUAG.GCCUCGUUAAC.......AAACCGCA.
+AF389978.1/20-335                    CAUGC..CGAGG..UGCGGUAG.GCCUCGUUAAU.......AAACCGCA.
+#=GC SS_cons                         <<<<<..........<<<<<<.....................>>>>>>..
+
+AF440330.1/1-315                     ..AAAAAAUAGUCGCAAACGACGAAAAC......................
+U68076.1/22-334                      AUUUAAAGUAAUCGCAAACGACGAUAAC......................
+AP001118.1/202977-202612             ..AAAAAAUAAUUGCAAAUAAUAAACAA......................
+D90888.1/18478-18840                 ...AAAAAUAGUCGCAAACGACGAAAAC......................
+AE005491.1/9259-9621                 ...AAAAAUAGUCGCAAACGACGAAAAC......................
+AF440353.1/1-310                     ..AAAAAAUAGUCGCAAACGACGAAAAC......................
+AL627276.1/57262-57624               ..AAAAAAUAGUCGCAAACGACGAAACC......................
+AF389960.1/20-340                    ..AAAAAAUAGUCGCAAACGACGAAAAC......................
+U32808.1/436-71                      ..AAAAAAUAGUCGCAAACGACGAACAA......................
+AE006115.1/421-55                    ..AAAAAAUAGUCGCAAACGACGAACAA......................
+AY040837.1/1-325                     ..AAAAAAUAGUCGCAAACGACGAAAAC......................
+AE004170.1/3459-3093                 ..AAAAAAUAGUCGCAAACGACGAAAAC......................
+AF389968.1/20-335                    ..AAAAAAUAGUCGCAAACGACGAAAAC......................
+AF389962.1/20-338                    ...AUAAAUAGUCGCAAACGACGAAAAC......................
+AF389985.1/20-331                    ..CAGUUAUAGUUGCAAACGACGAUAAC......................
+AF389951.1/20-337                    ...AAAAAUAGUCGCAAACGUCGAAAAC......................
+AF389943.1/20-338                    ...AAAAAUAGUUGCAAACGACGAAAAC......................
+AF389942.1/20-339                    ...AAAAAUAGUCGCAAACGACGAAAAC......................
+AF389978.1/20-335                    ...AAAAAUAGUCGCAAACGACGAAACC......................
+#=GC SS_cons                         ..................................................
+
+AF440330.1/1-315                     ...................................UACGCACUAGCAGCU
+U68076.1/22-334                      ...................................UACUCUCUAGCAGCU
+AP001118.1/202977-202612             ................................AACUACGCUUUAGCAGCU
+D90888.1/18478-18840                 ...................................UACGCUUUAGCAGCU
+AE005491.1/9259-9621                 ...................................UACGCUUUAGCAGCU
+AF440353.1/1-310                     ...................................UACGCUUUAGCAGCU
+AL627276.1/57262-57624               ...................................UACGCUUUAGCAGCU
+AF389960.1/20-340                    ...................................UACGCUUUAGCAGCU
+U32808.1/436-71                      ...................................UACGCUUUAGCAGCU
+AE006115.1/421-55                    ...................................UACGCUUUAGCAGCU
+AY040837.1/1-325                     ...................................UACGCACUAGCAGCU
+AE004170.1/3459-3093                 ...................................UACGCACUAGCAGCU
+AF389968.1/20-335                    ...................................UACGCACUCGCAGCU
+AF389962.1/20-338                    ...................................UACGCUUUAGCAGCU
+AF389985.1/20-331                    ...................................UACGCUCUAGCAGCU
+AF389951.1/20-337                    ...................................UACGCUUUAGCAGCU
+AF389943.1/20-338                    ...................................UACGCACUAGCAGCU
+AF389942.1/20-339                    ...................................UACGCACUAGCAGCU
+AF389978.1/20-335                    ...................................UACGCUUUAGCAGCU
+#=GC SS_cons                         .............................<<<<<....<<<<<<<<<<..
+
+AF440330.1/1-315                     UAA.....................UAACCUGCAUAGAGC...........
+U68076.1/22-334                      UAG.......................GCUGGCUAG...............
+AP001118.1/202977-202612             UAA.....................AAAACUGAAUAAAGC...........
+D90888.1/18478-18840                 UAA.....................UAACCUGCUUAGAGC...........
+AE005491.1/9259-9621                 UAA.....................UAACCUGCUUAGAGC...........
+AF440353.1/1-310                     UAA.....................UAACCUGCUUAGAGC...........
+AL627276.1/57262-57624               UAA.....................UAACCUGCUUAGAGC...........
+AF389960.1/20-340                    UAA.....................UAACCUGCUUAGAGC...........
+U32808.1/436-71                      UAA.....................UAACCUGCAUUUAGC...........
+AE006115.1/421-55                    UAA.....................UAACCUGCUCAUAGC...........
+AY040837.1/1-325                     UAA.....................UACCCUGCUAAGAGCG..........
+AE004170.1/3459-3093                 UAA.....................UACCCUGCUCAGAGC...........
+AF389968.1/20-335                    UAA.....................UAACCUGCGCUGAGC...........
+AF389962.1/20-338                    UAA.....................UAACCUGCUUAGAGC...........
+AF389985.1/20-331                    UAG.......................GCUAGCUAG...............
+AF389951.1/20-337                    UAA.....................UAACCUGCUAAGAGC...........
+AF389943.1/20-338                    UAA.....................UAACCUGCUUAGAGC...........
+AF389942.1/20-339                    UAA.....................UACCCUGCUUAGAGC...........
+AF389978.1/20-335                    UAA.....................UAACCUGCUCGGAGC...........
+#=GC SS_cons                         ............................>>>>.>>>>>>...........
+
+AF440330.1/1-315                     .............CCUUCUACCCUAGCUU................GCCUG
+U68076.1/22-334                      .............CGCUCCUUCCAUGUAU................UCUUG
+AP001118.1/202977-202612             .............CCUUCCUUCUUAUCCUCC..............UUCUC
+D90888.1/18478-18840                 .............CCUCUCUCCCUAGCCUCC...............GCUC
+AE005491.1/9259-9621                 .............CCUCUCUCCCUAGCCUCC...............GCUC
+AF440353.1/1-310                     .............CCUCUCUCCCUAGCCUCC...............GCUC
+AL627276.1/57262-57624               .............CCUCUCUCCCUAGCCUCC...............GCUC
+AF389960.1/20-340                    .............CCUCUCUCCCUAGCUUCC...............GCUC
+U32808.1/436-71                      .............CUUCGCGCUCCAGCUUCC...............GCUC
+AE006115.1/421-55                    .............CUUCUCUCCCCAGCUUCC...............GCUC
+AY040837.1/1-325                     .............CUCCUGCCCUAGCUUCC................GCUU
+AE004170.1/3459-3093                 .............CCUUCCUCCCUAGCUUCC...............GCUU
+AF389968.1/20-335                    .............CCUUCUACCCUAGCUU................GCCUG
+AF389962.1/20-338                    .............CCUCUCUCCCUAGCCUCC...............GCUC
+AF389985.1/20-331                    .............CCAUCUGACACAGGUCUC..............UCAAA
+AF389951.1/20-337                    .............CCUCUCUCCCUAGCUUCC...............GCUC
+AF389943.1/20-338                    .............CCUCUCUCCCUAGCUUCC...............GUUC
+AF389942.1/20-339                    .............CCUCUCUCCCUAGCUUCC...............GCUC
+AF389978.1/20-335                    .............CCUUCUACCCUAGCUU................GCCUA
+#=GC SS_cons                         ...>>>>>.....<<<<<<<<<<<..<<<.....................
+
+AF440330.1/1-315                     UGUCCUAGGGAA....UCGGAAGG..........................
+U68076.1/22-334                      UGGACU..GGA..UUUU.GGAGUG..........................
+AP001118.1/202977-202612             UUAGGAUGAGAA..AACAGGAAGG..........................
+D90888.1/18478-18840                 UUAGGACGGGGA..UCAAGAGAGG..........................
+AE005491.1/9259-9621                 UUAGGACGGGGA..UCAAGAGAGG..........................
+AF440353.1/1-310                     UU.GGACGGGGA..UCAAGAGAGG..........................
+AL627276.1/57262-57624               UUAGGACGGGGA..UCAAGAGAGG..........................
+AF389960.1/20-340                    UUAAGACGGGGA.UCAAAGAGAGG..........................
+U32808.1/436-71                      GUAAGACGGGGA..UAACGCGGAG..........................
+AE006115.1/421-55                    GUAAGACGGGGA..UCAAGAGGAG..........................
+AY040837.1/1-325                     GUAAGACGGGGAAUAA..CAGGGG..........................
+AE004170.1/3459-3093                 GUAAGACGGGGAAAUC.AGGAAGG..........................
+AF389968.1/20-335                    UGUCCUAGGGAA....UCGGAAGG..........................
+AF389962.1/20-338                    UUAGGACGGGGA..UCAAGAGAGG..........................
+AF389985.1/20-331                    UGGGCGGUGUA....UACAGAUGG..........................
+AF389951.1/20-337                    UUAAGACGGGGA..UAAAGAGAGG..........................
+AF389943.1/20-338                    UUAAGACGGGGA..UCAAGAGAGG..........................
+AF389942.1/20-339                    UUAAGACGGGGA..UAAAGAGAGG..........................
+AF389978.1/20-335                    UGUCCUAGGGGA....UUGGAAGG..........................
+#=GC SS_cons                         ..>>>..>>>>......>>>>>>>..........................
+
+AF440330.1/1-315                     ..UCA.UCCUUCACAGGAUC..GUGUGGAAGUCCU.........GCUCGG
+U68076.1/22-334                      ..UCACCCUAACACCUGAUC..GCGACGGAAACCCU........GGCCGG
+AP001118.1/202977-202612             ..UCAGA...AAAAGAGAAAA.ACGUGGAUAUCA........AGCUUGAC
+D90888.1/18478-18840                 ..UCAAACCCAAAAGAGAUC..GCGU.GGAAGCCCU........GCCUGG
+AE005491.1/9259-9621                 ..UCAAACCCAAAAGAGAUC..GCGU.GGAAGCCCU........GCCUGG
+AF440353.1/1-310                     ..UCAAACCCAAAAGAGAUC..GCGU.GGAUGCCUU........GCCUGG
+AL627276.1/57262-57624               ..UCAAACCCAAAAGAGAUC..GCGCGGAUGCCCU.........GCCUGG
+AF389960.1/20-340                    ..UCAAACCCAAAAGAGAUC..GCGUGGAUGCCCU.........GCCUGG
+U32808.1/436-71                      ..UCAAACCAAAACGAGAUC..GUGUGGAAGCCACC.......GUUUGAG
+AE006115.1/421-55                    ..UCAAAUUCAAACGAGAUC..GCGUGGACGCCUCC.......GCUUGAG
+AY040837.1/1-325                     .UUCAAACCCAAACGAGAUA..GCGAGGGAUUCUUUGA.....CUAGAGA
+AE004170.1/3459-3093                 ..UCAAACCAAAUCAAGCUG..GCGU.GGAUUCCCCC......ACCUGAG
+AF389968.1/20-335                    ..UCA.UCCUUCACAGGAUC..GUGUGGAAGUCCU.........GCUCGG
+AF389962.1/20-338                    ..UCAAACCCAAAAGAGAUC..GCGUGGAAGCCCU.........GCCUGG
+AF389985.1/20-331                    ..UCA.UCUUACAUUUGAUA..GCGAGGGAACUCC.........GUCCGG
+AF389951.1/20-337                    ..UCAAACCCAAAAGAGAUC..GCGCGGAUGUCCU.........GCCUGG
+AF389943.1/20-338                    ..UCAAACCUAAAAGAACUC..GCGUGAAUACCUU.........GCCUGG
+AF389942.1/20-339                    ..UCAAACCCAAAAGAGAUC..GCAUGGAAGUCCU.........GCCUGG
+AF389978.1/20-335                    ..UCA.UCUUUCAUAGGAUC..GCGUGGAAACCUU.........GUCUGG
+#=GC SS_cons                         ......................<<<<<.<<<<<<................
+
+AF440330.1/1-315                     GGCGGAAGCAU..UAAAACC.AAUCGAGC.UA.......GUCAAUUCGUG
+U68076.1/22-334                      GGUUGAAGCGU..UAAAACUAAG.CGGCC.UC.......GCCUUUAUCUA
+AP001118.1/202977-202612             GAUAA.CACGA.AGUAGUUU.UUUCAAGC.UA........UAUACCUAAU
+D90888.1/18478-18840                 GGUUGAAGCGU..UAAAACUUAAUCAGGC.UA.......GUUUGUUAGUG
+AE005491.1/9259-9621                 GGUUGAAGCGU..UAAAACUUAAUCAGGC.UA.......GUUUGUUAGUG
+AF440353.1/1-310                     GGUUGAAGCGU..UAAA.CUUAAUCAGGA.UA.......GUUUGUUGGUG
+AL627276.1/57262-57624               GGUUGAAGCGU..UAAAACG.AAUCAGGC.UA.......GUCUGGUAGUG
+AF389960.1/20-340                    GGUUGAAGCGU..UAAAACG.AAUCAGGC.UA.......GUCUGGUAGUG
+U32808.1/436-71                      GAUCGAAGCAC..UAAA.UUGAAUCAAAC.UA.......GCUUAAGUUUA
+AE006115.1/421-55                    GAUCGAAGCGU..UAAA.UUGAAUCAAGC.UA.......GUUUAUCUAUC
+AY040837.1/1-325                     GA.UGAACCGC..GAAAUAGAA.UUCUGG.UA......UGUAUUAGCAUA
+AE004170.1/3459-3093                 GGAUGAAGCGC..GAGAUCUAAUUCAGGU.UA.......GCCAUUCGUUA
+AF389968.1/20-335                    GGCGGAAGCAU..UAAAACC.AAUCGAGC.UA.......GUCAAUUCGUG
+AF389962.1/20-338                    GGUUGAAGCGU..UAAAACUUAAUCAGGC.UA.......GUUUGUUAGUG
+AF389985.1/20-331                    GGGUGAACCGC..GAAAUAG.UACCGGAC.UC.......GCCCGAUGAAA
+AF389951.1/20-337                    GGCUGAAGUGC..UAAAACU.AAUCAGGC.UA.......GUUCGUUAGUG
+AF389943.1/20-338                    GGUUGAAGCGC..UAAAAUCUAAUCAGGC.UA.......GUUUGUCAGUG
+AF389942.1/20-339                    GGCUAAAGUGC..UAAAUCU.AAUCAGGC.UA.......GUUUGUUAGUG
+AF389978.1/20-335                    GGUGGAAGCGU..UAAAACU.AAUCAGAC.UA.......GUUAUUCAGUG
+#=GC SS_cons                         >>>>>>.>>>>>...........................<<<<<<<<<<.
+
+AF440330.1/1-315                     GCGUGUCUCUCCGCAGCGGGUUGGC.......GAAUGUAAA....GAG.U
+U68076.1/22-334                      CCGUGUUUGUCCGGGAUUUAAAGGU.......UAA.UUAAAU...GACAA
+AP001118.1/202977-202612             AUGUGUUUUUCCAAAUUAGGUAAU........GAAUUCAAUAAA.GAAAA
+D90888.1/18478-18840                 GCGUGUCCGUCCGCAGCUGGCAAGC.......GAAUGUAAA....GAC.U
+AE005491.1/9259-9621                 GCGUGUCCGUCCGCAGCUGGCAAGC.......GAAUGUAAA....GAC.U
+AF440353.1/1-310                     GCGUGUCUGUCCGCAGCUGGCAAAU.......GAAUUCAAA....GACUA
+AL627276.1/57262-57624               GCGUGUCCGUCCGCAGGUGCCAGGC.......GAAUGUAAA....GAC.U
+AF389960.1/20-340                    GCGUGUCCGUCCGCAGGUGCCAGGC.......GAAUGUAAA....GAC.A
+U32808.1/436-71                      GCGUGUCUGUCCGCA.UGCUUAAGU.......GAAAUUAAA....GACGA
+AE006115.1/421-55                    GCGUGUCUGUCCGCAGUGGGUAAAU.......GAAAUUAAA....GACGA
+AY040837.1/1-325                     GCGUGUCAAUUCGCAGUGACGAUACG......AGAA.UAAA....GAU.U
+AE004170.1/3459-3093                 GCGUGUCGGUUCGCAGGC.GGUGGU.......GAAAUUAAA....GAU.C
+AF389968.1/20-335                    GCGUGUCUCUCCGCAGCGGGUUGGC.......GAAUGUAAA....GAG.U
+AF389962.1/20-338                    GCGUGUCCGUCCGCAGCUGGCAAGC.......GAAUGUAAA....GAC.U
+AF389985.1/20-331                    UCCUGUCUUUCGGAGUUUAUUCGGGU......UAAUUAAAA....GAG.A
+AF389951.1/20-337                    GCGUGUCUGUCCGCAGCUGGCGUGC.......GAAUGUAAA....GAC.U
+AF389943.1/20-338                    GCGUGUCCGUUCGCAGCUGACCGGC.......GAAUGUAAA....GAU.G
+AF389942.1/20-339                    GCGUGUCCAUCCGCAGCUGACCGGC.......GAAUGUAAA....GAUUG
+AF389978.1/20-335                    GCGUGUCGGUCCGCAGCUGGAUGGU.......GAAUGUAAA....GAUUC
+#=GC SS_cons                         <<<........>>>.>>>>>>>>>>.<<<<.........>>>>.......
+
+AF440330.1/1-315                     GACUAAGCA.UGUAG...UACCGAGGAUGU......AGUAAUUUUGGACG
+U68076.1/22-334                      UACUAAACA.UGUAG...UACCGACGGUCG......AGGCUUUUCGGACG
+AP001118.1/202977-202612             AACUAAGCA.UGUAG...GGCUUUAUUAGU......AGAAAUUUUGGACG
+D90888.1/18478-18840                 GACUAAGCA.UGUAG...UACCGAGGAUGU......AGGAAUUUCGGACG
+AE005491.1/9259-9621                 GACUAAGCA.UGUAG...UACCGAGGACGU......AGGAAUUUCGGACG
+AF440353.1/1-310                     GACUAAGCA.UGUAG...UACCGAGGAUGU......AGAAAUUUC.....
+AL627276.1/57262-57624               GACUAAGCA.UGUAG...UACCGAGGAUGU......AGGAAUUUCGGACG
+AF389960.1/20-340                    GACUAAGCA.UGUAG...UACCGAGGAUGU......AGGAAUUUCGGACG
+U32808.1/436-71                      GACUAAACG.UGUAG...UACUGAAGGUAG......AGUAAUUUCGGACG
+AE006115.1/421-55                    GACUAAACG.UGUAG...UACUGAAGGUAG......AGUAAUUUCGGACG
+AY040837.1/1-325                     GACUAAACA.UGUAG...CGCCAUCUGUUA.....GACUGAUUUUGGACG
+AE004170.1/3459-3093                 GACUAAGCA.UGUAG...UACCAAAGAUGA......AUGGUUUUCGGACG
+AF389968.1/20-335                    GACUAAGCA.UGUAG...UACCGAGGAUGU......AGUAAUUUUGGACG
+AF389962.1/20-338                    GACUAAGCA.UGUAG...UACCGAGGAUGU......AGGAAUUUCGGACG
+AF389985.1/20-331                    GACUAAGCA.UGUAG...UGCCUUGGAUGU......AGGUGUUCUGGACG
+AF389951.1/20-337                    GACUAAGCA.UGUAG...UGCCGAGGAUGU......AGGAAUUUCGGACG
+AF389943.1/20-338                    GACUAAGCA.UGUAG...UGCCGACGGUGU......AGUAAUUCUGGACG
+AF389942.1/20-339                    GACUAAGCA.UGUAG...UGCCGACGGUGU......AGCAAUUUCGGACG
+AF389978.1/20-335                    GACUAAGCA.UGUAG...UACUGAGGAUGU......AGGUUUUUCGGACG
+#=GC SS_cons                         ......>>>.>>......>>>>>>>>.>>>........>>>>>>>>...<
+
+AF440330.1/1-315                     GGG........................
+U68076.1/22-334                      GGG........................
+AP001118.1/202977-202612             CGGGUUCGAAUCCCGCCAGCUCCA...
+D90888.1/18478-18840                 CGGGUUCAACUCCCGCCAGCUCCACCA
+AE005491.1/9259-9621                 CGGGUUCAACUCCCGCCAGCUCCACCA
+AF440353.1/1-310                     ...........................
+AL627276.1/57262-57624               CGGGUUCAACUCCCGCCAGCUCCACCA
+AF389960.1/20-340                    CG.........................
+U32808.1/436-71                      GGGGUUCAACUCCCCCCAGCUCCACCA
+AE006115.1/421-55                    CGGGUUCAACUCCCGCCAGCUCCACCA
+AY040837.1/1-325                     CGG........................
+AE004170.1/3459-3093                 GGGGUUCAACUCCCCCCAGCUCCACCA
+AF389968.1/20-335                    GG.........................
+AF389962.1/20-338                    CG.........................
+AF389985.1/20-331                    CG.........................
+AF389951.1/20-337                    UG.........................
+AF389943.1/20-338                    CG.........................
+AF389942.1/20-339                    GG.........................
+AF389978.1/20-335                    CG.........................
+#=GC SS_cons                         <<<<.......>>>>>>>>>>>>....
+//

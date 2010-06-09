@@ -1,0 +1,91 @@
+.TH "sse_cmsearch" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
+
+.SH NAME
+.TP
+sse_cmsearch - search a sequence database for RNAs homologous to a CM using an SSE implementation
+
+.SH SYNOPSIS
+.B sse_cmsearch
+.I [options]
+.I cmfile
+.I seqfile
+
+.SH DESCRIPTION
+.B sse_cmsearch
+uses the covariance model (CM) in
+.I cmfile
+to search for homologous RNAs in 
+.I seqfile,
+and outputs high-scoring alignments,
+using a structural filter pipeline 
+implemented with SSE parallel code.
+
+.PP
+Currently, the sequence file must be in FASTA format.
+
+.PP
+CMs are profiles of RNA consensus sequence and secondary structure. A
+CM file is produced by the 
+.B cmbuild 
+program, from a given RNA sequence alignment of known 
+consensus structure.
+CM files must be calibrated prior to running 
+.B sse_cmsearch
+with the 
+.B cmcalibrate 
+program. Searches with calibrated CM files will include
+E-values and will use appropriate filter thresholds for
+acceleration. 
+CM calibration is described in more detail 
+in chapters 5 and 6 of the User's Guide.
+
+.PP
+.B sse_cmsearch
+output is designed for processing by the 
+.B cmsearch_dual 
+script;
+.B --glbf 3
+gives coordinates and scores of the final results list.
+
+.SH OPTIONS
+
+.TP
+.B -h
+Print brief help, including summary of available options.
+
+.TP
+.BI -Z " <x>"
+Calculate E-values as if the target database size was 
+.I <x> 
+megabases (Mb). Ignore the actual size of the database.
+
+.TP 
+.B --toponly
+Only search the top (Watson) strand of the sequences in
+.I seqfile.
+By default, both strands are searched.
+
+.TP
+.BI --s1-F " <x>"
+Set stage 1 cutoff to estimated filter pass rate
+.I <x>,
+where 
+.I <x>
+is a real number between 0 and 1.
+
+.TP
+.BI --s2-P " <x>"
+Set stage 2 cutoff to a p-value of 
+.I <x>,
+where 
+.I <x>
+is a real number between 0 and 1.
+
+.TP
+.BI --s3-E " <x>"
+Set stage 2 cutoff to a e-value of 
+.I <x>,
+where 
+.I <x>
+is a positive real number.
+

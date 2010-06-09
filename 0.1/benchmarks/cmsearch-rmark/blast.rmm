@@ -1,0 +1,245 @@
+#! /usr/local/bin/perl
+
+# Eric Nawrocki 09.07.05
+#
+# blast.rmm 
+#
+# RMARK module for blast
+
+# based on blast.pl by SRE
+# this file does less than blast.pl though
+#
+
+require "sre.pl";
+use Getopt::Std;
+
+getopts('E:B:');
+# THESE ARE IGNORED!!!! FIX ME
+if (defined $opt_E) { $e_cutoff = $opt_E; }
+if (defined $opt_B) { $b_cutoff = $opt_B; $use_evalues = 0; $use_bitscores = 1; }
+
+$configfile = shift;
+$idxfile    = shift;
+$alifile    = shift;
+$testfile   = shift;
+$root       = $alifile;
+if(!($root       =~ s/\.ali$//))
+{
+    printf("root: $root\nconfig: $configfile\nidx: $idxfile\nalifile: $alifile\ntestfile: $testfile\n");
+    die "Can't determine root based on test file name $testfile.\n";
+}
+
+$tmp     = &tempname();         # get a temp file name
+$tmp2     = &tempname();         # get a temp file name
+$matrix  = "BLOSUM62";
+$pairwise  = "blastn";		
+$format    = "xdformat -n";
+#$pairwise = "ssearch3 -Hqd 0";
+#$pairwise = "fasta3 -Hqd 0";
+
+$totseqs    = 0;
+$totok      = 0;
+$totgood    = 0;
+$siglevel   = 0.01;		# relative to OWL 29.3 size: 191509 seqs, 60552547 residues
+
+require "$configfile";
+#system("rm blast.temp");
+#print "PROFMARK 1.0: benchmarking $pairwise.\n";
+
+#open (INDEX,$idxfile) || die;
+#while (<INDEX>) {
+#    if (/^(\S+)/) {
+#	$root = $1;
+
+	# Preset the true positives to a best p/eval of 100.0.
+	#
+
+#format the database the test set
+system("$format -e $tmp2 $testfile > /dev/null");
+#system("$format $testfile > /dev/null");
+
+%sc = ();		# clear the assoc array
+$highnoise = 100.0;
+
+# Search test set with each sequence in the training set.
+# Record highest hit for each test seq including noise seqs.
+#
+
+#print("opening raw\n");
+&open_fasta("$root.raw");
+while (&read_fasta(*name, *desc, *seq)) {
+    
+    # Write one sequence to a temp file
+    open  (TMPSEQ, ">$tmp.seq") || die;
+    &write_fasta(*TMPSEQ, $name, $desc, $seq);
+    close TMPSEQ;
+    
+    # Run BLASTN
+    #$output = `$pairwise $dir/$root.test $tmp.seq M=$matrix B=0 E=10 Z=60552547 filter=seg filter=xnu`;
+    $output = `$pairwise $testfile $tmp.seq -kap $options`;
+    #system("$pairwise $testfile $tmp.seq -kap $options >> blast.temp");
+    #print("calling $pairwise $testfile $tmp.seq $options >> blast.temp\n");
+    # Parse output
+    @lines = split(/^/, $output);
+    $saw_sbjct = 0;
+    for($i = 0; $i < scalar(@lines); $i++)
+    {
+	$line = $lines[$i];
+	# We're looking for 4 types of lines
+	#
+	# Type 1: those that tell us we're about to see search results against a new 
+        #         chromosome. These lines look like this: 
+	#         >pg-1_20
+	#
+	# Type 2: those that tell us the score for a new HSP that we're about to see 
+	#         an alignment for. (remember we're not dealing with sum statistics, 
+	#         so each hit is its own HSP.)
+	#         These lines look like this: 
+	#         Score = 572 (91.9 bits), Expect = 2.2e-23, P = 2.2e-23
+	#
+	# Type 3: those that tell us the potential beginning or end of the region
+	#         of the target (chromosome) that we're hitting.
+	#         These lines look like this:
+	#         Sbjct: 45330 GTTTCTAATCTATCAGCT-CAGTAGTTTCGGTAAAGGCGAAACGAGGCTATAACGGATA- 45387
+	# Type 4: those that tell us the orientation of the hit with respect to the
+	#         target (chromosome) minus means reverse orientation, plus is forward.
+	#         These lines look like this:
+	#         forward orientation:
+	#         Identities = 132/180 (73%), Positives = 132/180 (73%), Strand = Plus / Plus
+	#         reverse orientation:
+        #         Identities = 71/111 (63%), Positives = 71/111 (63%), Strand = Minus / Plus
+
+	if ($line =~ /^>(\S+)/) 
+	{
+	    #print("read type1 line\n");
+	    #Type 1
+	    #This is one of two ways we know that we've
+	    #seen the last ^Sbjct: line for the previous hit.
+	    #So now we store the beginning and end positions of the previous hit.
+	    #(ONLY IF THIS IS NOT OUR FIRST HIT)
+	    if($saw_sbjct)
+	    {
+		#printf("1 storing begin $begin end $end for hit : $curr_hit\n");
+		push(@{$begin_hash_of_arr{$curr_hit}}, $begin);
+		push(@{$end_hash_of_arr{$curr_hit}}, $end);
+		push(@{$orient_hash_of_arr{$curr_hit}}, $orient);
+	    }
+	    $curr_hit = $1;
+	    $saw_sbjct = 0;
+	}
+	elsif ($line =~ /^\s+Score\s=\s(\d+)\s\((\S+)\sbits\)\,\sExpect\s=\s(\S+)\,\sP\s=\s(\S+).*$/)
+	{
+	    #printf("read type2 line\n");
+	    $curr_sc = $1;
+	    $curr_bits = $2;
+	    $curr_eval = $3;
+	    $curr_pval = $4;
+	    if($curr_hit eq "")
+	    {
+		print("ERROR in blast.rmm, parsing the blast output incorrectly. (curr_hit is the empty string).\n");
+		exit();
+	    }
+	    push(@{$sc_hash_of_arr{$curr_hit}}, $curr_eval);
+	    #print("adding $curr_hit eval $curr_eval\n");
+	    #this is the second of two ways we know that we've
+	    #seen the last ^Sbjct: line for a hit
+	    #so now we store the beginning and end
+	    #positions.
+	    if($saw_sbjct)
+	    {
+		#printf("2 storing begin $begin end $end for best hit : $curr_hit\n");
+		push(@{$begin_hash_of_arr{$curr_hit}}, $begin);
+		push(@{$end_hash_of_arr{$curr_hit}}, $end);
+		push(@{$orient_hash_of_arr{$curr_hit}}, $orient);
+	    }
+	    #in this case we're about to see a new hit in the same sequence
+	    #so we don't change $curr_hit
+	    $saw_sbjct = 0;
+	}
+	elsif($line =~ /Sbjct:\s+(\S+)\s+\S+\s+(\S+)\s*$/) {
+	    if(!($saw_sbjct))
+	    {
+		$begin = $1;
+		$end = $2;
+		$saw_sbjct = 1;
+	    }
+	    else
+	    {
+		$end = $2;
+	    }
+	}
+	elsif($line =~ /\s+Identities =.+Strand = /)
+	{
+	    #type 4, this tells us which orientation the hit is in
+	    if($line =~ /Minus/)
+	    {
+		#query was reversed to match db, this means 
+		#we're hitting the reverse strand of the db
+		$orient = 1;
+	    }
+	    else
+	    {
+		$orient = 0;
+	    }
+	}
+    }
+    #now its possible we haven't finished off the last hit
+    if($saw_sbjct)
+    {
+	#printf("3 storing begin $begin end $end for best hit : $curr_hit\n");
+	push(@{$begin_hash_of_arr{$curr_hit}}, $begin);
+	push(@{$end_hash_of_arr{$curr_hit}}, $end);
+	push(@{$orient_hash_of_arr{$curr_hit}}, $orient);
+    }
+}
+&close_fasta();
+
+# Convert output to GLBF format that master script rmark.pl expects
+# GLBF format is just like GLF format but with bounds of hits
+# <seq name> <score> <start posn> <end posn> <orientation 0=forward 1=reverse>
+foreach $subject (sort keys(%sc_hash_of_arr)) {
+    for($i = 0; $i < (scalar(@{$sc_hash_of_arr{$subject}})); $i++)
+    {
+	$sc = $sc_hash_of_arr{$subject}[$i];
+	$begin = $begin_hash_of_arr{$subject}[$i];
+	$end = $end_hash_of_arr{$subject}[$i];
+	$orient = $orient_hash_of_arr{$subject}[$i];
+	printf("%-24s %g %d %d %d\n", $subject, $sc, $begin, $end, $orient);
+    }
+}
+unlink "$tmp.seq";
+unlink $tmp;
+unlink $tmp2;
+
+# Old code from blast.pl to print output (skipping convert to GLF step)
+
+# Print output
+#
+#$ntest = 0;
+#$nok   = 0;		# number above high noise
+#$ngood = 0;		# number statistically significant
+#foreach $true (sort keys(%sc)) {
+#if ($sc{$true} < $highnoise) { 
+#$nok++; 
+#if ($sc{$true} < $siglevel)  { $ngood++; }
+#	    }
+#	    $ntest++; 
+#	}
+#	printf("%-20s   %5d/%-5d over noise of %g\n", $root, 
+#	       $nok, $ntest, $highnoise); 
+#	foreach $true (sort keys(%sc)) {
+#	    if ($sc{$true} < $highnoise) {
+#		$plusminus = "+"; 
+#		if ($sc{$true} < $siglevel) { $plusminus = "++"; }
+#	    } else {$plusminus = "-";}
+#	    printf("\t%s %-25s %g\n", $plusminus, $true, $sc{$true});
+#	}
+#	$totseqs  += $ntest;
+#	$totok    += $nok;
+#	$totgood  += $ngood;
+#    }
+#}
+
+#printf("Summary: %d/%d recognized above noise\n", $totok, $totseqs);
+#printf("         %d/%d recognized better than P=%f\n", $totgood, $totseqs, $siglevel);
+
