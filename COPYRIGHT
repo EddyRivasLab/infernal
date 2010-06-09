@@ -14,9 +14,14 @@ Copyright (C) 2008 HHMI Janelia Farm Research Campus
    Portions Copyright (C) 1989-2001      Free Software Foundation
    Portions Copyright (C) 1991           Massachusetts Institute of Technology
 
+Infernal includes the HMMER software package, which has its own license and
+copyright information. See hmmer/COPYRIGHT and hmmer/LICENSE.
+
+Infernal uses the Easel software library, which has its own license and
+copyright information. See easel/COPYRIGHT and easel/LICENSE.
+
 Infernal is distributed under the terms of the GNU General Public
 License version 3 (GPLv3). See the file LICENSE for details.
-
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
