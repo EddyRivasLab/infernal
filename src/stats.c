@@ -10,6 +10,7 @@
  * Separate file started May 17, 2002
  */
 #include "esl_config.h"
+#include "p7_config.h"
 #include "config.h"
 
 #include <stdio.h>

@@ -13,6 +13,7 @@
  */
 
 #include "esl_config.h"
+#include "p7_config.h"
 #include "config.h"
 
 #include <stdio.h>
