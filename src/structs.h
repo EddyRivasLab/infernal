@@ -16,9 +16,6 @@
 #include "p7_config.h"
 #include "config.h"
 
-#include <xmmintrin.h>		/* SSE  */
-#include <emmintrin.h>		/* SSE2 */
-
 #include "easel.h"
 #include "esl_sq.h"
 #include "esl_dirichlet.h"
