@@ -1,0 +1,81 @@
+# Infernal's cmstat crash exercises, in sqc command format.
+# EPN, Fri May 23 11:07:09 2008
+#
+# Exercises of cmstat.
+# requires trna.calibrated.cm, a calibrated CM file that would take
+# too long to calibrate within the sqc test.
+#
+1  exercise  cmstat:help/1         @src/cmstat@  -h
+
+1  exercise  cmstat:trna/1         @src/cmstat@  trna.calibrated.cm 
+1  exercise  cmstat:trna/2         @src/cmstat@  -g trna.calibrated.cm 
+1  exercise  cmstat:trna/3         @src/cmstat@  -m trna.calibrated.cm 
+1  exercise  cmstat:trna/4         @src/cmstat@  -Z 71.3 trna.calibrated.cm 
+1  exercise  cmstat:trna/5         @src/cmstat@  --all trna.calibrated.cm 
+1  exercise  cmstat:trna/6         @src/cmstat@  --le trna.calibrated.cm 
+1  exercise  cmstat:trna/7         @src/cmstat@  --ge trna.calibrated.cm 
+1  exercise  cmstat:trna/8         @src/cmstat@  --beta 1E-3 trna.calibrated.cm 
+1  exercise  cmstat:trna/9         @src/cmstat@  --qdbfile %QDBFILE% trna.calibrated.cm 
+
+1  exercise  cmstat:trna/10         @src/cmstat@  --lfi trna.calibrated.cm 
+1  exercise  cmstat:trna/11         @src/cmstat@  --gfi trna.calibrated.cm 
+1  exercise  cmstat:trna/12         @src/cmstat@  --lfc trna.calibrated.cm 
+1  exercise  cmstat:trna/13         @src/cmstat@  --gfc trna.calibrated.cm 
+1  exercise  cmstat:trna/14         @src/cmstat@  -E 3 --lfc trna.calibrated.cm 
+1  exercise  cmstat:trna/15         @src/cmstat@  -E 3 -Z 71.3 --lfc trna.calibrated.cm 
+1  exercise  cmstat:trna/16         @src/cmstat@  -T 12 --gfc trna.calibrated.cm 
+1  exercise  cmstat:trna/17         @src/cmstat@  --ga --lfi trna.calibrated.cm 
+1  exercise  cmstat:trna/18         @src/cmstat@  --tc --gfi trna.calibrated.cm 
+1  exercise  cmstat:trna/19         @src/cmstat@  --nc --lfi trna.calibrated.cm 
+1  exercise  cmstat:trna/20         @src/cmstat@  --seqfile 3trnas.fa --lfi -E 0.001 trna.calibrated.cm 
+1  exercise  cmstat:trna/21         @src/cmstat@  --toponly --seqfile 3trnas.fa --lfi -E 0.001 trna.calibrated.cm 
+
+1  exercise  cmstat:trna/22         @src/cmstat@  --search trna.calibrated.cm 
+1  exercise  cmstat:trna/23         @src/cmstat@  --search --cmL 100 trna.calibrated.cm 
+1  exercise  cmstat:trna/24         @src/cmstat@  --search --hmmL 1000 trna.calibrated.cm 
+
+1  exercise  cmstat:trna/25         @src/cmstat@  --efile %TMPFILE% --lfi trna.calibrated.cm 
+1  exercise  cmstat:trna/26         @src/cmstat@  --bfile %TMPFILE% --lfi trna.calibrated.cm 
+1  exercise  cmstat:trna/27         @src/cmstat@  --sfile %TMPFILE% --lfi trna.calibrated.cm 
+1  exercise  cmstat:trna/28         @src/cmstat@  --xfile %TMPFILE% --lfi trna.calibrated.cm 
+1  exercise  cmstat:trna/29         @src/cmstat@  --afile %TMPFILE% --lfi trna.calibrated.cm 
+1  exercise  cmstat:trna/30         @src/cmstat@  --bits --sfile %TMPFILE% --lfi trna.calibrated.cm 
+1  exercise  cmstat:trna/31         @src/cmstat@  --bits --xfile %TMPFILE% --lfi trna.calibrated.cm 
+1  exercise  cmstat:trna/32         @src/cmstat@  --bits --afile %TMPFILE% --lfi trna.calibrated.cm 
+
+# repeat with 3.4.12.calibrated.cm
+1  exercise  cmstat:3.4.12/1         @src/cmstat@  3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/2         @src/cmstat@  -g 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/3         @src/cmstat@  -m 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/4         @src/cmstat@  -Z 71.3 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/5         @src/cmstat@  --all 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/6         @src/cmstat@  --le 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/7         @src/cmstat@  --ge 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/8         @src/cmstat@  --beta 1E-3 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/9         @src/cmstat@  --qdbfile %QDBFILE% 3.4.12.calibrated.cm 
+
+1  exercise  cmstat:3.4.12/10         @src/cmstat@  --lfi 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/11         @src/cmstat@  --gfi 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/12         @src/cmstat@  --lfc 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/13         @src/cmstat@  --gfc 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/14         @src/cmstat@  -E 3 --lfc 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/15         @src/cmstat@  -E 3 -Z 71.3 --lfc 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/16         @src/cmstat@  -T 12 --gfc 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/17         @src/cmstat@  --ga --lfi 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/18         @src/cmstat@  --tc --gfi 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/19         @src/cmstat@  --nc --lfi 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/20         @src/cmstat@  --seqfile 3trnas.fa --lfi -E 0.001 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/21         @src/cmstat@  --toponly --seqfile 3trnas.fa --lfi -E 0.001 3.4.12.calibrated.cm 
+
+5  exercise  cmstat:3.4.12/22         @src/cmstat@  --search 3.4.12.calibrated.cm 
+5  exercise  cmstat:3.4.12/23         @src/cmstat@  --search --cmL 100 3.4.12.calibrated.cm 
+5  exercise  cmstat:3.4.12/24         @src/cmstat@  --search --hmmL 1000 3.4.12.calibrated.cm 
+
+1  exercise  cmstat:3.4.12/25         @src/cmstat@  --efile %TMPFILE% --lfi 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/26         @src/cmstat@  --bfile %TMPFILE% --lfi 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/27         @src/cmstat@  --sfile %TMPFILE% --lfi 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/28         @src/cmstat@  --xfile %TMPFILE% --lfi 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/29         @src/cmstat@  --afile %TMPFILE% --lfi 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/30         @src/cmstat@  --bits --sfile %TMPFILE% --lfi 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/31         @src/cmstat@  --bits --xfile %TMPFILE% --lfi 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/32         @src/cmstat@  --bits --afile %TMPFILE% --lfi 3.4.12.calibrated.cm 

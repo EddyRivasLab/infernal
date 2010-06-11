@@ -1,0 +1,25 @@
+# inf-1p0_nofilter.rmk:  options for a infernal 1.0 rmark-2 benchmark
+#                        with no filters, running one round of search
+#                        using the Inside algorithm with QDB and
+#                        beta=1E-15. 
+#
+# This infernal benchmark corresponds to the "Infernal v1.0 (no
+# filters) " ROC curve in Figure 1 of the Infernal 1.0
+# applications note. To duplicate those results, cmsearch must be
+# the Infernal version 1.0 executable, and the CM files used
+# must be the calibrated CM files included with the supplementary
+# material for the applications note (see 00README).
+#
+# Note: The "-Z 20" tells cmsearch to assume the database search space
+# is 20 Mb (which it actually is for rmark-2). This is necessary so if
+# rmark_clusterfy.pl is run, and the genome is split into single
+# chromosomes and each chromosome searched individually, cmsearch will
+# report E-values as if the entire genome were being searched.
+# IMPORTANTLY, if you use this .rmk file for a differently sized
+# database you should change the -Z 20 to -Z <x> where <x> is twice
+# the size in Mb of the database ('twice' b/c the search space for
+# cmsearch is actually twice the database size b/c both strands of
+# each sequence are searched).
+#
+$cms = "cmsearch --fil-no-hmm --fil-no-qdb -Z 20 ";
+1;

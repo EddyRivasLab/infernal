@@ -1,0 +1,12 @@
+# inf-72.rmk:  options for a infernal 0.72 rmark-2 benchmark
+#              with default settings.
+#
+#
+# This infernal benchmark corresponds to the "Infernal v0.72 ROC curve
+# in Figure 1 of the Infernal 1.0 applications note. To duplicate
+# those results, cmsearch-0.72 and cmbuild-0.72 must be the Infernal 
+# version 0.72 executables.
+# 
+$cmb = "cmbuild-0.72 ";
+$cms = "cmsearch-0.72 ";
+1;

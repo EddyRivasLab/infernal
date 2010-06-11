@@ -1,0 +1,7 @@
+trna   mpi.trna.cmcalibrate   32
+5s     mpi.5s.cmcalibrate     32
+lysine mpi.lysine.cmcalibrate 32
+srp    mpi.srp.cmcalibrate    32
+rnasep mpi.rnasep.cmcalibrate 32
+ssu    mpi.ssu.cmcalibrate    32
+lsu    mpi.lsu.cmcalibrate    32

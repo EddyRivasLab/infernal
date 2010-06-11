@@ -1,0 +1,65 @@
+#################################################################
+# Infernal
+# testsuite Makefile
+# SVN $Id$
+#################################################################
+# @LICENSE@
+#################################################################
+
+SHELL  = /bin/sh
+
+## your compiler and compiler flags;
+#  and other configuration of the compilation and linking
+#  environment.
+#  DEFS contains stuff that autoconf set up.
+#
+CC       = @CC@
+CFLAGS   = @CFLAGS@
+CPPFLAGS = @CPPFLAGS@
+LDFLAGS  = @LDFLAGS@
+DEFS     = @DEFS@
+LIBS     = @LIBS@ -lm
+MYLIBS   = -linfernal -lhmmer -leasel
+SIMDFLAGS = @SIMD_CFLAGS@
+
+# configuration for optional MPI functionality
+MPILIBS   = @MPILIBS@
+
+# Where the build arenas are
+#
+MYLIBDIR = -L../easel/ -L../src -L../hmmer/src
+MYINCDIR = -I../easel/ -I../src -I../hmmer/src
+
+TESTPROGS = \
+	bandcyk-montecarlo-test\
+	bandcyk-truncation-test\
+	cp9-test\
+	sub_cm-test
+
+#################################################################
+## Building the test programs.
+##
+
+.c.o: 
+	${CC} ${SIMDFLAGS} ${CFLAGS} ${DEFS} ${MYINCDIR} -c $<
+
+all:	${TESTPROGS}
+
+${TESTPROGS}: @EXEC_DEPENDENCY@ 
+	${CC} ${CFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIR} -o $@ $@.o $(MYLIBS) $(LIBS) $(MPILIBS)
+
+
+
+#################################################################
+## Miscellaneous targets.
+##
+clean:
+	-rm -f *.o *~ Makefile.bak core ${TESTPROGS} TAGS gmon.out 
+
+distclean:
+	-rm -f *.o *~ Makefile.bak core ${TESTPROGS} TAGS gmon.out 
+	-rm -f Makefile 
+
+TAGS:
+	etags -t *.c *.h Makefile.in
+

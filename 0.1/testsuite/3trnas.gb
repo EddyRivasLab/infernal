@@ -1,0 +1,24 @@
+LOCUS       DA0260       75 bp
+ACCESSION   .
+DEFINITION  .
+VERSION     .
+ORIGIN      
+       1  GGGCGAAUAG UGUCAGCGGG AGCACACCAG ACUUGCAAUC UGGUAGGGAG
+      51  GGUUCGAGUC CCUCUUUGUC CACCA
+//
+LOCUS       DA0261       75 bp
+ACCESSION   .
+DEFINITION  .
+VERSION     .
+ORIGIN      
+       1  GGGCGAAUAG UGUCAGCGGG AGCACACCAG ACUUGCAAUC UGGUAGGGAG
+      51  GGUUCGAGUC CCUCUUUGUC CACCA
+//
+LOCUS       tRNA-Tyr       56 bp
+ACCESSION   .
+DEFINITION  Ascaris suum mitochondrion, complete genome.
+VERSION     .
+ORIGIN      
+       1  cagtaggtag tttattttta aaatgtagta tttgggttac tgtgaatttt
+      51  tactga
+//

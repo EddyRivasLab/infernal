@@ -1,0 +1,136 @@
+# Infernal's crash exercises, in sqc command format.
+# SRE, Mon Aug  5 14:01:34 2002
+# SVN $Id$
+#
+
+# Exercises of cmalign.
+#
+1  exercise  cmalign:help/1       @src/cmalign@ -h
+1  exercise  cmalign:help/2       @src/cmalign@ --devhelp
+1  prep      model/trna           @src/cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
+1  exercise  cmalign:trna/1       @src/cmalign@ %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/2       @src/cmalign@ -l %TRNA.CM% 3trnas.fa
+2  prep      model/vault          @src/cmbuild@ -F --rf %VAULT.CM% vault.sto
+2  exercise  cmalign:vault/1      @src/cmalign@ %VAULT.CM% vault.fa
+2  exercise  cmalign:vault/2      @src/cmalign@ -l %VAULT.CM% vault.fa
+
+# Exercises of cmbuild.
+#
+1  exercise    cmbuild:help/1     @src/cmbuild@ -h
+1  exercise    cmbuild:help/2     @src/cmbuild@ --devhelp
+1  exercise    cmbuild/rf/trna    @src/cmbuild@ -F --rf --wnone %MODEL% trna1415G.sto
+1  exercise    cmbuild/trna       @src/cmbuild@ -F  %MODEL% trna1415G.sto
+1  exercise    cmbuild/rf/RNaseP  @src/cmbuild@ -F --rf  %MODEL% rnaseP-eubact.sto
+1  exercise    cmbuild/RNaseP     @src/cmbuild@ -F  %MODEL% rnaseP-eubact.sto
+1  exercise    cmbuild/SRP        @src/cmbuild@ -F  %MODEL% srp-euk.sto
+
+
+# Exercises of cmcalibrate 
+#
+1  exercise    cmcalibrate:help/1     @src/cmcalibrate@ -h
+1  exercise    cmcalibrate:help/2     @src/cmcalibrate@ --devhelp
+1  prep        model/trna             @src/cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
+1  exercise    cmcalibrate:trna       @src/cmcalibrate@ --forecast 1 %TRNA.CM%
+
+# Exercises of cmfetch
+#
+1  prep      model/3.4.12            @src/cmbuild@ -F --wnone %3.4.12.CM% !../testsuite/3.4.12.stk!
+1  exercise  cmfetch:3.4.12/i0       @src/cmfetch@ --index %3.4.12.CM% 
+1  exercise  cmfetch:3.4.12/i1       @src/cmfetch@ -f %3.4.12.CM% !../testsuite/12.3.list!
+1  exercise  cmfetch:3.4.12/i2       @src/cmfetch@ -o %TMP.CM% %3.4.12.CM% U2
+1  exercise  cmfetch:3.4.12/i3       @src/cmfetch@ -O %3.4.12.CM% U2
+# clean up
+1  prep      cleanup/3.4.12/c0       rm %3.4.12.CM%.ssi 
+1  prep      cleanup/3.4.12/c1       rm U2
+
+# Exercises of cmscore.
+#
+1  exercise  cmscore:help/1       @src/cmscore@ -h
+1  exercise  cmscore:help/2       @src/cmscore@ --devhelp
+1  prep      model/trna1          @src/cmbuild@ -F --wnone %TRNA1.CM% trna1415G.sto
+1  prep      model/trna2          @src/cmbuild@ --wnone --rf -F %TRNA2.CM% trna1415G.sto
+1  exercise  cmscore/trna1        @src/cmscore@ --infile trna-regression.fa %TRNA1.CM% 
+1  exercise  cmscore/trna2        @src/cmscore@ --infile trna-regression.fa %TRNA2.CM% 
+1  exercise  cmscore/local/trna1  @src/cmscore@ -l --infile trna-regression.fa %TRNA1.CM% 
+1  exercise  cmscore/local/trna2  @src/cmscore@ -l --infile trna-regression.fa %TRNA2.CM%
+
+2  prep      rand50               @easel/miniapps/esl-shuffle@ -G -N 50 -L 90 --dna --seed 42 -o %RAND50%
+2  exercise  trna1/rand50         @src/cmscore@ --infile %RAND50% %TRNA1.CM% 
+2  exercise  trna2/rand50         @src/cmscore@ --infile %RAND50% %TRNA2.CM%
+
+2  exercise  trna1/rand50/local   @src/cmscore@ --infile %RAND50% -l %TRNA1.CM% 
+2  exercise  trna2/rand50/local   @src/cmscore@ --infile %RAND50% -l %TRNA2.CM% 
+
+1  prep      model/rnaseP         @src/cmbuild@ --rf -F %RNASEP.CM% rnaseP-eubact.sto
+2  prep      model/srp            @src/cmbuild@ -F %SRP.CM% srp-euk.sto
+1  exercise  rnaseP/bsu           @src/cmscore@ --nonbanded --scoreonly --infile rnaseP-bsu.fa %RNASEP.CM%
+1  exercise  rnaseP/bsu/local     @src/cmscore@ --nonbanded --scoreonly --infile rnaseP-bsu.fa -l %RNASEP.CM% 
+2  exercise  srp/ffs              @src/cmscore@ --infile ffs-ecoli.fa %SRP.CM% 
+
+3  prep      rand20               @easel/miniapps/esl-shuffle@ -G -N 20 -L 100 --dna --seed 42 -o %RAND20%
+3  exercise  rnaseP/rand          @src/cmscore@ --infile %RAND20% %RNASEP.CM% 
+3  exercise  rnaseP/rand/local    @src/cmscore@ --infile %RAND20% -l %RNASEP.CM% 
+
+# Exercises of cmsearch 
+1  exercise  cmsearch:help/1      @src/cmsearch@ -h
+1  exercise  cmsearch:help/2      @src/cmsearch@ --devhelp
+1  exercise  trna/search          @src/cmsearch@ %TRNA.CM% 3trnas.fa
+1  exercise  rnaseP/search        @src/cmsearch@ %RNASEP.CM% 3trnas.fa
+1  exercise  srp/search           @src/cmsearch@ %SRP.CM% 3trnas.fa
+
+# Exercises of cmemit
+1  exercise  cmemit:help/1        @src/cmemit@ -h
+1  exercise  cmemit:help/2        @src/cmemit@ --devhelp
+1  exercise  trna/emit            @src/cmemit@   %TRNA.CM% %TMP.FA%
+1  exercise  rnaseP/emit          @src/cmemit@   %RNASEP.CM% %TMP.FA%
+1  exercise  srp/emit             @src/cmemit@   %SRP.CM% %TMP.FA%
+
+# Exercises of cmstat
+1  exercise  cmstat:help/1        @src/cmstat@ -h
+1  exercise  trna/stat            @src/cmstat@   %TRNA.CM% 
+1  exercise  rnaseP/stat          @src/cmstat@   %RNASEP.CM% 
+1  exercise  srp/stat             @src/cmstat@   %SRP.CM% 
+
+# Exercises developed for bandcyk.c
+# xref notebook/1015-infernal-bands; xref STL7 p.130.
+#
+1  prep      model/trna           @src/cmbuild@ --rf -F %TRNA.CM% ../intro/trna.sto
+2  prep      model/rp             @src/cmbuild@ --rf -F %RP.CM%   ../intro/RNaseP.sto
+3  prep      model/ssu            @src/cmbuild@ --rf -F %SSU.CM%  ../intro/ssu.sto
+1  exercise  bandcyk/mc/trna      @testsuite/bandcyk-montecarlo-test@ %TRNA.CM%
+2  exercise  bandcyk/mc/rp        @testsuite/bandcyk-montecarlo-test@ %RP.CM%
+3  exercise  bandcyk/mc/ssu       @testsuite/bandcyk-montecarlo-test@ -W 2000 %SSU.CM%
+1  exercise  bandcyk/trunc/trna   @testsuite/bandcyk-truncation-test@ %TRNA.CM% 160 1000
+2  exercise  bandcyk/trunc/rp     @testsuite/bandcyk-truncation-test@ %RP.CM%  1000 2000
+3  exercise  bandcyk/trunc/ssu    @testsuite/bandcyk-truncation-test@ %SSU.CM% 1687 3000 
+
+# Exercises of CM Plan 9 construction
+#
+1  prep      model/trna           @src/cmbuild@ --rf -F %TRNA.CM% ../intro/trna.sto
+2  prep      model/rp             @src/cmbuild@ --rf -F %RP.CM%   ../intro/RNaseP.sto
+2  prep      model/ssu            @src/cmbuild@ --rf -F %SSU.CM%  ../intro/ssu.sto
+1  exercise  cp9/trna             @testsuite/cp9-test@ -s 19 %TRNA.CM%
+2  exercise  cp9/trna             @testsuite/cp9-test@ -s 17 %TRNA.CM%
+2  exercise  cp9/rp               @testsuite/cp9-test@ --psionly %RP.CM%
+2  exercise  cp9/ssu              @testsuite/cp9-test@ --psionly %SSU.CM%
+
+# Exercises of sub CM construction
+#
+1  prep      model/trna           @src/cmbuild@ --rf -F %TRNA.CM% ../intro/trna.sto
+1  prep      model/rp             @src/cmbuild@ --rf -F %RP.CM%   ../intro/RNaseP.sto
+2  prep      model/ssu            @src/cmbuild@ --rf -F %SSU.CM%  ../intro/ssu.sto
+1  exercise  sub/trna1            @testsuite/sub_cm-test@ %TRNA.CM%
+1  exercise  sub/rp               @testsuite/sub_cm-test@ %RP.CM%
+2  exercise  sub/ssu              @testsuite/sub_cm-test@ %SSU.CM%
+3  exercise  sub/trna2            @testsuite/sub_cm-test@ --exhaust %TRNA.CM%
+
+# Infernal 1.0 is not backwards compatible with pre-1.0 CM files
+#
+#1  exercise  formats/0.55         @src/cmsearch@ DicF-0.55.cm 3trnas.fa
+#1  exercise  formats/0.6          @src/cmsearch@ DicF-0.6.cm  3trnas.fa
+#1  exercise  formats/0.7          @src/cmsearch@ DicF-0.7.cm  3trnas.fa
+#1  exercise  formats/0.71         @src/cmsearch@ DicF-0.71.cm 3trnas.fa
+#1  exercise  formats/0.72         @src/cmsearch@ DicF-0.72.cm 3trnas.fa
+#1  exercise  formats/0.8          @src/cmsearch@ DicF-0.8.cm  3trnas.fa
+1  exercise  formats/1.0          @src/cmsearch@ DicF-1.0.cm  3trnas.fa
+1  exercise  formats/1.0          @src/cmsearch@ DicF-1.1prealpha.cm  3trnas.fa
