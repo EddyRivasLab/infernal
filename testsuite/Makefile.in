@@ -20,6 +20,10 @@ LDFLAGS  = @LDFLAGS@
 DEFS     = @DEFS@
 LIBS     = @LIBS@ -lm
 MYLIBS   = -linfernal -lhmmer -leasel
+SIMDFLAGS = @SIMD_CFLAGS@
+
+# configuration for optional MPI functionality
+MPILIBS   = @MPILIBS@
 
 # Where the build arenas are
 #
@@ -37,12 +41,12 @@ TESTPROGS = \
 ##
 
 .c.o: 
-	${CC} ${CFLAGS} ${DEFS} ${MYINCDIR} -c $<
+	${CC} ${SIMDFLAGS} ${CFLAGS} ${DEFS} ${MYINCDIR} -c $<
 
 all:	${TESTPROGS}
 
 ${TESTPROGS}: @EXEC_DEPENDENCY@ 
-	${CC} ${CFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIR} -o $@ $@.o $(MYLIBS) $(LIBS)
+	${CC} ${CFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIR} -o $@ $@.o $(MYLIBS) $(LIBS) $(MPILIBS)
 
 
 
