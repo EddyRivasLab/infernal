@@ -140,6 +140,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 			       NULL, NULL, /* don't return best score at each posn, or best scoring posn */
 			       &sc)) != eslOK) return status;
     }
+
     /* If hits were reported greedily, remove overlapping hits, and sort by decreasing end point 
      * (if not greedy, we'll have 0 overlaps, and already be sorted by end point) */
     if(cm->search_opts & CM_SEARCH_HMMGREEDY) { /* resolve overlaps by being greedy */
@@ -156,6 +157,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 					 cur_results, /* report hits to cur_results */
 					 TRUE,   /* we're scanning */
 					 FALSE,  /* we're not ultimately aligning */
+					 TRUE,   /* we want j (end point) fixed, so returned score is for a parse that ends at j */
 					 TRUE,   /* be memory efficient */
 					 do_null3, /* correct scores with NULL3? */
 					 NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, or traces */
@@ -166,6 +168,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 				  cur_results, /* report hits to this round's results */
 				  TRUE,   /* we're scanning */
 				  FALSE,  /* we're not ultimately aligning */
+				  TRUE,   /* we want j (end point) fixed, so returned score is for a parse that ends at j */
 				  TRUE,   /* be memory efficient */
 				  do_null3, /* correct scores with NULL3? */
 				  NULL, NULL,   /* don't return best score at each posn, best scoring posn */

@@ -322,7 +322,7 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
  */
 int
 cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-		    int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, 
+		    int do_scan, int doing_align, int j_is_fixed, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, 
 		    CP9trace_t **ret_tr, float *ret_sc)
 {
   int          status;
@@ -356,6 +356,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
   if(mx->M != cm->clen)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, mx->M != cm->clen.\n");
   if(cm->clen != cm->cp9->M)                 ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, cm->clen != cm->cp9->M.\n");
   if(cm->search_opts & CM_SEARCH_HMMFORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, CM_SEARCH_HMMFORWARD flag raised.\n");
+  if(doing_align && (! j_is_fixed))          ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, doing_align is TRUE, but j_is_fixed is FALSE.\n");
     
   int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
 
@@ -529,7 +530,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
        * regular Backward: a scanner can end at the END 
        * state at any position, regular can only end at
        * the final position j0. */
-      if(do_scan) {	
+      if(do_scan && (! j_is_fixed)) {	
 	if(ip > 0) {
 	  /*******************************************************************
 	   * 2 Handle EL, looking at EL_k->E for all valid k.
@@ -607,7 +608,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
 	  imx[cur][k] = -INFTY; /* need seq to get here */
 	  elmx[cur][k]= -INFTY;  /* first emitted res can't be from an EL, need to see >= 1 matches */
 	}
-	if(do_scan && ip > 0) { /* add possibility of ending at this position from this state */
+	if(do_scan && (! j_is_fixed) && ip > 0) { /* add possibility of ending at this position from this state */
 	  mmx[cur][k] = 
 	    ESL_MAX(mmx[cur][k], 
 		    (CP9TSC(cp9O_ME,k) +                /* M_k<-E + (only in scanner)     */ 
@@ -1822,9 +1823,13 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
  *           if(be_efficient): only allocates 2 rows of the Backward
  *           matrix, else allocates full L+1 matrix.
  *
- *           if(do_scan): allows parses to end at any position j
- *           i0..j0, changing meaning of DP matrix cells as discussed
- *           below.
+ *           if(do_scan && j_is_fixed): allows parses to start at
+ *           any position i in i0..j0, but must end at j0. 
+ *
+ *           if(do_scan && ! j_is_fixed)): allows parses to end at 
+ *           at any position j in i0..j0, and start at any position 
+ *           i in i0..j0, changing meaning of DP matrix cells as 
+ *           discussed below. 
  *
  *           Reference for algorithm (when do_scan is FALSE): 
  *           Durbin et. al. Biological Sequence Analysis; p. 59.
@@ -1916,6 +1921,7 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
  *           doing_align  - TRUE if reason we've called this function is to help get posteriors
  *                          for CM alignment, in which case we can skip the traceback. 
+ *           j_is_fixed  - only return scores for parses that end at j0, must be TRUE if doing_align=TRUE
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
  *           do_null3  - TRUE to do NULL3 score correction, FALSE not to
  *           ret_psc   - RETURN: int log odds Backward score for each start point [0..(j0-i0+1)]
@@ -1930,7 +1936,7 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
  */
 int
 cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-		  int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc)
+	     int do_scan, int doing_align, int j_is_fixed, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
   GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
@@ -1959,9 +1965,10 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, cm->cp9 is NULL.\n");
   if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, passing in results data structure, but not in scanning mode.a\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, dsq is NULL.");
-  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx is NULL.\n");
-  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx->M != cm->clen.\n");
-  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, cm->clen != cm->cp9->M.\n");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, mx is NULL.\n");
+  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, mx->M != cm->clen.\n");
+  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, cm->clen != cm->cp9->M.\n");
+  if(doing_align && (! j_is_fixed))    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, doing_align is TRUE, but j_is_fixed is FALSE.\n");
     
   int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
 
@@ -2126,8 +2133,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
        * regular Backward: a scanner can end at the END 
        * state at any position, regular can only end at
        * the final position j0. */
-      if(do_scan)
-	{	
+      if(do_scan && (! j_is_fixed)) {	
 	  /*******************************************************************
 	   * 2 Handle EL, looking at EL_k->E for all valid k.
 	   * EL_k->M_M transition, which has no transition penalty */
@@ -2194,7 +2200,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
 				 (dmx[cur][k+1] + CP9TSC(cp9O_ID,k)));
 	  imx[cur][k] += cm->cp9->isc[dsq[i]][k];
 	  
-	  if(do_scan) { /* add possibility of ending at this position from this state */
+	  if(do_scan && (! j_is_fixed)) { /* add possibility of ending at this position from this state */
 	    mmx[cur][k] = 
 	      ILogsum(mmx[cur][k], 
 		      (CP9TSC(cp9O_ME,k) +                  /* M_k<-E + (only in scanner)     */ 
@@ -2278,7 +2284,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
    * regular Backward: a scanner can end at the END 
    * state at any position, regular can only end at
    * the final position j0. */
-  if(do_scan)
+  if(do_scan && (! j_is_fixed))
     {	
       dmx[cur][cm->cp9->M] =  
 	ILogsum(dmx[cur][cm->cp9->M],
@@ -3055,10 +3061,9 @@ main(int argc, char **argv)
   if(! esl_opt_GetBoolean(go, "-g")) { 
     cm->config_opts |= CM_CONFIG_LOCAL;
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
-  }
-  if(! esl_opt_GetBoolean(go, "--noel")) { 
-    cm->config_opts |= CM_CONFIG_LOCAL;
-    cm->config_opts |= CM_CONFIG_HMMEL;
+    if(! esl_opt_GetBoolean(go, "--noel")) { 
+      cm->config_opts |= CM_CONFIG_HMMEL;
+    }
   }
   ConfigCM(cm, NULL, TRUE, NULL, NULL); /* TRUE says: calculate W */
   init_ilogsum();

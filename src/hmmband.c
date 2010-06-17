@@ -200,6 +200,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 0, NULL, 
 			    do_scan2bands, /* are we using scanning Forward/Backward */
 			    TRUE,  /* we are going to use posteriors to align */
+			    TRUE,  /* j0 is the fixed endpoint */
 			    FALSE, /* don't be memory efficient */
 			    FALSE, /* don't do a NULL3 score correction */
 			    NULL, NULL,
@@ -309,6 +310,7 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 0, NULL, 
 			    do_scan2bands, /* are we using scanning Forward/Backward */
 			    TRUE,  /* we are going to use posteriors to align */
+			    TRUE,  /* j0 is the fixed endpoint */
 			    FALSE, /* don't be memory efficient */
 			    FALSE, /* don't do a NULL3 score correction */
 			    NULL, NULL,

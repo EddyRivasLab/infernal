@@ -43,7 +43,7 @@ static ESL_OPTIONS options[] = {
   { "-s",        eslARG_INT,    "181", NULL, "n>=0",    NULL,      NULL,  "--infile", "set RNG seed to <n> (if 0: one-time arbitrary seed)", 1 },
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print individual timings & scores, not just a summary", 1 },
   { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL, "-l,--search", "build sub CM for columns b/t HMM predicted start/end points", 1 },
-  { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 1 },
+  { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",    NULL,      NULL,       NULL, "set maximum allowable DP matrix size to <x> Mb", 1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
@@ -1581,8 +1581,9 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
 				NULL,   /* don't report hits */
 				TRUE,   /* we're scanning */
 				FALSE,  /* we're not ultimately aligning */
-				TRUE,   /* do NULL3 score correction */
+				TRUE,   /* j should be fixed as the endpoint */
 				TRUE,   /* be memory efficient */
+				TRUE,   /* do NULL3 score correction */
 				NULL,   /* don't return best score at each posn */
 				&i,     /* return start point i of best scoring hit, not used actually */
 			       &sc)) != eslOK) return status;

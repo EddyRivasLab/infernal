@@ -328,14 +328,14 @@ extern int cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0,
 		       int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, 
 		       CP9trace_t **ret_tr, float *ret_sc);
 extern int cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-			       int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, 
+			       int do_scan, int doing_align, int j_is_fixed, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, 
 			       CP9trace_t **ret_tr, float *ret_sc);
 extern int cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
 		       int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc);
 extern int cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
 			   int do_scan, int doing_align, int be_efficient, int be_safe, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc);
 extern int cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-			int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, 
+			int do_scan, int doing_align, int j_is_fixed, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, 
 			float *ret_sc);
 extern int cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq);
 extern int cp9_WorstForward(CM_t *cm, char *errbuf, CP9_MX *mx, int thresh, int doing_scan, int doing_align, int *ret_L);
