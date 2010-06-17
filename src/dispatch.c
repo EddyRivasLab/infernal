@@ -737,18 +737,21 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	fprintf(ofp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
 	if(sfp != NULL) fprintf(sfp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       }
-      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 0., NULL,
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 0., 
+			       NULL,   /* no results to keep track off (this is for scanning) */
 			       FALSE,  /* we are not scanning */
 			       TRUE,   /* we are aligning */
 			       FALSE,  /* don't be memory efficient */
-			       FALSE,  /* don't use a NULL3 score correction, we're aligning */
+			       FALSE,  /* don't use NULL3, it's irrelevant anyway b/c results is NULL */
 			       NULL, NULL, /* don't return best sc at each posn, or best scoring posn */
 			       &(cp9_tr[i]), /* return the trace */
 			       &sc)) != eslOK) return status;
+      null3_correction = 0.;
+      if(do_null3) ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, cur_dsq, 1, L, &null3_correction);
       if(sq_mode && !silent_mode) { 
 	esl_stopwatch_Stop(watch); 
 	FormatTimeString(time_buf, watch->user, TRUE);
-	fprintf(ofp, "  %8.2f  %11s\n", sc, time_buf);
+	fprintf(ofp, "  %8.2f  %11s\n", sc - null3_correction, time_buf);
       }
       parsesc[i] = sc;
       continue;

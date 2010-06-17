@@ -439,6 +439,19 @@ cp9_ViterbiBackward() on a set of sequences and outputs the max
 score. It must be compiled independently.
 
 This bug was fixed as of svn revision 3309.
+//
+ID              i17
+TITLE		cmalign viterbi null3
+STATUS          CLOSED
+XREF            See ~/nawrockie/notebook/10_0614_inf_repro_mpi/00LOG
+REPORTED_BY     EPN
+CLOSED_DATE     EPN, Thu Jun 17 08:40:25 2010
+DESCRIPTION    
+
+cmalign was not applying a NULL3 correction when the --viterbi flag
+was used. This was simple enough to fix in dispatch.c by calculating
+and subtracting the NULL3 correction in the same way it is done for
+all other alignment modes (e.g. CYK and optimal accuracy).
 
 
 
