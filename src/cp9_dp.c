@@ -544,16 +544,22 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
 	   * self loop b/c it's impossible to do that without emitting, and we've already seen our last res emitted,
 	   * either way we don't have to modify it */
 	  
-	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], elmx[cur][cm->cp9->M] + CP9TSC(cp9O_MEL,cm->cp9->M));/* M_M<-EL_M<-E, with 0 selfs in EL_M */
-	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], CP9TSC(cp9O_ME,cm->cp9->M));                              /* M_M<-E ... */
-	  /*///mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M]; *//* ... + emitted match symbol */
-	  /* DO NOT add contribution of emitting i from M, it's been added above */
+	  
+	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], 
+					 elmx[cur][cm->cp9->M] + CP9TSC(cp9O_MEL,cm->cp9->M) + cm->cp9->msc[dsq[i]][cm->cp9->M]); /* M_M<-EL_M<-E, with 0 selfs in EL_M */
+	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], 
+					 CP9TSC(cp9O_ME,cm->cp9->M) + cm->cp9->msc[dsq[i]][cm->cp9->M]); /* M_M<-E ... */
+	  /* IMPT DIFFERENCE WITH cp9_Backward(): we need to add in contribution of emission within the ESL_MAX()s above
+	   * here in Viterbi since we're doing a max, but in cp9_Backward we don't b/c we do a sum and don't want 
+	   * to double count that emission, since it was added once already above */
 	  
 	  imx[cur][cm->cp9->M] = ESL_MAX(imx[cur][cm->cp9->M],
 					 (CP9TSC(cp9O_IM,cm->cp9->M) +            /* I_M<-E + (only in scanner)     */
-					  0));                                        /* all parses end in E, 2^0 = 1.0;*/
-	  /*///imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M]; *//* ... + emitted insert symbol */  
-	  /* DO NOT add contribution of emitting i from M, it's been added above */
+					  0 +                                     /* all parses end in E, 2^0 = 1.0;*/
+					  cm->cp9->isc[dsq[i]][cm->cp9->M]));     /* + emitted insert symbol        */
+	  /* IMPT DIFFERENCE WITH cp9_Backward(): we need to add in contribution of emission within the ESL_MAX() above
+	   * here in Viterbi since we're doing a max, but in cp9_Backward we don't b/c we do a sum and don't want 
+	   * to double count that emission, since it was added once already above */
 	}
 	dmx[cur][cm->cp9->M] =  ESL_MAX(dmx[cur][cm->cp9->M], 
 					(CP9TSC(cp9O_DM,cm->cp9->M) +            /* D_M<-E + (only in scanner)     */
@@ -604,9 +610,13 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
 	if(do_scan && ip > 0) { /* add possibility of ending at this position from this state */
 	  mmx[cur][k] = 
 	    ESL_MAX(mmx[cur][k], 
-		    (CP9TSC(cp9O_ME,k) +                    /* M_k<-E + (only in scanner)     */ 
-		     0));                                 /* all parses end in E, 2^0 = 1.0;*/
-	  /* DO NOT add contribution of emitting i from M, it's been added above */
+		    (CP9TSC(cp9O_ME,k) +                /* M_k<-E + (only in scanner)     */ 
+		     0 +                                /* all parses end in E, 2^0 = 1.0;*/
+		     cm->cp9->msc[dsq[i]][k]));         /* emitted match symbol */
+	  /* IMPT DIFFERENCE WITH cp9_Backward(): we need to add in contribution of emission within the ESL_MAX() above
+	   * here in Viterbi since we're doing a max, but in cp9_Backward we don't b/c we do a sum and don't want 
+	   * to double count that emission, since it was added once already above */
+
 	  /* No EL contribution here b/c we'd be looking for M_k<-EL_k<-E, but EL_k<-E is impossible 
 	   * for k != cm->cp9->M; */
 	}	      
@@ -2136,14 +2146,12 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
 	    ILogsum(mmx[cur][cm->cp9->M], 
 		    ILogsum(elmx[cur][cm->cp9->M] + CP9TSC(cp9O_MEL,cm->cp9->M),/* M_M<-EL_M<-E, with 0 selfs in EL_M */
 			    CP9TSC(cp9O_ME,cm->cp9->M)));                             /* M_M<-E ... */
-	  /*///mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M]; *//* ... + emitted match symbol */
 	  /* DO NOT add contribution of emitting i from M, it's been added above */
 	  
 	  imx[cur][cm->cp9->M]  =
 	    ILogsum(imx[cur][cm->cp9->M],
 		    (CP9TSC(cp9O_IM,cm->cp9->M) +            /* I_M<-E + (only in scanner)     */
 		     0));                                        /* all parses end in E, 2^0 = 1.0;*/
-	  /*///imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M]; *//* ... + emitted insert symbol */  
 	  /* DO NOT add contribution of emitting i from M, it's been added above */
 	  dmx[cur][cm->cp9->M] =  
 	    ILogsum(dmx[cur][cm->cp9->M],
@@ -2754,6 +2762,7 @@ cp9_CheckTransitionGuarantees(CP9_t *cp9, char *errbuf)
   return eslOK;
 }
 
+
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/
@@ -2797,6 +2806,7 @@ static ESL_OPTIONS options[] = {
   { "-x",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute experimental Forward scan implementation", 0},
   { "-o",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute old (version 0.8) Forward scan implementation", 0},
   { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow Viterbi scan implementation",  0 },
+  { "-z",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow Viterbi backward scan implementation",  0 },
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "configure HMM for glocal alignment [default: local]", 0 },
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "do alignment, don't scan", 0 },
   { "--noel",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "turn local ends off [default: on, unless -g]", 0 },
@@ -2872,6 +2882,22 @@ main(int argc, char **argv)
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       
+      if (esl_opt_GetBoolean(go, "-b")) 
+	{ 
+	  esl_stopwatch_Start(w);
+	  if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
+					   do_scan,   /* are we scanning? */
+					   do_align,  /* are we aligning? */
+					   (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
+					   NULL,   /* don't want best score at each posn back */
+					   NULL,   /* don't want the max scoring posn back */
+					   NULL,   /* don't want traces back */
+					   &sc)) != eslOK) cm_Fail(errbuf);
+	  printf("%4d %-30s %10.4f bits ", (i+1), "cp9_ViterbiBackward(): ", sc);
+	  esl_stopwatch_Stop(w);
+	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+	}
+
       if (esl_opt_GetBoolean(go, "-f")) 
 	{ 
 	  esl_stopwatch_Start(w);
@@ -2941,3 +2967,162 @@ main(int argc, char **argv)
   return 0;
 }
 #endif /*IMPL_CP9_DP_BENCHMARK*/
+
+
+/*****************************************************************
+ * Debugging program
+ *****************************************************************/
+#ifdef DEBUG_CP9_DP
+/* gcc -o debug-cp9_dp -g -O2 -I. -L. -I../easel -L../easel -I../hmmer/src -L../hmmer/src -DDEBUG_CP9_DP cp9_dp.c -linfernal -lhmmer -leasel -lm
+ * ./debug-cp9_dp <cmfile> <fafile>
+ */
+
+#include "esl_config.h"
+#include "p7_config.h"
+#include "config.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#include "easel.h"
+#include "esl_getopts.h"
+#include "esl_histogram.h"
+#include "esl_random.h"
+#include "esl_randomseq.h"
+#include "esl_sqio.h"
+#include "esl_stats.h"
+#include "esl_stopwatch.h"
+#include "esl_vectorops.h"
+#include "esl_wuss.h"
+
+#include "funcs.h"		/* function declarations                */
+#include "structs.h"		/* data structures, macros, #define's   */
+
+static ESL_OPTIONS options[] = {
+  /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
+  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
+  { "-r",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "set random number seed randomly",                0 },
+  { "-s",        eslARG_INT,     "33", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
+  { "-L",        eslARG_INT, "500000", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",                   0 },
+  { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                   0 },
+  { "-f",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute optimized Forward scan implementation",  0 },
+  { "-x",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute experimental Forward scan implementation", 0},
+  { "-o",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute old (version 0.8) Forward scan implementation", 0},
+  { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow Viterbi scan implementation",  0 },
+  { "-z",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow Viterbi backward scan implementation",  0 },
+  { "-g",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "configure HMM for glocal alignment [default: local]", 0 },
+  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "do alignment, don't scan", 0 },
+  { "--noel",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "turn local ends off [default: on, unless -g]", 0 },
+  { "--full",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "calculate full matrix, not just 2 rows",         0 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+};
+static char usage[]  = "[-options] <cmfile>";
+static char banner[] = "benchmark driver for the fast scanning CM plan 9 HMM Viterbi implementation";
+
+int 
+main(int argc, char **argv)
+{
+  int             status;
+  ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 2, argc, argv, banner, usage);
+  CM_t            *cm;
+  ESL_STOPWATCH  *w       = esl_stopwatch_Create();
+  ESL_ALPHABET   *abc     = NULL;
+  ESL_SQ         *sq      = NULL;
+  float           sc;
+  char            *cmfile  = esl_opt_GetArg(go, 1);
+  char            *sqfile = esl_opt_GetArg(go, 2);
+  CMFILE          *cmfp;	/* open input CM file stream */
+  int             do_scan;
+  int             do_align;
+  char            errbuf[cmERRBUFSIZE];
+  ESL_SQFILE     *sqfp;           /* open sequence input file stream */
+  int             maxi, maxj, maxi2;
+
+  /* open input sequence file */
+  status = esl_sqfile_Open(sqfile, eslSQFILE_UNKNOWN, NULL, &sqfp);
+  if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "File %s doesn't exist or is not readable\n", sqfile);
+  else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of sequence file %s\n", sqfile);
+  else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can’t autodetect stdin or .gz."); 
+  else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
+
+  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)               cm_Fail("Failed to open covariance model save file %s\n", cmfile);
+  if ((status = (CMFileRead(cmfp, NULL, &abc, &cm))) != eslOK) cm_Fail("Failed to read CM");
+  CMFileClose(cmfp);
+  esl_sqfile_SetDigital(sqfp, abc);
+
+  if(! esl_opt_GetBoolean(go, "-g")) { 
+    cm->config_opts |= CM_CONFIG_LOCAL;
+    cm->config_opts |= CM_CONFIG_HMMLOCAL;
+  }
+  if(! esl_opt_GetBoolean(go, "--noel")) { 
+    cm->config_opts |= CM_CONFIG_LOCAL;
+    cm->config_opts |= CM_CONFIG_HMMEL;
+  }
+  ConfigCM(cm, NULL, TRUE, NULL, NULL); /* TRUE says: calculate W */
+  init_ilogsum();
+
+  if (esl_opt_GetBoolean(go, "-a"))  { do_scan = FALSE; do_align = TRUE;  }
+  else                               { do_scan = TRUE;  do_align = FALSE; }
+
+  sq = esl_sq_CreateDigital(abc);
+  while((status = esl_sqio_Read(sqfp, sq)) == eslOK) { 
+      esl_stopwatch_Start(w);
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, sq->dsq, 1, sq->n, cm->W, 0., NULL,
+			       do_scan,   /* are we scanning? */
+			       do_align,  /* are we aligning? */
+			       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
+			       FALSE,  /* don't do NULL3 */
+			       NULL,   /* don't want best score at each posn back */
+			       &maxj,  /* return the max scoring end posn */
+			       NULL,   /* don't want traces back */
+			       &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%-30s %10.4f bits endpoint: %4d", "cp9_Viterbi(): ", sc, maxj);
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+      esl_stopwatch_Start(w);
+      if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, sq->dsq, 1,
+				       (do_align) ? sq->n : maxj, 
+				       cm->W, 0., NULL,
+				       do_scan,   /* are we scanning? */
+				       do_align,  /* are we aligning? */
+				       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
+				       FALSE,  /* don't do NULL3 */
+				       NULL,   /* don't want best score at each posn back */
+				       &maxi,  /* return the max scoring start posn */
+				       NULL,   /* don't want traces back */
+				       &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%-30s %10.4f bits startpnt: %4d", "cp9_ViterbiBackward(): ", sc, maxi);
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+      esl_stopwatch_Start(w);
+      if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, sq->dsq, 1,
+				       sq->n,
+				       cm->W, 0., NULL,
+				       do_scan,   /* are we scanning? */
+				       do_align,  /* are we aligning? */
+				       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
+				       FALSE,  /* don't do NULL3 */
+				       NULL,   /* don't want best score at each posn back */
+				       &maxi2,   /* don't want the max scoring start posn */
+				       NULL,   /* don't want traces back */
+				       &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%-30s %10.4f bits startpnt: %4d", "END cp9_ViterbiBackward(): ", sc, maxi2);
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+      esl_sq_Reuse(sq);
+
+      printf("\n");
+  }
+  FreeCM(cm);
+  esl_sq_Destroy(sq);
+  esl_alphabet_Destroy(abc);
+  esl_stopwatch_Destroy(w);
+  esl_getopts_Destroy(go);
+  return 0;
+}
+#endif /*DEBUG_CP9_DP*/

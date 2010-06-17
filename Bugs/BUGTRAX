@@ -411,6 +411,36 @@ and in the main infernal trunk as of revision 3056.
 
 See ~/nawrockie/notebook/9_1116_inf_cmalign_bug/00LOG.
 for more information on this bug and how it was fixed.
+//
+ID              i16
+TITLE		backward viterbi
+STATUS          CLOSED
+XREF            See ~/nawrockie/notebook/10_0614_inf_repro_mpi/00LOG
+REPORTED_BY     EPN
+CLOSED_DATE     EPN, Thu Jun 17 08:03:49 2010
+DESCRIPTION    
+
+Backward Viterbi was incorrectly implemented in
+cp9_dp.c:cp9_ViterbiBackward(). Certain sequences gave different
+results (scores for optimal parses) for cp9_Viterbi(), which runs
+Viterbi for CM Plan 9 HMMs in the forward direction (traditional
+Viterbi), and cp9_ViterbiBackward() which runs Viterbi backwards.
+This affected releases 1.0 through 1.0.2 and Diana's 06.07.10 snapshot
+release for her thesis.
+
+The bug was that match emission and insert scores were erroneously not
+added to a DP cell's score in some rare cases.  To see the exact code
+changed, use 'svn diff'. 
+
+Note, there is no script in bugs.sqc that reproduces this bug. This is
+partly because it never causes any of the programs to crash. I added
+a debugging program to the end of cp9_dp.c that runs cp9_Viterbi and
+cp9_ViterbiBackward() on a set of sequences and outputs the max
+score. It must be compiled independently.
+
+This bug was fixed as of svn revision 3309.
+
+
 
 
 
