@@ -554,8 +554,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* initialize the flags/options/params and configuration of the CM */
       if((  status = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
       if((  status = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
+      if((  status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len)))      != eslOK) cm_Fail(errbuf);
       if(cm->flags & CMH_EXPTAIL_STATS) { 
-	if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len)))      != eslOK) cm_Fail(errbuf);
 	if((status = UpdateExpsForDBSize(cm, errbuf, cfg->dbsize))          != eslOK) cm_Fail(errbuf);
 	if((status = set_searchinfo_for_calibrated_cm(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
       }
@@ -594,7 +594,9 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	{
 	  for(rci = cfg->init_rci; rci <= cfg->do_rc; rci++) {
 	    /*printf("SEARCHING >%s %d\n", dbseq->sq[rci]->name, rci);*/
-	    if ((status = ProcessSearchWorkunit(cm, errbuf, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, &dbseq->results[rci], esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, &seq_surv_fractA, &seq_nhitsA)) != eslOK) cm_Fail(errbuf);
+	    if ((status = ProcessSearchWorkunit(cm, errbuf, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, 
+						ESL_MAX(1, ((int) cfg->avg_hit_len)), /* guess at average hit len for HMM scanning functions */
+						&dbseq->results[rci], esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, &seq_surv_fractA, &seq_nhitsA)) != eslOK) cm_Fail(errbuf);
 	    for(n = 0; n < cm->si->nrounds; n++) { 
 	      cm_surv_fractA[n] += (dbseq->sq[rci]->n * seq_surv_fractA[n]);
 	      cm_nhitsA[n]      += seq_nhitsA[n];
@@ -1098,7 +1100,9 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       while((status = cm_dsq_MPIRecv(0, 0, MPI_COMM_WORLD, &wbuf, &wn, &dsq, &L)) == eslOK)
 	{
 	  ESL_DPRINTF1(("worker %d: has received search job, length: %d\n", cfg->my_rank, L));
-	  if ((status = ProcessSearchWorkunit(cm, errbuf, dsq, L, &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, &surv_fractA, &nhitsA)) != eslOK) goto ERROR;
+	  if ((status = ProcessSearchWorkunit(cm, errbuf, dsq, L, 
+					      ESL_MAX(1, ((int) cfg->avg_hit_len)), /* guess at average hit len for HMM scanning functions */
+					      &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, &surv_fractA, &nhitsA)) != eslOK) goto ERROR;
 	  ESL_DPRINTF1(("worker %d: has gathered search results\n", cfg->my_rank));
 	  
 	  n = 0;
@@ -2571,7 +2575,10 @@ int estimate_search_time_for_round(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   }
   else { /* search with HMM */
     if(search_opts & CM_SEARCH_HMMFORWARD) { /* forward */
-      if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
+      if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 
+			       cm->W,  /* guess at hit len, irrelevant b/c we're not reporting hits */
+			       0.,     /* reporting threshold, irrelevant b/c we're not reporting hits */
+			       NULL,   /* don't report hits */
 			       TRUE,   /* we're scanning */
 			       FALSE,  /* we're not ultimately aligning */
 			       TRUE,   /* be memory efficient */
@@ -2579,7 +2586,10 @@ int estimate_search_time_for_round(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
 			       NULL, NULL, NULL)) != eslOK) return status;
     }
     else { /* viterbi */
-      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 
+			       cm->W,  /* guess at hit len, irrelevant b/c we're not reporting hits */
+			       0.,     /* reporting threshold, irrelevant b/c we're not reporting hits */
+			       NULL,   /* don't report hits */
 			       TRUE,   /* we're scanning */
 			       FALSE,  /* we're not ultimately aligning */
 			       TRUE,   /* be memory efficient */

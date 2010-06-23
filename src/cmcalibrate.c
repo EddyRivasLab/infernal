@@ -830,7 +830,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    fflush(stdout);*/
 	    /* TEMP */
 
-	    if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, cfg->expL, &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL, NULL)) != eslOK) cm_Fail(errbuf);
+	    if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, cfg->expL, 
+						ESL_MAX(1, ((int) cfg->avg_hit_len)), /* guess at average hit len for HMM scanning functions */
+						&results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL, NULL)) != eslOK) cm_Fail(errbuf);
+
 	    /* TEMP printf("# mode: %12s\n", DescribeExpMode(exp_mode)); */
 	    /* TEMP printf("serial i: %4d before nresults: %8d\n", i, results->num_results); */
 	    /* TEMP int zz;
@@ -1724,7 +1727,10 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  while((status = cm_dsq_MPIRecv(0, 0, MPI_COMM_WORLD, &wbuf, &wn, &exp_dsq, &expL)) == eslOK)
 	    {
 	      ESL_DPRINTF1(("worker %d: has received dsq chunk of length L: %d\n", cfg->my_rank, expL));
-	      if ((status = ProcessSearchWorkunit(cm, errbuf, exp_dsq, expL, &exp_results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL, NULL)) != eslOK) goto ERROR;
+	      if ((status = ProcessSearchWorkunit(cm, errbuf, exp_dsq, expL, 
+						  ESL_MAX(1, ((int) cfg->avg_hit_len)), /* guess at average hit len for HMM scanning functions */
+						  &exp_results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL, NULL)) != eslOK) goto ERROR;
+
 	      /*RemoveOverlappingHits(exp_results, 1, expL);*/
 	      ESL_DPRINTF1(("worker %d: has gathered search results\n", cfg->my_rank));
 
@@ -2571,7 +2577,10 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
       cm->search_opts |= CM_SEARCH_INSIDE; 
       if((status = FastFInsideScanHB(cm, errbuf, dsqA[i], 1, L_A[i], 0., NULL, do_null3, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(ins_scA[i]))) != eslOK) return status; 
     }
-    if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsqA[i], 1, L_A[i], cm->W, 0., NULL, 
+    if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsqA[i], 1, L_A[i], cm->W, 
+			     cm->W,  /* guess at hit len, irrelevant b/c we're not reporting hits */
+			     0.,     /* reporting threshold, irrelevant b/c we're not reporting hits */
+			     NULL,   /* don't report hits */
 			     TRUE,   /* yes, we are scanning */
 			     FALSE,  /* no, we are not aligning */
 			     FALSE,  /* don't be memory efficient */
@@ -3369,7 +3378,10 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   else { 
     if((status = get_genomic_sequence_from_hmm(cfg, errbuf, cm, L, &dsq)) != eslOK) return status;
   }
-  if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, L, &results, esl_opt_GetReal(go, "--mxsize"), 0, NULL, NULL)) != eslOK) return status;
+  if(((int) cfg->avg_hit_len) == 0) ESL_FAIL(eslEINCOMPAT, errbuf, "cfg->avg_hit_len is 0");
+  if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, L, 
+				      ESL_MAX(1, ((int) cfg->avg_hit_len)), /* guess at average hit len for HMM scanning functions */
+				      &results, esl_opt_GetReal(go, "--mxsize"), 0, NULL, NULL)) != eslOK) return status;
   RemoveOverlappingHits(results, 1, L);
 
   esl_stopwatch_Stop(w);

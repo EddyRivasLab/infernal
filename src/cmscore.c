@@ -1558,7 +1558,9 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
 
     /* Scan the (sub)seq in forward direction w/Viterbi or Forward, find score of best hit and it's endpoint j, then if CM_SEARCH_HMMFORWARD, go backwards to get it's start point, and a better guess at it's score */
     if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
-      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, cutoff, 
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, 
+			       cm->W,  /* guess at hit length, irrelevant b/c we're not storing hits, usually it'd be avg_hit_len from cm_GetAvgHitLen() */
+			       cutoff, /* reporting threshold */
 			       NULL,   /* don't store hits */
 			       TRUE,   /* we're scanning */
 			       FALSE,  /* we're not ultimately aligning */
@@ -1568,7 +1570,9 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
 			       &sc)) != eslOK) return status;
     }
     else if(cm->search_opts & CM_SEARCH_HMMFORWARD) { 
-      if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, cutoff, 
+      if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W,
+			       cm->W,  /* guess at hit length, irrelevant b/c we're not storing hits, usually it'd be avg_hit_len from cm_GetAvgHitLen() */
+			       cutoff, /* reporting threshold */
 			       NULL,   /* don't store hits */
 			       TRUE,   /* we're scanning */
 			       FALSE,  /* we're not ultimately aligning */
@@ -1577,7 +1581,9 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
 			       NULL,   /* don't return best score at each posn */
 			       &j,     /* return end point j of best scoring hit */
 			       &sc)) != eslOK) return status;
-      if((status = cp9_Backward(cm, errbuf, cm->cp9_mx, dsq, i0, j, cm->W, cutoff, 
+      if((status = cp9_Backward(cm, errbuf, cm->cp9_mx, dsq, i0, j, cm->W, 
+				cm->W,  /* guess at hit length, irrelevant b/c we're not storing hits, usually it'd be avg_hit_len from cm_GetAvgHitLen() */
+				cutoff, /* reporting threshold */
 				NULL,   /* don't report hits */
 				TRUE,   /* we're scanning */
 				FALSE,  /* we're not ultimately aligning */

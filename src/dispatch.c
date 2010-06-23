@@ -51,6 +51,13 @@
  *           dsq             - the target sequence (digitized)
  *           i0              - start of target subsequence (often 1, beginning of dsq)
  *           j0              - end of target subsequence (often L, end of dsq)
+ *           hit_len_guess   - the presumed length of a hit for HMM scanning functions, this is needed b/c 
+ *                             those functions only determine start points or end points (i or j), but when 
+ *                             those hits are stored, the need both a start and end point. 
+ *                             NOTE: we used to (v1.0->1.0.2) use W implicitly as hit_len_guess, but
+ *                                   now we allow it be passed in, and it's usually the average
+ *                                   hit length given the model (calc'ed using QDB band calculation
+ *                                   in cm.c::cm_GetAvgHitLen()).
  *           results         - [0..cm-fi->nrounds] search_results_t to keep results for each round in, must be non NULL and empty
  *           size_limit      - max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_flen        - RETURN: subseq len that survived filter (NULL if not filtering)
@@ -58,7 +65,7 @@
  *
  * Returns: eslOK on success. eslERANGE if we're doing HMM banded alignment and requested matrix is too big.
  */
-int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int j0, search_results_t **results, float size_limit, int *ret_flen, float *ret_sc)
+int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int j0, int hit_len_guess, search_results_t **results, float size_limit, int *ret_flen, float *ret_sc)
 {
   int               status;          /* easel status code */
   float             sc;              /* score of best hit in seq */
@@ -94,7 +101,6 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 
   ESL_DPRINTF1(("In DispatchSearch(), round: %d\n", sround));
 
-  /* TEMPORARY */
   if(si->stype[sround] == SEARCH_WITH_HYBRID) cm_Fail("DispatchSearch, hybrid filtering not yet implemented.\n");
 
   /* copy info for this round from SearchInfo fi */
@@ -123,7 +129,10 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     /* Scan the (sub)seq in forward direction w/Viterbi or Forward, getting j end points of hits above cutoff */
     fwd_results = CreateResults(INIT_RESULTS);
     if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
-      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, cutoff, fwd_results, 
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, 
+			       hit_len_guess, /* guess at hit length */
+			       cutoff,        /* reporting threshold */
+			       fwd_results,   /* results to append to */
 			       TRUE,   /* we're scanning */
 			       FALSE,  /* we're not ultimately aligning */
 			       TRUE,   /* be memory efficient */
@@ -132,7 +141,10 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 			       &sc)) != eslOK) return status;
     }
     else if(cm->search_opts & CM_SEARCH_HMMFORWARD) { 
-      if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, cutoff, fwd_results,
+      if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, 
+			       hit_len_guess, /* guess at hit length */
+			       cutoff,        /* reporting threshold */
+			       fwd_results,   /* results to append to */
 			       TRUE,   /* we're scanning */
 			       FALSE,  /* we're not ultimately aligning */
 			       TRUE,   /* be memory efficient */
@@ -153,7 +165,9 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     for(h = 0; h < fwd_results->num_results; h++) {
       min_i = (fwd_results->data[h].stop - cm->W + 1) >= i0 ? (fwd_results->data[h].stop - cm->W + 1) : i0;
       if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
-	if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, cutoff, 
+	if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, 
+					 hit_len_guess, /* guess at hit length, irrelevant b/c j_is_fixed is TRUE */
+					 cutoff,      /* reporting threshold */
 					 cur_results, /* report hits to cur_results */
 					 TRUE,   /* we're scanning */
 					 FALSE,  /* we're not ultimately aligning */
@@ -164,11 +178,13 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 					 &bwd_sc)) != eslOK) return status;
       }
       else { 
-	if((status = cp9_Backward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, cutoff, 
+	if((status = cp9_Backward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, 
+				  hit_len_guess, /* guess at hit length, irrelevant b/c j_is_fixed is TRUE */
+				  cutoff,      /* reporting threshold */
 				  cur_results, /* report hits to this round's results */
 				  TRUE,   /* we're scanning */
 				  FALSE,  /* we're not ultimately aligning */
-				  TRUE,   /* we want j (end point) fixed, so returned score is for a parse that ends at j */
+				  TRUE,   /* j_is_fixed: we want j (end point) fixed, so returned score is for a parse that ends at j */
 				  TRUE,   /* be memory efficient */
 				  do_null3, /* correct scores with NULL3? */
 				  NULL, NULL,   /* don't return best score at each posn, best scoring posn */
@@ -187,6 +203,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       if(bwd_sc > sc) sc = bwd_sc;
     }	  
     FreeResults(fwd_results);
+
   }
   /* end of SEARCH_WITH_HMM section */
   else if(stype == SEARCH_WITH_HYBRID) { 
@@ -262,14 +279,13 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 	}
       }
       /* next round: research this chunk that survived the filter */
-      if((status = DispatchSearch(cm, errbuf, (sround+1), dsq, i, j, results, size_limit, NULL, NULL)) != eslOK) return status;
+      if((status = DispatchSearch(cm, errbuf, (sround+1), dsq, i, j, hit_len_guess, results, size_limit, NULL, NULL)) != eslOK) return status;
     }
   }
   else { /* we're done filtering, and we're done searching, get alignments if nec */
     /* copy cur_results to final_results */
     AppendResults(cur_results, round_results, 1);
     if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {
-      /*if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {*/
       if((status = DispatchAlignments(cm, errbuf, NULL, 
 				      dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
 				      0, 0, 0, do_null3, NULL, size_limit, stdout, NULL, 1,
@@ -740,7 +756,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	fprintf(ofp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
 	if(sfp != NULL) fprintf(sfp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       }
-      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 0., 
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 
+			       L,      /* hit len guess, irrelevant (this is for scanning) */
+			       0.,     /* reporting threshold, irrelevant b/c no results are reported */
 			       NULL,   /* no results to keep track off (this is for scanning) */
 			       FALSE,  /* we are not scanning */
 			       TRUE,   /* we are aligning */

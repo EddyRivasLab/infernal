@@ -87,7 +87,7 @@ extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len
 extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
 
 /* from dispatch.c */
-extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
+extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, int hit_len_guess, 
 			      search_results_t **results, float size_limit, int *ret_flen, float *ret_sc);
 extern int DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
 			      int first_result, int bdump_level, int debug_level, int silent_mode, int do_null3, ESL_RANDOMNESS *r, float size_limit, FILE *ofp, FILE *sfp, int iidx,
@@ -127,7 +127,7 @@ extern int  rsearch_CYKScan  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float
 extern int  FastCYKScanHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, int do_null3, CM_HB_MX *mx, float size_limit, float *ret_sc);
 extern int  FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, int do_null3, CM_HB_MX *mx, float size_limit, float *ret_sc);
 extern int  cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, int correct_for_first_W, float **ret_vcalcs, float *ret_calcs);
-extern int  ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, search_results_t **ret_results, float mxsize_limit, int my_rank, float **ret_survfractA, int **ret_nhitsA);
+extern int  ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int hit_len_guess, search_results_t **ret_results, float mxsize_limit, int my_rank, float **ret_survfractA, int **ret_nhitsA);
 extern int  DetermineSeqChunksize(int nproc, int L, int W);
 
 /* from cm_dpsmall.c */
@@ -240,7 +240,7 @@ extern int **           ICalcInitDPScores          (CM_t *cm);
 extern GammaHitMx_t    *CreateGammaHitMx           (int L, int i0, int be_greedy, float cutoff, int do_backward);
 extern void             FreeGammaHitMx             (GammaHitMx_t *gamma);
 extern int              UpdateGammaHitMxCM         (CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, int *bestr, search_results_t *results, int W, double **act);
-extern int              UpdateGammaHitMxCP9Forward (CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act, int clen);
+extern int              UpdateGammaHitMxCP9Forward (CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act);
 extern int              UpdateGammaHitMxCP9Backward(CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act);
 extern void             TBackGammaHitMxForward     (GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
 extern void             TBackGammaHitMxBackward    (GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
@@ -324,17 +324,17 @@ extern void   DuplicateCP9(CM_t *src_cm, CM_t *dest_cm);
 extern int    cp9_GetNCalcsPerResidue(CP9_t *cp9, char *errbuf, float *ret_cp9_ncalcs_per_res);
 
 /* from cp9_dp.c */
-extern int cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+extern int cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, search_results_t *results, 
 		       int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, 
 		       CP9trace_t **ret_tr, float *ret_sc);
-extern int cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+extern int cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, search_results_t *results, 
 			       int do_scan, int doing_align, int j_is_fixed, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, 
 			       CP9trace_t **ret_tr, float *ret_sc);
-extern int cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+extern int cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, search_results_t *results, 
 		       int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc);
-extern int cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+extern int cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, search_results_t *results, 
 			   int do_scan, int doing_align, int be_efficient, int be_safe, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc);
-extern int cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+extern int cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, search_results_t *results, 
 			int do_scan, int doing_align, int j_is_fixed, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, 
 			float *ret_sc);
 extern int cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq);

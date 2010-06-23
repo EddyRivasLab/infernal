@@ -652,7 +652,10 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   
   /* CP9 viterbi */
   esl_stopwatch_Start(w);
-  if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq_cp9, 1, L_cp9, cm->W, 0., NULL,
+  if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq_cp9, 1, L_cp9, cm->W, 
+			   cm->W,  /* guess at hit length, irrelevant b/c we're not storing hits, usually it'd be avg_hit_len from cm_GetAvgHitLen() */
+			   0.,     /* reporting threshold, irrelevant b/c we're not storing hits */
+			   NULL,   /* don't report hits */
 			   TRUE,   /* we're scanning */
 			   FALSE,  /* we're not ultimately aligning */
 			   TRUE,   /* be memory efficient */
@@ -666,7 +669,10 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
 
   /* CP9 forward */
   esl_stopwatch_Start(w);
-  if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq_cp9, 1, L_cp9, cm->W, 0., NULL,
+  if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq_cp9, 1, L_cp9, cm->W, 
+			   cm->W,  /* guess at hit length, irrelevant b/c we're not storing hits, usually it'd be avg_hit_len from cm_GetAvgHitLen() */
+			   0.,     /* reporting threshold, irrelevant b/c we're not storing hits */
+			   NULL,   /* don't report hits */
 			   TRUE,   /* we're scanning */
 			   FALSE,  /* we're not ultimately aligning */
 			   TRUE,   /* be memory efficient */
@@ -685,7 +691,10 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
    * ESL_DPRINTF1(("minL: %d L: %d\n", minL, L));
    *if(minL != -1 && minL <= L) be_safe = TRUE;
    *esl_stopwatch_Start(w);
-   *if((status = cp9_FastForward(cm, errbuf, cm->cp9_mx, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, 
+   *if((status = cp9_FastForward(cm, errbuf, cm->cp9_mx, dsq_cp9, 1, L_cp9, cm->W, 
+   *			   cm->W,  
+   *			   0.,     
+   *			   NULL,   
    * TRUE,   
    * FALSE,
    * TRUE,

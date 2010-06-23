@@ -73,7 +73,7 @@
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, 
 	    search_results_t *results, int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, 
 	    int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc)
 {
@@ -115,6 +115,7 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   L = j0-i0+1;
   M = cm->cp9->M;
   if (W > L) W = L; 
+  if (hit_len_guess > L) hit_len_guess = L; 
 
   int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
 
@@ -263,10 +264,16 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 
       if(fsc > best_sc) { best_sc = fsc; best_pos= j; }
 
-      /* determine safe start point, max of j-W+1 and i0 */
-      i = ((j-W+1)> i0) ? (j-W+1) : i0;
+      /* Guess the start point i.
+       * Note: we used to (in v1.0->1.0.2) guess i=j-W+1 (hit len of W), but I think it's better
+       * to guess the average hit len given the model (which is what's currently passed in as hit_len_guess)
+       * because this reduces the likelihood that one of two adjacent hits within W of each other will
+       * be removed by our de-overlap procedure done in dispatch.c::DispatchSearch() prior to 
+       * calling cp9_ViterbiBackward/cp9_Backward to determine the precise start point 
+       */
+      i = ((j - hit_len_guess + 1)> i0) ? (j - hit_len_guess + 1) : i0;
       ip = i-i0+1;
-      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act, cm->clen)) != eslOK) return status;
+      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
     } /* end loop over end positions j */
   
   /* If recovering hits in a non-greedy manner, do the traceback.
@@ -321,7 +328,7 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, search_results_t *results, 
 		    int do_scan, int doing_align, int j_is_fixed, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, 
 		    CP9trace_t **ret_tr, float *ret_sc)
 {
@@ -365,6 +372,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
   L = j0-i0+1;
   M = cm->cp9->M;
   if (W > L) W = L; 
+  if (hit_len_guess > L) hit_len_guess = L;
 
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
@@ -669,8 +677,9 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
 
       if(fsc > best_sc) { best_sc = fsc; best_pos= i+1; } /* *off-by-one* */
 
-      /* determine safe end point, min of i+1+W-1 and j0 */
-      j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
+      /* If !j_is_fixed: guess the end point j using hit_len_guess */
+      if(j_is_fixed) { j = j0; }
+      else           { j = (((i+1)+hit_len_guess-1) < j0) ? ((i+1)+hit_len_guess-1) : j0; /* *off-by-one* */ }
       jp = j-i0+1;
 
       if(results != NULL) if((status = UpdateGammaHitMxCP9Backward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
@@ -761,6 +770,13 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
  *           i0        - start of target subsequence (1 for beginning of dsq)
  *           j0        - end of target subsequence (L for end of dsq)
  *           W         - the maximum size of a hit (often cm->W)
+ *           hit_len_guess - the presumed length of a hit, this is needed b/c we only
+ *                           determine endpoints (j) in this function, but when we store 'hits'
+ *                           we need a start point i, i=j-hit_len_guess+1. 
+ *                           NOTE: we used to (v1.0->1.0.2) use W as the hit_len_guess, but
+ *                                 now we allow it be passed in, and it's usually the average
+ *                                 hit length given the model (calc'ed using QDB band calculation
+ *                                 in cm.c::cm_GetAvgHitLen()).
  *           cutoff    - minimum score to report
  *           results   - search_results_t to add to; if NULL, don't keep results
  *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
@@ -779,7 +795,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, search_results_t *results, 
 	    int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
@@ -818,6 +834,7 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   L = j0-i0+1;
   M = cm->cp9->M;
   if (W > L) W = L; 
+  if (hit_len_guess > L) hit_len_guess = L;
 
   int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
 
@@ -977,10 +994,16 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 
       if(fsc > best_sc) { best_sc = fsc; best_pos= j; }
 
-      /* determine safe start point, max of j-W+1 and i0 */
-      i = ((j-W+1)> i0) ? (j-W+1) : i0;
+      /* Guess the start point i.
+       * Note: we used to (in v1.0->1.0.2) guess i=j-W+1 (hit len of W), but I think it's better
+       * to guess the average hit len given the model (which is what's currently passed in as hit_len_guess)
+       * because this reduces the likelihood that one of two adjacent hits within W of each other will
+       * be removed by our de-overlap procedure done in dispatch.c::DispatchSearch() prior to 
+       * calling cp9_ViterbiBackward/cp9_Backward to determine the precise start point 
+       */
+      i = ((j - hit_len_guess + 1)> i0) ? (j - hit_len_guess + 1) : i0;
       ip = i-i0+1;
-      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act, cm->clen)) != eslOK) return status;
+      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
     } /* end loop over end positions j */
   
   /* If recovering hits in a non-greedy manner, do the traceback.
@@ -1069,6 +1092,13 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
  *           i0        - start of target subsequence (1 for beginning of dsq)
  *           j0        - end of target subsequence (L for end of dsq)
  *           W         - the maximum size of a hit (often cm->W)
+ *           hit_len_guess - the presumed length of a hit, this is needed b/c we only
+ *                           determine endpoints (j) in this function, but when we store 'hits'
+ *                           we need a start point i, i=j-hit_len_guess+1. 
+ *                           NOTE: we used to (v1.0->1.0.2) use W as the hit_len_guess, but
+ *                                 now we allow it be passed in, and it's usually the average
+ *                                 hit length given the model (calc'ed using QDB band calculation
+ *                                 in cm.c::cm_GetAvgHitLen()).
  *           cutoff    - minimum score to report
  *           results   - search_results_t to add to; if NULL, don't keep results
  *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
@@ -1088,7 +1118,7 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, search_results_t *results, 
 		 int do_scan, int doing_align, int be_efficient, int be_safe, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
@@ -1137,6 +1167,7 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
   L = j0-i0+1;
   M = cm->cp9->M;
   if (W > L) W = L; 
+  if (hit_len_guess > L) hit_len_guess = L;
 
   /* TODO: move this out of this function */
   /* determine and set locality mode, and check that transition guarantees hold */
@@ -1270,10 +1301,16 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
 
   if(fsc > best_sc) { best_sc = fsc; best_pos= j; }
   
-  /* determine safe start point, max of j-W+1 and i0 */
-  i = ((j-W+1)> i0) ? (j-W+1) : i0;
+  /* Guess the start point i.
+   * Note: we used to (in v1.0->1.0.2) guess i=j-W+1 (hit len of W), but I think it's better
+   * to guess the average hit len given the model (which is what's currently passed in as hit_len_guess)
+   * because this reduces the likelihood that one of two adjacent hits within W of each other will
+   * be removed by our de-overlap procedure done in dispatch.c::DispatchSearch() prior to 
+   * calling cp9_ViterbiBackward/cp9_Backward to determine the precise start point 
+   */
+  i = ((j - hit_len_guess + 1)> i0) ? (j - hit_len_guess + 1) : i0;
   ip = i-i0+1;
-  if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act, cm->clen)) != eslOK) return status;
+  if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
 
   /* end of special case position j == i0 */
 
@@ -1778,11 +1815,17 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
 
       /*printf("jp: %d j: %d fsc: %f sc: %d\n", jp, j, fsc, scA[jp]);*/
       if(fsc > best_sc) { best_sc = fsc; best_pos= j; }
-  
-      /* determine safe start point, max of j-W+1 and i0 */
-      i = ((j-W+1)> i0) ? (j-W+1) : i0;
+      
+      /* Guess the start point i.
+       * Note: we used to (in v1.0->1.0.2) guess i=j-W+1 (hit len of W), but I think it's better
+       * to guess the average hit len given the model (which is what's currently passed in as hit_len_guess)
+       * because this reduces the likelihood that one of two adjacent hits within W of each other will
+       * be removed by our de-overlap procedure done in dispatch.c::DispatchSearch() prior to 
+       * calling cp9_ViterbiBackward/cp9_Backward to determine the precise start point 
+       */
+      i = ((j - hit_len_guess + 1)> i0) ? (j - hit_len_guess + 1) : i0;
       ip = i-i0+1;
-      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act, cm->clen)) != eslOK) return status;
+      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
     } /* end loop over end positions j */
       
   /* If recovering hits in a non-greedy manner, do the traceback.
@@ -1915,6 +1958,10 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
  *           i0        - start of target subsequence (1 for beginning of dsq)
  *           j0        - end of target subsequence (L for end of dsq)
  *           W         - the maximum size of a hit (often cm->W)
+ *           hit_len_guess - the presumed length of a hit, this is needed b/c we only
+ *                           determine start points (i) in this function, but when we store 'hits'
+ *                           we need a start point j, j=i+hit_len_guess-1. 
+ *                           This is only used if (! j_is_fixed).
  *           cutoff    - minimum score to report
  *           results   - search_results_t to add to; if NULL, don't keep results
  *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
@@ -1935,7 +1982,7 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, search_results_t *results, 
 	     int do_scan, int doing_align, int j_is_fixed, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
@@ -1977,6 +2024,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   L = j0-i0+1;
   M = cm->cp9->M;
   if (W > L) W = L; 
+  if (hit_len_guess > L) hit_len_guess = L;
 
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
@@ -2254,8 +2302,9 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
 
       if(fsc > best_sc) { best_sc = fsc; best_pos= i+1; } /* *off-by-one* */
 
-      /* determine safe end point, min of i+1+W-1 and j0 */
-      j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
+      /* If !j_is_fixed: guess the end point j using hit_len_guess */
+      if(j_is_fixed) { j = j0; }
+      else           { j = (((i+1)+hit_len_guess-1) < j0) ? ((i+1)+hit_len_guess-1) : j0; /* *off-by-one* */ }
       jp = j-i0+1;
 
       if(results != NULL) if((status = UpdateGammaHitMxCP9Backward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
@@ -2321,8 +2370,9 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   /* Update best_sc and gamma for special case of ip == 0, '* off-by-one *' explained above still applies */
   if(fsc > best_sc) { best_sc = fsc; best_pos= i+1; } /* *off-by-one* */
 
-  /* determine safe end point, min of i+1+W-1 and j0 */
-  j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
+  /* If !j_is_fixed: guess the end point j using hit_len_guess */
+  if(j_is_fixed) { j = j0; }
+  else           { j = (((i+1)+hit_len_guess-1) < j0) ? ((i+1)+hit_len_guess-1) : j0; /* *off-by-one* */ }
   jp = j-i0+1;
   
   if(results != NULL) if((status = UpdateGammaHitMxCP9Backward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
@@ -2876,7 +2926,7 @@ main(int argc, char **argv)
       esl_rsq_xfIID(r, cm->null, abc->K, L, dsq);
 
       esl_stopwatch_Start(w);
-      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, cm->W, 0., NULL,
 			       do_scan,   /* are we scanning? */
 			       do_align,  /* are we aligning? */
 			       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
@@ -2891,7 +2941,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-b")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
+	  if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, cm->W, 0., NULL,
 					   do_scan,   /* are we scanning? */
 					   do_align,  /* are we aligning? */
 					   (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
@@ -2907,7 +2957,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-f")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
+	  if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, cm->W, 0., NULL, 
 				   do_scan,   /* are we scanning? */
 				   do_align,  /* are we aligning? */
 				   (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
@@ -2922,7 +2972,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-o")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  sc = CP9Forward(cm, dsq, 1, L, cm->W, 0., NULL, NULL, NULL,
+	  sc = CP9Forward(cm, dsq, 1, L, cm->W, cm->W, 0., NULL, NULL, NULL,
 			  do_scan,   /* are we scanning? */
 			  do_align,  /* are we aligning? */
 			  (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
@@ -2937,7 +2987,7 @@ main(int argc, char **argv)
 	  ESL_DPRINTF1(("minL: %d L: %d\n", minL, L));
 	  if(minL != -1 && minL <= L) be_safe = TRUE;
 	  esl_stopwatch_Start(w);
-	  if((status = cp9_FastForward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
+	  if((status = cp9_FastForward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, cm->W, 0., NULL,
 				       do_scan,   /* are we scanning? */
 				       do_align,  /* are we aligning? */
 				       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
@@ -2953,7 +3003,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-w")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  sc = CP9Viterbi(cm, dsq, 1, L, cm->W, 0., NULL, NULL, NULL,
+	  sc = CP9Viterbi(cm, dsq, 1, L, cm->W, cm->W, 0., NULL, NULL, NULL,
 			  do_scan,   /* are we scanning? */
 			  do_align,  /* are we aligning? */
 			  (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
@@ -3074,7 +3124,7 @@ main(int argc, char **argv)
   sq = esl_sq_CreateDigital(abc);
   while((status = esl_sqio_Read(sqfp, sq)) == eslOK) { 
       esl_stopwatch_Start(w);
-      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, sq->dsq, 1, sq->n, cm->W, 0., NULL,
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, sq->dsq, 1, sq->n, cm->W, cm->W, 0., NULL,
 			       do_scan,   /* are we scanning? */
 			       do_align,  /* are we aligning? */
 			       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
@@ -3090,7 +3140,7 @@ main(int argc, char **argv)
       esl_stopwatch_Start(w);
       if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, sq->dsq, 1,
 				       (do_align) ? sq->n : maxj, 
-				       cm->W, 0., NULL,
+				       cm->W, cm->W, 0., NULL,
 				       do_scan,   /* are we scanning? */
 				       do_align,  /* are we aligning? */
 				       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
@@ -3106,7 +3156,7 @@ main(int argc, char **argv)
       esl_stopwatch_Start(w);
       if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, sq->dsq, 1,
 				       sq->n,
-				       cm->W, 0., NULL,
+				       cm->W, cm->W, 0., NULL,
 				       do_scan,   /* are we scanning? */
 				       do_align,  /* are we aligning? */
 				       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */

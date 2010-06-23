@@ -189,7 +189,10 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 
   /* Step 1: Get HMM Forward/Backward DP matrices. */
   do_scan2bands = (doing_search && (!(cm->search_opts & CM_SEARCH_HMMALNBANDS))) ? TRUE : FALSE;
-  if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 0., NULL,
+  if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 
+			   cm->W,     /* guess at hit len, irrelevant b/c we're not reporting hits */
+			   0.,        /* reporting threshold, irrelevant b/c we're not reporting hits */
+			   NULL,      /* don't report hits */
 			   do_scan2bands, /* are we using scanning Forward/Backward */
 			   TRUE,      /* we are going to use posteriors to align */
 			   FALSE,     /* don't be memory efficient */
@@ -197,7 +200,10 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 			   NULL, NULL,
 			   &sc)) != eslOK) return status;
 
-  if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 0, NULL, 
+  if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 
+			    cm->W,  /* guess at hit len, irrelevant b/c we're not reporting hits */
+			    0.,     /* reporting threshold, irrelevant b/c we're not reporting hits */
+			    NULL,   /* don't report hits */
 			    do_scan2bands, /* are we using scanning Forward/Backward */
 			    TRUE,  /* we are going to use posteriors to align */
 			    TRUE,  /* j0 is the fixed endpoint */
@@ -299,7 +305,10 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   do_scan2bands = ((cm->search_opts & CM_SEARCH_HBANDED) && (!(cm->search_opts & CM_SEARCH_HMMALNBANDS))) ? TRUE : FALSE;
 
   /* Step 1: Get HMM posteriors.*/
-  if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 0., NULL,
+  if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 
+			   cm->W,  /* guess at hit len, irrelevant b/c we're not reporting hits */
+			   0.,     /* reporting threshold, irrelevant b/c we're not reporting hits */
+			   NULL,   /* don't report hits */
 			   do_scan2bands, /* are we using scanning Forward/Backward */
 			   TRUE,      /* we are going to use posteriors to align */
 			   FALSE,     /* don't be memory efficient */
@@ -307,7 +316,10 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
 			   NULL, NULL,
 			   &sc)) != eslOK) return status;
   if(debug_level > 0) printf("CP9 Forward  score : %.4f\n", sc);
-  if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 0, NULL, 
+  if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 
+			    cm->W,  /* guess at hit len, irrelevant b/c we're not reporting hits */
+			    0.,     /* reporting threshold, irrelevant b/c we're not reporting hits */
+			    NULL,   /* don't report hits */
 			    do_scan2bands, /* are we using scanning Forward/Backward */
 			    TRUE,  /* we are going to use posteriors to align */
 			    TRUE,  /* j0 is the fixed endpoint */

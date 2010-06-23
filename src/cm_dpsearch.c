@@ -5438,6 +5438,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
  *           errbuf          - char buffer for reporting errors
  *           dsq             - the digitized sequence
  *           L               - length of target sequence 
+ *           hit_len_guess   - the presumed length of a hit for HMM scanning functions
  *           ret_results     - search_results_t to create and fill
  *           mxsize_limit    - maximum size of HMM banded matrix allowed.
  *           my_rank         - rank of processor calling this function, 0 if master (serial or MPI)
@@ -5450,7 +5451,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
  *           <ret_results> is filled with a newly alloc'ed and filled search_results_t structure, must be freed by caller
  */
 int
-ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, search_results_t **ret_results, float mxsize_limit, int my_rank, 
+ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int hit_len_guess, search_results_t **ret_results, float mxsize_limit, int my_rank, 
 		      float **ret_surv_fractA, int **ret_nhitsA)
 {
   int status;
@@ -5460,13 +5461,14 @@ ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, search_result
   int   *nhitsA;
   int do_collapse, do_pad;
 
-  if(cm->si == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm->si is NULL in ProcessSearchWorkunit()\n");
+  if(cm->si == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "cm->si is NULL in ProcessSearchWorkunit()\n");
+  if(hit_len_guess <= 0) ESL_FAIL(eslEINCOMPAT, errbuf, "hit_len_guess is <= 0 in ProcessSearchWorkunit()\n");
 
   ESL_ALLOC(results, sizeof(search_results_t *) * (cm->si->nrounds+1));
   for(n = 0; n <= cm->si->nrounds; n++) results[n] = CreateResults(INIT_RESULTS);
 
   /* do the search, DispatchSearch calls itself recursively if we're filtering */
-  if((status = DispatchSearch(cm, errbuf, 0, dsq, 1, L, results, mxsize_limit, NULL, NULL)) != eslOK) goto ERROR;
+  if((status = DispatchSearch(cm, errbuf, 0, dsq, 1, L, hit_len_guess, results, mxsize_limit, NULL, NULL)) != eslOK) goto ERROR;
 
   /* determine survival fraction from each round */
   if(ret_surv_fractA != NULL) { 

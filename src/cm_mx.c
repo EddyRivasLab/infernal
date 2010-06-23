@@ -1937,21 +1937,6 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
  *
  * Purpose:  Update a gamma semi-HMM for forward-direction CP9 hits that span i..j.
  * 
- *           NOTE: (EPN, Fri Sep 25 10:23:01 2009) I introduced a 
- *          'bug' fix specific to NULL3. The 'clen' argument is added, and i is now
- *          calc'ed as the max of (j-clen+1) and the i that's passed into the function
- *          (which is usually max(j-W+1,i0)). This was done b/c W is often much
- *          much larger than clen, and so the null3 penalty for hits was 
- *          too large - the old way (using i=max(j-W+1,i0)) resulted in the
- *          hit length often being W (b/c the start point i is unknown in an
- *          HMM forward scan). Now, with the fix, the hit length is often clen,
- *          which causes the null3 penalty to be more reasonable. 
- *          However, the analogous change was not made to the analogous Backward 
- *          function UpdateGammaHitMxCP9Backward(), see that function's comments
- *          for details. See 
- *          /groups/eddy/home/nawrockie/notebook/9_0924_inf_rfam_question/00LOG
- *          for more details on this bug fix.
- * 
  * Args:     cp9       - the model, used only for it's alphabet and null model
  *           errbuf    - for reporting errors
  *           gamma     - the gamma data structure
@@ -1961,12 +1946,10 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
  *           results   - results to add to, only used in this function if gamma->iamgreedy 
  *           W         - window size, max size of a hit, only used if we're doing a NULL3 correction (act != NULL)
  *           act       - [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1)
- *           clen      - cm->clen, only used if we're doing a NULL3 correction, to calculate null3_i, the i index used
- *                       to calculate the null3 correction, this is a 'bug' fix between v1.01 and v1.02
  * Returns:  eslOK on succes; eslEMEM on memory allocation error;
  */
 int
-UpdateGammaHitMxCP9Forward(CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act, int clen)
+UpdateGammaHitMxCP9Forward(CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act)
 {
   int status;
   float cumulative_sc;
@@ -1974,19 +1957,16 @@ UpdateGammaHitMxCP9Forward(CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i,
   int ip, jp;
   float *comp = NULL;    /* 0..a..cm->abc-K-1, the composition of residue a within the hit being reported */
   float null3_correction;
-  int null3_i; /* null3-specific offset i for gamma must be between 0 and gamma->L, this is max(j-clen+1, i0) */
 
   /* update hit_sc if do_null3 == TRUE (do_null3 == TRUE iff act != NULL) */
   if(act != NULL) { /* do NULL3 score correction */
-    null3_i = ESL_MAX(j-clen+1, 1);
-    null3_i = ESL_MAX(i, null3_i);
-    /*printf("\ti: %4d null3_i: %4d j: %4d hit_sc: %.2f ", i, null3_i, j, hit_sc);*/
+    /*printf("\ti: %4d i: %4d j: %4d hit_sc: %.2f ", i, i, j, hit_sc);*/
     ESL_ALLOC(comp, sizeof(float) * cp9->abc->K);
-    for(a = 0; a < cp9->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(null3_i-1)%(W+1)][a]; /* comp[a] is act[j][a] - act[null3_i-1][a] */
+    for(a = 0; a < cp9->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(i-1)%(W+1)][a]; /* comp[a] is act[j][a] - act[i-1][a] */
     esl_vec_FNorm(comp, cp9->abc->K);
     /*esl_vec_FDump(stdout, comp, cp9->abc->K, NULL);*/
     /*printf("(A:%.2f C:%.2f G:%.2f U:%.2f)  ", comp[0], comp[1], comp[2], comp[3]);*/
-    ScoreCorrectionNull3(cp9->abc, cp9->null, comp, j-null3_i+1, &null3_correction);
+    ScoreCorrectionNull3(cp9->abc, cp9->null, comp, j-i+1, &null3_correction);
     hit_sc -= null3_correction;
   }
   /*printf("%.2f (%.2f)\n", hit_sc, null3_correction);*/
