@@ -65,6 +65,7 @@ static ESL_OPTIONS options[] = {
   { "--devhelp",      eslARG_NONE,    NULL,      NULL, NULL,                  NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
   { "--mpi",          eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,        NULL, "run as an MPI parallel program", 1 },  
+  { "--Wchunk",       eslARG_INT,     NULL,      NULL, "n>4",                 NULL,   "--mpi",        NULL, "set W multiplier for sequence chunk size to <n>", 1 },
 #endif
   /* options for algorithm for final round of search */
   { "--inside",       eslARG_NONE,    "default", NULL, NULL,                  NULL,      NULL,    STRATOPTS1, "use scanning CM Inside algorithm", 2 },
@@ -878,7 +879,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 		  dbseqlist[si] = dbseq;
 		  sentlist[si]  = FALSE;
 		  have_work = TRUE;
-		  chunksize = DetermineSeqChunksize(cfg->nproc, dbseq->sq[0]->n, cm->W);
+		  chunksize = (esl_opt_IsOn(go, "--Wchunk")) ? (cm->W * esl_opt_GetInteger(go, "--Wchunk")) : DetermineSeqChunksize(cfg->nproc, dbseq->sq[0]->n, cm->W);
 		  ESL_DPRINTF1(("L: %ld chunksize: %d\n", dbseq->sq[0]->n, chunksize));
 		}
 	      else if(status == eslEOF) have_work = FALSE;

@@ -486,4 +486,4 @@ see ~nawrockie/notebook/10_0614_inf_repro_mpi/00LOG).
 The bug fix has virtually no impact on RMARK2 benchmark performance,
 but it does speed up that benchmark by about 20%.
 
-This bug was fixed as of svn revision 3319.
+This bug was fixed as of svn revision 3320.

@@ -226,6 +226,34 @@ Run as an MPI parallel program. This option will only be available if
 has been configured and built with the "--enable-mpi" flag (see User's
 Guide for details).
 
+.TP
+.BI --Wchunk <n>
+Set the W multiplier for sequence chunk size to 
+.I <n>.
+This option will only be available if
+@PACKAGE@ 
+has been configured and built with the "--enable-mpi" flag (see User's
+Guide for details).
+Each target sequence will be split up into chunks of size 
+.I <n> * W
+with each chunk being searched by a different processor. 
+.I W
+is the window length, which is the maximum length of a hit
+to the model; it is model-specific and cannot be changed.
+Normally, the chunk size is dependent on the number of processors
+being used with MPI. The chunk size can actually influence the results
+of 
+.B cmcalibrate.
+Using 
+.B --Wchunk
+is thus required for 100 percent reproducible results between two different runs of
+.B cmcalibrate
+in MPI mode on different numbers of processors.
+Note that 
+.B cmcalibrate
+MPI results may slightly differ from non-MPI (serial) results, because no
+sequence splitting/chunking is done in serial mode.
+
 .SH EXPERT OPTIONS
 
 .TP

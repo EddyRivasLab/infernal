@@ -59,6 +59,7 @@ static ESL_OPTIONS options[] = {
   { "--devhelp",         eslARG_NONE,   NULL,   NULL, NULL,     NULL,        NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
   { "--mpi",            eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "run as an MPI parallel program", 1 },  
+  { "--Wchunk",         eslARG_INT,     NULL,   NULL, "n>4",    NULL,     "--mpi",        NULL, "set W multiplier for sequence chunk size to <n>", 1 },
 #endif
   /* options for exp tail fitting */
   { "--exp-cmL-glc",    eslARG_REAL,    "1.5",  NULL, "0.1<=x<=1000.", NULL,NULL,         NULL, "set glocal  CM     Mb random seq length to <x>", 2 },
@@ -1201,8 +1202,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	  if((status = switch_global_to_local(go, cfg, cm, errbuf))      != eslOK) cm_Fail(errbuf);
 	  if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) cm_Fail(errbuf);
 	}
-	chunksize = DetermineSeqChunksize(cfg->nproc, cfg->expL, cm->W);
-	/* TEMP printf("HEY! chunksize: %d (W: %d)\n", chunksize, cm->W); */
+	chunksize = (esl_opt_IsOn(go, "--Wchunk")) ? (cm->W * esl_opt_GetInteger(go, "--Wchunk")) : DetermineSeqChunksize(cfg->nproc, cfg->expL, cm->W);
 
 	/* update search info for round 0 (final round) for exp tail mode */
 	UpdateSearchInfoForExpMode(cm, 0, exp_mode);

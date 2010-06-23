@@ -1199,7 +1199,6 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, int do_output_to_tmp, ch
     }
     free(namedashes);
     
-    int imin;
     float null3_correction = 0.;
     for (i = 0; i < seqs_to_aln->nseq; i++) {
       if(!(esl_opt_GetBoolean(go, "--no-null3"))) { ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, &null3_correction); }
