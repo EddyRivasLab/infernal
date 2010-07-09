@@ -656,6 +656,7 @@ AC_CONFIG_HEADERS(src/config.h)
 AC_CONFIG_FILES(src/Makefile)
 AC_CONFIG_FILES(src/impl_sse/Makefile)
 AC_CONFIG_FILES(testsuite/Makefile)
+AC_CONFIG_FILES(rmark/Makefile)
 
 # HMMER files
 if test -d hmmer/release-notes; then

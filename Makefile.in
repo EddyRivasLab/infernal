@@ -89,6 +89,7 @@ core:
 #	cd hmmer;     ./configure CC="$(CC)" CFLAGS="$(CFLAGS)"; make          
 	cd src;       make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module
 	cd testsuite; make CC="$(CC)" CFLAGS="$(CFLAGS)"
+	cd rmark;     make CC="$(CC)" CFLAGS="$(CFLAGS)"
 	@DO_IMPL_SSE@
 
 #.PHONY: $(RIGFILTERS)
