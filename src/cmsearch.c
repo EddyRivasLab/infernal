@@ -102,7 +102,7 @@ static ESL_OPTIONS options[] = {
   { "--fil-A-hmm",    eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL, "--fil-no-hmm",                        "always filter w/HMM w/surv fract <= <x> from --fil-Smax-hmm", 6 },
   { "--fil-finE-hmm", eslARG_REAL,    NULL,      NULL, "x>0.",                NULL,      NULL, "--fil-finT-hmm",                      "pretend final E cutoff=<x> for HMM filter cutoff calc", 106 }, 
   { "--fil-finT-hmm", eslARG_REAL,    NULL,      NULL, NULL,                  NULL,      NULL, "--fil-finE-hmm",                      "pretend final bit sc cutoff=<x> for HMM filter cutoff calc", 106 }, 
-  { "--fil-finE-qdb", eslARG_REAL,    NULL,      NULL, "x>0.",                NULL,      NULL," --fil-finT-qdb",                      "pretend final E cutoff=<x> for QDB filter cutoff calc", 106 }, 
+  { "--fil-finE-qdb", eslARG_REAL,    NULL,      NULL, "x>0.",                NULL,      NULL, "--fil-finT-qdb",                      "pretend final E cutoff=<x> for QDB filter cutoff calc", 106 }, 
   { "--fil-finT-qdb", eslARG_REAL,    NULL,      NULL, NULL,                  NULL,      NULL, "--fil-finE-qdb",                      "pretend final bit sc cutoff=<x> for QDB filter cutoff calc", 106 }, 
   /* W definition options (require --viterbi or --forward) */
   { "--hmm-W",        eslARG_INT,     NULL,      NULL, "n>1",                 NULL,      NULL,  "--hmm-cW", "set HMM window size as <n>", 7 },
