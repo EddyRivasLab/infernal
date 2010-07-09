@@ -27,7 +27,7 @@ ESLINC   = -I${ESLDIR} -I${top_srcdir}/easel
 SRCINC   = -I${SRCDIR} -I${top_srcdir}/src
 
 PROGS    = create-rmark\
-	   rocplot-rmark
+	   rmark-rocplot\
 
 all: ${PROGS} 
 	cd ${ESLDIR};            ${MAKE} easel_lib

@@ -12,10 +12,10 @@
  * Positive and negative hits are determined as follows:
  * - A hit is a positive if <matching_model> matches <query_model> and
  *   <strand> is "same".
- * - A hit is a negative if <matching_model> is "none" (strand will also
- *   be "none").
+ * - A hit is a negative if <matching_model> is "decoy" (strand will also
+ *   be "decoy").
  * - A hit is ignored for two possible reasons: 
- *   : if <matching_model> is neither "none" nor <query_model> OR
+ *   : if <matching_model> is neither "decoy" nor <query_model> OR
  *   : if <matching_model> is <query_model> and <strand> is "opposite".
  * 
  * The program also needs to find the query and positive
@@ -41,7 +41,7 @@
  * A typical command line, after having run a benchmark on "rmark" under
  * MPI with many output files:
  * 
- *    cat *.out | sort -g | ./rocplot pmark - > results.xy
+ *    cat *.out | sort -g | ./rmark-rocplot pmark - > results.xy
  *    xmgrace -settype xydydy results.xy
  *   
  * SRE, Wed Jun 18 13:37:31 2008 [Janelia]
@@ -99,16 +99,15 @@ struct oneplot_s {
 struct result_s {
   double E;			/* E-value */
   int    qidx;			/* index of query  */
-  int    tidx; 			/* index of target seq: 0..npos-1 for positives; npos..npos+nneg-1 for negatives */
+  int    tidx; 			/* index of matching seq: 0..npos-1 for positives */
   int    class;			/* +1 = positive; -1 = negative; 0 = ignore   */
 };
 
 
 
 static int    parse_tblfile(char *tblfile, ESL_KEYHASH *kh);
-static int    parse_results(char *resfile, int **pni, ESL_KEYHASH *modelkh, ESL_KEYHASH *poskh, ESL_KEYHASH *negkh, struct result_s **ret_r, int *ret_nr);
-static int    classify_pair_by_names(const char *query, const char *target);
-static int    classify_pair_by_names_rmark(const char *query, const char *target, const char *strand);
+static int    parse_results_rmark(char *resfile, int **pni, ESL_KEYHASH *modelkh, ESL_KEYHASH *poskh, struct result_s **ret_r, int *ret_nr, int *ret_nneg);
+static int    classify_pair_by_names_and_strand(const char *query, const char *target, const char *strand);
 static double weighted_total_positives(int **pni, double *queryp, int nq, double *seqp, int npos, int nseq);
 static struct oneplot_s *create_plot(ESL_GETOPTS *go, int nq);
 static void   destroy_plot(struct oneplot_s *plot);
@@ -155,7 +154,7 @@ main(int argc, char **argv)
   struct result_s  *rp    = NULL;
   int             **pni   = NULL;
   double          **yv    = NULL;	/* yv[0..nxpts-1][0..nboots-1]: vector of bootstrapped samples at each xaxis point */
-  int           nq, npos, nseq;
+  int           nq, npos, nneg, nseq;
   int           nresults  = 0;
   int           nboots;
   double       *queryp;
@@ -183,7 +182,6 @@ main(int argc, char **argv)
   esl_FileNewSuffix(pmarkbase, "pos", &posfile);    parse_tblfile(posfile,   poskh); free(posfile);  
   nq   = esl_keyhash_GetNumber(qkh);
   npos = esl_keyhash_GetNumber(poskh);
-  nseq = npos+nneg;
 
   /* Create a [0..nq-1]x[0..pos-1] matrix preclassifying each pair as +1 (positive), -1 (negative), or 0 (ignore) */
   if ((pni = malloc(sizeof(int *) * nq)) == NULL) esl_fatal("malloc failed");
@@ -191,18 +189,18 @@ main(int argc, char **argv)
     {
       if ((pni[i] = malloc(sizeof(int) * npos)) == NULL) esl_fatal("malloc failed");
       for (j = 0; j < npos; j++)
-	pni[i][j] = classify_pair_by_names_rmark(esl_keyhash_Get(qkh, i), esl_keyhash_Get(poskh, j));
+	pni[i][j] = classify_pair_by_names_and_strand(esl_keyhash_Get(qkh, i), esl_keyhash_Get(poskh, j), "same");
     }  
 
-  /* Read and code the .out file; assigning positives, negatives to the results */
-  parse_results(resfile, pni, qkh, poskh, negkh, &rp, &nresults);
+  /* Read and code the .pout file; assigning positives, negatives to the results */
+  parse_results_rmark(resfile, pni, qkh, poskh, &rp, &nresults, &nneg);
+  nseq = npos+nneg;
 
   /* Allocate for the bootstrap weights on queries, seqs */
   if ((queryp = malloc(sizeof(double) * nq))    == NULL) esl_fatal("malloc failed");
   if ((seqp   = malloc(sizeof(double) * nseq))  == NULL) esl_fatal("malloc failed");
 
   /* In seqp, 0..npos-1 are the positives; npos..nseq-1 are the negatives.
-   * To convert a negative's key index to the nseq index, add npos to it.
    */
 
   /* Figure out the coordinate system for the plot's xaxis; then
@@ -255,7 +253,6 @@ main(int argc, char **argv)
   free(queryp);
   free(seqp);
   free(rp);
-  esl_keyhash_Destroy(negkh);
   esl_keyhash_Destroy(poskh);
   esl_keyhash_Destroy(qkh);
   esl_randomness_Destroy(r);
@@ -286,17 +283,17 @@ parse_tblfile(char *tblfile, ESL_KEYHASH *kh)
 
 
 static int
-classify_pair_by_names_rmark(const char *query, const char *target const char *strand)
+classify_pair_by_names_and_strand(const char *query, const char *target, const char *strand)
 {
   int qlen = strlen(query);
   int tlen = strlen(target);
   
   if   (tlen > qlen && strncmp(query, target, qlen) == 0 && target[qlen] == '/' && strncmp(strand, "same", 4) == 0) 
     return 1;   /* this tests for <model> == <query_model> */
-  else if (strncmp(target, "none", 4) == 0) 
+  else if (strncmp(target, "decoy", 5) == 0) 
     return -1;  /* matches a stretch of negative sequence, doesn't overlap any positive */
   else
-    return 0;	/* ignore */
+    return 0;	/* ignore, could be target == query, but strand != "same", or target != "decoy" && target != query */
 }
 
 /* Given bootstrap sampled weights, calculate the maximum # of positives possible */
@@ -316,39 +313,38 @@ weighted_total_positives(int **pni, double *queryp, int nq, double *seqp, int np
 
 
 /* The output files have format:
- *   <E-value> <bitscore> <target_sequence> <query_model>
+ *   <E-value> <bitscore> <target_from> <target_to> <target_name> <query_model> <matching_model>/<pos_idx_for_query> <strand>
  *
- * Target sequence names are either
- *   decoy\d+                    for negatives (decoys); example: decoy75382
- *   <model>/<#>[/<to>-<from>]+  for positives;          example: CHP02677/42/297-773/781-1257
- *   
- * A hit is a positive if <query_model> matches the <model> component of the
- * target name - i.e. the embedded domains in the target are homologous to this 
- * query.
+ * Example of <matching_model>/<pos_idx_for_query>: "tRNA/3":
+ * "tRNA" is <matching_model>, "3" is <pos_idx_for_query>, this is the third tRNA.
  * 
- * A hit is a negative if the target name matches /decoy\d+/.
+ * A hit is a positive if <query_model> equals <matching_model> and <strand> is "same"
  * 
- * A hit is ignored if the target contains domains (isn't a decoy) but <query_model>
- * doesn't match <model>. 
+ * A hit is a negative if the <matching_model> is "decoy" and <pos_idx_for_query> is "0".
  * 
- * This information is parsed digested here, such that each pairwise comparison
+ * A hit is ignored if the <query_model> != <matching_model> OR 
+ * <query_model> == <matching_model> but <strand> is "opposite".
+ * 
+ * This information is parsed here, such that each pairwise comparison
  * is stored as:
  *    qidx     : index of the query model
  *    tidx     : index of the target sequence
  *    E        : E-value of the comparison; results are already sorted on this
  */
 static int
-parse_results(char *resfile, int **pni, ESL_KEYHASH *qkh, ESL_KEYHASH *poskh, ESL_KEYHASH *negkh, struct result_s **ret_r, int *ret_nr)
+parse_results_rmark(char *resfile, int **pni, ESL_KEYHASH *qkh, ESL_KEYHASH *poskh, struct result_s **ret_r, int *ret_nr, int *ret_nneg)
 {
   ESL_FILEPARSER  *efp    = NULL;
   char            *tok    = NULL;
-  char            *target = NULL;
+  char            *match  = NULL;
   char            *query  = NULL;
+  char            *strand = NULL;
   int              toklen;
-  int              qlen, tlen;
+  int              qlen, mlen, slen;
   struct result_s *rp     = NULL;
   int              ralloc = 0;
   int              nr     = 0;
+  int              nneg   = 0;
 
   if (esl_fileparser_Open(resfile, NULL, &efp) != eslOK) esl_fatal("failed to open pmark results file %s", resfile);
   esl_fileparser_SetCommentChar(efp, '#');
@@ -366,26 +362,31 @@ parse_results(char *resfile, int **pni, ESL_KEYHASH *qkh, ESL_KEYHASH *poskh, ES
       if (esl_fileparser_GetTokenOnLine(efp, &tok,    &toklen) != eslOK) esl_fatal("failed to parse line %d of %s", efp->linenumber, resfile); /* E-value => rp[nr].E */
       rp[nr].E = atof(tok);
       if (esl_fileparser_GetTokenOnLine(efp, &tok,    &toklen) != eslOK) esl_fatal("failed to parse line %d of %s", efp->linenumber, resfile); /* bit score ignored */
-      if (esl_fileparser_GetTokenOnLine(efp, &target, &tlen)   != eslOK) esl_fatal("failed to parse line %d of %s", efp->linenumber, resfile); /* target name; will be converted to an index */
+      if (esl_fileparser_GetTokenOnLine(efp, &tok,    &toklen) != eslOK) esl_fatal("failed to parse line %d of %s", efp->linenumber, resfile); /* target from ignored */
+      if (esl_fileparser_GetTokenOnLine(efp, &tok,    &toklen) != eslOK) esl_fatal("failed to parse line %d of %s", efp->linenumber, resfile); /* target to ignored */
+      if (esl_fileparser_GetTokenOnLine(efp, &tok,    &toklen) != eslOK) esl_fatal("failed to parse line %d of %s", efp->linenumber, resfile); /* target name (e.g. rmark3-2) is ignored */
       if (esl_fileparser_GetTokenOnLine(efp, &query,  &qlen)   != eslOK) esl_fatal("failed to parse line %d of %s", efp->linenumber, resfile); /* query name; will be converted to an index */
+      if (esl_fileparser_GetTokenOnLine(efp, &match,  &mlen)   != eslOK) esl_fatal("failed to parse line %d of %s", efp->linenumber, resfile); /* match name; will be converted to an index */
+      if (esl_fileparser_GetTokenOnLine(efp, &strand, &slen)   != eslOK) esl_fatal("failed to parse line %d of %s", efp->linenumber, resfile); /* strand; will be used to determine pos/neg */
       
       if (esl_key_Lookup(qkh, query,  &(rp[nr].qidx)) != eslOK) esl_fatal("failed to find query model %s in hash", query);  /* query index */
-      rp[nr].class = classify_pair_by_names(query, target);
+      rp[nr].class = classify_pair_by_names_and_strand(query, match, strand);
 
-      if (rp[nr].class == -1)		/* negatives: look up in negkh, and offset the index by npos */
+      if (rp[nr].class == -1)		/* negatives: increment nneg and offset the index by npos */
 	{
-	  if (esl_key_Lookup(negkh, target, &(rp[nr].tidx)) != eslOK) esl_fatal("failed to find target seq  %s in hash", target);	/* target index */
-	  rp[nr].tidx  += esl_keyhash_GetNumber(poskh);
+	  rp[nr].tidx = nneg + esl_keyhash_GetNumber(poskh);
+	  nneg++;
 	}
       else			/* positives/ignores: look up in poskh */
 	{
-	  if (esl_key_Lookup(poskh, target, &(rp[nr].tidx)) != eslOK) esl_fatal("failed to find target seq  %s in hash", target);	/* target index */
+	  if (esl_key_Lookup(poskh, match, &(rp[nr].tidx)) != eslOK) esl_fatal("failed to find match seq  %s in hash", match);	/* target index */
 	}
       nr++;
     }
 
-  *ret_r  = rp;
-  *ret_nr = nr;
+  *ret_r    = rp;
+  *ret_nr   = nr;
+  *ret_nneg = nneg;
   esl_fileparser_Close(efp);
   return eslOK;
 }
