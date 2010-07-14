@@ -8,8 +8,8 @@
 # rmark-master.pl can use a consistent command line structure for
 # all search programs (BLAST uses it, for example).
 #
-# Usage:      x-cmsearch <execdir>        <modeldir> <resultdir> <optsfile> <tblfile> <msafile>  <posfile>  <fafile> <outfile>
-# Example:  ./x-cmsearch ../hmmer/src/    h3-models  testdir     h3-df.opts test.tbl  rmark3.msa rmark3.pos test.fa  test.out
+# Usage:      x-cmsearch <execdir>        <scriptdir> <modeldir> <resultdir> <optsfile> <tblfile> <msafile>  <posfile>  <fafile> <outfile>
+# Example:  ./x-cmsearch ../hmmer/src/    ../rmark/   h3-models  testdir     h3-df.opts test.tbl  rmark3.msa rmark3.pos test.fa  test.out
 #
 # Command-line options:
 # -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the $optsfile
@@ -25,20 +25,21 @@ if (defined $opt_M) {
     if($mpi_nprocs < 2 || $mpi_nprocs > 8) { die "ERROR, with -M <n>, <n> must be between 2 and 8"; }
 }
 
-$usage = "Usages: x-cmsearch [options]\n\t<execdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
+$usage = "Usages: x-cmsearch [options]\n\t<execdir>\n\t<scriptdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
 $options_usage  = "Options:\n\t";
 $options_usage .= " -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the <optsfile>\n\n";
 
-if(scalar(@ARGV) != 9) { printf("$usage\n$options_usage"); exit(1); }
+if(scalar(@ARGV) != 10) { printf("$usage\n$options_usage"); exit(1); }
 
-($execdir, $modeldir, $resultdir, $optsfile, $tblfile, $msafile, $posfile, $fafile, $outfile) = @ARGV;
+($execdir, $scriptdir, $modeldir, $resultdir, $optsfile, $tblfile, $msafile, $posfile, $fafile, $outfile) = @ARGV;
 $tmpoutfile = $outfile . ".tmp";
 
-$idscript   = "identify-positives.pl";
+$idscript   = "$scriptdir/rmark-idpositives.pl";
 $cmsearch   = "$execdir/cmsearch";
 
 if (! -d $execdir)                                      { die "didn't find executable directory $execdir"; }
-if (! -x $cmsearch)                                       { die "didn't find executable $cmsearch"; }
+if (! -d $scriptdir)                                    { die "didn't find script directory $scriptdir"; }
+if (! -x $cmsearch)                                     { die "didn't find executable $cmsearch"; }
 if (! -e $resultdir)                                    { die "$resultdir doesn't exist"; }
 if (! -e $posfile)                                      { die "$posfile doesn't exist"; }
 if (! -e $idscript)                                     { die "positive identification script $idscript doesn't exist"; }
@@ -94,7 +95,7 @@ while (<TABLE>)
 close TABLE;
 close OUTFILE;
 
-# Final step use 'identify-positives.pl' to identify positives in the temporary output file to
+# Final step use 'rmark-idpositives.pl' to identify positives in the temporary output file to
 # create the permanent output file
 $status = system("perl $idscript $posfile $tmpoutfile > $outfile");
 if ($status != 0) { die "FAILED: $idscript $posfile $tmpoutfile > $outfile"; }

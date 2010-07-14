@@ -8,8 +8,8 @@
 # rmark-master.pl can use a consistent command line structure for
 # all search programs (BLAST uses it, for example).
 #
-# Usage:      x-nhmmer <execdir>        <modeldir> <resultdir> <optsfile> <tblfile> <msafile>  <posfile>  <fafile> <outfile>
-# Example:  ./x-nhmmer ../hmmer/src/    h3-models  testdir     h3-df.opts test.tbl  rmark3.msa rmark3.pos test.fa  test.out
+# Usage:      x-nhmmer <execdir>        <scriptdir> <modeldir> <resultdir> <optsfile> <tblfile> <msafile>  <posfile>  <fafile> <outfile>
+# Example:  ./x-nhmmer ../hmmer/src/    ../rmark    h3-models  testdir     h3-df.opts test.tbl  rmark3.msa rmark3.pos test.fa  test.out
 #
 # SRE, Tue Apr 20 10:32:49 2010 [Janelia]
 # SVN $Id$
@@ -17,16 +17,18 @@
 
 $usage = "Usages: x-nhmmer [options]\n\t<execdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
 
-if(scalar(@ARGV) != 9) { printf("$usage\n"); exit(1); }
+if(scalar(@ARGV) != 10) { printf("$usage\n"); exit(1); }
 
-($execdir, $modeldir, $resultdir, $optsfile, $tblfile, $msafile, $posfile, $fafile, $outfile) = @ARGV;
+($execdir, $scriptdir, $modeldir, $resultdir, $optsfile, $tblfile, $msafile, $posfile, $fafile, $outfile) = @ARGV;
 $tmpoutfile = $outfile . ".tmp";
 
-$idscript   = "identify-positives.pl";
+$idscript   = "$scriptdir/rmark-idpositives.pl";
 $nhmmer     = "$execdir/nhmmer";
 
 
 if (! -d $execdir)                                      { die "didn't find executable directory $execdir"; }
+if (! -d $scriptdir)                                    { die "didn't find script directory $scriptdir"; }
+if (! -d $modeldir)                                     { die "didn't find model directory $modeldir"; }
 if (! -x $nhmmer)                                       { die "didn't find executable $nhmmer"; }
 if (! -e $resultdir)                                    { die "$resultdir doesn't exist"; }
 if (! -e $posfile)                                      { die "$posfile doesn't exist"; }
@@ -75,7 +77,7 @@ while (<TABLE>)
 close TABLE;
 close OUTFILE;
 
-# Final step use 'identify-positives.pl' to identify positives in the temporary output file to
+# Final step use 'rmark-idpositives.pl' to identify positives in the temporary output file to
 # create the permanent output file
 $status = system("perl $idscript $posfile $tmpoutfile > $outfile");
 if ($status != 0) { die "FAILED: $idscript $posfile $tmpoutfile > $outfile"; }

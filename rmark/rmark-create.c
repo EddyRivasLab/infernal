@@ -58,7 +58,7 @@
 static char banner[] = "construct a rmark benchmark profile training/test set";
 static char usage[]  = "[options] <basename> <msafile> <seqdb>\n";
 
-#define SHUF_OPTS "--mono,--di,--markov0,--markov1,--reverse"   /* toggle group, seq shuffling options          */
+#define SHUF_OPTS "--mono,--di,--markov0,--markov1"   /* toggle group, seq shuffling options          */
 #define WATSON 0  /* orientation, Watson (top) strand */
 #define CRICK  1  /* orientation, Crick  (bottom) strand */
 
@@ -68,19 +68,18 @@ static ESL_OPTIONS options[] = {
   { "-1",       eslARG_REAL, "0.60", NULL,"0<x<=1.0",NULL,NULL,NULL,         "require all test seqs to have < x id to training",        1 },
   { "-2",       eslARG_REAL, "0.70", NULL,"0<x<=1.0",NULL,NULL,NULL,         "require all test seqs to have < x id to each other",      1 },
   { "-F",       eslARG_REAL, "0.70", NULL,"0<x<=1.0",NULL,NULL,NULL,         "filter out seqs <x*average length",                       1 },
-  { "-N",       eslARG_INT,    "20", NULL, NULL,     NULL,NULL,NULL,         "number of negative test seqs",                            1 },
-  { "-L",       eslARG_INT,"500000", NULL,"n>0",     NULL,NULL,NULL,         "full length of negative test seqs",                       1 },
+  { "-N",       eslARG_INT,    "20", NULL, NULL,     NULL,NULL,NULL,         "number of benchmark seqs",                            1 },
+  { "-L",       eslARG_INT,"500000", NULL,"n>0",     NULL,NULL,NULL,         "full length of benchmark seqs prior to test seq embedding",               1 },
   { "-C",       eslARG_INT, "10000", NULL,"n>0",     NULL,NULL,"--iid",      "length of of <seqdb> seqs to extract and shuffle when making test seqs",  1 },
   { "-X",       eslARG_REAL, "0.05", NULL,"0<x<=1.0",NULL,NULL,NULL,         "maximum fraction of total test seq covered by positives", 1 },
   { "-R",       eslARG_INT,     "5", NULL,"n>0",     NULL,NULL,NULL,         "minimum number of training seqs per family",              1 },
   { "-E",       eslARG_INT,     "1", NULL,"n>0",     NULL,NULL,NULL,         "minimum number of test     seqs per family",              1 },
 
   /* Options controlling negative segment randomization method  */
-  { "--mono",    eslARG_NONE,"default", NULL, NULL, SHUF_OPTS, NULL, NULL, "shuffle preserving monoresidue composition",                2 },
-  { "--di",      eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, NULL, NULL, "shuffle preserving mono- and di-residue composition",       2 },
+  { "--mono",    eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, NULL, NULL, "shuffle preserving monoresidue composition",                2 },
+  { "--di",      eslARG_NONE,"default", NULL, NULL, SHUF_OPTS, NULL, NULL, "shuffle preserving mono- and di-residue composition",       2 },
   { "--markov0", eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, NULL, NULL, "generate with 0th order Markov properties per input",       2 },
   { "--markov1", eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, NULL, NULL, "generate with 1st order Markov properties per input",       2 },
-  { "--reverse", eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, NULL, NULL, "reverse each input",                                        2 },
   { "--iid",     eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, NULL, NULL, "generate random iid sequence for negatives",                2 },
 
   /* Options forcing which alphabet we're working in (normally autodetected) */

@@ -3,10 +3,13 @@
 # The top level script that runs a rmark benchmark.
 #
 # Usage:
-#   ./rmark-master.pl <execdir> <resultdir> <benchmark prefix> <benchmark script>
+#   ./rmark-master.pl <execdir> <scriptdir> <resultdir> <optsfile> <benchmark prefix> <benchmark script>
 # 
 # <execdir>: Directory for finding executables to be benchmarked. This
 #    is passed on to the <benchmark script> without modification.
+#
+# <scriptdir>: Directory for finding scripts used by the benchmark, namely 
+#    rmark-idpositives.pl. 
 #
 # <modeldir>: Directory for finding model files for the benchmark. This
 #    is passed on to the <benchmark script> without modification.
@@ -33,7 +36,7 @@
 #    on an appropriately constructed subset of the benchmark queries.
 #
 #    It must take the following arguments:
-#    <execdir> <modeldir> <resultdir> <optsfile> <tblfile> <msafile> <posfile> <fafile> <outfile>
+#    <execdir> <scriptdir> <modeldir> <resultdir> <optsfile> <tblfile> <msafile> <posfile> <fafile> <outfile>
 #
 # Command-line options:
 # -P     : run a positive-only benchmark, only positive sequences will be searched
@@ -58,7 +61,7 @@ if (defined $opt_M) {
     if($mpi_nprocs < 2 || $mpi_nprocs > 8) { die "ERROR, with -M <n>, <n> must be between 2 and 8"; }
 }
 
-$usage =  "Usage: perl rmark-master.pl\n\t<executable dir>\n\t<model dir>\n\tresult dir, for output, must not exist>\n\t";
+$usage =  "Usage: perl rmark-master.pl\n\t<executable dir>\n\t<script dir>\n\t<model dir>\n\t<result dir, for output, must not exist>\n\t";
 $usage .= "<options file, 1 line>\n\t<benchmark prefix>\n\t<benchmark script>\n\n";
 $options_usage  = "Options:\n\t";
 $options_usage .= "-P     : run a positive-only benchmark, only positive sequences will be searched\n\t";
@@ -66,21 +69,42 @@ $options_usage .= "-N <n> : use <n> processors, default is to use one per model\
 $options_usage .= "-M <n> : pass -M <n> onto search module, telling it to run MPI with <n> <= 8 processors\n\t";
 $options_usage .= "         only valid if --mpi exists in <optsfile>\n\n";
 
-if(@ARGV != 6)
+if(@ARGV != 7)
 {
     print $usage;
     print $options_usage;
     exit();
 }
 
-($execdir, $modeldir, $resultdir, $optsfile, $benchmark_pfx, $rmark_script) = @ARGV;
+($execdir, $scriptdir, $modeldir, $resultdir, $optsfile, $benchmark_pfx, $rmark_script) = @ARGV;
 
-$tbl      = "$benchmark_pfx.tbl";
-$msafile  = "$benchmark_pfx.msa";
-$fafile   = "$benchmark_pfx.fa";
-$pfafile  = "$benchmark_pfx.pfa";
-$posfile  = "$benchmark_pfx.pos";
-$pposfile = "$benchmark_pfx.ppos";
+$tbl        = "$benchmark_pfx.tbl";
+$msafile    = "$benchmark_pfx.msa";
+$fafile     = "$benchmark_pfx.fa";
+$pfafile    = "$benchmark_pfx.pfa";
+$posfile    = "$benchmark_pfx.pos";
+$pposfile   = "$benchmark_pfx.ppos";
+$idscript   = "$scriptdir/rmark-idpositives.pl";
+
+# Check that all required files/directories for this script, and for 
+# the benchmark driver exist
+if (! -d $execdir)                                      { die "didn't find executable directory $execdir"; }
+if (! -d $scriptdir)                                    { die "didn't find script directory $scriptdir"; }
+if (! -d $modeldir)                                     { die "didn't find model directory $modeldir"; }
+if (! -e $idscript)                                     { die "positive identification script $idscript doesn't exist"; }
+if (! -e $optsfile)                                     { die "options file $optsfile doesn't exist"; }
+if (! -e $rmark_script)                                 { die "options file $rmark_script doesn't exist"; }
+if (! -e $tbl)                                          { die "table file $tbl doesn't exist"; }
+if (! -e $msafile)                                      { die "msa file $tbl doesn't exist"; }
+if($do_posonly) { 
+    if (! -e $pfafile)                                       { die "$pfafile doesn't exist"; }
+    if (! -e $pposfile)                                      { die "$pposfile doesn't exist"; }
+}
+else { 
+    if (! -e $fafile)                                       { die "$fafile doesn't exist"; }
+    if (! -e $posfile)                                      { die "$posfile doesn't exist"; }
+}
+
 
 if ($do_posonly) { 
     $fafile  = $pfafile;
@@ -133,10 +157,10 @@ chomp $searchopts;
 for ($i = 0; $i < $ncpu; $i++)
 {
     if($do_mpi) { # turn exclusivity on, so we get all processors on our node, to run MPI with
-	system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -l excl=true '$rmark_script -M $mpi_nprocs $execdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
+	system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -l excl=true '$rmark_script -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
     }
     else { 
-	system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge '$rmark_script $execdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
+	system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge '$rmark_script $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
     }
 }
 

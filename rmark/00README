@@ -4,68 +4,76 @@ Benchmarking methodology used internally in Infernal testing: the
 
 Table of contents:
    1. Overview of files in the rmark directory.
-   2. create-rmark: creating a new benchmark dataset 
-   3.    format of {.tbl,.msa,.fa,.pos,.neg} files in a benchmark dataset
+   2. rmark-create: creating a new benchmark dataset 
+   3.    format of {.tbl,.msa,.fa,.pfa,.pos,.ppos.neg} files in a benchmark dataset
    4.    finding summary statistics of a benchmark dataset
-   5. rmark-master.pl: running a pmark benchmark, in parallel using SGE qsub
+   5. rmark-master.pl: running a rmark benchmark, in parallel using SGE qsub
    6. rmark-<benchmark>:   benchmark driver scripts
    7.    format of benchmark results output files
-   8. rocplot: displaying results as ROC graphs
+   8. Calculating benchmark results
 
 
 ================================================================
 = 1. Overview of files
 ================================================================
 
-create-rmark.c  : Creates a new benchmark dataset.
+rmark-create.c        : Creates a new benchmark dataset.
 
-rmark-master.pl : Master script that parallelizes the running of a benchmark.
+rmark-master.pl       : Master script that parallelizes the running of a benchmark.
 
-x-cmsearch      : Infernal cmsearch benchmark
+x-cmsearch            : Infernal cmsearch benchmark
 
-x-nhmmer        : H3 nhmmer benchmark  (subsidiary to pmark-master.pl)
+x-nhmmer              : H3 nhmmer benchmark  (subsidiary to rmark-master.pl)
 
-rmark-rocplot.c : Constructs ROC plot of results, with bootstrapped
-                  confidence intervals.
+rmark-idpositives.pl  : Helper script called by all x-* drivers to identify
+    		        positives test sequences in a hit list
+    		        returned by a search.
 
-rmark-mer.pl    : Computes per-family and summary MER (minimum error
-                  rate) statistics for a finished benchmark.
+rmark-pp.sh           : Simple shell script that calls rmark-rocplot,
+		        rmark-mer.pl and rmark-time.pl for a finished
+		        full benchmark.
 
-rmark-time.pl   : Simple script that reports total running time of 
-                  a benchmark. Relies on "CPU time" lines in benchmark
-                  ".search" output.
+rmark-po-pp.sh        : Simple shell script that calls rmark-mer.pl and 
+		        rmark-time.pl for a finished positives-only
+		        benchmark.
 
-rmark-pp.sh     : Simple shell script that calls rmark-rocplot,
-		  rmark-mer.pl and rmark-time.pl for a finished
-		  full benchmark.
+rmark-mer.pl          : Computes per-family and summary MER (minimum error
+                        rate) statistics for a finished benchmark.
 
-rmark-po-pp.sh  : Simple shell script that calls rmark-mer.pl and 
-		  rmark-time.pl for a finished positives-only
-		  benchmark.
+rmark-time.pl         : Simple script that reports total running time of 
+                        a benchmark. Relies on "CPU time" lines in benchmark
+                        ".search" output. (May not be robust to
+                        non-Infernal, non-HMMER programs.)
 
-rmark-Rroc.pl   : Creates a pdf ROC plot using R from .xy output of 
-                  rmark-rocplot, .time output from rmark-time.pl
-		  and .mer output from rmark-mer.pl. The time and
-		  MER are included in the ROC curve's legend.
+rmark-rocplot.c       : Constructs ROC plot of results, with bootstrapped
+                        confidence intervals.
+
+rmark-Rroc.pl         : Creates a pdf ROC plot using R from .xy output of 
+                        rmark-rocplot, .time output from rmark-time.pl
+		        and .mer output from rmark-mer.pl. The time and
+		        MER are included in the ROC curve's legend.
 
 ================================================================
-= 2. create-rmark: creating a new benchmark dataset 
+= 2. rmark-create: creating a new benchmark dataset 
 ================================================================
 
-create-rmark is compiled from ANSI C source create-mark.c; see
+rmark-create is compiled from ANSI C source create-mark.c; see
 Makefile.in for build.
 
-Usage:    ./create-rmark <benchmark_prefix> <Stockholm MSA file> <FASTA sequence database>
-Example:  ./create-rmark rmark3 Rfam10.seed Rfamseq10
+Usage:    ./rmark-create <benchmark_prefix> <Stockholm MSA file> <FASTA sequence database>
+Example:  ./rmark-create rmark3 Rfam10.seed Rfamseq10
 
 Creates five output files:
    <benchmark_prefix>.tbl  - table summarizing the benchmark
    <benchmark_prefix>.msa  - MSA queries, stockholm format
-   <benchmark_prefix>.fa   - sequence targets, fasta format
+   <benchmark_prefix>.fa   - benchmark sequence targets, fasta format
+   <benchmark_prefix>.pfa  - test sequence targets, fasta format
    <benchmark_prefix>.pos  - table summarizing positive test set
+                             embedded within benchmark seqs (.fa file)
+   <benchmark_prefix>.ppos - table summarizing positive test set  
+                             non-embedded (.pfa file)
    <benchmark_prefix>.neg  - table summarizing negative test set                
 The format of these files is described in the following section.
-
 
 Briefly: each input alignment in the <Stockholm MSA file> is split
 into a query alignment and a nonredundant set of test sequences by two
@@ -109,73 +117,90 @@ construction protocol, the procedure is as follows:
    : If no test sequences have been identified that meet these
      criteria, fail and move on to the next MSA. (For instance, if all
      the sequences in the MSA are highly identical, don't bother using
-     this MSA for a benchmark; it's too easy.) A minimum number of
-     test sequences 
-
-     HERE HERE HERE
+     this MSA for a benchmark; it's too easy.) The minimum number of
+     test sequences required for a family to be included is 1 by
+     default, but it is changeable with the -E option.
 
    : The training set is preserved in its original alignment, and
      written to <benchmark_prefix>.msa.
 
-   : The test set is now considered to be "test domains", and we
-     construct positive test sequences by embedding these domains
-     in nonhomologous sequence constructed from sequences in
-     the <FASTA sequence database> as follows:
+   : Benchmark sequences are now constructed by embedding the test
+     sequences in nonhomologous sequence constructed from sequences in
+     the <FASTA sequence database> as follows. Given a number <N> of
+     benchmark sequences to create (20 by default, settable with -N),
+     each of total length <L> (500,000 nt by default, settable with
+     -L), composed of chunks of database sequence of length <C>
+     (10,000 nt by default, settable with -C).
 
-       : choose two test domains (by default; --single option makes it one)
+       : Construct each of the <N> benchmark sequences by first
+         generating " nonhomologous" sequence. This is done by
+         randomly selecting a length <C> subsequence from the <FASTA
+         sequence database> and using it to construct a nonhomologous
+         chunk of sequence by either:
 
-       : select a sequence length from <FASTA sequence database> at random
-         that is sufficiently long to embed both test domains.
- 
-       : embed the domain(s) at random positions in that sequence length
+	   : shuffling the selected subsequence.         (--mono) 
+           : shuffling preserving diresidue composition. (default; --di)    
+           : synthesize with same monoresidue comp       (--markov0)
+           : synthesize with same diresidue comp         (--markov1)
+	   : synthesize iid sequence                     (--iid)
 
-       : construct the non-domain regions of the test sequence with
-         "nonhomologous" sequence segments. There are several ways to
-         construct "nonhomologous" sequence segments, all of which
-         (except --iid) start with selecting a random subsequence of
-         appropriate length from the <FASTA sequence database>:
+       : Append the resulting sequence of length <C> to a growing
+         benchmark sequence. After <L>/<C> such sequences have been
+         appended the current benchmark sequence is complete, and a
+         new one is started. When finished, <N> * <L>/<C> sequences
+         will have been chosen from the <FASTA sequence database> and
+         each used to construct an independent chunk of a benchmark
+         sequence. (Note that the description above assumes <L>%<C> ==
+         0; if not, the final chunk will be smaller than <C> and
+         <L>/<C>+1 chunks will be required to create each benchmark
+         sequence.)
 
-	   : shuffle the selected subsequence.         (default; --mono) 
-           : shuffle preserving diresidue composition. (--di)    
-           : synthesize with same monoresidue comp     (--markov0)
-           : synthesize with same diresidue comp       (--markov1)
-	   : reverse C-to-N direction                  (--reverse)
-	   : synthesize iid sequence                   (--iid)
+       : At this point, <N> benchmark sequences of length <L> have
+         been created.  Details of how they were constructed (where
+         all the sequence segments came from) are written to the
+	 <benchmark_prefix>.neg file.
 
-   : The embedded-domain test sequences are written in FASTA format
-     to the <benchmark_prefix>.fa file. Details of how they were 
-     constructed (where all the sequence segments came from) are 
-     written to the <benchmark_prefix>.pos file.
+       : The final step is to embed the test sequences within the
+         benchmark sequences. For each test sequence, randomly choose
+         one of the <N> benchmark sequences and a position (1..<L>)
+         after which to embed the sequence. Also randomly choose to
+         embed it in either the positive or negative strand. If the
+         negative strand is chosen, the test sequence will be reverse
+         complemented prior to embedding. (No two test sequences can
+         be embedded at the same position in the same benchmark
+         sequence.) Embed the sequence by inserting it into the chosen
+         sequence after the chosen position. Details on where each
+         test sequence is embedded are written to the
+         <benchmark_prefix>.pos file. 
 
-   : Finally a set of <N> negative test sequences is constructed. 
-     Default N=200000; controlled by the -N option.
-     For each negative:
+	 More than one test sequence can be embedded in each benchmark
+         sequence. Because test sequences are inserted into the
+         benchmark sequences (rather than used to replace existing
+         subsequences in the benchmark sequences), the embedding
+         procedure increases the length of the benchmark sequences.
+	 The final total length of the benchmark sequences will be <N>
+         * <L> + <summed length of embedded test sequences>.
 
-        : choose one of the positive test seqs at random; we will use
-          the same set of segment lengths to construct a negative.
+       : The benchmark sequences are then written in FASTA format to
+         the <benchmark_prefix.fa file. 
 
-        : for every segment, insert a nonhomologous sequence generated
-          by the same method we used for nonhomologous segments in
-	  the positive sequences.
+       : The test sequences by themselves are then written in FASTA
+         format to the <benchmark_prefix>.pfa>. None of these will
+         have been reverse complemented. This file can be used to run
+         a quick 'positives-only' version of the benchmark.
 
-   : The test sequences are appended in FASTA format to the to the
-     <benchmark_prefix>.fa file. Details of how they were constructed
-     (where all the sequence segments came from) are written to the
-     <benchmark_prefix>.neg file.
-     
+================================================================     
+= 3. Format of {.tbl,.msa,.fa,.pfa,.pos,.ppos.neg} files in a benchmark dataset
+================================================================     
 
-================================================================
-= 3. Format of {.tbl,.msa,.fa,.pos,.neg} files in a benchmark dataset
-================================================================
-
-The .tbl file is used by pmark-master.pl as a list of MSA queries in
+The .tbl file is used by rmark-master.pl as a list of MSA queries in
 the benchmark. Each line has eight whitespace-delimited fields:
   <query msa name>    <avg pid> <alen> <nseq>  <nfrags> <nseq_train> <ndom_test> <nseq_test>
 For example:
-  2OG-FeII_Oxy           27%    167    141      0    113     16      8
-  3-alpha                24%     48     10      0      6      4      2
-  3_5_exonuc             24%    219     28      0     21      5      2
-  4HBT                   20%     99    141      0     97     37     18
+  5_8S_rRNA              68%    197     61      0     60      1
+  U1                     66%    200    100      0     93      5
+  U2                     60%    261    211      0    197     13
+  tRNA                   44%    117    967      0    933     20
 
 In more detail, these eight fields are: 
   <query_msa_name> : name of the MSA query, as given in original
@@ -193,211 +218,334 @@ In more detail, these eight fields are:
       <nseq_train> : number of sequences in the training set alignment
                      saved to <benchmark_prefix>.msa
 
-       <ndom_test> : number of sequences that passed criteria for use
-                     as a possible embedded domain in the test
-                     sequences
-
-       <nseq_test> : number of embedded-domain test sequences saved to
-                     <benchmark_prefix>.fa
+           <ntest> : number of test sequences embedded in the
+                     benchmark sequences saved to
+                     <benchmark_prefix>.fa. Raw versions
+                     (non-embedded) of these test sequences aree saved
+                     to <benchmark_prefix>.pfa.
 
 
 The .msa file is a Stockholm file containing all the query alignments. 
 
-The .fa file is a FASTA file containing the positive and negative test
-sequences. 
+The .fa file is a FASTA file containing the benchmark sequences, which
+are nonhomologous sequence with embedded test sequences, constructed
+as described in section (2) above.
 
-The .pos file is a log of where all the segments in the positive test
-sequences came from.
+The .pfa file is a FASTA file containing only the test sequences.
 
-  <test seq name>  <length> <L1> <D1> <L2> <D2> <L3>  [<source> <from> <to>]...
+The .pos file is a log of where the test sequences are embedded in the
+benchmark sequences. Each line of this file has 5 fields:
+
+  <test seq name>  <benchmark seq name>  <source>  <start>  <stop>
 
 
   <test seq name> : name of the test sequence. These are constructed
-                    as <MSA name>/<#>/<f1>-<t1>/<f2>-<t2>, where <#>
-                    ranges from 1 to the number of test sequences, and
-                    <f1>-<t1> and <f2>-<t2> are the coordinates in the
-                    test sequence that correspond to homologous
-                    domains. This naming structure is exploited by 
-		    benchmark scripts to know that the sequence is a
-                    positive, and to know exactly where the bounds of
-                    homologous domains are.
+                    as <MSA name>/<#>, where <#> ranges from 1 to the
+                    number of test sequences chosen from <MSA name>
+                    (i.e. 1..<ntest> from .tbl file).
 
-		    In a single-domain embedded test (--single), the
-		    names are <MSA name>/<#>/<f1>-<t1>.
+  <benchmark seq name> : the name of the benchmark sequence <test seq
+                         name> is embedded within.
 
-        <length> :  length of the test sequence in residues
-            <L1> :  length of the first nonhomologous segment
-            <D1> :  length of the first homologous test domain
-            <L2> :  length of the 2nd nonhomologous segment
-            <D2> :  length of the second homologous test domain (or 0)
-            <L3> :  length of the 3rd nonhomologous segment (or 0)
-            
-then for each segment (5 for the default two-domain embedding; 3 for
---single):
+        <source> :  name of the test sequence in the original MSA 
 
-        <source> :  name of the source sequence for the segment;
-	            in <FASTA sequence database> for nonhomologous
-	            segments, and in the original MSA for homologous
-	            segments. 
-          <from> :  start coord in the source
-            <to> :  end coord in the source
-		    
+          <start> :  start coord in the benchmark sequence 
+           <stop> :  end coord in the benchmark sequence, if <start> 
+	             is greater than <stop> then the test sequence is 
+		     reverse complemented within <benchmark seq name>.
 
-The .neg file is a log of where all the segments in the negative test
-sequences came from. It has essentially the same format as the .pos
-file, except that negative sequences are all named <decoy><#>
-(example: "decoy2012"), and the benchmark scripts rely on this to
-identify negative test sequences.
+The .ppos file has the same format as the .pos file, but the test seq
+name and <start>, <stop> correspond to the test sequences in the .pfa
+file, not the benchmark sequences in the .fa file.
 
+The .neg file is a log of where all the nonhomologous segments in the
+benchmark sequences came from. Each line has 6 white-space-delimited
+fields:
+
+  <benchmark seq name> <bstart> <bstop> <source> <sstart> <sstop>
+
+For example:
+rmark1              1      10000 CHROMOSOME_X                           3798523    3808522
+rmark1          10001      20000 CHROMOSOME_MtDNA                          1037      11036
+rmark1          20001      30000 CHROMOSOME_V                            645032     655031
+
+  <benchmark seq name> : name of benchmark sequence
+              <bstart> : start coord of the segment in the benchmark
+	                 sequence *prior* to embedding test sequences
+               <bstop> : stop coord of the segment in the benchmark
+	                 sequence *prior* to embedding test sequences
+              <source> : name of the source sequence in the <FASTA sequence
+                         database> for the segment
+              <sstart> : start coord of the segment in the source
+               <sstop> : stop coord of the segment in the source
 
 
 ================================================================     
 = 4. Finding summary statistics of a benchmark dataset
 ================================================================
 
-Number of query alignments:   wc -l <benchmark_prefix>.tbl
-                           or esl-alistat -a <benchmark_prefix>.msa
+Number of query alignments:      wc -l <benchmark_prefix>.tbl
+                              or esl-alistat -a <benchmark_prefix>.msa
 
-Number of positives:          wc -l <benchmark_prefix>.pos
+Number of positives:             wc -l <benchmark_prefix>.pos
 
-Number of negatives:          wc -l <benchmark_prefix>.neg
+Benchmark sequence length dist:  esl-seqstat <benchmark_prefix>.fa
 
-Test sequence length dist:    esl-seqstat <benchmark_prefix>.fa
+Test sequence length dist:       esl-seqstat <benchmark_prefix>.pfa
 
 
 
 ================================================================
-= 5. pmark-master.pl: running a pmark benchmark, in parallel using SGE qsub
+= 5. rmark-master.pl: running a rmark benchmark, in parallel using SGE qsub
 ================================================================
 
-Usage:   ./pmark-master.pl <top_builddir> <top_srcdir> <resultdir> <nproc> <benchmark_prefix> <benchmark script>
-Example: ./pmark-master.pl ~/releases/hmmer-release/build-icc ~/releases/hmmer-release h3-results  100 pmark ./x-hmmsearch
+Usage:   ./rmark-master.pl <execdir> <scriptdir> <modeldir> <optsfile> <benchmark_prefix> <benchmark script>
+Example: ./rmark-master.pl ~/infernal/src ~/infernal/rmark ~/db/rmark3-1p02-models/ 1p02.opts rmark3 ./x-cmsearch
      
-pmark-master.pl is a wrapper that coarse-grain parallelizes a
+rmark-master.pl is a wrapper that coarse-grain parallelizes a
 benchmark run for our SGE queue.
 
 This would typically be run in a notebook directory, which would have
-symlinks to the pmark-master.pl script and the driver x-* scripts, and
+symlinks to the rmark-master.pl script the driver x-* scripts, and
 also would have the <benchmark_prefix>.{tbl,msa,fa,pos,neg} files
-either present or symlinked.
+and calibrated CM files either present or symlinked.
 
 For each benchmark you run that day, you'd have a different
-<resultdir>; for example, you might run a "h3" and "h2"
+<resultdir>; for example, you might run a "i1p02" and "i1dev"
 benchmark. The <resultdir> name should be short because it is used to
 construct other names, including the SGE job name.
 
-The pmark-master.pl creates the <resultdir>, splits the
-<benchmark_prefix>.tbl file into <nproc> separate tbl files called
+The <optsfile> must include a single line which is the options string
+to be used by the search program.  For example: "-Z 20 --noalign". 
+
+The rmark-master.pl creates the <resultdir>, splits the
+<benchmark_prefix>.tbl file into <nali> separate tbl files called
 <resultdir>/tbl.<i>, and issues "qsub" commands to run the <benchmark
-script> on each of these subtables.
+script> on each of these subtables. <nali> is the number of
+models/families in the benchmark, so one family is put on each
+benchmark. However, <n> subtables will be created with the -N <n>
+option.
 
 The jobs in SGE are named <resultdir>.<i>.
 
-The <benchmark script> is passed 7 arguments:
- <top_builddir> <top_srcdir> <resultdir> <subtbl> <benchmark_prefix.msa> <benchmark_prefix.fa> <outfile>
+The <benchmark script> is passed 10 arguments:
+ <execdir> <scriptdir> <modeldir> <resultdir> <optsfile> <subtbl>  <benchmark_prefix.msa> <benchmark_prefix.pos> <benchmark_prefix.fa> <outfile>
 where <subtbl> is <resultdir>/tbl.<i> (the list of queries this
 parallelized instance of the benchmark driver is supposed to process), 
 and <outfile> is a file named <resultdir>/tbl<i>.out.
 
 When all the driver script instances are done, there will be <nproc>
 output files named <resultdir>/tbl<i>.out. These files can be analysed
-and turned into ROC graphs using rocplot and/or rocplot.pl.
+using rmark-pp.sh (for default, full benchmarks) or rmark-po-pp.sh
+(for positives-only benchmarks, see below).
+
+rmark-master.pl can also be run in 'positives-only' mode with the '-P'
+option. In this mode, full benchmark sequences are not searched,
+rather only test sequences are searched (in the <benchmark_prefix>.pfa
+sequence file). This is a quick version of the benchmark which gives
+an upper bound on the full benchmark performance. 
+
+Finally, if <optsfile> contains --mpi, the -M <n> option can be set
+for rmark-master.pl. This will cause SGE to run MPI with <n> (where
+<n> <= 8) processors. (We can only do up to 8 b/c I don't know how to
+make the x-* script run under mpirun, so we have the x-* script call
+'mpirun' itself on a single node, and thus it can only run on up to
+the number of cpus per node, which is currently 8 on our cluster.)
 
 ================================================================
 = 6. x-<benchmark>:   benchmark driver scripts
 ================================================================
 
-A driver script gets the 7 arguments as described above:
+A driver script gets the 10 arguments as described above:
 
-         <top_builddir> : path to top-level build directory of the
-	                  program(s) to be tested, where executables
-	                  can be found. When testing non-HMMER
-	                  programs, this is the installation directory
-	                  where those executables are found.
+              <execdir> : path to the directory where the search
+	                  program executable(s) can be found.
 
-           <top_srcdir> : path to top-level src directory of the HMMER
-                          program(s) to be tested, where data and
-                          scripts may be found. When testing non-HMMER
-                          programs, this is nonetheless still a HMMER
-			  top-level src directory, where parser scripts
-			  and data may be found. (For example, BLAST
-			  output parsers.)
+            <scriptdir> : path to the directory where benchmark
+	                  scripts can be found (namely 
+			  rmark-idpositives.pl).
+
+             <modeldir> : path to the directory where the model files
+	                  (.cm or .hmm) can be found. This is
+	                  necessary b/c CM files often need to be
+	                  calibrated before running a benchmark.
 
             <resultdir> : name of the directory that temp files can
 	                  be placed in, unique to the instantiation
-			  of pmark-master.pl that called us, so long
+			  of rmark-master.pl that called us, so long
 			  as we use names that don't clash with the
 			  other <nproc>-1 instances of driver scripts;
 			  for example, we can safely create tmp files
 			  that start with <queryname>.
-	                
+
+             <optsfile> : name of the options file with one line - the 
+	                  string of options to pass to the search program.
+
                <subtbl> : name of the tbl.<i> file in <resultsdir> that
 	                  lists the query alignments this instantiation
 			  of the driver is supposed to work on.
 
- <benchmark_prefix.msa> : the benchmark's MSA file; query alignments named
-                          in <subtbl> will be esl-alifetch'ed from here.
+ <benchmark_prefix.msa> : the benchmark's positives table. This is used
+                          in a final post-search step to determine
+                          which of the search hits overlap test sequences. 
 
-  <benchmark_prefix.fa> : the benchmark's positive and negative sequences;
+ <benchmark_prefix.pos> : the benchmark's positive and negative sequences;
                           this will be used as the target database for
 			  searches the driver runs.
+
+  <benchmark_prefix.fa> : the benchmark sequences, this will be used
+                          as the target database for searches the
+                          driver runs.
 
               <outfile> : a whitespace-delimited tabular output file, 
                           one line per target sequence, described below.
 
-Using <top_builddir> and <top_srcdir> allows us to easily construct
-regression tests of different HMMER versions and/or configurations.
+The driver will run the search using the options specified in
+<optsfile> and then call the 'rmark-idpositives.pl' script in
+<scriptdir> to determine which hits overlap with the embedded test
+sequences in the benchmark test sequences. 
 
+If a 'positives-only' benchmark is being run (specified with the -P
+option to rmark-master.pl) then <benchmark_prefix.pfa> will be used
+instead of <benchmark_prefix.fa>
 
 ================================================================
 = 7. format of benchmark results output files
 ================================================================
 
-The <nproc> output in files <resultdir>/tbl<i>.out have four fields:
-      <E-value> <bit score> <target> <query>
+The <nproc> output in files <resultdir>/tbl<i>.out have 7 fields:
+      <E-value> <bit score> <from> <to> <target> <query> <match_string> <strand_string>
 for example:
-  6e-41   144.1   UCH/6548/39-342/368-893         UCH
-  1.5e-34 123.1   UCH/6546/168-490/816-1424       UCH
-  0.17    14.4    zf-UBP/6823/3-74/209-283        UCH
-  1.4     11.4    decoy31607                      UCH
+    0.0037       27.7     295646     295578            rmark-2_2                                tRNA tRNA/2 same
+       171       10.5     239311     239347           rmark-2_10                                tRNA tmRNA/38 opposite
+      3.88       16.6     119616     119703            rmark-2_2                                tRNA decoy/0 decoy
+      25.9       13.6      64755      64807            rmark-2_2                                tRNA decoy/0 decoy
 
-These can be concatenated and sorted by E-value:
+<from> and <to> are the coordinates in the target of the hit. If <from
+is greater than <to>, then the hit is on the negative strand. 
+
+<match_string> indicates whether the hit overlaps a true positive. It
+includes two tokens separated by a '/': <fam>/<#>. <fam> is either
+'decoy' or a query name. If 'decoy' the hit overlaps no test sequence
+(on either strand), if it is a query name the hit overlaps sequence
+<#> from that query, with <#> corresponding to the index in the
+<benchmark_prefix.pos> file created with the benchmark.
+
+<strand_string> is either, "same", "opposite", or "decoy". It will
+always be "decoy", if <match_string> begins with "decoy". If
+<match_string> begins with a valid query, <strand_string> will be
+"same" if the hit is on the same strand as the test sequence, and
+"opposite" if it is on the opposite strand.
+
+The output files are created by the rmark-idpositives.pl script in
+<scriptdir>, which is called by the driver once the search is
+finished. The <match_string> and <strand_string> fields are added by the
+rmark-idpositives.pl script. rmark-idpositives.pl takes as input 
+a similar file to the output file but with these two fields missing,
+as well as the <benchmark_prefix.pos> file. It goes through each hit
+and determines if it significantly overlaps with a positive test
+sequence. Significant overlap occurs if the overlap is at least 50% of
+the shorter of the hit and the test sequence. 
+
+Lines from the output files can be concatenated and sorted by E-value:
    cat *.out | sort -g
 
 Analysis scripts can easily tell the difference between a true,
 false, and "ignored" comparison:
 
-  - if the target is named "decoy", it's a negative (nonhomologous)
+  - if <match_string> begins with "decoy", it's a negative (nonhomologous)
     comparison.
 
-  - if the name of the query matches the first part of the name of the
-    target, it's a true (homologous) comparison.
+  - if the first part of <match_string> matches <query> and
+    <strand_string> is "same", it's a true (homologous) comparison.
 
-  - if the name of the query doesn't match the first part of the
-    target name, we will ignore the comparison. This is a match
-    between a positive sequence and a query that doesn't correspond to
-    the positive test domains; it might be a false hit, but it also
-    might be that the two alignments (the query and the one that
-    generated the test sequence) are homologous.
+  - if the first part of <match_string> doesn't match <query> (but
+    also isn't "decoy"), we will ignore the comparison (regardless of
+    whether <strand_string> is "same" or "opposite"). This is a match
+    between a test sequence (or a test sequence's reverse complement)
+    and a query that doesn't correspond to the test sequence; it might
+    be a false hit, but it also might be that the two alignments (the
+    query and the one that generated the test sequence) are
+    homologous.
 
-Thus it's easy to keep track (even during a run) of the top-scoring
-false positive:
+Thus it's easy to determine the top-scoring false positive:
    cat *.out | sort -g | grep decoy | head
 
-and using the rocplot.pl script, it's easy to see get a glimpse of
-how the ROC plot is turning out:
-
-   cat *.out | sort -g | ../rocplot.pl | head
-
 
 ================================================================
-= 8. rocplot: displaying results as ROC graphs
+= 8. Calculating benchmark results
 ================================================================
+There are 6 scripts/programs for calculating benchmark results:
 
-rocplot is compiled from ANSI C source rocplot.c; see Makefile.in for build.
+rmark-pp.sh     : Simple shell script that calls rmark-rocplot,
+		  rmark-mer.pl and rmark-time.pl for a finished
+		  full benchmark.
 
-Usage:    ./rocplot <benchmark_prefix> <sorted .out data>
-Example:  cat *.out | sort -g | ../rocplot pmark - > results.xy
+rmark-po-pp.sh  : Simple shell script that calls rmark-mer.pl and 
+		  rmark-time.pl for a finished positives-only
+		  benchmark.
+
+rmark-mer.pl    : Computes per-family and summary MER (minimum error
+                  rate) statistics for a finished benchmark.
+
+rmark-time.pl   : Simple script that reports total running time of 
+                  a benchmark. Relies on "CPU time" lines in benchmark
+                  ".search" output. (May not be robust to
+                  non-Infernal, non-HMMER programs.)
+
+rmark-rocplot.c : Constructs ROC plot of results, with bootstrapped
+                  confidence intervals.
+
+rmark-Rroc.pl   : Creates a pdf ROC plot using R from .xy output of 
+                  rmark-rocplot, .time output from rmark-time.pl
+		  and .mer output from rmark-mer.pl. The time and
+		  MER are included in the ROC curve's legend.
+
+In more detail:
+
+rmark-pp.sh and rmark-po-pp.sh:
+------------------------------
+Two shell scripts, rmark-pp.sh and rmark-po-pp.sh, can be used to
+summarize the results of a benchmark. rmark-pp.sh is for full
+benchmarks (in which the full benchmark sequences were searched), and
+rmark-po-pp.sh is for positives-only benchmarks (in which only the
+test sequences were searched). These shell scripts are actually
+wrappers for the rmark-time.pl, rmark-mer.pl and rmark-roc programs.
+
+Usage:   rmark-pp.sh <benchmark_prefix> <resultdir>
+Example: rmark-pp.sh rmark3 i1p02-df
+
+Usage:   rmark-po-pp.sh <benchmark_prefix> <resultdir>
+Example: rmark-po-pp.sh rmark3 i1p02-df
+
+
+rmark-mer.pl and rmark-time.pl:
+------------------------------
+rmark-mer.pl and rmark-time.pl are PERL scripts. rmark-mer.pl takes
+concatenated output from the drivers sorted by E-value and computes
+per-query and summary minimum error rates (MER). The MER is the
+minimum sum of false positives and true negatives at any score
+threshold. rmark-time.pl takes as input strings matching "^# CPU" from
+Infernal or HMMER programs and computes the total running time of a
+benchmark run. (NOTE, rmark-time.pl may not work on all search
+programs). 
+
+Example usages:
+
+Full benchmark:
+cat i1p02-df/*out | sort -g | perl rmark-mer.pl rmark3.pos > i1p02-df/i1p02-df.mer
+grep "^# CPU" i1p02-df/*.search | rmark-time.pl > i1p02-df/i1p02-df.time
+
+Positives-only benchmark:
+cat po-i1p02-df/*out | sort -g | perl rmark-mer.pl rmark3.ppos > po-i1p02-df/po-i1p02-df.mer
+grep "^# CPU" po-i1p02-df/*.search | rmark-time.pl > po-i1p02-df/po-i1p02-df.time
+
+rmark-rocplot.c:
+----------------
+rmark-rocplot is compiled from ANSI C source rocplot.c; see Makefile.in for build.
+
+Usage:    ./rmark-rocplot <benchmark_prefix> <sorted .out data>
+Example:  cat *.out | sort -g | ../rocplot rmark3 - > i1p02-df/i1p02-df.xy
 
 The output is an XMGRACE xydydy file, plotting fractional coverage of
 the positives (on the Y-axis; range 0..1) versus errors per query (on
@@ -405,27 +553,28 @@ the X-axis; ranging from 1/(# of models) to 10.0 by default; see --min
 and --max options). For each point, a 95% confidence interval is
 denoted by the dydy points, as determined by "Bayesian" bootstrap
 resampling of the query alignments.
- 
-Output from rocplot over a set of different benchmarks are usually
-concatenated into one XMGRACE input .dat file, and worked up into
-a display following a procedure akin to:
 
+rmark-Rroc.pl:
+--------------
+PDFs of ROC curves from rmark-rocplot can be generated with
+rmark-Rroc.pl if 'R' is in the user's path. 
 
-  cat bench1/*.out  | sort -g | ./rocplot pmark - > bench1.dat
-  cat bench2/*.out  | sort -g | ./rocplot pmark - > bench2.dat
+First, a list of multiple benchmark runs is typically compiled. Each
+line of the list file includes three whitespace-delimited fields:
+<series_name> <resultsdir> <color>
 
-  cat bench1.dat >  todays.dat
-  cat bench2.dat >> todays.dat
+For example:
+infernal-1p02-nf i1p02-nf red
+infernal-1p02-df i1p02-df black
 
-  \cp todays.dat todays.agr
-  xmgrace -settype xydydy -param ~/src/hmmer/profmark/pmark.param todays.agr
+rmark-Rroc.pl takes this list as one of its command line arguments:
 
-then manually making the lines pretty colors as in
-  All:  symbols circle 56  opaque white fill  no riser
-  set 0   bench1  orange
-  set 1   bench2  black
+Usage:   perl rmark-rocR.pl <listfile> <pdfname> <'1'/'0' for yes/no draw error-bars> <plot_title>
+Example: perl rmark-rocR.pl today.list today.pdf 1 rmark3-071410
 
-and saving (as .agr) and exporting (as .eps):
-  Figure:  todays.{dat,agr,eps}
+This will create the file "today.pdf" which will be a ROC curve with 2
+series, infernal 1.02 non-filtered, in red, and infernal 1.02 default,
+in black. The legend will include MER and run times for each of the
+methods.
 
 
