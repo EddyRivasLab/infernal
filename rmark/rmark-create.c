@@ -68,9 +68,9 @@ static ESL_OPTIONS options[] = {
   { "-1",       eslARG_REAL, "0.60", NULL,"0<x<=1.0",NULL,NULL,NULL,         "require all test seqs to have < x id to training",        1 },
   { "-2",       eslARG_REAL, "0.70", NULL,"0<x<=1.0",NULL,NULL,NULL,         "require all test seqs to have < x id to each other",      1 },
   { "-F",       eslARG_REAL, "0.70", NULL,"0<x<=1.0",NULL,NULL,NULL,         "filter out seqs <x*average length",                       1 },
-  { "-N",       eslARG_INT,    "20", NULL, NULL,     NULL,NULL,NULL,         "number of benchmark seqs",                            1 },
-  { "-L",       eslARG_INT,"500000", NULL,"n>0",     NULL,NULL,NULL,         "full length of benchmark seqs prior to test seq embedding",               1 },
-  { "-C",       eslARG_INT, "10000", NULL,"n>0",     NULL,NULL,"--iid",      "length of of <seqdb> seqs to extract and shuffle when making test seqs",  1 },
+  { "-N",       eslARG_INT,    "10", NULL, NULL,     NULL,NULL,NULL,         "number of benchmark seqs",                            1 },
+  { "-L",       eslARG_INT,"1000000",NULL,"n>0",     NULL,NULL,NULL,         "full length of benchmark seqs prior to test seq embedding",               1 },
+  { "-C",       eslARG_INT,   "1000",NULL,"n>0",     NULL,NULL,"--iid",      "length of of <seqdb> seqs to extract and shuffle when making test seqs",  1 },
   { "-X",       eslARG_REAL, "0.05", NULL,"0<x<=1.0",NULL,NULL,NULL,         "maximum fraction of total test seq covered by positives", 1 },
   { "-R",       eslARG_INT,     "5", NULL,"n>0",     NULL,NULL,NULL,         "minimum number of training seqs per family",              1 },
   { "-E",       eslARG_INT,     "1", NULL,"n>0",     NULL,NULL,NULL,         "minimum number of test     seqs per family",              1 },
@@ -111,7 +111,6 @@ struct cfg_s {
 
   ESL_SQFILE     *dbfp;   	/* source database for negatives                           */
   int             db_nseq;	/* # of sequences in the db                                */
-  int             db_maxL;	/* maximum seq length in db_lens                           */
   int             nneg;         /* number of negative long sequences we'll create          */
   int             negL;         /* length of long negative sequences before test seqs get embedded */
   int             negchunkL;    /* length of each chunk that make up the long negative sequences */
@@ -293,7 +292,7 @@ main(int argc, char **argv)
 	    esl_sq_FormatDesc(posseqs[npos], "%s/%d", msa->name, npos_this_msa+1);
 	    /* Write the sequence to the positives-only output file, and its info the positives-only table */
 	    esl_sqio_Write(cfg.out_posfp, posseqs[npos], eslSQFILE_FASTA, FALSE);
-	    fprintf(cfg.ppossummfp, "%-35s %-35s %-35s %8" PRId64 " %8" PRId64 "\n",
+	    fprintf(cfg.ppossummfp, "%-35s %-35s %-35s %8d %8" PRId64 "\n",
 		    posseqs[npos]->desc,  /* description, this has been set earlier as the msa name plus seq idx (e.g. "tRNA/3" for 3rd tRNA in the set)   */
 		    posseqs[npos]->name,  /* positive sequence name (from input MSA) */
 		    posseqs[npos]->name,  /* again, positive sequence name (from input MSA) */
@@ -342,14 +341,16 @@ main(int argc, char **argv)
   
 /* Open the source sequence database for negative subseqs;
  * upon return, cfg->dbfp is open (digital, SSI indexed);
- * cfg->db_maxL and cfg->db_nseq are set.
+ * and cfg->db_nseq is set.
  */
 static int
 process_dbfile(struct cfg_s *cfg, char *dbfile, int dbfmt)
 {
   ESL_SQ     *sq    = esl_sq_CreateDigital(cfg->abc);
   int         status;
-  
+  int         nread;      /* number of sequences of at least length cfg->negchunkL read from db */
+  int         nrequired;  /* number of sequences of at least length cfg->negchunkL required in db */
+
   /* Open the sequence file in digital mode */
   status = esl_sqfile_OpenDigital(cfg->abc, dbfile, dbfmt, NULL, &(cfg->dbfp));
   if      (status == eslENOTFOUND) esl_fatal("No such file %s", dbfile);
@@ -357,20 +358,31 @@ process_dbfile(struct cfg_s *cfg, char *dbfile, int dbfmt)
   else if (status == eslEINVAL)    esl_fatal("Can't autodetect stdin or .gz.");
   else if (status != eslOK)        esl_fatal("Open failed, code %d.", status);
 
-  /* Read info on each sequence */
-  cfg->db_nseq   = 0;
-  cfg->db_maxL   = 0;
+  /* Read sequence file until we know it contains enough sequences to
+   * sample from to create the benchmark sequences if we sampled
+   * without replacement (even though we sample with replacement, so
+   * just 1 seq of length cfg->negchunkL would suffice). 
+   * We don't read the whole sequence file b/c it could be very
+   * large (rfamseq is >100 Gb) and that would take a long time.
+   */
+  nread = 0;
+  nrequired = ((cfg->negL / cfg->negchunkL) + 1) * cfg->nneg;
 
-  while ((status = esl_sqio_ReadInfo(cfg->dbfp, sq)) == eslOK) {
-    cfg->db_maxL = ESL_MAX(sq->L, cfg->db_maxL);
-    cfg->db_nseq++;
+  while ((nread < nrequired) && 
+	 ((status = esl_sqio_ReadInfo(cfg->dbfp, sq)) == eslOK)) {
+    if(sq->L > cfg->negchunkL) nread++;
     esl_sq_Reuse(sq);
   }
-  if (status != eslEOF) esl_fatal("Something went wrong with reading the seq db");
+  if (nread < nrequired) { /* there weren't enough seqs of sufficient length */
+    if(status == eslEOF) esl_fatal("Only read %d seqs of length %d in seq db, %d required", nread, cfg->negchunkL, nrequired);
+    else                 esl_fatal("Something went wrong with reading the seq db");
+  }
+  esl_sqfile_Position(cfg->dbfp, 0); /* rewind */
 
   /* Open SSI index */
   if (esl_sqfile_OpenSSI(cfg->dbfp, NULL) != eslOK) esl_fatal("Failed to open SSI index file");
-  if (cfg->dbfp->data.ascii.ssi->nprimary != cfg->db_nseq)     esl_fatal("oops, nprimary != nseq"); 
+  /* set number of seqs in db; trust the index */
+  cfg->db_nseq = cfg->dbfp->data.ascii.ssi->nprimary;
 
   esl_sq_Destroy(sq);
   return eslOK;
@@ -386,7 +398,6 @@ remove_fragments(struct cfg_s *cfg, ESL_MSA *msa, ESL_MSA **ret_filteredmsa, int
   int      i;
   int      nfrags;
   int      status;
-  int      medlen;
 
   /* min length is cfg->fragfrac * average length */
   for (i = 0; i < msa->nseq; i++) 
@@ -715,15 +726,16 @@ static int
 set_random_segment(ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq, int L)
 {
   ESL_SQ  *sq           = esl_sq_CreateDigital(cfg->abc);
+  ESL_SQ  *dbsq         = esl_sq_CreateDigital(cfg->abc);
   int      minDPL       = esl_opt_GetInteger(go, "--minDPL");
   int      db_dependent = (esl_opt_GetBoolean(go, "--iid") == TRUE ? FALSE : TRUE);
   char    *pkey         = NULL;
-  int      start, end;
+  int64_t  start, end;
   int64_t  Lseq;
   int      status;
 
   if (L==0) return eslOK;
-  if (L > cfg->db_maxL) esl_fatal("can't fetch a segment of length %d; database max is %d\n", L, cfg->db_maxL);
+  if (L > cfg->negchunkL) esl_fatal("asking to fetch a segment longer than chunksize %d\n", L, cfg->negchunkL);
 
   /* fetch a random subseq from the source database */
   esl_sq_GrowTo(sq, L);
@@ -731,19 +743,53 @@ set_random_segment(ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq
     {
       do {                                                     
 	if (pkey != NULL) free(pkey);
-	if (esl_ssi_FindNumber(cfg->dbfp->data.ascii.ssi, esl_rnd_Roll(cfg->r, cfg->db_nseq), NULL, NULL, NULL, &Lseq, &pkey) != eslOK)
+	esl_sq_Reuse(dbsq);
+
+	/* NOTE: we should be able to use esl_ssi_FindNumber() to pick
+	 * a random sequence and read it's length from the SSI
+	 * index. However, I had trouble getting that to work on the
+	 * Rfamseq database and I couldn't track down the
+	 * problem. Maybe the SSI doesn't properly store the sequence
+	 * lengths for such a large file? I resorted to positioning
+	 * the file to a random sequence, and reading that sequence to
+	 * get its length. This is much slower, but it works.
+	 * 
+	 * Code block that *should* work: 
+	 * if (esl_ssi_FindNumber(cfg->dbfp->data.ascii.ssi, esl_rnd_Roll(cfg->r, cfg->db_nseq), NULL, NULL, NULL, &Lseq, &pkey) != eslOK)
+	 * esl_fatal("failed to look up a random seq");
+	 */
+	/* pick a random sequence and get its pkey */
+	if (esl_ssi_FindNumber(cfg->dbfp->data.ascii.ssi, esl_rnd_Roll(cfg->r, cfg->db_nseq), NULL, NULL, NULL, NULL, &pkey) != eslOK)
 	  esl_fatal("failed to look up a random seq");
+	/* position the sequence file */
+	if(esl_sqfile_PositionByKey(cfg->dbfp, pkey) != eslOK) 
+	  esl_fatal("failed to reposition to a random seq");
+	/* read the random sequence to get its length */
+	if(esl_sqio_Read(cfg->dbfp, dbsq) != eslOK) 
+	  esl_fatal("failed to read random seq");
+	Lseq = dbsq->L;
       } while (Lseq < L);
 
       start = 1 + esl_rnd_Roll(cfg->r, Lseq-L);              
       end   = start + L - 1;
-      if (esl_sqio_FetchSubseq(cfg->dbfp, pkey, start, end, sq) != eslOK) esl_fatal("failed to fetch subseq, status: %d", status);
+
+      /* Another issue with SSI: the following line should suffice to
+       * fetch the sequence, but it gave me problems, probably for the
+       * same reasons alluded to above (which I can't figure out), so
+       * instead of fetching it efficiently using SSI, we copy it from
+       * <dbsq> which we only read b/c we need to be able to copy it
+       * here. The following line *should* work (and remove the need for 
+       * reading the full sequence into memory): 
+      * if ((status = esl_sqio_FetchSubseq(cfg->dbfp, pkey, start, end, sq)) != eslOK) esl_fatal("failed to fetch subseq, status: %d", status);
+      */
+      sq->dsq[0] = sq->dsq[L+1] = eslDSQ_SENTINEL;
+      memcpy(sq->dsq+1, dbsq->dsq+start, sizeof(ESL_DSQ) * L);
       esl_sq_ConvertDegen2X(sq);
     }
 
   /* log sequence source info: <name> <start> <end> */
   if (logfp != NULL && db_dependent) 
-    fprintf(logfp, "%-35s %10d %10d\n", pkey, start, end); 
+    fprintf(logfp, "%-35s %10" PRId64 " %10" PRId64 "\n", pkey, start, end); 
 
   /* Now apply the appropriate randomization algorithm */
   if      (esl_opt_GetBoolean(go, "--mono"))    status = esl_rsq_XShuffle  (cfg->r, sq->dsq, L, sq->dsq);
@@ -759,6 +805,7 @@ set_random_segment(ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq
 
   memcpy(dsq, sq->dsq+1, sizeof(ESL_DSQ) * L);
   esl_sq_Destroy(sq);
+  esl_sq_Destroy(dbsq);
   free(pkey);
   return eslOK;
 }

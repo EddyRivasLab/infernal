@@ -15,7 +15,7 @@
 # SVN $Id$
 #
 
-$usage = "Usages: x-nhmmer [options]\n\t<execdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
+$usage = "Usages: x-nhmmer [options]\n\t<execdir>\n\t<scriptdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
 
 if(scalar(@ARGV) != 10) { printf("$usage\n"); exit(1); }
 
@@ -76,6 +76,7 @@ while (<TABLE>)
 }
 close TABLE;
 close OUTFILE;
+close TMPOUTFILE;
 
 # Final step use 'rmark-idpositives.pl' to identify positives in the temporary output file to
 # create the permanent output file

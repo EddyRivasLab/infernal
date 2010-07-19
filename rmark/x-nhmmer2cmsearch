@@ -1,0 +1,167 @@
+#! /usr/bin/perl 
+
+# Do a piece of a rmark benchmark, for nhmmer-filtered cmsearch.
+#
+# This script is normally called by rmark-master.pl; its command line
+# syntax is tied to rmark-master.pl.
+# x-nhmmer2cmsearch doesn't use the <msafile>, but it's passed in so that
+# rmark-master.pl can use a consistent command line structure for
+# all search programs (BLAST uses it, for example).
+#
+# Usage:      x-nhmmer-cmsearch <execdir>        <scriptdir> <modeldir> <resultdir> <optsfile> <tblfile> <msafile>  <posfile>  <fafile> <outfile>
+# Example:  ./x-nhmmer-cmsearch ../hmmer/src/    ../rmark/   models     testdir     h3-df.opts test.tbl  rmark3.msa rmark3.pos test.fa  test.out
+#
+# Command-line options:
+# -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the $optsfile
+#
+# SRE, Tue Apr 20 10:32:49 2010 [Janelia]
+# SVN $Id$
+#
+use Getopt::Std;
+getopts('M:');
+$mpi_nprocs = 8;
+if (defined $opt_M) { 
+    $mpi_nprocs = $opt_M; 
+    if($mpi_nprocs < 2 || $mpi_nprocs > 8) { die "ERROR, with -M <n>, <n> must be between 2 and 8"; }
+}
+
+$usage = "Usage: x-nhmmer2cmsearch [options]\n\t<execdir>\n\t<scriptdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
+$options_usage  = "Options:\n\t";
+$options_usage .= " -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the <optsfile>\n\n";
+
+if(scalar(@ARGV) != 10) { printf("$usage\n$options_usage"); exit(1); }
+
+($execdir, $scriptdir, $modeldir, $resultdir, $optsfile, $tblfile, $msafile, $posfile, $fafile, $outfile) = @ARGV;
+$tmpoutfile = $outfile . ".tmp";
+
+$idscript   = "$scriptdir/rmark-idpositives.pl";
+$nhmmer     = "$execdir/nhmmer";
+$cmsearch   = "$execdir/cmsearch";
+$sfetch     = "$execdir/esl-sfetch";
+
+if (! -d $execdir)                                      { die "didn't find executable directory $execdir"; }
+if (! -d $scriptdir)                                    { die "didn't find script directory $scriptdir"; }
+if (! -x $cmsearch)                                     { die "didn't find executable $cmsearch"; }
+if (! -x $nhmmer)                                       { die "didn't find executable $nhmmer"; }
+if (! -x $sfetch)                                       { die "didn't find executable $sfetch"; }
+if (! -e $resultdir)                                    { die "$resultdir doesn't exist"; }
+if (! -e $posfile)                                      { die "$posfile doesn't exist"; }
+if (! -e $idscript)                                     { die "positive identification script $idscript doesn't exist"; }
+if (! -e $optsfile)                                     { die "options file $optsfile doesn't exist"; }
+
+# read options file, determine if we're using mpi or not
+# first options line is for nhmmer, second is for cmsearch
+
+$do_mpi = 0;
+open(OPTS, $optsfile) || die "couldn't open options file $optsfile"; 
+$nhmmer_searchopts = <OPTS>;
+$cmsearch_searchopts = <OPTS>;
+if($cmsearch_searchopts =~ m/\-\-mpi/) { $do_mpi = 1; }
+close(OPTS);
+chomp $nhmmer_searchopts;
+chomp $cmsearch_searchopts;
+
+# check all models exist before we fire off searches
+open(TABLE, "$tblfile")   || die "failed to open $tblfile";
+while (<TABLE>) {
+    ($msaname) = split;
+    if(! -e "$modeldir/$msaname.cm") { die "didn't find model file $modeldir/$msaname.cm"; }
+}
+close(TABLE);
+
+open(OUTFILE,">$outfile") || die "failed to open $outfile";
+open(TABLE, "$tblfile")   || die "failed to open $tblfile";
+open(TMPOUTFILE,">$tmpoutfile") || die "failed to open $tmpoutfile";
+while (<TABLE>)
+{
+    ($msaname) = split;
+    open(SFETCHIN,">$msaname.sfetch") || die "failed to open $msaname.sfetch";
+
+    # run nhmmer first
+    $status = system("$nhmmer $nhmmer_searchopts --tblout $resultdir/$msaname.tmp $modeldir/$msaname.hmm $fafile > $resultdir/$msaname.search1");
+    if ($status != 0) { die "FAILED: $nhmmer $nhmmer_searchopts --tblout $resultdir/$msaname.tmp $resultdir/$msaname.hmm $fafile > $resultdir/$msaname.search1"; }
+
+    # create a filtered database of only the hits reported by nhmmer using esl-sfetch to fetch sequences
+    open(OUTPUT, "$resultdir/$msaname.tmp") || die "FAILED: to open $resultdir/$msaname.tmp tabular output file"; 
+    while (<OUTPUT>)
+    {
+	if (/^\#/) { next; }
+	@fields   = split(' ', $_, 12);
+	$target      = $fields[0];
+	$target_from = $fields[6];
+	$target_to   = $fields[7];
+	$pval        = $fields[8];
+	$bitscore    = $fields[9];
+	printf SFETCHIN ("%s/%d-%d %d %d %s\n", $target, $target_from, $target_to, $target_from, $target_to, $target);
+    }
+    close(SFETCHIN);
+    # extract sequences into filtered database
+    $filtered_db = $msaname . ".sub.fa";
+    if(! -e "$fafile.ssi") { 
+	$status = system("$sfetch --index $fafile");
+	if ($status != 0) { die "FAILED: $sfetch --index $fafile"; }
+    }
+    $status = system("$sfetch -Cf $fafile $msaname.sfetch > $filtered_db");
+    if ($status != 0) { die "FAILED: $sfetch -Cf $fafile $msaname.sfetch > $filtered_db"; }
+
+    # run cmsearch on filtered_db
+    if($do_mpi) { 
+	$status = system("mpirun -np $mpi_nprocs $cmsearch $cmsearch_searchopts --tabfile $resultdir/$msaname.tmp $modeldir/$msaname.cm $filtered_db > $resultdir/$msaname.search");
+	if ($status != 0) { die "FAILED: mpirun -np $mpi_nprocs $cmsearch $cmsearch_searchopts --tabfile $resultdir/$msaname.tmp $resultdir/$msaname.cm $filtered_db > $resultdir/$msaname.search"; }
+    }
+    else { 
+	$status = system("$cmsearch --toponly $cmsearch_searchopts --tabfile $resultdir/$msaname.tmp $modeldir/$msaname.cm $filtered_db > $resultdir/$msaname.search");
+	if ($status != 0) { die "FAILED: $cmsearch $cmsearch_searchopts --tabfile $resultdir/$msaname.tmp $resultdir/$msaname.hmm $filtered_db > $resultdir/$msaname.search"; }
+    }
+
+    # parse output, being careful to add positions correctly to get original coordinates in $fafile
+    open(OUTPUT, "$resultdir/$msaname.tmp") || die "FAILED: to open $resultdir/$msaname.tmp tabular output file"; 
+    while (<OUTPUT>)
+    {
+	if (/^\#/) { next; }
+	@fields   = split(' ', $_, 9);
+	$target      = $fields[1];
+	$target_from = $fields[2];
+	$target_to   = $fields[3];
+	$bitscore    = $fields[6];
+	$pval        = $fields[7];
+
+	# $target includes number of positions to add/subtract from $target_from/$target_to to get 
+	# coordinates in original $fafile. 
+	# Example: 
+
+	$offset_range = $target;
+	$target       =~ s/\/.+$//; # remove everything after first "/" 
+	$offset_range =~ s/^.+\///; # remove everything up to final "/"
+	($offset1, $offset2) = split("-", $offset_range);
+	if($offset1 < $offset2) { # original hit from nhmmer filter was on forward strand 
+	    $target_from += ($offset1-1);
+	    $target_to   += ($offset1-1);
+	}
+	else { # original hit from nhmmer was on reverse strand
+	    $target_from += ($offset2-1);
+	    $target_to   += ($offset2-1);
+	    # now swap 
+	    $temp        = $target_from;
+	    $target_from = $target_to;
+	    $target_to   = $temp;
+	}
+
+
+	printf TMPOUTFILE "%10g %10.1f %10d %10d %20s %35s\n", $pval, $bitscore, $target_from, $target_to, $target, $msaname;
+    }
+
+    unlink "$resultdir/$msaname.tmp";
+}
+close TABLE;
+close OUTFILE;
+close TMPOUTFILE;
+
+# Final step use 'rmark-idpositives.pl' to identify positives in the temporary output file to
+# create the permanent output file
+$status = system("perl $idscript $posfile $tmpoutfile > $outfile");
+if ($status != 0) { die "FAILED: $idscript $posfile $tmpoutfile > $outfile"; }
+unlink $tmpoutfile;
+    
+    
+

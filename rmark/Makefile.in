@@ -34,9 +34,9 @@ all: ${PROGS}
 #	cd ${SRCDIR}/${IMPLDIR}; ${MAKE} impl_lib
 #	cd ${SRCDIR};            ${MAKE} hmmer_lib
 #	cd ${SRCDIR};            ${MAKE} hmmer_progs
-	${MAKE} profmark_progs
+	${MAKE} rmark_progs
 
-profmark_progs: ${PROGS} 
+rmark_progs: ${PROGS} 
 
 .c.o: 
 	${CC} ${ESLINC} ${SRCINC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} -o $@ -c $<		

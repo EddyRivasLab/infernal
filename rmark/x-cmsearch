@@ -25,7 +25,7 @@ if (defined $opt_M) {
     if($mpi_nprocs < 2 || $mpi_nprocs > 8) { die "ERROR, with -M <n>, <n> must be between 2 and 8"; }
 }
 
-$usage = "Usages: x-cmsearch [options]\n\t<execdir>\n\t<scriptdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
+$usage = "Usage: x-cmsearch [options]\n\t<execdir>\n\t<scriptdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
 $options_usage  = "Options:\n\t";
 $options_usage .= " -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the <optsfile>\n\n";
 
@@ -94,6 +94,7 @@ while (<TABLE>)
 }
 close TABLE;
 close OUTFILE;
+close TMPOUTFILE;
 
 # Final step use 'rmark-idpositives.pl' to identify positives in the temporary output file to
 # create the permanent output file
