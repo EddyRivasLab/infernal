@@ -21,7 +21,8 @@ MYINCDIRS      = -I${ESLDIR} \
                  -I.. \
                  -I${HMMDIR}
 
-PROGS = sse_cmsearch
+PROGS = sse_cmsearch\
+        sse_cmsearch_mod
 
 OBJS  = cm_optimized.o\
         sse_cm_dpsearch.o\
