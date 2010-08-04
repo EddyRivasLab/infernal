@@ -487,3 +487,103 @@ The bug fix has virtually no impact on RMARK2 benchmark performance,
 but it does speed up that benchmark by about 20%.
 
 This bug was fixed as of svn revision 3320.
+//
+ID              i19
+TITLE		Guide tree balancing initialization
+STATUS          CLOSED
+XREF            See ~/nawrockie/notebook/10_0804_inf_cmmodelmaker_steffan
+REPORTED_BY     Stefan Janssen, Robert Giegerich's group
+CLOSED_DATE     EPN, Wed Aug  4 09:24:08 2010
+DESCRIPTION    
+
+The choice of split points in bifurcations in a CM guide tree is
+handled by cm_modelmaker.c:HandModelmaker(). For all possible split
+points k between consensus positions (i,j), the k is chosen that
+minimizes the the absolute difference between (k-i) and (j-k+1) (note
+that the left subtree will model positions i..k-1 and the right
+subtree will model positions k..j). At least that was the intended
+behavior in cmbuild, but several bugs (this one and the two described
+in i20) prevented this from being the actual behavior.
+
+Between SVN revisions 2568 and 2569 in the Infernal 1.0 release branch
+(which was merged to the trunk in svn revision 2588) this balancing
+code was modified so that the difference in _consensus_ subtree lengths
+was minimized. Prior to that, the difference in _alignment_ subtree
+lengths was being minimized (that is the lengths were measured in
+alignment coordinates, and thus were influenced by inserts in the
+MSA). EPN made those revisions and introduced a serious bug in the
+course of those revisions; this is the i19 bug, which is described
+next. Looking at the code, or at least at an 'svn diff' output, is
+probably necessary for following the discussion below.
+
+The initialization of the best split point sets it to the first
+possible split point, which is ct[i]+1. Then the 'bestdiff' variable
+is set as a maximal value so that all subsequent possible split points
+will necessarily have lower 'diff' values (absolute difference in
+consensus length of left and right subtrees resulting from choosing
+the current split point k). Thus, 'bestdiff' is meant to always be
+changed from its initial value. (The first split point tested is
+ct[i]+1, which should always reset bestdiff to the diff resulting from
+choosing k=ct[i]+1). The i19 bug is that the initialization of
+bestdiff was to 'clen' which I thought was greater than any possible
+'diff', but in fact, is simply the number of consensus positions
+modeled by the currently growing guide tree. This is completely
+wrong because it is sometimes very small and was not always
+being overwritten by an actual diff from some valid cut point k.
+In such cases, k=ct[i]+1 was being chosen as the optimal split point,
+even if it was not. 
+
+The fix, suggested by Stefan, is to initialize bestdiff as msa->alen+1
+because the difference in subtree lengths can never exceed this:
+msa->alen >= clen, and clen is the maximal value of a subtree length
+(actually it's probably clen-1).
+
+This bug was fixed as of revision 3337.
+
+//
+ID              i20
+TITLE		Guide tree balancing off-by-ones
+STATUS          CLOSED
+XREF            See ~/nawrockie/notebook/10_0804_inf_cmmodelmaker_steffan
+REPORTED_BY     Stefan Janssen, Robert Giegerich's group
+CLOSED_DATE     EPN, Wed Aug  4 09:24:08 2010
+DESCRIPTION    
+
+This bug is closely related to i19 in that it occurs in the same
+function (cm_modelmaker.c:HandModelMaker()) and was reported
+simultaneously with bug i19 by the same user (Stefan Janssen).  Stefan
+also suggested the correct fix for the bug.  Read the DESCRIPTION of
+i19 for introduction.
+
+The i20 bug also occurs in the code that chooses the optimal split
+point k for a bifurcation. i20 is in fact two bugs, both of which are
+off-by-one errors. These bugs existed at least as early as infernal
+0.55 and have persisted through the 1.0.2 release. 
+
+The first bug involves the calculation of the absolute difference
+between the left and right subtree lengths. This difference should be:
+abs(R-L) where L is the consensus length of the left subtree and R is
+the consensus length of the right subtree. The left subtree models
+i..k-1, so L = k-i. The right subtree models k..j, so R =
+j-k+1. Therefore the absolute difference is abs((j-k+1)-(k-i)).  This
+could be rewritten as: abs(j+i-2k+1). However, the bug in the code was
+that the difference was being calculated as abs(j+i-2k), omitting the
++1 within the abs().
+
+The second bug involves the termination condition of the for loop that
+loops through possible split points k. The incorrect loop is:
+
+	  for (k = ct[i] + 1; k < ct[j]; k = ct[k] + 1) 
+
+The correct loop with the correct termination is:
+
+	  for (k = ct[i] + 1; k <= ct[j]; k = ct[k] + 1) 
+
+As Stefan reported, "otherwise you miss possible split points if two
+domains are next to each other without any unpaired bases" in
+between. Indeed, ct[j] is a valid split point k since the left
+subtree/right subtree definitions are i..k-1/k..j, if k==ct[j] (k and
+j are paired) and k-1 is the right half of a pair.
+
+This bug was fixed as of revision 3337.
+

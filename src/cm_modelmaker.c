@@ -87,7 +87,7 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **r
   CM_t           *cm;		/* new covariance model                       */
   Parsetree_t    *gtr;		/* guide tree for alignment                   */
   ESL_STACK      *pda;		/* pushdown stack used in building gtr        */
-  int            *matassign;	/* 0..alen-1 array; 0=insert col, 1=match col */
+  int            *matassign;	/* 1..alen   array; 0=insert col, 1=match col */
   int            *ct;		/* 0..alen-1 base pair partners array         */
   int             apos;		/* counter over columns of alignment          */
   int             idx;		/* counter over sequences in the alignment    */
@@ -190,10 +190,6 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **r
    * push several numbers onto the stack: what type of node, what
    * subseq it's responsible for (emitl...emitr), and what node
    * index it attaches to.
-   * 
-   * Note that we have to deal with the fact that ct is off-by-one
-   * in both indices and values: e.g. the base pairing partner 
-   * j of residue i is ct[i-1]-1. 
    */
   if((status = esl_stack_IPush(pda, -1)) != eslOK) goto ERROR;		/* what node it's attached to */
   if((status = esl_stack_IPush(pda, 1))  != eslOK) goto ERROR;		/* emitl */
@@ -347,8 +343,8 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **r
 	  i_cpos = a2c_map[i];
 	  j_cpos = a2c_map[j];
 	  bestk = ct[i]+1;
-	  bestdiff = clen;
-	  for (k = ct[i] + 1; k < ct[j]; k = ct[k] + 1) 
+	  bestdiff = msa->alen+1; /* effectively infinity, difference in left/right subtree lengths can never exceed this */
+	  for (k = ct[i] + 1; k <= ct[j]; k = ct[k] + 1) 
 	    {
 	      /* set kp as the closest consensus position to k to the
 	       * right (right side was chosen (over left) arbitrarily,
@@ -359,10 +355,13 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **r
 	       * regardless of length and placement of inserts. 
 	       */
 	      kp = k; 
-	      while(a2c_map[kp] == 0) kp++;
+	      while(a2c_map[kp] == 0) kp++; /* increment kp until it's a consensus position */
 	      k_cpos = a2c_map[kp];
-	      diff = abs(i_cpos+j_cpos-2*k_cpos); /* = len2-len1-1, where len2 = j_cpos-k_cpos+1, len1= k_cpos-i_cpos */
-	      /* diff is difference in consensus positions between i..kp and kp..j */
+	      diff = abs((k_cpos-i_cpos) - (j_cpos-k_cpos+1)); 
+	      /* diff = abs(cons length modeled by left child minus cons length modeled by right child),
+	       * Note that left child is i_cpos..k_cpos-1, right child is k_cpos..j_cpos 
+	       */
+
 	      if (diff < bestdiff) {
 		bestdiff = diff; 
 		bestk    = k;
@@ -396,8 +395,8 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **r
   cm->clen = clen;
 
   free(matassign);
-free(c2a_map);
-free(a2c_map);
+  free(c2a_map);
+  free(a2c_map);
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
   return eslOK;
@@ -1320,10 +1319,13 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int cl
 	  v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BIF_nd);
 
 	  bestk    = ct[i]+1;
-	  bestdiff = clen;
-	  for (k = ct[i] + 1; k < ct[j]; k = ct[k] + 1) 
+	  bestdiff = clen+1; /* effectively infinity, difference in left/right subtree lengths can never exceed this */
+	  for (k = ct[i] + 1; k <= ct[j]; k = ct[k] + 1) 
 	    {
-	      diff = abs(i+j-2*k); /* = len2-len1-1, where len2 = j-k+1, len1= k-i */
+	      diff = abs((k-i) - (j-k+1)); 
+	      /* diff = abs(cons length modeled by left child minus cons length modeled by right child),
+	       * Note that left child is i..k-1, right child is k..j 
+	       */
 	      if (diff < bestdiff) {
 		bestdiff = diff; 
 		bestk    = k;
