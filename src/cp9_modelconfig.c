@@ -706,8 +706,8 @@ CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos)
 int
 Prob2Score(float p, float null)
 {
-  if(esl_FCompare(p, 0., eslSMALLX1) == eslOK) return -INFTY;
-  else                                         return (int) floor(0.5 + INTSCALE * sreLOG2(p/null));
+  if(p == 0.0) return -INFTY;
+  else         return (int) floor(0.5 + INTSCALE * sreLOG2(p/null));
 }
 
 /* Function: Score2Prob()

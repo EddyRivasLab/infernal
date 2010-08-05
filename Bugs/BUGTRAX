@@ -587,3 +587,28 @@ j are paired) and k-1 is the right half of a pair.
 
 This bug was fixed as of revision 3337.
 
+//
+ID              i21
+TITLE		Floor on conversion of probability to integer score
+STATUS          CLOSED
+XREF            See ~/nawrockie/notebook/10_0802_inf_cmalign_paul_bug
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Thu Aug  5 09:08:34 2010
+DESCRIPTION    
+
+The cp9_modelconfig.c Prob2Score() function, which converts a
+probabilty to a scaled integer log_2 odds score was returning -INFTY
+if the passed in probability <p> was less than eslSMALLX1 (5e-9).
+This minimum <p> of 5e-9 for returning a valid score was too high
+because this function is used to calculate the summed probability mass
+(as a scaled integer log odds score) that can be excluded during CP9
+HMM banding for cmalign, and that probability should be able to be as
+low as 1e-15 or lower. The fix is that the function now only returns
+-INFTY if a comparison of p with 0.0 returns TRUE (if (p == 0.) return
+-INFTY). This is how HMMER-2.3.2 implemented the same function.
+Empirical testing shows this works down to about 1e-44: any <p> below
+1e-44 causes -INFTY to be returned.
+
+This bug was fixed as of revision 3338.
+
+
