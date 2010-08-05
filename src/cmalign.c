@@ -119,7 +119,7 @@ static ESL_OPTIONS options[] = {
   /* developer options related to output files and debugging */
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 103 },
   { "--bigmem",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "turn off memory saving mode, keep all seqs/parsetrees in memory", 103 },
-  { "--banddump",eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of band info print statements to <n>", 103 },
+  { "--banddump",eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,"--nonbanded","set verbosity of band info print statements to <n>", 103 },
   { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of debugging print statements to <n>", 103 },
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb", 103 },  
   /* Developer options related to experiment local begin/end modes */
