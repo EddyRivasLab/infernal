@@ -116,11 +116,13 @@ main(int argc, char **argv)
   search_results_t *windows = NULL; /* Expanded and merged hit candidate windows after first stage */
   ESL_ALLOC(s2_coord, sizeof(HitCoord_epi16));
 
-  ESL_STOPWATCH  *w = esl_stopwatch_Create();
+  ESL_STOPWATCH  *w  = esl_stopwatch_Create();
+  ESL_STOPWATCH  *w2 = esl_stopwatch_Create(); /* this will time the full search (all stages for all seqs) */
+
+  esl_stopwatch_Start(w2);
 
   o_glbf = esl_opt_GetInteger(go, "--glbf");
   o_glbf_all = esl_opt_GetBoolean(go, "--glbf_all");
-  printf("o_glbf_all: %d\n", o_glbf_all);
   if (esl_opt_GetBoolean(go, "--toponly")) do_reverse = 0;
   else                                     do_reverse = 1;
 
@@ -207,14 +209,14 @@ main(int argc, char **argv)
   /* Set filtering cutoff parameters */
   if (esl_opt_IsOn(go, "--s1-T")) {
     f_cutoff = esl_opt_GetReal(go, "--s1-T");
-    fprintf(stderr,"Stage 1: score cutoff %.2f\n",f_cutoff);
+    fprintf(stdout, "Stage 1: score cutoff %.2f\n",f_cutoff);
     /* Need to scale and offset, but not change sign -> switch sign ahead of time */
     s1_fcut = f_cutoff;
     s1_cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
     if (s1_cutoff == BYTEMAX) {
       s1_cutoff--;
       f_cutoff = (s1_cutoff - (float) ccm->base_b)/ccm->scale_b;
-      fprintf(stderr,"Stage 1: Warning - score cutoff out of range, setting to max of %.2f\n",f_cutoff);
+      fprintf(stdout,"Stage 1: Warning - score cutoff out of range, setting to max of %.2f\n",f_cutoff);
     }
   }
   else {
@@ -236,19 +238,19 @@ main(int argc, char **argv)
     esl_histogram_SetExpectedTail(hist, ccm_mu, 0.2, &esl_exp_generic_cdf, &param);
     esl_stopwatch_Stop(w);
     if (esl_opt_IsOn(go, "--evd1")) esl_histogram_PlotSurvival(stdout, hist);
-    fprintf(stderr,"Stage 1: EVD parameters mu = %7.3f\t lambda = %7.3f; ",ccm_mu,ccm_lambda);
-    esl_stopwatch_Display(stderr, w, " CPU time: ");
+    fprintf(stdout,"Stage 1: EVD parameters mu = %7.3f\t lambda = %7.3f; ",ccm_mu,ccm_lambda);
+    esl_stopwatch_Display(stdout, w, " time: ");
 
     float ccm_mu_extrap = ccm_mu + (log(0.2) / ccm_lambda);
     if (esl_opt_IsOn(go, "--s1-E")) {
       e_cutoff = esl_opt_GetReal(go,"--s1-E");
       f_cutoff = esl_exp_invcdf(1.-e_cutoff,ccm_mu_extrap,ccm_lambda);
-      fprintf(stderr,"Stage 1: E-value cutoff %.2e per kb -> score cutoff %.2f\n",e_cutoff,f_cutoff);
+      fprintf(stdout,"Stage 1: E-value cutoff %.2e per kb -> score cutoff %.2f\n",e_cutoff,f_cutoff);
     }
     else /*if (esl_opt_IsOn(go, "--s1-F"))*/ {
       e_cutoff = esl_opt_GetReal(go,"--s1-F")*500/cm->smx->W;
       f_cutoff = esl_exp_invcdf(1.-e_cutoff,ccm_mu_extrap,ccm_lambda);
-      fprintf(stderr,"Stage 1: Filter pass rate %f -> E-value cutoff %.2e per kb -> score cutoff %.2f\n",esl_opt_GetReal(go,"--s1-F"),e_cutoff,f_cutoff);
+      fprintf(stdout,"Stage 1: Filter pass rate %f -> E-value cutoff %.2e per kb -> score cutoff %.2f\n",esl_opt_GetReal(go,"--s1-F"),e_cutoff,f_cutoff);
     }
 
     s1_fcut = f_cutoff;
@@ -258,9 +260,9 @@ main(int argc, char **argv)
       s1_cutoff = BYTEMAX;
       s1_cutoff--;
       f_cutoff = ((float) (s1_cutoff - ccm->base_b))/ccm->scale_b;
-      fprintf(stderr,"Stage 1: Warning - score cutoff out of range, setting to max of %.2f\n",f_cutoff);
+      fprintf(stdout,"Stage 1: Warning - score cutoff out of range, setting to max of %.2f\n",f_cutoff);
       e_cutoff = esl_exp_cdf(f_cutoff,ccm_mu,ccm_lambda);
-      fprintf(stderr,"Stage 1: Warning - equivalent max p-value of %.2e\n",e_cutoff);
+      fprintf(stdout,"Stage 1: Warning - equivalent max p-value of %.2e\n",e_cutoff);
     }
     free(x);
     esl_randomness_Destroy(r);
@@ -270,12 +272,12 @@ main(int argc, char **argv)
 
   if (esl_opt_IsOn(go, "--s2-T")) {
     f_cutoff = esl_opt_GetReal(go, "--s2-T");
-    fprintf(stderr,"Stage 2: score cutoff %.2f\n",f_cutoff);
+    fprintf(stdout,"Stage 2: score cutoff %.2f\n",f_cutoff);
     s2_cutoff = wordify(ocm->scale_w, f_cutoff);
     if (s2_cutoff == WORDMAX) {
       s2_cutoff--;
       f_cutoff = s2_cutoff/ocm->scale_w;
-      fprintf(stderr,"Stage 2: Warning - score cutoff out of range, setting to max of %.2f\n",f_cutoff);
+      fprintf(stdout,"Stage 2: Warning - score cutoff out of range, setting to max of %.2f\n",f_cutoff);
     }
   }
   else {
@@ -283,29 +285,29 @@ main(int argc, char **argv)
     // FIXME FIXME FIXME  1.-p_cutoff rounds to 1 in the range of 1e-18 -> f_cutoff = inf, even though the
     // FIXME FIXME FIXME  effective possible range goes as far as about 1e-24 (for RF00037 at least)
     f_cutoff = esl_exp_invcdf(1.-s2_pcut,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
-    fprintf(stderr,"Stage 2: P-value cutoff %.2e\n",e_cutoff);
+    fprintf(stdout,"Stage 2: P-value cutoff %.2e\n",e_cutoff);
     s2_cutoff = wordify(ocm->scale_w, f_cutoff);
-    /* fprintf(stderr,"s2 %e %f %e %d\n",e_cutoff,f_cutoff,s2_pcut,s2_cutoff); */
+    /* fprintf(stdout,"s2 %e %f %e %d\n",e_cutoff,f_cutoff,s2_pcut,s2_cutoff); */
     if (s2_cutoff == WORDMAX) {
       s2_cutoff--;
       f_cutoff = s2_cutoff/ocm->scale_w;
       s2_pcut = esl_exp_surv(f_cutoff,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
-      /* fprintf(stderr,"s2 %e %f %e %d\n",e_cutoff,f_cutoff,s2_pcut,s2_cutoff); */
-      fprintf(stderr,"Stage 2: Warning - score cutoff out of range, setting to max of %.2e\n",s2_pcut);
+      /* fprintf(stdout,"s2 %e %f %e %d\n",e_cutoff,f_cutoff,s2_pcut,s2_cutoff); */
+      fprintf(stdout,"Stage 2: Warning - score cutoff out of range, setting to max of %.2e\n",s2_pcut);
     }
   }
   /* Need to scale */
 
   if (esl_opt_IsOn(go, "--s3-T")) {
     f_cutoff = esl_opt_GetReal(go, "--s3-T");
-    fprintf(stderr,"Stage 3: score cutoff %.2f\n",f_cutoff);
+    fprintf(stdout,"Stage 3: score cutoff %.2f\n",f_cutoff);
   }
   else {
     e_cutoff = esl_opt_GetReal(go,"--s3-E");
     s3_ecut = e_cutoff;
     s3_pcut = e_cutoff/cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->cur_eff_dbsize;
     f_cutoff = esl_exp_invcdf(1.-s3_pcut,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
-    fprintf(stderr,"Stage 3: E-value cutoff %.2e\n",e_cutoff);
+    fprintf(stdout,"Stage 3: E-value cutoff %.2e\n",e_cutoff);
   }
   s3_cutoff = f_cutoff;
 
@@ -322,14 +324,23 @@ PIPELINE:
     esl_stopwatch_Start(w);
     if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, s1_cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
     esl_stopwatch_Stop(w);
-    fprintf(stderr,"Stage 1: %-24s %-22s",seq->name,is_reversed?"(reverse complement)":"");
-    esl_stopwatch_Display(stderr, w, " CPU time: ");
+    fprintf(stdout,"Stage 1: %-24s %-22s",seq->name,is_reversed?"(reverse complement)":"");
+    esl_stopwatch_Display(stdout, w, " time: ");
 
     if (o_glbf_all) {
-      printf("writing to glbf 0\n");
       for (i = 0; i < results->num_results; i++) {
-        if (!is_reversed) fprintf(S0_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) results->data[i].score, results->data[i].start, results->data[i].stop, 0);
-        else fprintf(S0_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) results->data[i].score, (int) seq->n-results->data[i].stop+1, (int) seq->n-results->data[i].start+1, 1);
+        /* ORIGINAL GLBF OUTPUT, INCLUDES BIT SCORE ONLY
+	 * if (!is_reversed) fprintf(S0_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) results->data[i].score, results->data[i].start, results->data[i].stop, 0);
+	 * else fprintf(S0_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) results->data[i].score, (int) seq->n-results->data[i].stop+1, (int) seq->n-results->data[i].start+1, 1);
+	 */
+	/* NEW GLBF OUTPUT, INCLUDES BIT SCORE AND E-VALUE */
+	fprintf(S0_OFILE,"%-24s %.2f %s %d %d %d\n", 
+		seq->name, 
+		(float) results->data[i].score, 
+		"-",
+		(is_reversed) ? results->data[i].stop+1 : results->data[i].start,
+		(is_reversed) ? results->data[i].start+1 : results->data[i].stop,
+		(is_reversed) ? 1 : 0);
       }
     }
 
@@ -356,10 +367,19 @@ PIPELINE:
     }
     else if (o_glbf_all) {
       for (i = 0; i < windows->num_results; i++) {
-        if (!is_reversed)
-          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) windows->data[i].score, windows->data[i].start, windows->data[i].stop, 0);
-        else
-          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) windows->data[i].score, (int) seq->n-windows->data[i].stop+1, (int) seq->n-windows->data[i].start+1, 1);
+        /* ORIGINAL GLBF OUTPUT, INCLUDES BIT SCORE ONLY:
+	 *if (!is_reversed)
+	 * fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) windows->data[i].score, windows->data[i].start, windows->data[i].stop, 0);
+	 *else
+	 *fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) windows->data[i].score, (int) seq->n-windows->data[i].stop+1, (int) seq->n-windows->data[i].start+1, 1);
+	 */
+	/* NEW GLBF OUTPUT, INCLUDES BIT SCORE AND E-VALUE */
+	fprintf(S1_OFILE,"%-24s %.2f %s %d %d %d\n", seq->name, 
+		(float) windows->data[i].score, 
+		"-",
+		(is_reversed) ? (int) seq->n-windows->data[i].stop+1  : windows->data[i].start,
+		(is_reversed) ? (int) seq->n-windows->data[i].start+1 : windows->data[i].stop,
+		(is_reversed) ? 1 : 0);
       }
     }
 
@@ -383,10 +403,19 @@ PIPELINE:
 	      printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
 	  }
 	  else if (o_glbf_all) {
-	    if (!is_reversed) 
-	      fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
-	    else
-	      fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+	    /* ORIGINAL GLBF OUTPUT, INCLUDES BIT SCORE ONLY:
+	     * 
+	     * if (!is_reversed) 
+	     * fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
+	     * else
+	     * fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+	     */
+	    fprintf(S2_OFILE,"%-24s %.2f %s %d %d %d\n", seq->name, 
+		    (float) sc2/ocm->scale_w,
+		    "-",
+		    (is_reversed) ? (int) seq->n-stop+1  : start,
+		    (is_reversed) ? (int) seq->n-start+1 : stop, 
+		    (is_reversed) ? 1 : 0);
 	  }
 	  
 	  if(Sfinal >= 3) { /* Stage 3: full-precision CYK, if nec */
@@ -419,10 +448,19 @@ PIPELINE:
 		    printf("%-24s %-6e %d %d %d\n", seq->name, e3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
 		}
 		else if (o_glbf_all) {
-		  if (!is_reversed)
-		    fprintf(S3_OFILE,"%-24s %-6e %d %d %d\n", seq->name, e3, start, stop, 0);
-		  else
-		    fprintf(S3_OFILE,"%-24s %-6e %d %d %d\n", seq->name, e3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+		  /* ORIGINAL GLBF OUTPUT, INCLUDES E-VALUE ONLY:
+		   * 
+		   * if (!is_reversed)
+		   * fprintf(S3_OFILE,"%-24s %-6e %d %d %d\n", seq->name, e3, start, stop, 0);
+		   * else
+		   * fprintf(S3_OFILE,"%-24s %-6e %d %d %d\n", seq->name, e3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+		   */
+		  fprintf(S3_OFILE,"%-24s %.2f %g %d %d %d\n", seq->name, 
+			  sc3, 
+			  e3, 
+			  (is_reversed) ? (int) seq->n-stop+1  : start,
+			  (is_reversed) ? (int) seq->n-start+1 : stop, 
+			  (is_reversed) ? 1 : 0);
 		}
 	      }
 	    }
@@ -459,6 +497,10 @@ PIPELINE:
   esl_sqfile_Close(sqfp);
   esl_getopts_Destroy(go);
   esl_stopwatch_Destroy(w);
+
+  esl_stopwatch_Stop(w2);
+  esl_stopwatch_Display(stdout, w2, "Total CPU time: ");
+  esl_stopwatch_Destroy(w2);
 
   return 0;
 
