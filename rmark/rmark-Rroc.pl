@@ -11,7 +11,7 @@
 # Usage:  perl rmark-Rroc.pl <listfile> <name for pdf>
 # Example usage as pipe into R:
 # > perl rmark-Rroc.pl rmark-2.list rmark-2.pdf 1 rmark-ROC
-my $usage = "Usage: perl rmark-rocR.pl <listfile> <pdfname> <'1'/'0' for yes/no draw error-bars> <plot title>\n";
+my $usage = "Usage: perl rmark-rocR.pl <listfile> <pdfname> <1/0 yes/no draw error-bars> <plot title>\n";
 $usage .= "\nFormat of list file:\n\t<series_name> <root> <color>\n\n";
 $usage .= "\nExample:\n\tinf1p02-df r2-i1p02-df red\n\n";
 $usage .= "<root>/<root>.xy, <root>/<root>.mer and <root>/<root>.time must exist\n\n";
@@ -50,10 +50,13 @@ while(<LIST>) {
 
 	# process time file
 	open(TIME, $timefile) || die "ERROR, could not open time file $timefile";
-	$time = <TIME>;
-	chomp $time;
-	$time =~ s/^\s+//;
-	$time =~ s/\s+.+$//;
+	while($line = <TIME>) { 
+	    chomp $line;
+	    if($line =~ s/^total\s+//) { 
+		$line =~ s/\s+.+$//;
+		$time = $line;
+	    }
+	}
 	close(TIME);
 
 	# process mer file
@@ -91,6 +94,8 @@ while(<LIST>) {
 	    push(@R, "points(x$n, dy1$n, type=\"l\", lty=2, lwd=0.4, col=\"$color\")\n");
 	    push(@R, "points(x$n, dy2$n, type=\"l\", lty=2, lwd=0.4, col=\"$color\")\n");
 	}
+	push(@R, "axis(2, labels=FALSE, at=c(0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,1.0))\n");
+	push(@R, "axis(4, labels=FALSE, at=c(0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,1.0))\n");
 	close(XY);
     }
 }

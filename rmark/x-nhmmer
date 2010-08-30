@@ -36,6 +36,7 @@ if (! -e $idscript)                                     { die "positive identifi
 if (! -e $optsfile)                                     { die "options file $optsfile doesn't exist"; }
 
 # read options file
+
 open(OPTS, $optsfile) || die "couldn't open options file $optsfile"; 
 $searchopts = <OPTS>;
 close(OPTS);
@@ -83,6 +84,5 @@ close TMPOUTFILE;
 $status = system("perl $idscript $posfile $tmpoutfile > $outfile");
 if ($status != 0) { die "FAILED: $idscript $posfile $tmpoutfile > $outfile"; }
 unlink $tmpoutfile;
-    
     
 

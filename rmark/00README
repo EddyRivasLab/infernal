@@ -194,8 +194,8 @@ construction protocol, the procedure is as follows:
 ================================================================     
 
 The .tbl file is used by rmark-master.pl as a list of MSA queries in
-the benchmark. Each line has eight whitespace-delimited fields:
-  <query msa name>    <avg pid> <alen> <nseq>  <nfrags> <nseq_train> <ndom_test> <nseq_test>
+the benchmark. Each line has seven whitespace-delimited fields:
+  <query msa name>    <avg pid> <alen> <nseq>  <nfrags> <nseq_train> <nseq_test>
 For example:
   5_8S_rRNA              68%    197     61      0     60      1
   U1                     66%    200    100      0     93      5

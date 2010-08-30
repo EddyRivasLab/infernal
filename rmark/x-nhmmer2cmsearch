@@ -51,12 +51,21 @@ if (! -e $optsfile)                                     { die "options file $opt
 
 # read options file, determine if we're using mpi or not
 # first options line is for nhmmer, second is for cmsearch
-
+# all remaining lines are <fam> <fam-specific-options>
 $do_mpi = 0;
 open(OPTS, $optsfile) || die "couldn't open options file $optsfile"; 
 $nhmmer_searchopts = <OPTS>;
 $cmsearch_searchopts = <OPTS>;
 if($cmsearch_searchopts =~ m/\-\-mpi/) { $do_mpi = 1; }
+while($line = <OPTS>) { 
+    chomp $line;
+    $fam = $line;
+    $fam  =~ s/\s+.+$//;
+    $opts = $line;
+    $opts =~ s/^\S+\s+//;
+    $fam_searchopts_H{$fam} = $opts;
+}
+
 close(OPTS);
 chomp $nhmmer_searchopts;
 chomp $cmsearch_searchopts;
@@ -75,11 +84,12 @@ open(TMPOUTFILE,">$tmpoutfile") || die "failed to open $tmpoutfile";
 while (<TABLE>)
 {
     ($msaname) = split;
-    open(SFETCHIN,">$msaname.sfetch") || die "failed to open $msaname.sfetch";
+    $sfetch_in   = "$resultdir/$msaname.sfetch";
+    open(SFETCHIN,">$sfetch_in") || die "failed to open $sfetch_in";
 
     # run nhmmer first
-    $status = system("$nhmmer $nhmmer_searchopts --tblout $resultdir/$msaname.tmp $modeldir/$msaname.hmm $fafile > $resultdir/$msaname.search1");
-    if ($status != 0) { die "FAILED: $nhmmer $nhmmer_searchopts --tblout $resultdir/$msaname.tmp $resultdir/$msaname.hmm $fafile > $resultdir/$msaname.search1"; }
+    $status = system("$nhmmer $nhmmer_searchopts $fam_searchopts_H{$msaname} --tblout $resultdir/$msaname.tmp $modeldir/$msaname.hmm $fafile > $resultdir/$msaname.search1");
+    if ($status != 0) { die "FAILED: $nhmmer $nhmmer_searchopts $fam_searchopts_H{$msaname} --tblout $resultdir/$msaname.tmp $resultdir/$msaname.hmm $fafile > $resultdir/$msaname.search1"; }
 
     # create a filtered database of only the hits reported by nhmmer using esl-sfetch to fetch sequences
     open(OUTPUT, "$resultdir/$msaname.tmp") || die "FAILED: to open $resultdir/$msaname.tmp tabular output file"; 
@@ -96,13 +106,13 @@ while (<TABLE>)
     }
     close(SFETCHIN);
     # extract sequences into filtered database
-    $filtered_db = $msaname . ".sub.fa";
+    $filtered_db = "$resultdir/$msaname.sub.fa";
     if(! -e "$fafile.ssi") { 
 	$status = system("$sfetch --index $fafile");
 	if ($status != 0) { die "FAILED: $sfetch --index $fafile"; }
     }
-    $status = system("$sfetch -Cf $fafile $msaname.sfetch > $filtered_db");
-    if ($status != 0) { die "FAILED: $sfetch -Cf $fafile $msaname.sfetch > $filtered_db"; }
+    $status = system("$sfetch -Cf $fafile $sfetch_in > $filtered_db");
+    if ($status != 0) { die "FAILED: $sfetch -Cf $fafile $sfetch_in > $filtered_db"; }
 
     # run cmsearch on filtered_db
     if($do_mpi) { 
@@ -139,12 +149,8 @@ while (<TABLE>)
 	    $target_to   += ($offset1-1);
 	}
 	else { # original hit from nhmmer was on reverse strand
-	    $target_from += ($offset2-1);
-	    $target_to   += ($offset2-1);
-	    # now swap 
-	    $temp        = $target_from;
-	    $target_from = $target_to;
-	    $target_to   = $temp;
+	    $target_from = $offset1 - $target_from + 1;
+	    $target_to   = $offset1 - $target_to + 1;
 	}
 
 
@@ -152,6 +158,8 @@ while (<TABLE>)
     }
 
     unlink "$resultdir/$msaname.tmp";
+    unlink "$filtered_db";
+    unlink "$sfetch_in";
 }
 close TABLE;
 close OUTFILE;

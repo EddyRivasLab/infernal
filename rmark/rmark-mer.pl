@@ -95,7 +95,7 @@ while ($line = <>)
 	    $fam_fpH{$fam}++;
 	    $fp++;
 	}
-	elsif(($match =~ m/$fam\/\d+/) && ($strand eq "same")) { 
+	elsif(($match =~ m/^$fam\/\d+/) && ($strand eq "same")) { 
 	    # positive
 	    $fam_fnH{$fam}--;
 	    $fn--;

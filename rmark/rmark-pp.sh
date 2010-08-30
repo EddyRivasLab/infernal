@@ -2,7 +2,7 @@
 # get MER
 cat $2/*out | sort -g | perl rmark-mer.pl $1.pos > $2/$2.mer
 # get running time
-grep "^# CPU" $2/*.search | perl rmark-time.pl > $2/$2.time
+ls $2/*.search | perl rmark-time.pl > $2/$2.time
 # get ROC
 cat $2/*out | sort -g | rmark-rocplot $1 - > $2/$2.xy
 
@@ -12,7 +12,7 @@ cp $2/$2.time ./
 cp $2/$2.xy ./
 
 # summarize files to stdout
-echo $2
+echo -n $2
 grep ummary $2/$2.mer
-cat $2/$2.time
+tail -n1 $2/$2.time
 echo ' '

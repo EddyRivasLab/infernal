@@ -12,23 +12,34 @@
 # Example:  ./x-cmsearch ../hmmer/src/    ../rmark/   h3-models  testdir     h3-df.opts test.tbl  rmark3.msa rmark3.pos test.fa  test.out
 #
 # Command-line options:
+# -P     : run a positive-only benchmark, only each family's positive sequences will be searched
 # -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the $optsfile
+# -B <f> : build models as needed, instead of reading them from a file
+# -C <f> : fetch models from existing file <f>
 #
 # SRE, Tue Apr 20 10:32:49 2010 [Janelia]
 # SVN $Id$
 #
 use Getopt::Std;
-getopts('M:');
+getopts('PB:M:C:');
 $mpi_nprocs = 8;
+$do_build_models = 0;
+$build_optsfile = "";
+$do_posonly = 0;
+if (defined $opt_P) { $do_posonly = 1; }
+if (defined $opt_B) { $do_build_models = 1; $build_optsfile = $opt_B; }
+if (defined $opt_C) { $do_fetch_models = 1; $master_model = $opt_C; if($do_build_models) { die "-B and -C are incompatible"; } }
 if (defined $opt_M) { 
     $mpi_nprocs = $opt_M; 
-    if($mpi_nprocs < 2 || $mpi_nprocs > 8) { die "ERROR, with -M <n>, <n> must be between 2 and 8"; }
+    if($mpi_nprocs < 2 || $mpi_nprocs > 8) { die "ERROR, with -M <n>, <n> must be between 2 and 8"; } 
 }
 
 $usage = "Usage: x-cmsearch [options]\n\t<execdir>\n\t<scriptdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
 $options_usage  = "Options:\n\t";
-$options_usage .= " -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the <optsfile>\n\n";
-
+$options_usage .= " -P     : run a positive-only benchmark, only each family's positive sequences will be searched\n\t";
+$options_usage .= " -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the <optsfile>\n\t";
+$options_usage .= " -B <f> : build models as needed, using options in file <f>\n\t";
+$options_usage .= " -C <f> : fetch models from existing file <f>\n\n";
 if(scalar(@ARGV) != 10) { printf("$usage\n$options_usage"); exit(1); }
 
 ($execdir, $scriptdir, $modeldir, $resultdir, $optsfile, $tblfile, $msafile, $posfile, $fafile, $outfile) = @ARGV;
@@ -36,6 +47,21 @@ $tmpoutfile = $outfile . ".tmp";
 
 $idscript   = "$scriptdir/rmark-idpositives.pl";
 $cmsearch   = "$execdir/cmsearch";
+$cmbuild    = "$execdir/cmbuild";
+$afetch     = "$execdir/esl-afetch";
+$sfetch     = "$execdir/esl-sfetch";
+$cmfetch    = "$execdir/cmfetch";
+if(! -e $afetch) { 
+    $afetch     = "$execdir/../easel/miniapps/esl-afetch";
+    if(! -e $afetch) { die "$afetch does not exist, nor $execdir/$afetch"; }
+}
+if(! -e $sfetch) { 
+    $sfetch     = "$execdir/../easel/miniapps/esl-sfetch";
+    if(! -e $sfetch) { die "$sfetch does not exist, nor $execdir/$sfetch"; }
+}
+if($do_fetch_models) { 
+    if(! -e $cmfetch) { die "$cmfetch does not exist"; }
+}    
 
 if (! -d $execdir)                                      { die "didn't find executable directory $execdir"; }
 if (! -d $scriptdir)                                    { die "didn't find script directory $scriptdir"; }
@@ -44,6 +70,9 @@ if (! -e $resultdir)                                    { die "$resultdir doesn'
 if (! -e $posfile)                                      { die "$posfile doesn't exist"; }
 if (! -e $idscript)                                     { die "positive identification script $idscript doesn't exist"; }
 if (! -e $optsfile)                                     { die "options file $optsfile doesn't exist"; }
+if ($do_build_models) { 
+    if (! -e $build_optsfile)                           { die "options file $build_optsfile doesn't exist"; }
+}
 
 # read options file, determine if we're using mpi or not
 $do_mpi = 0;
@@ -54,19 +83,57 @@ close(OPTS);
 chomp $searchopts;
 
 # check all models exist before we fire off searches
-open(TABLE, "$tblfile")   || die "failed to open $tblfile";
-while (<TABLE>) {
-    ($msaname) = split;
-    if(! -e "$modeldir/$msaname.cm") { die "didn't find model file $modeldir/$msaname.cm"; }
+if((! $do_build_models) && (! $do_fetch_models)) { 
+    open(TABLE, "$tblfile")   || die "failed to open $tblfile";
+    while (<TABLE>) {
+	($msaname) = split;
+	if(! -e "$modeldir/$msaname.cm") { die "didn't find model file $modeldir/$msaname.cm"; }
+    }
+    close(TABLE);
 }
-close(TABLE);
+elsif($do_build_models) { # -B <f> enabled, read the options file <f>
+    open(OPTS, $build_optsfile) || die "couldn't open options file $build_optsfile"; 
+    $buildopts = <OPTS>;
+    close(OPTS);
+    chomp($buildopts);
+
+    $modeldir = $resultdir; # we'll build the models and read them from the $resultdir/ 
+}
+elsif($do_fetch_models) { 
+    $modeldir = $resultdir; # we'll fetch the models and read them from the $resultdir/ 
+}
 
 open(OUTFILE,">$outfile") || die "failed to open $outfile";
 open(TMPOUTFILE,">$tmpoutfile") || die "failed to open $tmpoutfile";
 open(TABLE, "$tblfile")   || die "failed to open $tblfile";
+$orig_fafile = $fafile;
 while (<TABLE>)
 {
     ($msaname) = split;
+
+    if($do_build_models) { 
+	$status = system("$afetch -o $resultdir/$msaname.sto $msafile $msaname > /dev/null");
+	if ($status != 0) { die "UH FAILED: $afetch -o $resultdir/$msaname.sto $msafile $msaname > /dev/null"; }
+
+	$status = system("$cmbuild $buildopts $resultdir/$msaname.cm $resultdir/$msaname.sto > /dev/null");
+	if ($status != 0) { die "FAILED: $cmbuild $buildopts $resultdir/$msaname.cm $resultdir/$msaname.sto > /dev/null"; }
+    }
+    elsif($do_fetch_models) { 
+	$status = system("$cmfetch -o $resultdir/$msaname.cm $master_model $msaname > /dev/null");
+	if ($status != 0) { die "FAILED: $cmfetch -o $resultdir/$msaname.cm $master_model > /dev/null"; }
+    }
+
+    if($do_posonly) { #fetch this family's sequences
+	$command = "grep \"^$msaname\/\" rmark3.ppos | awk \'{ print \$3 }\' > $resultdir/$msaname.sfetch";
+	$status = system($command);
+	if ($status != 0) { die "FAILED: $command failed"; }
+
+	$command = "$sfetch -o $resultdir/$msaname.pfa -f $orig_fafile $resultdir/$msaname.sfetch > /dev/null";
+	$status = system($command);
+	if ($status != 0) { die "FAILED: $command failed"; }
+
+	$fafile = "$resultdir/$msaname.pfa";
+    }
 
     if($do_mpi) { 
 	$status = system("mpirun -np $mpi_nprocs $cmsearch $searchopts --tabfile $resultdir/$msaname.tmp $modeldir/$msaname.cm $fafile > $resultdir/$msaname.search");
@@ -74,7 +141,7 @@ while (<TABLE>)
     }
     else { 
 	$status = system("$cmsearch $searchopts --tabfile $resultdir/$msaname.tmp $modeldir/$msaname.cm $fafile > $resultdir/$msaname.search");
-	if ($status != 0) { die "FAILED: $cmsearch $searchopts --tabfile $resultdir/$msaname.tmp $resultdir/$msaname.hmm $fafile > $resultdir/$msaname.search"; }
+	if ($status != 0) { die "FAILED: $cmsearch $searchopts --tabfile $resultdir/$msaname.tmp $resultdir/$msaname.cm $fafile > $resultdir/$msaname.search"; }
     }
 
     open(OUTPUT, "$resultdir/$msaname.tmp") || die "FAILED: to open $resultdir/$msaname.tmp tabular output file"; 
@@ -91,6 +158,17 @@ while (<TABLE>)
     }
 
     unlink "$resultdir/$msaname.tmp";
+    if($do_build_models) { 
+	unlink "$resultdir/$msaname.cm"; 
+	unlink "$resultdir/$msaname.sto"; 
+    }
+    elsif($do_fetch_models) { 
+	unlink "$resultdir/$msaname.cm"; 
+    }
+    if($do_posonly) { 
+	unlink "$msaname.pfa";
+	unlink "$msaname.sfetch";
+    }
 }
 close TABLE;
 close OUTFILE;
@@ -103,4 +181,3 @@ if ($status != 0) { die "FAILED: $idscript $posfile $tmpoutfile > $outfile"; }
 unlink $tmpoutfile;
     
     
-
