@@ -44,7 +44,9 @@
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_distance.h"
+#include "esl_fileparser.h"
 #include "esl_getopts.h"
+#include "esl_hmm.h"
 #include "esl_msa.h"
 #include "esl_msacluster.h"
 #include "esl_random.h"
@@ -54,17 +56,16 @@
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 
-
 static char banner[] = "construct a rmark benchmark profile training/test set";
-static char usage[]  = "[options] <basename> <msafile> <seqdb>\n";
+static char usage1[]  = "[options] <basename> <msafile> <hmmfile>";
+static char usage2[]  = "[options] -S <basename> <msafile> <seqdb>\n";
 
 #define SHUF_OPTS "--mono,--di,--markov0,--markov1"   /* toggle group, seq shuffling options          */
-#define WATSON 0  /* orientation, Watson (top) strand */
-#define CRICK  1  /* orientation, Crick  (bottom) strand */
 
 static ESL_OPTIONS options[] = {
   /* name       type        default env   range togs  reqs  incomp      help                                                   docgroup */
   { "-h",       eslARG_NONE,  FALSE, NULL, NULL, NULL,NULL, NULL,            "help; show brief info on version and usage",              1 },
+  { "-S",       eslARG_NONE,  FALSE, NULL, NULL, NULL,NULL, NULL,            "do not generate with an HMM, shuffle seqs from <seqdb>", 1 },
   { "-1",       eslARG_REAL, "0.60", NULL,"0<x<=1.0",NULL,NULL,NULL,         "require all test seqs to have < x id to training",        1 },
   { "-2",       eslARG_REAL, "0.70", NULL,"0<x<=1.0",NULL,NULL,NULL,         "require all test seqs to have < x id to each other",      1 },
   { "-F",       eslARG_REAL, "0.70", NULL,"0<x<=1.0",NULL,NULL,NULL,         "filter out seqs <x*average length",                       1 },
@@ -76,11 +77,11 @@ static ESL_OPTIONS options[] = {
   { "-E",       eslARG_INT,     "1", NULL,"n>0",     NULL,NULL,NULL,         "minimum number of test     seqs per family",              1 },
 
   /* Options controlling negative segment randomization method  */
-  { "--mono",    eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, NULL, NULL, "shuffle preserving monoresidue composition",                2 },
-  { "--di",      eslARG_NONE,"default", NULL, NULL, SHUF_OPTS, NULL, NULL, "shuffle preserving mono- and di-residue composition",       2 },
-  { "--markov0", eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, NULL, NULL, "generate with 0th order Markov properties per input",       2 },
-  { "--markov1", eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, NULL, NULL, "generate with 1st order Markov properties per input",       2 },
-  { "--iid",     eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, NULL, NULL, "generate random iid sequence for negatives",                2 },
+  { "--mono",    eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, "-S", NULL, "with -S, shuffle preserving monoresidue composition",                2 },
+  { "--di",      eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, "-S", NULL, "with -S, shuffle preserving mono- and di-residue composition",       2 },
+  { "--markov0", eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, "-S", NULL, "with -S, generate with 0th order Markov properties per input",       2 },
+  { "--markov1", eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, "-S", NULL, "with -S, generate with 1st order Markov properties per input",       2 },
+  { "--iid",     eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, "-S", NULL, "with -S, generate random iid sequence for negatives",                2 },
 
   /* Options forcing which alphabet we're working in (normally autodetected) */
   { "--amino",  eslARG_NONE,  FALSE, NULL, NULL, NULL,NULL,"--dna,--rna",    "<msafile> contains protein alignments",                   3 },
@@ -90,10 +91,10 @@ static ESL_OPTIONS options[] = {
   /* Other options */
   { "--minDPL", eslARG_INT,   "100", NULL, NULL, NULL, NULL, NULL,           "minimum segment length for DP shuffling",                 4 },
   { "--seed",   eslARG_INT,     "0", NULL, NULL, NULL, NULL, NULL,           "specify random number generator seed",                    4 },
-  { "--full",   eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL,"--sub",         "don't look for train/test within msa subsets if full doesn't exist", 4 },
-  { "--sub",    eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL,"--full",        "only search for train/test within msa subsets with greedy alg", 4 },
-  { "--xtest",  eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL,"--full",        "maximize test set size, not combined train/test size",    4 },
-  { "--sample", eslARG_INT,   FALSE, NULL, NULL, NULL, NULL,"--full",        "look for train/test with msa subsets via sampling, <n> samples", 4},
+  { "--sub",    eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, "--sample",     "look for train/test in msa subsets via greedy algorithm", 4 },
+  { "--sample", eslARG_INT,   FALSE, NULL, NULL, NULL, NULL, "-sub",         "look for train/test in msa subsets via sampling, <n> samples", 4},
+  { "--skip",   eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL,           "w/--sub or --sample, skip partition test", 4 },
+  { "--xtest",  eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL,           "w/--sub or --sample, maximize |test|, not |train|+|test|",  4 },
 
   { 0,0,0,0,0,0,0,0,0,0 },
 };
@@ -101,6 +102,7 @@ static ESL_OPTIONS options[] = {
 struct cfg_s {
   ESL_ALPHABET   *abc;          /* biological alphabet             */
   ESL_RANDOMNESS *r;            /* random number generator         */
+  ESL_HMM        *hmm;          /* HMM for generating background seqs */
   double          fragfrac;	/* seqs less than x*avg length are removed from alignment  */
   double          idthresh1;	/* fractional identity threshold for train/test split      */
   double          idthresh2;	/* fractional identity threshold for selecting test seqs   */
@@ -131,6 +133,7 @@ static int find_sets_greedily   (struct cfg_s *cfg, ESL_MSA *msa, int do_maxtest
 static int find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_maxtest, ESL_MSA **ret_trainmsa, ESL_STACK **ret_teststack);
 static int synthesize_negatives_and_embed_positives(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQ **posseqs, int npos);
 static int set_random_segment  (ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq, int L);
+static void read_hmmfile(char *filename, ESL_HMM **ret_hmm);
 
 static void
 cmdline_failure(char *argv0, char *format, ...)
@@ -139,7 +142,8 @@ cmdline_failure(char *argv0, char *format, ...)
   va_start(argp, format);
   vfprintf(stderr, format, argp);
   va_end(argp);
-  esl_usage(stdout, argv0, usage);
+  esl_usage(stdout, argv0, usage1);
+  esl_usage(stdout, argv0, usage2);
   printf("\nTo see more help on available options, do %s -h\n\n", argv0);
   exit(1);
 }
@@ -148,7 +152,8 @@ static void
 cmdline_help(char *argv0, ESL_GETOPTS *go) 
 {
   esl_banner(stdout, argv0, banner);
-  esl_usage (stdout, argv0, usage);
+  esl_usage (stdout, argv0, usage1);
+  esl_usage (stdout, argv0, usage2);
   puts("\n where general options are:");
   esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
   puts("\n options controlling segment randomization method:");
@@ -169,6 +174,7 @@ main(int argc, char **argv)
   char         *basename= NULL;	/* base of the output file names   */
   char         *alifile = NULL;	/* alignment file name             */
   char         *dbfile  = NULL;	/* name of seq db file             */
+  char         *hmmfile  = NULL;/* name of hmm file                */
   char          outfile[256];	/* name of an output file          */
   int           alifmt;		/* format code for alifile         */
   int           dbfmt;		/* format code for dbfile          */
@@ -198,14 +204,22 @@ main(int argc, char **argv)
   if (esl_opt_ArgNumber(go)                  != 3)     cmdline_failure(argv[0], "Incorrect number of command line arguments\n");
   basename = esl_opt_GetArg(go, 1); 
   alifile  = esl_opt_GetArg(go, 2);
-  dbfile   = esl_opt_GetArg(go, 3);
+  if(esl_opt_GetBoolean(go, "-S")) dbfile  = esl_opt_GetArg(go, 3);
+  else                             hmmfile = esl_opt_GetArg(go, 3);
   alifmt   = eslMSAFILE_STOCKHOLM;
   dbfmt    = eslSQFILE_FASTA;
+
+  /* check for incompatible option combinations */
+  if((! esl_opt_IsOn(go, "--sub")) && (! esl_opt_IsOn(go, "--sample"))) { 
+    if(esl_opt_IsOn(go, "--skip"))  cmdline_failure(argv[0], "--skip requires --sub or --sample");
+    if(esl_opt_IsOn(go, "--xtest")) cmdline_failure(argv[0], "--xtest requires --sub or --sample");
+  }
 
   /* Set up the configuration structure shared amongst functions here */
   if (esl_opt_IsDefault(go, "--seed"))   cfg.r = esl_randomness_CreateTimeseeded();
   else                                   cfg.r = esl_randomness_Create(esl_opt_GetInteger(go, "--seed"));
   cfg.abc        = NULL;		          /* until we open the MSA file, below */
+  cfg.hmm        = NULL;
   cfg.fragfrac   = esl_opt_GetReal(go, "-F");
   cfg.idthresh1  = esl_opt_GetReal(go, "-1");
   cfg.idthresh2  = esl_opt_GetReal(go, "-2");
@@ -228,7 +242,7 @@ main(int argc, char **argv)
   if ((cfg.ppossummfp = fopen(outfile, "w"))      == NULL) esl_fatal("Failed to open pos-only test set summary file %s\n", outfile);
   if (snprintf(outfile, 256, "%s.tbl", basename) >= 256)   esl_fatal("Failed to construct benchmark table file name");
   if ((cfg.tblfp     = fopen(outfile, "w"))      == NULL)  esl_fatal("Failed to open benchmark table file %s\n", outfile);
-  if (! esl_opt_GetBoolean(go, "--iid")) { /* only create negative file if --iid is NOT enabled */
+  if (esl_opt_GetBoolean(go, "-S") && (! esl_opt_GetBoolean(go, "--iid"))) { /* only create negative file if -S enabled and --iid is NOT enabled */
     if (snprintf(outfile, 256, "%s.neg", basename) >= 256)  esl_fatal("Failed to construct neg test set summary file name");
     if ((cfg.negsummfp = fopen(outfile, "w"))      == NULL) esl_fatal("Failed to open neg test set summary file %s\n", outfile);
   }
@@ -257,8 +271,9 @@ main(int argc, char **argv)
   if (cfg.abc->type == eslAMINO) esl_composition_SW34(cfg.fq);
   else                           esl_vec_DSet(cfg.fq, cfg.abc->K, 1.0 / (double) cfg.abc->K);
 
-  /* Open and process the dbfile; make sure it's in the same alphabet */
-  process_dbfile(&cfg, dbfile, dbfmt);
+  /* Open and read the HMM file of database file, depending on if -S was enabled or not */
+  if(hmmfile != NULL) read_hmmfile(hmmfile, &(cfg.hmm));
+  if(dbfile != NULL)  process_dbfile(&cfg, dbfile, dbfmt);
 
   /* Read and process MSAs one at a time  */
   nali = 0;
@@ -280,19 +295,19 @@ main(int argc, char **argv)
        *  - in the test set OR
        *  - more than cfg->idthresh2 similar to >=1 sequences in the test set
       */
-      if(! esl_opt_GetBoolean(go, "--sub")) { 
+      if(! esl_opt_GetBoolean(go, "--skip")) { 
 	separate_sets   (&cfg, msa, &trainmsa, &teststack);
 	ntestseq  = esl_stack_ObjectCount(teststack);
 	ntrainseq = trainmsa->nseq;
       }
-      else { /* --sub enabled, we skipped test 1 */
+      else { /* --skip enabled, we skipped test 1 */
 	ntestseq = ntrainseq = 0;
       }
 
-      /* Check if we failed test 1 or we passed test 1 but either
-       * train or test doesn't include the minimum number of sequences. */
-      if ((! esl_opt_GetBoolean(go, "--full")) && /* if --full, we never try test 2 below */
-	  (ntestseq  < cfg.min_ntest) || (ntrainseq < cfg.min_ntrain)) 
+      /* if --sub or --sample, check if we should look for subsets of 
+       * the seqs in the msa that satisfy our thresholds */
+      if((esl_opt_IsOn(go, "--sub") || esl_opt_IsOn(go, "--sample")) &&
+	 ((ntestseq  < cfg.min_ntest) || (ntrainseq < cfg.min_ntrain)))
 	{ /* Test 2: Is there a subset of the sequences in the msa
 	   *         that would satisfy our thresholds (most similar
 	   *         train/test pair < cfg->idthresh1, and most
@@ -303,8 +318,8 @@ main(int argc, char **argv)
 	   * default) to look for these subsets, or we use a sampling
 	   * algorithm (non-deterministic, enabled with --sample). 
 	   */
-	  if(! esl_opt_IsOn(go, "--sample")) find_sets_greedily   (&cfg, msa, esl_opt_GetBoolean(go, "--xtest"), &trainmsa, &teststack);
-	  else                               find_sets_by_sampling(&cfg, msa, esl_opt_GetInteger(go, "--sample"), esl_opt_GetBoolean(go, "--xtest"), &trainmsa, &teststack);
+	  if(esl_opt_IsOn(go, "--sub")) find_sets_greedily   (&cfg, msa, esl_opt_GetBoolean(go, "--xtest"), &trainmsa, &teststack);
+	  else                          find_sets_by_sampling(&cfg, msa, esl_opt_GetInteger(go, "--sample"), esl_opt_GetBoolean(go, "--xtest"), &trainmsa, &teststack);
 	  if(trainmsa == NULL) { /* no satisfactory subset was found */
 	    ntrainseq = ntestseq = 0; 
 	  }
@@ -681,7 +696,7 @@ find_sets_greedily(struct cfg_s *cfg, ESL_MSA *msa, int do_xtest, ESL_MSA **ret_
        */
       if((ntrain > ntest) && (ntest  >= cfg->min_ntest)) { /* training and test set are sufficiently large */
 	if(((  do_xtest) && (ntest   > nbest_test)) || 
-	   (!  do_xtest) && ((ntrain+ntest) > (nbest_train+nbest_test))) { 
+	   ((!  do_xtest) && ((ntrain+ntest) > (nbest_train+nbest_test)))) { 
 	  esl_vec_ICopy(i_am_train, msa->nseq, i_am_best_train);
 	  esl_vec_ICopy(i_am_test,  msa->nseq, i_am_best_test);
 	  nbest_train = ntrain;
@@ -971,11 +986,12 @@ synthesize_negatives_and_embed_positives(ESL_GETOPTS *go, struct cfg_s *cfg, ESL
   int64_t p;               /* a position in a sequence */
   int64_t neg_p;           /* a position in a negative sequence */
   int64_t bmk_p;           /* a position in an output  sequence */
-  int64_t chunkL;          /* length of a sequence chunk to extract from the db while constructing negatives */
+  int     chunkL;          /* length of a sequence chunk to extract from the db while constructing negatives */
   int     q;               /* an index for one of the embedded seqs in a output sequence */
   void   *ptr;             /* for reallocating */
   int     alloc_chunk = 2; /* number of elements to add when reallocating */
   int     keep_rolling;    /* for continuing to randomly choose numbers */
+  ESL_DSQ *tmpdsq;         /* temporary dsq, generated by the HMM */
 
   /* per-positive sequence variables, all are [0..j..npos-1] */
   int    *posseqs_i = NULL;  /* negative sequence idx (i) j is embedded within */
@@ -1054,24 +1070,37 @@ synthesize_negatives_and_embed_positives(ESL_GETOPTS *go, struct cfg_s *cfg, ESL
     bmksq->dsq[0] = bmksq->dsq[bmksq->n+1] = eslDSQ_SENTINEL;
     esl_sq_FormatName(bmksq, "rmark%d", i+1);
 
-    /* Create the negative sequence of length cfg->negL using the
-     * input database.  We do this by selecting chunks of the input
-     * database of length cfg->negchunkL (user-definable with -C) and
-     * shuffling them with the specified method and appending. If
-     * --iid, we construct each chunk and append them, even though
-     * it's unnecessary - we could just do one chunk.
+    /* Create the negative sequence of length cfg->negL by either
+     * generating sequence from the HMM or by using the input database
+     * (if -S).  If using the HMM, generate and concatenate as many
+     * seqs as necessary until the total length is cfg->negL.  If -S,
+     * select chunks of the input database of length cfg->negchunkL
+     * (user-definable with -C) and shuffle them with the specified
+     * method and appending. If --iid, we construct each chunk and
+     * append them, even though it's unnecessary - we could just do
+     * one chunk.
      */
     esl_sq_GrowTo(negsq, cfg->negL); 
     negsq->dsq[0] = negsq->dsq[cfg->negL+1] = eslDSQ_SENTINEL;
     negsq->n = 0;
     while(negsq->n < cfg->negL) { 
-      chunkL = (negsq->n + cfg->negchunkL <= cfg->negL) ? cfg->negchunkL : cfg->negL - negsq->n;
-      if(cfg->negsummfp != NULL) { 
-	/* print out sequence name, start/end posn in newly constructed negative seq, set_random_segment() will print the rest */
-	fprintf(cfg->negsummfp, "%-10s %10" PRId64 " %10" PRId64 " ", bmksq->name, negsq->n+1, negsq->n + chunkL); 
+      if(esl_opt_GetBoolean(go, "-S")) { /* shuffle part of the seqdb */
+	chunkL = (negsq->n + cfg->negchunkL <= cfg->negL) ? cfg->negchunkL : cfg->negL - negsq->n;
+	if(cfg->negsummfp != NULL) { 
+	  /* print out sequence name, start/end posn in newly constructed negative seq, set_random_segment() will print the rest */
+	  fprintf(cfg->negsummfp, "%-10s %10" PRId64 " %10" PRId64 " ", bmksq->name, negsq->n+1, negsq->n + chunkL); 
+	}
+	set_random_segment(go, cfg, cfg->negsummfp, negsq->dsq + negsq->n + 1, chunkL);
+	negsq->n += chunkL;
       }
-      set_random_segment(go, cfg, cfg->negsummfp, negsq->dsq + negsq->n + 1, chunkL);
-      negsq->n += chunkL;
+      else { /* -S not enabled, generate part of the sequence from the HMM */
+	esl_hmm_Emit(cfg->r, cfg->hmm, &tmpdsq, NULL, &chunkL);
+	if((negsq->n + chunkL) > cfg->negL) chunkL = cfg->negL - negsq->n;
+	memcpy(negsq->dsq + negsq->n + 1, tmpdsq+1, sizeof(ESL_DSQ) * chunkL);
+	free(tmpdsq);
+	/* printf("negsq %2d %10" PRId64 "\n", i, negsq->n); */
+	negsq->n += chunkL;
+      }
     }
     /* no need to name negsq, we won't output it */
 
@@ -1187,7 +1216,7 @@ set_random_segment(ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq
       do {                                                     
 	if (pkey != NULL) free(pkey);
 	esl_sq_Reuse(dbsq);
-
+	
 	/* NOTE: we should be able to use esl_ssi_FindNumber() to pick
 	 * a random sequence and read it's length from the SSI
 	 * index. However, I had trouble getting that to work on the
@@ -1212,10 +1241,10 @@ set_random_segment(ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq
 	  esl_fatal("failed to read random seq");
 	Lseq = dbsq->L;
       } while (Lseq < L);
-
+      
       start = 1 + esl_rnd_Roll(cfg->r, Lseq-L);              
       end   = start + L - 1;
-
+      
       /* Another issue with SSI: the following line should suffice to
        * fetch the sequence, but it gave me problems, probably for the
        * same reasons alluded to above (which I can't figure out), so
@@ -1223,26 +1252,29 @@ set_random_segment(ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq
        * <dbsq> which we only read b/c we need to be able to copy it
        * here. The following line *should* work (and remove the need for 
        * reading the full sequence into memory): 
-      * if ((status = esl_sqio_FetchSubseq(cfg->dbfp, pkey, start, end, sq)) != eslOK) esl_fatal("failed to fetch subseq, status: %d", status);
-      */
+       * if ((status = esl_sqio_FetchSubseq(cfg->dbfp, pkey, start, end, sq)) != eslOK) esl_fatal("failed to fetch subseq, status: %d", status);
+       */
       sq->dsq[0] = sq->dsq[L+1] = eslDSQ_SENTINEL;
       memcpy(sq->dsq+1, dbsq->dsq+start, sizeof(ESL_DSQ) * L);
       esl_sq_ConvertDegen2X(sq);
     }
-
+  
   /* log sequence source info: <name> <start> <end> */
   if (logfp != NULL && db_dependent) 
     fprintf(logfp, "%-35s %10" PRId64 " %10" PRId64 "\n", pkey, start, end); 
-
-  /* Now apply the appropriate randomization algorithm */
-  if      (esl_opt_GetBoolean(go, "--mono"))    status = esl_rsq_XShuffle  (cfg->r, sq->dsq, L, sq->dsq);
-  else if (esl_opt_GetBoolean(go, "--di")) {
+  
+  /* Now apply the appropriate randomization algorithm, if none are turned on, use --di */
+  if((esl_opt_GetBoolean(go, "--di")) || 
+     ((! esl_opt_GetBoolean(go, "--mono")) && 
+      (! esl_opt_GetBoolean(go, "--markov1")) && 
+      (! esl_opt_GetBoolean(go, "--markov2")) && 
+      (! esl_opt_GetBoolean(go, "--iid")))) { 
     if (L < minDPL)                             status = esl_rsq_XShuffle  (cfg->r, sq->dsq, L, sq->dsq);
     else                                        status = esl_rsq_XShuffleDP(cfg->r, sq->dsq, L, cfg->abc->Kp, sq->dsq);
-  } 
+  }
+  else if (esl_opt_GetBoolean(go, "--mono"))    status = esl_rsq_XShuffle  (cfg->r, sq->dsq, L, sq->dsq);
   else if (esl_opt_GetBoolean(go, "--markov0")) status = esl_rsq_XMarkov0  (cfg->r, sq->dsq, L, cfg->abc->Kp, sq->dsq);
   else if (esl_opt_GetBoolean(go, "--markov1")) status = esl_rsq_XMarkov1  (cfg->r, sq->dsq, L, cfg->abc->Kp, sq->dsq);
-  else if (esl_opt_GetBoolean(go, "--reverse")) status = esl_rsq_XReverse  (sq->dsq, L, sq->dsq);
   else if (esl_opt_GetBoolean(go, "--iid"))     status = esl_rsq_xIID      (cfg->r, cfg->fq, cfg->abc->K, L, sq->dsq);
   if (status != eslOK) esl_fatal("esl's shuffling failed");
 
@@ -1251,4 +1283,102 @@ set_random_segment(ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq
   esl_sq_Destroy(dbsq);
   free(pkey);
   return eslOK;
+}
+
+
+/* read_hmmfile
+ *
+ * Read the input HMM file.
+ * Lines beginning with # are comments and are ignored.
+ * Format of file: 
+ * line  1:                <alphabet-type> (1 token, must be integer between 1 and 5)
+ * line  2:                <N>             (1 token, number of states)
+ * line  3:                <begin>         (<N> tokens, the 'begin' probability distribution)
+ * lines 4 to <N>+3:       <transitions>   (<N> tokens, transition distribution for state L-3 if line L)
+ * lines <N>+4 to 2*<N>+3: <transitions>   (<abc->K> tokens, emission distribution for state L-<N>+3 if line L,	
+ *                                           abc->K is size of alphabet (4 for RNA))     
+ * 
+ * All tokens in each probability distribution (lines 3->2*<N>+3) should sum to 1.0.
+ * Types of alphabet: 
+ * type   alphabet  abc->K
+ *    1        RNA       4
+ *    2        DNA       4
+ *    3      AMINO      20
+ *    4      COINS       2
+ *    5       DICE       6
+ * 
+ * We die with esl_fatal() if there's an error.
+ * Returns: VOID
+ */
+void
+read_hmmfile(char *filename, ESL_HMM **ret_hmm)
+{
+  int             status;
+  ESL_FILEPARSER *efp;
+  ESL_HMM        *hmm = NULL;
+  ESL_ALPHABET   *abc;
+  char           *tok;
+  int             type;
+  int             i,j;
+  int             nstates;
+
+  if (esl_fileparser_Open(filename, NULL, &efp) != eslOK) esl_fatal("ERROR, failed to open template file %s in parse_template_file\n", filename);
+  esl_fileparser_SetCommentChar(efp, '#');
+
+  status = eslOK;
+  /* get alphabet type */
+  if((status = esl_fileparser_GetToken(efp, &tok, NULL)) != eslOK) esl_fatal("ERROR parsing HMM file, unable to read first token"); 
+  type = atoi(tok);
+  if(type < 1 || type > 5) { esl_fatal("ERROR parsing HMM file, first token should be alphabet type, an int between 1 and 5"); }
+  if(type != eslRNA)       { esl_fatal("ERROR parsing HMM file, invalid alphabet type, it must be RNA (1)"); }
+  abc = esl_alphabet_Create(type);
+
+  /* get number of states */
+  if((status = esl_fileparser_GetToken(efp, &tok, NULL)) != eslOK) esl_fatal("ERROR parsing HMM file, unable to read first token"); 
+  nstates = atoi(tok);
+  if((status = esl_fileparser_NextLine(efp)) != eslOK) esl_fatal("ERROR parsing HMM file, ran out of lines too early.");
+
+  /* create HMM */
+  hmm = esl_hmm_Create(abc, nstates);
+
+  /* read begin probs */
+  j = 0; 
+  while((status = esl_fileparser_GetTokenOnLine(efp, &tok, NULL)) == eslOK) { 
+    hmm->pi[j++] = atof(tok);
+  }
+  if(j != hmm->M) { esl_fatal("ERROR parsing HMM file, wrong number of begin transitions, %d != %d", j, hmm->M); }
+  if(esl_FCompare(esl_vec_FSum(hmm->pi, hmm->M), 1., eslSMALLX1) != eslOK) { esl_fatal("ERROR parsing HMM file, begin probs don't sum to 1."); }
+  esl_vec_FNorm(hmm->pi, hmm->M);
+  if((status = esl_fileparser_NextLine(efp)) != eslOK) esl_fatal("ERROR parsing HMM file, ran out of lines too early.");
+
+  /* read transition probs, should be hmm->M+1 of these for each state, the +1 is for the end prob */
+  for(i = 0; i < hmm->M; i++) { 
+    j = 0; 
+    while((status = esl_fileparser_GetTokenOnLine(efp, &tok, NULL)) == eslOK) { 
+      hmm->t[i][j++] = atof(tok);
+    }
+    if(j != (hmm->M+1)) { esl_fatal("ERROR parsing HMM file, wrong number of transitions for state %d", i); }
+    if(esl_FCompare(esl_vec_FSum(hmm->t[i], (hmm->M+1)), 1., 0.00001) != eslOK) { esl_fatal("ERROR parsing HMM file, trans probs state %d don't sum to 1.", i); }
+    esl_vec_FNorm(hmm->t[i], (hmm->M+1));
+
+    if((status = esl_fileparser_NextLine(efp)) != eslOK) esl_fatal("ERROR parsing HMM file, ran out of lines too early.");
+  }
+  
+  /* read emission probs, should be abc->K of these per state */
+  for(i = 0; i < hmm->M; i++) { 
+    j = 0; 
+    while((status = esl_fileparser_GetTokenOnLine(efp, &tok, NULL)) == eslOK) { 
+      hmm->e[i][j++] = atof(tok);
+    }
+    if(j != (hmm->K)) { esl_fatal("ERROR parsing HMM file, wrong number of emissions for state %d", i); }
+    if(esl_FCompare(esl_vec_FSum(hmm->e[i], hmm->K), 1., 0.00001) != eslOK) { esl_fatal("ERROR parsing HMM file, emit probs state %d don't sum to 1.", i); }
+    esl_vec_FNorm(hmm->e[i], hmm->K);
+
+    status = esl_fileparser_NextLine(efp);
+    if((i < (hmm->M-1)) && (status != eslOK)) esl_fatal("ERROR parsing HMM file, ran out of lines too early.");
+  }
+  *ret_hmm = hmm;
+
+  esl_fileparser_Destroy(efp);
+  return;
 }
