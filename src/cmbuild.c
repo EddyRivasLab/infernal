@@ -35,7 +35,7 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 
 #define WGTOPTS "--wgsc,--wblosum,--wpb,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
-#define EFFOPTS "--eent,--enone"               /* Exclusive options for effective sequence number calculation */
+#define EFFOPTS "--eent,--enone,--eset"                        /* Exclusive options for effective sequence number calculation */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -66,7 +66,9 @@ static ESL_OPTIONS options[] = {
   { "--eent",    eslARG_NONE,"default",NULL, NULL,    EFFOPTS,    NULL,      NULL, "adjust eff seq # to achieve relative entropy target", 4},
   { "--enone",   eslARG_NONE,  FALSE,  NULL, NULL,    EFFOPTS,    NULL,      NULL, "no effective seq # weighting: just use nseq",         4},
   { "--ere",     eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set CM target relative entropy to <x>",   4},
+  { "--eminseq", eslARG_REAL,  "0.1",  NULL,"x>=0",      NULL, "--eent",     NULL, "for --eent: set minimum effective sequence number to <x>", 4},
   { "--ehmmre",  eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set minimum HMM relative entropy to <x>", 4}, 
+  { "--eset",    eslARG_REAL,  NULL,   NULL,"x>=0",   EFFOPTS,    NULL,      NULL, "set eff seq # for all models to <x>",                 4},
 /* Customizing null model or priors */
   { "--null",    eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read null (random sequence) model from file <s>", 5 },
   { "--prior",   eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read priors from file <s>", 5 },
@@ -95,10 +97,10 @@ static ESL_OPTIONS options[] = {
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer debugging/experimentation */
   { "--nobalance",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "don't rebalance the CM; number in strict preorder", 101 },
-  { "--regress",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test information to file <s>", 101 },  
+  { "--regress",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,       NULL, "save regression test information to file <s>", 101 },  
   { "--nodetach",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "do not 'detach' one of two inserts that model same column", 101 },
   { "--elself",  eslARG_REAL,  "0.94", NULL, "0<=x<=1", NULL,      NULL,        NULL, "set EL self transition prob to <x>", 101 },
-  { "--eX",      eslARG_REAL,  "6.0",  NULL,"x>0",      NULL,      "--eent", "--ere", "for --eent: set minimum total rel ent param to <x>",  101}, 
+  { "--esigma",  eslARG_REAL,  "45.0",  NULL,"x>0",      NULL,  "--eent",       NULL, "for --eent: set sigma param to <x>",  101}, 
   { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s> (Stockholm or Pfam)",  101 },
 
   /* Developer verbose output options */
@@ -171,9 +173,9 @@ static int    build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *
 static int    set_model_name(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, const Prior_t *pri);
-static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, const Prior_t *prior);
+static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, const Prior_t *prior, float msa_nseq);
 static int    name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali);
-static double default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
+static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen);
 static void   strip_wuss(char *ss);
 static int    refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *orig_cm, ESL_MSA *input_msa, Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr, Parsetree_t ***ret_tr, int *ret_niter);
 static int    get_unaln_seqs_from_msa(const ESL_MSA *msa, ESL_SQ ***ret_sq);
@@ -702,7 +704,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
   if ((status =  set_model_name         (go, cfg, errbuf, msa, cm))                       != eslOK) goto ERROR;
   if ((status =  set_model_cutoffs      (go, cfg, errbuf, msa, cm))                       != eslOK) goto ERROR;
   if ((status =  set_effective_seqnumber(go, cfg, errbuf, msa, cm, cfg->pri))             != eslOK) goto ERROR;
-  if ((status =  parameterize           (go, cfg, errbuf, cm, cfg->pri))                  != eslOK) goto ERROR;
+  if ((status =  parameterize           (go, cfg, errbuf, cm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
   
   *ret_cm = cm;
   return eslOK;
@@ -1187,6 +1189,13 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
       neff = msa->nseq;
       if(cfg->be_verbose) fprintf(stdout, "done. [--enone: neff=nseq=%d]\n", msa->nseq);
     }
+  else if(esl_opt_IsOn(go, "--eset")) 
+    {
+      neff = esl_opt_GetReal(go, "--eset");
+      if(cfg->be_verbose) fprintf(stdout, "done. [--eset: neff=%.2f]\n", neff);
+      cm->eff_nseq = neff;
+      cm_Rescale(cm, neff / (float) msa->nseq);
+    }
   else if (esl_opt_GetBoolean(go, "--eent") == TRUE)
     {
       double etarget; 
@@ -1199,10 +1208,9 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
 	else if(cm->ndtype[nd] == MATL_nd) clen += 1;
 	else if(cm->ndtype[nd] == MATR_nd) clen += 1;
       }
-      if (esl_opt_IsOn(go, "--ere")) etarget = esl_opt_GetReal(go, "--ere");
-      else                           etarget = default_target_relent(cm->abc, clen, esl_opt_GetReal(go, "--eX"));
+      etarget = set_target_relent(go, cm->abc, clen);
 
-      status = cm_EntropyWeight(cm, pri, etarget, FALSE, &hmm_re, &neff);
+      status = cm_EntropyWeight(cm, pri, etarget, esl_opt_GetReal(go, "--eminseq"), FALSE, &hmm_re, &neff);
       /* if --ehmmre <x> enabled, ensure HMM relative entropy per match column is at least <x>, if not,
        * recalculate neff so HMM relative entropy of <x> is achieved.
        */
@@ -1210,7 +1218,7 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
 	hmm_etarget = esl_opt_GetReal(go, "--ehmmre"); 
 	printf("cm hmm re: %f target: %f\n", hmm_re, hmm_etarget);
 	if(hmm_re < hmm_etarget) { 
-	  status = cm_EntropyWeight(cm, pri, hmm_etarget, TRUE, &hmm_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
+	  status = cm_EntropyWeight(cm, pri, hmm_etarget, esl_opt_GetReal(go, "--eminseq"), TRUE, &hmm_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
 	  if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
 	  else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
 	  used_hmm_etarget = TRUE;
@@ -1233,7 +1241,7 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
  * Converts counts to probability parameters.
  */
 static int
-parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, const Prior_t *prior)
+parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, const Prior_t *prior, float msa_nseq)
 {
   int status; 
 
@@ -1241,7 +1249,8 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t 
     fprintf(stdout, "%-40s ... ", "Converting counts to probabilities"); 
     fflush(stdout);
   }
-  PriorifyCM(cm, prior);
+  PriorifyCM(cm, prior); 
+
   if( esl_opt_IsOn(go, "--rsearch")) {
     rsearch_CMProbifyEmissions(cm, cfg->fullmat); /* use those probs to set CM probs from cts */
     /*debug_print_cm_params(cm);*/
@@ -1267,33 +1276,34 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t 
   return eslOK;
 }
 
-/* default_target_relent()
- * Incept:    EPN, Tue Jul 10 10:13:43 2007
- *            based on HMMER3's hmmbuild.c:default_target_relent()
- *            SRE, Fri May 25 15:14:16 2007 [Janelia]
+/* set_target_relent()
+ * Incept:    EPN, Tue Aug 17 09:14:15 2010
  *
  * Purpose:   Implements a length-dependent calculation of the target relative entropy
  *            per position, attempting to ensure that the information content of
  *            the model is high enough to find local alignments; but don't set it
- *            below a hard alphabet-dependent limit (CM_ETARGET).
- *            notes.
+ *            below a hard limit for RNA (DEFAULT_ETARGET).
  *            
  * Args:      clen - consensus length (2*MATP + MATL + MATR)
- *            eX - X parameter: minimum total rel entropy target
  *
  */
 static double
-default_target_relent(const ESL_ALPHABET *abc, int clen, double eX)
+set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen)
 {
   double etarget;
-  /* HMMER3 default eX = 6.0 as of Tue Jul 10 2007
-   */
-  etarget = 6.* (eX + log((double) ((clen * (clen+1)) / 2)) / log(2.))    / (double)(2*clen + 4);
+  double re_target;
+  double esigma = esl_opt_GetReal(go, "--esigma"); /* default Infernal/HMMER3 sigma is 45.0 */
 
-  switch (abc->type) {
-  case eslRNA:    if (etarget < DEFAULT_ETARGET)   etarget = DEFAULT_ETARGET;   break;
-  default:        cm_Fail("ERROR in default_target_relent(), alphabet not RNA!\n");
+  if(esl_opt_IsOn(go, "--ere")) { 
+    re_target = esl_opt_GetReal(go, "--ere");
   }
+  else {
+    if(abc->type != eslRNA) cm_Fail("ERROR, alphabet not RNA, user needs to specify target entropy with --ere");
+    re_target = DEFAULT_ETARGET;
+  }
+  etarget = (esigma - eslCONST_LOG2R * log( 2.0 / ((double) clen * (double) (clen+1)))) / (double) clen; /* HMMER3.0 default, xref J5/36. */
+  etarget = ESL_MAX(etarget, re_target);
+  
   return etarget;
 }
 

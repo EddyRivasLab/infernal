@@ -438,7 +438,7 @@ extern void cm_Die (char *format, ...);
 extern void cm_Fail(char *format, ...);
 
 /* from eweight.c */
-extern int    cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, int pretend_cm_is_hmm, double *ret_hmm_re, double *ret_Neff);
+extern int    cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, int pretend_cm_is_hmm, double *ret_hmm_re, double *ret_Neff);
 extern void   cm_Rescale(CM_t *hmm, float scale);
 extern void   cp9_Rescale(CP9_t *hmm, float scale);
 extern double cm_MeanMatchInfo(const CM_t *cm);

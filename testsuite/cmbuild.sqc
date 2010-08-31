@@ -27,7 +27,8 @@
 1  exercise  cmbuild:se/18         @src/cmbuild@ --enone -F %SE.CM% se.stk 
 1  exercise  cmbuild:se/19         @src/cmbuild@ --ere 0.8 -F %SE.CM% se.stk 
 1  exercise  cmbuild:se/19         @src/cmbuild@ --ehmmre 0.6 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/20         @src/cmbuild@ --eX 3.0 -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/19         @src/cmbuild@ --eset 6 -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/19         @src/cmbuild@ --emin 2 -F %SE.CM% se.stk 
 1  exercise  cmbuild:se/21         @src/cmbuild@ -F --null at4.null %SE.CM% se.stk 
 1  exercise  cmbuild:se/22         @src/cmbuild@ -F --prior plus1.prior %SE.CM% se.stk 
 1  exercise  cmbuild:se/23         @src/cmbuild@ -F --ctarget 2 %SE.CM% se.stk 
@@ -77,7 +78,8 @@
 1  exercise  cmbuild:3.4.12/18         @src/cmbuild@ --enone -F %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/19         @src/cmbuild@ --ere 0.8 -F %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/19         @src/cmbuild@ --ehmmre 0.6 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/20         @src/cmbuild@ --eX 3.0 -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/20         @src/cmbuild@ --eset 3 -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/20         @src/cmbuild@ --eminseq 5 -F %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/21         @src/cmbuild@ -F --null at4.null %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/22         @src/cmbuild@ -F --prior plus1.prior %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/23         @src/cmbuild@ -F --ctarget 2 %3.4.12.CM% 3.4.12.stk 

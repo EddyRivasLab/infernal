@@ -43,16 +43,16 @@ struct ew_param_s {
 
 
 /* Evaluate fx = cm rel entropy - etarget, which we want to be = 0,
- * for effective sequence number <x>.
+ * for effective sequence number <Neff>.
  */
 static int
 cm_eweight_target_f(double Neff, void *params, double *ret_fx)
 {
   struct ew_param_s *p = (struct ew_param_s *) params;
   int v, i;
-  /*printf("cm_eweight_target_f() Neff: %f\n", Neff);*/
+  printf("cm_eweight_target_f() Neff:  %f\n", Neff);
 
-  /* copy parameters from CM to p->*_orig arrays */
+  /* copy parameters from to p->*_orig to CM arrays */
   for (v = 0; v < p->cm->M; v++) {
     for (i = 0; i < MAXCONNECT; i++)                    p->cm->t[v][i] = p->t_orig[v][i];
     for (i = 0; i < p->cm->abc->K * p->cm->abc->K; i++) p->cm->e[v][i] = p->e_orig[v][i];
@@ -61,10 +61,12 @@ cm_eweight_target_f(double Neff, void *params, double *ret_fx)
   }
   cm_Rescale(p->cm, Neff / (double) p->cm->nseq);
   PriorifyCM(p->cm, p->pri);
+  printf("cm_eweight_target_f() MMRE: %f\ncm_eweight_target_f() ret  %f\n\n", 
+	 cm_MeanMatchRelativeEntropy(p->cm), 
+	 cm_MeanMatchRelativeEntropy(p->cm) - p->etarget);
   *ret_fx = cm_MeanMatchRelativeEntropy(p->cm) - p->etarget; /* only diff with hmm_eweight_target_f */
   return eslOK;
 }
-
 
 /* Evaluate fx = hmm rel entropy - etarget, which we want to be = 0,
  * for effective sequence number <x>. Differs from cm_eweight_target_f
@@ -102,25 +104,26 @@ hmm_eweight_target_f(double Neff, void *params, double *ret_fx)
  *            what effective sequence number we should use, and 
  *            return it in <ret_Neff>. 
  *            
- *            Caller provides a count-based <hmm>, and the
+ *            Caller provides a count-based <cm>, and the
  *            Dirichlet prior <pri> that's to be used to parameterize
  *            models; neither of these will be modified. 
  *            Caller also provides the relative entropy
  *            target in bits in <etarget>. 
  *            
- *            <ret_Neff> will range from 0 to the true number of
+ *            <ret_Neff> will range from min_Neff to the true number of
  *            sequences counted into the model, <hmm->nseq>.
  *
- *            Note: if pretend_cm_is_hmm is TRUE the CM's MATP_MP pair
+ *            If <pretend_cm_is_hmm> is TRUE the CM's MATP_MP pair
  *            emissions are marginalized, treating pair emitting states
  *            effectively as a pair of singlet emitting states. 
  *            
+ *
  * Returns:   <eslOK> on success. 
  *
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, int pretend_cm_is_hmm, double *ret_hmm_re, double *ret_Neff)
+cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, int pretend_cm_is_hmm, double *ret_hmm_re, double *ret_Neff)
 {
   int status;
   ESL_ROOTFINDER *R = NULL;
@@ -155,19 +158,28 @@ cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, int pretend_cm_is
   }
   p.pri = pri;
   p.etarget = etarget;
-  
-  Neff = (double) cm->nseq;
-  if(pretend_cm_is_hmm) { if ((status = hmm_eweight_target_f(Neff, &p, &fx)) != eslOK) goto ERROR; } 
-  else                  { if ((status = cm_eweight_target_f(Neff, &p, &fx)) != eslOK) goto ERROR; } 
-  if (fx > 0.) { 
-    if(pretend_cm_is_hmm) { if ((R = esl_rootfinder_Create(hmm_eweight_target_f, &p)) == NULL) {status = eslEMEM; goto ERROR;} }
-    else                  { if ((R = esl_rootfinder_Create(cm_eweight_target_f, &p)) == NULL) {status = eslEMEM; goto ERROR;} }
-    esl_rootfinder_SetAbsoluteTolerance(R, 1e-3); /* getting Neff to ~3 sig digits is fine */
-    if ((status = esl_root_Bisection(R, 0., (double) cm->nseq, &Neff)) != eslOK) goto ERROR;
-    
-    esl_rootfinder_Destroy(R);
-  }
 
+  /* Firtst, ceck if min_Neff gives a rel entropy >= e.target, if so
+   * set Neff to min_Neff.  In this case its impossible to get a Neff
+   * < min_Neff that a relent == etarget, so we use min_Neff;
+   */
+  Neff = min_Neff;
+  if(pretend_cm_is_hmm) { if ((status = hmm_eweight_target_f(Neff, &p, &fx)) != eslOK)    goto ERROR; } 
+  else                  { if ((status = cm_eweight_target_f(Neff, &p, &fx)) != eslOK)     goto ERROR; } 
+  if(fx < 0.) { /* an Neff > min_Neff that gives a rel entropy of p.etarget is achievable, find it */
+    Neff = (double) cm->nseq;
+    if(pretend_cm_is_hmm) { if ((status = hmm_eweight_target_f(Neff, &p, &fx)) != eslOK)    goto ERROR; } 
+    else                  { if ((status = cm_eweight_target_f(Neff, &p, &fx)) != eslOK)     goto ERROR; } 
+    
+    if (fx > 0.) { 
+      if(pretend_cm_is_hmm) { if ((R = esl_rootfinder_Create(hmm_eweight_target_f, &p))    == NULL) {status = eslEMEM; goto ERROR;} }
+      else                  { if ((R = esl_rootfinder_Create(cm_eweight_target_f, &p))     == NULL) {status = eslEMEM; goto ERROR;} }
+      esl_rootfinder_SetAbsoluteTolerance(R, 1e-3); /* getting Neff to ~3 sig digits is fine */
+      if ((status = esl_root_Bisection(R, 0., (double) cm->nseq, &Neff)) != eslOK) goto ERROR;
+      
+      esl_rootfinder_Destroy(R);
+    }
+  }
   /* we've found Neff, determine the relative entropy of the CM if we marginalize the MP pair emissions,
    * this is (ALMOST) the relative entropy of the CP9 HMM we'll eventually construct from it,
    * (it's only ALMOST b/c the CP9 will have marginalized emissions from the MATP_MP PLUS the MATP_ML
@@ -366,6 +378,13 @@ cm_MeanMatchRelativeEntropy(const CM_t *cm)
   double KL = 0.;
   float *pair_null;
   int i,j;
+  int KL_pair_denom = 0;
+  int KL_singlet_denom = 0;
+  float left_e[cm->abc->K];
+  float right_e[cm->abc->K];
+  double KL_pair = 0.;
+  double KL_pair_marg = 0.;
+  double KL_singlet = 0.;
   
   ESL_ALLOC(pair_null, (sizeof(float) * cm->abc->K * cm->abc->K));
   for(i = 0; i < cm->abc->K; i++)
@@ -375,13 +394,44 @@ cm_MeanMatchRelativeEntropy(const CM_t *cm)
   for (v = 0; v < cm->M; v++) { 
     if(cm->stid[v] == MATP_MP) {
       KL += esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K));
+      KL_pair += esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K));
+      KL_pair_denom += 2;
+      /*printf("MP    (%5d) %6.3f\n", v, esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K)));*/
+
+      /* calculate marginals */
+      /* left half */
+      esl_vec_FSet(left_e, cm->abc->K, 0.);
+      for(i = 0; i < cm->abc->K; i++) { 
+	for(j = (i*cm->abc->K); j < ((i+1)*cm->abc->K); j++) {
+	  left_e[i] += cm->e[v][j];
+	}
+      }
+      esl_vec_FNorm(left_e, cm->abc->K);
+      KL_pair_marg += esl_vec_FRelEntropy(left_e, cm->null, cm->abc->K);
+      /*printf("cm       L %4d (%4s) v: %5d KL: %10.5f (added: %10.5f)\n", cm->ndidx[v], "MATP", v, KL, esl_vec_FRelEntropy(left_e, cm->null, cm->abc->K));*/
+      /* right half */
+      esl_vec_FSet(right_e, cm->abc->K, 0.);
+      for(i = 0; i < cm->abc->K; i++) { 
+	for(j = i; j < cm->abc->K * cm->abc->K; j += cm->abc->K) { 
+	  right_e[i] += cm->e[v][j]; 
+	}
+      }
+      KL_pair_marg += esl_vec_FRelEntropy(right_e, cm->null, cm->abc->K);
     }
     else if(cm->stid[v] == MATL_ML || 
 	    cm->stid[v] == MATR_MR) { 
       KL += esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K);
+      KL_singlet += esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K);
+      KL_singlet_denom += 1;
+      /*printf("ML/MR (%5d) %6.3f\n", v, esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K));*/
     }
   }  
   free(pair_null);
+
+  printf("\n%s KL total   %8.3f  %8.3f per          cpos\n", cm->name, KL, KL / (double) cm->clen);
+  printf("%s KL pair    %8.3f  %8.3f per   paired cpos\n", cm->name, KL_pair, KL_pair / (double) KL_pair_denom);
+  printf("%s KL pair(m) %8.3f  %8.3f per   paired cpos\n", cm->name, KL_pair_marg, KL_pair_marg / (double) KL_pair_denom);
+  printf("%s KL singlet %8.3f  %8.3f per unpaired cpos\n", cm->name, KL_singlet, KL_singlet / (double) KL_singlet_denom);
 
   KL /= (double) cm->clen;
   return KL;

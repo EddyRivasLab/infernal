@@ -303,6 +303,23 @@ Set the target mean match state relative entropy as
 By default the target relative entropy per match position is 0.59 bits.
 
 .TP 
+.BI --eminseq " <x>"
+Define the minimum allowed effective sequence number to 
+.I <x>.
+
+.TP 
+.BI --ehmmre " <x>"
+Set the target HMM mean match state relative entropy as 
+.I <x>.
+Entropy for basepairing match states is calculated using marginalized
+basepair emission probabilities. 
+
+.TP 
+.BI --eset " <x>"
+Set the effective sequence number for entropy weighting as 
+.I <x>.
+
+.TP 
 .BI --null " <f>"
 Read a null model from 
 .I <f>.
