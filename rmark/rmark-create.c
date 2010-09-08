@@ -58,7 +58,8 @@
 
 static char banner[] = "construct a rmark benchmark profile training/test set";
 static char usage1[]  = "[options] <basename> <msafile> <hmmfile>";
-static char usage2[]  = "[options] -S <basename> <msafile> <seqdb>\n";
+static char usage2[]  = "[options] -S    <basename> <msafile> <seqdb>";
+static char usage3[]  = "[options] --iid <basename> <msafile>\n";
 
 #define SHUF_OPTS "--mono,--di,--markov0,--markov1"   /* toggle group, seq shuffling options          */
 
@@ -77,11 +78,11 @@ static ESL_OPTIONS options[] = {
   { "-E",       eslARG_INT,     "1", NULL,"n>0",     NULL,NULL,NULL,         "minimum number of test     seqs per family",              1 },
 
   /* Options controlling negative segment randomization method  */
-  { "--mono",    eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, "-S", NULL, "with -S, shuffle preserving monoresidue composition",                2 },
-  { "--di",      eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, "-S", NULL, "with -S, shuffle preserving mono- and di-residue composition",       2 },
-  { "--markov0", eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, "-S", NULL, "with -S, generate with 0th order Markov properties per input",       2 },
-  { "--markov1", eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, "-S", NULL, "with -S, generate with 1st order Markov properties per input",       2 },
-  { "--iid",     eslARG_NONE,    FALSE, NULL, NULL, SHUF_OPTS, "-S", NULL, "with -S, generate random iid sequence for negatives",                2 },
+  { "--iid",     eslARG_NONE,    FALSE, NULL, NULL, NULL, NULL, "-S",      "generate random iid sequence for negatives",                2 },
+  { "--mono",    eslARG_NONE,    FALSE, NULL, NULL, NULL, "-S", SHUF_OPTS, "with -S, shuffle preserving monoresidue composition",                2 },
+  { "--di",      eslARG_NONE,    FALSE, NULL, NULL, NULL, "-S", SHUF_OPTS, "with -S, shuffle preserving mono- and di-residue composition",       2 },
+  { "--markov0", eslARG_NONE,    FALSE, NULL, NULL, NULL, "-S", SHUF_OPTS, "with -S, generate with 0th order Markov properties per input",       2 },
+  { "--markov1", eslARG_NONE,    FALSE, NULL, NULL, NULL, "-S", SHUF_OPTS, "with -S, generate with 1st order Markov properties per input",       2 },
 
   /* Options forcing which alphabet we're working in (normally autodetected) */
   { "--amino",  eslARG_NONE,  FALSE, NULL, NULL, NULL,NULL,"--dna,--rna",    "<msafile> contains protein alignments",                   3 },
@@ -144,6 +145,7 @@ cmdline_failure(char *argv0, char *format, ...)
   va_end(argp);
   esl_usage(stdout, argv0, usage1);
   esl_usage(stdout, argv0, usage2);
+  esl_usage(stdout, argv0, usage3);
   printf("\nTo see more help on available options, do %s -h\n\n", argv0);
   exit(1);
 }
@@ -201,11 +203,17 @@ main(int argc, char **argv)
   if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK) cmdline_failure(argv[0], "Failed to parse command line: %s\n", go->errbuf);
   if (esl_opt_VerifyConfig(go)               != eslOK) cmdline_failure(argv[0], "Error in app configuration:   %s\n", go->errbuf);
   if (esl_opt_GetBoolean(go, "-h"))                    cmdline_help(argv[0], go);
-  if (esl_opt_ArgNumber(go)                  != 3)     cmdline_failure(argv[0], "Incorrect number of command line arguments\n");
+
+  if ((  esl_opt_GetBoolean(go, "--iid") && esl_opt_ArgNumber(go) != 2) || 
+      (! esl_opt_GetBoolean(go, "--iid") && esl_opt_ArgNumber(go) != 3)) { 
+    cmdline_failure(argv[0], "Incorrect number of command line arguments\n");
+  }
   basename = esl_opt_GetArg(go, 1); 
   alifile  = esl_opt_GetArg(go, 2);
-  if(esl_opt_GetBoolean(go, "-S")) dbfile  = esl_opt_GetArg(go, 3);
-  else                             hmmfile = esl_opt_GetArg(go, 3);
+  if(! esl_opt_GetBoolean(go, "--iid")) { 
+    if(esl_opt_GetBoolean(go, "-S")) dbfile  = esl_opt_GetArg(go, 3);
+    else                             hmmfile = esl_opt_GetArg(go, 3);
+  }
   alifmt   = eslMSAFILE_STOCKHOLM;
   dbfmt    = eslSQFILE_FASTA;
 
@@ -242,7 +250,7 @@ main(int argc, char **argv)
   if ((cfg.ppossummfp = fopen(outfile, "w"))      == NULL) esl_fatal("Failed to open pos-only test set summary file %s\n", outfile);
   if (snprintf(outfile, 256, "%s.tbl", basename) >= 256)   esl_fatal("Failed to construct benchmark table file name");
   if ((cfg.tblfp     = fopen(outfile, "w"))      == NULL)  esl_fatal("Failed to open benchmark table file %s\n", outfile);
-  if (esl_opt_GetBoolean(go, "-S") && (! esl_opt_GetBoolean(go, "--iid"))) { /* only create negative file if -S enabled and --iid is NOT enabled */
+  if (esl_opt_GetBoolean(go, "-S")) { 
     if (snprintf(outfile, 256, "%s.neg", basename) >= 256)  esl_fatal("Failed to construct neg test set summary file name");
     if ((cfg.negsummfp = fopen(outfile, "w"))      == NULL) esl_fatal("Failed to open neg test set summary file %s\n", outfile);
   }
@@ -1084,7 +1092,7 @@ synthesize_negatives_and_embed_positives(ESL_GETOPTS *go, struct cfg_s *cfg, ESL
     negsq->dsq[0] = negsq->dsq[cfg->negL+1] = eslDSQ_SENTINEL;
     negsq->n = 0;
     while(negsq->n < cfg->negL) { 
-      if(esl_opt_GetBoolean(go, "-S")) { /* shuffle part of the seqdb */
+      if(esl_opt_GetBoolean(go, "-S") || esl_opt_GetBoolean(go, "--iid")) { /* shuffle part of the seqdb */
 	chunkL = (negsq->n + cfg->negchunkL <= cfg->negL) ? cfg->negchunkL : cfg->negL - negsq->n;
 	if(cfg->negsummfp != NULL) { 
 	  /* print out sequence name, start/end posn in newly constructed negative seq, set_random_segment() will print the rest */
@@ -1200,7 +1208,7 @@ set_random_segment(ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq
   ESL_SQ  *sq           = esl_sq_CreateDigital(cfg->abc);
   ESL_SQ  *dbsq         = esl_sq_CreateDigital(cfg->abc);
   int      minDPL       = esl_opt_GetInteger(go, "--minDPL"); 
- int      db_dependent = (esl_opt_GetBoolean(go, "--iid") == TRUE ? FALSE : TRUE);
+  int      db_dependent = (esl_opt_GetBoolean(go, "--iid") == TRUE ? FALSE : TRUE);
   char    *pkey         = NULL;
   int64_t  start, end;
   int64_t  Lseq;
@@ -1266,8 +1274,8 @@ set_random_segment(ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq
   /* Now apply the appropriate randomization algorithm, if none are turned on, use --di */
   if((esl_opt_GetBoolean(go, "--di")) || 
      ((! esl_opt_GetBoolean(go, "--mono")) && 
+      (! esl_opt_GetBoolean(go, "--markov0")) && 
       (! esl_opt_GetBoolean(go, "--markov1")) && 
-      (! esl_opt_GetBoolean(go, "--markov2")) && 
       (! esl_opt_GetBoolean(go, "--iid")))) { 
     if (L < minDPL)                             status = esl_rsq_XShuffle  (cfg->r, sq->dsq, L, sq->dsq);
     else                                        status = esl_rsq_XShuffleDP(cfg->r, sq->dsq, L, cfg->abc->Kp, sq->dsq);
