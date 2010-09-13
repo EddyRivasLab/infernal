@@ -105,7 +105,9 @@ while ($line = <>)
 	    $sc_should_decrease = 1;
 	}
     }
-    if(! $seen_matchHH{$fam}{$match}) { # we've already seen a (better scoring) match to this positive, skip it
+    if(! $seen_matchHH{$fam}{$match}) { 
+        # if seen_matchHH{$fam}{$match}, we've already seen a (better scoring) match to this positive, skip it
+	# note that seen_matchHH{$fam}{$match} is only set below for POSITIVES, so decoys will never be skipped
 	if($match =~ m/^decoy/) { 
 	    # negative
 	    $nlisted++;

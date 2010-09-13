@@ -44,6 +44,7 @@ if(scalar(@ARGV) != 10) { printf("$usage\n$options_usage"); exit(1); }
 
 ($execdir, $scriptdir, $modeldir, $resultdir, $optsfile, $tblfile, $msafile, $posfile, $fafile, $outfile) = @ARGV;
 $tmpoutfile = $outfile . ".tmp";
+$sorttmpoutfile = $outfile . ".tmp.sort";
 
 $idscript   = "$scriptdir/rmark-idpositives.pl";
 $cmsearch   = "$execdir/cmsearch";
@@ -179,10 +180,14 @@ close TABLE;
 close OUTFILE;
 close TMPOUTFILE;
 
-# Final step use 'rmark-idpositives.pl' to identify positives in the temporary output file to
-# create the permanent output file
-$status = system("perl $idscript $posfile $tmpoutfile > $outfile");
-if ($status != 0) { die "FAILED: $idscript $posfile $tmpoutfile > $outfile"; }
-unlink $tmpoutfile;
-    
+# Use 'rmark-idpositives.pl' to identify positives in the temporary output file to
+# create the permanent output file. First, we need to sort by score.
+
+$command = "sort -g $tmpoutfile > $sorttmpoutfile";
+$status = system("$command");
+if ($status != 0) { die "FAILED: $command"; }
+
+$command = "perl $idscript $posfile $sorttmpoutfile > $outfile";
+$status = system("$command");
+if ($status != 0) { die "FAILED: $command"; }
     

@@ -1,12 +1,17 @@
 #! /usr/bin/perl -w
 #
 # Given a positive file (.pos) and an output file of an rmark benchmark,
-# create a positive-annotated output file file that is identical to the
-# output file but includes two extra fields indicating if each hit overlaps a 
-# positive or not and whether the overlap is on the correct strand.
+# first remove all overlapping hits from the file, as defined below.
+# Then given the set of non-overlapping hits, create a positive-annotated 
+# output file that lists the non-overlapping hits in the benchmark output file,
+# along with two extra fields indicating if each hit overlaps a positive or not 
+# and whether the overlap is on the correct strand.
 #
-# Usage:      identify-positives.pl <posfile> <rmark outfile> 
-# Example:  ./identify-positives.pl rmark3.pos cmsearch.out 
+# The <rmark outfile> MUST be sorted properly by score (E-value or bit score), with
+# better scores preceding worse scores.  
+#
+# Usage:    perl identify-positives.pl <posfile> <sorted rmark output>
+# Example:  ./identify-positives.pl rmark3.pos sorted-cmsearch.out 
 #
 # SVN $Id$
 #
@@ -20,12 +25,13 @@ if(scalar(@ARGV) != 2) {
     exit(1);
 }
 
-my ($posfile, $outfile) = @ARGV;
+my($posfile, $outfile) = @ARGV;
 my $overlap_thr = 0.5;
 
 if (! -e $posfile) { die "$posfile doesn't exist"; }
 if (! -e $outfile) { die "$outfile doesn't exist"; }
 
+# Step 1: read the positives file and store information on where each positive is
 my @fields = ();
 my ($target_name, $family, $target_from, $target_to, $target_ori, $family_and_idx, $idx, $tmp, $line);
 my ($matching_fam, $matching_strand, $matching_idx);
@@ -35,7 +41,6 @@ my %pos_ori_HH = ();
 my %pos_idx_HH = ();
 my %pos_order_HA = ();
 my @pout_lines;
-# read the positive file 
 open(POS, "$posfile") || die "FAILED: to open $posfile";
 while ($line = <POS>)
 {
@@ -76,9 +81,51 @@ foreach $target_name (keys (%pos_to_HH)) {
     @{$pos_order_HA{$target_name}} = sort {$a <=> $b} (keys (%{$pos_to_HH{$target_name}}));
 }
 
-# Read the output file of hits and determine if each hit overlaps a positive.
-# Create the ".pout" file, which is identical to the ".out' file but with 
-# two additional fields telling if each hit overlaps with a positive or not.
+# Step 2: Read the output file of hits and make sure the hits are sorted 
+#         by score. Either increasing or decreasing.
+open(OUT,  "$outfile")   || die "FAILED: to open $outfile";
+my $seen_sc = 0;
+my $sc_should_increase = 0;
+my $sc_should_decrease = 0;
+my ($sc, $prv_sc, $overlap);
+while ($line = <OUT>)
+{
+    chomp $line;
+    if ($line =~ m/^\#/) { next; }
+    @fields   = split(' ', $line, 6);
+    $sc          = $fields[0];
+    if($seen_sc) { 
+	if($sc > $prv_sc) { 
+	    if($sc_should_decrease) { die "ERROR, results don't appear to be sorted by score"; }
+	    $sc_should_increase = 1;
+	}
+	elsif($sc < $prv_sc) { 
+	    if($sc_should_increase) { die "ERROR, results don't appear to be sorted by score"; }
+	    $sc_should_decrease = 1;
+	}
+    }
+    $prv_sc = $sc;
+    $seen_sc = 1;
+}
+close(OUT);
+
+# Step 3: If we get here, the scores are sorted.  Reread the output
+#         file of hits and remove overlaps greedily.  Since they're
+#         sorted by score, we can just remove any hit as we read it IF
+#         it overlaps with any hit we've already read and stored.
+#         We don't actually remove hits, but we flag them, and then
+#         ignore them in step 4 below.
+my $nhits_total   = 0;
+my $nhits_kept    = 0;
+my $nhits_removed = 0;
+my @hit_usemeA = ();
+my @khit_targetA = ();
+my @khit_fromA = ();
+my @khit_toA = ();
+my @khit_oriA = ();
+my @khit_queryA = ();
+my ($h, $query );
+
 open(OUT,  "$outfile")   || die "FAILED: to open $outfile";
 while ($line = <OUT>)
 {
@@ -88,6 +135,7 @@ while ($line = <OUT>)
     $target_from = $fields[2];
     $target_to   = $fields[3];
     $target_name = $fields[4];
+    $query       = $fields[5];
     if($target_from > $target_to) { # on negative strand (Crick) 
 	$tmp         = $target_to;
 	$target_to   = $target_from;
@@ -98,34 +146,98 @@ while ($line = <OUT>)
 	$target_ori = "+";
     }
 
-    if(! (exists ($pos_fam_HH{$target_name}))) { 
-	$matching_fam    = "decoy";
-	$matching_strand = "decoy";
+    # check if this hit overlaps with all previously seen hits:
+    $hit_usemeA[$nhits_total] = 1; # we'll use it, unless we find an overlapping hit with better score already stored
+    for($h = 0; $h < $nhits_kept; $h++) { 
+	if(($query eq $khit_queryA[$h]) && ($khit_targetA[$h] eq $target_name) && ($khit_oriA[$h] eq $target_ori)) { 
+	    # hit is from same query in same target and in same orientation, check if it overlaps
+	    $overlap = GetOverlap($target_from, $target_to, $khit_fromA[$h], $khit_toA[$h]);
+	    if($overlap > $overlap_thr) { 
+		# this hit overlaps another one with a better score
+		$hit_usemeA[$nhits_total] = 0;
+		$h = $nhits_kept; #breaks for loop above
+	    }
+	}
     }
+    if($hit_usemeA[$nhits_total] == 1) { 
+	push(@khit_targetA, $target_name);
+	push(@khit_fromA,   $target_from);
+	push(@khit_toA,     $target_to);
+	push(@khit_oriA,    $target_ori);
+	push(@khit_queryA,  $query);
+	$nhits_kept++;
+	#printf("KEPT HIT    %-20s  %-20s  %10d  %10d  %s\n", $query, $target_name, $target_from, $target_to, $target_ori);
+    }		 
     else { 
-        # target_name has at least 1 positive embedded within it, 
-	# check if this hit overlaps any positives
-	#printf("calling CheckIfPositive: targetname: $target_name\n"); 
-	CheckIfPositive($target_from, $target_to, $target_ori, $overlap_thr, 
-			\%{$pos_fam_HH{$target_name}}, 
-			\%{$pos_to_HH{$target_name}}, 
-			\%{$pos_ori_HH{$target_name}}, 
-			\%{$pos_idx_HH{$target_name}}, 
-			\@{$pos_order_HA{$target_name}}, 
-			\$matching_fam, \$matching_strand, \$matching_idx);
+	$nhits_removed++; 
+	#printf("REMOVED HIT %-20s  %-20s  %10d  %10d  %s\n", $query, $target_name, $target_from, $target_to, $target_ori);
     }
-    # note we don't print pout_lines until the end, so if there's an error that causes
-    # us to exit early, we'll know it b/c the pout file not exist
-    push(@pout_lines, sprintf("%s %s/%d %s\n", $line, $matching_fam, $matching_idx, $matching_strand));
-    #printf("%s %s %s\n", $line, $matching_fam, $matching_idx, $matching_strand);
+    $nhits_total++;
 }
 close(OUT);
+#printf("nkept:    %d\n", $nhits_kept);
+#printf("nremoved: %d\n", $nhits_removed);
+
+# Step 4: Reead the output file for a final time determine if each hit overlaps a positive.
+#         Create the ".pout" file, which is identical to the ".out' file but with 
+#         two additional fields telling if each hit overlaps with a positive or not.
+#         We actually don't have to reread the file, because we have all we
+#         need stored in the khit arrays, but I already had it implemented this way,
+#         and it works, so I left it.
+#
+open(OUT,  "$outfile")   || die "FAILED: to open $outfile";
+$h = 0;
+while ($line = <OUT>)
+{
+    chomp $line;
+    if ($line =~ m/^\#/) { next; }
+    # make sure we want to keep this hit
+    if($hit_usemeA[$h] == 1) { 
+	@fields   = split(' ', $line, 6);
+	$target_from = $fields[2];
+	$target_to   = $fields[3];
+	$target_name = $fields[4];
+	if($target_from > $target_to) { # on negative strand (Crick) 
+	    $tmp         = $target_to;
+	    $target_to   = $target_from;
+	    $target_from = $tmp;
+	    $target_ori  = "-";
+	}
+	else { 
+	    $target_ori = "+";
+	}
+	
+	if(! (exists ($pos_fam_HH{$target_name}))) { 
+	    $matching_fam    = "decoy";
+	    $matching_strand = "decoy";
+	}
+	else { 
+	    # target_name has at least 1 positive embedded within it, 
+	    # check if this hit overlaps any positives
+	    #printf("calling CheckIfPositive: targetname: $target_name\n"); 
+	    CheckIfPositive($target_from, $target_to, $target_ori, $overlap_thr, 
+			    \%{$pos_fam_HH{$target_name}}, 
+			    \%{$pos_to_HH{$target_name}}, 
+			    \%{$pos_ori_HH{$target_name}}, 
+			    \%{$pos_idx_HH{$target_name}}, 
+			    \@{$pos_order_HA{$target_name}}, 
+			    \$matching_fam, \$matching_strand, \$matching_idx);
+	}
+	# note we don't print pout_lines until the end, so if there's an error that causes
+	# us to exit early, we'll know it b/c the pout file not exist
+	push(@pout_lines, sprintf("%s %s/%d %s\n", $line, $matching_fam, $matching_idx, $matching_strand));
+	#printf("%s %s %s\n", $line, $matching_fam, $matching_idx, $matching_strand);
+    }
+    $h++; 
+}
+close(OUT);
+
+if($h != $nhits_total) { die "ERROR, second pass read $h hits, first pass read $nhits_total hits"; }
 
 my $pout_line;
 foreach $pout_line (@pout_lines) {
     print $pout_line;
 }
-
 
 #################################################################
 # Subroutine : CheckIfPositive()
