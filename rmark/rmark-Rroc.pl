@@ -64,7 +64,9 @@ while(<LIST>) {
 	while($mer = <MER>) { 
 	    if($mer =~ s/^\s*\*summary\*\s+//) { 
 		$mer =~ s/\s+$//; 
-		push(@nametimemerA,  "\"" . $name  . " " . $time . "h MER: " . $mer . "\"");
+		$legstring = sprintf("\"%-20s  %-10s  MER: %4d\"", $name, $time . "h", $mer);
+		push(@nametimemerA, $legstring);
+		#push(@nametimemerA,  "\"" . $name  . " " . $time . "h MER: " . $mer . "\"");
 	    }
 	}
 	close(MER);
@@ -101,7 +103,7 @@ while(<LIST>) {
 }
 close(LIST);
 
-push(@R, "legend(0.02, 0.25, c" . return_vec_line(\@nametimemerA) . ", lty=1, cex=0.8, col=c" . return_vec_line(\@colorA) . ", text.col=c" . return_vec_line(\@colorA) . ")\n");
+push(@R, "legend(0.02, 0.25, c" . return_vec_line(\@nametimemerA) . ", lty=1, cex=0.6, col=c" . return_vec_line(\@colorA) . ", text.col=c" . return_vec_line(\@colorA) . ")\n");
 push(@R, "dev.off()\n");
 
 $Rinput = join("", @R);

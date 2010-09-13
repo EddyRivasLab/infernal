@@ -11,9 +11,16 @@
 # Usage:      x-nhmmer <execdir>        <scriptdir> <modeldir> <resultdir> <optsfile> <tblfile> <msafile>  <posfile>  <fafile> <outfile>
 # Example:  ./x-nhmmer ../hmmer/src/    ../rmark    h3-models  testdir     h3-df.opts test.tbl  rmark3.msa rmark3.pos test.fa  test.out
 #
+# Command-line options:
+# -C <f> : fetch models from existing file <f>
+#
 # SRE, Tue Apr 20 10:32:49 2010 [Janelia]
 # SVN $Id$
 #
+use Getopt::Std;
+getopts('C:');
+$do_fetch_models = 0;
+if (defined $opt_C) { $do_fetch_models = 1; $master_model = $opt_C; } 
 
 $usage = "Usages: x-nhmmer [options]\n\t<execdir>\n\t<scriptdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
 
@@ -24,7 +31,11 @@ $tmpoutfile = $outfile . ".tmp";
 
 $idscript   = "$scriptdir/rmark-idpositives.pl";
 $nhmmer     = "$execdir/nhmmer";
+$hmmfetch   = "$execdir/hmmfetch";
 
+if($do_fetch_models) { 
+    if(! -e $hmmfetch) { die "$hmmfetch does not exist"; }
+}    
 
 if (! -d $execdir)                                      { die "didn't find executable directory $execdir"; }
 if (! -d $scriptdir)                                    { die "didn't find script directory $scriptdir"; }
@@ -43,19 +54,31 @@ close(OPTS);
 chomp $searchopts;
 
 # check all models exist before we fire off searches
-open(TABLE, "$tblfile")   || die "failed to open $tblfile";
-while (<TABLE>) {
-    ($msaname) = split;
-    if(! -e "$modeldir/$msaname.hmm") { die "didn't find model file $modeldir/$msaname.hmm"; }
+if(! $do_fetch_models) { 
+    open(TABLE, "$tblfile")   || die "failed to open $tblfile";
+    while (<TABLE>) {
+	($msaname) = split;
+	if(! -e "$modeldir/$msaname.hmm") { die "didn't find model file $modeldir/$msaname.hmm"; }
+    }
+    close(TABLE);
 }
-close(TABLE);
+elsif($do_fetch_models) { 
+    $modeldir = $resultdir; # we'll fetch the models and read them from the $resultdir/ 
+}
 
 open(OUTFILE,">$outfile") || die "failed to open $outfile";
 open(TMPOUTFILE,">$tmpoutfile") || die "failed to open $tmpoutfile";
 open(TABLE, "$tblfile")   || die "failed to open $tblfile";
 while (<TABLE>)
 {
+    $runtime = -1 * time();
+
     ($msaname) = split;
+
+    if($do_fetch_models) { 
+	$status = system("$hmmfetch -o $resultdir/$msaname.hmm $master_model $msaname > /dev/null");
+	if ($status != 0) { die "FAILED: $hmmfetch -o $resultdir/$msaname.hmm $master_model > /dev/null"; }
+    }
 
     $status = system("$nhmmer $searchopts --tblout $resultdir/$msaname.tmp $modeldir/$msaname.hmm $fafile > $resultdir/$msaname.search");
     if ($status != 0) { die "FAILED: $nhmmer $searchopts --tblout $resultdir/$msaname.tmp $resultdir/$msaname.hmm $fafile > $resultdir/$msaname.nhmmer"; }
@@ -74,6 +97,13 @@ while (<TABLE>)
     }
 
     unlink "$resultdir/$msaname.tmp";
+    unlink "$resultdir/$msaname.search";
+    if($do_fetch_models) { unlink "$resultdir/$msaname.hmm"; }
+
+    $runtime += time();
+    open(TIME, ">" . "$resultdir/$msaname.time");
+    printf TIME "$msaname $runtime seconds\n";
+    close(TIME);
 }
 close TABLE;
 close OUTFILE;

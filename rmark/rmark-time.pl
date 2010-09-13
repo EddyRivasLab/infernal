@@ -1,8 +1,9 @@
 #! /usr/bin/perl
 #
-# Given a list of .search output files each with >= 1 lines
+# Given a list of .time files each with 1 line
 # formatted like:
 #
+# tRNA 2524 seconds OR
 # CPU time: 372.42u 1.51s 00:06:13.92 Elapsed: 00:00:47.20
 #
 # Output the summed time for all such lines in each file, and 
@@ -25,6 +26,10 @@ while($file = <>) {
 	    ($hours, $minutes, $seconds) = ($1, $2, $3);
 	    $fam_seconds   += ($hours * 3600) + ($minutes * 60) + $seconds;
 	    $total_seconds += ($hours * 3600) + ($minutes * 60) + $seconds;
+	}
+	elsif($line =~ /^$fam\s+(\d+)\s+seconds/) { 
+	    $fam_seconds   += $1;
+	    $total_seconds += $1;
 	}
     }
     close(FILE);

@@ -46,13 +46,14 @@
 # -M <n> : pass -M <n> onto search module, telling it to run MPI with <n> <= 8 processors.
 #          only valid if --mpi exists in the $optsfile
 # -O <n> : only submit a single job, number <n> (for testing)
+# -X <s> : pass on -X <s> to the benchmark script
 #
 # Examples of rmark benchmark:
 #   ./rmark-master.pl ../src/ cmsearch-results cmsearch-df.opts rmark3 ./rmark-cmsearch
 #   ./rmark-master.pl -P -N 1 ../src/ cmsearch-po-results cmsearch-df.opts rmark3 ./rmark-cmsearch
 
 use Getopt::Std;
-getopts('PB:N:T:FAM:O:C:');
+getopts('PB:N:T:FAM:O:C:X:');
 $do_posonly = 0;
 $do_onejob_only = 0;
 $do_build_models = 0;
@@ -63,6 +64,7 @@ $tbl_set = 0;
 $tbl_file = "";
 $do_force = 0;
 $do_add = 0;
+$x_opt_to_pass = "";
 $mpi_nprocs = 8; #default, we'll only use it if --mpi exists in <optsfile>
 if (defined $opt_P) { $do_posonly = 1; }
 if (defined $opt_B) { $do_build_models = 1; $build_optsfile = $opt_B; }
@@ -72,6 +74,7 @@ if (defined $opt_F) { $do_force = 1; }
 if (defined $opt_A) { $do_add = 1; }
 if (defined $opt_O) { $do_onejob_only = 1; $onejob = $opt_O; }
 if (defined $opt_C) { $do_fetch_models = 1; $master_model = $opt_C; if($do_build_models) { die "-B and -C are incompatible"; } }
+if (defined $opt_X) { $x_opt_to_pass = "-X $opt_X"; } 
 if (defined $opt_M) { 
     $mpi_nprocs = $opt_M; 
     if($mpi_nprocs < 2 || $mpi_nprocs > 8) { die "ERROR, with -M <n>, <n> must be between 2 and 8"; }
@@ -215,11 +218,11 @@ for ($i = 0; $i < $ncpu; $i++)
     if((!$do_onejob_only) || ($onejob == $i)) { 
 	if($do_mpi) { # turn exclusivity on, so we get all processors on our node, to run MPI with
 	    #printf("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -l excl=true '$rmark_script $posonly_opt $build_opt $c_opt -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'\n");
-	    system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -l excl=true '$rmark_script $posonly_opt $build_opt $c_opt -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
+	    system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -l excl=true '$rmark_script $posonly_opt $build_opt $c_opt $x_opt_to_pass -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
 	}
 	else { 
 	    #printf("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge '$rmark_script $posonly_opt $build_opt $c_opt $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'\n");
-	    system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge '$rmark_script $posonly_opt $build_opt $c_opt $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
+	    system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge '$rmark_script $posonly_opt $build_opt $c_opt $x_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
 	}
     }
 }

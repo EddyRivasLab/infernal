@@ -51,6 +51,7 @@ $cmbuild    = "$execdir/cmbuild";
 $afetch     = "$execdir/esl-afetch";
 $sfetch     = "$execdir/esl-sfetch";
 $cmfetch    = "$execdir/cmfetch";
+
 if(! -e $afetch) { 
     $afetch     = "$execdir/../easel/miniapps/esl-afetch";
     if(! -e $afetch) { die "$afetch does not exist, nor $execdir/$afetch"; }
@@ -169,6 +170,10 @@ while (<TABLE>)
 	unlink "$msaname.pfa";
 	unlink "$msaname.sfetch";
     }
+
+    system("grep \"CPU time\" $resultdir/$msaname.search > $resultdir/$msaname.time");
+    sleep(0.1);
+    unlink "$resultdir/$msaname.search";
 }
 close TABLE;
 close OUTFILE;

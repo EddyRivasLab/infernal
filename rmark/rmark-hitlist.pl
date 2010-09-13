@@ -63,10 +63,8 @@ while ($line = <>)
 	if(exists($bitHH{$fam}{$target})) { #if target belongs to this fam
 	    if(($bitHH{$fam}{$target} eq "none") || ($bit > $bitHH{$fam}{$target})) {
 		$bitHH{$fam}{$target} = $bit; 
-		$found_at_least_one = 1;
-	    }
-	    if(($evalHH{$fam}{$target} eq "none") || ($bit > $evalHH{$fam}{$target})) {
 		$evalHH{$fam}{$target} = $e; 
+		$found_at_least_one = 1;
 	    }
 	}
     }
