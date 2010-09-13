@@ -71,6 +71,8 @@ open(TABLE, "$tblfile")   || die "failed to open $tblfile";
 $orig_fafile = $fafile;
 while (<TABLE>)
 {
+    $runtime = -1 * time();
+
     ($msaname) = split;
 
     # fetch the msa
@@ -106,6 +108,10 @@ while (<TABLE>)
     unlink "$resultdir/$msaname.sto";
     unlink "$resultdir/$msaname.query";
 
+    $runtime += time();
+    open(TIME, ">" . "$resultdir/$msaname.time");
+    printf TIME "$msaname $runtime seconds\n";
+    close(TIME);
 }
 close TABLE;
 close OUTFILE;
