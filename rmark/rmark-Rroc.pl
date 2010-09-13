@@ -25,6 +25,7 @@ $n = 0;
 $xlabel = "errors per query";
 $ylabel = "fractional coverage of positives";
 
+push(@R, "xlimit<-c(0.001,20)\n");
 push(@R, "ylimit<-c(0,1)\n");
 push(@R, "pdf(\"$pdf\", height=8.5, width=11)\n");
 
@@ -87,7 +88,7 @@ while(<LIST>) {
 	push(@R, "dy1" . $n . "<-c" . return_vec_line(\@dy1A) . "\n");
 	push(@R, "dy2" . $n . "<-c" . return_vec_line(\@dy2A) . "\n");
 	if($n == 1) { 
-	    push(@R, "plot(x$n, y$n,   type=\"l\", log=\"x\", ylim=ylimit, col=\"$color\", main=\"$main\", xlab=\"$xlabel\", ylab=\"$ylabel\")\n");
+	    push(@R, "plot(x$n, y$n,   type=\"l\", log=\"x\", xlim=xlimit, ylim=ylimit, col=\"$color\", main=\"$main\", xlab=\"$xlabel\", ylab=\"$ylabel\")\n");
 	}
 	else { 
 	    push(@R, "points(x$n, y$n, type=\"l\", col=\"$color\")\n");
@@ -103,7 +104,7 @@ while(<LIST>) {
 }
 close(LIST);
 
-push(@R, "legend(0.8, 0.25, c" . return_vec_line(\@nametimemerA) . ", lty=1, cex=0.8, col=c" . return_vec_line(\@colorA) . ", text.col=c" . return_vec_line(\@colorA) . ")\n");
+push(@R, "legend(0.5, 0.25, c" . return_vec_line(\@nametimemerA) . ", lty=1, cex=0.8, col=c" . return_vec_line(\@colorA) . ", text.col=c" . return_vec_line(\@colorA) . ")\n");
 push(@R, "dev.off()\n");
 
 $Rinput = join("", @R);

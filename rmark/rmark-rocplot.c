@@ -1,10 +1,10 @@
 /* Summarizing results of a benchmark by plotting a ROC-like plot,
  * including confidence intervals derived by Bayesian bootstrapping.
  * 
- * The <.pout file> from an rmark benchmark consists of lines:
+ * The <.out file> from an rmark benchmark consists of lines:
  *     <E-value> <bitscore> <target_sequence> <query_model> <matching_model> <seq_idx_in_fam> <strand>
  *    
- * The <.pout> file (or stream) must be sorted by E-value, with best
+ * The <.out> file (or stream) must be sorted by E-value, with best
  * (lowest) E-values first.
  *   
  * Unlike profmark, target sequence names are not informative. 
