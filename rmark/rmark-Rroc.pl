@@ -11,7 +11,11 @@
 # Usage:  perl rmark-Rroc.pl <listfile> <name for pdf>
 # Example usage as pipe into R:
 # > perl rmark-Rroc.pl rmark-2.list rmark-2.pdf 1 rmark-ROC
-my $usage = "Usage: perl rmark-rocR.pl <listfile> <pdfname> <1/0 yes/no draw error-bars> <plot title>\n";
+use Getopt::Std;
+getopts('R');
+if (defined $opt_R) { $replace_underscores = 1; }
+
+my $usage = "Usage: perl rmark-rocR.pl [OPTIONS] <listfile> <pdfname> <1/0 yes/no draw error-bars> <plot title>\n";
 $usage .= "\nFormat of list file:\n\t<series_name> <root> <color>\n\n";
 $usage .= "\nExample:\n\tinf1p02-df r2-i1p02-df red\n\n";
 $usage .= "<root>/<root>.xy, <root>/<root>.mer and <root>/<root>.time must exist\n\n";
@@ -20,12 +24,14 @@ if(scalar(@ARGV) != 4) { printf("$usage"); exit(1); }
 ($listfile, $pdf, $do_errorbars, $main) = @ARGV;
 $n = 0;
 
+if($replace_underscores) { $main =~ s/\_/ /g; }
+
 @R = ();
 
 $xlabel = "errors per query";
 $ylabel = "fractional coverage of positives";
 
-push(@R, "xlimit<-c(0.001,20)\n");
+#push(@R, "xlimit<-c(0.001,20)\n");
 push(@R, "ylimit<-c(0,1)\n");
 push(@R, "pdf(\"$pdf\", height=8.5, width=11)\n");
 
@@ -42,12 +48,27 @@ while(<LIST>) {
 	@yA = ();
 	@dy1A = ();
 	@dy2A = ();
-	$xyfile = $root . "/" . $root . ".xy";
-	$merfile = $root . "/" . $root . ".mer";
-	$timefile = $root . "/" . $root . ".time";
-	if(! -e $xyfile) { die "ERROR, $xyfile does not exist"; }
-	if(! -e $merfile) { die "ERROR, $merfile does not exist"; }
-	if(! -e $timefile) { die "ERROR, $timefile does not exist"; }
+	$xyfile = $root . ".xy";
+	$merfile = $root . ".mer";
+	$timefile = $root . ".time";
+	if(! -e $xyfile) { 
+	    $xyfile = $root . "/" . $xyfile; 
+	    if(! -e $xyfile) { 
+		die "ERROR, $xyfile does not exist"; 
+	    }
+	}
+	if(! -e $merfile) { 
+	    $merfile = $root . "/" . $merfile; 
+	    if(! -e $merfile) { 
+		die "ERROR, $merfile does not exist"; 
+	    }
+	}
+	if(! -e $timefile) { 
+	    $timefile = $root . "/" . $timefile; 
+	    if(! -e $timefile) { 
+		die "ERROR, $timefile does not exist"; 
+	    }
+	}
 
 	# process time file
 	open(TIME, $timefile) || die "ERROR, could not open time file $timefile";
@@ -81,14 +102,24 @@ while(<LIST>) {
 		push(@yA, $y);
 		push(@dy1A, $y + $dy1);
 		push(@dy2A, $y - $dy2);
+		$have_errorbars = 1;
+	    }
+	    elsif(/(\S+)\s+(\S+)/) { 
+		($x, $y) = ($1, $2, $3, $4);
+		push(@xA, $x);
+		push(@yA, $y);
+		if($do_errorbars) { die "ERROR, confidence intervals not read, but you want error bars"; }
+		$have_errorbars = 0;
 	    }
 	}
 	push(@R, "x"   . $n . "<-c" . return_vec_line(\@xA)   . "\n");
 	push(@R, "y"   . $n . "<-c" . return_vec_line(\@yA)   . "\n");
-	push(@R, "dy1" . $n . "<-c" . return_vec_line(\@dy1A) . "\n");
-	push(@R, "dy2" . $n . "<-c" . return_vec_line(\@dy2A) . "\n");
+	if($have_errorbars) { 
+	    push(@R, "dy1" . $n . "<-c" . return_vec_line(\@dy1A) . "\n");
+	    push(@R, "dy2" . $n . "<-c" . return_vec_line(\@dy2A) . "\n");
+	}
 	if($n == 1) { 
-	    push(@R, "plot(x$n, y$n,   type=\"l\", log=\"x\", xlim=xlimit, ylim=ylimit, col=\"$color\", main=\"$main\", xlab=\"$xlabel\", ylab=\"$ylabel\")\n");
+	    push(@R, "plot(x$n, y$n,   type=\"l\", log=\"x\", ylim=ylimit, col=\"$color\", main=\"$main\", xlab=\"$xlabel\", ylab=\"$ylabel\")\n");
 	}
 	else { 
 	    push(@R, "points(x$n, y$n, type=\"l\", col=\"$color\")\n");
