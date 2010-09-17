@@ -34,13 +34,17 @@
 
 /* various default parameters for CMs and CP9 HMMs */ 
 #define DEFAULT_MIN_CP9_E_CUTOFF 1.0
-#define DEFAULT_BETA   0.0000001
-#define DEFAULT_TAU    0.0000001
-#define DEFAULT_PBEGIN 0.05   /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_PEND   0.05   /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_ETARGET 0.59  /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
-#define DEFAULT_HS_MINLEN 7.  /* minimum length for a candidate sub CM root for a hybrid scan */
-#define DEFAULT_HS_BETA 1E-15 /* beta for calc'ing average hit length for sub cm roots of a hybrid scan */
+#define DEFAULT_BETA             0.0000001
+#define DEFAULT_TAU              0.0000001
+#define DEFAULT_PBEGIN           0.05   /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_PEND             0.05   /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_ETARGET          0.59  /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
+#define DEFAULT_HS_MINLEN        7.  /* minimum length for a candidate sub CM root for a hybrid scan */
+#define DEFAULT_HS_BETA          1E-15 /* beta for calc'ing average hit length for sub cm roots of a hybrid scan */
+#define DEFAULT_NULL2_OMEGA      0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null2 model */
+#define DEFAULT_NULL3_OMEGA      0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
+#define V1P0_NULL2_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null2 model for infernal versions 0.56 through 1.0.2 */
+#define V1P0_NULL3_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null3 model for infernal versions 0.56 through 1.0.2 */
 
 /* max number of parititons for cmcalibrate */
 #define MAX_PARTITIONS 20
@@ -201,6 +205,8 @@ typedef struct cplan9_s {
   /* The null model probabilities.
    */
   float  *null;                    /* "random sequence" emission prob's     +*/
+  float  null2_omega;              /* prior probability of null2 model, copied from CM */
+  float  null3_omega;              /* prior probability of null3 model, copied from CM */
   float  p1;                       /* null model loop probability           +*/
   /* local end, EL state parameters */
   float  el_self;                  /* EL transition self loop probability    */
@@ -1404,6 +1410,9 @@ typedef struct cm_s {
   int  **ioesc;         /*   Optimized emission score log odds int vector  */
   int   *ibeginsc;      /*   Score for ROOT_S -> state v (local alignment) */
   int   *iendsc;  	/*   Score for state_v -> EL (local alignment)     */
+
+  float   null2_omega;  /* prior probability of the null2 model (if it is used) */
+  float   null3_omega;  /* prior probability of the null3 model (if it is used) */
 
   int    flags;		/* status flags                                    */
 

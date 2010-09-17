@@ -38,5 +38,4 @@ extern Prior_t *Prior_Read(FILE *fp);
 extern void     PriorifyCM(CM_t *cm, const Prior_t *pri);
 extern Prior_t *Prior_Default(void);
 
-extern struct p7prior_s *P7DefaultInfernalPrior(void);
 #endif

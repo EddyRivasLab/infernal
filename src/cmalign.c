@@ -1201,7 +1201,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, int do_output_to_tmp, ch
     
     float null3_correction = 0.;
     for (i = 0; i < seqs_to_aln->nseq; i++) {
-      if(!(esl_opt_GetBoolean(go, "--no-null3"))) { ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, &null3_correction); }
+      if(!(esl_opt_GetBoolean(go, "--no-null3"))) { ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, cm->null3_omega, &null3_correction); }
       if(! NOT_IMPOSSIBLE(seqs_to_aln->struct_sc[i])) { 
 	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.3f\n", (cfg->nseq+i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->pp[i]);
 	else                                 fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f\n",        (cfg->nseq+i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction);
@@ -3568,7 +3568,7 @@ major_alignment2minor_parsetrees(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
     if((status = Alignment2Parsetrees(maj_target_msa, cmlist[m], cfg->mali_mtr[m], errbuf, &tmp_sq, &tmp_tr)) != eslOK) return status;
     for(i = 0; i < maj_target_msa->nseq; i++) { 
       if((status = ParsetreeScore(cmlist[m], NULL, errbuf, tmp_tr[i], tmp_sq[i]->dsq, FALSE, &(totscAA[m][i]), &(sscAA[m][i]), &(pscAA[m][i]), NULL, NULL)) != eslOK) return status;
-      //if(m == 0) if((status = ParsetreeScoreCorrectionNull3(cmlist[m], errbuf, tmp_tr[i], tmp_sq[i]->dsq, 0, &(n3scA[i]))) != eslOK) return status;
+      //if(m == 0) if((status = ParsetreeScoreCorrectionNull3(cmlist[m], errbuf, tmp_tr[i], tmp_sq[i]->dsq, 0, cm->null3_omega, &(n3scA[i]))) != eslOK) return status;
       tscAA[m][i] = totscAA[m][i] + n3scA[i] - pscAA[m][i] - sscAA[m][i];
       sc = do_sub ? pscAA[m][i] : totscAA[m][i];
       if(sc > wsc[i]) { wsc[i] = sc; wcm[i] = m; } 

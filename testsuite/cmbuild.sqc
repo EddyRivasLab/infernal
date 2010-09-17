@@ -57,6 +57,9 @@
 1  exercise  cmbuild:se/48         @src/cmbuild@ --gtree %TMPOUT% -F %SE.CM% se.stk 
 1  exercise  cmbuild:se/49         @src/cmbuild@ --gtbl %TMPOUT% -F %SE.CM% se.stk 
 1  exercise  cmbuild:se/50         @src/cmbuild@ --tfile %TMPOUT% -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/51         @src/cmbuild@ --p56 -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/52         @src/cmbuild@ --n2omega 0.00390625 -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/53         @src/cmbuild@ --n3omega 0.00390625 -F %SE.CM% se.stk 
 
 #
 1  exercise  cmbuild:3.4.12/1          @src/cmbuild@ -F %3.4.12.CM% 3.4.12.stk 
@@ -106,5 +109,8 @@
 1  exercise  cmbuild:3.4.12/48         @src/cmbuild@ --gtree %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/49         @src/cmbuild@ --gtbl %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/50         @src/cmbuild@ --tfile %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/51         @src/cmbuild@ --p56 -F %3.4.12.CM% 3.4.12.stk
+1  exercise  cmbuild:3.4.12/52         @src/cmbuild@ --n2omega 0.00390625 -F %3.4.12.CM% 3.4.12.stk
+1  exercise  cmbuild:3.4.12/54         @src/cmbuild@ --n3omega 0.00390625 -F %3.4.12.CM% 3.4.12.stk
 
 

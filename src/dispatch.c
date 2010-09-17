@@ -768,7 +768,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 			       &(cp9_tr[i]), /* return the trace */
 			       &sc)) != eslOK) return status;
       null3_correction = 0.;
-      if(do_null3) ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, cur_dsq, 1, L, &null3_correction);
+      if(do_null3) ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, cur_dsq, 1, L, cm->null3_omega, &null3_correction);
       if(sq_mode && !silent_mode) { 
 	esl_stopwatch_Stop(watch); 
 	FormatTimeString(time_buf, watch->user, TRUE);
@@ -1029,7 +1029,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     }
     /* determine NULL3 score correction, which is independent of the parsetree */
     null3_correction = 0.;
-    if(do_null3) ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, cur_dsq, 1, L, &null3_correction);
+    if(do_null3) ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, cur_dsq, 1, L, cm->null3_omega, &null3_correction);
     /* EPN, Thu Dec 17 14:07:04 2009
      * Following code would correct for null3 in struct_sc and primary_sc,
      * I'm undecided as to whether that's a good idea. 

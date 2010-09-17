@@ -1380,7 +1380,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
  * Return:   the log_2-odds score correction.          
  */
 int
-CP9TraceScoreCorrectionNull2(CP9_t *hmm, char *errbuf, CP9trace_t *tr, ESL_DSQ *dsq, int start, float *ret_sc)
+CP9TraceScoreCorrectionNull2(CP9_t *hmm, char *errbuf, CP9trace_t *tr, ESL_DSQ *dsq, int start, float omega, float *ret_sc)
 {
   int status;
   float *p;		/* null2 model distribution */
@@ -1421,7 +1421,7 @@ CP9TraceScoreCorrectionNull2(CP9_t *hmm, char *errbuf, CP9trace_t *tr, ESL_DSQ *
     * interpreted as a prior, saying that the second null model is 
     * 1/2^8 (1/256) as likely as the standard null model
     */
-   score -= 8 * INTSCALE;	
+   score += ((int) (sreLOG2(omega))) * INTSCALE;
 
    /* Return the correction to the bit score.
     */

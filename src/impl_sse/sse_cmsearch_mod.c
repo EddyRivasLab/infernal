@@ -188,19 +188,19 @@ main(int argc, char **argv)
   /* Set output files */
   if (o_glbf_all) {
     char *fname;
-    if(status = (esl_FileTail(cmfile, TRUE, &fname)) != eslOK) cm_Fail("Error getting filetail\n");
+    if((status = (esl_FileTail(cmfile, TRUE, &fname))) != eslOK) cm_Fail("Error getting filetail\n");
     if ((S0_OFILE = fopen(strcat(fname,".s0.glbf"),"w")) == NULL) { cm_Fail("Couldn't open stage 0 glbf file for writing!"); }
     free(fname);
-    if(status = (esl_FileTail(cmfile, TRUE, &fname)) != eslOK) cm_Fail("Error getting filetail\n");
+    if((status = (esl_FileTail(cmfile, TRUE, &fname))) != eslOK) cm_Fail("Error getting filetail\n");
     if ((S1_OFILE = fopen(strcat(fname,".s1.glbf"),"w")) == NULL) { cm_Fail("Couldn't open stage 1 glbf file for writing!"); }
     free(fname);
     if(Sfinal >= 2) { 
-      if(status = (esl_FileTail(cmfile, TRUE, &fname)) != eslOK) cm_Fail("Error getting filetail\n");
+      if((status = (esl_FileTail(cmfile, TRUE, &fname))) != eslOK) cm_Fail("Error getting filetail\n");
       if ((S2_OFILE = fopen(strcat(fname,".s2.glbf"),"w")) == NULL) { cm_Fail("Couldn't open stage 2 glbf file for writing!"); }
       free(fname);
     }
     if(Sfinal >= 3) { 
-      if(status = (esl_FileTail(cmfile, TRUE, &fname)) != eslOK) cm_Fail("Error getting filetail\n");
+      if((status = (esl_FileTail(cmfile, TRUE, &fname))) != eslOK) cm_Fail("Error getting filetail\n");
       if ((S3_OFILE = fopen(strcat(fname,".s3.glbf"),"w")) == NULL) { cm_Fail("Couldn't open stage 3 glbf file for writing!"); }
       free(fname);
     }
@@ -393,7 +393,7 @@ PIPELINE:
 	stop = s2_coord->j;
 	start = stop - s2_coord->d + 1;
 	
-	ScoreCorrectionNull3CompUnknown(cm->abc,cm->null,seq->dsq,start,stop,&null3_correction);
+	ScoreCorrectionNull3CompUnknown(cm->abc,cm->null,seq->dsq,start,stop,cm->null3_omega,&null3_correction);
 	p2 = esl_exp_surv((float)sc2/ocm->scale_w-null3_correction,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
 	if ((esl_opt_IsOn(go,"--s2-T") && (sc2 > s2_cutoff)) || (p2 < s2_pcut) || (sc2 > WORDMAX-10*ocm->scale_w)) {
 	  if (o_glbf == 2) {
@@ -433,7 +433,7 @@ PIPELINE:
 	      sc3   = results->data[hitloop].score;
 	      start = results->data[hitloop].start;
 	      stop  = results->data[hitloop].stop;
-	      /* ScoreCorrectionNull3CompUnknown(cm->abc,cm->null,seq->dsq,start,stop,&null3_correction); */
+	      /* ScoreCorrectionNull3CompUnknown(cm->abc,cm->null,seq->dsq,start,stop,cm->null3_omega,&null3_correction); */
 	      null3_correction = 0.; /* Hit resolution in CYKSCan already applies null3 */
 	      p3 = esl_exp_surv((float)sc3-null3_correction,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->lambda);
 	      e3 = p3 * cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->cur_eff_dbsize;

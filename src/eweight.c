@@ -50,7 +50,7 @@ cm_eweight_target_f(double Neff, void *params, double *ret_fx)
 {
   struct ew_param_s *p = (struct ew_param_s *) params;
   int v, i;
-  printf("cm_eweight_target_f() Neff:  %f\n", Neff);
+  /*printf("cm_eweight_target_f() Neff:  %f\n", Neff); */
 
   /* copy parameters from to p->*_orig to CM arrays */
   for (v = 0; v < p->cm->M; v++) {
@@ -61,9 +61,6 @@ cm_eweight_target_f(double Neff, void *params, double *ret_fx)
   }
   cm_Rescale(p->cm, Neff / (double) p->cm->nseq);
   PriorifyCM(p->cm, p->pri);
-  printf("cm_eweight_target_f() MMRE: %f\ncm_eweight_target_f() ret  %f\n\n", 
-	 cm_MeanMatchRelativeEntropy(p->cm), 
-	 cm_MeanMatchRelativeEntropy(p->cm) - p->etarget);
   *ret_fx = cm_MeanMatchRelativeEntropy(p->cm) - p->etarget; /* only diff with hmm_eweight_target_f */
   return eslOK;
 }
@@ -428,10 +425,10 @@ cm_MeanMatchRelativeEntropy(const CM_t *cm)
   }  
   free(pair_null);
 
-  printf("\n%s KL total   %8.3f  %8.3f per          cpos\n", cm->name, KL, KL / (double) cm->clen);
-  printf("%s KL pair    %8.3f  %8.3f per   paired cpos\n", cm->name, KL_pair, KL_pair / (double) KL_pair_denom);
-  printf("%s KL pair(m) %8.3f  %8.3f per   paired cpos\n", cm->name, KL_pair_marg, KL_pair_marg / (double) KL_pair_denom);
-  printf("%s KL singlet %8.3f  %8.3f per unpaired cpos\n", cm->name, KL_singlet, KL_singlet / (double) KL_singlet_denom);
+  /*printf("\n%s KL total   %8.3f  %8.3f per          cpos\n", cm->name, KL, KL / (double) cm->clen);
+    printf("%s KL pair    %8.3f  %8.3f per   paired cpos\n", cm->name, KL_pair, KL_pair / (double) KL_pair_denom);
+    printf("%s KL pair(m) %8.3f  %8.3f per   paired cpos\n", cm->name, KL_pair_marg, KL_pair_marg / (double) KL_pair_denom);
+    printf("%s KL singlet %8.3f  %8.3f per unpaired cpos\n", cm->name, KL_singlet, KL_singlet / (double) KL_singlet_denom);*/
 
   KL /= (double) cm->clen;
   return KL;

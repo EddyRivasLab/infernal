@@ -72,6 +72,7 @@ static ESL_OPTIONS options[] = {
 /* Customizing null model or priors */
   { "--null",    eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read null (random sequence) model from file <s>", 5 },
   { "--prior",   eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read priors from file <s>", 5 },
+  { "--p56",     eslARG_NONE,    NULL, NULL, NULL,      NULL,      NULL, "--prior,--rsearch", "use the default prior from Infernal v0.56 through v1.0.2", 5 },
 /* Building multiple CMs after clustering input MSA */
   { "--ctarget", eslARG_INT,   NULL,   NULL, "n>0" ,    NULL,      NULL,    "--call", "build (at most) <n> CMs by partitioning MSA into <n> clusters", 6 },
   { "--cmaxid",  eslARG_REAL,  NULL,   NULL,"0.<x<1.",  NULL,      NULL,    "--call", "max fractional id b/t 2 clusters is <x>, each cluster -> CM", 6 }, 
@@ -101,6 +102,8 @@ static ESL_OPTIONS options[] = {
   { "--nodetach",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "do not 'detach' one of two inserts that model same column", 101 },
   { "--elself",  eslARG_REAL,  "0.94", NULL, "0<=x<=1", NULL,      NULL,        NULL, "set EL self transition prob to <x>", 101 },
   { "--esigma",  eslARG_REAL,  "45.0",  NULL,"x>0",      NULL,  "--eent",       NULL, "for --eent: set sigma param to <x>",  101}, 
+  { "--n2omega",  eslARG_REAL,"0.000015258971",NULL,"x>0",NULL,NULL,            NULL, "set prior probability of null2 model as <x>",  101}, 
+  { "--n3omega",  eslARG_REAL,"0.000015258971",NULL,"x>0",NULL,NULL,            NULL, "set prior probability of null3 model as <x>",  101}, 
   { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s> (Stockholm or Pfam)",  101 },
 
   /* Developer verbose output options */
@@ -442,9 +445,12 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	cm_Fail("Failed to parse prior file %s\n", esl_opt_GetString(go, "--prior"));
       fclose(pfp);
     }
-  else 
+  else if(esl_opt_GetBoolean(go, "--p56")) { 
+    cfg->pri = Prior_Default_v0p56_through_v1p02();
+  }
+  else { 
     cfg->pri = Prior_Default();
-
+  }
   /* Set up the null/random seq model */
   if(esl_opt_GetString(go, "--null") != NULL) /* read freqs from a file and overwrite bg->f */
     {
@@ -1071,6 +1077,20 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
   /* set the cm->beta_W parameter, which is not used in cmbuild, but is used by cmcalibrate and
    * cmsearch (and possibly others) to set cm->W */
   cm->beta_W = esl_opt_GetReal(go, "--Wbeta");
+
+  /* set the cm->null2_omega and cm->null3_omega parameters */
+  if(esl_opt_IsOn(go, "--n2omega")) { /* user set --n2omega, use that */
+    cm->null2_omega = esl_opt_GetReal(go, "--n2omega");
+  }
+  else { /* user didn't set --n2omega, definition of cm->null2_omega depends on whether --p56 was set or not */
+    cm->null2_omega = ((esl_opt_GetBoolean(go, "--p56") == TRUE) ? V1P0_NULL2_OMEGA : esl_opt_GetReal(go, "--n2omega"));
+  }
+  if(esl_opt_IsOn(go, "--n3omega")) { /* user set --n3omega, use that */
+    cm->null3_omega = esl_opt_GetReal(go, "--n3omega");
+  }
+  else { /* user didn't set --n3omega, definition of cm->null3_omega depends on whether --p56 was set or not */
+    cm->null3_omega = ((esl_opt_GetBoolean(go, "--p56") == TRUE) ? V1P0_NULL3_OMEGA : esl_opt_GetReal(go, "--n3omega"));
+  }
 
   /* Before converting to probabilities, save a count vector file, if asked.
    * Used primarily for making data files for training priors.

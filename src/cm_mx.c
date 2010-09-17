@@ -1849,7 +1849,7 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	    }
 	    esl_vec_FNorm(comp, cm->abc->K);
 	    /*esl_vec_FDump(stdout, comp, cm->abc->K, NULL);*/
-	    ScoreCorrectionNull3(cm->abc, cm->null, comp, j-i+1, &null3_correction);
+	    ScoreCorrectionNull3(cm->abc, cm->null, comp, j-i+1, cm->null3_omega, &null3_correction);
 	    hit_sc -= null3_correction;
 	    cumulative_sc -= null3_correction;
 	    do_report_hit = (cumulative_sc > gamma->mx[j]) ? TRUE : FALSE;
@@ -1884,7 +1884,7 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
       if(act != NULL) { /* do NULL3 score correction */
 	for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(j-dmin+1-1)%(W+1)][a];
 	esl_vec_FNorm(comp, cm->abc->K);
-	ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, &null3_correction);
+	ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, cm->null3_omega, &null3_correction);
 	hit_sc -= null3_correction;
 	do_report_hit = (hit_sc >= gamma->cutoff) ? TRUE : FALSE;
       }
@@ -1910,7 +1910,7 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	  if(act != NULL) { /* do NULL3 score correction */
 	    for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(j-d+1-1)%(W+1)][a];
 	    esl_vec_FNorm(comp, cm->abc->K);
-	    ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, &null3_correction);
+	    ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, cm->null3_omega, &null3_correction);
 	    hit_sc -= null3_correction;
 	    do_report_hit = ((hit_sc > bestd_sc) && (hit_sc >= gamma->cutoff)) ? TRUE : FALSE;
 	  }
@@ -1966,7 +1966,7 @@ UpdateGammaHitMxCP9Forward(CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i,
     esl_vec_FNorm(comp, cp9->abc->K);
     /*esl_vec_FDump(stdout, comp, cp9->abc->K, NULL);*/
     /*printf("(A:%.2f C:%.2f G:%.2f U:%.2f)  ", comp[0], comp[1], comp[2], comp[3]);*/
-    ScoreCorrectionNull3(cp9->abc, cp9->null, comp, j-i+1, &null3_correction);
+    ScoreCorrectionNull3(cp9->abc, cp9->null, comp, j-i+1, cp9->null3_omega, &null3_correction);
     hit_sc -= null3_correction;
   }
   /*printf("%.2f (%.2f)\n", hit_sc, null3_correction);*/
@@ -2075,7 +2075,7 @@ UpdateGammaHitMxCP9Backward(CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i
     ESL_ALLOC(comp, sizeof(float) * cp9->abc->K);
     for(a = 0; a < cp9->abc->K; a++) comp[a] = act[(i+1)%(W+1)][a] - act[(j+1)%(W+1)][a]; /* *off-by-one*  we're going backwards: comp[a] is act[i][a] - act[j+1][a], but there's an off-by-one (see above) */
     esl_vec_FNorm(comp, cp9->abc->K);
-    ScoreCorrectionNull3(cp9->abc, cp9->null, comp, j-(i+1)+1, &null3_correction);
+    ScoreCorrectionNull3(cp9->abc, cp9->null, comp, j-(i+1)+1, cp9->null3_omega, &null3_correction);
     hit_sc -= null3_correction;
     /*esl_vec_FDump(stdout, comp, cp9->abc->K, NULL);*/
     /*printf("%.3f %.3f\n", hit_sc + null3_correction, hit_sc);*/

@@ -118,9 +118,11 @@ CreateCMShell(void)
   
   cm->dmin         = NULL;
   cm->dmax         = NULL;
-  cm->beta_W       = DEFAULT_BETA;     /* will be set when beta_W is read from cmfile */
-  cm->beta_qdb     = DEFAULT_BETA;   /* will be set to beta_W when beta_W is read from cmfile */
-  cm->tau          = DEFAULT_TAU;      /* 1E-7 the default tau  (tail loss for HMM banding) */
+  cm->beta_W       = DEFAULT_BETA;       /* will be set when beta_W is read from cmfile */
+  cm->beta_qdb     = DEFAULT_BETA;       /* will be set to beta_W when beta_W is read from cmfile */
+  cm->tau          = DEFAULT_TAU;        /* 1E-7 the default tau  (tail loss for HMM banding) */
+  cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
+  cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
   cm->cp9          = NULL;          
   cm->cp9b         = NULL;
   cm->cp9map       = NULL;

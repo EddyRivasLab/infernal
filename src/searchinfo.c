@@ -669,11 +669,11 @@ int UpdateHitScoresWithNull2Or3(CM_t *cm, char *errbuf, SearchInfo_t *si, search
   for (i=first_result; i<results->num_results; i++) {
     if(results->data[i].tr == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), parsetree for hit i: %d is NULL.\n", i);
     if(do_null2) { 
-      if((status = ParsetreeScoreCorrectionNull2(cm, errbuf, results->data[i].tr, dsq, results->data[i].start, &corr_sc)) != eslOK) return status;
+      if((status = ParsetreeScoreCorrectionNull2(cm, errbuf, results->data[i].tr, dsq, results->data[i].start, cm->null2_omega, &corr_sc)) != eslOK) return status;
     }
     else if(do_null3) { 
       /*printf("\norig score: %.3f\n", results->data[i].score);*/
-      if((status = ParsetreeScoreCorrectionNull3(cm, errbuf, results->data[i].tr, dsq, results->data[i].start, &corr_sc)) != eslOK) return status;
+      if((status = ParsetreeScoreCorrectionNull3(cm, errbuf, results->data[i].tr, dsq, results->data[i].start, cm->null3_omega, &corr_sc)) != eslOK) return status;
     }
     results->data[i].score -= corr_sc;
     /*printf("new  score: %.3f\n", results->data[i].score);*/

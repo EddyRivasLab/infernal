@@ -331,6 +331,8 @@ DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
   dest_cm->cp9->p1        = src_cm->cp9->p1;
   dest_cm->cp9->el_self   = src_cm->cp9->el_self;
   dest_cm->cp9->el_selfsc = src_cm->cp9->el_selfsc;
+  dest_cm->cp9->null2_omega = src_cm->cp9->null2_omega;
+  dest_cm->cp9->null3_omega = src_cm->cp9->null3_omega;
 
   CPlan9Renormalize(dest_cm->cp9);/* shouldn't be nec */
   CP9Logoddsify(dest_cm->cp9); /* fill in all the integer log odds scores:

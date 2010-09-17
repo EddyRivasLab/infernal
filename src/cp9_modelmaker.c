@@ -204,6 +204,8 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
   CPlan9SetNullModel(hmm, cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
   CPlan9InitEL(cm, hmm); /* set up hmm->el_from_ct and hmm->el_from_idx data, which
 			  * explains how the EL states are connected in the HMM. */
+  hmm->null2_omega = cm->null2_omega;
+  hmm->null3_omega = cm->null3_omega;
   
   ESL_ALLOC(ap, sizeof(int) * 2);
   if(debug_level > 1)
@@ -3191,6 +3193,8 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
   CPlan9SetNullModel(hmm, cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
   CPlan9InitEL(cm, hmm); /* set up hmm->el_from_ct and hmm->el_from_idx data, which
 			  * explains how the EL states are connected in the HMM. */
+  hmm->null2_omega = cm->null2_omega;
+  hmm->null3_omega = cm->null3_omega;
   
   /* COULD BE TEMP IF WE DON"T DO THE PHI/PSI TEST! */
   char     ***tmap;

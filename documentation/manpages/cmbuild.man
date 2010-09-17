@@ -335,6 +335,11 @@ replacing the default mixture Dirichlet.
 The format of prior files is documented in the User's Guide.
 
 .TP
+.BI --p56 " <f>"
+Use the default Dirichlet prior from versions 0.56 through 1.0.2 of
+Infernal, which is different from the current prior.
+
+.TP
 .BI --ctarget " <n>"
 Cluster each alignment in 
 .I alifile 

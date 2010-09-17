@@ -375,7 +375,7 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
 
   if(do_null2) { 
     float corr_sc;
-    if((status = ParsetreeScoreCorrectionNull2(cm, errbuf, tr, dsq, 0, &corr_sc)) != eslOK) return status;
+    if((status = ParsetreeScoreCorrectionNull2(cm, errbuf, tr, dsq, 0, cm->null2_omega, &corr_sc)) != eslOK) return status;
     sc -= corr_sc;
     primary_sc -= corr_sc;
     /* don't subtract corr_sc from struct_sc, b/c we would have subtracted it from 
@@ -1946,11 +1946,16 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
  *           The null model is constructed /post hoc/ as the
  *           average over all the emission distributions used by the trace.
  *           
+ *           <omega> is the prior probability of the null3 model. 
+ *           The log of this value is the penalty for the null3 
+ *           correction. If <omega> is 1./65536., which it is 
+ *           by default (1/2^16), we apply a 16 bit penalty.
+ *
  * Return:   ret_sc: the log_2-odds score correction.          
  *           eslEINCOMPAT on contract violation
  */
 int 
-ParsetreeScoreCorrectionNull2(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int start, float *ret_sc)
+ParsetreeScoreCorrectionNull2(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int start, float omega, float *ret_sc)
 {
   int status;
   float *p;		/* null2 model distribution */
@@ -2007,11 +2012,13 @@ ParsetreeScoreCorrectionNull2(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
     if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) score += sc[dsq[i+start-1]];
     if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) score += sc[dsq[j+start-1]];
   }
-  /* Apply an ad hoc 8 bit fudge factor penalty;
-   * interpreted as a prior, saying that the second null model is 
-   * 1/2^8 (1/256) as likely as the standard null model
-   */
-  score -= 8.;	
+   /* Apply an ad hoc log(omega) fudge factor penalty;
+    * interpreted as a prior, saying that the third null model is 
+    * <omega> as likely as the standard null model. 
+    * <omega> is by default 1/(2^16), so this is by default a
+    * 16 bit penalty.
+    */
+  score += sreLOG2(omega);
   
   /* Return the correction to the bit score. */
   ESL_DPRINTF1(("ParsetreeScoreCorrectionNull2 return sc: %f\n", LogSum2(0., score)));
@@ -2042,11 +2049,16 @@ ParsetreeScoreCorrectionNull2(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
  *           NOTE: (start) is offset in dsq such that tr->emitl[0] corresponds
  *           to the residue in dsq[1];
  *
+ *           <omega> is the prior probability of the null3 model. 
+ *           The log of this value is the penalty for the null3 
+ *           correction. If <omega> is 1./65536., which it is 
+ *           by default (1/2^16), we apply a 16 bit penalty.
+ * 
  * Return:   ret_sc: the log_2-odds score correction.          
  *           eslEINCOMPAT on contract violation
  */
 int 
-ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int start, float *ret_sc)
+ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int start, float omega, float *ret_sc)
 {
   int status;
   float *p;		/* null3 model distribution */
@@ -2091,11 +2103,13 @@ ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
     if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) score += sc[dsq[i+start-1]];
     if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) score += sc[dsq[j+start-1]];
   }
-   /* Apply an ad hoc 8 bit fudge factor penalty;
+   /* Apply an ad hoc log(omega) fudge factor penalty;
     * interpreted as a prior, saying that the third null model is 
-    * 1/2^5 (1/32) as likely as the standard null model
+    * <omega> as likely as the standard null model. 
+    * <omega> is by default 1/(2^16), so this is by default a
+    * 16 bit penalty.
     */
-  score -= 5.;
+  score += sreLOG2(omega);
 
   /* Return the correction to the bit score. */
   /*printf("ParsetreeScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score));*/
@@ -2127,6 +2141,11 @@ ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
  *           can be derived solely by the nucleotide composition of the hit and
  *           it's length. 
  *           
+ *           <omega> is the prior probability of the null3 model. 
+ *           The log of this value is the penalty for the null3 
+ *           correction. If <omega> is 1./65536., which it is 
+ *           by default (1/2^16), we apply a 16 bit penalty.
+ * 
  * Args:     abc  - alphabet for hit (only used to get alphabet size, which is size of <comp>)
  *           null0- the first null model used when building the CM, usually cm->null or cm->cp9->null
  *           comp - [0..a..abc->K-1] frequency of residue a in the hit we're correcting the score for, 
@@ -2140,7 +2159,7 @@ ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
  * Return:   void, ret_sc: the log_2-odds score correction.          
  */
 void
-ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len, float *ret_sc)
+ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len, float omega, float *ret_sc)
 {
   int   a;              /* residue index counters */
   float score = 0.;
@@ -2149,11 +2168,16 @@ ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len
     esl_vec_FDump(stdout, comp, abc->K, NULL);*/
   
   for (a = 0; a < abc->K; a++) score += sreLOG2(comp[a] / null0[a]) * comp[a] * len;
-   /* Apply an ad hoc 5 bit fudge factor penalty;
+
+   /* Apply an ad hoc log(omega) fudge factor penalty;
     * interpreted as a prior, saying that the third null model is 
-    * 1/2^5 (1/32) as likely as the standard null model
+    * <omega> as likely as the standard null model. 
+    * <omega> is by default 1/(2^16), so this is by default a
+    * 16 bit penalty.
     */
-  score -= 5.;
+  score += sreLOG2(omega);
+
+  /* Return the correction to the bit score. */
 
   /* Return the correction to the bit score. */
   /*printf("ScoreCorrectionNull3 return sc: %.3f\n", LogSum2(0., score));*/
@@ -2179,6 +2203,11 @@ ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len
  *           Same as ScoreCorrectionNull3() except that no <comp> vector is needed,
  *           the composition is determined within this function. 
  *           
+ *           <omega> is the prior probability of the null3 model. 
+ *           The log of this value is the penalty for the null3 
+ *           correction. If <omega> is 1./65536., which it is 
+ *           by default (1/2^16), we apply a 16 bit penalty.
+ * 
  * Args:     abc  - alphabet for hit (only used to get alphabet size, which is size of <comp>)
  *           null0- the first null model used when building the CM, usually cm->null or cm->cp9->null
  *           dsq  - the sequence the hit resides in
@@ -2189,13 +2218,13 @@ ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len
  * Return:   void, ret_sc: the log_2-odds score correction.          
  */
 void
-ScoreCorrectionNull3CompUnknown(const ESL_ALPHABET *abc, float *null0, ESL_DSQ *dsq, int start, int stop, float *ret_sc)
+ScoreCorrectionNull3CompUnknown(const ESL_ALPHABET *abc, float *null0, ESL_DSQ *dsq, int start, int stop, float omega, float *ret_sc)
 {
   float score = 0.;
   float *comp;		/* null3 model distribution */
 
   get_alphabet_comp(abc, dsq, start, stop, &comp);
-  ScoreCorrectionNull3(abc, null0, comp, (stop-start+1), &score);
+  ScoreCorrectionNull3(abc, null0, comp, (stop-start+1), omega, &score);
   free(comp);
   *ret_sc = score;
   return;
