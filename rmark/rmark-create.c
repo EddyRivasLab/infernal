@@ -96,6 +96,7 @@ static ESL_OPTIONS options[] = {
   { "--sample", eslARG_INT,   FALSE, NULL, NULL, NULL, NULL, "-sub",         "look for train/test in msa subsets via sampling, <n> samples", 4},
   { "--skip",   eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL,           "w/--sub or --sample, skip partition test", 4 },
   { "--xtest",  eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL,           "w/--sub or --sample, maximize |test|, not |train|+|test|",  4 },
+  { "--nfile",  eslARG_OUTFILE,FALSE,NULL, NULL, NULL, NULL, NULL,           "save benchmark database *without* positives to <f>",  4 },
 
   { 0,0,0,0,0,0,0,0,0,0 },
 };
@@ -117,6 +118,7 @@ struct cfg_s {
   FILE           *ppossummfp;   /* output: summary table of the positive-only test set */
   FILE           *negsummfp;    /* output: summary table of the negative test set */
   FILE           *tblfp;	/* output: summary table of the training set alignments */
+  FILE           *nseqfp;	/* output: (optional) negative sequences only (without embedded positives) */
 
   ESL_SQFILE     *dbfp;   	/* source database for negatives                           */
   int             db_nseq;	/* # of sequences in the db                                */
@@ -255,6 +257,10 @@ main(int argc, char **argv)
     if ((cfg.negsummfp = fopen(outfile, "w"))      == NULL) esl_fatal("Failed to open neg test set summary file %s\n", outfile);
   }
   else cfg.negsummfp = NULL;
+  if (esl_opt_IsOn(go, "--nfile")) { 
+    if((cfg.nseqfp = fopen(esl_opt_GetString(go, "--nfile"), "w")) == NULL) esl_fatal("Failed to open negative sequence file %s\n", esl_opt_GetString(go, "--nfile"));
+  }
+  else cfg.nseqfp = NULL;
 
   /* Open the MSA file; determine alphabet */
   status = esl_msafile_Open(alifile, alifmt, NULL, &afp);
@@ -404,6 +410,7 @@ main(int argc, char **argv)
   fclose(cfg.possummfp);
   fclose(cfg.ppossummfp);
   if(cfg.negsummfp != NULL) fclose(cfg.negsummfp);
+  if(cfg.nseqfp    != NULL) fclose(cfg.nseqfp);
   fclose(cfg.tblfp);
   esl_randomness_Destroy(cfg.r);
   esl_alphabet_Destroy(cfg.abc);
@@ -1077,6 +1084,7 @@ synthesize_negatives_and_embed_positives(ESL_GETOPTS *go, struct cfg_s *cfg, ESL
     bmksq->n = cfg->negL + negseqs_poslen[i];
     bmksq->dsq[0] = bmksq->dsq[bmksq->n+1] = eslDSQ_SENTINEL;
     esl_sq_FormatName(bmksq, "rmark%d", i+1);
+    esl_sq_FormatName(negsq, "rmark%d-nopositives", i+1);
 
     /* Create the negative sequence of length cfg->negL by either
      * generating sequence from the HMM or by using the input database
@@ -1160,6 +1168,7 @@ synthesize_negatives_and_embed_positives(ESL_GETOPTS *go, struct cfg_s *cfg, ESL
     /* output the sequence */
     esl_sqio_Write(cfg->out_bmkfp, bmksq, eslSQFILE_FASTA, FALSE);
     esl_sq_Reuse(bmksq);
+    if(cfg->nseqfp != NULL) esl_sqio_Write(cfg->nseqfp, negsq, eslSQFILE_FASTA, FALSE);
     esl_sq_Reuse(negsq);
   }
 
