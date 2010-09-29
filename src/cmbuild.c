@@ -1192,7 +1192,7 @@ set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, 
  * looking for the right relative entropy. (for --eent, the default)
  *
  * Based on HMMER3's hmmbuild func of same name, we don't allow
- * --eset or --eclust here though.
+ * --eclust here though.
  */
 static int
 set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,

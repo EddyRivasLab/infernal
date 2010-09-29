@@ -107,9 +107,19 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **r
   if (msa->ss_cons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): No consensus structure annotation available for that alignment.");
   if (! (msa->flags & eslMSA_DIGITAL)) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): MSA is not digitized.");
   if (use_rf && msa->rf == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): No reference annotation available for the alignment.");
+  if (! use_rf && msa->wgt == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): use_rf is FALSE, and msa->wgt is NULL.");
 
   /* 1. Determine match/insert assignments
    *    matassign is 1..alen. Values are 1 if a match column, 0 if insert column.
+   *
+   *    EPN, Wed Sep 29 13:26:51 2010 
+   *    Post-v1.0.2 change: 
+   *    match/insert columns are defined based on gap frequency in the
+   *    alignment *taking weights into account*. That is <= gapthresh
+   *    of the fraction of weighted sequences must have gaps to define
+   *    an match column.  Previously (infernal v0.1->1.0.2) 
+   *    <= gapthresh of the actual number of sequences (unweighted) 
+   *    need have gaps to be a match.
    */
   ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
 
@@ -119,11 +129,12 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **r
       matassign[apos] = (esl_abc_CIsGap(msa->abc, msa->rf[apos-1]) ? FALSE : TRUE);
   }
   else { 
-    int gaps;
+    float gaps;
     for (apos = 1; apos <= msa->alen; apos++) { 
-      for (gaps = 0, idx = 0; idx < msa->nseq; idx++)
-	if (esl_abc_XIsGap(msa->abc, msa->ax[idx][apos])) gaps++;
-      matassign[apos] = ((double) gaps / (double) msa->nseq > gapthresh) ? 0 : 1;
+      gaps = 0.;
+      for (idx = 0; idx < msa->nseq; idx++)
+	if (esl_abc_XIsGap(msa->abc, msa->ax[idx][apos])) gaps += msa->wgt[idx];
+      matassign[apos] = ((gaps / (float) msa->nseq) > gapthresh) ? 0 : 1;
     }
   }
 

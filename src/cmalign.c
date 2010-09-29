@@ -27,6 +27,7 @@
 #include "esl_getopts.h"		
 #include "esl_mpi.h"
 #include "esl_msa.h"
+#include "esl_msaweight.h"
 #include "esl_random.h"		
 #include "esl_sq.h"		
 #include "esl_sqio.h"
@@ -1502,7 +1503,7 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
     ESL_FAIL(eslFAIL, errbuf, "--withali alignment did not contain consensus structure annotation.\n");
   if (esl_opt_GetBoolean(go, "--withpknots")) /* copy the original secondary structure */
     esl_strdup(msa->ss_cons, -1, &(cfg->withss_cons));
- if (! clean_cs(msa->ss_cons, msa->alen, TRUE))
+  if (! clean_cs(msa->ss_cons, msa->alen, TRUE))
     ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation for --withali alignment\n");
 
   /* Build a CM from a master guide tree built from the msa, 
@@ -1511,6 +1512,11 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
    * Another solution would be to use a checksum, but CM files don't 
    * have checksums yet.
    */
+  /* First, weight the sequences, note we assume GSC weighting (default) was used, and there's
+   * currently no way to define a different method (!). We should either have all weighting
+   * options that cmbuild has... 
+   */
+  if(! esl_opt_GetBoolean(go, "--rf")) { esl_msaweight_GSC(msa); } /* guess that default weighting was used */
   if((status = HandModelmaker(msa, errbuf, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &new_cm, &mtr)) != eslOK) return status;
   if(!(compare_cm_guide_trees(cm, new_cm))) {
     /* no need to try rebalancing, that doesn't change the guidetree (seriously this is from cm.c::CMRebalance():

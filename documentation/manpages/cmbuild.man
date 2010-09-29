@@ -195,7 +195,8 @@ mark consensus columns with "x", and insert columns with ".".)
 The default is to determine this automatically; if the
 frequency of gap characters in a column is
 greater than a threshold, gapthresh (default 0.5), the column
-is called an insertion.
+is called an insertion. (Note, gap frequency is determined using
+weighted counts from sequences, not raw counts.)
 
 .TP
 .BI --gapthresh " <x>"
