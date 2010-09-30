@@ -20,7 +20,9 @@
 use Getopt::Std;
 getopts('C:');
 $do_fetch_models = 0;
+$do_debug = 0;
 if (defined $opt_C) { $do_fetch_models = 1; $master_model = $opt_C; } 
+if (defined $opt_D) { $do_debug = 1; }
 
 $usage = "Usages: x-nhmmer [options]\n\t<execdir>\n\t<scriptdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
 
@@ -97,9 +99,11 @@ while (<TABLE>)
 	printf TMPOUTFILE "%10g %10.1f %10d %10d %20s %35s\n", $pval, $bitscore, $target_from, $target_to, $target, $msaname;
     }
 
-    unlink "$resultdir/$msaname.tmp";
-    unlink "$resultdir/$msaname.search";
-    if($do_fetch_models) { unlink "$resultdir/$msaname.hmm"; }
+    if($do_debug == 0) { 
+	unlink "$resultdir/$msaname.tmp";
+	unlink "$resultdir/$msaname.search";
+	if($do_fetch_models) { unlink "$resultdir/$msaname.hmm"; }
+    }
 
     $runtime += time();
     open(TIME, ">" . "$resultdir/$msaname.time");

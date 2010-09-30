@@ -8,12 +8,25 @@
 #
 # Example usage:  sort -g cmsearch.out | perl mer.pl rmark3.pos cmsearch.time
 #
-use strict;
+# Command-line options:
+# -E <x> : set maximum E-value to consider as <x>
+# -T <x> : set minimum bit score to consider as <x>
+#
+#use strict;
 my $usage = "Usage: perl mer.pl <posfile> | <rmark outfile>\n";
+
+
+use Getopt::Std;
+getopts('E:T:');
+my $E_set = 0;
+my $T_set = 0;
+my $maxE = 100000;
+my $minT = -100000;
+if (defined $opt_E) { $E_set = 1; $maxE = $opt_E; }
+if (defined $opt_T) { $T_set = 1; $minT = $opt_T; }
 
 my $posfile = shift;
 my $timefile = shift;
-
 if (! -e $posfile)  { die "$posfile doesn't exist"; }
 if (! -e $timefile) { die "$timefile doesn't exist"; }
 
@@ -91,6 +104,8 @@ while ($line = <>)
     @fields   = split(' ', $line, 8);
     if(scalar(@fields) != 8) { die "ERROR, incorrectly formatted output line $line"; }
     $sc     = $fields[0];
+    if($T_set && $sc < $minT) { next; }
+    if($E_set && $sc > $maxE) { next; }
     $fam    = $fields[5];
     $match  = $fields[6];
     $strand = $fields[7];
