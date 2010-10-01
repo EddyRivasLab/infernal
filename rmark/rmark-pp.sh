@@ -5,9 +5,12 @@ ls $2/*.time   | perl rmark-time.pl > $2/$2.time
 cat $2/*out | sort -g | perl rmark-mer.pl $1.pos $2/$2.time > $2/$2.mer
 # get ROC
 cat $2/*out | sort -g | rmark-rocplot --seed 181 $1 - > $2/$2.xy
+# get ROC
+cat $2/*out | sort -g | rmark-rocplot --mer --seed 181 $1 - > $2/$2.bmer
 
 # copy files to cwd
 cp $2/$2.mer ./
+cp $2/$2.bmer ./
 cp $2/$2.time ./
 cp $2/$2.xy ./
 
