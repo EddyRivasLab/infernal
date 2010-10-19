@@ -610,5 +610,33 @@ Empirical testing shows this works down to about 1e-44: any <p> below
 1e-44 causes -INFTY to be returned.
 
 This bug was fixed as of revision 3338.
+//
 
+ID              i22
+TITLE		Improper NULL3 correction in HMM banded CYK/Inside scanners
+STATUS          CLOSED
+XREF            Minimal notes in ~/nawrockie/notebook/10_0924_inf_cmsearch_nhmmer/
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Tue Oct 19 06:23:05 2010
+DESCRIPTION    
 
+The NULL3 correction was incorrectly being applied for hits found in
+the HMM banded CYK and Inside scanning functions:
+cm_dpsearch.c::FastCYKScanHB() and
+cm_dpsearch.c::FastFInsideScanHB(). This bug was due to incorrect code
+in two places. First, in cm_mx.c::UpdateGammaHitMxCM(), the
+composition of a hit was incorrectly calc'ed when used for HMM banded
+scanners b/c <d> is w.r.t HMM bands (i.e. d=2 implies d=hdmin[j][v]+2,
+not d actually is 2). Second, in the cm_dpsearch.c scanning functions
+themselves the act vector, which is used to determine the composition
+of hits within the UpdateGamma, was being improperly initialized; only
+values between jmin[0] and jmax[0] were being set, whereas all i0..j0
+values should have been.
+
+This bugs only affects HMM banded scanners, non-banded and QDB
+scanners are unaffected, which is probably the main reason why it has
+persisted in the code until now (HMM banded scanners are non-default
+and only used if the cmsearch --hbanded option is used).
+
+This bug was fixed as of revision 3382.
+//

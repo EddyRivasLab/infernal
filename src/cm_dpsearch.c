@@ -4603,10 +4603,13 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   /* grow the matrix based on the current sequence and bands */
   if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, (j0-i0+1), size_limit)) != eslOK) return status;
 
-  /* determine W, the max size of hit that our bands will allow */
-  W = 0;
-  for(j = jmin[0]; j <= jmax[0]; j++)  
-    W = ESL_MAX(W, hdmax[0][(j-jmin[0])]);
+  /* set W as j0-i0+1 (this may exceed max size of a hit our bands will allow, 
+   * but that's okay b/c W is only used for sizing of act and bestr vectors */
+  W = j0-i0+1;
+  /* make sure our bands won't allow a hit bigger than W (this could be modified to only execute in debugging mode) */
+  for(j = jmin[0]; j <= jmax[0]; j++) {
+    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FastCYKScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%d)", j, hdmax[0][(j-jmin[0])], j0-i0+1);
+  }
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
@@ -4633,7 +4636,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
       esl_vec_DSet(act[i], cm->abc->K, 0.);
     }
     /* pre-fill act, different than non-HMM banded scanner b/c our main loop doesn't step j through residues */
-    for(j = jmin[0]+1; j <= jmax[0]; j++) { 
+    for(j = i0; j <= j0; j++) { 
       jp = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (j index for act) */
       esl_vec_DCopy(act[(jp-1)%(W+1)], cm->abc->K, act[jp%(W+1)]);
       esl_abc_DCount(cm->abc, act[jp%(W+1)], dsq[j], 1.);
@@ -5065,10 +5068,13 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   /* grow the matrix based on the current sequence and bands */
   if((status =  cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, (j0-i0+1), size_limit)) != eslOK) return status;
 
-  /* determine W, the max size of hit that our bands will allow */
-  W = 0;
-  for(j = jmin[0]; j <= jmax[0]; j++)  
-    W = ESL_MAX(W, hdmax[0][(j-jmin[0])]);
+  /* set W as j0-i0+1 (this may exceed max size of a hit our bands will allow, 
+   * but that's okay b/c W is only used for sizing of act and bestr vectors */
+  W = j0-i0+1;
+  /* make sure our bands won't allow a hit bigger than W (this could be modified to only execute in debugging mode) */
+  for(j = jmin[0]; j <= jmax[0]; j++) {
+    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FastCYKScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%d)", j, hdmax[0][(j-jmin[0])], j0-i0+1);
+  }
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
@@ -5095,7 +5101,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
       esl_vec_DSet(act[i], cm->abc->K, 0.);
     }
     /* pre-fill act, different than non-HMM banded scanner b/c our main loop doesn't step j through residues */
-    for(j = jmin[0]+1; j <= jmax[0]; j++) { 
+    for(j = i0; j <= j0; j++) { 
       jp = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (j index for act) */
       esl_vec_DCopy(act[(jp-1)%(W+1)], cm->abc->K, act[jp%(W+1)]);
       esl_abc_DCount(cm->abc, act[jp%(W+1)], dsq[j], 1.);

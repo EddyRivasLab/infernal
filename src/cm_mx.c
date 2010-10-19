@@ -1844,18 +1844,16 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	  do_report_hit = TRUE;
 	  if(act != NULL && NOT_IMPOSSIBLE(hit_sc)) { /* do NULL3 score correction */
 	    for(a = 0; a < cm->abc->K; a++) { 
-	      comp[a] = act[j%(W+1)][a] - act[(j-d+1-1)%(W+1)][a]; /* careful, tricky off-by-one: comp[a] is act[j][a] - act[i-1][a], hence the j-d+1-1 (i == j-d+1) */
-	      /*printf("a: %5d j/W: %5d i-1/W: %5d j[a]: %.3f i-1[a]: %.3f c[a]: %.3f\n", a, j%(W+1), (j-d+1-1%W), act[(j%(W+1))][a], act[((j-d+1-1)%(W+1))][a], comp[a]);*/
+	      comp[a] = act[j%(W+1)][a] - act[(i-1)%(W+1)][a]; 
+	      /*printf("a: %5d j/W: %5d i-1/W: %5d j[a]: %.3f i-1[a]: %.3f c[a]: %.3f\n", a, j%(W+1), (i-1%W), act[(j%(W+1))][a], act[((i-1)%(W+1))][a], comp[a]);*/
 	    }
 	    esl_vec_FNorm(comp, cm->abc->K);
-	    /*esl_vec_FDump(stdout, comp, cm->abc->K, NULL);*/
 	    ScoreCorrectionNull3(cm->abc, cm->null, comp, j-i+1, cm->null3_omega, &null3_correction);
 	    hit_sc -= null3_correction;
 	    cumulative_sc -= null3_correction;
 	    do_report_hit = (cumulative_sc > gamma->mx[j]) ? TRUE : FALSE;
 	  }
 	  if(do_report_hit) { 
-	    /*printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc);*/
 	    gamma->mx[j]     = cumulative_sc;
 	    gamma->gback[j]  = i + (gamma->i0-1);
 	    gamma->savesc[j] = hit_sc;
@@ -2136,6 +2134,7 @@ TBackGammaHitMxForward(GammaHitMx_t *gamma, search_results_t *results, int i0, i
   j = j0;
   while (j >= i0) {
     jp_g = j-i0+1;
+    /*printf("TBACK j: %d sc: %.2f\n", j, gamma->savesc[jp_g]);*/
     if (gamma->gback[jp_g] == -1) j--; /* no hit */
     else {              /* a hit, a palpable hit */
       if(gamma->savesc[jp_g] >= gamma->cutoff) /* report the hit */
