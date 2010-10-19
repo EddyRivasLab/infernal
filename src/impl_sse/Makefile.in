@@ -9,17 +9,18 @@ SIMDFLAGS      = @SIMD_CFLAGS@
 
 DEFS           = @DEFS@
 LIBS           = -leasel @LIBS@ -lm
-MYLIBS         = -linfernal -lhmmer -lm
+MYLIBS         = -linfernal -lhmmer -lhmmerimpl -lm
 
 ESLDIR         = ../../easel
 HMMDIR         = ../../hmmer/src
 
 SHELL          = /bin/sh
-MYLIBDIRS      = -L${HMMDIR} -L${ESLDIR} -L.. -L.
+MYLIBDIRS      = -L${HMMDIR} -L${HMMDIR}/impl_sse/ -L${ESLDIR} -L.. -L.
 MYINCDIRS      = -I${ESLDIR} \
                  -I. \
                  -I.. \
-                 -I${HMMDIR}
+                 -I${HMMDIR} \
+                 -I${HMMDIR}/impl_sse/
 
 PROGS = sse_cmsearch\
         sse_cmsearch_mod

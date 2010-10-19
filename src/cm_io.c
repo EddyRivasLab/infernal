@@ -1254,7 +1254,6 @@ read_binary_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   int           has_exp;
   int           has_fthr;
   int           has_ga, has_tc, has_nc;
-  int           has_n2omega, has_n3omega; /* v1.0rc1 -> v1.0.2 built models won't have omega values, later versions will */
   int           np;
   int           i, p, gc;
   int           tag;

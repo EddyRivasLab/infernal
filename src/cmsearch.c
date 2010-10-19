@@ -1181,7 +1181,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 /* initialize_cm()
  * Setup the CM based on the command-line options/defaults;
- * only set flags and a few parameters. ConfigCM() configures
+ * only sets flags and a few parameters. ConfigCM() configures
  * the CM. 
  */
 static int

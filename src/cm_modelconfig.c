@@ -181,6 +181,7 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
     if(cm->flags & CMH_QDB) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "ERROR in ConfigCM() CM already has QDBs\n");
     ConfigQDBAndW(cm, TRUE);
   }
+
   else if(always_calc_W) ConfigQDBAndW(cm, FALSE); /* FALSE says: don't calculate QDBs, W will still be calc'ed and set */
   
   /* We need to ensure that cm->el_selfsc * W >= IMPOSSIBLE

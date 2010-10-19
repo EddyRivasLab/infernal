@@ -1470,4 +1470,116 @@ typedef struct cm_s {
   const  ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size)*/
 } CM_t;
 
+
+enum cm_pipemodes_e { CM_SEARCH_SEQS = 0, CM_SCAN_MODELS = 1 };
+enum cm_zsetby_e    { CM_ZSETBY_DBSIZE = 0, CM_ZSETBY_OPTION = 1, CM_ZSETBY_FILEINFO = 2 };
+
+typedef struct cm_pipeline_s {
+  /* Dynamic programming matrices                                           */
+  P7_OMX       *oxf;		/* one-row Forward matrix, accel pipe       */
+  P7_OMX       *oxb;		/* one-row Backward matrix, accel pipe      */
+  P7_OMX       *fwd;		/* full Fwd matrix for domain envelopes     */
+  P7_OMX       *bck;		/* full Bck matrix for domain envelopes     */
+  P7_GMX       *gxf;		/* generic Forward matrix                   */
+  P7_GMX       *gxb;		/* generic Backward matrix                  */
+  P7_GMX       *gfwd;		/* generic full Fwd matrix for domain envs  */
+  P7_GMX       *gbck;		/* generic full Bck matrix for domain envs  */
+  ScanMatrix_t *fsmx;           /* scan matrix for CYK filter stage         */
+  ScanMatrix_t *smx;            /* scan matrix for final stage              */
+
+  /* Domain postprocessing                                                  */
+  ESL_RANDOMNESS *r;		/* random number generator                  */
+  int             do_reseeding; /* TRUE: reseed for reproducible results    */
+  P7_DOMAINDEF   *ddef;		/* domain definition workflow               */
+
+  /* Reporting threshold settings                                           */
+  int     by_E;		        /* TRUE to cut per-target report off by E   */
+  double  E;	                /* per-target E-value threshold             */
+  double  T;	                /* per-target bit score threshold           */
+  int     use_bit_cutoffs;      /* (FALSE | CMH_GA | CMH_TC | CMH_NC)       */
+
+  /* Inclusion threshold settings                                           */
+  int     inc_by_E;		/* TRUE to threshold inclusion by E-values  */
+  double  incE;			/* per-target inclusion E-value threshold   */
+  double  incT;			/* per-target inclusion score threshold     */
+
+  /* Tracking search space sizes for E value calculations                   */
+  double  Z;			/* eff # targs searched (per-target E-val)  */
+  enum cm_zsetby_e Z_setby;   	/* how Z was set                            */
+  
+  /* Threshold settings for pipeline                                        */
+  int     do_max;	        /* TRUE to run in slow/max mode             */
+  int     do_mid;	        /* TRUE to run in mid-level filter mode     */
+  int     do_fast;	        /* TRUE to run in strict-level filter mode  */
+  double  F1;		        /* MSV filter threshold                     */
+  double  F2;		        /* Viterbi filter threshold                 */
+  double  F3;		        /* uncorrected Forward filter threshold     */
+  double  dF3;		        /* per-domain Forward filter thr            */
+  double  F4;		        /* CYK filter P-value threshold             */
+  double  E4;		        /* CYK filter E-value threshold             */
+  int     use_E4;	        /* use an E-value cutoff for CYK filter     */
+  int     do_cm;		/* TRUE to use CM for at least one stage    */
+  int     do_hmm;		/* TRUE to use HMM for at least one stage   */
+  int     do_domainize;		/* TRUE to find domains in windows prior to CM stages */
+  int     do_pad;		/* TRUE to pad domains based on cm->W       */
+  int     do_msvmerge;		/* TRUE to merge MSV hits, FALSE not to     */
+  int     do_msv;		/* TRUE to filter with MSV, FALSE not to    */
+  int     do_biasfilter;	/* TRUE to use biased comp HMM filter       */
+  int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */
+  int     do_fwd;		/* TRUE to filter with Fwd, FALSE not to    */
+  int     do_cyk;		/* TRUE to filter with CYK, FALSE not to    */
+  int     do_null2;		/* TRUE to use null2 score corrections      */
+  int     do_null3;		/* TRUE to use null3 score corrections      */
+  int     do_skipbigdoms;       /* TRUE to skip domains > W                 */
+  int     do_skipweakdoms;      /* TRUE to skip low-scoring domains         */
+  int     do_localdoms;         /* TRUE to define domains in local mode     */
+
+  /* Parameters controlling p7 domain defintion */
+  float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
+  float  rt2;		/* controls extent of regions. regions extended until mocc[i]-{b,e}occ[i] < dt2            */
+  float  rt3;		/* controls when regions are flagged for split: if expected # of E preceding B is >= dt3   */
+  int    ns;            /* number of traceback samples for domain def */
+
+  /* CM search options for fourth filter and final stage */
+  int     fcyk_cm_search_opts;  /* CYK filter stage search opts             */
+  int     final_cm_search_opts; /* final stage search opts                  */
+  int     fcyk_cm_exp_mode;     /* CYK filter exp mode                      */
+  int     final_cm_exp_mode;    /* final stage exp mode   e                 */
+  double  fcyk_beta;            /* QDB beta for CYK filter stage            */
+  double  final_beta;           /* QDB beta for final stage                 */
+  double  fcyk_tau;             /* HMM bands tau for CYK filter stage       */
+  double  final_tau;            /* HMM bands tau for final stage            */
+
+  /* Accounting. (reduceable in threaded/MPI parallel version)              */
+  uint64_t      nmodels;        /* # of HMMs searched                       */
+  uint64_t      nseqs;	        /* # of sequences searched                  */
+  uint64_t      nres;	        /* # of residues searched                   */
+  uint64_t      nnodes;	        /* # of model nodes searched                */
+  uint64_t      n_past_msv;	/* # comparisons that pass MSVFilter()      */
+  uint64_t      n_past_bias;	/* # comparisons that pass bias filter      */
+  uint64_t      n_past_vit;	/* # comparisons that pass ViterbiFilter()  */
+  uint64_t      n_past_fwd;	/* # comparisons that pass ForwardFilter()  */
+  uint64_t      n_past_cyk;	/* # comparisons that pass CYK filter       */
+  uint64_t      n_past_ins;	/* # comparisons that pass Inside           */
+  uint64_t      n_output;	/* # alignments that make it to the final output */
+  uint64_t      pos_past_msv;	/* # positions that pass MSVFilter()        */
+  uint64_t      pos_past_bias;	/* # positions that pass bias filter        */
+  uint64_t      pos_past_vit;	/* # positions that pass ViterbiFilter()    */
+  uint64_t      pos_past_fwd;	/* # positions that pass ForwardFilter()    */
+  uint64_t      pos_past_cyk;	/* # positions that pass CYK filter         */
+  uint64_t      pos_past_ins;	/* # positions that pass Inside             */
+  uint64_t      pos_output;	/* # positions that make it to the final output */
+
+  enum cm_pipemodes_e mode;    	/* CM_SCAN_MODELS | CM_SEARCH_SEQS          */
+  int           do_top;         /* TRUE to do top    strand (usually TRUE) */
+  int           do_bot;         /* TRUE to do bottom strand (usually TRUE) */
+  int 		W;              /* window length */
+
+  int           show_accessions;/* TRUE to output accessions not names      */
+  int           show_alignments;/* TRUE to output alignments (default)      */
+
+  CMFILE       *cmfp;		/* COPY of open CM database (if scan mode) */
+  char          errbuf[eslERRBUFSIZE];
+} CM_PIPELINE;
+
 #endif /*STRUCTSH_INCLUDED*/

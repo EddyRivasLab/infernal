@@ -189,6 +189,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 
   /* Step 1: Get HMM Forward/Backward DP matrices. */
   do_scan2bands = (doing_search && (!(cm->search_opts & CM_SEARCH_HMMALNBANDS))) ? TRUE : FALSE;
+  printf("DO SCAN2BANDS: %d\n", do_scan2bands);
   if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 
 			   cm->W,     /* guess at hit len, irrelevant b/c we're not reporting hits */
 			   0.,        /* reporting threshold, irrelevant b/c we're not reporting hits */

@@ -113,7 +113,7 @@ CreateCMShell(void)
 
   cm->flags         = 0;
 
-  cm->W      = 200;           /* for backwards compatibility */
+  cm->W         = 200;        /* for backwards compatibility */
   cm->el_selfsc = 0.;         /* this is backwards compatible also */
   
   cm->dmin         = NULL;

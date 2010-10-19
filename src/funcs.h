@@ -496,6 +496,8 @@ extern void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm, P7_OPROFILE **ret_om);
 #endif
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm);
+extern int          CP9_to_P7(CM_t *cm, P7_HMM **ret_p7);
+extern int          dump_p7(P7_HMM *hmm, FILE *fp);
 
 /* from my_p7_msvfilter.c */
 #if 0
@@ -716,4 +718,20 @@ float trinside (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int 
                 int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
 
 
+/* from cm_pipeline.c */
+extern CM_PIPELINE *cm_pipeline_Create (ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes_e mode);
+extern int          cm_pipeline_Reuse  (CM_PIPELINE *pli);
+extern void         cm_pipeline_Destroy(CM_PIPELINE *pli);
+extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
 
+extern int cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
+extern int cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
+extern int cm_pli_NewModel          (CM_PIPELINE *pli, CM_t *cm, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, const P7_OPROFILE *om, P7_BG *bg);
+extern int cm_pli_NewSeq            (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq);
+extern int cm_Pipeline              (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, const ESL_SQ *sq, P7_TOPHITS *th);
+
+extern int cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
+
+/* from cm_p7_domaindef.c */
+extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_GMX *gxf, P7_GMX *gxb,
+						    P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef);
