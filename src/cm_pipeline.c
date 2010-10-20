@@ -991,7 +991,6 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 	  if((! pli->do_cyk) || (! (pli->fcyk_cm_search_opts & CM_SEARCH_HBANDED))) { /* we need to calculate the HMM bands */
 	    if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subseq, dstarts[d], dends[d], cm->cp9b, TRUE, 0)) != eslOK) { 
 	      printf("ERROR: %s\n", errbuf); return status; }
-	    PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, ESL_MIN(cm->W, dends[d]-dstarts[d]+1)); 
 	  }
 	  if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is HMM banded Inside */
 	    /*printf("calling HMM banded Inside scan\n");*/

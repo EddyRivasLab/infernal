@@ -4944,7 +4944,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmax[0]], TRUE, bestr, results, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][jp_v], hdmax[0][jp_v], TRUE, bestr, results, W, act)) != eslOK) return status;
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
@@ -5361,6 +5361,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   }
     
   for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++, j++) {
+    esl_vec_ISet(bestr, (W+1), 0); /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
     if (cm->flags & CMH_LOCAL_BEGIN) {
       for (y = 1; y < cm->M; y++) {
 	if(NOT_IMPOSSIBLE(cm->beginsc[y]) && (j >= jmin[y] && j <= jmax[y])) {
@@ -5386,7 +5387,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, bestr, results, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][jp_v], hdmax[0][jp_v], TRUE, bestr, results, W, act)) != eslOK) return status;
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */

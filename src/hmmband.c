@@ -189,13 +189,12 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 
   /* Step 1: Get HMM Forward/Backward DP matrices. */
   do_scan2bands = (doing_search && (!(cm->search_opts & CM_SEARCH_HMMALNBANDS))) ? TRUE : FALSE;
-  printf("DO SCAN2BANDS: %d\n", do_scan2bands);
   if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 
 			   cm->W,     /* guess at hit len, irrelevant b/c we're not reporting hits */
 			   0.,        /* reporting threshold, irrelevant b/c we're not reporting hits */
 			   NULL,      /* don't report hits */
 			   do_scan2bands, /* are we using scanning Forward/Backward */
-			   TRUE,      /* we are going to use posteriors to align */
+			   (! doing_search), /* are we going to use posteriors to align? */
 			   FALSE,     /* don't be memory efficient */
 			   FALSE,     /* don't do a NULL3 score correction */
 			   NULL, NULL,
@@ -206,8 +205,8 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 			    0.,     /* reporting threshold, irrelevant b/c we're not reporting hits */
 			    NULL,   /* don't report hits */
 			    do_scan2bands, /* are we using scanning Forward/Backward */
-			    TRUE,  /* we are going to use posteriors to align */
-			    TRUE,  /* j0 is the fixed endpoint */
+			    (! doing_search),  /* are we going to use posteriors to align? */
+			    (! doing_search),  /* is j0 is the fixed endpoint? */
 			    FALSE, /* don't be memory efficient */
 			    FALSE, /* don't do a NULL3 score correction */
 			    NULL, NULL,
@@ -259,7 +258,6 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   ESL_DPRINTF1(("bands validated.\n"));
 #endif
   if(debug_level > 0) debug_print_ij_bands(cm); 
-
   if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, (j0-i0+1));
 
   return eslOK;

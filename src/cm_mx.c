@@ -1824,12 +1824,12 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
   float hit_sc, cumulative_sc, bestd_sc;
 
   if(alpha_row == NULL && (!using_hmm_bands)) cm_Fail("UpdateGammaHitMxCM(), alpha_row is NULL, but using_hmm_bands is FALSE.\n");
-  dmin = (using_hmm_bands) ? 0     : dn; 
-  dmax = (using_hmm_bands) ? dx-dn : dx;
+  dmin = (using_hmm_bands) ? 0                 : dn; 
+  dmax = (using_hmm_bands) ? ESL_MIN(dx-dn, j) : dx;
   if(act != NULL) ESL_ALLOC(comp, sizeof(float) * cm->abc->K);
 
   /* mode 1: non-greedy  */
-  if(! gamma->iamgreedy || alpha_row == NULL) { 
+  if((! gamma->iamgreedy) || alpha_row == NULL) { 
     gamma->mx[j]     = gamma->mx[j-1] + 0; 
     gamma->gback[j]  = -1;
     gamma->savesc[j] = IMPOSSIBLE;
@@ -1840,6 +1840,7 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	i = using_hmm_bands ? j-d+1-dn  : j-d+1;
 	hit_sc = alpha_row[d];
 	cumulative_sc = gamma->mx[i-1] + hit_sc;
+	/*printf("CAND hit %3d..%3d: %8.2f\n", i, j, hit_sc);*/
 	if (cumulative_sc > gamma->mx[j]) {
 	  do_report_hit = TRUE;
 	  if(act != NULL && NOT_IMPOSSIBLE(hit_sc)) { /* do NULL3 score correction */
@@ -1852,6 +1853,7 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	    hit_sc -= null3_correction;
 	    cumulative_sc -= null3_correction;
 	    do_report_hit = (cumulative_sc > gamma->mx[j]) ? TRUE : FALSE;
+	    /*printf("GOOD hit %3d..%3d: %8.2f  %10.6f  %8.2f\n", i, j, hit_sc+null3_correction, null3_correction, hit_sc);*/
 	  }
 	  if(do_report_hit) { 
 	    gamma->mx[j]     = cumulative_sc;
@@ -1864,7 +1866,7 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
     }
   }
   /* mode 2: greedy */
-  if(gamma->iamgreedy && dmin <= dmax) { /* if dmin >= dmax, no valid d for this j exists, don't report any hits */
+  else if(gamma->iamgreedy && dmin <= dmax) { /* if dmin >= dmax, no valid d for this j exists, don't report any hits */
     /* Resolving overlaps greedily (RSEARCH style),  
      * At least one hit is sent back for each j here.
      * However, some hits can already be removed for the greedy overlap

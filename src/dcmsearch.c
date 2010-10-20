@@ -123,7 +123,7 @@ static ESL_OPTIONS options[] = {
   /* Options taken from infernal 1.0.2 cmsearch */
   /* options for algorithm for final round of search */
   { "-g",             eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "configure CM for glocal alignment [default: local]", 1 },
-  { "--cyk",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,   "--nocyk",         "--hmm", "use scanning CM CYK algorithm", 20 },
+  { "--cyk",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL, "--nocyk,--hmm", "use scanning CM CYK algorithm", 20 },
   { "--hmm",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,         "--cyk",  "do not use the CM, use only the HMM", 20},
   /* banded options for CYK filter round of searching */
   { "--fnoqdb",       eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--hmm,--nocyk",  "do not use QDBs in CYK filter round", 20 },
@@ -143,6 +143,9 @@ static ESL_OPTIONS options[] = {
   { "--toponly",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "only search the top strand", 20 },
   { "--bottomonly",   eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "only search the bottom strand", 20 },
   { "--nonull3",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "turn OFF the NULL3 post hoc additional null model", 20 },
+  /* experimental options */
+  { "--cp9noel",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            "-g", "turn OFF local ends in cp9 HMMs", 20 },
+  { "--cp9gloc",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,  "-g,--cp9noel", "configure CP9 HMM in glocal mode", 20 },
 
 /* Not used, but retained because esl option-handling code errors if it isn't kept here.  Placed in group 99 so it doesn't print to help*/
   { "--domZ",       eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "Not used",   99 },
@@ -495,7 +498,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     int             *final_dmin = NULL;
     int             *final_dmax = NULL;
 
-    if(! esl_opt_GetBoolean(go, "-g")) cm->config_opts |= CM_CONFIG_LOCAL;
+    if(! esl_opt_GetBoolean(go, "-g")) { 
+      if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
+	cm->config_opts |= CM_CONFIG_LOCAL;
+	cm->config_opts |= CM_CONFIG_HMMLOCAL;
+	if(! esl_opt_GetBoolean(go, "--cp9noel")) cm->config_opts |= CM_CONFIG_HMMEL; 
+      }
+    }
     if((status = ConfigCM(cm, errbuf, 
 			  TRUE, /* do calculate W */
 			  NULL, NULL)) != eslOK) cm_Fail("Error configuring CM: %s\n", errbuf);
