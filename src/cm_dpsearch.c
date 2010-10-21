@@ -4544,7 +4544,7 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_sc    - RETURN: score of best overall hit (vsc[0])
  *                       
- * Returns: eslOK on success
+ * Returns: eslOK on success; eslERANGE if required matrix size exceeds <size_limit>
  *          <ret_sc>: score of the best hit.
  */
 int
@@ -5011,7 +5011,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_sc    - RETURN: score of best overall hit (vsc[0])
  *                       
- * Returns: eslOK on success
+ * Returns: eslOK on success; eslERANGE if required matrix size exceeds <size_limit>
  *          <ret_sc>: score of the best hit.
  */
 int

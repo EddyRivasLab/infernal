@@ -103,6 +103,7 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
 
   if (p7_IsLocal(save_mode)) { return eslEINCOMPAT; } /* profile should be in glocal mode */
   if ((status = p7_domaindef_GrowTo(ddef, sq->n))       != eslOK) return status;  /* ddef's btot,etot,mocc now ready for seq of length n */
+  /*printf("GDD P7 mode: %d\n", gm->mode);*/
   if ((status = p7_GDomainDecoding(gm, gxf, gxb, ddef)) != eslOK) return status;  /* ddef->{btot,etot,mocc} now made.                    */
 
   printf("In p7_domaindef_GlocalByPosteriorHeuristics(): mode: %d rt1: %g rt2: %g rt3: %g nsamples: %d reseed: %d\n", save_mode, ddef->rt1, ddef->rt2, ddef->rt3, ddef->nsamples, ddef->do_reseeding);
@@ -115,6 +116,13 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
   triggered = FALSE;
   for (j = 1; j <= sq->n; j++)
     {
+      /*printf("GDD j: %5d  m: %.5f  b: %8.3f  e: %8.3f    bhere: %8.3f  ehere: %8.3f\n", 
+	     j, 
+	     ddef->mocc[j], 
+	     ddef->btot[j], 
+	     ddef->etot[j], 
+	     ddef->btot[j] - ddef->btot[j-1], 
+	     ddef->etot[j] - ddef->etot[j-1]); */
       if (! triggered) 
 	{			/* xref J2/101 for what the logic below is: */
 	  if       (ddef->mocc[j] - (ddef->btot[j] - ddef->btot[j-1]) <  ddef->rt2) i = j;
@@ -242,7 +250,6 @@ is_multidomain_region(P7_DOMAINDEF *ddef, int i, int j)
       expected_n = ESL_MIN( (ddef->etot[z] - ddef->etot[i-1]), (ddef->btot[j] - ddef->btot[z-1]));
       max        = ESL_MAX(max, expected_n);
     }
-
   return ( (max >= ddef->rt3) ? TRUE : FALSE);
 }
 

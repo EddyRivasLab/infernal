@@ -81,6 +81,7 @@
  *            | --nonull3    |  turn off NULL3 correction                   |   FALSE   |
  *            | -g           |  configure the CM for glocal alignment       |   FALSE   |
  *            | --dF3        |  Stage 3 (Fwd) per-domain thresh             |   0.01    |
+ *            | --dtF3       |  Stage 3 (Fwd) per-domain bit sc thresh      |   NULL    |
  *            | --F4         |  Stage 4 (CYK) thresh: promote hits P <= F4  |   1e-4    |
  *            | --E4         |  Stage 4 (CYK) thres: promote hits E <= E4   |   NULL    |
  *            | --fast       |  set filters at strict-level                 |   FALSE   |
@@ -110,7 +111,8 @@
  *            | --rt3        |  set domain def rt3 parameter as <x>         |   0.20    |
  *            | --skipbig    |  skip large domains > W residues             |   FALSE   |
  *            | --skipweak   |  skip low-scoring domains                    |   FALSE   |
- *            | --localdom   |  define domains in local mode                |   FALSE   |
+ *            | --localweak  |  rescore low-scoring domains in local mode   |   FALSE   |
+ *            | --glocaldom  |  define domains in glocal mode               |   FALSE   |
  *            | --ns         |  set number of samples for domain traceback  |   1000    |
  * Returns:   ptr to new <cm_PIPELINE> object on success. Caller frees this
  *            with <cm_pipeline_Destroy()>.
@@ -212,9 +214,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->ddef->rt2 = pli->rt2;
   pli->ddef->rt3 = pli->rt3;
   pli->ddef->nsamples = pli->ns;
-  pli->do_skipbigdoms  = esl_opt_GetBoolean(go, "--skipbig");
-  pli->do_skipweakdoms = esl_opt_GetBoolean(go, "--skipweak");
-  pli->do_localdoms    = (esl_opt_GetBoolean(go, "--glocaldom")) ? FALSE : TRUE;
+  pli->do_skipbigdoms   = esl_opt_GetBoolean(go, "--skipbig");
+  pli->do_skipweakdoms  = esl_opt_GetBoolean(go, "--skipweak");
+  pli->do_localdoms     = (esl_opt_GetBoolean(go, "--glocaldom")) ? FALSE : TRUE;
 
   /* Configure acceleration pipeline thresholds */
   pli->do_cm         = TRUE;
@@ -235,6 +237,11 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->F2     = ESL_MIN(1.0, esl_opt_GetReal(go, "--F2"));
   pli->F3     = ESL_MIN(1.0, esl_opt_GetReal(go, "--F3"));
   pli->dF3    = ESL_MIN(1.0, esl_opt_GetReal(go, "--dF3"));
+  pli->dtF3   = esl_opt_GetReal(go, "--dtF3");
+  pli->use_dtF3 = FALSE;
+  if (esl_opt_IsOn(go, "--dtF3")) { 
+    pli->use_dtF3 = TRUE; 
+  }
   pli->F4     = ESL_MIN(1.0, esl_opt_GetReal(go, "--F4"));
   pli->E4     = 1.;   
   pli->use_E4 = FALSE;
@@ -612,6 +619,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
   float            usc, vfsc, fwdsc, cyksc, inssc; /* filter scores                           */
   float            filtersc;           /* HMM null filter score                   */
   float            nullsc;             /* null model score                        */
+  float            finalsc;            /* final score for seq */
   float            seq_score;          /* the corrected per-seq bit score */
   double           P;                  /* P-value of a hit */
   double           E;                  /* E-value of a hit */
@@ -623,8 +631,10 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
   char             errbuf[cmERRBUFSIZE];
   void            *p;                 /* for ESL_RALLOC */
   search_results_t *results;
-  int              ali_len, env_len, dom_wlen; /* lengths of alignment, envelope, domain window */
+  int              ali_len, env_len, dom_len, dom_wlen; /* lengths of alignment, envelope, domain length, domain window */
   float            dom_sc, dom_nullsc; /* domain bit score, and domain null1 score */
+  int              do_hbanded_scan; 
+  int              do_qdb_or_nonbanded_scan; 
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   p7_omx_GrowTo(pli->oxf, om->M, 0, sq->n);    /* expand the one-row omx if needed */
@@ -774,6 +784,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
       }
       else { /* we're defining domains in glocal mode, so we need to fill 
 		generic fwd/bck matrices and pass them to p7_domaindef_GlocalByPosteriorHeuristics() */
+	p7_ReconfigLength(gm, window_len);
 	p7_gmx_GrowTo(pli->gxf, gm->M, window_len);
 	p7_GForward (tmpseq->dsq, window_len, gm, pli->gxf, NULL);
 	p7_gmx_GrowTo(pli->gxb, gm->M, window_len);
@@ -816,7 +827,10 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 	       esl_exp_surv(pli->ddef->dcl[d].envsc / eslCONST_LOG2,
 			    om->evparam[p7_FTAU], om->evparam[p7_FLAMBDA]));
 
-	if(pli->do_skipweakdoms && P > pli->dF3) { 
+	/* check if we can skip this domain */
+	if(pli->do_skipweakdoms && 
+	   (((! pli->use_dtF3) && (P      > pli->dF3)) || 
+	    ((  pli->use_dtF3) && (dom_sc < pli->dtF3)))) {
 	  dstarts[d] = dends[d] = -1; /* we won't pass this to the CM later */
 	  continue;
 	}
@@ -943,28 +957,31 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 	  /******************************************************************************/
 	  /* Filter 4: CYK with CM */
 	  cm->search_opts  = pli->fcyk_cm_search_opts;
-	  if(pli->fcyk_cm_search_opts & CM_SEARCH_HBANDED) { /* use HMM bands */
+	  do_hbanded_scan          = (pli->fcyk_cm_search_opts & CM_SEARCH_HBANDED) ? TRUE  : FALSE;
+	  do_qdb_or_nonbanded_scan = (pli->fcyk_cm_search_opts & CM_SEARCH_HBANDED) ? FALSE : TRUE;
+	  if(do_hbanded_scan) { /* use HMM bands */
 	    if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subseq, dstarts[d], dends[d], cm->cp9b, TRUE, 0)) != eslOK) { 
 	      printf("ERROR: %s\n", errbuf); return status; }
 	    PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, ESL_MIN(cm->W, dends[d]-dstarts[d]+1)); 
-	    if((status = FastCYKScanHB(cm, errbuf, subseq, dstarts[d], dends[d], 
-				       0.,            /* minimum score to report, irrelevant */
-				       NULL,          /* results to add to, NULL in this case */
-				       pli->do_null3, /* do the NULL3 correction? */
-				       cm->hbmx,      /* the HMM banded matrix */
-				       32768.,        /* upper limit for size of DP matrix, 32 Gb */
-				       &cyksc)) != eslOK) { 
-	      printf("ERROR: %s\n", errbuf); return status;  }
-	  }
-	  else { /* don't use HMM bands */
-	  /*printf("Running CYK on window %d\n", i);*/
-	  if((status = FastCYKScan(cm, errbuf, pli->fsmx, subseq, dstarts[d], dends[d],
+	    status = FastCYKScanHB(cm, errbuf, subseq, dstarts[d], dends[d], 
 				   0.,            /* minimum score to report, irrelevant */
 				   NULL,          /* results to add to, NULL in this case */
 				   pli->do_null3, /* do the NULL3 correction? */
-				   NULL,          /* ret_vsc, irrelevant here */
-				   &cyksc)) != eslOK) { 
-	    printf("ERROR: %s\n", errbuf); return status;  }
+				   cm->hbmx,      /* the HMM banded matrix */
+				   1024.,         /* upper limit for size of DP matrix, 1 Gb */
+				   &cyksc);       /* best score, irrelevant here */
+	    if     (status == eslERANGE) { do_qdb_or_nonbanded_scan = TRUE; }
+	    else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
+	  }
+	  if(do_qdb_or_nonbanded_scan) { 
+	    /*printf("Running CYK on window %d\n", i);*/
+	    if((status = FastCYKScan(cm, errbuf, pli->fsmx, subseq, dstarts[d], dends[d],
+				     0.,            /* minimum score to report, irrelevant */
+				     NULL,          /* results to add to, NULL in this case */
+				     pli->do_null3, /* do the NULL3 correction? */
+				     NULL,          /* ret_vsc, irrelevant here */
+				     &cyksc)) != eslOK) { 
+	      printf("ERROR: %s\n", errbuf); return status;  }
 	  }
 	  P = esl_exp_surv(cyksc, cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->mu_extrap, cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->lambda);
 	  E = P * cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->cur_eff_dbsize;
@@ -987,37 +1004,45 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 	 * Determine if we're doing a HMM banded scan, if so, we may already have HMM bands 
 	 * if our CYK filter also used them. 
 	 *******************************************************************/
-	if(pli->final_cm_search_opts & CM_SEARCH_HBANDED) { /* use HMM bands */
+	do_hbanded_scan          = (pli->final_cm_search_opts & CM_SEARCH_HBANDED) ? TRUE  : FALSE;
+	do_qdb_or_nonbanded_scan = (pli->final_cm_search_opts & CM_SEARCH_HBANDED) ? FALSE : TRUE;
+	if(do_hbanded_scan) { /* use HMM bands */
 	  if((! pli->do_cyk) || (! (pli->fcyk_cm_search_opts & CM_SEARCH_HBANDED))) { /* we need to calculate the HMM bands */
 	    if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subseq, dstarts[d], dends[d], cm->cp9b, TRUE, 0)) != eslOK) { 
 	      printf("ERROR: %s\n", errbuf); return status; }
 	  }
 	  if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is HMM banded Inside */
 	    /*printf("calling HMM banded Inside scan\n");*/
-	    if((status = FastFInsideScanHB(cm, errbuf, subseq, dstarts[d], dends[d], 
-					   pli->T,            /* minimum score to report */
-					   results,           /* our results data structure that will store hit(s) */
-					   pli->do_null3,     /* do the NULL3 correction? */
-					   cm->hbmx,          /* the HMM banded matrix */
-					   32768.,            /* upper limit for size of DP matrix, 32 Gb */
-					   &inssc)) != eslOK) { /* best score, irrelevant here */
-	      printf("ERROR: %s\n", errbuf); return status;  }
-	    printf("\t\t\tFULL HB INS %7.2f bits\n", inssc);
-	  }
-	  else { /* final algorithm is HMM banded CYK */
-	    /*printf("calling HMM banded CYK scan\n");*/
-	    if((status = FastCYKScanHB(cm, errbuf, subseq, dstarts[d], dends[d], 
+	    status = FastFInsideScanHB(cm, errbuf, subseq, dstarts[d], dends[d], 
 				       pli->T,            /* minimum score to report */
 				       results,           /* our results data structure that will store hit(s) */
 				       pli->do_null3,     /* do the NULL3 correction? */
 				       cm->hbmx,          /* the HMM banded matrix */
-				       32768.,            /* upper limit for size of DP matrix, 32 Gb */
-				       &cyksc)) != eslOK) { /* best score, irrelevant here */
-	      printf("ERROR: %s\n", errbuf); return status;  }
-	    printf("\t\t\tFULL HB CYK %7.2f bits\n", cyksc);
+				       1024.,             /* upper limit for size of DP matrix, 1 Gb */
+				       &inssc);           /* best score, irrelevant here */
+	    /* TEMP */ if(status == eslOK) printf("\t\t\tFULL HB Inside %7.2f bits\n", inssc);
+	    /* if status == eslERANGE: HMM banded scan was skipped b/c mx needed to be too large, 
+	     * we'll repeat the scan with QDBs or without bands below */
+	    if     (status == eslERANGE) { do_qdb_or_nonbanded_scan = TRUE; }
+	    else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
 	  }
+	  else { /* final algorithm is HMM banded CYK */
+	    /*printf("calling HMM banded CYK scan\n");*/
+	    status = FastCYKScanHB(cm, errbuf, subseq, dstarts[d], dends[d], 
+				   pli->T,            /* minimum score to report */
+				   results,           /* our results data structure that will store hit(s) */
+				   pli->do_null3,     /* do the NULL3 correction? */
+				   cm->hbmx,          /* the HMM banded matrix */
+				   1024.,             /* upper limit for size of DP matrix, 1 Gb */
+				   &cyksc);            /* best score, irrelevant here */
+	    /* TEMP */ if(status == eslOK) printf("\t\t\tFULL HB CYK %7.2f bits\n", cyksc);
+	  }
+	  /* if status == eslERANGE: HMM banded scan was skipped b/c mx needed to be too large, 
+	   * we'll repeat the scan with QDBs or without bands below */
+	  if     (status == eslERANGE) { do_qdb_or_nonbanded_scan = TRUE; }
+	  else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
 	}
-	else { 
+	if(do_qdb_or_nonbanded_scan) { 
 	  /*******************************************************************
 	   * Run non-HMM banded (probably qdb) version of CYK or Inside *
 	   *******************************************************************/
@@ -1028,7 +1053,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 					 results,           /* our results data structure that will store hit(s) */
 					 pli->do_null3,     /* apply the null3 correction? */
 					 NULL,              /* ret_vsc, irrelevant here */
-					 NULL)) != eslOK) { /* best score, irrelevant here */
+					 &finalsc)) != eslOK) { /* best score, irrelevant here */
 	      printf("ERROR: %s\n", errbuf); return status; }
 	  }
 	  else { /* final algorithm is CYK */
@@ -1038,11 +1063,11 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 				     results,           /* our results data structure that will store hit(s) */
 				     pli->do_null3,     /* apply the null3 correction? */
 				     NULL,              /* ret_vsc, irrelevant here */
-				     NULL)) != eslOK) { /* best score, irrelevant here */
+				     &finalsc)) != eslOK) { /* best score, irrelevant here */
 	      printf("ERROR: %s\n", errbuf); return status; }
 	  }
 	}
-	/*printf("FINAL: %.2f\n", finalsc);*/
+	printf("FINAL: %.2f\n", finalsc);
 	/* add each hit to the hitlist */
 	for (h = 0; h < results->num_results; h++) { 
 	  p7_tophits_CreateNextHit(hitlist, &hit);

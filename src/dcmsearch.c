@@ -103,16 +103,19 @@ static ESL_OPTIONS options[] = {
   { "--F1",         eslARG_REAL,  "0.35", NULL, NULL,    NULL,  NULL, "--max",          "Stage 1 (MSV) threshold: promote hits w/ P <= F1",             7 },
   { "--F2",         eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--max",          "Stage 2 (Vit) threshold: promote hits w/ P <= F2",             7 },
   { "--F3",         eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) threshold: promote hits w/ P <= F3",             7 },
+  { "--dtF3",       eslARG_REAL,  "0.00", NULL, NULL,    NULL,  NULL, "--max,--dF3",    "Stage 3 (Fwd) per-domain bit sc thr: promote hits w/sc >= dtF3", 7 },
   { "--dF3",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) per-domain threshold: promote hits w/ P <= dF3", 7 },
   { "--F4",         eslARG_REAL,  "1e-3", NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm","Stage 4 (CYK) threshold: promote hits w/ P <= F4",         7 },
   { "--E4",         eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm,--F4","Stage 4 (CYK) threshold: promote hits w/ E <= F4",    7 },
-  { "--rt1",        eslARG_REAL,  "0.25", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","Set domain definition rt1 parameter as <x>",                  7 },
-  { "--rt2",        eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","Set domain definition rt2 parameter as <x>",                  7 },
-  { "--rt3",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","Set domain definition rt3 parameter as <x>",                  7 },
-  { "--ns",         eslARG_INT,   "1000", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","Set number of domain tracebacks to <n>",                      7 },
-  { "--skipbig",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","Skip big domains that exceed the window size",                7 },
-  { "--skipweak",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","Skip low-scoring domains with P > F3",                        7 },
-  { "--glocaldom",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","Define domains with HMM in glocal (not local) mode",          7 },
+  { "--rt1",        eslARG_REAL,  "0.25", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set domain definition rt1 parameter as <x>",                  7 },
+  { "--rt2",        eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set domain definition rt2 parameter as <x>",                  7 },
+  { "--rt3",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set domain definition rt3 parameter as <x>",                  7 },
+  { "--ns",         eslARG_INT,   "1000", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set number of domain tracebacks to <n>",                      7 },
+  { "--skipbig",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","skip big domains that exceed the window size",                7 },
+  { "--skipweak",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","skip low-scoring domains with P > F3",                        7 },
+  { "--glocaldom",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","define domains with HMM in glocal (not local) mode",          7 },
+  { "--glocaluni",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--glocaldom", "--nohmm,--noddef","for glocal domain def, configure for unihit, not multi", 7 },
+  { "--tmp",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--glocaldom", "--nohmm,--noddef,--glocaluni","use generic local", 7 },
 /* Other options */
   { "--nonull2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn off biased composition score corrections",               12 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set database size in *Mb* to <x> for E-value calculations",   12 },
@@ -314,6 +317,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--skipbig"))   fprintf(ofp, "# Skip big  domain mode:                  on\n");
   if (esl_opt_IsUsed(go, "--skipweak"))  fprintf(ofp, "# Skip weak domain mode:                 on\n");
   if (esl_opt_IsUsed(go, "--glocaldom")) fprintf(ofp, "# Define domains in glocal mode          on\n");
+  if (esl_opt_IsUsed(go, "--glocaluni")) fprintf(ofp, "# Define domains in uniglocal mode       on\n");
   if (esl_opt_IsUsed(go, "--nonull2"))   fprintf(ofp, "# null2 bias corrections:                off\n");
   if (esl_opt_IsUsed(go, "--nonull3"))   fprintf(ofp, "# null3 bias corrections:                off\n");
   if (esl_opt_IsUsed(go, "--toponly"))   fprintf(ofp, "# search top-strand only:                on\n");
@@ -571,7 +575,16 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     p7_ProfileConfig(hmm, info->bg, gm, 100, p7_LOCAL); /* 100 is a dummy length for now; and MSVFilter requires local mode */
     p7_oprofile_Convert(gm, om);                        /* <om> is now p7_LOCAL, multihit */
 
-    p7_ProfileConfig(hmm, info->bg, gm, 100, p7_UNIGLOCAL); /* this will be used to define domains in cm_pipeline() */
+    if(! esl_opt_GetBoolean(go, "--tmp")) { 
+      if(esl_opt_GetBoolean(go, "--glocaluni")) { 
+	p7_ProfileConfig(hmm, info->bg, gm, 100, p7_UNIGLOCAL); /* this will be used to define domains in cm_pipeline() 
+								 * (we'll alternate b/t multi/uni later when processing domains) */
+      }
+      else { 
+	p7_ProfileConfig(hmm, info->bg, gm, 100, p7_GLOCAL); /* this will be used to define domains in cm_pipeline() 
+								(we'll alternate b/t multi/uni later when processing domains) */
+      }
+    }
 
     for (i = 0; i < infocnt; ++i) {
       /* Create processing pipeline and hit list */

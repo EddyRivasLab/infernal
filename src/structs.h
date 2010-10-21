@@ -987,9 +987,9 @@ typedef struct cm_hb_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
   int  L;               /* length of sequence the matrix currently corresponds to */
 
-  int    ncells_alloc;	/* current cell allocation limit */
-  int    ncells_valid;	/* current number of valid cells */
-  float  size_Mb;       /* current size of matrix in Megabytes */
+  int64_t    ncells_alloc;	/* current cell allocation limit */
+  int64_t    ncells_valid;	/* current number of valid cells */
+  float      size_Mb;       /* current size of matrix in Megabytes */
 
   int   *nrowsA;        /* [0..v..M] current number allocated rows for deck v */
 
@@ -1515,6 +1515,8 @@ typedef struct cm_pipeline_s {
   double  F2;		        /* Viterbi filter threshold                 */
   double  F3;		        /* uncorrected Forward filter threshold     */
   double  dF3;		        /* per-domain Forward filter thr            */
+  double  dtF3;		        /* per-domain bit sc Forward filter thr     */
+  int     use_dtF3;	        /* use dtF3 bit sc instead of dF3 P-value   */
   double  F4;		        /* CYK filter P-value threshold             */
   double  E4;		        /* CYK filter E-value threshold             */
   int     use_E4;	        /* use an E-value cutoff for CYK filter     */

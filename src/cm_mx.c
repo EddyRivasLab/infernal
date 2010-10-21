@@ -135,9 +135,9 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   void   *p;
   int     v, jp;
   int     cur_size = 0;
-  size_t  ncells;
+  int64_t ncells;
   int     jbw;
-  double  Mb_needed;
+  float   Mb_needed;
   int     have_el;
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
@@ -146,7 +146,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
    * cp9b has */
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with cp9b == NULL.\n");
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
-  
+
   ncells = 0;
   Mb_needed = ((float) (sizeof(int *)) * ((float) mx->M + 1)) + /* nrowsA ptrs */
     (float) (sizeof(float **)) * (float) (mx->M);               /* mx->dp[] ptrs */
