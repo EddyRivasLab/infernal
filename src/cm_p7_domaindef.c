@@ -106,7 +106,7 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
   /*printf("GDD P7 mode: %d\n", gm->mode);*/
   if ((status = p7_GDomainDecoding(gm, gxf, gxb, ddef)) != eslOK) return status;  /* ddef->{btot,etot,mocc} now made.                    */
 
-  printf("In p7_domaindef_GlocalByPosteriorHeuristics(): mode: %d rt1: %g rt2: %g rt3: %g nsamples: %d reseed: %d\n", save_mode, ddef->rt1, ddef->rt2, ddef->rt3, ddef->nsamples, ddef->do_reseeding);
+  /*printf("In p7_domaindef_GlocalByPosteriorHeuristics(): mode: %d rt1: %g rt2: %g rt3: %g nsamples: %d reseed: %d\n", save_mode, ddef->rt1, ddef->rt2, ddef->rt3, ddef->nsamples, ddef->do_reseeding);*/
 
   esl_vec_FSet(ddef->n2sc, sq->n+1, 0.0);          /* ddef->n2sc null2 scores are initialized                        */
   ddef->nexpected = ddef->btot[sq->n];             /* posterior expectation for # of domains (same as etot[sq->n])   */

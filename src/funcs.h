@@ -216,6 +216,7 @@ extern CM_HB_MX *       cm_hb_mx_Create            (int M);
 extern int              cm_hb_mx_GrowTo            (CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
 extern int              cm_hb_mx_Dump              (FILE *ofp, CM_HB_MX *mx);
 extern void             cm_hb_mx_Destroy           (CM_HB_MX *mx);
+extern int              cm_hb_mx_NumCellsNeeded    (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells);
 extern CM_HB_SHADOW_MX *cm_hb_shadow_mx_Create     (CM_t *cm, int M);
 extern int              cm_hb_shadow_mx_GrowTo     (CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L);
 extern int              cm_hb_shadow_mx_Dump       (FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx);
@@ -498,6 +499,7 @@ extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROF
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm);
 extern int          CP9_to_P7(CM_t *cm, P7_HMM **ret_p7);
 extern int          dump_p7(P7_HMM *hmm, FILE *fp);
+extern int          p7_GlocalLambdaMu(ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int L, int N, double tailp, double *ret_lambda, double *ret_mu);
 
 /* from my_p7_msvfilter.c */
 #if 0

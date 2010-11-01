@@ -3624,7 +3624,7 @@ PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
   int v;
   int j;
   int max;
-  double after, before;
+  int64_t after, before;
 
   printf("Printing DP cells saved using j and d bands:\n");
   before = after = 0;
@@ -3640,9 +3640,9 @@ PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
 	    after += max - hdmin[v][j-jmin[v]] + 1;
 	  }
     }
-  printf("Before:  something like %.0f\n", before);
-  printf("After:   something like %.0f\n", after);
-  printf("Speedup: maybe %.2f fold\n\n", (float) before / (float) after);
+  printf("Before:  something like %" PRId64 "\n", before);
+  printf("After:   something like %" PRId64 "\n", after);
+  printf("Speedup: maybe %.2f fold\n\n", (double) before / (double) after);
 }
 
 

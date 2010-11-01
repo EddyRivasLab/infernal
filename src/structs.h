@@ -1462,8 +1462,10 @@ typedef struct cm_s {
   CMStats_t *stats;      /* holds exponential tail stats and HMM filtering thresholds */
 
   /* p7 hmm, added 08.05.08 */
-  P7_HMM      *p7;       /* the query p7 HMM, only match emission scores are relevant/valid */
-  P7_PROFILE  *p7_gm;    /* profile HMM */
+  P7_HMM      *p7;         /* the query p7 HMM, only match emission scores are relevant/valid */
+  P7_PROFILE  *p7_gm;      /* profile HMM */
+  double       p7_gmu;     /* glocal mu     for <p7> */
+  double       p7_glambda; /* glocal lambda for <p7> */
 #if 0
   P7_OPROFILE *p7_om;    /* optimized profile HMM */
 #endif
@@ -1514,8 +1516,15 @@ typedef struct cm_pipeline_s {
   double  F1;		        /* MSV filter threshold                     */
   double  F2;		        /* Viterbi filter threshold                 */
   double  F3;		        /* uncorrected Forward filter threshold     */
+  double  F1b;		        /* bias-corrected MSV filter threshold      */
+  double  F2b;		        /* bias-corrected Viterbi filter threshold  */
+  double  F3b;		        /* bias-corrected Forward filter threshold  */
+  double  dF3b;		        /* bias-corrected per-domain threshold      */
   double  dF3;		        /* per-domain Forward filter thr            */
+  double  dF3fudge;             /* per-domain Forward filter thr fudge factor */
   double  dtF3;		        /* per-domain bit sc Forward filter thr     */
+  double  Fbfil;	        /* min allowed ratio of banded HMM vs QDB mx size  */
+  int     use_dF3fudge;	        /* use dF3 fudge factor                     */
   int     use_dtF3;	        /* use dtF3 bit sc instead of dF3 P-value   */
   double  F4;		        /* CYK filter P-value threshold             */
   double  E4;		        /* CYK filter E-value threshold             */
@@ -1526,7 +1535,10 @@ typedef struct cm_pipeline_s {
   int     do_pad;		/* TRUE to pad domains based on cm->W       */
   int     do_msvmerge;		/* TRUE to merge MSV hits, FALSE not to     */
   int     do_msv;		/* TRUE to filter with MSV, FALSE not to    */
-  int     do_biasfilter;	/* TRUE to use biased comp HMM filter       */
+  int     do_msvbias;	        /* TRUE to use biased comp HMM filter w/MSV */
+  int     do_vitbias;      	/* TRUE to use biased comp HMM filter w/Vit */
+  int     do_fwdbias;     	/* TRUE to use biased comp HMM filter w/Fwd */
+  int     do_dombias;     	/* TRUE to use biased comp HMM filter w/ddef*/
   int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */
   int     do_fwd;		/* TRUE to filter with Fwd, FALSE not to    */
   int     do_cyk;		/* TRUE to filter with CYK, FALSE not to    */
@@ -1535,6 +1547,13 @@ typedef struct cm_pipeline_s {
   int     do_skipbigdoms;       /* TRUE to skip domains > W                 */
   int     do_skipweakdoms;      /* TRUE to skip low-scoring domains         */
   int     do_localdoms;         /* TRUE to define domains in local mode     */
+  int     do_glocal_P;          /* TRUE to use glocal stats for domain P value */
+  int     do_wsplit;            /* TRUE to split MSV windows > wmult*W      */
+  int     do_wcorr;             /* TRUE to correct for window size          */
+  int     do_bfil;              /* TRUE to filter based on size ratio of HMM banded mx vs QDB mx */
+  int     do_bpick;             /* TRUE to pick QDBs or HMM bands based on relative size of the mx's */
+  double  bpick;	        /* ratio of banded HMM vs QDB mx size, above this - use QDBs */
+  double  wmult;                /* scalar * W, for do_wsplit                */
 
   /* Parameters controlling p7 domain defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
@@ -1558,24 +1577,35 @@ typedef struct cm_pipeline_s {
   uint64_t      nres;	        /* # of residues searched                   */
   uint64_t      nnodes;	        /* # of model nodes searched                */
   uint64_t      n_past_msv;	/* # comparisons that pass MSVFilter()      */
-  uint64_t      n_past_bias;	/* # comparisons that pass bias filter      */
   uint64_t      n_past_vit;	/* # comparisons that pass ViterbiFilter()  */
   uint64_t      n_past_fwd;	/* # comparisons that pass ForwardFilter()  */
+  uint64_t      n_past_ddef;	/* # domains that pass domain definition    */
   uint64_t      n_past_cyk;	/* # comparisons that pass CYK filter       */
   uint64_t      n_past_ins;	/* # comparisons that pass Inside           */
   uint64_t      n_output;	/* # alignments that make it to the final output */
+  uint64_t      n_past_msvbias;	/* # comparisons that pass MSV bias filter  */
+  uint64_t      n_past_vitbias;	/* # comparisons that pass Vit bias filter  */
+  uint64_t      n_past_fwdbias;	/* # comparisons that pass Fwd bias filter  */
+  uint64_t      n_past_dombias;	/* # domains that pass domain bias filter   */
   uint64_t      pos_past_msv;	/* # positions that pass MSVFilter()        */
-  uint64_t      pos_past_bias;	/* # positions that pass bias filter        */
   uint64_t      pos_past_vit;	/* # positions that pass ViterbiFilter()    */
   uint64_t      pos_past_fwd;	/* # positions that pass ForwardFilter()    */
+  uint64_t      pos_past_ddef;	/* # positions that pass domain definition  */
   uint64_t      pos_past_cyk;	/* # positions that pass CYK filter         */
   uint64_t      pos_past_ins;	/* # positions that pass Inside             */
   uint64_t      pos_output;	/* # positions that make it to the final output */
+  uint64_t      pos_past_msvbias;/* # positions that pass MSV bias filter */
+  uint64_t      pos_past_vitbias;/* # positions that pass Vit bias filter */
+  uint64_t      pos_past_fwdbias;/* # positions that pass Fwd bias filter */
+  uint64_t      pos_past_dombias;/* # positions that pass dom def bias filter */
 
   enum cm_pipemodes_e mode;    	/* CM_SCAN_MODELS | CM_SEARCH_SEQS          */
   int           do_top;         /* TRUE to do top    strand (usually TRUE) */
   int           do_bot;         /* TRUE to do bottom strand (usually TRUE) */
   int 		W;              /* window length */
+  int 		clen;           /* consensus length of model */
+  double        p7_glambda;     /* glocal lambda for p7 */
+  double        p7_gmu;         /* glocal lambda for p7 */
 
   int           show_accessions;/* TRUE to output accessions not names      */
   int           show_alignments;/* TRUE to output alignments (default)      */

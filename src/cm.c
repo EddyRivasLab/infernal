@@ -137,6 +137,8 @@ CreateCMShell(void)
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
   cm->p7           = NULL;          
   cm->p7_gm        = NULL;          
+  cm->p7_gmu       = 0.;
+  cm->p7_glambda   = 0.;
 #if 0
   cm->p7_om        = NULL;          
 #endif
@@ -241,7 +243,8 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   cm->cp9b          = NULL;
   cm->cp9map        = NULL;
   cm->p7            = NULL;
-  cm->p7_gm         = NULL;
+  cm->p7_gmu        = 0.;
+  cm->p7_glambda    = 0.;
 #if 0
   cm->p7_om         = NULL;
 #endif

@@ -284,6 +284,57 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
   return eslOK;
 }
 
+
+/* Function:  cm_hb_mx_NumCellsNeeded()
+ * Incept:    EPN, Fri Oct 29 13:03:05 2010
+ *
+ * Purpose:   Given a model and CP9_bands_t object with pre-calced bands for 
+ *            a target, determine the number of cells required in a 
+ *            CM_HB_MX for the target given the bands.
+ *            
+ *
+ * Args:      cm     - the CM the matrix is for
+ *            mx     - the matrix to grow
+ *            errbuf - char buffer for reporting errors
+ *            cp9b   - the bands for the current target sequence
+ *            L      - the length of the current target sequence we're aligning
+ *            size_limit- max number of Mb for DP matrix, if matrix is bigger -> return eslERANGE
+ *
+ * Returns:   <eslOK> on success
+ *
+ */
+int
+cm_hb_mx_NumCellsNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells)
+{
+  int     status;
+  void   *p;
+  int     v, jp;
+  int     cur_size = 0;
+  int64_t ncells;
+  int     jbw;
+  float   Mb_needed;
+  int     have_el;
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+
+  /* contract check */
+  if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with cp9b == NULL.\n");
+
+  ncells = 0;
+  for(v = 0; v < cp9b->cm_M; v++) { 
+    jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
+    for(jp = 0; jp <= jbw; jp++) 
+      ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+  }
+  if(have_el) ncells += (int) ((L+2) * (L+1) * 0.5); /* space for EL deck */
+
+  *ret_ncells = ncells;
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+
 /*****************************************************************
  *   2. CM_HB_SHADOOW_MX data structure functions,
  *      HMM banded shadow matrix for tracing back HMM banded CM parses

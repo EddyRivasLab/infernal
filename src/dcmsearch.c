@@ -55,7 +55,7 @@ typedef struct {
 #define INCOPTS     "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
 #define INCDOMOPTS  "--incdomE,--incdomT,--cut_ga,--cut_nc,--cut_tc"
 #define THRESHOPTS  "-E,-T,--domE,--domT,--incE,--incT,--incdomE,--incdomT,--cut_ga,--cut_nc,--cut_tc"
-#define XFASTMIDMAXOPTS "--fast,--mid,--max,--F1,--F2,--F3,--dF3,--F4,--nomsv,--nobias,--novit,--nofwd,--nocyk,--nohmm,--hmm"
+#define XFASTMIDMAXOPTS "--fast,--mid,--max,--F1,--F2,--F3,--dF3,--F4,--nomsv,--novit,--nofwd,--nocyk,--nohmm,--hmm"
 
 #define CPUOPTS     NULL
 #define MPIOPTS     NULL
@@ -94,28 +94,41 @@ static ESL_OPTIONS options[] = {
   { "--noddef",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmm",         "do not define domains inside windows prior to CM stages",      7 },
   { "--msvmerge",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--nomsv,--nohmm","merge MSV windows prior to Viterbi filter",                   7 },
   { "--nopad",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmm,--noddef","do not pad domains",                                           7 },
-  { "--nomsv",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--nobias","--max",     "skip the MSV filter stage",                                    7 },
-  { "--nobias",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the composition bias filter",                             7 },
+  { "--nomsv",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the MSV filter stage",                                    7 },
   { "--novit",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Viterbi filter stage",                                7 },
   { "--nofwd",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Forward filter stage",                                7 },
   { "--nohmm",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--hmm",    "skip all HMM filter stages (MSV/bias/Vit/Fwd)",                7 },
   { "--nocyk",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmm",          "skip the CYK filter stage",                                    7 },
+  { "--domsvbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nomsv",  "turn on the MSV composition bias filter",                      7 },
+  { "--novitbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--novit",  "turn on the Vit composition bias filter",                      7 },
+  { "--nofwdbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the Fwd composition bias filter",                      7 },
+  { "--nodombias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noddef", "turn on the per-domain composition bias filter",               7 },
   { "--F1",         eslARG_REAL,  "0.35", NULL, NULL,    NULL,  NULL, "--max",          "Stage 1 (MSV) threshold: promote hits w/ P <= F1",             7 },
+  { "--F1b",        eslARG_REAL,  "0.35", NULL, NULL,    NULL, "--domsvbias", "--max",  "Stage 1 (MSV) bias threshold: promote hits w/ P <= F1b",       7 },
   { "--F2",         eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--max",          "Stage 2 (Vit) threshold: promote hits w/ P <= F2",             7 },
+  { "--F2b",        eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--novitbias,--max",  "Stage 2 (Vit) bias threshold: promote hits w/ P <= F2b",       7 },
   { "--F3",         eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) threshold: promote hits w/ P <= F3",             7 },
-  { "--dtF3",       eslARG_REAL,  "0.00", NULL, NULL,    NULL,  NULL, "--max,--dF3",    "Stage 3 (Fwd) per-domain bit sc thr: promote hits w/sc >= dtF3", 7 },
   { "--dF3",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) per-domain threshold: promote hits w/ P <= dF3", 7 },
+  { "--F3b",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--nofwdbias,--max",  "Stage 3 (Fwd) bias threshold: promote hits w/ P <= F3b",       7 },
+  { "--dF3b",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--nodombias,--max",  "Stage 3 (Fwd) per domain bias thr: promote hits w/ P <= dF3b", 7 },
+  { "--dtF3",       eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--dF3",    "Stage 3 (Fwd) per-domain bit sc thr: promote hits w/sc >= dtF3", 7 },
+  { "--dF3fudge",   eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--dtF3",   "Stage 3 (Fwd) per-domain thresh fudge factor, add to sc", 7 },
   { "--F4",         eslARG_REAL,  "1e-3", NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm","Stage 4 (CYK) threshold: promote hits w/ P <= F4",         7 },
   { "--E4",         eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm,--F4","Stage 4 (CYK) threshold: promote hits w/ E <= F4",    7 },
   { "--rt1",        eslARG_REAL,  "0.25", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set domain definition rt1 parameter as <x>",                  7 },
   { "--rt2",        eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set domain definition rt2 parameter as <x>",                  7 },
   { "--rt3",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set domain definition rt3 parameter as <x>",                  7 },
-  { "--ns",         eslARG_INT,   "1000", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set number of domain tracebacks to <n>",                      7 },
+  { "--ns",         eslARG_INT,   "200",  NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set number of domain tracebacks to <n>",                      7 },
   { "--skipbig",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","skip big domains that exceed the window size",                7 },
-  { "--skipweak",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","skip low-scoring domains with P > F3",                        7 },
-  { "--glocaldom",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","define domains with HMM in glocal (not local) mode",          7 },
-  { "--glocaluni",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--glocaldom", "--nohmm,--noddef","for glocal domain def, configure for unihit, not multi", 7 },
-  { "--tmp",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--glocaldom", "--nohmm,--noddef,--glocaluni","use generic local", 7 },
+  { "--noskipweak", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","do not skip low-scoring domains with P > F3",                 7 },
+  { "--localdom",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","define domains with HMM in glocal (not local) mode",          7 },
+  { "--localp",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--glocaldom,--skipweak", "--nohmm,--noddef,--dtF3","use glocal P values for domains",                      7 },
+  { "--wnosplit",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nomsv",         "do not split windows after MSV stage", 7 },
+  { "--wmult",      eslARG_REAL,   "3.0", NULL, NULL,    NULL,  NULL, "--wnosplit,--nomsv",     "scalar multiplier for flagging window to split (if --wsplit)", 7 },
+  { "--wcorr",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use window size correction for Vit/Fwd filters", 7 },
+  { "--bfil",       eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--fnoqdb",        "maximum allowed banded HMM/QDB matrix size for a domain", 7 },
+  { "--bpick",      eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--fnoqdb",        "use QDBs if HMM/QDB matrix exceeds <x>, else use HMM bands", 7 },
+  { "--tmp",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--glocaldom", "--nohmm,--noddef","use generic local", 7 },
 /* Other options */
   { "--nonull2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn off biased composition score corrections",               12 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set database size in *Mb* to <x> for E-value calculations",   12 },
@@ -300,24 +313,33 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--noddef"))    fprintf(ofp, "# Domain definition prior to CM search:  off\n");
   if (esl_opt_IsUsed(go, "--nopad"))     fprintf(ofp, "# Domain padding strategy:               off\n");
   if (esl_opt_IsUsed(go, "--nomsv"))     fprintf(ofp, "# MSV filter:                            off\n");
-  if (esl_opt_IsUsed(go, "--nobias"))    fprintf(ofp, "# biased composition HMM filter:         off\n");
   if (esl_opt_IsUsed(go, "--novit"))     fprintf(ofp, "# Vit filter:                            off\n");
   if (esl_opt_IsUsed(go, "--nofwd"))     fprintf(ofp, "# Fwd filter:                            off\n");
   if (esl_opt_IsUsed(go, "--nohmm"))     fprintf(ofp, "# HMM filters (MSV/bias/Vit/Fwd):        off\n");
   if (esl_opt_IsUsed(go, "--nocyk"))     fprintf(ofp, "# CYK filter:                            off\n");
+  if (esl_opt_IsUsed(go, "--domsvbias")) fprintf(ofp, "# MSV biased comp HMM filter:            on\n");
+  if (esl_opt_IsUsed(go, "--novitbias")) fprintf(ofp, "# Vit biased comp HMM filter:            off\n");
+  if (esl_opt_IsUsed(go, "--nofwdbias")) fprintf(ofp, "# Fwd biased comp HMM filter:            off\n");
+  if (esl_opt_IsUsed(go, "--nodombias")) fprintf(ofp, "# Per-domain biased comp HMM filter:     off\n");
   if (esl_opt_IsUsed(go, "--F1"))        fprintf(ofp, "# MSV filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F1"));
   if (esl_opt_IsUsed(go, "--F2"))        fprintf(ofp, "# Vit filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F2"));
   if (esl_opt_IsUsed(go, "--F3"))        fprintf(ofp, "# Fwd filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F3"));
   if (esl_opt_IsUsed(go, "--F4"))        fprintf(ofp, "# CYK filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F4"));
   if (esl_opt_IsUsed(go, "--E4"))        fprintf(ofp, "# CYK filter E threshold:                <= %g\n", esl_opt_GetReal(go, "--E4"));
+  if (esl_opt_IsUsed(go, "--F1b"))       fprintf(ofp, "# MSV bias P threshold:                  <= %g\n", esl_opt_GetReal(go, "--F1b"));
+  if (esl_opt_IsUsed(go, "--F2b"))       fprintf(ofp, "# Vit bias P threshold:                  <= %g\n", esl_opt_GetReal(go, "--F2b"));
+  if (esl_opt_IsUsed(go, "--F3b"))       fprintf(ofp, "# Fwd bias P threshold:                  <= %g\n", esl_opt_GetReal(go, "--F3b"));
+  if (esl_opt_IsUsed(go, "--dF3b"))      fprintf(ofp, "# Domain defn P threshold:               <= %g\n", esl_opt_GetReal(go, "--dF3b"));
+  if (esl_opt_IsUsed(go, "--bfil"))      fprintf(ofp, "# Max allowed banded HMM/QDB mx size     %g\n",    esl_opt_GetReal(go, "--bfil"));
+  if (esl_opt_IsUsed(go, "--bpick"))     fprintf(ofp, "# Use HMM bands only if HMM/QDB mx size  <= %g\n", esl_opt_GetReal(go, "--bpick"));
   if (esl_opt_IsUsed(go, "--rt1"))       fprintf(ofp, "# Domain definition rt1 parameter        %g\n", esl_opt_GetReal(go, "--rt1"));
   if (esl_opt_IsUsed(go, "--rt2"))       fprintf(ofp, "# Domain definition rt2 parameter        %g\n", esl_opt_GetReal(go, "--rt2"));
   if (esl_opt_IsUsed(go, "--rt3"))       fprintf(ofp, "# Domain definition rt3 parameter        %g\n", esl_opt_GetReal(go, "--rt3"));
   if (esl_opt_IsUsed(go, "--ns"))        fprintf(ofp, "# Number of domain tracebacks sampled    %d\n", esl_opt_GetInteger(go, "--ns"));
   if (esl_opt_IsUsed(go, "--skipbig"))   fprintf(ofp, "# Skip big  domain mode:                  on\n");
-  if (esl_opt_IsUsed(go, "--skipweak"))  fprintf(ofp, "# Skip weak domain mode:                 on\n");
-  if (esl_opt_IsUsed(go, "--glocaldom")) fprintf(ofp, "# Define domains in glocal mode          on\n");
-  if (esl_opt_IsUsed(go, "--glocaluni")) fprintf(ofp, "# Define domains in uniglocal mode       on\n");
+  if (esl_opt_IsUsed(go, "--noskipweak"))fprintf(ofp, "# Skip weak domain mode:                 off\n");
+  if (esl_opt_IsUsed(go, "--localdom"))  fprintf(ofp, "# Define domains in local mode           on\n");
+  if (esl_opt_IsUsed(go, "--localp"))    fprintf(ofp, "# Use local P values for domains         on\n");
   if (esl_opt_IsUsed(go, "--nonull2"))   fprintf(ofp, "# null2 bias corrections:                off\n");
   if (esl_opt_IsUsed(go, "--nonull3"))   fprintf(ofp, "# null3 bias corrections:                off\n");
   if (esl_opt_IsUsed(go, "--toponly"))   fprintf(ofp, "# search top-strand only:                on\n");
@@ -573,17 +595,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     gm = p7_profile_Create (hmm->M, abc);
     om = p7_oprofile_Create(hmm->M, abc);
     p7_ProfileConfig(hmm, info->bg, gm, 100, p7_LOCAL); /* 100 is a dummy length for now; and MSVFilter requires local mode */
+
     p7_oprofile_Convert(gm, om);                        /* <om> is now p7_LOCAL, multihit */
 
     if(! esl_opt_GetBoolean(go, "--tmp")) { 
-      if(esl_opt_GetBoolean(go, "--glocaluni")) { 
-	p7_ProfileConfig(hmm, info->bg, gm, 100, p7_UNIGLOCAL); /* this will be used to define domains in cm_pipeline() 
-								 * (we'll alternate b/t multi/uni later when processing domains) */
-      }
-      else { 
-	p7_ProfileConfig(hmm, info->bg, gm, 100, p7_GLOCAL); /* this will be used to define domains in cm_pipeline() 
-								(we'll alternate b/t multi/uni later when processing domains) */
-      }
+      p7_ProfileConfig(hmm, info->bg, gm, 100, p7_GLOCAL); /* this will be used to define domains in cm_pipeline() 
+							      (we'll alternate b/t multi/uni later when processing domains) */
     }
 
     for (i = 0; i < infocnt; ++i) {
