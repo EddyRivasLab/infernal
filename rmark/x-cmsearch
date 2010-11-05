@@ -14,24 +14,29 @@
 # Command-line options:
 # -D     : debugging; don't unlink intermediate files, save them all
 # -P     : run a positive-only benchmark, only each family's positive sequences will be searched
+# -W     : run a positive-window-only benchmark
 # -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the $optsfile
 # -B <f> : build models as needed, instead of reading them from a file
 # -C <f> : fetch models from existing file <f>
+# -Y     : run a no-positive benchmark; for timings only
 # -Z     : run 'dcmsearch', not 'cmsearch'
 #
 # SRE, Tue Apr 20 10:32:49 2010 [Janelia]
 # SVN $Id$
 #
 use Getopt::Std;
-getopts('DPB:M:C:Z');
+getopts('DPWB:M:C:ZY');
 $mpi_nprocs = 8;
 $do_build_models = 0;
 $do_debug = 0;
 $build_optsfile = "";
 $do_posonly = 0;
+$do_poswindowonly = 0;
 $do_dcmsearch = 0;
 if (defined $opt_D) { $do_debug = 1; }
 if (defined $opt_P) { $do_posonly = 1; }
+if (defined $opt_W) { $do_poswindowonly = 1; }
+if (defined $opt_Y) { $do_nopos = 1; }
 if (defined $opt_B) { $do_build_models = 1; $build_optsfile = $opt_B; }
 if (defined $opt_C) { $do_fetch_models = 1; $master_model = $opt_C; if($do_build_models) { die "-B and -C are incompatible"; } }
 if (defined $opt_Z) { $do_dcmsearch = 1; }
@@ -39,10 +44,14 @@ if (defined $opt_M) {
     $mpi_nprocs = $opt_M; 
     if($mpi_nprocs < 2 || $mpi_nprocs > 8) { die "ERROR, with -M <n>, <n> must be between 2 and 8"; } 
 }
+if($do_posonly && $do_poswindowonly)                    { die "ERROR, only one of -P or -W may be enabled."; }
+if($do_posonly && $do_nopos)                            { die "ERROR, only one of -P or -Y may be enabled."; }
+if($do_poswindowonly && $do_nopos)                      { die "ERROR, only one of -Y or -W may be enabled."; }
 
 $usage = "Usage: x-cmsearch [options]\n\t<execdir>\n\t<scriptdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
 $options_usage  = "Options:\n\t";
 $options_usage .= " -P     : run a positive-only benchmark, only each family's positive sequences will be searched\n\t";
+$options_usage .= " -W     : run a positive-window-only benchmark\n\t";
 $options_usage .= " -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the <optsfile>\n\t";
 $options_usage .= " -B <f> : build models as needed, using options in file <f>\n\t";
 $options_usage .= " -C <f> : fetch models from existing file <f>\n\t";
@@ -159,53 +168,72 @@ while (<TABLE>)
 
 	$fafile = "$resultdir/$msaname.pfa";
     }
+    if($do_poswindowonly) { #fetch this family's sequences
+	$command = "grep \"^$msaname\/\" rmark3.wppos | awk \'{ print \$2 }\' > $resultdir/$msaname.sfetch";
+	$status = system($command);
+	if ($status != 0) { die "FAILED: $command failed"; }
 
+	$nl = `wc -l $resultdir/$msaname.sfetch`;
+	if($nl =~ m/^0\s+/) { 
+	    printf("WHOA!!!\n");
+	    unlink "$resultdir/$msaname.sfetch";
+	    next;
+	}
+	$command = "$sfetch -o $resultdir/$msaname.wpfa -f $orig_fafile $resultdir/$msaname.sfetch > /dev/null";
+	$status = system($command);
+	if ($status != 0) { die "FAILED: $command failed"; }
+	
+	$fafile = "$resultdir/$msaname.wpfa";
+    }
+    $extra_opt = "";
     if($do_dcmsearch) { 
 	$tab_opt = "--tblout $resultdir/$msaname.tmp";
+	$extra_opt = "--seed 181";
     }
     else { 
 	$tab_opt = "--tabfile $resultdir/$msaname.tmp";
     }
 
     if($do_mpi) { 
-	$command = "mpirun -np $mpi_nprocs $cmsearch_to_run $searchopts $fam_searchopts_H{$msaname} $tab_opt $modeldir/$msaname.cm $fafile > $resultdir/$msaname.search";
+	$command = "mpirun -np $mpi_nprocs $cmsearch_to_run $searchopts $fam_searchopts_H{$msaname} $tab_opt $extra_opt $modeldir/$msaname.cm $fafile > $resultdir/$msaname.search";
 	$status = system($command);
 	if ($status != 0) { die "FAILED: $command"; }
     }
     else { 
-	$command = "$cmsearch_to_run $searchopts $fam_searchopts_H{$msaname} $tab_opt $modeldir/$msaname.cm $fafile > $resultdir/$msaname.search";
+	$command = "$cmsearch_to_run $searchopts $fam_searchopts_H{$msaname} $tab_opt $extra_opt $modeldir/$msaname.cm $fafile > $resultdir/$msaname.search";
 	$status = system($command);
 	if ($status != 0) { die "FAILED: $command"; }
     }
 
-    open(OUTPUT, "$resultdir/$msaname.tmp") || die "FAILED: to open $resultdir/$msaname.tmp tabular output file"; 
-    if($do_dcmsearch) { 
-	while (<OUTPUT>)
-	{
-	    if (/^\#/) { next; }
-	    @fields   = split(' ', $_, 12);
-	    $target      = $fields[0];
-	    $target_from = $fields[6];
-	    $target_to   = $fields[7];
-	    $bitscore    = $fields[9];
-	    $pval        = $fields[8];
-	    printf TMPOUTFILE "%10g %10.1f %10d %10d %20s %35s\n", $pval, $bitscore, $target_from, $target_to, $target, $msaname;
+    if(! $do_nopos) { 
+	open(OUTPUT, "$resultdir/$msaname.tmp") || die "FAILED: to open $resultdir/$msaname.tmp tabular output file"; 
+	if($do_dcmsearch) { 
+	    while (<OUTPUT>)
+	    {
+		if (/^\#/) { next; }
+		@fields   = split(' ', $_, 12);
+		$target      = $fields[0];
+		$target_from = $fields[6];
+		$target_to   = $fields[7];
+		$bitscore    = $fields[9];
+		$pval        = $fields[8];
+		printf TMPOUTFILE "%10g %10.1f %10d %10d %20s %35s\n", $pval, $bitscore, $target_from, $target_to, $target, $msaname;
+	    }
+	}
+	else { 
+	    while (<OUTPUT>)
+	    {
+		if (/^\#/) { next; }
+		@fields   = split(' ', $_, 9);
+		$target      = $fields[1];
+		$target_from = $fields[2];
+		$target_to   = $fields[3];
+		$bitscore    = $fields[6];
+		$pval        = $fields[7];
+		printf TMPOUTFILE "%10g %10.1f %10d %10d %20s %35s\n", $pval, $bitscore, $target_from, $target_to, $target, $msaname;
+	    }
 	}
     }
-    else { 
-	while (<OUTPUT>)
-	{
-	    if (/^\#/) { next; }
-	    @fields   = split(' ', $_, 9);
-	    $target      = $fields[1];
-	    $target_from = $fields[2];
-	    $target_to   = $fields[3];
-	    $bitscore    = $fields[6];
-	    $pval        = $fields[7];
-	    printf TMPOUTFILE "%10g %10.1f %10d %10d %20s %35s\n", $pval, $bitscore, $target_from, $target_to, $target, $msaname;
-	}
-    }
-
     if($do_debug == 0) { 
 	unlink "$resultdir/$msaname.tmp";
 	if($do_build_models) { 
@@ -217,6 +245,10 @@ while (<TABLE>)
 	}
 	if($do_posonly) { 
 	    unlink "$resultdir/$msaname.pfa";
+	    unlink "$resultdir/$msaname.sfetch";
+	}
+	if($do_poswindowonly) { 
+	    unlink "$resultdir/$msaname.wpfa";
 	    unlink "$resultdir/$msaname.sfetch";
 	}
     }
@@ -234,16 +266,21 @@ close TMPOUTFILE;
 # Use 'rmark-idpositives.pl' to identify positives in the temporary output file to
 # create the permanent output file. First, we need to sort by score.
 
-$command = "sort -g $tmpoutfile > $sorttmpoutfile";
-$status = system("$command");
-if ($status != 0) { die "FAILED: $command"; }
-
-$command = "perl $idscript $posfile $sorttmpoutfile > $outfile";
-$status = system("$command");
-if ($status != 0) { die "FAILED: $command"; }
-
-sleep(0.1);    
-if($do_debug == 0) { 
+if(! $do_nopos) { 
+    $command = "sort -g $tmpoutfile > $sorttmpoutfile";
+    $status = system("$command");
+    if ($status != 0) { die "FAILED: $command"; }
+    
+    $command = "perl $idscript $posfile $sorttmpoutfile > $outfile";
+    $status = system("$command");
+    if ($status != 0) { die "FAILED: $command"; }
+    
+    sleep(0.1);    
+    if($do_debug == 0) { 
+	unlink $tmpoutfile;
+	unlink $sorttmpoutfile;
+    }    
+}
+else { 
     unlink $tmpoutfile;
-    unlink $sorttmpoutfile;
-}    
+}

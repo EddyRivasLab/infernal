@@ -1519,8 +1519,10 @@ typedef struct cm_pipeline_s {
   double  F1b;		        /* bias-corrected MSV filter threshold      */
   double  F2b;		        /* bias-corrected Viterbi filter threshold  */
   double  F3b;		        /* bias-corrected Forward filter threshold  */
-  double  dF3b;		        /* bias-corrected per-domain threshold      */
+  double  F3n3;		        /* null3-corrected Forward filter threshold */
   double  dF3;		        /* per-domain Forward filter thr            */
+  double  dF3b;		        /* bias-corrected per-domain threshold      */
+  double  dF3n3;	        /* null3-corrected domain filter threshold */
   double  dF3fudge;             /* per-domain Forward filter thr fudge factor */
   double  dtF3;		        /* per-domain bit sc Forward filter thr     */
   double  Fbfil;	        /* min allowed ratio of banded HMM vs QDB mx size  */
@@ -1538,7 +1540,10 @@ typedef struct cm_pipeline_s {
   int     do_msvbias;	        /* TRUE to use biased comp HMM filter w/MSV */
   int     do_vitbias;      	/* TRUE to use biased comp HMM filter w/Vit */
   int     do_fwdbias;     	/* TRUE to use biased comp HMM filter w/Fwd */
+  int     do_fwdnull3;     	/* TRUE to use NULL3 bias filter w/Fwd      */
   int     do_dombias;     	/* TRUE to use biased comp HMM filter w/ddef*/
+  int     do_domnull3;     	/* TRUE to use NULL bias filter w/ddef      */
+  double  p7_n3omega;           /* omega value to use for HMM null3 stages  */
   int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */
   int     do_fwd;		/* TRUE to filter with Fwd, FALSE not to    */
   int     do_cyk;		/* TRUE to filter with CYK, FALSE not to    */
@@ -1598,6 +1603,14 @@ typedef struct cm_pipeline_s {
   uint64_t      pos_past_vitbias;/* # positions that pass Vit bias filter */
   uint64_t      pos_past_fwdbias;/* # positions that pass Fwd bias filter */
   uint64_t      pos_past_dombias;/* # positions that pass dom def bias filter */
+
+  int           do_time_F1;      /* TRUE to abort after Stage 1 MSV */
+  int           do_time_F2;      /* TRUE to abort after Stage 2 Vit */
+  int           do_time_F3;      /* TRUE to abort after Stage 3 Fwd */
+  int           do_time_dF3;     /* TRUE to abort after domain def */
+  int           do_time_bfil;    /* TRUE to abort after bfil */
+  int           do_time_F4;      /* TRUE to abort after Stage 4 CYK */
+  int           do_time_F5;      /* TRUE to abort after Stage 5 Inside */
 
   enum cm_pipemodes_e mode;    	/* CM_SCAN_MODELS | CM_SEARCH_SEQS          */
   int           do_top;         /* TRUE to do top    strand (usually TRUE) */

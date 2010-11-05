@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT 0
+#define DOPRINT 1
 
 /*****************************************************************
  * 1. The CM_PIPELINE object: allocation, initialization, destruction.
@@ -92,7 +92,7 @@
  *            | --dF3b       |  Stage 3 (Fwd) domain bias filter thresh     |   OFF     |
  *            | --dF3fudge   |  Stage 3 (Fwd) per-domain fudge factor       |   NULL    |
  *            | --dtF3       |  Stage 3 (Fwd) per-domain bit sc thresh      |   NULL    |
- *            | --F4         |  Stage 4 (CYK) thresh: promote hits P <= F4  |   1e-4    |
+ *            | --F4         |  Stage 4 (CYK) thresh: promote hits P <= F4  |   5e-4    |
  *            | --E4         |  Stage 4 (CYK) thres: promote hits E <= E4   |   NULL    |
  *            | --fast       |  set filters at strict-level                 |   FALSE   |
  *            | --mid        |  set filters at mid-level                    |   FALSE   |
@@ -105,17 +105,15 @@
  *            | --nohmm      |  skip all HMM filter stages                  |   FALSE   |
  *            | --nocyk      |  don't filter with CYK, skip to final stage  |   FALSE   |
  *            | --fnoqdb     |  don't use QDBs in CYK filter                |   FALSE   |
- *            | --fbeta      |  set beta for QDBs in CYK filter to this     |   FALSE   |
+ *            | --fbeta      |  set beta for QDBs in CYK filter to this     |   1e-9    |
  *            | --fhbanded   |  use HMM bands for CYK filter                |   FALSE   |
- *            | --faln2bands |  get CYK filter HMM bands by aligning        |   FALSE   |
+ *            | --ftau       |  set tau for HMM bands in CYK filter to this |   5e-6    |
  *            | --fsums      |  use sums to get CYK filter HMM bands        |   FALSE   |
- *            | --ftau       |  set tau for HMM bands in CYK filter to this |   FALSE   |
- *            | --noqdb      |  don't use QDBs in final stage               |   FALSE   |
- *            | --beta       |  set beta for QDBs in final stage            |   FALSE   |
- *            | --hbanded    |  use HMM bands for final stage               |   FALSE   |
- *            | --aln2bands  |  get final stage HMM bands by aligning       |   FALSE   |
- *            | --sums       |  use sums to get final HMM bands             |   FALSE   |
  *            | --tau        |  set tau for final HMM bands to this         |   FALSE   |
+ *            | --sums       |  use sums to get final HMM bands             |   FALSE   |
+ *            | --qdb        |  use QDBs, not HMM bands in final stage      |   FALSE   |
+ *            | --beta       |  set beta for QDBs in final stage            |   1e-15   |
+ *            | --nonbanded  |  don't use QDBs or HMM bands in final stage  |   FALSE   |
  *            | --rt1        |  set domain def rt1 parameter as <x>         |   0.25    |
  *            | --rt2        |  set domain def rt2 parameter as <x>         |   0.10    |
  *            | --rt3        |  set domain def rt3 parameter as <x>         |   0.20    |
@@ -242,17 +240,20 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->do_mid        = FALSE;
   pli->do_fast       = FALSE;
   pli->do_domainize  = TRUE;
-  pli->do_pad        = TRUE;
+  pli->do_pad        = esl_opt_GetBoolean(go, "--pad");
   pli->do_msv        = TRUE;
   pli->do_msvbias    = FALSE;
   pli->do_vit        = TRUE;
   pli->do_vitbias    = TRUE;
   pli->do_fwd        = TRUE;
   pli->do_fwdbias    = TRUE;
+  pli->do_fwdnull3   = FALSE;
   pli->do_dombias    = TRUE;
+  pli->do_domnull3   = FALSE;
   pli->do_cyk        = TRUE;
   pli->do_null2      = TRUE;
   pli->do_null3      = TRUE;
+  pli->p7_n3omega    = esl_opt_GetReal(go, "--p7n3omega");
   pli->F1     = ESL_MIN(1.0, esl_opt_GetReal(go, "--F1"));
   pli->F2     = ESL_MIN(1.0, esl_opt_GetReal(go, "--F2"));
   pli->F3     = ESL_MIN(1.0, esl_opt_GetReal(go, "--F3"));
@@ -260,7 +261,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->F1b    = ESL_MIN(1.0, esl_opt_GetReal(go, "--F1b"));
   pli->F2b    = ESL_MIN(1.0, esl_opt_GetReal(go, "--F2b"));
   pli->F3b    = ESL_MIN(1.0, esl_opt_GetReal(go, "--F3b"));
+  pli->F3n3   = ESL_MIN(1.0, esl_opt_GetReal(go, "--F3n3"));
   pli->dF3b   = ESL_MIN(1.0, esl_opt_GetReal(go, "--dF3b"));
+  pli->dF3n3  = ESL_MIN(1.0, esl_opt_GetReal(go, "--dF3n3"));
   pli->dtF3   = 0.;
   pli->dF3fudge = 0.;
   pli->use_dtF3 = FALSE;
@@ -299,8 +302,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   if(esl_opt_GetBoolean(go, "--domsvbias"))pli->do_msvbias    = TRUE;
   if(esl_opt_GetBoolean(go, "--novitbias"))pli->do_vitbias    = FALSE;
   if(esl_opt_GetBoolean(go, "--nofwdbias"))pli->do_fwdbias    = FALSE;
+  if(esl_opt_GetBoolean(go, "--dofwdnull3"))pli->do_fwdnull3  = TRUE;
+  if(esl_opt_GetBoolean(go, "--dodomnull3"))pli->do_domnull3  = TRUE;
   if(esl_opt_GetBoolean(go, "--nodombias"))pli->do_dombias    = FALSE;
-  if(esl_opt_GetBoolean(go, "--nopad"))    pli->do_pad        = FALSE;
   if(esl_opt_GetBoolean(go, "--hmm")) { 
     pli->do_cm  = FALSE;
     pli->do_cyk = FALSE; 
@@ -339,6 +343,14 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
     pli->dF3 = 0.0001;
   }
 
+  pli->do_time_F1   = esl_opt_GetBoolean(go, "--time-F1");
+  pli->do_time_F2   = esl_opt_GetBoolean(go, "--time-F2");
+  pli->do_time_F3   = esl_opt_GetBoolean(go, "--time-F3");
+  pli->do_time_dF3  = esl_opt_GetBoolean(go, "--time-dF3");
+  pli->do_time_bfil = esl_opt_GetBoolean(go, "--time-bfil");
+  pli->do_time_F4   = esl_opt_GetBoolean(go, "--time-F4");
+  pli->do_time_F5   = esl_opt_GetBoolean(go, "--time-F5");
+
   if (esl_opt_GetBoolean(go, "--nonull2")) pli->do_null2      = FALSE;
   if (esl_opt_GetBoolean(go, "--nonull3")) pli->do_null3      = FALSE;
 
@@ -355,15 +367,18 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
 
     if(  esl_opt_GetBoolean(go, "--fnoqdb"))      pli->fcyk_cm_search_opts  |= CM_SEARCH_NOQDB;
     if(  esl_opt_GetBoolean(go, "--fhbanded"))    pli->fcyk_cm_search_opts  |= CM_SEARCH_HBANDED;
-    if(  esl_opt_GetBoolean(go, "--faln2bands"))  pli->fcyk_cm_search_opts  |= CM_SEARCH_HMMALNBANDS;
     if(  esl_opt_GetBoolean(go, "--fsums"))       pli->fcyk_cm_search_opts  |= CM_SEARCH_SUMS;
     if(! esl_opt_GetBoolean(go, "--nonull3"))     pli->fcyk_cm_search_opts  |= CM_SEARCH_NULL3;
 
     /* set up final round parameters */
     if(! esl_opt_GetBoolean(go, "--cyk"))         pli->final_cm_search_opts |= CM_SEARCH_INSIDE;
-    if(  esl_opt_GetBoolean(go, "--noqdb"))       pli->final_cm_search_opts |= CM_SEARCH_NOQDB;
-    if(  esl_opt_GetBoolean(go, "--hbanded"))     pli->final_cm_search_opts |= CM_SEARCH_HBANDED;
-    if(  esl_opt_GetBoolean(go, "--aln2bands"))   pli->final_cm_search_opts |= CM_SEARCH_HMMALNBANDS;
+    if(! esl_opt_GetBoolean(go, "--qdb")) { 
+      pli->final_cm_search_opts |= CM_SEARCH_NOQDB;
+    }
+    if(! esl_opt_GetBoolean(go, "--nonbanded")) { 
+      pli->final_cm_search_opts |= CM_SEARCH_HBANDED;
+    }
+    /* note that --nonbanded and --qdb are exclusive */
     if(  esl_opt_GetBoolean(go, "--sums"))        pli->final_cm_search_opts |= CM_SEARCH_SUMS;
     if(! esl_opt_GetBoolean(go, "--nonull3"))     pli->final_cm_search_opts |= CM_SEARCH_NULL3;
   }
@@ -694,7 +709,9 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
   P7_HIT          *hit     = NULL;     /* ptr to the current hit output data      */
   float            usc, vfsc, fwdsc, cyksc, inssc; /* filter scores                           */
   float            filtersc, dom_filtersc;           /* HMM null filter score                   */
+  float            null3sc, dom_null3sc;          /* null3 scores                   */
   int              have_filtersc;      /* TRUE if filtersc has been calc'ed for current window */
+  int              have_null3sc;       /* TRUE if null3sc has been calc'ed for current window */
   int              have_hmmbands;      /* TRUE if HMM bands have been calc'ed for current hit */
   float            nullsc, w_nullsc, cdiff_nullsc, wdiff_nullsc; /* null model scores */
   float            finalsc;            /* final score for seq */
@@ -817,7 +834,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
   }      
   pli->n_past_msv += hit_cnt;
 
-  /* for timing through MSV only */ /* return eslOK; */
+  if(pli->do_time_F1) return eslOK;
 
   /*********************************************/
   ESL_SQ *tmpseq = esl_sq_CreateDigital(sq->abc);
@@ -835,7 +852,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
     pli->pos_past_msv += window_len;
     
     subseq = sq->dsq + window_starts[i] - 1;
-    have_filtersc = FALSE;
+    have_filtersc = have_null3sc = FALSE;
     
     if(pli->do_wcorr) { 
       window_correction = (2 * log(2. / (pli->W+2))) - (2. * log(2. / (window_len+2)));
@@ -872,7 +889,6 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 #if DOPRINT
     printf("Window %5d [%10d..%10d] survived MSV Bias.\n", i, window_starts[i], window_ends[i]);
 #endif      
-    /* for timing through MSV bias only */ /* continue; */
     
     if(pli->do_msvbias) { /* we already called p7_oprofile_ReconfigMSVLength() above */
       p7_oprofile_ReconfigRestLength(om, window_len);
@@ -901,7 +917,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
     printf("Window %5d [%10d..%10d] survived Vit.\n", i, window_starts[i], window_ends[i]);
 #endif
 
-    /* for timing through Vit only */ /* continue; */
+    if(pli->do_time_F2) continue; 
 
     /********************************************/
     if (pli->do_vit && pli->do_vitbias) { 
@@ -912,16 +928,16 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
       have_filtersc = TRUE;
       seq_score = (vfsc + window_correction - filtersc) / eslCONST_LOG2;
       P = esl_gumbel_surv(seq_score,  om->evparam[p7_VMU],  om->evparam[p7_VLAMBDA]);
+#if DOPRINT
+      printf("vit-bias sc: %8.2f P: %g\n", seq_score, P);
+#endif
       if (P > pli->F2b) continue;
       /******************************************************************************/
     }
     pli->n_past_vitbias++;
     pli->pos_past_vitbias += window_len;
-#if DOPRINT
     printf("Window %5d [%10d..%10d] survived Vit-Bias.\n", i, window_starts[i], window_ends[i]);
-#endif
 
-    /* for timing through Vit bias only */ /* continue; */
     /********************************************/
 
     if(pli->do_fwd) { 
@@ -946,7 +962,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
     printf("Window %5d [%10d..%10d] survived Fwd (sc: %6.2f bits;  P: %g).\n", i, window_starts[i], window_ends[i], seq_score, P);
 #endif
 
-    /* for timing through Fwd only */ /* continue; */
+    if(pli->do_time_F3) continue;
 
     if (pli->do_fwd && pli->do_fwdbias) { 
       if (! have_filtersc) { 
@@ -959,12 +975,27 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
       if (P > pli->F3b) continue;
       /******************************************************************************/
     }
+
+    if (pli->do_fwd && pli->do_fwdnull3) { 
+      if (! have_null3sc) { 
+	ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, subseq, 1, window_len, pli->p7_n3omega, &null3sc);
+	printf("null3sc: %20.18f\n", null3sc);
+	null3sc *= ((float) pli->clen/ (float) window_len); /* a hit is more like clen, not window len */
+      }
+      have_null3sc = TRUE;
+      seq_score = ((fwdsc + window_correction - nullsc) / eslCONST_LOG2) - null3sc;
+      P = esl_exp_surv(seq_score,  om->evparam[p7_FTAU],  om->evparam[p7_FLAMBDA]);
+#if DOPRINT
+      printf("Window %5d [%10d..%10d] Fwd null3 sc: %10.8f bits (sc: %6.2f bits;  P: %g).\n", i, window_starts[i], window_ends[i], null3sc, seq_score, P);
+#endif
+      if (P > pli->F3n3) continue;
+      /******************************************************************************/
+    }
     pli->n_past_fwdbias++;
     pli->pos_past_fwdbias += window_len;
 #if DOPRINT
     printf("Window %5d [%10d..%10d] survived Fwd-Bias.\n", i, window_starts[i], window_ends[i]);
 #endif
-    /* for timing through Fwd bias only */ /* continue; */
 
     window_survived_fwd[i] = TRUE;
     nsurvived_fwd++;
@@ -1020,7 +1051,6 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
       printf("window %5d  %10d..%10d\n", i+1, window_starts[i], window_ends[i]);
       }*/
 
-    /* for timing through window split only */ /* return eslOK; */
   }
 #if DOPRINT
   printf("\n\n SECOND PASS\n\n");
@@ -1028,7 +1058,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 
   for (i = 0; i < nsurvived_fwd; i++) {
 #if DOPRINT
-    printf("\n\nWindow %5d/%5d [%10d..%10d] survived Fwd.\n", i, nsurvived_fwd, window_starts[i], window_ends[i]);
+    printf("\n\nWindow %5d/%5d [%10d..%10d] in pass 2.\n", i, nsurvived_fwd, window_starts[i], window_ends[i]);
 #endif
     window_len = window_ends[i] - window_starts[i] + 1;
     subseq = sq->dsq + window_starts[i] - 1;
@@ -1108,12 +1138,8 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 	else                 P = esl_exp_surv (dom_sc_for_pvalue,  om->evparam[p7_FTAU], om->evparam[p7_FLAMBDA]);
 
 #if DOPRINT
-	printf("\t\tdomain %5d  env bits: %6.2f (uncorrected: %6.2f) P: %g (uncorrected: %g)\n", 
-	       d+1, dom_sc_for_pvalue,
-	       pli->ddef->dcl[d].envsc / eslCONST_LOG2, 
-	       P,
-	       esl_exp_surv(pli->ddef->dcl[d].envsc / eslCONST_LOG2,
-			    om->evparam[p7_FTAU], om->evparam[p7_FLAMBDA]));
+	printf("\t\tdomain %5d  bits: %6.2f P: %g\n", 
+	       d+1, dom_sc_for_pvalue, P);
 #endif
 	/* check if we can skip this domain */
 	if(pli->do_skipweakdoms && 
@@ -1157,15 +1183,13 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 	  dends[d]   = pli->ddef->dcl[d].jenv;
 	}
 #if DOPRINT
-	printf("\tdefining domain %3d  [%7d..%7d] --> [%7d..%7d]\n", 
-	       d, pli->ddef->dcl[d].ienv, pli->ddef->dcl[d].jenv, 
-	       dstarts[d], dends[d]);
+	printf("Domain [%10d..%10d] survived dF3.\n", dstarts[d] + window_starts[i] - 1, dends[d] + window_starts[i] - 1);
 #endif
 
 	pli->n_past_ddef++;
 	pli->pos_past_ddef += dends[d] - dstarts[d] + 1;
 
-	/* for timing through domain def only */  /* dstarts[d] = dends[d] = -1; continue;  */
+	if(pli->do_time_dF3) { dstarts[d] = dends[d] = -1; continue; }
 
 	/* if we're doing a bias filter on domains - check if we skip domain due to that */
 	if(pli->do_dombias) {
@@ -1183,15 +1207,34 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 	  }
 	}
 #if DOPRINT
-	printf("\tdomain %3d  [%7d..%7d] --> [%7d..%7d] survived domain bias filter\n", 
+	printf("Domain [%10d..%10d] survived dF3b.\n", dstarts[d] + window_starts[i] - 1, dends[d] + window_starts[i] - 1);
+	/*printf("\tdomain %3d  [%7d..%7d] --> [%7d..%7d] survived domain bias filter\n", 
 	       d, pli->ddef->dcl[d].ienv, pli->ddef->dcl[d].jenv, 
-	       dstarts[d], dends[d]);
+	       dstarts[d], dends[d]);*/
+#endif
+
+	/* if we're doing a null3 bias filter on domains - check if we skip domain due to that */
+	if(pli->do_domnull3) {
+	  ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, tmpseq->dsq + pli->ddef->dcl[d].ienv - 1, 1, env_len, pli->p7_n3omega, &dom_null3sc);
+	  printf("dom null3sc: %20.18f\n", dom_null3sc);
+	  dom_sc_for_pvalue = ((dom_sc - dom_nullsc) / eslCONST_LOG2) - dom_null3sc;
+	  if(pli->use_dF3fudge) dom_sc_for_pvalue += pli->dF3fudge;
+	  if(pli->do_glocal_P) P = esl_exp_surv (dom_sc_for_pvalue,  pli->p7_gmu,          pli->p7_glambda);
+	  else                 P = esl_exp_surv (dom_sc_for_pvalue,  om->evparam[p7_FTAU], om->evparam[p7_FLAMBDA]);
+#if DOPRINT
+	  printf("\t\tdomain %5d  env bits w/null3: %6.2f P: %g\n", d+1, dom_sc_for_pvalue, P);
+#endif
+	  if (P > pli->dF3n3) { 
+	    dstarts[d] = dends[d] = -1; /* we won't pass this to the CM later */
+	    continue;
+	  }
+	}
+#if DOPRINT
+	printf("Domain [%10d..%10d] survived dF3n3.\n", dstarts[d] + window_starts[i] - 1, dends[d] + window_starts[i] - 1);
 #endif
 
 	pli->n_past_dombias++;
 	pli->pos_past_dombias += dends[d] - dstarts[d] + 1;
-
-	/* for timing through domain def bias only */  /* dstarts[d] = dends[d] = -1;  */
       }
 
     }
@@ -1224,8 +1267,8 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 	hit->dcl[0].jenv += window_starts[i] - 1;
 	hit->dcl[0].iali += window_starts[i] - 1;
 	hit->dcl[0].jali += window_starts[i] - 1;
-	hit->dcl[0].ad->sqfrom += window_starts[i] - 1;
-	hit->dcl[0].ad->sqto += window_starts[i] - 1;
+	/* TEMP this should eventually be uncommented */ // hit->dcl[0].ad->sqfrom += window_starts[i] - 1;
+	/* TEMP this should eventually be uncommented */ //hit->dcl[0].ad->sqto += window_starts[i] - 1;
 	
 	//adjust the score of a hit to account for the full length model - the characters ouside the envelope but in the window
 	env_len = hit->dcl[0].jenv - hit->dcl[0].ienv + 1;
@@ -1259,6 +1302,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 	hit->sum_pvalue = hit->pvalue = hit->dcl[0].pvalue;
       }
       pli->ddef->ndom = 0; // reset for next use
+      printf("HERE\n");
     } /* end of if(! pli->do_cm) */
     else { 
       /* We are using the CM, search the window containing each domain 
@@ -1336,6 +1380,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 	      }
 	      else { 
 #if DOPRINT
+		printf("Domain [%10d..%10d] survived bfil.\n", dstarts[d] + window_starts[i] - 1, dends[d] + window_starts[i] - 1);
 		printf("PASSING  DOMAIN: %12" PRId64 " %12" PRId64 " %.3f\n", 
 		       ncells_hb, ncells_qdb,
 		       ((float) ncells_hb / (float) ncells_qdb));
@@ -1361,7 +1406,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 	      }
 	    }
 	  }
-	  /* for timing through bfil test only */ /* continue;  */
+	  if(pli->do_time_bfil) continue; 
 
 	  if(do_hbanded_filter_scan) { 
 	    /* we already have hmm bands from above */
@@ -1398,10 +1443,11 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 	pli->pos_past_cyk += dends[d]-dstarts[d]+1;
 
 #if DOPRINT
-	printf("Window %5d [%10d..%10d] domain %5d [%10d..%10d] being passed to Inside.\n", i, window_starts[i], window_ends[i], d, dstarts[d], dends[d]);
+	printf("Domain [%10d..%10d] survived CYK.\n", dstarts[d] + window_starts[i] - 1, dends[d] + window_starts[i] - 1);
+	/*printf("Window %5d [%10d..%10d] domain %5d [%10d..%10d] being passed to Inside.\n", i, window_starts[i], window_ends[i], d, dstarts[d], dends[d]);*/
 #endif
 
-	/* for timing through CYK filter only */ /* continue; */
+	if(pli->do_time_F4) continue; 
 
 	/******************************************************************************/
 	/* Final stage: Inside/CYK with CM, report hits to a search_results_t data structure. */
@@ -1414,7 +1460,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 	 * if our CYK filter also used them. 
 	 *******************************************************************/
 	if(do_hbanded_final_scan) { /* use HMM bands */
-	  if(! have_hmmbands) { 
+	  if(! have_hmmbands || (esl_DCompare(cm->tau, pli->fcyk_tau, 1E-30) != eslOK)) { 
 	    if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subseq, dstarts[d], dends[d], cm->cp9b, TRUE, 0)) != eslOK) { 
 	      printf("ERROR: %s\n", errbuf); return status; }
 	    have_hmmbands = TRUE;
@@ -1478,7 +1524,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *
 #if DOPRINT
 	printf("FINAL: %.2f\n", finalsc);
 #endif
-	/* for timing through Inside only */ /* continue; */
+	if(pli->do_time_F5) continue;
 
 	/* add each hit to the hitlist */
 	for (h = 0; h < results->num_results; h++) { 

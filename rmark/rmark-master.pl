@@ -41,6 +41,8 @@
 # Command-line options:
 # -D     : debugging; don't unlink intermediate files, save them all
 # -P     : run a positive-only benchmark, only positive sequences will be searched
+# -W     : run a positive-window-only benchmark
+# -Y     : run a no-positive benchmark; for timings only
 # -B <f> : build models as needed, using options in file <f>
 # -C <f> : fetch models from existing file <f>
 # -N <n> : specify <N> processes be used for all families, default is to do one process per family
@@ -55,8 +57,10 @@
 #   ./rmark-master.pl -P -N 1 ../src/ cmsearch-po-results cmsearch-df.opts rmark3 ./rmark-cmsearch
 
 use Getopt::Std;
-getopts('DPB:N:T:FAM:O:C:X:Z');
+getopts('DPWB:N:T:FAM:O:C:X:ZY');
 $do_posonly = 0;
+$do_poswindowonly = 0;
+$do_nopos = 0;
 $do_debug = 0;
 $do_onejob_only = 0;
 $do_build_models = 0;
@@ -72,6 +76,8 @@ $z_opt_to_pass = "";
 $mpi_nprocs = 8; #default, we'll only use it if --mpi exists in <optsfile>
 if (defined $opt_D) { $do_debug = 1; }
 if (defined $opt_P) { $do_posonly = 1; }
+if (defined $opt_W) { $do_poswindowonly = 1; }
+if (defined $opt_Y) { $do_nopos = 1; }
 if (defined $opt_B) { $do_build_models = 1; $build_optsfile = $opt_B; }
 if (defined $opt_N) { $ncpu_set = 1; $ncpu = $opt_N; }
 if (defined $opt_T) { $tbl_set = 1; $tbl_file = $opt_T; }
@@ -116,9 +122,12 @@ $tbl        = "$benchmark_pfx.tbl";
 if($tbl_set) { $tbl = $tbl_file; }
 $msafile    = "$benchmark_pfx.msa";
 $fafile     = "$benchmark_pfx.fa";
+$npfafile   = "$benchmark_pfx-nopos.fa";
 $pfafile    = "$benchmark_pfx.pfa";
+$wpfafile   = "$benchmark_pfx.wpfa";
 $posfile    = "$benchmark_pfx.pos";
 $pposfile   = "$benchmark_pfx.ppos";
+$wpposfile  = "$benchmark_pfx.wppos";
 $idscript   = "$scriptdir/rmark-idpositives.pl";
 
 # Check that all required files/directories for this script, and for 
@@ -131,19 +140,32 @@ if (! -e $optsfile)                                     { die "options file $opt
 if (! -e $rmark_script)                                 { die "options file $rmark_script doesn't exist"; }
 if (! -e $tbl)                                          { die "table file $tbl doesn't exist"; }
 if (! -e $msafile)                                      { die "msa file $tbl doesn't exist"; }
+if($do_posonly && $do_poswindowonly)                    { die "ERROR, only one of -P or -W may be enabled."; }
+if($do_posonly && $do_nopos)                            { die "ERROR, only one of -P or -Y may be enabled."; }
+if($do_poswindowonly && $do_nopos)                      { die "ERROR, only one of -Y or -W may be enabled."; }
 if($do_posonly) { 
     if (! -e $pfafile)                                       { die "$pfafile doesn't exist"; }
     if (! -e $pposfile)                                      { die "$pposfile doesn't exist"; }
+}
+elsif($do_poswindowonly) { 
+    if (! -e $wpfafile)                                      { die "$wpfafile doesn't exist"; }
+    if (! -e $wpposfile)                                     { die "$wpposfile doesn't exist"; }
+}
+elsif($do_nopos) { 
+    if (! -e $npfafile)                                      { die "$npfafile doesn't exist"; }
 }
 else { 
     if (! -e $fafile)                                       { die "$fafile doesn't exist"; }
     if (! -e $posfile)                                      { die "$posfile doesn't exist"; }
 }
 
-
 if ($do_posonly) { 
     $fafile  = $pfafile;
     $posfile = $pposfile;
+}
+if ($do_poswindowonly) { 
+    $fafile  = $wpfafile;
+    $posfile = $wpposfile;
 }
 if(! $do_add) { 
     if ($do_force && (-e $resultdir)) { 
@@ -158,6 +180,10 @@ else {
     if(! -e $resultdir) { 
 	die("$resultdir does not exist, but -A used...");
     }
+}
+if($do_nopos) {
+    $fafile  = $npfafile;
+    $posfile;
 }
 # Suck in the master table
 open(BENCHMARK_TBL, $tbl) || die;
@@ -220,6 +246,10 @@ $posonly_opt = "";
 if($do_posonly) { 
     $posonly_opt = "-P";
 }
+$poswindowonly_opt = "";
+if($do_poswindowonly) { 
+    $poswindowonly_opt = "-W";
+}
 if($do_debug) { 
     $debug_opt = "-D";
 }
@@ -230,11 +260,11 @@ for ($i = 0; $i < $ncpu; $i++)
     if((!$do_onejob_only) || ($onejob == $i)) { 
 	if($do_mpi) { # turn exclusivity on, so we get all processors on our node, to run MPI with
 	    #printf("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -l excl=true '$rmark_script $posonly_opt $debug_opt $build_opt $c_opt -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'\n");
-	    system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -l excl=true '$rmark_script $posonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
+	    system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -l excl=true '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
 	}
 	else { 
 	    #printf("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge '$rmark_script $posonly_opt $debug_opt $build_opt $c_opt $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'\n");
-	    system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge '$rmark_script $posonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
+	    system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
 	}
     }
 }

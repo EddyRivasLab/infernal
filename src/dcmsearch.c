@@ -56,6 +56,7 @@ typedef struct {
 #define INCDOMOPTS  "--incdomE,--incdomT,--cut_ga,--cut_nc,--cut_tc"
 #define THRESHOPTS  "-E,-T,--domE,--domT,--incE,--incT,--incdomE,--incdomT,--cut_ga,--cut_nc,--cut_tc"
 #define XFASTMIDMAXOPTS "--fast,--mid,--max,--F1,--F2,--F3,--dF3,--F4,--nomsv,--novit,--nofwd,--nocyk,--nohmm,--hmm"
+#define TIMINGOPTS  "--time-F1,--time-F2,--time-F3,--time-dF3,--time-bfil,--time-F4,--time-F5"
 
 #define CPUOPTS     NULL
 #define MPIOPTS     NULL
@@ -93,16 +94,19 @@ static ESL_OPTIONS options[] = {
   { "--max",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  XFASTMIDMAXOPTS, "turn all heuristic filters off  (less speed, more power)",     7 },
   { "--noddef",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmm",         "do not define domains inside windows prior to CM stages",      7 },
   { "--msvmerge",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--nomsv,--nohmm","merge MSV windows prior to Viterbi filter",                   7 },
-  { "--nopad",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmm,--noddef","do not pad domains",                                           7 },
+  { "--pad",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmm,--noddef","pad domains i..j to j-W+1..i+W-1",                             7 },
   { "--nomsv",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the MSV filter stage",                                    7 },
   { "--novit",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Viterbi filter stage",                                7 },
   { "--nofwd",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Forward filter stage",                                7 },
   { "--nohmm",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--hmm",    "skip all HMM filter stages (MSV/bias/Vit/Fwd)",                7 },
   { "--nocyk",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmm",          "skip the CYK filter stage",                                    7 },
   { "--domsvbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nomsv",  "turn on the MSV composition bias filter",                      7 },
-  { "--novitbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--novit",  "turn on the Vit composition bias filter",                      7 },
-  { "--nofwdbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the Fwd composition bias filter",                      7 },
-  { "--nodombias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noddef", "turn on the per-domain composition bias filter",               7 },
+  { "--novitbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--novit",  "turn off the Vit composition bias filter",                     7 },
+  { "--nofwdbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn off the Fwd composition bias filter",                     7 },
+  { "--nodombias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noddef", "turn off the per-domain composition bias filter",              7 },
+  { "--dofwdnull3", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the Fwd null3 bias filter",                            7 },
+  { "--dodomnull3", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the Domaind def null3 bias filter",                    7 },
+  { "--p7n3omega",  eslARG_REAL,"0.0000000298023",NULL,"x>0",NULL,NULL, NULL,           "set prior probability of p7 null3 model as <x>",  7}, 
   { "--F1",         eslARG_REAL,  "0.35", NULL, NULL,    NULL,  NULL, "--max",          "Stage 1 (MSV) threshold: promote hits w/ P <= F1",             7 },
   { "--F1b",        eslARG_REAL,  "0.35", NULL, NULL,    NULL, "--domsvbias", "--max",  "Stage 1 (MSV) bias threshold: promote hits w/ P <= F1b",       7 },
   { "--F2",         eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--max",          "Stage 2 (Vit) threshold: promote hits w/ P <= F2",             7 },
@@ -110,11 +114,20 @@ static ESL_OPTIONS options[] = {
   { "--F3",         eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) threshold: promote hits w/ P <= F3",             7 },
   { "--dF3",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) per-domain threshold: promote hits w/ P <= dF3", 7 },
   { "--F3b",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--nofwdbias,--max",  "Stage 3 (Fwd) bias threshold: promote hits w/ P <= F3b",       7 },
+  { "--F3n3",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--dofwdnull3",     "--max",  "Stage 3 (Fwd) null3 threshold: promote hits w/ P <= F3n3",      7 },
   { "--dF3b",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--nodombias,--max",  "Stage 3 (Fwd) per domain bias thr: promote hits w/ P <= dF3b", 7 },
+  { "--dF3n3",      eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--nodombias,--max",  "Stage 3 (Fwd) per domain bias thr: promote hits w/ P <= dF3b", 7 },
   { "--dtF3",       eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--dF3",    "Stage 3 (Fwd) per-domain bit sc thr: promote hits w/sc >= dtF3", 7 },
   { "--dF3fudge",   eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--dtF3",   "Stage 3 (Fwd) per-domain thresh fudge factor, add to sc", 7 },
-  { "--F4",         eslARG_REAL,  "1e-3", NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm","Stage 4 (CYK) threshold: promote hits w/ P <= F4",         7 },
+  { "--F4",         eslARG_REAL,  "5e-4", NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm","Stage 4 (CYK) threshold: promote hits w/ P <= F4",         7 },
   { "--E4",         eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm,--F4","Stage 4 (CYK) threshold: promote hits w/ E <= F4",    7 },
+  { "--time-F1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 1 MSV; for timings",                        7 },
+  { "--time-F2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 2 Vit; for timings",                        7 },
+  { "--time-F3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 3 Fwd; for timings",                        7 },
+  { "--time-dF3",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after domain def; for timings",                         7 },
+  { "--time-bfil",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after bfil; for timings",                               7 },
+  { "--time-F4",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 4 CYK; for timings",                        7 },
+  { "--time-F5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 5 Ins; for timings",                        7 },
   { "--rt1",        eslARG_REAL,  "0.25", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set domain definition rt1 parameter as <x>",                  7 },
   { "--rt2",        eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set domain definition rt2 parameter as <x>",                  7 },
   { "--rt3",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set domain definition rt3 parameter as <x>",                  7 },
@@ -143,18 +156,16 @@ static ESL_OPTIONS options[] = {
   { "--hmm",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,         "--cyk",  "do not use the CM, use only the HMM", 20},
   /* banded options for CYK filter round of searching */
   { "--fnoqdb",       eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--hmm,--nocyk",  "do not use QDBs in CYK filter round", 20 },
-  { "--fbeta",        eslARG_REAL,    "1e-7",    NULL, "0<x<1", NULL,        NULL,"--hmm,--nocyk",  "set tail loss prob for CYK filter QDB calculation to <x>", 20 },
+  { "--fbeta",        eslARG_REAL,    "1e-9",    NULL, "0<x<1", NULL,        NULL,"--hmm,--nocyk",  "set tail loss prob for CYK filter QDB calculation to <x>", 20 },
   { "--fhbanded",     eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--hmm,--nocyk",  "calculate and use HMM bands in CYK filter round of CM search", 20 },
-  { "--faln2bands",   eslARG_NONE,    FALSE,     NULL, NULL,    NULL,"--fhbanded","--hmm,--nocyk",  "w/--fhbanded, derive HMM bands w/o scanning Forward/Backward", 20 },
+  { "--ftau",         eslARG_REAL,    "5e-6",    NULL, "0<x<1", NULL,"--fhbanded","--hmm,--nocyk",  "set tail loss prob for --fhbanded to <x>", 20 },
   { "--fsums",        eslARG_NONE,    FALSE,     NULL, NULL,    NULL,"--fhbanded","--hmm,--nocyk",  "w/--fhbanded use posterior sums (widens bands)", 20 },
-  { "--ftau",         eslARG_REAL,    "1e-7",    NULL, "0<x<1", NULL,"--fhbanded","--hmm,--nocyk",  "set tail loss prob for --fhbanded to <x>", 20 },
   /* banded options for final round of searching */
-  { "--noqdb",        eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,         "--hmm", "do not use QDBs in final Inside round", 20 },
-  { "--beta",         eslARG_REAL,    "1e-15",   NULL, "0<x<1", NULL,        NULL,         "--hmm", "set tail loss prob for final Inside QDB calculation to <x>", 20 },
-  { "--hbanded",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,         "--hmm", "calculate and use HMM bands in final Inside round of CM search", 20 },
-  { "--aln2bands",    eslARG_NONE,    FALSE,     NULL, NULL,    NULL,  "--hbanded",        "--hmm", "w/--hbanded, derive HMM bands w/o scanning Forward/Backward", 20 },
+  { "--tau",          eslARG_REAL,   "5e-6",     NULL, "0<x<1", NULL,  "--hbanded",        "--hmm", "set tail loss prob for --hbanded to <x>", 20 },
   { "--sums",         eslARG_NONE,    FALSE,     NULL, NULL,    NULL,  "--hbanded",        "--hmm", "w/--hbanded use posterior sums (widens bands)", 20 },
-  { "--tau",          eslARG_REAL,    "1e-7",    NULL, "0<x<1", NULL,  "--hbanded",        "--hmm", "set tail loss prob for --hbanded to <x>", 20 },
+  { "--qdb",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--nonbanded,--hmm,--tau", "use QDBs (instead of HMM bands) in final Inside round", 20 },
+  { "--beta",         eslARG_REAL,   "1e-15",    NULL, "0<x<1",  NULL,     "--qdb",        "--hmm", "set tail loss prob for final Inside QDB calculation to <x>", 20 },
+  { "--nonbanded",    eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--hmm,--tau,--sums,--beta", "do not use QDBs or HMM bands in final Inside round of CM search", 20 },
   /* other infernal 1.0.2 options */
   { "--toponly",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "only search the top strand", 20 },
   { "--bottomonly",   eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "only search the bottom strand", 20 },
@@ -301,17 +312,15 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--cyk"))       fprintf(ofp, "# use CYK for final search stage         on\n");
   if (esl_opt_IsUsed(go, "--fnoqdb"))    fprintf(ofp, "# QDBs (CYK filter stage)                off\n");
   if (esl_opt_IsUsed(go, "--fhbanded"))  fprintf(ofp, "# HMM bands (filter stage)               on\n");
-  if (esl_opt_IsUsed(go, "--faln2bands"))fprintf(ofp, "# HMM bands from full aln (filter)       on\n");
   if (esl_opt_IsUsed(go, "--fsums"))     fprintf(ofp, "# HMM bands from sums (filter)           on\n");
-  if (esl_opt_IsUsed(go, "--noqdb"))     fprintf(ofp, "# QDBs (final stage)                     off\n");
-  if (esl_opt_IsUsed(go, "--hbanded"))   fprintf(ofp, "# HMM bands (final stage)                on\n");
-  if (esl_opt_IsUsed(go, "--aln2bands")) fprintf(ofp, "# HMM bands from full aln (final)        on\n");
+  if (esl_opt_IsUsed(go, "--qdb"))       fprintf(ofp, "# QDBs (final stage)                     on\n");
+  if (esl_opt_IsUsed(go, "--nonbanded")) fprintf(ofp, "# No bands (final stage)                 on\n");
   if (esl_opt_IsUsed(go, "--sums"))      fprintf(ofp, "# HMM bands from sums (final)            on\n");
   if (esl_opt_IsUsed(go, "--max"))       fprintf(ofp, "# Max sensitivity mode:                  on [all heuristic filters off]\n");
   if (esl_opt_IsUsed(go, "--mid"))       fprintf(ofp, "# Mid-level filtering mode:              on\n");
   if (esl_opt_IsUsed(go, "--fast"))      fprintf(ofp, "# Strict-level filtering mode:           on\n");
   if (esl_opt_IsUsed(go, "--noddef"))    fprintf(ofp, "# Domain definition prior to CM search:  off\n");
-  if (esl_opt_IsUsed(go, "--nopad"))     fprintf(ofp, "# Domain padding strategy:               off\n");
+  if (esl_opt_IsUsed(go, "--pad"))       fprintf(ofp, "# Domain padding strategy:               on\n");
   if (esl_opt_IsUsed(go, "--nomsv"))     fprintf(ofp, "# MSV filter:                            off\n");
   if (esl_opt_IsUsed(go, "--novit"))     fprintf(ofp, "# Vit filter:                            off\n");
   if (esl_opt_IsUsed(go, "--nofwd"))     fprintf(ofp, "# Fwd filter:                            off\n");
@@ -321,6 +330,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--novitbias")) fprintf(ofp, "# Vit biased comp HMM filter:            off\n");
   if (esl_opt_IsUsed(go, "--nofwdbias")) fprintf(ofp, "# Fwd biased comp HMM filter:            off\n");
   if (esl_opt_IsUsed(go, "--nodombias")) fprintf(ofp, "# Per-domain biased comp HMM filter:     off\n");
+  if (esl_opt_IsUsed(go, "--dofwdnull3"))fprintf(ofp, "# Fwd null3 HMM filter:                  on\n"); 
   if (esl_opt_IsUsed(go, "--F1"))        fprintf(ofp, "# MSV filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F1"));
   if (esl_opt_IsUsed(go, "--F2"))        fprintf(ofp, "# Vit filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F2"));
   if (esl_opt_IsUsed(go, "--F3"))        fprintf(ofp, "# Fwd filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F3"));
@@ -329,6 +339,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--F1b"))       fprintf(ofp, "# MSV bias P threshold:                  <= %g\n", esl_opt_GetReal(go, "--F1b"));
   if (esl_opt_IsUsed(go, "--F2b"))       fprintf(ofp, "# Vit bias P threshold:                  <= %g\n", esl_opt_GetReal(go, "--F2b"));
   if (esl_opt_IsUsed(go, "--F3b"))       fprintf(ofp, "# Fwd bias P threshold:                  <= %g\n", esl_opt_GetReal(go, "--F3b"));
+  if (esl_opt_IsUsed(go, "--F3n3"))      fprintf(ofp, "# Fwd null3 P threshold:                 <= %g\n", esl_opt_GetReal(go, "--F3n3"));
   if (esl_opt_IsUsed(go, "--dF3b"))      fprintf(ofp, "# Domain defn P threshold:               <= %g\n", esl_opt_GetReal(go, "--dF3b"));
   if (esl_opt_IsUsed(go, "--bfil"))      fprintf(ofp, "# Max allowed banded HMM/QDB mx size     %g\n",    esl_opt_GetReal(go, "--bfil"));
   if (esl_opt_IsUsed(go, "--bpick"))     fprintf(ofp, "# Use HMM bands only if HMM/QDB mx size  <= %g\n", esl_opt_GetReal(go, "--bpick"));
@@ -344,6 +355,14 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--nonull3"))   fprintf(ofp, "# null3 bias corrections:                off\n");
   if (esl_opt_IsUsed(go, "--toponly"))   fprintf(ofp, "# search top-strand only:                on\n");
   if (esl_opt_IsUsed(go, "--bottomonly"))fprintf(ofp, "# search bottom-strand only:             on\n");
+
+  if (esl_opt_IsUsed(go, "--time-F1"))   fprintf(ofp, "# abort after Stage 1 MSV (for timing)   on\n");
+  if (esl_opt_IsUsed(go, "--time-F2"))   fprintf(ofp, "# abort after Stage 2 Vit (for timing)   on\n");
+  if (esl_opt_IsUsed(go, "--time-F3"))   fprintf(ofp, "# abort after Stage 3 Fwd (for timing)   on\n");
+  if (esl_opt_IsUsed(go, "--time-dF3"))  fprintf(ofp, "# abort after domain defn (for timing)   on\n");
+  if (esl_opt_IsUsed(go, "--time-bfil")) fprintf(ofp, "# abort after bfil calc   (for timing)   on\n");
+  if (esl_opt_IsUsed(go, "--time-F4"))   fprintf(ofp, "# abort after Stage 4 CYK (for timing)   on\n");
+  if (esl_opt_IsUsed(go, "--time-F5"))   fprintf(ofp, "# abort after Stage 5 Ins (for timing)   on\n");
 
   if (esl_opt_IsUsed(go, "-Z"))          fprintf(ofp, "# database size is set to:               %.1f Mb\n",    esl_opt_GetReal(go, "-Z"));
   if (esl_opt_IsUsed(go, "--seed"))  {
@@ -467,7 +486,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* Open the results output files */
   if (esl_opt_IsOn(go, "-o"))          { if ((ofp      = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) p7_Fail("Failed to open output file %s for writing\n",    esl_opt_GetString(go, "-o")); }
   if (esl_opt_IsOn(go, "-A"))          { if ((afp      = fopen(esl_opt_GetString(go, "-A"), "w")) == NULL) p7_Fail("Failed to open alignment file %s for writing\n", esl_opt_GetString(go, "-A")); }
-  if (esl_opt_IsOn(go, "--tblout"))    { if ((tblfp    = fopen(esl_opt_GetString(go, "--tblout"),    "w")) == NULL)  esl_fatal("Failed to open tabular per-seq output file %s for writing\n", esl_opt_GetString(go, "--tblfp")); }
+  if (esl_opt_IsOn(go, "--tblout"))    { if ((tblfp    = fopen(esl_opt_GetString(go, "--tblout"),    "w")) == NULL)  esl_fatal("Failed to open tabular per-seq output file %s for writing\n", esl_opt_GetString(go, "--tblout")); }
 
 #ifdef HMMER_THREADS
   /* initialize thread data */
@@ -563,7 +582,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
     }
 
-    if(esl_opt_GetBoolean(go, "--noqdb")) { 
+    if(! esl_opt_GetBoolean(go, "--qdb")) { 
       final_dmin = final_dmax = NULL; 
     }
     else { 

@@ -18,7 +18,7 @@
 # SVN $Id$
 #
 use Getopt::Std;
-getopts('C:');
+getopts('C:D');
 $do_fetch_models = 0;
 $do_debug = 0;
 if (defined $opt_C) { $do_fetch_models = 1; $master_model = $opt_C; } 

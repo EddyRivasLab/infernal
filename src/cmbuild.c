@@ -104,6 +104,7 @@ static ESL_OPTIONS options[] = {
   { "--esigma",  eslARG_REAL,  "45.0",  NULL,"x>0",      NULL,  "--eent",       NULL, "for --eent: set sigma param to <x>",  101}, 
   { "--n2omega",  eslARG_REAL,"0.000015258971",NULL,"x>0",NULL,NULL,            NULL, "set prior probability of null2 model as <x>",  101}, 
   { "--n3omega",  eslARG_REAL,"0.000015258971",NULL,"x>0",NULL,NULL,            NULL, "set prior probability of null3 model as <x>",  101}, 
+  { "--p7n3omega", eslARG_REAL,"0.0000000298023",NULL,"x>0",NULL,NULL,           NULL, "set prior probability of p7 null3 model as <x>",  101}, 
   { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s> (Stockholm or Pfam)",  101 },
 
   /* Developer verbose output options */

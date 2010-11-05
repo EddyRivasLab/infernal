@@ -306,6 +306,9 @@ CP9_to_P7(CM_t *cm, P7_HMM **ret_p7)
 
   if ((status = p7_ProfileConfig(hmm, bg, gm, cm->W*2, p7_GLOCAL)) != eslOK) goto ERROR; 
   if ((status = p7_GlocalLambdaMu(r, gm, bg, cm->W*2, 10000, 0.002, &lambda, &mu)) != eslOK) goto ERROR; 
+  /* TEMP 
+  lambda = 0.7;
+  mu = -3;*/
 
   printf("\n\n\n p7 glocal lambda: %g  mu: %g\n", lambda, mu);
   printf("cp9  local lambda: %g  mu: %g\n", cm->stats->expAA[EXP_CP9_GF][0]->lambda, cm->stats->expAA[EXP_CP9_GF][0]->mu_extrap);
