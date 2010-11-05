@@ -35,8 +35,8 @@ MPILIBS   = @MPILIBS@
 # Where the build arena is (module .h and .o files)
 #
 MYLIBS   = -lhmmer -lhmmerimpl -leasel
-MYLIBDIR = -L../easel -L../hmmer/src/ -L ../hmmer/src/impl_sse/
-MYINCDIR = -I../easel -I../hmmer/src/ -I ../hmmer/src/impl_sse/
+MYLIBDIR = -L../easel -L../hmmer/src/ -L../hmmer/src/impl_sse/
+MYINCDIR = -I../easel -I../hmmer/src/ -I../hmmer/src/impl_sse/
 
 PROGS = cmalign cmbuild cmcalibrate cmemit cmfetch cmscore cmsearch dcmsearch cmstat trcyk truncyk_check
 

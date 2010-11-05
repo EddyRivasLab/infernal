@@ -27,8 +27,8 @@ MPILIBS   = @MPILIBS@
 
 # Where the build arenas are
 #
-MYLIBDIR = -L../easel/ -L../src -L../hmmer/src -L ../hmmer/src/impl_sse/
-MYINCDIR = -I../easel/ -I../src -I../hmmer/src -I ../hmmer/src/impl_sse/
+MYLIBDIR = -L../easel/ -L../src -L../hmmer/src -L../hmmer/src/impl_sse/
+MYINCDIR = -I../easel/ -I../src -I../hmmer/src -I../hmmer/src/impl_sse/
 
 TESTPROGS = \
 	bandcyk-montecarlo-test\
