@@ -97,6 +97,7 @@ static ESL_OPTIONS options[] = {
   { "--skip",   eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL,           "w/--sub or --sample, skip partition test", 4 },
   { "--xtest",  eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL,           "w/--sub or --sample, maximize |test|, not |train|+|test|",  4 },
   { "--nfile",  eslARG_OUTFILE,FALSE,NULL, NULL, NULL, NULL, NULL,           "save benchmark database *without* positives to <f>",  4 },
+  { "--tfile",  eslARG_OUTFILE,FALSE,NULL, NULL, NULL, NULL, NULL,           "save orig/train/test alignments with renamed seqs to <f>",  4 },
 
   { 0,0,0,0,0,0,0,0,0,0 },
 };
@@ -119,6 +120,7 @@ struct cfg_s {
   FILE           *negsummfp;    /* output: summary table of the negative test set */
   FILE           *tblfp;	/* output: summary table of the training set alignments */
   FILE           *nseqfp;	/* output: (optional) negative sequences only (without embedded positives) */
+  FILE           *tfp;	        /* output: (optional) alignments with train/test seqs renamed */
 
   ESL_SQFILE     *dbfp;   	/* source database for negatives                           */
   int             db_nseq;	/* # of sequences in the db                                */
@@ -131,9 +133,9 @@ struct cfg_s {
 
 static int process_dbfile       (struct cfg_s *cfg, char *dbfile, int dbfmt);
 static int remove_fragments     (struct cfg_s *cfg, ESL_MSA *msa, ESL_MSA **ret_filteredmsa, int *ret_nfrags);
-static int separate_sets        (struct cfg_s *cfg, ESL_MSA *msa, ESL_MSA **ret_trainmsa, ESL_STACK **ret_teststack);
-static int find_sets_greedily   (struct cfg_s *cfg, ESL_MSA *msa, int do_maxtest, ESL_MSA **ret_trainmsa, ESL_STACK **ret_teststack);
-static int find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_maxtest, ESL_MSA **ret_trainmsa, ESL_STACK **ret_teststack);
+static int separate_sets        (struct cfg_s *cfg, ESL_MSA *msa, int **ret_i_am_train, int **ret_i_am_test);
+static int find_sets_greedily   (struct cfg_s *cfg, ESL_MSA *msa, int do_maxtest, int **ret_i_am_train, int **ret_i_am_test);
+static int find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_maxtest, int **ret_i_am_train, int **ret_i_am_test);
 static int synthesize_negatives_and_embed_positives(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQ **posseqs, int npos);
 static int set_random_segment  (ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq, int L);
 static void read_hmmfile(char *filename, ESL_HMM **ret_hmm);
@@ -186,7 +188,9 @@ main(int argc, char **argv)
   ESL_MSA      *origmsa = NULL;	/* one multiple sequence alignment */
   ESL_MSA      *msa     = NULL;	/* MSA after frags are removed     */
   ESL_MSA      *trainmsa= NULL;	/* training set, aligned           */
-  ESL_STACK    *teststack=NULL; /* test set: stack of ESL_SQ ptrs  */
+  ESL_MSA      *tmpmsa= NULL;	/* tmp aligned training/testing set, used if --tfile */
+  int          *i_am_train = NULL; /* [0..msa->nseq-1]: 1 if train seq, 0 if not */
+  int          *i_am_test  = NULL; /* [0..msa->nseq-1]: 1 if test  seq, 0 if not */
   int           status;		/* easel return code               */
   int           nfrags;		/* # of fragments removed          */
   int           ntestseq;       /* # of test  sequences for cur fam */
@@ -198,7 +202,7 @@ main(int argc, char **argv)
   int64_t       poslen_total;   /* total length of all positive seqs */
   double        avgid;
   void         *ptr;
-
+  int           i, traini, testi;
   
   /* Parse command line */
   go = esl_getopts_Create(options);
@@ -261,6 +265,10 @@ main(int argc, char **argv)
     if((cfg.nseqfp = fopen(esl_opt_GetString(go, "--nfile"), "w")) == NULL) esl_fatal("Failed to open negative sequence file %s\n", esl_opt_GetString(go, "--nfile"));
   }
   else cfg.nseqfp = NULL;
+  if (esl_opt_IsOn(go, "--tfile")) { 
+    if((cfg.tfp = fopen(esl_opt_GetString(go, "--tfile"), "w")) == NULL) esl_fatal("Failed to open alignment file %s\n", esl_opt_GetString(go, "--tfile"));
+  }
+  else cfg.tfp = NULL;
 
   /* Open the MSA file; determine alphabet */
   status = esl_msafile_Open(alifile, alifmt, NULL, &afp);
@@ -290,7 +298,7 @@ main(int argc, char **argv)
   if(dbfile != NULL)  process_dbfile(&cfg, dbfile, dbfmt);
 
   /* Read and process MSAs one at a time  */
-  nali = 0;
+  nali = 0; 
   npos = 0;
   poslen_total = 0;
   while ((status = esl_msa_Read(afp, &origmsa)) == eslOK)
@@ -310,9 +318,9 @@ main(int argc, char **argv)
        *  - more than cfg->idthresh2 similar to >=1 sequences in the test set
       */
       if(! esl_opt_GetBoolean(go, "--skip")) { 
-	separate_sets   (&cfg, msa, &trainmsa, &teststack);
-	ntestseq  = esl_stack_ObjectCount(teststack);
-	ntrainseq = trainmsa->nseq;
+	separate_sets (&cfg, msa, &i_am_train, &i_am_test);
+	ntrainseq = esl_vec_ISum(i_am_train, msa->nseq);
+	ntestseq  = esl_vec_ISum(i_am_test,  msa->nseq);
       }
       else { /* --skip enabled, we skipped test 1 */
 	ntestseq = ntrainseq = 0;
@@ -332,26 +340,22 @@ main(int argc, char **argv)
 	   * default) to look for these subsets, or we use a sampling
 	   * algorithm (non-deterministic, enabled with --sample). 
 	   */
-	  if(esl_opt_IsOn(go, "--sub")) find_sets_greedily   (&cfg, msa, esl_opt_GetBoolean(go, "--xtest"), &trainmsa, &teststack);
-	  else                          find_sets_by_sampling(&cfg, msa, esl_opt_GetInteger(go, "--sample"), esl_opt_GetBoolean(go, "--xtest"), &trainmsa, &teststack);
-	  if(trainmsa == NULL) { /* no satisfactory subset was found */
-	    ntrainseq = ntestseq = 0; 
-	  }
-	  else { 
-	    ntestseq  = esl_stack_ObjectCount(teststack);
-	    ntrainseq = trainmsa->nseq;
-	    /* we did find a satisfactory set (find_sets() checks that
-	     * we have a sufficient number of test/train seqs, but
-	     * check, to be sure */
-	    if ((ntestseq  < cfg.min_ntest) || (ntrainseq < cfg.min_ntrain)) 
-	      esl_fatal("find_sets() returned insufficient train/test sets!"); 
-	  }
+	  if(esl_opt_IsOn(go, "--sub")) find_sets_greedily   (&cfg, msa, esl_opt_GetBoolean(go, "--xtest"), &i_am_train, &i_am_test);
+	  else                          find_sets_by_sampling(&cfg, msa, esl_opt_GetInteger(go, "--sample"), esl_opt_GetBoolean(go, "--xtest"), &i_am_train, &i_am_test);
+	  ntrainseq = esl_vec_ISum(i_am_train, msa->nseq);
+	  ntestseq  = esl_vec_ISum(i_am_test,  msa->nseq);
+	  /* we did find a satisfactory set (find_sets() checks that
+	   * we have a sufficient number of test/train seqs, but
+	   * check, to be sure */
+	  if ((ntestseq  < cfg.min_ntest) || (ntrainseq < cfg.min_ntrain)) 
+	    esl_fatal("find_sets() returned insufficient train/test sets!"); 
 	}
 
       if ((ntestseq >= cfg.min_ntest) && (ntrainseq >= cfg.min_ntrain)) { 
 	/* We have a valid train/test set, that either satisfied
 	 * test 1 in separate_sets() or satisfied test 2 from
-	 * find_sets().  Write out the training alignment. */
+	 * find_sets().  Extract and write out the training alignment. */
+	if ((status = esl_msa_SequenceSubset(msa, i_am_train, &trainmsa)) != eslOK) goto ERROR;
 	esl_msa_MinimGaps(trainmsa, NULL, NULL, FALSE);
 	esl_msa_Write(cfg.out_msafp, trainmsa, eslMSAFILE_STOCKHOLM);
 	
@@ -363,29 +367,61 @@ main(int argc, char **argv)
 	 * in the long test sequences later */
 	if(npos > 0) { ESL_RALLOC(posseqs, ptr, sizeof(ESL_SQ *) * (npos + ntestseq)); }
 	else         { ESL_ALLOC (posseqs,      sizeof(ESL_SQ *) * ntestseq); }
-	while (esl_stack_ObjectCount(teststack) >= 1) { 
-	  esl_stack_PPop(teststack, &ptr); 
-	  posseqs[npos] = ptr;
-	  poslen_total += posseqs[npos]->n;
-	  /* Sequence description is set as a concatenation of the
-	   * family name and the sequence index in this family,
-	   * separated by a '/', which never appears in an Rfam
-	   * name. For example: "tRNA/3" for the third tRNA.
+	for(i = 0; i < msa->nseq; i++) { 
+	  if(i_am_test[i]) { 
+	    esl_sq_FetchFromMSA(msa, i, &(posseqs[npos]));
+	    poslen_total += posseqs[npos]->n;
+	    /* Sequence description is set as a concatenation of the
+	     * family name and the sequence index in this family,
+	     * separated by a '/', which never appears in an Rfam
+	     * name. For example: "tRNA/3" for the third tRNA.
+	     */
+	    esl_sq_FormatDesc(posseqs[npos], "%s/%d", msa->name, npos_this_msa+1);
+	    /* Write the sequence to the positives-only output file, and its info the positives-only table */
+	    esl_sqio_Write(cfg.out_posfp, posseqs[npos], eslSQFILE_FASTA, FALSE);
+	    fprintf(cfg.ppossummfp, "%-35s %-35s %-35s %8d %8" PRId64 "\n",
+		    posseqs[npos]->desc,  /* description, this has been set earlier as the msa name plus seq idx (e.g. "tRNA/3" for 3rd tRNA in the set)   */
+		    posseqs[npos]->name,  /* positive sequence name (from input MSA) */
+		    posseqs[npos]->name,  /* again, positive sequence name (from input MSA) */
+		    1, posseqs[npos]->n); /* start, stop */
+	    npos++;
+	    npos_this_msa++;
+	  }
+	}
+	if(cfg.tfp != NULL) { 
+	  /* output 2 more alignments per family: 
+	   * 1. training alignment with seqs renamed as "TRAIN.<fam>.<i>"
+	   * 2. test     alignment with seqs renamed as "<fam>/<i>"
 	   */
-	  esl_sq_FormatDesc(posseqs[npos], "%s/%d", msa->name, npos_this_msa+1);
-	  /* Write the sequence to the positives-only output file, and its info the positives-only table */
-	  esl_sqio_Write(cfg.out_posfp, posseqs[npos], eslSQFILE_FASTA, FALSE);
-	  fprintf(cfg.ppossummfp, "%-35s %-35s %-35s %8d %8" PRId64 "\n",
-		  posseqs[npos]->desc,  /* description, this has been set earlier as the msa name plus seq idx (e.g. "tRNA/3" for 3rd tRNA in the set)   */
-		  posseqs[npos]->name,  /* positive sequence name (from input MSA) */
-		  posseqs[npos]->name,  /* again, positive sequence name (from input MSA) */
-		  1, posseqs[npos]->n); /* start, stop */
-	  npos++;
-	  npos_this_msa++;
+	  /* Rename seqs */
+	  for(i = 0, traini = 0; i < msa->nseq; i++) { 
+	    if(i_am_train[i]) { 
+	      esl_msa_FormatSeqDescription(msa, i, msa->sqname[i]);
+	      esl_msa_FormatSeqName(msa, i, "TRAIN.%s.%d", msa->name, traini+1);
+	      traini++;
+	    }
+	    if(i_am_test[i]) { 
+	      esl_msa_FormatSeqDescription(msa, i, msa->sqname[i]);
+	      esl_msa_FormatSeqName(msa, i, "%s/%d", msa->name, testi+1);
+	      testi++;
+	    }
+	  }
+	  /* Output train subset, note we don't use trainmsa, b/c it's has all gap columns removed */
+	  if ((status = esl_msa_SequenceSubset(msa, i_am_train, &tmpmsa)) != eslOK) goto ERROR;
+	  esl_msa_FormatName(tmpmsa, "TRAIN.%s", msa->name);
+	  esl_msa_Write(cfg.tfp, tmpmsa, eslMSAFILE_PFAM);
+	  
+	  /* Output test subset */
+	  if ((status = esl_msa_SequenceSubset(msa, i_am_test, &tmpmsa)) != eslOK) goto ERROR;
+	  esl_msa_FormatName(tmpmsa, "TEST.%s", msa->name);
+	  esl_msa_Write(cfg.tfp, tmpmsa, eslMSAFILE_PFAM);
+	  esl_msa_Destroy(tmpmsa);
 	}
       }
-      if(teststack != NULL) esl_stack_Destroy(teststack);
-      esl_msa_Destroy(trainmsa);
+      if(i_am_train != NULL) free(i_am_train);
+      if(i_am_test  != NULL) free(i_am_test);
+      if(trainmsa != NULL) esl_msa_Destroy(trainmsa);
+      trainmsa = NULL;
       esl_msa_Destroy(origmsa);
       esl_msa_Destroy(msa);
     }
@@ -411,6 +447,7 @@ main(int argc, char **argv)
   fclose(cfg.ppossummfp);
   if(cfg.negsummfp != NULL) fclose(cfg.negsummfp);
   if(cfg.nseqfp    != NULL) fclose(cfg.nseqfp);
+  if(cfg.tfp       != NULL) fclose(cfg.tfp);
   fclose(cfg.tblfp);
   esl_randomness_Destroy(cfg.r);
   esl_alphabet_Destroy(cfg.abc);
@@ -513,87 +550,100 @@ remove_fragments(struct cfg_s *cfg, ESL_MSA *msa, ESL_MSA **ret_filteredmsa, int
  *          3. all other msa sequences not in train nor test are
  *             at least cfg->idthresh2 fractionally identical 
  *             with >= 1 test sequence.
+ * 
+ *          ret_i_am_train - [0..msa->nseq-1]: 1 if a training seq, 0 if not 
+ *          ret_i_am_test  - [0..msa->nseq-1]: 1 if a test seq, 0 if not 
  */
 static int
-separate_sets(struct cfg_s *cfg, ESL_MSA *msa, ESL_MSA **ret_trainmsa, ESL_STACK **ret_teststack)
+separate_sets(struct cfg_s *cfg, ESL_MSA *msa, int **ret_i_am_train, int **ret_i_am_test)
 {      
   ESL_MSA   *trainmsa  = NULL;
   ESL_MSA   *test_msa  = NULL;
-  ESL_STACK *teststack = NULL;
-  ESL_SQ    *sq        = NULL;
   int *assignment = NULL;
   int *nin        = NULL;
-  int *useme      = NULL;
+  int *i_am_train = NULL;
+  int *i_am_test  = NULL;
+  int *i_am_possibly_test  = NULL;
   int  nc         = 0;
   int  c;
   int  ctrain;			/* index of the cluster that becomes the training alignment */
   int  ntrain;			/* number of seqs in the training alignment */
   int  nskip;
-  int  i;
+  int  i, i2;
   int  status;
 
-  if ((teststack = esl_stack_PCreate()) == NULL) { status = eslEMEM; goto ERROR; }
-  ESL_ALLOC(useme, sizeof(int) * msa->nseq);
+  ESL_ALLOC(i_am_train,         sizeof(int) * msa->nseq);
+  ESL_ALLOC(i_am_possibly_test, sizeof(int) * msa->nseq);
+  ESL_ALLOC(i_am_test,          sizeof(int) * msa->nseq);
 
   if ((status = esl_msacluster_SingleLinkage(msa, cfg->idthresh1, &assignment, &nin, &nc)) != eslOK) goto ERROR;
   ctrain = esl_vec_IArgMax(nin, nc);
   ntrain = esl_vec_IMax(nin, nc);
 
-  for (i = 0; i < msa->nseq; i++) useme[i] = (assignment[i] == ctrain) ? 1 : 0;
-  if ((status = esl_msa_SequenceSubset(msa, useme, &trainmsa)) != eslOK) goto ERROR;
+  for (i = 0; i < msa->nseq; i++) i_am_train[i] = (assignment[i] == ctrain) ? 1 : 0;
+  if ((status = esl_msa_SequenceSubset(msa, i_am_train, &trainmsa)) != eslOK) goto ERROR;
 
   /* If all the seqs went into the training msa, none are left for testing; we're done here */
   if (trainmsa->nseq == msa->nseq) {
-    free(useme);
+    esl_vec_ISet(i_am_train, msa->nseq, 0);
+    esl_vec_ISet(i_am_test,  msa->nseq, 0);
     free(assignment);
     free(nin);
-    *ret_trainmsa  = trainmsa;
-    *ret_teststack = teststack;
+    free(i_am_possibly_test);
+    esl_msa_Destroy(trainmsa);
+    *ret_i_am_train = i_am_train;
+    *ret_i_am_test  = i_am_test;
     return eslOK;
   }
 
   /* Put all the other sequences into an MSA of their own; from these, we'll
    * choose test sequences.
    */
-  for (i = 0; i < msa->nseq; i++) useme[i] = (assignment[i] != ctrain) ? 1 : 0;
-  if ((status = esl_msa_SequenceSubset(msa, useme, &test_msa))                             != eslOK) goto ERROR;
+  for (i = 0; i < msa->nseq; i++) i_am_possibly_test[i] = (assignment[i] != ctrain) ? 1 : 0;
+  if ((status = esl_msa_SequenceSubset(msa, i_am_possibly_test, &test_msa))       != eslOK) goto ERROR;
 
   /* Cluster those test sequences. */
   free(nin);         nin        = NULL;
   free(assignment);  assignment = NULL;
+  esl_vec_ISet(i_am_test, msa->nseq, 0);
   if ((status = esl_msacluster_SingleLinkage(test_msa, cfg->idthresh2, &assignment, &nin, &nc)) != eslOK) goto ERROR;
-  for (c = 0; c < nc; c++)
-    {
-      nskip = esl_rnd_Roll(cfg->r, nin[c]); /* pick a random seq in this cluster to be the test. */
-      for (i=0; i < test_msa->nseq; i++)
-	if (assignment[i] == c) {
-	  if (nskip == 0) {
-	    esl_sq_FetchFromMSA(test_msa, i, &sq);
-	    esl_stack_PPush(teststack, (void *) sq);
+  for (c = 0; c < nc; c++) {
+    nskip = esl_rnd_Roll(cfg->r, nin[c]); /* pick a random seq in this cluster to be the test. */
+    for (i=0, i2=0; i < msa->nseq; i++) /* i is idx in orig msa, i2 is idx in test_msa */
+      if(i_am_possibly_test[i]) { /* i is in test_msa */
+	if (assignment[i2] == c) {
+	  if (nskip == 0) { /* this sequence will be a test seq, set i_am_test[i] as 1 */
+	    i_am_test[i] = 1;
 	    break;
-	  } else nskip--;
+	  } 
+	  else { 
+	    nskip--;
+	  }
 	}
-    }
+	i2++;
+      }
+  }
 
   esl_msa_Destroy(test_msa);
-  free(useme);
   free(nin);
   free(assignment);
+  free(i_am_possibly_test);
 
-  *ret_trainmsa  = trainmsa;
-  *ret_teststack = teststack;
+  *ret_i_am_train = i_am_train;
+  *ret_i_am_test  = i_am_test;
+
   return eslOK;
 
  ERROR:
-  if (useme      != NULL) free(useme);
+  if (i_am_train != NULL) free(i_am_train);
+  if (i_am_test  != NULL) free(i_am_test);
+  if (i_am_possibly_test  != NULL) free(i_am_possibly_test);
   if (assignment != NULL) free(assignment);
   if (nin        != NULL) free(nin);
   esl_msa_Destroy(trainmsa); 
   esl_msa_Destroy(test_msa); 
-  while (esl_stack_PPop(teststack, (void **) &sq) == eslOK) esl_sq_Destroy(sq);
-  esl_stack_Destroy(teststack);
-  *ret_trainmsa  = NULL;
-  *ret_teststack = NULL;
+  *ret_i_am_train = NULL;
+  *ret_i_am_test  = NULL;
   return status;
 }
 
@@ -624,11 +674,8 @@ separate_sets(struct cfg_s *cfg, ESL_MSA *msa, ESL_MSA **ret_trainmsa, ESL_STACK
  * chosen instead.
  */
 static int
-find_sets_greedily(struct cfg_s *cfg, ESL_MSA *msa, int do_xtest, ESL_MSA **ret_trainmsa, ESL_STACK **ret_teststack)
+find_sets_greedily(struct cfg_s *cfg, ESL_MSA *msa, int do_xtest, int **ret_i_am_train, int **ret_i_am_test)
 {      
-  ESL_MSA   *trainmsa  = NULL;
-  ESL_STACK *teststack = NULL;
-  ESL_SQ    *sq        = NULL;
   int *i_am_test       = NULL;
   int *i_am_train      = NULL;
   int *i_am_best_test  = NULL;
@@ -645,7 +692,6 @@ find_sets_greedily(struct cfg_s *cfg, ESL_MSA *msa, int do_xtest, ESL_MSA **ret_
   ESL_ALLOC(i_am_train,      sizeof(int) * msa->nseq);
   ESL_ALLOC(i_am_best_test,  sizeof(int) * msa->nseq);
   ESL_ALLOC(i_am_best_train, sizeof(int) * msa->nseq);
-  if ((teststack = esl_stack_PCreate()) == NULL) { status = eslEMEM; goto ERROR; }
 
   /* initialize best_train and best_test sets */
   esl_vec_ISet(i_am_best_train, msa->nseq, FALSE);
@@ -721,29 +767,18 @@ find_sets_greedily(struct cfg_s *cfg, ESL_MSA *msa, int do_xtest, ESL_MSA **ret_
     }
   } /* end of for(i = 0; i < msa->nseq; i++) */
        
-  if(nbest_train != 0 && nbest_test != 0) { 
-    /* printf("Success! train: %d seqs test: %d seqs\n", nbest_train, nbest_test); */
-    /* get trainmsa */
-    if ((status = esl_msa_SequenceSubset(msa, i_am_best_train, &trainmsa)) != eslOK) goto ERROR;
-    /* get teststack */
-    for(i = 0; i < msa->nseq; i++) { 
-      if(i_am_best_test[i] == TRUE) { 
-	esl_sq_FetchFromMSA(msa, i, &sq);
-	esl_stack_PPush(teststack, (void *) sq);
-      }
-    }      
-    *ret_trainmsa = trainmsa;
-    *ret_teststack = teststack;
+  if(nbest_train == 0 || nbest_test == 0) { 
+    esl_vec_ISet(i_am_best_train, msa->nseq, 0);
+    esl_vec_ISet(i_am_best_test,  msa->nseq, 0);
   }
   else { 
-    *ret_trainmsa = NULL;
-    *ret_teststack = NULL;
+    ;/* printf("Success! train: %d seqs test: %d seqs\n", nbest_train, nbest_test); */
   }
+  *ret_i_am_train = i_am_best_train;
+  *ret_i_am_test  = i_am_best_test;
   
   free(i_am_train);
   free(i_am_test);
-  free(i_am_best_train);
-  free(i_am_best_test); 
   esl_dmatrix_Destroy(S);
   return eslOK;
 
@@ -752,12 +787,9 @@ find_sets_greedily(struct cfg_s *cfg, ESL_MSA *msa, int do_xtest, ESL_MSA **ret_
   if (i_am_test != NULL)  free(i_am_test);
   if (i_am_best_train != NULL) free(i_am_best_train);
   if (i_am_best_test != NULL)  free(i_am_best_test);
-  esl_msa_Destroy(trainmsa); 
   esl_dmatrix_Destroy(S);
-  while (esl_stack_PPop(teststack, (void **) &sq) == eslOK) esl_sq_Destroy(sq);
-  esl_stack_Destroy(teststack);
-  *ret_trainmsa  = NULL;
-  *ret_teststack = NULL;
+  *ret_i_am_train = NULL;
+  *ret_i_am_test  = NULL;
   return status;
 }
 
@@ -794,12 +826,9 @@ find_sets_greedily(struct cfg_s *cfg, ESL_MSA *msa, int do_xtest, ESL_MSA **ret_
  * instead.
  */
 static int
-find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_maxtest, ESL_MSA **ret_trainmsa, ESL_STACK **ret_teststack)
+find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_maxtest, int **ret_i_am_train, int **ret_i_am_test)
 {      
-  ESL_MSA   *trainmsa  = NULL;
-  ESL_STACK *teststack = NULL;
   ESL_MSA   *test_msa  = NULL;
-  ESL_SQ    *sq        = NULL;
   int *i_am_test       = NULL;
   int *i_am_train      = NULL;
   int *i_am_best_test  = NULL;
@@ -833,7 +862,6 @@ find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_maxt
   esl_vec_ISet(i_am_best_test,  msa->nseq, FALSE);
   nbest_train = 0;
   nbest_test = 0;
-  if ((teststack = esl_stack_PCreate()) == NULL) { status = eslEMEM; goto ERROR; }
 
   /* get pairwise ID matrix */
   if ((status = esl_dst_XPairIdMx(msa->abc, msa->ax, msa->nseq, &S)) != eslOK) goto ERROR;
@@ -941,28 +969,18 @@ find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_maxt
     }
   } /* end of for(n = 0; n < msa->nseq; n++) */
        
-  if(nbest_train != 0 && nbest_test != 0) { 
-    /* printf("Success! train: %d seqs test: %d seqs\n", nbest_train, nbest_test); */
-    if ((status = esl_msa_SequenceSubset(msa, i_am_best_train, &trainmsa)) != eslOK) goto ERROR;
-    /* get teststack */
-    for(i = 0; i < msa->nseq; i++) { 
-      if(i_am_best_test[i] == TRUE) { 
-	esl_sq_FetchFromMSA(msa, i, &sq);
-	esl_stack_PPush(teststack, (void *) sq);
-      }
-    }      
-    *ret_trainmsa  = trainmsa;
-    *ret_teststack = teststack;
+  if(nbest_train == 0 || nbest_test == 0) { 
+    esl_vec_ISet(i_am_best_train, msa->nseq, 0);
+    esl_vec_ISet(i_am_best_test,  msa->nseq, 0);
   }
   else { 
-    *ret_trainmsa  = NULL;
-    *ret_teststack = NULL;
+    ;/* printf("Success! train: %d seqs test: %d seqs\n", nbest_train, nbest_test); */
   }
+  *ret_i_am_train = i_am_best_train;
+  *ret_i_am_test  = i_am_best_test;
   
   free(i_am_train);
   free(i_am_test);
-  free(i_am_best_train);
-  free(i_am_best_test); 
   esl_dmatrix_Destroy(S);
   return eslOK;
 
@@ -971,10 +989,8 @@ find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_maxt
   if (i_am_test != NULL)  free(i_am_test);
   if (i_am_best_train != NULL) free(i_am_best_train);
   if (i_am_best_test != NULL)  free(i_am_best_test);
-  esl_msa_Destroy(trainmsa); 
-  esl_dmatrix_Destroy(S);
-  *ret_trainmsa  = NULL;
-  *ret_teststack = NULL;
+  *ret_i_am_train = NULL;
+  *ret_i_am_test  = NULL;
   return status;
 }
 
