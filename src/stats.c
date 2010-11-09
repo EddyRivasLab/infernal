@@ -797,3 +797,174 @@ UpdateExpsForDBSize(CM_t *cm, char *errbuf, long dbsize)
   }
   return eslOK;
 }  
+
+
+
+/* Function: CreateGenomicHMM()
+ * Date:     EPN, Tue May 20 17:40:54 2008
+ * 
+ * Purpose: Create the three arrays that make up the parameters of the
+ *          fully connected 5 state HMM that emits 'realistic' genomic
+ *          sequence for calculating E-value statistics. 
+ *           
+ *          The HMM was trained by EM from 30 Mb of 100 Kb chunks of
+ *          real genomes of hand selected GC contents (10 Mb each from
+ *          Archaea, Bacteria, Eukarya genomes). See
+ *          ~nawrockie/notebook/8_0326_inf_default_gc/ for more info.
+ *
+ *          There were larger HMMs that 'performed' better, but this 5
+ *          state guy was a good balance b/t performance and number of
+ *          parameters. Performance was judged by how similar the
+ *          generated sequence was to the training 30 Mb genomic
+ *          sequence.
+ * 
+ *          abc - alphabet, must be eslRNA | eslDNA
+ *          errbuf - for error messages
+ *          ret_sA  - RETURN: start probabilities [0..nstates-1]
+ *          ret_tAA - RETURN: transition probabilities [0..nstates-1][0..nstates-1]
+ *          ret_eAA - RETURN: emission probabilities   [0..nstates-1][0..abc->K-1]
+ *          ret_nstates - RETURN: number of states (5)
+ */
+int
+CreateGenomicHMM(const ESL_ALPHABET *abc, char *errbuf, double **ret_sA, double ***ret_tAA, double ***ret_eAA, int *ret_nstates)
+{
+  int      status;
+  ESL_DSQ *dsq = NULL;
+  int      nstates = 5;
+  int      i, si, x;
+
+  /* contract check, make sure we're in a valid mode */
+  if(abc->type != eslRNA && abc->type != eslDNA) ESL_FAIL(eslEINCOMPAT, errbuf, "get_genomic_sequence_from_hmm(), abc is not eslRNA nor eslDNA");
+
+  /* start probabilities */
+  double *sA;
+  ESL_ALLOC(sA, sizeof(double) * nstates);
+
+  sA[0] = 0.157377049180328;
+  sA[1] = 0.39344262295082;
+  sA[2] = 0.265573770491803; 
+  sA[3] = 0.00327868852459016; 
+  sA[4] = 0.180327868852459;
+  esl_vec_DNorm(sA, nstates);
+
+  /* transition probabilities */
+  double **tAA;
+  ESL_ALLOC(tAA, sizeof(double *) * nstates);
+  for(i = 0; i < nstates; i ++) ESL_ALLOC(tAA[i], sizeof(double) * nstates);
+
+  tAA[0][0] = 0.999483637183643;
+  tAA[0][1] = 0.000317942006440604; 
+  tAA[0][2] = 0.000185401071732768; 
+  tAA[0][3] = 2.60394763669618e-07; 
+  tAA[0][4] = 1.27593434198113e-05;
+  esl_vec_DNorm(tAA[0], nstates);
+
+  tAA[1][0] = 9.76333640771184e-05; 
+  tAA[1][1] = 0.99980020511745; 
+  tAA[1][2] = 9.191359010352e-05; 
+  tAA[1][3] = 7.94413051888677e-08; 
+  tAA[1][4] = 1.01684870641751e-05;
+  esl_vec_DNorm(tAA[1], nstates);
+
+  tAA[2][0] = 1.3223694798182e-07; 
+  tAA[2][1] = 0.000155642887774602; 
+  tAA[2][2] = 0.999700615549769; 
+  tAA[2][3] = 9.15079680034191e-05; 
+  tAA[2][4] = 5.21013575048369e-05;
+  esl_vec_DNorm(tAA[2], nstates);
+
+  tAA[3][0] = 0.994252873563218; 
+  tAA[3][1] = 0.0014367816091954; 
+  tAA[3][2] = 0.0014367816091954; 
+  tAA[3][3] = 0.0014367816091954; 
+  tAA[3][4] = 0.0014367816091954;
+  esl_vec_DNorm(tAA[3], nstates);
+
+  tAA[4][0] = 8.32138798088677e-06; 
+  tAA[4][1] = 2.16356087503056e-05; 
+  tAA[4][2] = 6.42411152124459e-05; 
+  tAA[4][3] = 1.66427759617735e-07; 
+  tAA[4][4] = 0.999905635460297;
+  esl_vec_DNorm(tAA[4], nstates);
+
+  /* emission probabilities */
+  double **eAA;
+  ESL_ALLOC(eAA, sizeof(double *) * nstates);
+  for(i = 0; i < nstates; i ++) ESL_ALLOC(eAA[i], sizeof(double) * abc->K);
+
+  eAA[0][0] = 0.370906566523225;
+  eAA[0][1] = 0.129213995153577;
+  eAA[0][2] = 0.130511270043053;
+  eAA[0][3] = 0.369368168280145;
+  esl_vec_DNorm(eAA[0], abc->K);
+
+  eAA[1][0] = 0.305194882571888;
+  eAA[1][1] = 0.194580936415687;
+  eAA[1][2] = 0.192343972160245;
+  eAA[1][3] = 0.307880208852179;
+  esl_vec_DNorm(eAA[1], abc->K);
+
+  eAA[2][0] = 0.238484980800698;
+  eAA[2][1] = 0.261262845707113;
+  eAA[2][2] = 0.261810301531792;
+  eAA[2][3] = 0.238441871960397;
+  esl_vec_DNorm(eAA[2], abc->K);
+
+  eAA[3][0] = 0.699280575539568;
+  eAA[3][1] = 0.00143884892086331;
+  eAA[3][2] = 0.00143884892086331;
+  eAA[3][3] = 0.297841726618705;
+  esl_vec_DNorm(eAA[3], abc->K);
+
+  eAA[4][0] = 0.169064007664923;
+  eAA[4][1] = 0.331718611320207;
+  eAA[4][2] = 0.33045427183482;
+  eAA[4][3] = 0.16876310918005;
+  esl_vec_DNorm(eAA[4], abc->K);
+
+  *ret_sA = sA;
+  *ret_tAA = tAA;
+  *ret_eAA = eAA;
+  *ret_nstates = nstates;
+
+  return eslOK;
+
+ ERROR:
+  return status;
+}  
+
+/* Function: SampleGenomicSequenceFromHMM()
+ * Date:     EPN, Tue May 20 17:40:54 2008
+ * 
+ * Purpose: Sample a sequence of length L from an HMM. The HMM defined
+ *          by three arrays:
+ * 
+ *          sA  - start probabilities [0..nstates-1]
+ *          tAA - transition probabilities [0..nstates-1][0..nstates-1]
+ *          eAA - emission probabilities   [0..nstates-1][0..abc->K-1]
+ *
+ *          ret_dsq - the sampled sequence
+ */
+int
+SampleGenomicSequenceFromHMM(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, char *errbuf, double *sA, double **tAA, double **eAA, int nstates, int L, ESL_DSQ **ret_dsq)
+{
+  int status;
+  ESL_DSQ *dsq = NULL;
+  int      si, x;
+
+  ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
+  dsq[0] = dsq[L+1] = eslDSQ_SENTINEL;
+
+  /* pick initial state to emit from */
+  si = esl_rnd_DChoose(r, sA, nstates);
+  for (x = 1; x <= L; x++) {
+    dsq[x] = esl_rnd_DChoose(r, eAA[si], abc->K); /* emit residue */
+    si = esl_rnd_DChoose(r, tAA[si], nstates);    /* make transition */
+  }
+
+  *ret_dsq = dsq;
+  return eslOK;
+
+ ERROR:
+  return status;
+}

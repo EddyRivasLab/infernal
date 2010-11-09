@@ -208,6 +208,9 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm)
  * Purpose:  Create and fill a P7_HMM object from a CM and it's CP9 HMM.
  * 
  * Args:     cm        - the cm, must have a cp9 model in it.
+ *           errbuf    - for error messages
+ *           do_real   - TRUE to sample realistic genomic seqs, not IID
+ *           do_null3  - TRUE to use null3 correction on scores before tail fit
  *           ret_p7    - RETURN: new p7 model 
  *           
  * Return:   eslOK   on success
@@ -216,7 +219,7 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm)
  *           eslEMEM on memory error
  */
 int
-CP9_to_P7(CM_t *cm, P7_HMM **ret_p7)
+CP9_to_P7(CM_t *cm, char *errbuf, int do_real, int do_null3, P7_HMM **ret_p7)
 {
   int        status;
   P7_HMM     *hmm = NULL;        /* RETURN: new hmm */
@@ -305,7 +308,7 @@ CP9_to_P7(CM_t *cm, P7_HMM **ret_p7)
     if ((status = p7_oprofile_Convert(gm, om))         != eslOK) goto ERROR; */
 
   if ((status = p7_ProfileConfig(hmm, bg, gm, cm->W*2, p7_GLOCAL)) != eslOK) goto ERROR; 
-  if ((status = p7_GlocalLambdaMu(r, gm, bg, cm->W*2, 10000, 0.002, &lambda, &mu)) != eslOK) goto ERROR; 
+  if ((status = p7_GlocalLambdaMu(cm, r, gm, bg, do_real, do_null3, cm->W*2, 10000, 0.002, errbuf, &lambda, &mu)) != eslOK) goto ERROR; 
   /* TEMP 
   lambda = 0.7;
   mu = -3;*/
@@ -415,12 +418,16 @@ dump_p7(P7_HMM *hmm, FILE *fp)
  *            both of their length models appropriately for any
  *            subsequent alignments.
  *            
- * Args:      r      : source of randomness
+ * Args:      cm     : the model
+ *            r      : source of randomness
  *            gm     : configured profile to score sequences with
  *            bg     : null model (for background residue frequencies)
+ *            do_real: sample realistic genomic sequences, don't use iid
+ *            do_null3: TRUE to use null3 correction on scores, FALSE not to
  *            L      : mean length model for seq emission from profile
  *            N      : number of sequences to generate
  *            tailp  : tail mass from which we will extrapolate tau
+ *            errbuf : for error messages
  *            ret_lambda: RETURN: estimate for the Forward lambda
  *            ret_mu:     RETURN: estimate for the Forward mu
  *
@@ -429,7 +436,7 @@ dump_p7(P7_HMM *hmm, FILE *fp)
  * Throws:    <eslEMEM> on allocation error, and <*ret_tau> is 0.
  */
 int
-p7_GlocalLambdaMu(ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int L, int N, double tailp, double *ret_lambda, double *ret_mu)
+p7_GlocalLambdaMu(CM_t *cm, ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int do_real, int do_null3, int L, int N, double tailp, char *errbuf, double *ret_lambda, double *ret_mu)
 {
   P7_GMX  *gx      = p7_gmx_Create(gm->M, L); /* DP matrix: for ForwardParser,  L rows */
   ESL_DSQ *dsq     = NULL;
@@ -440,20 +447,40 @@ p7_GlocalLambdaMu(ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int L, int N, do
   int      i;
   int      n;
   ESL_HISTOGRAM *h = NULL;
+  float    null3sc = 0.;
+  float    sc;
+
+  /* the HMM that generates sequences */
+  int     ghmm_nstates = 0;       /* number of states in the HMM */
+  double  *ghmm_sA  = NULL;       /* start probabilities [0..ghmm_nstates-1] */
+  double **ghmm_tAA = NULL;       /* transition probabilities [0..nstates-1][0..nstates-1] */
+  double **ghmm_eAA = NULL;       /* emission probabilities   [0..nstates-1][0..abc->K-1] */
 
   ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
   if ((h = esl_histogram_CreateFull(-50., 50., 0.2)) == NULL) { status = eslEMEM; goto ERROR; }
   if (gx == NULL) { status = eslEMEM; goto ERROR; }
+
+  if(do_real) { 
+    if((status = CreateGenomicHMM(cm->abc, errbuf, &ghmm_sA, &ghmm_tAA, &ghmm_eAA, &ghmm_nstates)) != eslOK) goto ERROR;
+  }
 
   p7_ReconfigLength(gm, L);
   p7_bg_SetLength(bg, L);
 
   for (i = 0; i < N; i++)
     {
-      if ((status = esl_rsq_xfIID(r, bg->f, gm->abc->K, L, dsq)) != eslOK) goto ERROR;
+      if(do_real) { if((status = SampleGenomicSequenceFromHMM(r, cm->abc, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, L, &dsq) != eslOK)) goto ERROR; }
+      else        { if((status = esl_rsq_xfIID(r, bg->f, gm->abc->K, L, dsq)) != eslOK) goto ERROR; }
       if ((status = p7_GForward(dsq, L, gm, gx, &fsc))           != eslOK) goto ERROR;
       if ((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR;   
-      esl_histogram_Add(h, ((fsc - nullsc) / eslCONST_LOG2));
+      sc = ((fsc-nullsc) / eslCONST_LOG2);
+      if(do_null3) { 
+	ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, dsq, 1, L, cm->null3_omega, &null3sc);
+	null3sc *= (float) cm->clen / (float) L; /* assume hit would be of length clen, not full window len */
+	sc -= null3sc;
+      }
+      esl_histogram_Add(h, sc);
+      if(do_real) { free(dsq); dsq = NULL; }
     }
 
   /*esl_histogram_Print(stdout, h);*/
@@ -469,8 +496,19 @@ p7_GlocalLambdaMu(ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int L, int N, do
   *ret_mu = gmu - log(1./tailp) / glam;
 
   *ret_lambda =  glam;
+
+  /* free HMM if nec */
+  if(do_real) { 
+    for(i = 0; i < ghmm_nstates; i++) { 
+      free(ghmm_eAA[i]); 
+      free(ghmm_tAA[i]); 
+    }
+    free(ghmm_eAA);
+    free(ghmm_tAA);
+    free(ghmm_sA);
+  }
   
-  free(dsq);
+  if(dsq != NULL) free(dsq);
   p7_gmx_Destroy(gx);
   esl_histogram_Destroy(h);
   return eslOK;
@@ -482,6 +520,13 @@ p7_GlocalLambdaMu(ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int L, int N, do
   if (dsq != NULL) free(dsq);
   if (gx  != NULL) p7_gmx_Destroy(gx);
   if (h   != NULL) esl_histogram_Destroy(h);
+  for(i = 0; i < ghmm_nstates; i++) { 
+    if(ghmm_eAA != NULL) free(ghmm_eAA[i]); 
+    if(ghmm_tAA != NULL) free(ghmm_tAA[i]); 
+  }
+  if(ghmm_eAA != NULL) free(ghmm_eAA);
+  if(ghmm_tAA != NULL) free(ghmm_tAA);
+  if(ghmm_sA  != NULL) free(ghmm_sA);
   return status;
 }
 

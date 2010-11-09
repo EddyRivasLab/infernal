@@ -497,9 +497,9 @@ extern void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm, P7_OPROFILE **ret_om);
 #endif
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm);
-extern int          CP9_to_P7(CM_t *cm, P7_HMM **ret_p7);
+extern int          CP9_to_P7(CM_t *cm, char *errbuf, int do_real, int do_null3, P7_HMM **ret_p7);
 extern int          dump_p7(P7_HMM *hmm, FILE *fp);
-extern int          p7_GlocalLambdaMu(ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int L, int N, double tailp, double *ret_lambda, double *ret_mu);
+extern int          p7_GlocalLambdaMu(CM_t *cm, ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int do_real, int do_null3, int L, int N, double tailp, char *errbuf, double *ret_lambda, double *ret_mu);
 
 /* from my_p7_msvfilter.c */
 #if 0
@@ -708,6 +708,8 @@ extern ExpInfo_t *DuplicateExpInfo(ExpInfo_t *src);
 extern char      *DescribeExpMode(int exp_mode);
 extern char      *DescribeFthrMode(int fthr_mode);
 extern int        UpdateExpsForDBSize(CM_t *cm, char *errbuf, long dbsize);
+extern int        CreateGenomicHMM(const ESL_ALPHABET *abc, char *errbuf, double **ret_sA, double ***ret_tAA, double ***ret_eAA, int *ret_nstates);
+extern int        SampleGenomicSequenceFromHMM(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, char *errbuf, double *sA, double **tAA, double **eAA, int nstates, int L, ESL_DSQ **ret_dsq);
 
 /* from truncyk.c */
 void  SetMarginalScores(CM_t *cm);

@@ -135,7 +135,6 @@ static ESL_OPTIONS options[] = {
   { "--skipbig",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","skip big domains that exceed the window size",                7 },
   { "--noskipweak", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","do not skip low-scoring domains with P > F3",                 7 },
   { "--localdom",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","define domains with HMM in glocal (not local) mode",          7 },
-  { "--localp",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--glocaldom,--skipweak", "--nohmm,--noddef,--dtF3","use glocal P values for domains",                      7 },
   { "--wnosplit",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nomsv",         "do not split windows after MSV stage", 7 },
   { "--wmult",      eslARG_REAL,   "3.0", NULL, NULL,    NULL,  NULL, "--wnosplit,--nomsv",     "scalar multiplier for flagging window to split (if --wsplit)", 7 },
   { "--wcorr",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use window size correction for Vit/Fwd filters", 7 },
@@ -148,7 +147,10 @@ static ESL_OPTIONS options[] = {
   { "--seed",       eslARG_INT,    "42",  NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",         12 },
   { "--w_beta",     eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "tail mass at which window length is determined",               12 },
   { "--w_length",   eslARG_INT,    NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "window length ",                                              12 },
-
+  /* Options controlling exponential tail fitting of glocal p7 HMMs */
+  { "--localp",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--glocaldom,--skipweak", "--nohmm,--noddef,--dtF3","use glocal P values for domains",                      8 },
+  { "--real",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "sample realistic genomic sequences, not iid, for p7 calibration", 8},
+  { "--expnull3",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "use null3 correction in p7 calibrations", 8},
   /* Options taken from infernal 1.0.2 cmsearch */
   /* options for algorithm for final round of search */
   { "-g",             eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "configure CM for glocal alignment [default: local]", 1 },
@@ -261,6 +263,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     
     puts("\nOptions controlling acceleration heuristics:");
     esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
+
+    puts("\nOptions controlling p7 HMM statistics calibrations:");
+    esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
     
     puts("\nOptions from Infernal 1.0.2 cmsearch:");
     esl_opt_DisplayHelp(stdout, go, 20, 2, 80); 
@@ -553,8 +558,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = ConfigCM(cm, errbuf, 
 			  TRUE, /* do calculate W */
 			  NULL, NULL)) != eslOK) cm_Fail("Error configuring CM: %s\n", errbuf);
-    if((status = CP9_to_P7(cm, &hmm)) != eslOK) cm_Fail("Error creating HMM from CM");
-
+    if((status = CP9_to_P7(cm, errbuf, esl_opt_GetBoolean(go, "--real"), esl_opt_GetBoolean(go, "--expnull3"), &hmm)) != eslOK) cm_Fail("Error creating HMM from CM");
+       
     /*
     FILE *myfp;
     if ((myfp = fopen("cur.hmm", "w")) == NULL) esl_fatal("unable to open cur.hmm");
