@@ -394,7 +394,7 @@ main(int argc, char **argv)
 	   * 2. test     alignment with seqs renamed as "<fam>/<i>"
 	   */
 	  /* Rename seqs */
-	  for(i = 0, traini = 0; i < msa->nseq; i++) { 
+	  for(i = 0, traini = 0, testi = 0; i < msa->nseq; i++) { 
 	    if(i_am_train[i]) { 
 	      esl_msa_FormatSeqDescription(msa, i, msa->sqname[i]);
 	      esl_msa_FormatSeqName(msa, i, "TRAIN.%s.%d", msa->name, traini+1);
