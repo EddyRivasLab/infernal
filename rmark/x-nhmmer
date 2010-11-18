@@ -13,16 +13,19 @@
 #
 # Command-line options:
 # -C <f> : fetch models from existing file <f>
+# -P     : run a positive-only benchmark, only each family's positive sequences will be searched
 #
 # SRE, Tue Apr 20 10:32:49 2010 [Janelia]
 # SVN $Id$
 #
 use Getopt::Std;
-getopts('C:D');
+getopts('PC:D');
 $do_fetch_models = 0;
 $do_debug = 0;
+$do_posonly = 0;
 if (defined $opt_C) { $do_fetch_models = 1; $master_model = $opt_C; } 
 if (defined $opt_D) { $do_debug = 1; }
+if (defined $opt_P) { $do_posonly = 1; }
 
 $usage = "Usages: x-nhmmer [options]\n\t<execdir>\n\t<scriptdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
 
@@ -35,6 +38,11 @@ $sorttmpoutfile = $outfile . ".tmp.sort";
 $idscript   = "$scriptdir/rmark-idpositives.pl";
 $nhmmer     = "$execdir/nhmmer";
 $hmmfetch   = "$execdir/hmmfetch";
+$sfetch     = "$execdir/esl-sfetch";
+if(! -e $sfetch) { 
+    $sfetch     = "$execdir/../easel/miniapps/esl-sfetch";
+    if(! -e $sfetch) { die "$sfetch does not exist, nor $execdir/$sfetch"; }
+}
 
 if($do_fetch_models) { 
     if(! -e $hmmfetch) { die "$hmmfetch does not exist"; }
@@ -72,6 +80,7 @@ elsif($do_fetch_models) {
 open(OUTFILE,">$outfile") || die "failed to open $outfile";
 open(TMPOUTFILE,">$tmpoutfile") || die "failed to open $tmpoutfile";
 open(TABLE, "$tblfile")   || die "failed to open $tblfile";
+$orig_fafile = $fafile;
 while (<TABLE>)
 {
     $runtime = -1 * time();
@@ -81,6 +90,18 @@ while (<TABLE>)
     if($do_fetch_models) { 
 	$status = system("$hmmfetch -o $resultdir/$msaname.hmm $master_model $msaname > /dev/null");
 	if ($status != 0) { die "FAILED: $hmmfetch -o $resultdir/$msaname.hmm $master_model > /dev/null"; }
+    }
+
+    if($do_posonly) { #fetch this family's sequences
+	$command = "grep \"^$msaname\/\" rmark3.ppos | awk \'{ print \$3 }\' > $resultdir/$msaname.sfetch";
+	$status = system($command);
+	if ($status != 0) { die "FAILED: $command failed"; }
+
+	$command = "$sfetch -o $resultdir/$msaname.pfa -f $orig_fafile $resultdir/$msaname.sfetch > /dev/null";
+	$status = system($command);
+	if ($status != 0) { die "FAILED: $command failed"; }
+
+	$fafile = "$resultdir/$msaname.pfa";
     }
 
     $status = system("$nhmmer $searchopts --tblout $resultdir/$msaname.tmp $modeldir/$msaname.hmm $fafile > $resultdir/$msaname.search");
@@ -103,6 +124,10 @@ while (<TABLE>)
 	unlink "$resultdir/$msaname.tmp";
 	unlink "$resultdir/$msaname.search";
 	if($do_fetch_models) { unlink "$resultdir/$msaname.hmm"; }
+	if($do_posonly) { 
+	    unlink "$resultdir/$msaname.pfa";
+	    unlink "$resultdir/$msaname.sfetch";
+	}
     }
 
     $runtime += time();

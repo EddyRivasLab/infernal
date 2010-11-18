@@ -63,7 +63,7 @@ CreateCM(int nnodes, int nstates, const ESL_ALPHABET *abc)
 CM_t *
 CreateCMShell(void)
 {
-  int status;
+  int status, z;
   CM_t *cm;
 
   ESL_ALLOC(cm, sizeof(CM_t));
@@ -137,8 +137,9 @@ CreateCMShell(void)
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
   cm->p7           = NULL;          
   cm->p7_gm        = NULL;          
-  cm->p7_gmu       = 0.;
-  cm->p7_glambda   = 0.;
+  cm->p7_n3omega   = DEFAULT_P7NULL3_OMEGA; 
+
+  for (z = 0; z < CM_p7_NEVPARAM; z++) cm->p7_evparam[z] = CM_p7_EVPARAM_UNSET;
 #if 0
   cm->p7_om        = NULL;          
 #endif
@@ -161,7 +162,7 @@ void
 CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
 {
   int status;
-  int v;
+  int v, z;
                                 /* alphabet, only a reference */
   cm->abc    = abc; 
 				/* structural information */
@@ -243,8 +244,7 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   cm->cp9b          = NULL;
   cm->cp9map        = NULL;
   cm->p7            = NULL;
-  cm->p7_gmu        = 0.;
-  cm->p7_glambda    = 0.;
+  for (z = 0; z < CM_p7_NEVPARAM; z++) cm->p7_evparam[z] = CM_p7_EVPARAM_UNSET;
 #if 0
   cm->p7_om         = NULL;
 #endif

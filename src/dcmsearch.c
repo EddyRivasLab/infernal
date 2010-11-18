@@ -104,13 +104,17 @@ static ESL_OPTIONS options[] = {
   { "--novitbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--novit",  "turn off the Vit composition bias filter",                     7 },
   { "--nofwdbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn off the Fwd composition bias filter",                     7 },
   { "--nodombias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noddef", "turn off the per-domain composition bias filter",              7 },
+  { "--domsvnull3", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the MSV null3 bias filter",                            7 },
+  { "--dovitnull3", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the Vit null3 bias filter",                            7 },
   { "--dofwdnull3", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the Fwd null3 bias filter",                            7 },
   { "--dodomnull3", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the Domaind def null3 bias filter",                    7 },
   { "--p7n3omega",  eslARG_REAL,"0.0000000298023",NULL,"x>0",NULL,NULL, NULL,           "set prior probability of p7 null3 model as <x>",  7}, 
   { "--F1",         eslARG_REAL,  "0.35", NULL, NULL,    NULL,  NULL, "--max",          "Stage 1 (MSV) threshold: promote hits w/ P <= F1",             7 },
   { "--F1b",        eslARG_REAL,  "0.35", NULL, NULL,    NULL, "--domsvbias", "--max",  "Stage 1 (MSV) bias threshold: promote hits w/ P <= F1b",       7 },
+  { "--F1n3",       eslARG_REAL,  "0.35", NULL, NULL,    NULL, "--domsvnull3", "--max", "Stage 1 (MSV) null3 threshold: promote hits w/ P <= F1n3",      7 },
   { "--F2",         eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--max",          "Stage 2 (Vit) threshold: promote hits w/ P <= F2",             7 },
   { "--F2b",        eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--novitbias,--max",  "Stage 2 (Vit) bias threshold: promote hits w/ P <= F2b",       7 },
+  { "--F2n3",       eslARG_REAL,  "0.10", NULL, NULL,    NULL,"--dovitnull3",     "--max",  "Stage 2 (Vit) null3 threshold: promote hits w/ P <= F2n3",      7 },
   { "--F3",         eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) threshold: promote hits w/ P <= F3",             7 },
   { "--dF3",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) per-domain threshold: promote hits w/ P <= dF3", 7 },
   { "--F3b",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--nofwdbias,--max",  "Stage 3 (Fwd) bias threshold: promote hits w/ P <= F3b",       7 },
@@ -149,8 +153,6 @@ static ESL_OPTIONS options[] = {
   { "--w_length",   eslARG_INT,    NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "window length ",                                              12 },
   /* Options controlling exponential tail fitting of glocal p7 HMMs */
   { "--localp",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--glocaldom,--skipweak", "--nohmm,--noddef,--dtF3","use glocal P values for domains",                      8 },
-  { "--real",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "sample realistic genomic sequences, not iid, for p7 calibration", 8},
-  { "--expnull3",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "use null3 correction in p7 calibrations", 8},
   /* Options taken from infernal 1.0.2 cmsearch */
   /* options for algorithm for final round of search */
   { "-g",             eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "configure CM for glocal alignment [default: local]", 1 },
@@ -540,6 +542,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Outer loop: over each query CM in <cmfile>. */
   while (qhstatus == eslOK) {
+
+    /* Make sure we have E-value stats for both the CM and the p7, if not we can't run the pipeline */
+    if(! (cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s\n", cm->name);
+    if(! (cm->flags & CMH_P7_STATS))      cm_Fail("no plan7 HMM E-value parameters were read for CM: %s\n", cm->name);
+
     P7_PROFILE      *gm      = NULL;
     P7_OPROFILE     *om      = NULL;       /* optimized query profile                  */
     int              safe_W;
@@ -558,7 +565,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = ConfigCM(cm, errbuf, 
 			  TRUE, /* do calculate W */
 			  NULL, NULL)) != eslOK) cm_Fail("Error configuring CM: %s\n", errbuf);
-    if((status = CP9_to_P7(cm, errbuf, esl_opt_GetBoolean(go, "--real"), esl_opt_GetBoolean(go, "--expnull3"), &hmm)) != eslOK) cm_Fail("Error creating HMM from CM");
+    hmm = cm->p7;
+    /* the p7 HMM is built in ConfigCM() */
        
     /*
     FILE *myfp;

@@ -497,9 +497,14 @@ extern void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm, P7_OPROFILE **ret_om);
 #endif
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm);
-extern int          CP9_to_P7(CM_t *cm, char *errbuf, int do_real, int do_null3, P7_HMM **ret_p7);
+extern int          cm_cp9_to_p7(CM_t *cm);
+extern int          cm_p7_Calibrate(CM_t *cm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN, double ElfT, double EgfT, int do_real, int do_null3, float n3omega);
+extern int          p7_GlocalLambdaMu(CM_t *cm, ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int do_real, int do_null3, float n3omega, int L, int N, double tailp, char *errbuf, double *ret_lambda, double *ret_mu);
+extern int          cm_p7_MSVMu(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, int do_real, int do_null3, float n3omega, double *ret_mmu);
+extern int          cm_p7_ViterbiMu(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, int do_real, int do_null3, float n3omega, double *ret_vmu);
+extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, double tailp, int do_real, int do_null3, float n3omega, double *ret_tau);
+
 extern int          dump_p7(P7_HMM *hmm, FILE *fp);
-extern int          p7_GlocalLambdaMu(CM_t *cm, ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int do_real, int do_null3, int L, int N, double tailp, char *errbuf, double *ret_lambda, double *ret_mu);
 
 /* from my_p7_msvfilter.c */
 #if 0

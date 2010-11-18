@@ -463,6 +463,13 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
   /* E-value statistics
    */
   int p;
+  if (cm->flags & CMH_P7_STATS)
+    {
+      fprintf(fp, "EP7-LM   %8.4f %8.5f\n", cm->p7_evparam[CM_p7_LMMU],  cm->p7_evparam[CM_p7_LMLAMBDA]);
+      fprintf(fp, "EP7-LV   %8.4f %8.5f\n", cm->p7_evparam[CM_p7_LVMU],  cm->p7_evparam[CM_p7_LVLAMBDA]);
+      fprintf(fp, "EP7-LF   %8.4f %8.5f\n", cm->p7_evparam[CM_p7_LFTAU], cm->p7_evparam[CM_p7_LFLAMBDA]);
+      fprintf(fp, "EP7-GF   %8.4f %8.5f\n", cm->p7_evparam[CM_p7_GFMU],  cm->p7_evparam[CM_p7_GFLAMBDA]);
+    }
   if (cm->flags & CMH_EXPTAIL_STATS)
     {
       fprintf(fp, "PART     %-3d  ", cm->stats->np);
@@ -928,6 +935,56 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	cm->stats->hfiA[fthr_mode]->is_valid = TRUE;
 	fthr_flags[fthr_mode] = TRUE;
       }
+      /* p7 HMM E-value stats info, we require these to be in a particular order,
+       * on 4 consecutive lines: EP7_LM, EP7_LV, EP7_LF, EP7_GF */
+      else if (strncmp(tok, "EP7-LM", 6) == 0) {
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
+	cm->p7_evparam[CM_p7_LMMU] = atof(tok);
+	
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
+	cm->p7_evparam[CM_p7_LMLAMBDA] = atof(tok);
+	
+	/* read and process EP7-LV (local Viterbi) line */
+	if(esl_fgets(&buf, &n, cmf->f) == eslEOF)     goto FAILURE;
+	s   = buf;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (strncmp(tok, "EP7-LV", 6) != 0)           goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
+	cm->p7_evparam[CM_p7_LVMU] = atof(tok);
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
+	cm->p7_evparam[CM_p7_LVLAMBDA] = atof(tok);
+
+	/* read and process EP7-LF (local Forward) line */
+	if(esl_fgets(&buf, &n, cmf->f) == eslEOF)     goto FAILURE;
+	s   = buf;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (strncmp(tok, "EP7-LF", 6) != 0)           goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
+	cm->p7_evparam[CM_p7_LFTAU] = atof(tok);
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
+	cm->p7_evparam[CM_p7_LFLAMBDA] = atof(tok);
+
+	/* read and process EP7-GF (glocal Forward) line */
+	if(esl_fgets(&buf, &n, cmf->f) == eslEOF)     goto FAILURE;
+	s   = buf;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (strncmp(tok, "EP7-GF", 6) != 0)           goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
+	cm->p7_evparam[CM_p7_GFMU] = atof(tok);
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
+	cm->p7_evparam[CM_p7_GFLAMBDA] = atof(tok);
+
+	cm->flags |= CMH_P7_STATS;
+      }
+
       else if (strcmp(tok, "MODEL:") == 0)
 	break;
     }

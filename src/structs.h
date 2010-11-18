@@ -38,13 +38,14 @@
 #define DEFAULT_TAU              0.0000001
 #define DEFAULT_PBEGIN           0.05   /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_PEND             0.05   /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_ETARGET          0.59  /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
+#define DEFAULT_ETARGET          0.59   /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
 #define DEFAULT_HS_MINLEN        7.  /* minimum length for a candidate sub CM root for a hybrid scan */
 #define DEFAULT_HS_BETA          1E-15 /* beta for calc'ing average hit length for sub cm roots of a hybrid scan */
 #define DEFAULT_NULL2_OMEGA      0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null2 model */
 #define DEFAULT_NULL3_OMEGA      0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
 #define V1P0_NULL2_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null2 model for infernal versions 0.56 through 1.0.2 */
 #define V1P0_NULL3_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null3 model for infernal versions 0.56 through 1.0.2 */
+#define DEFAULT_P7NULL3_OMEGA    0.0000000298023/* 1/(2^25), the hard-coded prior probability of the p7 null3 model */
 
 /* max number of parititons for cmcalibrate */
 #define MAX_PARTITIONS 20
@@ -61,6 +62,11 @@
 /* Constants for type of cutoff */
 #define SCORE_CUTOFF 0
 #define E_CUTOFF     1
+
+/* P7 HMM E-value parameters, borrowed from HMMER, but with 2 new additions: CM_p7_GMU and CM_p7_GLAMBDA */
+#define CM_p7_NEVPARAM 8  /* number of statistical parameters stored in cm->p7_evparam */
+enum cm_p7_evparams_e {CM_p7_LMMU  = 0, CM_p7_LMLAMBDA = 1, CM_p7_LVMU = 2,  CM_p7_LVLAMBDA = 3, CM_p7_LFTAU = 4, CM_p7_LFLAMBDA = 5, CM_p7_GFMU = 6, CM_p7_GFLAMBDA = 7 };
+#define CM_p7_EVPARAM_UNSET -99999.0f  /* if p7_evparam[0] is unset, then all unset                         */
 
 /* We're moderately paranoid about underflow and overflow errors, so
  * we do some checking on the magnitude of the scores.
@@ -90,6 +96,15 @@
 #define epnEXP10(x) (exp((x) * 2.30258509 ))
 #define NOTZERO(x)  (fabs(x - 0.) > -1e6)
 #define INFTY       987654321   /* infinity for purposes of integer DP cells       */
+
+/* constants used in cm_pipeline for tallying up number of residues surviving each stage */
+#define p7_SURV_F1  0
+#define p7_SURV_F1b 1
+#define p7_SURV_F2  2
+#define p7_SURV_F2b 3
+#define p7_SURV_F3  4
+#define p7_SURV_F3b 5
+#define Np7_SURV    6
 
 /***********************************************************************************
  * CM Plan 9 HMM information                                                       */
@@ -431,13 +446,15 @@ typedef struct cp9map_s {
 #define CMH_CP9                 (1<<11) /* CP9 HMM is valid in cm->cp9              */
 #define CMH_CP9STATS            (1<<12) /* CP9 HMM has exp tail stats               */
 #define CMH_SCANMATRIX          (1<<13) /* ScanMatrix smx is valid                  */
+#define CMH_P7                  (1<<14) /* p7 is valid in cm->p7                    */
+#define CMH_P7_STATS            (1<<15) /* p7 HMM exponential tail stats set        */
 
-#define CM_IS_SUB               (1<<14) /* the CM is a sub CM                       */
-#define CM_IS_RSEARCH           (1<<15) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS         (1<<16) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT          (1<<17) /* CM has/will have RSEARCH emissions       */
-#define CM_EMIT_NO_LOCAL_BEGINS (1<<18) /* emitted parsetrees will never have local begins */
-#define CM_EMIT_NO_LOCAL_ENDS   (1<<19) /* emitted parsetrees will never have local ends   */
+#define CM_IS_SUB               (1<<16) /* the CM is a sub CM                       */
+#define CM_IS_RSEARCH           (1<<17) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS         (1<<18) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT          (1<<19) /* CM has/will have RSEARCH emissions       */
+#define CM_EMIT_NO_LOCAL_BEGINS (1<<20) /* emitted parsetrees will never have local begins */
+#define CM_EMIT_NO_LOCAL_ENDS   (1<<21) /* emitted parsetrees will never have local ends   */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
@@ -1303,6 +1320,9 @@ typedef struct cmstats_s {
  * 0..EXP_NMODES-1 are first dimension of cmstats->expAA 
  * order is important, it's exploited by cmcalibrate 
  */
+/* 
+As of 1.0.2:
+*/
 #define EXP_CP9_GV 0
 #define EXP_CP9_GF 1
 #define EXP_CM_GC  2  
@@ -1464,8 +1484,8 @@ typedef struct cm_s {
   /* p7 hmm, added 08.05.08 */
   P7_HMM      *p7;         /* the query p7 HMM, only match emission scores are relevant/valid */
   P7_PROFILE  *p7_gm;      /* profile HMM */
-  double       p7_gmu;     /* glocal mu     for <p7> */
-  double       p7_glambda; /* glocal lambda for <p7> */
+  float        p7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_P7_STATS) */
+  double       p7_n3omega; /* null3 omega for p7 model (TODO: put this in the CM file) */
 #if 0
   P7_OPROFILE *p7_om;    /* optimized profile HMM */
 #endif
@@ -1517,7 +1537,9 @@ typedef struct cm_pipeline_s {
   double  F2;		        /* Viterbi filter threshold                 */
   double  F3;		        /* uncorrected Forward filter threshold     */
   double  F1b;		        /* bias-corrected MSV filter threshold      */
+  double  F1n3;		        /* null3-corrected MSV filter threshold     */
   double  F2b;		        /* bias-corrected Viterbi filter threshold  */
+  double  F2n3;		        /* null3-corrected Viterbi filter threshold */
   double  F3b;		        /* bias-corrected Forward filter threshold  */
   double  F3n3;		        /* null3-corrected Forward filter threshold */
   double  dF3;		        /* per-domain Forward filter thr            */
@@ -1538,7 +1560,9 @@ typedef struct cm_pipeline_s {
   int     do_msvmerge;		/* TRUE to merge MSV hits, FALSE not to     */
   int     do_msv;		/* TRUE to filter with MSV, FALSE not to    */
   int     do_msvbias;	        /* TRUE to use biased comp HMM filter w/MSV */
+  int     do_msvnull3;      	/* TRUE to use NULL3 bias filter for w/MSV  */
   int     do_vitbias;      	/* TRUE to use biased comp HMM filter w/Vit */
+  int     do_vitnull3;      	/* TRUE to use NULL3 bias filter for Viterbi*/
   int     do_fwdbias;     	/* TRUE to use biased comp HMM filter w/Fwd */
   int     do_fwdnull3;     	/* TRUE to use NULL3 bias filter w/Fwd      */
   int     do_dombias;     	/* TRUE to use biased comp HMM filter w/ddef*/
@@ -1617,8 +1641,7 @@ typedef struct cm_pipeline_s {
   int           do_bot;         /* TRUE to do bottom strand (usually TRUE) */
   int 		W;              /* window length */
   int 		clen;           /* consensus length of model */
-  double        p7_glambda;     /* glocal lambda for p7 */
-  double        p7_gmu;         /* glocal lambda for p7 */
+  float         p7_evparam[CM_p7_NEVPARAM]; /* E-value params  (CMH_P7_STATS)      */
 
   int           show_accessions;/* TRUE to output accessions not names      */
   int           show_alignments;/* TRUE to output alignments (default)      */

@@ -829,9 +829,8 @@ int
 CreateGenomicHMM(const ESL_ALPHABET *abc, char *errbuf, double **ret_sA, double ***ret_tAA, double ***ret_eAA, int *ret_nstates)
 {
   int      status;
-  ESL_DSQ *dsq = NULL;
   int      nstates = 5;
-  int      i, si, x;
+  int      i;
 
   /* contract check, make sure we're in a valid mode */
   if(abc->type != eslRNA && abc->type != eslDNA) ESL_FAIL(eslEINCOMPAT, errbuf, "get_genomic_sequence_from_hmm(), abc is not eslRNA nor eslDNA");
