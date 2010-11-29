@@ -122,7 +122,6 @@ static ESL_OPTIONS options[] = {
   { "--dF3b",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--nodombias,--max",  "Stage 3 (Fwd) per domain bias thr: promote hits w/ P <= dF3b", 7 },
   { "--dF3n3",      eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--nodombias,--max",  "Stage 3 (Fwd) per domain bias thr: promote hits w/ P <= dF3b", 7 },
   { "--dtF3",       eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--dF3",    "Stage 3 (Fwd) per-domain bit sc thr: promote hits w/sc >= dtF3", 7 },
-  { "--dF3fudge",   eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--dtF3",   "Stage 3 (Fwd) per-domain thresh fudge factor, add to sc", 7 },
   { "--F4",         eslARG_REAL,  "5e-4", NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm","Stage 4 (CYK) threshold: promote hits w/ P <= F4",         7 },
   { "--E4",         eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm,--F4","Stage 4 (CYK) threshold: promote hits w/ E <= F4",    7 },
   { "--time-F1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 1 MSV; for timings",                        7 },
@@ -136,14 +135,10 @@ static ESL_OPTIONS options[] = {
   { "--rt2",        eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set domain definition rt2 parameter as <x>",                  7 },
   { "--rt3",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set domain definition rt3 parameter as <x>",                  7 },
   { "--ns",         eslARG_INT,   "200",  NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","set number of domain tracebacks to <n>",                      7 },
-  { "--skipbig",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","skip big domains that exceed the window size",                7 },
-  { "--noskipweak", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","do not skip low-scoring domains with P > F3",                 7 },
   { "--localdom",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","define domains with HMM in glocal (not local) mode",          7 },
   { "--wnosplit",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nomsv",         "do not split windows after MSV stage", 7 },
   { "--wmult",      eslARG_REAL,   "3.0", NULL, NULL,    NULL,  NULL, "--wnosplit,--nomsv",     "scalar multiplier for flagging window to split (if --wsplit)", 7 },
   { "--wcorr",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use window size correction for Vit/Fwd filters", 7 },
-  { "--bfil",       eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--fnoqdb",        "maximum allowed banded HMM/QDB matrix size for a domain", 7 },
-  { "--bpick",      eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--fnoqdb",        "use QDBs if HMM/QDB matrix exceeds <x>, else use HMM bands", 7 },
   { "--tmp",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--glocaldom", "--nohmm,--noddef","use generic local", 7 },
 /* Other options */
   { "--nonull2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn off biased composition score corrections",               12 },
@@ -151,8 +146,6 @@ static ESL_OPTIONS options[] = {
   { "--seed",       eslARG_INT,    "42",  NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",         12 },
   { "--w_beta",     eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "tail mass at which window length is determined",               12 },
   { "--w_length",   eslARG_INT,    NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "window length ",                                              12 },
-  /* Options controlling exponential tail fitting of glocal p7 HMMs */
-  { "--localp",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--glocaldom,--skipweak", "--nohmm,--noddef,--dtF3","use glocal P values for domains",                      8 },
   /* Options taken from infernal 1.0.2 cmsearch */
   /* options for algorithm for final round of search */
   { "-g",             eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "configure CM for glocal alignment [default: local]", 1 },
@@ -348,16 +341,11 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--F3b"))       fprintf(ofp, "# Fwd bias P threshold:                  <= %g\n", esl_opt_GetReal(go, "--F3b"));
   if (esl_opt_IsUsed(go, "--F3n3"))      fprintf(ofp, "# Fwd null3 P threshold:                 <= %g\n", esl_opt_GetReal(go, "--F3n3"));
   if (esl_opt_IsUsed(go, "--dF3b"))      fprintf(ofp, "# Domain defn P threshold:               <= %g\n", esl_opt_GetReal(go, "--dF3b"));
-  if (esl_opt_IsUsed(go, "--bfil"))      fprintf(ofp, "# Max allowed banded HMM/QDB mx size     %g\n",    esl_opt_GetReal(go, "--bfil"));
-  if (esl_opt_IsUsed(go, "--bpick"))     fprintf(ofp, "# Use HMM bands only if HMM/QDB mx size  <= %g\n", esl_opt_GetReal(go, "--bpick"));
   if (esl_opt_IsUsed(go, "--rt1"))       fprintf(ofp, "# Domain definition rt1 parameter        %g\n", esl_opt_GetReal(go, "--rt1"));
   if (esl_opt_IsUsed(go, "--rt2"))       fprintf(ofp, "# Domain definition rt2 parameter        %g\n", esl_opt_GetReal(go, "--rt2"));
   if (esl_opt_IsUsed(go, "--rt3"))       fprintf(ofp, "# Domain definition rt3 parameter        %g\n", esl_opt_GetReal(go, "--rt3"));
   if (esl_opt_IsUsed(go, "--ns"))        fprintf(ofp, "# Number of domain tracebacks sampled    %d\n", esl_opt_GetInteger(go, "--ns"));
-  if (esl_opt_IsUsed(go, "--skipbig"))   fprintf(ofp, "# Skip big  domain mode:                  on\n");
-  if (esl_opt_IsUsed(go, "--noskipweak"))fprintf(ofp, "# Skip weak domain mode:                 off\n");
   if (esl_opt_IsUsed(go, "--localdom"))  fprintf(ofp, "# Define domains in local mode           on\n");
-  if (esl_opt_IsUsed(go, "--localp"))    fprintf(ofp, "# Use local P values for domains         on\n");
   if (esl_opt_IsUsed(go, "--nonull2"))   fprintf(ofp, "# null2 bias corrections:                off\n");
   if (esl_opt_IsUsed(go, "--nonull3"))   fprintf(ofp, "# null3 bias corrections:                off\n");
   if (esl_opt_IsUsed(go, "--toponly"))   fprintf(ofp, "# search top-strand only:                on\n");
@@ -691,7 +679,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
           p7_tophits_Merge(info[0].th, info[i].th);
           cm_pipeline_Merge(info[0].pli, info[i].pli);
 
-          cm_pipeline_Destroy(info[i].pli);
+          cm_pipeline_Destroy(info[i].pli, cm);
           p7_tophits_Destroy(info[i].th);
           p7_oprofile_Destroy(info[i].om);
       }
@@ -738,13 +726,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
           esl_msa_Destroy(msa);
       }
 
-      cm_pipeline_Destroy(info->pli);
+      cm_pipeline_Destroy(info->pli, cm);
       p7_tophits_Destroy(info->th);
       p7_oprofile_Destroy(info->om);
       p7_profile_Destroy(info->gm);
       p7_oprofile_Destroy(om);
       p7_profile_Destroy(gm);
-      p7_hmm_Destroy(hmm);
+      FreeCM(cm);
 
       qhstatus = CMFileRead(cmfp, errbuf, &abc, &cm);
   } /* end outer loop over query CMs */
@@ -759,7 +747,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     default:
       cm_Fail("Unexpected error (%d: %s) in reading CMs from %s", qhstatus, errbuf, cfg->cmfile);
   }
-
+  
   for (i = 0; i < infocnt; ++i) {
       p7_bg_Destroy(info[i].bg);
   }
@@ -895,7 +883,7 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
       for (i=1; i<block->count; i++)
           esl_sq_Reuse(block->list + i);
 
-      sstatus = esl_sqio_ReadBlock(dbfp, block, NHMMER_MAX_RESIDUE_COUNT);
+      sstatus = esl_sqio_ReadBlock(dbfp, block, NHMMER_MAX_RESIDUE_COUNT, TRUE);
 
       info->pli->nseqs += block->count - (block->complete ? 0 : 1);// if there's an incomplete sequence read into the block wait to count it until it's complete.
 

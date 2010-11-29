@@ -1545,10 +1545,8 @@ typedef struct cm_pipeline_s {
   double  dF3;		        /* per-domain Forward filter thr            */
   double  dF3b;		        /* bias-corrected per-domain threshold      */
   double  dF3n3;	        /* null3-corrected domain filter threshold */
-  double  dF3fudge;             /* per-domain Forward filter thr fudge factor */
   double  dtF3;		        /* per-domain bit sc Forward filter thr     */
   double  Fbfil;	        /* min allowed ratio of banded HMM vs QDB mx size  */
-  int     use_dF3fudge;	        /* use dF3 fudge factor                     */
   int     use_dtF3;	        /* use dtF3 bit sc instead of dF3 P-value   */
   double  F4;		        /* CYK filter P-value threshold             */
   double  E4;		        /* CYK filter E-value threshold             */
@@ -1573,15 +1571,9 @@ typedef struct cm_pipeline_s {
   int     do_cyk;		/* TRUE to filter with CYK, FALSE not to    */
   int     do_null2;		/* TRUE to use null2 score corrections      */
   int     do_null3;		/* TRUE to use null3 score corrections      */
-  int     do_skipbigdoms;       /* TRUE to skip domains > W                 */
-  int     do_skipweakdoms;      /* TRUE to skip low-scoring domains         */
   int     do_localdoms;         /* TRUE to define domains in local mode     */
-  int     do_glocal_P;          /* TRUE to use glocal stats for domain P value */
   int     do_wsplit;            /* TRUE to split MSV windows > wmult*W      */
   int     do_wcorr;             /* TRUE to correct for window size          */
-  int     do_bfil;              /* TRUE to filter based on size ratio of HMM banded mx vs QDB mx */
-  int     do_bpick;             /* TRUE to pick QDBs or HMM bands based on relative size of the mx's */
-  double  bpick;	        /* ratio of banded HMM vs QDB mx size, above this - use QDBs */
   double  wmult;                /* scalar * W, for do_wsplit                */
 
   /* Parameters controlling p7 domain defintion */
