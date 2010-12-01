@@ -2576,9 +2576,9 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
   p7_bg_NullOne(bg, dsq, L, &nullsc);
 
   /* generic mode setup */
-  p7_gmx_GrowTo(gx, cm->p7->M, L); 
-  p7_ReconfigLength(cm->p7_gm, L);
-  gx->M = cm->p7->M;
+  p7_gmx_GrowTo(gx, cm->mlp7->M, L); 
+  p7_ReconfigLength(cm->mlp7_gm, L);
+  gx->M = cm->mlp7->M;
   gx->L = L;
 
   /* Step 1: MSV algorithm M->M transitions only 
@@ -2591,16 +2591,16 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
 
   /* optimized MSV */
   /*
-    p7_oprofile_ReconfigLength(cm->p7_om, L);
+    p7_oprofile_ReconfigLength(cm->mlp7_om, L);
     esl_stopwatch_Start(watch);    
-    my_p7_MSVFilter(dsq, L, cm->p7_om, ox, gx, &usc);
+    my_p7_MSVFilter(dsq, L, cm->mlp7_om, ox, gx, &usc);
     got    esl_stopwatch_Stop(watch); 
     FormatTimeString(time_buf, watch->user, TRUE);
     fprintf(stdout, "OMSV  %8.2f  %11s\n", ((usc -nullsc) / eslCONST_LOG2), time_buf);
   */
 
   esl_stopwatch_Start(watch);  
-  p7_GMSV(dsq, L, cm->p7_gm, gx, 2.0, &usc);
+  p7_GMSV(dsq, L, cm->mlp7_gm, gx, 2.0, &usc);
   esl_stopwatch_Stop(watch); 
   FormatTimeString(time_buf, watch->user, TRUE);
 #if PRINTNOW
@@ -2609,14 +2609,14 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
 
   /* Step 2: traceback MSV */
   esl_stopwatch_Start(watch);
-  status = my_p7_GTraceMSV(dsq, L, cm->p7_gm, gx, p7_tr, &i2k, &k2i, &isc, &iconflict);
+  status = my_p7_GTraceMSV(dsq, L, cm->mlp7_gm, gx, p7_tr, &i2k, &k2i, &isc, &iconflict);
 
   /* Step 3: prune pins */
   if(status == eslOK) { /* trace is valid */
     prune_i2k(i2k, iconflict, isc, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7);
   }
   else if (status == eslEINCOMPAT) { /* trace was discontiguous, abort! remove all pins */ 
-    esl_vec_ISet(k2i, (cm->p7->M+1), -1);
+    esl_vec_ISet(k2i, (cm->mlp7->M+1), -1);
     esl_vec_ISet(i2k, (L+1), -1);
     return status;
   }

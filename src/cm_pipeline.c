@@ -28,7 +28,9 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT 1
+#define DOPRINT 0
+
+static int merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, int nwin1, int64_t *ws2, int64_t *we2, double *wp2, int *wl2, int nwin2, int64_t **ret_mws, int64_t **ret_mwe, double **ret_mwp, int **ret_mwl, int *ret_nmwin);
 
 /*****************************************************************
  * 1. The CM_PIPELINE object: allocation, initialization, destruction.
@@ -527,12 +529,13 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            have the appropriate ones set.
  */
 int
-cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, const P7_OPROFILE *om, P7_BG *bg)
+cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE **omA, P7_BG **bgA, int nhmm)
 {
   int status = eslOK;
+  int m;
 
   pli->nmodels++;
-  pli->nnodes += om->M;
+  pli->nnodes += cm->clen;
 
   if(pli->fsmx != NULL) cm_FreeScanMatrix(cm, pli->fsmx);
   if(pli->smx != NULL)  cm_FreeScanMatrix(cm, pli->smx);
@@ -554,12 +557,15 @@ cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int *fcyk_dmin, int *fcyk_dmax, int 
   
   if (pli->Z_setby == p7_ZSETBY_NTARGETS && pli->mode == p7_SCAN_MODELS) pli->Z = pli->nmodels;
 
-  if (pli->do_msvbias || pli->do_vitbias || pli->do_fwdbias || pli->do_dombias) p7_bg_SetFilter(bg, om->M, om->compo);
+  if (pli->do_msvbias || pli->do_vitbias || pli->do_fwdbias || pli->do_dombias) { 
+    for(m = 0; m < nhmm; m++) { 
+      p7_bg_SetFilter(bgA[m], omA[m]->M, omA[m]->compo);
+    }
+  }
 
   pli->W    = cm->W;
   pli->clen = cm->clen;
-  esl_vec_FCopy(cm->p7_evparam, CM_p7_NEVPARAM, pli->p7_evparam);
-
+  
   return status;
 }
 
@@ -672,7 +678,7 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
  *            option flags set in <pli>. 
  *
  *            In a normal pipeline run, this function call should be
- *            followed by a call to cm_pipeline_p7BoundaryDef().
+ *            followed by a call to cm_pli_p7BoundaryDef().
  *
  * Returns:   <eslOK> on success. For the <ret_nwin> windows that
  *            survive all filters, the start and end positions of the
@@ -695,7 +701,7 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
  * Xref:      J4/25.
  */
 int
-cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin)
+cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, double **ret_wp, int *ret_nwin)
 {
   int              status;
   float            usc, vfsc, fwdsc; /* filter scores                           */
@@ -714,11 +720,13 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
   float            wcorr;            /* bit sc correction for a window */
   int            **survAA = NULL;    /* [0..s..Np7_SURV-1][0..i..nwin-1] TRUE if window i survived stage s */
   int              nalloc;           /* currently allocated size for ws, we */
-  int64_t         *ws;               /* [0..nwin-1] window start positions */
-  int64_t         *we;               /* [0..nwin-1] window end   positions */
+  int64_t         *ws = NULL;        /* [0..nwin-1] window start positions */
+  int64_t         *we = NULL;        /* [0..nwin-1] window end   positions */
+  double          *wp = NULL;        /* [0..nwin-1] window P-values, P-value of furthest-reached filter algorithm */
   int              nwin;             /* number of windows */
-  int64_t         *new_ws;           /* used when copying/modifying ws */
-  int64_t         *new_we;           /* used when copying/modifying we */
+  int64_t         *new_ws = NULL;    /* used when copying/modifying ws */
+  int64_t         *new_we = NULL;    /* used when copying/modifying we */
+  double          *new_wp = NULL;    /* used when copying/modifying wp */
   int              nsurv_fwd;        /* number of windows that survive fwd filter */
   int              new_nsurv_fwd;    /* used when merging fwd survivors */
   ESL_DSQ         *subdsq;           /* a ptr to the first position of a window */
@@ -731,10 +739,13 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
    * that we would miss if we left length parameters set to the full target length */
   p7_oprofile_ReconfigMSVLength(om, om->max_length);
 
+#if DOPRINT
   printf("sq: %s\nsq->n: %" PRId64 " cm->W:  %d  pli->W: %d\n", sq->name, sq->n, cm->W, pli->W);
+#endif
 
   /* initializations */
   nsurv_fwd = 0;
+  nwin = 0;
 
   /***************************************************/
   /* Filter 1: MSV, long target-variant, with p7 HMM */
@@ -770,7 +781,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
 	    if((i2+1) == nalloc) { 
 	      nalloc += 100;
 	      ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
-	      ESL_RALLOC(new_we,   p, sizeof(int64_t) * nalloc);
+	      ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
 	    }
 	    new_ws[i2] = ESL_MIN(new_ws[i2-1] + pli->W, we[i]);
 	    new_we[i2] = ESL_MIN(new_we[i2-1] + pli->W, we[i]);
@@ -806,6 +817,9 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
     }
   }      
   pli->n_past_msv += nwin;
+
+  ESL_ALLOC(wp, sizeof(double) * nwin);
+  for(i = 0; i < nwin; i++) { wp[i] = pli->F1; } /* TEMP (?) p7_MSVFilter_longtarget() does not return P-values */
 
   if(pli->do_time_F1) return eslOK;
 
@@ -850,9 +864,11 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
       have_filtersc = TRUE;
       
       wsc = (usc + wcorr - filtersc) / eslCONST_LOG2;
-      P   = esl_gumbel_surv(wsc,  pli->p7_evparam[CM_p7_LMMU],  pli->p7_evparam[CM_p7_LMLAMBDA]);
+      P   = esl_gumbel_surv(wsc,  p7_evparam[CM_p7_LMMU],  p7_evparam[CM_p7_LMLAMBDA]);
+      wp[i] = P;
 
       if (P > pli->F1b) continue;
+
       /******************************************************************************/
     }
     if (pli->do_msv && pli->do_msvnull3) { 
@@ -867,7 +883,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
       }
       have_null3sc = TRUE;
       wsc = ((usc + wcorr - nullsc) / eslCONST_LOG2) - null3sc;
-      P   = esl_exp_surv(wsc,  pli->p7_evparam[CM_p7_LMMU],  pli->p7_evparam[CM_p7_LMLAMBDA]);
+      P   = esl_exp_surv(wsc,  p7_evparam[CM_p7_LMMU],  p7_evparam[CM_p7_LMLAMBDA]);
+      wp[i] = P;
 
       if (P > pli->F1n3) continue;
     }
@@ -891,7 +908,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
       /* Second level filter: ViterbiFilter(), multihit with <om> */
       p7_ViterbiFilter(subdsq, wlen, om, pli->oxf, &vfsc);
       wsc = (vfsc + wcorr - nullsc) / eslCONST_LOG2; 
-      P   = esl_gumbel_surv(wsc,  pli->p7_evparam[CM_p7_LVMU],  pli->p7_evparam[CM_p7_LVLAMBDA]);
+      P   = esl_gumbel_surv(wsc,  p7_evparam[CM_p7_LVMU],  p7_evparam[CM_p7_LVLAMBDA]);
+      wp[i] = P;
 #if DOPRINT
       printf("vit sc: %8.2f P: %g\n", wsc, P);
       printf("IMPT: vfsc:  %8.2f   (log2: %8.2f)  wcorr: %8.2f  (log2: %8.2f)  nullsc: %8.2f  (log2: %8.2f)\n", vfsc, vfsc/eslCONST_LOG2, wcorr, wcorr/eslCONST_LOG2, nullsc, nullsc/eslCONST_LOG2);
@@ -915,7 +933,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
       }
       have_filtersc = TRUE;
       wsc = (vfsc + wcorr - filtersc) / eslCONST_LOG2;
-      P = esl_gumbel_surv(wsc,  pli->p7_evparam[CM_p7_LVMU],  pli->p7_evparam[CM_p7_LVLAMBDA]);
+      P = esl_gumbel_surv(wsc,  p7_evparam[CM_p7_LVMU],  p7_evparam[CM_p7_LVLAMBDA]);
+      wp[i] = P;
 #if DOPRINT
       printf("vit-bias sc: %8.2f P: %g\n", wsc, P);
 #endif
@@ -930,7 +949,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
       }
       have_null3sc = TRUE;
       wsc = ((vfsc + wcorr - nullsc) / eslCONST_LOG2) - null3sc;
-      P = esl_exp_surv(wsc,  pli->p7_evparam[CM_p7_LVMU],  pli->p7_evparam[CM_p7_LVLAMBDA]);
+      P = esl_exp_surv(wsc,  p7_evparam[CM_p7_LVMU],  p7_evparam[CM_p7_LVLAMBDA]);
+      wp[i] = P;
 
       if (P > pli->F1n3) continue;
     }
@@ -949,7 +969,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
       /* Parse it with Forward and obtain its real Forward score. */
       p7_ForwardParser(subdsq, wlen, om, pli->oxf, &fwdsc);
       wsc = (fwdsc + wcorr - nullsc) / eslCONST_LOG2; 
-      P = esl_exp_surv(wsc,  pli->p7_evparam[CM_p7_LFTAU],  pli->p7_evparam[CM_p7_LFLAMBDA]);
+      P = esl_exp_surv(wsc,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
+      wp[i] = P;
 #if DOPRINT
       printf("fwd sc: %8.2f P: %g\n", wsc, P);
       printf("IMPT: fwdsc:  %8.2f (log2: %8.2f)  wcorr:  %8.2f  (log2: %8.2f)  nullsc: %8.2f  (log2: %8.2f)\n", fwdsc, fwdsc/eslCONST_LOG2, wcorr, wcorr/eslCONST_LOG2, nullsc, nullsc/eslCONST_LOG2);
@@ -973,7 +994,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
       }
       have_filtersc = TRUE;
       wsc = (fwdsc + wcorr - filtersc) / eslCONST_LOG2;
-      P = esl_exp_surv(wsc,  pli->p7_evparam[CM_p7_LFTAU],  pli->p7_evparam[CM_p7_LFLAMBDA]);
+      P = esl_exp_surv(wsc,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
+      wp[i] = P;
       if (P > pli->F3b) continue;
       /******************************************************************************/
     }
@@ -986,7 +1008,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
       }
       have_null3sc = TRUE;
       wsc = ((fwdsc + wcorr - nullsc) / eslCONST_LOG2) - null3sc;
-      P = esl_exp_surv(wsc,  pli->p7_evparam[CM_p7_LFTAU],  pli->p7_evparam[CM_p7_LFLAMBDA]);
+      P = esl_exp_surv(wsc,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
+      wp[i] = P;
 #if DOPRINT
       printf("Window %5d [%10d..%10d] Fwd null3 sc: %10.8f bits (sc: %6.2f bits;  P: %g).\n", i, ws[i], we[i], null3sc, wsc, P);
 #endif
@@ -1036,10 +1059,12 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
   if(nsurv_fwd > 0) { 
     ESL_ALLOC(new_ws, sizeof(int64_t) * nsurv_fwd);
     ESL_ALLOC(new_we, sizeof(int64_t) * nsurv_fwd);
+    ESL_ALLOC(new_wp, sizeof(double)  * nsurv_fwd);
     for (i = 0, i2 = 0; i < nwin; i++) { 
       if(survAA[p7_SURV_F3b][i]) { 
 	new_ws[i2] = ws[i];
 	new_we[i2] = we[i];
+	new_wp[i2] = wp[i];
 	/*printf("window %5d  %10d..%10d\n", i2+1, new_ws[i2], new_we[i2]);*/
 	i2++;
       }
@@ -1056,6 +1081,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
 	while((i2 < nsurv_fwd) && ((new_we[i]+1) >= (new_ws[i2]))) { 
 	  useme[i2] = FALSE;
 	  new_we[i] = new_we[i2]; /* merged i with i2, rewrite end for i */
+	  new_wp[i] = ESL_MIN(new_wp[i], new_wp[i2]); /* take lower P-value of the two hits merged as P-value for this window */
 	  i2++;
 	}
 	i = i2-1;
@@ -1065,6 +1091,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
 	if(useme[i]) { 
 	  new_ws[i2] = new_ws[i];
 	  new_we[i2] = new_we[i];
+	  new_wp[i2] = new_wp[i];
 	  i2++;
 	}
       }
@@ -1073,8 +1100,13 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
     }
     free(ws);
     free(we);
+    free(wp);
     ws = new_ws;
     we = new_we;
+    wp = new_wp;
+  }
+  else { 
+    ws = we = NULL; /* zero windows survived forward */
   }
 
   if(survAA != NULL) { 
@@ -1084,6 +1116,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
 
   *ret_ws   = ws;
   *ret_we   = we;
+  *ret_wp   = wp;
   *ret_nwin = nsurv_fwd;
 
   return eslOK;
@@ -1105,8 +1138,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
  *            boundary def acts as a filter too).. 
  *
  *            In a normal pipeline run, this function call should be
- *            just after a call to cm_pipeline_p7Filter() and just
- *            before a call to cm_pipeline_CMStage().
+ *            just after a call to cm_pli_p7Filter() and just
+ *            before a call to cm_pli_CMStage().
  *
  * Returns:   <eslOK on success. For all <ret_nenv> envelopes not
  *            filtered out, return their envelope boundaries in
@@ -1115,7 +1148,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv)
+cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv)
 {
   int              status;                     
   float            env_filtersc;               /* HMM null filter score                   */
@@ -1127,8 +1160,8 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
   float            env_sc, env_nullsc;         /* envelope bit score, and domain null1 score */
   float            env_sc_for_pvalue;          /* corrected score for enveloped, used for calc'ing P value */
   int64_t          wlen;             /* window length of current window */
-  int64_t         *es;               /* [0..nenv-1] envelope start positions */
-  int64_t         *ee;               /* [0..nenv-1] envelope end   positions */
+  int64_t         *es = NULL;        /* [0..nenv-1] envelope start positions */
+  int64_t         *ee = NULL;        /* [0..nenv-1] envelope end   positions */
   int              nenv;             /* number of surviving envelopes */
   int              nenv_alloc;       /* current size of es, ee */
   ESL_DSQ         *subdsq;           /* a ptr to the first position of a window */
@@ -1136,8 +1169,12 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
   int64_t          estart, eend;     /* envelope start/end positions */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
-  if (nwin == 0)  return eslOK;    /* if there's no windows to define envelopes in, return */
-
+  if (nwin == 0)  { 
+    *ret_es = es;
+    *ret_ee = ee;
+    *ret_nenv = 0;
+    return eslOK;    /* if there's no envelopes to search in, return */
+  }
   p7_omx_GrowTo(pli->oxf, om->M, 0, sq->n);    /* expand the one-row omx if needed */
 
   nenv_alloc = nwin;
@@ -1146,11 +1183,13 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
   nenv = 0;
   seq = esl_sq_CreateDigital(sq->abc);
 
+#if DOPRINT
   printf("p7ED: sq: %s\nsq->n: %" PRId64 " cm->W:  %d  pli->W: %d\n", sq->name, sq->n, cm->W, pli->W);
+#endif
 
   for (i = 0; i < nwin; i++) {
 #if DOPRINT
-    printf("\n\nWindow %5d/%5d [%10d..%10d] in cm_pipeline_p7EnvelopeDef()\n", i, nwin, ws[i], we[i]);
+    printf("\n\nWindow %5d/%5d [%10d..%10d] in cm_pli_p7EnvelopeDef()\n", i, nwin, ws[i], we[i]);
 #endif
     wlen = we[i] - ws[i] + 1;
     subdsq = sq->dsq + ws[i] - 1;
@@ -1202,8 +1241,8 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
 
       env_nullsc = (float) env_wlen * log((float)env_wlen/(env_wlen+1)) + log(1./(env_wlen+1));
       env_sc_for_pvalue = (env_sc - env_nullsc) / eslCONST_LOG2;
-      if(pli->do_localdoms) P = esl_exp_surv (env_sc_for_pvalue,  pli->p7_evparam[CM_p7_LFTAU], pli->p7_evparam[CM_p7_LFLAMBDA]);
-      else                  P = esl_exp_surv (env_sc_for_pvalue,  pli->p7_evparam[CM_p7_GFMU],  pli->p7_evparam[CM_p7_GFLAMBDA]);
+      if(pli->do_localdoms) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
+      else                  P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
       /***************************************************/
 
       /* check if we can skip this domain based on its P-value or bit-score */
@@ -1259,8 +1298,8 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
       if(pli->do_dombias) {
 	p7_bg_FilterScore(bg, seq->dsq + pli->ddef->dcl[d].ienv - 1, env_len, &env_filtersc);
 	env_sc_for_pvalue = (env_sc - env_filtersc) / eslCONST_LOG2;
-	if(pli->do_localdoms) P = esl_exp_surv (env_sc_for_pvalue,  pli->p7_evparam[CM_p7_LFTAU], pli->p7_evparam[CM_p7_LFLAMBDA]);
-	else                  P = esl_exp_surv (env_sc_for_pvalue,  pli->p7_evparam[CM_p7_GFMU],  pli->p7_evparam[CM_p7_GFLAMBDA]);
+	if(pli->do_localdoms) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
+	else                  P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
 #if DOPRINT
 	printf("\t\tdomain %5d  env bits w/bias : %6.2f P: %g\n", d+1, env_sc_for_pvalue, P);
 #endif
@@ -1275,8 +1314,8 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
 	ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, seq->dsq + pli->ddef->dcl[d].ienv - 1, 1, env_len, pli->p7_n3omega, &env_null3sc);
 	printf("dom null3sc: %20.18f\n", env_null3sc);
 	env_sc_for_pvalue = ((env_sc - env_nullsc) / eslCONST_LOG2) - env_null3sc;
-	if(pli->do_localdoms) P = esl_exp_surv (env_sc_for_pvalue,  pli->p7_evparam[CM_p7_LFTAU], pli->p7_evparam[CM_p7_LFLAMBDA]);
-	else                  P = esl_exp_surv (env_sc_for_pvalue,  pli->p7_evparam[CM_p7_GFMU],  pli->p7_evparam[CM_p7_GFLAMBDA]);
+	if(pli->do_localdoms) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
+	else                  P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
 #if DOPRINT
 	printf("\t\tdomain %5d  env bits w/null3: %6.2f P: %g\n", d+1, env_sc_for_pvalue, P);
 #endif
@@ -1324,7 +1363,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
  *            if so pass to Inside for final hit definition.
  *
  *            In a normal pipeline run, this function call should be
- *            just after a call to cm_pipeline_p7EnvelopeDef().
+ *            just after a call to cm_pli_p7EnvelopeDef().
  *
  * Returns:   <eslOK> on success. If a significant hit is obtained,
  *            its information is added to the growing <hitlist>.
@@ -1336,7 +1375,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, P7_TOPHITS *hitlist)
+cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, P7_TOPHITS *hitlist)
 {
   int              status;
   char             errbuf[cmERRBUFSIZE];  /* for error messages */
@@ -1359,7 +1398,9 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
   results = CreateResults(INIT_RESULTS);
   nhit = 0;
 
+#if DOPRINT
   printf("CMST: sq: %s\nsq->n: %" PRId64 " cm->W:  %d  pli->W: %d\n", sq->name, sq->n, cm->W, pli->W);
+#endif
 
   for (i = 0; i < nenv; i++) {
     env_len = ee[i] - es[i] + 1;
@@ -1543,6 +1584,163 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
 }
 
 
+/* Function:  merge_windows_from_two_lists()
+ * Synopsis:  Merge two sorted lists of windows into one, collapsing overlapping windows together. 
+ * Incept:    EPN, Mon Nov 29 14:47:40 2010
+ *
+ * Purpose:   Given two lists of windows, merge them into one list
+ *            by collapsing any overlapping windows into a single window. 
+ *
+ *            Each window in list 1 is defined as:
+ *            <ws1[i]>..we1[i] for i=0..<nwin1-1>
+ *
+ *            Each window in list 2 is defined as:
+ *            <ws2[i]>..we2[i] for i=0..<nwin2-1>
+ *
+ *            The windows within each list must be sorted in
+ *            increasing order and be non-overlapping, i.e. the
+ *            following must hold:
+ *
+ *            ws1[i] <  ws1[j] for all i < j.
+ *            ws1[i] <= we1[i] for all i.
+ *
+ *            ws2[i] <  ws2[j] for all i < j.
+ *            ws2[i] <= we2[i] for all i.
+ *
+ *            Note, we check that these conditions hold at the
+ *            beginning of the function, and return eslEINVAL if not.
+ *
+ *            A new list is created and returned, as <mws>,
+ *            <mwe>, and <nmwin>, start, end positions and 
+ *            number of windows respectively. 
+ *
+ *            The lowest P-value of any of the merged windows is also
+ *            kept, and returned in <ret_mwp>, <ret_mwp[i]> is the
+ *            lowest P-value of any of the P-values from <wp1>/<wp2>
+ *            for windows that were merged together to create
+ *            <mws>..<mwe>. If the P-value was from a window in list 1
+ *            (<wp1>), <ret_mwl[i]> is set as 1, if it is from a
+ *            window from list 2 (<wp2>), <ret_mwl[i]> is set as 2.
+ * 
+ * Returns:   New merged list in <ret_mws>, <ret_mwe>, <ret_mwp>,
+ *            <ret_mwl>, <ret_nmwin>, storing start position, end
+ *            position, P-value and list origin of each of the
+ *            <ret_nmwin> windows in the merged list.
+ */
+int
+merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, int nwin1, int64_t *ws2, int64_t *we2, double *wp2, int *wl2, int nwin2, int64_t **ret_mws, int64_t **ret_mwe, double **ret_mwp, int **ret_mwl, int *ret_nmwin)
+{
+  int status;
+  int64_t *mws = NULL;
+  int64_t *mwe = NULL;
+  double  *mwp = NULL;
+  int     *mwl = NULL;
+  int nmwin;
+  int mi, i1, i2;
+  int nalloc;
+
+  /* check that our required conditions hold */
+  for(i1 = 0; i1 < nwin1-1; i1++) if(ws1[i1] >= ws1[i1+1]) return eslEINVAL;
+  for(i2 = 0; i2 < nwin2-1; i2++) if(ws2[i2] >= ws2[i2+1]) return eslEINVAL;
+  for(i1 = 0; i1 < nwin1; i1++) if(ws1[i1] > we1[i1]) return eslEINVAL;
+  for(i2 = 0; i2 < nwin2; i2++) if(ws2[i2] > we2[i2]) return eslEINVAL;
+
+  nalloc = nwin1 + nwin2; /* we'll never exceed this */
+  ESL_ALLOC(mws, sizeof(int64_t) * nalloc);
+  ESL_ALLOC(mwe, sizeof(int64_t) * nalloc);
+  ESL_ALLOC(mwp, sizeof(double)  * nalloc);
+  ESL_ALLOC(mwl, sizeof(int)     * nalloc);
+
+  i1 = 0;
+  i2 = 0;
+  mi = 0;
+  while(i1 < nwin1 || i2 < nwin2) { 
+    if((i1 < nwin1) && ((i2 == nwin2) || (ws1[i1] < ws2[i2]))) {
+      /**************************************************
+       * case 1: our next hit, in order is from list 1 *
+       **************************************************/
+      /* initialize merged hit as copy of hit from list 1 */
+      mws[mi] = ws1[i1]; /* our merged window begins at ws1[i1], this won't change */
+      mwp[mi] = wp1[i1]; /* for now, our best P-value is wp1[i1] */
+      mwl[mi] = wl1[i1]; /* for now, our best P-value comes from list 1 */
+      mwe[mi] = we1[i1]; /* for now, our merged window ends at we1[i1] */
+      /* merge with all overlapping windows in list 2 */
+      while((i2 < nwin2) && (mwe[mi] >= ws2[i2])) { /* check all windows in list 2 that overlap with our current list 1 window */
+	mwe[mi] = ESL_MAX(mwe[mi], we2[i2]); /* our merged window now ends at larger of mwe[me] and we2[i2] */
+	if(wp2[i2] < mwp[mi]) { 
+	  mwp[mi] = wp2[i2];  /* our best P-value now is wp2[i2] */
+	  mwl[mi] = wl2[i2];  /* our best P-value now comes from list 2 */
+	}
+	i2++;
+      }
+      i1++;
+      /* finally, if we merged any windows from list 2, our window is possibly larger, 
+       * so we merge with all now-overlapping windows in list 1 */
+      while((i1 < nwin1) && (mwe[mi] >= ws1[i1])) { 
+	mwe[mi] = ESL_MAX(mwe[mi], we1[i1]); /* our merged window now ends at larger of mwe[me] and we2[i2] */
+	if(wp1[i1] < mwp[mi]) { 
+	  mwp[mi] = wp1[i1];  /* our best P-value now is wp1[i1] */
+	  mwl[mi] = wl1[i1];  /* our best P-value now comes from list 1 */
+	}
+	i1++;
+      }
+      mi++;
+    }
+    else { 
+      /***************************************************************************************************************
+       * case 2: our next hit, in order is from list 2, same code as case, with list 1 and list 2 variables inverted *
+       ***************************************************************************************************************/
+      /* initialize merged hit as copy of hit from list 2 */
+      mws[mi] = ws2[i2]; /* our merged window begins at ws1[i2], this won't change */
+      mwp[mi] = wp2[i2]; /* for now, our best P-value is wp2[i2] */
+      mwl[mi] = wl2[i2]; /* for now, our best P-value comes from list 2 */
+      mwe[mi] = we2[i2]; /* for now, our merged window ends at we2[i2] */
+      /* merge with all overlapping windows in list 1 */
+      while((i1 < nwin1) && (mwe[mi] >= ws1[i1])) { /* check all windows in list 1 that overlap with our current list 2 window */
+	mwe[mi] = ESL_MAX(mwe[mi], we1[i1]); /* our merged window now ends at larger of mwe[me] and we1[i1] */
+	if(wp1[i1] < mwp[mi]) { 
+	  mwp[mi] = wp1[i1];  /* our best P-value now is wp1[i1] */
+	  mwl[mi] = wl1[i1];  /* our best P-value now comes from list 1 */
+	}
+	i1++;
+      }
+      i2++;
+      /* finally, if we merged any windows from list 1, our window is possibly larger, 
+       * so we merge with all now-overlapping windows in list 2 */
+      while((i2 < nwin2) && (mwe[mi] >= ws2[i2])) { /* check all windows in list 2 that overlap with our current list 1 window */
+	mwe[mi] = ESL_MAX(mwe[mi], we2[i2]); /* our merged window now ends at larger of mwe[me] and we2[i2] */
+	if(wp2[i2] < mwp[mi]) { 
+	  mwp[mi] = wp2[i2];  /* our best P-value now is wp2[i2] */
+	  mwl[mi] = wl2[i2];  /* our best P-value now comes from list 2 */
+	}
+	i2++;
+      }
+      mi++;
+    }
+  }
+  nmwin = mi;
+
+  /*
+  for(i1 = 0; i1 < nwin1; i1++) printf("list1 win %5d  %10" PRId64 "..%10" PRId64 " P: %10g\n", i1, ws1[i1], we1[i1], wp1[i1]);
+  printf("\n");
+  for(i2 = 0; i2 < nwin2; i2++) printf("list2 win %5d  %10" PRId64 "..%10" PRId64 " P: %10g\n", i2, ws2[i2], we2[i2], wp2[i2]);
+  printf("\n");
+  for(mi = 0; mi < nmwin; mi++) printf("mlist win %5d  %10" PRId64 "..%10" PRId64 " P: %10g  %d\n", mi, mws[mi], mwe[mi], mwp[mi], mwl[mi]);
+  printf("\n");
+  */
+
+  *ret_mws = mws;
+  *ret_mwe = mwe;
+  *ret_mwp = mwp;
+  *ret_mwl = mwl;
+  *ret_nmwin = nmwin;
+
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
 /* Function:  cm_Pipeline()
  * Synopsis:  The accelerated seq/profile comparison pipeline using HMMER3 scanning 
  * Incept:    EPN, Fri Sep 24 16:42:21 2010
@@ -1573,28 +1771,133 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, const ESL_SQ *sq, P7_TOPHITS *hitlist)
+cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG **bg, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, P7_TOPHITS *hitlist)
+
 {
   int status;
-  int nwin;            /* number of windows surviving MSV & Vit & Fwd, filled by cm_pli_p7Filter */
-  int64_t *ws = NULL;  /* [0..nwin-1] window start positions, filled by cm_pli_p7Filter() */
-  int64_t *we = NULL;  /* [0..nwin-1] window end   positions, filled by cm_pli_p7Filter() */
-  int nenv;            /* number of envelopes surviving MSV & Vit & Fwd & DomainDef, filled by cm_pli_p7EnvelopeDef */
-  int64_t *es = NULL;  /* [0..nenv-1] envelope start positions, filled by cm_pli_p7EnvelopeDef() */
-  int64_t *ee = NULL;  /* [0..nenv-1] envelope end   positions, filled by cm_pli_p7EnvelopeDef() */
+  int i, m;
+  int *nwinA;             /* number of windows surviving MSV & Vit & Fwd, filled by cm_pli_p7Filter */
+  int64_t **wsAA = NULL;  /* [0..m..nhmm-1][0..i..nwinAA[m]-1] window start positions, filled by cm_pli_p7Filter() */
+  int64_t **weAA = NULL;  /* [0..m..nhmm-1][0..i..nwinAA[m]-1] window end   positions, filled by cm_pli_p7Filter() */
+  double  **wpAA = NULL;  /* [0..m..nhmm-1][0..i..nwinAA[m]-1] window P-values, filled by cm_pli_p7Filter() */
+  int *nenvA;             /* [0..m..nhmm-1] number of envelopes surviving MSV & Vit & Fwd & DomainDef, filled by cm_pli_p7EnvelopeDef */
+  int64_t **esAA = NULL;  /* [0..m..nhmm-1][0..i..nenvAA[m]-1] envelope start positions, filled by cm_pli_p7EnvelopeDef() */
+  int64_t **eeAA = NULL;  /* [0..m..nhmm-1][0..i..nenvAA[m]-1] envelope end   positions, filled by cm_pli_p7EnvelopeDef() */
+
+  int64_t *all_ws = NULL; /* [0..i..nwin_all-1] start position of window i in the master list of all windows */
+  int64_t *all_we = NULL; /* [0..i..nwin_all-1] end   position of window i in the master list of all windows */
+  double  *all_wp = NULL; /* [0..i..nwin_all-1] P-value of window i in the master list of all windows */
+  int     *all_wl = NULL; /* [0..i..nwin_all-1] the model [0..nhmm-1] that gives window i the lowest P-value in the master list of all windows */
+  int      nwin_all;      /* number of windows in the master list of all windows */
+
+  int      cur_nwin;      /* number of windows in master list for current model */
+  int64_t *cur_ws = NULL; /* [0..i..cur_nwin-1] start position of window i for current model */
+  int64_t *cur_we = NULL; /* [0..i..cur_nwin-1] end   position of window i for current model */
+
+  /* copies of the *all* variables, used when updating/overwriting them */
+  int64_t *new_all_ws = NULL;
+  int64_t *new_all_we = NULL;
+  double  *new_all_wp = NULL;
+  int     *new_all_wl = NULL;
+  int      new_nwin_all;     
+
+  int     *wl = NULL;     /* [0..i..nwinA[m]] temporary list of model giving lowest P-value */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
 
-  if((status = cm_pli_p7Filter     (pli, cm, om, gm, bg, sq, &ws, &we, &nwin))                           != eslOK) return status;
-  if((status = cm_pli_p7EnvelopeDef(pli, cm, om, gm, bg, sq,  ws,  we,  nwin, &es, &ee, &nenv))          != eslOK) return status;
-  if((status = cm_pli_CMStage      (pli, cm, om, gm, bg, sq,                   es,  ee,  nenv, hitlist)) != eslOK) return status;
+  ESL_ALLOC(nwinA, sizeof(int)      * nhmm);
+  ESL_ALLOC(wsAA, sizeof(int64_t *) * nhmm);
+  ESL_ALLOC(weAA, sizeof(int64_t *) * nhmm);
+  ESL_ALLOC(wpAA, sizeof(double)    * nhmm);
 
-  if(ws != NULL) free(ws);
-  if(we != NULL) free(we);
-  if(es != NULL) free(ee);
-  if(ee != NULL) free(es);
+  ESL_ALLOC(nenvA, sizeof(int)      * nhmm);
+  ESL_ALLOC(esAA, sizeof(int64_t *) * nhmm);
+  ESL_ALLOC(eeAA, sizeof(int64_t *) * nhmm);
+
+  /* For each model, determine which windows survive through Forward
+   * (after going through MSV and Vit first). Then, merge windows that
+   * survive different models but overlap into a single window and for
+   * each merged window keep track of model that gives lowest P-value
+   * to any window that was merged to create it. This model will be
+   * used to define envelopes within the merged window in the next
+   * step.
+   */
+  for(m = 0; m < nhmm; m++) { 
+    if((status = cm_pli_p7Filter(pli, cm, om[m], gm[m], bg[m], p7_evparamAA[m], sq, &(wsAA[m]), &(weAA[m]), &(wpAA[m]), &(nwinA[m]))) != eslOK) return status;
+
+    if(m == 0) { 
+      ESL_ALLOC(all_ws, sizeof(int64_t) * nwinA[m]);
+      ESL_ALLOC(all_we, sizeof(int64_t) * nwinA[m]);
+      ESL_ALLOC(all_wp, sizeof(double)  * nwinA[m]);
+      ESL_ALLOC(all_wl, sizeof(int)     * nwinA[m]);
+      for(i = 0; i < nwinA[m]; i++) all_ws[i] = wsAA[m][i];
+      for(i = 0; i < nwinA[m]; i++) all_we[i] = weAA[m][i];
+      esl_vec_DCopy(wpAA[m], nwinA[m], all_wp);
+      esl_vec_ISet (all_wl, nwinA[m], 0);
+      nwin_all = nwinA[m];
+    }
+    else { 
+      ESL_ALLOC(wl, sizeof(int) * nwinA[m]);
+      esl_vec_ISet(wl, nwinA[m], m);
+      merge_windows_from_two_lists(all_ws, all_we, all_wp, all_wl, nwin_all, wsAA[m], weAA[m], wpAA[m], wl, nwinA[m], &new_all_ws, &new_all_we, &new_all_wp, &new_all_wl, &new_nwin_all);
+      free(all_ws);
+      free(all_we);
+      free(all_wp);
+      free(all_wl);
+      all_ws = new_all_ws;
+      all_we = new_all_we;
+      all_wp = new_all_wp;
+      all_wl = new_all_wl;
+      nwin_all = new_nwin_all;
+      free(wl);
+    }
+  }
+
+  /* At this point, all_w*[i] defines a surviving window:
+   * all_ws[i]: start position of window
+   * all_we[i]: end position of window
+   * all_wl[i]: index of model that gave minimal P-value
+   * all_wp[i]: minimal P-value of any window that was merged to
+   *            create this window, it was obtained using model all_wl[i]
+   * 
+   * Next step is to define envelopes for each window i using model
+   * all_wl[i]. To facilitate this, new lists of windows to search
+   * (cur_w*) are temporarily created for each model and passed to
+   * cm_pli_p7EnvelopeDef().
+   */
+
+  ESL_ALLOC(cur_ws, sizeof(int64_t) * nwin_all);
+  ESL_ALLOC(cur_we, sizeof(int64_t) * nwin_all);
+  for(m = 0; m < nhmm; m++) { 
+    cur_nwin = 0;
+    for(i = 0; i < nwin_all; i++) { 
+      if(all_wl[i] == m) { 
+	cur_ws[cur_nwin] = all_ws[i];
+	cur_we[cur_nwin] = all_we[i];
+	/*printf("m: %d  win: %5d  %10" PRId64 "..%10" PRId64 "\n", m, cur_nwin, all_ws[i], all_we[i]);*/
+	cur_nwin++;
+      }
+    }
+    if((status = cm_pli_p7EnvelopeDef(pli, cm, om[m], gm[m], bg[m], p7_evparamAA[m], sq,  cur_ws,  cur_we,  cur_nwin, &(esAA[m]), &(eeAA[m]), &(nenvA[m]))) != eslOK) return status;
+    if((status = cm_pli_CMStage      (pli, cm, sq, esAA[m],  eeAA[m],  nenvA[m], hitlist)) != eslOK) return status;
+  }
+  free(cur_ws);
+  free(cur_we);
+
+  if(wsAA != NULL) { for(m = 0; m < nhmm; m++) { free(wsAA[m]); } free(wsAA); }
+  if(weAA != NULL) { for(m = 0; m < nhmm; m++) { free(weAA[m]); } free(weAA); }
+  if(wpAA != NULL) { for(m = 0; m < nhmm; m++) { free(wpAA[m]); } free(wpAA); }
+  if(esAA != NULL) { for(m = 0; m < nhmm; m++) { free(esAA[m]); } free(esAA); }
+  if(eeAA != NULL) { for(m = 0; m < nhmm; m++) { free(eeAA[m]); } free(eeAA); }
+  if(all_ws != NULL) free(all_ws);
+  if(all_we != NULL) free(all_we);
+  if(all_wp != NULL) free(all_wp);
+  if(all_wl != NULL) free(all_wl);
 
   return eslOK;
+  
+ ERROR:
+  ESL_EXCEPTION(eslEMEM, "Out of memory\n");
 }
   
 

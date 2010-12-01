@@ -735,12 +735,12 @@ extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
 
 extern int cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
 extern int cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
-extern int cm_pli_NewModel          (CM_PIPELINE *pli, CM_t *cm, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, const P7_OPROFILE *om, P7_BG *bg);
+extern int cm_pli_NewModel          (CM_PIPELINE *pli, CM_t *cm, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE **omA, P7_BG **bgA, int nhmm);
 extern int cm_pli_NewSeq            (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq);
-extern int cm_pli_p7Filter          (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
-extern int cm_pli_p7EnvelopeDef     (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
-extern int cm_pli_CMFinalStage      (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, P7_TOPHITS *hitlist);
-extern int cm_Pipeline              (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, const ESL_SQ *sq, P7_TOPHITS *th);
+extern int cm_pli_p7Filter          (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, double **ret_wp, int *ret_nwin);
+extern int cm_pli_p7EnvelopeDef     (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
+extern int cm_pli_CMStage           (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, P7_TOPHITS *hitlist);
+extern int cm_Pipeline              (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **omA, P7_PROFILE **gmA, P7_BG **bgA, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, P7_TOPHITS *th);
 extern int cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
 
 /* from cm_p7_domaindef.c */

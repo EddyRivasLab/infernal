@@ -446,8 +446,8 @@ typedef struct cp9map_s {
 #define CMH_CP9                 (1<<11) /* CP9 HMM is valid in cm->cp9              */
 #define CMH_CP9STATS            (1<<12) /* CP9 HMM has exp tail stats               */
 #define CMH_SCANMATRIX          (1<<13) /* ScanMatrix smx is valid                  */
-#define CMH_P7                  (1<<14) /* p7 is valid in cm->p7                    */
-#define CMH_P7_STATS            (1<<15) /* p7 HMM exponential tail stats set        */
+#define CMH_MLP7                (1<<14) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
+#define CMH_MLP7_STATS          (1<<15) /*  ml p7 HMM exponential tail stats set    */
 
 #define CM_IS_SUB               (1<<16) /* the CM is a sub CM                       */
 #define CM_IS_RSEARCH           (1<<17) /* the CM was parameterized a la RSEARCH    */
@@ -1481,14 +1481,24 @@ typedef struct cm_s {
   /* statistics */
   CMStats_t *stats;      /* holds exponential tail stats and HMM filtering thresholds */
 
-  /* p7 hmm, added 08.05.08 */
-  P7_HMM      *p7;         /* the query p7 HMM, only match emission scores are relevant/valid */
-  P7_PROFILE  *p7_gm;      /* profile HMM */
-  float        p7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_P7_STATS) */
-  double       p7_n3omega; /* null3 omega for p7 model (TODO: put this in the CM file) */
+  /* p7 hmms, added 08.05.08 */
+  P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
+  P7_PROFILE   *mlp7_gm;      /* the ml p7 HMM profile */
+  float         mlp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_MLP7_STATS) */
+  double        p7_n3omega;   /* null3 omega for p7 models (TODO: put this in the CM file) */
 #if 0
-  P7_OPROFILE *p7_om;    /* optimized profile HMM */
+  P7_OPROFILE  *mlp7_om;     /* optimized profile HMM */
 #endif
+
+  /* p7 hmms, added 08.05.08 */
+  int          nep7;           /* number of extra p7 HMMs read from file */
+  P7_HMM      **ep7A;          /* query p7 HMM */
+  P7_PROFILE  **ep7_gmA;       /* profiles for ep7A */
+  float       **ep7_evparamAA; /* E-value params (CMH_EP7_STATS) */
+#if 0
+  P7_OPROFILE  *ep7_om;        /* optimized profile HMM */
+#endif
+
   const  ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size)*/
 } CM_t;
 
@@ -1633,7 +1643,7 @@ typedef struct cm_pipeline_s {
   int           do_bot;         /* TRUE to do bottom strand (usually TRUE) */
   int 		W;              /* window length */
   int 		clen;           /* consensus length of model */
-  float         p7_evparam[CM_p7_NEVPARAM]; /* E-value params  (CMH_P7_STATS)      */
+  //float         p7_evparam[CM_p7_NEVPARAM]; /* E-value params */
 
   int           show_accessions;/* TRUE to output accessions not names      */
   int           show_alignments;/* TRUE to output alignments (default)      */

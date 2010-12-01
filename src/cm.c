@@ -135,13 +135,13 @@ CreateCMShell(void)
   cm->si           = NULL;
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
-  cm->p7           = NULL;          
-  cm->p7_gm        = NULL;          
+  cm->mlp7         = NULL;          
+  cm->mlp7_gm      = NULL;          
   cm->p7_n3omega   = DEFAULT_P7NULL3_OMEGA; 
 
-  for (z = 0; z < CM_p7_NEVPARAM; z++) cm->p7_evparam[z] = CM_p7_EVPARAM_UNSET;
+  for (z = 0; z < CM_p7_NEVPARAM; z++) cm->mlp7_evparam[z] = CM_p7_EVPARAM_UNSET;
 #if 0
-  cm->p7_om        = NULL;          
+  cm->mlp7_om      = NULL;          
 #endif
 
   cm->ga       = 0.;  /* only valid if cm->flags & CMH_GA */
@@ -243,10 +243,10 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   cm->cp9           = NULL;
   cm->cp9b          = NULL;
   cm->cp9map        = NULL;
-  cm->p7            = NULL;
-  for (z = 0; z < CM_p7_NEVPARAM; z++) cm->p7_evparam[z] = CM_p7_EVPARAM_UNSET;
+  cm->mlp7          = NULL;
+  for (z = 0; z < CM_p7_NEVPARAM; z++) cm->mlp7_evparam[z] = CM_p7_EVPARAM_UNSET;
 #if 0
-  cm->p7_om         = NULL;
+  cm->mlp7_om       = NULL;
 #endif
 
   /* create HMM banded dp matrix, this only depends (at first) on num states, M.
@@ -386,10 +386,10 @@ FreeCM(CM_t *cm)
   if(cm->cp9_mx     != NULL) FreeCP9Matrix(cm->cp9_mx);
   if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
-  if(cm->p7         != NULL) p7_hmm_Destroy(cm->p7);
-  if(cm->p7_gm      != NULL) p7_profile_Destroy(cm->p7_gm);
+  if(cm->mlp7       != NULL) p7_hmm_Destroy(cm->mlp7);
+  if(cm->mlp7_gm    != NULL) p7_profile_Destroy(cm->mlp7_gm);
 #if 0 
-  if(cm->p7_om      != NULL) p7_oprofile_Destroy(cm->p7_om);
+  if(cm->mlp7_om    != NULL) p7_oprofile_Destroy(cm->mlp7_om);
 #endif
 
   free(cm);

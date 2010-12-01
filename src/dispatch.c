@@ -478,14 +478,14 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 #endif
   bg = p7_bg_Create(cm->abc);
   gx = p7_gmx_Create(200, 400);	/* initial alloc is for M=200, L=400; will grow as needed */
-  p7_ProfileConfig(cm->p7, bg, cm->p7_gm, 100, p7_LOCAL); /* 100 is a dummy length for now; MSVFilter requires local mode */
+  p7_ProfileConfig(cm->mlp7, bg, cm->mlp7_gm, 100, p7_LOCAL); /* 100 is a dummy length for now; MSVFilter requires local mode */
 #if 0 
-  p7_oprofile_Convert(cm->p7_gm, cm->p7_om); /* <om> is now p7_LOCAL, multihit */
+  p7_oprofile_Convert(cm->mlp7_gm, cm->mlp7_om); /* <om> is now p7_LOCAL, multihit */
 #endif
   if ((p7_tr = p7_trace_Create()) == NULL)  cm_Fail("trace creation failed");
 
 #if 0
-   p7_omx_GrowTo(ox, cm->p7_om->M, 0, 0); /* expand the one-row omx if needed */
+   p7_omx_GrowTo(ox, cm->mlp7_om->M, 0, 0); /* expand the one-row omx if needed */
 #endif
   /*p7_omx_SetDumpMode(stdout, ox, TRUE);*/
   int *p7_i2k;

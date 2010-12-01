@@ -222,77 +222,77 @@ cm_cp9_to_p7(CM_t *cm)
 
   if(cm->cp9 == NULL)         return eslEINCOMPAT; 
   if(! (cm->flags & CMH_CP9)) return eslEINCOMPAT; 
-  if(cm->p7 != NULL)          return eslEINCOMPAT;
+  if(cm->mlp7 != NULL)          return eslEINCOMPAT;
 
-  if ((cm->p7 = p7_hmm_Create(cm->clen, cm->abc)) == NULL)  return eslEMEM;
-  if ((status = p7_hmm_Zero(cm->p7))                 != eslOK) return status;
+  if ((cm->mlp7 = p7_hmm_Create(cm->clen, cm->abc)) == NULL)  return eslEMEM;
+  if ((status = p7_hmm_Zero(cm->mlp7))                 != eslOK) return status;
 
   /* copy transitions */
-  for (k = 0; k <= cm->p7->M; k++) { 
-    cm->p7->t[k][p7H_MM] = cm->cp9->t[k][CTMM];
-    cm->p7->t[k][p7H_MI] = cm->cp9->t[k][CTMI];
-    cm->p7->t[k][p7H_MD] = cm->cp9->t[k][CTMD];
-    cm->p7->t[k][p7H_IM] = cm->cp9->t[k][CTIM];
-    cm->p7->t[k][p7H_II] = cm->cp9->t[k][CTII];
-    cm->p7->t[k][p7H_DM] = cm->cp9->t[k][CTDM];
-    cm->p7->t[k][p7H_DD] = cm->cp9->t[k][CTDD];
+  for (k = 0; k <= cm->mlp7->M; k++) { 
+    cm->mlp7->t[k][p7H_MM] = cm->cp9->t[k][CTMM];
+    cm->mlp7->t[k][p7H_MI] = cm->cp9->t[k][CTMI];
+    cm->mlp7->t[k][p7H_MD] = cm->cp9->t[k][CTMD];
+    cm->mlp7->t[k][p7H_IM] = cm->cp9->t[k][CTIM];
+    cm->mlp7->t[k][p7H_II] = cm->cp9->t[k][CTII];
+    cm->mlp7->t[k][p7H_DM] = cm->cp9->t[k][CTDM];
+    cm->mlp7->t[k][p7H_DD] = cm->cp9->t[k][CTDD];
     /* note: the cp9 CTDI and CTID transitions do not exist the p7 model */
   }
   /* normalize match transitions */
-  for (k = 1; k <= cm->p7->M; k++) esl_vec_FNorm(cm->p7->t[k],  3); 
+  for (k = 1; k <= cm->mlp7->M; k++) esl_vec_FNorm(cm->mlp7->t[k],  3); 
   /* normalize insert transitions */
-  for (k = 0; k < cm->p7->M; k++) esl_vec_FNorm(cm->p7->t[k]+3, 2); 
+  for (k = 0; k < cm->mlp7->M; k++) esl_vec_FNorm(cm->mlp7->t[k]+3, 2); 
   /* normalize delete transitions */
-  for (k = 1; k < cm->p7->M; k++) esl_vec_FNorm(cm->p7->t[k]+5, 2); 
+  for (k = 1; k < cm->mlp7->M; k++) esl_vec_FNorm(cm->mlp7->t[k]+5, 2); 
 
   /* enforce HMMER conventions */
-  cm->p7->t[cm->p7->M][p7H_MD] = 0.0;
-  esl_vec_FNorm(cm->p7->t[cm->p7->M], 3);
-  cm->p7->t[0][p7H_DM] = cm->p7->t[cm->p7->M][p7H_DM] = 1.0;
-  cm->p7->t[0][p7H_DD] = cm->p7->t[cm->p7->M][p7H_DD] = 0.0;
+  cm->mlp7->t[cm->mlp7->M][p7H_MD] = 0.0;
+  esl_vec_FNorm(cm->mlp7->t[cm->mlp7->M], 3);
+  cm->mlp7->t[0][p7H_DM] = cm->mlp7->t[cm->mlp7->M][p7H_DM] = 1.0;
+  cm->mlp7->t[0][p7H_DD] = cm->mlp7->t[cm->mlp7->M][p7H_DD] = 0.0;
 
   /* enforce INFERNAL CP9 convention, the 0'th node's MM transition is really begin[0] */
-  cm->p7->t[0][p7H_MM] = cm->cp9->begin[1];
-  esl_vec_FNorm(cm->p7->t[0], 3);
+  cm->mlp7->t[0][p7H_MM] = cm->cp9->begin[1];
+  esl_vec_FNorm(cm->mlp7->t[0], 3);
 
   /* match emissions: copy, then normalize (should be unnec actually) */
-  for (k = 1; k <= cm->clen; k++) esl_vec_FCopy(cm->cp9->mat[k], cm->abc->K, cm->p7->mat[k]);
+  for (k = 1; k <= cm->clen; k++) esl_vec_FCopy(cm->cp9->mat[k], cm->abc->K, cm->mlp7->mat[k]);
   for (k = 1; k <= cm->clen; k++) esl_vec_FNorm(cm->cp9->mat[k], cm->abc->K);
   /* special case */
-  esl_vec_FSet(cm->p7->mat[0], cm->p7->abc->K, 0.);
-  cm->p7->mat[0][0] = 1.0;
+  esl_vec_FSet(cm->mlp7->mat[0], cm->mlp7->abc->K, 0.);
+  cm->mlp7->mat[0][0] = 1.0;
 
   /* insert emissions: copy, then normalize (should be unnec actually) */
-  for (k = 0; k <= cm->clen; k++) esl_vec_FCopy(cm->cp9->ins[k], cm->abc->K, cm->p7->ins[k]);
+  for (k = 0; k <= cm->clen; k++) esl_vec_FCopy(cm->cp9->ins[k], cm->abc->K, cm->mlp7->ins[k]);
   for (k = 0; k <= cm->clen; k++) esl_vec_FNorm(cm->cp9->ins[k], cm->abc->K);
 
   /* copy the max length parameter */
-  cm->p7->max_length = cm->W;
+  cm->mlp7->max_length = cm->W;
 
-  p7_hmm_SetName       (cm->p7, cm->name);
-  p7_hmm_SetAccession  (cm->p7, cm->acc);
-  p7_hmm_SetDescription(cm->p7, cm->desc);
-  p7_hmm_SetCtime      (cm->p7);
+  p7_hmm_SetName       (cm->mlp7, cm->name);
+  p7_hmm_SetAccession  (cm->mlp7, cm->acc);
+  p7_hmm_SetDescription(cm->mlp7, cm->desc);
+  p7_hmm_SetCtime      (cm->mlp7);
   if(cm->comlog != NULL && cm->comlog->bcom != NULL) { 
-    ESL_ALLOC(cm->p7->comlog, sizeof(char)* (strlen(cm->comlog->bcom)+1));
-    *(cm->p7->comlog) = '\0'; /* need this to make strcat work */
-    strcat(cm->p7->comlog, cm->comlog->bcom);
+    ESL_ALLOC(cm->mlp7->comlog, sizeof(char)* (strlen(cm->comlog->bcom)+1));
+    *(cm->mlp7->comlog) = '\0'; /* need this to make strcat work */
+    strcat(cm->mlp7->comlog, cm->comlog->bcom);
   }
-  else cm->p7->comlog = NULL;
+  else cm->mlp7->comlog = NULL;
 
-  cm->p7->eff_nseq = cm->eff_nseq;
-  cm->p7->nseq     = cm->nseq;
-  cm->p7->checksum = 0;
+  cm->mlp7->eff_nseq = cm->eff_nseq;
+  cm->mlp7->nseq     = cm->nseq;
+  cm->mlp7->checksum = 0;
 
   /* set the model composition */
-  if ((status = p7_hmm_SetComposition(cm->p7)) != eslOK) goto ERROR;
+  if ((status = p7_hmm_SetComposition(cm->mlp7)) != eslOK) goto ERROR;
 
-  cm->flags |= CMH_P7; /* raise the P7 flag */
+  cm->flags |= CMH_MLP7; /* raise the P7 flag */
 
   return eslOK;
 
  ERROR:
-  if(cm->p7 != NULL) { p7_hmm_Destroy(cm->p7); cm->p7 = NULL; }
+  if(cm->mlp7 != NULL) { p7_hmm_Destroy(cm->mlp7); cm->mlp7 = NULL; }
   return status;
 }
 
@@ -302,7 +302,7 @@ cm_cp9_to_p7(CM_t *cm)
  * Purpose:  Calibrate a CM's p7 HMM for local MSV, Viterbi, Forward and 
  *           also glocal Forward. 
  * 
- * Args:     cm        - the cm, cm->p7 must be non-NULL
+ * Args:     cm        - the cm, cm->mlp7 must be non-NULL
  *           errbuf    - for error messages
  *           ElmL      - length of sequences to sample for local MSV
  *           ElvL      - length of sequences to sample for local Vit
@@ -338,45 +338,45 @@ cm_p7_Calibrate(CM_t *cm, char *errbuf,
 
   printf("cm_p7_Calibrate:\n\tElmL: %d\n\tElvL: %d\n\tElfL: %d\n\tEgfL: %d\n\tElmN: %d\n\tElvN: %d\n\tElfN: %d\n\tEgfN: %d\n\tElfT: %f\n\tEgfT: %f\n\tdo_real: %d\n\tdo_null3: %d\n", ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT, do_real, do_null3);
 
-  if(cm->p7 == NULL)       { status = eslEINCOMPAT; goto ERROR; }
-  if(! cm->flags & CMH_P7) { status = eslEINCOMPAT; goto ERROR; }
+  if(cm->mlp7 == NULL)       { status = eslEINCOMPAT; goto ERROR; }
+  if(! cm->flags & CMH_MLP7) { status = eslEINCOMPAT; goto ERROR; }
 
   /* most of this code stolen from hmmer's evalues.c::p7_Calibrate() */
   if ((r      = esl_randomness_CreateFast(42)) == NULL)                    ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create RNG");
-  if ((bg     = p7_bg_Create(cm->p7->abc)) == NULL)                        ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to allocate background");
-  if ((gm     = p7_profile_Create(cm->p7->M, cm->p7->abc))  == NULL)       ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to allocate profile");
-  if ((status = p7_ProfileConfig(cm->p7, bg, gm, ElmL, p7_LOCAL)) != eslOK) ESL_XFAIL(status,  errbuf, "cm_p7_Calibrate(): failed to configure profile");
-  if ((om     = p7_oprofile_Create(cm->p7->M, cm->p7->abc)) == NULL)       ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create optimized profile");
+  if ((bg     = p7_bg_Create(cm->mlp7->abc)) == NULL)                        ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to allocate background");
+  if ((gm     = p7_profile_Create(cm->mlp7->M, cm->mlp7->abc))  == NULL)       ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to allocate profile");
+  if ((status = p7_ProfileConfig(cm->mlp7, bg, gm, ElmL, p7_LOCAL)) != eslOK) ESL_XFAIL(status,  errbuf, "cm_p7_Calibrate(): failed to configure profile");
+  if ((om     = p7_oprofile_Create(cm->mlp7->M, cm->mlp7->abc)) == NULL)       ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create optimized profile");
   if ((status = p7_oprofile_Convert(gm, om)) != eslOK)                     ESL_XFAIL(status,  errbuf, "cm_p7_Calibrate(): failed to convert to optimized profile");
 
 
   /* The calibration steps themselves */
-  if ((status = p7_Lambda      (cm->p7, bg, &lambda))                         != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine lambda");
+  if ((status = p7_Lambda      (cm->mlp7, bg, &lambda))                         != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine lambda");
   if ((status = cm_p7_MSVMu    (r, errbuf, om, bg, ElmL, ElmN, lambda, do_real, do_null3, n3omega, &lmmu))        != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine msv mu");
   if (ElvL != ElmL) p7_oprofile_ReconfigLength(om, ElvL);
   if ((status = cm_p7_ViterbiMu(r, errbuf, om, bg, ElvL, ElvN, lambda, do_real, do_null3, n3omega, &lvmu))        != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine vit mu");
   if (ElfL != ElvL) p7_oprofile_ReconfigLength(om, ElfL);
   if ((status = cm_p7_Tau      (r, errbuf, om, bg, ElfL, ElfN, lambda, ElfT, do_real, do_null3, n3omega, &lftau)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
 
-  /*if ((status = p7_Calibrate(cm->p7, NULL, &r, &bg, &gm, &om)) != eslOK) goto ERROR;*/
+  /*if ((status = p7_Calibrate(cm->mlp7, NULL, &r, &bg, &gm, &om)) != eslOK) goto ERROR;*/
 
   /* finally, determine Glocal Forward stats */
-  if ((status = p7_ProfileConfig(cm->p7, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR; 
+  if ((status = p7_ProfileConfig(cm->mlp7, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR; 
   if ((status = p7_GlocalLambdaMu(cm, r, gm, bg, do_real, do_null3, n3omega, EgfL, EgfN, EgfT, errbuf, &gflambda, &gfmu)) != eslOK) goto ERROR; 
 
   /* copy the p7's evparam[], which were set in p7_Calibrate() to the cm's p7_evparam,
    * which will additionally store the Glocal Lambda and Mu for Forward */
-  cm->p7_evparam[CM_p7_LMMU]     = cm->p7->evparam[p7_MMU]     = lmmu;
-  cm->p7_evparam[CM_p7_LMLAMBDA] = cm->p7->evparam[p7_MLAMBDA] = lambda;
-  cm->p7_evparam[CM_p7_LVMU]     = cm->p7->evparam[p7_VMU]     = lvmu;  
-  cm->p7_evparam[CM_p7_LVLAMBDA] = cm->p7->evparam[p7_VLAMBDA] = lambda;
-  cm->p7_evparam[CM_p7_LFTAU]    = cm->p7->evparam[p7_FTAU]    = lftau; 
-  cm->p7_evparam[CM_p7_LFLAMBDA] = cm->p7->evparam[p7_FLAMBDA] = lambda;  
+  cm->mlp7_evparam[CM_p7_LMMU]     = cm->mlp7->evparam[p7_MMU]     = lmmu;
+  cm->mlp7_evparam[CM_p7_LMLAMBDA] = cm->mlp7->evparam[p7_MLAMBDA] = lambda;
+  cm->mlp7_evparam[CM_p7_LVMU]     = cm->mlp7->evparam[p7_VMU]     = lvmu;  
+  cm->mlp7_evparam[CM_p7_LVLAMBDA] = cm->mlp7->evparam[p7_VLAMBDA] = lambda;
+  cm->mlp7_evparam[CM_p7_LFTAU]    = cm->mlp7->evparam[p7_FTAU]    = lftau; 
+  cm->mlp7_evparam[CM_p7_LFLAMBDA] = cm->mlp7->evparam[p7_FLAMBDA] = lambda;  
 
-  cm->p7_evparam[CM_p7_GFMU]     = gfmu;
-  cm->p7_evparam[CM_p7_GFLAMBDA] = gflambda;
+  cm->mlp7_evparam[CM_p7_GFMU]     = gfmu;
+  cm->mlp7_evparam[CM_p7_GFLAMBDA] = gflambda;
 
-  cm->flags |= CMH_P7_STATS;
+  cm->flags |= CMH_MLP7_STATS;
 
   printf("p7 glocal lambda: %g  mu: %g\n", gflambda, gfmu);
 

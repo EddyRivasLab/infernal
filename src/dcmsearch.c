@@ -20,6 +20,7 @@
 #include "esl_sq.h"
 #include "esl_sqio.h"
 #include "esl_stopwatch.h"
+#include "esl_vectorops.h"
 
 #ifdef HMMER_THREADS
 #include <unistd.h>
@@ -42,12 +43,14 @@ typedef struct {
 #ifdef HMMER_THREADS
   ESL_WORK_QUEUE   *queue;
 #endif /*HMMER_THREADS*/
-  P7_BG            *bg;          /* null model                              */
   CM_PIPELINE      *pli;         /* work pipeline                           */
   P7_TOPHITS       *th;          /* top hit results                         */
   CM_t             *cm;          /* a covariance model                      */
-  P7_OPROFILE      *om;          /* optimized query profile HMM             */
-  P7_PROFILE       *gm;          /* generic   query profile HMM             */
+  P7_BG           **bgA;         /* null models                              */
+  P7_OPROFILE     **omA;         /* optimized query profile HMMs            */
+  P7_PROFILE      **gmA;         /* generic   query profile HMMs            */
+  float           **p7_evparamAA;/* [0..nhmm-1][0..CM_p7_NEVPARAM] E-value parameters */
+  int               nhmm;        /* number of HMM filters, size of omA, gmA, bgA */
 } WORKER_INFO;
 
 #define REPOPTS     "-E,-T,--cut_ga,--cut_nc,--cut_tc"
@@ -140,6 +143,8 @@ static ESL_OPTIONS options[] = {
   { "--wmult",      eslARG_REAL,   "3.0", NULL, NULL,    NULL,  NULL, "--wnosplit,--nomsv",     "scalar multiplier for flagging window to split (if --wsplit)", 7 },
   { "--wcorr",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use window size correction for Vit/Fwd filters", 7 },
   { "--tmp",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--glocaldom", "--nohmm,--noddef","use generic local", 7 },
+  /* Filtering with a different P7 HMM */
+  { "--p7file",     eslARG_INFILE,  NULL, NULL, NULL,   NULL,  NULL,  NULL,              "read P7 HMM from file <f>, and filter with it",                13 },
 /* Other options */
   { "--nonull2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn off biased composition score corrections",               12 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set database size in *Mb* to <x> for E-value calculations",   12 },
@@ -262,6 +267,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     puts("\nOptions controlling p7 HMM statistics calibrations:");
     esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
     
+    puts("\nOptions for reading a p7 HMM from a file:");
+    esl_opt_DisplayHelp(stdout, go, 13, 2, 80); 
+
     puts("\nOptions from Infernal 1.0.2 cmsearch:");
     esl_opt_DisplayHelp(stdout, go, 20, 2, 80); 
 
@@ -351,6 +359,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--toponly"))   fprintf(ofp, "# search top-strand only:                on\n");
   if (esl_opt_IsUsed(go, "--bottomonly"))fprintf(ofp, "# search bottom-strand only:             on\n");
 
+  if (esl_opt_IsUsed(go, "--p7file"))    fprintf(ofp, "# external p7 HMM read from file:        yes\n");
+
   if (esl_opt_IsUsed(go, "--time-F1"))   fprintf(ofp, "# abort after Stage 1 MSV (for timing)   on\n");
   if (esl_opt_IsUsed(go, "--time-F2"))   fprintf(ofp, "# abort after Stage 2 Vit (for timing)   on\n");
   if (esl_opt_IsUsed(go, "--time-F3"))   fprintf(ofp, "# abort after Stage 3 Fwd (for timing)   on\n");
@@ -425,22 +435,25 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   FILE            *afp      = NULL;              /* alignment output file (-A)                      */
   FILE            *tblfp    = NULL;              /* output stream for tabular per-seq (--tblout)    */
 
-  CMFILE          *cmfp;		        /* open input CM file stream       */
-  CM_t            *cm      = NULL;              /* one CM query                                   */
-  P7_HMM          *hmm     = NULL;              /* one HMM query                                   */
+  CMFILE          *cmfp;		         /* open input CM file stream                       */
+  P7_HMMFILE      *hfp     = NULL;               /* open input HMM file                             */
+  CM_t            *cm      = NULL;               /* one CM query                                    */
+  P7_HMM         **hmmA    = NULL;               /* HMMs, used for filtering                        */
+  int              nhmm    = 0;                  /* number of HMMs used for filtering */
 
-  int              dbformat = eslSQFILE_UNKNOWN; /* format of dbfile                                 */
+  int              dbformat = eslSQFILE_UNKNOWN; /* format of dbfile                                */
   ESL_SQFILE      *dbfp     = NULL;              /* open input sequence file                        */
 
   ESL_ALPHABET    *abc      = NULL;              /* digital alphabet                                */
+  ESL_ALPHABET   **hmm_abcA = NULL;              /* digital alphabets for hmms                      */
   ESL_STOPWATCH   *w;
   int              textw    = 0;
   int              nquery   = 0;
   int              status   = eslOK;
   int              qhstatus = eslOK;
   int              sstatus  = eslOK;
-  int              i;
-
+  int              i, m;
+  
   int              ncpus    = 0;
 
   int              infocnt  = 0;
@@ -478,6 +491,14 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
     esl_fatal("Failed to open covariance model save file %s\n", cfg->cmfile);
 
+  /* Open the p7 file, if --p7file */
+  if (esl_opt_IsUsed(go, "--p7file")) { 
+    status = p7_hmmfile_Open(esl_opt_GetString(go, "--p7file"), NULL, &hfp);
+    if      (status == eslENOTFOUND) esl_fatal("Failed to open hmm file %s for reading.\n",                      esl_opt_GetString(go, "--p7file"));
+    else if (status == eslEFORMAT)   esl_fatal("Unrecognized format, trying to open hmm file %s for reading.\n", esl_opt_GetString(go, "--p7file"));
+    else if (status != eslOK)        esl_fatal("Unexpected error %d in opening hmm file %s.\n", status,          esl_opt_GetString(go, "--p7file"));
+  }
+
   /* Open the results output files */
   if (esl_opt_IsOn(go, "-o"))          { if ((ofp      = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) p7_Fail("Failed to open output file %s for writing\n",    esl_opt_GetString(go, "-o")); }
   if (esl_opt_IsOn(go, "-A"))          { if ((afp      = fopen(esl_opt_GetString(go, "-A"), "w")) == NULL) p7_Fail("Failed to open alignment file %s for writing\n", esl_opt_GetString(go, "-A")); }
@@ -510,8 +531,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
           info[i].pli   = NULL;
           info[i].th    = NULL;
           info[i].cm    = NULL;
-          info[i].om    = NULL;
-          info[i].bg    = p7_bg_Create(abc);
+	  info[i].omA   = NULL;
+	  info[i].p7_evparamAA = NULL;
+	  info[i].bgA   = NULL;
+	  info[i].nhmm  = 0;
 #ifdef HMMER_THREADS
           info[i].queue = queue;
 #endif
@@ -533,15 +556,17 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* Make sure we have E-value stats for both the CM and the p7, if not we can't run the pipeline */
     if(! (cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s\n", cm->name);
-    if(! (cm->flags & CMH_P7_STATS))      cm_Fail("no plan7 HMM E-value parameters were read for CM: %s\n", cm->name);
+    if(! (cm->flags & CMH_MLP7_STATS))    cm_Fail("no plan7 HMM E-value parameters were read for CM: %s\n", cm->name);
 
-    P7_PROFILE      *gm      = NULL;
-    P7_OPROFILE     *om      = NULL;       /* optimized query profile                  */
+    P7_PROFILE      **gmA      = NULL;
+    P7_OPROFILE     **omA      = NULL;       /* optimized query profile                  */
+    P7_BG           **bgA      = NULL;
     int              safe_W;
     int             *fcyk_dmin  = NULL;
     int             *fcyk_dmax  = NULL;
     int             *final_dmin = NULL;
     int             *final_dmax = NULL;
+    double gfmu, gflambda;
 
     if(! esl_opt_GetBoolean(go, "-g")) { 
       if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
@@ -553,17 +578,46 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = ConfigCM(cm, errbuf, 
 			  TRUE, /* do calculate W */
 			  NULL, NULL)) != eslOK) cm_Fail("Error configuring CM: %s\n", errbuf);
-    hmm = cm->p7;
-    /* the p7 HMM is built in ConfigCM() */
-       
-    /*
+    if(hfp == NULL) { /* --p7file not enabled, we only have 1 HMM */
+      nhmm = 1;
+      ESL_ALLOC(hmmA,     sizeof(P7_HMM *) * nhmm);
+      ESL_ALLOC(hmm_abcA, sizeof(ESL_ALPHABET *) * nhmm);
+      hmmA[0] = cm->mlp7;
+      hmm_abcA[0] = esl_alphabet_Create(cm->mlp7->abc->type);
+    }
+    else { /* --p7file enabled, read an HMM from the HMM file */
+      nhmm = 2;
+      ESL_ALLOC(hmmA,     sizeof(P7_HMM *) * nhmm);
+      ESL_ALLOC(hmm_abcA, sizeof(ESL_ALPHABET *) * nhmm);
+      hmmA[0] = cm->mlp7;
+      hmm_abcA[0] = esl_alphabet_Create(cm->mlp7->abc->type);
+      hmm_abcA[1] = NULL;
+      hmmA[1] = NULL;
+
+      status = p7_hmmfile_Read(hfp, &(hmm_abcA[1]), &(hmmA[1]));
+
+      /* TEMP: estimate glocal mu and lambda for forward for new model we just read */
+      /* finally, determine Glocal Forward stats */
+      ESL_RANDOMNESS *r = NULL;
+      if ((r = esl_randomness_CreateFast(42)) == NULL) cm_Fail("failed to create RNG");
+      P7_PROFILE *gm = NULL;
+      P7_BG *bg = NULL;
+      gm = p7_profile_Create (hmmA[1]->M, hmmA[1]->abc);
+      bg = p7_bg_Create(hmmA[1]->abc);
+      if ((status = p7_ProfileConfig(hmmA[1], bg, gm, 2*cm->W, p7_GLOCAL)) != eslOK) cm_Fail("Failed to configure the hmm to glocal");
+      if ((status = p7_GlocalLambdaMu(cm, r, gm, bg, FALSE, FALSE, cm->p7_n3omega, 2*cm->W, 1000, 0.04, NULL, &gflambda, &gfmu)) != eslOK) cm_Fail("Failed to configure glocal stats");
+      esl_randomness_Destroy(r);
+      p7_profile_Destroy(gm);
+      p7_bg_Destroy(bg);
+    }
+
+    /* TEMP: print out hmm to 'cur.hmm'
     FILE *myfp;
     if ((myfp = fopen("cur.hmm", "w")) == NULL) esl_fatal("unable to open cur.hmm");
     if ((status = p7_hmm_Validate(hmm, errbuf, 0.0001))       != eslOK) esl_fatal("p7_hmm_Validate() failed with status: %d, %s\n", status, errbuf);
     if ((status = p7_hmmfile_WriteASCII(myfp, -1, hmm)) != eslOK) esl_fatal("HMM save failed");
     fclose(myfp);
     */
-
     /*********************************************/
     /* EPN TEMP: need to find a better spot for this code block, problem is I want dmin/dmax but I don't want them
      * stored in the CM data structure, just need the arrays so I can pass it to cm_pli_NewModel() and it will
@@ -611,26 +665,53 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if (cm->acc)  fprintf(ofp, "Accession:   %s\n", cm->acc);
     if (cm->desc) fprintf(ofp, "Description: %s\n", cm->desc);
     
-    /* Convert HMM to an optimized model */
-    gm = p7_profile_Create (hmm->M, abc);
-    om = p7_oprofile_Create(hmm->M, abc);
-    p7_ProfileConfig(hmm, info->bg, gm, 100, p7_LOCAL); /* 100 is a dummy length for now; and MSVFilter requires local mode */
+    /* Convert HMMs to optimized models */
+    ESL_ALLOC(gmA, sizeof(P7_PROFILE *)  * nhmm);
+    ESL_ALLOC(omA, sizeof(P7_OPROFILE *) * nhmm);
+    ESL_ALLOC(bgA, sizeof(P7_BG *)  * nhmm);
+    for(m = 0; m < nhmm; m++) { 
+      gmA[m] = p7_profile_Create (hmmA[m]->M, abc);
+      omA[m] = p7_oprofile_Create(hmmA[m]->M, abc);
+      bgA[m] = p7_bg_Create(hmm_abcA[m]);
+      p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_LOCAL); /* 100 is a dummy length for now; and MSVFilter requires local mode */
+      p7_oprofile_Convert(gmA[m], omA[m]);                        /* <om> is now p7_LOCAL, multihit */
 
-    p7_oprofile_Convert(gm, om);                        /* <om> is now p7_LOCAL, multihit */
-
-    if(! esl_opt_GetBoolean(go, "--tmp")) { 
-      p7_ProfileConfig(hmm, info->bg, gm, 100, p7_GLOCAL); /* this will be used to define domains in cm_pipeline() 
-							      (we'll alternate b/t multi/uni later when processing domains) */
+      if(! esl_opt_GetBoolean(go, "--tmp")) { 
+	p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_GLOCAL); /* this will be used to define domains in cm_pipeline() 
+								      (we'll alternate b/t multi/uni later when processing domains) */
+      }
     }
 
     for (i = 0; i < infocnt; ++i) {
       /* Create processing pipeline and hit list */
       info[i].th  = p7_tophits_Create();
       info[i].cm  = cm;
-      info[i].om  = p7_oprofile_Clone(om);
-      info[i].gm  = p7_profile_Clone(gm);
-      info[i].pli = cm_pipeline_Create(go, om->M, 100, p7_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      cm_pli_NewModel(info[i].pli, cm, fcyk_dmin, fcyk_dmax, final_dmin, final_dmax, info[i].om, info[i].bg);
+      info[i].nhmm = nhmm;
+      ESL_ALLOC(info[i].gmA, sizeof(P7_PROFILE *)  * nhmm);
+      ESL_ALLOC(info[i].omA, sizeof(P7_OPROFILE *) * nhmm);
+      ESL_ALLOC(info[i].bgA, sizeof(P7_BG *)  * nhmm);
+      ESL_ALLOC(info[i].p7_evparamAA, sizeof(float *)  * nhmm);
+      for(m = 0; m < nhmm; m++) { 
+	info[i].gmA[m]  = p7_profile_Clone(gmA[m]);
+	info[i].omA[m]  = p7_oprofile_Clone(omA[m]);
+	info[i].bgA[m]  = p7_bg_Create(hmm_abcA[m]);
+	ESL_ALLOC(info[i].p7_evparamAA[m], sizeof(float) * CM_p7_NEVPARAM);
+	/* TEMP */
+	if(m == 0)       { esl_vec_FCopy(cm->mlp7_evparam, CM_p7_NEVPARAM, info[i].p7_evparamAA[m]); }
+	else if (m == 1) { 
+	  info[i].p7_evparamAA[m][CM_p7_LMMU]     = hmmA[m]->evparam[p7_MMU];
+	  info[i].p7_evparamAA[m][CM_p7_LMLAMBDA] = hmmA[m]->evparam[p7_MLAMBDA];
+	  info[i].p7_evparamAA[m][CM_p7_LVMU]     = hmmA[m]->evparam[p7_VMU];
+	  info[i].p7_evparamAA[m][CM_p7_LVLAMBDA] = hmmA[m]->evparam[p7_VLAMBDA];
+	  info[i].p7_evparamAA[m][CM_p7_LFTAU]    = hmmA[m]->evparam[p7_FTAU];
+	  info[i].p7_evparamAA[m][CM_p7_LFLAMBDA] = hmmA[m]->evparam[p7_FLAMBDA];
+	  info[i].p7_evparamAA[m][CM_p7_GFLAMBDA] = gflambda;
+	  info[i].p7_evparamAA[m][CM_p7_GFMU]     = gfmu;
+	}
+	else { esl_fatal("uh, m > 1\n"); }
+      }
+      info[i].pli = cm_pipeline_Create(go, omA[0]->M, 100, p7_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+      cm_pli_NewModel(info[i].pli, cm, fcyk_dmin, fcyk_dmax, final_dmin, final_dmax, info[i].omA, info[i].bgA, info[i].nhmm);
       info[i].pli->do_top = (esl_opt_GetBoolean(go, "--bottomonly")) ? FALSE : TRUE;
       info[i].pli->do_bot = (esl_opt_GetBoolean(go, "--toponly"))    ? FALSE : TRUE;
 
@@ -640,8 +721,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
 #ifdef HMMER_THREADS
-      if (ncpus > 0)  sstatus = thread_loop(info, threadObj, queue, dbfp);
-      else            sstatus = serial_loop(info, dbfp);
+    if (ncpus > 0)  sstatus = thread_loop(info, threadObj, queue, dbfp);
+    else            sstatus = serial_loop(info, dbfp);
 #else
       sstatus = serial_loop(info, dbfp);
 #endif
@@ -681,7 +762,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
           cm_pipeline_Destroy(info[i].pli, cm);
           p7_tophits_Destroy(info[i].th);
-          p7_oprofile_Destroy(info[i].om);
+	  for(m = 0; m < info[i].nhmm; m++) { 
+	    p7_oprofile_Destroy(info[i].omA[m]);
+	    p7_profile_Destroy(info[i].gmA[m]);
+	    p7_bg_Destroy(info[i].bgA[m]);
+	    free(info[i].p7_evparamAA[m]);
+	  }
       }
 
       /* Print the results.  */
@@ -728,10 +814,18 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       cm_pipeline_Destroy(info->pli, cm);
       p7_tophits_Destroy(info->th);
-      p7_oprofile_Destroy(info->om);
-      p7_profile_Destroy(info->gm);
-      p7_oprofile_Destroy(om);
-      p7_profile_Destroy(gm);
+
+      for(m = 0; m < info->nhmm; m++) { 
+	p7_oprofile_Destroy(info->omA[m]);
+	p7_profile_Destroy(info->gmA[m]);
+	p7_bg_Destroy(info->bgA[m]);
+	free(info->p7_evparamAA[m]);
+
+	p7_oprofile_Destroy(omA[m]);
+	p7_profile_Destroy(gmA[m]);
+	p7_bg_Destroy(bgA[m]);
+      }
+
       FreeCM(cm);
 
       qhstatus = CMFileRead(cmfp, errbuf, &abc, &cm);
@@ -748,10 +842,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_Fail("Unexpected error (%d: %s) in reading CMs from %s", qhstatus, errbuf, cfg->cmfile);
   }
   
-  for (i = 0; i < infocnt; ++i) {
-      p7_bg_Destroy(info[i].bg);
-  }
-
 #ifdef HMMER_THREADS
   if (ncpus > 0) {
       esl_workqueue_Reset(queue);
@@ -790,7 +880,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
   int      wstatus;
   int i;
   int prev_hit_cnt;
-  ESL_SQ   *dbsq   =  esl_sq_CreateDigital(info->om->abc);
+  ESL_SQ   *dbsq   =  esl_sq_CreateDigital(info->cm->abc);
 
   wstatus = esl_sqio_ReadWindow(dbfp, 0, NHMMER_MAX_RESIDUE_COUNT, dbsq);
 
@@ -802,7 +892,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
     
     if (info->pli->do_top) { 
       prev_hit_cnt = info->th->N;
-      if((status = cm_Pipeline(info->pli, info->cm, info->om, info->gm, info->bg, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+      if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
       cm_pipeline_Reuse(info->pli); // prepare for next search
       
       // modify hit positions to account for the position of the window in the full sequence
@@ -822,7 +912,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
       {
 	prev_hit_cnt = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
-	if((status = cm_Pipeline(info->pli, info->cm, info->om, info->gm, info->bg, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+	if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
 	cm_pipeline_Reuse(info->pli); // prepare for next search
 	  
 	for (i=prev_hit_cnt; i < info->th->N ; i++) {
@@ -841,7 +931,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
   }
 #endif /*eslAUGMENT_ALPHABET*/
 
-  wstatus = esl_sqio_ReadWindow(dbfp, info->om->max_length, NHMMER_MAX_RESIDUE_COUNT, dbsq);
+  wstatus = esl_sqio_ReadWindow(dbfp, info->omA[0]->max_length, NHMMER_MAX_RESIDUE_COUNT, dbsq);
   if (wstatus == eslEOD) { // no more left of this sequence ... move along to the next sequence.
     info->pli->nseqs++;
     esl_sq_Reuse(dbsq);
@@ -903,7 +993,7 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
           // the final sequence on the block was a probably-incomplete window of the active sequence,
           // so prep the next block to read in the next window
           esl_sq_Copy(block->list + (block->count - 1) , ((ESL_SQ_BLOCK *)newBlock)->list);
-          ((ESL_SQ_BLOCK *)newBlock)->list->C = info->om->max_length;
+          ((ESL_SQ_BLOCK *)newBlock)->list->C = info->omA[0]->max_length;
       }
 
   }
@@ -965,7 +1055,7 @@ pipeline_thread(void *arg)
       
       if (info->pli->do_top) { 
 	prev_hit_cnt = info->th->N;
-	if((status = cm_Pipeline(info->pli, info->cm, info->om, info->gm, info->bg, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+	if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
 	cm_pipeline_Reuse(info->pli); // prepare for next search
 	
 	// modify hit positions to account for the position of the window in the full sequence
@@ -987,7 +1077,7 @@ pipeline_thread(void *arg)
       if (info->pli->do_bot && dbsq->abc->complement != NULL) {
 	prev_hit_cnt = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
-	if((status = cm_Pipeline(info->pli, info->cm, info->om, info->gm, info->bg, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+	if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
 	cm_pipeline_Reuse(info->pli); // prepare for next search
 	
 	for (j=prev_hit_cnt; j < info->th->N ; ++j) {

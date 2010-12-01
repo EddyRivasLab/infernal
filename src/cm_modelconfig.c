@@ -111,27 +111,25 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
   cm->cp9_bmx = CreateCP9Matrix(1, cm->cp9->M);
   cm->flags |= CMH_CP9; /* raise the CP9 flag */
   
-  /* build the p7 and profiles from the cp9, using ONLY the match emission distributions, they're 
-   * all we'll use anyway
-   */
-  if(cm->p7    != NULL) p7_hmm_Destroy(cm->p7);
-  if(cm->p7_gm != NULL) p7_profile_Destroy(cm->p7_gm);
+  /* build the p7 and profiles from the cp9 */
+  if(cm->mlp7    != NULL) p7_hmm_Destroy(cm->mlp7);
+  if(cm->mlp7_gm != NULL) p7_profile_Destroy(cm->mlp7_gm);
 #if 0 
-  if(cm->p7_om != NULL) p7_oprofile_Destroy(cm->p7_om);
-  if((status = BuildP7HMM_MatchEmitsOnly(cm, &(cm->p7), &(cm->p7_gm), &(cm->p7_om))) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 HMM from the CM\n");
+  if(cm->mlp7_om != NULL) p7_oprofile_Destroy(cm->mlp7_om);
+  if((status = BuildP7HMM_MatchEmitsOnly(cm, &(cm->mlp7), &(cm->mlp7_gm), &(cm->mlp7_om))) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 HMM from the CM\n");
 #endif
   /* EPN, Tue Nov  9 09:46:48 2010 
-   * OLD: if((status = BuildP7HMM_MatchEmitsOnly(cm, &(cm->p7), &(cm->p7_gm))) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 HMM from the CM\n");*/
+   * OLD: if((status = BuildP7HMM_MatchEmitsOnly(cm, &(cm->mlp7), &(cm->mlp7_gm))) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 HMM from the CM\n");*/
   if((status = cm_cp9_to_p7(cm)) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 from the CM");
-  /* copy the E-value parameters in cm->p7_evparam read from the CM file, copy them to the HMM */
-  if(cm->flags & CMH_P7_STATS) { 
-    cm->p7->evparam[p7_MMU]     = cm->p7_evparam[CM_p7_LMMU];
-    cm->p7->evparam[p7_MLAMBDA] = cm->p7_evparam[CM_p7_LMLAMBDA];
-    cm->p7->evparam[p7_VMU]     = cm->p7_evparam[CM_p7_LVMU];
-    cm->p7->evparam[p7_VLAMBDA] = cm->p7_evparam[CM_p7_LVLAMBDA];
-    cm->p7->evparam[p7_FTAU]    = cm->p7_evparam[CM_p7_LFTAU];
-    cm->p7->evparam[p7_FLAMBDA] = cm->p7_evparam[CM_p7_LFLAMBDA];
-    cm->p7->flags |= p7H_STATS;
+  /* copy the E-value parameters in cm->mlp7_evparam read from the CM file, copy them to the HMM */
+  if(cm->flags & CMH_MLP7_STATS) { 
+    cm->mlp7->evparam[p7_MMU]     = cm->mlp7_evparam[CM_p7_LMMU];
+    cm->mlp7->evparam[p7_MLAMBDA] = cm->mlp7_evparam[CM_p7_LMLAMBDA];
+    cm->mlp7->evparam[p7_VMU]     = cm->mlp7_evparam[CM_p7_LVMU];
+    cm->mlp7->evparam[p7_VLAMBDA] = cm->mlp7_evparam[CM_p7_LVLAMBDA];
+    cm->mlp7->evparam[p7_FTAU]    = cm->mlp7_evparam[CM_p7_LFTAU];
+    cm->mlp7->evparam[p7_FLAMBDA] = cm->mlp7_evparam[CM_p7_LFLAMBDA];
+    cm->mlp7->flags |= p7H_STATS;
   }
 
   /* Possibly configure the CM for local alignment. */
@@ -647,8 +645,8 @@ ConfigQDBAndW(CM_t *cm, int do_calc_qdb)
     cm_FreeScanMatrixForCM(cm);
     cm_CreateScanMatrixForCM(cm, do_float, do_int);
   }
-  /* set cm->p7->max_length as cm->W */
-  if(cm->p7 != NULL) cm->p7->max_length = cm->W;
+  /* set cm->mlp7->max_length as cm->W */
+  if(cm->mlp7 != NULL) cm->mlp7->max_length = cm->W;
   /*if(mode == 1 || mode == 3) printf("TEMP leaving ConfigQDBAndW(), mode: %d, set cm->W as:     %d with beta_W:   %g\n", mode, cm->W, cm->beta_W);
     if(mode == 2)              printf("TEMP leaving ConfigQDBAndW(), mode: %d, set cm->W as:     %d with beta_W:   %g\n", mode, cm->W, cm->beta_qdb);
     if(mode == 2 || mode == 3) printf("TEMP leaving ConfigQDBAndW(), mode: %d, set qdbs dmax[0]: %d with beta_qdb: %g\n", mode, cm->dmax[0], cm->beta_qdb);*/
