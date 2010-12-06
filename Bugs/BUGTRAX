@@ -640,3 +640,55 @@ and only used if the cmsearch --hbanded option is used).
 
 This bug was fixed as of revision 3382.
 //
+
+ID              i23
+TITLE		Incorrect counting of degenerate pairs during model construction
+STATUS          CLOSED
+XREF            Notes in ~/nawrockie/notebook/10_1206_inf_degen_bug_924_inf_cmsearch_nhmmer/
+REPORTED_BY     Stefan Janssen, Robert Giegerich's group, University
+		of Bielefeld
+CLOSED_DATE     EPN, Mon Dec  6 13:20:30 2010
+DESCRIPTION    
+
+In alphabet.c::PairCount(), degenerate pairs were being counted
+incorrectly. There's notes in that function now regarding this bug.
+In that function, when a degenerate residue was encountered we first
+determined left[0..abc->K-1] and right[0..abc->K-1]: the fraction of
+possible canonical residues that agree with the degenerate symbol
+<syml> or <symr> (left and right symbol respectively). For example, if
+syml=='N', left[A]==left[C]==left[G]==left[U] = 0.25. These counts
+were also weighted by the sequence weight passed into the function, so
+if <wt> == 0.8, then actually left[A]==left[C]==left[G]==left[U]=0.20.
+Then the count for a pair was determined by multiplying left and
+right, for example: pair['AU'] = left[A] * right[U]. However, this was
+incorrect because both left and right had already been 'weighted'. In
+other words, just because (sum_i left[i]) == (sum_j right[j]) == <wt>,
+doesn't mean that (sum_ij left[i]*right[j]) == <wt>, which it
+certainly should be. 
+
+As a concrete example, take syml='N', symr='A', and <wt> = 0.8. If we
+use the old incorrect method: 
+                left  right 
+    pair['AA'] = 0.2 * 0.8  = 0.16
+    pair['CA'] = 0.2 * 0.8  = 0.16
+    pair['GA'] = 0.2 * 0.8  = 0.16
+    pair['UA'] = 0.2 * 0.8  = 0.16
+
+and all others will be 0.0. The sum here is only 0.64, but it should
+clearly sum to 0.8. 
+
+The fix is to not weight the fractions in the left and right vectors
+and set pair[] == left[] * right[] * wt.  In this case, 
+
+                left  right    wt
+    pair['AA'] = 0.25 * 1.0 * 0.8 = 0.2
+    pair['CA'] = 0.25 * 1.0 * 0.8 = 0.2
+    pair['GA'] = 0.25 * 1.0 * 0.8 = 0.2
+    pair['UA'] = 0.25 * 1.0 * 0.8 = 0.2
+
+This bug was present at least as far back as infernal 0.55, and
+possibly earlier. Thanks to Stefan Janssen for tracking this one
+down. I don't think I would have ever found it.
+
+This bug was fixed as of revision 3423.
+//

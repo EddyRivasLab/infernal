@@ -49,22 +49,43 @@ PairCount(const ESL_ALPHABET *abc, float *counters, ESL_DSQ syml, ESL_DSQ symr, 
   if (syml < abc->K && symr < abc->K) 
     counters[(int) (syml * abc->K + symr)] += wt;
   else {
+    int status;
     float *left = NULL;
     float *right = NULL;
-    int status;
+    int   l,r;
     ESL_ALLOC(left,  (sizeof(float) * abc->K));
     ESL_ALLOC(right, (sizeof(float) * abc->K));
 
-    int   l,r;
-    
+    /* Be careful to set weights as 1.0 for the FCount calls (not <wt>), 
+     * because what we want to know is the fraction of all possible
+     * residues that agree with the degenerate for each residue, i.e.:
+     *
+     * if  syml == 'N': left[A]  == left[C] == left[G] == left[U] == 0.25
+     * and symr == 'R': right[A] == right[G] == 0.5
+     *
+     * Then when we increment counters by left[l] * left[r] * <wt>.
+     * That way if <wt> = 0.8, counters is set as follows:
+     * 
+     * if syml == 'N' && symr == 'R': 
+     * counters['AA'] == counters['CA'] == counters ['GA'] == counters['UA'] == 
+     * counters['AG'] == counters['CG'] == counters ['GG'] == counters['UG'] == 0.1
+     * and all others are = 0.0.
+     *
+     * Previously (Infernal versions 0.55 (maybe even earlier) until
+     * 1.0.2) this was done incorrectly by passing <wt> to the
+     * FCount() calls and setting counters[] = left[l] *
+     * right[r]. Somehow, Stefan Janssen tracked this down. Thanks
+     * Stefan!  The bug is i23, logged in Bugs/BUGTRAX. 
+     * EPN, Mon Dec 6 13:09:52 2010
+     */
     esl_vec_FSet(left, abc->K, 0.);
     esl_vec_FSet(right, abc->K, 0.);
-    esl_abc_FCount(abc, left,  syml, wt);
-    esl_abc_FCount(abc, right, symr, wt);
+    esl_abc_FCount(abc, left,  syml, 1.0);
+    esl_abc_FCount(abc, right, symr, 1.0);
 
     for (l = 0; l < abc->K; l++)
       for (r = 0; r < abc->K; r++)
-	counters[l*abc->K +r] += left[l] * right[r];
+	counters[l*abc->K +r] += left[l] * right[r] * wt;
 
     free(left);
     free(right);
