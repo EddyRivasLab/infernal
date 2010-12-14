@@ -29,6 +29,7 @@
 #include "structs.h"
 
 #define DOPRINT 0
+#define DOPRINT2 0
 
 static int merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, int nwin1, int64_t *ws2, int64_t *we2, double *wp2, int *wl2, int nwin2, int64_t **ret_mws, int64_t **ret_mwe, double **ret_mwp, int **ret_mwl, int *ret_nmwin);
 
@@ -94,7 +95,6 @@ static int merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1,
  *            | --dF3b       |  Stage 3 (Fwd) domain bias filter thresh     |   OFF     |
  *            | --dtF3       |  Stage 3 (Fwd) per-domain bit sc thresh      |   NULL    |
  *            | --F4         |  Stage 4 (CYK) thresh: promote hits P <= F4  |   5e-4    |
- *            | --E4         |  Stage 4 (CYK) thres: promote hits E <= E4   |   NULL    |
  *            | --fast       |  set filters at strict-level                 |   FALSE   |
  *            | --mid        |  set filters at mid-level                    |   FALSE   |
  *            | --cyk        |  set final search stage as CYK, not inside   |   FALSE   |
@@ -270,26 +270,23 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
     pli->use_dtF3 = TRUE; 
     pli->dtF3   = esl_opt_GetReal(go, "--dtF3");
   }
-  pli->F4     = ESL_MIN(1.0, esl_opt_GetReal(go, "--F4"));
-  pli->E4     = 1.;   
-  pli->use_E4 = FALSE;
-  if (esl_opt_IsUsed(go, "--E4")) { 
-    pli->E4 = esl_opt_GetReal(go, "--E4");
-    pli->use_E4 = TRUE; 
-  }
-  if(esl_opt_GetBoolean(go, "--nomsv"))    pli->do_msv        = FALSE; 
-  if(esl_opt_GetBoolean(go, "--novit"))    pli->do_vit        = FALSE; 
-  if(esl_opt_GetBoolean(go, "--nofwd"))    pli->do_fwd        = FALSE; 
-  if(esl_opt_GetBoolean(go, "--nocyk"))    pli->do_cyk        = FALSE; 
-  if(esl_opt_GetBoolean(go, "--noddef"))   pli->do_domainize  = FALSE; 
-  if(esl_opt_GetBoolean(go, "--domsvbias"))pli->do_msvbias    = TRUE;
-  if(esl_opt_GetBoolean(go, "--novitbias"))pli->do_vitbias    = FALSE;
-  if(esl_opt_GetBoolean(go, "--nofwdbias"))pli->do_fwdbias    = FALSE;
-  if(esl_opt_GetBoolean(go, "--domsvnull3"))pli->do_msvnull3  = TRUE;
-  if(esl_opt_GetBoolean(go, "--dovitnull3"))pli->do_vitnull3  = TRUE;
-  if(esl_opt_GetBoolean(go, "--dofwdnull3"))pli->do_fwdnull3  = TRUE;
-  if(esl_opt_GetBoolean(go, "--dodomnull3"))pli->do_domnull3  = TRUE;
-  if(esl_opt_GetBoolean(go, "--nodombias"))pli->do_dombias    = FALSE;
+  pli->F4       = ESL_MIN(1.0, esl_opt_GetReal(go, "--F4"));
+  pli->F4env    = ESL_MIN(1.0, pli->F4 * (float) esl_opt_GetInteger(go, "--envF4x"));
+  pli->do_F4env = (esl_opt_GetBoolean(go, "--noenvF4")) ? FALSE : TRUE;
+
+  if(esl_opt_GetBoolean(go, "--nomsv"))       pli->do_msv        = FALSE; 
+  if(esl_opt_GetBoolean(go, "--novit"))       pli->do_vit        = FALSE; 
+  if(esl_opt_GetBoolean(go, "--nofwd"))       pli->do_fwd        = FALSE; 
+  if(esl_opt_GetBoolean(go, "--nocyk"))       pli->do_cyk        = FALSE; 
+  if(esl_opt_GetBoolean(go, "--noddef"))      pli->do_domainize  = FALSE; 
+  if(esl_opt_GetBoolean(go, "--domsvbias"))   pli->do_msvbias    = TRUE;
+  if(esl_opt_GetBoolean(go, "--novitbias"))   pli->do_vitbias    = FALSE;
+  if(esl_opt_GetBoolean(go, "--nofwdbias"))   pli->do_fwdbias    = FALSE;
+  if(esl_opt_GetBoolean(go, "--domsvnull3"))  pli->do_msvnull3   = TRUE;
+  if(esl_opt_GetBoolean(go, "--dovitnull3"))  pli->do_vitnull3   = TRUE;
+  if(esl_opt_GetBoolean(go, "--dofwdnull3"))  pli->do_fwdnull3   = TRUE;
+  if(esl_opt_GetBoolean(go, "--dodomnull3"))  pli->do_domnull3   = TRUE;
+  if(esl_opt_GetBoolean(go, "--nodombias"))   pli->do_dombias    = FALSE;
   if(esl_opt_GetBoolean(go, "--hmm")) { 
     pli->do_cm  = FALSE;
     pli->do_cyk = FALSE; 
@@ -309,6 +306,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
     pli->do_max = TRUE;
     pli->do_hmm = pli->do_msv = pli->do_vit = pli->do_fwd = pli->do_cyk = FALSE; 
     pli->do_msvbias = pli->do_vitbias = pli->do_fwdbias = pli->do_dombias = FALSE;
+    pli->do_F4env = FALSE;
     pli->F1 = pli->F2 = pli->F3 = pli->dF3 = pli->F4 = 1.0;
   }
   if(esl_opt_GetBoolean(go, "--mid")) { /* set up mid-level filtering */
@@ -317,6 +315,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
     pli->F2 = 0.1;
     pli->F3 = 0.05;
     pli->dF3 = 0.1;
+    pli->F4env = 0.10;
     pli->F4 = 0.001;
   }
   if(esl_opt_GetBoolean(go, "--fast")) { /* set up strict-level filtering */
@@ -334,7 +333,6 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->do_time_dF3  = esl_opt_GetBoolean(go, "--time-dF3");
   pli->do_time_bfil = esl_opt_GetBoolean(go, "--time-bfil");
   pli->do_time_F4   = esl_opt_GetBoolean(go, "--time-F4");
-  pli->do_time_F5   = esl_opt_GetBoolean(go, "--time-F5");
 
   if (esl_opt_GetBoolean(go, "--nonull2")) pli->do_null2      = FALSE;
   if (esl_opt_GetBoolean(go, "--nonull3")) pli->do_null3      = FALSE;
@@ -799,7 +797,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
       nwin = i2;
     }
   }
-  else { /* all windows automatically pass MSV, divide up into windows of 2*W, overlapping by W-1 residues */
+  else { /* do_msv is FALSE, all windows automatically pass MSV, divide up into windows of 2*W, overlapping by W-1 residues */
     nwin = 1; /* first window */
     if(sq->n > (2 * pli->W)) { 
       nwin += (int) (sq->n - (2 * pli->W)) / ((2 * pli->W) - (pli->W - 1));
@@ -808,8 +806,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
 	nwin++; /* if the (int) cast in previous line removed any fraction of a window, we add it back here */
       }
     }
-    ESL_ALLOC(ws, sizeof(int) * nwin);
-    ESL_ALLOC(we, sizeof(int) * nwin);
+    ESL_ALLOC(ws, sizeof(int64_t) * nwin);
+    ESL_ALLOC(we, sizeof(int64_t) * nwin);
     for(i = 0; i < nwin; i++) { 
       ws[i] = 1 + (i * (pli->W + 1));
       we[i] = ESL_MIN((ws[i] + (2*pli->W) - 1), sq->n);
@@ -1378,34 +1376,38 @@ int
 cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, P7_TOPHITS *hitlist)
 {
   int              status;
-  char             errbuf[cmERRBUFSIZE];  /* for error messages */
-  P7_HIT          *hit     = NULL;        /* ptr to the current hit output data   */
-  float            cyksc, inssc, finalsc; /* bit scores                           */
-  int              have_hmmbands;         /* TRUE if HMM bands have been calc'ed for current hit */
-  double           P;                     /* P-value of a hit */
-  double           E;                     /* E-value of a hit */
-  int              i, h;                  /* counters */
-  search_results_t *results;              /* results data structure CM search functions report hits to */
-  int              do_hbanded_filter_scan, do_hbanded_final_scan; 
-  int              do_qdb_or_nonbanded_filter_scan, do_qdb_or_nonbanded_final_scan;
-  int              nhit;                  /* number of hits reported */
-  int              env_len;               /* length of an envelope */
-  double           save_tau = cm->tau;    /* CM's tau upon entering function */
+  char             errbuf[cmERRBUFSIZE];   /* for error messages */
+  P7_HIT          *hit     = NULL;         /* ptr to the current hit output data   */
+  float            cyksc, inssc, finalsc;  /* bit scores                           */
+  int              have_hmmbands;          /* TRUE if HMM bands have been calc'ed for current hit */
+  double           P;                      /* P-value of a hit */
+  double           E;                      /* E-value of a hit */
+  int              i, h;                   /* counters */
+  search_results_t *results;               /* results data structure CM search functions report hits to */
+  int              nhit;                   /* number of hits reported */
+  int              env_len;                /* length of an envelope */
+  double           save_tau = cm->tau;     /* CM's tau upon entering function */
+  int64_t          cyk_envi, cyk_envj;     /* cyk_envi..cyk_envj is new envelope as defined by CYK hits */
+  float            cyk_env_cutoff;         /* bit score cutoff for envelope redefinition */
+  int              do_hbanded_filter_scan; /* use HMM bands for filter stage? */
+  int              do_hbanded_final_scan;  /* use HMM bands for final stage? */
+  int              do_qdb_or_nonbanded_filter_scan; /* use QDBs or no bands for filter stage (! do_hbanded_filter_scan) */
+  int              do_qdb_or_nonbanded_final_scan;  /* use QDBs or no bands for final  stage (! do_hbanded_final_scan) */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
 
-  results = CreateResults(INIT_RESULTS);
+  results  = CreateResults(INIT_RESULTS);
   nhit = 0;
+  cyk_env_cutoff = cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->mu_extrap + (log(pli->F4env) / (-1 * cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->lambda));
 
-#if DOPRINT
+#if DOPRINT2
   printf("CMST: sq: %s\nsq->n: %" PRId64 " cm->W:  %d  pli->W: %d\n", sq->name, sq->n, cm->W, pli->W);
 #endif
-
+  
   for (i = 0; i < nenv; i++) {
-    env_len = ee[i] - es[i] + 1;
     cm->tau = save_tau;
-#if DOPRINT
+#if DOPRINT2
     printf("\nEnvelope %5d [%10d..%10d] being passed to CYK.\n", i, es[i], ee[i]);
 #endif
 
@@ -1431,38 +1433,49 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
 	have_hmmbands = TRUE;
 
 	status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
-			       0.,            /* minimum score to report, irrelevant */
-			       NULL,          /* results to add to, NULL in this case */
-			       pli->do_null3, /* do the NULL3 correction? */
-			       cm->hbmx,      /* the HMM banded matrix */
-			       1024.,         /* upper limit for size of DP matrix, 1 Gb */
-			       &cyksc);       /* best score, irrelevant here */
+			       0.,                                 /* minimum score to report, irrelevant */
+			       NULL,                               /* results to add to, irrelevant here */
+			       pli->do_null3,                      /* do the NULL3 correction? */
+			       cm->hbmx,                           /* the HMM banded matrix */
+			       1024.,                              /* upper limit for size of DP matrix, 1 Gb */
+			       cyk_env_cutoff,                     /* bit score == envF4 P value, cutoff for envelope redefinition */
+			       (pli->do_F4env) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
+			       (pli->do_F4env) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
+			       &cyksc);                            /* best score, irrelevant here */
 	if     (status == eslERANGE) { do_qdb_or_nonbanded_filter_scan = TRUE; }
 	else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
       }
       if(do_qdb_or_nonbanded_filter_scan) { /* careful, different from just an 'else', b/c we may have just set this as true if status == eslERANGE */
 	/*printf("Running CYK on window %d\n", i);*/
 	if((status = FastCYKScan(cm, errbuf, pli->fsmx, sq->dsq, es[i], ee[i],
-				 0.,            /* minimum score to report, irrelevant */
-				 NULL,          /* results to add to, NULL in this case */
-				 pli->do_null3, /* do the NULL3 correction? */
-				 NULL,          /* ret_vsc, irrelevant here */
+				 0.,                                 /* minimum score to report, irrelevant */
+				 NULL,                               /* results to add to, irrelevant here */
+				 pli->do_null3,                      /* do the NULL3 correction? */
+				 cyk_env_cutoff,                     /* bit score == envF4 P value, cutoff for envelope redefinition */
+				 (pli->do_F4env) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
+				 (pli->do_F4env) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
+				 NULL,                               /* ret_vsc, irrelevant here */
 				 &cyksc)) != eslOK) { 
 	  printf("ERROR: %s\n", errbuf); return status;  }
       }
+      /* update envelope boundaries, if nec */
+      if(pli->do_F4env && (cyk_envi != -1 && cyk_envj != -1)) { 
+	if(es[i] != cyk_envi || ee[i] != cyk_envj) have_hmmbands = FALSE; /* this may be FALSE already, if not, set it to FALSE b/c we need to recalc bands */
+	es[i] = cyk_envi;
+	ee[i] = cyk_envj;
+      }
       P = esl_exp_surv(cyksc, cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->mu_extrap, cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->lambda);
+#if DOPRINT2
       E = P * cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->cur_eff_dbsize;
-#if DOPRINT
-      printf("\t\t\tCYK      %7.2f bits  E: %g  P: %g\n", cyksc, E, P);
+      printf("\t\t\tCYK      %7.2f bits  E: %g  P: %g  origenv[%7d..%7d] newenv[%7d..%7d]\n", cyksc, E, P, es[i], ee[i], es[i], ee[i]);
 #endif
-      if ((!pli->use_E4) && (P > pli->F4)) continue;
-      if (( pli->use_E4) && (E > pli->E4)) continue;
+      if (P > pli->F4) continue;
       /******************************************************************************/
     }	
     pli->n_past_cyk++;
-    pli->pos_past_cyk += env_len;
+    pli->pos_past_cyk += ee[i] - es[i] + 1;
 
-#if DOPRINT
+#if DOPRINT2
     printf("Envelope %5d [%10d..%10d] survived CYK.\n", i, es[i], ee[i]);
 #endif
     if(pli->do_time_F4) continue; 
@@ -1477,7 +1490,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
      * if our CYK filter also used them. 
      *******************************************************************/
     if(do_hbanded_final_scan) { /* use HMM bands */
-      if(! have_hmmbands || (esl_DCompare(cm->tau, pli->fcyk_tau, 1E-30) != eslOK)) { 
+      if(! have_hmmbands || (esl_DCompare(cm->tau, pli->fcyk_tau, 1E-30) != eslOK) || (es[i] != es[i] || ee[i] != ee[i])) { 
 	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, 0)) != eslOK) { 
 	  printf("ERROR: %s\n", errbuf); return status; }
 	have_hmmbands = TRUE;
@@ -1498,12 +1511,13 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
       else { /* final algorithm is HMM banded CYK */
 	/*printf("calling HMM banded CYK scan\n");*/
 	status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
-			       pli->T,            /* minimum score to report */
-			       results,           /* our results data structure that will store hit(s) */
-			       pli->do_null3,     /* do the NULL3 correction? */
-			       cm->hbmx,          /* the HMM banded matrix */
-			       1024.,             /* upper limit for size of DP matrix, 1 Gb */
-			       &cyksc);            /* best score, irrelevant here */
+			       pli->T,                             /* minimum score to report */
+			       results,                            /* our results data structure that will store hit(s) */
+			       pli->do_null3,                      /* do the NULL3 correction? */
+			       cm->hbmx,                           /* the HMM banded matrix */
+			       1024.,                              /* upper limit for size of DP matrix, 1 Gb */
+			       0., NULL, NULL,                     /* envelope redefinition parameters, irrelevant here */
+			       &cyksc);                            /* best score, irrelevant here */
 	/* if status == eslERANGE: HMM banded scan was skipped b/c mx needed to be too large, 
 	 * we'll repeat the scan with QDBs or without bands below */
 	if     (status == eslERANGE) { do_qdb_or_nonbanded_final_scan = TRUE; }
@@ -1530,12 +1544,12 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
 				 pli->T,            /* minimum score to report */
 				 results,           /* our results data structure that will store hit(s) */
 				 pli->do_null3,     /* apply the null3 correction? */
+				 0., NULL, NULL,    /* envelope redefinition parameters, irrelevant here */
 				 NULL,              /* ret_vsc, irrelevant here */
 				 &finalsc)) != eslOK) { /* best score, irrelevant here */
 	  printf("ERROR: %s\n", errbuf); return status; }
       }
     }
-    if(pli->do_time_F5) continue;
 
     /* add each hit to the hitlist */
     for (h = nhit; h < results->num_results; h++) { 
@@ -1569,7 +1583,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
 	if ((status  = esl_strdup(cm->name, -1, &(hit->name)))  != eslOK) esl_fatal("allocation failure");
 	if ((status  = esl_strdup(cm->acc,  -1, &(hit->acc)))   != eslOK) esl_fatal("allocation failure");
       }
-#if DOPRINT
+#if DOPRINT2
       printf("\t\t\tIns h: %2d  [%7d..%7d]  %7.2f bits  E: %g\n", h+1, hit->dcl[0].ienv, hit->dcl[0].jenv, hit->dcl[0].bitscore, hit->dcl[0].pvalue);
 #endif
     }
@@ -1809,10 +1823,19 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG
   ESL_ALLOC(wsAA, sizeof(int64_t *) * nhmm);
   ESL_ALLOC(weAA, sizeof(int64_t *) * nhmm);
   ESL_ALLOC(wpAA, sizeof(double)    * nhmm);
+  for(m = 0; m < nhmm; m++) { 
+    wsAA[m] = NULL;
+    weAA[m] = NULL;
+    wpAA[m] = NULL; 
+  }
 
   ESL_ALLOC(nenvA, sizeof(int)      * nhmm);
   ESL_ALLOC(esAA, sizeof(int64_t *) * nhmm);
   ESL_ALLOC(eeAA, sizeof(int64_t *) * nhmm);
+  for(m = 0; m < nhmm; m++) { 
+    esAA[m] = NULL;
+    eeAA[m] = NULL; 
+  }
 
   /* For each model, determine which windows survive through Forward
    * (after going through MSV and Vit first). Then, merge windows that
@@ -1822,10 +1845,12 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG
    * used to define envelopes within the merged window in the next
    * step.
    */
+  nwin_all = 0;
   for(m = 0; m < nhmm; m++) { 
     if((status = cm_pli_p7Filter(pli, cm, om[m], gm[m], bg[m], p7_evparamAA[m], sq, &(wsAA[m]), &(weAA[m]), &(wpAA[m]), &(nwinA[m]))) != eslOK) return status;
+    /* TEMP */ if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) continue;
 
-    if(m == 0) { 
+    if(nwin_all == 0 && nwinA[m] > 0) { 
       ESL_ALLOC(all_ws, sizeof(int64_t) * nwinA[m]);
       ESL_ALLOC(all_we, sizeof(int64_t) * nwinA[m]);
       ESL_ALLOC(all_wp, sizeof(double)  * nwinA[m]);
@@ -1836,7 +1861,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG
       esl_vec_ISet (all_wl, nwinA[m], 0);
       nwin_all = nwinA[m];
     }
-    else { 
+    else if(nwinA[m] > 0) {  
       ESL_ALLOC(wl, sizeof(int) * nwinA[m]);
       esl_vec_ISet(wl, nwinA[m], m);
       merge_windows_from_two_lists(all_ws, all_we, all_wp, all_wl, nwin_all, wsAA[m], weAA[m], wpAA[m], wl, nwinA[m], &new_all_ws, &new_all_we, &new_all_wp, &new_all_wl, &new_nwin_all);
@@ -1852,6 +1877,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG
       free(wl);
     }
   }
+  /* TEMP */ if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return eslOK;
 
   /* At this point, all_w*[i] defines a surviving window:
    * all_ws[i]: start position of window
@@ -1866,29 +1892,32 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG
    * cm_pli_p7EnvelopeDef().
    */
 
-  ESL_ALLOC(cur_ws, sizeof(int64_t) * nwin_all);
-  ESL_ALLOC(cur_we, sizeof(int64_t) * nwin_all);
-  for(m = 0; m < nhmm; m++) { 
-    cur_nwin = 0;
-    for(i = 0; i < nwin_all; i++) { 
-      if(all_wl[i] == m) { 
-	cur_ws[cur_nwin] = all_ws[i];
-	cur_we[cur_nwin] = all_we[i];
-	/*printf("m: %d  win: %5d  %10" PRId64 "..%10" PRId64 "\n", m, cur_nwin, all_ws[i], all_we[i]);*/
-	cur_nwin++;
+  if(nwin_all > 0) { 
+    ESL_ALLOC(cur_ws, sizeof(int64_t) * nwin_all);
+    ESL_ALLOC(cur_we, sizeof(int64_t) * nwin_all);
+    for(m = 0; m < nhmm; m++) { 
+      cur_nwin = 0;
+      for(i = 0; i < nwin_all; i++) { 
+	if(all_wl[i] == m) { 
+	  cur_ws[cur_nwin] = all_ws[i];
+	  cur_we[cur_nwin] = all_we[i];
+	  /*printf("m: %d  win: %5d  %10" PRId64 "..%10" PRId64 "\n", m, cur_nwin, all_ws[i], all_we[i]);*/
+	  cur_nwin++;
+	}
       }
+      if((status = cm_pli_p7EnvelopeDef(pli, cm, om[m], gm[m], bg[m], p7_evparamAA[m], sq,  cur_ws,  cur_we,  cur_nwin, &(esAA[m]), &(eeAA[m]), &(nenvA[m]))) != eslOK) return status;
+      if((status = cm_pli_CMStage      (pli, cm, sq, esAA[m],  eeAA[m],  nenvA[m], hitlist)) != eslOK) return status;
     }
-    if((status = cm_pli_p7EnvelopeDef(pli, cm, om[m], gm[m], bg[m], p7_evparamAA[m], sq,  cur_ws,  cur_we,  cur_nwin, &(esAA[m]), &(eeAA[m]), &(nenvA[m]))) != eslOK) return status;
-    if((status = cm_pli_CMStage      (pli, cm, sq, esAA[m],  eeAA[m],  nenvA[m], hitlist)) != eslOK) return status;
+    free(cur_ws);
+    free(cur_we);
   }
-  free(cur_ws);
-  free(cur_we);
+  /* TEMP */ if(pli->do_time_F4) return eslOK;
 
-  if(wsAA != NULL) { for(m = 0; m < nhmm; m++) { free(wsAA[m]); } free(wsAA); }
-  if(weAA != NULL) { for(m = 0; m < nhmm; m++) { free(weAA[m]); } free(weAA); }
-  if(wpAA != NULL) { for(m = 0; m < nhmm; m++) { free(wpAA[m]); } free(wpAA); }
-  if(esAA != NULL) { for(m = 0; m < nhmm; m++) { free(esAA[m]); } free(esAA); }
-  if(eeAA != NULL) { for(m = 0; m < nhmm; m++) { free(eeAA[m]); } free(eeAA); }
+  if(wsAA != NULL) { for(m = 0; m < nhmm; m++) { if(wsAA[m] != NULL) free(wsAA[m]); } free(wsAA); }
+  if(weAA != NULL) { for(m = 0; m < nhmm; m++) { if(weAA[m] != NULL) free(weAA[m]); } free(weAA); }
+  if(wpAA != NULL) { for(m = 0; m < nhmm; m++) { if(wpAA[m] != NULL) free(wpAA[m]); } free(wpAA); }
+  if(esAA != NULL) { for(m = 0; m < nhmm; m++) { if(esAA[m] != NULL) free(esAA[m]); } free(esAA); }
+  if(eeAA != NULL) { for(m = 0; m < nhmm; m++) { if(eeAA[m] != NULL) free(eeAA[m]); } free(eeAA); }
   if(all_ws != NULL) free(all_ws);
   if(all_we != NULL) free(all_we);
   if(all_wp != NULL) free(all_wp);

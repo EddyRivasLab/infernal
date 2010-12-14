@@ -2604,10 +2604,10 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
     /* for cyk and inside either use HMM bands, or don't */
     if(esl_opt_GetBoolean(go, "--fil-nonbanded")) { 
       cm->search_opts &= ~CM_SEARCH_INSIDE;
-      if((status = FastCYKScan    (cm, errbuf, cm->smx, dsqA[i], 1, L_A[i], 0., NULL, do_null3, NULL, &(cyk_scA[i]))) != eslOK) return status; 
+      if((status = FastCYKScan    (cm, errbuf, cm->smx, dsqA[i], 1, L_A[i], 0., NULL, do_null3, 0., NULL, NULL, NULL, &(cyk_scA[i]))) != eslOK) return status; 
       
       cm->search_opts |= CM_SEARCH_INSIDE; 
-      if((status = FastIInsideScan(cm, errbuf, cm->smx, dsqA[i], 1, L_A[i], 0., NULL, do_null3, NULL, &(ins_scA[i]))) != eslOK) return status; 
+      if((status = FastIInsideScan(cm, errbuf, cm->smx, dsqA[i], 1, L_A[i], 0., NULL, do_null3,                 NULL, &(ins_scA[i]))) != eslOK) return status; 
     }
     else { /* search with HMM bands */
       cm->search_opts &= ~CM_SEARCH_INSIDE;
@@ -2615,7 +2615,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
       cm->tau = esl_opt_GetReal(go, "--fil-tau");
       if(esl_opt_GetBoolean(go, "--fil-aln2bands")) cm->search_opts |= CM_SEARCH_HMMALNBANDS;
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsqA[i], 1, L_A[i], cm->cp9b, TRUE, 0)) != eslOK) return status; 
-      if((status = FastCYKScanHB(cm, errbuf, dsqA[i], 1, L_A[i], 0., NULL, do_null3, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(cyk_scA[i]))) != eslOK) return status; 
+      if((status = FastCYKScanHB(cm, errbuf, dsqA[i], 1, L_A[i], 0., NULL, do_null3, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), 0., NULL, NULL, &(cyk_scA[i]))) != eslOK) return status; 
 
       cm->search_opts |= CM_SEARCH_INSIDE; 
       if((status = FastFInsideScanHB(cm, errbuf, dsqA[i], 1, L_A[i], 0., NULL, do_null3, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(ins_scA[i]))) != eslOK) return status; 

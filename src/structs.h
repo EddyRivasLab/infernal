@@ -1559,8 +1559,8 @@ typedef struct cm_pipeline_s {
   double  Fbfil;	        /* min allowed ratio of banded HMM vs QDB mx size  */
   int     use_dtF3;	        /* use dtF3 bit sc instead of dF3 P-value   */
   double  F4;		        /* CYK filter P-value threshold             */
-  double  E4;		        /* CYK filter E-value threshold             */
-  int     use_E4;	        /* use an E-value cutoff for CYK filter     */
+  double  F4env;	        /* CYK envelope P-value threshold           */
+  int     do_F4env;	        /* TRUE to redefine envelopes after stage 4 */
   int     do_cm;		/* TRUE to use CM for at least one stage    */
   int     do_hmm;		/* TRUE to use HMM for at least one stage   */
   int     do_domainize;		/* TRUE to find domains in windows prior to CM stages */
@@ -1636,7 +1636,6 @@ typedef struct cm_pipeline_s {
   int           do_time_dF3;     /* TRUE to abort after domain def */
   int           do_time_bfil;    /* TRUE to abort after bfil */
   int           do_time_F4;      /* TRUE to abort after Stage 4 CYK */
-  int           do_time_F5;      /* TRUE to abort after Stage 5 Inside */
 
   enum cm_pipemodes_e mode;    	/* CM_SCAN_MODELS | CM_SEARCH_SEQS          */
   int           do_top;         /* TRUE to do top    strand (usually TRUE) */

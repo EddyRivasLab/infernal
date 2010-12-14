@@ -2569,10 +2569,10 @@ int estimate_search_time_for_round(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   esl_stopwatch_Start(w);
   if(stype == SEARCH_WITH_CM) { 
     if(search_opts & CM_SEARCH_INSIDE) { 
-      if((status = FastIInsideScan(cm, errbuf, smx, dsq, 1, L, 0., NULL, (! esl_opt_GetBoolean(go, "--no-null3")), NULL, NULL)) != eslOK) return status;
+      if((status = FastIInsideScan(cm, errbuf, smx, dsq, 1, L, 0., NULL, (! esl_opt_GetBoolean(go, "--no-null3")),                 NULL, NULL)) != eslOK) return status;
     }
     else 
-      if((status = FastCYKScan    (cm, errbuf, smx, dsq, 1, L, 0., NULL, (! esl_opt_GetBoolean(go, "--no-null3")), NULL, NULL)) != eslOK) return status;
+      if((status = FastCYKScan    (cm, errbuf, smx, dsq, 1, L, 0., NULL, (! esl_opt_GetBoolean(go, "--no-null3")), 0., NULL, NULL, NULL, NULL)) != eslOK) return status;
   }
   else { /* search with HMM */
     if(search_opts & CM_SEARCH_HMMFORWARD) { /* forward */

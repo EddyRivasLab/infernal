@@ -222,12 +222,12 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 
     if(cm->search_opts & CM_SEARCH_HBANDED) {
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status; 
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
-      else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit,                 &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit, 0., NULL, NULL, &sc)) != eslOK) return status; }
     }
     else { /* don't do HMM banded search */
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, cutoff, cur_results, do_null3, NULL, &sc)) != eslOK) return status; }
-      else                                   { if((status = FastCYKScan    (cm, errbuf, smx, dsq, i0, j0, cutoff, cur_results, do_null3, NULL, &sc)) != eslOK) return status; }
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, cutoff, cur_results, do_null3,                 NULL, &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScan    (cm, errbuf, smx, dsq, i0, j0, cutoff, cur_results, do_null3, 0., NULL, NULL, NULL, &sc)) != eslOK) return status; }
     }    
     /* If hits were reported greedily, remove overlapping hits, and sort by decreasing end point 
      * (if not greedy, we'll have 0 overlaps, and already be sorted by end point) */
