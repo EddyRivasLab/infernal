@@ -187,7 +187,7 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **r
    *    for informational purposes.
    */
   nstates = nnodes = 0;
-  gtr = CreateParsetree(100);	/* the parse tree we'll grow        */
+  gtr = CreateParsetree(25);	/* the parse tree we'll grow        */
   pda = esl_stack_ICreate();    /* a pushdown stack for our indices */
   if(pda == NULL) goto ERROR;
   clen = 0;
@@ -830,7 +830,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
   int          need_leftside;
   int          need_rightside;
 
-  tr  = CreateParsetree(100);
+  tr  = CreateParsetree(25);
   pda = esl_stack_ICreate();
   
   started = FALSE;
@@ -1179,7 +1179,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int cl
    *    for informational purposes.
    */
   nstates = nnodes = 0;
-  gtr = CreateParsetree(100);	/* the parse tree we'll grow        */
+  gtr = CreateParsetree(25);	/* the parse tree we'll grow        */
   pda = esl_stack_ICreate();    /* a pushdown stack for our indices */
   obs_clen = 0;
 

@@ -53,7 +53,7 @@ CreateParsetree(int size)
   Parsetree_t *new;
 
   ESL_ALLOC(new, sizeof(Parsetree_t));
-  new->memblock = 100;		/* allocation block size can be optimized here if you want. */
+  new->memblock = 25;		/* allocation block size can be optimized here if you want. */
   new->nalloc   = size;
   ESL_ALLOC(new->emitl, sizeof(int) * new->nalloc);
   ESL_ALLOC(new->emitr, sizeof(int) * new->nalloc);
