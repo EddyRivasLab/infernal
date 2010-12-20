@@ -1552,12 +1552,15 @@ typedef struct cm_pipeline_s {
   double  F2n3;		        /* null3-corrected Viterbi filter threshold */
   double  F3b;		        /* bias-corrected Forward filter threshold  */
   double  F3n3;		        /* null3-corrected Forward filter threshold */
+  double  gF3;		        /* glocal Forward filter thr            */
+  double  gF3b;		        /* bias-corrected glocal Fwd threshold      */
   double  dF3;		        /* per-domain Forward filter thr            */
   double  dF3b;		        /* bias-corrected per-domain threshold      */
   double  dF3n3;	        /* null3-corrected domain filter threshold */
   double  dtF3;		        /* per-domain bit sc Forward filter thr     */
   double  Fbfil;	        /* min allowed ratio of banded HMM vs QDB mx size  */
   int     use_dtF3;	        /* use dtF3 bit sc instead of dF3 P-value   */
+  int     do_nF3;	        /* filter based on glocal fwd sc, before doing ddef */
   double  F4;		        /* CYK filter P-value threshold             */
   double  F4env;	        /* CYK envelope P-value threshold           */
   int     do_F4env;	        /* TRUE to redefine envelopes after stage 4 */
@@ -1567,17 +1570,20 @@ typedef struct cm_pipeline_s {
   int     do_pad;		/* TRUE to pad domains based on cm->W       */
   int     do_msvmerge;		/* TRUE to merge MSV hits, FALSE not to     */
   int     do_msv;		/* TRUE to filter with MSV, FALSE not to    */
+  int     do_shortmsv;		/* TRUE to filter with standard MSV, not Longtarget variant */
   int     do_msvbias;	        /* TRUE to use biased comp HMM filter w/MSV */
   int     do_msvnull3;      	/* TRUE to use NULL3 bias filter for w/MSV  */
   int     do_vitbias;      	/* TRUE to use biased comp HMM filter w/Vit */
   int     do_vitnull3;      	/* TRUE to use NULL3 bias filter for Viterbi*/
   int     do_fwdbias;     	/* TRUE to use biased comp HMM filter w/Fwd */
   int     do_fwdnull3;     	/* TRUE to use NULL3 bias filter w/Fwd      */
+  int     do_gfwdbias;     	/* TRUE to use biased comp HMM filter w/gFwd*/
   int     do_dombias;     	/* TRUE to use biased comp HMM filter w/ddef*/
   int     do_domnull3;     	/* TRUE to use NULL bias filter w/ddef      */
   double  p7_n3omega;           /* omega value to use for HMM null3 stages  */
   int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */
   int     do_fwd;		/* TRUE to filter with Fwd, FALSE not to    */
+  int     do_gfwd;		/* TRUE to filter w/glocal Fwd, FALSE not to*/
   int     do_cyk;		/* TRUE to filter with CYK, FALSE not to    */
   int     do_null2;		/* TRUE to use null2 score corrections      */
   int     do_null3;		/* TRUE to use null3 score corrections      */
@@ -1585,6 +1591,9 @@ typedef struct cm_pipeline_s {
   int     do_wsplit;            /* TRUE to split MSV windows > wmult*W      */
   int     do_wcorr;             /* TRUE to correct for window size          */
   double  wmult;                /* scalar * W, for do_wsplit                */
+  int     do_oldcorr;           /* TRUE to use old correction for domain def*/
+  int     do_nocorr;            /* TRUE to use no correction for domain def */
+  int     do_domwinbias;        /* TRUE to calc domain bias for entire window*/
 
   /* Parameters controlling p7 domain defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
@@ -1607,20 +1616,23 @@ typedef struct cm_pipeline_s {
   uint64_t      nseqs;	        /* # of sequences searched                  */
   uint64_t      nres;	        /* # of residues searched                   */
   uint64_t      nnodes;	        /* # of model nodes searched                */
-  uint64_t      n_past_msv;	/* # comparisons that pass MSVFilter()      */
-  uint64_t      n_past_vit;	/* # comparisons that pass ViterbiFilter()  */
-  uint64_t      n_past_fwd;	/* # comparisons that pass ForwardFilter()  */
+  uint64_t      n_past_msv;	/* # windows that pass MSVFilter()          */
+  uint64_t      n_past_vit;	/* # windows that pass ViterbiFilter()      */
+  uint64_t      n_past_fwd;	/* # windows that pass ForwardFilter()      */
+  uint64_t      n_past_gfwd;	/* # windows that pass glocal GForward()    */
   uint64_t      n_past_ddef;	/* # domains that pass domain definition    */
-  uint64_t      n_past_cyk;	/* # comparisons that pass CYK filter       */
-  uint64_t      n_past_ins;	/* # comparisons that pass Inside           */
+  uint64_t      n_past_cyk;	/* # windows that pass CYK filter           */
+  uint64_t      n_past_ins;	/* # windows that pass Inside               */
   uint64_t      n_output;	/* # alignments that make it to the final output */
-  uint64_t      n_past_msvbias;	/* # comparisons that pass MSV bias filter  */
-  uint64_t      n_past_vitbias;	/* # comparisons that pass Vit bias filter  */
-  uint64_t      n_past_fwdbias;	/* # comparisons that pass Fwd bias filter  */
+  uint64_t      n_past_msvbias;	/* # windows that pass MSV bias filter      */
+  uint64_t      n_past_vitbias;	/* # windows that pass Vit bias filter      */
+  uint64_t      n_past_fwdbias;	/* # windows that pass Fwd bias filter      */
+  uint64_t      n_past_gfwdbias;/* # windows that pass gFwd bias filter     */
   uint64_t      n_past_dombias;	/* # domains that pass domain bias filter   */
   uint64_t      pos_past_msv;	/* # positions that pass MSVFilter()        */
   uint64_t      pos_past_vit;	/* # positions that pass ViterbiFilter()    */
   uint64_t      pos_past_fwd;	/* # positions that pass ForwardFilter()    */
+  uint64_t      pos_past_gfwd;	/* # positions that pass glocal GForward()  */
   uint64_t      pos_past_ddef;	/* # positions that pass domain definition  */
   uint64_t      pos_past_cyk;	/* # positions that pass CYK filter         */
   uint64_t      pos_past_ins;	/* # positions that pass Inside             */
@@ -1628,11 +1640,13 @@ typedef struct cm_pipeline_s {
   uint64_t      pos_past_msvbias;/* # positions that pass MSV bias filter */
   uint64_t      pos_past_vitbias;/* # positions that pass Vit bias filter */
   uint64_t      pos_past_fwdbias;/* # positions that pass Fwd bias filter */
+  uint64_t      pos_past_gfwdbias;/*# positions that pass gFwd bias filter*/
   uint64_t      pos_past_dombias;/* # positions that pass dom def bias filter */
 
   int           do_time_F1;      /* TRUE to abort after Stage 1 MSV */
   int           do_time_F2;      /* TRUE to abort after Stage 2 Vit */
   int           do_time_F3;      /* TRUE to abort after Stage 3 Fwd */
+  int           do_time_gF3;     /* TRUE to abort after Stage 3 glocal Fwd */
   int           do_time_dF3;     /* TRUE to abort after domain def */
   int           do_time_bfil;    /* TRUE to abort after bfil */
   int           do_time_F4;      /* TRUE to abort after Stage 4 CYK */

@@ -745,4 +745,4 @@ extern int cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
 
 /* from cm_p7_domaindef.c */
 extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_GMX *gxf, P7_GMX *gxb,
-						    P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef);
+						    P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int do_null2);

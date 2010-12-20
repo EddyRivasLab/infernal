@@ -57,9 +57,9 @@
 
 static int is_multidomain_region         (P7_DOMAINDEF *ddef, int i, int j);
 /* Note: is_multidomain_region is *identical* to the function of the same name in p7_domaindef.c*/
-static int glocal_region_trace_ensemble  (P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL_DSQ *dsq, int ireg, int jreg, const P7_GMX *fwd, P7_GMX *wrk, int *ret_nc);
+static int glocal_region_trace_ensemble  (P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL_DSQ *dsq, int ireg, int jreg, const P7_GMX *fwd, P7_GMX *wrk, int do_null2, int *ret_nc);
 static int glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL_SQ *sq, P7_GMX *gx1, P7_GMX *gx2, 
-					  int i, int j, int null2_is_done);
+					  int i, int j, int null2_is_done, int do_null2, int do_aln);
 
 /* Function:  p7_domaindef_GlocalByPosteriorHeuristics()
  * Synopsis:  Define glocal domains in a sequence using posterior probs.
@@ -80,6 +80,10 @@ static int glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *
  *            domains: their bounds, their null-corrected Forward
  *            scores, and their optimal posterior accuracy alignments.
  *            
+ *            <do_null2> is TRUE if we'll eventually apply a null2
+ *            penalty FALSE if not. If FALSE, we can save time by
+ *            skipping Backward calls at some stages.
+ *
  * Returns:   <eslOK> on success.           
  *            
  *            <eslERANGE> on numeric overflow in posterior
@@ -89,7 +93,7 @@ static int glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *
 int
 p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, 
 					 P7_GMX *gxf, P7_GMX *gxb, P7_GMX *fwd, P7_GMX *bck, 
-					 P7_DOMAINDEF *ddef)
+					 P7_DOMAINDEF *ddef, int do_null2)
 {
   int i, j;
   int triggered;
@@ -151,7 +155,7 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
 	       */
 	      p7_ReconfigMultihit(gm, saveL);
 	      p7_GForward(sq->dsq+i-1, j-i+1, gm, fwd, NULL);
-	      glocal_region_trace_ensemble(ddef, gm, sq->dsq, i, j, fwd, bck, &nc);
+	      glocal_region_trace_ensemble(ddef, gm, sq->dsq, i, j, fwd, bck, do_null2, &nc);
 	      p7_ReconfigUnihit(gm, saveL);
 	      /* ddef->n2sc is now set on i..j by the traceback-dependent method */
 
@@ -178,7 +182,7 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
                  * happens. [xref J5/130].
 		 */
 		ddef->nenvelopes++;
-		if (glocal_rescore_isolated_domain(ddef, gm, sq, fwd, bck, i2, j2, TRUE) == eslOK) 
+		if (glocal_rescore_isolated_domain(ddef, gm, sq, fwd, bck, i2, j2, TRUE, do_null2, FALSE) == eslOK) 
 		  last_j2 = j2;
 	      }
 	      p7_spensemble_Reuse(ddef->sp);
@@ -188,7 +192,7 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
 	    {
 	      /* The region looks simple, single domain; convert the region to an envelope. */
 	      ddef->nenvelopes++;
-	      glocal_rescore_isolated_domain(ddef, gm, sq, fwd, bck, i, j, FALSE);
+	      glocal_rescore_isolated_domain(ddef, gm, sq, fwd, bck, i, j, FALSE, do_null2, FALSE);
 	    }
 	  i     = -1;
 	  triggered = FALSE;
@@ -256,10 +260,13 @@ is_multidomain_region(P7_DOMAINDEF *ddef, int i, int j)
 
 /* glocal_region_trace_ensemble()
  * EPN, Tue Oct  5 10:13:25 2010
- * Based on p7_domaindef.c's region_trace_ensemble(). Modified only 
- * so that generic matrices (which can be used for glocally configured
- * models) can be used.
  *
+ * Based on p7_domaindef.c's region_trace_ensemble(). Modified so that
+ * generic matrices (which can be used for glocally configured models)
+ * can be used. An additional parameter <do_null2> has been added,
+ * so that null2-related calculations are only done if necessary.
+ * That is, they're skipped if null2 has been turned off in the pipeline.
+ * 
  * Notes from p7_domaindef.c::region_trace_ensemble():
  *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  * SRE, Fri Feb  8 11:49:44 2008 [Janelia]
@@ -312,7 +319,7 @@ is_multidomain_region(P7_DOMAINDEF *ddef, int i, int j)
  */
 static int
 glocal_region_trace_ensemble(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL_DSQ *dsq, int ireg, int jreg, 
-			     const P7_GMX *fwd, P7_GMX *wrk, int *ret_nc)
+			     const P7_GMX *fwd, P7_GMX *wrk, int do_null2, int *ret_nc)
 {
   int    Lr  = jreg-ireg+1;
   int    t, d, d2;
@@ -329,7 +336,7 @@ glocal_region_trace_ensemble(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL
   if (ddef->do_reseeding) 
     esl_randomness_Init(ddef->r, esl_randomness_GetSeed(ddef->r));
 
-  /* Collect an ensemble of sampled traces; calculate null2 odds ratios from these */
+  /* Collect an ensemble of sampled traces; calculate null2 odds ratios from these if nec */
   for (t = 0; t < ddef->nsamples; t++)
     {
       p7_GStochasticTrace(ddef->r, dsq+ireg-1, Lr, gm, fwd, ddef->tr);
@@ -339,24 +346,29 @@ glocal_region_trace_ensemble(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL
       for (d = 0; d < ddef->tr->ndom; d++)
 	{
 	  p7_spensemble_Add(ddef->sp, t, ddef->tr->sqfrom[d]+ireg-1, ddef->tr->sqto[d]+ireg-1, ddef->tr->hmmfrom[d], ddef->tr->hmmto[d]);
-
-	  p7_GNull2_ByTrace(gm, ddef->tr, ddef->tr->tfrom[d], ddef->tr->tto[d], wrk, null2);
 	  
-	  /* residues outside domains get bumped +1: because f'(x) = f(x), so f'(x)/f(x) = 1 in these segments */
-	  for (; pos <= ddef->tr->sqfrom[d]; pos++) ddef->n2sc[ireg+pos-1] += 1.0;
-
-	  /* Residues inside domains get bumped by their null2 ratio */
-	  for (; pos <= ddef->tr->sqto[d];   pos++) ddef->n2sc[ireg+pos-1] += null2[dsq[ireg+pos-1]];
+	  if(do_null2) { 
+	    p7_GNull2_ByTrace(gm, ddef->tr, ddef->tr->tfrom[d], ddef->tr->tto[d], wrk, null2);
+	    
+	    /* residues outside domains get bumped +1: because f'(x) = f(x), so f'(x)/f(x) = 1 in these segments */
+	    for (; pos <= ddef->tr->sqfrom[d]; pos++) ddef->n2sc[ireg+pos-1] += 1.0;
+	    
+	    /* Residues inside domains get bumped by their null2 ratio */
+	    for (; pos <= ddef->tr->sqto[d];   pos++) ddef->n2sc[ireg+pos-1] += null2[dsq[ireg+pos-1]];
+	  }
 	}
-      /* the remaining residues in the region outside any domains get +1 */
-      for (; pos <= Lr; pos++)  ddef->n2sc[ireg+pos-1] += 1.0;
-
+      if(do_null2) { 
+	/* the remaining residues in the region outside any domains get +1 */
+	for (; pos <= Lr; pos++)  ddef->n2sc[ireg+pos-1] += 1.0;
+      }
       p7_trace_Reuse(ddef->tr);        
     }
 
   /* Convert the accumulated n2sc[] ratios in this region to log odds null2 scores on each residue. */
-  for (pos = ireg; pos <= jreg; pos++)
-    ddef->n2sc[pos] = logf(ddef->n2sc[pos] / (float) ddef->nsamples);
+  if(do_null2) { 
+    for (pos = ireg; pos <= jreg; pos++)
+      ddef->n2sc[pos] = logf(ddef->n2sc[pos] / (float) ddef->nsamples);
+  }
 
   /* Cluster the ensemble of traces to break region into envelopes. */
   p7_spensemble_Cluster(ddef->sp, ddef->min_overlap, ddef->of_smaller, ddef->max_diagdiff, ddef->min_posterior, ddef->min_endpointp, &nc);
@@ -396,10 +408,19 @@ glocal_region_trace_ensemble(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL
 
 /* glocal_rescore_isolated_domain()
  * EPN, Tue Oct  5 10:16:12 2010
- * Based on p7_domaindef.c's rescore_isolated_domain(). Modified only 
+ *
+ * Based on p7_domaindef.c's rescore_isolated_domain(). Modified 
  * so that generic matrices (which can be used for glocally configured
  * models) can be used. This function finds a single glocal domain, not a 
- * single local one.
+ * single local one. 
+ * 
+ * Also modified to optionally remove the Backward and OA alignment.
+ * The decision to do these is determined by three input parameters:
+ * <null2_is_done>: TRUE if we've already computed the null2 scores for 
+ *                  this region (see Sean's notes below).
+ * <do_null2>:      TRUE if we will apply a null2 penalty eventually 
+ *                  to this domain 
+ * <do_aln>:        TRUE if we need the OA alignment
  *
  * Notes (verbatim) from p7_domaindef.c::rescore_isolated_domain():
  *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -449,7 +470,8 @@ glocal_region_trace_ensemble(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL
  */
 static int
 glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL_SQ *sq, 
-			       P7_GMX *gx1, P7_GMX *gx2, int i, int j, int null2_is_done)
+			       P7_GMX *gx1, P7_GMX *gx2, int i, int j, int null2_is_done, 
+			       int do_null2, int do_aln)
 {
   P7_DOMAIN     *dom           = NULL;
   int            Ld            = j-i+1;
@@ -461,47 +483,53 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const E
   int            status;
 
   p7_GForward (sq->dsq + i-1, Ld, gm, gx1, &envsc);
-  p7_GBackward(sq->dsq + i-1, Ld, gm, gx2, NULL);
 
-  status = p7_GDecoding(gm, gx1, gx2, gx2);      /* <ox2> is now overwritten with post probabilities     */
-  if (status == eslERANGE) return eslFAIL;      /* rare: numeric overflow; domain is assumed to be repetitive garbage [J3/119-212] */
-
-  /* Is null2 set already for this i..j? (It is, if we're in a domain that
-   * was defined by stochastic traceback clustering in a multidomain region;
-   * it isn't yet, if we're in a simple one-domain region). If it isn't,
-   * do it now, by the expectation (posterior decoding) method.
-   */
-  if (! null2_is_done) {
-    p7_GNull2_ByExpectation(gm, gx2, null2);
-    for (pos = i; pos <= j; pos++) 
-      ddef->n2sc[pos]  = logf(null2[sq->dsq[pos]]);
-  }
-    
-  for (pos = i; pos <= j; pos++) 
-    domcorrection   += ddef->n2sc[pos];	        /* domcorrection is in units of NATS */
-
-  /* Find an optimal accuracy alignment */
-  p7_GOptimalAccuracy(gm, gx2, gx1, &oasc);      /* <ox1> is now overwritten with OA scores              */
-  p7_GOATrace        (gm, gx2, gx1, ddef->tr);   /* <tr>'s seq coords are offset by i-1, rel to orig dsq */
+  oasc = 0.;
+  if(do_null2 || do_aln) { 
+    p7_GBackward(sq->dsq + i-1, Ld, gm, gx2, NULL);
   
-  /* hack the trace's sq coords to be correct w.r.t. original dsq */
-  for (z = 0; z < ddef->tr->N; z++)
-    if (ddef->tr->i[z] > 0) ddef->tr->i[z] += i-1;
+    status = p7_GDecoding(gm, gx1, gx2, gx2);      /* <ox2> is now overwritten with post probabilities     */
+    if (status == eslERANGE) return eslFAIL;      /* rare: numeric overflow; domain is assumed to be repetitive garbage [J3/119-212] */
+  
+    /* Is null2 set already for this i..j? (It is, if we're in a domain that
+     * was defined by stochastic traceback clustering in a multidomain region;
+     * it isn't yet, if we're in a simple one-domain region). If it isn't,
+     * do it now, by the expectation (posterior decoding) method.
+     */
+    if ((! null2_is_done) && do_null2) { 
+      p7_GNull2_ByExpectation(gm, gx2, null2);
+      for (pos = i; pos <= j; pos++) 
+	ddef->n2sc[pos]  = logf(null2[sq->dsq[pos]]);
+    }
+    if(do_null2) { 
+      for (pos = i; pos <= j; pos++) 
+	domcorrection   += ddef->n2sc[pos];	        /* domcorrection is in units of NATS */
+    }
 
-  /* get ptr to next empty domain structure in domaindef's results */
+    if(do_aln) { 
+      /* Find an optimal accuracy alignment */
+      p7_GOptimalAccuracy(gm, gx2, gx1, &oasc);      /* <ox1> is now overwritten with OA scores              */
+      p7_GOATrace        (gm, gx2, gx1, ddef->tr);   /* <tr>'s seq coords are offset by i-1, rel to orig dsq */
+      
+      /* hack the trace's sq coords to be correct w.r.t. original dsq */
+      for (z = 0; z < ddef->tr->N; z++)
+	if (ddef->tr->i[z] > 0) ddef->tr->i[z] += i-1;
+    }
+    /* get ptr to next empty domain structure in domaindef's results */
+  }
   if (ddef->ndom == ddef->nalloc) {
     void *p;
     ESL_RALLOC(ddef->dcl, p, sizeof(P7_DOMAIN) * (ddef->nalloc*2));
     ddef->nalloc *= 2;    
   }
   dom = &(ddef->dcl[ddef->ndom]);
-
+  
   /* store the results in it */
   dom->ienv          = i;
   dom->jenv          = j;
   dom->envsc         = envsc;         /* in units of NATS */
-  dom->domcorrection = domcorrection; /* in units of NATS */
-  dom->oasc          = oasc;	      /* in units of expected # of correctly aligned residues */
+  dom->domcorrection = domcorrection; /* in units of NATS, will be 0. if do_null2 == FALSE */
+  dom->oasc          = oasc;	      /* in units of expected # of correctly aligned residues, will be 0. if do_aln == FALSE */
   dom->dombias       = 0.0;	/* gets set later, using bg->omega and dombias */
   dom->bitscore      = 0.0;	/* gets set later by caller, using envsc, null score, and dombias */
   dom->pvalue        = 1.0;	/* gets set later by caller, using bitscore */
@@ -513,11 +541,15 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const E
 
   ddef->ndom++;
 
-  p7_trace_Reuse(ddef->tr);
+  if(do_aln) { 
+    p7_trace_Reuse(ddef->tr);
+  }
   return eslOK;
 
  ERROR:
-  p7_trace_Reuse(ddef->tr);
+  if(do_aln) { 
+    p7_trace_Reuse(ddef->tr);
+  }
   return status;
 }
   
