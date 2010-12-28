@@ -153,8 +153,6 @@ static ESL_OPTIONS options[] = {
   { "--oldcorr",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nocorr",        "use old correction for domain definition", 7 },
   { "--domwinbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nodombias",     "calc domain bias for entire window, not just domain", 7 },
   { "--tmp",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--glocaldom", "--nohmm,--noddef","use generic local", 7 },
-  /* Filtering with a different P7 HMM */
-  { "--p7file",     eslARG_INFILE,  NULL, NULL, NULL,   NULL,  NULL,  NULL,              "read P7 HMM from file <f>, and filter with it",                13 },
 /* Other options */
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set database size in *Mb* to <x> for E-value calculations",   12 },
@@ -370,8 +368,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--toponly"))   fprintf(ofp, "# search top-strand only:                on\n");
   if (esl_opt_IsUsed(go, "--bottomonly"))fprintf(ofp, "# search bottom-strand only:             on\n");
 
-  if (esl_opt_IsUsed(go, "--p7file"))    fprintf(ofp, "# external p7 HMM read from file:        yes\n");
-
   if (esl_opt_IsUsed(go, "--time-F1"))   fprintf(ofp, "# abort after Stage 1 MSV (for timing)   on\n");
   if (esl_opt_IsUsed(go, "--time-F2"))   fprintf(ofp, "# abort after Stage 2 Vit (for timing)   on\n");
   if (esl_opt_IsUsed(go, "--time-F3"))   fprintf(ofp, "# abort after Stage 3 Fwd (for timing)   on\n");
@@ -446,7 +442,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   FILE            *tblfp    = NULL;              /* output stream for tabular per-seq (--tblout)    */
 
   CMFILE          *cmfp;		         /* open input CM file stream                       */
-  P7_HMMFILE      *hfp     = NULL;               /* open input HMM file                             */
   CM_t            *cm      = NULL;               /* one CM query                                    */
   P7_HMM         **hmmA    = NULL;               /* HMMs, used for filtering                        */
   int              nhmm    = 0;                  /* number of HMMs used for filtering */
@@ -462,7 +457,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              status   = eslOK;
   int              qhstatus = eslOK;
   int              sstatus  = eslOK;
-  int              i, m;
+  int              i, m, z;
   
   int              ncpus    = 0;
 
@@ -500,14 +495,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* Open the query CM file */
   if ((cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
     esl_fatal("Failed to open covariance model save file %s\n", cfg->cmfile);
-
-  /* Open the p7 file, if --p7file */
-  if (esl_opt_IsUsed(go, "--p7file")) { 
-    status = p7_hmmfile_Open(esl_opt_GetString(go, "--p7file"), NULL, &hfp);
-    if      (status == eslENOTFOUND) esl_fatal("Failed to open hmm file %s for reading.\n",                      esl_opt_GetString(go, "--p7file"));
-    else if (status == eslEFORMAT)   esl_fatal("Unrecognized format, trying to open hmm file %s for reading.\n", esl_opt_GetString(go, "--p7file"));
-    else if (status != eslOK)        esl_fatal("Unexpected error %d in opening hmm file %s.\n", status,          esl_opt_GetString(go, "--p7file"));
-  }
 
   /* Open the results output files */
   if (esl_opt_IsOn(go, "-o"))          { if ((ofp      = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) p7_Fail("Failed to open output file %s for writing\n",    esl_opt_GetString(go, "-o")); }
@@ -576,7 +563,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     int             *fcyk_dmax  = NULL;
     int             *final_dmin = NULL;
     int             *final_dmax = NULL;
-    double gfmu, gflambda;
 
     if(! esl_opt_GetBoolean(go, "-g")) { 
       if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
@@ -588,46 +574,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = ConfigCM(cm, errbuf, 
 			  TRUE, /* do calculate W */
 			  NULL, NULL)) != eslOK) cm_Fail("Error configuring CM: %s\n", errbuf);
-    if(hfp == NULL) { /* --p7file not enabled, we only have 1 HMM */
-      nhmm = 1;
-      ESL_ALLOC(hmmA,     sizeof(P7_HMM *) * nhmm);
-      ESL_ALLOC(hmm_abcA, sizeof(ESL_ALPHABET *) * nhmm);
-      hmmA[0] = cm->mlp7;
-      hmm_abcA[0] = esl_alphabet_Create(cm->mlp7->abc->type);
-    }
-    else { /* --p7file enabled, read an HMM from the HMM file */
-      nhmm = 2;
-      ESL_ALLOC(hmmA,     sizeof(P7_HMM *) * nhmm);
-      ESL_ALLOC(hmm_abcA, sizeof(ESL_ALPHABET *) * nhmm);
-      hmmA[0] = cm->mlp7;
-      hmm_abcA[0] = esl_alphabet_Create(cm->mlp7->abc->type);
-      hmm_abcA[1] = NULL;
-      hmmA[1] = NULL;
 
-      status = p7_hmmfile_Read(hfp, &(hmm_abcA[1]), &(hmmA[1]));
-
-      /* TEMP: estimate glocal mu and lambda for forward for new model we just read */
-      /* finally, determine Glocal Forward stats */
-      ESL_RANDOMNESS *r = NULL;
-      if ((r = esl_randomness_CreateFast(42)) == NULL) cm_Fail("failed to create RNG");
-      P7_PROFILE *gm = NULL;
-      P7_BG *bg = NULL;
-      gm = p7_profile_Create (hmmA[1]->M, hmmA[1]->abc);
-      bg = p7_bg_Create(hmmA[1]->abc);
-      if ((status = p7_ProfileConfig(hmmA[1], bg, gm, 2*cm->W, p7_GLOCAL)) != eslOK) cm_Fail("Failed to configure the hmm to glocal");
-      if ((status = p7_GlocalLambdaMu(cm, r, gm, bg, FALSE, FALSE, cm->p7_n3omega, 2*cm->W, 1000, 0.04, NULL, &gflambda, &gfmu)) != eslOK) cm_Fail("Failed to configure glocal stats");
-      esl_randomness_Destroy(r);
-      p7_profile_Destroy(gm);
-      p7_bg_Destroy(bg);
-    }
-
-    /* TEMP: print out hmm to 'cur.hmm'
-    FILE *myfp;
-    if ((myfp = fopen("cur.hmm", "w")) == NULL) esl_fatal("unable to open cur.hmm");
-    if ((status = p7_hmm_Validate(hmm, errbuf, 0.0001))       != eslOK) esl_fatal("p7_hmm_Validate() failed with status: %d, %s\n", status, errbuf);
-    if ((status = p7_hmmfile_WriteASCII(myfp, -1, hmm)) != eslOK) esl_fatal("HMM save failed");
-    fclose(myfp);
-    */
     /*********************************************/
     /* EPN TEMP: need to find a better spot for this code block, problem is I want dmin/dmax but I don't want them
      * stored in the CM data structure, just need the arrays so I can pass it to cm_pli_NewModel() and it will
@@ -676,6 +623,16 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if (cm->desc) fprintf(ofp, "Description: %s\n", cm->desc);
     
     /* Convert HMMs to optimized models */
+    nhmm = 1 + cm->nap7;
+    ESL_ALLOC(hmmA,     sizeof(P7_HMM *) * nhmm);
+    ESL_ALLOC(hmm_abcA, sizeof(ESL_ALPHABET *) * nhmm);
+    hmmA[0] = cm->mlp7;
+    hmm_abcA[0] = esl_alphabet_Create(cm->mlp7->abc->type);
+    for(z = 0; z < cm->nap7; z++) { 
+      hmmA[z+1]     = cm->ap7A[z];
+      hmm_abcA[z+1] = esl_alphabet_Create(cm->ap7A[z]->abc->type);
+    }
+
     ESL_ALLOC(gmA, sizeof(P7_PROFILE *)  * nhmm);
     ESL_ALLOC(omA, sizeof(P7_OPROFILE *) * nhmm);
     ESL_ALLOC(bgA, sizeof(P7_BG *)  * nhmm);
@@ -706,19 +663,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	info[i].omA[m]  = p7_oprofile_Clone(omA[m]);
 	info[i].bgA[m]  = p7_bg_Create(hmm_abcA[m]);
 	ESL_ALLOC(info[i].p7_evparamAA[m], sizeof(float) * CM_p7_NEVPARAM);
-	/* TEMP */
-	if(m == 0)       { esl_vec_FCopy(cm->mlp7_evparam, CM_p7_NEVPARAM, info[i].p7_evparamAA[m]); }
-	else if (m == 1) { 
-	  info[i].p7_evparamAA[m][CM_p7_LMMU]     = hmmA[m]->evparam[p7_MMU];
-	  info[i].p7_evparamAA[m][CM_p7_LMLAMBDA] = hmmA[m]->evparam[p7_MLAMBDA];
-	  info[i].p7_evparamAA[m][CM_p7_LVMU]     = hmmA[m]->evparam[p7_VMU];
-	  info[i].p7_evparamAA[m][CM_p7_LVLAMBDA] = hmmA[m]->evparam[p7_VLAMBDA];
-	  info[i].p7_evparamAA[m][CM_p7_LFTAU]    = hmmA[m]->evparam[p7_FTAU];
-	  info[i].p7_evparamAA[m][CM_p7_LFLAMBDA] = hmmA[m]->evparam[p7_FLAMBDA];
-	  info[i].p7_evparamAA[m][CM_p7_GFLAMBDA] = gflambda;
-	  info[i].p7_evparamAA[m][CM_p7_GFMU]     = gfmu;
+
+	if(m == 0) { 
+	  esl_vec_FCopy(cm->mlp7_evparam, CM_p7_NEVPARAM, info[i].p7_evparamAA[m]); 
 	}
-	else { esl_fatal("uh, m > 1\n"); }
+	else { 
+	  esl_vec_FCopy(cm->ap7_evparamAA[m-1], CM_p7_NEVPARAM, info[i].p7_evparamAA[m]); 
+	}
       }
       info[i].pli = cm_pipeline_Create(go, omA[0]->M, 100, p7_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
       cm_pli_NewModel(info[i].pli, cm, fcyk_dmin, fcyk_dmax, final_dmin, final_dmax, info[i].omA, info[i].bgA, info[i].nhmm);

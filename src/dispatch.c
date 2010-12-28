@@ -448,7 +448,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 #if 0
   P7_OMX          *ox      = NULL;     /* optimized DP matrix                     */
 #endif
-  P7_BG *bg;
+  P7_PROFILE *gm = NULL;
+  P7_BG *bg = NULL;
   P7_TRACE *p7_tr;
   /*P7_ALIDISPLAY  *ad      = NULL;*/
   double **phi;       /* phi array, phi[k][v] is expected number of times
@@ -478,15 +479,14 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 #endif
   bg = p7_bg_Create(cm->abc);
   gx = p7_gmx_Create(200, 400);	/* initial alloc is for M=200, L=400; will grow as needed */
-  p7_ProfileConfig(cm->mlp7, bg, cm->mlp7_gm, 100, p7_LOCAL); /* 100 is a dummy length for now; MSVFilter requires local mode */
+  gm = p7_profile_Create (cm->mlp7->M, cm->mlp7->abc);
+  p7_ProfileConfig(cm->mlp7, bg, gm, 100, p7_LOCAL); /* 100 is a dummy length for now; MSVFilter requires local mode */
 #if 0 
-  p7_oprofile_Convert(cm->mlp7_gm, cm->mlp7_om); /* <om> is now p7_LOCAL, multihit */
+  om = p7_oprofile_Create(cm->mlp7_om, cm->mlp7->M, cm->mlp7->abc);
+  p7_oprofile_Convert(gm, cm->mlp7_om); 
 #endif
   if ((p7_tr = p7_trace_Create()) == NULL)  cm_Fail("trace creation failed");
 
-#if 0
-   p7_omx_GrowTo(ox, cm->mlp7_om->M, 0, 0); /* expand the one-row omx if needed */
-#endif
   /*p7_omx_SetDumpMode(stdout, ox, TRUE);*/
   int *p7_i2k;
   /* TEMP */
@@ -795,7 +795,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* Potentially, do HMM calculations. */
     if((!do_sub) && do_hbanded) {
       if(do_p7banded) { 
-	if((status =  p7_Seq2Bands   (orig_cm, errbuf, gx, bg, p7_tr, cur_dsq, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7, pad7, &p7_i2k, &kmin, &kmax, &i_ncells_banded)) != eslOK) return status;
+	if((status =  p7_Seq2Bands   (orig_cm, errbuf, gm, gx, bg, p7_tr, cur_dsq, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7, pad7, &p7_i2k, &kmin, &kmax, &i_ncells_banded)) != eslOK) return status;
 	if((status = cp9_Seq2BandsP7B(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, L, orig_cp9b, kmin, kmax, debug_level)) != eslOK) return status; 
       }
       else { 
@@ -817,7 +817,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       
       if(do_p7banded) { /* use P7 bands to constrain CP9 dp calculations */
 	/* (0) Get p7 bands */
-	if((status = p7_Seq2Bands(orig_cm, errbuf, gx, bg, p7_tr, cur_dsq, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7, pad7, &p7_i2k, &kmin, &kmax, &i_ncells_banded)) != eslOK) return status;
+	if((status = p7_Seq2Bands(orig_cm, errbuf, gm, gx, bg, p7_tr, cur_dsq, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7, pad7, &p7_i2k, &kmin, &kmax, &i_ncells_banded)) != eslOK) return status;
 	/* (1) Get HMM posteriors */
 	if((status = cp9_Seq2PosteriorsP7B(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, L, kmin, kmax, debug_level)) != eslOK) return status; 
 	/* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
@@ -1240,6 +1240,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
   p7_trace_Destroy(p7_tr);
   p7_bg_Destroy(bg);
+  p7_profile_Destroy(gm);
 #if 0 
   p7_omx_Destroy(ox);
 #endif

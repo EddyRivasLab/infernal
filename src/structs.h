@@ -447,14 +447,16 @@ typedef struct cp9map_s {
 #define CMH_CP9STATS            (1<<12) /* CP9 HMM has exp tail stats               */
 #define CMH_SCANMATRIX          (1<<13) /* ScanMatrix smx is valid                  */
 #define CMH_MLP7                (1<<14) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
-#define CMH_MLP7_STATS          (1<<15) /*  ml p7 HMM exponential tail stats set    */
+#define CMH_MLP7_STATS          (1<<15) /* ml p7 HMM exponential tail stats set    */
+#define CMH_AP7                 (1<<16) /* at least 1 additional p7 is valid in cm->ap7 */
+#define CMH_AP7_STATS           (1<<17) /* additional p7 HMM exponential tail stats set */
 
-#define CM_IS_SUB               (1<<16) /* the CM is a sub CM                       */
-#define CM_IS_RSEARCH           (1<<17) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS         (1<<18) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT          (1<<19) /* CM has/will have RSEARCH emissions       */
-#define CM_EMIT_NO_LOCAL_BEGINS (1<<20) /* emitted parsetrees will never have local begins */
-#define CM_EMIT_NO_LOCAL_ENDS   (1<<21) /* emitted parsetrees will never have local ends   */
+#define CM_IS_SUB               (1<<18) /* the CM is a sub CM                       */
+#define CM_IS_RSEARCH           (1<<19) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS         (1<<20) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT          (1<<21) /* CM has/will have RSEARCH emissions       */
+#define CM_EMIT_NO_LOCAL_BEGINS (1<<22) /* emitted parsetrees will never have local begins */
+#define CM_EMIT_NO_LOCAL_ENDS   (1<<23) /* emitted parsetrees will never have local ends   */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
@@ -1483,21 +1485,13 @@ typedef struct cm_s {
 
   /* p7 hmms, added 08.05.08 */
   P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
-  P7_PROFILE   *mlp7_gm;      /* the ml p7 HMM profile */
   float         mlp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_MLP7_STATS) */
   double        p7_n3omega;   /* null3 omega for p7 models (TODO: put this in the CM file) */
-#if 0
-  P7_OPROFILE  *mlp7_om;     /* optimized profile HMM */
-#endif
 
   /* p7 hmms, added 08.05.08 */
-  int          nep7;           /* number of extra p7 HMMs read from file */
-  P7_HMM      **ep7A;          /* query p7 HMM */
-  P7_PROFILE  **ep7_gmA;       /* profiles for ep7A */
-  float       **ep7_evparamAA; /* E-value params (CMH_EP7_STATS) */
-#if 0
-  P7_OPROFILE  *ep7_om;        /* optimized profile HMM */
-#endif
+  int          nap7;           /* number of additional p7 HMMs read from file */
+  P7_HMM      **ap7A;          /* query p7 HMM */
+  float       **ap7_evparamAA; /* E-value params (CMH_AP7_STATS) */
 
   const  ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size)*/
 } CM_t;

@@ -2531,6 +2531,7 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
  *           
  * Args:     cm          - the covariance model
  *           errbuf      - char buffer for reporting errors
+ *           P7_PROFILE  - generic profile
  *           P7_GMX      - generic P7 dp matrix
  *           P7_BG       - P7 null model 
  *           P7_TR       - P7 trace
@@ -2556,7 +2557,7 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
  * 
  */
 int
-p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L, 
+p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L, 
 	     double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
 	     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
@@ -2577,7 +2578,7 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
 
   /* generic mode setup */
   p7_gmx_GrowTo(gx, cm->mlp7->M, L); 
-  p7_ReconfigLength(cm->mlp7_gm, L);
+  p7_ReconfigLength(gm, L);
   gx->M = cm->mlp7->M;
   gx->L = L;
 
@@ -2600,7 +2601,7 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
   */
 
   esl_stopwatch_Start(watch);  
-  p7_GMSV(dsq, L, cm->mlp7_gm, gx, 2.0, &usc);
+  p7_GMSV(dsq, L, gm, gx, 2.0, &usc);
   esl_stopwatch_Stop(watch); 
   FormatTimeString(time_buf, watch->user, TRUE);
 #if PRINTNOW
@@ -2609,7 +2610,7 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
 
   /* Step 2: traceback MSV */
   esl_stopwatch_Start(watch);
-  status = my_p7_GTraceMSV(dsq, L, cm->mlp7_gm, gx, p7_tr, &i2k, &k2i, &isc, &iconflict);
+  status = my_p7_GTraceMSV(dsq, L, gm, gx, p7_tr, &i2k, &k2i, &isc, &iconflict);
 
   /* Step 3: prune pins */
   if(status == eslOK) { /* trace is valid */

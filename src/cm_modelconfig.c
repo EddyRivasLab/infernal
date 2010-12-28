@@ -113,15 +113,12 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
   
   /* build the p7 and profiles from the cp9 */
   if(cm->mlp7    != NULL) p7_hmm_Destroy(cm->mlp7);
-  if(cm->mlp7_gm != NULL) p7_profile_Destroy(cm->mlp7_gm);
 #if 0 
-  if(cm->mlp7_om != NULL) p7_oprofile_Destroy(cm->mlp7_om);
-  if((status = BuildP7HMM_MatchEmitsOnly(cm, &(cm->mlp7), &(cm->mlp7_gm), &(cm->mlp7_om))) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 HMM from the CM\n");
+  if((status = BuildP7HMM_MatchEmitsOnly(cm, &(cm->mlp7)) != eslOK)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 HMM from the CM\n");
 #endif
-  /* EPN, Tue Nov  9 09:46:48 2010 
-   * OLD: if((status = BuildP7HMM_MatchEmitsOnly(cm, &(cm->mlp7), &(cm->mlp7_gm))) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 HMM from the CM\n");*/
+  /* EPN, Tue Nov  9 09:46:48 2010 */
   if((status = cm_cp9_to_p7(cm)) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 from the CM");
-  /* copy the E-value parameters in cm->mlp7_evparam read from the CM file, copy them to the HMM */
+  /* copy the E-value parameters in cm->mlp7_evparam read from the CM file to the HMM */
   if(cm->flags & CMH_MLP7_STATS) { 
     cm->mlp7->evparam[p7_MMU]     = cm->mlp7_evparam[CM_p7_LMMU];
     cm->mlp7->evparam[p7_MLAMBDA] = cm->mlp7_evparam[CM_p7_LMLAMBDA];

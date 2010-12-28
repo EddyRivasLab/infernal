@@ -136,13 +136,12 @@ CreateCMShell(void)
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
   cm->mlp7         = NULL;          
-  cm->mlp7_gm      = NULL;          
   cm->p7_n3omega   = DEFAULT_P7NULL3_OMEGA; 
+  cm->nap7         = 0;
+  cm->ap7A         = NULL;          
+  cm->ap7_evparamAA= NULL;          
 
   for (z = 0; z < CM_p7_NEVPARAM; z++) cm->mlp7_evparam[z] = CM_p7_EVPARAM_UNSET;
-#if 0
-  cm->mlp7_om      = NULL;          
-#endif
 
   cm->ga       = 0.;  /* only valid if cm->flags & CMH_GA */
   cm->tc       = 0.;  /* only valid if cm->flags & CMH_TC */
@@ -243,11 +242,6 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   cm->cp9           = NULL;
   cm->cp9b          = NULL;
   cm->cp9map        = NULL;
-  cm->mlp7          = NULL;
-  for (z = 0; z < CM_p7_NEVPARAM; z++) cm->mlp7_evparam[z] = CM_p7_EVPARAM_UNSET;
-#if 0
-  cm->mlp7_om       = NULL;
-#endif
 
   /* create HMM banded dp matrix, this only depends (at first) on num states, M.
    * it is initially empty, but expanded to fit target sequences as needed */
@@ -387,10 +381,14 @@ FreeCM(CM_t *cm)
   if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
   if(cm->mlp7       != NULL) p7_hmm_Destroy(cm->mlp7);
-  if(cm->mlp7_gm    != NULL) p7_profile_Destroy(cm->mlp7_gm);
-#if 0 
-  if(cm->mlp7_om    != NULL) p7_oprofile_Destroy(cm->mlp7_om);
-#endif
+  if(cm->nap7 > 0) { 
+    int z;
+    for(z = 0; z < cm->nap7; z++) { 
+      if(cm->ap7A[z]    != NULL) p7_hmm_Destroy(cm->ap7A[z]);
+      if(cm->ap7_evparamAA[z] != NULL) free(cm->ap7_evparamAA[z]);
+    }
+    cm->nap7 = 0;
+  }
 
   free(cm);
 }

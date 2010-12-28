@@ -494,16 +494,17 @@ extern void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr
 
 /* from p7_modelmaker.c */
 #if 0
-extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm, P7_OPROFILE **ret_om);
+extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7);
 #endif
-extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm);
+extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7);
 extern int          cm_cp9_to_p7(CM_t *cm);
-extern int          cm_p7_Calibrate(CM_t *cm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN, double ElfT, double EgfT, int do_real, int do_null3, float n3omega);
-extern int          p7_GlocalLambdaMu(CM_t *cm, ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int do_real, int do_null3, float n3omega, int L, int N, double tailp, char *errbuf, double *ret_lambda, double *ret_mu);
-extern int          cm_p7_MSVMu(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, int do_real, int do_null3, float n3omega, double *ret_mmu);
-extern int          cm_p7_ViterbiMu(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, int do_real, int do_null3, float n3omega, double *ret_vmu);
-extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, double tailp, int do_real, int do_null3, float n3omega, double *ret_tau);
-
+extern int          cm_mlp7_Calibrate(CM_t *cm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN,  double ElfT, double EgfT, int do_fitlam, int do_real, int do_null3, int do_bias, float n3omega, float *cm_null);
+extern int          cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN, double ElfT, double EgfT, int do_fitlam, int do_real, int do_null3, int do_bias, float n3omega, float *cm_null, double *ret_gfmu, double *ret_gflambda);
+extern int          p7_GlocalLambdaMu(P7_HMM *hmm, ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int do_real, int do_null3, int do_bias, float n3omega, float *cm_null, int L, int N, double tailp, char *errbuf, double *ret_lambda, double *ret_mu);
+extern int          cm_p7_MSVMu(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, int do_fitlam, int do_real, int do_null3, int do_bias, float n3omega, double *ret_mmu, double *ret_mlam);
+extern int          cm_p7_ViterbiMu(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, int do_fitlam, int do_real, int do_null3, int do_bias, float n3omega, double *ret_vmu, double *ret_vlam);
+extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, double tailp, int do_fitlam, int do_real, int do_null3, int do_bias, float n3omega, double *ret_tau, double *ret_lam);
+extern int          cm_Addp7(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda, char *errbuf);
 extern int          dump_p7(P7_HMM *hmm, FILE *fp);
 
 /* from my_p7_msvfilter.c */
@@ -526,7 +527,7 @@ extern int          cp9_Seq2BandsP7B     (CM_t *cm, char *errbuf, CP9_MX *fmx, C
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
 extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);
 extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level);
-extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L, 
+extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L, 
 				 double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
 				 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 

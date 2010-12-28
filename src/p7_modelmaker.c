@@ -47,8 +47,6 @@
  * 
  * Args:     cm        - the cm
  *           ret_p7    - RETURN: new p7 model 
- *           ret_gm    - RETURN: new p7 generic profile
- *           ret_om    - RETURN: new p7 optimized profile
  *           
  * Return:   eslOK   on success
  *
@@ -56,7 +54,7 @@
  *           eslEMEM on memory error
  */
 int
-BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm, P7_OPROFILE **ret_om)
+BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7)
 {
   int        status;
   P7_HMM     *hmm = NULL;        /* RETURN: new hmm */
@@ -106,13 +104,7 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm, P7_OPR
   hmm->nseq     = cm->nseq;
   hmm->checksum = 0;
 
-  /* make the profiles */
-  gm = p7_profile_Create (hmm->M, hmm->abc);
-  om = p7_oprofile_Create(hmm->M, hmm->abc);
-
   *ret_p7 = hmm;
-  *ret_gm = gm;
-  *ret_om = om;
 
   return eslOK;
 
@@ -131,7 +123,6 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm, P7_OPR
  * 
  * Args:     cm        - the cm
  *           ret_p7    - RETURN: new p7 model 
- *           ret_gm    - RETURN: new p7 generic profile
  *           
  * Return:   eslOK   on success
  *
@@ -139,11 +130,10 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm, P7_OPR
  *           eslEMEM on memory error
  */
 int
-BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm)
+BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7)
 {
   int        status;
   P7_HMM     *hmm = NULL;        /* RETURN: new hmm */
-  P7_PROFILE  *gm = NULL;        /* RETURN: new generic profile */
   int        k;
 
   if(cm->cp9 == NULL)         return eslEINCOMPAT; 
@@ -188,12 +178,7 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm)
   hmm->nseq     = cm->nseq;
   hmm->checksum = 0;
 
-  /* make the profiles */
-  gm = p7_profile_Create (hmm->M, hmm->abc);
-
   *ret_p7 = hmm;
-  *ret_gm = gm;
-
 
   return eslOK;
 
@@ -296,10 +281,10 @@ cm_cp9_to_p7(CM_t *cm)
   return status;
 }
 
-/* Function: cm_p7_Calibrate()
- * Incept:   EPN, Tue Nov  9 06:16:57 2010
+/* Function: cm_mlp7_Calibrate()
+ * Incept:   EPN, Mon Dec 27 05:49:26 2010
  * 
- * Purpose:  Calibrate a CM's p7 HMM for local MSV, Viterbi, Forward and 
+ * Purpose:  Calibrate a CM's ML p7 HMM for local MSV, Viterbi, Forward and 
  *           also glocal Forward. 
  * 
  * Args:     cm        - the cm, cm->mlp7 must be non-NULL
@@ -314,8 +299,12 @@ cm_cp9_to_p7(CM_t *cm)
  *           EgfN      - number of sequences to sample for glocal Fwd
  *           ElfT      - fraction of tail mass to fit for  local Fwd (usually (HMMER3 is) 0.04)
  *           EgfT      - fraction of tail mass to fit for glocal Fwd 
+ *           do_fitlam - TRUE to fit lambda for MSV/Vit/Fwd separately, don't use 0.693
  *           do_real   - TRUE to sample realistic genomic seqs, not IID
  *           do_null3  - TRUE to use null3 correction on scores before tail fit
+ *           do_bias   - TRUE to use bias correction on scores before tail fit
+ *           n3omega   - omega for null3 correction
+ *           cm_null   - CM null model, only relevant if do_null3
  *           
  * Return:   eslOK   on success
  *
@@ -323,10 +312,77 @@ cm_cp9_to_p7(CM_t *cm)
  *           eslEMEM on memory error
  */
 int
-cm_p7_Calibrate(CM_t *cm, char *errbuf, 
+cm_mlp7_Calibrate(CM_t *cm, char *errbuf, 
+		  int ElmL, int ElvL, int ElfL, int EgfL, 
+		  int ElmN, int ElvN, int ElfN, int EgfN, 
+		  double ElfT, double EgfT, int do_fitlam, int do_real, int do_null3, int do_bias, float n3omega, float *cm_null)
+{
+  int status;
+  double gfmu, gflambda;
+
+  printf("cm_mlp7_Calibrate:\n\tElmL: %d\n\tElvL: %d\n\tElfL: %d\n\tEgfL: %d\n\tElmN: %d\n\tElvN: %d\n\tElfN: %d\n\tEgfN: %d\n\tElfT: %f\n\tEgfT: %f\n\tdo_real: %d\n\tdo_null3: %d\n\tdo_fitlam: %d\n\tdo_bias: %d\n", ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT, do_real, do_null3, do_fitlam, do_bias);
+
+  if(cm->mlp7 == NULL)         ESL_FAIL(eslEINCOMPAT, errbuf, "cm_mlp7_Calibrate(): cm->mlp7 is NULL");
+  if(! (cm->flags & CMH_MLP7)) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_mlp7_Calibrate(): cm's CMH_MLP7 flag is down");
+
+  if((status = cm_p7_Calibrate(cm->mlp7, errbuf, ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT, do_fitlam, do_real, do_null3, do_bias, n3omega, cm_null, &gfmu, &gflambda)) != eslOK) return status;
+
+  /* copy the p7's evparam[], which were set in p7_Calibrate() to the cm's p7_evparam,
+   * which will additionally store the Glocal Lambda and Mu for Forward */
+  cm->mlp7_evparam[CM_p7_LMMU]     = cm->mlp7->evparam[p7_MMU];
+  cm->mlp7_evparam[CM_p7_LMLAMBDA] = cm->mlp7->evparam[p7_MLAMBDA];
+  cm->mlp7_evparam[CM_p7_LVMU]     = cm->mlp7->evparam[p7_VMU];
+  cm->mlp7_evparam[CM_p7_LVLAMBDA] = cm->mlp7->evparam[p7_VLAMBDA];
+  cm->mlp7_evparam[CM_p7_LFTAU]    = cm->mlp7->evparam[p7_FTAU];
+  cm->mlp7_evparam[CM_p7_LFLAMBDA] = cm->mlp7->evparam[p7_FLAMBDA];
+
+  cm->mlp7_evparam[CM_p7_GFMU]     = gfmu;
+  cm->mlp7_evparam[CM_p7_GFLAMBDA] = gflambda;
+
+  cm->flags |= CMH_MLP7_STATS;
+
+  return eslOK;
+}
+
+/* Function: cm_p7_Calibrate()
+ * Incept:   EPN, Tue Nov  9 06:16:57 2010
+ * 
+ * Purpose:  Calibrate a p7 HMM for local MSV, Viterbi, Forward and 
+ *           also glocal Forward. 
+ * 
+ * Args:     hmm       - the hmm
+ *           errbuf    - for error messages
+ *           ElmL      - length of sequences to sample for local MSV
+ *           ElvL      - length of sequences to sample for local Vit
+ *           ElfL      - length of sequences to sample for local Fwd
+ *           EgfL      - length of sequences to sample for glocal Fwd
+ *           ElmN      - number of sequences to sample for local MSV
+ *           ElvN      - number of sequences to sample for local Vit
+ *           ElfN      - number of sequences to sample for local Fwd
+ *           EgfN      - number of sequences to sample for glocal Fwd
+ *           ElfT      - fraction of tail mass to fit for  local Fwd (usually (HMMER3 is) 0.04)
+ *           EgfT      - fraction of tail mass to fit for glocal Fwd 
+ *           do_fitlam - TRUE to fit lambda for MSV/Vit/Fwd separately, don't use 0.693
+ *           do_real   - TRUE to sample realistic genomic seqs, not IID
+ *           do_null3  - TRUE to use null3 correction on scores before tail fit
+ *           do_bias   - TRUE to use bias correction on scores before tail fit
+ *           cm_null   - the cm null model
+ *           n3_omega  - the prior probability of the null3 model
+ *           ret_gfmu  - RETURN: mu for glocal forward
+ *           ret_gflambda - RETURN: lambda for glocal forward
+ *           
+ * Return:   eslOK   on success
+ *
+ * Throws:   eslEINCOMPAT on contract violation
+ *           eslEMEM on memory error
+ */
+int
+cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, 
 		int ElmL, int ElvL, int ElfL, int EgfL, 
 		int ElmN, int ElvN, int ElfN, int EgfN, 
-		double ElfT, double EgfT, int do_real, int do_null3, float n3omega)
+		double ElfT, double EgfT, int do_fitlam, int do_real, int do_null3, int do_bias, 
+		float n3omega, float *cm_null,
+		double *ret_gfmu, double *ret_gflambda)
 {
   int        status;
   P7_OPROFILE    *om = NULL;
@@ -334,49 +390,41 @@ cm_p7_Calibrate(CM_t *cm, char *errbuf,
   P7_PROFILE     *gm = NULL;
   ESL_RANDOMNESS *r  = NULL;
   double lmmu, lvmu, lftau, gfmu;
-  double lambda, gflambda;
+  double lmlam, lvlam, lflam, gflambda, lambda;
 
-  printf("cm_p7_Calibrate:\n\tElmL: %d\n\tElvL: %d\n\tElfL: %d\n\tEgfL: %d\n\tElmN: %d\n\tElvN: %d\n\tElfN: %d\n\tEgfN: %d\n\tElfT: %f\n\tEgfT: %f\n\tdo_real: %d\n\tdo_null3: %d\n", ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT, do_real, do_null3);
-
-  if(cm->mlp7 == NULL)       { status = eslEINCOMPAT; goto ERROR; }
-  if(! cm->flags & CMH_MLP7) { status = eslEINCOMPAT; goto ERROR; }
+  printf("cm_p7_Calibrate:\n\tElmL: %d\n\tElvL: %d\n\tElfL: %d\n\tEgfL: %d\n\tElmN: %d\n\tElvN: %d\n\tElfN: %d\n\tEgfN: %d\n\tElfT: %f\n\tEgfT: %f\n\tdo_real: %d\n\tdo_null3: %d\n\tdo_fitlam: %d\n\tdo_bias: %d\n", ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT, do_real, do_null3, do_fitlam, do_bias);
 
   /* most of this code stolen from hmmer's evalues.c::p7_Calibrate() */
-  if ((r      = esl_randomness_CreateFast(42)) == NULL)                    ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create RNG");
-  if ((bg     = p7_bg_Create(cm->mlp7->abc)) == NULL)                        ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to allocate background");
-  if ((gm     = p7_profile_Create(cm->mlp7->M, cm->mlp7->abc))  == NULL)       ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to allocate profile");
-  if ((status = p7_ProfileConfig(cm->mlp7, bg, gm, ElmL, p7_LOCAL)) != eslOK) ESL_XFAIL(status,  errbuf, "cm_p7_Calibrate(): failed to configure profile");
-  if ((om     = p7_oprofile_Create(cm->mlp7->M, cm->mlp7->abc)) == NULL)       ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create optimized profile");
-  if ((status = p7_oprofile_Convert(gm, om)) != eslOK)                     ESL_XFAIL(status,  errbuf, "cm_p7_Calibrate(): failed to convert to optimized profile");
-
+  if ((r      = esl_randomness_CreateFast(42)) == NULL)                        ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create RNG");
+  if ((bg     = p7_bg_Create(hmm->abc)) == NULL)                          ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to allocate background");
+  if ((gm     = p7_profile_Create(hmm->M, hmm->abc))  == NULL)       ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to allocate profile");
+  if ((status = p7_ProfileConfig(hmm, bg, gm, ElmL, p7_LOCAL)) != eslOK)  ESL_XFAIL(status,  errbuf, "cm_p7_Calibrate(): failed to configure profile");
+  if ((om     = p7_oprofile_Create(hmm->M, hmm->abc)) == NULL)       ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create optimized profile");
+  if ((status = p7_oprofile_Convert(gm, om)) != eslOK)                         ESL_XFAIL(status,  errbuf, "cm_p7_Calibrate(): failed to convert to optimized profile");
 
   /* The calibration steps themselves */
-  if ((status = p7_Lambda      (cm->mlp7, bg, &lambda))                         != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine lambda");
-  if ((status = cm_p7_MSVMu    (r, errbuf, om, bg, ElmL, ElmN, lambda, do_real, do_null3, n3omega, &lmmu))        != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine msv mu");
+  lambda = lmlam = lvlam = lflam = 0.;
+  if(! do_fitlam) { 
+    if ((status = p7_Lambda      (hmm, bg, &lambda))                         != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine lambda");
+  }
+  if ((status = cm_p7_MSVMu    (r, errbuf, om, bg, ElmL, ElmN, lambda, do_fitlam, do_real, do_null3, do_bias, n3omega, &lmmu, &lmlam))        != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine msv mu");
   if (ElvL != ElmL) p7_oprofile_ReconfigLength(om, ElvL);
-  if ((status = cm_p7_ViterbiMu(r, errbuf, om, bg, ElvL, ElvN, lambda, do_real, do_null3, n3omega, &lvmu))        != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine vit mu");
+  if ((status = cm_p7_ViterbiMu(r, errbuf, om, bg, ElvL, ElvN, lambda, do_fitlam, do_real, do_null3, do_bias, n3omega, &lvmu, &lvlam))        != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine vit mu");
   if (ElfL != ElvL) p7_oprofile_ReconfigLength(om, ElfL);
-  if ((status = cm_p7_Tau      (r, errbuf, om, bg, ElfL, ElfN, lambda, ElfT, do_real, do_null3, n3omega, &lftau)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
+  if ((status = cm_p7_Tau      (r, errbuf, om, bg, ElfL, ElfN, lambda, ElfT, do_fitlam, do_real, do_null3, do_bias, n3omega, &lftau, &lflam)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
 
-  /*if ((status = p7_Calibrate(cm->mlp7, NULL, &r, &bg, &gm, &om)) != eslOK) goto ERROR;*/
+  /* set the p7's evparam[] */
+  hmm->evparam[p7_MMU]     = lmmu;
+  hmm->evparam[p7_MLAMBDA] = (do_fitlam) ? lmlam : lambda;
+  hmm->evparam[p7_VMU]     = lvmu;  
+  hmm->evparam[p7_VLAMBDA] = (do_fitlam) ? lvlam : lambda;
+  hmm->evparam[p7_FTAU]    = lftau; 
+  hmm->evparam[p7_FLAMBDA] = (do_fitlam) ? lflam : lambda;  
+  hmm->flags              |= p7H_STATS;
 
   /* finally, determine Glocal Forward stats */
-  if ((status = p7_ProfileConfig(cm->mlp7, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR; 
-  if ((status = p7_GlocalLambdaMu(cm, r, gm, bg, do_real, do_null3, n3omega, EgfL, EgfN, EgfT, errbuf, &gflambda, &gfmu)) != eslOK) goto ERROR; 
-
-  /* copy the p7's evparam[], which were set in p7_Calibrate() to the cm's p7_evparam,
-   * which will additionally store the Glocal Lambda and Mu for Forward */
-  cm->mlp7_evparam[CM_p7_LMMU]     = cm->mlp7->evparam[p7_MMU]     = lmmu;
-  cm->mlp7_evparam[CM_p7_LMLAMBDA] = cm->mlp7->evparam[p7_MLAMBDA] = lambda;
-  cm->mlp7_evparam[CM_p7_LVMU]     = cm->mlp7->evparam[p7_VMU]     = lvmu;  
-  cm->mlp7_evparam[CM_p7_LVLAMBDA] = cm->mlp7->evparam[p7_VLAMBDA] = lambda;
-  cm->mlp7_evparam[CM_p7_LFTAU]    = cm->mlp7->evparam[p7_FTAU]    = lftau; 
-  cm->mlp7_evparam[CM_p7_LFLAMBDA] = cm->mlp7->evparam[p7_FLAMBDA] = lambda;  
-
-  cm->mlp7_evparam[CM_p7_GFMU]     = gfmu;
-  cm->mlp7_evparam[CM_p7_GFLAMBDA] = gflambda;
-
-  cm->flags |= CMH_MLP7_STATS;
+  if ((status = p7_ProfileConfig(hmm, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR; 
+  if ((status = p7_GlocalLambdaMu(hmm, r, gm, bg, do_real, do_null3, do_bias, n3omega, cm_null, EgfL, EgfN, EgfT, errbuf, &gflambda, &gfmu)) != eslOK) goto ERROR; 
 
   printf("p7 glocal lambda: %g  mu: %g\n", gflambda, gfmu);
 
@@ -385,6 +433,9 @@ cm_p7_Calibrate(CM_t *cm, char *errbuf,
   p7_oprofile_Destroy(om);   
   p7_profile_Destroy(gm);   
   
+  if(ret_gfmu != NULL)     *ret_gfmu = gfmu;
+  if(ret_gflambda != NULL) *ret_gflambda = gflambda;
+
   return eslOK;
 
  ERROR: 
@@ -392,6 +443,8 @@ cm_p7_Calibrate(CM_t *cm, char *errbuf,
   if(bg != NULL) p7_bg_Destroy(bg);         
   if(om != NULL) p7_oprofile_Destroy(om);   
   if(gm != NULL) p7_profile_Destroy(gm);   
+  if(ret_gfmu != NULL) *ret_gfmu = 0.;
+  if(ret_gflambda != NULL) *ret_gflambda = 0.;
   return status;
 }
 
@@ -452,12 +505,15 @@ cm_p7_Calibrate(CM_t *cm, char *errbuf,
  *            both of their length models appropriately for any
  *            subsequent alignments.
  *            
- * Args:      cm     : the model
+ * Args:      hmm    : the model
  *            r      : source of randomness
  *            gm     : configured profile to score sequences with
  *            bg     : null model (for background residue frequencies)
  *            do_real: sample realistic genomic sequences, don't use iid
  *            do_null3: TRUE to use null3 correction on scores, FALSE not to
+ *            do_bias: TRUE to use bias correction on scores, FALSE not to
+ *            n3_omega: the prior probability of the null3 model
+ *            cm_null: the cm null model
  *            L      : mean length model for seq emission from profile
  *            N      : number of sequences to generate
  *            tailp  : tail mass from which we will extrapolate tau
@@ -470,7 +526,7 @@ cm_p7_Calibrate(CM_t *cm, char *errbuf,
  * Throws:    <eslEMEM> on allocation error, and <*ret_tau> is 0.
  */
 int
-p7_GlocalLambdaMu(CM_t *cm, ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int do_real, int do_null3, float n3omega, int L, int N, double tailp, char *errbuf, double *ret_lambda, double *ret_mu)
+p7_GlocalLambdaMu(P7_HMM *hmm, ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int do_real, int do_null3, int do_bias, float n3omega, float *cm_null, int L, int N, double tailp, char *errbuf, double *ret_lambda, double *ret_mu)
 {
   P7_GMX  *gx      = p7_gmx_Create(gm->M, L); /* DP matrix: for ForwardParser,  L rows */
   ESL_DSQ *dsq     = NULL;
@@ -495,22 +551,25 @@ p7_GlocalLambdaMu(CM_t *cm, ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int do
   if (gx == NULL) { status = eslEMEM; goto ERROR; }
 
   if(do_real) { 
-    if((status = CreateGenomicHMM(cm->abc, errbuf, &ghmm_sA, &ghmm_tAA, &ghmm_eAA, &ghmm_nstates)) != eslOK) goto ERROR;
+    if((status = CreateGenomicHMM(hmm->abc, errbuf, &ghmm_sA, &ghmm_tAA, &ghmm_eAA, &ghmm_nstates)) != eslOK) goto ERROR;
   }
 
   p7_ReconfigLength(gm, L);
   p7_bg_SetLength(bg, L);
+  if(do_bias) p7_bg_SetFilter(bg, gm->M, gm->compo);
 
   for (i = 0; i < N; i++)
     {
-      if(do_real) { if((status = SampleGenomicSequenceFromHMM(r, cm->abc, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, L, &dsq) != eslOK)) goto ERROR; }
+      if(do_real) { if((status = SampleGenomicSequenceFromHMM(r, hmm->abc, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, L, &dsq) != eslOK)) goto ERROR; }
       else        { if((status = esl_rsq_xfIID(r, bg->f, gm->abc->K, L, dsq)) != eslOK) goto ERROR; }
       if ((status = p7_GForward(dsq, L, gm, gx, &fsc))           != eslOK) goto ERROR;
-      if ((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR;   
+      if(do_bias) { if((status = p7_bg_FilterScore(bg, dsq, L, &nullsc))      != eslOK) goto ERROR; }
+      else        { if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR; }
       sc = ((fsc-nullsc) / eslCONST_LOG2);
+
       if(do_null3) { 
-	ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, dsq, 1, L, n3omega, &null3sc);
-	null3sc *= (float) cm->clen / (float) L; /* assume hit would be of length clen, not full window len */
+	ScoreCorrectionNull3CompUnknown(hmm->abc, cm_null, dsq, 1, L, n3omega, &null3sc);
+	null3sc *= (float) hmm->M / (float) L; /* assume hit would be of length clen, not full window len */
 	sc -= null3sc;
       }
       esl_histogram_Add(h, sc);
@@ -582,10 +641,13 @@ p7_GlocalLambdaMu(CM_t *cm, ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int do
  *            L       :  length of sequences to simulate
  *            N	      :  number of sequences to simulate		
  *            lambda  :  known Gumbel lambda parameter
+ *            do_fitlam: TRUE to fit lambda here and set in <ret_mlam>, <lambda> is irrelevant
  *            do_real :  TRUE to generate target seqs from genomic HMM, FALSE to do iid
  *            do_null3:  TRUE to apply null3 penalty with <n3omega> omega.
+ *            do_bias:   TRUE to apply bias correction with <n3omega> omega.
  *            n3omega :  omega for null3, irrelevant if do_null3.
  *            ret_mmu :  RETURN: ML estimate of location param mu
+ *            ret_mlam:  RETURN: ML estimate of lambda, only filled if do_fitlam, else set to 0
  *
  * Returns:   <eslOK> on success, and <ret_mu> contains the ML estimate
  *            of $\mu$.
@@ -599,7 +661,7 @@ p7_GlocalLambdaMu(CM_t *cm, ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int do
  *            eventually - need to be sure that fix applies here too.
  */
 int
-cm_p7_MSVMu(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, int do_real, int do_null3, float n3omega, double *ret_mmu)
+cm_p7_MSVMu(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, int do_fitlam, int do_real, int do_null3, int do_bias, float n3omega, double *ret_mmu, double *ret_mlam)
 {
   P7_OMX  *ox      = p7_omx_Create(om->M, 0, 0); /* DP matrix: 1 row version */
   ESL_DSQ *dsq     = NULL;
@@ -627,13 +689,14 @@ cm_p7_MSVMu(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, 
 
   p7_oprofile_ReconfigLength(om, L);
   p7_bg_SetLength(bg, L);
+  if(do_bias) p7_bg_SetFilter(bg, om->M, om->compo);
 
   for (i = 0; i < N; i++)
     {
       if(do_real) { if((status = SampleGenomicSequenceFromHMM(r, bg->abc, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, L, &dsq) != eslOK)) goto ERROR; }
       else        { if((status = esl_rsq_xfIID(r, bg->f, bg->abc->K, L, dsq)) != eslOK) goto ERROR; }
-      if ((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR;   
-
+      if(do_bias) { if((status = p7_bg_FilterScore(bg, dsq, L, &nullsc))      != eslOK) goto ERROR; }
+      else        { if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR; }
       status = p7_MSVFilter(dsq, L, om, ox, &sc); 
 #ifndef p7_IMPL_DUMMY
       if (status == eslERANGE) { sc = maxsc; status = eslOK; }
@@ -648,7 +711,13 @@ cm_p7_MSVMu(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, 
       xv[i] = sc;
     }
 
-  if ((status = esl_gumbel_FitCompleteLoc(xv, N, lambda, ret_mmu))  != eslOK) goto ERROR;
+  if(do_fitlam) { 
+    if ((status = esl_gumbel_FitComplete(xv, N, ret_mmu, ret_mlam))  != eslOK) goto ERROR;
+  }
+  else { 
+    if ((status = esl_gumbel_FitCompleteLoc(xv, N, lambda, ret_mmu))  != eslOK) goto ERROR;
+    *ret_mlam = 0.;
+  }
   p7_omx_Destroy(ox);
   free(xv);
   free(dsq);
@@ -690,10 +759,13 @@ cm_p7_MSVMu(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, 
  *            L       :  length of sequences to simulate
  *            N	      :  number of sequences to simulate		
  *            lambda  :  known Gumbel lambda parameter
+ *            do_fitlam: TRUE to fit lambda here and set in <ret_vlam>, <lambda> is irrelevant
  *            do_real :  TRUE to generate target seqs from genomic HMM, FALSE to do iid
  *            do_null3:  TRUE to apply null3 penalty with <n3omega> omega.
+ *            do_bias :  TRUE to apply bias correction with <n3omega> omega.
  *            n3omega :  omega for null3, irrelevant if do_null3.
  *            ret_vmu :  RETURN: ML estimate of location param mu
+ *            ret_vlam:  RETURN: ML estimate of lambda, only filled if do_fitlam, else set to 0
  *
  * Returns:   <eslOK> on success, and <ret_mu> contains the ML estimate
  *            of $\mu$.
@@ -701,7 +773,7 @@ cm_p7_MSVMu(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, 
  * Throws:    (no abnormal error conditions)
  */
 int
-cm_p7_ViterbiMu(ESL_RANDOMNESS *r, char *errbuf,P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, int do_real, int do_null3, float n3omega, double *ret_vmu)
+cm_p7_ViterbiMu(ESL_RANDOMNESS *r, char *errbuf,P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, int do_fitlam, int do_real, int do_null3, int do_bias, float n3omega, double *ret_vmu, double *ret_vlam)
 {
   P7_OMX  *ox      = p7_omx_Create(om->M, 0, 0); /* DP matrix: 1 row version */
   ESL_DSQ *dsq     = NULL;
@@ -729,12 +801,14 @@ cm_p7_ViterbiMu(ESL_RANDOMNESS *r, char *errbuf,P7_OPROFILE *om, P7_BG *bg, int 
 
   p7_oprofile_ReconfigLength(om, L);
   p7_bg_SetLength(bg, L);
+  if(do_bias) p7_bg_SetFilter(bg, om->M, om->compo);
 
   for (i = 0; i < N; i++)
     {
       if(do_real) { if((status = SampleGenomicSequenceFromHMM(r, bg->abc, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, L, &dsq) != eslOK)) goto ERROR; }
       else        { if((status = esl_rsq_xfIID(r, bg->f, bg->abc->K, L, dsq)) != eslOK) goto ERROR; }
-      if ((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR;   
+      if(do_bias) { if((status = p7_bg_FilterScore(bg, dsq, L, &nullsc))      != eslOK) goto ERROR; }
+      else        { if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR; }
 
       status = p7_ViterbiFilter(dsq, L, om, ox, &sc); 
 #ifndef p7_IMPL_DUMMY
@@ -750,7 +824,14 @@ cm_p7_ViterbiMu(ESL_RANDOMNESS *r, char *errbuf,P7_OPROFILE *om, P7_BG *bg, int 
       xv[i] = sc;
     }
 
-  if ((status = esl_gumbel_FitCompleteLoc(xv, N, lambda, ret_vmu))  != eslOK) goto ERROR;
+  if(do_fitlam) { 
+    if ((status = esl_gumbel_FitComplete(xv, N, ret_vmu, ret_vlam))  != eslOK) goto ERROR;
+  }
+  else { 
+    if ((status = esl_gumbel_FitCompleteLoc(xv, N, lambda, ret_vmu))  != eslOK) goto ERROR;
+    *ret_vlam = 0.;
+  }
+
   p7_omx_Destroy(ox);
   free(xv);
   free(dsq);
@@ -794,10 +875,13 @@ cm_p7_ViterbiMu(ESL_RANDOMNESS *r, char *errbuf,P7_OPROFILE *om, P7_BG *bg, int 
  *            N      : number of sequences to generate
  *            lambda : expected slope of the exponential tail (from p7_Lambda())
  *            tailp  : tail mass from which we will extrapolate mu
+ *            do_fitlam: TRUE to fit lambda here and set in <ret_lam>, <lambda> is irrelevant
  *            do_real :  TRUE to generate target seqs from genomic HMM, FALSE to do iid
  *            do_null3:  TRUE to apply null3 penalty with <n3omega> omega.
+ *            do_bias:   TRUE to apply bias correction with <n3omega> omega.
  *            n3omega :  omega for null3, irrelevant if do_null3.
- *            ret_mu : RETURN: estimate for the Forward mu (base of exponential tail)
+ *            ret_tau : RETURN: estimate for the Forward tau (base of exponential tail)
+ *            ret_lam:  RETURN: ML estimate of lambda, only filled if do_fitlam, else set to 0
  *
  * Returns:   <eslOK> on success, and <*ret_fv> is the score difference
  *            in bits.
@@ -805,7 +889,7 @@ cm_p7_ViterbiMu(ESL_RANDOMNESS *r, char *errbuf,P7_OPROFILE *om, P7_BG *bg, int 
  * Throws:    <eslEMEM> on allocation error, and <*ret_fv> is 0.
  */
 int
-cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, double tailp, int do_real, int do_null3, float n3omega, double *ret_tau)
+cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, double tailp, int do_fitlam, int do_real, int do_null3, int do_bias, float n3omega, double *ret_tau, double *ret_lam)
 {
   P7_OMX  *ox      = p7_omx_Create(om->M, 0, L);     /* DP matrix: for ForwardParser,  L rows */
   ESL_DSQ *dsq     = NULL;
@@ -831,13 +915,15 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, in
 
   p7_oprofile_ReconfigLength(om, L);
   p7_bg_SetLength(bg, L);
+  if(do_bias) p7_bg_SetFilter(bg, om->M, om->compo);
 
   for (i = 0; i < N; i++)
     {
       if(do_real) { if((status = SampleGenomicSequenceFromHMM(r, bg->abc, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, L, &dsq) != eslOK)) goto ERROR; }
       else        { if((status = esl_rsq_xfIID(r, bg->f, bg->abc->K, L, dsq)) != eslOK) goto ERROR; }
       if ((status = p7_ForwardParser(dsq, L, om, ox, &fsc))      != eslOK) goto ERROR;
-      if ((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR;   
+      if(do_bias) { if((status = p7_bg_FilterScore(bg, dsq, L, &nullsc))      != eslOK) goto ERROR; }
+      else        { if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR; }
       sc = (fsc - nullsc) / eslCONST_LOG2;
       if(do_null3) { 
 	ScoreCorrectionNull3CompUnknown(bg->abc, bg->f, dsq, 1, L, n3omega, &null3sc);
@@ -846,15 +932,32 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, in
       }
       xv[i] = sc;
     }
-  if ((status = esl_gumbel_FitComplete(xv, N, &gmu, &glam)) != eslOK) goto ERROR;
+  if(do_fitlam) { 
+    /* Count the scores into a histogram object.  */
+    ESL_HISTOGRAM *h = NULL;
+    int n;
+    double *xv2;
+    if ((h = esl_histogram_CreateFull(-50., 50., 0.2)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "allocation failed");
+    for (i = 0; i < N; i++) esl_histogram_Add(h, xv[i]);
+    esl_histogram_GetTailByMass(h, tailp, &xv2, &n, NULL);
 
-  /* Explanation of the eqn below: first find the x at which the Gumbel tail
-   * mass is predicted to be equal to tailp. Then back up from that x
-   * by log(tailp)/lambda to set the origin of the exponential tail to 1.0
-   * instead of tailp.
-   */
-  *ret_tau =  esl_gumbel_invcdf(1.0-tailp, gmu, glam) + (log(tailp) / lambda);
-  
+    esl_exp_FitComplete(xv2, n, ret_tau, ret_lam);
+    *ret_tau = *ret_tau - log(1./tailp) / *ret_lam;
+
+    esl_histogram_Destroy(h);
+  }
+  else { 
+    if ((status = esl_gumbel_FitComplete(xv, N, &gmu, &glam)) != eslOK) goto ERROR;
+
+    /* Explanation of the eqn below: first find the x at which the Gumbel tail
+     * mass is predicted to be equal to tailp. Then back up from that x
+     * by log(tailp)/lambda to set the origin of the exponential tail to 1.0
+     * instead of tailp.
+     */
+    *ret_tau =  esl_gumbel_invcdf(1.0-tailp, gmu, glam) + (log(tailp) / lambda);
+    *ret_lam = 0.;
+  }
+
   free(xv);
   free(dsq);
   p7_omx_Destroy(ox);
@@ -876,6 +979,71 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, in
   if (dsq != NULL) free(dsq);
   if (ox  != NULL) p7_omx_Destroy(ox);
   return status;
+}
+
+/* Function: cm_Addp7()
+ * Incept:   EPN, Mon Dec 27 07:59:47 2010
+ * 
+ * Purpose:  Add a p7 HMM to a CM in the cm->ap7A array.
+ * 
+ * Args:     cm       - the CM
+ *           hmm      - the HMM to add
+ *           gfmu     - glocal forward mu parameter
+ *           gflambda - glocal forward lambda parameter
+ *           errbuf   - for error messages 
+ *           
+ * Return:   eslOK   on success
+ *
+ * Throws:   eslEINCOMPAT on contract violation
+ *           eslEMEM on memory error
+ */
+int
+cm_Addp7(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda, char *errbuf)
+{
+  int   status, i, z;
+  void *p;
+  
+  if(cm->nap7 == 0) { 
+    if(cm->ap7A != NULL)          ESL_FAIL(eslEINVAL, errbuf, "cm_AddP7(): cm->nap7 == 0 but cm->ap7A != NULL");
+    if(cm->ap7_evparamAA != NULL) ESL_FAIL(eslEINVAL, errbuf, "cm_AddP7(): cm->nap7 == 0 but cm->ap7_evparamAA != NULL");
+    cm->nap7++;
+    ESL_ALLOC(cm->ap7A,          sizeof(P7_HMM *)     * cm->nap7);
+    ESL_ALLOC(cm->ap7_evparamAA, sizeof(float *)      * cm->nap7);
+  }
+  else { 
+    if(cm->ap7A == NULL)          ESL_FAIL(eslEINVAL, errbuf, "cm_AddP7(): cm->nap7 != 0 but cm->ap7A == NULL");
+    if(cm->ap7_evparamAA == NULL) ESL_FAIL(eslEINVAL, errbuf, "cm_AddP7(): cm->nap7 != 0 but cm->ap7_evparamAA == NULL");
+    cm->nap7++;
+    ESL_RALLOC(cm->ap7A,          p, sizeof(P7_HMM *)     * cm->nap7);
+    ESL_RALLOC(cm->ap7_evparamAA, p, sizeof(float *)      * cm->nap7);
+  }
+  
+  i = cm->nap7-1;
+  cm->ap7A[i] = hmm;
+  cm->flags |= CMH_AP7; /* raise the AP7 flag */
+
+  ESL_ALLOC(cm->ap7_evparamAA[i], sizeof(float) * CM_p7_NEVPARAM);
+  for (z = 0; z < CM_p7_NEVPARAM; z++) cm->ap7_evparamAA[i][z] = CM_p7_EVPARAM_UNSET;
+
+  if(hmm->flags & p7H_STATS) {
+    cm->ap7_evparamAA[i][CM_p7_LMMU]     = hmm->evparam[p7_MMU];
+    cm->ap7_evparamAA[i][CM_p7_LMLAMBDA] = hmm->evparam[p7_MLAMBDA];
+    cm->ap7_evparamAA[i][CM_p7_LVMU]     = hmm->evparam[p7_VMU];
+    cm->ap7_evparamAA[i][CM_p7_LVLAMBDA] = hmm->evparam[p7_VLAMBDA];
+    cm->ap7_evparamAA[i][CM_p7_LFTAU]    = hmm->evparam[p7_FTAU];
+    cm->ap7_evparamAA[i][CM_p7_LFLAMBDA] = hmm->evparam[p7_FLAMBDA];
+    cm->ap7_evparamAA[i][CM_p7_GFMU]     = gfmu;
+    cm->ap7_evparamAA[i][CM_p7_GFLAMBDA] = gflambda;
+    if(i > 0) { /* make sure all other additional HMMs have E-value stats also */
+      if(! (cm->flags & CMH_AP7_STATS)) ESL_FAIL(eslEINVAL, errbuf, "cm_AddP7(): existing HMMs lack E-value stats, but adding hmm that has E-value stats");
+    }
+    cm->flags |= CMH_AP7_STATS; /* raise the AP7 stats flag */
+  }    
+
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "cm_Addp7(): out of memory");
 }
 
 /* Function: dump_p7()

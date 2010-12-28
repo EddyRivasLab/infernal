@@ -37,6 +37,8 @@
 #define WGTOPTS "--wgsc,--wblosum,--wpb,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
 #define EFFOPTS "--eent,--enone,--eset"                        /* Exclusive options for effective sequence number calculation */
 
+static P7_PRIOR * p7_prior_Read(FILE *fp);
+
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
@@ -96,8 +98,10 @@ static ESL_OPTIONS options[] = {
   { "--ileaved", eslARG_NONE,   FALSE, NULL, NULL,       NULL,     NULL,        NULL, "w/--refine,--cdump, output alnment as interleaved Stockholm", 7 },
 
   /* Probably temporary options controlling p7 calibration */
-  { "--exp-real",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "sample realistic genomic sequences, not iid, for p7 calibration", 8},
+  { "--exp-real",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "sample realistic genomic seqs, not iid, for p7 calibration", 8},
   { "--exp-null3",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use null3 correction in p7 calibrations", 8},
+  { "--exp-bias",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use bias correction in p7 calibrations", 8},
+  { "--exp-fitlam",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,           "fit lambda, don't use fixed lambda close to 0.693", 8},
   { "--exp-lwmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for local stats is <x> * cm->W", 8},
   { "--exp-gwmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for glocal stats is <x> * cm->W", 8},
   { "--exp-lL",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--exp-lwmult,--exp-hmmerL",  "length of seqs to search for local stats is <n>", 8},
@@ -107,8 +111,12 @@ static ESL_OPTIONS options[] = {
   { "--exp-lvitN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local Vit calibration", 8},
   { "--exp-lfwdN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local Fwd calibration", 8},
   { "--exp-gfwdN",   eslARG_INT,  "10000", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 glocal Fwd calibration", 8},
-  { "--exp-lftailp", eslARG_REAL,  "0.04", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 local forward exp tail to <f> fraction of high scoring dist", 8},
-  { "--exp-gftailp", eslARG_REAL, "0.002", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 glocal forward exp tail to <f> fraction of high scoring dist", 8},
+  { "--exp-lftp",    eslARG_REAL, "0.055", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 local fwd exp tail to <f> fraction of scoring dist", 8},
+  { "--exp-gftp",    eslARG_REAL,  "0.01", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 glocal fwd exp tail to <f> fraction of scoring dist", 8},
+
+  /* Probably temporary options controlling calibration of additional p7 models */
+  { "--p7-add",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "build an additional p7, using hmm entropy weighting", 9},
+  { "--p7-prior",    eslARG_INFILE, NULL,  NULL, NULL,    NULL,"--p7-add", NULL,        "read p7 prior for --p7-add from file <f>", 9},
 
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer debugging/experimentation */
@@ -160,6 +168,10 @@ struct cfg_s {
   int           ncm_total;      /* which # CM this is that we're constructing (we may build > 1 per file) */
   int           namewidth;      /* max length of a CM name, nec for pretty tabular formatting */
   ESL_RANDOMNESS *r;            /* source of randomness, only created if --gibbs enabled */
+  
+  /* optional files used for building additional filter p7 HMMs */
+  P7_BG        *ap7_bg;         /* background model for additional P7s */
+  P7_BUILDER   *ap7_bld;        /* the P7_BUILDER */
 
   /* optional output files */
   FILE         *cfp;            /* for --cfile */
@@ -262,6 +274,8 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       puts("\nexpert options for tuning p7 calibration:");
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
+      puts("\nexpert options for building additional p7 models:");
+      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
       puts("\nundocumented developer options for debugging, experimentation:");
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
       puts("\nundocumented developer options for verbose output/debugging:");
@@ -288,6 +302,8 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       puts("\nexpert options for tuning p7 calibration:");
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
+      puts("\nexpert options for building additional p7 models:");
+      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
       exit(0);
     }
 
@@ -322,6 +338,8 @@ main(int argc, char **argv)
   cfg.r          = NULL;	           /* created (possibly) in init_cfg() */
   cfg.comlog     = NULL;	           /* created in init_cfg() */
   cfg.namewidth  = 0;
+  cfg.ap7_bg     = NULL;                   /* created (possibly) in init_cfg() */
+  cfg.ap7_bld    = NULL;                   /* created (possibly) in init_cfg() */
   /* optional output files, opened in init_cfg(), if at all */
   cfg.cfp        = NULL;
   cfg.escfp      = NULL;
@@ -404,6 +422,8 @@ main(int argc, char **argv)
   if (cfg.null  != NULL) free(cfg.null);
   if (cfg.r     != NULL) esl_randomness_Destroy(cfg.r);
   if (cfg.comlog!= NULL) FreeComLog(cfg.comlog);
+  if (cfg.ap7_bg!= NULL) p7_bg_Destroy(cfg.ap7_bg);
+  if (cfg.ap7_bld!= NULL) p7_builder_Destroy(cfg.ap7_bld);
 
   esl_getopts_Destroy(go);
   esl_stopwatch_Stop(w);
@@ -507,6 +527,22 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       cfg->r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
       if (cfg->r == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
     }
+
+  /* set up objects for building additional p7 models to filter with, if nec */
+  if (esl_opt_GetBoolean(go, "--p7-add")) { 
+    cfg->ap7_bg = p7_bg_Create(cfg->abc);
+    /* create the P7_BUILDER, pass NULL as the <go> argument, this sets all parameters to default */
+    cfg->ap7_bld = p7_builder_Create(NULL, cfg->abc);
+    if(esl_opt_IsUsed(go, "--p7-prior")) {
+      FILE *pfp;
+      if (cfg->ap7_bld->prior != NULL) p7_prior_Destroy(cfg->ap7_bld->prior);
+      if ((pfp = fopen(esl_opt_GetString(go, "--p7-prior"), "r")) == NULL) cm_Fail("Failed to open p7 prior file %s\n", esl_opt_GetString(go, "--p7-prior"));
+      if((cfg->ap7_bld->prior = p7_prior_Read(pfp)) == NULL) {
+	cm_Fail("Failed to parse p7 prior file %s\n", esl_opt_GetString(go, "--p7-prior"));
+      }
+      fclose(pfp);
+    }
+  }	 
 
   /* open output files */
   /* optionally, open count vector file */
@@ -722,8 +758,12 @@ static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
 {
   CM_t *cm = NULL;
+  P7_HMM *ahmm = NULL;
   int status;
-  int lmsvL, lvitL, lfwdL,  gfwdL;
+  int lmsvL, lvitL, lfwdL, gfwdL;
+  int lmsvN, lvitN, lfwdN;
+  double agfmu, agflambda;
+  float lftailp;
 
   if ((status =  check_and_clean_msa    (go, cfg, errbuf, msa))                           != eslOK) goto ERROR;
   if ((status =  set_relative_weights   (go, cfg, errbuf, msa))                           != eslOK) goto ERROR;
@@ -733,12 +773,14 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
   if ((status =  set_effective_seqnumber(go, cfg, errbuf, msa, cm, cfg->pri))             != eslOK) goto ERROR;
   if ((status =  parameterize           (go, cfg, errbuf, cm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
 
-  /* New steps for calibrating p7 HMMs */
+  /* Build and calibrate p7 HMM(s) */
+  /* Build the maximum-likelihood P7 HMM (cm->mlp7) from the CM itself (this is done inside ConfigCM())
+   * note, we need to do this first before setting seq lengths (e.g. lmsvL) below, b/c they depend on W */
   if((status = ConfigCM(cm, errbuf, 
 			TRUE, /* do calculate W */
 			NULL, NULL)) != eslOK) cm_Fail("Error configuring CM: %s\n", errbuf);
-  printf("cm->W: %d\n", cm->W);
-  /* ConfigCM will build the p7 */
+
+  /* Define relevant parameters: */
   if(esl_opt_GetBoolean(go, "--exp-hmmerL")) { 
     lmsvL = lvitL = 200;
     lfwdL = 100;
@@ -748,19 +790,51 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
     lmsvL = lvitL = lfwdL = (esl_opt_IsUsed(go, "--exp-lL")) ? esl_opt_GetInteger(go, "--exp-lL") : esl_opt_GetReal(go, "--exp-lwmult") * cm->W;
     gfwdL = (esl_opt_IsUsed(go, "--exp-gL")) ? esl_opt_GetInteger(go, "--exp-gL") : esl_opt_GetReal(go, "--exp-gwmult") * cm->W;
   }
-  if((status = cm_p7_Calibrate(cm, errbuf, 
-			       lmsvL, lvitL, lfwdL, gfwdL,                          /* length of sequences to search for local (lL) and glocal (gL) modes */    
-			       esl_opt_GetInteger(go, "--exp-lmsvN"),   /* number of seqs for local MSV */
-			       esl_opt_GetInteger(go, "--exp-lvitN"),   /* number of seqs for local Vit */
-			       esl_opt_GetInteger(go, "--exp-lfwdN"),   /* number of seqs for local Fwd */
-			       esl_opt_GetInteger(go, "--exp-gfwdN"),   /* number of seqs for glocal Fwd */
-			       esl_opt_GetReal   (go, "--exp-lftailp"), /* fraction of tail mass to fit for local Fwd */
-			       esl_opt_GetReal   (go, "--exp-gftailp"), /* fraction of tail mass to fit for glocal Fwd */
-			       esl_opt_GetBoolean(go, "--exp-real"),    /* use realistic seqs (if TRUE) or iid (if FALSE) */
-			       esl_opt_GetBoolean(go, "--exp-null3"),   /* use null3 correction? */
-			       cm->p7_n3omega))                         /* omega for null3 correction */
-      != eslOK) cm_Fail("Error calibrating p7 HMM");
+  if(esl_opt_GetBoolean(go, "--exp-fitlam")) { 
+    lmsvN = esl_opt_IsUsed(go, "--exp-lmsvN") ? esl_opt_GetInteger(go, "--exp-lmsvN") : 10000;
+    lvitN = esl_opt_IsUsed(go, "--exp-lvitN") ? esl_opt_GetInteger(go, "--exp-lvitN") : 10000;
+    lfwdN = esl_opt_IsUsed(go, "--exp-lfwdN") ? esl_opt_GetInteger(go, "--exp-lfwdN") : 10000;
+    lftailp = esl_opt_IsUsed(go, "--exp-lftp") ? esl_opt_GetReal(go, "--exp-lftp") : 0.01;
+  }
+  else { 
+    lmsvN = esl_opt_GetInteger(go, "--exp-lmsvN");
+    lvitN = esl_opt_GetInteger(go, "--exp-lvitN");
+    lfwdN = esl_opt_GetInteger(go, "--exp-lfwdN");
+    lftailp = esl_opt_GetReal(go, "--exp-lftp");
+  }
+  /* Calibrate the p7 hmm */
+  if((status = cm_mlp7_Calibrate(cm, errbuf, 
+				 lmsvL, lvitL, lfwdL, gfwdL,              /* length of sequences to search for each alg */
+				 lmsvN, lvitN, lfwdN,                     /* number of seqs to search for each alg */
+				 esl_opt_GetInteger(go, "--exp-gfwdN"),   /* number of seqs for glocal Fwd */
+				 lftailp,                                 /* fraction of tail mass to fit for local Fwd */
+				 esl_opt_GetReal   (go, "--exp-gftp"),    /* fraction of tail mass to fit for glocal Fwd */
+				 esl_opt_GetBoolean(go, "--exp-fitlam"),  /* fit lambdas? otherwise use 0.693 with slight correction */
+				 esl_opt_GetBoolean(go, "--exp-real"),    /* use realistic seqs (if TRUE) or iid (if FALSE) */
+				 esl_opt_GetBoolean(go, "--exp-null3"),   /* use null3 correction? */
+				 esl_opt_GetBoolean(go, "--exp-bias"),    /* use bias correction? */
+				 cm->p7_n3omega, cm->null))               /* omega for null3 correction, cm null model */
+     != eslOK) cm_Fail("Error calibrating cm->mlp7 HMM");
+  
+  /* Build and calibrate an additional HMM if nec */
+  if(esl_opt_GetBoolean(go, "--p7-add")) { 
+    if ((status = p7_Builder(cfg->ap7_bld, msa, cfg->ap7_bg, &ahmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->ap7_bld->errbuf); goto ERROR; }
+    if((status = cm_p7_Calibrate(ahmm, errbuf, 
+				 lmsvL, lvitL, lfwdL, gfwdL,                          /* length of sequences to search for local (lL) and glocal (gL) modes */    
+				 lmsvN, lvitN, lfwdN,                     /* number of seqs to search for each alg */
+				 esl_opt_GetInteger(go, "--exp-gfwdN"),   /* number of seqs for glocal Fwd */
+				 lftailp,                                 /* fraction of tail mass to fit for local Fwd */
+				 esl_opt_GetReal   (go, "--exp-gftp"),    /* fraction of tail mass to fit for glocal Fwd */
+				 esl_opt_GetBoolean(go, "--exp-fitlam"),  /* fit lambdas? otherwise use 0.693 with slight correction */
+				 esl_opt_GetBoolean(go, "--exp-real"),    /* use realistic seqs (if TRUE) or iid (if FALSE) */
+				 esl_opt_GetBoolean(go, "--exp-null3"),   /* use null3 correction? */
+				 esl_opt_GetBoolean(go, "--exp-bias"),    /* use bias correction? */
+				 cm->p7_n3omega, cm->null,                /* omega for null3 correction, cm null model */
+				 &agfmu, &agflambda))  
+       != eslOK) cm_Fail("Error calibrating additional p7 HMM");
 
+    if((status = cm_Addp7(cm, ahmm, agfmu, agflambda, errbuf)) != eslOK) cm_Fail("Error adding HMM to CM: %s\n", errbuf);
+  }
 
   *ret_cm = cm;
   return eslOK;
@@ -2381,4 +2455,45 @@ dump_emission_info(FILE *fp, CM_t *cm)
       
   FreeEmitMap(emap);
   return;
+}
+
+
+/* Function: p7_prior_Read()
+ * Incept:   EPN, Tue Nov 16 13:44:35 2010
+ *
+ * Purpose:  Input a p7 prior from an open stream
+ *           (probably an open file).
+ * 
+ * Returns:  A prior <pri>. NULL if an error occurs.
+ */
+P7_PRIOR *
+p7_prior_Read(FILE *fp) 
+{
+  P7_PRIOR *pri = NULL;
+  int        status;
+  ESL_FILEPARSER *efp = NULL;
+
+  ESL_ALLOC(pri, sizeof(P7_PRIOR));
+  pri->tm = pri->ti = pri->td = pri->em = pri->ei = NULL;
+
+  if ((efp = esl_fileparser_Create(fp)) == NULL) goto ERROR;
+  esl_fileparser_SetCommentChar(efp, '#');
+
+  /* Transition section: 3 sets of transitions out of match, out of insert, and out of delete */
+  if (esl_mixdchlet_Read(efp, &(pri->tm)) != eslOK) goto ERROR;
+  if (esl_mixdchlet_Read(efp, &(pri->ti)) != eslOK) goto ERROR;
+  if (esl_mixdchlet_Read(efp, &(pri->td)) != eslOK) goto ERROR;
+
+  /* Emission section: match emissions, then insert emissions */
+  if (esl_mixdchlet_Read(efp, &(pri->em)) != eslOK) goto ERROR;
+  if (esl_mixdchlet_Read(efp, &(pri->ei)) != eslOK) goto ERROR;
+
+  esl_fileparser_Destroy(efp);
+
+  return pri;
+  
+ ERROR: 
+  if(efp != NULL) esl_fileparser_Destroy(efp);
+  if(pri != NULL) p7_prior_Destroy(pri);
+  return NULL;
 }
