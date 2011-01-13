@@ -127,7 +127,9 @@ static ESL_OPTIONS options[] = {
   { "--sums",         eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,"--hbanded",       NULL,           "use posterior sums during HMM band calculation (widens bands)", 101 },
   { "--null2",        eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,"--no-null3", "--noalign",         "turn on the post hoc second null model", 101 },
   { "--no-null3",     eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,      NULL,        NULL,           "turn OFF the NULL3 post hoc additional null model", 101 },
-  { "-s",             eslARG_INT,    "181",      NULL, "n>=0",               NULL,      NULL,          NULL,         "set RNG seed to <n> (if 0: one-time arbitrary seed)", 101 },
+  { "--greedy",       eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,      NULL,        NULL,           "resolve hits with greedy algorithm, instead of optimal one", 101 },
+  { "--hgreedy",      eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,"--forward",       NULL,           "with --forward, resolve hits with greedy algorithm", 101 },
+  { "-s",             eslARG_INT,    "181",      NULL, "n>=0",               NULL,      NULL,        NULL,           "set RNG seed to <n> (if 0: one-time arbitrary seed)", 101 },
   { "--stall",        eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,      NULL,        NULL,           "arrest after start: for debugging MPI under gdb", 101 },  
   /* Developer options related to experimental local begin/end modes */
   { "--pebegin",      eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,      NULL, "-g,--pbegin","set all local begins as equiprobable", 102 },
@@ -1228,6 +1230,12 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     cm->search_opts |= CM_SEARCH_HMMFORWARD;
     cm->search_opts |= CM_SEARCH_NOQDB;
   }
+  if(esl_opt_GetBoolean(go, "--greedy")) { 
+    cm->search_opts |= CM_SEARCH_CMGREEDY;
+  }
+  if(esl_opt_GetBoolean(go, "--hgreedy")) { 
+    cm->search_opts |= CM_SEARCH_HMMGREEDY;
+  }
 
   /* align_opts, by default, DO NOT align with HMM bands */
   if(esl_opt_GetBoolean(go, "--aln-hbanded"))  { 
@@ -1536,6 +1544,10 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   final_S = E2SurvFract(final_E, cm->W, cfg->avg_hit_len, cfg->dbsize, FALSE); /* FALSE says don't add a W pad, we're not filtering in final round */
   /* update the search info, which holds the thresholds for final round */
   UpdateSearchInfoCutoff(cm, cm->si->nrounds, final_ctype, final_sc, final_E);   
+  /* turn greedy back on if specified */
+  if(esl_opt_GetBoolean(go, "--greedy"))  cm->si->search_opts[cm->si->nrounds] |= CM_SEARCH_CMGREEDY;
+  if(esl_opt_GetBoolean(go, "--hgreedy")) cm->si->search_opts[cm->si->nrounds] |= CM_SEARCH_HMMGREEDY;
+
   ValidateSearchInfo(cm, cm->si);
 
   /* Handle case where --fil-finE-hmm <x> or --fil-finT-hmm <x> was set on command line, if this is the case, 
