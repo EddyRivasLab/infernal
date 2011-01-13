@@ -1699,8 +1699,6 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
   ESL_DMATRIX *D = NULL;/* the distance matrix */
   double *diff = NULL; /* [0..T->N-2], diff[n]= min distance between any leaf in right and
 		        * left subtree of node n of tree T */
-  double *minld = NULL;/* [0..T->N-2], min dist from node to any taxa in left  subtree */
-  double *minrd = NULL;/* [0..T->N-2], min dist from node to any taxa in right subtree */
   int     nc;          /* number of clusters/MSAs  */
   int    *clust = NULL;/* [0..T->N-1], cluster number (0..nc-1) this seq is in */
   int    *csize = NULL;/* [0..nc-1], size of each cluster */
@@ -1736,6 +1734,7 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
   else { /* Mode 2 or Mode 3 */ 
     /* Create distance matrix and infer tree by single linkage clustering */
     if((status = esl_dst_XDiffMx(mmsa->abc, mmsa->ax, mmsa->nseq, &D)) != eslOK) ESL_FAIL(status, errbuf, "esl_dst_XDiffMx() error, status: %d", status);
+    /*esl_dmatrix_Dump(stdout, D, NULL, NULL);*/
     if((status = esl_tree_SingleLinkage(D, &T)) != eslOK)                        ESL_FAIL(status, errbuf, "esl_tree_SingleLinkage() error, status: %d", status);
     if((status = esl_tree_SetTaxaParents(T)) != eslOK)                           ESL_FAIL(status, errbuf, "esl_tree_SetTaxaParentse() error, status: %d", status);
     /*esl_tree_WriteNewick(stdout, T);*/
@@ -1745,21 +1744,22 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
      * (use: n_child > n, unless n's children are taxa)
      * diff[n] is minimum distance between any taxa (leaf) in left subtree of 
      * n to any taxa in right subtree of n. 
+     *
+     * EPN, Thu Jan 13 13:27:07 2011:
+     * Technically, we don't have to do this, diff values are already
+     * stored in T->ld and T->rd using the current esl_tree.c code, 
+     * but previously (versions ->1.0.2) we had to calculate diff[] here.
+     * I'm leaving it in the code because later code relies on it
+     * (see note on rounding of diff values in "Mode 3" comment block below) 
      */
     ESL_ALLOC(diff,  (sizeof(double) * (T->N - 1)));  /* one for each node */
-    ESL_ALLOC(minld, (sizeof(double) * (T->N - 1))); 
-    ESL_ALLOC(minrd, (sizeof(double) * (T->N - 1))); 
     for (n = (T->N-2); n >= 0; n--) {
-      minld[n] = T->ld[n] + ((T->left[n]  > 0) ? (minld[T->left[n]])  : 0);
-      minrd[n] = T->rd[n] + ((T->right[n] > 0) ? (minrd[T->right[n]]) : 0);
-      diff[n]  = minld[n] + minrd[n];
+      diff[n]  = T->ld[n]; /* or we could set it to T->rd[n], they're identical */
       diff[n] *= 1000.; 
       diff[n]  = (float) ((int) diff[n]);
       diff[n] /= 1000.; 
       /*printf("diff[n:%d]: %f\n", n, diff[n]);*/
     }
-    free(minld); minld = NULL;
-    free(minrd); minrd = NULL;
     /*for (n = 0; n < (T->N-1); n++)
       printf("diff[n:%d]: %f\n", n, diff[n]);
       for (n = 0; n < (T->N-1); n++)
@@ -1852,8 +1852,6 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
   
  ERROR: 
   if(diff  != NULL) free(diff);
-  if(minld != NULL) free(minld);
-  if(minrd != NULL) free(minrd);
   if(clust != NULL) free(clust);
   if(csize != NULL) free(csize);
   if(buffer!= NULL) free(buffer);
@@ -2014,20 +2012,20 @@ find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret
       mindiff   -= (mindiff - low) / 2.;
       if((fabs(high-0.) < thresh) && (fabs(low-0.) < thresh))  keep_going = FALSE; 
       /* stop, high and low have converged at 0. */
-      /*printf("LOWER   nc: %d mindiff: %f low: %f high: %f\n", curr_nc, mindiff, low, high);*/
+      printf("LOWER   nc: %d mindiff: %f low: %f high: %f\n", curr_nc, mindiff, low, high);
     }
     else {/* curr_nc >= target_nc */
       low        = mindiff;
       low_nc     = curr_nc;
       mindiff   += (high - mindiff) / 2.;
       if(fabs(high-low) < thresh)  keep_going = FALSE; /* stop, high and low have converged */
-      /*printf("GREATER nc: %d mindiff: %f low: %f high: %f\n", curr_nc, mindiff, low, high);*/
+      printf("GREATER nc: %d mindiff: %f low: %f high: %f\n", curr_nc, mindiff, low, high);
     }
   }
   /* it's possible we can't reach our target, if so, set mindiff as minimum value that gives 
    * less than target_nc clusters. */
   if(curr_nc != target_nc) {
-    /*printf("targ: %d curr: %d low: %d (%f) high: %d (%f)\n", target_nc, curr_nc, low_nc, low, high_nc, high);*/
+    printf("targ: %d curr: %d low: %d (%f) high: %d (%f)\n", target_nc, curr_nc, low_nc, low, high_nc, high);
     if(high_nc < target_nc) {
       mindiff = high;
       if((status = select_node(T, diff, mindiff, &clust, &curr_nc, &curr_best, errbuf)) != eslOK) return status;
@@ -2041,7 +2039,7 @@ find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret
 	high_nc = curr_nc;
       }
   }
-  /*printf("FINAL mindiff: %f\n", mindiff);  */
+  printf("FINAL mindiff: %f\n", mindiff);  
   *ret_nc    = curr_nc;
   *ret_clust = clust;
   *ret_mindiff = mindiff;
