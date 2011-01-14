@@ -387,6 +387,8 @@ FreeCM(CM_t *cm)
       if(cm->ap7A[z]    != NULL) p7_hmm_Destroy(cm->ap7A[z]);
       if(cm->ap7_evparamAA[z] != NULL) free(cm->ap7_evparamAA[z]);
     }
+    free(cm->ap7A);
+    free(cm->ap7_evparamAA);
     cm->nap7 = 0;
   }
 

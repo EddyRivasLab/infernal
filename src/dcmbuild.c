@@ -36,6 +36,7 @@
 
 #define WGTOPTS "--wgsc,--wblosum,--wpb,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
 #define EFFOPTS "--eent,--enone,--eset"                        /* Exclusive options for effective sequence number calculation */
+#define CLUSTOPTS "--ctarget,--cmaxid,--call,--corig,--cdump"  /* options for clustering the input aln and building a CM from each cluster */
 
 static P7_PRIOR * p7_prior_Read(FILE *fp);
 
@@ -98,10 +99,10 @@ static ESL_OPTIONS options[] = {
   { "--ileaved", eslARG_NONE,   FALSE, NULL, NULL,       NULL,     NULL,        NULL, "w/--refine,--cdump, output alnment as interleaved Stockholm", 7 },
 
   /* Probably temporary options controlling p7 calibration */
-  { "--exp-real",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "sample realistic genomic seqs, not iid, for p7 calibration", 8},
+  { "--exp-iid",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "sample iid, not realistic genomic seqs, for p7 calibration", 8},
   { "--exp-null3",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use null3 correction in p7 calibrations", 8},
   { "--exp-bias",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use bias correction in p7 calibrations", 8},
-  { "--exp-fitlam",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,           "fit lambda, don't use fixed lambda close to 0.693", 8},
+  { "--exp-fixlam",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use fixed lambda near 0.693, don't fit lambdas", 8},
   { "--exp-lwmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for local stats is <x> * cm->W", 8},
   { "--exp-gwmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for glocal stats is <x> * cm->W", 8},
   { "--exp-lL",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--exp-lwmult,--exp-hmmerL",  "length of seqs to search for local stats is <n>", 8},
@@ -117,6 +118,10 @@ static ESL_OPTIONS options[] = {
   /* Probably temporary options controlling calibration of additional p7 models */
   { "--p7-add",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "build an additional p7, using hmm entropy weighting", 9},
   { "--p7-prior",    eslARG_INFILE, NULL,  NULL, NULL,    NULL,"--p7-add", NULL,        "read p7 prior for --p7-add from file <f>", 9},
+  { "--p7-ctarget",  eslARG_INT,   NULL,   NULL, "n>0" ,  NULL,"--p7-add", CLUSTOPTS,   "build (at most) <n> HMMs by splitting MSA into <n> clusters", 9 },
+  { "--p7-corig",    eslARG_NONE,  FALSE,  NULL, NULL,    NULL,"--p7-ctarget", NULL,    "build an additional HMM from the original, full MSA", 6 }, 
+  { "--p7-cdump",    eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL, NULL,            "dump the MSA for each cluster (HMM) to file <s>", 6 },
+
 
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer debugging/experimentation */
@@ -182,6 +187,7 @@ struct cfg_s {
   FILE         *gtblfp;         /* for --gtbl */
   FILE         *tracefp;        /* for --tfile */
   FILE         *cdfp;           /* if --cdump, output file handle for dumping clustered MSAs */
+  FILE         *p7cdfp;         /* if --p7-cdump, output file handle for dumping clustered MSAs */
   FILE         *refinefp;       /* if --refine, output file handle for dumping refined MSAs */
   FILE         *rdfp;           /* if --rfile, output file handle for dumping intermediate MSAs during iterative refinement */
 
@@ -349,6 +355,7 @@ main(int argc, char **argv)
   cfg.gtblfp     = NULL;
   cfg.tracefp    = NULL;
   cfg.cdfp       = NULL;
+  cfg.p7cdfp     = NULL;
   cfg.refinefp   = NULL;
   cfg.rdfp       = NULL;
 
@@ -407,6 +414,10 @@ main(int argc, char **argv)
     printf("# Alignments for each cluster saved in file %s.\n", esl_opt_GetString(go, "--cdump"));
     fclose(cfg.cdfp); 
   }
+  if (cfg.p7cdfp != NULL) {
+    printf("# Alignments for each cluster saved in file %s.\n", esl_opt_GetString(go, "--p7-cdump"));
+    fclose(cfg.p7cdfp); 
+  }
   if (cfg.refinefp != NULL) {
     printf("# Refined alignments used to build CMs saved in file %s.\n", esl_opt_GetString(go, "--refine"));
     fclose(cfg.refinefp); 
@@ -446,6 +457,7 @@ main(int argc, char **argv)
  *    cfg->pri     - prior, used for all models
  *    cfg->fullmat - RIBOSUM matrix used for all models (optional)
  *    cfg->cdfp    - open file to dump MSAs to (optional)
+ *    cfg->p7cdfp  - open file to dump MSAs to (optional)
  *    cfg->comlog  - only allocated
  */
 static int
@@ -533,6 +545,8 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     cfg->ap7_bg = p7_bg_Create(cfg->abc);
     /* create the P7_BUILDER, pass NULL as the <go> argument, this sets all parameters to default */
     cfg->ap7_bld = p7_builder_Create(NULL, cfg->abc);
+    cfg->ap7_bld->w_len = -1;
+    cfg->ap7_bld->w_beta = p7_DEFAULT_WINDOW_BETA;
     if(esl_opt_IsUsed(go, "--p7-prior")) {
       FILE *pfp;
       if (cfg->ap7_bld->prior != NULL) p7_prior_Destroy(cfg->ap7_bld->prior);
@@ -600,6 +614,10 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       if ((cfg->cdfp = fopen(esl_opt_GetString(go, "--cdump"), "w")) == NULL)
 	cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--cdump"));
     }
+  if (esl_opt_GetString(go, "--p7-cdump") != NULL) {
+    if ((cfg->p7cdfp = fopen(esl_opt_GetString(go, "--p7-cdump"), "w")) == NULL)
+      cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--p7-cdump"));
+  }
   /* create the comlog */
   cfg->comlog = CreateComLog();
   if((status = write_cmbuild_info_to_comlog(go, cfg, errbuf)) != eslOK) return status;
@@ -645,6 +663,16 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int          ncm = 1;    /* number of CMs to be built for current MSA */
   int          c   = 0;    /* counter over CMs built for a single MSA */
   ESL_MSA    **cmsa;       /* pointer to cluster MSAs to build CMs from */
+  /* p7 cluster option related variables */
+  int          do_cluster_for_hmms_only; /* TRUE if --p7-ctarget || --p7-cmaxid || --p7-call */
+  int          do_p7_ctarget;     /* TRUE if --ctarget */
+  int          do_p7_cmindiff;    /* TRUE if --cmaxid  */
+  int          do_p7_call;        /* TRUE if --call */
+  int          nahmm;             /* number of hmms to build, only != 0 if do_cluster_for_hmms_only */
+  P7_HMM     **ahmmA = NULL;      /* the per-cluster-HMMs, we save them then copy them to the final CM */
+  float       *agfmuA = NULL;     /* the per-cluster-HMM glocal mu values */
+  float       *agflambdaA = NULL; /* the per-cluster-HMM glocal lambda values */
+  int          h;
 
   if ((status = init_cfg(go, cfg, errbuf))         != eslOK) cm_Fail(errbuf);
   if ((status = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
@@ -658,8 +686,17 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   do_cluster = (do_ctarget || do_cmindiff || do_call) ? TRUE : FALSE;
   if((do_ctarget + do_cmindiff + do_call) > TRUE) cm_Fail("More than one of --ctarget, --cmaxid, --call were enabled, shouldn't happen.");
 
-  nc      = do_ctarget  ? esl_opt_GetInteger(go, "--ctarget")    : 0;
-  mindiff = do_cmindiff ? (1. - esl_opt_GetReal(go, "--cmaxid")) : 0.;
+  do_p7_ctarget  = esl_opt_IsOn(go, "--p7-ctarget");
+  do_p7_call     = FALSE; /* not yet implemented, would hook up to --p7-call option */
+  do_p7_cmindiff = FALSE; /* not yet implemented, would hook up to --p7-maxid option */
+  do_cluster_for_hmms_only = do_p7_ctarget;
+
+  nc      = 0;
+  mindiff = 0.;
+  if(do_ctarget)     nc      = esl_opt_GetInteger(go, "--ctarget");
+  if(do_p7_ctarget)  nc      = esl_opt_GetInteger(go, "--p7-ctarget");
+  if(do_cmindiff)    mindiff = 1. - esl_opt_GetInteger(go, "--maxid");
+  if(do_p7_cmindiff) mindiff = 1. - esl_opt_GetInteger(go, "--p7-maxid");
 
   /* predict maximum length of CM name for pretty formatting */
   if((status = get_namewidth(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
@@ -677,23 +714,38 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if(msa->name == NULL)                             cm_Fail("Error naming MSA");
       ncm = 1;     /* default: only build 1 CM for each MSA in alignment file */
 
-      if(do_cluster) /* divide input MSA into clusters, and build CM from each cluster */
+      if(do_cluster) /* divide input MSA into clusters, and build model(s) from each cluster */
 	{
 	  if((status = MSADivide(msa, do_call, do_cmindiff, do_ctarget, mindiff, nc,
 				 esl_opt_GetBoolean(go, "--corig"), &ncm, &cmsa, errbuf)) != eslOK) cm_Fail(errbuf);
 	  esl_msa_Destroy(msa); /* we've copied the master msa into cmsa[ncm], we can delete this copy */
 	}
+      else if(do_cluster_for_hmms_only) /* divide input MSA into clusters, and build hmm(s) from each cluster, we'll use all these HMMs to filter with */
+	{
+	  if((status = MSADivide(msa, do_p7_call, do_p7_cmindiff, do_p7_ctarget, mindiff, nc,
+				 TRUE, &ncm, &cmsa, errbuf)) != eslOK) cm_Fail(errbuf);
+	  esl_msa_Destroy(msa); /* we've copied the master msa into cmsa[ncm], we can delete this copy */
+
+	  nahmm = ncm-1;
+	  ESL_ALLOC(ahmmA,     sizeof(P7_HMM *) * nahmm);
+	  ESL_ALLOC(agfmuA,    sizeof(float)    * nahmm);
+	  ESL_ALLOC(agflambdaA,sizeof(float)    * nahmm);
+	}
+
       for(c = 0; c < ncm; c++)
 	{
 	  cfg->ncm_total++;  
-	  if(do_cluster) {
+	  if(do_cluster || do_cluster_for_hmms_only) {
 	      msa = cmsa[c];
-	      if(esl_opt_GetString(go, "--cdump") != NULL) { 
+	      if(esl_opt_IsOn(go, "--cdump")) { 
 		if((status = esl_msa_Write(cfg->cdfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK)
 		  cm_Fail("--cdump related esl_msa_Write() call failed.");
 	      }
+	      if(esl_opt_IsOn(go, "--p7-cdump")) { 
+		if((status = esl_msa_Write(cfg->p7cdfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK)
+		  cm_Fail("--p7-cdump related esl_msa_Write() call failed.");
+	      }
 	  }
-
 	  /* if being verbose, print some stuff about what we're about to do.
 	   */
 	  if (cfg->be_verbose) {
@@ -725,12 +777,51 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    } 
 	  }	  
 	  /* output cm */
-	  if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm, mtr, tr)) != eslOK) cm_Fail(errbuf);
-	  
-	  if(cfg->be_verbose) { 
-	    fprintf(stdout, "\n");
-	    SummarizeCM(stdout, cm);  
-	    fprintf(stdout, "//\n");
+	  if(do_cluster_for_hmms_only) { 
+	    /* only output the CM if it is the final CM, built from the entire input aln, 
+	     * otherwise it was built from part of the seed, in this case we save the
+	     * HMM that was built from it, but don't care about the CM.
+	     */
+	    if(c < nahmm) { /* not the CM built from the full input aln */
+	      if(cm->nap7 != 1) cm_Fail("Error, one HMM not created from sequence cluster");
+	      ahmmA[c]      = p7_hmm_Clone(cm->ap7A[0]);
+	      agfmuA[c]     = cm->ap7_evparamAA[0][CM_p7_GFMU];
+	      agflambdaA[c] = cm->ap7_evparamAA[0][CM_p7_GFLAMBDA];
+	      printf("added HMM: %d\n", c);
+	    }
+	    else { /* the CM built from the full input aln, add all hmms to it and output it */
+	      if(! esl_opt_GetBoolean(go, "--p7-corig")) { 
+		if(cm->nap7 != 1) cm_Fail("Error, one HMM not created from sequence cluster");
+		/* remove the additional HMM from the CM first */
+		p7_hmm_Destroy(cm->ap7A[0]);
+		free(cm->ap7_evparamAA[0]);
+		free(cm->ap7A); 
+		free(cm->ap7_evparamAA);
+		cm->ap7A = NULL;
+		cm->ap7_evparamAA = NULL;
+		cm->nap7 = 0;
+		cm->flags &= ~CMH_AP7;
+		cm->flags &= ~CMH_AP7_STATS;
+	      }
+	      for(h = 0; h < nahmm; h++) { 
+		if((status = cm_Addp7(cm, ahmmA[h], agfmuA[h], agflambdaA[h], errbuf)) != eslOK) cm_Fail("Error adding HMM to CM: %s\n", errbuf);
+	      }	      
+	      if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm, mtr, tr)) != eslOK) cm_Fail(errbuf);
+	      if(cfg->be_verbose) { 
+		fprintf(stdout, "\n");
+		SummarizeCM(stdout, cm);  
+		fprintf(stdout, "//\n");
+	      }
+	    }
+	  }
+	  else { /* ! do_cluster_for_hmms_only, output the CM */
+	    if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm, mtr, tr)) != eslOK) cm_Fail(errbuf);
+	    
+	    if(cfg->be_verbose) { 
+	      fprintf(stdout, "\n");
+	      SummarizeCM(stdout, cm);  
+	      fprintf(stdout, "//\n");
+	    }
 	  }
 
 	  FreeCM(cm);
@@ -747,6 +838,9 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     }
   if(do_cluster) free(cmsa);
   if(cfg->fullmat != NULL) FreeMat(cfg->fullmat);
+  return;
+
+ ERROR: cm_Fail("Out of memory");
   return;
 }
 
@@ -790,7 +884,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
     lmsvL = lvitL = lfwdL = (esl_opt_IsUsed(go, "--exp-lL")) ? esl_opt_GetInteger(go, "--exp-lL") : esl_opt_GetReal(go, "--exp-lwmult") * cm->W;
     gfwdL = (esl_opt_IsUsed(go, "--exp-gL")) ? esl_opt_GetInteger(go, "--exp-gL") : esl_opt_GetReal(go, "--exp-gwmult") * cm->W;
   }
-  if(esl_opt_GetBoolean(go, "--exp-fitlam")) { 
+  if(! esl_opt_GetBoolean(go, "--exp-fixlam")) { 
     lmsvN = esl_opt_IsUsed(go, "--exp-lmsvN") ? esl_opt_GetInteger(go, "--exp-lmsvN") : 10000;
     lvitN = esl_opt_IsUsed(go, "--exp-lvitN") ? esl_opt_GetInteger(go, "--exp-lvitN") : 10000;
     lfwdN = esl_opt_IsUsed(go, "--exp-lfwdN") ? esl_opt_GetInteger(go, "--exp-lfwdN") : 10000;
@@ -804,16 +898,16 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
   }
   /* Calibrate the p7 hmm */
   if((status = cm_mlp7_Calibrate(cm, errbuf, 
-				 lmsvL, lvitL, lfwdL, gfwdL,              /* length of sequences to search for each alg */
-				 lmsvN, lvitN, lfwdN,                     /* number of seqs to search for each alg */
-				 esl_opt_GetInteger(go, "--exp-gfwdN"),   /* number of seqs for glocal Fwd */
-				 lftailp,                                 /* fraction of tail mass to fit for local Fwd */
-				 esl_opt_GetReal   (go, "--exp-gftp"),    /* fraction of tail mass to fit for glocal Fwd */
-				 esl_opt_GetBoolean(go, "--exp-fitlam"),  /* fit lambdas? otherwise use 0.693 with slight correction */
-				 esl_opt_GetBoolean(go, "--exp-real"),    /* use realistic seqs (if TRUE) or iid (if FALSE) */
-				 esl_opt_GetBoolean(go, "--exp-null3"),   /* use null3 correction? */
-				 esl_opt_GetBoolean(go, "--exp-bias"),    /* use bias correction? */
-				 cm->p7_n3omega, cm->null))               /* omega for null3 correction, cm null model */
+				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for each alg */
+				 lmsvN, lvitN, lfwdN,                        /* number of seqs to search for each alg */
+				 esl_opt_GetInteger(go, "--exp-gfwdN"),      /* number of seqs for glocal Fwd */
+				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
+				 esl_opt_GetReal   (go, "--exp-gftp"),       /* fraction of tail mass to fit for glocal Fwd */
+				 (! esl_opt_GetBoolean(go, "--exp-fixlam")), /* fit lambdas? otherwise use 0.693 with slight correction */
+				 (! esl_opt_GetBoolean(go, "--exp-iid")),    /* use realistic seqs (if TRUE) or iid (if FALSE) */
+				 esl_opt_GetBoolean(go, "--exp-null3"),      /* use null3 correction? */
+				 esl_opt_GetBoolean(go, "--exp-bias"),       /* use bias correction? */
+				 cm->p7_n3omega, cm->null))                  /* omega for null3 correction, cm null model */
      != eslOK) cm_Fail("Error calibrating cm->mlp7 HMM");
   
   /* Build and calibrate an additional HMM if nec */
@@ -821,15 +915,15 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
     if ((status = p7_Builder(cfg->ap7_bld, msa, cfg->ap7_bg, &ahmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->ap7_bld->errbuf); goto ERROR; }
     if((status = cm_p7_Calibrate(ahmm, errbuf, 
 				 lmsvL, lvitL, lfwdL, gfwdL,                          /* length of sequences to search for local (lL) and glocal (gL) modes */    
-				 lmsvN, lvitN, lfwdN,                     /* number of seqs to search for each alg */
-				 esl_opt_GetInteger(go, "--exp-gfwdN"),   /* number of seqs for glocal Fwd */
-				 lftailp,                                 /* fraction of tail mass to fit for local Fwd */
-				 esl_opt_GetReal   (go, "--exp-gftp"),    /* fraction of tail mass to fit for glocal Fwd */
-				 esl_opt_GetBoolean(go, "--exp-fitlam"),  /* fit lambdas? otherwise use 0.693 with slight correction */
-				 esl_opt_GetBoolean(go, "--exp-real"),    /* use realistic seqs (if TRUE) or iid (if FALSE) */
-				 esl_opt_GetBoolean(go, "--exp-null3"),   /* use null3 correction? */
-				 esl_opt_GetBoolean(go, "--exp-bias"),    /* use bias correction? */
-				 cm->p7_n3omega, cm->null,                /* omega for null3 correction, cm null model */
+				 lmsvN, lvitN, lfwdN,                        /* number of seqs to search for each alg */
+				 esl_opt_GetInteger(go, "--exp-gfwdN"),      /* number of seqs for glocal Fwd */
+				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
+				 esl_opt_GetReal   (go, "--exp-gftp"),       /* fraction of tail mass to fit for glocal Fwd */
+				 (! esl_opt_GetBoolean(go, "--exp-fixlam")), /* fit lambdas? otherwise use 0.693 with slight correction */
+				 (! esl_opt_GetBoolean(go, "--exp-iid")),    /* use realistic seqs (if TRUE) or iid (if FALSE) */
+				 esl_opt_GetBoolean(go, "--exp-null3"),      /* use null3 correction? */
+				 esl_opt_GetBoolean(go, "--exp-bias"),       /* use bias correction? */
+				 cm->p7_n3omega, cm->null,                   /* omega for null3 correction, cm null model */
 				 &agfmu, &agflambda))  
        != eslOK) cm_Fail("Error calibrating additional p7 HMM");
 
@@ -1823,8 +1917,6 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
   ESL_DMATRIX *D = NULL;/* the distance matrix */
   double *diff = NULL; /* [0..T->N-2], diff[n]= min distance between any leaf in right and
 		        * left subtree of node n of tree T */
-  double *minld = NULL;/* [0..T->N-2], min dist from node to any taxa in left  subtree */
-  double *minrd = NULL;/* [0..T->N-2], min dist from node to any taxa in right subtree */
   int     nc;          /* number of clusters/MSAs  */
   int    *clust = NULL;/* [0..T->N-1], cluster number (0..nc-1) this seq is in */
   int    *csize = NULL;/* [0..nc-1], size of each cluster */
@@ -1869,21 +1961,22 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
      * (use: n_child > n, unless n's children are taxa)
      * diff[n] is minimum distance between any taxa (leaf) in left subtree of 
      * n to any taxa in right subtree of n. 
+     *
+     * EPN, Thu Jan 13 13:27:07 2011:
+     * Technically, we don't have to do this, diff values are already
+     * stored in T->ld and T->rd using the current esl_tree.c code, 
+     * but previously (versions ->1.0.2) we had to calculate diff[] here.
+     * I'm leaving it in the code because later code relies on it
+     * (see note on rounding of diff values in "Mode 3" comment block below) 
      */
     ESL_ALLOC(diff,  (sizeof(double) * (T->N - 1)));  /* one for each node */
-    ESL_ALLOC(minld, (sizeof(double) * (T->N - 1))); 
-    ESL_ALLOC(minrd, (sizeof(double) * (T->N - 1))); 
     for (n = (T->N-2); n >= 0; n--) {
-      minld[n] = T->ld[n] + ((T->left[n]  > 0) ? (minld[T->left[n]])  : 0);
-      minrd[n] = T->rd[n] + ((T->right[n] > 0) ? (minrd[T->right[n]]) : 0);
-      diff[n]  = minld[n] + minrd[n];
+      diff[n]  = T->ld[n]; /* or we could set it to T->rd[n], they're identical */
       diff[n] *= 1000.; 
       diff[n]  = (float) ((int) diff[n]);
       diff[n] /= 1000.; 
       /*printf("diff[n:%d]: %f\n", n, diff[n]);*/
     }
-    free(minld); minld = NULL;
-    free(minrd); minrd = NULL;
     /*for (n = 0; n < (T->N-1); n++)
       printf("diff[n:%d]: %f\n", n, diff[n]);
       for (n = 0; n < (T->N-1); n++)
@@ -1976,8 +2069,6 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
   
  ERROR: 
   if(diff  != NULL) free(diff);
-  if(minld != NULL) free(minld);
-  if(minrd != NULL) free(minrd);
   if(clust != NULL) free(clust);
   if(csize != NULL) free(csize);
   if(buffer!= NULL) free(buffer);

@@ -1788,9 +1788,9 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
       mi++;
     }
     else { 
-      /***************************************************************************************************************
-       * case 2: our next hit, in order is from list 2, same code as case, with list 1 and list 2 variables inverted *
-       ***************************************************************************************************************/
+      /****************************************************************************************************************
+       * case 2: our next hit, in order is from list 2, same code as case 1, with list 1 and list 2 variables inverted *
+       ****************************************************************************************************************/
       /* initialize merged hit as copy of hit from list 2 */
       mws[mi] = ws2[i2]; /* our merged window begins at ws1[i2], this won't change */
       mwp[mi] = wp2[i2]; /* for now, our best P-value is wp2[i2] */
