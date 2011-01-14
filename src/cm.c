@@ -161,7 +161,7 @@ void
 CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
 {
   int status;
-  int v, z;
+  int v;
                                 /* alphabet, only a reference */
   cm->abc    = abc; 
 				/* structural information */

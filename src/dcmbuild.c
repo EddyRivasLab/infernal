@@ -119,8 +119,9 @@ static ESL_OPTIONS options[] = {
   { "--p7-add",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "build an additional p7, using hmm entropy weighting", 9},
   { "--p7-prior",    eslARG_INFILE, NULL,  NULL, NULL,    NULL,"--p7-add", NULL,        "read p7 prior for --p7-add from file <f>", 9},
   { "--p7-ctarget",  eslARG_INT,   NULL,   NULL, "n>0" ,  NULL,"--p7-add", CLUSTOPTS,   "build (at most) <n> HMMs by splitting MSA into <n> clusters", 9 },
-  { "--p7-corig",    eslARG_NONE,  FALSE,  NULL, NULL,    NULL,"--p7-ctarget", NULL,    "build an additional HMM from the original, full MSA", 6 }, 
-  { "--p7-cdump",    eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL, NULL,            "dump the MSA for each cluster (HMM) to file <s>", 6 },
+  { "--p7-corig",    eslARG_NONE,  FALSE,  NULL, NULL,    NULL,"--p7-ctarget", NULL,    "build an additional HMM from the original, full MSA", 9 }, 
+  { "--p7-cdump",    eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL, NULL,            "dump the MSA for each cluster (HMM) to file <s>", 9 },
+  { "--p7-cml",      eslARG_NONE,  FALSE,  NULL, NULL,    NULL,"--p7-ctarget","--p7-corig","per-cluster HMMs will be ML HMMs built from per-cluster CMs", 9 }, 
 
 
   /* All options below are developer options, only shown if --devhelp invoked */
@@ -784,9 +785,16 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	     */
 	    if(c < nahmm) { /* not the CM built from the full input aln */
 	      if(cm->nap7 != 1) cm_Fail("Error, one HMM not created from sequence cluster");
-	      ahmmA[c]      = p7_hmm_Clone(cm->ap7A[0]);
-	      agfmuA[c]     = cm->ap7_evparamAA[0][CM_p7_GFMU];
-	      agflambdaA[c] = cm->ap7_evparamAA[0][CM_p7_GFLAMBDA];
+	      if(esl_opt_GetBoolean(go, "--p7-cml")) { /* we want the ML HMM built from the CM */
+		ahmmA[c]      = p7_hmm_Clone(cm->mlp7);
+		agfmuA[c]     = cm->mlp7_evparam[CM_p7_GFMU];
+		agflambdaA[c] = cm->mlp7_evparam[CM_p7_GFLAMBDA];
+	      }
+	      else { /* we want the additional HMM, built from the seed (i.e. not the ML HMM built from the CM */
+		ahmmA[c]      = p7_hmm_Clone(cm->ap7A[0]);
+		agfmuA[c]     = cm->ap7_evparamAA[0][CM_p7_GFMU];
+		agflambdaA[c] = cm->ap7_evparamAA[0][CM_p7_GFLAMBDA];
+	      }
 	      printf("added HMM: %d\n", c);
 	    }
 	    else { /* the CM built from the full input aln, add all hmms to it and output it */
