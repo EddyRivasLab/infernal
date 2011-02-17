@@ -99,21 +99,20 @@ static ESL_OPTIONS options[] = {
   { "--ileaved", eslARG_NONE,   FALSE, NULL, NULL,       NULL,     NULL,        NULL, "w/--refine,--cdump, output alnment as interleaved Stockholm", 7 },
 
   /* Probably temporary options controlling p7 calibration */
-  { "--exp-iid",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "sample iid, not realistic genomic seqs, for p7 calibration", 8},
+  { "--exp-real",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "sample realistic, not iid genomic seqs, for p7 calibration", 8},
   { "--exp-null3",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use null3 correction in p7 calibrations", 8},
   { "--exp-bias",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use bias correction in p7 calibrations", 8},
-  { "--exp-fixlam",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use fixed lambda near 0.693, don't fit lambdas", 8},
-  { "--exp-lwmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for local stats is <x> * cm->W", 8},
-  { "--exp-gwmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for glocal stats is <x> * cm->W", 8},
-  { "--exp-lL",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--exp-lwmult,--exp-hmmerL",  "length of seqs to search for local stats is <n>", 8},
-  { "--exp-gL",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--exp-gwmult,--exp-hmmerL",  "length of seqs to search for glocal stats is <n>", 8},
-  { "--exp-hmmerL",  eslARG_NONE,   FALSE, NULL,  NULL,   NULL,  NULL, "--exp-lwmult,--exp-gwmult",  "use lengths from HMMER for calibrations", 8},
+  { "--exp-fitlam",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "fit lambda, don't use a fixed one  near 0.693", 8},
+  { "--exp-lcmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for local stats is <x> * cm->clen", 8},
+  { "--exp-gcmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for glocal stats is <x> * cm->clen", 8},
+  { "--exp-lL",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--exp-lcmult",  "length of seqs to search for local stats is <n>", 8},
+  { "--exp-gL",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--exp-gcmult",  "length of seqs to search for glocal stats is <n>", 8},
   { "--exp-lmsvN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local MSV calibration", 8},
   { "--exp-lvitN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local Vit calibration", 8},
   { "--exp-lfwdN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local Fwd calibration", 8},
-  { "--exp-gfwdN",   eslARG_INT,  "10000", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 glocal Fwd calibration", 8},
+  { "--exp-gfwdN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 glocal Fwd calibration", 8},
   { "--exp-lftp",    eslARG_REAL, "0.055", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 local fwd exp tail to <f> fraction of scoring dist", 8},
-  { "--exp-gftp",    eslARG_REAL,  "0.01", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 glocal fwd exp tail to <f> fraction of scoring dist", 8},
+  { "--exp-gftp",    eslARG_REAL, "0.065", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 glocal fwd exp tail to <f> fraction of scoring dist", 8},
 
   /* Probably temporary options controlling calibration of additional p7 models */
   { "--p7-add",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "build an additional p7, using hmm entropy weighting", 9},
@@ -863,9 +862,9 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
   P7_HMM *ahmm = NULL;
   int status;
   int lmsvL, lvitL, lfwdL, gfwdL;
-  int lmsvN, lvitN, lfwdN;
+  int lmsvN, lvitN, lfwdN, gfwdN;
   double agfmu, agflambda;
-  float lftailp;
+  float lftailp, gftailp;
 
   if ((status =  check_and_clean_msa    (go, cfg, errbuf, msa))                           != eslOK) goto ERROR;
   if ((status =  set_relative_weights   (go, cfg, errbuf, msa))                           != eslOK) goto ERROR;
@@ -883,36 +882,50 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
 			NULL, NULL)) != eslOK) cm_Fail("Error configuring CM: %s\n", errbuf);
 
   /* Define relevant parameters: */
-  if(esl_opt_GetBoolean(go, "--exp-hmmerL")) { 
-    lmsvL = lvitL = 200;
-    lfwdL = 100;
-    gfwdL = 2.*cm->W;
+
+  /* first, set all to default */
+  lmsvL = lvitL = 200;
+  lfwdL = 100;
+  gfwdL = ESL_MAX(100, 2.*cm->clen);
+  lmsvN = esl_opt_GetInteger(go, "--exp-lmsvN");
+  lvitN = esl_opt_GetInteger(go, "--exp-lvitN");
+  lfwdN = esl_opt_GetInteger(go, "--exp-lfwdN");
+  gfwdN = esl_opt_GetInteger(go, "--exp-gfwdN");
+  lftailp = esl_opt_GetReal(go, "--exp-lftp");
+  gftailp = esl_opt_GetReal(go, "--exp-gftp");
+
+  /* now, modify if nec based on command-line options */
+  if(esl_opt_IsUsed(go, "--exp-lL")) { 
+    lmsvL = lvitL = lfwdL = esl_opt_GetInteger(go, "--exp-lL");
   }
-  else { 
-    lmsvL = lvitL = lfwdL = (esl_opt_IsUsed(go, "--exp-lL")) ? esl_opt_GetInteger(go, "--exp-lL") : esl_opt_GetReal(go, "--exp-lwmult") * cm->W;
-    gfwdL = (esl_opt_IsUsed(go, "--exp-gL")) ? esl_opt_GetInteger(go, "--exp-gL") : esl_opt_GetReal(go, "--exp-gwmult") * cm->W;
+  else if(esl_opt_IsUsed(go, "--exp-lcmult")) { 
+    lmsvL = lvitL = lfwdL = esl_opt_GetReal(go, "--exp-lcmult") * cm->clen;
   }
-  if(! esl_opt_GetBoolean(go, "--exp-fixlam")) { 
+
+  if(esl_opt_IsUsed(go, "--exp-gL")) { 
+    gfwdL = esl_opt_GetInteger(go, "--exp-gL");
+  }
+  else if(esl_opt_IsUsed(go, "--exp-gcmult")) { 
+    gfwdL = esl_opt_GetReal(go, "--exp-gcmult") * cm->clen;
+  }
+
+  if(esl_opt_GetBoolean(go, "--exp-fitlam")) { 
     lmsvN = esl_opt_IsUsed(go, "--exp-lmsvN") ? esl_opt_GetInteger(go, "--exp-lmsvN") : 10000;
     lvitN = esl_opt_IsUsed(go, "--exp-lvitN") ? esl_opt_GetInteger(go, "--exp-lvitN") : 10000;
     lfwdN = esl_opt_IsUsed(go, "--exp-lfwdN") ? esl_opt_GetInteger(go, "--exp-lfwdN") : 10000;
+    gfwdN = esl_opt_IsUsed(go, "--exp-gfwdN") ? esl_opt_GetInteger(go, "--exp-gfwdN") : 10000;
     lftailp = esl_opt_IsUsed(go, "--exp-lftp") ? esl_opt_GetReal(go, "--exp-lftp") : 0.01;
+    gftailp = esl_opt_IsUsed(go, "--exp-gftp") ? esl_opt_GetReal(go, "--exp-gftp") : 0.01;
   }
-  else { 
-    lmsvN = esl_opt_GetInteger(go, "--exp-lmsvN");
-    lvitN = esl_opt_GetInteger(go, "--exp-lvitN");
-    lfwdN = esl_opt_GetInteger(go, "--exp-lfwdN");
-    lftailp = esl_opt_GetReal(go, "--exp-lftp");
-  }
+
   /* Calibrate the p7 hmm */
   if((status = cm_mlp7_Calibrate(cm, errbuf, 
 				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for each alg */
-				 lmsvN, lvitN, lfwdN,                        /* number of seqs to search for each alg */
-				 esl_opt_GetInteger(go, "--exp-gfwdN"),      /* number of seqs for glocal Fwd */
+				 lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
 				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
-				 esl_opt_GetReal   (go, "--exp-gftp"),       /* fraction of tail mass to fit for glocal Fwd */
-				 (! esl_opt_GetBoolean(go, "--exp-fixlam")), /* fit lambdas? otherwise use 0.693 with slight correction */
-				 (! esl_opt_GetBoolean(go, "--exp-iid")),    /* use realistic seqs (if TRUE) or iid (if FALSE) */
+				 gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
+				 esl_opt_GetBoolean(go, "--exp-fitlam"),     /* fit lambdas? otherwise use 0.693 with slight correction */
+				 esl_opt_GetBoolean(go, "--exp-real"),       /* use realistic seqs (if TRUE) or iid (if FALSE) */
 				 esl_opt_GetBoolean(go, "--exp-null3"),      /* use null3 correction? */
 				 esl_opt_GetBoolean(go, "--exp-bias"),       /* use bias correction? */
 				 cm->p7_n3omega, cm->null))                  /* omega for null3 correction, cm null model */
@@ -922,13 +935,12 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
   if(esl_opt_GetBoolean(go, "--p7-add")) { 
     if ((status = p7_Builder(cfg->ap7_bld, msa, cfg->ap7_bg, &ahmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->ap7_bld->errbuf); goto ERROR; }
     if((status = cm_p7_Calibrate(ahmm, errbuf, 
-				 lmsvL, lvitL, lfwdL, gfwdL,                          /* length of sequences to search for local (lL) and glocal (gL) modes */    
-				 lmsvN, lvitN, lfwdN,                        /* number of seqs to search for each alg */
-				 esl_opt_GetInteger(go, "--exp-gfwdN"),      /* number of seqs for glocal Fwd */
+				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for local (lL) and glocal (gL) modes */    
+				 lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
 				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
-				 esl_opt_GetReal   (go, "--exp-gftp"),       /* fraction of tail mass to fit for glocal Fwd */
-				 (! esl_opt_GetBoolean(go, "--exp-fixlam")), /* fit lambdas? otherwise use 0.693 with slight correction */
-				 (! esl_opt_GetBoolean(go, "--exp-iid")),    /* use realistic seqs (if TRUE) or iid (if FALSE) */
+				 gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
+				 esl_opt_GetBoolean(go, "--exp-fitlam"),     /* fit lambdas? otherwise use 0.693 with slight correction */
+				 esl_opt_GetBoolean(go, "--exp-real"),       /* use realistic seqs (if TRUE) or iid (if FALSE) */
 				 esl_opt_GetBoolean(go, "--exp-null3"),      /* use null3 correction? */
 				 esl_opt_GetBoolean(go, "--exp-bias"),       /* use bias correction? */
 				 cm->p7_n3omega, cm->null,                   /* omega for null3 correction, cm null model */
