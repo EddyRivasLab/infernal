@@ -102,6 +102,7 @@ static ESL_OPTIONS options[] = {
   { "--shortmsv",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nomsv",  "run MSV on short 2*W subseqs, not longer subseqs",             7 },
   { "--novit",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Viterbi filter stage",                                7 },
   { "--nofwd",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Forward filter stage",                                7 },
+  { "--nogfwd",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the glocal Forward filter stage",                                7 },
   { "--nohmm",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--hmm",    "skip all HMM filter stages (MSV/bias/Vit/Fwd)",                7 },
   { "--nocyk",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmm",          "skip the CYK filter stage",                                    7 },
   { "--domsvbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nomsv",  "turn on the MSV composition bias filter",                      7 },
@@ -152,7 +153,10 @@ static ESL_OPTIONS options[] = {
   { "--nocorr",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use no  correction for domain definition", 7 },
   { "--oldcorr",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nocorr",        "use old correction for domain definition", 7 },
   { "--domwinbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nodombias",     "calc domain bias for entire window, not just domain", 7 },
-  { "--tmp",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--glocaldom", "--nohmm,--noddef","use generic local", 7 },
+  { "--dosfwdbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--dofwdbias", NULL,       "use traceback samplings for fwd bias calculation", 7 },
+  { "--fbns",       eslARG_INT,    "50",  NULL, NULL,    NULL,"--dosfwdbias",NULL,       "sample <n> tracebacks for fwd bias calculation", 7 },
+  { "--gmsv",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--shortmsv,--localdom", NULL,        "use generic MSV", 7 },
+  { "--tmp",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","use generic local", 7 },
 /* Other options */
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set database size in *Mb* to <x> for E-value calculations",   12 },
@@ -643,7 +647,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_LOCAL); /* 100 is a dummy length for now; and MSVFilter requires local mode */
       p7_oprofile_Convert(gmA[m], omA[m]);                        /* <om> is now p7_LOCAL, multihit */
 
-      if(! esl_opt_GetBoolean(go, "--tmp")) { 
+      if((! esl_opt_GetBoolean(go, "--tmp")) && (! esl_opt_GetBoolean(go, "--gmsv"))) { 
 	p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_GLOCAL); /* this will be used to define domains in cm_pipeline() 
 								      (we'll alternate b/t multi/uni later when processing domains) */
       }

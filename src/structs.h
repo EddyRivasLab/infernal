@@ -1588,6 +1588,9 @@ typedef struct cm_pipeline_s {
   int     do_oldcorr;           /* TRUE to use old correction for domain def*/
   int     do_nocorr;            /* TRUE to use no correction for domain def */
   int     do_domwinbias;        /* TRUE to calc domain bias for entire window*/
+  int     do_fwdbias_sampling;  /* TRUE to calculate Fwd bias (F3b) based on sampled traces */
+  int     do_gmsv;              /* TRUE to use generic MSV */
+  int     fwdbias_ns;           /* number of samples for do_fwdbias_sampling */
 
   /* Parameters controlling p7 domain defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
