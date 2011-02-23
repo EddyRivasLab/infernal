@@ -564,8 +564,29 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	}
       }
       /* find the best score */
-      for (d = dnA[0]; d <= dxA[0]; d++) 
+      /* Current code does NOT do a null3 correction, code to correct with NULL3 included 
+       * below but commented out, block starts with 'NULL3:'. If this block is uncommented,
+       * you'll need to add a few variable declarations and a ALLOC (null3_correction, comp, a) */
+      /* NULL3: 
+	 if (act == NULL) { 
+      */
+      for (d = dnA[0]; d <= dxA[0]; d++) {
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
+      }
+      /* NULL3: 
+	else { 
+	for (d = dnA[0]; d <= dxA[0]; d++) { 
+ 	  if(alpha[jp_v][0][d] > vsc_root) { 
+ 	    for(a = 0; a < cm->abc->K; a++) { 
+	       comp[a] = act[jp_g%(W+1)][a] - act[(jp_g-d+1-1)%(W+1)][a]; 
+	    }
+	    esl_vec_FNorm(comp, cm->abc->K);
+	    ScoreCorrectionNull3(cm->abc, cm->null, comp, jp_g-(jp_g-d+1), cm->null3_omega, &null3_correction);
+	     vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d] - null3_correction);
+	  }
+	}
+      }
+      END OF NULL3 BLOCK */
 
       /* update envi, envj, if nec */
       if(do_env_defn) { 
@@ -606,6 +627,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   if (ret_vsc != NULL) *ret_vsc = vsc;
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
+  printf("FastCYKScan() return score: %10.4f\n", vsc_root); 
   ESL_DPRINTF1(("FastCYKScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
@@ -1487,6 +1509,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
   
+  printf("FastIInsideScan() return score: %10.4f\n", vsc_root); 
   ESL_DPRINTF1(("FastIInsideScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
@@ -5477,6 +5500,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 
   if(gamma != NULL) FreeGammaHitMx(gamma);
 
+  printf("FastFInsideScanHB() return sc: %f\n", vsc_root);
   ESL_DPRINTF1(("FastFInsideScanHB() return sc: %f\n", vsc_root));
   if (ret_sc != NULL) *ret_sc = vsc_root;
   return eslOK;

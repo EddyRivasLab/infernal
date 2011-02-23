@@ -156,7 +156,8 @@ static ESL_OPTIONS options[] = {
   { "--dosfwdbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--dofwdbias", NULL,       "use traceback samplings for fwd bias calculation", 7 },
   { "--fbns",       eslARG_INT,    "50",  NULL, NULL,    NULL,"--dosfwdbias",NULL,       "sample <n> tracebacks for fwd bias calculation", 7 },
   { "--gmsv",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--shortmsv,--localdom", NULL,        "use generic MSV", 7 },
-  { "--tmp",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noddef","use generic local", 7 },
+  { "--greedy",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "resolve hits with greedy algorithm, instead of optimal one", 101 },
+  { "--tmp",   eslARG_NONE,   FALSE, NULL,NULL, NULL,    NULL, "--nohmm,--noddef","use generic local", 7 },
 /* Other options */
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set database size in *Mb* to <x> for E-value calculations",   12 },
@@ -175,8 +176,8 @@ static ESL_OPTIONS options[] = {
   { "--ftau",         eslARG_REAL,    "5e-6",    NULL, "0<x<1", NULL,"--fhbanded","--hmm,--nocyk",  "set tail loss prob for --fhbanded to <x>", 20 },
   { "--fsums",        eslARG_NONE,    FALSE,     NULL, NULL,    NULL,"--fhbanded","--hmm,--nocyk",  "w/--fhbanded use posterior sums (widens bands)", 20 },
   /* banded options for final round of searching */
-  { "--tau",          eslARG_REAL,   "5e-6",     NULL, "0<x<1", NULL,  "--hbanded",        "--hmm", "set tail loss prob for --hbanded to <x>", 20 },
-  { "--sums",         eslARG_NONE,    FALSE,     NULL, NULL,    NULL,  "--hbanded",        "--hmm", "w/--hbanded use posterior sums (widens bands)", 20 },
+  { "--tau",          eslARG_REAL,   "5e-6",     NULL, "0<x<1", NULL,        NULL,       "--qdb,--nonbanded,--hmm", "set tail loss prob for --hbanded to <x>", 20 },
+  { "--sums",         eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,       "--qdb,--nonbanded,--hmm", "w/--hbanded use posterior sums (widens bands)", 20 },
   { "--qdb",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--nonbanded,--hmm,--tau", "use QDBs (instead of HMM bands) in final Inside round", 20 },
   { "--beta",         eslARG_REAL,   "1e-15",    NULL, "0<x<1",  NULL,     "--qdb",        "--hmm", "set tail loss prob for final Inside QDB calculation to <x>", 20 },
   { "--nonbanded",    eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--hmm,--tau,--sums,--beta", "do not use QDBs or HMM bands in final Inside round of CM search", 20 },

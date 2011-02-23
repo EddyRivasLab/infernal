@@ -372,15 +372,21 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
 
     /* set up final round parameters */
     if(! esl_opt_GetBoolean(go, "--cyk"))         pli->final_cm_search_opts |= CM_SEARCH_INSIDE;
-    if(! esl_opt_GetBoolean(go, "--qdb")) { 
+    /* three options for banding in final round: 
+     * --nonbanded: non-banded
+     * --qdb:       QDB
+     * neither:     HMM bands
+     */
+    if(esl_opt_GetBoolean(go, "--nonbanded")) { 
       pli->final_cm_search_opts |= CM_SEARCH_NOQDB;
     }
-    if(! esl_opt_GetBoolean(go, "--nonbanded")) { 
+    else if(! esl_opt_GetBoolean(go, "--qdb")) { 
       pli->final_cm_search_opts |= CM_SEARCH_HBANDED;
     }
     /* note that --nonbanded and --qdb are exclusive */
     if(  esl_opt_GetBoolean(go, "--sums"))        pli->final_cm_search_opts |= CM_SEARCH_SUMS;
     if(! esl_opt_GetBoolean(go, "--nonull3"))     pli->final_cm_search_opts |= CM_SEARCH_NULL3;
+    if(  esl_opt_GetBoolean(go, "--greedy"))      pli->final_cm_search_opts |= CM_SEARCH_CMGREEDY;
   }
 
   /* Determine statistics modes for CM stages */
@@ -1683,6 +1689,10 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
 	  printf("ERROR: %s\n", errbuf); return status; }
       }
     }
+
+    if(cm->search_opts & CM_SEARCH_CMGREEDY) { 
+      RemoveOverlappingHits(results, es[i], ee[i]);
+    }      
 
     /* add each hit to the hitlist */
     for (h = nhit; h < results->num_results; h++) { 
