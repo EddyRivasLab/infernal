@@ -1,10 +1,14 @@
 /* Summarizing results of a benchmark by plotting a ROC-like plot,
  * including confidence intervals derived by Bayesian bootstrapping.
  * 
- * Alternatively, with the --mer option, output mean MER (minimum
- * error rate) values for all bootstrap trials. MER is the minimal sum
- * of false negatives and false positives over all possible thresholds;
- * a good single summary statistic for benchmark performance.
+ * Alternatively, with the --mer or --Ethresh options, ROC-like plots
+ * are not output. With --mer, output mean MER (minimum error rate)
+ * values for all bootstrap trials. MER is the minimal sum of false
+ * negatives and false positives over all possible thresholds; a good
+ * single summary statistic for benchmark performance. With --Ethresh
+ * <x>, output mean number of true positives and false positives with
+ * E-values <= <x> for all bootstrap trials.
+ * 
  * 
  * The <.out file> from an rmark benchmark consists of lines:
  *     <E-value> <bitscore> <target_sequence> <query_model> <matching_model> <seq_idx_in_fam> <strand>
@@ -89,6 +93,7 @@ static ESL_OPTIONS options[] = {
   { "--nsd",    eslARG_REAL,   "3.", NULL,"x>0", NULL,"-s", NULL, "how many std.dev.'s big error bars should be",         1 },
   { "--interval", eslARG_REAL,"0.95",NULL,"0<=x<=1",NULL,NULL,"-s", "confidence interval width for error bars",           1 },
   { "--mer",    eslARG_NONE,  FALSE, NULL, NULL, NULL,NULL, NULL, "don't construct a plot, summarize MER instead",        1 },
+  { "--Ethresh",eslARG_REAL,  "1.",  NULL,"x>0", NULL, NULL,"--mer", "don't construct a plot, print avg num FNs/FPs w/E < <x>", 1 },
   { 0,0,0,0,0,0,0,0,0,0 },
 };
 
@@ -99,7 +104,7 @@ static ESL_OPTIONS options[] = {
  * To convert a FP/query value x to a bin i:      ceil(log10(x) * nsteps)
  */
 struct oneplot_s {
-  double *tp;			/* yaxis values, [0..nxpts-1]; # of TPs <= given FP/query on x-axis */
+  double *tp;			/* yaxis values, [0..nxpts-1]; # of FNs <= given FP/query on x-axis */
   int     base;                 /* scaled integer offset of bin #0 in tp */
   int     nsteps;		/* resolution of logarithmic x-axis: # of evenly spaced points per 10x */
   int     nxpts;		/* total # of points on axis */
@@ -108,6 +113,9 @@ struct oneplot_s {
   double  mer_thr;              /* MER threshold */
   double  mer_fn;               /* number of false negatives at MER threshold */
   double  mer_fp;               /* number of false positives at MER threshold */
+  double  Ethresh;              /* E-value threshold for Ethresh_fn and Ethresh_fp */
+  double  Ethresh_fn;           /* number of true  positives with E-values <= Ethresh */
+  double  Ethresh_fp;           /* number of false positives with E-values <= Ethresh */
 };
 
 struct result_s {
@@ -127,13 +135,12 @@ static struct oneplot_s *create_plot(ESL_GETOPTS *go, int nq);
 static void   destroy_plot(struct oneplot_s *plot);
 static void   make_plot(struct result_s *rp, int nr, int **pni, double *queryp, int nq, double *seqp, int nseq, int npos, 
 			struct oneplot_s *plot);
-static void   write_plot(FILE *fp, struct oneplot_s *plot);
-static void   write_mer (FILE *fp, struct oneplot_s *plot);
-static void   summary_merwrite_plot(FILE *fp, struct oneplot_s *plot);
+static void   write_plot    (FILE *fp, struct oneplot_s *plot);
+static void   write_mer     (FILE *fp, struct oneplot_s *plot);
+static void   write_Ethresh (FILE *fp, struct oneplot_s *plot);
 static void   summary_graph(ESL_GETOPTS *go, FILE *fp, struct oneplot_s *plot, double **yv);
 static void   summary_mer  (ESL_GETOPTS *go, FILE *fp, struct oneplot_s *plot, double *mervec, double *merthrvec, double *merfpvec, double *merfnvec);
-
-
+static void   summary_Ethresh(ESL_GETOPTS *go, FILE *fp, struct oneplot_s *plot, double *Ethresh_fn_vec, double *Ethresh_fp_vec);
 
 static void
 cmdline_failure(char *argv0, char *format, ...)
@@ -176,6 +183,8 @@ main(int argc, char **argv)
   double          *merthrvec = NULL;	/* [0..nboots-1]: MER threshold of bootstrapped samples */
   double          *merfpvec  = NULL;	/* [0..nboots-1]: MER false positives of bootstrapped samples */
   double          *merfnvec  = NULL;	/* [0..nboots-1]: MER false negatives of bootstrapped samples */
+  double          *Ethresh_fn_vec = NULL;	/* [0..nboots-1]: num FNs <= Ethresh of bootstrapped samples */
+  double          *Ethresh_fp_vec = NULL;	/* [0..nboots-1]: num FPs <= Ethresh of bootstrapped samples */
   int           nq, npos, nneg, nseq;
   int           nresults  = 0;
   int           nboots;
@@ -239,6 +248,8 @@ main(int argc, char **argv)
   if ((merthrvec  = malloc(sizeof(double) * nboots)) == NULL) esl_fatal("malloc failed");
   if ((merfpvec   = malloc(sizeof(double) * nboots)) == NULL) esl_fatal("malloc failed");
   if ((merfnvec   = malloc(sizeof(double) * nboots)) == NULL) esl_fatal("malloc failed");
+  if ((Ethresh_fn_vec = malloc(sizeof(double) * nboots)) == NULL) esl_fatal("malloc failed");
+  if ((Ethresh_fp_vec = malloc(sizeof(double) * nboots)) == NULL) esl_fatal("malloc failed");
 
   /* "Bayesian" bootstraps:  */
   if (! esl_opt_GetBoolean(go, "-n"))
@@ -252,8 +263,9 @@ main(int argc, char **argv)
       
 	  /* Plot or store this bootstrap sample. */      
 	  if (esl_opt_GetBoolean(go, "-a")) { 
-	    if (esl_opt_GetBoolean(go, "--mer")) { write_mer (stdout, plot); }
-	    else                                 { write_plot(stdout, plot); }
+	    if      (esl_opt_GetBoolean(go, "--mer"))     { write_mer     (stdout, plot); }
+	    else if (esl_opt_IsUsed    (go, "--Ethresh")) { write_Ethresh (stdout, plot); }
+	    else                                          { write_plot    (stdout, plot); }
 	  }
 	  else
 	    {
@@ -263,21 +275,25 @@ main(int argc, char **argv)
 	      merthrvec[i] = plot->mer_thr;
 	      merfpvec[i]  = plot->mer_fp;
 	      merfnvec[i]  = plot->mer_fn;
+	      Ethresh_fn_vec[i] = plot->Ethresh_fn;
+	      Ethresh_fp_vec[i] = plot->Ethresh_fp;
 	    }
 	}
     }
   else /* just plot the original data with no bootstraps */
     {
       make_plot(rp, nresults, pni, NULL, nq, NULL, nseq, npos, plot);
-      if (esl_opt_GetBoolean(go, "--mer")) { write_mer (stdout, plot); }
-      else                                 { write_plot(stdout, plot); }
+      if      (esl_opt_GetBoolean (go, "--mer")){ write_mer (stdout, plot); }
+      else if (esl_opt_IsUsed(go, "--Ethresh")) { write_Ethresh (stdout, plot); }
+      else                                      { write_plot(stdout, plot); }
     }
       
       
   /* Summarize the bootstraps */
   if (! esl_opt_GetBoolean(go, "-a") && ! esl_opt_GetBoolean(go, "-n") ) { 
-    if(esl_opt_GetBoolean(go, "--mer")) { summary_mer  (go, stdout, plot, mervec, merthrvec, merfpvec, merfnvec); }
-    else                                { summary_graph(go, stdout, plot, yv); }
+    if(esl_opt_GetBoolean(go, "--mer"))      { summary_mer    (go, stdout, plot, mervec, merthrvec, merfpvec, merfnvec); }
+    else if(esl_opt_IsUsed(go, "--Ethresh")) { summary_Ethresh(go, stdout, plot, Ethresh_fn_vec, Ethresh_fp_vec); }
+    else                                     { summary_graph  (go, stdout, plot, yv); }
   }
 
   for (i = 0; i < nq; i++) free(pni[i]);
@@ -288,6 +304,8 @@ main(int argc, char **argv)
   free(merthrvec);
   free(merfpvec);
   free(merfnvec);
+  free(Ethresh_fn_vec);
+  free(Ethresh_fp_vec);
   destroy_plot(plot);
   free(queryp);
   free(seqp);
@@ -475,6 +493,11 @@ create_plot(ESL_GETOPTS *go, int nq)
 
   ESL_ALLOC(plot->tp, sizeof(double) * plot->nxpts);
 
+  /* initialize */
+  plot->Ethresh = esl_opt_GetReal(go, "--Ethresh"); 
+  plot->Ethresh_fn = 0;
+  plot->Ethresh_fp = 0;
+
   return plot;
 
  ERROR:
@@ -552,12 +575,17 @@ make_plot(struct result_s *rp, int nresults, int **pni, double *queryp, int nq, 
       else { 
 	;/*printf("ign %5s/%5d  %3d  %3d  %g\n", "?", j, rp[j].qidx, rp[j].tidx, rp[j].E);*/
       }
-      /* update MER (initialize it if first result */
+      /* update MER (initialize it if first result) */
       if (j == 0 || (false_pos + false_neg) < plot->mer) { 
 	plot->mer = false_pos + false_neg;
 	plot->mer_fp = false_pos;
 	plot->mer_fn = false_neg;
 	plot->mer_thr = rp[j].E;
+      }
+      /* update number of FNs and FPs at or below <x> from --Ethresh <x> */
+      if (rp[j].E <= plot->Ethresh) { 
+	plot->Ethresh_fn = false_neg;
+	plot->Ethresh_fp = false_pos;
       }
       if (curr_xi >= plot->nxpts) break;
     }
@@ -591,6 +619,14 @@ write_mer(FILE *fp, struct oneplot_s *plot)
   fprintf(fp, "FN: %5.1f  ", plot->mer_fn);
   fprintf(fp, "FP: %5.1f  ", plot->mer_fp);
   fprintf(fp, "THR: %5.3f\n", plot->mer_thr);
+}
+
+static void
+write_Ethresh(FILE *fp, struct oneplot_s *plot)
+{
+  fprintf(fp, "E-value-threshold: %g  ", plot->Ethresh);
+  fprintf(fp, "FN<=E: %5.1f  ", plot->Ethresh_fn);
+  fprintf(fp, "FP<=E: %5.1f\n", plot->Ethresh_fp);
 }
 
 static void
@@ -666,5 +702,35 @@ summary_mer(ESL_GETOPTS *go, FILE *fp, struct oneplot_s *plot, double *mervec, d
     fprintf(fp, "[FN: %5.1f %5.1f %5.1f]  ", merfnvec[ntail], merfnmean, merfnvec[nboots-ntail]);
     fprintf(fp, "[FP: %5.1f %5.1f %5.1f]  ", merfpvec[ntail], merfpmean, merfpvec[nboots-ntail]);
     fprintf(fp, "[THR: %5.3f %5.3f %5.3f]\n", merthrvec[ntail], merthrmean, merthrvec[nboots-ntail]);
+  }
+}
+
+
+static void
+summary_Ethresh(ESL_GETOPTS *go, FILE *fp, struct oneplot_s *plot, double *Ethresh_fn_vec, double *Ethresh_fp_vec)
+{
+  int    nboots              = esl_opt_GetInteger(go, "-N");
+  int    by_stddev           = esl_opt_GetBoolean(go, "-s");
+  double confidence_interval = esl_opt_GetReal   (go, "--interval");
+  double nsd                 = esl_opt_GetReal   (go, "--nsd");
+  double fnmean, fpmean, fnvar, fpvar;
+  int    ntail;
+
+  esl_stats_DMean(Ethresh_fn_vec,  nboots, &fnmean,    &fnvar);
+  esl_stats_DMean(Ethresh_fp_vec,  nboots, &fpmean,    &fpvar);
+
+  esl_vec_DSortIncreasing(Ethresh_fn_vec,    nboots);
+  esl_vec_DSortIncreasing(Ethresh_fp_vec,    nboots);
+
+  ntail = (int) ((double) nboots * (1.0 - confidence_interval) / 2.0);
+
+  fprintf(fp, "[ETHRESH: %g]  ", esl_opt_GetReal(go, "--Ethresh"));
+  if (by_stddev) { 
+    fprintf(fp, "[E-TP: %5.1f %5.1f %5.1f]  ", fnmean - nsd*sqrt(fnvar), fnmean, fnmean + nsd*sqrt(fnvar));
+    fprintf(fp, "[E-FP: %5.1f %5.1f %5.1f]\n", fpmean - nsd*sqrt(fpvar), fpmean, fpmean + nsd*sqrt(fpvar));
+  }
+  else { 
+    fprintf(fp, "[E-TP: %5.1f %5.1f %5.1f]  ", Ethresh_fn_vec[ntail], fnmean, Ethresh_fn_vec[nboots-ntail]);
+    fprintf(fp, "[E-FP: %5.1f %5.1f %5.1f]\n", Ethresh_fp_vec[ntail], fpmean, Ethresh_fp_vec[nboots-ntail]);
   }
 }

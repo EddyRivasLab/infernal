@@ -19,13 +19,14 @@
 # -B <f> : build models as needed, instead of reading them from a file
 # -C <f> : fetch models from existing file <f>
 # -Y     : run a no-positive benchmark; for timings only
+# -H <f> : fetch family p7 HMM file from <f> for use with --p7file
 # -Z     : run 'dcmsearch', not 'cmsearch'
 #
 # SRE, Tue Apr 20 10:32:49 2010 [Janelia]
 # SVN $Id$
 #
 use Getopt::Std;
-getopts('DPWB:M:C:ZY');
+getopts('DPWB:M:C:ZYH:');
 $mpi_nprocs = 8;
 $do_build_models = 0;
 $do_debug = 0;
@@ -33,6 +34,8 @@ $build_optsfile = "";
 $do_posonly = 0;
 $do_poswindowonly = 0;
 $do_dcmsearch = 0;
+$do_p7file = 0;
+$master_p7file = "";
 if (defined $opt_D) { $do_debug = 1; }
 if (defined $opt_P) { $do_posonly = 1; }
 if (defined $opt_W) { $do_poswindowonly = 1; }
@@ -40,6 +43,7 @@ if (defined $opt_Y) { $do_nopos = 1; }
 if (defined $opt_B) { $do_build_models = 1; $build_optsfile = $opt_B; }
 if (defined $opt_C) { $do_fetch_models = 1; $master_model = $opt_C; if($do_build_models) { die "-B and -C are incompatible"; } }
 if (defined $opt_Z) { $do_dcmsearch = 1; }
+if (defined $opt_H) { $do_p7file = 1; $master_p7file = $opt_H; }
 if (defined $opt_M) { 
     $mpi_nprocs = $opt_M; 
     if($mpi_nprocs < 2 || $mpi_nprocs > 8) { die "ERROR, with -M <n>, <n> must be between 2 and 8"; } 
@@ -47,7 +51,7 @@ if (defined $opt_M) {
 if($do_posonly && $do_poswindowonly)                    { die "ERROR, only one of -P or -W may be enabled."; }
 if($do_posonly && $do_nopos)                            { die "ERROR, only one of -P or -Y may be enabled."; }
 if($do_poswindowonly && $do_nopos)                      { die "ERROR, only one of -Y or -W may be enabled."; }
-
+if($do_p7file && (! $do_dcmsearch))                     { die "ERROR, -H only works in combination with -Z"; }
 $usage = "Usage: x-cmsearch [options]\n\t<execdir>\n\t<scriptdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
 $options_usage  = "Options:\n\t";
 $options_usage .= " -P     : run a positive-only benchmark, only each family's positive sequences will be searched\n\t";
@@ -69,6 +73,7 @@ $cmbuild    = "$execdir/cmbuild";
 $afetch     = "$execdir/esl-afetch";
 $sfetch     = "$execdir/esl-sfetch";
 $cmfetch    = "$execdir/cmfetch";
+$hmmfetch   = "$execdir/hmmfetch";
 $cmsearch_to_run = ($do_dcmsearch) ? $dcmsearch : $cmsearch;
 
 if(! -e $afetch) { 
@@ -81,6 +86,9 @@ if(! -e $sfetch) {
 }
 if($do_fetch_models) { 
     if(! -e $cmfetch) { die "$cmfetch does not exist"; }
+}    
+if($do_p7file) { 
+    if(! -e $hmmfetch) { die "$hmmfetch does not exist"; }
 }    
 
 if (! -d $execdir)                                      { die "didn't find executable directory $execdir"; }
@@ -156,6 +164,16 @@ while (<TABLE>)
 	$status = system("$cmfetch -o $resultdir/$msaname.cm $master_model $msaname > /dev/null");
 	if ($status != 0) { die "FAILED: $cmfetch -o $resultdir/$msaname.cm $master_model > /dev/null"; }
     }
+    
+    $p7file_opt = "";
+    $p7file = "";
+    if($do_p7file) { 
+	$p7file     = "$resultdir/$msaname.p7file.hmm";
+	$p7file_opt = "--p7file $p7file";
+	$command = "$hmmfetch -o $p7file $master_p7file $msaname > /dev/null";
+	$status = system("$command");
+	if ($status != 0) { die "FAILED: $command\n"; }
+    }
 
     if($do_posonly) { #fetch this family's sequences
 	$command = "grep \"^$msaname\/\" rmark3.ppos | awk \'{ print \$3 }\' > $resultdir/$msaname.sfetch";
@@ -195,12 +213,12 @@ while (<TABLE>)
     }
 
     if($do_mpi) { 
-	$command = "mpirun -np $mpi_nprocs $cmsearch_to_run $searchopts $fam_searchopts_H{$msaname} $tab_opt $extra_opt $modeldir/$msaname.cm $fafile > $resultdir/$msaname.search";
+	$command = "mpirun -np $mpi_nprocs $cmsearch_to_run $searchopts $fam_searchopts_H{$msaname} $p7file_opt $tab_opt $extra_opt $modeldir/$msaname.cm $fafile > $resultdir/$msaname.search";
 	$status = system($command);
 	if ($status != 0) { die "FAILED: $command"; }
     }
     else { 
-	$command = "$cmsearch_to_run $searchopts $fam_searchopts_H{$msaname} $tab_opt $extra_opt $modeldir/$msaname.cm $fafile > $resultdir/$msaname.search";
+	$command = "$cmsearch_to_run $searchopts $fam_searchopts_H{$msaname} $p7file_opt $tab_opt $extra_opt $modeldir/$msaname.cm $fafile > $resultdir/$msaname.search";
 	$status = system($command);
 	if ($status != 0) { die "FAILED: $command"; }
     }
@@ -250,6 +268,9 @@ while (<TABLE>)
 	if($do_poswindowonly) { 
 	    unlink "$resultdir/$msaname.wpfa";
 	    unlink "$resultdir/$msaname.sfetch";
+	}
+	if($do_p7file) { 
+	    unlink "$p7file";
 	}
     }
 
