@@ -242,14 +242,14 @@ cm_cp9_to_p7(CM_t *cm)
 
   /* match emissions: copy, then normalize (should be unnec actually) */
   for (k = 1; k <= cm->clen; k++) esl_vec_FCopy(cm->cp9->mat[k], cm->abc->K, cm->mlp7->mat[k]);
-  for (k = 1; k <= cm->clen; k++) esl_vec_FNorm(cm->cp9->mat[k], cm->abc->K);
+  for (k = 1; k <= cm->clen; k++) esl_vec_FNorm(cm->mlp7->mat[k], cm->abc->K);
   /* special case */
   esl_vec_FSet(cm->mlp7->mat[0], cm->mlp7->abc->K, 0.);
   cm->mlp7->mat[0][0] = 1.0;
 
   /* insert emissions: copy, then normalize (should be unnec actually) */
   for (k = 0; k <= cm->clen; k++) esl_vec_FCopy(cm->cp9->ins[k], cm->abc->K, cm->mlp7->ins[k]);
-  for (k = 0; k <= cm->clen; k++) esl_vec_FNorm(cm->cp9->ins[k], cm->abc->K);
+  for (k = 0; k <= cm->clen; k++) esl_vec_FNorm(cm->mlp7->ins[k], cm->abc->K);
 
   /* copy the max length parameter */
   cm->mlp7->max_length = cm->W;
