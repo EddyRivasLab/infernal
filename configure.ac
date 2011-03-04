@@ -400,6 +400,10 @@ else
    # it.
 fi
 
+# Figure out how to generate PIC code for shared libraries
+# This sets @PIC_FLAGS@ output variable for Easel.
+ESL_PIC_FLAGS
+
 # If we're using SSE, figure out our @SIMD_CFLAGS@
 if test "$impl_choice" = "sse" && test "x$SIMD_CFLAGS" = x; then
    case $ax_cv_c_compiler_vendor in
@@ -578,6 +582,13 @@ AS_IF([test "x$impl_choice" != xno],
        LDFLAGS=$LDFLAGS_save],
       [AC_SUBST([GROUPHMMERLIBS], ["-lhmmer"])])
 
+# Define HAVE_GZIP if gzip is in $PATH (or if HAVE_GZIP is already set)
+AC_PATH_PROG(HAVE_GZIP, "gzip", "no")
+if test "${HAVE_GZIP}" = "no"; then
+  AC_MSG_WARN([gzip not found])
+else
+  AC_DEFINE(HAVE_GZIP)
+fi
 
 # Checks for libraries
 #
@@ -700,7 +711,7 @@ echo "
 
 INFERNAL configuration:
 
-     compiler:             ${CC} ${CFLAGS} ${SIMD_CFLAGS} ${PTHREAD_CFLAGS}
+     compiler:             ${CC} ${CFLAGS} ${SIMD_CFLAGS} ${PTHREAD_CFLAGS} ${PIC_FLAGS}
      linker:               ${LDFLAGS}
      libraries:            ${LIBS} ${LIBGSL} ${PTHREAD_LIBS}
      DP implementation:    ${impl_choice}
