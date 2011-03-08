@@ -236,6 +236,11 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->do_fwdbias_sampling = esl_opt_GetBoolean(go, "--dosfwdbias");
   pli->fwdbias_ns       = esl_opt_GetInteger(go, "--fbns");
   pli->do_gmsv          = esl_opt_GetBoolean(go, "--gmsv");
+  pli->do_filcmW        = esl_opt_GetBoolean(go, "--filcmW");
+  pli->do_glen          = esl_opt_GetBoolean(go, "--glen");
+  pli->glen_min         = esl_opt_GetInteger(go, "--glN");
+  pli->glen_max         = esl_opt_GetInteger(go, "--glX");
+  pli->glen_step        = esl_opt_GetInteger(go, "--glstep");
 
   /* Configure acceleration pipeline thresholds */
   pli->do_cm         = TRUE;
@@ -278,6 +283,12 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->dF3b   = ESL_MIN(1.0, esl_opt_GetReal(go, "--dF3b"));
   pli->dF3n3  = ESL_MIN(1.0, esl_opt_GetReal(go, "--dF3n3"));
   pli->dtF3   = 0.;
+
+  pli->orig_gF3  = pli->gF3;
+  pli->orig_gF3b = pli->gF3b;
+  pli->orig_dF3  = pli->dF3;
+  pli->orig_dF3b = pli->dF3b;
+
   pli->use_dtF3 = FALSE;
   if (esl_opt_IsOn(go, "--dtF3")) { 
     pli->use_dtF3 = TRUE; 
@@ -558,6 +569,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int *fcyk_dmin, int *fcyk_dmax, int 
 {
   int status = eslOK;
   int m;
+  int i, nsteps;
 
   pli->nmodels++;
   pli->nnodes += cm->clen;
@@ -590,6 +602,25 @@ cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int *fcyk_dmin, int *fcyk_dmax, int 
 
   pli->W    = cm->W;
   pli->clen = cm->clen;
+
+  /* reset consensus length specific thresholds  */
+  pli->gF3  = pli->orig_gF3;
+  pli->gF3b = pli->orig_gF3b;
+  pli->dF3  = pli->orig_dF3;
+  pli->dF3b = pli->orig_dF3b;
+
+  /* update consensus length specific thresholds, if nec */
+  if(pli->do_glen) { 
+    if(pli->clen >= pli->glen_min) { 
+      nsteps = (int) (1 + ((ESL_MAX(pli->clen, pli->glen_max) - (pli->glen_min-1)) / pli->glen_step));
+      for(i = 0; i < nsteps; i++) { 
+	pli->gF3  /= 2.;
+	pli->gF3b /= 2.;
+	pli->dF3  /= 2.;
+	pli->dF3b /= 2.;
+      }
+    }
+  }
   
   return status;
 }
@@ -772,9 +803,15 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
   /* Set false target length. This is a conservative estimate of the length of window that'll
    * soon be passed on to later phases of the pipeline;  used to recover some bits of the score
    * that we would miss if we left length parameters set to the full target length */
-  /* p7_oprofile_ReconfigMSVLength(om, om->max_length); */ /* nhmmer's way, this can't be right if we calibrate on length 2*W seqs */
-  p7_oprofile_ReconfigMSVLength(om, 2*pli->W);  
 
+  if(pli->do_filcmW) { /* pli->W is the same as cm->W */
+    p7_oprofile_ReconfigMSVLength(om, pli->W);
+    om->max_length = pli->W;
+  }
+  else { 
+    p7_oprofile_ReconfigMSVLength(om, om->max_length); /* nhmmer's way */
+  }
+  printf("om->max_length: %d\n", om->max_length);
 
 #if DOPRINT
   //  printf("\nPIPELINE p7Filter() %s  %" PRId64 " residues\n", sq->name, sq->n);
@@ -1524,6 +1561,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
   double           E;                      /* E-value of a hit */
   int              i, h;                   /* counters */
   search_results_t *results;               /* results data structure CM search functions report hits to */
+  search_results_t *tmp_results;           /* temporary results data structure CM search functions report hits to */
   int              nhit;                   /* number of hits reported */
   double           save_tau = cm->tau;     /* CM's tau upon entering function */
   int64_t          cyk_envi, cyk_envj;     /* cyk_envi..cyk_envj is new envelope as defined by CYK hits */
@@ -1532,13 +1570,17 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
   int              do_hbanded_final_scan;  /* use HMM bands for final stage? */
   int              do_qdb_or_nonbanded_filter_scan; /* use QDBs or no bands for filter stage (! do_hbanded_filter_scan) */
   int              do_qdb_or_nonbanded_final_scan;  /* use QDBs or no bands for final  stage (! do_hbanded_final_scan) */
+  int              do_final_greedy;        /* TRUE to use greedy hit resolution in final stage, FALSE not to */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
+  do_final_greedy = (pli->final_cm_search_opts & CM_SEARCH_CMGREEDY) ? TRUE : FALSE;
 
-  results  = CreateResults(INIT_RESULTS);
   nhit = 0;
   cyk_env_cutoff = cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->mu_extrap + (log(pli->F4env) / (-1 * cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->lambda));
+  if(! do_final_greedy) { 
+    results  = CreateResults(INIT_RESULTS);
+  }    
 
 #if DOPRINT
   //printf("\nPIPELINE CMStage() %s  %" PRId64 " residues\n", sq->name, sq->n);
@@ -1623,7 +1665,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
     /* Final stage: Inside/CYK with CM, report hits to a search_results_t data structure. */
     cm->search_opts  = pli->final_cm_search_opts;
     cm->tau          = pli->final_tau;
-    
+    tmp_results  = CreateResults(INIT_RESULTS);
+        
     /*******************************************************************
      * Determine if we're doing a HMM banded scan, if so, we may already have HMM bands 
      * if our CYK filter also used them. 
@@ -1637,7 +1680,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
       if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is HMM banded Inside */
 	status = FastFInsideScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
 				   pli->T,            /* minimum score to report */
-				   results,           /* our results data structure that will store hit(s) */
+				   do_final_greedy ? tmp_results : results, /* our results data structure that will store hit(s) */
 				   pli->do_null3,     /* do the NULL3 correction? */
 				   cm->hbmx,          /* the HMM banded matrix */
 				   1024.,             /* upper limit for size of DP matrix, 1 Gb */
@@ -1651,7 +1694,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
 	/*printf("calling HMM banded CYK scan\n");*/
 	status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
 			       pli->T,                             /* minimum score to report */
-			       results,                            /* our results data structure that will store hit(s) */
+			       do_final_greedy ? tmp_results : results, /* our results data structure that will store hit(s) */
 			       pli->do_null3,                      /* do the NULL3 correction? */
 			       cm->hbmx,                           /* the HMM banded matrix */
 			       1024.,                              /* upper limit for size of DP matrix, 1 Gb */
@@ -1671,7 +1714,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
 	/*printf("calling non-HMM banded Inside scan\n");*/
 	if((status = FastIInsideScan(cm, errbuf, pli->smx, sq->dsq, es[i], ee[i],
 				     pli->T,            /* minimum score to report */
-				     results,           /* our results data structure that will store hit(s) */
+				     do_final_greedy ? tmp_results : results, /* our results data structure that will store hit(s) */
 				     pli->do_null3,     /* apply the null3 correction? */
 				     NULL,              /* ret_vsc, irrelevant here */
 				     &finalsc)) != eslOK) { /* best score, irrelevant here */
@@ -1681,7 +1724,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
 	/*printf("calling non-HMM banded CYK scan\n");*/
 	if((status = FastCYKScan(cm, errbuf, pli->fsmx, sq->dsq, es[i], ee[i],
 				 pli->T,            /* minimum score to report */
-				 results,           /* our results data structure that will store hit(s) */
+				 do_final_greedy ? tmp_results : results, /* our results data structure that will store hit(s) */
 				 pli->do_null3,     /* apply the null3 correction? */
 				 0., NULL, NULL,    /* envelope redefinition parameters, irrelevant here */
 				 NULL,              /* ret_vsc, irrelevant here */
@@ -1690,8 +1733,9 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
       }
     }
 
-    if(cm->search_opts & CM_SEARCH_CMGREEDY) { 
-      RemoveOverlappingHits(results, es[i], ee[i]);
+    if(do_final_greedy) { 
+      RemoveOverlappingHits(tmp_results, es[i], ee[i]);
+      results = tmp_results;
     }      
 
     /* add each hit to the hitlist */
@@ -1732,8 +1776,13 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
 #endif
     }
     nhit = results->num_results;
+    if(do_final_greedy) { 
+      FreeResults(tmp_results);
+    }
   }
-  FreeResults(results);
+  if(! do_final_greedy) { 
+    FreeResults(results);
+  }
   cm->tau = save_tau;
   return eslOK;
 

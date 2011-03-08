@@ -156,7 +156,14 @@ static ESL_OPTIONS options[] = {
   { "--dosfwdbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--dofwdbias", NULL,       "use traceback samplings for fwd bias calculation", 7 },
   { "--fbns",       eslARG_INT,    "50",  NULL, NULL,    NULL,"--dosfwdbias",NULL,       "sample <n> tracebacks for fwd bias calculation", 7 },
   { "--gmsv",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--shortmsv,--localdom", NULL,        "use generic MSV", 7 },
-  { "--greedy",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "resolve hits with greedy algorithm, instead of optimal one", 101 },
+  { "--greedy",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "resolve hits with greedy algorithm, instead of optimal one", 7 },
+  { "--noml",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not filter with a ML p7 HMM", 7 },
+  { "--noadd",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--noml",           "do not filter with any additional p7 HMMs in the file", 7 },
+  { "--filcmW",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "use CM's window length for all HMM filters", 7 },
+  { "--glen",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use length dependent glocal p7 filter P-value thresholds", 7},
+  { "--glN",        eslARG_INT,   "201",  NULL, NULL,    NULL,"--glen",NULL,             "minimum value to start len-dependent glocal threshold", 7},
+  { "--glX",        eslARG_INT,   "500",  NULL, NULL,    NULL,"--glen",NULL,             "maximum value for len-dependent glocal threshold", 7},
+  { "--glstep",     eslARG_INT,   "100",  NULL, NULL,    NULL,"--glen",NULL,             "for len-dependent glocal threshold, step size for halving threshold", 7},
   { "--tmp",   eslARG_NONE,   FALSE, NULL,NULL, NULL,    NULL, "--nohmm,--noddef","use generic local", 7 },
 /* Other options */
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },
@@ -462,7 +469,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              status   = eslOK;
   int              qhstatus = eslOK;
   int              sstatus  = eslOK;
-  int              i, m, z;
+  int              i, m, z, z_offset;
   
   int              ncpus    = 0;
 
@@ -628,14 +635,29 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if (cm->desc) fprintf(ofp, "Description: %s\n", cm->desc);
     
     /* Convert HMMs to optimized models */
-    nhmm = 1 + cm->nap7;
+    if(esl_opt_GetBoolean(go, "--noml")) { 
+      if(cm->nap7 == 0) cm_Fail("--noml only makes sense if CM file has additional p7 HMMs, cm: %s does not\n", cm->name);
+      nhmm = cm->nap7;
+      z_offset = 0;
+    }
+    else if (! esl_opt_GetBoolean(go, "--noadd")) { 
+      nhmm = 1 + cm->nap7;
+      z_offset = 1;
+    }
+    else { 
+      nhmm = 1;
+    }
     ESL_ALLOC(hmmA,     sizeof(P7_HMM *) * nhmm);
     ESL_ALLOC(hmm_abcA, sizeof(ESL_ALPHABET *) * nhmm);
-    hmmA[0] = cm->mlp7;
-    hmm_abcA[0] = esl_alphabet_Create(cm->mlp7->abc->type);
-    for(z = 0; z < cm->nap7; z++) { 
-      hmmA[z+1]     = cm->ap7A[z];
-      hmm_abcA[z+1] = esl_alphabet_Create(cm->ap7A[z]->abc->type);
+    if(! esl_opt_GetBoolean(go, "--noml")) { 
+      hmmA[0] = cm->mlp7;
+      hmm_abcA[0] = esl_alphabet_Create(cm->mlp7->abc->type);
+    }
+    if(! esl_opt_GetBoolean(go, "--noadd")) { 
+      for(z = 0; z < cm->nap7; z++) { 
+	hmmA[z+z_offset]     = cm->ap7A[z];
+	hmm_abcA[z+z_offset] = esl_alphabet_Create(cm->ap7A[z]->abc->type);
+      }
     }
 
     ESL_ALLOC(gmA, sizeof(P7_PROFILE *)  * nhmm);
@@ -669,11 +691,16 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	info[i].bgA[m]  = p7_bg_Create(hmm_abcA[m]);
 	ESL_ALLOC(info[i].p7_evparamAA[m], sizeof(float) * CM_p7_NEVPARAM);
 
-	if(m == 0) { 
+	if(m == 0 && (! esl_opt_GetBoolean(go, "--noml"))) { 
 	  esl_vec_FCopy(cm->mlp7_evparam, CM_p7_NEVPARAM, info[i].p7_evparamAA[m]); 
 	}
 	else { 
-	  esl_vec_FCopy(cm->ap7_evparamAA[m-1], CM_p7_NEVPARAM, info[i].p7_evparamAA[m]); 
+	  if(esl_opt_GetBoolean(go, "--noml")) { 
+	    esl_vec_FCopy(cm->ap7_evparamAA[m], CM_p7_NEVPARAM, info[i].p7_evparamAA[m]); 
+	  }
+	  else {
+	    esl_vec_FCopy(cm->ap7_evparamAA[m-1], CM_p7_NEVPARAM, info[i].p7_evparamAA[m]); 
+	  }
 	}
       }
       info[i].pli = cm_pipeline_Create(go, omA[0]->M, 100, p7_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */

@@ -627,7 +627,6 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   if (ret_vsc != NULL) *ret_vsc = vsc;
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
-  printf("FastCYKScan() return score: %10.4f\n", vsc_root); 
   ESL_DPRINTF1(("FastCYKScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
@@ -1509,7 +1508,6 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
   
-  printf("FastIInsideScan() return score: %10.4f\n", vsc_root); 
   ESL_DPRINTF1(("FastIInsideScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
@@ -4097,9 +4095,6 @@ int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, 
     sc_v_size = D+1;
   }
 /* #ifdef INTEL_COMPILER*/
-#if 1
-  printf("intel compiler baby!\n");
-#endif
 
   /* Initialize sc_v to size of M */
   ESL_ALLOC(sc_v, (sizeof(float) * sc_v_size));
@@ -5500,7 +5495,6 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 
   if(gamma != NULL) FreeGammaHitMx(gamma);
 
-  printf("FastFInsideScanHB() return sc: %f\n", vsc_root);
   ESL_DPRINTF1(("FastFInsideScanHB() return sc: %f\n", vsc_root));
   if (ret_sc != NULL) *ret_sc = vsc_root;
   return eslOK;

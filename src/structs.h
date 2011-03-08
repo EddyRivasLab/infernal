@@ -1550,6 +1550,10 @@ typedef struct cm_pipeline_s {
   double  gF3b;		        /* bias-corrected glocal Fwd threshold      */
   double  dF3;		        /* per-domain Forward filter thr            */
   double  dF3b;		        /* bias-corrected per-domain threshold      */
+  double  orig_gF3;		/* glocal Forward filter thr            */
+  double  orig_gF3b;		/* bias-corrected glocal Fwd threshold      */
+  double  orig_dF3;		/* per-domain Forward filter thr            */
+  double  orig_dF3b;	        /* bias-corrected per-domain threshold      */
   double  dF3n3;	        /* null3-corrected domain filter threshold */
   double  dtF3;		        /* per-domain bit sc Forward filter thr     */
   double  Fbfil;	        /* min allowed ratio of banded HMM vs QDB mx size  */
@@ -1590,7 +1594,12 @@ typedef struct cm_pipeline_s {
   int     do_domwinbias;        /* TRUE to calc domain bias for entire window*/
   int     do_fwdbias_sampling;  /* TRUE to calculate Fwd bias (F3b) based on sampled traces */
   int     do_gmsv;              /* TRUE to use generic MSV */
+  int     do_filcmW;            /* TRUE to use CM's window length for all HMM filters */
   int     fwdbias_ns;           /* number of samples for do_fwdbias_sampling */
+  int     do_glen;              /* TRUE to use len-dependent glc p7 thresholds */
+  int     glen_min;             /* min clen for len-dependent glc p7 thr    */
+  int     glen_max;             /* max clen for len-dependent glc p7 thr    */
+  int     glen_step;            /* step size for halving glc p7 thr if do_glen */
 
   /* Parameters controlling p7 domain defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
