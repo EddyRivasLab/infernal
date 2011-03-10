@@ -257,7 +257,7 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
 {
   int v, jp, j, dp, d;
 
-  fprintf(ofp, "M: %d\nL: %d\ncells_alloc: %d\nncells_valid: %d\n", mx->M, mx->L, mx->ncells_alloc, mx->ncells_valid);
+  fprintf(ofp, "M: %d\nL: %d\ncells_alloc: %" PRId64 "\nncells_valid: %" PRId64 "\n", mx->M, mx->L, mx->ncells_alloc, mx->ncells_valid);
   
   /* DP matrix data */
   for (v = 0; v < mx->M; v++) {
@@ -306,14 +306,11 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
 int
 cm_hb_mx_NumCellsNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells)
 {
-  int     status;
-  void   *p;
   int     v, jp;
-  int     cur_size = 0;
   int64_t ncells;
   int     jbw;
-  float   Mb_needed;
   int     have_el;
+
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
   /* contract check */
@@ -329,9 +326,6 @@ cm_hb_mx_NumCellsNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t
 
   *ret_ncells = ncells;
   return eslOK;
-
- ERROR:
-  return status;
 }
 
 

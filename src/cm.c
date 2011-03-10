@@ -136,7 +136,6 @@ CreateCMShell(void)
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
   cm->mlp7         = NULL;          
-  cm->p7_n3omega   = DEFAULT_P7NULL3_OMEGA; 
   cm->nap7         = 0;
   cm->ap7A         = NULL;          
   cm->ap7_evparamAA= NULL;          

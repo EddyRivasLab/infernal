@@ -38,8 +38,6 @@
 #define EFFOPTS "--eent,--enone,--eset"                        /* Exclusive options for effective sequence number calculation */
 #define CLUSTOPTS "--ctarget,--cmaxid,--call,--corig,--cdump"  /* options for clustering the input aln and building a CM from each cluster */
 
-static P7_PRIOR * p7_prior_Read(FILE *fp);
-
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
@@ -115,13 +113,11 @@ static ESL_OPTIONS options[] = {
   { "--exp-gftp",    eslARG_REAL, "0.065", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 glocal fwd exp tail to <f> fraction of scoring dist", 8},
 
   /* Probably temporary options controlling calibration of additional p7 models */
-  { "--p7-add",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "build an additional p7, using hmm entropy weighting", 9},
-  { "--p7-prior",    eslARG_INFILE, NULL,  NULL, NULL,    NULL,"--p7-add", NULL,        "read p7 prior for --p7-add from file <f>", 9},
-  { "--p7-ctarget",  eslARG_INT,   NULL,   NULL, "n>0" ,  NULL,"--p7-add", CLUSTOPTS,   "build (at most) <n> HMMs by splitting MSA into <n> clusters", 9 },
-  { "--p7-corig",    eslARG_NONE,  FALSE,  NULL, NULL,    NULL,"--p7-ctarget", NULL,    "build an additional HMM from the original, full MSA", 9 }, 
-  { "--p7-cdump",    eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL, NULL,            "dump the MSA for each cluster (HMM) to file <s>", 9 },
-  { "--p7-cml",      eslARG_NONE,  FALSE,  NULL, NULL,    NULL,"--p7-ctarget","--p7-corig","per-cluster HMMs will be ML HMMs built from per-cluster CMs", 9 }, 
-
+  { "--p7-none",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "do not build an additional p7 HMM and store it in the CM file", 9},
+  { "--p7-ere",      eslARG_REAL,  "0.38", NULL, NULL,    NULL,  NULL, "--p7-none",     "for p7 HMM, set minimum rel entropy/posn to <x>", 9},
+  { "--p7-prior",    eslARG_INFILE, NULL,  NULL, NULL,    NULL,  NULL, "--p7-none",     "read p7 prior for --p7-add from file <f>", 9},
+  { "--p7-hprior",   eslARG_NONE,   NULL,  NULL, NULL,    NULL,  NULL, "--p7-none",     "use HMMER's default p7 prior, not Infernal's p7 prior", 9},
+  { "--p7-hemit",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--p7-none",     "use HMMER emission priors for additional HMM", 9 }, 
 
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer debugging/experimentation */
@@ -132,7 +128,6 @@ static ESL_OPTIONS options[] = {
   { "--esigma",  eslARG_REAL,  "45.0",  NULL,"x>0",      NULL,  "--eent",       NULL, "for --eent: set sigma param to <x>",  101}, 
   { "--n2omega",  eslARG_REAL,"0.000015258971",NULL,"x>0",NULL,NULL,            NULL, "set prior probability of null2 model as <x>",  101}, 
   { "--n3omega",  eslARG_REAL,"0.000015258971",NULL,"x>0",NULL,NULL,            NULL, "set prior probability of null3 model as <x>",  101}, 
-  { "--p7n3omega", eslARG_REAL,"0.0000000298023",NULL,"x>0",NULL,NULL,           NULL, "set prior probability of p7 null3 model as <x>",  101}, 
   { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s> (Stockholm or Pfam)",  101 },
 
   /* Developer verbose output options */
@@ -187,7 +182,6 @@ struct cfg_s {
   FILE         *gtblfp;         /* for --gtbl */
   FILE         *tracefp;        /* for --tfile */
   FILE         *cdfp;           /* if --cdump, output file handle for dumping clustered MSAs */
-  FILE         *p7cdfp;         /* if --p7-cdump, output file handle for dumping clustered MSAs */
   FILE         *refinefp;       /* if --refine, output file handle for dumping refined MSAs */
   FILE         *rdfp;           /* if --rfile, output file handle for dumping intermediate MSAs during iterative refinement */
 
@@ -231,6 +225,8 @@ static void   print_refine_column_headings(const ESL_GETOPTS *go, const struct c
 static int    print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int    get_namewidth(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static void   dump_emission_info(FILE *fp, CM_t *cm);
+static P7_PRIOR * p7_prior_Read(FILE *fp);
+static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
 
 int
 main(int argc, char **argv)
@@ -355,7 +351,6 @@ main(int argc, char **argv)
   cfg.gtblfp     = NULL;
   cfg.tracefp    = NULL;
   cfg.cdfp       = NULL;
-  cfg.p7cdfp     = NULL;
   cfg.refinefp   = NULL;
   cfg.rdfp       = NULL;
 
@@ -414,10 +409,6 @@ main(int argc, char **argv)
     printf("# Alignments for each cluster saved in file %s.\n", esl_opt_GetString(go, "--cdump"));
     fclose(cfg.cdfp); 
   }
-  if (cfg.p7cdfp != NULL) {
-    printf("# Alignments for each cluster saved in file %s.\n", esl_opt_GetString(go, "--p7-cdump"));
-    fclose(cfg.p7cdfp); 
-  }
   if (cfg.refinefp != NULL) {
     printf("# Refined alignments used to build CMs saved in file %s.\n", esl_opt_GetString(go, "--refine"));
     fclose(cfg.refinefp); 
@@ -457,7 +448,6 @@ main(int argc, char **argv)
  *    cfg->pri     - prior, used for all models
  *    cfg->fullmat - RIBOSUM matrix used for all models (optional)
  *    cfg->cdfp    - open file to dump MSAs to (optional)
- *    cfg->p7cdfp  - open file to dump MSAs to (optional)
  *    cfg->comlog  - only allocated
  */
 static int
@@ -541,7 +531,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     }
 
   /* set up objects for building additional p7 models to filter with, if nec */
-  if (esl_opt_GetBoolean(go, "--p7-add")) { 
+  if (! esl_opt_GetBoolean(go, "--p7-none")) { 
     cfg->ap7_bg = p7_bg_Create(cfg->abc);
     /* create the P7_BUILDER, pass NULL as the <go> argument, this sets all parameters to default */
     cfg->ap7_bld = p7_builder_Create(NULL, cfg->abc);
@@ -556,6 +546,12 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       }
       fclose(pfp);
     }
+    else if(! esl_opt_GetBoolean(go, "--p7-hprior")) { 
+      /* create the default Infernal p7 prior */
+      if (cfg->ap7_bld->prior != NULL) p7_prior_Destroy(cfg->ap7_bld->prior);
+      cfg->ap7_bld->prior = cm_p7_prior_CreateNucleic();
+    }
+    cfg->ap7_bld->re_target = esl_opt_GetReal(go, "--p7-ere");
   }	 
 
   /* open output files */
@@ -614,10 +610,6 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       if ((cfg->cdfp = fopen(esl_opt_GetString(go, "--cdump"), "w")) == NULL)
 	cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--cdump"));
     }
-  if (esl_opt_GetString(go, "--p7-cdump") != NULL) {
-    if ((cfg->p7cdfp = fopen(esl_opt_GetString(go, "--p7-cdump"), "w")) == NULL)
-      cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--p7-cdump"));
-  }
   /* create the comlog */
   cfg->comlog = CreateComLog();
   if((status = write_cmbuild_info_to_comlog(go, cfg, errbuf)) != eslOK) return status;
@@ -631,12 +623,6 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   return eslOK;
 }
 
-/* master()
- * The serial version of cmbuild. (There is no parallel version yet).
- * For each MSA, build at least one CM and save it.
- * 
- * We only return if successful. All errors are handled immediately and fatally with cm_Fail().
- */
 static void
 master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
@@ -663,16 +649,6 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int          ncm = 1;    /* number of CMs to be built for current MSA */
   int          c   = 0;    /* counter over CMs built for a single MSA */
   ESL_MSA    **cmsa;       /* pointer to cluster MSAs to build CMs from */
-  /* p7 cluster option related variables */
-  int          do_cluster_for_hmms_only; /* TRUE if --p7-ctarget || --p7-cmaxid || --p7-call */
-  int          do_p7_ctarget;     /* TRUE if --ctarget */
-  int          do_p7_cmindiff;    /* TRUE if --cmaxid  */
-  int          do_p7_call;        /* TRUE if --call */
-  int          nahmm;             /* number of hmms to build, only != 0 if do_cluster_for_hmms_only */
-  P7_HMM     **ahmmA = NULL;      /* the per-cluster-HMMs, we save them then copy them to the final CM */
-  float       *agfmuA = NULL;     /* the per-cluster-HMM glocal mu values */
-  float       *agflambdaA = NULL; /* the per-cluster-HMM glocal lambda values */
-  int          h;
 
   if ((status = init_cfg(go, cfg, errbuf))         != eslOK) cm_Fail(errbuf);
   if ((status = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
@@ -686,17 +662,8 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   do_cluster = (do_ctarget || do_cmindiff || do_call) ? TRUE : FALSE;
   if((do_ctarget + do_cmindiff + do_call) > TRUE) cm_Fail("More than one of --ctarget, --cmaxid, --call were enabled, shouldn't happen.");
 
-  do_p7_ctarget  = esl_opt_IsOn(go, "--p7-ctarget");
-  do_p7_call     = FALSE; /* not yet implemented, would hook up to --p7-call option */
-  do_p7_cmindiff = FALSE; /* not yet implemented, would hook up to --p7-maxid option */
-  do_cluster_for_hmms_only = do_p7_ctarget;
-
-  nc      = 0;
-  mindiff = 0.;
-  if(do_ctarget)     nc      = esl_opt_GetInteger(go, "--ctarget");
-  if(do_p7_ctarget)  nc      = esl_opt_GetInteger(go, "--p7-ctarget");
-  if(do_cmindiff)    mindiff = 1. - esl_opt_GetInteger(go, "--maxid");
-  if(do_p7_cmindiff) mindiff = 1. - esl_opt_GetInteger(go, "--p7-maxid");
+  nc      = do_ctarget  ? esl_opt_GetInteger(go, "--ctarget")    : 0;
+  mindiff = do_cmindiff ? (1. - esl_opt_GetReal(go, "--cmaxid")) : 0.;
 
   /* predict maximum length of CM name for pretty formatting */
   if((status = get_namewidth(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
@@ -714,38 +681,23 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if(msa->name == NULL)                             cm_Fail("Error naming MSA");
       ncm = 1;     /* default: only build 1 CM for each MSA in alignment file */
 
-      if(do_cluster) /* divide input MSA into clusters, and build model(s) from each cluster */
+      if(do_cluster) /* divide input MSA into clusters, and build CM from each cluster */
 	{
 	  if((status = MSADivide(msa, do_call, do_cmindiff, do_ctarget, mindiff, nc,
 				 esl_opt_GetBoolean(go, "--corig"), &ncm, &cmsa, errbuf)) != eslOK) cm_Fail(errbuf);
 	  esl_msa_Destroy(msa); /* we've copied the master msa into cmsa[ncm], we can delete this copy */
 	}
-      else if(do_cluster_for_hmms_only) /* divide input MSA into clusters, and build hmm(s) from each cluster, we'll use all these HMMs to filter with */
-	{
-	  if((status = MSADivide(msa, do_p7_call, do_p7_cmindiff, do_p7_ctarget, mindiff, nc,
-				 TRUE, &ncm, &cmsa, errbuf)) != eslOK) cm_Fail(errbuf);
-	  esl_msa_Destroy(msa); /* we've copied the master msa into cmsa[ncm], we can delete this copy */
-
-	  nahmm = ncm-1;
-	  ESL_ALLOC(ahmmA,     sizeof(P7_HMM *) * nahmm);
-	  ESL_ALLOC(agfmuA,    sizeof(float)    * nahmm);
-	  ESL_ALLOC(agflambdaA,sizeof(float)    * nahmm);
-	}
-
       for(c = 0; c < ncm; c++)
 	{
 	  cfg->ncm_total++;  
-	  if(do_cluster || do_cluster_for_hmms_only) {
+	  if(do_cluster) {
 	      msa = cmsa[c];
-	      if(esl_opt_IsOn(go, "--cdump")) { 
+	      if(esl_opt_GetString(go, "--cdump") != NULL) { 
 		if((status = esl_msa_Write(cfg->cdfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK)
 		  cm_Fail("--cdump related esl_msa_Write() call failed.");
 	      }
-	      if(esl_opt_IsOn(go, "--p7-cdump")) { 
-		if((status = esl_msa_Write(cfg->p7cdfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK)
-		  cm_Fail("--p7-cdump related esl_msa_Write() call failed.");
-	      }
 	  }
+
 	  /* if being verbose, print some stuff about what we're about to do.
 	   */
 	  if (cfg->be_verbose) {
@@ -777,58 +729,12 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    } 
 	  }	  
 	  /* output cm */
-	  if(do_cluster_for_hmms_only) { 
-	    /* only output the CM if it is the final CM, built from the entire input aln, 
-	     * otherwise it was built from part of the seed, in this case we save the
-	     * HMM that was built from it, but don't care about the CM.
-	     */
-	    if(c < nahmm) { /* not the CM built from the full input aln */
-	      if(cm->nap7 != 1) cm_Fail("Error, one HMM not created from sequence cluster");
-	      if(esl_opt_GetBoolean(go, "--p7-cml")) { /* we want the ML HMM built from the CM */
-		ahmmA[c]      = p7_hmm_Clone(cm->mlp7);
-		agfmuA[c]     = cm->mlp7_evparam[CM_p7_GFMU];
-		agflambdaA[c] = cm->mlp7_evparam[CM_p7_GFLAMBDA];
-	      }
-	      else { /* we want the additional HMM, built from the seed (i.e. not the ML HMM built from the CM */
-		ahmmA[c]      = p7_hmm_Clone(cm->ap7A[0]);
-		agfmuA[c]     = cm->ap7_evparamAA[0][CM_p7_GFMU];
-		agflambdaA[c] = cm->ap7_evparamAA[0][CM_p7_GFLAMBDA];
-	      }
-	      printf("added HMM: %d\n", c);
-	    }
-	    else { /* the CM built from the full input aln, add all hmms to it and output it */
-	      if(! esl_opt_GetBoolean(go, "--p7-corig")) { 
-		if(cm->nap7 != 1) cm_Fail("Error, one HMM not created from sequence cluster");
-		/* remove the additional HMM from the CM first */
-		p7_hmm_Destroy(cm->ap7A[0]);
-		free(cm->ap7_evparamAA[0]);
-		free(cm->ap7A); 
-		free(cm->ap7_evparamAA);
-		cm->ap7A = NULL;
-		cm->ap7_evparamAA = NULL;
-		cm->nap7 = 0;
-		cm->flags &= ~CMH_AP7;
-		cm->flags &= ~CMH_AP7_STATS;
-	      }
-	      for(h = 0; h < nahmm; h++) { 
-		if((status = cm_Addp7(cm, ahmmA[h], agfmuA[h], agflambdaA[h], errbuf)) != eslOK) cm_Fail("Error adding HMM to CM: %s\n", errbuf);
-	      }	      
-	      if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm, mtr, tr)) != eslOK) cm_Fail(errbuf);
-	      if(cfg->be_verbose) { 
-		fprintf(stdout, "\n");
-		SummarizeCM(stdout, cm);  
-		fprintf(stdout, "//\n");
-	      }
-	    }
-	  }
-	  else { /* ! do_cluster_for_hmms_only, output the CM */
-	    if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm, mtr, tr)) != eslOK) cm_Fail(errbuf);
-	    
-	    if(cfg->be_verbose) { 
-	      fprintf(stdout, "\n");
-	      SummarizeCM(stdout, cm);  
-	      fprintf(stdout, "//\n");
-	    }
+	  if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm, mtr, tr)) != eslOK) cm_Fail(errbuf);
+	  
+	  if(cfg->be_verbose) { 
+	    fprintf(stdout, "\n");
+	    SummarizeCM(stdout, cm);  
+	    fprintf(stdout, "//\n");
 	  }
 
 	  FreeCM(cm);
@@ -846,10 +752,8 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if(do_cluster) free(cmsa);
   if(cfg->fullmat != NULL) FreeMat(cfg->fullmat);
   return;
-
- ERROR: cm_Fail("Out of memory");
-  return;
 }
+
 
 /* A work unit consists of one multiple alignment, <msa>.
  * The job is to turn it into a new CM, returned in <*ret_cm>.
@@ -859,12 +763,18 @@ static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
 {
   CM_t *cm = NULL;
+  CM_t *acm = NULL; 
   P7_HMM *ahmm = NULL;
   int status;
   int lmsvL, lvitL, lfwdL, gfwdL;
   int lmsvN, lvitN, lfwdN, gfwdN;
   double agfmu, agflambda;
   float lftailp, gftailp;
+  int k, apos, idx;
+  float gaps;
+  ESL_MSA *amsa = NULL;
+  double mlp7_re, ahmm_re;
+  double neff;
 
   if ((status =  check_and_clean_msa    (go, cfg, errbuf, msa))                           != eslOK) goto ERROR;
   if ((status =  set_relative_weights   (go, cfg, errbuf, msa))                           != eslOK) goto ERROR;
@@ -875,14 +785,8 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
   if ((status =  parameterize           (go, cfg, errbuf, cm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
 
   /* Build and calibrate p7 HMM(s) */
-  /* Build the maximum-likelihood P7 HMM (cm->mlp7) from the CM itself (this is done inside ConfigCM())
-   * note, we need to do this first before setting seq lengths (e.g. lmsvL) below, b/c they depend on W */
-  if((status = ConfigCM(cm, errbuf, 
-			TRUE, /* do calculate W */
-			NULL, NULL)) != eslOK) cm_Fail("Error configuring CM: %s\n", errbuf);
 
   /* Define relevant parameters: */
-
   /* first, set all to default */
   lmsvL = lvitL = 200;
   lfwdL = 100;
@@ -918,41 +822,114 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
     gftailp = esl_opt_IsUsed(go, "--exp-gftp") ? esl_opt_GetReal(go, "--exp-gftp") : 0.01;
   }
 
+  /* build the ml p7 HMM */
+  if((status = ConfigCM(cm, errbuf, 
+			FALSE, /* don't need to calculate W */
+			NULL, NULL)) != eslOK) cm_Fail("Error configuring CM: %s\n", errbuf);
+
   /* Calibrate the p7 hmm */
   if((status = cm_mlp7_Calibrate(cm, errbuf, 
 				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for each alg */
 				 lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
 				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
-				 gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
-				 esl_opt_GetBoolean(go, "--exp-fitlam"),     /* fit lambdas? otherwise use 0.693 with slight correction */
-				 esl_opt_GetBoolean(go, "--exp-real"),       /* use realistic seqs (if TRUE) or iid (if FALSE) */
-				 esl_opt_GetBoolean(go, "--exp-null3"),      /* use null3 correction? */
-				 esl_opt_GetBoolean(go, "--exp-bias"),       /* use bias correction? */
-				 cm->p7_n3omega, cm->null))                  /* omega for null3 correction, cm null model */
+				 gftailp))                                   /* fraction of tail mass to fit for glocal Fwd */
      != eslOK) cm_Fail("Error calibrating cm->mlp7 HMM");
   
-  /* Build and calibrate an additional HMM if nec */
-  if(esl_opt_GetBoolean(go, "--p7-add")) { 
-    if ((status = p7_Builder(cfg->ap7_bld, msa, cfg->ap7_bg, &ahmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->ap7_bld->errbuf); goto ERROR; }
+  /* Build and calibrate an additional HMM */
+  if(! esl_opt_GetBoolean(go, "--p7-none")) { 
+    /* Default strategy: 
+     * 
+     * Build a p7 HMM <ahmm> with p7_builder with entropy weighting
+     * and rel ent target of <x> from (--p7-ere <x>). Then _overwrite_
+     * it's emission probabilities with marginalized emission
+     * probabilities from a temporary CM built such that it's ML p7
+     * HMM has mean match state entropy the same as <ahmm>.
+     *
+     * The motivation for this is that rmark3 benchmarking (xref:
+     * ~nawrockie/notebook/11_0226_inf_p7s_with_cp9_transitions/00LOG)
+     * revealed that HMMs built with H3 transitions and emissions from
+     * a marginalized CM are the best for filtering.
+     * 
+     * The --p7-hemit option makes it so HMMER emissions are used instead
+     * of the marginalized CM emissions.
+     *
+     * NOTE: We could avoid this if we had a way or using Infernal's
+     * emission priors (there are different prior for base pairs and
+     * singlets) in p7_Builder(), but that would require parsing the
+     * secondary structure and getting an Infernal function into
+     * hmmer). For now, we build a temporary CM and copy it's
+     * emissions.
+     *
+     * First, annotate the msa with RF annotation corresponding to the
+     * definition of match columns used by the CM. This will
+     * guarantree that the HMM has the same number of match columns as
+     * the CM, which is important because we copy marginalized ml
+     * emissions from a CM onto the HMM. Note that we also set
+     * cfg->ap7_bld->arch_strategy as p7_ARCH_HAND.
+     */
+    amsa = esl_msa_Clone(msa);
+    if(amsa->rf != NULL) free(amsa->rf); 
+    ESL_ALLOC(amsa->rf, sizeof(char) * (amsa->alen+1));
+    for (apos = 1; apos <= amsa->alen; apos++) { 
+      gaps = 0.;
+      for (idx = 0; idx < amsa->nseq; idx++)
+	if (esl_abc_XIsGap(amsa->abc, amsa->ax[idx][apos])) gaps += amsa->wgt[idx];
+      amsa->rf[(apos-1)] = ((gaps / (float) amsa->nseq) > esl_opt_GetReal(go, "--gapthresh")) ? '.' : 'x';
+    }
+    cfg->ap7_bld->arch_strategy = p7_ARCH_HAND;
+    
+    if ((status = p7_Builder(cfg->ap7_bld, amsa, cfg->ap7_bg, &ahmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->ap7_bld->errbuf); goto ERROR; }
+    free(amsa);
+
+    if(! esl_opt_GetBoolean(go, "--p7-hemit")) { 
+      /* Overwrite the emission probabilities of the HMM
+       * with emissions from a ML HMM built from a CM.
+       * First, build the CM, it will have the same HMM
+       * mean match state entropy as the ahmm we just 
+       * built.
+       */
+      if ((status =  build_model(go, cfg, errbuf, msa, &acm, NULL, NULL)) != eslOK) goto ERROR;
+      ahmm_re = p7_MeanMatchRelativeEntropy(ahmm, cfg->ap7_bg);
+      status = cm_EntropyWeight(acm, cfg->pri, ahmm_re, esl_opt_GetReal(go, "--eminseq"), TRUE, &mlp7_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
+      if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
+      else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
+      acm->eff_nseq = neff;
+      cm_Rescale(acm, acm->eff_nseq / (float) msa->nseq);
+      if ((status =  parameterize(go, cfg, errbuf, acm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
+      if((status = ConfigCM(acm, errbuf, 
+			    FALSE, /* don't need to calculate W */
+			    NULL, NULL)) != eslOK) { printf("Error configuring aCM: %s\n", acm->name); goto ERROR; }
+
+      /* copy the ML p7 emission probs from the CM we just built */
+      /* match emissions: copy, then normalize (norm should be unnec actually) */
+      for (k = 1; k <= ahmm->M; k++) esl_vec_FCopy(acm->mlp7->mat[k], ahmm->abc->K, ahmm->mat[k]);
+      for (k = 1; k <= ahmm->M; k++) esl_vec_FNorm(ahmm->mat[k], ahmm->abc->K);
+      /* special case */
+      esl_vec_FSet(ahmm->mat[0], ahmm->abc->K, 0.);
+      ahmm->mat[0][0] = 1.0;
+      
+      /* insert emissions: copy, then normalize (norm should be unnec actually) */
+      for (k = 0; k <= ahmm->M; k++) esl_vec_FCopy(acm->mlp7->ins[k], ahmm->abc->K, ahmm->ins[k]);
+      for (k = 0; k <= ahmm->M; k++) esl_vec_FNorm(ahmm->ins[k], ahmm->abc->K);
+      /* reset HMM composition */
+      if ((status = p7_hmm_SetComposition(ahmm)) != eslOK) goto ERROR;
+    }
+    /* calibrate the additional HMM */
     if((status = cm_p7_Calibrate(ahmm, errbuf, 
 				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for local (lL) and glocal (gL) modes */    
 				 lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
 				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
 				 gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
-				 esl_opt_GetBoolean(go, "--exp-fitlam"),     /* fit lambdas? otherwise use 0.693 with slight correction */
-				 esl_opt_GetBoolean(go, "--exp-real"),       /* use realistic seqs (if TRUE) or iid (if FALSE) */
-				 esl_opt_GetBoolean(go, "--exp-null3"),      /* use null3 correction? */
-				 esl_opt_GetBoolean(go, "--exp-bias"),       /* use bias correction? */
-				 cm->p7_n3omega, cm->null,                   /* omega for null3 correction, cm null model */
 				 &agfmu, &agflambda))  
        != eslOK) cm_Fail("Error calibrating additional p7 HMM");
 
     if((status = cm_Addp7(cm, ahmm, agfmu, agflambda, errbuf)) != eslOK) cm_Fail("Error adding HMM to CM: %s\n", errbuf);
+    if(acm != cm) { FreeCM(acm); }
   }
-
+  
   *ret_cm = cm;
   return eslOK;
-
+  
  ERROR:
   if(cm != NULL) FreeCM(cm);
   *ret_cm = NULL;
@@ -1329,7 +1306,6 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
   else { /* user didn't set --n3omega, definition of cm->null3_omega depends on whether --p56 was set or not */
     cm->null3_omega = ((esl_opt_GetBoolean(go, "--p56") == TRUE) ? V1P0_NULL3_OMEGA : esl_opt_GetReal(go, "--n3omega"));
   }
-  if(esl_opt_IsUsed(go, "--p7n3omega")) { cm->p7_n3omega = esl_opt_GetReal(go, "--p7n3omega"); }
 
   /* Before converting to probabilities, save a count vector file, if asked.
    * Used primarily for making data files for training priors.
@@ -1475,7 +1451,6 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
        */
       if( esl_opt_IsOn(go, "--ehmmre")) { 
 	hmm_etarget = esl_opt_GetReal(go, "--ehmmre"); 
-	printf("cm hmm re: %f target: %f\n", hmm_re, hmm_etarget);
 	if(hmm_re < hmm_etarget) { 
 	  status = cm_EntropyWeight(cm, pri, hmm_etarget, esl_opt_GetReal(go, "--eminseq"), TRUE, &hmm_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
 	  if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
@@ -2606,5 +2581,85 @@ p7_prior_Read(FILE *fp)
  ERROR: 
   if(efp != NULL) esl_fileparser_Destroy(efp);
   if(pri != NULL) p7_prior_Destroy(pri);
+  return NULL;
+}
+
+
+/* Function:  cm_p7_prior_CreateNucleic()
+ * Incept:    EPN, Thu Mar 10 14:08:25 2011
+ *
+ * Purpose:   Creates the default Infernal mixture Dirichlet prior 
+ *            for p7 HMMs for RNA.
+ *
+ *            The transition priors (match, insert, delete) are all
+ *            single Dirichlets, originally trained by Travis
+ *            Wheeler. And, at the time of writing, are the same
+ *            default transitions used by HMMER for DNA/RNA HMMs.
+ *
+ *            The match emission priors were trained on Rfam.
+ *            This is the 'ss1' prior described in 
+ *            ~nawrockie/notebook/10_1116_hmmer_dinuc_priors/00LOG.
+ *
+ *            The insert emission prior is flat, plus-1.
+ *
+ * Returns:   a pointer to the new <P7_PRIOR> structure.
+ */
+P7_PRIOR *cm_p7_prior_CreateNucleic(void)
+{
+  int status;
+  P7_PRIOR *pri = NULL;
+  int q;
+
+  int num_comp = 4;
+  static double defmq[5] = { 0.079226, 0.259549, 0.241578, 0.419647 };
+  static double defm[4][4] = {
+    { 1.294511, 0.400028, 6.579555, 0.509916}, 
+    { 0.090031, 0.028634, 0.086396, 0.041186},
+    { 0.158085, 0.448297, 0.114815, 0.394151},
+    { 1.740028, 1.487773, 1.565443, 1.947555}
+  };
+
+  ESL_ALLOC(pri, sizeof(P7_PRIOR));
+  pri->tm = pri->ti = pri->td = pri->em = pri->ei = NULL;
+
+  pri->tm = esl_mixdchlet_Create(1, 3);  // match transitions; single component; 3 params
+  pri->ti = esl_mixdchlet_Create(1, 2);  // insert transitions; single component; 2 params
+  pri->td = esl_mixdchlet_Create(1, 2);  // delete transitions; single component; 2 params
+  pri->em = esl_mixdchlet_Create(num_comp, 4); // match emissions; X component; 4 params
+  pri->ei = esl_mixdchlet_Create(1, 4); // insert emissions; single component; 4 params
+
+  if (pri->tm == NULL || pri->ti == NULL || pri->td == NULL || pri->em == NULL || pri->ei == NULL) goto ERROR;
+
+  /* Transition priors: taken from hmmer's p7_prior.c::p7_prior_CreateNucleic() */
+  /* Roughly, learned from rmark benchmark - hand-beautified (trimming overspecified significant digits)
+   */
+  pri->tm->pq[0]       = 1.0;
+  pri->tm->alpha[0][0] = 2.0; // TMM
+  pri->tm->alpha[0][1] = 0.1; // TMI
+  pri->tm->alpha[0][2] = 0.1; // TMD
+
+  pri->ti->pq[0]       = 1.0;
+  pri->ti->alpha[0][0] = 0.06; // TIM
+  pri->ti->alpha[0][1] = 0.2; // TII
+
+  pri->td->pq[0]       = 1.0;
+  pri->td->alpha[0][0] = 0.1; // TDM
+  pri->td->alpha[0][1] = 0.2; // TDD
+
+  /* Match emission priors  */
+  for (q = 0; q < num_comp; q++)
+    {
+      pri->em->pq[q] = defmq[q];
+      esl_vec_DCopy(defm[q], 4, pri->em->alpha[q]);
+    }
+
+  /* Insert emission priors. */
+  pri->ei->pq[0] = 1.0;
+  esl_vec_DSet(pri->ei->alpha[0], 4, 1.0);
+
+  return pri;
+
+ ERROR:
+  if (pri != NULL) p7_prior_Destroy(pri);
   return NULL;
 }

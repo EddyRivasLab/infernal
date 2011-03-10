@@ -299,12 +299,6 @@ cm_cp9_to_p7(CM_t *cm)
  *           EgfN      - number of sequences to sample for glocal Fwd
  *           ElfT      - fraction of tail mass to fit for  local Fwd (usually (HMMER3 is) 0.04)
  *           EgfT      - fraction of tail mass to fit for glocal Fwd 
- *           do_fitlam - TRUE to fit lambda for MSV/Vit/Fwd separately, don't use 0.693
- *           do_real   - TRUE to sample realistic genomic seqs, not IID
- *           do_null3  - TRUE to use null3 correction on scores before tail fit
- *           do_bias   - TRUE to use bias correction on scores before tail fit
- *           n3omega   - omega for null3 correction
- *           cm_null   - CM null model, only relevant if do_null3
  *           
  * Return:   eslOK   on success
  *
@@ -315,17 +309,17 @@ int
 cm_mlp7_Calibrate(CM_t *cm, char *errbuf, 
 		  int ElmL, int ElvL, int ElfL, int EgfL, 
 		  int ElmN, int ElvN, int ElfN, int EgfN, 
-		  double ElfT, double EgfT, int do_fitlam, int do_real, int do_null3, int do_bias, float n3omega, float *cm_null)
+		  double ElfT, double EgfT)
 {
   int status;
   double gfmu, gflambda;
 
-  printf("cm_mlp7_Calibrate:\n\tElmL: %d\n\tElvL: %d\n\tElfL: %d\n\tEgfL: %d\n\tElmN: %d\n\tElvN: %d\n\tElfN: %d\n\tEgfN: %d\n\tElfT: %f\n\tEgfT: %f\n\tdo_real: %d\n\tdo_null3: %d\n\tdo_fitlam: %d\n\tdo_bias: %d\n", ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT, do_real, do_null3, do_fitlam, do_bias);
+  /*printf("cm_mlp7_Calibrate:\n\tElmL: %d\n\tElvL: %d\n\tElfL: %d\n\tEgfL: %d\n\tElmN: %d\n\tElvN: %d\n\tElfN: %d\n\tEgfN: %d\n\tElfT: %f\n\tEgfT: %f\n\n", ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT);*/
 
   if(cm->mlp7 == NULL)         ESL_FAIL(eslEINCOMPAT, errbuf, "cm_mlp7_Calibrate(): cm->mlp7 is NULL");
   if(! (cm->flags & CMH_MLP7)) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_mlp7_Calibrate(): cm's CMH_MLP7 flag is down");
 
-  if((status = cm_p7_Calibrate(cm->mlp7, errbuf, ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT, do_fitlam, do_real, do_null3, do_bias, n3omega, cm_null, &gfmu, &gflambda)) != eslOK) return status;
+  if((status = cm_p7_Calibrate(cm->mlp7, errbuf, ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT, &gfmu, &gflambda)) != eslOK) return status;
 
   /* copy the p7's evparam[], which were set in p7_Calibrate() to the cm's p7_evparam,
    * which will additionally store the Glocal Lambda and Mu for Forward */
@@ -362,12 +356,6 @@ cm_mlp7_Calibrate(CM_t *cm, char *errbuf,
  *           EgfN      - number of sequences to sample for glocal Fwd
  *           ElfT      - fraction of tail mass to fit for  local Fwd (usually (HMMER3 is) 0.04)
  *           EgfT      - fraction of tail mass to fit for glocal Fwd 
- *           do_fitlam - TRUE to fit lambda for MSV/Vit/Fwd separately, don't use 0.693
- *           do_real   - TRUE to sample realistic genomic seqs, not IID
- *           do_null3  - TRUE to use null3 correction on scores before tail fit
- *           do_bias   - TRUE to use bias correction on scores before tail fit
- *           cm_null   - the cm null model
- *           n3_omega  - the prior probability of the null3 model
  *           ret_gfmu  - RETURN: mu for glocal forward
  *           ret_gflambda - RETURN: lambda for glocal forward
  *           
@@ -380,8 +368,7 @@ int
 cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, 
 		int ElmL, int ElvL, int ElfL, int EgfL, 
 		int ElmN, int ElvN, int ElfN, int EgfN, 
-		double ElfT, double EgfT, int do_fitlam, int do_real, int do_null3, int do_bias, 
-		float n3omega, float *cm_null,
+		double ElfT, double EgfT, 
 		double *ret_gfmu, double *ret_gflambda)
 {
   int        status;
@@ -392,46 +379,36 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
   double lmmu, lvmu, lftau, gfmu;
   double lmlam, lvlam, lflam, gflambda, lambda;
 
-  printf("cm_p7_Calibrate:\n\tElmL: %d\n\tElvL: %d\n\tElfL: %d\n\tEgfL: %d\n\tElmN: %d\n\tElvN: %d\n\tElfN: %d\n\tEgfN: %d\n\tElfT: %f\n\tEgfT: %f\n\tdo_real: %d\n\tdo_null3: %d\n\tdo_fitlam: %d\n\tdo_bias: %d\n", ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT, do_real, do_null3, do_fitlam, do_bias);
+  /*printf("cm_p7_Calibrate:\n\tElmL: %d\n\tElvL: %d\n\tElfL: %d\n\tEgfL: %d\n\tElmN: %d\n\tElvN: %d\n\tElfN: %d\n\tEgfN: %d\n\tElfT: %f\n\tEgfT: %f\n\n", ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT, do_real, do_null3, do_fitlam, do_bias);*/
 
   /* most of this code stolen from hmmer's evalues.c::p7_Calibrate() */
-  if ((r      = esl_randomness_CreateFast(42)) == NULL)                        ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create RNG");
+  if ((r      = esl_randomness_CreateFast(42)) == NULL)                   ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create RNG");
   if ((bg     = p7_bg_Create(hmm->abc)) == NULL)                          ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to allocate background");
-  if ((gm     = p7_profile_Create(hmm->M, hmm->abc))  == NULL)       ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to allocate profile");
+  if ((gm     = p7_profile_Create(hmm->M, hmm->abc))  == NULL)            ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to allocate profile");
   if ((status = p7_ProfileConfig(hmm, bg, gm, ElmL, p7_LOCAL)) != eslOK)  ESL_XFAIL(status,  errbuf, "cm_p7_Calibrate(): failed to configure profile");
-  if ((om     = p7_oprofile_Create(hmm->M, hmm->abc)) == NULL)       ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create optimized profile");
-  if ((status = p7_oprofile_Convert(gm, om)) != eslOK)                         ESL_XFAIL(status,  errbuf, "cm_p7_Calibrate(): failed to convert to optimized profile");
+  if ((om     = p7_oprofile_Create(hmm->M, hmm->abc)) == NULL)            ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create optimized profile");
+  if ((status = p7_oprofile_Convert(gm, om)) != eslOK)                    ESL_XFAIL(status,  errbuf, "cm_p7_Calibrate(): failed to convert to optimized profile");
 
   /* The calibration steps themselves */
   lambda = lmlam = lvlam = lflam = 0.;
-  if(! do_fitlam) { 
-    if ((status = p7_Lambda      (hmm, bg, &lambda))                         != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine lambda");
-  }
-  if ((status = cm_p7_MSVMu    (r, errbuf, om, bg, ElmL, ElmN, lambda, do_fitlam, do_real, do_null3, do_bias, n3omega, &lmmu, &lmlam))        != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine msv mu");
-  if (ElvL != ElmL) p7_oprofile_ReconfigLength(om, ElvL);
-  if ((status = cm_p7_ViterbiMu(r, errbuf, om, bg, ElvL, ElvN, lambda, do_fitlam, do_real, do_null3, do_bias, n3omega, &lvmu, &lvlam))        != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine vit mu");
-  if (ElfL != ElvL) p7_oprofile_ReconfigLength(om, ElfL);
-  if ((status = cm_p7_Tau      (r, errbuf, om, NULL, bg, ElfL, ElfN, lambda, ElfT, do_fitlam, do_real, do_null3, do_bias, n3omega, &lftau, &lflam)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
+  if ((status = p7_Lambda      (hmm, bg, &lambda))                         != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine lambda");
+  if ((status = p7_MSVMu    (r, om, bg, ElmL, ElmN, lambda, &lmmu))        != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine msv mu");
+  if ((status = p7_ViterbiMu(r, om, bg, ElvL, ElvN, lambda, &lvmu))        != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine vit mu");
+  if ((status = p7_Tau      (r, om, bg, ElfL, ElfN, lambda, ElfT, &lftau)) != eslOK)   ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
 
   /* set the p7's evparam[] */
   hmm->evparam[p7_MMU]     = lmmu;
-  hmm->evparam[p7_MLAMBDA] = (do_fitlam) ? lmlam : lambda;
+  hmm->evparam[p7_MLAMBDA] = lambda;
   hmm->evparam[p7_VMU]     = lvmu;  
-  hmm->evparam[p7_VLAMBDA] = (do_fitlam) ? lvlam : lambda;
+  hmm->evparam[p7_VLAMBDA] = lambda;
   hmm->evparam[p7_FTAU]    = lftau; 
-  hmm->evparam[p7_FLAMBDA] = (do_fitlam) ? lflam : lambda;  
+  hmm->evparam[p7_FLAMBDA] = lambda;
   hmm->flags              |= p7H_STATS;
 
   /* finally, determine Glocal Forward stats */
   if ((status = p7_ProfileConfig(hmm, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR; 
-  if(do_fitlam) { 
-    if ((status = p7_GlocalLambdaMu(hmm, r, gm, bg, do_real, do_null3, do_bias, n3omega, cm_null, EgfL, EgfN, EgfT, errbuf, &gflambda, &gfmu)) != eslOK) goto ERROR; 
-  }
-  else { 
-    if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, lambda, EgfT, FALSE, do_real, do_null3, do_bias, n3omega, &gfmu, &gflambda)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
-    gflambda = lambda;
-  }
-  printf("p7 glocal lambda: %g  mu: %g\n", gflambda, gfmu);
+  if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, lambda, EgfT, &gfmu)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
+  gflambda = lambda;
 
   esl_randomness_Destroy(r); 
   p7_bg_Destroy(bg);         
@@ -453,427 +430,13 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
   return status;
 }
 
-/* Function:  p7_GlocalLambdaMu()
- * Synopsis:  Determine Forward lambda and tau for glocal mode by simulation.
- * Incept:    EPN, Wed Oct 27 06:49:17 2010
- *            SRE, Thu Aug  9 15:08:39 2007 [p7_Tau()]
- *
- * Purpose:   This function is a modified version of p7_Tau(), with
- *            changes only made as necessary to use scores from a
- *            glocally configured HMM, instead of a locally configured
- *            on. One important difference is that lambda is estimated
- *            not passed in, another is that a generic profile <gm>
- *            is used here instead of the optimized one used by
- *            p7_Tau().  This is necessary b/c glocal scores cannot be
- *            calculated using the optimized routines because they
- *            make assumptions that are violated by a glocal
- *            configuration.  All notes below are from p7_Tau():
- *
- *            Determine the <tau> parameter for an exponential tail
- *            fit to the Forward score distribution for model <om>, on
- *            random sequences with the composition of the background
- *            model <bg>. This <tau> parameter is for an exponential
- *            distribution anchored from $P=1.0$, so it's not really a
- *            tail per se; but it's only an accurate fit in the tail
- *            of the Forward score distribution, from about $P=0.001$
- *            or so.
- *            
- *            The determination of <tau> is done by a brief simulation
- *            in which we fit a Gumbel distribution to a small number
- *            of Forward scores of random sequences, and use that to
- *            predict the location of the tail at probability <tailp>.
- *            
- *            The Gumbel is of course inaccurate, but we can use it
- *            here solely as an empirical distribution to determine
- *            the location of a reasonable <tau> more accurately on a
- *            smaller number of samples than we could do with raw
- *            order statistics. 
- *            
- *            Typical choices are L=100, N=200, tailp=0.04, which
- *            typically yield estimates $\hat{\mu}$ with a precision
- *            (standard deviation) of $\pm$ 0.2 bits, corresponding to
- *            a $\pm$ 15\% error in E-values. See [J1/135].
- *            
- *            The use of Gumbel fitting to a small number of $N$
- *            samples and the extrapolation of $\hat{\mu}$ from the
- *            estimated location of the 0.04 tail mass are both
- *            empirical and carefully optimized against several
- *            tradeoffs. Most importantly, around this choice of tail
- *            probability, a systematic error introduced by the use of
- *            the Gumbel fit is being cancelled by systematic error
- *            introduced by the use of a higher tail probability than
- *            the regime in which the exponential tail is a valid
- *            approximation. See [J1/135] for discussion.
- *            
- *            This function changes the length configuration of both
- *            <om> and <bg>. The caller must remember to reconfigure
- *            both of their length models appropriately for any
- *            subsequent alignments.
- *            
- * Args:      hmm    : the model
- *            r      : source of randomness
- *            gm     : configured profile to score sequences with
- *            bg     : null model (for background residue frequencies)
- *            do_real: sample realistic genomic sequences, don't use iid
- *            do_null3: TRUE to use null3 correction on scores, FALSE not to
- *            do_bias: TRUE to use bias correction on scores, FALSE not to
- *            n3_omega: the prior probability of the null3 model
- *            cm_null: the cm null model
- *            L      : mean length model for seq emission from profile
- *            N      : number of sequences to generate
- *            tailp  : tail mass from which we will extrapolate tau
- *            errbuf : for error messages
- *            ret_lambda: RETURN: estimate for the Forward lambda
- *            ret_mu:     RETURN: estimate for the Forward mu
- *
- * Returns:   <eslOK> on success
- *
- * Throws:    <eslEMEM> on allocation error, and <*ret_tau> is 0.
- */
-int
-p7_GlocalLambdaMu(P7_HMM *hmm, ESL_RANDOMNESS *r, P7_PROFILE *gm, P7_BG *bg, int do_real, int do_null3, int do_bias, float n3omega, float *cm_null, int L, int N, double tailp, char *errbuf, double *ret_lambda, double *ret_mu)
-{
-  P7_GMX  *gx      = p7_gmx_Create(gm->M, L); /* DP matrix: for ForwardParser,  L rows */
-  ESL_DSQ *dsq     = NULL;
-  double  *xv      = NULL;
-  float    fsc, nullsc;		                  
-  double   gmu, glam;
-  int      status;
-  int      i;
-  int      n;
-  ESL_HISTOGRAM *h = NULL;
-  float    null3sc = 0.;
-  float    sc;
-
-  /* the HMM that generates sequences */
-  int     ghmm_nstates = 0;       /* number of states in the HMM */
-  double  *ghmm_sA  = NULL;       /* start probabilities [0..ghmm_nstates-1] */
-  double **ghmm_tAA = NULL;       /* transition probabilities [0..nstates-1][0..nstates-1] */
-  double **ghmm_eAA = NULL;       /* emission probabilities   [0..nstates-1][0..abc->K-1] */
-
-  ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
-  printf("Heya!\n");
-  if ((h = esl_histogram_CreateFull(-50., 50., 0.2)) == NULL) { status = eslEMEM; goto ERROR; }
-  if (gx == NULL) { status = eslEMEM; goto ERROR; }
-
-  if(do_real) { 
-    if((status = CreateGenomicHMM(hmm->abc, errbuf, &ghmm_sA, &ghmm_tAA, &ghmm_eAA, &ghmm_nstates)) != eslOK) goto ERROR;
-  }
-
-  p7_ReconfigLength(gm, L);
-  p7_bg_SetLength(bg, L);
-  if(do_bias) p7_bg_SetFilter(bg, gm->M, gm->compo);
-
-  for (i = 0; i < N; i++)
-    {
-      if(do_real) { if((status = SampleGenomicSequenceFromHMM(r, hmm->abc, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, L, &dsq) != eslOK)) goto ERROR; }
-      else        { if((status = esl_rsq_xfIID(r, bg->f, gm->abc->K, L, dsq)) != eslOK) goto ERROR; }
-      if ((status = p7_GForward(dsq, L, gm, gx, &fsc))           != eslOK) goto ERROR;
-      if(do_bias) { if((status = p7_bg_FilterScore(bg, dsq, L, &nullsc))      != eslOK) goto ERROR; }
-      else        { if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR; }
-      sc = ((fsc-nullsc) / eslCONST_LOG2);
-
-      if(do_null3) { 
-	ScoreCorrectionNull3CompUnknown(hmm->abc, cm_null, dsq, 1, L, n3omega, &null3sc);
-	null3sc *= (float) hmm->M / (float) L; /* assume hit would be of length clen, not full window len */
-	sc -= null3sc;
-      }
-      esl_histogram_Add(h, sc);
-      if(do_real) { free(dsq); dsq = NULL; }
-    }
-
-  /*esl_histogram_Print(stdout, h);*/
-
-  esl_histogram_GetTailByMass(h, tailp, &xv, &n, NULL);
-  if ((status = esl_exp_FitComplete(xv, n, &gmu, &glam)) != eslOK) goto ERROR;
-
-  /* Explanation of the eqn below: first find the x at which the Gumbel tail
-   * mass is predicted to be equal to tailp. Then back up from that x
-   * by log(tailp)/lambda to set the origin of the exponential tail to 1.0
-   * instead of tailp.
-   */
-  *ret_mu = gmu - log(1./tailp) / glam;
-
-  *ret_lambda =  glam;
-
-  /* free HMM if nec */
-  if(do_real) { 
-    for(i = 0; i < ghmm_nstates; i++) { 
-      free(ghmm_eAA[i]); 
-      free(ghmm_tAA[i]); 
-    }
-    free(ghmm_eAA);
-    free(ghmm_tAA);
-    free(ghmm_sA);
-  }
-  
-  if(dsq != NULL) free(dsq);
-  p7_gmx_Destroy(gx);
-  esl_histogram_Destroy(h);
-  return eslOK;
-
- ERROR:
-  *ret_mu     = 0.;
-  *ret_lambda = 0.;
-  if (xv  != NULL) free(xv);
-  if (dsq != NULL) free(dsq);
-  if (gx  != NULL) p7_gmx_Destroy(gx);
-  if (h   != NULL) esl_histogram_Destroy(h);
-  for(i = 0; i < ghmm_nstates; i++) { 
-    if(ghmm_eAA != NULL) free(ghmm_eAA[i]); 
-    if(ghmm_tAA != NULL) free(ghmm_tAA[i]); 
-  }
-  if(ghmm_eAA != NULL) free(ghmm_eAA);
-  if(ghmm_tAA != NULL) free(ghmm_tAA);
-  if(ghmm_sA  != NULL) free(ghmm_sA);
-  return status;
-}
-
-
-/* Function:  cm_p7_MSVMu()
- * Synopsis:  Determines the local MSV Gumbel mu parameter for a model.
- * Incept:    SRE, Mon Aug  6 13:00:57 2007 [Janelia] (p7_MSVMu())
- *
- * Purpose:   Identical to p7_MSVMu() except that options <do_real> and
- *            <do_null3> allow target sequences to be generated by 
- *            a 5-state HMM that generates genome-like background sequence
- *            (if <do_real> is TRUE) and applies a null3 penalty
- *            (if <do_null3> is TRUE). See hmmer/evalues.c::cm_p7_MSVMu
- *            for additional information.
- *            
- * Args:      r       :  source of random numbers
- *            om      :  score profile (length config is changed upon return!)
- *            bg      :  null model    (length config is changed upon return!)
- *            L       :  length of sequences to simulate
- *            N	      :  number of sequences to simulate		
- *            lambda  :  known Gumbel lambda parameter
- *            do_fitlam: TRUE to fit lambda here and set in <ret_mlam>, <lambda> is irrelevant
- *            do_real :  TRUE to generate target seqs from genomic HMM, FALSE to do iid
- *            do_null3:  TRUE to apply null3 penalty with <n3omega> omega.
- *            do_bias:   TRUE to apply bias correction with <n3omega> omega.
- *            n3omega :  omega for null3, irrelevant if do_null3.
- *            ret_mmu :  RETURN: ML estimate of location param mu
- *            ret_mlam:  RETURN: ML estimate of lambda, only filled if do_fitlam, else set to 0
- *
- * Returns:   <eslOK> on success, and <ret_mu> contains the ML estimate
- *            of $\mu$.
- *
- * Throws:    (no abnormal error conditions)
- * 
- * Note:      The FitCompleteLoc() function is simple, and it's tempting
- *            to inline it here and save the <xv> working memory. However,
- *            the FitCompleteLoc() function is vulnerable
- *            to under/overflow error, and we'll probably fix it
- *            eventually - need to be sure that fix applies here too.
- */
-int
-cm_p7_MSVMu(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, int do_fitlam, int do_real, int do_null3, int do_bias, float n3omega, double *ret_mmu, double *ret_mlam)
-{
-  P7_OMX  *ox      = p7_omx_Create(om->M, 0, 0); /* DP matrix: 1 row version */
-  ESL_DSQ *dsq     = NULL;
-  double  *xv      = NULL;
-  int      i;
-  float    sc, nullsc, null3sc;
-#ifndef p7_IMPL_DUMMY
-  float    maxsc   = (255 - om->base_b) / om->scale_b; /* if score overflows, use this */
-#endif
-  int      status;
-
-  /* the HMM that generates sequences if do_real==TRUE */
-  int     ghmm_nstates = 0;       /* number of states in the HMM */
-  double  *ghmm_sA  = NULL;       /* start probabilities [0..ghmm_nstates-1] */
-  double **ghmm_tAA = NULL;       /* transition probabilities [0..nstates-1][0..nstates-1] */
-  double **ghmm_eAA = NULL;       /* emission probabilities   [0..nstates-1][0..abc->K-1] */
-
-  if (ox == NULL) { status = eslEMEM; goto ERROR; }
-  ESL_ALLOC(xv,  sizeof(double)  * N);
-  ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
-
-  if(do_real) { 
-    if((status = CreateGenomicHMM(bg->abc, errbuf, &ghmm_sA, &ghmm_tAA, &ghmm_eAA, &ghmm_nstates)) != eslOK) goto ERROR;
-  }
-
-  p7_oprofile_ReconfigLength(om, L);
-  p7_bg_SetLength(bg, L);
-  if(do_bias) p7_bg_SetFilter(bg, om->M, om->compo);
-
-  for (i = 0; i < N; i++)
-    {
-      if(do_real) { if((status = SampleGenomicSequenceFromHMM(r, bg->abc, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, L, &dsq) != eslOK)) goto ERROR; }
-      else        { if((status = esl_rsq_xfIID(r, bg->f, bg->abc->K, L, dsq)) != eslOK) goto ERROR; }
-      if(do_bias) { if((status = p7_bg_FilterScore(bg, dsq, L, &nullsc))      != eslOK) goto ERROR; }
-      else        { if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR; }
-      status = p7_MSVFilter(dsq, L, om, ox, &sc); 
-#ifndef p7_IMPL_DUMMY
-      if (status == eslERANGE) { sc = maxsc; status = eslOK; }
-#endif
-      if (status != eslOK)     goto ERROR;
-      sc = (sc - nullsc) / eslCONST_LOG2;
-      if(do_null3) { 
-	ScoreCorrectionNull3CompUnknown(bg->abc, bg->f, dsq, 1, L, n3omega, &null3sc);
-	null3sc *= (float) om->M / (float) L; /* assume hit would be of length clen, not full window len */
-	sc -= null3sc;
-      }
-      xv[i] = sc;
-    }
-
-  if(do_fitlam) { 
-    if ((status = esl_gumbel_FitComplete(xv, N, ret_mmu, ret_mlam))  != eslOK) goto ERROR;
-  }
-  else { 
-    if ((status = esl_gumbel_FitCompleteLoc(xv, N, lambda, ret_mmu))  != eslOK) goto ERROR;
-    *ret_mlam = 0.;
-  }
-  p7_omx_Destroy(ox);
-  free(xv);
-  free(dsq);
-  /* free HMM if nec */
-  if(do_real) { 
-    for(i = 0; i < ghmm_nstates; i++) { 
-      free(ghmm_eAA[i]); 
-      free(ghmm_tAA[i]); 
-    }
-    free(ghmm_eAA);
-    free(ghmm_tAA);
-    free(ghmm_sA);
-  }
-  
-  return eslOK;
-
- ERROR:
-  *ret_mmu = 0.0;
-  if (ox  != NULL) p7_omx_Destroy(ox);
-  if (xv  != NULL) free(xv);
-  if (dsq != NULL) free(dsq);
-  return status;
-}
-
-/* Function:  cm_p7_ViterbiMu()
- * Synopsis:  Determines the local Viterbi Gumbel mu parameter for a model.
- * Incept:    SRE, Tue May 19 10:26:19 2009 [Janelia] (p7_ViterbiMu())
- *
- * Purpose:   Identical to cm_p7_ViterbiMu() except that options
- *            <do_real> and <do_null3> allow target sequences to be
- *            generated by a 5-state HMM that generates genome-like
- *            background sequence (if <do_real> is TRUE) and applies a
- *            null3 penalty (if <do_null3> is TRUE). See
- *            hmmer/evalues.c::cm_p7_ViterbiMu for additional information.
- *
- * Args:      r       :  source of random numbers
- *            om      :  score profile (length config is changed upon return!)
- *            bg      :  null model    (length config is changed upon return!)
- *            L       :  length of sequences to simulate
- *            N	      :  number of sequences to simulate		
- *            lambda  :  known Gumbel lambda parameter
- *            do_fitlam: TRUE to fit lambda here and set in <ret_vlam>, <lambda> is irrelevant
- *            do_real :  TRUE to generate target seqs from genomic HMM, FALSE to do iid
- *            do_null3:  TRUE to apply null3 penalty with <n3omega> omega.
- *            do_bias :  TRUE to apply bias correction with <n3omega> omega.
- *            n3omega :  omega for null3, irrelevant if do_null3.
- *            ret_vmu :  RETURN: ML estimate of location param mu
- *            ret_vlam:  RETURN: ML estimate of lambda, only filled if do_fitlam, else set to 0
- *
- * Returns:   <eslOK> on success, and <ret_mu> contains the ML estimate
- *            of $\mu$.
- *
- * Throws:    (no abnormal error conditions)
- */
-int
-cm_p7_ViterbiMu(ESL_RANDOMNESS *r, char *errbuf,P7_OPROFILE *om, P7_BG *bg, int L, int N, double lambda, int do_fitlam, int do_real, int do_null3, int do_bias, float n3omega, double *ret_vmu, double *ret_vlam)
-{
-  P7_OMX  *ox      = p7_omx_Create(om->M, 0, 0); /* DP matrix: 1 row version */
-  ESL_DSQ *dsq     = NULL;
-  double  *xv      = NULL;
-  int      i;
-  float    sc, nullsc, null3sc;
-#ifndef p7_IMPL_DUMMY
-  float    maxsc   = (32767.0 - om->base_w) / om->scale_w; /* if score overflows, use this [J4/139] */
-#endif
-  int      status;
-
-  /* the HMM that generates sequences if do_real==TRUE */
-  int     ghmm_nstates = 0;       /* number of states in the HMM */
-  double  *ghmm_sA  = NULL;       /* start probabilities [0..ghmm_nstates-1] */
-  double **ghmm_tAA = NULL;       /* transition probabilities [0..nstates-1][0..nstates-1] */
-  double **ghmm_eAA = NULL;       /* emission probabilities   [0..nstates-1][0..abc->K-1] */
-
-  if (ox == NULL) { status = eslEMEM; goto ERROR; }
-  ESL_ALLOC(xv,  sizeof(double)  * N);
-  ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
-
-  if(do_real) { 
-    if((status = CreateGenomicHMM(bg->abc, errbuf, &ghmm_sA, &ghmm_tAA, &ghmm_eAA, &ghmm_nstates)) != eslOK) goto ERROR;
-  }
-
-  p7_oprofile_ReconfigLength(om, L);
-  p7_bg_SetLength(bg, L);
-  if(do_bias) p7_bg_SetFilter(bg, om->M, om->compo);
-
-  for (i = 0; i < N; i++)
-    {
-      if(do_real) { if((status = SampleGenomicSequenceFromHMM(r, bg->abc, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, L, &dsq) != eslOK)) goto ERROR; }
-      else        { if((status = esl_rsq_xfIID(r, bg->f, bg->abc->K, L, dsq)) != eslOK) goto ERROR; }
-      if(do_bias) { if((status = p7_bg_FilterScore(bg, dsq, L, &nullsc))      != eslOK) goto ERROR; }
-      else        { if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR; }
-
-      status = p7_ViterbiFilter(dsq, L, om, ox, &sc); 
-#ifndef p7_IMPL_DUMMY
-      if (status == eslERANGE) { sc = maxsc; status = eslOK; }
-#endif
-      if (status != eslOK)     goto ERROR;
-      sc = (sc - nullsc) / eslCONST_LOG2;
-      if(do_null3) { 
-	ScoreCorrectionNull3CompUnknown(bg->abc, bg->f, dsq, 1, L, n3omega, &null3sc);
-	null3sc *= (float) om->M / (float) L; /* assume hit would be of length clen, not full window len */
-	sc -= null3sc;
-      }
-      xv[i] = sc;
-    }
-
-  if(do_fitlam) { 
-    if ((status = esl_gumbel_FitComplete(xv, N, ret_vmu, ret_vlam))  != eslOK) goto ERROR;
-  }
-  else { 
-    if ((status = esl_gumbel_FitCompleteLoc(xv, N, lambda, ret_vmu))  != eslOK) goto ERROR;
-    *ret_vlam = 0.;
-  }
-
-  p7_omx_Destroy(ox);
-  free(xv);
-  free(dsq);
-  /* free HMM if nec */
-  if(do_real) { 
-    for(i = 0; i < ghmm_nstates; i++) { 
-      free(ghmm_eAA[i]); 
-      free(ghmm_tAA[i]); 
-    }
-    free(ghmm_eAA);
-    free(ghmm_tAA);
-    free(ghmm_sA);
-  }
-  return eslOK;
-
- ERROR:
-  *ret_vmu = 0.0;
-  if (ox  != NULL) p7_omx_Destroy(ox);
-  if (xv  != NULL) free(xv);
-  if (dsq != NULL) free(dsq);
-  return status;
-
-}
-
-
 /* Function:  cm_p7_Tau()
  * Synopsis:  Determine Forward tau by brief simulation.
  * Incept:    SRE, Thu Aug  9 15:08:39 2007 [Janelia] (p7_Tau())
  *
- * Purpose:   Identical to p7_Tau() except that options <do_real> and
- *            <do_null3> allow target sequences to be generated by 
- *            a 5-state HMM that generates genome-like background sequence
- *            (if <do_real> is TRUE) and applies a null3 penalty
- *            (if <do_null3> is TRUE). Also, can optionally take a generic
- *            profile, <gm>, instead of an optimized one <om>. This is useful
- *            if you're trying to get tau for glocal Fwd.
+ * Purpose:   Identical to p7_Tau() except that it can handle 
+ *            either an optimized profile or a generic profile,
+ *            the latter of which is used for glocal Forward.
  *            See hmmer/evalues.c::cm_p7_Tau for additional information.
  *            
  * Args:      r      : source of randomness
@@ -884,13 +447,7 @@ cm_p7_ViterbiMu(ESL_RANDOMNESS *r, char *errbuf,P7_OPROFILE *om, P7_BG *bg, int 
  *            N      : number of sequences to generate
  *            lambda : expected slope of the exponential tail (from p7_Lambda())
  *            tailp  : tail mass from which we will extrapolate mu
- *            do_fitlam: TRUE to fit lambda here and set in <ret_lam>, <lambda> is irrelevant
- *            do_real :  TRUE to generate target seqs from genomic HMM, FALSE to do iid
- *            do_null3:  TRUE to apply null3 penalty with <n3omega> omega.
- *            do_bias:   TRUE to apply bias correction with <n3omega> omega.
- *            n3omega :  omega for null3, irrelevant if do_null3.
  *            ret_tau : RETURN: estimate for the Forward tau (base of exponential tail)
- *            ret_lam:  RETURN: ML estimate of lambda, only filled if do_fitlam, else set to 0
  *
  * Returns:   <eslOK> on success, and <*ret_fv> is the score difference
  *            in bits.
@@ -898,14 +455,14 @@ cm_p7_ViterbiMu(ESL_RANDOMNESS *r, char *errbuf,P7_OPROFILE *om, P7_BG *bg, int 
  * Throws:    <eslEMEM> on allocation error, and <*ret_fv> is 0.
  */
 int
-cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, int L, int N, double lambda, double tailp, int do_fitlam, int do_real, int do_null3, int do_bias, float n3omega, double *ret_tau, double *ret_lam)
+cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, int L, int N, double lambda, double tailp, double *ret_tau)
 {
   P7_OMX  *ox = NULL;
   P7_GMX  *gx = NULL;
 
   ESL_DSQ *dsq     = NULL;
   double  *xv      = NULL;
-  float    sc, fsc, nullsc, null3sc;		                  
+  float    sc, fsc, nullsc;
   double   gmu, glam;
   int      status;
   int      i;
@@ -927,89 +484,39 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
     M  = om->M;
   }
 
-  /* the HMM that generates sequences if do_real==TRUE */
-  int     ghmm_nstates = 0;       /* number of states in the HMM */
-  double  *ghmm_sA  = NULL;       /* start probabilities [0..ghmm_nstates-1] */
-  double **ghmm_tAA = NULL;       /* transition probabilities [0..nstates-1][0..nstates-1] */
-  double **ghmm_eAA = NULL;       /* emission probabilities   [0..nstates-1][0..abc->K-1] */
-
   ESL_ALLOC(xv,  sizeof(double)  * N);
   ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
-
-
-  if(do_real) { 
-    if((status = CreateGenomicHMM(bg->abc, errbuf, &ghmm_sA, &ghmm_tAA, &ghmm_eAA, &ghmm_nstates)) != eslOK) goto ERROR;
-  }
 
   if(do_generic) p7_ReconfigLength(gm, L);
   else           p7_oprofile_ReconfigLength(om, L);
   p7_bg_SetLength(bg, L);
-  if(do_bias) { 
-    if(do_generic) p7_bg_SetFilter(bg, gm->M, gm->compo);
-    else           p7_bg_SetFilter(bg, om->M, om->compo);
-  }
 
   for (i = 0; i < N; i++)
     {
-      if(do_real) { if((status = SampleGenomicSequenceFromHMM(r, bg->abc, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, L, &dsq) != eslOK)) goto ERROR; }
-      else        { if((status = esl_rsq_xfIID(r, bg->f, bg->abc->K, L, dsq)) != eslOK) goto ERROR; }
+      if((status = esl_rsq_xfIID(r, bg->f, bg->abc->K, L, dsq)) != eslOK) goto ERROR; 
       if(do_generic) { 
 	if ((status = p7_GForward(dsq, L, gm, gx, &fsc))           != eslOK) goto ERROR;
       }
       else { 
 	if ((status = p7_ForwardParser(dsq, L, om, ox, &fsc))      != eslOK) goto ERROR;
       }
-      if(do_bias) { if((status = p7_bg_FilterScore(bg, dsq, L, &nullsc))      != eslOK) goto ERROR; }
-      else        { if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR; }
+      if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR; 
       sc = (fsc - nullsc) / eslCONST_LOG2;
-      if(do_null3) { 
-	ScoreCorrectionNull3CompUnknown(bg->abc, bg->f, dsq, 1, L, n3omega, &null3sc);
-	null3sc *= (float) M / (float) L; /* assume hit would be of length clen, not full window len */
-	sc -= null3sc;
-      }
       xv[i] = sc;
     }
-  if(do_fitlam) { 
-    /* Count the scores into a histogram object.  */
-    ESL_HISTOGRAM *h = NULL;
-    int n;
-    double *xv2;
-    if ((h = esl_histogram_CreateFull(-50., 50., 0.2)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "allocation failed");
-    for (i = 0; i < N; i++) esl_histogram_Add(h, xv[i]);
-    esl_histogram_GetTailByMass(h, tailp, &xv2, &n, NULL);
 
-    esl_exp_FitComplete(xv2, n, ret_tau, ret_lam);
-    *ret_tau = *ret_tau - log(1./tailp) / *ret_lam;
-
-    esl_histogram_Destroy(h);
-  }
-  else { 
-    if ((status = esl_gumbel_FitComplete(xv, N, &gmu, &glam)) != eslOK) goto ERROR;
-
-    /* Explanation of the eqn below: first find the x at which the Gumbel tail
-     * mass is predicted to be equal to tailp. Then back up from that x
-     * by log(tailp)/lambda to set the origin of the exponential tail to 1.0
-     * instead of tailp.
-     */
-    *ret_tau =  esl_gumbel_invcdf(1.0-tailp, gmu, glam) + (log(tailp) / lambda);
-    printf("tailp: %f, tau: %f\n", tailp, *ret_tau);
-    *ret_lam = 0.;
-  }
+  if ((status = esl_gumbel_FitComplete(xv, N, &gmu, &glam)) != eslOK) goto ERROR;
+  /* Explanation of the eqn below: first find the x at which the Gumbel tail
+   * mass is predicted to be equal to tailp. Then back up from that x
+   * by log(tailp)/lambda to set the origin of the exponential tail to 1.0
+   * instead of tailp.
+   */
+  *ret_tau =  esl_gumbel_invcdf(1.0-tailp, gmu, glam) + (log(tailp) / lambda);
 
   free(xv);
   free(dsq);
   if (ox != NULL) p7_omx_Destroy(ox);
   if (gx != NULL) p7_gmx_Destroy(gx);
-  /* free HMM if nec */
-  if(do_real) { 
-    for(i = 0; i < ghmm_nstates; i++) { 
-      free(ghmm_eAA[i]); 
-      free(ghmm_tAA[i]); 
-    }
-    free(ghmm_eAA);
-    free(ghmm_tAA);
-    free(ghmm_sA);
-  }
   return eslOK;
 
  ERROR:
