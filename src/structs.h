@@ -45,7 +45,6 @@
 #define DEFAULT_NULL3_OMEGA      0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
 #define V1P0_NULL2_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null2 model for infernal versions 0.56 through 1.0.2 */
 #define V1P0_NULL3_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null3 model for infernal versions 0.56 through 1.0.2 */
-#define DEFAULT_P7NULL3_OMEGA    0.0000000298023/* 1/(2^25), the hard-coded prior probability of the p7 null3 model */
 
 /* max number of parititons for cmcalibrate */
 #define MAX_PARTITIONS 20
@@ -1486,7 +1485,6 @@ typedef struct cm_s {
   /* p7 hmms, added 08.05.08 */
   P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
   float         mlp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_MLP7_STATS) */
-  double        p7_n3omega;   /* null3 omega for p7 models (TODO: put this in the CM file) */
 
   /* p7 hmms, added 08.05.08 */
   int          nap7;           /* number of additional p7 HMMs read from file */
@@ -1541,11 +1539,8 @@ typedef struct cm_pipeline_s {
   double  F2;		        /* Viterbi filter threshold                 */
   double  F3;		        /* uncorrected Forward filter threshold     */
   double  F1b;		        /* bias-corrected MSV filter threshold      */
-  double  F1n3;		        /* null3-corrected MSV filter threshold     */
   double  F2b;		        /* bias-corrected Viterbi filter threshold  */
-  double  F2n3;		        /* null3-corrected Viterbi filter threshold */
   double  F3b;		        /* bias-corrected Forward filter threshold  */
-  double  F3n3;		        /* null3-corrected Forward filter threshold */
   double  gF3;		        /* glocal Forward filter thr            */
   double  gF3b;		        /* bias-corrected glocal Fwd threshold      */
   double  dF3;		        /* per-domain Forward filter thr            */
@@ -1554,7 +1549,6 @@ typedef struct cm_pipeline_s {
   double  orig_gF3b;		/* bias-corrected glocal Fwd threshold      */
   double  orig_dF3;		/* per-domain Forward filter thr            */
   double  orig_dF3b;	        /* bias-corrected per-domain threshold      */
-  double  dF3n3;	        /* null3-corrected domain filter threshold */
   double  dtF3;		        /* per-domain bit sc Forward filter thr     */
   double  Fbfil;	        /* min allowed ratio of banded HMM vs QDB mx size  */
   int     use_dtF3;	        /* use dtF3 bit sc instead of dF3 P-value   */
@@ -1562,6 +1556,13 @@ typedef struct cm_pipeline_s {
   double  F4;		        /* CYK filter P-value threshold             */
   double  F4env;	        /* CYK envelope P-value threshold           */
   int     do_F4env;	        /* TRUE to redefine envelopes after stage 4 */
+  int     do_F3env;	        /* TRUE to redefine envelopes after local fwd */
+  int     do_gF3env;	        /* TRUE to redefine envelopes after glocal fwd */
+  int     do_gF3env_strict;     /* TRUE to be strict with glocal fwd env redefn */
+  double  F3envX;               /* max avg number of passes through model for local fwd env redefn */
+  double  gF3envX;              /* max avg number of passes through model for glocal fwd env redefn */
+  int     F3ns;                 /* number of samples for local fwd env redfn */
+  int     gF3ns;                /* number of samples for glocal fwd env redfn */
   int     do_cm;		/* TRUE to use CM for at least one stage    */
   int     do_hmm;		/* TRUE to use HMM for at least one stage   */
   int     do_domainize;		/* TRUE to find domains in windows prior to CM stages */
@@ -1570,15 +1571,10 @@ typedef struct cm_pipeline_s {
   int     do_msv;		/* TRUE to filter with MSV, FALSE not to    */
   int     do_shortmsv;		/* TRUE to filter with standard MSV, not Longtarget variant */
   int     do_msvbias;	        /* TRUE to use biased comp HMM filter w/MSV */
-  int     do_msvnull3;      	/* TRUE to use NULL3 bias filter for w/MSV  */
   int     do_vitbias;      	/* TRUE to use biased comp HMM filter w/Vit */
-  int     do_vitnull3;      	/* TRUE to use NULL3 bias filter for Viterbi*/
   int     do_fwdbias;     	/* TRUE to use biased comp HMM filter w/Fwd */
-  int     do_fwdnull3;     	/* TRUE to use NULL3 bias filter w/Fwd      */
   int     do_gfwdbias;     	/* TRUE to use biased comp HMM filter w/gFwd*/
   int     do_dombias;     	/* TRUE to use biased comp HMM filter w/ddef*/
-  int     do_domnull3;     	/* TRUE to use NULL bias filter w/ddef      */
-  double  p7_n3omega;           /* omega value to use for HMM null3 stages  */
   int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */
   int     do_fwd;		/* TRUE to filter with Fwd, FALSE not to    */
   int     do_gfwd;		/* TRUE to filter w/glocal Fwd, FALSE not to*/

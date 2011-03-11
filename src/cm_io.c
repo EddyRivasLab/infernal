@@ -1218,7 +1218,7 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 
     for(z = 0; z < nap7_to_read; z++) { 
       status = p7_hmmfile_Read(hfp, &aabc, &ahmm);
-      if((status = cm_Addp7(cm, ahmm, ap7_gflambda_tmpA[z], ap7_gfmu_tmpA[z], errbuf)) != eslOK) printf("ERROR adding additional p7: %d\n", z+1);
+      if((status = cm_Addp7(cm, ahmm, ap7_gfmu_tmpA[z], ap7_gflambda_tmpA[z], errbuf)) != eslOK) printf("ERROR adding additional p7: %d\n", z+1);
     } 
     /* now position the CM file to the end of the HMM we just read */
     if (fseeko(cmf->f, ftello(hfp->f), SEEK_SET) != 0) goto ERROR;

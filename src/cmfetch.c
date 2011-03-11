@@ -275,6 +275,7 @@ onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CMFILE *cmfp, char *cmfile)
 
   while ((status = CMFileRead(cmfp, errbuf, &abc, &cm)) != eslEOF)
     {
+      if(cm == NULL) cm_Fail(errbuf);
       if (strcmp(key, cm->name) == 0 || (cm->acc && strcmp(key, cm->acc) == 0)) break;
       FreeCM(cm);
       cm = NULL;

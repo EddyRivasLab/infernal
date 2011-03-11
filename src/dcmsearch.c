@@ -40,7 +40,8 @@
 #endif
 
 typedef struct {
-#ifdef HMMER_THREADS
+#if 0
+  /*#ifdef HMMER_THREADS*/
   ESL_WORK_QUEUE   *queue;
 #endif /*HMMER_THREADS*/
   CM_PIPELINE      *pli;         /* work pipeline                           */
@@ -106,31 +107,21 @@ static ESL_OPTIONS options[] = {
   { "--nohmm",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--hmm",    "skip all HMM filter stages (MSV/bias/Vit/Fwd)",                7 },
   { "--nocyk",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmm",          "skip the CYK filter stage",                                    7 },
   { "--domsvbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nomsv",  "turn on the MSV composition bias filter",                      7 },
-  { "--dovitbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--novit",  "turn on the Vit composition bias filter",                     7 },
-  { "--dofwdbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the Fwd composition bias filter",                     7 },
-  { "--dogfwdbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the glocal Fwd composition bias filter",              7 },
+  { "--novitbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--novit",  "turn on the Vit composition bias filter",                     7 },
+  { "--nofwdbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the Fwd composition bias filter",                     7 },
+  { "--nogfwdbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the glocal Fwd composition bias filter",              7 },
   { "--nodombias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noddef", "turn on the per-domain composition bias filter",              7 },
-  { "--domsvnull3", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the MSV null3 bias filter",                            7 },
-  { "--dovitnull3", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the Vit null3 bias filter",                            7 },
-  { "--dofwdnull3", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the Fwd null3 bias filter",                            7 },
-  { "--dodomnull3", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the Domaind def null3 bias filter",                    7 },
   { "--donF3",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "filter based on glocal Forward score prior to doing ddef",     7 },
-  { "--p7n3omega",  eslARG_REAL,"0.0000000298023",NULL,"x>0",NULL,NULL, NULL,           "set prior probability of p7 null3 model as <x>",  7}, 
-  { "--F1",         eslARG_REAL,  "0.35", NULL, NULL,    NULL,  NULL, "--max",          "Stage 1 (MSV) threshold: promote hits w/ P <= F1",             7 },
-  { "--F1b",        eslARG_REAL,  "0.35", NULL, NULL,    NULL, "--domsvbias", "--max",  "Stage 1 (MSV) bias threshold: promote hits w/ P <= F1b",       7 },
-  { "--F1n3",       eslARG_REAL,  "0.35", NULL, NULL,    NULL, "--domsvnull3", "--max", "Stage 1 (MSV) null3 threshold: promote hits w/ P <= F1n3",      7 },
-  { "--F2",         eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--max",          "Stage 2 (Vit) threshold: promote hits w/ P <= F2",             7 },
-  { "--F2b",        eslARG_REAL,  "0.10", NULL, NULL,    NULL, "--dovitbias",  "--max",  "Stage 2 (Vit) bias threshold: promote hits w/ P <= F2b",       7 },
-  { "--F2n3",       eslARG_REAL,  "0.10", NULL, NULL,    NULL, "--dovitnull3", "--max",  "Stage 2 (Vit) null3 threshold: promote hits w/ P <= F2n3",      7 },
-  { "--F3",         eslARG_REAL,  "0.01", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) threshold: promote hits w/ P <= F3",             7 },
-  { "--F3b",        eslARG_REAL,  "0.01", NULL, NULL,    NULL,"--dofwdbias",  "--max",  "Stage 3 (Fwd) bias threshold: promote hits w/ P <= F3b",       7 },
-  { "--F3n3",       eslARG_REAL,  "0.01", NULL, NULL,    NULL,"--dofwdnull3", "--max",  "Stage 3 (Fwd) null3 threshold: promote hits w/ P <= F3n3",      7 },
-  { "--gF3",        eslARG_REAL,  "0.01", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (gFwd) glocal threshold: promote hits w/ P <= gF3", 7 },
-  { "--gF3b",       eslARG_REAL,  "0.01", NULL, NULL,    NULL,"--dogfwdbias",  "--max",  "Stage 3 (gFwd) glocal bias thr: promote hits w/ P <= gF3b", 7 },
-  { "--dF3",        eslARG_REAL,  "0.01", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) per-domain threshold: promote hits w/ P <= dF3", 7 },
-  { "--dF3b",       eslARG_REAL,  "0.01", NULL, NULL,    NULL,  NULL, "--nodombias,--max",  "Stage 3 (Fwd) per domain bias thr: promote hits w/ P <= dF3b", 7 },
-  { "--dF3n3",      eslARG_REAL,  "0.01", NULL, NULL,    NULL,  NULL, "--nodombias,--max",  "Stage 3 (Fwd) per domain bias thr: promote hits w/ P <= dF3b", 7 },
-  { "--dtF3",       eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--dF3",    "Stage 3 (Fwd) per-domain bit sc thr: promote hits w/sc >= dtF3", 7 },
+  { "--F1",         eslARG_REAL,  "0.40", NULL, NULL,    NULL,  NULL, "--max",          "Stage 1 (MSV) threshold: promote hits w/ P <= F1",             7 },
+  { "--F1b",        eslARG_REAL,  "0.40", NULL, NULL,    NULL, "--domsvbias", "--max",  "Stage 1 (MSV) bias threshold: promote hits w/ P <= F1b",       7 },
+  { "--F2",         eslARG_REAL,  "0.15", NULL, NULL,    NULL,  NULL, "--max",          "Stage 2 (Vit) threshold: promote hits w/ P <= F2",             7 },
+  { "--F2b",        eslARG_REAL,  "0.15", NULL, NULL,    NULL, "--dovitbias",  "--max",  "Stage 2 (Vit) bias threshold: promote hits w/ P <= F2b",       7 },
+  { "--F3",         eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) threshold: promote hits w/ P <= F3",             7 },
+  { "--F3b",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--dofwdbias",  "--max",  "Stage 3 (Fwd) bias threshold: promote hits w/ P <= F3b",       7 },
+  { "--gF3",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (gFwd) glocal threshold: promote hits w/ P <= gF3", 7 },
+  { "--gF3b",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--dogfwdbias",  "--max",  "Stage 3 (gFwd) glocal bias thr: promote hits w/ P <= gF3b", 7 },
+  { "--dF3",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) per-domain threshold: promote hits w/ P <= dF3", 7 },
+  { "--dF3b",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--nodombias,--max",  "Stage 3 (Fwd) per domain bias thr: promote hits w/ P <= dF3b", 7 },
   { "--F4",         eslARG_REAL,  "5e-4", NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm","Stage 4 (CYK) threshold: promote hits w/ P <= F4",         7 },
   { "--E4",         eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm,--F4","Stage 4 (CYK) threshold: promote hits w/ E <= F4",    7 },
   { "--time-F1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 1 MSV; for timings",                        7 },
@@ -152,18 +143,25 @@ static ESL_OPTIONS options[] = {
   { "--wcorr",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use window size correction for Vit/Fwd filters", 7 },
   { "--nocorr",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use no  correction for domain definition", 7 },
   { "--oldcorr",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nocorr",        "use old correction for domain definition", 7 },
-  { "--domwinbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nodombias",     "calc domain bias for entire window, not just domain", 7 },
+  { "--domhitbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nodombias",     "calc domain bias for only the domain, not entire window", 7 },
   { "--dosfwdbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--dofwdbias", NULL,       "use traceback samplings for fwd bias calculation", 7 },
   { "--fbns",       eslARG_INT,    "50",  NULL, NULL,    NULL,"--dosfwdbias",NULL,       "sample <n> tracebacks for fwd bias calculation", 7 },
   { "--gmsv",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--shortmsv,--localdom", NULL,        "use generic MSV", 7 },
-  { "--greedy",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "resolve hits with greedy algorithm, instead of optimal one", 7 },
+  { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not resolve hits with greedy algorithm, use optimal one", 7 },
   { "--noml",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not filter with a ML p7 HMM", 7 },
   { "--noadd",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--noml",           "do not filter with any additional p7 HMMs in the file", 7 },
   { "--filcmW",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "use CM's window length for all HMM filters", 7 },
   { "--glen",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use length dependent glocal p7 filter P-value thresholds", 7},
   { "--glN",        eslARG_INT,   "201",  NULL, NULL,    NULL,"--glen",NULL,             "minimum value to start len-dependent glocal threshold", 7},
   { "--glX",        eslARG_INT,   "500",  NULL, NULL,    NULL,"--glen",NULL,             "maximum value for len-dependent glocal threshold", 7},
-  { "--glstep",     eslARG_INT,   "100",  NULL, NULL,    NULL,"--glen",NULL,             "for len-dependent glocal threshold, step size for halving threshold", 7},
+  { "--glstep",     eslARG_INT,   "100",  NULL, NULL,    NULL,"--glen",NULL,             "for len-dependent glocal thr, step size for halving thr", 7},
+  { "--envF3",      eslARG_NONE,   FALSE, NULL, NULL,    NULL, NULL,   NULL,             "redefine envelope after local forward stage", 7 },
+  { "--eF3X",       eslARG_REAL,  "1.1",  NULL, NULL,    NULL, NULL,   NULL,             "max avg num of passes through model for F3 env redefn", 7 },
+  { "--eF3ns",      eslARG_INT,     "50",  NULL, NULL,    NULL, NULL,   NULL,             "number of samples for F3 env redefn", 7 },
+  { "--envgF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL, NULL,   NULL,             "redefine envelope after glocal forward stage", 7 },
+  { "--egF3X",      eslARG_REAL,  "1.1",  NULL, NULL,    NULL, NULL,   NULL,             "max avg num of passes through model for gF3 env redefn", 7 },
+  { "--egF3ns",     eslARG_INT,    "200",  NULL, NULL,    NULL, NULL,   NULL,             "number of samples for gF3 env redefn", 7 },
+  { "--egF3S",      eslARG_NONE,   FALSE,  NULL, NULL,    NULL, NULL,   NULL,             "be strict in gF3 env redef", 7 },
   { "--tmp",   eslARG_NONE,   FALSE, NULL,NULL, NULL,    NULL, "--nohmm,--noddef","use generic local", 7 },
 /* Other options */
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },
@@ -207,7 +205,8 @@ static ESL_OPTIONS options[] = {
   { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert target <seqfile> is in format <s>>: no autodetection", 99 },
 
 
-#ifdef HMMER_THREADS
+#if 0
+  /*#ifdef HMMER_THREADS*/
   { "--cpu",        eslARG_INT, NULL,"HMMER_NCPU","n>=0",NULL,  NULL,  CPUOPTS,         "number of parallel CPU workers to use for multithreads",      12 },
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -244,7 +243,8 @@ static int p7_tophits_TabularTargets_cm_pipeline(FILE *ofp, char *qname, char *q
 static int p7_tophits_ComputeCMEvalues(P7_TOPHITS *th, double eff_dbsize);
 
 
-#ifdef HMMER_THREADS
+#if 0
+/*#ifdef HMMER_THREADS*/
 #define BLOCK_SIZE 1000
 
 static int  thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFILE *dbfp);
@@ -355,11 +355,10 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--nohmm"))     fprintf(ofp, "# HMM filters (MSV/bias/Vit/Fwd):        off\n");
   if (esl_opt_IsUsed(go, "--nocyk"))     fprintf(ofp, "# CYK filter:                            off\n");
   if (esl_opt_IsUsed(go, "--domsvbias")) fprintf(ofp, "# MSV biased comp HMM filter:            on\n");
-  if (esl_opt_IsUsed(go, "--dovitbias")) fprintf(ofp, "# Vit biased comp HMM filter:            on\n");
-  if (esl_opt_IsUsed(go, "--dofwdbias")) fprintf(ofp, "# Fwd biased comp HMM filter:            on\n");
-  if (esl_opt_IsUsed(go, "--dogfwdbias"))fprintf(ofp, "# gFwd biased comp HMM filter:           on\n");
+  if (esl_opt_IsUsed(go, "--novitbias")) fprintf(ofp, "# Vit biased comp HMM filter:            off\n");
+  if (esl_opt_IsUsed(go, "--nofwdbias")) fprintf(ofp, "# Fwd biased comp HMM filter:            off\n");
+  if (esl_opt_IsUsed(go, "--nogfwdbias"))fprintf(ofp, "# gFwd biased comp HMM filter:           off\n");
   if (esl_opt_IsUsed(go, "--nodombias")) fprintf(ofp, "# Per-domain biased comp HMM filter:     off\n");
-  if (esl_opt_IsUsed(go, "--dofwdnull3"))fprintf(ofp, "# Fwd null3 HMM filter:                  on\n"); 
   if (esl_opt_IsUsed(go, "--F1"))        fprintf(ofp, "# MSV filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F1"));
   if (esl_opt_IsUsed(go, "--F2"))        fprintf(ofp, "# Vit filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F2"));
   if (esl_opt_IsUsed(go, "--F3"))        fprintf(ofp, "# Fwd filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F3"));
@@ -368,7 +367,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--F1b"))       fprintf(ofp, "# MSV bias P threshold:                  <= %g\n", esl_opt_GetReal(go, "--F1b"));
   if (esl_opt_IsUsed(go, "--F2b"))       fprintf(ofp, "# Vit bias P threshold:                  <= %g\n", esl_opt_GetReal(go, "--F2b"));
   if (esl_opt_IsUsed(go, "--F3b"))       fprintf(ofp, "# Fwd bias P threshold:                  <= %g\n", esl_opt_GetReal(go, "--F3b"));
-  if (esl_opt_IsUsed(go, "--F3n3"))      fprintf(ofp, "# Fwd null3 P threshold:                 <= %g\n", esl_opt_GetReal(go, "--F3n3"));
   if (esl_opt_IsUsed(go, "--dF3b"))      fprintf(ofp, "# Domain defn P threshold:               <= %g\n", esl_opt_GetReal(go, "--dF3b"));
   if (esl_opt_IsUsed(go, "--rt1"))       fprintf(ofp, "# Domain definition rt1 parameter        %g\n", esl_opt_GetReal(go, "--rt1"));
   if (esl_opt_IsUsed(go, "--rt2"))       fprintf(ofp, "# Domain definition rt2 parameter        %g\n", esl_opt_GetReal(go, "--rt2"));
@@ -398,7 +396,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
                                          fprintf(ofp, "# window length beta value:              %g\n", esl_opt_GetReal(go, "--w_beta"));
   if (esl_opt_IsUsed(go, "--w_length") )
                                          fprintf(ofp, "# window length :                        %d\n", esl_opt_GetInteger(go, "--w_length"));
-#ifdef HMMER_THREADS
+#if 0
+  /*#ifdef HMMER_THREADS*/
   if (esl_opt_IsUsed(go, "--cpu"))       fprintf(ofp, "# number of worker threads:              %d\n", esl_opt_GetInteger(go, "--cpu"));  
 #endif
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
@@ -475,7 +474,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   int              infocnt  = 0;
   WORKER_INFO     *info     = NULL;
-#ifdef HMMER_THREADS
+#if 0
+  /*#ifdef HMMER_THREADS*/
   ESL_SQ_BLOCK    *block    = NULL;
   ESL_THREADS     *threadObj= NULL;
   ESL_WORK_QUEUE  *queue    = NULL;
@@ -513,7 +513,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if (esl_opt_IsOn(go, "-A"))          { if ((afp      = fopen(esl_opt_GetString(go, "-A"), "w")) == NULL) p7_Fail("Failed to open alignment file %s for writing\n", esl_opt_GetString(go, "-A")); }
   if (esl_opt_IsOn(go, "--tblout"))    { if ((tblfp    = fopen(esl_opt_GetString(go, "--tblout"),    "w")) == NULL)  esl_fatal("Failed to open tabular per-seq output file %s for writing\n", esl_opt_GetString(go, "--tblout")); }
 
-#ifdef HMMER_THREADS
+#if 0
+  /*#ifdef HMMER_THREADS*/
   /* initialize thread data */
   if (esl_opt_IsOn(go, "--cpu")) ncpus = esl_opt_GetInteger(go, "--cpu");
   else                                   esl_threads_CPUCount(&ncpus);
@@ -544,12 +545,14 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  info[i].p7_evparamAA = NULL;
 	  info[i].bgA   = NULL;
 	  info[i].nhmm  = 0;
-#ifdef HMMER_THREADS
+#if 0
+	  /*#ifdef HMMER_THREADS*/
           info[i].queue = queue;
 #endif
       }
 
-#ifdef HMMER_THREADS
+#if 0
+      /*#ifdef HMMER_THREADS*/
       for (i = 0; i < ncpus * 2; ++i) {
           block = esl_sq_CreateDigitalBlock(BLOCK_SIZE, abc);
           if (block == NULL)           esl_fatal("Failed to allocate sequence block");
@@ -649,6 +652,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
     ESL_ALLOC(hmmA,     sizeof(P7_HMM *) * nhmm);
     ESL_ALLOC(hmm_abcA, sizeof(ESL_ALPHABET *) * nhmm);
+    printf("cm->nap7: %d\n", cm->nap7);
     if(! esl_opt_GetBoolean(go, "--noml")) { 
       hmmA[0] = cm->mlp7;
       hmm_abcA[0] = esl_alphabet_Create(cm->mlp7->abc->type);
@@ -708,12 +712,14 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info[i].pli->do_top = (esl_opt_GetBoolean(go, "--bottomonly")) ? FALSE : TRUE;
       info[i].pli->do_bot = (esl_opt_GetBoolean(go, "--toponly"))    ? FALSE : TRUE;
 
-#ifdef HMMER_THREADS
+#if 0
+      /*#ifdef HMMER_THREADS*/
           if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
 #endif
       }
 
-#ifdef HMMER_THREADS
+#if 0
+    /*#ifdef HMMER_THREADS*/
     if (ncpus > 0)  sstatus = thread_loop(info, threadObj, queue, dbfp);
     else            sstatus = serial_loop(info, dbfp);
 #else
@@ -835,7 +841,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_Fail("Unexpected error (%d: %s) in reading CMs from %s", qhstatus, errbuf, cfg->cmfile);
   }
   
-#ifdef HMMER_THREADS
+#if 0
+  /*#ifdef HMMER_THREADS*/
   if (ncpus > 0) {
       esl_workqueue_Reset(queue);
       while (esl_workqueue_Remove(queue, (void **) &block) == eslOK) {
@@ -936,7 +943,8 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
 
 }
 
-#ifdef HMMER_THREADS
+#if 0
+/*#ifdef HMMER_THREADS*/
 static int
 thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFILE *dbfp)
 {
