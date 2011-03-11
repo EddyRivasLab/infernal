@@ -85,23 +85,27 @@ static int merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1,
  * *** opts below this line are unique to cm_pipeline.c ***
  *            | --nonull3    |  turn off NULL3 correction                   |   FALSE   |
  *            | -g           |  configure the CM for glocal alignment       |   FALSE   |
- *            | --dF3        |  Stage 3 (Fwd) per-domain thresh             |   0.01    |
  *            | --domsvbias  |  turn ON composition bias filter HMM for MSV |   FALSE   |
  *            | --novitbias  |  turn OFF composition bias filter HMM for Vit |   FALSE   |
  *            | --nofwdbias  |  turn OFF composition bias filter HMM for Fwd |   FALSE   |
  *            | --nogfwdbias |  turn OFF composition bias filter HMM for gFwd |   FALSE   |
- *            | --nodombias  |  turn OFF composition bias filter HMM for ddef| FALSE   |
+ *            | --noenvbias  |  turn OFF composition bias filter HMM for ddef| FALSE   |
+ *            | --F1         |  Stage 1 (MSV) filter thresh                 |   0.40    |
  *            | --F1b        |  Stage 1 (MSV) bias filter thresh            |   OFF     |
- *            | --F2b        |  Stage 2 (Vit) bias filter thresh            |   OFF     |
- *            | --F3b        |  Stage 3 (Fwd) bias filter thresh            |   OFF     |
- *            | --dF3b       |  Stage 3 (Fwd) domain bias filter thresh     |   OFF     |
- *            | --dtF3       |  Stage 3 (Fwd) per-domain bit sc thresh      |   NULL    |
- *            | --F4         |  Stage 4 (CYK) thresh: promote hits P <= F4  |   5e-4    |
+ *            | --F2         |  Stage 2 (Vit) filter thresh                 |   0.15    |
+ *            | --F2b        |  Stage 2 (Vit) bias filter thresh            |   0.15    |
+ *            | --F3         |  Stage 3 (Fwd) filter thresh                 |   0.02    |
+ *            | --F3b        |  Stage 3 (Fwd) bias filter thresh            |   0.02    |
+ *            | --F4         |  Stage 4 (gFwd) filter thresh                |   0.02    |
+ *            | --F4b        |  Stage 4 (gFwd) bias filter thresh           |   0.02    |
+ *            | --F5         |  Stage 5 (env def) filter thresh             |   0.02    |
+ *            | --F5b        |  Stage 5 (env def) bias filter thresh        |   0.02    |
+ *            | --F6         |  Stage 5 (CYK) filter thresh                 |   0.0005  |
  *            | --fast       |  set filters at strict-level                 |   FALSE   |
  *            | --mid        |  set filters at mid-level                    |   FALSE   |
  *            | --cyk        |  set final search stage as CYK, not inside   |   FALSE   |
  *            | --hmm        |  don't use CM at all, HMM only               |   FALSE   |
- *            | --noddef     |  don't domainize windows before CM stages    |   FALSE   |
+ *            | --noenvdef   |  don't define envelopes before CM stages     |   FALSE   |
  *            | --nomsv      |  skip MSV filter stage                       |   FALSE   |
  *            | --shortmsv   |  use standard MSV, not LongTarget variant    |   FALSE   |
  *            | --novit      |  skip Viterbi filter stage                   |   FALSE   |
@@ -118,13 +122,12 @@ static int merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1,
  *            | --qdb        |  use QDBs, not HMM bands in final stage      |   FALSE   |
  *            | --beta       |  set beta for QDBs in final stage            |   1e-15   |
  *            | --nonbanded  |  don't use QDBs or HMM bands in final stage  |   FALSE   |
- *            | --rt1        |  set domain def rt1 parameter as <x>         |   0.25    |
- *            | --rt2        |  set domain def rt2 parameter as <x>         |   0.10    |
- *            | --rt3        |  set domain def rt3 parameter as <x>         |   0.20    |
- *            | --localweak  |  rescore low-scoring domains in local mode   |   FALSE   |
- *            | --glocaldom  |  define domains in glocal mode               |   FALSE   |
- *            | --glocalp    |  use glocal P values for domains             |   FALSE   |
- *            | --ns         |  set number of samples for domain traceback  |   1000    |
+ *            | --rt1        |  set envelope def rt1 parameter as <x>         |   0.25    |
+ *            | --rt2        |  set envelope def rt2 parameter as <x>         |   0.10    |
+ *            | --rt3        |  set envelope def rt3 parameter as <x>         |   0.20    |
+ *            | --localweak  |  rescore low-scoring envelopes in local mode   |   FALSE   |
+ *            | --localenv   |  define envelopes in local mode                |   FALSE   |
+ *            | --ns         |  set number of samples for envelope traceback  |    200    |
  *            | --wsplit     |  split windows after MSV                     |   FALSE   |
  *            | --wmult      |  multiplier for splitting windows if --wsplit|   3.0     |
  * Returns:   ptr to new <cm_PIPELINE> object on success. Caller frees this
@@ -218,7 +221,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
       pli->Z       = esl_opt_GetReal(go, "-Z");
     }
 
-  /* Configure domain definition parameters */
+  /* Configure domain/envelope definition parameters */
   pli->rt1 = esl_opt_GetReal(go, "--rt1");
   pli->rt2 = esl_opt_GetReal(go, "--rt2");
   pli->rt3 = esl_opt_GetReal(go, "--rt3");
@@ -227,13 +230,13 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->ddef->rt2 = pli->rt2;
   pli->ddef->rt3 = pli->rt3;
   pli->ddef->nsamples = pli->ns;
-  pli->do_localdoms     = esl_opt_GetBoolean(go, "--localdom");
+  pli->do_localenv      = esl_opt_GetBoolean(go, "--localenv");
   pli->do_wsplit        = (esl_opt_GetBoolean(go, "--wnosplit")) ? FALSE : TRUE;
   pli->wmult            = esl_opt_GetReal(go, "--wmult");
   pli->do_wcorr         = esl_opt_GetBoolean(go, "--wcorr");
   pli->do_nocorr        = esl_opt_GetBoolean(go, "--nocorr");
   pli->do_oldcorr       = esl_opt_GetBoolean(go, "--oldcorr");
-  pli->do_domwinbias    = (! esl_opt_GetBoolean(go, "--domhitbias"));
+  pli->do_envwinbias    = (! esl_opt_GetBoolean(go, "--envhitbias"));
   pli->do_fwdbias_sampling = esl_opt_GetBoolean(go, "--dosfwdbias");
   pli->fwdbias_ns       = esl_opt_GetInteger(go, "--fbns");
   pli->do_gmsv          = esl_opt_GetBoolean(go, "--gmsv");
@@ -249,7 +252,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->do_max        = FALSE;
   pli->do_mid        = FALSE;
   pli->do_fast       = FALSE;
-  pli->do_domainize  = TRUE;
+  pli->do_envelopes  = TRUE;
   pli->do_pad        = esl_opt_GetBoolean(go, "--pad");
   pli->do_msv        = TRUE;
   pli->do_shortmsv   = FALSE;
@@ -260,50 +263,49 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->do_fwdbias    = TRUE;
   pli->do_gfwd       = TRUE;
   pli->do_gfwdbias   = TRUE;
-  pli->do_dombias    = TRUE;
+  pli->do_envbias    = TRUE;
   pli->do_cyk        = TRUE;
   pli->do_null2      = FALSE;
   pli->do_null3      = TRUE;
   pli->F1     = ESL_MIN(1.0, esl_opt_GetReal(go, "--F1"));
   pli->F2     = ESL_MIN(1.0, esl_opt_GetReal(go, "--F2"));
   pli->F3     = ESL_MIN(1.0, esl_opt_GetReal(go, "--F3"));
-  pli->gF3    = ESL_MIN(1.0, esl_opt_GetReal(go, "--gF3"));
-  pli->dF3    = ESL_MIN(1.0, esl_opt_GetReal(go, "--dF3"));
+  pli->F4     = ESL_MIN(1.0, esl_opt_GetReal(go, "--F4"));
+  pli->F5     = ESL_MIN(1.0, esl_opt_GetReal(go, "--F5"));
   pli->F1b    = ESL_MIN(1.0, esl_opt_GetReal(go, "--F1b"));
   pli->F2b    = ESL_MIN(1.0, esl_opt_GetReal(go, "--F2b"));
   pli->F3b    = ESL_MIN(1.0, esl_opt_GetReal(go, "--F3b"));
-  pli->gF3b   = ESL_MIN(1.0, esl_opt_GetReal(go, "--gF3b"));
-  pli->dF3b   = ESL_MIN(1.0, esl_opt_GetReal(go, "--dF3b"));
-  pli->dtF3   = 0.;
+  pli->F4b    = ESL_MIN(1.0, esl_opt_GetReal(go, "--F4b"));
+  pli->F5b    = ESL_MIN(1.0, esl_opt_GetReal(go, "--F5b"));
 
-  pli->orig_gF3  = pli->gF3;
-  pli->orig_gF3b = pli->gF3b;
-  pli->orig_dF3  = pli->dF3;
-  pli->orig_dF3b = pli->dF3b;
+  pli->orig_F4  = pli->F4;
+  pli->orig_F4b = pli->F4b;
+  pli->orig_F5  = pli->F5;
+  pli->orig_F5b = pli->F5b;
 
-  pli->F4       = ESL_MIN(1.0, esl_opt_GetReal(go, "--F4"));
-  pli->F4env    = ESL_MIN(1.0, pli->F4 * (float) esl_opt_GetInteger(go, "--envF4x"));
-  pli->do_F4env = (esl_opt_GetBoolean(go, "--noenvF4")) ? FALSE : TRUE;
+  pli->F6        = ESL_MIN(1.0, esl_opt_GetReal(go, "--F6"));
+  pli->F6env     = ESL_MIN(1.0, pli->F6 * (float) esl_opt_GetInteger(go, "--cykenvx"));
+  pli->do_cykenv = (esl_opt_GetBoolean(go, "--nocykenv")) ? FALSE : TRUE;
 
   pli->do_F3env  = (esl_opt_GetBoolean(go, "--envF3"))  ? TRUE : FALSE;
-  pli->do_gF3env = (esl_opt_GetBoolean(go, "--envgF3")) ? TRUE : FALSE;
-  pli->do_gF3env_strict = (esl_opt_GetBoolean(go, "--egF3S")) ? TRUE : FALSE;
+  pli->do_F4env = (esl_opt_GetBoolean(go, "--envF4")) ? TRUE : FALSE;
+  pli->do_F4env_strict = (esl_opt_GetBoolean(go, "--eF4S")) ? TRUE : FALSE;
   pli->F3envX    = (esl_opt_GetReal(go, "--eF3X"));
-  pli->gF3envX   = (esl_opt_GetReal(go, "--egF3X"));
+  pli->F4envX    = (esl_opt_GetReal(go, "--eF4X"));
   pli->F3ns      = (esl_opt_GetInteger(go, "--eF3ns"));
-  pli->gF3ns     = (esl_opt_GetInteger(go, "--egF3ns"));
+  pli->F4ns      = (esl_opt_GetInteger(go, "--eF4ns"));
 
   if(esl_opt_GetBoolean(go, "--nomsv"))       pli->do_msv        = FALSE; 
   if(esl_opt_GetBoolean(go, "--shortmsv"))    pli->do_shortmsv   = TRUE;
   if(esl_opt_GetBoolean(go, "--novit"))       pli->do_vit        = FALSE; 
   if(esl_opt_GetBoolean(go, "--nofwd"))       pli->do_fwd        = FALSE; 
   if(esl_opt_GetBoolean(go, "--nocyk"))       pli->do_cyk        = FALSE; 
-  if(esl_opt_GetBoolean(go, "--noddef"))      pli->do_domainize  = FALSE; 
+  if(esl_opt_GetBoolean(go, "--noenvdef"))    pli->do_envelopes  = FALSE; 
   if(esl_opt_GetBoolean(go, "--domsvbias"))   pli->do_msvbias    = TRUE;
   if(esl_opt_GetBoolean(go, "--novitbias"))   pli->do_vitbias    = FALSE;
   if(esl_opt_GetBoolean(go, "--nofwdbias"))   pli->do_fwdbias    = FALSE;
   if(esl_opt_GetBoolean(go, "--nogfwdbias"))  pli->do_gfwdbias   = FALSE;
-  if(esl_opt_GetBoolean(go, "--nodombias"))   pli->do_dombias    = FALSE;
+  if(esl_opt_GetBoolean(go, "--noedefbias"))  pli->do_envbias    = FALSE;
   if(esl_opt_GetBoolean(go, "--hmm")) { 
     pli->do_cm  = FALSE;
     pli->do_cyk = FALSE; 
@@ -313,28 +315,29 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
     pli->do_msv        = FALSE; 
     pli->do_vit        = FALSE;
     pli->do_fwd        = FALSE; 
-    pli->do_domainize  = FALSE; 
+    pli->do_envelopes  = FALSE; 
     pli->do_msvbias    = FALSE;
     pli->do_vitbias    = FALSE;
     pli->do_fwdbias    = FALSE;
     pli->do_gfwdbias   = FALSE;
-    pli->do_dombias    = FALSE;
+    pli->do_envbias    = FALSE;
   }
   if(esl_opt_GetBoolean(go, "--max")) { /* turn off all filters */
     pli->do_max = TRUE;
     pli->do_hmm = pli->do_msv = pli->do_vit = pli->do_fwd = pli->do_cyk = FALSE; 
-    pli->do_msvbias = pli->do_vitbias = pli->do_fwdbias = pli->do_gfwdbias = pli->do_dombias = FALSE;
-    pli->do_F4env = FALSE;
-    pli->F1 = pli->F2 = pli->F3 = pli->dF3 = pli->F4 = 1.0;
+    pli->do_msvbias = pli->do_vitbias = pli->do_fwdbias = pli->do_gfwdbias = pli->do_envbias = FALSE;
+    pli->do_cykenv = FALSE;
+    pli->F1 = pli->F2 = pli->F3 = pli->F4 = pli->F5 = 1.0;
   }
   if(esl_opt_GetBoolean(go, "--mid")) { /* set up mid-level filtering */
     pli->do_mid = TRUE;
-    pli->do_msv = pli->do_msvbias = pli->do_vitbias = pli->do_fwdbias = pli->do_gfwdbias = pli->do_dombias = FALSE;
+    pli->do_msv = pli->do_msvbias = pli->do_vitbias = pli->do_fwdbias = pli->do_gfwdbias = pli->do_envbias = FALSE;
     pli->F2 = 0.1;
     pli->F3 = 0.05;
-    pli->dF3 = 0.1;
-    pli->F4env = 0.10;
-    pli->F4 = 0.001;
+    pli->F4 = 0.05;
+    pli->F5 = 0.1;
+    pli->F6 = 0.001;
+    pli->F6env = 0.10;
   }
   if(esl_opt_GetBoolean(go, "--fast")) { /* set up strict-level filtering */
     /* these are set as nhmmer defaults for HMM filters, default for CYK */
@@ -342,16 +345,16 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
     pli->F1 = 0.02;
     pli->F2 = 0.001;
     pli->F3 = 0.00001;
-    pli->dF3 = 0.0001;
+    pli->F4 = 0.00001;
+    pli->F5 = 0.00001;
   }
 
   pli->do_time_F1   = esl_opt_GetBoolean(go, "--time-F1");
   pli->do_time_F2   = esl_opt_GetBoolean(go, "--time-F2");
   pli->do_time_F3   = esl_opt_GetBoolean(go, "--time-F3");
-  pli->do_time_gF3  = esl_opt_GetBoolean(go, "--time-gF3");
-  pli->do_time_dF3  = esl_opt_GetBoolean(go, "--time-dF3");
-  pli->do_time_bfil = esl_opt_GetBoolean(go, "--time-bfil");
   pli->do_time_F4   = esl_opt_GetBoolean(go, "--time-F4");
+  pli->do_time_F5   = esl_opt_GetBoolean(go, "--time-F5");
+  pli->do_time_F6   = esl_opt_GetBoolean(go, "--time-F6");
 
   if (esl_opt_GetBoolean(go, "--null2"))   pli->do_null2      = TRUE;
   if (esl_opt_GetBoolean(go, "--nonull3")) pli->do_null3      = FALSE;
@@ -409,7 +412,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->n_past_vit      = 0;
   pli->n_past_fwd      = 0;
   pli->n_past_gfwd     = 0;
-  pli->n_past_ddef     = 0;
+  pli->n_past_edef     = 0;
   pli->n_past_cyk      = 0;
   pli->n_past_ins      = 0;
   pli->n_output        = 0;
@@ -417,12 +420,12 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->n_past_vitbias  = 0;
   pli->n_past_fwdbias  = 0;
   pli->n_past_gfwdbias = 0;
-  pli->n_past_dombias  = 0;
+  pli->n_past_edefbias  = 0;
   pli->pos_past_msv    = 0;
   pli->pos_past_vit    = 0;
   pli->pos_past_fwd    = 0;
   pli->pos_past_gfwd   = 0;
-  pli->pos_past_ddef   = 0;
+  pli->pos_past_edef   = 0;
   pli->pos_past_cyk    = 0;
   pli->pos_past_ins    = 0;
   pli->pos_output      = 0;
@@ -430,7 +433,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->pos_past_vitbias= 0;
   pli->pos_past_fwdbias= 0;
   pli->pos_past_gfwdbias= 0;
-  pli->pos_past_dombias= 0;
+  pli->pos_past_edefbias= 0;
   pli->mode            = mode;
   pli->show_accessions = (esl_opt_GetBoolean(go, "--acc")   ? TRUE  : FALSE);
   pli->show_alignments = (esl_opt_GetBoolean(go, "--noali") ? FALSE : TRUE);
@@ -585,7 +588,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int *fcyk_dmin, int *fcyk_dmax, int 
   
   if (pli->Z_setby == p7_ZSETBY_NTARGETS && pli->mode == p7_SCAN_MODELS) pli->Z = pli->nmodels;
 
-  if (pli->do_msvbias || pli->do_vitbias || pli->do_fwdbias || pli->do_gfwdbias || pli->do_dombias) { 
+  if (pli->do_msvbias || pli->do_vitbias || pli->do_fwdbias || pli->do_gfwdbias || pli->do_envbias) { 
     for(m = 0; m < nhmm; m++) { 
       p7_bg_SetFilter(bgA[m], omA[m]->M, omA[m]->compo);
     }
@@ -595,20 +598,20 @@ cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int *fcyk_dmin, int *fcyk_dmax, int 
   pli->clen = cm->clen;
 
   /* reset consensus length specific thresholds  */
-  pli->gF3  = pli->orig_gF3;
-  pli->gF3b = pli->orig_gF3b;
-  pli->dF3  = pli->orig_dF3;
-  pli->dF3b = pli->orig_dF3b;
+  pli->F4  = pli->orig_F4;
+  pli->F4b = pli->orig_F4b;
+  pli->F5  = pli->orig_F5;
+  pli->F5b = pli->orig_F5b;
 
   /* update consensus length specific thresholds, if nec */
   if(pli->do_glen) { 
     if(pli->clen >= pli->glen_min) { 
       nsteps = (int) (1 + ((ESL_MAX(pli->clen, pli->glen_max) - (pli->glen_min-1)) / pli->glen_step));
       for(i = 0; i < nsteps; i++) { 
-	pli->gF3  /= 2.;
-	pli->gF3b /= 2.;
-	pli->dF3  /= 2.;
-	pli->dF3b /= 2.;
+	pli->F4  /= 2.;
+	pli->F4b /= 2.;
+	pli->F5  /= 2.;
+	pli->F5b /= 2.;
       }
     }
   }
@@ -680,7 +683,7 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
   p1->n_past_vit  += p2->n_past_vit;
   p1->n_past_fwd  += p2->n_past_fwd;
   p1->n_past_gfwd += p2->n_past_gfwd;
-  p1->n_past_ddef += p2->n_past_ddef;
+  p1->n_past_edef += p2->n_past_edef;
   p1->n_past_cyk  += p2->n_past_cyk;
   p1->n_past_ins  += p2->n_past_ins;
   p1->n_output    += p2->n_output;
@@ -689,13 +692,13 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
   p1->n_past_vitbias += p2->n_past_vitbias;
   p1->n_past_fwdbias += p2->n_past_fwdbias;
   p1->n_past_gfwdbias+= p2->n_past_gfwdbias;
-  p1->n_past_dombias += p2->n_past_dombias;
+  p1->n_past_edefbias += p2->n_past_edefbias;
 
   p1->pos_past_msv  += p2->pos_past_msv;
   p1->pos_past_vit  += p2->pos_past_vit;
   p1->pos_past_fwd  += p2->pos_past_fwd;
   p1->pos_past_gfwd += p2->pos_past_gfwd;
-  p1->pos_past_ddef += p2->pos_past_ddef;
+  p1->pos_past_edef += p2->pos_past_edef;
   p1->pos_past_cyk  += p2->pos_past_cyk;
   p1->pos_past_ins  += p2->pos_past_ins;
   p1->pos_output    += p2->pos_output;
@@ -704,7 +707,7 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
   p1->pos_past_vitbias += p2->pos_past_vitbias;
   p1->pos_past_fwdbias += p2->pos_past_fwdbias;
   p1->pos_past_gfwdbias+= p2->pos_past_gfwdbias;
-  p1->pos_past_dombias += p2->pos_past_dombias;
+  p1->pos_past_edefbias += p2->pos_past_edefbias;
 
   if (p1->Z_setby == p7_ZSETBY_NTARGETS)
     {
@@ -1269,9 +1272,9 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
   int              d, i;                       /* counters */
   void            *p;                          /* for ESL_RALLOC */
   int              ali_len, env_len, env_wlen; /* lengths of alignment, envelope, envelope window */
-  float            env_sc, env_nullsc;         /* envelope bit score, and domain null1 score */
+  float            env_sc, env_nullsc;         /* envelope bit score, and null1 score */
   float            sc_for_pvalue;              /* score for window, used for calc'ing P value */
-  float            env_dombias;                /* null2 correction for envelope */
+  float            env_envbias;                /* null2 correction for envelope */
   float            env_sc_for_pvalue;          /* corrected score for envelope, used for calc'ing P value */
   int64_t          wlen;             /* window length of current window */
   int64_t         *es = NULL;        /* [0..nenv-1] envelope start positions */
@@ -1285,7 +1288,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
   int              tr_i, tr_j;       /* first and final positions of traces */
   P7_TRACE        *tr = NULL;        /* sampled trace for pli->do_fwdbias_sampling or pli->do_F3env */
   int              ndom, ntot;       /* number of sampled tracebacks for pli->do_F3env */
-  float            tot_ndom;         /* total number of domains for pli->do_F3env */
+  float            tot_ndom;         /* total number of envelopes */
   int              min_i, max_j;     /* minimum/maximum position in match state in sampled traces for pli->do_F3env */
   int              s, z;
 
@@ -1325,14 +1328,14 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
     p7_bg_SetLength(bg, wlen);
     p7_bg_NullOne(bg, seq->dsq, wlen, &nullsc);
 
-    if(pli->do_localdoms) { /* we can use optimized matrices and, consequently, p7_domaindef_ByPosteriorHeuristics */
+    if(pli->do_localenv) { /* we can use optimized matrices and, consequently, p7_domaindef_ByPosteriorHeuristics */
       p7_oprofile_ReconfigLength(om, wlen);
       p7_ForwardParser(seq->dsq, wlen, om, pli->oxf, NULL);
       p7_omx_GrowTo(pli->oxb, om->M, 0, wlen);
       p7_BackwardParser(seq->dsq, wlen, om, pli->oxf, pli->oxb, NULL);
       status = p7_domaindef_ByPosteriorHeuristics (seq, om, pli->oxf, pli->oxb, pli->fwd,  pli->bck,  pli->ddef); 
     }
-    else { /* we're defining domains in glocal mode, so we need to fill 
+    else { /* we're defining envelopes in glocal mode, so we need to fill 
 	    * generic fwd/bck matrices and pass them to p7_domaindef_GlocalByPosteriorHeuristics() */
       p7_ReconfigLength(gm, wlen);
       p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
@@ -1341,7 +1344,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
       sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
       /* Does this score exceeds our glocal forward filter threshold? If not, move on to next seq */
       P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
-      if(P > pli->gF3) continue;
+      if(P > pli->F4) continue;
 #if DOPRINT	
       printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwd      %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
 #endif
@@ -1353,7 +1356,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
 	p7_bg_FilterScore(bg, seq->dsq, wlen, &filtersc);
 	sc_for_pvalue = (fwdsc - filtersc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
-	if(P > pli->gF3b) continue;
+	if(P > pli->F4) continue;
 #if DOPRINT	
 	printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwdBias  %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
 #endif 
@@ -1362,12 +1365,12 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
       }
       
       /* sample tracebacks and redefine envelope, if nec */
-      if(pli->do_gF3env) {
+      if(pli->do_F4env) {
 	ntot = 0;
 	tot_ndom = 0.;
 	min_i = wlen;
 	max_j = 1;
-	for(s = 0; s < pli->gF3ns; s++) { 
+	for(s = 0; s < pli->F4ns; s++) { 
 	  p7_GStochasticTrace(pli->r, subdsq, wlen, gm, pli->gxf, tr);
 	  p7_trace_GetDomainCount(tr, &ndom);
 	  tr_i = tr_j = 0;
@@ -1383,12 +1386,12 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
 	  p7_trace_Reuse(tr);
 	}
 	
-	printf("\t\tREDEFN gF3  %3d/%3d  avgndom: %.2f    ", ntot, pli->F3ns, (tot_ndom / (float) ntot));
-	if((ntot > 0) && ((tot_ndom / (float) ntot) <= pli->gF3envX)) { /* average number of passes through model is <= max allowed, redefine envelope */
+	printf("\t\tREDEFN F4  %3d/%3d  avgndom: %.2f    ", ntot, pli->F3ns, (tot_ndom / (float) ntot));
+	if((ntot > 0) && ((tot_ndom / (float) ntot) <= pli->F4envX)) { /* average number of passes through model is <= max allowed, redefine envelope */
 	  printf("%5" PRId64 " %5" PRId64 " (%5" PRId64 ")    ", ws[i], we[i], we[i]-ws[i]+1);
 	  min_i += (ws[i]-1);
 	  max_j += (ws[i]-1);
-	  if(pli->do_gF3env_strict) { 
+	  if(pli->do_F4env_strict) { 
 	    ws[i] = min_i;
 	    we[i] = max_j;
 	  }
@@ -1419,7 +1422,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
 	}
 	printf("\n");
       }
-      if(pli->do_time_gF3) continue; 
+      if(pli->do_time_F4) continue; 
       p7_gmx_GrowTo(pli->gxb, gm->M, wlen);
       p7_GBackward(seq->dsq, wlen, gm, pli->gxb, NULL);
       status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2); 
@@ -1468,18 +1471,15 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
 	 *  and here is the same code, simplified with our different names for the variables, etc 
 	 * (we don't use hit->dcl the way p7_pipeline does after this):  */
 	env_sc            = env_sc + (wlen - env_len) * log((float) wlen / (float) (wlen+3)); /* NATS, for the moment... */
-	env_dombias       = (pli->do_null2 ? p7_FLogsum(0.0, log(bg->omega) + pli->ddef->dcl[d].domcorrection) : 0.0); /* NATS, and will stay so */
-	env_sc_for_pvalue = (env_sc - (nullsc + env_dombias)) / eslCONST_LOG2; /* now BITS, as it should be */
+	env_envbias       = (pli->do_null2 ? p7_FLogsum(0.0, log(bg->omega) + pli->ddef->dcl[d].domcorrection) : 0.0); /* NATS, and will stay so */
+	env_sc_for_pvalue = (env_sc - (nullsc + env_envbias)) / eslCONST_LOG2; /* now BITS, as it should be */
       }
-      if(pli->do_localdoms) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
-      else                  P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
+      if(pli->do_localenv) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
+      else                 P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
       /***************************************************/
       
-      /* check if we can skip this domain based on its P-value or bit-score */
-#if DOPRINT2
-      printf("\t\tdomain %5d  env bits: %6.2f P: %g\n", d+1, env_sc_for_pvalue, P);
-#endif
-      if(P > pli->dF3) continue;
+      /* check if we can skip this envelope based on its P-value or bit-score */
+      if(P > pli->F5) continue;
     
       /* Define envelope to search with CM:
        *
@@ -1488,7 +1488,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
        *
        * if (pli->do_pad):
        * 
-       *                domain/hit
+       *                envelope/domain
        *   ----------xxxxxxxxxxxxxxxx---------
        *   |<-----------------------|
        *                W
@@ -1514,14 +1514,14 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
 	}
       }
 #if DOPRINT
-      printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived dF3       %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
+      printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived F5       %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
 #endif
-      pli->n_past_ddef++;
-      pli->pos_past_ddef += env_len;
+      pli->n_past_edef++;
+      pli->pos_past_edef += env_len;
 
-      /* if we're doing a bias filter on domains - check if we skip domain due to that */
-      if(pli->do_dombias) {
-	if(pli->do_domwinbias) { 
+      /* if we're doing a bias filter on envelopes - check if we skip envelope due to that */
+      if(pli->do_envbias) {
+	if(pli->do_envwinbias) { 
 	  /* calculate bias filter score for entire window */
 	  p7_bg_FilterScore(bg, seq->dsq, wlen, &filtersc);
 	}
@@ -1532,22 +1532,19 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
 	  filtersc += (float) (wlen-env_len) * logf(bg->p1);
 	}
 	env_sc_for_pvalue = (env_sc - filtersc) / eslCONST_LOG2;
-	if(pli->do_localdoms) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
-	else                  P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
-#if DOPRINT2
-	printf("\t\tdomain %5d  env bits w/bias : %6.2f P: %g\n", d+1, env_sc_for_pvalue, P);
-#endif
-	if (P > pli->dF3b) { continue; }
+	if(pli->do_localenv) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
+	else                 P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
+	if (P > pli->F5b) { continue; }
       }
 #if DOPRINT
-      printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived dF3-bias  %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
+      printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived F5-bias  %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
 #endif
-      pli->n_past_dombias++;
-      pli->pos_past_dombias += env_len;
+      pli->n_past_edefbias++;
+      pli->pos_past_edefbias += env_len;
 	
-      if(pli->do_time_dF3) { continue; }
+      if(pli->do_time_F5) { continue; }
 
-      /* if we get here, the 'domain' has survived, add it to the growing list */
+      /* if we get here, the envelope has survived, add it to the growing list */
       if((nenv+1) == nenv_alloc) { 
 	nenv_alloc *= 2;
 	ESL_RALLOC(es, p, sizeof(int64_t) * nenv_alloc);
@@ -1621,7 +1618,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
   do_final_greedy = (pli->final_cm_search_opts & CM_SEARCH_CMGREEDY) ? TRUE : FALSE;
 
   nhit = 0;
-  cyk_env_cutoff = cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->mu_extrap + (log(pli->F4env) / (-1 * cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->lambda));
+  cyk_env_cutoff = cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->mu_extrap + (log(pli->F6env) / (-1 * cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->lambda));
   if(! do_final_greedy) { 
     results  = CreateResults(INIT_RESULTS);
   }    
@@ -1663,9 +1660,9 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
 			       pli->do_null3,                      /* do the NULL3 correction? */
 			       cm->hbmx,                           /* the HMM banded matrix */
 			       1024.,                              /* upper limit for size of DP matrix, 1 Gb */
-			       cyk_env_cutoff,                     /* bit score == envF4 P value, cutoff for envelope redefinition */
-			       (pli->do_F4env) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
-			       (pli->do_F4env) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
+			       cyk_env_cutoff,                     /* bit score == envF6 P value, cutoff for envelope redefinition */
+			       (pli->do_cykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
+			       (pli->do_cykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
 			       &cyksc);                            /* best score, irrelevant here */
 	if     (status == eslERANGE) { do_qdb_or_nonbanded_filter_scan = TRUE; }
 	else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
@@ -1676,15 +1673,15 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
 				 0.,                                 /* minimum score to report, irrelevant */
 				 NULL,                               /* results to add to, irrelevant here */
 				 pli->do_null3,                      /* do the NULL3 correction? */
-				 cyk_env_cutoff,                     /* bit score == envF4 P value, cutoff for envelope redefinition */
-				 (pli->do_F4env) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
-				 (pli->do_F4env) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
+				 cyk_env_cutoff,                     /* bit score == envF6 P value, cutoff for envelope redefinition */
+				 (pli->do_cykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
+				 (pli->do_cykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
 				 NULL,                               /* ret_vsc, irrelevant here */
 				 &cyksc)) != eslOK) { 
 	  printf("ERROR: %s\n", errbuf); return status;  }
       }
       /* update envelope boundaries, if nec */
-      if(pli->do_F4env && (cyk_envi != -1 && cyk_envj != -1)) { 
+      if(pli->do_cykenv && (cyk_envi != -1 && cyk_envj != -1)) { 
 	if(es[i] != cyk_envi || ee[i] != cyk_envj) have_hmmbands = FALSE; /* this may be FALSE already, if not, set it to FALSE b/c we need to recalc bands */
 	es[i] = cyk_envi;
 	ee[i] = cyk_envj;
@@ -1694,7 +1691,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
       E = P * cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->cur_eff_dbsize;
       //printf("\t\t\tCYK      %7.2f bits  E: %g  P: %g  origenv[%7d..%7d] newenv[%7d..%7d]\n", cyksc, E, P, es[i], ee[i], es[i], ee[i]);
 #endif
-      if (P > pli->F4) continue;
+      if (P > pli->F6) continue;
       /******************************************************************************/
     }	
     pli->n_past_cyk++;
@@ -1703,7 +1700,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
 #if DOPRINT
     printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived CYK       %6.2f bits  P %g\n", es[i], ee[i], cyksc, P);
 #endif
-    if(pli->do_time_F4) continue; 
+    if(pli->do_time_F6) continue; 
     
     /******************************************************************************/
     /* Final stage: Inside/CYK with CM, report hits to a search_results_t data structure. */
@@ -2035,7 +2032,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG
   int64_t **wsAA = NULL;  /* [0..m..nhmm-1][0..i..nwinAA[m]-1] window start positions, filled by cm_pli_p7Filter() */
   int64_t **weAA = NULL;  /* [0..m..nhmm-1][0..i..nwinAA[m]-1] window end   positions, filled by cm_pli_p7Filter() */
   double  **wpAA = NULL;  /* [0..m..nhmm-1][0..i..nwinAA[m]-1] window P-values, filled by m_pli_p7Filter() */
-  int *nenvA;             /* [0..m..nhmm-1] number of envelopes surviving MSV & Vit & Fwd & DomainDef, filled by cm_pli_p7EnvelopeDef */
+  int *nenvA;             /* [0..m..nhmm-1] number of envelopes surviving MSV & Vit & Fwd & gFwd & EnvDef, filled by cm_pli_p7EnvelopeDef */
   int64_t **esAA = NULL;  /* [0..m..nhmm-1][0..i..nenvAA[m]-1] envelope start positions, filled by cm_pli_p7EnvelopeDef() */
   int64_t **eeAA = NULL;  /* [0..m..nhmm-1][0..i..nenvAA[m]-1] envelope end   positions, filled by cm_pli_p7EnvelopeDef() */
 
@@ -2162,7 +2159,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG
     free(cur_ws);
     free(cur_we);
   }
-  /* TEMP */ if(pli->do_time_F4) return eslOK;
+  /* TEMP */ if(pli->do_time_F6) return eslOK;
 
   if(wsAA != NULL) { for(m = 0; m < nhmm; m++) { if(wsAA[m] != NULL) free(wsAA[m]); } free(wsAA); }
   if(weAA != NULL) { for(m = 0; m < nhmm; m++) { if(weAA[m] != NULL) free(weAA[m]); } free(weAA); }
@@ -2276,7 +2273,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "Windows passing gFwd filter:  %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_gfwd,
 	    (double)pli->pos_past_gfwd / pli->nres ,
-	    pli->F3);
+	    pli->F4);
   }
   else { 
     fprintf(ofp, "Windows passing gFwd filter:  %15s  (off)\n", "");
@@ -2285,37 +2282,37 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "Windows passing gFwd bias fil:%15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_gfwdbias,
 	    (double)pli->pos_past_gfwdbias / pli->nres ,
-	    pli->F3b);
+	    pli->F4b);
   }
   else { 
     fprintf(ofp, "Windows passing gFwd bias fil: %15s  (off)\n", "");
   }
 
-  if(pli->do_domainize) { 
-    fprintf(ofp, "Windows passing domain dfn:   %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_ddef,
-	    (double)pli->pos_past_ddef / pli->nres ,
-	    pli->dF3);
+  if(pli->do_envelopes) { 
+    fprintf(ofp, "Windows passing envelope dfn:   %15" PRId64 "  (%.4g); expected (%.4g)\n",
+	    pli->n_past_edef,
+	    (double)pli->pos_past_edef / pli->nres ,
+	    pli->F5);
   }
   else { 
-    fprintf(ofp, "Windows passing domain dfn:  %15s  (off)\n", "");
+    fprintf(ofp, "Windows passing envelope dfn:  %15s  (off)\n", "");
   }
 
-  if(pli->do_dombias) { 
-    fprintf(ofp, "Windows passing dom bias fil: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_dombias,
-	    (double)pli->pos_past_dombias / pli->nres ,
-	    pli->dF3b);
+  if(pli->do_envbias) { 
+    fprintf(ofp, "Windows passing env bias fil: %15" PRId64 "  (%.4g); expected (%.4g)\n",
+	    pli->n_past_edefbias,
+	    (double)pli->pos_past_edefbias / pli->nres ,
+	    pli->F5b);
   }
   else { 
-    fprintf(ofp, "Windows passing dom bias fil: %15s  (off)\n", "");
+    fprintf(ofp, "Windows passing env bias fil: %15s  (off)\n", "");
   }
 
   if(pli->do_cyk) { 
     fprintf(ofp, "Windows passing CYK filter:   %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_cyk,
 	    (double)pli->pos_past_cyk / pli->nres ,
-	    pli->F4);
+	    pli->F6);
   }
   else { 
     fprintf(ofp, "Windows passing CYK filter:   %15s  (off)\n", "");

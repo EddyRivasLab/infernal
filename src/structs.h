@@ -1381,9 +1381,9 @@ typedef struct cm_s {
   ComLog_t *comlog;	/*   creation dates and command line(s) that built/calibrated the model (mandatory) */
   int    nseq;		/*   number of training sequences          (mandatory) */
   float  eff_nseq;	/*   effective number of seqs (<= nseq)    (mandatory) */
-  float  ga;	        /*   per-seq/per-domain gathering thresholds (bits) (CMH_GA) */
-  float  tc;            /*   per-seq/per-domain trusted cutoff (bits)       (CMH_TC) */
-  float  nc;	        /*   per-seq/per-domain noise cutoff (bits)         (CMH_NC) */
+  float  ga;	        /*   per-seq gathering thresholds (bits) (CMH_GA) */
+  float  tc;            /*   per-seq trusted cutoff (bits)       (CMH_TC) */
+  float  nc;	        /*   per-seq noise cutoff (bits)         (CMH_NC) */
 
 
 			/* Information about the null model:               */
@@ -1502,16 +1502,16 @@ typedef struct cm_pipeline_s {
   /* Dynamic programming matrices                                           */
   P7_OMX       *oxf;		/* one-row Forward matrix, accel pipe       */
   P7_OMX       *oxb;		/* one-row Backward matrix, accel pipe      */
-  P7_OMX       *fwd;		/* full Fwd matrix for domain envelopes     */
-  P7_OMX       *bck;		/* full Bck matrix for domain envelopes     */
+  P7_OMX       *fwd;		/* full Fwd matrix for envelopes            */
+  P7_OMX       *bck;		/* full Bck matrix for envelopes            */
   P7_GMX       *gxf;		/* generic Forward matrix                   */
   P7_GMX       *gxb;		/* generic Backward matrix                  */
-  P7_GMX       *gfwd;		/* generic full Fwd matrix for domain envs  */
-  P7_GMX       *gbck;		/* generic full Bck matrix for domain envs  */
+  P7_GMX       *gfwd;		/* generic full Fwd matrix for envelopes    */
+  P7_GMX       *gbck;		/* generic full Bck matrix for envelopes    */
   ScanMatrix_t *fsmx;           /* scan matrix for CYK filter stage         */
   ScanMatrix_t *smx;            /* scan matrix for final stage              */
 
-  /* Domain postprocessing                                                  */
+  /* Domain/envelope postprocessing                                         */
   ESL_RANDOMNESS *r;		/* random number generator                  */
   int             do_reseeding; /* TRUE: reseed for reproducible results    */
   P7_DOMAINDEF   *ddef;		/* domain definition workflow               */
@@ -1538,35 +1538,31 @@ typedef struct cm_pipeline_s {
   double  F1;		        /* MSV filter threshold                     */
   double  F2;		        /* Viterbi filter threshold                 */
   double  F3;		        /* uncorrected Forward filter threshold     */
+  double  F4;		        /* glocal Forward filter thr                */
+  double  F5;		        /* glocal env def filter thr                */
+  double  F6;		        /* CYK filter thr                           */
   double  F1b;		        /* bias-corrected MSV filter threshold      */
   double  F2b;		        /* bias-corrected Viterbi filter threshold  */
   double  F3b;		        /* bias-corrected Forward filter threshold  */
-  double  gF3;		        /* glocal Forward filter thr            */
-  double  gF3b;		        /* bias-corrected glocal Fwd threshold      */
-  double  dF3;		        /* per-domain Forward filter thr            */
-  double  dF3b;		        /* bias-corrected per-domain threshold      */
-  double  orig_gF3;		/* glocal Forward filter thr            */
-  double  orig_gF3b;		/* bias-corrected glocal Fwd threshold      */
-  double  orig_dF3;		/* per-domain Forward filter thr            */
-  double  orig_dF3b;	        /* bias-corrected per-domain threshold      */
-  double  dtF3;		        /* per-domain bit sc Forward filter thr     */
-  double  Fbfil;	        /* min allowed ratio of banded HMM vs QDB mx size  */
-  int     use_dtF3;	        /* use dtF3 bit sc instead of dF3 P-value   */
-  int     do_nF3;	        /* filter based on glocal fwd sc, before doing ddef */
-  double  F4;		        /* CYK filter P-value threshold             */
-  double  F4env;	        /* CYK envelope P-value threshold           */
-  int     do_F4env;	        /* TRUE to redefine envelopes after stage 4 */
+  double  F4b;		        /* bias-corrected gloc Forward filter threshold  */
+  double  F5b;		        /* bias-corrected env def filter threshold  */
+  double  orig_F4;		/* glocal Forward filter thr                */
+  double  orig_F4b;		/* bias-corrected glocal Fwd threshold      */
+  double  orig_F5;		/* per-envelope Forward filter thr          */
+  double  orig_F5b;	        /* bias-corrected per-envelope threshold    */
+  int     do_cykenv;	        /* TRUE to redefine envelopes after CYK     */
+  double  F6env;	        /* CYK envelope P-value threshold           */
   int     do_F3env;	        /* TRUE to redefine envelopes after local fwd */
-  int     do_gF3env;	        /* TRUE to redefine envelopes after glocal fwd */
-  int     do_gF3env_strict;     /* TRUE to be strict with glocal fwd env redefn */
+  int     do_F4env;	        /* TRUE to redefine envelopes after glocal fwd */
+  int     do_F4env_strict;      /* TRUE to be strict with glocal fwd env redefn */
   double  F3envX;               /* max avg number of passes through model for local fwd env redefn */
-  double  gF3envX;              /* max avg number of passes through model for glocal fwd env redefn */
+  double  F4envX;               /* max avg number of passes through model for glocal fwd env redefn */
   int     F3ns;                 /* number of samples for local fwd env redfn */
-  int     gF3ns;                /* number of samples for glocal fwd env redfn */
+  int     F4ns;                 /* number of samples for glocal fwd env redfn */
   int     do_cm;		/* TRUE to use CM for at least one stage    */
   int     do_hmm;		/* TRUE to use HMM for at least one stage   */
-  int     do_domainize;		/* TRUE to find domains in windows prior to CM stages */
-  int     do_pad;		/* TRUE to pad domains based on cm->W       */
+  int     do_envelopes;		/* TRUE to find envelopes in windows prior to CM stages */
+  int     do_pad;		/* TRUE to pad hits based on cm->W          */
   int     do_msvmerge;		/* TRUE to merge MSV hits, FALSE not to     */
   int     do_msv;		/* TRUE to filter with MSV, FALSE not to    */
   int     do_shortmsv;		/* TRUE to filter with standard MSV, not Longtarget variant */
@@ -1574,20 +1570,20 @@ typedef struct cm_pipeline_s {
   int     do_vitbias;      	/* TRUE to use biased comp HMM filter w/Vit */
   int     do_fwdbias;     	/* TRUE to use biased comp HMM filter w/Fwd */
   int     do_gfwdbias;     	/* TRUE to use biased comp HMM filter w/gFwd*/
-  int     do_dombias;     	/* TRUE to use biased comp HMM filter w/ddef*/
+  int     do_envbias;     	/* TRUE to use biased comp HMM filter w/ddef*/
   int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */
   int     do_fwd;		/* TRUE to filter with Fwd, FALSE not to    */
   int     do_gfwd;		/* TRUE to filter w/glocal Fwd, FALSE not to*/
   int     do_cyk;		/* TRUE to filter with CYK, FALSE not to    */
   int     do_null2;		/* TRUE to use null2 score corrections      */
   int     do_null3;		/* TRUE to use null3 score corrections      */
-  int     do_localdoms;         /* TRUE to define domains in local mode     */
+  int     do_localenv;          /* TRUE to define envelopes in local mode   */
   int     do_wsplit;            /* TRUE to split MSV windows > wmult*W      */
   int     do_wcorr;             /* TRUE to correct for window size          */
   double  wmult;                /* scalar * W, for do_wsplit                */
-  int     do_oldcorr;           /* TRUE to use old correction for domain def*/
-  int     do_nocorr;            /* TRUE to use no correction for domain def */
-  int     do_domwinbias;        /* TRUE to calc domain bias for entire window*/
+  int     do_oldcorr;           /* TRUE to use old correction for env def   */
+  int     do_nocorr;            /* TRUE to use no correction for env def    */
+  int     do_envwinbias;        /* TRUE to calc env bias for entire window  */
   int     do_fwdbias_sampling;  /* TRUE to calculate Fwd bias (F3b) based on sampled traces */
   int     do_gmsv;              /* TRUE to use generic MSV */
   int     do_filcmW;            /* TRUE to use CM's window length for all HMM filters */
@@ -1597,11 +1593,11 @@ typedef struct cm_pipeline_s {
   int     glen_max;             /* max clen for len-dependent glc p7 thr    */
   int     glen_step;            /* step size for halving glc p7 thr if do_glen */
 
-  /* Parameters controlling p7 domain defintion */
+  /* Parameters controlling p7 domain/envelope defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
   float  rt2;		/* controls extent of regions. regions extended until mocc[i]-{b,e}occ[i] < dt2            */
   float  rt3;		/* controls when regions are flagged for split: if expected # of E preceding B is >= dt3   */
-  int    ns;            /* number of traceback samples for domain def */
+  int    ns;            /* number of traceback samples for domain/envelope def */
 
   /* CM search options for fourth filter and final stage */
   int     fcyk_cm_search_opts;  /* CYK filter stage search opts             */
@@ -1622,7 +1618,7 @@ typedef struct cm_pipeline_s {
   uint64_t      n_past_vit;	/* # windows that pass ViterbiFilter()      */
   uint64_t      n_past_fwd;	/* # windows that pass ForwardFilter()      */
   uint64_t      n_past_gfwd;	/* # windows that pass glocal GForward()    */
-  uint64_t      n_past_ddef;	/* # domains that pass domain definition    */
+  uint64_t      n_past_edef;	/* # envelopess that pass envelope definition */
   uint64_t      n_past_cyk;	/* # windows that pass CYK filter           */
   uint64_t      n_past_ins;	/* # windows that pass Inside               */
   uint64_t      n_output;	/* # alignments that make it to the final output */
@@ -1630,12 +1626,12 @@ typedef struct cm_pipeline_s {
   uint64_t      n_past_vitbias;	/* # windows that pass Vit bias filter      */
   uint64_t      n_past_fwdbias;	/* # windows that pass Fwd bias filter      */
   uint64_t      n_past_gfwdbias;/* # windows that pass gFwd bias filter     */
-  uint64_t      n_past_dombias;	/* # domains that pass domain bias filter   */
+  uint64_t      n_past_edefbias;/* # envelopes that pass env bias filter    */
   uint64_t      pos_past_msv;	/* # positions that pass MSVFilter()        */
   uint64_t      pos_past_vit;	/* # positions that pass ViterbiFilter()    */
   uint64_t      pos_past_fwd;	/* # positions that pass ForwardFilter()    */
   uint64_t      pos_past_gfwd;	/* # positions that pass glocal GForward()  */
-  uint64_t      pos_past_ddef;	/* # positions that pass domain definition  */
+  uint64_t      pos_past_edef;	/* # positions that pass env definition     */
   uint64_t      pos_past_cyk;	/* # positions that pass CYK filter         */
   uint64_t      pos_past_ins;	/* # positions that pass Inside             */
   uint64_t      pos_output;	/* # positions that make it to the final output */
@@ -1643,15 +1639,14 @@ typedef struct cm_pipeline_s {
   uint64_t      pos_past_vitbias;/* # positions that pass Vit bias filter */
   uint64_t      pos_past_fwdbias;/* # positions that pass Fwd bias filter */
   uint64_t      pos_past_gfwdbias;/*# positions that pass gFwd bias filter*/
-  uint64_t      pos_past_dombias;/* # positions that pass dom def bias filter */
+  uint64_t      pos_past_edefbias;/* # positions that pass dom def bias filter */
 
   int           do_time_F1;      /* TRUE to abort after Stage 1 MSV */
   int           do_time_F2;      /* TRUE to abort after Stage 2 Vit */
   int           do_time_F3;      /* TRUE to abort after Stage 3 Fwd */
-  int           do_time_gF3;     /* TRUE to abort after Stage 3 glocal Fwd */
-  int           do_time_dF3;     /* TRUE to abort after domain def */
-  int           do_time_bfil;    /* TRUE to abort after bfil */
-  int           do_time_F4;      /* TRUE to abort after Stage 4 CYK */
+  int           do_time_F4;      /* TRUE to abort after Stage 4 glocal Fwd */
+  int           do_time_F5;      /* TRUE to abort after Stage 5 env def */
+  int           do_time_F6;      /* TRUE to abort after Stage 6 CYK */
 
   enum cm_pipemodes_e mode;    	/* CM_SCAN_MODELS | CM_SEARCH_SEQS          */
   int           do_top;         /* TRUE to do top    strand (usually TRUE) */
