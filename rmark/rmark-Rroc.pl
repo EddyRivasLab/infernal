@@ -18,7 +18,7 @@ if (defined $opt_R) { $replace_underscores = 1; }
 my $usage = "Usage: perl rmark-rocR.pl [OPTIONS] <listfile> <pdfname> <1/0 yes/no draw error-bars> <plot title>\n";
 $usage .= "\nFormat of list file:\n\t<series_name> <root> <color>\n\n";
 $usage .= "\nExample:\n\tinf1p02-df r2-i1p02-df red\n\n";
-$usage .= "<root>/<root>.xy, <root>/<root>.mer and <root>/<root>.time must exist\n\n";
+$usage .= "<root>/<root>.xy, <root>/<root>.mer, <root>/<root>.sum and <root>/<root>.time must exist\n\n";
 
 if(scalar(@ARGV) != 4) { printf("$usage"); exit(1); }
 ($listfile, $pdf, $do_errorbars, $main) = @ARGV;
@@ -50,6 +50,7 @@ while(<LIST>) {
 	@dy2A = ();
 	$xyfile = $root . ".xy";
 	$merfile = $root . ".mer";
+	$sumfile = $root . ".sum";
 	$timefile = $root . ".time";
 	if(! -e $xyfile) { 
 	    $xyfile = $root . "/" . $xyfile; 
@@ -61,6 +62,12 @@ while(<LIST>) {
 	    $merfile = $root . "/" . $merfile; 
 	    if(! -e $merfile) { 
 		die "ERROR, $merfile does not exist"; 
+	    }
+	}
+	if(! -e $sumfile) { 
+	    $sumfile = $root . "/" . $sumfile; 
+	    if(! -e $sumfile) { 
+		die "ERROR, $sumfile does not exist"; 
 	    }
 	}
 	if(! -e $timefile) { 
@@ -86,12 +93,23 @@ while(<LIST>) {
 	while($mer = <MER>) { 
 	    if($mer =~ s/^\s*\*summary\*\s+//) { 
 		$mer =~ s/\s+$//; 
-		$legstring = sprintf("\"%-25s  %-10s  MER: %4d\"", $name, $time . "h", $mer);
-		push(@nametimemerA, $legstring);
+		#$legstring = sprintf("\"%-25s  %-10s  MER: %4d\"", $name, $time . "h", $mer);
+		#push(@nametimemerA, $legstring);
 		#push(@nametimemerA,  "\"" . $name  . " " . $time . "h MER: " . $mer . "\"");
 	    }
 	}
 	close(MER);
+
+	# process sum file
+	open(SUM, $sumfile) || die "ERROR, could not open sum file $sumfile";
+	$sum = <SUM>;
+	chomp $sum;
+	$summer = $sum;
+	($sumname, $trash1, $summer, $sumfn, $sumfp, $summerthr, $trash2, $trash3, $trash4, $time) = split(/\s+/, $sum);
+	$legstring = sprintf("\"%-25s  %-10s  MER: %5.1f\"", $name, $time, $summer);
+	#printf("LEG string: $legstring\n");
+	push(@nametimemerA, $legstring);
+	close(SUM);
        
 	push(@colorA,     "\"" . $color . "\"");
 	open(XY,   $root . ".xy")   || die "ERROR, could not open xy file $root.xy";
