@@ -225,12 +225,12 @@ while (<TABLE>)
 
    # run cmsearch on filtered_db
     if($do_mpi) { 
-	$command = "mpirun -np $mpi_nprocs $cmsearch --noalign --toponly $cmsearch_searchopts --tabfile $resultdir/$msaname.tmp $modeldir/$msaname.cm $filtered_db > $resultdir/$msaname.search";
+	$command = "mpirun -np $mpi_nprocs $cmsearch --noalign --toponly $cmsearchopts --tabfile $resultdir/$msaname.tmp $modeldir/$msaname.cm $filtered_db > $resultdir/$msaname.search";
 	$status = system("$command");
 	if ($status != 0) { die "FAILED: $command"; }
     }
     else { 
-	$command = "$cmsearch --noalign --toponly $cmsearch_searchopts --tabfile $resultdir/$msaname.tmp $modeldir/$msaname.cm $filtered_db > $resultdir/$msaname.search";
+	$command = "$cmsearch --noalign --toponly $cmsearchopts --tabfile $resultdir/$msaname.tmp $modeldir/$msaname.cm $filtered_db > $resultdir/$msaname.search";
 	$status = system("$command");
 	if ($status != 0) { die "FAILED: $command"; }
     }

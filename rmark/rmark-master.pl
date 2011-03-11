@@ -268,7 +268,7 @@ for ($i = 0; $i < $ncpu; $i++)
 	}
 	else { 
 	    #printf("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge '$rmark_script $posonly_opt $debug_opt $build_opt $c_opt $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'\n");
-	    system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
+	    system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -l short=true '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
 	}
     }
 }
