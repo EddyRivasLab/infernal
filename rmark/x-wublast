@@ -82,8 +82,6 @@ open(TABLE, "$tblfile")   || die "failed to open $tblfile";
 $orig_fafile = $fafile;
 while (<TABLE>)
 {
-    $runtime = -1 * time();
-
     ($msaname) = split;
 
     # fetch the msa
@@ -97,9 +95,11 @@ while (<TABLE>)
     if ($status != 0) { die "FAILED: $command"; }
 
     # run wublast
-    $command = "$blastn $fafile $resultdir/$msaname.query $searchopts $fam_searchopts_H{$fam} topcomboN=100000 mformat=3 > $resultdir/$msaname.tmp";
+    $runtime = -1 * time();
+    $command = "$blastn $fafile $resultdir/$msaname.query cpus=1 $searchopts $fam_searchopts_H{$fam} topcomboN=100000 mformat=3 > $resultdir/$msaname.tmp";
     $status = system("$command");
     if ($status != 0) { die "FAILED: $command"; }
+    $runtime += time();
 
     open(OUTPUT, "$resultdir/$msaname.tmp") || die "FAILED: to open $resultdir/$msaname.tmp tabular output file"; 
 
@@ -162,7 +162,6 @@ while (<TABLE>)
     unlink "$resultdir/$msaname.sto";
     unlink "$resultdir/$msaname.query";
 
-    $runtime += time();
     open(TIME, ">" . "$resultdir/$msaname.time");
     printf TIME "$msaname $runtime seconds\n";
     close(TIME);
