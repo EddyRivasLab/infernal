@@ -15,13 +15,13 @@ use Getopt::Std;
 getopts('R');
 if (defined $opt_R) { $replace_underscores = 1; }
 
-my $usage = "Usage: perl rmark-rocR.pl [OPTIONS] <listfile> <pdfname> <1/0 yes/no draw error-bars> <plot title>\n";
+my $usage = "Usage: perl rmark-rocR.pl [OPTIONS] <listfile> <key (e.g. 1E04)> <pdfname> <1/0 yes/no draw error-bars> <plot title>\n";
 $usage .= "\nFormat of list file:\n\t<series_name> <root> <color>\n\n";
-$usage .= "\nExample:\n\tinf1p02-df r2-i1p02-df red\n\n";
-$usage .= "<root>/<root>.xy, <root>/<root>.mer, <root>/<root>.sum and <root>/<root>.time must exist\n\n";
+$usage .= "\nExample:\n\tinf1p02-df 1E00 r2-i1p02-df.pdf 0 RMARK3\n\n";
+$usage .= "<root>/<root>.em$key.xy, <root>/<root>.em$key.mer and <root>/<root>.time must exist\n\n";
 
-if(scalar(@ARGV) != 4) { printf("$usage"); exit(1); }
-($listfile, $pdf, $do_errorbars, $main) = @ARGV;
+if(scalar(@ARGV) != 5) { printf("$usage"); exit(1); }
+($listfile, $key, $pdf, $do_errorbars, $main) = @ARGV;
 $n = 0;
 
 if($replace_underscores) { $main =~ s/\_/ /g; }
@@ -48,10 +48,11 @@ while(<LIST>) {
 	@yA = ();
 	@dy1A = ();
 	@dy2A = ();
-	$xyfile = $root . ".xy";
-	$merfile = $root . ".mer";
+	$xyfile = $root . ".em" . $key . ".xy";
+	$merfile = $root . ".em" . $key . ".mer";
 	$sumfile = $root . ".sum";
 	$timefile = $root . ".time";
+	$sumfile = $root . ".em" . $key . ".sum";
 	if(! -e $xyfile) { 
 	    $xyfile = $root . "/" . $xyfile; 
 	    if(! -e $xyfile) { 
@@ -105,14 +106,13 @@ while(<LIST>) {
 	$sum = <SUM>;
 	chomp $sum;
 	$summer = $sum;
-	($sumname, $trash1, $summer, $sumfn, $sumfp, $summerthr, $trash2, $trash3, $trash4, $time) = split(/\s+/, $sum);
+	($sumname, $trash1, $trash2, $summer, $sumfn, $sumfp, $summerthr, $trash3, $trash4, $trash5, $time) = split(/\s+/, $sum);
 	$legstring = sprintf("\"%-25s  %-10s  MER: %5.1f\"", $name, $time, $summer);
-	#printf("LEG string: $legstring\n");
 	push(@nametimemerA, $legstring);
 	close(SUM);
        
 	push(@colorA,     "\"" . $color . "\"");
-	open(XY,   $root . ".xy")   || die "ERROR, could not open xy file $root.xy";
+	open(XY,   $xyfile)   || die "ERROR, could not open xy file $root.xy";
 	while(<XY>) { 
 	    if(/(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/) { 
 		($x, $y, $dy1, $dy2) = ($1, $2, $3, $4);
