@@ -692,3 +692,40 @@ down. I don't think I would have ever found it.
 
 This bug was fixed as of revision 3423.
 //
+
+ID              i24
+TITLE		Possible infinite loop with cmbuild --refine (cmbuild.c::refine_msa())
+STATUS          CLOSED
+XREF            Notes in ~/nawrockie/notebook/11_0321_inf_bug_cmbuild_refine/00LOG
+REPORTED_BY     Paul Gardner
+CLOSED_DATE     EPN, Mon Mar 21 08:24:53 2011
+DESCRIPTION    
+
+cmbuild.c::refine_msa() is meant to refine the input msa by building a
+model, determining the score of all the implicit parse trees, and then
+realigning all sequences to the current model. The scores of those
+parsetrees are determined and if they're more than 1% higher than the
+previous scores (on average), another build and realignment iteration
+is performed. This is continued until 1% higher scoring parsetrees are
+not found. Paul found a case where it iterated forever. I was unable
+to reproduce it, but it seems like it must be due to this line of
+code: 
+
+      if(delta <= threshold && delta >= 0) break; /* only way out of while(1) loop */
+
+This is line 775 in infernal 1.0.2's cmbuild. delta is the change in
+bit scores of the parsetrees since the previous iteration, calc'ed as:
+
+      delta    = (totscore - oldscore) / fabs(totscore);
+
+It appears as if it's possible that delta can remain < 0 even if the
+bit scores don't change, due to precision issues. The fix is to lower
+0 to some very small negative number: 
+
+      if(delta <= threshold && delta > (-1. * eslSMALLX1)) break; /* break out of loop before max number of iterations are reached */
+
+I also added a maximum or 200 possible iterations as an additional
+safeguard against an infinite loop.
+
+This bug is fixed as of revision r3510.
+//

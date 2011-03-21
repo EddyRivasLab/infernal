@@ -752,6 +752,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   ESL_MSA         *msa         = NULL;
   Parsetree_t     *mtr         = NULL;
   Parsetree_t    **tr          = NULL;
+  int              max_niter   = 200;  /* maximum number of iterations */
 
   /* check contract */
   if(input_msa       == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), input_msa passed in as NULL");
@@ -785,7 +786,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   if(cfg->rdfp != NULL) 
     if((status = esl_msa_Write(cfg->rdfp, input_msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
       ESL_FAIL(status, errbuf, "refine_msa(), esl_msa_Write() call failed.");
-  while(1)
+  while(iter <= max_niter)
     {
       iter++;
       if(iter == 1) { cm = init_cm; msa = input_msa; }
@@ -804,7 +805,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       delta    = (totscore - oldscore) / fabs(totscore);
       if(esl_opt_GetBoolean(go, "-a")) print_refine_column_headings(go, cfg);
       fprintf(stdout, "  %5d %13.2f %10.3f\n", iter, totscore, delta);
-      if(delta <= threshold && delta >= 0) break; /* only way out of while(1) loop */
+      if(delta <= threshold && delta > (-1. * eslSMALLX1)) break; /* break out of loop before max number of iterations are reached */
       oldscore = totscore;
 
       /* 2. parsetrees -> msa */
