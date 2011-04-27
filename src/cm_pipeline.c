@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT 1
+#define DOPRINT 0
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -250,8 +250,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->do_cm         = TRUE;
   pli->do_hmm        = TRUE;
   pli->do_max        = FALSE;
-  pli->do_mid        = FALSE;
-  pli->do_fast       = FALSE;
+  pli->do_rfam       = FALSE;
   pli->do_envelopes  = TRUE;
   pli->do_pad        = esl_opt_GetBoolean(go, "--pad");
   pli->do_msv        = TRUE;
@@ -329,24 +328,20 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
     pli->do_cykenv = FALSE;
     pli->F1 = pli->F2 = pli->F3 = pli->F4 = pli->F5 = 1.0;
   }
-  if(esl_opt_GetBoolean(go, "--mid")) { /* set up mid-level filtering */
-    pli->do_mid = TRUE;
-    pli->do_msv = pli->do_msvbias = pli->do_vitbias = pli->do_fwdbias = pli->do_gfwdbias = pli->do_envbias = FALSE;
-    pli->F2 = 0.1;
-    pli->F3 = 0.05;
-    pli->F4 = 0.05;
-    pli->F5 = 0.1;
-    pli->F6 = 0.001;
-    pli->F6env = 0.10;
-  }
-  if(esl_opt_GetBoolean(go, "--fast")) { /* set up strict-level filtering */
-    /* these are set as nhmmer defaults for HMM filters, default for CYK */
-    pli->do_fast = TRUE;
-    pli->F1 = 0.02;
-    pli->F2 = 0.001;
-    pli->F3 = 0.00001;
-    pli->F4 = 0.00001;
-    pli->F5 = 0.00001;
+  if(esl_opt_GetBoolean(go, "--rfam")) { /* set up strict-level filtering */
+    /* these are set as all default thresholds divided by 20, 
+     * and HMM banding for CYK (F6) filtering turned on (done below) */
+    pli->do_rfam = TRUE;
+    pli->F1  = 0.02;
+    pli->F2  = 0.008;
+    pli->F2b = 0.008;
+    pli->F3  = 0.001;
+    pli->F3b = 0.001;
+    pli->F4  = 0.001;
+    pli->F4b = 0.001;
+    pli->F5  = 0.001;
+    pli->F5b = 0.001;
+    pli->F6  = 0.00005;
   }
 
   pli->do_time_F1   = esl_opt_GetBoolean(go, "--time-F1");
@@ -366,6 +361,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->fcyk_tau  = esl_opt_GetReal(go, "--ftau");
   pli->final_beta = esl_opt_GetReal(go, "--beta");
   pli->final_tau  = esl_opt_GetReal(go, "--tau");
+
+  if(pli->do_rfam) pli->fcyk_cm_search_opts  |= CM_SEARCH_HBANDED;
 
   if(! esl_opt_GetBoolean(go, "--hmm")) { 
     /* set up filter round parameters */
@@ -807,7 +804,6 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
   else { 
     p7_oprofile_ReconfigMSVLength(om, om->max_length); /* nhmmer's way */
   }
-  printf("om->max_length: %d\n", om->max_length);
 
 #if DOPRINT
   //  printf("\nPIPELINE p7Filter() %s  %" PRId64 " residues\n", sq->name, sq->n);
@@ -2056,7 +2052,9 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG
   int     *wl = NULL;     /* [0..i..nwinA[m]] temporary list of model giving lowest P-value */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
+#if DOPRINT
   printf("\nPIPELINE ENTRANCE %s  %s  %" PRId64 " residues\n", sq->name, sq->desc, sq->n);
+#endif
 
   ESL_ALLOC(nwinA, sizeof(int)      * nhmm);
   ESL_ALLOC(wsAA, sizeof(int64_t *) * nhmm);
@@ -2289,13 +2287,13 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   }
 
   if(pli->do_envelopes) { 
-    fprintf(ofp, "Windows passing envelope dfn:   %15" PRId64 "  (%.4g); expected (%.4g)\n",
+    fprintf(ofp, "Windows passing envelope dfn: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_edef,
 	    (double)pli->pos_past_edef / pli->nres ,
 	    pli->F5);
   }
   else { 
-    fprintf(ofp, "Windows passing envelope dfn:  %15s  (off)\n", "");
+    fprintf(ofp, "Windows passing envelope dfn: %15s  (off)\n", "");
   }
 
   if(pli->do_envbias) { 

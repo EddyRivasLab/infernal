@@ -1533,8 +1533,7 @@ typedef struct cm_pipeline_s {
   
   /* Threshold settings for pipeline                                        */
   int     do_max;	        /* TRUE to run in slow/max mode             */
-  int     do_mid;	        /* TRUE to run in mid-level filter mode     */
-  int     do_fast;	        /* TRUE to run in strict-level filter mode  */
+  int     do_rfam;	        /* TRUE to run in Rfam pipeline (fast) mode */
   double  F1;		        /* MSV filter threshold                     */
   double  F2;		        /* Viterbi filter threshold                 */
   double  F3;		        /* uncorrected Forward filter threshold     */

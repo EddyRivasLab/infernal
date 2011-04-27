@@ -59,7 +59,7 @@ typedef struct {
 #define INCOPTS     "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
 #define INCDOMOPTS  "--incdomE,--incdomT,--cut_ga,--cut_nc,--cut_tc"
 #define THRESHOPTS  "-E,-T,--domE,--domT,--incE,--incT,--incdomE,--incdomT,--cut_ga,--cut_nc,--cut_tc"
-#define XFASTMIDMAXOPTS "--fast,--mid,--max,--F1,--F2,--F3,--dF3,--F4,--nomsv,--novit,--nofwd,--nocyk,--nohmm,--hmm"
+#define XFASTMIDMAXOPTS "--rfam,--max,--F1,--F2,--F3,--dF3,--F4,--nomsv,--novit,--nofwd,--nocyk,--nohmm,--hmm"
 #define TIMINGOPTS  "--time-F1,--time-F2,--time-F3,--time-dF3,--time-bfil,--time-F4"
 
 #define CPUOPTS     NULL
@@ -93,8 +93,7 @@ static ESL_OPTIONS options[] = {
   { "--cut_nc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use profile's NC noise cutoffs to set all thresholding",       6 },
   { "--cut_tc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use profile's TC trusted cutoffs to set all thresholding",     6 },
   /* Control of acceleration pipeline */
-  { "--fast",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  XFASTMIDMAXOPTS, "set heuristic filters at strict-level (more speed, less power)", 7 },
-  { "--mid",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  XFASTMIDMAXOPTS, "set heuristic filters at mid-level (mid-speed, mid-power)",    7 },
+  { "--rfam",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  XFASTMIDMAXOPTS, "set heuristic filters at Rfam-level (more speed, less power)", 7 },
   { "--max",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  XFASTMIDMAXOPTS, "turn all heuristic filters off  (less speed, more power)",     7 },
   { "--noenvdef",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmm",         "do not define domains inside windows prior to CM stages",      7 },
   { "--msvmerge",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--nomsv,--nohmm","merge MSV windows prior to Viterbi filter",                   7 },
@@ -120,7 +119,7 @@ static ESL_OPTIONS options[] = {
   { "--F4",         eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 4 (gFwd) glocal threshold: promote hits w/ P <= gF3", 7 },
   { "--F4b",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--nogfwdbias,--max","Stage 4 (gFwd) glocal bias thr: promote hits w/ P <= gF3b", 7 },
   { "--F5",         eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 5 (env defn) threshold: promote hits w/ P <= dF3", 7 },
-  { "--F5b",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--noenvbias,--max",  "Stage 5 (env defn) bias thr: promote hits w/ P <= dF3b", 7 },
+  { "--F5b",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--noedefbias,--max",  "Stage 5 (env defn) bias thr: promote hits w/ P <= dF3b", 7 },
   { "--F6",         eslARG_REAL,  "5e-4", NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm","Stage 6 (CYK) threshold: promote hits w/ P <= F4",         7 },
   { "--E6",         eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm,--F4","Stage 6 (CYK) threshold: promote hits w/ E <= F4",    7 },
   { "--cykenvx",    eslARG_INT,     "10", NULL, "n>=1",  NULL,  NULL, "--max,--nocyk,--hmm","CYK envelope redefinition threshold multiplier, <n> * F4", 7 },
@@ -146,8 +145,8 @@ static ESL_OPTIONS options[] = {
   { "--fbns",       eslARG_INT,    "50",  NULL, NULL,    NULL,"--dosfwdbias",NULL,       "sample <n> tracebacks for fwd bias calculation", 7 },
   { "--gmsv",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--shortmsv,--localenv", NULL,        "use generic MSV", 7 },
   { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not resolve hits with greedy algorithm, use optimal one", 7 },
-  { "--noml",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not filter with a ML p7 HMM", 7 },
-  { "--noadd",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--noml",           "do not filter with any additional p7 HMMs in the file", 7 },
+  { "--doml",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "filter with a ML p7 HMM in addition to additional p7 HMMs in the file", 7 },
+  { "--noadd",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not filter with any additional p7 HMMs in the file", 7 },
   { "--filcmW",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "use CM's window length for all HMM filters", 7 },
   { "--glen",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use length dependent glocal p7 filter P-value thresholds", 7},
   { "--glN",        eslARG_INT,   "201",  NULL, NULL,    NULL,"--glen",NULL,             "minimum value to start len-dependent glocal threshold", 7},
@@ -343,8 +342,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--nonbanded")) fprintf(ofp, "# No bands (final stage)                 on\n");
   if (esl_opt_IsUsed(go, "--sums"))      fprintf(ofp, "# HMM bands from sums (final)            on\n");
   if (esl_opt_IsUsed(go, "--max"))       fprintf(ofp, "# Max sensitivity mode:                  on [all heuristic filters off]\n");
-  if (esl_opt_IsUsed(go, "--mid"))       fprintf(ofp, "# Mid-level filtering mode:              on\n");
-  if (esl_opt_IsUsed(go, "--fast"))      fprintf(ofp, "# Strict-level filtering mode:           on\n");
+  if (esl_opt_IsUsed(go, "--rfam"))      fprintf(ofp, "# Rfam pipeline mode:                    on\n");
   if (esl_opt_IsUsed(go, "--noenvdef"))  fprintf(ofp, "# Envelope definition prior to CM search:off\n");
   if (esl_opt_IsUsed(go, "--pad"))       fprintf(ofp, "# hit padding strategy:                  on\n");
   if (esl_opt_IsUsed(go, "--nomsv"))     fprintf(ofp, "# MSV filter:                            off\n");
@@ -640,25 +638,30 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if (cm->desc) fprintf(ofp, "Description: %s\n", cm->desc);
     
     /* Convert HMMs to optimized models */
-    if(esl_opt_GetBoolean(go, "--noml")) { 
-      if(cm->nap7 == 0) cm_Fail("--noml only makes sense if CM file has additional p7 HMMs, cm: %s does not\n", cm->name);
-      nhmm = cm->nap7;
-      z_offset = 0;
-    }
-    else if (! esl_opt_GetBoolean(go, "--noadd")) { 
+    /* TODO: simplify this code */
+    /* by default, we filter only with the cm->nap7 HMMs written in the CM file */
+    nhmm = cm->nap7;
+    z_offset = 0;
+    /* but, if --doml selected or there's no HMMs in the file, use a  ML P7 HMM built from the CM */
+    if (esl_opt_GetBoolean(go, "--doml") || (cm->nap7 == 0)) { 
       nhmm = 1 + cm->nap7;
       z_offset = 1;
     }
-    else { 
+    else if(esl_opt_GetBoolean(go, "--noadd")) { 
+      /* or if --noadd is selected, only use a ML p7 HMM */
       nhmm = 1;
-    }
+      z_offset = 1;
+    }      
+
     ESL_ALLOC(hmmA,     sizeof(P7_HMM *) * nhmm);
     ESL_ALLOC(hmm_abcA, sizeof(ESL_ALPHABET *) * nhmm);
-    printf("cm->nap7: %d\n", cm->nap7);
-    if(! esl_opt_GetBoolean(go, "--noml")) { 
+
+    /* use the ML p7 HMM if nec */
+    if (esl_opt_GetBoolean(go, "--doml") || (cm->nap7 == 0)) { 
       hmmA[0] = cm->mlp7;
       hmm_abcA[0] = esl_alphabet_Create(cm->mlp7->abc->type);
     }
+    /* copy the HMMs from the file into the CM data structure */
     if(! esl_opt_GetBoolean(go, "--noadd")) { 
       for(z = 0; z < cm->nap7; z++) { 
 	hmmA[z+z_offset]     = cm->ap7A[z];
@@ -697,16 +700,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	info[i].bgA[m]  = p7_bg_Create(hmm_abcA[m]);
 	ESL_ALLOC(info[i].p7_evparamAA[m], sizeof(float) * CM_p7_NEVPARAM);
 
-	if(m == 0 && (! esl_opt_GetBoolean(go, "--noml"))) { 
+	/* HERE HERE HERE TODO: SIMPLFIY THIS CODE: */
+
+	if(m == 0 && ((esl_opt_GetBoolean(go, "--doml")) || (cm->nap7 == 0))) { 
 	  esl_vec_FCopy(cm->mlp7_evparam, CM_p7_NEVPARAM, info[i].p7_evparamAA[m]); 
 	}
 	else { 
-	  if(esl_opt_GetBoolean(go, "--noml")) { 
-	    esl_vec_FCopy(cm->ap7_evparamAA[m], CM_p7_NEVPARAM, info[i].p7_evparamAA[m]); 
-	  }
-	  else {
-	    esl_vec_FCopy(cm->ap7_evparamAA[m-1], CM_p7_NEVPARAM, info[i].p7_evparamAA[m]); 
-	  }
+	  esl_vec_FCopy(cm->ap7_evparamAA[m], CM_p7_NEVPARAM, info[i].p7_evparamAA[m]); 
 	}
       }
       info[i].pli = cm_pipeline_Create(go, omA[0]->M, 100, p7_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
@@ -904,8 +904,10 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
 	dcl->jenv += dbsq->start - 1;
 	dcl->iali += dbsq->start - 1;
 	dcl->jali += dbsq->start - 1;
-	dcl->ad->sqfrom += dbsq->start - 1;
-	dcl->ad->sqto += dbsq->start - 1;
+	if(dcl->ad != NULL) { 
+	  dcl->ad->sqfrom += dbsq->start - 1;
+	  dcl->ad->sqto += dbsq->start - 1;
+	}
       }
     }
 #ifdef eslAUGMENT_ALPHABET
@@ -924,20 +926,22 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
 	  dcl->jenv = dbsq->start - dcl->jenv + 1;
 	  dcl->iali = dbsq->start - dcl->iali + 1;
 	  dcl->jali = dbsq->start - dcl->jali + 1;
-	  dcl->ad->sqfrom = dbsq->start - dcl->ad->sqfrom + 1;
-	  dcl->ad->sqto = dbsq->start - dcl->ad->sqto + 1;
+	  if(dcl->ad != NULL) { 
+	    dcl->ad->sqfrom = dbsq->start - dcl->ad->sqfrom + 1;
+	    dcl->ad->sqto = dbsq->start - dcl->ad->sqto + 1;
+	  }
 	}
 	  
 	info->pli->nres += dbsq->W;
       }
-  }
 #endif /*eslAUGMENT_ALPHABET*/
 
-  wstatus = esl_sqio_ReadWindow(dbfp, info->omA[0]->max_length, NHMMER_MAX_RESIDUE_COUNT, dbsq);
-  if (wstatus == eslEOD) { // no more left of this sequence ... move along to the next sequence.
-    info->pli->nseqs++;
-    esl_sq_Reuse(dbsq);
-    wstatus = esl_sqio_ReadWindow(dbfp, 0, NHMMER_MAX_RESIDUE_COUNT, dbsq);
+    wstatus = esl_sqio_ReadWindow(dbfp, info->omA[0]->max_length, NHMMER_MAX_RESIDUE_COUNT, dbsq);
+    if (wstatus == eslEOD) { // no more left of this sequence ... move along to the next sequence.
+      info->pli->nseqs++;
+      esl_sq_Reuse(dbsq);
+      wstatus = esl_sqio_ReadWindow(dbfp, 0, NHMMER_MAX_RESIDUE_COUNT, dbsq);
+    }
   }
   esl_sq_Destroy(dbsq);
 
