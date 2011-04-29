@@ -59,7 +59,7 @@ typedef struct {
 #define INCOPTS     "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
 #define INCDOMOPTS  "--incdomE,--incdomT,--cut_ga,--cut_nc,--cut_tc"
 #define THRESHOPTS  "-E,-T,--domE,--domT,--incE,--incT,--incdomE,--incdomT,--cut_ga,--cut_nc,--cut_tc"
-#define XFASTMIDMAXOPTS "--rfam,--max,--F1,--F2,--F3,--dF3,--F4,--nomsv,--novit,--nofwd,--nocyk,--nohmm,--hmm"
+#define XFASTMIDMAXOPTS "--rfam,--max,--F1,--F2,--F3,--F4,--F5,--F6,--nomsv,--novit,--nofwd,--nogfwd,--nocyk,--nohmm,--hmm"
 #define TIMINGOPTS  "--time-F1,--time-F2,--time-F3,--time-dF3,--time-bfil,--time-F4"
 
 #define CPUOPTS     NULL
