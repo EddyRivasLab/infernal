@@ -19,7 +19,7 @@ CPPFLAGS = @CPPFLAGS@
 LDFLAGS  = @LDFLAGS@
 DEFS     = @DEFS@
 LIBS     = @LIBS@ -lm
-MYLIBS   = -linfernal -lhmmer -lhmmerimpl -leasel
+MYLIBS   = -linfernal -lhmmer -leasel
 SIMDFLAGS = @SIMD_CFLAGS@
 
 # configuration for optional MPI functionality
@@ -27,8 +27,8 @@ MPILIBS   = @MPILIBS@
 
 # Where the build arenas are
 #
-MYLIBDIR = -L../easel/ -L../src -L../hmmer/src -L../hmmer/src/impl_sse/
-MYINCDIR = -I../easel/ -I../src -I../hmmer/src -I../hmmer/src/impl_sse/
+MYLIBDIR = -L../easel/ -L../src -L../hmmer/src
+MYINCDIR = -I../easel/ -I../src -I../hmmer/src
 
 TESTPROGS = \
 	bandcyk-montecarlo-test\

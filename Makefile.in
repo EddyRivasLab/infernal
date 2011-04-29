@@ -86,9 +86,7 @@ all: core
 
 core:
 	cd easel;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; 
-	cd hmmer;     make CC="$(CC)" CFLAGS="$(CFLAGS)" hmmer_lib
-	cd hmmer;     make CC="$(CC)" CFLAGS="$(CFLAGS)" impl_lib
-#	cd hmmer;     ./configure CC="$(CC)" CFLAGS="$(CFLAGS)"; make          
+	cd hmmer;     make CC="$(CC)" CFLAGS="$(CFLAGS)" libhmmer.a
 	cd src;       make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module
 	cd testsuite; make CC="$(CC)" CFLAGS="$(CFLAGS)"
 	cd rmark;     make CC="$(CC)" CFLAGS="$(CFLAGS)"
