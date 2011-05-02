@@ -30,7 +30,7 @@ PROGS    = rmark-create\
 	   rmark-rocplot\
 
 all: ${PROGS} 
-	cd ${ESLDIR};            ${MAKE} easel_lib
+	cd ${ESLDIR};            ${MAKE} libeasel.a
 #	cd ${SRCDIR}/${IMPLDIR}; ${MAKE} impl_lib
 #	cd ${SRCDIR};            ${MAKE} hmmer_lib
 #	cd ${SRCDIR};            ${MAKE} hmmer_progs

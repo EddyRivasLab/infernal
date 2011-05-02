@@ -9,13 +9,13 @@ SIMDFLAGS      = @SIMD_CFLAGS@
 
 DEFS           = @DEFS@
 LIBS           = -leasel @LIBS@ -lm
-MYLIBS         = -linfernal -lhmmer -lhmmerimpl -lm
+MYLIBS         = -linfernal -lhmmer -lm
 
 ESLDIR         = ../../easel
 HMMDIR         = ../../hmmer/src
 
 SHELL          = /bin/sh
-MYLIBDIRS      = -L${HMMDIR} -L${HMMDIR}/impl_sse/ -L${ESLDIR} -L.. -L.
+MYLIBDIRS      = -L${HMMDIR} -L${ESLDIR} -L.. -L.
 MYINCDIRS      = -I${ESLDIR} \
                  -I. \
                  -I.. \

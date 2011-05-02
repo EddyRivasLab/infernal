@@ -1,3 +1,5 @@
+
+
 /* cmsim: scoring CMs against simulated sequences.
  * 
  * Main testbed for exploring the statistical behavior of Infernal
@@ -14,9 +16,11 @@
 #include <time.h>
 
 #include "easel.h"
+#include <esl_exponential.h>
 #include <esl_getopts.h>
 #include <esl_histogram.h>
 #include <esl_random.h>
+#include <esl_randomseq.h>
 #include <esl_stats.h>
 #include <esl_stopwatch.h>
 #include <esl_vectorops.h>
@@ -36,11 +40,22 @@ static ESL_OPTIONS options[] = {
   { "-v",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "verbose: print scores",                             1 },
   { "-i",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "do importance sampling",                            1 },
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "put CM in glocal mode",                             1 },
-  { "-L",        eslARG_INT,  "10000", NULL, "n>0",     NULL,  NULL, NULL, "length of random target seqs",                      1 },
-  { "-N",        eslARG_INT,     "10", NULL, "n>0",     NULL,  NULL, NULL, "number of random target seqs",                      1 },
+  { "--rL",      eslARG_INT,  "10000", NULL, "n>0",     NULL,  NULL, NULL, "length of random target seqs",                      1 },
+  { "--rN",      eslARG_INT,      "1", NULL, "n>0",     NULL,  NULL, NULL, "number of random target seqs",                      1 },
+  { "--rhmm",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "generate random sequences from realistic HMM",      1 },
+  { "--rtailp",  eslARG_REAL,  "0.02", NULL, "0.0<x<0.6",NULL, NULL, NULL, "set fraction of histogram tail to fit to exp tail to <x>", 1 },
+  { "--sN",      eslARG_INT,   "1000", NULL, "n>0",     NULL,  NULL, NULL, "number of sampled target seqs",                     1 },
+  { "--sT",      eslARG_REAL,    NULL, NULL, NULL,      NULL,  NULL, NULL, "set min bit sc for hits in sampled seqs to <x>",    1 },
+  { "--slocal",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "allow local begins/ends in sampled target seqs",    1 },
+  { "--sall",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "count all hits to sampled seqs, not just best",     1 },
+  { "--stailp",  eslARG_REAL,  "0.5",  NULL, "0.0<x<=1.0",NULL, NULL, NULL, "sampled seqs: set fraction of tail to fit to exp to <x>", 1 },
+  { "--siid",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "use NULL3 correction for random/sampled seqs",      1 },
+  { "--null3",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "use NULL3 correction for random/sampled seqs",      1 },
   { "--beta",    eslARG_REAL,  "1e-7", NULL, "0<x<1",   NULL,  NULL, NULL,     "set tail loss prob for QDB calculation to <x>", 1 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, "--beta", "do not use QDBs", 1 },
   { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,  NULL, NULL, "exponentiate CM probabilities by <x> before sampling",  1 },
+  { "--seed",    eslARG_INT,    "181", NULL, "n>=0",    NULL,  NULL, NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)", 1 },
+  { "--mxsize",  eslARG_REAL,"2048.0", NULL, "x>0.",    NULL,  NULL, NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 1 },
 
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -58,6 +73,11 @@ struct cfg_s {
   ESL_ALPHABET *abc;		/* digital alphabet for CM */
   ESL_RANDOMNESS *r;            /* source of randomness */
   int           ncm;            /* number CM we're at in file */
+  int            rN;            /* number of random sequences to search */
+  int            rL;            /* length of random sequences to search */
+  int            sN;            /* number of sampled sequences to search */
+  float          sT;            /* bit sc threshold for collecting hits from sampled seqs */
+  int            my_rank;       
 };
 
 static char usage[]  = "[-options] <cmfile>";
@@ -70,6 +90,10 @@ static void master(const ESL_GETOPTS *go, struct cfg_s *cfg);
 static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
 static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
+static int collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int N, int L, int *ret_scN, float **ret_scA);
+static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, int do_impt, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, double *ret_nrandhits, float *ret_tailp);
+static int sample_sequence_from_cm(struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, ESL_DSQ **ret_dsq);
+static int impt_exp_FitComplete(double *x, int n, double *ret_mu, double *ret_lambda, double *ret_scaled_nhits);
 
 int
 main(int argc, char **argv)
@@ -162,9 +186,15 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     ESL_FAIL(eslFAIL, errbuf, "Failed to open covariance model save file %s\n", cfg->cmfile);
 
   /* create RNG */
-  cfg->r = esl_randomness_CreateFast(esl_opt_GetInteger(go, "-s"));
-
+  cfg->r = esl_randomness_CreateFast(esl_opt_GetInteger(go, "--seed"));
   if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
+
+  cfg->rN = esl_opt_GetInteger(go, "--rN"); 
+  cfg->rL = esl_opt_GetInteger(go, "--rL"); 
+  cfg->sN = esl_opt_GetInteger(go, "--sN"); 
+
+  cfg->my_rank = 0;
+
 
   return eslOK;
 }
@@ -181,6 +211,22 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      status;
   char     errbuf[cmERRBUFSIZE];
   CM_t    *cm = NULL;
+  int               exp_mode;      /* exp tail mode */
+  int               rscN = 0;      /* number of hits in random seqs reported thus far, for all seqs */
+  float            *rscA = NULL;   /* [0..rscN-1] hit scores for all random seqs */
+  int               sscN = 0;      /* number of hits in CM-sampled seqs reported thus far, for all seqs */
+  float            *sscA = NULL;   /* [0..sscN-1] hit scores for all CM-sampled seqs */
+  float             min_cct = 1.;
+  float             max_cct = 0.;
+  float             sum_cct = 0.;
+  float             cct;
+  ExpInfo_t        *impt_expinfo;
+  ExpInfo_t        *rand_expinfo;
+
+  double            mu, lambda;                                  /* temporary mu and lambda used for setting exp tails */
+  double            nrandhits;                                   /* temporary number of rand hits found */
+  float             tailp;                                       /* temporary tail mass probability fit to an exponential */
+  float             avg_hitlen;
 
   if ((status = init_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = print_run_info (go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
@@ -188,15 +234,66 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   cfg->ncm = 0;
 
   while ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK)
-  {
-    if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
-    cfg->ncm++;
-    if((status = initialize_cm(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
+    {
+      if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
+      cfg->ncm++;
 
-    printf("CM 1: %s\n", cm->name);
-    FreeCM(cm);
-  }
+      ESL_ALLOC(impt_expinfo, sizeof(ExpInfo_t *));
+      impt_expinfo = CreateExpInfo();
+
+      ESL_ALLOC(rand_expinfo, sizeof(ExpInfo_t *));
+      rand_expinfo = CreateExpInfo();
+
+      if((status = initialize_cm(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
+      
+      printf("CM %d: %s\n", cfg->ncm, cm->name);
+      
+      /* For now, search only with local CYK */
+      exp_mode = EXP_CM_LC;
+      UpdateSearchInfoForExpMode(cm, 0, exp_mode);
+
+      /* Search random sequences and collect score histograms */
+      if((status = collect_scores(go, cfg, errbuf, cm, cfg->rN, cfg->rL, &rscN, &rscA) != eslOK)) cm_Fail(errbuf);
+      if((status = fit_histogram (go, cfg, errbuf, FALSE, rscA, rscN, exp_mode, &mu, &lambda, &nrandhits, &tailp)) != eslOK) cm_Fail(errbuf);
+      avg_hitlen = (double) (cfg->rL * cfg->rN) / (double) nrandhits;
+      printf("Random  seq fit histogram:\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\n", 
+	     "mu", mu, "lambda", lambda, "nrandhits", nrandhits, "tailp", tailp, "avg_len", avg_hitlen);
+      SetExpInfo(rand_expinfo, lambda, mu, (long) (cfg->rL * cfg->rN), (int) nrandhits, tailp);
+      debug_print_expinfo(rand_expinfo);
+
+      /* Search CM-sampled sequences and collect score histograms */
+      if((status = collect_scores(go, cfg, errbuf, cm, cfg->sN, -1, &sscN, &sscA) != eslOK)) cm_Fail(errbuf); /* the -1 passed as L tells collect_scores to sample from the CM */
+      int i;
+      for(i = 0; i < sscN; i++) { 
+	cct = 1./ (pow(2., sscA[i]));
+	min_cct = ESL_MIN(min_cct, cct);
+	max_cct = ESL_MAX(max_cct, cct);
+	sum_cct += cct;
+	printf("SCALED   %5d  %6.2f bits   %12.10f\n", i, sscA[i], cct);
+      }
+      printf("min_cct: %f\n", min_cct);
+      printf("max_cct: %f\n", max_cct);
+      printf("sum_cct: %f\n", sum_cct);
+
+      if((status = fit_histogram (go, cfg, errbuf, TRUE,sscA, sscN, exp_mode, &mu, &lambda, &nrandhits, &tailp)) != eslOK) cm_Fail(errbuf);
+      printf("Sampled seq fit histogram:\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\n", 
+	     "mu", mu, "lambda", lambda, "nrandhits", nrandhits, "tailp", tailp);
+      SetExpInfo(impt_expinfo, lambda, mu, 
+		 (long) (nrandhits * avg_hitlen),
+		 (int) nrandhits, /* actually this is scaled_nhits */
+		 tailp);
+      debug_print_expinfo(impt_expinfo);
+
+
+      FreeCM(cm);
+    }
+
+
   if(status != eslEOF) cm_Fail(errbuf);
+  return;
+
+ ERROR:
+  cm_Fail("Out of memory.");
   return;
 }
 
@@ -209,18 +306,44 @@ static int
 initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
 {
   int status;
+  float exp_cutoff;
 
-  /* Update cfg->cm->config_opts and cfg->cm->align_opts based on command line options */
-  cm->beta_qdb = esl_opt_GetReal(go, "--beta");
-  if(! esl_opt_GetBoolean(go, "-g")) {
-    cm->config_opts |= CM_CONFIG_LOCAL;
+  /* config QDB? yes unless --noqdb enabled */
+  if(esl_opt_GetBoolean(go, "--noqdb")) { 
+    cm->search_opts |= CM_SEARCH_NOQDB; /* don't use QDB to search */
+    /* cm->beta_qdb == cm->beta_W, both will be set as beta_W read from cmfile */
   }
-  if(! esl_opt_GetBoolean(go, "--noqdb")) { 
-    cm->config_opts |= CM_CONFIG_QDB;
+  else {
+    cm->config_opts |= CM_CONFIG_QDB;   /* configure QDB */
+    cm->beta_qdb = esl_opt_GetReal(go, "--beta"); 
   }
+
+  /* process the --slocal option, if emitted parsetrees can include
+   * local begins/ends, otherwise, they can't */
+  if(! esl_opt_GetBoolean(go, "--slocal")) { 
+    cm->flags |= CM_EMIT_NO_LOCAL_BEGINS; 
+    cm->flags |= CM_EMIT_NO_LOCAL_ENDS;
+  }
+  cm->search_opts |= CM_SEARCH_NOALIGN;
+
+  if(esl_opt_GetBoolean(go, "--null3")) cm->search_opts |= CM_SEARCH_NULL3;
+
+  /* ALWAYS use the greedy overlap resolution algorithm to return hits for exp calculation
+   * it's irrelevant for filter threshold stats, we return best score per seq for that */
+  cm->search_opts |= CM_SEARCH_CMGREEDY;
+  cm->search_opts |= CM_SEARCH_HMMGREEDY;
 
   if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status; /* FALSE says do not calculate W unless nec b/c we're using QDBs */
+  
+  /* create and initialize scan info for CYK/Inside scanning functions */
+  cm_CreateScanMatrixForCM(cm, TRUE, TRUE);
+  if(cm->smx == NULL) cm_Fail("initialize_cm(), CreateScanMatrixForCM() call failed.");
 
+  /* create the search info, which holds the thresholds for final round */
+  exp_cutoff = -eslINFINITY;
+  CreateSearchInfo(cm, SCORE_CUTOFF, exp_cutoff, -1.);
+  ValidateSearchInfo(cm, cm->si);
+  
   if(esl_opt_IsOn(go, "--exp"))        ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));
   
   return eslOK;
@@ -282,6 +405,334 @@ get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command)
   return status;
 }
 
+/* collect_scores()
+ *
+ * Generate and score sequences with a CM.
+ * 
+ * Two different modes:
+ * 1. generate from the CM.
+ * 2. generated random sequences as either
+ *    25% ACGU (default) or from a hard-coded HMM 
+ *    that generates genome-like sequences (if 
+ *    --rhmm).
+ *
+ * Return scores in <ret_scA> and number of scores in 
+ * <ret_scN>.
+ */
+static int
+collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int N, int L, int *ret_scN, float **ret_scA)
+{
+  int               status; 
+  int               scN = 0;      /* number of hits reported thus far, for all seqs */
+  float            *scA = NULL;   /* [0..rscN-1] hit scores for all seqs */
+  ESL_DSQ          *dsq = NULL;   /* digitized sequence to search */
+  int               i, h;         /* counters */
+  int               do_sample;    /* TRUE to sample from the CM, FALSE to sample random seqs */
+  void             *tmp;          /* ptr for ESL_RALLOC */
+  search_results_t *results;      /* results (hits) from current sequence */
+  float             min_ssc = -eslINFINITY; /* minimum score to collect if(do_sample) */
+
+  /* the HMM that generates sequences for exponential tail fitting */
+  int      ghmm_nstates = 0;      /* number of states in the HMM */
+  double  *ghmm_sA  = NULL;       /* start probabilities [0..ghmm_nstates-1] */
+  double **ghmm_tAA = NULL;       /* transition probabilities [0..nstates-1][0..nstates-1] */
+  double **ghmm_eAA = NULL;       /* emission probabilities   [0..nstates-1][0..abc->K-1] */
+
+  do_sample = (L == -1) ? TRUE : FALSE;
+  if(do_sample) { 
+    min_ssc = (esl_opt_IsUsed(go, "--sT")) ? esl_opt_GetReal(go, "--sT") : -eslINFINITY;
+  }
+  
+  /* get HMM for generating random seqs, if nec */
+  if(esl_opt_GetBoolean(go, "--rhmm")) { 
+    if((status = CreateGenomicHMM(cm->abc, errbuf, &ghmm_sA, &ghmm_tAA, &ghmm_eAA, &ghmm_nstates)) != eslOK) cm_Fail("ERROR unable to make HMM for generating random seqs"); 
+  }
+  
+  /* Search sequences and collect score histograms */
+  /* Following code block was stolen and modified from cmcalibrate.c */
+  
+  scN  = 0;
+  for(i = 0; i < N; i++) { 
+    /* generate sequence, either randomly from background null or from hard-wired 5 state HMM that emits genome like sequence */
+    if(do_sample) { 
+      if((status = sample_sequence_from_cm(cfg, errbuf, cm, &L, &dsq)) != eslOK) cm_Fail(errbuf);
+    }
+    else { /* generate random sequence, either iid (25% ACGU) or from a 'genome-like' HMM */
+      L = cfg->rL;
+      if(esl_opt_GetBoolean(go, "--rhmm")) { 
+	if((status = SampleGenomicSequenceFromHMM(cfg->r, cm->abc, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, cfg->rL, &dsq)) != eslOK) cm_Fail(errbuf);
+      }	
+      else { 
+	ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (cfg->rL+2));
+	if ((status = esl_rsq_xfIID(cfg->r, cm->null, cm->abc->K, cfg->rL, dsq) != eslOK)) cm_Fail("ERROR, couldn't generate random sequence");
+      }
+    }
+    
+    /************************************************/
+    /* to print seqs to stdout uncomment this block */
+    /* ESL_SQ *mytmpdsq;
+       mytmpdsq = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq, cfg->rL, NULL, NULL, NULL);
+       esl_sq_Textize(mytmpdsq);
+       printf(">seq%d\n%s\n", i, mytmpdsq->seq);
+       esl_sq_Destroy(mytmpdsq);
+       fflush(stdout);*/
+    /************************************************/
+    
+    if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, L, 
+					cm->clen, /* guess at average hit len for HMM scanning functions (irrelevant since we don't do HMM functions) */
+					&results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL, NULL)) != eslOK) cm_Fail(errbuf);
+    
+    /* Overlaps should have already been removed inside DispatchSearch called by ProcessSearchWorkunit() */
+    RemoveOverlappingHits(results, 1, L);
+    
+    if(results->num_results > 0) { 
+      if((! do_sample) || (esl_opt_GetBoolean(go, "--sall"))) { 
+	/* collect all hits */
+	if(i == 0) ESL_ALLOC (scA,      sizeof(float) * (scN + results->num_results));
+	else       ESL_RALLOC(scA, tmp, sizeof(float) * (scN + results->num_results));
+	for(h = 0; h < results->num_results; h++) scA[(scN+h)] = results->data[h].score;
+	scN += results->num_results;
+      }
+      else { /* we're sampling and --sall not enabled, only collect top hit */
+	SortResultsByScore(results);
+	if(results->data[0].score > min_ssc) { 
+	  if(i == 0) ESL_ALLOC (scA,      sizeof(float) * (scN + 1));
+	  else       ESL_RALLOC(scA, tmp, sizeof(float) * (scN + 1));
+	  scA[scN] = results->data[0].score;
+	  scN++;
+	}
+      }
+    }
+    
+    /*printf("i: %4d  after nresults: %8d\n", i, results->num_results); 
+      for(zz = 0; zz < results->num_results; zz++) 
+      printf("%5d  %5d  %10.3f\n", results->data[zz].start, results->data[zz].stop, results->data[zz].score);
+      fflush(stdout); */
+	
+    FreeResults(results);
+    free(dsq);
+  }
+  /* free HMM if nec */
+  if(esl_opt_GetBoolean(go, "--rhmm")) { 
+    for(i = 0; i < ghmm_nstates; i++) { 
+      free(ghmm_eAA[i]); 
+      free(ghmm_tAA[i]); 
+    }
+    free(ghmm_eAA);
+    free(ghmm_tAA);
+    free(ghmm_sA);
+  }
+
+  *ret_scN = scN;
+  *ret_scA = scA;
+  
+  return eslOK;
+  
+ ERROR: 
+  cm_Fail("Out of memory.");
+  return eslEMEM;
+}
 
 
+/* fit_histogram()
+ * Create, fill and fit the tail of a histogram to an exponential tail. Data to fill the histogram
+ * is given as <scores>.
+ */
+static int
+fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, int do_impt, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, double *ret_nrandhits, float *ret_tailp)
+{
+  int status;
+  double mu;
+  double lambda;
+  int i;
+  double *xv;         /* raw data from histogram */
+  int     n,z;  
+  float   tailp;
+  double  params[2];
+  double  nrandhits; 
+  double  scaled_nhits_total;
+  double  scaled_nhits_tail;
 
+  ESL_HISTOGRAM *h = NULL;       /* histogram of scores */
+
+  /* Initialize histogram; these numbers are guesses */
+  if((h = esl_histogram_CreateFull(-100., 100., .1)) == NULL) return eslEMEM;    
+
+  /* fill histogram */
+  for(i = 0; i < nscores; i++) {
+    if((status = esl_histogram_Add(h, scores[i])) != eslOK) ESL_FAIL(status, errbuf, "fit_histogram(), esl_histogram_Add() call returned non-OK status: %d\n", status);
+    /* printf("%4d %.3f\n", i, scores[i]); */
+  }
+
+  /* fit scores to an exponential tail */
+#if 0
+  if(cfg->rtfitfp != NULL) { 
+    /* fit to 41 different tailp values and print lambda, mu to a save file*/
+    fprintf(cfg->exptfitfp, "# %11s  %10s  %10s  %12s\n", "tail pmass",  "lambda",     "mu",         "nhits");
+    fprintf(cfg->exptfitfp, "# %11s  %10s  %10s  %12s\n", "-----------", "----------", "----------", "------------");
+    for(a = 0.; a >= -4.; a -= 0.1) { 
+      tailp = pow(10., a);
+      esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); 
+      if(n > 1) { 
+	esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
+	esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
+	fprintf(cfg->exptfitfp, "  %.9f  %10.6f  %10.4f  %12d\n", tailp, params[1], params[0], n);
+      }
+      else { 
+	fprintf(cfg->exptfitfp, "  %.9f  %10s  %10s  %12d\n", tailp, "N/A", "N/A", n);
+      }
+    }
+    fprintf(cfg->exptfitfp, "//\n");
+  }
+  /* end of if cfg->rtfitfp != NULL) */
+#endif
+
+  /* determine the fraction of the tail to fit, if --exp-tail-p, it's easy */
+  if(do_impt) { 
+    tailp = esl_opt_GetReal(go, "--stailp");
+  }
+  else { 
+    tailp = esl_opt_GetReal(go, "--rtailp");
+  }
+
+  esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailp' fraction */
+  if(n <= 1) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram.", tailp);
+
+  if(do_impt) { 
+    /* determine scaled sum of all scores */
+    scaled_nhits_total = 0.;
+    for(i = 0; i < nscores; i++) {
+      scaled_nhits_total += 1. / (pow(2., scores[i]));
+    }
+    printf("scaled_nhits_total: %.2f\n", scaled_nhits_total);
+    /* fit only tailp tail mass to an exponential */
+    impt_exp_FitComplete(xv, n, &(params[0]), &(params[1]), &scaled_nhits_tail);
+    printf("scaled_nhits_tail:   %.2f\n", scaled_nhits_tail);
+  }
+  else { 
+    esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
+  }
+  esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
+
+  mu = params[0];
+  lambda = params[1];
+  if(isnan(lambda)) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), exp tail fit lambda is NaN, too few hits in histogram. Increase --rL");
+  if(isinf(lambda)) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), exp tail fit lambda is inf, too few hits in histogram. Increase --rL");
+
+  if(do_impt) { 
+    nrandhits = scaled_nhits_tail;
+  }
+  else { 
+    nrandhits = h->n; /* total number of hits in the histogram */
+  }
+  /* print to output files if nec */
+  //if(cfg->exphfp != NULL)
+  //esl_histogram_Plot(cfg->exphfp, h);
+  //if(cfg->expqfp != NULL) {
+  //esl_histogram_PlotQQ(cfg->expqfp, h, &esl_exp_generic_invcdf, params);
+  //}
+
+  //if (cfg->expsfp != NULL) {
+  //esl_histogram_PlotSurvival(cfg->expsfp, h);
+  //esl_exp_Plot(cfg->expsfp, (params[0] - log(1./tailp) / params[1]), 0.693147, esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1); /* extrapolate mu */
+  //}
+
+  esl_histogram_Destroy(h);
+
+  *ret_mu     = mu;
+  *ret_lambda = lambda;
+  *ret_nrandhits = nrandhits;
+  *ret_tailp = tailp;
+  return eslOK;
+}
+
+/* Function: sample_sequence_from_cm()
+ * Date:     EPN, Mon May  2 08:44:53 2011
+ * 
+ * Purpose:  Generate a dsq from a CM and return it.
+ *
+ * Returns:  eslOK on success, ESL_DSQ is filled with newly alloc'ed dsq; some other status code on an error, 
+ */
+int sample_sequence_from_cm(struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, ESL_DSQ **ret_dsq)
+{
+  int status;
+  int L;
+  ESL_SQ *sq;
+  ESL_DSQ *dsq;
+
+  if((status = EmitParsetree(cm, errbuf, cfg->r, "irrelevant", TRUE, NULL, &sq, &L)) != eslOK) return status;
+  while(L == 0) { 
+    esl_sq_Destroy(sq); 
+    if((status = EmitParsetree(cm, errbuf, cfg->r, "irrelevant", TRUE, NULL, &sq, &L)) != eslOK) return status;
+  }
+
+  ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (sq->n+2));
+  memcpy(dsq, sq->dsq, sizeof(ESL_DSQ) * (sq->n+2));
+
+  esl_sq_Destroy(sq); 
+
+  *ret_L  = L;
+  *ret_dsq = dsq;
+
+  return eslOK;
+
+ ERROR: 
+  cm_Fail("Out of memory.");
+  return eslEMEM;
+}
+
+
+/* Function:  impt_exp_FitComplete()
+ * Incept:    SRE, Wed Aug 10 10:53:47 2005 [St. Louis]
+ *
+ * Purpose:   Given an array of <n> samples <x[0]..x[n-1]>, fit
+ *            them to an exponential distribution.
+ *            Return maximum likelihood parameters <ret_mu> and <ret_lambda>.
+ *
+ * Args:      x          - complete exponentially-distributed data [0..n-1]
+ *            n          - number of samples in <x>
+ *            ret_mu     - RETURN: lower bound of the distribution (all x_i >= mu)
+ *            ret_lambda - RETURN: maximum likelihood estimate of lambda
+ *            ret_scaled_nhits - RETURN: sum of scaled number of hits
+ *
+ * Returns:   <eslOK> on success.
+ *
+ * Xref:      STL9/138.
+ */
+int
+impt_exp_FitComplete(double *x, int n, double *ret_mu, double *ret_lambda, double *ret_scaled_nhits)
+{
+  double mu, mean;
+  int    i;
+
+  double scaled_x = 0;
+  double scaled_n = 0;
+  double diff = 0;
+
+  /* ML mu is the lowest score. mu=x is ok in the exponential.
+   */
+  mu = x[0];
+  for (i = 1; i < n; i++) if (x[i] < mu) mu = x[i];
+
+  mean = 0.;
+  for (i = 0; i < n; i++) { 
+    diff     = x[i] - mu;
+    scaled_x = 1. / (pow(2., x[i]));
+    mean    += diff * scaled_x;
+    scaled_n += scaled_x;
+
+    /*printf("\t\ti: %4d  x[i]: %12.10f  diff: %12.10f  scaled_x: %12.10f  prod: %12.10f  scaled_n: %12.10f\n", 
+      i, x[i], diff, scaled_x, diff*scaled_x, scaled_n);*/
+  }
+  mean /= scaled_n;
+
+  printf("impt n:        %d\n", n);
+  printf("impt scaled_n: %.3f\n", scaled_n);
+  printf("impt mu:       %.3f\n", mu);
+  printf("impt lambda:   %.3f\n", 1./mean);
+
+  *ret_mu     = mu;
+  *ret_lambda = 1./mean;	/* ML estimate trivial & analytic */
+  *ret_scaled_nhits = scaled_n;     /* number of scaled hits */
+  return eslOK;
+}
