@@ -636,9 +636,11 @@ cm_pli_NewSeq(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq)
   if (pli->Z_setby == CM_ZSETBY_DBSIZE && pli->mode == CM_SEARCH_SEQS) pli->Z = pli->nres;
 
   if((status = UpdateExpsForDBSize(cm, NULL, (long) pli->nres))          != eslOK) return status;
-  if((status = E2MinScore(cm, NULL, pli->final_cm_exp_mode, pli->E, &T)) != eslOK) return status;
-  pli->T = (double) T;
-
+  if(pli->by_E) { 
+    if((status = E2MinScore(cm, NULL, pli->final_cm_exp_mode, pli->E, &T)) != eslOK) return status;
+    pli->T = (double) T;
+  }
+  /* else, do nothing, -T was set based on the command line -T, or --ga, --tc or --nc */
   return eslOK;
 }
 
