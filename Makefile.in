@@ -251,3 +251,14 @@ distclean:
 #	(cd rigfilters;              make distclean)
 	-rm Makefile
 
+TAGS:
+	find . -name \*.c     | xargs etags    -
+	find . -name \*.h     | xargs etags -a -
+	find . -name \*.pl    | xargs etags -a -
+	find . -name \*.sh    | xargs etags -a -
+	find . -name \*.tex   | xargs etags -a -
+	find . -name \*.man   | xargs etags -a -
+	find . -name \*.in    | xargs etags -a -
+	find . -name \*.sqc   | xargs etags -a -
+	find . -name 00README | xargs etags -a -
+	etags -a 00CHECKLIST COPYRIGHT LICENSE configure.ac
