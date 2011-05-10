@@ -81,9 +81,9 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    so Easel is checked out from the appropriate stable branch too.
 
          svn proplist --verbose https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0
-         svn propedit svn:externals infernal
+         svn propedit svn:externals infernal-release
            easel   https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0
-         cd infernal
+         cd infernal-release
          svn update
 	 svn commit
 
@@ -328,4 +328,4 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 1.0rc5 - SRE, Wed Dec 17 17:59:01 2008   r2673  Easel:r310
 1.0    - SRE, Tue Jan 13 14:33:16 2009   r2710  Easel:r317
 1.0.1  - SRE, Sat Oct 24 10:12:50 2009   r2997  Easel:r422
-1.0.2  - SRE, Fri Oct 30 13:57:33 2009   r3021  Easel:r428
+1.0.2  - SRE, Fri Oct 30 13:57:33 2009   r3022  Easel:r428

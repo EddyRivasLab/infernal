@@ -673,11 +673,12 @@ AC_CONFIG_FILES(rmark/Makefile)
 if test -d hmmer/release-notes; then
   AC_CONFIG_FILES(hmmer/release-notes/LICENSE.sh)
 fi
-if test -d hmmer/documentation/userguide; then  
+if test -d hmmer/documentation; then  
+  AC_CONFIG_FILES([hmmer/documentation/Makefile])
+  AC_CONFIG_FILES([hmmer/documentation/man/Makefile])
   AC_CONFIG_FILES([hmmer/documentation/userguide/Makefile])
 fi
 AC_CONFIG_FILES([hmmer/src/Makefile hmmer/testsuite/Makefile hmmer/profmark/Makefile])
-
 AC_CONFIG_FILES([hmmer/src/impl_${impl_choice}/Makefile])
 AC_CONFIG_HEADERS(hmmer/src/p7_config.h)
 
@@ -693,6 +694,7 @@ AC_CONFIG_FILES([hmmer/Makefile])
 AC_CONFIG_HEADERS([easel/esl_config.h])
 AC_CONFIG_FILES([easel/miniapps/Makefile])
 AC_CONFIG_FILES([easel/testsuite/Makefile])
+AC_CONFIG_FILES([easel/documentation/Makefile])
 AC_CONFIG_FILES([easel/Makefile])
 
 

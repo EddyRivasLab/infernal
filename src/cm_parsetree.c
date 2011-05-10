@@ -1165,9 +1165,9 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   /* per-seq info */
   for (i = 0; i < nseq; i++)
     {
-      esl_msa_SetSeqName(msa, i, sq[i]->name);
-      if (sq[i]->acc[0]  != '\0') esl_msa_SetSeqAccession  (msa, i, sq[i]->acc);
-      if (sq[i]->desc[0] != '\0') esl_msa_SetSeqDescription(msa, i, sq[i]->desc);
+      esl_msa_SetSeqName(msa, i, sq[i]->name, -1);
+      if (sq[i]->acc[0]  != '\0') esl_msa_SetSeqAccession  (msa, i, sq[i]->acc,  -1);
+      if (sq[i]->desc[0] != '\0') esl_msa_SetSeqDescription(msa, i, sq[i]->desc, -1);
       if (msa->sqlen != NULL) msa->sqlen[i] = sq[i]->n;
       if (wgt == NULL) msa->wgt[i] = 1.0;
       else             msa->wgt[i] = wgt[i];
