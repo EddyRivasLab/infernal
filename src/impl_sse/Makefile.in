@@ -1,26 +1,36 @@
-#################################################################
-# Infernal SSE optimized implementation
-# src/impl_sse Makefile
-#################################################################
+top_srcdir  = @top_srcdir@
+srcdir      = @srcdir@
+VPATH       = @srcdir@ 
+SHELL       = /bin/sh
 
-CC             = @CC@
-CFLAGS         = @CFLAGS@
-SIMDFLAGS      = @SIMD_CFLAGS@
+prefix      = @prefix@
+exec_prefix = @exec_prefix@
+datarootdir = @datarootdir@
+bindir      = @bindir@
+libdir      = @libdir@
+includedir  = @includedir@
 
-DEFS           = @DEFS@
-LIBS           = -leasel @LIBS@ -lm
-MYLIBS         = -linfernal -lhmmer -lm
+CC          = @CC@
+CFLAGS      = @CFLAGS@ @PTHREAD_CFLAGS@
+SIMDFLAGS   = @SIMD_CFLAGS@
+CPPFLAGS    = @CPPFLAGS@
+LDFLAGS     = @LDFLAGS@
+DEFS        = @DEFS@
+LIBS        = -linfernal -lhmmer -leasel @LIBS@ -lm
 
-ESLDIR         = ../../easel
-HMMDIR         = ../../hmmer/src
+AR          = @AR@ 
+RANLIB      = @RANLIB@
+INSTALL     = @INSTALL@
 
-SHELL          = /bin/sh
-MYLIBDIRS      = -L${HMMDIR} -L${ESLDIR} -L.. -L.
-MYINCDIRS      = -I${ESLDIR} \
-                 -I. \
-                 -I.. \
-                 -I${HMMDIR} \
-                 -I${HMMDIR}/impl_sse/
+ESLDIR         = @INFERNAL_ESLDIR@
+MYLIBDIRS      = -L../../hmmer/src -L../../${ESLDIR} -L..
+MYINCDIRS      = -I../../hmmer/src \
+		 -I../../${ESLDIR} \
+		 -I${top_srcdir}/easel \
+		 -I. \
+		 -I.. \
+		 -I${srcdir} \
+		 -I${top_srcdir}/src
 
 PROGS = sse_cmsearch\
         sse_cmsearch_mod
@@ -36,31 +46,60 @@ HDRS  = ../funcs.h\
         ../structs.h\
         impl_sse.h
 
-all: $(PROGS)
+# Definitions present in HMMER3's Makefile that are not yet necessary in Infernal's
+#UTESTS =
+#BENCHMARKS = 
+#EXAMPLES =
 
-.c.o: 
-	$(CC) $(CFLAGS) $(SIMDFLAGS) $(DEFS) $(MYINCDIRS) -c $<
+# beautification magic stolen from git 
+QUIET_SUBDIR0 = +${MAKE} -C #space separator after -c
+QUIET_SUBDIR1 = 
+ifndef V
+	QUIET_CC      = @echo '    ' CC $@;
+	QUIET_GEN     = @echo '    ' GEN $@;
+	QUIET_AR      = @echo '    ' AR $@;
+	QUIET_SUBDIR0 = +@subdir=
+	QUIET_SUBDIR1 = ; echo '    ' SUBDIR $$subdir; \
+		        ${MAKE} -C $$subdir
+endif
 
-$(PROGS): %: %.o $(OBJS) ${HDRS}
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIRS) $(MYLIBDIRS) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
+.PHONY: all dev check tests install uninstall distclean clean 
 
-driver: $(OBJS) ${HDRS}
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIRS) $(MYLIBDIRS) -o sse-bmark -DIMPL_SEARCH_BENCHMARK sse_cm_dpsearch.c $(MYLIBS) $(LIBS)
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIRS) $(MYLIBDIRS) -o sse-cyk -DIMPLSSE_SMALL_TEST sse_cm_dpsmall.c sse_util.o cm_optimized.o $(MYLIBS) $(LIBS)
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIRS) $(MYLIBDIRS) -o sse-mscyk -DIMPL_MSCYK_TEST sse_cmcons_mscyk.c sse_cmcons_hitmx.o sse_cm_dpsearch.o cm_optimized.o $(MYLIBS) $(LIBS)
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIRS) $(MYLIBDIRS) -o mscyk-test -DIMPL_MSCYK_TEST2 sse_cmcons_mscyk.c sse_cmcons_hitmx.o sse_cm_dpsearch.o cm_optimized.o $(MYLIBS) $(LIBS)
 
-distclean:
-	${MAKE} clean
-	-rm -f Makefile
+all:   ${PROGS} libinfernal-impl.stamp
+
+libinfernal-impl.stamp: ${OBJS}
+	${QUIET_AR}${AR} -r ../libinfernal.a $? > /dev/null 2>&1
+	@${RANLIB} ../libinfernal.a
+	@echo "impl_lib objects compiled:\c" > $@
+	@date >> $@
+
+.FORCE:
+
+${OBJS}:   ${HDRS} 
+
+.c.o:  
+	${QUIET_CC}${CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${DEFS} ${PTHREAD_CFLAGS} ${MYINCDIRS} -o $@ -c $<
+
+install:
+	for file in ${HDRS}; do \
+	   ${INSTALL} -m 0644 ${srcdir}/$$file ${DESTDIR}${includedir}/ ;\
+	done
+
+uninstall:
+	for file in ${HDRS}; do \
+	   rm -f ${DESTDIR}${includedir}/$$file ;\
+	done
+
+distclean: clean
+	-rm -f Makefile 
 
 clean:
-	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out
-	-rm -f sse-bmark sse-cyk sse-mscyk mscyk-test
+	-rm -f libinfernal-impl.stamp
+	-rm -f *.o *~ Makefile.bak core TAGS gmon.out cscope.out
+	-rm -f *.gcno
 
-TAGS:
-	etags  *.c *.h Makefile.in
-
-###########
+################################################################
 # @LICENSE@
-###########
+################################################################
+

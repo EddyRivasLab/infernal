@@ -1,65 +1,39 @@
-#################################################################
-# Infernal
-# testsuite Makefile
-# SVN $Id$
-#################################################################
-# @LICENSE@
-#################################################################
+top_srcdir     = @top_srcdir@
+srcdir         = @srcdir@
+VPATH          = @srcdir@ 
 
-SHELL  = /bin/sh
+SQCLEVEL = 2
 
-## your compiler and compiler flags;
-#  and other configuration of the compilation and linking
-#  environment.
-#  DEFS contains stuff that autoconf set up.
+ESLDIR = @INFERNAL_ESLDIR@
+
+# beautification magic stolen from git 
 #
-CC       = @CC@
-CFLAGS   = @CFLAGS@
-CPPFLAGS = @CPPFLAGS@
-LDFLAGS  = @LDFLAGS@
-DEFS     = @DEFS@
-LIBS     = @LIBS@ -lm
-MYLIBS   = -linfernal -lhmmer -leasel
-SIMDFLAGS = @SIMD_CFLAGS@
+QUIET_SUBDIR0 = +${MAKE} -C #space separator after -c
+QUIET_SUBDIR1 = 
+ifndef V
+	QUIET_CC      = @echo '    ' CC $@;
+	QUIET_GEN     = @echo '    ' GEN $@;
+	QUIET_AR      = @echo '    ' AR $@;
+	QUIET_SUBDIR0 = +@subdir=
+	QUIET_SUBDIR1 = ; echo '    ' SUBDIR  $$subdir; \
+		        ${MAKE} -C $$subdir
+endif
 
-# configuration for optional MPI functionality
-MPILIBS   = @MPILIBS@
+.PHONY: check clean distclean
 
-# Where the build arenas are
-#
-MYLIBDIR = -L../easel/ -L../src -L../hmmer/src
-MYINCDIR = -I../easel/ -I../src -I../hmmer/src
+check: 
+	@echo 
+	@echo Running Infernal test suite...
+	@echo
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${SQCLEVEL} ${srcdir}/exercises.sqc .. ${srcdir}/..
 
-TESTPROGS = \
-	bandcyk-montecarlo-test\
-	bandcyk-truncation-test\
-	cp9-test\
-	sub_cm-test
-
-#################################################################
-## Building the test programs.
-##
-
-.c.o: 
-	${CC} ${SIMDFLAGS} ${CFLAGS} ${DEFS} ${MYINCDIR} -c $<
-
-all:	${TESTPROGS}
-
-${TESTPROGS}: @EXEC_DEPENDENCY@ 
-	${CC} ${CFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIR} -o $@ $@.o $(MYLIBS) $(LIBS) $(MPILIBS)
-
-
-
-#################################################################
-## Miscellaneous targets.
-##
 clean:
-	-rm -f *.o *~ Makefile.bak core ${TESTPROGS} TAGS gmon.out 
+	-rm -f *.gcno *.gcda *.gcov
+	-rm -f *.o *~ 
 
-distclean:
-	-rm -f *.o *~ Makefile.bak core ${TESTPROGS} TAGS gmon.out 
-	-rm -f Makefile 
+distclean: clean
+	-rm -f Makefile
 
-TAGS:
-	etags -t *.c *.h Makefile.in
-
+################################################################
+# @LICENSE@
+################################################################

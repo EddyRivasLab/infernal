@@ -1,44 +1,79 @@
-#################################################################
-# Infernal
-# src Makefile
-# SVN $Id$
-#################################################################
-# @LICENSE@
-#################################################################
+# VPATH and shell configuration
+top_srcdir = @top_srcdir@
+srcdir     = @srcdir@
+VPATH      = @srcdir@ 
+SHELL      = /bin/sh
 
-SHELL  = /bin/sh
-
-## your compiler and compiler flags
+# Installation targets
 #
-CC     = @CC@
-CFLAGS = @CFLAGS@ @PTHREAD_CFLAGS@
-SIMDFLAGS= @SIMD_CFLAGS@
+prefix      = @prefix@
+exec_prefix = @exec_prefix@
+datarootdir = @datarootdir@
+bindir      = @bindir@
+libdir      = @libdir@
+includedir  = @includedir@
+mandir      = @mandir@
+docdir      = @docdir@
+pdfdir      = @pdfdir@
+mandir      = @mandir@
+man1dir     = ${mandir}/man1
+man1ext     = .1
 
-## other defined flags. 
-#  DEFS contains stuff that autoconf decides on. 
-#  LIBS contains system libraries that the configure script decides we need.
-#
-DEFS  = @DEFS@
-LIBS  = @LIBS@ -lm
-
-## archiving command, and ranlib command if you need one.
-#  In general, you shouldn't need to change these, and they're
-#  only used for building the testsuite anyway... e.g. we
-#  make a "libinfernal.a" library for building the testsuite.
-#
-AR     = @AR@ rcv 
-RANLIB = @RANLIB@
-
-# configuration for optional MPI functionality
+CC        = @CC@
+CFLAGS    = @CFLAGS@ @PTHREAD_CFLAGS@
+SIMDFLAGS = @SIMD_CFLAGS@
+CPPFLAGS  = @CPPFLAGS@
+LDFLAGS   = @LDFLAGS@
+DEFS      = @DEFS@
+LIBS      = -linfernal -lhmmer -leasel @LIBS@ @LIBGSL@ @PTHREAD_LIBS@ -lm
 MPILIBS   = @MPILIBS@
 
-# Where the build arena is (module .h and .o files)
-#
-MYLIBS   = -lhmmer -leasel
-MYLIBDIR = -L../easel -L../hmmer/src/
-MYINCDIR = -I../easel -I../hmmer/src/
+AR        = @AR@ 
+RANLIB    = @RANLIB@
+INSTALL   = @INSTALL@
 
-PROGS = cmalign cmbuild dcmbuild cmcalibrate cmemit cmfetch cmscore cmsearch dcmsearch cmsim cmstat trcyk truncyk_check 
+IMPLDIR   = impl_@IMPL_CHOICE@
+ESLDIR    = @INFERNAL_ESLDIR@
+
+MYLIBDIRS = -L../${ESLDIR} -L../hmmer/src/ -L./${IMPLDIR} -L.
+MYINCDIRS = -I../${ESLDIR} \
+	    -I${top_srcdir}/easel \
+	    -I../hmmer/src \
+	    -I. \
+	    -I${srcdir}
+
+
+PROGS = cmalign\
+	cmbuild\
+	cmemit\
+	cmfetch\
+	cmscore\
+	cmsearch\
+	cmsim\
+	cmstat\
+	trcyk\
+	dcmsearch\
+	bandcyk-montecarlo-test\
+	bandcyk-truncation-test\
+	cp9-test\
+	sub_cm-test\
+	truncyk_check
+
+PROGSOBJSS = \
+	cmalign.o\
+	cmbuild.o\
+	cmemit.o\
+	cmfetch.o\
+	cmscore.o\
+	cmsearch.o\
+	cmsim.o\
+	cmstat.o\
+	trcyk.o\
+	truncyk_check.o\
+	dcmsearch.o
+
+HDRS =  funcs.h\
+	structs.h
 
 OBJS  = cm.o\
 	cm_dpalign.o\
@@ -77,43 +112,85 @@ OBJS  = cm.o\
 	cm_pipeline.o\
 	cm_p7_domaindef.o
 
-HDRS  = funcs.h\
-	structs.h
+# Definitions present in HMMER3's Makefile that are not yet necessary in Infernal's
+#STATS = 
+#BENCHMARKS = 
+#UTESTS =
+#ITESTS = 
+#EXAMPLES =
 
-.c.o: 
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) -c $<
+# beautification magic stolen from git
+QUIET_SUBDIR0 = +${MAKE} -C #space separator after -c
+QUIET_SUBDIR1 = 
+ifndef V
+	QUIET_CC      = @echo '    ' CC $@;
+	QUIET_GEN     = @echo '    ' GEN $@;
+	QUIET_AR      = @echo '    ' AR $@;
+	QUIET_SUBDIR0 = +@subdir=
+	QUIET_SUBDIR1 = ; echo '    ' SUBDIR $$subdir; \
+		        ${MAKE} -C $$subdir
+endif
 
-#################################################################
-## Targets defining how to make INFERNAL executables.
-##
-all: 	$(PROGS) 
+.PHONY: all dev tests check install uninstall distclean clean TAGS
 
-$(PROGS): @EXEC_DEPENDENCY@ $(OBJS) ${HDRS}
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS) $(MPILIBS)
+all:   ${PROGS} .FORCE
 
+libinfernal.a: libinfernal-src.stamp .FORCE
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} libinfernal-impl.stamp
 
-#################################################################
-## Targets used in making INFERNAL module for testsuite compilation.
-##
-module: libinfernal.a
+libinfernal-src.stamp: ${OBJS}
+	${QUIET_AR}${AR} -r libinfernal.a $? > /dev/null 2>&1 
+	@${RANLIB} libinfernal.a
+	@echo "src_lib objects compiled:\c" > $@
+	@date >> $@
 
-libinfernal.a: $(OBJS) ${HDRS}
-	$(AR) libinfernal.a $(OBJS) 
-	$(RANLIB) libinfernal.a
-	chmod 644 libinfernal.a
+.FORCE:
 
+${OBJS}:     ${HDRS} config.h
+${PROGOBJS}: ${HDRS} config.h
 
-#################################################################
-## Miscellaneous targets.
-##
-clean:
-	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out libinfernal.a
+${PROGS}: @EXEC_DEPENDENCY@  libinfernal.a ../hmmer/src/libhmmer.a ../${ESLDIR}/libeasel.a  
+	${QUIET_GEN}${CC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${MPILIBS} ${LIBS}
 
-distclean:
-	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out libinfernal.a
+.c.o:
+	${QUIET_CC}${CC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} ${CPPFLAGS} ${MYINCDIRS} -o $@ -c $<
+
+install:
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} install
+	for file in ${PROGS}; do \
+	   ${INSTALL} -m 0755 $$file ${DESTDIR}${bindir}/ ;\
+	done
+	${INSTALL} -m 0755 libinfernal.a ${DESTDIR}${libdir}/
+	for file in ${HDRS}; do \
+	   ${INSTALL} -m 0644 ${srcdir}/$$file ${DESTDIR}${includedir}/ ;\
+	done
+	${INSTALL} -m 0644 config.h ${DESTDIR}${includedir}/ ;\
+
+uninstall:
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} uninstall
+	for file in ${PROGS}; do \
+	   rm -f ${DESTDIR}${bindir}/$$file ;\
+	done
+	-rm -f ${DESTDIR}${libdir}/libinfernal.a
+	for file in ${HDRS}; do \
+	   rm -f ${DESTDIR}${includedir}/$$file ;\
+	done
+	-rm -f ${DESTDIR}${includedir}/config.h
+
+distclean: clean
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} distclean
 	-rm -f Makefile config.h
 
-TAGS:
-	etags -t *.c *.h Makefile.in
+clean:
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} clean
+	-rm -f *.o *~ Makefile.bak core ${PROGS} TAGS gmon.out
+	-rm -f libinfernal.a libinfernal-src.stamp
+	-rm -f *.gcno
+	-rm -f cscope.out
+	for prog in ${PROGS}; do \
+	   if test -d $$prog.dSYM; then rm -rf $$prog.dSYM; fi ;\
+	done
 
-
+################################################################
+# @LICENSE@
+################################################################

@@ -1,27 +1,26 @@
 # Process this file with autoconf to produce the Infernal configure script.
 #
 # Note that this is synchronized with Easel and HMMER's configure
-# script, so that Infernal configures HMMER and Easel in addition to
-# itself; this saves having to do a separate ./configure in
-# HMMER and Easel. That is, everything that appears in HMMER and
-# Easel's configure script must also appear here. Since HMMER's
-# configure script is setup to configure Easel as well, ensuring
-# everything from HMMER's configure script appears here should 
-# suffice.
+# script, so that Infernal configures Easel and HMMER in addition to
+# itself; this saves having to do a separate ./configure in Easel and
+# HMMER. That is, everything that appears in HMMER and Easel's
+# configure script must also appear here. Since HMMER's configure
+# script is setup to configure Easel as well, ensuring everything from
+# HMMER's configure script appears here should suffice.
 #
 # reminders to save re-reading autoconf manual for the n'th time:
-#   - output variables:
-#        are defined here as normal shell variables, e.g. FOO="my string"
-#        are made into output variables by calling AC_SUBST(FOO)
-#        any occurrence of @FOO@ in an output file is then substituted
-#        I think this only happens in files we assign w/ AC_CONFIG_FILES;
-#        that's the Makefile.in's.
+#    output variables:
+#      -  are defined here as normal shell variables, e.g. FOO="my string"
+#      -  are made into output variables by calling AC_SUBST(FOO)
+#      -  any occurrence of @FOO@ in an output file is then substituted
+#         I think this only happens in files we assign w/ AC_CONFIG_FILES;
+#         that's the Makefile.in's.
 #
-#   - C preprocessor symbols:
-#        are defined here by calling AC_DEFINE(FOO) or AC_DEFINE(FOO, [42])
-#        then #undef FOO lines in easel.h.in become #define FOO or #define FOO 42
-#        I think this only happens in header files that we assign
-#        w/ AC_CONFIG_HEADERS -- which means, easel.h.in
+#   C preprocessor symbols:
+#      -  are defined here by calling AC_DEFINE(FOO) or AC_DEFINE(FOO, [42])
+#      -  then #undef FOO in easel.h.in becomes #define FOO, #define FOO 42
+#         I think this only happens in header files that we assign
+#         w/ AC_CONFIG_HEADERS -- which means, easel.h.in
 #
 # SRE, Mon Oct  5 14:55:45 1998
 # SVN $Id$
@@ -41,6 +40,7 @@
 #  11. checks for system services
 #  12. AC_CONFIG_FILES
 #  13. AC_OUTPUT
+
 
 # Autoconf 2.61 has a bug in AC_FUNC_FSEEKO; don't use it.
 AC_PREREQ(2.63)
@@ -69,7 +69,7 @@ fi
 #     INFERNAL_LICENSETAG  which license to bundle from Licenses/ subdirectory.
 #     INFERNAL_VERSION     copy of version code, e.g. "1.0"
 #     INFERNAL_URL         URL home for INFERNAL.
-# And we have to define the relevant package variables for Easel and HMMER as well.
+# And we have to define the relevant package variables for Easel as well.
 #
 ################################################################
 
@@ -78,6 +78,7 @@ INFERNAL_COPYRIGHT="Copyright (C) 2010 Howard Hughes Medical Institute."
 INFERNAL_LICENSE="Freely distributed under the GNU General Public License (GPLv3)."
 INFERNAL_VERSION=$PACKAGE_VERSION
 INFERNAL_URL="http://infernal.janelia.org/"
+INFERNAL_ESLDIR="easel"
 
 HMMER_DATE="June 2010"
 HMMER_COPYRIGHT="Copyright (C) 2010 Howard Hughes Medical Institute."
@@ -98,6 +99,7 @@ AC_SUBST(INFERNAL_COPYRIGHT)
 AC_SUBST(INFERNAL_LICENSE)
 AC_SUBST(INFERNAL_VERSION)
 AC_SUBST(INFERNAL_URL)
+AC_SUBST(INFERNAL_ESLDIR)
 
 AC_SUBST(HMMER_DATE)
 AC_SUBST(HMMER_COPYRIGHT)
@@ -141,10 +143,6 @@ AC_DEFINE(eslLIBRARY)
 #       host_cpu        example: i686
 #       host_vendor     example: pc
 #       host_os         example: linux-gnu
-#
-# These are used later in the configure by the ACX_PTHREAD macro to determine
-# system-specific details of threads libraries.
-#
 AC_CANONICAL_HOST
 
 # Check if we're a binary distribution. 
@@ -156,8 +154,10 @@ AC_CANONICAL_HOST
 #
 # Implements a sneaky if statement that wraps most of the configure.ac M4 code.
 #
-if ((! test -d binaries) && test -d src); then 
+#if ((! test -d binaries) && test -d src); then 
 AC_MSG_NOTICE([Full Infernal source distribution - using full configuration])
+
+
 
 ################################################################
 # Process the ./configure command line
@@ -167,7 +167,8 @@ AC_MSG_NOTICE([Full Infernal source distribution - using full configuration])
 # --enable-debugging=x    - set debugging level to <x> (1-3)
 #
 # At all levels, including 0, replaces CFLAGS w/ "-g -Wall" (so it assumes gcc).
-# Sets the p7_DEBUGLEVEL preprocessor symbol to <x>
+# Sets p7_DEBUGGING preprocessor symbol, which compiles in debugging support.
+# Also sets eslDEBUGLEVEL level, 0-3.
 #
 AC_ARG_ENABLE(debugging,
 [AS_HELP_STRING([--enable-debugging],[include debugging code])
@@ -175,23 +176,14 @@ AS_HELP_STRING([--enable-debugging=x],[also set diagnostics verbosity level to <
 enable_debugging=$enableval, enable_debugging=no)
 
 case $enable_debugging in
-   yes)  AC_DEFINE(cm_DEBUGLEVEL, 0)
-         AC_DEFINE(eslDEBUGLEVEL, 0)
-	 ;;
-     1)  AC_DEFINE(cm_DEBUGLEVEL, 1)
-         AC_DEFINE(eslDEBUGLEVEL, 1)
-	 ;;
-     2)  AC_DEFINE(cm_DEBUGLEVEL, 2)
-         AC_DEFINE(eslDEBUGLEVEL, 2)
-	 ;;
-     3)  AC_DEFINE(cm_DEBUGLEVEL, 3)
-         AC_DEFINE(eslDEBUGLEVEL, 3)
-	 ;;
-    no)  AC_DEFINE(cm_DEBUGLEVEL, 0)
-         AC_DEFINE(eslDEBUGLEVEL, 0)
-	 ;;
+   yes)  AC_DEFINE(eslDEBUGLEVEL, 0);;
+     1)  AC_DEFINE(eslDEBUGLEVEL, 1);;
+     2)  AC_DEFINE(eslDEBUGLEVEL, 2);;
+     3)  AC_DEFINE(eslDEBUGLEVEL, 3);;
+    no)  AC_DEFINE(eslDEBUGLEVEL, 0);;
      *)  AC_MSG_ERROR([Unknown argument to --enable-debugging: $enable_debugging]);;
 esac
+
 
 # --enable-gcov      - compile for code coverage testing
 #
@@ -207,17 +199,32 @@ if test "$ok" = "yes"; then
   sre_cflags_env_set=yes
 fi
 
-# --enable-sse    Enable the SSE implementation.                                                                                              
-# --enable-vmx    Enable the Altivec/VMX implementation.                                                                                      
+
+# --enable-gprof     - compile for gcc code profiling
+#
+# Replaces CC with "gcc" and CFLAGS with "-O -g -pg"
+# Running programs generates a profile data file "gmon.out".
+#
+AC_ARG_ENABLE(gprof,[AS_HELP_STRING([--enable-gprof],[compile for gcc code profiing])], ok=$enableval, ok=no)
+if test "$ok" = "yes"; then
+  AC_MSG_NOTICE([Compiling with gprof instrumentation.])
+  CC="gcc"
+  CFLAGS="-O -g -pg"
+  sre_cflags_env_set=yes
+fi
+
+
+# --enable-sse    Enable the SSE implementation.
+# --enable-vmx    Enable the Altivec/VMX implementation.
 # --enable-dummy  Enable the portable implementation.
-#                                                                                                                                             
+#
 # These set $impl_choice to one of sse, vmx, dummy, or none.
 # Note that Infernal does not currently have any VMX-specific                                                                                 
 # code, but might still be able to turn on automatic compiler
 # vectorization.                                                                                                                              
-#                                                                     
-AC_ARG_ENABLE(sse,[AS_HELP_STRING([--enable-sse],[enable SSE optimizations])] ,           enable_sse=$enableval,   enable_sse=yes)
-AC_ARG_ENABLE(vmx,[AS_HELP_STRING([--enable-vmx],[enable Altivec/VMX optimizations])],    enable_vmx=$enableval,   enable_vmx=check)
+#
+AC_ARG_ENABLE(sse,[AS_HELP_STRING([--enable-sse],[enable SSE implementation])],          enable_sse=$enableval,   enable_sse=check)
+AC_ARG_ENABLE(vmx,[AS_HELP_STRING([--enable-vmx],[enable Altivec/VMX implementation])],  enable_vmx=$enableval,   enable_vmx=check)
 AC_ARG_ENABLE(dummy,[AS_HELP_STRING([--enable-dummy],[enable portable implementation])], enable_dummy=$enableval, enable_dummy=check)
 if test "$enable_sse" = "yes"; then
    if test "$enable_vmx" = "yes" || test "$enable_dummy" = "yes"; then
@@ -237,6 +244,7 @@ elif test "$enable_dummy" = "yes"; then
 else
    impl_choice=none   	
 fi
+
 
 # --enable-mpi       Enable MPI parallelization
 AC_ARG_ENABLE(mpi,[AS_HELP_STRING([--enable-mpi],[enable MPI parallelization])], enable_mpi=$enableval, enable_mpi=no)
@@ -285,7 +293,7 @@ esac
  
 AS_IF([test "x$check_threads" != xno],
       [ACX_PTHREAD([AC_DEFINE(HMMER_THREADS)
-                    AC_DEFINE(HAVE_PTHREADS)
+                    AC_DEFINE(HAVE_PTHREAD)
                     AC_SUBST(PTHREAD_LIBS)
                     AC_SUBST(PTHREAD_CFLAGS)],
                    [if test "x$enable_threads" != xcheck; then
@@ -356,12 +364,13 @@ fi
 if test "$impl_choice" = "dummy" && test "$enable_dummy" = "no"; then
   AC_MSG_ERROR([No vector impl configured; and you disabled the dummy implementation.])
 fi
-################################################################
+
 
 ################################################################
 # Checks for programs, including choice of compiler ${CC} and ${CFLAGS}.
 #
 AC_PROG_CC
+AC_PROG_INSTALL
 # MPI :  set @CC@ to mpicc, sets @MPILIBS@, defines HAVE_MPI. 
 if test "$enable_mpi" = "yes"; then
    ACX_MPI([AC_DEFINE(HAVE_MPI)
@@ -547,8 +556,6 @@ sse)  AC_MSG_NOTICE([Activating Intel/AMD SSE optimized DP implementation])
       AC_DEFINE([HAVE_SSE2])
       AC_DEFINE([p7_IMPL_SSE])
       AC_SUBST([HMMERIMPLLIB], ["impl_sse/libhmmerimpl.a"])
-      AC_SUBST([DO_IMPL_SSE], ["(cd src/impl_sse; make CC=\"\$(CC)\" CFLAGS=\"\$(CFLAGS)\";)"])
-      AC_SUBST([INSTALL_IMPL_SSE], ["for file in \$(SSEPROGS); do cp src/impl_sse/\$\$file \$(BINDIR)/; done"])
       IMPL_CHOICE="sse"
       ;;
 
@@ -590,7 +597,7 @@ else
   AC_DEFINE(HAVE_GZIP)
 fi
 
-# Checks for libraries
+# 5. Checks for libraries
 #
 LIBGSL=
 AS_IF([test "x$with_gsl" != xno],
@@ -612,7 +619,7 @@ AC_CHECK_HEADERS([sys/types.h sys/sysctl.h unistd.h stdint.h inttypes.h endian.h
 
 # altivec.h requires the simd cflags
 # For reasons I don't understand, this needs to come after any other CHECK_HEADERS().
-if test "$enable_vmx" = "yes"; then
+if test "$impl_choice" = "vmx"; then
    sre_save_CFLAGS="$CFLAGS"
    sre_save_CPPFLAGS="$CPPFLAGS"
    CFLAGS="$CFLAGS $SIMD_CFLAGS"
@@ -625,10 +632,6 @@ fi
 # Checks for types
 #
 AC_C_BIGENDIAN
-AC_TYPE_INT8_T
-AC_TYPE_INT16_T
-AC_TYPE_INT32_T
-AC_TYPE_INT64_T
 AC_TYPE_UINT8_T
 AC_TYPE_UINT16_T
 AC_TYPE_UINT32_T
@@ -644,6 +647,9 @@ AC_CHECK_FUNCS(times)
 AC_CHECK_FUNCS(getpid)
 AC_CHECK_FUNCS(sysctl)
 AC_CHECK_FUNCS(sysconf)
+AC_CHECK_FUNCS(getcwd)
+AC_CHECK_FUNCS(stat)
+AC_CHECK_FUNCS(fstat)
 
 AC_CHECK_FUNCS(ntohs, , AC_CHECK_LIB(socket, ntohs))
 AC_CHECK_FUNCS(ntohl, , AC_CHECK_LIB(socket, ntohl))
@@ -656,18 +662,26 @@ AC_FUNC_FSEEKO
 #
 AC_SYS_LARGEFILE
 
+
 # Done.
 # Config subdirs and files (except main Makefile, which we defer)
 #
 
-AC_CONFIG_HEADERS(src/config.h)
-
 # Write Infernal's config.h header
 #
+AC_CONFIG_HEADERS(src/config.h)
+
+if test -d release-notes; then
+  AC_CONFIG_FILES(release-notes/LICENSE.sh)
+fi
+
 AC_CONFIG_FILES(src/Makefile)
 AC_CONFIG_FILES(src/impl_sse/Makefile)
 AC_CONFIG_FILES(testsuite/Makefile)
 AC_CONFIG_FILES(rmark/Makefile)
+AC_CONFIG_FILES(documentation/Makefile)
+AC_CONFIG_FILES(documentation/manpages/Makefile)
+
 
 # HMMER files
 if test -d hmmer/release-notes; then
@@ -703,9 +717,9 @@ AC_CONFIG_FILES([easel/Makefile])
 ################################################################
 # remember that sneaky if statement that wraps the source
 # configuration? well, it ends here.
-else
-  AC_MSG_NOTICE([This is a precompiled binary distribution - using abbreviated config])
-fi
+#else
+#  AC_MSG_NOTICE([This is a precompiled binary distribution - using abbreviated config])
+#fi
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
 
@@ -719,9 +733,11 @@ INFERNAL configuration:
      DP implementation:    ${impl_choice}
 "
 
-#if test "$impl_choice" = "dummy"; then
-#  AC_MSG_WARN([The "dummy" implementation is a portable ANSI C reference implementation.])
-#  AC_MSG_WARN([It is slow, and is not intended for production use.])
-#fi
+if test "$impl_choice" = "dummy"; then
+  AC_MSG_WARN([The "dummy" implementation is a portable ANSI C reference implementation.])
+  AC_MSG_WARN([It is slow, and is not intended for production use.])
+fi
+
+
 
 

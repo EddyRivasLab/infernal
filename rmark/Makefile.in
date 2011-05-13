@@ -1,54 +1,64 @@
-# Makefile for INFERNAL rmark benchmark generation tools
-# The Makefile is generated from Makefile.in by autoconf
-# DO NOT EDIT Makefile; only edit Makefile.in
-#
-# SRE, Mon Mar 31 09:12:28 2008 [Janelia]
-# SVN $Id: Makefile.in 3279 2010-05-26 18:11:31Z nawrockie $
-
 top_srcdir = @top_srcdir@
 srcdir     = @srcdir@
-VPATH      = @srcdir@ @top_srcdir@
+VPATH      = @srcdir@ 
 
 CC       = @CC@
-CFLAGS   = @CFLAGS@
+CFLAGS   = @CFLAGS@ @PTHREAD_CFLAGS@
+SIMDFLAGS= @SIMD_CFLAGS@
 CPPFLAGS = @CPPFLAGS@
 LDFLAGS  = @LDFLAGS@
-SIMDFLAGS= @SIMD_CFLAGS@
 DEFS     = @DEFS@
-LIBS     = @LIBS@ @LIBGSL@ -lm
+LIBS     = -lhmmer -leasel @LIBS@ @LIBGSL@ @PTHREAD_LIBS@ -lm
 MPILIBS  = @MPILIBS@
 IMPLDIR  = impl_@IMPL_CHOICE@
 
 SRCDIR   = ../src
-ESLDIR   = ../easel
+ESLDIR   = @INFERNAL_ESLDIR@
 HMMERDIR = ../hmmer
 
-ESLINC   = -I${ESLDIR} -I${top_srcdir}/easel
+ESLINC   = -I../${ESLDIR} -I${top_srcdir}/easel
 SRCINC   = -I${SRCDIR} -I${top_srcdir}/src
 
 PROGS    = rmark-create\
-	   rmark-rocplot\
+	   rmark-rocplot
 
-all: ${PROGS} 
-	cd ${ESLDIR};            ${MAKE} libeasel.a
-#	cd ${SRCDIR}/${IMPLDIR}; ${MAKE} impl_lib
-#	cd ${SRCDIR};            ${MAKE} hmmer_lib
-#	cd ${SRCDIR};            ${MAKE} hmmer_progs
-	${MAKE} rmark_progs
+PROGOBJS  =\
+	rmark-create.o\
+	rmark-rocplot.o
 
-rmark_progs: ${PROGS} 
+# beautification magic stolen from git 
+QUIET_SUBDIR0 = +${MAKE} -C #space separator after -c
+QUIET_SUBDIR1 = 
+ifndef V
+	QUIET_CC      = @echo '    ' CC $@;
+	QUIET_GEN     = @echo '    ' GEN $@;
+	QUIET_AR      = @echo '    ' AR $@;
+	QUIET_SUBDIR0 = +@subdir=
+	QUIET_SUBDIR1 = ; echo '    ' SUBDIR $$subdir; \
+		        ${MAKE} -C $$subdir
+endif
+
+.PHONY: all dev distclean clean
+
+all:    ${PROGS}
+dev:    ${PROGS}
+
+${PROGS}: @EXEC_DEPENDENCY@  ${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a 
+	${QUIET_GEN}${CC} ${CFLAGS} ${DEFS} ${LDFLAGS} -L${HMMERDIR}/src -L../${ESLDIR} -L${SRCDIR} -o $@ $@.o ${LIBS}
+
+${PROGOBJS}: ../hmmer/src/hmmer.h ../hmmer/src/p7_config.h
 
 .c.o: 
-	${CC} ${ESLINC} ${SRCINC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} -o $@ -c $<		
+	${QUIET_CC}${CC} ${ESLINC} ${SRCINC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} -o $@ -c $<		
 
-${PROGS}: @EXEC_DEPENDENCY@  ${HMMERDIR}/src/libhmmer.a ${ESLDIR}/libeasel.a
-	${CC} ${CFLAGS} ${DEFS} ${LDFLAGS} -L${ESLDIR} -L${HMMERDIR}/src -o $@ $@.o -lhmmer -leasel ${LIBS}
-
-distclean:
-	make clean
+distclean: clean
 	-rm -f Makefile
 
 clean:
 	-rm -f *.o *~  ${PROGS} TAGS
 	-rm -f *.gcno
+
+################################################################
+# @LICENSE@
+################################################################
 

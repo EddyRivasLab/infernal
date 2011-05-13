@@ -34,7 +34,7 @@
 
 # Exercises of cmfetch
 #
-1  prep      model/3.4.12            @src/cmbuild@ -F --wnone %3.4.12.CM% !../testsuite/3.4.12.stk!
+1  prep      model/3.4.12            @src/cmbuild@ -F --wnone %3.4.12.CM% !testsuite/3.4.12.stk!
 1  exercise  cmfetch:3.4.12/i0       @src/cmfetch@ --index %3.4.12.CM% 
 1  exercise  cmfetch:3.4.12/i1       @src/cmfetch@ -f %3.4.12.CM% !../testsuite/12.3.list!
 1  exercise  cmfetch:3.4.12/i2       @src/cmfetch@ -o %TMP.CM% %3.4.12.CM% U2
@@ -97,32 +97,32 @@
 1  prep      model/trna           @src/cmbuild@ --rf -F %TRNA.CM% ../intro/trna.sto
 2  prep      model/rp             @src/cmbuild@ --rf -F %RP.CM%   ../intro/RNaseP.sto
 3  prep      model/ssu            @src/cmbuild@ --rf -F %SSU.CM%  ../intro/ssu.sto
-1  exercise  bandcyk/mc/trna      @testsuite/bandcyk-montecarlo-test@ %TRNA.CM%
-2  exercise  bandcyk/mc/rp        @testsuite/bandcyk-montecarlo-test@ %RP.CM%
-3  exercise  bandcyk/mc/ssu       @testsuite/bandcyk-montecarlo-test@ -W 2000 %SSU.CM%
-1  exercise  bandcyk/trunc/trna   @testsuite/bandcyk-truncation-test@ %TRNA.CM% 160 1000
-2  exercise  bandcyk/trunc/rp     @testsuite/bandcyk-truncation-test@ %RP.CM%  1000 2000
-3  exercise  bandcyk/trunc/ssu    @testsuite/bandcyk-truncation-test@ %SSU.CM% 1687 3000 
+1  exercise  bandcyk/mc/trna      @src/bandcyk-montecarlo-test@ %TRNA.CM%
+2  exercise  bandcyk/mc/rp        @src/bandcyk-montecarlo-test@ %RP.CM%
+3  exercise  bandcyk/mc/ssu       @src/bandcyk-montecarlo-test@ -W 2000 %SSU.CM%
+1  exercise  bandcyk/trunc/trna   @src/bandcyk-truncation-test@ %TRNA.CM% 160 1000
+2  exercise  bandcyk/trunc/rp     @src/bandcyk-truncation-test@ %RP.CM%  1000 2000
+3  exercise  bandcyk/trunc/ssu    @src/bandcyk-truncation-test@ %SSU.CM% 1687 3000 
 
 # Exercises of CM Plan 9 construction
 #
 1  prep      model/trna           @src/cmbuild@ --rf -F %TRNA.CM% ../intro/trna.sto
 2  prep      model/rp             @src/cmbuild@ --rf -F %RP.CM%   ../intro/RNaseP.sto
 2  prep      model/ssu            @src/cmbuild@ --rf -F %SSU.CM%  ../intro/ssu.sto
-1  exercise  cp9/trna             @testsuite/cp9-test@ -s 19 %TRNA.CM%
-2  exercise  cp9/trna             @testsuite/cp9-test@ -s 17 %TRNA.CM%
-2  exercise  cp9/rp               @testsuite/cp9-test@ --psionly %RP.CM%
-2  exercise  cp9/ssu              @testsuite/cp9-test@ --psionly %SSU.CM%
+1  exercise  cp9/trna             @src/cp9-test@ -s 19 %TRNA.CM%
+2  exercise  cp9/trna             @src/cp9-test@ -s 17 %TRNA.CM%
+2  exercise  cp9/rp               @src/cp9-test@ --psionly %RP.CM%
+2  exercise  cp9/ssu              @src/cp9-test@ --psionly %SSU.CM%
 
 # Exercises of sub CM construction
 #
 1  prep      model/trna           @src/cmbuild@ --rf -F %TRNA.CM% ../intro/trna.sto
 1  prep      model/rp             @src/cmbuild@ --rf -F %RP.CM%   ../intro/RNaseP.sto
 2  prep      model/ssu            @src/cmbuild@ --rf -F %SSU.CM%  ../intro/ssu.sto
-1  exercise  sub/trna1            @testsuite/sub_cm-test@ %TRNA.CM%
-1  exercise  sub/rp               @testsuite/sub_cm-test@ %RP.CM%
-2  exercise  sub/ssu              @testsuite/sub_cm-test@ %SSU.CM%
-3  exercise  sub/trna2            @testsuite/sub_cm-test@ --exhaust %TRNA.CM%
+1  exercise  sub/trna1            @src/sub_cm-test@ %TRNA.CM%
+1  exercise  sub/rp               @src/sub_cm-test@ %RP.CM%
+2  exercise  sub/ssu              @src/sub_cm-test@ %SSU.CM%
+3  exercise  sub/trna2            @src/sub_cm-test@ --exhaust %TRNA.CM%
 
 # Infernal 1.0 is not backwards compatible with pre-1.0 CM files
 #
