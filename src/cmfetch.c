@@ -221,7 +221,7 @@ multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CMFILE *cmfp, char *cmfile
       if (esl_fileparser_GetTokenOnLine(efp, &key, &keylen) != eslOK)
 	cm_Fail("Failed to read CM name on line %d of file %s\n", efp->linenumber, keyfile);
       
-      status = esl_key_Store(keys, key, &keyidx);
+      status = esl_keyhash_Store(keys, key, keylen, &keyidx);
       if (status == eslEDUP) cm_Fail("CM key %s occurs more than once in file %s\n", key, keyfile);
 	
       if (cmfp->ssi != NULL) { onefetch(go, ofp, key, cmfp, cmfile);  ncm++; }
@@ -231,8 +231,8 @@ multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CMFILE *cmfp, char *cmfile
     {
       while ((status = CMFileRead(cmfp, errbuf, &abc, &cm)) == eslOK)
 	{
-	  if (esl_key_Lookup(keys, cm->name, &keyidx) == eslOK || 
-	      ((cm->acc) && esl_key_Lookup(keys, cm->acc, &keyidx) == eslOK))
+	  if (esl_keyhash_Lookup(keys, cm->name, -1, &keyidx) == eslOK || 
+	      ((cm->acc) && esl_keyhash_Lookup(keys, cm->acc, -1, &keyidx) == eslOK))
 	    {
 	      if((status = CMFileWrite(ofp, cm, FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
 	      ncm++;

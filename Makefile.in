@@ -173,17 +173,11 @@ distclean:
 	-rm -f src/impl
 	-rm Makefile
 
+# "make TAGS": emacs etags database, for searching the whole source tree.
 TAGS:
-	find . -name \*.c     | xargs etags    -
-	find . -name \*.h     | xargs etags -a -
-	find . -name \*.pl    | xargs etags -a -
-	find . -name \*.sh    | xargs etags -a -
-	find . -name \*.tex   | xargs etags -a -
-	find . -name \*.man   | xargs etags -a -
-	find . -name \*.in    | xargs etags -a -
-	find . -name \*.sqc   | xargs etags -a -
-	find . -name 00README | xargs etags -a -
-	etags -a COPYRIGHT INSTALL LICENSE README configure.ac
+	etags    src/*.[ch]        src/*.in
+	etags -a testsuite/*.[ch]  testsuite/*.in
+	etags -a easel/*.[ch]      easel/*.in
 
 ################################################################
 # @LICENSE@

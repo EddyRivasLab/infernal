@@ -332,7 +332,7 @@ parse_tblfile(char *tblfile, ESL_KEYHASH *kh)
   while (esl_fileparser_NextLine(efp) == eslOK)
     {
       if (esl_fileparser_GetTokenOnLine(efp, &tok, &toklen) != eslOK) esl_fatal("failed to parse line %d of %s", efp->linenumber, tblfile);
-      if (esl_key_Store(kh, tok, NULL)                      != eslOK) esl_fatal("failed to add %s to seq index", tok);
+      if (esl_keyhash_Store(kh, tok, toklen, NULL)          != eslOK) esl_fatal("failed to add %s to seq index", tok);
     }      
   esl_fileparser_Close(efp);
   return eslOK;
@@ -441,7 +441,7 @@ parse_results_rmark(char *resfile, int **pni, ESL_KEYHASH *qkh, ESL_KEYHASH *pos
       if (esl_fileparser_GetTokenOnLine(efp, &match,  &mlen)   != eslOK) esl_fatal("failed to parse line %d of %s", efp->linenumber, resfile); /* match name; will be converted to an index */
       if (esl_fileparser_GetTokenOnLine(efp, &strand, &slen)   != eslOK) esl_fatal("failed to parse line %d of %s", efp->linenumber, resfile); /* strand; will be used to determine pos/neg */
       
-      if (esl_key_Lookup(qkh, query,  &(rp[nr].qidx)) != eslOK) esl_fatal("failed to find query model %s in hash", query);  /* query index */
+      if (esl_keyhash_Lookup(qkh, query, qlen, &(rp[nr].qidx)) != eslOK) esl_fatal("failed to find query model %s in hash", query);  /* query index */
       rp[nr].class = classify_pair_by_names_and_strand(query, match, strand);
       if (rp[nr].class == -1)		/* negatives: increment nneg and offset the index by npos */
 	{
@@ -450,7 +450,7 @@ parse_results_rmark(char *resfile, int **pni, ESL_KEYHASH *qkh, ESL_KEYHASH *pos
 	}
       else			/* positives/ignores: look up in poskh */
 	{
-	  if (esl_key_Lookup(poskh, match, &(rp[nr].tidx)) != eslOK) esl_fatal("failed to find match seq  %s in hash", match);	/* target index */
+	  if (esl_keyhash_Lookup(poskh, match, mlen, &(rp[nr].tidx)) != eslOK) esl_fatal("failed to find match seq  %s in hash", match);	/* target index */
 	  if (rp[nr].class == 1) { 
 	    if(pos_exists[rp[nr].qidx][rp[nr].tidx]) { 
 	      /* we've already seen a better scoring hit for this query/target pair,
