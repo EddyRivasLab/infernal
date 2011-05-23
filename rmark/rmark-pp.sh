@@ -13,10 +13,10 @@ cat $2/*out | perl rmark-multiply-evalues.pl $3 | sort -g | rmark-rocplot -N 100
 cat $2/*out | perl rmark-multiply-evalues.pl $3 | sort -g | rmark-rocplot -N 100000 --Ethresh 0.1 --seed 181 $1 - > $2/$2.em$3.bEthresh
 
 # copy files to cwd
-cp $2/$2.em$3.mer ./
-cp $2/$2.em$3.bmer ./
-cp $2/$2.time ./
-cp $2/$2.em$3.xy ./
+#cp $2/$2.em$3.mer ./
+#cp $2/$2.em$3.bmer ./
+#cp $2/$2.time ./
+#cp $2/$2.em$3.xy ./
 
 # summarize files to stdout
 echo -n $2 | awk '{printf("%-70s  ", $0)}' > $2/$2.em$3.sum
@@ -26,4 +26,10 @@ cat $2/$2.em$3.bEthresh | awk '{printf("ETHRESH:0.1  %5s  %5s   ", $5, $9)}' >> 
 grep ummary $2/$2.em$3.mer | awk '{print $7}' >> $2/$2.em$3.sum
 cp $2/$2.em$3.sum ./
 cat $2.em$3.sum
+
+# clean up (optional)
+#rm $2/$2.em$3.mer 
+#rm $2/$2.em$3.bmer 
+#rm $2/$2.time 
+#rm $2/$2.em$3.xy 
 

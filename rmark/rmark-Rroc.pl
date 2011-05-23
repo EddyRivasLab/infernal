@@ -137,10 +137,10 @@ while(<LIST>) {
 	    push(@R, "dy2" . $n . "<-c" . return_vec_line(\@dy2A) . "\n");
 	}
 	if($n == 1) { 
-	    push(@R, "plot(x$n, y$n,   type=\"l\", log=\"x\", ylim=ylimit, col=\"$color\", main=\"$main\", xlab=\"$xlabel\", ylab=\"$ylabel\")\n");
+	    push(@R, "plot(x$n, y$n,   type=\"l\", lwd=2, log=\"x\", ylim=ylimit, col=\"$color\", main=\"$main\", xlab=\"$xlabel\", ylab=\"$ylabel\")\n");
 	}
 	else { 
-	    push(@R, "points(x$n, y$n, type=\"l\", col=\"$color\")\n");
+	    push(@R, "points(x$n, y$n, type=\"l\", lwd=2, col=\"$color\")\n");
 	}
 	if($do_errorbars) {
 	    push(@R, "points(x$n, dy1$n, type=\"l\", lty=2, lwd=0.4, col=\"$color\")\n");
