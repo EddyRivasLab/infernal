@@ -45,6 +45,7 @@ MYINCDIRS = -I../${ESLDIR} \
 
 PROGS = cmalign\
 	cmbuild\
+	cmcalibrate\
 	cmemit\
 	cmfetch\
 	cmscore\

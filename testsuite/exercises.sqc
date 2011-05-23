@@ -36,7 +36,7 @@
 #
 1  prep      model/3.4.12            @src/cmbuild@ -F --wnone %3.4.12.CM% !testsuite/3.4.12.stk!
 1  exercise  cmfetch:3.4.12/i0       @src/cmfetch@ --index %3.4.12.CM% 
-1  exercise  cmfetch:3.4.12/i1       @src/cmfetch@ -f %3.4.12.CM% !../testsuite/12.3.list!
+1  exercise  cmfetch:3.4.12/i1       @src/cmfetch@ -f %3.4.12.CM% !testsuite/12.3.list!
 1  exercise  cmfetch:3.4.12/i2       @src/cmfetch@ -o %TMP.CM% %3.4.12.CM% U2
 1  exercise  cmfetch:3.4.12/i3       @src/cmfetch@ -O %3.4.12.CM% U2
 # clean up
