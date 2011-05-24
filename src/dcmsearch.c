@@ -59,7 +59,7 @@ typedef struct {
 #define INCOPTS     "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
 #define INCDOMOPTS  "--incdomE,--incdomT,--cut_ga,--cut_nc,--cut_tc"
 #define THRESHOPTS  "-E,-T,--domE,--domT,--incE,--incT,--incdomE,--incdomT,--cut_ga,--cut_nc,--cut_tc"
-#define XFASTMIDMAXOPTS "--rfam,--max,--F1,--F2,--F3,--F4,--F5,--F6,--nomsv,--novit,--nofwd,--nogfwd,--nocyk,--nohmm,--hmm"
+#define XFASTMIDMAXOPTS "--max,--F1,--F2,--F3,--F4,--F5,--F6,--noF1,--noF2,--noF3,--nogfwd,--nocyk,--nohmm,--hmm"
 #define TIMINGOPTS  "--time-F1,--time-F2,--time-F3,--time-dF3,--time-bfil,--time-F4"
 
 #define CPUOPTS     NULL
@@ -93,35 +93,35 @@ static ESL_OPTIONS options[] = {
   { "--cut_nc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use profile's NC noise cutoffs to set all thresholding",       6 },
   { "--cut_tc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use profile's TC trusted cutoffs to set all thresholding",     6 },
   /* Control of acceleration pipeline */
-  { "--rfam",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  XFASTMIDMAXOPTS, "set heuristic filters at Rfam-level (more speed, less power)", 7 },
+  { "--fZ",         eslARG_REAL,    NULL, NULL, NULL,    NULL,  NULL,  "--rfam",        "set heuristic filters to defaults used for a database size of <x> Mb", 7 },
+  { "--rfam",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--fZ",          "set heuristic filters at Rfam-level (more speed, less power)", 7 },
   { "--max",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  XFASTMIDMAXOPTS, "turn all heuristic filters off  (less speed, more power)",     7 },
   { "--noenvdef",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmm",         "do not define domains inside windows prior to CM stages",      7 },
-  { "--msvmerge",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--nomsv,--nohmm","merge MSV windows prior to Viterbi filter",                   7 },
+  { "--msvmerge",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--noF1,--nohmm","merge MSV windows prior to Viterbi filter",                   7 },
   { "--pad",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmm,--noenvdef","pad domains i..j to j-W+1..i+W-1",                             7 },
-  { "--nomsv",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the MSV filter stage",                                    7 },
-  { "--shortmsv",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nomsv",  "run MSV on short 2*W subseqs, not longer subseqs",             7 },
-  { "--novit",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Viterbi filter stage",                                7 },
-  { "--nofwd",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Forward filter stage",                                7 },
-  { "--nogfwd",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the glocal Forward filter stage",                         7 },
   { "--nohmm",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--hmm",    "skip all HMM filter stages (MSV/Vit/Fwd/gFwd/envdef)",         7 },
-  { "--nocyk",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmm",          "skip the CYK filter stage",                                    7 },
-  { "--domsvbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nomsv",  "turn on the MSV composition bias filter",                      7 },
-  { "--novitbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--novit",  "turn on the Vit composition bias filter",                      7 },
-  { "--nofwdbias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the Fwd composition bias filter",                      7 },
-  { "--nogfwdbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nofwd",  "turn on the glocal Fwd composition bias filter",               7 },
-  { "--noedefbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noenvdef", "turn on the per-domain composition bias filter",               7 },
-  { "--F1",         eslARG_REAL,  "0.40", NULL, NULL,    NULL,  NULL, "--max",          "Stage 1 (MSV) threshold: promote hits w/ P <= F1",             7 },
-  { "--F1b",        eslARG_REAL,  "0.40", NULL, NULL,    NULL,"--domsvbias", "--max",   "Stage 1 (MSV) bias threshold: promote hits w/ P <= F1b",       7 },
-  { "--F2",         eslARG_REAL,  "0.15", NULL, NULL,    NULL,  NULL, "--max",          "Stage 2 (Vit) threshold: promote hits w/ P <= F2",             7 },
-  { "--F2b",        eslARG_REAL,  "0.15", NULL, NULL,    NULL,  NULL, "--novitbias,--max","Stage 2 (Vit) bias threshold: promote hits w/ P <= F2b",   7 },
-  { "--F3",         eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) threshold: promote hits w/ P <= F3",             7 },
-  { "--F3b",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--nofwdbias,--max","Stage 3 (Fwd) bias threshold: promote hits w/ P <= F3b",       7 },
-  { "--F4",         eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 4 (gFwd) glocal threshold: promote hits w/ P <= gF3", 7 },
-  { "--F4b",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--nogfwdbias,--max","Stage 4 (gFwd) glocal bias thr: promote hits w/ P <= gF3b", 7 },
-  { "--F5",         eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--max",          "Stage 5 (env defn) threshold: promote hits w/ P <= dF3", 7 },
-  { "--F5b",        eslARG_REAL,  "0.02", NULL, NULL,    NULL,  NULL, "--noedefbias,--max",  "Stage 5 (env defn) bias thr: promote hits w/ P <= dF3b", 7 },
-  { "--F6",         eslARG_REAL,  "5e-4", NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm","Stage 6 (CYK) threshold: promote hits w/ P <= F4",         7 },
-  { "--E6",         eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm,--F4","Stage 6 (CYK) threshold: promote hits w/ E <= F4",    7 },
+  { "--noF1",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the MSV filter stage",                                    7 },
+  { "--shortmsv",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF1",  "run MSV on short 2*W subseqs, not longer subseqs",             7 },
+  { "--noF2",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Viterbi filter stage",                                7 },
+  { "--noF3",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Forward filter stage",                                7 },
+  { "--noF4",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the glocal Forward filter stage",                         7 },
+  { "--noF6",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmm",          "skip the CYK filter stage",                                    7 },
+  { "--doF1b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF1",  "turn on the MSV composition bias filter",                      7 },
+  { "--noF2b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF2",  "turn on the Vit composition bias filter",                      7 },
+  { "--noF3b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF3",  "turn on the Fwd composition bias filter",                      7 },
+  { "--noF4b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF3",  "turn on the glocal Fwd composition bias filter",               7 },
+  { "--noF5b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noenvdef", "turn on the per-domain composition bias filter",               7 },
+  { "--F1",         eslARG_REAL,  "0.35", NULL, NULL,    NULL,  NULL, "--max",          "Stage 1 (MSV) threshold: promote hits w/ P <= F1",             7 },
+  { "--F1b",        eslARG_REAL,  "0.35", NULL, NULL,    NULL,"--domsvbias", "--max",   "Stage 1 (MSV) bias threshold: promote hits w/ P <= F1b",       7 },
+  { "--F2",         eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--max",          "Stage 2 (Vit) threshold: promote hits w/ P <= F2",             7 },
+  { "--F2b",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--noF2b,--max","Stage 2 (Vit) bias threshold: promote hits w/ P <= F2b",   7 },
+  { "--F3",         eslARG_REAL,  "0.003", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) threshold: promote hits w/ P <= F3",             7 },
+  { "--F3b",        eslARG_REAL,  "0.003", NULL, NULL,    NULL,  NULL, "--noF3b,--max","Stage 3 (Fwd) bias threshold: promote hits w/ P <= F3b",       7 },
+  { "--F4",         eslARG_REAL,  "0.003", NULL, NULL,    NULL,  NULL, "--max",          "Stage 4 (gFwd) glocal threshold: promote hits w/ P <= F4", 7 },
+  { "--F4b",        eslARG_REAL,  "0.003", NULL, NULL,    NULL,  NULL, "--nogfwdbias,--max","Stage 4 (gFwd) glocal bias thr: promote hits w/ P <= F4b", 7 },
+  { "--F5",         eslARG_REAL,  "0.003", NULL, NULL,    NULL,  NULL, "--max",          "Stage 5 (env defn) threshold: promote hits w/ P <= F5", 7 },
+  { "--F5b",        eslARG_REAL,  "0.003", NULL, NULL,    NULL,  NULL, "--noedefbias,--max",  "Stage 5 (env defn) bias thr: promote hits w/ P <= F5b", 7 },
+  { "--F6",         eslARG_REAL,  "1e-4", NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm","Stage 6 (CYK) threshold: promote hits w/ P <= F6",         7 },
   { "--cykenvx",    eslARG_INT,     "10", NULL, "n>=1",  NULL,  NULL, "--max,--nocyk,--hmm","CYK envelope redefinition threshold multiplier, <n> * F4", 7 },
   { "--nocykenv",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm","Do not redefine envelopes after stage 4 based on CYK hits",7 },
   { "--time-F1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 1 MSV; for timings",                        7 },
@@ -134,16 +134,13 @@ static ESL_OPTIONS options[] = {
   { "--rt2",        eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--nohmm,--noenvdef","set domain definition rt2 parameter as <x>",                  7 },
   { "--rt3",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--nohmm,--noenvdef","set domain definition rt3 parameter as <x>",                  7 },
   { "--ns",         eslARG_INT,   "200",  NULL, NULL,    NULL,  NULL, "--nohmm,--noenvdef","set number of domain tracebacks to <n>",                      7 },
-  { "--localenv",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noenvdef","define domains with HMM in glocal (not local) mode",          7 },
-  { "--wnosplit",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nomsv",         "do not split windows after MSV stage", 7 },
-  { "--wmult",      eslARG_REAL,   "3.0", NULL, NULL,    NULL,  NULL, "--wnosplit,--nomsv",     "scalar multiplier for flagging window to split (if --wsplit)", 7 },
+  { "--localenv",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm,--noenvdef","define domains with HMM in local (not glocal) mode",          7 },
+  { "--wnosplit",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--noF1",         "do not split windows after MSV stage", 7 },
+  { "--wmult",      eslARG_REAL,   "3.0", NULL, NULL,    NULL,  NULL, "--wnosplit,--noF1",     "scalar multiplier for flagging window to split (if --wsplit)", 7 },
   { "--wcorr",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use window size correction for Vit/Fwd filters", 7 },
   { "--nocorr",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use no  correction for domain definition", 7 },
   { "--oldcorr",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nocorr",        "use old correction for domain definition", 7 },
   { "--envhitbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--noedefbias",     "calc domain bias for only the domain, not entire window", 7 },
-  { "--dosfwdbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--dofwdbias", NULL,       "use traceback samplings for fwd bias calculation", 7 },
-  { "--fbns",       eslARG_INT,    "50",  NULL, NULL,    NULL,"--dosfwdbias",NULL,       "sample <n> tracebacks for fwd bias calculation", 7 },
-  { "--gmsv",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--shortmsv,--localenv", NULL,        "use generic MSV", 7 },
   { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not resolve hits with greedy algorithm, use optimal one", 7 },
   { "--doml",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "filter with a ML p7 HMM in addition to additional p7 HMMs in the file", 7 },
   { "--noadd",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not filter with any additional p7 HMMs in the file", 7 },
@@ -152,14 +149,6 @@ static ESL_OPTIONS options[] = {
   { "--glN",        eslARG_INT,   "201",  NULL, NULL,    NULL,"--glen",NULL,             "minimum value to start len-dependent glocal threshold", 7},
   { "--glX",        eslARG_INT,   "500",  NULL, NULL,    NULL,"--glen",NULL,             "maximum value for len-dependent glocal threshold", 7},
   { "--glstep",     eslARG_INT,   "100",  NULL, NULL,    NULL,"--glen",NULL,             "for len-dependent glocal thr, step size for halving thr", 7},
-  { "--envF3",      eslARG_NONE,   FALSE, NULL, NULL,    NULL, NULL,   NULL,             "redefine envelope after local forward stage", 7 },
-  { "--eF3X",       eslARG_REAL,  "1.1",  NULL, NULL,    NULL, NULL,   NULL,             "max avg num of passes through model for F3 env redefn", 7 },
-  { "--eF3ns",      eslARG_INT,     "50",  NULL, NULL,    NULL, NULL,   NULL,             "number of samples for F3 env redefn", 7 },
-  { "--envF4",      eslARG_NONE,   FALSE, NULL, NULL,    NULL, NULL,   NULL,             "redefine envelope after glocal forward stage", 7 },
-  { "--eF4X",       eslARG_REAL,  "1.1",  NULL, NULL,    NULL, NULL,   NULL,             "max avg num of passes through model for gF3 env redefn", 7 },
-  { "--eF4ns",      eslARG_INT,    "200",  NULL, NULL,    NULL, NULL,   NULL,             "number of samples for gF3 env redefn", 7 },
-  { "--eF4S",       eslARG_NONE,   FALSE,  NULL, NULL,    NULL, NULL,   NULL,             "be strict in gF3 env redef", 7 },
-  { "--tmp",        eslARG_NONE,   FALSE, NULL,NULL, NULL,    NULL, "--nohmm,--noenvdef","use generic local", 7 },
 /* Other options */
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set database size in *Mb* to <x> for E-value calculations",   12 },
@@ -172,13 +161,13 @@ static ESL_OPTIONS options[] = {
   { "--cyk",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL, "--nocyk,--hmm", "use scanning CM CYK algorithm", 20 },
   { "--hmm",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,         "--cyk",  "do not use the CM, use only the HMM", 20},
   /* banded options for CYK filter round of searching */
-  { "--fnoqdb",       eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--hmm,--nocyk",  "do not use QDBs in CYK filter round", 20 },
-  { "--fbeta",        eslARG_REAL,    "1e-9",    NULL, "0<x<1", NULL,        NULL,"--hmm,--nocyk",  "set tail loss prob for CYK filter QDB calculation to <x>", 20 },
-  { "--fhbanded",     eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--hmm,--nocyk",  "calculate and use HMM bands in CYK filter round of CM search", 20 },
-  { "--ftau",         eslARG_REAL,    "5e-6",    NULL, "0<x<1", NULL,"--fhbanded","--hmm,--nocyk",  "set tail loss prob for --fhbanded to <x>", 20 },
-  { "--fsums",        eslARG_NONE,    FALSE,     NULL, NULL,    NULL,"--fhbanded","--hmm,--nocyk",  "w/--fhbanded use posterior sums (widens bands)", 20 },
+  { "--ftau",         eslARG_REAL,    "1e-4",    NULL, "0<x<1", NULL,        NULL,"--fqdb,--hmm,--nocyk",  "set tail loss prob for --fhbanded to <x>", 20 },
+  { "--fsums",        eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--fqdb,--hmm,--nocyk",  "w/--fhbanded use posterior sums (widens bands)", 20 },
+  { "--fqdb",         eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--hmm,--nocyk",  "use QDBs in CYK filter round, not HMM bands", 20 },
+  { "--fbeta",        eslARG_REAL,    "1e-9",    NULL, "0<x<1", NULL,    "--fqdb","--hmm,--nocyk",  "set tail loss prob for CYK filter QDB calculation to <x>", 20 },
+  { "--fnonbanded",   eslARG_NONE,    FALSE,     NULL, NULL,    NULL,    "--fqdb","--hmm,--nocyk",  "do not use any bands for CYK filter round", 20},
   /* banded options for final round of searching */
-  { "--tau",          eslARG_REAL,   "5e-6",     NULL, "0<x<1", NULL,        NULL,       "--qdb,--nonbanded,--hmm", "set tail loss prob for --hbanded to <x>", 20 },
+  { "--tau",          eslARG_REAL,   "1e-7",     NULL, "0<x<1", NULL,        NULL,       "--qdb,--nonbanded,--hmm", "set tail loss prob for --hbanded to <x>", 20 },
   { "--sums",         eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,       "--qdb,--nonbanded,--hmm", "w/--hbanded use posterior sums (widens bands)", 20 },
   { "--qdb",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--nonbanded,--hmm,--tau", "use QDBs (instead of HMM bands) in final Inside round", 20 },
   { "--beta",         eslARG_REAL,   "1e-15",    NULL, "0<x<1",  NULL,     "--qdb",        "--hmm", "set tail loss prob for final Inside QDB calculation to <x>", 20 },
@@ -335,39 +324,38 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--cut_nc"))    fprintf(ofp, "# model-specific thresholding:           NC cutoffs\n");
   if (esl_opt_IsUsed(go, "--cut_tc"))    fprintf(ofp, "# model-specific thresholding:           TC cutoffs\n");
   if (esl_opt_IsUsed(go, "--cyk"))       fprintf(ofp, "# use CYK for final search stage         on\n");
-  if (esl_opt_IsUsed(go, "--fnoqdb"))    fprintf(ofp, "# QDBs (CYK filter stage)                off\n");
-  if (esl_opt_IsUsed(go, "--fhbanded"))  fprintf(ofp, "# HMM bands (filter stage)               on\n");
+  if (esl_opt_IsUsed(go, "--fqdb"))      fprintf(ofp, "# QDBs (CYK filter stage)                on\n");
   if (esl_opt_IsUsed(go, "--fsums"))     fprintf(ofp, "# HMM bands from sums (filter)           on\n");
   if (esl_opt_IsUsed(go, "--qdb"))       fprintf(ofp, "# QDBs (final stage)                     on\n");
   if (esl_opt_IsUsed(go, "--nonbanded")) fprintf(ofp, "# No bands (final stage)                 on\n");
   if (esl_opt_IsUsed(go, "--sums"))      fprintf(ofp, "# HMM bands from sums (final)            on\n");
   if (esl_opt_IsUsed(go, "--max"))       fprintf(ofp, "# Max sensitivity mode:                  on [all heuristic filters off]\n");
+  if (esl_opt_IsUsed(go, "--fZ"))        fprintf(ofp, "# Filters set as if DB size in Mb is:    %f\n", esl_opt_GetReal(go, "--fZ"));
   if (esl_opt_IsUsed(go, "--rfam"))      fprintf(ofp, "# Rfam pipeline mode:                    on\n");
   if (esl_opt_IsUsed(go, "--noenvdef"))  fprintf(ofp, "# Envelope definition prior to CM search:off\n");
   if (esl_opt_IsUsed(go, "--pad"))       fprintf(ofp, "# hit padding strategy:                  on\n");
-  if (esl_opt_IsUsed(go, "--nomsv"))     fprintf(ofp, "# MSV filter:                            off\n");
-  if (esl_opt_IsUsed(go, "--novit"))     fprintf(ofp, "# Vit filter:                            off\n");
-  if (esl_opt_IsUsed(go, "--nofwd"))     fprintf(ofp, "# Fwd filter:                            off\n");
-  if (esl_opt_IsUsed(go, "--nogfwd"))    fprintf(ofp, "# glocal Fwd filter:                     off\n");
+  if (esl_opt_IsUsed(go, "--noF1"))      fprintf(ofp, "# HMM MSV filter:                        off\n");
+  if (esl_opt_IsUsed(go, "--noF2"))      fprintf(ofp, "# HMM Vit filter:                        off\n");
+  if (esl_opt_IsUsed(go, "--noF3"))      fprintf(ofp, "# HMM Fwd filter:                        off\n");
+  if (esl_opt_IsUsed(go, "--noF4"))      fprintf(ofp, "# HMM glocal Fwd filter:                 off\n");
   if (esl_opt_IsUsed(go, "--nohmm"))     fprintf(ofp, "# HMM filters (MSV/bias/Vit/Fwd):        off\n");
-  if (esl_opt_IsUsed(go, "--nocyk"))     fprintf(ofp, "# CYK filter:                            off\n");
-  if (esl_opt_IsUsed(go, "--domsvbias")) fprintf(ofp, "# MSV biased comp HMM filter:            on\n");
-  if (esl_opt_IsUsed(go, "--novitbias")) fprintf(ofp, "# Vit biased comp HMM filter:            off\n");
-  if (esl_opt_IsUsed(go, "--nofwdbias")) fprintf(ofp, "# Fwd biased comp HMM filter:            off\n");
-  if (esl_opt_IsUsed(go, "--nogfwdbias"))fprintf(ofp, "# gFwd biased comp HMM filter:           off\n");
-  if (esl_opt_IsUsed(go, "--noedefbias")) fprintf(ofp,"# Per-envelope biased comp HMM filter:     off\n");
-  if (esl_opt_IsUsed(go, "--F1"))        fprintf(ofp, "# MSV filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F1"));
-  if (esl_opt_IsUsed(go, "--F1b"))       fprintf(ofp, "# MSV bias P threshold:                  <= %g\n", esl_opt_GetReal(go, "--F1b"));
-  if (esl_opt_IsUsed(go, "--F2"))        fprintf(ofp, "# Vit filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F2"));
-  if (esl_opt_IsUsed(go, "--F2b"))       fprintf(ofp, "# Vit bias P threshold:                  <= %g\n", esl_opt_GetReal(go, "--F2b"));
-  if (esl_opt_IsUsed(go, "--F3"))        fprintf(ofp, "# Fwd filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F3"));
-  if (esl_opt_IsUsed(go, "--F3b"))       fprintf(ofp, "# Fwd bias P threshold:                  <= %g\n", esl_opt_GetReal(go, "--F3b"));
-  if (esl_opt_IsUsed(go, "--F4"))        fprintf(ofp, "# glocal Fwd filter P threshold:         <= %g\n", esl_opt_GetReal(go, "--F4"));
-  if (esl_opt_IsUsed(go, "--F4b"))       fprintf(ofp, "# glocal Fwd bias P threshold:           <= %g\n", esl_opt_GetReal(go, "--F4b"));
-  if (esl_opt_IsUsed(go, "--F5"))        fprintf(ofp, "# env defn filter P threshold:           <= %g\n", esl_opt_GetReal(go, "--F5"));
-  if (esl_opt_IsUsed(go, "--F5b"))       fprintf(ofp, "# env defn bias   P threshold:           <= %g\n", esl_opt_GetReal(go, "--F5b"));
-  if (esl_opt_IsUsed(go, "--F6"))        fprintf(ofp, "# CYK filter P threshold:                <= %g\n", esl_opt_GetReal(go, "--F6"));
-  if (esl_opt_IsUsed(go, "--E6"))        fprintf(ofp, "# CYK filter E threshold:                <= %g\n", esl_opt_GetReal(go, "--E6"));
+  if (esl_opt_IsUsed(go, "--noF6"))      fprintf(ofp, "# CM CYK filter:                         off\n");
+  if (esl_opt_IsUsed(go, "--doF1b"))     fprintf(ofp, "# HMM MSV biased comp filter:            on\n");
+  if (esl_opt_IsUsed(go, "--noF2b"))     fprintf(ofp, "# HMM Vit biased comp filter:            off\n");
+  if (esl_opt_IsUsed(go, "--noF3b"))     fprintf(ofp, "# HMM Fwd biased comp filter:            off\n");
+  if (esl_opt_IsUsed(go, "--noF4b"))     fprintf(ofp, "# HMM gFwd biased comp filter:           off\n");
+  if (esl_opt_IsUsed(go, "--noF5b"))     fprintf(ofp, "# HMM per-envelope biased comp filter:   off\n");
+  if (esl_opt_IsUsed(go, "--F1"))        fprintf(ofp, "# HMM MSV filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F1"));
+  if (esl_opt_IsUsed(go, "--F1b"))       fprintf(ofp, "# HMM MSV bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F1b"));
+  if (esl_opt_IsUsed(go, "--F2"))        fprintf(ofp, "# HMM Vit filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F2"));
+  if (esl_opt_IsUsed(go, "--F2b"))       fprintf(ofp, "# HMM Vit bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F2b"));
+  if (esl_opt_IsUsed(go, "--F3"))        fprintf(ofp, "# HMM Fwd filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F3"));
+  if (esl_opt_IsUsed(go, "--F3b"))       fprintf(ofp, "# HMM Fwd bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F3b"));
+  if (esl_opt_IsUsed(go, "--F4"))        fprintf(ofp, "# HMM glocal Fwd filter P threshold:     <= %g\n", esl_opt_GetReal(go, "--F4"));
+  if (esl_opt_IsUsed(go, "--F4b"))       fprintf(ofp, "# HMM glocal Fwd bias P threshold:       <= %g\n", esl_opt_GetReal(go, "--F4b"));
+  if (esl_opt_IsUsed(go, "--F5"))        fprintf(ofp, "# HMM env defn filter P threshold:       <= %g\n", esl_opt_GetReal(go, "--F5"));
+  if (esl_opt_IsUsed(go, "--F5b"))       fprintf(ofp, "# HMM env defn bias   P threshold:       <= %g\n", esl_opt_GetReal(go, "--F5b"));
+  if (esl_opt_IsUsed(go, "--F6"))        fprintf(ofp, "# CM CYK filter P threshold:             <= %g\n", esl_opt_GetReal(go, "--F6"));
   if (esl_opt_IsUsed(go, "--rt1"))       fprintf(ofp, "# Domain definition rt1 parameter        %g\n", esl_opt_GetReal(go, "--rt1"));
   if (esl_opt_IsUsed(go, "--rt2"))       fprintf(ofp, "# Domain definition rt2 parameter        %g\n", esl_opt_GetReal(go, "--rt2"));
   if (esl_opt_IsUsed(go, "--rt3"))       fprintf(ofp, "# Domain definition rt3 parameter        %g\n", esl_opt_GetReal(go, "--rt3"));
@@ -595,11 +583,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * stored in the CM data structure, just need the arrays so I can pass it to cm_pli_NewModel() and it will
      * create scan matrices for each set (fcyk_d{min,max}, final_d{min,max}) */
 
-    /* calculate QDBs for filter and/or final rounds */
-    if(esl_opt_GetBoolean(go, "--fnoqdb") || esl_opt_GetBoolean(go, "--nocyk")) { 
-      fcyk_dmin = fcyk_dmax = NULL; 
-    }
-    else { 
+    /* Calculate QDBs for filter and/or final rounds, if nec */
+    /* By default, QDBs are not necessary */
+    fcyk_dmin = fcyk_dmax = NULL; 
+    final_dmin = final_dmax = NULL; 
+    if(esl_opt_GetBoolean(go, "--fqdb")) { 
       safe_W = cm->clen * 3;
       while(!(BandCalculationEngine(cm, safe_W, esl_opt_GetReal(go, "--fbeta"), FALSE, &(fcyk_dmin), &(fcyk_dmax), NULL, NULL))) { 
 	free(fcyk_dmin);
@@ -608,11 +596,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	if(safe_W > (cm->clen * 1000)) cm_Fail("Unable to calculate QDBs");
       }
     }
-
-    if(! esl_opt_GetBoolean(go, "--qdb")) { 
-      final_dmin = final_dmax = NULL; 
-    }
-    else { 
+    if(esl_opt_GetBoolean(go, "--qdb")) { 
       safe_W = cm->clen * 3;
       while(!(BandCalculationEngine(cm, safe_W, esl_opt_GetReal(go, "--beta"), FALSE, &(final_dmin), &(final_dmax), NULL, NULL))) { 
 	free(final_dmin);
@@ -676,13 +660,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       gmA[m] = p7_profile_Create (hmmA[m]->M, abc);
       omA[m] = p7_oprofile_Create(hmmA[m]->M, abc);
       bgA[m] = p7_bg_Create(hmm_abcA[m]);
-      p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_LOCAL); /* 100 is a dummy length for now; and MSVFilter requires local mode */
-      p7_oprofile_Convert(gmA[m], omA[m]);                        /* <om> is now p7_LOCAL, multihit */
-
-      if((! esl_opt_GetBoolean(go, "--tmp")) && (! esl_opt_GetBoolean(go, "--gmsv"))) { 
-	p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_GLOCAL); /* this will be used to define envelopes in cm_pipeline() 
-								      (we'll alternate b/t multi/uni later when processing envelopes) */
-      }
+      p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_LOCAL);  /* 100 is a dummy length for now; and MSVFilter requires local mode */
+      p7_oprofile_Convert(gmA[m], omA[m]);                       /* <om> is now p7_LOCAL, multihit */
+      /* now convert gm to glocal, to define envelopes in cm_pipeline() */
+      p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_GLOCAL);
     }
 
     for (i = 0; i < infocnt; ++i) {
