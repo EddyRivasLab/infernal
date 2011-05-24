@@ -39,8 +39,6 @@
 #define DEFAULT_PBEGIN           0.05   /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_PEND             0.05   /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_ETARGET          0.59   /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
-#define DEFAULT_HS_MINLEN        7.  /* minimum length for a candidate sub CM root for a hybrid scan */
-#define DEFAULT_HS_BETA          1E-15 /* beta for calc'ing average hit length for sub cm roots of a hybrid scan */
 #define DEFAULT_NULL2_OMEGA      0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null2 model */
 #define DEFAULT_NULL3_OMEGA      0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
 #define V1P0_NULL2_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null2 model for infernal versions 0.56 through 1.0.2 */
@@ -1114,66 +1112,6 @@ typedef struct theta_s {
   int       i0;                 /* position of first residue in sequence (gamma->mx[0] corresponds to this residue) */
 } Theta_t;
 
-/* Structure HybridScanInfo_t: Information for a hybrid CP9 HMM/CM scan in 
- * which some states of the CM are used, and some states of the HMM are used.
- * This data structure keeps track of which HMM/CM states to use.
- */
-#define MB_CM 0
-#define MB_CP9 1
-typedef struct hybridscaninfo_s {
-  int    cm_M;         /* # states in the CM */
-  int    cp9_M;        /* # nodes in the CP9 HMM, consensus length of the cm */
-  int    W;            /* max hit size for hybrid scanner, set as hsi->dmax[0] */
-  double        beta;  /* tail loss prob used to calcuate smx->dmin, smx->dmax */
-  ScanMatrix_t *smx;   /* CM DP scan matrix associated with this filter, has some redundant info (cm_M, dmin, dmax), 
-			* but the reason it's here is it's DP matrix which is specific to hsi's dmin/dmax,
-			* so having  hsi->smx prevents need to modify the CM's ScanMatrix cm->smx (which may 
-			* correspond to different dmin/dmax), for a hybrid scan.
-			*/
-  float hybrid_ncalcs;   /* predicted # of millions of dp calcs for a hybrid scan per residue */
-  float full_cp9_ncalcs; /* predicted # of millions of dp calcs for a pure CP9 scan per residue */
-  float full_cm_ncalcs;  /* predicted # of millions of dp calcs for a pure CM scan per residue, 
-			  * this cannot be calc'ed from this object alone, b/c it depends on cm->beta,
-			  * this value is passed into cm_CreateHybridScanInfo() */
-  float *cm_vcalcs;      /* predicted # of millions of dp calcs for each subtree of the CM using hsi->dmin, hsi->dmax */
-  float *cp9_vcalcs;     /* predicted # of millions of dp calcs for each (implicit) subtree of the CP9 */
-
-  int   *k_mb;         /* [0..k..cm->clen] 2 possible values: MB_CM or MB_CP9 consensus col k is modelled by CM/CP9 */
-
-  int   *k_nxt;        /* [0..k..cm->clen-1] next closest cons col modelled by CP9, only valid if k_mb[k] == MB_CP9 */
-  int   *k_prv;        /* [1..k..cm->clen]   prev closest cons col modelled by CP9, only valid if k_mb[k] == MB_CP9 */
-  int    k_first;      /* min k for which k_mb[k] == MB_CP9 */
-  int    k_last;       /* max k for which k_mb[k] == MB_CP9 */
-
-  int   *k_nxtr;       /* [0..k..cm->clen-1] next closest column to use in CP9 DP algorithms */
-  int   *k_prvr;       /* [1..k..cm->clen]   prev closest column to use in CP9 DP algorithms */
-  int    k_firstr;     /* min k to use in CP9 DP algorithms */
-  int    k_lastr;      /* max k to use in CP9 DP algorithms */
-
-  int   *v_mb;         /* [0..v..cm->M-1]  2 possible values: MB_CM or MB_CP9 cm state v is modelled by CM/CP9 */
-  int   *v_nxt;        /* [1..v..cm->M-1]    next closest state modelled by CM, only valid if v_mb[v] == MB_CM */
-  int   *v_prv;        /* [1..v..cm->M-1]    prev closest state modelled by CM, only valid if v_mb[v] == MB_CM */
-  int    v_first;      /* min v for which v_mb[v] == MB_CM */
-  int    v_last;       /* max v for which v_mb[v] == MB_CM */
-  int    n_v_roots;    /* number of vroots */
-  int   *v_isroot;     /* [0..v..cm->M-1] TRUE if v is a sub CM root for the hybrid scan, FALSE if not */
-
-  /* nec? */ int    ncands;       /* number of candidate states, these *could* be sub CM roots */                   
-  /* nec? */ float  minlen;       /* minimum average length (avglen) a candidate state must have */                 
-  /* nec? */ int   *iscandA;      /* [0..v..cm->M-1] TRUE if state v is a candidate sub CM root, FALSE otherwise */   
-  float *avglenA;      /* [0..v..cm->M-1] average length of a hit rooted at v (from QDB) */                
-  double avglen_beta;  /* tail loss prob used for calc'ing avglenA */
-  int    nstarts;      /* # start states (and start groups) in the CM */                                 
-  int   *startA;       /* [0..i..cm->M-1] start group this state belongs to */                               
-  int   *firstA;       /* [0..i..nstarts-1], first state in start state i's group */                     
-  int   *lastA;        /* [0..i..nstarts-1], last state in start state i's group */                      
-  int  **withinAA;     /* [0..i..nstarts-1][0..j..nstarts-1] = TRUE if start state j's group             
-                        * is within start state i's group.                                               
-                        *  emap->startA[cm->nodemap[i]]->lpos < emap->startA[cm->nodemap[j]]->lpos  &&   
-                        *  emap->endA  [cm->nodemap[i]]->rpos > emap->endA  [cm->nodemap[j]]->rpos       
-                        */			
-} HybridScanInfo_t;
-
 /* Structure SearchInfo_t: 
  * 
  * Information for CM searches, including info on filters.  
@@ -1195,20 +1133,18 @@ typedef struct hybridscaninfo_s {
  */                                                                                                      
 typedef struct searchinfo_s {
   int    nrounds;            /* number of rounds of filtering, if 0, we're not filtering */
-  int   *stype;              /* [0..n..nrounds] search 'type' "SEARCH_WITH_HMM", "SEARCH_WITH_HYBRID", or "SEARCH_WITH_CM" */
+  int   *stype;              /* [0..n..nrounds] search 'type' "SEARCH_WITH_HMM", "SEARCH_WITH_CM" */
   int   *search_opts;        /* [0..n..nrounds] search options for each round of filtering, including the final round */
   int   *cutoff_type;        /* [0..n..nrounds] SCORE_CUTOFF or E_CUTOFF */
   float *sc_cutoff;          /* [0..n..nrounds] bit score cutoff threshold for each round, always valid, 
 			      * if cutoff_type[n] == E_CUTOFF this is minimal bit score across all partitions for e_cutoff */
   float *e_cutoff;           /* [0..n..nrounds] E-value cutoff threshold for each round, ONLY valid if if cutoff_type[n] == E_CUTOFF */
   ScanMatrix_t     **smx;    /* [0..n..nrounds] scanning DP matrix for each round, for final round (n==nrounds) si->smx[nrounds] == cm->smx */
-  HybridScanInfo_t **hsi;    /* [0..n..nrounds] hybrid scan info for SEARCH_WITH_HYBRID rounds, NULL if stype[f] != SEARCH_WITH_HYBRID */
 } SearchInfo_t;
 
 /* possible values for stype[] array in SearchInfo_t objects */
 #define SEARCH_WITH_HMM    0  
-#define SEARCH_WITH_HYBRID 1
-#define SEARCH_WITH_CM     2
+#define SEARCH_WITH_CM     1
 
 
 /* Structure ExpInfo_t:
@@ -1273,6 +1209,7 @@ typedef struct hmmfilterinfo_s {
 #define FTHR_PLOT_CMB_XHMM  6 /* predicted xhmm (factor slower than HMM only scan) versus CM bit score cutoffs */
 #define FTHR_PLOT_CMB_SPDUP 7 /* predicted speedup with filter versus CM bit score cutoffs */
 #define FTHR_NPLOT          8
+
 /* Structure BestFilterInfo_t: 
  * 
  * Information for the predicted best filter for CM searches
@@ -1285,16 +1222,11 @@ typedef struct bestfilterinfo_s {
   int           N;                   /* number of CM hits used to get threshold ((N*F) passed)*/
   int           db_size;             /* db size used to calculate exponential mu for *_eval calculations */
   int           is_valid;            /* TRUE if values have been set, FALSE if not */
-  int           ftype;               /* FILTER_WITH_HMM_VITERBI, FILTER_WITH_HMM_FORWARD, FILTER_WITH_HYBRID or FILTER_NOTYETSET */
+  int           ftype;               /* FILTER_WITH_HMM_VITERBI, FILTER_WITH_HMM_FORWARD or FILTER_NOTYETSET */
   float         e_cutoff;            /* cutoff E-value threshold for filter (we can use this and db_size and exponential tail to get bit score for each partition) */
   float         full_cm_ncalcs;      /* millions of DP calcs for full CM scan of length db_size */
   float         fil_ncalcs;          /* millions of DP calcs for filter scan of length db_size */
   float         fil_plus_surv_ncalcs;/* millions of DP calcs for filter scan + full CM scan of survivors of length db_size */
-  /* info for hybrid scanner, only valid if ftype == FILTER_WITH_HYBRID */
-  double        hbeta;               /* tail loss prob used to calculate dmin/dmax for hybrid filter */
-  int          *v_isroot;            /* [0..cm->M-1], TRUE if state v is a sub CM root in filter, false if not */
-  int           np;                  /* number of partitions (number of exponentials in hexpA) */
-  ExpInfo_t   **hexpA;               /* [0.p.np-1] exponential tail info for hybrid scanner, partition p, only non-NULL if ftype == FILTER_WITH_HYBRID */
 } BestFilterInfo_t;
 
 
@@ -1302,8 +1234,7 @@ typedef struct bestfilterinfo_s {
 /* possible values for ftype[] array in FilterInfo_t objects */
 #define FILTER_WITH_HMM_VITERBI 0  
 #define FILTER_WITH_HMM_FORWARD 1  
-#define FILTER_WITH_HYBRID      2
-#define FILTER_NOTYETSET        3
+#define FILTER_NOTYETSET        2
 
 /* Structure CMStats_t
  */
@@ -1463,7 +1394,6 @@ typedef struct cm_s {
   float     *root_trans; /* transition probs from state 0, saved IFF zeroed in ConfigLocal()   */
   float      pbegin;     /* local begin prob to spread across internal nodes for local mode    */
   float      pend;       /* local end prob to spread across internal nodes for local mode      */
-  
   
   float  el_selfsc;     /* score of a self transition in the EL state
 			 * the EL state emits only on self transition (EPN 11.15.05)*/

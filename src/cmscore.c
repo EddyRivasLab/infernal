@@ -1452,7 +1452,7 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   else if(do_random) {
     lengths_specified = (esl_opt_IsOn(go, "--Lmin") && esl_opt_IsOn(go, "--Lmax")) ? TRUE : FALSE;
     if(!lengths_specified) { /* set random sequence length distribution as length distribution of generative CM, obtained from QDB calc */
-      while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
+      while(!(BandCalculationEngine(cm, safe_windowlen, 1E-15, TRUE, NULL, NULL, &(gamma), NULL))) {
 	safe_windowlen *= 2;
 	if(safe_windowlen > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
 	FreeBandDensities(cm, gamma);
@@ -1527,9 +1527,8 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
 
   /* convenience pointers to cm->si for this 'filter round' of searching */
   float             cutoff;          /* cutoff for this round, HMM or CM, whichever is relevant for this round */
-  int               stype;           /* search type for this round SEARCH_WITH_HMM, SEARCH_WITH_HYBRID, or SEARCH_WITH_CM */
+  int               stype;           /* search type for this round SEARCH_WITH_HMM, or SEARCH_WITH_CM */
   ScanMatrix_t     *smx;             /* scan matrix for this round, != NULL only if SEARCH_WITH_CM, and must == cm->smx if we're in the final round */
-  HybridScanInfo_t *hsi;             /* hybrid scan info for this round, NULL unless stype is SEARCH_WITH_HYBRID */
 
   /* Contract checks */
   if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), CMH_BITS flag down.\n");
@@ -1537,7 +1536,6 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(): dsq is NULL.");
   if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(): CMH_BITS flag down.\n");
   if(si->nrounds != 0)                 ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(): si->nrounds != 0\n");
-  if(si->stype[0] == SEARCH_WITH_HYBRID) ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(): hybrid filtering not yet implemented.\n");
 
   /* copy info for this round from SearchInfo fi */
   sround = 0;
@@ -1545,14 +1543,12 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
   cutoff          = si->sc_cutoff[sround]; /* this will be a bit score regardless of whether the cutoff_type == E_CUTOFF */
   stype           = si->stype[sround];
   smx             = si->smx[sround]; /* may be NULL */
-  hsi             = si->hsi[sround]; /* may be NULL */
 
   /* SEARCH_WITH_HMM section */
   if(stype == SEARCH_WITH_HMM) { 
     /* some SEARCH_WITH_HMM specific contract checks */
     if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), trying to use CP9 HMM that is NULL.\n");
     if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
-    if(hsi != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), SEARCH_WITH_HMM but hsi != NULL.\n");
     if(! ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)))
       ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), round search type = SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI & CM_SEARCH_HMMFORWARD flags down.");
 
@@ -1604,7 +1600,6 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
   else { /* stype == SEARCH_WITH_CM */
     ESL_DASSERT1((stype == SEARCH_WITH_CM));
     if(smx == NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), SEARCH_WITH_CM but smx == NULL.\n");
-    if(hsi != NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(): SEARCH_WITH_CM, but hsi is NULL\n");
 
     if(cm->search_opts & CM_SEARCH_HBANDED) {
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status; 

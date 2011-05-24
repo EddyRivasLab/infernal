@@ -101,7 +101,6 @@ OBJS  = cm.o\
 	eweight.o\
 	errors.o\
 	hmmband.o\
-	hybridsearch.o\
 	logsum.o\
 	mpisupport.o\
 	prior.o\

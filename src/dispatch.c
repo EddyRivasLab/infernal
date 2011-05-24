@@ -82,9 +82,8 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 
   /* convenience pointers to cm->si for this 'filter round' of searching */
   float             cutoff;          /* cutoff for this round, HMM or CM, whichever is relevant for this round */
-  int               stype;           /* search type for this round SEARCH_WITH_HMM, SEARCH_WITH_HYBRID, or SEARCH_WITH_CM */
+  int               stype;           /* search type for this round SEARCH_WITH_HMM, or SEARCH_WITH_CM */
   ScanMatrix_t     *smx;             /* scan matrix for this round, != NULL only if SEARCH_WITH_CM, and must == cm->smx if we're in the final round */
-  HybridScanInfo_t *hsi;             /* hybrid scan info for this round, NULL unless stype is SEARCH_WITH_HYBRID */
   search_results_t *round_results;   /* search_results for this round */
   search_results_t *cur_results;     /* search_results for *this* call to DispatchSearch, copied to round_results at end of function */
   int               prev_j;          /* used to collapse hits within same W bubble together when filtering */
@@ -101,14 +100,11 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 
   ESL_DPRINTF1(("In DispatchSearch(), round: %d\n", sround));
 
-  if(si->stype[sround] == SEARCH_WITH_HYBRID) cm_Fail("DispatchSearch, hybrid filtering not yet implemented.\n");
-
   /* copy info for this round from SearchInfo fi */
   cm->search_opts = si->search_opts[sround]; 
   cutoff          = si->sc_cutoff[sround]; /* this will be a bit score regardless of whether the cutoff_type == E_CUTOFF */
   stype           = si->stype[sround];
   smx             = si->smx[sround]; /* may be NULL */
-  hsi             = si->hsi[sround]; /* may be NULL */
   round_results   = results[sround]; /* must not be NULL, contract enforced this */
   h_existing      = round_results->num_results; /* remember this, b/c we only want to rescan survivors found in *this* function call */
   do_null2        = (cm->search_opts & CM_SEARCH_NULL2) ? TRUE : FALSE;
@@ -121,7 +117,6 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     /* some SEARCH_WITH_HMM specific contract checks */
     if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), trying to use CP9 HMM that is NULL.\n");
     if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
-    if(hsi != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_HMM but hsi != NULL.\n", sround);
     if(! ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)))
       ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round search type=SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI & CM_SEARCH_HMMFORWARD flags are down.");
 
@@ -206,19 +201,10 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 
   }
   /* end of SEARCH_WITH_HMM section */
-  else if(stype == SEARCH_WITH_HYBRID) { 
-    /* contract check */
-    if(smx != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_HYBRID but smx != NULL.\n", sround);
-    if(hsi == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): current round %d is type SEARCH_WITH_HYBRID, but hsi is NULL\n", sround);
-    if((status = cm_cp9_HybridScan(cm, errbuf, cm->cp9_mx, dsq, hsi, i0, j0, hsi->W, cutoff, cur_results, 
-				   NULL, NULL, /* don't return best score at each posn, and best scoring posn */
-				   &sc)) != eslOK) return status;
-  }  
   else { /* stype == SEARCH_WITH_CM */
     ESL_DASSERT1((stype == SEARCH_WITH_CM));
     if(smx == NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_CM but smx == NULL.\n", sround);
     if(sround == si->nrounds && smx != cm->smx) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), final round %d, SEARCH_WITH_CM but smx != cm->smx.\n", sround);
-    if(hsi != NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): round %d is type SEARCH_WITH_CM, but hsi is NULL\n", sround);
 
     if(cm->search_opts & CM_SEARCH_HBANDED) {
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status; 

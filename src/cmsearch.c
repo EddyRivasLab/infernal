@@ -1768,13 +1768,13 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 
   /* C. add QDB filter, if necessary (before HMM filter, filters added like a stack, HMM filter is added last but used first) */
   if(do_qdb_filter) { 
-    AddFilterToSearchInfo(cm, TRUE, FALSE, FALSE, FALSE, FALSE, fqdb_smx, NULL, fqdb_ctype, fqdb_sc, fqdb_E, (! esl_opt_GetBoolean(go, "--no-null3")));
+    AddFilterToSearchInfo(cm, TRUE, FALSE, FALSE, FALSE, fqdb_smx, fqdb_ctype, fqdb_sc, fqdb_E, (! esl_opt_GetBoolean(go, "--no-null3")));
     /* DumpSearchInfo(cm->si); */
   }
   else if (fqdb_smx != NULL) cm_FreeScanMatrix(cm, fqdb_smx); 
   /* D. add HMM filter, if necessary (after QDB filter, filters added like a stack, HMM filter is added last but used first) */
   if (do_hmm_filter) { 
-    AddFilterToSearchInfo(cm, FALSE, FALSE, FALSE, TRUE, FALSE, NULL, NULL, fhmm_ctype, fhmm_sc, fhmm_E, (! esl_opt_GetBoolean(go, "--no-null3")));
+    AddFilterToSearchInfo(cm, FALSE, FALSE, FALSE, TRUE, NULL, fhmm_ctype, fhmm_sc, fhmm_E, (! esl_opt_GetBoolean(go, "--no-null3")));
     /*DumpSearchInfo(cm->si); */
   }
   ValidateSearchInfo(cm, cm->si);
@@ -2020,13 +2020,13 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
 
   /* C. add QDB filter, if necessary (before HMM filter, filters added like a stack, HMM filter is added last but used first) */
   if(do_qdb_filter) { 
-    AddFilterToSearchInfo(cm, TRUE, FALSE, FALSE, FALSE, FALSE, fqdb_smx, NULL, SCORE_CUTOFF, fqdb_sc, -1., (! esl_opt_GetBoolean(go, "--no-null3")));
+    AddFilterToSearchInfo(cm, TRUE, FALSE, FALSE, FALSE, fqdb_smx, SCORE_CUTOFF, fqdb_sc, -1., (! esl_opt_GetBoolean(go, "--no-null3")));
     /* DumpSearchInfo(cm->si); */
   }
   else if (fqdb_smx != NULL) cm_FreeScanMatrix(cm, fqdb_smx); 
   /* D. add HMM filter, if necessary (after QDB filter, filters added like a stack, HMM filter is added last but used first) */
   if (do_hmm_filter) { 
-    AddFilterToSearchInfo(cm, FALSE, FALSE, FALSE, TRUE, FALSE, NULL, NULL, SCORE_CUTOFF, fhmm_sc, -1., (! esl_opt_GetBoolean(go, "--no-null3")));
+    AddFilterToSearchInfo(cm, FALSE, FALSE, FALSE, TRUE, NULL, SCORE_CUTOFF, fhmm_sc, -1., (! esl_opt_GetBoolean(go, "--no-null3")));
     /* DumpSearchInfo(cm->si); */
   }
   ValidateSearchInfo(cm, cm->si);
@@ -2176,7 +2176,6 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
   int stype;
   int search_opts;
   ScanMatrix_t *smx;
-  HybridScanInfo_t *hsi;
   int   use_qdb;            /* are we using qdb for current round? */
   char  time_buf[128];	    /* for printing predicted times */
   int   do_pad;             /* TRUE to add W pad onto survival fraction (FALSE only in final round of searching) */
@@ -2217,7 +2216,6 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
     sc_cutoff   = cm->si->sc_cutoff[n];
     e_cutoff    = cm->si->e_cutoff[n];
     smx         = cm->si->smx[n];
-    hsi         = cm->si->hsi[n];
 
     /* Determine configuration of CM and CP9 based on cm->flags & cm->search_opts */
     CM2ExpMode(cm, search_opts, &cm_mode, &cp9_mode); 

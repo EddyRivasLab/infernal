@@ -531,17 +531,6 @@ extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX 
 extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);
 extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);
 
-/* from hybridsearch.c */
-extern int                cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanInfo_t *hsi, int i0, int j0, int W, 
-					    float cutoff, search_results_t *results, int **ret_psc, int *ret_maxres, float *ret_sc);
-extern int                predict_xsub(CM_t *cm, float *cm_vcalcs, float *cm_expsc, float *cp9_expsc);
-extern void               cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_hitlen);
-extern HybridScanInfo_t * cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs);
-extern int                cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int vroot_to_add);
-extern int                cm_CheckCompatibleWithHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int v_root_to_add);
-extern int                cm_ValidateHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi);
-extern void               cm_FreeHybridScanInfo(HybridScanInfo_t *hsi, CM_t *cm);
-
 /* from logsum.c */
 extern void  init_ilogsum(void);
 extern int   ILogsum(int s1, int s2);
@@ -628,8 +617,8 @@ extern void FreeMat(fullmat_t *fullmat);
 
 /* from searchinfo.c */
 extern int  CreateSearchInfo(CM_t *cm, int cutoff_type, float sc_cutoff, float e_cutoff);
-extern int  AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_filter, int forward_filter, int hybrid_filter, 
-				  ScanMatrix_t *smx, HybridScanInfo_t *hsi, int cutoff_type, float sc_cutoff, float e_cutoff, int do_null3);
+extern int  AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_filter, int forward_filter, 
+				  ScanMatrix_t *smx, int cutoff_type, float sc_cutoff, float e_cutoff, int do_null3);
 extern void FreeSearchInfo(SearchInfo_t *si, CM_t *cm);
 extern void DumpSearchInfo(SearchInfo_t *si);
 extern void DumpSearchOpts(int search_opts);
@@ -655,7 +644,6 @@ extern int  ScoresFromResults          (search_results_t *results, char *errbuf,
 extern float CountScanDPCalcs          (CM_t *cm, int L, int use_qdb);
 extern BestFilterInfo_t *CreateBestFilterInfo();
 extern int  SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, int ftype, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs);
-extern int  SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs, HybridScanInfo_t *hsi, int np, ExpInfo_t **hexpA);
 extern void FreeBestFilterInfo(BestFilterInfo_t *bf);
 extern void DumpBestFilterInfo(BestFilterInfo_t *bf);
 extern HMMFilterInfo_t *CreateHMMFilterInfo();
