@@ -76,11 +76,12 @@ static int merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1,
  *            | --cut_nc     |  model-specific thresholding using NC        |   FALSE   |
  *            | --cut_tc     |  model-specific thresholding using TC        |   FALSE   |
  *            | --max        |  turn all heuristic filters off              |   FALSE   |
+ *            | --fZ <x>     |  set filter thr as if dbsize were <x> Mb     |     OFF   |
  *            | --F1         |  Stage 1 (MSV) thresh: promote hits P <= F1  |    0.35   |
  *            | --F2         |  Stage 2 (Vit) thresh: promote hits P <= F2  |    0.10   |
  *            | --F3         |  Stage 3 (Fwd) thresh: promote hits P <= F3  |    0.02   |
  *            | --null2      |  turn ON biased comp score correction        |   FALSE   |
- *            | --seed       |  RNG seed (0=use arbitrary seed)             |      42   |
+ *            | --seed       |  RNG seed (0=use arbitrary seed)             |     181   |
  *            | --acc        |  prefer accessions over names in output      |   FALSE   |
  * *** opts below this line are unique to cm_pipeline.c ***
  *            | --nonull3    |  turn off NULL3 correction                   |   FALSE   |
@@ -136,11 +137,12 @@ static int merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1,
  * Throws:    <NULL> on allocation failure.
  */
 CM_PIPELINE *
-cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes_e mode)
+cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, enum cm_pipemodes_e mode)
 {
   CM_PIPELINE *pli  = NULL;
   int          seed = esl_opt_GetInteger(go, "--seed");
   int          status;
+  double       Z_Mb; /* database size in Mb */
 
   ESL_ALLOC(pli, sizeof(CM_PIPELINE));
 
@@ -255,85 +257,83 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes
   pli->do_null2      = FALSE;
   pli->do_null3      = TRUE;
 
-
-  /* Configure search space sizes for E value calculations and filter thresholds. Order is important here. */
-  pli->Z       = 0.0;
-  pli->Z_setby = CM_ZSETBY_DBSIZE;
-  /* Defaults: */
-  pli->F1        = ESL_MIN(1.0, esl_opt_GetReal(go, "--F1"));
-  pli->F1b       = ESL_MIN(1.0, esl_opt_GetReal(go, "--F1b"));
-  pli->F2        = ESL_MIN(1.0, esl_opt_GetReal(go, "--F2"));
-  pli->F2b       = ESL_MIN(1.0, esl_opt_GetReal(go, "--F2b"));
-  pli->F3        = ESL_MIN(1.0, esl_opt_GetReal(go, "--F3"));
-  pli->F3b       = ESL_MIN(1.0, esl_opt_GetReal(go, "--F3b"));
-  pli->F4        = ESL_MIN(1.0, esl_opt_GetReal(go, "--F4"));
-  pli->F4b       = ESL_MIN(1.0, esl_opt_GetReal(go, "--F4b"));
-  pli->F5        = ESL_MIN(1.0, esl_opt_GetReal(go, "--F5"));
-  pli->F5b       = ESL_MIN(1.0, esl_opt_GetReal(go, "--F5b"));
-  pli->F6        = ESL_MIN(1.0, esl_opt_GetReal(go, "--F6"));
-  pli->F6env     = ESL_MIN(1.0, pli->F6 * (float) esl_opt_GetInteger(go, "--cykenvx"));
-  pli->do_cykenv = (esl_opt_GetBoolean(go, "--nocykenv")) ? FALSE : TRUE;
-
+  /* Configure search space sizes for E value calculations and filter thresholds.
+   * This is database size dependent. Which was passed in. If -Z <x> enabled, we overwrite
+   * the passed in value with <x>.
+   */
   if (esl_opt_IsOn(go, "-Z")) { 
       pli->Z_setby = CM_ZSETBY_OPTION;
       pli->Z       = esl_opt_GetReal(go, "-Z");
-      if(pli->Z >= (100000. - eslSMALLX1)) { /* Z >= 100 Gb */
-	pli->F1 = pli->F1b = 0.05;
-	pli->F2 = pli->F2b = 0.04;
-	pli->F3 = pli->F3b = 0.0004;
-	pli->F4 = pli->F4b = 0.0004;
-	pli->F5 = pli->F5b = 0.0004;
-	pli->F6 = 0.0001;
-      }
-      else if(pli->Z >= (10000. - eslSMALLX1)) { /* 100 Gb > Z >= 10 Gb */
-	pli->F1 = pli->F1b = 0.06;
-	pli->F2 = pli->F2b = 0.05;
-	pli->F3 = pli->F3b = 0.0005;
-	pli->F4 = pli->F4b = 0.0005;
-	pli->F5 = pli->F5b = 0.0005;
-	pli->F6 = 0.0001;
-      }
-      else if(pli->Z >= (1000. - eslSMALLX1)) { /* 10 Gb > Z >= 1 Gb */
-	pli->F1 = pli->F1b = 0.06;
-	pli->F2 = pli->F2b = 0.15;
-	pli->F3 = pli->F3b = 0.0005;
-	pli->F4 = pli->F4b = 0.0005;
-	pli->F5 = pli->F5b = 0.0005;
-	pli->F6 = 0.0001;
-      }
-      else if(pli->Z >= (100. - eslSMALLX1)) { /* 1 Gb  > Z >= 100 Mb */
-	pli->F1 = pli->F1b = 0.30;
-	pli->F2 = pli->F2b = 0.15;
-	pli->F3 = pli->F3b = 0.002;
-	pli->F4 = pli->F4b = 0.002;
-	pli->F5 = pli->F5b = 0.002;
-	pli->F6 = 0.0001;
-      }
-      else if(pli->Z >= (10. - eslSMALLX1)) { /* 100 Mb  > Z >= 10 Mb */
-	pli->F1 = pli->F1b = 0.35;
-	pli->F2 = pli->F2b = 0.20;
-	pli->F3 = pli->F3b = 0.003;
-	pli->F4 = pli->F4b = 0.003;
-	pli->F5 = pli->F5b = 0.003;
-	pli->F6 = 0.0001;
-      }
-      else if(pli->Z >= (1. - eslSMALLX1)) { /* 10 Mb  > Z >= 1 Mb */
-	pli->F1 = pli->F1b = 0.35;
-	pli->F2 = pli->F2b = 0.20;
-	pli->F3 = pli->F3b = 0.015;
-	pli->F4 = pli->F4b = 0.015;
-	pli->F5 = pli->F5b = 0.015;
-	pli->F6 = 0.0001;
-      }
-      else if(pli->Z >= (1. - eslSMALLX1)) { /* 1 Mb  > Z */
-	pli->do_msv = FALSE;
-	pli->F2 = pli->F2b = 0.25;
-	pli->F3 = pli->F3b = 0.02;
-	pli->F4 = pli->F4b = 0.02;
-	pli->F5 = pli->F5b = 0.02;
-	pli->F6 = 0.0001;
-      }
   }
+  else { 
+    pli->Z       = Z;
+    pli->Z_setby = CM_ZSETBY_DBSIZE;
+  }
+  if(esl_opt_IsUsed(go, "--fZ")) { 
+    Z_Mb = esl_opt_GetReal(go, "--fZ"); 
+  }
+  else { 
+    Z_Mb = pli->Z / 1000000.;
+  }
+  if(Z_Mb >= (100000. - eslSMALLX1)) { /* Z >= 100 Gb */
+    pli->F1 = pli->F1b = 0.05;
+    pli->F2 = pli->F2b = 0.04;
+    pli->F3 = pli->F3b = 0.0004;
+    pli->F4 = pli->F4b = 0.0004;
+    pli->F5 = pli->F5b = 0.0004;
+    pli->F6 = 0.0001;
+  }
+  else if(Z_Mb >= (10000. - eslSMALLX1)) { /* 100 Gb > Z >= 10 Gb */
+    pli->F1 = pli->F1b = 0.06;
+    pli->F2 = pli->F2b = 0.05;
+    pli->F3 = pli->F3b = 0.0005;
+    pli->F4 = pli->F4b = 0.0005;
+    pli->F5 = pli->F5b = 0.0005;
+    pli->F6 = 0.0001;
+  }
+  else if(Z_Mb >= (1000. - eslSMALLX1)) { /* 10 Gb > Z >= 1 Gb */
+    pli->F1 = pli->F1b = 0.06;
+    pli->F2 = pli->F2b = 0.15;
+    pli->F3 = pli->F3b = 0.0005;
+    pli->F4 = pli->F4b = 0.0005;
+    pli->F5 = pli->F5b = 0.0005;
+    pli->F6 = 0.0001;
+  }
+  else if(Z_Mb >= (100. - eslSMALLX1)) { /* 1 Gb  > Z >= 100 Mb */
+    pli->F1 = pli->F1b = 0.30;
+    pli->F2 = pli->F2b = 0.15;
+    pli->F3 = pli->F3b = 0.002;
+    pli->F4 = pli->F4b = 0.002;
+    pli->F5 = pli->F5b = 0.002;
+    pli->F6 = 0.0001;
+  }
+  else if(Z_Mb >= (10. - eslSMALLX1)) { /* 100 Mb  > Z >= 10 Mb */
+    pli->F1 = pli->F1b = 0.35;
+    pli->F2 = pli->F2b = 0.20;
+    pli->F3 = pli->F3b = 0.003;
+    pli->F4 = pli->F4b = 0.003;
+    pli->F5 = pli->F5b = 0.003;
+    pli->F6 = 0.0001;
+  }
+  else if(Z_Mb >= (1. - eslSMALLX1)) { /* 10 Mb  > Z >= 1 Mb */
+    pli->F1 = pli->F1b = 0.35;
+    pli->F2 = pli->F2b = 0.20;
+    pli->F3 = pli->F3b = 0.015;
+    pli->F4 = pli->F4b = 0.015;
+    pli->F5 = pli->F5b = 0.015;
+    pli->F6 = 0.0001;
+  }
+  else if(Z_Mb >= (1. - eslSMALLX1)) { /* 1 Mb  > Z */
+    pli->do_msv = FALSE;
+    pli->F2 = pli->F2b = 0.25;
+    pli->F3 = pli->F3b = 0.02;
+    pli->F4 = pli->F4b = 0.02;
+    pli->F5 = pli->F5b = 0.02;
+    pli->F6 = 0.0001;
+  }
+
+  pli->F6env     = ESL_MIN(1.0, pli->F6 * (float) esl_opt_GetInteger(go, "--cykenvx"));
+  pli->do_cykenv = (esl_opt_GetBoolean(go, "--nocykenv")) ? FALSE : TRUE;
   
   pli->orig_F4  = pli->F4;
   pli->orig_F4b = pli->F4b;
@@ -822,17 +822,9 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
   int              nsurv_fwd;        /* number of windows that survive fwd filter */
   int              new_nsurv_fwd;    /* used when merging fwd survivors */
   ESL_DSQ         *subdsq;           /* a ptr to the first position of a window */
-  int              tr_i, tr_j;       /* first and final positions of traces */
-  int              tr_ki, tr_kj;     /* first and final nodes used traces */
-  P7_TRACE        *tr = NULL;        /* sampled trace for pli->do_fwdbias_sampling or pli->do_F3env */
-  int              ndom, ntot;       /* number of sampled tracebacks for pli->do_F3env */
-  float            tot_ndom;         /* total number of domains for pli->do_F3env */
-  int              min_i, max_j;     /* minimum/maximum position in match state in sampled traces for pli->do_F3env */
-  int              s, z;
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   p7_omx_GrowTo(pli->oxf, om->M, 0, sq->n);    /* expand the one-row omx if needed */
-  tr = p7_trace_Create();
 
   /* Set false target length. This is a conservative estimate of the length of window that'll
    * soon be passed on to later phases of the pipeline;  used to recover some bits of the score
@@ -1236,12 +1228,6 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
   ESL_SQ          *seq = NULL;       /* a copy of a window */
   int64_t          estart, eend;     /* envelope start/end positions */
   float            nullsc, filtersc, fwdsc;
-  int              tr_i, tr_j;       /* first and final positions of traces */
-  P7_TRACE        *tr = NULL;        /* sampled trace for pli->do_fwdbias_sampling or pli->do_F3env */
-  int              ndom, ntot;       /* number of sampled tracebacks for pli->do_F3env */
-  float            tot_ndom;         /* total number of envelopes */
-  int              min_i, max_j;     /* minimum/maximum position in match state in sampled traces for pli->do_F3env */
-  int              s, z;
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nwin == 0)  { 
@@ -1251,7 +1237,6 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
     return eslOK;    /* if there's no envelopes to search in, return */
   }
   p7_omx_GrowTo(pli->oxf, om->M, 0, sq->n);    /* expand the one-row omx if needed */
-  tr = p7_trace_Create();
   
   nenv_alloc = nwin;
   ESL_ALLOC(es, sizeof(int64_t) * nenv_alloc);
@@ -1493,7 +1478,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
   float            cyksc, inssc, finalsc;  /* bit scores                           */
   int              have_hmmbands;          /* TRUE if HMM bands have been calc'ed for current hit */
   double           P;                      /* P-value of a hit */
-  double           E;                      /* E-value of a hit */
   int              i, h;                   /* counters */
   search_results_t *results;               /* results data structure CM search functions report hits to */
   search_results_t *tmp_results;           /* temporary results data structure CM search functions report hits to */

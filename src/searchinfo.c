@@ -1343,6 +1343,37 @@ FreeHMMFilterInfo(HMMFilterInfo_t *hfi)
   return;
 }  
 
+/* Function: CopyHMMFilterInfo()
+ * Date:     EPN, Tue May 24 10:02:06 2011
+ *
+ * Purpose:  Copy an HMMFilterInfo object.
+ *            
+ * Returns:  eslOK on success. eslEMEM if out of memory.
+ */
+int 
+CopyHMMFilterInfo(HMMFilterInfo_t *src, HMMFilterInfo_t *dest)
+{
+  int status;
+
+  dest->is_valid  = src->is_valid;
+  dest->F         = src->F;
+  dest->N         = src->N;
+  dest->dbsize    = src->dbsize;
+  dest->ncut      = src->ncut;
+  if(src->ncut > 0) { 
+    ESL_ALLOC(dest->cm_E_cut,  sizeof(float) * src->ncut);
+    ESL_ALLOC(dest->fwd_E_cut, sizeof(float) * src->ncut);
+    esl_vec_FCopy(src->cm_E_cut,  src->ncut, dest->cm_E_cut);
+    esl_vec_FCopy(src->fwd_E_cut, src->ncut, dest->fwd_E_cut);
+  }
+  dest->always_better_than_Smax = src->always_better_than_Smax;
+
+  return eslOK;
+
+  ERROR: 
+  return eslEMEM;
+}  
+
 /* Function: DumpHMMFilterInfo()
  * Date:     EPN, Mon Dec 10 12:22:10 2007
  *

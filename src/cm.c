@@ -2545,3 +2545,105 @@ CompareCMGuideTrees(CM_t *cm1, CM_t *cm2)
   return TRUE;
 }
 
+
+/* Function: CloneCMJustReadFromFile()
+ * EPN, Tue May 24 09:11:13 2011
+ *
+ * Purpose:  Given a CM just read from a file, clone it and return
+ *           the clone in *ret_cm.
+ *
+ * Args:     cm     - CM to clone
+ *           ret_cm - copy of CM, allocated here, must be freed by caller.
+ * 
+ * Returns:  eslEINCOMPAT if cm seems to have been manipulated in some 
+ *           way after being read from a file.
+ */
+int 
+CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
+{
+  int status;
+  CM_t *new = NULL;
+  int i;
+
+  /* Check for flags that indicate the CM was manipulated after being
+   * read from a file. Return an error if any are found. */
+  if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_LOCAL_BEGIN flag is up (it shouldn't be if the CM was just read from a file");
+  if(cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_LOCAL_END flag is up (it shouldn't be if the CM was just read from a file");
+  if(cm->flags & CMH_BITS)        ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_BITS flag is up (it shouldn't be if the CM was just read from a file");
+  if(cm->flags & CMH_QDB)         ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_QDB flag is up (it shouldn't be if the CM was just read from a file");
+  if(cm->flags & CMH_CP9)         ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_CP9 flag is up (it shouldn't be if the CM was just read from a file");
+  if(cm->flags & CMH_CP9STATS)    ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_CP9STATS flag is up (it shouldn't be if the CM was just read from a file");
+  if(cm->flags & CMH_SCANMATRIX)  ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_SCANMATRIX flag is up (it shouldn't be if the CM was just read from a file");
+  if(cm->flags & CM_IS_SUB)       ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CM_IS_SUB flag is up (it shouldn't be if the CM was just read from a file");
+
+  if ((new = CreateCM(cm->nodes, cm->M, cm->abc)) == NULL) { status = eslEMEM; goto ERROR; }
+  CMZero(new);
+
+  new->flags       = cm->flags;
+  new->nseq        = cm->nseq;
+  new->clen        = cm->clen;
+  new->el_selfsc   = cm->el_selfsc;
+  new->eff_nseq    = cm->eff_nseq;
+  new->ga          = cm->ga;
+  new->tc          = cm->tc;
+  new->nc          = cm->nc;
+  new->null2_omega = cm->null2_omega;
+  new->null3_omega = cm->null3_omega;
+  new->beta_W      = cm->beta_W;
+  new->beta_qdb    = cm->beta_qdb;
+  new->tau         = cm->tau;
+
+  /* these arrays were alloc'ed in CreateCM() */
+  esl_vec_FCopy(cm->null,   new->abc->K, new->null);
+  esl_vec_ICopy(cm->ndidx,  cm->M, new->ndidx);
+  esl_vec_ICopy(cm->cfirst, cm->M, new->cfirst);
+  esl_vec_ICopy(cm->cnum,   cm->M, new->cnum);
+  esl_vec_ICopy(cm->plast,  cm->M, new->plast);
+  esl_vec_ICopy(cm->pnum,   cm->M, new->pnum);
+  for(i = 0; i < cm->M+1; i++) new->sttype[i] = cm->sttype[i];
+  for(i = 0; i < cm->M+1; i++) new->stid[i]   = cm->stid[i];
+
+  esl_vec_ICopy(cm->nodemap, cm->nodes, new->nodemap);
+  for(i = 0; i < cm->nodes;    i++) new->ndtype[i]  = cm->ndtype[i];
+
+  esl_vec_FCopy(cm->e[0], cm->M * cm->abc->K * cm->abc->K, new->e[0]);
+  esl_vec_FCopy(cm->t[0], cm->M * MAXCONNECT,              new->t[0]);
+
+  if (esl_strdup(cm->comlog->bcom,  -1, &(new->comlog->bcom))  != eslOK) { status = eslEMEM; goto ERROR; }
+  if (esl_strdup(cm->comlog->bdate, -1, &(new->comlog->bdate)) != eslOK) { status = eslEMEM; goto ERROR; }
+  if (esl_strdup(cm->comlog->ccom,  -1, &(new->comlog->ccom))  != eslOK) { status = eslEMEM; goto ERROR; }
+  if (esl_strdup(cm->comlog->cdate, -1, &(new->comlog->cdate)) != eslOK) { status = eslEMEM; goto ERROR; }
+  
+  /* clone the CM stats */
+  if((status = CloneCMStats(cm->stats, &(new->stats))) != eslOK) goto ERROR;
+
+  /* clone the p7 models, if any */
+  if(cm->mlp7 != NULL) { 
+    new->mlp7 = p7_hmm_Clone(cm->mlp7);
+    esl_vec_FCopy(cm->mlp7_evparam, CM_p7_NEVPARAM, new->mlp7_evparam);
+  }
+
+  if(cm->nap7 > 0) { 
+    ESL_ALLOC(new->ap7A,          sizeof(P7_HMM *) * cm->nap7);
+    ESL_ALLOC(new->ap7_evparamAA, sizeof(float *)  * cm->nap7);
+    for(i = 0; i < cm->nap7; i++) { 
+      new->ap7A[i] = p7_hmm_Clone(cm->ap7A[i]);
+      ESL_ALLOC(new->ap7_evparamAA[i], sizeof(float) * CM_p7_NEVPARAM);
+      esl_vec_FCopy(cm->ap7_evparamAA[i], CM_p7_NEVPARAM, new->ap7_evparamAA[i]);
+    }
+  }
+  new->nap7 = cm->nap7;
+
+  *ret_cm = new;
+
+  return eslOK;
+
+ ERROR:
+  if(new != NULL) { 
+    FreeCM(new);
+    *ret_cm = NULL;
+  }
+  ESL_FAIL(status, errbuf, "CloneCMJustReadFromFile() out of memory");
+  return status;
+}
+

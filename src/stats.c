@@ -967,3 +967,65 @@ SampleGenomicSequenceFromHMM(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, char *e
  ERROR:
   return status;
 }
+
+/* Function: CloneCMStats()
+ * EPN, Tue May 24 09:53:10 2011
+ *
+ * Purpose:  Clone a CMStats_t object and return
+ *           the clone in *ret_cmstats.
+ *
+ * Args:     cmstats     - cmstats to clone
+ *           ret_cmstats - clone, to return
+ * 
+ * Returns:  eslEMEM if out of memory.
+ */
+int 
+CloneCMStats(CMStats_t *cmstats, CMStats_t **ret_cmstats)
+{  
+  int status;
+  CMStats_t *new = NULL;
+  int i,p;
+
+  new = AllocCMStats(cmstats->np);
+  for(i = 0; i < EXP_NMODES; i++) {
+    for(p = 0; p < cmstats->np; p++) {
+      CopyExpInfo(cmstats->expAA[i][p], new->expAA[i][p]);
+    }
+  }
+  for(i = 0; i < FTHR_NMODES; i++) {
+    if((status = CopyHMMFilterInfo(cmstats->hfiA[i], new->hfiA[i])) != eslOK) goto ERROR;
+  }
+  *ret_cmstats = new;
+  
+  return eslOK;
+
+ ERROR:
+  if(new != NULL) FreeCMStats(new);
+  return status;
+}
+
+/* Function: CopyExpInfo()
+ * Date:     EPN, Tue May 24 09:59:14 2011
+ *
+ * Purpose:  Copy an ExpInfo_t object.
+ *            
+ * Returns:  eslOK on success.
+ */
+int
+CopyExpInfo(ExpInfo_t *src, ExpInfo_t *dest)
+{
+  int status;
+
+  dest->cur_eff_dbsize = src->cur_eff_dbsize;
+  dest->lambda         = src->lambda;
+  dest->mu_extrap      = src->mu_extrap;
+  dest->mu_orig        = src->mu_orig;
+  dest->dbsize         = src->dbsize;
+  dest->nrandhits      = src->nrandhits;
+  dest->tailp          = src->tailp;
+  dest->is_valid       = src->is_valid;
+
+  return eslOK;
+}  
+
+

@@ -19,6 +19,7 @@
 #include "esl_scorematrix.h"
 #include "esl_sq.h"
 #include "esl_sqio.h"
+#include "esl_ssi.h"
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
@@ -33,15 +34,10 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 
 /* set the max residue count to 1 meg when reading a block */
-#ifdef P7_IMPL_DUMMY_INCLUDED
-#define NHMMER_MAX_RESIDUE_COUNT (1024 * 100)
-#else
-#define NHMMER_MAX_RESIDUE_COUNT MAX_RESIDUE_COUNT   /*from esl_sqio_(ascii|ncbi).c*/
-#endif
+#define CMSEARCH_MAX_RESIDUE_COUNT 100000 /* differs from HMMER's default which is MAX_RESIDUE_COUNT from esl_sqio_(ascii|ncbi).c */
 
 typedef struct {
-#if 0
-  /*#ifdef HMMER_THREADS*/
+#ifdef HMMER_THREADS
   ESL_WORK_QUEUE   *queue;
 #endif /*HMMER_THREADS*/
   CM_PIPELINE      *pli;         /* work pipeline                           */
@@ -64,7 +60,6 @@ typedef struct {
 
 #define CPUOPTS     NULL
 #define MPIOPTS     NULL
-
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles   reqs   incomp              help                                                      docgroup*/
@@ -152,7 +147,7 @@ static ESL_OPTIONS options[] = {
 /* Other options */
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set database size in *Mb* to <x> for E-value calculations",   12 },
-  { "--seed",       eslARG_INT,    "42",  NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",         12 },
+  { "--seed",       eslARG_INT,   "181",  NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",         12 },
   { "--w_beta",     eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "tail mass at which window length is determined",               12 },
   { "--w_length",   eslARG_INT,    NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "window length ",                                              12 },
   /* Options taken from infernal 1.0.2 cmsearch */
@@ -190,9 +185,7 @@ static ESL_OPTIONS options[] = {
   { "--qformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert query <seqfile> is in format <s>: no autodetection",   99 },
   { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert target <seqfile> is in format <s>>: no autodetection", 99 },
 
-
-#if 0
-  /*#ifdef HMMER_THREADS*/
+#ifdef HMMER_THREADS
   { "--cpu",        eslARG_INT, NULL,"HMMER_NCPU","n>=0",NULL,  NULL,  CPUOPTS,         "number of parallel CPU workers to use for multithreads",      12 },
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -205,8 +198,9 @@ static ESL_OPTIONS options[] = {
  * of shared data amongst different parallel processes (threads or MPI processes).
  */
 struct cfg_s {
-  char            *dbfile;            /* target sequence database file                   */
+  char            *dbfile;           /* target sequence database file                   */
   char            *cmfile;           /* query HMM file                                  */
+  int64_t          Z;                /* database size, in nucleotides                   */
 
   int              do_mpi;            /* TRUE if we're doing MPI parallelization         */
   int              nproc;             /* how many MPI processes, total                   */
@@ -227,10 +221,9 @@ static int p7_tophits_Targets_cm_pipeline(FILE *ofp, P7_TOPHITS *th, CM_PIPELINE
 static int p7_tophits_Domains_cm_pipeline(FILE *ofp, P7_TOPHITS *th, CM_PIPELINE *pli, int textw);
 static int p7_tophits_TabularTargets_cm_pipeline(FILE *ofp, char *qname, char *qacc, P7_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 static int p7_tophits_ComputeCMEvalues(P7_TOPHITS *th, double eff_dbsize);
+static int determine_qdbs(CM_t *cm, double beta, int **ret_dmin, int **ret_dmax);
 
-
-#if 0
-/*#ifdef HMMER_THREADS*/
+#ifdef HMMER_THREADS
 #define BLOCK_SIZE 1000
 
 static int  thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFILE *dbfp);
@@ -384,8 +377,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
                                          fprintf(ofp, "# window length beta value:              %g\n", esl_opt_GetReal(go, "--w_beta"));
   if (esl_opt_IsUsed(go, "--w_length") )
                                          fprintf(ofp, "# window length :                        %d\n", esl_opt_GetInteger(go, "--w_length"));
-#if 0
-  /*#ifdef HMMER_THREADS*/
+#ifdef HMMER_THREADS
   if (esl_opt_IsUsed(go, "--cpu"))       fprintf(ofp, "# number of worker threads:              %d\n", esl_opt_GetInteger(go, "--cpu"));  
 #endif
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
@@ -426,7 +418,6 @@ main(int argc, char **argv)
   return status;
 }
 
-
 /* serial_master()
  * The serial version of cmsearch.
  * For each query CM in <cmfile> search the database for hits.
@@ -457,13 +448,14 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              qhstatus = eslOK;
   int              sstatus  = eslOK;
   int              i, m, z, z_offset;
+  int64_t          L;    
   
   int              ncpus    = 0;
 
   int              infocnt  = 0;
   WORKER_INFO     *info     = NULL;
-#if 0
-  /*#ifdef HMMER_THREADS*/
+
+#ifdef HMMER_THREADS
   ESL_SQ_BLOCK    *block    = NULL;
   ESL_THREADS     *threadObj= NULL;
   ESL_WORK_QUEUE  *queue    = NULL;
@@ -472,6 +464,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   double window_beta = -1.0 ;
   int window_length  = -1;
+
+  int              safe_W;
+  int             *fcyk_dmin  = NULL;
+  int             *fcyk_dmax  = NULL;
+  int             *final_dmin = NULL;
+  int             *final_dmax = NULL;
+
   if (esl_opt_IsUsed(go, "--w_beta")) { if (  ( window_beta   = esl_opt_GetReal(go, "--w_beta") )  < 0 || window_beta > 1  ) esl_fatal("Invalid window-length beta value\n"); }
   if (esl_opt_IsUsed(go, "--w_length")) { if (( window_length = esl_opt_GetInteger(go, "--w_length")) < 4  ) esl_fatal("Invalid window length value\n"); }
 
@@ -485,12 +484,38 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if (dbformat == eslSQFILE_UNKNOWN) p7_Fail("%s is not a recognized sequence database file format\n", esl_opt_GetString(go, "--tformat"));
   }
 
+#if 0 
   /* Open the target sequence database */
   status = esl_sqfile_Open(cfg->dbfile, dbformat, p7_SEQDBENV, &dbfp);
   if      (status == eslENOTFOUND) esl_fatal("Failed to open target sequence database %s for reading\n",      cfg->dbfile);
   else if (status == eslEFORMAT)   esl_fatal("Target sequence database file %s is empty or misformatted\n",   cfg->dbfile);
   else if (status == eslEINVAL)    esl_fatal("Can't autodetect format of a stdin or .gz seqfile");
   else if (status != eslOK)        esl_fatal("Unexpected error %d opening target sequence database file %s\n", status, cfg->dbfile);
+#endif
+
+  /* Open the target sequence database */
+  status = esl_sqfile_Open(cfg->dbfile, dbformat, p7_SEQDBENV, &dbfp);
+
+  /* Open the SSI index for retrieval */
+  if (dbfp->data.ascii.do_gzip)  esl_fatal("Reading gzipped sequence files is not supported.");
+  if (dbfp->data.ascii.do_stdin) esl_fatal("Reading sequence files from stdin is not supported.");
+  status = esl_sqfile_OpenSSI(dbfp, NULL);
+  if      (status == eslEFORMAT)   esl_fatal("SSI index for database file is in incorrect format\n");
+  else if (status == eslERANGE)    esl_fatal("SSI index for database file is in 64-bit format and we can't read it\n");
+  else if (status != eslOK)        esl_fatal("Failed to open SSI index for database file\n");
+
+  /* Determine database size */
+  if(esl_opt_IsUsed(go, "-Z")) { 
+    cfg->Z = (int64_t) (esl_opt_GetReal(go, "-Z") * 1000000.);
+  }
+  else { /* step through sequence SSI file to get database size */
+    cfg->Z = 0;
+    for(i = 0; i < dbfp->data.ascii.ssi->nprimary; i++) { 
+      esl_ssi_FindNumber(dbfp->data.ascii.ssi, i, NULL, NULL, NULL, &L, NULL);
+      cfg->Z += L;
+    }
+  }
+  printf("cfg->Z: %" PRId64 " residues\n", cfg->Z);
 
   /* Open the query CM file */
   if ((cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
@@ -501,14 +526,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if (esl_opt_IsOn(go, "-A"))          { if ((afp      = fopen(esl_opt_GetString(go, "-A"), "w")) == NULL) p7_Fail("Failed to open alignment file %s for writing\n", esl_opt_GetString(go, "-A")); }
   if (esl_opt_IsOn(go, "--tblout"))    { if ((tblfp    = fopen(esl_opt_GetString(go, "--tblout"),    "w")) == NULL)  esl_fatal("Failed to open tabular per-seq output file %s for writing\n", esl_opt_GetString(go, "--tblout")); }
 
-#if 0
-  /*#ifdef HMMER_THREADS*/
+#ifdef HMMER_THREADS
   /* initialize thread data */
   if (esl_opt_IsOn(go, "--cpu")) ncpus = esl_opt_GetInteger(go, "--cpu");
   else                                   esl_threads_CPUCount(&ncpus);
   /* EPN TEMP: until I write cm_clone to copy CMs to different infos */
-  ncpus = 1;
-
+  /* ncpus = 1; */
+  printf("NCPUS: %d\n", ncpus);
   if (ncpus > 0) {
       threadObj = esl_threads_Create(&pipeline_thread);
       queue = esl_workqueue_Create(ncpus * 2);
@@ -520,95 +544,54 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* <abc> is not known 'til first CM is read. Could be DNA or RNA*/
   qhstatus = CMFileRead(cmfp, errbuf, &abc, &cm);
+
   if (qhstatus == eslOK) {
-      /* One-time initializations after alphabet <abc> becomes known */
-      output_header(ofp, go, cfg->cmfile, cfg->dbfile);
-      dbfp->abc = abc;
-
-      for (i = 0; i < infocnt; ++i)    {
-          info[i].pli   = NULL;
-          info[i].th    = NULL;
-          info[i].cm    = NULL;
-	  info[i].omA   = NULL;
-	  info[i].p7_evparamAA = NULL;
-	  info[i].bgA   = NULL;
-	  info[i].nhmm  = 0;
-#if 0
-	  /*#ifdef HMMER_THREADS*/
-          info[i].queue = queue;
+    /* One-time initializations after alphabet <abc> becomes known */
+    output_header(ofp, go, cfg->cmfile, cfg->dbfile);
+    dbfp->abc = abc;
+    
+    for (i = 0; i < infocnt; ++i)    {
+      info[i].pli   = NULL;
+      info[i].th    = NULL;
+      info[i].cm    = NULL;
+      info[i].omA   = NULL;
+      info[i].p7_evparamAA = NULL;
+      info[i].bgA   = NULL;
+      info[i].nhmm  = 0;
+#ifdef HMMER_THREADS
+      info[i].queue = queue;
 #endif
-      }
+    }
 
-#if 0
-      /*#ifdef HMMER_THREADS*/
-      for (i = 0; i < ncpus * 2; ++i) {
-          block = esl_sq_CreateDigitalBlock(BLOCK_SIZE, abc);
-          if (block == NULL)           esl_fatal("Failed to allocate sequence block");
-
-          status = esl_workqueue_Init(queue, block);
-          if (status != eslOK)          esl_fatal("Failed to add block to work queue");
-      }
+#ifdef HMMER_THREADS    
+    for (i = 0; i < ncpus * 2; ++i) {
+      block = esl_sq_CreateDigitalBlock(BLOCK_SIZE, abc);
+      if (block == NULL)           esl_fatal("Failed to allocate sequence block");
+      
+      status = esl_workqueue_Init(queue, block);
+      if (status != eslOK)          esl_fatal("Failed to add block to work queue");
+    }
 #endif
   }
-
+  
   /* Outer loop: over each query CM in <cmfile>. */
   while (qhstatus == eslOK) {
+    nquery++;
+    esl_stopwatch_Start(w);
 
     /* Make sure we have E-value stats for both the CM and the p7, if not we can't run the pipeline */
     if(! (cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s\n", cm->name);
     if(! (cm->flags & CMH_MLP7_STATS))    cm_Fail("no plan7 HMM E-value parameters were read for CM: %s\n", cm->name);
 
-    P7_PROFILE      **gmA      = NULL;
-    P7_OPROFILE     **omA      = NULL;       /* optimized query profile                  */
-    P7_BG           **bgA      = NULL;
-    int              safe_W;
-    int             *fcyk_dmin  = NULL;
-    int             *fcyk_dmax  = NULL;
-    int             *final_dmin = NULL;
-    int             *final_dmax = NULL;
-
-    if(! esl_opt_GetBoolean(go, "-g")) { 
-      if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
-	cm->config_opts |= CM_CONFIG_LOCAL;
-	cm->config_opts |= CM_CONFIG_HMMLOCAL;
-	if(! esl_opt_GetBoolean(go, "--cp9noel")) cm->config_opts |= CM_CONFIG_HMMEL; 
-      }
-    }
-    if((status = ConfigCM(cm, errbuf, 
-			  TRUE, /* do calculate W */
-			  NULL, NULL)) != eslOK) cm_Fail("Error configuring CM: %s\n", errbuf);
-
-    /*********************************************/
-    /* EPN TEMP: need to find a better spot for this code block, problem is I want dmin/dmax but I don't want them
-     * stored in the CM data structure, just need the arrays so I can pass it to cm_pli_NewModel() and it will
-     * create scan matrices for each set (fcyk_d{min,max}, final_d{min,max}) */
-
-    /* Calculate QDBs for filter and/or final rounds, if nec */
-    /* By default, QDBs are not necessary */
-    fcyk_dmin = fcyk_dmax = NULL; 
+    /* Determine QDBs, if necessary. By default, they aren't. */
+    fcyk_dmin  = fcyk_dmax  = NULL; 
     final_dmin = final_dmax = NULL; 
-    if(esl_opt_GetBoolean(go, "--fqdb")) { 
-      safe_W = cm->clen * 3;
-      while(!(BandCalculationEngine(cm, safe_W, esl_opt_GetReal(go, "--fbeta"), FALSE, &(fcyk_dmin), &(fcyk_dmax), NULL, NULL))) { 
-	free(fcyk_dmin);
-	free(fcyk_dmax);
-	safe_W *= 2;
-	if(safe_W > (cm->clen * 1000)) cm_Fail("Unable to calculate QDBs");
-      }
+    if(esl_opt_GetBoolean(go, "--fqdb")) { /* determine CYK filter QDBs */
+      determine_qdbs(cm, esl_opt_GetReal(go, "--fbeta"), &(fcyk_dmin), &(fcyk_dmax));
     }
-    if(esl_opt_GetBoolean(go, "--qdb")) { 
-      safe_W = cm->clen * 3;
-      while(!(BandCalculationEngine(cm, safe_W, esl_opt_GetReal(go, "--beta"), FALSE, &(final_dmin), &(final_dmax), NULL, NULL))) { 
-	free(final_dmin);
-	free(final_dmax);
-	safe_W *= 2;
-	if(safe_W > (cm->clen * 1000)) cm_Fail("Unable to calculate QDBs");
-      }
+    if(esl_opt_GetBoolean(go, "--qdb")) { /* determine final stage QDBs */
+      determine_qdbs(cm, esl_opt_GetReal(go, "--beta"), &(final_dmin), &(final_dmax));
     }
-    /*********************************************/
-
-    nquery++;
-    esl_stopwatch_Start(w);
 
     /* seqfile may need to be rewound (multiquery mode) */
     if (nquery > 1) {
@@ -653,6 +636,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
     }
 
+    P7_PROFILE      **gmA      = NULL;
+    P7_OPROFILE     **omA      = NULL;       /* optimized query profile                  */
+    P7_BG           **bgA      = NULL;
+    CM_t            **cmA      = NULL;
+
     ESL_ALLOC(gmA, sizeof(P7_PROFILE *)  * nhmm);
     ESL_ALLOC(omA, sizeof(P7_OPROFILE *) * nhmm);
     ESL_ALLOC(bgA, sizeof(P7_BG *)  * nhmm);
@@ -666,15 +654,29 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_GLOCAL);
     }
 
+    /* Create processing pipeline and hit list */
     for (i = 0; i < infocnt; ++i) {
-      /* Create processing pipeline and hit list */
+      if((status = CloneCMJustReadFromFile(cm, errbuf, &(info[i].cm))) != eslOK) esl_fatal(errbuf);
       info[i].th  = p7_tophits_Create();
-      info[i].cm  = cm;
       info[i].nhmm = nhmm;
       ESL_ALLOC(info[i].gmA, sizeof(P7_PROFILE *)  * nhmm);
       ESL_ALLOC(info[i].omA, sizeof(P7_OPROFILE *) * nhmm);
       ESL_ALLOC(info[i].bgA, sizeof(P7_BG *)  * nhmm);
       ESL_ALLOC(info[i].p7_evparamAA, sizeof(float *)  * nhmm);
+
+      /* now configure each CM */
+      if(! esl_opt_GetBoolean(go, "-g")) { 
+	if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
+	  info[i].cm->config_opts |= CM_CONFIG_LOCAL;
+	  info[i].cm->config_opts |= CM_CONFIG_HMMLOCAL;
+	  if(! esl_opt_GetBoolean(go, "--cp9noel")) info[i].cm->config_opts |= CM_CONFIG_HMMEL; 
+	}
+      }
+      if((status = ConfigCM(info[i].cm, errbuf, 
+			    (i == 0) ? TRUE : FALSE, /* calculate W ? */
+			    NULL, NULL)) != eslOK) cm_Fail("Error configuring CM: %s\n", errbuf);
+      if(i != 0) info[i].cm->W = info[0].cm->W;
+
       for(m = 0; m < nhmm; m++) { 
 	info[i].gmA[m]  = p7_profile_Clone(gmA[m]);
 	info[i].omA[m]  = p7_oprofile_Clone(omA[m]);
@@ -690,19 +692,17 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  esl_vec_FCopy(cm->ap7_evparamAA[m], CM_p7_NEVPARAM, info[i].p7_evparamAA[m]); 
 	}
       }
-      info[i].pli = cm_pipeline_Create(go, omA[0]->M, 100, p7_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      cm_pli_NewModel(info[i].pli, cm, fcyk_dmin, fcyk_dmax, final_dmin, final_dmax, info[i].omA, info[i].bgA, info[i].nhmm);
+      info[i].pli = cm_pipeline_Create(go, omA[0]->M, 100, cfg->Z, p7_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+      cm_pli_NewModel(info[i].pli, info[i].cm, fcyk_dmin, fcyk_dmax, final_dmin, final_dmax, info[i].omA, info[i].bgA, info[i].nhmm);
       info[i].pli->do_top = (esl_opt_GetBoolean(go, "--bottomonly")) ? FALSE : TRUE;
       info[i].pli->do_bot = (esl_opt_GetBoolean(go, "--toponly"))    ? FALSE : TRUE;
 
-#if 0
-      /*#ifdef HMMER_THREADS*/
+#ifdef HMMER_THREADS
           if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
 #endif
       }
 
-#if 0
-    /*#ifdef HMMER_THREADS*/
+#ifdef HMMER_THREADS
     if (ncpus > 0)  sstatus = thread_loop(info, threadObj, queue, dbfp);
     else            sstatus = serial_loop(info, dbfp);
 #else
@@ -720,20 +720,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
           esl_fatal("Unexpected error %d reading sequence file %s", sstatus, dbfp->filename);
       }
 
-      //need to re-compute e-values before merging (when list will be sorted)
-      double dbsize     = 0.;
+      /* need to re-compute e-values before merging (when list will be sorted) */
       double eff_dbsize = 0.;
-      if (esl_opt_IsUsed(go, "-Z")) { 
-	dbsize     = 1000000*esl_opt_GetReal(go, "-Z");
-      }
-      else { 
-	for (i = 0; i < infocnt; ++i) dbsize += info[i].pli->nres;
-      }
-      eff_dbsize = (double) (((dbsize / (double) cm->stats->expAA[info[0].pli->final_cm_exp_mode][0]->dbsize) * 
+      eff_dbsize = (double) ((((double) cfg->Z / (double) cm->stats->expAA[info[0].pli->final_cm_exp_mode][0]->dbsize) * 
 			      ((double) cm->stats->expAA[info[0].pli->final_cm_exp_mode][0]->nrandhits)) + 0.5);
 	
       for (i = 0; i < infocnt; ++i) { 
-	if(esl_opt_GetBoolean(go, "--hmm")) { p7_tophits_ComputeNhmmerEvalues(info[i].th, dbsize);     }
+	if(esl_opt_GetBoolean(go, "--hmm")) { p7_tophits_ComputeNhmmerEvalues(info[i].th, (double) cfg->Z);     }
 	else                                { p7_tophits_ComputeCMEvalues    (info[i].th, eff_dbsize); }
       }
 
@@ -768,7 +761,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       p7_tophits_Targets_cm_pipeline(ofp, info->th, info->pli, textw); fprintf(ofp, "\n\n");
-      p7_tophits_Domains_cm_pipeline(ofp, info->th, info->pli, textw); fprintf(ofp, "\n\n");
+      /*p7_tophits_Domains_cm_pipeline(ofp, info->th, info->pli, textw); fprintf(ofp, "\n\n");*/
 
       if (tblfp != NULL) { 
 	p7_tophits_TabularTargets_cm_pipeline(tblfp, cm->name, cm->acc, info->th, info->pli, (nquery == 1)); 
@@ -824,8 +817,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_Fail("Unexpected error (%d: %s) in reading CMs from %s", qhstatus, errbuf, cfg->cmfile);
   }
   
-#if 0
-  /*#ifdef HMMER_THREADS*/
+#ifdef HMMER_THREADS
   if (ncpus > 0) {
       esl_workqueue_Reset(queue);
       while (esl_workqueue_Remove(queue, (void **) &block) == eslOK) {
@@ -865,7 +857,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
   int prev_hit_cnt;
   ESL_SQ   *dbsq   =  esl_sq_CreateDigital(info->cm->abc);
 
-  wstatus = esl_sqio_ReadWindow(dbfp, 0, NHMMER_MAX_RESIDUE_COUNT, dbsq);
+  wstatus = esl_sqio_ReadWindow(dbfp, 0, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
 
   while (wstatus == eslOK ) {
     
@@ -917,11 +909,11 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
       }
 #endif /*eslAUGMENT_ALPHABET*/
 
-    wstatus = esl_sqio_ReadWindow(dbfp, info->omA[0]->max_length, NHMMER_MAX_RESIDUE_COUNT, dbsq);
+    wstatus = esl_sqio_ReadWindow(dbfp, info->omA[0]->max_length, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
     if (wstatus == eslEOD) { // no more left of this sequence ... move along to the next sequence.
       info->pli->nseqs++;
       esl_sq_Reuse(dbsq);
-      wstatus = esl_sqio_ReadWindow(dbfp, 0, NHMMER_MAX_RESIDUE_COUNT, dbsq);
+      wstatus = esl_sqio_ReadWindow(dbfp, 0, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
     }
   }
   esl_sq_Destroy(dbsq);
@@ -930,8 +922,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
 
 }
 
-#if 0
-/*#ifdef HMMER_THREADS*/
+#ifdef HMMER_THREADS
 static int
 thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFILE *dbfp)
 {
@@ -961,7 +952,7 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
       for (i=1; i<block->count; i++)
           esl_sq_Reuse(block->list + i);
 
-      sstatus = esl_sqio_ReadBlock(dbfp, block, NHMMER_MAX_RESIDUE_COUNT, TRUE);
+      sstatus = esl_sqio_ReadBlock(dbfp, block, CMSEARCH_MAX_RESIDUE_COUNT, TRUE);
 
       info->pli->nseqs += block->count - (block->complete ? 0 : 1);// if there's an incomplete sequence read into the block wait to count it until it's complete.
 
@@ -1503,3 +1494,32 @@ p7_tophits_ComputeCMEvalues(P7_TOPHITS *th, double eff_dbsize)
   return eslOK;
 }
 
+
+/* Function:  determine_qdbs
+ * Synopsis:  Calculate QDBs for a CM
+ * Incept:    EPN, Tue May 24 10:25:28 2011
+ *
+ * Purpose:   Calculate QDBs (dmin/dmax) for a CM given a beta value.
+ *
+ * Returns:   <eslOK> on success.
+ */
+int
+determine_qdbs(CM_t *cm, double beta, int **ret_dmin, int **ret_dmax)
+{
+  int safe_W;
+  int *dmin = NULL; 
+  int *dmax = NULL;
+
+  safe_W = cm->clen * 3;
+  while(!(BandCalculationEngine(cm, safe_W, beta, FALSE, &dmin, &dmax, NULL, NULL))) { 
+    free(dmin);
+    free(dmax);
+    safe_W *= 2;
+    if(safe_W > (cm->clen * 1000)) cm_Fail("Unable to calculate QDBs");
+  }
+
+  *ret_dmin = dmin;
+  *ret_dmax = dmax;
+
+  return eslOK;
+}

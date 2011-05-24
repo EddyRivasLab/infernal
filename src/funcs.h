@@ -85,6 +85,7 @@ extern void       FreeComLog(ComLog_t *clog);
 extern int        CopyComLog(const ComLog_t *src, ComLog_t *dest);
 extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len);
 extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
+extern int        CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm);
 
 /* from dispatch.c */
 extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, int hit_len_guess, 
@@ -649,6 +650,7 @@ extern void DumpBestFilterInfo(BestFilterInfo_t *bf);
 extern HMMFilterInfo_t *CreateHMMFilterInfo();
 extern int  SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsize, int ncut, float *cm_E_cut, float *fwd_E_cut, int always_better_than_Smax);
 extern void FreeHMMFilterInfo(HMMFilterInfo_t *hfi);
+extern int  CopyHMMFilterInfo(HMMFilterInfo_t *src, HMMFilterInfo_t *dest);
 extern int  DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int ncm, int namewidth, char *namedashes);
 extern int  DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_E, int do_header, int namewidth, char *namedashes,
 				    float *ret_cm_bit_sc, float *ret_hmm_E, float *ret_hmm_bit_sc, float *ret_S, float *ret_xhmm, float *ret_spdup, float *ret_cm_ncalcs_per_res, float *ret_hmm_ncalcs_per_res, int *ret_do_filter);
@@ -701,6 +703,8 @@ extern char      *DescribeFthrMode(int fthr_mode);
 extern int        UpdateExpsForDBSize(CM_t *cm, char *errbuf, long dbsize);
 extern int        CreateGenomicHMM(const ESL_ALPHABET *abc, char *errbuf, double **ret_sA, double ***ret_tAA, double ***ret_eAA, int *ret_nstates);
 extern int        SampleGenomicSequenceFromHMM(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, char *errbuf, double *sA, double **tAA, double **eAA, int nstates, int L, ESL_DSQ **ret_dsq);
+extern int        CloneCMStats(CMStats_t *cmstats, CMStats_t **ret_cmstats);
+extern int        CopyExpInfo(ExpInfo_t *src, ExpInfo_t *dest);
 
 /* from truncyk.c */
 void  SetMarginalScores(CM_t *cm);
@@ -714,7 +718,7 @@ float trinside (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int 
 
 
 /* from cm_pipeline.c */
-extern CM_PIPELINE *cm_pipeline_Create (ESL_GETOPTS *go, int clen_hint, int L_hint, enum cm_pipemodes_e mode);
+extern CM_PIPELINE *cm_pipeline_Create (ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, enum cm_pipemodes_e mode);
 extern int          cm_pipeline_Reuse  (CM_PIPELINE *pli);
 extern void         cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm);
 extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
