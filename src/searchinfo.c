@@ -198,7 +198,7 @@ FreeSearchInfo(SearchInfo_t *si, CM_t *cm)
 void
 DumpSearchInfo(SearchInfo_t *si)
 {
-  int n, v;
+  int n;
   printf("\nSearchInfo summary:\n");
   printf("nrounds: %d\n", si->nrounds);
   for(n = 0; n <= si->nrounds; n++) { 
@@ -1242,8 +1242,6 @@ FreeBestFilterInfo(BestFilterInfo_t *bf)
 void
 DumpBestFilterInfo(BestFilterInfo_t *bf)
 {
-  int v, p;
-
   if(! (bf->is_valid)) {
     printf("BestFilterInfo_t not yet valid.\n");
     return;

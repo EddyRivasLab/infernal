@@ -61,6 +61,9 @@ static int merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1,
  *            and the pipeline will resize any necessary objects as
  *            needed, so the other (unknown) length is only an
  *            initial allocation.
+ *
+ *            <Z> is passed as the database size, in residues, if
+ *            known. If unknown, 0 should be passed as <Z>.
  *            
  *            The configuration <go> must include settings for the 
  *            following options:
@@ -266,8 +269,16 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, enum c
       pli->Z       = esl_opt_GetReal(go, "-Z");
   }
   else { 
-    pli->Z       = Z;
-    pli->Z_setby = CM_ZSETBY_DBSIZE;
+    pli->Z       = Z; /* Z is an input variable to this function */
+    if(pli->Z == 0) { 
+      /* we'll update pli->Z as each new sequence is added */
+      pli->Z_setby = CM_ZSETBY_DBSIZE; 
+    }
+    else { 
+      /* we determined Z from the file and passed it into this function, 
+       * in this case we don't update Z as we read in new seqs */
+      pli->Z_setby = CM_ZSETBY_FILEINFO; 
+    }
   }
   if(esl_opt_IsUsed(go, "--fZ")) { 
     Z_Mb = esl_opt_GetReal(go, "--fZ"); 
@@ -323,7 +334,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, enum c
     pli->F5 = pli->F5b = 0.015;
     pli->F6 = 0.0001;
   }
-  else if(Z_Mb >= (1. - eslSMALLX1)) { /* 1 Mb  > Z */
+  else { /* 1 Mb  > Z */
     pli->do_msv = FALSE;
     pli->F2 = pli->F2b = 0.25;
     pli->F3 = pli->F3b = 0.02;
@@ -674,9 +685,10 @@ cm_pli_NewSeq(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq)
   int status;
   float T;
   pli->nres += sq->n;
-  if (pli->Z_setby == CM_ZSETBY_DBSIZE && pli->mode == CM_SEARCH_SEQS) pli->Z = pli->nres;
-
-  if((status = UpdateExpsForDBSize(cm, NULL, (long) pli->nres))          != eslOK) return status;
+  if (pli->Z_setby == CM_ZSETBY_DBSIZE && pli->mode == CM_SEARCH_SEQS) { 
+    pli->Z = pli->nres;
+    if((status = UpdateExpsForDBSize(cm, NULL, (long) pli->nres))          != eslOK) return status;
+  }
   if(pli->by_E) { 
     if((status = E2MinScore(cm, NULL, pli->final_cm_exp_mode, pli->E, &T)) != eslOK) return status;
     pli->T = (double) T;
@@ -1470,11 +1482,11 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, P7_TOPHITS *hitlist)
+cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist)
 {
   int              status;
   char             errbuf[cmERRBUFSIZE];   /* for error messages */
-  P7_HIT          *hit     = NULL;         /* ptr to the current hit output data   */
+  CM_HIT          *hit     = NULL;         /* ptr to the current hit output data   */
   float            cyksc, inssc, finalsc;  /* bit scores                           */
   int              have_hmmbands;          /* TRUE if HMM bands have been calc'ed for current hit */
   double           P;                      /* P-value of a hit */
@@ -1666,38 +1678,30 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
 
     /* add each hit to the hitlist */
     for (h = nhit; h < results->num_results; h++) { 
-      p7_tophits_CreateNextHit(hitlist, &hit);
-      hit->ndom        = 1;
-      hit->best_domain = 0;
-      hit->subseq_start = sq->start;
-      
-      ESL_ALLOC(hit->dcl, sizeof(P7_DOMAIN));
-      
-      hit->dcl[0].ienv = hit->dcl[0].iali = results->data[h].start;
-      hit->dcl[0].jenv = hit->dcl[0].jali = results->data[h].stop;
-      hit->dcl[0].bitscore = hit->dcl[0].envsc = results->data[h].score;
-      hit->dcl[0].pvalue   = esl_exp_surv(results->data[h].score, cm->stats->expAA[pli->final_cm_exp_mode][0]->mu_extrap, cm->stats->expAA[pli->final_cm_exp_mode][0]->lambda);
+      cm_tophits_CloneHitFromResults(hitlist, results, h, &hit);
+      hit->pvalue = esl_exp_surv(hit->score, cm->stats->expAA[pli->final_cm_exp_mode][0]->mu_extrap, cm->stats->expAA[pli->final_cm_exp_mode][0]->lambda);
+
       /* initialize remaining values we don't know yet */
-      hit->dcl[0].domcorrection = 0.;
-      hit->dcl[0].dombias  = 0.;
-      hit->dcl[0].oasc     = 0.;
-      hit->dcl[0].is_reported = hit->dcl[0].is_included = FALSE;
-      hit->dcl[0].ad = NULL;
-	  
-      hit->pre_score  = hit->sum_score  = hit->score  = hit->dcl[0].bitscore;
-      hit->pre_pvalue = hit->sum_pvalue = hit->pvalue = hit->dcl[0].pvalue;
+      hit->evalue   = 0.;
+      hit->oasc     = 0.;
+      hit->ad       = NULL;
 	  
       if (pli->mode == CM_SEARCH_SEQS) { 
 	if (                       (status  = esl_strdup(sq->name, -1, &(hit->name)))  != eslOK) ESL_EXCEPTION(eslEMEM, "allocation failure");
 	if (sq->acc[0]  != '\0' && (status  = esl_strdup(sq->acc,  -1, &(hit->acc)))   != eslOK) ESL_EXCEPTION(eslEMEM, "allocation failure");
+        if (sq->desc[0] != '\0' && (status  = esl_strdup(sq->desc, -1, &(hit->desc)))  != eslOK) ESL_EXCEPTION(eslEMEM, "allocation failure");
       } 
       else {
 	if ((status  = esl_strdup(cm->name, -1, &(hit->name)))  != eslOK) esl_fatal("allocation failure");
 	if ((status  = esl_strdup(cm->acc,  -1, &(hit->acc)))   != eslOK) esl_fatal("allocation failure");
+        if ((status  = esl_strdup(cm->desc, -1, &(hit->desc)))  != eslOK) esl_fatal("allocation failure");
       }
 #if DOPRINT
       printf("SURVIVOR envelope     [%10d..%10d] survived Inside    %6.2f bits  P %g\n", hit->dcl[0].ienv, hit->dcl[0].jenv, hit->dcl[0].bitscore, hit->dcl[0].pvalue);
 #endif
+
+      /* Get an alignment of the hit */
+      /* TO WRITE */
     }
 
     if(do_final_greedy) { 
@@ -1713,9 +1717,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
   }
   cm->tau = save_tau;
   return eslOK;
-
- ERROR:
-  ESL_EXCEPTION(eslEMEM, "Error allocating memory for hit list in pipeline\n");
 }
 
 
@@ -1906,7 +1907,7 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG **bg, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, P7_TOPHITS *hitlist)
+cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG **bg, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, CM_TOPHITS *hitlist)
 
 {
   int status;
@@ -2220,280 +2221,9 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 /*****************************************************************
  * 3. Example 1: "search mode" in a sequence db
  *****************************************************************/
-
-#ifdef p7PIPELINE_EXAMPLE
-/* gcc -o pipeline_example -g -Wall -I../easel -L../easel -I. -L. -Dp7PIPELINE_EXAMPLE p7_pipeline.c -lhmmer -leasel -lm
- * ./pipeline_example <hmmfile> <sqfile>
- */
-
-#include "p7_config.h"
-
-#include "easel.h"
-#include "esl_getopts.h"
-#include "esl_sqio.h"
-
-#include "hmmer.h"
-
-static ESL_OPTIONS options[] = {
-  /* name           type         default   env  range   toggles   reqs   incomp                             help                                                  docgroup*/
-  { "-h",           eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL,  NULL,                          "show brief help on version and usage",                         0 },
-  { "-E",           eslARG_REAL,  "10.0", NULL, "x>0",     NULL,  NULL,  "--cut_ga,--cut_nc,--cut_tc",  "E-value cutoff for reporting significant sequence hits",       0 },
-  { "-T",           eslARG_REAL,   FALSE, NULL, "x>0",     NULL,  NULL,  "--cut_ga,--cut_nc,--cut_tc",  "bit score cutoff for reporting significant sequence hits",     0 },
-  { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",     NULL,  NULL,  NULL,                          "set # of comparisons done, for E-value calculation",           0 },
-  { "--domE",       eslARG_REAL,"1000.0", NULL, "x>0",     NULL,  NULL,  "--cut_ga,--cut_nc,--cut_tc",  "E-value cutoff for reporting individual domains",              0 },
-  { "--domT",       eslARG_REAL,   FALSE, NULL, "x>0",     NULL,  NULL,  "--cut_ga,--cut_nc,--cut_tc",  "bit score cutoff for reporting individual domains",            0 },
-  { "--domZ",       eslARG_REAL,   FALSE, NULL, "x>0",     NULL,  NULL,  NULL,                          "set # of significant seqs, for domain E-value calculation",    0 },
-  { "--cut_ga",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL,  "--seqE,--seqT,--domE,--domT", "use GA gathering threshold bit score cutoffs in <hmmfile>",    0 },
-  { "--cut_nc",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL,  "--seqE,--seqT,--domE,--domT", "use NC noise threshold bit score cutoffs in <hmmfile>",        0 },
-  { "--cut_tc",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL,  "--seqE,--seqT,--domE,--domT", "use TC trusted threshold bit score cutoffs in <hmmfile>",      0 },
-  { "--max",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, "--F1,--F2,--F3",               "Turn all heuristic filters off (less speed, more power)",      0 },
-  { "--F1",         eslARG_REAL,  "0.02", NULL, NULL,      NULL,  NULL, "--max",                        "Stage 1 (MSV) threshold: promote hits w/ P <= F1",             0 },
-  { "--F2",         eslARG_REAL,  "1e-3", NULL, NULL,      NULL,  NULL, "--max",                        "Stage 2 (Vit) threshold: promote hits w/ P <= F2",             0 },
-  { "--F3",         eslARG_REAL,  "1e-5", NULL, NULL,      NULL,  NULL, "--max",                        "Stage 3 (Fwd) threshold: promote hits w/ P <= F3",             0 },
-  { "--nobias",     eslARG_NONE,   NULL,  NULL, NULL,      NULL,  NULL, "--max",                        "turn off composition bias filter",                             0 },
-  { "--nonull2",    eslARG_NONE,   NULL,  NULL, NULL,      NULL,  NULL,  NULL,                          "turn off biased composition score corrections",                0 },
-  { "--seed",       eslARG_INT,    "42",  NULL, "n>=0",    NULL,  NULL,  NULL,                          "set RNG seed to <n> (if 0: one-time arbitrary seed)",          0 },
-  { "--acc",        eslARG_NONE,  FALSE,  NULL, NULL,      NULL,  NULL,  NULL,                          "output target accessions instead of names if possible",        0 },
- {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-};
-static char usage[]  = "[-options] <hmmfile> <seqdb>";
-static char banner[] = "example of using acceleration pipeline in search mode (seq targets)";
-
-int
-main(int argc, char **argv)
-{
-  ESL_GETOPTS  *go      = esl_getopts_CreateDefaultApp(options, 2, argc, argv, banner, usage);
-  char         *hmmfile = esl_opt_GetArg(go, 1);
-  char         *seqfile = esl_opt_GetArg(go, 2);
-  int           format  = eslSQFILE_FASTA;
-  P7_HMMFILE   *hfp     = NULL;
-  ESL_ALPHABET *abc     = NULL;
-  P7_BG        *bg      = NULL;
-  P7_HMM       *hmm     = NULL;
-  P7_PROFILE   *gm      = NULL;
-  P7_OPROFILE  *om      = NULL;
-  ESL_SQFILE   *sqfp    = NULL;
-  ESL_SQ       *sq      = NULL;
-  CM_PIPELINE  *pli     = NULL;
-  P7_TOPHITS   *hitlist = NULL;
-  int           h,d,namew;
-
-  /* Don't forget this. Null2 corrections need FLogsum() */
-  p7_FLogsumInit();
-
-  /* Read in one HMM */
-  if (p7_hmmfile_Open(hmmfile, NULL, &hfp) != eslOK) p7_Fail("Failed to open HMM file %s", hmmfile);
-  if (p7_hmmfile_Read(hfp, &abc, &hmm)     != eslOK) p7_Fail("Failed to read HMM");
-  p7_hmmfile_Close(hfp);
-
-  /* Open a sequence file */
-  if (esl_sqfile_OpenDigital(abc, seqfile, format, NULL, &sqfp) != eslOK) p7_Fail("Failed to open sequence file %s\n", seqfile);
-  sq = esl_sq_CreateDigital(abc);
-
-  /* Create a pipeline and a top hits list */
-  pli     = p7_pipeline_Create(go, hmm->M, 400, FALSE, p7_SEARCH_SEQS);
-  hitlist = p7_tophits_Create();
-
-  /* Configure a profile from the HMM */
-  bg = p7_bg_Create(abc);
-  gm = p7_profile_Create(hmm->M, abc);
-  om = p7_oprofile_Create(hmm->M, abc);
-  p7_ProfileConfig(hmm, bg, gm, 400, p7_LOCAL);
-  p7_oprofile_Convert(gm, om);     /* <om> is now p7_LOCAL, multihit */
-  p7_pli_NewModel(pli, om, bg);
-
-  /* Run each target sequence through the pipeline */
-  while (esl_sqio_Read(sqfp, sq) == eslOK)
-    { 
-      p7_pli_NewSeq(pli, sq);
-      p7_bg_SetLength(bg, sq->n);
-      p7_oprofile_ReconfigLength(om, sq->n);
-  
-      p7_Pipeline(pli, om, bg, sq, hitlist);
-
-      esl_sq_Reuse(sq);
-      p7_pipeline_Reuse(pli);
-    }
-
-  /* Print the results. 
-   * This example is a stripped version of hmmsearch's tabular output.
-   */
-  p7_tophits_Sort(hitlist);
-  namew = ESL_MAX(8, p7_tophits_GetMaxNameLength(hitlist));
-  for (h = 0; h < hitlist->N; h++)
-    {
-      d    = hitlist->hit[h]->best_domain;
-
-      printf("%10.2g %7.1f %6.1f  %7.1f %6.1f %10.2g  %6.1f %5d  %-*s %s\n",
-         hitlist->hit[h]->pvalue * (double) pli->Z,
-         hitlist->hit[h]->score,
-         hitlist->hit[h]->pre_score - hitlist->hit[h]->score, /* bias correction */
-         hitlist->hit[h]->dcl[d].bitscore,
-         eslCONST_LOG2R * p7_FLogsum(0.0, log(bg->omega) + hitlist->hit[h]->dcl[d].domcorrection), /* print in units of bits */
-         hitlist->hit[h]->dcl[d].pvalue * (double) pli->Z,
-         hitlist->hit[h]->nexpected,
-         hitlist->hit[h]->nreported,
-         namew,
-         hitlist->hit[h]->name,
-         hitlist->hit[h]->desc);
-    }
-
-  /* Done. */
-  p7_tophits_Destroy(hitlist);
-  p7_pipeline_Destroy(pli);
-  esl_sq_Destroy(sq);
-  esl_sqfile_Close(sqfp);
-  p7_oprofile_Destroy(om);
-  p7_profile_Destroy(gm);
-  p7_hmm_Destroy(hmm);
-  p7_bg_Destroy(bg);
-  esl_alphabet_Destroy(abc);
-  esl_getopts_Destroy(go);
-  return 0;
-}
-#endif /*p7PIPELINE_EXAMPLE*/
-/*----------- end, search mode (seq db) example -----------------*/
-
-
-
-
 /*****************************************************************
  * 4. Example 2: "scan mode" in an HMM db
  *****************************************************************/
-#ifdef p7PIPELINE_EXAMPLE2
-/* gcc -o pipeline_example2 -g -Wall -I../easel -L../easel -I. -L. -Dp7PIPELINE_EXAMPLE2 p7_pipeline.c -lhmmer -leasel -lm
- * ./pipeline_example2 <hmmdb> <sqfile>
- */
-
-#include "p7_config.h"
-
-#include "easel.h"
-#include "esl_getopts.h"
-#include "esl_sqio.h"
-
-#include "hmmer.h"
-
-static ESL_OPTIONS options[] = {
-  /* name           type         default   env  range   toggles   reqs   incomp                             help                                                  docgroup*/
-  { "-h",           eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL,  NULL,                          "show brief help on version and usage",                         0 },
-  { "-E",           eslARG_REAL,  "10.0", NULL, "x>0",     NULL,  NULL,  "--cut_ga,--cut_nc,--cut_tc",  "E-value cutoff for reporting significant sequence hits",       0 },
-  { "-T",           eslARG_REAL,   FALSE, NULL, "x>0",     NULL,  NULL,  "--cut_ga,--cut_nc,--cut_tc",  "bit score cutoff for reporting significant sequence hits",     0 },
-  { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",     NULL,  NULL,  NULL,                          "set # of comparisons done, for E-value calculation",           0 },
-  { "--domE",       eslARG_REAL,"1000.0", NULL, "x>0",     NULL,  NULL,  "--cut_ga,--cut_nc,--cut_tc",  "E-value cutoff for reporting individual domains",              0 },
-  { "--domT",       eslARG_REAL,   FALSE, NULL, "x>0",     NULL,  NULL,  "--cut_ga,--cut_nc,--cut_tc",  "bit score cutoff for reporting individual domains",            0 },
-  { "--domZ",       eslARG_REAL,   FALSE, NULL, "x>0",     NULL,  NULL,  NULL,                          "set # of significant seqs, for domain E-value calculation",    0 },
-  { "--cut_ga",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL,  "--seqE,--seqT,--domE,--domT", "use GA gathering threshold bit score cutoffs in <hmmfile>",    0 },
-  { "--cut_nc",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL,  "--seqE,--seqT,--domE,--domT", "use NC noise threshold bit score cutoffs in <hmmfile>",        0 },
-  { "--cut_tc",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL,  "--seqE,--seqT,--domE,--domT", "use TC trusted threshold bit score cutoffs in <hmmfile>",      0 },
-  { "--max",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, "--F1,--F2,--F3",               "Turn all heuristic filters off (less speed, more power)",      0 },
-  { "--F1",         eslARG_REAL,  "0.02", NULL, NULL,      NULL,  NULL, "--max",                        "Stage 1 (MSV) threshold: promote hits w/ P <= F1",             0 },
-  { "--F2",         eslARG_REAL,  "1e-3", NULL, NULL,      NULL,  NULL, "--max",                        "Stage 2 (Vit) threshold: promote hits w/ P <= F2",             0 },
-  { "--F3",         eslARG_REAL,  "1e-5", NULL, NULL,      NULL,  NULL, "--max",                        "Stage 3 (Fwd) threshold: promote hits w/ P <= F3",             0 },
-  { "--nobias",     eslARG_NONE,   NULL,  NULL, NULL,      NULL,  NULL, "--max",                        "turn off composition bias filter",                             0 },
-  { "--nonull2",    eslARG_NONE,   NULL,  NULL, NULL,      NULL,  NULL,  NULL,                          "turn off biased composition score corrections",                0 },
-  { "--seed",       eslARG_INT,    "42",  NULL, "n>=0",    NULL,  NULL,  NULL,                          "set RNG seed to <n> (if 0: one-time arbitrary seed)",          0 },
-  { "--acc",        eslARG_NONE,  FALSE,  NULL, NULL,      NULL,  NULL,  NULL,                          "output target accessions instead of names if possible",        0 },
-  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-};
-static char usage[]  = "[-options] <hmmfile> <seqfile>";
-static char banner[] = "example of using acceleration pipeline in scan mode (HMM targets)";
-
-int
-main(int argc, char **argv)
-{
-  ESL_GETOPTS  *go      = esl_getopts_CreateDefaultApp(options, 2, argc, argv, banner, usage);
-  char         *hmmfile = esl_opt_GetArg(go, 1);
-  char         *seqfile = esl_opt_GetArg(go, 2);
-  int           format  = eslSQFILE_FASTA;
-  P7_HMMFILE   *hfp     = NULL;
-  ESL_ALPHABET *abc     = NULL;
-  P7_BG        *bg      = NULL;
-  P7_OPROFILE  *om      = NULL;
-  ESL_SQFILE   *sqfp    = NULL;
-  ESL_SQ       *sq      = NULL;
-  CM_PIPELINE  *pli     = NULL;
-  P7_TOPHITS   *hitlist = p7_tophits_Create();
-  int           h,d,namew;
-
-  /* Don't forget this. Null2 corrections need FLogsum() */
-  p7_FLogsumInit();
-
-  /* Open a sequence file, read one seq from it.
-   * Convert to digital later, after 1st HMM is input and abc becomes known 
-   */
-  sq = esl_sq_Create();
-  if (esl_sqfile_Open(seqfile, format, NULL, &sqfp) != eslOK) p7_Fail("Failed to open sequence file %s\n", seqfile);
-  if (esl_sqio_Read(sqfp, sq)                       != eslOK) p7_Fail("Failed to read sequence from %s\n", seqfile);
-  esl_sqfile_Close(sqfp);
-
-  /* Open the HMM db */
-  if (p7_hmmfile_Open(hmmfile, NULL, &hfp) != eslOK) p7_Fail("Failed to open HMM file %s", hmmfile);
-
-  /* Create a pipeline for the query sequence in scan mode */
-  pli      = p7_pipeline_Create(go, 100, sq->n, FALSE, p7_SCAN_MODELS);
-  p7_pli_NewSeq(pli, sq);
-   
-  /* Some additional config of the pipeline specific to scan mode */
-  pli->hfp = hfp;
-  if (! pli->Z_is_fixed && hfp->is_pressed) { pli->Z_is_fixed = TRUE; pli->Z = hfp->ssi->nprimary; }
-
-  /* Read (partial) of each HMM in file */
-  while (p7_oprofile_ReadMSV(hfp, &abc, &om) == eslOK) 
-    {
-      /* One time only initialization after abc becomes known */
-      if (bg == NULL) 
-    {
-      bg = p7_bg_Create(abc);
-      if (esl_sq_Digitize(abc, sq) != eslOK) p7_Die("alphabet mismatch");
-      p7_bg_SetLength(bg, sq->n);
-    }
-      p7_pli_NewModel(pli, om, bg);
-      p7_oprofile_ReconfigLength(om, sq->n);
-
-      p7_Pipeline(pli, om, bg, sq, hitlist);
-      
-      p7_oprofile_Destroy(om);
-      p7_pipeline_Reuse(pli);
-    } 
-
-  /* Print the results. 
-   * This example is a stripped version of hmmsearch's tabular output.
-   */
-  p7_tophits_Sort(hitlist);
-  namew = ESL_MAX(8, p7_tophits_GetMaxNameLength(hitlist));
-  for (h = 0; h < hitlist->N; h++)
-    {
-      d    = hitlist->hit[h]->best_domain;
-
-      printf("%10.2g %7.1f %6.1f  %7.1f %6.1f %10.2g  %6.1f %5d  %-*s %s\n",
-         hitlist->hit[h]->pvalue * (double) pli->Z,
-         hitlist->hit[h]->score,
-         hitlist->hit[h]->pre_score - hitlist->hit[h]->score, /* bias correction */
-         hitlist->hit[h]->dcl[d].bitscore,
-         eslCONST_LOG2R * p7_FLogsum(0.0, log(bg->omega) + hitlist->hit[h]->dcl[d].domcorrection), /* print in units of BITS */
-         hitlist->hit[h]->dcl[d].pvalue * (double) pli->Z,
-         hitlist->hit[h]->nexpected,
-         hitlist->hit[h]->nreported,
-         namew,
-         hitlist->hit[h]->name,
-         hitlist->hit[h]->desc);
-    }
-
-  /* Done. */
-  p7_tophits_Destroy(hitlist);
-  p7_pipeline_Destroy(pli);
-  esl_sq_Destroy(sq);
-  p7_hmmfile_Close(hfp);
-  p7_bg_Destroy(bg);
-  esl_alphabet_Destroy(abc);
-  esl_getopts_Destroy(go);
-  return 0;
-}
-#endif /*p7PIPELINE_EXAMPLE2*/
-/*--------------- end, scan mode (HMM db) example ---------------*/
-
-
-
 /*****************************************************************
  * @LICENSE@
  *****************************************************************/

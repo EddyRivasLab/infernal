@@ -1014,8 +1014,6 @@ CloneCMStats(CMStats_t *cmstats, CMStats_t **ret_cmstats)
 int
 CopyExpInfo(ExpInfo_t *src, ExpInfo_t *dest)
 {
-  int status;
-
   dest->cur_eff_dbsize = src->cur_eff_dbsize;
   dest->lambda         = src->lambda;
   dest->mu_extrap      = src->mu_extrap;

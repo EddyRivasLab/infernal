@@ -1591,4 +1591,52 @@ typedef struct cm_pipeline_s {
   char          errbuf[eslERRBUFSIZE];
 } CM_PIPELINE;
 
+
+#define CM_HIT_FLAGS_DEFAULT 0
+#define CM_HIT_IS_INCLUDED      (1<<0)
+#define CM_HIT_IS_REPORTED      (1<<1)
+#define CM_HIT_IS_NEW           (1<<2)
+#define CM_HIT_IS_DROPPED       (1<<3)
+
+/* Structure: CM_HIT
+ * 
+ * Info about a high-scoring database hit, kept so we can output a
+ * sorted list of high hits at the end.
+ *
+ * sqfrom and sqto are the coordinates that will be shown
+ * in the results, not coords in arrays... therefore, reverse
+ * complements have sqfrom > sqto
+ */
+typedef struct cm_hit_s {
+  char          *name;		/* name of the target               (mandatory)           */
+  char          *acc;		/* accession of the target          (optional; else NULL) */
+  char          *desc;		/* description of the target        (optional; else NULL) */
+  double         sortkey;       /* number to sort by; big is better                       */
+
+  int64_t        start, stop;   /* start/end points of hit */
+  float          score;		/* bit score of the hit (with corrections) */
+  float          pvalue;	/* P-value of the hit   (with corrections) */
+  float          evalue;	/* E-value of the hit   (with corrections) */
+  float          oasc;		/* optimal accuracy score (units: expected # residues correctly aligned)      */
+  int            bestr;         /* best root state, start/end positions of target can be deduced from this */
+  Fancyali_t    *ad;            /* alignment display */
+
+  uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_NEW | CM_HIT_IS_DROPPED */
+} CM_HIT;
+
+/* Structure: CM_TOPHITS
+ * merging when we prepare to output results. "hit" list is NULL and
+ * unavailable until after we do a sort.  
+ */
+typedef struct cm_tophits_s {
+  CM_HIT **hit;         /* sorted pointer array                     */
+  CM_HIT  *unsrt;	/* unsorted data storage                    */
+  uint64_t Nalloc;	/* current allocation size                  */
+  uint64_t N;		/* number of hits in list now               */
+  uint64_t nreported;	/* number of hits that are reportable       */
+  uint64_t nincluded;	/* number of hits that are includable       */
+  int      is_sorted;	/* TRUE when h->hit valid for all N hits    */
+} CM_TOPHITS;
+
 #endif /*STRUCTSH_INCLUDED*/
+

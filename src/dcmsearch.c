@@ -41,7 +41,7 @@ typedef struct {
   ESL_WORK_QUEUE   *queue;
 #endif /*HMMER_THREADS*/
   CM_PIPELINE      *pli;         /* work pipeline                           */
-  P7_TOPHITS       *th;          /* top hit results                         */
+  CM_TOPHITS       *th;          /* top hit results                         */
   CM_t             *cm;          /* a covariance model                      */
   P7_BG           **bgA;         /* null models                              */
   P7_OPROFILE     **omA;         /* optimized query profile HMMs            */
@@ -213,15 +213,8 @@ static char banner[] = "search a sequence database with an RNA CM";
 static int  serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  serial_loop  (WORKER_INFO *info, ESL_SQFILE *dbfp);
 
-/* TEMPORARY, *_cm_pipeline() copies of p7_tophits.c functions, 
- * modified only to accept CM_PIPELINE object instead of P7_PIPELINE object 
- */
-static int p7_tophits_Threshold_cm_pipeline(P7_TOPHITS *th, CM_PIPELINE *pli);
-static int p7_tophits_Targets_cm_pipeline(FILE *ofp, P7_TOPHITS *th, CM_PIPELINE *pli, int textw);
-static int p7_tophits_Domains_cm_pipeline(FILE *ofp, P7_TOPHITS *th, CM_PIPELINE *pli, int textw);
-static int p7_tophits_TabularTargets_cm_pipeline(FILE *ofp, char *qname, char *qacc, P7_TOPHITS *th, CM_PIPELINE *pli, int show_header);
-static int p7_tophits_ComputeCMEvalues(P7_TOPHITS *th, double eff_dbsize);
-static int determine_qdbs(CM_t *cm, double beta, int **ret_dmin, int **ret_dmax);
+static int  determine_qdbs(CM_t *cm, double beta, int **ret_dmin, int **ret_dmax);
+static int  update_hit_positions(CM_TOPHITS *th, int istart, int64_t offset);
 
 #ifdef HMMER_THREADS
 #define BLOCK_SIZE 1000
@@ -465,7 +458,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   double window_beta = -1.0 ;
   int window_length  = -1;
 
-  int              safe_W;
   int             *fcyk_dmin  = NULL;
   int             *fcyk_dmax  = NULL;
   int             *final_dmin = NULL;
@@ -639,7 +631,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     P7_PROFILE      **gmA      = NULL;
     P7_OPROFILE     **omA      = NULL;       /* optimized query profile                  */
     P7_BG           **bgA      = NULL;
-    CM_t            **cmA      = NULL;
 
     ESL_ALLOC(gmA, sizeof(P7_PROFILE *)  * nhmm);
     ESL_ALLOC(omA, sizeof(P7_OPROFILE *) * nhmm);
@@ -657,7 +648,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Create processing pipeline and hit list */
     for (i = 0; i < infocnt; ++i) {
       if((status = CloneCMJustReadFromFile(cm, errbuf, &(info[i].cm))) != eslOK) esl_fatal(errbuf);
-      info[i].th  = p7_tophits_Create();
+      info[i].th  = cm_tophits_Create();
       info[i].nhmm = nhmm;
       ESL_ALLOC(info[i].gmA, sizeof(P7_PROFILE *)  * nhmm);
       ESL_ALLOC(info[i].omA, sizeof(P7_OPROFILE *) * nhmm);
@@ -698,9 +689,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info[i].pli->do_bot = (esl_opt_GetBoolean(go, "--toponly"))    ? FALSE : TRUE;
 
 #ifdef HMMER_THREADS
-          if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
+      if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
 #endif
-      }
+    }
 
 #ifdef HMMER_THREADS
     if (ncpus > 0)  sstatus = thread_loop(info, threadObj, queue, dbfp);
@@ -726,17 +717,17 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 			      ((double) cm->stats->expAA[info[0].pli->final_cm_exp_mode][0]->nrandhits)) + 0.5);
 	
       for (i = 0; i < infocnt; ++i) { 
-	if(esl_opt_GetBoolean(go, "--hmm")) { p7_tophits_ComputeNhmmerEvalues(info[i].th, (double) cfg->Z);     }
-	else                                { p7_tophits_ComputeCMEvalues    (info[i].th, eff_dbsize); }
+	/* TO DO: compute E-values differently if --hmm (p7_tophits_ComputeNhmmerEvalues?) */
+	cm_tophits_ComputeEvalues(info[i].th, eff_dbsize);
       }
 
       /* merge the results of the search results */
       for (i = 1; i < infocnt; ++i) {
-          p7_tophits_Merge(info[0].th, info[i].th);
+          cm_tophits_Merge(info[0].th, info[i].th);
           cm_pipeline_Merge(info[0].pli, info[i].pli);
 
           cm_pipeline_Destroy(info[i].pli, cm);
-          p7_tophits_Destroy(info[i].th);
+          cm_tophits_Destroy(info[i].th);
 	  for(m = 0; m < info[i].nhmm; m++) { 
 	    p7_oprofile_Destroy(info[i].omA[m]);
 	    p7_profile_Destroy(info[i].gmA[m]);
@@ -746,25 +737,29 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       /* Print the results.  */
-      p7_tophits_Sort(info->th);
-      p7_tophits_RemoveDuplicates(info->th);
-
-      p7_tophits_Threshold_cm_pipeline(info->th, info->pli);
+      cm_tophits_Sort(info->th);
+      cm_tophits_Threshold(info->th, info->pli);
 
       /* tally up total number of hits and target coverage */
       info->pli->n_output = info->pli->pos_output = 0;
       for (i = 0; i < info->th->N; i++) {
-          if (info->th->hit[i]->dcl[0].is_reported || info->th->hit[i]->dcl[0].is_included) {
-              info->pli->n_output++;
-              info->pli->pos_output += abs(info->th->hit[i]->dcl[0].jali - info->th->hit[i]->dcl[0].iali) + 1;
-          }
+	if ((info->th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info->th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
+	  info->pli->n_output++;
+	  info->pli->pos_output += abs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
+	}
       }
 
-      p7_tophits_Targets_cm_pipeline(ofp, info->th, info->pli, textw); fprintf(ofp, "\n\n");
-      /*p7_tophits_Domains_cm_pipeline(ofp, info->th, info->pli, textw); fprintf(ofp, "\n\n");*/
+      /* Output */
+      cm_tophits_Targets(ofp, info->th, info->pli, textw);
+      fprintf(ofp, "\n\n");
+
+      if(info->pli->show_alignments) {
+	cm_tophits_HitAlignments(ofp, info->th, info->pli, textw);
+	fprintf(ofp, "\n\n");
+      }
 
       if (tblfp != NULL) { 
-	p7_tophits_TabularTargets_cm_pipeline(tblfp, cm->name, cm->acc, info->th, info->pli, (nquery == 1)); 
+	cm_tophits_TabularTargets(tblfp, cm->name, cm->acc, info->th, info->pli, (nquery == 1)); 
       }
   
       esl_stopwatch_Stop(w);
@@ -773,9 +768,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* Output the results in an MSA (-A option) */
       if (afp) {
-          ESL_MSA *msa = NULL;
+	esl_fatal("-A option not yet implemented.");
 
-          if (p7_tophits_Alignment(info->th, abc, NULL, NULL, 0, p7_DEFAULT, &msa) == eslOK) {
+#if 0
+	ESL_MSA *msa = NULL;
+
+          if (cm_tophits_Alignment(info->th, abc, NULL, NULL, 0, p7_DEFAULT, &msa) == eslOK) {
             if (textw > 0) esl_msa_Write(afp, msa, eslMSAFILE_STOCKHOLM);
             else           esl_msa_Write(afp, msa, eslMSAFILE_PFAM);
 	    
@@ -785,10 +783,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
           }
 
           esl_msa_Destroy(msa);
+#endif
       }
 
       cm_pipeline_Destroy(info->pli, cm);
-      p7_tophits_Destroy(info->th);
+      cm_tophits_Destroy(info->th);
 
       for(m = 0; m < info->nhmm; m++) { 
 	p7_oprofile_Destroy(info->omA[m]);
@@ -846,80 +845,55 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   return eslFAIL;
 }
 
-//TODO: MPI code needs to be added here
+/* TODO: MPI code needs to be added here */
 
 static int
 serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
 {
   int       status;
-  int      wstatus;
-  int i;
-  int prev_hit_cnt;
+  int       wstatus;
+  int       prev_hit_cnt;
   ESL_SQ   *dbsq   =  esl_sq_CreateDigital(info->cm->abc);
 
   wstatus = esl_sqio_ReadWindow(dbfp, 0, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
 
   while (wstatus == eslOK ) {
     
-    P7_DOMAIN *dcl;
     cm_pli_NewSeq(info->pli, info->cm, dbsq);
-    info->pli->nres -= dbsq->C; // to account for overlapping region of windows
+    info->pli->nres -= dbsq->C; /* to account for overlapping region of windows */
     
     if (info->pli->do_top) { 
       prev_hit_cnt = info->th->N;
       if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
-      cm_pipeline_Reuse(info->pli); // prepare for next search
+      cm_pipeline_Reuse(info->pli); /* prepare for next search */
       
-      // modify hit positions to account for the position of the window in the full sequence
-      for (i=prev_hit_cnt; i < info->th->N ; i++) {
-	dcl = info->th->unsrt[i].dcl;
-	dcl->ienv += dbsq->start - 1;
-	dcl->jenv += dbsq->start - 1;
-	dcl->iali += dbsq->start - 1;
-	dcl->jali += dbsq->start - 1;
-	if(dcl->ad != NULL) { 
-	  dcl->ad->sqfrom += dbsq->start - 1;
-	  dcl->ad->sqto += dbsq->start - 1;
-	}
-      }
+      /* modify hit positions to account for the position of the window in the full sequence */
+      update_hit_positions(info->th, prev_hit_cnt, dbsq->start-1);
     }
-#ifdef eslAUGMENT_ALPHABET
-    //reverse complement
-    if (info->pli->do_bot && dbsq->abc->complement != NULL )
-      {
-	prev_hit_cnt = info->th->N;
-	esl_sq_ReverseComplement(dbsq);
-	if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
-	cm_pipeline_Reuse(info->pli); // prepare for next search
-	  
-	for (i=prev_hit_cnt; i < info->th->N ; i++) {
-	  dcl = info->th->unsrt[i].dcl;
-	  // modify hit positions to account for the position of the window in the full sequence
-	  dcl->ienv = dbsq->start - dcl->ienv + 1;
-	  dcl->jenv = dbsq->start - dcl->jenv + 1;
-	  dcl->iali = dbsq->start - dcl->iali + 1;
-	  dcl->jali = dbsq->start - dcl->jali + 1;
-	  if(dcl->ad != NULL) { 
-	    dcl->ad->sqfrom = dbsq->start - dcl->ad->sqfrom + 1;
-	    dcl->ad->sqto = dbsq->start - dcl->ad->sqto + 1;
-	  }
-	}
-	  
-	info->pli->nres += dbsq->W;
-      }
-#endif /*eslAUGMENT_ALPHABET*/
 
+    /* reverse complement */
+    if (info->pli->do_bot && dbsq->abc->complement != NULL) { 
+      prev_hit_cnt = info->th->N;
+      esl_sq_ReverseComplement(dbsq);
+      if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+      cm_pipeline_Reuse(info->pli); /* prepare for next search */
+      
+      /* modify hit positions to account for the position of the window in the full sequence */
+      update_hit_positions(info->th, prev_hit_cnt, dbsq->start-1);
+
+      info->pli->nres += dbsq->W; /* not sure why this is here (originally from nhmmer.c) - to account for W overlap? */
+    }
+    
     wstatus = esl_sqio_ReadWindow(dbfp, info->omA[0]->max_length, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
-    if (wstatus == eslEOD) { // no more left of this sequence ... move along to the next sequence.
+    if (wstatus == eslEOD) { /* no more left of this sequence ... move along to the next sequence. */
       info->pli->nseqs++;
       esl_sq_Reuse(dbsq);
       wstatus = esl_sqio_ReadWindow(dbfp, 0, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
     }
   }
   esl_sq_Destroy(dbsq);
-
+ 
   return wstatus;
-
 }
 
 #ifdef HMMER_THREADS
@@ -927,7 +901,7 @@ static int
 thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFILE *dbfp)
 {
 
-  //int      wstatus, wstatus_next;
+  /*int      wstatus, wstatus_next;*/
   int  status  = eslOK;
   int  sstatus = eslOK;
   int  eofCount = 0;
@@ -946,15 +920,17 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
   while (sstatus == eslOK ) {
       block = (ESL_SQ_BLOCK *) newBlock;
 
-      //reset block as an empty vessel, possibly keeping the first sq intact for reading in the next window
-      if (block->count > 0 && block->complete)
-          esl_sq_Reuse(block->list);
-      for (i=1; i<block->count; i++)
-          esl_sq_Reuse(block->list + i);
+      /* reset block as an empty vessel, possibly keeping the first sq intact for reading in the next window */
+      if (block->count > 0 && block->complete) { 
+	esl_sq_Reuse(block->list);
+      }
+      for (i=1; i<block->count; i++) { 
+	esl_sq_Reuse(block->list + i);
+      }
 
       sstatus = esl_sqio_ReadBlock(dbfp, block, CMSEARCH_MAX_RESIDUE_COUNT, TRUE);
 
-      info->pli->nseqs += block->count - (block->complete ? 0 : 1);// if there's an incomplete sequence read into the block wait to count it until it's complete.
+      info->pli->nseqs += block->count - (block->complete ? 0 : 1); /* if there's an incomplete sequence read into the block wait to count it until it's complete. */
 
       if (sstatus == eslEOF) {
           if (eofCount < esl_threads_GetWorkerCount(obj)) sstatus = eslOK;
@@ -966,25 +942,24 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
           if (status != eslOK) esl_fatal("Work queue reader failed");
       }
 
-      //newBlock needs all this information so the next ReadBlock call will know what to do
+      /* newBlock needs all this information so the next ReadBlock call will know what to do */
       ((ESL_SQ_BLOCK *)newBlock)->complete = block->complete;
       if (!block->complete) {
-          // the final sequence on the block was a probably-incomplete window of the active sequence,
-          // so prep the next block to read in the next window
-          esl_sq_Copy(block->list + (block->count - 1) , ((ESL_SQ_BLOCK *)newBlock)->list);
-          ((ESL_SQ_BLOCK *)newBlock)->list->C = info->omA[0]->max_length;
+	/* the final sequence on the block was a probably-incomplete window of the active sequence, 
+	 * so prep the next block to read in the next window */
+	esl_sq_Copy(block->list + (block->count - 1) , ((ESL_SQ_BLOCK *)newBlock)->list);
+	((ESL_SQ_BLOCK *)newBlock)->list->C = info->omA[0]->max_length;
       }
-
   }
 
   status = esl_workqueue_ReaderUpdate(queue, block, NULL);
   if (status != eslOK) esl_fatal("Work queue reader failed");
 
   if (sstatus == eslEOF) {
-      /* wait for all the threads to complete */
-      esl_threads_WaitForFinish(obj);
-      esl_workqueue_Complete(queue);  
-    }
+    /* wait for all the threads to complete */
+    esl_threads_WaitForFinish(obj);
+    esl_workqueue_Complete(queue);  
+  }
 
   return sstatus;
 }
@@ -993,7 +968,7 @@ static void
 pipeline_thread(void *arg)
 {
   int prev_hit_cnt;
-  int i, j;
+  int i;
   int status;
   int workeridx;
   WORKER_INFO   *info;
@@ -1028,52 +1003,30 @@ pipeline_thread(void *arg)
       ESL_SQ *dbsq = block->list + i;
 	
       cm_pli_NewSeq(info->pli, info->cm, dbsq);
-      P7_DOMAIN *dcl;
       
-      info->pli->nres -= dbsq->C; // to account for overlapping region of windows
+      info->pli->nres -= dbsq->C; /* to account for overlapping region of windows */
       
       if (info->pli->do_top) { 
 	prev_hit_cnt = info->th->N;
 	if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
-	cm_pipeline_Reuse(info->pli); // prepare for next search
+	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 	
-	// modify hit positions to account for the position of the window in the full sequence
-	for (j=prev_hit_cnt; j < info->th->N ; ++j) {
-          dcl = info->th->unsrt[j].dcl;
-          dcl->ienv += dbsq->start - 1;
-          dcl->jenv += dbsq->start - 1;
-          dcl->iali += dbsq->start - 1;
-          dcl->jali += dbsq->start - 1;
-          if(dcl->ad != NULL) { 
-	    dcl->ad->sqfrom += dbsq->start - 1;
-	    dcl->ad->sqto += dbsq->start - 1;
-	  }
-	}
+	/* modify hit positions to account for the position of the window in the full sequence */
+	update_hit_positions(info->th, prev_hit_cnt, dbsq->start-1);
       }
 	
-#ifdef eslAUGMENT_ALPHABET
-      //reverse complement
+      /* reverse complement */
       if (info->pli->do_bot && dbsq->abc->complement != NULL) {
 	prev_hit_cnt = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
 	if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
-	cm_pipeline_Reuse(info->pli); // prepare for next search
-	
-	for (j=prev_hit_cnt; j < info->th->N ; ++j) {
-	  dcl = info->th->unsrt[j].dcl;
-	  // modify hit positions to account for the position of the window in the full sequence
-	  dcl->ienv = dbsq->start - dcl->ienv + 1;
-	  dcl->jenv = dbsq->start - dcl->jenv + 1;
-	  dcl->iali = dbsq->start - dcl->iali + 1;
-	  dcl->jali = dbsq->start - dcl->jali + 1;
-	  if(dcl->ad != NULL) { 
-	    dcl->ad->sqfrom = dbsq->start - dcl->ad->sqfrom + 1;
-	    dcl->ad->sqto = dbsq->start - dcl->ad->sqto + 1;
-	  }
-	}
-	info->pli->nres += dbsq->W;
+	cm_pipeline_Reuse(info->pli); /* prepare for next search */
+
+	/* modify hit positions to account for the position of the window in the full sequence */
+	update_hit_positions(info->th, prev_hit_cnt, dbsq->start-1);
+
+	info->pli->nres += dbsq->W; /* not sure why this is here (originally from nhmmer.c) - to account for W overlap? */
       }
-#endif /*eslAUGMENT_ALPHABET*/
     }
   
     status = esl_workqueue_WorkerUpdate(info->queue, block, &newBlock);
@@ -1089,410 +1042,6 @@ pipeline_thread(void *arg)
   return;
 }
 #endif   /* HMMER_THREADS */
-
-
-
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/
-
-/* Function:  p7_tophits_Threshold_cm_pipeline()
- * Synopsis:  Apply score and E-value thresholds to a hitlist before output.
- * Incept:    SRE, Tue Dec  9 09:04:55 2008 [Janelia]
- *
- * Purpose:   Identical to p7_pipeline.c::p7_tophits_Threshold() but takes 
- *            a CM_PIPELINE instead of a P7_PIPELINE argument, and 
- *            pli->long_targets is implicitly TRUE. 
- *         
- *            After a pipeline has completed, go through it and mark all
- *            the targets that are "significant" (satisfying
- *            the reporting thresholds set for the pipeline). 
- *            
- *            Also sets the final total number of reported and
- *            included targets, the number of reported and included
- *            targets in each target, and the size of the search space
- *            for per-domain conditional E-value calculations,
- *            <pli->domZ>. By default, <pli->domZ> is the number of
- *            significant targets reported.
- *
- *            If model-specific thresholds were used in the pipeline,
- *            we cannot apply those thresholds now. They were already
- *            applied in the pipeline. In this case all we're
- *            responsible for here is counting them (setting
- *            nreported, nincluded counters).
- *            
- * Returns:   <eslOK> on success.
- */
-int
-p7_tophits_Threshold_cm_pipeline(P7_TOPHITS *th, CM_PIPELINE *pli)
-{
-  int h, d;    /* counters over sequence hits, domains in sequences */
-  
-  /* Flag reported, included targets (if we're using general thresholds) */
-  if (! pli->use_bit_cutoffs) { 
-    for (h = 0; h < th->N; h++) { 
-      if (cm_pli_TargetReportable(pli, th->hit[h]->score, th->hit[h]->pvalue)) { 
-	th->hit[h]->flags |= p7_IS_REPORTED;
-	if (cm_pli_TargetIncludable(pli, th->hit[h]->score, th->hit[h]->pvalue))
-	  th->hit[h]->flags |= p7_IS_INCLUDED;
-      }
-    }
-  }
-
-  /* Second pass is over domains, flagging reportable/includable ones. 
-   * Note how this enforces a hierarchical logic of 
-   * (sequence|domain) must be reported to be included, and
-   * domain can only be (reported|included) if whole sequence is too.
-   */
-  if (! pli->use_bit_cutoffs) {
-    for (h = 0; h < th->N; h++) {
-      if (th->hit[h]->flags & p7_IS_REPORTED) {
-	for (d = 0; d < th->hit[h]->ndom; d++) {
-          if (cm_pli_TargetReportable(pli, th->hit[h]->dcl[d].bitscore, th->hit[h]->dcl[d].pvalue))
-            th->hit[h]->dcl[d].is_reported = TRUE;
-          if ((th->hit[h]->flags & p7_IS_INCLUDED) &&
-              cm_pli_TargetIncludable(pli, th->hit[h]->dcl[d].bitscore, th->hit[h]->dcl[d].pvalue))
-            th->hit[h]->dcl[d].is_included = TRUE;
-	  /*printf("TH h: %3d  d: %3d  report? %s  include? %s\n", h, d, 
-	    ((th->hit[h]->dcl[d].is_reported == TRUE) ? "TRUE" : "FALSE"),
-	    ((th->hit[h]->dcl[d].is_included == TRUE) ? "TRUE" : "FALSE")); */
-        }
-      }
-    }
-  }
-
-  /* Count reported, included targets */
-  th->nreported = 0;
-  th->nincluded = 0;
-  for (h = 0; h < th->N; h++)
-  {
-      if (th->hit[h]->flags & p7_IS_REPORTED)  th->nreported++;
-      if (th->hit[h]->flags & p7_IS_INCLUDED)  th->nincluded++;
-  }
-
-  /* Count the reported, included domains */
-  for (h = 0; h < th->N; h++)  
-    for (d = 0; d < th->hit[h]->ndom; d++)
-      {
-        if (th->hit[h]->dcl[d].is_reported) th->hit[h]->nreported++;
-        if (th->hit[h]->dcl[d].is_included) th->hit[h]->nincluded++;
-      }
-
-  /* EPN: We can't call this b/c it's local to p7_pipeline.c */
-  /*workaround_bug_h74(th);*/  /* blech. This function is defined above; see commentary and crossreferences there. */
-
-  return eslOK;
-}
-
-
-/* Function:  p7_tophits_Targets_cm_pipeline()
- * Synopsis:  Standard output format for a top target hits list.
- * Incept:    SRE, Tue Dec  9 09:10:43 2008 [Janelia]
- *
- * Purpose:   Identical to p7_pipeline.c::p7_tophits_Targets() but takes 
- *            a CM_PIPELINE instead of a P7_PIPELINE argument, and 
- *            pli->long_targets is implicitly TRUE. 
- *
- *            Output a list of the reportable top target hits in <th> 
- *            in human-readable ASCII text format to stream <ofp>, using
- *            final pipeline accounting stored in <pli>. 
- * 
- *            The tophits list <th> should already be sorted (see
- *            <p7_tophits_Sort()> and thresholded (see
- *            <p7_tophits_Threshold>).
- *
- * Returns:   <eslOK> on success.
- */
-int
-p7_tophits_Targets_cm_pipeline(FILE *ofp, P7_TOPHITS *th, CM_PIPELINE *pli, int textw)
-{
-  char   newness;
-  int    h;
-  int    d;
-  int    namew;
-  int    posw;
-  int    descw;
-  char  *showname;
-  int    have_printed_incthresh = FALSE;
-
-  /* when --acc is on, we'll show accession if available, and fall back to name */
-  if (pli->show_accessions) namew = ESL_MAX(8, p7_tophits_GetMaxShownLength(th));
-  else                      namew = ESL_MAX(8, p7_tophits_GetMaxNameLength(th));
-
-  if (textw >  0)           descw = ESL_MAX(32, textw - namew - 61); /* 61 chars excluding desc is from the format: 2 + 22+2 +22+2 +8+2 +<name>+1 */
-  else                      descw = 0;                               /* unlimited desc length is handled separately */
-
-  posw = ESL_MAX(6, p7_tophits_GetMaxPositionLength(th));
-
-  fprintf(ofp, "Scores for complete hit%s:\n",     pli->mode == p7_SEARCH_SEQS ? "s" : "");
-  /* The minimum width of the target table is 111 char: 47 from fields, 8 from min name, 32 from min desc, 13 spaces */
-  fprintf(ofp, "  %9s %6s %5s  %-*s %*s %*s %s\n", "E-value", " score", " bias", namew, (pli->mode == p7_SEARCH_SEQS ? "Sequence":"Model"), posw, "start", posw, "end", "Description");
-  fprintf(ofp, "  %9s %6s %5s  %-*s %*s %*s %s\n", "-------", "------", "-----", namew, "--------", posw, "-----", posw, "-----", "-----------");
-  
-  for (h = 0; h < th->N; h++)
-    if (th->hit[h]->flags & p7_IS_REPORTED)
-    {
-        d    = th->hit[h]->best_domain;
-
-        if (! (th->hit[h]->flags & p7_IS_INCLUDED) && ! have_printed_incthresh) {
-          fprintf(ofp, "  ------ inclusion threshold ------\n");
-          have_printed_incthresh = TRUE;
-        }
-
-        if (pli->show_accessions)
-          {   /* the --acc option: report accessions rather than names if possible */
-            if (th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') showname = th->hit[h]->acc;
-            else                                                       showname = th->hit[h]->name;
-          }
-        else
-          showname = th->hit[h]->name;
-
-        if      (th->hit[h]->flags & p7_IS_NEW)     newness = '+';
-        else if (th->hit[h]->flags & p7_IS_DROPPED) newness = '-';
-        else                                        newness = ' ';
-	fprintf(ofp, "%c %9.2g %6.1f %5.1f  %-*s %*d %*d ",
-                newness,
-                th->hit[h]->pvalue, // * pli->Z,
-                th->hit[h]->score,
-                eslCONST_LOG2R * th->hit[h]->dcl[d].dombias, // domain bias - seems like the right one to use, no?
-                //th->hit[h]->pre_score - th->hit[h]->score, /* bias correction */
-                namew, showname,
-                posw, th->hit[h]->dcl[d].iali,
-                posw, th->hit[h]->dcl[d].jali);
-
-        if (textw > 0) fprintf(ofp, "%-.*s\n", descw, th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
-        else           fprintf(ofp, "%s\n",           th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
-        /* do NOT use *s with unlimited (INT_MAX) line length. Some systems
-	 * have an fprintf() bug here (we found one on an Opteron/SUSE Linux
-         * system (#h66)
-         */
-    }
-  if (th->nreported == 0) fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n");
-  return eslOK;
-}
-
-
-/* Function:  p7_tophits_Domains_cm_pipeline()
- * Synopsis:  Standard output format for top domain hits and alignments.
- * Incept:    SRE, Tue Dec  9 09:32:32 2008 [Janelia]
- *
- * Purpose:   Identical to p7_pipeline.c::p7_tophits_Domains() but takes 
- *            a CM_PIPELINE instead of a P7_PIPELINE argument, and 
- *            pli->long_targets is implicitly TRUE. 
- *
- *            For each reportable target sequence, output a tabular summary
- *            of reportable domains found in it, followed by alignments of
- *            each domain.
- * 
- *            Similar to <p7_tophits_Targets()>; see additional notes there.
- */
-int
-p7_tophits_Domains_cm_pipeline(FILE *ofp, P7_TOPHITS *th, CM_PIPELINE *pli, int textw)
-{
-  int h, d;
-  int nd;
-  int namew, descw;
-  char *showname;
-
-  fprintf(ofp, "Annotation for each hit %s:\n",
-	  pli->show_alignments ? " (and alignments)" : "");
-
-  for (h = 0; h < th->N; h++)
-    if (th->hit[h]->flags & p7_IS_REPORTED)
-    {
-        if (pli->show_accessions && th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0')
-        {
-            showname = th->hit[h]->acc;
-            namew    = strlen(th->hit[h]->acc);
-        }
-        else
-        {
-            showname = th->hit[h]->name;
-            namew = strlen(th->hit[h]->name);
-        }
-
-        if (textw > 0)
-        {
-          descw = ESL_MAX(32, textw - namew - 5);
-          fprintf(ofp, ">> %s  %-.*s\n", showname, descw, (th->hit[h]->desc == NULL ? "" : th->hit[h]->desc));
-        }
-        else
-        {
-          fprintf(ofp, ">> %s  %s\n",    showname,        (th->hit[h]->desc == NULL ? "" : th->hit[h]->desc));
-        }
-
-        if (th->hit[h]->nreported == 0)
-        {
-          fprintf(ofp,"   [No individual domains that satisfy reporting thresholds (although complete target did)]\n\n");
-          continue;
-        }
-
-        /* The domain table is 101 char wide:
-              #     score  bias    Evalue hmmfrom   hmmto    alifrom  ali to    envfrom  env to     acc
-             ---   ------ ----- --------- ------- -------    ------- -------    ------- -------    ----
-               1 ?  123.4  23.1    6.8e-9       3    1230 ..       1     492 []       2     490 .] 0.90
-             123 ! 1234.5 123.4 123456789 1234567 1234567 .. 1234567 1234567 [] 1234567 1234568 .] 0.12
-        */
-
-	fprintf(ofp, "   %6s %5s %9s %7s %7s %2s %7s %7s %2s %7s %7s %2s %4s\n",  "score",  "bias",  "  Evalue", "hmmfrom",  "hmm to", "  ", "alifrom",  "ali to", "  ", "envfrom",  "env to", "  ",  "acc");
-	fprintf(ofp, "   %6s %5s %9s %7s %7s %2s %7s %7s %2s %7s %7s %2s %4s\n",  "------", "-----", "---------", "-------", "-------", "  ", "-------", "-------", "  ", "-------", "-------", "  ", "----");
-
-        nd = 0;
-        for (d = 0; d < th->hit[h]->ndom; d++)
-          if (th->hit[h]->dcl[d].is_reported)
-            {
-              nd++;
-	      if(th->hit[h]->dcl[d].ad == NULL) { 
-		fprintf(ofp, " %c %6.1f %5.1f %9.2g %7s %7s %c%c %7s %7s %c%c %7d %7d %c%c %4.2f\n",
-			th->hit[h]->dcl[d].is_included ? '!' : '?',
-			th->hit[h]->dcl[d].bitscore,
-			th->hit[h]->dcl[d].dombias * eslCONST_LOG2R, /* convert NATS to BITS at last moment */
-			th->hit[h]->dcl[d].pvalue,
-			"-", "-", '-', '-', "-", "-", '-', '-', 
-			th->hit[h]->dcl[d].ienv,
-			th->hit[h]->dcl[d].jenv,
-			'-', '-', 
-			(th->hit[h]->dcl[d].oasc / (1.0 + fabs((float) (th->hit[h]->dcl[d].jenv - th->hit[h]->dcl[d].ienv)))));
-	      }
-	      else { 
-		fprintf(ofp, " %c %6.1f %5.1f %9.2g %7d %7d %c%c %7ld %7ld %c%c %7d %7d %c%c %4.2f\n",
-			th->hit[h]->dcl[d].is_included ? '!' : '?',
-			th->hit[h]->dcl[d].bitscore,
-			th->hit[h]->dcl[d].dombias * eslCONST_LOG2R, /* convert NATS to BITS at last moment */
-			th->hit[h]->dcl[d].pvalue,
-			th->hit[h]->dcl[d].ad->hmmfrom,
-			th->hit[h]->dcl[d].ad->hmmto,
-			(th->hit[h]->dcl[d].ad->hmmfrom == 1) ? '[' : '.',
-			(th->hit[h]->dcl[d].ad->hmmto   == th->hit[h]->dcl[d].ad->M) ? ']' : '.',
-			th->hit[h]->dcl[d].ad->sqfrom,
-			th->hit[h]->dcl[d].ad->sqto,
-			(th->hit[h]->dcl[d].ad->sqfrom == 1) ? '[' : '.',
-			(th->hit[h]->dcl[d].ad->sqto   == th->hit[h]->dcl[d].ad->L) ? ']' : '.',
-			th->hit[h]->dcl[d].ienv,
-			th->hit[h]->dcl[d].jenv,
-			(th->hit[h]->dcl[d].ienv == 1) ? '[' : '.',
-			(th->hit[h]->dcl[d].jenv == th->hit[h]->dcl[d].ad->L) ? ']' : '.',
-			(th->hit[h]->dcl[d].oasc / (1.0 + fabs((float) (th->hit[h]->dcl[d].jenv - th->hit[h]->dcl[d].ienv)))));
-	      }
-	    }
-
-        if (pli->show_alignments) {
-	  fprintf(ofp, "\n  Alignment:\n");
-	  for (d = 0; d < th->hit[h]->ndom; d++) {
-	    if (th->hit[h]->dcl[d].is_reported) { 
-	      nd++;
-	      fprintf(ofp, "  score: %.1f bits\n", th->hit[h]->dcl[d].bitscore);
-              p7_alidisplay_Print(ofp, th->hit[h]->dcl[d].ad, 40, textw, pli->show_accessions);
-              fprintf(ofp, "\n");
-            }
-	  }
-	}
-	else {
-          fprintf(ofp, "\n");
-	}
-    }
-  if (th->nreported == 0) { fprintf(ofp, "\n   [No targets detected that satisfy reporting thresholds]\n"); return eslOK; }
-  return eslOK;
-}
-
-
-/* Function:  p7_tophits_TabularTargets_cm_pipeline()
- * Synopsis:  Output parsable table of per-sequence hits.
- * Incept:    SRE, Wed Mar 18 15:26:17 2009 [Janelia]
- *
- * Purpose:   Identical to p7_pipeline.c::p7_tophits_TabularTargets() but
- *            takes a CM_PIPELINE instead of a P7_PIPELINE argument, and
- *            pli->long_targets is implicitly TRUE.
- *
- *            Output a parseable table of reportable per-sequence hits
- *            in sorted tophits list <th> in an easily parsed ASCII
- *            tabular form to stream <ofp>, using final pipeline
- *            accounting stored in <pli>.
- *            
- *            Designed to be concatenated for multiple queries and
- *            multiple top hits list.
- *
- * Returns:   <eslOK> on success.
- */
-int
-p7_tophits_TabularTargets_cm_pipeline(FILE *ofp, char *qname, char *qacc, P7_TOPHITS *th, CM_PIPELINE *pli, int show_header)
-{
-  int qnamew = ESL_MAX(20, strlen(qname));
-  int tnamew = ESL_MAX(20, p7_tophits_GetMaxNameLength(th));
-  int qaccw  = ((qacc != NULL) ? ESL_MAX(10, strlen(qacc)) : 10);
-  int taccw  = ESL_MAX(10, p7_tophits_GetMaxAccessionLength(th));
-  int posw;
-  posw = ESL_MAX(7, p7_tophits_GetMaxPositionLength(th));
-
-  int h,d;
-
-  if (show_header)
-  {
-    fprintf(ofp, "#%-*s %-*s %-*s %-*s %s %s %*s %*s %9s %6s %5s %s\n",
-	    tnamew-1, " target name",        taccw, "accession",  qnamew, "query name",           qaccw, "accession", "hmmfrom", "hmm to", posw, "alifrom", posw, "ali to",  "  E-value", " score", " bias", "description of target");
-    fprintf(ofp, "#%*s %*s %*s %*s %s %s %*s %*s %9s %6s %5s %s\n",
-	    tnamew-1, "-------------------", taccw, "----------", qnamew, "--------------------", qaccw, "----------", "-------", "-------", posw, "-------", posw, "-------", "---------", "------", "-----", "---------------------");
-  }
-
-  for (h = 0; h < th->N; h++)
-    if (th->hit[h]->flags & p7_IS_REPORTED)    {
-        d    = th->hit[h]->best_domain;
-	if(th->hit[h]->dcl[d].ad != NULL) { 
-	  fprintf(ofp, "%-*s %-*s %-*s %-*s %7d %7d %*d %*d %9.2g %6.1f %5.1f %s\n",
-		  tnamew, th->hit[h]->name,
-		  taccw,  th->hit[h]->acc ? th->hit[h]->acc : "-",
-		  qnamew, qname,
-		  qaccw,  ( (qacc != NULL && qacc[0] != '\0') ? qacc : "-"),
-		  th->hit[h]->dcl[d].ad->hmmfrom,
-		  th->hit[h]->dcl[d].ad->hmmto,
-		  posw, th->hit[h]->dcl[d].iali,
-		  posw, th->hit[h]->dcl[d].jali,
-		  th->hit[h]->pvalue,
-		  th->hit[h]->score,
-		  th->hit[h]->dcl[d].dombias * eslCONST_LOG2R, /* convert NATS to BITS at last moment */
-		  th->hit[h]->desc ?  th->hit[h]->desc : "-");
-	}
-	else { /* th->hit[h]->dcl[d].ad == NULL) */
-	  fprintf(ofp, "%-*s %-*s %-*s %-*s %7s %7s %*d %*d %9.2g %6.1f %5.1f %s\n",
-		  tnamew, th->hit[h]->name,
-		  taccw,  th->hit[h]->acc ? th->hit[h]->acc : "-",
-		  qnamew, qname,
-		  qaccw,  ( (qacc != NULL && qacc[0] != '\0') ? qacc : "-"),
-		  "-", "-", 
-		  posw, th->hit[h]->dcl[d].iali,
-		  posw, th->hit[h]->dcl[d].jali,
-		  th->hit[h]->pvalue,
-		  th->hit[h]->score,
-		  th->hit[h]->dcl[d].dombias * eslCONST_LOG2R, /* convert NATS to BITS at last moment */
-		  th->hit[h]->desc ?  th->hit[h]->desc : "-");
-	}
-    }
-  
-  return eslOK;
-}
-
-/* Function:  p7_tophits_ComputeCMEvalues()
- * Synopsis:  Compute CM E-values
- * Incept:    EPN, Tue Sep 28 05:26:20 2010
- *
- * Purpose:   After cmsearch pipeline has completed, the TopHits object contains
- *            objects with p-values that haven't yet been converted to e-values.
- *
- * Returns:   <eslOK> on success.
- */
-int
-p7_tophits_ComputeCMEvalues(P7_TOPHITS *th, double eff_dbsize)
-{
-  int i; 
-
-  for (i = 0; i < th->N ; i++) { 
-    /*printf("CM P: %g  ",  th->unsrt[i].pvalue);*/
-    th->unsrt[i].pvalue *= eff_dbsize;
-    /*printf("E: %g  (eff_dbsize: %12.6f\n",  th->unsrt[i].pvalue, eff_dbsize);*/
-    th->unsrt[i].sortkey = -th->unsrt[i].pvalue;
-  }
-  return eslOK;
-}
 
 
 /* Function:  determine_qdbs
@@ -1523,3 +1072,35 @@ determine_qdbs(CM_t *cm, double beta, int **ret_dmin, int **ret_dmax)
 
   return eslOK;
 }
+
+/* Function:  update_hit_positions
+ * Synopsis:  Update sequence positions in hit lits.
+ * Incept:    EPN, Wed May 25 09:12:52 2011
+ *
+ * Purpose:   For hits <istart..th->N-1> in a hit list, update their
+ *            positions by adding <offset> to start, stop and
+ *            ad->sqfrom, ad->sqto.  This is necessary when we've
+ *            searched a chunk of subsequence that originated
+ *            somewhere within a larger sequence.
+ *
+ * Returns:   <eslOK> on success.
+ */
+int
+update_hit_positions(CM_TOPHITS *th, int istart, int64_t offset)
+{ 
+  if(offset == 0) return eslOK;
+
+  int i;
+  for (i=istart; i < th->N ; i++) {
+    th->unsrt[i].start += offset;
+    th->unsrt[i].stop  += offset;
+    if(th->unsrt[i].ad != NULL) { 
+      th->unsrt[i].ad->sqfrom += offset;
+      th->unsrt[i].ad->sqto   += offset;
+    }
+  }
+  return eslOK;
+}
+/*****************************************************************
+ * @LICENSE@
+ *****************************************************************/
