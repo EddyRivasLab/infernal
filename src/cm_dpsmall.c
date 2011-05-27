@@ -643,6 +643,31 @@ CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet)
     }
 }
 
+
+/* Function: CYKNonQDBSmallMbNeeded()
+ * Date:     EPN, Fri May 27 11:43:56 2011
+ *
+ * Purpose:  Return number of Mb needed for non-QDB
+ *           divide and conquer CYK.
+ *
+ * Args:     cm     - the model
+ *           L      - length of sequence.
+ * 
+ * Returns: Number of Mb required.
+ */
+float
+CYKNonQDBSmallMbNeeded(CM_t *cm, int L)
+{
+  float Mb_per_deck;    /* megabytes per deck */
+  int   maxdecks;	/* maximum # of decks needed by CYKInside() */
+  float smallmemory;	/* how much memory small version of CYKInside() needs */
+
+  Mb_per_deck = size_vjd_deck(L, 1, L);
+  maxdecks    = cyk_deck_count(cm, 0, cm->M-1);
+  smallmemory = (float) maxdecks * Mb_per_deck;
+  return smallmemory;
+}
+
 /*################################################################
  * The dividers and conquerors. 
  *################################################################*/  

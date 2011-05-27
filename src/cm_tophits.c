@@ -149,8 +149,6 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   hit->score            = 0.0;
   hit->pvalue           = 0.0;
   hit->evalue           = 0.0;
-  hit->oasc             = 0.;
-  hit->bestr            = 0;
 
   hit->ad               = NULL;
   hit->flags            = CM_HIT_FLAGS_DEFAULT;
@@ -419,7 +417,7 @@ cm_tophits_Reuse(CM_TOPHITS *h)
       if (h->unsrt[i].name != NULL) free(h->unsrt[i].name);
       if (h->unsrt[i].acc  != NULL) free(h->unsrt[i].acc);
       if (h->unsrt[i].desc != NULL) free(h->unsrt[i].desc);
-      if (h->unsrt[i].ad != NULL)   FreeFancyAli(h->unsrt[i].ad);
+      if (h->unsrt[i].ad != NULL)   cm_alidisplay_Destroy(h->unsrt[i].ad);
     }
   }
   h->N         = 0;
@@ -444,7 +442,7 @@ cm_tophits_Destroy(CM_TOPHITS *h)
       if (h->unsrt[i].name != NULL) free(h->unsrt[i].name);
       if (h->unsrt[i].acc  != NULL) free(h->unsrt[i].acc);
       if (h->unsrt[i].desc != NULL) free(h->unsrt[i].desc);
-      if (h->unsrt[i].ad != NULL)   FreeFancyAli(h->unsrt[i].ad);
+      if (h->unsrt[i].ad != NULL)   cm_alidisplay_Destroy(h->unsrt[i].ad);
     }
     free(h->unsrt);
   }
@@ -475,7 +473,6 @@ cm_tophits_CloneHitFromResults(CM_TOPHITS *th, search_results_t *results, int hi
   if ((status = cm_tophits_CreateNextHit(th, &hit)) != eslOK) goto ERROR;
   hit->start = results->data[hidx].start;
   hit->stop  = results->data[hidx].stop;
-  hit->bestr = results->data[hidx].bestr;
   hit->score = results->data[hidx].score;
 
   *ret_hit = hit;
@@ -595,15 +592,15 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   char *namestr   = NULL;
   char *posstr    = NULL;
 
+
   /* when --acc is on, we'll show accession if available, and fall back to name */
   if (pli->show_accessions) namew = ESL_MAX(8, cm_tophits_GetMaxShownLength(th));
   else                      namew = ESL_MAX(8, cm_tophits_GetMaxNameLength(th));
 
-  if (textw >  0)           descw = ESL_MAX(32, textw - namew - 61); /* 61 chars excluding desc is from the format: 2 + 22+2 +22+2 +8+2 +<name>+1 */
-  else                      descw = 0;                               /* unlimited desc length is handled separately */
-
   posw = ESL_MAX(6, cm_tophits_GetMaxPositionLength(th));
-  printf("posw: %d\n", posw);
+
+  if (textw >  0) descw = ESL_MAX(32, textw - namew - (2*posw) - 31); /* 31 chars excluding desc is from the format: 1 + 2 + 9+2(E-value) + 6+2(score) + 1+2(strand) + 2+2+2+2(spacing) */
+  else            descw = 0;                                          /* unlimited desc length is handled separately */
 
   ESL_ALLOC(namestr, sizeof(char) * (namew+1));
   ESL_ALLOC(posstr,  sizeof(char) * (posw+1));
@@ -612,9 +609,9 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   for(i = 0; i < posw;  i++) { posstr[i]  = '-'; } posstr[posw]   = '\0';
 
   fprintf(ofp, "Hit scores:\n");
-  /* The minimum width of the target table is 111 char: 47 from fields, 8 from min name, 32 from min desc, 13 spaces */
-  fprintf(ofp, "  %9s %6s %-*s %*s %*s %s\n", "E-value",   " score", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"model"), posw, "start", posw, "end", "description");
-  fprintf(ofp, "  %9s %6s %-*s %*s %*s %s\n", "---------", "------", namew, namestr, posw, posstr, posw, posstr, "----------");
+  /* The minimum width of the target table is 85 char: 30 from fields, 8 from min name, 32 from min desc, 15 spaces */
+  fprintf(ofp, "   %9s  %6s  %-*s  %*s  %*s  %1s  %s\n", "E-value",   " score", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"model"), posw, "start", posw, "end", "", "description");
+  fprintf(ofp, "   %9s  %6s  %-*s  %*s  %*s  %1s  %s\n", "---------", "------", namew, namestr, posw, posstr, posw, posstr, "", "-----------");
   
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED)
@@ -634,13 +631,14 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
     }
 
     newness = ' '; /* left-over from HMMER3 output, which uses this to mark new/dropped hits in iterative searches */
-    fprintf(ofp, "%c %9.2g %6.1f %-*s %*ld %*ld ",
+    fprintf(ofp, "%c  %9.2g  %6.1f  %-*s  %*ld  %*ld  %c  ",
 	    newness,
 	    th->hit[h]->evalue,
 	    th->hit[h]->score,
 	    namew, showname,
 	    posw, th->hit[h]->start,
-	    posw, th->hit[h]->stop);
+	    posw, th->hit[h]->stop,
+	    (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'));
 
     if (textw > 0) fprintf(ofp, "%-.*s\n", descw, th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
     else           fprintf(ofp, "%s\n",           th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
@@ -663,7 +661,6 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   return status;
 }
 
-
 /* Function:  cm_tophits_HitAlignments()
  * Synopsis:  Standard output format for alignments.
  * Incept:    EPN, Tue May 24 13:50:53 2011
@@ -677,9 +674,15 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 int
 cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 {
-  int h;
-  int namew, descw;
+  int status;
+  int h, i;
+  int namew, descw, idxw;
   char *showname;
+  char *idxstr = NULL;
+
+  idxw = integer_textwidth(th->N);
+  ESL_ALLOC(idxstr, sizeof(char) * (idxw+1));
+  for(i = 0; i < idxw; i++) { idxstr[i] = '-'; } idxstr[idxw] = '\0';
 
   fprintf(ofp, "Hit alignments:\n");
 
@@ -702,49 +705,71 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	fprintf(ofp, ">> %s  %s\n",    showname,        (th->hit[h]->desc == NULL ? "" : th->hit[h]->desc));
       }
 
-      /* The hit table is 70+x char wide:, where x is the the number of digits in the total number of hits 
-       *        #    score    Evalue cm from   cm to       hit from      hit to     acc
-       *     ----   ------ --------- ------- -------    ----------- -----------    ----
-       *        1    123.4    6.8e-9       3    1230 []           1         492 .. 0.90
-       *     1234   123456 123456789 1234567 1234567 12 12345678901 12345678901 12 1234
-       *     0        1         2         3         4         5         6         7
-       *     12345678901234567890123456789012345678901234567890123456789012345678901234
+      /* The hit info display is 101+idxw char wide:, where nwidth is the the number of digits in th->N. 
+       * If (! pli->show_alignments) the width drops to 65+idxw.
+       *     #  score   E-value cm from   cm to       seq from      seq to     | acc cyk sc bands   mx Mb aln secs  
+       *     - ------ --------- ------- -------    ----------- -----------     |---- ------ ----- ------- --------
+       *     1  123.4    6.8e-9       3      72 []         412         492 + ..|0.98      -   yes    1.30     0.04  
+       *     2  123.4    1.8e-3       1      72 []         180         103 - ..|   -   23.5    no    0.65     2.23  
+       *  idxw 123456 123456789 1234567 1234567 12 12345678901 12345678901 1 12|1234 123456 12345 1234567 12345678
+       *     0        1         2         3         4         5         6      |  7         8        9         0
+       *     12345678901234567890123456789012345678901234567890123456789012345678901234567890123457890123456789012
+       *                                                                       |
+       *                                                                       ^
+       *                                                                       end of output if (! pli->show_alignments)
        */
 
-      fprintf(ofp, " %4s %1s %6s %9s %7s %7s %2s %11s %11s %2s %4s\n",  "#",    "", "score",   "Evalue",    "cm from", "cm to",   "", "hit from",    "hit to",      "", "acc");
-      fprintf(ofp, " %4s %1s %6s %9s %7s %7s %2s %11s %11s %2s %4s\n",  "----", "", "-------", "---------", "-------", "-------", "", "-----------", "-----------", "", "----");
+      fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s",  idxw, "#", "", "score", "E-value", "cm from", "cm to", "", "seq from", "seq to", "", "");
+      if(pli->show_alignments) fprintf(ofp, " %4s %6s %5s %7s %7s", "acc",  "cyk sc", "bands", "mx Mb",   "seconds");
+      fprintf(ofp, "\n");
+
+      fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s",  idxw, idxstr,  "", "------", "---------", "-------", "-------", "", "-----------", "-----------", "", "");
+      if(pli->show_alignments) fprintf(ofp, " %4s %6s %5s %7s %7s", "----", "------", "-----", "-------", "-------");
+      fprintf(ofp, "\n");
       
-      fprintf(ofp, " %4d %c %6.1f %9.2g %7d %7d %c%c %11ld %11ld %c%c %4.2f\n",
-	      h,
+      fprintf(ofp, " %*d %c %6.1f %9.2g %7d %7d %c%c %11ld %11ld %c %c%c",
+	      idxw, h+1,
 	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? '!' : '?'),
 	      th->hit[h]->score,
 	      th->hit[h]->evalue,
 	      th->hit[h]->ad->cfrom,
 	      th->hit[h]->ad->cto,
 	      (th->hit[h]->ad->cfrom == 1 ? '[' : '.'),
-	      /*(th->hit[h]->ad->cto   == th->hit[h]->ad->clen ? ']' : '.'),*/
-	      '?',
+	      (th->hit[h]->ad->cto   == th->hit[h]->ad->clen ? ']' : '.'),
 	      th->hit[h]->start,
 	      th->hit[h]->stop,
+	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'),
 	      (th->hit[h]->start == 1 ? '[' : '.'),
-	      /*(th->hit[h]->stop == th->hit[h]->ad->L ? '[' : '.'),*/
-	      '?',
-	      (th->hit[h]->oasc / (1.0 + fabs((float) (th->hit[h]->stop - th->hit[h]->start)))));
+	      (th->hit[h]->stop == th->hit[h]->ad->L ? ']' : '.'));
+      
+      if (pli->show_alignments) { 
+	if(th->hit[h]->ad->used_optacc) { 
+	  fprintf(ofp, " %4.2f %6s", th->hit[h]->ad->aln_sc, "-"); 
+	}
+	else {
+	  fprintf(ofp, " %4s %6.2f", "-", th->hit[h]->ad->aln_sc); 
+	}
+	fprintf(ofp, " %5s %7.2f %7.2f\n\n",	
+		(th->hit[h]->ad->used_hbands ? "yes" : "no"),
+		th->hit[h]->ad->matrix_Mb,
+		th->hit[h]->ad->elapsed_secs);
+	cm_alidisplay_Print(ofp, th->hit[h]->ad, 40, textw, pli->show_accessions, TRUE);
+	fprintf(ofp, "\n");
+      }
+      else { 
+	fprintf(ofp, "\n\n");
+      }
     }
-
-    if (pli->show_alignments) { 
-      fprintf(ofp, "\n  Alignment:\n");
-      fprintf(ofp, "  score: %.1f bits\n", th->hit[h]->score);
-      /* To do, add textw capacity */
-      PrintFancyAli(ofp, th->hit[h]->ad, 0, ((th->hit[h]->stop < th->hit[h]->start) ? TRUE : FALSE), FALSE);
-      fprintf(ofp, "\n");
-    }
-    else
-      fprintf(ofp, "\n");
   }
-  if (th->nreported == 0) { fprintf(ofp, "\n   [No targets detected that satisfy reporting thresholds]\n"); return eslOK; }
+  if (th->nreported == 0) { fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n"); return eslOK; }
 
+  if(idxstr != NULL) free(idxstr);
   return eslOK;
+
+ERROR: 
+  if(idxstr != NULL) free(idxstr);
+  return status;
+
 }
 /*---------------- end, standard output format ------------------*/
 

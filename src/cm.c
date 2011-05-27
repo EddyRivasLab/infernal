@@ -70,10 +70,10 @@ CreateCMShell(void)
 				/* general information: added later */
   cm->abc    = NULL;
 
-  cm->name   = NULL;
-  cm->acc    = NULL;
-  cm->desc   = NULL;
-  cm->annote = NULL;
+  cm->name = NULL;
+  cm->acc  = NULL;
+  cm->desc = NULL;
+  cm->rf   = NULL;
 
 				/* null model information */
   cm->null   = NULL;
@@ -328,12 +328,12 @@ CMRenormalize(CM_t *cm)
 void
 FreeCM(CM_t *cm)
 {
-  if (cm->smx    != NULL) cm_FreeScanMatrixForCM(cm); /* free this first, it needs some info from cm->stid */
-  if (cm->si     != NULL) FreeSearchInfo(cm->si, cm); /* free this first, it needs some info from cm->stid */
-  if (cm->name   != NULL) free(cm->name);
-  if (cm->acc    != NULL) free(cm->acc);
-  if (cm->desc   != NULL) free(cm->desc);
-  if (cm->annote != NULL) free(cm->annote);
+  if (cm->smx  != NULL) cm_FreeScanMatrixForCM(cm); /* free this first, it needs some info from cm->stid */
+  if (cm->si   != NULL) FreeSearchInfo(cm->si, cm); /* free this first, it needs some info from cm->stid */
+  if (cm->name != NULL) free(cm->name);
+  if (cm->acc  != NULL) free(cm->acc);
+  if (cm->desc != NULL) free(cm->desc);
+  if (cm->rf   != NULL) free(cm->rf);
 
   free(cm->null);
   free(cm->sttype);
@@ -2608,6 +2608,11 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
 
   esl_vec_FCopy(cm->e[0], cm->M * cm->abc->K * cm->abc->K, new->e[0]);
   esl_vec_FCopy(cm->t[0], cm->M * MAXCONNECT,              new->t[0]);
+
+  if (esl_strdup(cm->name, -1, &(new->name))  != eslOK) { status = eslEMEM; goto ERROR; }
+  if (cm->acc != NULL)  { if (esl_strdup(cm->acc, -1,  &(new->acc))  != eslOK) { status = eslEMEM; goto ERROR; } }
+  if (cm->desc != NULL) { if (esl_strdup(cm->desc, -1, &(new->desc)) != eslOK) { status = eslEMEM; goto ERROR; } }
+  if (cm->rf   != NULL) { if (esl_strdup(cm->rf,   -1, &(new->rf))   != eslOK) { status = eslEMEM; goto ERROR; } }
 
   if (esl_strdup(cm->comlog->bcom,  -1, &(new->comlog->bcom))  != eslOK) { status = eslEMEM; goto ERROR; }
   if (esl_strdup(cm->comlog->bdate, -1, &(new->comlog->bdate)) != eslOK) { status = eslEMEM; goto ERROR; }

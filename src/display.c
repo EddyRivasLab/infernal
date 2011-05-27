@@ -48,6 +48,7 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  *            do_noncanonical - mark half-bps and negative scoring bps that are non-canonicals in top line with 'v'
  *                              (by default, all negative scoring and half-bps are marked with 'x')
  *            pcode - posterior code
+ *            
  *
  * Returns:   fancy alignment structure.
  *            Caller frees, with FreeFancyAli(ali).
@@ -71,7 +72,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   int         symi, symj;
   int         d;
   int         mode;
-  int         lannote, rannote; /* chars in annotation line; left, right     */
+  int         lrf, rrf;         /* chars in reference line; left, right     */
   int         lstr, rstr;	/* chars in structure line; left, right      */
   int         lcons, rcons;	/* chars in consensus line; left, right      */
   int         lmid, rmid;	/* chars in ali quality line; left, right    */
@@ -138,13 +139,13 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
     }
 
   /* Allocate and initialize.
-   * Blank the annotation lines (memset calls) - only needed
+   * Blank the reference lines (memset calls) - only needed
    * because of the way we deal w/ EL. 
    */
-  if (cm->annote != NULL ) 
-    ESL_ALLOC(ali->annote, sizeof(char) * (ali->len+1));
+  if (cm->rf != NULL ) 
+    ESL_ALLOC(ali->rf, sizeof(char) * (ali->len+1));
   else                     
-    ali->annote = NULL;
+    ali->rf = NULL;
   ESL_ALLOC(ali->cstr, sizeof(char) * (ali->len+1));
   ESL_ALLOC(ali->cseq, sizeof(char) * (ali->len+1));
   ESL_ALLOC(ali->mid,  sizeof(char) * (ali->len+1));
@@ -159,7 +160,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   ESL_ALLOC(ali->scoord, sizeof(int)  * ali->len);
   ESL_ALLOC(ali->ccoord, sizeof(int)  * ali->len);
 
-  if (cm->annote != NULL) memset(ali->annote, ' ', ali->len);
+  if (cm->rf != NULL) memset(ali->rf, ' ', ali->len);
   memset(ali->cstr, ' ', ali->len);
   memset(ali->cseq, ' ', ali->len);
   memset(ali->mid,  ' ', ali->len);
@@ -181,9 +182,9 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   while (esl_stack_IPop(pda, &type) != eslEOD)
     {
       if (type == PDA_RESIDUE) {
-	if (cm->annote != NULL) { 
-	  esl_stack_IPop(pda, &rannote); 
-	  ali->annote[pos] = rannote;
+	if (cm->rf != NULL) { 
+	  esl_stack_IPop(pda, &rrf); 
+	  ali->rf[pos] = rrf;
 	}
 	esl_stack_IPop(pda, &rstr); 	  ali->cstr[pos]   = rstr;
 	esl_stack_IPop(pda, &rcons);	  ali->cseq[pos]   = rcons;
@@ -238,12 +239,12 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
       d = tr->emitr[ti] - tr->emitl[ti] + 1;
       mode = tr->mode[ti];
 
-      /* Calculate four of the five lines: annote, str, cons, and seq.
+      /* Calculate four of the five lines: rf, str, cons, and seq.
        */
       do_left = do_right = FALSE;
       if (cm->sttype[v] == IL_st) {
 	do_left = TRUE;
-	if (cm->annote != NULL) lannote = '.';
+	if (cm->rf != NULL) lrf = '.';
 	lstr    = '.';
 	lcons   = '.';
 	if (mode == 3 || mode == 2) lseq = tolower((int) abc->sym[symi]);
@@ -252,7 +253,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	spos_l  = tr->emitl[ti];
       } else if (cm->sttype[v] == IR_st) {
 	do_right = TRUE;
-	if (cm->annote != NULL) rannote = '.';
+	if (cm->rf != NULL) rrf = '.';
 	rstr    = '.';
 	rcons   = '.';
 	if (mode == 3 || mode == 1) rseq = tolower((int) abc->sym[symj]);
@@ -262,7 +263,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
       } else {
 	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) {
 	  do_left = TRUE;
-	  if (cm->annote != NULL) lannote = cm->annote[lc];
+	  if (cm->rf != NULL) lrf = cm->rf[lc];
 	  lstr   = cons->cstr[lc];
 	  lcons  = cons->cseq[lc];
 	  cpos_l = lc+1;
@@ -279,7 +280,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	}
 	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) {
 	  do_right = TRUE;
-	  if (cm->annote != NULL) rannote = cm->annote[rc];
+	  if (cm->rf != NULL) rrf = cm->rf[rc];
 	  rstr   = cons->cstr[rc];
 	  rcons  = cons->cseq[rc];
 	  cpos_r = rc+1;
@@ -348,7 +349,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
        * If rightwise - push it onto stack.
        */
       if (do_left) {
-	if (cm->annote != NULL) ali->annote[pos] = lannote;
+	if (cm->rf != NULL) ali->rf[pos] = lrf;
 	ali->cstr[pos]   = lstr;
 	ali->cseq[pos]   = lcons;
 	ali->mid[pos]    = lmid;
@@ -373,7 +374,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	if ((status = esl_stack_IPush(pda, (int) rmid)) != eslOK) goto ERROR;
 	if ((status = esl_stack_IPush(pda, (int) rcons)) != eslOK) goto ERROR;
 	if ((status = esl_stack_IPush(pda, (int) rstr)) != eslOK) goto ERROR;
-	if (cm->annote != NULL) if ((status = esl_stack_IPush(pda, (int) rannote)) != eslOK) goto ERROR;
+	if (cm->rf != NULL) if ((status = esl_stack_IPush(pda, (int) rrf)) != eslOK) goto ERROR;
 	if ((status = esl_stack_IPush(pda, PDA_RESIDUE)) != eslOK) goto ERROR;
       }
 
@@ -406,7 +407,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
       }
     } /* end loop over the PDA; PDA now empty */
 	 
-  if (cm->annote != NULL) ali->annote[ali->len] = '\0';
+  if (cm->rf != NULL) ali->rf[ali->len] = '\0';
   ali->cstr[ali->len] = '\0';
   ali->cseq[ali->len] = '\0';
   ali->mid[ali->len]  = '\0';
@@ -452,91 +453,107 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
  *           but this could be changed. Modeled on HMMER's 
  *           eponymous function.
  *
- * Args:     fp  - where to print it (stdout or open FILE)
- *           ali - alignment structure to print.      
- *           offset- number of residues to add to target seq index,
- *                   to ease MPI search, all target hits start at posn 1
- *           in_revcomp- TRUE if hit we're printing an alignment for a
- *                       cmsearch hit on reverse complement strand.
- *           do_top  - TRUE to turn on optional 'top-line' annotation.
- *                     This was set in CreateFancyAli() as marking either:
- *                     - negative scoring (non-compensatories) and half-bps: 
- *                     - negative scoring *non-canonical* bps and half bps
- *                       (in this 2nd case negative scoring canonicals are unmarked)
+ *            Put at least <min_aliwidth> alignment characters per
+ *            line; try to make lines no longer than <linewidth>
+ *            characters, including name, coords, and spacing.  The
+ *            width of lines may exceed <linewidth>, if that's what it
+ *            takes to put a name, coords, and <min_aliwidth>
+ *            characters of alignment on a line.
+ *            
+ *            As a special case, if <linewidth> is negative or 0, then
+ *            alignments are formatted in a single block of unlimited
+ *            line length.
+ *
+ *
+ * Args:     fp              - where to print it (stdout or open FILE)
+ *           ali             - alignment structure to print.      
+ *           offset          - number of residues to add to target seq index,
+ *                             to ease MPI search, all target hits start at posn 1
+ *           in_revcomp      - TRUE if hit we're printing an alignment for a
+ *                             cmsearch hit on reverse complement strand.
+ *           do_top          - TRUE to turn on optional 'top-line' annotation.
+ *                             This was set in CreateFancyAli() as marking either:
+ *                             negative scoring (non-compensatories) and half-bps: 
+ *                             negative scoring *non-canonical* bps and half bps
+ *                             (in this 2nd case negative scoring canonicals are unmarked)
+ *           min_aliwidth    - min length for alignment block (see Purpose above)
+ *           linewidth       - preferred line length (see Purpose above)
+ *           show_accessions - TRUE to print seq/query accessions (if avail.), not names
  * Returns:  (void)
  */
 void
-PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp, int do_top)
+PrintFancyAli(FILE *fp, Fancyali_t *ali, int64_t offset, int in_revcomp, int do_top, int linewidth)
 {
   int   status;
   char *buf;
   int   pos;
-  int   linelength;
   int   ci,  cj;		/* positions in CM consensus 1..clen */
   int   sqi, sqj;		/* positions in target seq 1..L      */
   int   i;
   int   i2print, j2print; /* i,j indices we'll print, used to deal with case of reverse complement */
   int   have_pcodes;      /* TRUE if posterior codes are valid */
 
+  printf("in PrintFancyAli sqfrom..sqto %d..%d in_revcomp: %d offset: %ld\n", ali->sqfrom, ali->sqto, in_revcomp, offset);
+
   have_pcodes = (ali->pcode != NULL) ? TRUE : FALSE;
-  linelength = 60;
-  ESL_ALLOC(buf, sizeof(char) * (linelength + 1));
-  buf[linelength] = '\0';
-  for (pos = 0; pos < ali->len; pos += linelength)
+
+  ESL_ALLOC(buf, sizeof(char) * (linewidth + 1));
+  buf[linewidth] = '\0';
+  for (pos = 0; pos < ali->len; pos += linewidth)
     {
       /* Laboriously determine our coord bounds on dsq
        * and consensus line for this alignment section.
        */
       sqi = 0;
-      for (i = pos; ali->aseq[i] != '\0' && i < pos + linelength; i++) {
+      for (i = pos; ali->aseq[i] != '\0' && i < pos + linewidth; i++) {
 	if (ali->scoord[i] != 0) {
 	  sqi = ali->scoord[i];
 	  break;
 	}
       }
       sqj = 0;
-      for (i = pos; ali->aseq[i] != '\0' && i < pos + linelength; i++) {
+      for (i = pos; ali->aseq[i] != '\0' && i < pos + linewidth; i++) {
 	if (ali->scoord[i] != 0) sqj = ali->scoord[i];
       }
       ci = 0; 
-      for (i = pos; ali->aseq[i] != '\0' && i < pos + linelength; i++) {
+      for (i = pos; ali->aseq[i] != '\0' && i < pos + linewidth; i++) {
 	if (ali->ccoord[i] != 0) {
 	  ci = ali->ccoord[i];
 	  break;
 	}
       }
       cj = 0;
-      for (i = pos; ali->aseq[i] != '\0' && i < pos + linelength; i++) {
+      for (i = pos; ali->aseq[i] != '\0' && i < pos + linewidth; i++) {
 	if (ali->ccoord[i] != 0) cj = ali->ccoord[i];
       }
 
       /* Formats and print the alignment section.
        */
-      if (ali->annote != NULL) {
-	strncpy(buf, ali->annote+pos, linelength);
+      if (ali->rf != NULL) {
+	strncpy(buf, ali->rf+pos, linewidth);
 	fprintf(fp, "  %8s %s\n", " ", buf);
       }
       if (do_top && ali->top != NULL) {
-	strncpy(buf, ali->top+pos, linelength);  
+	strncpy(buf, ali->top+pos, linewidth);  
 	fprintf(fp, "  %8s %s\n", " ", buf);
       }
       if (ali->cstr != NULL) {
-	strncpy(buf, ali->cstr+pos, linelength);  
+	strncpy(buf, ali->cstr+pos, linewidth);  
 	fprintf(fp, "  %8s %s\n", " ", buf);
       }
       if (ali->cseq != NULL) {
-	strncpy(buf, ali->cseq+pos, linelength);  
+	strncpy(buf, ali->cseq+pos, linewidth);  
 	if (ci && cj)
 	  fprintf(fp, "  %8d %s %-8d\n", ci, buf, cj);
 	else
 	  fprintf(fp, "  %8s %s %-8s\n", "-", buf, "-");
       }
       if (ali->mid != NULL) {
-	strncpy(buf, ali->mid+pos,  linelength);  
+	strncpy(buf, ali->mid+pos,  linewidth);  
 	fprintf(fp, "  %8s %s\n", " ", buf);
       }
       if (ali->aseq != NULL) {
-	strncpy(buf, ali->aseq+pos, linelength);  
+	strncpy(buf, ali->aseq+pos, linewidth);  
 	if (sqj && sqi) {
 	  if(in_revcomp) {
 	    i2print = offset - (sqi-1)    + 1;
@@ -553,7 +570,7 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp, int do_top)
 	}
       }
       if (have_pcodes && ali->pcode != NULL) {
-	strncpy(buf, ali->pcode+pos, linelength);  
+	strncpy(buf, ali->pcode+pos, linewidth);  
 	fprintf(fp, "  %8s %s\n", "PP", buf);
       }
       fprintf(fp, "\n");
@@ -573,7 +590,7 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp, int do_top)
 void
 FreeFancyAli(Fancyali_t *ali)
 {
-  if (ali->annote != NULL) free(ali->annote);
+  if (ali->rf != NULL) free(ali->rf);
   if (ali->cstr   != NULL) free(ali->cstr);
   if (ali->cseq   != NULL) free(ali->cseq);
   if (ali->mid    != NULL) free(ali->mid);

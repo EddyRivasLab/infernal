@@ -599,7 +599,7 @@ typedef struct consensus_s {
  * An alignment of a CM to a target sequence, formatted for display.
  */
 typedef struct fancyali_s {
-  char *annote;         /* reference annotation line (NULL if unavail) */
+  char *rf;             /* reference annotation line (NULL if unavail) */
   char *cstr;		/* CM consensus structure line                 */
   char *cseq;		/* CM consensus sequence line                  */
   char *mid;		/* alignment identity middle line              */
@@ -607,10 +607,15 @@ typedef struct fancyali_s {
   char *aseq;		/* aligned target sequence                     */
   char *pcode;          /* aligned posteriors 'ones' place (9 in 93)   */
   int  *scoord;		/* coords 1..L for aligned dsq chars           */
-  int  *ccoord;		/* coords 1..clen for aligned consensus chars  */
+  int  *ccoord;	        /* coords 1..clen for aligned consensus chars  */
   int   len;		/* len of the strings above                    */
   int   cfrom, cto;	/* max bounds in ccoord                        */
   int   sqfrom, sqto;	/* max bounds in scoord                        */
+
+  char *hmmname;		/* name of HMM                          */
+  char *hmmacc;			/* accession of HMM; or [0]='\0'        */
+  char *hmmdesc;		/* description of HMM; or [0]='\0'      */
+  
 } Fancyali_t;
 
 /* Structure: CMEmitMap_t
@@ -1306,7 +1311,7 @@ typedef struct cm_s {
   char *name;		/*   name of the model                             */
   char *acc;		/*   optional accession number for model, or NULL  */
   char *desc;		/*   optional description of the model, or NULL    */
-  char *annote;         /*   consensus column annotation line, or NULL     */ /* ONLY PARTIALLY IMPLEMENTED, BEWARE */
+  char *rf;             /*   consensus column annotation line, or NULL     */ /* ONLY PARTIALLY IMPLEMENTED, BEWARE */
 
   /* new as of v1.0 */
   ComLog_t *comlog;	/*   creation dates and command line(s) that built/calibrated the model (mandatory) */
@@ -1587,10 +1592,56 @@ typedef struct cm_pipeline_s {
   int           show_accessions;/* TRUE to output accessions not names      */
   int           show_alignments;/* TRUE to output alignments (default)      */
 
+  int           use_cyk;        /* TRUE to use CYK instead of optimal accuracy    */
+  int           align_hbanded;  /* TRUE to do HMM banded alignment, when possible */
+  float         hb_size_limit;  /* maximum size in Mb allowed for HB alignment    */
+
   CMFILE       *cmfp;		/* COPY of open CM database (if scan mode) */
   char          errbuf[eslERRBUFSIZE];
 } CM_PIPELINE;
 
+/* Structure: CM_ALIDISPLAY
+ * 
+ * Alignment of a sequence to a CM, formatted for printing.
+ * Based on HMMER's P7_ALIDISPLAY.
+ *
+ * For an alignment of L residues and names C chars long, requires
+ * 7L + 2C + 30 bytes; for typical case of L=100,C=10, that's
+ * <0.8 Kb.
+ */
+typedef struct cm_alidisplay_s {
+  char *rfline;                 /* reference coord info; or NULL        */
+  char *nline;                  /* negative scoring noncanonicals       */
+  char *csline;                 /* consensus structure info             */
+  char *model;                  /* aligned query consensus sequence     */
+  char *mline;                  /* "identities", conservation +'s, etc. */
+  char *aseq;                   /* aligned target sequence              */
+  char *ppline;			/* posterior prob annotation; or NULL   */
+  int   N;			/* length of strings                    */
+  
+  char *cmname;	    	        /* name of HMM                          */
+  char *cmacc;			/* accession of HMM; or [0]='\0'        */
+  char *cmdesc;		        /* description of HMM; or [0]='\0'      */
+  int   cfrom;		        /* min bound in ccoord, start position in CM */
+  int   cto;			/* max bound in ccoord, end position in CM   */
+  int   clen;			/* consensus length of model            */
+  
+  char *sqname;			/* name of target sequence              */
+  char *sqacc;			/* accession of target seq; or [0]='\0' */
+  char *sqdesc;			/* description of targ seq; or [0]='\0' */
+  long  sqfrom;			/* min bound in scoord, start position in sequence (1..L) */
+  long  sqto;		        /* max bound in scoord, end position in sequence   (1..L) */
+  long  L;			/* length of sequence                   */
+
+  int    used_optacc;           /* TRUE if aln alg was optacc, FALSE if CYK */
+  float  aln_sc;		/* if(used_optacc) avg PP of all aligned residues, else CYK score */
+  int    used_hbands;           /* TRUE if aln used HMM bands, FALSE if not */
+  float  matrix_Mb;             /* size of DP matrix used in Mb, either HMM banded CYK/OA or D&C CYK */
+  double elapsed_secs;          /* number of seconds required for alignment */
+
+  int   memsize;                /* size of allocated block of char memory */
+  char *mem;		        /* memory used for the char data above  */
+} CM_ALIDISPLAY;
 
 #define CM_HIT_FLAGS_DEFAULT 0
 #define CM_HIT_IS_INCLUDED      (1<<0)
@@ -1617,9 +1668,7 @@ typedef struct cm_hit_s {
   float          score;		/* bit score of the hit (with corrections) */
   float          pvalue;	/* P-value of the hit   (with corrections) */
   float          evalue;	/* E-value of the hit   (with corrections) */
-  float          oasc;		/* optimal accuracy score (units: expected # residues correctly aligned)      */
-  int            bestr;         /* best root state, start/end positions of target can be deduced from this */
-  Fancyali_t    *ad;            /* alignment display */
+  CM_ALIDISPLAY *ad;            /* alignment display */
 
   uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_NEW | CM_HIT_IS_DROPPED */
 } CM_HIT;

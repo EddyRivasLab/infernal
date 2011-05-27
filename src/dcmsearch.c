@@ -43,7 +43,8 @@ typedef struct {
   CM_PIPELINE      *pli;         /* work pipeline                           */
   CM_TOPHITS       *th;          /* top hit results                         */
   CM_t             *cm;          /* a covariance model                      */
-  P7_BG           **bgA;         /* null models                              */
+  CMConsensus_t    *cmcons;      /* CM consensus info, for display purposes */
+  P7_BG           **bgA;         /* null models                             */
   P7_OPROFILE     **omA;         /* optimized query profile HMMs            */
   P7_PROFILE      **gmA;         /* generic   query profile HMMs            */
   float           **p7_evparamAA;/* [0..nhmm-1][0..CM_p7_NEVPARAM] E-value parameters */
@@ -150,6 +151,10 @@ static ESL_OPTIONS options[] = {
   { "--seed",       eslARG_INT,   "181",  NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",         12 },
   { "--w_beta",     eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "tail mass at which window length is determined",               12 },
   { "--w_length",   eslARG_INT,    NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "window length ",                                              12 },
+  /* options affecting the alignment of hits */
+  { "--aln-cyk",      eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "align hits with CYK", 8 },
+  { "--aln-nonbanded",eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not use HMM bands when aligning hits", 8 },
+  { "--aln-sizelimit",eslARG_REAL,"128.", NULL, "x>0",   NULL,  NULL,  NULL,            "set maximum allowed size of DP matrices for hit alignment to <x> Mb", 8 },
   /* Options taken from infernal 1.0.2 cmsearch */
   /* options for algorithm for final round of search */
   { "-g",             eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "configure CM for glocal alignment [default: local]", 1 },
@@ -214,7 +219,7 @@ static int  serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  serial_loop  (WORKER_INFO *info, ESL_SQFILE *dbfp);
 
 static int  determine_qdbs(CM_t *cm, double beta, int **ret_dmin, int **ret_dmax);
-static int  update_hit_positions(CM_TOPHITS *th, int istart, int64_t offset);
+static int  update_hit_positions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_revcomp);
 
 #ifdef HMMER_THREADS
 #define BLOCK_SIZE 1000
@@ -256,11 +261,8 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     puts("\nOptions controlling acceleration heuristics:");
     esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
 
-    puts("\nOptions controlling p7 HMM statistics calibrations:");
-    esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
-    
-    puts("\nOptions for reading a p7 HMM from a file:");
-    esl_opt_DisplayHelp(stdout, go, 13, 2, 80); 
+    puts("\nOptions controlling alignment of hits:");
+    esl_opt_DisplayHelp(stdout, go, 8, 2, 80); 
 
     puts("\nOptions from Infernal 1.0.2 cmsearch:");
     esl_opt_DisplayHelp(stdout, go, 20, 2, 80); 
@@ -575,6 +577,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if(! (cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s\n", cm->name);
     if(! (cm->flags & CMH_MLP7_STATS))    cm_Fail("no plan7 HMM E-value parameters were read for CM: %s\n", cm->name);
 
+
     /* Determine QDBs, if necessary. By default, they aren't. */
     fcyk_dmin  = fcyk_dmax  = NULL; 
     final_dmin = final_dmax = NULL; 
@@ -647,7 +650,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* Create processing pipeline and hit list */
     for (i = 0; i < infocnt; ++i) {
-      if((status = CloneCMJustReadFromFile(cm, errbuf, &(info[i].cm))) != eslOK) esl_fatal(errbuf);
+      if((status = CloneCMJustReadFromFile(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
       info[i].th  = cm_tophits_Create();
       info[i].nhmm = nhmm;
       ESL_ALLOC(info[i].gmA, sizeof(P7_PROFILE *)  * nhmm);
@@ -667,6 +670,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 			    (i == 0) ? TRUE : FALSE, /* calculate W ? */
 			    NULL, NULL)) != eslOK) cm_Fail("Error configuring CM: %s\n", errbuf);
       if(i != 0) info[i].cm->W = info[0].cm->W;
+      if((status = CreateCMConsensus(info[i].cm, info[i].cm->abc, 3.0, 1.0, &(info[i].cmcons)))!= eslOK) cm_Fail("unable to calculate consensus info for the CM");
 
       for(m = 0; m < nhmm; m++) { 
 	info[i].gmA[m]  = p7_profile_Clone(gmA[m]);
@@ -754,7 +758,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       fprintf(ofp, "\n\n");
 
       if(info->pli->show_alignments) {
-	cm_tophits_HitAlignments(ofp, info->th, info->pli, textw);
+	if((status = cm_tophits_HitAlignments(ofp, info->th, info->pli, textw)) != eslOK) esl_fatal("Out of memory");
 	fprintf(ofp, "\n\n");
       }
 
@@ -864,24 +868,24 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
     
     if (info->pli->do_top) { 
       prev_hit_cnt = info->th->N;
-      if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+      if((status = cm_Pipeline(info->pli, info->cm, info->cmcons, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
       
       /* modify hit positions to account for the position of the window in the full sequence */
-      update_hit_positions(info->th, prev_hit_cnt, dbsq->start-1);
+      update_hit_positions(info->th, prev_hit_cnt, dbsq->start, FALSE);
     }
 
     /* reverse complement */
     if (info->pli->do_bot && dbsq->abc->complement != NULL) { 
       prev_hit_cnt = info->th->N;
       esl_sq_ReverseComplement(dbsq);
-      if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+      if((status = cm_Pipeline(info->pli, info->cm, info->cmcons, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
       
       /* modify hit positions to account for the position of the window in the full sequence */
-      update_hit_positions(info->th, prev_hit_cnt, dbsq->start-1);
+      update_hit_positions(info->th, prev_hit_cnt, dbsq->start, TRUE);
 
-      info->pli->nres += dbsq->W; /* not sure why this is here (originally from nhmmer.c) - to account for W overlap? */
+      info->pli->nres += dbsq->W; /* add dbsq->W residues, the reverse complement we just searched */
     }
     
     wstatus = esl_sqio_ReadWindow(dbfp, info->omA[0]->max_length, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
@@ -1008,24 +1012,24 @@ pipeline_thread(void *arg)
       
       if (info->pli->do_top) { 
 	prev_hit_cnt = info->th->N;
-	if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+	if((status = cm_Pipeline(info->pli, info->cm, info->cmcons, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 	
 	/* modify hit positions to account for the position of the window in the full sequence */
-	update_hit_positions(info->th, prev_hit_cnt, dbsq->start-1);
+	update_hit_positions(info->th, prev_hit_cnt, dbsq->start, FALSE);
       }
 	
       /* reverse complement */
       if (info->pli->do_bot && dbsq->abc->complement != NULL) {
 	prev_hit_cnt = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
-	if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+	if((status = cm_Pipeline(info->pli, info->cm, info->cmcons, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* modify hit positions to account for the position of the window in the full sequence */
-	update_hit_positions(info->th, prev_hit_cnt, dbsq->start-1);
+	update_hit_positions(info->th, prev_hit_cnt, dbsq->start, TRUE);
 
-	info->pli->nres += dbsq->W; /* not sure why this is here (originally from nhmmer.c) - to account for W overlap? */
+	info->pli->nres += dbsq->W; /* add dbsq->W residues, the reverse complement we just searched */
       }
     }
   
@@ -1077,26 +1081,40 @@ determine_qdbs(CM_t *cm, double beta, int **ret_dmin, int **ret_dmax)
  * Synopsis:  Update sequence positions in hit lits.
  * Incept:    EPN, Wed May 25 09:12:52 2011
  *
- * Purpose:   For hits <istart..th->N-1> in a hit list, update their
- *            positions by adding <offset> to start, stop and
- *            ad->sqfrom, ad->sqto.  This is necessary when we've
- *            searched a chunk of subsequence that originated
- *            somewhere within a larger sequence.
+ * Purpose: For hits <hit_start..th->N-1> in a hit list, update the
+ *          positions of start, stop and ad->sqfrom, ad->sqto.  This
+ *          is necessary when we've searched a chunk of subsequence
+ *          that originated somewhere within a larger sequence.
  *
- * Returns:   <eslOK> on success.
+ * Returns: <eslOK> on success.
  */
 int
-update_hit_positions(CM_TOPHITS *th, int istart, int64_t offset)
+update_hit_positions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_revcomp)
 { 
-  if(offset == 0) return eslOK;
+  if((seq_start == 1) && (in_revcomp == FALSE)) return eslOK;
 
   int i;
-  for (i=istart; i < th->N ; i++) {
-    th->unsrt[i].start += offset;
-    th->unsrt[i].stop  += offset;
-    if(th->unsrt[i].ad != NULL) { 
-      th->unsrt[i].ad->sqfrom += offset;
-      th->unsrt[i].ad->sqto   += offset;
+  if(in_revcomp) { 
+    for (i = hit_start; i < th->N ; i++) {
+      th->unsrt[i].start = seq_start - th->unsrt[i].start + 1;
+      th->unsrt[i].stop  = seq_start - th->unsrt[i].stop  + 1;
+      if(th->unsrt[i].ad != NULL) { 
+	th->unsrt[i].ad->sqfrom = seq_start - th->unsrt[i].ad->sqfrom + 1;
+	th->unsrt[i].ad->sqto   = seq_start - th->unsrt[i].ad->sqto + 1;
+	th->unsrt[i].ad->L      = seq_start - th->unsrt[i].ad->L + 1;
+      }
+    }
+
+  }
+  else { 
+    for (i = hit_start; i < th->N ; i++) {
+      th->unsrt[i].start += seq_start-1;
+      th->unsrt[i].stop  += seq_start-1;
+      if(th->unsrt[i].ad != NULL) { 
+	th->unsrt[i].ad->sqfrom += seq_start-1;
+	th->unsrt[i].ad->sqto   += seq_start-1;
+	th->unsrt[i].ad->L      += seq_start-1;
+      }
     }
   }
   return eslOK;

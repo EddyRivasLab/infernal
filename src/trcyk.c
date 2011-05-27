@@ -98,13 +98,13 @@ main(int argc, char **argv)
       {
          printf("sequence: %s\n", seq->name);
          printf("score:    %.2f\n",sc);
-         PrintFancyAli(stdout, fali, 0, FALSE, FALSE);
+         PrintFancyAli(stdout, fali, 0, FALSE, FALSE, 60);
       }
       else
       {
          printf("sequence: %s (reversed)\n", seq->name);
          printf("score:    %.2f\n",rev_sc);
-         PrintFancyAli(stdout, fali, seq->n, TRUE, FALSE);
+         PrintFancyAli(stdout, fali, seq->n, TRUE, FALSE, 60);
       }
 
       FreeFancyAli(fali);

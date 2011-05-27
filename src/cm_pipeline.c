@@ -486,11 +486,13 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, enum c
   pli->mode            = mode;
   pli->show_accessions = (esl_opt_GetBoolean(go, "--acc")   ? TRUE  : FALSE);
   pli->show_alignments = (esl_opt_GetBoolean(go, "--noali") ? FALSE : TRUE);
+  pli->use_cyk         = (esl_opt_GetBoolean(go, "--aln-cyk") ? TRUE : FALSE);
+  pli->align_hbanded   = (esl_opt_GetBoolean(go, "--aln-nonbanded") ? FALSE : TRUE);
+  pli->hb_size_limit   = esl_opt_GetReal(go, "--aln-sizelimit");
+
   pli->cmfp            = NULL;
   pli->errbuf[0]       = '\0';
 
-  /* EPN TEMP: remove once I get a data structure that holds CM parsetrees */
-  pli->show_alignments = FALSE;
   return pli;
 
  ERROR:
@@ -1482,7 +1484,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist)
+cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist)
 {
   int              status;
   char             errbuf[cmERRBUFSIZE];   /* for error messages */
@@ -1503,9 +1505,29 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
   int              do_qdb_or_nonbanded_final_scan;  /* use QDBs or no bands for final  stage (! do_hbanded_final_scan) */
   int              do_final_greedy;        /* TRUE to use greedy hit resolution in final stage, FALSE not to */
 
+  /* variables related to the final alignment of hits */
+  CM_HB_SHADOW_MX    *shmx = NULL;          /* HMM banded shadow matrix */
+  CM_HB_MX           *out_mx= NULL;         /* outside matrix for HMM banded Outside() */
+  Parsetree_t        *tr = NULL;            /* pointer to the pointer to the parsetree we're currently creating */
+  char               *postcode = NULL;      /* posterior decode array of strings */
+  ESL_DSQ            *subdsq;               /* ptr to start of a hit */
+  int                 hitlen;               /* hit length */
+  int64_t             hbmx_ncells;          /* number of DP cells required in HMM banded matrix */
+  int64_t             shmx_nchar_cells;     /* number of 'char' DP cells required in HMM banded shadow matrix */
+  int64_t             shmx_nint_cells;      /* number of 'int' DP cells required in HMM banded shadow matrix */
+  float               hbmx_Mb;              /* approximate size in Mb for HMM banded matrix for current hit */
+  float               shmx_Mb;              /* approximate size in Mb for HMM banded shadow matrix for current hit */
+  float               total_Mb;             /* approximate size in Mb needed for alignment of a hit */
+  int                 do_optacc;            /* TRUE to do optimal accuracy alignment */
+  int                 do_postcode;          /* TRUE to derive posteriors for hit alignments */
+  int                 do_hbanded;           /* TRUE to use HMM bands for alignment */
+  ESL_STOPWATCH      *watch = NULL;         /* stopwatch for timing alignment step */
+  float         optacc_sc, ins_sc, cyk_sc; /* optimal accuracy score, inside score, CYK score */
+
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
   do_final_greedy = (pli->final_cm_search_opts & CM_SEARCH_CMGREEDY) ? TRUE : FALSE;
+  watch = esl_stopwatch_Create();
 
   nhit = 0;
   /* Determine bit score cutoff for CYK envelope redefinition, 
@@ -1521,6 +1543,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
   printf("\nPIPELINE CMStage() %s  %" PRId64 " residues\n", sq->name, sq->n);
 #endif
   
+
   for (i = 0; i < nenv; i++) {
     cm->tau = save_tau;
 #if DOPRINT
@@ -1677,13 +1700,16 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
     }      
 
     /* add each hit to the hitlist */
+
+    shmx = cm_hb_shadow_mx_Create(cm, cm->M);
+    out_mx = cm_hb_mx_Create(cm->M);
+
     for (h = nhit; h < results->num_results; h++) { 
       cm_tophits_CloneHitFromResults(hitlist, results, h, &hit);
       hit->pvalue = esl_exp_surv(hit->score, cm->stats->expAA[pli->final_cm_exp_mode][0]->mu_extrap, cm->stats->expAA[pli->final_cm_exp_mode][0]->lambda);
 
       /* initialize remaining values we don't know yet */
       hit->evalue   = 0.;
-      hit->oasc     = 0.;
       hit->ad       = NULL;
 	  
       if (pli->mode == CM_SEARCH_SEQS) { 
@@ -1701,9 +1727,90 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
 #endif
 
       /* Get an alignment of the hit */
-      /* TO WRITE */
-    }
+      esl_stopwatch_Start(watch);  
 
+      /* set defaults, these may be changed below */
+      optacc_sc   = 0.;
+      do_optacc   = FALSE;
+      do_postcode = FALSE;
+      do_hbanded  = FALSE;
+
+      if(pli->align_hbanded) { 
+	/* Align with HMM bands, if we can do it in the allowed amount of memory */
+	/* determine CP9 HMM bands */
+	hitlen = hit->stop - hit->start + 1;
+	subdsq = sq->dsq + hit->start - 1;
+	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, 0)) != eslOK) { printf("ERROR: %s\n", errbuf); return status; }
+
+	/* Determine the number of cells needed in each CM_HB_MX required for aligning this sequence: */
+	if((status = cm_hb_mx_NumCellsNeeded       (cm, errbuf, cm->cp9b, hitlen, &hbmx_ncells)) != eslOK)                { printf("ERROR: %s\n", errbuf); return status; }
+	if((status = cm_hb_shadow_mx_NumCellsNeeded(cm, errbuf, cm->cp9b, &shmx_nchar_cells, &shmx_nint_cells)) != eslOK) { printf("ERROR: %s\n", errbuf); return status; }
+
+	hbmx_Mb = (hbmx_ncells * sizeof(float)) / 1000000.;
+	shmx_Mb = (shmx_nint_cells * sizeof(int) + shmx_nchar_cells * sizeof(char)) / 1000000.;
+
+	/* Determine which alignment algorithm to use depending on HMM banded matrix sizes.
+	 * Ideally we want posterior probabilities in the alignment output, but that requires
+	 * using two CM_HB_MX's. 
+	 * 
+	 * Note: in table below "limit" = pli->hb_size_limit
+	 * 
+	 *           matrix sizes                  pli->use_cyk   algorithm to use  HMM banded? posteriors?
+	 *          -----------------------------  -------------  ----------------  ----------- -----------
+	 * if       (2*hbmx_Mb + shmx_Mb) < limit  FALSE          optimal accuracy  yes         yes
+	 * else if  (2*hbmx_Mb + shmx_Mb) < limit  TRUE           CYK               yes         yes
+	 * else if    (hbmx_Mb + shmx_Mb) < limit  TRUE/FALSE     CYK               yes         no
+	 * else if    (hbmx_Mb + shmx_Mb) > limit  TRUE/FALSE     D&C CYK           no          no
+	 */
+
+	if((2*hbmx_Mb + shmx_Mb) < pli->hb_size_limit) { /* posteriors require 2 CM_HB_MX objects */
+	  do_optacc   = (pli->use_cyk) ? FALSE : TRUE; 
+	  do_postcode = TRUE;
+	  do_hbanded  = TRUE;
+	  total_Mb = 2*hbmx_Mb + shmx_Mb;
+	}
+	else if((hbmx_Mb + shmx_Mb) < pli->hb_size_limit) { 
+	  do_optacc   = FALSE; /* optacc requires 2 CM_HB_MX matrices, and they're too big */
+	  do_postcode = FALSE; /* ditto */
+	  do_hbanded  = TRUE;  
+	  total_Mb = hbmx_Mb + shmx_Mb;
+	}
+	else { /* not enough memory for HMM banded alignment, fall back to D&C CYK */
+	  do_optacc   = FALSE;
+	  do_postcode = FALSE;
+	  do_hbanded  = FALSE;
+	}
+      } /* end of if(pli->do_hbanded) */
+
+      if(do_hbanded) { 
+	if((status = FastAlignHB(cm, errbuf, NULL, subdsq, hitlen, 1, hitlen, 
+				 pli->hb_size_limit,                   /* limit for a single CM_HB_MX, so this is safe */
+				 cm->hbmx, shmx,                       /* inside/posterior, shadow matrices */
+				 do_optacc,                            /* use optimal accuracy alg? */
+				 FALSE,                                /* don't sample aln from Inside matrix */
+				 (do_postcode ? out_mx : NULL),        /* outside DP matrix */
+				 &tr,                                  /* parsetree */
+				 (do_postcode ? &postcode : NULL),     /* posterior codes */
+				 (do_optacc   ? &optacc_sc : &cyk_sc), /* optimal accuracy or CYK score */
+				 &ins_sc))                             /* inside score */
+	   != eslOK) return status;
+	esl_stopwatch_Stop(watch); /* we started it above before we calc'ed the CP9 bands */ 
+      }
+      else { /* not hmm banded, use D&C CYK (slow!) */
+	esl_stopwatch_Start(watch);  
+	cyk_sc = CYKDivideAndConquer(cm, subdsq, hitlen, 0, 1, hitlen, &tr, NULL, NULL); 
+	esl_stopwatch_Stop(watch);  
+	total_Mb = CYKNonQDBSmallMbNeeded(cm, hitlen);
+	postcode = NULL;
+      }
+
+      hit->ad = cm_alidisplay_Create(cm->abc, tr, cm, cmcons, sq, hit->start, 
+				     postcode, optacc_sc, do_optacc, do_hbanded, total_Mb, watch->elapsed);
+      /*cm_alidisplay_Dump(stdout, hit->ad);*/
+      FreeParsetree(tr);
+      free(postcode);
+    }
+    
     if(do_final_greedy) { 
       FreeResults(tmp_results);
       nhit = 0;
@@ -1716,6 +1823,9 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
     FreeResults(results);
   }
   cm->tau = save_tau;
+  if(out_mx != NULL) { cm_hb_mx_Destroy(out_mx); out_mx = NULL; }
+  if(shmx   != NULL) { cm_hb_shadow_mx_Destroy(shmx); shmx = NULL; }
+  if(watch  != NULL) { esl_stopwatch_Destroy(watch); }
   return eslOK;
 }
 
@@ -1907,7 +2017,7 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG **bg, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, CM_TOPHITS *hitlist)
+cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG **bg, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, CM_TOPHITS *hitlist)
 
 {
   int status;
@@ -2039,7 +2149,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG
 #if DOPRINT
       printf("\nPIPELINE HMM %d calling CMStage() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
 #endif
-      if((status = cm_pli_CMStage      (pli, cm, sq, esAA[m],  eeAA[m],  nenvA[m], hitlist)) != eslOK) return status;
+      if((status = cm_pli_CMStage      (pli, cm, cmcons, sq, esAA[m],  eeAA[m],  nenvA[m], hitlist)) != eslOK) return status;
     }
     free(cur_ws);
     free(cur_we);
@@ -2090,7 +2200,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     ntargets = pli->nseqs;
   } else {
     fprintf(ofp, "Query sequence(s):                    %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli->nres);
-    fprintf(ofp, "Target model(s):                      %15" PRId64 "  (%" PRId64 " nodes)\n",     pli->nmodels, pli->nnodes);
+    fprintf(ofp, "Target model(s):                      %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli->nmodels, pli->nnodes);
     ntargets = pli->nmodels;
   }
 
@@ -2109,9 +2219,6 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 	    pli->n_past_msvbias,
 	    (double)pli->pos_past_msvbias / pli->nres ,
 	    pli->F1b);
-  }
-  else { 
-    fprintf(ofp, "Windows passing MSV bias fil: %15s  (off)\n", "");
   }
 
   if(pli->do_vit) { 

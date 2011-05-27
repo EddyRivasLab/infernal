@@ -1018,7 +1018,7 @@ void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_
 	else           offset = 0;
 	PrintFancyAli(fp, ali,
 		      (COORDINATE(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
-		      in_revcomp, (do_noncanonical || do_noncompensatory));
+		      in_revcomp, (do_noncanonical || do_noncompensatory), 60);
 	FreeFancyAli(ali);
 	fprintf(fp, "\n");
       }

@@ -111,7 +111,8 @@ OBJS  = cm.o\
 	truncyk.o\
 	cm_pipeline.o\
 	cm_p7_domaindef.o\
-	cm_tophits.o
+	cm_tophits.o\
+	cm_alidisplay.o
 
 # Definitions present in HMMER3's Makefile that are not yet necessary in Infernal's
 #STATS = 

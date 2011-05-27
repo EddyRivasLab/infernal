@@ -139,6 +139,7 @@ extern float CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0,
 extern float CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, 
 			    int j0, int *dmin, int *dmax);
 extern float CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet);
+extern float CYKNonQDBSmallMbNeeded(CM_t *cm, int L);
 extern void  debug_print_bands(FILE *fp, CM_t *cm, int *dmin, int *dmax);
 /* cm_dpsmall.c: size calculators - not normally part of external API, but truncyk.c currently uses them */
 extern float insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0);
@@ -213,39 +214,40 @@ extern int  cm_detach_state(CM_t *cm, int insert1, int insert2);
 extern int  clean_cs(char *cs, int alen, int be_quiet);
 
 /* from cm_mx.c */
-extern CM_HB_MX *       cm_hb_mx_Create            (int M);
-extern int              cm_hb_mx_GrowTo            (CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
-extern int              cm_hb_mx_Dump              (FILE *ofp, CM_HB_MX *mx);
-extern void             cm_hb_mx_Destroy           (CM_HB_MX *mx);
-extern int              cm_hb_mx_NumCellsNeeded    (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells);
-extern CM_HB_SHADOW_MX *cm_hb_shadow_mx_Create     (CM_t *cm, int M);
-extern int              cm_hb_shadow_mx_GrowTo     (CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L);
-extern int              cm_hb_shadow_mx_Dump       (FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx);
-extern void             cm_hb_shadow_mx_Destroy    (CM_HB_SHADOW_MX *mx);
-extern ScanMatrix_t *   cm_CreateScanMatrix        (CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
-extern int              cm_CreateScanMatrixForCM   (CM_t *cm, int do_float, int do_int);           
-extern int              cm_FloatizeScanMatrix      (CM_t *cm, ScanMatrix_t *smx);
-extern int              cm_IntizeScanMatrix        (CM_t *cm, ScanMatrix_t *smx);
-extern int              cm_UpdateScanMatrixForCM   (CM_t *cm);
-extern int              cm_FreeFloatsFromScanMatrix(CM_t *cm, ScanMatrix_t *smx);
-extern int              cm_FreeIntsFromScanMatrix  (CM_t *cm, ScanMatrix_t *smx);
-extern void             cm_FreeScanMatrix          (CM_t *cm, ScanMatrix_t *smx);
-extern void             cm_FreeScanMatrixForCM     (CM_t *cm);
-extern void             cm_DumpScanMatrixAlpha     (CM_t *cm, int j, int i0, int doing_float);
-extern float **         FCalcOptimizedEmitScores   (CM_t *cm);
-extern int **           ICalcOptimizedEmitScores   (CM_t *cm);
+extern CM_HB_MX *       cm_hb_mx_Create               (int M);
+extern int              cm_hb_mx_GrowTo               (CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
+extern int              cm_hb_mx_Dump                 (FILE *ofp, CM_HB_MX *mx);
+extern void             cm_hb_mx_Destroy              (CM_HB_MX *mx);
+extern int              cm_hb_mx_NumCellsNeeded       (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells);
+extern CM_HB_SHADOW_MX *cm_hb_shadow_mx_Create        (CM_t *cm, int M);
+extern int              cm_hb_shadow_mx_GrowTo        (CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L);
+extern int              cm_hb_shadow_mx_Dump          (FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx);
+extern void             cm_hb_shadow_mx_Destroy       (CM_HB_SHADOW_MX *mx);
+extern int              cm_hb_shadow_mx_NumCellsNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *ret_nchar_cells, int64_t *ret_nint_cells);
+extern ScanMatrix_t *   cm_CreateScanMatrix           (CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
+extern int              cm_CreateScanMatrixForCM      (CM_t *cm, int do_float, int do_int);           
+extern int              cm_FloatizeScanMatrix         (CM_t *cm, ScanMatrix_t *smx);
+extern int              cm_IntizeScanMatrix           (CM_t *cm, ScanMatrix_t *smx);
+extern int              cm_UpdateScanMatrixForCM      (CM_t *cm);
+extern int              cm_FreeFloatsFromScanMatrix   (CM_t *cm, ScanMatrix_t *smx);
+extern int              cm_FreeIntsFromScanMatrix     (CM_t *cm, ScanMatrix_t *smx);
+extern void             cm_FreeScanMatrix             (CM_t *cm, ScanMatrix_t *smx);
+extern void             cm_FreeScanMatrixForCM        (CM_t *cm);
+extern void             cm_DumpScanMatrixAlpha        (CM_t *cm, int j, int i0, int doing_float);
+extern float **         FCalcOptimizedEmitScores      (CM_t *cm);
+extern int **           ICalcOptimizedEmitScores      (CM_t *cm);
 extern int **           ICopyOptimizedEmitScoresFromFloats(CM_t *cm, float **oesc);
-extern void             DumpOptimizedEmitScores    (CM_t *cm, FILE *fp);
-extern void             FreeOptimizedEmitScores    (float **fesc_vAA, int **iesc_vAA, int M);
-extern float **         FCalcInitDPScores          (CM_t *cm);
-extern int **           ICalcInitDPScores          (CM_t *cm);
-extern GammaHitMx_t    *CreateGammaHitMx           (int L, int i0, int be_greedy, float cutoff, int do_backward);
-extern void             FreeGammaHitMx             (GammaHitMx_t *gamma);
-extern int              UpdateGammaHitMxCM         (CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, int *bestr, search_results_t *results, int W, double **act);
-extern int              UpdateGammaHitMxCP9Forward (CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act);
-extern int              UpdateGammaHitMxCP9Backward(CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act);
-extern void             TBackGammaHitMxForward     (GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
-extern void             TBackGammaHitMxBackward    (GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
+extern void             DumpOptimizedEmitScores       (CM_t *cm, FILE *fp);
+extern void             FreeOptimizedEmitScores       (float **fesc_vAA, int **iesc_vAA, int M);
+extern float **         FCalcInitDPScores             (CM_t *cm);
+extern int **           ICalcInitDPScores             (CM_t *cm);
+extern GammaHitMx_t    *CreateGammaHitMx              (int L, int i0, int be_greedy, float cutoff, int do_backward);
+extern void             FreeGammaHitMx                (GammaHitMx_t *gamma);
+extern int              UpdateGammaHitMxCM            (CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, int *bestr, search_results_t *results, int W, double **act);
+extern int              UpdateGammaHitMxCP9Forward    (CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act);
+extern int              UpdateGammaHitMxCP9Backward   (CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act);
+extern void             TBackGammaHitMxForward        (GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
+extern void             TBackGammaHitMxBackward       (GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
 
 /* from cm_parsetree.c */
 extern Parsetree_t *CreateParsetree(int size);
@@ -424,7 +426,7 @@ extern float iFastPairScoreRightOnlyDegenerate(int K, int *iesc, float *right, E
 
 /* from display.c */
 extern Fancyali_t    *CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, int do_noncanonical, char *pcode);
-extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp, int do_top);
+extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int64_t offset, int in_revcomp, int do_top, int linewidth);
 extern void           FreeFancyAli(Fancyali_t *ali);
 extern int            CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh, CMConsensus_t **ret_cons);
 extern void           FreeCMConsensus(CMConsensus_t *con);
@@ -729,8 +731,8 @@ extern int cm_pli_NewModel          (CM_PIPELINE *pli, CM_t *cm, int *fcyk_dmin,
 extern int cm_pli_NewSeq            (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq);
 extern int cm_pli_p7Filter          (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, double **ret_wp, int *ret_nwin);
 extern int cm_pli_p7EnvelopeDef     (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
-extern int cm_pli_CMStage           (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist);
-extern int cm_Pipeline              (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **omA, P7_PROFILE **gmA, P7_BG **bgA, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, CM_TOPHITS *th);
+extern int cm_pli_CMStage           (CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist);
+extern int cm_Pipeline              (CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, P7_OPROFILE **omA, P7_PROFILE **gmA, P7_BG **bgA, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, CM_TOPHITS *th);
 extern int cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
 
 /* from cm_p7_domaindef.c */
@@ -757,4 +759,18 @@ extern int cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli,
 extern int cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 extern int cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipemode, 
 				  const char *qfile, const char *tfile, const ESL_GETOPTS *go);
+
+/* cm_alidisplay.c */
+extern CM_ALIDISPLAY *cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, 
+					   int64_t seqoffset, char *pcode, float aln_sc, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs);
+extern CM_ALIDISPLAY *cm_alidisplay_Clone(const CM_ALIDISPLAY *ad);
+extern size_t         cm_alidisplay_Sizeof(const CM_ALIDISPLAY *ad);
+extern int            cm_alidisplay_Serialize(CM_ALIDISPLAY *ad);
+extern int            cm_alidisplay_Deserialize(CM_ALIDISPLAY *ad);
+extern void           cm_alidisplay_Destroy(CM_ALIDISPLAY *ad);
+extern char           cm_alidisplay_EncodePostProb(float p);
+extern float          cm_alidisplay_DecodePostProb(char pc);
+extern int            cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth, int show_accessions, int do_noncanonicals);
+extern int            cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad);
+extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2);
 

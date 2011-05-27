@@ -294,11 +294,10 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
  *            
  *
  * Args:      cm     - the CM the matrix is for
- *            mx     - the matrix to grow
  *            errbuf - char buffer for reporting errors
  *            cp9b   - the bands for the current target sequence
  *            L      - the length of the current target sequence we're aligning
- *            size_limit- max number of Mb for DP matrix, if matrix is bigger -> return eslERANGE
+ *            ret_ncells - RETURN: number of cells required
  *
  * Returns:   <eslOK> on success
  *
@@ -330,7 +329,7 @@ cm_hb_mx_NumCellsNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t
 
 
 /*****************************************************************
- *   2. CM_HB_SHADOOW_MX data structure functions,
+ *   2. CM_HB_SHADOW_MX data structure functions,
  *      HMM banded shadow matrix for tracing back HMM banded CM parses
  *****************************************************************/
 
@@ -549,9 +548,6 @@ cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *
       }
     }
   }
-  /* TEMP */
-  assert(mx->y_ncells_valid == y_cur_size);
-  assert(mx->k_ncells_valid == k_cur_size);
   ESL_DASSERT1((y_cur_size == mx->y_ncells_valid));
   ESL_DASSERT1((k_cur_size == mx->k_ncells_valid));
 
@@ -638,6 +634,52 @@ cm_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx)
       fprintf(ofp, "\n\n");
     }
   }
+  return eslOK;
+}
+
+
+/* Function:  cm_hb_shadow_mx_NumCellsNeeded()
+ * Incept:    EPN, Fri May 27 10:57:56 2011
+ *
+ * Purpose:   Given a model and CP9_bands_t object with pre-calced bands for 
+ *            a target, determine the number of cells required in a 
+ *            CM_HB_SHADOW_MX for the target given the bands.
+ *            
+ *
+ * Args:      cm     - the CM the matrix is for
+ *            errbuf - char buffer for reporting errors
+ *            cp9b   - the bands for the current target sequence
+ *            L      - the length of the current target sequence we're aligning
+ *            size_limit- max number of Mb for DP matrix, if matrix is bigger -> return eslERANGE
+ *
+ * Returns:   <eslOK> on success
+ *
+ */
+int
+cm_hb_shadow_mx_NumCellsNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *ret_nchar_cells, int64_t *ret_nint_cells)
+{
+  int     v, jp;
+  int64_t y_ncells, k_ncells;
+  int     jbw;
+
+  /* contract check */
+  if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() entered with cp9b == NULL.\n");
+
+  y_ncells = k_ncells = 0;
+  for(v = 0; v < cp9b->cm_M; v++) { 
+    jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
+    if(cm->sttype[v] == B_st) { 
+      for(jp = 0; jp <= jbw; jp++) 
+	k_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+    }
+    else { 
+      for(jp = 0; jp <= jbw; jp++) 
+	y_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+    }
+  }
+
+  *ret_nchar_cells = y_ncells;
+  *ret_nint_cells  = k_ncells;
   return eslOK;
 }
 
