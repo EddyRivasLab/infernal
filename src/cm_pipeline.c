@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT 0
+#define DOPRINT 1
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -853,7 +853,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
   }
 
 #if DOPRINT
-  //  printf("\nPIPELINE p7Filter() %s  %" PRId64 " residues\n", sq->name, sq->n);
+  printf("\nPIPELINE p7Filter() %s  %" PRId64 " residues\n", sq->name, sq->n);
 #endif
 
   /* initializations */
@@ -1547,7 +1547,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
   for (i = 0; i < nenv; i++) {
     cm->tau = save_tau;
 #if DOPRINT
-    printf("\nEnvelope %5d [%10d..%10d] being passed to CYK.\n", i, es[i], ee[i]);
+    printf("\nEnvelope %5d [%10ld..%10ld] being passed to CYK.\n", i, es[i], ee[i]);
 #endif
 
     do_hbanded_filter_scan          = (pli->fcyk_cm_search_opts  & CM_SEARCH_HBANDED) ? TRUE  : FALSE;
@@ -1723,7 +1723,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
         if ((status  = esl_strdup(cm->desc, -1, &(hit->desc)))  != eslOK) esl_fatal("allocation failure");
       }
 #if DOPRINT
-      printf("SURVIVOR envelope     [%10d..%10d] survived Inside    %6.2f bits  P %g\n", hit->dcl[0].ienv, hit->dcl[0].jenv, hit->dcl[0].bitscore, hit->dcl[0].pvalue);
+      printf("SURVIVOR envelope     [%10ld..%10ld] survived Inside    %6.2f bits  P %g\n", hit->start, hit->stop, hit->score, hit->pvalue);
 #endif
 
       /* Get an alignment of the hit */
@@ -2017,16 +2017,16 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG **bg, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, CM_TOPHITS *hitlist)
+cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG **bgA, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, CM_TOPHITS *hitlist)
 
 {
   int status;
   int i, m;
-  int *nwinA;             /* number of windows surviving MSV & Vit & Fwd, filled by cm_pli_p7Filter */
+  int      *nwinA = NULL; /* number of windows surviving MSV & Vit & Fwd, filled by cm_pli_p7Filter */
   int64_t **wsAA = NULL;  /* [0..m..nhmm-1][0..i..nwinAA[m]-1] window start positions, filled by cm_pli_p7Filter() */
   int64_t **weAA = NULL;  /* [0..m..nhmm-1][0..i..nwinAA[m]-1] window end   positions, filled by cm_pli_p7Filter() */
   double  **wpAA = NULL;  /* [0..m..nhmm-1][0..i..nwinAA[m]-1] window P-values, filled by m_pli_p7Filter() */
-  int *nenvA;             /* [0..m..nhmm-1] number of envelopes surviving MSV & Vit & Fwd & gFwd & EnvDef, filled by cm_pli_p7EnvelopeDef */
+  int      *nenvA = NULL; /* [0..m..nhmm-1] number of envelopes surviving MSV & Vit & Fwd & gFwd & EnvDef, filled by cm_pli_p7EnvelopeDef */
   int64_t **esAA = NULL;  /* [0..m..nhmm-1][0..i..nenvAA[m]-1] envelope start positions, filled by cm_pli_p7EnvelopeDef() */
   int64_t **eeAA = NULL;  /* [0..m..nhmm-1][0..i..nenvAA[m]-1] envelope end   positions, filled by cm_pli_p7EnvelopeDef() */
 
@@ -2052,12 +2052,25 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, P7_OPROFILE **om,
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
 #if DOPRINT
   printf("\nPIPELINE ENTRANCE %s  %s  %" PRId64 " residues\n", sq->name, sq->desc, sq->n);
+
+  printf("F1: %f\n", pli->F1);
+  printf("F2: %f\n", pli->F2);
+  printf("F3: %f\n", pli->F3);
+  printf("F4: %f\n", pli->F4);
+  printf("F5: %f\n", pli->F5);
+  printf("F6: %f\n", pli->F6);
+
+  printf("F1b: %f\n", pli->F1b);
+  printf("F2b: %f\n", pli->F2b);
+  printf("F3b: %f\n", pli->F3b);
+  printf("F4b: %f\n", pli->F4b);
+  printf("F5b: %f\n", pli->F5b);
 #endif
 
   ESL_ALLOC(nwinA, sizeof(int)      * nhmm);
   ESL_ALLOC(wsAA, sizeof(int64_t *) * nhmm);
   ESL_ALLOC(weAA, sizeof(int64_t *) * nhmm);
-  ESL_ALLOC(wpAA, sizeof(double)    * nhmm);
+  ESL_ALLOC(wpAA, sizeof(double *)  * nhmm);
   for(m = 0; m < nhmm; m++) { 
     wsAA[m] = NULL;
     weAA[m] = NULL;
@@ -2085,7 +2098,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, P7_OPROFILE **om,
 #if DOPRINT
     printf("\nPIPELINE HMM %d calling p7Filter() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
 #endif
-    if((status = cm_pli_p7Filter(pli, cm, om[m], gm[m], bg[m], p7_evparamAA[m], sq, &(wsAA[m]), &(weAA[m]), &(wpAA[m]), &(nwinA[m]))) != eslOK) return status;
+    if((status = cm_pli_p7Filter(pli, cm, om[m], gm[m], bgA[m], p7_evparamAA[m], sq, &(wsAA[m]), &(weAA[m]), &(wpAA[m]), &(nwinA[m]))) != eslOK) return status;
     if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) continue;
 
     if(nwin_all == 0 && nwinA[m] > 0) { 
@@ -2145,7 +2158,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, P7_OPROFILE **om,
 #if DOPRINT
       printf("\nPIPELINE HMM %d calling p7EnvelopeDef() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
 #endif
-      if((status = cm_pli_p7EnvelopeDef(pli, cm, om[m], gm[m], bg[m], p7_evparamAA[m], sq,  cur_ws,  cur_we,  cur_nwin, &(esAA[m]), &(eeAA[m]), &(nenvA[m]))) != eslOK) return status;
+      if((status = cm_pli_p7EnvelopeDef(pli, cm, om[m], gm[m], bgA[m], p7_evparamAA[m], sq,  cur_ws,  cur_we,  cur_nwin, &(esAA[m]), &(eeAA[m]), &(nenvA[m]))) != eslOK) return status;
 #if DOPRINT
       printf("\nPIPELINE HMM %d calling CMStage() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
 #endif

@@ -30,6 +30,7 @@
 
 /* TEMP EPN, Tue Aug 19 17:40:32 2008 */
 #define PRINTNOW 0
+#define PRINTNOW2 0
 /* TEMP */
 
 /* various default parameters for CMs and CP9 HMMs */ 
@@ -1666,8 +1667,8 @@ typedef struct cm_hit_s {
 
   int64_t        start, stop;   /* start/end points of hit */
   float          score;		/* bit score of the hit (with corrections) */
-  float          pvalue;	/* P-value of the hit   (with corrections) */
-  float          evalue;	/* E-value of the hit   (with corrections) */
+  double         pvalue;	/* P-value of the hit   (with corrections) */
+  double         evalue;	/* E-value of the hit   (with corrections) */
   CM_ALIDISPLAY *ad;            /* alignment display */
 
   uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_NEW | CM_HIT_IS_DROPPED */

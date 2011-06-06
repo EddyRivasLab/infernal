@@ -598,7 +598,10 @@ extern int cmcalibrate_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_
 extern int comlog_MPIPackSize(ComLog_t *comlog, MPI_Comm comm, int *ret_n);
 extern int comlog_MPIPack    (ComLog_t *comlog, char *buf, int n, int *position, MPI_Comm comm);
 extern int comlog_MPIUnpack  (char *buf, int n, int *pos, MPI_Comm comm, ComLog_t **ret_comlog);
-
+extern int cm_pipeline_MPISend(CM_PIPELINE *pli, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
+extern int cm_pipeline_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_GETOPTS *go, CM_PIPELINE **ret_pli);
+extern int cm_tophits_MPISend(CM_TOPHITS *th, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
+extern int cm_tophits_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, CM_TOPHITS **ret_th);
 #endif
 
 /* from prior.c */

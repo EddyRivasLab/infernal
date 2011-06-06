@@ -1003,6 +1003,7 @@ cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad)
   fprintf(fp, "------------------\n");
 
   fprintf(fp, "rfline  = %s\n", ad->rfline ? ad->rfline : "[none]");
+  fprintf(fp, "nline   = %s\n", ad->nline  ? ad->nline : "[none]");
   fprintf(fp, "csline  = %s\n", ad->csline ? ad->csline : "[none]");
   fprintf(fp, "model   = %s\n", ad->model);
   fprintf(fp, "mline   = %s\n", ad->mline);
