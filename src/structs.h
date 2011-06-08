@@ -1447,6 +1447,11 @@ typedef struct cm_pipeline_s {
   ScanMatrix_t *fsmx;           /* scan matrix for CYK filter stage         */
   ScanMatrix_t *smx;            /* scan matrix for final stage              */
 
+  /* Model-dependent parameters                                             */
+  int 		maxW;           /* # residues to overlap in adjacent windows*/
+  int 		cmW;            /* CM's window length                       */
+  int 		clen;           /* CM's consensus length of model           */
+
   /* Domain/envelope postprocessing                                         */
   ESL_RANDOMNESS *r;		/* random number generator                  */
   int             do_reseeding; /* TRUE: reseed for reproducible results    */
@@ -1583,12 +1588,9 @@ typedef struct cm_pipeline_s {
   int           do_time_F5;      /* TRUE to abort after Stage 5 env def */
   int           do_time_F6;      /* TRUE to abort after Stage 6 CYK */
 
-  enum cm_pipemodes_e mode;    	/* CM_SCAN_MODELS | CM_SEARCH_SEQS          */
-  int           do_top;         /* TRUE to do top    strand (usually TRUE) */
-  int           do_bot;         /* TRUE to do bottom strand (usually TRUE) */
-  int 		W;              /* window length */
-  int 		clen;           /* consensus length of model */
-  //float         p7_evparam[CM_p7_NEVPARAM]; /* E-value params */
+  enum cm_pipemodes_e mode;    	/* CM_SCAN_MODELS | CM_SEARCH_SEQS           */
+  int           do_top;         /* TRUE to do top    strand (usually TRUE)   */
+  int           do_bot;         /* TRUE to do bottom strand (usually TRUE)   */
 
   int           show_accessions;/* TRUE to output accessions not names      */
   int           show_alignments;/* TRUE to output alignments (default)      */

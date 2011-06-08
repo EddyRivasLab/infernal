@@ -400,7 +400,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	ad->model[pos]   = lcons;
 	ad->mline[pos]   = lmid;
 	ad->aseq[pos]    = lseq;
-	if(pcode != NULL)   ad->ppline[pos] = lpost;
+	if(pcode != NULL)  ad->ppline[pos] = lpost;
 	ccoord[pos] = cpos_l;
 	scoord[pos] = spos_l;
 	pos++;
@@ -477,7 +477,10 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   for (pos = 0; pos < ad->N; pos++)
     if (ccoord[pos] != 0) ad->cto = ccoord[pos];
 
+  if(scoord != NULL) free(scoord);
+  if(ccoord != NULL) free(ccoord);
   esl_stack_Destroy(pda);
+
   return ad;
 
  ERROR:

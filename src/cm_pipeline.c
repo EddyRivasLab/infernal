@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT 1
+#define DOPRINT 0
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -149,6 +149,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, enum c
 
   ESL_ALLOC(pli, sizeof(CM_PIPELINE));
 
+  /* allocate matrices */
   if ((pli->fwd  = p7_omx_Create(clen_hint, L_hint, L_hint)) == NULL) goto ERROR;
   if ((pli->bck  = p7_omx_Create(clen_hint, L_hint, L_hint)) == NULL) goto ERROR;
   if ((pli->oxf  = p7_omx_Create(clen_hint, 0,      L_hint)) == NULL) goto ERROR;
@@ -159,6 +160,11 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, enum c
   if ((pli->gxb  = p7_gmx_Create(clen_hint, L_hint))         == NULL) goto ERROR;     
   pli->fsmx = NULL; /* can't allocate this until we know dmin/dmax/W etc. */
   pli->smx  = NULL; /* can't allocate this until we know dmin/dmax/W etc. */
+
+  /* intialize model-dependent parameters, these are invalid until we call cm_pli_NewModel() */
+  pli->maxW = 0;
+  pli->cmW  = 0;
+  pli->clen = 0;
 
   /* Normally, we reinitialize the RNG to the original seed every time we're
    * about to collect a stochastic trace ensemble. This eliminates run-to-run
@@ -453,45 +459,47 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, enum c
   }
 
   /* Accounting as we collect results */
-  pli->nmodels         = 0;
-  pli->nseqs           = 0;
-  pli->nres            = 0;
-  pli->nnodes          = 0;
-  pli->n_past_msv      = 0;
-  pli->n_past_vit      = 0;
-  pli->n_past_fwd      = 0;
-  pli->n_past_gfwd     = 0;
-  pli->n_past_edef     = 0;
-  pli->n_past_cyk      = 0;
-  pli->n_past_ins      = 0;
-  pli->n_output        = 0;
-  pli->n_past_msvbias  = 0;
-  pli->n_past_vitbias  = 0;
-  pli->n_past_fwdbias  = 0;
-  pli->n_past_gfwdbias = 0;
-  pli->n_past_edefbias  = 0;
-  pli->pos_past_msv    = 0;
-  pli->pos_past_vit    = 0;
-  pli->pos_past_fwd    = 0;
-  pli->pos_past_gfwd   = 0;
-  pli->pos_past_edef   = 0;
-  pli->pos_past_cyk    = 0;
-  pli->pos_past_ins    = 0;
-  pli->pos_output      = 0;
-  pli->pos_past_msvbias= 0;
-  pli->pos_past_vitbias= 0;
-  pli->pos_past_fwdbias= 0;
-  pli->pos_past_gfwdbias= 0;
-  pli->pos_past_edefbias= 0;
-  pli->mode            = mode;
-  pli->show_accessions = (esl_opt_GetBoolean(go, "--acc")   ? TRUE  : FALSE);
-  pli->show_alignments = (esl_opt_GetBoolean(go, "--noali") ? FALSE : TRUE);
-  pli->use_cyk         = (esl_opt_GetBoolean(go, "--aln-cyk") ? TRUE : FALSE);
-  pli->align_hbanded   = (esl_opt_GetBoolean(go, "--aln-nonbanded") ? FALSE : TRUE);
-  pli->hb_size_limit   = esl_opt_GetReal(go, "--aln-sizelimit");
+  pli->nmodels           = 0;
+  pli->nseqs             = 0;
+  pli->nres              = 0;
+  pli->nnodes            = 0;
+  pli->n_past_msv        = 0;
+  pli->n_past_vit        = 0;
+  pli->n_past_fwd        = 0;
+  pli->n_past_gfwd       = 0;
+  pli->n_past_edef       = 0;
+  pli->n_past_cyk        = 0;
+  pli->n_past_ins        = 0;
+  pli->n_output          = 0;
+  pli->n_past_msvbias    = 0;
+  pli->n_past_vitbias    = 0;
+  pli->n_past_fwdbias    = 0;
+  pli->n_past_gfwdbias   = 0;
+  pli->n_past_edefbias   = 0;
+  pli->pos_past_msv      = 0;
+  pli->pos_past_vit      = 0;
+  pli->pos_past_fwd      = 0;
+  pli->pos_past_gfwd     = 0;
+  pli->pos_past_edef     = 0;
+  pli->pos_past_cyk      = 0;
+  pli->pos_past_ins      = 0;      
+  pli->pos_output        = 0;
+  pli->pos_past_msvbias  = 0;
+  pli->pos_past_vitbias  = 0;
+  pli->pos_past_fwdbias  = 0;
+  pli->pos_past_gfwdbias = 0;
+  pli->pos_past_edefbias = 0;
+  pli->mode             = mode;
+  pli->do_top           = (esl_opt_GetBoolean(go, "--bottomonly"))   ? FALSE : TRUE;
+  pli->do_bot           = (esl_opt_GetBoolean(go, "--toponly"))      ? FALSE : TRUE;
+  pli->show_accessions  = (esl_opt_GetBoolean(go, "--acc")           ? TRUE  : FALSE);
+  pli->show_alignments  = (esl_opt_GetBoolean(go, "--noali")         ? FALSE : TRUE);
+  pli->use_cyk          = (esl_opt_GetBoolean(go, "--aln-cyk")       ? TRUE  : FALSE);
+  pli->align_hbanded    = (esl_opt_GetBoolean(go, "--aln-nonbanded") ? FALSE : TRUE);
+  pli->hb_size_limit    = esl_opt_GetReal(go, "--aln-sizelimit");
 
-  pli->cmfp            = NULL;
-  pli->errbuf[0]       = '\0';
+  pli->cmfp             = NULL;
+  pli->errbuf[0]        = '\0';
 
   return pli;
 
@@ -645,8 +653,17 @@ cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int *fcyk_dmin, int *fcyk_dmax, int 
     }
   }
 
-  pli->W    = cm->W;
+  pli->cmW  = cm->W;
   pli->clen = cm->clen;
+  /* determine pli->maxW, this will be the number of residues
+   * that must overlap between adjacent windows on a
+   * single sequence, this is MAX of cm->W and omA[m]->max_length
+   * for all HMMs m=0..nhmm-1
+   */
+  pli->maxW = cm->W;
+  for(m = 0; m < nhmm; m++) { 
+    pli->maxW = ESL_MAX(pli->maxW, omA[m]->max_length);
+  }
 
   /* reset consensus length specific thresholds  */
   pli->F4  = pli->orig_F4;
@@ -844,9 +861,9 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
    * soon be passed on to later phases of the pipeline;  used to recover some bits of the score
    * that we would miss if we left length parameters set to the full target length */
 
-  if(pli->do_filcmW) { /* pli->W is the same as cm->W */
-    p7_oprofile_ReconfigMSVLength(om, pli->W);
-    om->max_length = pli->W;
+  if(pli->do_filcmW) { 
+    p7_oprofile_ReconfigMSVLength(om, pli->cmW);
+    om->max_length = pli->cmW;
   }
   else { 
     p7_oprofile_ReconfigMSVLength(om, om->max_length); /* nhmmer's way */
@@ -891,10 +908,10 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
 	  ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
 	  ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
 	}
-	if(wlen > (pli->wmult * pli->W)) { 
+	if(wlen > (pli->wmult * pli->cmW)) { 
 	  /* split this window */
 	  new_ws[i2] = ws[i]; 
-	  new_we[i2] = ESL_MIN((new_ws[i2] + (2 * pli->W) - 1), we[i]);
+	  new_we[i2] = ESL_MIN((new_ws[i2] + (2 * pli->cmW) - 1), we[i]);
 	  while(new_we[i2] < we[i]) { 
 	    i2++;
 	    if((i2+1) == nalloc) { 
@@ -902,8 +919,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
 	      ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
 	      ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
 	    }
-	    new_ws[i2] = ESL_MIN(new_ws[i2-1] + pli->W, we[i]);
-	    new_we[i2] = ESL_MIN(new_we[i2-1] + pli->W, we[i]);
+	    new_ws[i2] = ESL_MIN(new_ws[i2-1] + pli->cmW, we[i]);
+	    new_we[i2] = ESL_MIN(new_we[i2-1] + pli->cmW, we[i]);
 	  }	    
 	}
 	else { /* do not split this window */
@@ -920,18 +937,18 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
   }
   else { /* do_msv is FALSE or do_shortmsv is TRUE, divide up into windows of 2*W, overlapping by W-1 residues */
     nwin = 1; /* first window */
-    if(sq->n > (2 * pli->W)) { 
-      nwin += (int) (sq->n - (2 * pli->W)) / ((2 * pli->W) - (pli->W - 1));
+    if(sq->n > (2 * pli->cmW)) { 
+      nwin += (int) (sq->n - (2 * pli->cmW)) / ((2 * pli->cmW) - (pli->cmW - 1));
       /*            (L     -  first window)/(number of unique residues per window) */
-      if(((sq->n - (2 * pli->W)) % ((2 * pli->W) - (pli->W - 1))) > 0) { 
+      if(((sq->n - (2 * pli->cmW)) % ((2 * pli->cmW) - (pli->cmW - 1))) > 0) { 
 	nwin++; /* if the (int) cast in previous line removed any fraction of a window, we add it back here */
       }
     }
     ESL_ALLOC(ws, sizeof(int64_t) * nwin);
     ESL_ALLOC(we, sizeof(int64_t) * nwin);
     for(i = 0; i < nwin; i++) { 
-      ws[i] = 1 + (i * (pli->W + 1));
-      we[i] = ESL_MIN((ws[i] + (2*pli->W) - 1), sq->n);
+      ws[i] = 1 + (i * (pli->cmW + 1));
+      we[i] = ESL_MIN((ws[i] + (2*pli->cmW) - 1), sq->n);
       /*printf("window %5d/%5d  %10d..%10d (L=%10" PRId64 ")\n", i+1, nwin, ws[i], we[i], sq->n);*/
     }
   }      
@@ -954,9 +971,9 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
     wlen = we[i] - ws[i] + 1;
 
     if(pli->do_wcorr) { 
-      wcorr = (2 * log(2. / (pli->W+2))) - (2. * log(2. / (wlen+2)));
-      p7_bg_SetLength(bg, pli->W);
-      p7_bg_NullOne  (bg, subdsq, pli->W, &nullsc);
+      wcorr = (2 * log(2. / (pli->cmW+2))) - (2. * log(2. / (wlen+2)));
+      p7_bg_SetLength(bg, pli->cmW);
+      p7_bg_NullOne  (bg, subdsq, pli->cmW, &nullsc);
     }
     else { 
       wcorr = 0.;
@@ -992,7 +1009,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
 	 (using the standard "per-sequence" msv filter this time). */
       p7_oprofile_ReconfigMSVLength(om, wlen);
       p7_MSVFilter(subdsq, wlen, om, pli->oxf, &mfsc);
-      if(pli->do_wcorr) p7_bg_FilterScore(bg, subdsq, pli->W,     &filtersc);
+      if(pli->do_wcorr) p7_bg_FilterScore(bg, subdsq, pli->cmW,     &filtersc);
       else              p7_bg_FilterScore(bg, subdsq, wlen, &filtersc);
       have_filtersc = TRUE;
       
@@ -1039,7 +1056,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
     /********************************************/
     if (pli->do_vit && pli->do_vitbias) { 
       if(! have_filtersc) { 
-	if(pli->do_wcorr) p7_bg_FilterScore(bg, subdsq, pli->W,     &filtersc);
+	if(pli->do_wcorr) p7_bg_FilterScore(bg, subdsq, pli->cmW,     &filtersc);
 	else              p7_bg_FilterScore(bg, subdsq, wlen, &filtersc);
       }
       have_filtersc = TRUE;
@@ -1078,8 +1095,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
 
     if (pli->do_fwd && pli->do_fwdbias) { 
       if (! have_filtersc) { 
-	if(pli->do_wcorr) p7_bg_FilterScore(bg, subdsq, pli->W, &filtersc);
-	else              p7_bg_FilterScore(bg, subdsq, wlen,   &filtersc);
+	if(pli->do_wcorr) p7_bg_FilterScore(bg, subdsq, pli->cmW, &filtersc);
+	else              p7_bg_FilterScore(bg, subdsq, wlen,     &filtersc);
       }
       have_filtersc = TRUE;
       wsc = (fwdsc + wcorr - filtersc) / eslCONST_LOG2;
@@ -1340,7 +1357,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
 	/* correction from nhmmer's p7_pipeline.c::p7_Pipeline_LongTarget() */
 	env_len = pli->ddef->dcl[d].jenv - pli->ddef->dcl[d].ienv +1;
 	ali_len = pli->ddef->dcl[d].jali - pli->ddef->dcl[d].iali +1;
-	env_wlen = ESL_MIN(pli->W, wlen); //see notes, ~/notebook/20100716_hmmer_score_v_eval_bug/, end of Thu Jul 22 13:36:49 EDT 2010
+	env_wlen = ESL_MIN(pli->cmW, wlen); //see notes, ~/notebook/20100716_hmmer_score_v_eval_bug/, end of Thu Jul 22 13:36:49 EDT 2010
 	env_sc  = pli->ddef->dcl[d].envsc;
 	/* For these modifications, see notes, ~/notebook/20100716_hmmer_score_v_eval_bug/, end of Thu Jul 22 13:36:49 EDT 2010 */
 	env_sc -= 2 * log(2. / (wlen+2)) +   (env_len-ali_len) * log((float) wlen / (wlen+2));
@@ -1396,13 +1413,13 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
 	eend   = pli->ddef->dcl[d].jenv;
       }
       else { /* pli->do_pad is TRUE */
-	if(env_len <= pli->W) { /* envelope size is less than or equal to W */
-	  estart = ESL_MAX(1,    pli->ddef->dcl[d].jenv - (pli->W-1));
-	  eend   = ESL_MIN(wlen, pli->ddef->dcl[d].ienv + (pli->W-1));
+	if(env_len <= pli->cmW) { /* envelope size is less than or equal to W */
+	  estart = ESL_MAX(1,    pli->ddef->dcl[d].jenv - (pli->cmW-1));
+	  eend   = ESL_MIN(wlen, pli->ddef->dcl[d].ienv + (pli->cmW-1));
 	}
 	else { /* envelope size > W, pad W-1 residues to each side */
-	  estart = ESL_MAX(1,    pli->ddef->dcl[d].ienv - (int) ((pli->W - 1)));
-	  eend   = ESL_MIN(wlen, pli->ddef->dcl[d].jenv + (int) ((pli->W - 1)));
+	  estart = ESL_MAX(1,    pli->ddef->dcl[d].ienv - (int) ((pli->cmW - 1)));
+	  eend   = ESL_MIN(wlen, pli->ddef->dcl[d].jenv + (int) ((pli->cmW - 1)));
 	}
       }
 #if DOPRINT
@@ -2178,6 +2195,8 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, P7_OPROFILE **om,
   if(all_we != NULL) free(all_we);
   if(all_wp != NULL) free(all_wp);
   if(all_wl != NULL) free(all_wl);
+  if(nwinA != NULL) free(nwinA);
+  if(nenvA != NULL) free(nenvA);
 
   return eslOK;
   
