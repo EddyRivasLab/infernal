@@ -233,8 +233,8 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
       symi = dsq[tr->emitl[ti]];  /* residue indices that node is aligned to */
       symj = dsq[tr->emitr[ti]];
       if(have_pcodes) { /* posterior codes are indexed 0..alen-1, off-by-one w.r.t dsq */
-	lpost = pcode[tr->emitl[ti]-1];
-	rpost = pcode[tr->emitr[ti]-1];
+	lpost = '.'; /* init to gap, if it corresponds to a residue, we'll reset it below */
+	rpost = '.'; /* init to gap, if it corresponds to a residue, we'll reset it below */
       }
       d = tr->emitr[ti] - tr->emitl[ti] + 1;
       mode = tr->mode[ti];
@@ -251,6 +251,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
         else                        lseq = '~';
 	cpos_l  = 0;
 	spos_l  = tr->emitl[ti];
+	if(pcode != NULL) { lpost = pcode[tr->emitl[ti]-1]; } /* watch off-by-one w.r.t. dsq */
       } else if (cm->sttype[v] == IR_st) {
 	do_right = TRUE;
 	if (cm->rf != NULL) rrf = '.';
@@ -260,6 +261,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
         else                        rseq = '~';
 	cpos_r  = 0;
 	spos_r  = tr->emitr[ti];
+	if(pcode != NULL) { rpost = pcode[tr->emitr[ti]-1]; } /* watch off-by-one w.r.t. dsq */
       } else {
 	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) {
 	  do_left = TRUE;
@@ -272,10 +274,12 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
             else if (mode == 2 && d>0 ) lseq = abc->sym[symi];
             else                        lseq = '~';
 	    spos_l = tr->emitl[ti];
+	    if(pcode != NULL) { lpost = pcode[tr->emitl[ti]-1]; } /* watch off-by-one w.r.t. dsq */
 	  } else {
 	    if (mode == 3 || mode == 2) lseq = '-';
             else                        lseq = '~';
 	    spos_l = 0;
+	    /* lpost remains as it was init'ed as a gap '.' */
 	  }
 	}
 	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) {
@@ -289,10 +293,12 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
             else if (mode == 1 && d>0 ) rseq = abc->sym[symj];
             else                        rseq = '~';
 	    spos_r = tr->emitr[ti];
+	    if(pcode != NULL) { rpost = pcode[tr->emitr[ti]-1]; } /* watch off-by-one w.r.t. dsq */
 	  } else {
 	    if (mode == 3 || mode == 1) rseq = '-';
             else                        rseq = '~';
 	    spos_r = 0;
+	    /* rpost remains as it was init'ed as a gap '.' */
 	  }
 	}
       }

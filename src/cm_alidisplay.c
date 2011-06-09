@@ -278,14 +278,14 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 
       /* Fetch some info into tmp variables, for "clarity"
        */
-      nd  = cm->ndidx[v];	  /* what CM node we're in */
-      lc   = cons->lpos[nd];	  /* where CM node aligns to in consensus */
-      rc   = cons->rpos[nd];
-      symi = sq->dsq[tr->emitl[ti] + (seqoffset-1)];  /* residue indices that node is aligned to */
-      symj = sq->dsq[tr->emitr[ti] + (seqoffset-1)];
+      nd   = cm->ndidx[v];	  /* what CM node we're in */
+      lc   = cons->lpos[nd];	  /* where CM node aligns to in consensus (left) */
+      rc   = cons->rpos[nd];      /* where CM node aligns to in consensus (right) */
+      symi = sq->dsq[tr->emitl[ti] + (seqoffset-1)];  /* residue indices that node is aligned to (left) */
+      symj = sq->dsq[tr->emitr[ti] + (seqoffset-1)];  /* residue indices that node is aligned to (right) */
       if(pcode != NULL) { /* posterior codes are indexed 0..alen-1, off-by-one w.r.t dsq */
-	lpost = pcode[tr->emitl[ti]-1];
-	rpost = pcode[tr->emitr[ti]-1];
+	lpost = '.'; /* init to gap, if it corresponds to a residue, we'll reset it below */
+	rpost = '.'; /* init to gap, if it corresponds to a residue, we'll reset it below */
       }
       d = tr->emitr[ti] - tr->emitl[ti] + 1;
       mode = tr->mode[ti];
@@ -302,6 +302,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
         else                        lseq = '~';
 	cpos_l  = 0;
 	spos_l  = tr->emitl[ti] + seqoffset-1;
+	if(pcode != NULL) { lpost = pcode[tr->emitl[ti]-1]; } /* watch off-by-one w.r.t. dsq */
       } else if (cm->sttype[v] == IR_st) {
 	do_right = TRUE;
 	if (cm->rf != NULL) rrf = '.';
@@ -311,6 +312,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
         else                        rseq = '~';
 	cpos_r  = 0;
 	spos_r  = tr->emitr[ti] + seqoffset-1;
+	if(pcode != NULL) { rpost = pcode[tr->emitr[ti]-1]; } /* watch off-by-one w.r.t. dsq */
       } else {
 	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) {
 	  do_left = TRUE;
@@ -323,10 +325,12 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
             else if (mode == 2 && d>0 ) lseq = abc->sym[symi];
             else                        lseq = '~';
 	    spos_l = tr->emitl[ti] + seqoffset-1;
+	    if(pcode != NULL) { lpost = pcode[tr->emitl[ti]-1]; } /* watch off-by-one w.r.t. dsq */
 	  } else {
 	    if (mode == 3 || mode == 2) lseq = '-';
             else                        lseq = '~';
 	    spos_l = 0;
+	    /* lpost remains as it was init'ed as a gap '.' */
 	  }
 	}
 	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) {
@@ -340,10 +344,12 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
             else if (mode == 1 && d>0 ) rseq = abc->sym[symj];
             else                        rseq = '~';
 	    spos_r = tr->emitr[ti] + seqoffset-1;
+	    if(pcode != NULL) { rpost = pcode[tr->emitr[ti]-1]; } /* watch off-by-one w.r.t. dsq */
 	  } else {
 	    if (mode == 3 || mode == 1) rseq = '-';
             else                        rseq = '~';
 	    spos_r = 0;
+	    /* rpost remains as it was init'ed as a gap '.' */
 	  }
 	}
       }
@@ -366,7 +372,8 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	else if (DegeneratePairScore(cm->abc, cm->esc[v], symi, symj) >= 0) 
 	  lmid = rmid = ':';
 	
-	/* determine lnnc, rnnc for optional negative scoring non-canonical annotation, they are 'v' if lseq and rseq are a negative scoring non-canonical (not a AU,UA,GC,CG,GU,UG) pair */
+	/* determine lnnc, rnnc for optional negative scoring non-canonical annotation, they are 'v' 
+	 * if lseq and rseq are a negative scoring non-canonical (not a AU,UA,GC,CG,GU,UG) pair */
 	if ((mode == 3) && (DegeneratePairScore(cm->abc, cm->esc[v], symi, symj) < 0) && (! bp_is_canonical(lseq, rseq))) {
 	  lnnc = rnnc = 'v';
 	}
