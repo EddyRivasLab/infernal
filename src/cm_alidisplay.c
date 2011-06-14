@@ -987,7 +987,6 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
   if (buf != NULL) free(buf);
   return status;
 }  
-
 /*------------------- end, alidisplay API -----------------------*/
 
 

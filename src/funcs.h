@@ -730,8 +730,8 @@ extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
 
 extern int cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
 extern int cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
-extern int cm_pli_NewModel          (CM_PIPELINE *pli, CM_t *cm, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE **omA, P7_BG **bgA, int nhmm);
-extern int cm_pli_NewSeq            (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq);
+extern int cm_pli_NewModel          (CM_PIPELINE *pli, CM_t *cm, int need_fsmx, int need_smx, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE **omA, P7_BG **bgA, int nhmm);
+extern int cm_pli_NewSeq            (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t cur_seq_idx);
 extern int cm_pli_p7Filter          (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, double **ret_wp, int *ret_nwin);
 extern int cm_pli_p7EnvelopeDef     (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 extern int cm_pli_CMStage           (CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist);
@@ -745,7 +745,8 @@ extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE
 extern CM_TOPHITS *cm_tophits_Create(void);
 extern int         cm_tophits_Grow(CM_TOPHITS *h);
 extern int         cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit);
-extern int         cm_tophits_Sort(CM_TOPHITS *h);
+extern int         cm_tophits_SortByScore(CM_TOPHITS *h);
+extern int         cm_tophits_SortBySeqIdx(CM_TOPHITS *h);
 extern int         cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2);
 extern int         cm_tophits_GetMaxPositionLength(CM_TOPHITS *h);
 extern int         cm_tophits_GetMaxNameLength(CM_TOPHITS *h);
@@ -753,8 +754,10 @@ extern int         cm_tophits_GetMaxAccessionLength(CM_TOPHITS *h);
 extern int         cm_tophits_GetMaxShownLength(CM_TOPHITS *h);
 extern int         cm_tophits_Reuse(CM_TOPHITS *h);
 extern void        cm_tophits_Destroy(CM_TOPHITS *h);
-extern int         cm_tophits_CloneHitFromResults(CM_TOPHITS *th, search_results_t *results, int hidx, CM_HIT **ret_hit);
+extern int         cm_tophits_CloneHitFromResults(CM_TOPHITS *th, search_results_t *results, int hidx, int64_t seq_idx, CM_HIT **ret_hit);
 extern int         cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eff_dbsize);
+extern int         cm_tophits_RemoveDuplicates(CM_TOPHITS *th);
+extern int         cm_tophits_RemoveDuplicatesOLD(CM_TOPHITS *th);
 
 extern int cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli);
 extern int cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw);
@@ -762,6 +765,9 @@ extern int cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli,
 extern int cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 extern int cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipemode, 
 				  const char *qfile, const char *tfile, const ESL_GETOPTS *go);
+
+extern int cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th);
+extern int cm_hit_Dump    (FILE *fp, const CM_HIT *h);
 
 /* cm_alidisplay.c */
 extern CM_ALIDISPLAY *cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, 
@@ -776,4 +782,3 @@ extern float          cm_alidisplay_DecodePostProb(char pc);
 extern int            cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth, int show_accessions, int do_noncanonicals);
 extern int            cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2);
-

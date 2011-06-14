@@ -1421,9 +1421,7 @@ typedef struct cm_s {
   /* p7 hmms, added 08.05.08 */
   P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
   float         mlp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_MLP7_STATS) */
-
-  /* p7 hmms, added 08.05.08 */
-  int          nap7;           /* number of additional p7 HMMs read from file */
+  int           nap7;          /* number of additional p7 HMMs read from file */
   P7_HMM      **ap7A;          /* query p7 HMM */
   float       **ap7_evparamAA; /* E-value params (CMH_AP7_STATS) */
 
@@ -1445,7 +1443,9 @@ typedef struct cm_pipeline_s {
   P7_GMX       *gfwd;		/* generic full Fwd matrix for envelopes    */
   P7_GMX       *gbck;		/* generic full Bck matrix for envelopes    */
   ScanMatrix_t *fsmx;           /* scan matrix for CYK filter stage         */
+  int           need_fsmx;      /* TRUE if fsmx is necessary                */
   ScanMatrix_t *smx;            /* scan matrix for final stage              */
+  int           need_smx;       /* TRUE if smx is necessary                */
 
   /* Model-dependent parameters                                             */
   int 		maxW;           /* # residues to overlap in adjacent windows*/
@@ -1510,7 +1510,7 @@ typedef struct cm_pipeline_s {
   int     do_vitbias;      	/* TRUE to use biased comp HMM filter w/Vit */
   int     do_fwdbias;     	/* TRUE to use biased comp HMM filter w/Fwd */
   int     do_gfwdbias;     	/* TRUE to use biased comp HMM filter w/gFwd*/
-  int     do_envbias;     	/* TRUE to use biased comp HMM filter w/ddef*/
+  int     do_edefbias;     	/* TRUE to use biased comp HMM filter w/edef*/
   int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */
   int     do_fwd;		/* TRUE to filter with Fwd, FALSE not to    */
   int     do_gfwd;		/* TRUE to filter w/glocal Fwd, FALSE not to*/
@@ -1593,11 +1593,13 @@ typedef struct cm_pipeline_s {
   int           do_bot;         /* TRUE to do bottom strand (usually TRUE)   */
 
   int           show_accessions;/* TRUE to output accessions not names      */
-  int           show_alignments;/* TRUE to output alignments (default)      */
+  int           do_alignments;  /* TRUE to compute and output alignments (default)*/
 
   int           use_cyk;        /* TRUE to use CYK instead of optimal accuracy    */
   int           align_hbanded;  /* TRUE to do HMM banded alignment, when possible */
   float         hb_size_limit;  /* maximum size in Mb allowed for HB alignment    */
+
+  int64_t       cur_seq_idx;    /* sequence index currently being searched */
 
   CMFILE       *cmfp;		/* COPY of open CM database (if scan mode) */
   char          errbuf[eslERRBUFSIZE];
@@ -1614,7 +1616,7 @@ typedef struct cm_pipeline_s {
  */
 typedef struct cm_alidisplay_s {
   char *rfline;                 /* reference coord info; or NULL        */
-  char *nline;                  /* negative scoring noncanonicals       */
+  char *nline;                  /* negative scoring noncanonical bps    */
   char *csline;                 /* consensus structure info             */
   char *model;                  /* aligned query consensus sequence     */
   char *mline;                  /* "identities", conservation +'s, etc. */
@@ -1651,6 +1653,7 @@ typedef struct cm_alidisplay_s {
 #define CM_HIT_IS_REPORTED      (1<<1)
 #define CM_HIT_IS_NEW           (1<<2)
 #define CM_HIT_IS_DROPPED       (1<<3)
+#define CM_HIT_IS_DUPLICATE     (1<<4)
 
 /* Structure: CM_HIT
  * 
@@ -1665,7 +1668,7 @@ typedef struct cm_hit_s {
   char          *name;		/* name of the target               (mandatory)           */
   char          *acc;		/* accession of the target          (optional; else NULL) */
   char          *desc;		/* description of the target        (optional; else NULL) */
-  double         sortkey;       /* number to sort by; big is better                       */
+  int64_t        seq_idx;       /* sequence index in the file, unique id for the sequence */
 
   int64_t        start, stop;   /* start/end points of hit */
   float          score;		/* bit score of the hit (with corrections) */
@@ -1673,7 +1676,7 @@ typedef struct cm_hit_s {
   double         evalue;	/* E-value of the hit   (with corrections) */
   CM_ALIDISPLAY *ad;            /* alignment display */
 
-  uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_NEW | CM_HIT_IS_DROPPED */
+  uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_NEW | CM_HIT_IS_DROPPED | CM_HIT_IS_DUPLICATE */
 } CM_HIT;
 
 /* Structure: CM_TOPHITS
@@ -1681,13 +1684,14 @@ typedef struct cm_hit_s {
  * unavailable until after we do a sort.  
  */
 typedef struct cm_tophits_s {
-  CM_HIT **hit;         /* sorted pointer array                     */
-  CM_HIT  *unsrt;	/* unsorted data storage                    */
-  uint64_t Nalloc;	/* current allocation size                  */
-  uint64_t N;		/* number of hits in list now               */
-  uint64_t nreported;	/* number of hits that are reportable       */
-  uint64_t nincluded;	/* number of hits that are includable       */
-  int      is_sorted;	/* TRUE when h->hit valid for all N hits    */
+  CM_HIT **hit;                  /* sorted pointer array                     */
+  CM_HIT  *unsrt;	         /* unsorted data storage                    */
+  uint64_t Nalloc;	         /* current allocation size                  */
+  uint64_t N;	  	         /* number of hits in list now               */
+  uint64_t nreported;            /* number of hits that are reportable       */
+  uint64_t nincluded;	         /* number of hits that are includable       */
+  int      is_sorted_by_score;   /* TRUE when hits sorted by score, length,     th->hit valid for all N hits */
+  int      is_sorted_by_seq_idx; /* TRUE when hits sorted by seq_idx, position, th->hit valid for all N hits */
 } CM_TOPHITS;
 
 #endif /*STRUCTSH_INCLUDED*/

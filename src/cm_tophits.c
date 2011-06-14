@@ -8,9 +8,7 @@
  *    1. The CM_TOPHITS object.
  *    2. Standard (human-readable) output of pipeline results.
  *    3. Tabular (parsable) output of pipeline results.
- *    4. Benchmark driver.
- *    5. Test driver.
- *    6. Copyright and license information.
+ *    4. Debugging/dev code.
  * 
  * EPN, Tue May 24 13:03:31 2011
  * SVN $Id: p7_tophits.c 3546 2011-05-23 14:36:44Z eddys $
@@ -60,8 +58,9 @@ cm_tophits_Create(void)
   h->N         = 0;
   h->nreported = 0;
   h->nincluded = 0;
-  h->is_sorted = TRUE;        /* but only because there's 0 hits */
-  h->hit[0]    = h->unsrt;    /* if you're going to call it "sorted" when it contains just one hit, you need this */
+  h->is_sorted_by_score   = TRUE; /* but only because there's 0 hits */
+  h->is_sorted_by_seq_idx = TRUE; /* but only because there's 0 hits */
+  h->hit[0]    = h->unsrt;        /* if you're going to call it "sorted" when it contains just one hit, you need this */
   return h;
 
  ERROR:
@@ -100,7 +99,7 @@ cm_tophits_Grow(CM_TOPHITS *h)
   /* If we grow a sorted list, we have to translate the pointers
    * in h->hit, because h->unsrt might have just moved in memory. 
    */
-  if (h->is_sorted) {
+  if (h->is_sorted_by_score || h->is_sorted_by_seq_idx) {
     for (i = 0; i < h->N; i++)
       h->hit[i] = h->unsrt + (h->hit[i] - ori);
   }
@@ -137,18 +136,22 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   
   hit = &(h->unsrt[h->N]);
   h->N++;
-  if (h->N >= 2) h->is_sorted = FALSE;
+  if (h->N >= 2) { 
+    h->is_sorted_by_score   = FALSE;
+    h->is_sorted_by_seq_idx = FALSE;
+  }
 
   hit->name             = NULL;
   hit->acc              = NULL;
   hit->desc             = NULL;
-  hit->sortkey          = 0.0;
 
   hit->start            = 1;
   hit->stop             = 1;
   hit->score            = 0.0;
   hit->pvalue           = 0.0;
   hit->evalue           = 0.0;
+
+  hit->seq_idx          = -1;
 
   hit->ad               = NULL;
   hit->flags            = CM_HIT_FLAGS_DEFAULT;
@@ -161,26 +164,37 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   return status;
 }
 
-/* hit_sorter(): qsort's pawn, below */
+/* hit_sorter_by_score() and hit_sorter_by_seq_idx: qsort's pawns, below */
 static int
-hit_sorter(const void *vh1, const void *vh2)
+hit_sorter_by_score(const void *vh1, const void *vh2)
 {
   CM_HIT *h1 = *((CM_HIT **) vh1);  /* don't ask. don't change. Don't Panic. */
   CM_HIT *h2 = *((CM_HIT **) vh2);
 
-  if      (h1->sortkey < h2->sortkey) return  1;
-  else if (h1->sortkey > h2->sortkey) return -1;
+  if      (h1->score < h2->score) return  1; /* first key, bit score, high to low */
+  else if (h1->score > h2->score) return -1;
   else {
-      int c = strcmp(h1->name, h2->name);
-      if (c != 0)                       return c;
-      else                              return  (h1->start < h2->start ? 1 : -1 );
+    if      (h1->seq_idx > h2->seq_idx) return  1; /* second key, seq_idx (unique id for sequences), low to high */
+    else if (h1->seq_idx < h2->seq_idx) return -1;
+    else                                return  (h1->start > h2->start ? 1 : -1 ); /* third key, start position, low to high */
   }
 }
 
-/* Function:  cm_tophits_Sort()
- * Synopsis:  Sorts a hit list.
+static int
+hit_sorter_by_seq_idx(const void *vh1, const void *vh2)
+{
+  CM_HIT *h1 = *((CM_HIT **) vh1);  /* don't ask. don't change. Don't Panic. */
+  CM_HIT *h2 = *((CM_HIT **) vh2);
+
+  if      (h1->seq_idx > h2->seq_idx) return  1; /* first key, seq_idx (unique id for sequences), low to high */
+  else if (h1->seq_idx < h2->seq_idx) return -1;
+  else                                return  (h1->start > h2->start ? 1 : -1 ); /* second key, start position, low to high */
+}
+
+/* Function:  cm_tophits_SortByScore()
+ * Synopsis:  Sorts a hit list by bit score.
  * Incept:    EPN, Tue May 24 13:30:23 2011
- *            SRE, Fri Dec 28 07:51:56 2007 [Janelia]
+ *            SRE, Fri Dec 28 07:51:56 2007 (p7_tophits_Sort())
  *
  * Purpose:   Sorts a top hit list. After this call,
  *            <h->hit[i]> points to the i'th ranked 
@@ -189,14 +203,51 @@ hit_sorter(const void *vh1, const void *vh2)
  * Returns:   <eslOK> on success.
  */
 int
-cm_tophits_Sort(CM_TOPHITS *h)
+cm_tophits_SortByScore(CM_TOPHITS *h)
 {
   int i;
 
-  if (h->is_sorted)  return eslOK;
-  for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
-  if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter);
-  h->is_sorted = TRUE;
+  if (h->is_sorted_by_score)  return eslOK;
+  /* initialize hit ptrs, this also unsorts if already sorted by seq_idx */
+  for (i = 0; i < h->N; i++) h->hit[i]           = h->unsrt + i;
+  if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_score);
+  h->is_sorted_by_seq_idx = FALSE;
+  h->is_sorted_by_score   = TRUE;
+  return eslOK;
+}
+
+/* Function:  cm_tophits_SortBySeqIdx()
+ * Synopsis:  Sorts a hit list by sequence index.
+ * Incept:    EPN, Tue Jun 14 05:15:17 2011
+ *
+ * Purpose:   Sorts a top hit list by seq_idx. After this call,
+ *            <h->hit[i]> points to the i'th ranked 
+ *            <CM_HIT> for all <h->N> hits.
+ *
+ * Returns:   <eslOK> on success.
+ */
+int
+cm_tophits_SortBySeqIdx(CM_TOPHITS *h)
+{
+  int i;
+
+  ESL_STOPWATCH *w;
+  w = esl_stopwatch_Create();
+  printf("START cm_tophits_SortBySeqIdx()\n");
+  esl_stopwatch_Start(w);
+
+  if (h->is_sorted_by_seq_idx)  return eslOK;
+  /* initialize hit ptrs, this also unsorts if already sorted by score */
+  for (i = 0; i < h->N; i++) h->hit[i]           = h->unsrt + i;
+  if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_seq_idx);
+  h->is_sorted_by_score   = FALSE;
+  h->is_sorted_by_seq_idx = TRUE;
+
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, "# CPU time: ");
+  
+  printf("END   cm_tophits_SortBySeqIdx()\n");
+
   return eslOK;
 }
 
@@ -228,8 +279,8 @@ cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2)
   int      status;
 
   /* Make sure the two lists are sorted */
-  if ((status = cm_tophits_Sort(h1)) != eslOK) goto ERROR;
-  if ((status = cm_tophits_Sort(h2)) != eslOK) goto ERROR;
+  if ((status = cm_tophits_SortByScore(h1)) != eslOK) goto ERROR;
+  if ((status = cm_tophits_SortByScore(h2)) != eslOK) goto ERROR;
 
   /* Attempt our allocations, so we fail early if we fail. 
    * Reallocating h1->unsrt screws up h1->hit, so fix it.
@@ -245,7 +296,7 @@ cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2)
 
   /* Merge the sorted hit lists */
   for (i=0,j=0,k=0; i < h1->N && j < h2->N ; k++)
-    new_hit[k] = (hit_sorter(&h1->hit[i], &h2->hit[j]) > 0) ? new2 + (h2->hit[j++] - h2->unsrt) : h1->hit[i++];
+    new_hit[k] = (hit_sorter_by_score(&h1->hit[i], &h2->hit[j]) > 0) ? new2 + (h2->hit[j++] - h2->unsrt) : h1->hit[i++];
   while (i < h1->N) new_hit[k++] = h1->hit[i++];
   while (j < h2->N) new_hit[k++] = new2 + (h2->hit[j++] - h2->unsrt);
 
@@ -264,7 +315,7 @@ cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2)
   h1->hit    = new_hit;
   h1->Nalloc = Nalloc;
   h1->N     += h2->N;
-  /* and is_sorted is TRUE, as a side effect of cm_tophits_Sort() above. */
+  /* and is_sorted_by_score is TRUE, as a side effect of cm_tophits_SortByScore() above. */
   return eslOK;
   
  ERROR:
@@ -421,7 +472,8 @@ cm_tophits_Reuse(CM_TOPHITS *h)
     }
   }
   h->N         = 0;
-  h->is_sorted = TRUE;
+  h->is_sorted_by_score   = TRUE;
+  h->is_sorted_by_seq_idx = TRUE;
   h->hit[0]    = h->unsrt;
   return eslOK;
 }
@@ -465,7 +517,7 @@ cm_tophits_Destroy(CM_TOPHITS *h)
  * Throws:    <eslEMEM> on allocation error.
  */
 int
-cm_tophits_CloneHitFromResults(CM_TOPHITS *th, search_results_t *results, int hidx, CM_HIT **ret_hit)
+cm_tophits_CloneHitFromResults(CM_TOPHITS *th, search_results_t *results, int hidx, int64_t seq_idx, CM_HIT **ret_hit)
 {
   CM_HIT *hit = NULL;
   int     status;
@@ -474,6 +526,7 @@ cm_tophits_CloneHitFromResults(CM_TOPHITS *th, search_results_t *results, int hi
   hit->start = results->data[hidx].start;
   hit->stop  = results->data[hidx].stop;
   hit->score = results->data[hidx].score;
+  hit->seq_idx = seq_idx;
 
   *ret_hit = hit;
   return eslOK;
@@ -500,8 +553,104 @@ cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eff_dbsize)
 
   for (i = 0; i < th->N ; i++) { 
     th->unsrt[i].evalue  = th->unsrt[i].pvalue * eff_dbsize;
-    th->unsrt[i].sortkey = -th->unsrt[i].evalue;
   }
+  return eslOK;
+}
+
+
+/* Function:  cm_tophits_RemoveDuplicates()
+ * Synopsis:  Remove overlapping hits from a tophits object sorted by seq_idx.
+ * Incept:    EPN, Tue Jun 14 05:42:31 2011
+ *            TJW, Wed Mar 10 13:38:36 EST 2010 (p7_tophits_RemoveDupiclates())
+ *
+ * Purpose:   
+
+ *            After the CM pipeline has completed, the CM_TOPHITS
+ *            object may contain duplicates if the target was broken
+ *            into overlapping windows. Scan through the tophits
+ *            object, which is sorted by sequence position and start
+ *            point and remove duplicates by keeping the one with the
+ *            better bit score. with the better score. Hits are marked
+ *            as 'removed' by raising the CM_HIT_IS_DUPLICATED flag in
+ *            the hit. At the end, no individual residue on one strand
+ *            should exist in more than one hit.
+ *
+ * Returns:   <eslOK> on success. <eslEINVAL> if th is not sorted by 
+ *            seq_idx upon entry.
+ */
+int
+cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
+{
+
+  uint64_t i,j;             /* counters over hits */
+  int64_t s_prv, e_prv;     /* start, end of previous hit */
+  int64_t s_cur, e_cur;     /* start, end of current hit */
+  int     sc_prv;           /* bit score of previous hit */
+  int     sc_cur;           /* bit score of current hit */
+  int     rc_prv;           /* TRUE if previous hit is in reverse complement, FALSE if not */
+  int     rc_cur;           /* TRUE if current hit is in reverse complement, FALSE if not */
+  int     si_prv;           /* seq_idx (unique sequence identifier) of previous hit */
+  int     si_cur;           /* seq_idx (unique sequence identifier) of current hit */
+  int     i_prv;            /* index in th->hit of previous hit */
+  int     hits_do_overlap;  /* TRUE if previous and current hits overlap, FALSE if not */
+  int     nremoved = 0;
+
+  ESL_STOPWATCH *w;
+  w = esl_stopwatch_Create();
+  printf("START cm_tophits_RemoveDuplicates()\n");
+  esl_stopwatch_Start(w);
+
+  if (! th->is_sorted_by_seq_idx) return eslEINVAL;
+  if (th->N<2) return eslOK;
+
+  /* set initial previous hit as the first hit */
+  s_prv  = th->hit[0]->start;
+  e_prv  = th->hit[0]->stop;
+  sc_prv = th->hit[0]->score;
+  rc_prv = s_prv < e_prv ? FALSE : TRUE;
+  si_prv = th->hit[0]->seq_idx;
+  i_prv  = 0;
+
+  for (i = 1; i < th->N; i++) {
+    s_cur  = th->hit[i]->start;
+    e_cur  = th->hit[i]->stop;
+    sc_cur = th->hit[i]->score;
+    rc_cur = s_cur < e_cur ? FALSE : TRUE;
+    si_cur = th->hit[i]->seq_idx;
+
+    /* check for overlap, we take advantage of the fact that we're sorted */
+    if((si_cur == si_prv) && /* same sequence */
+       (((rc_cur == FALSE && rc_cur == FALSE) && (e_prv >= s_cur)) ||  /* overlap on forward strand */
+	((rc_cur == TRUE  && rc_prv == TRUE)  && (s_prv >= e_cur))))   /* overlap on reverse strand */
+      {
+	/* an overlap, remove the hit with the smaller score */
+	nremoved++;
+	if(sc_prv > sc_cur) { /* keep previous hit i_prv, remove current hit i*/
+	  th->hit[i]->flags     |= CM_HIT_IS_DUPLICATE;
+	}
+	else { /* keep current hit i, remove previous hit i_prv */
+	  th->hit[i_prv]->flags |= CM_HIT_IS_DUPLICATE;
+	}
+      }
+    if(! (th->hit[i]->flags & CM_HIT_IS_DUPLICATE)) { 
+      /* i wasn't removed, update *_prv values to correspond to i, 
+       * else leave them alone, they'll correspond to latest hit 
+       * that wasn't removed. */
+      s_prv  = s_cur;
+      e_prv  = e_cur;
+      sc_prv = sc_cur;
+      rc_prv = rc_cur;
+      si_prv = si_cur;
+      i_prv  = i;
+    }
+  }
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, "# CPU time: ");
+  
+  printf("END   cm_tophits_RemoveDuplicates() %d removed %ld total\n", nremoved, th->N);
+
+  cm_tophits_Dump(stdout, th);
+
   return eslOK;
 }
 
@@ -510,6 +659,8 @@ cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eff_dbsize)
 /*****************************************************************
  * 2. Standard (human-readable) output of pipeline results
  *****************************************************************/
+
+
 /* Function:  cm_tophits_Threshold()
  * Synopsis:  Apply score and E-value thresholds to a hitlist before output.
  * Incept:    EPN, Tue May 24 13:44:13 2011
@@ -542,10 +693,12 @@ cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli)
   /* Flag reported, included targets (if we're using general thresholds) */
   if (! pli->use_bit_cutoffs) {
     for (h = 0; h < th->N; h++) {
-      if (cm_pli_TargetReportable(pli, th->hit[h]->score, th->hit[h]->evalue)) {
-	th->hit[h]->flags |= CM_HIT_IS_REPORTED;
-	if (cm_pli_TargetIncludable(pli, th->hit[h]->score, th->hit[h]->evalue))
-	  th->hit[h]->flags |= CM_HIT_IS_INCLUDED;
+      if (! (th->hit[h]->flags & CM_HIT_IS_DUPLICATE)) {
+	if (cm_pli_TargetReportable(pli, th->hit[h]->score, th->hit[h]->evalue)) {
+	  th->hit[h]->flags |= CM_HIT_IS_REPORTED;
+	  if (cm_pli_TargetIncludable(pli, th->hit[h]->score, th->hit[h]->evalue))
+	    th->hit[h]->flags |= CM_HIT_IS_INCLUDED;
+	}
       }
     }
   }
@@ -554,8 +707,10 @@ cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli)
   th->nreported = 0;
   th->nincluded = 0;
   for (h = 0; h < th->N; h++) { 
-    if (th->hit[h]->flags & CM_HIT_IS_REPORTED)  th->nreported++;
-    if (th->hit[h]->flags & CM_HIT_IS_INCLUDED)  th->nincluded++;
+    if (! (th->hit[h]->flags & CM_HIT_IS_DUPLICATE)) {
+      if (th->hit[h]->flags & CM_HIT_IS_REPORTED)  th->nreported++;
+      if (th->hit[h]->flags & CM_HIT_IS_INCLUDED)  th->nincluded++;
+    }
   }
   
   return eslOK;
@@ -614,38 +769,39 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   fprintf(ofp, "   %9s  %6s  %-*s  %*s  %*s  %1s  %s\n", "---------", "------", namew, namestr, posw, posstr, posw, posstr, "", "-----------");
   
   for (h = 0; h < th->N; h++) { 
-    if (th->hit[h]->flags & CM_HIT_IS_REPORTED)
+    if (th->hit[h]->flags & CM_HIT_IS_REPORTED) { 
 
       if (! (th->hit[h]->flags & CM_HIT_IS_INCLUDED) && ! have_printed_incthresh) {
 	fprintf(ofp, "  ------ inclusion threshold ------\n");
 	have_printed_incthresh = TRUE;
       }
-
-    if (pli->show_accessions) { 
-      /* the --acc option: report accessions rather than names if possible */
-      if (th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') showname = th->hit[h]->acc;
-      else                                                       showname = th->hit[h]->name;
+      
+      if (pli->show_accessions) { 
+	/* the --acc option: report accessions rather than names if possible */
+	if (th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') showname = th->hit[h]->acc;
+	else                                                       showname = th->hit[h]->name;
+      }
+      else {
+	showname = th->hit[h]->name;
+      }
+      
+      newness = ' '; /* left-over from HMMER3 output, which uses this to mark new/dropped hits in iterative searches */
+      fprintf(ofp, "%c  %9.2g  %6.1f  %-*s  %*ld  %*ld  %c  ",
+	      newness,
+	      th->hit[h]->evalue,
+	      th->hit[h]->score,
+	      namew, showname,
+	      posw, th->hit[h]->start,
+	      posw, th->hit[h]->stop,
+	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'));
+      
+      if (textw > 0) fprintf(ofp, "%-.*s\n", descw, th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
+      else           fprintf(ofp, "%s\n",           th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
+      /* do NOT use *s with unlimited (INT_MAX) line length. Some systems
+       * have an fprintf() bug here (we found one on an Opteron/SUSE Linux
+       * system (#h66))
+       */
     }
-    else {
-      showname = th->hit[h]->name;
-    }
-
-    newness = ' '; /* left-over from HMMER3 output, which uses this to mark new/dropped hits in iterative searches */
-    fprintf(ofp, "%c  %9.2g  %6.1f  %-*s  %*ld  %*ld  %c  ",
-	    newness,
-	    th->hit[h]->evalue,
-	    th->hit[h]->score,
-	    namew, showname,
-	    posw, th->hit[h]->start,
-	    posw, th->hit[h]->stop,
-	    (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'));
-
-    if (textw > 0) fprintf(ofp, "%-.*s\n", descw, th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
-    else           fprintf(ofp, "%s\n",           th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
-    /* do NOT use *s with unlimited (INT_MAX) line length. Some systems
-     * have an fprintf() bug here (we found one on an Opteron/SUSE Linux
-     * system (#h66))
-     */
   }
   if (th->nreported == 0) fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n");
 
@@ -675,7 +831,7 @@ int
 cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 {
   int status;
-  int h, i;
+  int h, i, nprinted;
   int namew, descw, idxw;
   char *showname;
   char *idxstr = NULL;
@@ -686,6 +842,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 
   fprintf(ofp, "Hit alignments:\n");
 
+  nprinted = 0;
   for (h = 0; h < th->N; h++) {
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED) {
       if (pli->show_accessions && th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') {
@@ -724,21 +881,21 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
        */
 
       fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s",  idxw, "#", "", "score", "E-value", "cm from", "cm to", "", "seq from", "seq to", "", "");
-      if(pli->show_alignments) { 
+      if(pli->do_alignments) { 
 	if(th->hit[h]->ad->used_optacc) { fprintf(ofp, " %4s %5s %7s %7s", "acc",   "bands", "mx Mb",   "seconds"); }
 	else                            { fprintf(ofp, " %6s %5s %7s %7s", "cyksc", "bands", "mx Mb",   "seconds"); }
       }
       fprintf(ofp, "\n");
 
       fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s",  idxw, idxstr,  "", "------", "---------", "-------", "-------", "", "-----------", "-----------", "", "");
-      if(pli->show_alignments) { 
+      if(pli->do_alignments) { 
 	if(th->hit[h]->ad->used_optacc) { fprintf(ofp, " %4s %5s %7s %7s", "----",   "-----", "-------", "-------"); }
 	else                            { fprintf(ofp, " %6s %5s %7s %7s", "------", "-----", "-------", "-------"); }
       }
       fprintf(ofp, "\n");
       
       fprintf(ofp, " %*d %c %6.1f %9.2g %7d %7d %c%c %11ld %11ld %c %c%c",
-	      idxw, h+1,
+	      idxw, nprinted+1,
 	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? '!' : '?'),
 	      th->hit[h]->score,
 	      th->hit[h]->evalue,
@@ -752,7 +909,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      (th->hit[h]->start == 1 ? '[' : '.'),
 	      (th->hit[h]->stop == th->hit[h]->ad->L ? ']' : '.'));
       
-      if (pli->show_alignments) { 
+      if (pli->do_alignments) { 
 	if(th->hit[h]->ad->used_optacc) { fprintf(ofp, " %4.2f", th->hit[h]->ad->aln_sc); }
       	else                            { fprintf(ofp, " %6.2f", th->hit[h]->ad->aln_sc); }
 	fprintf(ofp, " %5s %7.2f %7.2f\n\n",	
@@ -765,6 +922,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       else { 
 	fprintf(ofp, "\n\n");
       }
+      nprinted++;
     }
   }
   if (th->nreported == 0) { fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n"); return eslOK; }
@@ -940,6 +1098,96 @@ cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipe
   return status;
 }
 /*------------------- end, tabular output -----------------------*/
+
+/*****************************************************************
+ * 4. Debugging/dev code
+ *****************************************************************/
+
+/* Function:  cm_tophits_Dump()
+ * Synopsis:  Print contents of CM_TOPHITS for inspection.
+ *
+ * Purpose:   Print contents of the <CM_TOPHITS> <th> to
+ *            stream <fp> for inspection. 
+ *
+ * Returns:   <eslOK>
+ */
+int
+cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th)
+{
+  uint64_t i;
+
+  fprintf(fp, "CM_TOPHITS dump\n");
+  fprintf(fp, "------------------\n");
+
+  fprintf(fp, "N                    = %ld\n", th->N);
+  fprintf(fp, "Nalloc               = %ld\n", th->Nalloc);
+  fprintf(fp, "nreported            = %ld\n", th->nreported);
+  fprintf(fp, "nincluded            = %ld\n", th->nincluded);
+  fprintf(fp, "is_sorted_by_score   = %s\n",  th->is_sorted_by_score   ? "TRUE" : "FALSE");
+  fprintf(fp, "is_sorted_by_seq_idx = %s\n",  th->is_sorted_by_seq_idx ? "TRUE" : "FALSE");
+  if(th->is_sorted_by_score) { 
+    for (i = 0; i < th->N; i++) {
+      fprintf(fp, "SCORE SORTED HIT %ld:\n", i);
+      cm_hit_Dump(fp, th->hit[i]);
+    }
+  }
+  else if(th->is_sorted_by_seq_idx) { 
+    for (i = 0; i < th->N; i++) {
+      fprintf(fp, "SEQ_IDX SORTED HIT %ld:\n", i);
+      cm_hit_Dump(fp, th->hit[i]);
+    }
+  }
+  else { 
+    for (i = 0; i < th->N; i++) {
+      fprintf(fp, "UNSORTED HIT %ld:\n", i);
+      cm_hit_Dump(fp, &(th->unsrt[i]));
+    }
+  }
+  return eslOK;
+}
+
+/* Function:  cm_hit_Dump()
+ * Synopsis:  Print contents of a CM_HIT for inspection.
+ *
+ * Purpose:   Print contents of the <CM_HIT> <h> to
+ *            stream <fp> for inspection. 
+ *
+ * Returns:   <eslOK>
+ */
+int
+cm_hit_Dump(FILE *fp, const CM_HIT *h)
+{
+  fprintf(fp, "CM_HIT dump\n");
+  fprintf(fp, "------------------\n");
+  fprintf(fp, "name      = %s\n",  h->name);
+  fprintf(fp, "acc       = %s\n",  (h->acc  != NULL) ? h->acc  : "NULL");
+  fprintf(fp, "desc      = %s\n",  (h->desc != NULL) ? h->desc : "NULL");
+  fprintf(fp, "seq_idx   = %ld\n", h->seq_idx);
+  fprintf(fp, "start     = %ld\n", h->start);
+  fprintf(fp, "stop      = %ld\n", h->stop);
+  fprintf(fp, "score     = %f\n",  h->score);
+  fprintf(fp, "pvalue    = %f\n",  h->pvalue);
+  fprintf(fp, "evalue    = %f\n",  h->evalue);
+  if(h->flags == 0) { 
+    fprintf(fp, "flags     = NONE\n");
+  }
+  else { 
+    fprintf(fp, "flags:\n");
+    if(h->flags & CM_HIT_IS_REPORTED)  fprintf(fp, "\tCM_HIT_IS_REPORTED\n");
+    if(h->flags & CM_HIT_IS_INCLUDED)  fprintf(fp, "\tCM_HIT_IS_INCLUDED\n");
+    if(h->flags & CM_HIT_IS_NEW)       fprintf(fp, "\tCM_HIT_IS_NEW\n");
+    if(h->flags & CM_HIT_IS_DROPPED)   fprintf(fp, "\tCM_HIT_IS_DROPPED\n");
+    if(h->flags & CM_HIT_IS_DUPLICATE) fprintf(fp, "\tCM_HIT_IS_DUPLICATE\n");
+  }
+  if(h->ad == NULL) { 
+    fprintf(fp, "ad        = NULL\n");
+  }
+  else { 
+    cm_alidisplay_Dump(fp, h->ad);
+  }
+  return eslOK;
+}
+
 
 /*****************************************************************
  * 4. Benchmark driver
