@@ -3,7 +3,7 @@
  * Contents:
  *   1. CM_PIPELINE: allocation, initialization, destruction
  *   2. Pipeline API
- *   3. Example 1: search mode (in a sequence db)
+ *   TODO  3. Example 1: search mode (in a sequence db)
  *   TODO: 4. Example 2: scan mode (in an HMM db)
  *   5. Copyright and license information
  * 
@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT 0
+#define DOPRINT  0
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -140,7 +140,7 @@ static int merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1,
  * Throws:    <NULL> on allocation failure.
  */
 CM_PIPELINE *
-cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, enum cm_pipemodes_e mode)
+cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, int Z_setby, enum cm_pipemodes_e mode)
 {
   CM_PIPELINE *pli  = NULL;
   int          seed = esl_opt_GetInteger(go, "--seed");
@@ -160,6 +160,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, enum c
   if ((pli->gxb  = p7_gmx_Create(clen_hint, L_hint))         == NULL) goto ERROR;     
   pli->fsmx = NULL; /* can't allocate this until we know dmin/dmax/W etc. */
   pli->smx  = NULL; /* can't allocate this until we know dmin/dmax/W etc. */
+  pli->fcyk_dmin = pli->fcyk_dmax = pli->final_dmin = pli->final_dmax = NULL;
 
   /* intialize model-dependent parameters, these are invalid until we call cm_pli_NewModel() */
   pli->maxW = 0;
@@ -270,21 +271,13 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, enum c
    * This is database size dependent. Which was passed in. If -Z <x> enabled, we overwrite
    * the passed in value with <x>.
    */
-  if (esl_opt_IsOn(go, "-Z")) { 
+  if (esl_opt_IsUsed(go, "-Z")) { 
       pli->Z_setby = CM_ZSETBY_OPTION;
-      pli->Z       = esl_opt_GetReal(go, "-Z");
+      pli->Z       = (int64_t) (esl_opt_GetReal(go, "-Z") * 1000000.); 
   }
   else { 
-    pli->Z       = Z; /* Z is an input variable to this function */
-    if(pli->Z == 0) { 
-      /* we'll update pli->Z as each new sequence is added */
-      pli->Z_setby = CM_ZSETBY_DBSIZE; 
-    }
-    else { 
-      /* we determined Z from the file and passed it into this function, 
-       * in this case we don't update Z as we read in new seqs */
-      pli->Z_setby = CM_ZSETBY_FILEINFO; 
-    }
+    pli->Z       = Z;       /* Z is an input variable to this function */
+    pli->Z_setby = Z_setby; /* so is Z_setby */
   }
   if(esl_opt_IsUsed(go, "--fZ")) { 
     Z_Mb = esl_opt_GetReal(go, "--fZ"); 
@@ -462,12 +455,13 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, enum c
   }
 
   /* Determine statistics modes for CM stages */
-  pli->fcyk_cm_exp_mode  = (esl_opt_GetBoolean(go, "-g")) ? EXP_CM_GC : EXP_CM_LC;
+  pli->do_glocal_cm_stages = (esl_opt_GetBoolean(go, "-g")) ? TRUE : FALSE;
+  pli->fcyk_cm_exp_mode  = pli->do_glocal_cm_stages ? EXP_CM_GC : EXP_CM_LC;
   if(pli->final_cm_search_opts & CM_SEARCH_INSIDE) { 
-    pli->final_cm_exp_mode = (esl_opt_GetBoolean(go, "-g")) ? EXP_CM_GI : EXP_CM_LI;
+    pli->final_cm_exp_mode = pli->do_glocal_cm_stages ? EXP_CM_GI : EXP_CM_LI;
   }
   else {
-    pli->final_cm_exp_mode = (esl_opt_GetBoolean(go, "-g")) ? EXP_CM_GC : EXP_CM_LC;
+    pli->final_cm_exp_mode = pli->do_glocal_cm_stages ? EXP_CM_GC : EXP_CM_LC;
   }
 
   /* Accounting as we collect results */
@@ -501,6 +495,13 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, enum c
   pli->pos_past_fwdbias  = 0;
   pli->pos_past_gfwdbias = 0;
   pli->pos_past_edefbias = 0;
+
+  pli->n_overflow_fcyk    = 0;
+  pli->n_overflow_final   = 0;
+  pli->n_aln_hboa         = 0;
+  pli->n_aln_hbcyk        = 0;
+  pli->n_aln_dccyk        = 0;
+
   pli->mode             = mode;
   pli->do_top           = (esl_opt_GetBoolean(go, "--bottomonly"))   ? FALSE : TRUE;
   pli->do_bot           = (esl_opt_GetBoolean(go, "--toponly"))      ? FALSE : TRUE;
@@ -568,8 +569,12 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   p7_gmx_Destroy(pli->gxb);
   esl_randomness_Destroy(pli->r);
   p7_domaindef_Destroy(pli->ddef);
-  if(pli->fsmx != NULL && cm != NULL) cm_FreeScanMatrix(cm, pli->fsmx);
-  if(pli->smx != NULL && cm != NULL)  cm_FreeScanMatrix(cm, pli->smx);
+  if(pli->fsmx != NULL && cm != NULL) { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL; }
+  if(pli->smx != NULL  && cm != NULL) { cm_FreeScanMatrix(cm, pli->smx);  pli->smx  = NULL; }
+  if(pli->fcyk_dmin != NULL)          { free(pli->fcyk_dmin);             pli->fcyk_dmin = NULL; }
+  if(pli->fcyk_dmax != NULL)          { free(pli->fcyk_dmax);             pli->fcyk_dmax = NULL; }
+  if(pli->final_dmin != NULL)         { free(pli->final_dmin);            pli->final_dmin = NULL; }
+  if(pli->final_dmax != NULL)         { free(pli->final_dmax);            pli->final_dmax = NULL; }
   free(pli);
 }
 /*---------------- end, CM_PIPELINE object ----------------------*/
@@ -635,41 +640,68 @@ cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int need_fsmx, int need_smx, int *fc
   int status = eslOK;
   int m;
   int i, nsteps;
+  float T;
 
   pli->nmodels++;
   pli->nnodes += cm->clen;
 
-  if(pli->fsmx != NULL) cm_FreeScanMatrix(cm, pli->fsmx);
-  if(pli->smx != NULL)  cm_FreeScanMatrix(cm, pli->smx);
+  if(pli->fsmx != NULL)       { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL; }
+  if(pli->smx != NULL)        { cm_FreeScanMatrix(cm, pli->smx);  pli->smx  = NULL; }
+  if(pli->fcyk_dmin != NULL)  { free(pli->fcyk_dmin);             pli->fcyk_dmin = NULL; }
+  if(pli->fcyk_dmax != NULL)  { free(pli->fcyk_dmax);             pli->fcyk_dmax = NULL; }
+  if(pli->final_dmin != NULL) { free(pli->final_dmin);            pli->final_dmin = NULL; }
+  if(pli->final_dmax != NULL) { free(pli->final_dmax);            pli->final_dmax = NULL; }
 
-  pli->need_fsmx = need_fsmx;
-  pli->need_smx  = need_smx;
+  pli->need_fsmx  = need_fsmx;
+  pli->need_smx   = need_smx;
+  pli->fcyk_dmin  = fcyk_dmin;
+  pli->fcyk_dmax  = fcyk_dmax;
+  pli->final_dmin = final_dmin;
+  pli->final_dmax = final_dmax;
 
   if(pli->need_fsmx) { 
-    pli->fsmx = cm_CreateScanMatrix(cm, cm->W, fcyk_dmin, fcyk_dmax, 
-				    ((fcyk_dmin == NULL && fcyk_dmax == NULL) ? cm->W : fcyk_dmax[0]),
+    pli->fsmx = cm_CreateScanMatrix(cm, cm->W, pli->fcyk_dmin, pli->fcyk_dmax, 
+				    ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? cm->W : pli->fcyk_dmax[0]),
 				    pli->fcyk_beta, 
-				    ((fcyk_dmin == NULL && fcyk_dmax == NULL) ? FALSE : TRUE),
+				    ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? FALSE : TRUE),
 				    TRUE,    /* do     allocate float matrices for CYK filter round */
 				    FALSE);  /* do not allocate int   matrices for CYK filter round  */
   }
   if(pli->need_smx) { 
-    pli->smx  = cm_CreateScanMatrix(cm, cm->W, final_dmin, final_dmax, 
-				    ((final_dmin == NULL && final_dmax == NULL) ? cm->W : final_dmax[0]),
+    pli->smx  = cm_CreateScanMatrix(cm, cm->W, pli->final_dmin, pli->final_dmax, 
+				    ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? cm->W : pli->final_dmax[0]),
 				    pli->final_beta, 
-				    ((final_dmin == NULL && final_dmax == NULL) ? FALSE : TRUE),
+				    ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? FALSE : TRUE),
 				    FALSE,  /* do not allocate float matrices for Inside round */
 				    TRUE);  /* do     allocate int   matrices for Inside round */
   }
   
-  if (pli->Z_setby == p7_ZSETBY_NTARGETS && pli->mode == p7_SCAN_MODELS) pli->Z = pli->nmodels;
+  if (pli->Z_setby == CM_ZSETBY_NTARGETS && pli->mode == CM_SCAN_MODELS) pli->Z = pli->nmodels;
 
+  /* if we're using an E-value threshold and we already know Z, 
+   * determine the bit score for this model that pertains
+   * to that E-value */
+  if (pli->Z_setby == CM_ZSETBY_SSIINFO || pli->Z_setby == CM_ZSETBY_OPTION || pli->Z_setby == CM_ZSETBY_FILEINFO) {
+    if((status = UpdateExpsForDBSize(cm, NULL, (long) pli->Z)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem update exp tail parameters for model %s\n", cm->name);
+    if(pli->by_E) { 
+      if((status = E2MinScore(cm, NULL, pli->final_cm_exp_mode, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
+      pli->T = (double) T;
+    }
+  }
+
+  /* if we're using Rfam GA, NC, or TC cutoffs, update them for this model */
+  if (pli->mode == p7_SEARCH_SEQS && pli->use_bit_cutoffs) { 
+    if((status = cm_pli_NewModelThresholds(pli, cm)) != eslOK) return status;
+  }
+
+  /* setup the bias filters for this model */
   if (pli->do_msvbias || pli->do_vitbias || pli->do_fwdbias || pli->do_gfwdbias || pli->do_edefbias) { 
     for(m = 0; m < nhmm; m++) { 
       p7_bg_SetFilter(bgA[m], omA[m]->M, omA[m]->compo);
     }
   }
 
+  /* copy some values from the model */
   pli->cmW  = cm->W;
   pli->clen = cm->clen;
   /* determine pli->maxW, this will be the number of residues
@@ -704,6 +736,50 @@ cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int need_fsmx, int need_smx, int *fc
   return status;
 }
 
+/* Function:  cm_pli_NewModelThresholds()
+ * Synopsis:  Set reporting and inclusion bit score thresholds on a new model.
+ * Incept:    EPN, Wed Jun 15 14:40:46 2011
+ *            SRE, Sat Oct 17 12:07:43 2009 [Janelia] (p7_pli_NewModelThresholds()
+ *
+ * Purpose:   Set the bit score thresholds on a new model, if we're 
+ *            using Rfam GA, TC, or NC cutoffs for reporting or
+ *            inclusion.
+ *            
+ *            In a "search" pipeline, this only needs to be done once
+ *            per query model, so <cm_pli_NewModelThresholds()> gets 
+ *            called by <cm_pli_NewModel()>.
+ *            
+ *            In a "scan" pipeline, this needs to be called for each
+ *            model.
+ *
+ * Returns:   <eslOK> on success. 
+ *            
+ *            <eslEINVAL> if pipeline expects to be able to use a
+ *            model's bit score thresholds, but this model does not
+ *            have the appropriate ones set.
+ *
+ * Xref:      Written to fix bug #h60 (p7_pli_NewModelThreshold())
+ */
+int
+cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm)
+{
+
+  if (pli->use_bit_cutoffs) { 
+    if(pli->use_bit_cutoffs == CMH_GA) {
+      if (! (cm->flags & CMH_GA)) ESL_FAIL(eslEINVAL, pli->errbuf, "GA bit threshold unavailable for model %s\n", cm->name);
+      pli->T = pli->incT = cm->ga;
+    }
+    else if(pli->use_bit_cutoffs == CMH_TC) {
+      if (! (cm->flags & CMH_TC)) ESL_FAIL(eslEINVAL, pli->errbuf, "TC bit threshold unavailable for model %s\n", cm->name);
+      pli->T = pli->incT = cm->tc;
+    }
+    else if(pli->use_bit_cutoffs == CMH_NC) {
+      if (! (cm->flags & CMH_NC)) ESL_FAIL(eslEINVAL, pli->errbuf, "NC bit threshold unavailable for model %s\n", cm->name);
+      pli->T = pli->incT = cm->nc;
+    }
+  }
+  return eslOK;
+}
 
 /* Function:  cm_pli_NewSeq()
  * Synopsis:  Prepare pipeline for a new sequence (target or query)
@@ -718,25 +794,18 @@ cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int need_fsmx, int need_smx, int *fc
 int
 cm_pli_NewSeq(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t cur_seq_idx)
 {
-  int status;
-  float T;
-
+  /* Update number of residues read/searched */
   pli->nres += sq->n;
-  if (pli->Z_setby == CM_ZSETBY_DBSIZE && pli->mode == CM_SEARCH_SEQS) { 
-    pli->Z = pli->nres;
-    if((status = UpdateExpsForDBSize(cm, NULL, (long) pli->nres))          != eslOK) return status;
-  }
-  if(pli->by_E) { 
-    if((status = E2MinScore(cm, NULL, pli->final_cm_exp_mode, pli->E, &T)) != eslOK) return status;
-    pli->T = (double) T;
-  }
-  /* else, do nothing, -T was set based on the command line -T, or --ga, --tc or --nc */
 
   /* Update cur_seq_idx, which is a unique identifier for the sequence, so 
    * we can reliably remove overlaps. This index is copied to all the 
    * hit objects for all hits found by the pipeline when searching this sequence. */
   pli->cur_seq_idx = cur_seq_idx;
 
+  /* Note that we don't update pli->Z, that must be set at beginning
+   * of search, this differs from hmmsearch and nhmmer, which, by
+   * default update Z as sequences are read.
+   */
   return eslOK;
 }
 
@@ -804,14 +873,15 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
   p1->pos_past_gfwdbias+= p2->pos_past_gfwdbias;
   p1->pos_past_edefbias += p2->pos_past_edefbias;
 
-  if (p1->Z_setby == p7_ZSETBY_NTARGETS)
-    {
-      p1->Z += (p1->mode == p7_SCAN_MODELS) ? p2->nmodels : p2->nseqs;
-    }
-  else
-    {
-      p1->Z = p2->Z;
-    }
+  p1->n_overflow_fcyk  += p2->n_overflow_fcyk;
+  p1->n_overflow_final += p2->n_overflow_final;
+  p1->n_aln_hboa       += p2->n_aln_hboa;
+  p1->n_aln_hbcyk      += p2->n_aln_hbcyk;
+  p1->n_aln_dccyk      += p2->n_aln_dccyk;
+
+  if (p1->Z_setby == p7_ZSETBY_NTARGETS) { 
+    p1->Z += (p1->mode == p7_SCAN_MODELS) ? p2->nmodels : p2->nseqs;
+  }
 
   return eslOK;
 }
@@ -1555,6 +1625,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
   int                 do_optacc;            /* TRUE to do optimal accuracy alignment */
   int                 do_postcode;          /* TRUE to derive posteriors for hit alignments */
   int                 do_hbanded;           /* TRUE to use HMM bands for alignment */
+  int                 do_nonbanded;         /* TRUE to align without bands (instead of using HMM bands) */
   ESL_STOPWATCH      *watch = NULL;         /* stopwatch for timing alignment step */
   float         optacc_sc, ins_sc, cyk_sc; /* optimal accuracy score, inside score, CYK score */
 
@@ -1617,7 +1688,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
 			       NULL,                               /* results to add to, irrelevant here */
 			       pli->do_null3,                      /* do the NULL3 correction? */
 			       cm->hbmx,                           /* the HMM banded matrix */
-			       1024.,                              /* upper limit for size of DP matrix, 1 Gb */
+			       pli->hb_size_limit,                 /* upper limit for size of DP matrix */
 			       cyk_env_cutoff,                     /* bit score == F6env P value, cutoff for envelope redefinition */
 			       (pli->do_cykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
 			       (pli->do_cykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
@@ -1626,6 +1697,17 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
 	else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
       }
       if(do_qdb_or_nonbanded_filter_scan) { /* careful, different from just an 'else', b/c we may have just set this as true if status == eslERANGE */
+	/* make sure we have a ScanMatrix_t for this round, if not build one,
+	 * this should be okay because we should only very rarely need to do this */
+	pli->n_overflow_fcyk++;
+	if(pli->fsmx == NULL) { 
+	  pli->fsmx = cm_CreateScanMatrix(cm, cm->W, pli->fcyk_dmin, pli->fcyk_dmax, 
+					  ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? cm->W : pli->fcyk_dmax[0]),
+					  pli->fcyk_beta, 
+					  ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? FALSE : TRUE),
+					  TRUE,    /* do     allocate float matrices for CYK filter round */
+					  FALSE);  /* do not allocate int   matrices for CYK filter round  */
+	}
 	if((status = FastCYKScan(cm, errbuf, pli->fsmx, sq->dsq, es[i], ee[i],
 				 0.,                                 /* minimum score to report, irrelevant */
 				 NULL,                               /* results to add to, irrelevant here */
@@ -1678,7 +1760,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
 				   do_final_greedy ? tmp_results : results, /* our results data structure that will store hit(s) */
 				   pli->do_null3,     /* do the NULL3 correction? */
 				   cm->hbmx,          /* the HMM banded matrix */
-				   1024.,             /* upper limit for size of DP matrix, 1 Gb */
+				   pli->hb_size_limit,/* upper limit for size of DP matrix */
 				   &inssc);           /* best score, irrelevant here */
 	/* if status == eslERANGE: HMM banded scan was skipped b/c mx needed to be too large, 
 	 * we'll repeat the scan with QDBs or without bands below */
@@ -1692,7 +1774,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
 			       do_final_greedy ? tmp_results : results, /* our results data structure that will store hit(s) */
 			       pli->do_null3,                      /* do the NULL3 correction? */
 			       cm->hbmx,                           /* the HMM banded matrix */
-			       1024.,                              /* upper limit for size of DP matrix, 1 Gb */
+			       pli->hb_size_limit,                 /* upper limit for size of DP matrix */
 			       0., NULL, NULL,                     /* envelope redefinition parameters, irrelevant here */
 			       &cyksc);                            /* best score, irrelevant here */
 	/* if status == eslERANGE: HMM banded scan was skipped b/c mx needed to be too large, 
@@ -1706,7 +1788,17 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
        * Run non-HMM banded (probably qdb) version of CYK or Inside *
        *******************************************************************/
       if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is Inside */
-	/*printf("calling non-HMM banded Inside scan\n");*/
+	/* make sure we have a ScanMatrix_t for this round, if not build one,
+	 * this should be okay because we should only very rarely need to do this */
+	pli->n_overflow_final++;
+	if(pli->smx == NULL) { 
+	  pli->smx  = cm_CreateScanMatrix(cm, cm->W, pli->final_dmin, pli->final_dmax, 
+					  ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? cm->W : pli->final_dmax[0]),
+					  pli->final_beta, 
+					  ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? FALSE : TRUE),
+					  FALSE,  /* do not allocate float matrices for Inside round */
+					  TRUE);  /* do     allocate int   matrices for Inside round */
+	}
 	if((status = FastIInsideScan(cm, errbuf, pli->smx, sq->dsq, es[i], ee[i],
 				     pli->T,            /* minimum score to report */
 				     do_final_greedy ? tmp_results : results, /* our results data structure that will store hit(s) */
@@ -1716,7 +1808,16 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
 	  printf("ERROR: %s\n", errbuf); return status; }
       }
       else { /* final algorithm is CYK */
-	/*printf("calling non-HMM banded CYK scan\n");*/
+	/* make sure we have a ScanMatrix_t for this round, if not build one,
+	 * this should be okay because we should only very rarely need to do this */
+	if(pli->fsmx == NULL) { 
+	  pli->fsmx = cm_CreateScanMatrix(cm, cm->W, pli->fcyk_dmin, pli->fcyk_dmax, 
+					  ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? cm->W : pli->fcyk_dmax[0]),
+					  pli->fcyk_beta, 
+					  ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? FALSE : TRUE),
+					  TRUE,    /* do     allocate float matrices for CYK filter round */
+					  FALSE);  /* do not allocate int   matrices for CYK filter round  */
+	}
 	if((status = FastCYKScan(cm, errbuf, pli->fsmx, sq->dsq, es[i], ee[i],
 				 pli->T,            /* minimum score to report */
 				 do_final_greedy ? tmp_results : results, /* our results data structure that will store hit(s) */
@@ -1759,16 +1860,16 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
 #if DOPRINT
       printf("SURVIVOR envelope     [%10ld..%10ld] survived Inside    %6.2f bits  P %g\n", hit->start, hit->stop, hit->score, hit->pvalue);
 #endif
-
       /* Get an alignment of the hit, if nec */
       if(pli->do_alignments) { 
 	esl_stopwatch_Start(watch);  
 	
 	/* set defaults, these may be changed below */
-	optacc_sc   = 0.;
-	do_optacc   = FALSE;
-	do_postcode = FALSE;
-	do_hbanded  = FALSE;
+	optacc_sc    = 0.;
+	do_optacc    = FALSE;
+	do_postcode  = FALSE;
+	do_hbanded   = FALSE;
+	do_nonbanded = FALSE;
 	
 	if(pli->align_hbanded) { 
 	  /* Align with HMM bands, if we can do it in the allowed amount of memory */
@@ -1799,39 +1900,52 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
 	   */
 	  
 	  if((2*hbmx_Mb + shmx_Mb) < pli->hb_size_limit) { /* posteriors require 2 CM_HB_MX objects */
-	    do_optacc   = (pli->use_cyk) ? FALSE : TRUE; 
-	    do_postcode = TRUE;
-	    do_hbanded  = TRUE;
+	    pli->n_aln_hboa++;
+	    do_optacc    = (pli->use_cyk) ? FALSE : TRUE; 
+	    do_postcode  = TRUE;
+	    do_hbanded   = TRUE;
+	    do_nonbanded = FALSE;
 	    total_Mb = 2*hbmx_Mb + shmx_Mb;
 	  }
 	  else if((hbmx_Mb + shmx_Mb) < pli->hb_size_limit) { 
-	    do_optacc   = FALSE; /* optacc requires 2 CM_HB_MX matrices, and they're too big */
-	    do_postcode = FALSE; /* ditto */
-	    do_hbanded  = TRUE;  
+	    pli->n_aln_hbcyk++;
+	    do_optacc    = FALSE; /* optacc requires 2 CM_HB_MX matrices, and they're too big */
+	    do_postcode  = FALSE; /* ditto */
+	    do_hbanded   = TRUE;  
+	    do_nonbanded = FALSE;
 	    total_Mb = hbmx_Mb + shmx_Mb;
 	  }
 	  else { /* not enough memory for HMM banded alignment, fall back to D&C CYK */
-	    do_optacc   = FALSE;
-	    do_postcode = FALSE;
-	    do_hbanded  = FALSE;
+	    pli->n_aln_dccyk++;
+	    do_optacc    = FALSE;
+	    do_postcode  = FALSE;
+	    do_hbanded   = FALSE;
+	    do_nonbanded = TRUE;
 	  }
 	} /* end of if(pli->do_hbanded) */
 	
 	if(do_hbanded) { 
-	  if((status = FastAlignHB(cm, errbuf, NULL, subdsq, hitlen, 1, hitlen, 
-				   pli->hb_size_limit,                   /* limit for a single CM_HB_MX, so this is safe */
-				   cm->hbmx, shmx,                       /* inside/posterior, shadow matrices */
-				   do_optacc,                            /* use optimal accuracy alg? */
-				   FALSE,                                /* don't sample aln from Inside matrix */
-				   (do_postcode ? out_mx : NULL),        /* outside DP matrix */
-				   &tr,                                  /* parsetree */
-				   (do_postcode ? &postcode : NULL),     /* posterior codes */
-				   (do_optacc   ? &optacc_sc : &cyk_sc), /* optimal accuracy or CYK score */
-				   &ins_sc))                             /* inside score */
-	     != eslOK) return status;
+	  status = FastAlignHB(cm, errbuf, NULL, subdsq, hitlen, 1, hitlen, 
+			       pli->hb_size_limit,                   /* limit for a single CM_HB_MX, so this is safe */
+			       cm->hbmx, shmx,                       /* inside/posterior, shadow matrices */
+			       do_optacc,                            /* use optimal accuracy alg? */
+			       FALSE,                                /* don't sample aln from Inside matrix */
+			       (do_postcode ? out_mx : NULL),        /* outside DP matrix */
+			       &tr,                                  /* parsetree */
+			       (do_postcode ? &postcode  : NULL),    /* posterior codes */
+			       (do_optacc   ? &optacc_sc : &cyk_sc), /* optimal accuracy or CYK score */
+			       (do_optacc   ? &ins_sc    : NULL));   /* inside score, NULL if we're not doing opt acc */
+	  if(status == eslERANGE) { 
+	    /* matrix was too big, despite our pre-check (should be rare), use D&C CYK */
+	    do_optacc    = FALSE;
+	    do_postcode  = FALSE;
+	    do_hbanded   = FALSE; 
+	    do_nonbanded = TRUE;
+	  }
+	  else if(status != eslOK) return status;
 	  esl_stopwatch_Stop(watch); /* we started it above before we calc'ed the CP9 bands */ 
 	}
-	else { /* not hmm banded, use D&C CYK (slow!) */
+	if((! do_hbanded) && do_nonbanded) { /* use non-banded D&C CYK (slow!) */
 	  esl_stopwatch_Start(watch);  
 	  cyk_sc = CYKDivideAndConquer(cm, subdsq, hitlen, 0, 1, hitlen, &tr, NULL, NULL); 
 	  esl_stopwatch_Stop(watch);  
@@ -1839,12 +1953,51 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
 	  postcode = NULL;
 	}
 	
-	hit->ad = cm_alidisplay_Create(cm->abc, tr, cm, cmcons, sq, hit->start, 
-				       postcode, optacc_sc, do_optacc, do_hbanded, total_Mb, watch->elapsed);
+	hit->ad = cm_alidisplay_Create(cm->abc, tr, cm, cmcons, sq, hit->start, postcode, 
+				       (do_optacc) ? optacc_sc : cyk_sc, 
+				       do_optacc, do_hbanded, total_Mb, watch->elapsed);
 	/*cm_alidisplay_Dump(stdout, hit->ad);*/
 	FreeParsetree(tr);
 	free(postcode);
       } /* end of 'if(pli->do_alignments' */
+
+      /* Finally, if we're using model-specific bit score thresholds,
+       * determine if the significance of the hit (is it reported
+       * and/or included?)  Adapted from Sean's comments at an
+       * analogous point in p7_pipeline():
+       *
+       * If we're using model-specific bit score thresholds (GA | TC | NC)
+       * and we're in a cmscan pipeline (mode = CM_SCAN_MODELS), then we
+       * *must* apply those reporting or inclusion thresholds now, because
+       * this model is about to go away; we won't have its thresholds
+       * after all targets have been processed.
+       * 
+       * If we're using E-value thresholds and we don't know the
+       * search space size (Z_setby == CM_ZSETBY_NTARGETS), we 
+       * *cannot* apply those thresholds now, and we *must* wait 
+       * until all targets have been processed (see cm_tophits_Threshold()).
+       * 
+       * For any other thresholding, it doesn't matter whether we do
+       * it here (model-specifically) or at the end (in
+       * cm_tophits_Threshold()). 
+       * 
+       * What we actually do, then, is to set the flags if we're using
+       * model-specific score thresholds (regardless of whether we're
+       * in a scan or a search pipeline); otherwise we leave it to 
+       * cm_tophits_Threshold(). cm_tophits_Threshold() is always
+       * responsible for *counting* the reported, included sequences.
+       * 
+       * [xref J5/92]
+       */
+
+      if (pli->use_bit_cutoffs) { 
+	if (cm_pli_TargetReportable(pli, hit->score, hit->evalue)) { /* evalue is invalid, but irrelevant if pli->use_bit_cutoffs */
+	  hit->flags |= CM_HIT_IS_REPORTED;
+	  if (cm_pli_TargetIncludable(pli, hit->score, hit->evalue)) /* ditto */
+	    hit->flags |= CM_HIT_IS_INCLUDED;
+	}
+      }
+      
     } /* end of 'for(h = nhit'... */
 
     if(do_final_greedy) { 
@@ -1859,6 +2012,9 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
     FreeResults(results);
   }
   cm->tau = save_tau;
+  /* free the scan matrices if we just allocated them */
+  if((! pli->need_fsmx) && (pli->fsmx != NULL)) { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL;  }
+  if((! pli->need_smx)  && (pli->smx != NULL))  { cm_FreeScanMatrix(cm, pli->smx);  pli->smx = NULL; }
   if(out_mx != NULL) { cm_hb_mx_Destroy(out_mx); out_mx = NULL; }
   if(shmx   != NULL) { cm_hb_shadow_mx_Destroy(shmx); shmx = NULL; }
   if(watch  != NULL) { esl_stopwatch_Destroy(watch); }
@@ -2223,7 +2379,6 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, P7_OPROFILE **om,
   ESL_EXCEPTION(eslEMEM, "Out of memory\n");
 }
   
-
 /* Function:  cm_pli_Statistics()
  * Synopsis:  Final statistics output from a processing pipeline.
  * Incept:    EPN, Fri Sep 24 16:48:06 2010 
@@ -2241,130 +2396,165 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, P7_OPROFILE **om,
 int
 cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 {
-  double ntargets; 
+  double  ntargets; 
+  int64_t nwin_fcyk;  /* number of windows CYK filter evaluated */
+  int64_t nwin_final; /* number of windows final stage evaluated */
 
   fprintf(ofp, "Internal pipeline statistics summary:\n");
   fprintf(ofp, "-------------------------------------\n");
   if (pli->mode == CM_SEARCH_SEQS) {
-    fprintf(ofp,   "Query model(s):               %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli->nmodels, pli->nnodes);
-    fprintf(ofp,   "Target sequences:             %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli->nres);
+    fprintf(ofp,   "Query model(s):                                    %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli->nmodels, pli->nnodes);
+    fprintf(ofp,   "Target sequences:                                  %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli->nres);
     ntargets = pli->nseqs;
   } else {
-    fprintf(ofp, "Query sequence(s):                    %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli->nres);
-    fprintf(ofp, "Target model(s):                      %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli->nmodels, pli->nnodes);
+    fprintf(ofp, "Query sequence(s):                                   %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli->nres);
+    fprintf(ofp, "Target model(s):                                    %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli->nmodels, pli->nnodes);
     ntargets = pli->nmodels;
   }
 
   if(pli->do_msv) { 
-    fprintf(ofp, "Windows passing MSV filter:   %15" PRId64 "  (%.4g); expected (%.4g)\n",
+    fprintf(ofp, "Windows   passing  local HMM MSV           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_msv,
 	    (double)pli->pos_past_msv / pli->nres ,
 	    pli->F1);
+    nwin_fcyk = nwin_final = pli->n_past_msv;
   }
   else { 
-    fprintf(ofp, "Windows passing MSV filter:   %15s  (off)\n", "");
+    fprintf(ofp, "Windows   passing  local HMM MSV           filter: %15s  (off)\n", "");
   }
 
   if(pli->do_msvbias) { 
-    fprintf(ofp, "Windows passing MSV bias fil: %15" PRId64 "  (%.4g); expected (%.4g)\n",
+    fprintf(ofp, "Windows   passing  local HMM MSV      bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_msvbias,
 	    (double)pli->pos_past_msvbias / pli->nres ,
 	    pli->F1b);
+    nwin_fcyk = nwin_final = pli->n_past_msvbias;
   }
 
   if(pli->do_vit) { 
-    fprintf(ofp, "Windows passing Vit filter:   %15" PRId64 "  (%.4g); expected (%.4g)\n",
+    fprintf(ofp, "Windows   passing  local HMM Viterbi       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_vit,
 	    (double)pli->pos_past_vit / pli->nres ,
 	    pli->F2);
+    nwin_fcyk = nwin_final = pli->n_past_vit;
   }
   else { 
-    fprintf(ofp, "Windows passing Vit filter:   %15s  (off)\n", "");
+    fprintf(ofp, "Windows   passing  local HMM Viterbi       filter: %15s  (off)\n", "");
   }
 
   if(pli->do_vitbias) { 
-    fprintf(ofp, "Windows passing Vit bias fil: %15" PRId64 "  (%.4g); expected (%.4g)\n",
+    fprintf(ofp, "Windows   passing  local HMM Viterbi  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_vitbias,
 	    (double)pli->pos_past_vitbias / pli->nres ,
 	    pli->F2b);
+    nwin_fcyk = nwin_final = pli->n_past_vitbias;
   }
   else { 
-    fprintf(ofp, "Windows passing Vit bias fil: %15s  (off)\n", "");
+    fprintf(ofp, "Windows   passing  local HMM Viterbi  bias filter: %15s  (off)\n", "");
   }
 
   if(pli->do_fwd) { 
-    fprintf(ofp, "Windows passing Fwd filter:   %15" PRId64 "  (%.4g); expected (%.4g)\n",
+    fprintf(ofp, "Windows   passing  local HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_fwd,
 	    (double)pli->pos_past_fwd / pli->nres ,
 	    pli->F3);
+    nwin_fcyk = nwin_final = pli->n_past_fwd;
   }
   else { 
-    fprintf(ofp, "Windows passing Fwd filter:   %15s  (off)\n", "");
+    fprintf(ofp, "Windows   passing  local HMM Forward       filter: %15s  (off)\n", "");
   }
 
   if(pli->do_fwdbias) { 
-    fprintf(ofp, "Windows passing Fwd bias fil: %15" PRId64 "  (%.4g); expected (%.4g)\n",
+    fprintf(ofp, "Windows   passing  local HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_fwdbias,
 	    (double)pli->pos_past_fwdbias / pli->nres ,
 	    pli->F3b);
+    nwin_fcyk = nwin_final = pli->n_past_fwdbias;
   }
   else { 
-    fprintf(ofp, "Windows passing Fwd bias fil: %15s  (off)\n", "");
+    fprintf(ofp, "Windows   passing  local HMM Forward  bias filter: %15s  (off)\n", "");
   }
 
   if(pli->do_gfwd) { 
-    fprintf(ofp, "Windows passing gFwd filter:  %15" PRId64 "  (%.4g); expected (%.4g)\n",
+    fprintf(ofp, "Windows   passing glocal HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_gfwd,
 	    (double)pli->pos_past_gfwd / pli->nres ,
 	    pli->F4);
+    nwin_fcyk = nwin_final = pli->n_past_gfwd;
   }
   else { 
-    fprintf(ofp, "Windows passing gFwd filter:  %15s  (off)\n", "");
+    fprintf(ofp, "Windows   passing glocal HMM Forward       filter: %15s  (off)\n", "");
   }
   if(pli->do_gfwdbias) { 
-    fprintf(ofp, "Windows passing gFwd bias fil:%15" PRId64 "  (%.4g); expected (%.4g)\n",
+    fprintf(ofp, "Windows   passing glocal HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_gfwdbias,
 	    (double)pli->pos_past_gfwdbias / pli->nres ,
 	    pli->F4b);
+    nwin_fcyk = nwin_final = pli->n_past_gfwdbias;
   }
   else { 
-    fprintf(ofp, "Windows passing gFwd bias fil: %15s  (off)\n", "");
+    fprintf(ofp, "Windows   passing glocal HMM Forward  bias filter: %15s  (off)\n", "");
   }
 
   if(pli->do_envelopes) { 
-    fprintf(ofp, "Windows passing envelope dfn: %15" PRId64 "  (%.4g); expected (%.4g)\n",
+    fprintf(ofp, "Envelopes passing glocal HMM envelope defn filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_edef,
 	    (double)pli->pos_past_edef / pli->nres ,
 	    pli->F5);
+    nwin_fcyk = nwin_final = pli->n_past_edef;
   }
   else { 
-    fprintf(ofp, "Windows passing envelope dfn: %15s  (off)\n", "");
+    fprintf(ofp, "Envelopes passing glocal HMM envelope defn filter: %15s  (off)\n", "");
   }
 
   if(pli->do_edefbias) { 
-    fprintf(ofp, "Windows passing env bias fil: %15" PRId64 "  (%.4g); expected (%.4g)\n",
+    fprintf(ofp, "Envelopes passing glocal HMM envelope bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_edefbias,
 	    (double)pli->pos_past_edefbias / pli->nres ,
 	    pli->F5b);
+    nwin_fcyk = nwin_final = pli->n_past_edefbias;
   }
   else { 
-    fprintf(ofp, "Windows passing env bias fil: %15s  (off)\n", "");
+    fprintf(ofp, "Windows passing glocal HMM envelope bias filter: %15s  (off)\n", "");
   }
 
   if(pli->do_cyk) { 
-    fprintf(ofp, "Windows passing CYK filter:   %15" PRId64 "  (%.4g); expected (%.4g)\n",
+    fprintf(ofp, "Envelopes passing %6s CM  CYK           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
+	    (pli->do_glocal_cm_stages) ? "glocal" : "local",
 	    pli->n_past_cyk,
 	    (double)pli->pos_past_cyk / pli->nres ,
 	    pli->F6);
+    nwin_final = pli->n_past_cyk;
   }
   else { 
-    fprintf(ofp, "Windows passing CYK filter:   %15s  (off)\n", "");
+    fprintf(ofp, "Envelopes passing %6s CM  CYK           filter: %15s  (off)\n", 
+	    (pli->do_glocal_cm_stages) ? "glocal" : "local",
+	    "");
   }
 
-  fprintf(ofp, "Total hits:                   %15d  (%.4g)\n",
+  fprintf(ofp, "Total hits reported:                               %15d  (%.4g)\n",
           (int)pli->n_output,
           (double)pli->pos_output / pli->nres );
 
+  fprintf(ofp, "\n");
+  if(nwin_fcyk > 0) { 
+    fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15" PRId64 " (%.4g)\n", 
+	    "CYK", 
+	    pli->n_overflow_fcyk,
+	    (double)pli->n_overflow_fcyk / (double) nwin_fcyk);
+  }
+  else { 
+    fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15" PRId64 " (%.4g)\n", 0., 0.);
+  }
+  if(nwin_final > 0) { 
+    fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15" PRId64 " (%.4g)\n", 
+	    (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
+	    pli->n_overflow_final,
+	    (double)pli->n_overflow_final / (double) nwin_final);
+  }
+  else { 
+    fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15" PRId64 " (%.4g)\n", 0., 0.);
+  }
   if (w != NULL) {
     esl_stopwatch_Display(ofp, w, "# CPU time: ");
     fprintf(ofp, "# Mc/sec: %.2f\n", 

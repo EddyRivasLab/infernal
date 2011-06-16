@@ -67,10 +67,8 @@ typedef struct {
 } WORKER_INFO;
 
 #define REPOPTS     "-E,-T,--cut_ga,--cut_nc,--cut_tc"
-#define DOMREPOPTS  "--domE,--domT,--cut_ga,--cut_nc,--cut_tc"
 #define INCOPTS     "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
-#define INCDOMOPTS  "--incdomE,--incdomT,--cut_ga,--cut_nc,--cut_tc"
-#define THRESHOPTS  "-E,-T,--domE,--domT,--incE,--incT,--incdomE,--incdomT,--cut_ga,--cut_nc,--cut_tc"
+#define THRESHOPTS  "-E,-T,--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
 #define XFASTMIDMAXOPTS "--max,--F1,--F2,--F3,--F4,--F5,--F6,--noF1,--noF2,--noF3,--nogfwd,--nocyk,--nohmm,--hmm"
 #define TIMINGOPTS  "--time-F1,--time-F2,--time-F3,--time-dF3,--time-bfil,--time-F4"
 
@@ -87,15 +85,15 @@ static ESL_OPTIONS options[] = {
   { "-h",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "show brief help on version and usage",                         1 },
   /* Control of output */
   { "-o",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "direct output to file <f>, not stdout",                        2 },
-  { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of per-sequence hits to file <s>",        2 },
+  { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of hits to file <s>",                     2 },
   { "--acc",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "prefer accessions over names in output",                       2 },
   { "--noali",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "don't output alignments, so output is smaller",                2 },
   { "--notextw",    eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL, "--textw",        "unlimit ASCII text output line width",                         2 },
   { "--textw",      eslARG_INT,    "120", NULL, "n>=120",NULL,  NULL, "--notextw",      "set max width of ASCII text output lines",                     2 },
   /* Control of scoring system */
-  { "--popen",      eslARG_REAL,  "0.02", NULL, "0<=x<0.5",NULL,  NULL,  NULL,              "gap open probability",                                         3 },
-  { "--pextend",    eslARG_REAL,   "0.4", NULL, "0<=x<1",  NULL,  NULL,  NULL,              "gap extend probability",                                       3 },
-  { "--mxfile",     eslARG_INFILE,  NULL, NULL, NULL,      NULL,  NULL,  NULL,              "substitution score matrix [default: BLOSUM62]",                3 },
+  { "--popen",      eslARG_REAL,  "0.02", NULL, "0<=x<0.5",NULL,  NULL,  NULL,          "gap open probability",                                         3 },
+  { "--pextend",    eslARG_REAL,   "0.4", NULL, "0<=x<1",  NULL,  NULL,  NULL,          "gap extend probability",                                       3 },
+  { "--mxfile",     eslARG_INFILE,  NULL, NULL, NULL,      NULL,  NULL,  NULL,          "substitution score matrix [default: BLOSUM62]",                3 },
   /* Control of reporting thresholds */
   { "-E",           eslARG_REAL,  "10.0", NULL, "x>0",   NULL,  NULL,  REPOPTS,         "report sequences <= this E-value threshold in output",         4 },
   { "-T",           eslARG_REAL,   FALSE, NULL, NULL,    NULL,  NULL,  REPOPTS,         "report sequences >= this score threshold in output",           4 },
@@ -103,9 +101,9 @@ static ESL_OPTIONS options[] = {
   { "--incE",       eslARG_REAL,  "0.01", NULL, "x>0",   NULL,  NULL,  INCOPTS,         "consider sequences <= this E-value threshold as significant",  5 },
   { "--incT",       eslARG_REAL,   FALSE, NULL, NULL,    NULL,  NULL,  INCOPTS,         "consider sequences >= this score threshold as significant",    5 },
   /* Model-specific thresholding for both reporting and inclusion */
-  { "--cut_ga",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use profile's GA gathering cutoffs as reporting thresholds",   6 },
-  { "--cut_nc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use profile's NC noise cutoffs as reporting thresholds",       6 },
-  { "--cut_tc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use profile's TC trusted cutoffs as reporting thresholds",     6 },
+  { "--cut_ga",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use CM's GA gathering cutoffs as reporting thresholds",   6 },
+  { "--cut_nc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use CM's NC noise cutoffs as reporting thresholds",       6 },
+  { "--cut_tc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use CM's TC trusted cutoffs as reporting thresholds",     6 },
   /* Control of acceleration pipeline */
   { "--fZ",         eslARG_REAL,    NULL, NULL, NULL,    NULL,  NULL,  "--rfam",        "set heuristic filters to defaulst used for a db of size <x> Mb", 7 },
   { "--rfam",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--fZ",          "set heuristic filters at Rfam-level (more speed, less power)", 7 },
@@ -197,14 +195,7 @@ static ESL_OPTIONS options[] = {
   /* experimental options */
   { "--cp9noel",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            "-g", "turn OFF local ends in cp9 HMMs", 20 },
   { "--cp9gloc",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,  "-g,--cp9noel", "configure CP9 HMM in glocal mode", 20 },
-
-/* Not used, but retained because esl option-handling code errors if it isn't kept here.  Placed in group 99 so it doesn't print to help*/
-  { "--domZ",       eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "Not used",   99 },
-  { "--domE",       eslARG_REAL,  "10.0", NULL, "x>0",   NULL,  NULL,  DOMREPOPTS,      "Not used",   99 },
-  { "--domT",       eslARG_REAL,   FALSE, NULL, NULL,    NULL,  NULL,  DOMREPOPTS,      "Not used",   99 },
-  { "--incdomE",    eslARG_REAL,  "0.01", NULL, "x>0",   NULL,  NULL,  INCDOMOPTS,      "Not used",    99 },
-  { "--incdomT",    eslARG_REAL,   FALSE, NULL, NULL,    NULL,  NULL,  INCDOMOPTS,      "Not used",      99 },
-/* will eventually bring these back, but store in group 99 for now, so they don't print to help*/
+/* will eventually bring these back, but store in group 99 for now, so they don't print to help */
   { "--qformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert query <seqfile> is in format <s>: no autodetection",   99 },
   { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert target <seqfile> is in format <s>>: no autodetection", 99 },
 
@@ -214,6 +205,9 @@ static ESL_OPTIONS options[] = {
 #ifdef HAVE_MPI
   { "--stall",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--mpi", NULL,            "arrest after start: for debugging MPI under gdb",             12 },  
   { "--mpi",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  MPIOPTS,         "run as an MPI parallel program",                              12 },
+  /* Searching only a subset of sequences in the target database, currently requires MPI b/c SSI is required */
+  { "--sidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "start searching at sequence index <n> in target db SSI index", 9 },
+  { "--eidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "stop  searching at sequence index <n> in target db SSI index", 9 },
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -228,10 +222,10 @@ struct cfg_s {
   char            *dbfile;           /* target sequence database file                   */
   char            *cmfile;           /* query HMM file                                  */
   int64_t          Z;                /* database size, in nucleotides                   */
-
-  int              do_mpi;            /* TRUE if we're doing MPI parallelization         */
-  int              nproc;             /* how many MPI processes, total                   */
-  int              my_rank;           /* who am I, in 0..nproc-1                         */
+  int              Z_setby;          /* how Z was set: CM_ZSETBY_SSIINFO, CM_ZSETBY_OPTION, CM_ZSETBY_FILEINFO */
+  int              do_mpi;           /* TRUE if we're doing MPI parallelization         */
+  int              nproc;            /* how many MPI processes, total                   */
+  int              my_rank;          /* who am I, in 0..nproc-1                         */
 };
 
 static char usage[]  = "[options] <query cmfile> <target seqfile>";
@@ -285,6 +279,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     puts("\nOptions directing output:");
     esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
     
+    puts("\nOptions for searching only a subset of target sequences:");
+    esl_opt_DisplayHelp(stdout, go, 9, 2, 80); 
+
     puts("\nOptions controlling reporting thresholds:");
     esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
     
@@ -327,66 +324,69 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
 {
   cm_banner(ofp, go->argv[0], banner);
   
-                                         fprintf(ofp, "# query CM file:                         %s\n", cmfile);
-                                         fprintf(ofp, "# target sequence database:              %s\n", seqfile);
-  if (esl_opt_IsUsed(go, "-o"))          fprintf(ofp, "# output directed to file:               %s\n",      esl_opt_GetString(go, "-o"));
-  if (esl_opt_IsUsed(go, "--tblout"))    fprintf(ofp, "# per-seq hits tabular output:           %s\n",      esl_opt_GetString(go, "--tblout"));
-  if (esl_opt_IsUsed(go, "--acc"))       fprintf(ofp, "# prefer accessions over names:          yes\n");
-  if (esl_opt_IsUsed(go, "--noali"))     fprintf(ofp, "# show alignments in output:             no\n");
-  if (esl_opt_IsUsed(go, "--notextw"))   fprintf(ofp, "# max ASCII text line length:            unlimited\n");
-  if (esl_opt_IsUsed(go, "--textw"))     fprintf(ofp, "# max ASCII text line length:            %d\n",             esl_opt_GetInteger(go, "--textw"));
-  if (esl_opt_IsUsed(go, "--popen"))     fprintf(ofp, "# gap open probability:                  %f\n",             esl_opt_GetReal  (go, "--popen"));
-  if (esl_opt_IsUsed(go, "--pextend"))   fprintf(ofp, "# gap extend probability:                %f\n",             esl_opt_GetReal  (go, "--pextend"));
-  if (esl_opt_IsUsed(go, "--mxfile"))    fprintf(ofp, "# subst score matrix:                    %s\n",             esl_opt_GetString(go, "--mxfile"));
-  if (esl_opt_IsUsed(go, "-E"))          fprintf(ofp, "# sequence reporting threshold:          E-value <= %g\n",  esl_opt_GetReal(go, "-E"));
-  if (esl_opt_IsUsed(go, "-T"))          fprintf(ofp, "# sequence reporting threshold:          score >= %g\n",    esl_opt_GetReal(go, "-T"));
-  if (esl_opt_IsUsed(go, "--incE"))      fprintf(ofp, "# sequence inclusion threshold:          E-value <= %g\n",  esl_opt_GetReal(go, "--incE"));
-  if (esl_opt_IsUsed(go, "--incT"))      fprintf(ofp, "# sequence inclusion threshold:          score >= %g\n",    esl_opt_GetReal(go, "--incT"));
-  if (esl_opt_IsUsed(go, "--cut_ga"))    fprintf(ofp, "# model-specific thresholding:           GA cutoffs\n");
-  if (esl_opt_IsUsed(go, "--cut_nc"))    fprintf(ofp, "# model-specific thresholding:           NC cutoffs\n");
-  if (esl_opt_IsUsed(go, "--cut_tc"))    fprintf(ofp, "# model-specific thresholding:           TC cutoffs\n");
-  if (esl_opt_IsUsed(go, "--cyk"))       fprintf(ofp, "# use CYK for final search stage         on\n");
-  if (esl_opt_IsUsed(go, "--fqdb"))      fprintf(ofp, "# QDBs (CYK filter stage)                on\n");
-  if (esl_opt_IsUsed(go, "--fsums"))     fprintf(ofp, "# HMM bands from sums (filter)           on\n");
-  if (esl_opt_IsUsed(go, "--qdb"))       fprintf(ofp, "# QDBs (final stage)                     on\n");
-  if (esl_opt_IsUsed(go, "--nonbanded")) fprintf(ofp, "# No bands (final stage)                 on\n");
-  if (esl_opt_IsUsed(go, "--sums"))      fprintf(ofp, "# HMM bands from sums (final)            on\n");
-  if (esl_opt_IsUsed(go, "--max"))       fprintf(ofp, "# Max sensitivity mode:                  on [all heuristic filters off]\n");
-  if (esl_opt_IsUsed(go, "--fZ"))        fprintf(ofp, "# Filters set as if DB size in Mb is:    %f\n", esl_opt_GetReal(go, "--fZ"));
-  if (esl_opt_IsUsed(go, "--rfam"))      fprintf(ofp, "# Rfam pipeline mode:                    on\n");
-  if (esl_opt_IsUsed(go, "--noenvdef"))  fprintf(ofp, "# Envelope definition prior to CM search:off\n");
-  if (esl_opt_IsUsed(go, "--pad"))       fprintf(ofp, "# hit padding strategy:                  on\n");
-  if (esl_opt_IsUsed(go, "--noF1"))      fprintf(ofp, "# HMM MSV filter:                        off\n");
-  if (esl_opt_IsUsed(go, "--noF2"))      fprintf(ofp, "# HMM Vit filter:                        off\n");
-  if (esl_opt_IsUsed(go, "--noF3"))      fprintf(ofp, "# HMM Fwd filter:                        off\n");
-  if (esl_opt_IsUsed(go, "--noF4"))      fprintf(ofp, "# HMM glocal Fwd filter:                 off\n");
-  if (esl_opt_IsUsed(go, "--nohmm"))     fprintf(ofp, "# HMM filters (MSV/bias/Vit/Fwd):        off\n");
-  if (esl_opt_IsUsed(go, "--noF6"))      fprintf(ofp, "# CM CYK filter:                         off\n");
-  if (esl_opt_IsUsed(go, "--doF1b"))     fprintf(ofp, "# HMM MSV biased comp filter:            on\n");
-  if (esl_opt_IsUsed(go, "--noF2b"))     fprintf(ofp, "# HMM Vit biased comp filter:            off\n");
-  if (esl_opt_IsUsed(go, "--noF3b"))     fprintf(ofp, "# HMM Fwd biased comp filter:            off\n");
-  if (esl_opt_IsUsed(go, "--noF4b"))     fprintf(ofp, "# HMM gFwd biased comp filter:           off\n");
-  if (esl_opt_IsUsed(go, "--noF5b"))     fprintf(ofp, "# HMM per-envelope biased comp filter:   off\n");
-  if (esl_opt_IsUsed(go, "--F1"))        fprintf(ofp, "# HMM MSV filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F1"));
-  if (esl_opt_IsUsed(go, "--F1b"))       fprintf(ofp, "# HMM MSV bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F1b"));
-  if (esl_opt_IsUsed(go, "--F2"))        fprintf(ofp, "# HMM Vit filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F2"));
-  if (esl_opt_IsUsed(go, "--F2b"))       fprintf(ofp, "# HMM Vit bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F2b"));
-  if (esl_opt_IsUsed(go, "--F3"))        fprintf(ofp, "# HMM Fwd filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F3"));
-  if (esl_opt_IsUsed(go, "--F3b"))       fprintf(ofp, "# HMM Fwd bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F3b"));
-  if (esl_opt_IsUsed(go, "--F4"))        fprintf(ofp, "# HMM glocal Fwd filter P threshold:     <= %g\n", esl_opt_GetReal(go, "--F4"));
-  if (esl_opt_IsUsed(go, "--F4b"))       fprintf(ofp, "# HMM glocal Fwd bias P threshold:       <= %g\n", esl_opt_GetReal(go, "--F4b"));
-  if (esl_opt_IsUsed(go, "--F5"))        fprintf(ofp, "# HMM env defn filter P threshold:       <= %g\n", esl_opt_GetReal(go, "--F5"));
-  if (esl_opt_IsUsed(go, "--F5b"))       fprintf(ofp, "# HMM env defn bias   P threshold:       <= %g\n", esl_opt_GetReal(go, "--F5b"));
-  if (esl_opt_IsUsed(go, "--F6"))        fprintf(ofp, "# CM CYK filter P threshold:             <= %g\n", esl_opt_GetReal(go, "--F6"));
-  if (esl_opt_IsUsed(go, "--rt1"))       fprintf(ofp, "# Domain definition rt1 parameter        %g\n", esl_opt_GetReal(go, "--rt1"));
-  if (esl_opt_IsUsed(go, "--rt2"))       fprintf(ofp, "# Domain definition rt2 parameter        %g\n", esl_opt_GetReal(go, "--rt2"));
-  if (esl_opt_IsUsed(go, "--rt3"))       fprintf(ofp, "# Domain definition rt3 parameter        %g\n", esl_opt_GetReal(go, "--rt3"));
-  if (esl_opt_IsUsed(go, "--ns"))        fprintf(ofp, "# Number of envelope tracebacks sampled  %d\n", esl_opt_GetInteger(go, "--ns"));
-  if (esl_opt_IsUsed(go, "--localenv"))  fprintf(ofp, "# Define envelopes in local mode           on\n");
-  if (esl_opt_IsUsed(go, "--null2"))     fprintf(ofp, "# null2 bias corrections:                on\n");
-  if (esl_opt_IsUsed(go, "--nonull3"))   fprintf(ofp, "# null3 bias corrections:                off\n");
-  if (esl_opt_IsUsed(go, "--toponly"))   fprintf(ofp, "# search top-strand only:                on\n");
-  if (esl_opt_IsUsed(go, "--bottomonly"))fprintf(ofp, "# search bottom-strand only:             on\n");
+                                          fprintf(ofp, "# query CM file:                         %s\n", cmfile);
+                                          fprintf(ofp, "# target sequence database:              %s\n", seqfile);
+  if (esl_opt_IsUsed(go, "-o"))           fprintf(ofp, "# output directed to file:               %s\n",      esl_opt_GetString(go, "-o"));
+  if (esl_opt_IsUsed(go, "--tblout"))     fprintf(ofp, "# tabular output of hits:                %s\n",      esl_opt_GetString(go, "--tblout"));
+  if (esl_opt_IsUsed(go, "--acc"))        fprintf(ofp, "# prefer accessions over names:          yes\n");
+  if (esl_opt_IsUsed(go, "--noali"))      fprintf(ofp, "# show alignments in output:             no\n");
+  if (esl_opt_IsUsed(go, "--notextw"))    fprintf(ofp, "# max ASCII text line length:            unlimited\n");
+  if (esl_opt_IsUsed(go, "--textw"))      fprintf(ofp, "# max ASCII text line length:            %d\n",             esl_opt_GetInteger(go, "--textw"));
+#ifdef HAVE_MPI
+  if (esl_opt_IsUsed(go, "--sidx"))       fprintf(ofp, "# first target sequence to search:       %d\n",             esl_opt_GetInteger(go, "--sidx"));
+  if (esl_opt_IsUsed(go, "--eidx"))       fprintf(ofp, "# final target sequence to search:       %d\n",             esl_opt_GetInteger(go, "--eidx"));
+#endif
+  if (esl_opt_IsUsed(go, "--pextend"))    fprintf(ofp, "# gap extend probability:                %f\n",             esl_opt_GetReal  (go, "--pextend"));
+  if (esl_opt_IsUsed(go, "--mxfile"))     fprintf(ofp, "# subst score matrix:                    %s\n",             esl_opt_GetString(go, "--mxfile"));
+  if (esl_opt_IsUsed(go, "-E"))           fprintf(ofp, "# sequence reporting threshold:          E-value <= %g\n",  esl_opt_GetReal(go, "-E"));
+  if (esl_opt_IsUsed(go, "-T"))           fprintf(ofp, "# sequence reporting threshold:          score >= %g\n",    esl_opt_GetReal(go, "-T"));
+  if (esl_opt_IsUsed(go, "--incE"))       fprintf(ofp, "# sequence inclusion threshold:          E-value <= %g\n",  esl_opt_GetReal(go, "--incE"));
+  if (esl_opt_IsUsed(go, "--incT"))       fprintf(ofp, "# sequence inclusion threshold:          score >= %g\n",    esl_opt_GetReal(go, "--incT"));
+  if (esl_opt_IsUsed(go, "--cut_ga"))     fprintf(ofp, "# model-specific thresholding:           GA cutoffs\n");
+  if (esl_opt_IsUsed(go, "--cut_nc"))     fprintf(ofp, "# model-specific thresholding:           NC cutoffs\n");
+  if (esl_opt_IsUsed(go, "--cut_tc"))     fprintf(ofp, "# model-specific thresholding:           TC cutoffs\n");
+  if (esl_opt_IsUsed(go, "--cyk"))        fprintf(ofp, "# use CYK for final search stage         on\n");
+  if (esl_opt_IsUsed(go, "--fqdb"))       fprintf(ofp, "# QDBs (CYK filter stage)                on\n");
+  if (esl_opt_IsUsed(go, "--fsums"))      fprintf(ofp, "# HMM bands from sums (filter)           on\n");
+  if (esl_opt_IsUsed(go, "--qdb"))        fprintf(ofp, "# QDBs (final stage)                     on\n");
+  if (esl_opt_IsUsed(go, "--nonbanded"))  fprintf(ofp, "# No bands (final stage)                 on\n");
+  if (esl_opt_IsUsed(go, "--sums"))       fprintf(ofp, "# HMM bands from sums (final)            on\n");
+  if (esl_opt_IsUsed(go, "--max"))        fprintf(ofp, "# Max sensitivity mode:                  on [all heuristic filters off]\n");
+  if (esl_opt_IsUsed(go, "--fZ"))         fprintf(ofp, "# Filters set as if DB size in Mb is:    %f\n", esl_opt_GetReal(go, "--fZ"));
+  if (esl_opt_IsUsed(go, "--rfam"))       fprintf(ofp, "# Rfam pipeline mode:                    on\n");
+  if (esl_opt_IsUsed(go, "--noenvdef"))   fprintf(ofp, "# Envelope definition prior to CM search:off\n");
+  if (esl_opt_IsUsed(go, "--pad"))        fprintf(ofp, "# hit padding strategy:                  on\n");
+  if (esl_opt_IsUsed(go, "--noF1"))       fprintf(ofp, "# HMM MSV filter:                        off\n");
+  if (esl_opt_IsUsed(go, "--noF2"))       fprintf(ofp, "# HMM Vit filter:                        off\n");
+  if (esl_opt_IsUsed(go, "--noF3"))       fprintf(ofp, "# HMM Fwd filter:                        off\n");
+  if (esl_opt_IsUsed(go, "--noF4"))       fprintf(ofp, "# HMM glocal Fwd filter:                 off\n");
+  if (esl_opt_IsUsed(go, "--nohmm"))      fprintf(ofp, "# HMM filters (MSV/bias/Vit/Fwd):        off\n");
+  if (esl_opt_IsUsed(go, "--noF6"))       fprintf(ofp, "# CM CYK filter:                         off\n");
+  if (esl_opt_IsUsed(go, "--doF1b"))      fprintf(ofp, "# HMM MSV biased comp filter:            on\n");
+  if (esl_opt_IsUsed(go, "--noF2b"))      fprintf(ofp, "# HMM Vit biased comp filter:            off\n");
+  if (esl_opt_IsUsed(go, "--noF3b"))      fprintf(ofp, "# HMM Fwd biased comp filter:            off\n");
+  if (esl_opt_IsUsed(go, "--noF4b"))      fprintf(ofp, "# HMM gFwd biased comp filter:           off\n");
+  if (esl_opt_IsUsed(go, "--noF5b"))      fprintf(ofp, "# HMM per-envelope biased comp filter:   off\n");
+  if (esl_opt_IsUsed(go, "--F1"))         fprintf(ofp, "# HMM MSV filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F1"));
+  if (esl_opt_IsUsed(go, "--F1b"))        fprintf(ofp, "# HMM MSV bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F1b"));
+  if (esl_opt_IsUsed(go, "--F2"))         fprintf(ofp, "# HMM Vit filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F2"));
+  if (esl_opt_IsUsed(go, "--F2b"))        fprintf(ofp, "# HMM Vit bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F2b"));
+  if (esl_opt_IsUsed(go, "--F3"))         fprintf(ofp, "# HMM Fwd filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F3"));
+  if (esl_opt_IsUsed(go, "--F3b"))        fprintf(ofp, "# HMM Fwd bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F3b"));
+  if (esl_opt_IsUsed(go, "--F4"))         fprintf(ofp, "# HMM glocal Fwd filter P threshold:     <= %g\n", esl_opt_GetReal(go, "--F4"));
+  if (esl_opt_IsUsed(go, "--F4b"))        fprintf(ofp, "# HMM glocal Fwd bias P threshold:       <= %g\n", esl_opt_GetReal(go, "--F4b"));
+  if (esl_opt_IsUsed(go, "--F5"))         fprintf(ofp, "# HMM env defn filter P threshold:       <= %g\n", esl_opt_GetReal(go, "--F5"));
+  if (esl_opt_IsUsed(go, "--F5b"))        fprintf(ofp, "# HMM env defn bias   P threshold:       <= %g\n", esl_opt_GetReal(go, "--F5b"));
+  if (esl_opt_IsUsed(go, "--F6"))         fprintf(ofp, "# CM CYK filter P threshold:             <= %g\n", esl_opt_GetReal(go, "--F6"));
+  if (esl_opt_IsUsed(go, "--rt1"))        fprintf(ofp, "# Domain definition rt1 parameter        %g\n", esl_opt_GetReal(go, "--rt1"));
+  if (esl_opt_IsUsed(go, "--rt2"))        fprintf(ofp, "# Domain definition rt2 parameter        %g\n", esl_opt_GetReal(go, "--rt2"));
+  if (esl_opt_IsUsed(go, "--rt3"))        fprintf(ofp, "# Domain definition rt3 parameter        %g\n", esl_opt_GetReal(go, "--rt3"));
+  if (esl_opt_IsUsed(go, "--ns"))         fprintf(ofp, "# Number of envelope tracebacks sampled  %d\n", esl_opt_GetInteger(go, "--ns"));
+  if (esl_opt_IsUsed(go, "--localenv"))   fprintf(ofp, "# Define envelopes in local mode           on\n");
+  if (esl_opt_IsUsed(go, "--null2"))      fprintf(ofp, "# null2 bias corrections:                on\n");
+  if (esl_opt_IsUsed(go, "--nonull3"))    fprintf(ofp, "# null3 bias corrections:                off\n");
+  if (esl_opt_IsUsed(go, "--toponly"))    fprintf(ofp, "# search top-strand only:                on\n");
+  if (esl_opt_IsUsed(go, "--bottomonly")) fprintf(ofp, "# search bottom-strand only:             on\n");
 
   if (esl_opt_IsUsed(go, "--time-F1"))   fprintf(ofp, "# abort after Stage 1 MSV (for timing)   on\n");
   if (esl_opt_IsUsed(go, "--time-F2"))   fprintf(ofp, "# abort after Stage 2 Vit (for timing)   on\n");
@@ -410,7 +410,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--cpu"))       fprintf(ofp, "# number of worker threads:              %d\n", esl_opt_GetInteger(go, "--cpu"));  
 #endif
 #ifdef HAVE_MPI
-  if (esl_opt_IsUsed(go, "--mpi"))       fprintf(ofp, "# MPI:                             on\n");
+  if (esl_opt_IsUsed(go, "--mpi"))       fprintf(ofp, "# MPI:                                   on\n");
 #endif
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
   return eslOK;
@@ -495,12 +495,13 @@ main(int argc, char **argv)
 static int
 serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 {
-  FILE            *ofp      = stdout;            /* results output file (-o)                        */
-  FILE            *tblfp    = NULL;              /* output stream for tabular per-seq (--tblout)    */
-  CMFILE          *cmfp;		         /* open input CM file stream                       */
-  P7_HMM         **hmmA    = NULL;               /* HMMs, used for filtering                        */
-  ESL_SQFILE      *dbfp     = NULL;              /* open input sequence file                        */
-  ESL_ALPHABET    *abc      = NULL;              /* digital alphabet                                */
+  FILE            *ofp      = stdout;            /* results output file (-o)                                  */
+  FILE            *tblfp    = NULL;              /* output stream for tabular hits (--tblout)                 */
+  CMFILE          *cmfp;		         /* open input CM file stream                                 */
+  P7_HMM         **hmmA     = NULL;              /* HMMs, used for filtering                                  */
+  CM_t            *cm       = NULL;              /* covariance model                                          */
+  ESL_SQFILE      *dbfp     = NULL;              /* open input sequence file                                  */
+  ESL_ALPHABET    *abc      = NULL;              /* digital alphabet                                          */
   ESL_STOPWATCH   *w;
   int              textw    = 0;
   int              nquery   = 0;
@@ -514,7 +515,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   WORKER_INFO     *tinfo;                        /* the template info, cloned to make the worked info */
   WORKER_INFO     *info          = NULL;         /* the worker info */
-  int              infocnt       = 0;
+  int              infocnt       = 0;            /* number of worker infos */
 
 #ifdef HMMER_THREADS
   ESL_SQ_BLOCK    *block    = NULL;
@@ -532,7 +533,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if((status = open_dbfile(go, cfg, errbuf, &dbfp)) != eslOK) esl_fatal(errbuf); 
   /* Determine database size */
   if(esl_opt_IsUsed(go, "-Z")) { /* enabling -Z is the only way to bypass the SSI index file requirement */
-    cfg->Z = (int64_t) (esl_opt_GetReal(go, "-Z") * 1000000.); 
+    cfg->Z       = (int64_t) (esl_opt_GetReal(go, "-Z") * 1000000.); 
+    cfg->Z_setby = CM_ZSETBY_OPTION; 
   }
   else { 
     if((status = open_dbfile_ssi           (go, cfg, dbfp, errbuf)) != eslOK) esl_fatal(errbuf); 
@@ -543,8 +545,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cfg->cmfile);
 
   /* Open the results output files */
-  if (esl_opt_IsOn(go, "-o"))          { if ((ofp      = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) p7_Fail("Failed to open output file %s for writing\n",    esl_opt_GetString(go, "-o")); }
-  if (esl_opt_IsOn(go, "--tblout"))    { if ((tblfp    = fopen(esl_opt_GetString(go, "--tblout"),    "w")) == NULL)  esl_fatal("Failed to open tabular per-seq output file %s for writing\n", esl_opt_GetString(go, "--tblout")); }
+  if (esl_opt_IsOn(go, "-o"))           { if ((ofp       = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) p7_Fail("Failed to open output file %s for writing\n",    esl_opt_GetString(go, "-o")); }
+  if (esl_opt_IsOn(go, "--tblout"))     { if ((tblfp     = fopen(esl_opt_GetString(go, "--tblout"),    "w")) == NULL)  esl_fatal("Failed to open tabular output file %s for writing\n", esl_opt_GetString(go, "--tblout")); }
 
 #ifdef HMMER_THREADS
   /* initialize thread data */
@@ -559,10 +561,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   infocnt = (ncpus == 0) ? 1 : ncpus;
   ESL_ALLOC(info, sizeof(WORKER_INFO) * infocnt);
-  ESL_ALLOC(tinfo, sizeof(WORKER_INFO));
 
   /* <abc> is not known 'til first CM is read. Could be DNA or RNA*/
-  qhstatus = CMFileRead(cmfp, errbuf, &abc, &(tinfo->cm));
+  qhstatus = CMFileRead(cmfp, errbuf, &abc, &cm);
 
   if (qhstatus == eslOK) {
     /* One-time initializations after alphabet <abc> becomes known */
@@ -605,10 +606,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     nquery++;
     esl_stopwatch_Start(w);
 
-    tinfo->pli = NULL; 
-    tinfo->th  = NULL;
-    tinfo->cmcons = NULL;
-    tinfo->fcyk_dmin = tinfo->fcyk_dmax = tinfo->final_dmin = tinfo->final_dmax = NULL;
+    /* create a new template info, and point it to the cm we just read */
+    tinfo = create_info();
+    tinfo->cm = cm;
 
     /* Make sure we have E-value stats for both the CM and the p7, if not we can't run the pipeline */
     if(! (tinfo->cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s\n", tinfo->cm->name);
@@ -625,6 +625,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if (tinfo->cm->acc)  fprintf(ofp, "Accession:   %s\n", tinfo->cm->acc);
     if (tinfo->cm->desc) fprintf(ofp, "Description: %s\n", tinfo->cm->desc);
     
+    /* Setup profiles in the tinfo (template info), then clone it into each thread's info: info[] */
     /* Determine QDBs, if necessary. By default they are not needed. */
     if((status = setup_qdbs(go, tinfo, errbuf)) != eslOK) cm_Fail(errbuf);
     /* Setup HMM filters */
@@ -633,11 +634,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = clone_info(go, tinfo, info, infocnt, errbuf)) != eslOK) cm_Fail(errbuf);
     
     /* Create processing pipeline and hit list */
-    tinfo[i].pli = NULL;
-    tinfo[i].th  = NULL;
     for (i = 0; i < infocnt; ++i) {
-      info[i].pli = cm_pipeline_Create(go, info[i].omA[0]->M, 100, cfg->Z, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      cm_pli_NewModel(info[i].pli, info[i].cm, info[i].need_fsmx, info[i].need_smx, info[i].fcyk_dmin, info[i].fcyk_dmax, info[i].final_dmin, info[i].final_dmax, info[i].omA, info[i].bgA, info[i].nhmm);
+      info[i].th   = cm_tophits_Create();
+      info[i].pli  = cm_pipeline_Create(go, info[i].omA[0]->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+      if((status = cm_pli_NewModel(info[i].pli, info[i].cm, info[i].need_fsmx, info[i].need_smx, info[i].fcyk_dmin, info[i].fcyk_dmax, 
+				   info[i].final_dmin, info[i].final_dmax, info[i].omA, info[i].bgA, info[i].nhmm)) != eslOK) { 
+	cm_Fail(info[i].pli->errbuf);
+      }
 
 #ifdef HMMER_THREADS
       if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
@@ -677,48 +680,52 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  free_info(&info[i]);
       }
 
-      /* Remove duplicates, sort and enforce threshold */
-      cm_tophits_SortBySeqIdx(info->th);
-      cm_tophits_RemoveDuplicates(info->th);
-      cm_tophits_SortByScore(info->th);
-      cm_tophits_Threshold(info->th, info->pli);
+      /* Sort by sequence index/position and remove duplicates */
+      cm_tophits_SortBySeqIdx(info[0].th);
+      cm_tophits_RemoveDuplicates(info[0].th);
+      /* Resort by score and enforce threshold */
+      cm_tophits_SortByScore(info[0].th);
+      cm_tophits_Threshold(info[0].th, info[0].pli);
 
       /* tally up total number of hits and target coverage */
-      info->pli->n_output = info->pli->pos_output = 0;
+      info[0].pli->n_output = info[0].pli->pos_output = 0;
       for (i = 0; i < info->th->N; i++) {
-	if ((info->th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info->th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
-	  info->pli->n_output++;
-	  info->pli->pos_output += abs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
+	if ((info[0].th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info[0].th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
+	  info[0].pli->n_output++;
+	  info[0].pli->pos_output += abs(info[0].th->hit[i]->stop - info[0].th->hit[i]->start) + 1;
 	}
       }
 
       /* Output */
-      cm_tophits_Targets(ofp, info->th, info->pli, textw);
+      cm_tophits_Targets(ofp, info[0].th, info[0].pli, textw);
       fprintf(ofp, "\n\n");
 
-      if(info->pli->show_alignments) {
-	if((status = cm_tophits_HitAlignments(ofp, info->th, info->pli, textw)) != eslOK) esl_fatal("Out of memory");
+      if(info[0].pli->do_alignments) {
+	if((status = cm_tophits_HitAlignments(ofp, info[0].th, info[0].pli, textw)) != eslOK) esl_fatal("Out of memory");
+	fprintf(ofp, "\n\n");
+	cm_tophits_HitAlignmentStatistics(ofp, info[0].th);
 	fprintf(ofp, "\n\n");
       }
 
       if (tblfp != NULL) { 
-	cm_tophits_TabularTargets(tblfp, tinfo->cm->name, tinfo->cm->acc, info->th, info->pli, (nquery == 1)); 
+	cm_tophits_TabularTargets(tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (nquery == 1)); 
       }
   
       esl_stopwatch_Stop(w);
-      cm_pli_Statistics(ofp, info->pli, w);
+      cm_pli_Statistics(ofp, info[0].pli, w);
       fprintf(ofp, "//\n");
 
       free_info(tinfo);
-      free_info(info);
+      free(tinfo);
+      free_info(&(info[0]));
       free(hmmA);
-      
-      qhstatus = CMFileRead(cmfp, errbuf, &abc, &(tinfo->cm));
+
+      qhstatus = CMFileRead(cmfp, errbuf, &abc, &cm);
   } /* end outer loop over query CMs */
 
   switch(qhstatus) {
   case eslEFORMAT:   cm_Fail("bad file format in CM file %s",             cfg->cmfile);      break;
-  case eslEOF:       /* do nothing. EOF is what we want. */                                    break;
+  case eslEOF:       /* do nothing. EOF is what we want. */                                  break;
   default:           cm_Fail("Unexpected error (%d) in reading CMs from %s", qhstatus, cfg->cmfile);
   }
 
@@ -739,7 +746,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 #endif
 
   free(info);
-  free(tinfo);
 
   CMFileClose(cmfp);
   esl_sqfile_Close(dbfp);
@@ -807,7 +813,7 @@ static int  mpi_block_pack_size(MPI_BLOCK *block, MPI_Comm comm, int *ret_n);
 static int  mpi_block_pack(MPI_BLOCK *block, char *buf, int n, int *pos, MPI_Comm comm);
 static int  mpi_block_unpack(char *buf, int n, int *pos, MPI_Comm comm, MPI_BLOCK **ret_block);
 
-static int add_blocks(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, char *errbuf, MPI_BLOCK_LIST *block_list, 
+static int add_blocks(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, char *errbuf, int64_t final_pkey_idx, MPI_BLOCK_LIST *block_list, 
 		      int64_t *ret_new_idx, int64_t *ret_noverlap, int64_t *ret_nseq);
 static int inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, int64_t pkey_idx, char *errbuf, 
 					   MPI_BLOCK_LIST *block_list, int64_t *ret_noverlap);
@@ -910,8 +916,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              size;
   MPI_Status       mpistatus;
   char             errbuf[eslERRBUFSIZE];
-  int64_t          pkey_idx;
-  MPI_BLOCK   *cur_block = NULL;
+  int64_t          pkey_idx;                 /* sequence index, in SSI */
+  int64_t          final_pkey_idx;           /* final sequence index to search, in SSI */
+  MPI_BLOCK       *cur_block = NULL;         /* current block of sequence(s) */
   int64_t          nseq = 0;                 /* number of sequences in one block */
   int64_t          tot_nseq = 0;             /* number of sequences in all blocks for one CM */
   int64_t          noverlap = 0;             /* number of overlapping residues in one block */
@@ -928,11 +935,17 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if((status = open_dbfile_ssi(go, cfg, dbfp, errbuf)) != eslOK)  mpi_failure(errbuf); 
   /* Determine database size */
   if(esl_opt_IsUsed(go, "-Z")) { 
-    cfg->Z = (int64_t) (esl_opt_GetReal(go, "-Z") * 1000000.); 
+    cfg->Z       = (int64_t) (esl_opt_GetReal(go, "-Z") * 1000000.); 
+    cfg->Z_setby = CM_ZSETBY_OPTION; 
   }
   else { 
+    esl_stopwatch_Start(w);
     if((status = determine_dbsize_using_ssi(go, cfg, dbfp, errbuf)) != eslOK) mpi_failure(errbuf); 
+    esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(ofp, w, "# Determining Z CPU time: ");
   }
+  /* Broadcast the database size to all workers */
+  MPI_Bcast(&(cfg->Z), 1, MPI_LONG_LONG_INT, 0, MPI_COMM_WORLD);
   printf("MPIM cfg->Z: %" PRId64 " residues\n", cfg->Z);
 
   /* Open the query CM file */
@@ -944,7 +957,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     mpi_failure("Failed to open output file %s for writing\n",    esl_opt_GetString(go, "-o"));
 
   if (esl_opt_IsOn(go, "--tblout") && (tblfp = fopen(esl_opt_GetString(go, "--tblout"), "w")) == NULL)
-    mpi_failure("Failed to open tabular per-seq output file %s for writing\n", esl_opt_GetString(go, "--tblfp"));
+    mpi_failure("Failed to open tabular per-seq output file %s for writing\n", esl_opt_GetString(go, "--tblout"));
 
   /* allocate and initialize <info> which will hold the CMs, HMMs, etc. */
   if((info = create_info()) == NULL) mpi_failure("Out of memory");
@@ -980,21 +993,44 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* Create processing pipeline and hit list */
       info->th  = cm_tophits_Create(); 
-      info->pli = cm_pipeline_Create(go, info->omA[0]->M, 100, cfg->Z, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      cm_pli_NewModel(info->pli, info->cm, info->need_fsmx, info->need_smx, info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->omA, info->bgA, info->nhmm);
-
+      info->pli = cm_pipeline_Create(go, info->omA[0]->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+      if((status = cm_pli_NewModel(info->pli, info->cm, info->need_fsmx, info->need_smx, info->fcyk_dmin, info->fcyk_dmax, 
+				   info->final_dmin, info->final_dmax, info->omA, info->bgA, info->nhmm)) != eslOK) { 
+	mpi_failure(info[i].pli->errbuf);
+      }
       /* Create block_list and add an empty block to it */
       block_list = create_mpi_block_list();
       block_list->blocks[0] = create_mpi_block();
       block_list->N = 1;
 
-      /* Main loop: */
+      /* Initialize for main loop */
       pkey_idx = 0;
+      final_pkey_idx = dbfp->data.ascii.ssi->nprimary - 1;
       sstatus = eslOK;
       tot_noverlap = noverlap = 0;
       tot_nseq     = nseq     = 0;
-      while((pkey_idx < dbfp->data.ascii.ssi->nprimary) && 
-	    ((sstatus = add_blocks(dbfp, dbsq, info->pli->maxW, errbuf, block_list, &pkey_idx, &noverlap, &nseq)) == eslOK))
+#ifdef HAVE_MPI
+      /* process --sidx and --eidx, if nec */
+      if(esl_opt_IsUsed(go, "--sidx")) { /* start searching at sequence index <n> from --sidx <n> */
+	pkey_idx = esl_opt_GetInteger(go, "--sidx") - 1;
+	if(pkey_idx >= dbfp->data.ascii.ssi->nprimary) {
+	  mpi_failure("--sidx %d is invalid because only %d sequences exist in the target db", pkey_idx+1, dbfp->data.ascii.ssi->nprimary);
+	}
+      }
+      if(esl_opt_IsUsed(go, "--eidx")) { /* start searching at sequence index <n> from --eidx <n> */
+	final_pkey_idx = esl_opt_GetInteger(go, "--eidx") - 1;
+	if(final_pkey_idx >= dbfp->data.ascii.ssi->nprimary) { 
+	  mpi_failure("--eidx %d is invalid because only %d sequences exist in the target db", final_pkey_idx+1, dbfp->data.ascii.ssi->nprimary);
+	}
+	if(final_pkey_idx < pkey_idx) { 
+	  mpi_failure("with --sidx <n1> --eidx <n2>, <n2> must be >= <n1>");
+	}
+      }
+      printf("searching seqs %ld to %ld\n", pkey_idx, final_pkey_idx);
+#endif
+      /* Main loop: */
+      while((pkey_idx <= final_pkey_idx) && 
+	    ((sstatus = add_blocks(dbfp, dbsq, info->pli->maxW, errbuf, final_pkey_idx, block_list, &pkey_idx, &noverlap, &nseq)) == eslOK))
 	{
 	  tot_noverlap += noverlap;
 	  tot_nseq     += nseq;
@@ -1077,6 +1113,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if ((status = cm_pipeline_MPIRecv(dest, INFERNAL_PIPELINE_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, go, &mpi_pli)) != eslOK)
 	    mpi_failure("Unexpected error %d receiving pipeline from %d", status, dest);
 
+	  printf("RECEIVED TOPHITS (%ld hits) FROM %d\n", mpi_th->N, dest);
 	  cm_tophits_Merge(info->th, mpi_th);
 	  cm_pipeline_Merge(info->pli, mpi_pli);
 
@@ -1090,7 +1127,10 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info->pli->nres -= tot_noverlap;
       printf("nres: %ld\n", info->pli->nres);
 
-      /* Sort and enforce threshold */
+      /* Sort by sequence index/position and remove duplicates */
+      cm_tophits_SortBySeqIdx(info->th);
+      cm_tophits_RemoveDuplicates(info->th);
+      /* Resort by score and enforce threshold */
       cm_tophits_SortByScore(info->th);
       cm_tophits_Threshold(info->th, info->pli);
 
@@ -1105,8 +1145,10 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       cm_tophits_Targets(ofp, info->th, info->pli, textw); 
       fprintf(ofp, "\n\n");
-      if(info->pli->show_alignments) {
+      if(info->pli->do_alignments) {
 	if((status = cm_tophits_HitAlignments(ofp, info->th, info->pli, textw)) != eslOK) esl_fatal("Out of memory");
+	fprintf(ofp, "\n\n");
+	cm_tophits_HitAlignmentStatistics(ofp, info->th);
 	fprintf(ofp, "\n\n");
       }
       if (tblfp != NULL) { 
@@ -1125,7 +1167,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if(hstatus == eslOK) { 
 	if((info = create_info()) == NULL) mpi_failure("Out of memory"); /* for the next model */
       }
-    } /* end outer loop over query HMMs */
+    } /* end outer loop over query CMs */
   
   switch(hstatus) {
   case eslEFORMAT:   mpi_failure("bad file format in CM file %s",             cfg->cmfile);      break;
@@ -1200,12 +1242,13 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   char            *mpi_buf  = NULL;              /* buffer used to pack/unpack structures           */
   int              mpi_size = 0;                 /* size of the allocated buffer                    */
 
-  char             errbuf[eslERRBUFSIZE];
-  int64_t          pkey_idx;
-  int64_t          L;
-  int64_t          seq_from, seq_to;
-  int64_t          readL;
-  char            *pkey;
+  char             errbuf[eslERRBUFSIZE];        /* for reporting errors */
+  int64_t          pkey_idx;                     /* sequence index in SSI */
+  int64_t          L;                            /* length of a complete sequence, read from SSI */
+  int64_t          seq_from, seq_to;             /* start/end positions of a sequence */
+  int64_t          readL;                        /* number of residues read in the current block */
+  char            *pkey;                         /* a primary key from SSI */
+  MPI_Status       mpistatus;
 
   w = esl_stopwatch_Create();
 
@@ -1213,18 +1256,13 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if((status = open_dbfile    (go, cfg, errbuf, &dbfp)) != eslOK) mpi_failure(errbuf); 
   /* MPI requires SSI indexing */
   if((status = open_dbfile_ssi(go, cfg, dbfp, errbuf))  != eslOK) mpi_failure(errbuf); 
-  /* Determine database size */
-  if(esl_opt_IsUsed(go, "-Z")) { /* enabling -Z is the only way to bypass the SSI index file requirement */
-    cfg->Z = (int64_t) (esl_opt_GetReal(go, "-Z") * 1000000.); 
-  }
-  else { 
-    if((status = determine_dbsize_using_ssi(go, cfg, dbfp, errbuf)) != eslOK) mpi_failure(errbuf); 
-  }
+  /* Receive the database size broadcasted from the master */
+  MPI_Bcast(&(cfg->Z), 1, MPI_LONG_LONG_INT, 0, MPI_COMM_WORLD);
   printf("MPIW cfg->Z: %" PRId64 " residues\n", cfg->Z);
 
   /* Open the query CM file */
   if ((cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
-    esl_fatal("Failed to open covariance model save file %s\n", cfg->cmfile);
+    mpi_failure("Failed to open covariance model save file %s\n", cfg->cmfile);
 
   /* allocate and initialize <info> which will hold the CMs, HMMs, etc. */
   if((info = create_info()) == NULL) mpi_failure("Out of memory");
@@ -1245,6 +1283,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       esl_stopwatch_Start(w);
 
       status = 0;
+      /* inform the master we're ready for a block of sequences */
       MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
 
       /* Setup the CM and calculate QDBs, if nec */
@@ -1255,8 +1294,11 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* Create processing pipeline and hit list */
       info->th  = cm_tophits_Create(); 
-      info->pli = cm_pipeline_Create(go, info->omA[0]->M, 100, cfg->Z, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      cm_pli_NewModel(info->pli, info->cm, info->need_fsmx, info->need_smx, info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->omA, info->bgA, info->nhmm);
+      info->pli = cm_pipeline_Create(go, info->omA[0]->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+      if((status = cm_pli_NewModel(info->pli, info->cm, info->need_fsmx, info->need_smx, info->fcyk_dmin, info->fcyk_dmax, 
+				   info->final_dmin, info->final_dmax, info->omA, info->bgA, info->nhmm)) != eslOK) { 
+	mpi_failure(info->pli->errbuf);
+      }
 
       /* receive a sequence info block from the master */
       if((status = mpi_block_recv(0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, &block)) != eslOK) mpi_failure("Failed to receive sequence block, error status code: %d\n", status); 
@@ -1267,14 +1309,19 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	while(pkey_idx <= block->final_idx) 
 	  { 
 	    /* determine the primary key and length of the sequence */
-	    status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, &pkey);
-	    
+	    if((status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, &pkey)) != eslOK) { 
+	      if(status == eslENOTFOUND) mpi_failure("(worker) unable to find sequence %d in SSI index file", pkey_idx);
+	       if(status == eslEFORMAT)   mpi_failure("(worker) SSI index for database file is in incorrect format.");
+	       if(status != eslOK)        mpi_failure("(worker) problem with SSI index for database file.");
+	    }
+
 	    /* determine if we're reading the full sequence or a subsequence */
 	    if((pkey_idx != block->first_idx) && (pkey_idx != block->final_idx)) { 
 	      /* read full sequence */
 	      if((status = esl_sqio_Fetch(dbfp, pkey, dbsq)) != eslOK) mpi_failure("unable to fetch sequence %s\n", pkey);
 	      seq_from = 1;
 	      seq_to   = L;
+	      /*printf("MPI just fetched seq %d (%40s) %10ld..%10ld\n", pkey_idx, pkey, seq_from, seq_to);*/
 	    }
 	    else {
 	      /* read first or final sequence in block, this is probably a subsequence */
@@ -1283,6 +1330,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	      if((status = esl_sqio_FetchSubseq(dbfp, pkey, seq_from, seq_to, dbsq)) != eslOK) mpi_failure("unable to fetch subsequence %ld..%ld of %s\n", seq_from, seq_to, pkey);
 	      /* FetchSubseq renames the sequence, set it back */
 	      esl_sq_SetName(dbsq, dbsq->source);
+	      /*printf("MPI just fetched seq %d (%40s) %10ld..%10ld\n", pkey_idx, pkey, seq_from, seq_to);*/
 	    }
 	    /* tell pipeline we've got a new sequence (this updates info->pli->nres) */
 	    cm_pli_NewSeq(info->pli, info->cm, dbsq, pkey_idx);
@@ -1310,9 +1358,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	      if(info->pli->do_top) info->pli->nres += dbsq->n; /* add dbsq->n residues, the reverse complement we just searched */
 	      
 	      /* Hit positions will be relative to the reverse-complemented sequence
-	       * (i.e. start < end), which may be a subsequence. Update hit positions 
-	       * so they're relative to the full-length original sequence (start > end). */
-	      update_hit_positions(info->th, prev_hit_cnt, seq_from, TRUE);
+	       * (i.e. start > end), which may be a subsequence. Update hit positions 
+	       * so they're relative to the full-length original sequence (start < end). */
+	      update_hit_positions(info->th, prev_hit_cnt, seq_to, TRUE); /* note we use seq_to, not seq_from */
 	    }
 	    esl_sq_Reuse(dbsq);
 
@@ -1379,7 +1427,8 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
   int64_t   seq_idx = 0;
   ESL_SQ   *dbsq   =  esl_sq_CreateDigital(info->cm->abc);
 
-  wstatus = esl_sqio_ReadWindow(dbfp, 0, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
+  wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
+  /* printf("SER just read seq %d (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end); */
   while (wstatus == eslOK ) {
     
     cm_pli_NewSeq(info->pli, info->cm, dbsq, seq_idx);
@@ -1388,6 +1437,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
     if (info->pli->do_top) { 
       prev_hit_cnt = info->th->N;
       if((status = cm_Pipeline(info->pli, info->cm, info->cmcons, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+      fflush(stdout);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
       
       /* modify hit positions to account for the position of the window in the full sequence */
@@ -1399,13 +1449,14 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
       prev_hit_cnt = info->th->N;
       esl_sq_ReverseComplement(dbsq);
       if((status = cm_Pipeline(info->pli, info->cm, info->cmcons, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+      fflush(stdout);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
       
       /* modify hit positions to account for the position of the window in the full sequence */
       update_hit_positions(info->th, prev_hit_cnt, dbsq->start, TRUE);
 
       if(info->pli->do_top) info->pli->nres += dbsq->W; /* add dbsq->W residues, the number of unique residues on reverse complement that we just searched */
-
+      
       /* Reverse complement again, to get original sequence back.
        * This is necessary so the C overlapping context residues 
        * from previous window are as they should be (and not the
@@ -1415,14 +1466,16 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
     }
     
     wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
+    /* printf("SER just read seq %d (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end); */
     if (wstatus == eslEOD) { /* no more left of this sequence ... move along to the next sequence. */
       info->pli->nseqs++;
       esl_sq_Reuse(dbsq);
-      wstatus = esl_sqio_ReadWindow(dbfp, 0, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
-      seq_idx++;
+      wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
+      /* printf("SER just read seq %d (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end); */
+      seq_idx++; /* because we started reading a new sequence, or reached EOF */
     }
   }
-
+  
   esl_sq_Destroy(dbsq);
  
   return wstatus;
@@ -1437,6 +1490,8 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
   int  status  = eslOK;
   int  sstatus = eslOK;
   int  eofCount = 0;
+  int           use_tmpsq = FALSE;
+  ESL_SQ       *tmpsq = esl_sq_CreateDigital(info->cm->abc);
   ESL_SQ_BLOCK *block;
   void         *newBlock;
   int i;
@@ -1453,16 +1508,31 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
       block = (ESL_SQ_BLOCK *) newBlock;
 
       /* reset block as an empty vessel, possibly keeping the first sq intact for reading in the next window */
-      if (block->count > 0 && block->complete) { 
-	esl_sq_Reuse(block->list);
+      for (i=0; i<block->count; i++) { 
+          esl_sq_Reuse(block->list + i);
       }
-      for (i=1; i<block->count; i++) { 
-	esl_sq_Reuse(block->list + i);
+      if (use_tmpsq) {
+          esl_sq_Copy(tmpsq, block->list);
+          block->complete = FALSE;  /* this lets ReadBlock know that it needs to append to a small bit of previously-read sequence */
+          block->list->C = info->pli->maxW;
+	  /* Overload the ->C value, which ReadBlock uses to determine how much 
+	   * overlap should be retained in the ReadWindow step. */
       }
 
       sstatus = esl_sqio_ReadBlock(dbfp, block, CMSEARCH_MAX_RESIDUE_COUNT, TRUE);
 
-      info->pli->nseqs += block->count - (block->complete ? 0 : 1); /* if there's an incomplete sequence read into the block wait to count it until it's complete. */
+      if (block->complete || block->count == 0) {
+	use_tmpsq = FALSE;
+      } else {
+	/* The final sequence on the block was a probably-incomplete window of the active sequence,
+	 * so capture a copy of that window to use as a template on which the next ReadWindow() call
+	 * (internal to ReadBlock) will be based */
+	esl_sq_Copy(block->list + (block->count - 1) , tmpsq);
+	use_tmpsq = TRUE;
+      }
+
+      block->first_seqidx = info->pli->nseqs;
+      info->pli->nseqs += block->count - (use_tmpsq ? 1 : 0); /* if there's an incomplete sequence read into the block wait to count it until it's complete. */
 
       if (sstatus == eslEOF) {
           if (eofCount < esl_threads_GetWorkerCount(obj)) sstatus = eslOK;
@@ -1492,6 +1562,8 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
     esl_threads_WaitForFinish(obj);
     esl_workqueue_Complete(queue);  
   }
+
+  if(tmpsq != NULL) esl_sq_Destroy(tmpsq);
 
   return sstatus;
  }
@@ -1537,8 +1609,7 @@ pipeline_thread(void *arg)
 	
       /* FIX ME! threaded version doesn't keep track of seq_idx for each block..., but it has to, so we 
        * can reliably remove overlaps */
-      cm_pli_NewSeq(info->pli, info->cm, dbsq, seq_idx);
-      seq_idx++;
+      cm_pli_NewSeq(info->pli, info->cm, dbsq, block->first_seqidx + i);
       info->pli->nres -= dbsq->C; /* to account for overlapping region of windows */
       
       if (info->pli->do_top) { 
@@ -1686,8 +1757,15 @@ determine_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp,
     if(status == eslEFORMAT)   ESL_FAIL(status, errbuf, "SSI index for database file is in incorrect format.");
     if(status != eslOK)        ESL_FAIL(status, errbuf, "proble with SSI index for database file.");
     cfg->Z += L;
-    /*printf("sequence number %10ld (%-50s) L: %10ld totalL: %10ld\n", i, pkey, L, cfg->Z);*/
   }
+  if((! esl_opt_GetBoolean(go, "--toponly")) && 
+     (! esl_opt_GetBoolean(go, "--bottomonly"))) { 
+    cfg->Z *= 2; /* we're searching both strands */
+  }
+  cfg->Z_setby = CM_ZSETBY_SSIINFO;
+
+  /*printf("DBSIZE determined %ld residues (%ld sequences)\n", cfg->Z, dbfp->data.ascii.ssi->nprimary);
+    esl_fatal("done.");*/
 
   return eslOK;
 }
@@ -1749,7 +1827,6 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
      * get added during configuration. 
      */
     if((status = CloneCMJustReadFromFile(src_info->cm, errbuf, &(dest_infoA[i].cm))) != eslOK) return status;
-    dest_infoA[i].th           = cm_tophits_Create();
     dest_infoA[i].nhmm         = src_info->nhmm;
     dest_infoA[i].use_mlp7_hmm = src_info->use_mlp7_hmm;
     dest_infoA[i].need_fsmx    = src_info->need_fsmx;
@@ -1985,7 +2062,7 @@ setup_hmm_filters(ESL_GETOPTS *go, WORKER_INFO *info, const ESL_ALPHABET *abc, c
 }
 
 /* Function:  update_hit_positions
- * Synopsis:  Update sequence positions in hit lits.
+ * Synopsis:  Update sequence positions in a hit list.
  * Incept:    EPN, Wed May 25 09:12:52 2011
  *
  * Purpose: For hits <hit_start..th->N-1> in a hit list, update the
@@ -2337,7 +2414,7 @@ free_mpi_block_list(MPI_BLOCK_LIST *list)
  *            for list of non-OK error return codes.
  */
 int 
-add_blocks(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, char *errbuf, MPI_BLOCK_LIST *block_list, int64_t *ret_pkey_idx, int64_t *ret_noverlap, int64_t *ret_nseq)
+add_blocks(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, char *errbuf, int64_t final_pkey_idx, MPI_BLOCK_LIST *block_list, int64_t *ret_pkey_idx, int64_t *ret_noverlap, int64_t *ret_nseq)
 {
   int status = eslOK; /* error code status */
   int64_t pkey_idx;
@@ -2355,14 +2432,14 @@ add_blocks(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, char *errbuf, MPI_BLO
   status = eslOK;
   pkey_idx = *ret_pkey_idx;
   /* read sequences until we have at least 1 complete block to send to a worker */
-  while((pkey_idx < dbfp->data.ascii.ssi->nprimary) && (! block_list->blocks[0]->complete)) { 
+  while((pkey_idx <= final_pkey_idx) && (! block_list->blocks[0]->complete)) { 
     status = inspect_next_sequence_using_ssi(dbfp, sq, ncontext, pkey_idx, errbuf, block_list, &noverlap);
     nseq++;
     if(block_list == NULL) ESL_FAIL(eslFAIL, errbuf, "error parsing database in add_blocks()");
     pkey_idx++;
     tot_noverlap += noverlap;
   }
-  if(pkey_idx == dbfp->data.ascii.ssi->nprimary && (! block_list->blocks[block_list->N-1]->complete)) { 
+  if(pkey_idx == (final_pkey_idx+1) && (! block_list->blocks[block_list->N-1]->complete)) { 
     /* We reached the end of the file and didn't finish the final
      * block.  If its non-empty then it's valid, else it's not. */
     if(block_list->blocks[block_list->N-1]->blockL > 0) { /* valid */
@@ -2435,7 +2512,7 @@ inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, 
   if(block_list == NULL) { 
     /* This should only happen on first call to this function, or if
      * by chance the previous sequence (inspected with the previous
-     * call to next_sequence_using_ssi() filled its final block
+     * call to next_sequence_using_ssi()) filled its final block
      * exactly full, with no remaining residues with which to start a
      * new block. */
     block_list = create_mpi_block_list();
@@ -2444,29 +2521,25 @@ inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, 
     block_list->N++;
   }
     
-  /* Now fill in >= 1 blocks with this sequence.
-   * Note: we fill blocks to be exactly CMSEARCH_MAX_RESIDUE_COUNT
-   * whenever possible (i.e. only the final block including the end of
-   * the final sequence can not equal this size). We could be smarter
-   * about not allowing stupid overlaps (i.e. including 1..L-1 in one
-   * block and L-ncontext+1..L in the next block), but that's not
-   * how serial mode operates (it relies of esl_sqio_ReadWindow()
-   * and is ignorant of how much sequence is left after the current
-   * window), so we do it the same way here for consistency. Plus
-   * this way is simpler to implement and understand. 
+  /* Now fill in >= 1 blocks with this sequence. 
+   * Chop the sequence up into overlapping chunks of max size
+   * CMSEARCH_MAX_RESIDUE_COUNT (not including any overlap). The final
+   * chunk (which may be the only chunk) will probably be less than
+   * CMSEARCH_MAX_RESIDUE_COUNT residues. Add the chunk(s) to as many
+   * blocks as necessary, creating all blocks except the first one as
+   * we go, to get rid of all the chunks.  Each block will get exactly
+   * 1 chunk.
    */
-  cur_block  = block_list->blocks[0];
-  nremaining = L;
+  cur_block    = block_list->blocks[0];
+  nremaining   = L;
   cur_noverlap = 0; /* first chunk of this sequence, we haven't required any overlapping residues yet */
-
   while(nremaining > 0) { 
-    ntoadd   = (CMSEARCH_MAX_RESIDUE_COUNT + cur_noverlap) - cur_block->blockL; /* max number residues we can add to cur_block */
+    ntoadd   = CMSEARCH_MAX_RESIDUE_COUNT + cur_noverlap; /* max number residues we can add to cur_block */
     ntoadd   = ESL_MIN(ntoadd, nremaining);
     if(cur_block->blockL == 0) { /* this block was just created */
       cur_block->first_idx = pkey_idx; 
     }
     cur_block->final_idx = pkey_idx; /* this may be changed by a subsequent call to this function */
-
     if(nremaining <= ntoadd) { 
       /* Case 1: We can fit all remaining sequence in current block */
       if(cur_block->blockL == 0) { 
@@ -2475,36 +2548,29 @@ inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, 
       cur_block->final_to  = L;
       cur_block->blockL   += nremaining;
       if(cur_block->blockL >= CMSEARCH_MAX_RESIDUE_COUNT) { 
-	/* finish any block which is now >= CMSEARCH_MAX_RESIDUE_COUNT residues,
-	 * and set nremaining to 0. Otherwise we leave the block 
-	 * incomplete, it will be finished in a later call to add_blocks() */
 	cur_block->complete = TRUE;
-	/* we'll make a new block below (under the else() below 
-	 * this block will remain in its initial state until
-	 * we enter this function the next time. */
       }
       /* update nremaining, this will break us out of the while()  */
       nremaining = 0;
     }
     else { 
       /* Case 2: We can't fit all of the remaining sequence in current
-       *         block, add as much of the remaining sequence as we
-       *         can to the current block, and then make a new block
-       *         for the remaining sequence (plus an overlap of 
-       *         ncontext residues). The new block is made below,
-       *         outside of this else.
+       *         block, add the first <ntoadd> residues to it, and
+       *         then make a new block for the remaining sequence
+       *         (plus an overlap of ncontext residues). The new block
+       *         is made below, outside of this else.
        */
-      seq_from = L - nremaining + 1;
-      if(cur_block->blockL == 0) { 
-	cur_block->first_from = seq_from;
-      }
-      cur_block->final_to  = seq_from + ntoadd - 1;
-      cur_block->blockL   += ntoadd;
-      cur_block->complete  = TRUE;
+	seq_from = L - nremaining + 1;
+	if(cur_block->blockL == 0) { 
+	  cur_block->first_from = seq_from;
+	}
+	cur_block->final_to  = seq_from + ntoadd - 1;
+	cur_block->blockL   += ntoadd;
+	cur_block->complete  = TRUE;
 
       /* determine the number of residues in next block that will overlap, 
        * our current seq position end point is (seq_from + ntoadd - 1), 
-       * so overlap can't exceed this */
+       * so cur_noverlap can't exceed this */
       cur_noverlap = ESL_MIN(ncontext, (seq_from + ntoadd - 1)); 
 
       /* update nremaining */

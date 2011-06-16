@@ -58,9 +58,10 @@ cm_tophits_Create(void)
   h->N         = 0;
   h->nreported = 0;
   h->nincluded = 0;
-  h->is_sorted_by_score   = TRUE; /* but only because there's 0 hits */
-  h->is_sorted_by_seq_idx = TRUE; /* but only because there's 0 hits */
-  h->hit[0]    = h->unsrt;        /* if you're going to call it "sorted" when it contains just one hit, you need this */
+  h->is_sorted_by_score   = TRUE;  /* but only because there's 0 hits */
+  h->is_sorted_by_seq_idx = FALSE; /* actually this is true with 0 hits, but for safety, 
+				    * we don't want both sorted_* fields as TRUE */
+  h->hit[0]    = h->unsrt;         /* if you're going to call it "sorted" when it contains just one hit, you need this */
   return h;
 
  ERROR:
@@ -188,7 +189,16 @@ hit_sorter_by_seq_idx(const void *vh1, const void *vh2)
 
   if      (h1->seq_idx > h2->seq_idx) return  1; /* first key, seq_idx (unique id for sequences), low to high */
   else if (h1->seq_idx < h2->seq_idx) return -1;
-  else                                return  (h1->start > h2->start ? 1 : -1 ); /* second key, start position, low to high */
+  else { 
+    /* same sequence, sort by strand, start position, in that order */
+    int in_rc1;
+    int in_rc2;
+    in_rc1 = (h1->start < h1->stop) ? 0 : 1;
+    in_rc2 = (h2->start < h2->stop) ? 0 : 1;
+    if     (in_rc1 > in_rc2) return  1; /* second key, strand (in_rc1 = 1, in_rc2 = 0), forward, then reverse */
+    else if(in_rc1 < in_rc2) return -1; /*                    (in_rc1 = 0, in_rc2 = 1), forward, then reverse */
+    else                     return (h1->start > h2->start ? 1 : -1 ); /* third key, start position, low to high */
+  }
 }
 
 /* Function:  cm_tophits_SortByScore()
@@ -196,10 +206,12 @@ hit_sorter_by_seq_idx(const void *vh1, const void *vh2)
  * Incept:    EPN, Tue May 24 13:30:23 2011
  *            SRE, Fri Dec 28 07:51:56 2007 (p7_tophits_Sort())
  *
- * Purpose:   Sorts a top hit list. After this call,
- *            <h->hit[i]> points to the i'th ranked 
- *            <CM_HIT> for all <h->N> hits.
- *
+ * Purpose:   Sorts a top hit list by score. After this call,
+ *            <h->hit[i]> points to the i'th ranked <CM_HIT> for all
+ *            <h->N> hits. First sort key is score (high to low), 
+ *            second is seq_idx (low to high), third is 
+ *            start position (low to high).
+
  * Returns:   <eslOK> on success.
  */
 int
@@ -207,9 +219,12 @@ cm_tophits_SortByScore(CM_TOPHITS *h)
 {
   int i;
 
-  if (h->is_sorted_by_score)  return eslOK;
+  if (h->is_sorted_by_score) { 
+    h->is_sorted_by_seq_idx = FALSE;
+    return eslOK;
+  }
   /* initialize hit ptrs, this also unsorts if already sorted by seq_idx */
-  for (i = 0; i < h->N; i++) h->hit[i]           = h->unsrt + i;
+  for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
   if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_score);
   h->is_sorted_by_seq_idx = FALSE;
   h->is_sorted_by_score   = TRUE;
@@ -222,7 +237,10 @@ cm_tophits_SortByScore(CM_TOPHITS *h)
  *
  * Purpose:   Sorts a top hit list by seq_idx. After this call,
  *            <h->hit[i]> points to the i'th ranked 
- *            <CM_HIT> for all <h->N> hits.
+ *            <CM_HIT> for all <h->N> hits. First sort key
+ *            is seq_idx (low to high), second is start
+ *            position (low to high).
+
  *
  * Returns:   <eslOK> on success.
  */
@@ -231,22 +249,15 @@ cm_tophits_SortBySeqIdx(CM_TOPHITS *h)
 {
   int i;
 
-  ESL_STOPWATCH *w;
-  w = esl_stopwatch_Create();
-  printf("START cm_tophits_SortBySeqIdx()\n");
-  esl_stopwatch_Start(w);
-
-  if (h->is_sorted_by_seq_idx)  return eslOK;
+  if (h->is_sorted_by_seq_idx) {
+    h->is_sorted_by_score = FALSE;
+    return eslOK;
+  }
   /* initialize hit ptrs, this also unsorts if already sorted by score */
-  for (i = 0; i < h->N; i++) h->hit[i]           = h->unsrt + i;
+  for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
   if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_seq_idx);
   h->is_sorted_by_score   = FALSE;
   h->is_sorted_by_seq_idx = TRUE;
-
-  esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, "# CPU time: ");
-  
-  printf("END   cm_tophits_SortBySeqIdx()\n");
 
   return eslOK;
 }
@@ -315,7 +326,8 @@ cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2)
   h1->hit    = new_hit;
   h1->Nalloc = Nalloc;
   h1->N     += h2->N;
-  /* and is_sorted_by_score is TRUE, as a side effect of cm_tophits_SortByScore() above. */
+  /* and is_sorted_by_score is TRUE and sorted_by_seq_idx is FALSE,
+   *  as a side effect of cm_tophits_SortByScore() above. */
   return eslOK;
   
  ERROR:
@@ -472,8 +484,9 @@ cm_tophits_Reuse(CM_TOPHITS *h)
     }
   }
   h->N         = 0;
-  h->is_sorted_by_score   = TRUE;
-  h->is_sorted_by_seq_idx = TRUE;
+  h->is_sorted_by_score   = TRUE;  /* because there's no hits */
+  h->is_sorted_by_seq_idx = FALSE; /* actually this is true with 0 hits, but for safety, 
+				    * we don't want both sorted_* fields as TRUE */
   h->hit[0]    = h->unsrt;
   return eslOK;
 }
@@ -582,7 +595,7 @@ int
 cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
 {
 
-  uint64_t i,j;             /* counters over hits */
+  uint64_t i;               /* counter over hits */
   int64_t s_prv, e_prv;     /* start, end of previous hit */
   int64_t s_cur, e_cur;     /* start, end of current hit */
   int     sc_prv;           /* bit score of previous hit */
@@ -592,13 +605,7 @@ cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
   int     si_prv;           /* seq_idx (unique sequence identifier) of previous hit */
   int     si_cur;           /* seq_idx (unique sequence identifier) of current hit */
   int     i_prv;            /* index in th->hit of previous hit */
-  int     hits_do_overlap;  /* TRUE if previous and current hits overlap, FALSE if not */
   int     nremoved = 0;
-
-  ESL_STOPWATCH *w;
-  w = esl_stopwatch_Create();
-  printf("START cm_tophits_RemoveDuplicates()\n");
-  esl_stopwatch_Start(w);
 
   if (! th->is_sorted_by_seq_idx) return eslEINVAL;
   if (th->N<2) return eslOK;
@@ -618,9 +625,9 @@ cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
     rc_cur = s_cur < e_cur ? FALSE : TRUE;
     si_cur = th->hit[i]->seq_idx;
 
-    /* check for overlap, we take advantage of the fact that we're sorted */
+    /* check for overlap, we take advantage of the fact that we're sorted by strand and position */
     if((si_cur == si_prv) && /* same sequence */
-       (((rc_cur == FALSE && rc_cur == FALSE) && (e_prv >= s_cur)) ||  /* overlap on forward strand */
+       (((rc_cur == FALSE && rc_prv == FALSE) && (e_prv >= s_cur)) ||  /* overlap on forward strand */
 	((rc_cur == TRUE  && rc_prv == TRUE)  && (s_prv >= e_cur))))   /* overlap on reverse strand */
       {
 	/* an overlap, remove the hit with the smaller score */
@@ -644,12 +651,9 @@ cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
       i_prv  = i;
     }
   }
-  esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, "# CPU time: ");
-  
-  printf("END   cm_tophits_RemoveDuplicates() %d removed %ld total\n", nremoved, th->N);
 
-  cm_tophits_Dump(stdout, th);
+  /*printf("Leaving cm_tophits_RemoveDuplicates(), %d total, %d removed\n", th->N, nremoved);
+    cm_tophits_Dump(stdout, th);*/
 
   return eslOK;
 }
@@ -935,6 +939,270 @@ ERROR:
   return status;
 
 }
+  
+/* Function:  cm_tophits_HitAlignmentStatistics()
+ * Synopsis:  Final alignment statistics output from a list of hits.
+ * Incept:    EPN, Thu Jun 16 04:22:11 2011
+ *
+ * Purpose:   Print summary statistics on alignments performed 
+ *            for all hits in tophits object <th> to stream <ofp>.
+ *            Statistics are compiled and reported for all 
+ *            reported and included hits as well as for each
+ *            type independently.
+ *
+ * Returns:   <eslOK> on success.
+ */
+int
+cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th)
+{
+  uint64_t h;
+  int is_reported;
+  int is_included;
+
+  int64_t rep_naln_hboa, rep_naln_hbcyk, rep_naln_dccyk;
+  double  tot_rep_matrix_Mb_hboa, tot_rep_matrix_Mb_hbcyk, tot_rep_matrix_Mb_dccyk;
+  double  min_rep_matrix_Mb_hboa, min_rep_matrix_Mb_hbcyk, min_rep_matrix_Mb_dccyk;
+  double  max_rep_matrix_Mb_hboa, max_rep_matrix_Mb_hbcyk, max_rep_matrix_Mb_dccyk;
+  double  avg_rep_matrix_Mb_hboa, avg_rep_matrix_Mb_hbcyk, avg_rep_matrix_Mb_dccyk;
+  double  tot_rep_elapsed_secs_hboa, tot_rep_elapsed_secs_hbcyk, tot_rep_elapsed_secs_dccyk;
+  double  min_rep_elapsed_secs_hboa, min_rep_elapsed_secs_hbcyk, min_rep_elapsed_secs_dccyk;
+  double  max_rep_elapsed_secs_hboa, max_rep_elapsed_secs_hbcyk, max_rep_elapsed_secs_dccyk;
+  double  avg_rep_elapsed_secs_hboa, avg_rep_elapsed_secs_hbcyk, avg_rep_elapsed_secs_dccyk;
+
+  int64_t inc_naln_hboa, inc_naln_hbcyk, inc_naln_dccyk;
+  double  tot_inc_matrix_Mb_hboa, tot_inc_matrix_Mb_hbcyk, tot_inc_matrix_Mb_dccyk;
+  double  min_inc_matrix_Mb_hboa, min_inc_matrix_Mb_hbcyk, min_inc_matrix_Mb_dccyk;
+  double  max_inc_matrix_Mb_hboa, max_inc_matrix_Mb_hbcyk, max_inc_matrix_Mb_dccyk;
+  double  avg_inc_matrix_Mb_hboa, avg_inc_matrix_Mb_hbcyk, avg_inc_matrix_Mb_dccyk;
+  double  tot_inc_elapsed_secs_hboa, tot_inc_elapsed_secs_hbcyk, tot_inc_elapsed_secs_dccyk;
+  double  min_inc_elapsed_secs_hboa, min_inc_elapsed_secs_hbcyk, min_inc_elapsed_secs_dccyk;
+  double  max_inc_elapsed_secs_hboa, max_inc_elapsed_secs_hbcyk, max_inc_elapsed_secs_dccyk;
+  double  avg_inc_elapsed_secs_hboa, avg_inc_elapsed_secs_hbcyk, avg_inc_elapsed_secs_dccyk;
+
+  /* initalize */
+  rep_naln_hboa = rep_naln_hbcyk = rep_naln_dccyk = 0;
+  tot_rep_matrix_Mb_hboa = tot_rep_matrix_Mb_hbcyk = tot_rep_matrix_Mb_dccyk = 0.;
+  min_rep_matrix_Mb_hboa = min_rep_matrix_Mb_hbcyk = min_rep_matrix_Mb_dccyk = 0.;
+  max_rep_matrix_Mb_hboa = max_rep_matrix_Mb_hbcyk = max_rep_matrix_Mb_dccyk = 0.;
+  tot_rep_elapsed_secs_hboa = tot_rep_elapsed_secs_hbcyk = tot_rep_elapsed_secs_dccyk = 0.;
+  min_rep_elapsed_secs_hboa = min_rep_elapsed_secs_hbcyk = min_rep_elapsed_secs_dccyk = 0.;
+  max_rep_elapsed_secs_hboa = max_rep_elapsed_secs_hbcyk = max_rep_elapsed_secs_dccyk = 0.;
+
+  inc_naln_hboa = inc_naln_hbcyk = inc_naln_dccyk = 0;
+  tot_inc_matrix_Mb_hboa = tot_inc_matrix_Mb_hbcyk = tot_inc_matrix_Mb_dccyk = 0.;
+  min_inc_matrix_Mb_hboa = min_inc_matrix_Mb_hbcyk = min_inc_matrix_Mb_dccyk = 0.;
+  max_inc_matrix_Mb_hboa = max_inc_matrix_Mb_hbcyk = max_inc_matrix_Mb_dccyk = 0.;
+  tot_inc_elapsed_secs_hboa = tot_inc_elapsed_secs_hbcyk = tot_inc_elapsed_secs_dccyk = 0.;
+  min_inc_elapsed_secs_hboa = min_inc_elapsed_secs_hbcyk = min_inc_elapsed_secs_dccyk = 0.;
+  max_inc_elapsed_secs_hboa = max_inc_elapsed_secs_hbcyk = max_inc_elapsed_secs_dccyk = 0.;
+ 
+  for(h = 0; h < th->N; h++) { 
+    is_reported = (th->unsrt[h].flags & CM_HIT_IS_REPORTED) ? TRUE : FALSE;
+    is_included = (th->unsrt[h].flags & CM_HIT_IS_INCLUDED) ? TRUE : FALSE;
+    if(th->unsrt[h].ad != NULL) { 
+      /* update reported stats */
+      if(is_reported) { 
+	if(th->unsrt[h].ad->used_optacc) { 
+	  rep_naln_hboa++;
+	  tot_rep_matrix_Mb_hboa    += th->unsrt[h].ad->matrix_Mb;
+	  tot_rep_elapsed_secs_hboa += th->unsrt[h].ad->elapsed_secs;
+	  if(rep_naln_hboa == 1) { 
+	    min_rep_matrix_Mb_hboa    = th->unsrt[h].ad->matrix_Mb;
+	    max_rep_matrix_Mb_hboa    = th->unsrt[h].ad->matrix_Mb;
+	    min_rep_elapsed_secs_hboa = th->unsrt[h].ad->elapsed_secs;
+	    max_rep_elapsed_secs_hboa = th->unsrt[h].ad->elapsed_secs;
+	  }
+	  else { 
+	    min_rep_matrix_Mb_hboa    = ESL_MIN(min_rep_matrix_Mb_hboa,    th->unsrt[h].ad->matrix_Mb);
+	    max_rep_matrix_Mb_hboa    = ESL_MAX(max_rep_matrix_Mb_hboa,    th->unsrt[h].ad->matrix_Mb);
+	    min_rep_elapsed_secs_hboa = ESL_MIN(min_rep_elapsed_secs_hboa, th->unsrt[h].ad->elapsed_secs);
+	    max_rep_elapsed_secs_hboa = ESL_MAX(max_rep_elapsed_secs_hboa, th->unsrt[h].ad->elapsed_secs);
+	  }
+	}
+	else if(th->unsrt[h].ad->used_hbands) { 
+	  rep_naln_hbcyk++;
+	  tot_rep_matrix_Mb_hbcyk    += th->unsrt[h].ad->matrix_Mb;
+	  tot_rep_elapsed_secs_hbcyk += th->unsrt[h].ad->elapsed_secs;
+	  if(rep_naln_hbcyk == 1) { 
+	    min_rep_matrix_Mb_hbcyk    = th->unsrt[h].ad->matrix_Mb;
+	    max_rep_matrix_Mb_hbcyk    = th->unsrt[h].ad->matrix_Mb;
+	    min_rep_elapsed_secs_hbcyk = th->unsrt[h].ad->elapsed_secs;
+	    max_rep_elapsed_secs_hbcyk = th->unsrt[h].ad->elapsed_secs;
+	  }
+	  else { 
+	    min_rep_matrix_Mb_hbcyk    = ESL_MIN(min_rep_matrix_Mb_hbcyk,    th->unsrt[h].ad->matrix_Mb);
+	    max_rep_matrix_Mb_hbcyk    = ESL_MAX(max_rep_matrix_Mb_hbcyk,    th->unsrt[h].ad->matrix_Mb);
+	    min_rep_elapsed_secs_hbcyk = ESL_MIN(min_rep_elapsed_secs_hbcyk, th->unsrt[h].ad->elapsed_secs);
+	    max_rep_elapsed_secs_hbcyk = ESL_MAX(max_rep_elapsed_secs_hbcyk, th->unsrt[h].ad->elapsed_secs);
+	  }
+	}
+	else { 
+	  rep_naln_dccyk++;
+	  tot_rep_matrix_Mb_dccyk    += th->unsrt[h].ad->matrix_Mb;
+	  tot_rep_elapsed_secs_dccyk += th->unsrt[h].ad->elapsed_secs;
+	  if(rep_naln_dccyk == 1) { 
+	    min_rep_matrix_Mb_dccyk    = th->unsrt[h].ad->matrix_Mb;
+	    max_rep_matrix_Mb_dccyk    = th->unsrt[h].ad->matrix_Mb;
+	    min_rep_elapsed_secs_dccyk = th->unsrt[h].ad->elapsed_secs;
+	    max_rep_elapsed_secs_dccyk = th->unsrt[h].ad->elapsed_secs;
+	  }
+	  else { 
+	    min_rep_matrix_Mb_dccyk    = ESL_MIN(min_rep_matrix_Mb_dccyk,    th->unsrt[h].ad->matrix_Mb);
+	    max_rep_matrix_Mb_dccyk    = ESL_MAX(max_rep_matrix_Mb_dccyk,    th->unsrt[h].ad->matrix_Mb);
+	    min_rep_elapsed_secs_dccyk = ESL_MIN(min_rep_elapsed_secs_dccyk, th->unsrt[h].ad->elapsed_secs);
+	    max_rep_elapsed_secs_dccyk = ESL_MAX(max_rep_elapsed_secs_dccyk, th->unsrt[h].ad->elapsed_secs);
+	  }
+	}
+      }
+      /* update included stats */
+      if(is_included) { 
+	if(th->unsrt[h].ad->used_optacc) { 
+	  inc_naln_hboa++;
+	  tot_inc_matrix_Mb_hboa    += th->unsrt[h].ad->matrix_Mb;
+	  tot_inc_elapsed_secs_hboa += th->unsrt[h].ad->elapsed_secs;
+	  if(inc_naln_hboa == 1) { 
+	    min_inc_matrix_Mb_hboa    = th->unsrt[h].ad->matrix_Mb;
+	    max_inc_matrix_Mb_hboa    = th->unsrt[h].ad->matrix_Mb;
+	    min_inc_elapsed_secs_hboa = th->unsrt[h].ad->elapsed_secs;
+	    max_inc_elapsed_secs_hboa = th->unsrt[h].ad->elapsed_secs;
+	  }
+	  else { 
+	    min_inc_matrix_Mb_hboa    = ESL_MIN(min_inc_matrix_Mb_hboa,    th->unsrt[h].ad->matrix_Mb);
+	    max_inc_matrix_Mb_hboa    = ESL_MAX(max_inc_matrix_Mb_hboa,    th->unsrt[h].ad->matrix_Mb);
+	    min_inc_elapsed_secs_hboa = ESL_MIN(min_inc_elapsed_secs_hboa, th->unsrt[h].ad->elapsed_secs);
+	    max_inc_elapsed_secs_hboa = ESL_MAX(max_inc_elapsed_secs_hboa, th->unsrt[h].ad->elapsed_secs);
+	  }
+	}
+	else if(th->unsrt[h].ad->used_hbands) { 
+	  inc_naln_hbcyk++;
+	  tot_inc_matrix_Mb_hbcyk    += th->unsrt[h].ad->matrix_Mb;
+	  tot_inc_elapsed_secs_hbcyk += th->unsrt[h].ad->elapsed_secs;
+	  if(inc_naln_hbcyk == 1) { 
+	    min_inc_matrix_Mb_hbcyk    = th->unsrt[h].ad->matrix_Mb;
+	    max_inc_matrix_Mb_hbcyk    = th->unsrt[h].ad->matrix_Mb;
+	    min_inc_elapsed_secs_hbcyk = th->unsrt[h].ad->elapsed_secs;
+	    max_inc_elapsed_secs_hbcyk = th->unsrt[h].ad->elapsed_secs;
+	  }
+	  else { 
+	    min_inc_matrix_Mb_hbcyk    = ESL_MIN(min_inc_matrix_Mb_hbcyk,    th->unsrt[h].ad->matrix_Mb);
+	    max_inc_matrix_Mb_hbcyk    = ESL_MAX(max_inc_matrix_Mb_hbcyk,    th->unsrt[h].ad->matrix_Mb);
+	    min_inc_elapsed_secs_hbcyk = ESL_MIN(min_inc_elapsed_secs_hbcyk, th->unsrt[h].ad->elapsed_secs);
+	    max_inc_elapsed_secs_hbcyk = ESL_MAX(max_inc_elapsed_secs_hbcyk, th->unsrt[h].ad->elapsed_secs);
+	  }
+	}
+	else { 
+	  inc_naln_dccyk++;
+	  tot_inc_matrix_Mb_dccyk    += th->unsrt[h].ad->matrix_Mb;
+	  tot_inc_elapsed_secs_dccyk += th->unsrt[h].ad->elapsed_secs;
+	  if(inc_naln_dccyk == 1) { 
+	    min_inc_matrix_Mb_dccyk    = th->unsrt[h].ad->matrix_Mb;
+	    max_inc_matrix_Mb_dccyk    = th->unsrt[h].ad->matrix_Mb;
+	    min_inc_elapsed_secs_dccyk = th->unsrt[h].ad->elapsed_secs;
+	    max_inc_elapsed_secs_dccyk = th->unsrt[h].ad->elapsed_secs;
+	  }
+	  else { 
+	    min_inc_matrix_Mb_dccyk    = ESL_MIN(min_inc_matrix_Mb_dccyk,    th->unsrt[h].ad->matrix_Mb);
+	    max_inc_matrix_Mb_dccyk    = ESL_MAX(max_inc_matrix_Mb_dccyk,    th->unsrt[h].ad->matrix_Mb);
+	    min_inc_elapsed_secs_dccyk = ESL_MIN(min_inc_elapsed_secs_dccyk, th->unsrt[h].ad->elapsed_secs);
+	    max_inc_elapsed_secs_dccyk = ESL_MAX(max_inc_elapsed_secs_dccyk, th->unsrt[h].ad->elapsed_secs);
+	  }
+	}
+      }
+    }
+  }
+  /* Output */
+  if(rep_naln_hboa > 0) { 
+    avg_rep_matrix_Mb_hboa    = tot_rep_matrix_Mb_hboa    / (double) rep_naln_hboa;
+    avg_rep_elapsed_secs_hboa = tot_rep_elapsed_secs_hboa / (double) rep_naln_hboa;
+  }
+  if(rep_naln_hbcyk > 0) { 
+    avg_rep_matrix_Mb_hbcyk    = tot_rep_matrix_Mb_hbcyk    / (double) rep_naln_hbcyk;
+    avg_rep_elapsed_secs_hbcyk = tot_rep_elapsed_secs_hbcyk / (double) rep_naln_hbcyk;
+  }
+  if(rep_naln_dccyk > 0) { 
+    avg_rep_matrix_Mb_dccyk    = tot_rep_matrix_Mb_dccyk    / (double) rep_naln_dccyk;
+    avg_rep_elapsed_secs_dccyk = tot_rep_elapsed_secs_dccyk / (double) rep_naln_dccyk;
+  }
+  if(inc_naln_hboa > 0) { 
+    avg_inc_matrix_Mb_hboa    = tot_inc_matrix_Mb_hboa    / (double) inc_naln_hboa;
+    avg_inc_elapsed_secs_hboa = tot_inc_elapsed_secs_hboa / (double) inc_naln_hboa;
+  }
+  if(inc_naln_hbcyk > 0) { 
+    avg_inc_matrix_Mb_hbcyk    = tot_inc_matrix_Mb_hbcyk    / (double) inc_naln_hbcyk;
+    avg_inc_elapsed_secs_hbcyk = tot_inc_elapsed_secs_hbcyk / (double) inc_naln_hbcyk;
+  }
+  if(inc_naln_dccyk > 0) { 
+    avg_inc_matrix_Mb_dccyk    = tot_inc_matrix_Mb_dccyk    / (double) inc_naln_dccyk;
+    avg_inc_elapsed_secs_dccyk = tot_inc_elapsed_secs_dccyk / (double) inc_naln_dccyk;
+  }
+
+  fprintf(ofp, "Hit alignment statistics summary:\n");
+  fprintf(ofp, "---------------------------------\n");
+  //fprintf(ofp, "Query:       %s  [CLEN=%d]\n", cm->name, cm->clen);
+  //if (cm->acc)  fprintf(ofp, "Accession:   %s\n", cm->acc);
+  //if (cm->desc) fprintf(ofp, "Description: %s\n", cm->desc);
+  //fprintf(ofp, "\n");
+  if((rep_naln_hboa + rep_naln_hbcyk + rep_naln_dccyk) > 0) { 
+    fprintf(ofp, "%8s  %-22s  %9s  %25s  %34s\n", "", "", "", "    matrix size (Mb)     ", "      alignment time (secs)       ");
+    fprintf(ofp, "%8s  %-22s  %9s  %25s  %34s\n", "", "", "", "-------------------------", "----------------------------------");
+    fprintf(ofp, "%8s  %-22s  %9s  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "category", "      algorithm       ", "# alns", "minimum", "average", "maximum", "minimum", "average", "maximum", "total");
+    fprintf(ofp, "%8s  %-22s  %9s  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "--------", "----------------------", "---------", "-------", "-------", "-------", "-------", "-------", "-------", "-------");
+    /* reported */
+    if(rep_naln_hboa > 0) { 
+      fprintf(ofp, "%8s  %-22s  %9ld  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", "HMM banded optimal acc", rep_naln_hboa, 
+	      min_rep_matrix_Mb_hboa,    avg_rep_matrix_Mb_hboa,    max_rep_matrix_Mb_hboa, 
+	      min_rep_elapsed_secs_hboa, avg_rep_elapsed_secs_hboa, max_rep_elapsed_secs_hboa, tot_rep_elapsed_secs_hboa);
+    }
+    else {
+      fprintf(ofp, "%8s  %-22s  %9ld  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", "HMM banded optimal acc", rep_naln_hboa, "-", "-", "-", "-", "-", "-", "-");
+    }
+    if(rep_naln_hbcyk > 0) { 
+      fprintf(ofp, "%8s  %-22s  %9ld  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", "HMM banded CYK", rep_naln_hbcyk, 
+	      min_rep_matrix_Mb_hbcyk,    avg_rep_matrix_Mb_hbcyk,    max_rep_matrix_Mb_hbcyk, 
+	      min_rep_elapsed_secs_hbcyk, avg_rep_elapsed_secs_hbcyk, max_rep_elapsed_secs_hbcyk, tot_rep_elapsed_secs_hbcyk);
+    }
+    else {
+      fprintf(ofp, "%8s  %-22s  %9ld  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", "HMM banded CYK", rep_naln_hbcyk, "-", "-", "-", "-", "-", "-", "-");
+    }
+    if(rep_naln_dccyk > 0) { 
+      fprintf(ofp, "%8s  %-22s  %9ld  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", "nonbanded D&C CYK", rep_naln_dccyk, 
+	      min_rep_matrix_Mb_dccyk,    avg_rep_matrix_Mb_dccyk,    max_rep_matrix_Mb_dccyk, 
+	      min_rep_elapsed_secs_dccyk, avg_rep_elapsed_secs_dccyk, max_rep_elapsed_secs_dccyk, tot_rep_elapsed_secs_dccyk);
+    }
+    else {
+      fprintf(ofp, "%8s  %-22s  %9ld  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", "nonbanded D&C CYK", rep_naln_dccyk, "-", "-", "-", "-", "-", "-", "-");
+    }
+    /* included */
+    if(inc_naln_hboa > 0) { 
+      fprintf(ofp, "%8s  %-22s  %9ld  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", "HMM banded optimal acc", inc_naln_hboa, 
+	      min_inc_matrix_Mb_hboa,    avg_inc_matrix_Mb_hboa,    max_inc_matrix_Mb_hboa, 
+	      min_inc_elapsed_secs_hboa, avg_inc_elapsed_secs_hboa, max_inc_elapsed_secs_hboa, tot_inc_elapsed_secs_hboa);
+    }
+    else {
+      fprintf(ofp, "%8s  %-22s  %9ld  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", "HMM banded optimal acc", inc_naln_hboa, "-", "-", "-", "-", "-", "-", "-");
+    }
+    if(inc_naln_hbcyk > 0) { 
+      fprintf(ofp, "%8s  %-22s  %9ld  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", "HMM banded CYK", inc_naln_hbcyk, 
+	      min_inc_matrix_Mb_hbcyk,    avg_inc_matrix_Mb_hbcyk,    max_inc_matrix_Mb_hbcyk, 
+	      min_inc_elapsed_secs_hbcyk, avg_inc_elapsed_secs_hbcyk, max_inc_elapsed_secs_hbcyk, tot_inc_elapsed_secs_hbcyk);
+    }
+    else {
+      fprintf(ofp, "%8s  %-22s  %9ld  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", "HMM banded CYK", inc_naln_hbcyk, "-", "-", "-", "-", "-", "-", "-");
+    }
+    if(inc_naln_dccyk > 0) { 
+      fprintf(ofp, "%8s  %-22s  %9ld  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", "nonbanded D&C CYK", inc_naln_dccyk, 
+	      min_inc_matrix_Mb_dccyk,    avg_inc_matrix_Mb_dccyk,    max_inc_matrix_Mb_dccyk, 
+	      min_inc_elapsed_secs_dccyk, avg_inc_elapsed_secs_dccyk, max_inc_elapsed_secs_dccyk, tot_inc_elapsed_secs_dccyk);
+    }
+    else {
+      fprintf(ofp, "%8s  %-22s  %9ld  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", "nonbanded D&C CYK", inc_naln_dccyk, "-", "-", "-", "-", "-", "-", "-");
+    }
+  }
+  else { 
+    fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n");
+  }
+  return eslOK;
+}
 /*---------------- end, standard output format ------------------*/
 
 /*****************************************************************
@@ -961,10 +1229,10 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
 {
   int status;
   int i;
-  int qnamew = ESL_MAX(20, strlen(qname));
   int tnamew = ESL_MAX(20, cm_tophits_GetMaxNameLength(th));
-  int qaccw  = ((qacc != NULL) ? ESL_MAX(10, strlen(qacc)) : 10);
-  int taccw  = ESL_MAX(10, cm_tophits_GetMaxAccessionLength(th));
+  int qnamew = ESL_MAX(20, strlen(qname));
+  int qaccw  = ((qacc != NULL) ? ESL_MAX(9, strlen(qacc)) : 9);
+  int taccw  = ESL_MAX(9, cm_tophits_GetMaxAccessionLength(th));
   int posw   = ESL_MAX(8, cm_tophits_GetMaxPositionLength(th));
 
   char *qnamestr = NULL;
@@ -973,33 +1241,33 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
   char *taccstr  = NULL;
   char *posstr   = NULL;
 
-  ESL_ALLOC(qnamestr, sizeof(char) * (qnamew+1));
-  ESL_ALLOC(tnamestr, sizeof(char) * (tnamew+1));
-  ESL_ALLOC(qaccstr,  sizeof(char) * (qaccw+1));
+  ESL_ALLOC(tnamestr, sizeof(char) * (tnamew));
   ESL_ALLOC(taccstr,  sizeof(char) * (taccw+1));
+  ESL_ALLOC(qnamestr, sizeof(char) * (qnamew+1));
+  ESL_ALLOC(qaccstr,  sizeof(char) * (qaccw+1));
   ESL_ALLOC(posstr,   sizeof(char) * (posw+1));
 
-  for(i = 0; i < qnamew; i++) { qnamestr[i] = '-'; } qnamestr[qnamew] = '\0';
-  for(i = 0; i < tnamew; i++) { tnamestr[i] = '-'; } tnamestr[tnamew] = '\0';
-  for(i = 0; i < qaccw;  i++) { qaccstr[i]  = '-'; } qaccstr[qaccw]   = '\0';
-  for(i = 0; i < taccw;  i++) { taccstr[i]  = '-'; } taccstr[taccw]   = '\0';
-  for(i = 0; i < posw;   i++) { posstr[i]   = '-'; } posstr[posw]     = '\0';
+  for(i = 0; i < tnamew-1; i++) { tnamestr[i] = '-'; } tnamestr[tnamew-1] = '\0'; /* need to account for single '#' */
+  for(i = 0; i < taccw;    i++) { taccstr[i]  = '-'; } taccstr[taccw]     = '\0';
+  for(i = 0; i < qnamew;   i++) { qnamestr[i] = '-'; } qnamestr[qnamew]   = '\0';
+  for(i = 0; i < qaccw;    i++) { qaccstr[i]  = '-'; } qaccstr[qaccw]     = '\0';
+  for(i = 0; i < posw;     i++) { posstr[i]   = '-'; } posstr[posw]       = '\0';
 
   int h;
 
   if (show_header) { 
-    fprintf(ofp, "#%-*s %-*s %-*s %-*s %-7s %-7s %*s %*s %9s %6s %5s %s\n",
-	    tnamew-1, " target name", taccw, "accession",  qnamew, "query name", qaccw, "accession", 
+    fprintf(ofp, "#%-*s %-*s %-*s %-*s %7s %7s %*s %*s %6s %9s %6s %-s\n",
+	    tnamew-1, "target name", taccw, "accession",  qnamew, "query name", qaccw, "accession", 
 	    "cm from", "cm to", 
-	    posw, "hit from", posw, "hit to", "E-value", "score", "strand", "description of target");
-    fprintf(ofp, "#%-*s %-*s %-*s %-*s %-7s %-7s %*s %*s %9s %6s %5s %s\n",
+	    posw, "hit from", posw, "hit to", "strand", "E-value", "score", "description of target");
+    fprintf(ofp, "#%-*s %-*s %-*s %-*s %-7s %-7s %*s %*s %6s %9s %6s %s\n",
 	    tnamew-1, tnamestr, taccw, taccstr, qnamew, qnamestr, qaccw, qaccstr, 
 	    "-------", "-------", 
-	    posw, posstr, posw, posstr, "---------", "------", "-----", "---------------------");
+	    posw, posstr, posw, posstr, "------", "---------", "------", "---------------------");
   }
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED)    {
-      fprintf(ofp, "%-*s %-*s %-*s %-*s %7d %7d %*ld %*ld %9.2g %6.1f %6s %s\n",
+      fprintf(ofp, "%-*s %-*s %-*s %-*s %7d %7d %*ld %*ld %6s %9.2g %6.1f %s\n",
 	      tnamew, th->hit[h]->name,
 	      taccw,  ((th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') ? th->hit[h]->acc : "-"),
 	      qnamew, qname,
@@ -1008,10 +1276,10 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
 	      th->hit[h]->ad->cto,
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
+	      (th->hit[h]->start < th->hit[h]->stop ? "+" : "-"),
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
-	      (th->hit[h]->start < th->hit[h]->stop ? "   +  "  :  "   -  "),
-	      (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "");
+	      (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "-");
     }
   }
   if(qnamestr != NULL) free(qnamestr);

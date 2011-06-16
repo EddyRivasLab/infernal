@@ -1590,7 +1590,7 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
   /* Allocations and initializations */
   bsc = IMPOSSIBLE;
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
-				/* if caller didn't give us a deck pool, make one */
+
   /* grow the matrix based on the current sequence and bands */
   if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
 

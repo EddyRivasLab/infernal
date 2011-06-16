@@ -1430,7 +1430,7 @@ typedef struct cm_s {
 
 
 enum cm_pipemodes_e { CM_SEARCH_SEQS = 0, CM_SCAN_MODELS = 1 };
-enum cm_zsetby_e    { CM_ZSETBY_DBSIZE = 0, CM_ZSETBY_OPTION = 1, CM_ZSETBY_FILEINFO = 2 };
+enum cm_zsetby_e    { CM_ZSETBY_SSIINFO = 0, CM_ZSETBY_NTARGETS = 1, CM_ZSETBY_OPTION = 2, CM_ZSETBY_FILEINFO = 3};
 
 typedef struct cm_pipeline_s {
   /* Dynamic programming matrices                                           */
@@ -1445,7 +1445,11 @@ typedef struct cm_pipeline_s {
   ScanMatrix_t *fsmx;           /* scan matrix for CYK filter stage         */
   int           need_fsmx;      /* TRUE if fsmx is necessary                */
   ScanMatrix_t *smx;            /* scan matrix for final stage              */
-  int           need_smx;       /* TRUE if smx is necessary                */
+  int           need_smx;       /* TRUE if smx is necessary                 */
+  int          *fcyk_dmin;      /* QDB dmin values for filter CYK round     */
+  int          *fcyk_dmax;      /* QDB dmax values for filter CYK round     */
+  int          *final_dmin;     /* QDB dmin values for final round          */
+  int          *final_dmax;     /* QDB dmax values for final round          */
 
   /* Model-dependent parameters                                             */
   int 		maxW;           /* # residues to overlap in adjacent windows*/
@@ -1532,6 +1536,7 @@ typedef struct cm_pipeline_s {
   int     glen_min;             /* min clen for len-dependent glc p7 thr    */
   int     glen_max;             /* max clen for len-dependent glc p7 thr    */
   int     glen_step;            /* step size for halving glc p7 thr if do_glen */
+  int     do_glocal_cm_stages;  /* TRUE to use CM in glocal mode for final stages */
 
   /* Parameters controlling p7 domain/envelope defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
@@ -1580,7 +1585,13 @@ typedef struct cm_pipeline_s {
   uint64_t      pos_past_fwdbias;/* # positions that pass Fwd bias filter */
   uint64_t      pos_past_gfwdbias;/*# positions that pass gFwd bias filter*/
   uint64_t      pos_past_edefbias;/* # positions that pass dom def bias filter */
+  uint64_t      n_overflow_fcyk;  /* # hits that couldn't use an HMM banded mx in CYK filter stage */
+  uint64_t      n_overflow_final; /* # hits that couldn't use an HMM banded mx in final stage */
+  uint64_t      n_aln_hboa;       /* # HMM banded optacc alignments computed */
+  uint64_t      n_aln_hbcyk;      /* # HMM banded CYK    alignments computed */
+  uint64_t      n_aln_dccyk;      /* # nonbanded divide and conquer CYK alignments computed */
 
+  /* Flags for timing experiments */
   int           do_time_F1;      /* TRUE to abort after Stage 1 MSV */
   int           do_time_F2;      /* TRUE to abort after Stage 2 Vit */
   int           do_time_F3;      /* TRUE to abort after Stage 3 Fwd */
@@ -1588,6 +1599,7 @@ typedef struct cm_pipeline_s {
   int           do_time_F5;      /* TRUE to abort after Stage 5 env def */
   int           do_time_F6;      /* TRUE to abort after Stage 6 CYK */
 
+  /* miscellaneous parameters */
   enum cm_pipemodes_e mode;    	/* CM_SCAN_MODELS | CM_SEARCH_SEQS           */
   int           do_top;         /* TRUE to do top    strand (usually TRUE)   */
   int           do_bot;         /* TRUE to do bottom strand (usually TRUE)   */
