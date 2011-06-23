@@ -771,14 +771,12 @@ void RemoveOverlappingHits (search_results_t *results, int i0, int j0)
  */
 int RemoveHitsOverECutoff (CM_t *cm, char *errbuf, SearchInfo_t *si, int sround, search_results_t *results, ESL_DSQ *dsq, int first_result, int sort_by_score, int sort_by_endpoint)
 {
-  int gc_comp;
   int i, x;
   search_result_node_t swap;
   float score_for_Eval; /* the score we'll determine the statistical signifance of. */
   int cm_exp_mode;      /* exp tail mode if we're using CM hits */
   int cp9_exp_mode;     /* exp tail mode if we're using HMM hits */
-  int p;                /* relevant partition */
-  ExpInfo_t **exp;      /* pointer to exp tail to use */
+  ExpInfo_t *exp;       /* pointer to exp tail to use */
   float cutoff;         /* the max E-value we want to keep */
   int orig_num_results; /* number of results when function entered */
 
@@ -796,16 +794,14 @@ int RemoveHitsOverECutoff (CM_t *cm, char *errbuf, SearchInfo_t *si, int sround,
   /* Determine exp tail mode to use */
   orig_num_results = results->num_results;
   CM2ExpMode(cm, si->search_opts[sround], &cm_exp_mode, &cp9_exp_mode);
-  exp = (si->stype[sround] == SEARCH_WITH_HMM) ? cm->stats->expAA[cp9_exp_mode] : cm->stats->expAA[cm_exp_mode];
+  exp = (si->stype[sround] == SEARCH_WITH_HMM) ? cm->expA[cp9_exp_mode] : cm->expA[cm_exp_mode];
   
   ESL_DASSERT1((si->cutoff_type[sround] == E_CUTOFF));
   cutoff = si->e_cutoff[sround];
   
   for (i=first_result; i<results->num_results; i++) {
-    gc_comp = get_gc_comp (cm->abc, dsq, results->data[i].start, results->data[i].stop);
-    p = cm->stats->gc2p[gc_comp];
     score_for_Eval = results->data[i].score;
-    if (Score2E(score_for_Eval, exp[p]->mu_extrap, exp[p]->lambda, exp[p]->cur_eff_dbsize) > cutoff)  
+    if (Score2E(score_for_Eval, exp->mu_extrap, exp->lambda, exp->cur_eff_dbsize) > cutoff)  
       results->data[i].start = -1;
   }
   
@@ -912,10 +908,9 @@ void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_
   float score_for_Eval; /* the score we'll determine the statistical significance of */
   CMEmitMap_t *emap;    /* consensus emit map for the CM */
   int do_stats;        
-  ExpInfo_t **exp;      /* pointer to exp tail to use */
+  ExpInfo_t *exp;       /* pointer to exp tail to use */
   int cm_exp_mode;      /* exp tail mode if we're using CM hits */
   int cp9_exp_mode;     /* exp tail mode if we're using HMM hits */
-  int p;                /* relevant partition */
   int offset;         
   int init_rci;         /* initial strand that's been searched, 0 if do_top, else 1 */
   double Eval, Pval;    /* E value and P value of a hit */
@@ -941,7 +936,7 @@ void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_
 
   if(do_stats) { /* determine exp tail mode to use */
     CM2ExpMode(cm, si->search_opts[si->nrounds], &cm_exp_mode, &cp9_exp_mode);
-    exp = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->expAA[cp9_exp_mode] : cm->stats->expAA[cm_exp_mode];
+    exp = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->expA[cp9_exp_mode] : cm->expA[cm_exp_mode];
   }
   emap = CreateEmitMap(cm);
   name = dbseq->sq[0]->name;
@@ -990,10 +985,9 @@ void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_
       }
 
       if (do_stats) {
-	p = cm->stats->gc2p[gc_comp];
 	score_for_Eval = results->data[i].score;
-	Pval = esl_exp_surv((double) score_for_Eval, exp[p]->mu_extrap, exp[p]->lambda);
-	Eval = Pval * exp[p]->cur_eff_dbsize;
+	Pval = esl_exp_surv((double) score_for_Eval, exp->mu_extrap, exp->lambda);
+	Eval = Pval * exp->cur_eff_dbsize;
 	fprintf(fp, " Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score, Eval, Pval, gc_comp);
 	if(tabfp != NULL) { 
 	  fprintf(tabfp, "%4.2e  %3d\n", Eval, gc_comp);
@@ -1425,8 +1419,8 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   for(i = 0; i < hfi->ncut; i++) {
     cm_E  = hfi->cm_E_cut[i]  * ((double) dbsize / (double) hfi->dbsize);
     hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
-    if((status = E2MinScore(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
-    if((status = E2MinScore(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
+    if((status = E2ScoreGivenExpInfo(cm->expA[cm_mode],  errbuf, cm_E,  &cm_bit_sc))  != eslOK) return status;
+    if((status = E2ScoreGivenExpInfo(cm->expA[hmm_mode], errbuf, hmm_E, &hmm_bit_sc)) != eslOK) return status;
     fprintf(fp, "%4s  %6d  ", "", (i+1));
     if(cm_E < 0.01)  fprintf(fp, "%10.2e  ", cm_E);
     else             fprintf(fp, "%10.3f  ", cm_E);
@@ -1504,14 +1498,14 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
   }
   fprintf(fp, "%6d  %-*s  %5d  ", cmi, namewidth, cm->name, cm->clen);
   if((status = GetHMMFilterFwdECutGivenCME(hfi, errbuf, cm_E, dbsize, &i)) != eslOK) return status;
-  if((status = E2MinScore(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
+  if((status = E2ScoreGivenExpInfo(cm->expA[cm_mode], errbuf, cm_E,  &cm_bit_sc))  != eslOK) return status;
   if(cm_E < 0.01)  fprintf(fp, "%4.2e  ", cm_E);
   else             fprintf(fp, "%8.3f  ", cm_E);
   fprintf(fp, "%6.1f  ", cm_bit_sc);
 
   if(i != -1) { 
     hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
-    if((status = E2MinScore(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
+    if((status = E2ScoreGivenExpInfo(cm->expA[hmm_mode], errbuf, hmm_E, &hmm_bit_sc)) != eslOK) return status;
     fprintf(fp, "%6.1f  ", hmm_bit_sc);
     S     = GetHMMFilterS      (hfi, i, W, avg_hit_len);
     xhmm  = GetHMMFilterXHMM   (hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res);
@@ -1565,7 +1559,7 @@ DumpHMMFilterInfoForCMBitScore(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_
   int status;
   float cm_E;
 
-  if((status = Score2MaxE(cm, errbuf, cm_mode, cm_bit_sc, &cm_E)) != eslOK)  return status;
+  if((status = Score2E(cm_bit_sc, cm->expA[cm_mode]->mu_extrap, cm->expA[cm_mode]->lambda, cm->expA[cm_mode]->cur_eff_dbsize)) != eslOK) return status;
   if((status = DumpHMMFilterInfoForCME(fp, hfi, errbuf, cm, cm_mode, hmm_mode, dbsize, cmi, cm_E, do_header, namewidth, namespaces, 
 				       NULL, ret_hmm_E, ret_hmm_bit_sc, ret_S, ret_xhmm, ret_spdup, ret_cm_ncalcs_per_res, ret_hmm_ncalcs_per_res, ret_do_filter)) != eslOK) return status;
 
@@ -1627,8 +1621,8 @@ PlotHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   for(i = 0; i < hfi->ncut; i++) {
     cm_E  = hfi->cm_E_cut[i]  * ((double) dbsize / (double) hfi->dbsize);
     hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
-    if((status = E2MinScore(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
-    if((status = E2MinScore(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
+    if((status = E2ScoreGivenExpInfo(cm->expA[cm_mode],  errbuf, cm_E,  &cm_bit_sc))  != eslOK) return status;
+    if((status = E2ScoreGivenExpInfo(cm->expA[hmm_mode], errbuf, hmm_E, &hmm_bit_sc)) != eslOK) return status;
 
     switch (mode) { 
     case FTHR_PLOT_CME_HMME:  fprintf(fp, "%g\t%g\n", cm_E, hmm_E); break;
@@ -1810,7 +1804,7 @@ GetHMMFilterFwdECutGivenCMBitScore(HMMFilterInfo_t *hfi, char *errbuf, float cm_
   /* contract check */
   if(ret_cut_pt == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "GetHMMFilterFwdECutGivenCMBitScore(), ret_cut_pt == NULL");
 
-  if((status = Score2MaxE(cm, errbuf, cm_mode, cm_bit_sc, &cm_E)) != eslOK)          return status;
+  if((status = Score2E(cm_bit_sc, cm->expA[cm_mode]->mu_extrap, cm->expA[cm_mode]->lambda, cm->expA[cm_mode]->cur_eff_dbsize)) != eslOK) return status;
   if((status = GetHMMFilterFwdECutGivenCME(hfi, errbuf, cm_E, dbsize, &cut_pt)) != eslOK) return status; 
 
   *ret_cut_pt = cut_pt;

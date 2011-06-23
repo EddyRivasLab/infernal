@@ -18,15 +18,15 @@
 #define USE_OLDLOGSUM 0
 
 /* from cm.c */
-extern CM_t *CreateCM(int nnodes, int nstates, const ESL_ALPHABET *abc);
+extern CM_t *CreateCM(int nnodes, int nstates, int clen, const ESL_ALPHABET *abc);
 extern CM_t *CreateCMShell(void);
-extern void  CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc);
+extern void  CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *abc);
 extern void  CMZero(CM_t *cm);
 extern void  CMRenormalize(CM_t *cm);
 extern void  FreeCM(CM_t *cm);
 extern void  CMSimpleProbify(CM_t *cm);
 extern int   rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat);
-extern void  CMLogoddsify(CM_t *cm);
+extern int   CMLogoddsify(CM_t *cm);
 extern int   CMCountStatetype(CM_t *cm, char type);
 extern int   CMCountNodetype(CM_t *cm, char type);
 extern int   CMSegmentCountStatetype(CM_t *cm, int r, int z, char type);
@@ -72,6 +72,7 @@ extern char *CMStateid(char st);
 extern int   cm_SetName(CM_t *cm, char *name);
 extern int   cm_SetAccession(CM_t *cm, char *acc);
 extern int   cm_SetDescription(CM_t *cm, char *desc);
+extern int   cm_SetConsensus(CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq);
 extern int   cm_AppendComlog(CM_t *cm, int argc, char **argv);
 extern int   cm_SetCtime(CM_t *cm);
 extern int   DefaultNullModel(const ESL_ALPHABET *abc, float **ret_null);
@@ -86,6 +87,7 @@ extern int        CopyComLog(const ComLog_t *src, ComLog_t *dest);
 extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len);
 extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
 extern int        CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm);
+extern void       DumpCMFlags(FILE *fp, CM_t *cm);
 
 /* from dispatch.c */
 extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, int hit_len_guess, 
@@ -189,6 +191,16 @@ extern int     CMFilePositionByIndex(CMFILE *cmf, int64_t idx);
 extern int     CMFilePositionByKey(CMFILE *cmf, char *key);
 extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary, char *errbuf);
 extern int     PositionSqFileByNumber(ESL_SQFILE *sqfp, int sseq, char *errbuf);
+
+/* from cm_file.c */
+extern int     cm_file_Open(char *filename, char *env, NEW_CM_FILE **ret_cmfp, char *errbuf);
+extern int     cm_file_OpenNoDB(char *filename, char *env, NEW_CM_FILE **ret_cmfp, char *errbuf);
+extern int     cm_file_OpenBuffer(char *buffer, int size, NEW_CM_FILE **ret_cmfp);
+extern void    cm_file_Close(NEW_CM_FILE *cmfp);
+extern int     cm_file_CreateLock(NEW_CM_FILE *cmfp);
+extern int     cm_file_WriteASCII(FILE *fp, int format, CM_t *cm);
+extern int     cm_file_WriteBinary(FILE *fp, int format, CM_t *cm);
+extern int     cm_file_Read(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
 
 /* from cm_modelconfig.c */
 extern int   ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t *mother_map);
@@ -577,9 +589,6 @@ extern int cm_cp9trace_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CP9t
 extern int cm_digitized_sq_MPIPackSize(const ESL_SQ *sq, MPI_Comm comm, int *ret_n);
 extern int cm_digitized_sq_MPIPack(const ESL_SQ *sq, char *buf, int n, int *position, MPI_Comm comm);
 extern int cm_digitized_sq_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MPI_Comm comm, ESL_SQ **ret_sq);
-extern int cmstats_MPIPackSize(CMStats_t *cmstats, MPI_Comm comm, int *ret_n);
-extern int cmstats_MPIPack(CMStats_t *cmstats, char *buf, int n, int *position, MPI_Comm comm);
-extern int cmstats_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CMStats_t **ret_cmstats);
 extern int exp_info_MPIPackSize(ExpInfo_t *exp, MPI_Comm comm, int *ret_n);
 extern int exp_info_MPIPack(ExpInfo_t *exp, char *buf, int n, int *position, MPI_Comm comm);
 extern int exp_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ExpInfo_t **ret_exp);
@@ -683,17 +692,13 @@ extern seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int 
 extern seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, double *pdist, int extranum, int nseq, double *L_distro, int Lmax, int i_am_mpi_master); 
 
 /* from stats.c */
-extern CMStats_t *AllocCMStats(int np);
-extern void       FreeCMStats(CMStats_t *cmstats);
-extern int        debug_print_cmstats(CM_t *cm, char *errbuf, CMStats_t *cmstats, int has_fthr);
+extern int        debug_print_expinfo_and_filterinfo_arrays(CM_t *cm, char *errbuf, ExpInfo_t **expA, HMMFilterInfo_t **hfiA);
 extern int        debug_print_expinfo(ExpInfo_t *exp);
 extern int        get_gc_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, int stop);
 extern int        get_alphabet_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, int stop, float **ret_freq); 
 extern int        GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, int *ret_namewidth);
 extern int        GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, double **ret_gc_ct);
-extern int        E2MinScore(CM_t *cm, char *errbuf, int exp_mode, float E,  float *ret_sc);
 extern int        E2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, float E, float *ret_sc);
-extern int        Score2MaxE(CM_t *cm, char *errbuf, int exp_mode, float sc, float *ret_E);
 extern double     Score2E(float x, double mu, double lambda, long eff_dbsize);
 extern int        CM2ExpMode(CM_t *cm, int search_opts, int *ret_cm_exp_mode, int *ret_cp9_exp_mode);
 extern int        CM2FthrMode(CM_t *cm, char *errbuf, int search_opts, int *ret_fthr_mode);
@@ -708,7 +713,6 @@ extern char      *DescribeFthrMode(int fthr_mode);
 extern int        UpdateExpsForDBSize(CM_t *cm, char *errbuf, long dbsize);
 extern int        CreateGenomicHMM(const ESL_ALPHABET *abc, char *errbuf, double **ret_sA, double ***ret_tAA, double ***ret_eAA, int *ret_nstates);
 extern int        SampleGenomicSequenceFromHMM(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, char *errbuf, double *sA, double **tAA, double **eAA, int nstates, int L, ESL_DSQ **ret_dsq);
-extern int        CloneCMStats(CMStats_t *cmstats, CMStats_t **ret_cmstats);
 extern int        CopyExpInfo(ExpInfo_t *src, ExpInfo_t *dest);
 
 /* from truncyk.c */

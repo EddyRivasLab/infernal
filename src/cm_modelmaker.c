@@ -400,10 +400,28 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **r
    * arrangement of consensus nodes. Now do the drill for constructing a full model 
    * using this guide tree.
    */
-  cm = CreateCM(nnodes, nstates, msa->abc);
+  cm = CreateCM(nnodes, nstates, clen, msa->abc);
   if((status = cm_from_guide(cm, errbuf, gtr, FALSE)) != eslOK) return status; /* FALSE says, we're not building a sub CM that will never be localized */
   CMZero(cm);
   cm->clen = clen;
+
+  /* post v1.0.2: introduced cm->map and now we fill cm->rf */
+  /* cm->map is identical to c2a_map, copy it */
+  if(cm->map != NULL) free(cm->map); /* this is paranoid, it will be NULL */
+  ESL_ALLOC(cm->map, sizeof(int) * (cm->clen+1));
+  esl_vec_ICopy(c2a_map, (cm->clen+1), cm->map);
+  cm->flags |= CMH_MAP;
+
+  /* cm->rf is copied from the msa, from consensus positions */
+  if(msa->rf != NULL) { 
+    if(cm->rf != NULL) free(cm->rf); /* this is paranoid, it will be NULL */
+    ESL_ALLOC(cm->rf, sizeof(char) * (cm->clen+2));
+    cm->rf[0] = ' ';
+    for(cpos = 1; cpos <= cm->clen; cpos++) 
+      cm->rf[cpos] = msa->rf[c2a_map[cpos]-1]; /* watch off-by-one in msa's rf */
+    cm->rf[cm->clen+1] = '\0';
+    cm->flags |= CMH_RF;
+  }
 
   free(matassign);
   free(c2a_map);
@@ -1365,10 +1383,13 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int cl
    * arrangement of consensus nodes. Now do the drill for constructing a full model 
    * using this guide tree.
    */
-  cm = CreateCM(nnodes, nstates, abc);
+  cm = CreateCM(nnodes, nstates, clen, abc);
   if((status = cm_from_guide(cm, errbuf, gtr, building_sub_model)) != eslOK) return status;
   CMZero(cm);
   cm->clen = clen;
+
+  /* note map and rf stay NULL (invalid) we could copy them from their mother, 
+   * but not in this function (because we don't have the mother CM here) */
 
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);

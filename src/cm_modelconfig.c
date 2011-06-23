@@ -77,6 +77,10 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
   char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
   /* TEMP */
   
+  /* Build the emitmap */
+  if(cm->emap != NULL) FreeEmitMap(cm->emap);
+  cm->emap = CreateEmitMap(cm);
+
   /* Build the CP9 HMM and associated data */
   /* IMPORTANT: do this before setting up CM for local mode
    * if we already have these, free them (wasteful but safe, 

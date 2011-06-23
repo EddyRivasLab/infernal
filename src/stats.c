@@ -33,76 +33,12 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-/* Function: AllocCMStats()
- * Date:     EPN, Wed May  2 14:10:25 2007      
- *
- * Purpose:  Allocate a CMStats_t data structure given
- *           the number of partitions and relevant info needed
- *           for creating the HMMFilter_t objects.
- * 
- * Args:     np - number of partitions 
- */
-CMStats_t *
-AllocCMStats(int np)
-{
-  int status;
-  CMStats_t  *cmstats;
-  int i, p;
-
-  ESL_ALLOC(cmstats, sizeof(struct cmstats_s));
-
-  cmstats->np = np;
-  ESL_ALLOC(cmstats->ps, sizeof(int) * cmstats->np);
-  ESL_ALLOC(cmstats->pe, sizeof(int) * cmstats->np);
-  ESL_ALLOC(cmstats->expAA, sizeof(ExpInfo_t **) * EXP_NMODES);
-  ESL_ALLOC(cmstats->hfiA,  sizeof(HMMFilterInfo_t *) * FTHR_NMODES);
-  for(i = 0; i < EXP_NMODES; i++) {
-    ESL_ALLOC(cmstats->expAA[i], sizeof(ExpInfo_t *) * cmstats->np);
-    for(p = 0; p < cmstats->np; p++) {
-      cmstats->expAA[i][p] = CreateExpInfo();
-      if(cmstats->expAA[i][p] == NULL) goto ERROR; /* memory error */
-    }
-  }
-  for(i = 0; i < FTHR_NMODES; i++) {
-    cmstats->hfiA[i] = CreateHMMFilterInfo();
-    if(cmstats->hfiA[i] == NULL) goto ERROR; /* memory error */
-  }
-  return cmstats;
-
- ERROR:
-  cm_Fail("AllocCMStats() memory allocation error.");
-  return NULL; /* never reached */
-}
-
-/* Function: FreeCMStats()
- * Returns: (void) 
- */
-void 
-FreeCMStats(CMStats_t *cmstats)
-{
-  int i, p;
-  for(i = 0; i < EXP_NMODES; i++)
-    {
-      for(p = 0; p < cmstats->np; p++)
-	if(cmstats->expAA[i][p] != NULL) free(cmstats->expAA[i][p]);
-      free(cmstats->expAA[i]);
-    }
-  free(cmstats->expAA);
-  for(i = 0; i < FTHR_NMODES; i++)
-    FreeHMMFilterInfo(cmstats->hfiA[i]);
-  free(cmstats->hfiA);
-  free(cmstats->ps);
-  free(cmstats->pe);
-  free(cmstats);
-}  
-
 
 /* Function: debug_print_cmstats
  */
-int debug_print_cmstats(CM_t *cm, char *errbuf, CMStats_t *cmstats, int has_fthr)
+int debug_print_expinfo_and_filterinfo_arrays(CM_t *cm, char *errbuf, ExpInfo_t **expA, HMMFilterInfo_t **hfiA)
 {
   int status;
-  int p;
   char *namedashes;
   int ni;
   int namewidth = strlen(cm->name); 
@@ -110,46 +46,41 @@ int debug_print_cmstats(CM_t *cm, char *errbuf, CMStats_t *cmstats, int has_fthr
   namedashes[namewidth] = '\0';
   for(ni = 0; ni < namewidth; ni++) namedashes[ni] = '-';
 
-  printf("Num partitions: %d\n", cmstats->np);
-  for (p = 0; p < cmstats->np; p++)
-    {
-      printf("Partition %d: start: %d end: %d\n", p, cmstats->ps[p], cmstats->pe[p]);
-      printf("cm_lc  exp tail:\t");
-      debug_print_expinfo(cmstats->expAA[EXP_CM_LC][p]);
-      printf("cm_gc  exp tail:\t");
-      debug_print_expinfo(cmstats->expAA[EXP_CM_GC][p]);
-      printf("cm_li  exp tail:\t");
-      debug_print_expinfo(cmstats->expAA[EXP_CM_LI][p]);
-      printf("cm_gi  exp tail:\t");
-      debug_print_expinfo(cmstats->expAA[EXP_CM_GI][p]);
-      printf("cp9_lv exp tail:\t");
-      debug_print_expinfo(cmstats->expAA[EXP_CP9_LV][p]);
-      printf("cp9_gv exp tail:\t");
-      debug_print_expinfo(cmstats->expAA[EXP_CP9_GV][p]);
-      printf("cp9_lf exp tail:\t");
-      debug_print_expinfo(cmstats->expAA[EXP_CP9_LF][p]);
-      printf("cp9_gf exp tail:\t");
-      debug_print_expinfo(cmstats->expAA[EXP_CP9_GF][p]);
-      printf("\n\n");
-    }
-
-  if(has_fthr)
-    {
-      printf("Filter CM_LC info:\n");
-      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_LC], errbuf, cm, EXP_CM_LC, EXP_CP9_LF, cmstats->hfiA[FTHR_CM_LC]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
-      printf("Filter CM_LI info:\n");
-      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_LI], errbuf, cm, EXP_CM_LI, EXP_CP9_LF, cmstats->hfiA[FTHR_CM_LI]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
-      printf("Filter CM_GC info:\n");
-      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_GC], errbuf, cm, EXP_CM_GC, EXP_CP9_GF, cmstats->hfiA[FTHR_CM_GC]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
-      printf("Filter CM_GI info:\n");
-      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_GI], errbuf, cm, EXP_CM_GI, EXP_CP9_GF, cmstats->hfiA[FTHR_CM_GI]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
-      printf("\n\n");
-    }
+  if(expA != NULL) { 
+    printf("cm_lc  exp tail:\t");
+    debug_print_expinfo(expA[EXP_CM_LC]);
+    printf("cm_gc  exp tail:\t");
+    debug_print_expinfo(expA[EXP_CM_GC]);
+    printf("cm_li  exp tail:\t");
+    debug_print_expinfo(expA[EXP_CM_LI]);
+    printf("cm_gi  exp tail:\t");
+    debug_print_expinfo(expA[EXP_CM_GI]);
+    printf("cp9_lv exp tail:\t");
+    debug_print_expinfo(expA[EXP_CP9_LV]);
+    printf("cp9_gv exp tail:\t");
+    debug_print_expinfo(expA[EXP_CP9_GV]);
+    printf("cp9_lf exp tail:\t");
+    debug_print_expinfo(expA[EXP_CP9_LF]);
+    printf("cp9_gf exp tail:\t");
+    debug_print_expinfo(expA[EXP_CP9_GF]);
+    printf("\n\n");
+  }
+  if(hfiA != NULL) { 
+    printf("Filter CM_LC info:\n");
+    if((status = DumpHMMFilterInfo(stdout, hfiA[FTHR_CM_LC], errbuf, cm, EXP_CM_LC, EXP_CP9_LF, hfiA[FTHR_CM_LC]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
+    printf("Filter CM_LI info:\n");
+    if((status = DumpHMMFilterInfo(stdout, hfiA[FTHR_CM_LI], errbuf, cm, EXP_CM_LI, EXP_CP9_LF, hfiA[FTHR_CM_LI]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
+    printf("Filter CM_GC info:\n");
+    if((status = DumpHMMFilterInfo(stdout, hfiA[FTHR_CM_GC], errbuf, cm, EXP_CM_GC, EXP_CP9_GF, hfiA[FTHR_CM_GC]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
+    printf("Filter CM_GI info:\n");
+    if((status = DumpHMMFilterInfo(stdout, hfiA[FTHR_CM_GI], errbuf, cm, EXP_CM_GI, EXP_CP9_GF, hfiA[FTHR_CM_GI]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
+    printf("\n\n");
+  }
   free(namedashes);
   return eslOK;
 
  ERROR:
-  ESL_FAIL(status, errbuf, "Memory allocation error in debug_print_cmstats().");
+  ESL_FAIL(status, errbuf, "Memory allocation error in debug_print_expinfo_and_filterinfo_arrays().");
   return status; /* NEVERREACHED */
 }
 
@@ -369,39 +300,6 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *re
   ESL_FAIL(status, errbuf, "GetDBInfo(): memory allocation error.");
 }
 
-/* Function: E2MinScore()
- * Date:     EPN, Tue Dec 11 15:40:25 2007 
- *           (morphed from RSEARCH: RJK, Mon April 15 2002 [St. Louis])
- *
- * Purpose:  Given an E-value <E> and a CM with valid exp tail stats 
- *           determine the minimal bit score that will give an E-value 
- *           of <E> across all partitions. This will be a safe bit score
- *           cutoff to use when returning hits in DispatchSearch().
- *           Because no score less than this will have an E-value 
- *           less than E.
- *
- * Returns:  eslOK on success, <ret_sc> filled with bit score
- *           error code on failure, errbuf filled with message
- */
-int E2MinScore (CM_t *cm, char *errbuf, int exp_mode, float E, float *ret_sc)
-{
-  int status;
-  float low_sc, sc;
-  int p;
-
-  /* contract checks */
-  if(!(cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "E2MinScore, CM's CMH_EXPTAIL_STATS flag is down.");
-  if(ret_sc == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "E2MinScore, ret_sc is NULL");
-
-  if((status = E2ScoreGivenExpInfo(cm->stats->expAA[exp_mode][0], errbuf, E, &low_sc)) != eslOK) return status;
-  for(p = 1; p < cm->stats->np; p++) {
-    if((status = E2ScoreGivenExpInfo(cm->stats->expAA[exp_mode][p], errbuf, E, &sc)) != eslOK) return status;
-    low_sc = ESL_MIN(low_sc, sc);
-  }
-  *ret_sc = low_sc;
-  return eslOK;
-}
-
 /* Function: E2ScoreGivenExpInfo()
  * Date:     EPN, Thu Apr  3 15:57:34 2008
  *
@@ -421,43 +319,6 @@ int E2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, float E, float *ret_sc)
   *ret_sc = sc;
   return eslOK;
 }
-
-
-/* Function: Score2MaxE()
- * Date:     EPN, Wed Jan 16 14:25:44 2008
- *
- * Purpose:  Given a bit score <sc> and a CM with valid exp tail stats
- *           determine the maximal E-value that will be assigned to 
- *           bit score of <sc> across all partitions. 
- *           This will be a 'safe' E-value cutoff to use 
- *           to always return hits with bit score of <sc> or greater.
- *           because no E-value higher than this will be assigned to
- *           a bit score greater than <sc>.
- *
- * Returns:  eslOK on success, <ret_E> filled with E value
- *           error code on failure, errbuf filled with message
- */
-int Score2MaxE (CM_t *cm, char *errbuf, int exp_mode, float sc, float *ret_E)
-{
-  float high_E, E;
-  int p;
-
-  /* contract checks */
-  if(!(cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "Score2E(), CM's CMH_EXPTAIL_STATS flag is down.");
-  if(ret_E == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "Score2E(), ret_E is NULL");
-
-  high_E = Score2E(sc, cm->stats->expAA[exp_mode][0]->mu_extrap, cm->stats->expAA[exp_mode][0]->lambda, cm->stats->expAA[exp_mode][0]->cur_eff_dbsize);
-
-  if(! cm->stats->expAA[exp_mode][0]->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "Score2E(), CM's exp tail stats for mode: %d partition: %d are invalid.", exp_mode, p);
-  for(p = 1; p < cm->stats->np; p++) {
-    if(! cm->stats->expAA[exp_mode][p]->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "Score2E(), CM's exp tail stats for mode: %d partition: %d are invalid.", exp_mode, p);
-    E = Score2E(sc, cm->stats->expAA[exp_mode][p]->mu_extrap, cm->stats->expAA[exp_mode][p]->lambda, cm->stats->expAA[exp_mode][p]->cur_eff_dbsize);
-    high_E = ESL_MAX(high_E, E);
-  }
-  *ret_E = high_E;
-  return eslOK;
-}
-
 
 /* Function: Score2E()
  * Date:     EPN, Fri Feb 15 12:40:21 2008
@@ -776,7 +637,7 @@ DescribeFthrMode(int fthr_mode)
  * Date:     EPN, Thu Jan 17 09:38:06 2008
  *
  * Purpose:  Update the <cur_eff_dbsize> parameter of the
- *           ExpInfo_t objects in a CM's cm->stats object 
+ *           ExpInfo_t objects in a CM's cm->expA object 
  *           to reflect a database of size <dbsize>.
  *            
  * Returns:  eslOK on success, other Easel status code on contract 
@@ -785,16 +646,14 @@ DescribeFthrMode(int fthr_mode)
 int 
 UpdateExpsForDBSize(CM_t *cm, char *errbuf, long dbsize)
 {
-  int i, p;
+  int i;
   /* contract checks */
   if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateExpsForDBSize(), cm does not have Exp stats.");
 
   for(i = 0; i < EXP_NMODES; i++) { 
-    for(p = 0; p < cm->stats->np; p++) {
-      cm->stats->expAA[i][p]->cur_eff_dbsize = (long) ((((double) dbsize / (double) cm->stats->expAA[i][p]->dbsize) * 
-							((double) cm->stats->expAA[i][p]->nrandhits)) + 0.5);
+    cm->expA[i]->cur_eff_dbsize = (long) ((((double) dbsize / (double) cm->expA[i]->dbsize) * 
+					   ((double) cm->expA[i]->nrandhits)) + 0.5);
     }
-  }
   return eslOK;
 }  
 
@@ -965,42 +824,6 @@ SampleGenomicSequenceFromHMM(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, char *e
   return eslOK;
 
  ERROR:
-  return status;
-}
-
-/* Function: CloneCMStats()
- * EPN, Tue May 24 09:53:10 2011
- *
- * Purpose:  Clone a CMStats_t object and return
- *           the clone in *ret_cmstats.
- *
- * Args:     cmstats     - cmstats to clone
- *           ret_cmstats - clone, to return
- * 
- * Returns:  eslEMEM if out of memory.
- */
-int 
-CloneCMStats(CMStats_t *cmstats, CMStats_t **ret_cmstats)
-{  
-  int status;
-  CMStats_t *new = NULL;
-  int i,p;
-
-  new = AllocCMStats(cmstats->np);
-  for(i = 0; i < EXP_NMODES; i++) {
-    for(p = 0; p < cmstats->np; p++) {
-      CopyExpInfo(cmstats->expAA[i][p], new->expAA[i][p]);
-    }
-  }
-  for(i = 0; i < FTHR_NMODES; i++) {
-    if((status = CopyHMMFilterInfo(cmstats->hfiA[i], new->hfiA[i])) != eslOK) goto ERROR;
-  }
-  *ret_cmstats = new;
-  
-  return eslOK;
-
- ERROR:
-  if(new != NULL) FreeCMStats(new);
   return status;
 }
 

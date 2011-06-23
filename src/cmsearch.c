@@ -535,7 +535,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       if((! (cm->flags & CMH_EXPTAIL_STATS)) && esl_opt_IsOn(go, "--forecast")) cm_Fail("--forecast only works with calibrated CM files. Run cmcalibrate (please)."); 
-      /* potentially overwrite lambdas in cm->stats */
+      /* potentially overwrite lambdas in cm->expA */
       if ( esl_opt_IsOn(go, "--lambda")) if((status = overwrite_lambdas(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
       cfg->ncm++;
 
@@ -805,7 +805,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       }	
       used_at_least_one_cm = TRUE;
 
-      /* potentially overwrite lambdas in cm->stats */
+      /* potentially overwrite lambdas in cm->expA */
       if (esl_opt_IsOn(go, "--lambda")) if((status = overwrite_lambdas(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
 
       if((status = cm_master_MPIBcast(cm, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
@@ -1502,12 +1502,12 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
     /* No relevant options enabled, cutoff is default E value cutoff */
     final_ctype = E_CUTOFF;
     final_E     = esl_opt_GetReal(go, "-E");
-    if((status  = E2MinScore(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E, &final_sc)) != eslOK) return status;
+    if((status  = E2ScoreGivenExpInfo((use_hmmonly ? cm->expA[hmm_mode] : cm->expA[cm_mode]), errbuf, final_E, &final_sc)) != eslOK) return status;
   }
   else if( esl_opt_IsUsed(go, "-E")) { /* -E enabled, use that */
     final_ctype = E_CUTOFF;
     final_E     = esl_opt_GetReal(go, "-E");
-    if((status = E2MinScore(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E, &final_sc)) != eslOK) return status;
+    if((status  = E2ScoreGivenExpInfo((use_hmmonly ? cm->expA[hmm_mode] : cm->expA[cm_mode]), errbuf, final_E, &final_sc)) != eslOK) return status;
   }
   else if ( esl_opt_IsUsed(go, "-T")) { /* -T enabled, use that */
     final_ctype = SCORE_CUTOFF;
@@ -1536,10 +1536,11 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   /* Determine the E-value for bit sc cutoff, or bit sc cutoff for E-value regardless of user options,
    * we'll print these to stdout eventually. Note, we may be repeating calculations here... */
   if(final_ctype == SCORE_CUTOFF) { /* determine max E-value that corresponds to final_sc bit sc cutoff  across all partitions */
-    if((status = Score2MaxE(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_sc, &final_E)) != eslOK) return status;
+    if(use_hmmonly) final_E = Score2E(final_sc, cm->expA[hmm_mode]->mu_extrap, cm->expA[hmm_mode]->lambda, cm->expA[hmm_mode]->cur_eff_dbsize);
+    else            final_E = Score2E(final_sc, cm->expA[cm_mode]->mu_extrap,  cm->expA[cm_mode]->lambda,  cm->expA[cm_mode]->cur_eff_dbsize);
   }
   else if(final_ctype == E_CUTOFF) { /* determine min bit sc that corresponds to final_E E-val cutoff across all partitions */
-    if((status  = E2MinScore(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E, &final_sc)) != eslOK) return status;
+    if((status  = E2ScoreGivenExpInfo((use_hmmonly ? cm->expA[hmm_mode] : cm->expA[cm_mode]), errbuf, final_E, &final_sc)) != eslOK) return status;
   }
   final_S = E2SurvFract(final_E, cm->W, cfg->avg_hit_len, cfg->dbsize, FALSE); /* FALSE says don't add a W pad, we're not filtering in final round */
   /* update the search info, which holds the thresholds for final round */
@@ -1555,11 +1556,11 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
    */
   if(esl_opt_IsOn(go, "--fil-finE-hmm")) { 
     final_E_acc2hmmfil = esl_opt_GetReal(go, "--fil-finE-hmm");
-    if((status  = E2MinScore(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E_acc2hmmfil, &final_sc_acc2hmmfil)) != eslOK) return status;
+    if((status  = E2ScoreGivenExpInfo((use_hmmonly ? cm->expA[hmm_mode] : cm->expA[cm_mode]), errbuf, final_E_acc2hmmfil, &final_sc_acc2hmmfil)) != eslOK) return status;
   }
   else if (esl_opt_IsOn(go, "--fil-finT-hmm")) { 
     final_sc_acc2hmmfil = esl_opt_GetReal(go, "--fil-finT-hmm");
-    if((status = Score2MaxE(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_sc_acc2hmmfil, &final_E_acc2hmmfil)) != eslOK) return status;
+    final_E_acc2hmmfil  = Score2E(final_sc_acc2hmmfil, cm->expA[hmm_mode]->mu_extrap, cm->expA[hmm_mode]->lambda, cm->expA[hmm_mode]->cur_eff_dbsize);
   }
   else { /* neither --fil-finE-hmm nor --fil-finT-hmm were set on command line */
     final_sc_acc2hmmfil = final_sc;
@@ -1570,11 +1571,11 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
    */
   if(esl_opt_IsOn(go, "--fil-finE-qdb")) { 
     final_E_acc2qdbfil = esl_opt_GetReal(go, "--fil-finE-qdb");
-    if((status  = E2MinScore(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E_acc2qdbfil, &final_sc_acc2qdbfil)) != eslOK) return status;
+    if((status  = E2ScoreGivenExpInfo((use_hmmonly ? cm->expA[hmm_mode] : cm->expA[cm_mode]), errbuf, final_E_acc2qdbfil, &final_sc_acc2qdbfil)) != eslOK) return status;
   }
   else if (esl_opt_IsOn(go, "--fil-finT-qdb")) { 
     final_sc_acc2qdbfil = esl_opt_GetReal(go, "--fil-finT-qdb");
-    if((status = Score2MaxE(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_sc_acc2qdbfil, &final_E_acc2qdbfil)) != eslOK) return status;
+    final_E_acc2qdbfil  = Score2E(final_sc_acc2qdbfil, cm->expA[cm_mode]->mu_extrap,  cm->expA[cm_mode]->lambda,  cm->expA[cm_mode]->cur_eff_dbsize);
   }
   else { /* neither --fil-finE-qdb nor --fil-finT-qdb were set on command line */
     final_sc_acc2qdbfil = final_sc;
@@ -1608,7 +1609,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 
       /* determine fthr mode */
       if((status = CM2FthrMode(cm, errbuf, cm->search_opts, &fthr_mode)) != eslOK) return status;
-      HMMFilterInfo_t *hfi_ptr = cm->stats->hfiA[fthr_mode]; /* for convenience */
+      HMMFilterInfo_t *hfi_ptr = cm->hfiA[fthr_mode]; /* for convenience */
       if(hfi_ptr->is_valid == FALSE) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_calibrated_cm(), cm's CMH_FILTER_STATS is raised but best filter info for fthr_mode %d is invalid.", fthr_mode);
       fhmm_ctype = E_CUTOFF;
       /* determine the appropriate filter cut point <cut_point> to use, for details
@@ -1678,10 +1679,10 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 
     if(do_hmm_filter) { 
       if(fhmm_ctype == SCORE_CUTOFF) { /* determine max E-value that corresponds to fhmm_sc bit sc cutoff across all partitions */
-	if((status = Score2MaxE(cm, errbuf, hmm_mode, fhmm_sc, &fhmm_E)) != eslOK) return status;
+	fhmm_E = Score2E(fhmm_sc, cm->expA[hmm_mode]->mu_extrap, cm->expA[hmm_mode]->lambda, cm->expA[hmm_mode]->cur_eff_dbsize);
       }
       else if(fhmm_ctype == E_CUTOFF) { /* determine min bit sc that corresponds to fhmm_E E-val cutoff across all partitions */
-	if((status  = E2MinScore(cm, errbuf, hmm_mode, fhmm_E, &fhmm_sc)) != eslOK) return status;
+	if((status  = E2ScoreGivenExpInfo(cm->expA[hmm_mode], errbuf, fhmm_E, &fhmm_sc)) != eslOK) return status;
       }
       fhmm_S = E2SurvFract(fhmm_E, cm->W, cfg->avg_hit_len, cfg->dbsize, TRUE);
     }
@@ -1751,10 +1752,10 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No CM filter cutoff selected. This shouldn't happen.");
 
     if(fqdb_ctype == SCORE_CUTOFF) { /* determine max E-value that corresponds to fqdb_sc bit sc cutoff  across all partitions */
-      if((status = Score2MaxE(cm, errbuf, qdb_mode, fqdb_sc, &fqdb_E)) != eslOK) return status;
+      fqdb_E = Score2E(fqdb_sc, cm->expA[qdb_mode]->mu_extrap,  cm->expA[qdb_mode]->lambda,  cm->expA[qdb_mode]->cur_eff_dbsize);
     }
     else if(fqdb_ctype == E_CUTOFF) { /* determine min bit sc that corresponds to fqdb_E E-val cutoff across all partitions */
-      if((status  = E2MinScore(cm, errbuf, qdb_mode, fqdb_E, &fqdb_sc)) != eslOK) return status;
+      if((status  = E2ScoreGivenExpInfo(cm->expA[qdb_mode], errbuf, fqdb_E, &fqdb_sc)) != eslOK) return status;
     }
 
     fqdb_S = E2SurvFract(fqdb_E, cm->W, cfg->avg_hit_len, cfg->dbsize, TRUE);
@@ -2172,7 +2173,7 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
   int using_filters;
   int cm_mode;
   int cp9_mode;
-  int exp_mode;             /* index to use for exp tail stats in cm->stats->gumAA[], exp_mode = (stype == SEARCH_WITH_CM) cm_mode : cp9_mode; */
+  int exp_mode;             /* index to use for exp tail stats in cm->expA[], exp_mode = (stype == SEARCH_WITH_CM) cm_mode : cp9_mode; */
   int stype;
   int search_opts;
   ScanMatrix_t *smx;
@@ -2274,7 +2275,7 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
 	fprintf(stdout, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
 	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
       }
-      if(e_cutoff < -0.1)  if((status = Score2MaxE(cm, errbuf, exp_mode, sc_cutoff, &e_cutoff)) != eslOK) return status;
+      if(e_cutoff < -0.1)  e_cutoff = Score2E(sc_cutoff, cm->expA[exp_mode]->mu_extrap, cm->expA[exp_mode]->lambda, cm->expA[exp_mode]->cur_eff_dbsize);
       if(e_cutoff < 0.01)  { 
 	fprintf(stdout, "  %10.1e", e_cutoff);
 	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %10.1e", e_cutoff);
@@ -2342,7 +2343,7 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
 	fprintf(stdout, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
 	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
       }
-      if(e_cutoff < -0.1)  if((status = Score2MaxE(cm, errbuf, exp_mode, sc_cutoff, &e_cutoff)) != eslOK) return status;
+      if(e_cutoff < -0.1)  e_cutoff = Score2E(sc_cutoff, cm->expA[exp_mode]->mu_extrap, cm->expA[exp_mode]->lambda, cm->expA[exp_mode]->cur_eff_dbsize);
       if(e_cutoff < 0.01)  { 
 	fprintf(stdout, "  %10.1e", e_cutoff);
 	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %10.1e", e_cutoff);
@@ -2679,19 +2680,17 @@ static int
 overwrite_lambdas(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
 {
   double lambda;
-  int i, p;
+  int i;
 
   if(!esl_opt_IsOn(go, "--lambda"))     ESL_FAIL(eslEINCOMPAT, errbuf, "overwrite_lambdas(), but --lambda was not enabled, shouldn't happen.\n");
   if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "--lambda only works with calibrated CM files. Run cmcalibrate (please).");
-  if(cm->stats == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "overwrite_lambdas(), cm->stats is NULL, shouldn't happen.\n");
+  if(cm->expA == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "overwrite_lambdas(), cm->expA is NULL, shouldn't happen.\n");
 
   lambda = esl_opt_GetReal(go, "--lambda");
   for(i = 0; i < EXP_NMODES; i++) { 
-    for(p = 0; p < cm->stats->np; p++) { 
-      cm->stats->expAA[i][p]->lambda = lambda;
-      /* mu_extrap, the extrapolated mu value is lambda dependent, so we have to update it */
-      cm->stats->expAA[i][p]->mu_extrap = cm->stats->expAA[i][p]->mu_orig - log(1./cm->stats->expAA[i][p]->tailp) / cm->stats->expAA[i][p]->lambda;
-    }
+    cm->expA[i]->lambda = lambda;
+    /* mu_extrap, the extrapolated mu value is lambda dependent, so we have to update it */
+    cm->expA[i]->mu_extrap = cm->expA[i]->mu_orig - log(1./cm->expA[i]->tailp) / cm->expA[i]->lambda;
   }
   return eslOK;
 }

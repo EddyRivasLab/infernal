@@ -431,6 +431,8 @@ PositionSqFileByNumber(ESL_SQFILE *sqfp, int sseq, char *errbuf)
 static int
 write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
 {
+  cm_Fail("write_ascii_cm() deprecated");
+#if 0
   int v,x,y,nd,i,z;
   
   fprintf(fp, "INFERNAL-1 [%s]\n", INFERNAL_VERSION);
@@ -479,11 +481,11 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
   }
   if (cm->flags & CMH_EXPTAIL_STATS)
     {
-      fprintf(fp, "PART     %-3d  ", cm->stats->np);
+      fprintf(fp, "PART     %-3d  ", 1);
       for(p = 0; p < cm->stats->np; p++)
-	fprintf(fp, "%5d  %5d  ", cm->stats->ps[p], cm->stats->pe[p]);
+	fprintf(fp, "%5d  %5d  ", 0, 100);
       fprintf(fp, "\n");
-      for(p = 0; p < cm->stats->np; p++)
+      for(p = 0; p < 1; p++)
 	{
 	  fprintf(fp, "E-LC     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 		  p, cm->stats->expAA[EXP_CM_LC][p]->lambda, cm->stats->expAA[EXP_CM_LC][p]->mu_extrap, cm->stats->expAA[EXP_CM_LC][p]->mu_orig, 
@@ -606,12 +608,17 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
       p7_hmmfile_WriteASCII(fp, -1, cm->ap7A[z]);
     }
   }
+  #endif
   return eslOK;
 } 
 
 static int  
 read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 {
+  int status;
+  cm_Fail("read_ascii_cm() deprecated");
+#if 0
+
   int     status;
   CM_t   *cm;
   char   *buf;
@@ -724,15 +731,7 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	    abc = *ret_abc;
 	    if ((*ret_abc)->type != alphabet_type)                        { status = eslEINCOMPAT; goto FAILURE; }
 	  }
-	  /* Now we have the alphabet and we should have N and M, so we can build the
-	   * full model, and set the alphabet (which we need to do before alloc'ing/setting
-	   * the null model */
-	  if(! (read_nstates && read_nnodes))
-	    {
-	      printf("ERROR, STATES and NODES lines should precede alphabet line");
-	      goto FAILURE;
-	    }
-	  CreateCMBody(cm, N, M, abc);
+	  read_alphabet = TRUE;
 	}	    
       else if (strcmp(tok, "ELSELF") == 0) 
 	{
@@ -770,6 +769,15 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	  clen = atoi(tok); /* we'll compare this to what we calculate at end of func */
 	  read_clen = TRUE;
+	  /* Now we have the clen and we should have N and M and the alphabet, so we can build the
+	   * full model, and set the alphabet (which we need to do before alloc'ing/setting
+	   * the null model */
+	  if(! (read_nstates && read_nnodes && read_alphabet))
+	    {
+	      printf("ERROR, STATES, NODES and ALPHABET lines should precede CLEN line");
+	      goto FAILURE;
+	    }
+	  CreateCMBody(cm, N, M, clen, abc);
 	}
       /* comlog info, careful, we want the full line, so a token becomes a full line */
       else if (strcmp(tok, "BCOM") == 0) 
@@ -1263,6 +1271,7 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 
  ERROR:
   ESL_FAIL(eslEMEM, errbuf, "Error ran out of memory reading the cmfile.");
+#endif
   return status; /* NEVERREACHED */
 }
 
@@ -1275,6 +1284,9 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 static int
 write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
 {
+  cm_Fail("write_binary_cm() is deprecated");
+#if 0   
+
   int v, i ,p;
   int has_exp, has_fthr;
   int has_ga, has_tc, has_nc;
@@ -1408,7 +1420,9 @@ write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
   /* Note: begin, end, and flags not written out. Local alignment is
    * run-time configuration right now.
    */
+#endif
   return eslOK;
+
 }
 
 
@@ -1420,6 +1434,10 @@ write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
 static int
 read_binary_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 {
+  int status;
+  cm_Fail("read_binary_cm() deprecated");
+#if 0  
+
   FILE         *fp;
   CM_t         *cm;
   unsigned int  magic;
@@ -1619,6 +1637,7 @@ read_binary_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 
  ERROR: 
   ESL_FAIL(eslEMEM, errbuf, "Error ran out of memory reading the cmfile.");
+#endif
   return status; /* NEVERREACHED */
 }
 
@@ -2098,6 +2117,11 @@ read_asc30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm)
       if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Missing MAP field on match line for node %d: should at least be -", k);
       if (hmm->flags & p7H_MAP) hmm->map[k] = atoi(tok1);
 
+      if (hfp->format >= p7_HMMFILE_3e) {
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Missing CONS field on match line for node %d: should at least be -", k);
+	if (hmm->flags & p7H_CONS) hmm->consensus[k] = *tok1;
+      }
+      
       if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Missing RF field on match line for node %d: should at least be -",  k);
       if (hmm->flags & p7H_RF) hmm->rf[k]   = *tok1;
 
@@ -2123,10 +2147,14 @@ read_asc30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm)
   if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))         != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Premature end of data: missing //?");
   if (strcmp(tok1, "//")                                                      != 0)      ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Expected closing //; found %s instead", tok1);
 
+  /* legacy issues */
+  if (hfp->format < p7_HMMFILE_3e && (status = p7_hmm_SetConsensus(hmm, NULL)) != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Failed to set consensus on legacy HMM format");
+
   /* Finish up. */
-  if (hmm->flags & p7H_RF)  { hmm->rf[0]  = ' '; hmm->rf[hmm->M+1] = '\0'; }
-  if (hmm->flags & p7H_CS)  { hmm->cs[0]  = ' '; hmm->cs[hmm->M+1] = '\0'; }
-  if (hmm->flags & p7H_MAP) { hmm->map[0] = 0; }
+  if (hmm->flags & p7H_RF)   { hmm->rf[0]  = ' '; hmm->rf[hmm->M+1] = '\0'; }
+  if (hmm->flags & p7H_CONS) { hmm->consensus[0] = ' '; hmm->consensus[hmm->M+1] = '\0'; }
+  if (hmm->flags & p7H_CS)   { hmm->cs[0]  = ' '; hmm->cs[hmm->M+1] = '\0'; }
+  if (hmm->flags & p7H_MAP)  { hmm->map[0] = 0; }
   if (hmm->name == NULL)    ESL_XFAIL(eslEFORMAT, hfp->errbuf, "No NAME found for HMM");
   if (hmm->M    <= 0)       ESL_XFAIL(eslEFORMAT, hfp->errbuf, "No LENG found for HMM (or LENG <= 0)");
   if (abc       == NULL)    ESL_XFAIL(eslEFORMAT, hfp->errbuf, "No ALPH found for HMM");

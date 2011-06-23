@@ -433,28 +433,32 @@ typedef struct cp9map_s {
 #define CMH_BITS                (1<<0)  /* CM has valid log odds scores             */
 #define CMH_ACC                 (1<<1)  /* accession number is available            */
 #define CMH_DESC                (1<<2)  /* description exists                       */
-#define CMH_GA                  (1<<3)  /* gathering threshold exists               */
-#define CMH_TC                  (1<<4)  /* trusted cutoff exists                    */
-#define CMH_NC                  (1<<5)  /* noise cutoff exists                      */
-#define CMH_LOCAL_BEGIN         (1<<6)  /* Begin distribution is active (local ali) */
-#define CMH_LOCAL_END           (1<<7)  /* End distribution is active (local ali)   */
-#define CMH_EXPTAIL_STATS       (1<<8)  /* exponential tail stats set               */
-#define CMH_FILTER_STATS        (1<<9)  /* filter threshold stats are set           */
-#define CMH_QDB                 (1<<10) /* query-dependent bands, QDBs valid        */
-#define CMH_CP9                 (1<<11) /* CP9 HMM is valid in cm->cp9              */
-#define CMH_CP9STATS            (1<<12) /* CP9 HMM has exp tail stats               */
-#define CMH_SCANMATRIX          (1<<13) /* ScanMatrix smx is valid                  */
-#define CMH_MLP7                (1<<14) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
-#define CMH_MLP7_STATS          (1<<15) /* ml p7 HMM exponential tail stats set    */
-#define CMH_AP7                 (1<<16) /* at least 1 additional p7 is valid in cm->ap7 */
-#define CMH_AP7_STATS           (1<<17) /* additional p7 HMM exponential tail stats set */
+#define CMH_RF                  (1<<3)  /* reference exists                         */
+#define CMH_GA                  (1<<4)  /* gathering threshold exists               */
+#define CMH_TC                  (1<<5)  /* trusted cutoff exists                    */
+#define CMH_NC                  (1<<6)  /* noise cutoff exists                      */
+#define CMH_CHKSUM              (1<<7)  /* checksum exists                          */
+#define CMH_MAP                 (1<<8)  /* alignment map exists                     */
+#define CMH_CONS                (1<<9)  /* consensus sequence exists                */
+#define CMH_LOCAL_BEGIN         (1<<10) /* Begin distribution is active (local ali) */
+#define CMH_LOCAL_END           (1<<11) /* End distribution is active (local ali)   */
+#define CMH_EXPTAIL_STATS       (1<<12) /* exponential tail stats set               */
+#define CMH_FILTER_STATS        (1<<13) /* filter threshold stats are set           */
+#define CMH_QDB                 (1<<14) /* query-dependent bands, QDBs valid        */
+#define CMH_CP9                 (1<<15) /* CP9 HMM is valid in cm->cp9              */
+#define CMH_CP9STATS            (1<<16) /* CP9 HMM has exp tail stats               */
+#define CMH_SCANMATRIX          (1<<17) /* ScanMatrix smx is valid                  */
+#define CMH_MLP7                (1<<18) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
+#define CMH_MLP7_STATS          (1<<19) /* ml p7 HMM exponential tail stats set    */
+#define CMH_AP7                 (1<<20) /* at least 1 additional p7 is valid in cm->ap7 */
+#define CMH_AP7_STATS           (1<<21) /* additional p7 HMM exponential tail stats set */
 
-#define CM_IS_SUB               (1<<18) /* the CM is a sub CM                       */
-#define CM_IS_RSEARCH           (1<<19) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS         (1<<20) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT          (1<<21) /* CM has/will have RSEARCH emissions       */
-#define CM_EMIT_NO_LOCAL_BEGINS (1<<22) /* emitted parsetrees will never have local begins */
-#define CM_EMIT_NO_LOCAL_ENDS   (1<<23) /* emitted parsetrees will never have local ends   */
+#define CM_IS_SUB               (1<<22) /* the CM is a sub CM                       */
+#define CM_IS_RSEARCH           (1<<23) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS         (1<<24) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT          (1<<25) /* CM has/will have RSEARCH emissions       */
+#define CM_EMIT_NO_LOCAL_BEGINS (1<<26) /* emitted parsetrees will never have local begins */
+#define CM_EMIT_NO_LOCAL_ENDS   (1<<27) /* emitted parsetrees will never have local ends   */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
@@ -1245,11 +1249,7 @@ typedef struct bestfilterinfo_s {
 /* Structure CMStats_t
  */
 typedef struct cmstats_s {
-  int np;                    /* number of partitions, default: 1 */
-  int *ps;                   /* start GC content [0..100] of each partition */
-  int *pe;                   /* end   GC content [0..100] of each partition */
-  int gc2p[GC_SEGMENTS];     /* map from GC content to partition number     */
-  ExpInfo_t ***expAA;        /* [0..EXP_NMODES-1][0..np-1] */
+  ExpInfo_t       **expA;    /* [0..EXP_NMODES-1]  */
   HMMFilterInfo_t **hfiA;    /* [0..FTHR_NMODES-1] */
 } CMStats_t;
 
@@ -1309,19 +1309,21 @@ typedef struct comlog_s {
  */
 typedef struct cm_s {			
 			/* General information about the model:            */
-  char *name;		/*   name of the model                             */
-  char *acc;		/*   optional accession number for model, or NULL  */
-  char *desc;		/*   optional description of the model, or NULL    */
-  char *rf;             /*   consensus column annotation line, or NULL     */ /* ONLY PARTIALLY IMPLEMENTED, BEWARE */
+  char    *name;        /* name of the model                         (mandatory) */ /* String, \0-terminated   */
+  char    *acc;	        /* accession number of model (Rfam)          (CMH_ACC)   */ /* String, \0-terminated   */
+  char    *desc;        /* brief (1-line) description of model       (CMH_DESC)) */ /* String, \0-terminated   */
+  char    *rf;          /* reference line from alignment 1..M        (CMH_RF)    */ /* String; 0=' ', M+1='\0' */
+  char    *consensus;   /* consensus residue line        1..M        (CMH_CONS)  */ /* String; 0=' ', M+1='\0' */
+  uint32_t checksum;    /* checksum of training sequences            (CMH_CHKSUM)*/
+  int     *map;         /* map of alignment cols onto model 1..clen  (CMH_MAP)   */ /* Array; map[0]=0 */
 
   /* new as of v1.0 */
-  ComLog_t *comlog;	/*   creation dates and command line(s) that built/calibrated the model (mandatory) */
+  ComLog_t *comlog;     /* command line calls and execution times of cmbuild and possibly cmcalibrate */
   int    nseq;		/*   number of training sequences          (mandatory) */
   float  eff_nseq;	/*   effective number of seqs (<= nseq)    (mandatory) */
   float  ga;	        /*   per-seq gathering thresholds (bits) (CMH_GA) */
   float  tc;            /*   per-seq trusted cutoff (bits)       (CMH_TC) */
   float  nc;	        /*   per-seq noise cutoff (bits)         (CMH_NC) */
-
 
 			/* Information about the null model:               */
   float *null;          /*   residue probabilities [0..3]                  */
@@ -1375,11 +1377,11 @@ typedef struct cm_s {
   int    flags;		/* status flags                                    */
 
   /* W and query dependent bands (QDB) on subsequence lengths at each state */
-  int   *dmin;          /* minimum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
-  int   *dmax;          /* maximum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
-  int    W;             /* max d: max size of a hit (EPN 08.18.05)                            */
-  double beta_qdb;      /* tail loss probability for QDB calculation used to set dmin/dmax    */
-  double beta_W;        /* tail loss probability for QDB calculation used to set W, often     *
+  int    *dmin;         /* minimum d bound for each state v; [0..v..M-1]    */
+  int    *dmax;         /* maximum d bound for each state v; [0..v..M-1]    */
+  int     W;            /* max d: max size of a hit (EPN 08.18.05)                            */
+  double  beta_qdb;     /* tail loss probability for QDB calculation used to set dmin/dmax    */
+  double  beta_W;       /* tail loss probability for QDB calculation used to set W, often     *
 			 * equal to beta_qdb, but not always. beta_W >= beta_qdb ALWAYS.      *
 			 * If beta_W > beta_qdb, dmax[0] > W, d values > W are not allowed    *
 			 * in the DP algorithms though (enforced sneakily when the            *
@@ -1416,7 +1418,8 @@ typedef struct cm_s {
   SearchInfo_t *si;      /* describes each round of filtering, and final round of searching */
 
   /* statistics */
-  CMStats_t *stats;      /* holds exponential tail stats and HMM filtering thresholds */
+  ExpInfo_t       **expA;  /* Exponential tail stats, [0..EXP_NMODES-1]  */
+  HMMFilterInfo_t **hfiA;  /* Filter threshold stats, [0..FTHR_NMODES-1] */
 
   /* p7 hmms, added 08.05.08 */
   P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
@@ -1425,7 +1428,12 @@ typedef struct cm_s {
   P7_HMM      **ap7A;          /* query p7 HMM */
   float       **ap7_evparamAA; /* E-value params (CMH_AP7_STATS) */
 
+  /* emitmap, added 06.20.11 (post v1.0.2) */
+  CMEmitMap_t   *emap;  /* maps model nodes to consensus positions */ 
+
   const  ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size)*/
+  off_t    offset;          /* CM record offset on disk                              */
+
 } CM_t;
 
 
@@ -1705,6 +1713,56 @@ typedef struct cm_tophits_s {
   int      is_sorted_by_score;   /* TRUE when hits sorted by score, length,     th->hit valid for all N hits */
   int      is_sorted_by_seq_idx; /* TRUE when hits sorted by seq_idx, position, th->hit valid for all N hits */
 } CM_TOPHITS;
+
+
+/*****************************************************************
+ * NEW_CM_FILE:  a CM save file or database, open for reading.
+ *****************************************************************/
+
+/* These tags need to be in temporal order, so we can do tests
+ * like "if (format >= CM_FILE_1a) ..."
+ */
+enum cm_file_formats_e {
+  CM_FILE_1a = 0,
+};
+
+typedef struct cm_file_s {
+  FILE         *f;		 /* pointer to stream for reading models                 */
+  char         *fname;	         /* (fully qualified) name of the CM file; [STDIN] if -  */
+  ESL_SSI      *ssi;		 /* open SSI index for model file <f>; NULL if none.     */
+
+  int           do_gzip;	/* TRUE if f is "gzip -dc |" (will pclose(f))           */ 
+  int           do_stdin;       /* TRUE if f is stdin (won't close f)                   */
+  int           newly_opened;	/* TRUE if we just opened the stream (and parsed magic) */
+  int           is_pressed;	/* TRUE if a pressed CM database file (Rfam or equiv)   */
+
+  int            format;	/* CM file format code */
+  int           (*parser)(struct cm_file_s *, ESL_ALPHABET **, CM_t **);  
+  ESL_FILEPARSER *efp;
+
+  /* If <is_pressed>, we can read optimized profile HMM filters directly, via:  */
+  FILE         *ffp;		/* MSV part of the optimized profile HMM */
+  FILE         *pfp;		/* rest of the optimized profile HMM     */
+
+#ifdef HMMER_THREADS
+  int              syncRead;
+  pthread_mutex_t  readMutex;
+#endif
+
+  char          errbuf[eslERRBUFSIZE];
+} NEW_CM_FILE;
+
+/* note on <fname>, above:
+ * this is the actual name of the HMM file being read.
+ * 
+ * The way cm_file_Open() works, it will preferentially look for
+ * cmpress'ed binary files. If you open "foo", it will first try to
+ * open "foo.i1m" and <fname> will be "foo.i1m". "foo" does not even
+ * have to exist. If a parsing error occurs, you want <fname> to
+ * be "foo.i1m", so error messages report blame correctly.
+ * In the special case of reading from stdin, <fname> is "[STDIN]".
+ */
+
 
 #endif /*STRUCTSH_INCLUDED*/
 

@@ -93,6 +93,7 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7)
   p7_hmm_SetAccession(hmm, cm->acc);
   p7_hmm_SetDescription(hmm, cm->desc);
   p7_hmm_SetCtime(hmm);
+  if((status = p7_hmm_SetConsensus(hmm, NULL)) != eslOK) goto ERROR;
   if(cm->comlog != NULL && cm->comlog->bcom != NULL) { 
     ESL_ALLOC(hmm->comlog, sizeof(char)* (strlen(cm->comlog->bcom)+1));
     *(hmm->comlog) = '\0'; /* need this to make strcat work */
@@ -167,6 +168,7 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7)
   p7_hmm_SetAccession(hmm, cm->acc);
   p7_hmm_SetDescription(hmm, cm->desc);
   p7_hmm_SetCtime(hmm);
+  if((status = p7_hmm_SetConsensus(hmm, NULL)) != eslOK) goto ERROR;
   if(cm->comlog != NULL && cm->comlog->bcom != NULL) { 
     ESL_ALLOC(hmm->comlog, sizeof(char)* (strlen(cm->comlog->bcom)+1));
     *(hmm->comlog) = '\0'; /* need this to make strcat work */
@@ -258,6 +260,7 @@ cm_cp9_to_p7(CM_t *cm)
   p7_hmm_SetAccession  (cm->mlp7, cm->acc);
   p7_hmm_SetDescription(cm->mlp7, cm->desc);
   p7_hmm_SetCtime      (cm->mlp7);
+  if((status = p7_hmm_SetConsensus(cm->mlp7, NULL)) != eslOK) goto ERROR;
   if(cm->comlog != NULL && cm->comlog->bcom != NULL) { 
     ESL_ALLOC(cm->mlp7->comlog, sizeof(char)* (strlen(cm->comlog->bcom)+1));
     *(cm->mlp7->comlog) = '\0'; /* need this to make strcat work */

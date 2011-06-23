@@ -54,6 +54,7 @@ PROGS = cmalign\
 	cmstat\
 	trcyk\
 	dcmsearch\
+	dcmbuild\
 	bandcyk-montecarlo-test\
 	bandcyk-truncation-test\
 	cp9-test\
@@ -71,7 +72,8 @@ PROGSOBJSS = \
 	cmstat.o\
 	trcyk.o\
 	truncyk_check.o\
-	dcmsearch.o
+	dcmsearch.o\
+	dcmbuild.o
 
 HDRS =  funcs.h\
 	structs.h
@@ -81,6 +83,7 @@ OBJS  = cm.o\
 	cm_dpsearch.o\
 	cm_dpsmall.o\
 	cm_io.o\
+	cm_file.o\
 	cm_modelconfig.o\
 	cm_modelmaker.o\
 	cm_mx.o\

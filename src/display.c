@@ -641,24 +641,26 @@ FreeFancyAli(Fancyali_t *ali)
  *            pthresh    - bit score threshold for base pairs to be lowercased
  *            sthresh    - bit score threshold for singlets to be lowercased
  *            
- * Returns:   <eslOK> on success, <eslEMEM> on memory error.
-8             CMConsensus_t structure in *ret_cons.
- *            Caller frees w/ FreeCMConsensus().
+ * Returns:   <eslOK> on success, returns CMConsensus_t structure in *ret_cons. 
+ *            Caller frees w/ FreeCMConsensus(). Dies immediately with cm_Fail()
+ *            upon error.
  *
  * Xref:      STL6 p.58.
  */
 int
 CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh, CMConsensus_t **ret_cons)
 {
-  /* Contract check. We allow the caller to specify the alphabet they want the 
+  /* Contract check. CM must have log odds scores. 
+   * Also, We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
-  if(cm->abc->type == eslRNA)
-    { 
-      if(abc->type != eslRNA && abc->type != eslDNA)
-	cm_Fail("ERROR in CreateCMConsensus(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
-    }
-  else if(cm->abc->K != abc->K)
-    cm_Fail("ERROR in CreateCMConsensus(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+  if(! (cm->flags & CMH_BITS)) cm_Fail("CreateCMConsensus(): CM does not have valid bit scores (CMH_BITS flag is down)\n");
+  if(cm->abc->type == eslRNA) {
+    if(abc->type != eslRNA && abc->type != eslDNA)
+      cm_Fail("CreateCMConsensus(): cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+  }
+  else if(cm->abc->K != abc->K) { 
+    cm_Fail("CreateCMConsensus(): cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+  }
 
   int       status;
   CMConsensus_t *con;           /* growing consensus info */
@@ -1085,11 +1087,22 @@ IsCompensatory(const ESL_ALPHABET *abc, float *pij, int symi, int symj)
  * 
  */
 
+
+/* Function: CreateEmitMap()
+ * Date:     ? (SRE pre Infernal version 0.55).
+ *
+ * Purpose:  Create and fill an emit map for a given CM <cm>
+ *           and return it. 
+ *           If we run out of memory or we have a problem creating
+ *           the map, we return NULL.
+ *
+ */
+
 CMEmitMap_t *
 CreateEmitMap(CM_t *cm)
 {
   int          status;
-  CMEmitMap_t *map;
+  CMEmitMap_t *map = NULL;
   ESL_STACK   *pda;
   int          cpos;
   int          nd;
@@ -1163,11 +1176,19 @@ CreateEmitMap(CM_t *cm)
 
   map->clen = map->rpos[0]-1;
   esl_stack_Destroy(pda);
+
+  /* ensure we've filled in the map correctly */
+  for (nd = 0; nd < cm->nodes; nd++) { 
+    if(map->lpos[nd] == -1) goto ERROR;
+    if(map->rpos[nd] == -1) goto ERROR;
+    if(map->epos[nd] == -1) goto ERROR;
+  }
+
   return map;
 
  ERROR: 
-  cm_Fail("Memory allocation error.");
-  return NULL; /* never reached */
+  if(map != NULL) FreeEmitMap(map);
+  return NULL; 
 }
   
 void

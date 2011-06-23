@@ -192,7 +192,7 @@ struct cfg_s {
 };
 
 static char usage[]  = "[-options] <cmfile output> <alignment file>";
-static char banner[] = "build RNA covariance model(s) from alignment";
+static char banner[] = "build RNA covariance model(s) from alignment(s)";
 
 static int    init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static void   master (const ESL_GETOPTS *go, struct cfg_s *cfg);
@@ -200,11 +200,13 @@ static int    process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, c
 static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, Parsetree_t **tr);
 static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
-static int    build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
-static int    set_model_name(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
+static int    build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
+static int    annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, const Prior_t *pri);
-static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, const Prior_t *prior, float msa_nseq);
+static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, CM_t *cm, const Prior_t *prior, float msa_nseq);
+static int    configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static int    build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali);
 static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen);
 static void   strip_wuss(char *ss);
@@ -762,170 +764,23 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
 {
-  CM_t *cm = NULL;
-  CM_t *acm = NULL; 
-  P7_HMM *ahmm = NULL;
-  int status;
-  int lmsvL, lvitL, lfwdL, gfwdL;
-  int lmsvN, lvitN, lfwdN, gfwdN;
-  double agfmu, agflambda;
-  float lftailp, gftailp;
-  int k, apos, idx;
-  float gaps;
-  ESL_MSA *amsa = NULL;
-  double mlp7_re, ahmm_re;
-  double neff;
+  int      status;
+  uint32_t checksum = 0;  /* checksum calculated for the input MSA. cmalign --mapali verifies against this. */
+  CM_t    *cm = NULL;     /* the CM */
 
-  if ((status =  check_and_clean_msa    (go, cfg, errbuf, msa))                           != eslOK) goto ERROR;
-  if ((status =  set_relative_weights   (go, cfg, errbuf, msa))                           != eslOK) goto ERROR;
-  if ((status =  build_model            (go, cfg, errbuf, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
-  if ((status =  set_model_name         (go, cfg, errbuf, msa, cm))                       != eslOK) goto ERROR;
-  if ((status =  set_model_cutoffs      (go, cfg, errbuf, msa, cm))                       != eslOK) goto ERROR;
-  if ((status =  set_effective_seqnumber(go, cfg, errbuf, msa, cm, cfg->pri))             != eslOK) goto ERROR;
-  if ((status =  parameterize           (go, cfg, errbuf, cm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
+  if ((status =  check_and_clean_msa           (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
+  if ((status =  esl_msa_Checksum              (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
+  if ((status =  set_relative_weights          (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
+  if ((status =  build_model                   (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
+  if ((status =  set_model_cutoffs             (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
+  if ((status =  set_effective_seqnumber       (go, cfg, errbuf, msa, cm, cfg->pri))                   != eslOK) goto ERROR;
+  if ((status =  parameterize                  (go, cfg, errbuf, TRUE, cm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
+  if ((status =  annotate                      (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
+  if ((status =  configure_model               (go, cfg, errbuf, cm))                                  != eslOK) goto ERROR;
+  if ((status =  build_and_calibrate_p7_filters(go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
 
-  /* Build and calibrate p7 HMM(s) */
-
-  /* Define relevant parameters: */
-  /* first, set all to default */
-  lmsvL = lvitL = 200;
-  lfwdL = 100;
-  gfwdL = ESL_MAX(100, 2.*cm->clen);
-  lmsvN = esl_opt_GetInteger(go, "--exp-lmsvN");
-  lvitN = esl_opt_GetInteger(go, "--exp-lvitN");
-  lfwdN = esl_opt_GetInteger(go, "--exp-lfwdN");
-  gfwdN = esl_opt_GetInteger(go, "--exp-gfwdN");
-  lftailp = esl_opt_GetReal(go, "--exp-lftp");
-  gftailp = esl_opt_GetReal(go, "--exp-gftp");
-
-  /* now, modify if nec based on command-line options */
-  if(esl_opt_IsUsed(go, "--exp-lL")) { 
-    lmsvL = lvitL = lfwdL = esl_opt_GetInteger(go, "--exp-lL");
-  }
-  else if(esl_opt_IsUsed(go, "--exp-lcmult")) { 
-    lmsvL = lvitL = lfwdL = esl_opt_GetReal(go, "--exp-lcmult") * cm->clen;
-  }
-
-  if(esl_opt_IsUsed(go, "--exp-gL")) { 
-    gfwdL = esl_opt_GetInteger(go, "--exp-gL");
-  }
-  else if(esl_opt_IsUsed(go, "--exp-gcmult")) { 
-    gfwdL = esl_opt_GetReal(go, "--exp-gcmult") * cm->clen;
-  }
-
-  if(esl_opt_GetBoolean(go, "--exp-fitlam")) { 
-    lmsvN = esl_opt_IsUsed(go, "--exp-lmsvN") ? esl_opt_GetInteger(go, "--exp-lmsvN") : 10000;
-    lvitN = esl_opt_IsUsed(go, "--exp-lvitN") ? esl_opt_GetInteger(go, "--exp-lvitN") : 10000;
-    lfwdN = esl_opt_IsUsed(go, "--exp-lfwdN") ? esl_opt_GetInteger(go, "--exp-lfwdN") : 10000;
-    gfwdN = esl_opt_IsUsed(go, "--exp-gfwdN") ? esl_opt_GetInteger(go, "--exp-gfwdN") : 10000;
-    lftailp = esl_opt_IsUsed(go, "--exp-lftp") ? esl_opt_GetReal(go, "--exp-lftp") : 0.01;
-    gftailp = esl_opt_IsUsed(go, "--exp-gftp") ? esl_opt_GetReal(go, "--exp-gftp") : 0.01;
-  }
-
-  /* build the ml p7 HMM */
-  if((status = ConfigCM(cm, errbuf, 
-			FALSE, /* don't need to calculate W */
-			NULL, NULL)) != eslOK) cm_Fail("Error configuring CM: %s\n", errbuf);
-
-  /* Calibrate the p7 hmm */
-  if((status = cm_mlp7_Calibrate(cm, errbuf, 
-				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for each alg */
-				 lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
-				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
-				 gftailp))                                   /* fraction of tail mass to fit for glocal Fwd */
-     != eslOK) cm_Fail("Error calibrating cm->mlp7 HMM");
-  
-  /* Build and calibrate an additional HMM */
-  if(! esl_opt_GetBoolean(go, "--p7-none")) { 
-    /* Default strategy: 
-     * 
-     * Build a p7 HMM <ahmm> with p7_builder with entropy weighting
-     * and rel ent target of <x> from (--p7-ere <x>). Then _overwrite_
-     * it's emission probabilities with marginalized emission
-     * probabilities from a temporary CM built such that it's ML p7
-     * HMM has mean match state entropy the same as <ahmm>.
-     *
-     * The motivation for this is that rmark3 benchmarking (xref:
-     * ~nawrockie/notebook/11_0226_inf_p7s_with_cp9_transitions/00LOG)
-     * revealed that HMMs built with H3 transitions and emissions from
-     * a marginalized CM are the best for filtering.
-     * 
-     * The --p7-hemit option makes it so HMMER emissions are used instead
-     * of the marginalized CM emissions.
-     *
-     * NOTE: We could avoid this if we had a way or using Infernal's
-     * emission priors (there are different prior for base pairs and
-     * singlets) in p7_Builder(), but that would require parsing the
-     * secondary structure and getting an Infernal function into
-     * hmmer). For now, we build a temporary CM and copy it's
-     * emissions.
-     *
-     * First, annotate the msa with RF annotation corresponding to the
-     * definition of match columns used by the CM. This will
-     * guarantree that the HMM has the same number of match columns as
-     * the CM, which is important because we copy marginalized ml
-     * emissions from a CM onto the HMM. Note that we also set
-     * cfg->ap7_bld->arch_strategy as p7_ARCH_HAND.
-     */
-    amsa = esl_msa_Clone(msa);
-    if(amsa->rf != NULL) free(amsa->rf); 
-    ESL_ALLOC(amsa->rf, sizeof(char) * (amsa->alen+1));
-    for (apos = 1; apos <= amsa->alen; apos++) { 
-      gaps = 0.;
-      for (idx = 0; idx < amsa->nseq; idx++)
-	if (esl_abc_XIsGap(amsa->abc, amsa->ax[idx][apos])) gaps += amsa->wgt[idx];
-      amsa->rf[(apos-1)] = ((gaps / (float) amsa->nseq) > esl_opt_GetReal(go, "--gapthresh")) ? '.' : 'x';
-    }
-    cfg->ap7_bld->arch_strategy = p7_ARCH_HAND;
-    
-    if ((status = p7_Builder(cfg->ap7_bld, amsa, cfg->ap7_bg, &ahmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->ap7_bld->errbuf); goto ERROR; }
-    free(amsa);
-
-    if(! esl_opt_GetBoolean(go, "--p7-hemit")) { 
-      /* Overwrite the emission probabilities of the HMM
-       * with emissions from a ML HMM built from a CM.
-       * First, build the CM, it will have the same HMM
-       * mean match state entropy as the ahmm we just 
-       * built.
-       */
-      if ((status =  build_model(go, cfg, errbuf, msa, &acm, NULL, NULL)) != eslOK) goto ERROR;
-      ahmm_re = p7_MeanMatchRelativeEntropy(ahmm, cfg->ap7_bg);
-      status = cm_EntropyWeight(acm, cfg->pri, ahmm_re, esl_opt_GetReal(go, "--eminseq"), TRUE, &mlp7_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
-      if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
-      else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
-      acm->eff_nseq = neff;
-      cm_Rescale(acm, acm->eff_nseq / (float) msa->nseq);
-      if ((status =  parameterize(go, cfg, errbuf, acm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
-      if((status = ConfigCM(acm, errbuf, 
-			    FALSE, /* don't need to calculate W */
-			    NULL, NULL)) != eslOK) { printf("Error configuring aCM: %s\n", acm->name); goto ERROR; }
-
-      /* copy the ML p7 emission probs from the CM we just built */
-      /* match emissions: copy, then normalize (norm should be unnec actually) */
-      for (k = 1; k <= ahmm->M; k++) esl_vec_FCopy(acm->mlp7->mat[k], ahmm->abc->K, ahmm->mat[k]);
-      for (k = 1; k <= ahmm->M; k++) esl_vec_FNorm(ahmm->mat[k], ahmm->abc->K);
-      /* special case */
-      esl_vec_FSet(ahmm->mat[0], ahmm->abc->K, 0.);
-      ahmm->mat[0][0] = 1.0;
-      
-      /* insert emissions: copy, then normalize (norm should be unnec actually) */
-      for (k = 0; k <= ahmm->M; k++) esl_vec_FCopy(acm->mlp7->ins[k], ahmm->abc->K, ahmm->ins[k]);
-      for (k = 0; k <= ahmm->M; k++) esl_vec_FNorm(ahmm->ins[k], ahmm->abc->K);
-      /* reset HMM composition */
-      if ((status = p7_hmm_SetComposition(ahmm)) != eslOK) goto ERROR;
-    }
-    /* calibrate the additional HMM */
-    if((status = cm_p7_Calibrate(ahmm, errbuf, 
-				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for local (lL) and glocal (gL) modes */    
-				 lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
-				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
-				 gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
-				 &agfmu, &agflambda))  
-       != eslOK) cm_Fail("Error calibrating additional p7 HMM");
-
-    if((status = cm_Addp7(cm, ahmm, agfmu, agflambda, errbuf)) != eslOK) cm_Fail("Error adding HMM to CM: %s\n", errbuf);
-    if(acm != cm) { FreeCM(acm); }
-  }
+  cm->checksum = checksum;
+  cm->flags   |= CMH_CHKSUM;
   
   *ret_cm = cm;
   return eslOK;
@@ -1119,7 +974,15 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   /* copy the cmbuild command info to the CM */
   if ((status = CopyComLog(cfg->comlog, cm->comlog)) != eslOK) ESL_FAIL(eslFAIL, errbuf, "Problem copying com log info to CM. Probably out of memory.");
   if ((status = cm_Validate(cm, 0.0001, errbuf))     != eslOK) return status;
-  if ((status = CMFileWrite(cfg->cmfp, cm, esl_opt_GetBoolean(go, "--binary"), errbuf)) != eslOK) return status;
+
+  if (esl_opt_GetBoolean(go, "--binary")) { 
+    if ((status = cm_file_WriteBinary(cfg->cmfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
+  }
+  else { 
+    if ((status = cm_file_WriteASCII(cfg->cmfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
+  }
+  //if ((status = CMFileWrite(cfg->cmfp, cm, esl_opt_GetBoolean(go, "--binary"), errbuf)) != eslOK) return status;
+
   /* build the HMM, so we can print the CP9 relative entropy */
   if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslFAIL, errbuf, "Couldn't build a CP9 HMM from the CM.");
 
@@ -1176,7 +1039,11 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
 static int
 check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa)
 {
+  ESL_STOPWATCH *w = NULL;
+
   if (cfg->be_verbose) {
+    w = esl_stopwatch_Create();
+    esl_stopwatch_Start(w);
     fprintf(stdout, "%-40s ... ", "Checking MSA");  
     fflush(stdout); 
   }
@@ -1198,7 +1065,12 @@ check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf
   /* MSA better have a name, we named it before */
   if(msa->name == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "MSA is nameless, (we thought we named it...) shouldn't happen");
 
-  if (cfg->be_verbose) fprintf(stdout, "done.\n");
+  if (cfg->be_verbose) { 
+    fprintf(stdout, "done.  ");
+    esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(stdout, w, "CPU time: ");
+  }
+  if(w != NULL) esl_stopwatch_Destroy(w);
   return eslOK;
 }
 
@@ -1208,7 +1080,11 @@ check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf
 static int
 set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa)
 {
+  ESL_STOPWATCH *w = NULL;
+
   if (cfg->be_verbose) {
+    w = esl_stopwatch_Create();
+    esl_stopwatch_Start(w);
     fprintf(stdout, "%-40s ... ", "Relative sequence weighting");  
     fflush(stdout); 
   }
@@ -1220,7 +1096,12 @@ set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbu
   else if (esl_opt_GetBoolean(go, "--wgsc"))                   esl_msaweight_GSC(msa);
   else if (esl_opt_GetBoolean(go, "--wblosum"))                esl_msaweight_BLOSUM(msa, esl_opt_GetReal(go, "--wid"));
 
-  if (cfg->be_verbose) fprintf(stdout, "done.\n");
+  if (cfg->be_verbose) { 
+    fprintf(stdout, "done.  ");
+    esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(stdout, w, "CPU time: ");
+  }
+  if(w != NULL) esl_stopwatch_Destroy(w);
   return eslOK;
 }
 
@@ -1233,7 +1114,7 @@ set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbu
  * the <msa> too.
  */
 static int
-build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
+build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
 {
   int status;
   Parsetree_t     **tr;
@@ -1241,14 +1122,16 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
   int idx;
   CM_t *cm;
   char *aseq;                   
+  ESL_STOPWATCH *w = NULL;
 
-  if (cfg->be_verbose) {
-    fprintf(stdout, "%-40s ... ", "Constructing model architecture"); 
+  if (cfg->be_verbose && do_print) {
+    w = esl_stopwatch_Create();
+    esl_stopwatch_Start(w);
+    fprintf(stdout, "%-40s ... ", "Constructing model "); 
     fflush(stdout);
   }
 
   if((status = HandModelmaker(msa, errbuf, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &cm, &mtr)) != eslOK) return status;
-  if(cfg->be_verbose) fprintf(stdout, "done.\n");
   
   /* set the CM's null model, if rsearch mode, use the bg probs used to calc RIBOSUM */
   if( esl_opt_IsOn(go, "--rsearch")) CMSetNullModel(cm, cfg->fullmat->g); 
@@ -1278,14 +1161,27 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
   cm->nseq     = msa->nseq;
   cm->eff_nseq = msa->nseq;
 
+  if(cfg->be_verbose && do_print) { 
+    fprintf(stdout, "done.  ");
+    esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(stdout, w, "CPU time: ");
+  }
+
   /* ensure the dual insert states we will detach were populated with 0 counts */
   if(!(esl_opt_GetBoolean(go, "--nodetach")))
     {
-      if(cfg->be_verbose) fprintf(stdout, "%-40s ... ", "Finding and checking dual inserts");
+      if(cfg->be_verbose && do_print) { 
+	esl_stopwatch_Start(w);
+	fprintf(stdout, "%-40s ... ", "Finding and checking dual inserts");
+      }
       cm_find_and_detach_dual_inserts(cm, 
 				      TRUE,   /* Do check (END_E-1) insert states have 0 counts */
 				      FALSE); /* Don't detach the states yet, wait til CM is priorified */
-      if (cfg->be_verbose) fprintf(stdout, "done.\n");
+      if (cfg->be_verbose && do_print) {
+	fprintf(stdout, "done.  ");
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, "CPU time: ");
+      }
     }
   /* set the EL self transition probability */
   cm->el_selfsc = sreLOG2(esl_opt_GetReal(go, "--elself"));
@@ -1326,6 +1222,8 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
   }
   else *ret_msa_tr = tr;
 
+  if(w != NULL) esl_stopwatch_Destroy(w);
+
   return eslOK;
 
  ERROR:
@@ -1333,8 +1231,8 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
 }
 
 
-/* set_model_name()
- * Give the model a name based on the MSA name.
+/* annotate()
+ * Transfer annotation information from MSA to new HMM.
  * 
  * We've ensured the msa has a name in name_msa() so if 
  * for some inconceivable reason it doesn't 
@@ -1347,21 +1245,44 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
  * 
  */
 static int
-set_model_name(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm)
+annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm)
 {
   int status = eslOK;
+  ESL_STOPWATCH *w = NULL;
+  CMConsensus_t *cons = NULL;
 
   if (cfg->be_verbose) {
-    fprintf(stdout, "%-40s ... ", "Set model name");
+    w = esl_stopwatch_Create();
+    esl_stopwatch_Start(w);
+    fprintf(stdout, "%-40s ... ", "Transferring MSA annotation");
     fflush(stdout);
   }
 
-  if ((status = cm_SetName(cm, msa->name)) != eslOK) goto ERROR;
-  if (cfg->be_verbose) fprintf(stdout, "done. [%s]\n", cm->name);
+  if(! (cm->flags & CMH_BITS)) ESL_XFAIL(status, errbuf, "Trying to set cm->consensus before bit scores are valid");
+
+  if ((status = cm_SetName       (cm, msa->name)) != eslOK)  ESL_XFAIL(status, errbuf, "Unable to set name for CM");
+  if ((status = cm_SetAccession  (cm, msa->acc))  != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA accession");
+  if ((status = cm_SetDescription(cm, msa->desc)) != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA description");
+  CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &(cons));
+  if ((status = cm_SetConsensus  (cm, cons, NULL)) != eslOK) ESL_XFAIL(status, errbuf, "Failed to calculate consensus sequence");
+
+  if (cfg->be_verbose) { 
+    fprintf(stdout, "done.  ");
+    esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(stdout, w, "CPU time: ");
+  }
+
+  if(w != NULL) esl_stopwatch_Destroy(w);
+  if(cons != NULL) FreeCMConsensus(cons);
   return eslOK;
 
  ERROR:
-  if (cfg->be_verbose) fprintf(stdout, "FAILED.\n");
+  if (cfg->be_verbose) { 
+    fprintf(stdout, "FAILED.  ");
+    esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(stdout, w, "CPU time: ");
+  }
+  if(w != NULL) esl_stopwatch_Destroy(w);
   return status;
 }
 
@@ -1391,10 +1312,6 @@ set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, 
     cm->flags |= CMH_NC;
     cutoff_was_set = TRUE;
   }
-  if (cfg->be_verbose && cutoff_was_set ) {
-    fprintf(stdout, "%-40s ... ", "Set model cutoffs");
-    fprintf(stdout, "done.\n");
-  }
   return eslOK;
 }
 
@@ -1417,18 +1334,24 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
   int status;
   double neff;
   int used_hmm_etarget = FALSE;
-  if(cfg->be_verbose) fprintf(stdout, "%-40s ... ", "Set effective sequence number");
-  fflush(stdout);
+  ESL_STOPWATCH *w = NULL;
+
+  if(cfg->be_verbose) { 
+    w = esl_stopwatch_Create();
+    esl_stopwatch_Start(w);
+    fprintf(stdout, "%-40s ... ", "Set effective sequence number");
+    fflush(stdout);
+  }
 
   if((esl_opt_GetBoolean(go, "--enone")) || ( esl_opt_IsOn(go, "--rsearch")))
     {
       neff = msa->nseq;
-      if(cfg->be_verbose) fprintf(stdout, "done. [--enone: neff=nseq=%d]\n", msa->nseq);
+      if(cfg->be_verbose) fprintf(stdout, "done.  ");
     }
   else if(esl_opt_IsOn(go, "--eset")) 
     {
       neff = esl_opt_GetReal(go, "--eset");
-      if(cfg->be_verbose) fprintf(stdout, "done. [--eset: neff=%.2f]\n", neff);
+      if(cfg->be_verbose) fprintf(stdout, "done.  ");
       cm->eff_nseq = neff;
       cm_Rescale(cm, neff / (float) msa->nseq);
     }
@@ -1465,10 +1388,14 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
       cm_Rescale(cm, neff / (float) msa->nseq);
 
       if(cfg->be_verbose) { 
-	if(used_hmm_etarget) fprintf(stdout, "done. [etarget (hmm) %.2f bits; neff %.2f]\n", hmm_etarget, neff);
-	else                 fprintf(stdout, "done. [etarget (cm)  %.2f bits; neff %.2f]\n", etarget, neff);
+	if(used_hmm_etarget) fprintf(stdout, "done.  ");
+	else                 fprintf(stdout, "done.  ");
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, "CPU time: ");
       }
     }
+  if(w != NULL) esl_stopwatch_Destroy(w);
+
   return eslOK;
 }
 
@@ -1476,11 +1403,14 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
  * Converts counts to probability parameters.
  */
 static int
-parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, const Prior_t *prior, float msa_nseq)
+parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, CM_t *cm, const Prior_t *prior, float msa_nseq)
 {
   int status; 
+  ESL_STOPWATCH *w = NULL;
 
-  if (cfg->be_verbose){
+  if (cfg->be_verbose && do_print){
+    w = esl_stopwatch_Create();
+    esl_stopwatch_Start(w);
     fprintf(stdout, "%-40s ... ", "Converting counts to probabilities"); 
     fflush(stdout);
   }
@@ -1507,9 +1437,230 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t 
   CMRenormalize(cm);
   CMLogoddsify(cm);
 
-  if (cfg->be_verbose) fprintf(stdout, "done.\n");
+  if (cfg->be_verbose && do_print) { 
+    fprintf(stdout, "done.  ");
+    esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(stdout, w, "CPU time: ");
+  }
+  if(w != NULL) esl_stopwatch_Destroy(w);
+
   return eslOK;
 }
+
+/* configure_model()
+ * Configure the model. This determines QDBs, W, and builds the ML p7 filter, 
+ * which we'll calibrate in build_and_calibrate_p7_filters() 
+ */
+static int
+configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
+{
+  int status; 
+  ESL_STOPWATCH *w = NULL;
+
+  if (cfg->be_verbose){
+    w = esl_stopwatch_Create();
+    esl_stopwatch_Start(w);
+    fprintf(stdout, "%-40s ... ", "Configuring model"); 
+    fflush(stdout);
+  }
+  cm->config_opts |= CM_CONFIG_QDB; /* this tells ConfigCM() to calculate QDBs */
+  if((status = ConfigCM(cm, errbuf, 
+			TRUE, /* do calculate W */
+			NULL, NULL)) != eslOK) return status;
+
+  if (cfg->be_verbose) { 
+    fprintf(stdout, "done.  ");
+    esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(stdout, w, "CPU time: ");
+  }
+
+  if(w != NULL) esl_stopwatch_Destroy(w);
+
+  return eslOK;
+}
+
+/* build_and_calibrate_p7_filters()
+ * Build any additional p7 HMM filters other than the 
+ * ML p7 HMM filter which was built in configure_model().
+ * Calibrate the ML p7 HMM filter and any other p7 filters
+ * built here.
+ */
+static int
+build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm)
+{
+  int status; 
+  CM_t    *acm = NULL; 
+  P7_HMM *ahmm = NULL;
+  int lmsvL, lvitL, lfwdL, gfwdL;
+  int lmsvN, lvitN, lfwdN, gfwdN;
+  double agfmu, agflambda;
+  float lftailp, gftailp;
+  int k, apos, idx;
+  float gaps;
+  ESL_MSA *amsa = NULL;
+  double mlp7_re, ahmm_re;
+  double neff;
+  ESL_STOPWATCH *w = NULL;
+
+  if (cfg->be_verbose){
+    w = esl_stopwatch_Create();
+    esl_stopwatch_Start(w);
+    fprintf(stdout, "%-40s ... ", "Calibrating p7 HMM filters"); 
+    fflush(stdout);
+  }
+
+  /* calibrate p7 HMM(s) */
+
+  /* Define relevant parameters: */
+  /* first, set all to default */
+  lmsvL = lvitL = 200;
+  lfwdL = 100;
+  gfwdL = ESL_MAX(100, 2.*cm->clen);
+  lmsvN = esl_opt_GetInteger(go, "--exp-lmsvN");
+  lvitN = esl_opt_GetInteger(go, "--exp-lvitN");
+  lfwdN = esl_opt_GetInteger(go, "--exp-lfwdN");
+  gfwdN = esl_opt_GetInteger(go, "--exp-gfwdN");
+  lftailp = esl_opt_GetReal(go, "--exp-lftp");
+  gftailp = esl_opt_GetReal(go, "--exp-gftp");
+
+  /* now, modify if nec based on command-line options */
+  if(esl_opt_IsUsed(go, "--exp-lL")) { 
+    lmsvL = lvitL = lfwdL = esl_opt_GetInteger(go, "--exp-lL");
+  }
+  else if(esl_opt_IsUsed(go, "--exp-lcmult")) { 
+    lmsvL = lvitL = lfwdL = esl_opt_GetReal(go, "--exp-lcmult") * cm->clen;
+  }
+
+  if(esl_opt_IsUsed(go, "--exp-gL")) { 
+    gfwdL = esl_opt_GetInteger(go, "--exp-gL");
+  }
+  else if(esl_opt_IsUsed(go, "--exp-gcmult")) { 
+    gfwdL = esl_opt_GetReal(go, "--exp-gcmult") * cm->clen;
+  }
+
+  if(esl_opt_GetBoolean(go, "--exp-fitlam")) { 
+    lmsvN = esl_opt_IsUsed(go, "--exp-lmsvN") ? esl_opt_GetInteger(go, "--exp-lmsvN") : 10000;
+    lvitN = esl_opt_IsUsed(go, "--exp-lvitN") ? esl_opt_GetInteger(go, "--exp-lvitN") : 10000;
+    lfwdN = esl_opt_IsUsed(go, "--exp-lfwdN") ? esl_opt_GetInteger(go, "--exp-lfwdN") : 10000;
+    gfwdN = esl_opt_IsUsed(go, "--exp-gfwdN") ? esl_opt_GetInteger(go, "--exp-gfwdN") : 10000;
+    lftailp = esl_opt_IsUsed(go, "--exp-lftp") ? esl_opt_GetReal(go, "--exp-lftp") : 0.01;
+    gftailp = esl_opt_IsUsed(go, "--exp-gftp") ? esl_opt_GetReal(go, "--exp-gftp") : 0.01;
+  }
+
+  /* Calibrate the ML p7 hmm */
+  if((status = cm_mlp7_Calibrate(cm, errbuf, 
+				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for each alg */
+				 lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
+				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
+				 gftailp))                                   /* fraction of tail mass to fit for glocal Fwd */
+     != eslOK) cm_Fail("Error calibrating cm->mlp7 HMM");
+  
+  /* Build and calibrate an additional HMM */
+  if(! esl_opt_GetBoolean(go, "--p7-none")) { 
+    /* Default strategy: 
+     * 
+     * Build a p7 HMM <ahmm> with p7_builder with entropy weighting
+     * and rel ent target of <x> from (--p7-ere <x>). Then _overwrite_
+     * it's emission probabilities with marginalized emission
+     * probabilities from a temporary CM built such that it's ML p7
+     * HMM has mean match state entropy the same as <ahmm>.
+     *
+     * The motivation for this is that rmark3 benchmarking (xref:
+     * ~nawrockie/notebook/11_0226_inf_p7s_with_cp9_transitions/00LOG)
+     * revealed that HMMs built with H3 transitions and emissions from
+     * a marginalized CM are the best for filtering.
+     * 
+     * The --p7-hemit option makes it so HMMER emissions are used instead
+     * of the marginalized CM emissions.
+     *
+     * NOTE: We could avoid this if we had a way or using Infernal's
+     * emission priors (there are different prior for base pairs and
+     * singlets) in p7_Builder(), but that would require parsing the
+     * secondary structure and getting an Infernal function into
+     * hmmer). For now, we build a temporary CM and copy it's
+     * emissions.
+     *
+     * First, annotate the msa with RF annotation corresponding to the
+     * definition of match columns used by the CM. This will
+     * guarantree that the HMM has the same number of match columns as
+     * the CM, which is important because we copy marginalized ml
+     * emissions from a CM onto the HMM. Note that we also set
+     * cfg->ap7_bld->arch_strategy as p7_ARCH_HAND.
+     */
+    amsa = esl_msa_Clone(msa);
+    if(amsa->rf != NULL) free(amsa->rf); 
+    ESL_ALLOC(amsa->rf, sizeof(char) * (amsa->alen+1));
+    for (apos = 1; apos <= amsa->alen; apos++) { 
+      gaps = 0.;
+      for (idx = 0; idx < amsa->nseq; idx++)
+	if (esl_abc_XIsGap(amsa->abc, amsa->ax[idx][apos])) gaps += amsa->wgt[idx];
+      amsa->rf[(apos-1)] = ((gaps / (float) amsa->nseq) > esl_opt_GetReal(go, "--gapthresh")) ? '.' : 'x';
+    }
+    cfg->ap7_bld->arch_strategy = p7_ARCH_HAND;
+    
+    if ((status = p7_Builder(cfg->ap7_bld, amsa, cfg->ap7_bg, &ahmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->ap7_bld->errbuf); goto ERROR; }
+    esl_msa_Destroy(amsa); 
+
+    if(! esl_opt_GetBoolean(go, "--p7-hemit")) { 
+      /* Overwrite the emission probabilities of the HMM
+       * with emissions from a ML HMM built from a CM.
+       * First, build the CM, it will have the same HMM
+       * mean match state entropy as the ahmm we just 
+       * built.
+       */
+      if ((status =  build_model(go, cfg, errbuf, FALSE, msa, &acm, NULL, NULL)) != eslOK) goto ERROR;
+      ahmm_re = p7_MeanMatchRelativeEntropy(ahmm, cfg->ap7_bg);
+      status = cm_EntropyWeight(acm, cfg->pri, ahmm_re, esl_opt_GetReal(go, "--eminseq"), TRUE, &mlp7_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
+      if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
+      else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
+      acm->eff_nseq = neff;
+      cm_Rescale(acm, acm->eff_nseq / (float) msa->nseq);
+      if ((status =  parameterize(go, cfg, errbuf, FALSE, acm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
+      if((status = ConfigCM(acm, errbuf, 
+			    FALSE, /* don't need to calculate W */
+			    NULL, NULL)) != eslOK) { printf("Error configuring aCM: %s\n", acm->name); goto ERROR; }
+
+      /* copy the ML p7 emission probs from the CM we just built */
+      /* match emissions: copy, then normalize (norm should be unnec actually) */
+      for (k = 1; k <= ahmm->M; k++) esl_vec_FCopy(acm->mlp7->mat[k], ahmm->abc->K, ahmm->mat[k]);
+      for (k = 1; k <= ahmm->M; k++) esl_vec_FNorm(ahmm->mat[k], ahmm->abc->K);
+      /* special case */
+      esl_vec_FSet(ahmm->mat[0], ahmm->abc->K, 0.);
+      ahmm->mat[0][0] = 1.0;
+      
+      /* insert emissions: copy, then normalize (norm should be unnec actually) */
+      for (k = 0; k <= ahmm->M; k++) esl_vec_FCopy(acm->mlp7->ins[k], ahmm->abc->K, ahmm->ins[k]);
+      for (k = 0; k <= ahmm->M; k++) esl_vec_FNorm(ahmm->ins[k], ahmm->abc->K);
+      /* reset HMM composition */
+      if ((status = p7_hmm_SetComposition(ahmm)) != eslOK) goto ERROR;
+      FreeCM(acm);
+    }
+    /* calibrate the additional HMM */
+    if((status = cm_p7_Calibrate(ahmm, errbuf, 
+				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for local (lL) and glocal (gL) modes */    
+				 lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
+				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
+				 gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
+				 &agfmu, &agflambda))  
+       != eslOK) cm_Fail("Error calibrating additional p7 HMM");
+
+    if((status = cm_Addp7(cm, ahmm, agfmu, agflambda, errbuf)) != eslOK) return status;
+  }
+
+  if (cfg->be_verbose) { 
+    fprintf(stdout, "done.  ");
+    esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(stdout, w, "CPU time: ");
+  }
+  if(w != NULL) esl_stopwatch_Destroy(w);
+
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "out of memory");
+  return status; /* never reached */
+}
+
 
 /* set_target_relent()
  * Incept:    EPN, Tue Aug 17 09:14:15 2010

@@ -684,7 +684,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int need_fsmx, int need_smx, int *fc
   if (pli->Z_setby == CM_ZSETBY_SSIINFO || pli->Z_setby == CM_ZSETBY_OPTION || pli->Z_setby == CM_ZSETBY_FILEINFO) {
     if((status = UpdateExpsForDBSize(cm, NULL, (long) pli->Z)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem update exp tail parameters for model %s\n", cm->name);
     if(pli->by_E) { 
-      if((status = E2MinScore(cm, NULL, pli->final_cm_exp_mode, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
+      if((status = E2ScoreGivenExpInfo(cm->expA[pli->final_cm_exp_mode], pli->errbuf, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
       pli->T = (double) T;
     }
   }
@@ -1639,7 +1639,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
    * any residue that exists in a CYK hit that reaches this threshold will be included
    * in the redefined envelope, any that doesn't will not be.
    */
-  cyk_env_cutoff = cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->mu_extrap + (log(pli->F6env) / (-1 * cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->lambda));
+  cyk_env_cutoff = cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6env) / (-1 * cm->expA[pli->fcyk_cm_exp_mode]->lambda));
   if(! do_final_greedy) { 
     results  = CreateResults(INIT_RESULTS);
   }    
@@ -1725,7 +1725,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
 	es[i] = cyk_envi;
 	ee[i] = cyk_envj;
       }
-      P = esl_exp_surv(cyksc, cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->mu_extrap, cm->stats->expAA[pli->fcyk_cm_exp_mode][0]->lambda);
+      P = esl_exp_surv(cyksc, cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap, cm->expA[pli->fcyk_cm_exp_mode]->lambda);
       if (P > pli->F6) continue;
       /******************************************************************************/
     }	
@@ -1841,7 +1841,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
 
     for (h = nhit; h < results->num_results; h++) { 
       cm_tophits_CloneHitFromResults(hitlist, results, h, pli->cur_seq_idx, &hit);
-      hit->pvalue = esl_exp_surv(hit->score, cm->stats->expAA[pli->final_cm_exp_mode][0]->mu_extrap, cm->stats->expAA[pli->final_cm_exp_mode][0]->lambda);
+      hit->pvalue = esl_exp_surv(hit->score, cm->expA[pli->final_cm_exp_mode]->mu_extrap, cm->expA[pli->final_cm_exp_mode]->lambda);
 
       /* initialize remaining values we don't know yet */
       hit->evalue   = 0.;
@@ -2544,7 +2544,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 	    (double)pli->n_overflow_fcyk / (double) nwin_fcyk);
   }
   else { 
-    fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15" PRId64 " (%.4g)\n", 0., 0.);
+    fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15d (%.4g)\n", "CYK", 0, 0.);
   }
   if(nwin_final > 0) { 
     fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15" PRId64 " (%.4g)\n", 
@@ -2553,7 +2553,9 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 	    (double)pli->n_overflow_final / (double) nwin_final);
   }
   else { 
-    fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15" PRId64 " (%.4g)\n", 0., 0.);
+    fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15d (%.4g)\n", 
+	    (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
+	    0, 0.);
   }
   if (w != NULL) {
     esl_stopwatch_Display(ofp, w, "# CPU time: ");

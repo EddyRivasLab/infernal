@@ -666,8 +666,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       /* we need to re-compute e-values before merging (when list will be sorted) */
-      eff_dbsize = (double) ((((double) cfg->Z / (double) info[0].cm->stats->expAA[info[0].pli->final_cm_exp_mode][0]->dbsize) * 
-			      ((double) info[0].cm->stats->expAA[info[0].pli->final_cm_exp_mode][0]->nrandhits)) + 0.5);
+      eff_dbsize = (double) ((((double) cfg->Z / (double) info[0].cm->expA[info[0].pli->final_cm_exp_mode]->dbsize) * 
+			      ((double) info[0].cm->expA[info[0].pli->final_cm_exp_mode]->nrandhits)) + 0.5);
       for (i = 0; i < infocnt; ++i) { 
 	/* TO DO: compute E-values differently if --hmm (p7_tophits_ComputeNhmmerEvalues?) */
 	cm_tophits_ComputeEvalues(info[i].th, eff_dbsize);
@@ -1380,8 +1380,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       esl_stopwatch_Stop(w);
       
       /* compute E-values before sending back to master */
-      eff_dbsize = (double) ((((double) cfg->Z / (double) info->cm->stats->expAA[info->pli->final_cm_exp_mode][0]->dbsize) * 
-			      ((double) info->cm->stats->expAA[info->pli->final_cm_exp_mode][0]->nrandhits)) + 0.5);
+      eff_dbsize = (double) ((((double) cfg->Z / (double) info->cm->expA[info->pli->final_cm_exp_mode]->dbsize) * 
+			      ((double) info->cm->expA[info->pli->final_cm_exp_mode]->nrandhits)) + 0.5);
       cm_tophits_ComputeEvalues(info->th, eff_dbsize);
       
       cm_tophits_MPISend(info->th,   0, INFERNAL_TOPHITS_TAG,  MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
@@ -1575,7 +1575,6 @@ pipeline_thread(void *arg)
   int i;
   int status;
   int workeridx;
-  int64_t seq_idx = 0;
   WORKER_INFO   *info;
   ESL_THREADS   *obj;
 

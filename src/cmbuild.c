@@ -702,10 +702,12 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
 {
+  uint32_t    checksum = 0;	/* checksum calculated for the input MSA. cmalign --mapali verifies against this. */
   CM_t *cm = NULL;
   int status;
 
   if ((status =  check_and_clean_msa    (go, cfg, errbuf, msa))                           != eslOK) goto ERROR;
+  if ((status =  esl_msa_Checksum       (msa, &checksum))                                 != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
   if ((status =  set_relative_weights   (go, cfg, errbuf, msa))                           != eslOK) goto ERROR;
   if ((status =  build_model            (go, cfg, errbuf, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
   if ((status =  set_model_name         (go, cfg, errbuf, msa, cm))                       != eslOK) goto ERROR;
@@ -713,6 +715,10 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
   if ((status =  set_effective_seqnumber(go, cfg, errbuf, msa, cm, cfg->pri))             != eslOK) goto ERROR;
   if ((status =  parameterize           (go, cfg, errbuf, cm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
   
+  cm->checksum = checksum;
+  printf("checksum %ld\n", checksum);
+  cm->flags   |= CMH_CHKSUM;
+
   *ret_cm = cm;
   return eslOK;
 
@@ -905,7 +911,10 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   /* copy the cmbuild command info to the CM */
   if ((status = CopyComLog(cfg->comlog, cm->comlog)) != eslOK) ESL_FAIL(eslFAIL, errbuf, "Problem copying com log info to CM. Probably out of memory.");
   if ((status = cm_Validate(cm, 0.0001, errbuf))     != eslOK) return status;
-  if ((status = CMFileWrite(cfg->cmfp, cm, esl_opt_GetBoolean(go, "--binary"), errbuf)) != eslOK) return status;
+  
+
+  if ((status = cm_file_WriteASCII(cfg->cmfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
+  //if ((status = CMFileWrite(cfg->cmfp, cm, esl_opt_GetBoolean(go, "--binary"), errbuf)) != eslOK) return status;
   /* build the HMM, so we can print the CP9 relative entropy */
   if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslFAIL, errbuf, "Couldn't build a CP9 HMM from the CM.");
 
@@ -928,10 +937,8 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   if(cfg->tblfp != NULL) PrintCM(cfg->tblfp, cm); /* tabular description of CM topology */
   /* emit map */
   if(cfg->efp != NULL) {
-    CMEmitMap_t *emap;
-    emap = CreateEmitMap(cm);
-    DumpEmitMap(cfg->efp, emap, cm);
-    FreeEmitMap(emap);
+    if(cm->emap == NULL) cm->emap = CreateEmitMap(cm);
+    DumpEmitMap(cfg->efp, cm->emap, cm);
   }
   /* save tabular description of guide tree topology, if nec */
   if(cfg->gtblfp != NULL) PrintParsetree(cfg->gtblfp, mtr);  
@@ -1051,6 +1058,9 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
       FreeCM(cm);
       cm = new;
     }
+  /* create emitmap */
+  cm->emap = CreateEmitMap(cm);
+
   /* get counts */
   ESL_ALLOC(tr, sizeof(Parsetree_t *) * (msa->nseq));
   for (idx = 0; idx < msa->nseq; idx++) {
@@ -2257,8 +2267,7 @@ dump_emission_info(FILE *fp, CM_t *cm)
   float tsc, esc;
   float bpsc, lsc, rsc;
   float tlsc, trsc, tbpsc, tdiffsc;
-  CMEmitMap_t *emap;
-  emap = CreateEmitMap(cm);
+  if(cm->emap == NULL) cm->emap = CreateEmitMap(cm);
   esc  = tsc  = 0.;
   tlsc = trsc = tbpsc = tdiffsc = 0.;
 
@@ -2275,7 +2284,7 @@ dump_emission_info(FILE *fp, CM_t *cm)
 	esc += cm->e[v][a] * cm->esc[v][a];
       }
       a = esl_vec_FArgMax(cm->esc[v], cm->abc->K);
-      fprintf(fp, "  %5d  %3s  %5d  %5d  %5d  %c  %7.3f\n", i, "L", v, nd, emap->lpos[nd], cm->abc->sym[a], esc);
+      fprintf(fp, "  %5d  %3s  %5d  %5d  %5d  %c  %7.3f\n", i, "L", v, nd, cm->emap->lpos[nd], cm->abc->sym[a], esc);
       tsc += esc;
     }
     if(cm->stid[v] == MATR_MR) { 
@@ -2286,7 +2295,7 @@ dump_emission_info(FILE *fp, CM_t *cm)
 	esc += cm->e[v][a] * cm->esc[v][a];
       }
       a = esl_vec_FArgMax(cm->esc[v], cm->abc->K);
-      fprintf(fp, "  %5d  %3s  %5d  %5d  %5d  %c  %7.3f\n", i, "R", v, nd, emap->rpos[nd], cm->abc->sym[a], esc);
+      fprintf(fp, "  %5d  %3s  %5d  %5d  %5d  %c  %7.3f\n", i, "R", v, nd, cm->emap->rpos[nd], cm->abc->sym[a], esc);
       tsc += esc;
     }
   }
@@ -2317,7 +2326,7 @@ dump_emission_info(FILE *fp, CM_t *cm)
       ab = esl_vec_FArgMax(cm->esc[v], (cm->abc->K * cm->abc->K));
       a  = ab / cm->abc->K;
       b  = ab % cm->abc->K;
-      fprintf(fp, "  %5d  %5d  %5d  %5d  %5d  %c%c  %7.3f  %7.3f  %7.3f  %7.3f\n", i, v, nd, emap->lpos[nd], emap->rpos[nd], cm->abc->sym[a], cm->abc->sym[b], 
+      fprintf(fp, "  %5d  %5d  %5d  %5d  %5d  %c%c  %7.3f  %7.3f  %7.3f  %7.3f\n", i, v, nd, cm->emap->lpos[nd], cm->emap->rpos[nd], cm->abc->sym[a], cm->abc->sym[b], 
 	      bpsc, lsc, rsc, (bpsc - (lsc+rsc)));
       tlsc += lsc;
       trsc += rsc;
@@ -2328,6 +2337,5 @@ dump_emission_info(FILE *fp, CM_t *cm)
   fprintf(fp, "# %5s  %5s  %5s  %5s  %5s  %2s  %7s  %7s  %7s  %7s\n", "-----", "-----", "-----", "-----", "-----", "--", "-------", "-------", "-------", "-------");
   fprintf(fp, "# total  %5s  %5s  %5s  %5s  %2s  %7.3f  %7.3f  %7.3f  %7.3f\n", "-", "-", "-", "-", "-", tbpsc, tlsc, trsc, tdiffsc);
       
-  FreeEmitMap(emap);
   return;
 }

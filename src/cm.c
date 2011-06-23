@@ -52,12 +52,12 @@
  *           Caller is responsible for free'ing the cm.
  */
 CM_t *
-CreateCM(int nnodes, int nstates, const ESL_ALPHABET *abc)
+CreateCM(int nnodes, int nstates, int clen, const ESL_ALPHABET *abc)
 {
   CM_t *cm;
 
   cm = CreateCMShell();
-  if (cm != NULL) CreateCMBody(cm, nnodes, nstates, abc);
+  if (cm != NULL) CreateCMBody(cm, nnodes, nstates, clen, abc);
   return cm;
 }
 CM_t *
@@ -70,11 +70,13 @@ CreateCMShell(void)
 				/* general information: added later */
   cm->abc    = NULL;
 
-  cm->name = NULL;
-  cm->acc  = NULL;
-  cm->desc = NULL;
-  cm->rf   = NULL;
-
+  cm->name      = NULL;
+  cm->acc       = NULL;
+  cm->desc      = NULL;
+  cm->rf        = NULL;
+  cm->consensus = NULL;
+  cm->map       = NULL;
+  cm->checksum  = 0;
 				/* null model information */
   cm->null   = NULL;
 
@@ -111,7 +113,8 @@ CreateCMShell(void)
   cm->lmesc   = NULL;
   cm->rmesc   = NULL;
 
-  cm->flags         = 0;
+  cm->flags    = 0;
+  cm->offset   = 0;
 
   cm->W         = 200;        /* for backwards compatibility */
   cm->el_selfsc = 0.;         /* this is backwards compatible also */
@@ -127,7 +130,8 @@ CreateCMShell(void)
   cm->cp9b         = NULL;
   cm->cp9map       = NULL;
   cm->root_trans   = NULL;
-  cm->stats        = NULL;
+  cm->expA         = NULL;
+  cm->hfiA         = NULL;
   cm->smx          = NULL;
   cm->hbmx         = NULL;
   cm->cp9_mx       = NULL;
@@ -149,6 +153,8 @@ CreateCMShell(void)
   cm->nseq     = 0;
   cm->clen     = 0;
   cm->comlog   = NULL;
+  cm->emap     = NULL;
+
   return cm;
 
  ERROR:
@@ -157,7 +163,7 @@ CreateCMShell(void)
 }
 
 void
-CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
+CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *abc)
 {
   int status;
   int v;
@@ -165,8 +171,9 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   cm->abc    = abc; 
 				/* structural information */
   cm->M      = nstates;
+  cm->nodes  = nnodes;
+  cm->clen   = clen;
 
-				/* null model information */
   CMAllocNullModel(cm);         
 
   if((cm->comlog = CreateComLog()) == NULL) goto ERROR;
@@ -178,8 +185,9 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   ESL_ALLOC(cm->cnum,    nstates    * sizeof(int));
   ESL_ALLOC(cm->plast,   nstates    * sizeof(int));
   ESL_ALLOC(cm->pnum,    nstates    * sizeof(int));
+  ESL_ALLOC(cm->dmin,    nstates    * sizeof(int));
+  ESL_ALLOC(cm->dmax,    nstates    * sizeof(int));
 				/* node->state map information */
-  cm->nodes  = nnodes;
   ESL_ALLOC(cm->nodemap, nnodes  * sizeof(int));
   ESL_ALLOC(cm->ndtype,  nnodes  * sizeof(char));
   
@@ -225,6 +233,9 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
       cm->itsc[v] = cm->itsc[0] + v * MAXCONNECT;
     }
 
+  /* Zero model */
+  CMZero(cm);
+
   /* the EL state at M is special: we only need state
    * type info recorded, so functions looking at parsetrees  
    * can interpret what an "M" index means.
@@ -232,12 +243,11 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   cm->sttype[cm->M] = EL_st;
   cm->stid[cm->M]   = END_EL;
 
-  cm->flags         = 0;
+  /* don't modify cm->flags nor cm->offset, they may have been updated prior to this 
+   * call, i.e. when reading a CM from a file */
   cm->config_opts   = 0;
   cm->align_opts    = 0;
   cm->search_opts   = 0;
-  cm->dmin          = NULL;
-  cm->dmax          = NULL;
   cm->cp9           = NULL;
   cm->cp9b          = NULL;
   cm->cp9map        = NULL;
@@ -249,6 +259,12 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   /* we'll allocate the cp9, cp9b, cp9map, cp9_mx and cp9_bmx inside ConfigCM(),
    * we need some more info about the CM besides M and nnodes to build those
    */
+
+  /* Optional allocation, status flag dependent */
+  if (cm->flags & CMH_RF)    ESL_ALLOC(cm->rf,          (cm->clen+2) * sizeof(char));
+  if (cm->flags & CMH_CONS)  ESL_ALLOC(cm->consensus,   (cm->clen+2) * sizeof(char));
+  if (cm->flags & CMH_MAP)   ESL_ALLOC(cm->map,         (cm->clen+1) * sizeof(int));
+
   return;
 
  ERROR:
@@ -328,14 +344,18 @@ CMRenormalize(CM_t *cm)
 void
 FreeCM(CM_t *cm)
 {
-  if (cm->smx  != NULL) cm_FreeScanMatrixForCM(cm); /* free this first, it needs some info from cm->stid */
-  if (cm->si   != NULL) FreeSearchInfo(cm->si, cm); /* free this first, it needs some info from cm->stid */
-  if (cm->name != NULL) free(cm->name);
-  if (cm->acc  != NULL) free(cm->acc);
-  if (cm->desc != NULL) free(cm->desc);
-  if (cm->rf   != NULL) free(cm->rf);
+  int i;
 
-  free(cm->null);
+  if (cm->smx       != NULL) cm_FreeScanMatrixForCM(cm); /* free this first, it needs some info from cm->stid */
+  if (cm->si        != NULL) FreeSearchInfo(cm->si, cm); /* free this first, it needs some info from cm->stid */
+  if (cm->name      != NULL) free(cm->name);
+  if (cm->acc       != NULL) free(cm->acc);
+  if (cm->desc      != NULL) free(cm->desc);
+  if (cm->rf        != NULL) free(cm->rf);
+  if (cm->consensus != NULL) free(cm->consensus);
+  if (cm->map       != NULL) free(cm->map);
+  if (cm->null      != NULL) free(cm->null);
+
   free(cm->sttype);
   free(cm->ndidx);
   free(cm->stid);
@@ -349,36 +369,62 @@ FreeCM(CM_t *cm)
   if (cm->lmesc   != NULL) { free(cm->lmesc[0]); free(cm->lmesc); }
   if (cm->rmesc   != NULL) { free(cm->rmesc[0]); free(cm->rmesc); }
 
-  free(cm->t[0]);
-  free(cm->t);
-  free(cm->e[0]);
-  free(cm->e);
-  free(cm->tsc[0]);
-  free(cm->tsc);
-  free(cm->esc[0]);
-  free(cm->esc);
-  free(cm->itsc[0]);
-  free(cm->itsc);
-  free(cm->iesc[0]);
-  free(cm->iesc);
-  free(cm->begin);
-  free(cm->end);
-  free(cm->beginsc);
-  free(cm->endsc);
-  free(cm->ibeginsc);
-  free(cm->iendsc);
-  free(cm->dmin);
-  free(cm->dmax);
+  if(cm->t != NULL) { 
+    if(cm->t[0] != NULL) free(cm->t[0]);
+    free(cm->t);
+  }
+  if(cm->e != NULL) { 
+    if(cm->e[0] != NULL) free(cm->e[0]);
+    free(cm->e);
+  }
+  if(cm->tsc != NULL) { 
+    if(cm->tsc[0] != NULL) free(cm->tsc[0]);
+    free(cm->tsc);
+  }
+  if(cm->esc != NULL) { 
+    if(cm->esc[0] != NULL) free(cm->esc[0]);
+    free(cm->esc);
+  }
+  if(cm->itsc != NULL) { 
+    if(cm->itsc[0] != NULL) free(cm->itsc[0]);
+    free(cm->itsc);
+  }
+  if(cm->iesc != NULL) { 
+    if(cm->iesc[0] != NULL) free(cm->iesc[0]);
+    free(cm->iesc);
+  }
+  if(cm->begin    != NULL) free(cm->begin);
+  if(cm->end      != NULL) free(cm->end);
+  if(cm->beginsc  != NULL) free(cm->beginsc);
+  if(cm->ibeginsc != NULL) free(cm->ibeginsc);
+  if(cm->endsc    != NULL) free(cm->endsc);
+  if(cm->iendsc   != NULL) free(cm->iendsc);
+  if(cm->dmin     != NULL) free(cm->dmin);
+  if(cm->dmax     != NULL) free(cm->dmax);
+
   if(cm->comlog     != NULL) FreeComLog(cm->comlog);
   if(cm->cp9map     != NULL) FreeCP9Map(cm->cp9map);
   if(cm->cp9b       != NULL) FreeCP9Bands(cm->cp9b);
   if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
   if(cm->root_trans != NULL) free(cm->root_trans);
-  if(cm->stats      != NULL) FreeCMStats(cm->stats);
   if(cm->hbmx       != NULL) cm_hb_mx_Destroy(cm->hbmx);
   if(cm->cp9_mx     != NULL) FreeCP9Matrix(cm->cp9_mx);
   if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
+  
+  if(cm->expA != NULL) { 
+    for(i = 0; i < EXP_NMODES;  i++) {
+      free(cm->expA[i]);
+    }
+    free(cm->expA);
+  }
+  if(cm->hfiA != NULL) { 
+    for(i = 0; i < FTHR_NMODES; i++) {
+      FreeHMMFilterInfo(cm->hfiA[i]); 
+    }
+    free(cm->hfiA);
+  }
+
   if(cm->mlp7       != NULL) p7_hmm_Destroy(cm->mlp7);
   if(cm->nap7 > 0) { 
     int z;
@@ -392,6 +438,8 @@ FreeCM(CM_t *cm)
     free(cm->ap7_evparamAA);
     cm->nap7 = 0;
   }
+
+  if(cm->emap != NULL) FreeEmitMap(cm->emap);
 
   free(cm);
 }
@@ -682,7 +730,7 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
  * Purpose:  Convert the probabilities in a CM to log-odds 
  *           EPN 12.19.06: also fill in integer log-odds scores.
  */
-void
+int
 CMLogoddsify(CM_t *cm)
 {
   int v, x, y;
@@ -822,8 +870,11 @@ CMLogoddsify(CM_t *cm)
       cm->flags |= CMH_LOCAL_BEGIN;
       cm->flags |= CMH_LOCAL_END;
     }
+
   /* raise flag saying we have valid log odds scores */
   cm->flags |= CMH_BITS;
+
+  return eslOK;
 }
 
 
@@ -1604,11 +1655,19 @@ CMRebalance(CM_t *cm)
   /* Create the new model. Copy information that's unchanged by
    * renumbering the CM.
    */
-  new = CreateCM(cm->nodes, cm->M, cm->abc);
-  if((status = esl_strdup(cm->name, -1, &(new->name))) != eslOK) goto ERROR;
-  if((status = esl_strdup(cm->acc,  -1, &(new->acc)))  != eslOK) goto ERROR;
-  if((status = esl_strdup(cm->desc, -1, &(new->desc))) != eslOK) goto ERROR;
+  new = CreateCM(cm->nodes, cm->M, cm->clen, cm->abc);
+  if((status = esl_strdup(cm->name,      -1, &(new->name)))      != eslOK) goto ERROR;
+  if((status = esl_strdup(cm->acc,       -1, &(new->acc)))       != eslOK) goto ERROR;
+  if((status = esl_strdup(cm->desc,      -1, &(new->desc)))      != eslOK) goto ERROR;
+  if((status = esl_strdup(cm->rf,        -1, &(new->rf)))        != eslOK) goto ERROR;
+  if((status = esl_strdup(cm->consensus, -1, &(new->consensus))) != eslOK) goto ERROR;
+  if(cm->map != NULL) { 
+    ESL_ALLOC(new->map, sizeof(int) * (cm->clen+1));
+    esl_vec_ICopy(cm->map, cm->clen+1, new->map);
+  }
+
   new->flags    = cm->flags;
+  new->offset   = cm->offset;
   new->clen     = cm->clen;
   new->nseq     = cm->nseq;
   new->eff_nseq = cm->eff_nseq;
@@ -1616,7 +1675,6 @@ CMRebalance(CM_t *cm)
   if(cm->flags & CMH_TC) new->tc = cm->tc;
   if(cm->flags & CMH_NC) new->nc = cm->nc;
   
-
   for (x = 0; x < cm->abc->K; x++) new->null[x] = cm->null[x];
 
   /* Calculate "weights" (# of required extra decks) on every B and S state.
@@ -1737,6 +1795,14 @@ CMRebalance(CM_t *cm)
       new->begin[newidx[v]] = cm->begin[v];
       new->end[newidx[v]]   = cm->end[v];
     }
+  if(cm->dmin != NULL) { 
+    ESL_ALLOC(new->dmin, sizeof(int) * cm->M);
+    for (v = 0; v < cm->M; v++) new->dmin[newidx[v]] = cm->dmin[v];
+  }
+  if(cm->dmax != NULL) { 
+    ESL_ALLOC(new->dmax, sizeof(int) * cm->M);
+    for (v = 0; v < cm->M; v++) new->dmax[newidx[v]] = cm->dmax[v];
+  }
 
   /* Guide tree numbering is unchanged - still in preorder.
    * Associate nodes with new state numbering.
@@ -2161,6 +2227,8 @@ cm_Validate(CM_t *cm, float tol, char *errbuf)
   if (cm->M          <  1)          ESL_XFAIL(eslFAIL, errbuf, "CM has M < 1");
   if (cm->abc        == NULL)       ESL_XFAIL(eslFAIL, errbuf, "CM has no alphabet reference");
   if (cm->abc->type  == eslUNKNOWN) ESL_XFAIL(eslFAIL, errbuf, "CM's alphabet is set to unknown");
+  if (cm->dmin       == NULL)       ESL_XFAIL(eslFAIL, errbuf, "CM's dmin vector is NULL");
+  if (cm->dmax       == NULL)       ESL_XFAIL(eslFAIL, errbuf, "CM's dmax vector is NULL");
   
   esl_vec_FSet(pvec, MAXCONNECT+1, 0.); 
   for (v = 0; v < cm->M; v++)
@@ -2325,12 +2393,12 @@ cm_SetName(CM_t *cm, char *name)
 /* Function: cm_SetAccession()
  * Incept:   SRE, Mon Jan  1 16:53:53 2007 [Casa de Gatos]
  * 
- * Purpose:  Set or change the accession number of a Plan7 CM to <acc>,
- *           and raise the <ACC> flag. Trailing whitespace (including newline) 
+ * Purpose:  Set or change the accession number of a CM to <acc>,
+ *           and raise the <CMH_ACC> flag. Trailing whitespace (including newline) 
  *           is chopped.  
  *           
  *           If <acc> is <NULL>, unset the CM's accession (if any) and drop 
- *           the <ACC> flag.
+ *           the <CMH_ACC> flag.
  *
  * Returns:  <eslOK> on success.
  *
@@ -2391,6 +2459,68 @@ cm_SetDescription(CM_t *cm, char *desc)
   return eslOK;
 
  ERROR:
+  return status;
+}
+
+/* Function:  cm_SetConsensus()
+ * Incept:    EPN, Wed Jun 22 06:11:35 2011
+ *            (SRE p7_hmm_SetConsensus())
+ *
+ * Synopsis:  Set the consensus residue line of the CM.
+ *
+ * Purpose:   Sets the consensus annotation line of the model <cm>.
+ *
+ *            Based on p7_hmm_SetConsensus() which is flexible to
+ *            setting the consensus as a single sequence or
+ *            a consensus from a multiple sequence alignment.
+ *            Here, only the latter case is handled, i.e.
+ *            <sq> should always be passed as NULL. But in the
+ *            future, we should relax this to allow for single
+ *            sequence models. 
+ *
+ *            The consensus sequence isn't even calculated here,
+ *            it must be passed in as part of the <cons> CMConsensus_t
+ *            object, which was created by CreateCMConsensus().
+ * 
+ *            So, currently, <sq> must null and <cons> must be non-null.
+ *
+ * Args:      cm     - model with valid probability parameters
+ *            cons   - consensus information for the CM
+ *            sq     - NULL if a standard model;
+ *                     or the query sequence for a single-sequence model (NOT YET IMPLEMENTED)
+ *           
+ * Returns:   <eslOK> on success. The <CMH_CONS> flag on the <cm> is raised
+ *            if it wasn't already. The <cm->consensus> line is set.
+ *
+ * Throws:    <eslEMEM> on allocation error. <eslEINVAL> if contract is violated.
+ *            In both cases, the <CMH_CONS> is dropped, even if it was up to 
+ *            begin with, and the <cm->consensus> is <NULL>,
+ *            even if we had one to begin with.
+ *
+ * Xref:      SRE:J8/26.
+ */
+int
+cm_SetConsensus(CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq)
+{
+  int   status;
+  int   cpos;
+
+  if(cons == NULL || sq != NULL) { status = eslEINVAL; goto ERROR; }
+  
+  /* allocation, if needed */
+  if (! cm->consensus) ESL_ALLOC(cm->consensus, sizeof(char) * (cm->clen+2));
+
+  /* copy cons->cseq, careful for off-by-one */
+  cm->consensus[0] = ' ';
+  for (cpos = 1; cpos <= cm->clen; cpos++) cm->consensus[cpos] = cons->cseq[cpos-1];
+  cm->consensus[cm->clen+1] = '\0';
+  cm->flags  |= CMH_CONS;	
+  return eslOK;
+
+ ERROR:
+  if (cm->consensus) free(cm->consensus);
+  cm->consensus = NULL;
+  cm->flags    &= (~CMH_CONS);	
   return status;
 }
 
@@ -2578,10 +2708,11 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
   if(cm->flags & CMH_SCANMATRIX)  ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_SCANMATRIX flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CM_IS_SUB)       ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CM_IS_SUB flag is up (it shouldn't be if the CM was just read from a file");
 
-  if ((new = CreateCM(cm->nodes, cm->M, cm->abc)) == NULL) { status = eslEMEM; goto ERROR; }
+  if ((new = CreateCM(cm->nodes, cm->M, cm->clen, cm->abc)) == NULL) { status = eslEMEM; goto ERROR; }
   CMZero(new);
 
   new->flags       = cm->flags;
+  new->offset      = cm->offset;
   new->nseq        = cm->nseq;
   new->clen        = cm->clen;
   new->el_selfsc   = cm->el_selfsc;
@@ -2612,17 +2743,34 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
   esl_vec_FCopy(cm->t[0], cm->M * MAXCONNECT,              new->t[0]);
 
   if (esl_strdup(cm->name, -1, &(new->name))  != eslOK) { status = eslEMEM; goto ERROR; }
-  if (cm->acc != NULL)  { if (esl_strdup(cm->acc, -1,  &(new->acc))  != eslOK) { status = eslEMEM; goto ERROR; } }
-  if (cm->desc != NULL) { if (esl_strdup(cm->desc, -1, &(new->desc)) != eslOK) { status = eslEMEM; goto ERROR; } }
-  if (cm->rf   != NULL) { if (esl_strdup(cm->rf,   -1, &(new->rf))   != eslOK) { status = eslEMEM; goto ERROR; } }
+  if (cm->acc       != NULL) { if (esl_strdup(cm->acc,       -1, &(new->acc))       != eslOK) { status = eslEMEM; goto ERROR; } }
+  if (cm->desc      != NULL) { if (esl_strdup(cm->desc,      -1, &(new->desc))      != eslOK) { status = eslEMEM; goto ERROR; } }
+  if (cm->rf        != NULL) { if (esl_strdup(cm->rf,        -1, &(new->rf))        != eslOK) { status = eslEMEM; goto ERROR; } }
+  if (cm->consensus != NULL) { if (esl_strdup(cm->consensus, -1, &(new->consensus)) != eslOK) { status = eslEMEM; goto ERROR; } }
 
   if (esl_strdup(cm->comlog->bcom,  -1, &(new->comlog->bcom))  != eslOK) { status = eslEMEM; goto ERROR; }
   if (esl_strdup(cm->comlog->bdate, -1, &(new->comlog->bdate)) != eslOK) { status = eslEMEM; goto ERROR; }
   if (esl_strdup(cm->comlog->ccom,  -1, &(new->comlog->ccom))  != eslOK) { status = eslEMEM; goto ERROR; }
   if (esl_strdup(cm->comlog->cdate, -1, &(new->comlog->cdate)) != eslOK) { status = eslEMEM; goto ERROR; }
   
-  /* clone the CM stats */
-  if((status = CloneCMStats(cm->stats, &(new->stats))) != eslOK) goto ERROR;
+  /* clone the CM expA and hfiA */
+  if(cm->expA != NULL) { 
+    ESL_ALLOC(new->expA, sizeof(ExpInfo_t *)       * EXP_NMODES);
+    for(i = 0; i < EXP_NMODES; i++) CopyExpInfo(cm->expA[i], new->expA[i]);
+  }
+  if(cm->hfiA != NULL) { 
+    ESL_ALLOC(new->hfiA, sizeof(HMMFilterInfo_t *) * FTHR_NMODES);
+    for(i = 0; i < FTHR_NMODES; i++) {
+      cm->hfiA[i] = CreateHMMFilterInfo();
+      if((status = CopyHMMFilterInfo(cm->hfiA[i], new->hfiA[i])) != eslOK) goto ERROR;
+    }
+  }
+
+  /* clone the alignment map */
+  if(cm->map != NULL) { 
+    ESL_ALLOC(new->map, sizeof(int) * (new->clen+1));
+    esl_vec_ICopy(cm->map, (new->clen+1), new->map);
+  }
 
   /* clone the p7 models, if any */
   if(cm->mlp7 != NULL) { 
@@ -2654,3 +2802,48 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
   return status;
 }
 
+
+/* Function: DumpCMFlags()
+ * Date:     EPN, Wed Jun 22 19:24:54 2011
+ *
+ * Purpose:  Print flags that are raised in a CM.
+ *            
+ * Returns:  void.
+ */
+void
+DumpCMFlags(FILE *fp, CM_t *cm)
+{
+  fprintf(fp, "Dumping CM flags:\n");
+  if(cm->flags & CMH_BITS)                 fprintf(fp, "\tCMH_BITS\n");
+  if(cm->flags & CMH_ACC)                  fprintf(fp, "\tCMH_ACC\n");
+  if(cm->flags & CMH_DESC)                 fprintf(fp, "\tCMH_DESC\n");
+  if(cm->flags & CMH_RF)                   fprintf(fp, "\tCMH_RF\n");
+  if(cm->flags & CMH_GA)                   fprintf(fp, "\tCMH_GA\n");
+  if(cm->flags & CMH_TC)                   fprintf(fp, "\tCMH_TC\n");
+  if(cm->flags & CMH_NC)                   fprintf(fp, "\tCMH_NC\n");
+  if(cm->flags & CMH_CHKSUM)               fprintf(fp, "\tCMH_CHKSUM\n");
+  if(cm->flags & CMH_MAP)                  fprintf(fp, "\tCMH_MAP\n");
+  if(cm->flags & CMH_CONS)                 fprintf(fp, "\tCMH_CONS\n");
+  if(cm->flags & CMH_LOCAL_BEGIN)          fprintf(fp, "\tCMH_LOCAL_BEGIN\n");
+  if(cm->flags & CMH_LOCAL_END)            fprintf(fp, "\tCMH_LOCAL_END\n");
+  if(cm->flags & CMH_EXPTAIL_STATS)        fprintf(fp, "\tCMH_EXPTAIL_STATS\n");
+  if(cm->flags & CMH_FILTER_STATS)         fprintf(fp, "\tCMH_FILTER_STATS\n");
+  if(cm->flags & CMH_QDB)                  fprintf(fp, "\tCMH_QDB\n");
+  if(cm->flags & CMH_CP9)                  fprintf(fp, "\tCMH_CP9\n");
+  if(cm->flags & CMH_CP9STATS)             fprintf(fp, "\tCMH_CP9STATS\n");
+  if(cm->flags & CMH_SCANMATRIX)           fprintf(fp, "\tCMH_SCANMATRIX\n");
+  if(cm->flags & CMH_MLP7)                 fprintf(fp, "\tCMH_MLP7\n");
+  if(cm->flags & CMH_MLP7_STATS)           fprintf(fp, "\tCMH_MLP7_STATS\n");
+  if(cm->flags & CMH_AP7)                  fprintf(fp, "\tCMH_AP7\n");
+  if(cm->flags & CMH_AP7_STATS)            fprintf(fp, "\tCMH_AP7_STATS\n");
+
+  if(cm->flags & CM_IS_SUB)               fprintf(fp, "\tCM_IS_SUB\n");
+  if(cm->flags & CM_IS_RSEARCH)           fprintf(fp, "\tCM_IS_RSEARCH\n");
+  if(cm->flags & CM_RSEARCHTRANS)         fprintf(fp, "\tCM_RSEARCHTRANS\n");
+  if(cm->flags & CM_RSEARCHEMIT)          fprintf(fp, "\tCM_RSEARCHEMIT\n");
+  if(cm->flags & CM_EMIT_NO_LOCAL_BEGINS) fprintf(fp, "\tCM_EMIT_NO_LOCAL_BEGINS\n");
+  if(cm->flags & CM_EMIT_NO_LOCAL_ENDS)   fprintf(fp, "\tCM_EMIT_NO_LOCAL_ENDS\n");
+
+  fprintf(fp, "Finished dumping CM flags.\n");
+  return;
+}
