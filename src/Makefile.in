@@ -53,8 +53,6 @@ PROGS = cmalign\
 	cmsim\
 	cmstat\
 	trcyk\
-	dcmsearch\
-	dcmbuild\
 	bandcyk-montecarlo-test\
 	bandcyk-truncation-test\
 	cp9-test\
@@ -72,8 +70,6 @@ PROGSOBJSS = \
 	cmstat.o\
 	trcyk.o\
 	truncyk_check.o\
-	dcmsearch.o\
-	dcmbuild.o
 
 HDRS =  funcs.h\
 	structs.h

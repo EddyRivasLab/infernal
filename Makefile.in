@@ -80,8 +80,7 @@ PROGS = cmalign\
 	cmfetch\
 	cmscore\
 	cmsearch\
-	cmstat\
-	dcmsearch
+	cmstat
 
 SSEPROGS = sse_cmsearch\
            cmsearch_dual
