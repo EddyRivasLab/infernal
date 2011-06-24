@@ -1034,13 +1034,15 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
   int idx;
   CM_t *cm;
   char *aseq;                   
+  int use_wts;
 
   if (cfg->be_verbose) {
     fprintf(stdout, "%-40s ... ", "Constructing model architecture"); 
     fflush(stdout);
   }
-
-  if((status = HandModelmaker(msa, errbuf, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &cm, &mtr)) != eslOK) return status;
+  
+  use_wts = esl_opt_GetBoolean(go, "--rf") ? FALSE : TRUE;
+  if((status = HandModelmaker(msa, errbuf, esl_opt_GetBoolean(go, "--rf"), use_wts, esl_opt_GetReal(go, "--gapthresh"), &cm, &mtr)) != eslOK) return status;
   if(cfg->be_verbose) fprintf(stdout, "done.\n");
   
   /* set the CM's null model, if rsearch mode, use the bg probs used to calc RIBOSUM */
