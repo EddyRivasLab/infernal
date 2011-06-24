@@ -52,6 +52,7 @@ static ESL_OPTIONS options[] = {
   { "--rsearch", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
   { "--binary",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "save the model(s) in binary format",     2 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--rsearch", "use reference coordinate annotation to specify consensus", 2 },
+  { "--1p0matins",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,       "--rf", "ignore seq weights when defining match/insert (v0.1-v1.0.2 method)", 2 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,      NULL,  "--rsearch", "fraction of gaps to allow in a consensus column [0..1]", 2 },
   { "--ignorant", eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "strip the structural info from input alignment", 2 },
 /* Alternate relative sequence weighting strategies */
@@ -70,6 +71,7 @@ static ESL_OPTIONS options[] = {
   { "--eminseq", eslARG_REAL,  "0.1",  NULL,"x>=0",      NULL, "--eent",     NULL, "for --eent: set minimum effective sequence number to <x>", 4},
   { "--ehmmre",  eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set minimum HMM relative entropy to <x>", 4}, 
   { "--eset",    eslARG_REAL,  NULL,   NULL,"x>=0",   EFFOPTS,    NULL,      NULL, "set eff seq # for all models to <x>",                 4},
+  { "--e1p0df",  eslARG_NONE,  NULL,   NULL, NULL,       NULL, "--eent","--enone,--ere,--eminseq,--ehmmre,--eset", "use Infernal v1.0-v1.0.2 default entropy weighting strategy", 4},
 /* Customizing null model or priors */
   { "--null",    eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read null (random sequence) model from file <s>", 5 },
   { "--prior",   eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read priors from file <s>", 5 },
@@ -156,7 +158,7 @@ struct cfg_s {
   ESL_ALPHABET *abc;		/* digital alphabet */
 
   char         *cmfile;         /* file to write CM to                    */
-  FILE         *cmfp;           /* CM output file handle                  */
+  FILE         *cmoutfp;        /* CM output file handle                  */
 
   float        *null;		/* null model                              */
   Prior_t      *pri;		/* mixture Dirichlet prior for the HMM     */
@@ -209,6 +211,7 @@ static int    configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
 static int    build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali);
 static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen);
+static double version_1p0_default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
 static void   strip_wuss(char *ss);
 static int    refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *orig_cm, ESL_MSA *input_msa, Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr, Parsetree_t ***ret_tr, int *ret_niter);
 static int    get_unaln_seqs_from_msa(const ESL_MSA *msa, ESL_SQ ***ret_sq);
@@ -335,7 +338,7 @@ main(int argc, char **argv)
   cfg.alifile    = esl_opt_GetArg(go, 2);
   cfg.afp        = NULL;	           /* created in init_cfg() */
   cfg.abc        = NULL;	           /* created in init_cfg() */
-  cfg.cmfp       = NULL;	           /* opened in init_cfg() */
+  cfg.cmoutfp    = NULL;	           /* opened in init_cfg() */
   cfg.null       = NULL;	           /* created in init_cfg() */
   cfg.pri        = NULL;                   /* created in init_cfg() */
   cfg.fullmat    = NULL;                   /* read (possibly) in init_cfg() */
@@ -419,15 +422,15 @@ main(int argc, char **argv)
     printf("# Intermediate alignments from MSA refinement saved in file %s.\n", esl_opt_GetString(go, "--rdump"));
     fclose(cfg.rdfp); 
   }
-  if (cfg.afp   != NULL) esl_msafile_Close(cfg.afp);
-  if (cfg.abc   != NULL) esl_alphabet_Destroy(cfg.abc);
-  if (cfg.cmfp  != NULL) fclose(cfg.cmfp);
-  if (cfg.pri   != NULL) Prior_Destroy(cfg.pri);
-  if (cfg.null  != NULL) free(cfg.null);
-  if (cfg.r     != NULL) esl_randomness_Destroy(cfg.r);
-  if (cfg.comlog!= NULL) FreeComLog(cfg.comlog);
-  if (cfg.ap7_bg!= NULL) p7_bg_Destroy(cfg.ap7_bg);
-  if (cfg.ap7_bld!= NULL) p7_builder_Destroy(cfg.ap7_bld);
+  if (cfg.afp     != NULL) esl_msafile_Close(cfg.afp);
+  if (cfg.abc     != NULL) esl_alphabet_Destroy(cfg.abc);
+  if (cfg.cmoutfp != NULL) fclose(cfg.cmoutfp);
+  if (cfg.pri     != NULL) Prior_Destroy(cfg.pri);
+  if (cfg.null    != NULL) free(cfg.null);
+  if (cfg.r       != NULL) esl_randomness_Destroy(cfg.r);
+  if (cfg.comlog  != NULL) FreeComLog(cfg.comlog);
+  if (cfg.ap7_bg  != NULL) p7_bg_Destroy(cfg.ap7_bg);
+  if (cfg.ap7_bld != NULL) p7_builder_Destroy(cfg.ap7_bld);
 
   esl_getopts_Destroy(go);
   esl_stopwatch_Stop(w);
@@ -445,7 +448,7 @@ main(int argc, char **argv)
  * Sets: 
  *    cfg->afp     - open alignment file                
  *    cfg->abc     - digital alphabet
- *    cfg->cmfp    - open CM file
+ *    cfg->cmoutfp - output file for CM
  *    cfg->null    - NULL model, used for all models
  *    cfg->pri     - prior, used for all models
  *    cfg->fullmat - RIBOSUM matrix used for all models (optional)
@@ -474,10 +477,10 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   /* open CM file for writing */
   if (esl_opt_GetBoolean(go, "-A")) { /* we're appending to a CM file */
-    if ((cfg->cmfp = fopen(cfg->cmfile, "a")) == NULL) ESL_FAIL(status, errbuf, "Failed to open CM file %s to append to", cfg->cmfile);
+    if ((cfg->cmoutfp = fopen(cfg->cmfile, "a")) == NULL) ESL_FAIL(status, errbuf, "Failed to open CM file %s to append to", cfg->cmfile);
   }
   else { /* we're starting a new CM file */
-    if ((cfg->cmfp = fopen(cfg->cmfile, "w")) == NULL) ESL_FAIL(status, errbuf, "Failed to open CM file %s for writing", cfg->cmfile);
+    if ((cfg->cmoutfp = fopen(cfg->cmfile, "w")) == NULL) ESL_FAIL(status, errbuf, "Failed to open CM file %s for writing", cfg->cmfile);
   }
   /* Set up the prior */
   if (esl_opt_GetString(go, "--prior") != NULL)
@@ -740,7 +743,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  }
 
 	  FreeCM(cm);
-	  fflush(cfg->cmfp);
+	  fflush(cfg->cmoutfp);
 
 	  if(tr != NULL) {
 	    for(i = 0; i < msa->nseq; i++) FreeParsetree(tr[i]);
@@ -976,12 +979,11 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   if ((status = cm_Validate(cm, 0.0001, errbuf))     != eslOK) return status;
 
   if (esl_opt_GetBoolean(go, "--binary")) { 
-    if ((status = cm_file_WriteBinary(cfg->cmfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
+    if ((status = cm_file_WriteBinary(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
   }
   else { 
-    if ((status = cm_file_WriteASCII(cfg->cmfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
+    if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
   }
-  //if ((status = CMFileWrite(cfg->cmfp, cm, esl_opt_GetBoolean(go, "--binary"), errbuf)) != eslOK) return status;
 
   /* build the HMM, so we can print the CP9 relative entropy */
   if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslFAIL, errbuf, "Couldn't build a CP9 HMM from the CM.");
@@ -1123,6 +1125,8 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
   CM_t *cm;
   char *aseq;                   
   ESL_STOPWATCH *w = NULL;
+  int use_rf;
+  int use_wts;
 
   if (cfg->be_verbose && do_print) {
     w = esl_stopwatch_Create();
@@ -1131,7 +1135,9 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
     fflush(stdout);
   }
 
-  if((status = HandModelmaker(msa, errbuf, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &cm, &mtr)) != eslOK) return status;
+  use_rf  = (esl_opt_GetBoolean(go, "--rf")) ? TRUE : FALSE;
+  use_wts = (use_rf || esl_opt_GetBoolean(go, "--1p0matins")) ? FALSE : TRUE;
+  if((status = HandModelmaker(msa, errbuf, use_rf, use_wts, esl_opt_GetReal(go, "--gapthresh"), &cm, &mtr)) != eslOK) return status;
   
   /* set the CM's null model, if rsearch mode, use the bg probs used to calc RIBOSUM */
   if( esl_opt_IsOn(go, "--rsearch")) CMSetNullModel(cm, cfg->fullmat->g); 
@@ -1367,7 +1373,13 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
 	else if(cm->ndtype[nd] == MATL_nd) clen += 1;
 	else if(cm->ndtype[nd] == MATR_nd) clen += 1;
       }
-      etarget = set_target_relent(go, cm->abc, clen);
+      if(esl_opt_GetBoolean(go, "--e1p0df")) { 
+	/* determine etarget with default method used by Infernal version 1.0-->1.0.2 */
+	etarget = version_1p0_default_target_relent(cm->abc, clen, 6.0);
+      }
+      else { 
+	etarget = set_target_relent(go, cm->abc, clen);
+      }
 
       status = cm_EntropyWeight(cm, pri, etarget, esl_opt_GetReal(go, "--eminseq"), FALSE, &hmm_re, &neff);
       /* if --ehmmre <x> enabled, ensure HMM relative entropy per match column is at least <x>, if not,
@@ -1495,8 +1507,7 @@ build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, c
   int lmsvN, lvitN, lfwdN, gfwdN;
   double agfmu, agflambda;
   float lftailp, gftailp;
-  int k, apos, idx;
-  float gaps;
+  int k, apos, cpos;
   ESL_MSA *amsa = NULL;
   double mlp7_re, ahmm_re;
   double neff;
@@ -1581,21 +1592,19 @@ build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, c
      * emissions.
      *
      * First, annotate the msa with RF annotation corresponding to the
-     * definition of match columns used by the CM. This will
-     * guarantree that the HMM has the same number of match columns as
-     * the CM, which is important because we copy marginalized ml
-     * emissions from a CM onto the HMM. Note that we also set
-     * cfg->ap7_bld->arch_strategy as p7_ARCH_HAND.
+     * definition of match columns used by the CM using the cm->map.
+     * This will guarantree that the HMM has the same number of match
+     * columns as the CM, which is important because we copy
+     * marginalized ml emissions from a CM onto the HMM. Note that we
+     * also set cfg->ap7_bld->arch_strategy as p7_ARCH_HAND.
      */
     amsa = esl_msa_Clone(msa);
     if(amsa->rf != NULL) free(amsa->rf); 
     ESL_ALLOC(amsa->rf, sizeof(char) * (amsa->alen+1));
-    for (apos = 1; apos <= amsa->alen; apos++) { 
-      gaps = 0.;
-      for (idx = 0; idx < amsa->nseq; idx++)
-	if (esl_abc_XIsGap(amsa->abc, amsa->ax[idx][apos])) gaps += amsa->wgt[idx];
-      amsa->rf[(apos-1)] = ((gaps / (float) amsa->nseq) > esl_opt_GetReal(go, "--gapthresh")) ? '.' : 'x';
-    }
+    if(! (cm->flags & CMH_MAP)) { cm_Fail("Unable to create additional p7 HMM, CM has no map, this shouldn't happen"); }
+    /* init to all inserts, then set match states based on cm->map */
+    for (apos = 0; apos <  amsa->alen; apos++) amsa->rf[apos] = '.';
+    for (cpos = 1; cpos <= cm->clen;   cpos++) amsa->rf[cm->map[cpos]-1] = 'x'; /* note off by one */
     cfg->ap7_bld->arch_strategy = p7_ARCH_HAND;
     
     if ((status = p7_Builder(cfg->ap7_bld, amsa, cfg->ap7_bg, &ahmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->ap7_bld->errbuf); goto ERROR; }
@@ -1690,6 +1699,40 @@ set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen)
   etarget = (esigma - eslCONST_LOG2R * log( 2.0 / ((double) clen * (double) (clen+1)))) / (double) clen; /* HMMER3.0 default, xref J5/36. */
   etarget = ESL_MAX(etarget, re_target);
   
+  return etarget;
+}
+
+/* version_1p0_default_target_relent()
+ * Incept:    EPN, Tue Jul 10 10:13:43 2007
+ *            based on HMMER3's hmmbuild.c:default_target_relent()
+ *            SRE, Fri May 25 15:14:16 2007 [Janelia]
+ *
+ * Purpose:   Calculate default target relative entropy using the 
+ *            method in Infernal version 1.0 --> 1.0.2.
+ *
+ *            Implements a length-dependent calculation of the target relative entropy
+ *            per position, attempting to ensure that the information content of
+ *            the model is high enough to find local alignments; but don't set it
+ *            below a hard alphabet-dependent limit (CM_ETARGET).
+ *            notes.
+ *            
+ * Args:      clen - consensus length (2*MATP + MATL + MATR)
+ *            eX - X parameter: minimum total rel entropy target
+ *
+ */
+static double
+version_1p0_default_target_relent(const ESL_ALPHABET *abc, int clen, double eX)
+{
+  double etarget;
+
+  /* HMMER3 default eX = 6.0 as of Tue Jul 10 2007
+   */
+  etarget = 6.* (eX + log((double) ((clen * (clen+1)) / 2)) / log(2.))    / (double)(2*clen + 4);
+
+  switch (abc->type) {
+  case eslRNA:    if (etarget < DEFAULT_ETARGET)   etarget = DEFAULT_ETARGET;   break;
+  default:        cm_Fail("ERROR in default_target_relent(), alphabet not RNA!\n");
+  }
   return etarget;
 }
 
