@@ -241,7 +241,7 @@ static int   determine_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_
 static WORKER_INFO *create_info();
 static int   clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int dest_infocnt, char *errbuf);
 static void  free_info(WORKER_INFO *info);
-static int   setup_cm(ESL_GETOPTS *go, WORKER_INFO *info, int do_calculate_W, char *errbuf);
+static int   setup_cm(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf);
 static int   setup_qdbs(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf);
 static int   setup_hmm_filters(ESL_GETOPTS *go, WORKER_INFO *info, const ESL_ALPHABET *abc, char *errbuf, P7_HMM ***ret_hmmA);
 static int   update_hit_positions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_revcomp);
@@ -497,7 +497,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   FILE            *ofp      = stdout;            /* results output file (-o)                                  */
   FILE            *tblfp    = NULL;              /* output stream for tabular hits (--tblout)                 */
-  CMFILE          *cmfp;		         /* open input CM file stream                                 */
+  CM_FILE         *cmfp;		         /* open input CM file stream                                 */
   P7_HMM         **hmmA     = NULL;              /* HMMs, used for filtering                                  */
   CM_t            *cm       = NULL;              /* covariance model                                          */
   ESL_SQFILE      *dbfp     = NULL;              /* open input sequence file                                  */
@@ -542,11 +542,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
 
   /* Open the query CM file */
-  if ((cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cfg->cmfile);
+  if((status = cm_file_Open(cfg->cmfile, NULL, &(cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
 
   /* Open the results output files */
-  if (esl_opt_IsOn(go, "-o"))           { if ((ofp       = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) p7_Fail("Failed to open output file %s for writing\n",    esl_opt_GetString(go, "-o")); }
-  if (esl_opt_IsOn(go, "--tblout"))     { if ((tblfp     = fopen(esl_opt_GetString(go, "--tblout"),    "w")) == NULL)  esl_fatal("Failed to open tabular output file %s for writing\n", esl_opt_GetString(go, "--tblout")); }
+  if (esl_opt_IsOn(go, "-o"))           { if ((ofp       = fopen(esl_opt_GetString(go, "-o"),          "w")) == NULL) cm_Fail("Failed to open output file %s for writing\n",         esl_opt_GetString(go, "-o")); }
+  if (esl_opt_IsOn(go, "--tblout"))     { if ((tblfp     = fopen(esl_opt_GetString(go, "--tblout"),    "w")) == NULL) cm_Fail("Failed to open tabular output file %s for writing\n", esl_opt_GetString(go, "--tblout")); }
 
 #ifdef HMMER_THREADS
   /* initialize thread data */
@@ -563,7 +563,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_ALLOC(info, sizeof(WORKER_INFO) * infocnt);
 
   /* <abc> is not known 'til first CM is read. Could be DNA or RNA*/
-  qhstatus = CMFileRead(cmfp, errbuf, &abc, &cm);
+  qhstatus = cm_file_Read(cmfp, &abc, &cm);
 
   if (qhstatus == eslOK) {
     /* One-time initializations after alphabet <abc> becomes known */
@@ -720,13 +720,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       free_info(&(info[0]));
       free(hmmA);
 
-      qhstatus = CMFileRead(cmfp, errbuf, &abc, &cm);
+      qhstatus = cm_file_Read(cmfp, &abc, &cm);
   } /* end outer loop over query CMs */
 
   switch(qhstatus) {
-  case eslEFORMAT:   cm_Fail("bad file format in CM file %s",             cfg->cmfile);      break;
-  case eslEOF:       /* do nothing. EOF is what we want. */                                  break;
-  default:           cm_Fail("Unexpected error (%d) in reading CMs from %s", qhstatus, cfg->cmfile);
+  case eslEFORMAT:   cm_Fail("bad file format in CM file %s\n%s",             cfg->cmfile, cmfp->errbuf); break;
+  case eslEOF:       /* do nothing. EOF is what we want. */                                               break;
+  default:           cm_Fail("Unexpected error (%d) in reading CMs from %s\n%s", qhstatus, cfg->cmfile, cmfp->errbuf);
   }
 
   /* Terminate outputs... any last words?
@@ -747,7 +747,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   free(info);
 
-  CMFileClose(cmfp);
+  cm_file_Close(cmfp);
   esl_sqfile_Close(dbfp);
   esl_alphabet_Destroy(abc);
   esl_stopwatch_Destroy(w);
@@ -892,7 +892,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   FILE            *ofp      = stdout;            /* results output file (-o)                        */
   FILE            *tblfp    = NULL;              /* output stream for tabular per-seq (--tblout)    */
 
-  CMFILE          *cmfp;		         /* open input CM file stream                       */
+  CM_FILE         *cmfp;		         /* open input CM file stream                       */
   P7_HMM         **hmmA    = NULL;               /* HMMs, used for filtering                        */
   ESL_SQFILE      *dbfp     = NULL;              /* open input sequence file                        */
   ESL_SQ          *dbsq     = NULL;              /* one target sequence (digital)                   */
@@ -949,8 +949,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   printf("MPIM cfg->Z: %" PRId64 " residues\n", cfg->Z);
 
   /* Open the query CM file */
-  if ((cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
-    esl_fatal("Failed to open covariance model save file %s\n", cfg->cmfile);
+  if((status = cm_file_Open(cfg->cmfile, NULL, &(cmfp), errbuf)) != eslOK) mpi_failure(errbuf);
 
   /* Open the results output files */
   if (esl_opt_IsOn(go, "-o") && (ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL)
@@ -963,7 +962,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if((info = create_info()) == NULL) mpi_failure("Out of memory");
 
   /* <abc> is not known 'til first CM is read. */
-  hstatus = CMFileRead(cmfp, errbuf, &abc, &(info->cm));
+  hstatus = cm_file_Read(cmfp, &abc, &(info->cm));
   if (hstatus == eslOK)
     {
       /* One-time initializations after alphabet <abc> becomes known */
@@ -986,8 +985,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if (info->cm->desc) fprintf(ofp, "Description: %s\n", info->cm->desc);
 
       /* Setup the CM and calculate QDBs, if nec */
-      if((status = setup_cm(go, info, TRUE, errbuf)) != eslOK) mpi_failure(errbuf);
-      if((status = setup_qdbs(go, info, errbuf))     != eslOK) mpi_failure(errbuf);
+      if((status = setup_cm(go, info, errbuf))   != eslOK) mpi_failure(errbuf);
+      if((status = setup_qdbs(go, info, errbuf)) != eslOK) mpi_failure(errbuf);
       /* Setup HMM filters */
       if((status = setup_hmm_filters(go, info, abc, errbuf, &hmmA)) != eslOK) mpi_failure(errbuf);
 
@@ -1163,16 +1162,16 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       free_mpi_block_list(block_list);
       block_list = NULL;
 
-      hstatus = CMFileRead(cmfp, errbuf, &abc, &(info->cm));
+      hstatus = cm_file_Read(cmfp, &abc, &(info->cm));
       if(hstatus == eslOK) { 
 	if((info = create_info()) == NULL) mpi_failure("Out of memory"); /* for the next model */
       }
     } /* end outer loop over query CMs */
   
   switch(hstatus) {
-  case eslEFORMAT:   mpi_failure("bad file format in CM file %s",             cfg->cmfile);      break;
-  case eslEOF:       /* EOF is good, that's what we expect here */                                break;
-  default:           mpi_failure("Unexpected error (%d) in reading HMMs from %s", hstatus, cfg->cmfile);
+  case eslEFORMAT:   mpi_failure("bad file format in CM file %s\n%s",             cfg->cmfile, cmfp->errbuf); break;
+  case eslEOF:       /* do nothing. EOF is what we want. */                                               break;
+  default:           mpi_failure("Unexpected error (%d) in reading CMs from %s\n%s", hstatus, cfg->cmfile, cmfp->errbuf);
   }
   
   /* monitor all the workers to make sure they have ended */
@@ -1207,7 +1206,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   free(block_list);
   if (mpi_buf != NULL) free(mpi_buf);
 
-  CMFileClose(cmfp);
+  cm_file_Close(cmfp);
   esl_sqfile_Close(dbfp);
   esl_alphabet_Destroy(abc);
   esl_sq_Destroy(dbsq);
@@ -1228,7 +1227,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   ESL_SQ          *dbsq     = NULL;              /* one target sequence (digital)                   */
   ESL_ALPHABET    *abc      = NULL;              /* digital alphabet                                */
-  CMFILE          *cmfp;		         /* open input CM file stream                       */
+  CM_FILE         *cmfp;		         /* open input CM file stream                       */
   P7_HMM         **hmmA    = NULL;               /* HMMs, used for filtering                        */
   ESL_SQFILE      *dbfp     = NULL;              /* open input sequence file                        */
   ESL_STOPWATCH   *w;
@@ -1261,8 +1260,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   printf("MPIW cfg->Z: %" PRId64 " residues\n", cfg->Z);
 
   /* Open the query CM file */
-  if ((cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
-    mpi_failure("Failed to open covariance model save file %s\n", cfg->cmfile);
+  if((status = cm_file_Open(cfg->cmfile, NULL, &(cmfp), errbuf)) != eslOK) mpi_failure(errbuf);
 
   /* allocate and initialize <info> which will hold the CMs, HMMs, etc. */
   if((info = create_info()) == NULL) mpi_failure("Out of memory");
@@ -1287,8 +1285,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
 
       /* Setup the CM and calculate QDBs, if nec */
-      if((status = setup_cm  (go, info, TRUE, errbuf)) != eslOK) mpi_failure(errbuf);
-      if((status = setup_qdbs(go, info, errbuf))       != eslOK) mpi_failure(errbuf);
+      if((status = setup_cm  (go, info, errbuf)) != eslOK) mpi_failure(errbuf);
+      if((status = setup_qdbs(go, info, errbuf)) != eslOK) mpi_failure(errbuf);
       /* Setup HMM filters */
       if((status = setup_hmm_filters(go, info, abc, errbuf, &hmmA)) != eslOK) mpi_failure(errbuf);
 
@@ -1397,9 +1395,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     } /* end outer loop over query CMs */
   
   switch(hstatus) {
-  case eslEFORMAT:   mpi_failure("bad file format in CM file %s",             cfg->cmfile);      break;
-  case eslEOF:       /* EOF is good, that's what we expect here */                                break;
-  default:           mpi_failure("Unexpected error (%d) in reading HMMs from %s", hstatus, cfg->cmfile);
+  case eslEFORMAT:   mpi_failure("bad file format in CM file %s\n%s",             cfg->cmfile, cmfp->errbuf); break;
+  case eslEOF:       /* do nothing. EOF is what we want. */                                               break;
+  default:           mpi_failure("Unexpected error (%d) in reading CMs from %s\n%s", hstatus, cfg->cmfile, cmfp->errbuf);
   }
 
   status = 0;
@@ -1407,7 +1405,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   if (mpi_buf != NULL) free(mpi_buf);
 
-  CMFileClose(cmfp);
+  cm_file_Close(cmfp);
   esl_sqfile_Close(dbfp);
 
   esl_sq_Destroy(dbsq);
@@ -1836,10 +1834,7 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
     ESL_ALLOC(dest_infoA[i].p7_evparamAA, sizeof(float *)  * src_info->nhmm);
 
     /* configure the CM */
-    if((status = setup_cm(go, (&dest_infoA[i]), 
-			  (i == 0) ? TRUE : FALSE, /* calculate W? */
-			  errbuf)) != eslOK) return status;
-    if(i > 0) dest_infoA[i].cm->W = dest_infoA[0].cm->W;
+    if((status = setup_cm(go, (&dest_infoA[i]), errbuf)) != eslOK) return status;
 
     for(m = 0; m < src_info->nhmm; m++) { 
       dest_infoA[i].gmA[m]  = p7_profile_Clone(src_info->gmA[m]);
@@ -1920,7 +1915,7 @@ free_info(WORKER_INFO *info)
  *          message and returns appropriate error status code.
  */
 int
-setup_cm(ESL_GETOPTS *go, WORKER_INFO *info, int do_calculate_W, char *errbuf)
+setup_cm(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
 { 
   int status;
 
@@ -1932,7 +1927,9 @@ setup_cm(ESL_GETOPTS *go, WORKER_INFO *info, int do_calculate_W, char *errbuf)
       if(! esl_opt_GetBoolean(go, "--cp9noel")) info->cm->config_opts |= CM_CONFIG_HMMEL; 
     }
   }
-  if((status = ConfigCM(info->cm, errbuf, do_calculate_W, NULL, NULL)) != eslOK) { 
+  if((status = ConfigCM(info->cm, errbuf, 
+			FALSE, /* we don't have to calculate W, its in the CM file */
+			NULL, NULL)) != eslOK) { 
     return status;
   }
   if((status = CreateCMConsensus(info->cm, info->cm->abc, 3.0, 1.0, &(info->cmcons)))!= eslOK) {
@@ -1966,22 +1963,42 @@ setup_qdbs(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
   info->final_dmin = info->final_dmax = NULL; 
 
   if(esl_opt_GetBoolean(go, "--fqdb")) { /* determine CYK filter QDBs */
-    safe_W = info->cm->clen * 3;
-    while(!(BandCalculationEngine(info->cm, safe_W, esl_opt_GetReal(go, "--fbeta"), FALSE, &(info->fcyk_dmin), &(info->fcyk_dmax), NULL, NULL))) { 
-      free(info->fcyk_dmin);
-      free(info->fcyk_dmax);
-      safe_W *= 2;
-      if(safe_W > (info->cm->clen * 1000)) ESL_FAIL(eslEINVAL, errbuf, "Unable to calculate QDBs");
+    /* it may be that --fbeta is the same as cm->beta_qdb, if so, we read the desired QDBs from the CM file */
+    if((cm->flags & CMH_QDB) && (esl_opt_GetReal(go, "--fbeta") == cm->beta_qdb)) { 
+      printf("WHOA fbeta: %f == beta_qdb\n", esl_opt_GetReal(go, "--fbeta"), cm->beta_qdb);
+      ESL_ALLOC(info->fcyk_dmin, sizeof(int) * info->cm->M);
+      ESL_ALLOC(info->fcyk_dmax, sizeof(int) * info->cm->M);
+      esl_vec_ICopy(info->cm->dmin, info->cm->M, info->fcyk_dmin);
+      esl_vec_ICopy(info->cm->dmax, info->cm->M, info->fcyk_dmax);
+    }
+    else { 
+      safe_W = info->cm->clen * 3;
+      while(!(BandCalculationEngine(info->cm, safe_W, esl_opt_GetReal(go, "--fbeta"), FALSE, &(info->fcyk_dmin), &(info->fcyk_dmax), NULL, NULL))) { 
+	free(info->fcyk_dmin);
+	free(info->fcyk_dmax);
+	safe_W *= 2;
+	if(safe_W > (info->cm->clen * 1000)) ESL_FAIL(eslEINVAL, errbuf, "Unable to calculate QDBs");
+      }
     }
   }
 
   if(esl_opt_GetBoolean(go, "--qdb")) { /* determine CYK filter QDBs */
-    safe_W = info->cm->clen * 3;
-    while(!(BandCalculationEngine(info->cm, safe_W, esl_opt_GetReal(go, "--beta"), FALSE, &(info->final_dmin), &(info->final_dmax), NULL, NULL))) { 
-      free(info->final_dmin);
-      free(info->final_dmax);
-      safe_W *= 2;
-      if(safe_W > (info->cm->clen * 1000)) ESL_FAIL(eslEINVAL, errbuf, "Unable to calculate QDBs");
+    /* it may be that --beta is the same as cm->beta_qdb, if so, we read the desired QDBs from the CM file */
+    if((cm->flags & CMH_QDB) && (esl_opt_GetReal(go, "--beta") == cm->beta_qdb)) { 
+      printf("WHOA beta: %f == beta_qdb\n", esl_opt_GetReal(go, "--beta"), cm->beta_qdb);
+      ESL_ALLOC(info->final_dmin, sizeof(int) * info->cm->M);
+      ESL_ALLOC(info->final_dmax, sizeof(int) * info->cm->M);
+      esl_vec_ICopy(info->cm->dmin, info->cm->M, info->final_dmin);
+      esl_vec_ICopy(info->cm->dmax, info->cm->M, info->final_dmax);
+    }
+    else { 
+      safe_W = info->cm->clen * 3;
+      while(!(BandCalculationEngine(info->cm, safe_W, esl_opt_GetReal(go, "--beta"), FALSE, &(info->final_dmin), &(info->final_dmax), NULL, NULL))) { 
+	free(info->final_dmin);
+	free(info->final_dmax);
+	safe_W *= 2;
+	if(safe_W > (info->cm->clen * 1000)) ESL_FAIL(eslEINVAL, errbuf, "Unable to calculate QDBs");
+      }
     }
   }
 

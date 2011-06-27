@@ -788,7 +788,7 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
     {
       ofp = fopen("sub.cm", "w");
       if(print_flag)  printf("%-40s ... ", "Saving model to file"); fflush(stdout);
-      if(print_flag)  CMFileWrite(ofp, sub_cm, FALSE, NULL);
+      if(print_flag)  cm_file_WriteASCII(ofp, -1, sub_cm);
       if(print_flag)  printf("done.\n");
     }
 

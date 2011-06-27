@@ -55,7 +55,7 @@ main(int argc, char **argv)
   int                status;
   ESL_GETOPTS       *go      = esl_getopts_CreateDefaultApp(options, 1, argc, argv, banner, usage);
   char              *cmfile = esl_opt_GetArg(go, 1);
-  CMFILE  *cmfp;		/* open CM file for reading */
+  CM_FILE  *cmfp;		/* open CM file for reading */
   CM_t    *cm;			/* a covariance model       */
   CM_t    *sub_cm;              /* sub covariance model     */
   int      nmodels;             /* number of sub CMs to build */
@@ -147,9 +147,9 @@ main(int argc, char **argv)
    * Preliminaries: get our CM
    ***********************************************/
 
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
-  if ((CMFileRead(cmfp, NULL, &abc, &cm)) != eslOK) cm_Fail("Failed to read CM");
-  CMFileClose(cmfp);
+  if ((status = cm_file_Open(cmfile, NULL, &(cmfp), errbuf)) != eslOK) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
+  if ((cm_file_Read(cmfp, &abc, &cm)) != eslOK) cm_Fail("Failed to read CM");
+  cm_file_Close(cmfp);
 
   if (esl_opt_IsOn(go, "-s"))  r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
   else                         r = esl_randomness_CreateTimeseeded();

@@ -78,7 +78,6 @@ OBJS  = cm.o\
 	cm_dpalign.o\
 	cm_dpsearch.o\
 	cm_dpsmall.o\
-	cm_io.o\
 	cm_file.o\
 	cm_modelconfig.o\
 	cm_modelmaker.o\

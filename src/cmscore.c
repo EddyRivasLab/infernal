@@ -129,7 +129,7 @@ struct cfg_s {
 
   /* Masters only (i/o streams) */
   char         *cmfile;	        /* name of input CM file  */ 
-  CMFILE       *cmfp;		/* open input CM file stream       */
+  CM_FILE      *cmfp;		/* open input CM file stream       */
   ESL_SQFILE   *sqfp;           /* open sequence input file stream */
   FILE         *ofp;            /* output file (default is stdout) */
   FILE         *tracefp;	/* optional output for parsetrees  */
@@ -346,7 +346,7 @@ main(int argc, char **argv)
   /* Clean up the shared cfg. 
    */
   if (cfg.my_rank == 0) {
-    if (cfg.cmfp      != NULL) CMFileClose(cfg.cmfp);
+    if (cfg.cmfp      != NULL) cm_file_Close(cfg.cmfp);
     if (cfg.sqfp      != NULL) esl_sqfile_Close(cfg.sqfp);
     if (cfg.tracefp   != NULL) {
       printf("# Parsetrees saved in file %s.\n", esl_opt_GetString(go, "--tfile"));
@@ -400,8 +400,10 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int status;
 
   /* open CM file */
-  if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
-    ESL_FAIL(eslFAIL, errbuf, "Failed to open covariance model save file %s\n", cfg->cmfile);
+  status = cm_file_Open(cfg->cmfile, NULL, &(cfg->cmfp), errbuf);
+  if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cfg->cmfile, errbuf);
+  else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cfg->cmfile, errbuf);
+  else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",               status, cfg->cmfile, errbuf);  
 
   /* optionally, open the input sequence file */
   if( esl_opt_IsOn(go, "--infile")) { 
@@ -537,7 +539,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
 
-  while ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK)
+  while ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
@@ -586,7 +588,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       FreeSeqsToAln(seqs_to_aln); 
       FreeCM(cm);
     }
-  if(status != eslEOF) cm_Fail(errbuf);
+  if(status != eslEOF) cm_Fail(cfg->cmfp->errbuf);
   return;
 }
 
@@ -676,7 +678,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    * Unrecoverable errors just crash us out with cm_Fail().
    */
 
-  while (xstatus == eslOK && ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK))
+  while (xstatus == eslOK && ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK))
     {
       cfg->ncm++;  
       ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
@@ -831,7 +833,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   free(buf);
   
   if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); return xstatus; }
-  else if(status != eslEOF) return status;  /* problem reading CM file */
+  else if(status != eslEOF) { strcpy(errbuf, cfg->cmfp->errbuf); return status; }
   else                      return eslOK;
 }
 

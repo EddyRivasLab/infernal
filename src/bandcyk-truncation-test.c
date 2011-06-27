@@ -59,12 +59,13 @@ static char banner[] = "Check of truncation error calculation in BandCalculation
 int 
 main(int argc, char **argv)
 {
+  int status;
   ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 3, argc, argv, banner, usage);
 
   char    *cmfile = esl_opt_GetArg(go, 1);
   int      W1     = atoi(esl_opt_GetArg(go, 2));
   int      W2     = atoi(esl_opt_GetArg(go, 3));
-  CMFILE  *cmfp;		/* open CM file for reading */
+  CM_FILE *cmfp;		/* open CM file for reading */
   CM_t    *cm;			/* a covariance model       */
   int      v;			/* counter over states */
   int      n;			/* counter over lengths 0..W */
@@ -77,6 +78,7 @@ main(int argc, char **argv)
   double   g;			/* log of an estimated gamma[n] */
   int      be_verbose;
   ESL_ALPHABET   *abc     = NULL;
+  char            errbuf[cmERRBUFSIZE]; /* for error messages */
 
   /*********************************************** 
    * Parse command line
@@ -90,9 +92,9 @@ main(int argc, char **argv)
   /* Get our CM
    */
 
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
-  if ((CMFileRead(cmfp, NULL, &abc, &cm)) != eslOK) cm_Fail("Failed to read CM");
-  CMFileClose(cmfp);
+  if ((status = cm_file_Open(cmfile, NULL, &(cmfp), errbuf)) != eslOK) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
+  if ((cm_file_Read(cmfp, &abc, &cm)) != eslOK) cm_Fail("Failed to read CM");
+  cm_file_Close(cmfp);
 
   /* Do two band calculations with the different W's.
    * Save the gamma_0 densities for root state 0.

@@ -52,7 +52,7 @@ static ESL_OPTIONS options[] = {
   { "--rsearch", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
   { "--binary",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "save the model(s) in binary format",     2 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--rsearch", "use reference coordinate annotation to specify consensus", 2 },
-  { "--1p0matins",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,       "--rf", "ignore seq weights when defining match/insert (v0.1-v1.0.2 method)", 2 },
+  { "--1p0matins",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,       "--rf", "ignore seq weights for match/insert defn (v0.1-v1.0.2 method)", 2 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,      NULL,  "--rsearch", "fraction of gaps to allow in a consensus column [0..1]", 2 },
   { "--ignorant", eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "strip the structural info from input alignment", 2 },
 /* Alternate relative sequence weighting strategies */

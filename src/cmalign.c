@@ -152,7 +152,7 @@ struct cfg_s {
   int           nseq;           /* number of sequences we've aligned thus far */
 
   /* Masters only (i/o streams) */
-  CMFILE       *cmfp;		/* open input CM file stream       */
+  CM_FILE      *cmfp;		/* open input CM file stream       */
   FILE         *tmpfp;		/* the temporary output file where alignments are initially written */
   FILE         *ofp;		/* output file where alignments are ultimately written (default is stdout) */
   FILE         *tracefp;	/* optional output for parsetrees  */
@@ -443,7 +443,7 @@ main(int argc, char **argv)
       printf("# Regression data (alignment) saved in file %s.\n", esl_opt_GetString(go, "--regress"));
       fclose(cfg.regressfp);
     }
-    if (cfg.cmfp      != NULL) CMFileClose(cfg.cmfp);
+    if (cfg.cmfp      != NULL) cm_file_Close(cfg.cmfp);
     if (cfg.sqfp      != NULL) esl_sqfile_Close(cfg.sqfp);
     if (cfg.withalifp != NULL) esl_msafile_Close(cfg.withalifp);
     if (cfg.withmsa   != NULL) esl_msa_Destroy(cfg.withmsa);
@@ -517,9 +517,10 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   esl_sqfile_SetDigital(cfg->sqfp, cfg->abc);
 
   /* open CM file */
-  if((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
-   ESL_FAIL(eslFAIL, errbuf, "Failed to open covariance model save file %s\n", cfg->cmfile);
-
+  status = cm_file_Open(cfg->cmfile, NULL, &(cfg->cmfp), errbuf);
+  if      (status == eslENOTFOUND) return status;
+  else if (status == eslEFORMAT)   return status;
+  else if (status != eslOK)        return status;
   /* note, we don't open temporary output file, where we store intermediate alignments yet,
    * we do that in serial_master and mpi_master, because it needs to be rewritten for each
    * CM we align to (b/c we can align to more than one CM, though its probably uncommon) */
@@ -621,7 +622,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status  = init_master_cfg(go, cfg, errbuf)) != eslOK)  cm_Fail(errbuf);
   if ((status  = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
   
-  while ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK)
+  while ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK) 
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
@@ -710,7 +711,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if(created_tmpfile) remove(tmpfile); 
       esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be aligning the seqs in this file again with another CM */
     }
-  if(status != eslEOF) cm_Fail(errbuf);
+  if(status != eslEOF) cm_Fail(cfg->cmfp->errbuf);
   if(! used_at_least_one_cm) { 
     if(! esl_opt_IsDefault(go, "--cm-idx"))  { cm_Fail("--cm-idx %d enabled, but only %d CMs in the cmfile.\n", esl_opt_GetInteger(go, "--cm-idx"), cfg->ncm); }
     if(! esl_opt_IsDefault(go, "--cm-name")) { cm_Fail("--cm-name %s enabled, but no CM named %s exists in the cmfile.\n", esl_opt_GetString(go, "--cm-name"), esl_opt_GetString(go, "--cm-name")); }
@@ -823,7 +824,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    * Unrecoverable errors just crash us out with cm_Fail().
    */
 
-  while (xstatus == eslOK && ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK))
+  while (xstatus == eslOK && ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK)) 
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;  
@@ -1010,7 +1011,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       FreeCM(cm);
       if(created_tmpfile) remove(tmpfile);
       esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be aligning this file again with another CM */
-    }
+    } 
 
   /* On success or recoverable errors:
    * Shut down workers cleanly. 
@@ -1022,7 +1023,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); return xstatus; }
   else if((! used_at_least_one_cm) && (! esl_opt_IsDefault(go, "--cm-idx")))  { ESL_FAIL(eslEINVAL, errbuf, "--cm-idx %d enabled, but only %d CMs in the cmfile.\n", esl_opt_GetInteger(go, "--cm-idx"), cfg->ncm); }
   else if((! used_at_least_one_cm) && (! esl_opt_IsDefault(go, "--cm-name"))) { ESL_FAIL(eslEINVAL, errbuf, "--cm-name %s enabled, but no CM named %s exists in the cmfile.\n", esl_opt_GetString(go, "--cm-name"), esl_opt_GetString(go, "--cm-name")); }
-  else if(status != eslEOF) return status;
+  else if(status != eslEOF) { strcpy(errbuf, cfg->cmfp->errbuf); return status; }
   else                      return eslOK; 
 }
 
@@ -1517,7 +1518,7 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
    * options that cmbuild has... 
    */
   if(! esl_opt_GetBoolean(go, "--rf")) { esl_msaweight_GSC(msa); } /* guess that default weighting was used */
-  if((status = HandModelmaker(msa, errbuf, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &new_cm, &mtr)) != eslOK) return status;
+  if((status = HandModelmaker(msa, errbuf, esl_opt_GetBoolean(go, "--rf"), TRUE, esl_opt_GetReal(go, "--gapthresh"), &new_cm, &mtr)) != eslOK) return status;
   if(!(compare_cm_guide_trees(cm, new_cm))) {
     /* no need to try rebalancing, that doesn't change the guidetree (seriously this is from cm.c::CMRebalance():
      * for (x = 0; x < new->nodes; x++) new->ndtype[x]  = cm->ndtype[x];
@@ -2721,7 +2722,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_ALLOC(cmlist, sizeof(CM_t *) * nalloc);
   status = eslOK;
   while (status == eslOK) { 
-    status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &(cmlist[cfg->ncm]));
+    status = cm_file_Read(cfg->cmfp, &(cfg->abc), &(cmlist[cfg->ncm]));
     if(status == eslOK) { 
       cfg->ncm++;
       if(cfg->ncm == nalloc) { 
@@ -2733,7 +2734,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if(cfg->ncm == 1) print_cm_info (go, cfg, errbuf, cmlist[cfg->ncm-1]);
     }
   }
-  if(status != eslEOF) cm_Fail(errbuf);
+  if(status != eslEOF) cm_Fail(cfg->cmfp->errbuf);
 
   /* 2. Read all the alignments from the -M <f> meta-cm training alignment file */
   status = eslOK;
@@ -3377,7 +3378,7 @@ validate_meta(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t **cml
   ESL_ALLOC(cfg->mali_mtr, sizeof(Parsetree_t *) * cfg->ncm);
   for(m = 0; m < cfg->ncm; m++) { 
     if(cfg->mali_msa[m]->rf == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "with -M, all alignments from %s must have #=GC RF notation, but alignment %d does not.", esl_opt_GetString(go, "-M"), m+1);
-    if((status = HandModelmaker(cfg->mali_msa[m], errbuf, TRUE, 0.5, &tmp_cm, &(cfg->mali_mtr[m]))) != eslOK) return status;
+    if((status = HandModelmaker(cfg->mali_msa[m], errbuf, TRUE, FALSE, 0.5, &tmp_cm, &(cfg->mali_mtr[m]))) != eslOK) return status;
     /*                              !use RF! */
     if(!(CompareCMGuideTrees(cmlist[m], tmp_cm))) { 
       tmp2_cm = CMRebalance(tmp_cm);

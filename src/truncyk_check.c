@@ -31,11 +31,12 @@ static char usage[]  = "Usage: truncyk_check [-options] <cmfile> <sequence file>
 int
 main(int argc, char **argv)
 {
+  int              status;
   char            *cmfile;      /* file to read CM from */	
   ESL_ALPHABET    *abc;
   char            *seqfile;     /* file to read sequences from */
   int              format;      /* format of sequence file */
-  CMFILE          *cmfp;        /* open CM file for reading */
+  CM_FILE         *cmfp;        /* open CM file for reading */
   ESL_SQFILE	  *sqfp;        /* open seqfile for reading */
   CM_t            *cm;          /* a covariance model       */
   ESL_SQ          *seq;         /* RNA sequence */
@@ -54,6 +55,7 @@ main(int argc, char **argv)
   FILE *regressfp;              /* open filehandle for writing regressions  */
 
   ESL_GETOPTS *go;
+  char         errbuf[cmERRBUFSIZE];
 
   /*********************************************** 
    * Parse command line
@@ -92,13 +94,12 @@ main(int argc, char **argv)
   if ( esl_sqfile_Open(seqfile, format, NULL, &sqfp) != eslOK )
     cm_Die("Failed to open sequence database file %s\n%s\n", seqfile, usage);
 
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
-    cm_Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-
-  if (CMFileRead(cmfp, NULL, &abc, &cm) != eslOK)
-    cm_Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
-  if (cm == NULL) 
-    cm_Die("%s empty?\n", cmfile);
+   if((status = cm_file_Open(cmfile, NULL, &cmfp, errbuf)) != eslOK);
+      cm_Die("Failed to open covariance model save file\n");
+   if ((status = cm_file_Read(cmfp, &abc, &cm)) != eslOK)
+      cm_Die("Failed to read a CM from cm file\n");
+   if (cm == NULL)
+      cm_Die("CM file empty?\n");
 
 				/* open regression test data file */
   if (regressfile != NULL) {
@@ -213,7 +214,7 @@ main(int argc, char **argv)
 
   if (regressfile != NULL) fclose(regressfp);
   FreeCM(cm);
-  CMFileClose(cmfp);
+  cm_file_Close(cmfp);
   esl_sqfile_Close(sqfp);
   esl_stopwatch_Destroy(watch);
 

@@ -78,7 +78,7 @@ static ESL_OPTIONS options[] = {
  */
 struct cfg_s {
   char         *cmfile;	        /* name of input CM file  */ 
-  CMFILE       *cmfp;		/* open input CM file stream       */
+  CM_FILE      *cmfp;		/* open input CM file stream       */
   ESL_ALPHABET *abc;		/* digital alphabet for CM */
   ESL_ALPHABET *abc_out; 	/* digital alphabet for writing */
   FILE         *ofp;		/* output file (default is stdout) */
@@ -207,7 +207,7 @@ main(int argc, char **argv)
   }
   if (cfg.abc   != NULL) { esl_alphabet_Destroy(cfg.abc); cfg.abc = NULL; }
   if (cfg.abc_out != NULL) esl_alphabet_Destroy(cfg.abc_out);
-  if (cfg.cmfp  != NULL) CMFileClose(cfg.cmfp);
+  if (cfg.cmfp  != NULL) cm_file_Close(cfg.cmfp);
   if (cfg.r     != NULL) esl_randomness_Destroy(cfg.r);
 
   esl_getopts_Destroy(go);
@@ -232,9 +232,13 @@ main(int argc, char **argv)
 static int
 init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
+  int status;
+
   /* open CM file for reading */
-  if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
-    ESL_FAIL(eslFAIL, errbuf, "Failed to open covariance model save file %s\n", cfg->cmfile);
+  status = cm_file_Open(cfg->cmfile, NULL, &(cfg->cmfp), errbuf);
+  if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cfg->cmfile, errbuf);
+  else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cfg->cmfile, errbuf);
+  else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",               status, cfg->cmfile, errbuf);  
 
   /* open sequence output file for writing */
   if ((cfg->ofp = fopen(esl_opt_GetArg(go, 2), "w")) == NULL)
@@ -282,30 +286,18 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int      status;
   char     errbuf[cmERRBUFSIZE];
-  CM_t    *cm = NULL;
-  P7_HMM    *hmm = NULL;        /* RETURN: new hmm                     */
-  int k;
+  CM_t    *cm  = NULL;
 
   if ((status = init_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = print_run_info (go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
 
   cfg->ncm = 0;
 
-  while ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK)
+  while ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK)
   {
     if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
     cfg->ncm++;
     if((status = initialize_cm(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
-
-    if ((hmm    = p7_hmm_Create(cm->clen, cm->abc)) == NULL)  { cm_Fail("Error creating p7 hmm"); }
-    if ((status = p7_hmm_Zero(hmm))           != eslOK) cm_Fail("Error zeroing p7 hmm");
-    for (k = 1; k <= cm->clen; k++) {
-      esl_vec_FCopy(cm->cp9->mat[k], cm->abc->K, hmm->mat[k]);
-    }
-    p7_hmm_SetName(hmm, cm->name);
-    p7_hmm_SetAccession(hmm, cm->acc);
-    p7_hmm_SetDescription(hmm, cm->desc);
-
 
     /* Pick 1 of 4 exclusive output options. Output is handled within each function. */
     if     (esl_opt_GetBoolean(go, "-u")) { 
@@ -321,9 +313,8 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = build_cp9     (go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
     }
     FreeCM(cm);
-    p7_hmm_Destroy(hmm);
   }
-  if(status != eslEOF) cm_Fail(errbuf);
+  if(status != eslEOF) cm_Fail(cfg->cmfp->errbuf);
   return;
 }
 

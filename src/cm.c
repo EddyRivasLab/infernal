@@ -83,6 +83,7 @@ CreateCMShell(void)
 				/* structural information */
   cm->M      = 0;
   cm->clen   = 0;
+  cm->W      = 0;
   cm->sttype = NULL;
   cm->ndidx  = NULL;
   cm->stid   = NULL;
@@ -116,8 +117,7 @@ CreateCMShell(void)
   cm->flags    = 0;
   cm->offset   = 0;
 
-  cm->W         = 200;        /* for backwards compatibility */
-  cm->el_selfsc = 0.;         /* this is backwards compatible also */
+  cm->el_selfsc = 0.;         
   
   cm->dmin         = NULL;
   cm->dmax         = NULL;
@@ -178,9 +178,9 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
 
   if((cm->comlog = CreateComLog()) == NULL) goto ERROR;
 
-  ESL_ALLOC(cm->sttype, (nstates+1) * sizeof(char));
+  ESL_ALLOC(cm->sttype,  nstates    * sizeof(char));
   ESL_ALLOC(cm->ndidx,   nstates    * sizeof(int));
-  ESL_ALLOC(cm->stid,   (nstates+1) * sizeof(char));
+  ESL_ALLOC(cm->stid,    nstates    * sizeof(char));
   ESL_ALLOC(cm->cfirst,  nstates    * sizeof(int));
   ESL_ALLOC(cm->cnum,    nstates    * sizeof(int));
   ESL_ALLOC(cm->plast,   nstates    * sizeof(int));
@@ -298,6 +298,9 @@ CMZero(CM_t *cm)
   esl_vec_FSet(cm->endsc,    cm->M, 0.);
   esl_vec_ISet(cm->ibeginsc, cm->M, 0);
   esl_vec_ISet(cm->iendsc,   cm->M, 0);
+
+  esl_vec_ISet(cm->dmin, cm->M, 0);
+  esl_vec_ISet(cm->dmax, cm->M, cm->W);
 }
 
 /* Function:  CMRenormalize()
@@ -2699,14 +2702,14 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
 
   /* Check for flags that indicate the CM was manipulated after being
    * read from a file. Return an error if any are found. */
+  if(cm->flags & CMH_BITS)        ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_BITS flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_LOCAL_BEGIN flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_LOCAL_END flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CMH_BITS)        ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_BITS flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CMH_QDB)         ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_QDB flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CMH_CP9)         ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_CP9 flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CMH_CP9STATS)    ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_CP9STATS flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CMH_SCANMATRIX)  ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_SCANMATRIX flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CM_IS_SUB)       ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CM_IS_SUB flag is up (it shouldn't be if the CM was just read from a file");
+  if(cm->flags & CM_EMIT_NO_LOCAL_BEGINS) ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CM_EMIT_NO_LOCAL_BEGINS flag is up (it shouldn't be if the CM was just read from a file");
+  if(cm->flags & CM_EMIT_NO_LOCAL_ENDS)   ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CM_EMIT_NO_LOCAL_ENDS flag is up (it shouldn't be if the CM was just read from a file");
 
   if ((new = CreateCM(cm->nodes, cm->M, cm->clen, cm->abc)) == NULL) { status = eslEMEM; goto ERROR; }
   CMZero(new);
@@ -2830,7 +2833,6 @@ DumpCMFlags(FILE *fp, CM_t *cm)
   if(cm->flags & CMH_FILTER_STATS)         fprintf(fp, "\tCMH_FILTER_STATS\n");
   if(cm->flags & CMH_QDB)                  fprintf(fp, "\tCMH_QDB\n");
   if(cm->flags & CMH_CP9)                  fprintf(fp, "\tCMH_CP9\n");
-  if(cm->flags & CMH_CP9STATS)             fprintf(fp, "\tCMH_CP9STATS\n");
   if(cm->flags & CMH_SCANMATRIX)           fprintf(fp, "\tCMH_SCANMATRIX\n");
   if(cm->flags & CMH_MLP7)                 fprintf(fp, "\tCMH_MLP7\n");
   if(cm->flags & CMH_MLP7_STATS)           fprintf(fp, "\tCMH_MLP7_STATS\n");

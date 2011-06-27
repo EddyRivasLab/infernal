@@ -4,7 +4,7 @@
  * Based on p7_hmmfile.c copied from HMMER svn revision 3570.
  * 
  * Contents:
- *     1. The NEW_CM_FILE object for reading CMs
+ *     1. The CM_FILE object for reading CMs
  *     2. Writing CM files.
  *     3. API for reading CM files in various formats.
  *     4. Private, specific CM file format parsers.
@@ -46,8 +46,8 @@ static unsigned int v01magic = 0xe3edb0b1; /* v0.1 binary: "cm01" + 0x80808080 *
 static uint32_t v1a_magic = 0xe3edb0b2; /* v1.1 binary: "cm02" + 0x80808080 */
 
 
-static int read_asc1cm(NEW_CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
-static int read_bin1cm(NEW_CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
+static int read_asc1cm(CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
+static int read_bin1cm(CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
 
 static int   write_bin_string(FILE *fp, char *s);
 static int   read_bin_string (FILE *fp, char **ret_s);
@@ -68,9 +68,9 @@ static int read_asc30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_h
 static int read_bin30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm);
 
 /*****************************************************************
- * 1. The NEW_CMFILE object for reading CMs.
+ * 1. The CM_FILE object for reading CMs.
  *****************************************************************/
-static int open_engine(char *filename, char *env, NEW_CM_FILE **ret_cmfp, int do_ascii_only, char *errbuf);
+static int open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, char *errbuf);
 
 
 /* Function:  cm_file_Open()
@@ -108,7 +108,7 @@ static int open_engine(char *filename, char *env, NEW_CM_FILE **ret_cmfp, int do
  *            errbuf   - error message buffer: <NULL>, or a ptr
  *                       to <eslERRBUFSIZE> chars of allocated space.
  *
- * Returns:   <eslOK> on success, and the open <NEW_CM_FILE> is returned
+ * Returns:   <eslOK> on success, and the open <CM_FILE> is returned
  *            in <*ret_cmfp>.
  *            
  *            <eslENOTFOUND> if <filename> can't be opened for
@@ -124,7 +124,7 @@ static int open_engine(char *filename, char *env, NEW_CM_FILE **ret_cmfp, int do
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_file_Open(char *filename, char *env, NEW_CM_FILE **ret_cmfp, char *errbuf)
+cm_file_Open(char *filename, char *env, CM_FILE **ret_cmfp, char *errbuf)
 {
   return open_engine(filename, env, ret_cmfp, FALSE, errbuf);
 }
@@ -141,7 +141,7 @@ cm_file_Open(char *filename, char *env, NEW_CM_FILE **ret_cmfp, char *errbuf)
  *            database that it may be about to overwrite.
  */
 int
-cm_file_OpenNoDB(char *filename, char *env, NEW_CM_FILE **ret_cmfp, char *errbuf)
+cm_file_OpenNoDB(char *filename, char *env, CM_FILE **ret_cmfp, char *errbuf)
 {
   return open_engine(filename, env, ret_cmfp, TRUE, errbuf);
 }
@@ -164,9 +164,9 @@ cm_file_OpenNoDB(char *filename, char *env, NEW_CM_FILE **ret_cmfp, char *errbuf
  * Args:      filename - CM file to open; or "-" for <stdin>
  *            env      - list of paths to look for <cmfile> in, in 
  *                       addition to current working dir; or <NULL>
- *            ret_cmfp  - RETURN: opened <NEW_CM_FILE>.
+ *            ret_cmfp  - RETURN: opened <CM_FILE>.
  *
- * Returns:   <eslOK> on success, and the open <NEW_CM_FILE> is returned
+ * Returns:   <eslOK> on success, and the open <CM_FILE> is returned
  *            in <*ret_cmfp>.
  *            
  *            <eslENOTFOUND> if <filename> can't be opened for
@@ -174,19 +174,19 @@ cm_file_OpenNoDB(char *filename, char *env, NEW_CM_FILE **ret_cmfp, char *errbuf
  *            any) is checked.
  *            
  *            <eslEFORMAT> if <filename> is not in a recognized HMMER
- *            HMM file format.
+ *            CM file format.
  *
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_file_OpenBuffer(char *buffer, int size, NEW_CM_FILE **ret_cmfp)
+cm_file_OpenBuffer(char *buffer, int size, CM_FILE **ret_cmfp)
 {
-  NEW_CM_FILE *cmfp     = NULL;
+  CM_FILE *cmfp     = NULL;
   int         status;
   char       *tok;
   int         toklen;
 
-  ESL_ALLOC(cmfp, sizeof(NEW_CM_FILE));
+  ESL_ALLOC(cmfp, sizeof(CM_FILE));
   cmfp->f            = NULL;
   cmfp->fname        = NULL;
   cmfp->do_gzip      = FALSE;
@@ -237,9 +237,9 @@ cm_file_OpenBuffer(char *buffer, int size, NEW_CM_FILE **ret_cmfp)
  *              
  */
 static int 
-open_engine(char *filename, char *env, NEW_CM_FILE **ret_cmfp, int do_ascii_only, char *errbuf)
+open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, char *errbuf)
 {
-  NEW_CM_FILE *cmfp      = NULL;
+  CM_FILE *cmfp      = NULL;
   char       *envfile  = NULL;	/* full path to filename after using environment  */
   char       *dbfile   = NULL;	/* constructed name of an index or binary db file */
   char       *cmd      = NULL;	/* constructed gzip -dc pipe command              */
@@ -249,13 +249,14 @@ open_engine(char *filename, char *env, NEW_CM_FILE **ret_cmfp, int do_ascii_only
   char       *tok;
   int         toklen;
 
-  ESL_ALLOC(cmfp, sizeof(NEW_CM_FILE));
+  ESL_ALLOC(cmfp, sizeof(CM_FILE));
   cmfp->f            = NULL;
   cmfp->fname        = NULL;
   cmfp->do_gzip      = FALSE;
   cmfp->do_stdin     = FALSE;
   cmfp->newly_opened = TRUE;	/* well, it will be, real soon now */
   cmfp->is_pressed   = FALSE;
+  cmfp->is_binary    = FALSE;
 #ifdef HMMER_THREADS
   cmfp->syncRead     = FALSE;
 #endif
@@ -354,8 +355,8 @@ open_engine(char *filename, char *env, NEW_CM_FILE **ret_cmfp, int do_ascii_only
    */
   if (cmfp->f == NULL)  
     {
-      if (env) ESL_XFAIL(eslENOTFOUND, errbuf, "HMM file %s not found (nor an .h3m binary of it); also looked in %s", filename, env);
-      else     ESL_XFAIL(eslENOTFOUND, errbuf, "HMM file %s not found (nor an .h3m binary of it)",                    filename);
+      if (env) ESL_XFAIL(eslENOTFOUND, errbuf, "CM file %s not found (nor an .i1m binary of it); also looked in %s", filename, env);
+      else     ESL_XFAIL(eslENOTFOUND, errbuf, "CM file %s not found (nor an .i1m binary of it)",                    filename);
     }
 
 
@@ -397,7 +398,7 @@ open_engine(char *filename, char *env, NEW_CM_FILE **ret_cmfp, int do_ascii_only
 
   /* 6. Check for binary file format. A pressed db is automatically binary: verify. */
   if (! fread((char *) &(magic.n), sizeof(uint32_t), 1, cmfp->f))  ESL_XFAIL(eslEFORMAT, errbuf, "File exists, but appears to be empty?");
-  if      (magic.n == v1a_magic) { cmfp->format = CM_FILE_1a; cmfp->parser = read_bin1cm; }
+  if      (magic.n == v1a_magic) { cmfp->format = CM_FILE_1a; cmfp->parser = read_bin1cm; cmfp->is_binary = TRUE; }
   else if (cmfp->is_pressed) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s unrecognized\nCurrent Infernal format is INFERNAL1/a. Previous Infernal formats are not supported.", cmfp->fname);
 
   /* 7. Checks for ASCII file format */
@@ -438,7 +439,7 @@ open_engine(char *filename, char *env, NEW_CM_FILE **ret_cmfp, int do_ascii_only
  * Returns:   (void)
  */
 void
-cm_file_Close(NEW_CM_FILE *cmfp)
+cm_file_Close(CM_FILE *cmfp)
 {
   if (cmfp == NULL) return;
 
@@ -467,7 +468,7 @@ cm_file_Close(NEW_CM_FILE *cmfp)
  * Returns:   <eslOK> on success.
  */
 int
-cm_file_CreateLock(NEW_CM_FILE *cmfp)
+cm_file_CreateLock(CM_FILE *cmfp)
 {
   int status;
 
@@ -488,7 +489,7 @@ cm_file_CreateLock(NEW_CM_FILE *cmfp)
   return eslFAIL;
 }
 #endif
-/*----------------- end, NEW_CM_FILE object ----------------------*/
+/*----------------- end, CM_FILE object ----------------------*/
 
 
 
@@ -547,7 +548,7 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
   fprintf(fp, "N3OMEGA  %6g\n",cm->null3_omega);
   fprintf(fp, "ELSELF   %.8f\n",cm->el_selfsc);
   fprintf(fp, "NSEQ     %d\n", cm->nseq);
-  fprintf(fp, "EFFN     %f\n", cm->eff_nseq);
+  fprintf(fp, "EFFN     %.2f\n",cm->eff_nseq);
   if (cm->flags & CMH_CHKSUM)  fprintf(fp, "CKSUM    %u\n", cm->checksum); /* unsigned 32-bit */
   fputs("NULL    ", fp);
   for (x = 0; x < cm->abc->K; x++) { fprintf(fp, "%6s ", prob2ascii(cm->null[x], 1/(float)(cm->abc->K))); }
@@ -895,7 +896,7 @@ write_bin_string(FILE *fp, char *s)
  *            as file positioning functions (<fseeko()> or <ftello()>.
  */
 int
-cm_file_Read(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc,  CM_t **opt_cm)
+cm_file_Read(CM_FILE *cmfp, ESL_ALPHABET **ret_abc,  CM_t **opt_cm)
 {
   /* A call to SSI to remember file position may eventually go here.  */
   return (*cmfp->parser)(cmfp, ret_abc, opt_cm);
@@ -926,7 +927,7 @@ cm_file_Read(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc,  CM_t **opt_cm)
  *            index or is not a seekable stream. 
  */
 int
-cm_file_PositionByKey(NEW_CM_FILE *cmfp, const char *key)
+cm_file_PositionByKey(CM_FILE *cmfp, const char *key)
 {
   uint16_t fh;
   off_t    offset;
@@ -950,26 +951,27 @@ cm_file_PositionByKey(NEW_CM_FILE *cmfp, const char *key)
  *
  * Returns:   <eslOK> on success.
  * 
- *            In the event anerror, the state of <cmfp> is left
+ *            In the event an error, the state of <cmfp> is left
  *            unchanged.
  *
  * Throws:    <eslESYS> on system i/o call failure, or <eslEINVAL> if
  *            <cmfp> is not a seekable stream. 
  */
 int
-cm_file_Position(NEW_CM_FILE *cmfp, const off_t offset)
+cm_file_Position(CM_FILE *cmfp, const off_t offset)
 {
   if (fseeko(cmfp->f, offset, SEEK_SET) != 0)    ESL_EXCEPTION(eslESYS, "fseek failed");
 
   cmfp->newly_opened = FALSE;	/* because we're poised on the magic number, and must read it */
   return eslOK;
 }
+
 /*------------------- end, input API ----------------------------*/
 
 
 
 /*****************************************************************
- * 4.  Private, specific profile HMM file format parsers.
+ * 4.  Private, specific profile CM file format parsers.
  *****************************************************************/
 
 /* Parsing save files from INFERNAL 1.x
@@ -1011,7 +1013,7 @@ cm_file_Position(NEW_CM_FILE *cmfp, const off_t offset)
  *             returned <NULL>.
  */
 static int
-read_asc1cm(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
+read_asc1cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 {
   int           status;
   ESL_ALPHABET *abc  = NULL;
@@ -1026,10 +1028,12 @@ read_asc1cm(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
   int           alphatype;
   off_t         offset = 0;
   int           v, x, y, nd;            /* counters */
-  uint32_t      mlp7_statstracker = 0;  /* for making sure we have all ML P7 E-value stats, if we have any */
+  uint32_t      mlp7_statstracker  = 0; /* for making sure we have all ML P7 E-value stats, if we have any */
+  uint32_t      cmcp9_statstracker = 0; /* for making sure we have all CM/CP9 E-value stats, if we have any */
   int           nap7_expected = -1;     /* number of additional p7 filters from NAP7 line */
   int           nap7_read     = 0;      /* number of additional p7 filters we've read stats for */
   int           exp_mode;   
+  int           read_el_selfsc = FALSE; /* set to true when we read ELSELF line */
 
   /* temporary parameters, for storing values prior to their allocation in the CM */
   char  *tmp_bcom          = NULL;
@@ -1181,9 +1185,10 @@ read_asc1cm(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 	if ((cm->null3_omega = atof(tok1)) <= 0.0f)                                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid omega on N3OMEGA line: should be a positive real number, not %s", tok1);
       }
 
-      else if (strcmp(tag, "ESLSELF") == 0) {
+      else if (strcmp(tag, "ELSELF") == 0) {
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Nothing follows ELSELF tag");
 	cm->el_selfsc = atof(tok1);
+	read_el_selfsc = TRUE;
       }
 
       else if (strcmp(tag, "NSEQ") == 0) {
@@ -1278,10 +1283,10 @@ read_asc1cm(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 
       else if (strncmp(tag, "ECM", 3) == 0) { /* one of 4 possible CM E-value lines */
 	/* determine which one */
-	if      (strncmp(tag+3, "LC", 2) == 0) { exp_mode = EXP_CM_LC; }
-	else if (strncmp(tag+3, "GC", 2) == 0) { exp_mode = EXP_CM_GC; }
-	else if (strncmp(tag+3, "LI", 2) == 0) { exp_mode = EXP_CM_LI; }
-	else if (strncmp(tag+3, "GI", 2) == 0) { exp_mode = EXP_CM_GI; }
+	if      (strncmp(tag+3, "LC", 2) == 0) { exp_mode = EXP_CM_LC; cmcp9_statstracker += 1; }
+	else if (strncmp(tag+3, "GC", 2) == 0) { exp_mode = EXP_CM_GC; cmcp9_statstracker += 2; }
+	else if (strncmp(tag+3, "LI", 2) == 0) { exp_mode = EXP_CM_LI; cmcp9_statstracker += 4; }
+	else if (strncmp(tag+3, "GI", 2) == 0) { exp_mode = EXP_CM_GI; cmcp9_statstracker += 8; }
 	else                                   { ESL_XFAIL(status, cmfp->errbuf, "Invalid tag beginning with ECM"); }
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECM.. line"); /* lambda    */
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECM.. line"); /* mu_extrap */
@@ -1290,6 +1295,7 @@ read_asc1cm(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok5, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECM.. line"); /* nrandhits */
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok6, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECM.. line"); /* tailp     */
 	if (cm->expA == NULL) { 
+	  ESL_ALLOC(cm->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
 	  for(x = 0; x < EXP_NMODES; x++) { cm->expA[x] = CreateExpInfo(); }
 	}
 	cm->expA[exp_mode]->lambda    = atof(tok1);
@@ -1303,10 +1309,10 @@ read_asc1cm(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 
       else if (strncmp(tag, "ECP9", 4) == 0) { /* one of 4 possible CP9 E-value lines */
 	/* determine which one */
-	if      (strncmp(tag+4, "LV", 2) == 0) { exp_mode = EXP_CP9_LV; }
-	else if (strncmp(tag+4, "GV", 2) == 0) { exp_mode = EXP_CP9_GV; }
-	else if (strncmp(tag+4, "LF", 2) == 0) { exp_mode = EXP_CP9_LF; }
-	else if (strncmp(tag+4, "GF", 2) == 0) { exp_mode = EXP_CP9_GF; }
+	if      (strncmp(tag+4, "LV", 2) == 0) { exp_mode = EXP_CP9_LV; cmcp9_statstracker += 16;  } 
+	else if (strncmp(tag+4, "GV", 2) == 0) { exp_mode = EXP_CP9_GV; cmcp9_statstracker += 32;  }
+	else if (strncmp(tag+4, "LF", 2) == 0) { exp_mode = EXP_CP9_LF; cmcp9_statstracker += 64;  }
+	else if (strncmp(tag+4, "GF", 2) == 0) { exp_mode = EXP_CP9_GF; cmcp9_statstracker += 128; }
 	else                                   { ESL_XFAIL(status, cmfp->errbuf, "Invalid tag beginning with ECP9"); }
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECP9.. line"); /* lambda    */
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECP9.. line"); /* mu_extrap */
@@ -1336,10 +1342,14 @@ read_asc1cm(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
   /* Done reading the header information.
    * Check that everything is ok and mandatory info is present before moving on.
    */
-  if (cm->M < 1)          ESL_XFAIL(status, cmfp->errbuf, "Failed to read STATES line in header section");
+  if (cm->M     < 1)      ESL_XFAIL(status, cmfp->errbuf, "Failed to read STATES line in header section");
   if (cm->nodes < 1)      ESL_XFAIL(status, cmfp->errbuf, "Failed to read NODES line in header section");
+  if (cm->clen  < 1)      ESL_XFAIL(status, cmfp->errbuf, "Failed to read CLEN line in header section");
+  if (cm->W     < 1)      ESL_XFAIL(status, cmfp->errbuf, "Failed to read W line in header section");
+  if (! read_el_selfsc)   ESL_XFAIL(status, cmfp->errbuf, "Failed to read ELSELF line in header section");
   if (cm->name == NULL)   ESL_XFAIL(status, cmfp->errbuf, "Failed to read NAME line in header section");
-  if (abc  == NULL)       ESL_XFAIL(status, cmfp->errbuf, "Failed to read ALPH line in header section");
+  if (abc      == NULL)   ESL_XFAIL(status, cmfp->errbuf, "Failed to read ALPH line in header section");
+  if (tmp_null == NULL)   ESL_XFAIL(status, cmfp->errbuf, "Failed to read NULL line in header section");
 
   /* Check to make sure we parsed E-value stats correctly. 
    */
@@ -1353,10 +1363,8 @@ read_asc1cm(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 
   /* Finally, make sure we have either none or all the CM/CP9 E-value stats */
   if (cm->expA != NULL) { 
-    for(x = 0; x < EXP_NMODES; x++) { 
-      if(! cm->expA[x]->is_valid) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Missing one or more ECM.. or ECP9.. parameter lines");
-    }
-    cm->flags |= CMH_EXPTAIL_STATS;
+    if      (cmcp9_statstracker == 255) cm->flags |= CMH_EXPTAIL_STATS;
+    else if (cmcp9_statstracker != 0)   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Missing one or more ECM.. or ECP9.. parameter lines");
   }
 
   /* Allocate body of CM now that # states (M) and # nodes (nnodes) are known */
@@ -1706,7 +1714,7 @@ read_asc1cm(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 
 
 static int
-read_bin1cm(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
+read_bin1cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 {
   ESL_ALPHABET *abc = NULL;
   CM_t         *cm = NULL;
@@ -2595,7 +2603,7 @@ main(int argc, char **argv)
   ESL_STOPWATCH *w       = esl_stopwatch_Create();
   ESL_ALPHABET  *abc     = NULL;
   char          *hmmfile = esl_opt_GetArg(go, 1);
-  NEW_CM_FILE    *cmfp     = NULL;
+  CM_FILE    *cmfp     = NULL;
   P7_HMM        *hmm     = NULL;
   P7_BG         *bg      = NULL;
   P7_PROFILE    *gm      = NULL;
@@ -2674,7 +2682,7 @@ static int
 utest_io_30(char *tmpfile, int format, P7_HMM *hmm)
 {
   FILE         *fp     = NULL;
-  NEW_CM_FILE   *cmfp    = NULL;
+  CM_FILE   *cmfp    = NULL;
   P7_HMM       *new    = NULL;
   ESL_ALPHABET *newabc = NULL;
   char          msg[] = "3.0 file i/o unit test failed";
@@ -2822,71 +2830,76 @@ main(int argc, char **argv)
 /*****************************************************************
  * 9. Example.
  *****************************************************************/
-/* On using the example to test error messages from p7_hmmfile_OpenE():
+/* On using the example to test error messages from cm_file_Open():
  *    Message
  *  --------------
- *  .gz file missing/not readable     \rm test.hmm.gz; touch test.hmm.gz; src/p7_hmmfile_example test.hmm.gz
- *  gzip -dc doesn't exist            \cp testsuite/20aa.hmm test.hmm; gzip test.hmm; sudo mv /usr/bin/gzip /usr/bin/gzip.old; src/p7_hmmfile_example test.hmm.gz
- *  hmm file not found                \rm test.hmm; src/p7_hmmfile_example test.hmm
- *  bad SSI file format               \cp testsuite/20aa.hmm test.hmm; \rm test.hmm.ssi; touch test.hmm.ssi; src/p7_hmmfile_example test.hmm
+ *  .gz file missing/not readable     \rm test.cm.gz; touch test.cm.gz; src/cmfile_example test.cm.gz
+ *  gzip -dc doesn't exist            \cp testsuite/20aa.cm test.cm; gzip test.cm; sudo mv /usr/bin/gzip /usr/bin/gzip.old; src/cmfile_example test.cm.gz
+ *  cm file not found                \rm test.cm; src/cmfile_example test.cm
+ *  bad SSI file format               \cp testsuite/20aa.cm test.cm; \rm test.cm.ssi; touch test.cm.ssi; src/cmfile_example test.cm
  *  64-bit SSI on 32-bit sys
- *  empty file                        \rm test.hmm; touch test.hmm
- *  unrecognized format (binary)      cat testsuite/20aa.hmm > test.hmm; src/hmmpress test.hmm; \rm test.hmm; [edit test.hmm.h3m, delete first byte]
- *  unrecognized format (ascii)       cat testsuite/20aa.hmm | sed -e 's/^HMMER3\/b/HMMER3\/x/' > test.hmm
+ *  empty file                        \rm test.cm; touch test.cm
+ *  unrecognized format (binary)      cat testsuite/20aa.cm > test.cm; src/cmpress test.cm; \rm test.cm; [edit test.cm.h3m, delete first byte]
+ *  unrecognized format (ascii)       cat testsuite/20aa.cm | sed -e 's/^HMMER3\/b/HMMER3\/x/' > test.hmm
  *  
  */
 
-#ifdef p7HMMFILE_EXAMPLE
-/* gcc -g -Wall -Dp7HMMFILE_EXAMPLE -I. -I../easel -L. -L../easel -o p7_hmmfile_example p7_hmmfile.c -lhmmer -leasel -lm
+#ifdef CMFILE_EXAMPLE
+/* gcc -g -Wall -DCMFILE_EXAMPLE -I. -I../easel -L. -L../easel -o cmfile_example cm_file.c -linfernal -lhmmer -leasel -lm
  */
+#include "esl_config.h"
 #include "p7_config.h"
+#include "config.h"
 
 #include "easel.h"
 #include "esl_alphabet.h"
 
 #include "hmmer.h"
 
+#include "funcs.h"
+#include "structs.h"
+
 int
 main(int argc, char **argv)
 {
-  char         *hmmfile = argv[1];
-  NEW_CM_FILE   *cmfp     = NULL;
-  P7_HMM       *hmm     = NULL;
-  ESL_ALPHABET *abc     = NULL;
+  char         *cmfile = argv[1];
+  CM_FILE      *cmfp   = NULL;
+  CM_t         *cm     = NULL;
+  ESL_ALPHABET *abc    = NULL;
   char          errbuf[eslERRBUFSIZE];
   int           status;
   
-  /* An example of reading a single HMM from a file, and checking that it is the only one. */
-  status = p7_hmmfile_OpenE(hmmfile, NULL, &cmfp, errbuf);
-  if      (status == eslENOTFOUND) p7_Fail("File existence/permissions problem in trying to open HMM file %s.\n%s\n", hmmfile, errbuf);
-  else if (status == eslEFORMAT)   p7_Fail("File format problem in trying to open HMM file %s.\n%s\n",                hmmfile, errbuf);
-  else if (status != eslOK)        p7_Fail("Unexpected error %d in opening HMM file %s.\n%s\n",               status, hmmfile, errbuf);  
+  /* An example of reading a single CM from a file, and checking that it is the only one. */
+  status = cm_ile_Open(cmfile, NULL, &cmfp, errbuf);
+  if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
+  else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
+  else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",               status, cmfile, errbuf);  
 
-  status = p7_hmmfile_Read(cmfp, &abc, &hmm);
-  if      (status == eslEFORMAT)   p7_Fail("Bad file format in HMM file %s:\n%s\n",          cmfp->fname, cmfp->errbuf);
-  else if (status == eslEINCOMPAT) p7_Fail("HMM in %s is not in the expected %s alphabet\n", cmfp->fname, esl_abc_DecodeType(abc->type));
-  else if (status == eslEOF)       p7_Fail("Empty HMM file %s? No HMM data found.\n",        cmfp->fname);
-  else if (status != eslOK)        p7_Fail("Unexpected error in reading HMMs from %s\n",     cmfp->fname);
+  status = cm_file_Read(cmfp, &abc, &cm);
+  if      (status == eslEFORMAT)   cm_Fail("Bad file format in CM file %s:\n%s\n",          cmfp->fname, cmfp->errbuf);
+  else if (status == eslEINCOMPAT) cm_Fail("CM in %s is not in the expected %s alphabet\n", cmfp->fname, esl_abc_DecodeType(abc->type));
+  else if (status == eslEOF)       cm_Fail("Empty CM file %s? No CM data found.\n",         cmfp->fname);
+  else if (status != eslOK)        cm_Fail("Unexpected error in reading CMs from %s\n",     cmfp->fname);
 
-  status = p7_hmmfile_Read(cmfp, &abc, NULL);
-  if (status != eslEOF)            p7_Fail("HMM file %s does not contain just one HMM\n", cmfp->fname);
+  status = cm_file_Read(cmfp, &abc, NULL);
+  if (status != eslEOF)            cm_Fail("CM file %s does not contain just one CM\n", cmfp->fname);
 
-  p7_hmmfile_Close(cmfp);
+  cm_file_Close(cmfp);
 
-  p7_hmmfile_WriteASCII(stdout, -1, hmm);
+  cm_ile_WriteASCII(stdout, -1, cm);
 
   esl_alphabet_Destroy(abc);
-  p7_hmm_Destroy(hmm);
+  FreeCM(cm);
   return 0;
 }
-#endif /*p7HMMFILE_EXAMPLE*/
+#endif /*CMFILE_EXAMPLE*/
 /*----------------------- end, example --------------------------*/
 
 
 /*****************************************************************
  * @LICENSE@
  *
- * SVN $Id: p7_hmmfile.c 3569 2011-06-16 16:16:13Z eddys $
- * SVN $URL: https://svn.janelia.org/eddylab/eddys/src/hmmer/trunk/src/p7_hmmfile.c $
+ * SVN $Id$
+ * SVN $URL$
  *****************************************************************/
 

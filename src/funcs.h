@@ -182,25 +182,17 @@ extern void debug_print_shadow(void ***shadow, CM_t *cm, int L);
 extern void debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
 extern void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
 
-/* from cm_io.c */
-extern CMFILE *CMFileOpen(char *cmfile, char *env);
-extern int     CMFileRead(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
-extern void    CMFileClose(CMFILE *cmf);
-extern void    CMFileRewind(CMFILE *cmf);
-extern int     CMFilePositionByIndex(CMFILE *cmf, int64_t idx);
-extern int     CMFilePositionByKey(CMFILE *cmf, char *key);
-extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary, char *errbuf);
-extern int     PositionSqFileByNumber(ESL_SQFILE *sqfp, int sseq, char *errbuf);
-
 /* from cm_file.c */
-extern int     cm_file_Open(char *filename, char *env, NEW_CM_FILE **ret_cmfp, char *errbuf);
-extern int     cm_file_OpenNoDB(char *filename, char *env, NEW_CM_FILE **ret_cmfp, char *errbuf);
-extern int     cm_file_OpenBuffer(char *buffer, int size, NEW_CM_FILE **ret_cmfp);
-extern void    cm_file_Close(NEW_CM_FILE *cmfp);
-extern int     cm_file_CreateLock(NEW_CM_FILE *cmfp);
+extern int     cm_file_Open(char *filename, char *env, CM_FILE **ret_cmfp, char *errbuf);
+extern int     cm_file_OpenNoDB(char *filename, char *env, CM_FILE **ret_cmfp, char *errbuf);
+extern int     cm_file_OpenBuffer(char *buffer, int size, CM_FILE **ret_cmfp);
+extern void    cm_file_Close(CM_FILE *cmfp);
+extern int     cm_file_CreateLock(CM_FILE *cmfp);
 extern int     cm_file_WriteASCII(FILE *fp, int format, CM_t *cm);
 extern int     cm_file_WriteBinary(FILE *fp, int format, CM_t *cm);
-extern int     cm_file_Read(NEW_CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
+extern int     cm_file_Read(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
+extern int     cm_file_PositionByKey(CM_FILE *cmfp, const char *key);
+extern int     cm_file_Position(CM_FILE *cmfp, const off_t offset);
 
 /* from cm_modelconfig.c */
 extern int   ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t *mother_map);
@@ -215,7 +207,7 @@ extern void  ConfigLocal_DisallowELEmissions(CM_t *cm);
 extern int   ConfigQDBAndW(CM_t *cm, int do_calc_qdb);
 
 /* from cm_modelmaker.c */
-extern int  HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_mtr);
+extern int  HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_mtr);
 extern int  ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int clen, int building_sub_model, CM_t **ret_cm, Parsetree_t **ret_gtr);
 extern Parsetree_t *Transmogrify(CM_t *cm, Parsetree_t *gtr, 
 				 ESL_DSQ *dsq, char *aseq, int alen);
@@ -559,9 +551,6 @@ extern float FLogsum(float p1, float p2);
 #if HAVE_MPI
 extern int cm_master_MPIBcast(CM_t *cm, int tag, MPI_Comm comm, char **buf, int *nalloc);
 extern int cm_worker_MPIBcast(int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_ALPHABET **abc, CM_t **ret_cm);
-extern int cm_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t **ret_cm);
-extern int cm_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm);
-extern int cm_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
 extern int cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t **ret_cm);
 extern int cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm);
 extern int cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
@@ -787,3 +776,4 @@ extern float          cm_alidisplay_DecodePostProb(char pc);
 extern int            cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth, int show_accessions, int do_noncanonicals);
 extern int            cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2);
+

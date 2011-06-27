@@ -53,9 +53,10 @@ static double DChiSquareFit(double *d1, double *d2, int N);
 int
 main(int argc, char **argv)
 {
+  int status;
   ESL_GETOPTS    *go    = esl_getopts_CreateDefaultApp(options, 1, argc, argv, banner, usage);
   char    *cmfile = esl_opt_GetArg(go, 1);
-  CMFILE  *cmfp;		/* open CM file for reading */
+  CM_FILE  *cmfp;		/* open CM file for reading */
   CM_t    *cm;			/* a covariance model       */
   int      v;			/* counter over states */
   
@@ -68,6 +69,7 @@ main(int argc, char **argv)
   int      mc_nsample;		/* # of monte carlo samples to do */
   ESL_RANDOMNESS *r       = NULL;
   ESL_ALPHABET   *abc     = NULL;
+  char            errbuf[cmERRBUFSIZE]; /* for error messages */
 
   /*********************************************** 
    * Parse command line
@@ -85,9 +87,9 @@ main(int argc, char **argv)
    * Preliminaries: get our CM
    ***********************************************/
 
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)    cm_Fail("Failed to open covariance model save file %s\n", cmfile);
-  if ((CMFileRead(cmfp, NULL, &abc, &cm)) != eslOK) cm_Fail("Failed to read CM");
-  CMFileClose(cmfp);
+  if ((status = cm_file_Open(cmfile, NULL, &(cmfp), errbuf)) != eslOK) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
+  if ((cm_file_Read(cmfp, &abc, &cm)) != eslOK) cm_Fail("Failed to read CM");
+  cm_file_Close(cmfp);
 
   /*****************************************************************
    * Do the band calculations

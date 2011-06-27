@@ -77,7 +77,7 @@ static ESL_OPTIONS options[] = {
  */
 struct cfg_s {
   char         *cmfile;	        /* name of input CM file  */ 
-  CMFILE       *cmfp;		/* open input CM file stream       */
+  CM_FILE      *cmfp;		/* open input CM file stream       */
   ESL_ALPHABET *abc;		/* digital alphabet for CM */
   ESL_RANDOMNESS *r;            /* source of randomness */
   int           ncm;            /* number CM we're at in file */
@@ -173,7 +173,7 @@ main(int argc, char **argv)
   /* Clean up the cfg. 
    */
   if (cfg.abc   != NULL) { esl_alphabet_Destroy(cfg.abc); cfg.abc = NULL; }
-  if (cfg.cmfp  != NULL) CMFileClose(cfg.cmfp);
+  if (cfg.cmfp  != NULL) cm_file_Close(cfg.cmfp);
   if (cfg.r     != NULL) esl_randomness_Destroy(cfg.r);
 
   /* master specific cleaning */
@@ -206,9 +206,10 @@ main(int argc, char **argv)
 static int
 init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
+  int status;
+
   /* open CM file for reading */
-  if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
-    ESL_FAIL(eslFAIL, errbuf, "Failed to open covariance model save file %s\n", cfg->cmfile);
+  if((status = cm_file_Open(cfg->cmfile, NULL, &(cfg->cmfp), errbuf)) != eslOK) return status;
 
   /* open optional output files, if nec */
   if (esl_opt_GetString(go, "--ifile") != NULL) {
@@ -272,7 +273,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   cfg->ncm = 0;
 
-  while ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK)
+  while ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
@@ -371,7 +372,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     }
 
 
-  if(status != eslEOF) cm_Fail(errbuf);
+  if(status != eslEOF) cm_Fail(cfg->cmfp->errbuf);
   return;
 
  ERROR:

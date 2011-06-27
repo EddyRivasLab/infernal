@@ -168,7 +168,7 @@ struct cfg_s {
   int              do_stall;          /* TRUE to stall the program until gdb attaches */
 
   /* Masters only (i/o streams) */
-  CMFILE          *cmfp;	      /* open input CM file stream       */
+  CM_FILE         *cmfp;	      /* open input CM file stream       */
   FILE            *exphfp;            /* optional output for exp tail histograms */
   FILE            *expsfp;            /* optional output for exp tail survival plot */
   FILE            *expqfp;            /* optional output for exp tail QQ file */
@@ -449,13 +449,14 @@ main(int argc, char **argv)
     sigset_t blocksigs;  /* list of signals to protect from             */
     char     errbuf[cmERRBUFSIZE];
 
-    CMFileRewind(cfg.cmfp);
+    cm_file_Position(cfg.cmfp, (off_t) 0);
+
     if (esl_FileExists(cfg.tmpfile))                    cm_Fail("Ouch. Temporary file %s appeared during the run.", cfg.tmpfile);
     if ((outfp = fopen(cfg.tmpfile, cfg.mode)) == NULL) cm_Fail("Ouch. Temporary file %s couldn't be opened for writing.", cfg.tmpfile); 
     
     for (cmi = 0; cmi < cfg.ncm; cmi++) {
-      if ((status = CMFileRead(cfg.cmfp, errbuf, &(cfg.abc), &cm)) != eslOK) cm_Fail("Ran out of CMs too early in pass 2");
-      if (cm == NULL)                                                        cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
+      if ((status = cm_file_Read(cfg.cmfp, &(cfg.abc), &cm)) != eslOK) cm_Fail("Ran out of CMs too early in pass 2");
+      if (cm == NULL)                                                  cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
 
       /* update the cm->comlog info */
       if((status = update_comlog(go, errbuf, cfg.ccom, cfg.cdate, cm)) != eslOK) cm_Fail(errbuf);
@@ -463,15 +464,22 @@ main(int argc, char **argv)
       if(cm->expA != NULL) { 
 	for(i = 0; i < EXP_NMODES;  i++)  free(cm->expA[i]); free(cm->expA);
       }
+      ESL_ALLOC(cm->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
       if(cm->hfiA != NULL) { 
 	for(i = 0; i < FTHR_NMODES; i++)  FreeHMMFilterInfo(cm->hfiA[i]); free(cm->hfiA);
       }
+      ESL_ALLOC(cm->hfiA, sizeof(HMMFilterInfo_t) * FTHR_NMODES);
 
       cm->expA   = cfg.expAA[cmi];
       cm->hfiA   = cfg.hfiAA[cmi];
       cm->flags |= CMH_EXPTAIL_STATS; 
       cm->flags |= CMH_FILTER_STATS; 
-      if((status = CMFileWrite(outfp, cm, cfg.cmfp->is_binary, errbuf)) != eslOK) cm_Fail(go->errbuf);
+      if(cfg.cmfp->is_binary) { 
+	if ((status = cm_file_WriteBinary(outfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
+      }
+      else { 
+	if ((status = cm_file_WriteASCII(outfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
+      }
       FreeCM(cm);
     } /* end of from idx = 0 to ncm */
     
@@ -480,7 +488,7 @@ main(int argc, char **argv)
      * we wouldn't want a user to ctrl-C just as we've deleted
      * their CM file but before the new one is moved.
      */
-    CMFileClose(cfg.cmfp);
+    cm_file_Close(cfg.cmfp);
     if (fclose(outfp)   != 0)                            cm_Fail("system error during rewrite of CM file");
     if (sigemptyset(&blocksigs) != 0)                    cm_Fail("system error during rewrite of CM file.");;
     if (sigaddset(&blocksigs, SIGINT) != 0)              cm_Fail("system error during rewrite of CM file.");;
@@ -559,8 +567,10 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int status;
 
   /* open CM file */
-  if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
-    ESL_FAIL(eslFAIL, errbuf, "Failed to open covariance model save file %s\n", cfg->cmfile);
+  status = cm_file_Open(cfg->cmfile, NULL, &(cfg->cmfp), errbuf);
+  if      (status == eslENOTFOUND) return status;
+  else if (status == eslEFORMAT)   return status;
+  else if (status != eslOK)        return status;
 
   /* optionally, open exp tail histogram file */
   if (esl_opt_GetString(go, "--exp-hfile") != NULL) 
@@ -711,9 +721,11 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = print_run_info (go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   
-  while ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK)
+  while ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK) 
     {
-      if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
+      if      (status == eslEOD)  cm_Fail("read failed, CM file %s may be truncated?", cfg->cmfile);
+      else if (status != eslOK)   cm_Fail(cfg->cmfp->errbuf);
+
       cfg->ncm++;
       if(cfg->ncm == cfg->cmalloc) { /* expand our memory */
 	cfg->cmalloc  += 128;
@@ -939,8 +951,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       
       printf("//\n");
       fflush(stdout);
-    } /* end of while(CMFileRead()) */
-  if(status != eslEOF) cm_Fail(errbuf);
+    } /* end of while(cm_file_Read()) */
+  if(status != eslEOF) cm_Fail(cfg->cmfp->errbuf);
   
   if(cfg->ncm > 1 && (esl_opt_IsOn(go, "--forecast"))) { 
     fprintf(stdout, "#\n");
@@ -1117,7 +1129,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    * Unrecoverable errors just crash us out with cm_Fail().
    */
   
-  while ((xstatus == eslOK) && ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK)) 
+  while ((xstatus == eslOK) && ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK)) 
     {
       cfg->ncm++;  
       if(cfg->ncm == cfg->cmalloc) { /* expand our memory */
@@ -1578,7 +1590,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   free(buf);
   
   if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); return xstatus; }
-  else if(status != eslEOF) return status;
+  else if(status != eslEOF) { strcpy(errbuf, cfg->cmfp->errbuf); return status; }
   else                      return eslOK;
   
  ERROR: 

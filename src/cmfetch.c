@@ -60,17 +60,19 @@ static ESL_OPTIONS options[] = {
   { 0,0,0,0,0,0,0,0,0,0 },
 };
 
-static void create_ssi_index(ESL_GETOPTS *go, CMFILE *cmfp, char *cmfile);
-static void multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CMFILE *cmfp, char *cmfile);
-static void onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CMFILE *cmfp, char *cmfile);
+static void create_ssi_index(ESL_GETOPTS *go, CM_FILE *cmfp, char *cmfile);
+static void multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CM_FILE *cmfp, char *cmfile);
+static void onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CM_FILE *cmfp, char *cmfile);
 
 int
 main(int argc, char **argv)
 {
+  int           status;
   ESL_GETOPTS  *go      = NULL;	/* application configuration      */
   char         *cmfile  = NULL;	/* CM file name                   */
-  CMFILE       *cmfp    = NULL;	/* open CM file                   */
+  CM_FILE      *cmfp    = NULL;	/* open CM file                   */
   FILE         *ofp     = NULL;	/* output stream for CMs          */
+  char          errbuf[cmERRBUFSIZE];
 
   /***********************************************
    * Parse command line
@@ -83,18 +85,21 @@ main(int argc, char **argv)
   
   /* Open the CM file.  */
   cmfile = esl_opt_GetArg(go, 1);
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
+  status = cm_file_Open(cmfile, NULL, &cmfp, errbuf);
+  if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
+  else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
+  else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",               status, cmfile, errbuf);  
 
  /* Open the output file, if any  */
   if (esl_opt_GetBoolean(go, "-O")) 
     {
       if ((ofp = fopen(esl_opt_GetArg(go, 2), "w")) == NULL)
-	esl_fatal("Failed to open output file %s\n", esl_opt_GetArg(go, 2));
+	cm_Fail("Failed to open output file %s\n", esl_opt_GetArg(go, 2));
     }
   else if (esl_opt_GetString(go, "-o") != NULL)
     {
       if ((ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL)
-	esl_fatal("Failed to open output file %s\n", esl_opt_GetString(go, "-o"));
+	cm_Fail("Failed to open output file %s\n", esl_opt_GetString(go, "-o"));
     }
   else ofp = stdout;
 
@@ -118,7 +123,7 @@ main(int argc, char **argv)
     }
 
   if (esl_opt_GetBoolean(go, "-O") || esl_opt_GetString(go, "-o") != NULL) fclose(ofp);
-  CMFileClose(cmfp);
+  cm_file_Close(cmfp);
   esl_getopts_Destroy(go);
   exit(0);
 }
@@ -128,7 +133,7 @@ main(int argc, char **argv)
  * Both name and accession of CMs are stored as keys.
  */
 static void
-create_ssi_index(ESL_GETOPTS *go, CMFILE *cmfp, char *cmfile)
+create_ssi_index(ESL_GETOPTS *go, CM_FILE *cmfp, char *cmfile)
 {
   ESL_NEWSSI   *ns      = NULL;
   ESL_ALPHABET *abc     = NULL;
@@ -137,28 +142,27 @@ create_ssi_index(ESL_GETOPTS *go, CMFILE *cmfp, char *cmfile)
   char         *ssifile = NULL;
   uint16_t      fh;
   int           status;
-  char          errbuf[cmERRBUFSIZE]; 
 
-  if (esl_sprintf(&ssifile, "%s.ssi", cmfile) != eslOK) p7_Die("esl_sprintf() failed");
+  if (esl_sprintf(&ssifile, "%s.ssi", cmfile) != eslOK) cm_Fail("esl_sprintf() failed");
 
   status = esl_newssi_Open(ssifile, FALSE, &ns);
-  if      (status == eslENOTFOUND)   esl_fatal("failed to open SSI index %s", ssifile);
-  else if (status == eslEOVERWRITE)  esl_fatal("SSI index %s already exists; delete or rename it", ssifile);
-  else if (status != eslOK)          esl_fatal("failed to create a new SSI index");
+  if      (status == eslENOTFOUND)   cm_Fail("failed to open SSI index %s", ssifile);
+  else if (status == eslEOVERWRITE)  cm_Fail("SSI index %s already exists; delete or rename it", ssifile);
+  else if (status != eslOK)          cm_Fail("failed to create a new SSI index");
 
   if (esl_newssi_AddFile(ns, cmfile, 0, &fh) != eslOK) /* 0 = format code (CMs don't have any yet) */
-    esl_fatal("Failed to add CM file %s to new SSI index\n", cmfile);
+    cm_Fail("Failed to add CM file %s to new SSI index\n", cmfile);
 
   printf("Working...    "); 
   fflush(stdout);
   
-  while ((status = CMFileRead(cmfp, errbuf, &abc, &cm)) == eslOK) 
+  while ((status = cm_file_Read(cmfp, &abc, &cm)) == eslOK)
     { 
       ncm++;
       
       if (cm->name == NULL) cm_Fail("Every CM must have a name to be indexed. Failed to find name of CM #%d\n", ncm);
       
-      if (esl_newssi_AddKey(ns, cm->name, fh, cmfp->offset, 0, 0) != eslOK)
+      if (esl_newssi_AddKey(ns, cm->name, fh, cm->offset, 0, 0) != eslOK)
 	cm_Fail("Failed to add key %s to SSI index", cm->name);
       
       if (cm->acc) {
@@ -166,8 +170,8 @@ create_ssi_index(ESL_GETOPTS *go, CMFILE *cmfp, char *cmfile)
 	  cm_Fail("Failed to add secondary key %s to SSI index", cm->acc);
       }
       FreeCM(cm);
-    } /* end of while CMFileRead() */
-  if(status != eslEOF) cm_Fail(errbuf); /* CMFileRead() returned an error, die. */
+    } /* end of while cm_file_Read() */
+  if(status != eslEOF) cm_Fail(cmfp->errbuf); /* cm_file_Read() returned an error, die. */
   
   if (esl_newssi_Write(ns) != eslOK) 
     cm_Fail("Failed to write keys to ssi file %s\n", ssifile);
@@ -200,7 +204,7 @@ create_ssi_index(ESL_GETOPTS *go, CMFILE *cmfp, char *cmfile)
  * the order they occur in the CM file.
  */
 static void
-multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CMFILE *cmfp, char *cmfile)
+multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CM_FILE *cmfp, char *cmfile)
 {
   ESL_KEYHASH    *keys   = esl_keyhash_Create();
   ESL_FILEPARSER *efp    = NULL;
@@ -211,7 +215,6 @@ multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CMFILE *cmfp, char *cmfile
   int             keylen;
   int             keyidx;
   int             status;
-  char            errbuf[cmERRBUFSIZE]; 
   
   if (esl_fileparser_Open(keyfile, NULL, &efp) != eslOK)  cm_Fail("Failed to open key file %s\n", keyfile);
   esl_fileparser_SetCommentChar(efp, '#');
@@ -229,17 +232,17 @@ multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CMFILE *cmfp, char *cmfile
 
   if (cmfp->ssi == NULL) 
     {
-      while ((status = CMFileRead(cmfp, errbuf, &abc, &cm)) == eslOK)
+      while ((status = cm_file_Read(cmfp, &abc, &cm)) == eslOK)
 	{
 	  if (esl_keyhash_Lookup(keys, cm->name, -1, &keyidx) == eslOK || 
 	      ((cm->acc) && esl_keyhash_Lookup(keys, cm->acc, -1, &keyidx) == eslOK))
 	    {
-	      if((status = CMFileWrite(ofp, cm, FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
+	      if ((status = cm_file_WriteASCII(ofp, -1, cm)) != eslOK) cm_Fail("CM save failed");
 	      ncm++;
 	    }
 	  FreeCM(cm);
-	} /* end of while CMFileRead() */
-      if(status != eslEOF) cm_Fail(errbuf); /* CMFileRead() returned an error, die. */
+	} /* end of while cm_file_Read() */
+      if(status != eslEOF) cm_Fail(cmfp->errbuf); /* cm_file_Read() returned an error, die. */
 
     }
   
@@ -259,34 +262,34 @@ multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CMFILE *cmfp, char *cmfile
  * the one we're after.
  */
 static void
-onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CMFILE *cmfp, char *cmfile)
+onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CM_FILE *cmfp, char *cmfile)
 {
   ESL_ALPHABET *abc  = NULL;
   CM_t         *cm   = NULL;
   int           status;
-  char          errbuf[cmERRBUFSIZE]; 
+
   if (cmfp->ssi != NULL)
     {
-      status = CMFilePositionByKey(cmfp, key);
+      status = cm_file_PositionByKey(cmfp, key);
       if      (status == eslENOTFOUND) cm_Fail("CM %s not found in SSI index for file %s\n", key, cmfile);
       else if (status == eslEFORMAT)   cm_Fail("Failed to parse SSI index for %s\n", cmfile);
       else if (status != eslOK)        cm_Fail("Failed to look up location of CM %s in SSI index of file %s\n", key, cmfile);
     }
 
-  while ((status = CMFileRead(cmfp, errbuf, &abc, &cm)) != eslEOF)
+  while ((status = cm_file_Read(cmfp, &abc, &cm)) != eslEOF)
     {
-      if(cm == NULL) cm_Fail(errbuf);
+      if(cm == NULL) cm_Fail(cmfp->errbuf);
       if (strcmp(key, cm->name) == 0 || (cm->acc && strcmp(key, cm->acc) == 0)) break;
       FreeCM(cm);
       cm = NULL;
     }
   
   if(status == eslOK) { 
-    if((status = CMFileWrite(ofp, cm, FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
+    if ((status = cm_file_WriteASCII(ofp, -1, cm)) != eslOK) cm_Fail("CM save failed");
     FreeCM(cm);
   }
   else if (status != eslEOF) { 
-    cm_Fail(errbuf); /* CMFileRead() returned an error, die. */
+    cm_Fail(cmfp->errbuf); /* cm_file_Read() returned an error, die. */
   }
   else {
     cm_Fail("CM %s not found in file %s\n", key, cmfile);

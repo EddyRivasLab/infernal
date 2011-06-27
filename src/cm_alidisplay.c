@@ -318,7 +318,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	  do_left = TRUE;
 	  if (cm->rf != NULL) lrf = cm->rf[lc];
 	  lstr   = cons->cstr[lc];
-	  lcons  = cons->cseq[lc];
+	  lcons  = (cm->flags & CMH_CONS) ? cm->consensus[lc] : cons->cseq[lc];
 	  cpos_l = lc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
 	    if      (mode == 3)         lseq = abc->sym[symi];
@@ -337,7 +337,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	  do_right = TRUE;
 	  if (cm->rf != NULL) rrf = cm->rf[rc];
 	  rstr   = cons->cstr[rc];
-	  rcons  = cons->cseq[rc];
+	  rcons  = (cm->flags & CMH_CONS) ? cm->consensus[rc] : cons->cseq[rc];
 	  cpos_r = rc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
 	    if      (mode == 3)         rseq = abc->sym[symj];

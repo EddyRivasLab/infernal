@@ -446,19 +446,18 @@ typedef struct cp9map_s {
 #define CMH_FILTER_STATS        (1<<13) /* filter threshold stats are set           */
 #define CMH_QDB                 (1<<14) /* query-dependent bands, QDBs valid        */
 #define CMH_CP9                 (1<<15) /* CP9 HMM is valid in cm->cp9              */
-#define CMH_CP9STATS            (1<<16) /* CP9 HMM has exp tail stats               */
-#define CMH_SCANMATRIX          (1<<17) /* ScanMatrix smx is valid                  */
-#define CMH_MLP7                (1<<18) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
-#define CMH_MLP7_STATS          (1<<19) /* ml p7 HMM exponential tail stats set    */
-#define CMH_AP7                 (1<<20) /* at least 1 additional p7 is valid in cm->ap7 */
-#define CMH_AP7_STATS           (1<<21) /* additional p7 HMM exponential tail stats set */
+#define CMH_SCANMATRIX          (1<<16) /* ScanMatrix smx is valid                  */
+#define CMH_MLP7                (1<<17) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
+#define CMH_MLP7_STATS          (1<<18) /* ml p7 HMM exponential tail stats set    */
+#define CMH_AP7                 (1<<19) /* at least 1 additional p7 is valid in cm->ap7 */
+#define CMH_AP7_STATS           (1<<20) /* additional p7 HMM exponential tail stats set */
 
-#define CM_IS_SUB               (1<<22) /* the CM is a sub CM                       */
-#define CM_IS_RSEARCH           (1<<23) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS         (1<<24) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT          (1<<25) /* CM has/will have RSEARCH emissions       */
-#define CM_EMIT_NO_LOCAL_BEGINS (1<<26) /* emitted parsetrees will never have local begins */
-#define CM_EMIT_NO_LOCAL_ENDS   (1<<27) /* emitted parsetrees will never have local ends   */
+#define CM_IS_SUB               (1<<21) /* the CM is a sub CM                       */
+#define CM_IS_RSEARCH           (1<<22) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS         (1<<23) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT          (1<<24) /* CM has/will have RSEARCH emissions       */
+#define CM_EMIT_NO_LOCAL_BEGINS (1<<25) /* emitted parsetrees will never have local begins */
+#define CM_EMIT_NO_LOCAL_ENDS   (1<<26) /* emitted parsetrees will never have local ends   */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
@@ -502,24 +501,6 @@ typedef struct cp9map_s {
 #define CM_SEARCH_HMM2IJOLD    (1<<11) /* use old hmm2ij band calculation alg      */
 #define CM_SEARCH_NULL2        (1<<12) /* use NULL2 score correction               */
 #define CM_SEARCH_NULL3        (1<<13) /* use NULL3 score correction               */
-
-/* Structure: CMFILE
- * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]
- *
- * An open CM database for reading. 
- * (When writing, we just use a normal stdio.h FILE.)
- * API is implemented in cmio.c
- */
-typedef struct cmfile_s {
-  FILE     *f;                  /* open file for reading */
-  char     *fname;              /* name of the CM file; [STDIN] if -           */
-  ESL_SSI  *ssi;                /* ptr to open SSI index, or NULL if unavailable */
-  int       is_binary;		/* TRUE if file is in binary format */
-  int       byteswap;		/* TRUE if binary and we need to swap byte order */
-  int       mode;		/* type of SSI offset (part of SSI API) */
-  off_t     offset;             /* disk offset of the CM that was read last */
-} CMFILE;
-
 
 /* Structure: Parsetree_t
  * Incept:    SRE 29 Feb 2000 [Seattle]
@@ -1437,6 +1418,56 @@ typedef struct cm_s {
 } CM_t;
 
 
+
+/*****************************************************************
+ * CM_FILE:  a CM save file or database, open for reading.
+ *****************************************************************/
+
+/* These tags need to be in temporal order, so we can do tests
+ * like "if (format >= CM_FILE_1a) ..."
+ */
+enum cm_file_formats_e {
+  CM_FILE_1a = 0,
+};
+
+typedef struct cm_file_s {
+  FILE         *f;		 /* pointer to stream for reading models                 */
+  char         *fname;	         /* (fully qualified) name of the CM file; [STDIN] if -  */
+  ESL_SSI      *ssi;		 /* open SSI index for model file <f>; NULL if none.     */
+
+  int           do_gzip;	/* TRUE if f is "gzip -dc |" (will pclose(f))           */ 
+  int           do_stdin;       /* TRUE if f is stdin (won't close f)                   */
+  int           newly_opened;	/* TRUE if we just opened the stream (and parsed magic) */
+  int           is_binary;	/* TRUE if a binary file (output with WriteBinary)      */
+  int           is_pressed;	/* TRUE if a pressed CM database file (Rfam or equiv)   */
+
+  int            format;	/* CM file format code */
+  int           (*parser)(struct cm_file_s *, ESL_ALPHABET **, CM_t **);  
+  ESL_FILEPARSER *efp;
+
+  /* If <is_pressed>, we can read optimized profile HMM filters directly, via:  */
+  FILE         *ffp;		/* MSV part of the optimized profile HMM */
+  FILE         *pfp;		/* rest of the optimized profile HMM     */
+
+#ifdef HMMER_THREADS
+  int              syncRead;
+  pthread_mutex_t  readMutex;
+#endif
+
+  char          errbuf[eslERRBUFSIZE];
+} CM_FILE;
+
+/* note on <fname>, above:
+ * this is the actual name of the CM file being read.
+ * 
+ * The way cm_file_Open() works, it will preferentially look for
+ * cmpress'ed binary files. If you open "foo", it will first try to
+ * open "foo.i1m" and <fname> will be "foo.i1m". "foo" does not even
+ * have to exist. If a parsing error occurs, you want <fname> to
+ * be "foo.i1m", so error messages report blame correctly.
+ * In the special case of reading from stdin, <fname> is "[STDIN]".
+ */
+
 enum cm_pipemodes_e { CM_SEARCH_SEQS = 0, CM_SCAN_MODELS = 1 };
 enum cm_zsetby_e    { CM_ZSETBY_SSIINFO = 0, CM_ZSETBY_NTARGETS = 1, CM_ZSETBY_OPTION = 2, CM_ZSETBY_FILEINFO = 3};
 
@@ -1621,7 +1652,7 @@ typedef struct cm_pipeline_s {
 
   int64_t       cur_seq_idx;    /* sequence index currently being searched */
 
-  CMFILE       *cmfp;		/* COPY of open CM database (if scan mode) */
+  CM_FILE      *cmfp;		/* COPY of open CM database (if scan mode) */
   char          errbuf[eslERRBUFSIZE];
 } CM_PIPELINE;
 
@@ -1713,55 +1744,6 @@ typedef struct cm_tophits_s {
   int      is_sorted_by_score;   /* TRUE when hits sorted by score, length,     th->hit valid for all N hits */
   int      is_sorted_by_seq_idx; /* TRUE when hits sorted by seq_idx, position, th->hit valid for all N hits */
 } CM_TOPHITS;
-
-
-/*****************************************************************
- * NEW_CM_FILE:  a CM save file or database, open for reading.
- *****************************************************************/
-
-/* These tags need to be in temporal order, so we can do tests
- * like "if (format >= CM_FILE_1a) ..."
- */
-enum cm_file_formats_e {
-  CM_FILE_1a = 0,
-};
-
-typedef struct cm_file_s {
-  FILE         *f;		 /* pointer to stream for reading models                 */
-  char         *fname;	         /* (fully qualified) name of the CM file; [STDIN] if -  */
-  ESL_SSI      *ssi;		 /* open SSI index for model file <f>; NULL if none.     */
-
-  int           do_gzip;	/* TRUE if f is "gzip -dc |" (will pclose(f))           */ 
-  int           do_stdin;       /* TRUE if f is stdin (won't close f)                   */
-  int           newly_opened;	/* TRUE if we just opened the stream (and parsed magic) */
-  int           is_pressed;	/* TRUE if a pressed CM database file (Rfam or equiv)   */
-
-  int            format;	/* CM file format code */
-  int           (*parser)(struct cm_file_s *, ESL_ALPHABET **, CM_t **);  
-  ESL_FILEPARSER *efp;
-
-  /* If <is_pressed>, we can read optimized profile HMM filters directly, via:  */
-  FILE         *ffp;		/* MSV part of the optimized profile HMM */
-  FILE         *pfp;		/* rest of the optimized profile HMM     */
-
-#ifdef HMMER_THREADS
-  int              syncRead;
-  pthread_mutex_t  readMutex;
-#endif
-
-  char          errbuf[eslERRBUFSIZE];
-} NEW_CM_FILE;
-
-/* note on <fname>, above:
- * this is the actual name of the HMM file being read.
- * 
- * The way cm_file_Open() works, it will preferentially look for
- * cmpress'ed binary files. If you open "foo", it will first try to
- * open "foo.i1m" and <fname> will be "foo.i1m". "foo" does not even
- * have to exist. If a parsing error occurs, you want <fname> to
- * be "foo.i1m", so error messages report blame correctly.
- * In the special case of reading from stdin, <fname> is "[STDIN]".
- */
 
 
 #endif /*STRUCTSH_INCLUDED*/

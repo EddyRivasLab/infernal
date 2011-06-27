@@ -61,27 +61,38 @@ static int check_for_pknots(char *cs, int alen);
  *           in this line are interpreted (as base pairs). Pseudoknots, 
  *           if annotated, are ignored.
  *           
- *           Match vs. insert can be determined one of two ways. By default,
- *           the assignment is made by "gapthresh"; for columns with
- *           fractional occurence of gaps greater than this, the column
- *           is assigned to insert. If "use_rf" is TRUE, the rf (reference)
- *           line is interpreted as the assignment -- columns with non-space
- *           characters in the rf line are assigned to MATCH.
- *           
+ *           Match vs. insert can be determined one of three ways,
+ *           depending on the values of <use_rf> and <use_wts>. 
+ *           1. <use_rf> == FALSE and <use_wts> == TRUE: 
+ *              Default. The assignment is made by <gapthresh>; for
+ *              columns with fractional occurence of gaps (considering
+ *              sequence weights) is greater than this, the column is
+ *              assigned to insert.
+ *           2. <use_rf> == FALSE and <use_wts> == FALSE:
+ *              Same as 1, but sequence weights are not considered in
+ *              fractional occurence of gaps. (This was default in 
+ *              Infernal up through version 1.0.2).
+ *           3. <use_rf> == TRUE and <use_wts> == FALSE:
+ *              case): Match positions are defined as all non-gap
+ *              positions in the msa->rf annotation.
+ *           4. <use_rf> == TRUE and <use_wts> == TRUE:
+ *              Not allowed. Contract violation.
+ *
  *           Both rf and cs are provided in the msa structure.
  *           
  * Args:     msa       - multiple alignment to build model from
  *           errbuf    - for error messages
  *           use_rf    - TRUE to use RF annotation to determine match/insert
+ *           use_wts   - TRUE to consider sequence weights from msa when determining match/insert
  *           gapthresh - fraction of gaps to allow in a match column (if use_rf=FALSE)
  *           ret_cm    - RETURN: new model                      (maybe NULL)
  *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
  *           
  * Return:   eslOK on success;
- *           eslEINCOMPAT on contract violation
+ *           eslEINCOMPAT on contract violation.
  */
 int
-HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_gtr)
+HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   int             status;
   CM_t           *cm;		/* new covariance model                       */
@@ -103,23 +114,27 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **r
   int  cpos;                    /* consensus position counter */
   int  k_cpos, i_cpos, j_cpos;  /* consensus position that k, i, j (alignment positions) correspond to */
   int  kp;                      /* k prime, closest alignment position that is consensus to the right of k (that is kp >= k) */
+  float gaps = 0.;              /* counter over gaps */
 
-  if (msa->ss_cons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): No consensus structure annotation available for that alignment.");
+  /* Contract check */
+  if (msa->ss_cons == NULL)            ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): No consensus structure annotation available for that alignment.");
   if (! (msa->flags & eslMSA_DIGITAL)) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): MSA is not digitized.");
-  if (use_rf && msa->rf == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): No reference annotation available for the alignment.");
-  if (! use_rf && msa->wgt == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): use_rf is FALSE, and msa->wgt is NULL.");
+  if (  use_rf && msa->rf  == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): No reference annotation available for the alignment.");
+  if (! use_rf && msa->wgt == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): use_rf is FALSE, and msa->wgt is NULL.");
+  if (  use_rf && use_wts)             ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): use_rf is TRUE and use_wts is TRUE, if use_rf is TRUE, use_wts must be FALSE.");
 
   /* 1. Determine match/insert assignments
    *    matassign is 1..alen. Values are 1 if a match column, 0 if insert column.
    *
    *    EPN, Wed Sep 29 13:26:51 2010 
-   *    Post-v1.0.2 change: 
+   *    Post-v1.0.2 change, if (use_rf == FALSE) and (use_wts == TRUE): 
    *    match/insert columns are defined based on gap frequency in the
    *    alignment *taking weights into account*. That is <= gapthresh
    *    of the fraction of weighted sequences must have gaps to define
    *    an match column.  Previously (infernal v0.1->1.0.2) 
    *    <= gapthresh of the actual number of sequences (unweighted) 
-   *    need have gaps to be a match.
+   *    need have gaps to be a match, this is still allowed if (use_wts
+   *    is FALSE).
    */
   ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
 
@@ -128,11 +143,18 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **r
     for (apos = 1; apos <= msa->alen; apos++)
       matassign[apos] = (esl_abc_CIsGap(msa->abc, msa->rf[apos-1]) ? FALSE : TRUE);
   }
-  else { 
-    float gaps;
+  else if(! use_wts) { 
     for (apos = 1; apos <= msa->alen; apos++) { 
       gaps = 0.;
-      for (idx = 0; idx < msa->nseq; idx++)
+      for (idx = 0; idx < msa->nseq; idx++) 
+	if (esl_abc_XIsGap(msa->abc, msa->ax[idx][apos])) gaps += 1.0;
+      matassign[apos] = ((gaps / (float) msa->nseq) > gapthresh) ? 0 : 1;
+    }
+  }
+  else { 
+    for (apos = 1; apos <= msa->alen; apos++) { 
+      gaps = 0.;
+      for (idx = 0; idx < msa->nseq; idx++) 
 	if (esl_abc_XIsGap(msa->abc, msa->ax[idx][apos])) gaps += msa->wgt[idx];
       matassign[apos] = ((gaps / (float) msa->nseq) > gapthresh) ? 0 : 1;
     }

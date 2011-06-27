@@ -46,9 +46,10 @@ static char banner[] = "test CP9 HMM construction procedure";
 int
 main(int argc, char **argv)
 {
+  int                status;
   ESL_GETOPTS       *go      = esl_getopts_CreateDefaultApp(options, 1, argc, argv, banner, usage);
   char              *cmfile = esl_opt_GetArg(go, 1);
-  CMFILE            *cmfp;        /* open CM file for reading */
+  CM_FILE           *cmfp;        /* open CM file for reading */
   CM_t              *cm;          /* a covariance model       */
   CP9_t             *hmm;         /* constructed CP9 HMM; written to hmmfile              */
   CP9Map_t          *cp9map;      /* maps the hmm to the cm and vice versa */
@@ -62,6 +63,7 @@ main(int argc, char **argv)
   ESL_STOPWATCH     *w    = NULL; /* for timings */
   ESL_RANDOMNESS    *r    = NULL; /* source of randomness */
   ESL_ALPHABET      *abc  = NULL; /* alphabet, for the CM */
+  char               errbuf[cmERRBUFSIZE]; /* for error messages */
 
   /*********************************************** 
    * Parse command line
@@ -77,9 +79,9 @@ main(int argc, char **argv)
    * Preliminaries: get our CM
    ***********************************************/
 
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
-  if ((CMFileRead(cmfp, NULL, &abc, &cm)) != eslOK) cm_Fail("Failed to read CM");
-  CMFileClose(cmfp);
+  if ((status = cm_file_Open(cmfile, NULL, &(cmfp), errbuf)) != eslOK) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
+  if ((cm_file_Read(cmfp, &abc, &cm)) != eslOK) cm_Fail("Failed to read CM");
+  cm_file_Close(cmfp);
 
   w  = esl_stopwatch_Create();
   esl_stopwatch_Start(w);

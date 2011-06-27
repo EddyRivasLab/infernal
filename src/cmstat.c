@@ -56,7 +56,7 @@ main(int argc, char **argv)
 
   ESL_ALPHABET    *abc = NULL;  /* alphabet                  */
   char            *cmfile;	/* name of input CM file     */ 
-  NEW_CM_FILE     *cmfp;	/* open input CM file stream */
+  CM_FILE         *cmfp;	/* open input CM file stream */
   CM_t            *cm;          /* CM most recently read     */
   int              ncm;         /* CM index                  */
   char             errbuf[cmERRBUFSIZE]; /* for error messages */
