@@ -1951,6 +1951,7 @@ setup_cm(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
 int
 setup_qdbs(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
 {
+  int status;
   int safe_W;
 
   /* Determine if we need to allocate and use ScanMatrix_t's for 
@@ -1963,9 +1964,9 @@ setup_qdbs(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
   info->final_dmin = info->final_dmax = NULL; 
 
   if(esl_opt_GetBoolean(go, "--fqdb")) { /* determine CYK filter QDBs */
-    /* it may be that --fbeta is the same as cm->beta_qdb, if so, we read the desired QDBs from the CM file */
-    if((cm->flags & CMH_QDB) && (esl_opt_GetReal(go, "--fbeta") == cm->beta_qdb)) { 
-      printf("WHOA fbeta: %f == beta_qdb\n", esl_opt_GetReal(go, "--fbeta"), cm->beta_qdb);
+    /* it may be that --fbeta is the same as info->cm->beta_qdb, if so, we read the desired QDBs from the CM file */
+    if((info->cm->flags & CMH_QDB) && (esl_opt_GetReal(go, "--fbeta") == info->cm->beta_qdb)) { 
+      printf("WHOA fbeta: %f == beta_qdb\n", esl_opt_GetReal(go, "--fbeta"), info->cm->beta_qdb);
       ESL_ALLOC(info->fcyk_dmin, sizeof(int) * info->cm->M);
       ESL_ALLOC(info->fcyk_dmax, sizeof(int) * info->cm->M);
       esl_vec_ICopy(info->cm->dmin, info->cm->M, info->fcyk_dmin);
@@ -1983,9 +1984,9 @@ setup_qdbs(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
   }
 
   if(esl_opt_GetBoolean(go, "--qdb")) { /* determine CYK filter QDBs */
-    /* it may be that --beta is the same as cm->beta_qdb, if so, we read the desired QDBs from the CM file */
-    if((cm->flags & CMH_QDB) && (esl_opt_GetReal(go, "--beta") == cm->beta_qdb)) { 
-      printf("WHOA beta: %f == beta_qdb\n", esl_opt_GetReal(go, "--beta"), cm->beta_qdb);
+    /* it may be that --beta is the same as info->cm->beta_qdb, if so, we read the desired QDBs from the CM file */
+    if((info->cm->flags & CMH_QDB) && (esl_opt_GetReal(go, "--beta") == info->cm->beta_qdb)) { 
+      printf("WHOA beta: %f == beta_qdb\n", esl_opt_GetReal(go, "--beta"), info->cm->beta_qdb);
       ESL_ALLOC(info->final_dmin, sizeof(int) * info->cm->M);
       ESL_ALLOC(info->final_dmax, sizeof(int) * info->cm->M);
       esl_vec_ICopy(info->cm->dmin, info->cm->M, info->final_dmin);
@@ -2003,6 +2004,9 @@ setup_qdbs(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
   }
 
   return eslOK;
+
+ ERROR: 
+  return status;
 }
 
 /* Function:  setup_hmm_filters()

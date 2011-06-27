@@ -1,3 +1,7 @@
+# For verbose output:
+#     % make V=1
+#
+
 # VPATH and shell configuration
 top_srcdir = @top_srcdir@
 srcdir     = @srcdir@
@@ -75,6 +79,7 @@ HDRS =  funcs.h\
 	structs.h
 
 OBJS  = cm.o\
+	cm_alidisplay.o\
 	cm_dpalign.o\
 	cm_dpsearch.o\
 	cm_dpsmall.o\
@@ -83,16 +88,19 @@ OBJS  = cm.o\
 	cm_modelmaker.o\
 	cm_mx.o\
 	cm_parsetree.o\
+	cm_pipeline.o\
 	cm_qdband.o\
 	cm_submodel.o\
+	cm_tophits.o\
+	cm_p7_band.o\
+	cm_p7_domaindef.o\
+	cm_p7_modelmaker.o\
 	cp9.o\
 	cp9_dp.o\
 	cp9_modelconfig.o\
 	cp9_modelmaker.o\
 	cp9_mx.o\
 	cp9_trace.o\
-	p7_modelmaker.o\
-	my_p7_msvfilter.o\
 	alphabet.o\
 	dispatch.o\
 	display.o\
@@ -106,11 +114,7 @@ OBJS  = cm.o\
 	searchinfo.o\
 	seqstoaln.o\
 	stats.o\
-	truncyk.o\
-	cm_pipeline.o\
-	cm_p7_domaindef.o\
-	cm_tophits.o\
-	cm_alidisplay.o
+	truncyk.o
 
 # Definitions present in HMMER3's Makefile that are not yet necessary in Infernal's
 #STATS = 

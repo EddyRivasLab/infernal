@@ -499,7 +499,7 @@ extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **h
 extern void         debug_print_ij_bands(CM_t *cm);
 extern void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, CP9Bands_t *cp9b);
 
-/* from p7_modelmaker.c */
+/* from cm_p7_modelmaker.c */
 #if 0
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7);
 #endif
@@ -511,7 +511,7 @@ extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, 
 extern int          cm_Addp7(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda, char *errbuf);
 extern int          dump_p7(P7_HMM *hmm, FILE *fp);
 
-/* from my_p7_msvfilter.c */
+/* from cm_p7_band.c */
 #if 0
 extern int          my_p7_MSVFilter(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, P7_OMX *ox, P7_GMX *gx, float *ret_sc);
 extern int          p7_omx_CopyMSVRow2gmx(P7_OMX *ox, const P7_OPROFILE *om, P7_GMX *gx, int rowi, uint8_t xE, uint8_t xN, uint8_t xJ, uint8_t xB, uint8_t xC);
