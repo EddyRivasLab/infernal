@@ -35,6 +35,9 @@
 #include <assert.h>
 #endif
 
+#define CMSEQDBENV       "BLASTDB"
+#define CMDBENV          "RFAMDB"
+
 /*****************************************************************
  * Everything else that follows is configured automatically 
  * by the ./configure script. DO NOT EDIT.

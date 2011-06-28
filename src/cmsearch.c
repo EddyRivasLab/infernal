@@ -1331,7 +1331,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	      /*printf("MPI just fetched seq %d (%40s) %10ld..%10ld\n", pkey_idx, pkey, seq_from, seq_to);*/
 	    }
 	    /* tell pipeline we've got a new sequence (this updates info->pli->nres) */
-	    cm_pli_NewSeq(info->pli, info->cm, dbsq, pkey_idx);
+	    cm_pli_NewSeq(info->pli, dbsq, pkey_idx);
 	    readL += dbsq->n;
 
 	    /* search top strand */
@@ -1429,7 +1429,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
   /* printf("SER just read seq %d (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end); */
   while (wstatus == eslOK ) {
     
-    cm_pli_NewSeq(info->pli, info->cm, dbsq, seq_idx);
+    cm_pli_NewSeq(info->pli, dbsq, seq_idx);
     info->pli->nres -= dbsq->C; /* to account for overlapping region of windows */
     
     printf("cm->W: %d\n", info->cm->W);
@@ -1607,7 +1607,7 @@ pipeline_thread(void *arg)
 	
       /* FIX ME! threaded version doesn't keep track of seq_idx for each block..., but it has to, so we 
        * can reliably remove overlaps */
-      cm_pli_NewSeq(info->pli, info->cm, dbsq, block->first_seqidx + i);
+      cm_pli_NewSeq(info->pli, dbsq, block->first_seqidx + i);
       info->pli->nres -= dbsq->C; /* to account for overlapping region of windows */
       
       if (info->pli->do_top) { 

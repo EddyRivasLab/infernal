@@ -725,7 +725,7 @@ extern int cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double E
 extern int cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
 extern int cm_pli_NewModel          (CM_PIPELINE *pli, CM_t *cm, int need_fsmx, int need_smx, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE **omA, P7_BG **bgA, int nhmm);
 extern int cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
-extern int cm_pli_NewSeq            (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t cur_seq_idx);
+extern int cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
 extern int cm_pli_p7Filter          (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, double **ret_wp, int *ret_nwin);
 extern int cm_pli_p7EnvelopeDef     (CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 extern int cm_pli_CMStage           (CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist);

@@ -78,6 +78,7 @@ PROGS = cmalign\
 	cmcalibrate\
 	cmemit\
 	cmfetch\
+	cmscan\
 	cmscore\
 	cmsearch\
 	cmstat

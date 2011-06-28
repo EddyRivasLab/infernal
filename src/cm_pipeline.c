@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT  1
+#define DOPRINT  0
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -335,6 +335,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, int Z_
   }
   else { /* 1 Mb  > Z */
     pli->do_msv = FALSE;
+    pli->F1 = pli->F1b = 1.00; /* this is irrelevant */
     pli->F2 = pli->F2b = 0.25;
     pli->F3 = pli->F3b = 0.02;
     pli->F4 = pli->F4b = 0.02;
@@ -792,7 +793,7 @@ cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm)
  * Returns:   <eslOK> on success.
  */
 int
-cm_pli_NewSeq(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t cur_seq_idx)
+cm_pli_NewSeq(CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx)
 {
   /* Update number of residues read/searched */
   pli->nres += sq->n;
