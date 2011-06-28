@@ -178,9 +178,9 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
 
   if((cm->comlog = CreateComLog()) == NULL) goto ERROR;
 
-  ESL_ALLOC(cm->sttype,  nstates    * sizeof(char));
+  ESL_ALLOC(cm->sttype, (nstates+1) * sizeof(char));
   ESL_ALLOC(cm->ndidx,   nstates    * sizeof(int));
-  ESL_ALLOC(cm->stid,    nstates    * sizeof(char));
+  ESL_ALLOC(cm->stid,   (nstates+1) * sizeof(char));
   ESL_ALLOC(cm->cfirst,  nstates    * sizeof(int));
   ESL_ALLOC(cm->cnum,    nstates    * sizeof(int));
   ESL_ALLOC(cm->plast,   nstates    * sizeof(int));
@@ -2716,17 +2716,19 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
 
   new->flags       = cm->flags;
   new->offset      = cm->offset;
-  new->nseq        = cm->nseq;
   new->clen        = cm->clen;
+  new->W           = cm->W;
+  new->beta_W      = cm->beta_W;
+  new->beta_qdb    = cm->beta_qdb;
+  new->null2_omega = cm->null2_omega;
+  new->null3_omega = cm->null3_omega;
   new->el_selfsc   = cm->el_selfsc;
+  new->nseq        = cm->nseq;
   new->eff_nseq    = cm->eff_nseq;
+  new->checksum    = cm->checksum;
   new->ga          = cm->ga;
   new->tc          = cm->tc;
   new->nc          = cm->nc;
-  new->null2_omega = cm->null2_omega;
-  new->null3_omega = cm->null3_omega;
-  new->beta_W      = cm->beta_W;
-  new->beta_qdb    = cm->beta_qdb;
   new->tau         = cm->tau;
 
   /* these arrays were alloc'ed in CreateCM() */
@@ -2736,6 +2738,8 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
   esl_vec_ICopy(cm->cnum,   cm->M, new->cnum);
   esl_vec_ICopy(cm->plast,  cm->M, new->plast);
   esl_vec_ICopy(cm->pnum,   cm->M, new->pnum);
+  esl_vec_ICopy(cm->dmin,   cm->M, new->dmin);
+  esl_vec_ICopy(cm->dmax,   cm->M, new->dmax);
   for(i = 0; i < cm->M+1; i++) new->sttype[i] = cm->sttype[i];
   for(i = 0; i < cm->M+1; i++) new->stid[i]   = cm->stid[i];
 
@@ -2758,8 +2762,11 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
   
   /* clone the CM expA and hfiA */
   if(cm->expA != NULL) { 
-    ESL_ALLOC(new->expA, sizeof(ExpInfo_t *)       * EXP_NMODES);
-    for(i = 0; i < EXP_NMODES; i++) CopyExpInfo(cm->expA[i], new->expA[i]);
+    ESL_ALLOC(new->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
+    for(i = 0; i < EXP_NMODES; i++) { 
+      new->expA[i] = CreateExpInfo();
+      CopyExpInfo(cm->expA[i], new->expA[i]);
+    }
   }
   if(cm->hfiA != NULL) { 
     ESL_ALLOC(new->hfiA, sizeof(HMMFilterInfo_t *) * FTHR_NMODES);

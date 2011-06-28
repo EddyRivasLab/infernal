@@ -1432,6 +1432,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
     cm_pli_NewSeq(info->pli, info->cm, dbsq, seq_idx);
     info->pli->nres -= dbsq->C; /* to account for overlapping region of windows */
     
+    printf("cm->W: %d\n", info->cm->W);
     if (info->pli->do_top) { 
       prev_hit_cnt = info->th->N;
       if((status = cm_Pipeline(info->pli, info->cm, info->cmcons, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th)) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
@@ -1841,8 +1842,9 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
       dest_infoA[i].omA[m]  = p7_oprofile_Clone(src_info->omA[m]);
       dest_infoA[i].bgA[m]  = p7_bg_Create(src_info->bgA[m]->abc);
       ESL_ALLOC(dest_infoA[i].p7_evparamAA[m], sizeof(float) * CM_p7_NEVPARAM);
-      if(m == 0 && dest_infoA[i].use_mlp7_hmm) { esl_vec_FCopy(src_info->cm->mlp7_evparam,     CM_p7_NEVPARAM, dest_infoA[i].p7_evparamAA[m]); }
-      else                                     { esl_vec_FCopy(src_info->cm->ap7_evparamAA[m], CM_p7_NEVPARAM, dest_infoA[i].p7_evparamAA[m]); }
+      if(m == 0 && dest_infoA[i].use_mlp7_hmm) { esl_vec_FCopy(src_info->cm->mlp7_evparam,       CM_p7_NEVPARAM, dest_infoA[i].p7_evparamAA[m]); }
+      else if(     dest_infoA[i].use_mlp7_hmm) { esl_vec_FCopy(src_info->cm->ap7_evparamAA[m-1], CM_p7_NEVPARAM, dest_infoA[i].p7_evparamAA[m]); }
+      else                                     { esl_vec_FCopy(src_info->cm->ap7_evparamAA[m],   CM_p7_NEVPARAM, dest_infoA[i].p7_evparamAA[m]); }
     }
 
     if(src_info->fcyk_dmin != NULL) { 
@@ -1966,7 +1968,7 @@ setup_qdbs(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
   if(esl_opt_GetBoolean(go, "--fqdb")) { /* determine CYK filter QDBs */
     /* it may be that --fbeta is the same as info->cm->beta_qdb, if so, we read the desired QDBs from the CM file */
     if((info->cm->flags & CMH_QDB) && (esl_opt_GetReal(go, "--fbeta") == info->cm->beta_qdb)) { 
-      printf("WHOA fbeta: %f == beta_qdb\n", esl_opt_GetReal(go, "--fbeta"), info->cm->beta_qdb);
+      printf("WHOA fbeta: %f == beta_qdb %f\n", esl_opt_GetReal(go, "--fbeta"), info->cm->beta_qdb);
       ESL_ALLOC(info->fcyk_dmin, sizeof(int) * info->cm->M);
       ESL_ALLOC(info->fcyk_dmax, sizeof(int) * info->cm->M);
       esl_vec_ICopy(info->cm->dmin, info->cm->M, info->fcyk_dmin);
@@ -1986,7 +1988,7 @@ setup_qdbs(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
   if(esl_opt_GetBoolean(go, "--qdb")) { /* determine CYK filter QDBs */
     /* it may be that --beta is the same as info->cm->beta_qdb, if so, we read the desired QDBs from the CM file */
     if((info->cm->flags & CMH_QDB) && (esl_opt_GetReal(go, "--beta") == info->cm->beta_qdb)) { 
-      printf("WHOA beta: %f == beta_qdb\n", esl_opt_GetReal(go, "--beta"), info->cm->beta_qdb);
+      printf("WHOA beta: %f == beta_qdb %f\n", esl_opt_GetReal(go, "--beta"), info->cm->beta_qdb);
       ESL_ALLOC(info->final_dmin, sizeof(int) * info->cm->M);
       ESL_ALLOC(info->final_dmax, sizeof(int) * info->cm->M);
       esl_vec_ICopy(info->cm->dmin, info->cm->M, info->final_dmin);
@@ -2022,11 +2024,12 @@ int
 setup_hmm_filters(ESL_GETOPTS *go, WORKER_INFO *info, const ESL_ALPHABET *abc, char *errbuf, P7_HMM ***ret_hmmA)
 {
   int      status;
+  CM_t    *tmp_cm = NULL;
   P7_HMM **hmmA = NULL;
   int      m, z, z_offset;
 
   /* Convert HMMs to optimized models.
-   * First, determine how many and which HMMs we'll be using *
+   * First, determine how many and which HMMs we'll be using 
    * by default, we filter only with the <nhmm> (== cm->nap7) HMMs written in the CM file */
   info->use_mlp7_hmm = FALSE;
   info->nhmm = info->cm->nap7;
@@ -2041,11 +2044,34 @@ setup_hmm_filters(ESL_GETOPTS *go, WORKER_INFO *info, const ESL_ALPHABET *abc, c
     info->nhmm = 1;
   }      
 
+  /* It's possible we need a mlp7 hmm, but we don't have one yet (this
+   * only occurs if we call this function from serial_master(), not if
+   * called from mpi_master() nor mpi_worker(), due to the fact that
+   * we build the ml p7 HMM for the CM before entering this function
+   * in MPI mode, but not in serial mode.)  To get the mlp7 HMM we
+   * wastefully clone the CM and configure that clone to build the
+   * mlp7 HMM, then we clone that mlp7 HMM.  We do it in this
+   * convoluted and wasteful way because we don't want to configure
+   * the info->cm, because then we couldn't clone it in a subsequent
+   * clone_info() call due to the extra data structures that get added
+   * to a configured CM (CP9 matrices, etc).
+   */
+  if(info->use_mlp7_hmm && info->cm->mlp7 == NULL) { 
+    if((status = CloneCMJustReadFromFile(info->cm, errbuf, &tmp_cm)) != eslOK) return status;
+    if((status = ConfigCM(tmp_cm, errbuf, FALSE, NULL, NULL))        != eslOK) return status;
+  }    
+
   /* Now we know how many HMMs, allocate and fill the necessary data structures for each */
   ESL_ALLOC(hmmA, sizeof(P7_HMM *) * info->nhmm);
   /* use the ML p7 HMM if nec */
-  if (esl_opt_GetBoolean(go, "--doml") || (info->cm->nap7 == 0)) { 
-    hmmA[0] = info->cm->mlp7;
+  if (info->use_mlp7_hmm) { 
+    if(info->cm->mlp7 != NULL) { 
+      hmmA[0] = info->cm->mlp7;
+    }
+    else { 
+      hmmA[0] = p7_hmm_Clone(tmp_cm->mlp7);
+      if(hmmA[0] == NULL) ESL_FAIL(eslFAIL, errbuf, "Failed to clone mlp7 HMM");
+    }
   }
   /* copy the HMMs from the file into the CM data structure */
   if(! esl_opt_GetBoolean(go, "--noadd")) { 
@@ -2070,14 +2096,18 @@ setup_hmm_filters(ESL_GETOPTS *go, WORKER_INFO *info, const ESL_ALPHABET *abc, c
     p7_ProfileConfig(hmmA[m], info->bgA[m], info->gmA[m], 100, p7_GLOCAL);
     /* copy evalue parameters */
     ESL_ALLOC(info->p7_evparamAA[m], sizeof(float) * CM_p7_NEVPARAM);
-    if(m == 0 && info->use_mlp7_hmm) { esl_vec_FCopy(info->cm->mlp7_evparam,     CM_p7_NEVPARAM, info->p7_evparamAA[m]); }
-    else                             { esl_vec_FCopy(info->cm->ap7_evparamAA[m], CM_p7_NEVPARAM, info->p7_evparamAA[m]); }
+    if(m == 0 && info->use_mlp7_hmm) { esl_vec_FCopy(info->cm->mlp7_evparam,       CM_p7_NEVPARAM, info->p7_evparamAA[m]); }
+    else if(     info->use_mlp7_hmm) { esl_vec_FCopy(info->cm->ap7_evparamAA[m-1], CM_p7_NEVPARAM, info->p7_evparamAA[m]); }
+    else                             { esl_vec_FCopy(info->cm->ap7_evparamAA[m],   CM_p7_NEVPARAM, info->p7_evparamAA[m]); }
   }
   *ret_hmmA = hmmA;
+  if(tmp_cm != NULL) FreeCM(tmp_cm);
   
   return eslOK;
 
  ERROR: 
+  if(tmp_cm != NULL) FreeCM(tmp_cm);
+  *ret_hmmA = NULL;
   ESL_FAIL(status, errbuf, "Out of memory.");
 }
 

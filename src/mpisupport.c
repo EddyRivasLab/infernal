@@ -207,8 +207,8 @@ cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm c
 
   if (MPI_Unpack(buf, n, pos, cm->e[0],              M*K*K, MPI_FLOAT, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, cm->t[0],       M*MAXCONNECT, MPI_FLOAT, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  if (MPI_Unpack(buf, n, pos, cm->sttype,                M,  MPI_CHAR, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  if (MPI_Unpack(buf, n, pos, cm->stid,                  M,  MPI_CHAR, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (MPI_Unpack(buf, n, pos, cm->sttype,              M+1,  MPI_CHAR, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (MPI_Unpack(buf, n, pos, cm->stid,                M+1,  MPI_CHAR, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, cm->ndidx,                 M,   MPI_INT, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, cm->cfirst,                M,   MPI_INT, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, cm->cnum,                  M,   MPI_INT, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
@@ -349,8 +349,8 @@ cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
 
   if (MPI_Pack(cm->e[0],              M*K*K, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(cm->t[0],       M*MAXCONNECT, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
-  if (MPI_Pack(cm->sttype,                M,  MPI_CHAR, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
-  if (MPI_Pack(cm->stid,                  M,  MPI_CHAR, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
+  if (MPI_Pack(cm->sttype,              M+1,  MPI_CHAR, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
+  if (MPI_Pack(cm->stid,                M+1,  MPI_CHAR, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(cm->ndidx,                 M,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(cm->cfirst,                M,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(cm->cnum,                  M,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");

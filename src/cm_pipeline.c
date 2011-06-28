@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT  0
+#define DOPRINT  1
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -1627,7 +1627,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
   int                 do_hbanded;           /* TRUE to use HMM bands for alignment */
   int                 do_nonbanded;         /* TRUE to align without bands (instead of using HMM bands) */
   ESL_STOPWATCH      *watch = NULL;         /* stopwatch for timing alignment step */
-  float         optacc_sc, ins_sc, cyk_sc; /* optimal accuracy score, inside score, CYK score */
+  float         optacc_sc, ins_sc, cyk_sc;  /* optimal accuracy score, inside score, CYK score */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
@@ -2397,8 +2397,8 @@ int
 cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 {
   double  ntargets; 
-  int64_t nwin_fcyk;  /* number of windows CYK filter evaluated */
-  int64_t nwin_final; /* number of windows final stage evaluated */
+  int64_t nwin_fcyk  = 0; /* number of windows CYK filter evaluated */
+  int64_t nwin_final = 0; /* number of windows final stage evaluated */
 
   fprintf(ofp, "Internal pipeline statistics summary:\n");
   fprintf(ofp, "-------------------------------------\n");
@@ -2544,7 +2544,9 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 	    (double)pli->n_overflow_fcyk / (double) nwin_fcyk);
   }
   else { 
-    fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15d (%.4g)\n", "CYK", 0, 0.);
+    fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15d (%.4g)\n", 
+	    "CYK", 
+	    0, 0.);
   }
   if(nwin_final > 0) { 
     fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15" PRId64 " (%.4g)\n", 

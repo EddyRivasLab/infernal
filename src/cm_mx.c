@@ -160,6 +160,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
 
   Mb_needed += ESL_MAX(((float) (sizeof(float) * mx->ncells_alloc)), ((float) (sizeof(float) * ncells))); /* mx->dp_mem */
   Mb_needed *= 0.000001; /* convert to megabytes */
+  /*printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed);*/
   ESL_DPRINTF2(("HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
