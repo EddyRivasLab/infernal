@@ -1579,6 +1579,21 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
  *            In a normal pipeline run, this function call should be
  *            just after a call to cm_pli_p7EnvelopeDef().
  *
+ *            If pli->mode is CM_SCAN_MODELS, it's possible that we
+ *            haven't yet configured our CM, because configuration is
+ *            slow and for any one query sequence a large fraction of
+ *            target CMs will not have a single envelope survive to
+ *            these latter CM stages of the pipeline. So we only
+ *            configure if necessary, i.e. if we get to this function
+ *            with at least one envelope. We check if we're configured
+ *            by whether the CMH_BITS flag is up or not (if up, we're
+ *            configured).
+ *
+ *            With an unconfigured CM, <*opt_cmcons> is likely NULL,
+ *            in that case we create a CMConsensus_t object and return
+ *            it in <*opt_cmcons>. Otherwise <*opt_cmcons> should be
+ *            already be a valid CMConsensus_t object upon entrance.
+ *
  * Returns:   <eslOK> on success. If a significant hit is obtained,
  *            its information is added to the growing <hitlist>.
  *
@@ -1589,7 +1604,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist)
+cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CMConsensus_t **opt_cmcons)
 {
   int              status;
   char             errbuf[cmERRBUFSIZE];   /* for error messages */
@@ -1632,6 +1647,21 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
+
+  /* Check if we need to configure our CM and create our CMConsensus_t */
+  if(pli->mode == CM_SCAN_MODELS && (! (cm->flags & CMH_BITS))) {  
+    /* SCAN mode and we haven't yet configured our model, configure it */
+    printf("CONFIGURING CM %s\n", cm->name);
+    if((status = ConfigCM(cm, pli->errbuf, FALSE, NULL, NULL)) != eslOK) return status;
+    if(*opt_cmcons == NULL) { 
+      if((status = CreateCMConsensus(cm, cm->abc, 3.0, 1.0, opt_cmcons))!= eslOK) ESL_FAIL(status, pli->errbuf, "In cm_pli_CMStage() failed to create CMConsensus data structure.\n");
+    }
+  }
+  else { 
+    /* contract check: make sure CMConsensus is valid */
+    if(opt_cmcons == NULL || *opt_cmcons == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "Entered cm_pli_CMStage() with invalid CMConsensus structure"); 
+  }
+
   do_final_greedy = (pli->final_cm_search_opts & CM_SEARCH_CMGREEDY) ? TRUE : FALSE;
   watch = esl_stopwatch_Create();
 
@@ -1954,7 +1984,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *
 	  postcode = NULL;
 	}
 	
-	hit->ad = cm_alidisplay_Create(cm->abc, tr, cm, cmcons, sq, hit->start, postcode, 
+	hit->ad = cm_alidisplay_Create(cm->abc, tr, cm, *opt_cmcons, sq, hit->start, postcode, 
 				       (do_optacc) ? optacc_sc : cyk_sc, 
 				       do_optacc, do_hbanded, total_Mb, watch->elapsed);
 	/*cm_alidisplay_Dump(stdout, hit->ad);*/
@@ -2210,7 +2240,7 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG **bgA, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, CM_TOPHITS *hitlist)
+cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG **bgA, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, CM_TOPHITS *hitlist, CMConsensus_t **opt_cmcons)
 
 {
   int status;
@@ -2355,7 +2385,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, P7_OPROFILE **om,
 #if DOPRINT
       printf("\nPIPELINE HMM %d calling CMStage() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
 #endif
-      if((status = cm_pli_CMStage      (pli, cm, cmcons, sq, esAA[m],  eeAA[m],  nenvA[m], hitlist)) != eslOK) return status;
+      if((status = cm_pli_CMStage      (pli, cm, sq, esAA[m],  eeAA[m],  nenvA[m], hitlist, opt_cmcons)) != eslOK) return status;
     }
     free(cur_ws);
     free(cur_we);
@@ -2408,15 +2438,15 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp,   "Target sequences:                                  %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli->nres);
     ntargets = pli->nseqs;
   } else {
-    fprintf(ofp, "Query sequence(s):                                   %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli->nres);
-    fprintf(ofp, "Target model(s):                                    %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli->nmodels, pli->nnodes);
+    fprintf(ofp,   "Query sequence(s):                                 %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli->nres);
+    fprintf(ofp,   "Target model(s):                                   %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli->nmodels, pli->nnodes);
     ntargets = pli->nmodels;
   }
 
   if(pli->do_msv) { 
     fprintf(ofp, "Windows   passing  local HMM MSV           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_msv,
-	    (double)pli->pos_past_msv / pli->nres ,
+	    (double) pli->pos_past_msv / pli->nres,
 	    pli->F1);
     nwin_fcyk = nwin_final = pli->n_past_msv;
   }
@@ -2427,7 +2457,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   if(pli->do_msvbias) { 
     fprintf(ofp, "Windows   passing  local HMM MSV      bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_msvbias,
-	    (double)pli->pos_past_msvbias / pli->nres ,
+	    (double) pli->pos_past_msvbias / pli->nres,
 	    pli->F1b);
     nwin_fcyk = nwin_final = pli->n_past_msvbias;
   }
@@ -2435,7 +2465,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   if(pli->do_vit) { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_vit,
-	    (double)pli->pos_past_vit / pli->nres ,
+	    (double) pli->pos_past_vit / pli->nres,
 	    pli->F2);
     nwin_fcyk = nwin_final = pli->n_past_vit;
   }
@@ -2446,7 +2476,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   if(pli->do_vitbias) { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_vitbias,
-	    (double)pli->pos_past_vitbias / pli->nres ,
+	    (double) pli->pos_past_vitbias / pli->nres,
 	    pli->F2b);
     nwin_fcyk = nwin_final = pli->n_past_vitbias;
   }
@@ -2457,7 +2487,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   if(pli->do_fwd) { 
     fprintf(ofp, "Windows   passing  local HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_fwd,
-	    (double)pli->pos_past_fwd / pli->nres ,
+	    (double) pli->pos_past_fwd / pli->nres,
 	    pli->F3);
     nwin_fcyk = nwin_final = pli->n_past_fwd;
   }
@@ -2468,7 +2498,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   if(pli->do_fwdbias) { 
     fprintf(ofp, "Windows   passing  local HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_fwdbias,
-	    (double)pli->pos_past_fwdbias / pli->nres ,
+	    (double) pli->pos_past_fwdbias / pli->nres,
 	    pli->F3b);
     nwin_fcyk = nwin_final = pli->n_past_fwdbias;
   }
@@ -2479,7 +2509,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   if(pli->do_gfwd) { 
     fprintf(ofp, "Windows   passing glocal HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_gfwd,
-	    (double)pli->pos_past_gfwd / pli->nres ,
+	    (double) pli->pos_past_gfwd / pli->nres,
 	    pli->F4);
     nwin_fcyk = nwin_final = pli->n_past_gfwd;
   }
@@ -2489,7 +2519,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   if(pli->do_gfwdbias) { 
     fprintf(ofp, "Windows   passing glocal HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_gfwdbias,
-	    (double)pli->pos_past_gfwdbias / pli->nres ,
+	    (double) pli->pos_past_gfwdbias / pli->nres,
 	    pli->F4b);
     nwin_fcyk = nwin_final = pli->n_past_gfwdbias;
   }
@@ -2500,7 +2530,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   if(pli->do_envelopes) { 
     fprintf(ofp, "Envelopes passing glocal HMM envelope defn filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_edef,
-	    (double)pli->pos_past_edef / pli->nres ,
+	    (double) pli->pos_past_edef / pli->nres,
 	    pli->F5);
     nwin_fcyk = nwin_final = pli->n_past_edef;
   }
@@ -2511,7 +2541,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   if(pli->do_edefbias) { 
     fprintf(ofp, "Envelopes passing glocal HMM envelope bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_edefbias,
-	    (double)pli->pos_past_edefbias / pli->nres ,
+	    (double) pli->pos_past_edefbias / pli->nres,
 	    pli->F5b);
     nwin_fcyk = nwin_final = pli->n_past_edefbias;
   }
@@ -2523,7 +2553,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "Envelopes passing %6s CM  CYK           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    (pli->do_glocal_cm_stages) ? "glocal" : "local",
 	    pli->n_past_cyk,
-	    (double)pli->pos_past_cyk / pli->nres ,
+	    (double) pli->pos_past_cyk / pli->nres,
 	    pli->F6);
     nwin_final = pli->n_past_cyk;
   }
@@ -2535,14 +2565,14 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 
   fprintf(ofp, "Total hits reported:                               %15d  (%.4g)\n",
           (int)pli->n_output,
-          (double)pli->pos_output / pli->nres );
+          (double) pli->pos_output / pli->nres );
 
   fprintf(ofp, "\n");
   if(nwin_fcyk > 0) { 
     fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15" PRId64 " (%.4g)\n", 
 	    "CYK", 
 	    pli->n_overflow_fcyk,
-	    (double)pli->n_overflow_fcyk / (double) nwin_fcyk);
+	    (double) pli->n_overflow_fcyk / (double) nwin_fcyk);
   }
   else { 
     fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15d (%.4g)\n", 
@@ -2553,7 +2583,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15" PRId64 " (%.4g)\n", 
 	    (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
 	    pli->n_overflow_final,
-	    (double)pli->n_overflow_final / (double) nwin_final);
+	    (double) pli->n_overflow_final / (double) nwin_final);
   }
   else { 
     fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15d (%.4g)\n", 

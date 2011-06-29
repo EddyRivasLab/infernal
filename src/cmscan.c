@@ -1329,7 +1329,6 @@ serial_loop(ESL_GETOPTS *go, WORKER_INFO *info, CM_FILE *cmfp)
   int      use_mlp7_hmm = FALSE;
   int             nhmm = 0;
   CMConsensus_t  *cmcons = NULL;
-  char            errbuf[eslERRBUFSIZE];
   ESL_STOPWATCH *w = NULL;
 
   w = esl_stopwatch_Create();
@@ -1403,6 +1402,7 @@ serial_loop(ESL_GETOPTS *go, WORKER_INFO *info, CM_FILE *cmfp)
 	  if(! esl_opt_GetBoolean(go, "--cp9noel")) cm->config_opts |= CM_CONFIG_HMMEL; 
 	}
       }
+#if 0
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, "TIMING HMM filter setup");
       esl_stopwatch_Start(w);
@@ -1415,15 +1415,16 @@ serial_loop(ESL_GETOPTS *go, WORKER_INFO *info, CM_FILE *cmfp)
       esl_stopwatch_Display(stdout, w, "TIMING CreateCMConsensus()");
       esl_stopwatch_Start(w);
       /* END OF TEMP: end of block */
-
-
+#endif      
+      
+      cmcons = NULL;
       if((status = cm_pli_NewModel(info->pli, cm, 
 				   FALSE, FALSE,           /* need_fsmx, need_smx */
 				   NULL, NULL, NULL, NULL, /* fcyk_dmin, fcyk_dmax, final_dmin, final_dmax */
 				   omA, bgA, nhmm)) != eslOK) cm_Fail(info->pli->errbuf);
       
-      if((status = cm_Pipeline(info->pli, cm, cmcons, omA, gmA, bgA, p7_evparamAA, nhmm, info->qsq, info->th)) != eslOK) 
-	cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+      if((status = cm_Pipeline(info->pli, cm, omA, gmA, bgA, p7_evparamAA, nhmm, info->qsq, info->th, &(cmcons))) != eslOK)
+	cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
       
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, "TIMING cm_Pipeline()");

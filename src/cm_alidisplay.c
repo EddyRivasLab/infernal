@@ -316,7 +316,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
       } else {
 	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) {
 	  do_left = TRUE;
-	  if (cm->rf != NULL) lrf = cm->rf[lc];
+	  if (cm->rf != NULL) lrf = cm->rf[lc+1];
 	  lstr   = cons->cstr[lc];
 	  lcons  = (cm->flags & CMH_CONS) ? cm->consensus[(lc+1)] : cons->cseq[lc];
 	  cpos_l = lc+1;
@@ -335,7 +335,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	}
 	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) {
 	  do_right = TRUE;
-	  if (cm->rf != NULL) rrf = cm->rf[rc];
+	  if (cm->rf != NULL) rrf = cm->rf[rc+1];
 	  rstr   = cons->cstr[rc];
 	  rcons  = (cm->flags & CMH_CONS) ? cm->consensus[(rc+1)] : cons->cseq[rc];
 	  cpos_r = rc+1;

@@ -985,9 +985,6 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
     if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
   }
 
-  /* build the HMM, so we can print the CP9 relative entropy */
-  if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslFAIL, errbuf, "Couldn't build a CP9 HMM from the CM.");
-
   fprintf(stdout, "%6d  %6d  %-*s  %8d  %8.2f  %6" PRId64 "  %5d  %4d  %4d  %5.3f  %5.3f\n",
 	  msaidx,
 	  cmidx,
@@ -1475,10 +1472,20 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
     fprintf(stdout, "%-40s ... ", "Configuring model"); 
     fflush(stdout);
   }
-  cm->config_opts |= CM_CONFIG_QDB; /* this tells ConfigCM() to calculate QDBs */
+
+  /* configure local for calculating W (ignores ROOT_IL, ROOT_IR), this way is consistent with Infernal 1.0->1.0.2 */
+  cm->config_opts |= CM_CONFIG_LOCAL;    
+  cm->config_opts |= CM_CONFIG_HMMLOCAL; 
+  cm->config_opts |= CM_CONFIG_HMMEL;    
+
+  /* ConfigCM() should calculate QDBs */
+  cm->config_opts |= CM_CONFIG_QDB;   
   if((status = ConfigCM(cm, errbuf, 
 			TRUE, /* do calculate W */
 			NULL, NULL)) != eslOK) return status;
+
+  /* convert back to global */
+  ConfigGlobal(cm);
 
   if (cfg->be_verbose) { 
     fprintf(stdout, "done.  ");

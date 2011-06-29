@@ -1114,7 +1114,6 @@ read_asc1cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
       else if (strcmp(tag, "W") == 0) {
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))  != eslOK)   ESL_XFAIL(status,    cmfp->errbuf, "No consensus length found on W line");
 	if ((cm->W = atoi(tok1))                                              == 0)   	  ESL_XFAIL(status,    cmfp->errbuf, "Invalid consensus length %s on W line", tok1);
-	printf("read cm->W: %d\n", cm->W);
       }
 
       else if (strcmp(tag, "ALPH") == 0) {
