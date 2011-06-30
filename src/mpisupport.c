@@ -184,6 +184,9 @@ cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm c
   if (MPI_Unpack(buf, n, pos, &(cm->nodes), 1, MPI_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->clen),  1, MPI_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &atype,       1, MPI_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (MPI_Unpack(buf, n, pos, &(cm->flags), 1,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
+  /* note: it's important cm->flags is set prior to CreateCMBody() call below, to properly allocate
+   * cm->rf, cm->consensus, cm->map, or not */
 
   /* Set or verify the alphabet */
   if (*abc == NULL)	{	/* still unknown: set it, pass control of it back to caller */
@@ -192,15 +195,14 @@ cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm c
     if ((*abc)->type != atype)                             { status = eslEINCOMPAT; goto ERROR; }
   }
 
+  CreateCMBody(cm, cm->nodes, cm->M, cm->clen, (*abc));
+
   /* For convenience below */
   K      = cm->abc->K;
   M      = cm->M;
   nnodes = cm->nodes; 
 
-  CreateCMBody(cm, cm->nodes, cm->M, cm->clen, (*abc));
-
   /* Unpack the rest of the CM */
-  if (MPI_Unpack(buf, n, pos, &(cm->flags),              1,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   /* note cm->flags is how it was immediately after CM is read from file, so the only flags that can possibly be raised are:
    * CMH_ACC, CMH_DESC, CM_RF, CMH_GA, CMH_TC, CMH_NC, CMH_CHKSUM, CMH_MAP, CMH_CONS, CMH_EXPTAIL_STATS, CMH_FILTER_STATS, 
    * CMH_QDB, CMH_MLP7_STATS, CMH_AP7_STATS, CM_IS_RSEARCH, CM_RSEARCHTRANS, CM_RSEARCH_EMIT */
@@ -235,7 +237,7 @@ cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm c
   if (MPI_Unpack(buf, n, pos, &(cm->nc),                 1, MPI_FLOAT, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->tc),                 1, MPI_FLOAT, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
 
-  /* free the cm->comlog that was allocated inside the CreateCM() call, we'll allocate a new one, a bit messy */
+  /* free the cm->comlog that was allocated inside the CreateCMBody() call, we'll allocate a new one, a bit messy */
   FreeComLog(cm->comlog);
   if((status = comlog_MPIUnpack(buf, n, pos, comm, &(cm->comlog))) != eslOK) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
 
@@ -335,7 +337,6 @@ cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
   int   clen   = cm->clen;
   float *tmp_ap7_gfmuA     = NULL;
   float *tmp_ap7_gflambdaA = NULL;
-  int    nap7_expected = 0;
 
   if (MPI_Pack(&M,                        1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&nnodes,                   1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
@@ -364,18 +365,20 @@ cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
   if (MPI_Pack(&(cm->el_selfsc),          1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->null2_omega),        1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->null3_omega),        1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
+  if (MPI_Pack(&(cm->checksum),           1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(cm->null,                  K, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
 
-  if (MPI_Pack(cm->dmin,                  1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
-  if (MPI_Pack(cm->dmax,                  1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
+  if (MPI_Pack(cm->dmin,                  M,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
+  if (MPI_Pack(cm->dmax,                  M,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->W),                  1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->beta_W),             1,MPI_DOUBLE, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->beta_qdb),           1,MPI_DOUBLE, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->tau),                1,MPI_DOUBLE, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->ga),                 1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
-  if (MPI_Pack(&(cm->tc),                 1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->nc),                 1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
+  if (MPI_Pack(&(cm->tc),                 1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
 
+  /* comlog */
   if((status = comlog_MPIPack(cm->comlog, buf, n, pos, comm)) != eslOK)               ESL_XEXCEPTION(status, "pack failed");
 
   /* name and all the optional stuff */
@@ -405,11 +408,11 @@ cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
   }
 
   /* Finally pack any additional p7 filter stats, and the p7 models themselves */
-  if (MPI_Pack(&(nap7_expected),               1, MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
+  if (MPI_Pack(&(cm->nap7),               1, MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if(cm->nap7 > 0) { 
     if (cm->flags & CMH_AP7_STATS) { 
-      ESL_ALLOC(tmp_ap7_gfmuA,     sizeof(float) * nap7_expected);
-      ESL_ALLOC(tmp_ap7_gflambdaA, sizeof(float) * nap7_expected);
+      ESL_ALLOC(tmp_ap7_gfmuA,     sizeof(float) * cm->nap7);
+      ESL_ALLOC(tmp_ap7_gflambdaA, sizeof(float) * cm->nap7);
       for(i = 0; i < cm->nap7; i++) { 
 	tmp_ap7_gfmuA[i]     = cm->ap7_evparamAA[i][CM_p7_GFMU];
 	tmp_ap7_gflambdaA[i] = cm->ap7_evparamAA[i][CM_p7_GFLAMBDA];
@@ -466,7 +469,7 @@ cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
   int   sz;
 
   if (MPI_Pack_size(1,            MPI_INT,    comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  
-  n += 5*sz; /* M, nodes, abc->type, clen, flags */ 
+  n += 5*sz; /* M, nodes, clen, abc->type, flags */ 
   if (MPI_Pack_size(M*K*K,        MPI_FLOAT,  comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  
   n += sz; /* e */
   if (MPI_Pack_size(M*MAXCONNECT, MPI_FLOAT,  comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  
@@ -483,6 +486,8 @@ cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
   n += sz; /* nseq */
   if (MPI_Pack_size(1,            MPI_FLOAT,  comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  
   n += 4*sz; /* eff_nseq, el_selfsc, null2_omega, null3_omega */
+  if (MPI_Pack_size(1,            MPI_INT,    comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  
+  n += sz; /* checksum */
   if (MPI_Pack_size(K,            MPI_FLOAT,  comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += sz; /* null */
   if (MPI_Pack_size(M,            MPI_INT,    comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  
@@ -495,13 +500,14 @@ cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
   n += 3*sz; /* ga, tc, nc */
 
   if ((status = comlog_MPIPackSize(cm->comlog, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  printf("comlog size: %d\n", sz);
   n += sz; /* comlog */
 
   if ((status = esl_mpi_PackOptSize(cm->name, -1, MPI_CHAR, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += sz; /* name */
   if ((status = esl_mpi_PackOptSize(cm->acc,  -1, MPI_CHAR, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += sz; /* acc */
-  if ((status = esl_mpi_PackOptSize(cm->acc,  -1, MPI_CHAR, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  if ((status = esl_mpi_PackOptSize(cm->desc, -1, MPI_CHAR, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += sz; /* desc */
 
   if (cm->flags & CMH_RF)   if (MPI_Pack_size(cm->clen+2,  MPI_CHAR, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
@@ -2492,8 +2498,8 @@ comlog_MPIPackSize(ComLog_t *comlog, MPI_Comm comm, int *ret_n)
 
   status = esl_mpi_PackOptSize(comlog->bcom,  -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   status = esl_mpi_PackOptSize(comlog->bdate, -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  status = esl_mpi_PackOptSize(comlog->ccom, -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  status = esl_mpi_PackOptSize(comlog->cdate,-1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = esl_mpi_PackOptSize(comlog->ccom,  -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = esl_mpi_PackOptSize(comlog->cdate, -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
 
   *ret_n = n;
   return eslOK;
@@ -2516,11 +2522,10 @@ comlog_MPIPack(ComLog_t *comlog, char *buf, int n, int *position, MPI_Comm comm)
 
   ESL_DPRINTF2(("comlog_MPIPack(): ready.\n"));
   
-
   status = esl_mpi_PackOpt(comlog->bcom,   -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
   status = esl_mpi_PackOpt(comlog->bdate,  -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = esl_mpi_PackOpt(comlog->ccom,  -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = esl_mpi_PackOpt(comlog->cdate, -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = esl_mpi_PackOpt(comlog->ccom,   -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = esl_mpi_PackOpt(comlog->cdate,  -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
   ESL_DPRINTF2(("comlog_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
 
   if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
@@ -2540,9 +2545,9 @@ comlog_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ComLog_t **ret_comlo
   int status;
   ComLog_t *comlog;
 
-  ESL_ALLOC(comlog, sizeof(ComLog_t));
-  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->bcom),   NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->bdate),  NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  comlog = CreateComLog();
+  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->bcom),  NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->bdate), NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->ccom),  NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->cdate), NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   *ret_comlog = comlog;

@@ -3232,10 +3232,6 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   RemoveOverlappingHits(results, 1, L);
 
   esl_stopwatch_Stop(w);
-  if(w != NULL) esl_stopwatch_Destroy(w);
-  FreeResults(results);
-  if(dnull != NULL) free(dnull);
-  free(dsq);
 
   cm->search_opts = orig_search_opts;
   sec_per_res = w->user * (Mc_per_res / Mc);
@@ -3251,6 +3247,11 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
     printf("Mc_per_res: %f\n", Mc_per_res);
     printf("Mc: %f\n", Mc);*/
   
+  if(w != NULL) esl_stopwatch_Destroy(w);
+  FreeResults(results);
+  if(dnull != NULL) free(dnull);
+  free(dsq);
+
   /* free HMM if nec */
   if(! esl_opt_GetBoolean(go, "--exp-random")) { 
     for(i = 0; i < ghmm_nstates; i++) { 

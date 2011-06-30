@@ -1266,7 +1266,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if((info = create_info()) == NULL) mpi_failure("Out of memory");
 
   /* <abc> is not known 'til first CM is read. */
-  hstatus = CMFileRead(cmfp, errbuf, &abc, &(info->cm));
+  hstatus = cm_file_Read(cmfp, &abc, &(info->cm));
   if (hstatus == eslOK)
     {
       /* One-time initializations after alphabet <abc> becomes known */
@@ -1388,7 +1388,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       free_info(info);
       free(info);
       
-      hstatus = CMFileRead(cmfp, errbuf, &abc, &(info->cm));
+      hstatus = cm_file_Read(cmfp, &abc, &(info->cm));
       if(hstatus == eslOK) { 
 	if((info = create_info()) == NULL) mpi_failure("Out of memory"); /* info is for the next model */
       }
