@@ -47,7 +47,6 @@ main(int argc, char **argv)
   int            fmtcode = -1;	/* -1 = write the current default format */
   int            status;
   char           errbuf[eslERRBUFSIZE];
-  CMConsensus_t *cons    = NULL;
 
   if (outfmt != NULL) {
     if      (strcmp(outfmt, "1/a") == 0) fmtcode = CM_FILE_1a;
@@ -62,10 +61,9 @@ main(int argc, char **argv)
   while ((status = cm_file_Read(cmfp, &abc, &cm)) == eslOK)
     {
       if(cmfp->format == CM_FILE_1) { 
+	/* we need to calculate QDBs (cm->dmin, cm->dmax), cm->W, cm->consensus, 
+	 * as well as E-value parameters for the ML p7 HMM  */
 	if ((status = configure_model(cm, errbuf))       != eslOK) cm_Fail(errbuf);
-	CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &(cons));
-	if ((status = cm_SetConsensus  (cm, cons, NULL)) != eslOK) cm_Fail("Failed to calculate consensus sequence");
-	FreeCMConsensus(cons);
       }	
       if      (esl_opt_GetBoolean(go, "-a") == TRUE) cm_file_WriteASCII (ofp, fmtcode, cm);
       else if (esl_opt_GetBoolean(go, "-b") == TRUE) cm_file_WriteBinary(ofp, fmtcode, cm);
@@ -94,6 +92,10 @@ static int
 configure_model(CM_t *cm, char *errbuf)
 {
   int status; 
+  CMConsensus_t *cons    = NULL;
+  int lmsvL, lvitL, lfwdL, gfwdL;
+  int lmsvN, lvitN, lfwdN, gfwdN;
+  float lftailp, gftailp;
 
   /* configure local for calculating W (ignores ROOT_IL, ROOT_IR), this way is consistent with Infernal 1.0->1.0.2 */
   cm->config_opts |= CM_CONFIG_LOCAL;    
@@ -108,6 +110,28 @@ configure_model(CM_t *cm, char *errbuf)
 
   /* convert back to global */
   ConfigGlobal(cm);
+
+  CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &(cons));
+  if ((status = cm_SetConsensus  (cm, cons, NULL)) != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate consensus sequence");
+  FreeCMConsensus(cons);
+
+  /* the cm->mlp7 HMM was created in ConfigCM(), now calibrate it
+   * there are more options than this in cmbuild, but here we enforce
+   * defaults. See cmbuild.c::build_and_calibrate_p7_filters(). */
+  lmsvL = lvitL = 200;
+  lfwdL = 100;
+  gfwdL = ESL_MAX(100, 2.*cm->clen);
+  lmsvN = lvitN = lfwdN = gfwdN = 200;
+  lftailp = 0.055;
+  gftailp = 0.065;
+
+  /* Calibrate the ML p7 hmm */
+  if((status = cm_mlp7_Calibrate(cm, errbuf, 
+				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for each alg */
+				 lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
+				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
+				 gftailp))                                   /* fraction of tail mass to fit for glocal Fwd */
+     != eslOK) return status;
 
   return eslOK;
 }

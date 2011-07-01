@@ -1989,12 +1989,12 @@ read_asc_1p0_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
       /* Record where this CM starts on disk */
       if ((! cmfp->do_stdin) && (! cmfp->do_gzip) && (offset = ftello(cmfp->f)) < 0)   ESL_XEXCEPTION(eslESYS, "ftello() failed");
 
-      /* First line of file: "INFERNAL1" */
+      /* First line of file: "INFERNAL-1" */
       if (feof(cmfp->f) || esl_fgets(&buf, &n, cmfp->f) != eslOK) { /* end of file, free buf and return eslEOF */
 	if(buf != NULL) free(buf);
 	return eslEOF;
       }
-      if      (cmfp->format == CM_FILE_1)  { if (strncmp(buf, "INFERNAL1", 10) != 0)    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Didn't find INFERNAL1/a tag: bad format or not an INFERNAL save file?"); }
+      if      (cmfp->format == CM_FILE_1)  { if (strncmp(buf, "INFERNAL-1", 10) != 0)    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Didn't find INFERNAL-1 tag: bad format or not an INFERNAL save file?"); }
       else                                                                              ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No such CM file format code: this shouldn't happen");
     }
 
