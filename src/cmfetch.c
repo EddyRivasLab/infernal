@@ -85,7 +85,7 @@ main(int argc, char **argv)
   
   /* Open the CM file.  */
   cmfile = esl_opt_GetArg(go, 1);
-  status = cm_file_Open(cmfile, NULL, &cmfp, errbuf);
+  status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf);
   if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
   else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
   else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",               status, cmfile, errbuf);  

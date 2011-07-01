@@ -234,7 +234,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 {
   ESL_GETOPTS *go = NULL;
 
-  if ((go = esl_getopts_Create(options))     == NULL)     p7_Die("Internal failure creating options object");
+  if ((go = esl_getopts_Create(options))     == NULL)     cm_Fail("Internal failure creating options object");
   if (esl_opt_ProcessEnvironment(go)         != eslOK)  { printf("Failed to process environment: %s\n", go->errbuf); goto ERROR; }
   if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { printf("Failed to parse command line: %s\n",  go->errbuf); goto ERROR; }
   if (esl_opt_VerifyConfig(go)               != eslOK)  { printf("Failed to parse command line: %s\n",  go->errbuf); goto ERROR; }
@@ -242,7 +242,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   /* help format: */
   if (esl_opt_GetBoolean(go, "-h") == TRUE) 
     {
-      p7_banner(stdout, argv[0], banner);
+      cm_banner(stdout, argv[0], banner);
       esl_usage(stdout, argv[0], usage);
       puts("\nBasic options:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
@@ -497,7 +497,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if (strcmp(cfg->seqfile, "-") != 0) esl_fatal("Query sequence file must be '-'\n");
   }
   /* Open the target CM database and read 1 CM, but only to get the sequence alphabet */
-  status = cm_file_Open(cfg->cmfile, CMDBENV, &cmfp, errbuf);
+  status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
   if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open HMM file %s.\n%s\n", cfg->cmfile, errbuf);
   else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open HMM file %s.\n%s\n",                cfg->cmfile, errbuf);
   else if (status != eslOK)        cm_Fail("Unexpected error %d in opening HMM file %s.\n%s\n",               status, cfg->cmfile, errbuf);  
@@ -576,7 +576,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       esl_stopwatch_Start(w);	                          
 
       /* Open the target profile database */
-      status = cm_file_Open(cfg->cmfile, CMDBENV, &cmfp, NULL);
+      status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, NULL);
       if (status != eslOK)        cm_Fail("Unexpected error %d in opening cm file %s.\n%s",           status, cfg->cmfile, cmfp->errbuf);  
   
 #ifdef SUB_WITH_HMMER_THREADS

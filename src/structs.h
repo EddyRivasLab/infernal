@@ -1427,7 +1427,8 @@ typedef struct cm_s {
  * like "if (format >= CM_FILE_1a) ..."
  */
 enum cm_file_formats_e {
-  CM_FILE_1a = 0,
+  CM_FILE_1  = 0, /* Infernal v1.0->v1.0.2 */
+  CM_FILE_1a = 1,
 };
 
 typedef struct cm_file_s {

@@ -88,6 +88,7 @@ extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len
 extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
 extern int        CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm);
 extern void       DumpCMFlags(FILE *fp, CM_t *cm);
+extern ESL_GETOPTS *cm_CreateDefaultApp(ESL_OPTIONS *options, int nargs, int argc, char **argv, char *banner, char *usage);
 
 /* from dispatch.c */
 extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, int hit_len_guess, 
@@ -183,9 +184,9 @@ extern void debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin
 extern void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
 
 /* from cm_file.c */
-extern int     cm_file_Open(char *filename, char *env, CM_FILE **ret_cmfp, char *errbuf);
-extern int     cm_file_OpenNoDB(char *filename, char *env, CM_FILE **ret_cmfp, char *errbuf);
-extern int     cm_file_OpenBuffer(char *buffer, int size, CM_FILE **ret_cmfp);
+extern int     cm_file_Open(char *filename, char *env, int allow_1p0, CM_FILE **ret_cmfp, char *errbuf);
+extern int     cm_file_OpenNoDB(char *filename, char *env, int allow_1p0, CM_FILE **ret_cmfp, char *errbuf);
+extern int     cm_file_OpenBuffer(char *buffer, int size, int allow_1p0, CM_FILE **ret_cmfp);
 extern void    cm_file_Close(CM_FILE *cmfp);
 extern int     cm_file_CreateLock(CM_FILE *cmfp);
 extern int     cm_file_WriteASCII(FILE *fp, int format, CM_t *cm);

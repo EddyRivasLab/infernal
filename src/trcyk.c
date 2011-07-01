@@ -58,7 +58,7 @@ main(int argc, char **argv)
    cmfile = argv[optind++];
    seqfile = argv[optind++];
 
-   if((status = cm_file_Open(cmfile, NULL, &cmfp, errbuf)) != eslOK);
+   if((status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf)) != eslOK);
       cm_Die("Failed to open covariance model save file\n");
    if ((status = cm_file_Read(cmfp, &abc, &cm)) != eslOK)
       cm_Die("Failed to read a CM from cm file\n");

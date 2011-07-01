@@ -50,6 +50,7 @@ MYINCDIRS = -I../${ESLDIR} \
 PROGS = cmalign\
 	cmbuild\
 	cmcalibrate\
+	cmconvert\
 	cmemit\
 	cmfetch\
 	cmscan\

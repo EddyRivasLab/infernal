@@ -209,7 +209,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int status;
 
   /* open CM file for reading */
-  if((status = cm_file_Open(cfg->cmfile, NULL, &(cfg->cmfp), errbuf)) != eslOK) return status;
+  if((status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cfg->cmfp), errbuf)) != eslOK) return status;
 
   /* open optional output files, if nec */
   if (esl_opt_GetString(go, "--ifile") != NULL) {

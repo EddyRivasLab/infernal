@@ -567,7 +567,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int status;
 
   /* open CM file */
-  status = cm_file_Open(cfg->cmfile, NULL, &(cfg->cmfp), errbuf);
+  status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cfg->cmfp), errbuf);
   if      (status == eslENOTFOUND) return status;
   else if (status == eslEFORMAT)   return status;
   else if (status != eslOK)        return status;

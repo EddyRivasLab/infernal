@@ -542,7 +542,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
 
   /* Open the query CM file */
-  if((status = cm_file_Open(cfg->cmfile, NULL, &(cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
 
   /* Open the results output files */
   if (esl_opt_IsOn(go, "-o"))           { if ((ofp       = fopen(esl_opt_GetString(go, "-o"),          "w")) == NULL) cm_Fail("Failed to open output file %s for writing\n",         esl_opt_GetString(go, "-o")); }
@@ -949,7 +949,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   printf("MPIM cfg->Z: %" PRId64 " residues\n", cfg->Z);
 
   /* Open the query CM file */
-  if((status = cm_file_Open(cfg->cmfile, NULL, &(cmfp), errbuf)) != eslOK) mpi_failure(errbuf);
+  if((status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) mpi_failure(errbuf);
 
   /* Open the results output files */
   if (esl_opt_IsOn(go, "-o") && (ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL)
@@ -1260,7 +1260,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   printf("MPIW cfg->Z: %" PRId64 " residues\n", cfg->Z);
 
   /* Open the query CM file */
-  if((status = cm_file_Open(cfg->cmfile, NULL, &(cmfp), errbuf)) != eslOK) mpi_failure(errbuf);
+  if((status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) mpi_failure(errbuf);
 
   /* allocate and initialize <info> which will hold the CMs, HMMs, etc. */
   if((info = create_info()) == NULL) mpi_failure("Out of memory");

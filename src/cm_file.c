@@ -45,9 +45,9 @@ static unsigned int v01magic = 0xe3edb0b1; /* v0.1 binary: "cm01" + 0x80808080 *
 
 static uint32_t v1a_magic = 0xe3edb0b2; /* v1.1 binary: "cm02" + 0x80808080 */
 
-
-static int read_asc1cm(CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
-static int read_bin1cm(CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
+static int read_asc_1p1_cm(CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
+static int read_bin_1p1_cm(CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
+static int read_asc_1p0_cm(CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
 
 static int   write_bin_string(FILE *fp, char *s);
 static int   read_bin_string (FILE *fp, char **ret_s);
@@ -70,8 +70,7 @@ static int read_bin30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_h
 /*****************************************************************
  * 1. The CM_FILE object for reading CMs.
  *****************************************************************/
-static int open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, char *errbuf);
-
+static int open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, int allow_1p0, char *errbuf);
 
 /* Function:  cm_file_Open()
  * Synopsis:  Open an CM file <filename>. 
@@ -79,7 +78,11 @@ static int open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_asc
  *            SRE, Tue Dec 21 10:44:38 2010 [Zaragoza] (p7_hmmfile_OpenE())
  *
  * Purpose:   Open an CM file <filename>, and prepare to read the first
- *            CM from it.
+ *            CM from it. 
+ *
+ *            The format should be INFERNAL1/a or more recent.  If
+ *            <allow_1p0>, we also allow the file to be in Infernal
+ *            v1.0 to v1.0.2 ascii format.
  *            
  *            We look for <filename> relative to the current working
  *            directory. Additionally, if we don't find it in the cwd
@@ -124,9 +127,9 @@ static int open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_asc
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_file_Open(char *filename, char *env, CM_FILE **ret_cmfp, char *errbuf)
+cm_file_Open(char *filename, char *env, int allow_1p0, CM_FILE **ret_cmfp, char *errbuf)
 {
-  return open_engine(filename, env, ret_cmfp, FALSE, errbuf);
+  return open_engine(filename, env, ret_cmfp, FALSE, allow_1p0, errbuf);
 }
 
 /* Function:  cm_file_OpenNoDB()
@@ -141,9 +144,9 @@ cm_file_Open(char *filename, char *env, CM_FILE **ret_cmfp, char *errbuf)
  *            database that it may be about to overwrite.
  */
 int
-cm_file_OpenNoDB(char *filename, char *env, CM_FILE **ret_cmfp, char *errbuf)
+cm_file_OpenNoDB(char *filename, char *env, int allow_1p0, CM_FILE **ret_cmfp, char *errbuf)
 {
-  return open_engine(filename, env, ret_cmfp, TRUE, errbuf);
+  return open_engine(filename, env, ret_cmfp, TRUE, allow_1p0, errbuf);
 }
 
 
@@ -151,7 +154,7 @@ cm_file_OpenNoDB(char *filename, char *env, CM_FILE **ret_cmfp, char *errbuf)
  * Incept:    EPN, Fri Jun 17 09:47:34 2011 
  *            MSF, Thu Aug 19 2010 [Janelia] (p7_hmmfile_OpenBuffer())
  * 
- * Purpose:   Perparse a buffer containing an ascii HMM for parsing.
+ * Purpose:   Perparse a buffer containing an ascii CM for parsing.
  *            
  *            As another special case, if <filename> ends in a <.gz>
  *            suffix, the file is assumed to be compressed by GNU
@@ -179,7 +182,7 @@ cm_file_OpenNoDB(char *filename, char *env, CM_FILE **ret_cmfp, char *errbuf)
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_file_OpenBuffer(char *buffer, int size, CM_FILE **ret_cmfp)
+cm_file_OpenBuffer(char *buffer, int size, int allow_1p0, CM_FILE **ret_cmfp)
 {
   CM_FILE *cmfp     = NULL;
   int         status;
@@ -207,7 +210,8 @@ cm_file_OpenBuffer(char *buffer, int size, CM_FILE **ret_cmfp)
   if ((status = esl_fileparser_SetCommentChar(cmfp->efp, '#'))        != eslOK)  goto ERROR;
   if ((status = esl_fileparser_GetToken(cmfp->efp, &tok, &toklen))    != eslOK)  goto ERROR;
 
-  if (strcmp("INFERNAL1/a", tok) == 0) { cmfp->format = CM_FILE_1a; cmfp->parser = read_asc1cm; }
+  if      (             strcmp("INFERNAL1/a", tok) == 0) { cmfp->format = CM_FILE_1a; cmfp->parser = read_asc_1p1_cm; }
+  else if (allow_1p0 && strcmp("INFERNAL-1",  tok) == 0) { cmfp->format = CM_FILE_1;  cmfp->parser = read_asc_1p0_cm; }
 
   if (cmfp->parser == NULL) { status = eslEFORMAT; goto ERROR; }
 
@@ -226,7 +230,7 @@ cm_file_OpenBuffer(char *buffer, int size, CM_FILE **ret_cmfp)
 /* open_engine()
  *
  * Implements the file opening functions:
- * <cm__file_Open()>, <cm_file_OpenNoDB()>, 
+ * <cm_file_Open()>, <cm_file_OpenNoDB()>, 
  * See their comments above.
  * 
  * Only returns three types of errors: 
@@ -237,9 +241,9 @@ cm_file_OpenBuffer(char *buffer, int size, CM_FILE **ret_cmfp)
  *              
  */
 static int 
-open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, char *errbuf)
+open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, int allow_1p0, char *errbuf)
 {
-  CM_FILE *cmfp      = NULL;
+  CM_FILE    *cmfp     = NULL;
   char       *envfile  = NULL;	/* full path to filename after using environment  */
   char       *dbfile   = NULL;	/* constructed name of an index or binary db file */
   char       *cmd      = NULL;	/* constructed gzip -dc pipe command              */
@@ -332,7 +336,7 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, ch
     {
       FILE *tmpfp;
       /* if we opened an ASCII file in the INFERNALDB directory, cmfp->fname contains fully qualified name of file including the path */
-      if ((status = esl_sprintf(&dbfile, "%s.h3m", cmfp->fname) != eslOK)) ESL_XFAIL(status, errbuf, "esl_sprintf() failed; shouldn't happen");
+      if ((status = esl_sprintf(&dbfile, "%s.i1m", cmfp->fname) != eslOK)) ESL_XFAIL(status, errbuf, "esl_sprintf() failed; shouldn't happen");
       
       if ((tmpfp = fopen(dbfile, "rb")) != NULL) 
 	{
@@ -398,7 +402,7 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, ch
 
   /* 6. Check for binary file format. A pressed db is automatically binary: verify. */
   if (! fread((char *) &(magic.n), sizeof(uint32_t), 1, cmfp->f))  ESL_XFAIL(eslEFORMAT, errbuf, "File exists, but appears to be empty?");
-  if      (magic.n == v1a_magic) { cmfp->format = CM_FILE_1a; cmfp->parser = read_bin1cm; cmfp->is_binary = TRUE; }
+  if      (magic.n == v1a_magic) { cmfp->format = CM_FILE_1a; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
   else if (cmfp->is_pressed) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s unrecognized\nCurrent Infernal format is INFERNAL1/a. Previous Infernal formats are not supported.", cmfp->fname);
 
   /* 7. Checks for ASCII file format */
@@ -412,8 +416,10 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, ch
       if ((status = esl_fileparser_NextLinePeeked(cmfp->efp, magic.c, 4)) != eslOK)  ESL_XFAIL(status,  errbuf, "internal error in esl_fileparser_NextLinePeeked()");
       if ((status = esl_fileparser_GetToken(cmfp->efp, &tok, &toklen))    != eslOK)  ESL_XFAIL(status,  errbuf, "internal error in esl_fileparser_GetToken()");
 
-      if      (strcmp("INFERNAL1/a", tok) == 0) { cmfp->format = CM_FILE_1a; cmfp->parser = read_asc1cm; }
-      else ESL_XFAIL(eslEFORMAT, errbuf, "Format tag is '%s': unrecognized.\nCurrent INFERNAL format is 'INFERNAL1/a'. Previous Infernal formats are not supported.", tok);
+      if      (                 strcmp("INFERNAL1/a", tok) == 0) { cmfp->format = CM_FILE_1a; cmfp->parser = read_asc_1p1_cm; }
+      else if ((  allow_1p0) && strcmp("INFERNAL-1",  tok) == 0) { cmfp->format = CM_FILE_1;  cmfp->parser = read_asc_1p0_cm; }
+      else if ((! allow_1p0) && strcmp("INFERNAL-1",  tok) == 0) { ESL_XFAIL(eslEFORMAT, errbuf, "Format tag is '%s': use cmconvert to reformat Infernal v1.0 to v1.0.2 CM files to current format", tok); }
+      else                                                       { ESL_XFAIL(eslEFORMAT, errbuf, "Format tag is '%s': unrecognized or not supported.", tok); }
     }
 
   *ret_cmfp = cmfp;
@@ -1013,7 +1019,7 @@ cm_file_Position(CM_FILE *cmfp, const off_t offset)
  *             returned <NULL>.
  */
 static int
-read_asc1cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
+read_asc_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 {
   int           status;
   ESL_ALPHABET *abc  = NULL;
@@ -1218,7 +1224,7 @@ read_asc1cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 
       else if (strcmp(tag, "NAP7") == 0) {
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Nothing follows NAP7 tag");
-	if ((nap7_expected = atoi(tok1)) == 0)                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid nseq on NAP7 line: should be integer, not %s", tok1);
+	if ((nap7_expected = atoi(tok1)) < 0)                                             ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid integer on NAP7 line: should be integer >= 0, not %s", tok1);
 	ESL_ALLOC(tmp_ap7_gfmuA,     sizeof(float) * nap7_expected);
 	ESL_ALLOC(tmp_ap7_gflambdaA, sizeof(float) * nap7_expected);
       }
@@ -1714,7 +1720,7 @@ read_asc1cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 
 
 static int
-read_bin1cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
+read_bin_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 {
   ESL_ALPHABET *abc = NULL;
   CM_t         *cm = NULL;
@@ -1927,6 +1933,447 @@ read_bin1cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
   return status;
 }
 
+/* read_asc_1p0_cm(): inputting version 1.0-->1.0.2 CM file format. 
+ *
+ * This function was stolen from Infernal v1.0.2's
+ * cm_io.c:read_ascii_cm() (which is identical to the function of the
+ * same time in v1.0 and v1.0.1.), and minmally changed to work in the
+ * context of new CM_FILE data structure. This version also includes
+ * better error message handling.
+ */
+static int  
+read_asc_1p0_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
+{
+  int     status;
+  CM_t   *cm;
+  char   *buf;
+  int     n;			/* length of buf */
+  char   *s;
+  int     M,N;			/* number of states, nodes in model */
+  int     v,x,y,nd;		/* counters for states, events, nodes */
+  char   *tok;
+  int     toklen;
+  int     exp_flags[EXP_NMODES]; /* keep track of which exp tails we've read */
+  int     exp_mode;             /* index of exp tail info               */
+  int     have_exps;            /* for checking we get 0 or all exp tails*/
+  int     have_ga = FALSE;      /* we have GA cutoff, needed b/c we can't set cm->flags until after CreateCMBody() call */
+  int     have_tc = FALSE;      /* we have TC cutoff, needed b/c we can't set cm->flags until after CreateCMBody() call */
+  int     have_nc = FALSE;      /* we have NC cutoff, needed b/c we can't set cm->flags until after CreateCMBody() call */
+  int     p;                    /* counter for partitions          */
+  int     i;                    /* counter over exp_modes for exp tails */
+  int     alphabet_type;        /* type of ESL_ALPHABET */
+  ESL_ALPHABET *abc = NULL;
+  int     read_nstates = FALSE; /* TRUE once we've read the number of states */
+  int     read_nnodes  = FALSE; /* TRUE once we've read the number of nodes */
+  int     read_atype   = FALSE; /* TRUE once we've read the alphabet type */
+  int     read_clen = FALSE;
+  int     evalues_are_invalid = FALSE;  /* TRUE if the PART line reports more than 1 partition */
+  int     clen = 0;
+  int     npartitions = 0;
+  off_t   offset = 0;
+
+  cm  = NULL;
+  buf = NULL;
+  n   = 0;
+  for(i = 0; i < EXP_NMODES; i++)  exp_flags[i] = FALSE;
+  
+  cmfp->errbuf[0] = '\0';
+
+  if (cmfp->newly_opened)
+    {
+      offset            = 0;
+      cmfp->newly_opened = FALSE;
+    }
+  else
+    {
+      /* Record where this CM starts on disk */
+      if ((! cmfp->do_stdin) && (! cmfp->do_gzip) && (offset = ftello(cmfp->f)) < 0)   ESL_XEXCEPTION(eslESYS, "ftello() failed");
+
+      /* First line of file: "INFERNAL1" */
+      if (feof(cmfp->f) || esl_fgets(&buf, &n, cmfp->f) != eslOK) { /* end of file, free buf and return eslEOF */
+	if(buf != NULL) free(buf);
+	return eslEOF;
+      }
+      if      (cmfp->format == CM_FILE_1)  { if (strncmp(buf, "INFERNAL1", 10) != 0)    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Didn't find INFERNAL1/a tag: bad format or not an INFERNAL save file?"); }
+      else                                                                              ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No such CM file format code: this shouldn't happen");
+    }
+
+
+  /* Parse the header information
+   * These are all tag/value. 
+   * Ignore unknown tags (forward compatibility). 
+   */
+  cm = CreateCMShell();
+  M  = N = -1;
+  while (esl_fgets(&buf, &n, cmfp->f) != eslEOF) 
+    {
+      s   = buf;
+      if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Premature end of data, prior to MODEL section");
+      else if (strcmp(tok, "NAME") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No name found on NAME line");
+	  if ((esl_strdup(tok, toklen, &(cm->name)))   != eslOK) ESL_XFAIL(status,     cmfp->errbuf, "Problem setting name for CM");
+	}
+      else if (strcmp(tok, "ACC") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No accession found on ACC line");
+	  if ((esl_strdup(tok, toklen, &(cm->acc)))    != eslOK) ESL_XFAIL(status,     cmfp->errbuf, "Problem setting accession for CM");
+	}
+      else if (strcmp(tok, "DESC") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No description found on DESC line");
+	  if ((esl_strdup(tok, toklen, &(cm->desc)))   != eslOK) ESL_XFAIL(status,     cmfp->errbuf, "Problem setting description for CM");
+	}
+      else if (strcmp(tok, "GA") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No GA threshold found on GA line");
+	  cm->ga = atof(tok);
+	  have_ga = TRUE;
+	}
+      else if (strcmp(tok, "TC") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No TC threshold found on TC line");
+	  cm->tc = atof(tok);
+	  have_tc = TRUE;
+	}
+      else if (strcmp(tok, "NC") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No NC threshold found on NC line");
+	  cm->nc = atof(tok);
+	  have_nc = TRUE;
+	}
+      else if (strcmp(tok, "STATES") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No number of STATES found on STATES line");
+	  M = atoi(tok);
+	  read_nstates = TRUE;
+	}
+      else if (strcmp(tok, "NODES") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No number of NODES found on NODES line");
+	  N = atoi(tok);
+	  read_nnodes = TRUE;
+	}
+      else if (strcmp(tok, "ALPHABET") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No alphabet type found on ALPHABET line");
+	  alphabet_type = atoi(tok);
+	  /* Set or verify alphabet. */
+	  if (*ret_abc == NULL)	{	/* still unknown: set it, pass control of it back to caller */
+	    if ((abc = esl_alphabet_Create(alphabet_type)) == NULL)       ESL_XFAIL(eslEMEM, cmfp->errbuf, "Failed to create alphabet"); 
+	  } else {			/* already known: check it */
+	    abc = *ret_abc;
+	    if ((*ret_abc)->type != alphabet_type)                        ESL_XFAIL(eslEINCOMPAT,cmfp->errbuf,"Alphabet type mismatch");
+	  }
+	  read_atype = TRUE;
+	}	    
+      else if (strcmp(tok, "ELSELF") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No ELSELF score found on ELSELF line");
+	  cm->el_selfsc = atof(tok);
+	}
+      else if (strcmp(tok, "WBETA") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No WBETA found on WBETA line");
+	  cm->beta_W = (double) atof(tok);
+	  cm->beta_qdb = cm->beta_W;
+	}
+      else if (strcmp(tok, "NSEQ") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No name found on NAME line");
+	  cm->nseq = atoi(tok);
+	}
+      else if (strcmp(tok, "EFFNSEQ") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No effective seq number found on EFFNSEQ line");
+	  cm->eff_nseq = atof(tok);
+	}
+      else if (strcmp(tok, "CLEN") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No consensus length found on CLEN line");
+	  clen = atoi(tok); /* we'll compare this to what we calculate at end of func */
+	  read_clen = TRUE;
+	  /* Now we have the clen and we should have the alphabet type and N and M, so we can build the
+	   * full model, and set the alphabet (which we need to do before alloc'ing/setting
+	   * the null model */
+	  if(! (read_nstates && read_nnodes && read_atype))
+	    {
+	      ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "ERROR, ALPHABET, STATES and NODES lines should precede CLEN line");
+	    }
+	  CreateCMBody(cm, N, M, clen, abc);
+	}
+      /* comlog info, careful, we want the full line, so a token becomes a full line */
+      else if (strcmp(tok, "BCOM") == 0) 
+	{
+	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
+	  if ((esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No build command found on BCOM line");
+	  if(cm->comlog->bcom != NULL) free(cm->comlog->bcom);
+	  esl_strdup(tok, toklen, &(cm->comlog->bcom));
+	}
+      else if (strcmp(tok, "BDATE") == 0) 
+	{
+	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
+	  if ((esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No date found on BDATE line");
+	  if(cm->comlog->bdate != NULL) free(cm->comlog->bdate);
+	  esl_strdup(tok, toklen, &(cm->comlog->bdate));
+	}
+      else if (strcmp(tok, "CCOM") == 0) 
+	{
+	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
+	  if ((esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No calibrate command found on CCOM line");
+	  if(cm->comlog->ccom != NULL) free(cm->comlog->ccom);
+	  esl_strdup(tok, toklen, &(cm->comlog->ccom));
+	}
+      else if (strcmp(tok, "CDATE") == 0) 
+	{
+	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
+	  if ((esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No date found on CDATE line");
+	  if(cm->comlog->cdate != NULL) free(cm->comlog->cdate);
+	  esl_strdup(tok, toklen, &(cm->comlog->cdate));
+	}
+      else if (strcmp(tok, "NULL") == 0) 
+	{
+	  if(cm->abc == NULL) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "NULL line must be preceded by ALPHABET line");
+	  /* cm-> null already allocated in CreateCMBody() */
+	  for (x = 0; x < abc->K; x++)
+	    {
+	      if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Problem reading NULL line");
+	      cm->null[x] = ascii2prob(tok, (1./(float) abc->K));
+	    }
+	}
+      /* exp tail distribution information */
+      else if (strcmp(tok, "PART") == 0) 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK)      ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No number of partitions on PART line");
+	  if (! is_integer(tok))                                      ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "number of partitions is not an integer on PART line");
+	  npartitions = atoi(tok);
+	  if(npartitions != 1) { 
+	    evalues_are_invalid = TRUE; 
+	    /* we can't deal with more than 1 partition in the current codebase, if there are more, throw away any E-value parameters we read */
+	  }
+	  /* else 1 partition, we can handle this (nearly all infernal
+	   * 1.0--1.0.2 files should have 1 partitions, you could 
+	   * only create a multi-partition file with the undocument
+	   * --exp-pfile option to cmcalibrate). */
+
+	  /* Ignore the rest of this line, it includes partition start/stop info that's no longer parsed */
+	  if ((esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid PART- line");
+	}
+      /* exp tail info */
+      else if ((strncmp(tok, "E-", 2) == 0) && (! evalues_are_invalid)) /* skip the E- lines if we've read more than one partition above */
+	{				
+	  /* determine which exp tail we're reading */
+	  if      (strncmp(tok+2, "LC", 2) == 0) 	  exp_mode = EXP_CM_LC;
+	  else if (strncmp(tok+2, "GC", 2) == 0) 	  exp_mode = EXP_CM_GC;
+	  else if (strncmp(tok+2, "LI", 2) == 0) 	  exp_mode = EXP_CM_LI;
+	  else if (strncmp(tok+2, "GI", 2) == 0) 	  exp_mode = EXP_CM_GI;
+	  else if (strncmp(tok+2, "LV", 2) == 0) 	  exp_mode = EXP_CP9_LV;
+	  else if (strncmp(tok+2, "GV", 2) == 0) 	  exp_mode = EXP_CP9_GV;
+	  else if (strncmp(tok+2, "LF", 2) == 0) 	  exp_mode = EXP_CP9_LF;
+	  else if (strncmp(tok+2, "GF", 2) == 0) 	  exp_mode = EXP_CP9_GF;
+	  else                                      ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid xx on E-xx line");
+	  
+	  /* create the expA array if this is the first E- line we've read */
+	  if (cm->expA == NULL) { 
+	    ESL_ALLOC(cm->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
+	    for(x = 0; x < EXP_NMODES; x++) { cm->expA[x] = CreateExpInfo(); }
+	  }
+	  
+	  /* now we know what exp tail we're reading, read it */
+	  /* chew up partition */
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No partition read on E-xx line");
+	  p = atoi(tok);
+	  if (p != 0)                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid partition on E-xx line");
+	  
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No lambda read on E-xx line");
+	  if (! is_real(tok))                                    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "lambda not real number on E-xx line");
+	  cm->expA[exp_mode]->lambda = atof(tok);
+	  
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No mu_extrap read on E-xx line");
+	  if (! is_real(tok))                                    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "mu_extrap not real number on E-xx line");
+	  cm->expA[exp_mode]->mu_extrap = atof(tok);
+	  
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No mu_orig read on E-xx line");
+	  if (! is_real(tok))                                    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "mu_orign is not real number on E-xx line");
+	  cm->expA[exp_mode]->mu_orig = atof(tok);
+	  
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No dbsize read on E-xx line");
+	  if (! is_integer(tok))                                 ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "dbsize is not integer on E-xx line");
+	  cm->expA[exp_mode]->dbsize = (long) atoi(tok);
+	  
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No nrandhits read on E-xx line");
+	  if (! is_integer(tok))                                 ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "nrandhits is not integer on E-xx line");
+	  cm->expA[exp_mode]->nrandhits = atoi(tok);
+	  
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No tailp read on E-xx line");
+	  if (! is_real(tok))                                    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "tailp is not real number on E-xx line");
+	  cm->expA[exp_mode]->tailp = atof(tok);
+	  
+	  cm->expA[exp_mode]->cur_eff_dbsize = (long) (cm->expA[exp_mode]->nrandhits);
+	  /* Previous line is to set cur_eff_dbsize as if database was of size cm->stats->expAA[p]->dbsize, we 
+	   * act as if the max hits we'll see is nrandhits, the number of hits we saw in cmcalibrate,
+	   * so this is the highest possible E-value we can get.
+	   * cur_eff_dbsize will be updated in cmsearch for whatever the target database size is. */
+	  cm->expA[exp_mode]->is_valid = TRUE; /* set valid flag */
+	  exp_flags[exp_mode] = TRUE;
+	}
+      else if (strncmp(tok, "FT-", 3) == 0) 
+	{				
+	  /* filter thresholds statistics are deprecated, chew up the rest ot this line */
+	  if ((esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid FT- line");
+	}
+      else if (strcmp(tok, "MODEL:") == 0)
+	break;
+    }
+
+  /* Done reading the header information.
+   * Check that everything is ok and mandatory info is present before moving on.
+   */
+  if (feof(cmfp->f))      ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Premature end to CM file, file truncated?");
+  if (! read_nstates)     ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "MODEL: line precedes STATES line");
+  if (! read_nnodes)      ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "MODEL: line precedes NODES line");
+  if (! read_clen)        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "MODEL: line precedes CLEN line");
+  if (! read_atype)       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "MODEL: line precedes ALPHABET line");
+  if (cm->name == NULL)   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "MODEL: line precedes NAME line");
+
+  /* if we have any exp tail stats, we (currently) require all of them */
+  have_exps = exp_flags[0];
+  for(exp_mode = 1; exp_mode < EXP_NMODES; exp_mode++)
+    if(((have_exps && (!exp_flags[exp_mode]))) ||
+       ((!have_exps) && (exp_flags[exp_mode])))
+      ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Some but not all E-xx lines read, expected 8");
+  
+  /* Main model section. 
+   */
+  CMZero(cm);
+  if(have_exps)  cm->flags |= CMH_EXPTAIL_STATS;
+  if(have_ga)    cm->flags |= CMH_GA;
+  if(have_tc)    cm->flags |= CMH_TC;
+  if(have_nc)    cm->flags |= CMH_NC;
+  nd = -1;
+  clen = 0;
+  for (v = 0; v < cm->M; v++)
+    {
+      if (esl_fgets(&buf, &n, cmfp->f) != eslOK)             ESL_XFAIL(status,     cmfp->errbuf, "Premature end of data before main model section");
+      s = buf;
+      if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(status,     cmfp->errbuf, "Premature end of data before main model section");
+      
+      /* Ah, a node line. Process it and get the following line.
+       */
+      if (*tok == '[') 
+	{
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Too few fields on node line");      
+	  if ((x = NodeCode(tok)) == -1)                         ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid node type %s", tok);
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Too few fields on node line");      
+	  if (!is_integer(tok))                                  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid node index on node line");
+	  nd = atoi(tok);
+	  cm->ndtype[nd]  = x;
+	  if(cm->ndtype[nd] == MATP_nd) clen+=2;
+	  else if(cm->ndtype[nd] == MATL_nd) clen++;
+	  else if(cm->ndtype[nd] == MATR_nd) clen++;
+	  cm->nodemap[nd] = v;
+
+	  if (esl_fgets(&buf, &n, cmfp->f) != eslOK)             ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Too few fields on NODE line");
+	  s = buf;
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Too few fields on NODE line");
+	}
+
+      /* Process state line.
+       */
+      cm->sttype[v] = StateCode(tok);
+      if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+      if (! is_integer(tok))                                 ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+      if (atoi(tok) != v)                                    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+      if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+      if (! is_integer(tok))                                 ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+      cm->plast[v] = atoi(tok);
+      if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+      if (! is_integer(tok))                                 ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+      cm->pnum[v] = atoi(tok);
+      if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+      if (! is_integer(tok))                                 ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+      cm->cfirst[v] = atoi(tok);
+      if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+      if (! is_integer(tok))                                 ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+      cm->cnum[v] = atoi(tok);
+				/* Transition probabilities. */
+      if (cm->sttype[v] != B_st) 
+	{
+	  for (x = 0; x < cm->cnum[v]; x++)
+	    {
+	      if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+	      if (! is_real(tok) && *tok != '*')                     ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+	      cm->t[v][x] = ascii2prob(tok, 1.);
+	    }
+	}
+				/* Emission probabilities. */
+      if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
+	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
+	{
+	  for (x = 0; x < cm->abc->K; x++)
+	    {
+	      if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+	      if (! is_real(tok) && *tok != '*')                     ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+	      cm->e[v][x] = ascii2prob(tok, cm->null[x]);
+	    }
+	}
+      else if (cm->sttype[v] == MP_st) 
+	{
+	  for (x = 0; x < cm->abc->K; x++)
+	    for (y = 0; y < cm->abc->K; y++)
+	      {
+		if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+		if (! is_real(tok) && *tok != '*')                     ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid state line for cm: %s state: %d", cm->name, v);      
+		cm->e[v][x*cm->abc->K+y] = ascii2prob(tok, cm->null[x]*cm->null[y]);
+	      }
+	} 
+
+      cm->ndidx[v] = nd;
+      cm->stid[v]  = DeriveUniqueStateCode(cm->ndtype[nd], cm->sttype[v]);
+    } /* end of loop over states */
+
+  /* Advance to record separator
+   */
+  while (esl_fgets(&buf, &n, cmfp->f) != eslEOF) 
+    if (strncmp(buf, "//", 2) == 0) 
+      break;
+
+  /* EPN 10.29.06 Remove the sole source of CM ambiguities. Find and detach insert states
+   *              that are 1 state before an END_E.  */
+  cm_find_and_detach_dual_inserts(cm, 
+				  FALSE, /* Don't check END_E-1 states have 0 counts, they may not if 
+					  * an old version (0.7 or earlier) of cmbuild was used, or  
+					  * cmbuild --nodetach  was used to build the CM  */
+				  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
+
+  /* check that the clen we calc'ed is the same as the CLEN line said */
+  if (read_clen && clen != cm->clen) 
+    {
+      ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "calculated consensus length %d does not equal read CLEN: %d.\n", clen, cm->clen);
+    }
+
+  /* Success.
+   * Renormalize the CM, and return.
+   */
+  CMRenormalize(cm);
+
+  if (buf != NULL) free(buf);
+  if (*ret_abc == NULL) *ret_abc = abc;
+  if ( opt_cm != NULL)  *opt_cm = cm; else FreeCM(cm);
+  return eslOK;
+
+ ERROR:
+  if (buf != NULL) free(buf);
+  if (*ret_abc == NULL && abc != NULL) esl_alphabet_Destroy(abc);
+  if (cm      != NULL) FreeCM(cm);
+  if (opt_cm != NULL) *opt_cm = NULL;
+  if      (status == eslEMEM || status == eslESYS) return status; 
+  else if (status == eslEOF)                       return status;
+  else if (status == eslEINCOMPAT)                 return status;
+  else                                             return eslEFORMAT;	/* anything else is a format error: includes premature EOF, EOL, EOD  */
+}
+
+
 
 /* Parsing save files from HMMER 3.x
  * All parsers follow the same API.
@@ -1995,7 +2442,7 @@ read_asc30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm)
       if ((! hfp->do_stdin) && (! hfp->do_gzip) && (offset = ftello(hfp->f)) < 0)   ESL_XEXCEPTION(eslESYS, "ftello() failed");
 
       /* First line of file: "HMMER3/e". Allocate shell for HMM annotation information (we don't know K,M yet) */
-      if ((status = esl_fileparser_NextLine(hfp->efp))                   != eslOK)  goto ERROR;  /* EOF here is normal; could also be a thrown EMEM */
+      if ((status = esl_fileparser_NextLine(hfp->efp))                   != eslOK)  ESL_XFAIL(eslEFORMAT, hfp->errbuf, "No name found on NAME line");  /* EOF here is normal; could also be a thrown EMEM */
       if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tag, NULL)) != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "unexpected absence of tokens on data line");
 
       if      (hfp->format == p7_HMMFILE_3e) { if (strcmp(tag, "HMMER3/e") != 0)     ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Didn't find HMMER3/e tag: bad format or not a HMMER save file?"); }
