@@ -52,7 +52,7 @@ static ESL_OPTIONS options[] = {
   { "--rsearch", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
   { "--binary",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "save the model(s) in binary format",     2 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--rsearch", "use reference coordinate annotation to specify consensus", 2 },
-  { "--1p0matins",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,       "--rf", "ignore seq weights for match/insert defn (v0.1-v1.0.2 method)", 2 },
+  { "--v1p0",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "parameterize CM using methods from Infernal v1.0.2", 2 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,      NULL,  "--rsearch", "fraction of gaps to allow in a consensus column [0..1]", 2 },
   { "--ignorant", eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "strip the structural info from input alignment", 2 },
 /* Alternate relative sequence weighting strategies */
@@ -492,7 +492,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	cm_Fail("Failed to parse prior file %s\n", esl_opt_GetString(go, "--prior"));
       fclose(pfp);
     }
-  else if(esl_opt_GetBoolean(go, "--p56")) { 
+  else if(esl_opt_GetBoolean(go, "--p56") || esl_opt_GetBoolean(go, "--v1p0")) { 
     cfg->pri = Prior_Default_v0p56_through_v1p02();
   }
   else { 
@@ -784,7 +784,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
 
   cm->checksum = checksum;
   cm->flags   |= CMH_CHKSUM;
-  
+
   *ret_cm = cm;
   return eslOK;
   
@@ -1100,6 +1100,7 @@ set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbu
     esl_stopwatch_Stop(w);
     esl_stopwatch_Display(stdout, w, "CPU time: ");
   }
+
   if(w != NULL) esl_stopwatch_Destroy(w);
   return eslOK;
 }
@@ -1133,7 +1134,7 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
   }
 
   use_rf  = (esl_opt_GetBoolean(go, "--rf")) ? TRUE : FALSE;
-  use_wts = (use_rf || esl_opt_GetBoolean(go, "--1p0matins")) ? FALSE : TRUE;
+  use_wts = (use_rf || esl_opt_GetBoolean(go, "--v1p0")) ? FALSE : TRUE;
   if((status = HandModelmaker(msa, errbuf, use_rf, use_wts, esl_opt_GetReal(go, "--gapthresh"), &cm, &mtr)) != eslOK) return status;
   
   /* set the CM's null model, if rsearch mode, use the bg probs used to calc RIBOSUM */
@@ -1370,7 +1371,7 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
 	else if(cm->ndtype[nd] == MATL_nd) clen += 1;
 	else if(cm->ndtype[nd] == MATR_nd) clen += 1;
       }
-      if(esl_opt_GetBoolean(go, "--e1p0df")) { 
+      if(esl_opt_GetBoolean(go, "--v1p0")) { 
 	/* determine etarget with default method used by Infernal version 1.0-->1.0.2 */
 	etarget = version_1p0_default_target_relent(cm->abc, clen, 6.0);
       }
@@ -1473,19 +1474,26 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
     fflush(stdout);
   }
 
-  /* configure local for calculating W (ignores ROOT_IL, ROOT_IR), this way is consistent with Infernal 1.0->1.0.2 */
-  cm->config_opts |= CM_CONFIG_LOCAL;    
-  cm->config_opts |= CM_CONFIG_HMMLOCAL; 
-  cm->config_opts |= CM_CONFIG_HMMEL;    
+  if(esl_opt_GetBoolean(go, "--v1p0")) { 
+    /* configure local for calculating W (ignores ROOT_IL, ROOT_IR), this way is consistent with Infernal 1.0->1.0.2 */
+    cm->config_opts |= CM_CONFIG_LOCAL;    
+    cm->config_opts |= CM_CONFIG_HMMLOCAL; 
+    cm->config_opts |= CM_CONFIG_HMMEL;    
+  }
 
-  /* ConfigCM() should calculate QDBs */
+  /* ConfigCM() must calculate QDBs */
   cm->config_opts |= CM_CONFIG_QDB;   
   if((status = ConfigCM(cm, errbuf, 
 			TRUE, /* do calculate W */
 			NULL, NULL)) != eslOK) return status;
 
-  /* convert back to global */
-  ConfigGlobal(cm);
+  if(esl_opt_GetBoolean(go, "--v1p0")) { 
+    /* Some hackery, to match v1.0-->v1.0.2's method */
+    cm->flags &= ~CMH_QDB;     /* so QDBs/W are not recalculated after globalizing in ConfigGlobal() */
+    /* Convert back to global */
+    ConfigGlobal(cm);
+    cm->flags |= CMH_QDB;
+  }
 
   if (cfg->be_verbose) { 
     fprintf(stdout, "done.  ");

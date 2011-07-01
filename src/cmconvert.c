@@ -108,8 +108,11 @@ configure_model(CM_t *cm, char *errbuf)
 			TRUE, /* do calculate W */
 			NULL, NULL)) != eslOK) return status;
 
-  /* convert back to global */
+  /* Some hackery, to match v1.0-->v1.0.2's method */
+  cm->flags &= ~CMH_QDB;     /* so QDBs/W are not recalculated after globalizing in ConfigGlobal() */
+  /* Convert back to global */
   ConfigGlobal(cm);
+  cm->flags |= CMH_QDB;
 
   CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &(cons));
   if ((status = cm_SetConsensus  (cm, cons, NULL)) != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate consensus sequence");

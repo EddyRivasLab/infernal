@@ -156,7 +156,7 @@ cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, 
   p.pri = pri;
   p.etarget = etarget;
 
-  /* Firtst, ceck if min_Neff gives a rel entropy >= e.target, if so
+  /* First, check if min_Neff gives a rel entropy >= e.target, if so
    * set Neff to min_Neff.  In this case its impossible to get a Neff
    * < min_Neff that a relent == etarget, so we use min_Neff;
    */
