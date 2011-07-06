@@ -1417,7 +1417,11 @@ typedef struct cm_s {
 
 } CM_t;
 
-
+typedef struct {
+  int            count;       /* number of <CM_t> objects in the block */
+  int            listSize;    /* maximum number elements in the list          */
+  CM_t         **list;        /* array of <CM_t> objects               */
+} CM_BLOCK;
 
 /*****************************************************************
  * CM_FILE:  a CM save file or database, open for reading.
@@ -1470,7 +1474,7 @@ typedef struct cm_file_s {
  */
 
 enum cm_pipemodes_e { CM_SEARCH_SEQS = 0, CM_SCAN_MODELS = 1 };
-enum cm_zsetby_e    { CM_ZSETBY_SSIINFO = 0, CM_ZSETBY_NTARGETS = 1, CM_ZSETBY_OPTION = 2, CM_ZSETBY_FILEINFO = 3};
+enum cm_zsetby_e    { CM_ZSETBY_SSIINFO = 0, CM_ZSETBY_SSI_AND_QLENGTH = 1, CM_ZSETBY_OPTION = 2, CM_ZSETBY_FILEINFO = 3};
 
 typedef struct cm_pipeline_s {
   /* Dynamic programming matrices                                           */
@@ -1512,10 +1516,15 @@ typedef struct cm_pipeline_s {
   double  incE;			/* per-target inclusion E-value threshold   */
   double  incT;			/* per-target inclusion score threshold     */
 
-  /* Tracking search space sizes for E value calculations                   */
-  double  Z;			/* eff # targs searched (per-target E-val)  */
+  /* Tracking search space sizes for E value calculations                   *
+   * NOTE: Definition of Z here differs markedly from HMMER, where Z is     *
+   * number of target sequences (SEARCH) or models (SCAN).                  */
+  double  Z;   /* database size, defn differs between SEARCH/SCAN mode      *
+                * SEARCH: # of residues in target sequence database         *
+		* SCAN:   # of models in target database multiplied by the  *
+		*         # of residues in current query seq                */
   enum cm_zsetby_e Z_setby;   	/* how Z was set                            */
-  
+
   /* Threshold settings for pipeline                                        */
   int     do_max;	        /* TRUE to run in slow/max mode             */
   int     do_rfam;	        /* TRUE to run in Rfam pipeline (fast) mode */

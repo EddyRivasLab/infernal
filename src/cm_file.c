@@ -908,6 +908,43 @@ cm_file_Read(CM_FILE *cmfp, ESL_ALPHABET **ret_abc,  CM_t **opt_cm)
   return (*cmfp->parser)(cmfp, ret_abc, opt_cm);
 }
 
+
+/* Function:  cm_file_ReadBlock()
+ * Synopsis:  Read the next block of CMs from a cm file.
+ * Incept:    EPN, Wed Jul  6 13:30:05 2011
+ *
+ * Purpose:   Reads a block of CMs from open cm file <cmfp> into 
+ *            <cmBlock>.
+ *
+ * Returns:   <eslOK> on success; the new sequences are stored in <cmBlock>.
+ * 
+ *            Returns <eslEOF> when there is no CMs left in the
+ *            file (including first attempt to read an empty file).
+ * 
+ *            Otherwise return the status of the cm_file_Read() function.
+ */
+int
+cm_file_ReadBlock(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_BLOCK *cmBlock)
+{
+  int     i;
+  int     size = 0;
+  int     status = eslOK;
+
+  cmBlock->count = 0;
+  for (i = 0; i < cmBlock->listSize; ++i)
+    {
+      status = cm_file_Read(cmfp, ret_abc, &cmBlock->list[i]);
+      if (status != eslOK) break;
+      size += cmBlock->list[i]->clen;
+      ++cmBlock->count;
+    }
+
+  /* EOF will be returned only in the case where no profiles were read */
+  if (status == eslEOF && i > 0) status = eslOK;
+
+  return status;
+}
+
 /* Function:  cm_file_PositionByKey()
  * Synopsis:  Use SSI to reposition file to start of named CM.
  * Incept:    EPN, Tue Jun 21 10:46:33 2011

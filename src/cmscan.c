@@ -25,23 +25,26 @@
 #include "esl_mpi.h"
 #endif /*HAVE_MPI*/
 
-#ifdef SUB_WITH_HMMER_THREADS
+#ifdef HMMER_THREADS
 #include <unistd.h>
 #include "esl_threads.h"
 #include "esl_workqueue.h"
-#endif /*SUB_WITH_HMMER_THREADS*/
+#endif /*HMMER_THREADS*/
 
 #include "hmmer.h"
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
 typedef struct {
-#ifdef SUB_WITH_HMMER_THREADS
+#ifdef HMMER_THREADS
   ESL_WORK_QUEUE   *queue;
-#endif /*SUB_WITH_HMMER_THREADS*/
+#endif /*HMMER_THREADS*/
   ESL_SQ           *qsq;
-  CM_PIPELINE      *pli;         /* work pipeline                           */
-  CM_TOPHITS       *th;          /* top hit results                         */
+  CM_PIPELINE      *pli;             /* work pipeline                           */
+  CM_TOPHITS       *th;              /* top hit results                         */
+  int               cm_config_opts;  /* set based on command-line options     */
+  int               doml_opt_is_on;  /* TRUE if --doml enabled */
+  int               noadd_opt_is_on; /* TRUE if --noadd enabled */
 } WORKER_INFO;
 
 #define REPOPTS         "-E,-T,--cut_ga,--cut_nc,--cut_tc"
@@ -50,7 +53,7 @@ typedef struct {
 #define XFASTMIDMAXOPTS "--max,--F1,--F2,--F3,--F4,--F5,--F6,--noF1,--noF2,--noF3,--nogfwd,--nocyk,--nohmm,--hmm"
 #define TIMINGOPTS      "--time-F1,--time-F2,--time-F3,--time-dF3,--time-bfil,--time-F4"
 
-#if defined (SUB_WITH_HMMER_THREADS) && defined (HAVE_MPI)
+#if defined (HMMER_THREADS) && defined (HAVE_MPI)
 #define CPUOPTS     "--mpi"
 #define MPIOPTS     "--cpu"
 #else
@@ -176,7 +179,7 @@ static ESL_OPTIONS options[] = {
   /* experimental options */
   { "--cp9noel",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            "-g", "turn OFF local ends in cp9 HMMs", 20 },
   { "--cp9gloc",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,  "-g,--cp9noel", "configure CP9 HMM in glocal mode", 20 },
-#ifdef SUB_WITH_HMMER_THREADS
+#ifdef HMMER_THREADS
   { "--cpu",        eslARG_INT, NULL,"HMMER_NCPU","n>=0",NULL,  NULL,  CPUOPTS,         "number of parallel CPU workers to use for multithreads",       12 },
 #endif
 #ifdef HAVE_MPI
@@ -210,13 +213,18 @@ static char usage[]  = "[-options] <cmdb> <seqfile>";
 static char banner[] = "search sequence(s) against a profile database";
 
 static int  serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
-static int  serial_loop  (ESL_GETOPTS *go, WORKER_INFO *info, CM_FILE *cmfp);
-#ifdef SUB_WITH_HMMER_THREADS
-#define BLOCK_SIZE 1000
+static int  serial_loop  (WORKER_INFO *info, CM_FILE *cmfp);
+static int  setup_cm     (CM_t *cm, const ESL_ALPHABET *abc, WORKER_INFO *info, char *errbuf, 
+			  int *opt_nhmm, P7_HMM ***opt_hmmA, P7_BG ***opt_bgA, P7_OPROFILE ***opt_omA, 
+			  P7_PROFILE ***opt_gmA, float ***opt_p7evpAA);
+static void setup_config_opts(const ESL_GETOPTS *go, int *ret_config_opts);
+
+#ifdef HMMER_THREADS
+#define BLOCK_SIZE 100
 
 static int  thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, CM_FILE *cmfp);
 static void pipeline_thread(void *arg);
-#endif /*SUB_WITH_HMMER_THREADS*/
+#endif /*HMMER_THREADS*/
 
 #ifdef HAVE_MPI
 static int  mpi_master   (ESL_GETOPTS *go, struct cfg_s *cfg);
@@ -361,7 +369,7 @@ output_header(FILE *ofp, ESL_GETOPTS *go, char *cmfile, char *seqfile)
   }
   if (esl_opt_IsUsed(go, "--qformat"))   fprintf(ofp, "# input seqfile format asserted:   %s\n", esl_opt_GetString(go, "--qformat"));
   if (esl_opt_IsUsed(go, "--daemon"))    fprintf(ofp, "run as a daemon process\n");
-#ifdef SUB_WITH_HMMER_THREADS
+#ifdef HMMER_THREADS
   if (esl_opt_IsUsed(go, "--cpu"))       fprintf(ofp, "# number of worker threads:        %d\n", esl_opt_GetInteger(go, "--cpu"));  
 #endif
 #ifdef HAVE_MPI
@@ -456,6 +464,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_FILE         *cmfp     = NULL;		 /* open CM database file                           */
   ESL_ALPHABET    *abc      = NULL;              /* sequence alphabet                               */
   ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
+  ESL_STOPWATCH   *mw       = NULL;              /* timing                                          */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
   int              nquery   = 0;
   int              textw;
@@ -468,14 +477,17 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   int              infocnt  = 0;
   WORKER_INFO     *info     = NULL;
-#ifdef SUB_WITH_HMMER_THREADS
-  P7_OM_BLOCK     *block    = NULL;
+#ifdef HMMER_THREADS
+  CM_BLOCK        *block    = NULL;
   ESL_THREADS     *threadObj= NULL;
   ESL_WORK_QUEUE  *queue    = NULL;
 #endif
   char             errbuf[eslERRBUFSIZE];
 
   w = esl_stopwatch_Create();
+  mw = esl_stopwatch_Create();
+
+  esl_stopwatch_Start(mw);
 
   if (esl_opt_GetBoolean(go, "--notextw")) textw = 0;
   else                                     textw = esl_opt_GetInteger(go, "--textw");
@@ -509,7 +521,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(hstatus == eslEFORMAT)  cm_Fail("bad file format in CM file %s\n%s",           cfg->cmfile, cmfp->errbuf);
   else if (hstatus != eslOK) cm_Fail("Unexpected error in reading CMs from %s\n%s", cfg->cmfile, cmfp->errbuf); 
 
-  /* Determine database size: #CMs in the CM database, currently requires <cmfile>.ssi SSI file (RETHINK IF YOU IMPLEMENT cmpress) */
+  /* Determine database size: default is to updated as we read target CMs */
   if(esl_opt_IsUsed(go, "-Z")) { /* enabling -Z is the only way to bypass the SSI index file requirement */
     cfg->Z       = (int64_t) esl_opt_GetReal(go, "-Z");
     cfg->Z_setby = CM_ZSETBY_OPTION; 
@@ -517,7 +529,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   else { 
     if(cmfp->ssi == NULL) cm_Fail("Failed to open SSI index for CM file: %s\n", cmfp->fname);
     cfg->Z = (int64_t) cmfp->ssi->nprimary;
-    cfg->Z_setby = CM_ZSETBY_SSIINFO; 
+    cfg->Z_setby = CM_ZSETBY_SSI_AND_QLENGTH; /* we will multiply Z by each query sequence length */
   }
   cm_file_Close(cmfp);
 
@@ -535,11 +547,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
  
   output_header(ofp, go, cfg->cmfile, cfg->seqfile);
 
-#ifdef SUB_WITH_HMMER_THREADS
+#ifdef HMMER_THREADS
   /* initialize thread data */
   if (esl_opt_IsOn(go, "--cpu")) ncpus = esl_opt_GetInteger(go, "--cpu");
   else                           esl_threads_CPUCount(&ncpus);
-
+  printf("NCPUS: %d\n", ncpus);
   if (ncpus > 0)
     {
       threadObj = esl_threads_Create(&pipeline_thread);
@@ -552,16 +564,18 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   for (i = 0; i < infocnt; ++i)
     {
-      //info[i].bg    = p7_bg_Create(abc);
-#ifdef SUB_WITH_HMMER_THREADS
+      setup_config_opts(go, &(info[i].cm_config_opts));
+      info[i].doml_opt_is_on  = esl_opt_GetBoolean(go, "--doml")  ? TRUE : FALSE;
+      info[i].noadd_opt_is_on = esl_opt_GetBoolean(go, "--noadd") ? TRUE : FALSE;
+#ifdef HMMER_THREADS
       info[i].queue = queue;
 #endif
     }
 
-#ifdef SUB_WITH_HMMER_THREADS
+#ifdef HMMER_THREADS
   for (i = 0; i < ncpus * 2; ++i)
     {
-      block = p7_oprofile_CreateBlock(BLOCK_SIZE);
+      block = cm_CreateBlock(BLOCK_SIZE);
       if (block == NULL)    esl_fatal("Failed to allocate sequence block");
 
       status = esl_workqueue_Init(queue, block);
@@ -579,7 +593,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, NULL);
       if (status != eslOK)        cm_Fail("Unexpected error %d in opening cm file %s.\n%s",           status, cfg->cmfile, cmfp->errbuf);  
   
-#ifdef SUB_WITH_HMMER_THREADS
+#ifdef HMMER_THREADS
       /* if we are threaded, create a lock to prevent multiple readers */
       if (ncpus > 0)
 	{
@@ -596,22 +610,23 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	{
 	  /* Create processing pipeline and hit list */
 	  info[i].th  = cm_tophits_Create(); 
-	  info[i].pli = cm_pipeline_Create(go, 100, 100, cfg->Z, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
+	  info[i].pli = cm_pipeline_Create(go, 100, 100, cfg->Z * qsq->n, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
 	  info[i].pli->cmfp = cmfp;  /* for two-stage input, pipeline needs <hfp> */
 
-	  cm_pli_NewSeq(info[i].pli, qsq, 0); /* 0 is sequence index, only used to remove overlaps */
+	  cm_pli_NewSeq(info[i].pli, qsq, 0); /* 0 is sequence index, it's irrelevant in this context (only used to remove overlaps) */
+	  info[i].pli->nseqs++;
 	  info[i].qsq = qsq;
 
-#ifdef SUB_WITH_HMMER_THREADS
+#ifdef HMMER_THREADS
 	  if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
 #endif
 	}
 
-#ifdef SUB_WITH_HMMER_THREADS
-      if (ncpus > 0)  hstatus = thread_loop(threadObj, queue, hfp);
-      else	      hstatus = serial_loop(go, info, hfp);
+#ifdef HMMER_THREADS
+      if (ncpus > 0)  hstatus = thread_loop(threadObj, queue, cmfp);
+      else	      hstatus = serial_loop(info, cmfp);
 #else
-      hstatus = serial_loop(go, info, cmfp);
+      hstatus = serial_loop(info, cmfp);
 #endif
       switch(hstatus)
 	{
@@ -681,6 +696,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if (tblfp)    cm_tophits_TabularTail(tblfp,    "cmscan", CM_SCAN_MODELS, cfg->seqfile, cfg->cmfile, go);
   if (ofp)      fprintf(ofp, "[ok]\n");
 
+  esl_stopwatch_Stop(mw);
+  esl_stopwatch_Display(stdout, mw, "Total runtime:");
+
   /* Cleanup - prepare for successful exit
    */
   for (i = 0; i < infocnt; ++i)
@@ -688,13 +706,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       //p7_bg_Destroy(info[i].bg);
     }
 
-#ifdef SUB_WITH_HMMER_THREADS
+#ifdef HMMER_THREADS
   if (ncpus > 0)
     {
       esl_workqueue_Reset(queue);
       while (esl_workqueue_Remove(queue, (void **) &block) == eslOK)
 	{
-	  p7_oprofile_DestroyBlock(block);
+	  cm_DestroyBlock(block);
 	}
       esl_workqueue_Destroy(queue);
       esl_threads_Destroy(threadObj);
@@ -1314,22 +1332,22 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 #endif /*HAVE_MPI*/
 
 static int
-serial_loop(ESL_GETOPTS *go, WORKER_INFO *info, CM_FILE *cmfp)
+serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 {
   int            status;
 
   CM_t *cm;
-  ESL_ALPHABET  *abc = NULL;
-  P7_BG           **bgA = NULL;         /* null models                              */
-  P7_OPROFILE     **omA = NULL;         /* optimized query profile HMMs            */
-  P7_PROFILE      **gmA = NULL;         /* generic   query profile HMMs            */
-  P7_HMM **hmmA = NULL;
-  float           **p7_evparamAA = NULL;/* [0..nhmm-1][0..CM_p7_NEVPARAM] E-value parameters */
-  int      m, z, z_offset;
-  int      use_mlp7_hmm = FALSE;
-  int             nhmm = 0;
-  CMConsensus_t  *cmcons = NULL;
-  ESL_STOPWATCH *w = NULL;
+  ESL_ALPHABET     *abc     = NULL;
+  P7_BG           **bgA     = NULL;         /* null models                              */
+  P7_OPROFILE     **omA     = NULL;         /* optimized query profile HMMs            */
+  P7_PROFILE      **gmA     = NULL;         /* generic   query profile HMMs            */
+  P7_HMM          **hmmA    = NULL;
+  float           **p7evpAA = NULL;/* [0..nhmm-1][0..CM_p7_NEVPARAM] E-value parameters */
+  CMConsensus_t    *cmcons  = NULL;
+  ESL_STOPWATCH    *w       = NULL;
+  int               m;
+  int               nhmm    = 0;
+  char              errbuf[cmERRBUFSIZE];
 
   w = esl_stopwatch_Create();
 
@@ -1337,130 +1355,48 @@ serial_loop(ESL_GETOPTS *go, WORKER_INFO *info, CM_FILE *cmfp)
   while ((status = cm_file_Read(cmfp, &abc, &cm)) == eslOK)
     {
       esl_stopwatch_Start(w);
-
-      /***************************************************/
-      /* TEMP: eventually encapsulate this in a function */
-
-      /* Convert HMMs to optimized models.
-       * First, determine how many and which HMMs we'll be using *
-       * by default, we filter only with the <nhmm> (== cm->nap7) HMMs written in the CM file */
-      /* but, if --doml selected or there's no HMMs in the file, use a ML P7 HMM built from the CM */
-      if (esl_opt_GetBoolean(go, "--doml") || (cm->nap7 == 0)) { 
-	use_mlp7_hmm = TRUE;
-	nhmm = 1 + cm->nap7;
-      }
-      else if(esl_opt_GetBoolean(go, "--noadd")) { 
-	/* or if --noadd is selected, only use a ML p7 HMM */
-	use_mlp7_hmm = TRUE;
-	nhmm = 1;
-      }
-      else { 
-	nhmm = cm->nap7;
-      }
-
-      /* Now we know how many HMMs, allocate and fill the necessary data structures for each */
-      ESL_ALLOC(hmmA, sizeof(P7_HMM *) * nhmm);
-      /* use the ML p7 HMM if nec */
-      if (esl_opt_GetBoolean(go, "--doml") || (cm->nap7 == 0)) { 
-	hmmA[0] = cm->mlp7;
-      }
-      /* copy the HMMs from the file into the CM data structure */
-      if(! esl_opt_GetBoolean(go, "--noadd")) { 
-	z_offset = use_mlp7_hmm ? 1 : 0;
-	for(z = 0; z < cm->nap7; z++) { 
-	  hmmA[z+z_offset] = cm->ap7A[z];
-	}
-      }
-  
-      /* allocate space for profiles, bg and EV params for each HMM */
-      ESL_ALLOC(gmA, sizeof(P7_PROFILE *)     * nhmm);
-      ESL_ALLOC(omA, sizeof(P7_OPROFILE *)    * nhmm);
-      ESL_ALLOC(bgA, sizeof(P7_BG *)          * nhmm);
-      ESL_ALLOC(p7_evparamAA, sizeof(float *) * nhmm);
-      for(m = 0; m < nhmm; m++) { 
-	gmA[m] = p7_profile_Create (hmmA[m]->M, abc);
-	omA[m] = p7_oprofile_Create(hmmA[m]->M, abc);
-	bgA[m] = p7_bg_Create(abc);
-	p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_LOCAL);  /* 100 is a dummy length for now; and MSVFilter requires local mode */
-	p7_oprofile_Convert(gmA[m], omA[m]);                       /* <om> is now p7_LOCAL, multihit */
-	/* after omA[m]'s been created, convert gmA[m] to glocal, to define envelopes in cm_pipeline() */
-	p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_GLOCAL);
-	/* copy evalue parameters */
-	ESL_ALLOC(p7_evparamAA[m], sizeof(float) * CM_p7_NEVPARAM);
-	if(m == 0 && use_mlp7_hmm) { esl_vec_FCopy(cm->mlp7_evparam,       CM_p7_NEVPARAM, p7_evparamAA[m]); }
-	else if(use_mlp7_hmm)      { esl_vec_FCopy(cm->ap7_evparamAA[m-1], CM_p7_NEVPARAM, p7_evparamAA[m]); }
-	else                       { esl_vec_FCopy(cm->ap7_evparamAA[m],   CM_p7_NEVPARAM, p7_evparamAA[m]); }
-      }
-      /* END OF TEMP: eventually of block that goes into a function */
-
-      /* BEG OF TEMP: eventually encapsulate this in a function */
-      /* Configure the CM */
-      if(! esl_opt_GetBoolean(go, "-g")) { 
-	if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
-	  cm->config_opts |= CM_CONFIG_LOCAL;
-	  cm->config_opts |= CM_CONFIG_HMMLOCAL;
-	  if(! esl_opt_GetBoolean(go, "--cp9noel")) cm->config_opts |= CM_CONFIG_HMMEL; 
-	}
-      }
-#if 0
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(stdout, w, "TIMING HMM filter setup");
-      esl_stopwatch_Start(w);
-      if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) cm_Fail(errbuf); 
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(stdout, w, "TIMING ConfigCM()");
-      esl_stopwatch_Start(w);
-      if((status = CreateCMConsensus(cm, abc, 3.0, 1.0, &(cmcons)))!= eslOK) cm_Fail("Failed to create CMConsensus data structure.\n");
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(stdout, w, "TIMING CreateCMConsensus()");
-      esl_stopwatch_Start(w);
-      /* END OF TEMP: end of block */
-#endif      
       
-      cmcons = NULL;
+      if((status = setup_cm(cm, abc, info, errbuf, &nhmm, &hmmA, &bgA, &omA, &gmA, &p7evpAA)) != eslOK) cm_Fail(errbuf);
+      cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */
       if((status = cm_pli_NewModel(info->pli, cm, 
 				   FALSE, FALSE,           /* need_fsmx, need_smx */
 				   NULL, NULL, NULL, NULL, /* fcyk_dmin, fcyk_dmax, final_dmin, final_dmax */
 				   omA, bgA, nhmm)) != eslOK) cm_Fail(info->pli->errbuf);
       
-      if((status = cm_Pipeline(info->pli, cm, omA, gmA, bgA, p7_evparamAA, nhmm, info->qsq, info->th, &(cmcons))) != eslOK)
+      if((status = cm_Pipeline(info->pli, cm, omA, gmA, bgA, p7evpAA, nhmm, info->qsq, info->th, &(cmcons))) != eslOK)
 	cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
+      
+      /* compute the E-values */
+      cm_tophits_ComputeEvalues(info->th, (double) cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize);
       
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, "TIMING cm_Pipeline()");
       cm_pipeline_Reuse(info->pli);
-      
-      if(gmA != NULL)          { for(m = 0; m < nhmm; m++) { if(gmA[m] != NULL)          p7_profile_Destroy(gmA[m]);  } free(gmA); }
-      if(omA != NULL)          { for(m = 0; m < nhmm; m++) { if(omA[m] != NULL)          p7_oprofile_Destroy(omA[m]); } free(omA); }
-      if(bgA != NULL)          { for(m = 0; m < nhmm; m++) { if(bgA[m] != NULL)          p7_bg_Destroy(bgA[m]);       } free(bgA); }
-      if(p7_evparamAA != NULL) { for(m = 0; m < nhmm; m++) { if(p7_evparamAA[m] != NULL) free(p7_evparamAA[m]);       } free(p7_evparamAA); }
-      if(cm != NULL)     FreeCM(cm);
+
       if(cmcons != NULL) FreeCMConsensus(cmcons);
+      if(cm     != NULL) FreeCM(cm);
     } /* end of while(cm_file_Read() == eslOK) */
 
   esl_alphabet_Destroy(abc);
   esl_stopwatch_Destroy(w);
 
-  return status;
+  if(gmA     != NULL) { for(m = 0; m < nhmm; m++) { if(gmA[m]     != NULL) p7_profile_Destroy(gmA[m]);  } free(gmA); }
+  if(omA     != NULL) { for(m = 0; m < nhmm; m++) { if(omA[m]     != NULL) p7_oprofile_Destroy(omA[m]); } free(omA); }
+  if(bgA     != NULL) { for(m = 0; m < nhmm; m++) { if(bgA[m]     != NULL) p7_bg_Destroy(bgA[m]);       } free(bgA); }
+  if(p7evpAA != NULL) { for(m = 0; m < nhmm; m++) { if(p7evpAA[m] != NULL) free(p7evpAA[m]);            } free(p7evpAA); }
+  if(hmmA    != NULL) free(hmmA); /* hmmA just points to HMMs in the CM data structure, don't free those */
 
- ERROR:
-  if(gmA != NULL)          { for(m = 0; m < nhmm; m++) { if(gmA[m] != NULL)          p7_profile_Destroy(gmA[m]);  } free(gmA); }
-  if(omA != NULL)          { for(m = 0; m < nhmm; m++) { if(omA[m] != NULL)          p7_oprofile_Destroy(omA[m]); } free(omA); }
-  if(bgA != NULL)          { for(m = 0; m < nhmm; m++) { if(bgA[m] != NULL)          p7_bg_Destroy(bgA[m]);       } free(bgA); }
-  if(p7_evparamAA != NULL) { for(m = 0; m < nhmm; m++) { if(p7_evparamAA[m] != NULL) free(p7_evparamAA[m]);       } free(p7_evparamAA); }
-  if(cm != NULL)     FreeCM(cm);
-  if(cmcons != NULL) FreeCMConsensus(cmcons);
   return status;
 }
 
-#ifdef SUB_WITH_HMMER_THREADS
+#ifdef HMMER_THREADS
 static int
-thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, P7_HMMFILE *hfp)
+thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, CM_FILE *cmfp)
 {
   int  status   = eslOK;
   int  sstatus  = eslOK;
   int  eofCount = 0;
-  P7_OM_BLOCK   *block;
+  CM_BLOCK   *block;
   ESL_ALPHABET  *abc = NULL;
   void          *newBlock;
 
@@ -1473,8 +1409,8 @@ thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, P7_HMMFILE *hfp)
   /* Main loop: */
   while (sstatus == eslOK)
     {
-      block = (P7_OM_BLOCK *) newBlock;
-      sstatus = p7_oprofile_ReadBlockMSV(hfp, &abc, block);
+      block = (CM_BLOCK *) newBlock;
+      sstatus = cm_file_ReadBlock(cmfp, &abc, block);
       if (sstatus == eslEOF)
 	{
 	  if (eofCount < esl_threads_GetWorkerCount(obj)) sstatus = eslOK;
@@ -1510,8 +1446,17 @@ pipeline_thread(void *arg)
   int workeridx;
   WORKER_INFO   *info;
   ESL_THREADS   *obj;
-  P7_OM_BLOCK   *block;
+  CM_BLOCK      *block;
   void          *newBlock;
+
+  P7_BG           **bgA     = NULL;         /* null models                              */
+  P7_OPROFILE     **omA     = NULL;         /* optimized query profile HMMs            */
+  P7_PROFILE      **gmA     = NULL;         /* generic   query profile HMMs            */
+  P7_HMM          **hmmA    = NULL;
+  float           **p7evpAA = NULL; /* [0..nhmm-1][0..CM_p7_NEVPARAM] E-value parameters */
+  CMConsensus_t    *cmcons  = NULL;
+  int               nhmm    = 0;
+  char              errbuf[cmERRBUFSIZE];
   
 #ifdef HAVE_FLUSH_ZERO_MODE
   /* In order to avoid the performance penalty dealing with sub-normal
@@ -1532,30 +1477,35 @@ pipeline_thread(void *arg)
   if (status != eslOK) esl_fatal("Work queue worker failed");
 
   /* loop until all blocks have been processed */
-  block = (P7_OM_BLOCK *) newBlock;
+  block = (CM_BLOCK *) newBlock;
   while (block->count > 0)
     {
       /* Main loop: */
       for (i = 0; i < block->count; ++i)
 	{
-	  P7_OPROFILE *om = block->list[i];
+	  CM_t *cm = block->list[i];
 
-	  p7_pli_NewModel(info->pli, om, info->bg);
-	  p7_bg_SetLength(info->bg, info->qsq->n);
-	  p7_oprofile_ReconfigLength(om, info->qsq->n);
+	  if((status = setup_cm(cm, cm->abc, info, errbuf, &nhmm, &hmmA, &bgA, &omA, &gmA, &p7evpAA)) != eslOK) cm_Fail(errbuf);
+	  cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */
+	  if((status = cm_pli_NewModel(info->pli, cm, 
+				       FALSE, FALSE,           /* need_fsmx, need_smx */
+				       NULL, NULL, NULL, NULL, /* fcyk_dmin, fcyk_dmax, final_dmin, final_dmax */
+				       omA, bgA, nhmm)) != eslOK) cm_Fail(info->pli->errbuf);
+	  if((status = cm_Pipeline(info->pli, cm, omA, gmA, bgA, p7evpAA, nhmm, info->qsq, info->th, &(cmcons))) != eslOK)
+	    cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
 
-	  p7_Pipeline(info->pli, om, info->bg, info->qsq, info->th);
-
-	  p7_oprofile_Destroy(om);
-	  p7_pipeline_Reuse(info->pli);
-
+	  /* compute the E-values */
+	  cm_tophits_ComputeEvalues(info->th, (double) cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize);
+	  
+	  if(cmcons != NULL) FreeCMConsensus(cmcons);
+	  if(cm     != NULL) FreeCM(cm);
 	  block->list[i] = NULL;
 	}
 
       status = esl_workqueue_WorkerUpdate(info->queue, block, &newBlock);
       if (status != eslOK) esl_fatal("Work queue worker failed");
 
-      block = (P7_OM_BLOCK *) newBlock;
+      block = (CM_BLOCK *) newBlock;
     }
 
   status = esl_workqueue_WorkerUpdate(info->queue, block, NULL);
@@ -1564,8 +1514,167 @@ pipeline_thread(void *arg)
   esl_threads_Finished(obj, workeridx);
   return;
 }
-#endif   /* SUB_WITH_HMMER_THREADS */
+#endif   /* HMMER_THREADS */
 
+/* Function:  setup_cm()
+ * Incept:    EPN, Wed Jul  6 05:19:15 2011
+ *
+ * Purpose:  Prepare to run the pipeline for a CM. Construct
+ *           the requisite p7 matrices and background objects.
+ *
+ * Returns: eslOK on success. Upon an error, fills errbuf with
+ *          message and returns appropriate error status code.
+ */
+int
+setup_cm(CM_t *cm, const ESL_ALPHABET *abc, WORKER_INFO *info, char *errbuf, int *opt_nhmm, P7_HMM ***opt_hmmA, P7_BG ***opt_bgA, P7_OPROFILE ***opt_omA, P7_PROFILE ***opt_gmA, float ***opt_p7evpAA)
+{ 
+  int               status;
+  int               nhmm = 0;
+  int               use_mlp7_hmm = FALSE;
+  P7_BG           **bgA  = NULL;         /* null models                              */
+  P7_OPROFILE     **omA  = NULL;         /* optimized query profile HMMs            */
+  P7_PROFILE      **gmA  = NULL;         /* generic   query profile HMMs            */
+  P7_HMM          **hmmA = NULL;
+  float           **p7evpAA = NULL;/* [0..nhmm-1][0..CM_p7_NEVPARAM] E-value parameters */
+  int               m, z, z_offset;
+  ESL_STOPWATCH *w = NULL;
+  w = esl_stopwatch_Create();
+
+  esl_stopwatch_Start(w);
+
+  /* Set configure options, but don't configure yet, we only do that in cm_pipeline()
+   * if we have to (if >= 1 hit survives to the first CM stage) 
+   */
+  cm->config_opts = info->cm_config_opts;
+
+  /* Convert HMMs to optimized models.
+   * First, determine how many and which HMMs we'll be using *
+   * by default, we filter only with the <nhmm> (== cm->nap7) HMMs written in the CM file */
+  /* but, if --doml selected or there's no HMMs in the file, use a ML P7 HMM built from the CM */
+  if (info->doml_opt_is_on || (cm->nap7 == 0)) { 
+    use_mlp7_hmm = TRUE;
+    nhmm = 1 + cm->nap7;
+  }
+  else if(info->noadd_opt_is_on) { 
+    /* or if --noadd is selected, only use a ML p7 HMM */
+    use_mlp7_hmm = TRUE;
+    nhmm = 1;
+  }
+  else { 
+    nhmm = cm->nap7;
+  }
+
+  /* check if we need to freshly allocate everything */
+  if(*opt_nhmm != nhmm) { /* yes, we do */
+    ESL_ALLOC(hmmA, sizeof(P7_HMM *)        * nhmm);
+    ESL_ALLOC(gmA,  sizeof(P7_PROFILE *)    * nhmm);
+    ESL_ALLOC(omA,  sizeof(P7_OPROFILE *)   * nhmm);
+    ESL_ALLOC(bgA,  sizeof(P7_BG *)         * nhmm);
+    ESL_ALLOC(p7evpAA, sizeof(float *) * nhmm);
+    for(m = 0; m < nhmm; m++) { 
+      hmmA[m] = NULL;
+      gmA[m]  = NULL;
+      omA[m]  = NULL;
+      bgA[m]  = NULL;
+      p7evpAA[m] = NULL;
+    }
+  }
+  else { /* we only have to destroy/reallocate for the profiles */
+    hmmA = *opt_hmmA;
+    bgA  = *opt_bgA;
+    omA  = *opt_omA;
+    gmA  = *opt_gmA;
+    p7evpAA = *opt_p7evpAA;
+    for(m = 0; m < nhmm; m++) { 
+      p7_profile_Destroy(gmA[m]);  /* we only create a new one if we need it, in cm_pipeline() */
+      gmA[m] = NULL;
+      p7_oprofile_Destroy(omA[m]); /* we'll create a new one below */
+      omA[m] = NULL;
+    }
+  }
+
+  /* Now we know how many HMMs, allocate and fill the necessary data structures for each */
+  /* use the ML p7 HMM if nec */
+  if (info->doml_opt_is_on || (cm->nap7 == 0)) { 
+    hmmA[0] = cm->mlp7;
+  }
+  /* copy the HMMs from the file into the CM data structure */
+  if(! info->doml_opt_is_on) { 
+    z_offset = use_mlp7_hmm ? 1 : 0;
+    for(z = 0; z < cm->nap7; z++) { 
+      hmmA[z+z_offset] = cm->ap7A[z];
+    }
+  }
+
+  /* set up p7 profiles */
+  for(m = 0; m < nhmm; m++) { 
+    if(bgA[m]     == NULL) bgA[m] = p7_bg_Create(abc);
+    if(omA[m]     == NULL) omA[m] = p7_oprofile_Create(hmmA[m]->M, abc);
+    if(gmA[m]     == NULL) gmA[m] = p7_profile_Create (hmmA[m]->M, abc);
+    if(p7evpAA[m] == NULL) ESL_ALLOC(p7evpAA[m], sizeof(float) * CM_p7_NEVPARAM);
+    /* NOTE: we always have to create the optimized profile, there is no p7_oprofile_Reuse() */
+    p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_LOCAL);  /* 100 is a dummy length for now; and MSVFilter requires local mode */
+    p7_oprofile_Convert(gmA[m], omA[m]);                       /* <om> is now p7_LOCAL, multihit */
+    /* after omA[m]'s been created, convert gmA[m] to glocal, to define envelopes in cm_pipeline() */
+    p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_GLOCAL);
+    /* copy evalue parameters */
+    if(m == 0 && use_mlp7_hmm) { esl_vec_FCopy(cm->mlp7_evparam,       CM_p7_NEVPARAM, p7evpAA[m]); }
+    else if(use_mlp7_hmm)      { esl_vec_FCopy(cm->ap7_evparamAA[m-1], CM_p7_NEVPARAM, p7evpAA[m]); }
+    else                       { esl_vec_FCopy(cm->ap7_evparamAA[m],   CM_p7_NEVPARAM, p7evpAA[m]); }
+  }
+  
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, "TIMING setup_cm()");
+  esl_stopwatch_Destroy(w);
+
+  *opt_nhmm    = nhmm;
+  *opt_hmmA    = hmmA;
+  *opt_bgA     = bgA;
+  *opt_omA     = omA;
+  *opt_gmA     = gmA;
+  *opt_p7evpAA = p7evpAA;
+  
+  return eslOK;
+
+ ERROR: 
+  if(gmA     != NULL) { for(m = 0; m < nhmm; m++) { if(gmA[m]     != NULL) p7_profile_Destroy(gmA[m]);  } free(gmA); }
+  if(omA     != NULL) { for(m = 0; m < nhmm; m++) { if(omA[m]     != NULL) p7_oprofile_Destroy(omA[m]); } free(omA); }
+  if(bgA     != NULL) { for(m = 0; m < nhmm; m++) { if(bgA[m]     != NULL) p7_bg_Destroy(bgA[m]);       } free(bgA); }
+  if(p7evpAA != NULL) { for(m = 0; m < nhmm; m++) { if(p7evpAA[m] != NULL) free(p7evpAA[m]);            } free(p7evpAA); }
+  if(hmmA    != NULL) free(hmmA); /* hmmA just points to HMMs in the CM data structure, don't free those */
+  *opt_nhmm = 0;
+  *opt_hmmA = NULL;
+  *opt_bgA  = NULL;
+  *opt_omA  = NULL;
+  *opt_gmA  = NULL;
+  *opt_p7evpAA = NULL;
+  ESL_FAIL(status, errbuf, "Out of memory");
+}
+
+/* Function:  setup_config_opts()
+ * Incept:    EPN, Wed Jul  6 13:45:44 2011
+ *
+ * Purpose:  Determine what a CM's <config_opts> flags 
+ *           should be based on command-line options.
+ *
+ * Returns: void.
+ */
+void
+setup_config_opts(const ESL_GETOPTS *go, int *ret_config_opts)
+{ 
+  int config_opts = 0;
+
+  if(! esl_opt_GetBoolean(go, "-g")) { 
+    if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
+      config_opts |= CM_CONFIG_LOCAL;
+      config_opts |= CM_CONFIG_HMMLOCAL;
+      if(! esl_opt_GetBoolean(go, "--cp9noel")) config_opts |= CM_CONFIG_HMMEL; 
+    }
+  }
+
+  *ret_config_opts = config_opts;
+  return;
+}
 
 /*****************************************************************
  * @LICENSE@

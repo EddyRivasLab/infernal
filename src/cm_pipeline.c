@@ -279,6 +279,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, int Z_
     pli->Z       = Z;       /* Z is an input variable to this function */
     pli->Z_setby = Z_setby; /* so is Z_setby */
   }
+  /* set filter thresholds dependent on Z */
   if(esl_opt_IsUsed(go, "--fZ")) { 
     Z_Mb = esl_opt_GetReal(go, "--fZ"); 
   }
@@ -342,9 +343,10 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, int Z_
     pli->F5 = pli->F5b = 0.02;
     pli->F6 = 0.0001;
   }
+
   pli->F6env     = ESL_MIN(1.0, pli->F6 * (float) esl_opt_GetInteger(go, "--cykenvx"));
   pli->do_cykenv = (esl_opt_GetBoolean(go, "--nocykenv")) ? FALSE : TRUE;
-
+    
   /* obey manually-defined filter thresholds */
   if(esl_opt_IsUsed(go, "--F1"))  { pli->do_msv      = TRUE; pli->F1  = esl_opt_GetReal(go, "--F1");  }
   if(esl_opt_IsUsed(go, "--F1b")) { pli->do_msvbias  = TRUE; pli->F1b = esl_opt_GetReal(go, "--F1b"); }
@@ -621,7 +623,7 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  * Incept:    EPN, Fri Sep 24 16:35:35 2010
  *            SRE, Fri Dec  5 10:35:37 2008 [Janelia] (p7_pli_NewModel())
  *
- * Purpose:   Caller has a new model <cm>, and optimized HMM matrix <om>. 
+ * Purpose:   Caller has a new model <cm>.
  *            Prepare the pipeline <pli> to receive this model as either 
  *            a query or a target.
  *
@@ -676,22 +678,19 @@ cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int need_fsmx, int need_smx, int *fc
 				    FALSE,  /* do not allocate float matrices for Inside round */
 				    TRUE);  /* do     allocate int   matrices for Inside round */
   }
-  
-  if (pli->Z_setby == CM_ZSETBY_NTARGETS && pli->mode == CM_SCAN_MODELS) pli->Z = pli->nmodels;
 
-  /* if we're using an E-value threshold and we already know Z, 
-   * determine the bit score for this model that pertains
-   * to that E-value */
-  if (pli->Z_setby == CM_ZSETBY_SSIINFO || pli->Z_setby == CM_ZSETBY_OPTION || pli->Z_setby == CM_ZSETBY_FILEINFO) {
-    if((status = UpdateExpsForDBSize(cm, NULL, (long) pli->Z)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem update exp tail parameters for model %s\n", cm->name);
-    if(pli->by_E) { 
-      if((status = E2ScoreGivenExpInfo(cm->expA[pli->final_cm_exp_mode], pli->errbuf, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
-      pli->T = (double) T;
-    }
+  /* Update the current effective database size so it pertains to the
+   * new model. Also, If we're using an E-value threshold determine
+   * the bit score for this model that pertains to that E-value.
+   */
+  if((status = UpdateExpsForDBSize(cm, NULL, (long) pli->Z)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem update exp tail parameters for model %s\n", cm->name);
+  if(pli->by_E) { 
+    if((status = E2ScoreGivenExpInfo(cm->expA[pli->final_cm_exp_mode], pli->errbuf, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
+    pli->T = (double) T;
   }
 
   /* if we're using Rfam GA, NC, or TC cutoffs, update them for this model */
-  if (pli->mode == p7_SEARCH_SEQS && pli->use_bit_cutoffs) { 
+  if (pli->use_bit_cutoffs) { 
     if((status = cm_pli_NewModelThresholds(pli, cm)) != eslOK) return status;
   }
 
@@ -743,15 +742,16 @@ cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int need_fsmx, int need_smx, int *fc
  *            SRE, Sat Oct 17 12:07:43 2009 [Janelia] (p7_pli_NewModelThresholds()
  *
  * Purpose:   Set the bit score thresholds on a new model, if we're 
- *            using Rfam GA, TC, or NC cutoffs for reporting or
- *            inclusion.
+ *            either using Rfam GA, TC, or NC cutoffs for reporting or
+ *            inclusion, and/or if we already know the total 
+ *            database size.
  *            
  *            In a "search" pipeline, this only needs to be done once
  *            per query model, so <cm_pli_NewModelThresholds()> gets 
  *            called by <cm_pli_NewModel()>.
  *            
  *            In a "scan" pipeline, this needs to be called for each
- *            model.
+ *            target model.
  *
  * Returns:   <eslOK> on success. 
  *            
@@ -792,8 +792,8 @@ cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm)
  *
  * Returns:   <eslOK> on success.
  */
-int
-cm_pli_NewSeq(CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx)
+ int
+ cm_pli_NewSeq(CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx)
 {
   /* Update number of residues read/searched */
   pli->nres += sq->n;
@@ -804,7 +804,7 @@ cm_pli_NewSeq(CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx)
   pli->cur_seq_idx = cur_seq_idx;
 
   /* Note that we don't update pli->Z, that must be set at beginning
-   * of search, this differs from hmmsearch and nhmmer, which, by
+   * of a search, this differs from hmmsearch and nhmmer, which, by
    * default update Z as sequences are read.
    */
   return eslOK;
@@ -2447,7 +2447,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "Windows   passing  local HMM MSV           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_msv,
 	    (double) pli->pos_past_msv / pli->nres,
-	    pli->F1);
+	    pli->F1 * pli->nmodels);
     nwin_fcyk = nwin_final = pli->n_past_msv;
   }
   else { 
@@ -2458,7 +2458,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "Windows   passing  local HMM MSV      bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_msvbias,
 	    (double) pli->pos_past_msvbias / pli->nres,
-	    pli->F1b);
+	    pli->F1b * pli->nmodels);
     nwin_fcyk = nwin_final = pli->n_past_msvbias;
   }
 
@@ -2466,7 +2466,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "Windows   passing  local HMM Viterbi       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_vit,
 	    (double) pli->pos_past_vit / pli->nres,
-	    pli->F2);
+	    pli->F2 * pli->nmodels);
     nwin_fcyk = nwin_final = pli->n_past_vit;
   }
   else { 
@@ -2477,7 +2477,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "Windows   passing  local HMM Viterbi  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_vitbias,
 	    (double) pli->pos_past_vitbias / pli->nres,
-	    pli->F2b);
+	    pli->F2b * pli->nmodels);
     nwin_fcyk = nwin_final = pli->n_past_vitbias;
   }
   else { 
@@ -2488,7 +2488,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "Windows   passing  local HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_fwd,
 	    (double) pli->pos_past_fwd / pli->nres,
-	    pli->F3);
+	    pli->F3 * pli->nmodels);
     nwin_fcyk = nwin_final = pli->n_past_fwd;
   }
   else { 
@@ -2499,7 +2499,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "Windows   passing  local HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_fwdbias,
 	    (double) pli->pos_past_fwdbias / pli->nres,
-	    pli->F3b);
+	    pli->F3b * pli->nmodels);
     nwin_fcyk = nwin_final = pli->n_past_fwdbias;
   }
   else { 
@@ -2510,7 +2510,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "Windows   passing glocal HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_gfwd,
 	    (double) pli->pos_past_gfwd / pli->nres,
-	    pli->F4);
+	    pli->F4 * pli->nmodels);
     nwin_fcyk = nwin_final = pli->n_past_gfwd;
   }
   else { 
@@ -2520,7 +2520,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "Windows   passing glocal HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_gfwdbias,
 	    (double) pli->pos_past_gfwdbias / pli->nres,
-	    pli->F4b);
+	    pli->F4b * pli->nmodels);
     nwin_fcyk = nwin_final = pli->n_past_gfwdbias;
   }
   else { 
@@ -2531,7 +2531,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "Envelopes passing glocal HMM envelope defn filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_edef,
 	    (double) pli->pos_past_edef / pli->nres,
-	    pli->F5);
+	    pli->F5 * pli->nmodels);
     nwin_fcyk = nwin_final = pli->n_past_edef;
   }
   else { 
@@ -2542,7 +2542,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     fprintf(ofp, "Envelopes passing glocal HMM envelope bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli->n_past_edefbias,
 	    (double) pli->pos_past_edefbias / pli->nres,
-	    pli->F5b);
+	    pli->F5b * pli->nmodels);
     nwin_fcyk = nwin_final = pli->n_past_edefbias;
   }
   else { 
@@ -2554,7 +2554,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 	    (pli->do_glocal_cm_stages) ? "glocal" : "local",
 	    pli->n_past_cyk,
 	    (double) pli->pos_past_cyk / pli->nres,
-	    pli->F6);
+	    pli->F6 * pli->nmodels);
     nwin_final = pli->n_past_cyk;
   }
   else { 
@@ -2569,24 +2569,24 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 
   fprintf(ofp, "\n");
   if(nwin_fcyk > 0) { 
-    fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15" PRId64 " (%.4g)\n", 
+    fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15" PRId64 "  (%.4g)\n", 
 	    "CYK", 
 	    pli->n_overflow_fcyk,
 	    (double) pli->n_overflow_fcyk / (double) nwin_fcyk);
   }
   else { 
-    fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15d (%.4g)\n", 
+    fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15d  (%.4g)\n", 
 	    "CYK", 
 	    0, 0.);
   }
   if(nwin_final > 0) { 
-    fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15" PRId64 " (%.4g)\n", 
+    fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15" PRId64 "  (%.4g)\n", 
 	    (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
 	    pli->n_overflow_final,
 	    (double) pli->n_overflow_final / (double) nwin_final);
   }
   else { 
-    fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15d (%.4g)\n", 
+    fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15d  (%.4g)\n", 
 	    (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
 	    0, 0.);
   }

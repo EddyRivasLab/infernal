@@ -2923,3 +2923,75 @@ cm_CreateDefaultApp(ESL_OPTIONS *options, int nargs, int argc, char **argv, char
     }
   return go;
 }
+
+
+/* Function:  cm_CreateBlock()
+ * Synopsis:  Create a new block of empty <CM_BLOCK>.
+ * Incept:    EPN, Wed Jul  6 11:39:20 2011
+ *
+ * Purpose:   Creates a block of empty <CM_BLOCK> CM objects.
+ *            
+ * Returns:   a pointer to the new <CM_BLOCK>. Caller frees this
+ *            with <cm_DestroyBlock()>.
+ *
+ * Throws:    <NULL> if allocation fails.
+ */
+CM_BLOCK *
+cm_CreateBlock(int count)
+{
+  int i = 0;
+
+  CM_BLOCK *block = NULL;
+  int status = eslOK;
+
+  ESL_ALLOC(block, sizeof(*block));
+
+  block->count = 0;
+  block->listSize = 0;
+  block->list  = NULL;
+
+  ESL_ALLOC(block->list, sizeof(CM_t *) * count);
+  block->listSize = count;
+
+  for (i = 0; i < count; ++i)
+    {
+      block->list[i] = NULL;
+    }
+
+  return block;
+
+ ERROR:
+  if (block != NULL)
+    {
+      if (block->list != NULL)  free(block->list);
+      free(block);
+    }
+  
+  return NULL;
+}
+
+/* Function:  cm_DestroyBlock()
+ * Synopsis:  Frees an <CMM_BLOCK>.
+ * Incept:    
+ *
+ * Purpose:   Free a Create()'d block of profiles.
+ */
+void
+cm_DestroyBlock(CM_BLOCK *block)
+{
+  int i;
+
+  if (block == NULL) return;
+
+  if (block->list != NULL)
+    {
+      for (i = 0; i < block->listSize; ++i)
+	{
+	  if (block->list[i] != NULL) FreeCM(block->list[i]);
+	}
+      free(block->list);
+    }
+
+  free(block);
+  return;
+}

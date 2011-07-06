@@ -89,6 +89,8 @@ extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
 extern int        CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm);
 extern void       DumpCMFlags(FILE *fp, CM_t *cm);
 extern ESL_GETOPTS *cm_CreateDefaultApp(ESL_OPTIONS *options, int nargs, int argc, char **argv, char *banner, char *usage);
+extern CM_BLOCK    *cm_CreateBlock(int size);
+extern void         cm_DestroyBlock(CM_BLOCK *block);
 
 /* from dispatch.c */
 extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, int hit_len_guess, 
@@ -192,6 +194,7 @@ extern int     cm_file_CreateLock(CM_FILE *cmfp);
 extern int     cm_file_WriteASCII(FILE *fp, int format, CM_t *cm);
 extern int     cm_file_WriteBinary(FILE *fp, int format, CM_t *cm);
 extern int     cm_file_Read(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
+extern int     cm_file_ReadBlock(CM_FILE *cmfp, ESL_ALPHABET **ret_tac, CM_BLOCK *cmBlock);
 extern int     cm_file_PositionByKey(CM_FILE *cmfp, const char *key);
 extern int     cm_file_Position(CM_FILE *cmfp, const off_t offset);
 
@@ -750,7 +753,7 @@ extern int         cm_tophits_GetMaxShownLength(CM_TOPHITS *h);
 extern int         cm_tophits_Reuse(CM_TOPHITS *h);
 extern void        cm_tophits_Destroy(CM_TOPHITS *h);
 extern int         cm_tophits_CloneHitFromResults(CM_TOPHITS *th, search_results_t *results, int hidx, int64_t seq_idx, CM_HIT **ret_hit);
-extern int         cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eff_dbsize);
+extern int         cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eZ);
 extern int         cm_tophits_RemoveDuplicates(CM_TOPHITS *th);
 
 extern int cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli);

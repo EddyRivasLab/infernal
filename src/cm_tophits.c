@@ -560,12 +560,12 @@ cm_tophits_CloneHitFromResults(CM_TOPHITS *th, search_results_t *results, int hi
  * Returns:   <eslOK> on success.
  */
 int
-cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eff_dbsize)
+cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eZ)
 {
   int i; 
 
   for (i = 0; i < th->N ; i++) { 
-    th->unsrt[i].evalue  = th->unsrt[i].pvalue * eff_dbsize;
+    th->unsrt[i].evalue  = th->unsrt[i].pvalue * eZ;
   }
   return eslOK;
 }
