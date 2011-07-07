@@ -510,9 +510,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
   /* Open the target CM database and read 1 CM, but only to get the sequence alphabet */
   status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
-  if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open HMM file %s.\n%s\n", cfg->cmfile, errbuf);
-  else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open HMM file %s.\n%s\n",                cfg->cmfile, errbuf);
-  else if (status != eslOK)        cm_Fail("Unexpected error %d in opening HMM file %s.\n%s\n",               status, cfg->cmfile, errbuf);  
+  if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cfg->cmfile, errbuf);
+  else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cfg->cmfile, errbuf);
+  else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",               status, cfg->cmfile, errbuf);  
   if      (cmfp->do_gzip)          cm_Fail("Reading gzipped CM files is not supported");
   if      (cmfp->do_stdin)         cm_Fail("Reading CM files from stdin is not supported");
   // TODO:cmpress? if (! cmfp->is_pressed)           cm_Fail("Failed to open binary auxfiles for %s: use cmpress first\n",             hfp->fname);

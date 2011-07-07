@@ -1781,6 +1781,7 @@ create_info()
   info->pli          = NULL;
   info->th           = NULL;
   info->cm           = NULL;
+  info->cmcons       = NULL;
   info->omA          = NULL;
   info->bgA          = NULL;
   info->p7_evparamAA = NULL;

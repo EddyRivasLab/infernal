@@ -605,7 +605,16 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
 	      cm->expA[EXP_CP9_GF]->lambda, cm->expA[EXP_CP9_GF]->mu_extrap, cm->expA[EXP_CP9_GF]->mu_orig, 
 	      cm->expA[EXP_CP9_GF]->dbsize, cm->expA[EXP_CP9_GF]->nrandhits, cm->expA[EXP_CP9_GF]->tailp);
     }
+
+  /* main model section */
   fputs("CM\n", fp);
+
+  /* Create emit map if nec, so we can output map, consensus and rf info appropriately */
+  if(cm->emap == NULL) { 
+    cm->emap = CreateEmitMap(cm);
+    if(cm->emap == NULL) ESL_EXCEPTION(eslEINVAL, "unable to create an emit map");
+  }  
+
   for (v = 0; v < cm->M; v++) { 
     nd = cm->ndidx[v];
 
@@ -1694,16 +1703,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
     p7_hmmfile_Close(hfp);
   }
 
-  /* EPN 10.29.06 Remove the sole source of CM ambiguities. Find and detach insert states
-   *              that are 1 state before an END_E.  */
-  cm_find_and_detach_dual_inserts(cm, 
-				  FALSE, /* Don't check END_E-1 states have 0 counts, they may not if 
-					  * an old version (0.7 or earlier) of cmbuild was used, or  
-					  * cmbuild --nodetach  was used to build the CM  */
-				  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
   CMRenormalize(cm);
-
-
 
   /* Create emit map now that we know the model architecture */
   cm->emap = CreateEmitMap(cm);
@@ -1733,6 +1733,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
       if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) cm->map[cm->emap->rpos[nd]] = tmp_map_right[nd];
     }
   }
+
   /* these get allocated regardless of flag status, free them */
   free(tmp_rf_left);
   free(tmp_rf_right);
@@ -1958,19 +1959,6 @@ read_bin_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
     if (fseeko(cmfp->f, ftello(hfp->f), SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for CM file parser after reading filter HMMs");
     p7_hmmfile_Close(hfp);
   }
-
-  /* EPN 10.29.06 Remove the sole source of CM ambiguities. Find and detach insert states
-   *              that are 1 state before an END_E.  */
-  cm_find_and_detach_dual_inserts(cm, 
-				  FALSE, /* Don't check END_E-1 states have 0 counts, they may not if 
-					  * an old version (0.7 or earlier) of cmbuild was used, or  
-					  * cmbuild --nodetach  was used to build the CM  */
-				  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
-  CMRenormalize(cm);
-
-  /* Create emit map now that we know the model architecture */
-  cm->emap = CreateEmitMap(cm);
-  if(cm->emap == NULL) ESL_XFAIL(eslEINVAL, cmfp->errbuf, "After reading complete model, failed to create an emit map");
 
   if (tmp_ap7_gfmuA != NULL)     free(tmp_ap7_gfmuA);
   if (tmp_ap7_gflambdaA != NULL) free(tmp_ap7_gflambdaA);
@@ -3070,12 +3058,15 @@ is_real(char *s)
 /*****************************************************************
  * 6. Benchmark driver.
  *****************************************************************/
-#ifdef p7HMMFILE_BENCHMARK
+#ifdef CM_FILE_BENCHMARK
 /*
-  icc  -O3 -static -o p7_hmmfile_benchmark -I. -L. -I../easel -L../easel -Dp7HMMFILE_BENCHMARK p7_hmmfile.c -lhmmer -leasel -lm 
-  ./p7_hmmfile_benchmark Pfam.hmm
+  gcc -pthread -std=gnu99 -g -Wall -static -o cm_file_benchmark -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel -DCM_FILE_BENCHMARK cm_file.c -linfernal -lhmmer -leasel -lm
+  icc -pthread                 -O3 -static -o cm_file_benchmark -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel -DCM_FILE_BENCHMARK cm_file.c -linfernal -lhmmer -leasel -lm 
+  ./cm_file_benchmark Rfam.cm
  */
+#include "esl_config.h"
 #include "p7_config.h"
+#include "config.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -3085,85 +3076,84 @@ is_real(char *s)
 #include "esl_stopwatch.h"
 
 #include "hmmer.h"
+#include "funcs.h"		/* external functions                   */
+#include "structs.h"		/* data structures, macros, #define's   */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",  0 },
-  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "include time of profile configuration", 0 }, 
+  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "include time of CM configuration", 0 }, 
+  { "-W",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  "-a", NULL, "include time of W calculation", 0 }, 
   { "-v",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "verbose: print model info as they're read", 0 }, 
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
-static char usage[]  = "[-options] <HMM file>";
-static char banner[] = "benchmark driver for HMM input";
+static char usage[]  = "[-options] <CM file>";
+static char banner[] = "benchmark driver for CM input";
 
 int 
 main(int argc, char **argv)
 {
-  ESL_GETOPTS   *go      = p7_CreateDefaultApp(options, 1, argc, argv, banner, usage);
-  ESL_STOPWATCH *w       = esl_stopwatch_Create();
-  ESL_ALPHABET  *abc     = NULL;
-  char          *hmmfile = esl_opt_GetArg(go, 1);
-  CM_FILE    *cmfp     = NULL;
-  P7_HMM        *hmm     = NULL;
-  P7_BG         *bg      = NULL;
-  P7_PROFILE    *gm      = NULL;
-  P7_OPROFILE   *om      = NULL;
-  int            nmodel  = 0;
-  uint64_t       totM    = 0;
+  ESL_GETOPTS   *go       = cm_CreateDefaultApp(options, 1, argc, argv, banner, usage);
+  ESL_STOPWATCH *w        = esl_stopwatch_Create();
+  ESL_STOPWATCH *w2       = esl_stopwatch_Create();
+  ESL_ALPHABET  *abc      = NULL;
+  char          *cmfile   = esl_opt_GetArg(go, 1);
+  CM_FILE       *cmfp     = NULL;
+  CM_t          *cm       = NULL;
+  int            nmodel   = 0;
+  uint64_t       tot_clen = 0;
   int            status;
+  int            be_verbose = esl_opt_GetBoolean(go, "-v");
   char           errbuf[eslERRBUFSIZE];
 
   esl_stopwatch_Start(w);
 
-  status = p7_hmmfile_OpenE(hmmfile, NULL, &cmfp, errbuf);
-  if      (status == eslENOTFOUND) p7_Fail("File existence/permissions problem in trying to open HMM file %s.\n%s\n", hmmfile, errbuf);
-  else if (status == eslEFORMAT)   p7_Fail("File format problem in trying to open HMM file %s.\n%s\n",                hmmfile, errbuf);
-  else if (status != eslOK)        p7_Fail("Unexpected error %d in opening HMM file %s.\n%s\n",               status, hmmfile, errbuf);  
+  status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf);
+  if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
+  else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
+  else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",               status, cmfile, errbuf);  
+  if      (cmfp->do_gzip)          cm_Fail("Reading gzipped CM files is not supported");
+  if      (cmfp->do_stdin)         cm_Fail("Reading CM files from stdin is not supported");
 
-  while ((status = p7_hmmfile_Read(cmfp, &abc, &hmm)) == eslOK)
+  if(be_verbose) esl_stopwatch_Start(w2);
+  while ((status = cm_file_Read(cmfp, &abc, &cm)) == eslOK)
     {
-      if (nmodel == 0) { 	/* first time initialization, now that alphabet known */
-	bg = p7_bg_Create(abc);
-	p7_bg_SetLength(bg, 400);
-      }
-
-      if (esl_opt_GetBoolean(go, "-v")) printf("%s\n", hmm->name);
       nmodel++;
-      totM += hmm->M;
+      tot_clen += cm->clen;
 
       if (esl_opt_GetBoolean(go, "-a") == TRUE) 
 	{
-	  gm = p7_profile_Create(hmm->M, abc);
-	  p7_ProfileConfig(hmm, bg, gm, 400, p7_LOCAL);
-	  om = p7_oprofile_Create(gm->M, abc);
-	  p7_oprofile_Convert(gm, om);
-	  p7_oprofile_ReconfigLength(om, 400);
-
-	  p7_profile_Destroy(gm);
-	  p7_oprofile_Destroy(om);
+	  if((status = ConfigCM(cm, errbuf, 
+				esl_opt_GetBoolean(go, "-W"), /* calculate W? */
+				NULL, NULL)) != eslOK) cm_Fail(errbuf);
 	}
 
-      p7_hmm_Destroy(hmm);
+      if(be_verbose) { 
+	esl_stopwatch_Stop(w2);
+	printf("%-30s  ", cm->name);
+	esl_stopwatch_Display(stdout, w2, "CPU time: ");
+	esl_stopwatch_Start(w2);
+      }
+      FreeCM(cm);
     }
-  if      (status == eslEFORMAT)   p7_Fail("bad file format in HMM file %s",             hmmfile);
-  else if (status == eslEINCOMPAT) p7_Fail("HMM file %s contains different alphabets",   hmmfile);
-  else if (status != eslEOF)       p7_Fail("Unexpected error in reading HMMs from %s",   hmmfile);
+  if      (status == eslEFORMAT)   cm_Fail("bad file format in CM file %s\n%s",             cmfile, cmfp->errbuf);
+  else if (status == eslEINCOMPAT) cm_Fail("CM file %s contains different alphabets\n%s",   cmfile, cmfp->errbuf);
+  else if (status != eslEOF)       cm_Fail("Unexpected error in reading CMs from %s\n%s",   cmfile, cmfp->errbuf);
 
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, "# CPU time: ");
   printf("# number of models: %d\n", nmodel);
-  printf("# total M:          %" PRId64 "\n", totM);
+  printf("# total clen:       %" PRId64 "\n", tot_clen);
   
-  p7_bg_Destroy(bg);
-  p7_hmmfile_Close(cmfp);
+  cm_file_Close(cmfp);
   esl_alphabet_Destroy(abc);
   esl_stopwatch_Destroy(w);
+  esl_stopwatch_Destroy(w2);
   esl_getopts_Destroy(go);
   return 0;
 }
-#endif /*p7HMMFILE_BENCHMARK*/
+#endif /*cm_FILE_BENCHMARK*/
 /*---------------- end, benchmark driver ------------------------*/
-
 
 /*****************************************************************
  * 7. Unit tests.
@@ -3335,7 +3325,7 @@ main(int argc, char **argv)
  *  --------------
  *  .gz file missing/not readable     \rm test.cm.gz; touch test.cm.gz; src/cmfile_example test.cm.gz
  *  gzip -dc doesn't exist            \cp testsuite/20aa.cm test.cm; gzip test.cm; sudo mv /usr/bin/gzip /usr/bin/gzip.old; src/cmfile_example test.cm.gz
- *  cm file not found                \rm test.cm; src/cmfile_example test.cm
+ *  cm file not found                 \rm test.cm; src/cmfile_example test.cm
  *  bad SSI file format               \cp testsuite/20aa.cm test.cm; \rm test.cm.ssi; touch test.cm.ssi; src/cmfile_example test.cm
  *  64-bit SSI on 32-bit sys
  *  empty file                        \rm test.cm; touch test.cm
@@ -3370,7 +3360,7 @@ main(int argc, char **argv)
   int           status;
   
   /* An example of reading a single CM from a file, and checking that it is the only one. */
-  status = cm_ile_Open(cmfile, NULL, &cmfp, errbuf);
+  status = cm_file_Open(cmfile, NULL, &cmfp, errbuf);
   if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
   else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
   else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",               status, cmfile, errbuf);  
