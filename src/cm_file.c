@@ -1356,7 +1356,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 	else if (strncmp(tag+4, "GV", 2) == 0) { exp_mode = EXP_CP9_GV; cmcp9_statstracker += 32;  }
 	else if (strncmp(tag+4, "LF", 2) == 0) { exp_mode = EXP_CP9_LF; cmcp9_statstracker += 64;  }
 	else if (strncmp(tag+4, "GF", 2) == 0) { exp_mode = EXP_CP9_GF; cmcp9_statstracker += 128; }
-	else                                   { ESL_XFAIL(status, cmfp->errbuf, "Invalid tag beginning with ECP9"); }
+ 	else                                   { ESL_XFAIL(status, cmfp->errbuf, "Invalid tag beginning with ECP9"); }
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECP9.. line"); /* lambda    */
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECP9.. line"); /* mu_extrap */
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok3, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECP9.. line"); /* mu_orig   */
@@ -1767,8 +1767,8 @@ read_bin_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
   off_t         offset = 0;
   int           status;
   int           nap7_expected = -1;
-  char         *tmp_ap7_gfmuA     = NULL;
-  char         *tmp_ap7_gflambdaA = NULL;
+  float        *tmp_ap7_gfmuA     = NULL;
+  float        *tmp_ap7_gflambdaA = NULL;
 
   cmfp->errbuf[0] = '\0';
   if (feof(cmfp->f))  { status = eslEOF;       goto ERROR; }
@@ -1875,6 +1875,18 @@ read_bin_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
       if (! fread((char *) &(tmp_ap7_gflambdaA[x]), sizeof(float), 1, cmfp->f))         ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read additional P7 E-value stats");
     }
   }
+  if (cm->flags & CMH_EXPTAIL_STATS) { 
+    ESL_ALLOC(cm->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
+    for(x = 0; x < EXP_NMODES; x++) {
+      cm->expA[x] = CreateExpInfo();
+      if (! fread((char *) &(cm->expA[x]->lambda),    sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
+      if (! fread((char *) &(cm->expA[x]->mu_extrap), sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
+      if (! fread((char *) &(cm->expA[x]->mu_orig),   sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
+      if (! fread((char *) &(cm->expA[x]->dbsize),    sizeof(long),   1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
+      if (! fread((char *) &(cm->expA[x]->nrandhits), sizeof(int),    1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
+      if (! fread((char *) &(cm->expA[x]->tailp),     sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
+    }
+  }
 
   /* Finally, read additional HMMs for this CM if nec */
   if(nap7_expected > 0) { 
@@ -1955,6 +1967,10 @@ read_bin_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 					  * cmbuild --nodetach  was used to build the CM  */
 				  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
   CMRenormalize(cm);
+
+  /* Create emit map now that we know the model architecture */
+  cm->emap = CreateEmitMap(cm);
+  if(cm->emap == NULL) ESL_XFAIL(eslEINVAL, cmfp->errbuf, "After reading complete model, failed to create an emit map");
 
   if (tmp_ap7_gfmuA != NULL)     free(tmp_ap7_gfmuA);
   if (tmp_ap7_gflambdaA != NULL) free(tmp_ap7_gflambdaA);
