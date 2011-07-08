@@ -1436,6 +1436,8 @@ enum cm_file_formats_e {
 };
 
 typedef struct cm_file_s {
+  P7_HMMFILE   *hfp;             /* for reading p7 HMMs within the CM file */
+
   FILE         *f;		 /* pointer to stream for reading models                 */
   char         *fname;	         /* (fully qualified) name of the CM file; [STDIN] if -  */
   ESL_SSI      *ssi;		 /* open SSI index for model file <f>; NULL if none.     */
@@ -1450,7 +1452,8 @@ typedef struct cm_file_s {
   int           (*parser)(struct cm_file_s *, ESL_ALPHABET **, CM_t **);  
   ESL_FILEPARSER *efp;
 
-  /* If <is_pressed>, we can read optimized profile HMM filters directly, via:  */
+  /* If <is_pressed>, we can read HMM filters directly, via: */
+  FILE         *gfp;		/* HMM file */
   FILE         *ffp;		/* MSV part of the optimized profile HMM */
   FILE         *pfp;		/* rest of the optimized profile HMM     */
 

@@ -515,7 +515,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",               status, cfg->cmfile, errbuf);  
   if      (cmfp->do_gzip)          cm_Fail("Reading gzipped CM files is not supported");
   if      (cmfp->do_stdin)         cm_Fail("Reading CM files from stdin is not supported");
-  // TODO:cmpress? if (! cmfp->is_pressed)           cm_Fail("Failed to open binary auxfiles for %s: use cmpress first\n",             hfp->fname);
+  if (! cmfp->is_pressed)          cm_Fail("Failed to open binary auxfiles for %s: use cmpress first\n",             cmfp->fname);
 
   hstatus = cm_file_Read(cmfp, &abc, NULL);
   if(hstatus == eslEFORMAT)  cm_Fail("bad file format in CM file %s\n%s",           cfg->cmfile, cmfp->errbuf);

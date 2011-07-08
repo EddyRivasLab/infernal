@@ -197,6 +197,8 @@ extern int     cm_file_Read(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm
 extern int     cm_file_ReadBlock(CM_FILE *cmfp, ESL_ALPHABET **ret_tac, CM_BLOCK *cmBlock);
 extern int     cm_file_PositionByKey(CM_FILE *cmfp, const char *key);
 extern int     cm_file_Position(CM_FILE *cmfp, const off_t offset);
+extern int     cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, int nhmm_remaining, off_t cm_offset, P7_OPROFILE *om);
+extern int     cm_p7_hmmfile_WriteBinary(FILE *fp, int format, int nhmm_remaining, P7_HMM *hmm);
 
 /* from cm_modelconfig.c */
 extern int   ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t *mother_map);

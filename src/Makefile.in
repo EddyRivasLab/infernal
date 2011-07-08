@@ -53,6 +53,7 @@ PROGS = cmalign\
 	cmconvert\
 	cmemit\
 	cmfetch\
+	cmpress\
 	cmscan\
 	cmscore\
 	cmsearch\
