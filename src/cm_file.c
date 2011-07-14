@@ -48,8 +48,6 @@ static uint32_t  v1a_magic  = 0xe3edb0b2; /* v1.1 binary: "cm02" + 0x80808080 */
 
 /* CHANGE THESE, I COPIED HMMER's BECAUSE I DIDN'T KNOW HOW TO CONVERT STRING TO MAGIC */
 static uint32_t  v1a_fmagic = 0xb3e4e6f3; /* 3/d binary MSV file, SSE:     "3dfs" = 0x 33 64 66 73  + 0x80808080 */
-static uint32_t  v1a_pmagic = 0xb3e4f0f3; /* 3/d binary profile file, SSE: "3dps" = 0x 33 64 70 73  + 0x80808080 */
-static uint32_t  v1a_mmagic = 0xb3e4f0f4; /* ? Fix me! I just added 1 to v1a_pmagic */
 
 static int read_asc_1p1_cm(CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
 static int read_bin_1p1_cm(CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
@@ -376,18 +374,19 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
    */
   if (cmfp->is_pressed) 
     {
-      /* here we rely on the fact that the suffixes are .i1{mfpi}, to construct other names from .i1m file name !! */
+      /* here we rely on the fact that the suffixes are .i1{mgfpi}, to construct other names from .i1m file name !! */
       n = strlen(cmfp->fname); 	/* so, n = '\0', n-1 = 'm'  */
       esl_strdup(cmfp->fname, n, &dbfile);
 
+      dbfile[n-1] = 'h';	/* the binary file of full HMMs */
+      if((status = p7_hmmfile_OpenENoDB(dbfile, NULL, &(cmfp->gfp), errbuf)) != eslOK) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1h file found", cmfp->fname);
+      
       dbfile[n-1] = 'f';	/* the MSV filter part of the optimized sequence profiles (HMMs) */
-      if ((cmfp->ffp = fopen(dbfile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1f file found", cmfp->fname);
+      if ((cmfp->ffp      = fopen(dbfile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1f file found", cmfp->fname);
+      if ((cmfp->gfp->ffp = fopen(dbfile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1f file found", cmfp->fname);
 
       dbfile[n-1] = 'p';	/* the remainder of the optimized sequence profiles (HMMs) */
-      if ((cmfp->pfp = fopen(dbfile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1p file found", cmfp->fname);
-
-      dbfile[n-1] = 'g';	/* the binary file of full HMMs */
-      if ((cmfp->gfp = fopen(dbfile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1g file found", cmfp->fname);
+      if ((cmfp->gfp->pfp = fopen(dbfile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1p file found", cmfp->fname);
 
       dbfile[n-1] = 'i';	/* the SSI index for the .i1m file */
       status = esl_ssi_Open(dbfile, &(cmfp->ssi));
@@ -395,6 +394,9 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
       else if (status == eslEFORMAT)   ESL_XFAIL(eslEFORMAT,   errbuf, "Opened %s, a pressed HMM file; but format of its .i1i file unrecognized", cmfp->fname);
       else if (status == eslERANGE)    ESL_XFAIL(eslEFORMAT,   errbuf, "Opened %s, a pressed HMM file; but its .i1i file is 64-bit and your system is 32-bit", cmfp->fname);
       else if (status != eslOK)        ESL_XFAIL(eslEFORMAT,   errbuf, "Opened %s, a pressed HMM file; but failed to open its .i1i file", cmfp->fname);
+
+      /* set up cmfp->hfp so we can call p7_oprofile_ReadMSV() to read MSV parts of 
+       * optimized profiles from cmfp->ffp */
 
       free(dbfile); dbfile = NULL;      
     }
@@ -494,6 +496,7 @@ cm_file_Close(CM_FILE *cmfp)
 #endif
 
   if(cmfp->hfp != NULL) p7_hmmfile_Close(cmfp->hfp);
+  if(cmfp->gfp != NULL) p7_hmmfile_Close(cmfp->gfp);
 
   free(cmfp);
 }
@@ -521,6 +524,10 @@ cm_file_CreateLock(CM_FILE *cmfp)
       status = pthread_mutex_init(&cmfp->readMutex, NULL);
       if (status != 0) goto ERROR;
     }
+
+  /* create lock on hmm file as well */
+  if (cmfp->hfp != NULL)
+    if((status = p7_hmmfile_CreateLock(cmfp->hfp)) != eslOK) goto ERROR;
 
   return eslOK;
 
@@ -1069,19 +1076,30 @@ cm_file_Position(CM_FILE *cmfp, const off_t offset)
  *            being created by cmpress. 
  *
  *            Most of the work is done by p7_oprofile_Write(). This
- *            function is only necessary to write two pieces of data
- *            that are specific to CMs:
+ *            function is only necessary to write six pieces of data
+ *            that are specific to CMs to the MSV file and one 
+ *            to the profile file:
  *
  *            1. <nhmm_remaining>: the number of optimized profiles
  *            that will be printed after this one that correspond to
  *            the same CM as this one (the collection of all profiles
  *            that correspond to the same CM will possibly be used
  *            together to filter for the CM and thus must all be read
- *            together).
+ *            together). 
  *
- *            2. <cm_offset>: the position in the corresponding
- *            <.i1m> file at which the CM corresponding to the
- *            optimized profile can be found.
+ *            2. <cm_offset>: the position in the corresponding <.i1m>
+ *            file at which the CM corresponding to the optimized
+ *            profile can be found. 
+ *            
+ *            3. <cm_clen>: consensus length of the CM this p7 is a 
+ *            filter for. 
+ *
+ *            4. <cm_W>:    window length of the CM this p7 is a 
+ *            filter for. 
+ * 
+ *            5. <gfmu>:     glocal forward mu for this <om>
+ *
+ *            6. <gflambda>: glocal forward lambda for this <om>
  *
  * Args:      ffp            - open binary stream for saving MSV filter part
  *            pfp            - open binary stream for saving rest of profile
@@ -1098,57 +1116,192 @@ cm_file_Position(CM_FILE *cmfp, const off_t offset)
  * Throws:    (no abnormal error conditions)
  */
 int
-cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, int nhmm_remaining, off_t cm_offset, P7_OPROFILE *om)
+cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, int nhmm_remaining, off_t cm_offset, int cm_clen, int cm_W, float gfmu, float gflambda, P7_OPROFILE *om)
 {
   /* <ffp> is the part of the oprofile that MSVFilter() needs */
   if (fwrite((char *) &(v1a_fmagic),     sizeof(uint32_t), 1,  ffp) != 1) return eslFAIL;
   if (fwrite((char *) &(nhmm_remaining), sizeof(int),      1,  ffp) != 1) return eslFAIL;
-  if (fwrite((char *) om->offs,          sizeof(off_t),    1,  ffp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm_offset),      sizeof(off_t),    1,  ffp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm_clen),        sizeof(int),      1,  ffp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm_W),           sizeof(int),      1,  ffp) != 1) return eslFAIL;
+  if (fwrite((char *) &(gfmu),           sizeof(float),    1,  ffp) != 1) return eslFAIL;
+  if (fwrite((char *) &(gflambda),       sizeof(float),    1,  ffp) != 1) return eslFAIL;
 
-  /* <pfp> gets the rest of the oprofile */
-  if (fwrite((char *) &(v1a_pmagic),     sizeof(uint32_t), 1,  ffp) != 1) return eslFAIL;
-  if (fwrite((char *) &(nhmm_remaining), sizeof(int),      1,  ffp) != 1) return eslFAIL;
-  
+  /* <pfp> gets the rest of the oprofile, we don't need to write anything extra, so
+   * p7_oprofile_Write handles it all */
+
   /* pass to p7_oprofile_Write to do the rest */
   return p7_oprofile_Write(ffp, pfp, om);
 }
 
-/* Function:  cm_p7_hmmfile_WriteBinary()
- * Incept:    EPN, Fri Jul  8 07:13:32 2011
- * 
- * Purpose:   Writes an HMM to a file in HMMER3 binary format.
+/* Function:  cm_p7_oprofile_ReadMSV()
+ * Synopsis:  Read MSV filter part of an optimized profile.
+ * Incept:    EPN, Fri Jul  8 08:19:58 2011
  *
- *            Most of the work here is done by p7_hmmfile_WriteBinary().
- *            This function is only necessary to write a single piece
- *            of data that is specific to CMs:
+ * Purpose:   Read the MSV filter parts of p7 filter profile(s) from the
+ *            <.i1f> file associated with an open CM file <cmfp>.
+ *            Allocate new model(s), populate it with this minimal
+ *            MSV filter information, and return a pointer to them
+ *            in <*ret_omA>. Return pointers to additional information
+ *            on the models in <*ret_cm_offsetA>, <*ret_cm_clenA> and
+ *            <*ret_cm_WA>.
+ *            
+ *            Our alphabet may get set by the first HMM we read.  If
+ *            <*byp_abc> is <NULL> at start, create a new alphabet and
+ *            return a pointer to it in <*byp_abc>. If <*byp_abc> is
+ *            non-<NULL>, it is assumed to be a pointer to an existing
+ *            alphabet; we verify that the HMM's alphabet matches it
+ *            and <*ret_abc> isn't changed.  This is the same
+ *            convention used by <cm_file_Read()>.
+ *            
+ *            The <.i1f> file was opened automatically, if it existed,
+ *            when the CM file was opened with <cm_file_Open()>.
+ *            
+ *            When no more HMMs remain in the file, return <eslEOF>.
  *
- *            <nhmm_remaining>: the number of HMMs that will be
- *            printed after this one that correspond to the same CM as
- *            this one (the collection of all HMMs that correspond to
- *            the same CM will possibly be used together to filter for
- *            the CM and thus must all be read together).
+ *            Most of the work is done by p7_oprofile_ReadMSV(). This
+ *            function is only necessary to read four pieces of data
+ *            that are specific to CMs. See cm_p7_oprofile_Write()
+ *            for an explanation. 
  *
- *            From p7_hmmfile_WriteBinary():
- *            Legacy binary file formats in the 3.x release series are
- *            supported by specifying the <format> code. Pass <-1> to
- *            use the default current standard format; pass a valid
- *            code such as <p7_HMMFILE_3a> to select a specific
- *            binary format.
+ * Args:      hfp     - open HMM file, with associated .h3p file
+ *            byp_abc - BYPASS: <*byp_abc == ESL_ALPHABET *> if known; 
+ *                              <*byp_abc == NULL> if desired; 
+ *                              <NULL> if unwanted.
+ *            ret_read_mlp7   - RETURN: true if mlp7 was read
+ *            ret_read_ap7    - RETURN: true if ap7  was read
+ *            ret_nhmm        - RETURN: size of ret_*A arrays
+ *            ret_cm_offsetA  - RETURN: offset of CM  each om corresponds to
+ *            ret_cm_clenA    - RETURN: clen of CM each om corresponds to
+ *            ret_cm_WA       - RETURN: W of CM each om corresponds to
+ *            ret_gfmuA       - RETURN: glocal fwd mu for each om 
+ *            ret_gflambdaA   - RETURN: glocal forward lambda for each om
+ *            ret_omA         - RETURN: the read <oms> with MSV filter
+ *                              data filled in.
+ *            
+ * Returns:   <eslOK> on success. <*ret_om> is allocated here;
+ *            caller free's with <p7_oprofile_Destroy()>.
+ *            <*byp_abc> is allocated here if it was requested;
+ *            caller free's with <esl_alphabet_Destroy()>.
+ *            
+ *            Returns <eslEFORMAT> if <cmfp> has no <.i1f> file open,
+ *            or on any parsing error.
+ *            
+ *            Returns <eslEINCOMPAT> if the HMM we read is incompatible
+ *            with the existing alphabet <*byp_abc> led us to expect.
+ *            
+ *            On any returned error, <cmfp->errbuf> contains an
+ *            informative error message.
  *
- * Returns:   <eslOK> on success.
- *            <eslFAIL> if any writes fail (for instance,
- *            if disk fills up, which did happen during testing!).
- *
- * Throws:    <eslEINVAL> if <format> isn't a valid 3.0 format code.
+ * Throws:    <eslEMEM> on allocation error.
  */
 int
-cm_p7_hmmfile_WriteBinary(FILE *fp, int format, int nhmm_remaining, P7_HMM *hmm)
+cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int use_mlp7, int use_ap7, ESL_ALPHABET **byp_abc, int *ret_read_mlp7, int *ret_read_ap7, int *ret_nhmm, off_t **ret_cm_offsetA, int **ret_cm_clenA, int **ret_cm_WA, float **ret_gfmuA, float **ret_gflambdaA, P7_OPROFILE ***ret_omA)
 {
-  if (fwrite((char *) &(v1a_mmagic),     sizeof(uint32_t), 1,  fp) != 1) return eslFAIL;
-  if (fwrite((char *) &(nhmm_remaining), sizeof(int),      1,  fp) != 1) return eslFAIL;
+  int status         = eslOK;      /* return status */
+  uint32_t magic;                  /* magic number used to verify format */
+  int keep_reading   = TRUE;       /* should we continue to read next HMM? */
+  int nhmm_read      = 0;          /* number of HMMs we've read MSV info for and stored in omA */
+  int nhmm_seen      = 0;          /* number of HMMs we've looked at (some may have been ignored) */
+  int read_mlp7      = FALSE;      /* did we read a ML p7 HMM? */
+  int read_ap7       = FALSE;      /* did we read an addtional p7 HMM? */
+  int nhmm_allocated = 0;          /* size allocated in omA, cm_clenA, cm_WA, cm_offsetA */
+  int nhmm_remaining = 0;          /* number of HMMs remaining for corresponding CM */
+  off_t cm_offset;                 /* offset of the corresponding CM  in cmfp->mfp */
+  int   cm_clen;                   /* CM consensus length (will likely be om->M) */
+  int   cm_W;                      /* CM window length (will likely differ from om->max_length) */
+  float gfmu;                      /* glocal fwd mu parameter for current hmm */
+  float gflambda;                  /* glocal fwd lambda parameter for current hmm */
+  int   this_is_mlp7;              /* TRUE if current HMM we're reading is a ML p7 HMM */
+  P7_OPROFILE  *unused_om = NULL;  /* an om object we use to call p7_oprofile_ReadInfoMSV() with */
+  P7_OPROFILE **omA = NULL;        /* the om objects we'll keep and return */
+  int   *cm_clenA = NULL;          /* consensus lengths of corresponding CMs */
+  int   *cm_WA = NULL;             /* window lengths of corresponding CMs */
+  off_t *cm_offsetA = NULL;        /* file offsets of corresponding CMs in cmfp->mfp */
+  float *gfmuA = NULL;             /* glocal forward mu parameters */
+  float *gflambdaA = NULL;         /* glocal forward lambda parameters */
+  int   i;                         /* a counter */
+  int   read_this_hmm;             /* TRUE if we should read and store the next HMM in omA */
 
-  /* pass to p7_hmmfile_WriteBinary to do the rest */
-  return p7_hmmfile_WriteBinary(fp, -1, hmm);
+  if (cmfp->errbuf != NULL) cmfp->errbuf[0] = '\0';
+  if (cmfp->ffp == NULL)                     ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "no MSV profile file; cmpress probably wasn't run");
+  if (use_mlp7 == FALSE && use_ap7 == FALSE) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "cm_p7_oprofile_ReadMSV(): use_mlp7 and use_ap7 both FALSE");
+
+  while(keep_reading) { 
+    if (feof(cmfp->ffp))                                           { status = eslEOF; goto ERROR; } /* normal EOF: no more profiles */
+    if (! fread( (char *) &magic, sizeof(uint32_t), 1, cmfp->ffp)) { status = eslEOF; goto ERROR; }
+    if (magic != v1a_fmagic)  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "bad magic; not a CM database?");
+    
+    if (! fread( (char *) &nhmm_remaining,  sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read number of HMMs remaining");
+    if (! fread( (char *) &cm_offset,       sizeof(off_t),    1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM offset");
+    if (! fread( (char *) &cm_clen,         sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM consensus length");
+    if (! fread( (char *) &cm_W,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM window length (W)");
+    if (! fread( (char *) &gfmu,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read glocal fwd mu parameter");
+    if (! fread( (char *) &gflambda,        sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read glocal fwd lambda parameter");
+    
+    /* move HMM file position to where we are in cmfp (cmfile) */
+    if (fseeko(cmfp->gfp->ffp, ftello(cmfp->ffp), SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for HMM file parser (MSV)");
+
+    /* Determine if we should read this HMM and return it or skip it */
+    this_is_mlp7 = (nhmm_seen == 0) ? TRUE : FALSE;
+    if(this_is_mlp7) { /* we're positioned to read the first HMM, the mlp7 */
+      if(use_mlp7 || nhmm_remaining == 0) { read_mlp7 = read_this_hmm = TRUE;  }
+      else                                { read_mlp7 = read_this_hmm = FALSE; }
+    }
+    else { /* we're positioned to read an additional p7 HMM */
+      if(use_ap7) { read_ap7 = read_this_hmm = TRUE;  }
+      else        { read_ap7 = read_this_hmm = FALSE; }
+    }
+    if(read_this_hmm) { 
+      if(nhmm_read == 0) { 
+	nhmm_allocated = 1 + nhmm_remaining; /* b/c HMMs are in order of mlp7 then ap7s, once we start reading we read all remaining */
+	ESL_ALLOC(omA,        sizeof(P7_OPROFILE *) * nhmm_allocated);
+	for(i = 0; i < nhmm_allocated; i++) omA[i] = NULL;
+	ESL_ALLOC(cm_offsetA, sizeof(off_t) * nhmm_allocated);
+	ESL_ALLOC(cm_clenA,   sizeof(int)   * nhmm_allocated);
+	ESL_ALLOC(cm_WA,      sizeof(int)   * nhmm_allocated);
+	ESL_ALLOC(gfmuA,      sizeof(int)   * nhmm_allocated);
+	ESL_ALLOC(gflambdaA,  sizeof(int)   * nhmm_allocated);
+      }
+      if((status = p7_oprofile_ReadMSV(cmfp->gfp, byp_abc, &(omA[nhmm_read]))) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "failed read MSV part of unused filter model");
+      cm_offsetA[nhmm_read]  = cm_offset;
+      cm_clenA[nhmm_read]    = cm_clen;
+      cm_WA[nhmm_read]       = cm_W;
+      gfmuA[nhmm_read]       = gfmu;
+      gflambdaA[nhmm_read]   = gflambda;
+      nhmm_read++;
+    }
+    else { /* don't read this HMM, skip ahead to next one */
+      if((status = p7_oprofile_ReadInfoMSV(cmfp->gfp, byp_abc, &unused_om)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "failed read MSV info part of unused filter model");
+      p7_oprofile_Destroy(unused_om);
+    }
+
+    /* move CM file position to where we are in hfp (hmmfile) */
+    if (fseeko(cmfp->ffp, ftello(cmfp->gfp->ffp), SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for CM file parser (MSV)");
+
+    nhmm_seen++;
+    if(nhmm_remaining == 0) keep_reading = FALSE;
+  }
+
+  *ret_read_mlp7   = read_mlp7; /* is the mlp7 in *ret_omA?   */
+  *ret_read_ap7    = read_ap7;  /* are ap7s    in *ret_omA?   */
+  *ret_nhmm        = nhmm_read; /* number of HMMs in *ret_omA */
+  *ret_cm_offsetA  = cm_offsetA; 
+  *ret_cm_clenA    = cm_clenA; 
+  *ret_cm_WA       = cm_WA; 
+  *ret_gfmuA       = gfmuA;
+  *ret_gflambdaA   = gflambdaA;
+  *ret_omA         = omA;         
+  return eslOK;
+
+ ERROR:
+  if (omA != NULL) { for (i = 0; i < nhmm_allocated; i++) p7_oprofile_Destroy(omA[i]); }
+  if (cm_offsetA  != NULL) free(cm_offsetA);
+  if (cm_clenA    != NULL) free(cm_clenA);
+  if (cm_WA       != NULL) free(cm_WA);
+  if (gfmuA       != NULL) free(gfmuA);
+  if (gflambdaA   != NULL) free(gflambdaA);
+  return status;
 }
 
 /*----------------- end of API for p7 filters ----------------------*/
@@ -1985,7 +2138,6 @@ read_bin_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
   /* Finally, read additional HMMs for this CM if nec */
   if(nap7_expected > 0) { 
     P7_HMM       *ahmm = NULL;              /* the HMM */
-    ESL_ALPHABET *aabc = NULL;
     uint32_t      magic;
     
     /* move file position to where we are in cmfp (cmfile) */
@@ -2001,7 +2153,7 @@ read_bin_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
       else    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Unknown magic number at start of additional p7 filters");
     }
     for(x = 0; x < nap7_expected; x++) { 
-      status = p7_hmmfile_Read(cmfp->hfp, &aabc, &ahmm);
+      status = p7_hmmfile_Read(cmfp->hfp, &abc, &ahmm);
       if      (status == eslEOD)       ESL_XFAIL(status, cmfp->errbuf, "HMM read failed, file %s may be truncated?", cmfp->fname);
       else if (status == eslEFORMAT)   ESL_XFAIL(status, cmfp->errbuf, "bad HMM file format in CM file %s",          cmfp->fname);
       else if (status == eslEINCOMPAT) ESL_XFAIL(status, cmfp->errbuf, "HMM filters contain different alphabets");
@@ -2016,7 +2168,7 @@ read_bin_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
   if (tmp_ap7_gflambdaA != NULL) free(tmp_ap7_gflambdaA);
 
   if (*ret_abc == NULL) *ret_abc = abc;	/* pass our new alphabet back to caller, if caller didn't know it already */
-  if ( opt_cm != NULL)  *opt_cm  = cm; else FreeCM(cm);
+  if ( opt_cm != NULL)  *opt_cm  = cm;  else FreeCM(cm);
   return eslOK;
   
  ERROR:

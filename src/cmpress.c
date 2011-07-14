@@ -57,6 +57,7 @@ main(int argc, char **argv)
   int            status;
   int            nhmm_remaining = 0;
   off_t          cm_offset = 0;
+  float          gfmu, gflambda;
   char           errbuf[eslERRBUFSIZE];
 
   if (strcmp(cmfile, "-") == 0) cm_Fail("Can't use - for <cmfile> argument: can't index standard input\n");
@@ -93,7 +94,9 @@ main(int argc, char **argv)
 
       /* Write out the mlp7 first, and additional p7s after that */
       for(i = 0; i <= cm->nap7; i++) { 
-	hmm = (i == 0) ? cm->mlp7 : cm->ap7A[i-1];
+	hmm      = (i == 0) ? cm->mlp7 : cm->ap7A[i-1];
+        gfmu     = (i == 0) ? cm->mlp7_evparam[CM_p7_GFMU]     : cm->ap7_evparamAA[i-1][CM_p7_GFMU];
+        gflambda = (i == 0) ? cm->mlp7_evparam[CM_p7_GFLAMBDA] : cm->ap7_evparamAA[i-1][CM_p7_GFLAMBDA];
 	nhmm_remaining = cm->nap7 - i; 
 	np7++;
 	tot_M += hmm->M;
@@ -108,8 +111,8 @@ main(int argc, char **argv)
 	if ((om->offs[p7_FOFFSET] = ftello(ffp)) == -1) cm_Fail("Failed to ftello() current disk position of MSV db file");
 	if ((om->offs[p7_POFFSET] = ftello(pfp)) == -1) cm_Fail("Failed to ftello() current disk position of profile db file");
 
-	cm_p7_oprofile_Write     (ffp, pfp, nhmm_remaining, cm_offset, om);
-	cm_p7_hmmfile_WriteBinary(mfp, -1,  nhmm_remaining, hmm);
+	cm_p7_oprofile_Write(ffp, pfp, nhmm_remaining, cm_offset, cm->clen, cm->W, gfmu, gflambda, om);
+	p7_hmmfile_WriteBinary(gfp, -1, hmm);
 
 	p7_profile_Destroy(gm);
 	p7_oprofile_Destroy(om);
@@ -134,11 +137,11 @@ main(int argc, char **argv)
     printf("Pressed and indexed %d CMs and %d p7 HMM filters (%ld CM names and %ld CM accessions).\n", ncm, np7, (long) nssi->nprimary, (long) nssi->nsecondary);
   else 
     printf("Pressed and indexed %d CMs and %d p7 HMM filters (%ld CM names).\n", ncm, np7, (long) nssi->nprimary);
-  printf("Covariance models pressed into binary file:         %s.i1c\n", cmfp->fname);
-  printf("SSI index for binary covariance model file:         %s.i1i\n", cmfp->fname);
-  printf("p7 HMM filters pressed into:                        %s.i1m\n", cmfp->fname);
-  printf("Optimized filter profiles (MSV part)  pressed into: %s.i1f\n", cmfp->fname);
-  printf("Optimized filter profiles (remainder) pressed into: %s.i1p\n", cmfp->fname);
+  printf("Covariance models pressed into binary file:            %s.i1m\n", cmfp->fname);
+  printf("SSI index for binary covariance model file:            %s.i1i\n", cmfp->fname);
+  printf("p7 HMM filters pressed into:                           %s.i1h\n", cmfp->fname);
+  printf("Optimized p7 filter profiles (MSV part)  pressed into: %s.i1f\n", cmfp->fname);
+  printf("Optimized p7 filter profiles (remainder) pressed into: %s.i1p\n", cmfp->fname);
 
   fclose(mfp);
   fclose(ffp); 
@@ -156,7 +159,7 @@ static void
 open_db_files(ESL_GETOPTS *go, char *basename, FILE **ret_mfp, FILE **ret_gfp,  FILE **ret_ffp,  FILE **ret_pfp, ESL_NEWSSI **ret_nssi)
 {
   char       *mfile           = NULL; /* .i1m file: binary CMs */
-  char       *gfile           = NULL; /* .i1g file: binary HMMs */
+  char       *gfile           = NULL; /* .i1h file: binary HMMs */
   char       *ffile           = NULL; /* .i1f file: binary optimized profiles, MSV filter part only */
   char       *pfile           = NULL; /* .i1p file: binary optimized profiles, remainder (excluding MSV filter) */
   char       *ssifile         = NULL;
@@ -174,11 +177,11 @@ open_db_files(ESL_GETOPTS *go, char *basename, FILE **ret_mfp, FILE **ret_gfp,  
   else if (status == eslEOVERWRITE)  cm_Fail("Looks like %s is already pressed (.i1i file present, anyway): delete old cmpress indices first", basename);
   else if (status != eslOK)          cm_Fail("failed to create a new SSI index");
 
-  if (esl_sprintf(&mfile, "%s.i3m", basename) != eslOK) cm_Die("esl_sprintf() failed");
+  if (esl_sprintf(&mfile, "%s.i1m", basename) != eslOK) cm_Die("esl_sprintf() failed");
   if (! allow_overwrite && esl_FileExists(mfile))       cm_Fail("Binary CM file %s already exists; delete old cmpress indices first", mfile);
   if ((mfp = fopen(mfile, "wb"))              == NULL)  cm_Fail("Failed to open binary CM file %s for writing", mfile);
 
-  if (esl_sprintf(&gfile, "%s.i3h", basename) != eslOK) cm_Die("esl_sprintf() failed");
+  if (esl_sprintf(&gfile, "%s.i1h", basename) != eslOK) cm_Die("esl_sprintf() failed");
   if (! allow_overwrite && esl_FileExists(gfile))       cm_Fail("Binary HMM file %s already exists; delete old cmpress indices first", gfile);
   if ((gfp = fopen(gfile, "wb"))              == NULL)  cm_Fail("Failed to open binary CM file %s for writing", gfile);
 

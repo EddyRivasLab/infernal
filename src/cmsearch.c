@@ -509,7 +509,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              qhstatus = eslOK;
   int              sstatus  = eslOK;
   int              i;
-  double           eff_dbsize;                   /* the effective database size, max # hits expected in db of this size */
   
   int              ncpus    = 0;
 
@@ -636,9 +635,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Create processing pipeline and hit list */
     for (i = 0; i < infocnt; ++i) {
       info[i].th   = cm_tophits_Create();
-      info[i].pli  = cm_pipeline_Create(go, info[i].omA[0]->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      if((status = cm_pli_NewModel(info[i].pli, info[i].cm, info[i].need_fsmx, info[i].need_smx, info[i].fcyk_dmin, info[i].fcyk_dmax, 
-				   info[i].final_dmin, info[i].final_dmax, info[i].omA, info[i].bgA, info[i].nhmm)) != eslOK) { 
+      info[i].pli  = cm_pipeline_Create(go, abc, info[i].omA[0]->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+      if((status = cm_pli_NewModel(info[i].pli, CM_NEWMODEL_CM, info[i].cm, info[i].cm->clen, info[i].cm->W, info[i].need_fsmx, 
+				   info[i].need_smx, info[i].fcyk_dmin, info[i].fcyk_dmax, info[i].final_dmin, info[i].final_dmax, 
+				   info[i].omA, info[i].bgA, info[i].nhmm)) != eslOK) { 
 	cm_Fail(info[i].pli->errbuf);
       }
 
@@ -668,7 +668,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       /* we need to re-compute e-values before merging (when list will be sorted) */
       for (i = 0; i < infocnt; ++i) { 
 	/* TO DO: compute E-values differently if --hmm (p7_tophits_ComputeNhmmerEvalues?) */
-	cm_tophits_ComputeEvalues(info[i].th, (double) info[0].cm->expA[info[0].pli->final_cm_exp_mode]->cur_eff_dbsize);
+	cm_tophits_ComputeEvalues(info[i].th, (double) info[0].cm->expA[info[0].pli->final_cm_exp_mode]->cur_eff_dbsize, 0);
       }
 
       /* merge the results of the search results */
@@ -990,9 +990,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* Create processing pipeline and hit list */
       info->th  = cm_tophits_Create(); 
-      info->pli = cm_pipeline_Create(go, info->omA[0]->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      if((status = cm_pli_NewModel(info->pli, info->cm, info->need_fsmx, info->need_smx, info->fcyk_dmin, info->fcyk_dmax, 
-				   info->final_dmin, info->final_dmax, info->omA, info->bgA, info->nhmm)) != eslOK) { 
+      info->pli = cm_pipeline_Create(go, abc, info->omA[0]->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+      if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->need_fsmx, info->need_smx, 
+				   info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->omA, info->bgA, info->nhmm)) != eslOK) { 
 	mpi_failure(info[i].pli->errbuf);
       }
       /* Create block_list and add an empty block to it */
@@ -1290,9 +1290,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* Create processing pipeline and hit list */
       info->th  = cm_tophits_Create(); 
-      info->pli = cm_pipeline_Create(go, info->omA[0]->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      if((status = cm_pli_NewModel(info->pli, info->cm, info->need_fsmx, info->need_smx, info->fcyk_dmin, info->fcyk_dmax, 
-				   info->final_dmin, info->final_dmax, info->omA, info->bgA, info->nhmm)) != eslOK) { 
+      info->pli = cm_pipeline_Create(go, abc, info->omA[0]->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+      if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->need_fsmx, info->need_smx, 
+				   info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->omA, info->bgA, info->nhmm)) != eslOK) { 
 	mpi_failure(info->pli->errbuf);
       }
 
@@ -1335,7 +1335,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    /* search top strand */
 	    if (info->pli->do_top) { 
 	      prev_hit_cnt = info->th->N;
-	      if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th, &(info->cmcons))) != eslOK) 
+	      if((status = cm_Pipeline(info->pli, info->cm->offset, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th, &(info->cm), &(info->cmcons))) != eslOK) 
 		mpi_failure("cm_pipeline() failed unexpected with status code %d\n", status);
 	      cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
@@ -1348,7 +1348,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    if(info->pli->do_bot && dbsq->abc->complement != NULL) { 
 	      esl_sq_ReverseComplement(dbsq);
 	      prev_hit_cnt = info->th->N;
-	      if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th, &(info->cmcons))) != eslOK) 
+	      if((status = cm_Pipeline(info->pli, info->cm->offset, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th, &(info->cm), &(info->cmcons))) != eslOK) 
 		mpi_failure("cm_pipeline() failed unexpected with status code %d\n", status);
 	      cm_pipeline_Reuse(info->pli); /* prepare for next search */
 	      if(info->pli->do_top) info->pli->nres += dbsq->n; /* add dbsq->n residues, the reverse complement we just searched */
@@ -1376,7 +1376,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       esl_stopwatch_Stop(w);
       
       /* compute E-values before sending back to master */
-      cm_tophits_ComputeEvalues(info->th, (double) info->cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize);
+      cm_tophits_ComputeEvalues(info->th, (double) info->cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, 0);
       
       cm_tophits_MPISend(info->th,   0, INFERNAL_TOPHITS_TAG,  MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
       cm_pipeline_MPISend(info->pli, 0, INFERNAL_PIPELINE_TAG, MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
@@ -1431,7 +1431,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
     printf("cm->W: %d\n", info->cm->W);
     if (info->pli->do_top) { 
       prev_hit_cnt = info->th->N;
-      if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th, &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th, &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
       fflush(stdout);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
       
@@ -1443,7 +1443,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
     if (info->pli->do_bot && dbsq->abc->complement != NULL) { 
       prev_hit_cnt = info->th->N;
       esl_sq_ReverseComplement(dbsq);
-      if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th, &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th, &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
       fflush(stdout);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
       
@@ -1608,7 +1608,7 @@ pipeline_thread(void *arg)
       
       if (info->pli->do_top) { 
 	prev_hit_cnt = info->th->N;
-	if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th, &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th, &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 	
 	/* modify hit positions to account for the position of the window in the full sequence */
@@ -1619,7 +1619,7 @@ pipeline_thread(void *arg)
       if (info->pli->do_bot && dbsq->abc->complement != NULL) {
 	prev_hit_cnt = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
-	if((status = cm_Pipeline(info->pli, info->cm, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th, &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th, &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* modify hit positions to account for the position of the window in the full sequence */

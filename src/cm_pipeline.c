@@ -140,7 +140,7 @@ static int merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1,
  * Throws:    <NULL> on allocation failure.
  */
 CM_PIPELINE *
-cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, int Z_setby, enum cm_pipemodes_e mode)
+cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint, int64_t Z, int Z_setby, enum cm_pipemodes_e mode)
 {
   CM_PIPELINE *pli  = NULL;
   int          seed = esl_opt_GetInteger(go, "--seed");
@@ -160,6 +160,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, int Z_
   if ((pli->gxb  = p7_gmx_Create(clen_hint, L_hint))         == NULL) goto ERROR;     
   pli->fsmx = NULL; /* can't allocate this until we know dmin/dmax/W etc. */
   pli->smx  = NULL; /* can't allocate this until we know dmin/dmax/W etc. */
+  //pli->need_fsmx = pli->need_smx = FALSE; /* we'll change this later if nec */
   pli->fcyk_dmin = pli->fcyk_dmax = pli->final_dmin = pli->final_dmax = NULL;
 
   /* intialize model-dependent parameters, these are invalid until we call cm_pli_NewModel() */
@@ -514,6 +515,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, int clen_hint, int L_hint, int64_t Z, int Z_
   pli->align_hbanded    = (esl_opt_GetBoolean(go, "--aln-nonbanded") ? FALSE : TRUE);
   pli->hb_size_limit    = esl_opt_GetReal(go, "--aln-sizelimit");
 
+  pli->abc              = abc;
   pli->cmfp             = NULL;
   pli->errbuf[0]        = '\0';
 
@@ -623,116 +625,181 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  * Incept:    EPN, Fri Sep 24 16:35:35 2010
  *            SRE, Fri Dec  5 10:35:37 2008 [Janelia] (p7_pli_NewModel())
  *
- * Purpose:   Caller has a new model <cm>.
+ * Purpose:   Caller has a new model.
  *            Prepare the pipeline <pli> to receive this model as either 
  *            a query or a target.
  *
- *            The pipeline may alter the null model <bg> in a model-specific
- *            way (if we're using a composition bias filter HMM in the
- *            pipeline).
+ *            The information of the model we may receive varies, as
+ *            indicated by <modmode> and <pli->mode>. This is enforced 
+ *            by a contract check upon entrace, failure causes immediate
+ *            return of eslEINCOMPAT.
+ *
+ *      case  <pli->mode>     <modmode>         <cm>      <omA> and <bgA> <nhmm>
+ *      ----  --------------  ---------------   --------  --------------- ------
+ *         1  CM_SEARCH_SEQS  CM_NEWMODEL_CM    non-null  non-null        >0
+ *         2  CM_SCAN_SEQS    CM_NEWMODEL_MSV   NULL      non-null        >0
+ *         3  CM_SCAN_SEQS    CM_NEWMODEL_CM    non-null  NULL             0
+ *
+ *            <cm_clen> and <cm_W> are always valid, but are only 
+ *            necessary for case 2.
+ *
+ *            Note that if we're in SEARCH mode, <modmode> will 
+ *            always be CM_NEWMODEL_CM. In SCAN mode, we may only
+ *            call this function once with <modmode> == CM_NEWMODEL_MSV
+ *            (case 2 above, this happens if no hit from the query
+ *            sequence survives to the CM stage). Also, if we
+ *            are in SCAN mode with modmode==CM_NEWMODEL_CM we must
+ *            have entered this function previously for the same
+ *            'model' with modmode==CM_NEWMODEL_MSV.
+ *
+ *            The pipeline may alter the null models in <bgA> in a
+ *            model-specific way (if we're using composition bias
+ *            filter HMMs in the pipeline).
  *
  * Returns:   <eslOK> on success.
+ *
+ *            <eslEINCOMPAT> in contract is not met.
  * 
  *            <eslEINVAL> if pipeline expects to be able to use a
  *            model's bit score thresholds, but this model does not
  *            have the appropriate ones set.
  */
 int
-cm_pli_NewModel(CM_PIPELINE *pli, CM_t *cm, int need_fsmx, int need_smx, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE **omA, P7_BG **bgA, int nhmm)
+cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int need_fsmx, int need_smx, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE **omA, P7_BG **bgA, int nhmm)
 {
   int status = eslOK;
   int m;
   int i, nsteps;
   float T;
 
-  pli->nmodels++;
-  pli->nnodes += cm->clen;
+  printf("in cm_pli_NewModel, mode: %s modmode: %s\n", 
+	 ((pli->mode == CM_SEARCH_SEQS)  ? "SEARCH" : "SCAN"), 
+	 ((modmode   == CM_NEWMODEL_MSV) ? "MSV" : "CM"));
 
-  if(pli->fsmx != NULL)       { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL; }
-  if(pli->smx != NULL)        { cm_FreeScanMatrix(cm, pli->smx);  pli->smx  = NULL; }
-  if(pli->fcyk_dmin != NULL)  { free(pli->fcyk_dmin);             pli->fcyk_dmin = NULL; }
-  if(pli->fcyk_dmax != NULL)  { free(pli->fcyk_dmax);             pli->fcyk_dmax = NULL; }
-  if(pli->final_dmin != NULL) { free(pli->final_dmin);            pli->final_dmin = NULL; }
-  if(pli->final_dmax != NULL) { free(pli->final_dmax);            pli->final_dmax = NULL; }
-
-  pli->need_fsmx  = need_fsmx;
-  pli->need_smx   = need_smx;
-  pli->fcyk_dmin  = fcyk_dmin;
-  pli->fcyk_dmax  = fcyk_dmax;
-  pli->final_dmin = final_dmin;
-  pli->final_dmax = final_dmax;
-
-  if(pli->need_fsmx) { 
-    pli->fsmx = cm_CreateScanMatrix(cm, cm->W, pli->fcyk_dmin, pli->fcyk_dmax, 
-				    ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? cm->W : pli->fcyk_dmax[0]),
-				    pli->fcyk_beta, 
-				    ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? FALSE : TRUE),
-				    TRUE,    /* do     allocate float matrices for CYK filter round */
-				    FALSE);  /* do not allocate int   matrices for CYK filter round  */
+  /* check contract */
+  /* fsmx/smx have to be NULL, b/c they require the CM used to create them (gone now) to free them (poorly designed) */
+  if(pli->fsmx != NULL)            ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, pli->fsmx non-null"); 
+  if(pli->smx != NULL)             ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, pli->smx  non-null"); /* smx has to be NULL,  b/c it requires the CM used to create it to free it (poorly designed) */
+  if(pli->mode == CM_SEARCH_SEQS) { /* case 1 */
+    if(modmode != CM_NEWMODEL_CM) 
+    if(cm == NULL)                 ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and CM is NULL"); 
+    if(cm->clen != cm_clen)        ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, cm->clen != cm_clen"); 
+    if(cm->W    != cm_W)           ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, cm->W != cm_W"); 
+    if(omA == NULL)                ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and omA is NULL"); 
+    if(bgA == NULL)                ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and bgA is NULL"); 
+    if(nhmm <= 0)                  ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and nhmm <= 0"); 
   }
-  if(pli->need_smx) { 
-    pli->smx  = cm_CreateScanMatrix(cm, cm->W, pli->final_dmin, pli->final_dmax, 
-				    ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? cm->W : pli->final_dmax[0]),
-				    pli->final_beta, 
-				    ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? FALSE : TRUE),
-				    FALSE,  /* do not allocate float matrices for Inside round */
-				    TRUE);  /* do     allocate int   matrices for Inside round */
-  }
-
-  /* Update the current effective database size so it pertains to the
-   * new model. Also, If we're using an E-value threshold determine
-   * the bit score for this model that pertains to that E-value.
-   */
-  if((status = UpdateExpsForDBSize(cm, NULL, (long) pli->Z)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem update exp tail parameters for model %s\n", cm->name);
-  if(pli->by_E) { 
-    if((status = E2ScoreGivenExpInfo(cm->expA[pli->final_cm_exp_mode], pli->errbuf, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
-    pli->T = (double) T;
-  }
-
-  /* if we're using Rfam GA, NC, or TC cutoffs, update them for this model */
-  if (pli->use_bit_cutoffs) { 
-    if((status = cm_pli_NewModelThresholds(pli, cm)) != eslOK) return status;
-  }
-
-  /* setup the bias filters for this model */
-  if (pli->do_msvbias || pli->do_vitbias || pli->do_fwdbias || pli->do_gfwdbias || pli->do_edefbias) { 
-    for(m = 0; m < nhmm; m++) { 
-      p7_bg_SetFilter(bgA[m], omA[m]->M, omA[m]->compo);
+  else if(pli->mode == CM_SCAN_MODELS) { 
+    if(modmode == CM_NEWMODEL_MSV) { /* case 2 */
+      if(cm != NULL)              ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/MSV mode, and CM is non-NULL"); 
+      if(omA == NULL)             ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/MSV mode, and omA is NULL"); 
+      if(bgA == NULL)             ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/MSV mode, and bgA is NULL"); 
+      if(nhmm <= 0)               ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/MSV mode, and nhmm <= 0");
+    }
+    else if(modmode == CM_NEWMODEL_CM) { /* case 3 */
+      if(cm == NULL)              ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/CM mode, and CM is NULL"); 
+      if(cm->clen != cm_clen)     ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, cm->clen != cm_clen");
+      if(cm->W    != cm_W)        ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, cm->W != cm_W");
+      if(omA != NULL)             ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/CM mode, and omA is non-NULL"); 
+      if(bgA != NULL)             ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/CM mode, and bgA is non-NULL"); 
+      if(nhmm != 0)               ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/CM mode, and nhmm != 0"); 
     }
   }
 
-  /* copy some values from the model */
-  pli->cmW  = cm->W;
-  pli->clen = cm->clen;
-  /* determine pli->maxW, this will be the number of residues
-   * that must overlap between adjacent windows on a
-   * single sequence, this is MAX of cm->W and omA[m]->max_length
-   * for all HMMs m=0..nhmm-1
+  /* Two sets of value updates: 
+   * case 1: we do both sets 
+   * case 2: we do set 1 only
+   * case 3: we do set 2 only
    */
-  pli->maxW = cm->W;
-  for(m = 0; m < nhmm; m++) { 
-    pli->maxW = ESL_MAX(pli->maxW, omA[m]->max_length);
-  }
+  if(pli->mode == CM_SEARCH_SEQS || modmode == CM_NEWMODEL_MSV) { 
+    /* set 1 updates: case 1 and 2 do these */
+    pli->nmodels++;
+    pli->nnodes += cm_clen;
 
-  /* reset consensus length specific thresholds  */
-  pli->F4  = pli->orig_F4;
-  pli->F4b = pli->orig_F4b;
-  pli->F5  = pli->orig_F5;
-  pli->F5b = pli->orig_F5b;
+    if (pli->do_msvbias || pli->do_vitbias || pli->do_fwdbias || pli->do_gfwdbias || pli->do_edefbias) { 
+      for(m = 0; m < nhmm; m++) { 
+	p7_bg_SetFilter(bgA[m], omA[m]->M, omA[m]->compo);
+      }
+    }
+    /* copy some values from the model */
+    pli->cmW  = cm_W;
+    pli->clen = cm_clen;
 
-  /* update consensus length specific thresholds, if nec */
-  if(pli->do_glen) { 
-    if(pli->clen >= pli->glen_min) { 
-      nsteps = (int) (1 + ((ESL_MAX(pli->clen, pli->glen_max) - (pli->glen_min-1)) / pli->glen_step));
-      for(i = 0; i < nsteps; i++) { 
-	pli->F4  /= 2.;
-	pli->F4b /= 2.;
-	pli->F5  /= 2.;
-	pli->F5b /= 2.;
+    /* determine pli->maxW, this will be the number of residues
+     * that must overlap between adjacent windows on a
+     * single sequence, this is MAX of cm->W and omA[m]->max_length
+     * for all HMMs m=0..nhmm-1
+     */
+    pli->maxW = cm_W;
+    for(m = 0; m < nhmm; m++) { 
+      pli->maxW = ESL_MAX(pli->maxW, omA[m]->max_length);
+    }
+
+    /* reset consensus length specific thresholds  */
+    pli->F4  = pli->orig_F4;
+    pli->F4b = pli->orig_F4b;
+    pli->F5  = pli->orig_F5;
+    pli->F5b = pli->orig_F5b;
+    
+    /* update consensus length specific thresholds, if nec */
+    if(pli->do_glen) { 
+      if(pli->clen >= pli->glen_min) { 
+	nsteps = (int) (1 + ((ESL_MAX(pli->clen, pli->glen_max) - (pli->glen_min-1)) / pli->glen_step));
+	for(i = 0; i < nsteps; i++) { 
+	  pli->F4  /= 2.;
+	  pli->F4b /= 2.;
+	  pli->F5  /= 2.;
+	  pli->F5b /= 2.;
+	}
       }
     }
   }
-  
+  if(pli->mode == CM_SEARCH_SEQS || modmode == CM_NEWMODEL_CM) { 
+    /* set 2 updates: case 1 and 3 do these (they require a valid CM) */
+    if(pli->fcyk_dmin != NULL)  { free(pli->fcyk_dmin);             pli->fcyk_dmin = NULL; }
+    if(pli->fcyk_dmax != NULL)  { free(pli->fcyk_dmax);             pli->fcyk_dmax = NULL; }
+    if(pli->final_dmin != NULL) { free(pli->final_dmin);            pli->final_dmin = NULL; }
+    if(pli->final_dmax != NULL) { free(pli->final_dmax);            pli->final_dmax = NULL; }
+
+    pli->need_fsmx  = need_fsmx;
+    pli->need_smx   = need_smx;
+    pli->fcyk_dmin  = fcyk_dmin;
+    pli->fcyk_dmax  = fcyk_dmax;
+    pli->final_dmin = final_dmin;
+    pli->final_dmax = final_dmax;
+    
+    if(pli->need_fsmx) { 
+      pli->fsmx = cm_CreateScanMatrix(cm, cm->W, pli->fcyk_dmin, pli->fcyk_dmax, 
+				      ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? cm->W : pli->fcyk_dmax[0]),
+				      pli->fcyk_beta, 
+				      ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? FALSE : TRUE),
+				      TRUE,    /* do     allocate float matrices for CYK filter round */
+				      FALSE);  /* do not allocate int   matrices for CYK filter round  */
+    }
+    if(pli->need_smx) { 
+      pli->smx  = cm_CreateScanMatrix(cm, cm->W, pli->final_dmin, pli->final_dmax, 
+				      ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? cm->W : pli->final_dmax[0]),
+				      pli->final_beta, 
+				      ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? FALSE : TRUE),
+				      FALSE,  /* do not allocate float matrices for Inside round */
+				      TRUE);  /* do     allocate int   matrices for Inside round */
+    }
+
+    /* Update the current effective database size so it pertains to the
+     * new model. Also, If we're using an E-value threshold determine
+     * the bit score for this model that pertains to that E-value.
+     */
+    if((status = UpdateExpsForDBSize(cm, NULL, (long) pli->Z)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem update exp tail parameters for model %s\n", cm->name);
+    if(pli->by_E) { 
+      if((status = E2ScoreGivenExpInfo(cm->expA[pli->final_cm_exp_mode], pli->errbuf, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
+      pli->T = (double) T;
+    }
+
+    /* if we're using Rfam GA, NC, or TC cutoffs, update them for this model */
+    if (pli->use_bit_cutoffs) { 
+      if((status = cm_pli_NewModelThresholds(pli, cm)) != eslOK) return status;
+    }
+  }
   return status;
 }
 
@@ -921,7 +988,7 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
  * Xref:      J4/25.
  */
 int
-cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, double **ret_wp, int *ret_nwin)
+cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, double **ret_wp, int *ret_nwin)
 {
   int              status;
   float            mfsc, vfsc, fwdsc;/* filter scores                           */
@@ -948,6 +1015,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
   int              nsurv_fwd;        /* number of windows that survive fwd filter */
   int              new_nsurv_fwd;    /* used when merging fwd survivors */
   ESL_DSQ         *subdsq;           /* a ptr to the first position of a window */
+  int              have_rest = FALSE;/* set to TRUE in SCAN mode when we read remainder of om */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   p7_omx_GrowTo(pli->oxf, om->M, 0, sq->n);    /* expand the one-row omx if needed */
@@ -1071,13 +1139,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
 
     if(pli->do_shortmsv) { 
       p7_oprofile_ReconfigMSVLength(om, wlen);
-      if(pli->do_gmsv) { 
-	p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
-	p7_GMSV(subdsq, wlen, gm, pli->gxf, 2.0, &mfsc);
-      }
-      else { 
-	p7_MSVFilter(subdsq, wlen, om, pli->oxf, &mfsc);
-      }
+      p7_MSVFilter(subdsq, wlen, om, pli->oxf, &mfsc);
       wsc = (mfsc + wcorr - nullsc) / eslCONST_LOG2;
       P = esl_gumbel_surv(wsc,  p7_evparam[CM_p7_LMMU],  p7_evparam[CM_p7_LMLAMBDA]);
       wp[i] = P;
@@ -1115,14 +1177,21 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
 #if DOPRINT
     printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived MSV-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], (pli->do_shortmsv) ? wsc : 0., wp[i]);
 #endif      
+    if(pli->do_time_F1) return eslOK;
     
+    /* In scan mode, if it passes the MSV filter, read the rest of the profile */
+    if (pli->mode == CM_SCAN_MODELS && (! have_rest)) {
+      if (pli->cmfp) p7_oprofile_ReadRest(pli->cmfp->gfp, om);
+      /* Note: we don't call cm_pli_NewModelThresholds() yet (as p7_pipeline() 
+       * does at this point), because we don't yet have the CM */
+      have_rest = TRUE;
+    }
     if(pli->do_msvbias) { /* we already called p7_oprofile_ReconfigMSVLength() above */
       p7_oprofile_ReconfigRestLength(om, wlen);
     }
     else { /* we did not call p7_oprofile_ReconfigMSVLength() above */
       p7_oprofile_ReconfigLength(om, wlen);
     }
-    if(pli->do_time_F1) return eslOK;
 
     if (pli->do_vit) { 
       /******************************************************************************/
@@ -1285,7 +1354,9 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
     wp = new_wp;
   }
   else { 
-    ws = we = NULL; /* zero windows survived forward */
+    if(ws != NULL) free(ws); ws = NULL;
+    if(we != NULL) free(we); we = NULL;
+    if(wp != NULL) free(wp); wp = NULL;
   }
 
   if(survAA != NULL) { 
@@ -1327,7 +1398,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv)
+cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv)
 {
   int              status;                     
   double           P;                          /* P-value of a hit */
@@ -1347,6 +1418,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
   ESL_SQ          *seq = NULL;       /* a copy of a window */
   int64_t          estart, eend;     /* envelope start/end positions */
   float            nullsc, filtersc, fwdsc;
+  P7_PROFILE      *gm = NULL;        /* a ptr to *opt_gm, for convenience */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nwin == 0)  { 
@@ -1355,8 +1427,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
     *ret_nenv = 0;
     return eslOK;    /* if there's no envelopes to search in, return */
   }
-  p7_omx_GrowTo(pli->oxf, om->M, 0, sq->n);    /* expand the one-row omx if needed */
-  
+
   nenv_alloc = nwin;
   ESL_ALLOC(es, sizeof(int64_t) * nenv_alloc);
   ESL_ALLOC(ee, sizeof(int64_t) * nenv_alloc);
@@ -1366,7 +1437,20 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
 #if DOPRINT
   printf("\nPIPELINE p7EnvelopeDef() %s  %" PRId64 " residues\n", sq->name, sq->n);
 #endif
+
+  /* if we're in SCAN mode, we don't yet have the full generic model, read the HMM and create it */
+  if (pli->mode == CM_SCAN_MODELS && (! pli->do_localenv) && (*opt_gm) == NULL) { 
+    P7_HMM       *hmm = NULL;
+    if (pli->cmfp      == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in cm_pli_p7EnvelopeDef()");
+    if (pli->cmfp->hfp == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in cm_pli_p7EnvelopeDef()");
+    p7_hmmfile_Position(pli->cmfp->gfp, om->offs[p7_MOFFSET]);
+    p7_hmmfile_Read    (pli->cmfp->gfp, &(pli->abc), &hmm);
+    *opt_gm = p7_profile_Create(hmm->M, pli->abc);
+    p7_ProfileConfig(hmm, bg, *opt_gm, 100, p7_GLOCAL);
+    p7_hmm_Destroy(hmm);
+  }
   
+  gm = *opt_gm;
   for (i = 0; i < nwin; i++) {
     wlen = we[i] - ws[i] + 1;
     subdsq = sq->dsq + ws[i] - 1;
@@ -1604,7 +1688,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE *om, P7_PROFILE *gm
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CMConsensus_t **opt_cmcons)
+cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 {
   int              status;
   char             errbuf[cmERRBUFSIZE];   /* for error messages */
@@ -1616,7 +1700,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
   search_results_t *results;               /* results data structure CM search functions report hits to */
   search_results_t *tmp_results;           /* temporary results data structure CM search functions report hits to */
   int              nhit;                   /* number of hits reported */
-  double           save_tau = cm->tau;     /* CM's tau upon entering function */
+  double           save_tau;               /* CM's tau upon entering function */
   int64_t          cyk_envi, cyk_envj;     /* cyk_envi..cyk_envj is new envelope as defined by CYK hits */
   float            cyk_env_cutoff;         /* bit score cutoff for envelope redefinition */
   int              do_hbanded_filter_scan; /* use HMM bands for filter stage? */
@@ -1624,6 +1708,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
   int              do_qdb_or_nonbanded_filter_scan; /* use QDBs or no bands for filter stage (! do_hbanded_filter_scan) */
   int              do_qdb_or_nonbanded_final_scan;  /* use QDBs or no bands for final  stage (! do_hbanded_final_scan) */
   int              do_final_greedy;        /* TRUE to use greedy hit resolution in final stage, FALSE not to */
+  CM_t            *cm = NULL;              /* ptr to *opt_cm, for convenience only */
 
   /* variables related to the final alignment of hits */
   CM_HB_SHADOW_MX    *shmx = NULL;          /* HMM banded shadow matrix */
@@ -1648,20 +1733,31 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
 
-  /* Check if we need to configure our CM and create our CMConsensus_t */
-  if(pli->mode == CM_SCAN_MODELS && (! (cm->flags & CMH_BITS))) {  
-    /* SCAN mode and we haven't yet configured our model, configure it */
-    printf("CONFIGURING CM %s\n", cm->name);
-    if((status = ConfigCM(cm, pli->errbuf, FALSE, NULL, NULL)) != eslOK) return status;
+  /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
+  if (pli->mode == CM_SCAN_MODELS) { 
+    if(*opt_cm == NULL) { 
+      printf("READING CM\n");
+      cm_file_Position(pli->cmfp, cm_offset);
+      if((status = cm_file_Read(pli->cmfp, &(pli->abc), opt_cm)) != eslOK) ESL_FAIL(status, pli->errbuf, pli->cmfp->errbuf);
+      printf("CONFIGURING CM %s\n", (*opt_cm)->name);
+      if((status = ConfigCM(*opt_cm, pli->errbuf, FALSE, NULL, NULL)) != eslOK) return status;
+      /* update the pipeline about the model */
+      if((status = cm_pli_NewModel(pli, CM_NEWMODEL_CM, *opt_cm, (*opt_cm)->clen, (*opt_cm)->W, 
+				   FALSE, FALSE, NULL, NULL, NULL, NULL,  /* need_fsmx, need_smx, fcyk_dmin, fcyk_dmax, final_dmin, final_dmax */
+				   NULL, NULL, 0)) /* omA, bgA, nhmm */
+	 != eslOK); 
+    }
     if(*opt_cmcons == NULL) { 
-      if((status = CreateCMConsensus(cm, cm->abc, 3.0, 1.0, opt_cmcons))!= eslOK) ESL_FAIL(status, pli->errbuf, "In cm_pli_CMStage() failed to create CMConsensus data structure.\n");
+      if((status = CreateCMConsensus(*opt_cm, (*opt_cm)->abc, 3.0, 1.0, opt_cmcons))!= eslOK) ESL_FAIL(status, pli->errbuf, "In cm_pli_CMStage() failed to create CMConsensus data structure.\n");
     }
   }
-  else { 
-    /* contract check: make sure CMConsensus is valid */
+  else { /* not SCAN mode, *opt_cm and *opt_cmconsensus should be valid */
     if(opt_cmcons == NULL || *opt_cmcons == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "Entered cm_pli_CMStage() with invalid CMConsensus structure"); 
+    if(opt_cm     == NULL || *opt_cm     == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "Entered cm_pli_CMStage() with invalid CM"); 
   }
 
+  cm = *opt_cm;
+  save_tau = cm->tau;
   do_final_greedy = (pli->final_cm_search_opts & CM_SEARCH_CMGREEDY) ? TRUE : FALSE;
   watch = esl_stopwatch_Create();
 
@@ -2045,7 +2141,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int64_t *es, int64_
   cm->tau = save_tau;
   /* free the scan matrices if we just allocated them */
   if((! pli->need_fsmx) && (pli->fsmx != NULL)) { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL;  }
-  if((! pli->need_smx)  && (pli->smx != NULL))  { cm_FreeScanMatrix(cm, pli->smx);  pli->smx = NULL; }
+  if((! pli->need_smx)  && (pli->smx != NULL))  { cm_FreeScanMatrix(cm, pli->smx);  pli->smx = NULL;   }
   if(out_mx != NULL) { cm_hb_mx_Destroy(out_mx); out_mx = NULL; }
   if(shmx   != NULL) { cm_hb_shadow_mx_Destroy(shmx); shmx = NULL; }
   if(watch  != NULL) { esl_stopwatch_Destroy(watch); }
@@ -2240,7 +2336,7 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG **bgA, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, CM_TOPHITS *hitlist, CMConsensus_t **opt_cmcons)
+cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE **omA, P7_PROFILE **gmA, P7_BG **bgA, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 
 {
   int status;
@@ -2321,7 +2417,7 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG
 #if DOPRINT
     printf("\nPIPELINE HMM %d calling p7Filter() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
 #endif
-    if((status = cm_pli_p7Filter(pli, cm, om[m], gm[m], bgA[m], p7_evparamAA[m], sq, &(wsAA[m]), &(weAA[m]), &(wpAA[m]), &(nwinA[m]))) != eslOK) return status;
+    if((status = cm_pli_p7Filter(pli, omA[m], bgA[m], p7_evparamAA[m], sq, &(wsAA[m]), &(weAA[m]), &(wpAA[m]), &(nwinA[m]))) != eslOK) return status;
     if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) continue;
 
     if(nwin_all == 0 && nwinA[m] > 0) { 
@@ -2381,11 +2477,11 @@ cm_Pipeline(CM_PIPELINE *pli, CM_t *cm, P7_OPROFILE **om, P7_PROFILE **gm, P7_BG
 #if DOPRINT
       printf("\nPIPELINE HMM %d calling p7EnvelopeDef() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
 #endif
-      if((status = cm_pli_p7EnvelopeDef(pli, cm, om[m], gm[m], bgA[m], p7_evparamAA[m], sq,  cur_ws,  cur_we,  cur_nwin, &(esAA[m]), &(eeAA[m]), &(nenvA[m]))) != eslOK) return status;
+      if((status = cm_pli_p7EnvelopeDef(pli, omA[m], bgA[m], p7_evparamAA[m], sq,  cur_ws,  cur_we,  cur_nwin, &(gmA[m]), &(esAA[m]), &(eeAA[m]), &(nenvA[m]))) != eslOK) return status;
 #if DOPRINT
       printf("\nPIPELINE HMM %d calling CMStage() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
 #endif
-      if((status = cm_pli_CMStage      (pli, cm, sq, esAA[m],  eeAA[m],  nenvA[m], hitlist, opt_cmcons)) != eslOK) return status;
+      if((status = cm_pli_CMStage      (pli, cm_offset, sq, esAA[m],  eeAA[m],  nenvA[m], hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
     }
     free(cur_ws);
     free(cur_we);

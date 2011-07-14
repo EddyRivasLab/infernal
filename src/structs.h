@@ -1453,9 +1453,9 @@ typedef struct cm_file_s {
   ESL_FILEPARSER *efp;
 
   /* If <is_pressed>, we can read HMM filters directly, via: */
-  FILE         *gfp;		/* HMM file */
   FILE         *ffp;		/* MSV part of the optimized profile HMM */
   FILE         *pfp;		/* rest of the optimized profile HMM     */
+  P7_HMMFILE   *gfp;            /* full HMM file, nec for getting generic profiles for glocal envelope defn */
 
 #ifdef HMMER_THREADS
   int              syncRead;
@@ -1476,8 +1476,9 @@ typedef struct cm_file_s {
  * In the special case of reading from stdin, <fname> is "[STDIN]".
  */
 
-enum cm_pipemodes_e { CM_SEARCH_SEQS = 0, CM_SCAN_MODELS = 1 };
-enum cm_zsetby_e    { CM_ZSETBY_SSIINFO = 0, CM_ZSETBY_SSI_AND_QLENGTH = 1, CM_ZSETBY_OPTION = 2, CM_ZSETBY_FILEINFO = 3};
+enum cm_pipemodes_e     { CM_SEARCH_SEQS = 0, CM_SCAN_MODELS = 1 };
+enum cm_newmodelmodes_e { CM_NEWMODEL_MSV = 0, CM_NEWMODEL_CM = 1 };
+enum cm_zsetby_e        { CM_ZSETBY_SSIINFO = 0, CM_ZSETBY_SSI_AND_QLENGTH = 1, CM_ZSETBY_OPTION = 2, CM_ZSETBY_FILEINFO = 3};
 
 typedef struct cm_pipeline_s {
   /* Dynamic programming matrices                                           */
@@ -1581,7 +1582,6 @@ typedef struct cm_pipeline_s {
   int     do_nocorr;            /* TRUE to use no correction for env def    */
   int     do_envwinbias;        /* TRUE to calc env bias for entire window  */
   int     do_fwdbias_sampling;  /* TRUE to calculate Fwd bias (F3b) based on sampled traces */
-  int     do_gmsv;              /* TRUE to use generic MSV */
   int     do_filcmW;            /* TRUE to use CM's window length for all HMM filters */
   int     fwdbias_ns;           /* number of samples for do_fwdbias_sampling */
   int     do_glen;              /* TRUE to use len-dependent glc p7 thresholds */
@@ -1664,6 +1664,8 @@ typedef struct cm_pipeline_s {
   float         hb_size_limit;  /* maximum size in Mb allowed for HB alignment    */
 
   int64_t       cur_seq_idx;    /* sequence index currently being searched */
+
+  ESL_ALPHABET *abc;            /* ptr to alphabet info */
 
   CM_FILE      *cmfp;		/* COPY of open CM database (if scan mode) */
   char          errbuf[eslERRBUFSIZE];
