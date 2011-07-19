@@ -522,11 +522,11 @@ $M$ is:
    P(M | D) = \frac{P(D | M) P(M)}{P(D | M) P(M) + P(D | N) P(N)}
 \]
 
-Recall that the log odds score reported by \software{infernal}'s alignment
-algorithms is
+Recall that the log odds score (in units of bits) reported by
+\software{infernal}'s alignment algorithms is
 
 \[
-  s = \log \frac{P(D | M)}{P(D | N)}.
+  s = \log_2 \frac{P(D | M)}{P(D | N)}.
 \]
 
 Let's assume for simplicity that \emph{a priori}, the profile and the
@@ -535,7 +535,7 @@ cancel. Then the log odds score $s$ is related to the Bayesian
 posterior by a sigmoid function,
 
 \[
-  P(M | D) = \frac{e^s}{e^s + 1}.
+  P(M | D) = \frac{2^s}{2^s + 1}.
 \]
 
 (We don't have to assume that the two hypotheses are equiprobable;
@@ -549,7 +549,7 @@ contributions of more than one null hypothesis: \textbf{we desire a
 generalized score $S$ such that:}
 
 \[
-  \frac{e^S}{e^S + 1} = P(M | D),
+  \frac{2^S}{2^S + 1} = P(M | D),
 \]
 
 \textbf{for \emph{any} number of alternative hypotheses under consideration.}
@@ -558,7 +558,7 @@ So, let $N_i$ represent any number of alternative null models
 $N_i$. Then, by algebraic rearrangement of Bayes' theorem,
 
 \[
-   S = \log \frac{P(S | M) P(M)}{ \sum_{i} P(S | N_i) P(N_i)}. 
+   S = \log \frac{P(D | M) P(M)}{ \sum_{i} P(D | N_i) P(N_i)}. 
 \]
 
 We saw above that \software{infernal} internally calculates a log odds score $s$, of
