@@ -40,11 +40,12 @@ typedef struct {
   ESL_WORK_QUEUE   *queue;
 #endif /*HMMER_THREADS*/
   ESL_SQ           *qsq;
-  P7_BG            *bg;	             /* null model                              */
-  CM_PIPELINE      *pli;             /* work pipeline                           */
-  CM_TOPHITS       *th;              /* top hit results                         */
-  float            *p7_evparam;      /* E-value parameters for p7 filter        */
+  P7_BG            *bg;	             /* null model                            */
+  CM_PIPELINE      *pli;             /* work pipeline                         */
+  CM_TOPHITS       *th;              /* top hit results                       */
+  float            *p7_evparam;      /* E-value parameters for p7 filter      */
   int               cm_config_opts;  /* set based on command-line options     */
+  int               prev_hit_cnt;    /* for fixing coords on revcomp hits     */
 } WORKER_INFO;
 
 #define REPOPTS         "-E,-T,--cut_ga,--cut_nc,--cut_tc"
@@ -220,7 +221,7 @@ static int  setup_cm     (CM_t *cm, const ESL_ALPHABET *abc, WORKER_INFO *info, 
 static void setup_config_opts(const ESL_GETOPTS *go, int *ret_config_opts);
 
 #ifdef HMMER_THREADS
-#define BLOCK_SIZE 100
+#define BLOCK_SIZE 25
 
 static int  thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, CM_FILE *cmfp);
 static void pipeline_thread(void *arg);
@@ -234,7 +235,7 @@ static int  mpi_worker   (ESL_GETOPTS *go, struct cfg_s *cfg);
 /* process_commandline()
  * 
  * Processes the commandline, filling in fields in <cfg> and creating and returning
- * an <ESL_GETOPTS> options structure. The help page (hmmsearch -h) is formatted
+ * an <ESL_GETOPTS> options structure. The help page (cmscan -h) is formatted
  * here.
  */
 static void
@@ -472,6 +473,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              hstatus  = eslOK;
   int              sstatus  = eslOK;
   int              i;
+  int              in_rc; 
 
   int              ncpus    = 0;
 
@@ -564,7 +566,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   for (i = 0; i < infocnt; ++i)
     {
-      info[i].bg = p7_bg_Create(abc);
+      info[i].bg           = p7_bg_Create(abc);
+      info[i].prev_hit_cnt = 0;
       ESL_ALLOC(info[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
       setup_config_opts(go, &(info[i].cm_config_opts));
 #ifdef HMMER_THREADS
@@ -589,19 +592,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       nquery++;
       esl_stopwatch_Start(w);	                          
 
-      /* Open the target profile database */
-      status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, NULL);
-      if (status != eslOK)        cm_Fail("Unexpected error %d in opening cm file %s.\n%s",           status, cfg->cmfile, cmfp->errbuf);  
-  
-#ifdef HMMER_THREADS
-      /* if we are threaded, create locks to prevent multiple readers */
-      if (ncpus > 0)
-	{
-	  status = cm_file_CreateLock(cmfp);
-	  if (status != eslOK) cm_Fail("Unexpected error %d creating lock\n", status);
-	}
-#endif
-
       fprintf(ofp, "Query:       %s  [L=%ld]\n", qsq->name, (long) qsq->n);
       if (qsq->acc[0]  != 0) fprintf(ofp, "Accession:   %s\n", qsq->acc);
       if (qsq->desc[0] != 0) fprintf(ofp, "Description: %s\n", qsq->desc);
@@ -611,41 +601,65 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* Create processing pipeline and hit list */
 	  info[i].th  = cm_tophits_Create(); 
 	  info[i].pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qsq->n, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
-	  info[i].pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
-
-	  cm_pli_NewSeq(info[i].pli, qsq, 0); /* 0 is sequence index, it's irrelevant in this context (only used to remove overlaps) */
 	  info[i].pli->nseqs++;
 	  info[i].qsq = qsq;
-
-#ifdef HMMER_THREADS
-	  if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
-#endif
 	}
 
+      /* scan all target CMs twice, once with the top strand of the query and once with the bottom strand */
+      for(in_rc = 0; in_rc <= 1; in_rc++) { 
+	printf("in_rc: %d\n", in_rc);
+
+	if(in_rc == 0 && (! info->pli->do_top)) continue; /* skip top strand */
+	if(in_rc == 1 && (! info->pli->do_bot)) continue; /* skip bottom strand */
+	if(in_rc == 1) { 
+	  if(qsq->abc->complement == NULL) { 
+	    if(! info->pli->do_top) cm_Fail("Trying to only search bottom strand but sequence cannot be complemented"); 
+	    else continue; /* skip bottom strand b/c we can't complement the sequence */
+	  }
+	  esl_sq_ReverseComplement(qsq);
+	}
+
+	/* open the target profile database */
+	if ((status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, NULL)) != eslOK) cm_Fail("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, cmfp->errbuf);  
 #ifdef HMMER_THREADS
-      if (ncpus > 0)  hstatus = thread_loop(threadObj, queue, cmfp);
-      else	      hstatus = serial_loop(info, cmfp);
+	if (ncpus > 0) { /* if we are threaded, create locks to prevent multiple readers */
+	  if ((status = cm_file_CreateLock(cmfp)) != eslOK) cm_Fail("Unexpected error %d creating lock\n", status);
+	}
+#endif
+	for (i = 0; i < infocnt; ++i) {
+	  info[i].pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
+	  cm_pli_NewSeq(info[i].pli, qsq, 0); /* 0 is sequence index, it's irrelevant in this context (only used to remove overlaps) */
+	  info[i].prev_hit_cnt = info[i].th->N;
+#ifdef HMMER_THREADS
+	if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
+#endif
+	}
+#ifdef HMMER_THREADS
+	if (ncpus > 0)  hstatus = thread_loop(threadObj, queue, cmfp);
+	else	        hstatus = serial_loop(info, cmfp);
 #else
-      hstatus = serial_loop(info, cmfp);
+	hstatus = serial_loop(info, cmfp);
 #endif
-      switch(hstatus)
-	{
-	case eslEFORMAT:
-	  cm_Fail("bad file format in CM file %s",             cfg->cmfile);
-	  break;
-	case eslEINCOMPAT:
-	  cm_Fail("CM file %s contains different alphabets",   cfg->cmfile);
-	  break;
-	case eslEMEM:
-	  cm_Fail("Out of memory");
-	  break;
-	case eslEOF:
-	  /* do nothing */
-	  break;
-	default:
-	  cm_Fail("Unexpected error in reading CMs from %s",   cfg->cmfile); 
+	switch(hstatus) 
+	  { 
+	  case eslEFORMAT:   cm_Fail("bad file format in CM file %s",             cfg->cmfile);  break;
+	  case eslEINCOMPAT: cm_Fail("CM file %s contains different alphabets",   cfg->cmfile);  break;
+	  case eslEMEM:      cm_Fail("Out of memory");	                                         break;
+	  case eslEOF:       /* do nothing */                                                    break;
+	  default:           cm_Fail("Unexpected error in reading CMs from %s",   cfg->cmfile);  break; 
+	  }
+
+	/* fix sequence positions if we're in the reverse complement */
+	if(in_rc == 1) { 
+	  for (i = 0; i < infocnt; ++i) {
+	    cm_tophits_UpdateHitPositions(info[i].th, info[i].prev_hit_cnt, qsq->start, TRUE);
+	  }
 	}
 
+	cm_file_Close(cmfp);
+      } /* end of 'for(in_rc == 0; in_rc <= 1; in_rc++)' */
+
+      /***********************************************************************/
       /* merge the results of the search results */
       for (i = 1; i < infocnt; ++i)
 	{
@@ -683,7 +697,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_pli_Statistics(ofp, info->pli, w);
       fprintf(ofp, "//\n"); fflush(ofp);
 
-      cm_file_Close(cmfp);
       cm_pipeline_Destroy(info->pli, NULL);
       cm_tophits_Destroy(info->th);
       esl_sq_Reuse(qsq);
@@ -1346,12 +1359,14 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
   P7_PROFILE       *gm         = NULL;      /* generic   query profile HMM            */
   CMConsensus_t    *cmcons     = NULL;
   ESL_STOPWATCH    *w          = NULL;
-  int               prv_ntophits = 0;
+  int               prv_ntophits;
   int               cm_clen, cm_W;          /* consensus, window length for current CM */        
   float             gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
   off_t             cm_offset;              /* file offset for current CM */
 
   w = esl_stopwatch_Create();
+  prv_ntophits = info->th->N;
+
   /* Main loop: */
   while ((status = cm_p7_oprofile_ReadMSV(cmfp, &abc, &cm_offset, &cm_clen, &cm_W, &gfmu, &gflambda, &om)) == eslOK)
     {
@@ -1459,7 +1474,7 @@ pipeline_thread(void *arg)
   P7_PROFILE       *gm         = NULL;      /* generic   query profile HMM            */
   CMConsensus_t    *cmcons     = NULL;
   ESL_STOPWATCH    *w          = NULL;
-  int               prv_ntophits = 0;
+  int               prv_ntophits;
   int               cm_clen, cm_W;          /* consensus, window length for current CM */        
   float             gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
   off_t             cm_offset;              /* file offset for current CM */
@@ -1483,6 +1498,7 @@ pipeline_thread(void *arg)
   if (status != eslOK) esl_fatal("Work queue worker failed");
 
   w = esl_stopwatch_Create();
+  prv_ntophits = info->th->N;
 
   /* loop until all blocks have been processed */
   block = (CM_P7_OM_BLOCK *) newBlock;

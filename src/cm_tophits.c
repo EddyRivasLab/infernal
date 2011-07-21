@@ -661,6 +661,50 @@ cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
   return eslOK;
 }
 
+
+/* Function:  cm_tophits_UpdateHitPositions()
+ * Synopsis:  Update sequence positions in a hit list.
+ * Incept:    EPN, Wed May 25 09:12:52 2011
+ *
+ * Purpose: For hits <hit_start..th->N-1> in a hit list, update the
+ *          positions of start, stop and ad->sqfrom, ad->sqto.  This
+ *          is necessary when we've searched a chunk of subsequence
+ *          that originated somewhere within a larger sequence.
+ *
+ * Returns: <eslOK> on success.
+ */
+ int
+cm_tophits_UpdateHitPositions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_revcomp)
+{ 
+  int i;
+  if(in_revcomp) { 
+    for (i = hit_start; i < th->N ; i++) {
+      th->unsrt[i].start = seq_start - th->unsrt[i].start + 1;
+      th->unsrt[i].stop  = seq_start - th->unsrt[i].stop  + 1;
+      th->unsrt[i].in_rc = TRUE;
+      if(th->unsrt[i].ad != NULL) { 
+	th->unsrt[i].ad->sqfrom = seq_start - th->unsrt[i].ad->sqfrom + 1;
+	th->unsrt[i].ad->sqto   = seq_start - th->unsrt[i].ad->sqto + 1;
+	th->unsrt[i].ad->L      = seq_start - th->unsrt[i].ad->L + 1;
+      }
+    }
+
+  }
+  else { 
+    for (i = hit_start; i < th->N ; i++) {
+      th->unsrt[i].start += seq_start-1;
+      th->unsrt[i].stop  += seq_start-1;
+      th->unsrt[i].in_rc = FALSE;
+      if(th->unsrt[i].ad != NULL) { 
+	th->unsrt[i].ad->sqfrom += seq_start-1;
+	th->unsrt[i].ad->sqto   += seq_start-1;
+	th->unsrt[i].ad->L      += seq_start-1;
+      }
+    }
+  }
+  return eslOK;
+}
+
 /*---------------- end, CM_TOPHITS object -----------------------*/
 
 /*****************************************************************
@@ -1283,7 +1327,7 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
       fprintf(ofp, "%*" PRId64 " %*" PRId64 " %6s %9.2g %6.1f %s\n",
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
-	      (th->hit[h]->in_rc == TRUE) ? "-" : "+";
+	      (th->hit[h]->in_rc == TRUE) ? "-" : "+",
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
 	      (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "-");

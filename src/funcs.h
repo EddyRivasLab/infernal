@@ -756,6 +756,7 @@ extern void        cm_tophits_Destroy(CM_TOPHITS *h);
 extern int         cm_tophits_CloneHitFromResults(CM_TOPHITS *th, search_results_t *results, int hidx, int64_t seq_idx, CM_HIT **ret_hit);
 extern int         cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eZ, int istart);
 extern int         cm_tophits_RemoveDuplicates(CM_TOPHITS *th);
+extern int         cm_tophits_UpdateHitPositions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_revcomp);
 
 extern int cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli);
 extern int cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw);

@@ -240,7 +240,6 @@ static void  free_info(WORKER_INFO *info);
 static int   setup_cm(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf);
 static int   setup_qdbs(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf);
 static int   setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info, const ESL_ALPHABET *abc, char *errbuf);
-static int   update_hit_positions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_revcomp);
 
 #ifdef HMMER_THREADS
 #define BLOCK_SIZE 1000
@@ -1336,7 +1335,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	      /* If we're a subsequence, update hit positions so they're relative 
 	       * to the full-length sequence. */
-	      if(seq_from != 1) update_hit_positions(info->th, prev_hit_cnt, seq_from, FALSE);
+	      if(seq_from != 1) cm_tophits_UpdateHitPositions(info->th, prev_hit_cnt, seq_from, FALSE);
 	    }
 	    
 	    /* search reverse complement */
@@ -1351,7 +1350,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	      /* Hit positions will be relative to the reverse-complemented sequence
 	       * (i.e. start > end), which may be a subsequence. Update hit positions 
 	       * so they're relative to the full-length original sequence (start < end). */
-	      update_hit_positions(info->th, prev_hit_cnt, seq_to, TRUE); /* note we use seq_to, not seq_from */
+	      cm_tophits_UpdateHitPositions(info->th, prev_hit_cnt, seq_to, TRUE); /* note we use seq_to, not seq_from */
 	    }
 	    esl_sq_Reuse(dbsq);
 
@@ -1430,7 +1429,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
       
       /* modify hit positions to account for the position of the window in the full sequence */
-      update_hit_positions(info->th, prev_hit_cnt, dbsq->start, FALSE);
+      cm_tophits_UpdateHitPositions(info->th, prev_hit_cnt, dbsq->start, FALSE);
     }
 
     /* reverse complement */
@@ -1442,7 +1441,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
       
       /* modify hit positions to account for the position of the window in the full sequence */
-      update_hit_positions(info->th, prev_hit_cnt, dbsq->start, TRUE);
+      cm_tophits_UpdateHitPositions(info->th, prev_hit_cnt, dbsq->start, TRUE);
 
       if(info->pli->do_top) info->pli->nres += dbsq->W; /* add dbsq->W residues, the number of unique residues on reverse complement that we just searched */
       
@@ -1606,7 +1605,7 @@ pipeline_thread(void *arg)
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 	
 	/* modify hit positions to account for the position of the window in the full sequence */
-	update_hit_positions(info->th, prev_hit_cnt, dbsq->start, FALSE);
+	cm_tophits_UpdateHitPositions(info->th, prev_hit_cnt, dbsq->start, FALSE);
       }
 	
       /* reverse complement */
@@ -1617,7 +1616,7 @@ pipeline_thread(void *arg)
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* modify hit positions to account for the position of the window in the full sequence */
-	update_hit_positions(info->th, prev_hit_cnt, dbsq->start, TRUE);
+	cm_tophits_UpdateHitPositions(info->th, prev_hit_cnt, dbsq->start, TRUE);
 
 	if(info->pli->do_top) info->pli->nres += dbsq->W; /* add dbsq->W residues, the reverse complement we just searched */
 
@@ -2001,51 +2000,6 @@ setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info, const ESL_ALPHABET *abc, ch
   /* copy E-value parameters */
   esl_vec_FCopy(info->cm->fp7_evparam, CM_p7_NEVPARAM, info->p7_evparam); 
 
-  return eslOK;
-}
-
-/* Function:  update_hit_positions
- * Synopsis:  Update sequence positions in a hit list.
- * Incept:    EPN, Wed May 25 09:12:52 2011
- *
- * Purpose: For hits <hit_start..th->N-1> in a hit list, update the
- *          positions of start, stop and ad->sqfrom, ad->sqto.  This
- *          is necessary when we've searched a chunk of subsequence
- *          that originated somewhere within a larger sequence.
- *
- * Returns: <eslOK> on success.
- */
- int
-update_hit_positions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_revcomp)
-{ 
-  if((seq_start == 1) && (in_revcomp == FALSE)) return eslOK;
-
-  int i;
-  if(in_revcomp) { 
-    for (i = hit_start; i < th->N ; i++) {
-      th->unsrt[i].start = seq_start - th->unsrt[i].start + 1;
-      th->unsrt[i].stop  = seq_start - th->unsrt[i].stop  + 1;
-      th->unsrt[i].in_rc = TRUE;
-      if(th->unsrt[i].ad != NULL) { 
-	th->unsrt[i].ad->sqfrom = seq_start - th->unsrt[i].ad->sqfrom + 1;
-	th->unsrt[i].ad->sqto   = seq_start - th->unsrt[i].ad->sqto + 1;
-	th->unsrt[i].ad->L      = seq_start - th->unsrt[i].ad->L + 1;
-      }
-    }
-
-  }
-  else { 
-    for (i = hit_start; i < th->N ; i++) {
-      th->unsrt[i].start += seq_start-1;
-      th->unsrt[i].stop  += seq_start-1;
-      th->unsrt[i].in_rc = FALSE;
-      if(th->unsrt[i].ad != NULL) { 
-	th->unsrt[i].ad->sqfrom += seq_start-1;
-	th->unsrt[i].ad->sqto   += seq_start-1;
-	th->unsrt[i].ad->L      += seq_start-1;
-      }
-    }
-  }
   return eslOK;
 }
  
