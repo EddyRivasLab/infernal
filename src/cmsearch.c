@@ -667,9 +667,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* merge the results of the search results */
       for (i = 1; i < infocnt; ++i) {
-          cm_tophits_Merge(info[0].th, info[i].th);
-          cm_pipeline_Merge(info[0].pli, info[i].pli);
-	  free_info(&info[i]);
+	cm_tophits_Merge(info[0].th, info[i].th);
+	cm_pipeline_Merge(info[0].pli, info[i].pli);
+	free_info(&info[i]);
       }
 
       /* Sort by sequence index/position and remove duplicates */
@@ -2025,6 +2025,7 @@ update_hit_positions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_re
     for (i = hit_start; i < th->N ; i++) {
       th->unsrt[i].start = seq_start - th->unsrt[i].start + 1;
       th->unsrt[i].stop  = seq_start - th->unsrt[i].stop  + 1;
+      th->unsrt[i].in_rc = TRUE;
       if(th->unsrt[i].ad != NULL) { 
 	th->unsrt[i].ad->sqfrom = seq_start - th->unsrt[i].ad->sqfrom + 1;
 	th->unsrt[i].ad->sqto   = seq_start - th->unsrt[i].ad->sqto + 1;
@@ -2037,6 +2038,7 @@ update_hit_positions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_re
     for (i = hit_start; i < th->N ; i++) {
       th->unsrt[i].start += seq_start-1;
       th->unsrt[i].stop  += seq_start-1;
+      th->unsrt[i].in_rc = FALSE;
       if(th->unsrt[i].ad != NULL) { 
 	th->unsrt[i].ad->sqfrom += seq_start-1;
 	th->unsrt[i].ad->sqto   += seq_start-1;

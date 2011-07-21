@@ -119,10 +119,14 @@ OBJS  = cm.o\
 	stats.o\
 	truncyk.o
 
+BENCHMARKS = \
+	cm_tophits_benchmark
+
+UTESTS =\
+	cm_tophits_utest\
+
 # Definitions present in HMMER3's Makefile that are not yet necessary in Infernal's
 #STATS = 
-#BENCHMARKS = 
-#UTESTS =
 #ITESTS = 
 #EXAMPLES =
 
@@ -141,6 +145,12 @@ endif
 .PHONY: all dev tests check install uninstall distclean clean TAGS
 
 all:   ${PROGS} .FORCE
+
+dev:   ${PROGS} ${UTESTS} ${BENCHMARKS} ${EXAMPLES} .FORCE
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} dev
+
+tests: ${PROGS} ${UTESTS} .FORCE
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} tests
 
 libinfernal.a: libinfernal-src.stamp .FORCE
 	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} libinfernal-impl.stamp
@@ -161,6 +171,36 @@ ${PROGS}: @EXEC_DEPENDENCY@  libinfernal.a ../hmmer/src/libhmmer.a ../${ESLDIR}/
 
 .c.o:
 	${QUIET_CC}${CC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} ${CPPFLAGS} ${MYINCDIRS} -o $@ -c $<
+
+${UTESTS}: libinfernal.a  ${HDRS} config.h
+	@BASENAME=`echo $@ | sed -e 's/_utest//' | sed -e 's/^cm_//'` ;\
+	DFLAG=`echo $${BASENAME} | sed -e 'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/'`;\
+	DFLAG=CM_$${DFLAG}_TESTDRIVE ;\
+	if test -e ${srcdir}/CM_$${BASENAME}.c; then \
+           DFILE=${srcdir}/CM_$${BASENAME}.c ;\
+        else \
+           DFILE=${srcdir}/$${BASENAME}.c ;\
+	fi;\
+	if test ${V} ;\
+	   then echo "{CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}" ;\
+	   else echo '    ' GEN $@ ;\
+        fi ;\
+	${CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}
+
+${BENCHMARKS}: libinfernal.a  ${HDRS} config.h
+	@BASENAME=`echo $@ | sed -e 's/_benchmark//' | sed -e 's/^cm_//'` ;\
+	DFLAG=`echo $${BASENAME} | sed -e 'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/'`;\
+	DFLAG=CM_$${DFLAG}_BENCHMARK ;\
+	if test -e ${srcdir}/CM_$${BASENAME}.c; then \
+           DFILE=${srcdir}/CM_$${BASENAME}.c ;\
+        else \
+           DFILE=${srcdir}/$${BASENAME}.c ;\
+	fi;\
+	if test ${V} ;\
+	   then echo "{CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}" ;\
+	   else echo '    ' GEN $@ ;\
+        fi ;\
+	${CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}
 
 install:
 	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} install

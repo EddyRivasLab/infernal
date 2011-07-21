@@ -9,6 +9,9 @@
  *    2. Standard (human-readable) output of pipeline results.
  *    3. Tabular (parsable) output of pipeline results.
  *    4. Debugging/dev code.
+ *    5. Benchmark driver.
+ *    6. Test driver.
+ *    7. Copyright and license information.
  * 
  * EPN, Tue May 24 13:03:31 2011
  * SVN $Id: p7_tophits.c 3546 2011-05-23 14:36:44Z eddys $
@@ -148,6 +151,7 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
 
   hit->start            = 1;
   hit->stop             = 1;
+  hit->in_rc            = FALSE;
   hit->score            = 0.0;
   hit->pvalue           = 0.0;
   hit->evalue           = 0.0;
@@ -190,14 +194,19 @@ hit_sorter_by_seq_idx(const void *vh1, const void *vh2)
   if      (h1->seq_idx > h2->seq_idx) return  1; /* first key, seq_idx (unique id for sequences), low to high */
   else if (h1->seq_idx < h2->seq_idx) return -1;
   else { 
-    /* same sequence, sort by strand, start position, in that order */
-    int in_rc1;
-    int in_rc2;
-    in_rc1 = (h1->start < h1->stop) ? 0 : 1;
-    in_rc2 = (h2->start < h2->stop) ? 0 : 1;
-    if     (in_rc1 > in_rc2) return  1; /* second key, strand (in_rc1 = 1, in_rc2 = 0), forward, then reverse */
-    else if(in_rc1 < in_rc2) return -1; /*                    (in_rc1 = 0, in_rc2 = 1), forward, then reverse */
-    else                     return (h1->start > h2->start ? 1 : -1 ); /* third key, start position, low to high */
+    /* same sequence, sort by strand, stop position then start position (if revcomp) or start position then stop position (if !revcomp) */
+    if     (h1->in_rc > h2->in_rc)    return  1; /* second key, strand (h1->in_rc = 1, h1->in_rc = 0), forward, then reverse */
+    else if(h1->in_rc < h2->in_rc)    return -1; /*                    (h1->in_rc = 0, h2->in_rc = 1), forward, then reverse */
+    else if(h1->in_rc) { 
+      if     (h1->stop > h2->stop)    return  1; /* both revcomp:     third key is stop  position, low to high */
+      else if(h1->stop < h2->stop)    return -1; 
+      else                            return (h1->start  > h2->start  ? 1 : -1 ); /* both revcomp, same stop position, fourth key is start position, low to high */
+    }
+    else               {
+      if     (h1->start > h2->start)  return  1; /* both !revcomp:    third key is start position, low to high */
+      else if(h1->start < h2->start)  return -1; 
+      else                            return (h1->stop  > h2->stop    ? 1 : -1 ); /* both !revcomp, same start position, fourth key is stop position, low to high */
+    }
   }
 }
 
@@ -268,7 +277,7 @@ cm_tophits_SortBySeqIdx(CM_TOPHITS *h)
  *            SRE, Fri Dec 28 09:32:12 2007 [Janelia] (p7_tophits.c)
  *
  * Purpose:   Merge <h2> into <h1>. Upon return, <h1>
- *            contains the sorted, merged list. <h2>
+ *            contains the unsorted, merged list. <h2>
  *            is effectively destroyed; caller should
  *            not access it further, and may as well free
  *            it immediately.
@@ -282,34 +291,20 @@ int
 cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2)
 {
   void    *p;
-  CM_HIT **new_hit = NULL;
-  CM_HIT  *ori1    = h1->unsrt;    /* original base of h1's data */
   CM_HIT  *new2;
   int      i,j,k;
   int      Nalloc = h1->Nalloc + h2->Nalloc;
   int      status;
 
-  /* Make sure the two lists are sorted */
-  if ((status = cm_tophits_SortByScore(h1)) != eslOK) goto ERROR;
-  if ((status = cm_tophits_SortByScore(h2)) != eslOK) goto ERROR;
-
   /* Attempt our allocations, so we fail early if we fail. 
    * Reallocating h1->unsrt screws up h1->hit, so fix it.
    */
-  ESL_RALLOC(h1->unsrt, p, sizeof(CM_HIT) * Nalloc);
-  ESL_ALLOC (new_hit, sizeof(CM_HIT *)    * Nalloc);
-  for (i = 0; i < h1->N; i++)
-    h1->hit[i] = h1->unsrt + (h1->hit[i] - ori1);
+  ESL_RALLOC(h1->unsrt, p, sizeof(CM_HIT)   * Nalloc);
+  ESL_RALLOC(h1->hit,   p, sizeof(CM_HIT *) * Nalloc);
 
   /* Append h2's unsorted data array to h1. h2's data begin at <new2> */
   new2 = h1->unsrt + h1->N;
   memcpy(new2, h2->unsrt, sizeof(CM_HIT) * h2->N);
-
-  /* Merge the sorted hit lists */
-  for (i=0,j=0,k=0; i < h1->N && j < h2->N ; k++)
-    new_hit[k] = (hit_sorter_by_score(&h1->hit[i], &h2->hit[j]) > 0) ? new2 + (h2->hit[j++] - h2->unsrt) : h1->hit[i++];
-  while (i < h1->N) new_hit[k++] = h1->hit[i++];
-  while (j < h2->N) new_hit[k++] = new2 + (h2->hit[j++] - h2->unsrt);
 
   /* h2 now turns over management of name, acc, desc memory to h1;
    * nullify its pointers, to prevent double free.  */
@@ -322,16 +317,17 @@ cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2)
     }
 
   /* Construct the new grown h1 */
-  free(h1->hit);
-  h1->hit    = new_hit;
   h1->Nalloc = Nalloc;
   h1->N     += h2->N;
-  /* and is_sorted_by_score is TRUE and sorted_by_seq_idx is FALSE,
-   *  as a side effect of cm_tophits_SortByScore() above. */
+  h1->is_sorted_by_score   = FALSE;
+  h1->is_sorted_by_seq_idx = FALSE;
+
+  /* reset pointers in sorted list (not really nec because we're not sorted) */
+  for (i = 0; i < h1->N; i++) h1->hit[i] = h1->unsrt + i;
+
   return eslOK;
   
  ERROR:
-  if (new_hit != NULL) free(new_hit);
   return status;
 }
 
@@ -541,6 +537,14 @@ cm_tophits_CloneHitFromResults(CM_TOPHITS *th, search_results_t *results, int hi
   hit->score = results->data[hidx].score;
   hit->seq_idx = seq_idx;
 
+  hit->in_rc = hit->start <= hit->stop ? FALSE : TRUE;
+  /* Note: start should always be less than stop because 
+   * results are created on a 'forward' strand sequence spanning 
+   * i..j with i <= j. We'll fix hit->in_rc in cmsearch  or 
+   * cmscan because that's the only scope in which we know if
+   * we're in the forward or reverse strand.
+   */
+
   *ret_hit = hit;
   return eslOK;
 
@@ -576,15 +580,14 @@ cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eZ, int istart)
  * Incept:    EPN, Tue Jun 14 05:42:31 2011
  *            TJW, Wed Mar 10 13:38:36 EST 2010 (p7_tophits_RemoveDupiclates())
  *
- * Purpose:   
-
- *            After the CM pipeline has completed, the CM_TOPHITS
- *            object may contain duplicates if the target was broken
- *            into overlapping windows. Scan through the tophits
- *            object, which is sorted by sequence position and start
- *            point and remove duplicates by keeping the one with the
- *            better bit score. with the better score. Hits are marked
- *            as 'removed' by raising the CM_HIT_IS_DUPLICATED flag in
+ * Purpose:   After the CM pipeline has completed, the CM_TOPHITS object
+ *            may contain duplicates if the target was broken into
+ *            overlapping windows. Scan through the tophits object,
+ *            which, upon entering, is sorted by sequence index,
+ *            strand, and start position (stop position for hits on
+ *            the reverse strand and remove duplicates by keeping the
+ *            one with the better bit score. Hits are marked as
+ *            'removed' by raising the CM_HIT_IS_DUPLICATED flag in
  *            the hit. At the end, no individual residue on one strand
  *            should exist in more than one hit.
  *
@@ -598,8 +601,8 @@ cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
   uint64_t i;               /* counter over hits */
   int64_t s_prv, e_prv;     /* start, end of previous hit */
   int64_t s_cur, e_cur;     /* start, end of current hit */
-  int     sc_prv;           /* bit score of previous hit */
-  int     sc_cur;           /* bit score of current hit */
+  float   sc_prv;           /* bit score of previous hit */
+  float   sc_cur;           /* bit score of current hit */
   int     rc_prv;           /* TRUE if previous hit is in reverse complement, FALSE if not */
   int     rc_cur;           /* TRUE if current hit is in reverse complement, FALSE if not */
   int     si_prv;           /* seq_idx (unique sequence identifier) of previous hit */
@@ -614,7 +617,7 @@ cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
   s_prv  = th->hit[0]->start;
   e_prv  = th->hit[0]->stop;
   sc_prv = th->hit[0]->score;
-  rc_prv = s_prv < e_prv ? FALSE : TRUE;
+  rc_prv = th->hit[0]->in_rc;
   si_prv = th->hit[0]->seq_idx;
   i_prv  = 0;
 
@@ -622,7 +625,7 @@ cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
     s_cur  = th->hit[i]->start;
     e_cur  = th->hit[i]->stop;
     sc_cur = th->hit[i]->score;
-    rc_cur = s_cur < e_cur ? FALSE : TRUE;
+    rc_cur = th->hit[i]->in_rc;
     si_cur = th->hit[i]->seq_idx;
 
     /* check for overlap, we take advantage of the fact that we're sorted by strand and position */
@@ -790,7 +793,7 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       }
       
       newness = ' '; /* left-over from HMMER3 output, which uses this to mark new/dropped hits in iterative searches */
-      fprintf(ofp, "%c  %9.2g  %6.1f  %-*s  %*ld  %*ld  %c  ",
+      fprintf(ofp, "%c  %9.2g  %6.1f  %-*s  %*" PRId64 "  %*" PRId64 "  %c  ",
 	      newness,
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
@@ -898,7 +901,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       }
       fprintf(ofp, "\n");
       
-      fprintf(ofp, " %*d %c %6.1f %9.2g %7d %7d %c%c %11ld %11ld %c %c%c",
+      fprintf(ofp, " %*d %c %6.1f %9.2g %7d %7d %c%c %11" PRId64 " %11" PRId64 " %c %c%c",
 	      idxw, nprinted+1,
 	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? '!' : '?'),
 	      th->hit[h]->score,
@@ -1149,53 +1152,53 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th)
     fprintf(ofp, "%8s  %-22s  %9s  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "--------", "----------------------", "---------", "-------", "-------", "-------", "-------", "-------", "-------", "-------");
     /* reported */
     if(rep_naln_hboa > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9ld  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", "HMM banded optimal acc", rep_naln_hboa, 
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", "HMM banded optimal acc", rep_naln_hboa, 
 	      min_rep_matrix_Mb_hboa,    avg_rep_matrix_Mb_hboa,    max_rep_matrix_Mb_hboa, 
 	      min_rep_elapsed_secs_hboa, avg_rep_elapsed_secs_hboa, max_rep_elapsed_secs_hboa, tot_rep_elapsed_secs_hboa);
     }
     else {
-      fprintf(ofp, "%8s  %-22s  %9ld  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", "HMM banded optimal acc", rep_naln_hboa, "-", "-", "-", "-", "-", "-", "-");
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", "HMM banded optimal acc", rep_naln_hboa, "-", "-", "-", "-", "-", "-", "-");
     }
     if(rep_naln_hbcyk > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9ld  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", "HMM banded CYK", rep_naln_hbcyk, 
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", "HMM banded CYK", rep_naln_hbcyk, 
 	      min_rep_matrix_Mb_hbcyk,    avg_rep_matrix_Mb_hbcyk,    max_rep_matrix_Mb_hbcyk, 
 	      min_rep_elapsed_secs_hbcyk, avg_rep_elapsed_secs_hbcyk, max_rep_elapsed_secs_hbcyk, tot_rep_elapsed_secs_hbcyk);
     }
     else {
-      fprintf(ofp, "%8s  %-22s  %9ld  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", "HMM banded CYK", rep_naln_hbcyk, "-", "-", "-", "-", "-", "-", "-");
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", "HMM banded CYK", rep_naln_hbcyk, "-", "-", "-", "-", "-", "-", "-");
     }
     if(rep_naln_dccyk > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9ld  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", "nonbanded D&C CYK", rep_naln_dccyk, 
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", "nonbanded D&C CYK", rep_naln_dccyk, 
 	      min_rep_matrix_Mb_dccyk,    avg_rep_matrix_Mb_dccyk,    max_rep_matrix_Mb_dccyk, 
 	      min_rep_elapsed_secs_dccyk, avg_rep_elapsed_secs_dccyk, max_rep_elapsed_secs_dccyk, tot_rep_elapsed_secs_dccyk);
     }
     else {
-      fprintf(ofp, "%8s  %-22s  %9ld  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", "nonbanded D&C CYK", rep_naln_dccyk, "-", "-", "-", "-", "-", "-", "-");
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", "nonbanded D&C CYK", rep_naln_dccyk, "-", "-", "-", "-", "-", "-", "-");
     }
     /* included */
     if(inc_naln_hboa > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9ld  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", "HMM banded optimal acc", inc_naln_hboa, 
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", "HMM banded optimal acc", inc_naln_hboa, 
 	      min_inc_matrix_Mb_hboa,    avg_inc_matrix_Mb_hboa,    max_inc_matrix_Mb_hboa, 
 	      min_inc_elapsed_secs_hboa, avg_inc_elapsed_secs_hboa, max_inc_elapsed_secs_hboa, tot_inc_elapsed_secs_hboa);
     }
     else {
-      fprintf(ofp, "%8s  %-22s  %9ld  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", "HMM banded optimal acc", inc_naln_hboa, "-", "-", "-", "-", "-", "-", "-");
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", "HMM banded optimal acc", inc_naln_hboa, "-", "-", "-", "-", "-", "-", "-");
     }
     if(inc_naln_hbcyk > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9ld  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", "HMM banded CYK", inc_naln_hbcyk, 
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", "HMM banded CYK", inc_naln_hbcyk, 
 	      min_inc_matrix_Mb_hbcyk,    avg_inc_matrix_Mb_hbcyk,    max_inc_matrix_Mb_hbcyk, 
 	      min_inc_elapsed_secs_hbcyk, avg_inc_elapsed_secs_hbcyk, max_inc_elapsed_secs_hbcyk, tot_inc_elapsed_secs_hbcyk);
     }
     else {
-      fprintf(ofp, "%8s  %-22s  %9ld  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", "HMM banded CYK", inc_naln_hbcyk, "-", "-", "-", "-", "-", "-", "-");
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", "HMM banded CYK", inc_naln_hbcyk, "-", "-", "-", "-", "-", "-", "-");
     }
     if(inc_naln_dccyk > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9ld  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", "nonbanded D&C CYK", inc_naln_dccyk, 
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", "nonbanded D&C CYK", inc_naln_dccyk, 
 	      min_inc_matrix_Mb_dccyk,    avg_inc_matrix_Mb_dccyk,    max_inc_matrix_Mb_dccyk, 
 	      min_inc_elapsed_secs_dccyk, avg_inc_elapsed_secs_dccyk, max_inc_elapsed_secs_dccyk, tot_inc_elapsed_secs_dccyk);
     }
     else {
-      fprintf(ofp, "%8s  %-22s  %9ld  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", "nonbanded D&C CYK", inc_naln_dccyk, "-", "-", "-", "-", "-", "-", "-");
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", "nonbanded D&C CYK", inc_naln_dccyk, "-", "-", "-", "-", "-", "-", "-");
     }
   }
   else { 
@@ -1277,10 +1280,10 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
       if(th->hit[h]->ad == NULL) { fprintf(ofp, "%7s %7s ", "-", "-"); }
       else                       { fprintf(ofp, "%7d %7d ", th->hit[h]->ad->cfrom, th->hit[h]->ad->cto); }
 
-      fprintf(ofp, "%*ld %*ld %6s %9.2g %6.1f %s\n",
+      fprintf(ofp, "%*" PRId64 " %*" PRId64 " %6s %9.2g %6.1f %s\n",
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
-	      (th->hit[h]->start < th->hit[h]->stop ? "+" : "-"),
+	      (th->hit[h]->in_rc == TRUE) ? "-" : "+";
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
 	      (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "-");
@@ -1391,27 +1394,27 @@ cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th)
   fprintf(fp, "CM_TOPHITS dump\n");
   fprintf(fp, "------------------\n");
 
-  fprintf(fp, "N                    = %ld\n", th->N);
-  fprintf(fp, "Nalloc               = %ld\n", th->Nalloc);
-  fprintf(fp, "nreported            = %ld\n", th->nreported);
-  fprintf(fp, "nincluded            = %ld\n", th->nincluded);
+  fprintf(fp, "N                    = %" PRId64 "\n", th->N);
+  fprintf(fp, "Nalloc               = %" PRId64 "\n", th->Nalloc);
+  fprintf(fp, "nreported            = %" PRId64 "\n", th->nreported);
+  fprintf(fp, "nincluded            = %" PRId64 "\n", th->nincluded);
   fprintf(fp, "is_sorted_by_score   = %s\n",  th->is_sorted_by_score   ? "TRUE" : "FALSE");
   fprintf(fp, "is_sorted_by_seq_idx = %s\n",  th->is_sorted_by_seq_idx ? "TRUE" : "FALSE");
   if(th->is_sorted_by_score) { 
     for (i = 0; i < th->N; i++) {
-      fprintf(fp, "SCORE SORTED HIT %ld:\n", i);
+      fprintf(fp, "SCORE SORTED HIT %" PRId64 ":\n", i);
       cm_hit_Dump(fp, th->hit[i]);
     }
   }
   else if(th->is_sorted_by_seq_idx) { 
     for (i = 0; i < th->N; i++) {
-      fprintf(fp, "SEQ_IDX SORTED HIT %ld:\n", i);
+      fprintf(fp, "SEQ_IDX SORTED HIT %" PRId64 ":\n", i);
       cm_hit_Dump(fp, th->hit[i]);
     }
   }
   else { 
     for (i = 0; i < th->N; i++) {
-      fprintf(fp, "UNSORTED HIT %ld:\n", i);
+      fprintf(fp, "UNSORTED HIT %" PRId64 ":\n", i);
       cm_hit_Dump(fp, &(th->unsrt[i]));
     }
   }
@@ -1434,9 +1437,10 @@ cm_hit_Dump(FILE *fp, const CM_HIT *h)
   fprintf(fp, "name      = %s\n",  h->name);
   fprintf(fp, "acc       = %s\n",  (h->acc  != NULL) ? h->acc  : "NULL");
   fprintf(fp, "desc      = %s\n",  (h->desc != NULL) ? h->desc : "NULL");
-  fprintf(fp, "seq_idx   = %ld\n", h->seq_idx);
-  fprintf(fp, "start     = %ld\n", h->start);
-  fprintf(fp, "stop      = %ld\n", h->stop);
+  fprintf(fp, "seq_idx   = %" PRId64 "\n", h->seq_idx);
+  fprintf(fp, "start     = %" PRId64 "\n", h->start);
+  fprintf(fp, "stop      = %" PRId64 "\n", h->stop);
+  fprintf(fp, "in_rc     = %s\n",  h->in_rc ? "TRUE" : "FALSE");
   fprintf(fp, "score     = %f\n",  h->score);
   fprintf(fp, "pvalue    = %f\n",  h->pvalue);
   fprintf(fp, "evalue    = %f\n",  h->evalue);
@@ -1464,9 +1468,346 @@ cm_hit_Dump(FILE *fp, const CM_HIT *h)
 /*****************************************************************
  * 4. Benchmark driver
  *****************************************************************/
+#ifdef CM_TOPHITS_BENCHMARK
+/* 
+  gcc -o benchmark-cm-tophits -std=gnu99 -g -O2 -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel -DCM_TOPHITS_BENCHMARK cm_tophits.c -linfernal -lhmmer -leasel -lm 
+  ./benchmark-cm-tophits
+
+  As of 28 Dec 07, shows 0.20u for 10 lists of 10,000 hits each (at least ~100x normal expectation),
+  so we expect top hits list time to be negligible for typical hmmsearch/hmmscan runs.
+  
+  If needed, we do have opportunity for optimization, however - especially in memory handling.
+ */
+#include "esl_config.h"
+#include "p7_config.h"
+#include "config.h"
+
+#include <stdlib.h>
+#include <stdio.h>
+
+#include "easel.h"
+#include "esl_getopts.h"
+#include "esl_stopwatch.h"
+#include "esl_random.h"
+
+#include "hmmer.h"
+#include "funcs.h"		/* external functions                   */
+#include "structs.h"		/* data structures, macros, #define's   */
+
+static ESL_OPTIONS options[] = {
+  /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",             0 },
+  { "-s",        eslARG_INT,    "181", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                    0 },
+  { "-M",        eslARG_INT,     "10", NULL, NULL,  NULL,  NULL, NULL, "number of top hits lists to simulate and merge",   0 },
+  { "-N",        eslARG_INT,  "10000", NULL, NULL,  NULL,  NULL, NULL, "number of top hits to simulate per list",          0 },
+  { "-X",        eslARG_INT,   "1000", NULL, NULL,  NULL,  NULL, NULL, "number of target sequences hits can come from",    0 },
+  { "-L",        eslARG_INT, "100000", NULL, NULL,  NULL,  NULL, NULL, "length of target sequences",                       0 },
+  { "-v",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "dump hit list after removing overlaps",            0 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+};
+static char usage[]  = "[-options]";
+static char banner[] = "benchmark driver for CM_TOPHITS";
+
+int
+main(int argc, char **argv)
+{
+  ESL_GETOPTS    *go       = cm_CreateDefaultApp(options, 0, argc, argv, banner, usage);
+  ESL_STOPWATCH  *w        = esl_stopwatch_Create();
+  ESL_RANDOMNESS *r        = esl_randomness_CreateFast(esl_opt_GetInteger(go, "-s"));
+  int             N        = esl_opt_GetInteger(go, "-N");
+  int             M        = esl_opt_GetInteger(go, "-M");
+  int             X        = esl_opt_GetInteger(go, "-X");
+  int             L        = esl_opt_GetInteger(go, "-L");
+  CM_TOPHITS    **h        = NULL;
+  CM_HIT         *hit      = NULL;
+  float          *scores   = NULL;
+  int            *seq_idxes= NULL;
+  int            *starts   = NULL;
+  int            *stops    = NULL;
+  char            name[]   = "not_unique_name";
+  char            acc[]    = "not_unique_acc";
+  char            desc[]   = "Test description for the purposes of making the benchmark allocate space";
+  int             i,j;
+  int             nhits;
+  int             status;
+
+  /* prep work: generate our sort keys before starting to time anything    */
+  ESL_ALLOC(h,         sizeof(CM_TOPHITS *) * M); /* allocate pointers for M lists */
+  ESL_ALLOC(scores,    sizeof(double) * N * M);   
+  ESL_ALLOC(seq_idxes, sizeof(int) * N * M);   
+  ESL_ALLOC(starts,    sizeof(int) * N * M);   
+  ESL_ALLOC(stops,     sizeof(int) * N * M);   
+  for (i = 0; i < N*M; i++) scores[i]    = esl_random(r);
+  for (i = 0; i < N*M; i++) seq_idxes[i] = esl_rnd_Roll(r, X);
+  for (i = 0; i < N*M; i++) starts[i]    = esl_rnd_Roll(r, L) + 1;
+  for (i = 0; i < N*M; i++) stops[i]     = esl_rnd_Roll(r, L) + 1;
+
+  esl_stopwatch_Start(w);
+
+  /* generate M "random" lists and sort them */
+  for (j = 0; j < M; j++)
+    {
+      h[j] = cm_tophits_Create();
+      for (i = 0; i < N; i++) 
+	{ 
+	  cm_tophits_CreateNextHit(h[j], &hit);
+	  esl_strdup(name, -1, &(hit->name));
+	  esl_strdup(acc,  -1, &(hit->acc));
+	  esl_strdup(desc, -1, &(hit->desc));
+	  hit->start   = starts[j*N+i];
+	  hit->stop    = stops[j*N+i];
+	  hit->score   = scores[j*N+i];
+	  hit->seq_idx = seq_idxes[j*N+i];
+	  if     (hit->start < hit->stop) { hit->in_rc = FALSE; }
+	  else if(hit->start > hit->stop) { hit->in_rc = TRUE;  }
+	  else                            { hit->in_rc = (esl_rnd_Roll(r, 2) == 0) ? FALSE : TRUE; }
+	}
+      if(esl_opt_GetBoolean(go, "-v")) cm_tophits_Dump(stdout, h[j]);
+    }
+
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, "# CPU time hit creation:                  ");
+  esl_stopwatch_Start(w);
+
+  /* then merge them into one big list in h[0] */
+  for (j = 1; j < M; j++)
+    {
+      cm_tophits_Merge(h[0], h[j]);
+      cm_tophits_Destroy(h[j]);
+    }      
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_Merge():            ");
+  esl_stopwatch_Start(w);
+  
+  cm_tophits_SortBySeqIdx(h[0]);
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_SortBySeqIdx():     ");
+  esl_stopwatch_Start(w);
+
+  if(esl_opt_GetBoolean(go, "-v")) cm_tophits_Dump(stdout, h[0]);
+
+  cm_tophits_RemoveDuplicates(h[0]);
+
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_RemoveDuplicates(): ");
+  esl_stopwatch_Start(w);
+
+  cm_tophits_SortByScore(h[0]);
+
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_SortByScore():      ");
+  
+  if(esl_opt_GetBoolean(go, "-v")) cm_tophits_Dump(stdout, h[0]);
+
+  /* determine number of nonoverlapping hits */
+  nhits = 0;
+  for(i = 0; i < h[0]->N; i++) { 
+    if(! (h[0]->hit[i]->flags & CM_HIT_IS_DUPLICATE)) { nhits++; }
+  }
+
+  printf("# number of lists:               %d\n", M);
+  printf("# sequence length                %d\n", L);
+  printf("# number of sequences            %d\n", X);
+  printf("# initial number of hits         %d\n", N*M);
+  printf("# number of non-overlapping hits %d\n", nhits);
+
+  cm_tophits_Destroy(h[0]);
+  status = eslOK;
+
+ ERROR:
+  esl_getopts_Destroy(go);
+  esl_stopwatch_Destroy(w);
+  esl_randomness_Destroy(r);
+  if (scores    != NULL) free(scores);
+  if (seq_idxes != NULL) free(seq_idxes);
+  if (starts    != NULL) free(starts);
+  if (stops     != NULL) free(stops);
+  if (h         != NULL) free(h);
+  return status;
+}
+#endif /*CM_TOPHITS_BENCHMARK*/
 /*****************************************************************
  * 5. Test driver
  *****************************************************************/
+
+#ifdef CM_TOPHITS_TESTDRIVE
+/*
+  gcc -o cm_tophits_utest -std=gnu99 -g -O2 -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel -DCM_TOPHITS_TESTDRIVE cm_tophits.c -linfernal -lhmmer -leasel -lm 
+  ./tophits_test
+*/
+#include "esl_config.h"
+#include "p7_config.h"
+#include "config.h"
+
+#include <stdlib.h>
+#include <stdio.h>
+
+#include "easel.h"
+#include "esl_getopts.h"
+#include "esl_stopwatch.h"
+#include "esl_random.h"
+
+#include "hmmer.h"
+#include "funcs.h"		/* external functions                   */
+#include "structs.h"		/* data structures, macros, #define's   */
+
+static ESL_OPTIONS options[] = {
+  /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",             0 },
+  { "-s",        eslARG_INT,    "181", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                    0 },
+  { "-N",        eslARG_INT,    "100", NULL, NULL,  NULL,  NULL, NULL, "number of top hits to simulate",                   0 },
+  { "-X",        eslARG_INT,   "1000", NULL, NULL,  NULL,  NULL, NULL, "number of target sequences hits can come from",    0 },
+  { "-L",        eslARG_INT, "100000", NULL, NULL,  NULL,  NULL, NULL, "length of target sequences",                       0 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+};
+
+static char usage[]  = "[-options]";
+static char banner[] = "test driver for CM_TOPHITS";
+
+int
+main(int argc, char **argv)
+{
+  ESL_GETOPTS    *go       = cm_CreateDefaultApp(options, 0, argc, argv, banner, usage);
+  ESL_RANDOMNESS *r        = esl_randomness_CreateFast(esl_opt_GetInteger(go, "-s"));
+  int             N        = esl_opt_GetInteger(go, "-N");
+  int             L        = esl_opt_GetInteger(go, "-L");
+  int             X        = esl_opt_GetInteger(go, "-X");
+  CM_TOPHITS     *h1       = NULL;
+  CM_TOPHITS     *h2       = NULL;
+  CM_TOPHITS     *h3       = NULL;
+  char            name[]   = "not_unique_name";
+  char            acc[]    = "not_unique_acc";
+  char            desc[]   = "Test description for the purposes of making the test driver allocate space";
+  float           score; 
+  CM_HIT         *hit = NULL;
+  int             i;
+
+  h1 = cm_tophits_Create();
+  h2 = cm_tophits_Create();
+  h3 = cm_tophits_Create();
+  
+  for (i = 0; i < N; i++) 
+    {
+      /* add hit to h1 */
+      cm_tophits_CreateNextHit(h1, &hit);
+      esl_strdup(name, -1, &(hit->name));
+      esl_strdup(acc,  -1, &(hit->acc));
+      esl_strdup(desc, -1, &(hit->desc));
+      hit->start   = esl_rnd_Roll(r, L);
+      hit->stop    = esl_rnd_Roll(r, L);
+      hit->score   = esl_random(r);
+      hit->seq_idx = esl_rnd_Roll(r, X);
+
+      /* add hit to h2 */
+      cm_tophits_CreateNextHit(h2, &hit);
+      esl_strdup(name, -1, &(hit->name));
+      esl_strdup(acc,  -1, &(hit->acc));
+      esl_strdup(desc, -1, &(hit->desc));
+      hit->start   = esl_rnd_Roll(r, L);
+      hit->stop    = esl_rnd_Roll(r, L);
+      hit->score   = 10.0 * esl_random(r);
+      hit->seq_idx = esl_rnd_Roll(r, X);
+
+      /* add hit to h3 */
+      cm_tophits_CreateNextHit(h3, &hit);
+      esl_strdup(name, -1, &(hit->name));
+      esl_strdup(acc,  -1, &(hit->acc));
+      esl_strdup(desc, -1, &(hit->desc));
+      hit->start   = esl_rnd_Roll(r, L);
+      hit->stop    = esl_rnd_Roll(r, L);
+      hit->score   = 0.1 * esl_random(r);
+      hit->seq_idx = esl_rnd_Roll(r, X);
+    }
+
+  /* add a few more hits */
+  cm_tophits_CreateNextHit(h1, &hit);
+  esl_strdup("third", -1, &(hit->name));
+  hit->start   = L;
+  hit->stop    = L;
+  hit->score   = 20.0;
+  hit->seq_idx = 0;
+
+  cm_tophits_CreateNextHit(h2, &hit);
+  esl_strdup("second", -1, &(hit->name));
+  hit->start   = L;
+  hit->stop    = L;
+  hit->score   = 30.0;
+  hit->seq_idx = 0;
+
+  cm_tophits_CreateNextHit(h3, &hit);
+  esl_strdup("first", -1, &(hit->name));
+  hit->start   = L;
+  hit->stop    = L;
+  hit->score   = 40.0;
+  hit->seq_idx = 0;
+
+  cm_tophits_CreateNextHit(h1, &hit);
+  esl_strdup("thirdtolast", -1, &(hit->name));
+  hit->start   = L+1;
+  hit->stop    = L+1;
+  hit->score   = -1.0;
+  hit->seq_idx = 0;
+
+  cm_tophits_CreateNextHit(h2, &hit);
+  esl_strdup("secondtolast", -1, &(hit->name));
+  hit->start   = L+1;
+  hit->stop    = L+1;
+  hit->score   = -2.0;
+  hit->seq_idx = 0;
+
+  cm_tophits_CreateNextHit(h3, &hit);
+  esl_strdup("last", -1, &(hit->name));
+  hit->start   = L+1;
+  hit->stop    = L+1;
+  hit->score   = -3.0;
+  hit->seq_idx = 0;
+
+  cm_tophits_SortBySeqIdx(h1);
+  cm_tophits_RemoveDuplicates(h1);
+  cm_tophits_SortByScore(h1);
+  if (strcmp(h1->hit[0]->name,   "third")        != 0)   esl_fatal("sort 1 failed (top is %s = %f)",  h1->hit[0]->name,   h1->hit[0]->score);
+  if (strcmp(h1->hit[N+1]->name, "thirdtolast")  != 0)   esl_fatal("sort 1 failed (last is %s = %f)", h1->hit[N+1]->name, h1->hit[N+1]->score);
+
+  cm_tophits_MergeUnsorted(h1, h2);
+  cm_tophits_SortBySeqIdx(h1);
+  cm_tophits_RemoveDuplicates(h1);
+  cm_tophits_SortByScore(h1);
+  if (strcmp(h1->hit[0]->name,     "second")        != 0)   esl_fatal("sort 2 failed (top is %s = %f)",            h1->hit[0]->name,     h1->hit[0]->score);
+  if (strcmp(h1->hit[1]->name,     "third")         != 0)   esl_fatal("sort 2 failed (second is %s = %f)",         h1->hit[1]->name,     h1->hit[1]->score);
+  if (strcmp(h1->hit[2*N+2]->name, "thirdtolast")   != 0)   esl_fatal("sort 2 failed (second to last is %s = %f)", h1->hit[2*N+2]->name, h1->hit[2*N+2]->score);
+  if (strcmp(h1->hit[2*N+3]->name, "secondtolast")  != 0)   esl_fatal("sort 2 failed (last is %s = %f)",           h1->hit[2*N+3]->name, h1->hit[2*N+3]->score);
+  if (   h1->hit[0]->flags     & CM_HIT_IS_DUPLICATE)  esl_fatal("RemoveDuplicates failed");
+  if (! (h1->hit[1]->flags     & CM_HIT_IS_DUPLICATE)) esl_fatal("RemoveDuplicates failed");
+  if (   h1->hit[2*N+2]->flags & CM_HIT_IS_DUPLICATE)  esl_fatal("RemoveDuplicates failed");
+  if (! (h1->hit[2*N+3]->flags & CM_HIT_IS_DUPLICATE)) esl_fatal("RemoveDuplicates failed");
+
+  cm_tophits_MergeUnsorted(h1, h3);
+  cm_tophits_SortBySeqIdx(h1);
+  cm_tophits_RemoveDuplicates(h1);
+  cm_tophits_SortByScore(h1);
+  if (strcmp(h1->hit[0]->name,     "first")         != 0)   esl_fatal("sort 3 failed (top    is %s = %f)",         h1->hit[0]->name,     h1->hit[0]->score);
+  if (strcmp(h1->hit[1]->name,     "second")        != 0)   esl_fatal("sort 3 failed (second is %s = %f)",         h1->hit[1]->name,     h1->hit[1]->score);
+  if (strcmp(h1->hit[2]->name,     "third")         != 0)   esl_fatal("sort 3 failed (third  is %s = %f)",         h1->hit[2]->name,     h1->hit[2]->score);
+  if (strcmp(h1->hit[3*N+3]->name, "thirdtolast")   != 0)   esl_fatal("sort 3 failed (third to last is %s = %f)",  h1->hit[3*N+3]->name, h1->hit[3*N+3]->score);
+  if (strcmp(h1->hit[3*N+4]->name, "secondtolast")  != 0)   esl_fatal("sort 3 failed (second to last is %s = %f)", h1->hit[3*N+4]->name, h1->hit[3*N+4]->score);
+  if (strcmp(h1->hit[3*N+5]->name, "last")          != 0)   esl_fatal("sort 3 failed (last is %s = %f)",           h1->hit[3*N+5]->name, h1->hit[3*N+5]->score);
+  if (   h1->hit[0]->flags     & CM_HIT_IS_DUPLICATE)  esl_fatal("RemoveDuplicates failed");
+  if (! (h1->hit[1]->flags     & CM_HIT_IS_DUPLICATE)) esl_fatal("RemoveDuplicates failed");
+  if (! (h1->hit[2]->flags     & CM_HIT_IS_DUPLICATE)) esl_fatal("RemoveDuplicates failed");
+  if (   h1->hit[3*N+3]->flags & CM_HIT_IS_DUPLICATE)  esl_fatal("RemoveDuplicates failed");
+  if (! (h1->hit[3*N+4]->flags & CM_HIT_IS_DUPLICATE)) esl_fatal("RemoveDuplicates failed");
+  if (! (h1->hit[3*N+5]->flags & CM_HIT_IS_DUPLICATE)) esl_fatal("RemoveDuplicates failed");
+
+  if (cm_tophits_GetMaxNameLength(h1) != strlen(name)) esl_fatal("GetMaxNameLength() failed");
+
+  cm_tophits_Destroy(h1);
+  cm_tophits_Destroy(h2);
+  cm_tophits_Destroy(h3);
+  esl_randomness_Destroy(r);
+  esl_getopts_Destroy(go);
+  return eslOK;
+}
+#endif /*p7TOPHITS_TESTDRIVE*/
 /*****************************************************************
  * @LICENSE@
  *****************************************************************/

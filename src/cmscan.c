@@ -654,7 +654,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  cm_tophits_Destroy(info[i].th);
 	}
 
-      /* Print results */
+      /* Sort by score and enforce threshold. Note we don't have to sort by seq_idx first and remove duplicates
+       * because there is no way overlaps exist, because we didn't divide up any sequences as we do in cmsearch.
+       */
       cm_tophits_SortByScore(info->th);
       cm_tophits_Threshold(info->th, info->pli);
 

@@ -1723,17 +1723,20 @@ typedef struct cm_alidisplay_s {
  * Info about a high-scoring database hit, kept so we can output a
  * sorted list of high hits at the end.
  *
- * sqfrom and sqto are the coordinates that will be shown
+ * <start> and <stop> are the coordinates that will be shown
  * in the results, not coords in arrays... therefore, reverse
- * complements have sqfrom > sqto
+ * complements have <start> > <stop>. To handle the rare
+ * case that we have a hit that spans a single residue,
+ * <in_rc> is TRUE if hit is on reverse complement, FALSE
+ * if not.
  */
 typedef struct cm_hit_s {
   char          *name;		/* name of the target               (mandatory)           */
   char          *acc;		/* accession of the target          (optional; else NULL) */
   char          *desc;		/* description of the target        (optional; else NULL) */
   int64_t        seq_idx;       /* sequence index in the file, unique id for the sequence */
-
   int64_t        start, stop;   /* start/end points of hit */
+  int            in_rc;         /* TRUE if hit is in reverse complement of a target, FALSE if not */
   float          score;		/* bit score of the hit (with corrections) */
   double         pvalue;	/* P-value of the hit   (with corrections) */
   double         evalue;	/* E-value of the hit   (with corrections) */
