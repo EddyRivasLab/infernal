@@ -197,9 +197,8 @@ extern int     cm_file_Read(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm
 extern int     cm_file_ReadBlock(CM_FILE *cmfp, ESL_ALPHABET **ret_tac, CM_BLOCK *cmBlock);
 extern int     cm_file_PositionByKey(CM_FILE *cmfp, const char *key);
 extern int     cm_file_Position(CM_FILE *cmfp, const off_t offset);
-extern int     cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, int nhmm_remaining, off_t cm_offset, int cm_len, int cm_W, float gfmu, float gflambda, P7_OPROFILE *om);
-extern int     cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int use_mlp7, int use_ap7, ESL_ALPHABET **byp_abc, int *ret_read_mlp7, int *ret_read_ap7, int *ret_nhmm, off_t **ret_cm_offsetA, int **ret_cm_clenA, int **ret_cm_WA, float **ret_gfmuA, float **ret_gflambdaA, P7_OPROFILE ***ret_omA);
-extern int     cm_p7_hmmfile_WriteBinary(FILE *fp, int format, int nhmm_remaining, P7_HMM *hmm);
+extern int     cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int cm_len, int cm_W, float gfmu, float gflambda, P7_OPROFILE *om);
+extern int     cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om);
 
 /* from cm_modelconfig.c */
 extern int   ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t *mother_map);
@@ -512,10 +511,9 @@ extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7);
 #endif
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7);
 extern int          cm_cp9_to_p7(CM_t *cm);
-extern int          cm_mlp7_Calibrate(CM_t *cm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN,  double ElfT, double EgfT);
 extern int          cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN, double ElfT, double EgfT, double *ret_gfmu, double *ret_gflambda);
 extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, int L, int N, double lambda, double tailp, double *ret_tau);
-extern int          cm_Addp7(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda, char *errbuf);
+extern int          cm_SetFilterHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda);
 extern int          dump_p7(P7_HMM *hmm, FILE *fp);
 
 /* from cm_p7_band.c */
@@ -730,13 +728,13 @@ extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
 
 extern int cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
 extern int cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
-extern int cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int need_fsmx, int need_smx, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE **omA, P7_BG **bgA, int nhmm);
+extern int cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int need_fsmx, int need_smx, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE *om, P7_BG *bg);
 extern int cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
 extern int cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
-extern int cm_pli_p7Filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, double **ret_wp, int *ret_nwin);
+extern int cm_pli_p7Filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
 extern int cm_pli_p7EnvelopeDef     (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 extern int cm_pli_CMStage           (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
-extern int cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE **omA, P7_PROFILE **gmA, P7_BG **bgA, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
+extern int cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
 extern int cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
 
 /* from cm_p7_domaindef.c */

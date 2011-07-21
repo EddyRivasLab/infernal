@@ -98,28 +98,28 @@ static ESL_OPTIONS options[] = {
   { "--rdump",   eslARG_OUTFILE, NULL, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, print all intermediate alignments to <f>", 7 },
   { "--ileaved", eslARG_NONE,   FALSE, NULL, NULL,       NULL,     NULL,        NULL, "w/--refine,--cdump, output alnment as interleaved Stockholm", 7 },
 
-  /* Probably temporary options controlling p7 calibration */
-  { "--exp-real",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "sample realistic, not iid genomic seqs, for p7 calibration", 8},
-  { "--exp-null3",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use null3 correction in p7 calibrations", 8},
-  { "--exp-bias",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use bias correction in p7 calibrations", 8},
-  { "--exp-fitlam",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "fit lambda, don't use a fixed one  near 0.693", 8},
-  { "--exp-lcmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for local stats is <x> * cm->clen", 8},
-  { "--exp-gcmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for glocal stats is <x> * cm->clen", 8},
-  { "--exp-lL",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--exp-lcmult",  "length of seqs to search for local stats is <n>", 8},
-  { "--exp-gL",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--exp-gcmult",  "length of seqs to search for glocal stats is <n>", 8},
-  { "--exp-lmsvN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local MSV calibration", 8},
-  { "--exp-lvitN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local Vit calibration", 8},
-  { "--exp-lfwdN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local Fwd calibration", 8},
-  { "--exp-gfwdN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 glocal Fwd calibration", 8},
-  { "--exp-lftp",    eslARG_REAL, "0.055", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 local fwd exp tail to <f> fraction of scoring dist", 8},
-  { "--exp-gftp",    eslARG_REAL, "0.065", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 glocal fwd exp tail to <f> fraction of scoring dist", 8},
+  /* Options controlling the building of the filter p7 */
+  { "--p7-ml",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "define the filter p7 HMM as the ML p7 HMM", 8},
+  { "--p7-ere",      eslARG_REAL,  "0.38", NULL, NULL,    NULL,  NULL, "--p7-ml",     "for the filter p7 HMM, set minimum rel entropy/posn to <x>", 8},
+  { "--p7-prior",    eslARG_INFILE, NULL,  NULL, NULL,    NULL,  NULL, "--p7-ml",     "read p7 prior for the filter HMM from file <f>", 8},
+  { "--p7-hprior",   eslARG_NONE,   NULL,  NULL, NULL,    NULL,  NULL, "--p7-ml",     "use HMMER's default p7 prior, not Infernal's p7 prior", 8},
+  { "--p7-hemit",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--p7-ml",     "use HMMER emission priors for additional HMM", 8}, 
 
-  /* Probably temporary options controlling calibration of additional p7 models */
-  { "--p7-none",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "do not build an additional p7 HMM and store it in the CM file", 9},
-  { "--p7-ere",      eslARG_REAL,  "0.38", NULL, NULL,    NULL,  NULL, "--p7-none",     "for p7 HMM, set minimum rel entropy/posn to <x>", 9},
-  { "--p7-prior",    eslARG_INFILE, NULL,  NULL, NULL,    NULL,  NULL, "--p7-none",     "read p7 prior for --p7-add from file <f>", 9},
-  { "--p7-hprior",   eslARG_NONE,   NULL,  NULL, NULL,    NULL,  NULL, "--p7-none",     "use HMMER's default p7 prior, not Infernal's p7 prior", 9},
-  { "--p7-hemit",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--p7-none",     "use HMMER emission priors for additional HMM", 9 }, 
+  /* Options controlling the filter p7 calibration */
+  { "--exp-real",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "sample realistic, not iid genomic seqs, for p7 calibration", 9},
+  { "--exp-null3",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use null3 correction in p7 calibrations", 9},
+  { "--exp-bias",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use bias correction in p7 calibrations", 9},
+  { "--exp-fitlam",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "fit lambda, don't use a fixed one  near 0.693", 9},
+  { "--exp-lcmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for local stats is <x> * cm->clen", 9},
+  { "--exp-gcmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for glocal stats is <x> * cm->clen", 9},
+  { "--exp-lL",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--exp-lcmult",  "length of seqs to search for local stats is <n>", 9},
+  { "--exp-gL",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--exp-gcmult",  "length of seqs to search for glocal stats is <n>", 9},
+  { "--exp-lmsvN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local MSV calibration", 9},
+  { "--exp-lvitN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local Vit calibration", 9},
+  { "--exp-lfwdN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local Fwd calibration", 9},
+  { "--exp-gfwdN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 glocal Fwd calibration", 9},
+  { "--exp-lftp",    eslARG_REAL, "0.055", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 local fwd exp tail to <f> fraction of scoring dist", 9},
+  { "--exp-gftp",    eslARG_REAL, "0.065", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 glocal fwd exp tail to <f> fraction of scoring dist", 9},
 
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer debugging/experimentation */
@@ -172,8 +172,8 @@ struct cfg_s {
   ESL_RANDOMNESS *r;            /* source of randomness, only created if --gibbs enabled */
   
   /* optional files used for building additional filter p7 HMMs */
-  P7_BG        *ap7_bg;         /* background model for additional P7s */
-  P7_BUILDER   *ap7_bld;        /* the P7_BUILDER */
+  P7_BG        *fp7_bg;         /* background model for additional P7s */
+  P7_BUILDER   *fp7_bld;        /* the P7_BUILDER */
 
   /* optional output files */
   FILE         *cfp;            /* for --cfile */
@@ -307,9 +307,9 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
       puts("\nexpert options for refining the input alignment:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
-      puts("\nexpert options for tuning p7 calibration:");
+      puts("\nexpert options controlling how the p7 filter HMM is built:");
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
-      puts("\nexpert options for building additional p7 models:");
+      puts("\nexpert options for tuning calibration of the p7 filter HMM:");
       esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
       exit(0);
     }
@@ -345,8 +345,8 @@ main(int argc, char **argv)
   cfg.r          = NULL;	           /* created (possibly) in init_cfg() */
   cfg.comlog     = NULL;	           /* created in init_cfg() */
   cfg.namewidth  = 0;
-  cfg.ap7_bg     = NULL;                   /* created (possibly) in init_cfg() */
-  cfg.ap7_bld    = NULL;                   /* created (possibly) in init_cfg() */
+  cfg.fp7_bg     = NULL;                   /* created (possibly) in init_cfg() */
+  cfg.fp7_bld    = NULL;                   /* created (possibly) in init_cfg() */
   /* optional output files, opened in init_cfg(), if at all */
   cfg.cfp        = NULL;
   cfg.escfp      = NULL;
@@ -429,8 +429,8 @@ main(int argc, char **argv)
   if (cfg.null    != NULL) free(cfg.null);
   if (cfg.r       != NULL) esl_randomness_Destroy(cfg.r);
   if (cfg.comlog  != NULL) FreeComLog(cfg.comlog);
-  if (cfg.ap7_bg  != NULL) p7_bg_Destroy(cfg.ap7_bg);
-  if (cfg.ap7_bld != NULL) p7_builder_Destroy(cfg.ap7_bld);
+  if (cfg.fp7_bg  != NULL) p7_bg_Destroy(cfg.fp7_bg);
+  if (cfg.fp7_bld != NULL) p7_builder_Destroy(cfg.fp7_bld);
 
   esl_getopts_Destroy(go);
   esl_stopwatch_Stop(w);
@@ -537,26 +537,26 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   /* set up objects for building additional p7 models to filter with, if nec */
   if (! esl_opt_GetBoolean(go, "--p7-none")) { 
-    cfg->ap7_bg = p7_bg_Create(cfg->abc);
+    cfg->fp7_bg = p7_bg_Create(cfg->abc);
     /* create the P7_BUILDER, pass NULL as the <go> argument, this sets all parameters to default */
-    cfg->ap7_bld = p7_builder_Create(NULL, cfg->abc);
-    cfg->ap7_bld->w_len = -1;
-    cfg->ap7_bld->w_beta = p7_DEFAULT_WINDOW_BETA;
+    cfg->fp7_bld = p7_builder_Create(NULL, cfg->abc);
+    cfg->fp7_bld->w_len = -1;
+    cfg->fp7_bld->w_beta = p7_DEFAULT_WINDOW_BETA;
     if(esl_opt_IsUsed(go, "--p7-prior")) {
       FILE *pfp;
-      if (cfg->ap7_bld->prior != NULL) p7_prior_Destroy(cfg->ap7_bld->prior);
+      if (cfg->fp7_bld->prior != NULL) p7_prior_Destroy(cfg->fp7_bld->prior);
       if ((pfp = fopen(esl_opt_GetString(go, "--p7-prior"), "r")) == NULL) cm_Fail("Failed to open p7 prior file %s\n", esl_opt_GetString(go, "--p7-prior"));
-      if((cfg->ap7_bld->prior = p7_prior_Read(pfp)) == NULL) {
+      if((cfg->fp7_bld->prior = p7_prior_Read(pfp)) == NULL) {
 	cm_Fail("Failed to parse p7 prior file %s\n", esl_opt_GetString(go, "--p7-prior"));
       }
       fclose(pfp);
     }
     else if(! esl_opt_GetBoolean(go, "--p7-hprior")) { 
       /* create the default Infernal p7 prior */
-      if (cfg->ap7_bld->prior != NULL) p7_prior_Destroy(cfg->ap7_bld->prior);
-      cfg->ap7_bld->prior = cm_p7_prior_CreateNucleic();
+      if (cfg->fp7_bld->prior != NULL) p7_prior_Destroy(cfg->fp7_bld->prior);
+      cfg->fp7_bld->prior = cm_p7_prior_CreateNucleic();
     }
-    cfg->ap7_bld->re_target = esl_opt_GetReal(go, "--p7-ere");
+    cfg->fp7_bld->re_target = esl_opt_GetReal(go, "--p7-ere");
   }	 
 
   /* open output files */
@@ -1513,14 +1513,14 @@ build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, c
 {
   int status; 
   CM_t    *acm = NULL; 
-  P7_HMM *ahmm = NULL;
+  P7_HMM *fhmm = NULL;
   int lmsvL, lvitL, lfwdL, gfwdL;
   int lmsvN, lvitN, lfwdN, gfwdN;
   double agfmu, agflambda;
   float lftailp, gftailp;
   int k, apos, cpos;
   ESL_MSA *amsa = NULL;
-  double mlp7_re, ahmm_re;
+  double mlp7_re, fhmm_re;
   double neff;
   ESL_STOPWATCH *w = NULL;
 
@@ -1569,23 +1569,19 @@ build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, c
     gftailp = esl_opt_IsUsed(go, "--exp-gftp") ? esl_opt_GetReal(go, "--exp-gftp") : 0.01;
   }
 
-  /* Calibrate the ML p7 hmm */
-  if((status = cm_mlp7_Calibrate(cm, errbuf, 
-				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for each alg */
-				 lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
-				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
-				 gftailp))                                   /* fraction of tail mass to fit for glocal Fwd */
-     != eslOK) cm_Fail("Error calibrating cm->mlp7 HMM");
-  
-  /* Build and calibrate an additional HMM */
-  if(! esl_opt_GetBoolean(go, "--p7-none")) { 
+  /* Build the HMM filter (cm->fp7) */
+  if(esl_opt_GetBoolean(go, "--p7-ml")) {
+    /* use the ML p7 HMM as the HMM filter */
+    fhmm = cm->mlp7;
+  }
+  else { 
     /* Default strategy: 
      * 
-     * Build a p7 HMM <ahmm> with p7_builder with entropy weighting
+     * Build a p7 HMM <fhmm> with p7_builder with entropy weighting
      * and rel ent target of <x> from (--p7-ere <x>). Then _overwrite_
      * it's emission probabilities with marginalized emission
      * probabilities from a temporary CM built such that it's ML p7
-     * HMM has mean match state entropy the same as <ahmm>.
+     * HMM has mean match state entropy the same as <fhmm>.
      *
      * The motivation for this is that rmark3 benchmarking (xref:
      * ~nawrockie/notebook/11_0226_inf_p7s_with_cp9_transitions/00LOG)
@@ -1607,7 +1603,7 @@ build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, c
      * This will guarantree that the HMM has the same number of match
      * columns as the CM, which is important because we copy
      * marginalized ml emissions from a CM onto the HMM. Note that we
-     * also set cfg->ap7_bld->arch_strategy as p7_ARCH_HAND.
+     * also set cfg->fp7_bld->arch_strategy as p7_ARCH_HAND.
      */
     amsa = esl_msa_Clone(msa);
     if(amsa->rf != NULL) free(amsa->rf); 
@@ -1616,21 +1612,21 @@ build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, c
     /* init to all inserts, then set match states based on cm->map */
     for (apos = 0; apos <  amsa->alen; apos++) amsa->rf[apos] = '.';
     for (cpos = 1; cpos <= cm->clen;   cpos++) amsa->rf[cm->map[cpos]-1] = 'x'; /* note off by one */
-    cfg->ap7_bld->arch_strategy = p7_ARCH_HAND;
+    cfg->fp7_bld->arch_strategy = p7_ARCH_HAND;
     
-    if ((status = p7_Builder(cfg->ap7_bld, amsa, cfg->ap7_bg, &ahmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->ap7_bld->errbuf); goto ERROR; }
+    if ((status = p7_Builder(cfg->fp7_bld, amsa, cfg->fp7_bg, &fhmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->fp7_bld->errbuf); goto ERROR; }
     esl_msa_Destroy(amsa); 
 
     if(! esl_opt_GetBoolean(go, "--p7-hemit")) { 
       /* Overwrite the emission probabilities of the HMM
        * with emissions from a ML HMM built from a CM.
        * First, build the CM, it will have the same HMM
-       * mean match state entropy as the ahmm we just 
+       * mean match state entropy as the fhmm we just 
        * built.
        */
       if ((status =  build_model(go, cfg, errbuf, FALSE, msa, &acm, NULL, NULL)) != eslOK) goto ERROR;
-      ahmm_re = p7_MeanMatchRelativeEntropy(ahmm, cfg->ap7_bg);
-      status = cm_EntropyWeight(acm, cfg->pri, ahmm_re, esl_opt_GetReal(go, "--eminseq"), TRUE, &mlp7_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
+      fhmm_re = p7_MeanMatchRelativeEntropy(fhmm, cfg->fp7_bg);
+      status = cm_EntropyWeight(acm, cfg->pri, fhmm_re, esl_opt_GetReal(go, "--eminseq"), TRUE, &mlp7_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
       if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
       else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
       acm->eff_nseq = neff;
@@ -1642,30 +1638,31 @@ build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, c
 
       /* copy the ML p7 emission probs from the CM we just built */
       /* match emissions: copy, then normalize (norm should be unnec actually) */
-      for (k = 1; k <= ahmm->M; k++) esl_vec_FCopy(acm->mlp7->mat[k], ahmm->abc->K, ahmm->mat[k]);
-      for (k = 1; k <= ahmm->M; k++) esl_vec_FNorm(ahmm->mat[k], ahmm->abc->K);
+      for (k = 1; k <= fhmm->M; k++) esl_vec_FCopy(acm->mlp7->mat[k], fhmm->abc->K, fhmm->mat[k]);
+      for (k = 1; k <= fhmm->M; k++) esl_vec_FNorm(fhmm->mat[k], fhmm->abc->K);
       /* special case */
-      esl_vec_FSet(ahmm->mat[0], ahmm->abc->K, 0.);
-      ahmm->mat[0][0] = 1.0;
+      esl_vec_FSet(fhmm->mat[0], fhmm->abc->K, 0.);
+      fhmm->mat[0][0] = 1.0;
       
       /* insert emissions: copy, then normalize (norm should be unnec actually) */
-      for (k = 0; k <= ahmm->M; k++) esl_vec_FCopy(acm->mlp7->ins[k], ahmm->abc->K, ahmm->ins[k]);
-      for (k = 0; k <= ahmm->M; k++) esl_vec_FNorm(ahmm->ins[k], ahmm->abc->K);
+      for (k = 0; k <= fhmm->M; k++) esl_vec_FCopy(acm->mlp7->ins[k], fhmm->abc->K, fhmm->ins[k]);
+      for (k = 0; k <= fhmm->M; k++) esl_vec_FNorm(fhmm->ins[k], fhmm->abc->K);
       /* reset HMM composition */
-      if ((status = p7_hmm_SetComposition(ahmm)) != eslOK) goto ERROR;
+      if ((status = p7_hmm_SetComposition(fhmm)) != eslOK) goto ERROR;
       FreeCM(acm);
     }
-    /* calibrate the additional HMM */
-    if((status = cm_p7_Calibrate(ahmm, errbuf, 
-				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for local (lL) and glocal (gL) modes */    
-				 lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
-				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
-				 gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
-				 &agfmu, &agflambda))  
-       != eslOK) cm_Fail("Error calibrating additional p7 HMM");
-
-    if((status = cm_Addp7(cm, ahmm, agfmu, agflambda, errbuf)) != eslOK) return status;
   }
+
+  /* calibrate the HMM filter */
+  if((status = cm_p7_Calibrate(fhmm, errbuf, 
+			       lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for local (lL) and glocal (gL) modes */    
+			       lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
+			       lftailp,                                    /* fraction of tail mass to fit for local Fwd */
+			       gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
+			       &agfmu, &agflambda))  
+     != eslOK) cm_Fail("Error calibrating additional p7 HMM");
+  
+  if((status = cm_SetFilterHMM(cm, fhmm, agfmu, agflambda)) != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter for the CM");
 
   if (cfg->be_verbose) { 
     fprintf(stdout, "done.  ");

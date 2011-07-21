@@ -284,63 +284,6 @@ cm_cp9_to_p7(CM_t *cm)
   return status;
 }
 
-/* Function: cm_mlp7_Calibrate()
- * Incept:   EPN, Mon Dec 27 05:49:26 2010
- * 
- * Purpose:  Calibrate a CM's ML p7 HMM for local MSV, Viterbi, Forward and 
- *           also glocal Forward. 
- * 
- * Args:     cm        - the cm, cm->mlp7 must be non-NULL
- *           errbuf    - for error messages
- *           ElmL      - length of sequences to sample for local MSV
- *           ElvL      - length of sequences to sample for local Vit
- *           ElfL      - length of sequences to sample for local Fwd
- *           EgfL      - length of sequences to sample for glocal Fwd
- *           ElmN      - number of sequences to sample for local MSV
- *           ElvN      - number of sequences to sample for local Vit
- *           ElfN      - number of sequences to sample for local Fwd
- *           EgfN      - number of sequences to sample for glocal Fwd
- *           ElfT      - fraction of tail mass to fit for  local Fwd (usually (HMMER3 is) 0.04)
- *           EgfT      - fraction of tail mass to fit for glocal Fwd 
- *           
- * Return:   eslOK   on success
- *
- * Throws:   eslEINCOMPAT on contract violation
- *           eslEMEM on memory error
- */
-int
-cm_mlp7_Calibrate(CM_t *cm, char *errbuf, 
-		  int ElmL, int ElvL, int ElfL, int EgfL, 
-		  int ElmN, int ElvN, int ElfN, int EgfN, 
-		  double ElfT, double EgfT)
-{
-  int status;
-  double gfmu, gflambda;
-
-  /*printf("cm_mlp7_Calibrate:\n\tElmL: %d\n\tElvL: %d\n\tElfL: %d\n\tEgfL: %d\n\tElmN: %d\n\tElvN: %d\n\tElfN: %d\n\tEgfN: %d\n\tElfT: %f\n\tEgfT: %f\n\n", ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT);*/
-
-  if(cm->mlp7 == NULL)         ESL_FAIL(eslEINCOMPAT, errbuf, "cm_mlp7_Calibrate(): cm->mlp7 is NULL");
-  if(! (cm->flags & CMH_MLP7)) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_mlp7_Calibrate(): cm's CMH_MLP7 flag is down");
-
-  if((status = cm_p7_Calibrate(cm->mlp7, errbuf, ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT, &gfmu, &gflambda)) != eslOK) return status;
-
-  /* copy the p7's evparam[], which were set in p7_Calibrate() to the cm's p7_evparam,
-   * which will additionally store the Glocal Lambda and Mu for Forward */
-  cm->mlp7_evparam[CM_p7_LMMU]     = cm->mlp7->evparam[p7_MMU];
-  cm->mlp7_evparam[CM_p7_LMLAMBDA] = cm->mlp7->evparam[p7_MLAMBDA];
-  cm->mlp7_evparam[CM_p7_LVMU]     = cm->mlp7->evparam[p7_VMU];
-  cm->mlp7_evparam[CM_p7_LVLAMBDA] = cm->mlp7->evparam[p7_VLAMBDA];
-  cm->mlp7_evparam[CM_p7_LFTAU]    = cm->mlp7->evparam[p7_FTAU];
-  cm->mlp7_evparam[CM_p7_LFLAMBDA] = cm->mlp7->evparam[p7_FLAMBDA];
-
-  cm->mlp7_evparam[CM_p7_GFMU]     = gfmu;
-  cm->mlp7_evparam[CM_p7_GFLAMBDA] = gflambda;
-
-  cm->flags |= CMH_MLP7_STATS;
-
-  return eslOK;
-}
-
 /* Function: cm_p7_Calibrate()
  * Incept:   EPN, Tue Nov  9 06:16:57 2010
  * 
@@ -531,10 +474,10 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
   return status;
 }
 
-/* Function: cm_Addp7()
+/* Function: cm_SetFilterHMM()
  * Incept:   EPN, Mon Dec 27 07:59:47 2010
  * 
- * Purpose:  Add a p7 HMM to a CM in the cm->ap7A array.
+ * Purpose:  Assign a p7 HMM as a CM's filter hmm (cm->fp7)
  * 
  * Args:     cm       - the CM
  *           hmm      - the HMM to add
@@ -548,52 +491,27 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
  *           eslEMEM on memory error
  */
 int
-cm_Addp7(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda, char *errbuf)
+cm_SetFilterHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda)
 {
-  int   status, i, z;
-  void *p;
-  
-  if(cm->nap7 == 0) { 
-    if(cm->ap7A != NULL)          ESL_FAIL(eslEINVAL, errbuf, "cm_AddP7(): cm->nap7 == 0 but cm->ap7A != NULL");
-    if(cm->ap7_evparamAA != NULL) ESL_FAIL(eslEINVAL, errbuf, "cm_AddP7(): cm->nap7 == 0 but cm->ap7_evparamAA != NULL");
-    cm->nap7++;
-    ESL_ALLOC(cm->ap7A,          sizeof(P7_HMM *)     * cm->nap7);
-    ESL_ALLOC(cm->ap7_evparamAA, sizeof(float *)      * cm->nap7);
+  if(cm->fp7 != NULL) { 
+    p7_hmm_Destroy(cm->fp7);
   }
-  else { 
-    if(cm->ap7A == NULL)          ESL_FAIL(eslEINVAL, errbuf, "cm_AddP7(): cm->nap7 != 0 but cm->ap7A == NULL");
-    if(cm->ap7_evparamAA == NULL) ESL_FAIL(eslEINVAL, errbuf, "cm_AddP7(): cm->nap7 != 0 but cm->ap7_evparamAA == NULL");
-    cm->nap7++;
-    ESL_RALLOC(cm->ap7A,          p, sizeof(P7_HMM *)     * cm->nap7);
-    ESL_RALLOC(cm->ap7_evparamAA, p, sizeof(float *)      * cm->nap7);
-  }
-  
-  i = cm->nap7-1;
-  cm->ap7A[i] = hmm;
-  cm->flags |= CMH_AP7; /* raise the AP7 flag */
-
-  ESL_ALLOC(cm->ap7_evparamAA[i], sizeof(float) * CM_p7_NEVPARAM);
-  for (z = 0; z < CM_p7_NEVPARAM; z++) cm->ap7_evparamAA[i][z] = CM_p7_EVPARAM_UNSET;
+  cm->fp7 = hmm;
+  cm->flags |= CMH_FP7; /* raise the FP7 flag */
 
   if(hmm->flags & p7H_STATS) {
-    cm->ap7_evparamAA[i][CM_p7_LMMU]     = hmm->evparam[p7_MMU];
-    cm->ap7_evparamAA[i][CM_p7_LMLAMBDA] = hmm->evparam[p7_MLAMBDA];
-    cm->ap7_evparamAA[i][CM_p7_LVMU]     = hmm->evparam[p7_VMU];
-    cm->ap7_evparamAA[i][CM_p7_LVLAMBDA] = hmm->evparam[p7_VLAMBDA];
-    cm->ap7_evparamAA[i][CM_p7_LFTAU]    = hmm->evparam[p7_FTAU];
-    cm->ap7_evparamAA[i][CM_p7_LFLAMBDA] = hmm->evparam[p7_FLAMBDA];
-    cm->ap7_evparamAA[i][CM_p7_GFMU]     = gfmu;
-    cm->ap7_evparamAA[i][CM_p7_GFLAMBDA] = gflambda;
-    if(i > 0) { /* make sure all other additional HMMs have E-value stats also */
-      if(! (cm->flags & CMH_AP7_STATS)) ESL_FAIL(eslEINVAL, errbuf, "cm_AddP7(): existing HMMs lack E-value stats, but adding hmm that has E-value stats");
-    }
-    cm->flags |= CMH_AP7_STATS; /* raise the AP7 stats flag */
+    cm->fp7_evparam[CM_p7_LMMU]     = hmm->evparam[p7_MMU];
+    cm->fp7_evparam[CM_p7_LMLAMBDA] = hmm->evparam[p7_MLAMBDA];
+    cm->fp7_evparam[CM_p7_LVMU]     = hmm->evparam[p7_VMU];
+    cm->fp7_evparam[CM_p7_LVLAMBDA] = hmm->evparam[p7_VLAMBDA];
+    cm->fp7_evparam[CM_p7_LFTAU]    = hmm->evparam[p7_FTAU];
+    cm->fp7_evparam[CM_p7_LFLAMBDA] = hmm->evparam[p7_FLAMBDA];
+    cm->fp7_evparam[CM_p7_GFMU]     = gfmu;
+    cm->fp7_evparam[CM_p7_GFLAMBDA] = gflambda;
+    cm->flags |= CMH_FP7_STATS; /* raise the AP7 stats flag */
   }    
 
   return eslOK;
-
- ERROR: 
-  ESL_FAIL(status, errbuf, "cm_Addp7(): out of memory");
 }
 
 /* Function: dump_p7()

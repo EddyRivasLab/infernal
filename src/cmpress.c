@@ -39,7 +39,6 @@ main(int argc, char **argv)
   char          *cmfile   = esl_opt_GetArg(go, 1);
   CM_FILE       *cmfp     = NULL;
   CM_t          *cm       = NULL;
-  P7_HMM        *hmm      = NULL; /* a pointer to the current HMM we're working on */
   P7_BG         *bg       = NULL;
   P7_PROFILE    *gm       = NULL;
   P7_OPROFILE   *om       = NULL;
@@ -50,14 +49,9 @@ main(int argc, char **argv)
   ESL_NEWSSI    *nssi     = NULL;
   uint16_t       fh       = 0;
   int            ncm      = 0;
-  int            np7      = 0;
   uint64_t       tot_clen = 0;
-  uint64_t       tot_M    = 0;
-  int            i;
   int            status;
-  int            nhmm_remaining = 0;
   off_t          cm_offset = 0;
-  float          gfmu, gflambda;
   char           errbuf[eslERRBUFSIZE];
 
   if (strcmp(cmfile, "-") == 0) cm_Fail("Can't use - for <cmfile> argument: can't index standard input\n");
@@ -79,44 +73,34 @@ main(int argc, char **argv)
 
   while ((status = cm_file_Read(cmfp, &abc, &cm)) == eslOK)
     {
-     if (cm->name == NULL) cm_Fail("Every CM must have a name to be indexed. Failed to find name of CM #%d\n", ncm+1);
-
-     if (ncm == 0) { 	/* first time initialization, now that alphabet known */
+      if (cm->name == NULL) cm_Fail("Every CM must have a name to be indexed. Failed to find name of CM #%d\n", ncm+1);
+      
+      if (ncm == 0) { 	/* first time initialization, now that alphabet known */
 	bg = p7_bg_Create(abc);
 	p7_bg_SetLength(bg, 400);
       }
-
+      
       ncm++;
       tot_clen += cm->clen;
-
-      /* configure the CM, to build the ml p7 HMM */
-      if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) cm_Fail(errbuf);
-
-      /* Write out the mlp7 first, and additional p7s after that */
-      for(i = 0; i <= cm->nap7; i++) { 
-	hmm      = (i == 0) ? cm->mlp7 : cm->ap7A[i-1];
-        gfmu     = (i == 0) ? cm->mlp7_evparam[CM_p7_GFMU]     : cm->ap7_evparamAA[i-1][CM_p7_GFMU];
-        gflambda = (i == 0) ? cm->mlp7_evparam[CM_p7_GFLAMBDA] : cm->ap7_evparamAA[i-1][CM_p7_GFLAMBDA];
-	nhmm_remaining = cm->nap7 - i; 
-	np7++;
-	tot_M += hmm->M;
-
-	gm = p7_profile_Create(hmm->M, abc);
-	p7_ProfileConfig(hmm, bg, gm, 400, p7_LOCAL);
-	om = p7_oprofile_Create(gm->M, abc);
-	p7_oprofile_Convert(gm, om);
       
-	if ((cm_offset            = ftello(mfp)) == -1) cm_Fail("Failed to ftello() current disk position of CM db file");
-	if ((om->offs[p7_MOFFSET] = ftello(gfp)) == -1) cm_Fail("Failed to ftello() current disk position of HMM db file");
-	if ((om->offs[p7_FOFFSET] = ftello(ffp)) == -1) cm_Fail("Failed to ftello() current disk position of MSV db file");
-	if ((om->offs[p7_POFFSET] = ftello(pfp)) == -1) cm_Fail("Failed to ftello() current disk position of profile db file");
+      if(cm->fp7 == NULL || (! (cm->flags & CMH_FP7))) { cm_Fail("CM #%d does not have a filter HMM", ncm+1); }
+      if(! (cm->flags & CMH_FP7_STATS))                { cm_Fail("CM #%d does not have a calibrated filter HMM", ncm+1); }
+      gm = p7_profile_Create(cm->fp7->M, abc);
+      p7_ProfileConfig(cm->fp7, bg, gm, 400, p7_LOCAL);
+      om = p7_oprofile_Create(gm->M, abc);
+      p7_oprofile_Convert(gm, om);
+      
+      if ((cm_offset            = ftello(mfp)) == -1) cm_Fail("Failed to ftello() current disk position of CM db file");
+      if ((om->offs[p7_MOFFSET] = ftello(gfp)) == -1) cm_Fail("Failed to ftello() current disk position of CM->FP7 db file");
+      if ((om->offs[p7_FOFFSET] = ftello(ffp)) == -1) cm_Fail("Failed to ftello() current disk position of MSV db file");
+      if ((om->offs[p7_POFFSET] = ftello(pfp)) == -1) cm_Fail("Failed to ftello() current disk position of profile db file");
 
-	cm_p7_oprofile_Write(ffp, pfp, nhmm_remaining, cm_offset, cm->clen, cm->W, gfmu, gflambda, om);
-	p7_hmmfile_WriteBinary(gfp, -1, hmm);
+      cm_p7_oprofile_Write(ffp, pfp, cm_offset, cm->clen, cm->W, cm->fp7_evparam[CM_p7_GFMU], cm->fp7_evparam[CM_p7_GFLAMBDA], om); 
+      p7_hmmfile_WriteBinary(gfp, -1, cm->fp7);
 
-	p7_profile_Destroy(gm);
-	p7_oprofile_Destroy(om);
-      }
+      p7_profile_Destroy(gm);
+      p7_oprofile_Destroy(om);
+
 #ifndef p7_IMPL_DUMMY
       if (esl_newssi_AddKey(nssi, cm->name, fh, cm_offset, 0, 0) != eslOK) cm_Fail("Failed to add key %s to SSI index", cm->name);
       if (cm->acc) {
@@ -134,9 +118,9 @@ main(int argc, char **argv)
   
   printf("done.\n");
   if (nssi->nsecondary > 0) 
-    printf("Pressed and indexed %d CMs and %d p7 HMM filters (%ld CM names and %ld CM accessions).\n", ncm, np7, (long) nssi->nprimary, (long) nssi->nsecondary);
+    printf("Pressed and indexed %d CMs and p7 HMM filters (%ld names and %ld accessions).\n", ncm, (long) nssi->nprimary, (long) nssi->nsecondary);
   else 
-    printf("Pressed and indexed %d CMs and %d p7 HMM filters (%ld CM names).\n", ncm, np7, (long) nssi->nprimary);
+    printf("Pressed and indexed %d CMs and p7 HMM filters (%ld names).\n", ncm, (long) nssi->nprimary);
   printf("Covariance models pressed into binary file:            %s.i1m\n", cmfp->fname);
   printf("SSI index for binary covariance model file:            %s.i1i\n", cmfp->fname);
   printf("p7 HMM filters pressed into:                           %s.i1h\n", cmfp->fname);
@@ -157,7 +141,7 @@ main(int argc, char **argv)
 
 static void
 open_db_files(ESL_GETOPTS *go, char *basename, FILE **ret_mfp, FILE **ret_gfp,  FILE **ret_ffp,  FILE **ret_pfp, ESL_NEWSSI **ret_nssi)
-{
+  {
   char       *mfile           = NULL; /* .i1m file: binary CMs */
   char       *gfile           = NULL; /* .i1h file: binary HMMs */
   char       *ffile           = NULL; /* .i1f file: binary optimized profiles, MSV filter part only */

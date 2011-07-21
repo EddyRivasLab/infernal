@@ -634,11 +634,11 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            by a contract check upon entrace, failure causes immediate
  *            return of eslEINCOMPAT.
  *
- *      case  <pli->mode>     <modmode>         <cm>      <omA> and <bgA> <nhmm>
- *      ----  --------------  ---------------   --------  --------------- ------
- *         1  CM_SEARCH_SEQS  CM_NEWMODEL_CM    non-null  non-null        >0
- *         2  CM_SCAN_SEQS    CM_NEWMODEL_MSV   NULL      non-null        >0
- *         3  CM_SCAN_SEQS    CM_NEWMODEL_CM    non-null  NULL             0
+ *      case  <pli->mode>     <modmode>         <cm>      <om> and <bg>
+ *      ----  --------------  ---------------   --------  -------------
+ *         1  CM_SEARCH_SEQS  CM_NEWMODEL_CM    non-null  non-null     
+ *         2  CM_SCAN_SEQS    CM_NEWMODEL_MSV   NULL      non-null     
+ *         3  CM_SCAN_SEQS    CM_NEWMODEL_CM    non-null  NULL         
  *
  *            <cm_clen> and <cm_W> are always valid, but are only 
  *            necessary for case 2.
@@ -665,10 +665,9 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            have the appropriate ones set.
  */
 int
-cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int need_fsmx, int need_smx, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE **omA, P7_BG **bgA, int nhmm)
+cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int need_fsmx, int need_smx, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE *om, P7_BG *bg)
 {
   int status = eslOK;
-  int m;
   int i, nsteps;
   float T;
 
@@ -681,24 +680,21 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     if(cm == NULL)                 ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and CM is NULL"); 
     if(cm->clen != cm_clen)        ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, cm->clen != cm_clen"); 
     if(cm->W    != cm_W)           ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, cm->W != cm_W"); 
-    if(omA == NULL)                ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and omA is NULL"); 
-    if(bgA == NULL)                ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and bgA is NULL"); 
-    if(nhmm <= 0)                  ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and nhmm <= 0"); 
+    if(om == NULL)                 ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and om is NULL"); 
+    if(bg == NULL)                 ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and bg is NULL"); 
   }
   else if(pli->mode == CM_SCAN_MODELS) { 
     if(modmode == CM_NEWMODEL_MSV) { /* case 2 */
       if(cm != NULL)              ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/MSV mode, and CM is non-NULL"); 
-      if(omA == NULL)             ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/MSV mode, and omA is NULL"); 
-      if(bgA == NULL)             ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/MSV mode, and bgA is NULL"); 
-      if(nhmm <= 0)               ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/MSV mode, and nhmm <= 0");
+      if(om == NULL)              ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/MSV mode, and om is NULL"); 
+      if(bg == NULL)              ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/MSV mode, and bg is NULL"); 
     }
     else if(modmode == CM_NEWMODEL_CM) { /* case 3 */
       if(cm == NULL)              ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/CM mode, and CM is NULL"); 
       if(cm->clen != cm_clen)     ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, cm->clen != cm_clen");
       if(cm->W    != cm_W)        ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, cm->W != cm_W");
-      if(omA != NULL)             ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/CM mode, and omA is non-NULL"); 
-      if(bgA != NULL)             ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/CM mode, and bgA is non-NULL"); 
-      if(nhmm != 0)               ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/CM mode, and nhmm != 0"); 
+      if(om != NULL)              ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/CM mode, and om is non-NULL"); 
+      if(bg != NULL)              ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/CM mode, and bg is non-NULL"); 
     }
   }
 
@@ -713,9 +709,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     pli->nnodes += cm_clen;
 
     if (pli->do_msvbias || pli->do_vitbias || pli->do_fwdbias || pli->do_gfwdbias || pli->do_edefbias) { 
-      for(m = 0; m < nhmm; m++) { 
-	p7_bg_SetFilter(bgA[m], omA[m]->M, omA[m]->compo);
-      }
+      p7_bg_SetFilter(bg, om->M, om->compo);
     }
     /* copy some values from the model */
     pli->cmW  = cm_W;
@@ -723,13 +717,9 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
 
     /* determine pli->maxW, this will be the number of residues
      * that must overlap between adjacent windows on a
-     * single sequence, this is MAX of cm->W and omA[m]->max_length
-     * for all HMMs m=0..nhmm-1
+     * single sequence, this is MAX of cm->W and om->max_length
      */
-    pli->maxW = cm_W;
-    for(m = 0; m < nhmm; m++) { 
-      pli->maxW = ESL_MAX(pli->maxW, omA[m]->max_length);
-    }
+    pli->maxW = ESL_MAX(cm_W, om->max_length);
 
     /* reset consensus length specific thresholds  */
     pli->F4  = pli->orig_F4;
@@ -984,7 +974,7 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
  * Xref:      J4/25.
  */
 int
-cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, double **ret_wp, int *ret_nwin)
+cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin)
 {
   int              status;
   float            mfsc, vfsc, fwdsc;/* filter scores                           */
@@ -1007,7 +997,6 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
   int              nwin;             /* number of windows */
   int64_t         *new_ws = NULL;    /* used when copying/modifying ws */
   int64_t         *new_we = NULL;    /* used when copying/modifying we */
-  double          *new_wp = NULL;    /* used when copying/modifying wp */
   int              nsurv_fwd;        /* number of windows that survive fwd filter */
   int              new_nsurv_fwd;    /* used when merging fwd survivors */
   ESL_DSQ         *subdsq;           /* a ptr to the first position of a window */
@@ -1303,12 +1292,10 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
   if(nsurv_fwd > 0) { 
     ESL_ALLOC(new_ws, sizeof(int64_t) * nsurv_fwd);
     ESL_ALLOC(new_we, sizeof(int64_t) * nsurv_fwd);
-    ESL_ALLOC(new_wp, sizeof(double)  * nsurv_fwd);
     for (i = 0, i2 = 0; i < nwin; i++) { 
       if(survAA[p7_SURV_F3b][i]) { 
 	new_ws[i2] = ws[i];
 	new_we[i2] = we[i];
-	new_wp[i2] = wp[i];
 	/*printf("window %5d  %10d..%10d\n", i2+1, new_ws[i2], new_we[i2]);*/
 	i2++;
       }
@@ -1325,7 +1312,6 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
 	while((i2 < nsurv_fwd) && ((new_we[i]+1) >= (new_ws[i2]))) { 
 	  useme[i2] = FALSE;
 	  new_we[i] = new_we[i2]; /* merged i with i2, rewrite end for i */
-	  new_wp[i] = ESL_MIN(new_wp[i], new_wp[i2]); /* take lower P-value of the two hits merged as P-value for this window */
 	  i2++;
 	}
 	i = i2-1;
@@ -1335,7 +1321,6 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
 	if(useme[i]) { 
 	  new_ws[i2] = new_ws[i];
 	  new_we[i2] = new_we[i];
-	  new_wp[i2] = new_wp[i];
 	  i2++;
 	}
       }
@@ -1347,7 +1332,6 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     free(wp);
     ws = new_ws;
     we = new_we;
-    wp = new_wp;
   }
   else { 
     if(ws != NULL) free(ws); ws = NULL;
@@ -1362,7 +1346,6 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
 
   *ret_ws   = ws;
   *ret_we   = we;
-  *ret_wp   = wp;
   *ret_nwin = nsurv_fwd;
 
   return eslOK;
@@ -1465,7 +1448,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
       p7_ForwardParser(seq->dsq, wlen, om, pli->oxf, NULL);
       p7_omx_GrowTo(pli->oxb, om->M, 0, wlen);
       p7_BackwardParser(seq->dsq, wlen, om, pli->oxf, pli->oxb, NULL);
-      status = p7_domaindef_ByPosteriorHeuristics (seq, om, pli->oxf, pli->oxb, pli->fwd,  pli->bck,  pli->ddef); 
+      status = p7_domaindef_ByPosteriorHeuristics (seq, om, pli->oxf, pli->oxb, pli->fwd,  pli->bck,  pli->ddef, NULL); 
     }
     else { /* we're defining envelopes in glocal mode, so we need to fill 
 	    * generic fwd/bck matrices and pass them to p7_domaindef_GlocalByPosteriorHeuristics() */
@@ -1740,7 +1723,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
       /* update the pipeline about the model */
       if((status = cm_pli_NewModel(pli, CM_NEWMODEL_CM, *opt_cm, (*opt_cm)->clen, (*opt_cm)->W, 
 				   FALSE, FALSE, NULL, NULL, NULL, NULL,  /* need_fsmx, need_smx, fcyk_dmin, fcyk_dmax, final_dmin, final_dmax */
-				   NULL, NULL, 0)) /* omA, bgA, nhmm */
+				   NULL, NULL)) /* om, bg */
 	 != eslOK); 
     }
     if(*opt_cmcons == NULL) { 
@@ -2338,37 +2321,16 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE **omA, P7_PROFILE **gmA, P7_BG **bgA, float **p7_evparamAA, int nhmm, const ESL_SQ *sq, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
-
+cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 {
   int status;
-  int i, m;
-  int      *nwinA = NULL; /* number of windows surviving MSV & Vit & Fwd, filled by cm_pli_p7Filter */
-  int64_t **wsAA = NULL;  /* [0..m..nhmm-1][0..i..nwinAA[m]-1] window start positions, filled by cm_pli_p7Filter() */
-  int64_t **weAA = NULL;  /* [0..m..nhmm-1][0..i..nwinAA[m]-1] window end   positions, filled by cm_pli_p7Filter() */
-  double  **wpAA = NULL;  /* [0..m..nhmm-1][0..i..nwinAA[m]-1] window P-values, filled by m_pli_p7Filter() */
-  int      *nenvA = NULL; /* [0..m..nhmm-1] number of envelopes surviving MSV & Vit & Fwd & gFwd & EnvDef, filled by cm_pli_p7EnvelopeDef */
-  int64_t **esAA = NULL;  /* [0..m..nhmm-1][0..i..nenvAA[m]-1] envelope start positions, filled by cm_pli_p7EnvelopeDef() */
-  int64_t **eeAA = NULL;  /* [0..m..nhmm-1][0..i..nenvAA[m]-1] envelope end   positions, filled by cm_pli_p7EnvelopeDef() */
+  int       nwin = 0;   /* number of windows surviving MSV & Vit & lFwd, filled by cm_pli_p7Filter() */
+  int64_t  *ws = NULL;  /* [0..i..nwin-1] window start positions, filled by cm_pli_p7Filter() */
+  int64_t  *we = NULL;  /* [0..i..nwin-1] window end   positions, filled by cm_pli_p7Filter() */
 
-  int64_t *all_ws = NULL; /* [0..i..nwin_all-1] start position of window i in the master list of all windows */
-  int64_t *all_we = NULL; /* [0..i..nwin_all-1] end   position of window i in the master list of all windows */
-  double  *all_wp = NULL; /* [0..i..nwin_all-1] P-value of window i in the master list of all windows */
-  int     *all_wl = NULL; /* [0..i..nwin_all-1] the model [0..nhmm-1] that gives window i the lowest P-value in the master list of all windows */
-  int      nwin_all;      /* number of windows in the master list of all windows */
-
-  int      cur_nwin;      /* number of windows in master list for current model */
-  int64_t *cur_ws = NULL; /* [0..i..cur_nwin-1] start position of window i for current model */
-  int64_t *cur_we = NULL; /* [0..i..cur_nwin-1] end   position of window i for current model */
-
-  /* copies of the *all* variables, used when updating/overwriting them */
-  int64_t *new_all_ws = NULL;
-  int64_t *new_all_we = NULL;
-  double  *new_all_wp = NULL;
-  int     *new_all_wl = NULL;
-  int      new_nwin_all;     
-
-  int     *wl = NULL;     /* [0..i..nwinA[m]] temporary list of model giving lowest P-value */
+  int       nenv = 0;   /* number of envelopes surviving MSV & Vit & lFwd & gFwd & EnvDef, filled by cm_pli_p7EnvelopeDef */
+  int64_t  *es = NULL;  /* [0..i..nenv-1] window start positions, filled by cm_pli_p7EnvelopeDef() */
+  int64_t  *ee = NULL;  /* [0..i..nenv-1] window end   positions, filled by cm_pli_p7EnvelopeDef() */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
 #if DOPRINT
@@ -2388,124 +2350,29 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE **omA, P7_PROFILE **g
   printf("F5b: %f\n", pli->F5b);
 #endif
 
-  ESL_ALLOC(nwinA, sizeof(int)      * nhmm);
-  ESL_ALLOC(wsAA, sizeof(int64_t *) * nhmm);
-  ESL_ALLOC(weAA, sizeof(int64_t *) * nhmm);
-  ESL_ALLOC(wpAA, sizeof(double *)  * nhmm);
-  for(m = 0; m < nhmm; m++) { 
-    wsAA[m] = NULL;
-    weAA[m] = NULL;
-    wpAA[m] = NULL; 
-  }
-
-  ESL_ALLOC(nenvA, sizeof(int)      * nhmm);
-  ESL_ALLOC(esAA, sizeof(int64_t *) * nhmm);
-  ESL_ALLOC(eeAA, sizeof(int64_t *) * nhmm);
-  for(m = 0; m < nhmm; m++) { 
-    esAA[m] = NULL;
-    eeAA[m] = NULL; 
-  }
-
-  /* For each model, determine which windows survive through Forward
-   * (after going through MSV and Vit first). Then, merge windows that
-   * survive different models but overlap into a single window and for
-   * each merged window keep track of model that gives lowest P-value
-   * to any window that was merged to create it. This model will be
-   * used to define envelopes within the merged window in the next
-   * step.
-   */
-  nwin_all = 0;
-  for(m = 0; m < nhmm; m++) { 
 #if DOPRINT
-    printf("\nPIPELINE HMM %d calling p7Filter() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
+  printf("\nPIPELINE HMM %d calling p7Filter() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
 #endif
-    if((status = cm_pli_p7Filter(pli, omA[m], bgA[m], p7_evparamAA[m], sq, &(wsAA[m]), &(weAA[m]), &(wpAA[m]), &(nwinA[m]))) != eslOK) return status;
-    if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) continue;
-
-    if(nwin_all == 0 && nwinA[m] > 0) { 
-      ESL_ALLOC(all_ws, sizeof(int64_t) * nwinA[m]);
-      ESL_ALLOC(all_we, sizeof(int64_t) * nwinA[m]);
-      ESL_ALLOC(all_wp, sizeof(double)  * nwinA[m]);
-      ESL_ALLOC(all_wl, sizeof(int)     * nwinA[m]);
-      for(i = 0; i < nwinA[m]; i++) all_ws[i] = wsAA[m][i];
-      for(i = 0; i < nwinA[m]; i++) all_we[i] = weAA[m][i];
-      esl_vec_DCopy(wpAA[m], nwinA[m], all_wp);
-      esl_vec_ISet (all_wl, nwinA[m], 0);
-      nwin_all = nwinA[m];
-    }
-    else if(nwinA[m] > 0) {  
-      ESL_ALLOC(wl, sizeof(int) * nwinA[m]);
-      esl_vec_ISet(wl, nwinA[m], m);
-      merge_windows_from_two_lists(all_ws, all_we, all_wp, all_wl, nwin_all, wsAA[m], weAA[m], wpAA[m], wl, nwinA[m], &new_all_ws, &new_all_we, &new_all_wp, &new_all_wl, &new_nwin_all);
-      free(all_ws);
-      free(all_we);
-      free(all_wp);
-      free(all_wl);
-      all_ws = new_all_ws;
-      all_we = new_all_we;
-      all_wp = new_all_wp;
-      all_wl = new_all_wl;
-      nwin_all = new_nwin_all;
-      free(wl);
-    }
-  }
-
-  /* At this point, all_w*[i] defines a surviving window:
-   * all_ws[i]: start position of window
-   * all_we[i]: end position of window
-   * all_wl[i]: index of model that gave minimal P-value
-   * all_wp[i]: minimal P-value of any window that was merged to
-   *            create this window, it was obtained using model all_wl[i]
-   * 
-   * Next step is to define envelopes for each window i using model
-   * all_wl[i]. To facilitate this, new lists of windows to search
-   * (cur_w*) are temporarily created for each model and passed to
-   * cm_pli_p7EnvelopeDef().
-   */
-
-  if(nwin_all > 0) { 
-    ESL_ALLOC(cur_ws, sizeof(int64_t) * nwin_all);
-    ESL_ALLOC(cur_we, sizeof(int64_t) * nwin_all);
-    for(m = 0; m < nhmm; m++) { 
-      cur_nwin = 0;
-      for(i = 0; i < nwin_all; i++) { 
-	if(all_wl[i] == m) { 
-	  cur_ws[cur_nwin] = all_ws[i];
-	  cur_we[cur_nwin] = all_we[i];
-	  /*printf("m: %d  win: %5d  %10" PRId64 "..%10" PRId64 "\n", m, cur_nwin, all_ws[i], all_we[i]);*/
-	  cur_nwin++;
-	}
-      }
+  if((status = cm_pli_p7Filter(pli, om, bg, p7_evparam, sq, &ws, &we, &nwin)) != eslOK) return status;
+  if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
+  
 #if DOPRINT
-      printf("\nPIPELINE HMM %d calling p7EnvelopeDef() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
+  printf("\nPIPELINE HMM %d calling p7EnvelopeDef() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
 #endif
-      if((status = cm_pli_p7EnvelopeDef(pli, omA[m], bgA[m], p7_evparamAA[m], sq,  cur_ws,  cur_we,  cur_nwin, &(gmA[m]), &(esAA[m]), &(eeAA[m]), &(nenvA[m]))) != eslOK) return status;
+  if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, ws, we, nwin, opt_gm, &es, &ee, &nenv)) != eslOK) return status;
 #if DOPRINT
-      printf("\nPIPELINE HMM %d calling CMStage() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
+  printf("\nPIPELINE HMM %d calling CMStage() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
 #endif
-      if((status = cm_pli_CMStage      (pli, cm_offset, sq, esAA[m],  eeAA[m],  nenvA[m], hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
-    }
-    free(cur_ws);
-    free(cur_we);
-  }
+  if((status = cm_pli_CMStage      (pli, cm_offset, sq, es,  ee,  nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
+
   if(pli->do_time_F6) return eslOK;
 
-  if(wsAA != NULL) { for(m = 0; m < nhmm; m++) { if(wsAA[m] != NULL) free(wsAA[m]); } free(wsAA); }
-  if(weAA != NULL) { for(m = 0; m < nhmm; m++) { if(weAA[m] != NULL) free(weAA[m]); } free(weAA); }
-  if(wpAA != NULL) { for(m = 0; m < nhmm; m++) { if(wpAA[m] != NULL) free(wpAA[m]); } free(wpAA); }
-  if(esAA != NULL) { for(m = 0; m < nhmm; m++) { if(esAA[m] != NULL) free(esAA[m]); } free(esAA); }
-  if(eeAA != NULL) { for(m = 0; m < nhmm; m++) { if(eeAA[m] != NULL) free(eeAA[m]); } free(eeAA); }
-  if(all_ws != NULL) free(all_ws);
-  if(all_we != NULL) free(all_we);
-  if(all_wp != NULL) free(all_wp);
-  if(all_wl != NULL) free(all_wl);
-  if(nwinA != NULL) free(nwinA);
-  if(nenvA != NULL) free(nenvA);
+  if(ws != NULL) free(ws);
+  if(we != NULL) free(we);
+  if(es != NULL) free(es);
+  if(ee != NULL) free(ee);
 
   return eslOK;
-  
- ERROR:
-  ESL_EXCEPTION(eslEMEM, "Out of memory\n");
 }
   
 /* Function:  cm_pli_Statistics()

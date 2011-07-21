@@ -96,6 +96,7 @@ configure_model(CM_t *cm, char *errbuf)
   int lmsvL, lvitL, lfwdL, gfwdL;
   int lmsvN, lvitN, lfwdN, gfwdN;
   float lftailp, gftailp;
+  double fil_gfmu, fil_gflambda;
 
   /* configure local for calculating W (ignores ROOT_IL, ROOT_IR), this way is consistent with Infernal 1.0->1.0.2 */
   cm->config_opts |= CM_CONFIG_LOCAL;    
@@ -118,8 +119,12 @@ configure_model(CM_t *cm, char *errbuf)
   if ((status = cm_SetConsensus  (cm, cons, NULL)) != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate consensus sequence");
   FreeCMConsensus(cons);
 
-  /* the cm->mlp7 HMM was created in ConfigCM(), now calibrate it
-   * there are more options than this in cmbuild, but here we enforce
+  /* We'll define the filter HMM as the ML p7 HMM because
+   * that's the only option available (by default, in cmbuild,
+   * a filter HMM gets built separately that's different from
+   * the ml p7, but that requires the cmbuild input alignment).
+   * The cm->mlp7 HMM was created in ConfigCM(), now calibrate it.
+   * There are more options than this in cmbuild, but here we enforce
    * defaults. See cmbuild.c::build_and_calibrate_p7_filters(). */
   lmsvL = lvitL = 200;
   lfwdL = 100;
@@ -129,12 +134,14 @@ configure_model(CM_t *cm, char *errbuf)
   gftailp = 0.065;
 
   /* Calibrate the ML p7 hmm */
-  if((status = cm_mlp7_Calibrate(cm, errbuf, 
-				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for each alg */
-				 lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
-				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
-				 gftailp))                                   /* fraction of tail mass to fit for glocal Fwd */
+  if((status = cm_p7_Calibrate(cm->mlp7, errbuf, 
+			       lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for local (lL) and glocal (gL) modes */    
+			       lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
+			       lftailp,                                    /* fraction of tail mass to fit for local Fwd */
+			       gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
+			       &fil_gfmu, &fil_gflambda))  
      != eslOK) return status;
+  if((status = cm_SetFilterHMM(cm, cm->mlp7, fil_gfmu, fil_gflambda)) != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter for the CM");
 
   return eslOK;
 }

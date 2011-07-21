@@ -40,11 +40,10 @@ typedef struct {
   ESL_WORK_QUEUE   *queue;
 #endif /*SUB_WITH_HMMER_THREADS*/
   ESL_SQ           *qsq;
+  P7_BG            *bg;	             /* null model                              */
   CM_PIPELINE      *pli;             /* work pipeline                           */
   CM_TOPHITS       *th;              /* top hit results                         */
   int               cm_config_opts;  /* set based on command-line options     */
-  int               doml_opt_is_on;  /* TRUE if --doml enabled */
-  int               noadd_opt_is_on; /* TRUE if --noadd enabled */
 } WORKER_INFO;
 
 #define REPOPTS         "-E,-T,--cut_ga,--cut_nc,--cut_tc"
@@ -138,8 +137,6 @@ static ESL_OPTIONS options[] = {
   { "--oldcorr",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nocorr",        "use old correction for domain definition", 7 },
   { "--envhitbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--noedefbias",     "calc domain bias for only the domain, not entire window", 7 },
   { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not resolve hits with greedy algorithm, use optimal one", 7 },
-  { "--doml",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "filter with a ML p7 HMM in addition to additional p7 HMMs in the file", 7 },
-  { "--noadd",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not filter with any additional p7 HMMs in the file", 7 },
   { "--filcmW",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "use CM's window length for all HMM filters", 7 },
   { "--glen",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use length dependent glocal p7 filter P-value thresholds", 7},
   { "--glN",        eslARG_INT,   "201",  NULL, NULL,    NULL,"--glen",NULL,             "minimum value to start len-dependent glocal threshold", 7},
@@ -214,9 +211,11 @@ static char banner[] = "search sequence(s) against a profile database";
 
 static int  serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  serial_loop  (WORKER_INFO *info, CM_FILE *cmfp);
+#if 0 
 static int  setup_cm     (CM_t *cm, const ESL_ALPHABET *abc, WORKER_INFO *info, char *errbuf, 
 			  int *opt_nhmm, P7_HMM ***opt_hmmA, P7_BG ***opt_bgA, P7_OPROFILE ***opt_omA, 
 			  P7_PROFILE ***opt_gmA, float ***opt_p7evpAA);
+#endif
 static void setup_config_opts(const ESL_GETOPTS *go, int *ret_config_opts);
 
 #ifdef SUB_WITH_HMMER_THREADS
@@ -564,9 +563,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   for (i = 0; i < infocnt; ++i)
     {
+      info[i].bg = p7_bg_Create(abc);
       setup_config_opts(go, &(info[i].cm_config_opts));
-      info[i].doml_opt_is_on  = esl_opt_GetBoolean(go, "--doml")  ? TRUE : FALSE;
-      info[i].noadd_opt_is_on = esl_opt_GetBoolean(go, "--noadd") ? TRUE : FALSE;
 #ifdef SUB_WITH_HMMER_THREADS
       info[i].queue = queue;
 #endif
@@ -1337,81 +1335,38 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 {
   int            status;
 
-  CM_t             *cm      = NULL; ;
-  ESL_ALPHABET     *abc     = NULL;
-  P7_BG           **bgA     = NULL;         /* null models                              */
-  P7_OPROFILE     **omA     = NULL;         /* optimized query profile HMMs            */
-  P7_PROFILE      **gmA     = NULL;         /* generic   query profile HMMs            */
-  P7_HMM          **hmmA    = NULL;
-  float           **p7evpAA = NULL;/* [0..nhmm-1][0..CM_p7_NEVPARAM] E-value parameters */
-  CMConsensus_t    *cmcons  = NULL;
-  ESL_STOPWATCH    *w       = NULL;
-  int               m;
-  int               nhmm    = 0;
-  char              errbuf[cmERRBUFSIZE];
-
-  int read_mlp7 = FALSE;
-  int read_ap7  = FALSE;
-  int nhmm_read;
-  off_t *cm_offsetA = NULL;
-  int   *cm_clenA   = NULL;
-  int   *cm_WA      = NULL;
-  float  *gfmuA     = NULL;
-  float  *gflambdaA = NULL;
-  int     prv_ntophits = 0;
+  CM_t             *cm         = NULL; 
+  ESL_ALPHABET     *abc        = NULL;
+  P7_OPROFILE      *om         = NULL;      /* optimized query profile HMM            */
+  P7_PROFILE       *gm         = NULL;      /* generic   query profile HMM            */
+  float            *p7_evparam = NULL;      /* E-value parameters */
+  CMConsensus_t    *cmcons     = NULL;
+  ESL_STOPWATCH    *w          = NULL;
+  int               prv_ntophits = 0;
+  int               cm_clen, cm_W;          /* consensus, window length for current CM */        
+  float             gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
+  off_t             cm_offset;              /* file offset for current CM */
 
   w = esl_stopwatch_Create();
+  ESL_ALLOC(p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
 
   /* Main loop: */
-  //while ((status = cm_file_Read(cmfp, &abc, &cm)) == eslOK)
-  while ((status = cm_p7_oprofile_ReadMSV(cmfp, info->doml_opt_is_on, (! info->noadd_opt_is_on), &abc, &read_mlp7, &read_ap7, 
-					  &nhmm_read, &cm_offsetA, &cm_clenA, &cm_WA, &gfmuA, &gflambdaA, &omA)) == eslOK)
+  while ((status = cm_p7_oprofile_ReadMSV(cmfp, &abc, &cm_offset, &cm_clen, &cm_W, &gfmu, &gflambda, &om)) == eslOK)
     {
       esl_stopwatch_Start(w);
-      /***************************************************************************************/
-      /* TEMP (?) BLOCK: this will all be unnec if we force a single p7 filter for each CM */
-      if(nhmm != nhmm_read) { /* we need to create new BGs (this is wasteful, we could be careful and keep min(nhmm, read_nhmm) BGs around) */
-	for(m = 0; m < nhmm; m++) { 
-	  p7_bg_Destroy(bgA[m]); 
-	  p7_profile_Destroy(gmA[m]); 
-	  free(p7evpAA[m]);
-	} 
-	free(bgA);
-	free(gmA);
-	free(p7evpAA);
-	ESL_ALLOC(bgA,     sizeof(P7_BG *)      * nhmm_read);
-	ESL_ALLOC(gmA,     sizeof(P7_PROFILE *) * nhmm_read);
-	ESL_ALLOC(p7evpAA, sizeof(float *)      * nhmm_read);
-	for(m = 0; m < nhmm_read; m++) { 
-	  bgA[m] = p7_bg_Create(omA[m]->abc); 
-	  gmA[m] = NULL;
-	  ESL_ALLOC(p7evpAA[m], sizeof(float) * CM_p7_NEVPARAM);
-	}
-	nhmm = nhmm_read;
-      }
-      for(m = 0; m < nhmm; m++) { 
-	esl_vec_FCopy(omA[m]->evparam, p7_NEVPARAM, p7evpAA[m]);
-	p7evpAA[m][CM_p7_GFMU]     = gfmuA[m];
-	p7evpAA[m][CM_p7_GFLAMBDA] = gflambdaA[m];
-      }
-      /* sanity check */
-      for(m = 1; m < nhmm; m++) { 
-	if(cm_offsetA[m] != cm_offsetA[0]) cm_Fail("read incompatible CM offsets from MSV file %s.i1f", cmfp->fname);
-	if(cm_clenA[m]   != cm_clenA[0])   cm_Fail("read incompatible CM clen values from MSV file %s.i1f", cmfp->fname);
-	if(cm_WA[m]      != cm_WA[0])      cm_Fail("read incompatible CM W values from MSV file %s.i1f", cmfp->fname);
-      }
-      /* END OF TEMP (?) BLOCK */
-      /***************************************************************************************/
-      //if((status = setup_cm(cm, abc, info, errbuf, &nhmm, &hmmA, &bgA, &omA, &gmA, &p7evpAA)) != eslOK) cm_Fail(errbuf);
+      esl_vec_FCopy(om->evparam, p7_NEVPARAM, p7_evparam);
+      p7_evparam[CM_p7_GFMU]     = gfmu;
+      p7_evparam[CM_p7_GFLAMBDA] = gflambda;
+      gm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
       cm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
       cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */
       if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
 				   cm, /* this is NULL b/c we don't have one yet */
-				   cm_clenA[0], cm_WA[0], 
+				   cm_clen, cm_W, 
 				   FALSE, FALSE, NULL, NULL, NULL, NULL, /* all these are irrelevant in CM_NEWMODEL_MSV mode */
-				   omA, bgA, nhmm)) != eslOK) cm_Fail(info->pli->errbuf);
-      
-      if((status = cm_Pipeline(info->pli, cm_offsetA[0], omA, gmA, bgA, p7evpAA, nhmm, info->qsq, info->th, &cm, &cmcons)) != eslOK)
+				   om, info->bg)) != eslOK) cm_Fail(info->pli->errbuf);
+
+      if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, p7_evparam, info->qsq, info->th, &gm, &cm, &cmcons)) != eslOK)
 	cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
       
       if(info->th->N != prv_ntophits) { 
@@ -1427,31 +1382,20 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
       if(info->pli->fsmx != NULL && cm != NULL) { cm_FreeScanMatrix(cm, info->pli->fsmx); info->pli->fsmx = NULL; }
       if(info->pli->smx  != NULL && cm != NULL) { cm_FreeScanMatrix(cm, info->pli->smx);  info->pli->smx  = NULL; }
       if(cm  != NULL) FreeCM(cm);
-      if(omA != NULL) { for(m = 0; m < nhmm; m++) { if(omA[m] != NULL) p7_oprofile_Destroy(omA[m]); } free(omA); }
-      /* free generic models, but not gmA ptr, we'll reuse that if we can (if nhmm doesn't change in next loop iter) */
-      if(gmA != NULL) { for(m = 0; m < nhmm; m++) { if(gmA[m] != NULL) { p7_profile_Destroy(gmA[m]); gmA[m] = NULL; } } }
-      if(cm_clenA   != NULL) free(cm_clenA);   cm_clenA   = NULL;
-      if(cm_WA      != NULL) free(cm_WA);      cm_WA      = NULL;
-      if(cm_offsetA != NULL) free(cm_offsetA); cm_offsetA = NULL;
-      if(gfmuA      != NULL) free(gfmuA);      gfmuA      = NULL;
-      if(gflambdaA  != NULL) free(gflambdaA);  gflambdaA  = NULL;
+      if(om  != NULL) p7_oprofile_Destroy(om);
+      if(gm  != NULL) p7_profile_Destroy(gm);
     } /* end of while(cm_p7_oprofile_ReadMSV() == eslOK) */
-
-  if(gmA     != NULL) free(gmA); /* we free individual gmA[m] elements in while(cm_p7_oprofile_ReadMSV()) loop above */
-  if(p7evpAA != NULL) { for(m = 0; m < nhmm; m++) { if(p7evpAA[m] != NULL) free(p7evpAA[m]);            } free(p7evpAA); }
   esl_alphabet_Destroy(abc);
   esl_stopwatch_Destroy(w);
-
-  if(bgA     != NULL) { for(m = 0; m < nhmm; m++) { if(bgA[m]     != NULL) p7_bg_Destroy(bgA[m]);       } free(bgA); }
+  if(p7_evparam != NULL) free(p7_evparam);
 
   return status;
 
  ERROR: 
-  if(gmA     != NULL) { for(m = 0; m < nhmm; m++) { if(gmA[m]     != NULL) p7_profile_Destroy(gmA[m]);  } free(gmA); }
-  if(omA     != NULL) { for(m = 0; m < nhmm; m++) { if(omA[m]     != NULL) p7_oprofile_Destroy(omA[m]); } free(omA); }
-  if(bgA     != NULL) { for(m = 0; m < nhmm; m++) { if(bgA[m]     != NULL) p7_bg_Destroy(bgA[m]);       } free(bgA); }
-  if(p7evpAA != NULL) { for(m = 0; m < nhmm; m++) { if(p7evpAA[m] != NULL) free(p7evpAA[m]);            } free(p7evpAA); }
-  if(hmmA    != NULL) free(hmmA); /* hmmA just points to HMMs in the CM data structure, don't free those */
+  if(cm  != NULL) FreeCM(cm); cm = NULL;
+  if(om  != NULL) p7_oprofile_Destroy(om); om = NULL; 
+  if(gm  != NULL) p7_profile_Destroy(gm);  gm = NULL;
+  if(cmcons != NULL) FreeCMConsensus(cmcons); cmcons = NULL;
 
   return status;
 }
@@ -1582,6 +1526,7 @@ pipeline_thread(void *arg)
 }
 #endif   /* SUB_WITH_HMMER_THREADS */
 
+#if 0 
 /* Function:  setup_cm()
  * Incept:    EPN, Wed Jul  6 05:19:15 2011
  *
@@ -1716,6 +1661,7 @@ setup_cm(CM_t *cm, const ESL_ALPHABET *abc, WORKER_INFO *info, char *errbuf, int
   *opt_p7evpAA = NULL;
   ESL_FAIL(status, errbuf, "Out of memory");
 }
+#endif
 
 /* Function:  setup_config_opts()
  * Incept:    EPN, Wed Jul  6 13:45:44 2011

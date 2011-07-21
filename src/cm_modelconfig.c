@@ -122,16 +122,6 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
 #endif
   /* EPN, Tue Nov  9 09:46:48 2010 */
   if((status = cm_cp9_to_p7(cm)) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 from the CM");
-  /* copy the E-value parameters in cm->mlp7_evparam read from the CM file to the HMM */
-  if(cm->flags & CMH_MLP7_STATS) { 
-    cm->mlp7->evparam[p7_MMU]     = cm->mlp7_evparam[CM_p7_LMMU];
-    cm->mlp7->evparam[p7_MLAMBDA] = cm->mlp7_evparam[CM_p7_LMLAMBDA];
-    cm->mlp7->evparam[p7_VMU]     = cm->mlp7_evparam[CM_p7_LVMU];
-    cm->mlp7->evparam[p7_VLAMBDA] = cm->mlp7_evparam[CM_p7_LVLAMBDA];
-    cm->mlp7->evparam[p7_FTAU]    = cm->mlp7_evparam[CM_p7_LFTAU];
-    cm->mlp7->evparam[p7_FLAMBDA] = cm->mlp7_evparam[CM_p7_LFLAMBDA];
-    cm->mlp7->flags |= p7H_STATS;
-  }
 
   /* Possibly configure the CM for local alignment. */
   if (cm->config_opts & CM_CONFIG_LOCAL)

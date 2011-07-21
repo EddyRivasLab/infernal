@@ -140,11 +140,9 @@ CreateCMShell(void)
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
   cm->mlp7         = NULL;          
-  cm->nap7         = 0;
-  cm->ap7A         = NULL;          
-  cm->ap7_evparamAA= NULL;          
+  cm->fp7          = NULL;          
 
-  for (z = 0; z < CM_p7_NEVPARAM; z++) cm->mlp7_evparam[z] = CM_p7_EVPARAM_UNSET;
+  for (z = 0; z < CM_p7_NEVPARAM; z++) cm->fp7_evparam[z]  = CM_p7_EVPARAM_UNSET;
 
   cm->ga       = 0.;  /* only valid if cm->flags & CMH_GA */
   cm->tc       = 0.;  /* only valid if cm->flags & CMH_TC */
@@ -428,20 +426,8 @@ FreeCM(CM_t *cm)
     free(cm->hfiA);
   }
 
-  if(cm->mlp7       != NULL) p7_hmm_Destroy(cm->mlp7);
-  if(cm->nap7 > 0) { 
-    int z;
-    for(z = 0; z < cm->nap7; z++) { 
-      if(cm->ap7A[z]    != NULL) { 
-	p7_hmm_Destroy(cm->ap7A[z]);
-      }
-      if(cm->ap7_evparamAA[z] != NULL) free(cm->ap7_evparamAA[z]);
-    }
-    free(cm->ap7A);
-    free(cm->ap7_evparamAA);
-    cm->nap7 = 0;
-  }
-
+  if(cm->mlp7       != NULL) { p7_hmm_Destroy(cm->mlp7); cm->mlp7 = NULL; }
+  if(cm->fp7        != NULL) { p7_hmm_Destroy(cm->fp7);  cm->fp7  = NULL; }
   if(cm->emap != NULL) FreeEmitMap(cm->emap);
 
   free(cm);
@@ -2785,19 +2771,11 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
   /* clone the p7 models, if any */
   if(cm->mlp7 != NULL) { 
     new->mlp7 = p7_hmm_Clone(cm->mlp7);
-    esl_vec_FCopy(cm->mlp7_evparam, CM_p7_NEVPARAM, new->mlp7_evparam);
   }
-
-  if(cm->nap7 > 0) { 
-    ESL_ALLOC(new->ap7A,          sizeof(P7_HMM *) * cm->nap7);
-    ESL_ALLOC(new->ap7_evparamAA, sizeof(float *)  * cm->nap7);
-    for(i = 0; i < cm->nap7; i++) { 
-      new->ap7A[i] = p7_hmm_Clone(cm->ap7A[i]);
-      ESL_ALLOC(new->ap7_evparamAA[i], sizeof(float) * CM_p7_NEVPARAM);
-      esl_vec_FCopy(cm->ap7_evparamAA[i], CM_p7_NEVPARAM, new->ap7_evparamAA[i]);
-    }
+  if(cm->fp7 != NULL) { 
+    new->fp7 = p7_hmm_Clone(cm->fp7);
+    esl_vec_FCopy(cm->fp7_evparam, CM_p7_NEVPARAM, new->fp7_evparam);
   }
-  new->nap7 = cm->nap7;
 
   *ret_cm = new;
 
@@ -2842,9 +2820,8 @@ DumpCMFlags(FILE *fp, CM_t *cm)
   if(cm->flags & CMH_CP9)                  fprintf(fp, "\tCMH_CP9\n");
   if(cm->flags & CMH_SCANMATRIX)           fprintf(fp, "\tCMH_SCANMATRIX\n");
   if(cm->flags & CMH_MLP7)                 fprintf(fp, "\tCMH_MLP7\n");
-  if(cm->flags & CMH_MLP7_STATS)           fprintf(fp, "\tCMH_MLP7_STATS\n");
-  if(cm->flags & CMH_AP7)                  fprintf(fp, "\tCMH_AP7\n");
-  if(cm->flags & CMH_AP7_STATS)            fprintf(fp, "\tCMH_AP7_STATS\n");
+  if(cm->flags & CMH_FP7)                  fprintf(fp, "\tCMH_FP7\n");
+  if(cm->flags & CMH_FP7_STATS)            fprintf(fp, "\tCMH_FP7_STATS\n");
 
   if(cm->flags & CM_IS_SUB)               fprintf(fp, "\tCM_IS_SUB\n");
   if(cm->flags & CM_IS_RSEARCH)           fprintf(fp, "\tCM_IS_RSEARCH\n");

@@ -448,16 +448,15 @@ typedef struct cp9map_s {
 #define CMH_CP9                 (1<<15) /* CP9 HMM is valid in cm->cp9              */
 #define CMH_SCANMATRIX          (1<<16) /* ScanMatrix smx is valid                  */
 #define CMH_MLP7                (1<<17) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
-#define CMH_MLP7_STATS          (1<<18) /* ml p7 HMM exponential tail stats set    */
-#define CMH_AP7                 (1<<19) /* at least 1 additional p7 is valid in cm->ap7 */
-#define CMH_AP7_STATS           (1<<20) /* additional p7 HMM exponential tail stats set */
+#define CMH_FP7                 (1<<18) /* filter p7 is valid in cm->fp7            */
+#define CMH_FP7_STATS           (1<<19) /* filter p7 HMM exponential tail stats set */
 
-#define CM_IS_SUB               (1<<21) /* the CM is a sub CM                       */
-#define CM_IS_RSEARCH           (1<<22) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS         (1<<23) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT          (1<<24) /* CM has/will have RSEARCH emissions       */
-#define CM_EMIT_NO_LOCAL_BEGINS (1<<25) /* emitted parsetrees will never have local begins */
-#define CM_EMIT_NO_LOCAL_ENDS   (1<<26) /* emitted parsetrees will never have local ends   */
+#define CM_IS_SUB               (1<<20) /* the CM is a sub CM                       */
+#define CM_IS_RSEARCH           (1<<21) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS         (1<<22) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT          (1<<23) /* CM has/will have RSEARCH emissions       */
+#define CM_EMIT_NO_LOCAL_BEGINS (1<<24) /* emitted parsetrees will never have local begins */
+#define CM_EMIT_NO_LOCAL_ENDS   (1<<25) /* emitted parsetrees will never have local ends   */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
@@ -1404,10 +1403,8 @@ typedef struct cm_s {
 
   /* p7 hmms, added 08.05.08 */
   P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
-  float         mlp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_MLP7_STATS) */
-  int           nap7;          /* number of additional p7 HMMs read from file */
-  P7_HMM      **ap7A;          /* query p7 HMM */
-  float       **ap7_evparamAA; /* E-value params (CMH_AP7_STATS) */
+  P7_HMM       *fp7;          /* the filter p7 HMM, read from CM file */
+  float        fp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_FP7_STATS) */
 
   /* emitmap, added 06.20.11 (post v1.0.2) */
   CMEmitMap_t   *emap;  /* maps model nodes to consensus positions */ 
