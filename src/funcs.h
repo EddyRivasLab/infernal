@@ -89,8 +89,8 @@ extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
 extern int        CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm);
 extern void       DumpCMFlags(FILE *fp, CM_t *cm);
 extern ESL_GETOPTS *cm_CreateDefaultApp(ESL_OPTIONS *options, int nargs, int argc, char **argv, char *banner, char *usage);
-extern CM_BLOCK    *cm_CreateBlock(int size);
-extern void         cm_DestroyBlock(CM_BLOCK *block);
+extern CM_P7_OM_BLOCK *cm_p7_oprofile_CreateBlock(int size);
+extern void            cm_p7_oprofile_DestroyBlock(CM_P7_OM_BLOCK *block);
 
 /* from dispatch.c */
 extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, int hit_len_guess, 
@@ -194,11 +194,11 @@ extern int     cm_file_CreateLock(CM_FILE *cmfp);
 extern int     cm_file_WriteASCII(FILE *fp, int format, CM_t *cm);
 extern int     cm_file_WriteBinary(FILE *fp, int format, CM_t *cm);
 extern int     cm_file_Read(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
-extern int     cm_file_ReadBlock(CM_FILE *cmfp, ESL_ALPHABET **ret_tac, CM_BLOCK *cmBlock);
 extern int     cm_file_PositionByKey(CM_FILE *cmfp, const char *key);
 extern int     cm_file_Position(CM_FILE *cmfp, const off_t offset);
 extern int     cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int cm_len, int cm_W, float gfmu, float gflambda, P7_OPROFILE *om);
 extern int     cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om);
+extern int     cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOCK *hmmBlock);
 
 /* from cm_modelconfig.c */
 extern int   ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t *mother_map);

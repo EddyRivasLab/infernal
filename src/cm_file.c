@@ -453,9 +453,6 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   cmfp->hfp->errbuf[0]    = '\0';
   if ((status = esl_strdup(cmfp->fname, -1, &(cmfp->hfp->fname))) != eslOK) goto ERROR;
 
-  //if ((hfp->f = fopen(cmfp->fname, "r")) == NULL)                    goto ERROR;
-  //if ((status = esl_strdup(cmfp->fname, -1, &(hfp->fname))) != eslOK) goto ERROR;
-
   *ret_cmfp = cmfp;
   return eslOK;
 
@@ -526,9 +523,11 @@ cm_file_CreateLock(CM_FILE *cmfp)
       if (status != 0) goto ERROR;
     }
 
-  /* create lock on hmm file as well */
+  /* create lock on hmm files as well */
   if (cmfp->hfp != NULL)
     if((status = p7_hmmfile_CreateLock(cmfp->hfp)) != eslOK) goto ERROR;
+  if (cmfp->gfp != NULL)
+    if((status = p7_hmmfile_CreateLock(cmfp->gfp)) != eslOK) goto ERROR;
 
   return eslOK;
 
@@ -938,43 +937,6 @@ cm_file_Read(CM_FILE *cmfp, ESL_ALPHABET **ret_abc,  CM_t **opt_cm)
   return (*cmfp->parser)(cmfp, ret_abc, opt_cm);
 }
 
-
-/* Function:  cm_file_ReadBlock()
- * Synopsis:  Read the next block of CMs from a cm file.
- * Incept:    EPN, Wed Jul  6 13:30:05 2011
- *
- * Purpose:   Reads a block of CMs from open cm file <cmfp> into 
- *            <cmBlock>.
- *
- * Returns:   <eslOK> on success; the new sequences are stored in <cmBlock>.
- * 
- *            Returns <eslEOF> when there is no CMs left in the
- *            file (including first attempt to read an empty file).
- * 
- *            Otherwise return the status of the cm_file_Read() function.
- */
-int
-cm_file_ReadBlock(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_BLOCK *cmBlock)
-{
-  int     i;
-  int     size = 0;
-  int     status = eslOK;
-
-  cmBlock->count = 0;
-  for (i = 0; i < cmBlock->listSize; ++i)
-    {
-      status = cm_file_Read(cmfp, ret_abc, &cmBlock->list[i]);
-      if (status != eslOK) break;
-      size += cmBlock->list[i]->clen;
-      ++cmBlock->count;
-    }
-
-  /* EOF will be returned only in the case where no profiles were read */
-  if (status == eslEOF && i > 0) status = eslOK;
-
-  return status;
-}
-
 /* Function:  cm_file_PositionByKey()
  * Synopsis:  Use SSI to reposition file to start of named CM.
  * Incept:    EPN, Tue Jun 21 10:46:33 2011
@@ -1139,7 +1101,7 @@ cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int cm_clen, int cm_
  *            that are specific to CMs. See cm_p7_oprofile_Write()
  *            for more explanation. 
  *
- * Args:      hfp     - open HMM file, with associated .h3p file
+ * Args:      cmfp    - open CM file, with associated .i1p file
  *            byp_abc - BYPASS: <*byp_abc == ESL_ALPHABET *> if known; 
  *                              <*byp_abc == NULL> if desired; 
  *                              <NULL> if unwanted.
@@ -1192,11 +1154,11 @@ cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, off_t *ret_cm_offs
   if (! fread( (char *) &gfmu,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read glocal fwd mu parameter");
   if (! fread( (char *) &gflambda,        sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read glocal fwd lambda parameter");
   
-  /* move HMM file position to where we are in cmfp (cmfile) */
+  /* move HMM file position (cmfp->gfp->ffp) to where we are in CM file (cmfp->ffp) */
   if (fseeko(cmfp->gfp->ffp, ftello(cmfp->ffp), SEEK_SET) != 0)         ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for HMM file parser (MSV)");
   if ((status = p7_oprofile_ReadMSV(cmfp->gfp, byp_abc, &om)) != eslOK) ESL_XFAIL(status,       cmfp->errbuf, "failed read MSV part of unused filter model");
 
-  /* move CM file position to where we are in hfp (hmmfile) */
+  /* move CM file position (cmfp->ffp) to where we are in HMM file (cmfp->gfp->ffp) */
   if (fseeko(cmfp->ffp, ftello(cmfp->gfp->ffp), SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for CM file parser (MSV)");
 
   *ret_cm_offset  = cm_offset; 
@@ -1210,6 +1172,63 @@ cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, off_t *ret_cm_offs
  ERROR:
   if (om != NULL) p7_oprofile_Destroy(om); 
   *ret_om = NULL;
+  return status;
+}
+
+
+/* Function:  cm_p7_oprofile_ReadBlockMSV()
+ * Synopsis:  Read the next block of MSV filter parts from a HMM file.
+ * Incept:    EPN, Thu Jul 21 04:44:19 2011
+ *
+ * Purpose:   Reads a block of the MSV filter parts of optimized 
+ *            p7 profiles from open cm file <cmfp> into 
+ *            <hmmBlock>.
+ *
+ *            Most of the work is done by p7_oprofile_ReadMSV(). This
+ *            function is only necessary to read five pieces of data
+ *            that are specific to CMs. See cm_p7_oprofile_Write()
+ *            for more explanation. 
+ *
+ * Args:      cmfp    - open CM file, with associated .i1f file
+ *            byp_abc - BYPASS: <*byp_abc == ESL_ALPHABET *> if known; 
+ *                              <*byp_abc == NULL> if desired; 
+ *                              <NULL> if unwanted.
+ *            hmmBlock- RETURN: the block of profiles.
+ *            
+ * Returns:   <eslOK> on success; block in <hmmBlock>.
+ *            
+ *            Returns <eslEFORMAT> if <cmfp> has no <.i1f> file open,
+ *            or on any parsing error.
+ *            
+ *            Returns <eslEINCOMPAT> if any HMM we read is incompatible
+ *            with the existing alphabet <*byp_abc> led us to expect.
+ *            
+ *            Returns <eslEOF> when there is no profiles left in the
+ *            file (including first attempt to read an empty file).
+ */
+int
+cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOCK *hmmBlock)
+{
+  int status         = eslOK;      /* return status */
+  int i;
+
+  hmmBlock->count = 0;
+  for (i = 0; i < hmmBlock->listSize; ++i)
+    {
+      status = cm_p7_oprofile_ReadMSV(cmfp, byp_abc, 
+				      &(hmmBlock->cm_offsetA[i]), 
+				      &(hmmBlock->cm_clenA[i]), 
+				      &(hmmBlock->cm_WA[i]), 
+				      &(hmmBlock->gfmuA[i]), 
+				      &(hmmBlock->gflambdaA[i]), 
+				      &(hmmBlock->list[i]));
+      if (status != eslOK) break;
+      ++hmmBlock->count;
+    }
+
+  /* EOF will be returned only in the case were no profiles were read */
+  if (status == eslEOF && i > 0) status = eslOK;
+
   return status;
 }
 

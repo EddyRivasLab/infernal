@@ -1415,10 +1415,15 @@ typedef struct cm_s {
 } CM_t;
 
 typedef struct {
-  int            count;       /* number of <CM_t> objects in the block */
+  int            count;       /* number of <P7_OPROFILE> objects in the block (and cm_offsetA, cm_clenA, cm_WA, gfmuA, gflambdaA) */
   int            listSize;    /* maximum number elements in the list          */
-  CM_t         **list;        /* array of <CM_t> objects               */
-} CM_BLOCK;
+  P7_OPROFILE  **list;        /* array of <P7_OPROFILE> objects               */
+  off_t         *cm_offsetA;  /* file offsets for CMs */
+  int           *cm_clenA;    /* consensus length of CMs */
+  int           *cm_WA;       /* window length of CMs */
+  float         *gfmuA;       /* glocal forward mu parameter for HMM */
+  float         *gflambdaA;   /* glocal forward lambda parameter for HMM */
+} CM_P7_OM_BLOCK;
 
 /*****************************************************************
  * CM_FILE:  a CM save file or database, open for reading.

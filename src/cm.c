@@ -2901,38 +2901,52 @@ cm_CreateDefaultApp(ESL_OPTIONS *options, int nargs, int argc, char **argv, char
   return go;
 }
 
-
-/* Function:  cm_CreateBlock()
- * Synopsis:  Create a new block of empty <CM_BLOCK>.
+/* Function:  cm_p7_oprofile_CreateBlock()
+ * Synopsis:  Create a new block of empty <CM_P7_OM_BLOCK>.
  * Incept:    EPN, Wed Jul  6 11:39:20 2011
  *
- * Purpose:   Creates a block of empty <CM_BLOCK> CM objects.
+ * Purpose:   Creates a block of empty <CM_P7_OM_BLOCK> CM objects.
  *            
- * Returns:   a pointer to the new <CM_BLOCK>. Caller frees this
- *            with <cm_DestroyBlock()>.
+ * Returns:   a pointer to the new <CM_P7_OM_BLOCK>. Caller frees this
+ *            with <cm_p7_oprofile_DestroyBlock()>.
  *
  * Throws:    <NULL> if allocation fails.
  */
-CM_BLOCK *
-cm_CreateBlock(int count)
+CM_P7_OM_BLOCK *
+cm_p7_oprofile_CreateBlock(int count)
 {
   int i = 0;
 
-  CM_BLOCK *block = NULL;
+  CM_P7_OM_BLOCK *block = NULL;
   int status = eslOK;
 
   ESL_ALLOC(block, sizeof(*block));
 
   block->count = 0;
   block->listSize = 0;
-  block->list  = NULL;
+  block->list         = NULL;
+  block->cm_offsetA   = NULL;
+  block->cm_clenA     = NULL;
+  block->cm_WA        = NULL;
+  block->gfmuA        = NULL;
+  block->gflambdaA    = NULL;
 
-  ESL_ALLOC(block->list, sizeof(CM_t *) * count);
+  ESL_ALLOC(block->list,       sizeof(P7_OPROFILE *) * count);
+  ESL_ALLOC(block->cm_offsetA, sizeof(off_t)         * count);
+  ESL_ALLOC(block->cm_clenA,   sizeof(int)           * count);
+  ESL_ALLOC(block->cm_WA,      sizeof(int)           * count);
+  ESL_ALLOC(block->gfmuA,      sizeof(float)         * count);
+  ESL_ALLOC(block->gflambdaA,  sizeof(float)         * count);
   block->listSize = count;
 
   for (i = 0; i < count; ++i)
     {
-      block->list[i] = NULL;
+      block->list[i]      = NULL;
+      block->cm_offsetA[i] = 0;
+      block->cm_clenA[i]   = 0;
+      block->cm_WA[i]      = 0;
+      block->gfmuA[i]      = 0.;
+      block->gflambdaA[i]  = 0.;
     }
 
   return block;
@@ -2940,21 +2954,26 @@ cm_CreateBlock(int count)
  ERROR:
   if (block != NULL)
     {
-      if (block->list != NULL)  free(block->list);
+      if (block->list       != NULL)  free(block->list);
+      if (block->cm_offsetA != NULL)  free(block->cm_offsetA);
+      if (block->cm_clenA   != NULL)  free(block->cm_clenA);
+      if (block->cm_WA      != NULL)  free(block->cm_WA);
+      if (block->gfmuA      != NULL)  free(block->gfmuA);
+      if (block->gflambdaA  != NULL)  free(block->gflambdaA);
       free(block);
     }
   
   return NULL;
 }
 
-/* Function:  cm_DestroyBlock()
- * Synopsis:  Frees an <CMM_BLOCK>.
+/* Function:  cm_p7_oprofile_DestroyBlock()
+ * Synopsis:  Frees an <CM_P7_OPROFILE_BLOCK>.
  * Incept:    
  *
  * Purpose:   Free a Create()'d block of profiles.
  */
 void
-cm_DestroyBlock(CM_BLOCK *block)
+cm_p7_oprofile_DestroyBlock(CM_P7_OM_BLOCK *block)
 {
   int i;
 
@@ -2964,10 +2983,15 @@ cm_DestroyBlock(CM_BLOCK *block)
     {
       for (i = 0; i < block->listSize; ++i)
 	{
-	  if (block->list[i] != NULL) FreeCM(block->list[i]);
+	  if (block->list[i]    != NULL)  p7_oprofile_Destroy(block->list[i]);
 	}
       free(block->list);
     }
+  if (block->cm_offsetA != NULL)  free(block->cm_offsetA);
+  if (block->cm_clenA   != NULL)  free(block->cm_clenA);
+  if (block->cm_WA      != NULL)  free(block->cm_WA);
+  if (block->gfmuA      != NULL)  free(block->gfmuA);
+  if (block->gflambdaA  != NULL)  free(block->gflambdaA);
 
   free(block);
   return;
