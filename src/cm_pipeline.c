@@ -672,10 +672,6 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
   int i, nsteps;
   float T;
 
-  printf("in cm_pli_NewModel, mode: %s modmode: %s\n", 
-	 ((pli->mode == CM_SEARCH_SEQS)  ? "SEARCH" : "SCAN"), 
-	 ((modmode   == CM_NEWMODEL_MSV) ? "MSV" : "CM"));
-
   /* check contract */
   /* fsmx/smx have to be NULL, b/c they require the CM used to create them (gone now) to free them (poorly designed) */
   if(pli->fsmx != NULL)            ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, pli->fsmx non-null"); 
@@ -1032,9 +1028,9 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     p7_oprofile_ReconfigMSVLength(om, om->max_length); /* nhmmer's way */
   }
 
-#if DOPRINT
+  #if DOPRINT
   printf("\nPIPELINE p7Filter() %s  %" PRId64 " residues\n", sq->name, sq->n);
-#endif
+  #endif
 
   /* initializations */
   nsurv_fwd = 0;
@@ -1863,7 +1859,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
     printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived CYK       %6.2f bits  P %g\n", es[i], ee[i], cyksc, P);
 #endif
     if(pli->do_time_F6) continue; 
-    
+
     /******************************************************************************/
     /* Final stage: Inside/CYK with CM, report hits to a search_results_t data structure. */
     cm->search_opts  = pli->final_cm_search_opts;
@@ -1925,6 +1921,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 					  ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? FALSE : TRUE),
 					  FALSE,  /* do not allocate float matrices for Inside round */
 					  TRUE);  /* do     allocate int   matrices for Inside round */
+	  printf("created scan mx, final_dmin null? %s\n", pli->final_dmin == NULL ? "yes" : "no");
 	}
 	if((status = FastIInsideScan(cm, errbuf, pli->smx, sq->dsq, es[i], ee[i],
 				     pli->T,            /* minimum score to report */
@@ -1988,6 +1985,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
       printf("SURVIVOR envelope     [%10ld..%10ld] survived Inside    %6.2f bits  P %g\n", hit->start, hit->stop, hit->score, hit->pvalue);
 #endif
       /* Get an alignment of the hit, if nec */
+
       if(pli->do_alignments) { 
 	esl_stopwatch_Start(watch);  
 	
@@ -2038,6 +2036,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	    pli->n_aln_hbcyk++;
 	    do_optacc    = FALSE; /* optacc requires 2 CM_HB_MX matrices, and they're too big */
 	    do_postcode  = FALSE; /* ditto */
+	    postcode     = NULL;
 	    do_hbanded   = TRUE;  
 	    do_nonbanded = FALSE;
 	    total_Mb = hbmx_Mb + shmx_Mb;
@@ -2046,6 +2045,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	    pli->n_aln_dccyk++;
 	    do_optacc    = FALSE;
 	    do_postcode  = FALSE;
+	    postcode     = NULL;
 	    do_hbanded   = FALSE;
 	    do_nonbanded = TRUE;
 	  }
@@ -2085,7 +2085,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 				       do_optacc, do_hbanded, total_Mb, watch->elapsed);
 	/*cm_alidisplay_Dump(stdout, hit->ad);*/
 	FreeParsetree(tr);
-	free(postcode);
+	if(do_postcode && postcode != NULL) free(postcode);
       } /* end of 'if(pli->do_alignments' */
 
       /* Finally, if we're using model-specific bit score thresholds,
@@ -2134,6 +2134,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
     else { 
       nhit = results->num_results;
     }
+
   }
   if(! do_final_greedy) { 
     FreeResults(results);
@@ -2145,6 +2146,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
   if(out_mx != NULL) { cm_hb_mx_Destroy(out_mx); out_mx = NULL; }
   if(shmx   != NULL) { cm_hb_shadow_mx_Destroy(shmx); shmx = NULL; }
   if(watch  != NULL) { esl_stopwatch_Destroy(watch); }
+
   return eslOK;
 }
 

@@ -1,5 +1,5 @@
-/* dcmsearch: search CM(s) against a nucleotide sequence database,
- *            using profile HMM(s) to prefilter the database.
+/* cmsearch: search CM(s) against a nucleotide sequence database,
+ *           using profile HMM(s) to prefilter the database.
  * 
  * Based on HMMER 3's nhmmer.c, which was based on hmmsearch.c.
  * EPN, Fri Sep 24 10:58:08 2010
@@ -70,7 +70,7 @@ typedef struct {
 #define INCOPTS     "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
 #define THRESHOPTS  "-E,-T,--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
 #define XFASTMIDMAXOPTS "--max,--F1,--F2,--F3,--F4,--F5,--F6,--noF1,--noF2,--noF3,--nogfwd,--nocyk,--nohmm,--hmm"
-#define TIMINGOPTS  "--time-F1,--time-F2,--time-F3,--time-dF3,--time-bfil,--time-F4"
+#define TIMINGOPTS  "--time-F1,--time-F2,--time-F3,--time-F4,--time-F5,--time-F6"
 
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
 #define CPUOPTS     "--mpi"
@@ -183,7 +183,7 @@ static ESL_OPTIONS options[] = {
   { "--fbeta",        eslARG_REAL,    "1e-9",    NULL, "0<x<1", NULL,    "--fqdb","--hmm,--nocyk",  "set tail loss prob for CYK filter QDB calculation to <x>", 20 },
   { "--fnonbanded",   eslARG_NONE,    FALSE,     NULL, NULL,    NULL,    "--fqdb","--hmm,--nocyk",  "do not use any bands for CYK filter round", 20},
   /* banded options for final round of searching */
-  { "--tau",          eslARG_REAL,   "1e-7",     NULL, "0<x<1", NULL,        NULL,       "--qdb,--nonbanded,--hmm", "set tail loss prob for --hbanded to <x>", 20 },
+  { "--tau",          eslARG_REAL,   "5e-6",     NULL, "0<x<1", NULL,        NULL,       "--qdb,--nonbanded,--hmm", "set tail loss prob for --hbanded to <x>", 20 },
   { "--sums",         eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,       "--qdb,--nonbanded,--hmm", "w/--hbanded use posterior sums (widens bands)", 20 },
   { "--qdb",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--nonbanded,--hmm,--tau", "use QDBs (instead of HMM bands) in final Inside round", 20 },
   { "--beta",         eslARG_REAL,   "1e-15",    NULL, "0<x<1",  NULL,     "--qdb",        "--hmm", "set tail loss prob for final Inside QDB calculation to <x>", 20 },
@@ -681,6 +681,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       /* Sort by sequence index/position and remove duplicates */
       cm_tophits_SortBySeqIdx(info[0].th);
       cm_tophits_RemoveDuplicates(info[0].th);
+
       /* Resort by score and enforce threshold */
       cm_tophits_SortByScore(info[0].th);
       cm_tophits_Threshold(info[0].th, info[0].pli);
@@ -1428,7 +1429,6 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
     cm_pli_NewSeq(info->pli, dbsq, seq_idx);
     info->pli->nres -= dbsq->C; /* to account for overlapping region of windows */
     
-    printf("cm->W: %d\n", info->cm->W);
     if (info->pli->do_top) { 
       prev_hit_cnt = info->th->N;
       if((status = cm_Pipeline(info->pli, info->cm->offset, info->omA, info->gmA, info->bgA, info->p7_evparamAA, info->nhmm, dbsq, info->th, &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);

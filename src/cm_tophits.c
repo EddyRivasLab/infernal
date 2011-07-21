@@ -1267,13 +1267,17 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
   }
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED)    {
-      fprintf(ofp, "%-*s %-*s %-*s %-*s %7d %7d %*ld %*ld %6s %9.2g %6.1f %s\n",
+      /* print occurs in three statements, b/c cfrom/cto can only be printed if we have a alignment display computed */
+      fprintf(ofp, "%-*s %-*s %-*s %-*s ",
 	      tnamew, th->hit[h]->name,
 	      taccw,  ((th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') ? th->hit[h]->acc : "-"),
 	      qnamew, qname,
-	      qaccw,  ((qacc != NULL && qacc[0] != '\0') ? qacc : "-"),
-	      th->hit[h]->ad->cfrom,
-	      th->hit[h]->ad->cto,
+	      qaccw,  ((qacc != NULL && qacc[0] != '\0') ? qacc : "-"));
+
+      if(th->hit[h]->ad == NULL) { fprintf(ofp, "%7s %7s ", "-", "-"); }
+      else                       { fprintf(ofp, "%7d %7d ", th->hit[h]->ad->cfrom, th->hit[h]->ad->cto); }
+
+      fprintf(ofp, "%*ld %*ld %6s %9.2g %6.1f %s\n",
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->start < th->hit[h]->stop ? "+" : "-"),

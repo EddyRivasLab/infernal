@@ -1368,6 +1368,7 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 					  &nhmm_read, &cm_offsetA, &cm_clenA, &cm_WA, &gfmuA, &gflambdaA, &omA)) == eslOK)
     {
       esl_stopwatch_Start(w);
+      /***************************************************************************************/
       /* TEMP (?) BLOCK: this will all be unnec if we force a single p7 filter for each CM */
       if(nhmm != nhmm_read) { /* we need to create new BGs (this is wasteful, we could be careful and keep min(nhmm, read_nhmm) BGs around) */
 	for(m = 0; m < nhmm; m++) { 
@@ -1399,8 +1400,8 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 	if(cm_clenA[m]   != cm_clenA[0])   cm_Fail("read incompatible CM clen values from MSV file %s.i1f", cmfp->fname);
 	if(cm_WA[m]      != cm_WA[0])      cm_Fail("read incompatible CM W values from MSV file %s.i1f", cmfp->fname);
       }
-      /* TEMP (?) BLOCK: this will all be unnec if we force a single p7 filter for each CM */
-
+      /* END OF TEMP (?) BLOCK */
+      /***************************************************************************************/
       //if((status = setup_cm(cm, abc, info, errbuf, &nhmm, &hmmA, &bgA, &omA, &gmA, &p7evpAA)) != eslOK) cm_Fail(errbuf);
       cm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
       cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */

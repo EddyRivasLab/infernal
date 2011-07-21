@@ -273,6 +273,7 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   cmfp->efp          = NULL;
   cmfp->ffp          = NULL;
   cmfp->pfp          = NULL;
+  cmfp->gfp          = NULL;
   cmfp->ssi          = NULL;
   cmfp->errbuf[0]    = '\0';
 
@@ -504,7 +505,7 @@ cm_file_Close(CM_FILE *cmfp)
 #ifdef HMMER_THREADS
 /* Function:  cm_file_CreateLock()
  * Incept:    EPN, Fri Jun 17 10:07:06 2011
- *            MSF, Wed July 15 2009 (p7_hmmfile_CreateLock()
+ *            MSF, Wed July 15 2009 (p7_hmmfile_CreateLock())
  *
  * Purpose:   Create a lock to syncronize readers.
  *

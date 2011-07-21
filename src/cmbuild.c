@@ -1474,12 +1474,10 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
     fflush(stdout);
   }
 
-  if(esl_opt_GetBoolean(go, "--v1p0")) { 
-    /* configure local for calculating W (ignores ROOT_IL, ROOT_IR), this way is consistent with Infernal 1.0->1.0.2 */
-    cm->config_opts |= CM_CONFIG_LOCAL;    
-    cm->config_opts |= CM_CONFIG_HMMLOCAL; 
-    cm->config_opts |= CM_CONFIG_HMMEL;    
-  }
+  /* configure local for calculating W (ignores ROOT_IL, ROOT_IR), this way is consistent with Infernal 1.0->1.0.2 */
+  cm->config_opts |= CM_CONFIG_LOCAL;    
+  cm->config_opts |= CM_CONFIG_HMMLOCAL; 
+  cm->config_opts |= CM_CONFIG_HMMEL;    
 
   /* ConfigCM() must calculate QDBs */
   cm->config_opts |= CM_CONFIG_QDB;   
@@ -1487,13 +1485,11 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
 			TRUE, /* do calculate W */
 			NULL, NULL)) != eslOK) return status;
 
-  if(esl_opt_GetBoolean(go, "--v1p0")) { 
-    /* Some hackery, to match v1.0-->v1.0.2's method */
-    cm->flags &= ~CMH_QDB;     /* so QDBs/W are not recalculated after globalizing in ConfigGlobal() */
-    /* Convert back to global */
-    ConfigGlobal(cm);
-    cm->flags |= CMH_QDB;
-  }
+  /* Some hackery, to match v1.0-->v1.0.2's method */
+  cm->flags &= ~CMH_QDB;     /* so QDBs/W are not recalculated after globalizing in ConfigGlobal() */
+  /* Convert back to global */
+  ConfigGlobal(cm);
+  cm->flags |= CMH_QDB;
 
   if (cfg->be_verbose) { 
     fprintf(stdout, "done.  ");
