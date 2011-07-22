@@ -557,7 +557,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_ALLOC(info, sizeof(WORKER_INFO) * infocnt);
 
   /* <abc> is not known 'til first CM is read. Could be DNA or RNA*/
-  qhstatus = cm_file_Read(cmfp, &abc, &cm);
+  qhstatus = cm_file_Read(cmfp, TRUE, &abc, &cm);
 
   if (qhstatus == eslOK) {
     /* One-time initializations after alphabet <abc> becomes known */
@@ -712,7 +712,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       free_info(&(info[0]));
       free(hmmA);
 
-      qhstatus = cm_file_Read(cmfp, &abc, &cm);
+      qhstatus = cm_file_Read(cmfp, TRUE, &abc, &cm);
   } /* end outer loop over query CMs */
 
   switch(qhstatus) {
@@ -954,7 +954,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if((info = create_info()) == NULL) mpi_failure("Out of memory");
 
   /* <abc> is not known 'til first CM is read. */
-  hstatus = cm_file_Read(cmfp, &abc, &(info->cm));
+  hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
   if (hstatus == eslOK)
     {
       /* One-time initializations after alphabet <abc> becomes known */
@@ -1154,7 +1154,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       free_mpi_block_list(block_list);
       block_list = NULL;
 
-      hstatus = cm_file_Read(cmfp, &abc, &(info->cm));
+      hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
       if(hstatus == eslOK) { 
 	if((info = create_info()) == NULL) mpi_failure("Out of memory"); /* for the next model */
       }
@@ -1258,7 +1258,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if((info = create_info()) == NULL) mpi_failure("Out of memory");
 
   /* <abc> is not known 'til first CM is read. */
-  hstatus = cm_file_Read(cmfp, &abc, &(info->cm));
+  hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
   if (hstatus == eslOK)
     {
       /* One-time initializations after alphabet <abc> becomes known */
@@ -1378,7 +1378,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       free_info(info);
       free(info);
       
-      hstatus = cm_file_Read(cmfp, &abc, &(info->cm));
+      hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
       if(hstatus == eslOK) { 
 	if((info = create_info()) == NULL) mpi_failure("Out of memory"); /* info is for the next model */
       }

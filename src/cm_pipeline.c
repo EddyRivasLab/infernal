@@ -1164,9 +1164,9 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
 #endif      
     if(pli->do_time_F1) return eslOK;
     
-    /* In scan mode, if it passes the MSV filter, read the rest of the profile */
+    /* In scan mode, if it passes the MSV filter (or if MSV filter is off) read the rest of the profile */
     if (pli->mode == CM_SCAN_MODELS && (! have_rest)) {
-      if (pli->cmfp) p7_oprofile_ReadRest(pli->cmfp->gfp, om);
+      if (pli->cmfp) p7_oprofile_ReadRest(pli->cmfp->hfp, om);
       /* Note: we don't call cm_pli_NewModelThresholds() yet (as p7_pipeline() 
        * does at this point), because we don't yet have the CM */
       have_rest = TRUE;
@@ -1422,19 +1422,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
     P7_HMM       *hmm = NULL;
     if (pli->cmfp      == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in cm_pli_p7EnvelopeDef()");
     if (pli->cmfp->hfp == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in cm_pli_p7EnvelopeDef()");
-#ifdef HMMER_THREADS
-    /* lock the mutex to prevent other threads from reading the file at the same time */
-    if (pli->cmfp->gfp->syncRead) { 
-      if (pthread_mutex_lock (&pli->cmfp->gfp->readMutex) != 0) ESL_FAIL(eslESYS, pli->errbuf, "mutex lock failed");
-    }
-#endif
-    p7_hmmfile_Position(pli->cmfp->gfp, om->offs[p7_MOFFSET]);
-    p7_hmmfile_Read    (pli->cmfp->gfp, &(pli->abc), &hmm);
-#ifdef HMMER_THREADS
-    if (pli->cmfp->gfp->syncRead) { 
-      if (pthread_mutex_unlock (&pli->cmfp->gfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
-    }
-#endif    
+    if((status = cm_p7_hmmfile_Read(pli->cmfp, pli->abc, om->offs[p7_MOFFSET], &hmm)) != eslOK) ESL_FAIL(status, pli->errbuf, pli->cmfp->errbuf);
     *opt_gm = p7_profile_Create(hmm->M, pli->abc);
     p7_ProfileConfig(hmm, bg, *opt_gm, 100, p7_GLOCAL);
     p7_hmm_Destroy(hmm);
@@ -1726,23 +1714,21 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS) { 
     if(*opt_cm == NULL) { 
-      printf("READING CM\n", pli->cmfp->syncRead);
 #ifdef HMMER_THREADS
       /* lock the mutex to prevent other threads from reading the file at the same time */
       if (pli->cmfp->syncRead) { 
 	if (pthread_mutex_lock (&pli->cmfp->readMutex)      != 0) ESL_FAIL(eslESYS, pli->errbuf, "mutex lock failed");
-	if (pthread_mutex_lock (&pli->cmfp->hfp->readMutex) != 0) ESL_FAIL(eslESYS, pli->errbuf, "mutex lock failed");
+	//if (pthread_mutex_lock (&pli->cmfp->hfp->readMutex) != 0) ESL_FAIL(eslESYS, pli->errbuf, "mutex lock failed");
       }
 #endif
       cm_file_Position(pli->cmfp, cm_offset);
-      if((status = cm_file_Read(pli->cmfp, &(pli->abc), opt_cm)) != eslOK) ESL_FAIL(status, pli->errbuf, pli->cmfp->errbuf);
+      if((status = cm_file_Read(pli->cmfp, FALSE, &(pli->abc), opt_cm)) != eslOK) ESL_FAIL(status, pli->errbuf, pli->cmfp->errbuf);
 #ifdef HMMER_THREADS
       if (pli->cmfp->syncRead) { 
 	if (pthread_mutex_unlock (&pli->cmfp->readMutex)      != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
-	if (pthread_mutex_unlock (&pli->cmfp->hfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
+	//if (pthread_mutex_unlock (&pli->cmfp->hfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
       }
 #endif    
-      printf("CONFIGURING CM %s\n", (*opt_cm)->name);
       if((status = ConfigCM(*opt_cm, pli->errbuf, FALSE, NULL, NULL)) != eslOK) return status;
       /* update the pipeline about the model */
       if((status = cm_pli_NewModel(pli, CM_NEWMODEL_CM, *opt_cm, (*opt_cm)->clen, (*opt_cm)->W, 

@@ -156,7 +156,7 @@ create_ssi_index(ESL_GETOPTS *go, CM_FILE *cmfp, char *cmfile)
   printf("Working...    "); 
   fflush(stdout);
   
-  while ((status = cm_file_Read(cmfp, &abc, &cm)) == eslOK)
+  while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) == eslOK)
     { 
       ncm++;
       
@@ -232,7 +232,7 @@ multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CM_FILE *cmfp, char *cmfil
 
   if (cmfp->ssi == NULL) 
     {
-      while ((status = cm_file_Read(cmfp, &abc, &cm)) == eslOK)
+      while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) == eslOK)
 	{
 	  if (esl_keyhash_Lookup(keys, cm->name, -1, &keyidx) == eslOK || 
 	      ((cm->acc) && esl_keyhash_Lookup(keys, cm->acc, -1, &keyidx) == eslOK))
@@ -276,7 +276,7 @@ onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CM_FILE *cmfp, char *cmfile)
       else if (status != eslOK)        cm_Fail("Failed to look up location of CM %s in SSI index of file %s\n", key, cmfile);
     }
 
-  while ((status = cm_file_Read(cmfp, &abc, &cm)) != eslEOF)
+  while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) != eslEOF)
     {
       if(cm == NULL) cm_Fail(cmfp->errbuf);
       if (strcmp(key, cm->name) == 0 || (cm->acc && strcmp(key, cm->acc) == 0)) break;

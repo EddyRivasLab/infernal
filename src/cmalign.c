@@ -622,7 +622,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status  = init_master_cfg(go, cfg, errbuf)) != eslOK)  cm_Fail(errbuf);
   if ((status  = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
   
-  while ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK) 
+  while ((status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm)) == eslOK) 
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
@@ -824,7 +824,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    * Unrecoverable errors just crash us out with cm_Fail().
    */
 
-  while (xstatus == eslOK && ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK)) 
+  while (xstatus == eslOK && ((status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm)) == eslOK)) 
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;  
@@ -2722,7 +2722,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_ALLOC(cmlist, sizeof(CM_t *) * nalloc);
   status = eslOK;
   while (status == eslOK) { 
-    status = cm_file_Read(cfg->cmfp, &(cfg->abc), &(cmlist[cfg->ncm]));
+    status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &(cmlist[cfg->ncm]));
     if(status == eslOK) { 
       cfg->ncm++;
       if(cfg->ncm == nalloc) { 

@@ -293,7 +293,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   cfg->ncm = 0;
 
-  while ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK)
+  while ((status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm)) == eslOK)
   {
     if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
     cfg->ncm++;

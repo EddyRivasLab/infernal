@@ -539,7 +539,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
 
-  while ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK)
+  while ((status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm)) == eslOK)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
@@ -678,7 +678,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    * Unrecoverable errors just crash us out with cm_Fail().
    */
 
-  while (xstatus == eslOK && ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK))
+  while (xstatus == eslOK && ((status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm)) == eslOK))
     {
       cfg->ncm++;  
       ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));

@@ -979,7 +979,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   if ((status = cm_Validate(cm, 0.0001, errbuf))     != eslOK) return status;
 
   if (esl_opt_GetBoolean(go, "--binary")) { 
-    if ((status = cm_file_WriteBinary(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
+    if ((status = cm_file_WriteBinary(cfg->cmoutfp, -1, cm, NULL)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
   }
   else { 
     if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");

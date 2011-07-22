@@ -58,7 +58,7 @@ main(int argc, char **argv)
   else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
   else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",                       status, cmfile, errbuf);  
 
-  while ((status = cm_file_Read(cmfp, &abc, &cm)) == eslOK)
+  while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) == eslOK)
     {
       if(cmfp->format == CM_FILE_1) { 
 	/* we need to calculate QDBs (cm->dmin, cm->dmax), cm->W, cm->consensus, 
@@ -66,8 +66,7 @@ main(int argc, char **argv)
 	if ((status = configure_model(cm, errbuf))       != eslOK) cm_Fail(errbuf);
       }	
       if      (esl_opt_GetBoolean(go, "-a") == TRUE) cm_file_WriteASCII (ofp, fmtcode, cm);
-      else if (esl_opt_GetBoolean(go, "-b") == TRUE) cm_file_WriteBinary(ofp, fmtcode, cm);
-      //else if (esl_opt_GetBoolean(go, "-1") == TRUE) cm_file_WriteASCII (ofp, cm);
+      else if (esl_opt_GetBoolean(go, "-b") == TRUE) cm_file_WriteBinary(ofp, fmtcode, cm, NULL);
 
       FreeCM(cm);
     }

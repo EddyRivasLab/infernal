@@ -455,7 +455,7 @@ main(int argc, char **argv)
     if ((outfp = fopen(cfg.tmpfile, cfg.mode)) == NULL) cm_Fail("Ouch. Temporary file %s couldn't be opened for writing.", cfg.tmpfile); 
     
     for (cmi = 0; cmi < cfg.ncm; cmi++) {
-      if ((status = cm_file_Read(cfg.cmfp, &(cfg.abc), &cm)) != eslOK) cm_Fail("Ran out of CMs too early in pass 2");
+      if ((status = cm_file_Read(cfg.cmfp, TRUE, &(cfg.abc), &cm)) != eslOK) cm_Fail("Ran out of CMs too early in pass 2");
       if (cm == NULL)                                                  cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
 
       /* update the cm->comlog info */
@@ -475,7 +475,7 @@ main(int argc, char **argv)
       cm->flags |= CMH_EXPTAIL_STATS; 
       cm->flags |= CMH_FILTER_STATS; 
       if(cfg.cmfp->is_binary) { 
-	if ((status = cm_file_WriteBinary(outfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
+	if ((status = cm_file_WriteBinary(outfp, -1, cm, NULL)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
       }
       else { 
 	if ((status = cm_file_WriteASCII(outfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
@@ -721,7 +721,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = print_run_info (go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   
-  while ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK) 
+  while ((status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm)) == eslOK) 
     {
       if      (status == eslEOD)  cm_Fail("read failed, CM file %s may be truncated?", cfg->cmfile);
       else if (status != eslOK)   cm_Fail(cfg->cmfp->errbuf);
@@ -1129,7 +1129,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    * Unrecoverable errors just crash us out with cm_Fail().
    */
   
-  while ((xstatus == eslOK) && ((status = cm_file_Read(cfg->cmfp, &(cfg->abc), &cm)) == eslOK)) 
+  while ((xstatus == eslOK) && ((status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm)) == eslOK)) 
     {
       cfg->ncm++;  
       if(cfg->ncm == cfg->cmalloc) { /* expand our memory */

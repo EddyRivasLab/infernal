@@ -1438,8 +1438,6 @@ enum cm_file_formats_e {
 };
 
 typedef struct cm_file_s {
-  P7_HMMFILE   *hfp;             /* for reading p7 HMMs within the CM file */
-
   FILE         *f;		 /* pointer to stream for reading models                 */
   char         *fname;	         /* (fully qualified) name of the CM file; [STDIN] if -  */
   ESL_SSI      *ssi;		 /* open SSI index for model file <f>; NULL if none.     */
@@ -1451,13 +1449,14 @@ typedef struct cm_file_s {
   int           is_pressed;	/* TRUE if a pressed CM database file (Rfam or equiv)   */
 
   int            format;	/* CM file format code */
-  int           (*parser)(struct cm_file_s *, ESL_ALPHABET **, CM_t **);  
+  int           (*parser)(struct cm_file_s *, int, ESL_ALPHABET **, CM_t **);  
   ESL_FILEPARSER *efp;
+
+  P7_HMMFILE   *hfp;            /* for reading p7 HMMs within the CM file */
 
   /* If <is_pressed>, we can read HMM filters directly, via: */
   FILE         *ffp;		/* MSV part of the optimized profile HMM */
   FILE         *pfp;		/* rest of the optimized profile HMM     */
-  P7_HMMFILE   *gfp;            /* full HMM file, nec for getting generic profiles for glocal envelope defn */
 
 #ifdef HMMER_THREADS
   int              syncRead;

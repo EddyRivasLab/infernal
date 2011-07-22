@@ -114,7 +114,7 @@ main(int argc, char **argv)
   fprintf(stdout, "# %-4s  %-20s  %-12s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %5s  %5s\n", "----", "--------------------", "------------", "--------", "--------", "----", "----", "----",   "----", "-----", "-----", "-----");
 
   ncm = 0;
-  while ((status = cm_file_Read(cmfp, &abc, &cm)) != eslEOF) 
+  while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) != eslEOF) 
     {
       if      (status == eslEOD)  cm_Fail("read failed, CM file %s may be truncated?", cmfile);
       else if (status != eslOK)   cm_Fail(cmfp->errbuf);

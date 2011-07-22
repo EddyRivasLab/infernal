@@ -1,4 +1,4 @@
-/* Input/output of HMMs.
+/* Input/output of CMs.
  * 
  * EPN, Fri Jun 17 09:37:56 2011
  * Based on p7_hmmfile.c copied from HMMER svn revision 3570.
@@ -49,9 +49,9 @@ static uint32_t  v1a_magic  = 0xe3edb0b2; /* v1.1 binary: "cm02" + 0x80808080 */
 /* CHANGE THESE, I COPIED HMMER's BECAUSE I DIDN'T KNOW HOW TO CONVERT STRING TO MAGIC */
 static uint32_t  v1a_fmagic = 0xb3e4e6f3; /* 3/d binary MSV file, SSE:     "3dfs" = 0x 33 64 66 73  + 0x80808080 */
 
-static int read_asc_1p1_cm(CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
-static int read_bin_1p1_cm(CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
-static int read_asc_1p0_cm(CM_FILE *hfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
+static int read_asc_1p1_cm(CM_FILE *hfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
+static int read_bin_1p1_cm(CM_FILE *hfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
+static int read_asc_1p0_cm(CM_FILE *hfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
 
 static int   write_bin_string(FILE *fp, char *s);
 static int   read_bin_string (FILE *fp, char **ret_s);
@@ -188,7 +188,7 @@ cm_file_OpenNoDB(char *filename, char *env, int allow_1p0, CM_FILE **ret_cmfp, c
 int
 cm_file_OpenBuffer(char *buffer, int size, int allow_1p0, CM_FILE **ret_cmfp)
 {
-  CM_FILE *cmfp     = NULL;
+  CM_FILE    *cmfp = NULL;
   int         status;
   char       *tok;
   int         toklen;
@@ -258,7 +258,6 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   int         toklen;
 
   ESL_ALLOC(cmfp, sizeof(CM_FILE));
-  cmfp->hfp          = NULL;
   cmfp->f            = NULL;
   cmfp->fname        = NULL;
   cmfp->do_gzip      = FALSE;
@@ -271,9 +270,9 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
 #endif
   cmfp->parser       = NULL;
   cmfp->efp          = NULL;
+  cmfp->hfp          = NULL;
   cmfp->ffp          = NULL;
   cmfp->pfp          = NULL;
-  cmfp->gfp          = NULL;
   cmfp->ssi          = NULL;
   cmfp->errbuf[0]    = '\0';
 
@@ -369,25 +368,46 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
       else     ESL_XFAIL(eslENOTFOUND, errbuf, "CM file %s not found (nor an .i1m binary of it)",                    filename);
     }
 
+  /* 5. Set up the HMM file <cmfp->hfp> that we'll use to read p7
+   *     filter HMMs from within the CM file. We do this before we
+   *     handle press'd model files, so we can set <cmfp->hfp->ffp>
+   *     and <cmfp->hfp->pfp> if necessary.
+   *      
+   */
+  ESL_ALLOC(cmfp->hfp, sizeof(P7_HMMFILE));
+  if ((cmfp->hfp->f = fopen(cmfp->fname, "r")) == NULL) goto ERROR;
+  cmfp->hfp->do_gzip      = cmfp->do_gzip;
+  cmfp->hfp->do_stdin     = cmfp->do_stdin;
+  cmfp->hfp->newly_opened = TRUE;	/* well, it will be, real soon now */
+  cmfp->hfp->is_pressed   = cmfp->is_pressed;
+#ifdef HMMER_THREADS
+  cmfp->hfp->syncRead     = FALSE;
+#endif
+  cmfp->hfp->parser       = NULL;
+  cmfp->hfp->efp          = NULL;
+  cmfp->hfp->ffp          = NULL;
+  cmfp->hfp->pfp          = NULL;
+  cmfp->hfp->ssi          = NULL;      /* not sure if this should point to cmfp->ssi */
+  cmfp->hfp->errbuf[0]    = '\0';
+  if ((status = esl_strdup(cmfp->fname, -1, &(cmfp->hfp->fname))) != eslOK) goto ERROR;
 
-  /* 5. If we found and opened a binary model file .i1m, open the rest of 
-   *     the press'd model files. (this can't be true if do_ascii_only is set)
+  /* 6. If we found and opened a binary model file .i1m, open the rest of 
+   *     the press'd model files. (this can't be true if do_ascii_only is set).
+   *     Note that we set cmfp->hfp->ffp and cmfp->hfp->pfp at the end of the
+   *     function after we've 
    */
   if (cmfp->is_pressed) 
     {
-      /* here we rely on the fact that the suffixes are .i1{mgfpi}, to construct other names from .i1m file name !! */
+      /* here we rely on the fact that the suffixes are .i1{mfpi}, to construct other names from .i1m file name !! */
       n = strlen(cmfp->fname); 	/* so, n = '\0', n-1 = 'm'  */
       esl_strdup(cmfp->fname, n, &dbfile);
 
-      dbfile[n-1] = 'h';	/* the binary file of full HMMs */
-      if((status = p7_hmmfile_OpenENoDB(dbfile, NULL, &(cmfp->gfp), errbuf)) != eslOK) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1h file found", cmfp->fname);
-      
       dbfile[n-1] = 'f';	/* the MSV filter part of the optimized sequence profiles (HMMs) */
       if ((cmfp->ffp      = fopen(dbfile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1f file found", cmfp->fname);
-      if ((cmfp->gfp->ffp = fopen(dbfile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1f file found", cmfp->fname);
+      if ((cmfp->hfp->ffp = fopen(dbfile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1f file found", cmfp->fname);
 
       dbfile[n-1] = 'p';	/* the remainder of the optimized sequence profiles (HMMs) */
-      if ((cmfp->gfp->pfp = fopen(dbfile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1p file found", cmfp->fname);
+      if ((cmfp->hfp->pfp = fopen(dbfile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1p file found", cmfp->fname);
 
       dbfile[n-1] = 'i';	/* the SSI index for the .i1m file */
       status = esl_ssi_Open(dbfile, &(cmfp->ssi));
@@ -395,9 +415,6 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
       else if (status == eslEFORMAT)   ESL_XFAIL(eslEFORMAT,   errbuf, "Opened %s, a pressed HMM file; but format of its .i1i file unrecognized", cmfp->fname);
       else if (status == eslERANGE)    ESL_XFAIL(eslEFORMAT,   errbuf, "Opened %s, a pressed HMM file; but its .i1i file is 64-bit and your system is 32-bit", cmfp->fname);
       else if (status != eslOK)        ESL_XFAIL(eslEFORMAT,   errbuf, "Opened %s, a pressed HMM file; but failed to open its .i1i file", cmfp->fname);
-
-      /* set up cmfp->hfp so we can call p7_oprofile_ReadMSV() to read MSV parts of 
-       * optimized profiles from cmfp->ffp */
 
       free(dbfile); dbfile = NULL;      
     }
@@ -413,12 +430,12 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
     }
 
 
-  /* 6. Check for binary file format. A pressed db is automatically binary: verify. */
+  /* 7. Check for binary file format. A pressed db is automatically binary: verify. */
   if (! fread((char *) &(magic.n), sizeof(uint32_t), 1, cmfp->f))  ESL_XFAIL(eslEFORMAT, errbuf, "File exists, but appears to be empty?");
   if      (magic.n == v1a_magic) { cmfp->format = CM_FILE_1a; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
   else if (cmfp->is_pressed) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s unrecognized\nCurrent Infernal format is INFERNAL1/a. Previous Infernal formats are not supported.", cmfp->fname);
 
-  /* 7. Checks for ASCII file format */
+  /* 8. Checks for ASCII file format */
   if (cmfp->parser == NULL)
     {
       /* Does the magic appear to be binary, yet we didn't recognize it? */
@@ -435,24 +452,6 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
       else                                                       { ESL_XFAIL(eslEFORMAT, errbuf, "Format tag is '%s': unrecognized or not supported.", tok); }
     }
 
-  /* Set up the HMM file <cmfp->hfp> */
-  ESL_ALLOC(cmfp->hfp, sizeof(P7_HMMFILE));
-  if ((cmfp->hfp->f = fopen(cmfp->fname, "r")) == NULL) goto ERROR;
-  cmfp->hfp->do_gzip      = cmfp->do_gzip;
-  cmfp->hfp->do_stdin     = cmfp->do_stdin;
-  cmfp->hfp->newly_opened = TRUE;	/* well, it will be, real soon now */
-  cmfp->hfp->is_pressed   = FALSE;
-#ifdef HMMER_THREADS
-  cmfp->hfp->syncRead     = FALSE;
-#endif
-  cmfp->hfp->parser       = NULL;
-  cmfp->hfp->efp          = NULL;
-  cmfp->hfp->ffp          = NULL;
-  cmfp->hfp->pfp          = NULL;
-  cmfp->hfp->ssi          = NULL;      /* not sure if this should point to cmfp->ssi */
-  cmfp->hfp->errbuf[0]    = '\0';
-  if ((status = esl_strdup(cmfp->fname, -1, &(cmfp->hfp->fname))) != eslOK) goto ERROR;
-
   *ret_cmfp = cmfp;
   return eslOK;
 
@@ -460,7 +459,7 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   if (cmd     != NULL)  free(cmd);
   if (dbfile  != NULL)  free(dbfile);
   if (envfile != NULL)  free(envfile);
-  if (cmfp    != NULL) cm_file_Close(cmfp);
+  if (cmfp    != NULL)  cm_file_Close(cmfp);
   *ret_cmfp = NULL;
   if      (status == eslEMEM)       return status;
   else if (status == eslENOTFOUND)  return status;
@@ -494,7 +493,6 @@ cm_file_Close(CM_FILE *cmfp)
 #endif
 
   if(cmfp->hfp != NULL) p7_hmmfile_Close(cmfp->hfp);
-  if(cmfp->gfp != NULL) p7_hmmfile_Close(cmfp->gfp);
 
   free(cmfp);
 }
@@ -526,8 +524,6 @@ cm_file_CreateLock(CM_FILE *cmfp)
   /* create lock on hmm files as well */
   if (cmfp->hfp != NULL)
     if((status = p7_hmmfile_CreateLock(cmfp->hfp)) != eslOK) goto ERROR;
-  if (cmfp->gfp != NULL)
-    if((status = p7_hmmfile_CreateLock(cmfp->gfp)) != eslOK) goto ERROR;
 
   return eslOK;
 
@@ -739,16 +735,21 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
  *            code such as <CM_FILE_1a> to select a specific
  *            binary format.
  *
- * Returns:   <eslOK> on success.
- *            <eslFAIL> if any writes fail (for instance,
- *            if disk fills up, which did happen during testing!).
+ * Returns:   <eslOK> on success. File position of start of fp7 is
+ *            sent back in <*opt_fp7_offset> if it is non-NULL. If no
+ *            fp7 is written, (<*opt_fp7_offset> is 0) and caller will
+ *            know no fp7 is written because (cm->fp7 == NULL) || (!
+ *            (cm->flags & CMH_FP7)).  <eslFAIL> if any writes fail
+ *            (for instance, if disk fills up, which did happen during
+ *            testing!).
  *
  * Throws:    <eslEINVAL> if <format> isn't a valid 3.0 format code.
  */
 int
-cm_file_WriteBinary(FILE *fp, int format, CM_t *cm)
+cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
 {
   int v, z;
+  off_t fp7_offset;
 
   if (format == -1) format = CM_FILE_1a;
 
@@ -832,10 +833,16 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm)
   }
 
   /* finally, write the filter p7 HMM */
+  fp7_offset = 0; 
+  /* fp7_offset remains 0 if we don't write a fp7, caller will know that no 
+   * fp7 was written if (! (cm->flags & CMH_FP7)) || cm->fp7 == NULL 
+   */
   if(cm->flags & CMH_FP7 && cm->fp7 != NULL) { 
+    if((fp7_offset = ftello(fp)) == -1) ESL_EXCEPTION(eslEINVAL, "failed to determine file position for p7 filter");
     p7_hmmfile_WriteBinary(fp, -1, cm->fp7);
   }
   
+  if(opt_fp7_offset != NULL) *opt_fp7_offset = fp7_offset;
   return eslOK;
 }
 /*----------------- end, save file output  ----------------------*/
@@ -884,6 +891,17 @@ write_bin_string(FILE *fp, char *s)
  *            only interested in whether the file contains a valid
  *            CM or not -- for example, to verify that a file contains
  *            only a single CM instead of a database of them.)
+ *
+ *            Read a p7 filter HMM (if one exists) for the CM if
+ *            <read_fp7> is TRUE, else, don't read one. This allows us
+ *            to read only the CM if we're using a pressed file in
+ *            cmscan and already have read the p7 filter HMM
+ *            previously. However be careful with this, because caller
+ *            will have problems if it tries to read the file
+ *            sequentially with <read_fp7> as FALSE because file
+ *            offset will not be at the beginning of the next CM upon
+ *            return, it will be at the beginning of the p7 filter for
+ *            the last CM read, if one exists.
  *            
  *            Caller may or may not already know what alphabet the CM
  *            is expected to be in.  A reference to the pointer to the
@@ -931,10 +949,10 @@ write_bin_string(FILE *fp, char *s)
  *            as file positioning functions (<fseeko()> or <ftello()>.
  */
 int
-cm_file_Read(CM_FILE *cmfp, ESL_ALPHABET **ret_abc,  CM_t **opt_cm)
+cm_file_Read(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc,  CM_t **opt_cm)
 {
   /* A call to SSI to remember file position may eventually go here.  */
-  return (*cmfp->parser)(cmfp, ret_abc, opt_cm);
+  return (*cmfp->parser)(cmfp, read_fp7, ret_abc, opt_cm);
 }
 
 /* Function:  cm_file_PositionByKey()
@@ -1007,6 +1025,116 @@ cm_file_Position(CM_FILE *cmfp, const off_t offset)
 /*****************************************************************
  * 4. API for reading/writing p7 HMMs/profiles to filter for CMs.
  *****************************************************************/
+
+/* Function:  cm_p7_hmmfile_Read()
+ * Incept:    EPN, Fri Jul 22 09:21:53 2011
+ *
+ * Purpose:   Position an HMM save file <cmfp->hfp> to <offset> and 
+ *            read an HMM from it at that position. Return the HMM
+ *            in <ret_hmm>.
+ *
+ *            Caller must already know the alphabet the HMM is
+ *            expected to be in, passed in as <abc>.  If the alphabet
+ *            for the HMM is of a different type than <abc>, we return
+ *            eslEINCOMPAT.
+ *
+ * Returns:   <eslOK> on success, and the newly allocated HMM is
+ *            in <ret_hmm>. 
+ *
+ *            Returns <eslEOF> if no HMMs remain in the file; this 
+ *            is a failure, as we expect there to be one at <offset>.
+ *            
+ *            Returns <eslEFORMAT> on any format problems, including
+ *            premature end of data or bad magic at the start of a
+ *            binary file. An informative error message is left in
+ *            <cmfp->errbuf>; the filename (fully qualified, if opened
+ *            in a directory specified by an <env> list) is in
+ *            <cmfp->fname>; and if <cmfp->hfp->efp> is non-<NULL>,
+ *            the HMM file is in an ASCII text format, and the caller
+ *            may also obtain the line number at which the format
+ *            error was detected, in <cmfp->hfp->efp->linenumber>, and
+ *            use it to format informative output for a user.
+ *            
+ *            Returns <eslEINCOMPAT> if the alphabet of the HMM doesn't
+ *            match the expectation in <abc>.
+ *
+ *            Upon any return that is not <eslOK>, <*ret_hmm> is
+ *            <NULL>.
+ *
+ * Throws:    <eslEMEM> upon an allocation error.
+ *            <eslESYS> on failure of other system calls, such
+ *            as file positioning functions (<fseeko()> or <ftello()>.
+ */
+int
+cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_hmm)
+{
+  int      status;
+  P7_HMM  *hmm  = NULL;
+  char    *tok1 = NULL;
+  uint32_t magic;
+
+#ifdef HMMER_THREADS
+  /* lock the mutex to prevent other threads from reading the file at the same time */
+  if (cmfp->hfp->syncRead) { 
+    if (pthread_mutex_lock (&cmfp->hfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex lock failed");
+  }
+#endif
+  
+  if (fseeko(cmfp->hfp->f, offset, SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for HMM file parser");
+
+  /* set the parser if it's unset (which it is only for first HMM read from cmfp->hfp) */
+  if(cmfp->hfp->parser == NULL) { 
+    if(cmfp->is_binary) { /* CM file is binary, HMM file must be too */
+      if (! fread((char *) &(magic), sizeof(uint32_t), 1, cmfp->hfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Failed to read magic number at start of p7 additional filters");
+      if      (magic == v3a_magic) { cmfp->hfp->format = p7_HMMFILE_3a; cmfp->hfp->parser = read_bin30hmm; }
+      else if (magic == v3b_magic) { cmfp->hfp->format = p7_HMMFILE_3b; cmfp->hfp->parser = read_bin30hmm; }
+      else if (magic == v3c_magic) { cmfp->hfp->format = p7_HMMFILE_3c; cmfp->hfp->parser = read_bin30hmm; }
+      else if (magic == v3d_magic) { cmfp->hfp->format = p7_HMMFILE_3d; cmfp->hfp->parser = read_bin30hmm; }
+      else if (magic == v3e_magic) { cmfp->hfp->format = p7_HMMFILE_3e; cmfp->hfp->parser = read_bin30hmm; }
+      else    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Unknown magic number for p7 HMM filter");
+    }
+    else { /* CM file is ascii, HMM file must be too */
+      if(cmfp->hfp->efp != NULL) ESL_XFAIL(eslEINVAL, cmfp->errbuf, "HMM ascii file parsers are out of sync");    
+      if ((cmfp->hfp->efp = esl_fileparser_Create(cmfp->hfp->f)) == NULL)   { status = eslEMEM; goto ERROR; }
+      if ((status = esl_fileparser_SetCommentChar(cmfp->hfp->efp, '#'))        != eslOK)  goto ERROR;
+      if ((status = esl_fileparser_GetToken(cmfp->hfp->efp, &tok1, NULL))      != eslOK)  goto ERROR;
+      
+      if      (strcmp("HMMER3/e", tok1) == 0) { cmfp->hfp->format = p7_HMMFILE_3e; cmfp->hfp->parser = read_asc30hmm; }
+      else if (strcmp("HMMER3/d", tok1) == 0) { cmfp->hfp->format = p7_HMMFILE_3d; cmfp->hfp->parser = read_asc30hmm; }
+      else if (strcmp("HMMER3/c", tok1) == 0) { cmfp->hfp->format = p7_HMMFILE_3c; cmfp->hfp->parser = read_asc30hmm; }
+      else if (strcmp("HMMER3/b", tok1) == 0) { cmfp->hfp->format = p7_HMMFILE_3b; cmfp->hfp->parser = read_asc30hmm; }
+      else if (strcmp("HMMER3/a", tok1) == 0) { cmfp->hfp->format = p7_HMMFILE_3a; cmfp->hfp->parser = read_asc30hmm; }
+      else    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Unknown format for p7 HMM filter");
+    }
+  }
+
+  /* read the HMM */
+  status = p7_hmmfile_Read(cmfp->hfp, &abc, &hmm);
+  if      (status == eslEOD)       ESL_XFAIL(status, cmfp->errbuf, "read failed, CM file may be truncated?");
+  else if (status == eslEFORMAT)   ESL_XFAIL(status, cmfp->errbuf, "bad file format for HMM filter");
+  else if (status == eslEINCOMPAT) ESL_XFAIL(status, cmfp->errbuf, "HMM filters are of different alphabets");
+  else if (status != eslOK)        ESL_XFAIL(status, cmfp->errbuf, "Unexpected error in reading HMM filters");
+
+#ifdef HMMER_THREADS
+  if (cmfp->hfp->syncRead) { 
+    if (pthread_mutex_unlock (&cmfp->hfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
+  }
+#endif    
+
+  *ret_hmm = hmm;
+  return status;
+
+ ERROR:
+#ifdef HMMER_THREADS
+    if (cmfp->hfp->syncRead) { 
+      if (pthread_mutex_unlock (&cmfp->hfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
+    }
+#endif    
+
+  if(hmm != NULL) p7_hmm_Destroy(hmm);
+  *ret_hmm = NULL;
+  return status;
+}
 
 /* Function:  cm_p7_oprofile_Write()
  * Synopsis:  Write an optimized p7 profile in two files.
@@ -1154,12 +1282,12 @@ cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, off_t *ret_cm_offs
   if (! fread( (char *) &gfmu,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read glocal fwd mu parameter");
   if (! fread( (char *) &gflambda,        sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read glocal fwd lambda parameter");
   
-  /* move HMM file position (cmfp->gfp->ffp) to where we are in CM file (cmfp->ffp) */
-  if (fseeko(cmfp->gfp->ffp, ftello(cmfp->ffp), SEEK_SET) != 0)         ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for HMM file parser (MSV)");
-  if ((status = p7_oprofile_ReadMSV(cmfp->gfp, byp_abc, &om)) != eslOK) ESL_XFAIL(status,       cmfp->errbuf, "failed read MSV part of unused filter model");
+  /* move HMM file position (cmfp->hfp->ffp) to where we are in CM file (cmfp->ffp) */
+  if (fseeko(cmfp->hfp->ffp, ftello(cmfp->ffp), SEEK_SET) != 0)         ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "failed to set position for HMM file parser (MSV)");
+  if ((status = p7_oprofile_ReadMSV(cmfp->hfp, byp_abc, &om)) != eslOK) ESL_XFAIL(status,       cmfp->errbuf, "failed read MSV part of unused filter model");
 
-  /* move CM file position (cmfp->ffp) to where we are in HMM file (cmfp->gfp->ffp) */
-  if (fseeko(cmfp->ffp, ftello(cmfp->gfp->ffp), SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for CM file parser (MSV)");
+  /* move CM file position (cmfp->ffp) to where we are in HMM file (cmfp->hfp->ffp) */
+  if (fseeko(cmfp->ffp, ftello(cmfp->hfp->ffp), SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for CM file parser (MSV)");
 
   *ret_cm_offset  = cm_offset; 
   *ret_cm_clen    = cm_clen; 
@@ -1278,11 +1406,12 @@ cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOC
  *             returned <NULL>.
  */
 static int
-read_asc_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
+read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 {
   int           status;
   ESL_ALPHABET *abc  = NULL;
   CM_t         *cm   = NULL;
+  P7_HMM       *hmm  = NULL;
   char         *tag  = NULL;
   char         *tok1 = NULL;
   char         *tok2 = NULL;
@@ -1292,6 +1421,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
   char         *tok6 = NULL;
   int           alphatype;
   off_t         offset = 0;
+  off_t         fp7_offset = 0;
   int           v, x, y, nd;            /* counters */
   int           read_fp7_stats = FALSE;
   uint32_t      cmcp9_statstracker = 0; /* for making sure we have all CM/CP9 E-value stats, if we have any */
@@ -1793,38 +1923,14 @@ read_asc_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
   if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))        != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Premature end of data: missing //?");
   if (strcmp(tok1, "//")                                                      != 0)      ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Expected closing //; found %s instead", tok1);
 
-  /* Finally, read the additional p7 HMMs, if any */
-
-  /* Read the filter HMM for this CM */
-  P7_HMM       *ahmm = NULL;           /* the HMM */
-  ESL_ALPHABET *aabc = NULL;
-
-  /* move file position to where we are in cmf (cmfile) */
-  if (fseeko(cmfp->hfp->f, ftello(cmfp->f), SEEK_SET) != 0) goto ERROR;
-  
-  /* create the file parser, if nec */
-  if (cmfp->hfp->efp == NULL) { 
-    if ((cmfp->hfp->efp = esl_fileparser_Create(cmfp->hfp->f)) == NULL)   { status = eslEMEM; goto ERROR; }
-    if ((status = esl_fileparser_SetCommentChar(cmfp->hfp->efp, '#'))        != eslOK)  goto ERROR;
-    if ((status = esl_fileparser_GetToken(cmfp->hfp->efp, &tok1, NULL))      != eslOK)  goto ERROR;
-  }
-  if(cmfp->hfp->parser == NULL) { 
-    if      (strcmp("HMMER3/e", tok1) == 0) { cmfp->hfp->format = p7_HMMFILE_3e; cmfp->hfp->parser = read_asc30hmm; }
-    else if (strcmp("HMMER3/d", tok1) == 0) { cmfp->hfp->format = p7_HMMFILE_3d; cmfp->hfp->parser = read_asc30hmm; }
-    else if (strcmp("HMMER3/c", tok1) == 0) { cmfp->hfp->format = p7_HMMFILE_3c; cmfp->hfp->parser = read_asc30hmm; }
-    else if (strcmp("HMMER3/b", tok1) == 0) { cmfp->hfp->format = p7_HMMFILE_3b; cmfp->hfp->parser = read_asc30hmm; }
-    else if (strcmp("HMMER3/a", tok1) == 0) { cmfp->hfp->format = p7_HMMFILE_3a; cmfp->hfp->parser = read_asc30hmm; }
-  }
-
-  status = p7_hmmfile_Read(cmfp->hfp, &aabc, &ahmm);
-  if      (status == eslEOD)       ESL_XFAIL(status, cmfp->errbuf, "read failed, CM file may be truncated?");
-  else if (status == eslEFORMAT)   ESL_XFAIL(status, cmfp->errbuf, "bad file format for HMM filter");
-  else if (status == eslEINCOMPAT) ESL_XFAIL(status, cmfp->errbuf, "HMM filters are of different alphabets");
-  else if (status != eslOK)        ESL_XFAIL(status, cmfp->errbuf, "Unexpected error in reading HMM filters");
-  if((status = cm_SetFilterHMM(cm, ahmm, tmp_fp7_gfmu, tmp_fp7_gflambda)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Unable to set filter HMM for CM");
-
-  /* now position the CM file to the end of the HMM we just read */
-  if (fseeko(cmfp->f, ftello(cmfp->hfp->f), SEEK_SET) != 0) goto ERROR;
+  /* Finally, read the filter HMM for this CM, unless we're explicitly told not to */
+  if(read_fp7) { 
+    if((fp7_offset = ftello(cmfp->f)) < 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "ftello() failed");
+    if((status = cm_p7_hmmfile_Read(cmfp, abc, fp7_offset, &hmm)) != eslOK) goto ERROR;
+    if((status = cm_SetFilterHMM(cm, hmm, tmp_fp7_gfmu, tmp_fp7_gflambda)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Unable to set filter HMM for CM");
+    /* now position the CM file to the end of the HMM we just read */
+    if (fseeko(cmfp->f, ftello(cmfp->hfp->f), SEEK_SET) != 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "Failed to set position for CM file parser after reading filter HMMs");
+  } 
 
   CMRenormalize(cm);
 
@@ -1881,14 +1987,16 @@ read_asc_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 
 
 static int
-read_bin_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
+read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 {
   ESL_ALPHABET *abc = NULL;
   CM_t         *cm = NULL;
+  P7_HMM       *hmm = NULL;
   uint32_t      magic;
   int           alphabet_type;
   int           v, x;
   off_t         offset = 0;
+  off_t         fp7_offset = 0;
   int           status;
   float         tmp_fp7_gfmu;
   float         tmp_fp7_gflambda;
@@ -2002,29 +2110,14 @@ read_bin_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
     }
   }
 
-  /* Finally, read the filter HMM for this CM */
-  P7_HMM       *ahmm = NULL;              /* the HMM */
-    
-  /* move file position to where we are in cmfp (cmfile) */
-  if (fseeko(cmfp->hfp->f, ftello(cmfp->f), SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for HMM file parser");
-
-  if(cmfp->hfp->parser == NULL) { 
-    if (! fread((char *) &(magic), sizeof(uint32_t), 1, cmfp->hfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Failed to read magic number at start of p7 additional filters");
-    if      (magic == v3a_magic) { cmfp->hfp->format = p7_HMMFILE_3a; cmfp->hfp->parser = read_bin30hmm; }
-    else if (magic == v3b_magic) { cmfp->hfp->format = p7_HMMFILE_3b; cmfp->hfp->parser = read_bin30hmm; }
-    else if (magic == v3c_magic) { cmfp->hfp->format = p7_HMMFILE_3c; cmfp->hfp->parser = read_bin30hmm; }
-    else if (magic == v3d_magic) { cmfp->hfp->format = p7_HMMFILE_3d; cmfp->hfp->parser = read_bin30hmm; }
-    else if (magic == v3e_magic) { cmfp->hfp->format = p7_HMMFILE_3e; cmfp->hfp->parser = read_bin30hmm; }
-    else    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Unknown magic number at start of additional p7 filters");
-  }
-  status = p7_hmmfile_Read(cmfp->hfp, &abc, &ahmm);
-  if      (status == eslEOD)       ESL_XFAIL(status, cmfp->errbuf, "HMM read failed, file %s may be truncated?", cmfp->fname);
-  else if (status == eslEFORMAT)   ESL_XFAIL(status, cmfp->errbuf, "bad HMM file format in CM file %s",          cmfp->fname);
-  else if (status == eslEINCOMPAT) ESL_XFAIL(status, cmfp->errbuf, "HMM filters contain different alphabets");
-  else if (status != eslOK)        ESL_XFAIL(status, cmfp->errbuf, "Unexpected error in reading HMMs from %s",   cmfp->fname);
-  if((status = cm_SetFilterHMM(cm, ahmm, tmp_fp7_gfmu, tmp_fp7_gflambda)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Unable to set filter HMM for CM");
-  /* now position the CM file to the end of the HMM we just read */
-  if (fseeko(cmfp->f, ftello(cmfp->hfp->f), SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for CM file parser after reading filter HMMs");
+  /* Finally, read the filter HMM for this CM, unless we're explicitly asked not to. */
+  if(read_fp7) { 
+    if((fp7_offset = ftello(cmfp->f)) < 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "ftello() failed");
+    if((status = cm_p7_hmmfile_Read(cmfp, abc, fp7_offset, &hmm)) != eslOK) goto ERROR;
+    if((status = cm_SetFilterHMM(cm, hmm, tmp_fp7_gfmu, tmp_fp7_gflambda)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Unable to set filter HMM for CM");
+    /* now position the CM file to the end of the HMM we just read */
+    if (fseeko(cmfp->f, ftello(cmfp->hfp->f), SEEK_SET) != 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "Failed to set position for CM file parser after reading filter HMMs");
+  } 
 
   if (*ret_abc == NULL) *ret_abc = abc;	/* pass our new alphabet back to caller, if caller didn't know it already */
   if ( opt_cm != NULL)  *opt_cm  = cm;  else FreeCM(cm);
@@ -2044,9 +2137,13 @@ read_bin_1p1_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
  * same time in v1.0 and v1.0.1.), and minmally changed to work in the
  * context of new CM_FILE data structure. This version also includes
  * better error message handling.
+ *
+ * Note that the value of <read_fp7> is irrelevant. It is only
+ * in the prototype so that read_asc_1p0_cm is consistent with
+ * other parser prototypes.
  */
 static int  
-read_asc_1p0_cm(CM_FILE *cmfp, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
+read_asc_1p0_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_cm)
 {
   int     status;
   CM_t   *cm;
