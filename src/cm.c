@@ -2821,7 +2821,6 @@ DumpCMFlags(FILE *fp, CM_t *cm)
   if(cm->flags & CMH_SCANMATRIX)           fprintf(fp, "\tCMH_SCANMATRIX\n");
   if(cm->flags & CMH_MLP7)                 fprintf(fp, "\tCMH_MLP7\n");
   if(cm->flags & CMH_FP7)                  fprintf(fp, "\tCMH_FP7\n");
-  if(cm->flags & CMH_FP7_STATS)            fprintf(fp, "\tCMH_FP7_STATS\n");
 
   if(cm->flags & CM_IS_SUB)               fprintf(fp, "\tCM_IS_SUB\n");
   if(cm->flags & CM_IS_RSEARCH)           fprintf(fp, "\tCM_IS_RSEARCH\n");

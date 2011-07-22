@@ -493,7 +493,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   FILE            *ofp      = stdout;            /* results output file (-o)                                  */
   FILE            *tblfp    = NULL;              /* output stream for tabular hits (--tblout)                 */
   CM_FILE         *cmfp;		         /* open input CM file stream                                 */
-  P7_HMM         **hmmA     = NULL;              /* HMMs, used for filtering                                  */
   CM_t            *cm       = NULL;              /* covariance model                                          */
   ESL_SQFILE      *dbfp     = NULL;              /* open input sequence file                                  */
   ESL_ALPHABET    *abc      = NULL;              /* digital alphabet                                          */
@@ -604,8 +603,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* Make sure we have E-value stats for both the CM and the p7, if not we can't run the pipeline */
     if(! (tinfo->cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s\n", tinfo->cm->name);
-    if(! (tinfo->cm->flags & CMH_FP7_STATS))     cm_Fail("no plan7 HMM E-value parameters were read for CM: %s\n,", tinfo->cm->name);
-
+    if(! (tinfo->cm->flags & CMH_FP7))           cm_Fail("no filter HMM was read for CM: %s\n", tinfo->cm->name);
+    
     /* seqfile may need to be rewound (multiquery mode) */
     if (nquery > 1) {
       if (! esl_sqfile_IsRewindable(dbfp))
@@ -710,7 +709,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       free_info(tinfo);
       free(tinfo);
       free_info(&(info[0]));
-      free(hmmA);
 
       qhstatus = cm_file_Read(cmfp, TRUE, &abc, &cm);
   } /* end outer loop over query CMs */
@@ -885,7 +883,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   FILE            *tblfp    = NULL;              /* output stream for tabular per-seq (--tblout)    */
 
   CM_FILE         *cmfp;		         /* open input CM file stream                       */
-  P7_HMM         **hmmA    = NULL;               /* HMMs, used for filtering                        */
   ESL_SQFILE      *dbfp     = NULL;              /* open input sequence file                        */
   ESL_SQ          *dbsq     = NULL;              /* one target sequence (digital)                   */
   ESL_ALPHABET    *abc      = NULL;              /* digital alphabet                                */
@@ -970,7 +967,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* Make sure we have E-value stats for both the CM and the p7, if not we can't run the pipeline */
       if(! (info->cm->flags & CMH_EXPTAIL_STATS)) mpi_failure("no E-value parameters were read for CM: %s\n", info->cm->name);
-      if(! (info->cm->flags & CMH_MLP7_STATS))    mpi_failure("no plan7 HMM E-value parameters were read for CM: %s\n", info->cm->name);
+      if(! (info->cm->flags & CMH_FP7))           mpi_failure("no filter HMM was read for CM: %s\n", info->cm->name);
 
       fprintf(ofp, "Query:       %s  [CLEN=%d]\n", info->cm->name, info->cm->clen);
       if (info->cm->acc)  fprintf(ofp, "Accession:   %s\n", info->cm->acc);
@@ -984,9 +981,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* Create processing pipeline and hit list */
       info->th  = cm_tophits_Create(); 
-      info->pli = cm_pipeline_Create(go, abc, info->omA[0]->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+      info->pli = cm_pipeline_Create(go, abc, info->om->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
       if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->need_fsmx, info->need_smx, 
-				   info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->omA, info->bgA, info->nhmm)) != eslOK) { 
+				   info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->om, info->bg)) != eslOK) { 
 	mpi_failure(info[i].pli->errbuf);
       }
       /* Create block_list and add an empty block to it */
@@ -1220,13 +1217,11 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_SQ          *dbsq     = NULL;              /* one target sequence (digital)                   */
   ESL_ALPHABET    *abc      = NULL;              /* digital alphabet                                */
   CM_FILE         *cmfp;		         /* open input CM file stream                       */
-  P7_HMM         **hmmA    = NULL;               /* HMMs, used for filtering                        */
   ESL_SQFILE      *dbfp     = NULL;              /* open input sequence file                        */
   ESL_STOPWATCH   *w;
   int              status   = eslOK;
   int              hstatus  = eslOK;
   int              prev_hit_cnt;
-  double           eff_dbsize;                   /* the effective database size, max # hits expected in db of this size */
 
   WORKER_INFO     *info          = NULL;         /* contains CM, HMMs, p7 profiles, cmcons, etc. */
 
@@ -1239,7 +1234,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   int64_t          seq_from, seq_to;             /* start/end positions of a sequence */
   int64_t          readL;                        /* number of residues read in the current block */
   char            *pkey;                         /* a primary key from SSI */
-  MPI_Status       mpistatus;
 
   w = esl_stopwatch_Create();
 
@@ -1253,9 +1247,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Open the query CM file */
   if((status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) mpi_failure(errbuf);
-
-  /* allocate and initialize <info> which will hold the CMs, HMMs, etc. */
-  if((info = create_info()) == NULL) mpi_failure("Out of memory");
 
   /* <abc> is not known 'til first CM is read. */
   hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
@@ -1276,6 +1267,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       /* inform the master we're ready for a block of sequences */
       MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
 
+      /* allocate and initialize <info> which will hold the CMs, HMMs, etc. */
+      if((info = create_info()) == NULL) mpi_failure("Out of memory");
+
       /* Setup the CM and calculate QDBs, if nec */
       if((status = setup_cm  (go, info, errbuf)) != eslOK) mpi_failure(errbuf);
       if((status = setup_qdbs(go, info, errbuf)) != eslOK) mpi_failure(errbuf);
@@ -1284,9 +1278,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* Create processing pipeline and hit list */
       info->th  = cm_tophits_Create(); 
-      info->pli = cm_pipeline_Create(go, abc, info->omA[0]->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+      info->pli = cm_pipeline_Create(go, abc, info->om->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
       if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->need_fsmx, info->need_smx, 
-				   info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->omA, info->bgA, info->nhmm)) != eslOK) { 
+				   info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->om, info->bg)) != eslOK) { 
 	mpi_failure(info->pli->errbuf);
       }
 
@@ -1822,6 +1816,7 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
     dest_infoA[i].gm  = p7_profile_Clone(src_info->gm);
     dest_infoA[i].om  = p7_oprofile_Clone(src_info->om);
     dest_infoA[i].bg  = p7_bg_Create(src_info->bg->abc);
+    if(dest_infoA[i].p7_evparam == NULL) ESL_ALLOC(dest_infoA[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
     esl_vec_FCopy(src_info->cm->fp7_evparam, CM_p7_NEVPARAM, dest_infoA[i].p7_evparam);
   
     if(src_info->fcyk_dmin != NULL) { 
@@ -1857,22 +1852,22 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
 void
 free_info(WORKER_INFO *info)
 { 
-  if(info->pli != NULL) cm_pipeline_Destroy(info->pli, info->cm);
-  if(info->th  != NULL) cm_tophits_Destroy(info->th);
+  if(info->pli != NULL) cm_pipeline_Destroy(info->pli, info->cm); info->pli = NULL;
+  if(info->th  != NULL) cm_tophits_Destroy(info->th);             info->th  = NULL;
   
-  if(info->cm     != NULL) FreeCM(info->cm);
-  if(info->cmcons != NULL) FreeCMConsensus(info->cmcons);
+  if(info->cm     != NULL) FreeCM(info->cm);                      info->cm  = NULL;
+  if(info->cmcons != NULL) FreeCMConsensus(info->cmcons);         info->cmcons = NULL;
   
-  if(info->om     != NULL) p7_oprofile_Destroy(info->om);
-  if(info->gm     != NULL) p7_profile_Destroy(info->gm);
-  if(info->bg     != NULL) p7_bg_Destroy(info->bg);
-  if(info->p7_evparam != NULL) free(info->p7_evparam);
+  if(info->om     != NULL) p7_oprofile_Destroy(info->om);         info->om = NULL;
+  if(info->gm     != NULL) p7_profile_Destroy(info->gm);          info->gm = NULL;
+  if(info->bg     != NULL) p7_bg_Destroy(info->bg);               info->bg = NULL;
+  if(info->p7_evparam != NULL) free(info->p7_evparam);            info->p7_evparam = NULL;
+      
+  if(info->fcyk_dmin  != NULL) free(info->fcyk_dmin);             info->fcyk_dmin = NULL;
+  if(info->fcyk_dmax  != NULL) free(info->fcyk_dmax);             info->fcyk_dmax = NULL;
+  if(info->final_dmin != NULL) free(info->final_dmin);            info->final_dmin = NULL;
+  if(info->final_dmin != NULL) free(info->final_dmax);            info->final_dmax = NULL;
 
-  if(info->fcyk_dmin  != NULL) free(info->fcyk_dmin);
-  if(info->fcyk_dmax  != NULL) free(info->fcyk_dmax);
-  if(info->final_dmin != NULL) free(info->final_dmin);
-  if(info->final_dmin != NULL) free(info->final_dmax);
-  
   return;
 }
 

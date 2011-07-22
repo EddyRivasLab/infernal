@@ -600,7 +600,7 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
   if (cm->flags & CMH_TC)  fprintf(fp, "TC       %.2f\n", cm->tc);
   if (cm->flags & CMH_NC)  fprintf(fp, "NC       %.2f\n", cm->nc);
 
-  if (cm->flags & CMH_FP7_STATS) {
+  if (cm->flags & CMH_FP7) {
     fprintf(fp, "EFP7GF  %8.4f %8.5f\n", cm->fp7_evparam[CM_p7_GFMU],  cm->fp7_evparam[CM_p7_GFLAMBDA]);
   }
   if (cm->flags & CMH_EXPTAIL_STATS)
@@ -817,7 +817,7 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
 
   /* E-value parameters 
    */
-  if (cm->flags & CMH_FP7_STATS) { /* should always be true */
+  if (cm->flags & CMH_FP7) { /* should always be true */
     if (fwrite((char *) &(cm->fp7_evparam[CM_p7_GFMU]),     sizeof(float), 1, fp) != 1) return eslFAIL;
     if (fwrite((char *) &(cm->fp7_evparam[CM_p7_GFLAMBDA]), sizeof(float), 1, fp) != 1) return eslFAIL;
   }
@@ -1199,6 +1199,37 @@ cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int cm_clen, int cm_
   return p7_oprofile_Write(ffp, pfp, om);
 }
 
+
+/* Function:  cm_p7_oprofile_Position()
+ * Synopsis:  Reposition the hmm filter file part of a CM file to an offset.
+ * Incept:    EPN, Fri Jul 22 10:49:41 2011 
+ *            MSF, Thu Oct 15, 2009 [Janelia] (p7_oprofile_Position())
+ *
+ * Purpose:   Reposition an open <cmfp->ffp> to offset <offset>.
+ *            <offset> would usually be the first byte of a
+ *            desired hmm record.
+ *            
+ * Returns:   <eslOK>     on success;
+ *            <eslEOF>    if no data can be read from this position.
+ *
+ * Throws:    <eslEINVAL>  if the <sqfp> is not positionable.
+ *            <eslEFORMAT> if no msv profile opened.
+ *            <eslESYS>    if the fseeko() call fails.
+ */
+int
+cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset)
+{
+  if (cmfp->ffp == NULL)  ESL_EXCEPTION(eslEFORMAT, cmfp->errbuf, "no MSV profile file; cmpress probably wasn't run");
+  if (cmfp->do_stdin)     ESL_EXCEPTION(eslEINVAL, "can't Position() in standard input");
+  if (cmfp->do_gzip)      ESL_EXCEPTION(eslEINVAL, "can't Position() in a gzipped file");
+  if (offset < 0)         ESL_EXCEPTION(eslEINVAL, "bad offset");
+
+  if (fseeko(cmfp->ffp, offset, SEEK_SET) != 0) ESL_EXCEPTION(eslESYS, "fseeko() failed");
+
+  return eslOK;
+}
+
+
 /* Function:  cm_p7_oprofile_ReadMSV()
  * Synopsis:  Read MSV filter part of an optimized profile.
  * Incept:    EPN, Fri Jul  8 08:19:58 2011
@@ -1229,6 +1260,12 @@ cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int cm_clen, int cm_
  *            that are specific to CMs. See cm_p7_oprofile_Write()
  *            for more explanation. 
  *
+ *            If <read_scores> is TRUE: read all the MSV data 
+ *            (including scores) using p7_oprofile_ReadMSV().
+ *            If <read_scores> is FALSE: read only the MSV info
+ *            (no scores) using p7_oprofile_ReadInfoMSV().
+ *
+ *
  * Args:      cmfp    - open CM file, with associated .i1p file
  *            byp_abc - BYPASS: <*byp_abc == ESL_ALPHABET *> if known; 
  *                              <*byp_abc == NULL> if desired; 
@@ -1258,7 +1295,7 @@ cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int cm_clen, int cm_
  * Throws:    <eslEMEM> on allocation error.
  */
 int
-cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om)
+cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om)
 {
   int status         = eslOK;      /* return status */
   uint32_t magic;                  /* magic number used to verify format */
@@ -1270,7 +1307,7 @@ cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, off_t *ret_cm_offs
   P7_OPROFILE *om = NULL;          /* the om we've read */
 
   if (cmfp->errbuf != NULL) cmfp->errbuf[0] = '\0';
-  if (cmfp->ffp == NULL)                     ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "no MSV profile file; cmpress probably wasn't run");
+  if (cmfp->ffp == NULL)    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "no MSV profile file; cmpress probably wasn't run");
 
   if (feof(cmfp->ffp))                                           { status = eslEOF; goto ERROR; } /* normal EOF: no more profiles */
   if (! fread( (char *) &magic, sizeof(uint32_t), 1, cmfp->ffp)) { status = eslEOF; goto ERROR; }
@@ -1283,26 +1320,29 @@ cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, off_t *ret_cm_offs
   if (! fread( (char *) &gflambda,        sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read glocal fwd lambda parameter");
   
   /* move HMM file position (cmfp->hfp->ffp) to where we are in CM file (cmfp->ffp) */
-  if (fseeko(cmfp->hfp->ffp, ftello(cmfp->ffp), SEEK_SET) != 0)         ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "failed to set position for HMM file parser (MSV)");
-  if ((status = p7_oprofile_ReadMSV(cmfp->hfp, byp_abc, &om)) != eslOK) ESL_XFAIL(status,       cmfp->errbuf, "failed read MSV part of unused filter model");
-
+  if (fseeko(cmfp->hfp->ffp, ftello(cmfp->ffp), SEEK_SET) != 0)               ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "failed to set position for HMM file parser (MSV)");
+  if (read_scores) { 
+    if ((status = p7_oprofile_ReadMSV(cmfp->hfp, byp_abc, &om))     != eslOK) ESL_XFAIL(status,       cmfp->errbuf, "failed to read MSV filter model");
+  }
+  else { 
+    if ((status = p7_oprofile_ReadInfoMSV(cmfp->hfp, byp_abc, &om)) != eslOK) ESL_XFAIL(status,       cmfp->errbuf, "failed to read MSV info");
+  }
   /* move CM file position (cmfp->ffp) to where we are in HMM file (cmfp->hfp->ffp) */
   if (fseeko(cmfp->ffp, ftello(cmfp->hfp->ffp), SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for CM file parser (MSV)");
 
-  *ret_cm_offset  = cm_offset; 
-  *ret_cm_clen    = cm_clen; 
-  *ret_cm_W       = cm_W; 
-  *ret_gfmu       = gfmu;
-  *ret_gflambda   = gflambda;
-  *ret_om         = om;         
+  if(ret_cm_offset != NULL) *ret_cm_offset  = cm_offset; 
+  if(ret_cm_clen   != NULL) *ret_cm_clen    = cm_clen; 
+  if(ret_cm_W      != NULL) *ret_cm_W       = cm_W; 
+  if(ret_gfmu      != NULL) *ret_gfmu       = gfmu;
+  if(ret_gflambda  != NULL) *ret_gflambda   = gflambda;
+  if(ret_om        != NULL) *ret_om         = om;         
   return eslOK;
 
  ERROR:
   if (om != NULL) p7_oprofile_Destroy(om); 
-  *ret_om = NULL;
+  if (ret_om != NULL) *ret_om = NULL;
   return status;
 }
-
 
 /* Function:  cm_p7_oprofile_ReadBlockMSV()
  * Synopsis:  Read the next block of MSV filter parts from a HMM file.
@@ -1343,7 +1383,7 @@ cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOC
   hmmBlock->count = 0;
   for (i = 0; i < hmmBlock->listSize; ++i)
     {
-      status = cm_p7_oprofile_ReadMSV(cmfp, byp_abc, 
+      status = cm_p7_oprofile_ReadMSV(cmfp, TRUE, byp_abc, 
 				      &(hmmBlock->cm_offsetA[i]), 
 				      &(hmmBlock->cm_clenA[i]), 
 				      &(hmmBlock->cm_WA[i]), 
@@ -2093,7 +2133,7 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   if ((cm->flags & CMH_NC) && (! fread((char *) &(cm->nc), sizeof(float), 1, cmfp->f)))                  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read NC cutoff");
 
   /* E-value parameters */
-  if (cm->flags & CMH_FP7_STATS) { /* should always be true */
+  if (cm->flags & CMH_FP7) { /* should always be true */
     if (! fread((char *) &tmp_fp7_gfmu,     sizeof(float), 1, cmfp->f))         ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read additional P7 E-value stats");
     if (! fread((char *) &tmp_fp7_gflambda, sizeof(float), 1, cmfp->f))         ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read additional P7 E-value stats");
   }

@@ -497,7 +497,6 @@ cm_SetFilterHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda)
     p7_hmm_Destroy(cm->fp7);
   }
   cm->fp7 = hmm;
-  cm->flags |= CMH_FP7; /* raise the FP7 flag */
 
   if(hmm->flags & p7H_STATS) {
     cm->fp7_evparam[CM_p7_LMMU]     = hmm->evparam[p7_MMU];
@@ -508,8 +507,18 @@ cm_SetFilterHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda)
     cm->fp7_evparam[CM_p7_LFLAMBDA] = hmm->evparam[p7_FLAMBDA];
     cm->fp7_evparam[CM_p7_GFMU]     = gfmu;
     cm->fp7_evparam[CM_p7_GFLAMBDA] = gflambda;
-    cm->flags |= CMH_FP7_STATS; /* raise the AP7 stats flag */
   }    
+  else { /* this should never happen */
+    cm->fp7_evparam[CM_p7_LMMU]     = 0.;
+    cm->fp7_evparam[CM_p7_LMLAMBDA] = 0.;
+    cm->fp7_evparam[CM_p7_LVMU]     = 0.;
+    cm->fp7_evparam[CM_p7_LVLAMBDA] = 0.;
+    cm->fp7_evparam[CM_p7_LFTAU]    = 0.;
+    cm->fp7_evparam[CM_p7_LFLAMBDA] = 0.;
+    cm->fp7_evparam[CM_p7_GFMU]     = 0.;
+    cm->fp7_evparam[CM_p7_GFLAMBDA] = 0.;
+  }
+  cm->flags |= CMH_FP7; /* raise the FP7 flag */
 
   return eslOK;
 }

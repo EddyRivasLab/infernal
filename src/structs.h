@@ -449,14 +449,13 @@ typedef struct cp9map_s {
 #define CMH_SCANMATRIX          (1<<16) /* ScanMatrix smx is valid                  */
 #define CMH_MLP7                (1<<17) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
 #define CMH_FP7                 (1<<18) /* filter p7 is valid in cm->fp7            */
-#define CMH_FP7_STATS           (1<<19) /* filter p7 HMM exponential tail stats set */
 
-#define CM_IS_SUB               (1<<20) /* the CM is a sub CM                       */
-#define CM_IS_RSEARCH           (1<<21) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS         (1<<22) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT          (1<<23) /* CM has/will have RSEARCH emissions       */
-#define CM_EMIT_NO_LOCAL_BEGINS (1<<24) /* emitted parsetrees will never have local begins */
-#define CM_EMIT_NO_LOCAL_ENDS   (1<<25) /* emitted parsetrees will never have local ends   */
+#define CM_IS_SUB               (1<<19) /* the CM is a sub CM                       */
+#define CM_IS_RSEARCH           (1<<20) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS         (1<<21) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT          (1<<22) /* CM has/will have RSEARCH emissions       */
+#define CM_EMIT_NO_LOCAL_BEGINS (1<<23) /* emitted parsetrees will never have local begins */
+#define CM_EMIT_NO_LOCAL_ENDS   (1<<24) /* emitted parsetrees will never have local ends   */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */

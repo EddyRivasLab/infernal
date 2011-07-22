@@ -198,8 +198,9 @@ extern int     cm_file_PositionByKey(CM_FILE *cmfp, const char *key);
 extern int     cm_file_Position(CM_FILE *cmfp, const off_t offset);
 extern int     cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_hmm);
 extern int     cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int cm_len, int cm_W, float gfmu, float gflambda, P7_OPROFILE *om);
-extern int     cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om);
+extern int     cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om);
 extern int     cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOCK *hmmBlock);
+extern int     cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset);
 
 /* from cm_modelconfig.c */
 extern int   ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t *mother_map);

@@ -84,7 +84,6 @@ main(int argc, char **argv)
       tot_clen += cm->clen;
       
       if(cm->fp7 == NULL || (! (cm->flags & CMH_FP7))) { cm_Fail("CM #%d does not have a filter HMM", ncm+1); }
-      if(! (cm->flags & CMH_FP7_STATS))                { cm_Fail("CM #%d does not have a calibrated filter HMM", ncm+1); }
       gm = p7_profile_Create(cm->fp7->M, abc);
       p7_ProfileConfig(cm->fp7, bg, gm, 400, p7_LOCAL);
       om = p7_oprofile_Create(gm->M, abc);

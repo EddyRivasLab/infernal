@@ -524,7 +524,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   else if (hstatus != eslOK) cm_Fail("Unexpected error in reading CMs from %s\n%s", cfg->cmfile, cmfp->errbuf); 
 
   /* Determine database size: default is to updated as we read target CMs */
-  if(esl_opt_IsUsed(go, "-Z")) { /* enabling -Z is the only way to bypass the SSI index file requirement */
+  if(esl_opt_IsUsed(go, "-Z")) { 
     cfg->Z       = (int64_t) esl_opt_GetReal(go, "-Z");
     cfg->Z_setby = CM_ZSETBY_OPTION; 
   }
@@ -755,15 +755,15 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 #ifdef HAVE_MPI
 
 /* Define common tags used by the MPI master/slave processes */
-#define HMMER_ERROR_TAG          1
-#define HMMER_HMM_TAG            2
-#define HMMER_SEQUENCE_TAG       3
-#define HMMER_BLOCK_TAG          4
-#define HMMER_PIPELINE_TAG       5
-#define HMMER_TOPHITS_TAG        6
-#define HMMER_HIT_TAG            7
-#define HMMER_TERMINATING_TAG    8
-#define HMMER_READY_TAG          9
+#define INFERNAL_ERROR_TAG          1
+#define INFERNAL_HMM_TAG            2
+#define INFERNAL_SEQUENCE_TAG       3
+#define INFERNAL_BLOCK_TAG          4
+#define INFERNAL_PIPELINE_TAG       5
+#define INFERNAL_TOPHITS_TAG        6
+#define INFERNAL_HIT_TAG            7
+#define INFERNAL_TERMINATING_TAG    8
+#define INFERNAL_READY_TAG          9
 
 /* mpi_failure()
  * Generate an error message.  If the clients rank is not 0, a
@@ -802,7 +802,7 @@ mpi_failure(char *format, ...)
     }
   else
     {
-      MPI_Send(str, len, MPI_CHAR, 0, HMMER_ERROR_TAG, MPI_COMM_WORLD);
+      MPI_Send(str, len, MPI_CHAR, 0, INFERNAL_ERROR_TAG, MPI_COMM_WORLD);
       pause();
     }
 }
@@ -823,7 +823,7 @@ typedef struct {
   MSV_BLOCK *blocks;
 } BLOCK_LIST;
 
-/* this routine parses the database keeping track of the blocks
+/* This routine parses the database keeping track of the blocks
  * offset within the file, number of sequences and the length
  * of the block.  These blocks are passed as work units to the
  * MPI workers.  If multiple hmm's are in the query file, the
@@ -834,6 +834,7 @@ int next_block(CM_FILE *cmfp, BLOCK_LIST *list, MSV_BLOCK *block)
   P7_OPROFILE   *om       = NULL;
   ESL_ALPHABET  *abc      = NULL;
   int            status   = eslOK;
+  off_t          prv_offset = 0;
 
   /* if the list has been calculated, use it instead of parsing the database */
   if (list->complete)
@@ -863,10 +864,13 @@ int next_block(CM_FILE *cmfp, BLOCK_LIST *list, MSV_BLOCK *block)
   block->offset = 0;
   block->length = 0;
   block->count = 0;
+  if((prv_offset = ftello(cmfp->ffp)) < 0) return eslESYS;
 
-  while (block->length < MAX_BLOCK_SIZE && (status = p7_oprofile_ReadInfoMSV(hfp, &abc, &om)) == eslOK)
+  while (block->length < MAX_BLOCK_SIZE && 
+	 (status = cm_p7_oprofile_ReadMSV(cmfp, FALSE, &abc, NULL, NULL, NULL, NULL, NULL, &om)) == eslOK)
     {
-      if (block->count == 0) block->offset = om->roff;
+      if (block->count == 0) block->offset = prv_offset;
+      if((prv_offset = ftello(cmfp->ffp)) < 0) return eslESYS;
       block->length = om->eoff - block->offset + 1;
       block->count++;
       p7_oprofile_Destroy(om);
@@ -900,7 +904,7 @@ int next_block(CM_FILE *cmfp, BLOCK_LIST *list, MSV_BLOCK *block)
 }
 
 /* mpi_master()
- * The MPI version of hmmscan
+ * The MPI version of cmscan
  * Follows standard pattern for a master/worker load-balanced MPI program (J1/78-79).
  * 
  * A master can only return if it's successful. 
@@ -925,10 +929,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              seqfmt   = eslSQFILE_UNKNOWN; /* format of seqfile                               */
   P7_BG           *bg       = NULL;	         /* null model                                      */
   ESL_SQFILE      *sqfp     = NULL;              /* open seqfile                                    */
-  P7_HMMFILE      *hfp      = NULL;		 /* open HMM database file                          */
+  CM_FILE         *cmfp     = NULL;		 /* open CMM database file                          */
   ESL_ALPHABET    *abc      = NULL;              /* sequence alphabet                               */
   P7_OPROFILE     *om       = NULL;		 /* target profile                                  */
   ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
+  ESL_STOPWATCH   *mw       = NULL;              /* timing                                          */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
   int              nquery   = 0;
   int              textw;
@@ -948,6 +953,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   char             errbuf[eslERRBUFSIZE];
 
   w = esl_stopwatch_Create();
+  mw = esl_stopwatch_Create();
+
+  esl_stopwatch_Start(mw);
   
   if (esl_opt_GetBoolean(go, "--notextw")) textw = 0;
   else                                     textw = esl_opt_GetInteger(go, "--textw");
@@ -959,19 +967,29 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
 
   /* Open the target profile database to get the sequence alphabet */
-  status = p7_hmmfile_OpenE(cfg->hmmfile, p7_HMMDBENV, &hfp, errbuf);
-  if      (status == eslENOTFOUND) mpi_failure("File existence/permissions problem in trying to open HMM file %s.\n%s\n", cfg->hmmfile, errbuf);
-  else if (status == eslEFORMAT)   mpi_failure("File format problem in trying to open HMM file %s.\n%s\n",                cfg->hmmfile, errbuf);
-  else if (status != eslOK)        mpi_failure("Unexpected error %d in opening HMM file %s.\n%s\n",               status, cfg->hmmfile, errbuf);  
-  if (! hfp->is_pressed)           mpi_failure("Failed to open binary dbs for HMM file %s: use hmmpress first\n",         hfp->fname);
-  
-  hstatus = p7_oprofile_ReadMSV(hfp, &abc, &om);
-  if      (hstatus == eslEFORMAT)   mpi_failure("bad file format in HMM file %s",             cfg->hmmfile);
-  else if (hstatus == eslEINCOMPAT) mpi_failure("HMM file %s contains different alphabets",   cfg->hmmfile);
-  else if (hstatus != eslOK)        mpi_failure("Unexpected error in reading HMMs from %s",   cfg->hmmfile); 
+  status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
+  if      (status == eslENOTFOUND) mpi_failure("File existence/permissions problem in trying to open CM file %s.\n%s\n", cfg->cmfile, errbuf);
+  else if (status == eslEFORMAT)   mpi_failure("File format problem in trying to open CM file %s.\n%s\n",                cfg->cmfile, errbuf);
+  else if (status != eslOK)        mpi_failure("Unexpected error %d in opening CM file %s.\n%s\n",               status, cfg->cmfile, errbuf);  
+  if      (cmfp->do_gzip)          mpi_failure("Reading gzipped CM files is not supported");
+  if      (cmfp->do_stdin)         mpi_failure("Reading CM files from stdin is not supported");
+  if (! cmfp->is_pressed)          mpi_failure("Failed to open binary auxfiles for %s: use cmpress first\n",             cmfp->fname);
 
-  p7_oprofile_Destroy(om);
-  p7_hmmfile_Close(hfp);
+  hstatus = cm_file_Read(cmfp, FALSE, &abc, NULL);
+  if(hstatus == eslEFORMAT)  mpi_failure("bad file format in CM file %s\n%s",           cfg->cmfile, cmfp->errbuf);
+  else if (hstatus != eslOK) mpi_failure("Unexpected error in reading CMs from %s\n%s", cfg->cmfile, cmfp->errbuf); 
+
+  /* Determine database size: default is to updated as we read target CMs */
+  if(esl_opt_IsUsed(go, "-Z")) { 
+    cfg->Z       = (int64_t) esl_opt_GetReal(go, "-Z");
+    cfg->Z_setby = CM_ZSETBY_OPTION; 
+  }
+  else { 
+    if(cmfp->ssi == NULL) mpi_failure("Failed to open SSI index for CM file: %s\n", cmfp->fname);
+    cfg->Z = (int64_t) cmfp->ssi->nprimary;
+    cfg->Z_setby = CM_ZSETBY_SSI_AND_QLENGTH; /* we will multiply Z by each query sequence length */
+  }
+  cm_file_Close(cmfp);
 
   /* Open the query sequence database */
   status = esl_sqfile_OpenDigital(abc, cfg->seqfile, seqfmt, NULL, &sqfp);
@@ -984,7 +1002,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if (esl_opt_IsOn(go, "-o")          && (ofp      = fopen(esl_opt_GetString(go, "-o"),          "w")) == NULL)
     mpi_failure("Failed to open output file %s for writing\n",                 esl_opt_GetString(go, "-o"));
   if (esl_opt_IsOn(go, "--tblout")    && (tblfp    = fopen(esl_opt_GetString(go, "--tblout"),    "w")) == NULL)
-    mpi_failure("Failed to open tabular per-seq output file %s for writing\n", esl_opt_GetString(go, "--tblfp"));
+    mpi_failure("Failed to open tabular per-seq output file %s for writing\n", esl_opt_GetString(go, "--tblout"));
  
   ESL_ALLOC(list, sizeof(MSV_BLOCK));
   list->complete = 0;
@@ -993,15 +1011,15 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   list->last     = 0;
   list->blocks   = NULL;
 
-  output_header(ofp, go, cfg->hmmfile, cfg->seqfile);
+  output_header(ofp, go, cfg->cmfile, cfg->seqfile);
   qsq = esl_sq_CreateDigital(abc);
   bg = p7_bg_Create(abc);
 
   /* Outside loop: over each query sequence in <seqfile>. */
   while ((sstatus = esl_sqio_Read(sqfp, qsq)) == eslOK)
     {
-      P7_PIPELINE     *pli     = NULL;		/* processing pipeline                      */
-      P7_TOPHITS      *th      = NULL;        	/* top-scoring sequence hits                */
+      CM_PIPELINE     *pli     = NULL;		/* processing pipeline                      */
+      CM_TOPHITS      *th      = NULL;        	/* top-scoring sequence hits                */
 
       nquery++;
 
@@ -1011,22 +1029,22 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if (nquery > 1) list->current = 0;
 
       /* Open the target profile database */
-      status = p7_hmmfile_OpenE(cfg->hmmfile, p7_HMMDBENV, &hfp, NULL);
-      if (status != eslOK) mpi_failure("Unexpected error %d in opening hmm file %s.\n", status, cfg->hmmfile);  
+      status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
+      if (status != eslOK) mpi_failure("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, errbuf);  
   
       fprintf(ofp, "Query:       %s  [L=%ld]\n", qsq->name, (long) qsq->n);
       if (qsq->acc[0]  != 0) fprintf(ofp, "Accession:   %s\n", qsq->acc);
       if (qsq->desc[0] != 0) fprintf(ofp, "Description: %s\n", qsq->desc);
 
       /* Create processing pipeline and hit list */
-      th  = p7_tophits_Create(); 
-      pli = p7_pipeline_Create(go, 100, 100, FALSE, p7_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
-      pli->hfp = hfp;  /* for two-stage input, pipeline needs <hfp> */
+      th  = cm_tophits_Create(); 
+      pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qsq->n, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
+      pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
 
-      p7_pli_NewSeq(pli, qsq);
+      cm_pli_NewSeq(pli, qsq, nquery-1);
 
       /* Main loop: */
-      while ((hstatus = next_block(hfp, list, &block)) == eslOK)
+      while ((hstatus = next_block(cmfp, list, &block)) == eslOK)
 	{
 	  if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) 
 	    mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
@@ -1041,26 +1059,19 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  dest = mpistatus.MPI_SOURCE;
 	  MPI_Recv(mpi_buf, size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
 
-	  if (mpistatus.MPI_TAG == HMMER_ERROR_TAG)
+	  if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)
 	    mpi_failure("MPI client %d raised error:\n%s\n", dest, mpi_buf);
-	  if (mpistatus.MPI_TAG != HMMER_READY_TAG)
+	  if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)
 	    mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
       
-	  MPI_Send(&block, 3, MPI_LONG_LONG_INT, dest, HMMER_BLOCK_TAG, MPI_COMM_WORLD);
+	  MPI_Send(&block, 3, MPI_LONG_LONG_INT, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD);
 	}
       switch(hstatus)
 	{
-	case eslEFORMAT:
-	  mpi_failure("bad file format in HMM file %s",              cfg->hmmfile);
-	  break;
-	case eslEINCOMPAT:
-	  mpi_failure("HMM file %s contains different alphabets",    cfg->hmmfile);
-	  break;
-	case eslEOF:
-	  /* do nothing */
-	  break;
-	default:
-	  mpi_failure("Unexpected error %d in reading HMMs from %s", hstatus, cfg->hmmfile); 
+	case eslEFORMAT:   mpi_failure("bad file format in CM file %s",           cfg->cmfile); break;
+	case eslEINCOMPAT: mpi_failure("CM file %s contains different alphabets", cfg->cmfile); break;
+	case eslEOF: 	   /* do nothing */	                                                break;
+	default:	   mpi_failure("Unexpected error %d in reading CMs from %s", hstatus, cfg->cmfile); break;
 	}
 
       block.offset = 0;
@@ -1083,51 +1094,63 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  dest = mpistatus.MPI_SOURCE;
 	  MPI_Recv(mpi_buf, size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
 
-	  if (mpistatus.MPI_TAG == HMMER_ERROR_TAG)
+	  if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)
 	    mpi_failure("MPI client %d raised error:\n%s\n", dest, mpi_buf);
-	  if (mpistatus.MPI_TAG != HMMER_READY_TAG)
+	  if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)
 	    mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
 	}
 
       /* merge the results of the search results */
       for (dest = 1; dest < cfg->nproc; ++dest)
 	{
-	  P7_PIPELINE     *mpi_pli   = NULL;
-	  P7_TOPHITS      *mpi_th    = NULL;
+	  CM_PIPELINE     *mpi_pli   = NULL;
+	  CM_TOPHITS      *mpi_th    = NULL;
 
 	  /* send an empty block to signal the worker they are done */
-	  MPI_Send(&block, 3, MPI_LONG_LONG_INT, dest, HMMER_BLOCK_TAG, MPI_COMM_WORLD);
+	  MPI_Send(&block, 3, MPI_LONG_LONG_INT, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD);
 
 	  /* wait for the results */
-	  if ((status = p7_tophits_MPIRecv(dest, HMMER_TOPHITS_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, &mpi_th)) != eslOK)
+	  if ((status = cm_tophits_MPIRecv(dest, INFERNAL_TOPHITS_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, &mpi_th)) != eslOK)
 	    mpi_failure("Unexpected error %d receiving tophits from %d", status, dest);
 
-	  if ((status = p7_pipeline_MPIRecv(dest, HMMER_PIPELINE_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, go, &mpi_pli)) != eslOK)
+	  if ((status = cm_pipeline_MPIRecv(dest, INFERNAL_PIPELINE_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, go, &mpi_pli)) != eslOK)
 	    mpi_failure("Unexpected error %d receiving pipeline from %d", status, dest);
 
-	  p7_tophits_Merge(th, mpi_th);
-	  p7_pipeline_Merge(pli, mpi_pli);
+	  cm_tophits_Merge(th, mpi_th);
+	  cm_pipeline_Merge(pli, mpi_pli);
 
-	  p7_pipeline_Destroy(mpi_pli, NULL);
-	  p7_tophits_Destroy(mpi_th);
+	  cm_pipeline_Destroy(mpi_pli, NULL);
+	  cm_tophits_Destroy(mpi_th);
 	}
 
       /* Print the results.  */
-      p7_tophits_SortBySortkey(th);
-      p7_tophits_Threshold(th, pli);
-      p7_tophits_Targets(ofp, th, pli, textw); fprintf(ofp, "\n\n");
-      p7_tophits_Domains(ofp, th, pli, textw); fprintf(ofp, "\n\n");
+      cm_tophits_SortByScore(th);
+      cm_tophits_Threshold(th, pli);
 
-      if (tblfp)    p7_tophits_TabularTargets(tblfp,    qsq->name, qsq->acc, th, pli, (nquery == 1));
-      if (domtblfp) p7_tophits_TabularDomains(domtblfp, qsq->name, qsq->acc, th, pli, (nquery == 1));
+      /* tally up total number of hits and target coverage */
+      pli->n_output = pli->pos_output = 0;
+      for (i = 0; i < th->N; i++) {
+	if ((th->hit[i]->flags & CM_HIT_IS_REPORTED) || (th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
+	  pli->n_output++;
+	  pli->pos_output += abs(th->hit[i]->stop - th->hit[i]->start) + 1;
+	}
+      }
+
+      cm_tophits_Targets(ofp, th, pli, textw); fprintf(ofp, "\n\n");
+      if(pli->do_alignments) {
+	if((status = cm_tophits_HitAlignments(ofp, th, pli, textw)) != eslOK) esl_fatal("Out of memory");
+	fprintf(ofp, "\n\n");
+      }
+
+      if (tblfp)    cm_tophits_TabularTargets(tblfp,    qsq->name, qsq->acc, th, pli, (nquery == 1));
 
       esl_stopwatch_Stop(w);
-      p7_pli_Statistics(ofp, pli, w);
+      cm_pli_Statistics(ofp, pli, w);
       fprintf(ofp, "//\n");
 
-      p7_hmmfile_Close(hfp);
-      p7_pipeline_Destroy(pli, NULL);
-      p7_tophits_Destroy(th);
+      cm_file_Close(cmfp);
+      cm_pipeline_Destroy(pli, NULL);
+      cm_tophits_Destroy(th);
       esl_sq_Reuse(qsq);
     }
   if (sstatus == eslEFORMAT) 
@@ -1151,17 +1174,19 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       dest = mpistatus.MPI_SOURCE;
       MPI_Recv(mpi_buf, size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
 
-      if (mpistatus.MPI_TAG == HMMER_ERROR_TAG)
+      if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)
 	mpi_failure("MPI client %d raised error:\n%s\n", dest, mpi_buf);
-      if (mpistatus.MPI_TAG != HMMER_TERMINATING_TAG)
+      if (mpistatus.MPI_TAG != INFERNAL_TERMINATING_TAG)
 	mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
     }
 
  /* Terminate outputs - any last words?
    */
-  if (tblfp)    p7_tophits_TabularTail(tblfp,    "hmmscan", p7_SCAN_MODELS, cfg->seqfile, cfg->hmmfile, go);
-  if (domtblfp) p7_tophits_TabularTail(domtblfp, "hmmscan", p7_SCAN_MODELS, cfg->seqfile, cfg->hmmfile, go);
+  if (tblfp)    cm_tophits_TabularTail(tblfp,    "cmscan", CM_SCAN_MODELS, cfg->seqfile, cfg->cmfile, go);
   if (ofp)      fprintf(ofp, "[ok]\n");
+
+  esl_stopwatch_Stop(mw);
+  esl_stopwatch_Display(stdout, mw, "Total runtime:");
 
   /* Cleanup - prepare for successful exit
    */
@@ -1172,12 +1197,12 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   esl_sq_Destroy(qsq);
   esl_stopwatch_Destroy(w);
+  esl_stopwatch_Destroy(mw);
   esl_alphabet_Destroy(abc);
   esl_sqfile_Close(sqfp);
 
   if (ofp != stdout) fclose(ofp);
   if (tblfp)         fclose(tblfp);
-  if (domtblfp)      fclose(domtblfp);
 
   return eslOK;
 
@@ -1192,17 +1217,26 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              seqfmt   = eslSQFILE_UNKNOWN; /* format of seqfile                               */
   P7_BG           *bg       = NULL;	         /* null model                                      */
   ESL_SQFILE      *sqfp     = NULL;              /* open seqfile                                    */
-  P7_HMMFILE      *hfp      = NULL;		 /* open HMM database file                          */
+  CM_FILE         *cmfp     = NULL;		 /* open CM database file                           */
+  CM_t            *cm       = NULL;              /* the CM                                          */
+  CMConsensus_t   *cmcons   = NULL;              /* CM consensus information                        */
   ESL_ALPHABET    *abc      = NULL;              /* sequence alphabet                               */
   P7_OPROFILE     *om       = NULL;		 /* target profile                                  */
+  P7_PROFILE      *gm       = NULL;              /* generic query profile HMM                       */
   ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
   int              status   = eslOK;
   int              hstatus  = eslOK;
   int              sstatus  = eslOK;
+  int              cm_clen, cm_W;          /* consensus, window length for current CM */        
+  float            gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
+  off_t            cm_offset;              /* file offset for current CM */
+  float           *p7_evparam;             /* E-value parameters for the p7 filter */
+  int              prv_ntophits;
 
   char            *mpi_buf  = NULL;              /* buffer used to pack/unpack structures */
   int              mpi_size = 0;                 /* size of the allocated buffer */
+  int              nquery   = 0;
 
   MPI_Status       mpistatus;
   char             errbuf[eslERRBUFSIZE];
@@ -1210,19 +1244,30 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   w = esl_stopwatch_Create();
 
   /* Open the target profile database to get the sequence alphabet */
-  status = p7_hmmfile_OpenE(cfg->hmmfile, p7_HMMDBENV, &hfp, errbuf);
-  if      (status == eslENOTFOUND) mpi_failure("File existence/permissions problem in trying to open HMM file %s.\n%s\n", cfg->hmmfile, errbuf);
-  else if (status == eslEFORMAT)   mpi_failure("File format problem in trying to open HMM file %s.\n%s\n",                cfg->hmmfile, errbuf);
-  else if (status != eslOK)        mpi_failure("Unexpected error %d in opening HMM file %s.\n%s\n",               status, cfg->hmmfile, errbuf);  
-  if (! hfp->is_pressed)           mpi_failure("Failed to open binary dbs for HMM file %s: use hmmpress first\n",         hfp->fname);
+  /* Open the target profile database to get the sequence alphabet */
+  status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
+  if      (status == eslENOTFOUND) mpi_failure("File existence/permissions problem in trying to open CM file %s.\n%s\n", cfg->cmfile, errbuf);
+  else if (status == eslEFORMAT)   mpi_failure("File format problem in trying to open CM file %s.\n%s\n",                cfg->cmfile, errbuf);
+  else if (status != eslOK)        mpi_failure("Unexpected error %d in opening CM file %s.\n%s\n",               status, cfg->cmfile, errbuf);  
+  if      (cmfp->do_gzip)          mpi_failure("Reading gzipped CM files is not supported");
+  if      (cmfp->do_stdin)         mpi_failure("Reading CM files from stdin is not supported");
+  if (! cmfp->is_pressed)          mpi_failure("Failed to open binary auxfiles for %s: use cmpress first\n",             cmfp->fname);
 
-  hstatus = p7_oprofile_ReadMSV(hfp, &abc, &om);
-  if      (hstatus == eslEFORMAT)   mpi_failure("bad file format in HMM file %s",             cfg->hmmfile);
-  else if (hstatus == eslEINCOMPAT) mpi_failure("HMM file %s contains different alphabets",   cfg->hmmfile);
-  else if (hstatus != eslOK)        mpi_failure("Unexpected error in reading HMMs from %s",   cfg->hmmfile); 
+  hstatus = cm_file_Read(cmfp, FALSE, &abc, NULL);
+  if(hstatus == eslEFORMAT)  mpi_failure("bad file format in CM file %s\n%s",           cfg->cmfile, cmfp->errbuf);
+  else if (hstatus != eslOK) mpi_failure("Unexpected error in reading CMs from %s\n%s", cfg->cmfile, cmfp->errbuf); 
 
-  p7_oprofile_Destroy(om);
-  p7_hmmfile_Close(hfp);
+  /* Determine database size: default is to updated as we read target CMs */
+  if(esl_opt_IsUsed(go, "-Z")) { 
+    cfg->Z       = (int64_t) esl_opt_GetReal(go, "-Z");
+    cfg->Z_setby = CM_ZSETBY_OPTION; 
+  }
+  else { 
+    if(cmfp->ssi == NULL) mpi_failure("Failed to open SSI index for CM file: %s\n", cmfp->fname);
+    cfg->Z = (int64_t) cmfp->ssi->nprimary;
+    cfg->Z_setby = CM_ZSETBY_SSI_AND_QLENGTH; /* we will multiply Z by each query sequence length */
+  }
+  cm_file_Close(cmfp);
 
   /* Open the query sequence database */
   status = esl_sqfile_OpenDigital(abc, cfg->seqfile, seqfmt, NULL, &sqfp);
@@ -1233,98 +1278,112 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   qsq = esl_sq_CreateDigital(abc);
   bg = p7_bg_Create(abc);
+  ESL_ALLOC(p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
 
   /* Outside loop: over each query sequence in <seqfile>. */
   while ((sstatus = esl_sqio_Read(sqfp, qsq)) == eslOK)
     {
-      P7_PIPELINE     *pli     = NULL;		/* processing pipeline                      */
-      P7_TOPHITS      *th      = NULL;        	/* top-scoring sequence hits                */
+      CM_PIPELINE     *pli     = NULL;		/* processing pipeline                      */
+      CM_TOPHITS      *th      = NULL;        	/* top-scoring sequence hits                */
 
       MSV_BLOCK        block;
+
+      nquery++;
 
       esl_stopwatch_Start(w);
 
       status = 0;
-      MPI_Send(&status, 1, MPI_INT, 0, HMMER_READY_TAG, MPI_COMM_WORLD);
+      MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
 
       /* Open the target profile database */
-      status = p7_hmmfile_OpenE(cfg->hmmfile, p7_HMMDBENV, &hfp, NULL);
-      if (status != eslOK) mpi_failure("Unexpected error %d in opening hmm file %s.\n", status, cfg->hmmfile);  
+      status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
+      if (status != eslOK) mpi_failure("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, errbuf);  
   
       /* Create processing pipeline and hit list */
-      th  = p7_tophits_Create(); 
-      pli = p7_pipeline_Create(go, 100, 100, FALSE, p7_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
-      pli->hfp = hfp;  /* for two-stage input, pipeline needs <hfp> */
+      th  = cm_tophits_Create(); 
+      pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qsq->n, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
+      pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
 
-      p7_pli_NewSeq(pli, qsq);
+      cm_pli_NewSeq(pli, qsq, nquery-1);
 
       /* receive a sequence block from the master */
-      MPI_Recv(&block, 3, MPI_LONG_LONG_INT, 0, HMMER_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
+      MPI_Recv(&block, 3, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
       while (block.count > 0)
 	{
 	  uint64_t length = 0;
 	  uint64_t count  = block.count;
 
-	  hstatus = p7_oprofile_Position(hfp, block.offset);
+	  hstatus = cm_p7_oprofile_Position(cmfp, block.offset);
 	  if (hstatus != eslOK) mpi_failure("Cannot position optimized model to %ld\n", block.offset);
 
-	  while (count > 0 && (hstatus = p7_oprofile_ReadMSV(hfp, &abc, &om)) == eslOK)
+	  while (count > 0 && 
+		 (hstatus = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &abc, &cm_offset, &cm_clen, &cm_W, &gfmu, &gflambda, &om)) == eslOK)
 	    {
 	      length = om->eoff - block.offset + 1;
 
-	      p7_pli_NewModel(pli, om, bg);
-	      p7_bg_SetLength(bg, qsq->n);
-	      p7_oprofile_ReconfigLength(om, qsq->n);
-	      
-	      p7_Pipeline(pli, om, bg, qsq, th);
-	      
-	      p7_oprofile_Destroy(om);
-	      p7_pipeline_Reuse(pli);
+	      esl_vec_FCopy(om->evparam, p7_NEVPARAM, p7_evparam);
+	      p7_evparam[CM_p7_GFMU]     = gfmu;
+	      p7_evparam[CM_p7_GFLAMBDA] = gflambda;
+	      gm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
+	      cm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
+	      cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */
+	      if((status = cm_pli_NewModel(pli, CM_NEWMODEL_MSV, 
+					   cm,                                   /* this is NULL b/c we don't have one yet */
+					   cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
+					   FALSE, FALSE, NULL, NULL, NULL, NULL, /* all these are irrelevant in CM_NEWMODEL_MSV mode */
+					   om, bg)) != eslOK) mpi_failure(pli->errbuf);
+
+	      prv_ntophits = th->N;
+	      if((status = cm_Pipeline(pli, cm_offset, om, bg, p7_evparam, qsq, th, &gm, &cm, &cmcons)) != eslOK)
+		mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s", status, pli->errbuf);
+
+	      if(th->N != prv_ntophits) { 
+		cm_tophits_ComputeEvalues(th, (double) cm->expA[pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
+	      }
+	      cm_pipeline_Reuse(pli);
+
+	      if(cmcons != NULL) FreeCMConsensus(cmcons);
+	      if(pli->fsmx != NULL && cm != NULL) { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL; }
+	      if(pli->smx  != NULL && cm != NULL) { cm_FreeScanMatrix(cm, pli->smx);  pli->smx  = NULL; }
+	      if(cm  != NULL) FreeCM(cm);
+	      if(om  != NULL) p7_oprofile_Destroy(om);
+	      if(gm  != NULL) p7_profile_Destroy(gm);
 
 	      --count;
 	    }
-
-	  /* check the status of reading the hmm */
-
-	  /* lets do a little bit of sanity checking here to make sure the blocks are the same */
+	  /* check the status of reading the msv filter */
 	  if (count > 0)              
 	    {
 	      switch(hstatus)
 		{
-		case eslEFORMAT:
-		  mpi_failure("bad file format in HMM file %s",              cfg->hmmfile);
-		  break;
-		case eslEINCOMPAT:
-		  mpi_failure("HMM file %s contains different alphabets",    cfg->hmmfile);
-		  break;
-		case eslOK:
-		case eslEOF:
-		  mpi_failure("Block count mismatch - expected %ld found %ld at offset %ld\n", block.count, block.count-count, block.offset);
-		  break;
-		default:
-		  mpi_failure("Unexpected error %d in reading HMMs from %s", hstatus, cfg->hmmfile); 
+		case eslEFORMAT:    mpi_failure("bad file format in HMM file %s\n%s",          cfg->cmfile, cmfp->errbuf); break;
+		case eslEINCOMPAT:  mpi_failure("HMM file %s contains different alphabets",    cfg->cmfile); break;
+		case eslOK:         
+		case eslEOF:        mpi_failure("Block count mismatch - expected %ld found %ld at offset %ld\n", block.count, block.count-count, block.offset); break;
+		default:  	    mpi_failure("Unexpected error %d in reading HMMs from %s\n%s", hstatus, cfg->cmfile, cmfp->errbuf); break;
 		}
 	    }
-	  if (block.length != length) 
-	    mpi_failure("Block length mismatch - expected %ld found %ld at offset %ld\n", block.length, length, block.offset);
+
+	  /* lets do a little bit of sanity checking here to make sure the blocks are the same */
+	  if (block.length != length) mpi_failure("Block length mismatch - expected %ld found %ld at offset %ld\n", block.length, length, block.offset);
 
 	  /* inform the master we need another block of sequences */
 	  status = 0;
-	  MPI_Send(&status, 1, MPI_INT, 0, HMMER_READY_TAG, MPI_COMM_WORLD);
+	  MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
 
 	  /* wait for the next block of sequences */
-	  MPI_Recv(&block, 3, MPI_LONG_LONG_INT, 0, HMMER_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
+	  MPI_Recv(&block, 3, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
 	}
 
       esl_stopwatch_Stop(w);
 
       /* Send the top hits back to the master. */
-      p7_tophits_MPISend(th, 0, HMMER_TOPHITS_TAG, MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
-      p7_pipeline_MPISend(pli, 0, HMMER_PIPELINE_TAG, MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
+      cm_tophits_MPISend(th, 0, INFERNAL_TOPHITS_TAG, MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
+      cm_pipeline_MPISend(pli, 0, INFERNAL_PIPELINE_TAG, MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
 
-      p7_hmmfile_Close(hfp);
-      p7_pipeline_Destroy(pli, NULL);
-      p7_tophits_Destroy(th);
+      cm_file_Close(cmfp);
+      cm_pipeline_Destroy(pli, NULL);
+      cm_tophits_Destroy(th);
       esl_sq_Reuse(qsq);
     } /* end outer loop over query HMMs */
   if (sstatus == eslEFORMAT) 
@@ -1333,7 +1392,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     mpi_failure("Unexpected error %d reading sequence file %s", sstatus, sqfp->filename);
 
   status = 0;
-  MPI_Send(&status, 1, MPI_INT, 0, HMMER_TERMINATING_TAG, MPI_COMM_WORLD);
+  MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_TERMINATING_TAG, MPI_COMM_WORLD);
 
   if (mpi_buf != NULL) free(mpi_buf);
 
@@ -1345,6 +1404,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   esl_sqfile_Close(sqfp);
 
   return eslOK;
+
+ ERROR: 
+  mpi_failure("out of memory");
+  return status; /* NEVER REACHED */
 }
 #endif /*HAVE_MPI*/
 
@@ -1365,10 +1428,9 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
   off_t             cm_offset;              /* file offset for current CM */
 
   w = esl_stopwatch_Create();
-  prv_ntophits = info->th->N;
 
   /* Main loop: */
-  while ((status = cm_p7_oprofile_ReadMSV(cmfp, &abc, &cm_offset, &cm_clen, &cm_W, &gfmu, &gflambda, &om)) == eslOK)
+  while ((status = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &abc, &cm_offset, &cm_clen, &cm_W, &gfmu, &gflambda, &om)) == eslOK)
     {
       esl_stopwatch_Start(w);
       esl_vec_FCopy(om->evparam, p7_NEVPARAM, info->p7_evparam);
@@ -1383,13 +1445,13 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 				   FALSE, FALSE, NULL, NULL, NULL, NULL, /* all these are irrelevant in CM_NEWMODEL_MSV mode */
 				   om, info->bg)) != eslOK) cm_Fail(info->pli->errbuf);
 
+      prv_ntophits = info->th->N;
       if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, info->qsq, info->th, &gm, &cm, &cmcons)) != eslOK)
 	cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
       
       if(info->th->N != prv_ntophits) { 
 	cm_tophits_ComputeEvalues(info->th, (double) cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
       }
-      prv_ntophits = info->th->N;
 
       esl_stopwatch_Stop(w);
       //esl_stopwatch_Display(stdout, w, "TIMING serial cm_Pipeline()");
@@ -1498,7 +1560,6 @@ pipeline_thread(void *arg)
   if (status != eslOK) esl_fatal("Work queue worker failed");
 
   w = esl_stopwatch_Create();
-  prv_ntophits = info->th->N;
 
   /* loop until all blocks have been processed */
   block = (CM_P7_OM_BLOCK *) newBlock;
@@ -1528,13 +1589,13 @@ pipeline_thread(void *arg)
 				       FALSE, FALSE, NULL, NULL, NULL, NULL, /* all these are irrelevant in CM_NEWMODEL_MSV mode */
 				       om, info->bg)) != eslOK) cm_Fail(info->pli->errbuf);
 
+	  prv_ntophits = info->th->N;
 	  if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, info->qsq, info->th, &gm, &cm, &cmcons)) != eslOK)
 	    cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
 
 	  if(info->th->N != prv_ntophits) { 
 	    cm_tophits_ComputeEvalues(info->th, (double) cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
 	  }
-	  prv_ntophits = info->th->N;
 
 	  esl_stopwatch_Stop(w);
 	  //esl_stopwatch_Display(stdout, w, "TIMING threaded cm_Pipeline()");
@@ -1571,143 +1632,6 @@ pipeline_thread(void *arg)
   return;
 }
 #endif   /* HMMER_THREADS */
-
-#if 0 
-/* Function:  setup_cm()
- * Incept:    EPN, Wed Jul  6 05:19:15 2011
- *
- * Purpose:  Prepare to run the pipeline for a CM. Construct
- *           the requisite p7 matrices and background objects.
- *
- * Returns: eslOK on success. Upon an error, fills errbuf with
- *          message and returns appropriate error status code.
- */
-int
-setup_cm(CM_t *cm, const ESL_ALPHABET *abc, WORKER_INFO *info, char *errbuf, int *opt_nhmm, P7_HMM ***opt_hmmA, P7_BG ***opt_bgA, P7_OPROFILE ***opt_omA, P7_PROFILE ***opt_gmA, float ***opt_p7evpAA)
-{ 
-  int               status;
-  int               nhmm = 0;
-  int               use_mlp7_hmm = FALSE;
-  P7_BG           **bgA  = NULL;         /* null models                              */
-  P7_OPROFILE     **omA  = NULL;         /* optimized query profile HMMs            */
-  P7_PROFILE      **gmA  = NULL;         /* generic   query profile HMMs            */
-  P7_HMM          **hmmA = NULL;
-  float           **p7evpAA = NULL;/* [0..nhmm-1][0..CM_p7_NEVPARAM] E-value parameters */
-  int               m, z, z_offset;
-  ESL_STOPWATCH *w = NULL;
-  w = esl_stopwatch_Create();
-
-  esl_stopwatch_Start(w);
-
-  /* Set configure options, but don't configure yet, we only do that in cm_pipeline()
-   * if we have to (if >= 1 hit survives to the first CM stage) 
-   */
-  cm->config_opts = info->cm_config_opts;
-
-  /* Convert HMMs to optimized models.
-   * First, determine how many and which HMMs we'll be using *
-   * by default, we filter only with the <nhmm> (== cm->nap7) HMMs written in the CM file */
-  /* but, if --doml selected or there's no HMMs in the file, use a ML P7 HMM built from the CM */
-  if (info->doml_opt_is_on || (cm->nap7 == 0)) { 
-    use_mlp7_hmm = TRUE;
-    nhmm = 1 + cm->nap7;
-  }
-  else if(info->noadd_opt_is_on) { 
-    /* or if --noadd is selected, only use a ML p7 HMM */
-    use_mlp7_hmm = TRUE;
-    nhmm = 1;
-  }
-  else { 
-    nhmm = cm->nap7;
-  }
-
-  /* check if we need to freshly allocate everything */
-  if(*opt_nhmm != nhmm) { /* yes, we do */
-    ESL_ALLOC(hmmA, sizeof(P7_HMM *)        * nhmm);
-    ESL_ALLOC(gmA,  sizeof(P7_PROFILE *)    * nhmm);
-    ESL_ALLOC(omA,  sizeof(P7_OPROFILE *)   * nhmm);
-    ESL_ALLOC(bgA,  sizeof(P7_BG *)         * nhmm);
-    ESL_ALLOC(p7evpAA, sizeof(float *) * nhmm);
-    for(m = 0; m < nhmm; m++) { 
-      hmmA[m] = NULL;
-      gmA[m]  = NULL;
-      omA[m]  = NULL;
-      bgA[m]  = NULL;
-      p7evpAA[m] = NULL;
-    }
-  }
-  else { /* we only have to destroy/reallocate for the profiles */
-    hmmA = *opt_hmmA;
-    bgA  = *opt_bgA;
-    omA  = *opt_omA;
-    gmA  = *opt_gmA;
-    p7evpAA = *opt_p7evpAA;
-    for(m = 0; m < nhmm; m++) { 
-      p7_profile_Destroy(gmA[m]);  /* we only create a new one if we need it, in cm_pipeline() */
-      gmA[m] = NULL;
-      p7_oprofile_Destroy(omA[m]); /* we'll create a new one below */
-      omA[m] = NULL;
-    }
-  }
-
-  /* Now we know how many HMMs, allocate and fill the necessary data structures for each */
-  /* use the ML p7 HMM if nec */
-  if (info->doml_opt_is_on || (cm->nap7 == 0)) { 
-    hmmA[0] = cm->mlp7;
-  }
-  /* copy the HMMs from the file into the CM data structure */
-  if(! info->doml_opt_is_on) { 
-    z_offset = use_mlp7_hmm ? 1 : 0;
-    for(z = 0; z < cm->nap7; z++) { 
-      hmmA[z+z_offset] = cm->ap7A[z];
-    }
-  }
-
-  /* set up p7 profiles */
-  for(m = 0; m < nhmm; m++) { 
-    if(bgA[m]     == NULL) bgA[m] = p7_bg_Create(abc);
-    if(omA[m]     == NULL) omA[m] = p7_oprofile_Create(hmmA[m]->M, abc);
-    if(gmA[m]     == NULL) gmA[m] = p7_profile_Create (hmmA[m]->M, abc);
-    if(p7evpAA[m] == NULL) ESL_ALLOC(p7evpAA[m], sizeof(float) * CM_p7_NEVPARAM);
-    /* NOTE: we always have to create the optimized profile, there is no p7_oprofile_Reuse() */
-    p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_LOCAL);  /* 100 is a dummy length for now; and MSVFilter requires local mode */
-    p7_oprofile_Convert(gmA[m], omA[m]);                       /* <om> is now p7_LOCAL, multihit */
-    /* after omA[m]'s been created, convert gmA[m] to glocal, to define envelopes in cm_pipeline() */
-    p7_ProfileConfig(hmmA[m], bgA[m], gmA[m], 100, p7_GLOCAL);
-    /* copy evalue parameters */
-    if(m == 0 && use_mlp7_hmm) { esl_vec_FCopy(cm->mlp7_evparam,       CM_p7_NEVPARAM, p7evpAA[m]); }
-    else if(use_mlp7_hmm)      { esl_vec_FCopy(cm->ap7_evparamAA[m-1], CM_p7_NEVPARAM, p7evpAA[m]); }
-    else                       { esl_vec_FCopy(cm->ap7_evparamAA[m],   CM_p7_NEVPARAM, p7evpAA[m]); }
-  }
-  
-  esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, "TIMING setup_cm()");
-  esl_stopwatch_Destroy(w);
-
-  *opt_nhmm    = nhmm;
-  *opt_hmmA    = hmmA;
-  *opt_bgA     = bgA;
-  *opt_omA     = omA;
-  *opt_gmA     = gmA;
-  *opt_p7evpAA = p7evpAA;
-  
-  return eslOK;
-
- ERROR: 
-  if(gmA     != NULL) { for(m = 0; m < nhmm; m++) { if(gmA[m]     != NULL) p7_profile_Destroy(gmA[m]);  } free(gmA); }
-  if(omA     != NULL) { for(m = 0; m < nhmm; m++) { if(omA[m]     != NULL) p7_oprofile_Destroy(omA[m]); } free(omA); }
-  if(bgA     != NULL) { for(m = 0; m < nhmm; m++) { if(bgA[m]     != NULL) p7_bg_Destroy(bgA[m]);       } free(bgA); }
-  if(p7evpAA != NULL) { for(m = 0; m < nhmm; m++) { if(p7evpAA[m] != NULL) free(p7evpAA[m]);            } free(p7evpAA); }
-  if(hmmA    != NULL) free(hmmA); /* hmmA just points to HMMs in the CM data structure, don't free those */
-  *opt_nhmm = 0;
-  *opt_hmmA = NULL;
-  *opt_bgA  = NULL;
-  *opt_omA  = NULL;
-  *opt_gmA  = NULL;
-  *opt_p7evpAA = NULL;
-  ESL_FAIL(status, errbuf, "Out of memory");
-}
-#endif
 
 /* Function:  setup_config_opts()
  * Incept:    EPN, Wed Jul  6 13:45:44 2011
