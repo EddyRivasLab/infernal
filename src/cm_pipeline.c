@@ -775,7 +775,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
      * new model. Also, If we're using an E-value threshold determine
      * the bit score for this model that pertains to that E-value.
      */
-    if((status = UpdateExpsForDBSize(cm, NULL, (long) pli->Z)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem update exp tail parameters for model %s\n", cm->name);
+    if((status = UpdateExpsForDBSize(cm, pli->errbuf, (long) pli->Z)) != eslOK) return status;
     if(pli->by_E) { 
       if((status = E2ScoreGivenExpInfo(cm->expA[pli->final_cm_exp_mode], pli->errbuf, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
       pli->T = (double) T;
@@ -1729,6 +1729,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	//if (pthread_mutex_unlock (&pli->cmfp->hfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
       }
 #endif    
+      printf("CONFIGURING CM: %s\n", (*opt_cm)->name);
       if((status = ConfigCM(*opt_cm, pli->errbuf, FALSE, NULL, NULL)) != eslOK) return status;
       /* update the pipeline about the model */
       if((status = cm_pli_NewModel(pli, CM_NEWMODEL_CM, *opt_cm, (*opt_cm)->clen, (*opt_cm)->W, 

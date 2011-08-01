@@ -33,18 +33,33 @@
 #include "funcs.h"		/* function declarations                */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define CMCUTOPTS    "-E,-T,--ga,--tc,--nc"                       /* exclusive choice for CM cutoff */
+#define OUTOPTS "-E,-T,--cut_ga,--cut_nc,--cut_tc"
 
-#define DEFAULT_DBSIZE 10000000 /* 10 Mb */
+#define OUTMODE_DEFAULT   0
+#define OUTMODE_BITSCORES 1
+#define OUTMODE_EVALUES   2
+#define OUTMODE_GA        3
+#define OUTMODE_NC        4
+#define OUTMODE_TC        5
+#define NOUTMODES         6 
 
 static ESL_OPTIONS options[] = {
   /* name           type      default      env  range     toggles      reqs     incomp    help  docgroup*/
-  { "-h",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   0 },
+  { "-h",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,       NULL, "show brief help on version and usage",   0 },
+  { "-E",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,       NULL, "print bit scores that correspond to E-value threshold of <x>", 0 },
+  { "-T",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,       NULL, "print E-values that correspond to bit score threshold of <x>", 0 },
+  { "-Z",        eslARG_REAL,   "10",      NULL, "x>0",     NULL,      NULL,       NULL, "set database size in *Mb* to <x> for E-value calculations",    0 },
+  { "--cut_ga",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       NULL, "print E-values that correspond to GA bit score thresholds",    0 },
+  { "--cut_nc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       NULL, "print E-values that correspond to NC bit score thresholds",    0 },
+  { "--cut_tc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       NULL, "print E-values that correspond to TC bit score thresholds",    0 },
+  { "--key",     eslARG_STRING, NULL,      NULL, NULL,      NULL,      NULL,       NULL, "only print statistics for CM with name or accession <s>",      0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
 static char usage[]  = "[-options] <cmfile>";
 static char banner[] = "display summary statistics for CMs";
+
+static void output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode);
 
 int
 main(int argc, char **argv)
@@ -61,7 +76,8 @@ main(int argc, char **argv)
   int              ncm;         /* CM index                  */
   char             errbuf[cmERRBUFSIZE]; /* for error messages */
   int              status;      /* easel status */
-
+  int              output_mode; /* 0..5: OUTMODE_DEFAULT | OUTMODE_BITSCORES | OUTMODE_EVALUES | OUTMODE_GA | OUTMODE_TC | OUTMODE_NC */
+  char            *key = NULL;  /* <s> from --key, if used */
   /* Process the command line options.
    */
   go = esl_getopts_Create(options);
@@ -106,40 +122,94 @@ main(int argc, char **argv)
   else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
   else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",               status, cmfile, errbuf);  
 
+  /* Determine the output mode and print column headings
+   */
+  output_mode = OUTMODE_DEFAULT;
+  if     (esl_opt_IsUsed(go, "-E"))       { output_mode = OUTMODE_BITSCORES; }
+  else if(esl_opt_IsUsed(go, "-T"))       { output_mode = OUTMODE_EVALUES;   }
+  else if(esl_opt_IsUsed(go, "--cut_ga")) { output_mode = OUTMODE_GA;        }
+  else if(esl_opt_IsUsed(go, "--cut_tc")) { output_mode = OUTMODE_TC;        }
+  else if(esl_opt_IsUsed(go, "--cut_nc")) { output_mode = OUTMODE_NC;        }
+
+  if(output_mode == OUTMODE_DEFAULT) { /* default mode, general model stats */
+    fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %12s\n",    "",      "",                     "",             "",         "",         "",     "",      "",      "", "",    "rel entropy");
+    fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %12s\n",    "",      "",                     "",             "",         "",         "",     "",      "",      "", "",    "------------");
+    fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %5s  %5s\n", "idx",  "name",                 "accession",    "nseq",     "eff_nseq", "clen", "bps",   "bifs",  "W",     "M",     "CM",     "HMM");
+    fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %5s  %5s\n", "----", "--------------------", "---------", "--------", "--------", "----", "----", "----",   "----", "-----", "-----", "-----");
+  }
+  else { 
+    if(output_mode == OUTMODE_BITSCORES) { 
+      fprintf(stdout, "# Printing cmsearch bit score cutoffs corresponding to E-value of %g in a database of size %.6f Mb\n", esl_opt_GetReal(go, "-E"), esl_opt_GetReal(go, "-Z"));
+      fprintf(stdout, "#\n");
+      fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s\n", "idx",  "name", "accession", "local-inside", "local-cyk", "glocal-inside", "glocal-cyk");
+      fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s\n", "----", "--------------------", "---------", "-------------", "-------------", "-------------", "-------------");
+    }
+    else if(output_mode == OUTMODE_EVALUES) { 
+      fprintf(stdout, "# Printing cmsearch E-values corresponding to a bit score threshold of %.2f  in a database of size %.6f Mb\n", esl_opt_GetReal(go, "-T"), esl_opt_GetReal(go, "-Z"));
+      fprintf(stdout, "#\n");
+      fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s\n", "idx",  "name", "accession", "local-inside", "local-cyk", "glocal-inside", "glocal-cyk");
+      fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s\n", "----", "--------------------", "---------", "-------------", "-------------", "-------------", "-------------");
+    }
+    else { 
+      if(output_mode == OUTMODE_GA) { 
+	fprintf(stdout, "# Printing cmsearch E-values corresponding to GA bit score thresholds in a database of size %.6f Mb\n", esl_opt_GetReal(go, "-Z"));
+      }
+      else if(output_mode == OUTMODE_NC) { 
+	fprintf(stdout, "# Printing cmsearch E-values corresponding to NC bit score thresholds in a database of size %.6f Mb\n", esl_opt_GetReal(go, "-Z"));
+      }
+      else if(output_mode == OUTMODE_TC) { 
+	fprintf(stdout, "# Printing cmsearch E-values corresponding to TC bit score thresholds in a database of size %.6f Mb\n", esl_opt_GetReal(go, "-Z"));
+      }
+      fprintf(stdout, "#\n");
+      fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s  %13s\n", "idx",  "name", "accession", "bit-score", "local-inside", "local-cyk", "glocal-inside", "glocal-cyk");
+      fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s  %13s\n", "----", "--------------------", "---------", "-------------", "-------------", "-------------", "-------------", "-------------");
+    }
+  }
+
   /* Main body: read CMs one at a time, print stats 
    */
-  fprintf(stdout, "# %-4s  %-20s  %-12s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %12s\n",    "",      "",                     "",             "",         "",         "",     "",      "",      "", "",    "rel entropy");
-  fprintf(stdout, "# %-4s  %-20s  %-12s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %12s\n",    "",      "",                     "",             "",         "",         "",     "",      "",      "", "",    "------------");
-  fprintf(stdout, "# %-4s  %-20s  %-12s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %5s  %5s\n", "idx",  "name",                 "accession",    "nseq",     "eff_nseq", "clen", "bps",   "bifs",  "W",     "M",     "CM",     "HMM");
-  fprintf(stdout, "# %-4s  %-20s  %-12s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %5s  %5s\n", "----", "--------------------", "------------", "--------", "--------", "----", "----", "----",   "----", "-----", "-----", "-----");
 
-  ncm = 0;
-  while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) != eslEOF) 
-    {
-      if      (status == eslEOD)  cm_Fail("read failed, CM file %s may be truncated?", cmfile);
-      else if (status != eslOK)   cm_Fail(cmfp->errbuf);
-      ncm++;
-
-      /* build the cp9 HMM */
-      if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) cm_Fail("Couldn't build a CP9 HMM from the CM\n");
+  if(! esl_opt_IsUsed(go, "--key")) { 
+    
+    ncm = 0;
+    while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) != eslEOF) 
+      {
+	if      (status == eslEOD)  cm_Fail("read failed, CM file %s may be truncated?", cmfile);
+	else if (status != eslOK)   cm_Fail(cmfp->errbuf);
+	ncm++;
       
-      fprintf(stdout, "%6d  %-20s  %-12s  %8d  %8.2f  %4d  %4d  %4d  %4d  %5d  %5.3f  %5.3f\n",
-	      ncm,
-	      cm->name,
-	      cm->acc == NULL ? "-" : cm->acc,
-	      cm->nseq,
-	      cm->eff_nseq,
-	      cm->clen,
-	      CMCountStatetype(cm, MP_st),
-	      CMCountStatetype(cm, B_st),
-	      cm->W,
-	      cm->M,
-	      cm_MeanMatchRelativeEntropy(cm),
-	      cp9_MeanMatchRelativeEntropy(cm));
-      
-      FreeCM(cm);
+	output_stats(go, cm, ncm, output_mode);
+	FreeCM(cm);
+      }
+  }
+  else { /* --key enabled, only print stats for a single CM */
+    key = esl_opt_GetString(go, "--key");
+    if(cmfp->ssi != NULL) { 
+      /* we have an SSI index, use it */
+      status = cm_file_PositionByKey(cmfp, key);
+      if      (status == eslENOTFOUND) cm_Fail("CM %s not found in SSI index for file %s\n", key, cmfile);
+      else if (status == eslEFORMAT)   cm_Fail("Failed to parse SSI index for %s\n", cmfile);
+      else if (status != eslOK)        cm_Fail("Failed to look up location of CM %s in SSI index of file %s\n", key, cmfile);
     }
-  
+    while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) != eslEOF)
+      {
+	/* no SSI index, chew through all CMs til we find the right one */
+	if(cm == NULL) cm_Fail(cmfp->errbuf);
+	if (strcmp(key, cm->name) == 0 || (cm->acc && strcmp(key, cm->acc) == 0)) break;
+	FreeCM(cm);
+	cm = NULL;
+      }
+      if(status == eslOK) { 
+	output_stats(go, cm, 1, output_mode);
+	FreeCM(cm);
+      }
+      else if (status != eslEOF) { 
+	cm_Fail(cmfp->errbuf); /* cm_file_Read() returned an error, die. */
+      }
+      else {
+	cm_Fail("CM %s not found in file %s\n", key, cmfile);
+      }
+  }
   fprintf(stdout, "#\n");
   esl_alphabet_Destroy(abc);
   cm_file_Close(cmfp);
@@ -148,4 +218,97 @@ main(int argc, char **argv)
   esl_stopwatch_Display(stdout, w, "# CPU time: ");
   esl_stopwatch_Destroy(w);
   exit(0);
+}
+
+
+/* output_stats():
+ * Print relevant statistics for a CM, dependent on <output_mode>..
+ */
+static void
+output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode) 
+{
+  int  status;
+  char errbuf[cmERRBUFSIZE]; /* for error messages */
+  float            lins;        /*  local inside bit score */
+  float            lcyk;        /*  local CYK    bit score */
+  float            gins;        /* glocal inside bit score */
+  float            gcyk;        /* glocal CYK    bit score */
+  float            E;           /* E-value threshold */
+  float            T;           /* bit score threshold */
+  float            Z;           /* database size */
+
+  Z = esl_opt_GetReal(go, "-Z") * 1000000.;
+
+  if(output_mode == OUTMODE_DEFAULT) { 
+    /* build the cp9 HMM */
+    if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) cm_Fail("Couldn't build a CP9 HMM from the CM\n");
+    
+    fprintf(stdout, "%6d  %-20s  %-9s  %8d  %8.2f  %4d  %4d  %4d  %4d  %5d  %5.3f  %5.3f\n",
+	    ncm,
+	    cm->name,
+	    cm->acc == NULL ? "-" : cm->acc,
+	    cm->nseq,
+	    cm->eff_nseq,
+	    cm->clen,
+	    CMCountStatetype(cm, MP_st),
+	    CMCountStatetype(cm, B_st),
+	    cm->W,
+	    cm->M,
+	    cm_MeanMatchRelativeEntropy(cm),
+	    cp9_MeanMatchRelativeEntropy(cm));
+    
+  }
+  else if(output_mode == OUTMODE_BITSCORES) { 
+    E = esl_opt_GetReal(go, "-E");
+    if((status = UpdateExpsForDBSize(cm, errbuf, (long) Z)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
+    if((status = E2ScoreGivenExpInfo(cm->expA[EXP_CM_LI], errbuf, E, &lins)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
+    if((status = E2ScoreGivenExpInfo(cm->expA[EXP_CM_LC], errbuf, E, &lcyk)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
+    if((status = E2ScoreGivenExpInfo(cm->expA[EXP_CM_GI], errbuf, E, &gins)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
+    if((status = E2ScoreGivenExpInfo(cm->expA[EXP_CM_GC], errbuf, E, &gcyk)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
+    fprintf(stdout, "%6d  %-20s  %-9s  %13.2f  %13.2f  %13.2f  %13.2f\n",
+	    ncm,
+	    cm->name,
+	    cm->acc == NULL ? "-" : cm->acc,
+	    lins, lcyk, gins, gcyk);
+  }
+  else { 
+    if((status = UpdateExpsForDBSize(cm, errbuf, (long) Z)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
+    if(output_mode == OUTMODE_EVALUES) { T = esl_opt_GetReal(go, "-T"); }
+    if(output_mode == OUTMODE_GA)      { T = (cm->flags & CMH_GA) ? cm->ga : 0.; }
+    if(output_mode == OUTMODE_NC)      { T = (cm->flags & CMH_GA) ? cm->nc : 0.; }
+    if(output_mode == OUTMODE_TC)      { T = (cm->flags & CMH_GA) ? cm->tc : 0.; }
+    if(! (cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("model %s does not have CM exponential tail stats");
+    lins = Score2E(T, cm->expA[EXP_CM_LI]->mu_extrap, cm->expA[EXP_CM_LI]->lambda, cm->expA[EXP_CM_LI]->cur_eff_dbsize);
+    lcyk = Score2E(T, cm->expA[EXP_CM_LC]->mu_extrap, cm->expA[EXP_CM_LC]->lambda, cm->expA[EXP_CM_LC]->cur_eff_dbsize);
+    gins = Score2E(T, cm->expA[EXP_CM_GI]->mu_extrap, cm->expA[EXP_CM_GI]->lambda, cm->expA[EXP_CM_GI]->cur_eff_dbsize);
+    gcyk = Score2E(T, cm->expA[EXP_CM_GC]->mu_extrap, cm->expA[EXP_CM_GC]->lambda, cm->expA[EXP_CM_GC]->cur_eff_dbsize);
+    
+    if(output_mode == OUTMODE_EVALUES) { 
+      fprintf(stdout, "%6d  %-20s  %-9s  %13g  %13g  %13g  %13g\n",
+	      ncm,
+	      cm->name,
+	      cm->acc == NULL ? "-" : cm->acc,
+	      lins, lcyk, gins, gcyk);
+    }
+    else { 
+      if((output_mode == OUTMODE_GA && (! (cm->flags & CMH_GA))) || 
+	 (output_mode == OUTMODE_NC && (! (cm->flags & CMH_NC))) || 
+	 (output_mode == OUTMODE_TC && (! (cm->flags & CMH_TC)))) 
+	{ 
+	  /* GA, NC, or TC cutoff is not present for this CM */
+	  fprintf(stdout, "%6d  %-20s  %-9s  %13s  %13s  %13s  %13s  %13s\n",
+		  ncm,
+		  cm->name,
+		  cm->acc == NULL ? "-" : cm->acc,
+		  "-", "-", "-", "-", "-");
+	}
+      else { 
+	fprintf(stdout, "%6d  %-20s  %-9s  %13.2f  %13g  %13g  %13g  %13g\n",
+		ncm,
+		cm->name,
+		cm->acc == NULL ? "-" : cm->acc,
+		T, lins, lcyk, gins, gcyk);
+      }
+    }
+  }
 }
