@@ -696,7 +696,9 @@ if test -d hmmer/documentation; then
 fi
 AC_CONFIG_FILES([hmmer/src/Makefile hmmer/testsuite/Makefile hmmer/profmark/Makefile])
 AC_CONFIG_FILES([hmmer/src/impl_${impl_choice}/Makefile])
+AC_CONFIG_FILES([hmmer/libdivsufsort/Makefile])
 AC_CONFIG_HEADERS(hmmer/src/p7_config.h)
+AC_CONFIG_HEADERS(hmmer/libdivsufsort/divsufsort.h)
 
 # the following incantation establishes a symlink of
 # src/impl_{whatever} to src/impl in the *build* directory.
@@ -712,7 +714,6 @@ AC_CONFIG_FILES([easel/miniapps/Makefile])
 AC_CONFIG_FILES([easel/testsuite/Makefile])
 AC_CONFIG_FILES([easel/documentation/Makefile])
 AC_CONFIG_FILES([easel/Makefile])
-
 
 ################################################################
 # 13. AC_OUTPUT
