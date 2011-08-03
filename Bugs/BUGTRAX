@@ -729,3 +729,26 @@ safeguard against an infinite loop.
 
 This bug is fixed as of revision r3510.
 //
+
+ID              i25
+TITLE		Improper NULL3 correction in HMM banded CYK/Inside scanners in greedy mode
+STATUS          CLOSED
+XREF            Notes in ~/nawrockie/notebook/11_0628_inf_cmscan_and_cmpress/
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Wed Aug  3 05:41:05 2011
+DESCRIPTION    
+
+This bug is closely related to bug i22 in which the null3 penalty is
+incorrectly calculated for HMM banded Inside or CYK hits. In fact it
+is the same bug, only here it applies to a GammaHitMx_t in greedy mode
+(<iamgreedy>=TRUE). Bug i22 fixed the problem for non-greedy, optimal
+hit resolution mode, but somehow I failed to realize the bug also
+applied to greedy mode. I've applied an analogous fix to what I did
+for i22 to fix the greedy mode case. The fix is in
+cm_mx.c:UpdateGammaHitMxCM(). See description of i22 above, and
+example of the bug in
+~/nawrockie/notebook/11_0628_inf_cmscan_and_cmpress/00LOG (Aug 3 2011)
+for more details. 
+
+This bug was fixed as of revision 3629.
+//

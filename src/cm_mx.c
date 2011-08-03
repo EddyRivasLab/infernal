@@ -1878,7 +1878,7 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  *
  * Purpose:  Update a gamma semi-HMM for CM hits that end at gamma-relative position <j>.
  *
- * Args:     cm        - the model, used only for it's alphabet and null model
+ * Args:     cm        - the model, used only for its alphabet and null model
  *           errbuf    - for reporting errors
  *           gamma     - the gamma data structure
  *           j         - offset j for gamma must be between 0 and gamma->L
@@ -1925,7 +1925,7 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 
     if(alpha_row != NULL) { 
       for (d = dmin; d <= dmax; d++) {
-	i = using_hmm_bands ? j-d+1-dn  : j-d+1;
+	i = using_hmm_bands ? j-(d+dn)+1 : j-d+1;
 	hit_sc = alpha_row[d];
 	cumulative_sc = gamma->mx[i-1] + hit_sc;
 	/*printf("CAND hit %3d..%3d: %8.2f\n", i, j, hit_sc);*/
@@ -1944,6 +1944,7 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	    /*printf("GOOD hit %3d..%3d: %8.2f  %10.6f  %8.2f\n", i, j, hit_sc+null3_correction, null3_correction, hit_sc);*/
 	  }
 	  if(do_report_hit) { 
+	    /*printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc);*/
 	    gamma->mx[j]     = cumulative_sc;
 	    gamma->gback[j]  = i + (gamma->i0-1);
 	    gamma->savesc[j] = hit_sc;
@@ -1966,11 +1967,12 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
       do_report_hit = TRUE;
       r = bestr[dmin]; 
       ip = using_hmm_bands ? j-(dmin+dn)+gamma->i0 : j-dmin+gamma->i0;
+      i  = using_hmm_bands ? j-(dmin+dn)+1         : j-dmin+1;
       jp = j-1+gamma->i0;
       assert(ip >= gamma->i0);
       assert(jp >= gamma->i0);
       if(act != NULL) { /* do NULL3 score correction */
-	for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(j-dmin+1-1)%(W+1)][a];
+	for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(i-1)%(W+1)][a];
 	esl_vec_FNorm(comp, cm->abc->K);
 	ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, cm->null3_omega, &null3_correction);
 	hit_sc -= null3_correction;
@@ -1992,11 +1994,12 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	  do_report_hit = TRUE;
 	  r = bestr[d]; 
 	  ip = using_hmm_bands ? j-(d+dn)+gamma->i0 : j-d+gamma->i0;
+	  i  = using_hmm_bands ? j-(d+dn)+1         : j-d+1;
 	  jp = j-1+gamma->i0;
 	  assert(ip >= gamma->i0);
 	  assert(jp >= gamma->i0);
 	  if(act != NULL) { /* do NULL3 score correction */
-	    for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(j-d+1-1)%(W+1)][a];
+	    for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(i-1)%(W+1)][a];
 	    esl_vec_FNorm(comp, cm->abc->K);
 	    ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, cm->null3_omega, &null3_correction);
 	    hit_sc -= null3_correction;
