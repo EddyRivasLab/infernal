@@ -166,7 +166,7 @@ static ESL_OPTIONS options[] = {
   { "--fbeta",        eslARG_REAL,    "1e-9",    NULL, "0<x<1", NULL,    "--fqdb","--hmm,--nocyk",  "set tail loss prob for CYK filter QDB calculation to <x>", 20 },
   { "--fnonbanded",   eslARG_NONE,    FALSE,     NULL, NULL,    NULL,    "--fqdb","--hmm,--nocyk",  "do not use any bands for CYK filter round", 20},
   /* banded options for final round of searching */
-  { "--tau",          eslARG_REAL,   "1e-7",     NULL, "0<x<1", NULL,        NULL,       "--qdb,--nonbanded,--hmm", "set tail loss prob for --hbanded to <x>", 20 },
+  { "--tau",          eslARG_REAL,   "5e-6",     NULL, "0<x<1", NULL,        NULL,       "--qdb,--nonbanded,--hmm", "set tail loss prob for --hbanded to <x>", 20 },
   { "--sums",         eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,       "--qdb,--nonbanded,--hmm", "w/--hbanded use posterior sums (widens bands)", 20 },
   { "--qdb",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--nonbanded,--hmm,--tau", "use QDBs (instead of HMM bands) in final Inside round", 20 },
   { "--beta",         eslARG_REAL,   "1e-15",    NULL, "0<x<1",  NULL,     "--qdb",        "--hmm", "set tail loss prob for final Inside QDB calculation to <x>", 20 },
@@ -218,7 +218,7 @@ static int  setup_cm     (CM_t *cm, const ESL_ALPHABET *abc, WORKER_INFO *info, 
 			  int *opt_nhmm, P7_HMM ***opt_hmmA, P7_BG ***opt_bgA, P7_OPROFILE ***opt_omA, 
 			  P7_PROFILE ***opt_gmA, float ***opt_p7evpAA);
 #endif
-static void setup_config_opts(const ESL_GETOPTS *go, int *ret_config_opts);
+static int  determine_config_opts(const ESL_GETOPTS *go);
 
 #ifdef HMMER_THREADS
 #define BLOCK_SIZE 25
@@ -569,7 +569,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info[i].bg           = p7_bg_Create(abc);
       info[i].prev_hit_cnt = 0;
       ESL_ALLOC(info[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
-      setup_config_opts(go, &(info[i].cm_config_opts));
+      info[i].cm_config_opts = determine_config_opts(go);
 #ifdef HMMER_THREADS
       info[i].queue = queue;
 #endif
@@ -607,8 +607,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* scan all target CMs twice, once with the top strand of the query and once with the bottom strand */
       for(in_rc = 0; in_rc <= 1; in_rc++) { 
-	printf("in_rc: %d\n", in_rc);
-
 	if(in_rc == 0 && (! info->pli->do_top)) continue; /* skip top strand */
 	if(in_rc == 1 && (! info->pli->do_bot)) continue; /* skip bottom strand */
 	if(in_rc == 1) { 
@@ -1231,6 +1229,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              cm_clen, cm_W;          /* consensus, window length for current CM */        
   float            gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
   off_t            cm_offset;              /* file offset for current CM */
+  int              cm_config_opts;         /* sent to the pipeline so we can appropriately configure CMs */
   float           *p7_evparam;             /* E-value parameters for the p7 filter */
   int              prv_ntophits;
 
@@ -1276,8 +1275,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   else if (status == eslEINVAL)    mpi_failure("Can't autodetect format of a stdin or .gz seqfile");
   else if (status != eslOK)        mpi_failure("Unexpected error %d opening sequence file %s\n", status, cfg->seqfile);
 
-  qsq = esl_sq_CreateDigital(abc);
-  bg = p7_bg_Create(abc);
+  qsq            = esl_sq_CreateDigital(abc);
+  bg             = p7_bg_Create(abc);
+  cm_config_opts = determine_config_opts(go);
+
   ESL_ALLOC(p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
 
   /* Outside loop: over each query sequence in <seqfile>. */
@@ -1446,7 +1447,7 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 				   om, info->bg)) != eslOK) cm_Fail(info->pli->errbuf);
 
       prv_ntophits = info->th->N;
-      if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, info->qsq, info->th, &gm, &cm, &cmcons)) != eslOK)
+      if((status = cm_Pipeline(info->pli, cm_offset, info->cm_config_opts, om, info->bg, info->p7_evparam, info->qsq, info->th, &gm, &cm, &cmcons)) != eslOK)
 	cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
       
       if(info->th->N != prv_ntophits) { 
@@ -1590,7 +1591,7 @@ pipeline_thread(void *arg)
 				       om, info->bg)) != eslOK) cm_Fail(info->pli->errbuf);
 
 	  prv_ntophits = info->th->N;
-	  if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, info->qsq, info->th, &gm, &cm, &cmcons)) != eslOK)
+	  if((status = cm_Pipeline(info->pli, cm_offset, info->cm_config_opts, om, info->bg, info->p7_evparam, info->qsq, info->th, &gm, &cm, &cmcons)) != eslOK)
 	    cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
 
 	  if(info->th->N != prv_ntophits) { 
@@ -1633,7 +1634,7 @@ pipeline_thread(void *arg)
 }
 #endif   /* HMMER_THREADS */
 
-/* Function:  setup_config_opts()
+/* Function:  determine_config_opts()
  * Incept:    EPN, Wed Jul  6 13:45:44 2011
  *
  * Purpose:  Determine what a CM's <config_opts> flags 
@@ -1641,8 +1642,8 @@ pipeline_thread(void *arg)
  *
  * Returns: void.
  */
-void
-setup_config_opts(const ESL_GETOPTS *go, int *ret_config_opts)
+int
+determine_config_opts(const ESL_GETOPTS *go)
 { 
   int config_opts = 0;
 
@@ -1654,8 +1655,7 @@ setup_config_opts(const ESL_GETOPTS *go, int *ret_config_opts)
     }
   }
 
-  *ret_config_opts = config_opts;
-  return;
+  return config_opts;
 }
 
 /*****************************************************************

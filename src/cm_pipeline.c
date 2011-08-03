@@ -1642,19 +1642,14 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
  *            just after a call to cm_pli_p7EnvelopeDef().
  *
  *            If pli->mode is CM_SCAN_MODELS, it's possible that we
- *            haven't yet configured our CM, because configuration is
- *            slow and for any one query sequence a large fraction of
- *            target CMs will not have a single envelope survive to
- *            these latter CM stages of the pipeline. So we only
- *            configure if necessary, i.e. if we get to this function
- *            with at least one envelope. We check if we're configured
- *            by whether the CMH_BITS flag is up or not (if up, we're
- *            configured).
- *
- *            With an unconfigured CM, <*opt_cmcons> is likely NULL,
- *            in that case we create a CMConsensus_t object and return
- *            it in <*opt_cmcons>. Otherwise <*opt_cmcons> should be
- *            already be a valid CMConsensus_t object upon entrance.
+ *            haven't yet read our CM from the file. This is true when
+ *            (*opt_cm == NULL). If so, we read the CM from the file
+ *            after positioning it to position <cm_offset> and
+ *            configure the CM after setting cm->config_opts to
+ *            <cm_config_opts>. In this case, <*opt_cmcons> should
+ *            also be NULL and we create a CMConsensus_t object and
+ *            return it in <*opt_cmcons>. Otherwise, if <*opt_cm>
+ *            is valid (non-NULL),  <*opt_cmcons> should be as well.
  *
  * Returns:   <eslOK> on success. If a significant hit is obtained,
  *            its information is added to the growing <hitlist>.
@@ -1666,7 +1661,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
+cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 {
   int              status;
   char             errbuf[cmERRBUFSIZE];   /* for error messages */
@@ -1718,7 +1713,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
       /* lock the mutex to prevent other threads from reading the file at the same time */
       if (pli->cmfp->syncRead) { 
 	if (pthread_mutex_lock (&pli->cmfp->readMutex)      != 0) ESL_FAIL(eslESYS, pli->errbuf, "mutex lock failed");
-	//if (pthread_mutex_lock (&pli->cmfp->hfp->readMutex) != 0) ESL_FAIL(eslESYS, pli->errbuf, "mutex lock failed");
       }
 #endif
       cm_file_Position(pli->cmfp, cm_offset);
@@ -1726,10 +1720,10 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 #ifdef HMMER_THREADS
       if (pli->cmfp->syncRead) { 
 	if (pthread_mutex_unlock (&pli->cmfp->readMutex)      != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
-	//if (pthread_mutex_unlock (&pli->cmfp->hfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
       }
 #endif    
-      printf("CONFIGURING CM: %s\n", (*opt_cm)->name);
+      printf("CONFIGURING CM: %s (%d)\n", (*opt_cm)->name, cm_config_opts);
+      (*opt_cm)->config_opts = cm_config_opts;
       if((status = ConfigCM(*opt_cm, pli->errbuf, FALSE, NULL, NULL)) != eslOK) return status;
       /* update the pipeline about the model */
       if((status = cm_pli_NewModel(pli, CM_NEWMODEL_CM, *opt_cm, (*opt_cm)->clen, (*opt_cm)->W, 
@@ -2332,7 +2326,7 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
+cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 {
   int status;
   int       nwin = 0;   /* number of windows surviving MSV & Vit & lFwd, filled by cm_pli_p7Filter() */
@@ -2362,19 +2356,19 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #endif
 
 #if DOPRINT
-  printf("\nPIPELINE HMM %d calling p7Filter() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
+  printf("\nPIPELINE calling p7Filter() %s  %" PRId64 " residues\n", sq->name, sq->n);
 #endif
   if((status = cm_pli_p7Filter(pli, om, bg, p7_evparam, sq, &ws, &we, &nwin)) != eslOK) return status;
   if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
   
 #if DOPRINT
-  printf("\nPIPELINE HMM %d calling p7EnvelopeDef() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
+  printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues\n", sq->name, sq->n);
 #endif
   if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, ws, we, nwin, opt_gm, &es, &ee, &nenv)) != eslOK) return status;
 #if DOPRINT
-  printf("\nPIPELINE HMM %d calling CMStage() %s  %" PRId64 " residues\n", m, sq->name, sq->n);
+  printf("\nPIPELINE calling CMStage() %s  %" PRId64 " residues\n", sq->name, sq->n);
 #endif
-  if((status = cm_pli_CMStage      (pli, cm_offset, sq, es,  ee,  nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
+  if((status = cm_pli_CMStage      (pli, cm_offset, cm_config_opts, sq, es,  ee,  nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
 
   if(pli->do_time_F6) return eslOK;
 

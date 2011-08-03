@@ -292,7 +292,7 @@ cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2)
 {
   void    *p;
   CM_HIT  *new2;
-  int      i,j,k;
+  int      i;
   int      Nalloc = h1->Nalloc + h2->Nalloc;
   int      status;
 
