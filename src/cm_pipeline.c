@@ -1983,12 +1983,13 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	do_postcode  = FALSE;
 	do_hbanded   = FALSE;
 	do_nonbanded = FALSE;
+
+	hitlen = hit->stop - hit->start + 1;
+	subdsq = sq->dsq + hit->start - 1;
 	
 	if(pli->align_hbanded) { 
 	  /* Align with HMM bands, if we can do it in the allowed amount of memory */
 	  /* determine CP9 HMM bands */
-	  hitlen = hit->stop - hit->start + 1;
-	  subdsq = sq->dsq + hit->start - 1;
 	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, 0)) != eslOK) { printf("ERROR: %s\n", errbuf); return status; }
 	  
 	  /* Determine the number of cells needed in each CM_HB_MX required for aligning this sequence: */
@@ -2038,7 +2039,10 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	    do_nonbanded = TRUE;
 	  }
 	} /* end of if(pli->do_hbanded) */
-	
+	else { 
+	  do_nonbanded = TRUE;
+	}
+
 	if(do_hbanded) { 
 	  status = FastAlignHB(cm, errbuf, NULL, subdsq, hitlen, 1, hitlen, 
 			       pli->hb_size_limit,                   /* limit for a single CM_HB_MX, so this is safe */

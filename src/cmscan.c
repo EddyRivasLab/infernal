@@ -1335,7 +1335,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 					   om, bg)) != eslOK) mpi_failure(pli->errbuf);
 
 	      prv_ntophits = th->N;
-	      if((status = cm_Pipeline(pli, cm_offset, om, bg, p7_evparam, qsq, th, &gm, &cm, &cmcons)) != eslOK)
+	      if((status = cm_Pipeline(pli, cm_offset, cm_config_opts, om, bg, p7_evparam, qsq, th, &gm, &cm, &cmcons)) != eslOK)
 		mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s", status, pli->errbuf);
 
 	      if(th->N != prv_ntophits) { 

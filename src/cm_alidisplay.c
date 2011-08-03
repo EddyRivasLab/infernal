@@ -914,6 +914,13 @@ cm_alidisplay_DecodePostProb(char pc)
  *            As a special case, if <linewidth> is negative or 0, then
  *            alignments are formatted in a single block of unlimited
  *            line length.
+ *
+ * Returns:   eslOK on success
+ *            eslEINVAL if ad->aseq or ad->model are invalid,
+ *            specifically if local end formatting is invalid.
+ *            All local ends should begin with '*[' and end with
+ *            ']*' with the intervening characters being 0 or
+ *            more whitespace characters followed by an integer.
  */
 int
 cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth, int show_accessions, int do_noncanonicals)
@@ -921,13 +928,14 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
   char *buf          = NULL;
   char *show_cmname  = NULL;
   char *show_seqname = NULL;
-  int   namewidth, coordwidth, aliwidth;
+  int   namewidth, coordwidth, aliwidth, cur_aliwidth;
   int   pos;
   int   status;
   int   ni, nk;
-  int   z;
+  int   z, zp;
   long  i1,i2;
   int   k1,k2;
+  int   ni_toadd, nk_toadd; 
 
   /* implement the --acc option for preferring accessions over names in output  */
   show_cmname  = (show_accessions && ad->cmacc[0] != '\0') ? ad->cmacc : ad->cmname;
@@ -942,42 +950,67 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
   aliwidth   = (linewidth > 0) ? linewidth - namewidth - 2*coordwidth - 5 : ad->N;
   if (aliwidth < ad->N && aliwidth < min_aliwidth) aliwidth = min_aliwidth; /* at least, regardless of some silly linewidth setting */
   ESL_ALLOC(buf, sizeof(char) * (aliwidth+1));
-  buf[aliwidth] = 0;
+  buf[aliwidth] = '\0';
 
   /* Break the alignment into multiple blocks of width aliwidth for printing */
   i1 = ad->sqfrom;
   k1 = ad->cfrom ;
-  for (pos = 0; pos < ad->N; pos += aliwidth)
+  cur_aliwidth = aliwidth; 
+
+  for (pos = 0; pos < ad->N; pos += cur_aliwidth)
     {
       if (pos > 0) fprintf(fp, "\n"); /* blank line betweeen blocks */
 
       ni = nk = 0; 
-      for (z = pos; z < pos + aliwidth && z < ad->N; z++) {
-	if (ad->model[z] != '.') nk++; /* k advances except on insert states */
-	if (ad->aseq[z]  != '-') ni++; /* i advances except on delete states */
+      cur_aliwidth = aliwidth; /* this will change if a aliwidth-wide block will end in the middle of a local end display */
+
+      for (z = pos; z < pos + cur_aliwidth && z < ad->N; z++) {
+	if (ad->aseq[z]  == '*' && ad->model[z] == '*') { 
+	  /* we're at the beginning of a local end display (example: "*[ 7]*"), process it */
+	  nk_toadd = ni_toadd = 0;
+	  if(ad->aseq[z+1] != '[' || ad->model[z+1] != '[') { status = eslEINVAL; goto ERROR; }
+
+	  zp = z+2;
+	  while(ad->model[zp] == ' ') { zp++; } /* chew up any whitespace */
+	  while(ad->model[zp] != ']') { nk_toadd *= 10; nk_toadd += ad->model[zp] - '0'; zp++; } /* determine size of local end in model */
+
+	  zp = z+2;
+	  while(ad->aseq[zp] == ' ')  { zp++; } /* chew up any whitespace */
+	  while(ad->aseq[zp] != ']')  { ni_toadd *= 10; ni_toadd += ad->aseq[zp] - '0';  zp++; } /* determine size of local end in aseq */
+
+	  if((zp+1) >= (pos + aliwidth)) { /* the local end display will not fit completely on this block, save it for next block */
+	    cur_aliwidth = z - pos; 
+	  }
+	  else { 
+	    nk += nk_toadd;
+	    ni += ni_toadd;
+	    z = zp+1; /* position z at end of local end display (one char past the ']', on the '*') */
+	  }
+	}
+	else { /* normal case, we're not at the beginning of a local end */
+	  if (ad->model[z] != '.') nk++; /* k advances except on insert states */
+	  if (ad->aseq[z]  != '-') ni++; /* i advances except on delete states */
+	}
       }
+
+      if(aliwidth != cur_aliwidth) buf[cur_aliwidth] = '\0';
 
       k2 = k1+nk-1;
-      if (ad->sqfrom < ad->sqto) {
-          i2 = i1+ni-1;
-      } else { /* hit is on the reverse complement */
-          i2 = i1-ni+1;
-      }
-      if (ad->rfline != NULL) { strncpy(buf, ad->rfline+pos, aliwidth); fprintf(fp, "  %*s %s RF\n", namewidth+coordwidth+1, "", buf); }
-      if (do_noncanonicals)   { strncpy(buf, ad->nline+pos,  aliwidth); fprintf(fp, "  %*s %s NC\n", namewidth+coordwidth+1, "", buf); }
-      strncpy(buf, ad->csline+pos, aliwidth); fprintf(fp, "  %*s %s CS\n", namewidth+coordwidth+1, "", buf); 
-      strncpy(buf, ad->model+pos, aliwidth); fprintf(fp, "  %*s %*d %s %-*d\n", namewidth,  show_cmname, coordwidth, k1, buf, coordwidth, k2);
-      strncpy(buf, ad->mline+pos, aliwidth); fprintf(fp, "  %*s %s\n", namewidth+coordwidth+1, " ", buf);
-      if (ni > 0) { strncpy(buf, ad->aseq+pos, aliwidth); fprintf(fp, "  %*s %*ld %s %-*ld\n", namewidth, show_seqname, coordwidth, i1,  buf, coordwidth, i2);  }
-      else        { strncpy(buf, ad->aseq+pos, aliwidth); fprintf(fp, "  %*s %*s %s %*s\n",    namewidth, show_seqname, coordwidth, "-", buf, coordwidth, "-"); }
-      if (ad->ppline != NULL) { strncpy(buf, ad->ppline+pos, aliwidth); fprintf(fp, "  %*s %s PP\n", namewidth+coordwidth+1, "", buf); }
+      if (ad->sqfrom < ad->sqto) { i2 = i1+ni-1; }
+      else                       { i2 = i1-ni+1; }
+
+      if (ad->rfline != NULL) { strncpy(buf, ad->rfline+pos, cur_aliwidth); fprintf(fp, "  %*s %s %*sRF\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); }
+      if (do_noncanonicals)   { strncpy(buf, ad->nline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s %*sNC\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); }
+      strncpy(buf, ad->csline+pos, cur_aliwidth); fprintf(fp, "  %*s %s %*sCS\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, "");
+      strncpy(buf, ad->model+pos,  cur_aliwidth); fprintf(fp, "  %*s %*d %s %*s%-*d\n", namewidth,  show_cmname, coordwidth, k1, buf, aliwidth-cur_aliwidth, "", coordwidth, k2);
+      strncpy(buf, ad->mline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s\n", namewidth+coordwidth+1, " ", buf);
+      if (ni > 0) { strncpy(buf, ad->aseq+pos, cur_aliwidth); fprintf(fp, "  %*s %*ld %s %*s%-*ld\n", namewidth, show_seqname, coordwidth, i1,  buf, aliwidth-cur_aliwidth, "", coordwidth, i2);  }
+      else        { strncpy(buf, ad->aseq+pos, cur_aliwidth); fprintf(fp, "  %*s %*s %s %*s%*s\n",    namewidth, show_seqname, coordwidth, "-", buf, aliwidth-cur_aliwidth, "", coordwidth, "-"); }
+      if (ad->ppline != NULL) { strncpy(buf, ad->ppline+pos, cur_aliwidth); fprintf(fp, "  %*s %s %*sPP\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); }
 
       k1 += nk;
-      if (ad->sqfrom < ad->sqto) {
-          i1 += ni;
-      }  else { /* revcomp hit for DNA */
-          i1 -= ni;
-      }
+      if (ad->sqfrom < ad->sqto) { i1 += ni; }
+      else                       { i1 -= ni; } /* revcomp hit for DNA */
     }
   fflush(fp);
   free(buf);
