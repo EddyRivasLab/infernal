@@ -24,6 +24,7 @@
 #include "esl_dmatrix.h"
 #include "esl_getopts.h"
 #include "esl_msa.h"
+#include "esl_msafile.h"
 #include "esl_msaweight.h"
 #include "esl_msacluster.h"
 #include "esl_stack.h"
@@ -154,7 +155,7 @@ static ESL_OPTIONS options[] = {
 struct cfg_s {
   char         *alifile;	/* name of the alignment file we're building CMs from  */
   int           fmt;		/* format code for alifile */
-  ESL_MSAFILE  *afp;            /* open alifile  */
+  ESLX_MSAFILE *afp;            /* open alifile  */
   ESL_ALPHABET *abc;		/* digital alphabet */
 
   char         *cmfile;         /* file to write CM to                    */
@@ -168,7 +169,6 @@ struct cfg_s {
   int           be_verbose;	/* standard verbose output, as opposed to one-line-per-CM summary */
   int           nali;		/* which # alignment this is in file */
   int           ncm_total;      /* which # CM this is that we're constructing (we may build > 1 per file) */
-  int           namewidth;      /* max length of a CM name, nec for pretty tabular formatting */
   ESL_RANDOMNESS *r;            /* source of randomness, only created if --gibbs enabled */
   
   /* optional files used for building additional filter p7 HMMs */
@@ -228,7 +228,6 @@ static int    print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, cha
 static int    print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static void   print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
 static int    print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int    get_namewidth(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static void   dump_emission_info(FILE *fp, CM_t *cm);
 static P7_PRIOR * p7_prior_Read(FILE *fp);
 static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
@@ -344,7 +343,6 @@ main(int argc, char **argv)
   cfg.fullmat    = NULL;                   /* read (possibly) in init_cfg() */
   cfg.r          = NULL;	           /* created (possibly) in init_cfg() */
   cfg.comlog     = NULL;	           /* created in init_cfg() */
-  cfg.namewidth  = 0;
   cfg.fp7_bg     = NULL;                   /* created (possibly) in init_cfg() */
   cfg.fp7_bld    = NULL;                   /* created (possibly) in init_cfg() */
   /* optional output files, opened in init_cfg(), if at all */
@@ -422,7 +420,7 @@ main(int argc, char **argv)
     printf("# Intermediate alignments from MSA refinement saved in file %s.\n", esl_opt_GetString(go, "--rdump"));
     fclose(cfg.rdfp); 
   }
-  if (cfg.afp     != NULL) esl_msafile_Close(cfg.afp);
+  if (cfg.afp     != NULL) eslx_msafile_Close(cfg.afp);
   if (cfg.abc     != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.cmoutfp != NULL) fclose(cfg.cmoutfp);
   if (cfg.pri     != NULL) Prior_Destroy(cfg.pri);
@@ -460,20 +458,18 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int status;
 
-  /* open input alignment file */
-  status = esl_msafile_Open(cfg->alifile, cfg->fmt, NULL, &(cfg->afp));
-  if      (status == eslENOTFOUND) ESL_FAIL(status, errbuf, "Alignment file %s doesn't exist or is not readable\n", cfg->alifile);
-  else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of alignment %s\n", cfg->alifile);
-  else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file open failed with error %d\n", status);
-  cfg->fmt = cfg->afp->format;
-
   /* Set the msafile alphabet as RNA, if it's DNA we're fine. 
    * If it's not RNA nor DNA, we can't deal with it anyway,
    * so we're hardcoded to RNA.
    */
   cfg->abc = esl_alphabet_Create(eslRNA);
   if(cfg->abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for sequence file");
-  esl_msafile_SetDigital(cfg->afp, cfg->abc);
+
+  /* open input alignment file */
+  if((status = eslx_msafile_Open(&(cfg->abc), cfg->alifile, NULL, cfg->fmt, NULL, &(cfg->afp))) != eslOK) { 
+    eslx_msafile_OpenFailure(cfg->afp, status);
+  }
+  cfg->fmt = cfg->afp->format;
 
   /* open CM file for writing */
   if (esl_opt_GetBoolean(go, "-A")) { /* we're appending to a CM file */
@@ -536,28 +532,26 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     }
 
   /* set up objects for building additional p7 models to filter with, if nec */
-  if (! esl_opt_GetBoolean(go, "--p7-none")) { 
-    cfg->fp7_bg = p7_bg_Create(cfg->abc);
-    /* create the P7_BUILDER, pass NULL as the <go> argument, this sets all parameters to default */
-    cfg->fp7_bld = p7_builder_Create(NULL, cfg->abc);
-    cfg->fp7_bld->w_len = -1;
-    cfg->fp7_bld->w_beta = p7_DEFAULT_WINDOW_BETA;
-    if(esl_opt_IsUsed(go, "--p7-prior")) {
-      FILE *pfp;
-      if (cfg->fp7_bld->prior != NULL) p7_prior_Destroy(cfg->fp7_bld->prior);
-      if ((pfp = fopen(esl_opt_GetString(go, "--p7-prior"), "r")) == NULL) cm_Fail("Failed to open p7 prior file %s\n", esl_opt_GetString(go, "--p7-prior"));
-      if((cfg->fp7_bld->prior = p7_prior_Read(pfp)) == NULL) {
-	cm_Fail("Failed to parse p7 prior file %s\n", esl_opt_GetString(go, "--p7-prior"));
-      }
-      fclose(pfp);
+  cfg->fp7_bg = p7_bg_Create(cfg->abc);
+  /* create the P7_BUILDER, pass NULL as the <go> argument, this sets all parameters to default */
+  cfg->fp7_bld = p7_builder_Create(NULL, cfg->abc);
+  cfg->fp7_bld->w_len = -1;
+  cfg->fp7_bld->w_beta = p7_DEFAULT_WINDOW_BETA;
+  if(esl_opt_IsUsed(go, "--p7-prior")) {
+    FILE *pfp;
+    if (cfg->fp7_bld->prior != NULL) p7_prior_Destroy(cfg->fp7_bld->prior);
+    if ((pfp = fopen(esl_opt_GetString(go, "--p7-prior"), "r")) == NULL) cm_Fail("Failed to open p7 prior file %s\n", esl_opt_GetString(go, "--p7-prior"));
+    if((cfg->fp7_bld->prior = p7_prior_Read(pfp)) == NULL) {
+      cm_Fail("Failed to parse p7 prior file %s\n", esl_opt_GetString(go, "--p7-prior"));
     }
-    else if(! esl_opt_GetBoolean(go, "--p7-hprior")) { 
-      /* create the default Infernal p7 prior */
-      if (cfg->fp7_bld->prior != NULL) p7_prior_Destroy(cfg->fp7_bld->prior);
-      cfg->fp7_bld->prior = cm_p7_prior_CreateNucleic();
-    }
-    cfg->fp7_bld->re_target = esl_opt_GetReal(go, "--p7-ere");
-  }	 
+    fclose(pfp);
+  }
+  else if(! esl_opt_GetBoolean(go, "--p7-hprior")) { 
+    /* create the default Infernal p7 prior */
+    if (cfg->fp7_bld->prior != NULL) p7_prior_Destroy(cfg->fp7_bld->prior);
+    cfg->fp7_bld->prior = cm_p7_prior_CreateNucleic();
+  }
+  cfg->fp7_bld->re_target = esl_opt_GetReal(go, "--p7-ere");
 
   /* open output files */
   /* optionally, open count vector file */
@@ -670,14 +664,9 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   nc      = do_ctarget  ? esl_opt_GetInteger(go, "--ctarget")    : 0;
   mindiff = do_cmindiff ? (1. - esl_opt_GetReal(go, "--cmaxid")) : 0.;
 
-  /* predict maximum length of CM name for pretty formatting */
-  if((status = get_namewidth(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-
-  while ((status = esl_msa_Read(cfg->afp, &msa)) != eslEOF)
+  while ((status = eslx_msafile_Read(cfg->afp, &msa)) != eslEOF)
     {
-      if      (status == eslEFORMAT) cm_Fail("Alignment file parse error:\n%s\n", cfg->afp->errbuf);
-      else if (status == eslEINVAL)  cm_Fail("Alignment file parse error:\n%s\n", cfg->afp->errbuf);
-      else if (status != eslOK)      cm_Fail("Alignment file read failed with error code %d\n", status);
+      if (status != eslOK) eslx_msafile_ReadFailure(cfg->afp, status);
       cfg->nali++;  
 
       /* if it's unnamed, name the MSA, we require a name (different from 
@@ -698,8 +687,8 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if(do_cluster) {
 	      msa = cmsa[c];
 	      if(esl_opt_GetString(go, "--cdump") != NULL) { 
-		if((status = esl_msa_Write(cfg->cdfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK)
-		  cm_Fail("--cdump related esl_msa_Write() call failed.");
+		if((status = eslx_msafile_Write(cfg->cdfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK)
+		  cm_Fail("--cdump related eslx_msafile_Write() call failed.");
 	      }
 	  }
 
@@ -856,8 +845,8 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
 
   /* print initial alignment to --rdump file, if --rdump was enabled */
   if(cfg->rdfp != NULL) 
-    if((status = esl_msa_Write(cfg->rdfp, input_msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
-      ESL_FAIL(status, errbuf, "refine_msa(), esl_msa_Write() call failed.");
+    if((status = eslx_msafile_Write(cfg->rdfp, input_msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
+      ESL_FAIL(status, errbuf, "refine_msa(), esl_msafile_Write() call failed.");
   while(iter <= max_niter)
     {
       iter++;
@@ -890,8 +879,8 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       
       /* print intermediate alignment to --rdump file, if --rdump was enabled */
       if(cfg->rdfp != NULL) {
-	if((status = esl_msa_Write(cfg->rdfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
-	  ESL_FAIL(status, errbuf, "refine_msa(), esl_msa_Write() call failed.");
+	if((status = eslx_msafile_Write(cfg->rdfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
+	  ESL_FAIL(status, errbuf, "refine_msa(), esl_msafile_Write() call failed.");
       }
       /* 3. msa -> cm */
       if(iter > 1) { /* free previous iterations cm, mtr and tr */
@@ -907,8 +896,8 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
     }
 
   /* write out final alignment to --refine output file */
-  if((status = esl_msa_Write(cfg->refinefp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
-    ESL_FAIL(status, errbuf, "refine_msa(), esl_msa_Write() call failed.");
+  if((status = eslx_msafile_Write(cfg->refinefp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
+    ESL_FAIL(status, errbuf, "refine_msa(), esl_msafile_Write() call failed.");
 
   /* if CM was in local mode for aligning input MSA seqs, make it global so we can write it out */
   if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END)) ConfigGlobal(cm);
@@ -943,24 +932,12 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
 static int
 print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
 {
-  int status;
-  char *namedashes;
-  int ni;
-  ESL_ALLOC(namedashes, sizeof(char) * cfg->namewidth+1);
-  namedashes[cfg->namewidth] = '\0';
-  for(ni = 0; ni < cfg->namewidth; ni++) namedashes[ni] = '-';
+  fprintf(stdout, "# %-4s  %-6s  %-20s  %8s  %8s  %6s  %5s  %4s  %4s  %12s\n",    "",     "", "",                     "",         "",         "",     "",      "", "", "rel entropy");
+  fprintf(stdout, "# %-4s  %-6s  %-20s  %8s  %8s  %6s  %5s  %4s  %4s  %12s\n",    "",     "", "",                     "",         "",         "",     "",      "", "", "------------");
+  fprintf(stdout, "# %4s  %-6s  %-20s  %8s  %8s  %6s  %5s  %4s  %4s  %5s  %5s\n",  "aln",  "cm idx", "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "bps", "bifs",  "CM",     "HMM");
+  fprintf(stdout, "# %-4s  %-6s  %-20s  %8s  %8s  %6s  %5s  %4s  %4s  %5s  %5s\n", "----", "------", "--------------------", "--------", "--------", "------", "-----", "----", "----", "-----", "-----");
 
-  fprintf(stdout, "# %-4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %4s  %4s  %12s\n",    "",     "", cfg->namewidth, "",                     "",         "",         "",     "",      "", "", "rel entropy");
-  fprintf(stdout, "# %-4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %4s  %4s  %12s\n",    "",     "", cfg->namewidth, "",                     "",         "",         "",     "",      "", "", "------------");
-  fprintf(stdout, "# %4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %4s  %4s  %5s  %5s\n",  "aln",  "cm idx", cfg->namewidth, "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "bps", "bifs",  "CM",     "HMM");
-  fprintf(stdout, "# %-4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %4s  %4s  %5s  %5s\n", "----", "------", cfg->namewidth, namedashes,             "--------", "--------", "------", "-----", "----", "----", "-----", "-----");
-
-  free(namedashes);
   return eslOK;
-
- ERROR:
-  ESL_FAIL(status, errbuf, "Memory allocation error in print_column_headings()");
-  return status; /* NEVERREACHED */
 }
 
 static int
@@ -985,10 +962,9 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
     if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
   }
 
-  fprintf(stdout, "%6d  %6d  %-*s  %8d  %8.2f  %6" PRId64 "  %5d  %4d  %4d  %5.3f  %5.3f\n",
+  fprintf(stdout, "%6d  %6d  %-20s  %8d  %8.2f  %6" PRId64 "  %5d  %4d  %4d  %5.3f  %5.3f\n",
 	  msaidx,
 	  cmidx,
-	  cfg->namewidth,
 	  cm->name, 
 	  msa->nseq,
 	  cm->eff_nseq,
@@ -2593,67 +2569,6 @@ print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
   fprintf(stdout, "# %-5s %-13s %10s\n", "-----", "-------------", "----------");
   return;
 }
-
-/* Function: get_namewidth()
- * Date:     EPN, Fri May 23 05:45:32 2008
- *
- * Purpose:  Determine the maximum length of a CM name we'll create in the current
- *           cmbuild call from the MSA already opened cfg->afp.
- *           Sets cfg->namewidth as the max number of characters needed for
- *           all CM names.
- *
- * Returns:  eslOK on success
- *           eslEFORMAT on parse error of MSA in cfg->afp
- */
-static int
-get_namewidth(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
-{
-  int status;
-  int nali = 0;
-  int do_cmaxid_or_call;
-  int do_ctarget;
-  int cur_namewidth;
-  ESL_MSA *msa = NULL;
-
-  cfg->namewidth = 6; /* length of "name", plus 2 spaces, just for looks */
-  do_cmaxid_or_call = ( esl_opt_IsOn(go, "--cmaxid") || esl_opt_GetBoolean(go, "--call")) ? TRUE : FALSE;
-  do_ctarget        = esl_opt_IsOn(go, "--ctarget");
-
-  /* if -n <s> enabled, set namewidth as length of <s> */
-  if( esl_opt_IsOn(go, "-n")) { 
-    cfg->namewidth = ESL_MAX(cfg->namewidth, strlen(esl_opt_GetString(go, "-n"))); 
-    return eslOK;
-  }
-
-  /* else, get MSA names using either (1) stockholm GF ID markup name or (2) cmbuild's rules for naming the msa */
-  while ((status = esl_msa_Read(cfg->afp, &msa)) != eslEOF) { 
-    if      (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Alignment file parse error:\n%s\n", cfg->afp->errbuf);
-    else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Alignment file parse error:\n%s\n", cfg->afp->errbuf);
-    else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file read failed with error code %d\n", status);
-    nali++;
-
-      /* name the msa, if it already has one from #=GF ID markup, name_msa() returns w/o modifying it */
-      if((status = name_msa(go, errbuf, msa, nali)) != eslOK) return status;
-      cur_namewidth = strlen(msa->name);
-      if(do_cmaxid_or_call) cur_namewidth += 1 + IntDigits(msa->nseq); /* we could create as many as msa->nseq CMs from this msa */
-      if(do_ctarget)        cur_namewidth += 1 + esl_opt_GetInteger(go, "--ctarget"); /* we'll make --ctarget <n> CMs from this msa */
-      cfg->namewidth = ESL_MAX(cfg->namewidth, cur_namewidth);
-      esl_msa_Destroy(msa);
-  }
-  /* close the MSA file and open it again, sloppy */
-  esl_msafile_Close(cfg->afp);
-  if   (esl_opt_IsOn(go, "--informat")) cfg->fmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--informat"));
-  else                                  cfg->fmt = eslMSAFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
-  status = esl_msafile_Open(cfg->alifile, cfg->fmt, NULL, &(cfg->afp));
-  if      (status == eslENOTFOUND) ESL_FAIL(status, errbuf, "Alignment file %s doesn't exist or is not readable\n", cfg->alifile);
-  else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of alignment %s\n", cfg->alifile);
-  else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file open failed with error %d\n", status);
-  cfg->fmt = cfg->afp->format;
-  esl_msafile_SetDigital(cfg->afp, cfg->abc);
-
-  return eslOK;
-}
-  
 
 /* Function: dump_emission_info()
  * Date:     EPN, Wed Jul  9 14:47:51 2008

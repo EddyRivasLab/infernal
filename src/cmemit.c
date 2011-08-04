@@ -493,7 +493,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
     if((status = truncate_msa(go, cfg, msa, errbuf)) != eslOK) cm_Fail(errbuf);
 
   /* Output the alignment */
-  status = esl_msa_Write(cfg->ofp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
+  status = eslx_msafile_Write(cfg->ofp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
   if      (status == eslEMEM) ESL_XFAIL(status, errbuf, "Memory error when outputting alignment\n");
   else if (status != eslOK)   ESL_XFAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
 

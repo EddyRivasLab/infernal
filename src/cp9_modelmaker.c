@@ -2672,7 +2672,7 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
       Parsetrees2Alignment(cm, errbuf, cm->abc, sq, NULL, tr, NULL, msa_nseq, NULL, NULL, TRUE, FALSE, FALSE, &msa);
       /* MSA should be in text mode, not digitized */
       if(msa->flags & eslMSA_DIGITAL)
-      cm_Fail("ERROR in CP9_check_by_sampling(), sampled MSA should NOT be digitized.\n");
+	cm_Fail("ERROR in CP9_check_by_sampling(), sampled MSA should NOT be digitized.\n");
       
       /* Truncate the alignment prior to consensus column spos and after 
 	 consensus column epos */
@@ -2683,7 +2683,7 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
 	 * and between cc=epos and cc=epos+1.
 	 */
 	useme[apos] = (cc < (spos-1) || cc > epos) ? 0 : 1;
-	if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) {
+	if (!esl_abc_CIsGap(cm->abc, msa->rf[apos])) {
 	  cc++; 
 	  if(cc == (epos+1)) useme[apos] = 0; 
 	  /* we misassigned this guy, overwrite */ 
@@ -2697,11 +2697,11 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
       matassign[0] = 0;
       for (apos = 0; apos < msa->alen; apos++) {
 	matassign[apos+1] = 0;
-	if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) 
+	if (!esl_abc_CIsGap(cm->abc, msa->rf[apos])) 
 	  matassign[apos+1] = 1;
       }
       /* make fake tracebacks for each seq */
-      if((status = esl_msa_Digitize(msa->abc, msa, NULL)) == eslEINVAL) cm_Fail("In CP9_check_by_sampling(), esl_msa_Digitize() returned eslEINVAL, some characters must be invalid in msa.");
+      if((status = esl_msa_Digitize(cm->abc, msa, NULL)) == eslEINVAL) cm_Fail("In CP9_check_by_sampling(), esl_msa_Digitize() returned eslEINVAL, some characters must be invalid in msa.");
       CP9_fake_tracebacks(msa, matassign, &cp9_tr);
       
       /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */

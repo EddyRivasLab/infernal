@@ -27,6 +27,8 @@
 #include "esl_getopts.h"		
 #include "esl_mpi.h"
 #include "esl_msa.h"
+#include "esl_msafile.h"
+#include "esl_msafile2.h"
 #include "esl_msaweight.h"
 #include "esl_random.h"		
 #include "esl_sq.h"		
@@ -160,14 +162,14 @@ struct cfg_s {
   FILE         *elfp;	        /* optional output for EL insert info */
   FILE         *scorefp;        /* optional output for alnment scores */
   FILE         *regressfp;	/* optional output for regression test  */
-  ESL_MSAFILE  *withalifp;	/* optional input alignment to include */
+  ESLX_MSAFILE *withalifp;	/* optional input alignment to include */
   ESL_MSA      *withmsa;	/* MSA from withalifp to include */
   char         *withss_cons;	/* ss_cons string from withmsa (before knot stripping) */
   Parsetree_t  *withali_mtr;	/* guide tree for MSA from withalifp */
   ESL_ALPHABET *withali_abc;	/* digital alphabet for reading withali MSA */
   ESL_ALPHABET *abc_out;	/* digital alphabet for output */
 
-  ESL_MSAFILE  *malifp;	        /* -M optional input alignment to include */
+  ESLX_MSAFILE  *malifp;	/* -M optional input alignment to include */
   ESL_MSA      **mali_msa;	/* MSAs from withalifp to include */
   Parsetree_t  **mali_mtr;	/* guide trees for MSAs from malifp */
   ESL_ALPHABET *mali_abc;	/* digital alphabet for reading mali MSA */
@@ -443,15 +445,15 @@ main(int argc, char **argv)
       printf("# Regression data (alignment) saved in file %s.\n", esl_opt_GetString(go, "--regress"));
       fclose(cfg.regressfp);
     }
-    if (cfg.cmfp      != NULL) cm_file_Close(cfg.cmfp);
-    if (cfg.sqfp      != NULL) esl_sqfile_Close(cfg.sqfp);
-    if (cfg.withalifp != NULL) esl_msafile_Close(cfg.withalifp);
-    if (cfg.withmsa   != NULL) esl_msa_Destroy(cfg.withmsa);
+    if (cfg.cmfp        != NULL) cm_file_Close(cfg.cmfp);
+    if (cfg.sqfp        != NULL) esl_sqfile_Close(cfg.sqfp);
+    if (cfg.withalifp   != NULL) eslx_msafile_Close(cfg.withalifp);
+    if (cfg.withmsa     != NULL) esl_msa_Destroy(cfg.withmsa);
     if (cfg.withali_mtr != NULL) FreeParsetree(cfg.withali_mtr);
     if (cfg.withss_cons != NULL) free(cfg.withss_cons);
-    if (cfg.malifp != NULL) esl_msafile_Close(cfg.malifp);
-    if (cfg.mali_msa  != NULL) { for(m = 0; m < cfg.mali_n; m++) { esl_msa_Destroy(cfg.mali_msa[m]); } free(cfg.mali_msa); } 
-    if (cfg.mali_mtr  != NULL) { for(m = 0; m < cfg.mali_n; m++) { FreeParsetree(cfg.mali_mtr[m]); }   free(cfg.mali_mtr); } 
+    if (cfg.malifp      != NULL) eslx_msafile_Close(cfg.malifp);
+    if (cfg.mali_msa    != NULL) { for(m = 0; m < cfg.mali_n; m++) { esl_msa_Destroy(cfg.mali_msa[m]); } free(cfg.mali_msa); } 
+    if (cfg.mali_mtr    != NULL) { for(m = 0; m < cfg.mali_n; m++) { FreeParsetree(cfg.mali_mtr[m]); }   free(cfg.mali_mtr); } 
   }
   if (cfg.r         != NULL) esl_randomness_Destroy(cfg.r);
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
@@ -498,7 +500,6 @@ static int
 init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int  status;
-  int  type;
 
   /* open input sequence file */
   status = esl_sqfile_Open(cfg->sqfile, cfg->fmt, NULL, &(cfg->sqfp));
@@ -569,26 +570,15 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   /* optionally, open withali file for reading */
   if(esl_opt_GetString(go, "--withali") != NULL)
     {
-      status = esl_msafile_Open(esl_opt_GetString(go, "--withali"), eslMSAFILE_UNKNOWN, NULL, &(cfg->withalifp));
-      if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't exist or is not readable\n", 
-					      esl_opt_GetString(go, "--withali"));
-      else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of --withali alignment %s\n", 
-					      esl_opt_GetString(go, "--withali"));
-      else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file open failed with error %d\n", status);
-      /* Guess the withali alphabet, if it's ambiguous, guess RNA,
-       * we'll treat RNA and DNA both as RNA internally.
-       * We can't handle any other alphabets, so this is hardcoded. */
-      status = esl_msafile_GuessAlphabet(cfg->withalifp, &type);
-      if (status == eslEAMBIGUOUS)    type = eslRNA; /* guess it's RNA, we'll fail downstream with an error message if it's not */
-      else if (status == eslEFORMAT)  ESL_FAIL(status, errbuf, "Alignment file parse failed: %s\n", cfg->withalifp->errbuf);
-      else if (status == eslENODATA)  ESL_FAIL(status, errbuf, "Alignment file %s is empty\n", esl_opt_GetString(go, "--withali"));
-      else if (status != eslOK)       ESL_FAIL(status, errbuf, "Failed to read alignment file %s\n", esl_opt_GetString(go, "--withali"));
-      /* we can read DNA/RNA but internally we treat it as RNA */
-      if(! (type == eslRNA || type == eslDNA))
-	ESL_FAIL(eslEFORMAT, errbuf, "Alphabet is not DNA/RNA in %s\n", esl_opt_GetString(go, "--withali"));
-      cfg->withali_abc = esl_alphabet_Create(eslRNA);
-      if(cfg->withali_abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for --withali");
-      esl_msafile_SetDigital(cfg->withalifp, cfg->withali_abc);
+      status = eslx_msafile_Open(&(cfg->withali_abc), esl_opt_GetString(go, "--withali"), NULL, eslMSAFILE_UNKNOWN, NULL, &(cfg->withalifp));
+      if (status != eslOK) eslx_msafile_OpenFailure(cfg->withalifp, status);
+    }
+
+  /* optionally, open mli file for reading */
+  if(esl_opt_GetString(go, "-M") != NULL)
+    {
+      status = eslx_msafile_Open(&(cfg->mali_abc), esl_opt_GetString(go, "-M"), NULL, eslMSAFILE_UNKNOWN, NULL, &(cfg->malifp));
+      if (status != eslOK) eslx_msafile_OpenFailure(cfg->malifp, status);
     }
 
   if(cfg->r == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create master RNG.");
@@ -1284,7 +1274,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, int do_output_to_tmp, ch
     if((status = add_withali_pknots(go, cfg, errbuf, cm, msa)) != eslOK) return status;
   }
 
-  status = esl_msa_Write(do_output_to_tmp ? cfg->tmpfp : cfg->ofp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
+  status = eslx_msafile_Write(do_output_to_tmp ? cfg->tmpfp : cfg->ofp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
   /* note that the contract asserted that if --ileaved then do_output_to_tmp must be FALSE */
   if      (status == eslEMEM) ESL_FAIL(status, errbuf, "Memory error when outputting alignment\n");
   else if (status != eslOK)   ESL_FAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
@@ -1295,7 +1285,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, int do_output_to_tmp, ch
     /* Must delete author info from msa, because it contains version
      * and won't diff clean in regression tests. */
     if(msa->au != NULL) free(msa->au); msa->au = NULL;
-    status = esl_msa_Write(cfg->regressfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
+    status = eslx_msafile_Write(cfg->regressfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
     if (status == eslEMEM)    ESL_FAIL(status, errbuf, "Memory error when outputting regression file\n");
     else if (status != eslOK) ESL_FAIL(status, errbuf, "Writing regression file failed with error %d\n", status);
   }
@@ -1491,11 +1481,9 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
   char          errbuf[cmERRBUFSIZE];
 
   /* cfg->withalifp is open */
-  status = esl_msa_Read(cfg->withalifp, &msa);
-  if      (status == eslEFORMAT) cm_Fail("--withali alignment file parse error:\n%s\n", cfg->withalifp->errbuf);
-  else if (status == eslEINVAL)  cm_Fail("--withali alignment file parse error:\n%s\n", cfg->withalifp->errbuf);
-  else if (status == eslEOF)     cm_Fail("--withali alignment file %s empty?\n",        cfg->withalifp->fname);
-  else if (status != eslOK)      cm_Fail("--withali alignment file read failed with error code %d\n", status);
+  if((status = eslx_msafile_Read(cfg->withalifp, &msa)) != eslOK) { 
+    eslx_msafile_ReadFailure(cfg->withalifp, status);
+  }
 
   /* Some input data cleaning. */
   if (esl_opt_GetBoolean(go, "--rf") && msa->rf == NULL) 
@@ -2078,7 +2066,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
   char         *rf2print = NULL;                /* #=GC RF annotation for final alignment */
   char         *ss_cons2print = NULL;           /* #=GC SS_cons annotation for final alignment */
 
-  /* variables only used in small mode (--savemem) */
+  /* variables only used in small mode */
   int           ngs_cur;                       /* number of GS lines in current alignment (only used if do_small) */
   int           gs_exists = FALSE;             /* set to TRUE if do_small and any input aln has >= 1 GS line */
   int           maxname, maxgf, maxgc, maxgr;  /* max length of seqname, GF tag, GC tag, GR tag in all input alignments */
@@ -2086,7 +2074,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
   int           margin = 0;                    /* total margin length for output msa */
   int           regurg_header = FALSE;         /* set to TRUE if we're printing out header */
   int           regurg_gf     = FALSE;         /* set to TRUE if we're printing out GF (we won't if ofp == cfg->regressfp (i.e. we're printing to regress file */
-  ESL_MSAFILE  *afp;
+  ESL_MSAFILE2 *afp;
 
   /* Allocate and initialize */
   ESL_ALLOC(msaA,   sizeof(ESL_MSA *) * cfg->nali);
@@ -2095,7 +2083,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
   /****************************************************************************
    * Read alignments one at a time, storing all non-sequence info, separately *
    ****************************************************************************/
-  if((status = esl_msafile_Open(tmpfile, eslMSAFILE_PFAM, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading", tmpfile);
+  if((status = esl_msafile2_Open(tmpfile, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading", tmpfile);
 
   ai = 0;
   nseq_tot = 0;
@@ -2110,7 +2098,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
 
   /* read all alignments, there should be cfg->nali of them */
   for(ai = 0; ai < cfg->nali; ai++) { 
-    status = esl_msa_ReadInfoPfam(afp, NULL, cfg->abc, -1, NULL, NULL, &(msaA[ai]), &nseq_cur, &alen_cur, &ngs_cur, &maxname_cur, &maxgf_cur, &maxgc_cur, &maxgr_cur, NULL, NULL, NULL, NULL, NULL);
+    status = esl_msafile2_ReadInfoPfam(afp, NULL, cfg->abc, -1, NULL, NULL, &(msaA[ai]), &nseq_cur, &alen_cur, &ngs_cur, &maxname_cur, &maxgf_cur, &maxgc_cur, &maxgr_cur, NULL, NULL, NULL, NULL, NULL);
     if      (status == eslEFORMAT) cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
     else if (status == eslEINVAL)  cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
     else if (status != eslOK)      cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
@@ -2135,11 +2123,11 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
     update_maxins_and_maxel(msaA[ai], cm->clen, msaA[ai]->alen, maxins, maxel);
   }
   /* final check, make sure we've read all msas from the file, we should have, we only printed cfg->nali */
-  status = esl_msa_ReadInfoPfam(afp, NULL, cfg->abc, -1, NULL, NULL, NULL, 
-				      NULL, NULL, NULL, NULL, NULL, NULL, NULL, 
-				      NULL, NULL, NULL, NULL, NULL);
+  status = esl_msafile2_ReadInfoPfam(afp, NULL, cfg->abc, -1, NULL, NULL, NULL, 
+				     NULL, NULL, NULL, NULL, NULL, NULL, NULL, 
+				     NULL, NULL, NULL, NULL, NULL);
   if(status != eslEOF) ESL_FAIL(status, errbuf, "More alignments in temp file than expected.");
-  esl_msafile_Close(afp);
+  esl_msafile2_Close(afp);
   
   /*********************************************
    *  Merge all alignments into the merged MSA *
@@ -2160,37 +2148,37 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
   /* if there was any GS annotation in any of the individual alignments,
    * do second pass through alignment files, outputting GS annotation as we go. */
   if(gs_exists) { 
-    if((status = esl_msafile_Open(tmpfile, eslMSAFILE_PFAM, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading on second pass", tmpfile);
+    if((status = esl_msafile2_Open(tmpfile, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading on second pass", tmpfile);
     for(ai = 0; ai < cfg->nali; ai++) { 
       regurg_header = (ai == 0) ? TRUE : FALSE;
       regurg_gf     = ((ofp != cfg->regressfp) && (ai == 0)) ? TRUE : FALSE;
-      status = esl_msa_RegurgitatePfam(afp, ofp, 
-				       maxname, maxgf, maxgc, maxgr, /* max width of a seq name, gf tag, gc tag, gr tag */
-				       regurg_header, /* regurgitate stockholm header ? */
-				       FALSE,         /* regurgitate // trailer ? */
-				       regurg_header, /* regurgitate blank lines */
-				       regurg_header, /* regurgitate comments */
-				       regurg_gf,     /* regurgitate GF ? */
-				       TRUE,          /* regurgitate GS ? */
-				       FALSE,         /* regurgitate GC ? */
-				       FALSE,         /* regurgitate GR ? */
-				       FALSE,         /* regurgitate aseq ? */
-				       NULL,          /* output all seqs, not just those stored in a keyhash */
-				       NULL,          /* output all seqs, don't skip those listed in a keyhash */
-				       NULL,          /* useme,  irrelevant, we're only outputting GS */
-				       NULL,          /* add2me, irrelevant, we're only outputting GS */
-				       alenA[ai], /* alignment length, as we read it in first pass (inserts may have been removed since then) */
-				       '.', NULL, NULL);
+      status = esl_msafile2_RegurgitatePfam(afp, ofp, 
+					    maxname, maxgf, maxgc, maxgr, /* max width of a seq name, gf tag, gc tag, gr tag */
+					    regurg_header, /* regurgitate stockholm header ? */
+					    FALSE,         /* regurgitate // trailer ? */
+					    regurg_header, /* regurgitate blank lines */
+					    regurg_header, /* regurgitate comments */
+					    regurg_gf,     /* regurgitate GF ? */
+					    TRUE,          /* regurgitate GS ? */
+					    FALSE,         /* regurgitate GC ? */
+					    FALSE,         /* regurgitate GR ? */
+					    FALSE,         /* regurgitate aseq ? */
+					    NULL,          /* output all seqs, not just those stored in a keyhash */
+					    NULL,          /* output all seqs, don't skip those listed in a keyhash */
+					    NULL,          /* useme,  irrelevant, we're only outputting GS */
+					    NULL,          /* add2me, irrelevant, we're only outputting GS */
+					    alenA[ai], /* alignment length, as we read it in first pass (inserts may have been removed since then) */
+					    '.', NULL, NULL);
       if(status == eslEOF) cm_Fail("Second pass, error out of temp alignments too soon, when trying to read aln %d", ai);
       if(status != eslOK)  cm_Fail("Second pass, error reading temp alignment %d %s", ai, afp->errbuf); 
       fflush(ofp);
     }
-    esl_msafile_Close(afp);
+    esl_msafile2_Close(afp);
     fprintf(ofp, "\n"); /* a single blank line to separate GS annotation from aligned data */
   }
   /* do another (either second or third) pass through alignment files, outputting aligned sequence data (and GR) as we go */
 
-  if((status = esl_msafile_Open(tmpfile, eslMSAFILE_PFAM, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading on second (or third) pass", tmpfile);
+  if((status = esl_msafile2_Open(tmpfile, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading on second (or third) pass", tmpfile);
 
   for(ai = 0; ai < cfg->nali; ai++) { 
     /* determine how many all gap columns to insert after each alignment position
@@ -2200,23 +2188,23 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
     regurg_header = ((! gs_exists) && (ai == 0)) ? TRUE : FALSE;
     regurg_gf     = ((ofp != cfg->regressfp) && (! gs_exists) && (ai == 0)) ? TRUE : FALSE;
 
-    status = esl_msa_RegurgitatePfam(afp, ofp,
-				     maxname, maxgf, maxgc, maxgr, /* max width of a seq name, gf tag, gc tag, gr tag */
-				     regurg_header,  /* regurgitate stockholm header ? */
-				     FALSE,          /* regurgitate // trailer ? */
-				     regurg_header,  /* regurgitate blank lines */
-				     regurg_header,  /* regurgitate comments */
-				     regurg_gf,      /* regurgitate GF ? */
-				     FALSE,          /* regurgitate GS ? */
-				     FALSE,          /* regurgitate GC ? */
-				     TRUE,           /* regurgitate GR ? */
-				     TRUE,           /* regurgitate aseq ? */
-				     NULL,           /* output all seqs, not just those stored in a keyhash */
-				     NULL,           /* output all seqs, don't skip those stored in a keyhash */
-				     NULL,           /* useme, not nec b/c we want to keep all columns */
-				     ngap_eitherA,   /* number of all gap columns to add after each apos */
-				     alenA[ai],      /* alignment length, as we read it in first pass, not strictly necessary */
-				     '.', NULL, NULL);
+    status = esl_msafile2_RegurgitatePfam(afp, ofp,
+					  maxname, maxgf, maxgc, maxgr, /* max width of a seq name, gf tag, gc tag, gr tag */
+					  regurg_header,  /* regurgitate stockholm header ? */
+					  FALSE,          /* regurgitate // trailer ? */
+					  regurg_header,  /* regurgitate blank lines */
+					  regurg_header,  /* regurgitate comments */
+					  regurg_gf,      /* regurgitate GF ? */
+					  FALSE,          /* regurgitate GS ? */
+					  FALSE,          /* regurgitate GC ? */
+					  TRUE,           /* regurgitate GR ? */
+					  TRUE,           /* regurgitate aseq ? */
+					  NULL,           /* output all seqs, not just those stored in a keyhash */
+					  NULL,           /* output all seqs, don't skip those stored in a keyhash */
+					  NULL,           /* useme, not nec b/c we want to keep all columns */
+					  ngap_eitherA,   /* number of all gap columns to add after each apos */
+					  alenA[ai],      /* alignment length, as we read it in first pass, not strictly necessary */
+					  '.', NULL, NULL);
     if(status == eslEOF) cm_Fail("Second pass, error out of alignments too soon, when trying to read temp aln %d", ai);
     if(status != eslOK)  cm_Fail("Second pass, error reading temp alignment %d: %s", ai, afp->errbuf); 
     if(ai == 0) { 
@@ -2242,7 +2230,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
   fprintf(ofp, "#=GC %-*s %s\n", margin-6, "RF", rf2print);
   fprintf(ofp, "//\n");
 
-  esl_msafile_Close(afp);
+  esl_msafile2_Close(afp);
 
   if(ss_cons2print != NULL) free(ss_cons2print);
   if(rf2print != NULL) free(rf2print);
@@ -2741,7 +2729,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_ALLOC(cfg->mali_msa, sizeof(ESL_MSA *) * cfg->ncm);
   ESL_MSA *tmp_msa; /* so we can ensure we have correct number of alignments in file, should be equal to number of CMs we just read */
   while (status == eslOK) { 
-    status = esl_msa_Read(cfg->malifp, &tmp_msa);
+    status = eslx_msafile_Read(cfg->malifp, &tmp_msa);
     if(status == eslOK) { 
       if(cfg->mali_n >= cfg->ncm) cm_Fail("with -M, read %d CMs, but %s has > %d alignments.", cfg->ncm, esl_opt_GetString(go, "-M"), cfg->ncm);
       cfg->mali_msa[cfg->mali_n] = tmp_msa;
@@ -2768,7 +2756,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_MSA *maj_target_msa;
   if((status = Parsetrees2Alignment(cmlist[0], errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, NULL, seqs_to_aln->nseq, NULL, NULL, TRUE, esl_opt_GetBoolean(go, "--matchonly"), FALSE, &maj_target_msa)) != eslOK)
     cm_Fail("serial_master_meta(), error generating major alignment from parsetrees.");
-  /* printf("\n"); status = esl_msa_Write(stdout, maj_target_msa, eslMSAFILE_STOCKHOLM); printf("\n"); */
+  /* printf("\n"); status = esl_msafile_Write(stdout, maj_target_msa, eslMSAFILE_STOCKHOLM); printf("\n"); */
 
   /* 5. Determine the implicit minor alignments defined by the major alignment, and determine implicit scores */
   if((status = major_alignment2minor_parsetrees(go, cfg, errbuf, cmlist, maj_target_msa, maj_train_a2c_map, &wcm)) != eslOK) cm_Fail(errbuf);
@@ -2797,7 +2785,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
     /* minor parsetrees -> implicit major alignment (majorfied alignment) */
     if((status = Parsetrees2Alignment_Minor2Major(cmlist[m], cfg->abc_out, min_seqs_to_aln->sq, NULL, min_seqs_to_aln->tr, min_seqs_to_aln->nseq, TRUE, esl_opt_GetBoolean(go, "--matchonly"), toadd2min[m], &majed_min_msa)) != eslOK)
       cm_Fail("serial_master_meta(), error generating alignment from parsetrees to major CM.");
-    /* status = esl_msa_Write(stdout, majed_min_msa, eslMSAFILE_STOCKHOLM); 
+    /* status = esl_msafile_Write(stdout, majed_min_msa, eslMSAFILE_STOCKHOLM); 
        DumpEmitMap(stdout, maj_emap, cmlist[0]);
       ParsetreeDump(stdout, cfg->mali_mtr[0], cmlist[0], maj_target_msa->ax[0], NULL, NULL); */
 
@@ -3692,7 +3680,7 @@ majorfied_alignment2major_parsetrees(const ESL_GETOPTS *go, struct cfg_s *cfg, c
   }
   free(majed_min_c2a_map);
 
-  /* esl_msa_Write(stdout, majed_min_msa, eslMSAFILE_STOCKHOLM); */
+  /* esl_msafile_Write(stdout, majed_min_msa, eslMSAFILE_STOCKHOLM); */
   if((status = Alignment2Parsetrees(majed_min_msa, maj_cm, cfg->mali_mtr[0], errbuf, NULL, &majed_tr)) != eslOK) return status;
   
   *ret_majed_tr = majed_tr;
