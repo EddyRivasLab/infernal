@@ -74,9 +74,9 @@
 # Exercises of cmsearch 
 1  exercise  cmsearch:help/1      @src/cmsearch@ -h
 1  exercise  cmsearch:help/2      @src/cmsearch@ --devhelp
-1  exercise  trna/search          @src/cmsearch@ %TRNA.CM% 3trnas.fa
-1  exercise  rnaseP/search        @src/cmsearch@ %RNASEP.CM% 3trnas.fa
-1  exercise  srp/search           @src/cmsearch@ %SRP.CM% 3trnas.fa
+1  exercise  trna/search          @src/cmsearch@ -Z 1000 %TRNA.CM% 3trnas.fa
+1  exercise  rnaseP/search        @src/cmsearch@ -Z 1000 %RNASEP.CM% 3trnas.fa
+1  exercise  srp/search           @src/cmsearch@ -Z 1000 %SRP.CM% 3trnas.fa
 
 # Exercises of cmemit
 1  exercise  cmemit:help/1        @src/cmemit@ -h

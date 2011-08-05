@@ -2,9 +2,9 @@
  * Modified from HMMER's create-profmark.c. 
  * 
  * Usage:
- *   ./create-rmark <basename> <msa Stockholm file> <FASTA db>
+ *   ./rmark-create <basename> <msa Stockholm file> <FASTA db>
  * For example:
- *   ./create-rmark rmark3 /misc/data0/databases/Rfam/Rfam.seed /misc/data0/databases/rfamseq.fasta
+ *   ./rmark-create rmark3 /misc/data0/databases/Rfam/Rfam.seed /misc/data0/databases/rfamseq.fasta
  *
  * There are three types of sequences:
  * 1. positives:
@@ -48,6 +48,7 @@
 #include "esl_getopts.h"
 #include "esl_hmm.h"
 #include "esl_msa.h"
+#include "esl_msafile.h"
 #include "esl_msacluster.h"
 #include "esl_random.h"
 #include "esl_randomseq.h"
@@ -184,7 +185,7 @@ main(int argc, char **argv)
   char          outfile[256];	/* name of an output file          */
   int           alifmt;		/* format code for alifile         */
   int           dbfmt;		/* format code for dbfile          */
-  ESL_MSAFILE  *afp     = NULL;	/* open alignment file             */
+  ESLX_MSAFILE *afp     = NULL;	/* open alignment file             */
   ESL_MSA      *origmsa = NULL;	/* one multiple sequence alignment */
   ESL_MSA      *msa     = NULL;	/* MSA after frags are removed     */
   ESL_MSA      *trainmsa= NULL;	/* training set, aligned           */
@@ -270,25 +271,13 @@ main(int argc, char **argv)
   }
   else cfg.tfp = NULL;
 
-  /* Open the MSA file; determine alphabet */
-  status = esl_msafile_Open(alifile, alifmt, NULL, &afp);
-  if      (status == eslENOTFOUND) esl_fatal("Alignment file %s doesn't exist or is not readable\n", alifile);
-  else if (status == eslEFORMAT)   esl_fatal("Couldn't determine format of alignment %s\n", alifile);
-  else if (status != eslOK)        esl_fatal("Alignment file open failed with error %d\n", status);
-
+  /* Open the MSA file */
   if      (esl_opt_GetBoolean(go, "--amino"))   cfg.abc = esl_alphabet_Create(eslAMINO);
   else if (esl_opt_GetBoolean(go, "--dna"))     cfg.abc = esl_alphabet_Create(eslDNA);
   else if (esl_opt_GetBoolean(go, "--rna"))     cfg.abc = esl_alphabet_Create(eslRNA);
-  else {
-    int type;
-    status = esl_msafile_GuessAlphabet(afp, &type);
-    if (status == eslEAMBIGUOUS)    esl_fatal("Failed to guess the bio alphabet used in %s.\nUse --dna, --rna, or --amino option to specify it.", alifile);
-    else if (status == eslEFORMAT)  esl_fatal("Alignment file parse failed: %s\n", afp->errbuf);
-    else if (status == eslENODATA)  esl_fatal("Alignment file %s is empty\n", alifile);
-    else if (status != eslOK)       esl_fatal("Failed to read alignment file %s\n", alifile);
-    cfg.abc = esl_alphabet_Create(type);
+  if((status = eslx_msafile_Open(&(cfg.abc), alifile, NULL, alifmt, NULL, &afp)) != eslOK) { 
+    eslx_msafile_OpenFailure(afp, status);
   }
-  esl_msafile_SetDigital(afp, cfg.abc);
 
   if (cfg.abc->type == eslAMINO) esl_composition_SW34(cfg.fq);
   else                           esl_vec_DSet(cfg.fq, cfg.abc->K, 1.0 / (double) cfg.abc->K);
@@ -301,7 +290,7 @@ main(int argc, char **argv)
   nali = 0; 
   npos = 0;
   poslen_total = 0;
-  while ((status = esl_msa_Read(afp, &origmsa)) == eslOK)
+  while ((status = eslx_msafile_Read(afp, &origmsa)) == eslOK)
     {
       npos_this_msa = 0;
       if(origmsa->name == NULL) esl_fatal("All msa's must have a valid name (#=GC ID), alignment %d does not.", nali);
@@ -357,7 +346,7 @@ main(int argc, char **argv)
 	 * find_sets().  Extract and write out the training alignment. */
 	if ((status = esl_msa_SequenceSubset(msa, i_am_train, &trainmsa)) != eslOK) goto ERROR;
 	esl_msa_MinimGaps(trainmsa, NULL, NULL, FALSE);
-	esl_msa_Write(cfg.out_msafp, trainmsa, eslMSAFILE_STOCKHOLM);
+	eslx_msafile_Write(cfg.out_msafp, trainmsa, eslMSAFILE_STOCKHOLM);
 	
 	esl_dst_XAverageId(cfg.abc, trainmsa->ax, trainmsa->nseq, 10000, &avgid); /* 10000 is max_comparisons, before sampling kicks in */
 	fprintf(cfg.tblfp, "%-20s  %3.0f%% %6d %6d %6d %6d %6d\n", msa->name, 100.*avgid, (int) trainmsa->alen, msa->nseq, nfrags, trainmsa->nseq, ntestseq);
@@ -409,12 +398,12 @@ main(int argc, char **argv)
 	  /* Output train subset, note we don't use trainmsa, b/c it's has all gap columns removed */
 	  if ((status = esl_msa_SequenceSubset(msa, i_am_train, &tmpmsa)) != eslOK) goto ERROR;
 	  esl_msa_FormatName(tmpmsa, "TRAIN.%s", msa->name);
-	  esl_msa_Write(cfg.tfp, tmpmsa, eslMSAFILE_PFAM);
+	  eslx_msafile_Write(cfg.tfp, tmpmsa, eslMSAFILE_PFAM);
 	  
 	  /* Output test subset */
 	  if ((status = esl_msa_SequenceSubset(msa, i_am_test, &tmpmsa)) != eslOK) goto ERROR;
 	  esl_msa_FormatName(tmpmsa, "TEST.%s", msa->name);
-	  esl_msa_Write(cfg.tfp, tmpmsa, eslMSAFILE_PFAM);
+	  eslx_msafile_Write(cfg.tfp, tmpmsa, eslMSAFILE_PFAM);
 	  esl_msa_Destroy(tmpmsa);
 	}
       }
@@ -425,9 +414,7 @@ main(int argc, char **argv)
       esl_msa_Destroy(origmsa);
       esl_msa_Destroy(msa);
     }
-  if      (status == eslEFORMAT)  esl_fatal("Alignment file parse error, line %d of file %s:\n%s\nOffending line is:\n%s\n", 
-					    afp->linenumber, afp->fname, afp->errbuf, afp->buf);	
-  else if (status != eslEOF)      esl_fatal("Alignment file read failed with error code %d\n", status);
+  if (status != eslEOF)           eslx_msafile_ReadFailure(afp, status);
   else if (nali   == 0)           esl_fatal("No alignments found in file %s\n", alifile);
 
   /* Make sure we summed length of the positives isn't above the max allowed */
@@ -451,7 +438,7 @@ main(int argc, char **argv)
   fclose(cfg.tblfp);
   esl_randomness_Destroy(cfg.r);
   esl_alphabet_Destroy(cfg.abc);
-  esl_msafile_Close(afp);
+  eslx_msafile_Close(afp);
   esl_getopts_Destroy(go);
   return 0;
 
