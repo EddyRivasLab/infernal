@@ -3314,19 +3314,10 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	if(have_el && NOT_IMPOSSIBLE(cm->endsc[v])) { 
 	  for (j = jmin[v]; j <= jmax[v]; j++) { 
 	    jp_v  = j - jmin[v];
-	    /* special case: if hdmin[v][jp_v] > 0, we have to sum up posterior prob of emitting 
-	     * hdmin[v][jp_v] residues from the EL state, this is then stored in alpha[v][jp_v][dp_v==0]
-	     * note: when d = hdmin[v][jp_v], dp_v is 0
-	     */
-	    alpha[v][jp_v][0] = IMPOSSIBLE;
-	    yshadow[v][jp_v][0] = USED_EL; 
-	    for(d = sd+1; d <= hdmin[v][jp_v]; d++) {
-	      alpha[v][jp_v][0] = FLogsum(alpha[v][jp_v][0], post[cm->M][j-sdr][d-sd]);
-	    }
-	    /* now finish initializing the remaining valid d values */
-	    for(d = hdmin[v][jp_v]+1; d <= hdmax[v][jp_v]; d++) {
+	    /* copy values from saved EL deck */
+	    for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
 	      dp_v = d - hdmin[v][jp_v];
-	      alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v-1], post[cm->M][j-sdr][d-sd]); /* careful, we'll emit sd residues from v and d-sd from EL (i=((j-sdr)-d+1)..(j-sdr)) */
+	      alpha[v][jp_v][dp_v]   = alpha[cm->M][j-sdr][d-sd];
 	      yshadow[v][jp_v][dp_v] = USED_EL; 
 	    }
 	  }
