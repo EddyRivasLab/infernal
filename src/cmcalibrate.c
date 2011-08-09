@@ -901,7 +901,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  }
 	  
 	  /* search emitted sequences to get filter thresholds for HMM and each candidate sub CM root state */
-	  ESL_DPRINTF1(("\n\ncalling process_filter_workunit to get HMM filter thresholds for p: %d mode: %d\n", p, exp_mode));
+	  ESL_DPRINTF1(("\n\ncalling process_filter_workunit to get HMM filter thresholds for mode: %d\n", exp_mode));
 	  
 	  if((status = process_filter_workunit (go, cfg, errbuf, cm, fil_dsqA, fil_L_A, filN, &fil_cyk_scA, &fil_ins_scA, &fil_fwd_scA)) != eslOK) cm_Fail(errbuf);
 	  

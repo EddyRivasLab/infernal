@@ -350,7 +350,7 @@ DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
   */
 
   /* finally create the CP9Bands */
-  dest_cm->cp9b = AllocCP9Bands(dest_cm, dest_cm->cp9);
+  dest_cm->cp9b = AllocCP9Bands(dest_cm->M, dest_cm->cp9->M);
 
   dest_cm->cp9->flags = src_cm->cp9->flags;
 }

@@ -39,7 +39,7 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 
 /* set the max residue count to 100Kb when reading a block */
-#define CMSEARCH_MAX_RESIDUE_COUNT 100000 /* differs from HMMER's default which is MAX_RESIDUE_COUNT from esl_sqio_(ascii|ncbi).c */
+#define CMSEARCH_MAX_RESIDUE_COUNT 10000000 /* differs from HMMER's default which is MAX_RESIDUE_COUNT from esl_sqio_(ascii|ncbi).c */
 
 typedef struct {
 #ifdef HMMER_THREADS
@@ -167,6 +167,7 @@ static ESL_OPTIONS options[] = {
   { "--aln-cyk",      eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "align hits with CYK", 8 },
   { "--aln-nonbanded",eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not use HMM bands when aligning hits", 8 },
   { "--aln-sizelimit",eslARG_REAL,"128.", NULL, "x>0",   NULL,  NULL,  NULL,            "set maximum allowed size of DP matrices for hit alignment to <x> Mb", 8 },
+  { "--aln-scanbands",eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use HMM bands from final search stage for alignment of hits, don't recalc", 8},
   /* Options taken from infernal 1.0.2 cmsearch */
   /* options for algorithm for final round of search */
   { "-g",             eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "configure CM for glocal alignment [default: local]", 1 },
@@ -1324,7 +1325,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    if (info->pli->do_top) { 
 	      prev_hit_cnt = info->th->N;
 	      if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, dbsq, info->th, &(info->gm), &(info->cm), &(info->cmcons))) != eslOK) 
-		mpi_failure("cm_pipeline() failed unexpected with status code %d\n", status);
+		mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	      cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	      /* If we're a subsequence, update hit positions so they're relative 
@@ -1337,7 +1338,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	      esl_sq_ReverseComplement(dbsq);
 	      prev_hit_cnt = info->th->N;
 	      if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, dbsq, info->th, &(info->gm), &(info->cm), &(info->cmcons))) != eslOK) 
-		mpi_failure("cm_pipeline() failed unexpected with status code %d\n", status);
+		mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	      cm_pipeline_Reuse(info->pli); /* prepare for next search */
 	      if(info->pli->do_top) info->pli->nres += dbsq->n; /* add dbsq->n residues, the reverse complement we just searched */
 	      
@@ -1418,7 +1419,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
     
     if (info->pli->do_top) { 
       prev_hit_cnt = info->th->N;
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, dbsq, info->th, &(info->gm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, dbsq, info->th, &(info->gm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       fflush(stdout);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
       
@@ -1430,7 +1431,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
     if (info->pli->do_bot && dbsq->abc->complement != NULL) { 
       prev_hit_cnt = info->th->N;
       esl_sq_ReverseComplement(dbsq);
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, dbsq, info->th, &(info->gm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, dbsq, info->th, &(info->gm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       fflush(stdout);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
       
@@ -1595,7 +1596,7 @@ pipeline_thread(void *arg)
       
       if (info->pli->do_top) { 
 	prev_hit_cnt = info->th->N;
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, dbsq, info->th, &(info->gm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, dbsq, info->th, &(info->gm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 	
 	/* modify hit positions to account for the position of the window in the full sequence */
@@ -1606,7 +1607,7 @@ pipeline_thread(void *arg)
       if (info->pli->do_bot && dbsq->abc->complement != NULL) {
 	prev_hit_cnt = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, dbsq, info->th, &(info->gm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n", status);
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, dbsq, info->th, &(info->gm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* modify hit positions to account for the position of the window in the full sequence */

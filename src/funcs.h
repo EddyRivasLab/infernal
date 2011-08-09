@@ -470,7 +470,7 @@ extern double cp9_MeanMatchRelativeEntropy(const CM_t *cm);
 /* from hmmband.c */
 extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
 extern int          cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
-extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
+extern CP9Bands_t * AllocCP9Bands(int cm_M, int hmm_M);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int debug_level);
 extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
@@ -506,6 +506,8 @@ extern void         debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int
 extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
 extern void         debug_print_ij_bands(CM_t *cm);
 extern void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, CP9Bands_t *cp9b);
+extern void         cp9_ShiftCMBands(CM_t *cm, int i, int j);
+extern CP9Bands_t  *cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf);
 
 /* from cm_p7_modelmaker.c */
 #if 0
@@ -736,6 +738,7 @@ extern int cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t
 extern int cm_pli_p7Filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
 extern int cm_pli_p7EnvelopeDef     (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 extern int cm_pli_CMStage           (CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
+extern int cm_pli_AlignHit          (CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b);
 extern int cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
 extern int cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
 

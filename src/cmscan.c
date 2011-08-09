@@ -154,6 +154,7 @@ static ESL_OPTIONS options[] = {
   { "--aln-cyk",      eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "align hits with CYK", 8 },
   { "--aln-nonbanded",eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not use HMM bands when aligning hits", 8 },
   { "--aln-sizelimit",eslARG_REAL,"128.", NULL, "x>0",   NULL,  NULL,  NULL,            "set maximum allowed size of DP matrices for hit alignment to <x> Mb", 8 },
+  { "--aln-scanbands",eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use HMM bands from final search stage for alignment of hits, don't recalc", 8},
   /* Options taken from infernal 1.0.2 cmsearch */
   /* options for algorithm for final round of search */
   { "-g",             eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "configure CM for glocal alignment [default: local]", 1 },

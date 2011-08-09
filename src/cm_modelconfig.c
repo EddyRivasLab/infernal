@@ -81,6 +81,12 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
   if(cm->emap != NULL) FreeEmitMap(cm->emap);
   cm->emap = CreateEmitMap(cm);
 
+  /* Allocate the shadow matrix for alignment traceback, 
+   * Initially this is small, and its only grown as needed.
+   */
+  if(cm->shmx != NULL) cm_hb_shadow_mx_Destroy(cm->shmx);
+  cm->shmx = cm_hb_shadow_mx_Create(cm, cm->M);
+
   /* Build the CP9 HMM and associated data */
   /* IMPORTANT: do this before setting up CM for local mode
    * if we already have these, free them (wasteful but safe, 
@@ -106,7 +112,7 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
   fprintf(stdout, "\tcp9 build time        %11s\n", time_buf);
 #endif
 
-  cm->cp9b = AllocCP9Bands(cm, cm->cp9);
+  cm->cp9b = AllocCP9Bands(cm->M, cm->cp9->M);
   /* create the CP9 matrices, we init to 1 row, which is tiny so it's okay
    * that we have two of them, we only grow them as needed, cp9_bmx is 
    * only needed if we're doing Forward -> Backward -> Posteriors.

@@ -134,6 +134,8 @@ CreateCMShell(void)
   cm->hfiA         = NULL;
   cm->smx          = NULL;
   cm->hbmx         = NULL;
+  cm->ohbmx        = NULL;
+  cm->shmx         = NULL;
   cm->cp9_mx       = NULL;
   cm->cp9_bmx      = NULL;
   cm->si           = NULL;
@@ -250,9 +252,10 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
   cm->cp9b          = NULL;
   cm->cp9map        = NULL;
 
-  /* create HMM banded dp matrix, this only depends (at first) on num states, M.
+  /* create HMM banded dp matrices, this only depends (at first) on num states, M.
    * it is initially empty, but expanded to fit target sequences as needed */
-  cm->hbmx    = cm_hb_mx_Create(cm->M);
+  cm->hbmx  = cm_hb_mx_Create(cm->M);
+  cm->ohbmx = cm_hb_mx_Create(cm->M);
 
   /* we'll allocate the cp9, cp9b, cp9map, cp9_mx and cp9_bmx inside ConfigCM(),
    * we need some more info about the CM besides M and nnodes to build those
@@ -409,6 +412,8 @@ FreeCM(CM_t *cm)
   if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
   if(cm->root_trans != NULL) free(cm->root_trans);
   if(cm->hbmx       != NULL) cm_hb_mx_Destroy(cm->hbmx);
+  if(cm->ohbmx      != NULL) cm_hb_mx_Destroy(cm->ohbmx);
+  if(cm->shmx       != NULL) cm_hb_shadow_mx_Destroy(cm->shmx);
   if(cm->cp9_mx     != NULL) FreeCP9Matrix(cm->cp9_mx);
   if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);

@@ -1387,10 +1387,12 @@ typedef struct cm_s {
   int   iel_selfsc;     /* scaled int version of el_selfsc         */
 
   /* DP matrices and some auxiliary info for DP algorithms */
-  ScanMatrix_t *smx;     /* matrices, info for CYK/Inside scans with this CM */
-  CM_HB_MX     *hbmx;    /* growable HMM banded float matrix */
-  CP9_MX       *cp9_mx;  /* growable CP9 DP matrix */
-  CP9_MX       *cp9_bmx; /* another growable CP9 DP matrix, 'b' is for backward,
+  ScanMatrix_t    *smx;     /* matrices, info for CYK/Inside scans with this CM */
+  CM_HB_MX        *hbmx;    /* growable HMM banded float matrix */
+  CM_HB_MX        *ohbmx;   /* another, growable HMM banded float matrix for Outside/Posterior calcs */
+  CM_HB_SHADOW_MX *shmx;    /* growable HMM banded shadow matrix, for alignment tracebacks */
+  CP9_MX          *cp9_mx;  /* growable CP9 DP matrix */
+  CP9_MX          *cp9_bmx; /* another growable CP9 DP matrix, 'b' is for backward,
 			  * only alloc'ed to any significant size if we do Forward,Backward->Posteriors */
 
   /* search info describing the cmsearch filtering strategy, NULL unless created in cmsearch */
@@ -1662,6 +1664,7 @@ typedef struct cm_pipeline_s {
   int           use_cyk;        /* TRUE to use CYK instead of optimal accuracy    */
   int           align_hbanded;  /* TRUE to do HMM banded alignment, when possible */
   float         hb_size_limit;  /* maximum size in Mb allowed for HB alignment    */
+  int           do_hb_recalc;   /* TRUE to recalculate HMM bands for alignment    */
 
   int64_t       cur_seq_idx;    /* sequence index currently being searched */
 

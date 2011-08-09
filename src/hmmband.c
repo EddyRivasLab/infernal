@@ -41,22 +41,22 @@
  *           for description of this structure.
  *
  * Args:    
- * CM_t *cm            - the CM
- * cplan9_s *hmm       - the CP9 HMM for the CM
+ * cm_M                - number of states in the CM
+ * hmm_M               - number of nodes in the CP9 HMM for the CM
  * Returns: (void) 
  *
  */
 
 CP9Bands_t *
-AllocCP9Bands(CM_t *cm, CP9_t *hmm)
+AllocCP9Bands(int cm_M, int hmm_M)
 {
   int status;
   CP9Bands_t  *cp9bands;
 
   ESL_ALLOC(cp9bands, sizeof(CP9Bands_t));
 
-  cp9bands->cm_M  = cm->M;
-  cp9bands->hmm_M = hmm->M;
+  cp9bands->cm_M  = cm_M;
+  cp9bands->hmm_M = hmm_M;
   
   ESL_ALLOC(cp9bands->pn_min_m, sizeof(int) * (cp9bands->hmm_M+1));
   ESL_ALLOC(cp9bands->pn_max_m, sizeof(int) * (cp9bands->hmm_M+1));
@@ -81,8 +81,6 @@ AllocCP9Bands(CM_t *cm, CP9_t *hmm)
   /* NOTE: cp9bands->hdmin and hdmax are 2D arrays, the ptrs are 
    * alloc'ed here, but the actually memory is alloc'ed by
    * hmmband.c:cp9_Seq2Bands() with a call to hmmband.c:cp9_GrowHDBands(). 
-   * We set hdmin[0] = hdmax[0] = NULL so we know not to free them 
-   * if they were never alloc'ed.
    */
   cp9bands->hd_needed  = 0;
   cp9bands->hd_alloced = 0;
@@ -1087,7 +1085,7 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0)
 	}
       }
     }
-    /* HERE HERE, get rid of StateIsDetached once old band construction method is deprecated */
+    /* get rid of StateIsDetached once old band construction method is deprecated */
     if(cp9b->imin[v] == -1 && !StateIsDetached(cm, v)) { /* ensure all unreachable states have 0 width bands */
       if(cp9b->imax[v] != -2) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d imin[v] == -1, but imax[v] != -2 but rather %d\n", v, cp9b->imax[v]);
       if(cp9b->jmin[v] != -1) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d imin[v] == -1, but jmin[v] != -1 but rather %d\n", v, cp9b->jmin[v]);
@@ -5064,6 +5062,117 @@ hmm2ij_state_step5_non_emitter_d0_hack(int v, int imax_v, int *jmin)
   jmin[v]--;*/
 }
 
+/* Function: cp9_ShiftCMBands()
+ *
+ * Description: Given a CM with a valid cm->cp9b CP9 bands object 
+ *              calculated for a sequence in coordinates 1..i..j..L,
+ *              subtract a fixed offset (i-1) from all CM positions
+ *              in cp9b (cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax)
+ *              so the bands will now pertain to the same hit if
+ *              its coordinates were shifted to 1..j-i+1. This is used
+ *              prior to alignment of a pre-defined hit from i..j
+ *              using bands calculated when i..j was within its larger
+ *              context of 1..i..j..L. During alignment hits always
+ *              start at position 1. 
+ *
+ *              Because only positions i..j are possible in the subsequent
+ *              alignment, bands that allow residues before i or after
+ *              j are tightened to only include within i..j. This will
+ *              make states that were possible to reach only with residues
+ *              before i or after j now impossible to reach.
+ *
+ *              Once all i and j bands are updated, ij2d_bands()
+ *              is used to update the d bands. 
+ *
+ *              NOTE: after calling this function cp9b will fail
+ *              a cp9_ValidateBands() function call.
+ *
+ * Args:        CM - the CM, with a valid cm->cp9b CP9Bands_t object
+ *              i  - first position of hit, this is the offset
+ *              j  - final position of hit, used only to determine hit length
+ * Returns: (void) 
+ */
+void 
+cp9_ShiftCMBands(CM_t *cm, int i, int j)
+{
+  int v;
+  int ip = i-1;
+  int Lp = j-i+1;
+  int sd;
+  int min_i, max_i, min_j, max_j;
+  /* printf("cp9_OffsetCMBands(), i: %d j: %d Lp: %d\n", i, j, Lp); */
+
+  for(v = 0; v < cm->M; v++) { 
+    sd = StateDelta(cm->sttype[v]);
+    if(cm->cp9b->imin[v] > 0) { /* state is currently possible to reach */
+      min_i = 1;
+      max_i = Lp;
+      min_j = sd;
+      max_j = ESL_MAX(Lp, sd);
+
+      cm->cp9b->imin[v] = ESL_MAX(cm->cp9b->imin[v] - ip, min_i); 
+      cm->cp9b->imax[v] = ESL_MIN(cm->cp9b->imax[v] - ip, max_i);
+
+      cm->cp9b->jmin[v] = ESL_MAX(cm->cp9b->jmin[v] - ip, min_j); 
+      cm->cp9b->jmax[v] = ESL_MIN(cm->cp9b->jmax[v] - ip, max_j);
+
+      if(cm->cp9b->imax[v] <  min_i || cm->cp9b->jmax[v] < min_j || 
+	 cm->cp9b->imin[v] >  max_i || cm->cp9b->jmin[v] > max_j) { 
+	/* this state is now impossible to reach */
+	cm->cp9b->imin[v] = cm->cp9b->jmin[v] = -1;
+	cm->cp9b->imax[v] = cm->cp9b->jmax[v] = -2;
+      }
+    }	
+  }
+  ij2d_bands(cm, Lp, cm->cp9b->imin, cm->cp9b->imax, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, 0);
+  /* Note that this will not update hdmin bands that are no longer within jmin..jmax, that's okay */
+
+  return;
+}
+
+
+/* Function: cp9_CloneBands()
+ *
+ * Description: Clone a CP9Bands_t *cp9b object and return it.
+ *
+ * Args:    cp9b - the CP9Bands_t object to clone
+ *
+ * Returns: the clone CP9Bands_t object.
+ */
+CP9Bands_t *
+cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf) 
+{
+  int status;
+  CP9Bands_t *dest_cp9b = NULL;
+  dest_cp9b = AllocCP9Bands(src_cp9b->cm_M, src_cp9b->hmm_M);
+
+  esl_vec_ICopy(src_cp9b->pn_min_m,  src_cp9b->hmm_M+1, dest_cp9b->pn_min_m);
+  esl_vec_ICopy(src_cp9b->pn_max_m,  src_cp9b->hmm_M+1, dest_cp9b->pn_max_m);
+  esl_vec_ICopy(src_cp9b->pn_min_i,  src_cp9b->hmm_M+1, dest_cp9b->pn_min_i);
+  esl_vec_ICopy(src_cp9b->pn_max_i,  src_cp9b->hmm_M+1, dest_cp9b->pn_max_i);
+  esl_vec_ICopy(src_cp9b->pn_min_d,  src_cp9b->hmm_M+1, dest_cp9b->pn_min_d);
+  esl_vec_ICopy(src_cp9b->pn_max_d,  src_cp9b->hmm_M+1, dest_cp9b->pn_max_d);
+  esl_vec_ICopy(src_cp9b->isum_pn_m, src_cp9b->hmm_M+1, dest_cp9b->isum_pn_m);
+  esl_vec_ICopy(src_cp9b->isum_pn_i, src_cp9b->hmm_M+1, dest_cp9b->isum_pn_i);
+  esl_vec_ICopy(src_cp9b->isum_pn_d, src_cp9b->hmm_M+1, dest_cp9b->isum_pn_d);
+
+  esl_vec_ICopy(src_cp9b->imin,       src_cp9b->cm_M, dest_cp9b->imin);
+  esl_vec_ICopy(src_cp9b->imax,       src_cp9b->cm_M, dest_cp9b->imax);
+  esl_vec_ICopy(src_cp9b->jmin,       src_cp9b->cm_M, dest_cp9b->jmin);
+  esl_vec_ICopy(src_cp9b->jmax,       src_cp9b->cm_M, dest_cp9b->jmax);
+  esl_vec_ICopy(src_cp9b->safe_hdmin, src_cp9b->cm_M, dest_cp9b->safe_hdmin);
+  esl_vec_ICopy(src_cp9b->safe_hdmax, src_cp9b->cm_M, dest_cp9b->safe_hdmax);
+
+  if((status = cp9_GrowHDBands(dest_cp9b, errbuf)) != eslOK) goto ERROR;
+  esl_vec_ICopy(src_cp9b->hdmin_mem, dest_cp9b->hd_alloced, dest_cp9b->hdmin_mem);
+  esl_vec_ICopy(src_cp9b->hdmax_mem, dest_cp9b->hd_alloced, dest_cp9b->hdmax_mem);
+
+  return dest_cp9b;
+
+ ERROR: 
+  if(dest_cp9b != NULL) FreeCP9Bands(dest_cp9b);
+  return NULL;
+}
 
 #if 0
 

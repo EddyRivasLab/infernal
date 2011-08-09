@@ -913,7 +913,7 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
       orig_hmm = hmm;
       orig_cp9map = cp9map;
       if(do_hbanded)
-	cp9b = AllocCP9Bands(cm, hmm);
+	cp9b = AllocCP9Bands(cm->M, hmm->M);
 
       StopwatchZero(watch2);
       StopwatchStart(watch2);
@@ -941,7 +941,7 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
 
   if(do_hbanded)
     {
-      cp9b = AllocCP9Bands(cm, cm->cp9);
+      cp9b = AllocCP9Bands(cm->M, cm->cp9->M);
       orig_cp9b = cp9b; 
     }
   orig_cm = cm;
@@ -1043,7 +1043,7 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
 	      /* Get the HMM bands for the sub_cm */
 	      sub_hmm = sub_cm->cp9;
 	      sub_cp9map = sub_cm->cp9map;
-	      sub_cp9b   = AllocCP9Bands(sub_cm, sub_cm->cp9);
+	      sub_cp9b   = AllocCP9Bands(sub_cm->M, sub_cm->cp9->M);
 	      CP9_seq2bands(sub_cm, dsq[i], 1, sqinfo[i].len, sub_cp9b, 
 			    NULL, /* we don't want the posterior matrix back */
 			    debug_level);

@@ -2003,6 +2003,12 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
     }
   }
 
+  if(tmp_bcom  != NULL) free(tmp_bcom);
+  if(tmp_bdate != NULL) free(tmp_bdate);
+  if(tmp_ccom  != NULL) free(tmp_ccom);
+  if(tmp_cdate != NULL) free(tmp_cdate);
+  if(tmp_null  != NULL) free(tmp_null);
+
   /* these get allocated regardless of flag status, free them */
   free(tmp_rf_left);
   free(tmp_rf_right);

@@ -507,13 +507,14 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->n_aln_dccyk        = 0;
 
   pli->mode             = mode;
-  pli->do_top           = (esl_opt_GetBoolean(go, "--bottomonly"))   ? FALSE : TRUE;
-  pli->do_bot           = (esl_opt_GetBoolean(go, "--toponly"))      ? FALSE : TRUE;
-  pli->show_accessions  = (esl_opt_GetBoolean(go, "--acc")           ? TRUE  : FALSE);
-  pli->do_alignments    = (esl_opt_GetBoolean(go, "--noali")         ? FALSE : TRUE);
-  pli->use_cyk          = (esl_opt_GetBoolean(go, "--aln-cyk")       ? TRUE  : FALSE);
-  pli->align_hbanded    = (esl_opt_GetBoolean(go, "--aln-nonbanded") ? FALSE : TRUE);
+  pli->do_top           = (esl_opt_GetBoolean(go, "--bottomonly"))    ? FALSE : TRUE;
+  pli->do_bot           = (esl_opt_GetBoolean(go, "--toponly"))       ? FALSE : TRUE;
+  pli->show_accessions  = (esl_opt_GetBoolean(go, "--acc")            ? TRUE  : FALSE);
+  pli->do_alignments    = (esl_opt_GetBoolean(go, "--noali")          ? FALSE : TRUE);
+  pli->use_cyk          = (esl_opt_GetBoolean(go, "--aln-cyk")        ? TRUE  : FALSE);
+  pli->align_hbanded    = (esl_opt_GetBoolean(go, "--aln-nonbanded")  ? FALSE : TRUE);
   pli->hb_size_limit    = esl_opt_GetReal(go, "--aln-sizelimit");
+  pli->do_hb_recalc     = (esl_opt_GetBoolean(go, "--aln-scanbands")) ? FALSE : TRUE;
 
   pli->abc              = abc;
   pli->cmfp             = NULL;
@@ -1682,26 +1683,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   int              do_qdb_or_nonbanded_final_scan;  /* use QDBs or no bands for final  stage (! do_hbanded_final_scan) */
   int              do_final_greedy;        /* TRUE to use greedy hit resolution in final stage, FALSE not to */
   CM_t            *cm = NULL;              /* ptr to *opt_cm, for convenience only */
-
-  /* variables related to the final alignment of hits */
-  CM_HB_SHADOW_MX    *shmx = NULL;          /* HMM banded shadow matrix */
-  CM_HB_MX           *out_mx= NULL;         /* outside matrix for HMM banded Outside() */
-  Parsetree_t        *tr = NULL;            /* pointer to the pointer to the parsetree we're currently creating */
-  char               *postcode = NULL;      /* posterior decode array of strings */
-  ESL_DSQ            *subdsq;               /* ptr to start of a hit */
-  int                 hitlen;               /* hit length */
-  int64_t             hbmx_ncells;          /* number of DP cells required in HMM banded matrix */
-  int64_t             shmx_nchar_cells;     /* number of 'char' DP cells required in HMM banded shadow matrix */
-  int64_t             shmx_nint_cells;      /* number of 'int' DP cells required in HMM banded shadow matrix */
-  float               hbmx_Mb;              /* approximate size in Mb for HMM banded matrix for current hit */
-  float               shmx_Mb;              /* approximate size in Mb for HMM banded shadow matrix for current hit */
-  float               total_Mb;             /* approximate size in Mb needed for alignment of a hit */
-  int                 do_optacc;            /* TRUE to do optimal accuracy alignment */
-  int                 do_postcode;          /* TRUE to derive posteriors for hit alignments */
-  int                 do_hbanded;           /* TRUE to use HMM bands for alignment */
-  int                 do_nonbanded;         /* TRUE to align without bands (instead of using HMM bands) */
-  ESL_STOPWATCH      *watch = NULL;         /* stopwatch for timing alignment step */
-  float         optacc_sc, ins_sc, cyk_sc;  /* optimal accuracy score, inside score, CYK score */
+  CP9Bands_t      *scan_cp9b = NULL;       /* a copy of the HMM bands derived in the final CM search stage, if its HMM banded */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
@@ -1743,7 +1725,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   cm = *opt_cm;
   save_tau = cm->tau;
   do_final_greedy = (pli->final_cm_search_opts & CM_SEARCH_CMGREEDY) ? TRUE : FALSE;
-  watch = esl_stopwatch_Create();
 
   nhit = 0;
   /* Determine bit score cutoff for CYK envelope redefinition, 
@@ -1946,11 +1927,22 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
       results = tmp_results;
     }      
 
+    /* save a copy of the bands we calculated for the final search stage */
+    if(pli->do_alignments && (! do_qdb_or_nonbanded_final_scan)) { 
+      scan_cp9b = cp9_CloneBands(cm->cp9b, pli->errbuf);
+      if(scan_cp9b == NULL) return eslEMEM;
+#if eslDEBUGLEVEL >= 1
+      if((status = cp9_ValidateBands(cm, pli->errbuf, cm->cp9b, es[i], ee[i])) != eslOK) return status;
+      ESL_DPRINTF1(("original bands validated.\n"));
+      if((status = cp9_ValidateBands(cm, pli->errbuf, scan_cp9b, es[i], ee[i])) != eslOK) return status;
+      ESL_DPRINTF1(("cloned bands validated.\n"));
+#endif
+    }
+    else { 
+      scan_cp9b = NULL;
+    }
+
     /* add each hit to the hitlist */
-
-    shmx = cm_hb_shadow_mx_Create(cm, cm->M);
-    out_mx = cm_hb_mx_Create(cm->M);
-
     for (h = nhit; h < results->num_results; h++) { 
       cm_tophits_CloneHitFromResults(hitlist, results, h, pli->cur_seq_idx, &hit);
       hit->pvalue = esl_exp_surv(hit->score, cm->expA[pli->final_cm_exp_mode]->mu_extrap, cm->expA[pli->final_cm_exp_mode]->lambda);
@@ -1960,125 +1952,25 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
       hit->ad       = NULL;
 	  
       if (pli->mode == CM_SEARCH_SEQS) { 
-	if (                       (status  = esl_strdup(sq->name, -1, &(hit->name)))  != eslOK) ESL_EXCEPTION(eslEMEM, "allocation failure");
-	if (sq->acc[0]  != '\0' && (status  = esl_strdup(sq->acc,  -1, &(hit->acc)))   != eslOK) ESL_EXCEPTION(eslEMEM, "allocation failure");
-        if (sq->desc[0] != '\0' && (status  = esl_strdup(sq->desc, -1, &(hit->desc)))  != eslOK) ESL_EXCEPTION(eslEMEM, "allocation failure");
+	if (                       (status  = esl_strdup(sq->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+	if (sq->acc[0]  != '\0' && (status  = esl_strdup(sq->acc,  -1, &(hit->acc)))   != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+        if (sq->desc[0] != '\0' && (status  = esl_strdup(sq->desc, -1, &(hit->desc)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
       } 
       else {
-	if ((status  = esl_strdup(cm->name, -1, &(hit->name)))  != eslOK) esl_fatal("allocation failure");
-	if ((status  = esl_strdup(cm->acc,  -1, &(hit->acc)))   != eslOK) esl_fatal("allocation failure");
-        if ((status  = esl_strdup(cm->desc, -1, &(hit->desc)))  != eslOK) esl_fatal("allocation failure");
+	if ((status  = esl_strdup(cm->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+	if ((status  = esl_strdup(cm->acc,  -1, &(hit->acc)))   != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+        if ((status  = esl_strdup(cm->desc, -1, &(hit->desc)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
       }
 #if DOPRINT
       printf("SURVIVOR envelope     [%10ld..%10ld] survived Inside    %6.2f bits  P %g\n", hit->start, hit->stop, hit->score, hit->pvalue);
 #endif
       /* Get an alignment of the hit, if nec */
-
       if(pli->do_alignments) { 
-	esl_stopwatch_Start(watch);  
-	
-	/* set defaults, these may be changed below */
-	optacc_sc    = 0.;
-	do_optacc    = FALSE;
-	do_postcode  = FALSE;
-	do_hbanded   = FALSE;
-	do_nonbanded = FALSE;
-
-	hitlen = hit->stop - hit->start + 1;
-	subdsq = sq->dsq + hit->start - 1;
-	
-	if(pli->align_hbanded) { 
-	  /* Align with HMM bands, if we can do it in the allowed amount of memory */
-	  /* determine CP9 HMM bands */
-	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, 0)) != eslOK) { printf("ERROR: %s\n", errbuf); return status; }
-	  
-	  /* Determine the number of cells needed in each CM_HB_MX required for aligning this sequence: */
-	  if((status = cm_hb_mx_NumCellsNeeded       (cm, errbuf, cm->cp9b, hitlen, &hbmx_ncells)) != eslOK)                { printf("ERROR: %s\n", errbuf); return status; }
-	  if((status = cm_hb_shadow_mx_NumCellsNeeded(cm, errbuf, cm->cp9b, &shmx_nchar_cells, &shmx_nint_cells)) != eslOK) { printf("ERROR: %s\n", errbuf); return status; }
-	  
-	  hbmx_Mb = (hbmx_ncells * sizeof(float)) / 1000000.;
-	  shmx_Mb = (shmx_nint_cells * sizeof(int) + shmx_nchar_cells * sizeof(char)) / 1000000.;
-	  
-	  /* Determine which alignment algorithm to use depending on HMM banded matrix sizes.
-	   * Ideally we want posterior probabilities in the alignment output, but that requires
-	   * using two CM_HB_MX's. 
-	   * 
-	   * Note: in table below "limit" = pli->hb_size_limit
-	   * 
-	   *           matrix sizes                  pli->use_cyk   algorithm to use  HMM banded? posteriors?
-	   *          -----------------------------  -------------  ----------------  ----------- -----------
-	   * if       (2*hbmx_Mb + shmx_Mb) < limit  FALSE          optimal accuracy  yes         yes
-	   * else if  (2*hbmx_Mb + shmx_Mb) < limit  TRUE           CYK               yes         yes
-	   * else if    (hbmx_Mb + shmx_Mb) < limit  TRUE/FALSE     CYK               yes         no
-	   * else if    (hbmx_Mb + shmx_Mb) > limit  TRUE/FALSE     D&C CYK           no          no
-	   */
-	  
-	  if((2*hbmx_Mb + shmx_Mb) < pli->hb_size_limit) { /* posteriors require 2 CM_HB_MX objects */
-	    pli->n_aln_hboa++;
-	    do_optacc    = (pli->use_cyk) ? FALSE : TRUE; 
-	    do_postcode  = TRUE;
-	    do_hbanded   = TRUE;
-	    do_nonbanded = FALSE;
-	    total_Mb = 2*hbmx_Mb + shmx_Mb;
-	  }
-	  else if((hbmx_Mb + shmx_Mb) < pli->hb_size_limit) { 
-	    pli->n_aln_hbcyk++;
-	    do_optacc    = FALSE; /* optacc requires 2 CM_HB_MX matrices, and they're too big */
-	    do_postcode  = FALSE; /* ditto */
-	    postcode     = NULL;
-	    do_hbanded   = TRUE;  
-	    do_nonbanded = FALSE;
-	    total_Mb = hbmx_Mb + shmx_Mb;
-	  }
-	  else { /* not enough memory for HMM banded alignment, fall back to D&C CYK */
-	    pli->n_aln_dccyk++;
-	    do_optacc    = FALSE;
-	    do_postcode  = FALSE;
-	    postcode     = NULL;
-	    do_hbanded   = FALSE;
-	    do_nonbanded = TRUE;
-	  }
-	} /* end of if(pli->do_hbanded) */
-	else { 
-	  do_nonbanded = TRUE;
-	}
-
-	if(do_hbanded) { 
-	  status = FastAlignHB(cm, errbuf, NULL, subdsq, hitlen, 1, hitlen, 
-			       pli->hb_size_limit,                   /* limit for a single CM_HB_MX, so this is safe */
-			       cm->hbmx, shmx,                       /* inside/posterior, shadow matrices */
-			       do_optacc,                            /* use optimal accuracy alg? */
-			       FALSE,                                /* don't sample aln from Inside matrix */
-			       (do_postcode ? out_mx : NULL),        /* outside DP matrix */
-			       &tr,                                  /* parsetree */
-			       (do_postcode ? &postcode  : NULL),    /* posterior codes */
-			       (do_optacc   ? &optacc_sc : &cyk_sc), /* optimal accuracy or CYK score */
-			       (do_optacc   ? &ins_sc    : NULL));   /* inside score, NULL if we're not doing opt acc */
-	  if(status == eslERANGE) { 
-	    /* matrix was too big, despite our pre-check (should be rare), use D&C CYK */
-	    do_optacc    = FALSE;
-	    do_postcode  = FALSE;
-	    do_hbanded   = FALSE; 
-	    do_nonbanded = TRUE;
-	  }
-	  else if(status != eslOK) return status;
-	  esl_stopwatch_Stop(watch); /* we started it above before we calc'ed the CP9 bands */ 
-	}
-	if((! do_hbanded) && do_nonbanded) { /* use non-banded D&C CYK (slow!) */
-	  esl_stopwatch_Start(watch);  
-	  cyk_sc = CYKDivideAndConquer(cm, subdsq, hitlen, 0, 1, hitlen, &tr, NULL, NULL); 
-	  esl_stopwatch_Stop(watch);  
-	  total_Mb = CYKNonQDBSmallMbNeeded(cm, hitlen);
-	  postcode = NULL;
-	}
-	
-	hit->ad = cm_alidisplay_Create(cm->abc, tr, cm, *opt_cmcons, sq, hit->start, postcode, 
-				       (do_optacc) ? optacc_sc : cyk_sc, 
-				       do_optacc, do_hbanded, total_Mb, watch->elapsed);
-	/*cm_alidisplay_Dump(stdout, hit->ad);*/
-	FreeParsetree(tr);
-	if(do_postcode && postcode != NULL) free(postcode);
-      } /* end of 'if(pli->do_alignments' */
+	if((status = cm_pli_AlignHit(pli, cm, *opt_cmcons, sq, hit, 
+				     (h == nhit) ? TRUE : FALSE,    /* TRUE if this is the first hit we're aligning (h == nhit) */
+				     scan_cp9b))                    /* a copy of the HMM bands determined in the last search stage, NULL if HMM bands not used */
+	   != eslOK) return status;
+      } 
 
       /* Finally, if we're using model-specific bit score thresholds,
        * determine if the significance of the hit (is it reported
@@ -2135,13 +2027,174 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   /* free the scan matrices if we just allocated them */
   if((! pli->need_fsmx) && (pli->fsmx != NULL)) { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL;  }
   if((! pli->need_smx)  && (pli->smx != NULL))  { cm_FreeScanMatrix(cm, pli->smx);  pli->smx = NULL;   }
-  if(out_mx != NULL) { cm_hb_mx_Destroy(out_mx); out_mx = NULL; }
-  if(shmx   != NULL) { cm_hb_shadow_mx_Destroy(shmx); shmx = NULL; }
-  if(watch  != NULL) { esl_stopwatch_Destroy(watch); }
+  if(scan_cp9b != NULL) FreeCP9Bands(scan_cp9b);
 
   return eslOK;
 }
 
+/* Function:  cm_pli_AlignHit()
+ * Synopsis:  Align a hit that survives all stages of the pipeline to a CM.
+ * Incept:    EPN, Mon Aug  8 10:46:21 2011
+ *
+ * Purpose:   For a given hit <hit> in sequence <sq> spanning
+ *            <hit->start> to <hit->stop>, align it to a CM and create a
+ *            CM_ALIDISPLAY object and store it in <hit->ad>. The
+ *            alignment algorithm used is HMM banded optimal accuracy
+ *            unless that requires too much memory. See comments
+ *            within code for more detail.
+ *
+ * Returns:   <eslOK> on success. 
+ */
+int
+cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b)
+{
+  int                 status;               /* Easel status code */
+  Parsetree_t        *tr = NULL;            /* pointer to the pointer to the parsetree we're currently creating */
+  char               *postcode = NULL;      /* posterior decode array of strings */
+  ESL_DSQ            *subdsq;               /* ptr to start of a hit */
+  int                 hitlen;               /* hit length */
+  int64_t             hbmx_ncells;          /* number of DP cells required in HMM banded matrix */
+  int64_t             shmx_nchar_cells;     /* number of 'char' DP cells required in HMM banded shadow matrix */
+  int64_t             shmx_nint_cells;      /* number of 'int' DP cells required in HMM banded shadow matrix */
+  float               hbmx_Mb;              /* approximate size in Mb for HMM banded matrix for current hit */
+  float               shmx_Mb;              /* approximate size in Mb for HMM banded shadow matrix for current hit */
+  float               total_Mb;             /* approximate size in Mb needed for alignment of a hit */
+  int                 do_optacc;            /* TRUE to do optimal accuracy alignment */
+  int                 do_postcode;          /* TRUE to derive posteriors for hit alignments */
+  int                 do_hbanded;           /* TRUE to use HMM bands for alignment */
+  int                 do_nonbanded;         /* TRUE to align without bands (instead of using HMM bands) */
+  ESL_STOPWATCH      *watch = NULL;         /* stopwatch for timing alignment step */
+  float               optacc_sc, ins_sc, cyk_sc;  /* optimal accuracy score, inside score, CYK score */
+
+  watch = esl_stopwatch_Create();
+  if(! watch) ESL_FAIL(eslEMEM, pli->errbuf, "out of memory");
+
+  esl_stopwatch_Start(watch);  
+	
+  /* set defaults, these may be changed below */
+  optacc_sc    = 0.;
+  do_optacc    = FALSE;
+  do_postcode  = FALSE;
+  do_hbanded   = FALSE;
+  do_nonbanded = FALSE;
+
+  hitlen = hit->stop - hit->start + 1;
+  subdsq = sq->dsq + hit->start - 1;
+
+  if(pli->align_hbanded) { 
+    /* Align with HMM bands, if we can do it in the allowed amount of memory */
+
+    /* Either recalculate the HMM bands or adjust those that we already have */
+    if(scan_cp9b == NULL || pli->do_hb_recalc) { 
+      /* determine CP9 HMM bands */
+      if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, 0)) != eslOK) return status; 
+    }
+    else { 
+      /* shift existing CP9 HMM bands by a fixed offset, this guarantees our alignment will be the same hit our search found */
+      if(! first_hit) { 
+	/* This is not the first hit in this envelope, we need to clone the scan_cp9b bands that were passed in, 
+	 * before shifting them (because they were shifted for the previous hit in this envelope and are no longer usable) 
+	 */
+	if(cm->cp9b != NULL) FreeCP9Bands(cm->cp9b);
+	cm->cp9b = cp9_CloneBands(scan_cp9b, pli->errbuf);
+	if(cm->cp9b == NULL) return status;
+      }
+      cp9_ShiftCMBands(cm, hit->start, hit->stop);
+      /* NOTE: cm->cp9b bands would currently fail a cp9_ValidateBands() check..., but they'll work for our purposes here */
+    }
+    
+    /* Determine the number of cells needed in each CM_HB_MX required for aligning this sequence: */
+    if((status = cm_hb_mx_NumCellsNeeded       (cm, pli->errbuf, cm->cp9b, hitlen, &hbmx_ncells)) != eslOK)                return status; 
+    if((status = cm_hb_shadow_mx_NumCellsNeeded(cm, pli->errbuf, cm->cp9b, &shmx_nchar_cells, &shmx_nint_cells)) != eslOK) return status; 
+    
+    hbmx_Mb = (hbmx_ncells * sizeof(float)) / 1000000.;
+    shmx_Mb = (shmx_nint_cells * sizeof(int) + shmx_nchar_cells * sizeof(char)) / 1000000.;
+    
+    /* Determine which alignment algorithm to use depending on HMM banded matrix sizes.
+     * Ideally we want posterior probabilities in the alignment output, but that requires
+     * using two CM_HB_MX's. 
+     * 
+     * Note: in table below "limit" = pli->hb_size_limit
+     * 
+     *           matrix sizes                  pli->use_cyk   algorithm to use  HMM banded? posteriors?
+     *          -----------------------------  -------------  ----------------  ----------- -----------
+     * if       (2*hbmx_Mb + shmx_Mb) < limit  FALSE          optimal accuracy  yes         yes
+     * else if  (2*hbmx_Mb + shmx_Mb) < limit  TRUE           CYK               yes         yes
+     * else if    (hbmx_Mb + shmx_Mb) < limit  TRUE/FALSE     CYK               yes         no
+     * else if    (hbmx_Mb + shmx_Mb) > limit  TRUE/FALSE     D&C CYK           no          no
+     */
+    
+    if((2*hbmx_Mb + shmx_Mb) < pli->hb_size_limit) { /* posteriors require 2 CM_HB_MX objects */
+      pli->n_aln_hboa++;
+      do_optacc    = (pli->use_cyk) ? FALSE : TRUE; 
+      do_postcode  = TRUE;
+      do_hbanded   = TRUE;
+      do_nonbanded = FALSE;
+      total_Mb = 2*hbmx_Mb + shmx_Mb;
+    }
+    else if((hbmx_Mb + shmx_Mb) < pli->hb_size_limit) { 
+      pli->n_aln_hbcyk++;
+      do_optacc    = FALSE; /* optacc requires 2 CM_HB_MX matrices, and they're too big */
+      do_postcode  = FALSE; /* ditto */
+      postcode     = NULL;
+      do_hbanded   = TRUE;  
+      do_nonbanded = FALSE;
+      total_Mb = hbmx_Mb + shmx_Mb;
+    }
+    else { /* not enough memory for HMM banded alignment, fall back to D&C CYK */
+      pli->n_aln_dccyk++;
+      do_optacc    = FALSE;
+      do_postcode  = FALSE;
+      postcode     = NULL;
+      do_hbanded   = FALSE;
+      do_nonbanded = TRUE;
+    }
+  } /* end of if(pli->do_hbanded) */
+  else { 
+    do_nonbanded = TRUE;
+  }
+  
+  if(do_hbanded) { 
+    status = FastAlignHB(cm, pli->errbuf, NULL, subdsq, hitlen, 1, hitlen, 
+			 pli->hb_size_limit,                   /* limit for a single CM_HB_MX, so this is safe */
+			 cm->hbmx, cm->shmx,                   /* inside/posterior, shadow matrices */
+			 do_optacc,                            /* use optimal accuracy alg? */
+			 FALSE,                                /* don't sample aln from Inside matrix */
+			 (do_postcode ? cm->ohbmx : NULL),     /* outside DP matrix */
+			 &tr,                                  /* parsetree */
+			 (do_postcode ? &postcode  : NULL),    /* posterior codes */
+			 (do_optacc   ? &optacc_sc : &cyk_sc), /* optimal accuracy or CYK score */
+			 (do_optacc   ? &ins_sc    : NULL));   /* inside score, NULL if we're not doing opt acc */
+    if(status == eslERANGE) { 
+      /* matrix was too big, despite our pre-check (should be rare), use D&C CYK */
+      do_optacc    = FALSE;
+      do_postcode  = FALSE;
+      do_hbanded   = FALSE; 
+      do_nonbanded = TRUE;
+    }
+    else if(status != eslOK) return status;
+    esl_stopwatch_Stop(watch); /* we started it above before we calc'ed the CP9 bands */ 
+  }
+  if((! do_hbanded) && do_nonbanded) { /* use non-banded D&C CYK (slow!) */
+    esl_stopwatch_Start(watch);  
+    cyk_sc = CYKDivideAndConquer(cm, subdsq, hitlen, 0, 1, hitlen, &tr, NULL, NULL); 
+    esl_stopwatch_Stop(watch);  
+    total_Mb = CYKNonQDBSmallMbNeeded(cm, hitlen);
+    postcode = NULL;
+  }
+  
+  hit->ad = cm_alidisplay_Create(cm->abc, tr, cm, cmcons, sq, hit->start, postcode, 
+				 (do_optacc) ? optacc_sc : cyk_sc, 
+				 do_optacc, do_hbanded, total_Mb, watch->elapsed);
+  /*cm_alidisplay_Dump(stdout, hit->ad);*/
+
+  /* clean up and return */
+  FreeParsetree(tr);
+  if(do_postcode && postcode != NULL) free(postcode);
+  if(watch  != NULL) { esl_stopwatch_Destroy(watch); }
+
+  return eslOK;
+}
 
 /* Function:  merge_windows_from_two_lists()
  * Synopsis:  Merge two sorted lists of windows into one, collapsing overlapping windows together. 
