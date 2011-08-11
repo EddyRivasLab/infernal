@@ -587,7 +587,7 @@ cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eZ, int istart)
  *            strand, and start position (stop position for hits on
  *            the reverse strand and remove duplicates by keeping the
  *            one with the better bit score. Hits are marked as
- *            'removed' by raising the CM_HIT_IS_DUPLICATED flag in
+ *            'removed' by raising the CM_HIT_IS_DUPLICATE flag in
  *            the hit. At the end, no individual residue on one strand
  *            should exist in more than one hit.
  *
@@ -636,10 +636,14 @@ cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
 	/* an overlap, remove the hit with the smaller score */
 	nremoved++;
 	if(sc_prv > sc_cur) { /* keep previous hit i_prv, remove current hit i*/
-	  th->hit[i]->flags     |= CM_HIT_IS_DUPLICATE;
+	  th->hit[i]->flags     |=  CM_HIT_IS_DUPLICATE;
+	  th->hit[i]->flags     &= ~CM_HIT_IS_REPORTED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
+	  th->hit[i]->flags     &= ~CM_HIT_IS_INCLUDED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
 	}
 	else { /* keep current hit i, remove previous hit i_prv */
-	  th->hit[i_prv]->flags |= CM_HIT_IS_DUPLICATE;
+	  th->hit[i_prv]->flags |=  CM_HIT_IS_DUPLICATE;
+	  th->hit[i_prv]->flags &= ~CM_HIT_IS_REPORTED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
+	  th->hit[i_prv]->flags &= ~CM_HIT_IS_INCLUDED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
 	}
       }
     if(! (th->hit[i]->flags & CM_HIT_IS_DUPLICATE)) { 
