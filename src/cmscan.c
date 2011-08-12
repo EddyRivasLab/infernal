@@ -475,7 +475,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
   ESL_STOPWATCH   *mw       = NULL;              /* timing                                          */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
-  int              cm_idx   = 0;                 /* index of current model we're working with       */
   int              seq_idx  = 0;                 /* index of current seq we're working with         */
   int              textw;
   int              status   = eslOK;
@@ -964,6 +963,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              size;
   MPI_Status       mpistatus;
   char             errbuf[eslERRBUFSIZE];
+  int              in_rc; 
 
   w = esl_stopwatch_Create();
   mw = esl_stopwatch_Create();
@@ -1035,16 +1035,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       CM_TOPHITS      *th      = NULL;        	/* top-scoring sequence hits                */
 
       seq_idx++;
-
       esl_stopwatch_Start(w);	                          
 
       /* seqfile may need to be rewound (multiquery mode) */
       if (seq_idx > 1) list->current = 0;
 
-      /* Open the target profile database */
-      status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
-      if (status != eslOK) mpi_failure("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, errbuf);  
-  
       fprintf(ofp, "Query:       %s  [L=%ld]\n", qsq->name, (long) qsq->n);
       if (qsq->acc[0]  != 0) fprintf(ofp, "Accession:   %s\n", qsq->acc);
       if (qsq->desc[0] != 0) fprintf(ofp, "Description: %s\n", qsq->desc);
@@ -1052,75 +1047,93 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       /* Create processing pipeline and hit list */
       th  = cm_tophits_Create(); 
       pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qsq->n, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
-      pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
 
-      cm_pli_NewSeq(pli, qsq, seq_idx);
+      /* scan all target CMs twice, once with the top strand of the query and once with the bottom strand */
+      for(in_rc = 0; in_rc <= 1; in_rc++) { 
+	if(in_rc == 0 && (! pli->do_top)) continue; /* skip top strand */
+	if(in_rc == 1 && (! pli->do_bot)) continue; /* skip bottom strand */
+	if(in_rc == 1) { 
+	  if(qsq->abc->complement == NULL) { 
+	    if(! pli->do_top) mpi_failure("Trying to only search bottom strand but sequence cannot be complemented"); 
+	    else continue; /* skip bottom strand b/c we can't complement the sequence */
+	  }
+	  /* no need to complement the sequence, we only use its name, acc, desc */
+	}
+	
+	/* Open the target profile database */
+	status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
+	if (status != eslOK) mpi_failure("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, errbuf);  
+	pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
+	
+	cm_pli_NewSeq(pli, qsq, seq_idx);
 
-      /* Main loop: */
-      while ((hstatus = next_block(cmfp, list, &block)) == eslOK)
+	/* Main loop: */
+	while ((hstatus = next_block(cmfp, list, &block)) == eslOK)
 	{
 	  if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) 
 	    mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
-
+	  
 	  MPI_Get_count(&mpistatus, MPI_PACKED, &size);
 	  if (mpi_buf == NULL || size > mpi_size) {
 	    void *tmp;
 	    ESL_RALLOC(mpi_buf, tmp, sizeof(char) * size);
 	    mpi_size = size; 
 	  }
-
+	  
 	  dest = mpistatus.MPI_SOURCE;
 	  MPI_Recv(mpi_buf, size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
-
+	  
 	  if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)
 	    mpi_failure("MPI client %d raised error:\n%s\n", dest, mpi_buf);
 	  if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)
 	    mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
-      
+	  
 	  MPI_Send(&block, 3, MPI_LONG_LONG_INT, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD);
 	}
-      switch(hstatus)
-	{
-	case eslEFORMAT:   mpi_failure("bad file format in CM file %s",           cfg->cmfile); break;
-	case eslEINCOMPAT: mpi_failure("CM file %s contains different alphabets", cfg->cmfile); break;
-	case eslEOF: 	   /* do nothing */	                                                break;
-	default:	   mpi_failure("Unexpected error %d in reading CMs from %s", hstatus, cfg->cmfile); break;
-	}
-
-      block.offset = 0;
-      block.length = 0;
-      block.count  = 0;
-
-      /* wait for all workers to finish up their work blocks */
-      for (i = 1; i < cfg->nproc; ++i)
-	{
-	  if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) 
-	    mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
-
-	  MPI_Get_count(&mpistatus, MPI_PACKED, &size);
-	  if (mpi_buf == NULL || size > mpi_size) {
-	    void *tmp;
-	    ESL_RALLOC(mpi_buf, tmp, sizeof(char) * size);
-	    mpi_size = size; 
+	switch(hstatus)
+	  {
+	  case eslEFORMAT:   mpi_failure("bad file format in CM file %s",           cfg->cmfile); break;
+	  case eslEINCOMPAT: mpi_failure("CM file %s contains different alphabets", cfg->cmfile); break;
+	  case eslEOF: 	   /* do nothing */	                                                break;
+	  default:	   mpi_failure("Unexpected error %d in reading CMs from %s", hstatus, cfg->cmfile); break;
+	  }
+	
+	block.offset = 0;
+	block.length = 0;
+	block.count  = 0;
+	
+	/* wait for all workers to finish up their work blocks */
+	for (i = 1; i < cfg->nproc; ++i)
+	  {
+	    if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) 
+	      mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
+	    
+	    MPI_Get_count(&mpistatus, MPI_PACKED, &size);
+	    if (mpi_buf == NULL || size > mpi_size) {
+	      void *tmp;
+	      ESL_RALLOC(mpi_buf, tmp, sizeof(char) * size);
+	      mpi_size = size; 
+	    }
+	    
+	    dest = mpistatus.MPI_SOURCE;
+	    MPI_Recv(mpi_buf, size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
+	    
+	    if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)
+	      mpi_failure("MPI client %d raised error:\n%s\n", dest, mpi_buf);
+	    if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)
+	      mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
 	  }
 
-	  dest = mpistatus.MPI_SOURCE;
-	  MPI_Recv(mpi_buf, size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
+	for (dest = 1; dest < cfg->nproc; ++dest)
+	  /* send an empty block to signal the worker they are done with this strand of this sequence */
+	  MPI_Send(&block, 3, MPI_LONG_LONG_INT, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD);
+      } /* end of (in_rc = 0..1) loop (in top or bottom strand) */
 
-	  if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)
-	    mpi_failure("MPI client %d raised error:\n%s\n", dest, mpi_buf);
-	  if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)
-	    mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
-	}
-
-      /* merge the results of the search results */
+      /* receive and merge the results */
       for (dest = 1; dest < cfg->nproc; ++dest)
 	{
 	  CM_PIPELINE     *mpi_pli   = NULL;
 	  CM_TOPHITS      *mpi_th    = NULL;
-
-	  /* send an empty block to signal the worker they are done */
-	  MPI_Send(&block, 3, MPI_LONG_LONG_INT, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD);
 
 	  /* wait for the results */
 	  if ((status = cm_tophits_MPIRecv(dest, INFERNAL_TOPHITS_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, &mpi_th)) != eslOK)
@@ -1131,11 +1144,17 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	  cm_tophits_Merge(th, mpi_th);
 	  cm_pipeline_Merge(pli, mpi_pli);
-
+	  
 	  cm_pipeline_Destroy(mpi_pli, NULL);
 	  cm_tophits_Destroy(mpi_th);
 	}
-
+      
+      if(pli->research_ends) { 
+	/* We may have overlaps so sort by sequence index/position and remove duplicates */
+	cm_tophits_SortByPosition(th);
+	cm_tophits_RemoveDuplicates(th);
+      }
+      
       /* Print the results.  */
       cm_tophits_SortByScore(th);
       cm_tophits_Threshold(th, pli);
@@ -1154,9 +1173,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	if((status = cm_tophits_HitAlignments(ofp, th, pli, textw)) != eslOK) esl_fatal("Out of memory");
 	fprintf(ofp, "\n\n");
       }
-
+      
       if (tblfp)    cm_tophits_TabularTargets(tblfp,    qsq->name, qsq->acc, th, pli, (seq_idx == 1));
-
+      
       esl_stopwatch_Stop(w);
       cm_pli_Statistics(ofp, pli, w);
       fprintf(ofp, "//\n");
@@ -1170,7 +1189,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     mpi_failure("Parse failed (sequence file %s):\n%s\n", sqfp->filename, esl_sqfile_GetErrorBuf(sqfp));
   else if (sstatus != eslEOF)     
     mpi_failure("Unexpected error %d reading sequence file %s", sstatus, sqfp->filename);
-
+  
   /* monitor all the workers to make sure they have ended */
   for (i = 1; i < cfg->nproc; ++i)
     {
@@ -1183,24 +1202,24 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	ESL_RALLOC(mpi_buf, tmp, sizeof(char) * size);
 	mpi_size = size; 
       }
-
+      
       dest = mpistatus.MPI_SOURCE;
       MPI_Recv(mpi_buf, size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
-
+      
       if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)
 	mpi_failure("MPI client %d raised error:\n%s\n", dest, mpi_buf);
       if (mpistatus.MPI_TAG != INFERNAL_TERMINATING_TAG)
 	mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
     }
-
- /* Terminate outputs - any last words?
+  
+  /* Terminate outputs - any last words?
    */
   if (tblfp)    cm_tophits_TabularTail(tblfp,    "cmscan", CM_SCAN_MODELS, cfg->seqfile, cfg->cmfile, go);
   if (ofp)      fprintf(ofp, "[ok]\n");
 
   esl_stopwatch_Stop(mw);
   esl_stopwatch_Display(stdout, mw, "Total runtime:");
-
+  
   /* Cleanup - prepare for successful exit
    */
   free(list);
@@ -1246,7 +1265,11 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   off_t            cm_offset;              /* file offset for current CM */
   int              cm_config_opts;         /* sent to the pipeline so we can appropriately configure CMs */
   float           *p7_evparam;             /* E-value parameters for the p7 filter */
-  int              prv_ntophits;
+  int              init_ntophits;          /* number of top hits before first cm_Pipeline() call */
+  int              init_npastfwd;          /* number of hits past local Fwd filter before first cm_Pipeline() call */
+  int              prv_ntophits;           /* number of top hits before each cm_Pipeline() call */
+  int              in_rc;                  /* in_rc == TRUE; our qsq has been reverse complemented */
+  ESL_SQ          *termsq   = NULL;        /* terminal sequence, first or final ESL_MIN(pli->maxW, dbsq->n) residues of dbsq */
 
   char            *mpi_buf  = NULL;              /* buffer used to pack/unpack structures */
   int              mpi_size = 0;                 /* size of the allocated buffer */
@@ -1292,6 +1315,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   else if (status != eslOK)        mpi_failure("Unexpected error %d opening sequence file %s\n", status, cfg->seqfile);
 
   qsq            = esl_sq_CreateDigital(abc);
+  termsq         = esl_sq_CreateDigital(abc);
   bg             = p7_bg_Create(abc);
   cm_config_opts = determine_config_opts(go);
 
@@ -1302,113 +1326,145 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       CM_PIPELINE     *pli     = NULL;		/* processing pipeline                      */
       CM_TOPHITS      *th      = NULL;        	/* top-scoring sequence hits                */
-
       MSV_BLOCK        block;
 
       seq_idx++;
-
       esl_stopwatch_Start(w);
 
-      status = 0;
-      MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
-
-      /* Open the target profile database */
-      status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
-      if (status != eslOK) mpi_failure("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, errbuf);  
-  
       /* Create processing pipeline and hit list */
       th  = cm_tophits_Create(); 
       pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qsq->n, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
-      pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
 
-      cm_pli_NewSeq(pli, qsq, seq_idx);
-
-      /* receive a block of models from the master */
-      MPI_Recv(&block, 3, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
-      while (block.count > 0)
-	{
-	  uint64_t length = 0;
-	  uint64_t count  = block.count;
-
-	  hstatus = cm_p7_oprofile_Position(cmfp, block.offset);
-	  if (hstatus != eslOK) mpi_failure("Cannot position optimized model to %ld\n", block.offset);
-
-	  while (count > 0 && 
-		 (hstatus = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &abc, &cm_offset, &cm_clen, &cm_W, &gfmu, &gflambda, &om)) == eslOK)
-	    {
-	      cm_idx++;
-	      length = om->eoff - block.offset + 1;
-
-	      esl_vec_FCopy(om->evparam, p7_NEVPARAM, p7_evparam);
-	      p7_evparam[CM_p7_GFMU]     = gfmu;
-	      p7_evparam[CM_p7_GFLAMBDA] = gflambda;
-	      gm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
-	      cm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
-	      cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */
-	      if((status = cm_pli_NewModel(pli, CM_NEWMODEL_MSV, 
-					   cm,                                   /* this is NULL b/c we don't have one yet */
-					   cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
-					   FALSE, FALSE, NULL, NULL, NULL, NULL, /* all these are irrelevant in CM_NEWMODEL_MSV mode */
-					   om, bg, cm_idx-1)) != eslOK) mpi_failure(pli->errbuf);
-
-	      prv_ntophits = th->N;
-	      if((status = cm_Pipeline(pli, cm_offset, cm_config_opts, om, bg, p7_evparam, qsq, FALSE, th, &gm, &cm, &cmcons)) != eslOK)
-		mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s", status, pli->errbuf);
-
-	      if(th->N != prv_ntophits) { 
-		cm_tophits_ComputeEvalues(th, (double) cm->expA[pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
-	      }
-	      cm_pipeline_Reuse(pli);
-
-	      if(cmcons != NULL) FreeCMConsensus(cmcons);
-	      if(pli->fsmx != NULL && cm != NULL) { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL; }
-	      if(pli->smx  != NULL && cm != NULL) { cm_FreeScanMatrix(cm, pli->smx);  pli->smx  = NULL; }
-	      if(cm  != NULL) FreeCM(cm);
-	      if(om  != NULL) p7_oprofile_Destroy(om);
-	      if(gm  != NULL) p7_profile_Destroy(gm);
-
-	      --count;
-	    }
-	  /* check the status of reading the msv filter */
-	  if (count > 0)              
-	    {
-	      switch(hstatus)
-		{
-		case eslEFORMAT:    mpi_failure("bad file format in HMM file %s\n%s",          cfg->cmfile, cmfp->errbuf); break;
-		case eslEINCOMPAT:  mpi_failure("HMM file %s contains different alphabets",    cfg->cmfile); break;
-		case eslOK:         
-		case eslEOF:        mpi_failure("Block count mismatch - expected %ld found %ld at offset %ld\n", block.count, block.count-count, block.offset); break;
-		default:  	    mpi_failure("Unexpected error %d in reading HMMs from %s\n%s", hstatus, cfg->cmfile, cmfp->errbuf); break;
-		}
-	    }
-
-	  /* lets do a little bit of sanity checking here to make sure the blocks are the same */
-	  if (block.length != length) mpi_failure("Block length mismatch - expected %ld found %ld at offset %ld\n", block.length, length, block.offset);
-
-	  /* inform the master we need another block of sequences */
-	  status = 0;
-	  MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
-
-	  /* wait for the next block of sequences */
-	  MPI_Recv(&block, 3, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
+      /* scan all target CMs twice, once with the top strand of the query and once with the bottom strand */
+      for(in_rc = 0; in_rc <= 1; in_rc++) { 
+	if(in_rc == 0 && (! pli->do_top)) continue; /* skip top strand */
+	if(in_rc == 1 && (! pli->do_bot)) continue; /* skip bottom strand */
+	if(in_rc == 1) { 
+	  if(qsq->abc->complement == NULL) { 
+	    if(! pli->do_top) mpi_failure("Trying to only search bottom strand but sequence cannot be complemented"); 
+	    else continue; /* skip bottom strand b/c we can't complement the sequence */
+	  }
+	  esl_sq_ReverseComplement(qsq);
 	}
 
-      esl_stopwatch_Stop(w);
+	status = 0;
+	MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
+	
+	/* Open the target profile database */
+	status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
+	if (status != eslOK) mpi_failure("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, errbuf);  
+	pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
+	
+	cm_pli_NewSeq(pli, qsq, seq_idx);
 
+	/* receive a block of models from the master */
+	MPI_Recv(&block, 3, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
+	while (block.count > 0)
+	  {
+	    uint64_t length = 0;
+	    uint64_t count  = block.count;
+	    
+	    hstatus = cm_p7_oprofile_Position(cmfp, block.offset);
+	    if (hstatus != eslOK) mpi_failure("Cannot position optimized model to %ld\n", block.offset);
+	    
+	    while (count > 0 && 
+		   (hstatus = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &abc, &cm_offset, &cm_clen, &cm_W, &gfmu, &gflambda, &om)) == eslOK)
+	      {
+		cm_idx++;
+		length = om->eoff - block.offset + 1;
+		
+		esl_vec_FCopy(om->evparam, p7_NEVPARAM, p7_evparam);
+		p7_evparam[CM_p7_GFMU]     = gfmu;
+		p7_evparam[CM_p7_GFLAMBDA] = gflambda;
+		gm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
+		cm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
+		cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */
+		if((status = cm_pli_NewModel(pli, CM_NEWMODEL_MSV, 
+					     cm,                                   /* this is NULL b/c we don't have one yet */
+					     cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
+					     FALSE, FALSE, NULL, NULL, NULL, NULL, /* all these are irrelevant in CM_NEWMODEL_MSV mode */
+					     om, bg, cm_idx-1)) != eslOK) mpi_failure(pli->errbuf);
+		
+		init_ntophits = th->N;
+		init_npastfwd = pli->n_past_fwd;
+		if((status = cm_Pipeline(pli, cm_offset, cm_config_opts, om, bg, p7_evparam, qsq, /*i_am_terminal=*/FALSE, th, &gm, &cm, &cmcons)) != eslOK)
+		  mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s", status, pli->errbuf);
+		cm_pipeline_Reuse(pli);
+		if(in_rc && th->N != init_ntophits) cm_tophits_UpdateHitPositions(th, init_ntophits, qsq->start, in_rc);
+
+		if(pli->research_ends && (init_npastfwd != pli->n_past_fwd)) { 
+		  /* research first pli->maxW residues with local envelope defn */
+		  copy_subseq(qsq, termsq, 1, ESL_MIN(pli->maxW, qsq->n), in_rc);
+		  prv_ntophits = th->N;
+		  if((status = cm_Pipeline(pli, cm_offset, cm_config_opts, om, bg, p7_evparam, termsq, /*i_am_terminal=*/TRUE, th, &gm, &cm, &cmcons)) != eslOK) 
+		    mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, pli->errbuf);
+		  cm_pipeline_Reuse(pli);
+		  if(in_rc && th->N != prv_ntophits) cm_tophits_UpdateHitPositions(th, prv_ntophits, termsq->start, in_rc);
+		  
+		  /* research final pli->maxW residues with local envelope defn */
+		  if(qsq->n > pli->maxW) { 
+		    copy_subseq(qsq, termsq, qsq->n - pli->maxW + 1, pli->maxW, in_rc);
+		    prv_ntophits = th->N;
+		    if((status = cm_Pipeline(pli, cm_offset, cm_config_opts, om, bg, p7_evparam, termsq, /*i_am_terminal=*/TRUE, th, &gm, &cm, &cmcons)) != eslOK) 
+		      cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, pli->errbuf);
+		    cm_pipeline_Reuse(pli); 
+		    if(th->N != prv_ntophits) cm_tophits_UpdateHitPositions(th, prv_ntophits, termsq->start, in_rc);
+		  }
+		}	
+		
+		if(th->N != init_ntophits) { 
+		  cm_tophits_ComputeEvalues(th, (double) cm->expA[pli->final_cm_exp_mode]->cur_eff_dbsize, init_ntophits);
+		}
+
+		if(cmcons != NULL) FreeCMConsensus(cmcons);
+		if(pli->fsmx != NULL && cm != NULL) { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL; }
+		if(pli->smx  != NULL && cm != NULL) { cm_FreeScanMatrix(cm, pli->smx);  pli->smx  = NULL; }
+		if(cm  != NULL) FreeCM(cm);
+		if(om  != NULL) p7_oprofile_Destroy(om);
+		if(gm  != NULL) p7_profile_Destroy(gm);
+		
+		--count;
+	      }
+	    /* check the status of reading the msv filter */
+	    if (count > 0)              
+	      {
+		switch(hstatus)
+		  {
+		  case eslEFORMAT:    mpi_failure("bad file format in HMM file %s\n%s",          cfg->cmfile, cmfp->errbuf); break;
+		  case eslEINCOMPAT:  mpi_failure("HMM file %s contains different alphabets",    cfg->cmfile); break;
+		  case eslOK:         
+		  case eslEOF:        mpi_failure("Block count mismatch - expected %ld found %ld at offset %ld\n", block.count, block.count-count, block.offset); break;
+		  default:  	      mpi_failure("Unexpected error %d in reading HMMs from %s\n%s", hstatus, cfg->cmfile, cmfp->errbuf); break;
+		  }
+	      }
+	    
+	    /* lets do a little bit of sanity checking here to make sure the blocks are the same */
+	    if (block.length != length) mpi_failure("Block length mismatch - expected %ld found %ld at offset %ld\n", block.length, length, block.offset);
+	    
+	    /* inform the master we need another block of sequences */
+	    status = 0;
+	    MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
+	    
+	    /* wait for the next block of sequences */
+	    MPI_Recv(&block, 3, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
+	  }
+	cm_file_Close(cmfp);
+      } /* end loop over in_rc (reverse complement) */
+      esl_stopwatch_Stop(w);
+      
       /* Send the top hits back to the master. */
       cm_tophits_MPISend(th, 0, INFERNAL_TOPHITS_TAG, MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
       cm_pipeline_MPISend(pli, 0, INFERNAL_PIPELINE_TAG, MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
-
-      cm_file_Close(cmfp);
+      
       cm_pipeline_Destroy(pli, NULL);
       cm_tophits_Destroy(th);
       esl_sq_Reuse(qsq);
-    } /* end outer loop over query HMMs */
+    } /* end outer loop over query sequences */
   if (sstatus == eslEFORMAT) 
     mpi_failure("Parse failed (sequence file %s):\n%s\n", sqfp->filename, esl_sqfile_GetErrorBuf(sqfp));
   else if (sstatus != eslEOF)
     mpi_failure("Unexpected error %d reading sequence file %s", sstatus, sqfp->filename);
-
+  
   status = 0;
   MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_TERMINATING_TAG, MPI_COMM_WORLD);
 
@@ -1417,6 +1473,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   p7_bg_Destroy(bg);
 
   esl_sq_Destroy(qsq);
+  esl_sq_Destroy(termsq);
   esl_stopwatch_Destroy(w);
   esl_alphabet_Destroy(abc);
   esl_sqfile_Close(sqfp);
@@ -1467,7 +1524,7 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
       init_npastfwd = info->pli->n_past_fwd;
       if((status = cm_Pipeline(info->pli, cm_offset, info->cm_config_opts, om, info->bg, info->p7_evparam, info->qsq, /*i_am_terminal=*/FALSE, info->th, &gm, &cm, &cmcons)) != eslOK)
 	cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
-      cm_pipeline_Reuse(info->pli); /* prepare for next search */
+      cm_pipeline_Reuse(info->pli); 
       if(info->in_rc && info->th->N != init_ntophits) cm_tophits_UpdateHitPositions(info->th, init_ntophits, info->qsq->start, info->in_rc);
 
       if(info->pli->research_ends && (init_npastfwd != info->pli->n_past_fwd)) { 
@@ -1476,7 +1533,7 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 	prv_ntophits = info->th->N;
 	if((status = cm_Pipeline(info->pli, cm_offset, info->cm_config_opts, om, info->bg, info->p7_evparam, termsq, /*i_am_terminal=*/TRUE, info->th, &gm, &cm, &cmcons)) != eslOK) 
 	  cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
-	cm_pipeline_Reuse(info->pli); /* prepare for next search */
+	cm_pipeline_Reuse(info->pli); 
 	if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, termsq->start, info->in_rc);
 
 	/* research final info->pli->maxW residues with local envelope defn */
@@ -1485,7 +1542,7 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 	  prv_ntophits = info->th->N;
 	  if((status = cm_Pipeline(info->pli, cm_offset, info->cm_config_opts, om, info->bg, info->p7_evparam, termsq, /*i_am_terminal=*/TRUE, info->th, &gm, &cm, &cmcons)) != eslOK) 
 	    cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
-	  cm_pipeline_Reuse(info->pli); /* prepare for next search */
+	  cm_pipeline_Reuse(info->pli); 
 	  if(info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, termsq->start, info->in_rc);
 	}
       }	
@@ -1640,7 +1697,7 @@ pipeline_thread(void *arg)
 	    prv_ntophits = info->th->N;
 	    if((status = cm_Pipeline(info->pli, cm_offset, info->cm_config_opts, om, info->bg, info->p7_evparam, termsq, /*i_am_terminal=*/TRUE, info->th, &gm, &cm, &cmcons)) != eslOK) 
 	      cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
-	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
+	    cm_pipeline_Reuse(info->pli); 
 	    if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, termsq->start, info->in_rc);
 	    
 	    /* research final info->pli->maxW residues with local envelope defn */
@@ -1649,7 +1706,7 @@ pipeline_thread(void *arg)
 	      prv_ntophits = info->th->N;
 	      if((status = cm_Pipeline(info->pli, cm_offset, info->cm_config_opts, om, info->bg, info->p7_evparam, termsq, /*i_am_terminal=*/TRUE, info->th, &gm, &cm, &cmcons)) != eslOK) 
 		cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
-	      cm_pipeline_Reuse(info->pli); /* prepare for next search */
+	      cm_pipeline_Reuse(info->pli); 
 	      if(info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, termsq->start, info->in_rc);
 	    }
 	  }

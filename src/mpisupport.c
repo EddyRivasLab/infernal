@@ -175,7 +175,6 @@ cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm c
   int    atype, i, K, M, nnodes;
   float  tmp_fp7_gfmu;
   float  tmp_fp7_gflambda;
-  char   errbuf[cmERRBUFSIZE];
 
   cm = CreateCMShell(); 
   if (cm == NULL) { status = eslEMEM; goto ERROR; }
@@ -183,7 +182,7 @@ cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm c
   if (MPI_Unpack(buf, n, pos, &(cm->nodes), 1, MPI_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->clen),  1, MPI_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &atype,       1, MPI_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  if (MPI_Unpack(buf, n, pos, &(cm->flags), 1,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
+  if (MPI_Unpack(buf, n, pos, &(cm->flags), 1, MPI_INT, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   /* note: it's important cm->flags is set prior to CreateCMBody() call below, to properly allocate
    * cm->rf, cm->consensus, cm->map, or not */
 
@@ -319,9 +318,7 @@ cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
   int   M      = cm->M;
   int   nnodes = cm->nodes;
   int   clen   = cm->clen;
-  float tmp_fp7_gfmuA;
-  float tmp_fp7_gflambdaA;
-
+  
   if (MPI_Pack(&M,                        1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&nnodes,                   1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&clen,                     1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
@@ -2634,8 +2631,7 @@ cm_pipeline_MPISend(CM_PIPELINE *pli, int dest, int tag, MPI_Comm comm, char **b
       bogus.pos_past_edefbias = 0;
       bogus.n_overflow_fcyk   = 0;
       bogus.n_overflow_final  = 0;
-      bogus.n_aln_hboa        = 0;
-      bogus.n_aln_hbcyk       = 0;
+      bogus.n_aln_hb          = 0;
       bogus.n_aln_dccyk       = 0;
       bogus.Z                 = 0.0;
       pli = &bogus;
@@ -2677,8 +2673,7 @@ cm_pipeline_MPISend(CM_PIPELINE *pli, int dest, int tag, MPI_Comm comm, char **b
 
   if (MPI_Pack(&pli->n_overflow_fcyk,   1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&pli->n_overflow_final,  1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
-  if (MPI_Pack(&pli->n_aln_hboa,        1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
-  if (MPI_Pack(&pli->n_aln_hbcyk,       1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
+  if (MPI_Pack(&pli->n_aln_hb,          1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&pli->n_aln_dccyk,       1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
 
   if (MPI_Pack(&pli->Z,                 1, MPI_DOUBLE,        *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
