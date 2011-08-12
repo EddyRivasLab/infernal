@@ -61,9 +61,9 @@ cm_tophits_Create(void)
   h->N         = 0;
   h->nreported = 0;
   h->nincluded = 0;
-  h->is_sorted_by_score   = TRUE;  /* but only because there's 0 hits */
-  h->is_sorted_by_seq_idx = FALSE; /* actually this is true with 0 hits, but for safety, 
-				    * we don't want both sorted_* fields as TRUE */
+  h->is_sorted_by_score    = TRUE;  /* but only because there's 0 hits */
+  h->is_sorted_by_position = FALSE; /* actually this is true with 0 hits, but for safety, 
+				     * we don't want both sorted_* fields as TRUE */
   h->hit[0]    = h->unsrt;         /* if you're going to call it "sorted" when it contains just one hit, you need this */
   return h;
 
@@ -103,7 +103,7 @@ cm_tophits_Grow(CM_TOPHITS *h)
   /* If we grow a sorted list, we have to translate the pointers
    * in h->hit, because h->unsrt might have just moved in memory. 
    */
-  if (h->is_sorted_by_score || h->is_sorted_by_seq_idx) {
+  if (h->is_sorted_by_score || h->is_sorted_by_position) { 
     for (i = 0; i < h->N; i++)
       h->hit[i] = h->unsrt + (h->hit[i] - ori);
   }
@@ -141,8 +141,8 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   hit = &(h->unsrt[h->N]);
   h->N++;
   if (h->N >= 2) { 
-    h->is_sorted_by_score   = FALSE;
-    h->is_sorted_by_seq_idx = FALSE;
+    h->is_sorted_by_score    = FALSE;
+    h->is_sorted_by_position = FALSE;
   }
 
   hit->name             = NULL;
@@ -156,6 +156,7 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   hit->pvalue           = 0.0;
   hit->evalue           = 0.0;
 
+  hit->cm_idx           = -1;
   hit->seq_idx          = -1;
 
   hit->ad               = NULL;
@@ -169,7 +170,7 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   return status;
 }
 
-/* hit_sorter_by_score() and hit_sorter_by_seq_idx: qsort's pawns, below */
+/* hit_sorter_by_score() and hit_sorter_by_position: qsort's pawns, below */
 static int
 hit_sorter_by_score(const void *vh1, const void *vh2)
 {
@@ -186,26 +187,30 @@ hit_sorter_by_score(const void *vh1, const void *vh2)
 }
 
 static int
-hit_sorter_by_seq_idx(const void *vh1, const void *vh2)
+hit_sorter_by_position(const void *vh1, const void *vh2)
 {
   CM_HIT *h1 = *((CM_HIT **) vh1);  /* don't ask. don't change. Don't Panic. */
   CM_HIT *h2 = *((CM_HIT **) vh2);
 
-  if      (h1->seq_idx > h2->seq_idx) return  1; /* first key, seq_idx (unique id for sequences), low to high */
-  else if (h1->seq_idx < h2->seq_idx) return -1;
+  if      (h1->cm_idx > h2->cm_idx)     return  1; /* first key, cm_idx (unique id for models), low to high */
+  else if (h1->cm_idx < h2->cm_idx)     return -1; /* first key, cm_idx (unique id for models), low to high */
   else { 
-    /* same sequence, sort by strand, stop position then start position (if revcomp) or start position then stop position (if !revcomp) */
-    if     (h1->in_rc > h2->in_rc)    return  1; /* second key, strand (h1->in_rc = 1, h1->in_rc = 0), forward, then reverse */
-    else if(h1->in_rc < h2->in_rc)    return -1; /*                    (h1->in_rc = 0, h2->in_rc = 1), forward, then reverse */
-    else if(h1->in_rc) { 
-      if     (h1->stop > h2->stop)    return  1; /* both revcomp:     third key is stop  position, low to high */
-      else if(h1->stop < h2->stop)    return -1; 
-      else                            return (h1->start  > h2->start  ? 1 : -1 ); /* both revcomp, same stop position, fourth key is start position, low to high */
-    }
-    else               {
-      if     (h1->start > h2->start)  return  1; /* both !revcomp:    third key is start position, low to high */
-      else if(h1->start < h2->start)  return -1; 
-      else                            return (h1->stop  > h2->stop    ? 1 : -1 ); /* both !revcomp, same start position, fourth key is stop position, low to high */
+    if      (h1->seq_idx > h2->seq_idx) return  1; /* second key, seq_idx (unique id for sequences), low to high */
+    else if (h1->seq_idx < h2->seq_idx) return -1;
+    else { 
+      /* same sequence, sort by strand, stop position then start position (if revcomp) or start position then stop position (if !revcomp) */
+      if     (h1->in_rc > h2->in_rc)    return  1; /* third key, strand (h1->in_rc = 1, h1->in_rc = 0), forward, then reverse */
+      else if(h1->in_rc < h2->in_rc)    return -1; /*                   (h1->in_rc = 0, h2->in_rc = 1), forward, then reverse */
+      else if(h1->in_rc) { 
+	if     (h1->stop > h2->stop)    return  1; /* both revcomp:     fourth key is stop  position, low to high */
+	else if(h1->stop < h2->stop)    return -1; 
+	else                            return (h1->start  > h2->start  ? 1 : -1 ); /* both revcomp, same stop position, fourth key is start position, low to high */
+      }
+      else               {
+	if     (h1->start > h2->start)  return  1; /* both !revcomp:    fourth key is start position, low to high */
+	else if(h1->start < h2->start)  return -1; 
+	else                            return (h1->stop  > h2->stop    ? 1 : -1 ); /* both !revcomp, same start position, fourth key is stop position, low to high */
+      }
     }
   }
 }
@@ -229,44 +234,45 @@ cm_tophits_SortByScore(CM_TOPHITS *h)
   int i;
 
   if (h->is_sorted_by_score) { 
-    h->is_sorted_by_seq_idx = FALSE;
+    h->is_sorted_by_position = FALSE;
     return eslOK;
   }
   /* initialize hit ptrs, this also unsorts if already sorted by seq_idx */
   for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
   if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_score);
-  h->is_sorted_by_seq_idx = FALSE;
-  h->is_sorted_by_score   = TRUE;
+  h->is_sorted_by_position = FALSE;
+  h->is_sorted_by_score    = TRUE;
   return eslOK;
 }
 
-/* Function:  cm_tophits_SortBySeqIdx()
- * Synopsis:  Sorts a hit list by sequence index.
+/* Function:  cm_tophits_SortByPosition()
+ * Synopsis:  Sorts a hit list by cm index, sequence index, strand, then position.
  * Incept:    EPN, Tue Jun 14 05:15:17 2011
  *
- * Purpose:   Sorts a top hit list by seq_idx. After this call,
- *            <h->hit[i]> points to the i'th ranked 
- *            <CM_HIT> for all <h->N> hits. First sort key
- *            is seq_idx (low to high), second is start
- *            position (low to high).
-
+ * Purpose:   Sorts a top hit list to ease removal of duplicates.
+ *            After this call, <h->hit[i]> points to the i'th ranked
+ *            <CM_HIT> for all <h->N> hits. First sort key is cm_idx
+ *            (low to high), second is seq_idx (low to high) position
+ *            (low to high), third is strand (forward then reverse),
+ *            fourth key is start position (if forward strand) or stop
+ *            position (if reverse strand).
  *
  * Returns:   <eslOK> on success.
  */
 int
-cm_tophits_SortBySeqIdx(CM_TOPHITS *h)
+cm_tophits_SortByPosition(CM_TOPHITS *h)
 {
   int i;
 
-  if (h->is_sorted_by_seq_idx) {
+  if (h->is_sorted_by_position) { 
     h->is_sorted_by_score = FALSE;
     return eslOK;
   }
   /* initialize hit ptrs, this also unsorts if already sorted by score */
   for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
-  if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_seq_idx);
-  h->is_sorted_by_score   = FALSE;
-  h->is_sorted_by_seq_idx = TRUE;
+  if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_position);
+  h->is_sorted_by_score    = FALSE;
+  h->is_sorted_by_position = TRUE;
 
   return eslOK;
 }
@@ -319,8 +325,8 @@ cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2)
   /* Construct the new grown h1 */
   h1->Nalloc = Nalloc;
   h1->N     += h2->N;
-  h1->is_sorted_by_score   = FALSE;
-  h1->is_sorted_by_seq_idx = FALSE;
+  h1->is_sorted_by_score    = FALSE;
+  h1->is_sorted_by_position = FALSE;
 
   /* reset pointers in sorted list (not really nec because we're not sorted) */
   for (i = 0; i < h1->N; i++) h1->hit[i] = h1->unsrt + i;
@@ -480,9 +486,9 @@ cm_tophits_Reuse(CM_TOPHITS *h)
     }
   }
   h->N         = 0;
-  h->is_sorted_by_score   = TRUE;  /* because there's no hits */
-  h->is_sorted_by_seq_idx = FALSE; /* actually this is true with 0 hits, but for safety, 
-				    * we don't want both sorted_* fields as TRUE */
+  h->is_sorted_by_score    = TRUE;  /* because there's no hits */
+  h->is_sorted_by_position = FALSE; /* actually this is true with 0 hits, but for safety, 
+				     * we don't want both sorted_* fields as TRUE */
   h->hit[0]    = h->unsrt;
   return eslOK;
 }
@@ -526,15 +532,16 @@ cm_tophits_Destroy(CM_TOPHITS *h)
  * Throws:    <eslEMEM> on allocation error.
  */
 int
-cm_tophits_CloneHitFromResults(CM_TOPHITS *th, search_results_t *results, int hidx, int64_t seq_idx, CM_HIT **ret_hit)
+cm_tophits_CloneHitFromResults(CM_TOPHITS *th, search_results_t *results, int hidx, int64_t cm_idx, int64_t seq_idx, CM_HIT **ret_hit)
 {
   CM_HIT *hit = NULL;
   int     status;
 
   if ((status = cm_tophits_CreateNextHit(th, &hit)) != eslOK) goto ERROR;
-  hit->start = results->data[hidx].start;
-  hit->stop  = results->data[hidx].stop;
-  hit->score = results->data[hidx].score;
+  hit->start   = results->data[hidx].start;
+  hit->stop    = results->data[hidx].stop;
+  hit->score   = results->data[hidx].score;
+  hit->cm_idx  = cm_idx;
   hit->seq_idx = seq_idx;
 
   hit->in_rc = hit->start <= hit->stop ? FALSE : TRUE;
@@ -605,12 +612,14 @@ cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
   float   sc_cur;           /* bit score of current hit */
   int     rc_prv;           /* TRUE if previous hit is in reverse complement, FALSE if not */
   int     rc_cur;           /* TRUE if current hit is in reverse complement, FALSE if not */
+  int     ci_prv;           /* cm_idx  (unique model    identifier) of previous hit */
+  int     ci_cur;           /* cm_idx  (unique model    identifier) of current hit */
   int     si_prv;           /* seq_idx (unique sequence identifier) of previous hit */
   int     si_cur;           /* seq_idx (unique sequence identifier) of current hit */
   int     i_prv;            /* index in th->hit of previous hit */
   int     nremoved = 0;
 
-  if (! th->is_sorted_by_seq_idx) return eslEINVAL;
+  if (! th->is_sorted_by_position) return eslEINVAL;
   if (th->N<2) return eslOK;
 
   /* set initial previous hit as the first hit */
@@ -618,6 +627,7 @@ cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
   e_prv  = th->hit[0]->stop;
   sc_prv = th->hit[0]->score;
   rc_prv = th->hit[0]->in_rc;
+  ci_prv = th->hit[0]->cm_idx;
   si_prv = th->hit[0]->seq_idx;
   i_prv  = 0;
 
@@ -626,10 +636,12 @@ cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
     e_cur  = th->hit[i]->stop;
     sc_cur = th->hit[i]->score;
     rc_cur = th->hit[i]->in_rc;
+    ci_cur = th->hit[i]->cm_idx;
     si_cur = th->hit[i]->seq_idx;
 
     /* check for overlap, we take advantage of the fact that we're sorted by strand and position */
-    if((si_cur == si_prv) && /* same sequence */
+    if((ci_cur == ci_prv) && /* same model */
+       (si_cur == si_prv) && /* same sequence */
        (((rc_cur == FALSE && rc_prv == FALSE) && (e_prv >= s_cur)) ||  /* overlap on forward strand */
 	((rc_cur == TRUE  && rc_prv == TRUE)  && (s_prv >= e_cur))))   /* overlap on reverse strand */
       {
@@ -654,6 +666,7 @@ cm_tophits_RemoveDuplicates(CM_TOPHITS *th)
       e_prv  = e_cur;
       sc_prv = sc_cur;
       rc_prv = rc_cur;
+      ci_prv = ci_cur;
       si_prv = si_cur;
       i_prv  = i;
     }
@@ -1000,52 +1013,56 @@ ERROR:
  *            Statistics are compiled and reported for all 
  *            reported and included hits as well as for each
  *            type independently.
+ * 
+ *            <used_cyk> is TRUE if pli->align_cyk was TRUE, if 
+ *            HMM banded CYK was used instead of HMM banded 
+ *            optimal accuracy for alignment.
  *
  * Returns:   <eslOK> on success.
  */
 int
-cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th)
+cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_cyk)
 {
   uint64_t h;
   int is_reported;
   int is_included;
 
-  int64_t rep_naln_hboa, rep_naln_hbcyk, rep_naln_dccyk;
-  double  tot_rep_matrix_Mb_hboa, tot_rep_matrix_Mb_hbcyk, tot_rep_matrix_Mb_dccyk;
-  double  min_rep_matrix_Mb_hboa, min_rep_matrix_Mb_hbcyk, min_rep_matrix_Mb_dccyk;
-  double  max_rep_matrix_Mb_hboa, max_rep_matrix_Mb_hbcyk, max_rep_matrix_Mb_dccyk;
-  double  avg_rep_matrix_Mb_hboa, avg_rep_matrix_Mb_hbcyk, avg_rep_matrix_Mb_dccyk;
-  double  tot_rep_elapsed_secs_hboa, tot_rep_elapsed_secs_hbcyk, tot_rep_elapsed_secs_dccyk;
-  double  min_rep_elapsed_secs_hboa, min_rep_elapsed_secs_hbcyk, min_rep_elapsed_secs_dccyk;
-  double  max_rep_elapsed_secs_hboa, max_rep_elapsed_secs_hbcyk, max_rep_elapsed_secs_dccyk;
-  double  avg_rep_elapsed_secs_hboa, avg_rep_elapsed_secs_hbcyk, avg_rep_elapsed_secs_dccyk;
+  int64_t rep_naln_hb, rep_naln_dccyk;
+  double  tot_rep_matrix_Mb_hb, tot_rep_matrix_Mb_dccyk;
+  double  min_rep_matrix_Mb_hb, min_rep_matrix_Mb_dccyk;
+  double  max_rep_matrix_Mb_hb, max_rep_matrix_Mb_dccyk;
+  double  avg_rep_matrix_Mb_hb, avg_rep_matrix_Mb_dccyk;
+  double  tot_rep_elapsed_secs_hb, tot_rep_elapsed_secs_dccyk;
+  double  min_rep_elapsed_secs_hb, min_rep_elapsed_secs_dccyk;
+  double  max_rep_elapsed_secs_hb, max_rep_elapsed_secs_dccyk;
+  double  avg_rep_elapsed_secs_hb, avg_rep_elapsed_secs_dccyk;
 
-  int64_t inc_naln_hboa, inc_naln_hbcyk, inc_naln_dccyk;
-  double  tot_inc_matrix_Mb_hboa, tot_inc_matrix_Mb_hbcyk, tot_inc_matrix_Mb_dccyk;
-  double  min_inc_matrix_Mb_hboa, min_inc_matrix_Mb_hbcyk, min_inc_matrix_Mb_dccyk;
-  double  max_inc_matrix_Mb_hboa, max_inc_matrix_Mb_hbcyk, max_inc_matrix_Mb_dccyk;
-  double  avg_inc_matrix_Mb_hboa, avg_inc_matrix_Mb_hbcyk, avg_inc_matrix_Mb_dccyk;
-  double  tot_inc_elapsed_secs_hboa, tot_inc_elapsed_secs_hbcyk, tot_inc_elapsed_secs_dccyk;
-  double  min_inc_elapsed_secs_hboa, min_inc_elapsed_secs_hbcyk, min_inc_elapsed_secs_dccyk;
-  double  max_inc_elapsed_secs_hboa, max_inc_elapsed_secs_hbcyk, max_inc_elapsed_secs_dccyk;
-  double  avg_inc_elapsed_secs_hboa, avg_inc_elapsed_secs_hbcyk, avg_inc_elapsed_secs_dccyk;
+  int64_t inc_naln_hb, inc_naln_dccyk;
+  double  tot_inc_matrix_Mb_hb, tot_inc_matrix_Mb_dccyk;
+  double  min_inc_matrix_Mb_hb, min_inc_matrix_Mb_dccyk;
+  double  max_inc_matrix_Mb_hb, max_inc_matrix_Mb_dccyk;
+  double  avg_inc_matrix_Mb_hb, avg_inc_matrix_Mb_dccyk;
+  double  tot_inc_elapsed_secs_hb, tot_inc_elapsed_secs_dccyk;
+  double  min_inc_elapsed_secs_hb, min_inc_elapsed_secs_dccyk;
+  double  max_inc_elapsed_secs_hb, max_inc_elapsed_secs_dccyk;
+  double  avg_inc_elapsed_secs_hb, avg_inc_elapsed_secs_dccyk;
 
   /* initalize */
-  rep_naln_hboa = rep_naln_hbcyk = rep_naln_dccyk = 0;
-  tot_rep_matrix_Mb_hboa = tot_rep_matrix_Mb_hbcyk = tot_rep_matrix_Mb_dccyk = 0.;
-  min_rep_matrix_Mb_hboa = min_rep_matrix_Mb_hbcyk = min_rep_matrix_Mb_dccyk = 0.;
-  max_rep_matrix_Mb_hboa = max_rep_matrix_Mb_hbcyk = max_rep_matrix_Mb_dccyk = 0.;
-  tot_rep_elapsed_secs_hboa = tot_rep_elapsed_secs_hbcyk = tot_rep_elapsed_secs_dccyk = 0.;
-  min_rep_elapsed_secs_hboa = min_rep_elapsed_secs_hbcyk = min_rep_elapsed_secs_dccyk = 0.;
-  max_rep_elapsed_secs_hboa = max_rep_elapsed_secs_hbcyk = max_rep_elapsed_secs_dccyk = 0.;
+  rep_naln_hb = rep_naln_dccyk = 0;
+  tot_rep_matrix_Mb_hb = tot_rep_matrix_Mb_dccyk = 0.;
+  min_rep_matrix_Mb_hb = min_rep_matrix_Mb_dccyk = 0.;
+  max_rep_matrix_Mb_hb = max_rep_matrix_Mb_dccyk = 0.;
+  tot_rep_elapsed_secs_hb = tot_rep_elapsed_secs_dccyk = 0.;
+  min_rep_elapsed_secs_hb = min_rep_elapsed_secs_dccyk = 0.;
+  max_rep_elapsed_secs_hb = max_rep_elapsed_secs_dccyk = 0.;
 
-  inc_naln_hboa = inc_naln_hbcyk = inc_naln_dccyk = 0;
-  tot_inc_matrix_Mb_hboa = tot_inc_matrix_Mb_hbcyk = tot_inc_matrix_Mb_dccyk = 0.;
-  min_inc_matrix_Mb_hboa = min_inc_matrix_Mb_hbcyk = min_inc_matrix_Mb_dccyk = 0.;
-  max_inc_matrix_Mb_hboa = max_inc_matrix_Mb_hbcyk = max_inc_matrix_Mb_dccyk = 0.;
-  tot_inc_elapsed_secs_hboa = tot_inc_elapsed_secs_hbcyk = tot_inc_elapsed_secs_dccyk = 0.;
-  min_inc_elapsed_secs_hboa = min_inc_elapsed_secs_hbcyk = min_inc_elapsed_secs_dccyk = 0.;
-  max_inc_elapsed_secs_hboa = max_inc_elapsed_secs_hbcyk = max_inc_elapsed_secs_dccyk = 0.;
+  inc_naln_hb = inc_naln_dccyk = 0;
+  tot_inc_matrix_Mb_hb = tot_inc_matrix_Mb_dccyk = 0.;
+  min_inc_matrix_Mb_hb = min_inc_matrix_Mb_dccyk = 0.;
+  max_inc_matrix_Mb_hb = max_inc_matrix_Mb_dccyk = 0.;
+  tot_inc_elapsed_secs_hb = tot_inc_elapsed_secs_dccyk = 0.;
+  min_inc_elapsed_secs_hb = min_inc_elapsed_secs_dccyk = 0.;
+  max_inc_elapsed_secs_hb = max_inc_elapsed_secs_dccyk = 0.;
  
   for(h = 0; h < th->N; h++) { 
     is_reported = (th->unsrt[h].flags & CM_HIT_IS_REPORTED) ? TRUE : FALSE;
@@ -1053,38 +1070,21 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th)
     if(th->unsrt[h].ad != NULL) { 
       /* update reported stats */
       if(is_reported) { 
-	if(th->unsrt[h].ad->used_optacc) { 
-	  rep_naln_hboa++;
-	  tot_rep_matrix_Mb_hboa    += th->unsrt[h].ad->matrix_Mb;
-	  tot_rep_elapsed_secs_hboa += th->unsrt[h].ad->elapsed_secs;
-	  if(rep_naln_hboa == 1) { 
-	    min_rep_matrix_Mb_hboa    = th->unsrt[h].ad->matrix_Mb;
-	    max_rep_matrix_Mb_hboa    = th->unsrt[h].ad->matrix_Mb;
-	    min_rep_elapsed_secs_hboa = th->unsrt[h].ad->elapsed_secs;
-	    max_rep_elapsed_secs_hboa = th->unsrt[h].ad->elapsed_secs;
+	if(th->unsrt[h].ad->used_hbands) { 
+	  rep_naln_hb++;
+	  tot_rep_matrix_Mb_hb    += th->unsrt[h].ad->matrix_Mb;
+	  tot_rep_elapsed_secs_hb += th->unsrt[h].ad->elapsed_secs;
+	  if(rep_naln_hb == 1) { 
+	    min_rep_matrix_Mb_hb    = th->unsrt[h].ad->matrix_Mb;
+	    max_rep_matrix_Mb_hb    = th->unsrt[h].ad->matrix_Mb;
+	    min_rep_elapsed_secs_hb = th->unsrt[h].ad->elapsed_secs;
+	    max_rep_elapsed_secs_hb = th->unsrt[h].ad->elapsed_secs;
 	  }
 	  else { 
-	    min_rep_matrix_Mb_hboa    = ESL_MIN(min_rep_matrix_Mb_hboa,    th->unsrt[h].ad->matrix_Mb);
-	    max_rep_matrix_Mb_hboa    = ESL_MAX(max_rep_matrix_Mb_hboa,    th->unsrt[h].ad->matrix_Mb);
-	    min_rep_elapsed_secs_hboa = ESL_MIN(min_rep_elapsed_secs_hboa, th->unsrt[h].ad->elapsed_secs);
-	    max_rep_elapsed_secs_hboa = ESL_MAX(max_rep_elapsed_secs_hboa, th->unsrt[h].ad->elapsed_secs);
-	  }
-	}
-	else if(th->unsrt[h].ad->used_hbands) { 
-	  rep_naln_hbcyk++;
-	  tot_rep_matrix_Mb_hbcyk    += th->unsrt[h].ad->matrix_Mb;
-	  tot_rep_elapsed_secs_hbcyk += th->unsrt[h].ad->elapsed_secs;
-	  if(rep_naln_hbcyk == 1) { 
-	    min_rep_matrix_Mb_hbcyk    = th->unsrt[h].ad->matrix_Mb;
-	    max_rep_matrix_Mb_hbcyk    = th->unsrt[h].ad->matrix_Mb;
-	    min_rep_elapsed_secs_hbcyk = th->unsrt[h].ad->elapsed_secs;
-	    max_rep_elapsed_secs_hbcyk = th->unsrt[h].ad->elapsed_secs;
-	  }
-	  else { 
-	    min_rep_matrix_Mb_hbcyk    = ESL_MIN(min_rep_matrix_Mb_hbcyk,    th->unsrt[h].ad->matrix_Mb);
-	    max_rep_matrix_Mb_hbcyk    = ESL_MAX(max_rep_matrix_Mb_hbcyk,    th->unsrt[h].ad->matrix_Mb);
-	    min_rep_elapsed_secs_hbcyk = ESL_MIN(min_rep_elapsed_secs_hbcyk, th->unsrt[h].ad->elapsed_secs);
-	    max_rep_elapsed_secs_hbcyk = ESL_MAX(max_rep_elapsed_secs_hbcyk, th->unsrt[h].ad->elapsed_secs);
+	    min_rep_matrix_Mb_hb    = ESL_MIN(min_rep_matrix_Mb_hb,    th->unsrt[h].ad->matrix_Mb);
+	    max_rep_matrix_Mb_hb    = ESL_MAX(max_rep_matrix_Mb_hb,    th->unsrt[h].ad->matrix_Mb);
+	    min_rep_elapsed_secs_hb = ESL_MIN(min_rep_elapsed_secs_hb, th->unsrt[h].ad->elapsed_secs);
+	    max_rep_elapsed_secs_hb = ESL_MAX(max_rep_elapsed_secs_hb, th->unsrt[h].ad->elapsed_secs);
 	  }
 	}
 	else { 
@@ -1107,38 +1107,21 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th)
       }
       /* update included stats */
       if(is_included) { 
-	if(th->unsrt[h].ad->used_optacc) { 
-	  inc_naln_hboa++;
-	  tot_inc_matrix_Mb_hboa    += th->unsrt[h].ad->matrix_Mb;
-	  tot_inc_elapsed_secs_hboa += th->unsrt[h].ad->elapsed_secs;
-	  if(inc_naln_hboa == 1) { 
-	    min_inc_matrix_Mb_hboa    = th->unsrt[h].ad->matrix_Mb;
-	    max_inc_matrix_Mb_hboa    = th->unsrt[h].ad->matrix_Mb;
-	    min_inc_elapsed_secs_hboa = th->unsrt[h].ad->elapsed_secs;
-	    max_inc_elapsed_secs_hboa = th->unsrt[h].ad->elapsed_secs;
+	if(th->unsrt[h].ad->used_hbands) { 
+	  inc_naln_hb++;
+	  tot_inc_matrix_Mb_hb    += th->unsrt[h].ad->matrix_Mb;
+	  tot_inc_elapsed_secs_hb += th->unsrt[h].ad->elapsed_secs;
+	  if(inc_naln_hb == 1) { 
+	    min_inc_matrix_Mb_hb    = th->unsrt[h].ad->matrix_Mb;
+	    max_inc_matrix_Mb_hb    = th->unsrt[h].ad->matrix_Mb;
+	    min_inc_elapsed_secs_hb = th->unsrt[h].ad->elapsed_secs;
+	    max_inc_elapsed_secs_hb = th->unsrt[h].ad->elapsed_secs;
 	  }
 	  else { 
-	    min_inc_matrix_Mb_hboa    = ESL_MIN(min_inc_matrix_Mb_hboa,    th->unsrt[h].ad->matrix_Mb);
-	    max_inc_matrix_Mb_hboa    = ESL_MAX(max_inc_matrix_Mb_hboa,    th->unsrt[h].ad->matrix_Mb);
-	    min_inc_elapsed_secs_hboa = ESL_MIN(min_inc_elapsed_secs_hboa, th->unsrt[h].ad->elapsed_secs);
-	    max_inc_elapsed_secs_hboa = ESL_MAX(max_inc_elapsed_secs_hboa, th->unsrt[h].ad->elapsed_secs);
-	  }
-	}
-	else if(th->unsrt[h].ad->used_hbands) { 
-	  inc_naln_hbcyk++;
-	  tot_inc_matrix_Mb_hbcyk    += th->unsrt[h].ad->matrix_Mb;
-	  tot_inc_elapsed_secs_hbcyk += th->unsrt[h].ad->elapsed_secs;
-	  if(inc_naln_hbcyk == 1) { 
-	    min_inc_matrix_Mb_hbcyk    = th->unsrt[h].ad->matrix_Mb;
-	    max_inc_matrix_Mb_hbcyk    = th->unsrt[h].ad->matrix_Mb;
-	    min_inc_elapsed_secs_hbcyk = th->unsrt[h].ad->elapsed_secs;
-	    max_inc_elapsed_secs_hbcyk = th->unsrt[h].ad->elapsed_secs;
-	  }
-	  else { 
-	    min_inc_matrix_Mb_hbcyk    = ESL_MIN(min_inc_matrix_Mb_hbcyk,    th->unsrt[h].ad->matrix_Mb);
-	    max_inc_matrix_Mb_hbcyk    = ESL_MAX(max_inc_matrix_Mb_hbcyk,    th->unsrt[h].ad->matrix_Mb);
-	    min_inc_elapsed_secs_hbcyk = ESL_MIN(min_inc_elapsed_secs_hbcyk, th->unsrt[h].ad->elapsed_secs);
-	    max_inc_elapsed_secs_hbcyk = ESL_MAX(max_inc_elapsed_secs_hbcyk, th->unsrt[h].ad->elapsed_secs);
+	    min_inc_matrix_Mb_hb    = ESL_MIN(min_inc_matrix_Mb_hb,    th->unsrt[h].ad->matrix_Mb);
+	    max_inc_matrix_Mb_hb    = ESL_MAX(max_inc_matrix_Mb_hb,    th->unsrt[h].ad->matrix_Mb);
+	    min_inc_elapsed_secs_hb = ESL_MIN(min_inc_elapsed_secs_hb, th->unsrt[h].ad->elapsed_secs);
+	    max_inc_elapsed_secs_hb = ESL_MAX(max_inc_elapsed_secs_hb, th->unsrt[h].ad->elapsed_secs);
 	  }
 	}
 	else { 
@@ -1162,25 +1145,17 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th)
     }
   }
   /* Output */
-  if(rep_naln_hboa > 0) { 
-    avg_rep_matrix_Mb_hboa    = tot_rep_matrix_Mb_hboa    / (double) rep_naln_hboa;
-    avg_rep_elapsed_secs_hboa = tot_rep_elapsed_secs_hboa / (double) rep_naln_hboa;
-  }
-  if(rep_naln_hbcyk > 0) { 
-    avg_rep_matrix_Mb_hbcyk    = tot_rep_matrix_Mb_hbcyk    / (double) rep_naln_hbcyk;
-    avg_rep_elapsed_secs_hbcyk = tot_rep_elapsed_secs_hbcyk / (double) rep_naln_hbcyk;
+  if(rep_naln_hb > 0) { 
+    avg_rep_matrix_Mb_hb    = tot_rep_matrix_Mb_hb    / (double) rep_naln_hb;
+    avg_rep_elapsed_secs_hb = tot_rep_elapsed_secs_hb / (double) rep_naln_hb;
   }
   if(rep_naln_dccyk > 0) { 
     avg_rep_matrix_Mb_dccyk    = tot_rep_matrix_Mb_dccyk    / (double) rep_naln_dccyk;
     avg_rep_elapsed_secs_dccyk = tot_rep_elapsed_secs_dccyk / (double) rep_naln_dccyk;
   }
-  if(inc_naln_hboa > 0) { 
-    avg_inc_matrix_Mb_hboa    = tot_inc_matrix_Mb_hboa    / (double) inc_naln_hboa;
-    avg_inc_elapsed_secs_hboa = tot_inc_elapsed_secs_hboa / (double) inc_naln_hboa;
-  }
-  if(inc_naln_hbcyk > 0) { 
-    avg_inc_matrix_Mb_hbcyk    = tot_inc_matrix_Mb_hbcyk    / (double) inc_naln_hbcyk;
-    avg_inc_elapsed_secs_hbcyk = tot_inc_elapsed_secs_hbcyk / (double) inc_naln_hbcyk;
+  if(inc_naln_hb > 0) { 
+    avg_inc_matrix_Mb_hb    = tot_inc_matrix_Mb_hb    / (double) inc_naln_hb;
+    avg_inc_elapsed_secs_hb = tot_inc_elapsed_secs_hb / (double) inc_naln_hb;
   }
   if(inc_naln_dccyk > 0) { 
     avg_inc_matrix_Mb_dccyk    = tot_inc_matrix_Mb_dccyk    / (double) inc_naln_dccyk;
@@ -1193,27 +1168,22 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th)
   //if (cm->acc)  fprintf(ofp, "Accession:   %s\n", cm->acc);
   //if (cm->desc) fprintf(ofp, "Description: %s\n", cm->desc);
   //fprintf(ofp, "\n");
-  if((rep_naln_hboa + rep_naln_hbcyk + rep_naln_dccyk) > 0) { 
+  if((rep_naln_hb + rep_naln_dccyk) > 0) { 
     fprintf(ofp, "%8s  %-22s  %9s  %25s  %34s\n", "", "", "", "    matrix size (Mb)     ", "      alignment time (secs)       ");
     fprintf(ofp, "%8s  %-22s  %9s  %25s  %34s\n", "", "", "", "-------------------------", "----------------------------------");
     fprintf(ofp, "%8s  %-22s  %9s  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "category", "      algorithm       ", "# alns", "minimum", "average", "maximum", "minimum", "average", "maximum", "total");
     fprintf(ofp, "%8s  %-22s  %9s  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "--------", "----------------------", "---------", "-------", "-------", "-------", "-------", "-------", "-------", "-------");
     /* reported */
-    if(rep_naln_hboa > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", "HMM banded optimal acc", rep_naln_hboa, 
-	      min_rep_matrix_Mb_hboa,    avg_rep_matrix_Mb_hboa,    max_rep_matrix_Mb_hboa, 
-	      min_rep_elapsed_secs_hboa, avg_rep_elapsed_secs_hboa, max_rep_elapsed_secs_hboa, tot_rep_elapsed_secs_hboa);
+    if(rep_naln_hb > 0) { 
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", 
+	      (used_cyk) ? "HMM banded CYK" : "HMM banded optimal acc", 
+	      rep_naln_hb, min_rep_matrix_Mb_hb, avg_rep_matrix_Mb_hb, max_rep_matrix_Mb_hb, 
+	      min_rep_elapsed_secs_hb, avg_rep_elapsed_secs_hb, max_rep_elapsed_secs_hb, tot_rep_elapsed_secs_hb);
     }
     else {
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", "HMM banded optimal acc", rep_naln_hboa, "-", "-", "-", "-", "-", "-", "-");
-    }
-    if(rep_naln_hbcyk > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", "HMM banded CYK", rep_naln_hbcyk, 
-	      min_rep_matrix_Mb_hbcyk,    avg_rep_matrix_Mb_hbcyk,    max_rep_matrix_Mb_hbcyk, 
-	      min_rep_elapsed_secs_hbcyk, avg_rep_elapsed_secs_hbcyk, max_rep_elapsed_secs_hbcyk, tot_rep_elapsed_secs_hbcyk);
-    }
-    else {
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", "HMM banded CYK", rep_naln_hbcyk, "-", "-", "-", "-", "-", "-", "-");
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", 
+	      (used_cyk) ? "HMM banded CYK" : "HMM banded optimal acc", 
+	      rep_naln_hb, "-", "-", "-", "-", "-", "-", "-");
     }
     if(rep_naln_dccyk > 0) { 
       fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", "nonbanded D&C CYK", rep_naln_dccyk, 
@@ -1224,21 +1194,16 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th)
       fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", "nonbanded D&C CYK", rep_naln_dccyk, "-", "-", "-", "-", "-", "-", "-");
     }
     /* included */
-    if(inc_naln_hboa > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", "HMM banded optimal acc", inc_naln_hboa, 
-	      min_inc_matrix_Mb_hboa,    avg_inc_matrix_Mb_hboa,    max_inc_matrix_Mb_hboa, 
-	      min_inc_elapsed_secs_hboa, avg_inc_elapsed_secs_hboa, max_inc_elapsed_secs_hboa, tot_inc_elapsed_secs_hboa);
+    if(inc_naln_hb > 0) { 
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", 
+	      (used_cyk) ? "HMM banded CYK" : "HMM banded optimal acc", 
+	      inc_naln_hb, min_inc_matrix_Mb_hb,    avg_inc_matrix_Mb_hb,    max_inc_matrix_Mb_hb, 
+	      min_inc_elapsed_secs_hb, avg_inc_elapsed_secs_hb, max_inc_elapsed_secs_hb, tot_inc_elapsed_secs_hb);
     }
     else {
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", "HMM banded optimal acc", inc_naln_hboa, "-", "-", "-", "-", "-", "-", "-");
-    }
-    if(inc_naln_hbcyk > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", "HMM banded CYK", inc_naln_hbcyk, 
-	      min_inc_matrix_Mb_hbcyk,    avg_inc_matrix_Mb_hbcyk,    max_inc_matrix_Mb_hbcyk, 
-	      min_inc_elapsed_secs_hbcyk, avg_inc_elapsed_secs_hbcyk, max_inc_elapsed_secs_hbcyk, tot_inc_elapsed_secs_hbcyk);
-    }
-    else {
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", "HMM banded CYK", inc_naln_hbcyk, "-", "-", "-", "-", "-", "-", "-");
+      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", 
+	      (used_cyk) ? "HMM banded CYK" : "HMM banded optimal acc", 
+	      inc_naln_hb, "-", "-", "-", "-", "-", "-", "-");
     }
     if(inc_naln_dccyk > 0) { 
       fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", "nonbanded D&C CYK", inc_naln_dccyk, 
@@ -1442,21 +1407,21 @@ cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th)
   fprintf(fp, "CM_TOPHITS dump\n");
   fprintf(fp, "------------------\n");
 
-  fprintf(fp, "N                    = %" PRId64 "\n", th->N);
-  fprintf(fp, "Nalloc               = %" PRId64 "\n", th->Nalloc);
-  fprintf(fp, "nreported            = %" PRId64 "\n", th->nreported);
-  fprintf(fp, "nincluded            = %" PRId64 "\n", th->nincluded);
-  fprintf(fp, "is_sorted_by_score   = %s\n",  th->is_sorted_by_score   ? "TRUE" : "FALSE");
-  fprintf(fp, "is_sorted_by_seq_idx = %s\n",  th->is_sorted_by_seq_idx ? "TRUE" : "FALSE");
+  fprintf(fp, "N                     = %" PRId64 "\n", th->N);
+  fprintf(fp, "Nalloc                = %" PRId64 "\n", th->Nalloc);
+  fprintf(fp, "nreported             = %" PRId64 "\n", th->nreported);
+  fprintf(fp, "nincluded             = %" PRId64 "\n", th->nincluded);
+  fprintf(fp, "is_sorted_by_score    = %s\n",  th->is_sorted_by_score    ? "TRUE" : "FALSE");
+  fprintf(fp, "is_sorted_by_position = %s\n",  th->is_sorted_by_position ? "TRUE" : "FALSE");
   if(th->is_sorted_by_score) { 
     for (i = 0; i < th->N; i++) {
       fprintf(fp, "SCORE SORTED HIT %" PRId64 ":\n", i);
       cm_hit_Dump(fp, th->hit[i]);
     }
   }
-  else if(th->is_sorted_by_seq_idx) { 
+  else if(th->is_sorted_by_position) { 
     for (i = 0; i < th->N; i++) {
-      fprintf(fp, "SEQ_IDX SORTED HIT %" PRId64 ":\n", i);
+      fprintf(fp, "POSITION SORTED HIT %" PRId64 ":\n", i);
       cm_hit_Dump(fp, th->hit[i]);
     }
   }
@@ -1627,7 +1592,7 @@ main(int argc, char **argv)
   esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_Merge():            ");
   esl_stopwatch_Start(w);
   
-  cm_tophits_SortBySeqIdx(h[0]);
+  cm_tophits_SortByPosition(h[0]);
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_SortBySeqIdx():     ");
   esl_stopwatch_Start(w);
@@ -1773,6 +1738,7 @@ main(int argc, char **argv)
   hit->start   = L;
   hit->stop    = L;
   hit->score   = 20.0;
+  hit->cm_idx  = 0;
   hit->seq_idx = 0;
 
   cm_tophits_CreateNextHit(h2, &hit);
@@ -1780,6 +1746,7 @@ main(int argc, char **argv)
   hit->start   = L;
   hit->stop    = L;
   hit->score   = 30.0;
+  hit->cm_idx  = 0;
   hit->seq_idx = 0;
 
   cm_tophits_CreateNextHit(h3, &hit);
@@ -1787,6 +1754,7 @@ main(int argc, char **argv)
   hit->start   = L;
   hit->stop    = L;
   hit->score   = 40.0;
+  hit->cm_idx  = 0;
   hit->seq_idx = 0;
 
   cm_tophits_CreateNextHit(h1, &hit);
@@ -1794,6 +1762,7 @@ main(int argc, char **argv)
   hit->start   = L+1;
   hit->stop    = L+1;
   hit->score   = -1.0;
+  hit->cm_idx  = 0;
   hit->seq_idx = 0;
 
   cm_tophits_CreateNextHit(h2, &hit);
@@ -1801,6 +1770,7 @@ main(int argc, char **argv)
   hit->start   = L+1;
   hit->stop    = L+1;
   hit->score   = -2.0;
+  hit->cm_idx  = 0;
   hit->seq_idx = 0;
 
   cm_tophits_CreateNextHit(h3, &hit);
@@ -1808,16 +1778,17 @@ main(int argc, char **argv)
   hit->start   = L+1;
   hit->stop    = L+1;
   hit->score   = -3.0;
+  hit->cm_idx  = 0;
   hit->seq_idx = 0;
 
-  cm_tophits_SortBySeqIdx(h1);
+  cm_tophits_SortByPosition(h1);
   cm_tophits_RemoveDuplicates(h1);
   cm_tophits_SortByScore(h1);
   if (strcmp(h1->hit[0]->name,   "third")        != 0)   esl_fatal("sort 1 failed (top is %s = %f)",  h1->hit[0]->name,   h1->hit[0]->score);
   if (strcmp(h1->hit[N+1]->name, "thirdtolast")  != 0)   esl_fatal("sort 1 failed (last is %s = %f)", h1->hit[N+1]->name, h1->hit[N+1]->score);
 
   cm_tophits_MergeUnsorted(h1, h2);
-  cm_tophits_SortBySeqIdx(h1);
+  cm_tophits_SortByPosition(h1);
   cm_tophits_RemoveDuplicates(h1);
   cm_tophits_SortByScore(h1);
   if (strcmp(h1->hit[0]->name,     "second")        != 0)   esl_fatal("sort 2 failed (top is %s = %f)",            h1->hit[0]->name,     h1->hit[0]->score);
@@ -1830,7 +1801,7 @@ main(int argc, char **argv)
   if (! (h1->hit[2*N+3]->flags & CM_HIT_IS_DUPLICATE)) esl_fatal("RemoveDuplicates failed");
 
   cm_tophits_MergeUnsorted(h1, h3);
-  cm_tophits_SortBySeqIdx(h1);
+  cm_tophits_SortByPosition(h1);
   cm_tophits_RemoveDuplicates(h1);
   cm_tophits_SortByScore(h1);
   if (strcmp(h1->hit[0]->name,     "first")         != 0)   esl_fatal("sort 3 failed (top    is %s = %f)",         h1->hit[0]->name,     h1->hit[0]->score);

@@ -206,8 +206,8 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
   /* grow the matrices based on the current sequence and bands */
-  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
-  if((status = cm_hb_shadow_mx_GrowTo(cm, shmx, errbuf, cp9b, W))    != eslOK) return status;
+  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit))          != eslOK) return status;
+  if((status = cm_hb_shadow_mx_GrowTo(cm, shmx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
@@ -3269,8 +3269,8 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
   /* grow the matrices based on the current sequence and bands */
-  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
-  if((status = cm_hb_shadow_mx_GrowTo(cm, shmx, errbuf, cp9b, W))    != eslOK) return status;
+  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit))          != eslOK) return status;
+  if((status = cm_hb_shadow_mx_GrowTo(cm, shmx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
 
   /* initialize the EL deck, if it's valid */
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;  

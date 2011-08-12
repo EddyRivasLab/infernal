@@ -137,7 +137,8 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   int     cur_size = 0;
   int64_t ncells;
   int     jbw;
-  float   Mb_needed;
+  float   Mb_needed;   /* required size of matrix, given the bands */
+  float   Mb_alloc;  /* allocated size of matrix, >= Mb_needed */
   int     have_el;
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
@@ -147,20 +148,18 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with cp9b == NULL.\n");
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
 
-  ncells = 0;
-  Mb_needed = ((float) (sizeof(int *)) * ((float) mx->M + 1)) + /* nrowsA ptrs */
-    (float) (sizeof(float **)) * (float) (mx->M);               /* mx->dp[] ptrs */
-  for(v = 0; v < mx->M; v++) { 
-    jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
-    Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->dp[v][] ptrs */
-    for(jp = 0; jp <= jbw; jp++) 
-      ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+  if(mx->size_Mb > (0.5 * size_limit)) { 
+    /* matrix is at least half the size of our limit (based on 
+     * bands from previous aligned sequence). Free the main dp_mem.
+     * */
+    free(mx->dp_mem);
+    mx->dp_mem = NULL;
+    mx->ncells_alloc = 0;
   }
-  if(have_el) ncells += (int) ((L+2) * (L+1) * 0.5); /* space for EL deck */
 
-  Mb_needed += ESL_MAX(((float) (sizeof(float) * mx->ncells_alloc)), ((float) (sizeof(float) * ncells))); /* mx->dp_mem */
-  Mb_needed *= 0.000001; /* convert to megabytes */
+  if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &ncells, &Mb_needed)) != eslOK) return status;
   /*printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed);*/
+  printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed);
   ESL_DPRINTF2(("HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -171,6 +170,17 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   if (ncells > mx->ncells_alloc) {
       ESL_RALLOC(mx->dp_mem, p, sizeof(float) * ncells);
       mx->ncells_alloc = ncells;
+      Mb_alloc = Mb_needed;
+  }
+  else { 
+    /* mx->dp_mem remains as it is allocated, set Mb_alloc accordingly
+     * (this is not just mx->size_Mb, because size of pointer arrays
+     * may change, for example) 
+     */
+    Mb_alloc  = Mb_needed * 1000000.; /* convert to bytes */
+    Mb_alloc -= ((float) (sizeof(float) * ncells)); 
+    Mb_alloc += ((float) (sizeof(float) * mx->ncells_alloc)); 
+    Mb_alloc *= 0.000001; /* convert to Mb */
   }
   mx->ncells_valid = ncells;
 
@@ -213,7 +223,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   
   /* now update L and size_Mb */
   mx->L       = L;    /* length of current seq we're valid for */
-  mx->size_Mb = Mb_needed;
+  mx->size_Mb = Mb_alloc;
   
   return eslOK;
 
@@ -285,46 +295,58 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
   return eslOK;
 }
 
-
-/* Function:  cm_hb_mx_NumCellsNeeded()
- * Incept:    EPN, Fri Oct 29 13:03:05 2010
+/* Function:  cm_hb_mx_SizeNeeded()
+ * Incept:    EPN, Thu Aug 11 14:51:04 2011
  *
- * Purpose:   Given a model and CP9_bands_t object with pre-calced bands for 
- *            a target, determine the number of cells required in a 
- *            CM_HB_MX for the target given the bands.
+ * Purpose:   Given a model and CP9_bands_t object with 
+ *            pre-calced bands for a target, determine the number 
+ *            of cells and total size in Mb required in a CM_HB_MX 
+ *            for the target given the bands. 
+ * 
+ *            Return number of cells required given the bands
+ *            in <cp9b> in <ret_ncells> and size of required 
+ *            matrix in Mb in <ret_Mb>.
  *            
- *
  * Args:      cm     - the CM the matrix is for
  *            errbuf - char buffer for reporting errors
  *            cp9b   - the bands for the current target sequence
  *            L      - the length of the current target sequence we're aligning
  *            ret_ncells - RETURN: number of cells required
- *
+ *            ret_Mb - RETURN: required size of matrix in Mb
+ *           
  * Returns:   <eslOK> on success
  *
  */
 int
-cm_hb_mx_NumCellsNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells)
+cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb)
 {
   int     v, jp;
   int64_t ncells;
   int     jbw;
   int     have_el;
-
+  float   Mb_needed;
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
   /* contract check */
-  if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with cp9b == NULL.\n");
+  if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_SizeNeeded() entered with cp9b == NULL.\n");
 
   ncells = 0;
+  Mb_needed = ((float) (sizeof(int *)) * ((float) cp9b->cm_M + 1)) + /* nrowsA ptrs */
+    (float) (sizeof(float **)) * (float) (cp9b->cm_M);               /* mx->dp[] ptrs */
   for(v = 0; v < cp9b->cm_M; v++) { 
     jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
+    Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->dp[v][] ptrs */
     for(jp = 0; jp <= jbw; jp++) 
       ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
   }
   if(have_el) ncells += (int) ((L+2) * (L+1) * 0.5); /* space for EL deck */
 
-  *ret_ncells = ncells;
+  Mb_needed += (float) (sizeof(float) * ncells); /* mx->dp_mem */
+  Mb_needed *= 0.000001; /* convert to megabytes */
+
+  if(ret_ncells != NULL) *ret_ncells = ncells;
+  if(ret_Mb     != NULL) *ret_Mb     = Mb_needed;
+
   return eslOK;
 }
 
@@ -442,18 +464,20 @@ cm_hb_shadow_mx_Create(CM_t *cm, int M)
  *            errbuf - char buffer for reporting errors
  *            cp9b   - the bands for the current target sequence
  *            L      - the length of the current target sequence we're aligning
+ *            size_limit- max number of Mb for DP matrix, if matrix is bigger -> return eslERANGE
  *
  * Returns:   <eslOK> on success, and <mx> may be reallocated upon
  *            return; any data that may have been in <mx> must be 
  *            assumed to be invalidated.
  *
- * Throws:    <eslEINCOMPAT> if mx does not appeared to be created for this cm
- *                           This should be caught and appropriately handled by caller. 
+ * Throws:    <eslERANGE> if required size to grow to exceeds <size_limit>.
+ *            This should be caught and appropriately handled by caller. 
+ *            <eslEINCOMPAT> if mx does not appeared to be created for this cm
  *            <eslEINCOMPAT> on contract violation
  *            <eslEMEM> on memory allocation error.
  */
 int
-cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
+cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit)
 {
   int     status;
   void   *p;
@@ -461,37 +485,31 @@ cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *
   int     y_cur_size, k_cur_size = 0;
   size_t  y_ncells, k_ncells;
   int     jbw;
-  double  Mb_needed;
+  float   Mb_needed;   /* required size of matrix, given the bands */
+  float   Mb_alloc;  /* allocated size of matrix, >= Mb_needed */
+
   /* contract check, number of states (M) is something we don't change
    * so check this matrix has same number of 1st dim state ptrs that
    * cp9b has */
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() entered with cp9b == NULL.\n");
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
   
-  y_ncells = k_ncells = 0;
-  Mb_needed = ((float) (sizeof(int *)) * ((float) mx->M + 1)) + /* nrowsA ptrs */
-    (float) (sizeof(char **)) * (float) (mx->M-mx->nbifs) +     /* mx->yshadow[] ptrs */
-    (float) (sizeof(int  **)) * (float) (mx->nbifs);            /* mx->kshadow[] ptrs */
-  for(v = 0; v < mx->M; v++) { 
-    jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
-    if(cm->sttype[v] == B_st) { 
-      if(mx->kshadow[v] == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() v is a B st %d, but mx->kshadow[v] == NULL.\n", v);
-      if(mx->yshadow[v] != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() v is a B st %d, but mx->yshadow[v] != NULL.\n", v);
-      Mb_needed += (float) (sizeof(int *) * (jbw+1)); /* mx->kshadow[v][] ptrs */
-      for(jp = 0; jp <= jbw; jp++) 
-	k_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
-    }
-    else { 
-      if(mx->kshadow[v] != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() v is not a B st %d, but mx->kshadow[v] != NULL.\n", v);
-      if(mx->yshadow[v] == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() v is not a B st %d, but mx->kshadow[v] == NULL.\n", v);
-      Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->yshadow[v][] ptrs */
-      for(jp = 0; jp <= jbw; jp++) 
-	y_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
-    }
+  if(mx->size_Mb > (0.5 * size_limit)) { 
+    /* matrix is at least half the size of our limit (based on 
+     * bands from previous aligned sequence). Free the main dp_mem.
+     * */
+    free(mx->yshadow_mem);
+    free(mx->kshadow_mem);
+    mx->yshadow_mem = NULL;
+    mx->kshadow_mem = NULL;
+    mx->y_ncells_alloc = 0;
+    mx->k_ncells_alloc = 0;
   }
-  Mb_needed += ESL_MAX(((float) (sizeof(char) * mx->y_ncells_alloc)), ((float) (sizeof(char) * y_ncells))); /* mx->yshadow_mem */
-  Mb_needed += ESL_MAX(((float) (sizeof(char) * mx->k_ncells_alloc)), ((float) (sizeof(char) * k_ncells))); /* mx->kshadow_mem */
-  Mb_needed *= 0.000001; /* convert to megabytes */
+
+  if((status = cm_hb_shadow_mx_SizeNeeded(cm, errbuf, cp9b, &y_ncells, &k_ncells, &Mb_needed)) != eslOK) return status;
+  printf("HMM banded shadow matrix requested size: %.2f Mb\n", Mb_needed);
+  ESL_DPRINTF2(("HMM banded shadow matrix requested size: %.2f Mb\n", Mb_needed));
+  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded shadow DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full yshadow and kshadow matrices? 
    * or can we get away with just jiggering the pointers, if 
@@ -503,6 +521,17 @@ cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *
   if (y_ncells > mx->y_ncells_alloc) {
       ESL_RALLOC(mx->yshadow_mem, p, sizeof(char) * y_ncells);
       mx->y_ncells_alloc = y_ncells;
+      Mb_alloc = Mb_needed;
+  }
+  else { 
+    /* mx->yshadow_mem remains as it is allocated, set Mb_alloc
+     * accordingly (this is not just mx->size_Mb, because size of
+     * pointer arrays may change, for example)
+     */
+    Mb_alloc  = Mb_needed * 1000000.; /* convert to bytes */
+    Mb_alloc -= ((float) (sizeof(char) * y_ncells)); 
+    Mb_alloc += ((float) (sizeof(char) * mx->y_ncells_alloc)); 
+    Mb_alloc *= 0.000001; /* convert to Mb */
   }
   mx->y_ncells_valid = y_ncells;
 
@@ -511,6 +540,13 @@ cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *
       ESL_RALLOC(mx->kshadow_mem, p, sizeof(int) * k_ncells);
       mx->k_ncells_alloc = k_ncells;
   }
+  else { 
+    /* mx->kshadow_mem remains as it is allocated, update Mb_alloc */
+    Mb_alloc *= 1000000.; /* convert to bytes */
+    Mb_alloc -= ((float) (sizeof(int) * k_ncells)); 
+    Mb_alloc += ((float) (sizeof(int) * mx->k_ncells_alloc)); 
+    Mb_alloc *= 0.000001; /* convert to Mb */
+  }
   mx->k_ncells_valid = k_ncells;
 
   /* make sure each row is big enough */
@@ -518,10 +554,14 @@ cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *
     jbw = cp9b->jmax[v] - cp9b->jmin[v] + 1;
     if(jbw > mx->nrowsA[v]) {
       if(cm->sttype[v] == B_st) { 
+	if(mx->kshadow[v] == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() v is a B st %d, but mx->kshadow[v] == NULL.\n", v);
+	if(mx->yshadow[v] != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() v is a B st %d, but mx->yshadow[v] != NULL.\n", v);
 	ESL_RALLOC(mx->kshadow[v], p, sizeof(int *) * jbw);
 	mx->nrowsA[v] = jbw;
       }
       else { 
+	if(mx->kshadow[v] != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() v is not a B st %d, but mx->kshadow[v] != NULL.\n", v);
+	if(mx->yshadow[v] == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() v is not a B st %d, but mx->kshadow[v] == NULL.\n", v);
 	ESL_RALLOC(mx->yshadow[v], p, sizeof(char *) * jbw);
 	mx->nrowsA[v] = jbw;
       }
@@ -556,7 +596,7 @@ cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *
   
   /* now update L and size_Mb */
   mx->L       = L;    /* length of current seq we're valid for */
-  mx->size_Mb = Mb_needed;
+  mx->size_Mb = Mb_alloc;
   
   return eslOK;
 
@@ -638,52 +678,70 @@ cm_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx)
   return eslOK;
 }
 
-
-/* Function:  cm_hb_shadow_mx_NumCellsNeeded()
- * Incept:    EPN, Fri May 27 10:57:56 2011
+/* Function:  cm_hb_shadow_mx_SizeNeeded()
+ * Incept:    EPN, Fri Aug 12 04:19:36 2011
  *
- * Purpose:   Given a model and CP9_bands_t object with pre-calced bands for 
- *            a target, determine the number of cells required in a 
- *            CM_HB_SHADOW_MX for the target given the bands.
- *            
+ * Purpose:   Given a model, and a CP9_bands_t object 
+ *            with pre-calced bands for a target, determine the number 
+ *            of cells and total size in Mb required for the matrix
+ *            for the target given the bands.
  *
- * Args:      cm     - the CM the matrix is for
- *            errbuf - char buffer for reporting errors
- *            cp9b   - the bands for the current target sequence
- *            L      - the length of the current target sequence we're aligning
- *            size_limit- max number of Mb for DP matrix, if matrix is bigger -> return eslERANGE
+ *            Return number of yshadow (char) cells required in 
+ *            <ret_nchar_cells> and number of kshadow (int) cells
+ *            required in <ret_nint_cells) and size of required 
+ *            matrix in Mb in <ret_Mb>.
+ *
+ * Args:      cm              - the CM the matrix is for
+ *            errbuf          - char buffer for reporting errors
+ *            cp9b            - the bands for the current target sequence
+ *            ret_nchar_cells - RETURN: number of required char cells (yshadow)
+ *            ret_nint_cells  - RETURN: number of required int  cells (kshadow)
+ *            ret_Mb          - RETURN: required size of matrix in Mb
  *
  * Returns:   <eslOK> on success
  *
  */
 int
-cm_hb_shadow_mx_NumCellsNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *ret_nchar_cells, int64_t *ret_nint_cells)
+cm_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *ret_nchar_cells, int64_t *ret_nint_cells, float *ret_Mb)
 {
   int     v, jp;
   int64_t y_ncells, k_ncells;
   int     jbw;
+  float   Mb_needed;
+  int     nbifs;
 
   /* contract check */
-  if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() entered with cp9b == NULL.\n");
+  if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_SizeNeeded() entered with cp9b == NULL.\n");
 
   y_ncells = k_ncells = 0;
+  nbifs = CMCountStatetype(cm, B_st);
+  Mb_needed = ((float) (sizeof(int *)) * ((float) cp9b->cm_M + 1)) + /* nrowsA ptrs */
+    (float) (sizeof(char **)) * (float) (cp9b->cm_M - nbifs) +       /* mx->yshadow[] ptrs */
+    (float) (sizeof(int  **)) * (float) (nbifs);                     /* mx->kshadow[] ptrs */
   for(v = 0; v < cp9b->cm_M; v++) { 
     jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
     if(cm->sttype[v] == B_st) { 
+      Mb_needed += (float) (sizeof(int *) * (jbw+1)); /* mx->kshadow[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) 
 	k_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
     }
     else { 
+      Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->yshadow[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) 
 	y_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
     }
   }
+  Mb_needed += (float) (sizeof(char) * y_ncells); /* mx->yshadow_mem */
+  Mb_needed += (float) (sizeof(int)  * k_ncells); /* mx->kshadow_mem */
+  Mb_needed *= 0.000001; /* convert to megabytes */
 
-  *ret_nchar_cells = y_ncells;
-  *ret_nint_cells  = k_ncells;
+  if(ret_nchar_cells != NULL) *ret_nchar_cells = y_ncells;
+  if(ret_nint_cells  != NULL) *ret_nint_cells  = k_ncells;
+  if(ret_Mb          != NULL) *ret_Mb     = Mb_needed;
+
   return eslOK;
-}
 
+}
 /*****************************************************************
  *   3. ScanMatrix_t data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 

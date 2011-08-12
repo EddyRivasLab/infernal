@@ -145,17 +145,18 @@ static ESL_OPTIONS options[] = {
   { "--glX",        eslARG_INT,   "500",  NULL, NULL,    NULL,"--glen",NULL,             "maximum value for len-dependent glocal threshold", 7},
   { "--glstep",     eslARG_INT,   "100",  NULL, NULL,    NULL,"--glen",NULL,             "for len-dependent glocal thr, step size for halving thr", 7},
   { "--noends",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "don't search for local envelopes in first/final cm->W residues", 7},
+  { "--xtau",       eslARG_REAL,  "2.",   NULL, NULL,    NULL,  NULL,  NULL,             "set multiplier for tau to <x> when tightening HMM bands", 7},
   /* Other options */
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set # of comparisons done, for E-value calculation",           12 },
-  { "--seed",       eslARG_INT,    "42",  NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",          12 },
-  { "--qformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert input <seqfile> is in format <s>: no autodetection",    12 },
-  { "--daemon",     eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL,  DAEMONOPTS,      "run program as a daemon",                                      12 },
+  { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",          12 },
+  { "--daemon",     eslARG_NONE,   NULL,  NULL, NULL,    NULL,  NULL,  DAEMONOPTS,      "run program as a daemon",                                      12 },
+  { "--w_beta",     eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "tail mass at which window length is determined",               12 },
+  { "--w_length",   eslARG_INT,    NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "window length ",                                              12 },
   /* options affecting the alignment of hits */
   { "--aln-cyk",      eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "align hits with CYK", 8 },
   { "--aln-nonbanded",eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not use HMM bands when aligning hits", 8 },
   { "--aln-sizelimit",eslARG_REAL,"128.", NULL, "x>0",   NULL,  NULL,  NULL,            "set maximum allowed size of DP matrices for hit alignment to <x> Mb", 8 },
-  { "--aln-scanbands",eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use HMM bands from final search stage for alignment of hits, don't recalc", 8},
   { "--aln-newbands", eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "recalculate HMM bands for alignment of hits, don't use scan bands", 8},
   /* Options taken from infernal 1.0.2 cmsearch */
   /* options for algorithm for final round of search */
@@ -181,6 +182,9 @@ static ESL_OPTIONS options[] = {
   /* experimental options */
   { "--cp9noel",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            "-g", "turn OFF local ends in cp9 HMMs", 20 },
   { "--cp9gloc",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,  "-g,--cp9noel", "configure CP9 HMM in glocal mode", 20 },
+/* will eventually bring these back, but store in group 99 for now, so they don't print to help */
+  { "--qformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert query <seqfile> is in format <s>: no autodetection",   99 },
+  { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert target <seqfile> is in format <s>>: no autodetection", 99 },
 #ifdef HMMER_THREADS
   { "--cpu",        eslARG_INT, NULL,"HMMER_NCPU","n>=0",NULL,  NULL,  CPUOPTS,         "number of parallel CPU workers to use for multithreads",       12 },
 #endif
@@ -471,7 +475,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
   ESL_STOPWATCH   *mw       = NULL;              /* timing                                          */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
-  int              nquery   = 0;
+  int              cm_idx   = 0;                 /* index of current model we're working with       */
+  int              seq_idx  = 0;                 /* index of current seq we're working with         */
   int              textw;
   int              status   = eslOK;
   int              hstatus  = eslOK;
@@ -593,7 +598,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* Outside loop: over each query sequence in <seqfile>. */
   while ((sstatus = esl_sqio_Read(sqfp, qsq)) == eslOK)
     {
-      nquery++;
+      seq_idx++;
       esl_stopwatch_Start(w);	                          
 
       fprintf(ofp, "Query:       %s  [L=%ld]\n", qsq->name, (long) qsq->n);
@@ -629,8 +634,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
 #endif
 	for (i = 0; i < infocnt; ++i) {
-	  info[i].pli->cmfp = cmfp;           /* for four-stage input, pipeline needs <cmfp> */
-	  cm_pli_NewSeq(info[i].pli, qsq, 0); /* 0 is sequence index, it's irrelevant in this context (only used to remove overlaps) */
+	  info[i].pli->cmfp = cmfp;                 /* for four-stage input, pipeline needs <cmfp> */
+	  cm_pli_NewSeq(info[i].pli, qsq, seq_idx-1); 
 	  info[i].in_rc = in_rc;
 #ifdef HMMER_THREADS
 	if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
@@ -677,7 +682,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       if(info[0].pli->research_ends) { 
 	/* We may have overlaps so sort by sequence index/position and remove duplicates */
-	cm_tophits_SortBySeqIdx(info[0].th);
+	cm_tophits_SortByPosition(info[0].th);
 	cm_tophits_RemoveDuplicates(info[0].th);
       }
 
@@ -700,7 +705,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	fprintf(ofp, "\n\n");
       }
 
-      if (tblfp)    cm_tophits_TabularTargets(tblfp,    qsq->name, qsq->acc, info->th, info->pli, (nquery == 1));
+      if (tblfp)    cm_tophits_TabularTargets(tblfp,    qsq->name, qsq->acc, info->th, info->pli, (seq_idx == 1));
 
       esl_stopwatch_Stop(w);
       cm_pli_Statistics(ofp, info->pli, w);
@@ -943,7 +948,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
   ESL_STOPWATCH   *mw       = NULL;              /* timing                                          */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
-  int              nquery   = 0;
+  int              seq_idx   = 0;
   int              textw;
   int              status   = eslOK;
   int              hstatus  = eslOK;
@@ -1029,12 +1034,12 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       CM_PIPELINE     *pli     = NULL;		/* processing pipeline                      */
       CM_TOPHITS      *th      = NULL;        	/* top-scoring sequence hits                */
 
-      nquery++;
+      seq_idx++;
 
       esl_stopwatch_Start(w);	                          
 
       /* seqfile may need to be rewound (multiquery mode) */
-      if (nquery > 1) list->current = 0;
+      if (seq_idx > 1) list->current = 0;
 
       /* Open the target profile database */
       status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
@@ -1049,7 +1054,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qsq->n, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
       pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
 
-      cm_pli_NewSeq(pli, qsq, nquery-1);
+      cm_pli_NewSeq(pli, qsq, seq_idx);
 
       /* Main loop: */
       while ((hstatus = next_block(cmfp, list, &block)) == eslOK)
@@ -1150,7 +1155,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	fprintf(ofp, "\n\n");
       }
 
-      if (tblfp)    cm_tophits_TabularTargets(tblfp,    qsq->name, qsq->acc, th, pli, (nquery == 1));
+      if (tblfp)    cm_tophits_TabularTargets(tblfp,    qsq->name, qsq->acc, th, pli, (seq_idx == 1));
 
       esl_stopwatch_Stop(w);
       cm_pli_Statistics(ofp, pli, w);
@@ -1245,7 +1250,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   char            *mpi_buf  = NULL;              /* buffer used to pack/unpack structures */
   int              mpi_size = 0;                 /* size of the allocated buffer */
-  int              nquery   = 0;
+  int              seq_idx  = 0;                 /* index of sequence we're currently working on */
+  int              cm_idx   = 0;                 /* index of model    we're currently working on */
 
   MPI_Status       mpistatus;
   char             errbuf[eslERRBUFSIZE];
@@ -1299,7 +1305,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       MSV_BLOCK        block;
 
-      nquery++;
+      seq_idx++;
 
       esl_stopwatch_Start(w);
 
@@ -1315,9 +1321,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qsq->n, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
       pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
 
-      cm_pli_NewSeq(pli, qsq, nquery-1);
+      cm_pli_NewSeq(pli, qsq, seq_idx);
 
-      /* receive a sequence block from the master */
+      /* receive a block of models from the master */
       MPI_Recv(&block, 3, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
       while (block.count > 0)
 	{
@@ -1330,6 +1336,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  while (count > 0 && 
 		 (hstatus = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &abc, &cm_offset, &cm_clen, &cm_W, &gfmu, &gflambda, &om)) == eslOK)
 	    {
+	      cm_idx++;
 	      length = om->eoff - block.offset + 1;
 
 	      esl_vec_FCopy(om->evparam, p7_NEVPARAM, p7_evparam);
@@ -1342,7 +1349,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 					   cm,                                   /* this is NULL b/c we don't have one yet */
 					   cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
 					   FALSE, FALSE, NULL, NULL, NULL, NULL, /* all these are irrelevant in CM_NEWMODEL_MSV mode */
-					   om, bg)) != eslOK) mpi_failure(pli->errbuf);
+					   om, bg, cm_idx-1)) != eslOK) mpi_failure(pli->errbuf);
 
 	      prv_ntophits = th->N;
 	      if((status = cm_Pipeline(pli, cm_offset, cm_config_opts, om, bg, p7_evparam, qsq, FALSE, th, &gm, &cm, &cmcons)) != eslOK)
@@ -1439,10 +1446,11 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
   float             gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
   off_t             cm_offset;              /* file offset for current CM */
   ESL_SQ           *termsq  = esl_sq_CreateDigital(info->qsq->abc); /* terminal sequence, first or final ESL_MIN(pli->maxW, dbsq->n) residues of dbsq */
-
+  int64_t           cm_idx = 0;                /* index of CM we're currently working with */
   /* Main loop: */
   while ((status = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &abc, &cm_offset, &cm_clen, &cm_W, &gfmu, &gflambda, &om)) == eslOK)
     {
+      cm_idx++;
       esl_vec_FCopy(om->evparam, p7_NEVPARAM, info->p7_evparam);
       info->p7_evparam[CM_p7_GFMU]     = gfmu;
       info->p7_evparam[CM_p7_GFLAMBDA] = gflambda;
@@ -1453,7 +1461,7 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 				   cm,                                   /* this is NULL b/c we don't have one yet */
 				   cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
 				   FALSE, FALSE, NULL, NULL, NULL, NULL, /* all these are irrelevant in CM_NEWMODEL_MSV mode */
-				   om, info->bg)) != eslOK) cm_Fail(info->pli->errbuf);
+				   om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
 
       init_ntophits = info->th->N;
       init_npastfwd = info->pli->n_past_fwd;
@@ -1571,6 +1579,7 @@ pipeline_thread(void *arg)
   float             gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
   off_t             cm_offset;              /* file offset for current CM */
   ESL_SQ           *termsq = NULL;          /* terminal sequence, first or final ESL_MIN(pli->maxW, dbsq->n) residues of dbsq */
+  int64_t           cm_idx = 0;             /* index of CM we're currently working with */
   
 #ifdef HAVE_FLUSH_ZERO_MODE
   /* In order to avoid the performance penalty dealing with sub-normal
@@ -1604,6 +1613,7 @@ pipeline_thread(void *arg)
 	  cm_W            = block->cm_WA[i];
 	  gfmu            = block->gfmuA[i];
 	  gflambda        = block->gflambdaA[i];
+	  cm_idx++;
 
 	  esl_vec_FCopy(om->evparam, p7_NEVPARAM, info->p7_evparam);
 	  info->p7_evparam[CM_p7_GFMU]     = gfmu;
@@ -1615,7 +1625,7 @@ pipeline_thread(void *arg)
 				       cm,                                   /* this is NULL b/c we don't have one yet */
 				       cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
 				       FALSE, FALSE, NULL, NULL, NULL, NULL, /* all these are irrelevant in CM_NEWMODEL_MSV mode */
-				       om, info->bg)) != eslOK) cm_Fail(info->pli->errbuf);
+				       om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
 
 	  init_ntophits = info->th->N;
 	  init_npastfwd = info->pli->n_past_fwd;

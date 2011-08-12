@@ -992,13 +992,13 @@ typedef struct cm_hb_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
   int  L;               /* length of sequence the matrix currently corresponds to */
 
-  int64_t    ncells_alloc;	/* current cell allocation limit */
-  int64_t    ncells_valid;	/* current number of valid cells */
+  int64_t    ncells_alloc;  /* current cell allocation limit */
+  int64_t    ncells_valid;  /* current number of valid cells */
   float      size_Mb;       /* current size of matrix in Megabytes */
 
   int   *nrowsA;        /* [0..v..M] current number allocated rows for deck v */
 
-  float ***dp;          /*  [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  float ***dp;          /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
   float   *dp_mem;      /* the actual mem, points to dp[0][0][0] */
 
   CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
@@ -1608,43 +1608,43 @@ typedef struct cm_pipeline_s {
   double  final_beta;           /* QDB beta for final stage                 */
   double  fcyk_tau;             /* HMM bands tau for CYK filter stage       */
   double  final_tau;            /* HMM bands tau for final stage            */
+  double  xtau;                 /* multiplier for tau when tightening bands */
 
   /* Accounting. (reduceable in threaded/MPI parallel version)              */
-  uint64_t      nmodels;        /* # of HMMs searched                       */
-  uint64_t      nseqs;	        /* # of sequences searched                  */
-  uint64_t      nres;	        /* # of residues searched                   */
-  uint64_t      nnodes;	        /* # of model nodes searched                */
-  uint64_t      n_past_msv;	/* # windows that pass MSVFilter()          */
-  uint64_t      n_past_vit;	/* # windows that pass ViterbiFilter()      */
-  uint64_t      n_past_fwd;	/* # windows that pass ForwardFilter()      */
-  uint64_t      n_past_gfwd;	/* # windows that pass glocal GForward()    */
-  uint64_t      n_past_edef;	/* # envelopess that pass envelope definition */
-  uint64_t      n_past_cyk;	/* # windows that pass CYK filter           */
-  uint64_t      n_past_ins;	/* # windows that pass Inside               */
-  uint64_t      n_output;	/* # alignments that make it to the final output */
-  uint64_t      n_past_msvbias;	/* # windows that pass MSV bias filter      */
-  uint64_t      n_past_vitbias;	/* # windows that pass Vit bias filter      */
-  uint64_t      n_past_fwdbias;	/* # windows that pass Fwd bias filter      */
-  uint64_t      n_past_gfwdbias;/* # windows that pass gFwd bias filter     */
-  uint64_t      n_past_edefbias;/* # envelopes that pass env bias filter    */
-  uint64_t      pos_past_msv;	/* # positions that pass MSVFilter()        */
-  uint64_t      pos_past_vit;	/* # positions that pass ViterbiFilter()    */
-  uint64_t      pos_past_fwd;	/* # positions that pass ForwardFilter()    */
-  uint64_t      pos_past_gfwd;	/* # positions that pass glocal GForward()  */
-  uint64_t      pos_past_edef;	/* # positions that pass env definition     */
-  uint64_t      pos_past_cyk;	/* # positions that pass CYK filter         */
-  uint64_t      pos_past_ins;	/* # positions that pass Inside             */
-  uint64_t      pos_output;	/* # positions that make it to the final output */
-  uint64_t      pos_past_msvbias;/* # positions that pass MSV bias filter */
-  uint64_t      pos_past_vitbias;/* # positions that pass Vit bias filter */
-  uint64_t      pos_past_fwdbias;/* # positions that pass Fwd bias filter */
-  uint64_t      pos_past_gfwdbias;/*# positions that pass gFwd bias filter*/
-  uint64_t      pos_past_edefbias;/* # positions that pass dom def bias filter */
-  uint64_t      n_overflow_fcyk;  /* # hits that couldn't use an HMM banded mx in CYK filter stage */
-  uint64_t      n_overflow_final; /* # hits that couldn't use an HMM banded mx in final stage */
-  uint64_t      n_aln_hboa;       /* # HMM banded optacc alignments computed */
-  uint64_t      n_aln_hbcyk;      /* # HMM banded CYK    alignments computed */
-  uint64_t      n_aln_dccyk;      /* # nonbanded divide and conquer CYK alignments computed */
+  uint64_t      nmodels;           /* # of HMMs searched                       */
+  uint64_t      nseqs;	           /* # of sequences searched                  */
+  uint64_t      nres;	           /* # of residues searched                   */
+  uint64_t      nnodes;	           /* # of model nodes searched                */
+  uint64_t      n_past_msv;	   /* # windows that pass MSVFilter()          */
+  uint64_t      n_past_vit;	   /* # windows that pass ViterbiFilter()      */
+  uint64_t      n_past_fwd;	   /* # windows that pass ForwardFilter()      */
+  uint64_t      n_past_gfwd;	   /* # windows that pass glocal GForward()    */
+  uint64_t      n_past_edef;	   /* # envelopes that pass envelope definition */
+  uint64_t      n_past_cyk;	   /* # windows that pass CYK filter           */
+  uint64_t      n_past_ins;	   /* # windows that pass Inside               */
+  uint64_t      n_output;	   /* # alignments that make it to the final output */
+  uint64_t      n_past_msvbias;	   /* # windows that pass MSV bias filter      */
+  uint64_t      n_past_vitbias;	   /* # windows that pass Vit bias filter      */
+  uint64_t      n_past_fwdbias;	   /* # windows that pass Fwd bias filter      */
+  uint64_t      n_past_gfwdbias;   /* # windows that pass gFwd bias filter     */
+  uint64_t      n_past_edefbias;   /* # envelopes that pass env bias filter    */
+  uint64_t      pos_past_msv;	   /* # positions that pass MSVFilter()        */
+  uint64_t      pos_past_vit;	   /* # positions that pass ViterbiFilter()    */
+  uint64_t      pos_past_fwd;	   /* # positions that pass ForwardFilter()    */
+  uint64_t      pos_past_gfwd;	   /* # positions that pass glocal GForward()  */
+  uint64_t      pos_past_edef;	   /* # positions that pass env definition     */
+  uint64_t      pos_past_cyk;	   /* # positions that pass CYK filter         */
+  uint64_t      pos_past_ins;      /* # positions that pass Inside             */    
+  uint64_t      pos_output;	   /* # positions that make it to the final output */
+  uint64_t      pos_past_msvbias;  /* # positions that pass MSV bias filter */
+  uint64_t      pos_past_vitbias;  /* # positions that pass Vit bias filter */
+  uint64_t      pos_past_fwdbias;  /* # positions that pass Fwd bias filter */
+  uint64_t      pos_past_gfwdbias; /* # positions that pass gFwd bias filter*/
+  uint64_t      pos_past_edefbias; /* # positions that pass dom def bias filter */
+  uint64_t      n_overflow_fcyk;   /* # hits that couldn't use an HMM banded mx in CYK filter stage */
+  uint64_t      n_overflow_final;  /* # hits that couldn't use an HMM banded mx in final stage */
+  uint64_t      n_aln_hb;          /* # HMM banded alignments computed */
+  uint64_t      n_aln_dccyk;       /* # nonbanded divide and conquer CYK alignments computed */
 
   /* Flags for timing experiments */
   int           do_time_F1;      /* TRUE to abort after Stage 1 MSV */
@@ -1662,11 +1662,12 @@ typedef struct cm_pipeline_s {
   int           show_accessions;/* TRUE to output accessions not names      */
   int           do_alignments;  /* TRUE to compute and output alignments (default)*/
 
-  int           use_cyk;        /* TRUE to use CYK instead of optimal accuracy    */
+  int           align_cyk;      /* TRUE to use CYK instead of optimal accuracy    */
   int           align_hbanded;  /* TRUE to do HMM banded alignment, when possible */
   float         hb_size_limit;  /* maximum size in Mb allowed for HB alignment    */
   int           do_hb_recalc;   /* TRUE to recalculate HMM bands for alignment    */
 
+  int64_t       cur_cm_idx;     /* model    index currently being used     */
   int64_t       cur_seq_idx;    /* sequence index currently being searched */
 
   ESL_ALPHABET *abc;            /* ptr to alphabet info */
@@ -1741,7 +1742,8 @@ typedef struct cm_hit_s {
   char          *name;		/* name of the target               (mandatory)           */
   char          *acc;		/* accession of the target          (optional; else NULL) */
   char          *desc;		/* description of the target        (optional; else NULL) */
-  int64_t        seq_idx;       /* sequence index in the file, unique id for the sequence */
+  int64_t        cm_idx;        /* model    index in the cmfile,  unique id for the model    */
+  int64_t        seq_idx;       /* sequence index in the seqfile, unique id for the sequence */
   int64_t        start, stop;   /* start/end points of hit */
   int            in_rc;         /* TRUE if hit is in reverse complement of a target, FALSE if not */
   float          score;		/* bit score of the hit (with corrections) */
@@ -1757,14 +1759,14 @@ typedef struct cm_hit_s {
  * unavailable until after we do a sort.  
  */
 typedef struct cm_tophits_s {
-  CM_HIT **hit;                  /* sorted pointer array                     */
-  CM_HIT  *unsrt;	         /* unsorted data storage                    */
-  uint64_t Nalloc;	         /* current allocation size                  */
-  uint64_t N;	  	         /* number of hits in list now               */
-  uint64_t nreported;            /* number of hits that are reportable       */
-  uint64_t nincluded;	         /* number of hits that are includable       */
-  int      is_sorted_by_score;   /* TRUE when hits sorted by score, length,     th->hit valid for all N hits */
-  int      is_sorted_by_seq_idx; /* TRUE when hits sorted by seq_idx, position, th->hit valid for all N hits */
+  CM_HIT **hit;                   /* sorted pointer array                     */
+  CM_HIT  *unsrt;	          /* unsorted data storage                    */
+  uint64_t Nalloc;	          /* current allocation size                  */
+  uint64_t N;	  	          /* number of hits in list now               */
+  uint64_t nreported;             /* number of hits that are reportable       */
+  uint64_t nincluded;	          /* number of hits that are includable       */
+  int      is_sorted_by_score;    /* TRUE when hits sorted by score, length,     th->hit valid for all N hits */
+  int      is_sorted_by_position; /* TRUE when hits sorted by cm_idx, seq_idx, position, th->hit valid for all N hits */
 } CM_TOPHITS;
 
 

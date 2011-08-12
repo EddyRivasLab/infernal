@@ -158,6 +158,7 @@ static ESL_OPTIONS options[] = {
   { "--glX",        eslARG_INT,   "500",  NULL, NULL,    NULL,"--glen",NULL,             "maximum value for len-dependent glocal threshold", 7},
   { "--glstep",     eslARG_INT,   "100",  NULL, NULL,    NULL,"--glen",NULL,             "for len-dependent glocal thr, step size for halving thr", 7},
   { "--noends",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "don't search for local envelopes in first/final cm->W residues", 7},
+  { "--xtau",       eslARG_REAL,  "2.",   NULL, NULL,    NULL,  NULL,  NULL,             "set multiplier for tau to <x> when tightening HMM bands", 7},
 /* Other options */
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set database size in *Mb* to <x> for E-value calculations",   12 },
@@ -501,7 +502,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_ALPHABET    *abc      = NULL;              /* digital alphabet                                          */
   ESL_STOPWATCH   *w;
   int              textw    = 0;
-  int              nquery   = 0;
+  int64_t          cm_idx   = 0;                 /* index of CM we're currently working with */
   int              status   = eslOK;
   int              qhstatus = eslOK;
   int              sstatus  = eslOK;
@@ -597,7 +598,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   
   /* Outer loop: over each query CM in <cmfile>. */
   while (qhstatus == eslOK) {
-    nquery++;
+    cm_idx++;
     esl_stopwatch_Start(w);
 
     /* create a new template info, and point it to the cm we just read */
@@ -609,7 +610,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if(! (tinfo->cm->flags & CMH_FP7))           cm_Fail("no filter HMM was read for CM: %s\n", tinfo->cm->name);
     
     /* seqfile may need to be rewound (multiquery mode) */
-    if (nquery > 1) {
+    if (cm_idx > 1) {
       if (! esl_sqfile_IsRewindable(dbfp))
 	esl_fatal("Target sequence file %s isn't rewindable; can't search it with multiple queries", cfg->dbfile);
       esl_sqfile_Position(dbfp, 0);
@@ -633,7 +634,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info[i].pli  = cm_pipeline_Create(go, abc, info[i].om->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
       if((status = cm_pli_NewModel(info[i].pli, CM_NEWMODEL_CM, info[i].cm, info[i].cm->clen, info[i].cm->W, info[i].need_fsmx, 
 				   info[i].need_smx, info[i].fcyk_dmin, info[i].fcyk_dmax, info[i].final_dmin, info[i].final_dmax, 
-				   info[i].om, info[i].bg)) != eslOK) { 
+				   info[i].om, info[i].bg, cm_idx-1)) != eslOK) { 
 	cm_Fail(info[i].pli->errbuf);
       }
 
@@ -674,7 +675,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       /* Sort by sequence index/position and remove duplicates */
-      cm_tophits_SortBySeqIdx(info[0].th);
+      cm_tophits_SortByPosition(info[0].th);
       cm_tophits_RemoveDuplicates(info[0].th);
 
       /* Resort by score and enforce threshold */
@@ -697,12 +698,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if(info[0].pli->do_alignments) {
 	if((status = cm_tophits_HitAlignments(ofp, info[0].th, info[0].pli, textw)) != eslOK) esl_fatal("Out of memory");
 	fprintf(ofp, "\n\n");
-	cm_tophits_HitAlignmentStatistics(ofp, info[0].th);
+	cm_tophits_HitAlignmentStatistics(ofp, info[0].th, info[0].pli->align_cyk);
 	fprintf(ofp, "\n\n");
       }
 
       if (tblfp != NULL) { 
-	cm_tophits_TabularTargets(tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (nquery == 1)); 
+	cm_tophits_TabularTargets(tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1)); 
       }
   
       esl_stopwatch_Stop(w);
@@ -891,7 +892,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_ALPHABET    *abc      = NULL;              /* digital alphabet                                */
   ESL_STOPWATCH   *w;
   int              textw    = 0;
-  int              nquery   = 0;
+  int64_t          cm_idx   = 0;                 /* index of CM we're currently working with */
   int              status   = eslOK;
   int              hstatus  = eslOK;
   int              sstatus  = eslOK;
@@ -966,7 +967,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* Outer loop: over each query CM in <cmfile>. */
   while (hstatus == eslOK) 
     {
-      nquery++;
+      cm_idx++;
       esl_stopwatch_Start(w);
 
       /* Make sure we have E-value stats for both the CM and the p7, if not we can't run the pipeline */
@@ -987,7 +988,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info->th  = cm_tophits_Create(); 
       info->pli = cm_pipeline_Create(go, abc, info->om->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
       if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->need_fsmx, info->need_smx, 
-				   info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->om, info->bg)) != eslOK) { 
+				   info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->om, info->bg, cm_idx-1)) != eslOK) { 
 	mpi_failure(info[i].pli->errbuf);
       }
       /* Create block_list and add an empty block to it */
@@ -1120,7 +1121,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       printf("nres: %ld\n", info->pli->nres);
 
       /* Sort by sequence index/position and remove duplicates */
-      cm_tophits_SortBySeqIdx(info->th);
+      cm_tophits_SortByPosition(info->th);
       cm_tophits_RemoveDuplicates(info->th);
       /* Resort by score and enforce threshold */
       cm_tophits_SortByScore(info->th);
@@ -1140,11 +1141,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if(info->pli->do_alignments) {
 	if((status = cm_tophits_HitAlignments(ofp, info->th, info->pli, textw)) != eslOK) esl_fatal("Out of memory");
 	fprintf(ofp, "\n\n");
-	cm_tophits_HitAlignmentStatistics(ofp, info->th);
+	cm_tophits_HitAlignmentStatistics(ofp, info->th, info->pli->align_cyk);
 	fprintf(ofp, "\n\n");
       }
       if (tblfp != NULL) { 
-	cm_tophits_TabularTargets(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (nquery == 1)); 
+	cm_tophits_TabularTargets(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
       }
       esl_stopwatch_Stop(w);
       cm_pli_Statistics(ofp, info->pli, w);
@@ -1256,6 +1257,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_SQ          *end_termsq   = NULL;          /* terminal sequence, final         pli->maxW           residues of dbsq */
   int              i_am_start;                   /* TRUE if current dbsq contains first residue of its parent sequence */
   int              i_am_end;                     /* TRUE if current dbsq contains final residue of its parent sequence */
+  int64_t          cm_idx   = 0;                    /* index of CM we're currently working with */
 
   WORKER_INFO     *info          = NULL;         /* contains CM, HMMs, p7 profiles, cmcons, etc. */
 
@@ -1301,6 +1303,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       MPI_BLOCK *block;
 
+      cm_idx++;
       esl_stopwatch_Start(w);
 
       status = 0;
@@ -1317,7 +1320,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       info->th  = cm_tophits_Create(); 
       info->pli = cm_pipeline_Create(go, abc, info->om->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
       if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->need_fsmx, info->need_smx, 
-				   info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->om, info->bg)) != eslOK) { 
+				   info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->om, info->bg, cm_idx-1)) != eslOK) { 
 	mpi_failure(info->pli->errbuf);
       }
 
@@ -1528,10 +1531,11 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
   int survived_fwd_bot = FALSE; /* TRUE if at least one hit survives past local fwd stage of pipeline */
 
   wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
+  seq_idx++;
   printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);
   while (wstatus == eslOK ) {
     
-    cm_pli_NewSeq(info->pli, dbsq, seq_idx);
+    cm_pli_NewSeq(info->pli, dbsq, seq_idx-1);
     info->pli->nres -= dbsq->C; /* to account for overlapping region of windows */
     
     i_am_start = (dbsq->start == 1) ? TRUE : FALSE;

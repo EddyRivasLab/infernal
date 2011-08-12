@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT  0
+#define DOPRINT  1
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -247,6 +247,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->glen_max         = esl_opt_GetInteger(go, "--glX");
   pli->glen_step        = esl_opt_GetInteger(go, "--glstep");
   pli->research_ends    = (esl_opt_GetBoolean(go, "--noends")) ? FALSE : TRUE;
+  pli->xtau             = esl_opt_GetReal(go, "--xtau");
 
   /* Configure acceleration pipeline thresholds */
   pli->do_cm         = TRUE;
@@ -503,8 +504,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
 
   pli->n_overflow_fcyk    = 0;
   pli->n_overflow_final   = 0;
-  pli->n_aln_hboa         = 0;
-  pli->n_aln_hbcyk        = 0;
+  pli->n_aln_hb           = 0;
   pli->n_aln_dccyk        = 0;
 
   pli->mode             = mode;
@@ -512,7 +512,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_bot           = (esl_opt_GetBoolean(go, "--toponly"))       ? FALSE : TRUE;
   pli->show_accessions  = (esl_opt_GetBoolean(go, "--acc")            ? TRUE  : FALSE);
   pli->do_alignments    = (esl_opt_GetBoolean(go, "--noali")          ? FALSE : TRUE);
-  pli->use_cyk          = (esl_opt_GetBoolean(go, "--aln-cyk")        ? TRUE  : FALSE);
+  pli->align_cyk          = (esl_opt_GetBoolean(go, "--aln-cyk")        ? TRUE  : FALSE);
   pli->align_hbanded    = (esl_opt_GetBoolean(go, "--aln-nonbanded")  ? FALSE : TRUE);
   pli->hb_size_limit    = esl_opt_GetReal    (go, "--aln-sizelimit");
   pli->do_hb_recalc     = esl_opt_GetBoolean(go, "--aln-newbands")    ? TRUE  : FALSE;
@@ -667,7 +667,7 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            have the appropriate ones set.
  */
 int
-cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int need_fsmx, int need_smx, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE *om, P7_BG *bg)
+cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int need_fsmx, int need_smx, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE *om, P7_BG *bg, int64_t cur_cm_idx)
 {
   int status = eslOK;
   int i, nsteps;
@@ -699,6 +699,8 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
       if(bg != NULL)              ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SCAN/CM mode, and bg is non-NULL"); 
     }
   }
+
+  pli->cur_cm_idx = cur_cm_idx;
 
   /* Two sets of value updates: 
    * case 1: we do both sets 
@@ -931,8 +933,7 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
 
   p1->n_overflow_fcyk  += p2->n_overflow_fcyk;
   p1->n_overflow_final += p2->n_overflow_final;
-  p1->n_aln_hboa       += p2->n_aln_hboa;
-  p1->n_aln_hbcyk      += p2->n_aln_hbcyk;
+  p1->n_aln_hb         += p2->n_aln_hb;
   p1->n_aln_dccyk      += p2->n_aln_dccyk;
 
   if (p1->Z_setby == p7_ZSETBY_NTARGETS) { 
@@ -1691,7 +1692,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   char             errbuf[cmERRBUFSIZE];   /* for error messages */
   CM_HIT          *hit     = NULL;         /* ptr to the current hit output data   */
   float            cyksc, inssc, finalsc;  /* bit scores                           */
-  int              have_hmmbands;          /* TRUE if HMM bands have been calc'ed for current hit */
   double           P;                      /* P-value of a hit */
   int              i, h;                   /* counters */
   search_results_t *results;               /* results data structure CM search functions report hits to */
@@ -1707,6 +1707,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   int              do_final_greedy;        /* TRUE to use greedy hit resolution in final stage, FALSE not to */
   CM_t            *cm = NULL;              /* ptr to *opt_cm, for convenience only */
   CP9Bands_t      *scan_cp9b = NULL;       /* a copy of the HMM bands derived in the final CM search stage, if its HMM banded */
+  int64_t          hbmx_ncells;            /* number of DP cells required in HMM banded matrix */
+  float            hbmx_Mb;                /* approximate size in Mb for HMM banded matrix for current hit */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
@@ -1733,7 +1735,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
       /* update the pipeline about the model */
       if((status = cm_pli_NewModel(pli, CM_NEWMODEL_CM, *opt_cm, (*opt_cm)->clen, (*opt_cm)->W, 
 				   FALSE, FALSE, NULL, NULL, NULL, NULL,  /* need_fsmx, need_smx, fcyk_dmin, fcyk_dmax, final_dmin, final_dmax */
-				   NULL, NULL)) /* om, bg */
+				   NULL, NULL, pli->cur_cm_idx)) /* om, bg */
 	 != eslOK); 
     }
     if(*opt_cmcons == NULL) { 
@@ -1774,14 +1776,13 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
     do_qdb_or_nonbanded_filter_scan = (pli->fcyk_cm_search_opts  & CM_SEARCH_HBANDED) ? FALSE : TRUE;
     do_hbanded_final_scan           = (pli->final_cm_search_opts & CM_SEARCH_HBANDED) ? TRUE  : FALSE;
     do_qdb_or_nonbanded_final_scan  = (pli->final_cm_search_opts & CM_SEARCH_HBANDED) ? FALSE : TRUE;
-    have_hmmbands = FALSE;
 
     if(pli->do_cyk) { 
       /******************************************************************************/
       /* Filter 4: CYK with CM */
       cm->search_opts  = pli->fcyk_cm_search_opts;
       cm->tau          = pli->fcyk_tau;
-      
+
       /* Two options, dependent on pli->fcyk_cm_search_opts.
        * 1. Do HMM banded CYK.
        * 2. Do QDB or non-banded CYK.
@@ -1792,11 +1793,22 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
       if(do_hbanded_filter_scan) { /* get HMM bands */
 	/* put up CM_SEARCH_HBANDED flag temporarily */
 	cm->search_opts |= CM_SEARCH_HBANDED;
-	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, 0)) != eslOK) { 
-	  printf("ERROR: %s\n", errbuf); return status; }
+	
+	/* Calculate HMM bands. We'll tighten tau and recalculate bands until 
+	 * the resulting HMM banded matrix is under our size limit.
+	 */
+	while(1) { 
+	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, 0)) != eslOK) return status;
+	  if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, &hbmx_Mb)) != eslOK) return status; 
+	  if(hbmx_Mb < pli->hb_size_limit) break; /* our matrix will be small enough, break out of while(1) */
+	  if(cm->tau > 0.01)               break; /* our bands have gotten too tight, break out of while(1) */
+	  printf("CYK 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
+	  cm->tau *= pli->xtau;
+	}	  
+	printf("CYK 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
+
 	/* reset search opts */
 	cm->search_opts  = pli->fcyk_cm_search_opts;
-	have_hmmbands = TRUE;
 
 	status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
 			       0.,                                 /* minimum score to report, irrelevant */
@@ -1814,6 +1826,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
       if(do_qdb_or_nonbanded_filter_scan) { /* careful, different from just an 'else', b/c we may have just set this as true if status == eslERANGE */
 	/* make sure we have a ScanMatrix_t for this round, if not build one,
 	 * this should be okay because we should only very rarely need to do this */
+	printf("OVERFLOW CYK FILTER above pli->hb_size_limit\n");
+	continue;
 	pli->n_overflow_fcyk++;
 	if(pli->fsmx == NULL) { 
 	  pli->fsmx = cm_CreateScanMatrix(cm, cm->W, pli->fcyk_dmin, pli->fcyk_dmax, 
@@ -1836,7 +1850,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
       }
       /* update envelope boundaries, if nec */
       if(pli->do_cykenv && (cyk_envi != -1 && cyk_envj != -1)) { 
-	if(es[i] != cyk_envi || ee[i] != cyk_envj) have_hmmbands = FALSE; /* this may be FALSE already, if not, set it to FALSE b/c we need to recalc bands */
 	es[i] = cyk_envi;
 	ee[i] = cyk_envj;
       }
@@ -1863,13 +1876,19 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
      * if our CYK filter also used them. 
      *******************************************************************/
     if(do_hbanded_final_scan) { /* use HMM bands */
-      if(! have_hmmbands || (esl_DCompare(cm->tau, pli->fcyk_tau, 1E-30) != eslOK) || (es[i] != es[i] || ee[i] != ee[i])) { 
-	/* we need to calculate (or recalculate) bands */
-	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, 0)) != eslOK) { 
-	  printf("ERROR: %s\n", errbuf); return status; }
-	have_hmmbands = TRUE;
-      }
-      if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is HMM banded Inside */
+	/* Calculate HMM bands. We'll tighten tau and recalculate bands until 
+	 * the resulting HMM banded matrix is under our size limit.
+	 */
+	while(1) { 
+	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, 0)) != eslOK) return status;
+	  if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, &hbmx_Mb)) != eslOK) return status; 
+	  if(hbmx_Mb < pli->hb_size_limit) break; /* our matrix will be small enough, break out of while(1) */
+	  if(cm->tau > 0.01)               break; /* our bands have gotten too tight, break out of while(1) */
+	  printf("INS 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
+	  cm->tau *= pli->xtau;
+	}	  
+	printf("INS 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
+	if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is HMM banded Inside */
 	status = FastFInsideScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
 				   pli->T,            /* minimum score to report */
 				   do_final_greedy ? tmp_results : results, /* our results data structure that will store hit(s) */
@@ -1906,6 +1925,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	/* make sure we have a ScanMatrix_t for this round, if not build one,
 	 * this should be okay because we should only very rarely need to do this */
 	pli->n_overflow_final++;
+	printf("OVERFLOW INS FILTER above pli->hb_size_limit\n");
+	continue;
 	if(pli->smx == NULL) { 
 	  pli->smx  = cm_CreateScanMatrix(cm, cm->W, pli->final_dmin, pli->final_dmax, 
 					  ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? cm->W : pli->final_dmax[0]),
@@ -1913,7 +1934,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 					  ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? FALSE : TRUE),
 					  FALSE,  /* do not allocate float matrices for Inside round */
 					  TRUE);  /* do     allocate int   matrices for Inside round */
-	  printf("created scan mx, final_dmin null? %s\n", pli->final_dmin == NULL ? "yes" : "no");
 	}
 	if((status = FastIInsideScan(cm, errbuf, pli->smx, sq->dsq, es[i], ee[i],
 				     pli->T,            /* minimum score to report */
@@ -1967,7 +1987,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 
     /* add each hit to the hitlist */
     for (h = nhit; h < results->num_results; h++) { 
-      cm_tophits_CloneHitFromResults(hitlist, results, h, pli->cur_seq_idx, &hit);
+      cm_tophits_CloneHitFromResults(hitlist, results, h, pli->cur_cm_idx, pli->cur_seq_idx, &hit);
       hit->pvalue = esl_exp_surv(hit->score, cm->expA[pli->final_cm_exp_mode]->mu_extrap, cm->expA[pli->final_cm_exp_mode]->lambda);
 
       /* initialize remaining values we don't know yet */
@@ -2109,8 +2129,19 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
 
     /* Either recalculate the HMM bands or adjust those that we already have */
     if(scan_cp9b == NULL || pli->do_hb_recalc) { 
-      /* determine CP9 HMM bands */
-      if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, 0)) != eslOK) return status; 
+      /* Calculate HMM bands. We'll tighten tau and recalculate bands until 
+       * the resulting HMM banded matrix is under our size limit.
+       */
+      cm->tau = pli->final_tau;
+      while(1) { 
+	if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, 0)) != eslOK) return status; 
+	if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, hitlen, NULL, &hbmx_Mb)) != eslOK) return status; 
+	if(hbmx_Mb < pli->hb_size_limit) break; /* our matrix will be small enough, break out of while(1) */
+	if(cm->tau > 0.01)               break; /* our bands have gotten too tight, break out of while(1) */
+	printf("ARC 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
+	cm->tau *= pli->xtau;
+      }	  
+      printf("ARC 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
     }
     else { 
       /* shift existing CP9 HMM bands by a fixed offset, this guarantees our alignment will be the same hit our search found */
@@ -2126,43 +2157,26 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
       /* NOTE: cm->cp9b bands would currently fail a cp9_ValidateBands() check..., but they'll work for our purposes here */
     }
     
-    /* Determine the number of cells needed in each CM_HB_MX required for aligning this sequence: */
-    if((status = cm_hb_mx_NumCellsNeeded       (cm, pli->errbuf, cm->cp9b, hitlen, &hbmx_ncells)) != eslOK)                return status; 
-    if((status = cm_hb_shadow_mx_NumCellsNeeded(cm, pli->errbuf, cm->cp9b, &shmx_nchar_cells, &shmx_nint_cells)) != eslOK) return status; 
+    /* Determine the number of cells needed in the CM_HB_MX's required
+     * for alignment. It it's above our limit, we won't use HMM bands.
+     *
+     *           matrix sizes                 pli->align_cyk   algorithm to use  HMM banded? posteriors?
+     *          ----------------------------  -------------  ----------------  ----------- -----------
+     * if       hbmx_Mb < pli->hb_size_limit  FALSE          optimal accuracy  yes         yes
+     * else if  hbmx_Mb < pli->hb_size_limit  TRUE           CYK               yes         yes
+     * else if  hbmx_Mb > pli->hb_size_limit  TRUE/FALSE     D&C CYK           no          no
+     */     
+    if((status = cm_hb_mx_SizeNeeded       (cm, pli->errbuf, cm->cp9b, hitlen, NULL, &hbmx_Mb)) != eslOK) return status; 
+    if((status = cm_hb_shadow_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, NULL,   NULL, &shmx_Mb)) != eslOK) return status; 
+    printf("ALN 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
     
-    hbmx_Mb = (hbmx_ncells * sizeof(float)) / 1000000.;
-    shmx_Mb = (shmx_nint_cells * sizeof(int) + shmx_nchar_cells * sizeof(char)) / 1000000.;
-    
-    /* Determine which alignment algorithm to use depending on HMM banded matrix sizes.
-     * Ideally we want posterior probabilities in the alignment output, but that requires
-     * using two CM_HB_MX's. 
-     * 
-     * Note: in table below "limit" = pli->hb_size_limit
-     * 
-     *           matrix sizes                  pli->use_cyk   algorithm to use  HMM banded? posteriors?
-     *          -----------------------------  -------------  ----------------  ----------- -----------
-     * if       (2*hbmx_Mb + shmx_Mb) < limit  FALSE          optimal accuracy  yes         yes
-     * else if  (2*hbmx_Mb + shmx_Mb) < limit  TRUE           CYK               yes         yes
-     * else if    (hbmx_Mb + shmx_Mb) < limit  TRUE/FALSE     CYK               yes         no
-     * else if    (hbmx_Mb + shmx_Mb) > limit  TRUE/FALSE     D&C CYK           no          no
-     */
-    
-    if((2*hbmx_Mb + shmx_Mb) < pli->hb_size_limit) { /* posteriors require 2 CM_HB_MX objects */
-      pli->n_aln_hboa++;
-      do_optacc    = (pli->use_cyk) ? FALSE : TRUE; 
+    if(hbmx_Mb < pli->hb_size_limit) { 
+      pli->n_aln_hb++;
+      do_optacc    = (pli->align_cyk) ? FALSE : TRUE;
+      total_Mb     = (pli->align_cyk) ? (hbmx_Mb + shmx_Mb) : (2*hbmx_Mb + shmx_Mb);
       do_postcode  = TRUE;
       do_hbanded   = TRUE;
       do_nonbanded = FALSE;
-      total_Mb = 2*hbmx_Mb + shmx_Mb;
-    }
-    else if((hbmx_Mb + shmx_Mb) < pli->hb_size_limit) { 
-      pli->n_aln_hbcyk++;
-      do_optacc    = FALSE; /* optacc requires 2 CM_HB_MX matrices, and they're too big */
-      do_postcode  = FALSE; /* ditto */
-      postcode     = NULL;
-      do_hbanded   = TRUE;  
-      do_nonbanded = FALSE;
-      total_Mb = hbmx_Mb + shmx_Mb;
     }
     else { /* not enough memory for HMM banded alignment, fall back to D&C CYK */
       pli->n_aln_dccyk++;
@@ -2205,6 +2219,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
     total_Mb = CYKNonQDBSmallMbNeeded(cm, hitlen);
     postcode = NULL;
   }
+    
   
   hit->ad = cm_alidisplay_Create(cm->abc, tr, cm, cmcons, sq, hit->start, postcode, 
 				 (do_optacc) ? optacc_sc : cyk_sc, 
