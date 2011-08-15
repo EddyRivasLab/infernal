@@ -4876,7 +4876,7 @@ int
 CMPostCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t *tr, int do_marginalize, char **ret_pcode, float *ret_avgp)
 {
   int status;
-  int x, v, i, j, d, r, jp;
+  int x, v, i, j, d, r, jp, rp;
   int v2, j2, d2;
   int ip;
   int sd, sdl, sdr;
@@ -4890,15 +4890,17 @@ CMPostCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t *t
 
   ESL_ALLOC(pcode, (L+1) * sizeof(char)); 
 
-  /* First, determine the summed log prob that each residue is emitted by any state.
-   * In a perfect world with machines with infinite precision (or prob if we just implemented doubles)
-   * this would always be 1.0 exactly for all residues, but there are precision errors due
-   * to the logsum lookup table *and* due to floating point precision (that is that
-   * said precision errors still exist using analytical logs and exps) that can 
-   * cause summed probs > 1.0 (I've seen up to 1.03!) This is because the difference
-   * between the Inside and Outside total sequence P(S | M) scores can reach
-   * 0.03 bits. I've only seen this happen for parsetrees with a single IL or IR
-   * state that makes several hundred self transits. 
+  /* First, determine the summed log prob that each residue is emitted
+   * by any state.  In a perfect world with machines with infinite
+   * precision (or prob if we just implemented doubles) this would
+   * always be 1.0 exactly for all residues, but there are precision
+   * errors due to the logsum lookup table *and* due to floating point
+   * precision (that is that said precision errors still exist using
+   * analytical logs and exps) that can cause summed probs > 1.0 (I've
+   * seen up to 1.03!) This is because the difference between the
+   * Inside and Outside total sequence P(S | M) scores can reach 0.03
+   * bits. I've only seen this happen for parsetrees with a single IL
+   * or IR state that makes several hundred self transits.
    */
 
   float   *res_logp; /* [1..i..L], log of summed probability of residue i being emitted by any emitting state */
@@ -4963,7 +4965,7 @@ CMPostCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t *t
       }
     }
   }
-  /*for(i = 0; i <= (L+1); i++) printf("res_logp[%5d] %12f\n", i, res_logp[i]);*/
+  /*for(i = 0; i <= (L+1); i++) printf("res_logp[%5d] %12f %12f\n", i, res_logp[i], FScore2Prob(res_logp[i], 1.));*/
   /* finished determining summed log prob of each emitted residue */
 
   /* go through each node of the parsetree and determine post code for emissions */
@@ -4984,17 +4986,18 @@ CMPostCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t *t
 
       if(cm->sttype[v] == EL_st) { /* EL state, we have to handle this guy special */
 	for(r = i; r <= j; r++) { /* we have to annotate from residues i..j */
+	  rp = r-i0+1;
 	  left_logp = IMPOSSIBLE;
 	  for (j2 = r; j2 <= j0; j2++) { 
 	    d2 = j2-r+1;
 	    left_logp = FLogsum(left_logp, post[v][j2][d2]);
 	  }
-	  pcode[r-1] = Fscore2postcode(left_logp - res_logp[ip]);
-	  p = FScore2Prob((left_logp - res_logp[ip]), 1.);
+	  pcode[r-1] = Fscore2postcode(left_logp - res_logp[rp]);
+	  p = FScore2Prob((left_logp - res_logp[rp]), 1.);
 	  sump += p;
 	  if(p >  1.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCode(): probability for EL state v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, p);
 	  if(p < -0.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCode(): probability for EL state v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, p);
-	  /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
+	  /*printf("r: %d | left_logp %f (%f) | res_logp[%d] %f (%f) | code: %c\n", r, left_logp, FScore2Prob(left_logp, 1.0), rp, res_logp[rp], FScore2Prob(left_logp - res_logp[rp], 1.0), pcode[r-1]);*/
 	}
       }
       else { /* non-EL state */
@@ -5074,7 +5077,7 @@ int
 CMPostCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parsetree_t *tr, int do_marginalize, char **ret_pcode, float *ret_avgp)
 {
   int status;
-  int x, v, i, j, d, r;
+  int x, v, i, j, d, r, rp;
   float p;
   char *pcode;
   int jp_v, dp_v;
@@ -5097,15 +5100,17 @@ CMPostCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parsetre
 
   ESL_ALLOC(pcode, (L+1) * sizeof(char)); 
 
-  /* First, determine the summed log prob that each residue is emitted by any state.
-   * In a perfect world with machines with infinite precision (or prob if we just implemented doubles)
-   * this would always be 1.0 exactly for all residues, but there are precision errors due
-   * to the logsum lookup table *and* due to floating point precision (that is that
-   * said precision errors still exist using analytical logs and exps) that can 
-   * cause summed probs > 1.0 (I've seen up to 1.03!) This is because the difference
-   * between the Inside and Outside total sequence P(S | M) scores can reach
-   * 0.03 bits. I've only seen this happen for parsetrees with a single IL or IR
-   * state that makes several hundred self transits. 
+  /* First, determine the summed log prob that each residue is emitted
+   * by any state.  In a perfect world with machines with infinite
+   * precision (or prob if we just implemented doubles) this would
+   * always be 1.0 exactly for all residues, but there are precision
+   * errors due to the logsum lookup table *and* due to floating point
+   * precision (that is that said precision errors still exist using
+   * analytical logs and exps) that can cause summed probs > 1.0 (I've
+   * seen up to 1.03!) This is because the difference between the
+   * Inside and Outside total sequence P(S | M) scores can reach 0.03
+   * bits. I've only seen this happen for parsetrees with a single IL
+   * or IR state that makes several hundred self transits.
    */
 
   float   *res_logp; /* [1..i..L], log of summed probability of residue i being emitted by any emitting state */
@@ -5178,7 +5183,7 @@ CMPostCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parsetre
       }
     }
   }
-  /*for(i = 0; i <= (L+1); i++) printf("res_logp[%5d] %12f\n", i, res_logp[i]);*/
+  for(i = 0; i <= (L+1); i++) printf("res_logp[%5d] %12f %12f\n", i, res_logp[i], FScore2Prob(res_logp[i], 1.));
   /* finished determining summed log prob of each emitted residue */
 
   /* go through each node of the parsetree and determine posterior code for emissions */
@@ -5198,17 +5203,18 @@ CMPostCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parsetre
 
     if(cm->sttype[v] == EL_st) { /* EL state, we have to handle this guy special */
       for(r = i; r <= j; r++) { /* we have to annotate from residues i..j */
+	rp = r-i0+1;
 	left_logp = IMPOSSIBLE;
 	for (j2 = r; j2 <= j0; j2++) { 
 	  d2 = j2-r+1;
 	  left_logp = FLogsum(left_logp, post[v][j2][d2]);
 	}
-	pcode[r-1] = Fscore2postcode(left_logp - res_logp[ip]);
-	p = FScore2Prob((left_logp - res_logp[ip]), 1.);
+	pcode[r-1] = Fscore2postcode(left_logp - res_logp[rp]);
+	p = FScore2Prob((left_logp - res_logp[rp]), 1.);
 	sump += p;
 	if(p >  1.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCodeHB(): probability for EL state v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, p);
 	if(p < -0.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCodeHB(): probability for EL state v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, p);
-	/*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
+	/*printf("r: %d | left_logp %f (%f) | res_logp[%d] %f (%f) | code: %c\n", r, left_logp, FScore2Prob(left_logp, 1.0), rp, res_logp[rp], FScore2Prob(left_logp - res_logp[rp], 1.0), pcode[r-1]);*/
       }
     }
     else { /* non-EL state */

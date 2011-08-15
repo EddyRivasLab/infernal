@@ -752,3 +752,35 @@ for more details.
 
 This bug was fixed as of revision 3629.
 //
+
+ID              i26
+TITLE		Incorrect posterior calculation for EL state.
+STATUS          CLOSED
+XREF            Notes in ~/nawrockie/notebook/11_0811_inf_big_hb_mx_issues/
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Mon Aug 15 11:04:01 2011
+DESCRIPTION    
+
+In cm_dpalign.c::CMPostCode() and cm_dpalign.c::CMPostCodeHB(), the
+posterior probability for residues emitted by the EL state was being
+incorrectly calculated. That value should be calculated as the
+posterior probability that residue 'r' was emitted from the EL state
+divided by the posterior probability that residue 'r' was emitted from
+any emitting state (call this denominator value 'D'). Ideally, D would
+be 1.0, but due to precision errors related to the flogsum lookup
+table and floating point precision, its important to actually
+calculate D (instead of assuming it is 1.0) and use it to normalize
+the probability that 'r' was emitted from a given state. Otherwise
+you'll get some probabilities slightly > 1.0. 
+
+However, for EL states, the wrong D was being used, instead of using
+the D pertaining to residue 'r', D pertaining to residue 'i != r' was
+being used. Basically, this was a typo in the code.
+
+The fix was very simple. Use 'svn diff' to see it. (Note that there
+are many non-code changes to comments (mainly line spacing)) that are
+revealed by an 'svn diff', but there are only a couple of trivial code
+changes to fix the bug.
+
+This bug was fixed as of revision 3652.
+//
