@@ -140,6 +140,8 @@ extern int  DetermineSeqChunksize(int nproc, int L, int W);
 extern int             RefTrCYKScan           (CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
 extern TrScanMatrix_t *cm_CreateTrScanMatrix  (CM_t *cm, int W, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
 extern int             cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx);
+extern int             cm_FreeFloatsFromTrScanMatrix   (CM_t *cm, TrScanMatrix_t *trsmx);
+extern void            cm_FreeTrScanMatrix             (CM_t *cm, TrScanMatrix_t *trsmx);
 
 
 /* from cm_dpsmall.c */

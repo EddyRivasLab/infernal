@@ -447,15 +447,16 @@ typedef struct cp9map_s {
 #define CMH_QDB                 (1<<14) /* query-dependent bands, QDBs valid        */
 #define CMH_CP9                 (1<<15) /* CP9 HMM is valid in cm->cp9              */
 #define CMH_SCANMATRIX          (1<<16) /* ScanMatrix smx is valid                  */
-#define CMH_MLP7                (1<<17) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
-#define CMH_FP7                 (1<<18) /* filter p7 is valid in cm->fp7            */
+#define CMH_TRSCANMATRIX        (1<<17) /* ScanMatrix smx is valid                  */
+#define CMH_MLP7                (1<<18) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
+#define CMH_FP7                 (1<<19) /* filter p7 is valid in cm->fp7            */
 
-#define CM_IS_SUB               (1<<19) /* the CM is a sub CM                       */
-#define CM_IS_RSEARCH           (1<<20) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS         (1<<21) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT          (1<<22) /* CM has/will have RSEARCH emissions       */
-#define CM_EMIT_NO_LOCAL_BEGINS (1<<23) /* emitted parsetrees will never have local begins */
-#define CM_EMIT_NO_LOCAL_ENDS   (1<<24) /* emitted parsetrees will never have local ends   */
+#define CM_IS_SUB               (1<<20) /* the CM is a sub CM                       */
+#define CM_IS_RSEARCH           (1<<21) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS         (1<<22) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT          (1<<23) /* CM has/will have RSEARCH emissions       */
+#define CM_EMIT_NO_LOCAL_BEGINS (1<<24) /* emitted parsetrees will never have local begins */
+#define CM_EMIT_NO_LOCAL_ENDS   (1<<25) /* emitted parsetrees will never have local ends   */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
@@ -1122,47 +1123,44 @@ typedef struct trscanmx_s {
   /* f{J,L,R,T}alpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] for float implementations of CYK/Inside */
   float ***fJalpha;          /* non-BEGL_S states for float versions of CYK/Inside */
   float ***fJalpha_begl;     /*     BEGL_S states for float versions of CYK/Inside */
-  float   *fJalpha_mem;      /* ptr to the actual memory for falpha */
-  float   *fJalpha_begl_mem; /* ptr to the actual memory for falpha_begl */
+  float   *fJalpha_mem;      /* ptr to the actual memory for fJalpha */
+  float   *fJalpha_begl_mem; /* ptr to the actual memory for fJalpha_begl */
 
   float ***fLalpha;          /* non-BEGL_S states for float versions of CYK/Inside */
   float ***fLalpha_begl;     /*     BEGL_S states for float versions of CYK/Inside */
-  float   *fLalpha_mem;      /* ptr to the actual memory for falpha */
-  float   *fLalpha_begl_mem; /* ptr to the actual memory for falpha_begl */
+  float   *fLalpha_mem;      /* ptr to the actual memory for fLalpha */
+  float   *fLalpha_begl_mem; /* ptr to the actual memory for fLalpha_begl */
 
   float ***fRalpha;          /* non-BEGL_S states for float versions of CYK/Inside */
   float ***fRalpha_begl;     /*     BEGL_S states for float versions of CYK/Inside */
-  float   *fRalpha_mem;      /* ptr to the actual memory for falpha */
-  float   *fRalpha_begl_mem; /* ptr to the actual memory for falpha_begl */
+  float   *fRalpha_mem;      /* ptr to the actual memory for fRalpha */
+  float   *fRalpha_begl_mem; /* ptr to the actual memory for fRalpha_begl */
 
-  float ***fTalpha;          /* non-BEGL_S states for float versions of CYK/Inside */
-  float ***fTalpha_begl;     /*     BEGL_S states for float versions of CYK/Inside */
-  float   *fTalpha_mem;      /* ptr to the actual memory for falpha */
-  float   *fTalpha_begl_mem; /* ptr to the actual memory for falpha_begl */
+  float ***fTalpha;          /* BIF states for float versions of CYK/Inside */
+  float   *fTalpha_mem;      /* ptr to the actual memory for fTalpha */
 
   /* i{J,L,R,T}alpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] for integer implementations of CYK/Inside */
   int   ***iJalpha;          /* non-BEGL_S states for int   versions of CYK/Inside */
   int   ***iJalpha_begl;     /*     BEGL_S states for int   versions of CYK/Inside */
-  int     *iJalpha_mem;      /* ptr to the actual memory for ialpha */
-  int     *iJalpha_begl_mem; /* ptr to the actual memory for ialpha_begl */
+  int     *iJalpha_mem;      /* ptr to the actual memory for iJalpha */
+  int     *iJalpha_begl_mem; /* ptr to the actual memory for iJalpha_begl */
 
   int   ***iLalpha;          /* non-BEGL_S states for int   versions of CYK/Inside */
   int   ***iLalpha_begl;     /*     BEGL_S states for int   versions of CYK/Inside */
-  int     *iLalpha_mem;      /* ptr to the actual memory for ialpha */
-  int     *iLalpha_begl_mem; /* ptr to the actual memory for ialpha_begl */
+  int     *iLalpha_mem;      /* ptr to the actual memory for iLalpha */
+  int     *iLalpha_begl_mem; /* ptr to the actual memory for iLalpha_begl */
 
   int   ***iRalpha;          /* non-BEGL_S states for int   versions of CYK/Inside */
   int   ***iRalpha_begl;     /*     BEGL_S states for int   versions of CYK/Inside */
-  int     *iRalpha_mem;      /* ptr to the actual memory for ialpha */
-  int     *iRalpha_begl_mem; /* ptr to the actual memory for ialpha_begl */
+  int     *iRalpha_mem;      /* ptr to the actual memory for iRalpha */
+  int     *iRalpha_begl_mem; /* ptr to the actual memory for iRalpha_begl */
 
-  int   ***iTalpha;          /* non-BEGL_S states for int   versions of CYK/Inside */
-  int   ***iTalpha_begl;     /*     BEGL_S states for int   versions of CYK/Inside */
-  int     *iTalpha_mem;      /* ptr to the actual memory for ialpha */
-  int     *iTalpha_begl_mem; /* ptr to the actual memory for ialpha_begl */
+  int   ***iTalpha;          /* BIF states for int   versions of CYK/Inside */
+  int     *iTalpha_mem;      /* ptr to the actual memory for iTalpha */
 
-  int      ncells_alpha;      /* number of alloc'ed, valid cells for f{J,L,R,T}alpha and i{J,L,R,T}alpha matrices, alloc'ed as contiguous block */
-  int      ncells_alpha_begl; /* number of alloc'ed, valid cells for f{J,L,R,T}alpha_begl and i{J,L,R,T}alpha_begl matrices, alloc'ed as contiguous block */
+  int      ncells_alpha;      /* number of alloc'ed, valid cells for f{J,L,R}alpha and i{J,L,R}alpha matrices, alloc'ed as contiguous block */
+  int      ncells_alpha_begl; /* number of alloc'ed, valid cells for f{J,L,R}alpha_begl and i{J,L,R}alpha_begl matrices, alloc'ed as contiguous block */
+  int      ncells_Talpha;     /* number of alloc'ed, valid cells for fTalpha and iTalpha matrices, alloc'ed as contiguous block */
 } TrScanMatrix_t;
 
 /* Structure SearchInfo_t: 

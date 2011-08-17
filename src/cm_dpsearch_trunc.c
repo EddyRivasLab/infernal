@@ -105,8 +105,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
   float ***Lalpha_begl = trsmx->fLalpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] Lalpha DP matrix, NULL for v != BEGL_S */
   float ***Ralpha      = trsmx->fRalpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v == BEGL_S */
   float ***Ralpha_begl = trsmx->fRalpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v != BEGL_S */
-  float ***Talpha      = trsmx->fTalpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] Talpha DP matrix, NULL for v == BEGL_S */
-  float ***Talpha_begl = trsmx->fTalpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] Talpha DP matrix, NULL for v != BEGL_S */
+  float ***Talpha      = trsmx->fTalpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] Talpha DP matrix, NULL for v != BIF_B  */
   int   **dnAA         = trsmx->dnAA;         /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
   int   **dxAA         = trsmx->dxAA;         /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
   int    *bestr        = trsmx->bestr;        /* [0..d..W] best root state (for local begins or 0) for this d */
@@ -127,7 +126,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
   vsc = NULL;
   ESL_ALLOC(vsc, sizeof(float) * cm->M);
   esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
-  vsc_root    = IMPOSSIBLE;
+  vsc_root = IMPOSSIBLE;
 
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
@@ -367,7 +366,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	    }
 	  }
 	  if(vsc != NULL) {
-	    if(cm->stid[v] != BEGL_S) { 
+	    if(cm->stid[v] == BIF_B) { 
 	      for (d = dnA[v]; d <= dxA[v]; d++) { 
 		vsc[v] = ESL_MAX(vsc[v], 
 				 ESL_MAX(Jalpha[jp_v][v][d], 
@@ -375,16 +374,23 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 						 ESL_MAX(Ralpha[jp_v][v][d], Talpha[jp_v][v][d]))));
 	      }
 	    }
-	    else {
+	    else if(cm->stid[v] == BEGL_S) { 
 	      for (d = dnA[v]; d <= dxA[v]; d++) { 
 		vsc[v] = ESL_MAX(vsc[v], 
 				 ESL_MAX(Jalpha_begl[jp_v][v][d], 
 					 ESL_MAX(Lalpha_begl[jp_v][v][d], Ralpha_begl[jp_v][v][d])));
 	      }
 	    }
+	    else {
+	      for (d = dnA[v]; d <= dxA[v]; d++) { 
+		vsc[v] = ESL_MAX(vsc[v], 
+				 ESL_MAX(Jalpha[jp_v][v][d], 
+					 ESL_MAX(Lalpha[jp_v][v][d], Ralpha[jp_v][v][d])));
+	      }
+	    }
 	  }
 #if 0
-	  if(cm->stid[v] != BEGL_S) { 
+	  if(cm->stid[v] == BIF_B) { 
 	    for(d = dnA[v]; d <= dxA[v]; d++) { 
 	      printf("M j: %3d  v: %3d  d: %3d\n", j, v, d);
 	      printf("M j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
@@ -395,7 +401,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 		     NOT_IMPOSSIBLE(Talpha[jp_v][v][d]) ? Talpha[jp_v][v][d] : -9999.9);
 	    }
 	  }
-	  else { 
+	  else if(cm->stid[v] == BEGL_S) { 
 	    for(d = dnA[v]; d <= dxA[v]; d++) { 
 	      printf("M j: %3d  v: %3d  d: %3d\n", j, v, d);
 	      printf("M j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
@@ -403,6 +409,17 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 		     NOT_IMPOSSIBLE(Jalpha_begl[jp_v][v][d]) ? Jalpha_begl[jp_v][v][d] : -9999.9,
 		     NOT_IMPOSSIBLE(Lalpha_begl[jp_v][v][d]) ? Lalpha_begl[jp_v][v][d] : -9999.9,
 		     NOT_IMPOSSIBLE(Ralpha_begl[jp_v][v][d]) ? Ralpha_begl[jp_v][v][d] : -9999.9, 
+		     -9999.9);
+	    }
+	  }
+	  else {
+	    for(d = dnA[v]; d <= dxA[v]; d++) { 
+	      printf("M j: %3d  v: %3d  d: %3d\n", j, v, d);
+	      printf("M j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
+		     j, v, d, 
+		     NOT_IMPOSSIBLE(Jalpha[jp_v][v][d]) ? Jalpha[jp_v][v][d] : -9999.9,
+		     NOT_IMPOSSIBLE(Lalpha[jp_v][v][d]) ? Lalpha[jp_v][v][d] : -9999.9,
+		     NOT_IMPOSSIBLE(Ralpha[jp_v][v][d]) ? Ralpha[jp_v][v][d] : -9999.9,
 		     -9999.9);
 	    }
 	  }
@@ -630,17 +647,18 @@ cm_CreateTrScanMatrix(CM_t *cm, int W, int *dmax, double beta_W, double beta_qdb
    */
 
   trsmx->fJalpha          = trsmx->fLalpha          = trsmx->fRalpha          = trsmx->fTalpha          = NULL;
-  trsmx->fJalpha_begl     = trsmx->fLalpha_begl     = trsmx->fRalpha_begl     = trsmx->fTalpha_begl     = NULL;
+  trsmx->fJalpha_begl     = trsmx->fLalpha_begl     = trsmx->fRalpha_begl     = NULL;
   trsmx->fJalpha_mem      = trsmx->fLalpha_mem      = trsmx->fRalpha_mem      = trsmx->fTalpha_mem      = NULL;
-  trsmx->fJalpha_begl_mem = trsmx->fLalpha_begl_mem = trsmx->fRalpha_begl_mem = trsmx->fTalpha_begl_mem = NULL;
+  trsmx->fJalpha_begl_mem = trsmx->fLalpha_begl_mem = trsmx->fRalpha_begl_mem = NULL;
 
   trsmx->iJalpha          = trsmx->iLalpha          = trsmx->iRalpha          = trsmx->iTalpha          = NULL;
-  trsmx->iJalpha_begl     = trsmx->iLalpha_begl     = trsmx->iRalpha_begl     = trsmx->iTalpha_begl     = NULL;
+  trsmx->iJalpha_begl     = trsmx->iLalpha_begl     = trsmx->iRalpha_begl     = NULL;
   trsmx->iJalpha_mem      = trsmx->iLalpha_mem      = trsmx->iRalpha_mem      = trsmx->iTalpha_mem      = NULL;
-  trsmx->iJalpha_begl_mem = trsmx->iLalpha_begl_mem = trsmx->iRalpha_begl_mem = trsmx->iTalpha_begl_mem = NULL;
+  trsmx->iJalpha_begl_mem = trsmx->iLalpha_begl_mem = trsmx->iRalpha_begl_mem = NULL;
 
   trsmx->ncells_alpha      = 0;
   trsmx->ncells_alpha_begl = 0;
+  trsmx->ncells_Talpha     = 0;
 
   if(do_float) /* allocate float mx and scores */
     cm_FloatizeTrScanMatrix(cm, trsmx);
@@ -674,7 +692,7 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   int y, yoffset, w;
   int use_hmmonly;
   use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
-  int n_begl;
+  int n_begl, n_bif;
   int n_non_begl;
   int cur_cell;
 
@@ -687,7 +705,6 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   if(trsmx->fRalpha != NULL)       cm_Fail("cm_FloatizeScanMatrix(), trsmx->fRalpha is not NULL.");
   if(trsmx->fRalpha_begl != NULL)  cm_Fail("cm_FloatizeScanMatrix(), trsmx->fRalpha_begl is not NULL.");
   if(trsmx->fTalpha != NULL)       cm_Fail("cm_FloatizeScanMatrix(), trsmx->fTalpha is not NULL.");
-  if(trsmx->fTalpha_begl != NULL)  cm_Fail("cm_FloatizeScanMatrix(), trsmx->fTalpha_begl is not NULL.");
   
   /* allocate alpha 
    * we allocate only as many cells as necessary,
@@ -697,29 +714,31 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
    * note: deck for the EL state, cm->M is never used for scanners
    */
   n_begl = 0;
+  n_bif  = 0;
   for (v = 0; v < cm->M; v++) if (cm->stid[v] == BEGL_S) n_begl++;
+  for (v = 0; v < cm->M; v++) if (cm->stid[v] == BIF_B)  n_bif++;
   n_non_begl = cm->M - n_begl;
 
-  /* allocate falpha */
+  /* allocate f{J,L,R,T}alpha */
   /* j == 0 v == 0 cells, followed by j == 1 v == 0, then j == 0 v == 1 etc.. */
   ESL_ALLOC(trsmx->fJalpha,        sizeof(float **) * 2);
-  ESL_ALLOC(trsmx->fJalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->fJalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
+  ESL_ALLOC(trsmx->fJalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fJalpha[0][v] will be NULL */
+  ESL_ALLOC(trsmx->fJalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fJalpha[1][v] will be NULL */
   ESL_ALLOC(trsmx->fJalpha_mem,    sizeof(float) * 2 * n_non_begl * (trsmx->W+1));
 
   ESL_ALLOC(trsmx->fLalpha,        sizeof(float **) * 2);
-  ESL_ALLOC(trsmx->fLalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->fLalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
+  ESL_ALLOC(trsmx->fLalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fLalpha[0][v] will be NULL */
+  ESL_ALLOC(trsmx->fLalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fLalpha[1][v] will be NULL */
   ESL_ALLOC(trsmx->fLalpha_mem,    sizeof(float) * 2 * n_non_begl * (trsmx->W+1));
 
   ESL_ALLOC(trsmx->fRalpha,        sizeof(float **) * 2);
-  ESL_ALLOC(trsmx->fRalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->fRalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
+  ESL_ALLOC(trsmx->fRalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fRalpha[0][v] will be NULL */
+  ESL_ALLOC(trsmx->fRalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fRalpha[1][v] will be NULL */
   ESL_ALLOC(trsmx->fRalpha_mem,    sizeof(float) * 2 * n_non_begl * (trsmx->W+1));
 
   ESL_ALLOC(trsmx->fTalpha,        sizeof(float **) * 2);
-  ESL_ALLOC(trsmx->fTalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->fTalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
+  ESL_ALLOC(trsmx->fTalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B, fTalpha[0][v] will be NULL */
+  ESL_ALLOC(trsmx->fTalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B, fTalpha[1][v] will be NULL */
   ESL_ALLOC(trsmx->fTalpha_mem,    sizeof(float) * 2 * n_non_begl * (trsmx->W+1));
 
   if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * n_non_begl * (trsmx->W+1)) != trsmx->ncells_alpha)) 
@@ -732,12 +751,10 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
       trsmx->fJalpha[0][v] = trsmx->fJalpha_mem + cur_cell;
       trsmx->fLalpha[0][v] = trsmx->fLalpha_mem + cur_cell;
       trsmx->fRalpha[0][v] = trsmx->fRalpha_mem + cur_cell;
-      trsmx->fTalpha[0][v] = trsmx->fTalpha_mem + cur_cell;
       cur_cell += trsmx->W+1;
       trsmx->fJalpha[1][v] = trsmx->fJalpha_mem + cur_cell;
       trsmx->fLalpha[1][v] = trsmx->fLalpha_mem + cur_cell;
       trsmx->fRalpha[1][v] = trsmx->fRalpha_mem + cur_cell;
-      trsmx->fTalpha[1][v] = trsmx->fTalpha_mem + cur_cell;
       cur_cell += trsmx->W+1;
     }
     else { 
@@ -747,28 +764,43 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
       trsmx->fLalpha[1][v] = NULL;
       trsmx->fRalpha[0][v] = NULL;
       trsmx->fRalpha[1][v] = NULL;
+    }
+  }
+  if(cur_cell != trsmx->ncells_alpha) cm_Fail("cm_FloatizeScanMatrix(), error allocating falpha, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_alpha);
+
+  if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * n_bif * (trsmx->W+1)) != trsmx->ncells_Talpha)) 
+    cm_Fail("cm_FloatizeScanMatrix(), cmTRSMX_HAS_INT flag raised, but trsmx->ncells_Talpha %d != %d (predicted num float cells size in Talpha)\n", trsmx->ncells_Talpha, (2 * n_bif * (trsmx->W+1)));
+  trsmx->ncells_Talpha = 2 * n_bif * (trsmx->W+1);
+
+  cur_cell = 0;
+  for (v = 0; v < cm->M; v++) {	
+    if (cm->stid[v] == BIF_B) { 
+      trsmx->fTalpha[0][v] = trsmx->fTalpha_mem + cur_cell;
+      cur_cell += trsmx->W+1;
+      trsmx->fTalpha[1][v] = trsmx->fTalpha_mem + cur_cell;
+      cur_cell += trsmx->W+1;
+    }
+    else { 
       trsmx->fTalpha[0][v] = NULL;
       trsmx->fTalpha[1][v] = NULL;
     }
   }
-  if(cur_cell != trsmx->ncells_alpha) cm_Fail("cm_FloatizeScanMatrix(), error allocating falpha, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_alpha);
+  if(cur_cell != trsmx->ncells_Talpha) cm_Fail("cm_FloatizeScanMatrix(), error allocating fTalpha, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_Talpha);
+  
 
   /* allocate falpha_begl */
   /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
   ESL_ALLOC(trsmx->fJalpha_begl, sizeof(float **) * (trsmx->W+1));
   ESL_ALLOC(trsmx->fLalpha_begl, sizeof(float **) * (trsmx->W+1));
   ESL_ALLOC(trsmx->fRalpha_begl, sizeof(float **) * (trsmx->W+1));
-  ESL_ALLOC(trsmx->fTalpha_begl, sizeof(float **) * (trsmx->W+1));
   for (j = 0; j <= trsmx->W; j++) {
     ESL_ALLOC(trsmx->fJalpha_begl[j],  sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fJalpha_begl[0][v] will be NULL */
     ESL_ALLOC(trsmx->fLalpha_begl[j],  sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fLalpha_begl[0][v] will be NULL */
     ESL_ALLOC(trsmx->fRalpha_begl[j],  sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fRalpha_begl[0][v] will be NULL */
-    ESL_ALLOC(trsmx->fTalpha_begl[j],  sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fTalpha_begl[0][v] will be NULL */
   }
   ESL_ALLOC(trsmx->fJalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
   ESL_ALLOC(trsmx->fLalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
   ESL_ALLOC(trsmx->fRalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  ESL_ALLOC(trsmx->fTalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
   if((trsmx->flags & cmTRSMX_HAS_INT) && (((trsmx->W+1) * n_begl * (trsmx->W+1)) != trsmx->ncells_alpha_begl)) 
     cm_Fail("cm_IntizeScanMatrix(), cmTRSMX_HAS_FLOAT flag raised, but trsmx->ncells_alpha_begl %d != %d (predicted num float cells size)\n", trsmx->ncells_alpha_begl, ((trsmx->W+1) * n_begl * (trsmx->W+1)));
   trsmx->ncells_alpha_begl = (trsmx->W+1) * n_begl * (trsmx->W+1);
@@ -780,14 +812,12 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
 	trsmx->fJalpha_begl[j][v] = trsmx->fJalpha_begl_mem + cur_cell;
 	trsmx->fLalpha_begl[j][v] = trsmx->fLalpha_begl_mem + cur_cell;
 	trsmx->fRalpha_begl[j][v] = trsmx->fRalpha_begl_mem + cur_cell;
-	trsmx->fTalpha_begl[j][v] = trsmx->fTalpha_begl_mem + cur_cell;
 	cur_cell += trsmx->W+1;
       }
       else { 
 	trsmx->fJalpha_begl[j][v] = NULL;
 	trsmx->fLalpha_begl[j][v] = NULL;
 	trsmx->fRalpha_begl[j][v] = NULL;
-	trsmx->fTalpha_begl[j][v] = NULL;
       }
     }
   }
@@ -798,19 +828,17 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   esl_vec_FSet(trsmx->fJalpha_mem,      trsmx->ncells_alpha,      IMPOSSIBLE);
   esl_vec_FSet(trsmx->fLalpha_mem,      trsmx->ncells_alpha,      IMPOSSIBLE);
   esl_vec_FSet(trsmx->fRalpha_mem,      trsmx->ncells_alpha,      IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fTalpha_mem,      trsmx->ncells_alpha,      IMPOSSIBLE);
+  esl_vec_FSet(trsmx->fTalpha_mem,      trsmx->ncells_Talpha,     IMPOSSIBLE);
   esl_vec_FSet(trsmx->fJalpha_begl_mem, trsmx->ncells_alpha_begl, IMPOSSIBLE);
   esl_vec_FSet(trsmx->fLalpha_begl_mem, trsmx->ncells_alpha_begl, IMPOSSIBLE);
   esl_vec_FSet(trsmx->fRalpha_begl_mem, trsmx->ncells_alpha_begl, IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fTalpha_begl_mem, trsmx->ncells_alpha_begl, IMPOSSIBLE);
-  /* Now, initialize cells that should not be IMPOSSIBLE in fJalpha and fJalpha_begl */
+  /* Now, initialize cells that should not be IMPOSSIBLE in f{J,L,RT}alpha and f{J,L,R}alpha_begl */
   for(v = cm->M-1; v >= 0; v--) {
     if(cm->stid[v] != BEGL_S) {
       if (cm->sttype[v] == E_st) { 
 	trsmx->fJalpha[0][v][0] = trsmx->fJalpha[1][v][0] = 0.;
 	trsmx->fLalpha[0][v][0] = trsmx->fLalpha[1][v][0] = 0.;
 	trsmx->fRalpha[0][v][0] = trsmx->fRalpha[1][v][0] = 0.;
-	/* Talpha[{0,1}][v][0] remains IMPOSSIBLE */
 	/* rest of E deck is IMPOSSIBLE, it's already set */
       }
       else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) {
@@ -819,7 +847,7 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
 	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 	  trsmx->fJalpha[0][v][0] = ESL_MAX(trsmx->fJalpha[0][v][0], (trsmx->fJalpha[0][y+yoffset][0] + cm->tsc[v][yoffset]));
 	trsmx->fJalpha[0][v][0] = ESL_MAX(trsmx->fJalpha[0][v][0], IMPOSSIBLE);
-	/* {L,R,T}alpha[0][v][0] remain IMPOSSIBLE */
+	/* {L,R}alpha[0][v][0] remain IMPOSSIBLE */
       }
       else if (cm->sttype[v] == B_st) {
 	w = cm->cfirst[v]; /* BEGL_S, left child state */
@@ -837,7 +865,7 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
       trsmx->fJalpha_begl[0][v][0] = ESL_MAX(trsmx->fJalpha_begl[0][v][0], IMPOSSIBLE);
       for (j = 1; j <= trsmx->W; j++) 
 	trsmx->fJalpha_begl[j][v][0] = trsmx->fJalpha_begl[0][v][0];
-      /* {L,R,T}alpha_begl[j][v][0] remain IMPOSSIBLE for all j */
+      /* {L,R}alpha_begl[j][v][0] remain IMPOSSIBLE for all j */
     }
   }
   /* set the flag that tells us we've got valid floats */
@@ -848,6 +876,103 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   cm_Fail("memory allocation error.");
   return status; /* NEVERREACHED */
 }
+
+/* Function: cm_FreeTrScanMatrix()
+ * Date:     EPN, Wed Aug 17 14:22:45 2011
+ *
+ * Purpose:  Free a TrScanMatrix_t object corresponding
+ *           to CM <cm>.
+ *            
+ * Returns:  void
+ */
+void
+cm_FreeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
+{
+  int j;
+  //if(! ((cm->flags & CMH_TRSCANMATRIX) && (trsmx == cm->trsmx))) { /* don't free the cm->trsmx's dmax */
+  //if(trsmx->dmax != cm->dmax && trsmx->dmax != NULL) { free(trsmx->dmax); trsmx->dmax = NULL; }
+  //}
+
+  for(j = 1; j <= trsmx->W; j++) {
+    free(trsmx->dnAA[j]);
+    free(trsmx->dxAA[j]);
+  }
+  free(trsmx->dnAA);
+  free(trsmx->dxAA);
+  free(trsmx->bestr);
+  
+  if(trsmx->flags & cmTRSMX_HAS_FLOAT) cm_FreeFloatsFromTrScanMatrix(cm, trsmx);
+  //if(trsmx->flags & cmTRSMX_HAS_INT)   cm_FreeIntsFromTrScanMatrix(cm, trsmx);
+  free(trsmx);
+  return;
+}
+
+/* Function: cm_FreeFloatsFromTrScanMatrix()
+ * Date:     EPN, Wed Aug 17 14:19:21 2011
+ *
+ * Purpose:  Free float data structures in a TrScanMatrix_t object 
+ *           corresponding to <cm>.
+ *            
+ * Returns:  eslOK on success, dies immediately on an error.
+ */
+int
+cm_FreeFloatsFromTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
+{
+  int j;
+
+  /* contract check */
+  if(! trsmx->flags & cmTRSMX_HAS_FLOAT)  cm_Fail("cm_FreeFloatsFromScanMatrix(), si's cmTRSMX_HAS_FLOAT flag is down.");
+  if(trsmx->fJalpha == NULL)              cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fJalpha is already NULL.");
+  if(trsmx->fJalpha_begl == NULL)         cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fJalpha_begl is already NULL.");
+  if(trsmx->fLalpha == NULL)              cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fLalpha is already NULL.");
+  if(trsmx->fLalpha_begl == NULL)         cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fLalpha_begl is already NULL.");
+  if(trsmx->fRalpha == NULL)              cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fRalpha is already NULL.");
+  if(trsmx->fRalpha_begl == NULL)         cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fRalpha_begl is already NULL.");
+  if(trsmx->fTalpha == NULL)              cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fTalpha is already NULL.");
+
+  free(trsmx->fJalpha_mem);
+  free(trsmx->fJalpha[1]);
+  free(trsmx->fJalpha[0]);
+  free(trsmx->fJalpha);
+  trsmx->fJalpha = NULL;
+
+  free(trsmx->fLalpha_mem);
+  free(trsmx->fLalpha[1]);
+  free(trsmx->fLalpha[0]);
+  free(trsmx->fLalpha);
+  trsmx->fLalpha = NULL;
+
+  free(trsmx->fRalpha_mem);
+  free(trsmx->fRalpha[1]);
+  free(trsmx->fRalpha[0]);
+  free(trsmx->fRalpha);
+  trsmx->fRalpha = NULL;
+
+  free(trsmx->fTalpha_mem);
+  free(trsmx->fTalpha[1]);
+  free(trsmx->fTalpha[0]);
+  free(trsmx->fTalpha);
+  trsmx->fTalpha = NULL;
+
+  free(trsmx->fJalpha_begl_mem);
+  for (j = 0; j <= trsmx->W; j++) free(trsmx->fJalpha_begl[j]);
+  free(trsmx->fJalpha_begl);
+  trsmx->fJalpha_begl = NULL;
+
+  free(trsmx->fLalpha_begl_mem);
+  for (j = 0; j <= trsmx->W; j++) free(trsmx->fLalpha_begl[j]);
+  free(trsmx->fLalpha_begl);
+  trsmx->fLalpha_begl = NULL;
+
+  free(trsmx->fRalpha_begl_mem);
+  for (j = 0; j <= trsmx->W; j++) free(trsmx->fRalpha_begl[j]);
+  free(trsmx->fRalpha_begl);
+  trsmx->fRalpha_begl = NULL;
+
+  trsmx->flags &= ~cmTRSMX_HAS_FLOAT;
+  return eslOK;
+}
+
 
 /*****************************************************************
  * Benchmark driver
@@ -890,6 +1015,7 @@ static ESL_OPTIONS options[] = {
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "search in glocal mode [default: local]", 0 },
   { "-L",        eslARG_INT,  "10000", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",                   0 },
   { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                   0 },
+  { "--dc",      eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also search with D&C trCYK",                     0},
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "don't use QDBs", 0},
   { "--infile",  eslARG_INFILE,  NULL, NULL, NULL,  NULL,  NULL, "-L,-N,-e", "read sequences to search from file <s>", 2 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -947,10 +1073,12 @@ main(int argc, char **argv)
   dmax = cm->dmax; 
 
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
+#if 0
   trsmx = cm_CreateTrScanMatrix   (cm, cm->W, dmax, cm->beta_W, cm->beta_qdb, 
 				   (dmin == NULL && dmax == NULL) ? FALSE : TRUE,
 				   TRUE, FALSE); /* do_float, do_int */
   if(trsmx == NULL) esl_fatal("Problem creating trsmx");
+#endif
   
   /* get sequences */
   if(esl_opt_IsUsed(go, "--infile")) { 
@@ -1013,6 +1141,11 @@ main(int argc, char **argv)
       dsq = seqs_to_aln->sq[i]->dsq;
       cm->search_opts &= ~CM_SEARCH_INSIDE;
 
+      trsmx = cm_CreateTrScanMatrix   (cm, cm->W, dmax, cm->beta_W, cm->beta_qdb, 
+				       (dmin == NULL && dmax == NULL) ? FALSE : TRUE,
+				       TRUE, FALSE); /* do_float, do_int */
+      if(trsmx == NULL) esl_fatal("Problem creating trsmx");
+      
       esl_stopwatch_Start(w);
       if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
@@ -1037,16 +1170,20 @@ main(int argc, char **argv)
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
-      esl_stopwatch_Start(w);
-      sc = TrCYK_DnC(cm, dsq, L, 0, 1, L, FALSE);
-      printf("%4d %-30s %10.4f bits ", (i+1), "TrCYK_DnC():      ", sc);
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(stdout, w, " CPU time: ");
+      if(esl_opt_GetBoolean(go, "--dc")) { 
+	esl_stopwatch_Start(w);
+	sc = TrCYK_DnC(cm, dsq, L, 0, 1, L, FALSE);
+	printf("%4d %-30s %10.4f bits ", (i+1), "TrCYK_DnC():      ", sc);
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+      }
 
       printf("\n");
+      cm_FreeTrScanMatrix(cm, trsmx);
     }
   FreeCM(cm);
   FreeSeqsToAln(seqs_to_aln);
+  //cm_FreeTrScanMatrix(cm, trsmx);
   esl_alphabet_Destroy(abc);
   esl_stopwatch_Destroy(w);
   esl_randomness_Destroy(r);
