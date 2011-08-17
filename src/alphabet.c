@@ -341,7 +341,7 @@ LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
 {
    float *left = NULL;
    int status;
-   ESL_ALLOC(left,  (sizeof(float) * abc->K));
+   ESL_ALLOC(left,  (sizeof(float) * (abc->K+1)));
    int i;
    float sc;
 
@@ -387,7 +387,7 @@ RightMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
    int i,j;
    float sc;
    float row[abc->K];
-   ESL_ALLOC(right, (sizeof(float) * abc->K));
+   ESL_ALLOC(right, (sizeof(float) * (abc->K+1)));
 
    if (dres < abc->K)
    {

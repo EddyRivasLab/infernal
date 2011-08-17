@@ -148,8 +148,8 @@ SetMarginalScores(CM_t *cm)
       if (cm->sttype[v] == MP_st)
          for (i = 0; i < cm->abc->Kp; i++)
          {
-            cm->lmesc[v][i] =  LeftMarginalScore(cm->abc, cm->esc[v], i);
-            cm->rmesc[v][i] = RightMarginalScore(cm->abc, cm->esc[v], i);
+	   cm->lmesc[v][i] =  LeftMarginalScore(cm->abc, cm->esc[v], i);
+	   cm->rmesc[v][i] = RightMarginalScore(cm->abc, cm->esc[v], i);
          }
        else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)
          for (i = 0; i < cm->abc->Kp; i++)
@@ -227,7 +227,7 @@ TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **re
    /* 2.0 instead of 2 to force floating point division, not integer division */
    /* This is the fragment penalty */
    bsc = sreLOG2(2.0/(model_len*(model_len+1)));
-
+   printf("Best truncated score: %.4f (%.4f)\n", sc, (sc+bsc));
    sc += bsc;
 
    if ( ret_tr != NULL ) { *ret_tr = tr; }
@@ -315,6 +315,7 @@ TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int lenCORREX
    }
    /* 2.0 instead of 2 to force floating point division, not integer division */
    bsc = sreLOG2(2.0/(model_len*(model_len+1)));
+
    /* null model length correction */
    if (lenCORREX)
    {
@@ -323,6 +324,7 @@ TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int lenCORREX
       sc -= nullsc;
    }
 
+   printf("Best truncated score: %.4f (%.4f)\n", sc, (sc+bsc));
    sc += bsc;
 
    if ( ret_tr != NULL ) *ret_tr = tr;
@@ -1587,6 +1589,44 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
                      if ( ret_shadow != NULL ) { ((char **)shadow[v])[j][d] = yoffset; }
                   }
 
+		  if  ( d > 1 )
+                  if  ( (sc = L_alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
+                  {
+                     L_alpha[v][j][d] = sc;
+                     if ( ret_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
+                     if ( ret_shadow != NULL ) { Lmode_shadow[v][j][d] = 2; }
+                  }
+	       }
+
+	       /* we need a separate 'for(yoffset...' loop for the R matrix 
+		* because it depends on a fully calculated J matrix cell
+		* alpha[v][j][d] in some cases (when v is an IL, and yoffset is 0)
+		*/
+               for ( yoffset = 0; yoffset < cm->cnum[v]; yoffset++ )
+	       {
+		  if  ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
+		  {
+                      R_alpha[v][j][d] = sc;
+                      if ( ret_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
+                      if ( ret_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
+                  }
+
+                  if  ( (sc = R_alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
+                  {
+                      R_alpha[v][j][d] = sc;
+                      if ( ret_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
+                      if ( ret_shadow != NULL ) { Rmode_shadow[v][j][d] = 1; }
+                  }
+               }
+#if 0 
+               for ( yoffset = 0; yoffset < cm->cnum[v]; yoffset++ )
+               {
+                  if  ( (sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > alpha[v][j][d] )
+                  {
+                     alpha[v][j][d] = sc;
+                     if ( ret_shadow != NULL ) { ((char **)shadow[v])[j][d] = yoffset; }
+                  }
+
                   if  ( d > 1 )
                   if  ( (sc = L_alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
                   {
@@ -1595,6 +1635,29 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
                      if ( ret_shadow != NULL ) { Lmode_shadow[v][j][d] = 2; }
                   }
 
+		  /* EPN, Wed Aug 17 09:34:13 2011
+		   * I think this is a minor bug:
+		   * If y == v and yoffset is 0, then
+		   * 1. alpha[y+yoffset][j][d] == alpha[v][j][d] This
+                   *    is a problem because alpha[v][j][d] hasn't
+                   *    been fully calculated yet, see line about 12
+                   *    lines up: 'alpha[v][j][d] = sc;', it could be
+                   *    changed for next yoffset value. This means
+                   *    that the if statement below: 'if ( (sc =
+                   *    alpha[y+yoffset][j][d] + cm->tsc[v][yoffset])
+                   *    > R_alpha[v][j][d] )' is using a
+                   *    not-yet-finished alpha[y+yoffset][j][d]
+                   *    (remember this equals alpha[v][j][d]) value,
+                   *    which is bad. The way to fix this is to 
+		   *    use separate 'for(yoffset...' loops for each
+		   *    alpha and R_alpha.
+		   *
+		   * 2. R_alpha[y+yoffset][j][d] == R_alpha[v][j][d] 
+		   *    I think this is okay because R_alpha[v][j][d] is
+		   *    init'ed to IMPOSSIBLE and transitions are always
+		   *    <= 0, so R_alpha[v][j][d] will stay as IMPOSSIBLE
+		   *    below.
+		   */
                   if  ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
                   {
                      R_alpha[v][j][d] = sc;
@@ -1609,7 +1672,7 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
                      if ( ret_shadow != NULL ) { Rmode_shadow[v][j][d] = 1; }
                   }
                }
-
+#endif
                i = j-d+1;
                if ( dsq[i] < cm->abc->K ) 
                {
@@ -1674,6 +1737,51 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
                      alpha[v][j][d] = sc;
                      if ( ret_shadow != NULL ) { ((char **)shadow[v])[j][d] = yoffset; }
                   }
+                  if  ( d > 1 )
+                  if  ( (sc = R_alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
+                  {
+                     R_alpha[v][j][d] = sc;
+                     if ( ret_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
+                     if ( ret_shadow != NULL ) { Rmode_shadow[v][j][d] = 1; }
+                  }
+	       }
+
+	       /* we need a separate 'for(yoffset...' loop for the L matrix 
+		* because it depends on a fully calculated J matrix cell
+		* alpha[v][j][d] in some cases (when v is an IR, and yoffset is 0)
+		*/
+               for ( yoffset = 0; yoffset < cm->cnum[v]; yoffset++ )
+               {
+                  if  ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
+                  {
+                     L_alpha[v][j][d] = sc;
+                     if ( ret_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
+                     if ( ret_shadow != NULL ) { Lmode_shadow[v][j][d] = 3; }
+                  }
+
+                  if  ( (sc = L_alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
+                  {
+                     L_alpha[v][j][d] = sc;
+                     if ( ret_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
+                     if ( ret_shadow != NULL ) { Lmode_shadow[v][j][d] = 2; }
+                  }
+	       }
+
+#if 0
+	       /* EPN, Wed Aug 17 09:34:13 2011 I think this is a
+		* minor bug, analogous to the one in the same spot
+		* above for IL, ML states, see that comment for more
+		* info. (The bug is actually only for self-looping
+		* IL/IR states.)
+		*/
+
+               for ( yoffset = 0; yoffset < cm->cnum[v]; yoffset++ )
+               {
+                  if  ( (sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > alpha[v][j][d] )
+                  {
+                     alpha[v][j][d] = sc;
+                     if ( ret_shadow != NULL ) { ((char **)shadow[v])[j][d] = yoffset; }
+                  }
 
                   if  ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
                   {
@@ -1697,6 +1805,7 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
                      if ( ret_shadow != NULL ) { Rmode_shadow[v][j][d] = 1; }
                   }
                }
+#endif
 
                if ( dsq[j] < cm->abc->K ) 
                {
@@ -1737,6 +1846,43 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
       {
          cm_Die("'Inconceivable!'\n'You keep using that word...'");
       }
+
+#if 0
+      /* TEMP PRINTING */
+      if(cm->sttype[v] == B_st) { 
+	for (jp = 0; jp <= W; jp++) { 
+	  j = i0-1+jp;
+	  if(j > 0) { 
+	    for ( d = 0; d <= jp; d++ ) {
+	      printf("D j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
+		     j, v, d, 
+		     NOT_IMPOSSIBLE(  alpha[v][j][d]) ?   alpha[v][j][d] : -9999.9,
+		     NOT_IMPOSSIBLE(L_alpha[v][j][d]) ? L_alpha[v][j][d] : -9999.9,
+		     NOT_IMPOSSIBLE(R_alpha[v][j][d]) ? R_alpha[v][j][d] : -9999.9,
+		     NOT_IMPOSSIBLE(T_alpha[v][j][d]) ? T_alpha[v][j][d] : -9999.9);
+	    }
+	  }
+	}
+      }
+      else {
+	for (jp = 0; jp <= W; jp++) { 
+	  j = i0-1+jp;
+	  if(j > 0) { 
+	    for ( d = 0; d <= jp; d++ ) {
+	      printf("D j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
+		     j, v, d, 
+		     NOT_IMPOSSIBLE(  alpha[v][j][d]) ?   alpha[v][j][d] : -9999.9,
+		     NOT_IMPOSSIBLE(L_alpha[v][j][d]) ? L_alpha[v][j][d] : -9999.9,
+		     NOT_IMPOSSIBLE(R_alpha[v][j][d]) ? R_alpha[v][j][d] : -9999.9,
+		     -9999.9);
+	    }
+	  }
+	}
+      }
+	
+      printf("\n");
+      /* TEMP PRINTING */
+#endif
 
       if ( v == vroot )
       {

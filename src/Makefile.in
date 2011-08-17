@@ -85,6 +85,7 @@ OBJS  = cm.o\
 	cm_alidisplay.o\
 	cm_dpalign.o\
 	cm_dpsearch.o\
+	cm_dpsearch_trunc.o\
 	cm_dpsmall.o\
 	cm_file.o\
 	cm_modelconfig.o\

@@ -1101,6 +1101,70 @@ typedef struct theta_s {
   int       i0;                 /* position of first residue in sequence (gamma->mx[0] corresponds to this residue) */
 } Theta_t;
 
+/* Structure TrScanMatrix_t: Information used by all trCYK/trInside
+ * scanning functions, compiled together into one data structure for
+ * convenience.
+ */
+#define cmTRSMX_HAS_FLOAT (1 << 0)  /* if float versions of alpha and precalc'ed scores are valid */
+#define cmTRSMX_HAS_INT   (1 << 1)  /* if int   versions of alpha and precalc'ed scores are valid */
+typedef struct trscanmx_s {
+  /* general info about the model/search */
+  int     cm_M;        /* # states in the CM */
+  int     W;           /* max hit size */
+  int    *dmax;        /* [0..v..cm->M-1] max subtree length for v using beta, just a ref, NULL for non-banded */
+  int   **dnAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
+  int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
+  int    *bestr;       /* auxil info: best root state at alpha[0][cur][d] */
+  int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha) */
+  double  beta_qdb;    /* tail loss prob used for calc'ing dmin/dmax, invalid if dmin==dmax==NULL */
+  double  beta_W;      /* tail loss prob used for calc'ing W, often == beta_qdb, may be greater, can't be less */
+
+  /* f{J,L,R,T}alpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] for float implementations of CYK/Inside */
+  float ***fJalpha;          /* non-BEGL_S states for float versions of CYK/Inside */
+  float ***fJalpha_begl;     /*     BEGL_S states for float versions of CYK/Inside */
+  float   *fJalpha_mem;      /* ptr to the actual memory for falpha */
+  float   *fJalpha_begl_mem; /* ptr to the actual memory for falpha_begl */
+
+  float ***fLalpha;          /* non-BEGL_S states for float versions of CYK/Inside */
+  float ***fLalpha_begl;     /*     BEGL_S states for float versions of CYK/Inside */
+  float   *fLalpha_mem;      /* ptr to the actual memory for falpha */
+  float   *fLalpha_begl_mem; /* ptr to the actual memory for falpha_begl */
+
+  float ***fRalpha;          /* non-BEGL_S states for float versions of CYK/Inside */
+  float ***fRalpha_begl;     /*     BEGL_S states for float versions of CYK/Inside */
+  float   *fRalpha_mem;      /* ptr to the actual memory for falpha */
+  float   *fRalpha_begl_mem; /* ptr to the actual memory for falpha_begl */
+
+  float ***fTalpha;          /* non-BEGL_S states for float versions of CYK/Inside */
+  float ***fTalpha_begl;     /*     BEGL_S states for float versions of CYK/Inside */
+  float   *fTalpha_mem;      /* ptr to the actual memory for falpha */
+  float   *fTalpha_begl_mem; /* ptr to the actual memory for falpha_begl */
+
+  /* i{J,L,R,T}alpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] for integer implementations of CYK/Inside */
+  int   ***iJalpha;          /* non-BEGL_S states for int   versions of CYK/Inside */
+  int   ***iJalpha_begl;     /*     BEGL_S states for int   versions of CYK/Inside */
+  int     *iJalpha_mem;      /* ptr to the actual memory for ialpha */
+  int     *iJalpha_begl_mem; /* ptr to the actual memory for ialpha_begl */
+
+  int   ***iLalpha;          /* non-BEGL_S states for int   versions of CYK/Inside */
+  int   ***iLalpha_begl;     /*     BEGL_S states for int   versions of CYK/Inside */
+  int     *iLalpha_mem;      /* ptr to the actual memory for ialpha */
+  int     *iLalpha_begl_mem; /* ptr to the actual memory for ialpha_begl */
+
+  int   ***iRalpha;          /* non-BEGL_S states for int   versions of CYK/Inside */
+  int   ***iRalpha_begl;     /*     BEGL_S states for int   versions of CYK/Inside */
+  int     *iRalpha_mem;      /* ptr to the actual memory for ialpha */
+  int     *iRalpha_begl_mem; /* ptr to the actual memory for ialpha_begl */
+
+  int   ***iTalpha;          /* non-BEGL_S states for int   versions of CYK/Inside */
+  int   ***iTalpha_begl;     /*     BEGL_S states for int   versions of CYK/Inside */
+  int     *iTalpha_mem;      /* ptr to the actual memory for ialpha */
+  int     *iTalpha_begl_mem; /* ptr to the actual memory for ialpha_begl */
+
+  int      ncells_alpha;      /* number of alloc'ed, valid cells for f{J,L,R,T}alpha and i{J,L,R,T}alpha matrices, alloc'ed as contiguous block */
+  int      ncells_alpha_begl; /* number of alloc'ed, valid cells for f{J,L,R,T}alpha_begl and i{J,L,R,T}alpha_begl matrices, alloc'ed as contiguous block */
+} TrScanMatrix_t;
+
 /* Structure SearchInfo_t: 
  * 
  * Information for CM searches, including info on filters.  
