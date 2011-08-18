@@ -58,12 +58,12 @@ main(int argc, char **argv)
    cmfile = argv[optind++];
    seqfile = argv[optind++];
 
-   if((status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf)) != eslOK);
-      cm_Die("Failed to open covariance model save file\n");
-      if ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) != eslOK)
-      cm_Die("Failed to read a CM from cm file\n");
+   if((status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf)) != eslOK)
+     cm_Die("Failed to open covariance model save file\n");
+   if ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) != eslOK)
+     cm_Die("Failed to read a CM from cm file\n");
    if (cm == NULL)
-      cm_Die("CM file empty?\n");
+     cm_Die("CM file empty?\n");
    cm_file_Close(cmfp);
 
    if ( esl_sqfile_Open(seqfile, format, NULL, &sqfp) != eslOK )
@@ -87,11 +87,13 @@ main(int argc, char **argv)
          esl_sq_Digitize(abc, seq);
       sc = TrCYK_DnC(cm, seq->dsq, seq->n, 0, i0, j0, &tr);
       fali = CreateFancyAli(cm->abc, tr, cm, cons, seq->dsq, FALSE, NULL);
+      /*ParsetreeDump(stdout, tr, cm, seq->dsq, NULL, NULL);*/
       FreeParsetree(tr);
 
       revcomp(abc, seq, seq);
       rev_sc = TrCYK_DnC(cm,seq->dsq, seq->n, 0, i0, j0, &tr);
       rev_fali = CreateFancyAli(cm->abc, tr, cm, cons,seq->dsq, FALSE, NULL);
+      /*ParsetreeDump(stdout, tr, cm, seq->dsq, NULL, NULL);*/
       FreeParsetree(tr);
 
       if (sc > rev_sc)

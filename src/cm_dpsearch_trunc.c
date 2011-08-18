@@ -235,15 +235,11 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 
 	      Jalpha[jp_v][v][d] = Jsc;
 	      Talpha[jp_v][v][d] = Tsc;
-	      if(kmin == 0) { 
-		Lalpha[jp_v][v][d] = ESL_MAX(Lsc, ESL_MAX(Jalpha_begl[jp_wA[0]][w][d], Lalpha_begl[jp_wA[0]][w][d])); 
-		Ralpha[jp_v][v][d] = ESL_MAX(Rsc, ESL_MAX(Jalpha[jp_y][y][d], Ralpha[jp_y][y][d]));
-	      }
-	      else { 
-		Lalpha[jp_v][v][d] = Lsc;
-		Ralpha[jp_v][v][d] = Rsc;
-	      }
+	      if(kmin == 0) Lalpha[jp_v][v][d] = ESL_MAX(Lsc, ESL_MAX(Jalpha_begl[jp_wA[0]][w][d], Lalpha_begl[jp_wA[0]][w][d])); 
+	      else          Lalpha[jp_v][v][d] = Lsc;
 
+	      if(kmax == d) Ralpha[jp_v][v][d] = ESL_MAX(Rsc, ESL_MAX(Jalpha[jp_y][y][d], Ralpha[jp_y][y][d]));
+	      else          Ralpha[jp_v][v][d] = Rsc;
 	      /* careful: scores for w, the BEGL_S child of v, are in alpha_begl, not alpha */
 	    }
 	  }

@@ -643,11 +643,11 @@ build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf
       ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
       matassign[0] = 0;
       for (apos = 1; apos <= msa->alen; apos++)
-	matassign[apos] = esl_abc_CIsGap(msa->abc, msa->rf[apos-1]) ? FALSE : TRUE;  
+	matassign[apos] = esl_abc_CIsGap(cm->abc, msa->rf[apos-1]) ? FALSE : TRUE;  
 
       /* Add the counts to the growing counts-based HMM */
       /* make fake tracebacks for each seq, first we need to digitize the MSA */
-      esl_msa_Digitize(msa->abc, msa, NULL);
+      esl_msa_Digitize(cm->abc, msa, NULL);
       CP9_fake_tracebacks(msa, matassign, &cp9_tr);
 	  
       /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
