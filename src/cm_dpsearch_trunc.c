@@ -255,7 +255,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	      Jsc = init_scAA[v][d-sd]; 
 	      Lsc = IMPOSSIBLE;
 	      Rsc = IMPOSSIBLE;
-	      Ralpha[jp_y][v][d] = Rsc; /* this is important b/c if we're an IL, we'll access this cell in the recursion below for Ralpha */
+	      Ralpha[jp_v][v][d] = Rsc; /* this is important b/c if we're an IL, we'll access this cell in the recursion below for Ralpha */
 
 	      /* We need to do separate 'for (yoffset...' loops for J
 	       * and R matrices, because jp_v == jp_y for all states
@@ -287,7 +287,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	      Jsc = init_scAA[v][d-sd]; 
 	      Lsc = IMPOSSIBLE;
 	      Rsc = IMPOSSIBLE;
-	      Lalpha[jp_y][v][d] = Lsc; /* this is important b/c if we're an IR, we'll access this cell in the recursion below for Lalpha */
+	      Lalpha[jp_v][v][d] = Lsc; /* this is important b/c if we're an IR, we'll access this cell in the recursion below for Lalpha */
 	      
 	      /* We need to do separate 'for (yoffset...' loops for J
 	       * and L matrices, because jp_v == jq_y for all states
@@ -1073,12 +1073,10 @@ main(int argc, char **argv)
   dmax = cm->dmax; 
 
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
-#if 0
   trsmx = cm_CreateTrScanMatrix   (cm, cm->W, dmax, cm->beta_W, cm->beta_qdb, 
 				   (dmin == NULL && dmax == NULL) ? FALSE : TRUE,
 				   TRUE, FALSE); /* do_float, do_int */
   if(trsmx == NULL) esl_fatal("Problem creating trsmx");
-#endif
   
   /* get sequences */
   if(esl_opt_IsUsed(go, "--infile")) { 
@@ -1140,11 +1138,6 @@ main(int argc, char **argv)
       L = seqs_to_aln->sq[i]->n;
       dsq = seqs_to_aln->sq[i]->dsq;
       cm->search_opts &= ~CM_SEARCH_INSIDE;
-
-      trsmx = cm_CreateTrScanMatrix   (cm, cm->W, dmax, cm->beta_W, cm->beta_qdb, 
-				       (dmin == NULL && dmax == NULL) ? FALSE : TRUE,
-				       TRUE, FALSE); /* do_float, do_int */
-      if(trsmx == NULL) esl_fatal("Problem creating trsmx");
       
       esl_stopwatch_Start(w);
       if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
@@ -1179,11 +1172,10 @@ main(int argc, char **argv)
       }
 
       printf("\n");
-      cm_FreeTrScanMatrix(cm, trsmx);
     }
   FreeCM(cm);
   FreeSeqsToAln(seqs_to_aln);
-  //cm_FreeTrScanMatrix(cm, trsmx);
+  cm_FreeTrScanMatrix(cm, trsmx);
   esl_alphabet_Destroy(abc);
   esl_stopwatch_Destroy(w);
   esl_randomness_Destroy(r);

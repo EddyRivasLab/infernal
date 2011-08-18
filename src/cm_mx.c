@@ -1345,6 +1345,103 @@ cm_DumpScanMatrixAlpha(CM_t *cm, int j, int i0, int doing_float)
   return;
 }
 
+
+/* Function: cm_DumpTrScanMatrixAlpha()
+ * Date:     EPN, Thu Aug 18 07:35:20 2011
+ *
+ * Purpose:  Dump current {J,L,R,T}alpha matrices from a TrScanMatrix (either float or int).
+ *            
+ * Returns:  void.
+ */
+void
+cm_DumpTrScanMatrixAlpha(CM_t *cm, TrScanMatrix_t *trsmx, int j, int i0, int doing_float)
+{
+  int d, v;
+  int jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
+  int cur = j%2;
+  int prv = (j-1)%2;
+  int *dnA, *dxA;
+
+  if(doing_float && (! trsmx->flags & cmTRSMX_HAS_FLOAT))  cm_Fail("cm_DumpScanMatrixAlpha(), trying to print float alpha, but cmTRSMX_HAS_FLOAT flag is down.\n");
+  if((! doing_float) && (! trsmx->flags & cmTRSMX_HAS_INT)) cm_Fail("cm_DumpScanMatrixAlpha(), trying to print int alpha, but cmTRSMX_HAS_INT flag is down.\n");
+
+  int begl_prv = j-1 % (trsmx->W+1);
+  int begl_cur = j   % (trsmx->W+1);
+
+  printf("Dumping {J,L,R,T}Alpha: j: %d\n", j);
+  if(jp_g >= trsmx->W) { dnA = trsmx->dnAA[trsmx->W]; dxA = trsmx->dxAA[trsmx->W]; }
+  else              { dnA = trsmx->dnAA[jp_g];  dxA = trsmx->dxAA[jp_g]; }
+  if(doing_float) {
+    for (v = trsmx->cm_M-1; v >= 0; v--) {	
+      if (cm->stid[v] == BEGL_S) { 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fJalpha_begl[begl_prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fLalpha_begl[begl_prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fRalpha_begl[begl_prv][v][d]); 
+      }
+      else {
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fJalpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fLalpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fRalpha[prv][v][d]); 
+      }
+      if(cm->stid[v] == BIF_B) { 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("TA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fTalpha[prv][v][d]); 
+      }
+      printf("\n");
+    }
+    for (v = trsmx->cm_M-1; v >= 0; v--) {	
+      if (cm->stid[v] == BEGL_S) {
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fJalpha_begl[begl_cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fLalpha_begl[begl_cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fRalpha_begl[begl_cur][v][d]); 
+      }
+      else {
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fJalpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fLalpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fRalpha[cur][v][d]); 
+      }
+      if(cm->stid[v] == BIF_B) { 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("TA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fTalpha[cur][v][d]); 
+      }
+      printf("\n");
+    }
+  }
+  else { /* doing int */
+    for (v = trsmx->cm_M-1; v >= 0; v--) {	
+      if (cm->stid[v] == BEGL_S) {
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iJalpha_begl[begl_prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iLalpha_begl[begl_prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iRalpha_begl[begl_prv][v][d]); 
+      }
+      else {
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iJalpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iLalpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iRalpha[prv][v][d]); 
+      }
+      if(cm->stid[v] == BIF_B) { 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("TA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iTalpha[prv][v][d]); 
+      }
+      printf("\n\n");
+    }
+    for (v = trsmx->cm_M-1; v >= 0; v--) {	
+      if (cm->stid[v] == BEGL_S) {
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iJalpha_begl[begl_cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iLalpha_begl[begl_cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iRalpha_begl[begl_cur][v][d]); 
+      }
+      else {
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iJalpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iLalpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iRalpha[cur][v][d]); 
+      }
+      if(cm->stid[v] == BIF_B) { 
+	for(d = dnA[v]; d <= dxA[v]; d++) printf("TA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iTalpha[cur][v][d]); 
+      }
+      printf("\n\n");
+    }
+  }
+  return;
+}
+
 /* Function: FCalcOptimizedEmitScores()
  * Date:     EPN, Tue Nov  6 17:24:45 2007
  *

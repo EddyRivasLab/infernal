@@ -254,6 +254,7 @@ extern int              cm_FreeIntsFromScanMatrix     (CM_t *cm, ScanMatrix_t *s
 extern void             cm_FreeScanMatrix             (CM_t *cm, ScanMatrix_t *smx);
 extern void             cm_FreeScanMatrixForCM        (CM_t *cm);
 extern void             cm_DumpScanMatrixAlpha        (CM_t *cm, int j, int i0, int doing_float);
+extern void             cm_DumpTrScanMatrixAlpha      (CM_t *cm, TrScanMatrix_t *trsmx, int j, int i0, int doing_float);
 extern float **         FCalcOptimizedEmitScores      (CM_t *cm);
 extern int **           ICalcOptimizedEmitScores      (CM_t *cm);
 extern int **           ICopyOptimizedEmitScoresFromFloats(CM_t *cm, float **oesc);
