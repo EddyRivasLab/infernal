@@ -517,46 +517,43 @@ cm_tophits_Destroy(CM_TOPHITS *h)
   return;
 }
 
-
-/* Function:  cm_tophits_CloneHitFromResults()
- * Synopsis:  Add a new hit, a clone of a hit in a search_results_node_t object.
+/* Function:  cm_tophits_CloneHitMostly()
+ * Synopsis:  Add a new hit to <dest_th>, a clone of hit <h> in <src_th>.
  * Incept:    EPN, Wed May 25 08:17:35 2011
  *
- * Purpose:   Create a new hit in the CM_TOPHITS object <th>
- *            and copy the information from the search_results_t
- *            object's <hidx>'th node into it. Return a pointer 
- *            to the new hit.
+ * Purpose:   Create a new hit in the CM_TOPHITS object <dest_th>
+ *            and copy the information from hit <h> in the sorted
+ *            hitlist <src_th> into it.
+ * 
+ *            NOTE: we do not copy name, acc, desc, or ad.
  *
  * Returns:   <eslOK> on success.
  *
  * Throws:    <eslEMEM> on allocation error.
  */
 int
-cm_tophits_CloneHitFromResults(CM_TOPHITS *th, search_results_t *results, int hidx, int64_t cm_idx, int64_t seq_idx, CM_HIT **ret_hit)
+cm_tophits_CloneHitMostly(CM_TOPHITS *src_th, int h, CM_TOPHITS *dest_th)
 {
   CM_HIT *hit = NULL;
   int     status;
 
-  if ((status = cm_tophits_CreateNextHit(th, &hit)) != eslOK) goto ERROR;
-  hit->start   = results->data[hidx].start;
-  hit->stop    = results->data[hidx].stop;
-  hit->score   = results->data[hidx].score;
-  hit->cm_idx  = cm_idx;
-  hit->seq_idx = seq_idx;
+  if ((status = cm_tophits_CreateNextHit(dest_th, &hit)) != eslOK) goto ERROR;
+  hit->cm_idx  = src_th->hit[h]->cm_idx;
+  hit->seq_idx = src_th->hit[h]->seq_idx;
+  hit->start   = src_th->hit[h]->start;
+  hit->stop    = src_th->hit[h]->stop;
+  hit->in_rc   = src_th->hit[h]->in_rc;
+  hit->root    = src_th->hit[h]->root;
+  hit->mode    = src_th->hit[h]->mode;
+  hit->score   = src_th->hit[h]->score;
+  hit->pvalue  = src_th->hit[h]->pvalue;
+  hit->evalue  = src_th->hit[h]->evalue;
+  hit->flags   = src_th->hit[h]->flags;
+  hit->ad      = NULL;
 
-  hit->in_rc = hit->start <= hit->stop ? FALSE : TRUE;
-  /* Note: start should always be less than stop because 
-   * results are created on a 'forward' strand sequence spanning 
-   * i..j with i <= j. We'll fix hit->in_rc in cmsearch  or 
-   * cmscan because that's the only scope in which we know if
-   * we're in the forward or reverse strand.
-   */
-
-  *ret_hit = hit;
   return eslOK;
 
  ERROR:
-  *ret_hit = NULL;
   return status;
 }  
 
@@ -1464,8 +1461,6 @@ cm_hit_Dump(FILE *fp, const CM_HIT *h)
     fprintf(fp, "flags:\n");
     if(h->flags & CM_HIT_IS_REPORTED)  fprintf(fp, "\tCM_HIT_IS_REPORTED\n");
     if(h->flags & CM_HIT_IS_INCLUDED)  fprintf(fp, "\tCM_HIT_IS_INCLUDED\n");
-    if(h->flags & CM_HIT_IS_NEW)       fprintf(fp, "\tCM_HIT_IS_NEW\n");
-    if(h->flags & CM_HIT_IS_DROPPED)   fprintf(fp, "\tCM_HIT_IS_DROPPED\n");
     if(h->flags & CM_HIT_IS_DUPLICATE) fprintf(fp, "\tCM_HIT_IS_DUPLICATE\n");
   }
   if(h->ad == NULL) { 

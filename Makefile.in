@@ -75,7 +75,6 @@ endif
 #
 PROGS = cmalign\
 	cmbuild\
-	cmcalibrate\
 	cmemit\
 	cmfetch\
 	cmscan\

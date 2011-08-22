@@ -561,10 +561,10 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
        esl_sq_Destroy(mytmpdsq);
        fflush(stdout);*/
     /************************************************/
-    
+
     if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, L, 
 					cm->clen, /* guess at average hit len for HMM scanning functions (irrelevant since we don't do HMM functions) */
-					&results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL, NULL)) != eslOK) cm_Fail(errbuf);
+					&results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank)) != eslOK) cm_Fail(errbuf);
     
     /* Overlaps should have already been removed inside DispatchSearch called by ProcessSearchWorkunit() */
     RemoveOverlappingHits(results, 1, L);

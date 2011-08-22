@@ -41,7 +41,7 @@
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
- *           results         - search_results_t to add to; if NULL, don't add to it
+ *           hitlist         - hitlist to add to; if NULL, don't add to it
  *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
@@ -56,7 +56,7 @@
  */
 int
 SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
-	   search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
+	    CM_TOPHITS *hitlist, int do_null3, float **ret_vsc, float *ret_sc)
 {
 //FIXME: needs some cleanup from the scalar detritus; should be able
 //FIXME: to drop the ScanMatrix (I think all we need from it is W
@@ -138,7 +138,7 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
+  if(hitlist != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -657,8 +657,8 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	tmpv = _mm_max_ps(tmpv, vec_alpha[jp_v][0][d]);
       esl_sse_hmax_ps(tmpv, &tmp_esc);		/* overloaded tmp_esc, just need a temporary float */
       vsc_root = ESL_MAX(vsc_root, tmp_esc);
-      /* for UpdateGammaHitMxCM to work, these data need to be un-vectorized: alpha[jp_v][0], bestr */
-      if (results != NULL) {
+      /* for UpdateGammaHitMx to work, these data need to be un-vectorized: alpha[jp_v][0], bestr */
+      if (hitlist != NULL) {
         for (d = 0; d < sW; d++) {
           tmp.v = vec_alpha[jp_v][0][d];
           alpha[jp_v][0][     d] = tmp.x[0];
@@ -672,16 +672,16 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
           if (3*sW+d <= W) bestr[3*sW+d] = tmp.x[3];
         }
       }
-      /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results, W, act)) != eslOK) return status;
+      /* update gamma, but only if we're reporting hits to hitlist */
+      if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, smx->bestmode, hitlist, W, act)) != eslOK) return status;
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
   /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in UpdateGammaHitMxCM() for each position j */
-  if(results != NULL && gamma->iamgreedy == FALSE) 
-    TBackGammaHitMxForward(gamma, results, i0, j0);
+   * If we were greedy, they were reported in UpdateGammaHitMx() for each position j */
+  if(hitlist != NULL && gamma->iamgreedy == FALSE) 
+    TBackGammaHitMx(gamma, hitlist, i0, j0);
 
   /* clean up and return */
   if(gamma != NULL) FreeGammaHitMx(gamma);
@@ -716,7 +716,7 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
  * Benchmark driver
  *****************************************************************/
 #ifdef IMPL_SEARCH_BENCHMARK
-/* gcc -o sse-bmark -g -O2 -std=gnu99 -msse2 -mpentiumpro -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c -linfernal -lhmmer -leasel -lm
+/* gcc -o sse-bmark -g -O2 -std=gnu99 -msse2 -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_SEARCH_BENCHMARK sse_cm_dpsearch.c -linfernal -lhmmer -leasel -lm
  * icc -o sse-bmark -g -O3 -static -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_SEARCH_BENCHMARK sse_cm_dpsearch.c -linfernal -lhmmer -leasel -lm
 
  * Not updated for this file ...
@@ -785,7 +785,7 @@ main(int argc, char **argv)
   int             i;
   float           sc;
   char            *cmfile = esl_opt_GetArg(go, 1);
-  CMFILE          *cmfp;	/* open input CM file stream */
+  CM_FILE        *cmfp;	/* open input CM file stream */
   int            *dmin;
   int            *dmax;
   int             do_random;
@@ -799,9 +799,9 @@ main(int argc, char **argv)
   if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
   else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
 
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
-  if ((status = CMFileRead(cmfp, errbuf, &abc, &cm) != eslOK))            cm_Fail("Failed to read CM");
-  CMFileClose(cmfp);
+  if ((status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf)) != eslOK)  cm_Fail("Failed to open covariance model save file\n", cmfile);
+  if ((status = cm_file_Read(cmfp, TRUE, &abc, &cm))              != eslOK)  cm_Fail("Failed to read a CM from cm file\n");
+  cm_file_Close(cmfp);
 
   do_random = TRUE;
   if(esl_opt_GetBoolean(go, "-e")) do_random = FALSE; 
@@ -841,7 +841,7 @@ main(int argc, char **argv)
     /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
     int safe_windowlen = cm->clen * 2;
     double **gamma = NULL;
-    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
+    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
       safe_windowlen *= 2;
       FreeBandDensities(cm, gamma);
       if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
@@ -860,7 +860,7 @@ main(int argc, char **argv)
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
 
       esl_stopwatch_Start(w);
-      if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -874,15 +874,6 @@ main(int argc, char **argv)
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
   
-      if (esl_opt_GetBoolean(go, "--rsearch")) 
-	{ 
-	  esl_stopwatch_Start(w);
-	  if((status = rsearch_CYKScan (cm, errbuf, dsq, L, 0., cm->W, NULL, &sc)) != eslOK) cm_Fail(errbuf); 
-	  printf("%4d %-30s %10.4f bits ", (i+1), "rsearch_CYKScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
-
       /* integer inside implementations */
       if (esl_opt_GetBoolean(go, "--iins")) 
 	{ 

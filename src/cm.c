@@ -131,14 +131,12 @@ CreateCMShell(void)
   cm->cp9map       = NULL;
   cm->root_trans   = NULL;
   cm->expA         = NULL;
-  cm->hfiA         = NULL;
   cm->smx          = NULL;
   cm->hbmx         = NULL;
   cm->ohbmx        = NULL;
   cm->shmx         = NULL;
   cm->cp9_mx       = NULL;
   cm->cp9_bmx      = NULL;
-  cm->si           = NULL;
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
   cm->mlp7         = NULL;          
@@ -351,7 +349,6 @@ FreeCM(CM_t *cm)
   int i;
 
   if (cm->smx       != NULL) cm_FreeScanMatrixForCM(cm); /* free this first, it needs some info from cm->stid */
-  if (cm->si        != NULL) FreeSearchInfo(cm->si, cm); /* free this first, it needs some info from cm->stid */
   if (cm->name      != NULL) free(cm->name);
   if (cm->acc       != NULL) free(cm->acc);
   if (cm->desc      != NULL) free(cm->desc);
@@ -423,12 +420,6 @@ FreeCM(CM_t *cm)
       free(cm->expA[i]);
     }
     free(cm->expA);
-  }
-  if(cm->hfiA != NULL) { 
-    for(i = 0; i < FTHR_NMODES; i++) {
-      FreeHMMFilterInfo(cm->hfiA[i]); 
-    }
-    free(cm->hfiA);
   }
 
   if(cm->mlp7       != NULL) { p7_hmm_Destroy(cm->mlp7); cm->mlp7 = NULL; }
@@ -2751,19 +2742,12 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
   if (esl_strdup(cm->comlog->ccom,  -1, &(new->comlog->ccom))  != eslOK) { status = eslEMEM; goto ERROR; }
   if (esl_strdup(cm->comlog->cdate, -1, &(new->comlog->cdate)) != eslOK) { status = eslEMEM; goto ERROR; }
   
-  /* clone the CM expA and hfiA */
+  /* clone the CM expA */
   if(cm->expA != NULL) { 
     ESL_ALLOC(new->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
     for(i = 0; i < EXP_NMODES; i++) { 
       new->expA[i] = CreateExpInfo();
       CopyExpInfo(cm->expA[i], new->expA[i]);
-    }
-  }
-  if(cm->hfiA != NULL) { 
-    ESL_ALLOC(new->hfiA, sizeof(HMMFilterInfo_t *) * FTHR_NMODES);
-    for(i = 0; i < FTHR_NMODES; i++) {
-      cm->hfiA[i] = CreateHMMFilterInfo();
-      if((status = CopyHMMFilterInfo(cm->hfiA[i], new->hfiA[i])) != eslOK) goto ERROR;
     }
   }
 

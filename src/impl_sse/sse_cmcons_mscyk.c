@@ -70,19 +70,19 @@ static __m128i MSCYK_add_BIF(__m128i bifl, __m128i bifr, __m128i tsv, __m128i ba
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
- *           results         - search_results_t to add to; if NULL, don't add to it
+ *           hitlist         - hitlist to add to; if NULL, don't add to it
  *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
  * Returns:  eslOK on succes;
- *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <results>.
+ *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <hitlist>.
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  *           Dies immediately if some error occurs.
  */
 int
 SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, uint8_t cutoff, 
-	   search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
+	  CM_TOPHITS *hitlist, int do_null3, float **ret_vsc, float *ret_sc)
 {
 //FIXME: needs some cleanup from the scalar detritus; should be able
 //FIXME: to drop the ScanMatrix (I think all we need from it is W
@@ -191,7 +191,7 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
   // FIXME: zero (otherwise they wouldn't improve the SHMM score),
   // FIXME: and setting the MSCYK threshold to a very negative number
   // FIXME: has no effect.
-  if(results != NULL) gamma = CreateGammaHitMx_epu8(L, i0, FALSE, ccm->base_b, ((float) (cutoff-ccm->base_b))/ccm->scale_b, FALSE);
+  if(hitlist != NULL) gamma = CreateGammaHitMx_epu8(L, i0, FALSE, ccm->base_b, ((float) (cutoff-ccm->base_b))/ccm->scale_b, FALSE);
   else                gamma = NULL;
 //
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -1017,7 +1017,7 @@ fprintf(stderr,"\n");
 //      esl_sse_hmax_ps(tmpv, &tmp_esc);		/* overloaded tmp_esc, just need a temporary float */
 //      vsc_root = ESL_MAX(vsc_root, tmp_esc);
       /* for UpdateGammaHitMxCM to work, these data need to be un-vectorized: alpha[jp_v][0], bestr */
-//      if (results != NULL) {
+//      if (hitlist != NULL) {
 //        for (d = 0; d < sW; d++) {
 //          tmp.v = vec_alpha[jp_v][0][d];
 //          alpha[jp_v][0][     d] = tmp.x[0];
@@ -1031,7 +1031,7 @@ fprintf(stderr,"\n");
 //          bestr[3*sW+d] = tmp.x[3];
 //        }
 //      }
-      /* update gamma, but only if we're reporting hits to results */
+      /* update gamma, but only if we're reporting hits to hitlist */
 #ifdef DEBUG_0
 fprintf(stderr,"\t4 ntS: ");
 for (d = 0; d <= W; d++) {
@@ -1041,11 +1041,11 @@ for (d = 0; d <= W; d++) {
 }
 fprintf(stderr,"\n");
 #endif
-      //if(results != NULL) if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, j, vec_ntS[jp_Sv], results, W, sW)) != eslOK) return status;
+      //if(hitlist != NULL) if((status = UpdateGammaHitMx_epu8(ccm, errbuf, gamma, j, vec_ntS[jp_Sv], hitlist, W, sW)) != eslOK) return status;
       for (d = 0; d < sW; d++) {
         tmpary[d] = _mm_adds_epu8(vec_ntS[jp_Sv][d],vec_nmlc[d]);
       }
-      if(results != NULL) { if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, j, tmpary, results, W, sW)) != eslOK) return status; }
+      if(hitlist != NULL) { if((status = UpdateGammaHitMx_epu8(ccm, errbuf, gamma, j, tmpary, hitlist, W, sW)) != eslOK) return status; }
       else { 
         for (d = 0; d < sW; d++) {
           if (esl_sse_hmax_epu8(tmpary[d]) > rsc) { rsc = (float) esl_sse_hmax_epu8(tmpary[d]); }
@@ -1076,8 +1076,8 @@ fprintf(stderr,"\n");
 //
   /* If recovering hits in a non-greedy manner, do the traceback.
    * If we were greedy, they were reported in UpdateGammaHitMxCM() for each position j */
-  if(results != NULL && gamma->iamgreedy == FALSE) 
-    TBackGammaHitMxForward_epu8(gamma, results, i0, j0);
+  if(hitlist != NULL && gamma->iamgreedy == FALSE) 
+    TBackGammaHitMx_epu8(gamma, hitlist, i0, j0);
 
   /* clean up and return */
   if(gamma != NULL) FreeGammaHitMx_epu8(gamma);
@@ -1089,10 +1089,10 @@ fprintf(stderr,"\n");
 //  if (ret_vsc != NULL) *ret_vsc         = vsc;
 //  else free(vsc);
   if (ret_sc != NULL) {
-    if (results != NULL) {
+    if (hitlist != NULL) {
       rsc = -eslINFINITY;
-      for (i = 0; i < results->num_results; i++) {
-        if (results->data[i].score > rsc) { rsc = results->data[i].score; }
+      for (i = 0; i < hitlist->N; i++) {
+        if (hitlist->unsrt[i].score > rsc) { rsc = hitlist->unsrt[i].score; }
       }
     }
     else {
@@ -1129,40 +1129,45 @@ Overlap(int i, int j, int h, int k) {
  *            IMPORTANT: assumes non-overlapping hits
  *            from non-greedy traceback option
  */
-search_results_t*
-ResolveMSCYK(search_results_t *initial, int i0, int j0, int W, float cutoff) {
+CM_TOPHITS *
+ResolveMSCYK(CM_TOPHITS *initial, int i0, int j0, int W, float cutoff) {
   int x, y, i, j;
   int included;
-  search_results_t *merged   = NULL;
+  CM_TOPHITS *merged   = NULL;
+  CM_HIT *hit = NULL;
   
-  merged = CreateResults(INIT_RESULTS);
-  for (x = 0; x < initial->num_results; x++) {
-    i = initial->data[x].start;
-    j = initial->data[x].stop;
+  merged = cm_tophits_Create();
+  for (x = 0; x < initial->N; x++) {
+    i = initial->unsrt[x].start;
+    j = initial->unsrt[x].stop;
     included = 0;
-    if (initial->data[x].score < cutoff) continue;
+    if (initial->unsrt[x].score < cutoff) continue;
 
-    for (y = 0; !included && (y < merged->num_results); y++) {
-      if (Overlap(j-W,j,merged->data[y].stop-W,merged->data[y].stop)) {
-        if (i < merged->data[y].start) { merged->data[y].start = i; }
-        if (j > merged->data[y].stop ) { merged->data[y].stop  = j; }
-        if (initial->data[x].score > merged->data[y].score) { merged->data[y].score = initial->data[x].score; }
+    for (y = 0; !included && (y < merged->N); y++) {
+      if (Overlap(j-W,j,merged->unsrt[y].stop-W,merged->unsrt[y].stop)) {
+        if (i < merged->unsrt[y].start) { merged->unsrt[y].start = i; }
+        if (j > merged->unsrt[y].stop ) { merged->unsrt[y].stop  = j; }
+        if (initial->unsrt[x].score > merged->unsrt[y].score) { merged->unsrt[y].score = initial->unsrt[x].score; }
         included = 1;
       }
     }
     if (!included) {
-      ReportHit(i,j,0,initial->data[x].score,merged);
+      cm_tophits_CreateNextHit(merged, &hit);
+      hit->start = i;
+      hit->stop  = j;
+      hit->root  = 0;
+      hit->score = initial->unsrt[x].score;
     }
   }
 
-  for (y = 0; y < merged->num_results; y++) {
-    i = merged->data[y].stop - W;
+  for (y = 0; y < merged->N; y++) {
+    i = merged->unsrt[y].stop - W;
     if (i < i0) { i = i0; }
-    j = merged->data[y].start + W;
+    j = merged->unsrt[y].start + W;
     if (j > j0) { j = j0; }
 
-    if (i < merged->data[y].start) { merged->data[y].start = i; }
-    if (j > merged->data[y].stop ) { merged->data[y].stop  = j; }
+    if (i < merged->unsrt[y].start) { merged->unsrt[y].start = i; }
+    if (j > merged->unsrt[y].stop ) { merged->unsrt[y].stop  = j; }
   }
 
   return merged;
@@ -1172,9 +1177,8 @@ ResolveMSCYK(search_results_t *initial, int i0, int j0, int W, float cutoff) {
  * Benchmark driver
  *****************************************************************/
 #ifdef IMPL_MSCYK_TEST
-/* gcc -o sse-bmark -g -O2 -std=gnu99 -msse2 -mpentiumpro -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST cm_dpsearch.c -linfernal -lhmmer -leasel -lm
- * icc -o sse-bmark -g -O3 -static -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST sse_cm_dpsearch.c -linfernal -lhmmer -leasel -lm
-
+/* gcc -o sse-bmark -g -O2 -std=gnu99 -msse2 -O2 -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST sse_cmcons_mscyk.c -linfernal -lhmmer -leasel -lm
+ * icc -o sse-bmark -g -O3 -static -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST sse_cmcons_mscyk.c -linfernal -lhmmer -leasel -lm
  */
 
 #include "esl_config.h"
@@ -1236,7 +1240,7 @@ main(int argc, char **argv)
   int             i;
   float           sc;
   char            *cmfile = esl_opt_GetArg(go, 1);
-  CMFILE          *cmfp;	/* open input CM file stream */
+  CM_FILE        *cmfp;	/* open input CM file stream */
   int            *dmin;
   int            *dmax;
   int             do_random;
@@ -1246,7 +1250,7 @@ main(int argc, char **argv)
   uint8_t         cutoff;
   float           f_cutoff;
   float           f_S_Sa, f_S_SM, f_S_e;
-  search_results_t *results = NULL;
+  CM_TOPHITS     *hitlist = NULL;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
@@ -1255,9 +1259,9 @@ main(int argc, char **argv)
   if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
   else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
 
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
-  if ((status = CMFileRead(cmfp, errbuf, &abc, &cm) != eslOK))            cm_Fail("Failed to read CM");
-  CMFileClose(cmfp);
+  if ((status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf)) != eslOK)  cm_Fail("Failed to open covariance model save file\n", cmfile);
+  if ((status = cm_file_Read(cmfp, TRUE, &abc, &cm))              != eslOK)  cm_Fail("Failed to read a CM from cm file\n");
+  cm_file_Close(cmfp);
 
   do_random = TRUE;
   if(esl_opt_GetBoolean(go, "-e")) do_random = FALSE; 
@@ -1324,7 +1328,7 @@ nullL = cm->clen;
     /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
     int safe_windowlen = cm->clen * 2;
     double **gamma = NULL;
-    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
+    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
       safe_windowlen *= 2;
       FreeBandDensities(cm, gamma);
       if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
@@ -1344,7 +1348,7 @@ nullL = cm->clen;
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
 
       esl_stopwatch_Start(w);
-      if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -1360,13 +1364,13 @@ nullL = cm->clen;
 
       if (esl_opt_GetBoolean(go, "--mscyk"))
         {
-          results = CreateResults(INIT_RESULTS);
+          hitlist = cm_tophits_Create();
 	  esl_stopwatch_Start(w);
-	  if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, dsq, 1, L, cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, dsq, 1, L, cutoff, hitlist, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "SSE_MSCYK(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-          FreeResults(results);
+          cm_tophits_Destroy(hitlist);
         }
   
       printf("\n");
@@ -1389,9 +1393,8 @@ nullL = cm->clen;
 
 
 #ifdef IMPL_MSCYK_TEST2
-/* gcc -o sse-bmark -g -O2 -std=gnu99 -msse2 -mpentiumpro -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST cm_dpsearch.c -linfernal -lhmmer -leasel -lm
- * icc -o sse-bmark -g -O3 -static -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST sse_cm_dpsearch.c -linfernal -lhmmer -leasel -lm
-
+/* gcc -o sse-bmark -g -O2 -std=gnu99 -msse2 -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST2 sse_cmcons_mscyk.c -linfernal -lhmmer -leasel -lm
+ * icc -o sse-bmark -g -O3 -static -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST2 sse_cmcons_mscyk.c -linfernal -lhmmer -leasel -lm
  */
 
 #include "esl_config.h"
@@ -1440,7 +1443,7 @@ main(int argc, char **argv)
   float           sc;
   char           *cmfile = esl_opt_GetArg(go, 1);
   char           *seqfile= esl_opt_GetArg(go, 2);
-  CMFILE         *cmfp;	/* open input CM file stream */
+  CM_FILE        *cmfp;	/* open input CM file stream */
   ESL_SQFILE     *sqfp;
   ESL_SQ         *seq;
   char            errbuf[cmERRBUFSIZE];
@@ -1451,11 +1454,11 @@ main(int argc, char **argv)
   int             format = eslSQFILE_UNKNOWN;
   int             imax, jmax;
   float           max;
-  search_results_t *results = NULL;
+  CM_TOPHITS     *hitlist = NULL;
 
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
-  if ((status = CMFileRead(cmfp, errbuf, &abc, &cm) != eslOK))            cm_Fail("Failed to read CM");
-  CMFileClose(cmfp);
+  if ((status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf)) != eslOK)  cm_Fail("Failed to open covariance model save file\n", cmfile);
+  if ((status = cm_file_Read(cmfp, TRUE, &abc, &cm))              != eslOK)  cm_Fail("Failed to read a CM from cm file\n");
+  cm_file_Close(cmfp);
 
   if (esl_sqfile_Open(seqfile, format, NULL, &sqfp) != eslOK) cm_Fail("Failed to open sequence database file\n");
 
@@ -1496,23 +1499,23 @@ fprintf(stderr,"S->Sa %d S->SM %d S->e %d M->S %d\n",ccm->tsb_S_Sa,ccm->tsb_S_SM
     if (seq->dsq == NULL) esl_sq_Digitize(abc, seq);
     fprintf(stdout,"%s\t",seq->name);
   
-    results = CreateResults(INIT_RESULTS);
-    if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+    hitlist = cm_tophits_Create();
+    if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, cutoff, hitlist, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 
     /* Rudimentary output of results */
     max = -eslINFINITY; imax = -1; jmax = -1;
-    for (i = 0; i < results->num_results; i++) {
-      if (results->data[i].score > max) {
-        max = results->data[i].score;
-        imax= results->data[i].start;
-        jmax= results->data[i].stop;
+    for (i = 0; i < hitlist->N; i++) {
+      if (hitlist->unsrt[i].score > max) {
+        max = hitlist->unsrt[i].score;
+        imax= hitlist->unsrt[i].start;
+        jmax= hitlist->unsrt[i].stop;
       }
-//fprintf(stdout,"\t%4d %4d %6f\n",results->data[i].start,results->data[i].stop,results->data[i].score);
+//fprintf(stdout,"\t%4d %4d %6f\n",hitlist->unsrt[i].start,hitlist->unsrt[i].stop,hitlist->unsrt[i].score);
     }
     fprintf(stdout,"%4d %4d %4f %6f\n",imax,jmax,max,sc);
     fflush(stdout);
 
-    FreeResults(results);
+    cm_tophits_Destroy(hitlist);
 
     esl_sq_Destroy(seq);
     seq = esl_sq_Create();

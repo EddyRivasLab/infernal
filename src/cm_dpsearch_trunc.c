@@ -24,7 +24,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-
+#define PRINTALPHA 0 
 /* Function: RefTrCYKScan()
  * Date:     EPN, Tue Aug 16 04:16:03 2011
  *
@@ -42,7 +42,7 @@
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
- *           results         - search_results_t to add to; if NULL, don't add to it
+ *           th              - CM_TOPHITS to add to; if NULL, don't add to it
  *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           env_cutoff      - ret_envi..ret_envj will include all hits that exceed this bit sc
  *           ret_envi        - min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
@@ -54,12 +54,12 @@
  *           any change to this function should be mirrored in those functions. 
  *
  * Returns:  eslOK on succes;
- *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <results>.
+ *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <hitlist>.
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  *           Dies immediately if some error occurs.
  */
 int
-RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, 
+RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist,
 	     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -131,7 +131,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
+  if(hitlist != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -385,7 +385,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	      }
 	    }
 	  }
-#if 0
+#if PRINTALPHA
 	  if(cm->stid[v] == BIF_B) { 
 	    for(d = dnA[v]; d <= dxA[v]; d++) { 
 	      printf("M j: %3d  v: %3d  d: %3d\n", j, v, d);
@@ -452,40 +452,72 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
       if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  if(NOT_IMPOSSIBLE(cm->beginsc[y])) {
-	    if(cm->stid[y] == BEGL_S)
-	      {
-		jp_y = j % (W+1);
-		for (d = dnA[y]; d <= dxA[y]; d++) {
-		  /* Is this more efficient:? 
-		     bestr[d]          = (alpha[jp_v][0][d] > (alpha_begl[jp_y][y][d] + cm->beginsc[y])) ? bestr[d] : y;
-		     alpha[jp_v][0][d] = ESL_MAX(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->beginsc[y]); */
-		  if(Jalpha[jp_v][0][d] < (Jalpha_begl[jp_y][y][d] + cm->beginsc[y])) {
-		    Jalpha[jp_v][0][d] = Jalpha_begl[jp_y][y][d] + cm->beginsc[y];
-		    bestr[d] = y;
-		  }
+	    if(cm->stid[y] == BEGL_S) {
+	      jp_y = j % (W+1);
+	      /* the trCYK paper doesn't allow best_sc to be rooted at an S state, why not? */
+	      for (d = dnA[y]; d <= dxA[y]; d++) {
+		if(Jalpha[jp_v][0][d] < (Jalpha_begl[jp_y][y][d] + cm->beginsc[y])) {
+		  Jalpha[jp_v][0][d] = Jalpha_begl[jp_y][y][d] + cm->beginsc[y];
+		  bestr[d] = y;
 		}
 	      }
+	    }
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		{
-		  /* Is this more efficient:? 
-		     bestr[d]          = (alpha[jp_v][0][d] > (alpha[jp_y][y][d] + cm->beginsc[y])) ? bestr[d] : y;
-		     alpha[jp_v][0][d] = ESL_MAX(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->beginsc[y]); */
-		  if(Jalpha[jp_v][0][d] < (Jalpha[jp_y][y][d] + cm->beginsc[y])) {
-		    Jalpha[jp_v][0][d] = Jalpha[jp_y][y][d] + cm->beginsc[y];
-		    bestr[d] = y;
-		  }
+		if(Jalpha[jp_v][0][d] < (Jalpha[jp_y][y][d] + cm->beginsc[y])) {
+		  Jalpha[jp_v][0][d] = Jalpha[jp_y][y][d] + cm->beginsc[y];
+		  bestr[d] = y;
 		}
 	      }
 	    }
 	  }
 	}
       }
+      /* Finally, allow for truncated hits */
+      for (y = 1; y < cm->M; y++) {
+	jp_y = cur;
+	/*if(NOT_IMPOSSIBLE(cm->beginsc[y])) {*/
+	/*trunc_penalty = cm->beginsc[y];*/
+	float trunc_penalty = 0.;
+	if(cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st) { 
+	  for (d = dnA[y]; d <= dxA[y]; d++) {
+	    if(Jalpha[jp_v][0][d] < (Jalpha[jp_y][y][d] + trunc_penalty)) {
+	      Jalpha[jp_v][0][d] = Jalpha[jp_y][y][d] + trunc_penalty;
+	      bestr[d] = y;
+	    }
+	  }
+	}
+	if(cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st) { 
+	  for (d = dnA[y]; d <= dxA[y]; d++) {
+	    if(Jalpha[jp_v][0][d] < (Lalpha[jp_y][y][d] + trunc_penalty)) {
+	      Jalpha[jp_v][0][d] = Lalpha[jp_y][y][d] + trunc_penalty;
+	      bestr[d] = y;
+	    }
+	  }
+	}
+	if(cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st) { 
+	  for (d = dnA[y]; d <= dxA[y]; d++) {
+	    if(Jalpha[jp_v][0][d] < (Ralpha[jp_y][y][d] + trunc_penalty)) {
+	      Jalpha[jp_v][0][d] = Ralpha[jp_y][y][d] + trunc_penalty;
+	      bestr[d] = y;
+	    }
+	  }
+	}
+	if(cm->sttype[y] == B_st) { 
+	  /*if(y == 54) { printf("Talpha[%d][%d][%d] %.4f\n", jp_y, y, d, Talpha[jp_y][y][d]); }*/
+	  for (d = dnA[y]; d <= dxA[y]; d++) {
+	    if(Jalpha[jp_v][0][d] < (Talpha[jp_y][y][d] + trunc_penalty)) {
+	      Jalpha[jp_v][0][d] = Talpha[jp_y][y][d] + trunc_penalty;
+	      bestr[d] = y;
+	    }
+	  }
+	}
+      }
       /* find the best score in J */
-      for (d = dnA[0]; d <= dxA[0]; d++) 
+      for (d = dnA[0]; d <= dxA[0]; d++) {
 	vsc_root = ESL_MAX(vsc_root, Jalpha[jp_v][0][d]);
-
+      }
       /* update envi, envj, if nec */
       if(do_env_defn) { 
 	for (d = dnA[0]; d <= dxA[0]; d++) {
@@ -496,8 +528,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	}
       }
 
-      /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, jp_g, Jalpha[jp_v][0], dnA[0], dxA[0], FALSE, trsmx->bestr, results, W, act)) != eslOK) return status;
+      /* update gamma, but only if we're reporting hits to th */
+      if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, Jalpha[jp_v][0], dnA[0], dxA[0], FALSE, trsmx->bestr, trsmx->bestmode, hitlist, W, act)) != eslOK) return status;
 
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
@@ -506,16 +538,20 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
   /* find the best score in any matrix at any state */
   float best_tr_sc = IMPOSSIBLE;
   for(v = 0; v < cm->M; v++) { 
-    best_tr_sc = ESL_MAX(best_tr_sc, vsc[v]);
+    //best_tr_sc = ESL_MAX(best_tr_sc, vsc[v]);
+    if(vsc[v] > best_tr_sc) { 
+      best_tr_sc = vsc[v];
+      printf("UPDATED best_tr_sc v: %d %.4f\n", v, best_tr_sc);
+    }
   }
   printf("Best truncated score: %.4f (%.4f)\n",
 	 best_tr_sc, 
 	 best_tr_sc + sreLOG2(2./(cm->clen * (cm->clen+1))));
 
   /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in UpdateGammaHitMxCM() for each position j */
-  if(results != NULL && gamma->iamgreedy == FALSE) 
-    TBackGammaHitMxForward(gamma, results, i0, j0);
+   * If we were greedy, they were reported in UpdateGammaHitMx() for each position j */
+  if(hitlist != NULL && gamma->iamgreedy == FALSE) 
+    TBackGammaHitMx(gamma, hitlist, i0, j0);
 
   /* set envelope return variables if nec */
   if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
@@ -1011,6 +1047,7 @@ static ESL_OPTIONS options[] = {
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "search in glocal mode [default: local]", 0 },
   { "-L",        eslARG_INT,  "10000", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",                   0 },
   { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                   0 },
+  { "-T",        eslARG_REAL,    "5.", NULL, NULL,  NULL,  NULL, NULL, "set bit score reporting threshold as <x>",       0 },
   { "--dc",      eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also search with D&C trCYK",                     0},
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "don't use QDBs", 0},
   { "--infile",  eslARG_INFILE,  NULL, NULL, NULL,  NULL,  NULL, "-L,-N,-e", "read sequences to search from file <s>", 2 },
@@ -1042,6 +1079,9 @@ main(int argc, char **argv)
   char            errbuf[cmERRBUFSIZE];
   TrScanMatrix_t *trsmx = NULL;
   ESL_SQFILE     *sqfp  = NULL;        /* open sequence input file stream */
+  CMConsensus_t  *cons  = NULL;
+  Parsetree_t    *tr    = NULL;
+  Fancyali_t     *fali  = NULL;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
@@ -1059,6 +1099,7 @@ main(int argc, char **argv)
   if(! esl_opt_GetBoolean(go, "-g"))     cm->config_opts |= CM_CONFIG_LOCAL;
   if( esl_opt_GetBoolean(go, "--noqdb")) cm->search_opts |= CM_SEARCH_NOQDB;
   else                                   cm->config_opts |= CM_CONFIG_QDB;
+  cm->search_opts |= CM_SEARCH_CMGREEDY; /* greedy hit resolution is default */
   ConfigCM(cm, errbuf, FALSE, NULL, NULL); /* FALSE says: don't calculate W */
 
   if (esl_opt_GetBoolean(go, "--noqdb")) { 
@@ -1128,6 +1169,7 @@ main(int argc, char **argv)
     seqs_to_aln = CMEmitSeqsToAln(r, cm, 1, N, FALSE, NULL, FALSE);
 
   SetMarginalScores(cm);
+  CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &cons);
 
   for (i = 0; i < N; i++)
     {
@@ -1154,10 +1196,18 @@ main(int argc, char **argv)
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
       esl_stopwatch_Start(w);
-      sc = TrCYK_Inside(cm, dsq, L, 0, 1, L, FALSE, NULL);
+      sc = TrCYK_Inside(cm, dsq, L, 0, 1, L, FALSE, &tr);
       printf("%4d %-30s %10.4f bits ", (i+1), "TrCYK_Inside():   ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+      /*
+      fali = CreateFancyAli(cm->abc, tr, cm, cons, dsq, FALSE, NULL);
+      ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+      PrintFancyAli(stdout, fali, 0, FALSE, FALSE, 60);
+      FreeParsetree(tr);
+      FreeFancyAli(fali);
+      */
 
       if(esl_opt_GetBoolean(go, "--dc")) { 
 	esl_stopwatch_Start(w);
@@ -1183,4 +1233,5 @@ main(int argc, char **argv)
   return 0; /* never reached */
 }
 #endif /*IMPL_TRUNC_SEARCH_BENCHMARK*/
+
 

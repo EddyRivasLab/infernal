@@ -74,11 +74,10 @@
  */
 int
 cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, 
-	    search_results_t *results, int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, 
+	    int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, 
 	    int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc)
 {
   int          status;
-  GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          i;           /* j-W: position in the subsequence                             */
@@ -103,7 +102,6 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 
   /* Contract checks */
   if(cm->cp9 == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, cm->cp9 is NULL.\n");
-  if(results != NULL && !do_scan)            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, passing in results data structure, but not in scanning mode.\n");
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, dsq is NULL.");
   if(mx == NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx is NULL.\n");
   if(mx->M != cm->clen)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx->M != cm->clen.\n");
@@ -118,12 +116,6 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   if (hit_len_guess > L) hit_len_guess = L; 
 
   int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
-
-  /* gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_HMMGREEDY), cutoff, FALSE);
-  else                gamma = NULL;
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -273,15 +265,9 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
        */
       i = ((j - hit_len_guess + 1)> i0) ? (j - hit_len_guess + 1) : i0;
       ip = i-i0+1;
-      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
     } /* end loop over end positions j */
   
-  /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, then we've reported hits in UpdateGammaHitMxCP9Forward() for each position j */
-  if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxForward(gamma, results, i0, j0);
-
   /* clean up and exit */
-  if(gamma != NULL) FreeGammaHitMx(gamma);
   if (act != NULL) { 
     for(i = 0; i <= W; i++) free(act[i]); 
     free(act);
@@ -328,12 +314,11 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, search_results_t *results, 
+cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, 
 		    int do_scan, int doing_align, int j_is_fixed, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, 
 		    CP9trace_t **ret_tr, float *ret_sc)
 {
   int          status;
-  GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          i;           /* j-W: position in the subsequence                             */
@@ -357,7 +342,6 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
 
   /* Contract checks */
   if(cm->cp9 == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, cm->cp9 is NULL.\n");
-  if(results != NULL && !do_scan)            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, passing in results data structure, but not in scanning mode.\n");
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, dsq is NULL.");
   if(mx == NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, mx is NULL.\n");
   if(mx->M != cm->clen)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, mx->M != cm->clen.\n");
@@ -373,12 +357,6 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
   M = cm->cp9->M;
   if (W > L) W = L; 
   if (hit_len_guess > L) hit_len_guess = L;
-
-  /* gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_HMMGREEDY), cutoff, TRUE);
-  else                gamma = NULL;
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -658,7 +636,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
       scA[ip] = mmx[cur][0]; /* all parses must start in M_0, the B state */
       fsc = Scorify(scA[ip]);
 
-      /* Update best_sc and gamma, the little semi-Markov model that deals with multihit parsing:
+      /* Update best_sc:
        * There's a 'backwards-specific' off-by-one here, that only occurs b/c we're going backwards,
        * this is probably implementation specific (meaning getting rid of it is possible, but
        * I can't figure it out), but we deal with it (albeit confusingly) as follows:
@@ -668,11 +646,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
        * let i = ip+i0-1 => ip = i-i0+1;
        * so sc[ip] = backward->mmx[ip][0] = summed log prob of all parses that end at j0, 
        * and start at position i+1 of the sequence (because i+1 is the last residue
-       * whose emission has been accounted for). As a result, gamma indexing is off-by-one
-       * with respect to sequence position, hence the i+1 or i-1 in the following
-       * code blocks, each marked by "*off-by-one*" comment below. 
-       * for example: let i0 = 2 gamma[ip=4], normally this means ip=4 corresponds to i=5 
-       *              but due to this off-by-one sc[ip=4] corresponds to hits that start at i=6
+       * whose emission has been accounted for). 
        */
 
       if(fsc > best_sc) { best_sc = fsc; best_pos= i+1; } /* *off-by-one* */
@@ -682,15 +656,9 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
       else           { j = (((i+1)+hit_len_guess-1) < j0) ? ((i+1)+hit_len_guess-1) : j0; /* *off-by-one* */ }
       jp = j-i0+1;
 
-      if(results != NULL) if((status = UpdateGammaHitMxCP9Backward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
     } /* end loop over start positions i */
 
-  /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, then we've reported hits in UpdateGammaHitMxCP9Backward() for each position j */
-  if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxBackward(gamma, results, i0, j0);
-
   /* clean up and exit */
-  if(gamma != NULL) FreeGammaHitMx(gamma);
   if (act != NULL) { 
     for(i = 0; i <= W; i++) free(act[i]); 
     free(act);
@@ -778,7 +746,6 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
  *                                 hit length given the model (calc'ed using QDB band calculation
  *                                 in cm.c::cm_GetAvgHitLen()).
  *           cutoff    - minimum score to report
- *           results   - search_results_t to add to; if NULL, don't keep results
  *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
  *           doing_align  - TRUE if reason we've called this function is to help get posteriors
@@ -795,11 +762,10 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, search_results_t *results, 
+cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, 
 	    int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
-  GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          i;           /* j-W: position in the subsequence                             */
@@ -823,7 +789,6 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, cm->cp9 is NULL.\n");
-  if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, passing in results data structure, but not in scanning mode.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, dsq is NULL.");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, mx is NULL.\n");
   if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, mx->M != cm->clen.\n");
@@ -837,12 +802,6 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   if (hit_len_guess > L) hit_len_guess = L;
 
   int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
-
-  /* gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_HMMGREEDY), cutoff, FALSE);
-  else                gamma = NULL;
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -1003,15 +962,9 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
        */
       i = ((j - hit_len_guess + 1)> i0) ? (j - hit_len_guess + 1) : i0;
       ip = i-i0+1;
-      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
     } /* end loop over end positions j */
   
-  /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, then we've reported hits already in UpdateGammaHitMxCP9Forward() for each position j */
-  if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxForward(gamma, results, i0, j0);
-
   /* clean up and exit */
-  if(gamma != NULL) FreeGammaHitMx(gamma);
   if (act != NULL) { 
     for(i = 0; i <= W; i++) free(act[i]); 
     free(act);
@@ -1100,7 +1053,6 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
  *                                 hit length given the model (calc'ed using QDB band calculation
  *                                 in cm.c::cm_GetAvgHitLen()).
  *           cutoff    - minimum score to report
- *           results   - search_results_t to add to; if NULL, don't keep results
  *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
  *           doing_align  - TRUE if reason we've called this function is to help get posteriors
@@ -1118,11 +1070,10 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, search_results_t *results, 
+cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, 
 		 int do_scan, int doing_align, int be_efficient, int be_safe, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
-  GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          i;           /* j-W: position in the subsequence                             */
@@ -1148,7 +1099,6 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
 
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, cm->cp9 is NULL.\n");
-  if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, passing in results data structure, but not in scanning mode.\n");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, mx is NULL.\n");
   if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, mx->M != cm->clen.\n");
   if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, cm->clen != cm->cp9->M.\n");
@@ -1175,12 +1125,6 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
   /* printf("locality mode: %d\n", locality_mode); */
   if((status = cp9_CheckTransitionGuarantees(cm->cp9, errbuf)) == eslEINCOMPAT) return status;
   else if (status != eslOK) be_safe = TRUE;
-
-  /* gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_HMMGREEDY), cutoff, FALSE);
-  else                gamma = NULL;
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -1310,7 +1254,6 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
    */
   i = ((j - hit_len_guess + 1)> i0) ? (j - hit_len_guess + 1) : i0;
   ip = i-i0+1;
-  if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
 
   /* end of special case position j == i0 */
 
@@ -1825,15 +1768,9 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
        */
       i = ((j - hit_len_guess + 1)> i0) ? (j - hit_len_guess + 1) : i0;
       ip = i-i0+1;
-      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
     } /* end loop over end positions j */
       
-  /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, then we've reported hits already in UpdateGammaHitMxCP9Forward() for each position j */
-  if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxForward(gamma, results, i0, j0);
-
   /* clean up and exit */
-  if(gamma != NULL) FreeGammaHitMx(gamma);
   if (act != NULL) { 
     for(i = 0; i <= W; i++) free(act[i]); 
     free(act);
@@ -1963,7 +1900,6 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
  *                           we need a start point j, j=i+hit_len_guess-1. 
  *                           This is only used if (! j_is_fixed).
  *           cutoff    - minimum score to report
- *           results   - search_results_t to add to; if NULL, don't keep results
  *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
  *           doing_align  - TRUE if reason we've called this function is to help get posteriors
@@ -1982,11 +1918,10 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff, search_results_t *results, 
+cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, int hit_len_guess, float cutoff,
 	     int do_scan, int doing_align, int j_is_fixed, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
-  GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          i;           /*     j-W: position in the subsequence                         */
@@ -2010,7 +1945,6 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
 
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, cm->cp9 is NULL.\n");
-  if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, passing in results data structure, but not in scanning mode.a\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, dsq is NULL.");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, mx is NULL.\n");
   if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, mx->M != cm->clen.\n");
@@ -2025,12 +1959,6 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   M = cm->cp9->M;
   if (W > L) W = L; 
   if (hit_len_guess > L) hit_len_guess = L;
-
-  /* gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_HMMGREEDY), cutoff, TRUE);
-  else                gamma = NULL;
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -2283,7 +2211,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
       scA[ip] = mmx[cur][0]; /* all parses must start in M_0, the B state */
       fsc = Scorify(scA[ip]);
 
-      /* Update best_sc and gamma, the little semi-Markov model that deals with multihit parsing:
+      /* Update best_sc, the little semi-Markov model that deals with multihit parsing:
        * There's a 'backwards-specific' off-by-one here, that only occurs b/c we're going backwards,
        * this is probably implementation specific (meaning getting rid of it is possible, but
        * I can't figure it out), but we deal with it (albeit confusingly) as follows:
@@ -2293,11 +2221,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
        * let i = ip+i0-1 => ip = i-i0+1;
        * so scA[ip] = backward->mmx[ip][0] = summed log prob of all parses that end at j0, 
        * and start at position i+1 of the sequence (because i+1 is the last residue
-       * whose emission has been accounted for). As a result, gamma indexing is off-by-one
-       * with respect to sequence position, hence the i+1 or i-1 in the following
-       * code blocks, each marked by "*off-by-one*" comment below. 
-       * for example: let i0 = 2 gamma[ip=4], normally this means ip=4 corresponds to i=5 
-       *              but due to this off-by-one scA[ip=4] corresponds to hits that start at i=6
+       * whose emission has been accounted for).
        */
 
       if(fsc > best_sc) { best_sc = fsc; best_pos= i+1; } /* *off-by-one* */
@@ -2306,8 +2230,6 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
       if(j_is_fixed) { j = j0; }
       else           { j = (((i+1)+hit_len_guess-1) < j0) ? ((i+1)+hit_len_guess-1) : j0; /* *off-by-one* */ }
       jp = j-i0+1;
-
-      if(results != NULL) if((status = UpdateGammaHitMxCP9Backward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
     }
   /*******************************************************************/
   /* Special case: ip == 0, i = i0-1; */
@@ -2367,7 +2289,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   scA[ip] = mmx[cur][0]; /* all parses must start in M_0, the B state */
   fsc = Scorify(scA[ip]);
 
-  /* Update best_sc and gamma for special case of ip == 0, '* off-by-one *' explained above still applies */
+  /* Update best_sc for special case of ip == 0, '* off-by-one *' explained above still applies */
   if(fsc > best_sc) { best_sc = fsc; best_pos= i+1; } /* *off-by-one* */
 
   /* If !j_is_fixed: guess the end point j using hit_len_guess */
@@ -2375,17 +2297,11 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   else           { j = (((i+1)+hit_len_guess-1) < j0) ? ((i+1)+hit_len_guess-1) : j0; /* *off-by-one* */ }
   jp = j-i0+1;
   
-  if(results != NULL) if((status = UpdateGammaHitMxCP9Backward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
   /* end of special case, ip == 0 */
   /**********************************************************************************/
   /* End of Backward recursion */
   
-  /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, then we've reported hits in UpdateGammaHitMxCP9Forward() for each position j */
-  if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxBackward(gamma, results, i0, j0);
-
   /* clean up and exit */
-  if(gamma != NULL) FreeGammaHitMx(gamma);
   if (act != NULL) { 
     for(i = 0; i <= W; i++) free(act[i]); 
     free(act);

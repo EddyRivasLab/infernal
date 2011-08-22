@@ -149,19 +149,18 @@ int ccm_bg_FilterScore(CCM_BG *bg, ESL_DSQ *dsq, int L, float *ret_sc);
 /* sse_cmcons_hitmx.c */
 GammaHitMx_epu8 *CreateGammaHitMx_epu8(int L, int i0, int be_greedy, int offset_zero, float cutoff, int do_backward);
 void FreeGammaHitMx_epu8(GammaHitMx_epu8 *gamma);
-int  UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma, int j, __m128i *alpha_row, search_results_t *results, int W, int sW);
-void TBackGammaHitMxForward_epu8 (GammaHitMx_epu8 *gamma, search_results_t *results, int i0, int j0);
-void TBackGammaHitMxBackward_epu8(GammaHitMx_epu8 *gamma, search_results_t *results, int i0, int j0);
+int  UpdateGammaHitMx_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma, int j, __m128i *alpha_row, CM_TOPHITS *hitlist, int W, int sW);
+void TBackGammaHitMx_epu8 (GammaHitMx_epu8 *gamma, CM_TOPHITS *hitlist, int i0, int j0);
 
 /* sse_cmcons_mscyk.c */
 int SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, uint8_t cutoff,
-           search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc);
-search_results_t* ResolveMSCYK(search_results_t *initial, int i0, int j0, int W, float cutoff);
+	      CM_TOPHITS *hitlist, int do_null3, float **ret_vsc, float *ret_sc);
+CM_TOPHITS * ResolveMSCYK(CM_TOPHITS *initial, int i0, int j0, int W, float cutoff);
 
 /* sse_cm_dpsearch.c */
 int SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq,
-	int i0, int j0, float cutoff, search_results_t *results,
-	int do_null3, float **ret_vsc, float *ret_sc);
+		int i0, int j0, float cutoff, CM_TOPHITS *hitlist,
+		int do_null3, float **ret_vsc, float *ret_sc);
 
 /* sse_cm_dpsmall.c */
 float SSE_CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r,

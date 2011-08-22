@@ -827,7 +827,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  
 	  if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, cfg->expL, 
 					      ESL_MAX(1, ((int) cfg->avg_hit_len)), /* guess at average hit len for HMM scanning functions */
-					      &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL, NULL)) != eslOK) cm_Fail(errbuf);
+					      &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank)) != eslOK) cm_Fail(errbuf);
 	  
 	  /* TEMP printf("# mode: %12s\n", DescribeExpMode(exp_mode)); */
 	  /* TEMP printf("serial i: %4d before nresults: %8d\n", i, results->num_results); */
@@ -1701,7 +1701,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    ESL_DPRINTF1(("worker %d: has received dsq chunk of length L: %d\n", cfg->my_rank, expL));
 	    if ((status = ProcessSearchWorkunit(cm, errbuf, exp_dsq, expL, 
 						ESL_MAX(1, ((int) cfg->avg_hit_len)), /* guess at average hit len for HMM scanning functions */
-						&exp_results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL, NULL)) != eslOK) goto ERROR;
+						&exp_results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank)) != eslOK) goto ERROR;
 	    
 	    /*RemoveOverlappingHits(exp_results, 1, expL);*/
 	    ESL_DPRINTF1(("worker %d: has gathered search results\n", cfg->my_rank));
@@ -3228,7 +3228,7 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   if(((int) cfg->avg_hit_len) == 0) ESL_FAIL(eslEINCOMPAT, errbuf, "cfg->avg_hit_len is 0");
   if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, L, 
 				      ESL_MAX(1, ((int) cfg->avg_hit_len)), /* guess at average hit len for HMM scanning functions */
-				      &results, esl_opt_GetReal(go, "--mxsize"), 0, NULL, NULL)) != eslOK) return status;
+				      &results, esl_opt_GetReal(go, "--mxsize"), 0)) != eslOK) return status;
   RemoveOverlappingHits(results, 1, L);
 
   esl_stopwatch_Stop(w);

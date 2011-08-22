@@ -5183,7 +5183,7 @@ CMPostCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parsetre
       }
     }
   }
-  for(i = 0; i <= (L+1); i++) printf("res_logp[%5d] %12f %12f\n", i, res_logp[i], FScore2Prob(res_logp[i], 1.));
+  /* for(i = 0; i <= (L+1); i++) printf("res_logp[%5d] %12f %12f\n", i, res_logp[i], FScore2Prob(res_logp[i], 1.)); */
   /* finished determining summed log prob of each emitted residue */
 
   /* go through each node of the parsetree and determine posterior code for emissions */

@@ -49,7 +49,7 @@ MYINCDIRS = -I../${ESLDIR} \
 
 PROGS = cmalign\
 	cmbuild\
-	cmcalibrate\
+#	cmcalibrate\
 	cmconvert\
 	cmemit\
 	cmfetch\
@@ -57,26 +57,27 @@ PROGS = cmalign\
 	cmscan\
 	cmscore\
 	cmsearch\
-	cmsim\
+#	cmsim\
 	cmstat\
-	trcyk\
+#	trcyk\
 	bandcyk-montecarlo-test\
 	bandcyk-truncation-test\
 	cp9-test\
 	sub_cm-test\
-	truncyk_check
+#	truncyk_check
 
 PROGSOBJSS = \
 	cmalign.o\
 	cmbuild.o\
+#	cmcalibrate.o\
 	cmemit.o\
 	cmfetch.o\
 	cmscore.o\
 	cmsearch.o\
-	cmsim.o\
+#	cmsim.o\
 	cmstat.o\
-	trcyk.o\
-	truncyk_check.o\
+#	trcyk.o\
+#	truncyk_check.o\
 
 HDRS =  funcs.h\
 	structs.h
@@ -115,7 +116,7 @@ OBJS  = cm.o\
 	mpisupport.o\
 	prior.o\
 	rnamat.o\
-	searchinfo.o\
+#	searchinfo.o\
 	seqstoaln.o\
 	stats.o\
 	truncyk.o

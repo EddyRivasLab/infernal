@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT  1
+#define DOPRINT  0
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -1694,8 +1694,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   float            cyksc, inssc, finalsc;  /* bit scores                           */
   double           P;                      /* P-value of a hit */
   int              i, h;                   /* counters */
-  search_results_t *results;               /* results data structure CM search functions report hits to */
-  search_results_t *tmp_results;           /* temporary results data structure CM search functions report hits to */
+  CM_TOPHITS      *tmp_hitlist = NULL;     /* hitlist for current sequence, used only if do_final_greedy is TRUE */
   int              nhit;                   /* number of hits reported */
   double           save_tau;               /* CM's tau upon entering function */
   int64_t          cyk_envi, cyk_envj;     /* cyk_envi..cyk_envj is new envelope as defined by CYK hits */
@@ -1707,7 +1706,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   int              do_final_greedy;        /* TRUE to use greedy hit resolution in final stage, FALSE not to */
   CM_t            *cm = NULL;              /* ptr to *opt_cm, for convenience only */
   CP9Bands_t      *scan_cp9b = NULL;       /* a copy of the HMM bands derived in the final CM search stage, if its HMM banded */
-  int64_t          hbmx_ncells;            /* number of DP cells required in HMM banded matrix */
   float            hbmx_Mb;                /* approximate size in Mb for HMM banded matrix for current hit */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
@@ -1751,15 +1749,12 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   save_tau = cm->tau;
   do_final_greedy = (pli->final_cm_search_opts & CM_SEARCH_CMGREEDY) ? TRUE : FALSE;
 
-  nhit = 0;
+  nhit = hitlist->N;
   /* Determine bit score cutoff for CYK envelope redefinition, 
    * any residue that exists in a CYK hit that reaches this threshold will be included
    * in the redefined envelope, any that doesn't will not be.
    */
   cyk_env_cutoff = cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6env) / (-1 * cm->expA[pli->fcyk_cm_exp_mode]->lambda));
-  if(! do_final_greedy) { 
-    results  = CreateResults(INIT_RESULTS);
-  }    
 
 #if DOPRINT
   printf("\nPIPELINE CMStage() %s  %" PRId64 " residues\n", sq->name, sq->n);
@@ -1802,17 +1797,17 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	  if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, &hbmx_Mb)) != eslOK) return status; 
 	  if(hbmx_Mb < pli->hb_size_limit) break; /* our matrix will be small enough, break out of while(1) */
 	  if(cm->tau > 0.01)               break; /* our bands have gotten too tight, break out of while(1) */
-	  printf("CYK 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
+	  /* printf("CYK 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);*/
 	  cm->tau *= pli->xtau;
 	}	  
-	printf("CYK 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
+	/* printf("CYK 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
 
 	/* reset search opts */
 	cm->search_opts  = pli->fcyk_cm_search_opts;
 
 	status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
 			       0.,                                 /* minimum score to report, irrelevant */
-			       NULL,                               /* results to add to, irrelevant here */
+			       NULL,                               /* hitlist to add to, irrelevant here */
 			       pli->do_null3,                      /* do the NULL3 correction? */
 			       cm->hbmx,                           /* the HMM banded matrix */
 			       pli->hb_size_limit,                 /* upper limit for size of DP matrix */
@@ -1839,7 +1834,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	}
 	if((status = FastCYKScan(cm, errbuf, pli->fsmx, sq->dsq, es[i], ee[i],
 				 0.,                                 /* minimum score to report, irrelevant */
-				 NULL,                               /* results to add to, irrelevant here */
+				 NULL,                               /* hitlist to add to, irrelevant here */
 				 pli->do_null3,                      /* do the NULL3 correction? */
 				 cyk_env_cutoff,                     /* bit score == envF6 P value, cutoff for envelope redefinition */
 				 (pli->do_cykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
@@ -1866,10 +1861,10 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
     if(pli->do_time_F6) continue; 
 
     /******************************************************************************/
-    /* Final stage: Inside/CYK with CM, report hits to a search_results_t data structure. */
+    /* Final stage: Inside/CYK with CM, report hits to our hitlist */
     cm->search_opts  = pli->final_cm_search_opts;
     cm->tau          = pli->final_tau;
-    tmp_results  = CreateResults(INIT_RESULTS);
+    if(do_final_greedy) tmp_hitlist = cm_tophits_Create();
         
     /*******************************************************************
      * Determine if we're doing a HMM banded scan, if so, we may already have HMM bands 
@@ -1884,14 +1879,14 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	  if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, &hbmx_Mb)) != eslOK) return status; 
 	  if(hbmx_Mb < pli->hb_size_limit) break; /* our matrix will be small enough, break out of while(1) */
 	  if(cm->tau > 0.01)               break; /* our bands have gotten too tight, break out of while(1) */
-	  printf("INS 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
+	  /* printf("INS 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
 	  cm->tau *= pli->xtau;
 	}	  
-	printf("INS 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
+	/* printf("INS 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
 	if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is HMM banded Inside */
 	status = FastFInsideScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
 				   pli->T,            /* minimum score to report */
-				   do_final_greedy ? tmp_results : results, /* our results data structure that will store hit(s) */
+				   (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
 				   pli->do_null3,     /* do the NULL3 correction? */
 				   cm->hbmx,          /* the HMM banded matrix */
 				   pli->hb_size_limit,/* upper limit for size of DP matrix */
@@ -1905,7 +1900,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	/*printf("calling HMM banded CYK scan\n");*/
 	status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
 			       pli->T,                             /* minimum score to report */
-			       do_final_greedy ? tmp_results : results, /* our results data structure that will store hit(s) */
+			       (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
 			       pli->do_null3,                      /* do the NULL3 correction? */
 			       cm->hbmx,                           /* the HMM banded matrix */
 			       pli->hb_size_limit,                 /* upper limit for size of DP matrix */
@@ -1937,7 +1932,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	}
 	if((status = FastIInsideScan(cm, errbuf, pli->smx, sq->dsq, es[i], ee[i],
 				     pli->T,            /* minimum score to report */
-				     do_final_greedy ? tmp_results : results, /* our results data structure that will store hit(s) */
+				     (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
 				     pli->do_null3,     /* apply the null3 correction? */
 				     NULL,              /* ret_vsc, irrelevant here */
 				     &finalsc)) != eslOK) { /* best score, irrelevant here */
@@ -1956,7 +1951,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	}
 	if((status = FastCYKScan(cm, errbuf, pli->fsmx, sq->dsq, es[i], ee[i],
 				 pli->T,            /* minimum score to report */
-				 do_final_greedy ? tmp_results : results, /* our results data structure that will store hit(s) */
+				 (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
 				 pli->do_null3,     /* apply the null3 correction? */
 				 0., NULL, NULL,    /* envelope redefinition parameters, irrelevant here */
 				 NULL,              /* ret_vsc, irrelevant here */
@@ -1966,8 +1961,18 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
     }
 
     if(do_final_greedy) { 
-      RemoveOverlappingHits(tmp_results, es[i], ee[i]);
-      results = tmp_results;
+      cm_tophits_SortByPosition(tmp_hitlist);
+      cm_tophits_RemoveDuplicates(tmp_hitlist);
+      for(h = 0; h < tmp_hitlist->N; h++) { 
+	if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+	  if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem adding hit to hitlist, out of memory?");
+	}
+      }
+      printf("TMP:\n");
+      cm_tophits_Dump(stdout, tmp_hitlist);
+      printf("MASTER:\n");
+      cm_tophits_Dump(stdout, hitlist);
+      cm_tophits_Destroy(tmp_hitlist);
     }      
 
     /* save a copy of the bands we calculated for the final search stage */
@@ -1984,11 +1989,13 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
     else { 
       scan_cp9b = NULL;
     }
-
-    /* add each hit to the hitlist */
-    for (h = nhit; h < results->num_results; h++) { 
-      cm_tophits_CloneHitFromResults(hitlist, results, h, pli->cur_cm_idx, pli->cur_seq_idx, &hit);
-      hit->pvalue = esl_exp_surv(hit->score, cm->expA[pli->final_cm_exp_mode]->mu_extrap, cm->expA[pli->final_cm_exp_mode]->lambda);
+  
+    /* add info to each hit DP scanning functions didn't have access to, and align the hits if nec */
+    for (h = nhit; h < hitlist->N; h++) { 
+      hit = &(hitlist->unsrt[h]);
+      hit->cm_idx  = pli->cur_cm_idx;
+      hit->seq_idx = pli->cur_seq_idx;
+      hit->pvalue  = esl_exp_surv(hit->score, cm->expA[pli->final_cm_exp_mode]->mu_extrap, cm->expA[pli->final_cm_exp_mode]->lambda);
 
       /* initialize remaining values we don't know yet */
       hit->evalue   = 0.;
@@ -2013,7 +2020,11 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 				     (h == nhit) ? TRUE : FALSE,    /* TRUE if this is the first hit we're aligning (h == nhit) */
 				     scan_cp9b))                    /* a copy of the HMM bands determined in the last search stage, NULL if HMM bands not used */
 	   != eslOK) return status;
-      } 
+      }
+      if(scan_cp9b != NULL) { 
+	FreeCP9Bands(scan_cp9b);
+	scan_cp9b = NULL;
+      }
 
       /* Finally, if we're using model-specific bit score thresholds,
        * determine if the significance of the hit (is it reported
@@ -2054,17 +2065,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
       
     } /* end of 'for(h = nhit'... */
 
-    if(do_final_greedy) { 
-      FreeResults(tmp_results);
-      nhit = 0;
-    }
-    else { 
-      nhit = results->num_results;
-    }
-
-  }
-  if(! do_final_greedy) { 
-    FreeResults(results);
+    nhit = hitlist->N;
   }
   cm->tau = save_tau;
   /* free the scan matrices if we just allocated them */
@@ -2096,9 +2097,6 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   char               *postcode = NULL;      /* posterior decode array of strings */
   ESL_DSQ            *subdsq;               /* ptr to start of a hit */
   int                 hitlen;               /* hit length */
-  int64_t             hbmx_ncells;          /* number of DP cells required in HMM banded matrix */
-  int64_t             shmx_nchar_cells;     /* number of 'char' DP cells required in HMM banded shadow matrix */
-  int64_t             shmx_nint_cells;      /* number of 'int' DP cells required in HMM banded shadow matrix */
   float               hbmx_Mb;              /* approximate size in Mb for HMM banded matrix for current hit */
   float               shmx_Mb;              /* approximate size in Mb for HMM banded shadow matrix for current hit */
   float               total_Mb;             /* approximate size in Mb needed for alignment of a hit */
@@ -2138,10 +2136,10 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
 	if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, hitlen, NULL, &hbmx_Mb)) != eslOK) return status; 
 	if(hbmx_Mb < pli->hb_size_limit) break; /* our matrix will be small enough, break out of while(1) */
 	if(cm->tau > 0.01)               break; /* our bands have gotten too tight, break out of while(1) */
-	printf("ARC 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
+	/* printf("ARC 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
 	cm->tau *= pli->xtau;
       }	  
-      printf("ARC 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
+      /* printf("ARC 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
     }
     else { 
       /* shift existing CP9 HMM bands by a fixed offset, this guarantees our alignment will be the same hit our search found */
@@ -2168,7 +2166,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
      */     
     if((status = cm_hb_mx_SizeNeeded       (cm, pli->errbuf, cm->cp9b, hitlen, NULL, &hbmx_Mb)) != eslOK) return status; 
     if((status = cm_hb_shadow_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, NULL,   NULL, &shmx_Mb)) != eslOK) return status; 
-    printf("ALN 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
+    /* printf("ALN 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
     
     if(hbmx_Mb < pli->hb_size_limit) { 
       pli->n_aln_hb++;

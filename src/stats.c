@@ -29,14 +29,11 @@
 #include "esl_ssi.h"
 #include "esl_vectorops.h"
 
-#include "cm_dispatch.h"
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
 
-/* Function: debug_print_cmstats
- */
-int debug_print_expinfo_and_filterinfo_arrays(CM_t *cm, char *errbuf, ExpInfo_t **expA, HMMFilterInfo_t **hfiA)
+int debug_print_expinfo_array(CM_t *cm, char *errbuf, ExpInfo_t **expA)
 {
   int status;
   char *namedashes;
@@ -65,22 +62,11 @@ int debug_print_expinfo_and_filterinfo_arrays(CM_t *cm, char *errbuf, ExpInfo_t 
     debug_print_expinfo(expA[EXP_CP9_GF]);
     printf("\n\n");
   }
-  if(hfiA != NULL) { 
-    printf("Filter CM_LC info:\n");
-    if((status = DumpHMMFilterInfo(stdout, hfiA[FTHR_CM_LC], errbuf, cm, EXP_CM_LC, EXP_CP9_LF, hfiA[FTHR_CM_LC]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
-    printf("Filter CM_LI info:\n");
-    if((status = DumpHMMFilterInfo(stdout, hfiA[FTHR_CM_LI], errbuf, cm, EXP_CM_LI, EXP_CP9_LF, hfiA[FTHR_CM_LI]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
-    printf("Filter CM_GC info:\n");
-    if((status = DumpHMMFilterInfo(stdout, hfiA[FTHR_CM_GC], errbuf, cm, EXP_CM_GC, EXP_CP9_GF, hfiA[FTHR_CM_GC]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
-    printf("Filter CM_GI info:\n");
-    if((status = DumpHMMFilterInfo(stdout, hfiA[FTHR_CM_GI], errbuf, cm, EXP_CM_GI, EXP_CP9_GF, hfiA[FTHR_CM_GI]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
-    printf("\n\n");
-  }
   free(namedashes);
   return eslOK;
 
  ERROR:
-  ESL_FAIL(status, errbuf, "Memory allocation error in debug_print_expinfo_and_filterinfo_arrays().");
+  ESL_FAIL(status, errbuf, "Memory allocation error in debug_print_expinfo_array().");
   return status; /* NEVERREACHED */
 }
 

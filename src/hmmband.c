@@ -190,7 +190,6 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 
 			   cm->W,     /* guess at hit len, irrelevant b/c we're not reporting hits */
 			   0.,        /* reporting threshold, irrelevant b/c we're not reporting hits */
-			   NULL,      /* don't report hits */
 			   do_scan2bands, /* are we using scanning Forward/Backward */
 			   (! doing_search), /* are we going to use posteriors to align? */
 			   FALSE,     /* don't be memory efficient */
@@ -201,7 +200,6 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 
 			    cm->W,  /* guess at hit len, irrelevant b/c we're not reporting hits */
 			    0.,     /* reporting threshold, irrelevant b/c we're not reporting hits */
-			    NULL,   /* don't report hits */
 			    do_scan2bands, /* are we using scanning Forward/Backward */
 			    (! doing_search),  /* are we going to use posteriors to align? */
 			    (! doing_search),  /* is j0 is the fixed endpoint? */
@@ -305,7 +303,6 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 
 			   cm->W,  /* guess at hit len, irrelevant b/c we're not reporting hits */
 			   0.,     /* reporting threshold, irrelevant b/c we're not reporting hits */
-			   NULL,   /* don't report hits */
 			   do_scan2bands, /* are we using scanning Forward/Backward */
 			   TRUE,      /* we are going to use posteriors to align */
 			   FALSE,     /* don't be memory efficient */
@@ -316,7 +313,6 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 
 			    cm->W,  /* guess at hit len, irrelevant b/c we're not reporting hits */
 			    0.,     /* reporting threshold, irrelevant b/c we're not reporting hits */
-			    NULL,   /* don't report hits */
 			    do_scan2bands, /* are we using scanning Forward/Backward */
 			    TRUE,  /* we are going to use posteriors to align */
 			    TRUE,  /* j0 is the fixed endpoint */

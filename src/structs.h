@@ -737,32 +737,6 @@ typedef struct cp9bands_s {
 #define HMMDELETE 2
 #define NHMMSTATETYPES 3
 
-/* structures from RSEARCH */
-#define INIT_RESULTS 100
-typedef struct _search_result_node_t {
-  int start;
-  int stop;
-  int bestr;   /* Best root state */
-  float score;
-  Parsetree_t *tr;
-  char *pcode;           /* posterior code string, left NULL unless cm->search_opts & CM_SEARCH_POST */
-} search_result_node_t;
-
-typedef struct _search_results_t {
-  search_result_node_t *data;
-  int num_results;
-  int num_allocated;
-} search_results_t;
-
-typedef struct _dbseq_t {
-  ESL_SQ *sq[2];
-  search_results_t *results[2];
-  int chunks_sent;
-  int alignments_sent;           /* -1 is flag for none queued yet */
-  float best_score;              /* Best score for scan of this sequence */
-  int partition;                 /* For histogram building */
-} dbseq_t;
-
 /* sequences to align, for cmalign and cmscore (implemented to ease MPI) */
 typedef struct _seqs_to_aln_t {
   ESL_SQ  **sq;                  /* the sequences */
@@ -1054,6 +1028,7 @@ typedef struct scanmx_s {
   int   **dnAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int    *bestr;       /* auxil info: best root state at alpha[0][cur][d] */
+  int    *bestmode;    /* auxil info: best mode for parsetree at alpha[0][cur][d] */
   int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha) */
   double  beta_qdb;    /* tail loss prob used for calc'ing dmin/dmax, invalid if dmin==dmax==NULL */
   double  beta_W;      /* tail loss prob used for calc'ing W, often == beta_qdb, may be greater, can't be less */
@@ -1083,6 +1058,7 @@ typedef struct gammahitmx_s {
   int      *gback;              /* [0..L] traceback pointers for SHMM */ 
   float    *savesc;             /* [0..L] saves score of hit added to best parse at j */
   int      *saver;		/* [0..L] saves initial non-ROOT state of best parse ended at j */
+  int      *savemode;		/* [0..L] saves mode best parse ended at j (CM_HIT_MODE_J | CM_HIT_MODE_L | CM_HIT_MODE_R | CM_HIT_MODE_T) */
   float     cutoff;             /* minimum score to report */
   int       i0;                 /* position of first residue in sequence (gamma->mx[0] corresponds to this residue) */
   int       iamgreedy;          /* TRUE to use RSEARCH's greedy overlap resolution alg, FALSE to use optimal alg */
@@ -1116,6 +1092,7 @@ typedef struct trscanmx_s {
   int   **dnAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int    *bestr;       /* auxil info: best root state at alpha[0][cur][d] */
+  int    *bestmode;    /* auxil info: best mode for parsetree at alpha[0][cur][d] */
   int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha) */
   double  beta_qdb;    /* tail loss prob used for calc'ing dmin/dmax, invalid if dmin==dmax==NULL */
   double  beta_W;      /* tail loss prob used for calc'ing W, often == beta_qdb, may be greater, can't be less */
@@ -1162,41 +1139,6 @@ typedef struct trscanmx_s {
   int      ncells_alpha_begl; /* number of alloc'ed, valid cells for f{J,L,R}alpha_begl and i{J,L,R}alpha_begl matrices, alloc'ed as contiguous block */
   int      ncells_Talpha;     /* number of alloc'ed, valid cells for fTalpha and iTalpha matrices, alloc'ed as contiguous block */
 } TrScanMatrix_t;
-
-/* Structure SearchInfo_t: 
- * 
- * Information for CM searches, including info on filters.  
- * <nrounds> holds number of rounds of filtering.  
- * <search_opts>, <sc_cutoff>, <e_cutoff> <stype>, and <hsi>
- * are all arrays of length <nrounds + 1>, running [0..nrounds].  
- * The final value in all those arrays (index <nrounds>) corresponds to
- * the final scan, when filtering is finished.  A special case is when
- * <nrounds> == 0, in this case we're not filtering.
- *
- * A note about the mandatory use of two cutoffs <sc_cutoff> and <e_cutoff>
- * If <cutoff_type> == E_CUTOFF, <sc_cutoff> is the minimal bit score
- * that satisfies the E_CUTOFF for all partitions, this is used for
- * reporting hits in SearchDispath(), but the final cutoff used is still
- * <e_cutoff>.
- * If <cutoff_type> == SCORE_CUTOFF, <e_cutoff> is set to -1., and never
- * used. It should be considered invalid.
- *
- */                                                                                                      
-typedef struct searchinfo_s {
-  int    nrounds;            /* number of rounds of filtering, if 0, we're not filtering */
-  int   *stype;              /* [0..n..nrounds] search 'type' "SEARCH_WITH_HMM", "SEARCH_WITH_CM" */
-  int   *search_opts;        /* [0..n..nrounds] search options for each round of filtering, including the final round */
-  int   *cutoff_type;        /* [0..n..nrounds] SCORE_CUTOFF or E_CUTOFF */
-  float *sc_cutoff;          /* [0..n..nrounds] bit score cutoff threshold for each round, always valid, 
-			      * if cutoff_type[n] == E_CUTOFF this is minimal bit score across all partitions for e_cutoff */
-  float *e_cutoff;           /* [0..n..nrounds] E-value cutoff threshold for each round, ONLY valid if if cutoff_type[n] == E_CUTOFF */
-  ScanMatrix_t     **smx;    /* [0..n..nrounds] scanning DP matrix for each round, for final round (n==nrounds) si->smx[nrounds] == cm->smx */
-} SearchInfo_t;
-
-/* possible values for stype[] array in SearchInfo_t objects */
-#define SEARCH_WITH_HMM    0  
-#define SEARCH_WITH_CM     1
-
 
 /* Structure ExpInfo_t:
  *
@@ -1457,12 +1399,8 @@ typedef struct cm_s {
   CP9_MX          *cp9_bmx; /* another growable CP9 DP matrix, 'b' is for backward,
 			  * only alloc'ed to any significant size if we do Forward,Backward->Posteriors */
 
-  /* search info describing the cmsearch filtering strategy, NULL unless created in cmsearch */
-  SearchInfo_t *si;      /* describes each round of filtering, and final round of searching */
-
   /* statistics */
   ExpInfo_t       **expA;  /* Exponential tail stats, [0..EXP_NMODES-1]  */
-  HMMFilterInfo_t **hfiA;  /* Filter threshold stats, [0..FTHR_NMODES-1] */
 
   /* p7 hmms, added 08.05.08 */
   P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
@@ -1784,9 +1722,13 @@ typedef struct cm_alidisplay_s {
 #define CM_HIT_FLAGS_DEFAULT 0
 #define CM_HIT_IS_INCLUDED      (1<<0)
 #define CM_HIT_IS_REPORTED      (1<<1)
-#define CM_HIT_IS_NEW           (1<<2)
-#define CM_HIT_IS_DROPPED       (1<<3)
-#define CM_HIT_IS_DUPLICATE     (1<<4)
+#define CM_HIT_IS_DUPLICATE     (1<<2)
+
+#define CM_HIT_NMODES 4
+#define CM_HIT_MODE_J        3
+#define CM_HIT_MODE_L        2
+#define CM_HIT_MODE_R        1
+#define CM_HIT_MODE_T        0
 
 /* Structure: CM_HIT
  * 
@@ -1808,12 +1750,14 @@ typedef struct cm_hit_s {
   int64_t        seq_idx;       /* sequence index in the seqfile, unique id for the sequence */
   int64_t        start, stop;   /* start/end points of hit */
   int            in_rc;         /* TRUE if hit is in reverse complement of a target, FALSE if not */
+  int            root;          /* TRUE if hit is in reverse complement of a target, FALSE if not */
+  int            mode;          /* joint or marginal hit mode: CM_MODE_J | CM_MODE_R | CM_MODE_L | CM_MODE_T */
   float          score;		/* bit score of the hit (with corrections) */
   double         pvalue;	/* P-value of the hit   (with corrections) */
   double         evalue;	/* E-value of the hit   (with corrections) */
   CM_ALIDISPLAY *ad;            /* alignment display */
 
-  uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_NEW | CM_HIT_IS_DROPPED | CM_HIT_IS_DUPLICATE */
+  uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_DUPLICATE */
 } CM_HIT;
 
 /* Structure: CM_TOPHITS
@@ -1827,7 +1771,7 @@ typedef struct cm_tophits_s {
   uint64_t N;	  	          /* number of hits in list now               */
   uint64_t nreported;             /* number of hits that are reportable       */
   uint64_t nincluded;	          /* number of hits that are includable       */
-  int      is_sorted_by_score;    /* TRUE when hits sorted by score, length,     th->hit valid for all N hits */
+  int      is_sorted_by_score;    /* TRUE when hits sorted by score, length, th->hit valid for all N hits */
   int      is_sorted_by_position; /* TRUE when hits sorted by cm_idx, seq_idx, position, th->hit valid for all N hits */
 } CM_TOPHITS;
 
