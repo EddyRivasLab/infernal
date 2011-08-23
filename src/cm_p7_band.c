@@ -158,7 +158,7 @@ my_p7_MSVFilter(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, P7_OMX *ox, P7
 
 #ifdef p7_DEBUGGING
   if (ox->debugging) { 
-    p7_gmx_Dump(stdout, gx);
+    p7_gmx_Dump(stdout, gx, p7_DEFAULT);
     ESL_DMATRIX *D;
     double min;
     double max;
