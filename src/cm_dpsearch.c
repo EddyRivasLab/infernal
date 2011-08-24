@@ -445,7 +445,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	      arow3 = alpha[jp_y][y+3];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = ESL_MAX(arow3[dp_y] + tsc_v[3],
-			     arow2[dp_y] + tsc_v[2]);		
+				  arow2[dp_y] + tsc_v[2]);		
 		sc_v[d] = ESL_MAX(sc_v[d], init_scAA[v][dp_y]);
 		sc_v[d] = ESL_MAX(sc_v[d], arow1[dp_y] + tsc_v[1]);		
 		sc_v[d] = ESL_MAX(sc_v[d], arow0[dp_y] + tsc_v[0]);		
@@ -573,20 +573,6 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
       for (d = dnA[0]; d <= dxA[0]; d++) {
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       }
-      /* NULL3: 
-	else { 
-	for (d = dnA[0]; d <= dxA[0]; d++) { 
- 	  if(alpha[jp_v][0][d] > vsc_root) { 
- 	    for(a = 0; a < cm->abc->K; a++) { 
-	       comp[a] = act[jp_g%(W+1)][a] - act[(jp_g-d+1-1)%(W+1)][a]; 
-	    }
-	    esl_vec_FNorm(comp, cm->abc->K);
-	    ScoreCorrectionNull3(cm->abc, cm->null, comp, jp_g-(jp_g-d+1), cm->null3_omega, &null3_correction);
-	     vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d] - null3_correction);
-	  }
-	}
-      }
-      END OF NULL3 BLOCK */
 
       /* update envi, envj, if nec */
       if(do_env_defn) { 
@@ -5127,12 +5113,11 @@ DetermineSeqChunksize(int nproc, int L, int W)
  * Benchmark driver
  *****************************************************************/
 #ifdef IMPL_SEARCH_BENCHMARK
-/* gcc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * gcc -o benchmark-search -g -O2 -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
+/* gcc -o benchmark-search -g -O2 -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c -linfernal -lhmmer -leasel -lm
  * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * mpicc -o benchmark-search -g -O2 -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
+ * mpicc -o benchmark-search -g -O2 -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c -linfernal -leasel -lm
  * icc -g -O3 -static -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * icc -o benchmark-search -O3 -static -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
+ * icc -o benchmark-search -O3 -static -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c -linfernal -leasel -lm
  * ./benchmark-search <cmfile>
  */
 
@@ -5155,7 +5140,6 @@ DetermineSeqChunksize(int nproc, int L, int W)
 #include <esl_wuss.h>
 
 #include "funcs.h"		/* function declarations                */
-#include "old_funcs.h"		/* function declarations for 0.81 versions */
 #include "structs.h"		/* data structures, macros, #define's   */
 
 static ESL_OPTIONS options[] = {
@@ -5166,16 +5150,13 @@ static ESL_OPTIONS options[] = {
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "search in glocal mode [default: local]", 0 },
   { "-L",        eslARG_INT,  "10000", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",                   0 },
   { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                   0 },
-  { "-o",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute old reference CYK scan implementation", 0 },
-  { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute new reference CYK scan implementation", 0 },
+  { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute reference CYK scan implementation", 0 },
   { "-x",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute experimental CYK scan implementation", 0 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute non-banded optimized CYK scan implementation", 0 },
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute optimized int inside scan implementation", 0 },
   { "--riins",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute reference int inside scan implementation", 0 },
-  { "--oiins",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute old int inside scan implementation", 0 },
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute optimized float inside scan implementation", 0 },
   { "--rfins",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute reference float inside scan implementation", 0 },
-  { "--ofins",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute old float inside scan implementation", 0 },
   { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,  NULL,"-e",   NULL,  "also execute HMM banded CYK scan implementation", 6 },
   { "--ihbanded",eslARG_NONE,   FALSE, NULL, NULL,  NULL,"-e",   NULL,  "also execute HMM banded Inside scan implementation", 6 },
   { "--tau",     eslARG_REAL,   "1e-7",NULL, "0<x<1",NULL,"--hbanded",  NULL, "set tail loss prob for --hbanded to <x>", 6 },
@@ -5200,8 +5181,8 @@ main(int argc, char **argv)
   ESL_DSQ        *dsq;
   int             i;
   float           sc;
-  char            *cmfile = esl_opt_GetArg(go, 1);
-  CMFILE          *cmfp;	/* open input CM file stream */
+  char           *cmfile = esl_opt_GetArg(go, 1);
+  CM_FILE        *cmfp;	/* open input CM file stream */
   int            *dmin;
   int            *dmax;
   int             do_random;
@@ -5214,9 +5195,9 @@ main(int argc, char **argv)
 
   r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
 
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
-  if ((status = CMFileRead(cmfp, errbuf, &abc, &cm) != eslOK))            cm_Fail("Failed to read CM");
-  CMFileClose(cmfp);
+  if ((status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf)) != eslOK)  cm_Fail("Failed to open covariance model save file\n", cmfile);
+  if ((status = cm_file_Read(cmfp, TRUE, &abc, &cm))              != eslOK)  cm_Fail("Failed to read a CM from cm file\n");
+  cm_file_Close(cmfp);
 
   do_random = TRUE;
   if(esl_opt_GetBoolean(go, "-e")) do_random = FALSE; 
@@ -5239,7 +5220,7 @@ main(int argc, char **argv)
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
 
   /* get sequences */
-  if(!esl_opt_IsDefault(go, "-L")) {
+  if(esl_opt_IsUsed(go, "-L")) {
      double *dnull;
      ESL_DSQ *randdsq = NULL;
      ESL_ALLOC(randdsq, sizeof(ESL_DSQ)* (L+2));
@@ -5263,7 +5244,7 @@ main(int argc, char **argv)
     /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
     int safe_windowlen = cm->clen * 2;
     double **gamma = NULL;
-    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
+    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
       safe_windowlen *= 2;
       /* This is a temporary fix becuase BCE() overwrites gamma, leaking memory
        * Probably better long-term for BCE() to check whether gamma is already allocated
@@ -5298,17 +5279,6 @@ main(int argc, char **argv)
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
-/*
-      if (esl_opt_GetBoolean(go, "-o")) 
-	{ 
-	  esl_stopwatch_Start(w);
-	  if (esl_opt_GetBoolean(go, "--noqdb")) sc = CYKScan (cm, dsq, 1, L, cm->W, 0., NULL); 
-	  else                                   sc = CYKBandedScan (cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL); 
-	  printf("%4d %-30s %10.4f bits ", (i+1), "CYKBandedScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
-*/
       /* integer inside implementations */
       if (esl_opt_GetBoolean(go, "--iins")) 
 	{ 
@@ -5347,26 +5317,6 @@ main(int argc, char **argv)
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
-/*
-      if (esl_opt_GetBoolean(go, "--oiins")) 
-	{ 
-	  cm->search_opts  |= CM_SEARCH_INSIDE;
-	  if(esl_opt_GetBoolean(go, "--noqdb")) { 
-	    esl_stopwatch_Start(w);
-	    sc = iInsideScan(cm, dsq, 1, L, cm->W, 0., NULL);
-	    printf("%4d %-30s %10.4f bits ", (i+1), "iInsideScan() (int no-qdb): ", sc);
-	    esl_stopwatch_Stop(w);
-	    esl_stopwatch_Display(stdout, w, " CPU time: ");
-	  }
-	  else { 
-	    esl_stopwatch_Start(w);
-	    sc = iInsideBandedScan(cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL);
-	    printf("%4d %-30s %10.4f bits ", (i+1), "iInsideBandedScan() (int): ", sc);
-	    esl_stopwatch_Stop(w);
-	    esl_stopwatch_Display(stdout, w, " CPU time: ");
-	  }
-	}
-*/
       /* float inside implementations */
       if (esl_opt_GetBoolean(go, "--fins")) 
 	{ 
@@ -5387,26 +5337,6 @@ main(int argc, char **argv)
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
-/*
-      if (esl_opt_GetBoolean(go, "--ofins")) 
-	{ 
-	  cm->search_opts  |= CM_SEARCH_INSIDE;
-	  if(esl_opt_GetBoolean(go, "--noqdb")) { 
-	    esl_stopwatch_Start(w);
-	    sc = InsideScan(cm, dsq, 1, L, cm->W, 0., NULL);
-	    printf("%4d %-30s %10.4f bits ", (i+1), "InsideScan() (float no-qdb): ", sc);
-	    esl_stopwatch_Stop(w);
-	    esl_stopwatch_Display(stdout, w, " CPU time: ");
-	  }
-	  else { 
-	    esl_stopwatch_Start(w);
-	    sc = InsideBandedScan(cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL);
-	    printf("%4d %-30s %10.4f bits ", (i+1), "InsideBandedScan() (float): ", sc);
-	    esl_stopwatch_Stop(w);
-	    esl_stopwatch_Display(stdout, w, " CPU time: ");
-	  }
-	}
-*/
 /*
       if (esl_opt_GetBoolean(go, "--hbanded")) 
 	{ 

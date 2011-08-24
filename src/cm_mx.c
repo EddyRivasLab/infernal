@@ -1989,10 +1989,11 @@ CreateGammaHitMx(int L, int i0, int be_greedy, float cutoff, int do_backward)
   gamma->iamgreedy = be_greedy;
   gamma->cutoff    = cutoff;
   /* allocate/initialize for CYK/Inside */
-  ESL_ALLOC(gamma->mx,     sizeof(float) * (L+1));
-  ESL_ALLOC(gamma->gback,  sizeof(int)   * (L+1));
-  ESL_ALLOC(gamma->savesc, sizeof(float) * (L+1));
-  ESL_ALLOC(gamma->saver,  sizeof(int)   * (L+1));
+  ESL_ALLOC(gamma->mx,       sizeof(float) * (L+1));
+  ESL_ALLOC(gamma->gback,    sizeof(int)   * (L+1));
+  ESL_ALLOC(gamma->savesc,   sizeof(float) * (L+1));
+  ESL_ALLOC(gamma->saver,    sizeof(int)   * (L+1));
+  ESL_ALLOC(gamma->savemode, sizeof(int)   * (L+1));
     
   if(do_backward) { 
     gamma->mx[L]    = 0;
@@ -2023,6 +2024,7 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
   free(gamma->gback);
   free(gamma->savesc);
   free(gamma->saver);
+  free(gamma->savemode);
   free(gamma);
 
   return;
@@ -2076,17 +2078,18 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alph
 
   /* mode 1: non-greedy  */
   if((! gamma->iamgreedy) || alpha_row == NULL) { 
-    gamma->mx[j]     = gamma->mx[j-1] + 0; 
-    gamma->gback[j]  = -1;
-    gamma->savesc[j] = IMPOSSIBLE;
-    gamma->saver[j]  = -1;
+    gamma->mx[j]        = gamma->mx[j-1] + 0; 
+    gamma->gback[j]     = -1;
+    gamma->savesc[j]    = IMPOSSIBLE;
+    gamma->saver[j]     = -1;
+    gamma->savemode[j]  = -1;
 
     if(alpha_row != NULL) { 
       for (d = dmin; d <= dmax; d++) {
 	i = using_hmm_bands ? j-(d+dn)+1 : j-d+1;
 	hit_sc = alpha_row[d];
 	cumulative_sc = gamma->mx[i-1] + hit_sc;
-	printf("CAND hit %3d..%3d: %8.2f\n", i, j, hit_sc);
+	/* printf("CAND hit %3d..%3d: %8.2f\n", i, j, hit_sc); */
 	if (cumulative_sc > gamma->mx[j]) {
 	  do_report_hit = TRUE;
 	  if(act != NULL && NOT_IMPOSSIBLE(hit_sc)) { /* do NULL3 score correction */
@@ -2099,10 +2102,10 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alph
 	    hit_sc -= null3_correction;
 	    cumulative_sc -= null3_correction;
 	    do_report_hit = (cumulative_sc > gamma->mx[j]) ? TRUE : FALSE;
-	    printf("GOOD hit %3d..%3d: %8.2f  %10.6f  %8.2f\n", i, j, hit_sc+null3_correction, null3_correction, hit_sc);
+	    /* printf("GOOD hit %3d..%3d: %8.2f  %10.6f  %8.2f\n", i, j, hit_sc+null3_correction, null3_correction, hit_sc); */
 	  }
 	  if(do_report_hit) { 
-	    printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc);
+	    /* printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc); */
 	    gamma->mx[j]       = cumulative_sc;
 	    gamma->gback[j]    = i + (gamma->i0-1);
 	    gamma->savesc[j]   = hit_sc;
@@ -2159,10 +2162,10 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alph
 	if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) { 
 	  do_report_hit = TRUE;
 	  r    = bestr[d]; 
-	  mode = bestr[d]; 
-	  ip = using_hmm_bands ? j-(d+dn)+gamma->i0 : j-d+gamma->i0;
-	  i  = using_hmm_bands ? j-(d+dn)+1         : j-d+1;
-	  jp = j-1+gamma->i0;
+	  mode = bestmode[d]; 
+	  ip   = using_hmm_bands ? j-(d+dn)+gamma->i0 : j-d+gamma->i0;
+	  i    = using_hmm_bands ? j-(d+dn)+1         : j-d+1;
+	  jp   = j-1+gamma->i0;
 	  assert(ip >= gamma->i0);
 	  assert(jp >= gamma->i0);
 	  if(act != NULL) { /* do NULL3 score correction */

@@ -1973,7 +1973,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   } 
 
   CMRenormalize(cm);
-  cm->flags |= CMH_QDB; /* we just QDBs from the CM file */
+  cm->flags |= CMH_QDB; /* we just read QDBs */
 
   /* Create emit map now that we know the model architecture */
   cm->emap = CreateEmitMap(cm);
@@ -2105,7 +2105,7 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   if (! fread((char *) cm->ndtype, sizeof(char), cm->nodes,  cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read ndtype array");
   if (! fread((char *) cm->dmin,   sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read dmin array");
   if (! fread((char *) cm->dmax,   sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read dmax array");
-  cm->flags |= CMH_QDB; /* we just QDBs from the CM file */
+  cm->flags |= CMH_QDB; /* we just read QDBs */
   for (v = 0; v < cm->M; v++) {
     if (! fread((char *) cm->t[v], sizeof(float), MAXCONNECT,           cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read transitions for state %d", v);
     if (! fread((char *) cm->e[v], sizeof(float), cm->abc->K*cm->abc->K,cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read emissions for state %d", v);

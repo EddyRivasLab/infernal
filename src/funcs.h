@@ -135,7 +135,8 @@ extern int  cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int 
 extern int  DetermineSeqChunksize(int nproc, int L, int W);
 
 /* from cm_dpsearch_trunc.c */
-extern int             RefTrCYKScan           (CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
+extern int  RefTrCYKScan (CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
+extern int  FastTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
 extern TrScanMatrix_t *cm_CreateTrScanMatrix  (CM_t *cm, int W, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
 extern int             cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx);
 extern int             cm_FreeFloatsFromTrScanMatrix   (CM_t *cm, TrScanMatrix_t *trsmx);
@@ -634,59 +635,6 @@ extern fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp);
 extern int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa);
 extern int ribosum_calc_targets(fullmat_t *fullmat);
 extern void FreeMat(fullmat_t *fullmat);
-
-#if 0
-/* from searchinfo.c */
-extern int  CreateSearchInfo(CM_t *cm, int cutoff_type, float sc_cutoff, float e_cutoff);
-extern int  AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_filter, int forward_filter, 
-				  ScanMatrix_t *smx, int cutoff_type, float sc_cutoff, float e_cutoff, int do_null3);
-extern void FreeSearchInfo(SearchInfo_t *si, CM_t *cm);
-extern void DumpSearchInfo(SearchInfo_t *si);
-extern void DumpSearchOpts(int search_opts);
-extern void ValidateSearchInfo(CM_t *cm, SearchInfo_t *fi);
-extern void UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float sc_cutoff, float e_cutoff);
-extern void UpdateSearchInfoForExpMode(CM_t *cm, int round, int exp_mode);
-extern void UpdateSearchInfoForNewSMX(CM_t *cm);
-
-extern search_results_t *CreateResults (int size);
-extern void ExpandResults              (search_results_t *r, int additional);
-extern void AppendResults              (search_results_t *src_results, search_results_t *dest_results, int i0);
-extern void FreeResults                (search_results_t *r);
-extern int  CompareResultsByScore      (const void *a_void, const void *b_void);
-extern int  CompareResultsByEndPoint   (const void *a_void, const void *b_void);
-extern void SortResultsByScore         (search_results_t *results);
-extern void SortResultsByEndPoint      (search_results_t *results);
-extern void PrintResults               (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory, int do_noncanonical, int namewidth);
-extern void ReportHit                  (int i, int j, int bestr, float score, search_results_t *results);
-extern int  UpdateHitScoresWithNull2Or3(CM_t *cm, char *errbuf, SearchInfo_t *si, search_results_t *results, ESL_DSQ *dsq, int first_result, float sc_cutoff, int do_null2, int do_null3, int sort_by_score, int sort_by_endpoint);
-extern void RemoveOverlappingHits      (search_results_t *results, int i0, int j0);
-extern int  RemoveHitsOverECutoff      (CM_t *cm, char *errbuf, SearchInfo_t *si, int sround, search_results_t *results, ESL_DSQ *dsq, int first_result, int sort_by_score, int sort_by_endpoint);
-extern int  ScoresFromResults          (search_results_t *results, char *errbuf, float **ret_scA, int *ret_scN); 
-extern float CountScanDPCalcs          (CM_t *cm, int L, int use_qdb);
-extern BestFilterInfo_t *CreateBestFilterInfo();
-extern int  SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, int ftype, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs);
-extern void FreeBestFilterInfo(BestFilterInfo_t *bf);
-extern void DumpBestFilterInfo(BestFilterInfo_t *bf);
-extern HMMFilterInfo_t *CreateHMMFilterInfo();
-extern int  SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsize, int ncut, float *cm_E_cut, float *fwd_E_cut, int always_better_than_Smax);
-extern void FreeHMMFilterInfo(HMMFilterInfo_t *hfi);
-extern int  CopyHMMFilterInfo(HMMFilterInfo_t *src, HMMFilterInfo_t *dest);
-extern int  DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int ncm, int namewidth, char *namedashes);
-extern int  DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_E, int do_header, int namewidth, char *namedashes,
-				    float *ret_cm_bit_sc, float *ret_hmm_E, float *ret_hmm_bit_sc, float *ret_S, float *ret_xhmm, float *ret_spdup, float *ret_cm_ncalcs_per_res, float *ret_hmm_ncalcs_per_res, int *ret_do_filter);
-extern int  DumpHMMFilterInfoForCMBitScore(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_bit_sc, int do_header, int namewidth, char *namedashes,
-					   float *ret_cm_E, float *ret_hmm_E, float *ret_hmm_bit_sc, float *ret_S, float *ret_xhmm, float *ret_spdup, float *ret_cm_ncalcs_per_res, float *ret_hmm_ncalcs_per_res, int *ret_do_filter);
-extern int   PlotHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int mode);
-extern float GetHMMFilterS(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len);
-extern float GetHMMFilterTotalCalcs(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len, float cm_ncalcs_per_res, float hmm_ncalcs_per_res);
-extern float GetHMMFilterXHMM(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len, float cm_ncalcs_per_res, float hmm_ncalcs_per_res);
-extern float GetHMMFilterSpeedup(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len, float cm_ncalcs_per_res, float hmm_ncalcs_per_res);
-extern int   GetHMMFilterFwdECutGivenCME(HMMFilterInfo_t *hfi, char *errbuf, float cm_E, long dbsize, int *ret_cut_pt);
-extern int   GetHMMFilterFwdECutGivenCMBitScore(HMMFilterInfo_t *hfi, char *errbuf, float cm_bit_sc, long dbsize, int *ret_cut_pt, CM_t *cm, int cm_mode);
-extern float SurvFract2E(float S, int W, float avg_hit_len, long dbsize);
-extern float E2SurvFract(float E, int W, float avg_hit_len, long dbsize, int do_pad);
-extern int   Results2SurvFract(CM_t *cm, char *errbuf, int i0, int j0, search_results_t *results, int do_pad, int do_collapse, float *ret_survfract);
-#endif
 
 /* from seqstoaln.c */
 extern seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master);
