@@ -330,17 +330,17 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
 	          sc += DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
 		  struct_sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
 		}
-		lsc = LeftMarginalScore(cm->abc, cm->esc[v], symi); 
-		rsc = RightMarginalScore(cm->abc, cm->esc[v], symj); 
+		lsc = cm->lmesc[v][symi];
+		rsc = cm->rmesc[v][symj];
 		struct_sc -= lsc;  /* subtract left  marginalized score */
 		struct_sc -= rsc; /* subtract right marginalized score */
 		primary_sc += lsc;
 		primary_sc += rsc;
 	      }
             else if (mode == 2)
-              sc += LeftMarginalScore(cm->abc, cm->esc[v], symi);
+              sc += cm->lmesc[v][symi];
             else if (mode == 1)
-              sc += RightMarginalScore(cm->abc, cm->esc[v], symj);
+              sc += cm->rmesc[v][symj];
 	    if(emap != NULL) { 
 	      spos = ESL_MIN(spos, emap->lpos[nd]);
 	      epos = ESL_MAX(epos, emap->rpos[nd]);
@@ -507,8 +507,8 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int 
 	if (mode == 3 || mode == 2) syml = cm->abc->sym[dsq[tr->emitl[x]]]; 
 	if (mode == 3 || mode == 1) symr = cm->abc->sym[dsq[tr->emitr[x]]];
 	if      (mode == 3) esc = DegeneratePairScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
-        else if (mode == 2) esc =   LeftMarginalScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]]);
-        else if (mode == 1) esc =  RightMarginalScore(cm->abc, cm->esc[v],                        dsq[tr->emitr[x]]);
+        else if (mode == 2) esc = cm->lmesc[v][dsq[tr->emitl[x]]];
+        else if (mode == 1) esc = cm->rmesc[v][dsq[tr->emitr[x]]];
       } else if ( (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) && (mode == 3 || mode == 2) ) {
 	syml = cm->abc->sym[dsq[tr->emitl[x]]];
 	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitl[x]], cm->esc[v]);
@@ -1359,9 +1359,9 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_f
 		    tr_esc[tidx] = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
 		}
 	      else if (mode == 2)
-		tr_esc[tidx] = LeftMarginalScore(cm->abc, cm->esc[v], symi);
+		tr_esc[tidx] = cm->lmesc[v][symi];
 	      else if (mode == 1)
-		tr_esc[tidx] = RightMarginalScore(cm->abc, cm->esc[v], symj);
+		tr_esc[tidx] = cm->rmesc[v][symj];
 	    } 
 	  else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
 	    {

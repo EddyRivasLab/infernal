@@ -228,7 +228,7 @@ static int    print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, cha
 static int    print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static void   print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
 static int    print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static void   dump_emission_info(FILE *fp, CM_t *cm);
+static int    dump_emission_info(FILE *fp, CM_t *cm, char *errbuf);
 static P7_PRIOR * p7_prior_Read(FILE *fp);
 static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
 
@@ -990,7 +990,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   /* save tree description of guide tree topology, if nec */
   if(cfg->gfp    != NULL) MasterTraceDisplay(cfg->gfp, mtr, cm);
   /* save base pair info, if nec */
-  if(cfg->escfp   != NULL) dump_emission_info(cfg->escfp, cm);
+  if(cfg->escfp   != NULL) if((status = dump_emission_info(cfg->escfp, cm, errbuf)) != eslOK) return status;
 
   /* save parsetrees if nec */
   if(cfg->tracefp != NULL) { 
@@ -2575,11 +2575,12 @@ print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
  *
  * Purpose:  Dump information on the emissions (singlets and base pairs) in the model.
  *
- * Returns:  void
+ * Returns:  eslOK on success, eslEMEM and fills errbuf on memory allocation error
  */
-static void
-dump_emission_info(FILE *fp, CM_t *cm)
+static int
+dump_emission_info(FILE *fp, CM_t *cm, char *errbuf)
 {
+  int status;
   int nd, v;
   int i = 0;
   int ab, a, b;
@@ -2587,6 +2588,12 @@ dump_emission_info(FILE *fp, CM_t *cm)
   float bpsc, lsc, rsc;
   float tlsc, trsc, tbpsc, tdiffsc;
   CMEmitMap_t *emap;
+  float *lme = NULL;
+  float *rme = NULL;
+
+  ESL_ALLOC(lme, sizeof(float) * cm->abc->K);
+  ESL_ALLOC(rme, sizeof(float) * cm->abc->K);
+
   emap = CreateEmitMap(cm);
   esc  = tsc  = 0.;
   tlsc = trsc = tbpsc = tdiffsc = 0.;
@@ -2635,14 +2642,23 @@ dump_emission_info(FILE *fp, CM_t *cm)
       i++;
       nd = cm->ndidx[v];
       bpsc = lsc = rsc = 0.;
+      esl_vec_FSet(lme, cm->abc->K, 0.);
+      esl_vec_FSet(rme, cm->abc->K, 0.);
       for(a = 0; a < cm->abc->K; a++) { 
 	for(b = 0; b < cm->abc->K; b++) { 
 	  ab = (a * cm->abc->K) + b;
-	  bpsc += cm->e[v][ab] * cm->esc[v][ab];
-	  lsc  += cm->e[v][ab] * LeftMarginalScore (cm->abc, cm->esc[v], a);
-	  rsc  += cm->e[v][ab] * RightMarginalScore(cm->abc, cm->esc[v], b);
+	  bpsc   += cm->e[v][ab] * cm->esc[v][ab];
+	  lme[a] += cm->e[v][ab];
+	  rme[b] += cm->e[v][ab];
 	}
       }
+      lsc = 0.;
+      rsc = 0.;
+      for(a = 0; a < cm->abc->K; a++) { 
+	lsc += lme[a] * cm->lmesc[v][a];
+	rsc += rme[a] * cm->rmesc[v][a];
+      }
+
       ab = esl_vec_FArgMax(cm->esc[v], (cm->abc->K * cm->abc->K));
       a  = ab / cm->abc->K;
       b  = ab % cm->abc->K;
@@ -2658,7 +2674,13 @@ dump_emission_info(FILE *fp, CM_t *cm)
   fprintf(fp, "# total  %5s  %5s  %5s  %5s  %2s  %7.3f  %7.3f  %7.3f  %7.3f\n", "-", "-", "-", "-", "-", tbpsc, tlsc, trsc, tdiffsc);
       
   FreeEmitMap(emap);
-  return;
+  if(lme != NULL) free(lme);
+  if(rme != NULL) free(rme);
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "out of memory when trying to output emission information");
+  return status; /* NEVER REACHED */
 }
 
 

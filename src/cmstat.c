@@ -242,6 +242,7 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode)
   if(output_mode == OUTMODE_DEFAULT) { 
     /* build the cp9 HMM */
     if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) cm_Fail("Couldn't build a CP9 HMM from the CM\n");
+    debug_print_cp9_params(stdout, cm->cp9, TRUE);
     
     fprintf(stdout, "%6d  %-20s  %-9s  %8d  %8.2f  %4d  %4d  %4d  %4d  %5d  %5.3f  %5.3f\n",
 	    ncm,

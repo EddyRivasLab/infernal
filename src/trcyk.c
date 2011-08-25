@@ -73,7 +73,7 @@ main(int argc, char **argv)
 
    ConfigCM(cm, NULL, TRUE, NULL, NULL); /* TRUE says: calculate W */
    CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &cons);
-   SetMarginalScores(cm);
+   SetMarginalScores_reproduce_bug_i27(cm);
 
    seq = esl_sq_Create();
    while ( esl_sqio_Read(sqfp, seq) == eslOK )

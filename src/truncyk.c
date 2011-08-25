@@ -25,6 +25,7 @@
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_stack.h"
+#include "esl_vectorops.h"
 
 #include "structs.h"
 #include "funcs.h"
@@ -118,24 +119,33 @@ float tr_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
                   int r_allow_J, int r_allow_L, int r_allow_R,
                   int z_allow_J, int z_allow_L, int z_allow_R);
 
-/* Function: SetMarginalScore()
+/* Function: SetMarginalScores_reproduce_bug_i27()
  * Author:   DLK
  *
  * Purpose:  Given an otherwise initialized CM,
  *           set marginalized emission score vectors.
  *           Requires cm->abc and cm->esc.
  *
+ *           EPN, Thu Aug 25 09:21:13 2011
+ *           This function contains an unfixed version of bug i27 from
+ *           BUGTRAX in that it calls
+ *           LeftMarginalScore_reproduce_bug_i27 and
+ *           RightMarginalScore_reproduce_bug_i27. See those functions
+ *           below for more information.
+ *
  * Args:     cm
  *
  * Returns:  none (cm is modified)
  */
 void
-SetMarginalScores(CM_t *cm)
+SetMarginalScores_reproduce_bug_i27(CM_t *cm)
 {
    int i,v;
 
-   cm->lmesc = malloc(sizeof(float *) * (cm->M));
-   cm->rmesc = malloc(sizeof(float *) * (cm->M));
+   cm->lmesc  = malloc(sizeof(float *) * (cm->M));
+   cm->rmesc  = malloc(sizeof(float *) * (cm->M));
+   cm->ilmesc = malloc(sizeof(float *) * (cm->M));
+   cm->irmesc = malloc(sizeof(float *) * (cm->M));
 
    cm->lmesc[0] = malloc(sizeof(float) * (cm->M*cm->abc->Kp));
    cm->rmesc[0] = malloc(sizeof(float) * (cm->M*cm->abc->Kp));
@@ -148,8 +158,8 @@ SetMarginalScores(CM_t *cm)
       if (cm->sttype[v] == MP_st)
          for (i = 0; i < cm->abc->Kp; i++)
          {
-	   cm->lmesc[v][i] =  LeftMarginalScore(cm->abc, cm->esc[v], i);
-	   cm->rmesc[v][i] = RightMarginalScore(cm->abc, cm->esc[v], i);
+	   cm->lmesc[v][i] =  LeftMarginalScore_reproduce_bug_i27(cm->abc, cm->esc[v], i);
+	   cm->rmesc[v][i] = RightMarginalScore_reproduce_bug_i27(cm->abc, cm->esc[v], i);
          }
        else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)
          for (i = 0; i < cm->abc->Kp; i++)
@@ -172,6 +182,126 @@ SetMarginalScores(CM_t *cm)
    }
   
    return;
+}
+
+
+/* Function: LeftMarginalScore_reproduce_bug_i27()
+ * Author:   DLK
+ *
+ * Purpose:  Calculate marginal probability for left half
+ *           of an emission pair.  Implicitly assumes
+ *           a uniform background distribution
+ *
+ *           EPN, Thu Aug 25 09:20:32 2011 This function contains an
+ *           unfixed version of bug i27 from BUGTRAX. The esc vector
+ *           is log_2 odds scores but esl_vec_FLogSum() works in log
+ *           base e, therefore the scores returned from this function
+ *           were wrong and corresponded to emission probabilities
+ *           that do not sum to 1.0 across the canonical residues of
+ *           the alphabet (when called successively for
+ *           dres=0..abc->K-1).  I left this in to allow reproduction
+ *           of the benchmark from Kolbe, Eddy 2009 paper on truncated
+ *           CYK, the code for which included this bug. The fixed
+ *           version is now incorporated into CMLogoddsify, which now
+ *           calculates marginal scores and thus removes the need for
+ *           this function.
+ */
+float
+LeftMarginalScore_reproduce_bug_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
+{
+   float *left = NULL;
+   int status;
+   ESL_ALLOC(left,  (sizeof(float) * (abc->K+1)));
+   int i;
+   float sc;
+
+   if (dres < abc->K) 
+   {
+     sc = esl_vec_FLogSum(&(esc[dres*abc->K]),abc->K);
+     sc -= sreLOG2(abc->K);
+   }
+   else /* degenerate */
+   {
+      esl_vec_FSet(left, abc->K, 0.);
+      esl_abc_FCount(abc, left, dres, 1.);
+
+      sc = 0.;
+      for (i = 0; i < abc->K; i++)
+      {
+	sc += esl_vec_FLogSum(&(esc[i*abc->K]),abc->K)*left[i];
+	sc -= sreLOG2(abc->K)*left[i];
+      }
+   }
+
+   free(left);
+
+   return sc;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return 0.0; /* never reached */
+}
+
+/* Function: RightMarginalScore_reproduce_bug_i27()
+ * Author:   DLK
+ *
+ * Purpose:  Calculate marginal probability for right half
+ *           of an emission pair.  Implicitly assumes
+ *           a uniform background distribution.
+ *
+ *           EPN, Thu Aug 25 09:18:43 2011
+ *           This contains bug i27 from BUGTRAX. The esc vector is
+ *           log_2 odds scores but esl_vec_FLogSum() works in log base
+ *           e, therefore the scores returned from this function were
+ *           wrong and corresponded to emission probabilities that do
+ *           not sum to 1.0 across the canonical residues of the
+ *           alphabet (when called successively for dres=0..abc->K-1).
+ *           I left this in to allow reproduction of the benchmark
+ *           from Kolbe, Eddy 2009 paper on truncated CYK, the code
+ *           for which included this bug. The fixed version is now
+ *           incorporated into CMLogoddsify, which now calculates
+ *           marginal scores and thus removes the need for this
+ *           function.
+ */
+float
+RightMarginalScore_reproduce_bug_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
+{
+   float *right = NULL;
+   int status;
+   int i,j;
+   float sc;
+   float row[abc->K];
+   ESL_ALLOC(right, (sizeof(float) * (abc->K+1)));
+
+   if (dres < abc->K)
+   {
+      for (i=0; i<abc->K; i++)
+         row[i] = esc[i*abc->K+dres];
+      sc = esl_vec_FLogSum(row,abc->K);
+      sc -= sreLOG2(abc->K);
+   }
+   else /* degenerate */
+   {
+      esl_vec_FSet(right, abc->K, 0.);
+      esl_abc_FCount(abc, right, dres, 1.);
+
+      sc = 0.;
+      for (i=0; i < abc->K; i++)
+      {
+         for (j=0; j<abc->K; j++)
+            row[j] = esc[j*abc->K+dres];
+         sc += esl_vec_FLogSum(row,abc->K)*right[i];
+         sc -= sreLOG2(abc->K)*right[i];
+      }
+   }
+
+   free(right);
+
+   return sc;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return 0.0; /* never reached */
 }
 
 /* Function: TrCYK_DnC()

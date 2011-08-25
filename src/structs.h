@@ -1351,6 +1351,8 @@ typedef struct cm_s {
   int  **itsc;		/*   Transition score vector, scaled log odds int  */
   int  **iesc;		/*   Emission score vector, scaled log odds int    */
   int  **ioesc;         /*   Optimized emission score log odds int vector  */
+  int  **ilmesc;        /*   Left marginal emission scores (log odds int)  */
+  int  **irmesc;        /*   Right marginal emission scores (log odds int) */                
   int   *ibeginsc;      /*   Score for ROOT_S -> state v (local alignment) */
   int   *iendsc;  	/*   Score for state_v -> EL (local alignment)     */
 

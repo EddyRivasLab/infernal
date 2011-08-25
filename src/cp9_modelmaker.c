@@ -2507,14 +2507,14 @@ debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores)
   for(k = 1; k <= hmm->M; k++)
     {      
       fprintf(fp, "Node: %d\n", k);
-      for(i = 0; i < hmm->abc->K; i++)
+      for(i = 0; i < hmm->abc->Kp; i++)
 	{
 	  if(print_scores) 
 	    fprintf(fp, "mat[%3d][%3d] = %.3f | %10d\n", k, i, hmm->mat[k][i], hmm->msc[i][k]);
 	  else
 	    fprintf(fp, "mat[%3d][%3d] = %.3f\n", k, i, hmm->mat[k][i]);
 	}
-      for(i = 0; i < hmm->abc->K; i++)
+      for(i = 0; i < hmm->abc->Kp; i++)
 	{
 	  if(print_scores)
 	    fprintf(fp, "ins[%3d][%3d] = %.3f | %10d\n", k, i, hmm->ins[k][i], hmm->isc[i][k]);

@@ -138,7 +138,9 @@ extern int  DetermineSeqChunksize(int nproc, int L, int W);
 extern int  RefTrCYKScan (CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
 extern TrScanMatrix_t *cm_CreateTrScanMatrix  (CM_t *cm, int W, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
 extern int             cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx);
+extern int             cm_IntizeTrScanMatrix  (CM_t *cm, TrScanMatrix_t *trsmx);
 extern int             cm_FreeFloatsFromTrScanMatrix   (CM_t *cm, TrScanMatrix_t *trsmx);
+extern int             cm_FreeIntsFromTrScanMatrix     (CM_t *cm, TrScanMatrix_t *trsmx);
 extern void            cm_FreeTrScanMatrix             (CM_t *cm, TrScanMatrix_t *trsmx);
 
 
@@ -425,8 +427,6 @@ extern float  DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ s
 extern int    iDegeneratePairScore(const ESL_ALPHABET *abc, int *esc, ESL_DSQ syml, ESL_DSQ symr);
 extern char   resolve_degenerate (ESL_RANDOMNESS *r, char c);
 extern int    revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
-float  LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres);
-float  RightMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres);
 extern float  FastPairScoreBothDegenerate(int K, float *esc, float *left, float *right);
 extern int  iFastPairScoreBothDegenerate(int K, int *esc, float *left, float *right);
 extern float FastPairScoreLeftOnlyDegenerate(int K, float *esc, float *left, ESL_DSQ symr);
@@ -670,7 +670,10 @@ extern int        SampleGenomicSequenceFromHMM(ESL_RANDOMNESS *r, const ESL_ALPH
 extern int        CopyExpInfo(ExpInfo_t *src, ExpInfo_t *dest);
 
 /* from truncyk.c */
-void  SetMarginalScores(CM_t *cm);
+void  SetMarginalScores_reproduce_bug_i27(CM_t *cm);
+float LeftMarginalScore_reproduce_bug_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres);
+float RightMarginalScore_reproduce_bug_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres);
+
 float TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr);
 float TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int lenCORREX, Parsetree_t **ret_tr);
 /* legacy, avoid use: */

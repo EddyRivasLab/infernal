@@ -3692,8 +3692,8 @@ debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ 
 	if (mode == 3 || mode == 2) syml = cm->abc->sym[dsq[tr->emitl[x]]]; 
 	if (mode == 3 || mode == 1) symr = cm->abc->sym[dsq[tr->emitr[x]]];
 	if      (mode == 3) esc = DegeneratePairScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
-        else if (mode == 2) esc =   LeftMarginalScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]]);
-        else if (mode == 1) esc =  RightMarginalScore(cm->abc, cm->esc[v],                        dsq[tr->emitr[x]]);
+        else if (mode == 2) esc = cm->lmesc[v][dsq[tr->emitl[x]]];
+        else if (mode == 1) esc = cm->rmesc[v][dsq[tr->emitr[x]]];
       } else if ( (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) && (mode == 3 || mode == 2) ) {
 	syml = cm->abc->sym[dsq[tr->emitl[x]]];
 	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitl[x]], cm->esc[v]);

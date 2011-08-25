@@ -113,6 +113,8 @@ CreateCMShell(void)
 
   cm->lmesc   = NULL;
   cm->rmesc   = NULL;
+  cm->ilmesc  = NULL;
+  cm->irmesc  = NULL;
 
   cm->flags    = 0;
   cm->offset   = 0;
@@ -191,18 +193,26 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
   
   /* parameter information */
   /* level 1 */
-  ESL_ALLOC(cm->t,    (nstates) * sizeof(float *));
-  ESL_ALLOC(cm->e,    (nstates) * sizeof(float *));
-  ESL_ALLOC(cm->tsc,  (nstates) * sizeof(float *));
-  ESL_ALLOC(cm->esc,  (nstates) * sizeof(float *));
-  ESL_ALLOC(cm->itsc, (nstates) * sizeof(int *));
-  ESL_ALLOC(cm->iesc, (nstates) * sizeof(int *));
-  cm->t[0]   = NULL;
-  cm->e[0]   = NULL;
-  cm->tsc[0] = NULL;
-  cm->esc[0] = NULL;
-  cm->itsc[0]= NULL;
-  cm->iesc[0]= NULL;
+  ESL_ALLOC(cm->t,      (nstates) * sizeof(float *));
+  ESL_ALLOC(cm->e,      (nstates) * sizeof(float *));
+  ESL_ALLOC(cm->tsc,    (nstates) * sizeof(float *));
+  ESL_ALLOC(cm->esc,    (nstates) * sizeof(float *));
+  ESL_ALLOC(cm->lmesc,  (nstates) * sizeof(float *));
+  ESL_ALLOC(cm->rmesc,  (nstates) * sizeof(float *));
+  ESL_ALLOC(cm->itsc,   (nstates) * sizeof(int *));
+  ESL_ALLOC(cm->iesc,   (nstates) * sizeof(int *));
+  ESL_ALLOC(cm->ilmesc, (nstates) * sizeof(int *));
+  ESL_ALLOC(cm->irmesc, (nstates) * sizeof(int *));
+  cm->t[0]      = NULL;
+  cm->e[0]      = NULL;
+  cm->tsc[0]    = NULL;
+  cm->esc[0]    = NULL;
+  cm->lmesc[0]  = NULL;
+  cm->rmesc[0]  = NULL;
+  cm->itsc[0]   = NULL;
+  cm->iesc[0]   = NULL;
+  cm->ilmesc[0] = NULL;
+  cm->irmesc[0] = NULL;
   ESL_ALLOC(cm->begin,   (nstates) * sizeof(float));
   ESL_ALLOC(cm->end,     (nstates) * sizeof(float));
   ESL_ALLOC(cm->beginsc, (nstates) * sizeof(float));
@@ -215,20 +225,28 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
    */
   
   /* level 2 */
-  ESL_ALLOC(cm->t[0],    MAXCONNECT * nstates * sizeof(float));
-  ESL_ALLOC(cm->e[0],    cm->abc->K * cm->abc->K * nstates * sizeof(float));
-  ESL_ALLOC(cm->tsc[0],  MAXCONNECT * nstates * sizeof(float));
-  ESL_ALLOC(cm->esc[0],  cm->abc->K * cm->abc->K * nstates * sizeof(float));
+  ESL_ALLOC(cm->t[0],     MAXCONNECT * nstates * sizeof(float));
+  ESL_ALLOC(cm->e[0],     cm->abc->K * cm->abc->K * nstates * sizeof(float));
+  ESL_ALLOC(cm->tsc[0],   MAXCONNECT * nstates * sizeof(float));
+  ESL_ALLOC(cm->esc[0],   cm->abc->K * cm->abc->K * nstates * sizeof(float));
+  ESL_ALLOC(cm->lmesc[0], cm->abc->Kp * nstates * sizeof(float));
+  ESL_ALLOC(cm->rmesc[0], cm->abc->Kp * nstates * sizeof(float));
   ESL_ALLOC(cm->itsc[0], MAXCONNECT * nstates * sizeof(int));
   ESL_ALLOC(cm->iesc[0], cm->abc->K * cm->abc->K * nstates * sizeof(int));
+  ESL_ALLOC(cm->ilmesc[0], cm->abc->Kp * nstates * sizeof(int));
+  ESL_ALLOC(cm->irmesc[0], cm->abc->Kp * nstates * sizeof(int));
   for (v = 0; v < nstates; v++) 
     {
-      cm->e[v]    = cm->e[0]    + v * (cm->abc->K * cm->abc->K);
-      cm->t[v]    = cm->t[0]    + v * MAXCONNECT;
-      cm->esc[v]  = cm->esc[0]  + v * (cm->abc->K * cm->abc->K);
-      cm->tsc[v]  = cm->tsc[0]  + v * MAXCONNECT;
-      cm->iesc[v] = cm->iesc[0] + v * (cm->abc->K * cm->abc->K);
-      cm->itsc[v] = cm->itsc[0] + v * MAXCONNECT;
+      cm->e[v]      = cm->e[0]     + v * (cm->abc->K * cm->abc->K);
+      cm->t[v]      = cm->t[0]     + v * MAXCONNECT;
+      cm->tsc[v]    = cm->tsc[0]   + v * MAXCONNECT;
+      cm->esc[v]    = cm->esc[0]   + v * (cm->abc->K * cm->abc->K);
+      cm->lmesc[v]  = cm->lmesc[0] + v * cm->abc->Kp;
+      cm->rmesc[v]  = cm->rmesc[0] + v * cm->abc->Kp;
+      cm->iesc[v]   = cm->iesc[0]  + v * (cm->abc->K * cm->abc->K);
+      cm->itsc[v]   = cm->itsc[0]  + v * MAXCONNECT;
+      cm->ilmesc[v] = cm->ilmesc[0] + v * cm->abc->Kp;
+      cm->irmesc[v] = cm->irmesc[0] + v * cm->abc->Kp;
     }
 
   /* Zero model */
@@ -284,12 +302,16 @@ CMZero(CM_t *cm)
   int v;			/* counter over states                 */
 
   for (v = 0; v < cm->M; v++) {
-    esl_vec_FSet(cm->e[v],    (cm->abc->K * cm->abc->K), 0.);
-    esl_vec_FSet(cm->t[v],    MAXCONNECT,                0.);
-    esl_vec_FSet(cm->esc[v],  (cm->abc->K * cm->abc->K), 0.);
-    esl_vec_FSet(cm->tsc[v],  MAXCONNECT,                0.);
-    esl_vec_ISet(cm->iesc[v], (cm->abc->K * cm->abc->K), 0);
-    esl_vec_ISet(cm->itsc[v], MAXCONNECT,                0);
+    esl_vec_FSet(cm->e[v],      (cm->abc->K * cm->abc->K), 0.);
+    esl_vec_FSet(cm->t[v],      MAXCONNECT,                0.);
+    esl_vec_FSet(cm->tsc[v],    MAXCONNECT,                0.);
+    esl_vec_FSet(cm->esc[v],    (cm->abc->K * cm->abc->K), 0.);
+    esl_vec_FSet(cm->lmesc[v],  cm->abc->Kp,               0.);
+    esl_vec_FSet(cm->rmesc[v],  cm->abc->Kp,               0.);
+    esl_vec_ISet(cm->itsc[v],   MAXCONNECT,                0);
+    esl_vec_ISet(cm->iesc[v],   (cm->abc->K * cm->abc->K), 0);
+    esl_vec_ISet(cm->ilmesc[v], cm->abc->Kp,               0);
+    esl_vec_ISet(cm->irmesc[v], cm->abc->Kp,               0);
   }
   esl_vec_FSet(cm->begin,    cm->M, 0.);
   esl_vec_FSet(cm->end,      cm->M, 0.);
@@ -367,8 +389,10 @@ FreeCM(CM_t *cm)
   free(cm->nodemap);
   free(cm->ndtype);
 
-  if (cm->lmesc   != NULL) { free(cm->lmesc[0]); free(cm->lmesc); }
-  if (cm->rmesc   != NULL) { free(cm->rmesc[0]); free(cm->rmesc); }
+  if (cm->lmesc   != NULL) { free(cm->lmesc[0]);  free(cm->lmesc); }
+  if (cm->rmesc   != NULL) { free(cm->rmesc[0]);  free(cm->rmesc); }
+  if (cm->ilmesc  != NULL) { free(cm->ilmesc[0]); free(cm->ilmesc); }
+  if (cm->irmesc  != NULL) { free(cm->irmesc[0]); free(cm->irmesc); }
 
   if(cm->t != NULL) { 
     if(cm->t[0] != NULL) free(cm->t[0]);
@@ -720,62 +744,99 @@ CMLogoddsify(CM_t *cm)
 {
   int v, x, y;
 
-  /* TEMP */
-  ESL_STOPWATCH *w;
-  w = esl_stopwatch_Create();
-  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
-  esl_stopwatch_Start(w);
+  /* zero lmesc, rmesc, we'll sum up probs then convert to scores */
+  esl_vec_FSet(cm->lmesc[0], cm->M * cm->abc->Kp, 0.);
+  esl_vec_FSet(cm->rmesc[0], cm->M * cm->abc->Kp, 0.);
 
-  for (v = 0; v < cm->M; v++)
-    {
-      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st)
-	for (x = 0; x < cm->cnum[v]; x++)
-	  {
-	    cm->tsc[v][x]  = sreLOG2(cm->t[v][x]);
-	    cm->itsc[v][x] = Prob2Score(cm->t[v][x], 1.0);
-	    /*printf("cm->t[%4d][%2d]: %f itsc->e: %f itsc: %d\n", v, x, cm->t[v][x], Score2Prob(cm->itsc[v][x], 1.0), cm->itsc[v][x]);*/
-	  }	    
-      if (cm->sttype[v] == MP_st)
-	for (x = 0; x < cm->abc->K; x++)
-	  for (y = 0; y < cm->abc->K; y++)
-	    {
-	      cm->esc[v][x*cm->abc->K+y]  = sreLOG2(cm->e[v][x*cm->abc->K+y] / (cm->null[x]*cm->null[y]));
-	      cm->iesc[v][x*cm->abc->K+y] = Prob2Score(cm->e[v][x*cm->abc->K+y], (cm->null[x]*cm->null[y]));
-	      /*printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, (x*cm->abc->K+y), cm->e[v][(x*cm->abc->K+y)], Score2Prob(cm->iesc[v][x*cm->abc->K+y], (cm->null[x]*cm->null[y])), cm->iesc[v][(x*cm->abc->K+y)]);*/
-	    }
-      if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
-	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
-	for (x = 0; x < cm->abc->K; x++)
-	  {
-	    cm->esc[v][x]  = sreLOG2(cm->e[v][x] / cm->null[x]);
-	    cm->iesc[v][x] = Prob2Score(cm->e[v][x], cm->null[x]);
-	    /*printf("cm->e[%4d][%2d]: %f esc: %f null[%d]: %f\n", v, x, cm->e[v][x], cm->esc[v][x], x, cm->null[x]);*/
-	    /*printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, x, cm->e[v][x], Score2Prob(cm->iesc[v][x], (cm->null[x])), cm->iesc[v][x]);*/
-	  }
-      /* These work even if begin/end distributions are inactive 0's,
-       * sreLOG2 will set beginsc, endsc to -infinity.
-       */
-      cm->beginsc[v]  = sreLOG2(cm->begin[v]);
-      cm->ibeginsc[v] = Prob2Score(cm->begin[v], 1.0);
-      /*printf("cm->begin[%4d]: %f ibeginsc->e: %f ibeginsc: %d\n", v, cm->begin[v], Score2Prob(cm->ibeginsc[v], 1.0), cm->ibeginsc[v]);*/
+  for (v = 0; v < cm->M; v++) {
+    /* fill in unused marginal scores */
+    cm->lmesc[v][cm->abc->K]      = cm->rmesc[v][cm->abc->K]     = IMPOSSIBLE; /* gap */
+    cm->lmesc[v][cm->abc->Kp-2]   = cm->rmesc[v][cm->abc->Kp-2]  = IMPOSSIBLE; /* no-residue '*' */
+    cm->lmesc[v][cm->abc->Kp-1]   = cm->rmesc[v][cm->abc->Kp-1]  = IMPOSSIBLE; /* missing data */
+    cm->ilmesc[v][cm->abc->K]     = cm->irmesc[v][cm->abc->K]    = -INFTY;   ; /* gap */
+    cm->ilmesc[v][cm->abc->Kp-2]  = cm->irmesc[v][cm->abc->Kp-2] = -INFTY;   ; /* no-residue '*' */
+    cm->ilmesc[v][cm->abc->Kp-1]  = cm->irmesc[v][cm->abc->Kp-1] = -INFTY;   ; /* missing data */
 
-      cm->endsc[v]    = sreLOG2(cm->end[v]);
-      cm->iendsc[v]   = Prob2Score(cm->end[v], 1.0);
-      /*printf("cm->end[%4d]: %f iendsc->e: %f iendsc: %d\n\n", v, cm->end[v], Score2Prob(cm->iendsc[v], 1.0), cm->iendsc[v]);*/
+    if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
+      for (x = 0; x < cm->cnum[v]; x++) {
+	cm->tsc[v][x]  = sreLOG2(cm->t[v][x]);
+	cm->itsc[v][x] = Prob2Score(cm->t[v][x], 1.0);
+	/*printf("cm->t[%4d][%2d]: %f itsc->e: %f itsc: %d\n", v, x, cm->t[v][x], Score2Prob(cm->itsc[v][x], 1.0), cm->itsc[v][x]);*/
+      }
+    }	    
+    if (cm->sttype[v] == MP_st) { 
+      for (x = 0; x < cm->abc->K; x++) {
+	for (y = 0; y < cm->abc->K; y++) {
+	  cm->esc[v][x*cm->abc->K+y]  = sreLOG2   (cm->e[v][x*cm->abc->K+y] / (cm->null[x]*cm->null[y]));
+	  cm->iesc[v][x*cm->abc->K+y] = Prob2Score(cm->e[v][x*cm->abc->K+y],  (cm->null[x]*cm->null[y]));
+	  /* printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, (x*cm->abc->K+y), cm->e[v][(x*cm->abc->K+y)], Score2Prob(cm->iesc[v][x*cm->abc->K+y], (cm->null[x]*cm->null[y])), cm->iesc[v][(x*cm->abc->K+y)]); */
+	  cm->lmesc[v][x] += cm->e[v][x*cm->abc->K+y];
+	  cm->rmesc[v][y] += cm->e[v][x*cm->abc->K+y];
+	}
+      }
+      for (x = 0; x < cm->abc->K; x++) { 
+	cm->ilmesc[v][x] = Prob2Score(cm->lmesc[v][x],  cm->null[x]);
+	cm->irmesc[v][x] = Prob2Score(cm->rmesc[v][x],  cm->null[x]);
+	cm->lmesc[v][x]  = sreLOG2   (cm->lmesc[v][x] / cm->null[x]);
+	cm->rmesc[v][x]  = sreLOG2   (cm->rmesc[v][x] / cm->null[x]);
+      }
+      /* handle degeneracies */
+      esl_abc_FExpectScVec(cm->abc, cm->lmesc[v],  cm->null);
+      esl_abc_FExpectScVec(cm->abc, cm->rmesc[v],  cm->null);
+      esl_abc_IExpectScVec(cm->abc, cm->ilmesc[v], cm->null);
+      esl_abc_IExpectScVec(cm->abc, cm->irmesc[v], cm->null);
+    }
+    else if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) { 
+      for (x = 0; x < cm->abc->K; x++) { 
+	cm->esc[v][x]    = sreLOG2(cm->e[v][x] / cm->null[x]);
+	cm->iesc[v][x]   = Prob2Score(cm->e[v][x], cm->null[x]);
+	/*printf("cm->e[%4d][%2d]: %f esc: %f null[%d]: %f\n", v, x, cm->e[v][x], cm->esc[v][x], x, cm->null[x]);*/
+	/*printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, x, cm->e[v][x], Score2Prob(cm->iesc[v][x], (cm->null[x])), cm->iesc[v][x]);*/
+      }
+      /* handle marginals, differently for L and R states */
+      if(cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+	for (x = 0; x < cm->abc->K; x++) { 
+	  cm->lmesc[v][x]  = cm->esc[v][x];
+	  cm->ilmesc[v][x] = cm->iesc[v][x];
+	  cm->rmesc[v][x]  = 0.;
+	  cm->irmesc[v][x] = 0;
+	}
+	esl_abc_FExpectScVec(cm->abc, cm->lmesc[v],  cm->null);
+	esl_abc_IExpectScVec(cm->abc, cm->ilmesc[v], cm->null);
+	esl_vec_FSet(cm->rmesc[v]  + cm->abc->K+1, ((cm->abc->Kp-3) - cm->abc->K), 0.);
+	esl_vec_ISet(cm->irmesc[v] + cm->abc->K+1, ((cm->abc->Kp-3) - cm->abc->K), 0);
+      }
+      else if(cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+	for (x = 0; x < cm->abc->K; x++) { 
+	  cm->lmesc[v][x]  = 0.;
+	  cm->ilmesc[v][x] = 0;
+	  cm->rmesc[v][x]  = cm->esc[v][x];
+	  cm->irmesc[v][x] = cm->iesc[v][x];
+	}
+	esl_vec_FSet(cm->lmesc[v]  + cm->abc->K+1, ((cm->abc->Kp-3) - cm->abc->K), 0.);
+	esl_vec_ISet(cm->ilmesc[v] + cm->abc->K+1, ((cm->abc->Kp-3) - cm->abc->K), 0);
+	esl_abc_FExpectScVec(cm->abc, cm->rmesc[v],  cm->null);
+	esl_abc_IExpectScVec(cm->abc, cm->irmesc[v], cm->null);
+      }
     }
 
+    /* These work even if begin/end distributions are inactive 0's,
+     * sreLOG2 will set beginsc, endsc to -infinity.
+     */
+    cm->beginsc[v]  = sreLOG2(cm->begin[v]);
+    cm->ibeginsc[v] = Prob2Score(cm->begin[v], 1.0);
+    /*printf("cm->begin[%4d]: %f ibeginsc->e: %f ibeginsc: %d\n", v, cm->begin[v], Score2Prob(cm->ibeginsc[v], 1.0), cm->ibeginsc[v]);*/
+    
+    cm->endsc[v]    = sreLOG2(cm->end[v]);
+    cm->iendsc[v]   = Prob2Score(cm->end[v], 1.0);
+    /*printf("cm->end[%4d]: %f iendsc->e: %f iendsc: %d\n\n", v, cm->end[v], Score2Prob(cm->iendsc[v], 1.0), cm->iendsc[v]);*/
+  }
+    
   cm->iel_selfsc = Prob2Score(sreEXP2(cm->el_selfsc), 1.0);
   /*printf("cm->el_selfsc: %f prob: %f cm->iel_selfsc: %d prob: %f\n", cm->el_selfsc, 
-	 (sreEXP2(cm->el_selfsc)), cm->iel_selfsc, (Score2Prob(cm->iel_selfsc, 1.0)));
-	 printf("-INFTY: %d prob: %f 2^: %f\n", -INFTY, (Score2Prob(-INFTY, 1.0)), sreEXP2(-INFTY));*/
-
-  esl_stopwatch_Stop(w); 
-  FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "\t\t\tCM df params       %11s\n", time_buf);
-#endif
-  esl_stopwatch_Start(w); 
-
+    (sreEXP2(cm->el_selfsc)), cm->iel_selfsc, (Score2Prob(cm->iel_selfsc, 1.0)));
+    printf("-INFTY: %d prob: %f 2^: %f\n", -INFTY, (Score2Prob(-INFTY, 1.0)), sreEXP2(-INFTY));*/
+  
   /* Allocate and fill optimized emission scores for this CM.
    * If they already exist, free them and recalculate them, slightly wasteful, oh well.
    */
@@ -787,13 +848,6 @@ CMLogoddsify(CM_t *cm)
    */
   cm->ioesc = ICopyOptimizedEmitScoresFromFloats(cm, cm->oesc);
   
-  esl_stopwatch_Stop(w); 
-  FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "\t\t\tCM O  params       %11s\n", time_buf);
-#endif
-  esl_stopwatch_Destroy(w);
-
   /* Potentially, overwrite transitions with non-probabilistic 
    * RSEARCH transitions. Currently only default transition
    * parameters are allowed, these are defined as DEFAULT_R*
