@@ -784,3 +784,40 @@ changes to fix the bug.
 
 This bug was fixed as of revision 3652.
 //
+
+ID              i27
+TITLE		Incorrect calculation of marginal emission scores
+STATUS          CLOSED
+XREF            Minimal notes in ~/nawrockie/notebook/11_0816_inf_banded_trcyk
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Thu Aug 25 09:13:57 2011
+DESCRIPTION    
+
+Marginal emission scores were being incorrectly calculated because the
+alphabet.c::LeftMarginalScore() and alphabet.c::RightMarginalScore()
+functions were using the esl_vec_FLogsum() function to sum log odds
+scores in base 2, but that function operates in log base e.  The
+resulting marginal emission scores were wrong, and did not correspond
+to valid probabilities (the sum of the marginal probabilities for all
+four canonicals was not 1.0). Additionally the implementation in these
+functions assumed the null model was always equiprobable for all four
+bases, when this is in fact not guaranteed. (cmbuild --null allows the
+use of a null model with arbitrary emission probabilities).
+
+The fixed version completely changes how and where marginals are
+calculated. It is now in CMLogoddisfy() and the calculation is done
+differently, without the use of the esl_vec_FLogsum() function. By
+placing the calculation in CMLogoddisfy() we know that the marginal
+scores are always valid when any of the CM bit scores are valid, and
+we do not need to call the SetMarginals() function to set them up.
+
+As of revision 3666, the old LeftMarginalScore(), RightMarginalScore()
+and SetMarginals() functions have been retained but renamed by adding 
+'_reproduce_bug_i27' at the end of their names. I did this to allow
+reproduction of the benchmark from the Kolbe, Eddy 2009 benchmark, but
+I'm not sure if this is too important since other parts of the
+codebase have changed as well and I may remove them in a future
+revision. All three functions have been moved to truncyk.c.
+
+This bug was fixed as of revision 3666.
+//
