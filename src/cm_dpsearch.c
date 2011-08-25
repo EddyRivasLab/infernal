@@ -1614,7 +1614,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
   init_scAA = ICalcInitDPScores(cm);
 
   /* allocate/initialize gamma_row, only used for updating gamma if hitlist != NULL */
-  ESL_ALLOC(gamma_row, sizeof(float) * W+1);
+  ESL_ALLOC(gamma_row, sizeof(float) * (W+1));
   esl_vec_FSet(gamma_row, (W+1), IMPOSSIBLE);
 
   /* if do_null3: allocate and initialize act vector */
@@ -2039,7 +2039,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "X2FastIInsideScan, dsq is NULL\n");
   if(smx == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "X2FastIInsideScan, smx == NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "X2FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "X2FastIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
+  if(! (smx->flags & cmSMX_HAS_INT))         ESL_FAIL(eslEINCOMPAT, errbuf, "X2FastIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
   if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "X2FastIInsideScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
@@ -2085,7 +2085,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
   init_scAA = ICalcInitDPScores(cm);
 
   /* allocate/initialize gamma_row, only used for updating gamma if hitlist != NULL */
-  ESL_ALLOC(gamma_row, sizeof(float) * W+1);
+  ESL_ALLOC(gamma_row, sizeof(float) * (W+1));
   esl_vec_FSet(gamma_row, (W+1), IMPOSSIBLE);
 
   /* if do_null3: allocate and initialize act vector */
@@ -3170,7 +3170,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
   init_scAA = ICalcInitDPScores(cm);
 
   /* allocate/initialize gamma_row, only used for updating gamma if hitlist != NULL */
-  ESL_ALLOC(gamma_row, sizeof(float) * W+1);
+  ESL_ALLOC(gamma_row, sizeof(float) * (W+1));
   esl_vec_FSet(gamma_row, (W+1), IMPOSSIBLE);
 
   /* if do_null3: allocate and initialize act vector */
@@ -3479,7 +3479,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   init_scAA = ICalcInitDPScores(cm);
 
   /* allocate/initialize gamma_row, only used for updating gamma if hitlist != NULL */
-  ESL_ALLOC(gamma_row, sizeof(float) * W+1);
+  ESL_ALLOC(gamma_row, sizeof(float) * (W+1));
   esl_vec_FSet(gamma_row, (W+1), IMPOSSIBLE);
 
   /* if do_null3: allocate and initialize act vector */
