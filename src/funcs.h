@@ -237,17 +237,22 @@ extern int  cm_detach_state(CM_t *cm, int insert1, int insert2);
 extern int  clean_cs(char *cs, int alen, int be_quiet);
 
 /* from cm_mx.c */
-extern CM_HB_MX *       cm_hb_mx_Create               (int M);
+extern CM_HB_MX        *cm_hb_mx_Create               (int M);
 extern int              cm_hb_mx_GrowTo               (CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
 extern int              cm_hb_mx_Dump                 (FILE *ofp, CM_HB_MX *mx);
 extern void             cm_hb_mx_Destroy              (CM_HB_MX *mx);
 extern int              cm_hb_mx_SizeNeeded           (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb);
+extern CM_TR_HB_MX     *cm_tr_hb_mx_Create            (CM_t *cm);
+extern int              cm_tr_hb_mx_GrowTo            (CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
+extern int              cm_tr_hb_mx_Dump              (FILE *ofp, CM_TR_HB_MX *mx);
+extern void             cm_tr_hb_mx_Destroy           (CM_TR_HB_MX *mx);
+extern int              cm_tr_hb_mx_SizeNeeded        (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_JLRncells, int64_t *ret_Tncells, float *ret_Mb);
 extern CM_HB_SHADOW_MX *cm_hb_shadow_mx_Create        (CM_t *cm, int M);
 extern int              cm_hb_shadow_mx_GrowTo        (CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
 extern int              cm_hb_shadow_mx_Dump          (FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx);
 extern void             cm_hb_shadow_mx_Destroy       (CM_HB_SHADOW_MX *mx);
 extern int              cm_hb_shadow_mx_SizeNeeded    (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *ret_nchar_cells, int64_t *ret_nint_cells, float *ret_Mb);
-extern ScanMatrix_t *   cm_CreateScanMatrix           (CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
+extern ScanMatrix_t    *cm_CreateScanMatrix           (CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
 extern int              cm_CreateScanMatrixForCM      (CM_t *cm, int do_float, int do_int);           
 extern int              cm_FloatizeScanMatrix         (CM_t *cm, ScanMatrix_t *smx);
 extern int              cm_IntizeScanMatrix           (CM_t *cm, ScanMatrix_t *smx);

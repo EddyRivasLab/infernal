@@ -447,16 +447,15 @@ typedef struct cp9map_s {
 #define CMH_QDB                 (1<<14) /* query-dependent bands, QDBs valid        */
 #define CMH_CP9                 (1<<15) /* CP9 HMM is valid in cm->cp9              */
 #define CMH_SCANMATRIX          (1<<16) /* ScanMatrix smx is valid                  */
-#define CMH_TRSCANMATRIX        (1<<17) /* ScanMatrix smx is valid                  */
-#define CMH_MLP7                (1<<18) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
-#define CMH_FP7                 (1<<19) /* filter p7 is valid in cm->fp7            */
+#define CMH_MLP7                (1<<17) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
+#define CMH_FP7                 (1<<18) /* filter p7 is valid in cm->fp7            */
 
-#define CM_IS_SUB               (1<<20) /* the CM is a sub CM                       */
-#define CM_IS_RSEARCH           (1<<21) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS         (1<<22) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT          (1<<23) /* CM has/will have RSEARCH emissions       */
-#define CM_EMIT_NO_LOCAL_BEGINS (1<<24) /* emitted parsetrees will never have local begins */
-#define CM_EMIT_NO_LOCAL_ENDS   (1<<25) /* emitted parsetrees will never have local ends   */
+#define CM_IS_SUB               (1<<19) /* the CM is a sub CM                       */
+#define CM_IS_RSEARCH           (1<<20) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS         (1<<21) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT          (1<<22) /* CM has/will have RSEARCH emissions       */
+#define CM_EMIT_NO_LOCAL_BEGINS (1<<23) /* emitted parsetrees will never have local begins */
+#define CM_EMIT_NO_LOCAL_ENDS   (1<<24) /* emitted parsetrees will never have local ends   */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
@@ -981,6 +980,35 @@ typedef struct cm_hb_mx_s {
 			 * state, only a reference, so don't free
 			 * it when mx is freed. */
 } CM_HB_MX;
+
+
+typedef struct cm_tr_hb_mx_s {
+  int  M;		/* number of states (1st dim ptrs) in current mx */
+  int  B;		/* number of BIF_B states (1st dim ptrs) in current mx (valid, non-null Tdp states) */
+  int  L;               /* length of sequence the matrix currently corresponds to */
+
+  int64_t    JLRncells_alloc;  /* current cell allocation limit for EACH of Jdp, Ldp and Rdp */
+  int64_t    JLRncells_valid;  /* current number of valid cells in EACH of Jdp, Ldp and Rdp */
+  int64_t    Tncells_alloc;    /* current cell allocation limit for Tdp */
+  int64_t    Tncells_valid;    /* current number of valid cells in Tdp */
+  float      size_Mb;          /* current size of full matrix (J,L,R&T) in Megabytes */
+
+  int   *nrowsA;        /* [0..v..M] current number allocated rows for deck v */
+
+  float ***Jdp;         /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  float   *Jdp_mem;     /* the actual mem, points to Jdp[0][0][0] */
+  float ***Ldp;         /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  float   *Ldp_mem;     /* the actual mem, points to Ldp[0][0][0] */
+  float ***Rdp;         /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  float   *Rdp_mem;     /* the actual mem, points to Rdp[0][0][0] */
+  float ***Tdp;         /* B states only: [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  float   *Tdp_mem;     /* the actual mem, points to Tdp[0][0][0] */
+
+  CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
+			 * matrix, which defines j, d, bands for each
+			 * state, only a reference, so don't free
+			 * it when mx is freed. */
+} CM_TR_HB_MX;
 
 
 /* Declaration of CM dynamic programming matrix structure for 
