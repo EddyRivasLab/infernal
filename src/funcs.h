@@ -578,16 +578,6 @@ extern int cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm co
 extern int cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
 extern int cm_dsq_MPISend(ESL_DSQ *dsq, int L, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
 extern int cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_DSQ **ret_dsq, int *ret_L);
-#if 0
-extern int cm_search_results_MPISend(search_results_t *results, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
-extern int cm_search_results_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, search_results_t  **ret_results);
-extern int cm_search_results_MPIPackSize(const search_results_t *results, MPI_Comm comm, int *ret_n);
-extern int cm_search_results_MPIPack(const search_results_t *results, char *buf, int n, int *position, MPI_Comm comm);
-extern int cm_search_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, search_results_t **ret_results);
-extern int cm_search_result_node_MPIPackSize(const search_result_node_t *rnode, MPI_Comm comm, int *ret_n) ;
-extern int cm_search_result_node_MPIPack(const search_result_node_t *rnode, char *buf, int n, int *position, MPI_Comm comm);
-extern int cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, search_result_node_t *ret_rnode);
-#endif
 extern int cm_seqs_to_aln_MPISend(seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to_send, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
 extern int cm_seqs_to_aln_MPIRecv(const ESL_ALPHABET *abc, int source, int tag, MPI_Comm comm, char **buf, int *nalloc, seqs_to_aln_t **ret_seqs_to_aln);
 extern int cm_seqs_to_aln_MPIPackSize(const seqs_to_aln_t *results, int offset, int nseq_to_pack, MPI_Comm comm, int *ret_n);
@@ -605,12 +595,6 @@ extern int cm_digitized_sq_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, 
 extern int exp_info_MPIPackSize(ExpInfo_t *exp, MPI_Comm comm, int *ret_n);
 extern int exp_info_MPIPack(ExpInfo_t *exp, char *buf, int n, int *position, MPI_Comm comm);
 extern int exp_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ExpInfo_t **ret_exp);
-extern int hmm_filter_info_MPIPackSize(HMMFilterInfo_t *hfi, MPI_Comm comm, int *ret_n);
-extern int hmm_filter_info_MPIPack(HMMFilterInfo_t *hfi, char *buf, int n, int *position, MPI_Comm comm);
-extern int hmm_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, HMMFilterInfo_t **ret_hfi);
-extern int best_filter_info_MPIPackSize(BestFilterInfo_t *bf, MPI_Comm comm, int *ret_n);
-extern int best_filter_info_MPIPack(BestFilterInfo_t *bf, char *buf, int n, int *position, MPI_Comm comm);
-extern int best_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, BestFilterInfo_t **ret_bf);
 extern int cmcalibrate_exp_results_MPIPackSize(float *scA, int nseq, MPI_Comm comm, int *ret_n);
 extern int cmcalibrate_exp_results_MPIPack(float *scA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
 extern int cmcalibrate_exp_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_scA, int *ret_nseq);
