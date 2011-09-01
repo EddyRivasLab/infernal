@@ -1556,7 +1556,7 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
                     {
                        T_alpha[v][j][d] = sc;
                        if ( ret_shadow != NULL) { ((int **)T_shadow[v])[j][d] = k; }
-                    }
+		    }
                  }
                }
                else {

@@ -378,6 +378,7 @@ cm_tr_hb_mx_Create(CM_t *cm)
   int allocW = 1;
   int B = CMCountNodetype(cm, BIF_nd);
   int M = cm->M;
+  int firstbif = 0;
 
   /* level 1: the structure itself */
   ESL_ALLOC(mx, sizeof(CM_TR_HB_MX));
@@ -411,11 +412,12 @@ cm_tr_hb_mx_Create(CM_t *cm)
     ESL_ALLOC(mx->Jdp[v], sizeof(float *) * (allocL));
     ESL_ALLOC(mx->Ldp[v], sizeof(float *) * (allocL));
     ESL_ALLOC(mx->Rdp[v], sizeof(float *) * (allocL));
-    mx->Jdp[v][0]  = mx->Ldp_mem + v * (allocL) * (allocW);
-    mx->Ldp[v][0]  = mx->Rdp_mem + v * (allocL) * (allocW);
+    mx->Jdp[v][0]  = mx->Jdp_mem + v * (allocL) * (allocW);
+    mx->Ldp[v][0]  = mx->Ldp_mem + v * (allocL) * (allocW);
     mx->Rdp[v][0]  = mx->Rdp_mem + v * (allocL) * (allocW);
 
     if(cm->sttype[v] == B_st) { 
+      if(firstbif == 0) firstbif = v;
       ESL_ALLOC(mx->Tdp[v], sizeof(float *) * (allocL));
       mx->Tdp[v][0] = mx->Tdp_mem + b * (allocL) * (allocW);
       b++;
@@ -427,6 +429,7 @@ cm_tr_hb_mx_Create(CM_t *cm)
   }
   mx->M               = M;
   mx->B               = B;
+  mx->firstbif        = firstbif;
   mx->JLRncells_alloc = (M+1)*(allocL)*(allocW);
   mx->JLRncells_valid = 0;
   mx->Tncells_alloc   = B*(allocL)*(allocW);

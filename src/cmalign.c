@@ -1316,7 +1316,9 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   if((status = DispatchAlignments(cm, errbuf, seqs_to_aln,
 				  esl_opt_GetInteger(go, "--banddump"),
 				  esl_opt_GetInteger(go, "--dlev"), be_quiet, 
-				  (! esl_opt_GetBoolean(go, "--no-null3")), cfg->r,
+				  (! esl_opt_GetBoolean(go, "--no-null3")), 
+				  FALSE, /* do_trunc? */
+				  cfg->r,
 				  esl_opt_GetReal(go, "--mxsize"), stdout, cfg->scorefp, cfg->nseq+1,
 				  esl_opt_GetInteger(go, "--7pad"), 
 				  esl_opt_GetInteger(go, "--7len"), 
@@ -1993,7 +1995,6 @@ print_info_file_header(FILE *fp, char *firstline, char *elstring)
   fprintf(fp, "#   <seqlen>  is the unaligned length of the sequence\n");
   fprintf(fp, "#   <spos>    is the first (5'-most) consensus position filled by a nongap for this sequence (-1 if 0 nongap consensus posns)\n");
   fprintf(fp, "#   <epos>    is the final (3'-most) consensus position filled by a nongap for this sequence (-1 if 0 nongap consensus posns)\n");
-  fprintf(fp, "#   <seqlen>  is the unaligned length of the sequence\n");
   fprintf(fp, "#   <c_x> is a consensus position (between 0 and <clen>; if 0: inserts before 1st consensus posn)\n");
   fprintf(fp, "#   <u_x> is the *unaligned* position (b/t 1 and <seqlen>) in <seqname> of the first %sinserted residue after <c_x>.\n", elstring);
   fprintf(fp, "#   <i_x> is the number of %sinserted residues after position <c_x> for <seqname>.\n", elstring);

@@ -2145,8 +2145,8 @@ setup_cm(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
 
   /* Configure the CM */
   if(! esl_opt_GetBoolean(go, "-g")) { 
-    if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
       info->cm->config_opts |= CM_CONFIG_LOCAL;
+    if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
       info->cm->config_opts |= CM_CONFIG_HMMLOCAL;
       if(! esl_opt_GetBoolean(go, "--cp9noel")) info->cm->config_opts |= CM_CONFIG_HMMEL; 
     }

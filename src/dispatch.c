@@ -208,7 +208,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     if(sround == si->nrounds && smx != cm->smx) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), final round %d, SEARCH_WITH_CM but smx != cm->smx.\n", sround);
 
     if(cm->search_opts & CM_SEARCH_HBANDED) {
-      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status; 
+      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, FALSE, 0)) != eslOK) return status; 
       if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit,                 &sc)) != eslOK) return status; }
       else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit, 0., NULL, NULL, &sc)) != eslOK) return status; }
     }
@@ -303,6 +303,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
  *           debug_level    - verbosity level for debugging print statements
  *           silent_mode    - TRUE to not print anything, FALSE to print scores 
  *           do_null3       - TRUE to apply null3 correction to scores, FALSE not to
+ *           do_trunc       - TRUE if we're aligning with truncated CYK/Inside/Outside
  *           r              - source of randomness (NULL unless CM_ALIGN_SAMPLE)
  *           size_limit     - max number of Mb for a DP matrix, if requestd matrix is bigger return eslERANGE 
  *           ofp            - output file to print scores to as we're aligning
@@ -318,7 +319,8 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
  */
 int
 DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, 
-		   int bdump_level, int debug_level, int silent_mode, int do_null3, ESL_RANDOMNESS *r, 
+		   int bdump_level, int debug_level, int silent_mode, int do_null3, int do_trunc, 
+		   ESL_RANDOMNESS *r, 
 		   float size_limit, FILE *ofp, FILE *sfp, int iidx,
 		   int pad7, int len7, float sc7, int end7, 
 		   float mprob7, float mcprob7, float iprob7, float ilprob7)
@@ -746,7 +748,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	if((status = cp9_Seq2BandsP7B(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, L, orig_cp9b, kmin, kmax, debug_level)) != eslOK) return status; 
       }
       else { 
-	if((status = cp9_Seq2Bands(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) return status; 
+	if((status = cp9_Seq2Bands(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, do_trunc, debug_level)) != eslOK) return status; 
       }
     }
     else if(do_sub) { 
@@ -832,7 +834,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	}
 	else { /* ! do_p7banded */ 
 	  /* (5) Do Forward/Backward again, and get HMM bands */
-	  if((status = cp9_Seq2Bands(sub_cm, errbuf, sub_cm->cp9_mx, sub_cm->cp9_bmx, sub_cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK) return status;
+	  if((status = cp9_Seq2Bands(sub_cm, errbuf, sub_cm->cp9_mx, sub_cm->cp9_bmx, sub_cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, do_trunc, debug_level)) != eslOK) return status;
 	}
 	hmm           = sub_hmm;    
 	cp9b          = sub_cp9b;

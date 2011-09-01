@@ -4186,6 +4186,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   int      jpn, jpx;           /* minimum/maximum jp_v */
   int      dp_v, dp_y;         /* d index for state v/y in alpha w/mem eff bands */
   int      dn, dx;             /* current minimum/maximum d allowed */
+  int      dp;                 /* ESL_MAX(d-sd, 0) */
   int      dp_y_sd;            /* dp_y - sd */
   int      dpn, dpx;           /* minimum/maximum dp_v */
   int      kp_z;               /* k (in the d dim) index for state z in alpha w/mem eff bands */
@@ -4281,7 +4282,8 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
 	for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
-	  alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
+	  dp = ESL_MAX(d-sd, 0);
+	  alpha[v][jp_v][dp_v] = el_scA[dp] + cm->endsc[v];
 	}
       }
     }
@@ -4679,6 +4681,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   int      jpn, jpx;           /* minimum/maximum jp_v */
   int      dp_v, dp_y;         /* d index for state v/y in alpha w/mem eff bands */
   int      dn, dx;             /* current minimum/maximum d allowed */
+  int      dp;                 /* ESL_MAX(d-sd, 0) */
   int      dp_y_sd;            /* dp_y - sd */
   int      dpn, dpx;           /* minimum/maximum dp_v */
   int      kp_z;               /* k (in the d dim) index for state z in alpha w/mem eff bands */
@@ -4765,7 +4768,8 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
 	for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
-	  alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
+	  dp = ESL_MAX(d-sd, 0);
+	  alpha[v][jp_v][dp_v] = el_scA[dp] + cm->endsc[v];
 	}
       }
     }

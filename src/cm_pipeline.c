@@ -1793,7 +1793,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	 * the resulting HMM banded matrix is under our size limit.
 	 */
 	while(1) { 
-	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, 0)) != eslOK) return status;
+	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, FALSE, 0)) != eslOK) return status;
 	  if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, &hbmx_Mb)) != eslOK) return status; 
 	  if(hbmx_Mb < pli->hb_size_limit) break; /* our matrix will be small enough, break out of while(1) */
 	  if(cm->tau > 0.01)               break; /* our bands have gotten too tight, break out of while(1) */
@@ -1875,7 +1875,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	 * the resulting HMM banded matrix is under our size limit.
 	 */
 	while(1) { 
-	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, 0)) != eslOK) return status;
+	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, FALSE, 0)) != eslOK) return status;
 	  if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, &hbmx_Mb)) != eslOK) return status; 
 	  if(hbmx_Mb < pli->hb_size_limit) break; /* our matrix will be small enough, break out of while(1) */
 	  if(cm->tau > 0.01)               break; /* our bands have gotten too tight, break out of while(1) */
@@ -2132,7 +2132,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
        */
       cm->tau = pli->final_tau;
       while(1) { 
-	if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, 0)) != eslOK) return status; 
+	if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, FALSE, 0)) != eslOK) return status; 
 	if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, hitlen, NULL, &hbmx_Mb)) != eslOK) return status; 
 	if(hbmx_Mb < pli->hb_size_limit) break; /* our matrix will be small enough, break out of while(1) */
 	if(cm->tau > 0.01)               break; /* our bands have gotten too tight, break out of while(1) */
@@ -2151,7 +2151,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
 	cm->cp9b = cp9_CloneBands(scan_cp9b, pli->errbuf);
 	if(cm->cp9b == NULL) return status;
       }
-      cp9_ShiftCMBands(cm, hit->start, hit->stop);
+      cp9_ShiftCMBands(cm, hit->start, hit->stop, FALSE);
       /* NOTE: cm->cp9b bands would currently fail a cp9_ValidateBands() check..., but they'll work for our purposes here */
     }
     

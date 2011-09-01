@@ -32,6 +32,9 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
+/* helper functions for cp9_HMM2ijBands() */
+static void determine_marginal_right_i_band (CM_t *cm, CP9Map_t *cp9map, CP9Bands_t *cp9b, int v, int lpos, int max_rpos, int i0, int j0, int *r_nn_i, int *r_nx_i, int *ret_imin_v, int *ret_imax_v);
+static void determine_marginal_left_j_band(CM_t *cm, CP9Map_t *cp9map, CP9Bands_t *cp9b, int v, int rpos, int min_lpos, int i0, int j0, int *r_nn_j, int *r_nx_j, int *ret_jmin_v, int *ret_jmax_v);
 
 /* EPN 10.28.06
  * Function: AllocCP9Bands()
@@ -155,12 +158,13 @@ DScore2Prob(int sc, float null)
  *           j0          - end of target subsequence (often L, end of sq)
  *           cp9b        - PRE-ALLOCATED, the HMM bands for this sequence, filled here.
  *           doing_search- TRUE if we're going to use these HMM bands for search, not alignment
+ *           do_trunc    - TRUE if we're going to use these bands for truncated CYK/Inside/Outside
  *           debug_level - verbosity level for debugging printf()s
  * Return:  eslOK on success;
  * 
  */
 int
-cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int debug_level)
+cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int do_trunc, int debug_level)
 {
   int   status;
   int   use_sums;     /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
@@ -230,9 +234,9 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
     if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
   }
   else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, do_trunc, debug_level)) != eslOK) return status;
     /* For debugging, uncomment this block:
-       if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) { 
+       if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, do_trunc, debug_level)) != eslOK) { 
        ESL_SQ *tmp;
        tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq+i0-1, (j0-i0+1), NULL, NULL, NULL);
        esl_sq_Textize(tmp);
@@ -247,7 +251,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   /* Use the CM bands on i and j to get bands on d, specific to j. */
   /* cp9_GrowHDBands() must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status; 
-  ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, debug_level);
+  ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0)) != eslOK) return status;
@@ -1193,17 +1197,20 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
  * int **hdmax      hdmax[v][jp] = last position in band on d for state v
  *                                 and j position: j = jp+jmin[v].
  *                  Filled in this function.
+ * int do_trunc     TRUE if we'll use these bands in a truncated version of CYK/Inside/Outside
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
  *****************************************************************************/
 void
 ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
-	   int **hdmin, int **hdmax, int debug_level)
+	   int **hdmin, int **hdmax, int do_trunc, int debug_level)
 {
   int v;            /* counter over states of the CM */
   int jp;           /* counter over valid j's, but offset. jp+jmin[v] = actual j */
   int j;            /* actual j */
   int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
+  int max_sdl_sdr;  /* maximum of StateLeftDelta, StateRightDelta for a state (1 for emitters, 0 for nonemitters) */
+  int dn;           /* max_sdl_sdr if do_trunc, else sd */
   for(v = 0; v < cm->M; v++) {
     if(cm->sttype[v] == E_st) {
       for(jp = 0; jp <= (jmax[v]-jmin[v]); jp++) {
@@ -1212,11 +1219,14 @@ ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
       }
     }
     else {
-      sd = StateDelta(cm->sttype[v]);
+      sd          = StateDelta(cm->sttype[v]);
+      max_sdl_sdr = ESL_MAX(StateLeftDelta(cm->sttype[v]), StateRightDelta(cm->sttype[v]));
+      dn          = do_trunc ? max_sdl_sdr : sd;
+      /* if (do_trunc) d can be 1 for MP states, which is the reason we use dn here */
       for(jp = 0; jp <= (jmax[v]-jmin[v]); jp++) {
 	j = jp+jmin[v];
-	hdmin[v][jp] = ESL_MAX((j - imax[v] + 1), sd);
-	hdmax[v][jp] = ESL_MAX((j - imin[v] + 1), sd);
+	hdmin[v][jp] = ESL_MAX((j - imax[v] + 1), dn);
+	hdmax[v][jp] = ESL_MAX((j - imin[v] + 1), dn);
 	/* printf("hd[%d][j=%d]: min: %d | max: %d\n", v, (jp+jmin[v]), hdmin[v][jp], hdmax[v][jp]); */
       }
     }
@@ -1365,6 +1375,7 @@ hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
  *           <j0>     - final position in the sequence we're considering
  *           <doing_search> - TRUE if we're searching the target sequence, not aligning it,
  *                            relevant b/c iff we're aligning the parsetree *must* span i0..j0
+ *           <do_trunc>     - TRUE if we're going to use these bands for truncated CYK/Inside/Outside
  *           <debug_level>  - verbosity level for debuggint printf() statements
  *
  * Returns:  <eslOK> on success.
@@ -1373,7 +1384,7 @@ hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
  *           <eslEMEM> on memory error
  */
 int
-cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level)
+cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int do_trunc, int debug_level)
 {
 
   int status;
@@ -1424,8 +1435,13 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
    * if a delete states sub-parsetree is bounded by i' and j', this means positions i' and j' HAVE YET TO BE EMITTED.
    * For i states this means we have to add 1 to the delete band positions, but for j states we do not, the off-by-one
    * is taken care of because the HMM is moving left to right, while j positions move right to left (confusing as hell,
-   * bad explanation, i know... write out an example, it's the only way to get it). 
+   * bad explanation, i know... write out an example, its the only way to get it). 
    */
+
+  /* do_trunc == TRUE related variables */
+  int marg_imin_v, marg_imax_v;
+  int marg_jmin_v, marg_jmax_v;
+
 
   /* Contract checks */
   if (cp9b == NULL)                                                                   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), cp9b is NULL.\n");
@@ -1493,6 +1509,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
   k    = 0;
   lpos = 0;
   rpos = 0;
+
   if ((nd_pda    = esl_stack_ICreate())      == NULL)  goto ERROR;
   if ((lpos_pda  = esl_stack_ICreate())      == NULL)  goto ERROR;
   if ((status = esl_stack_IPush(nd_pda, 0))  != eslOK) goto ERROR;		/* 0 = left side. 1 would = right side. */
@@ -1509,10 +1526,34 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  v = cm->nodemap[nd];
 	  w = cm->cfirst[v]; /* BEGL_S */
 	  y = cm->cnum[v];   /* BEGR_S */
-	  imin[v] = imin[w];
-	  imax[v] = imax[w];
-	  jmin[v] = jmin[y];
-	  jmax[v] = jmax[y];
+	  if(! do_trunc) { /* we won't be using these bands for truncated version of CYK/Inside/Outside */
+	    /* set v's i band based on left child w, and v's j band based on right child y */
+	    imin[v] = imin[w];
+	    imax[v] = imax[w];
+	    jmin[v] = jmin[y];
+	    jmax[v] = jmax[y];
+	  }
+	  else { /* do_trunc == TRUE, we will be using these bands for truncated version of CYK/Inside/Outside */
+	    /* the difference with do_trunc is we set the B state
+	     * v's i and j bands such that any i or j that is valid
+	     * for w or y is valid for v.
+	     */
+	    if     (imin[w] == -1) imin[v] = imin[y];
+	    else if(imin[y] == -1) imin[v] = imin[w];
+	    else                   imin[v] = ESL_MIN(imin[w], imin[y]);
+
+	    if     (imax[w] == -2) imax[v] = imax[y];
+	    else if(imax[y] == -2) imax[v] = imax[w];
+	    else                   imax[v] = ESL_MAX(imax[w], imax[y]);
+
+	    if     (jmin[w] == -1) jmin[v] = jmin[y];
+	    else if(jmin[y] == -1) jmin[v] = jmin[w];
+	    else                   jmin[v] = ESL_MIN(jmin[w], jmin[y]);
+
+	    if     (jmax[w] == -2) jmax[v] = jmax[y];
+	    else if(jmax[y] == -2) jmax[v] = jmax[w];
+	    else                   jmax[v] = ESL_MAX(jmax[w], jmax[y]);
+	  }
 	  /* check for possibility that either child is not reachable, will only possibly happen with local on */
 	  if(imin[v] == -1 || jmin[v] == -1) { 
 	    /* either the left child, or right child is not reachable, make them both unreachable as well as the BIF state */
@@ -1528,236 +1569,339 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  lpos = cp9map->nd2lpos[nd];
 	  rpos = cp9map->nd2rpos[nd];
 	  v = cm->nodemap[nd]; /* v is MATP_MP */
-	  if(imin[v] != -1) { 
-	    cp9b->jmin[v] = r_mn[rpos];
-	    cp9b->jmax[v] = r_mx[rpos];
-	    if(cp9b->jmin[v] == -1) { cp9b->imin[v] = -1; cp9b->imax[v] = -2; } /* v is unreachable */
-	    /* special case [*1*]: v emits left and right, so jmin[v] >= i0+1 and jmax[v] >= i0+1
-	     * b/c i emitted from MATP_MP >= i0, thus j emitted from MATP_MP >= i0+1. 
-	     */
-	    if(cp9b->jmax[v] == i0) { /* HMM tells us right half of MP state must emit first residue in the sequence,
-				       * but we know it can't because the left half of this MATP_MP state must emit 1 residue, 
-				       * which can't be before the first one. In this case we ignore the HMM and set
-				       * say that this state is unreachable */
-	      ESL_DASSERT1((cp9b->jmin[v] == i0));
-	      cp9b->jmin[v] = -1; /* ignore hmm */
-	      cp9b->jmax[v] = -2; /* ignore hmm */
-	      cp9b->imin[v] = -1; /* ignore hmm */
-	      cp9b->imax[v] = -2; /* ignore hmm */
+	  if(! do_trunc) { /* we won't be using these bands for truncated version of CYK/Inside/Outside */
+	    if(imin[v] != -1) { 
+	      jmin[v] = r_mn[rpos];
+	      jmax[v] = r_mx[rpos];
+	      if(jmin[v] == -1) { imin[v] = -1; imax[v] = -2; } /* v is unreachable */
+	      /* special case [*1*]: v emits left and right, so jmin[v] >= i0+1 and jmax[v] >= i0+1
+	       * b/c i emitted from MATP_MP >= i0, thus j emitted from MATP_MP >= i0+1. 
+	       * This doesn't apply if do_trunc is TRUE, in which case we can emit just left OR right from v.
+	       */
+	      if(jmax[v] == i0) { /* HMM tells us right half of MP state must emit first residue in the sequence,
+					 * but we know it can't because the left half of this MATP_MP state must emit 1 residue, 
+					 * which can't be before the first one. In this case we ignore the HMM and set
+					 * say that this state is unreachable */
+		ESL_DASSERT1((jmin[v] == i0));
+		jmin[v] = -1; /* ignore hmm */
+		jmax[v] = -2; /* ignore hmm */
+		imin[v] = -1; /* ignore hmm */
+		imax[v] = -2; /* ignore hmm */
+	      }
+	      else if (jmin[v] == i0) { /* HMM tells us right half of MP state could possibly
+					       * emit first residue (i0), but we know it can't (see comment above).
+					       * we ignore it and say the leftmost residue it could emit is i0+1 */
+		jmin[v]++;              /* pad 1 onto what the hmm thought */
+		/* leave jmax[v] alone, we konw it's not == i0, we checked for that case above */
+	      }
 	    }
-	    else if (cp9b->jmin[v] == i0) { /* HMM tells us right half of MP state could possibly
-					     * emit first residue (i0), but we know it can't (see comment above).
-					     * we ignore it and say the leftmost residue it could emit is i0+1 */
-	      cp9b->jmin[v]++;              /* pad 1 onto what the hmm thought */
-	      /* leave cp9b->jmax[v] alone, we konw it's not == i0, we checked for that case above */
+	    else { jmin[v] = -1; jmax[v] = -2; }
+	  }
+	  else { /* do_trunc == TRUE, we will be using these bands for truncated version of CYK/Inside/Outside */
+	    /* in truncated case, we need to set non-impossible band
+	     * for cases where imin[v] == -1 && imax[v] == -2 (left
+	     * half of the bp was set as impossible), but r_mn[rpos]
+	     * && r_mx[rpos] != -1 (right half of bp is not
+	     * impossible).
+	     */
+	    jmin[v] = r_mn[rpos];
+	    jmax[v] = r_mx[rpos];
+	    if(imin[v] != -1 || jmin[v] != -1) { 
+	      /* left and/or right half of basepair is reachable */
+	      determine_marginal_right_i_band(cm, cp9map, cp9b, v, lpos, rpos, i0, j0, r_nn_i, r_nx_i, &marg_imin_v, &marg_imax_v);
+	      determine_marginal_left_j_band (cm, cp9map, cp9b, v, rpos, lpos, i0, j0, r_nn_j, r_nx_j, &marg_jmin_v, &marg_jmax_v);
+	      if(imin[v] != -1 && jmin[v] == -1) { 
+		/* left half of bp is reachable, right half is unreachable (imin/imax previously set)*/
+		  jmin[v] = marg_jmin_v;
+		  jmax[v] = marg_jmax_v;
+	      }
+	      else if(imin[v] == -1 && jmin[v] != -1) { 
+		/* left half of bp is unreachable, right half is reachable (jmin/jmax previously set)*/
+		imin[v] = marg_imin_v;
+		imax[v] = marg_imax_v;
+	      }
+	      /* else both left and right half are reachable, (imin/imax and jmin/jmax previously set) */
+	    }
+	    /* finally, if we're reachable expand bands so all possible marginal parses are allowed */
+	    if(imin[v] != -1 && jmin[v] != -1) { 
+	      imin[v] = ESL_MIN(imin[v], marg_imin_v);
+	      imax[v] = ESL_MAX(imax[v], marg_imax_v);
+	      jmin[v] = ESL_MIN(jmin[v], marg_jmin_v);
+	      jmax[v] = ESL_MAX(jmax[v], marg_jmax_v);
 	    }
 	  }
-	  else { cp9b->jmin[v] = -1; cp9b->jmax[v] = -2; }
+
 	  v++; /* v is MATP_ML */
 	  if(imin[v] != -1) { 
-	    cp9b->jmin[v] = r_dn[rpos];
-	    cp9b->jmax[v] = r_dx[rpos];
+	    jmin[v] = r_dn[rpos];
+	    jmax[v] = r_dx[rpos];
 	    /* special case [*2*]: v emits left, so jmin[v] >= i0 and jmax[v] >= i0 
 	     * b/c i emitted from MATP_ML >= i0, thus j must be >= i0
 	     * This is similar to the case for MATP_MP above (see [*1*]) 
 	     */
-	    if(cp9b->jmax[v] == (i0-1)) { /* HMM tells us we can only enter this state having emitted 0 residues,
+	    if(jmax[v] == (i0-1)) { /* HMM tells us we can only enter this state having emitted 0 residues,
 					   * we know better, in this case we ignore the HMM, and set the j band
 					   * to dummy values, which means it's unset and doesn't yet exist
 					   */
-	      ESL_DASSERT1((cp9b->jmin[v] == (i0-1)));
-	      cp9b->jmin[v] = -1; /* ignore hmm */
-	      cp9b->jmax[v] = -2; /* ignore hmm */
-	      cp9b->imin[v] = -1; /* ignore hmm */
-	      cp9b->imax[v] = -2; /* ignore hmm */
+	      ESL_DASSERT1((jmin[v] == (i0-1)));
+	      jmin[v] = -1; /* ignore hmm */
+	      jmax[v] = -2; /* ignore hmm */
+	      imin[v] = -1; /* ignore hmm */
+	      imax[v] = -2; /* ignore hmm */
 	    }
-	    else if (cp9b->jmin[v] == (i0-1)) { /* HMM tells us right half of MATP_ML state could be entered
+	    else if (jmin[v] == (i0-1)) { /* HMM tells us right half of MATP_ML state could be entered
 						 * having emitted 0 residues, but we know it can't (see comment above).
 						 * we ignore it and say we must have at least emitted residue i0.
 						 */
-	      cp9b->jmin[v] = i0; /* pad 1 onto what the hmm thought */
-	      /* leave cp9b->jmax[v] alone, we konw it's not == i0-1, we checked for that case above */
+	      jmin[v] = i0; /* pad 1 onto what the hmm thought */
+	      /* leave jmax[v] alone, we konw it's not == i0-1, we checked for that case above */
 	    }
-	    if(cp9b->jmin[v] == -1) { cp9b->imin[v] = -1; cp9b->imax[v] = -2; } /* v is unreachable */
+	    if(jmin[v] == -1) { imin[v] = -1; imax[v] = -2; } /* v is unreachable */
 	  }
-	  else { cp9b->jmin[v] = -1; cp9b->jmax[v] = -2; }
+	  else { jmin[v] = -1; jmax[v] = -2; }
+
 	  v++; /* v is MATP_MR */
 	  if(imin[v] != -1) { 
-	    cp9b->jmin[v] = r_mn[rpos];
-	    cp9b->jmax[v] = r_mx[rpos];
-	    if(cp9b->jmin[v] == -1) { cp9b->imin[v] = -1; cp9b->imax[v] = -2; } /* v is unreachable */
+	    jmin[v] = r_mn[rpos];
+	    jmax[v] = r_mx[rpos];
+	    if(jmin[v] == -1) { imin[v] = -1; imax[v] = -2; } /* v is unreachable */
 	  }
-	  else { cp9b->jmin[v] = -1; cp9b->jmax[v] = -2; }
+	  else { jmin[v] = -1; jmax[v] = -2; }
 	  v++; /* v is MATP_D */
 	  if(imin[v] != -1) { 
-	    cp9b->jmin[v] = r_dn[rpos];
-	    cp9b->jmax[v] = r_dx[rpos];
-	    if(cp9b->jmin[v] == -1) { cp9b->imin[v] = -1; cp9b->imax[v] = -2; } /* v is unreachable */
+	    jmin[v] = r_dn[rpos];
+	    jmax[v] = r_dx[rpos];
+	    if(jmin[v] == -1) { imin[v] = -1; imax[v] = -2; } /* v is unreachable */
 	  }
-	  else { cp9b->jmin[v] = -1; cp9b->jmax[v] = -2; } 
+	  else { jmin[v] = -1; jmax[v] = -2; } 
+
 	  v++; /* v is MATP_IL */
-	  if(cp9b->imin[v] != -1) { 
-	    cp9b->jmin[v] = r_nn_j[rpos-1]; 
-	    cp9b->jmax[v] = r_nx_j[rpos-1]; 
+	  if(imin[v] != -1) { 
+	    jmin[v] = r_nn_j[rpos-1]; 
+	    jmax[v] = r_nx_j[rpos-1]; 
 	    /* special case [*3*]: v emits left, so jmin[v] >= i0 and jmax[v] >= i0 
 	     * b/c i emitted from MATP_IL >= i0, thus j must be >= i0
 	     * This is similar to the case for MATP_ML above (see [*2*]) 
 	     */
-	    if(cp9b->jmax[v] == (i0-1)) { /* HMM tells us we can only enter this state having emitted 0 residues,
+	    if(jmax[v] == (i0-1)) { /* HMM tells us we can only enter this state having emitted 0 residues,
 					   * we know better, in this case we ignore the HMM, and set the j band
 					   * on v such that v is unreachable */
-	      ESL_DASSERT1((cp9b->jmin[v] == (i0-1)));
-	      cp9b->jmin[v] = -1; /* ignore hmm */
-	      cp9b->jmax[v] = -2; /* ignore hmm */
-	      cp9b->imin[v] = -1; /* ignore hmm */
-	      cp9b->imax[v] = -2; /* ignore hmm */
+	      ESL_DASSERT1((jmin[v] == (i0-1)));
+	      jmin[v] = -1; /* ignore hmm */
+	      jmax[v] = -2; /* ignore hmm */
+	      imin[v] = -1; /* ignore hmm */
+	      imax[v] = -2; /* ignore hmm */
 	    }
-	    else if (cp9b->jmin[v] == (i0-1)) { /* HMM tells us right half of MATP_IL state could be entered
+	    else if (jmin[v] == (i0-1)) { /* HMM tells us right half of MATP_IL state could be entered
 						 * having emitted 0 residues, but we know it can't (see comment above).
 						 * we ignore it and say we must have at least emitted residue i0.
 						 */
-	      cp9b->jmin[v] = i0; /* pad 1 onto what the hmm thought */
-	      /* leave cp9b->jmax[v] alone, we konw it's not == i0-1, we checked for that case above */
+	      jmin[v] = i0; /* pad 1 onto what the hmm thought */
+	      /* leave jmax[v] alone, we konw it's not == i0-1, we checked for that case above */
 	    }
 	  }
-	  else { cp9b->jmin[v] = -1; cp9b->jmax[v] = -2; }
+	  else { jmin[v] = -1; jmax[v] = -2; }
+
 	  v++; /* v is MATP_IR */
-	  cp9b->jmin[v] = r_in[rpos-1];
-	  cp9b->jmax[v] = r_ix[rpos-1]; 
-	  if(cp9b->jmin[v] != -1) { /* set implicit i bands */
-	    cp9b->imin[v] = r_nn_i[lpos+1]; /* look at band on lpos *+1* b/c we enter MATP_IR AFTER the MATP_MP, MATP_MR, MATP_ML, or MATP_IL insert (if any) */
-	    cp9b->imax[v] = r_nx_i[lpos+1]; /* look at band on lpos *+1* b/c we enter MATP_IR AFTER the MATP_MP, MATP_MR, MATP_ML, or MATP_IL insert (if any) */
+	  jmin[v] = r_in[rpos-1];
+	  jmax[v] = r_ix[rpos-1]; 
+	  if(jmin[v] != -1) { /* set implicit i bands */
+	    imin[v] = r_nn_i[lpos+1]; /* look at band on lpos *+1* b/c we enter MATP_IR AFTER the MATP_MP, MATP_MR, MATP_ML, or MATP_IL insert (if any) */
+	    imax[v] = r_nx_i[lpos+1]; /* look at band on lpos *+1* b/c we enter MATP_IR AFTER the MATP_MP, MATP_MR, MATP_ML, or MATP_IL insert (if any) */
 	    ESL_DASSERT1(((lpos+1) <= cm->clen)); /* note: we know lpos+1 <= cm->clen b/c we're in a MATP node, and the ccol the right half of the node maps to 
 						  *       must be to the right of the ccol the left half of the node maps to */
-	    if(cp9b->imin[v] == 0) { cm_Fail("v: %d lpos: %d\n", v, lpos); }
+	    if(imin[v] == 0) { cm_Fail("v: %d lpos: %d\n", v, lpos); }
 	  }
-	  else { cp9b->imin[v] = -1; cp9b->imax[v] = -2; }
+	  else { imin[v] = -1; imax[v] = -2; }
 	  if(StateIsDetached(cm, v)) { 
-	    cp9b->imin[v] = -1;
-	    cp9b->imax[v] = -2;
-	    cp9b->jmin[v] = -1;
-	    cp9b->jmax[v] = -2;
+	    imin[v] = -1;
+	    imax[v] = -2;
+	    jmin[v] = -1;
+	    jmax[v] = -2;
 	  }
 	  break;
 	  
 	case MATL_nd: /* i bands were set when we were on the left, non-right emitter, set implicit j bands */
 	  lpos = cp9map->nd2lpos[nd];
-	  /* special case [*4*]: for v == MATL_ML and v == MATL_IL, v emits left, so jmin[v] >= i0 and jmax[v] >= i0 
-	   * b/c i emitted from MATP_{M,I}L >= i0, thus j must be >= i0
-	   * This is similar to the case for MATP_ML and MATP_IL above (see [*2*] and [*3*]) 
-	   */
 	  v = cm->nodemap[nd]; /* v is MATL_ML */
-	  if(cp9b->imin[v] != -1) { /* only set j bands for reachable states (those with valid i bands) */
-	    cp9b->jmin[v] = r_nn_j[rpos];
-	    cp9b->jmax[v] = r_nx_j[rpos];
-	    if(cp9b->jmax[v] == (i0-1)) { /* HMM tells us we can only enter this state having emitted 0 residues,
-					   * we know better, in this case we ignore the HMM, and set the j band
-					   * on v such that state v is unreachable */
-	      ESL_DASSERT1((cp9b->jmin[v] == (i0-1)));
-	      cp9b->jmin[v] = -1; /* ignore hmm */
-	      cp9b->jmax[v] = -2; /* ignore hmm */
-	      cp9b->imin[v] = -1; /* ignore hmm */
-	      cp9b->imax[v] = -2; /* ignore hmm */
-	    }
-	    else if (cp9b->jmin[v] == (i0-1)) { /* HMM tells us right half of MATL_ML state could be entered
-						 * having emitted 0 residues, but we know it can't (see comment above).
-						 * we ignore it and say we must have at least emitted residue i0. */
-	      cp9b->jmin[v] = i0; /* pad 1 onto what the hmm thought */
-	      /* leave cp9b->jmax[v] alone, we know it's not == i0-1, we checked for that case above */
+	  if(! do_trunc) { /* we won't be using these bands for truncated version of CYK/Inside/Outside */
+	    if(imin[v] != -1) { /* only set j bands for reachable states (those with valid i bands) */
+	      jmin[v] = r_nn_j[rpos];
+	      jmax[v] = r_nx_j[rpos];
+	      /* we won't be using these bands for trCYK/Inside/Outside,
+	       * MATL cells are only valid if >= 1 residues have been
+	       * emitted. Note, this isn't true for Rmatrix MATL cells in trCYK/Inside/Outside 
+	       */
+	      /* special case [*4*]: for v == MATL_ML and v == MATL_IL, v emits left, so jmin[v] >= i0 and jmax[v] >= i0 
+	       * b/c i emitted from MATP_{M,I}L >= i0, thus j must be >= i0
+	       * This is similar to the case for MATP_ML and MATP_IL above (see [*2*] and [*3*]) 
+	       */
+	      if(jmax[v] == (i0-1)) { /* HMM tells us we can only enter this state having emitted 0 residues,
+				       * we know better, in this case we ignore the HMM, and set the j band
+				       * on v such that state v is unreachable */
+		ESL_DASSERT1((jmin[v] == (i0-1)));
+		jmin[v] = -1; /* ignore hmm */
+		jmax[v] = -2; /* ignore hmm */
+		imin[v] = -1; /* ignore hmm */
+		imax[v] = -2; /* ignore hmm */
+	      }
+	      else if (jmin[v] == (i0-1)) { /* HMM tells us right half of MATL_ML state could be entered
+					     * having emitted 0 residues, but we know it can't (see comment above).
+					     * we ignore it and say we must have at least emitted residue i0. */
+		jmin[v] = i0; /* pad 1 onto what the hmm thought */
+		/* leave jmax[v] alone, we know it's not == i0-1, we checked for that case above */
+	      }
 	    }
 	  }
-	  else { /* cp9b->imin[v] is -1 */
-	    cp9b->jmin[v] = -1; 
-	    cp9b->jmax[v] = -2; 
+	  else { /* do_trunc == TRUE, we will be using these bands for truncated version of CYK/Inside/Outside */
+	    jmin[v] = r_nn_j[rpos];
+	    jmax[v] = r_nx_j[rpos];
+	    if(imin[v] != -1 || jmin[v] != -1) { 
+	      /* left and/or right half is reachable */
+	      determine_marginal_right_i_band(cm, cp9map, cp9b, v, lpos, rpos, i0, j0, r_nn_i, r_nx_i, &marg_imin_v, &marg_imax_v);
+	      determine_marginal_left_j_band (cm, cp9map, cp9b, v, rpos, lpos, i0, j0, r_nn_j, r_nx_j, &marg_jmin_v, &marg_jmax_v);
+	      if(imin[v] != -1 && jmin[v] == -1) { 
+		/* left half reachable, right half unreachable (imin/imax previously set)*/
+		  jmin[v] = marg_jmin_v;
+		  jmax[v] = marg_jmax_v;
+	      }
+	      else if(imin[v] == -1 && jmin[v] != -1) { 
+		/* left half unreachable, right half reachable (jmin/jmax previously set)*/
+		imin[v] = marg_imin_v;
+		imax[v] = marg_imax_v;
+	      }
+	      /* else both left and right half are reachable, (imin/imax and jmin/jmax previously set) */
+	    }
+	    /* finally, if we're reachable expand bands so all possible marginal parses are allowed */
+	    if(imin[v] != -1 && jmin[v] != -1) { 
+	      imin[v] = ESL_MIN(imin[v], marg_imin_v);
+	      imax[v] = ESL_MAX(imax[v], marg_imax_v);
+	      jmin[v] = ESL_MIN(jmin[v], marg_jmin_v);
+	      jmax[v] = ESL_MAX(jmax[v], marg_jmax_v);
+	    }
 	  }
+
 	  v++; /* v is MATL_D, the MATL_ML and MATL_IL concerns don't apply, D's don't emit */
-	  if(cp9b->imin[v] != -1) { /* only set j bands for reachable states (those with valid i bands) */
-	    cp9b->jmin[v] = r_nn_j[rpos];
-	    cp9b->jmax[v] = r_nx_j[rpos];
+	  if(imin[v] != -1) { /* only set j bands for reachable states (those with valid i bands) */
+	    jmin[v] = r_nn_j[rpos];
+	    jmax[v] = r_nx_j[rpos];
 	  }
+
 	  v++; /* v is MATL_IL */
-	  if(cp9b->imin[v] != -1) { /* only set j bands for reachable states (those with valid i bands) */
-	    cp9b->jmin[v] = r_nn_j[rpos];
-	    cp9b->jmax[v] = r_nx_j[rpos];
-	    if(cp9b->jmax[v] == (i0-1)) { /* HMM tells us we can only enter this state having emitted 0 residues,
+	  if(imin[v] != -1) { /* only set j bands for reachable states (those with valid i bands) */
+	    jmin[v] = r_nn_j[rpos];
+	    jmax[v] = r_nx_j[rpos];
+	    if(jmax[v] == (i0-1)) { /* HMM tells us we can only enter this state having emitted 0 residues,
 					   * we know better, in this case we ignore the HMM, and set the j band
 					   * on v such that state v is unreachable */
-	      ESL_DASSERT1((cp9b->jmin[v] == (i0-1)));
-	      cp9b->jmin[v] = -1; /* ignore hmm */
-	      cp9b->jmax[v] = -2; /* ignore hmm */
-	      cp9b->imin[v] = -1; /* ignore hmm */
-	      cp9b->imax[v] = -2; /* ignore hmm */
+	      ESL_DASSERT1((jmin[v] == (i0-1)));
+	      jmin[v] = -1; /* ignore hmm */
+	      jmax[v] = -2; /* ignore hmm */
+	      imin[v] = -1; /* ignore hmm */
+	      imax[v] = -2; /* ignore hmm */
 	    }
-	    else if (cp9b->jmin[v] == (i0-1)) { /* HMM tells us right half of MATL_ML state could be entered
+	    else if (jmin[v] == (i0-1)) { /* HMM tells us right half of MATL_ML state could be entered
 						 * having emitted 0 residues, but we know it can't (see comment above).
 						 * we ignore it and say we must have at least emitted residue i0. */
-	      cp9b->jmin[v] = i0; /* pad 1 onto what the hmm thought */
-	      /* leave cp9b->jmax[v] alone, we know it's not == i0-1, we checked for that case above */
+	      jmin[v] = i0; /* pad 1 onto what the hmm thought */
+	      /* leave jmax[v] alone, we know it's not == i0-1, we checked for that case above */
 	    }
 	  }
-	  else { /* cp9b->imin[v] is -1 */
-	    cp9b->jmin[v] = -1; 
-	    cp9b->jmax[v] = -2; 
+	  else { /* imin[v] is -1 */
+	    jmin[v] = -1; 
+	    jmax[v] = -2; 
 	  }
 	  if(StateIsDetached(cm, v)) { 
-	    cp9b->imin[v] = -1;
-	    cp9b->imax[v] = -2;
-	    cp9b->jmin[v] = -1;
-	    cp9b->jmax[v] = -2;
+	    imin[v] = -1;
+	    imax[v] = -2;
+	    jmin[v] = -1;
+	    jmax[v] = -2;
 	  }
 	  break;
 	
 	case MATR_nd: /* set j bands explicitly from HMM bands, i bands implicitly */
 	  rpos = cp9map->nd2rpos[nd];
 	  v = cm->nodemap[nd]; /* v is MATR_MR */
-	  cp9b->jmin[v] = r_mn[rpos];
-	  cp9b->jmax[v] = r_mx[rpos];
-	  v++; /* v is MATR_D */
-	  cp9b->jmin[v] = r_dn[rpos];
-	  cp9b->jmax[v] = r_dx[rpos];
-	  v++; /* v is MATR_IR */
-	  cp9b->jmin[v] = r_in[rpos-1]; 
-	  cp9b->jmax[v] = r_ix[rpos-1];
-	  /* set implicit i bands */
-	  for(v = cm->nodemap[nd]; v < cm->nodemap[nd] + TotalStatesInNode(cm->ndtype[nd]); v++) { 
-	    if(cp9b->jmin[v] != -1) { 
-	      cp9b->imin[v] = r_nn_i[lpos];
-	      cp9b->imax[v] = r_nx_i[lpos];
+	  if(! do_trunc) { /* we won't be using these bands for truncated version of CYK/Inside/Outside */
+	    jmin[v] = r_mn[rpos];
+	    jmax[v] = r_mx[rpos];
+	    imin[v] = jmin[v] != -1 ? r_nn_i[lpos] : -1;
+	    imax[v] = jmin[v] != -1 ? r_nx_i[lpos] : -2;
+	  }
+	  else { /* do_trunc == TRUE,  we will be using these bands for truncated version of CYK/Inside/Outside */
+	    jmin[v] = r_mn[rpos];
+	    jmax[v] = r_mx[rpos];
+	    imin[v] = r_nn_i[lpos];
+	    imax[v] = r_nx_i[lpos];
+	    if(imin[v] != -1 || jmin[v] != -1) { 
+	      /* left and/or right half is reachable */
+	      determine_marginal_right_i_band(cm, cp9map, cp9b, v, lpos, rpos, i0, j0, r_nn_i, r_nx_i, &marg_imin_v, &marg_imax_v);
+	      determine_marginal_left_j_band (cm, cp9map, cp9b, v, rpos, lpos, i0, j0, r_nn_j, r_nx_j, &marg_jmin_v, &marg_jmax_v);
+	      if(imin[v] != -1 && jmin[v] == -1) { 
+		/* left half reachable, right half unreachable (imin/max previously set) */
+		  jmin[v] = marg_jmin_v;
+		  jmax[v] = marg_jmax_v;
+	      }
+	      else if(imin[v] == -1 && jmin[v] != -1) { 
+		/* left half unreachable, right half reachable (jmin/jmax previously set) */
+		imin[v] = marg_imin_v;
+		imax[v] = marg_imax_v;
+	      }
+	      /* else both left and right half are reachable, (imin/imax and jmin/jmax previously set) */
+	    }
+	    /* finally, if we're reachable expand bands so all possible marginal parses are allowed */
+	    if(imin[v] != -1 && jmin[v] != -1) { 
+	      imin[v] = ESL_MIN(imin[v], marg_imin_v);
+	      imax[v] = ESL_MAX(imax[v], marg_imax_v);
+	      jmin[v] = ESL_MIN(jmin[v], marg_jmin_v);
+	      jmax[v] = ESL_MAX(jmax[v], marg_jmax_v);
 	    }
 	  }
+
+	  v++; /* v is MATR_D */
+	  jmin[v] = r_dn[rpos];
+	  jmax[v] = r_dx[rpos];
+	  imin[v] = jmin[v] != -1 ? r_nn_i[lpos] : -1;
+	  imax[v] = jmin[v] != -1 ? r_nx_i[lpos] : -2;
+
+	  v++; /* v is MATR_IR */
+	  jmin[v] = r_in[rpos-1]; 
+	  jmax[v] = r_ix[rpos-1];
+	  imin[v] = jmin[v] != -1 ? r_nn_i[lpos] : -1;
+	  imax[v] = jmin[v] != -1 ? r_nx_i[lpos] : -2;
 	  break;
 	  
 	case BEGL_nd: 
 	case BEGR_nd: /* set i and j bands implicitly, except for BEGR_IL, whose i bands are set explicitly based on HMM */
 	  v = cm->nodemap[nd]; /* set i and j band for BEG{L,R}_S based on children */
-	  cp9b->imin[v] = cp9b->jmin[v] = INT_MAX;
-	  cp9b->imax[v] = cp9b->jmax[v] = INT_MIN;
+	  imin[v] = jmin[v] = INT_MAX;
+	  imax[v] = jmax[v] = INT_MIN;
 	  for(y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++) { 
-	    if(cp9b->imin[y] != -1) { /* if y is reachable, make sure we can get there from v */
-	      cp9b->imin[v] = ESL_MIN(cp9b->imin[v], cp9b->imin[y]);
-	      cp9b->imax[v] = ESL_MAX(cp9b->imax[v], cp9b->imax[y]);
-	      cp9b->jmin[v] = ESL_MIN(cp9b->jmin[v], cp9b->jmin[y]);
-	      cp9b->jmax[v] = ESL_MAX(cp9b->jmax[v], cp9b->jmax[y]);
+	    if(imin[y] != -1 && jmin[y] != -1) { /* if y is reachable, make sure we can get there from v */
+	      imin[v] = ESL_MIN(imin[v], imin[y]);
+	      imax[v] = ESL_MAX(imax[v], imax[y]);
+	      jmin[v] = ESL_MIN(jmin[v], jmin[y]);
+	      jmax[v] = ESL_MAX(jmax[v], jmax[y]);
 	    }
 	  }
-	  if(cp9b->imin[v] == INT_MAX) { 
-	    cp9b->imin[v] = cp9b->jmin[v] = -1;
-	    cp9b->imax[v] = cp9b->jmax[v] = -2;
+	  if(imin[v] == INT_MAX) { 
+	    imin[v] = jmin[v] = -1;
+	    imax[v] = jmax[v] = -2;
 	  }	    
 
 	  /* set BEGR_IL's i and j band */
 	  if(cm->ndtype[nd] == BEGR_nd) {
 	    v++;
-	    cp9b->imin[v] = r_in[lpos-1]; /* BEGR_IL emits before lpos */
-	    cp9b->imax[v] = r_ix[lpos-1]; 
-	    if(cp9b->imin[v-1] != -1 && cp9b->imin[v] != -1) { /* if BEGR_S and BEGR_IL is reachable */
-	      cp9b->imin[v-1] = ESL_MIN(cp9b->imin[v-1], cp9b->imin[v]); /* expand BEGR_S so it can reach BEGR_IL */
-	      cp9b->jmin[v] = ESL_MAX(cp9b->jmin[v-1], i0); /* can't get to a BEGR_IL without emitting at least i0 */
-	      cp9b->jmax[v] = cp9b->jmax[v-1];
+	    imin[v] = r_in[lpos-1]; /* BEGR_IL emits before lpos */
+	    imax[v] = r_ix[lpos-1]; 
+	    if(imin[v-1] != -1 && imin[v] != -1) { /* if BEGR_S and BEGR_IL is reachable */
+	      imin[v-1] = ESL_MIN(imin[v-1], imin[v]); /* expand BEGR_S so it can reach BEGR_IL */
+	      jmin[v] = ESL_MAX(jmin[v-1], i0); /* can't get to a BEGR_IL without emitting at least i0 */
+	      jmax[v] = jmax[v-1];
 	    }
 	    else { 
-	      cp9b->imin[v] = cp9b->jmin[v] = -1;
-	      cp9b->imax[v] = cp9b->jmax[v] = -2;
+	      imin[v] = jmin[v] = -1;
+	      imax[v] = jmax[v] = -2;
 	    }
 	    esl_stack_IPop(lpos_pda, &lpos); /* pop the remembered lpos from our sister BEGL_nd to use for parent BIF_nd and above */
 	  }
@@ -1769,20 +1913,20 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	
 	case END_nd:
 	  v = cm->nodemap[nd]; /* v is END_E */
-	  cp9b->imin[v] = r_nn_i[lpos];
-	  cp9b->imax[v] = ESL_MIN(r_nx_i[lpos]+1, j0+1); /* +1 is for StateDelta */
+	  imin[v] = r_nn_i[lpos];
+	  imax[v] = ESL_MIN(r_nx_i[lpos]+1, j0+1); /* +1 is for StateDelta */
 	  if(r_in[lpos] != -1) { /* we could come from an IR above us (tricky case) */
-	    cp9b->imin[v] = ESL_MIN(cp9b->imin[v], ESL_MAX(r_in[lpos] - 1, i0));
-	    cp9b->imax[v] = ESL_MAX(cp9b->imax[v], ESL_MAX(r_ix[lpos] - 1, i0));
+	    imin[v] = ESL_MIN(imin[v], ESL_MAX(r_in[lpos] - 1, i0));
+	    imax[v] = ESL_MAX(imax[v], ESL_MAX(r_ix[lpos] - 1, i0));
 	  }
 	  rpos = lpos;
-	  if(cp9b->imin[v] != -1) { 
-	    cp9b->jmin[v] = cp9b->imin[v]-1; /* E must emit d = 0 residues, so j ==i-1 */
-	    cp9b->jmax[v] = cp9b->imax[v]-1; /* E must emit d = 0 residues, so j ==i-1 */
+	  if(imin[v] != -1) { 
+	    jmin[v] = imin[v]-1; /* E must emit d = 0 residues, so j ==i-1 */
+	    jmax[v] = imax[v]-1; /* E must emit d = 0 residues, so j ==i-1 */
 	  }
 	  else { 
-	    cp9b->jmin[v] = -1;
-	    cp9b->jmax[v] = -2;
+	    jmin[v] = -1;
+	    jmax[v] = -2;
 	  }	    
 	  break;
 
@@ -1791,31 +1935,33 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  assert(lpos == 1);
 	  assert(rpos == hmm_M);
 	  v = cm->nodemap[nd]; /* v is ROOT_S */
-	  cp9b->imin[v] = r_nn_i[1]; 
-	  cp9b->imax[v] = r_nx_i[1]; 
-	  cp9b->jmin[v] = r_nn_j[hmm_M]; 
-	  cp9b->jmax[v] = r_nx_j[hmm_M]; 
+	  imin[v] = r_nn_i[1]; 
+	  imax[v] = r_nx_i[1]; 
+	  jmin[v] = r_nn_j[hmm_M]; 
+	  jmax[v] = r_nx_j[hmm_M]; 
+
 	  v++; /* v is ROOT_IL */
-	  cp9b->imin[v] = r_in[0]; /* ROOT_IL maps to HMM insert state of HMM node 0 */
-	  cp9b->imax[v] = r_ix[0]; /* ROOT_IL maps to HMM insert state of HMM node 0 */
-	  if(cp9b->imin[v] != -1) { /* ROOT_IL's j bands will be same as ROOT_S's, after ensuring state delta of 1 is respected */
-	    cp9b->jmin[v] = ESL_MAX(r_nn_j[hmm_M], i0); /* can't get to ROOT_IL without emitting at least i0 */
-	    cp9b->jmax[v] = r_nx_j[hmm_M];
+	  imin[v] = r_in[0]; /* ROOT_IL maps to HMM insert state of HMM node 0 */
+	  imax[v] = r_ix[0]; /* ROOT_IL maps to HMM insert state of HMM node 0 */
+	  if(imin[v] != -1) { /* ROOT_IL's j bands will be same as ROOT_S's, after ensuring state delta of 1 is respected */
+	    jmin[v] = ESL_MAX(r_nn_j[hmm_M], i0); /* can't get to ROOT_IL without emitting at least i0 */
+	    jmax[v] = r_nx_j[hmm_M];
 	    if(r_in[hmm_M] != -1) { 
-	      cp9b->jmin[v] = ESL_MIN(cp9b->jmin[v], r_in[hmm_M]);
-	      cp9b->jmax[v] = ESL_MIN(cp9b->jmax[v], r_ix[hmm_M]);
+	      jmin[v] = ESL_MIN(jmin[v], r_in[hmm_M]);
+	      jmax[v] = ESL_MIN(jmax[v], r_ix[hmm_M]);
 	    }
 	  }
+
 	  v++; /* v is ROOT_IR */
 	  if(r_in[hmm_M] != -1) { /* if r_in[hmm_M] == -1, this state is unreachable */
-	    cp9b->imin[v] = r_nn_i[1]; /* HMM state M_0 is silent */
-	    cp9b->imax[v] = r_nx_i[1]; /* HMM state M_0 is silent */
-	    if(cp9b->imin[v-1] != -1) { 
-	      cp9b->imin[v] = ESL_MIN(cp9b->imin[v], cp9b->imin[v-1]+1);
-	      cp9b->imax[v] = ESL_MAX(cp9b->imax[v], cp9b->imax[v-1]+1);
+	    imin[v] = r_nn_i[1]; /* HMM state M_0 is silent */
+	    imax[v] = r_nx_i[1]; /* HMM state M_0 is silent */
+	    if(imin[v-1] != -1) { 
+	      imin[v] = ESL_MIN(imin[v], imin[v-1]+1);
+	      imax[v] = ESL_MAX(imax[v], imax[v-1]+1);
 	    }
-	    cp9b->jmin[v] = r_in[hmm_M]; /* ROOT_IR maps to HMM insert state of HMM node hmm_M */
-	    cp9b->jmax[v] = r_ix[hmm_M]; /* ROOT_IR maps to HMM insert state of HMM node hmm_M */
+	    jmin[v] = r_in[hmm_M]; /* ROOT_IR maps to HMM insert state of HMM node hmm_M */
+	    jmax[v] = r_ix[hmm_M]; /* ROOT_IR maps to HMM insert state of HMM node hmm_M */
 	  }
 	  break;
 	} /* end of switch(cm->ndtype[nd]) */
@@ -1827,34 +1973,34 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	case MATP_nd: 
 	  lpos = cp9map->nd2lpos[nd];
 	  v = cm->nodemap[nd]; /* v is MATP_MP */
-	  cp9b->imin[v] = r_mn[lpos];
-	  cp9b->imax[v] = r_mx[lpos];
+	  imin[v] = r_mn[lpos];
+	  imax[v] = r_mx[lpos];
 	  v++; /* v is MATP_ML */
-	  cp9b->imin[v] = r_mn[lpos];
-	  cp9b->imax[v] = r_mx[lpos];
+	  imin[v] = r_mn[lpos];
+	  imax[v] = r_mx[lpos];
 	  v++; /* v is MATP_MR */
-	  cp9b->imin[v] = r_dn[lpos] == -1 ? -1 : r_dn[lpos]+1;
-	  cp9b->imax[v] = r_dx[lpos] == -2 ? -2 : r_dx[lpos]+1;
+	  imin[v] = r_dn[lpos] == -1 ? -1 : r_dn[lpos]+1;
+	  imax[v] = r_dx[lpos] == -2 ? -2 : r_dx[lpos]+1;
 	  v++; /* v is MATP_D */
-	  cp9b->imin[v] = r_dn[lpos] == -1 ? -1 : r_dn[lpos]+1;
-	  cp9b->imax[v] = r_dx[lpos] == -2 ? -2 : r_dx[lpos]+1;
+	  imin[v] = r_dn[lpos] == -1 ? -1 : r_dn[lpos]+1;
+	  imax[v] = r_dx[lpos] == -2 ? -2 : r_dx[lpos]+1;
 	  v++; /* v is MATP_IL */
-	  cp9b->imin[v] = r_in[lpos];
-	  cp9b->imax[v] = r_ix[lpos]; 
+	  imin[v] = r_in[lpos];
+	  imax[v] = r_ix[lpos]; 
 	  /* we deal with setting imin/imax for MATP_IR when we're on the right */
 	  break;
 	  
 	case MATL_nd:
 	  lpos = cp9map->nd2lpos[nd];
 	  v = cm->nodemap[nd]; /* v is MATL_ML */
-	  cp9b->imin[v] = r_mn[lpos];
-	  cp9b->imax[v] = r_mx[lpos];
+	  imin[v] = r_mn[lpos];
+	  imax[v] = r_mx[lpos];
 	  v++; /* v is MATL_D */
-	  cp9b->imin[v] = r_dn[lpos] == -1 ? -1 : r_dn[lpos]+1;
-	  cp9b->imax[v] = r_dx[lpos] == -2 ? -2 : r_dx[lpos]+1;
+	  imin[v] = r_dn[lpos] == -1 ? -1 : r_dn[lpos]+1;
+	  imax[v] = r_dx[lpos] == -2 ? -2 : r_dx[lpos]+1;
 	  v++; /* v is MATL_IL */
-	  cp9b->imin[v] = r_in[lpos];
-	  cp9b->imax[v] = r_ix[lpos];
+	  imin[v] = r_in[lpos];
+	  imax[v] = r_ix[lpos];
 	  break;
 	} /* end of switch(cm->ndtype[nd]) */
 	
@@ -1881,7 +2027,18 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	}
       }
     }
-  
+
+#if 0
+  if(do_trunc) { 
+    for(v = 0; v < cm->M; v++) { 
+      printf("dotrunc: %d ijband v: %4d nd: %4d  %4s  %2s  i: %5d - %5d  j: %5d - %5d\n", do_trunc, v, cm->ndidx[v], 
+	     Nodetype(cm->ndtype[cm->ndidx[v]]), 
+	     Statetype(cm->sttype[v]),
+	     imin[v], imax[v], jmin[v], jmax[v]);
+    }
+  }
+#endif
+
   if(! doing_search) { /* if we're aligning the full seq must be aligned at the root state */
     imin[0] = i0;                   /* first residue must be in subtree of ROOT_S */
     if(imin[1] != -1) imin[1] = i0; /* first residue must be in subtree of ROOT_IL, if it is used */
@@ -1892,23 +2049,23 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 
 #if 1
   //#if eslDEBUGLEVEL >= 1
-  /* make sure detached states have the bands properly set (should be in cp9_ValidateBands() */
+  /* make sure detached states have the bands properly set (should be in cp9_ValidateBands()) */
   for(v = 0; v < cm->M; v++) { 
     if(StateIsDetached(cm, v)) { 
-      assert(cp9b->imin[v] == -1);
-      assert(cp9b->imax[v] == -2);
-      assert(cp9b->jmin[v] == -1);
-      assert(cp9b->jmax[v] == -2);
+      assert(imin[v] == -1);
+      assert(imax[v] == -2);
+      assert(jmin[v] == -1);
+      assert(jmax[v] == -2);
     } 
-    /*////nd = cm->ndidx[v]; printf("nd: %4d v: %4d  %4s %2s (%11d %11d  %11d %11d) (HMM nd: %4d %4d)\n", nd, v, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v]), cp9b->imin[v], cp9b->imax[v], cp9b->jmin[v], cp9b->jmax[v], cp9map->cs2hn[v][0], cp9map->cs2hn[v][1]);*/
+    /*////nd = cm->ndidx[v]; printf("nd: %4d v: %4d  %4s %2s (%11d %11d  %11d %11d) (HMM nd: %4d %4d)\n", nd, v, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v]), imin[v], imax[v], jmin[v], jmax[v], cp9map->cs2hn[v][0], cp9map->cs2hn[v][1]);*/
   }
 #endif
   /* final check, it's possible, but unlikely that some states had valid i bands set, but invalid j bands set, 
    * or vice versa, we handle this by making these states unreachable */
   for(v = 0; v < cm->M; v++) { 
-    if(cp9b->imin[v] == -1 || cp9b->jmin[v] == -1) { 
-      cp9b->imin[v] = cp9b->jmin[v] = -1;
-      cp9b->imax[v] = cp9b->jmax[v] = -2;
+    if(imin[v] == -1 || jmin[v] == -1) { 
+      imin[v] = jmin[v] = -1;
+      imax[v] = jmax[v] = -2;
     }
   }
 
@@ -5089,7 +5246,7 @@ hmm2ij_state_step5_non_emitter_d0_hack(int v, int imax_v, int *jmin)
  * Returns: (void) 
  */
 void 
-cp9_ShiftCMBands(CM_t *cm, int i, int j)
+cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc)
 {
   int v;
   int ip = i-1;
@@ -5120,7 +5277,7 @@ cp9_ShiftCMBands(CM_t *cm, int i, int j)
       }
     }	
   }
-  ij2d_bands(cm, Lp, cm->cp9b->imin, cm->cp9b->imax, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, 0);
+  ij2d_bands(cm, Lp, cm->cp9b->imin, cm->cp9b->imax, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, do_trunc, 0);
   /* Note that this will not update hdmin bands that are no longer within jmin..jmax, that's okay */
 
   return;
@@ -5168,6 +5325,94 @@ cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf)
  ERROR: 
   if(dest_cp9b != NULL) FreeCP9Bands(dest_cp9b);
   return NULL;
+}
+
+
+/* Function: determine_marginal_left_j_band()
+ *
+ * Description: For a given state <v>, determine the
+ *              j band on it for trCYK/Inside/Outside
+ *              based on r_nn_j and r_nx_j, 
+ *              min/max positions derived from an 
+ *              HMM F/B parse for each consensus
+ *              position of the model.
+ *              This is a helper function for 
+ *              cp9_HMM2ijBands() and is only 
+ *              called by that function if do_trunc
+ *              was passed into it as TRUE.
+ *
+ * Returns: min j in *ret_jmin_v, max j in *ret_jmax_v
+ */
+void
+determine_marginal_left_j_band(CM_t *cm, CP9Map_t *cp9map, CP9Bands_t *cp9b, int v, int rpos, int min_lpos, int i0, int j0, int *r_nn_j, int *r_nx_j, int *ret_jmin_v, int *ret_jmax_v)
+{
+  int tmp_rpos = rpos;
+  int jmin_v = j0+1;
+  int jmax_v = i0-1;
+  int is_reachable_left = FALSE;
+
+  //while(tmp_rpos >= min_lpos) { 
+  while(! is_reachable_left && tmp_rpos >= min_lpos) { 
+    if((cp9map->nd2lpos[cp9map->pos2nd[tmp_rpos]] == tmp_rpos) &&
+       (r_nn_j[tmp_rpos] != -1) && (r_nx_j[tmp_rpos] != -2)) {
+      is_reachable_left = TRUE;
+    }
+    /*printf("rpos: %d tmp_rpos: %d nd: %d (type: %4s)\n", rpos, tmp_rpos, cp9map->pos2nd[tmp_rpos], Nodetype(cm->ndtype[cp9map->pos2nd[tmp_rpos]]));*/
+    if(r_nn_j[tmp_rpos] != -1) jmin_v = ESL_MIN(jmin_v, r_nn_j[tmp_rpos]);
+    if(r_nx_j[tmp_rpos] != -2) jmax_v = ESL_MAX(jmax_v, r_nx_j[tmp_rpos]);
+    assert(tmp_rpos >= 0);
+    ESL_DASSERT1((tmp_rpos >= 0));
+    tmp_rpos--;
+  }
+  if((jmin_v == j0+1) && (jmax_v == i0-1)) { 
+    /* no reachable L emitting state exists between min_lpos and rpos */
+    jmin_v = -1;
+    jmax_v = -2;
+  }
+  *ret_jmin_v = jmin_v;
+  *ret_jmax_v = jmax_v;
+
+  return;
+}
+
+
+/* Function: determine_marginal_right_i_band()
+ *
+ * Description: Analogous to determine_marginal_left_j_band(),
+ *              but for a left i band.
+ *
+ * Returns: min i in *ret_imin_v, max i in *ret_imax_v
+ */
+void
+determine_marginal_right_i_band(CM_t *cm, CP9Map_t *cp9map, CP9Bands_t *cp9b, int v, int lpos, int max_rpos, int i0, int j0, int *r_nn_i, int *r_nx_i, int *ret_imin_v, int *ret_imax_v)
+{
+  int tmp_lpos = lpos;
+  int imin_v = j0+1;
+  int imax_v = i0-1;
+  int is_reachable_right = FALSE;
+
+  //while(tmp_lpos <= max_rpos) { 
+  while(! is_reachable_right && tmp_lpos <= max_rpos) { 
+    if((cp9map->nd2rpos[cp9map->pos2nd[tmp_lpos]] == tmp_lpos) && 
+       (r_nn_i[tmp_lpos] != -1) && (r_nx_i[tmp_lpos] != -2)) {
+      is_reachable_right = TRUE;
+      /*printf("lpos: %d tmp_lpos: %d nd: %d (type: %4s)\n", lpos, tmp_lpos, cp9map->pos2nd[tmp_lpos], Nodetype(cm->ndtype[cp9map->pos2nd[tmp_lpos]]));*/
+    }
+    if(r_nn_i[tmp_lpos] != -1) imin_v = ESL_MIN(imin_v, r_nn_i[tmp_lpos]);
+    if(r_nx_i[tmp_lpos] != -2) imax_v = ESL_MAX(imax_v, r_nx_i[tmp_lpos]);
+    assert(tmp_lpos <= cm->clen);
+    ESL_DASSERT1((tmp_lpos <= cm->clen));
+    tmp_lpos++;
+  }
+  if((imin_v == j0+1) && (imax_v == i0-1)) { 
+    /* no reachable R emitting state exists between lpos and max_rpos */
+    imin_v = -1;
+    imax_v = -2;
+  }
+  *ret_imin_v = imin_v;
+  *ret_imax_v = imax_v;
+
+  return;
 }
 
 #if 0

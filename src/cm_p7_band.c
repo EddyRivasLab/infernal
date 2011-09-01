@@ -2039,14 +2039,14 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   }
   else {
     esl_stopwatch_Start(watch);  
-    if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, 1, L, FALSE, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, 1, L, FALSE, FALSE, debug_level)) != eslOK) return status;
     esl_stopwatch_Stop(watch); 
     FormatTimeString(time_buf, watch->user, TRUE);
 #if PRINTNOW
     fprintf(stdout, "HMM2ij          %11s\n", time_buf);
 #endif
     /* For debugging, uncomment this block:
-       if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) { 
+       if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, FALSE, debug_level)) != eslOK) { 
        ESL_SQ *tmp;
        tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq+i0-1, (j0-i0+1), NULL, NULL, NULL);
        esl_sq_Textize(tmp);
@@ -2061,7 +2061,7 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   /* Use the CM bands on i and j to get bands on d, specific to j. */
   /* cp9_GrowHDBands() must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status; 
-  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, debug_level);
+  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, FALSE, debug_level);
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, 1, L)) != eslOK) return status;
