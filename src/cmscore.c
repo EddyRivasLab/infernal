@@ -1180,6 +1180,8 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
       cm->dmin = NULL;
       cm->dmax = NULL;
       cm->flags &= ~CMH_QDB;
+      cm->flags &= ~CMH_QDB_LOCAL;
+      cm->flags &= ~CMH_QDB_GLOBAL;
     }
 
     if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;

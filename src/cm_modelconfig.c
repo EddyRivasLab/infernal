@@ -252,8 +252,7 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   if(cm->flags & CM_IS_SUB)
     cm_Fail("ERROR in ConfigLocal(), CM is a sub CM, we can't localize it, we could if we first checked if its invalid (see cm_from_guide()).");
 
-  if(cm->flags & CMH_SCANMATRIX) had_scanmatrix = TRUE;
-  else had_scanmatrix = FALSE;
+  had_scanmatrix = (cm->flags & CMH_SCANMATRIX) ? TRUE : FALSE;
 
   /*****************************************************************
    * Internal entry.
@@ -306,25 +305,37 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   }
   cm->flags |= CMH_LOCAL_BEGIN;
   
-  /*****************************************************************
-   * Internal exit.
-   *****************************************************************/
-  ConfigLocalEnds(cm, p_internal_exit);
-
-  /* new local probs invalidate log odds scores and QDBs */
-  cm->flags &= ~CMH_BITS;
-  /* recalc QDBs if they exist */
-  if(cm->flags & CMH_QDB) {
+  /* New local begin probs invalidate QDBs if:
+   * (A) they were calc'ed in glocal mode OR
+   * (B) p_internal_start is non-default (not what was used 
+   *     by cmbuild to calc the QDBs used in the CM file) 
+   * If either is true, we have to recalc QDBs:
+   * 
+   * Note: we do this before configuring local ends because
+   *       doing to calc QDBs we would have to turn local ends off.
+   */
+  if(((cm->flags & CMH_QDB) && (cm->flags & CMH_QDB_GLOBAL)) ||
+     (fabs(cm->pbegin - DEFAULT_PBEGIN) > eslSMALLX1)) { 
     free(cm->dmin);
     free(cm->dmax);
     cm->dmin = NULL;
     cm->dmax = NULL;
     cm->flags &= ~CMH_QDB;
+    cm->flags &= ~CMH_QDB_GLOBAL;
+    cm->flags &= ~CMH_QDB_LOCAL;
     ConfigQDBAndW(cm, TRUE); /* TRUE says: calc QDBs */
   }      
   /* ConfigQDBAndW should rebuild scan matrix, if it existed */
   if((! (cm->flags & CMH_SCANMATRIX)) && had_scanmatrix)
-     cm_Fail("ConfigLocal(), CM had a scan matrix, but ConfigQDBAndW didn't rebuild it.");
+    cm_Fail("ConfigLocal(), CM had a scan matrix, but ConfigQDBAndW didn't rebuild it.");
+
+  /*****************************************************************
+   * Internal exit.
+   *****************************************************************/
+  ConfigLocalEnds(cm, p_internal_exit);
+
+  /* new local probs invalidate bit scores */
+  cm->flags &= ~CMH_BITS;
      
   CMLogoddsify(cm);
   return;
@@ -345,6 +356,9 @@ void
 ConfigGlobal(CM_t *cm)
 {
   int v;			/* counter over states */
+  int had_scanmatrix;           /* true if CM had a scan matrix when function was entered */
+
+  had_scanmatrix = (cm->flags & CMH_SCANMATRIX) ? TRUE : FALSE;
 
   /*printf("in configGlobal\n");*/
   /* Contract check: local begins MUST be active, if not then cm->root_trans (the 
@@ -376,24 +390,22 @@ ConfigGlobal(CM_t *cm)
    *****************************************************************/
   ConfigNoLocalEnds(cm);
 
-  /* new probs invalidate log odds scores and QDB */
-  cm->flags &= ~CMH_BITS;
-  /* Recalc QDBs if they exist */
-  if(cm->flags & CMH_QDB) {
+  /* Recalc QDBs if they exist and were calc'ed in local mode */
+  if((cm->flags & CMH_QDB) && (cm->flags & CMH_QDB_LOCAL)) {
     free(cm->dmin);
     free(cm->dmax);
     cm->dmin = NULL;
     cm->dmax = NULL;
     cm->flags &= ~CMH_QDB;
+    cm->flags &= ~CMH_QDB_LOCAL;
+    cm->flags &= ~CMH_QDB_GLOBAL;
     ConfigQDBAndW(cm, TRUE); /* TRUE says: calc QDBs */
-  }      
-  /* free and rebuild scan matrix to correspond to new QDBs, if it exists */
-  if(cm->flags & CMH_SCANMATRIX) {
-    int do_float = cm->smx->flags & cmSMX_HAS_FLOAT;
-    int do_int   = cm->smx->flags & cmSMX_HAS_INT;
-    cm_FreeScanMatrixForCM(cm);
-    cm_CreateScanMatrixForCM(cm, do_float, do_int);
+    /* ConfigQDBAndW should rebuild scan matrix, if it existed */
+    if((! (cm->flags & CMH_SCANMATRIX)) && had_scanmatrix)
+      cm_Fail("ConfigLocal(), CM had a scan matrix, but ConfigQDBAndW didn't rebuild it.");
   }
+  /* new probs invalidate log odds scores */
+  cm->flags &= ~CMH_BITS;
 
   CMLogoddsify(cm);
   return;
@@ -557,6 +569,7 @@ ConfigQDBAndW(CM_t *cm, int do_calc_qdb)
   int v;
   int safe_windowlen;
   int *dmin, *dmax;
+  int local_begins_on = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
 
   /* Three possible modes, depending on input args. 
    * We'll have to do the band calculation either:
@@ -629,6 +642,8 @@ ConfigQDBAndW(CM_t *cm, int do_calc_qdb)
 	if(cm->W < cm->dmin[v]) cm_Fail("ConfigQDBAndW(), mode 3, cm->W set as %d with beta: %g, but dmin[v:%d] (%d) exceeds it. QDBs calc'ed with beta: %g. This shouldn't happen.\n", cm->W, cm->beta_W, v, dmin[v], cm->beta_qdb); }
     }
     cm->flags |= CMH_QDB; /* raise the QDB flag */
+    if(local_begins_on) { cm->flags |= CMH_QDB_LOCAL;  cm->flags &= ~CMH_QDB_GLOBAL; }
+    else                { cm->flags |= CMH_QDB_GLOBAL; cm->flags &= ~CMH_QDB_LOCAL;  }
   }
   /* free and rebuild scan matrix to correspond to new QDBs and/or W, 
    * if it exists, this is where QDBs are potentially truncated 
@@ -644,9 +659,11 @@ ConfigQDBAndW(CM_t *cm, int do_calc_qdb)
   }
   /* set cm->mlp7->max_length as cm->W */
   if(cm->mlp7 != NULL) cm->mlp7->max_length = cm->W;
+
   /*if(mode == 1 || mode == 3) printf("TEMP leaving ConfigQDBAndW(), mode: %d, set cm->W as:     %d with beta_W:   %g\n", mode, cm->W, cm->beta_W);
     if(mode == 2)              printf("TEMP leaving ConfigQDBAndW(), mode: %d, set cm->W as:     %d with beta_W:   %g\n", mode, cm->W, cm->beta_qdb);
     if(mode == 2 || mode == 3) printf("TEMP leaving ConfigQDBAndW(), mode: %d, set qdbs dmax[0]: %d with beta_qdb: %g\n", mode, cm->dmax[0], cm->beta_qdb);*/
+
   CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
   return eslOK;
 }
@@ -663,6 +680,7 @@ int
 ConfigQDB(CM_t *cm)
 {
   int safe_windowlen;
+  int local_begins_on = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
 
   /* Contract check */
   if(cm->flags & CMH_QDB)
@@ -692,6 +710,8 @@ ConfigQDB(CM_t *cm)
    * hits that are bigger than we're allowing with QDB. */
   cm->W = cm->dmax[0];
   cm->flags |= CMH_QDB; /* raise the QDB flag */
+  if(local_begins_on) cm->flags |= CMH_QDB_LOCAL;
+  else                cm->flags |= CMH_QDB_GLOBAL;
 
   /* free and rebuild scan matrix to correspond to new QDBs, if it exists */
   if(cm->flags & CMH_SCANMATRIX) {

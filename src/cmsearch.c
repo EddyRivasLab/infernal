@@ -2189,7 +2189,7 @@ setup_qdbs(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
 
   if(esl_opt_GetBoolean(go, "--fqdb")) { /* determine CYK filter QDBs */
     /* it may be that --fbeta is the same as info->cm->beta_qdb, if so, we read the desired QDBs from the CM file */
-    if((info->cm->flags & CMH_QDB) && (esl_opt_GetReal(go, "--fbeta") == info->cm->beta_qdb)) { 
+    if((info->cm->flags & CMH_QDB) && (fabs(esl_opt_GetReal(go, "--fbeta") - info->cm->beta_qdb) < eslSMALLX1)) { 
       ESL_ALLOC(info->fcyk_dmin, sizeof(int) * info->cm->M);
       ESL_ALLOC(info->fcyk_dmax, sizeof(int) * info->cm->M);
       esl_vec_ICopy(info->cm->dmin, info->cm->M, info->fcyk_dmin);
@@ -2208,7 +2208,7 @@ setup_qdbs(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
 
   if(esl_opt_GetBoolean(go, "--qdb")) { /* determine CYK filter QDBs */
     /* it may be that --beta is the same as info->cm->beta_qdb, if so, we read the desired QDBs from the CM file */
-    if((info->cm->flags & CMH_QDB) && (esl_opt_GetReal(go, "--beta") == info->cm->beta_qdb)) { 
+    if((info->cm->flags & CMH_QDB) && (fabs(esl_opt_GetReal(go, "--beta") - info->cm->beta_qdb) < eslSMALLX1)) { 
       ESL_ALLOC(info->final_dmin, sizeof(int) * info->cm->M);
       ESL_ALLOC(info->final_dmax, sizeof(int) * info->cm->M);
       esl_vec_ICopy(info->cm->dmin, info->cm->M, info->final_dmin);

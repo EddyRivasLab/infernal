@@ -203,7 +203,7 @@ cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm c
   /* Unpack the rest of the CM */
   /* note cm->flags is how it was immediately after CM is read from file, so the only flags that can possibly be raised are:
    * CMH_ACC, CMH_DESC, CM_RF, CMH_GA, CMH_TC, CMH_NC, CMH_CHKSUM, CMH_MAP, CMH_CONS, CMH_EXPTAIL_STATS, CMH_FILTER_STATS, 
-   * CMH_QDB, CMH_FP7, CM_IS_RSEARCH, CM_RSEARCHTRANS, CM_RSEARCH_EMIT */
+   * CMH_QDB, CMH_QDB_LOCAL, CMH_FP7, CM_IS_RSEARCH, CM_RSEARCHTRANS, CM_RSEARCH_EMIT */
 
   if (MPI_Unpack(buf, n, pos, cm->e[0],              M*K*K, MPI_FLOAT, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, cm->t[0],       M*MAXCONNECT, MPI_FLOAT, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
@@ -319,7 +319,7 @@ cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
 
   /* note cm->flags is how it was immediately after CM is read from file, so the only flags that can possibly be raised are:
    * CMH_ACC, CMH_DESC, CM_RF, CMH_GA, CMH_TC, CMH_NC, CMH_CHKSUM, CMH_MAP, CMH_CONS, CMH_EXPTAIL_STATS, CMH_FILTER_STATS, 
-   * CMH_QDB, CMH_MLP7_STATS, CMH_AP7_STATS, CM_IS_RSEARCH, CM_RSEARCHTRANS, CM_RSEARCH_EMIT */
+   * CMH_QDB, CMH_QDB_LOCAL, CMH_MLP7_STATS, CMH_AP7_STATS, CM_IS_RSEARCH, CM_RSEARCHTRANS, CM_RSEARCH_EMIT */
 
   if (MPI_Pack(cm->e[0],              M*K*K, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(cm->t[0],       M*MAXCONNECT, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");

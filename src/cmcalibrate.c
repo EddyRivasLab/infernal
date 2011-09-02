@@ -2182,11 +2182,12 @@ switch_global_to_local(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, char 
   CPlan9ELConfig(cm);
 
   /* recalculate cm->W and recalculate QDBs (if the CM has them) */
-  if(cm->flags & CMH_QDB) { 
+  if((cm->flags & CMH_QDB) && (cm->flags & CMH_QDB_GLOBAL)) { 
     free(cm->dmin); 
     free(cm->dmax); 
     cm->dmin = cm->dmax = NULL;
     cm->flags &= ~CMH_QDB;
+    cm->flags &= ~CMH_QDB_GLOBAL;
     ConfigQDBAndW(cm, TRUE); /* TRUE says: calculate QDBs */
   }
   else ConfigQDBAndW(cm, FALSE); /* FALSE says: don't calc QDBs */

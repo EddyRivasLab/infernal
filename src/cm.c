@@ -2860,6 +2860,8 @@ DumpCMFlags(FILE *fp, CM_t *cm)
   if(cm->flags & CMH_EXPTAIL_STATS)        fprintf(fp, "\tCMH_EXPTAIL_STATS\n");
   if(cm->flags & CMH_FILTER_STATS)         fprintf(fp, "\tCMH_FILTER_STATS\n");
   if(cm->flags & CMH_QDB)                  fprintf(fp, "\tCMH_QDB\n");
+  if(cm->flags & CMH_QDB_LOCAL)            fprintf(fp, "\tCMH_QDB_LOCAL\n");
+  if(cm->flags & CMH_QDB_GLOBAL)           fprintf(fp, "\tCMH_QDB_GLOBAL\n");
   if(cm->flags & CMH_CP9)                  fprintf(fp, "\tCMH_CP9\n");
   if(cm->flags & CMH_SCANMATRIX)           fprintf(fp, "\tCMH_SCANMATRIX\n");
   if(cm->flags & CMH_MLP7)                 fprintf(fp, "\tCMH_MLP7\n");
