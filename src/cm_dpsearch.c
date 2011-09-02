@@ -4240,7 +4240,11 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
   /* initialize all cells of the matrix to IMPOSSIBLE */
+  ESL_STOPWATCH *w = esl_stopwatch_Create();
+  esl_stopwatch_Start(w);
   esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE);
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
 
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse of multiple nonoverlapping hits. */

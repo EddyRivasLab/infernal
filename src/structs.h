@@ -44,6 +44,8 @@
 #define DEFAULT_NULL3_OMEGA      0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
 #define V1P0_NULL2_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null2 model for infernal versions 0.56 through 1.0.2 */
 #define V1P0_NULL3_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null3 model for infernal versions 0.56 through 1.0.2 */
+#define DEFAULT_OCCP             0.999   
+#define DEFAULT_OCCP_IGNORE      0.000001   
 
 /* max number of parititons for cmcalibrate */
 #define MAX_PARTITIONS 20
@@ -710,6 +712,14 @@ typedef struct cp9bands_s {
   int     *isum_pn_i;         /* [0..k..hmm_M] sum over i of log post probs from post->imx[i][k]*/
   int     *isum_pn_d;         /* [0..k..hmm_M] sum over i of log post probs from post->dmx[i][k]*/
 
+  /* Probability that each HMM node (consensus position) is occupied (either match or delete state) 
+   * This information is used to minimize band expansion for truncated CYK/Inside/Outside (see cp9_HMM2ijBands()).
+   * <occ> is filled by cp9_CalculateOccupancy(). 
+   */
+  float *occ;                  /* [1..k..hmm_M] probability node k's match or delete state is occupied */
+  float  occthresh;            /* probability threshold for occ array, if occ[k] > occp, we don't  
+				* consider marginal parsetrees that exclude position k */
+
   /* arrays for CM state bands, derived from HMM bands */
   int *imin;                  /* [0..cm_M-1] imin[v] = first position in band on i for state v*/
   int *imax;                  /* [0..cm_M-1] imax[v] = last position in band on i for state v*/
@@ -988,6 +998,7 @@ typedef struct cm_tr_hb_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
   int  B;		/* number of BIF_B states (1st dim ptrs) in current mx (valid, non-null Tdp states) */
   int  L;               /* length of sequence the matrix currently corresponds to */
+  int  firstbif;        /* state index of first BIF_B state in the CM */
 
   int64_t    JLRncells_alloc;  /* current cell allocation limit for EACH of Jdp, Ldp and Rdp */
   int64_t    JLRncells_valid;  /* current number of valid cells in EACH of Jdp, Ldp and Rdp */

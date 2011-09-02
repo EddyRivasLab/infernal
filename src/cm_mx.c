@@ -158,7 +158,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   }
 
   if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &ncells, &Mb_needed)) != eslOK) return status;
-  /*printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed);*/
+  printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed);
   ESL_DPRINTF2(("HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -521,7 +521,7 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   }
 
   if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &JLRncells, &Tncells, &Mb_needed)) != eslOK) return status;
-  /*printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed);*/
+  printf("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed);
   ESL_DPRINTF2(("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP Tr mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -605,6 +605,7 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
       JLRcur_size      += jp + 1;
     }      
   }
+  printf("JLR ncells %ld %ld\n", JLRcur_size, mx->JLRncells_valid);
   assert(JLRcur_size == mx->JLRncells_valid);
   assert(Tcur_size   == mx->Tncells_valid);
   ESL_DASSERT1((JLRcur_size == mx->JLRncells_valid));

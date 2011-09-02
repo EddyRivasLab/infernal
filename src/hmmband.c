@@ -32,6 +32,9 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
+#define OLD_TRUNC 0
+#define NEW_TRUNC 1
+
 /* helper functions for cp9_HMM2ijBands() */
 static void determine_marginal_right_i_band (CM_t *cm, CP9Map_t *cp9map, CP9Bands_t *cp9b, int v, int lpos, int max_rpos, int i0, int j0, int *r_nn_i, int *r_nx_i, int *ret_imin_v, int *ret_imax_v);
 static void determine_marginal_left_j_band(CM_t *cm, CP9Map_t *cp9map, CP9Bands_t *cp9b, int v, int rpos, int min_lpos, int i0, int j0, int *r_nn_j, int *r_nx_j, int *ret_jmin_v, int *ret_jmax_v);
@@ -60,6 +63,10 @@ AllocCP9Bands(int cm_M, int hmm_M)
 
   cp9bands->cm_M  = cm_M;
   cp9bands->hmm_M = hmm_M;
+
+  ESL_ALLOC(cp9bands->occ, sizeof(float) * (hmm_M+1));
+  esl_vec_FSet(cp9bands->occ, (hmm_M+1), 0.); /* initialize, we'll change this in cp9_Seq2Bands() if do_trunc == TRUE */
+  cp9bands->occthresh = DEFAULT_OCCP;           /*0.999*/
   
   ESL_ALLOC(cp9bands->pn_min_m, sizeof(int) * (cp9bands->hmm_M+1));
   ESL_ALLOC(cp9bands->pn_max_m, sizeof(int) * (cp9bands->hmm_M+1));
@@ -123,6 +130,8 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
   free(cp9bands->isum_pn_m);
   free(cp9bands->isum_pn_i);
   free(cp9bands->isum_pn_d);
+
+  free(cp9bands->occ);
 
   free(cp9bands);
 }
@@ -228,6 +237,11 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 				 (1.-cm->tau), do_scan2bands, do_old_hmm2ij, debug_level)) != eslOK) return status;
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
+
+  /* Step 2B: (only if do_trunc) Calculate which nodes are 'highly likely' to be occupied (prob > cp9b->occp) */
+  if(do_trunc) { 
+    cp9_CalculateOccupancy(pmx, cp9b, i0, j0);
+  }
 
   /* Step 3: HMM bands  ->  CM bands. */
   if(do_old_hmm2ij) { 
@@ -507,7 +521,6 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
 	  }
 	}
     }	  
-
   esl_vec_ISet(mass_m, M+1, -INFTY);
   esl_vec_ISet(mass_i, M+1, -INFTY);
   esl_vec_ISet(mass_d, M+1, -INFTY);
@@ -1526,7 +1539,13 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  v = cm->nodemap[nd];
 	  w = cm->cfirst[v]; /* BEGL_S */
 	  y = cm->cnum[v];   /* BEGR_S */
+#if OLD_TRUNC
 	  if(! do_trunc) { /* we won't be using these bands for truncated version of CYK/Inside/Outside */
+#endif
+#if NEW_TRUNC
+	  if((! do_trunc) || /* we won't be using these bands for truncated version of CYK/Inside/Outside */
+	     ((cp9b->occ[lpos] > cp9b->occthresh) && (cp9b->occ[rpos] > cp9b->occthresh))) { /* both lpos and rpos are 'very likely' (p > cp9b->occthresh) occupied, an optimal marginal parse is unlikely */
+#endif
 	    /* set v's i band based on left child w, and v's j band based on right child y */
 	    imin[v] = imin[w];
 	    imax[v] = imax[w];
@@ -1569,7 +1588,13 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  lpos = cp9map->nd2lpos[nd];
 	  rpos = cp9map->nd2rpos[nd];
 	  v = cm->nodemap[nd]; /* v is MATP_MP */
+#if OLD_TRUNC
 	  if(! do_trunc) { /* we won't be using these bands for truncated version of CYK/Inside/Outside */
+#endif
+#if NEW_TRUNC
+	  if((! do_trunc) || /* we won't be using these bands for truncated version of CYK/Inside/Outside */
+	     ((cp9b->occ[lpos] > cp9b->occthresh) && (cp9b->occ[rpos] > cp9b->occthresh))) { /* both lpos and rpos are 'very likely' (p > cp9b->occthresh) occupied, an optimal marginal parse is unlikely */
+#endif
 	    if(imin[v] != -1) { 
 	      jmin[v] = r_mn[rpos];
 	      jmax[v] = r_mx[rpos];
@@ -1724,7 +1749,13 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	case MATL_nd: /* i bands were set when we were on the left, non-right emitter, set implicit j bands */
 	  lpos = cp9map->nd2lpos[nd];
 	  v = cm->nodemap[nd]; /* v is MATL_ML */
+#if OLD_TRUNC
 	  if(! do_trunc) { /* we won't be using these bands for truncated version of CYK/Inside/Outside */
+#endif
+#if NEW_TRUNC
+	  if((! do_trunc) || /* we won't be using these bands for truncated version of CYK/Inside/Outside */
+	     ((cp9b->occ[lpos] > cp9b->occthresh) && (cp9b->occ[rpos] > cp9b->occthresh))) { /* both lpos and rpos are 'very likely' (p > cp9b->occthresh) occupied, an optimal marginal parse is unlikely */
+#endif
 	    if(imin[v] != -1) { /* only set j bands for reachable states (those with valid i bands) */
 	      jmin[v] = r_nn_j[rpos];
 	      jmax[v] = r_nx_j[rpos];
@@ -1822,7 +1853,13 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	case MATR_nd: /* set j bands explicitly from HMM bands, i bands implicitly */
 	  rpos = cp9map->nd2rpos[nd];
 	  v = cm->nodemap[nd]; /* v is MATR_MR */
+#if OLD_TRUNC
 	  if(! do_trunc) { /* we won't be using these bands for truncated version of CYK/Inside/Outside */
+#endif
+#if NEW_TRUNC
+	    if((! do_trunc) || /* we won't be using these bands for truncated version of CYK/Inside/Outside */
+	       ((cp9b->occ[lpos] > cp9b->occthresh) && (cp9b->occ[rpos] > cp9b->occthresh))) { /* both lpos and rpos are 'very likely' (p > cp9b->occthresh) occupied, an optimal marginal parse is unlikely */
+#endif
 	    jmin[v] = r_mn[rpos];
 	    jmax[v] = r_mx[rpos];
 	    imin[v] = jmin[v] != -1 ? r_nn_i[lpos] : -1;
@@ -5412,6 +5449,76 @@ determine_marginal_right_i_band(CM_t *cm, CP9Map_t *cp9map, CP9Bands_t *cp9b, in
   *ret_imin_v = imin_v;
   *ret_imax_v = imax_v;
 
+  return;
+}
+
+
+/* Function: cp9_CalculateOccupancy()
+ * Date:     EPN, Thu Sep  1 10:22:12 2011
+ *
+ * Purpose: Given a filled HMM posterior matrix, determine the probability
+ *          that HMM node <k> is used, by summing the probability 
+ *          its match state is used for any residue and the probability
+ *          its delete state is used following any residue. 
+ *
+ *          We will use this for determining if we need to allow
+ *          marginal hits for each state in a HMM banded matrix for 
+ *          trCYK/Inside/Outside. 
+ *
+ *          Note: I experimented with a faster version that ignores 
+ *          posterior probabilties below some threshold (i.e. 0.00001)
+ *          but abandoned it thinking accuracy trumps it, see code 
+ *          below related to ignore_thresh.
+ *
+ * CP9_MX pmx:      DP matrix for posteriors, already calc'ed
+ * CP9Bands_t cp9b: the cp9 bands
+ * int i0           start of target subsequence (often 1, beginning of dsq)
+ * int j0           end of target subsequence (often L, end of dsq)
+ *
+ * Returns: void
+ */
+void
+cp9_CalculateOccupancy(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
+{
+  int i;
+  int k;                                  /* counter over nodes of the model */
+  int L = j0-i0+1;                        /* length of sequence */
+
+  ESL_STOPWATCH *w = esl_stopwatch_Create();
+  esl_stopwatch_Start(w);  
+  for(k = 0; k <= cp9b->hmm_M; k++)
+    {
+      cp9b->occ[k] = -INFTY;
+      for(i = 0; i <= L; i++) {
+	cp9b->occ[k] = ILogsum(cp9b->occ[k], ILogsum(pmx->mmx[i][k], pmx->dmx[i][k]));
+      }
+    }
+  esl_stopwatch_Stop(w); 
+  esl_stopwatch_Display(stdout, w, "# Posterior calculation (no ignore): ");
+
+#if 0
+  esl_stopwatch_Start(w);  
+  /* Experimental code that ignores any cell that is below some threshold (i.e. 0.00001) to prevent unnec ILogsum calls 
+   * and save time. */
+  int ignore_thresh = Prob2Score(cp9b->occp_ignore, 1.);
+  for(k = 0; k <= cp9b->hmm_M; k++)
+    {
+      cp9b->occ[k] = -INFTY;
+      for(i = 0; i <= L; i++) {
+	if(pmx->mmx[i][k] > ignore_thresh) cp9b->occ[k] = ILogsum(cp9b->occ[k], pmx->mmx[i][k]);
+	if(pmx->dmx[i][k] > ignore_thresh) cp9b->occ[k] = ILogsum(cp9b->occ[k], pmx->dmx[i][k]);
+      }
+    }
+  esl_stopwatch_Stop(w); 
+  esl_stopwatch_Display(stdout, w, "# Posterior calculation (ignore): ");
+#endif
+
+  for(k = 1; k <= cp9b->hmm_M; k++) { 
+    cp9b->occ[k] = Score2Prob(cp9b->occ[k], 1.); /* convert to probabilities */
+    printf("probability k %4d occupied: %.6f\n", k, cp9b->occ[k]);
+  }
+
+  esl_stopwatch_Destroy(w);
   return;
 }
 
