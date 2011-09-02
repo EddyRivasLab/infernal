@@ -720,6 +720,12 @@ typedef struct cp9bands_s {
   float  occthresh;            /* probability threshold for occ array, if occ[k] > occp, we don't  
 				* consider marginal parsetrees that exclude position k */
 
+  /* do_{J,L,R,T} [0..cm_M-1] for trCYK/trInside/trOutside, must we calculate {J,L,R,T} DP matrix cells for state v? */
+  int *do_J;                  /* [0..v..cm_M-1] TRUE to calculate J DP matrix cells for state v, FALSE not to */
+  int *do_L;                  /* [0..v..cm_M-1] TRUE to calculate L DP matrix cells for state v, FALSE not to */
+  int *do_R;                  /* [0..v..cm_M-1] TRUE to calculate R DP matrix cells for state v, FALSE not to */
+  int *do_T;                  /* [0..v..cm_M-1] TRUE to calculate T DP matrix cells for state v, FALSE not to */
+
   /* arrays for CM state bands, derived from HMM bands */
   int *imin;                  /* [0..cm_M-1] imin[v] = first position in band on i for state v*/
   int *imax;                  /* [0..cm_M-1] imax[v] = last position in band on i for state v*/
@@ -998,15 +1004,21 @@ typedef struct cm_tr_hb_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
   int  B;		/* number of BIF_B states (1st dim ptrs) in current mx (valid, non-null Tdp states) */
   int  L;               /* length of sequence the matrix currently corresponds to */
-  int  firstbif;        /* state index of first BIF_B state in the CM */
 
-  int64_t    JLRncells_alloc;  /* current cell allocation limit for EACH of Jdp, Ldp and Rdp */
-  int64_t    JLRncells_valid;  /* current number of valid cells in EACH of Jdp, Ldp and Rdp */
-  int64_t    Tncells_alloc;    /* current cell allocation limit for Tdp */
-  int64_t    Tncells_valid;    /* current number of valid cells in Tdp */
-  float      size_Mb;          /* current size of full matrix (J,L,R&T) in Megabytes */
+  int64_t    Jncells_alloc;  /* current cell allocation limit for Jdp */
+  int64_t    Lncells_alloc;  /* current cell allocation limit for Ldp */
+  int64_t    Rncells_alloc;  /* current cell allocation limit for Rdp */
+  int64_t    Tncells_alloc;  /* current cell allocation limit for Tdp */
+  int64_t    Jncells_valid;  /* current number of valid cells in Jdp */
+  int64_t    Lncells_valid;  /* current number of valid cells in Ldp */
+  int64_t    Rncells_valid;  /* current number of valid cells in Rdp */
+  int64_t    Tncells_valid;  /* current number of valid cells in Tdp */
+  float      size_Mb;        /* current size of full matrix (J,L,R&T) in Megabytes */
 
-  int   *nrowsA;        /* [0..v..M] current number allocated rows for deck v */
+  int   *JnrowsA;       /* [0..v..M] current number allocated rows for deck v in J matrix */
+  int   *LnrowsA;       /* [0..v..M] current number allocated rows for deck v in L matrix */
+  int   *RnrowsA;       /* [0..v..M] current number allocated rows for deck v in R matrix */
+  int   *TnrowsA;       /* [0..v..M] current number allocated rows for deck v in T matrix */
 
   float ***Jdp;         /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
   float   *Jdp_mem;     /* the actual mem, points to Jdp[0][0][0] */

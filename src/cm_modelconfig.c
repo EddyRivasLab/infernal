@@ -77,9 +77,8 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
   char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
   /* TEMP */
   
-  /* Build the emitmap */
-  if(cm->emap != NULL) FreeEmitMap(cm->emap);
-  cm->emap = CreateEmitMap(cm);
+  /* Build the emitmap, if necessary */
+  if(cm->emap == NULL) cm->emap = CreateEmitMap(cm);
 
   /* Allocate the shadow matrix for alignment traceback, 
    * Initially this is small, and its only grown as needed.

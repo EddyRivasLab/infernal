@@ -913,7 +913,7 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
       orig_hmm = hmm;
       orig_cp9map = cp9map;
       if(do_hbanded)
-	cp9b = AllocCP9Bands(cm->M, hmm->M);
+	cp9b = AllocCP9Bands(cm, hmm->M);
 
       StopwatchZero(watch2);
       StopwatchStart(watch2);

@@ -32,9 +32,6 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define OLD_TRUNC 0
-#define NEW_TRUNC 1
-
 /* helper functions for cp9_HMM2ijBands() */
 static void determine_marginal_right_i_band (CM_t *cm, CP9Map_t *cp9map, CP9Bands_t *cp9b, int v, int lpos, int max_rpos, int i0, int j0, int *r_nn_i, int *r_nx_i, int *ret_imin_v, int *ret_imax_v);
 static void determine_marginal_left_j_band(CM_t *cm, CP9Map_t *cp9map, CP9Bands_t *cp9b, int v, int rpos, int min_lpos, int i0, int j0, int *r_nn_j, int *r_nx_j, int *ret_jmin_v, int *ret_jmax_v);
@@ -65,6 +62,18 @@ AllocCP9Bands(int cm_M, int hmm_M)
   cp9bands->hmm_M = hmm_M;
 
   ESL_ALLOC(cp9bands->occ, sizeof(float) * (hmm_M+1));
+  esl_vec_FSet(cp9bands->occ, (hmm_M+1), 0.); /* initialize, we'll change this in cp9_Seq2Bands() if do_trunc == TRUE */
+  cp9bands->occthresh = DEFAULT_OCCP;           /*0.999*/
+
+  ESL_ALLOC(cp9bands->do_J, sizeof(int) * (cm_M));
+  ESL_ALLOC(cp9bands->do_L, sizeof(int) * (cm_M));
+  ESL_ALLOC(cp9bands->do_R, sizeof(int) * (cm_M));
+  ESL_ALLOC(cp9bands->do_T, sizeof(int) * (cm_M));
+  esl_vec_ISet(cp9bands->do_J, cm_M, TRUE);
+  esl_vec_ISet(cp9bands->do_L, cm_M, TRUE);
+  esl_vec_ISet(cp9bands->do_R, cm_M, TRUE);
+  esl_vec_ISet(cp9bands->do_T, cm_M, TRUE);
+
   esl_vec_FSet(cp9bands->occ, (hmm_M+1), 0.); /* initialize, we'll change this in cp9_Seq2Bands() if do_trunc == TRUE */
   cp9bands->occthresh = DEFAULT_OCCP;           /*0.999*/
   
@@ -132,6 +141,11 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
   free(cp9bands->isum_pn_d);
 
   free(cp9bands->occ);
+
+  free(cp9bands->do_J);
+  free(cp9bands->do_L);
+  free(cp9bands->do_R);
+  free(cp9bands->do_T);
 
   free(cp9bands);
 }
@@ -238,9 +252,10 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
 
-  /* Step 2B: (only if do_trunc) Calculate which nodes are 'highly likely' to be occupied (prob > cp9b->occp) */
+  /* Step 2B: (only if do_trunc) Calculate occupancy and candidate states for marginal alignments */
   if(do_trunc) { 
     cp9_CalculateOccupancy(pmx, cp9b, i0, j0);
+    cp9_MarginalCandidates(cm, cp9b);
   }
 
   /* Step 3: HMM bands  ->  CM bands. */
@@ -1539,13 +1554,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  v = cm->nodemap[nd];
 	  w = cm->cfirst[v]; /* BEGL_S */
 	  y = cm->cnum[v];   /* BEGR_S */
-#if OLD_TRUNC
-	  if(! do_trunc) { /* we won't be using these bands for truncated version of CYK/Inside/Outside */
-#endif
-#if NEW_TRUNC
 	  if((! do_trunc) || /* we won't be using these bands for truncated version of CYK/Inside/Outside */
 	     ((cp9b->occ[lpos] > cp9b->occthresh) && (cp9b->occ[rpos] > cp9b->occthresh))) { /* both lpos and rpos are 'very likely' (p > cp9b->occthresh) occupied, an optimal marginal parse is unlikely */
-#endif
 	    /* set v's i band based on left child w, and v's j band based on right child y */
 	    imin[v] = imin[w];
 	    imax[v] = imax[w];
@@ -1588,13 +1598,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  lpos = cp9map->nd2lpos[nd];
 	  rpos = cp9map->nd2rpos[nd];
 	  v = cm->nodemap[nd]; /* v is MATP_MP */
-#if OLD_TRUNC
-	  if(! do_trunc) { /* we won't be using these bands for truncated version of CYK/Inside/Outside */
-#endif
-#if NEW_TRUNC
 	  if((! do_trunc) || /* we won't be using these bands for truncated version of CYK/Inside/Outside */
 	     ((cp9b->occ[lpos] > cp9b->occthresh) && (cp9b->occ[rpos] > cp9b->occthresh))) { /* both lpos and rpos are 'very likely' (p > cp9b->occthresh) occupied, an optimal marginal parse is unlikely */
-#endif
 	    if(imin[v] != -1) { 
 	      jmin[v] = r_mn[rpos];
 	      jmax[v] = r_mx[rpos];
@@ -1749,13 +1754,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	case MATL_nd: /* i bands were set when we were on the left, non-right emitter, set implicit j bands */
 	  lpos = cp9map->nd2lpos[nd];
 	  v = cm->nodemap[nd]; /* v is MATL_ML */
-#if OLD_TRUNC
-	  if(! do_trunc) { /* we won't be using these bands for truncated version of CYK/Inside/Outside */
-#endif
-#if NEW_TRUNC
 	  if((! do_trunc) || /* we won't be using these bands for truncated version of CYK/Inside/Outside */
 	     ((cp9b->occ[lpos] > cp9b->occthresh) && (cp9b->occ[rpos] > cp9b->occthresh))) { /* both lpos and rpos are 'very likely' (p > cp9b->occthresh) occupied, an optimal marginal parse is unlikely */
-#endif
 	    if(imin[v] != -1) { /* only set j bands for reachable states (those with valid i bands) */
 	      jmin[v] = r_nn_j[rpos];
 	      jmax[v] = r_nx_j[rpos];
@@ -1853,13 +1853,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	case MATR_nd: /* set j bands explicitly from HMM bands, i bands implicitly */
 	  rpos = cp9map->nd2rpos[nd];
 	  v = cm->nodemap[nd]; /* v is MATR_MR */
-#if OLD_TRUNC
-	  if(! do_trunc) { /* we won't be using these bands for truncated version of CYK/Inside/Outside */
-#endif
-#if NEW_TRUNC
 	    if((! do_trunc) || /* we won't be using these bands for truncated version of CYK/Inside/Outside */
 	       ((cp9b->occ[lpos] > cp9b->occthresh) && (cp9b->occ[rpos] > cp9b->occthresh))) { /* both lpos and rpos are 'very likely' (p > cp9b->occthresh) occupied, an optimal marginal parse is unlikely */
-#endif
 	    jmin[v] = r_mn[rpos];
 	    jmax[v] = r_mx[rpos];
 	    imin[v] = jmin[v] != -1 ? r_nn_i[lpos] : -1;
@@ -5519,6 +5514,78 @@ cp9_CalculateOccupancy(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
   }
 
   esl_stopwatch_Destroy(w);
+  return;
+}
+
+
+/* Function: cp9_MarginalCandidates()
+ * Date:     EPN, Fri Sep  2 12:46:15 2011
+ *
+ * Purpose: Given a CP9Bands_t object with a filled occ (occupancy)
+ *          array from cp9_CalculateOccupancy(), determine for each CM
+ *          state v, whether a joint (J), left marginal (L) right
+ *          marginal (R), or terminal marginal alignment that includes
+ *          v should be allowed. For any disallowed type of alignment
+ *          we will be able to skip the corresponding calculations in
+ *          a trCYK/trInside/trOutside DP recursion.  And we won't
+ *          have to allocate memory for that state in the
+ *          corresponding (J,L,R,T) DP matrix.
+ *
+ * CM_t       cm:   the model
+ * CP9Bands_t cp9b: the cp9 bands
+ *
+ * Returns: void
+ */
+void
+cp9_MarginalCandidates(CM_t *cm, CP9Bands_t *cp9b)
+{
+  int v, p;
+  int nd;
+  int lpos = 1;
+  int rpos = cm->clen;
+  
+  for(v = 0; v < cp9b->cm_M; v++) { 
+    nd = cm->ndidx[v];
+    /* Careful, emitmap is off-by-one for our purposes for lpos if v is not MATP_MP or MATL_ML, and rpos if v is not MATP_MP or MATR_MR */
+    lpos = (cm->stid[v] == MATP_MP || cm->stid[v] == MATL_ML) ? cm->emap->lpos[nd] : cm->emap->lpos[nd]+1;
+    rpos = (cm->stid[v] == MATP_MP || cm->stid[v] == MATR_MR) ? cm->emap->rpos[nd] : cm->emap->rpos[nd]-1;
+
+    cp9b->do_J[v] = 
+      ((cp9b->occ[lpos] < (1.0-cp9b->occthresh)) || /* lpos almost certainly not used OR */
+       (cp9b->occ[rpos] < (1.0-cp9b->occthresh)))   /* rpos almost certainly not used    */
+      ? FALSE : TRUE; 
+
+    cp9b->do_L[v] = 
+      ((cp9b->occ[lpos] < (1.0-cp9b->occthresh)) || /* lpos almost certainly not used OR  */
+       (cp9b->occ[rpos] > cp9b->occthresh))         /* rpos almost certainly used         */
+      ? FALSE : TRUE;    
+
+    cp9b->do_R[v] = 
+      ((cp9b->occ[rpos] < (1.0-cp9b->occthresh)) || /* rpos almost certainly not used OR  */
+       (cp9b->occ[lpos] > cp9b->occthresh))         /* lpos almost certainly used         */
+      ? FALSE : TRUE;    
+
+    if(cm->stid[v] == BIF_B) { 
+      cp9b->do_T[v] = 
+	((cp9b->occ[rpos] > cp9b->occthresh)  ||   /* rpos almost certainly used OR  */
+	 (cp9b->occ[lpos] > cp9b->occthresh))      /* lpos almost certainly used     */
+	? FALSE : TRUE;    
+      if(cp9b->do_T[v] == TRUE) { 
+	p = lpos;
+	while((p <= rpos) && (cp9b->occ[p] < (1.0-cp9b->occthresh))) p++;
+	if(p == rpos+1) { 
+	  /* all positions from lpos..rpos are almost certainly not used */
+	  cp9b->do_T[v] = FALSE;
+	}
+      }
+    }
+    else { /* not a B state, T matrix not used */
+      cp9b->do_T[v] = FALSE; 
+    }
+  }
+
+  cp9b->do_J[0] = TRUE; /* the ROOT_S state is special, all local or truncated hits will be rooted here */
+
   return;
 }
 

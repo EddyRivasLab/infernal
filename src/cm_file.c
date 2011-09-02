@@ -2110,6 +2110,10 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   cm->flags |= CMH_QDB;       /* we just read QDBs */
   cm->flags |= CMH_QDB_LOCAL; /* QDBs from CM file are always calc'ed in local mode, they just are */
 
+  /* Create emit map now that we know the model architecture */
+  cm->emap = CreateEmitMap(cm);
+  if(cm->emap == NULL) ESL_XFAIL(eslEINVAL, cmfp->errbuf, "After reading complete model, failed to create an emit map");
+
   for (v = 0; v < cm->M; v++) {
     if (! fread((char *) cm->t[v], sizeof(float), MAXCONNECT,           cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read transitions for state %d", v);
     if (! fread((char *) cm->e[v], sizeof(float), cm->abc->K*cm->abc->K,cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read emissions for state %d", v);

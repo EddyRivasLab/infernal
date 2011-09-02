@@ -139,10 +139,8 @@ extern int  RefTrCYKScan    (CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_
 			     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
 extern int  RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist,
 			     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
-extern int  FastTrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
-			    CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
 extern int  FastTrCYKScanHBSkipSlow(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
-				    CM_TR_HB_MX *mx, float size_limit, float env_cutoff, CMEmitMap_t *emap, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
+				    CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
 
 extern TrScanMatrix_t *cm_CreateTrScanMatrix  (CM_t *cm, int W, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
 extern int             cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx);
@@ -251,7 +249,7 @@ extern CM_TR_HB_MX     *cm_tr_hb_mx_Create            (CM_t *cm);
 extern int              cm_tr_hb_mx_GrowTo            (CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
 extern int              cm_tr_hb_mx_Dump              (FILE *ofp, CM_TR_HB_MX *mx);
 extern void             cm_tr_hb_mx_Destroy           (CM_TR_HB_MX *mx);
-extern int              cm_tr_hb_mx_SizeNeeded        (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_JLRncells, int64_t *ret_Tncells, float *ret_Mb);
+extern int              cm_tr_hb_mx_SizeNeeded        (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb);
 extern CM_HB_SHADOW_MX *cm_hb_shadow_mx_Create        (CM_t *cm, int M);
 extern int              cm_hb_shadow_mx_GrowTo        (CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
 extern int              cm_hb_shadow_mx_Dump          (FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx);
@@ -488,7 +486,7 @@ extern double cp9_MeanMatchRelativeEntropy(const CM_t *cm);
 /* from hmmband.c */
 extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int do_trunc, int debug_level);
 extern int          cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
-extern CP9Bands_t * AllocCP9Bands(int cm_M, int hmm_M);
+extern CP9Bands_t  *AllocCP9Bands(int cm_M, int hmm_M);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int do_trunc, int debug_level);
 extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
@@ -527,6 +525,7 @@ extern void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr
 extern void         cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc);
 extern CP9Bands_t  *cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf);
 extern void         cp9_CalculateOccupancy(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0);
+extern void         cp9_MarginalCandidates(CM_t *cm, CP9Bands_t *cp9b);
 
 /* from cm_p7_modelmaker.c */
 #if 0

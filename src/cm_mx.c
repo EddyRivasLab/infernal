@@ -134,7 +134,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   int     status;
   void   *p;
   int     v, jp;
-  int     cur_size = 0;
+  int64_t cur_size = 0;
   int64_t ncells;
   int     jbw;
   float   Mb_needed;   /* required size of matrix, given the bands */
@@ -217,6 +217,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
     }      
   }
   ESL_DASSERT1((cur_size == mx->ncells_valid));
+  printf("ncells %10ld %10ld\n", cur_size, mx->ncells_valid);
 
   mx->cp9b = cp9b; /* just a reference */
   
@@ -330,7 +331,7 @@ cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *re
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_SizeNeeded() entered with cp9b == NULL.\n");
 
   ncells = 0;
-  Mb_needed = ((float) (sizeof(int *)) * ((float) cp9b->cm_M + 1)) + /* nrowsA ptrs */
+  Mb_needed = ((float) (sizeof(int *)) * ((float) cp9b->cm_M + 1)) + /* {J,L,R,T}nrowsA ptrs */
     (float) (sizeof(float **)) * (float) (cp9b->cm_M);               /* mx->dp[] ptrs */
   for(v = 0; v < cp9b->cm_M; v++) { 
     jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
@@ -378,7 +379,6 @@ cm_tr_hb_mx_Create(CM_t *cm)
   int allocW = 1;
   int B = CMCountNodetype(cm, BIF_nd);
   int M = cm->M;
-  int firstbif = 0;
 
   /* level 1: the structure itself */
   ESL_ALLOC(mx, sizeof(CM_TR_HB_MX));
@@ -406,7 +406,11 @@ cm_tr_hb_mx_Create(CM_t *cm)
   ESL_ALLOC(mx->Ldp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
   ESL_ALLOC(mx->Rdp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
   ESL_ALLOC(mx->Tdp_mem,  sizeof(float) * (B+1) * (allocL) * (allocW));
-  ESL_ALLOC(mx->nrowsA, sizeof(int)      * (M+1));
+  ESL_ALLOC(mx->JnrowsA,  sizeof(int)   * (M+1));
+  ESL_ALLOC(mx->LnrowsA,  sizeof(int)   * (M+1));
+  ESL_ALLOC(mx->RnrowsA,  sizeof(int)   * (M+1));
+  ESL_ALLOC(mx->TnrowsA,  sizeof(int)   * (M+1));
+
   b = 0;
   for (v = 0; v <= M; v++) {
     ESL_ALLOC(mx->Jdp[v], sizeof(float *) * (allocL));
@@ -417,7 +421,6 @@ cm_tr_hb_mx_Create(CM_t *cm)
     mx->Rdp[v][0]  = mx->Rdp_mem + v * (allocL) * (allocW);
 
     if(cm->sttype[v] == B_st) { 
-      if(firstbif == 0) firstbif = v;
       ESL_ALLOC(mx->Tdp[v], sizeof(float *) * (allocL));
       mx->Tdp[v][0] = mx->Tdp_mem + b * (allocL) * (allocW);
       b++;
@@ -425,25 +428,35 @@ cm_tr_hb_mx_Create(CM_t *cm)
     else { 
       mx->Tdp[v] = NULL;
     }
-    mx->nrowsA[v] = allocL;
+    mx->JnrowsA[v] = allocL;
+    mx->LnrowsA[v] = allocL;
+    mx->RnrowsA[v] = allocL;
+    mx->TnrowsA[v] = allocL;
   }
   mx->M               = M;
   mx->B               = B;
-  mx->firstbif        = firstbif;
-  mx->JLRncells_alloc = (M+1)*(allocL)*(allocW);
-  mx->JLRncells_valid = 0;
+  mx->Jncells_alloc   = (M+1)*(allocL)*(allocW);
+  mx->Lncells_alloc   = (M+1)*(allocL)*(allocW);
+  mx->Rncells_alloc   = (M+1)*(allocL)*(allocW);
   mx->Tncells_alloc   = B*(allocL)*(allocW);
+  mx->Jncells_valid   = 0;
+  mx->Lncells_valid   = 0;
+  mx->Rncells_valid   = 0;
   mx->Tncells_valid   = 0;
   mx->L               = allocL; /* allocL = 1 */
 
   mx->size_Mb = 
-    (float) (mx->M+1) * (float) sizeof(int *) +                 /* nrowsA ptrs */
+    (float) (4. * (mx->M+1) * (float) sizeof(int *))   +        /* {J,L,R,T}nrowsA ptrs */
     (4 * (float) (mx->M+1) * (float) sizeof(float **)) +        /* mx->{J,L,R,T}dp[] ptrs */
-    (3 * (float) (mx->M+1) * (float) sizeof(float *))  +        /* mx->{J,L,R}dp[v][] ptrs */
-    (float) (mx->B+1) * (float) sizeof(float *)       +         /* mx->Tdp[v][] ptrs */
-    (3 * (float) mx->JLRncells_alloc * (float) sizeof(float)) + /* mx->{J,L,R}dp_mem */
-    (float) mx->Tncells_alloc * (float) sizeof(float);          /* mx->Tdp_mem */
-mx->size_Mb *= 0.000001; /* convert to Mb */
+    (float) (mx->M+1) * (float) sizeof(float *)        +        /* mx->Jdp[v][] ptrs */
+    (float) (mx->M+1) * (float) sizeof(float *)        +        /* mx->Ldp[v][] ptrs */
+    (float) (mx->M+1) * (float) sizeof(float *)        +        /* mx->Rdp[v][] ptrs */
+    (float) (mx->B+1) * (float) sizeof(float *)        +        /* mx->Tdp[v][] ptrs */
+    (float) mx->Jncells_alloc * (float) sizeof(float)  +        /* mx->Jdp_mem       */
+    (float) mx->Lncells_alloc * (float) sizeof(float)  +        /* mx->Ldp_mem       */
+    (float) mx->Rncells_alloc * (float) sizeof(float)  +        /* mx->Rdp_mem       */
+    (float) mx->Tncells_alloc * (float) sizeof(float);          /* mx->Tdp_mem       */
+  mx->size_Mb *= 0.000001; /* convert to Mb */
 
   return mx;
 
@@ -488,14 +501,23 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   int     status;
   void   *p;
   int     v, jp;
-  int     JLRcur_size = 0;
-  int     Tcur_size   = 0;
-  int64_t JLRncells;
+  int64_t Jcur_size = 0;
+  int64_t Lcur_size = 0;
+  int64_t Rcur_size = 0;
+  int64_t Tcur_size = 0;
+  int64_t Jncells;
+  int64_t Lncells;
+  int64_t Rncells;
   int64_t Tncells;
   int     jbw;
   float   Mb_needed;   /* required size of matrix, given the bands */
   float   Mb_alloc;  /* allocated size of matrix, >= Mb_needed */
   int     have_el;
+  int     realloced_J; /* did we reallocate mx->Jdp_mem? */
+  int     realloced_L; /* did we reallocate mx->Ldp_mem? */
+  int     realloced_R; /* did we reallocate mx->Rdp_mem? */
+  int     realloced_T; /* did we reallocate mx->Tdp_mem? */
+
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
   /* contract check, number of states (M) is something we don't change
@@ -516,100 +538,182 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
     mx->Ldp_mem = NULL;
     mx->Rdp_mem = NULL;
     mx->Tdp_mem = NULL;
-    mx->JLRncells_alloc = 0;
-    mx->Tncells_alloc   = 0;
+    mx->Jncells_alloc = 0;
+    mx->Lncells_alloc = 0;
+    mx->Rncells_alloc = 0;
+    mx->Tncells_alloc = 0;
   }
 
-  if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &JLRncells, &Tncells, &Mb_needed)) != eslOK) return status;
+  if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &Jncells, &Lncells, &Rncells, &Tncells, &Mb_needed)) != eslOK) return status;
   printf("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed);
   ESL_DPRINTF2(("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP Tr mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
-  /* must we realloc the full matrix? or can we get away with just
+  /* must we realloc the full {J,L,R.T}matrices? or can we get away with just
    * jiggering the pointers, if total required num cells is less
    * than or equal to what we already have alloc'ed?
    */
-  if (JLRncells > mx->JLRncells_alloc || Tncells > mx->Tncells_alloc) {
-      ESL_RALLOC(mx->Jdp_mem, p, sizeof(float) * JLRncells);
-      ESL_RALLOC(mx->Ldp_mem, p, sizeof(float) * JLRncells);
-      ESL_RALLOC(mx->Rdp_mem, p, sizeof(float) * JLRncells);
-      if(Tncells > 0) ESL_RALLOC(mx->Tdp_mem, p, sizeof(float) * Tncells);
-      mx->JLRncells_alloc = JLRncells;
-      mx->Tncells_alloc   = Tncells;
-      Mb_alloc = Mb_needed;
+  realloced_J = realloced_L = realloced_R = realloced_T = FALSE;
+  if (Jncells > mx->Jncells_alloc) { 
+      ESL_RALLOC(mx->Jdp_mem, p, sizeof(float) * Jncells);
+      mx->Jncells_alloc = Jncells;
+      realloced_J = TRUE;
   }
-  else { 
-    /* mx->{J,L,R,T}dp_mem remain as they are allocated, set Mb_alloc accordingly
-     * (this is not just mx->size_Mb, because size of pointer arrays
-     * may change, for example) 
-     */
-    Mb_alloc  = Mb_needed * 1000000.; /* convert to bytes */
-    Mb_alloc -= 3 * ((float) (sizeof(float) * JLRncells)); 
-    Mb_alloc -=     ((float) (sizeof(float) * Tncells)); 
-    Mb_alloc += 3 * ((float) (sizeof(float) * mx->JLRncells_alloc)); 
-    Mb_alloc +=     ((float) (sizeof(float) * mx->Tncells_alloc)); 
-    Mb_alloc *= 0.000001; /* convert to Mb */
+  if (Lncells > mx->Lncells_alloc) { 
+      ESL_RALLOC(mx->Ldp_mem, p, sizeof(float) * Lncells);
+      mx->Lncells_alloc = Lncells;
+      realloced_L = TRUE;
   }
-  mx->JLRncells_valid = JLRncells;
-  mx->Tncells_valid   = Tncells;
+  if (Rncells > mx->Rncells_alloc) { 
+      ESL_RALLOC(mx->Rdp_mem, p, sizeof(float) * Rncells);
+      mx->Rncells_alloc = Rncells;
+      realloced_R = TRUE;
+  }
+  if (Tncells > mx->Tncells_alloc) { 
+      ESL_RALLOC(mx->Tdp_mem, p, sizeof(float) * Tncells);
+      mx->Tncells_alloc = Tncells;
+      realloced_T = TRUE;
+  }
+
+  /* Determine the size of our matrix based on the size it needed to be (Mb_needed).
+   * This is tricky, for each matrix not reallocated, we have to adjust Mb_needed
+   * so it uses previously allocated size of that matrix.
+   */
+  Mb_alloc = Mb_needed * 1000000; /* convert to bytes */
+  if(! realloced_J) { 
+    Mb_alloc -= (float) (sizeof(float) * Jncells);
+    Mb_alloc += (float) (sizeof(float) * mx->Jncells_alloc);
+  }
+  if(! realloced_L) { 
+    Mb_alloc -= (float) (sizeof(float) * Lncells);
+    Mb_alloc += (float) (sizeof(float) * mx->Lncells_alloc);
+  }
+  if(! realloced_R) { 
+    Mb_alloc -= (float) (sizeof(float) * Rncells);
+    Mb_alloc += (float) (sizeof(float) * mx->Rncells_alloc);
+  }
+  if(! realloced_T) { 
+    Mb_alloc -= (float) (sizeof(float) * Tncells);
+    Mb_alloc += (float) (sizeof(float) * mx->Tncells_alloc);
+  }
+  /* note if we didn't reallocate any of the four matrices, Mb_alloc == Mb_needed */
+  Mb_alloc *= 0.000001; /* convert to Mb */
+
+  mx->Jncells_valid = Jncells;
+  mx->Lncells_valid = Lncells;
+  mx->Rncells_valid = Rncells;
+  mx->Tncells_valid = Tncells;
   
   for(v = 0; v < mx->M; v++) {
     jbw = cp9b->jmax[v] - cp9b->jmin[v] + 1;
-    if(jbw > mx->nrowsA[v]) {
-      ESL_RALLOC(mx->Jdp[v], p, sizeof(float *) * jbw);
-      ESL_RALLOC(mx->Ldp[v], p, sizeof(float *) * jbw);
-      ESL_RALLOC(mx->Rdp[v], p, sizeof(float *) * jbw);
-      if(cm->sttype[v] == B_st) { 
-	ESL_RALLOC(mx->Tdp[v], p, sizeof(float *) * jbw);
+
+    if(cp9b->do_J[v]) {
+      if(jbw > mx->JnrowsA[v]) { 
+	ESL_RALLOC(mx->Jdp[v], p, sizeof(float *) * jbw);
+	mx->JnrowsA[v] = jbw;
       }
-      mx->nrowsA[v] = jbw;
+    }
+    else { /* cp9b->do_J[v] is FALSE */
+      free(mx->Jdp[v]);
+      mx->Jdp[v] = NULL;
+      mx->JnrowsA[v] = 0;
+    }
+
+    if(cp9b->do_L[v]) {
+      if(jbw > mx->LnrowsA[v]) { 
+	ESL_RALLOC(mx->Ldp[v], p, sizeof(float *) * jbw);
+	mx->LnrowsA[v] = jbw;
+      }
+    }
+    else { /* cp9b->do_L[v] is FALSE */
+      free(mx->Ldp[v]);
+      mx->Ldp[v] = NULL;
+      mx->LnrowsA[v] = 0;
+    }
+
+    if(cp9b->do_R[v]) {
+      if(jbw > mx->RnrowsA[v]) { 
+	ESL_RALLOC(mx->Rdp[v], p, sizeof(float *) * jbw);
+	mx->RnrowsA[v] = jbw;
+      }
+    }
+    else { /* cp9b->do_R[v] is FARSE */
+      free(mx->Rdp[v]);
+      mx->Rdp[v] = NULL;
+      mx->RnrowsA[v] = 0;
+    }
+
+    if(cp9b->do_T[v]) {
+      if(jbw > mx->TnrowsA[v]) { 
+	ESL_RALLOC(mx->Tdp[v], p, sizeof(float *) * jbw);
+	mx->TnrowsA[v] = jbw;
+      }
+    }
+    else { /* cp9b->do_T[v] is FALSE */
+      free(mx->Tdp[v]);
+      mx->Tdp[v] = NULL;
+      mx->TnrowsA[v] = 0;
     }
   }
   if(have_el) {
     jbw = L+1;
-    if(jbw > mx->nrowsA[mx->M]) {
+    if(jbw > mx->JnrowsA[mx->M]) {
       ESL_RALLOC(mx->Jdp[mx->M], p, sizeof(float *) * jbw);
-      ESL_RALLOC(mx->Ldp[mx->M], p, sizeof(float *) * jbw);
-      ESL_RALLOC(mx->Rdp[mx->M], p, sizeof(float *) * jbw);
-      mx->nrowsA[mx->M] = jbw;
-      /* Tdp is NULL for cm->M */
+      mx->JnrowsA[mx->M] = jbw;
+      /* Ldp, Rdp, Tdp is NULL for cm->M */
     }
   }
 
-  /* reset the pointers, we keep a tally of cur_size as we go,
-   * we could precalc it and store it for each v,j, but that 
-   * would be wasteful, as we'll only use the matrix configured
-   * this way once, in a banded CYK run.
+  /* reset the pointers, we keep a tally of cur_size as we go 
    */
-  JLRcur_size = 0;
-  Tcur_size   = 0;
+  Jcur_size = 0;
+  Lcur_size = 0;
+  Rcur_size = 0;
+  Tcur_size = 0;
   for(v = 0; v < mx->M; v++) { 
-    for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
-      mx->Jdp[v][jp] = mx->Jdp_mem + JLRcur_size;
-      mx->Ldp[v][jp] = mx->Ldp_mem + JLRcur_size;
-      mx->Rdp[v][jp] = mx->Rdp_mem + JLRcur_size;
-      JLRcur_size     += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+    if(mx->Jdp[v] != NULL) { 
+      for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
+	mx->Jdp[v][jp] = mx->Jdp_mem + Jcur_size;
+	Jcur_size += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+      }
     }
-    if(cm->sttype[v] == B_st) { 
+    if(mx->Ldp[v] != NULL) { 
+      for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
+	mx->Ldp[v][jp] = mx->Ldp_mem + Lcur_size;
+	Lcur_size += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+      }
+    }
+    if(mx->Rdp[v] != NULL) { 
+      for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
+	mx->Rdp[v][jp] = mx->Rdp_mem + Rcur_size;
+	Rcur_size += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+      }
+    }
+    if(mx->Tdp[v] != NULL) { 
       for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	mx->Tdp[v][jp] = mx->Tdp_mem + Tcur_size;
-	Tcur_size     += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Tcur_size += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
       }
     }
   }
   if(have_el) {
     for(jp = 0; jp <= L; jp++) { 
-      mx->Jdp[mx->M][jp] = mx->Jdp_mem + JLRcur_size;
-      mx->Ldp[mx->M][jp] = mx->Ldp_mem + JLRcur_size;
-      mx->Rdp[mx->M][jp] = mx->Rdp_mem + JLRcur_size;
-      JLRcur_size      += jp + 1;
+      mx->Jdp[mx->M][jp] = mx->Jdp_mem + Jcur_size;
+      Jcur_size += jp + 1;
     }      
   }
-  printf("JLR ncells %ld %ld\n", JLRcur_size, mx->JLRncells_valid);
-  assert(JLRcur_size == mx->JLRncells_valid);
-  assert(Tcur_size   == mx->Tncells_valid);
-  ESL_DASSERT1((JLRcur_size == mx->JLRncells_valid));
-  ESL_DASSERT1((Tcur_size   == mx->Tncells_valid));
+  printf("J ncells %10ld %10ld\n", Jcur_size, mx->Jncells_valid);
+  printf("L ncells %10ld %10ld\n", Lcur_size, mx->Lncells_valid);
+  printf("R ncells %10ld %10ld\n", Rcur_size, mx->Rncells_valid);
+  printf("T ncells %10ld %10ld\n", Tcur_size, mx->Tncells_valid);
+  assert(Jcur_size == mx->Jncells_valid);
+  assert(Lcur_size == mx->Lncells_valid);
+  assert(Rcur_size == mx->Rncells_valid);
+  assert(Tcur_size == mx->Tncells_valid);
+  ESL_DASSERT1((Jcur_size == mx->Jncells_valid));
+  ESL_DASSERT1((Lcur_size == mx->Lncells_valid));
+  ESL_DASSERT1((Rcur_size == mx->Rncells_valid));
+  ESL_DASSERT1((Tcur_size == mx->Tncells_valid));
 
   mx->cp9b = cp9b; /* just a reference */
   
@@ -661,7 +765,10 @@ cm_tr_hb_mx_Destroy(CM_TR_HB_MX *mx)
   }
   free(mx->Tdp);
 
-  if (mx->nrowsA   != NULL)  free(mx->nrowsA);
+  if (mx->JnrowsA  != NULL)  free(mx->JnrowsA);
+  if (mx->LnrowsA  != NULL)  free(mx->LnrowsA);
+  if (mx->RnrowsA  != NULL)  free(mx->RnrowsA);
+  if (mx->TnrowsA  != NULL)  free(mx->TnrowsA);
   if (mx->Jdp_mem  != NULL)  free(mx->Jdp_mem);
   if (mx->Ldp_mem  != NULL)  free(mx->Ldp_mem);
   if (mx->Rdp_mem  != NULL)  free(mx->Rdp_mem);
@@ -681,8 +788,12 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx)
 {
   int v, jp, j, dp, d;
 
-  fprintf(ofp, "M: %d\nL: %d\nJLRncells_alloc: %" PRId64 "\nTncells_alloc: %" PRId64 "\nJLRncells_valid: %" PRId64 "\nTncells_valid: %" PRId64 "\n", 
-	  mx->M, mx->L, mx->JLRncells_alloc, mx->Tncells_alloc, mx->JLRncells_valid, mx->Tncells_valid);
+  fprintf(ofp, "M: %d\n", mx->M);
+  fprintf(ofp, "L: %d\n", mx->L);
+  fprintf(ofp, "Jncells_alloc: %" PRId64 "\nJncells_valid: %" PRId64 "\n", mx->Jncells_alloc, mx->Jncells_valid);
+  fprintf(ofp, "Lncells_alloc: %" PRId64 "\nLncells_valid: %" PRId64 "\n", mx->Jncells_alloc, mx->Jncells_valid);
+  fprintf(ofp, "Rncells_alloc: %" PRId64 "\nRncells_valid: %" PRId64 "\n", mx->Jncells_alloc, mx->Jncells_valid);
+  fprintf(ofp, "Tncells_alloc: %" PRId64 "\nTncells_valid: %" PRId64 "\n", mx->Jncells_alloc, mx->Jncells_valid);
   
   /* DP matrix data */
   for (v = 0; v < mx->M; v++) {
@@ -690,22 +801,22 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx)
       j = jp + mx->cp9b->jmin[v];
       for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
 	d = dp + mx->cp9b->hdmin[v][jp];
-	fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][jp][dp]);
-	fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][jp][dp]);
-	fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][jp][dp]);
-	if(mx->Tdp[v] != NULL) 	fprintf(ofp, "Tdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Tdp[v][jp][dp]);
+	if(mx->Jdp[v]) fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][jp][dp]);
+	if(mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][jp][dp]);
+	if(mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][jp][dp]);
+	if(mx->Tdp[v]) fprintf(ofp, "Tdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Tdp[v][jp][dp]);
       }
       fprintf(ofp, "\n");
     }
     fprintf(ofp, "\n\n");
   }
   /* print EL deck, if it's valid */
-  if(mx->nrowsA[mx->M] == (mx->L+1)) {
+  if(mx->JnrowsA[mx->M] == (mx->L+1)) {
     for(j = 0; j <= mx->L; j++) {
       for(d = 0; d <= jp; d++) {
-	fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][jp][dp]);
-	fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][jp][dp]);
-	fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][jp][dp]);
+	if(mx->Jdp[v]) fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][jp][dp]);
+	if(mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][jp][dp]);
+	if(mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][jp][dp]);
       }
       fprintf(ofp, "\n");
     }
@@ -730,18 +841,20 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx)
  *            errbuf - char buffer for reporting errors
  *            cp9b   - the bands for the current target sequence
  *            L      - the length of the current target sequence we're aligning
- *            ret_JLRncells - RETURN: number of J,L,R matrix cells required
- *            ret_Tncells   - RETURN: number of T matrix cells required
+ *            ret_Jncells - RETURN: number of J matrix cells required
+ *            ret_Lncells - RETURN: number of L matrix cells required
+ *            ret_Rncells - RETURN: number of R matrix cells required
+ *            ret_Tncells - RETURN: number of T matrix cells required
  *            ret_Mb - RETURN: required size of matrix in Mb
  *           
  * Returns:   <eslOK> on success
  *
  */
 int
-cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_JLRncells, int64_t *ret_Tncells, float *ret_Mb)
+cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb)
 {
   int     v, jp;
-  int64_t JLRncells, Tncells;
+  int64_t Jncells, Lncells, Rncells, Tncells;
   int     jbw;
   int     have_el;
   float   Mb_needed;
@@ -750,32 +863,52 @@ cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t 
   /* contract check */
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_SizeNeeded() entered with cp9b == NULL.\n");
 
-  JLRncells = 0;
+  Jncells = 0;
+  Lncells = 0;
+  Rncells = 0;
   Tncells   = 0;
   Mb_needed = ((float) (sizeof(int *)) * ((float) cp9b->cm_M + 1)) + /* nrowsA ptrs */
     (float) (sizeof(float **)) * (float) (cp9b->cm_M);               /* mx->dp[] ptrs */
   for(v = 0; v < cp9b->cm_M; v++) { 
     jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
-    Mb_needed += 3 * (float) (sizeof(float *) * (jbw+1)); /* mx->{J,L,R}dp[v][] ptrs */
-    for(jp = 0; jp <= jbw; jp++) {
-      JLRncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+    if(cp9b->do_J[v]) { 
+      Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Jdp[v][] ptrs */
+      for(jp = 0; jp <= jbw; jp++) {
+	Jncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+      }
     }
-    if(cm->sttype[v] == B_st) { 
+    if(cp9b->do_L[v]) { 
+      Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Ldp[v][] ptrs */
+      for(jp = 0; jp <= jbw; jp++) {
+	Lncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+      }
+    }
+    if(cp9b->do_R[v]) { 
+      Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Rdp[v][] ptrs */
+      for(jp = 0; jp <= jbw; jp++) {
+	Rncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+      }
+    }
+    if(cp9b->do_T[v]) {
       Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Tdp[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) {
 	Tncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
       }
     }
   }
-  if(have_el) JLRncells += (int) ((L+2) * (L+1) * 0.5); /* space for EL deck */
+  if(have_el) Jncells += (int) ((L+2) * (L+1) * 0.5); /* space for EL deck */
 
-  Mb_needed += 3 * ((float) (sizeof(float) * JLRncells)); /* mx->{J,L,R}dp_mem */
-  Mb_needed +=     ((float) (sizeof(float) * Tncells));   /* mx->Tdp_mem */
+  Mb_needed += ((float) (sizeof(float) * Jncells)); /* mx->Jdp_mem */
+  Mb_needed += ((float) (sizeof(float) * Lncells)); /* mx->Ldp_mem */
+  Mb_needed += ((float) (sizeof(float) * Rncells)); /* mx->Rdp_mem */
+  Mb_needed += ((float) (sizeof(float) * Tncells)); /* mx->Tdp_mem */
   Mb_needed *= 0.000001; /* convert to megabytes */
 
-  if(ret_JLRncells != NULL) *ret_JLRncells = JLRncells;
-  if(ret_Tncells   != NULL) *ret_Tncells   = Tncells;
-  if(ret_Mb        != NULL) *ret_Mb        = Mb_needed;
+  if(ret_Jncells != NULL) *ret_Jncells = Jncells;
+  if(ret_Lncells != NULL) *ret_Lncells = Lncells;
+  if(ret_Rncells != NULL) *ret_Rncells = Rncells;
+  if(ret_Tncells != NULL) *ret_Tncells = Tncells;
+  if(ret_Mb      != NULL) *ret_Mb      = Mb_needed;
 
   return eslOK;
 }
