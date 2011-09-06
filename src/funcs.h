@@ -485,6 +485,7 @@ extern double cp9_MeanMatchRelativeEntropy(const CM_t *cm);
 
 /* from hmmband.c */
 extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int do_trunc, int debug_level);
+extern int          cp9_HMM2ijBandsORIG(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
 extern int          cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
 extern CP9Bands_t  *AllocCP9Bands(int cm_M, int hmm_M);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
@@ -525,7 +526,8 @@ extern void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr
 extern void         cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc);
 extern CP9Bands_t  *cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf);
 extern void         cp9_CalculateOccupancy(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0);
-extern void         cp9_MarginalCandidates(CM_t *cm, CP9Bands_t *cp9b);
+extern void         cp9_MarginalCandidatesFromOccupancy(CM_t *cm, CP9Bands_t *cp9b);
+extern void         cp9_MarginalCandidatesFromBands(CM_t *cm, CP9Bands_t *cp9b);
 
 /* from cm_p7_modelmaker.c */
 #if 0
