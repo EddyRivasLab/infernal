@@ -247,6 +247,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 
   /* Step 2B: (only if do_trunc) Calculate occupancy and candidate states for marginal alignments */
   if(do_trunc) { 
+    /* xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG */
     cp9_PredictStartAndEndPositions(pmx, cp9b, i0, j0);
     cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b);
   }
@@ -5139,6 +5140,8 @@ cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf)
  * int j0           end of target subsequence (often L, end of dsq)
  *
  * Returns: void
+ *
+ * xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG 
  */
 void
 cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
@@ -5304,6 +5307,8 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
  * CP9Bands_t cp9b: the cp9 bands
  *
  * Returns: void
+ *
+ * xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG 
  */
 void
 cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b)
