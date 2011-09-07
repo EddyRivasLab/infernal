@@ -65,6 +65,12 @@ AllocCP9Bands(int cm_M, int hmm_M)
   esl_vec_FSet(cp9bands->occ, (hmm_M+1), 0.); /* initialize, we'll change this in cp9_Seq2Bands() if do_trunc == TRUE */
   cp9bands->occthresh = DEFAULT_OCCP;           /*0.999*/
 
+  cp9bands->sp1 = cp9bands->sp2 = cp9bands->ep1 = cp9bands->ep2 = -1;
+  cp9bands->thresh1 = DEFAULT_CP9BANDS_THRESH1;
+  cp9bands->thresh2 = DEFAULT_CP9BANDS_THRESH2;
+  cp9bands->Rmarg_imin = cp9bands->Lmarg_jmin = -1;
+  cp9bands->Rmarg_imax = cp9bands->Lmarg_jmax = -2;
+
   ESL_ALLOC(cp9bands->do_J, sizeof(int) * (cm_M));
   ESL_ALLOC(cp9bands->do_L, sizeof(int) * (cm_M));
   ESL_ALLOC(cp9bands->do_R, sizeof(int) * (cm_M));
@@ -253,9 +259,15 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
 
   /* Step 2B: (only if do_trunc) Calculate occupancy and candidate states for marginal alignments */
+#if 0
   if(do_trunc) { 
     cp9_CalculateOccupancy(pmx, cp9b, i0, j0);
     cp9_MarginalCandidatesFromOccupancy(cm, cp9b);
+  }
+#endif
+  if(do_trunc) { 
+    cp9_PredictStartAndEndPositions(pmx, cp9b, i0, j0);
+    cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b);
   }
 
   /* Step 3: HMM bands  ->  CM bands. */
@@ -598,8 +610,8 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
       xset_m[0] = TRUE; 
     }
   }
-  /* mass_i[0] is unchaged because b/c pmx->imx[0][0] is -INFTY, set above */
-  /* mass_d[0] is unchaged because b/c pmx->dmx[0][0] is -INFTY, set above */
+  /* mass_i[0] is unchanged because b/c pmx->imx[0][0] is -INFTY, set above */
+  /* mass_d[0] is unchanged because b/c pmx->dmx[0][0] is -INFTY, set above */
   for (k = 1; k <= M; k++) {
     /* mass_m[k] doesn't change b/c pmx->mmx[0][k] is -INFTY */
     /* mass_i[k] doesn't change b/c pmx->mmx[0][k] is -INFTY */
@@ -1492,6 +1504,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
   /* do_trunc == TRUE related variables */
   int marg_imin_v, marg_imax_v;
   int marg_jmin_v, marg_jmax_v;
+  int marg_imin, marg_imax;
+  int marg_jmin, marg_jmax;
   int final_v;
 
   /* Contract checks */
@@ -1815,7 +1829,23 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
       }
     }
 
-#if 1
+  /* If do_trunc, do a final pass through all states, expanding bands to allow for L and/or R and/or T marginal alignments, if necessary,
+   * cp9b->{L,R}marg_{i,j}{min,max} were defined in cp9_PredictStartAndEndPositions(). 
+   */
+  if(do_trunc) { 
+    for(v = 0; v < cm->M; v++) { 
+      if(cp9b->do_L[v] || cp9b->do_T[v]) { /* allow for left marginal alignment by expanding j band */
+	jmin[v] = (jmin[v] == -1) ? cp9b->Lmarg_jmin : ESL_MIN(jmin[v], cp9b->Lmarg_jmin);
+	jmax[v] = (jmax[v] == -2) ? cp9b->Lmarg_jmax : ESL_MAX(jmax[v], cp9b->Lmarg_jmax);
+      }
+      if(cp9b->do_R[v] || cp9b->do_T[v]) { /* allow for right marginal alignment by expanding i band */
+	imin[v] = (imin[v] == -1) ? cp9b->Rmarg_imin : ESL_MIN(imin[v], cp9b->Rmarg_imin);
+	imax[v] = (imax[v] == -2) ? cp9b->Rmarg_imax : ESL_MAX(imax[v], cp9b->Rmarg_imax);
+      }
+    }
+  }
+	
+#if 0
     /* If do_trunc, do a final pass through all states, expanding bands to allow for L and/or R marginal alignments, if necessary */
     if(do_trunc) { 
       for(nd = cm->nodes-1; nd >= 0; nd--) { 
@@ -1828,13 +1858,6 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  if(cp9b->do_R[v] || cp9b->do_T[v]) determine_marginal_right_i_band(cm, cp9map, cp9b, lpos, rpos, i0, j0, r_nn_i, r_nx_i, &marg_imin_v, &marg_imax_v);
 	  final_v = (nd == cm->nodes-1) ? cm->M-1 : cm->nodemap[nd+1] - 1;
 	  for(; v <= final_v; v++) { /* for all states in this node */
-	    if(cp9b->do_L[v] || cp9b->do_T[v]) { /* allow for left marginal alignment by expanding j band */
-	      jmin[v] = (jmin[v] == -1) ? marg_jmin_v : ESL_MIN(jmin[v], marg_jmin_v);
-	      jmax[v] = (jmax[v] == -2) ? marg_jmax_v : ESL_MAX(jmax[v], marg_jmax_v);
-	    }
-	    if(cp9b->do_R[v] || cp9b->do_T[v]) { /* allow for right marginal alignment by expanding i band */
-	      imin[v] = (imin[v] == -1) ? marg_imin_v : ESL_MIN(imin[v], marg_imin_v);
-	      imax[v] = (imax[v] == -2) ? marg_imax_v : ESL_MAX(imax[v], marg_imax_v);
 	    }
 	  }
 	}
@@ -1880,6 +1903,14 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
    * 4. for MP states, enforce jmin/jmax allow at least 2 residues to be emitted
    */
   for(v = 0; v < cm->M; v++) { 
+    if(! ((imin[v] == -1 && imax[v] == -2) || (imin[v] >= 0 && imax[v] >= 0))) { 
+      printf("v: %4d %4s %2s\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      cm_Fail("uh-oh\n");
+    }
+    if(! ((jmin[v] == -1 && jmax[v] == -2) || (jmin[v] >= 0 && jmax[v] >= 0))) { 
+      printf("v: %4d %4s %2s\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      cm_Fail("uh-oh\n");
+    }
     assert((imin[v] == -1 && imax[v] == -2) || (imin[v] >= 0 && imax[v] >= 0)); 
     assert((jmin[v] == -1 && jmax[v] == -2) || (jmin[v] >= 0 && jmax[v] >= 0)); 
     ESL_DASSERT1(((imin[v] == -1 && imax[v] == -2) || (imin[v] >= 0 && imax[v] >= 0))); 
@@ -6300,6 +6331,176 @@ cp9_CalculateOccupancy(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
 }
 
 
+/* Function: cp9_PredictStartAndEndPositions()
+ * Date:     EPN, Tue Sep  6 11:43:18 2011
+ *
+ * Purpose: Given a filled HMM posterior matrix and a CP9Bands_t
+ *          object with valid pn_{min,max}{m,i,d} bands, determine the
+ *          first and final HMM nodes that have a probability of being
+ *          occupied that exceeds <cp9b->thresh1> and <cp9b->thresh2>.
+ *          Store these four values in:
+ *          <cp9b->sp1>: minimum position that might be used       (p > cp9b->thresh1, typically 0.01)
+ *          <cp9b->sp2>: minimum position that will likely be used (p > cp9b->thresh2, typically 0.99)
+ *          <cp9b->ep1>: maximum position that might be used       (p > cp9b->thresh1, typically 0.01)
+ *          <cp9b->ep2>: maximum position that will likely be used (p > cp9b->thresh2, typically 0.99)
+ *       
+ *          Also determine the CM bands on i and j that 
+ *          will be used to allow for marginal alignments,
+ *          store these in <cp9b->{L,R}marg{i,j}_{min,max}.
+ *            
+ * CP9_MX pmx:      DP matrix for posteriors, already calc'ed
+ * CP9Bands_t cp9b: the cp9 bands
+ * int i0           start of target subsequence (often 1, beginning of dsq)
+ * int j0           end of target subsequence (often L, end of dsq)
+ *
+ * Returns: void
+ */
+void
+cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
+{
+  int i;
+  int k;                                  /* counter over nodes of the model */
+  int L = j0-i0+1;                        /* length of sequence */
+  int iocc;         /* occupancy probability, scaled int form */
+  float pocc;       /* occupancy probability, probability form */
+
+  /* Calculate minimum start positions: */
+  k = 1;
+  cp9b->sp1 = cp9b->sp2 = -1;
+  while(k <= cp9b->hmm_M && (cp9b->sp1 == -1 || cp9b->sp2 == -1)) { 
+    if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) { 
+      printf("k: %4d pocc IRRELEVANT (k unreachable, skipping)\n", k);
+      k++;
+      /* M, I, D states in node k are unreachable (no posterior cells had more than 
+       * cm->tau probability mass), k won't be our sp1 or sp2 */
+    }
+    else { 
+      iocc = -INFTY;
+      for(i = 0; i <= L; i++) {
+	iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][k], pmx->dmx[i][k]));
+      }
+      pocc = Score2Prob(iocc, 1.);
+      printf("k: %4d pocc: %.4f\n", k, pocc);
+      if((cp9b->sp1 == -1) && (pocc > cp9b->thresh1)) cp9b->sp1 = k;
+      if((cp9b->sp2 == -1) && (pocc > cp9b->thresh2)) cp9b->sp2 = k;
+      k++;
+    }
+  }
+  if(k == cp9b->hmm_M+1) { 
+    if(cp9b->sp1 == -1) { cp9b->sp1 = cp9b->hmm_M+1; } /* no node k has occupancy > thresh1, set as out-of-bounds value M+1 */
+    if(cp9b->sp2 == -1) { cp9b->sp2 = cp9b->hmm_M+1; } /* no node k has occupancy > thresh2,  set as out-of-bounds value M+1 */
+  }
+  
+  /* Calculate maximum end positions: */
+  if((cp9b->sp1 == cp9b->hmm_M+1) && 
+     (cp9b->sp2 == cp9b->hmm_M+1)) { 
+    /* we already know that there's no nodes that satisfy either thresh1 or thresh2, we can save time here */
+    cp9b->ep1 = 0;
+    cp9b->ep2 = 0;
+  }
+  else { 
+    cp9b->ep1 = cp9b->ep2 = -1;
+    k = cp9b->hmm_M;
+    while(k >= 1 && (cp9b->ep1 == -1 || cp9b->ep2 == -1)) { 
+      if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) { 
+	printf("k: %4d pocc IRRELEVANT (k unreachable, skipping)\n", k);
+	k--;
+	/* M, I, D states in node k are unreachable (no posterior cells had more than 
+	 * cm->tau probability mass), k won't be our ep1 or ep2 */
+      }
+      else { 
+	iocc = -INFTY;
+	for(i = 0; i <= L; i++) {
+	  iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][k], pmx->dmx[i][k]));
+	}
+	pocc = Score2Prob(iocc, 1.);
+	printf("k: %4d pocc: %.4f\n", k, pocc);
+	if((cp9b->ep1 == -1) && (pocc > cp9b->thresh1)) cp9b->ep1 = k;
+	if((cp9b->ep2 == -1) && (pocc > cp9b->thresh2)) cp9b->ep2 = k;
+	k--;
+      }
+    }
+    if(k == 0) { 
+      if(cp9b->ep1 == -1) { cp9b->ep1 = 0; } /* no node k has occupancy > thresh1, set as out-of-bounds value 0 */
+      if(cp9b->ep2 == -1) { cp9b->ep2 = 0; } /* no node k has occupancy > thresh2, set as out-of-bounds value 0 */
+    }
+  }
+
+  /* determine cp9b->{R,L}marg_{i,j}{min,max}, the i and j bands that will be used to allow for marginal left (Lmarg_j{min,max}
+   * and marginal right (Rmarg_i{min,max} alignment. */
+   /* set cp9b->Rmarg_imin */
+  if(cp9b->sp1 == cp9b->hmm_M+1) { cp9b->Rmarg_imin = i0; }
+  else { 
+    cp9b->Rmarg_imin = INT_MAX;
+    if(cp9b->pn_min_m[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_m[cp9b->sp1]);
+    if(cp9b->pn_min_i[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_i[cp9b->sp1]);
+    if(cp9b->pn_min_d[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_d[cp9b->sp1]);
+    if(cp9b->pn_min_m[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_m[cp9b->sp2]);
+    if(cp9b->pn_min_i[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_i[cp9b->sp2]);
+    if(cp9b->pn_min_d[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_d[cp9b->sp2]);
+    if(cp9b->Rmarg_imin == INT_MAX) cp9b->Rmarg_imin = i0;
+    cp9b->Rmarg_imin = ESL_MAX(i0, cp9b->Rmarg_imin); /* i can't be less than i0 */
+    cp9b->Rmarg_imin = ESL_MIN(j0, cp9b->Rmarg_imin); /* i can't be more than j0 */
+  }
+  
+  /* set cp9b->Rmarg_imax */
+  if(cp9b->sp1 == cp9b->hmm_M+1) { cp9b->Rmarg_imax = j0; }
+  else { 
+    cp9b->Rmarg_imax = INT_MIN;
+    if(cp9b->pn_max_m[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_m[cp9b->sp1]);
+    if(cp9b->pn_max_i[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_i[cp9b->sp1]);
+    if(cp9b->pn_max_d[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_d[cp9b->sp1]);
+    if(cp9b->pn_max_m[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_m[cp9b->sp2]);
+    if(cp9b->pn_max_i[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_i[cp9b->sp2]);
+    if(cp9b->pn_max_d[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_d[cp9b->sp2]);
+    if(cp9b->Rmarg_imax == INT_MIN) cp9b->Rmarg_imax = j0;
+    cp9b->Rmarg_imax = ESL_MAX(i0, cp9b->Rmarg_imax); /* i can't be less than i0 */
+    cp9b->Rmarg_imax = ESL_MIN(j0, cp9b->Rmarg_imax); /* i can't be more than j0 */
+  }
+
+  /* set cp9b->Lmarg_jmin */
+  if(cp9b->ep1 == 0) { cp9b->Lmarg_jmin = i0-1; }
+  else { 
+    cp9b->Lmarg_jmin = INT_MAX;
+    if(cp9b->pn_min_m[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_m[cp9b->ep1]);
+    if(cp9b->pn_min_i[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_i[cp9b->ep1]);
+    if(cp9b->pn_min_d[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_d[cp9b->ep1]-1); /* off-by-one with deletes in HMM vs CM */
+    if(cp9b->pn_min_m[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_m[cp9b->ep2]);
+    if(cp9b->pn_min_i[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_i[cp9b->ep2]);
+    if(cp9b->pn_min_d[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_d[cp9b->ep2]-1); /* off-by-one with deletes in HMM vs CM */
+    if(cp9b->Lmarg_jmin == INT_MAX) cp9b->Lmarg_jmin = i0;
+    cp9b->Lmarg_jmin = ESL_MAX(i0-1, cp9b->Lmarg_jmin); /* j can't be less than i0-1 */
+    cp9b->Lmarg_jmin = ESL_MIN(j0,   cp9b->Lmarg_jmin); /* j can't be more than j0 */
+  }
+  
+  /* set cp9b->Lmarg_jmax */
+  if(cp9b->ep1 == 0) { cp9b->Lmarg_jmax = j0; }
+  else { 
+    cp9b->Lmarg_jmax = INT_MIN;
+    if(cp9b->pn_max_m[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_m[cp9b->ep1]);
+    if(cp9b->pn_max_i[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_i[cp9b->ep1]);
+    if(cp9b->pn_max_d[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_d[cp9b->ep1]-1); /* off-by-one with deletes in HMM vs CM */
+    if(cp9b->pn_max_m[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_m[cp9b->ep2]);
+    if(cp9b->pn_max_i[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_i[cp9b->ep2]);
+    if(cp9b->pn_max_d[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_d[cp9b->ep2]-1); /* off-by-one with deletes in HMM vs CM */
+    if(cp9b->Lmarg_jmax == INT_MIN) cp9b->Lmarg_jmax = j0;
+    cp9b->Lmarg_jmax = ESL_MAX(i0-1, cp9b->Lmarg_jmax); /* j can't be less than i0-1 */
+    cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax); /* j can't be more than j0 */
+  }
+  
+  printf("HEYA Returning from cp9_PredictStartAndEndPositions():\n\t");
+  printf("sp1: %4d\n\t", cp9b->sp1);
+  printf("sp2: %4d\n\t", cp9b->sp2);
+  printf("ep2: %4d\n\t", cp9b->ep2);
+  printf("ep1: %4d\n\t", cp9b->ep1);
+  printf("Ljn: %4d\n\t", cp9b->Lmarg_jmin);
+  printf("Ljx: %4d\n\t", cp9b->Lmarg_jmax);
+  printf("Rin: %4d\n\t", cp9b->Rmarg_imin);
+  printf("Rix: %4d\n\n", cp9b->Rmarg_imax);
+
+  return;
+}
+
 /* Function: cp9_MarginalCandidatesFromOccupancy()
  * Date:     EPN, Fri Sep  2 12:46:15 2011
  *
@@ -6363,6 +6564,63 @@ cp9_MarginalCandidatesFromOccupancy(CM_t *cm, CP9Bands_t *cp9b)
     }
     else { /* not a B state, T matrix not used */
       cp9b->do_T[v] = FALSE; 
+    }
+  }
+
+  cp9b->do_J[0] = TRUE; /* the ROOT_S state is special, all local or truncated hits will be rooted here */
+
+  return;
+}
+
+
+/* Function: cp9_MarginalCandidatesFromStartEndPositions()
+ * Date:     EPN, Tue Sep  6 14:50:16 2011
+ *
+ * Purpose: Given a CP9Bands_t object with valid sp1, sp2, ep1, and
+ *          ep2 values from cp9_PredictStartAndEndPositions(),
+ *          determine for each CM state v, whether a joint (J), left
+ *          marginal (L) right marginal (R), or terminal marginal
+ *          alignment that includes v should be allowed. For any
+ *          disallowed type of alignment we will be able to skip the
+ *          corresponding calculations in a trCYK/trInside/trOutside
+ *          DP recursion.  And we won't have to allocate memory for
+ *          that state in the corresponding (J,L,R,T) DP matrix.
+ *
+ * CM_t       cm:   the model
+ * CP9Bands_t cp9b: the cp9 bands
+ *
+ * Returns: void
+ */
+void
+cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b)
+{
+  int v, p;
+  int nd;
+  int lpos = 1;
+  int rpos = cm->clen;
+  
+  for(v = 0; v < cp9b->cm_M; v++) { 
+    nd = cm->ndidx[v];
+    /* Careful, emitmap is off-by-one for our purposes for lpos if v is not MATP_MP or MATL_ML, and rpos if v is not MATP_MP or MATR_MR */
+    lpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) ? cm->emap->lpos[nd] : cm->emap->lpos[nd]+1;
+    rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) ? cm->emap->rpos[nd] : cm->emap->rpos[nd]-1;
+
+    /* below: 'possibly' means probability > cp9b->thresh1 (typically 0.01) */
+    /*        'probably' means probability > cp9b->thresh2 (typically 0.99) */
+
+    /* do_J if both lpos and rpos are possibly used */
+    cp9b->do_J[v] = ((lpos >= cp9b->sp1) && (rpos <= cp9b->ep1)) ? TRUE : FALSE;
+
+    /* do_L if lpos is possibly used and rpos is probably not used */
+    cp9b->do_L[v] = ((lpos >= cp9b->sp1 && lpos <= cp9b->ep1) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
+
+    /* do_R if rpos is possibly used and lpos is probably not used */
+    cp9b->do_R[v] = ((rpos <= cp9b->ep1 && rpos >= cp9b->sp1) && (lpos < cp9b->sp2)) ? TRUE : FALSE;
+
+    cp9b->do_T[v] = FALSE; /* possibly changed below for B_st */
+    if(cm->sttype[v] == B_st) { 
+      /* do_T if lpos and rpos are probably not used */
+      cp9b->do_T[v] = ((lpos < cp9b->sp2) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
     }
   }
 

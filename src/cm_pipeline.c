@@ -1697,6 +1697,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   CM_TOPHITS      *tmp_hitlist = NULL;     /* hitlist for current sequence, used only if do_final_greedy is TRUE */
   int              nhit;                   /* number of hits reported */
   double           save_tau;               /* CM's tau upon entering function */
+  float            save_cp9b_thresh1;      /* cm->cp9b's thresh1 upon entering function */
+  float            save_cp9b_thresh2;      /* cm->cp9b's thresh2 upon entering function */
   int64_t          cyk_envi, cyk_envj;     /* cyk_envi..cyk_envj is new envelope as defined by CYK hits */
   float            cyk_env_cutoff;         /* bit score cutoff for envelope redefinition */
   int              do_hbanded_filter_scan; /* use HMM bands for filter stage? */
@@ -1746,7 +1748,9 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   }
 
   cm = *opt_cm;
-  save_tau = cm->tau;
+  save_tau          = cm->tau;
+  save_cp9b_thresh1 = cm->cp9b->thresh1;
+  save_cp9b_thresh2 = cm->cp9b->thresh2;
   do_final_greedy = (pli->final_cm_search_opts & CM_SEARCH_CMGREEDY) ? TRUE : FALSE;
 
   nhit = hitlist->N;
@@ -1762,7 +1766,9 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   
 
   for (i = 0; i < nenv; i++) {
-    cm->tau = save_tau;
+    cm->tau           = save_tau;
+    cm->cp9b->thresh1 = save_cp9b_thresh1;
+    cm->cp9b->thresh2 = save_cp9b_thresh2;
 #if DOPRINT
     printf("\nSURVIVOR Envelope %5d [%10ld..%10ld] being passed to CYK.\n", i, es[i], ee[i]);
 #endif
@@ -1799,6 +1805,10 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	  if(cm->tau > 0.01)               break; /* our bands have gotten too tight, break out of while(1) */
 	  /* printf("CYK 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);*/
 	  cm->tau *= pli->xtau;
+	  /* cm->cp9b->thresh1 *= 2.; */
+	  /* cm->cp9b->thresh2 -= (1.0-cp9b->thresh2); */
+	  /* cm->cp9b->thresh1 = ESL_MIN(0.25, cm->cp9b->thresh1); */
+	  /* cm->cp9b->thresh2 = ESL_MAX(0.25, cm->cp9b->thresh2); */
 	}	  
 	/* printf("CYK 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
 

@@ -46,6 +46,9 @@
 #define V1P0_NULL3_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null3 model for infernal versions 0.56 through 1.0.2 */
 #define DEFAULT_OCCP             0.999   
 #define DEFAULT_OCCP_IGNORE      0.000001   
+#define DEFAULT_CP9BANDS_THRESH1 0.01
+#define DEFAULT_CP9BANDS_THRESH2 0.99
+
 
 /* max number of parititons for cmcalibrate */
 #define MAX_PARTITIONS 20
@@ -716,9 +719,28 @@ typedef struct cp9bands_s {
    * This information is used to minimize band expansion for truncated CYK/Inside/Outside (see cp9_HMM2ijBands()).
    * <occ> is filled by cp9_CalculateOccupancy(). 
    */
-  float *occ;                  /* [1..k..hmm_M] probability node k's match or delete state is occupied */
-  float  occthresh;            /* probability threshold for occ array, if occ[k] > occp, we don't  
-				* consider marginal parsetrees that exclude position k */
+  float *occ;                 /* [1..k..hmm_M] probability node k's match or delete state is occupied */
+  float  occthresh;           /* probability threshold for occ array, if occ[k] > occp, we don't  
+			       * consider marginal parsetrees that exclude position k */
+
+  /* Predicted first and final consensus positions that might be
+   * (maybe_-prefixed) and are likely to be (likely_-prefixed) involved
+   * in the parse of the sequence based on the HMM posterior
+   * probabilities. These are used to determine what types of marginal
+   * alignments should be allowed from each state (the do_{J,L,R,T}
+   * arrays) */
+  int sp1;                    /* minimum cpos for which occupancy probability exceeds maybe_thresh */
+  int ep1;                    /* maximum cpos for which occupancy probability exceeds maybe_thresh */
+  int sp2;                    /* minimum cpos for which occupancy probability exceeds likely_thresh */
+  int ep2;                    /* maximum cpos for which occupancy probability exceeds likely_thresh */
+
+  float thresh1;              /* probability threshold for sp1, ep1 (typically 0.01) */
+  float thresh2;              /* probability threshold for sp2, ep2 (typically 0.99) */
+
+  int Rmarg_imin;             /* for Right marginal alignments, minimum target sequence position that can align to CM as i */
+  int Rmarg_imax;             /* for Right marginal alignments, maximum target sequence position that can align to CM as i */ 
+  int Lmarg_jmin;             /* for Left  marginal alignments, minimum target sequence position that can align to CM as j */
+  int Lmarg_jmax;             /* for Left  marginal alignments, maximum target sequence position that can align to CM as j */
 
   /* do_{J,L,R,T} [0..cm_M-1] for trCYK/trInside/trOutside, must we calculate {J,L,R,T} DP matrix cells for state v? */
   int *do_J;                  /* [0..v..cm_M-1] TRUE to calculate J DP matrix cells for state v, FALSE not to */

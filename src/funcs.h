@@ -526,8 +526,9 @@ extern void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr
 extern void         cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc);
 extern CP9Bands_t  *cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf);
 extern void         cp9_CalculateOccupancy(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0);
+extern void         cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0);
 extern void         cp9_MarginalCandidatesFromOccupancy(CM_t *cm, CP9Bands_t *cp9b);
-extern void         cp9_MarginalCandidatesFromBands(CM_t *cm, CP9Bands_t *cp9b);
+extern void         cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b);
 
 /* from cm_p7_modelmaker.c */
 #if 0

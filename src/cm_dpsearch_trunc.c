@@ -2884,6 +2884,7 @@ static ESL_OPTIONS options[] = {
   { "--cp9noel", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "-g",           "turn OFF local ends in cp9 HMMs", 2 },
   { "--cp9gloc", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "-g,--cp9noel", "configure CP9 HMM in glocal mode", 2 },
   { "--occthresh",eslARG_REAL,"0.999", NULL, NULL,  NULL,  NULL,  NULL, "set occupancy probability threshold to <x>", 2 },
+  { "--sizelimit",eslARG_REAL, "128.", NULL, "x>0", NULL,  NULL,  NULL, "set maximum allowed size of HB matrices to <x> Mb", 2 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -2915,6 +2916,9 @@ main(int argc, char **argv)
   CMConsensus_t  *cons  = NULL;
   Parsetree_t    *tr    = NULL;
   CM_TR_HB_MX    *trhbmx= NULL;
+  float           size_limit = esl_opt_GetReal(go, "--sizelimit");
+  float           save_tau, save_cp9b_thresh1, save_cp9b_thresh2;
+  float           hbmx_Mb, trhbmx_Mb;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
@@ -3052,21 +3056,36 @@ main(int argc, char **argv)
   }
   CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &cons);
   
+  save_tau = cm->tau;
+  save_cp9b_thresh1 = cm->cp9b->thresh1;
+  save_cp9b_thresh2 = cm->cp9b->thresh2;
+
   for (i = 0; i < N; i++)
     {
       L = seqs_to_aln->sq[i]->n;
       dsq = seqs_to_aln->sq[i]->dsq;
       cm->search_opts &= ~CM_SEARCH_INSIDE;
-      
+
+      cm->tau = save_tau;
+      cm->cp9b->thresh1 = save_cp9b_thresh1;
+      cm->cp9b->thresh2 = save_cp9b_thresh2;
 
       if(esl_opt_GetBoolean(go, "--hb") || esl_opt_GetBoolean(go, "--onlyhb")) { 
 	cm->align_opts  |= CM_ALIGN_HBANDED;
 
 	esl_stopwatch_Start(w);
-	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
-				   TRUE,  /* doing search? */
-				   FALSE,  /* doing trCYK/Inside/Outside? */
-				   0)) != eslOK) cm_Fail(errbuf);
+	while(1) { 
+	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
+				     TRUE,  /* doing search? */
+				     FALSE,  /* doing trCYK/Inside/Outside? */
+				     0)) != eslOK) cm_Fail(errbuf);
+	  if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, &hbmx_Mb)) != eslOK) return status; 
+	  if(hbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */
+	  if(cm->tau > 0.01)         cm_Fail("tau reached limit, unable to create matrix smaller than size limit of %.2f Mb\n", size_limit);
+	  printf("  CYK 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);
+	  cm->tau *= 2.;
+	}
+
 	esl_stopwatch_Stop(w);
 	printf("%4d %-30s %17s", i+1, "HMM Band calc:", "");
 	esl_stopwatch_Display(stdout, w, "CPU time: ");
@@ -3074,16 +3093,32 @@ main(int argc, char **argv)
 	PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);
 
 	esl_stopwatch_Start(w);
-	if((status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, cm->hbmx, 1028., 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, cm->hbmx, size_limit, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScanHB(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	esl_stopwatch_Start(w);
-	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
-				   TRUE,  /* doing search? */
-				   TRUE,  /* doing trCYK/Inside/Outside? */
-				   0)) != eslOK) cm_Fail(errbuf);
+	/* Calculate HMM bands. We'll tighten tau and recalculate bands until 
+	 * the resulting HMM banded matrix is under our size limit.
+	 */
+	cm->tau = save_tau;
+	while(1) { 
+	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
+				     TRUE,  /* doing search? */
+				     TRUE,  /* doing trCYK/Inside/Outside? */
+				     0)) != eslOK) cm_Fail(errbuf);
+	  if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, NULL, NULL, NULL, &trhbmx_Mb)) != eslOK) return status; 
+	  if(trhbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */
+	  if(cm->tau > 0.01)         cm_Fail("tau reached limit, unable to create matrix smaller than size limit of %.2f Mb\n", size_limit);
+	  printf("TrCYK 0 tau: %10g  thresh1: %10g  thresh2: %10g  trhbmx_Mb: %10.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, trhbmx_Mb);
+	  cm->tau *= 2.;
+	  cm->cp9b->thresh1 *= 2.; 
+	  cm->cp9b->thresh2 -= (1.0-cm->cp9b->thresh2); 
+	  cm->cp9b->thresh1 = ESL_MIN(0.25, cm->cp9b->thresh1);
+	  cm->cp9b->thresh2 = ESL_MAX(0.25, cm->cp9b->thresh2);
+	}	  
+	printf("TrCYK 1 tau: %10g  thresh1: %10g  thresh2: %10g  trhbmx_Mb: %10.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, trhbmx_Mb);
 	esl_stopwatch_Stop(w);
 	printf("%4d %-30s %17s", i+1, "HMM Band calc:", "");
 	esl_stopwatch_Display(stdout, w, "CPU time: ");
@@ -3093,7 +3128,7 @@ main(int argc, char **argv)
 	cm_tr_hb_mx_Destroy(trhbmx);
 	trhbmx = cm_tr_hb_mx_Create(cm);
 	esl_stopwatch_Start(w);
-	if((status = FastTrCYKScanHBSkipSlow(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, trhbmx, 1028., 0.,  NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = FastTrCYKScanHBSkipSlow(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastTrCYKScanHBSkipSlow(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
