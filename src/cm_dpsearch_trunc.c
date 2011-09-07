@@ -32,6 +32,8 @@
 #include "funcs.h"
 #include "structs.h"
 
+#define OLDCODE 0
+#define NEWCODE 0
 #define PRINTFALPHA 0
 #define PRINTIALPHA 0
 
@@ -1152,7 +1154,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   return 0.; /* NEVERREACHED */
 }
 
-/* Function: FastTrCYKScanHBSkipSlow()
+/* Function: TrCYKScanHB()
  * Incept:   EPN, Thu Aug 25 15:19:28 2011
  *
  * Purpose:  An HMM banded version of a scanning TrCYK algorithm. Takes
@@ -1160,6 +1162,16 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
  *           only cells within the bands allocated.
  *           (different than other (non-HB) scanning function's convention 
  *            of [j][v][d]).
+ *
+ *           This version is not prefixed with 'Fast' because I didn't 
+ *           successfully optimize it. There are if statements such as
+ *           (do_J_v) in the lowest (for d) loops of the recursion which
+ *           seem like they should be able to be changed to get a faster
+ *           implementation. However, I was unsuccessful in making it
+ *           noticeably faster. It may be possible to accelerate with
+ *           a significant overhaul, but since it is not the rate limiting
+ *           step currently (CP9 band determination is about 5-10X slower)
+ *           there's no motivation to do that now.
  *
  * Args:     cm        - the model    [0..M-1]
  *           sq        - the sequence [1..L]   
@@ -1181,8 +1193,8 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
  *          <ret_sc>: score of the best hit.
  */
 int
-FastTrCYKScanHBSkipSlow(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
-			CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc)
+TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
+	    CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc)
 {
   int      status;
   GammaHitMx_t *gamma;  /* semi-HMM for hit resoultion */
@@ -1325,7 +1337,7 @@ FastTrCYKScanHBSkipSlow(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, fl
     nd = cm->ndidx[v];
     lpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) ? cm->emap->lpos[nd] : cm->emap->lpos[nd]+1;
     rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) ? cm->emap->rpos[nd] : cm->emap->rpos[nd]-1;
-    printf("v: %4d %4s %2s [%4d..%4d] (%6.4f..%6.4f) J: %d L: %d R: %d T: %d\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), lpos, rpos, cp9b->occ[lpos], cp9b->occ[rpos], do_J_v, do_L_v, do_R_v, do_T_v);
+    /*printf("v: %4d %4s %2s [%4d..%4d] (%6.4f..%6.4f) J: %d L: %d R: %d T: %d\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), lpos, rpos, cp9b->occ[lpos], cp9b->occ[rpos], do_J_v, do_L_v, do_R_v, do_T_v);*/
 
     /* re-initialize the J deck if we can do a local end from v */
     if(do_J_v) { 
@@ -1681,7 +1693,7 @@ FastTrCYKScanHBSkipSlow(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, fl
 	    if(d >= 2) { 
 	      if(do_J_v) Jalpha[v][jp_v][dp_v] += esc_v[dsq[i]*cm->abc->Kp+dsq[j]];
 	      if(do_L_v) Lalpha[v][jp_v][dp_v] += lmesc_v[dsq[i]];
-	      if(do_R_v) Ralpha[v][jp_v][dp_v] += rmesc_v[dsq[j]];;
+	      if(do_R_v) Ralpha[v][jp_v][dp_v] += rmesc_v[dsq[j]];
 	    }
 	    else { 
 	      if(do_J_v) Jalpha[v][jp_v][dp_v] = IMPOSSIBLE;
@@ -1965,104 +1977,91 @@ FastTrCYKScanHBSkipSlow(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, fl
     }
   }
 
-  /* consider local hits */
-  v = 0;
-  ESL_DASSERT1((cp9b->do_J[0] == TRUE));
-  for (j = jmin[v]; j <= jmax[v]; j++) {
-    jp_v = j - jmin[v];
-    esl_vec_ISet(bestr, (W+1), 0); /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
-    if (cm->flags & CMH_LOCAL_BEGIN) {
-      for (y = 1; y < cm->M; y++) {
-	do_J_y = cp9b->do_J[y];
-	if(NOT_IMPOSSIBLE(cm->beginsc[y])  && /* local begin is possible into y */
-	   (j >= jmin[y] && j <= jmax[y])  && /* j is within state y's j band */
-	   (do_J_y)) {                        /* J matrix is valid for state y */
-	  jp_y = j - jmin[y];
-	  dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
-	  dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
-	  dp_v = dn - hdmin[v][jp_v];
-	  dp_y = dn - hdmin[y][jp_y];
-	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	    sc = Jalpha[y][jp_y][dp_y] + cm->beginsc[y];
-	    if(sc > Jalpha[0][jp_v][dp_v]) {
-	      Jalpha[0][jp_v][dp_v] = sc;
-	      bestr[d] = y;
-	    }
-	  }
-	}
-      } /* end of for(y = 1; y < cm->M; y++) */
-    } /* end of if(cm->flags & CMH_LOCAL_BEGIN */
-  }    
-
+  /* Finally, allow for local and truncated hits */
   esl_stopwatch_Start(w);
-  /* Finally, allow for truncated hits */
   v = 0;
   assert(cp9b->do_J[0] == TRUE);
   ESL_DASSERT1((cp9b->do_J[0] == TRUE));
   for (j = jmin[v]; j <= jmax[v]; j++) {
     jp_v = j - jmin[v];
+    esl_vec_ISet(bestr, (W+1), 0);                /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
     esl_vec_ISet(bestmode, (W+1), CM_HIT_MODE_J); /* init bestmode to CM_HIT_MODE_J */
     for (y = 1; y < cm->M; y++) {
-      do_J_y = cp9b->do_J[y];
-      do_L_y = cp9b->do_L[y];
-      do_R_y = cp9b->do_R[y];
-      do_T_y = cp9b->do_T[y];
-      if((j >= jmin[y] && j <= jmax[y]) &&         /* j is within state y's band */
-	 (do_J_y || do_L_y || do_R_y || do_T_y)) { /* J, L, R, or T matrix is valid for state y */
+      if(j >= jmin[y] && j <= jmax[y]) {  /* j is within state y's band */
 	jp_y = j - jmin[y];
-	if(cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st) { 
-	  /*if(NOT_IMPOSSIBLE(cm->beginsc[y])) {*/
-	  /*trunc_penalty = cm->beginsc[y];*/
-	  dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
-	  dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
+	dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
+	dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
+	if(cp9b->do_J[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	    Jsc = do_J_y ? Jalpha[y][jp_y][dp_y] + trunc_penalty : IMPOSSIBLE; 
-	    Lsc = do_L_y ? Lalpha[y][jp_y][dp_y] + trunc_penalty : IMPOSSIBLE; 
-	    Rsc = do_R_y ? Ralpha[y][jp_y][dp_y] + trunc_penalty : IMPOSSIBLE; 
+	    Jsc = Jalpha[y][jp_y][dp_y] + trunc_penalty;
 	    if(Jsc > Jalpha[0][jp_v][dp_v]) { 
 	      Jalpha[0][jp_v][dp_v] = Jsc;
 	      bestr[d] = y;
 	      /* bestmode[d] remains CM_HIT_MODE_J */
 	    }
-	    if(Lsc > Jalpha[0][jp_v][dp_v] && (cm->sttype[y] != MR_st)) { 
+	  }
+	}
+	if(cp9b->do_J[y] && (cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[y])) { 
+	  dp_v = dn - hdmin[v][jp_v];
+	  dp_y = dn - hdmin[y][jp_y];
+	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
+	    Jsc = Jalpha[y][jp_y][dp_y] + cm->beginsc[y];
+	    if(Jsc > Jalpha[0][jp_v][dp_v]) { 
+	      Jalpha[0][jp_v][dp_v] = Jsc;
+	      bestr[d] = y;
+	      /* bestmode[d] remains CM_HIT_MODE_J */
+	    }
+	  }
+	}
+	if(cp9b->do_L[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st)) { 
+	  dp_v = dn - hdmin[v][jp_v];
+	  dp_y = dn - hdmin[y][jp_y];
+	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
+	    Lsc = Lalpha[y][jp_y][dp_y] + trunc_penalty;
+	    if(Lsc > Jalpha[0][jp_v][dp_v]) { 
 	      Jalpha[0][jp_v][dp_v] = Lsc;
-	      bestr[d]    = y;
+	      bestr[d] = y;
 	      bestmode[d] = CM_HIT_MODE_L;
 	    }
-	    if(Rsc > Jalpha[0][jp_v][dp_v] && (cm->sttype[y] != ML_st)) { 
+	  }
+	}
+	if(cp9b->do_R[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st)) { 
+	  dp_v = dn - hdmin[v][jp_v];
+	  dp_y = dn - hdmin[y][jp_y];
+	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
+	    Rsc = Ralpha[y][jp_y][dp_y] + trunc_penalty;
+	    if(Rsc > Jalpha[0][jp_v][dp_v]) { 
 	      Jalpha[0][jp_v][dp_v] = Rsc;
-	      bestr[d]    = y;
+	      bestr[d] = y;
 	      bestmode[d] = CM_HIT_MODE_R;
 	    }
 	  }
 	}
-	if(cm->sttype[y] == B_st && do_T_y) { 
-	  dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
-	  dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
+	if(cp9b->do_T[y]) { /* will only be true for B states */
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	    Tsc = Talpha[y][jp_y][dp_y] + trunc_penalty; 
-	    if(Tsc > Jalpha[0][jp_v][dp_v]) {
-	      Jalpha[0][jp_v][dp_v] = Tsc;
+	    Tsc = Talpha[y][jp_y][dp_y] + trunc_penalty;
+	    if(Tsc > Jalpha[0][jp_v][dp_v]) { 
+	      Jalpha[0][jp_v][dp_v] = Rsc;
 	      bestr[d] = y;
-	      bestmode[d] = CM_HIT_MODE_T; 
+	      bestmode[d] = CM_HIT_MODE_T;
 	    }
 	  }
 	}
       }
     }
+    /* report all hits with valid d for this j, only if hitlist != NULL */
+    if(hitlist != NULL) { 
+      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, Jalpha[0][jp_v], hdmin[0][jp_v], hdmax[0][jp_v], TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+    }
   }
   esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, " Considering truncated hits time: ");
+  esl_stopwatch_Display(stdout, w, " HEYA2 Considering truncated and local hits time: ");
 
     
-  /* report all hits with valid d for this j, only if hitlist != NULL */
-  if(hitlist != NULL) { 
-    if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, Jalpha[0][jp_v], hdmin[0][jp_v], hdmax[0][jp_v], TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
-  }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to hitlist */
   if(hitlist != NULL) { 
     for(j = jmax[v]+1; j <= j0; j++) {
@@ -2126,7 +2125,6 @@ FastTrCYKScanHBSkipSlow(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, fl
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* never reached */
 }
-
 
 /*****************************************************************
  *   1. TrScanMatrix_t data structure functions,
@@ -2883,7 +2881,8 @@ static ESL_OPTIONS options[] = {
   { "--tau",     eslARG_REAL,   "5e-6",NULL, "0<x<1",NULL, NULL, NULL, "set tail loss prob for --hb to <x>", 2 },
   { "--cp9noel", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "-g",           "turn OFF local ends in cp9 HMMs", 2 },
   { "--cp9gloc", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "-g,--cp9noel", "configure CP9 HMM in glocal mode", 2 },
-  { "--occthresh",eslARG_REAL,"0.999", NULL, NULL,  NULL,  NULL,  NULL, "set occupancy probability threshold to <x>", 2 },
+  { "--thresh1", eslARG_REAL,  "0.01", NULL, NULL,  NULL,  NULL,  NULL, "set HMM bands thresh1 to <x>", 2 },
+  { "--thresh2", eslARG_REAL,  "0.99", NULL, NULL,  NULL,  NULL,  NULL, "set HMM bands thresh2 to <x>", 2 },
   { "--sizelimit",eslARG_REAL, "128.", NULL, "x>0", NULL,  NULL,  NULL, "set maximum allowed size of HB matrices to <x> Mb", 2 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -2952,9 +2951,8 @@ main(int argc, char **argv)
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, " CPU time: ");
 
-  if (esl_opt_IsUsed(go, "--occthresh")) { 
-    cm->cp9b->occthresh = esl_opt_GetReal(go, "--occthresh");
-  }
+  if (esl_opt_IsUsed(go, "--thresh1")) { cm->cp9b->thresh1 = esl_opt_GetReal(go, "--thresh1"); }
+  if (esl_opt_IsUsed(go, "--thresh2")) { cm->cp9b->thresh2 = esl_opt_GetReal(go, "--thresh2"); }
 
   if (esl_opt_GetBoolean(go, "--noqdb")) { 
     if(cm->dmin != NULL) { free(cm->dmin); cm->dmin = NULL; }
@@ -3130,6 +3128,41 @@ main(int argc, char **argv)
 	esl_stopwatch_Start(w);
 	if((status = FastTrCYKScanHBSkipSlow(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastTrCYKScanHBSkipSlow(): ", sc);
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+	esl_stopwatch_Start(w);
+	/* Calculate HMM bands. We'll tighten tau and recalculate bands until 
+	 * the resulting HMM banded matrix is under our size limit.
+	 */
+	cm->tau = save_tau;
+	while(1) { 
+	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
+				     TRUE,  /* doing search? */
+				     TRUE,  /* doing trCYK/Inside/Outside? */
+				     0)) != eslOK) cm_Fail(errbuf);
+	  if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, NULL, NULL, NULL, &trhbmx_Mb)) != eslOK) return status; 
+	  if(trhbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */
+	  if(cm->tau > 0.01)         cm_Fail("tau reached limit, unable to create matrix smaller than size limit of %.2f Mb\n", size_limit);
+	  printf("TrCYK 0 tau: %10g  thresh1: %10g  thresh2: %10g  trhbmx_Mb: %10.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, trhbmx_Mb);
+	  cm->tau *= 2.;
+	  cm->cp9b->thresh1 *= 2.; 
+	  cm->cp9b->thresh2 -= (1.0-cm->cp9b->thresh2); 
+	  cm->cp9b->thresh1 = ESL_MIN(0.25, cm->cp9b->thresh1);
+	  cm->cp9b->thresh2 = ESL_MAX(0.25, cm->cp9b->thresh2);
+	}	  
+	printf("TrCYK 1 tau: %10g  thresh1: %10g  thresh2: %10g  trhbmx_Mb: %10.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, trhbmx_Mb);
+	esl_stopwatch_Stop(w);
+	printf("%4d %-30s %17s", i+1, "HMM Band calc:", "");
+	esl_stopwatch_Display(stdout, w, "CPU time: ");
+
+	PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);
+
+	cm_tr_hb_mx_Destroy(trhbmx);
+	trhbmx = cm_tr_hb_mx_Create(cm);
+	esl_stopwatch_Start(w);
+	if((status = FastTrCYKScanHBSkipFast(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits ", (i+1), "FastTrCYKScanHBSkipFast(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
       }

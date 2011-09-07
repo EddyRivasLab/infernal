@@ -44,8 +44,6 @@
 #define DEFAULT_NULL3_OMEGA      0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
 #define V1P0_NULL2_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null2 model for infernal versions 0.56 through 1.0.2 */
 #define V1P0_NULL3_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null3 model for infernal versions 0.56 through 1.0.2 */
-#define DEFAULT_OCCP             0.999   
-#define DEFAULT_OCCP_IGNORE      0.000001   
 #define DEFAULT_CP9BANDS_THRESH1 0.01
 #define DEFAULT_CP9BANDS_THRESH2 0.99
 
@@ -714,14 +712,6 @@ typedef struct cp9bands_s {
   int     *isum_pn_m;         /* [0..k..hmm_M] sum over i of log post probs from post->mmx[i][k]*/
   int     *isum_pn_i;         /* [0..k..hmm_M] sum over i of log post probs from post->imx[i][k]*/
   int     *isum_pn_d;         /* [0..k..hmm_M] sum over i of log post probs from post->dmx[i][k]*/
-
-  /* Probability that each HMM node (consensus position) is occupied (either match or delete state) 
-   * This information is used to minimize band expansion for truncated CYK/Inside/Outside (see cp9_HMM2ijBands()).
-   * <occ> is filled by cp9_CalculateOccupancy(). 
-   */
-  float *occ;                 /* [1..k..hmm_M] probability node k's match or delete state is occupied */
-  float  occthresh;           /* probability threshold for occ array, if occ[k] > occp, we don't  
-			       * consider marginal parsetrees that exclude position k */
 
   /* Predicted first and final consensus positions that might be
    * (maybe_-prefixed) and are likely to be (likely_-prefixed) involved
