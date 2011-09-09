@@ -129,6 +129,7 @@ fast_tr_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, floa
   float    tsc;                /* a transition score */
   int      yvalid_idx;         /* for keeping track of which children are valid */
   int      yvalid_ct;          /* for keeping track of which children are valid */
+  /* variables related to truncated alignment (not in fast_cyk_align_hb() */
   float    trunc_penalty = 0.; /* penalty in bits for a truncated hit */
   int      do_J_v, do_J_y, do_J_z; /* is J matrix valid for state v, y, z? */
   int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
@@ -147,7 +148,6 @@ fast_tr_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, floa
   int     *jmax  = cp9b->jmax;
   int    **hdmin = cp9b->hdmin;
   int    **hdmax = cp9b->hdmax;
-
 
   /* the DP matrix */
   float ***Jalpha  = mx->Jdp; /* pointer to the Jalpha DP matrix */
@@ -169,7 +169,7 @@ fast_tr_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, floa
   b   = -1;
   bsc = IMPOSSIBLE;
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
-				/* if caller didn't give us a deck pool, make one */
+
   /* grow the matrices based on the current sequence and bands */
   if((status = cm_tr_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit))          != eslOK) return status;
   if((status = cm_tr_hb_shadow_mx_GrowTo(cm, shmx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
@@ -958,7 +958,7 @@ fast_tr_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, floa
 	    bmode = TRMODE_R;
 	  }
 	}	    
-	/* check for truncated hit in R matrix */
+	/* check for truncated hit in T matrix */
 	if(do_T_v) { 
 	  if (Talpha[v][jp_v][Wp] + trunc_penalty > bsc) { 
 	    b     = v;
@@ -1041,7 +1041,7 @@ fast_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, Parsetree_t *tr,
   float     sc;			/* the score of the CYK alignment */
   ESL_STACK *pda_i;             /* stack that tracks bifurc parent of a right start */
   ESL_STACK *pda_c;             /* stack that tracks mode of bifurc parent of a right start */
-  int       v,j,d,i,z;		/* indices for state, j, subseq len */
+  int       v,j,d,i;		/* indices for state, seq positions */
   int       k;			/* right subtree len for bifurcs */
   int       y, yoffset;         /* child state y, it's offset */
   int       bifparent;          /* B_st parent */
@@ -1049,7 +1049,6 @@ fast_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, Parsetree_t *tr,
   float     bsc;                /* local begin score */
   int       jp_v;               /* j-jmin[v] for current j, and current v */
   int       dp_v;               /* d-hdmin[v][jp_v] for current j, current v, current d*/
-  int       jp_z;               /* j-jmin[z] for current j, and current z */
   char      mode;               /* current truncation mode: TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T */
   char      prvmode, nxtmode;   /* previous, next truncation mode */
   char      bmode;              /* mode for best truncated CYK alignment */
@@ -1456,6 +1455,778 @@ FastTrAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int i0, i
   return eslOK;
 }
 
+
+/* Function: TrInsideAlignHB()
+ * Date:     EPN, Thu Nov  8 18:24:41 2007
+ *
+ * Purpose: Run the truncated inside algorithm on a target sequence
+ *           using bands in the j and d dimensions of the DP
+ *           matrix. Bands were obtained from an HMM Forward-Backward
+ *           parse of the target sequence. Uses float log odds scores.
+ * 
+ *           Very similar to fast_tr_cyk_inside_align_hb(), see 'Purpose'
+ *           of that function for more details. Only differences with
+ *           that function is:
+ *           - we do Inside, not CYK
+ *           - can't return a shadow matrix (we're not aligning)
+ *           - doesn't return bsc, b info about local begins 
+ *
+ *           This function complements TrOutsideAlignHB().
+ *
+ * Args:     cm        - the model    [0..M-1]
+ *           errbuf    - char buffer for reporting errors
+ *           dsq       - the digitized sequence
+ *           i0        - first position in subseq to align (1, for whole seq)
+ *           j0        - last position in subseq to align  (L, for whole seq)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           mx        - the dp matrix, only cells within bands in cp9b will be valid
+ *           ret_sc    - RETURN: log P(S|M)/P(S|R), as a bit score
+ * 
+ * Returns:  <ret_sc>
+ *
+ * Throws:  <eslOK> on success
+ *          <eslERANGE> if required CM_HB_MX for exceeds <size_limit>, 
+ *                      in this case, alignment has been aborted, ret_sc is not valid
+ */
+int
+TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_HB_MX *mx, float *ret_sc)
+{
+  int      status;
+  int      v,y,z;	/* indices for states  */
+  int      j,jp,d,i,k;	/* indices in sequence dimensions */
+  float    sc, Lsc, Rsc;/* temporary scores */
+  float    tsc;         /* a temporary variable holding a transition score */
+  int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
+  int      W;		/* subsequence length */
+  float    bsc;		/* summed score for using all local begins */
+  int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
+  float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
+  /* indices used for handling band-offset issues, and in the depths of the DP recursion */
+  int      sd;                 /* StateDelta(cm->sttype[v]) */
+  int      sdr;                /* StateRightDelta(cm->sttype[v] */
+  int      jp_v, jp_y, jp_z;   /* offset j index for states v, y, z */
+  int      jp_y_sdr;           /* jp_y - sdr */
+  int      j_sdr;              /* j - sdr */
+  int      jn, jx;             /* current minimum/maximum j allowed */
+  int      jpn, jpx;           /* minimum/maximum jp_v */
+  int      dp_v, dp_y, dp_z;   /* d index for state v/y/z in alpha w/mem eff bands */
+  int      dn, dx;             /* current minimum/maximum d allowed */
+  int      dp;                 /* ESL_MAX(d-sd, 0) */
+  int      dp_y_sd;            /* dp_y - sd */
+  int      dp_y_sdr;           /* dp_y - sdr */
+  int      dpn, dpx;           /* minimum/maximum dp_v */
+  int      kp_z;               /* k (in the d dim) index for state z in alpha w/mem eff bands */
+  int      kn, kx;             /* current minimum/maximum k value */
+  int      Wp;                 /* W oalso changes depending on state */
+  int      yvalid_idx;         /* for keeping track of which children are valid */
+  int      yvalid_ct;          /* for keeping track of which children are valid */
+  int      have_el;            /* TRUE if local ends are on */
+  /* variables related to truncated alignment (not in FastInsideAlignHB()) */
+  float    trunc_penalty = 0.; /* penalty in bits for a truncated hit */
+  int      do_J_v, do_J_y, do_J_z; /* is J matrix valid for state v, y, z? */
+  int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
+  int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
+  int      do_T_v, do_T_y, do_T_z; /* is T matrix valid for state v, y, z? */
+
+  /* Contract check */
+  if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastInsideAlignHB(), dsq is NULL.\n");
+  if (mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastInsideAlignHB(), mx is NULL.\n");
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastInsideAlignHB(), cm->cp9b is NULL.\n");
+
+  /* ptrs to cp9b info, for convenience */
+  CP9Bands_t *cp9b = cm->cp9b;
+  int     *jmin  = cp9b->jmin;  
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
+
+  /* the DP matrix */
+  float ***Jalpha  = mx->Jdp; /* pointer to the Jalpha DP matrix */
+  float ***Lalpha  = mx->Ldp; /* pointer to the Lalpha DP matrix */
+  float ***Ralpha  = mx->Rdp; /* pointer to the Ralpha DP matrix */
+  float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
+
+  /* Allocations and initializations */
+  bsc = IMPOSSIBLE;
+  W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
+
+  /* grow the matrix based on the current sequence and bands */
+  if((status = cm_tr_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
+
+  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
+  ESL_ALLOC(el_scA, sizeof(float) * (W+1));
+  for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
+
+  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores */
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  if(have_el) { 
+    assert(cp9b->do_J[cm->M]);
+    for (jp = 0; jp <= W; jp++) {
+      j = i0-1+jp;
+      for (d = 0;  d <= jp; d++) Jalpha[cm->M][j][d] = el_scA[d];
+    }
+  }
+
+  /* yvalidA[0..cnum[v]] will hold TRUE for states y for which a transition is legal 
+   * (some transitions are impossible due to the bands) */
+  ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
+  esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
+
+  ESL_STOPWATCH *w = esl_stopwatch_Create();
+  esl_stopwatch_Start(w);
+  /* initialize all cells of the matrix to IMPOSSIBLE */
+  if(mx->Jncells_valid > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
+  if(mx->Lncells_valid > 0) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
+  if(mx->Rncells_valid > 0) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
+  if(mx->Tncells_valid > 0) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
+
+  /* Main recursion */
+  for (v = cm->M-1; v >= 0; v--) { /* all the way down to root, different from other scanners */
+    float const *esc_v   = cm->oesc[v]; /* emission scores for state v */
+    float const *tsc_v   = cm->tsc[v];  /* transition scores for state v */
+    float const *lmesc_v = cm->lmesc[v];
+    float const *rmesc_v = cm->rmesc[v];
+    sd     = StateDelta(cm->sttype[v]);
+    sdr    = StateRightDelta(cm->sttype[v]);
+    jn     = jmin[v];
+    jx     = jmax[v];
+    do_J_v = cp9b->do_J[v];
+    do_L_v = cp9b->do_L[v];
+    do_R_v = cp9b->do_R[v];
+    do_T_v = cp9b->do_T[v];
+
+    /* re-initialize the J deck if we can do a local end from v */
+    if(do_J_v) { 
+      if(NOT_IMPOSSIBLE(cm->endsc[v])) {
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v  = j - jmin[v];
+	  for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    dp = ESL_MAX(d-sd, 0);
+	    Jalpha[v][jp_v][dp_v] = el_scA[dp] + cm->endsc[v];
+	    /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
+	  }
+	}
+      }
+    }
+    /* otherwise this state's deck has already been initialized to IMPOSSIBLE */
+
+    if(cm->sttype[v] == E_st) { 
+      for (j = jmin[v]; j <= jmax[v]; j++) { 
+	jp_v = j-jmin[v];
+	ESL_DASSERT1((hdmin[v][jp_v] == 0));
+	ESL_DASSERT1((hdmax[v][jp_v] == 0));
+	if(do_J_v) Jalpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
+	if(do_L_v) Lalpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
+	if(do_R_v) Ralpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
+      }
+    }
+    else if(cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
+      /* update {J,L,R}alpha[v][jp_v][dp_v] cells, for IL states, loop
+       * nesting order is: for j { for d { for y { } } } because they
+       * can self transit, and a {J,L,R}alpha[v][j][d] cell must be
+       * complete (that is we must have looked at all children y)
+       * before can start calc'ing for {J,L,R}alpha[v][j][d+1] 
+       * We could be slightly more efficient if we separated out 
+       * MR from IR b/c self-transits in MRs are impossible, but 
+       * we don't do that here. */
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+	jp_v = j - jmin[v];
+	yvalid_ct = 0;
+	j_sdr = j - sdr;
+	
+	/* determine which children y we can legally transit to for v, j */
+	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
+	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr valid for state y? */
+	
+	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	  i    = j - d + 1;
+	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+
+	  /* We need to treat R differently from and J and L here, by
+	   * doing separate 'for (yoffset...' loops for J and R
+	   * because we have to fully calculate Jalpha[v][jp_v][dp_v])
+	   * before we can start to calculate Ralpha[v][jp_v][dp_v].
+	   */
+	  /* Handle J and L first */
+	  if(do_J_v || do_L_v) { 
+	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+	      yoffset = yvalidA[yvalid_idx];
+	      y = cm->cfirst[v] + yoffset;
+	      do_J_y = cp9b->do_J[y];
+	      do_L_y = cp9b->do_L[y];
+	      if(do_J_y || do_L_y) { 
+		jp_y_sdr = j - jmin[y] - sdr;
+		
+		if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
+		  dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		  ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		  if(do_J_v && do_J_y) Jalpha[v][jp_v][dp_v] = FLogsum(Jalpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
+		  if(do_L_v && do_L_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Lalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
+		}
+	      }
+	    }
+	    if(do_J_v) { 
+	      Jalpha[v][jp_v][dp_v] += esc_v[dsq[i]];
+	      Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
+	    }
+	    if(do_L_v) { 
+	      Lalpha[v][jp_v][dp_v] = (d >= 2) ? Lalpha[v][jp_v][dp_v] + esc_v[dsq[i]] : esc_v[dsq[i]];
+	      Lalpha[v][jp_v][dp_v] = ESL_MAX(Lalpha[v][jp_v][dp_v], IMPOSSIBLE);
+	    }
+	    i--;
+	  }
+
+	  if(do_R_v) { 
+	    /* Handle R separately */
+	    Rsc = Ralpha[v][jp_v][dp_v]; /* this sc will be IMPOSSIBLE */
+	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+	      yoffset = yvalidA[yvalid_idx];
+	      y = cm->cfirst[v] + yoffset;
+	      do_R_y = cp9b->do_R[y];
+	      do_J_y = cp9b->do_J[y];
+	      if(do_J_y || do_R_y) { 
+		jp_y_sdr = j - jmin[y] - sdr;
+		
+		/* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,L above) */
+		if((d) >= hdmin[y][jp_y_sdr] && (d) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
+		  dp_y = d - hdmin[y][jp_y_sdr];
+		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		  ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		  if(do_J_y) Rsc = FLogsum(Rsc, Jalpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]);
+		  if(do_R_y) Rsc = FLogsum(Rsc, Ralpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]);
+		}
+	      }
+	    } /* end of for (yvalid_idx = 0... loop */
+	    Ralpha[v][jp_v][dp_v] = Rsc; 
+	    /* we use Rsc instead of Ralpha cell in above loop because
+	     * Ralpha[v][jp_v][dp_v] may be the same cell as
+	     * Ralpha[y][jp_y_sdr][dp_y] if we're an IL state
+	     */
+	  }
+	}
+      }
+    }
+    else if(cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+      /* update {J,L,R}alpha[v][jp_v][dp_v] cells, for IR states, loop
+       * nesting order is: for j { for d { for y { } } } because they
+       * can self transit, and a {J,L,R}alpha[v][j][d] cell must be
+       * complete (that is we must have looked at all children y)
+       * before can start calc'ing for {J,L,R}alpha[v][j][d+1].
+       * We could be slightly more efficient if we separated out 
+       * MR from IR b/c self-transits in MRs are impossible, but 
+       * we don't do that here. */
+
+      /* The first MR_st/IR_st 'for (j...' loop is for J and R matrices which use the same set of j values */
+      if(do_J_v || do_R_v) { 
+	for (j = jmin[v]; j <= jmax[v]; j++) {
+	  jp_v = j - jmin[v];
+	  yvalid_ct = 0;
+	  j_sdr = j - sdr;
+	  
+	  /* determine which children y we can legally transit to for v, j */
+	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
+	    if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
+	  
+	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	    
+	    /* We need to treat L differently from and J and R here, by
+	     * doing separate 'for (yoffset...' loops for J because we
+	     * have to fully calculate Jalpha[v][jp_v][dp_v]) before we
+	     * can start to calculate Lalpha[v][jp_v][dp_v].
+	     */
+	    /* Handle J and R first */
+	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+	      yoffset = yvalidA[yvalid_idx];
+	      y = cm->cfirst[v] + yoffset;
+	      do_J_y = cp9b->do_J[y];
+	      do_R_y = cp9b->do_R[y];
+	      if(do_J_y || do_R_y) { 
+		jp_y_sdr = j - jmin[y] - sdr;
+		
+		if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
+		  dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		  ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		  if(do_J_v && do_J_y) Jalpha[v][jp_v][dp_v] = FLogsum(Jalpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
+		  if(do_R_v && do_R_y) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Ralpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
+		}
+	      }
+	    }
+	    if(do_J_v) { 
+	      Jalpha[v][jp_v][dp_v] += esc_v[dsq[j]];
+	      Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
+	    }
+	    if(do_R_v) { 
+	      Ralpha[v][jp_v][dp_v] = (d >= 2) ? Ralpha[v][jp_v][dp_v] + esc_v[dsq[j]] : esc_v[dsq[j]];
+	      Ralpha[v][jp_v][dp_v] = ESL_MAX(Ralpha[v][jp_v][dp_v], IMPOSSIBLE);
+	    }
+	  }
+	}
+      }
+
+      if(do_L_v) { 
+	/* The second MR_st/IR_st 'for (j...' loop is for the L matrix which use a different set of j values */
+	for (j = jmin[v]; j <= jmax[v]; j++) {
+	  jp_v = j - jmin[v];
+	  yvalid_ct = 0;
+	  
+	  /* determine which children y we can legally transit to for v, j */
+	  /* we use 'j' and not 'j_sdr' here for the L matrix, differently from J and R matrices above */
+	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
+	    if((j) >= jmin[y] && ((j) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
+	  
+	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	    
+	    Lsc = Lalpha[v][jp_v][dp_v]; /* this sc will be IMPOSSIBLE */
+	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+	      yoffset = yvalidA[yvalid_idx];
+	      y = cm->cfirst[v] + yoffset;
+	      do_L_y = cp9b->do_L[y];
+	      do_J_y = cp9b->do_J[y];
+	      if(do_L_y || do_J_y) { 
+		/* we use 'jp_y=j-min[y]' here, not 'jp_y_sdr=j-jmin[y]-sdr' (which we used in the corresponding loop for J,R above) */
+		jp_y = j - jmin[y];
+	      
+		/* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,R above) */
+		if((d) >= hdmin[y][jp_y] && (d) <= hdmax[y][jp_y]) { /* make sure d is valid for this v, j and y */
+		  dp_y = d - hdmin[y][jp_y];
+		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v] - hdmin[v][jp_v])));
+		  ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y] - hdmin[y][jp_y])));
+		  if(do_J_y) Lsc = FLogsum(Lsc, Jalpha[y][jp_y][dp_y] + tsc_v[yoffset]);
+		  if(do_L_y) Lsc = FLogsum(Lsc, Lalpha[y][jp_y][dp_y] + tsc_v[yoffset]);
+		}
+	      }
+	    } /* end of for (yvalid_idx = 0... loop */
+	    Lalpha[v][jp_v][dp_v] = Lsc; 
+	    /* we use Lsc instead of Lalpha cell in above loop because
+	     * Lalpha[v][jp_v][dp_v] may be the same cell as
+	     * Lalpha[y][jp_y_sdr][dp_y] if we're an IR state
+	     */
+	  }
+	}
+      }
+    }
+    else if(cm->sttype[v] == MP_st) { 
+      /* MP states cannot self transit, this means that all cells in
+       * alpha[v] are independent of each other, only depending on
+       * alpha[y] for previously calc'ed y.  We can do the for loops
+       * in any nesting order, this implementation does what I think
+       * is most efficient: for y { for j { for d { } } }
+       */
+      for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+	do_J_y = cp9b->do_J[y];
+	do_L_y = cp9b->do_L[y];
+	do_R_y = cp9b->do_R[y];
+	yoffset = y - cm->cfirst[v];
+	tsc = tsc_v[yoffset];
+
+	/* The first MP_st 'for (jp_v...' loop is for J and R matrices which use the same set of j values */
+	/* j must satisfy:
+	 * j >= jmin[v]
+	 * j >= jmin[y]+sdr (follows from (j-sdr >= jmin[y]))
+	 * j <= jmax[v]
+	 * j <= jmax[y]+sdr (follows from (j-sdr <= jmax[y]))
+	 * this reduces to two ESL_MAX calls
+	 */
+	jn = ESL_MAX(jmin[v], jmin[y]+sdr);
+	jx = ESL_MIN(jmax[v], jmax[y]+sdr);
+	jpn = jn - jmin[v];
+	jpx = jx - jmin[v];
+	jp_y_sdr = jn - jmin[y] - sdr;
+	/* for Lalpha, we use 'jp_y=j-min[y]' instead of 'jp_y_sdr=j-jmin[y]-sdr' */
+	
+	if((do_J_v && do_J_y) || (do_R_v && (do_J_y || do_R_y))) { 
+	  for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++, jp_y++) {
+	    ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
+	    ESL_DASSERT1((jp_y_sdr >= 0 && jp_y_sdr <= (jmax[y]-jmin[y])));
+	    
+	    if(do_J_v && do_J_y) { 
+	      /* J matrix: */
+	      /* d must satisfy:
+	       * d >= hdmin[v][jp_v]
+	       * d >= hdmin[y][jp_y_sdr]+sd (follows from (d-sd >= hdmin[y][jp_y_sdr]))
+	       * d <= hdmax[v][jp_v]
+	       * d <= hdmax[y][jp_y_sdr]+sd (follows from (d-sd <= hdmax[y][jp_y_sdr]))
+	       * this reduces to two ESL_MAX calls
+	       */
+	      dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
+	      dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
+	      dpn       = dn - hdmin[v][jp_v];
+	      dpx       = dx - hdmin[v][jp_v];
+	      dp_y_sd   = dn - hdmin[y][jp_y_sdr] - sd;
+	      
+	      for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) { 
+		ESL_DASSERT1((dp_v      >= 0 && dp_v       <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		ESL_DASSERT1((dp_y_sd   >= 0 && dp_y_sd    <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		Jalpha[v][jp_v][dp_v] = FLogsum(Jalpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y_sd] + tsc);
+	      }
+	    }
+	    
+	    if(do_R_v && (do_R_y || do_J_y)) { 
+	      /* R matrix: */
+	      /* d must satisfy:
+	       * d >= hdmin[v][jp_v]
+	       * d >= hdmin[y][jp_y_sd]+sd (follows from (d-sd >= hdmin[y][jp_y_sd]))
+	       * d <= hdmax[v][jp_v]
+	       * d <= hdmax[y][jp_y_sd]+sd (follows from (d-sd <= hdmax[y][jp_y_sd]))
+	       * this reduces to two ESL_MAX calls
+	       */
+	      dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sdr);
+	      dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sdr);
+	      dpn       = dn - hdmin[v][jp_v];
+	      dpx       = dx - hdmin[v][jp_v];
+	      dp_y_sdr  = dn - hdmin[y][jp_y_sdr] - sdr;
+	      /* for {L,R}alpha, we use 'dp_y_sdr' instead of 'dy_y_sd' */
+	      
+	      for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdr++) { 
+		/* we use 'dp_y_sdr' here, not 'dp_y_sd' (which we used in the corresponding loop for J above) */
+		ESL_DASSERT1((dp_y_sdr  >= 0 && dp_y_sdr   <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		if(do_J_y) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y_sdr] + tsc); 
+		if(do_R_y) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Ralpha[y][jp_y_sdr][dp_y_sdr] + tsc); 
+	      }
+	    }
+	  }
+	}
+
+	if(do_L_v && (do_L_y || do_J_y)) { 
+	  /* The second MP_st 'for (jp_v...' loop is for L matrix, which uses a different set of j values from J and R */
+	  /* j must satisfy:
+	   * j >= jmin[v]
+	   * j >= jmin[y] (follows from (j >= jmin[y]))
+	   * j <= jmax[v]
+	   * j <= jmax[y] (follows from (j <= jmax[y]))
+	   * this reduces to two ESL_MAX calls
+	   */
+	  jn = ESL_MAX(jmin[v], jmin[y]);
+	  jx = ESL_MIN(jmax[v], jmax[y]);
+	  jpn = jn - jmin[v];
+	  jpx = jx - jmin[v];
+	  jp_y = jn - jmin[y];
+	  /* for Lalpha, we use 'jp_y=j-min[y]' instead of 'jp_y_sdr=j-jmin[y]-sdr' */
+	  
+	  for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++) {
+	    ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
+	    ESL_DASSERT1((jp_y     >= 0 && jp_y     <= (jmax[y]-jmin[y])));
+	    
+	    /* d must satisfy:
+	   * d >= hdmin[v][jp_v]
+	   * d >= hdmin[y][jp_y_sd]+sd (follows from (d-sd >= hdmin[y][jp_y_sd]))
+	   * d <= hdmax[v][jp_v]
+	   * d <= hdmax[y][jp_y_sd]+sd (follows from (d-sd <= hdmax[y][jp_y_sd]))
+	   * this reduces to two ESL_MAX calls
+	   */
+	    dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y] + sdr);
+	    dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y] + sdr);
+	    dpn       = dn - hdmin[v][jp_v];
+	    dpx       = dx - hdmin[v][jp_v];
+	    dp_y_sdr  = dn - hdmin[y][jp_y] - sdr;
+	    /* for Lalpha, we use 'dp_y_sdr' instead of 'dy_y_sd' */
+	    
+	    for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdr++) { 
+	      /* we use 'dp_y_sdr' here, not 'dp_y_sd' (which we used in the corresponding loop for J above) */
+	      ESL_DASSERT1((dp_y_sdr >= 0 && dp_y_sdr  <= (hdmax[y][jp_y]     - hdmin[y][jp_y])));
+	      if(do_J_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Jalpha[y][jp_y][dp_y_sdr] + tsc);
+	      if(do_L_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Lalpha[y][jp_y][dp_y_sdr] + tsc);
+	    }
+	  }
+	}
+      }
+      /* add in emission score */
+      for (j = jmin[v]; j <= jmax[v]; j++) { 
+	jp_v  = j - jmin[v];
+	i     = j - hdmin[v][jp_v] + 1;
+	for (d = hdmin[v][jp_v], dp_v = 0; d <= hdmax[v][jp_v]; d++, dp_v++) 
+	  {
+	    /*if(i < i0 || j > j0) { 
+	      printf("dsq[i:%d]: %d\n", i, dsq[i]);
+	      printf("dsq[j:%d]: %d\n", j, dsq[j]);
+	      printf("esc_v[%d]: %.5f\n", dsq[i]*cm->abc->Kp+dsq[j], esc_v[dsq[i]*cm->abc->Kp+dsq[j]]);;
+	      printf("i0: %d j0: %d\n", i0, j0);
+	      }*/
+	    if(d >= 2) { 
+	      if(do_J_v) Jalpha[v][jp_v][dp_v] += esc_v[dsq[i]*cm->abc->Kp+dsq[j]];
+	      if(do_L_v) Lalpha[v][jp_v][dp_v] += lmesc_v[dsq[i]];
+	      if(do_R_v) Ralpha[v][jp_v][dp_v] += rmesc_v[dsq[j]];
+	    }
+	    else { 
+	      if(do_J_v) Jalpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      if(do_L_v) Lalpha[v][jp_v][dp_v] = lmesc_v[dsq[i]];
+	      if(do_R_v) Ralpha[v][jp_v][dp_v] = rmesc_v[dsq[j]];
+	    }
+	    i--;
+	  }
+      }
+      /* ensure all cells are >= IMPOSSIBLE */
+      for (j = jmin[v]; j <= jmax[v]; j++) { 
+	jp_v  = j - jmin[v];
+	for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
+	  if(do_J_v) Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
+	  if(do_L_v) Lalpha[v][jp_v][dp_v] = ESL_MAX(Lalpha[v][jp_v][dp_v], IMPOSSIBLE);
+	  if(do_R_v) Ralpha[v][jp_v][dp_v] = ESL_MAX(Ralpha[v][jp_v][dp_v], IMPOSSIBLE);
+	}
+      }
+    }
+    else if(cm->sttype[v] != B_st) { /* entered if state v is D or S (! E && ! B && ! ML && ! IL && ! MR && ! IR) */
+      /* D, S states cannot self transit, this means that all cells in
+       * alpha[v] are independent of each other, only depending on
+       * alpha[y] for previously calc'ed y.  We can do the for loops
+       * in any nesting order, this implementation does what I think
+       * is most efficient: for y { for j { for d { } } }
+       */
+      for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+	do_J_y = cp9b->do_J[y];
+	do_L_y = cp9b->do_L[y];
+	do_R_y = cp9b->do_R[y];
+	yoffset = y - cm->cfirst[v];
+	tsc = tsc_v[yoffset];
+	
+	if((do_J_v && do_J_y) || (do_L_v && do_L_y) || (do_R_v && do_R_y)) { 
+	  /* j must satisfy:
+	   * j >= jmin[v]
+	   * j >= jmin[y]+sdr (follows from (j-sdr >= jmin[y]))
+	   * j <= jmax[v]
+	   * j <= jmax[y]+sdr (follows from (j-sdr <= jmax[y]))
+	   * this reduces to two ESL_MAX calls
+	   */
+	  jn = ESL_MAX(jmin[v], jmin[y]+sdr);
+	  jx = ESL_MIN(jmax[v], jmax[y]+sdr);
+	  jpn = jn - jmin[v];
+	  jpx = jx - jmin[v];
+	  jp_y_sdr = jn - jmin[y] - sdr;
+	  
+	  for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
+	    ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
+	    ESL_DASSERT1((jp_y_sdr >= 0 && jp_y_sdr <= (jmax[y]-jmin[y])));
+	    
+	    /* d must satisfy:
+	     * d >= hdmin[v][jp_v]
+	     * d >= hdmin[y][jp_y_sdr]+sd (follows from (d-sd >= hdmin[y][jp_y_sdr]))
+	     * d <= hdmax[v][jp_v]
+	     * d <= hdmax[y][jp_y_sdr]+sd (follows from (d-sd <= hdmax[y][jp_y_sdr]))
+	     * this reduces to two ESL_MAX calls
+	     */
+	    dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
+	    dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
+	    dpn     = dn - hdmin[v][jp_v];
+	    dpx     = dx - hdmin[v][jp_v];
+	    dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+	    
+	    for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) { 
+	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	      if(do_J_v && do_J_y) Jalpha[v][jp_v][dp_v] = FLogsum(Jalpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y_sd] + tsc);
+	      if(do_L_v && do_L_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Lalpha[y][jp_y_sdr][dp_y_sd] + tsc);
+	      if(do_R_v && do_R_y) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Ralpha[y][jp_y_sdr][dp_y_sd] + tsc);
+
+	      /* an easy to overlook case: if d == 0, set L and R values to IMPOSSIBLE */
+	      if(dp_v == dpn && dn == 0) { /* d is 0 */
+		if(do_L_v) Lalpha[v][jp_v][dp_v] = IMPOSSIBLE;
+		if(do_R_v) Ralpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      }		
+	    }
+	  }
+	}
+      }
+      /* no emission score to add */
+    }
+    else { /* B_st */ 
+      y = cm->cfirst[v]; /* left  subtree */
+      z = cm->cnum[v];   /* right subtree */
+
+      do_J_y = cp9b->do_J[y];
+      do_L_y = cp9b->do_L[y];
+      do_R_y = cp9b->do_R[y];
+      do_T_y = cp9b->do_T[y]; /* will be FALSE, y is not a B_st */
+
+      do_J_z = cp9b->do_J[z];
+      do_L_z = cp9b->do_L[z];
+      do_R_z = cp9b->do_R[z];
+      do_T_z = cp9b->do_T[z]; /* will be FALSE, z is not a B_st */
+      
+      /* Any valid j must be within both state v and state z's j band 
+       * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
+       * constructed, but we'll check anyway. 
+       */
+      jn = (jmin[v] > jmin[z]) ? jmin[v] : jmin[z];
+      jx = (jmax[v] < jmax[z]) ? jmax[v] : jmax[z];
+      /* the main j loop */
+      for (j = jn; j <= jx; j++) { 
+	jp_v = j - jmin[v];
+	jp_y = j - jmin[y];
+	jp_z = j - jmin[z];
+	kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+	/* kn satisfies inequalities (1) and (3) (listed below)*/	
+	kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+	/* kn satisfies inequalities (2) and (4) (listed below)*/	
+	i = j - hdmin[v][jp_v] + 1;
+	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++, i--) {
+	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+	      
+	  /* Find the first k value that implies a valid cell in the {J,L,R} matrix y and z decks.
+	   * This k must satisfy the following 6 inequalities (some may be redundant):
+	   * (1) k >= j-jmax[y];
+	   * (2) k <= j-jmin[y]; 
+	   *     1 and 2 guarantee (j-k) is within state y's j band
+	   *
+	   * (3) k >= hdmin[z][j-jmin[z]];
+	   * (4) k <= hdmax[z][j-jmin[z]]; 
+	   *     3 and 4 guarantee k is within z's j=(j), d band
+	   *
+	   * (5) k >= d-hdmax[y][j-jmin[y]-k];
+	   * (6) k <= d-hdmin[y][j-jmin[y]-k]; 
+	   *     5 and 6 guarantee (d-k) is within state y's j=(j-k) d band
+	   *
+	   * kn and kx were set above (outside (for (dp_v...) loop) that
+	   * satisfy 1-4 (b/c 1-4 are d-independent and k-independent)
+	   * RHS of inequalities 5 and 6 are dependent on k, so we check
+	   * for these within the next for loop.
+	   *
+	   * To update a cell in the T matrix with a sum of an R matrix value for y
+	   * and a L matrix value for z, there are 2 additional inequalities to satisfy:
+	   * (7) k != i-1  (where i = j-d+1)
+	   * (8) k != j
+	   * These are checked for in the loop below as well. 
+	   */
+	  for(k = kn; k <= kx; k++) { 
+	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+	      /* for current k, all 6 inequalities have been satisified 
+	       * so we know the cells corresponding to the platonic 
+	       * matrix cells alpha[v][j][d], alpha[y][j-k][d-k], and
+	       * alpha[z][j][k] are all within the bands. These
+	       * cells correspond to alpha[v][jp_v][dp_v], 
+	       * alpha[y][jp_y-k][d-hdmin[jp_y-k]-k],
+	       * and alpha[z][jp_z][k-hdmin[jp_z]];
+	       */
+	      kp_z = k-hdmin[z][jp_z];
+	      dp_y = d-hdmin[y][jp_y-k];
+	      if(do_J_v && do_J_y && do_J_z) Jalpha[v][jp_v][dp_v] = FLogsum(Jalpha[v][jp_v][dp_v], Jalpha[y][jp_y-k][dp_y - k] + Jalpha[z][jp_z][kp_z]);
+	      if(do_L_v && do_J_y && do_L_z) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Jalpha[y][jp_y-k][dp_y - k] + Lalpha[z][jp_z][kp_z]);
+	      if(do_R_v && do_R_y && do_J_z) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Ralpha[y][jp_y-k][dp_y - k] + Jalpha[z][jp_z][kp_z]);
+	      /*if((k != i-1) && (k != j)) {*/
+	      if(do_T_v && do_R_y && do_L_z) Talpha[v][jp_v][dp_v] = FLogsum(Talpha[v][jp_v][dp_v], Ralpha[y][jp_y-k][dp_y - k] + Lalpha[z][jp_z][kp_z]);
+		/*}*/
+	    }
+	  }
+	}
+      }
+
+      /* two additional special cases in trCYK (these are not in standard CYK).
+       * we do these in their own for(j.. { for(d.. { } } loops b/c one 
+       * is independent of z, the other of y, unlike the above loop which is dependent 
+       * on both.
+       */
+      if(do_L_v && (do_J_y || do_L_y)) { 
+	jn = (jmin[v] > jmin[y]) ? jmin[v] : jmin[y];
+	jx = (jmax[v] < jmax[y]) ? jmax[v] : jmax[y];
+	for (j = jn; j <= jx; j++) { 
+	  jp_v = j - jmin[v];
+	  jp_y = j - jmin[y];
+	  ESL_DASSERT1((j >= jmin[v] && j <= jmax[v]));
+	  ESL_DASSERT1((j >= jmin[y] && j <= jmax[y]));
+	  dn = (hdmin[v][jp_v] > hdmin[y][jp_y]) ? hdmin[v][jp_v] : hdmin[y][jp_y];
+	  dx = (hdmax[v][jp_v] < hdmax[y][jp_y]) ? hdmax[v][jp_v] : hdmax[y][jp_y];
+	  for(d = dn; d <= dx; d++) { 
+	    dp_v = d - hdmin[v][jp_v];
+	    dp_y = d - hdmin[y][jp_y];
+	    ESL_DASSERT1((d >= hdmin[v][jp_v] && d <= hdmax[v][jp_v]));
+	    ESL_DASSERT1((d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]));
+	    if(do_J_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Jalpha[y][jp_y][dp_y]);
+	    if(do_L_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Lalpha[y][jp_y][dp_y]);
+	  }
+	}
+      }
+      if(do_R_v && (do_J_z || do_R_z)) { 
+	jn = (jmin[v] > jmin[z]) ? jmin[v] : jmin[z];
+	jx = (jmax[v] < jmax[z]) ? jmax[v] : jmax[z];
+	for (j = jn; j <= jx; j++) { 
+	  jp_v = j - jmin[v];
+	  jp_z = j - jmin[z];
+	  ESL_DASSERT1((j >= jmin[v] && j <= jmax[v]));
+	  ESL_DASSERT1((j >= jmin[z] && j <= jmax[z]));
+	  dn = (hdmin[v][jp_v] > hdmin[z][jp_z]) ? hdmin[v][jp_v] : hdmin[z][jp_z];
+	  dx = (hdmax[v][jp_v] < hdmax[z][jp_z]) ? hdmax[v][jp_v] : hdmax[z][jp_z];
+	  for(d = dn; d <= dx; d++) { 
+	    dp_v = d - hdmin[v][jp_v];
+	    dp_z = d - hdmin[z][jp_z];
+	    ESL_DASSERT1((d >= hdmin[v][jp_v] && d <= hdmax[v][jp_v]));
+	    ESL_DASSERT1((d >= hdmin[z][jp_z] && d <= hdmax[z][jp_z]));
+	    if(do_J_z) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Jalpha[z][jp_z][dp_z]);
+	    if(do_R_z) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Ralpha[z][jp_z][dp_z]);
+	  }
+	}
+      }
+    } /* finished calculating deck v. */
+         
+    /* allow for truncated begins into v that emit the full sequence i0..j0 */
+    if(j0 >= jmin[v] && j0 <= jmax[v]) { 
+      jp_v = j0 - jmin[v];
+      Wp = W - hdmin[v][jp_v];
+      if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
+	/* If we get here alpha[v][jp_v][Wp] is a valid cell
+	 * in the banded alpha matrix, corresponding to 
+	 * alpha[v][j0][W] in the platonic matrix.
+	 * Check for truncated alignment getting us to the root.
+	 */
+#if 0
+	/* Don't allow local begins, right? */
+	/* check for normal local begins */
+	if(do_J_v && (cm->flags & CMH_LOCAL_BEGIN) && allow_begin) {
+	  bsc = FLogsum(bsc, (Jalpha[v][jp_v][Wp] + cm->beginsc[v]));
+	}
+#endif
+	/* include hits in J matrix (much like a normal local begin) */
+	if(do_J_v && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st)) { 
+	  bsc = FLogsum(bsc, (Jalpha[v][jp_v][Wp] + trunc_penalty));
+	}
+	/* include truncated hits in L matrix */
+	if(do_L_v && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st)) { 
+	  bsc = FLogsum(bsc, (Lalpha[v][jp_v][Wp] + trunc_penalty));
+	}	    
+	/* check for truncated hit in R matrix */
+	if(do_R_v && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st)) { 
+	  bsc = FLogsum(bsc, (Ralpha[v][jp_v][Wp] + trunc_penalty));
+	}	    
+	/* check for truncated hit in T matrix */
+	if(do_T_v) { 
+	  bsc = FLogsum(bsc, (Talpha[v][jp_v][Wp] + trunc_penalty));
+	}	    
+      }
+      /* include bsc into alpha[0][jp_v][Wp] (full sequence aligned to ROOT_S) */
+      if (v == 0) { 
+	assert(do_J_v);
+	if(j0 >= jmin[0] && j0 <= jmax[0]) {
+	  jp_v = j0 - jmin[v];
+	  Wp   = W - hdmin[v][jp_v];
+	  if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
+	    Jalpha[0][jp_v][Wp] = FLogsum(Jalpha[0][jp_v][Wp], bsc);
+	  }
+	}
+      } 
+    }
+  } /* end of for (v = cm->M-1; v > 0; v--) */
+  /*FILE *fp1; fp1 = fopen("tmp.iamx", "w");   cm_tr_hb_mx_Dump(fp1, mx); fclose(fp1);*/
+  
+  Wp = W - hdmin[0][j0-jmin[0]];
+  sc =    Jalpha[0][j0-jmin[0]][Wp]; /* this will be bsc, unless a non-truncated hit rooted at 0 is optimal */
+
+  free(el_scA);
+  free(yvalidA);
+
+  *ret_sc = sc;
+
+  ESL_DPRINTF1(("TrInsideAlignHB() return sc: %f\n", sc));
+  printf("TrInsideAlignHB() return sc: %.4f\n", sc);
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
+}
+
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/
@@ -1720,6 +2491,7 @@ main(int argc, char **argv)
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScanHB(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
+
       /*********************End FastCYKScanHB****************************/
 
       /*********************Begin FastAlignHB()***************************/
@@ -1787,6 +2559,16 @@ main(int argc, char **argv)
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       /*********************End TrCYKScanHB****************************/
 
+      /*********************Begin FTrInsideScanHB****************************/
+      cm_tr_hb_mx_Destroy(trhbmx);
+      trhbmx = cm_tr_hb_mx_Create(cm);
+      esl_stopwatch_Start(w);
+      if((status = FTrInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%4d %-30s %10.4f bits ", (i+1), "FTrInsideScanHB(): ", sc);
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_Display(stdout, w, " CPU time: ");
+      /*********************End TrCYKScanHB****************************/
+
       /*********************Begin FastTrAlignHB()****************************/
       esl_stopwatch_Start(w);
       /* Calculate HMM bands. We'll tighten tau and recalculate bands until 
@@ -1822,12 +2604,22 @@ main(int argc, char **argv)
       esl_stopwatch_Start(w);
       if((status = FastTrAlignHB(cm, errbuf, NULL, dsq, 1, L, size_limit, trhbmx, trhbshmx, FALSE, FALSE, NULL, &tr, NULL, &sc, NULL)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastTrAlignHB(): ", sc);
+      esl_stopwatch_Stop(w);
       ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
       ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
-      printf("Parsetree score      : %.4f           (FULL LENGTH)\n", parsetree_sc);
-      esl_stopwatch_Stop(w);
+      printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       /*********************End FastTrAlignHB*****************************/
+
+      /*********************Begin TrInsideAlignHB()****************************/
+      cm_tr_hb_mx_Destroy(trhbmx);
+      trhbmx = cm_tr_hb_mx_Create(cm);
+      esl_stopwatch_Start(w);
+      if((status = TrInsideAlignHB(cm, errbuf, dsq, 1, L, size_limit, trhbmx, &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", (i+1), "TrInsideAlignHB(): ", sc);
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_Display(stdout, w, " CPU time: ");
+      /*********************End TrInsideAlignHB*****************************/
       
       if(! esl_opt_GetBoolean(go, "--onlyhb")) { 
 	/*********************Begin RefTrCYKScan****************************/
@@ -1837,6 +2629,14 @@ main(int argc, char **argv)
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End RefTrCYKScan****************************/
+
+	/*********************Begin RefITrInsideScan****************************/
+	esl_stopwatch_Start(w);
+	if((status = RefITrInsideScan(cm, errbuf, trsmx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits ", (i+1), "RefITrInsideScan(): ", sc);
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	/*********************End RefITrInsideScan****************************/
 	
 	if(esl_opt_GetBoolean(go, "--orig")) { 
 	  /*********************Begin TrCYK_Inside****************************/

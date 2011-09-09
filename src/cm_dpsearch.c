@@ -507,7 +507,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	  }
 	  /* if(cm->stid[v] != BEGL_S)
 	     for (d = dn; d <= dx; d++) { printf("alpha[j:%4d][v:%4d][d:%4d]: %.5f\n", j, v, d, alpha[jp_v][v][d]); }*/
-	} /*loop over decks v>0 */
+	} /*loop over decks v>=0 */
       
       /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
        * 
@@ -4516,10 +4516,9 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
 	}
       }
     } /* finished calculating deck v. */
-  } /* end of for (v = cm->M-1; v > 0; v--) */
+  } /* end of for (v = cm->M-1; v >= 0; v--) */
         
-  /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
-   * 
+  /* Deal with local begins. 
    * If local begins are off, all hits must be rooted at v=0.
    * With local begins on, the hit is rooted at the second state in
    * the traceback (e.g. after 0), the internal entry point. 
@@ -4981,10 +4980,10 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 	}
       }
     } /* finished calculating deck v. */
-  } /* end of for (v = cm->M-1; v > 0; v--) */
+
+  } /* end of for (v = cm->M-1; v >= 0; v--) */
         
-  /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
-   * 
+  /* Deal with local begins.
    * If local begins are off, all hits must be rooted at v=0.
    * With local begins on, the hit is rooted at the second state in
    * the traceback (e.g. after 0), the internal entry point. 

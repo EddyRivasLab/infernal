@@ -567,10 +567,10 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
   for(v = 0; v < cm->M; v++) { 
     best_tr_sc = ESL_MAX(best_tr_sc, vsc[v]);
   }
-  printf("Best truncated score: %.4f (%.4f)\n",
+  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH CYK)\n",
 	 best_tr_sc, 
 	 best_tr_sc + sreLOG2(2./(cm->clen * (cm->clen+1))));
-  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH)\n",
+  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH CYK)\n",
 	 bsc_full, 
 	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))));
 
@@ -643,6 +643,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   int      ivsc;                /* integer score */
   float    *vsc;                /* best score for each state (float) */
   float     vsc_root;           /* best overall score (score at ROOT_S) */
+  float     bsc_full;           /* best overall score that emits full sequence i0..j0 */
   int       yoffset;		/* offset to a child state */
   int       i,j;		/* index of start/end positions in sequence, 0..L */
   int       d;			/* a subsequence length, 0..W */
@@ -669,12 +670,12 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   int64_t   envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, CMH_BITS flag is not raised.\n");
-  if(j0 < i0)                              ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, dsq is NULL\n");
-  if(trsmx == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, trsmx == NULL\n");
-  if(cm->search_opts & CM_SEARCH_INSIDE)   ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, CM_SEARCH_INSIDE flag raised");
-  if(! (trsmx->flags & cmTRSMX_HAS_INT))   ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, ScanMatrix's cmTRSMX_HAS_FLOAT flag is not raised");
+  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, CMH_BITS flag is not raised.\n");
+  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, dsq is NULL\n");
+  if(trsmx == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, trsmx == NULL\n");
+  if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! (trsmx->flags & cmTRSMX_HAS_INT))     ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, ScanMatrix's cmTRSMX_HAS_FLOAT flag is not raised");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
   int  ***Jalpha       = trsmx->iJalpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] Jalpha DP matrix, NULL for v == BEGL_S */
@@ -706,6 +707,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   ESL_ALLOC(vsc, sizeof(float) * cm->M);
   esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
   vsc_root = IMPOSSIBLE;
+  bsc_full = IMPOSSIBLE;
 
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
@@ -1103,6 +1105,11 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
       for (d = dnA[0]; d <= dxA[0]; d++) {
 	vsc_root = ESL_MAX(vsc_root, Scorify(Jalpha[jp_v][0][d]));
       }
+      /* find the best score in J that spans the full sequence */
+      if(j == j0) { 
+	bsc_full = ESL_MAX(bsc_full, Jalpha[jp_v][0][L]);
+      }
+
       /* update envi, envj, if nec */
       if(do_env_defn) { 
 	for (d = dnA[0]; d <= dxA[0]; d++) {
@@ -1128,9 +1135,12 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   for(v = 0; v < cm->M; v++) { 
     best_tr_sc = ESL_MAX(best_tr_sc, vsc[v]);
   }
-  printf("Best truncated score: %.4f (%.4f)\n",
+  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH INSIDE)\n",
 	 best_tr_sc, 
 	 best_tr_sc + sreLOG2(2./(cm->clen * (cm->clen+1))));
+  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH INSIDE)\n",
+	 Scorify(bsc_full), 
+	 Scorify(bsc_full) + sreLOG2(2./(cm->clen * (cm->clen+1))));
 
   /* If recovering hits in a non-greedy manner, do the traceback.
    * If we were greedy, they were reported in UpdateGammaHitMx() for each position j */
@@ -1155,7 +1165,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
 
-  ESL_DPRINTF1(("RefTrCYKScan() return score: %10.4f\n", vsc_root)); 
+  ESL_DPRINTF1(("RefITrInsideScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
  ERROR:
@@ -2070,8 +2080,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   }
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, " HEYA2 Considering truncated and local hits time: ");
-
-  /*FILE *fp1; fp1 = fopen("tmp.smx", "w");   cm_tr_hb_mx_Dump(fp1, mx); fclose(fp1);*/
+  /*FILE *fp1; fp1 = fopen("tmp.ismx", "w");   cm_tr_hb_mx_Dump(fp1, mx); fclose(fp1);*/
     
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to hitlist */
   if(hitlist != NULL) { 
@@ -2118,10 +2127,10 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   /* find the best score in any matrix at any state */
   float best_tr_sc = IMPOSSIBLE;
   best_tr_sc = vsc_root;
-  printf("Best truncated score: %.4f (%.4f)\n",
+  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH CYK)\n",
 	 best_tr_sc - trunc_penalty, 
 	 best_tr_sc + sreLOG2(2./(cm->clen * (cm->clen+1))));
-  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH)\n",
+  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH CYK)\n",
 	 bsc_full, 
 	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))));
 
@@ -2227,6 +2236,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   int      yvalid_idx;         /* for keeping track of which children are valid */
   int      yvalid_ct;          /* for keeping track of which children are valid */
   float    vsc_root;           /* score of best hit */
+  float    bsc_full;           /* best overall score that emits full sequence i0..j0 */
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
   double **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int      jp;                 /* j index in act */
@@ -2239,9 +2249,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   int      do_T_v, do_T_y, do_T_z; /* is T matrix valid for state v, y, z? */
 
   /* Contract check */
-  if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), dsq is NULL.\n");
-  if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), mx is NULL.\n");
-  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), mx is NULL.\n");
+  if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), dsq is NULL.\n");
+  if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), mx is NULL.\n");
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), mx is NULL.\n");
 
   ESL_DPRINTF1(("cm->search_opts & CM_SEARCH_HMMALNBANDS: %d\n", cm->search_opts & CM_SEARCH_HMMALNBANDS));
 
@@ -2259,7 +2269,6 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   float ***Ralpha  = mx->Rdp; /* pointer to the Ralpha DP matrix */
   float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
 
-
   /* Allocations and initializations  */
   /* grow the matrix based on the current sequence and bands */
   if((status = cm_tr_hb_mx_GrowTo(cm, mx, errbuf, cp9b, (j0-i0+1), size_limit)) != eslOK) return status;
@@ -2269,7 +2278,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   W = j0-i0+1;
   /* make sure our bands won't allow a hit bigger than W (this could be modified to only execute in debugging mode) */
   for(j = jmin[0]; j <= jmax[0]; j++) {
-    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FastCYKScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%d)", j, hdmax[0][(j-jmin[0])], j0-i0+1);
+    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FTrInsideScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%d)", j, hdmax[0][(j-jmin[0])], j0-i0+1);
   }
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
@@ -2757,6 +2766,12 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	      if(do_J_v && do_J_y) Jalpha[v][jp_v][dp_v] = FLogsum(Jalpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y_sd] + tsc);
 	      if(do_L_v && do_L_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Lalpha[y][jp_y_sdr][dp_y_sd] + tsc);
 	      if(do_R_v && do_R_y) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Ralpha[y][jp_y_sdr][dp_y_sd] + tsc);
+
+	      /* an easy to overlook case: if d == 0, set L and R values to IMPOSSIBLE */
+	      if(dp_v == dpn && dn == 0) { /* d is 0 */
+		if(do_L_v) Lalpha[v][jp_v][dp_v] = IMPOSSIBLE;
+		if(do_R_v) Ralpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      }		
 	    }
 	  }
 	}
@@ -2949,7 +2964,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
    * already calc'ed from the v loop with v == 0 
    */
 
-  /* Report all possible hits, but only after looking at local begins (if they're on) */
+  /* Report all possible hits, but only after looking at truncated begins (if they're on) */
   v = 0;
   sd = sdr = 0;
   jpn = 0;
@@ -2970,7 +2985,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
     }
   }
 
-  /* Finally, allow for local and truncated hits */
+  /* Finally, allow for truncated hits */
   esl_stopwatch_Start(w);
   v = 0;
   assert(cp9b->do_J[0] == TRUE);
@@ -3038,7 +3053,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
 	    Tsc = Talpha[y][jp_y][dp_y] + trunc_penalty;
 	    if(Tsc > Jalpha[0][jp_v][dp_v]) { 
-	      Jalpha[0][jp_v][dp_v] = Rsc;
+	      Jalpha[0][jp_v][dp_v] = Tsc;
 	      bestr[d] = y;
 	      bestmode[d] = TRMODE_T;
 	    }
@@ -3065,12 +3080,14 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   }
   /* find the best scoring hit, and update envelope boundaries if nec */
   vsc_root = IMPOSSIBLE;
+  bsc_full = IMPOSSIBLE;
   v = 0;
   jpn = 0;
   jpx = jmax[v] - jmin[v];
   for(jp_v = jpn; jp_v <= jpx; jp_v++) {
     dpn     = 0;
     dpx     = hdmax[v][jp_v] - hdmin[v][jp_v];
+    /* find the best score in J */
     for(dp_v = dpn; dp_v <= dpx; dp_v++) {
       vsc_root = ESL_MAX(vsc_root, Jalpha[0][jp_v][dp_v]);
     }
@@ -3086,12 +3103,27 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
       }
     }
   }
+  
+  /* find the best score in J that spans the full sequence */
+  if(j0 >= jmin[0] && j0 <= jmax[0]) {
+    jp_v = j0-jmin[0];
+    int L = j0-i0+1;
+    if(L >= hdmin[0][jp_v] && L <= hdmax[0][jp_v]) {
+      dp_v = L-hdmin[0][jp_v];
+      bsc_full = ESL_MAX(bsc_full, Jalpha[0][jp_v][dp_v]);
+    }
+  }
+
+
   /* find the best score in any matrix at any state */
   float best_tr_sc = IMPOSSIBLE;
   best_tr_sc = vsc_root;
-  printf("Best truncated score: %.4f (%.4f)\n",
+  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH INSIDE)\n",
 	 best_tr_sc - trunc_penalty, 
 	 best_tr_sc + sreLOG2(2./(cm->clen * (cm->clen+1))));
+  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH INSIDE)\n",
+	 bsc_full, 
+	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))));
 
   free(el_scA);
   free(yvalidA);

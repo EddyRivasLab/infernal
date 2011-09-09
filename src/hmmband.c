@@ -5109,7 +5109,6 @@ cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf)
   return NULL;
 }
 
-
 /* Function: cp9_PredictStartAndEndPositions()
  * Date:     EPN, Tue Sep  6 11:43:18 2011
  *
