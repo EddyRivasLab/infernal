@@ -84,7 +84,7 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
    * Initially this is small, and its only grown as needed.
    */
   if(cm->shmx != NULL) cm_hb_shadow_mx_Destroy(cm->shmx);
-  cm->shmx = cm_hb_shadow_mx_Create(cm, cm->M);
+  cm->shmx = cm_hb_shadow_mx_Create(cm);
 
   /* Build the CP9 HMM and associated data */
   /* IMPORTANT: do this before setting up CM for local mode

@@ -81,6 +81,7 @@ HDRS =  funcs.h\
 OBJS  = cm.o\
 	cm_alidisplay.o\
 	cm_dpalign.o\
+	cm_dpalign_trunc.o\
 	cm_dpsearch.o\
 	cm_dpsearch_trunc.o\
 	cm_dpsmall.o\

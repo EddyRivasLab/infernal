@@ -541,11 +541,11 @@ typedef struct cp9map_s {
  * in a set of arrays. 
  */
 typedef struct parsetree_s {
-  int *emitl;		/* i position in seq or ali (1..L or alen) */
-  int *emitr;		/* j position in seq or ali (1..L or alen) */
-  int *state;		/* y of state (0..M-1)                     */
-  int *mode;		/* mode of state (used in marginal         *
-                         * alignment), (0,1,2,3)                   */
+  int  *emitl;		/* i position in seq or ali (1..L or alen) */
+  int  *emitr;		/* j position in seq or ali (1..L or alen) */
+  int  *state;		/* y of state (0..M-1)                     */
+  char *mode;		/* mode of state, used in marginal alignment   *
+                         *  (TRMODE_J, TRMODE_L, TRMODE_R or TRMODE_T) */
 
   int *nxtl;		/* index in trace of left child            */
   int *nxtr;		/* index in trace of right child           */
@@ -916,6 +916,29 @@ typedef struct _fullmat_t {
  */
 #define USED_LOCAL_BEGIN 101
 #define USED_EL          102
+#define USED_TRUNC_BEGIN 103
+#define USED_TRUNC_END   104
+
+/* Constants for alignment truncation modes, used during alignment traceback.
+ * We use TRMODE{J,L,R}_OFFSET as a way of determining the marginal alignment
+ * mode just from the yoffset stored in the {J,L,R}shadow matrices, by 
+ * adding the appropriate offset to yoffset depending on the truncation mode.
+ * A crucial fact is that yoffset ranges from 0..MAXCONNECT-1 for normal
+ * states, but it can also be USED_LOCAL_BEGIN, USED_EL, and USED_TRUNC_BEGIN,
+ * so we have to make sure that adding 0..MAXCONNECT-1 to any of the 
+ * TRMODE_{J,L,R}_OFFSET values does not add up to USED_LOCAL_BEGIN, USED_EL
+ * or USED_TRUNC_BEGIN. And remember that these values have to be able
+ * to be stored in a char.
+ */
+#define NTRMODES        4
+#define TRMODE_J        3
+#define TRMODE_L        2
+#define TRMODE_R        1
+#define TRMODE_T        0
+#define TRMODE_J_OFFSET 0
+#define TRMODE_L_OFFSET 10
+#define TRMODE_R_OFFSET 20
+
 
 /* EPN, Fri Sep  7 16:49:43 2007
  * From HMMER3's p7_config.h:
@@ -1055,15 +1078,15 @@ typedef struct cm_tr_hb_mx_s {
 typedef struct cm_hb_shadow_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
   int  L;               /* length of sequence the matrix currently corresponds to */
+  int  B;               /* number of B_st's in the cm this mx was created for */
 
-  int    y_ncells_alloc;  /* current cell allocation limit in yshadow*/
-  int    y_ncells_valid;  /* current number of valid cells in yshadow */
-  int    k_ncells_alloc;  /* current cell allocation limit in kshadow*/
-  int    k_ncells_valid;  /* current number of valid cells in kshadow */
+  int64_t y_ncells_alloc;  /* current cell allocation limit in yshadow*/
+  int64_t y_ncells_valid;  /* current number of valid cells in yshadow */
+  int64_t k_ncells_alloc;  /* current cell allocation limit in kshadow*/
+  int64_t k_ncells_valid;  /* current number of valid cells in kshadow */
   float  size_Mb;         /* current size of matrix in Megabytes */
 
   int   *nrowsA;          /* [0..v..M] current number allocated rows for deck v */
-  int    nbifs;           /* number of B_st's in the cm this mx was created for */
 
   /* yshadow holds the shadow matrix for all non-BIF_B states, yshadow[v] == NULL if cm->sttype[v] == B_st */
   char ***yshadow;       /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
@@ -1078,6 +1101,66 @@ typedef struct cm_hb_shadow_mx_s {
 			 * state, only a reference, so don't free
 			 * it when mx is freed. */
 } CM_HB_SHADOW_MX;
+
+typedef struct cm_tr_hb_shadow_mx_s {
+  int  M;		/* number of states (1st dim ptrs) in current mx */
+  int  L;               /* length of sequence the matrix currently corresponds to */
+  int  B;		/* number of BIF_B states (1st dim ptrs) in current mx */
+
+  int64_t Jy_ncells_alloc;  /* current cell allocation limit in Jyshadow*/
+  int64_t Ly_ncells_alloc;  /* current cell allocation limit in Lyshadow*/
+  int64_t Ry_ncells_alloc;  /* current cell allocation limit in Ryshadow*/
+
+  int64_t Jk_ncells_alloc;  /* current cell allocation limit in Jkshadow*/
+  int64_t Lk_ncells_alloc;  /* current cell allocation limit in Lkshadow/Lkmode*/
+  int64_t Rk_ncells_alloc;  /* current cell allocation limit in Rkshadow/Rkmode*/
+  int64_t Tk_ncells_alloc;  /* current cell allocation limit in Tkshadow*/
+
+  int64_t Jy_ncells_valid;  /* current number of valid cells in Jyshadow */
+  int64_t Ly_ncells_valid;  /* current number of valid cells in Lyshadow */
+  int64_t Ry_ncells_valid;  /* current number of valid cells in Ryshadow */
+
+  int64_t Jk_ncells_valid;  /* current number of valid cells in Jkshadow */
+  int64_t Lk_ncells_valid;  /* current number of valid cells in Lkshadow/Lkmode */
+  int64_t Rk_ncells_valid;  /* current number of valid cells in Rkshadow/Rkmode */
+  int64_t Tk_ncells_valid;  /* current number of valid cells in Tkshadow */
+
+  float  size_Mb;         /* current size of matrix in Megabytes */
+
+  int   *JnrowsA;         /* [0..v..M] current number allocated rows for deck v */
+  int   *LnrowsA;         /* [0..v..M] current number allocated rows for deck v */
+  int   *RnrowsA;         /* [0..v..M] current number allocated rows for deck v */
+  int   *TnrowsA;         /* [0..v..M] current number allocated rows for deck v */
+
+  /* {J,L,R}yshadow holds the shadow matrix for all non-BIF_B states, {J,L,R}yshadow[v] == NULL if cm->sttype[v] == B_st */
+  char ***Jyshadow;       /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  char   *Jyshadow_mem;   /* the actual mem, points to Jyshadow[0][0][0] */
+  char ***Lyshadow;       /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  char   *Lyshadow_mem;   /* the actual mem, points to Lyshadow[0][0][0] */
+  char ***Ryshadow;       /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  char   *Ryshadow_mem;   /* the actual mem, points to Ryshadow[0][0][0] */
+
+  /* {J,L,R,T}kshadow holds the shadow matrix for all BIF_B states, {J,L,R,T}kshadow[v] == NULL if cm->sttype[v] != B_st */
+  int ***Jkshadow;       /*  [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  int   *Jkshadow_mem;   /* the actual mem, points to Jkshadow[0][0][0] */
+  int ***Lkshadow;       /*  [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  int   *Lkshadow_mem;   /* the actual mem, points to Lkshadow[0][0][0] */
+  int ***Rkshadow;       /*  [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  int   *Rkshadow_mem;   /* the actual mem, points to Rkshadow[0][0][0] */
+  int ***Tkshadow;       /*  [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  int   *Tkshadow_mem;   /* the actual mem, points to Tkshadow[0][0][0] */
+
+  /* {L,R}kmode holds the alignment mode for all BIF_B states {L,R}kmode == NULL for non-B states */
+  char ***Lkmode;        /*  [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  char   *Lkmode_mem;    /* the actual mem, points to Lkmode[0][0][0] */
+  char ***Rkmode;        /*  [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  char   *Rkmode_mem;    /* the actual mem, points to Rkmode[0][0][0] */
+
+  CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
+			 * matrix, which defines j, d, bands for each
+			 * state, only a reference, so don't free
+			 * it when mx is freed. */
+} CM_TR_HB_SHADOW_MX;
 
 /* Structure ScanMatrix_t: Information used by all CYK/Inside scanning functions,
  * compiled together into one data structure for convenience. 
@@ -1123,7 +1206,7 @@ typedef struct gammahitmx_s {
   int      *gback;              /* [0..L] traceback pointers for SHMM */ 
   float    *savesc;             /* [0..L] saves score of hit added to best parse at j */
   int      *saver;		/* [0..L] saves initial non-ROOT state of best parse ended at j */
-  int      *savemode;		/* [0..L] saves mode best parse ended at j (CM_HIT_MODE_J | CM_HIT_MODE_L | CM_HIT_MODE_R | CM_HIT_MODE_T) */
+  int      *savemode;		/* [0..L] saves mode best parse ended at j (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T) */
   float     cutoff;             /* minimum score to report */
   int       i0;                 /* position of first residue in sequence (gamma->mx[0] corresponds to this residue) */
   int       iamgreedy;          /* TRUE to use RSEARCH's greedy overlap resolution alg, FALSE to use optimal alg */
@@ -1717,12 +1800,6 @@ typedef struct cm_alidisplay_s {
 #define CM_HIT_IS_INCLUDED      (1<<0)
 #define CM_HIT_IS_REPORTED      (1<<1)
 #define CM_HIT_IS_DUPLICATE     (1<<2)
-
-#define CM_HIT_NMODES 4
-#define CM_HIT_MODE_J        3
-#define CM_HIT_MODE_L        2
-#define CM_HIT_MODE_R        1
-#define CM_HIT_MODE_T        0
 
 /* Structure: CM_HIT
  * 

@@ -93,7 +93,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   int         lc, rc;		 /* indices for left, right pos in consensus */
   int         symi, symj;
   int         d;
-  int         mode;
+  char        mode;
   int         lrf, rrf;  /* chars in annotation line; left, right     */
   int         lstr, rstr;	 /* chars in structure line; left, right      */
   int         lcons, rcons;	 /* chars in consensus line; left, right      */
@@ -298,8 +298,8 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	if (cm->rf != NULL) lrf = '.';
 	lstr    = '.';
 	lcons   = '.';
-	if (mode == 3 || mode == 2) lseq = tolower((int) abc->sym[symi]);
-        else                        lseq = '~';
+	if (mode == TRMODE_J || mode == TRMODE_L) lseq = tolower((int) abc->sym[symi]);
+        else                                      lseq = '~';
 	cpos_l  = 0;
 	spos_l  = tr->emitl[ti] + seqoffset-1;
 	if(pcode != NULL) { lpost = pcode[tr->emitl[ti]-1]; } /* watch off-by-one w.r.t. dsq */
@@ -308,8 +308,8 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	if (cm->rf != NULL) rrf = '.';
 	rstr    = '.';
 	rcons   = '.';
-	if (mode == 3 || mode == 1) rseq = tolower((int) abc->sym[symj]);
-        else                        rseq = '~';
+	if (mode == TRMODE_J || mode == TRMODE_R) rseq = tolower((int) abc->sym[symj]);
+        else                                      rseq = '~';
 	cpos_r  = 0;
 	spos_r  = tr->emitr[ti] + seqoffset-1;
 	if(pcode != NULL) { rpost = pcode[tr->emitr[ti]-1]; } /* watch off-by-one w.r.t. dsq */
@@ -321,14 +321,14 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	  lcons  = (cm->flags & CMH_CONS) ? cm->consensus[(lc+1)] : cons->cseq[lc];
 	  cpos_l = lc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
-	    if      (mode == 3)         lseq = abc->sym[symi];
-            else if (mode == 2 && d>0 ) lseq = abc->sym[symi];
-            else                        lseq = '~';
+	    if      (mode == TRMODE_J)         lseq = abc->sym[symi];
+            else if (mode == TRMODE_L && d>0 ) lseq = abc->sym[symi];
+            else                               lseq = '~';
 	    spos_l = tr->emitl[ti] + seqoffset-1;
 	    if(pcode != NULL) { lpost = pcode[tr->emitl[ti]-1]; } /* watch off-by-one w.r.t. dsq */
 	  } else {
-	    if (mode == 3 || mode == 2) lseq = '-';
-            else                        lseq = '~';
+	    if (mode == TRMODE_J || mode == TRMODE_L) lseq = '-';
+            else                                      lseq = '~';
 	    spos_l = 0;
 	    /* lpost remains as it was init'ed as a gap '.' */
 	  }
@@ -340,14 +340,14 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	  rcons  = (cm->flags & CMH_CONS) ? cm->consensus[(rc+1)] : cons->cseq[rc];
 	  cpos_r = rc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
-	    if      (mode == 3)         rseq = abc->sym[symj];
-            else if (mode == 1 && d>0 ) rseq = abc->sym[symj];
-            else                        rseq = '~';
+	    if      (mode == TRMODE_J)         rseq = abc->sym[symj];
+            else if (mode == TRMODE_R && d>0 ) rseq = abc->sym[symj];
+            else                               rseq = '~';
 	    spos_r = tr->emitr[ti] + seqoffset-1;
 	    if(pcode != NULL) { rpost = pcode[tr->emitr[ti]-1]; } /* watch off-by-one w.r.t. dsq */
 	  } else {
-	    if (mode == 3 || mode == 1) rseq = '-';
-            else                        rseq = '~';
+	    if (mode == TRMODE_J || mode == TRMODE_R) rseq = '-';
+            else                                      rseq = '~';
 	    spos_r = 0;
 	    /* rpost remains as it was init'ed as a gap '.' */
 	  }
@@ -366,15 +366,15 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	  }
         else if (mode != 3)
           {
-            if (mode == 2 && lseq == toupper(lcons)) lmid = lseq;
-            if (mode == 1 && rseq == toupper(rcons)) rmid = rseq;
+            if (mode == TRMODE_L && lseq == toupper(lcons)) lmid = lseq;
+            if (mode == TRMODE_R && rseq == toupper(rcons)) rmid = rseq;
           }
 	else if (DegeneratePairScore(cm->abc, cm->esc[v], symi, symj) >= 0) 
 	  lmid = rmid = ':';
 	
 	/* determine lnnc, rnnc for optional negative scoring non-canonical annotation, they are 'v' 
 	 * if lseq and rseq are a negative scoring non-canonical (not a AU,UA,GC,CG,GU,UG) pair */
-	if ((mode == 3) && (DegeneratePairScore(cm->abc, cm->esc[v], symi, symj) < 0) && (! bp_is_canonical(lseq, rseq))) {
+	if ((mode == TRMODE_J) && (DegeneratePairScore(cm->abc, cm->esc[v], symi, symj) < 0) && (! bp_is_canonical(lseq, rseq))) {
 	  lnnc = rnnc = 'v';
 	}
       } else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
@@ -393,7 +393,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	  rmid = '+';
       }
       if(cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR) { 
-	if(mode == 3) { 
+	if(mode == TRMODE_J) { 
 	  lnnc = rnnc = 'v'; /* mark non-truncated half base-pairs (MATP_ML or MATP_MR) with 'v' */
 	}
       }

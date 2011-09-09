@@ -58,7 +58,7 @@ CreateParsetree(int size)
   ESL_ALLOC(new->emitl, sizeof(int) * new->nalloc);
   ESL_ALLOC(new->emitr, sizeof(int) * new->nalloc);
   ESL_ALLOC(new->state, sizeof(int) * new->nalloc);
-  ESL_ALLOC(new->mode,  sizeof(int) * new->nalloc);
+  ESL_ALLOC(new->mode,  sizeof(char) * new->nalloc);
   ESL_ALLOC(new->nxtl,  sizeof(int) * new->nalloc);
   ESL_ALLOC(new->nxtr,  sizeof(int) * new->nalloc);
   ESL_ALLOC(new->prv,   sizeof(int) * new->nalloc);
@@ -83,7 +83,7 @@ GrowParsetree(Parsetree_t *tr)
   ESL_RALLOC(tr->emitl, tmp, sizeof(int) * tr->nalloc);
   ESL_RALLOC(tr->emitr, tmp, sizeof(int) * tr->nalloc);
   ESL_RALLOC(tr->state, tmp, sizeof(int) * tr->nalloc);
-  ESL_RALLOC(tr->mode,  tmp, sizeof(int) * tr->nalloc);
+  ESL_RALLOC(tr->mode,  tmp, sizeof(char) * tr->nalloc);
   ESL_RALLOC(tr->nxtl,  tmp, sizeof(int) * tr->nalloc);
   ESL_RALLOC(tr->nxtr,  tmp, sizeof(int) * tr->nalloc);
   ESL_RALLOC(tr->prv,   tmp, sizeof(int) * tr->nalloc);
@@ -123,10 +123,11 @@ SizeofParsetree(Parsetree_t *tr)
   
   Mb = 0.;
   Mb += 3 * sizeof(int); /* n, nalloc, memblock */
-  Mb += tr->nalloc * (sizeof(int)) * 7; 
+  Mb += tr->nalloc * (sizeof(int)) * 6; 
+  Mb += tr->nalloc * (sizeof(char)) * 1; 
   Mb /= 1000000.;
-  /* 7 = emitl,emitr,state,mode,nxtl,nxtr,prv */
-
+  /* 6 = emitl,emitr,state,nxtl,nxtr,prv */
+  /* 1 = mode */
   return Mb;
 }
 
@@ -159,11 +160,13 @@ SizeofParsetree(Parsetree_t *tr)
  *           
  *           For the special case of initializing the root node, use y==-1
  *           and whichway==TRACE_LEFT_CHILD. 
+ *
+ *           <mode> is the alignment mode, either TRMODE_J, TRMODE_L, TRMODE_R, or TRMODE_T.
  *           
  * Returns:  index of new node.
  */          
 int
-InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state, int mode)
+InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state, char mode)
 {
   int a;
   int n;
@@ -211,7 +214,7 @@ InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int 
 {
    int n;
 
-   n = InsertTraceNodewithMode(tr, y, whichway, emitl, emitr, state, 3);
+   n = InsertTraceNodewithMode(tr, y, whichway, emitl, emitr, state, TRMODE_J);
 
    return n;
 }
@@ -282,7 +285,7 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
   int v,y;			/* parent, child state index in CM                   */
   ESL_DSQ symi, symj;		/* symbol indices for emissions, 0..cm->abc->Kp-1    */
   float sc;			/* the log-odds score of the parse tree */
-  int mode;
+  char mode;
   float struct_sc;              /* contribution of the structure to the score */
   float primary_sc;             /* contribution of primary sequence emissions to the score */
   float lsc, rsc;
@@ -320,7 +323,7 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
 	  {
 	    symi = dsq[tr->emitl[tidx]];
 	    symj = dsq[tr->emitr[tidx]];
-            if (mode == 3)
+            if (mode == TRMODE_J)
               {
   	        if (symi < cm->abc->K && symj < cm->abc->K) { 
 	          sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
@@ -337,16 +340,16 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
 		primary_sc += lsc;
 		primary_sc += rsc;
 	      }
-            else if (mode == 2)
+            else if (mode == TRMODE_L)
               sc += cm->lmesc[v][symi];
-            else if (mode == 1)
+            else if (mode == TRMODE_R)
               sc += cm->rmesc[v][symj];
 	    if(emap != NULL) { 
 	      spos = ESL_MIN(spos, emap->lpos[nd]);
 	      epos = ESL_MAX(epos, emap->rpos[nd]);
 	    }
 	  } 
-	else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
+	else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == TRMODE_J || mode == TRMODE_L) )
 	  {
 	    symi = dsq[tr->emitl[tidx]];
 	    if (symi < cm->abc->K) lsc = cm->esc[v][(int) symi];
@@ -358,7 +361,7 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
 	      epos = ESL_MAX(epos, emap->lpos[nd]);
 	    }
 	  } 
-	else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 1) )
+	else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == TRMODE_J || mode == TRMODE_R) )
 	  {
 	    symj = dsq[tr->emitr[tidx]];
 	    if (symj < cm->abc->K) rsc = cm->esc[v][(int) symj];
@@ -461,7 +464,7 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int 
   float tsc;
   float esc;
   int   v,y;
-  int   mode;
+  char  mode;
   int   do_banded;
   int   L;
 
@@ -504,15 +507,15 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int 
       syml = symr = ' ';
       esc = 0.;
       if (cm->sttype[v] == MP_st) {
-	if (mode == 3 || mode == 2) syml = cm->abc->sym[dsq[tr->emitl[x]]]; 
-	if (mode == 3 || mode == 1) symr = cm->abc->sym[dsq[tr->emitr[x]]];
-	if      (mode == 3) esc = DegeneratePairScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
-        else if (mode == 2) esc = cm->lmesc[v][dsq[tr->emitl[x]]];
-        else if (mode == 1) esc = cm->rmesc[v][dsq[tr->emitr[x]]];
-      } else if ( (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) && (mode == 3 || mode == 2) ) {
+	if (mode == TRMODE_J || mode == TRMODE_L) syml = cm->abc->sym[dsq[tr->emitl[x]]]; 
+	if (mode == TRMODE_J || mode == TRMODE_R) symr = cm->abc->sym[dsq[tr->emitr[x]]];
+	if      (mode == TRMODE_J) esc = DegeneratePairScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
+        else if (mode == TRMODE_L) esc = cm->lmesc[v][dsq[tr->emitl[x]]];
+        else if (mode == TRMODE_R) esc = cm->rmesc[v][dsq[tr->emitr[x]]];
+      } else if ( (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) && (mode == TRMODE_J || mode == TRMODE_L) ) {
 	syml = cm->abc->sym[dsq[tr->emitl[x]]];
 	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitl[x]], cm->esc[v]);
-      } else if ( (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) && (mode == 3 || mode == 1) ) {
+      } else if ( (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) && (mode == TRMODE_J || mode == TRMODE_R) ) {
 	symr = cm->abc->sym[dsq[tr->emitr[x]]];
 	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitr[x]], cm->esc[v]);
       }
@@ -1289,7 +1292,7 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_f
   int tidx;			/* counter through positions in the parsetree        */
   int v,y;			/* parent, child state index in CM                   */
   ESL_DSQ symi, symj;		/* symbol indices for emissions, 0..Kp-1             */
-  int mode;
+  char mode;
   int    tp;                    /* trace index offset, for v's with > tidx (IL or IR)*/
   float *tr_esc;                /* [0..tr->n-1] score of emissions from each trace node */
   float *tr_tsc;                /* [0..tr->n-1] score of transitions from each trace node */
@@ -1351,25 +1354,25 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_f
 	    {
 	      symi = dsq[tr->emitl[tidx]];
 	      symj = dsq[tr->emitr[tidx]];
-	      if (mode == 3)
+	      if (mode == TRMODE_J)
 		{
 		  if (symi < cm->abc->K && symj < cm->abc->K)
 		    tr_esc[tidx] = cm->esc[v][(int) (symi*cm->abc->K+symj)];
 		  else
 		    tr_esc[tidx] = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
 		}
-	      else if (mode == 2)
+	      else if (mode == TRMODE_L)
 		tr_esc[tidx] = cm->lmesc[v][symi];
-	      else if (mode == 1)
+	      else if (mode == TRMODE_R)
 		tr_esc[tidx] = cm->rmesc[v][symj];
 	    } 
-	  else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
+	  else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == TRMODE_J || mode == TRMODE_L) )
 	    {
 	      symi = dsq[tr->emitl[tidx]];
 	      if (symi < cm->abc->K) tr_esc[tidx] = cm->esc[v][(int) symi];
 	      else                   tr_esc[tidx] = esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]);
 	    } 
-	  else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 2) )
+	  else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == TRMODE_J || mode == TRMODE_L) )
 	    {
 	      symj = dsq[tr->emitr[tidx]];
 	      if (symj < cm->abc->K) tr_esc[tidx] = cm->esc[v][(int) symj];

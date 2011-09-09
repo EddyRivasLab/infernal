@@ -550,7 +550,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
   /* allocate/initialize shmx, if needed, only if do_hbanded */
   sub_shmx  = NULL;
   shmx      = NULL;
-  if(do_hbanded) shmx = cm_hb_shadow_mx_Create(cm, cm->M);
+  if(do_hbanded) shmx = cm_hb_shadow_mx_Create(cm);
   orig_shmx = shmx;
 
   nalign = seqs_to_aln->nseq;
@@ -826,7 +826,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	sub_hmm    = sub_cm->cp9;
 	sub_cp9b   = sub_cm->cp9b;
 	sub_cp9map = sub_cm->cp9map;
-	sub_shmx   = cm_hb_shadow_mx_Create(cm, cm->M); /* a new shadow matrix for the sub CM */
+	sub_shmx   = cm_hb_shadow_mx_Create(cm); /* a new shadow matrix for the sub CM */
 
 	if(do_p7banded) { 
 	  P7BandsAdjustForSubCM(kmin, kmax, L, spos, epos);

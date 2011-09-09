@@ -551,7 +551,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 
   if (ret_b != NULL)      *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
   if (ret_bsc != NULL)    *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
-  if(ret_sc != NULL)      *ret_sc = sc;
+  if (ret_sc != NULL)     *ret_sc = sc;
   free(el_scA);
   free(yvalidA);
 
@@ -1239,7 +1239,7 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           
  *           Identical to FastAlign() but HMM bands are used here.
  * 
- *           Input arguments allow this function to be run in 4 'modes':
+ *           Input arguments allow this function to be run in 6 'modes':
  *
  *           mode      returns                 arguments
  *           ----  ----------------  ----------------------------------------
@@ -1304,10 +1304,6 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int 
   have_pcodes = (ret_pcode != NULL) ? TRUE : FALSE;
   do_post = (do_optacc || have_pcodes) ? TRUE : FALSE;
 
-  ESL_STOPWATCH *w;
-  w = esl_stopwatch_Create();
-  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
-
   /* Contract check */
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), dsq is NULL.");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), mx is NULL.");
@@ -1324,32 +1320,14 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int 
   /* if do_post, fill Inside, Outside, Posterior matrices, in that order */
   /* if do_sample (and !do_post) fill Inside and sample from it */
   if(do_post || do_sample) { 
-    esl_stopwatch_Start(w);  
     if((status = FastInsideAlignHB (cm, errbuf, dsq, i0, j0, size_limit, mx, &ins_sc)) != eslOK) return status;
-    esl_stopwatch_Stop(w); 
-    FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-    printf("\nFastInsideAlignHB  %11s\n", time_buf);
-#endif
     if(do_sample) { 
       if((status = SampleFromInsideHB(r, cm, errbuf, dsq, j0-i0+1, mx, &tr, &sc)) != eslOK) return status; 
     }
     if(do_post) { /* Inside was called above, now do Outside, then Posterior */
-      esl_stopwatch_Start(w);  
       if((status = FastOutsideAlignHB(cm, errbuf, dsq, i0, j0, size_limit, post_mx, mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
-      esl_stopwatch_Stop(w); 
-      FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-      printf("FastOutsideAlignHB %11s\n", time_buf);
-#endif
       /* Note: we can only check the posteriors in FastOutsideAlignHB() if local begin/ends are off */
-      esl_stopwatch_Start(w);  
       if((status = CMPosteriorHB(cm, errbuf, i0, j0, size_limit, mx, post_mx, post_mx)) != eslOK) return status;   
-      esl_stopwatch_Stop(w); 
-      FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-      printf("CMPosteriorHB      %11s\n", time_buf);
-#endif
       if(cm->align_opts & CM_ALIGN_CHECKINOUT) { 
 	if((status = CMCheckPosteriorHB(cm, errbuf, i0, j0, post_mx)) != eslOK) return status;
 	printf("\nHMM banded posteriors checked.\n\n");
@@ -1365,13 +1343,7 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int 
     /* Fill in the parsetree (either CYK or optimally accurate (if do_optacc)), 
      * this will overwrite mx if (do_post) caused it to be filled in FastInsideAlignHB 
      */
-    esl_stopwatch_Start(w);  
     if((status = fast_alignT_hb(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, mx, shmx, do_optacc, post_mx, size_limit, &sc)) != eslOK) return status;
-    esl_stopwatch_Stop(w); 
-    FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-    printf("fast_alignT_hb()   %11s\n", time_buf);
-#endif
   }
 
   if(have_pcodes) {
@@ -1385,7 +1357,6 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   if (ret_sc != NULL) *ret_sc = sc;
   ESL_DPRINTF1(("returning from FastAlignHB() sc : %f\n", sc)); 
-  esl_stopwatch_Destroy(w);
   return eslOK;
 }
 

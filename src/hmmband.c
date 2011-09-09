@@ -1449,13 +1449,6 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
    * bad explanation, i know... write out an example, its the only way to get it). 
    */
 
-  /* do_trunc == TRUE related variables */
-  int marg_imin_v, marg_imax_v;
-  int marg_jmin_v, marg_jmax_v;
-  int marg_imin, marg_imax;
-  int marg_jmin, marg_jmax;
-  int final_v;
-
   /* Contract checks */
   if (cp9b == NULL)                                                                   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), cp9b is NULL.\n");
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
@@ -3610,7 +3603,7 @@ debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ 
   float tsc;
   float esc;
   int   v,y;
-  int   mode;
+  char  mode;
 
   /* Contract check */
   if(dsq == NULL)  cm_Fail("In debug_print_parsetree_and_ij_bands(), dsq is NULL");
@@ -3633,15 +3626,15 @@ debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ 
       syml = symr = ' ';
       esc = 0.;
       if (cm->sttype[v] == MP_st) {
-	if (mode == 3 || mode == 2) syml = cm->abc->sym[dsq[tr->emitl[x]]]; 
-	if (mode == 3 || mode == 1) symr = cm->abc->sym[dsq[tr->emitr[x]]];
-	if      (mode == 3) esc = DegeneratePairScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
-        else if (mode == 2) esc = cm->lmesc[v][dsq[tr->emitl[x]]];
-        else if (mode == 1) esc = cm->rmesc[v][dsq[tr->emitr[x]]];
-      } else if ( (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) && (mode == 3 || mode == 2) ) {
+	if (mode == TRMODE_J || mode == TRMODE_L) syml = cm->abc->sym[dsq[tr->emitl[x]]]; 
+	if (mode == TRMODE_J || mode == TRMODE_R) symr = cm->abc->sym[dsq[tr->emitr[x]]];
+	if      (mode == TRMODE_J) esc = DegeneratePairScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
+        else if (mode == TRMODE_L) esc = cm->lmesc[v][dsq[tr->emitl[x]]];
+        else if (mode == TRMODE_R) esc = cm->rmesc[v][dsq[tr->emitr[x]]];
+      } else if ( (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) && (mode == TRMODE_J || mode == TRMODE_L) ) {
 	syml = cm->abc->sym[dsq[tr->emitl[x]]];
 	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitl[x]], cm->esc[v]);
-      } else if ( (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) && (mode == 3 || mode == 1) ) {
+      } else if ( (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) && (mode == TRMODE_J || mode == TRMODE_R) ) {
 	symr = cm->abc->sym[dsq[tr->emitr[x]]];
 	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitr[x]], cm->esc[v]);
       }
@@ -5226,9 +5219,9 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
     if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_m[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_m[cp9b->sp2]);
     if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_i[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_i[cp9b->sp2]);
     if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_d[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_d[cp9b->sp2]);
-    if(cp9b->Rmarg_imin == INT_MAX) cp9b->Rmarg_imin = i0;
-    cp9b->Rmarg_imin = ESL_MAX(i0, cp9b->Rmarg_imin); /* i can't be less than i0 */
-    cp9b->Rmarg_imin = ESL_MIN(j0, cp9b->Rmarg_imin); /* i can't be more than j0 */
+    if(cp9b->Rmarg_imin == INT_MAX || cp9b->sp1 == (cp9b->hmm_M+1) || cp9b->sp2 == (cp9b->hmm_M+1)) cp9b->Rmarg_imin = i0;
+    cp9b->Rmarg_imin = ESL_MAX(i0,   cp9b->Rmarg_imin); /* i can't be less than i0 */
+    cp9b->Rmarg_imin = ESL_MIN(j0+1, cp9b->Rmarg_imin); /* i can't be more than j0+1 */
   }
   
   /* set cp9b->Rmarg_imax */
@@ -5241,9 +5234,9 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
     if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_m[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_m[cp9b->sp2]);
     if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_i[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_i[cp9b->sp2]);
     if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_d[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_d[cp9b->sp2]);
-    if(cp9b->Rmarg_imax == INT_MIN) cp9b->Rmarg_imax = j0;
-    cp9b->Rmarg_imax = ESL_MAX(i0, cp9b->Rmarg_imax); /* i can't be less than i0 */
-    cp9b->Rmarg_imax = ESL_MIN(j0, cp9b->Rmarg_imax); /* i can't be more than j0 */
+    if(cp9b->Rmarg_imax == INT_MIN || cp9b->sp1 == (cp9b->hmm_M+1) || cp9b->sp2 == (cp9b->hmm_M+1)) cp9b->Rmarg_imax = j0+1;
+    cp9b->Rmarg_imax = ESL_MAX(i0,   cp9b->Rmarg_imax); /* i can't be less than i0 */
+    cp9b->Rmarg_imax = ESL_MIN(j0+1, cp9b->Rmarg_imax); /* i can't be more than j0+1 */
   }
 
   /* set cp9b->Lmarg_jmin */
@@ -5256,7 +5249,7 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
     if(cp9b->ep2 != 0 && cp9b->pn_min_m[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_m[cp9b->ep2]);
     if(cp9b->ep2 != 0 && cp9b->pn_min_i[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_i[cp9b->ep2]);
     if(cp9b->ep2 != 0 && cp9b->pn_min_d[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_d[cp9b->ep2]-1); /* off-by-one with deletes in HMM vs CM */
-    if(cp9b->Lmarg_jmin == INT_MAX) cp9b->Lmarg_jmin = i0;
+    if(cp9b->Lmarg_jmin == INT_MAX || cp9b->ep1 == 0 || cp9b->ep2 == 0) cp9b->Lmarg_jmin = i0-1;
     cp9b->Lmarg_jmin = ESL_MAX(i0-1, cp9b->Lmarg_jmin); /* j can't be less than i0-1 */
     cp9b->Lmarg_jmin = ESL_MIN(j0,   cp9b->Lmarg_jmin); /* j can't be more than j0 */
   }
@@ -5271,7 +5264,7 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
     if(cp9b->ep2 != 0 && cp9b->pn_max_m[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_m[cp9b->ep2]);
     if(cp9b->ep2 != 0 && cp9b->pn_max_i[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_i[cp9b->ep2]);
     if(cp9b->ep2 != 0 && cp9b->pn_max_d[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_d[cp9b->ep2]-1); /* off-by-one with deletes in HMM vs CM */
-    if(cp9b->Lmarg_jmax == INT_MIN) cp9b->Lmarg_jmax = j0;
+    if(cp9b->Lmarg_jmax == INT_MIN || cp9b->ep1 == 0 || cp9b->ep2 == 0) cp9b->Lmarg_jmax = j0;
     cp9b->Lmarg_jmax = ESL_MAX(i0-1, cp9b->Lmarg_jmax); /* j can't be less than i0-1 */
     cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax); /* j can't be more than j0 */
   }

@@ -107,15 +107,6 @@ static int   cyk_extra_decks(CM_t *cm);
 #define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
 #define BE_PARANOID   1		/* setting for do_full: keep whole matrix, perhaps for debugging */
 
-/* Special flags for use in shadow (traceback) matrices, instead of
- * offsets to connected states. When yshad[0][][] is USED_LOCAL_BEGIN,
- * the b value returned by inside() is the best connected state (a 0->b
- * local entry). When yshad[v][][] is USED_EL, there is a v->EL transition
- * and the remaining subsequence is aligned to the EL state. 
- */
-#define USED_LOCAL_BEGIN 101
-#define USED_EL          102
-
 /*******************************************************************************
  * EPN: Banded functions are named *_b() 
  * Functions that I don't think need a banded version are indicated with a U

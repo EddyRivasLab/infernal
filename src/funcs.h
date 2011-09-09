@@ -91,6 +91,13 @@ extern void       DumpCMFlags(FILE *fp, CM_t *cm);
 extern ESL_GETOPTS *cm_CreateDefaultApp(ESL_OPTIONS *options, int nargs, int argc, char **argv, char *banner, char *usage);
 extern CM_P7_OM_BLOCK *cm_p7_oprofile_CreateBlock(int size);
 extern void            cm_p7_oprofile_DestroyBlock(CM_P7_OM_BLOCK *block);
+extern float **FCalcOptimizedEmitScores      (CM_t *cm);
+extern int   **ICalcOptimizedEmitScores      (CM_t *cm);
+extern int   **ICopyOptimizedEmitScoresFromFloats(CM_t *cm, float **oesc);
+extern void    DumpOptimizedEmitScores       (CM_t *cm, FILE *fp);
+extern void    FreeOptimizedEmitScores       (float **fesc_vAA, int **iesc_vAA, int M);
+extern float **FCalcInitDPScores             (CM_t *cm);
+extern int   **ICalcInitDPScores             (CM_t *cm);
 
 /* from dispatch.c */
 extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, int hit_len_guess, 
@@ -119,6 +126,10 @@ extern int CMPosterior        (CM_t *cm, char *errbuf, int i0, int j0, float siz
 extern int CMCheckPosteriorHB (CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post);
 extern int CMCheckPosterior   (CM_t *cm, char *errbuf, int i0, int j0, float ***post);
 
+/* from cm_dpalign_trunc.c */
+extern int FastTrAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, 
+			 int do_optacc, int do_sample, CM_TR_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode, float *ret_sc, float *ret_ins_sc);
+
 /* from cm_dpsearch.c */
 extern int  FastCYKScan      (CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
 extern int  RefCYKScan       (CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
@@ -143,14 +154,6 @@ extern int  TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, fl
 			CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
 extern int  FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
 			    CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
-
-extern TrScanMatrix_t *cm_CreateTrScanMatrix  (CM_t *cm, int W, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
-extern int             cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx);
-extern int             cm_IntizeTrScanMatrix  (CM_t *cm, TrScanMatrix_t *trsmx);
-extern int             cm_FreeFloatsFromTrScanMatrix   (CM_t *cm, TrScanMatrix_t *trsmx);
-extern int             cm_FreeIntsFromTrScanMatrix     (CM_t *cm, TrScanMatrix_t *trsmx);
-extern void            cm_FreeTrScanMatrix             (CM_t *cm, TrScanMatrix_t *trsmx);
-
 
 /* from cm_dpsmall.c */
 extern float CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, 
@@ -247,16 +250,26 @@ extern int              cm_hb_mx_GrowTo               (CM_t *cm, CM_HB_MX *mx, c
 extern int              cm_hb_mx_Dump                 (FILE *ofp, CM_HB_MX *mx);
 extern void             cm_hb_mx_Destroy              (CM_HB_MX *mx);
 extern int              cm_hb_mx_SizeNeeded           (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb);
+
 extern CM_TR_HB_MX     *cm_tr_hb_mx_Create            (CM_t *cm);
 extern int              cm_tr_hb_mx_GrowTo            (CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
 extern int              cm_tr_hb_mx_Dump              (FILE *ofp, CM_TR_HB_MX *mx);
 extern void             cm_tr_hb_mx_Destroy           (CM_TR_HB_MX *mx);
 extern int              cm_tr_hb_mx_SizeNeeded        (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb);
-extern CM_HB_SHADOW_MX *cm_hb_shadow_mx_Create        (CM_t *cm, int M);
+
+extern CM_HB_SHADOW_MX *cm_hb_shadow_mx_Create        (CM_t *cm);
 extern int              cm_hb_shadow_mx_GrowTo        (CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
 extern int              cm_hb_shadow_mx_Dump          (FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx);
 extern void             cm_hb_shadow_mx_Destroy       (CM_HB_SHADOW_MX *mx);
 extern int              cm_hb_shadow_mx_SizeNeeded    (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *ret_nchar_cells, int64_t *ret_nint_cells, float *ret_Mb);
+
+extern CM_TR_HB_SHADOW_MX *cm_tr_hb_shadow_mx_Create  (CM_t *cm);
+extern int              cm_tr_hb_shadow_mx_GrowTo     (CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
+extern int              cm_tr_hb_shadow_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx);
+extern void             cm_tr_hb_shadow_mx_Destroy    (CM_TR_HB_SHADOW_MX *mx);
+extern int              cm_tr_hb_shadow_mx_SizeNeeded (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *ret_Jnchar_cells, int64_t *ret_Lnchar_cells, int64_t *ret_Rnchar_cells, 
+						       int64_t *ret_Jnint_cells, int64_t *ret_Lnint_cells, int64_t *ret_Rnint_cells, int64_t *ret_Tnint_cells, float *ret_Mb);
+
 extern ScanMatrix_t    *cm_CreateScanMatrix           (CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
 extern int              cm_CreateScanMatrixForCM      (CM_t *cm, int do_float, int do_int);           
 extern int              cm_FloatizeScanMatrix         (CM_t *cm, ScanMatrix_t *smx);
@@ -267,14 +280,15 @@ extern int              cm_FreeIntsFromScanMatrix     (CM_t *cm, ScanMatrix_t *s
 extern void             cm_FreeScanMatrix             (CM_t *cm, ScanMatrix_t *smx);
 extern void             cm_FreeScanMatrixForCM        (CM_t *cm);
 extern void             cm_DumpScanMatrixAlpha        (CM_t *cm, int j, int i0, int doing_float);
+
+extern TrScanMatrix_t  *cm_CreateTrScanMatrix         (CM_t *cm, int W, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
+extern int              cm_FloatizeTrScanMatrix       (CM_t *cm, TrScanMatrix_t *trsmx);
+extern int              cm_IntizeTrScanMatrix         (CM_t *cm, TrScanMatrix_t *trsmx);
+extern int              cm_FreeFloatsFromTrScanMatrix (CM_t *cm, TrScanMatrix_t *trsmx);
+extern int              cm_FreeIntsFromTrScanMatrix   (CM_t *cm, TrScanMatrix_t *trsmx);
+extern void             cm_FreeTrScanMatrix           (CM_t *cm, TrScanMatrix_t *trsmx);
 extern void             cm_DumpTrScanMatrixAlpha      (CM_t *cm, TrScanMatrix_t *trsmx, int j, int i0, int doing_float);
-extern float **         FCalcOptimizedEmitScores      (CM_t *cm);
-extern int **           ICalcOptimizedEmitScores      (CM_t *cm);
-extern int **           ICopyOptimizedEmitScoresFromFloats(CM_t *cm, float **oesc);
-extern void             DumpOptimizedEmitScores       (CM_t *cm, FILE *fp);
-extern void             FreeOptimizedEmitScores       (float **fesc_vAA, int **iesc_vAA, int M);
-extern float **         FCalcInitDPScores             (CM_t *cm);
-extern int **           ICalcInitDPScores             (CM_t *cm);
+
 extern GammaHitMx_t    *CreateGammaHitMx              (int L, int i0, int be_greedy, float cutoff, int do_backward);
 extern void             FreeGammaHitMx                (GammaHitMx_t *gamma);
 extern int              UpdateGammaHitMx              (CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, int *bestr, int *bestmode, CM_TOPHITS *hitlist, int W, double **act);
@@ -287,7 +301,7 @@ extern void         GrowParsetree(Parsetree_t *tr);
 extern void         FreeParsetree(Parsetree_t *tr);
 extern float        SizeofParsetree(Parsetree_t *tr);
 extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state);
-extern int          InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state, int mode);
+extern int          InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state, char mode);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);
 extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt);
 extern int          ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2, float *ret_sc, float *ret_struct_sc, float *ret_primary_sc, int *ret_spos, int *ret_epos);

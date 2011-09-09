@@ -4538,7 +4538,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   ESL_ALLOC(bestr, sizeof(int) * (W+1));
   ESL_ALLOC(bestmode, sizeof(int) * (W+1));
   esl_vec_ISet(bestr,    W+1, 0);
-  esl_vec_ISet(bestmode, W+1, CM_HIT_MODE_J);
+  esl_vec_ISet(bestmode, W+1, TRMODE_J);
 
   /* first report all hits with j < jmin[0] are impossible, only if we're reporting hits to hitlist */
   if(hitlist != NULL) { 
@@ -5003,7 +5003,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   ESL_ALLOC(bestr, sizeof(int) * (W+1));
   ESL_ALLOC(bestmode, sizeof(int) * (W+1));
   esl_vec_ISet(bestr,    W+1, 0);
-  esl_vec_ISet(bestmode, W+1, CM_HIT_MODE_J);
+  esl_vec_ISet(bestmode, W+1, TRMODE_J);
 
   /* first report all hits with j < jmin[0] are impossible, only if we're reporting hits to hitlist */
   if(hitlist != NULL) { 

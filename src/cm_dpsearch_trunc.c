@@ -75,6 +75,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
   GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
   float    *vsc;                /* best score for each state (float) */
   float     vsc_root;           /* best overall score (score at ROOT_S) */
+  float     bsc_full;           /* best overall score that emits full sequence i0..j0 */
   int       yoffset;		/* offset to a child state */
   int       i,j;		/* index of start/end positions in sequence, 0..L */
   int       d;			/* a subsequence length, 0..W */
@@ -137,6 +138,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
   ESL_ALLOC(vsc, sizeof(float) * cm->M);
   esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
   vsc_root = IMPOSSIBLE;
+  bsc_full = IMPOSSIBLE;
 
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
@@ -455,7 +457,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
       jp_v = cur;
       for (d = dnA[0]; d <= dxA[0]; d++) {
 	bestr[d]    = 0;	     /* root of the traceback = root state 0 */
-	bestmode[d] = CM_HIT_MODE_J; /* mode of the parsetree, joint (J) */
+	bestmode[d] = TRMODE_J; /* mode of the parsetree, joint (J) */
 	y = cm->cfirst[0];
 	Jalpha[jp_v][0][d] = ESL_MAX(IMPOSSIBLE, Jalpha[cur][y][d] + tsc_v[0]);
 	Lalpha[jp_v][0][d] = IMPOSSIBLE;
@@ -503,7 +505,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	    if(Jalpha[jp_v][0][d] < (Jalpha[jp_y][y][d] + trunc_penalty)) {
 	      Jalpha[jp_v][0][d] = Jalpha[jp_y][y][d] + trunc_penalty;
 	      bestr[d] = y;
-	      /* bestmode[d] remains CM_HIT_MODE_J */
+	      /* bestmode[d] remains TRMODE_J */
 	    }
 	  }
 	}
@@ -512,7 +514,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	    if(Jalpha[jp_v][0][d] < (Lalpha[jp_y][y][d] + trunc_penalty)) {
 	      Jalpha[jp_v][0][d] = Lalpha[jp_y][y][d] + trunc_penalty;
 	      bestr[d]    = y;
-	      bestmode[d] = CM_HIT_MODE_L;
+	      bestmode[d] = TRMODE_L;
 	    }
 	  }
 	}
@@ -521,7 +523,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	    if(Jalpha[jp_v][0][d] < (Ralpha[jp_y][y][d] + trunc_penalty)) {
 	      Jalpha[jp_v][0][d] = Ralpha[jp_y][y][d] + trunc_penalty;
 	      bestr[d]    = y;
-	      bestmode[d] = CM_HIT_MODE_R;
+	      bestmode[d] = TRMODE_R;
 	    }
 	  }
 	}
@@ -530,7 +532,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	    if(Jalpha[jp_v][0][d] < (Talpha[jp_y][y][d] + trunc_penalty)) {
 	      Jalpha[jp_v][0][d] = Talpha[jp_y][y][d] + trunc_penalty;
 	      bestr[d]    = y;
-	      bestmode[d] = CM_HIT_MODE_T;
+	      bestmode[d] = TRMODE_T;
 	    }
 	  }
 	}
@@ -538,6 +540,10 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
       /* find the best score in J */
       for (d = dnA[0]; d <= dxA[0]; d++) {
 	vsc_root = ESL_MAX(vsc_root, Jalpha[jp_v][0][d]);
+      }
+      /* find the best score in J that spans the full sequence */
+      if(j == j0) { 
+	bsc_full = ESL_MAX(bsc_full, Jalpha[jp_v][0][L]);
       }
       /* update envi, envj, if nec */
       if(do_env_defn) { 
@@ -564,6 +570,9 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
   printf("Best truncated score: %.4f (%.4f)\n",
 	 best_tr_sc, 
 	 best_tr_sc + sreLOG2(2./(cm->clen * (cm->clen+1))));
+  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH)\n",
+	 bsc_full, 
+	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))));
 
   /* If recovering hits in a non-greedy manner, do the traceback.
    * If we were greedy, they were reported in UpdateGammaHitMx() for each position j */
@@ -1009,7 +1018,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
       jp_v = cur;
       for (d = dnA[0]; d <= dxA[0]; d++) {
 	bestr[d]    = 0;	     /* root of the traceback = root state 0 */
-	bestmode[d] = CM_HIT_MODE_J; /* mode of the parsetree, joint (J) */
+	bestmode[d] = TRMODE_J; /* mode of the parsetree, joint (J) */
 	y = cm->cfirst[0];
 	Jalpha[jp_v][0][d] = ESL_MAX(-INFTY, Jalpha[cur][y][d] + tsc_v[0]);
 	Lalpha[jp_v][0][d] = -INFTY;
@@ -1057,7 +1066,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	    if(Jalpha[jp_v][0][d] < (Jalpha[jp_y][y][d] + trunc_penalty)) {
 	      Jalpha[jp_v][0][d] = Jalpha[jp_y][y][d] + trunc_penalty;
 	      bestr[d] = y;
-	      /* bestmode[d] remains CM_HIT_MODE_J */
+	      /* bestmode[d] remains TRMODE_J */
 	    }
 	  }
 	}
@@ -1066,7 +1075,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	    if(Jalpha[jp_v][0][d] < (Lalpha[jp_y][y][d] + trunc_penalty)) {
 	      Jalpha[jp_v][0][d] = Lalpha[jp_y][y][d] + trunc_penalty;
 	      bestr[d]    = y;
-	      bestmode[d] = CM_HIT_MODE_L;
+	      bestmode[d] = TRMODE_L;
 	    }
 	  }
 	}
@@ -1075,7 +1084,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	    if(Jalpha[jp_v][0][d] < (Ralpha[jp_y][y][d] + trunc_penalty)) {
 	      Jalpha[jp_v][0][d] = Ralpha[jp_y][y][d] + trunc_penalty;
 	      bestr[d]    = y;
-	      bestmode[d] = CM_HIT_MODE_R;
+	      bestmode[d] = TRMODE_R;
 	    }
 	  }
 	}
@@ -1085,7 +1094,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	    if(Jalpha[jp_v][0][d] < (Talpha[jp_y][y][d] + trunc_penalty)) {
 	      Jalpha[jp_v][0][d] = Talpha[jp_y][y][d] + trunc_penalty;
 	      bestr[d]    = y;
-	      bestmode[d] = CM_HIT_MODE_T;
+	      bestmode[d] = TRMODE_T;
 	    }
 	  }
 	}
@@ -1163,6 +1172,9 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
  *           (different than other (non-HB) scanning function's convention 
  *            of [j][v][d]).
  *
+ *           This function is very similar to FTrInsideScanHB(). Any changes
+ *           should be mirrored there.
+ *
  *           This version is not prefixed with 'Fast' because I didn't 
  *           successfully optimize it. There are if statements such as
  *           (do_J_v) in the lowest (for d) loops of the recursion which
@@ -1200,10 +1212,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   GammaHitMx_t *gamma;  /* semi-HMM for hit resoultion */
   int     *bestr;       /* best root state for d at current j */
   int     *bestmode;    /* best mode for parsetree for d at current j */
-  int      nd;	        /* node index */
   int      v,y,z;	/* indices for states  */
   int      j,d,i,k;	/* indices in sequence dimensions */
-  float    sc, Jsc, Lsc, Rsc, Tsc; /* temporary scores */
+  float    Jsc, Lsc, Rsc, Tsc; /* temporary scores */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
   float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
@@ -1227,6 +1238,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   int      yvalid_idx;         /* for keeping track of which children are valid */
   int      yvalid_ct;          /* for keeping track of which children are valid */
   float    vsc_root;           /* score of best hit */
+  float    bsc_full;           /* score of best hit that emits full sequence i0..j0 */
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
   double **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int      jp;                 /* j index in act */
@@ -1237,7 +1249,6 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
   int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
   int      do_T_v, do_T_y, do_T_z; /* is T matrix valid for state v, y, z? */
-  int      lpos, rpos;
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), dsq is NULL.\n");
@@ -1260,7 +1271,6 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   float ***Ralpha  = mx->Rdp; /* pointer to the Ralpha DP matrix */
   float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
 
-
   /* Allocations and initializations  */
   /* grow the matrix based on the current sequence and bands */
   if((status = cm_tr_hb_mx_GrowTo(cm, mx, errbuf, cp9b, (j0-i0+1), size_limit)) != eslOK) return status;
@@ -1270,7 +1280,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   W = j0-i0+1;
   /* make sure our bands won't allow a hit bigger than W (this could be modified to only execute in debugging mode) */
   for(j = jmin[0]; j <= jmax[0]; j++) {
-    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FastCYKScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%d)", j, hdmax[0][(j-jmin[0])], j0-i0+1);
+    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "TrCYKScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%d)", j, hdmax[0][(j-jmin[0])], j0-i0+1);
   }
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
@@ -1322,8 +1332,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   for (v = cm->M-1; v >= 0; v--) { /* all the way down to root, different from other scanners */
     float const *esc_v   = cm->oesc[v]; /* emission scores for state v */
     float const *tsc_v   = cm->tsc[v];  /* transition scores for state v */
-    float const *lmesc_v = cm->lmesc[v];
-    float const *rmesc_v = cm->rmesc[v];
+    float const *lmesc_v = cm->lmesc[v]; /* marginal left  emission scores for state v */
+    float const *rmesc_v = cm->rmesc[v]; /* marginal right emission scores for state v */
     sd     = StateDelta(cm->sttype[v]);
     sdr    = StateRightDelta(cm->sttype[v]);
     jn     = jmin[v];
@@ -1332,12 +1342,6 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
     do_L_v = cp9b->do_L[v];
     do_R_v = cp9b->do_R[v];
     do_T_v = cp9b->do_T[v];
-
-    /* Careful, emitmap is off-by-one for our purposes for lpos if v is not MATP_MP or MATL_ML, and rpos if v is not MATP_MP or MATR_MR */
-    nd = cm->ndidx[v];
-    lpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) ? cm->emap->lpos[nd] : cm->emap->lpos[nd]+1;
-    rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) ? cm->emap->rpos[nd] : cm->emap->rpos[nd]-1;
-    /*printf("v: %4d %4s %2s [%4d..%4d] (%6.4f..%6.4f) J: %d L: %d R: %d T: %d\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), lpos, rpos, cp9b->occ[lpos], cp9b->occ[rpos], do_J_v, do_L_v, do_R_v, do_T_v);*/
 
     /* re-initialize the J deck if we can do a local end from v */
     if(do_J_v) { 
@@ -1764,6 +1768,12 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	      if(do_J_v && do_J_y) Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y_sd] + tsc);
 	      if(do_L_v && do_L_y) Lalpha[v][jp_v][dp_v] = ESL_MAX(Lalpha[v][jp_v][dp_v], Lalpha[y][jp_y_sdr][dp_y_sd] + tsc);
 	      if(do_R_v && do_R_y) Ralpha[v][jp_v][dp_v] = ESL_MAX(Ralpha[v][jp_v][dp_v], Ralpha[y][jp_y_sdr][dp_y_sd] + tsc);
+
+	      /* an easy to overlook case: if d == 0, ensure L and R values are IMPOSSIBLE */
+	      if(dp_v == dpn && dn == 0) { /* d is 0 */
+		if(do_L_v) Lalpha[v][jp_v][dp_v] = IMPOSSIBLE;
+		if(do_R_v) Ralpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      }		
 	    }
 	  }
 	}
@@ -1817,7 +1827,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	   * (6) k <= d-hdmin[y][j-jmin[y]-k]; 
 	   *     5 and 6 guarantee (d-k) is within state y's j=(j-k) d band
 	   *
-	   * kn and kx were set above (outside (for (dp_v...) loop) that
+	   * kn and kx were set above (outside (for (dp_v...) loop)) that
 	   * satisfy 1-4 (b/c 1-4 are d-independent and k-independent)
 	   * RHS of inequalities 5 and 6 are dependent on k, so we check
 	   * for these within the next for loop.
@@ -1966,7 +1976,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   ESL_ALLOC(bestr, sizeof(int) * (W+1));
   ESL_ALLOC(bestmode, sizeof(int) * (W+1));
   esl_vec_ISet(bestr,    W+1, 0);
-  esl_vec_ISet(bestmode, W+1, CM_HIT_MODE_J);
+  esl_vec_ISet(bestmode, W+1, TRMODE_J);
 
   /* first report all hits with j < jmin[0] are impossible, only if we're reporting hits to hitlist */
   if(hitlist != NULL) { 
@@ -1985,7 +1995,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   for (j = jmin[v]; j <= jmax[v]; j++) {
     jp_v = j - jmin[v];
     esl_vec_ISet(bestr, (W+1), 0);                /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
-    esl_vec_ISet(bestmode, (W+1), CM_HIT_MODE_J); /* init bestmode to CM_HIT_MODE_J */
+    esl_vec_ISet(bestmode, (W+1), TRMODE_J); /* init bestmode to TRMODE_J */
     for (y = 1; y < cm->M; y++) {
       if(j >= jmin[y] && j <= jmax[y]) {  /* j is within state y's band */
 	jp_y = j - jmin[y];
@@ -1999,7 +2009,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	    if(Jsc > Jalpha[0][jp_v][dp_v]) { 
 	      Jalpha[0][jp_v][dp_v] = Jsc;
 	      bestr[d] = y;
-	      /* bestmode[d] remains CM_HIT_MODE_J */
+	      /* bestmode[d] remains TRMODE_J */
 	    }
 	  }
 	}
@@ -2011,7 +2021,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	    if(Jsc > Jalpha[0][jp_v][dp_v]) { 
 	      Jalpha[0][jp_v][dp_v] = Jsc;
 	      bestr[d] = y;
-	      /* bestmode[d] remains CM_HIT_MODE_J */
+	      /* bestmode[d] remains TRMODE_J */
 	    }
 	  }
 	}
@@ -2023,7 +2033,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	    if(Lsc > Jalpha[0][jp_v][dp_v]) { 
 	      Jalpha[0][jp_v][dp_v] = Lsc;
 	      bestr[d] = y;
-	      bestmode[d] = CM_HIT_MODE_L;
+	      bestmode[d] = TRMODE_L;
 	    }
 	  }
 	}
@@ -2035,7 +2045,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	    if(Rsc > Jalpha[0][jp_v][dp_v]) { 
 	      Jalpha[0][jp_v][dp_v] = Rsc;
 	      bestr[d] = y;
-	      bestmode[d] = CM_HIT_MODE_R;
+	      bestmode[d] = TRMODE_R;
 	    }
 	  }
 	}
@@ -2045,9 +2055,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
 	    Tsc = Talpha[y][jp_y][dp_y] + trunc_penalty;
 	    if(Tsc > Jalpha[0][jp_v][dp_v]) { 
-	      Jalpha[0][jp_v][dp_v] = Rsc;
+	      Jalpha[0][jp_v][dp_v] = Tsc;
 	      bestr[d] = y;
-	      bestmode[d] = CM_HIT_MODE_T;
+	      bestmode[d] = TRMODE_T;
 	    }
 	  }
 	}
@@ -2061,6 +2071,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, " HEYA2 Considering truncated and local hits time: ");
 
+  /*FILE *fp1; fp1 = fopen("tmp.smx", "w");   cm_tr_hb_mx_Dump(fp1, mx); fclose(fp1);*/
     
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to hitlist */
   if(hitlist != NULL) { 
@@ -2072,6 +2083,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   }
   /* find the best scoring hit, and update envelope boundaries if nec */
   vsc_root = IMPOSSIBLE;
+  bsc_full = IMPOSSIBLE;
   v = 0;
   jpn = 0;
   jpx = jmax[v] - jmin[v];
@@ -2093,12 +2105,25 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
       }
     }
   }
+  /* find the best score in J that spans the full sequence */
+  if(j0 >= jmin[0] && j0 <= jmax[0]) {
+    jp_v = j0-jmin[0];
+    int L = j0-i0+1;
+    if(L >= hdmin[0][jp_v] && L <= hdmax[0][jp_v]) {
+      dp_v = L-hdmin[0][jp_v];
+      bsc_full = ESL_MAX(bsc_full, Jalpha[0][jp_v][dp_v]);
+    }
+  }
+
   /* find the best score in any matrix at any state */
   float best_tr_sc = IMPOSSIBLE;
   best_tr_sc = vsc_root;
   printf("Best truncated score: %.4f (%.4f)\n",
 	 best_tr_sc - trunc_penalty, 
 	 best_tr_sc + sreLOG2(2./(cm->clen * (cm->clen+1))));
+  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH)\n",
+	 bsc_full, 
+	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))));
 
   free(el_scA);
   free(yvalidA);
@@ -2118,7 +2143,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   if(gamma != NULL) FreeGammaHitMx(gamma);
 
   if (ret_sc != NULL) *ret_sc = vsc_root;
-  ESL_DPRINTF1(("FastCYKScanHB() return sc: %f\n", vsc_root));
+  ESL_DPRINTF1(("TrCYKScanHB() return sc: %f\n", vsc_root));
   return eslOK;
 
  ERROR: 
@@ -2135,6 +2160,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
  *           only cells within the bands allocated.
  *           (different than other (non-HB) scanning function's convention 
  *            of [j][v][d]). This version uses float scores, not integers.
+ *
+ *           This function is very similar to TrCYKScanHB(). Any changes
+ *           should be mirrored there.
  *
  *           This version is not prefixed with 'Fast' because I didn't 
  *           successfully optimize it. There are if statements such as
@@ -2173,10 +2201,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   GammaHitMx_t *gamma;  /* semi-HMM for hit resoultion */
   int     *bestr;       /* best root state for d at current j */
   int     *bestmode;    /* best mode for parsetree for d at current j */
-  int      nd;	        /* node index */
   int      v,y,z;	/* indices for states  */
   int      j,d,i,k;	/* indices in sequence dimensions */
-  float    sc, Jsc, Lsc, Rsc, Tsc; /* temporary scores */
+  float    Jsc, Lsc, Rsc, Tsc; /* temporary scores */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
   float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
@@ -2210,7 +2237,6 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
   int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
   int      do_T_v, do_T_y, do_T_z; /* is T matrix valid for state v, y, z? */
-  int      lpos, rpos;
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), dsq is NULL.\n");
@@ -2305,12 +2331,6 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
     do_L_v = cp9b->do_L[v];
     do_R_v = cp9b->do_R[v];
     do_T_v = cp9b->do_T[v];
-
-    /* Careful, emitmap is off-by-one for our purposes for lpos if v is not MATP_MP or MATL_ML, and rpos if v is not MATP_MP or MATR_MR */
-    nd = cm->ndidx[v];
-    lpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) ? cm->emap->lpos[nd] : cm->emap->lpos[nd]+1;
-    rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) ? cm->emap->rpos[nd] : cm->emap->rpos[nd]-1;
-    /*printf("v: %4d %4s %2s [%4d..%4d] (%6.4f..%6.4f) J: %d L: %d R: %d T: %d\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), lpos, rpos, cp9b->occ[lpos], cp9b->occ[rpos], do_J_v, do_L_v, do_R_v, do_T_v);*/
 
     /* re-initialize the J deck if we can do a local end from v */
     if(do_J_v) { 
@@ -2939,7 +2959,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   ESL_ALLOC(bestr, sizeof(int) * (W+1));
   ESL_ALLOC(bestmode, sizeof(int) * (W+1));
   esl_vec_ISet(bestr,    W+1, 0);
-  esl_vec_ISet(bestmode, W+1, CM_HIT_MODE_J);
+  esl_vec_ISet(bestmode, W+1, TRMODE_J);
 
   /* first report all hits with j < jmin[0] are impossible, only if we're reporting hits to hitlist */
   if(hitlist != NULL) { 
@@ -2958,7 +2978,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   for (j = jmin[v]; j <= jmax[v]; j++) {
     jp_v = j - jmin[v];
     esl_vec_ISet(bestr, (W+1), 0);                /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
-    esl_vec_ISet(bestmode, (W+1), CM_HIT_MODE_J); /* init bestmode to CM_HIT_MODE_J */
+    esl_vec_ISet(bestmode, (W+1), TRMODE_J); /* init bestmode to TRMODE_J */
     for (y = 1; y < cm->M; y++) {
       if(j >= jmin[y] && j <= jmax[y]) {  /* j is within state y's band */
 	jp_y = j - jmin[y];
@@ -2972,7 +2992,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	    if(Jsc > Jalpha[0][jp_v][dp_v]) { 
 	      Jalpha[0][jp_v][dp_v] = Jsc;
 	      bestr[d] = y;
-	      /* bestmode[d] remains CM_HIT_MODE_J */
+	      /* bestmode[d] remains TRMODE_J */
 	    }
 	  }
 	}
@@ -2984,7 +3004,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	    if(Jsc > Jalpha[0][jp_v][dp_v]) { 
 	      Jalpha[0][jp_v][dp_v] = Jsc;
 	      bestr[d] = y;
-	      /* bestmode[d] remains CM_HIT_MODE_J */
+	      /* bestmode[d] remains TRMODE_J */
 	    }
 	  }
 	}
@@ -2996,7 +3016,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	    if(Lsc > Jalpha[0][jp_v][dp_v]) { 
 	      Jalpha[0][jp_v][dp_v] = Lsc;
 	      bestr[d] = y;
-	      bestmode[d] = CM_HIT_MODE_L;
+	      bestmode[d] = TRMODE_L;
 	    }
 	  }
 	}
@@ -3008,7 +3028,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	    if(Rsc > Jalpha[0][jp_v][dp_v]) { 
 	      Jalpha[0][jp_v][dp_v] = Rsc;
 	      bestr[d] = y;
-	      bestmode[d] = CM_HIT_MODE_R;
+	      bestmode[d] = TRMODE_R;
 	    }
 	  }
 	}
@@ -3020,7 +3040,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	    if(Tsc > Jalpha[0][jp_v][dp_v]) { 
 	      Jalpha[0][jp_v][dp_v] = Rsc;
 	      bestr[d] = y;
-	      bestmode[d] = CM_HIT_MODE_T;
+	      bestmode[d] = TRMODE_T;
 	    }
 	  }
 	}
@@ -3098,708 +3118,6 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* never reached */
 }
-
-/*****************************************************************
- *   1. TrScanMatrix_t data structure functions,
- *      auxiliary info and matrix of float and/or int scores for 
- *      truncated query dependent banded or non-banded CM DP search 
- *      functions.
- *****************************************************************/
-
-/* Function: cm_CreateTrScanMatrix()
- * Date:     EPN, Tue Aug 16 04:23:41 2011
- *
- * Purpose:  Given relevant info, allocate and initialize
- *           TrScanMatrix_t object.  Note that unlike a ScanMatrix_t,
- *           dmin is not used to set minimum values, even if we're
- *           going to use QDBs, because minimum subtree lengths are
- *           illogical with the truncated version of CYK/Inside, but
- *           maximum lengths are not, so <dmax> is considered here.
- *            
- * Returns:  eslOK on success, dies immediately on some error
- */
-TrScanMatrix_t *
-cm_CreateTrScanMatrix(CM_t *cm, int W, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int)
-{ 
-  int status;
-  TrScanMatrix_t *trsmx;
-  int v,j;
-
-  if((!do_float) && (!do_int)) cm_Fail("cm_CreateScanMatrix(), do_float and do_int both FALSE.\n");
-  if(do_banded && dmax == NULL) cm_Fail("cm_CreateScanMatrix(), do_banded is TRUE, but dmax is NULL.\n");
-
-  ESL_ALLOC(trsmx, sizeof(TrScanMatrix_t));
-
-  trsmx->flags    = 0;
-  trsmx->cm_M     = cm->M;
-  trsmx->W        = W;
-  trsmx->dmax     = dmax; /* could be NULL */
-  trsmx->beta_W   = beta_W; 
-  trsmx->beta_qdb = beta_qdb; 
-
-  /* precalculate minimum and maximum d for each state and each sequence index (1..j..W). 
-   * this is not always just 0, dmax, (for ex. if j < W). */
-  ESL_ALLOC(trsmx->dnAA, sizeof(int *) * (trsmx->W+1));
-  ESL_ALLOC(trsmx->dxAA, sizeof(int *) * (trsmx->W+1));
-  trsmx->dnAA[0] = trsmx->dxAA[0] = NULL; /* corresponds to j == 0, which is out of bounds */
-  for(j = 1; j <= trsmx->W; j++) {
-    ESL_ALLOC(trsmx->dnAA[j], sizeof(int) * cm->M);
-    ESL_ALLOC(trsmx->dxAA[j], sizeof(int) * cm->M);
-    for(v = 0; v < cm->M; v++) {
-      /* dnAA[j][v] is 1 for all states, even MATP, b/c d == 1 is valid for MATP in L,R matrices */
-      trsmx->dnAA[j][v] = 1;
-      if(do_banded) { 
-	trsmx->dxAA[j][v] = ESL_MIN(j, trsmx->dmax[v]); 
-	trsmx->dxAA[j][v] = ESL_MIN(trsmx->dxAA[j][v], trsmx->W);
-      }
-      else { 
-	trsmx->dxAA[j][v] = ESL_MIN(j, trsmx->W); 
-      }
-    }
-  }
-  /* allocate bestr, which holds best root state at alpha[0][cur][d] */
-  ESL_ALLOC(trsmx->bestr,    (sizeof(int) * (trsmx->W+1)));
-  ESL_ALLOC(trsmx->bestmode, (sizeof(int) * (trsmx->W+1)));
-  /* initialize bestmode to J for all positions */
-  esl_vec_ISet(trsmx->bestmode, (trsmx->W+1), CM_HIT_MODE_J);
-
-  /* Some info about the falpha/ialpha matrix
-   * The alpha matrix holds data for all states EXCEPT BEGL_S states
-   * The alpha scanning matrix is indexed [j][v][d]. 
-   *    j takes values 0 or 1: only the previous (prv) or current (cur) row
-   *    v ranges from 0..M-1 over states in the model.
-   *    d ranges from 0..W over subsequence lengths.
-   * Note if v is a BEGL_S alpha[j][v] == NULL
-   * Note that old convention of sharing E memory is no longer,
-   * each E state has it's own deck.
-   *
-   * alpha_begl matrix holds data for ONLY BEGL_S states
-   *    j takes value of 0..W
-   *    v ranges from 0..M-1 over states in the model
-   *    d ranges from 0..W over subsequence lengths.
-   * Note if v is NOT a BEGL_S alpha_begl[j][v] == NULL
-   *
-   * alpha and alpha_begl are allocated in contiguous blocks
-   * of memory in {f,i}alpha_mem and {f,i}alpha_begl_mem
-   */
-
-  /* Some info on alpha initialization 
-   * We initialize on d=0, subsequences of length 0; these are
-   * j-independent. Any generating state (P,L,R) is impossible on d=0.
-   * E=0 for d=0. B,S,D must be calculated. 
-   * Also, for MP, d=1 is impossible.
-   * Also, for E, all d>0 are impossible.
-   *
-   * and, for banding: any cell outside our bands is impossible.
-   * These inits are never changed in the recursion, so even with the
-   * rolling, matrix face reuse strategy, this works.
-   *
-   * The way we initialize is just to set the entire matrix
-   * to -INFTY or IMPOSSIBLE (for ints and floats, respectively),
-   * and then reset those cells that should not be -INFTY or
-   * IMPOSSIBLE as listed above. This way we don't have to
-   * step through the bands, setting cells outside them to IMPOSSIBLE
-   * or -INFY;
-   */
-
-  trsmx->fJalpha          = trsmx->fLalpha          = trsmx->fRalpha          = trsmx->fTalpha          = NULL;
-  trsmx->fJalpha_begl     = trsmx->fLalpha_begl     = trsmx->fRalpha_begl     = NULL;
-  trsmx->fJalpha_mem      = trsmx->fLalpha_mem      = trsmx->fRalpha_mem      = trsmx->fTalpha_mem      = NULL;
-  trsmx->fJalpha_begl_mem = trsmx->fLalpha_begl_mem = trsmx->fRalpha_begl_mem = NULL;
-
-  trsmx->iJalpha          = trsmx->iLalpha          = trsmx->iRalpha          = trsmx->iTalpha          = NULL;
-  trsmx->iJalpha_begl     = trsmx->iLalpha_begl     = trsmx->iRalpha_begl     = NULL;
-  trsmx->iJalpha_mem      = trsmx->iLalpha_mem      = trsmx->iRalpha_mem      = trsmx->iTalpha_mem      = NULL;
-  trsmx->iJalpha_begl_mem = trsmx->iLalpha_begl_mem = trsmx->iRalpha_begl_mem = NULL;
-
-  trsmx->ncells_alpha      = 0;
-  trsmx->ncells_alpha_begl = 0;
-  trsmx->ncells_Talpha     = 0;
-
-  if(do_float) /* allocate float mx and scores */
-    cm_FloatizeTrScanMatrix(cm, trsmx);
-  if(do_int)   /* allocate int mx and scores */
-    cm_IntizeTrScanMatrix(cm, trsmx);
-  return trsmx;
-
- ERROR:
-  cm_Fail("memory allocation error in cm_CreateTrScanMatrix().\n");
-  return NULL; /* NEVERREACHED */
-}
-
-/* Function: cm_FloatizeTrScanMatrix()
- * Date:     EPN, Tue Aug 16 04:36:29 2011
- *
- * Purpose: Allocate and initialize float data structures in a
- *           TrScanMatrix_t object for <cm>.  This initializes a
- *           scanning float DP matrix for trCYK/trInside, for details
- *           on that matrix see the notes by the
- *           cm_TrFloatizeScanMatrix() function call in
- *           cm_CreateTrScanMatrix().
- *            
- * Returns:  eslOK on success, dies immediately on an error.
- */
-int
-cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
-{
-  int status;
-  int j, v;
-  int y, yoffset, w;
-  int n_begl, n_bif;
-  int n_non_begl;
-  int cur_cell;
-
-  /* contract check */
-  if(trsmx->flags & cmTRSMX_HAS_FLOAT) cm_Fail("cm_FloatizeScanMatrix(), trsmx's cmTRSMX_HAS_FLOAT flag is already up.");
-  if(trsmx->fJalpha != NULL)       cm_Fail("cm_FloatizeScanMatrix(), trsmx->fJalpha is not NULL.");
-  if(trsmx->fJalpha_begl != NULL)  cm_Fail("cm_FloatizeScanMatrix(), trsmx->fJalpha_begl is not NULL.");
-  if(trsmx->fLalpha != NULL)       cm_Fail("cm_FloatizeScanMatrix(), trsmx->fLalpha is not NULL.");
-  if(trsmx->fLalpha_begl != NULL)  cm_Fail("cm_FloatizeScanMatrix(), trsmx->fLalpha_begl is not NULL.");
-  if(trsmx->fRalpha != NULL)       cm_Fail("cm_FloatizeScanMatrix(), trsmx->fRalpha is not NULL.");
-  if(trsmx->fRalpha_begl != NULL)  cm_Fail("cm_FloatizeScanMatrix(), trsmx->fRalpha_begl is not NULL.");
-  if(trsmx->fTalpha != NULL)       cm_Fail("cm_FloatizeScanMatrix(), trsmx->fTalpha is not NULL.");
-  
-  /* allocate alpha 
-   * we allocate only as many cells as necessary,
-   * for f{J,L,R,T}alpha,      we only allocate for non-BEGL_S states,
-   * for f{J,L,R,T}alpha_begl, we only allocate for     BEGL_S states
-   * for fTalpha,              we only allocate for     BIF_B  states
-   *
-   * note: deck for the EL state, cm->M is never used for scanners
-   */
-  n_begl = 0;
-  n_bif  = 0;
-  for (v = 0; v < cm->M; v++) if (cm->stid[v] == BEGL_S) n_begl++;
-  for (v = 0; v < cm->M; v++) if (cm->stid[v] == BIF_B)  n_bif++;
-  n_non_begl = cm->M - n_begl;
-
-  /* allocate f{J,L,R,T}alpha */
-  /* j == 0 v == 0 cells, followed by j == 1 v == 0, then j == 0 v == 1 etc.. */
-  ESL_ALLOC(trsmx->fJalpha,        sizeof(float **) * 2);
-  ESL_ALLOC(trsmx->fJalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fJalpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->fJalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fJalpha[1][v] will be NULL */
-  ESL_ALLOC(trsmx->fJalpha_mem,    sizeof(float) * 2 * n_non_begl * (trsmx->W+1));
-
-  ESL_ALLOC(trsmx->fLalpha,        sizeof(float **) * 2);
-  ESL_ALLOC(trsmx->fLalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fLalpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->fLalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fLalpha[1][v] will be NULL */
-  ESL_ALLOC(trsmx->fLalpha_mem,    sizeof(float) * 2 * n_non_begl * (trsmx->W+1));
-
-  ESL_ALLOC(trsmx->fRalpha,        sizeof(float **) * 2);
-  ESL_ALLOC(trsmx->fRalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fRalpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->fRalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fRalpha[1][v] will be NULL */
-  ESL_ALLOC(trsmx->fRalpha_mem,    sizeof(float) * 2 * n_non_begl * (trsmx->W+1));
-
-  ESL_ALLOC(trsmx->fTalpha,        sizeof(float **) * 2);
-  ESL_ALLOC(trsmx->fTalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B, fTalpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->fTalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B, fTalpha[1][v] will be NULL */
-  ESL_ALLOC(trsmx->fTalpha_mem,    sizeof(float) * 2 * n_non_begl * (trsmx->W+1));
-
-  if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * n_non_begl * (trsmx->W+1)) != trsmx->ncells_alpha)) 
-    cm_Fail("cm_FloatizeScanMatrix(), cmTRSMX_HAS_INT flag raised, but trsmx->ncells_alpha %d != %d (predicted num float cells size)\n", trsmx->ncells_alpha, (2 * n_non_begl * (trsmx->W+1)));
-  trsmx->ncells_alpha = 2 * n_non_begl * (trsmx->W+1);
-
-  cur_cell = 0;
-  for (v = 0; v < cm->M; v++) {	
-    if (cm->stid[v] != BEGL_S) {
-      trsmx->fJalpha[0][v] = trsmx->fJalpha_mem + cur_cell;
-      trsmx->fLalpha[0][v] = trsmx->fLalpha_mem + cur_cell;
-      trsmx->fRalpha[0][v] = trsmx->fRalpha_mem + cur_cell;
-      cur_cell += trsmx->W+1;
-      trsmx->fJalpha[1][v] = trsmx->fJalpha_mem + cur_cell;
-      trsmx->fLalpha[1][v] = trsmx->fLalpha_mem + cur_cell;
-      trsmx->fRalpha[1][v] = trsmx->fRalpha_mem + cur_cell;
-      cur_cell += trsmx->W+1;
-    }
-    else { 
-      trsmx->fJalpha[0][v] = NULL;
-      trsmx->fJalpha[1][v] = NULL;
-      trsmx->fLalpha[0][v] = NULL;
-      trsmx->fLalpha[1][v] = NULL;
-      trsmx->fRalpha[0][v] = NULL;
-      trsmx->fRalpha[1][v] = NULL;
-    }
-  }
-  if(cur_cell != trsmx->ncells_alpha) cm_Fail("cm_FloatizeScanMatrix(), error allocating falpha, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_alpha);
-
-  if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * n_bif * (trsmx->W+1)) != trsmx->ncells_Talpha)) 
-    cm_Fail("cm_FloatizeScanMatrix(), cmTRSMX_HAS_INT flag raised, but trsmx->ncells_Talpha %d != %d (predicted num float cells size in Talpha)\n", trsmx->ncells_Talpha, (2 * n_bif * (trsmx->W+1)));
-  trsmx->ncells_Talpha = 2 * n_bif * (trsmx->W+1);
-
-  cur_cell = 0;
-  for (v = 0; v < cm->M; v++) {	
-    if (cm->stid[v] == BIF_B) { 
-      trsmx->fTalpha[0][v] = trsmx->fTalpha_mem + cur_cell;
-      cur_cell += trsmx->W+1;
-      trsmx->fTalpha[1][v] = trsmx->fTalpha_mem + cur_cell;
-      cur_cell += trsmx->W+1;
-    }
-    else { 
-      trsmx->fTalpha[0][v] = NULL;
-      trsmx->fTalpha[1][v] = NULL;
-    }
-  }
-  if(cur_cell != trsmx->ncells_Talpha) cm_Fail("cm_FloatizeScanMatrix(), error allocating fTalpha, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_Talpha);
-  
-
-  /* allocate falpha_begl */
-  /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
-  ESL_ALLOC(trsmx->fJalpha_begl, sizeof(float **) * (trsmx->W+1));
-  ESL_ALLOC(trsmx->fLalpha_begl, sizeof(float **) * (trsmx->W+1));
-  ESL_ALLOC(trsmx->fRalpha_begl, sizeof(float **) * (trsmx->W+1));
-  for (j = 0; j <= trsmx->W; j++) {
-    ESL_ALLOC(trsmx->fJalpha_begl[j],  sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fJalpha_begl[0][v] will be NULL */
-    ESL_ALLOC(trsmx->fLalpha_begl[j],  sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fLalpha_begl[0][v] will be NULL */
-    ESL_ALLOC(trsmx->fRalpha_begl[j],  sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fRalpha_begl[0][v] will be NULL */
-  }
-  ESL_ALLOC(trsmx->fJalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  ESL_ALLOC(trsmx->fLalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  ESL_ALLOC(trsmx->fRalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  if((trsmx->flags & cmTRSMX_HAS_INT) && (((trsmx->W+1) * n_begl * (trsmx->W+1)) != trsmx->ncells_alpha_begl)) 
-    cm_Fail("cm_IntizeScanMatrix(), cmTRSMX_HAS_FLOAT flag raised, but trsmx->ncells_alpha_begl %d != %d (predicted num float cells size)\n", trsmx->ncells_alpha_begl, ((trsmx->W+1) * n_begl * (trsmx->W+1)));
-  trsmx->ncells_alpha_begl = (trsmx->W+1) * n_begl * (trsmx->W+1);
-
-  cur_cell = 0;
-  for (v = 0; v < cm->M; v++) {	
-    for (j = 0; j <= trsmx->W; j++) { 
-      if (cm->stid[v] == BEGL_S) {
-	trsmx->fJalpha_begl[j][v] = trsmx->fJalpha_begl_mem + cur_cell;
-	trsmx->fLalpha_begl[j][v] = trsmx->fLalpha_begl_mem + cur_cell;
-	trsmx->fRalpha_begl[j][v] = trsmx->fRalpha_begl_mem + cur_cell;
-	cur_cell += trsmx->W+1;
-      }
-      else { 
-	trsmx->fJalpha_begl[j][v] = NULL;
-	trsmx->fLalpha_begl[j][v] = NULL;
-	trsmx->fRalpha_begl[j][v] = NULL;
-      }
-    }
-  }
-  if(cur_cell != trsmx->ncells_alpha_begl) cm_Fail("cm_FloatizeScanMatrix(), error allocating falpha_begl, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_alpha_begl);
-
-  /* Initialize matrix */
-  /* First, init entire matrix to IMPOSSIBLE */
-  esl_vec_FSet(trsmx->fJalpha_mem,      trsmx->ncells_alpha,      IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fLalpha_mem,      trsmx->ncells_alpha,      IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fRalpha_mem,      trsmx->ncells_alpha,      IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fTalpha_mem,      trsmx->ncells_Talpha,     IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fJalpha_begl_mem, trsmx->ncells_alpha_begl, IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fLalpha_begl_mem, trsmx->ncells_alpha_begl, IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fRalpha_begl_mem, trsmx->ncells_alpha_begl, IMPOSSIBLE);
-  /* Now, initialize cells that should not be IMPOSSIBLE in f{J,L,RT}alpha and f{J,L,R}alpha_begl */
-  for(v = cm->M-1; v >= 0; v--) {
-    if(cm->stid[v] != BEGL_S) {
-      if (cm->sttype[v] == E_st) { 
-	trsmx->fJalpha[0][v][0] = trsmx->fJalpha[1][v][0] = 0.;
-	trsmx->fLalpha[0][v][0] = trsmx->fLalpha[1][v][0] = 0.;
-	trsmx->fRalpha[0][v][0] = trsmx->fRalpha[1][v][0] = 0.;
-	/* rest of E deck is IMPOSSIBLE, it's already set */
-      }
-      else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) {
-	y = cm->cfirst[v];
-	trsmx->fJalpha[0][v][0] = cm->endsc[v];
-	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	  trsmx->fJalpha[0][v][0] = ESL_MAX(trsmx->fJalpha[0][v][0], (trsmx->fJalpha[0][y+yoffset][0] + cm->tsc[v][yoffset]));
-	trsmx->fJalpha[0][v][0] = ESL_MAX(trsmx->fJalpha[0][v][0], IMPOSSIBLE);
-	/* {L,R}alpha[0][v][0] remain IMPOSSIBLE */
-      }
-      else if (cm->sttype[v] == B_st) {
-	w = cm->cfirst[v]; /* BEGL_S, left child state */
-	y = cm->cnum[v];
-	trsmx->fJalpha[0][v][0] = trsmx->fJalpha_begl[0][w][0] + trsmx->fJalpha[0][y][0]; 
-      }
-      trsmx->fJalpha[1][v][0] = trsmx->fJalpha[0][v][0];
-      /* {L,R,T}alpha[{0,1}][v][0] remain IMPOSSIBLE */
-    }
-    else { /* v == BEGL_S */
-      y = cm->cfirst[v];
-      trsmx->fJalpha_begl[0][v][0] = cm->endsc[v];
-      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	trsmx->fJalpha_begl[0][v][0] = ESL_MAX(trsmx->fJalpha_begl[0][v][0], (trsmx->fJalpha[0][y+yoffset][0] + cm->tsc[v][yoffset])); /* careful: y is in trsmx->fJalpha */
-      trsmx->fJalpha_begl[0][v][0] = ESL_MAX(trsmx->fJalpha_begl[0][v][0], IMPOSSIBLE);
-      for (j = 1; j <= trsmx->W; j++) 
-	trsmx->fJalpha_begl[j][v][0] = trsmx->fJalpha_begl[0][v][0];
-      /* {L,R}alpha_begl[j][v][0] remain IMPOSSIBLE for all j */
-    }
-  }
-  /* set the flag that tells us we've got valid floats */
-  trsmx->flags |= cmTRSMX_HAS_FLOAT;
-  return eslOK;
-
- ERROR: 
-  cm_Fail("memory allocation error.");
-  return status; /* NEVERREACHED */
-}
-
-
-/* Function: cm_IntizeTrScanMatrix()
- * Date:     EPN, Wed Aug 24 15:00:32 2011
- *
- * Purpose: Allocate and initialize integer data structures in a
- *           TrScanMatrix_t object for <cm>.  This initializes a
- *           scanning int DP matrix for trCYK/trInside, for details
- *           on that matrix see the notes by the
- *           cm_TrIntizeScanMatrix() function call in
- *           cm_CreateTrScanMatrix().
- *            
- * Returns:  eslOK on success, dies immediately on an error.
- */
-int
-cm_IntizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
-{
-  int status;
-  int j, v;
-  int y, yoffset, w;
-  int n_begl, n_bif;
-  int n_non_begl;
-  int cur_cell;
-
-  /* contract check */
-  if(trsmx->flags & cmTRSMX_HAS_INT) cm_Fail("cm_IntizeScanMatrix(), trsmx's cmTRSMX_HAS_INT flag is already up.");
-  if(trsmx->iJalpha != NULL)         cm_Fail("cm_IntizeScanMatrix(), trsmx->iJalpha is not NULL.");
-  if(trsmx->iJalpha_begl != NULL)    cm_Fail("cm_IntizeScanMatrix(), trsmx->iJalpha_begl is not NULL.");
-  if(trsmx->iLalpha != NULL)         cm_Fail("cm_IntizeScanMatrix(), trsmx->iLalpha is not NULL.");
-  if(trsmx->iLalpha_begl != NULL)    cm_Fail("cm_IntizeScanMatrix(), trsmx->iLalpha_begl is not NULL.");
-  if(trsmx->iRalpha != NULL)         cm_Fail("cm_IntizeScanMatrix(), trsmx->iRalpha is not NULL.");
-  if(trsmx->iRalpha_begl != NULL)    cm_Fail("cm_IntizeScanMatrix(), trsmx->iRalpha_begl is not NULL.");
-  if(trsmx->iTalpha != NULL)         cm_Fail("cm_IntizeScanMatrix(), trsmx->iTalpha is not NULL.");
-  
-  /* allocate alpha 
-   * we allocate only as many cells as necessary,
-   * for i{J,L,R}alpha,      we only allocate for non-BEGL_S states,
-   * for i{J,L,R}alpha_begl, we only allocate for     BEGL_S states
-   * for iTalpha,            we only allocate for     BIF_B  states
-   *
-   * note: deck for the EL state, cm->M is never used for scanners
-   */
-  n_begl = 0;
-  n_bif  = 0;
-  for (v = 0; v < cm->M; v++) if (cm->stid[v] == BEGL_S) n_begl++;
-  for (v = 0; v < cm->M; v++) if (cm->stid[v] == BIF_B)  n_bif++;
-  n_non_begl = cm->M - n_begl;
-
-  /* allocate f{J,L,R,T}alpha */
-  /* j == 0 v == 0 cells, followed by j == 1 v == 0, then j == 0 v == 1 etc.. */
-  ESL_ALLOC(trsmx->iJalpha,        sizeof(int **) * 2);
-  ESL_ALLOC(trsmx->iJalpha[0],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fJalpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->iJalpha[1],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fJalpha[1][v] will be NULL */
-  ESL_ALLOC(trsmx->iJalpha_mem,    sizeof(int) * 2 * n_non_begl * (trsmx->W+1));
-
-  ESL_ALLOC(trsmx->iLalpha,        sizeof(int **) * 2);
-  ESL_ALLOC(trsmx->iLalpha[0],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fLalpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->iLalpha[1],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fLalpha[1][v] will be NULL */
-  ESL_ALLOC(trsmx->iLalpha_mem,    sizeof(int) * 2 * n_non_begl * (trsmx->W+1));
-
-  ESL_ALLOC(trsmx->iRalpha,        sizeof(int **) * 2);
-  ESL_ALLOC(trsmx->iRalpha[0],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fRalpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->iRalpha[1],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, fRalpha[1][v] will be NULL */
-  ESL_ALLOC(trsmx->iRalpha_mem,    sizeof(int) * 2 * n_non_begl * (trsmx->W+1));
-
-  ESL_ALLOC(trsmx->iTalpha,        sizeof(int **) * 2);
-  ESL_ALLOC(trsmx->iTalpha[0],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B, fTalpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->iTalpha[1],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B, fTalpha[1][v] will be NULL */
-  ESL_ALLOC(trsmx->iTalpha_mem,    sizeof(int) * 2 * n_non_begl * (trsmx->W+1));
-
-  if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * n_non_begl * (trsmx->W+1)) != trsmx->ncells_alpha)) 
-    cm_Fail("cm_IntizeScanMatrix(), cmTRSMX_HAS_INT flag raised, but trsmx->ncells_alpha %d != %d (predicted num int cells size)\n", trsmx->ncells_alpha, (2 * n_non_begl * (trsmx->W+1)));
-  trsmx->ncells_alpha = 2 * n_non_begl * (trsmx->W+1);
-
-  cur_cell = 0;
-  for (v = 0; v < cm->M; v++) {	
-    if (cm->stid[v] != BEGL_S) {
-      trsmx->iJalpha[0][v] = trsmx->iJalpha_mem + cur_cell;
-      trsmx->iLalpha[0][v] = trsmx->iLalpha_mem + cur_cell;
-      trsmx->iRalpha[0][v] = trsmx->iRalpha_mem + cur_cell;
-      cur_cell += trsmx->W+1;
-      trsmx->iJalpha[1][v] = trsmx->iJalpha_mem + cur_cell;
-      trsmx->iLalpha[1][v] = trsmx->iLalpha_mem + cur_cell;
-      trsmx->iRalpha[1][v] = trsmx->iRalpha_mem + cur_cell;
-      cur_cell += trsmx->W+1;
-    }
-    else { 
-      trsmx->iJalpha[0][v] = NULL;
-      trsmx->iJalpha[1][v] = NULL;
-      trsmx->iLalpha[0][v] = NULL;
-      trsmx->iLalpha[1][v] = NULL;
-      trsmx->iRalpha[0][v] = NULL;
-      trsmx->iRalpha[1][v] = NULL;
-    }
-  }
-  if(cur_cell != trsmx->ncells_alpha) cm_Fail("cm_IntizeScanMatrix(), error allocating falpha, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_alpha);
-
-  if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * n_bif * (trsmx->W+1)) != trsmx->ncells_Talpha)) 
-    cm_Fail("cm_IntizeScanMatrix(), cmTRSMX_HAS_INT flag raised, but trsmx->ncells_Talpha %d != %d (predicted num int cells size in Talpha)\n", trsmx->ncells_Talpha, (2 * n_bif * (trsmx->W+1)));
-  trsmx->ncells_Talpha = 2 * n_bif * (trsmx->W+1);
-
-  cur_cell = 0;
-  for (v = 0; v < cm->M; v++) {	
-    if (cm->stid[v] == BIF_B) { 
-      trsmx->iTalpha[0][v] = trsmx->iTalpha_mem + cur_cell;
-      cur_cell += trsmx->W+1;
-      trsmx->iTalpha[1][v] = trsmx->iTalpha_mem + cur_cell;
-      cur_cell += trsmx->W+1;
-    }
-    else { 
-      trsmx->iTalpha[0][v] = NULL;
-      trsmx->iTalpha[1][v] = NULL;
-    }
-  }
-  if(cur_cell != trsmx->ncells_Talpha) cm_Fail("cm_IntizeScanMatrix(), error allocating iTalpha, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_Talpha);
-  
-
-  /* allocate falpha_begl */
-  /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
-  ESL_ALLOC(trsmx->iJalpha_begl, sizeof(int **) * (trsmx->W+1));
-  ESL_ALLOC(trsmx->iLalpha_begl, sizeof(int **) * (trsmx->W+1));
-  ESL_ALLOC(trsmx->iRalpha_begl, sizeof(int **) * (trsmx->W+1));
-  for (j = 0; j <= trsmx->W; j++) {
-    ESL_ALLOC(trsmx->iJalpha_begl[j],  sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fJalpha_begl[0][v] will be NULL */
-    ESL_ALLOC(trsmx->iLalpha_begl[j],  sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fLalpha_begl[0][v] will be NULL */
-    ESL_ALLOC(trsmx->iRalpha_begl[j],  sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fRalpha_begl[0][v] will be NULL */
-  }
-  ESL_ALLOC(trsmx->iJalpha_begl_mem,   sizeof(int) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  ESL_ALLOC(trsmx->iLalpha_begl_mem,   sizeof(int) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  ESL_ALLOC(trsmx->iRalpha_begl_mem,   sizeof(int) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  if((trsmx->flags & cmTRSMX_HAS_INT) && (((trsmx->W+1) * n_begl * (trsmx->W+1)) != trsmx->ncells_alpha_begl)) 
-    cm_Fail("cm_IntizeScanMatrix(), cmTRSMX_HAS_INT flag raised, but trsmx->ncells_alpha_begl %d != %d (predicted num int cells size)\n", trsmx->ncells_alpha_begl, ((trsmx->W+1) * n_begl * (trsmx->W+1)));
-  trsmx->ncells_alpha_begl = (trsmx->W+1) * n_begl * (trsmx->W+1);
-
-  cur_cell = 0;
-  for (v = 0; v < cm->M; v++) {	
-    for (j = 0; j <= trsmx->W; j++) { 
-      if (cm->stid[v] == BEGL_S) {
-	trsmx->iJalpha_begl[j][v] = trsmx->iJalpha_begl_mem + cur_cell;
-	trsmx->iLalpha_begl[j][v] = trsmx->iLalpha_begl_mem + cur_cell;
-	trsmx->iRalpha_begl[j][v] = trsmx->iRalpha_begl_mem + cur_cell;
-	cur_cell += trsmx->W+1;
-      }
-      else { 
-	trsmx->iJalpha_begl[j][v] = NULL;
-	trsmx->iLalpha_begl[j][v] = NULL;
-	trsmx->iRalpha_begl[j][v] = NULL;
-      }
-    }
-  }
-  if(cur_cell != trsmx->ncells_alpha_begl) cm_Fail("cm_IntizeScanMatrix(), error allocating ialpha_begl, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_alpha_begl);
-
- /* Initialize matrix */
-  /* First, init entire matrix to -INFTY */
-  esl_vec_ISet(trsmx->iJalpha_mem,      trsmx->ncells_alpha,      -INFTY);
-  esl_vec_ISet(trsmx->iLalpha_mem,      trsmx->ncells_alpha,      -INFTY);
-  esl_vec_ISet(trsmx->iRalpha_mem,      trsmx->ncells_alpha,      -INFTY);
-  esl_vec_ISet(trsmx->iTalpha_mem,      trsmx->ncells_Talpha,     -INFTY);
-  esl_vec_ISet(trsmx->iJalpha_begl_mem, trsmx->ncells_alpha_begl, -INFTY);
-  esl_vec_ISet(trsmx->iLalpha_begl_mem, trsmx->ncells_alpha_begl, -INFTY);
-  esl_vec_ISet(trsmx->iRalpha_begl_mem, trsmx->ncells_alpha_begl, -INFTY);
-  /* Now, initialize cells that should not be -INFTY in f{J,L,RT}alpha and f{J,L,R}alpha_begl */
-  for(v = cm->M-1; v >= 0; v--) {
-    if(cm->stid[v] != BEGL_S) {
-      if (cm->sttype[v] == E_st) { 
-	trsmx->iJalpha[0][v][0] = trsmx->iJalpha[1][v][0] = 0.;
-	trsmx->iLalpha[0][v][0] = trsmx->iLalpha[1][v][0] = 0.;
-	trsmx->iRalpha[0][v][0] = trsmx->iRalpha[1][v][0] = 0.;
-	/* rest of E deck is -INFTY, it's already set */
-      }
-      else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) {
-	y = cm->cfirst[v];
-	trsmx->iJalpha[0][v][0] = cm->endsc[v];
-	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	  trsmx->iJalpha[0][v][0] = ESL_MAX(trsmx->iJalpha[0][v][0], (trsmx->iJalpha[0][y+yoffset][0] + cm->tsc[v][yoffset]));
-	trsmx->iJalpha[0][v][0] = ESL_MAX(trsmx->iJalpha[0][v][0], -INFTY);
-	/* {L,R}alpha[0][v][0] remain -INFTY */
-      }
-      else if (cm->sttype[v] == B_st) {
-	w = cm->cfirst[v]; /* BEGL_S, left child state */
-	y = cm->cnum[v];
-	trsmx->iJalpha[0][v][0] = trsmx->iJalpha_begl[0][w][0] + trsmx->iJalpha[0][y][0]; 
-      }
-      trsmx->iJalpha[1][v][0] = trsmx->iJalpha[0][v][0];
-      /* {L,R,T}alpha[{0,1}][v][0] remain -INFTY */
-    }
-    else { /* v == BEGL_S */
-      y = cm->cfirst[v];
-      trsmx->iJalpha_begl[0][v][0] = cm->endsc[v];
-      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	trsmx->iJalpha_begl[0][v][0] = ESL_MAX(trsmx->iJalpha_begl[0][v][0], (trsmx->iJalpha[0][y+yoffset][0] + cm->tsc[v][yoffset])); /* careful: y is in trsmx->iJalpha */
-      trsmx->iJalpha_begl[0][v][0] = ESL_MAX(trsmx->iJalpha_begl[0][v][0], -INFTY);
-      for (j = 1; j <= trsmx->W; j++) 
-	trsmx->iJalpha_begl[j][v][0] = trsmx->iJalpha_begl[0][v][0];
-      /* {L,R}alpha_begl[j][v][0] remain -INFTY for all j */
-    }
-  }
-  /* set the flag that tells us we've got valid ints */
-  trsmx->flags |= cmTRSMX_HAS_INT;
-  return eslOK;
-
- ERROR: 
-  cm_Fail("memory allocation error.");
-  return status; /* NEVERREACHED */
-}
-
-/* Function: cm_FreeTrScanMatrix()
- * Date:     EPN, Wed Aug 17 14:22:45 2011
- *
- * Purpose:  Free a TrScanMatrix_t object corresponding
- *           to CM <cm>.
- *            
- * Returns:  void
- */
-void
-cm_FreeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
-{
-  int j;
-  //if(! ((cm->flags & CMH_TRSCANMATRIX) && (trsmx == cm->trsmx))) { /* don't free the cm->trsmx's dmax */
-  //if(trsmx->dmax != cm->dmax && trsmx->dmax != NULL) { free(trsmx->dmax); trsmx->dmax = NULL; }
-  //}
-
-  for(j = 1; j <= trsmx->W; j++) {
-    free(trsmx->dnAA[j]);
-    free(trsmx->dxAA[j]);
-  }
-  free(trsmx->dnAA);
-  free(trsmx->dxAA);
-  free(trsmx->bestr);
-  free(trsmx->bestmode);
-  
-  if(trsmx->flags & cmTRSMX_HAS_FLOAT) cm_FreeFloatsFromTrScanMatrix(cm, trsmx);
-  if(trsmx->flags & cmTRSMX_HAS_INT)   cm_FreeIntsFromTrScanMatrix(cm, trsmx);
-  free(trsmx);
-  return;
-}
-
-/* Function: cm_FreeFloatsFromTrScanMatrix()
- * Date:     EPN, Wed Aug 17 14:19:21 2011
- *
- * Purpose:  Free float data structures in a TrScanMatrix_t object 
- *           corresponding to <cm>.
- *            
- * Returns:  eslOK on success, dies immediately on an error.
- */
-int
-cm_FreeFloatsFromTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
-{
-  int j;
-
-  /* contract check */
-  if(! trsmx->flags & cmTRSMX_HAS_FLOAT)  cm_Fail("cm_FreeFloatsFromScanMatrix(), si's cmTRSMX_HAS_FLOAT flag is down.");
-  if(trsmx->fJalpha == NULL)              cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fJalpha is already NULL.");
-  if(trsmx->fJalpha_begl == NULL)         cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fJalpha_begl is already NULL.");
-  if(trsmx->fLalpha == NULL)              cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fLalpha is already NULL.");
-  if(trsmx->fLalpha_begl == NULL)         cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fLalpha_begl is already NULL.");
-  if(trsmx->fRalpha == NULL)              cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fRalpha is already NULL.");
-  if(trsmx->fRalpha_begl == NULL)         cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fRalpha_begl is already NULL.");
-  if(trsmx->fTalpha == NULL)              cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fTalpha is already NULL.");
-
-  free(trsmx->fJalpha_mem);
-  free(trsmx->fJalpha[1]);
-  free(trsmx->fJalpha[0]);
-  free(trsmx->fJalpha);
-  trsmx->fJalpha = NULL;
-
-  free(trsmx->fLalpha_mem);
-  free(trsmx->fLalpha[1]);
-  free(trsmx->fLalpha[0]);
-  free(trsmx->fLalpha);
-  trsmx->fLalpha = NULL;
-
-  free(trsmx->fRalpha_mem);
-  free(trsmx->fRalpha[1]);
-  free(trsmx->fRalpha[0]);
-  free(trsmx->fRalpha);
-  trsmx->fRalpha = NULL;
-
-  free(trsmx->fTalpha_mem);
-  free(trsmx->fTalpha[1]);
-  free(trsmx->fTalpha[0]);
-  free(trsmx->fTalpha);
-  trsmx->fTalpha = NULL;
-
-  free(trsmx->fJalpha_begl_mem);
-  for (j = 0; j <= trsmx->W; j++) free(trsmx->fJalpha_begl[j]);
-  free(trsmx->fJalpha_begl);
-  trsmx->fJalpha_begl = NULL;
-
-  free(trsmx->fLalpha_begl_mem);
-  for (j = 0; j <= trsmx->W; j++) free(trsmx->fLalpha_begl[j]);
-  free(trsmx->fLalpha_begl);
-  trsmx->fLalpha_begl = NULL;
-
-  free(trsmx->fRalpha_begl_mem);
-  for (j = 0; j <= trsmx->W; j++) free(trsmx->fRalpha_begl[j]);
-  free(trsmx->fRalpha_begl);
-  trsmx->fRalpha_begl = NULL;
-
-  trsmx->flags &= ~cmTRSMX_HAS_FLOAT;
-  return eslOK;
-}
-
-
-/* Function: cm_FreeIntsFromTrScanMatrix()
- * Date:     EPN, Wed Aug 24 14:56:18 2011
- *
- * Purpose:  Free float data structures in a TrScanMatrix_t object 
- *           corresponding to <cm>.
- *            
- * Returns:  eslOK on success, dies immediately on an error.
- */
-int
-cm_FreeIntsFromTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
-{
-  int j;
-
-  /* contract check */
-  if(! trsmx->flags & cmTRSMX_HAS_INT)  cm_Fail("cm_FreeIntsFromScanMatrix(), si's cmTRSMX_HAS_FLOAT flag is down.");
-  if(trsmx->iJalpha == NULL)            cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iJalpha is already NULL.");
-  if(trsmx->iJalpha_begl == NULL)       cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iJalpha_begl is already NULL.");
-  if(trsmx->iLalpha == NULL)            cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iLalpha is already NULL.");
-  if(trsmx->iLalpha_begl == NULL)       cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iLalpha_begl is already NULL.");
-  if(trsmx->iRalpha == NULL)            cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iRalpha is already NULL.");
-  if(trsmx->iRalpha_begl == NULL)       cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iRalpha_begl is already NULL.");
-  if(trsmx->iTalpha == NULL)            cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iTalpha is already NULL.");
-
-  free(trsmx->iJalpha_mem);
-  free(trsmx->iJalpha[1]);
-  free(trsmx->iJalpha[0]);
-  free(trsmx->iJalpha);
-  trsmx->iJalpha = NULL;
-
-  free(trsmx->iLalpha_mem);
-  free(trsmx->iLalpha[1]);
-  free(trsmx->iLalpha[0]);
-  free(trsmx->iLalpha);
-  trsmx->iLalpha = NULL;
-
-  free(trsmx->iRalpha_mem);
-  free(trsmx->iRalpha[1]);
-  free(trsmx->iRalpha[0]);
-  free(trsmx->iRalpha);
-  trsmx->iRalpha = NULL;
-
-  free(trsmx->iTalpha_mem);
-  free(trsmx->iTalpha[1]);
-  free(trsmx->iTalpha[0]);
-  free(trsmx->iTalpha);
-  trsmx->iTalpha = NULL;
-
-  free(trsmx->iJalpha_begl_mem);
-  for (j = 0; j <= trsmx->W; j++) free(trsmx->iJalpha_begl[j]);
-  free(trsmx->iJalpha_begl);
-  trsmx->iJalpha_begl = NULL;
-
-  free(trsmx->iLalpha_begl_mem);
-  for (j = 0; j <= trsmx->W; j++) free(trsmx->iLalpha_begl[j]);
-  free(trsmx->iLalpha_begl);
-  trsmx->iLalpha_begl = NULL;
-
-  free(trsmx->iRalpha_begl_mem);
-  for (j = 0; j <= trsmx->W; j++) free(trsmx->iRalpha_begl[j]);
-  free(trsmx->iRalpha_begl);
-  trsmx->iRalpha_begl = NULL;
-
-  trsmx->flags &= ~cmTRSMX_HAS_INT;
-  return eslOK;
-}
-
 
 /*****************************************************************
  * Benchmark driver

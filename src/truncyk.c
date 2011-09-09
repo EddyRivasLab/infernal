@@ -729,35 +729,35 @@ tr_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    /* Found the best path, now to interpret and sub-divide */
    if ( v_mode ) /* parent graph is non-empty */
    {
-      if ( w_mode == 0 && y_mode == 0 ) /* local hit in parent (marginal) */
+      if ( w_mode == TRMODE_T && y_mode == TRMODE_T ) /* local hit in parent (marginal) */
       {
 if (!useEL && b3_v == -1)
 cm_Die("1Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, r, (useEL ? v : b3_v), i0, best_j, best_j, j0, 
-                       useEL, r_allow_J, r_allow_L, r_allow_R, (v_mode == 3), (v_mode == 2), (v_mode == 1));
+                       useEL, r_allow_J, r_allow_L, r_allow_R, (v_mode == TRMODE_J), (v_mode == TRMODE_L), (v_mode == TRMODE_R));
          return best_sc;
       }
       else
       {
 if (v == -1) cm_Die("2Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0,
-                       FALSE, r_allow_J, r_allow_L, r_allow_R, (v_mode == 3), (v_mode == 2), (v_mode == 1));
+                       FALSE, r_allow_J, r_allow_L, r_allow_R, (v_mode == TRMODE_J), (v_mode == TRMODE_L), (v_mode == TRMODE_R));
       }
    }
-   else if ( w_mode == 0 || y_mode == 0 ) /* local entry to one of the children */
+   else if ( w_mode == TRMODE_T || y_mode == TRMODE_T ) /* local entry to one of the children */
    {
       if ( b1_sc > b2_sc )
       {
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b1_i, b1_j, b1_v, b1_mode);
          z = CMSubtreeFindEnd(cm, b1_v);
-         tr_generic_splitter(cm, dsq, L, tr, b1_v, z, b1_i, b1_j, (b1_mode == 3), (b1_mode == 2), (b1_mode == 1));
+         tr_generic_splitter(cm, dsq, L, tr, b1_v, z, b1_i, b1_j, (b1_mode == TRMODE_J), (b1_mode == TRMODE_L), (b1_mode == TRMODE_R));
          return best_sc;
       }
       else
       {
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b2_i, b2_j, b2_v, b2_mode);
          z = CMSubtreeFindEnd(cm, b2_v);
-         tr_generic_splitter(cm, dsq, L, tr, b2_v, z, b2_i, b2_j, (b2_mode == 3), (b2_mode == 2), (b2_mode == 1));
+         tr_generic_splitter(cm, dsq, L, tr, b2_v, z, b2_i, b2_j, (b2_mode == TRMODE_J), (b2_mode == TRMODE_L), (b2_mode == TRMODE_R));
          return best_sc;
       }
    }
@@ -770,7 +770,7 @@ if (v == -1) cm_Die("2Superbad: passing z = -1!\n");
    if ( w_mode )
    {
       InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_k, w, w_mode);
-      tr_generic_splitter(cm, dsq, L, tr, w, wend, best_j - best_d + 1, best_j - best_k, (w_mode == 3), (w_mode == 2), (w_mode == 1));
+      tr_generic_splitter(cm, dsq, L, tr, w, wend, best_j - best_d + 1, best_j - best_k, (w_mode == TRMODE_J), (w_mode == TRMODE_L), (w_mode == TRMODE_R));
    }
    else
    {
@@ -781,7 +781,7 @@ if (v == -1) cm_Die("2Superbad: passing z = -1!\n");
    if ( y_mode )
    {
       InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j - best_k + 1, best_j, y, y_mode);
-      tr_generic_splitter(cm, dsq, L, tr, y, yend, best_j - best_k + 1, best_j, (y_mode == 3), (y_mode == 2), (y_mode == 1));
+      tr_generic_splitter(cm, dsq, L, tr, y, yend, best_j - best_k + 1, best_j, (y_mode == TRMODE_J), (y_mode == TRMODE_L), (y_mode == TRMODE_R));
    }
    else 
    {
@@ -845,8 +845,8 @@ tr_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    b2_sc = tr_outside(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT,
              r_allow_J, r_allow_L, r_allow_R,
              NULL, beta, NULL, NULL, &b2_mode, &b2_v, &b2_j);
-   if ( b2_mode == 2 && !r_allow_L ) b2_sc = IMPOSSIBLE;
-   if ( b2_mode == 1 && !r_allow_R ) b2_sc = IMPOSSIBLE;
+   if ( b2_mode == TRMODE_L && !r_allow_L ) b2_sc = IMPOSSIBLE;
+   if ( b2_mode == TRMODE_R && !r_allow_R ) b2_sc = IMPOSSIBLE;
 
    /* Find the split */
    W = j0 - i0 + 1;
@@ -959,28 +959,28 @@ tr_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    
    if ( p_mode )
    {
-      if ( c_mode == 0 ) /* child empty */
+      if ( c_mode == TRMODE_T ) /* child empty */
       {
-if ((p_mode == 3 ? w : b2_v) == -1) cm_Die("3Superbad: passing z = -1!\n");
-         tr_v_splitter(cm, dsq, L, tr, r, (p_mode == 3 ? w : b2_v), i0, best_j - best_d + 1, best_j, j0,
-                       (p_mode == 3), r_allow_J, r_allow_L, r_allow_R, (p_mode == 3), (p_mode == 2), (p_mode == 1));
+if ((p_mode == TRMODE_J ? w : b2_v) == -1) cm_Die("3Superbad: passing z = -1!\n");
+         tr_v_splitter(cm, dsq, L, tr, r, (p_mode == TRMODE_J ? w : b2_v), i0, best_j - best_d + 1, best_j, j0,
+                       (p_mode == TRMODE_J), r_allow_J, r_allow_L, r_allow_R, (p_mode == TRMODE_J), (p_mode == TRMODE_L), (p_mode == TRMODE_R));
          return best_sc;
       }
       else
       {
 if (best_v == -1) cm_Die("4Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j - best_d + 1, best_j, j0,
-                       FALSE, r_allow_J, r_allow_L, r_allow_R, (c_mode == 3), (c_mode == 2), (c_mode == 1));
+                       FALSE, r_allow_J, r_allow_L, r_allow_R, (c_mode == TRMODE_J), (c_mode == TRMODE_L), (c_mode == TRMODE_R));
       }
    }
 
    if ( c_mode )
    {
-      if ( p_mode == 0 )
+      if ( p_mode == TRMODE_T )
       {
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j, best_v, c_mode);
       }
-      tr_wedge_splitter(cm, dsq, L, tr, best_v, z, best_j - best_d + 1, best_j, (c_mode == 3), (c_mode == 2), (c_mode == 1));
+      tr_wedge_splitter(cm, dsq, L, tr, best_v, z, best_j - best_d + 1, best_j, (c_mode == TRMODE_J), (c_mode == TRMODE_L), (c_mode == TRMODE_R));
    }
    else /* parent and child both empty */
       cm_Die("Danger, danger! p_mode = %d c_mode = %d\n",p_mode,c_mode);
@@ -1155,10 +1155,10 @@ tr_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int 
       {
 if (best_v == -1) cm_Die("5Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_i, best_j, j0,
-                       FALSE, r_allow_J, r_allow_L, r_allow_R, (c_mode == 3), (c_mode == 2), (c_mode == 1));
+                       FALSE, r_allow_J, r_allow_L, r_allow_R, (c_mode == TRMODE_J), (c_mode == TRMODE_L), (c_mode == TRMODE_R));
 if (z == -1) cm_Die("6Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j,
-                       useEL, (c_mode == 3), (c_mode == 2), (c_mode == 1), z_allow_J, z_allow_L, z_allow_R);  
+                       useEL, (c_mode == TRMODE_J), (c_mode == TRMODE_L), (c_mode == TRMODE_R), z_allow_J, z_allow_L, z_allow_R);  
       }
       else
       {
@@ -1174,7 +1174,7 @@ if (z == -1) cm_Die("6Superbad: passing z = -1!\n");
       }
 if (z == -1) cm_Die("7Superbad: passing z = -1!\n");
       tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j,
-                    useEL, (c_mode == 3), (c_mode == 2), (c_mode == 1), z_allow_J, z_allow_L, z_allow_R);
+                    useEL, (c_mode == TRMODE_J), (c_mode == TRMODE_L), (c_mode == TRMODE_R), z_allow_J, z_allow_L, z_allow_R);
    }
 
    return;
@@ -3884,7 +3884,7 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
    {
       if ( cm->sttype[v] == B_st )
       {
-         if      ( mode == 3 )
+         if      ( mode == TRMODE_J )
          {
             k = ((int **) shadow[v])[j][d];
 
@@ -3893,7 +3893,7 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
             if((status = esl_stack_IPush(pda, mode)) != eslOK) goto ERROR;
             if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;
          }
-         else if ( mode == 2 )
+         else if ( mode == TRMODE_L )
          {
             k = ((int **) L_shadow[v])[j][d];
 
@@ -3906,7 +3906,7 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
             /* Retrieve mode of left child (should be 3 or 2) */
             mode = ((int **)Lmode_shadow[v])[j][d];
          }
-         else if ( mode == 1 )
+         else if ( mode == TRMODE_R )
          {
             k = ((int **) R_shadow[v])[j][d];
 
@@ -3920,7 +3920,7 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
             /* In right marginal mode, left child is always right marginal */
             mode = 1;
          }
-         else if ( mode == 0 )
+         else if ( mode == TRMODE_T )
          {
             k = ((int **) T_shadow[v])[j][d];
 
@@ -3955,20 +3955,23 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
       }
       else
       {
-         if      ( mode == 3 )
+         if      ( mode == TRMODE_J )
          {
             yoffset = ((char **)   shadow[v])[j][d];
             nxtmode = 3;
+	    printf("HEYA J v: %4d j: %4d d: %4d mode: %4d yoffset: %4d nxtmode: %4d\n", v, j, d, yoffset, nxtmode);
          }
-         else if ( mode == 2 )
+         else if ( mode == TRMODE_L )
          {
             yoffset = ((char **) L_shadow[v])[j][d];
             nxtmode = ((int  **)Lmode_shadow[v])[j][d];
+	    printf("HEYA L v: %4d j: %4d d: %4d mode: %4d yoffset: %4d nxtmode: %4d\n", v, j, d, yoffset, nxtmode);
          }
-         else if ( mode == 1 )
+         else if ( mode == TRMODE_R )
          {
             yoffset = ((char **) R_shadow[v])[j][d];
             nxtmode = ((int  **)Rmode_shadow[v])[j][d];
+	    printf("HEYA R v: %4d j: %4d d: %4d mode: %4d yoffset: %4d nxtmode: %4d\n", v, j, d, yoffset, nxtmode);
          }
          else { cm_Die("Unknown mode in traceback!"); }
 
@@ -3977,26 +3980,26 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
             case  D_st:
                break;
             case MP_st:
-               if ( mode == 3 )          i++;
-               if ( mode == 2 && d > 0 ) i++;
-               if ( mode == 3 )          j--;
-               if ( mode == 1 && d > 0 ) j--;
+               if ( mode == TRMODE_J )          i++;
+               if ( mode == TRMODE_L && d > 0 ) i++;
+               if ( mode == TRMODE_J )          j--;
+               if ( mode == TRMODE_R && d > 0 ) j--;
                break;
             case ML_st:
-               if ( mode == 3 )          i++;
-               if ( mode == 2 && d > 0 ) i++;
+               if ( mode == TRMODE_J )          i++;
+               if ( mode == TRMODE_L && d > 0 ) i++;
                break;
             case MR_st:
-               if ( mode == 3 )          j--;
-               if ( mode == 1 && d > 0 ) j--;
+               if ( mode == TRMODE_J )          j--;
+               if ( mode == TRMODE_R && d > 0 ) j--;
                break;
             case IL_st:
-               if ( mode == 3 )          i++;
-               if ( mode == 2 && d > 0 ) i++;
+               if ( mode == TRMODE_J )          i++;
+               if ( mode == TRMODE_L && d > 0 ) i++;
                break;
             case IR_st:
-               if ( mode == 3 )          j--;
-               if ( mode == 1 && d > 0 ) j--;
+               if ( mode == TRMODE_J )          j--;
+               if ( mode == TRMODE_R && d > 0 ) j--;
                break;
             case  S_st:
                break;
@@ -4008,7 +4011,7 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
          if ( yoffset == USED_EL )
          {
             v = cm->M;
-            if (mode == 3)
+            if (mode == TRMODE_J)
             {
                InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
             }
@@ -4114,17 +4117,17 @@ tr_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
       jp = j-j1;
       ip = i-i0;
 
-      if      ( mode == 3 )
+      if      ( mode == TRMODE_J )
       {
          yoffset = ((char **) shadow->J[v])[jp][ip];
          nxtmode = 3;
       }
-      else if ( mode == 2 )
+      else if ( mode == TRMODE_L )
       {
          yoffset = ((char **) shadow->L[v])[jp][ip];
          nxtmode = ((char **) shadow->Lmode[v])[jp][ip];
       }
-      else if ( mode == 1 )
+      else if ( mode == TRMODE_R )
       {
          yoffset = ((char **) shadow->R[v])[jp][ip];
          nxtmode = ((char **) shadow->Rmode[v])[jp][ip];
@@ -4138,16 +4141,16 @@ tr_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
          case  D_st:
             break;
          case MP_st:
-            if ( mode == 3 || mode == 2 ) i++;
-            if ( mode == 3 || mode == 1 ) j--;
+            if ( mode == TRMODE_J || mode == TRMODE_L ) i++;
+            if ( mode == TRMODE_J || mode == TRMODE_R ) j--;
             break;
          case ML_st:
          case IL_st:
-            if ( mode == 3 || mode == 2 ) i++;
+            if ( mode == TRMODE_J || mode == TRMODE_L ) i++;
             break;
          case MR_st:
          case IR_st:
-            if ( mode == 3 || mode == 1 ) j--;
+            if ( mode == TRMODE_J || mode == TRMODE_R ) j--;
             break;
          default:
             cm_Die("'Inconceivable!'\n'Youu keep using that word...'");
