@@ -1034,6 +1034,34 @@ typedef struct cm_hb_mx_s {
 			 * it when mx is freed. */
 } CM_HB_MX;
 
+/* Declaration of CM dynamic programming matrix structure for 
+ * truncated alignment with float scores in vjd (state idx, aln posn,
+ * subseq len) coordinates, non-banded version. 
+ */
+typedef struct cm_tr_mx_s {
+  int  M;		/* number of states (1st dim ptrs) in current mx */
+  int  B;               /* number of B states in current mx */
+  int  L;               /* length of sequence the matrix currently corresponds to */
+
+  int64_t    Jncells_alloc;  /* current cell allocation limit for Jdp */
+  int64_t    Jncells_valid;  /* current number of valid cells for Jdp */
+  int64_t    Lncells_alloc;  /* current cell allocation limit for Ldp */
+  int64_t    Lncells_valid;  /* current number of valid cells for Ldp */
+  int64_t    Rncells_alloc;  /* current cell allocation limit for Rdp, same as for Ldp */
+  int64_t    Rncells_valid;  /* current number of valid cells for Rdp, same as for Ldp  */
+  int64_t    Tncells_alloc;  /* current cell allocation limit for Tdp */
+  int64_t    Tncells_valid;  /* current number of valid cells for Tdp */
+  float      size_Mb;        /* current size of matrix in Megabytes */
+
+  float  ***Jdp;          /* J matrix, [0..v..M][0..j..L][0..j] */
+  float    *Jdp_mem;      /* the actual mem, points to Jdp[0][0][0] */
+  float  ***Ldp;          /* L matrix, [0..v..M][0..j..L][0..j] */
+  float    *Ldp_mem;      /* the actual mem, points to Ldp[0][0][0] */
+  float  ***Rdp;          /* R matrix, [0..v..M][0..j..L][0..j] */
+  float    *Rdp_mem;      /* the actual mem, points to Rdp[0][0][0] */
+  float  ***Tdp;          /* T matrix, [0..v..M][0..j..L][0..j] */
+  float    *Tdp_mem;      /* the actual mem, points to Tdp[0][0][0] */
+} CM_TR_MX;
 
 typedef struct cm_tr_hb_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
@@ -1102,6 +1130,64 @@ typedef struct cm_hb_shadow_mx_s {
 			 * it when mx is freed. */
 } CM_HB_SHADOW_MX;
 
+/* Declaration of CM shadow traceback matrix structure for truncated
+ * alignment in vjd (state idx, aln posn, subseq len) coordinates,
+ * non-banded version.
+ */
+typedef struct cm_tr_shadow_mx_s {
+  int  M;		/* number of states (1st dim ptrs) in current mx */
+  int  L;               /* length of sequence the matrix currently corresponds to */
+  int  B;		/* number of BIF_B states (1st dim ptrs) in current mx */
+
+  int64_t Jy_ncells_alloc;  /* current cell allocation limit in Jyshadow*/
+  int64_t Ly_ncells_alloc;  /* current cell allocation limit in Lyshadow*/
+  int64_t Ry_ncells_alloc;  /* current cell allocation limit in Ryshadow*/
+
+  int64_t Jk_ncells_alloc;  /* current cell allocation limit in Jkshadow*/
+  int64_t Lk_ncells_alloc;  /* current cell allocation limit in Lkshadow/Lkmode*/
+  int64_t Rk_ncells_alloc;  /* current cell allocation limit in Rkshadow/Rkmode*/
+  int64_t Tk_ncells_alloc;  /* current cell allocation limit in Tkshadow*/
+
+  int64_t Jy_ncells_valid;  /* current number of valid cells in Jyshadow */
+  int64_t Ly_ncells_valid;  /* current number of valid cells in Lyshadow */
+  int64_t Ry_ncells_valid;  /* current number of valid cells in Ryshadow */
+
+  int64_t Jk_ncells_valid;  /* current number of valid cells in Jkshadow */
+  int64_t Lk_ncells_valid;  /* current number of valid cells in Lkshadow/Lkmode */
+  int64_t Rk_ncells_valid;  /* current number of valid cells in Rkshadow/Rkmode */
+  int64_t Tk_ncells_valid;  /* current number of valid cells in Tkshadow */
+
+  float  size_Mb;         /* current size of matrix in Megabytes */
+
+  /* {J,L,R}yshadow holds the shadow matrix for all non-BIF_B states, {J,L,R}yshadow[v] == NULL if cm->sttype[v] == B_st */
+  char ***Jyshadow;       /* [0..v..M][0..j..L][0..d..j] */
+  char   *Jyshadow_mem;   /* the actual mem, points to Jyshadow[0][0][0] */
+  char ***Lyshadow;       /* [0..v..M][0..j..L][0..d..j] */
+  char   *Lyshadow_mem;   /* the actual mem, points to Lyshadow[0][0][0] */
+  char ***Ryshadow;       /* [0..v..M][0..j..L][0..d..j] */
+  char   *Ryshadow_mem;   /* the actual mem, points to Ryshadow[0][0][0] */
+
+  /* {J,L,R,T}kshadow holds the shadow matrix for all BIF_B states, {J,L,R,T}kshadow[v] == NULL if cm->sttype[v] != B_st */
+  int ***Jkshadow;       /* [0..v..M][0..j..L][0..d..j] */
+  int   *Jkshadow_mem;   /* the actual mem, points to Jkshadow[0][0][0] */
+  int ***Lkshadow;       /* [0..v..M][0..j..L][0..d..j] */
+  int   *Lkshadow_mem;   /* the actual mem, points to Lkshadow[0][0][0] */
+  int ***Rkshadow;       /* [0..v..M][0..j..L][0..d..j] */
+  int   *Rkshadow_mem;   /* the actual mem, points to Rkshadow[0][0][0] */
+  int ***Tkshadow;       /* [0..v..M][0..j..L][0..d..j] */
+  int   *Tkshadow_mem;   /* the actual mem, points to Tkshadow[0][0][0] */
+
+  /* {L,R}kmode holds the alignment mode for all BIF_B states {L,R}kmode == NULL for non-B states */
+  char ***Lkmode;        /* [0..v..M][0..j..L][0..d..j] */
+  char   *Lkmode_mem;    /* the actual mem, points to Lkmode[0][0][0] */
+  char ***Rkmode;        /* [0..v..M][0..j..L][0..d..j] */
+  char   *Rkmode_mem;    /* the actual mem, points to Rkmode[0][0][0] */
+} CM_TR_SHADOW_MX;
+
+/* Declaration of CM shadow traceback matrix structure for 
+ * truncated alignment in vjd (state idx, aln posn,
+ * subseq len) coordinates, banded in j and d dimension.
+ */
 typedef struct cm_tr_hb_shadow_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
   int  L;               /* length of sequence the matrix currently corresponds to */

@@ -63,14 +63,17 @@ AllocCP9Bands(int cm_M, int hmm_M)
   cp9bands->Rmarg_imin = cp9bands->Lmarg_jmin = -1;
   cp9bands->Rmarg_imax = cp9bands->Lmarg_jmax = -2;
 
-  ESL_ALLOC(cp9bands->do_J, sizeof(int) * (cm_M));
-  ESL_ALLOC(cp9bands->do_L, sizeof(int) * (cm_M));
-  ESL_ALLOC(cp9bands->do_R, sizeof(int) * (cm_M));
-  ESL_ALLOC(cp9bands->do_T, sizeof(int) * (cm_M));
-  esl_vec_ISet(cp9bands->do_J, cm_M, TRUE);
+  ESL_ALLOC(cp9bands->do_J, sizeof(int) * (cm_M+1));
+  ESL_ALLOC(cp9bands->do_L, sizeof(int) * (cm_M+1));
+  ESL_ALLOC(cp9bands->do_R, sizeof(int) * (cm_M+1));
+  ESL_ALLOC(cp9bands->do_T, sizeof(int) * (cm_M+1));
+  esl_vec_ISet(cp9bands->do_J, cm_M+1, TRUE);
   esl_vec_ISet(cp9bands->do_L, cm_M, TRUE);
   esl_vec_ISet(cp9bands->do_R, cm_M, TRUE);
   esl_vec_ISet(cp9bands->do_T, cm_M, TRUE);
+  cp9bands->do_L[cm_M] = FALSE;
+  cp9bands->do_R[cm_M] = FALSE;
+  cp9bands->do_T[cm_M] = FALSE;
 
   ESL_ALLOC(cp9bands->pn_min_m, sizeof(int) * (cp9bands->hmm_M+1));
   ESL_ALLOC(cp9bands->pn_max_m, sizeof(int) * (cp9bands->hmm_M+1));

@@ -1844,9 +1844,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	   *
 	   * To update a cell in the T matrix with a sum of an R matrix value for y
 	   * and a L matrix value for z, there are 2 additional inequalities to satisfy:
-	   * (7) k != i-1  (where i = j-d+1)
-	   * (8) k != j
-	   * These are checked for in the loop below as well. 
+	   * (7) k != 0
+	   * (8) k != d
+	   * We ensure 7 and 8 in the loop below.
 	   */
 	  for(k = kn; k <= kx; k++) { 
 	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
@@ -1863,9 +1863,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	      if(do_J_v && do_J_y && do_J_z) Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], Jalpha[y][jp_y-k][dp_y - k] + Jalpha[z][jp_z][kp_z]);
 	      if(do_L_v && do_J_y && do_L_z) Lalpha[v][jp_v][dp_v] = ESL_MAX(Lalpha[v][jp_v][dp_v], Jalpha[y][jp_y-k][dp_y - k] + Lalpha[z][jp_z][kp_z]);
 	      if(do_R_v && do_R_y && do_J_z) Ralpha[v][jp_v][dp_v] = ESL_MAX(Ralpha[v][jp_v][dp_v], Ralpha[y][jp_y-k][dp_y - k] + Jalpha[z][jp_z][kp_z]);
-	      /*if((k != i-1) && (k != j)) {*/
-	      if(do_T_v && do_R_y && do_L_z) Talpha[v][jp_v][dp_v] = ESL_MAX(Talpha[v][jp_v][dp_v], Ralpha[y][jp_y-k][dp_y - k] + Lalpha[z][jp_z][kp_z]);
-		/*}*/
+	      if(k != 0 && k != d) {
+		if(do_T_v && do_R_y && do_L_z) Talpha[v][jp_v][dp_v] = ESL_MAX(Talpha[v][jp_v][dp_v], Ralpha[y][jp_y-k][dp_y - k] + Lalpha[z][jp_z][kp_z]);
+	      }
 	    }
 	  }
 	}
@@ -2832,9 +2832,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	   *
 	   * To update a cell in the T matrix with a sum of an R matrix value for y
 	   * and a L matrix value for z, there are 2 additional inequalities to satisfy:
-	   * (7) k != i-1  (where i = j-d+1)
-	   * (8) k != j
-	   * These are checked for in the loop below as well. 
+	   * (7) k != 0
+	   * (8) k != d
+	   * We ensure 7 and 8 in the loop below.
 	   */
 	  for(k = kn; k <= kx; k++) { 
 	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
@@ -2851,9 +2851,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	      if(do_J_v && do_J_y && do_J_z) Jalpha[v][jp_v][dp_v] = FLogsum(Jalpha[v][jp_v][dp_v], Jalpha[y][jp_y-k][dp_y - k] + Jalpha[z][jp_z][kp_z]);
 	      if(do_L_v && do_J_y && do_L_z) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Jalpha[y][jp_y-k][dp_y - k] + Lalpha[z][jp_z][kp_z]);
 	      if(do_R_v && do_R_y && do_J_z) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Ralpha[y][jp_y-k][dp_y - k] + Jalpha[z][jp_z][kp_z]);
-	      /*if((k != i-1) && (k != j)) {*/
-	      if(do_T_v && do_R_y && do_L_z) Talpha[v][jp_v][dp_v] = FLogsum(Talpha[v][jp_v][dp_v], Ralpha[y][jp_y-k][dp_y - k] + Lalpha[z][jp_z][kp_z]);
-		/*}*/
+	      if((k != 0) && (k != d)) {
+		if(do_T_v && do_R_y && do_L_z) Talpha[v][jp_v][dp_v] = FLogsum(Talpha[v][jp_v][dp_v], Ralpha[y][jp_y-k][dp_y - k] + Lalpha[z][jp_z][kp_z]);
+	      }
 	    }
 	  }
 	}

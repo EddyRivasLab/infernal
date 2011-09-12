@@ -87,8 +87,10 @@ static int optimal_accuracy_align   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L
 				     int *ret_b, float *ret_bsc, float ****ret_mx, float ***post_mx, float *ret_pp);
 static int fast_alignT_hb    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, int allow_begin,
 			      CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, int do_optacc, CM_HB_MX *post_mx, float size_limit, float *ret_sc);
-static int fast_alignT       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
-			      int allow_begin, float ****ret_mx, int do_optacc, float ***post_mx, float size_limit, float *ret_sc);
+static int fast_alignT       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+			      int r, int z, int i0, int j0, 
+			      int allow_begin, int do_optacc, float ***post_mx, 
+			      float size_limit, float ****ret_mx, float *ret_sc);
 static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
 
 /* 
@@ -879,10 +881,10 @@ fast_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend,
   if (ret_b != NULL)      *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
   if (ret_bsc != NULL)    *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
   if (ret_shadow != NULL) *ret_shadow = shadow;
-  if (ret_sc     != NULL) *ret_sc = sc;
   else free_vjd_shadow_matrix(shadow, cm, i0, j0);
   if (ret_mx     != NULL) *ret_mx = alpha;
   else free_vjd_matrix(alpha, cm->M, 1, L);
+  if (ret_sc     != NULL) *ret_sc = sc;
 
   free(el_scA);
 
@@ -1078,8 +1080,8 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *
  * Purpose:  Call either fast_cyk_align() (if !<do_optacc>), 
  *           or optimal_accuracy_align()  (if  <do_optacc>),
- *           get vjd shadow matrix; then trace back. Append the trace to a given
- *           traceback, which already has state r at tr->n-1.
+ *           get vjd shadow matrix; then trace back and
+ *           append to an existing but empty parsetree tr.
  *        
  *           If (<do_optacc>) then post_mx must != NULL.
  *
@@ -1100,7 +1102,9 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 int
 fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 	    int r, int z, int i0, int j0, 
-	    int allow_begin, float ****ret_mx, int do_optacc, float ***post_mx, float size_limit, float *ret_sc)
+	    int allow_begin, int do_optacc, float ***post_mx, 
+	    float size_limit, float ****ret_mx, float *ret_sc)
+
 {
   int       status;
   void   ***shadow;             /* the traceback shadow matrix */
@@ -1460,10 +1464,10 @@ FastAlign(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int i0
     InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
     /* Fill in the parsetree (either CYK or optimally accurate (if do_optacc)) */
     if(do_optacc) { /* we have to send the filled *ret_post_mx */
-      if((status = fast_alignT(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, ret_mx, do_optacc, *ret_post_mx, size_limit, &sc)) != eslOK) return status;
+      if((status = fast_alignT(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, do_optacc, *ret_post_mx, size_limit, ret_mx, &sc)) != eslOK) return status;
     }
     else { /* don't need to send *ret_post_mx (in fact, it could be NULL) */
-      if((status = fast_alignT(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, ret_mx, do_optacc, NULL, size_limit, &sc)) != eslOK) return status;
+      if((status = fast_alignT(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, do_optacc, NULL, size_limit, ret_mx, &sc)) != eslOK) return status;
     }
   }
 
@@ -2668,8 +2672,7 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
 }  
 
 
-/*
- * Function: FastOutsideAlign()
+/* Function: FastOutsideAlign()
  * Date:     EPN, Mon Nov 19 07:00:37 2007
  *
  * Purpose:  Run the outside algorithm on a target sequence
