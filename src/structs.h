@@ -1011,33 +1011,38 @@ enum emitmode_e {
 };
 #define nEMITMODES 4 
 
-/* Declaration of CM dynamic programming matrix structure for 
- * alignment with float scores in vjd (state idx, aln posn,
- * subseq len) coordinates. May be banded in j and/or d dimensions.
+/* Declaration of CM dynamic programming matrices for alignment.
+ * There are eight matrices here, four DP matrices for DP calculations
+ * and four shadow matrices for alignment tracebacks. There is one DP
+ * matrix and one shadow matrix for each combination of standard vs
+ * truncated and non-banded vs HMM-banded alignment.  All matrices are
+ * setup in 'vjd' (state idx, aln posn, subseq len) coordinates.  HMM
+ * banded variants of all matrices are banded in j and d dimensions
+ * with only cells within bands allocated. HMM banded DP variants are
+ * also used for DP search functions.
+ *
+ * CM_MX:                non-banded standard  CYK/Inside/Outside DP matrix
+ * CM_TR_MX:             non-banded truncated CYK/Inside/Outside DP matrix
+ * CM_HB_MX:             HMM banded standard  CYK/Inside/Outside DP matrix
+ * CM_TR_HB_MX:          HMM banded truncated CYK/Inside/Outside DP matrix
+ *
+ * CM_SHADOW_MX:         non-banded standard  CYK/optacc shadow matrix
+ * CM_SHADOW_TR_MX:      non-banded truncated CYK/optacc shadow matrix 
+ * CM_SHADOW_HB_MX:      HMM banded standard  CYK/optacc shadow matrix 
+ * CM_SHADOW_TR_HB_MX:   HMM banded truncated CYK/optacc shadow matrix 
  */
-typedef struct cm_hb_mx_s {
+typedef struct cm_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
   int  L;               /* length of sequence the matrix currently corresponds to */
 
-  int64_t    ncells_alloc;  /* current cell allocation limit */
-  int64_t    ncells_valid;  /* current number of valid cells */
-  float      size_Mb;       /* current size of matrix in Megabytes */
+  int64_t    ncells_alloc;  /* current cell allocation limit for dp */
+  int64_t    ncells_valid;  /* current number of valid cells for dp */
+  float      size_Mb;        /* current size of matrix in Megabytes */
 
-  int   *nrowsA;        /* [0..v..M] current number allocated rows for deck v */
+  float  ***dp;          /* matrix, [0..v..M][0..j..L][0..j] */
+  float    *dp_mem;      /* the actual mem, points to dp[0][0][0] */
+} CM_MX;
 
-  float ***dp;          /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
-  float   *dp_mem;      /* the actual mem, points to dp[0][0][0] */
-
-  CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
-			 * matrix, which defines j, d, bands for each
-			 * state, only a reference, so don't free
-			 * it when mx is freed. */
-} CM_HB_MX;
-
-/* Declaration of CM dynamic programming matrix structure for 
- * truncated alignment with float scores in vjd (state idx, aln posn,
- * subseq len) coordinates, non-banded version. 
- */
 typedef struct cm_tr_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
   int  B;               /* number of B states in current mx */
@@ -1062,6 +1067,25 @@ typedef struct cm_tr_mx_s {
   float  ***Tdp;          /* T matrix, [0..v..M][0..j..L][0..j] */
   float    *Tdp_mem;      /* the actual mem, points to Tdp[0][0][0] */
 } CM_TR_MX;
+
+typedef struct cm_hb_mx_s {
+  int  M;		/* number of states (1st dim ptrs) in current mx */
+  int  L;               /* length of sequence the matrix currently corresponds to */
+
+  int64_t    ncells_alloc;  /* current cell allocation limit */
+  int64_t    ncells_valid;  /* current number of valid cells */
+  float      size_Mb;       /* current size of matrix in Megabytes */
+
+  int   *nrowsA;        /* [0..v..M] current number allocated rows for deck v */
+
+  float ***dp;          /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  float   *dp_mem;      /* the actual mem, points to dp[0][0][0] */
+
+  CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
+			 * matrix, which defines j, d, bands for each
+			 * state, only a reference, so don't free
+			 * it when mx is freed. */
+} CM_HB_MX;
 
 typedef struct cm_tr_hb_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
@@ -1098,42 +1122,27 @@ typedef struct cm_tr_hb_mx_s {
 			 * it when mx is freed. */
 } CM_TR_HB_MX;
 
-
-/* Declaration of CM dynamic programming matrix structure for 
- * alignment with float scores in vjd (state idx, aln posn,
- * subseq len) coordinates. May be banded in j and/or d dimensions.
- */
-typedef struct cm_hb_shadow_mx_s {
+typedef struct cm_shadow_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
   int  L;               /* length of sequence the matrix currently corresponds to */
-  int  B;               /* number of B_st's in the cm this mx was created for */
+  int  B;		/* number of BIF_B states (1st dim ptrs) in current mx */
 
   int64_t y_ncells_alloc;  /* current cell allocation limit in yshadow*/
-  int64_t y_ncells_valid;  /* current number of valid cells in yshadow */
   int64_t k_ncells_alloc;  /* current cell allocation limit in kshadow*/
+  int64_t y_ncells_valid;  /* current number of valid cells in yshadow */
   int64_t k_ncells_valid;  /* current number of valid cells in kshadow */
+
   float  size_Mb;         /* current size of matrix in Megabytes */
 
-  int   *nrowsA;          /* [0..v..M] current number allocated rows for deck v */
-
   /* yshadow holds the shadow matrix for all non-BIF_B states, yshadow[v] == NULL if cm->sttype[v] == B_st */
-  char ***yshadow;       /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  char ***yshadow;       /* [0..v..M][0..j..L][0..d..j] */
   char   *yshadow_mem;   /* the actual mem, points to yshadow[0][0][0] */
 
   /* kshadow holds the shadow matrix for all BIF_B states, kshadow[v] == NULL if cm->sttype[v] != B_st */
-  int ***kshadow;       /*  [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
-  int   *kshadow_mem;   /* the actual mem, points to kshadow[0][0][0] */
+  int ***kshadow;       /* [0..v..M][0..j..L][0..d..j] */
+  int   *kshadow_mem;   /* the actual mem, points to Jkshadow[0][0][0] */
+} CM_SHADOW_MX;
 
-  CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
-			 * matrix, which defines j, d, bands for each
-			 * state, only a reference, so don't free
-			 * it when mx is freed. */
-} CM_HB_SHADOW_MX;
-
-/* Declaration of CM shadow traceback matrix structure for truncated
- * alignment in vjd (state idx, aln posn, subseq len) coordinates,
- * non-banded version.
- */
 typedef struct cm_tr_shadow_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
   int  L;               /* length of sequence the matrix currently corresponds to */
@@ -1184,10 +1193,33 @@ typedef struct cm_tr_shadow_mx_s {
   char   *Rkmode_mem;    /* the actual mem, points to Rkmode[0][0][0] */
 } CM_TR_SHADOW_MX;
 
-/* Declaration of CM shadow traceback matrix structure for 
- * truncated alignment in vjd (state idx, aln posn,
- * subseq len) coordinates, banded in j and d dimension.
- */
+typedef struct cm_hb_shadow_mx_s {
+  int  M;		/* number of states (1st dim ptrs) in current mx */
+  int  L;               /* length of sequence the matrix currently corresponds to */
+  int  B;               /* number of B_st's in the cm this mx was created for */
+
+  int64_t y_ncells_alloc;  /* current cell allocation limit in yshadow*/
+  int64_t y_ncells_valid;  /* current number of valid cells in yshadow */
+  int64_t k_ncells_alloc;  /* current cell allocation limit in kshadow*/
+  int64_t k_ncells_valid;  /* current number of valid cells in kshadow */
+  float  size_Mb;         /* current size of matrix in Megabytes */
+
+  int   *nrowsA;          /* [0..v..M] current number allocated rows for deck v */
+
+  /* yshadow holds the shadow matrix for all non-BIF_B states, yshadow[v] == NULL if cm->sttype[v] == B_st */
+  char ***yshadow;       /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  char   *yshadow_mem;   /* the actual mem, points to yshadow[0][0][0] */
+
+  /* kshadow holds the shadow matrix for all BIF_B states, kshadow[v] == NULL if cm->sttype[v] != B_st */
+  int ***kshadow;       /*  [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  int   *kshadow_mem;   /* the actual mem, points to kshadow[0][0][0] */
+
+  CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
+			 * matrix, which defines j, d, bands for each
+			 * state, only a reference, so don't free
+			 * it when mx is freed. */
+} CM_HB_SHADOW_MX;
+
 typedef struct cm_tr_hb_shadow_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
   int  L;               /* length of sequence the matrix currently corresponds to */
@@ -1557,7 +1589,7 @@ typedef struct cm_s {
   ScanMatrix_t    *smx;     /* matrices, info for CYK/Inside scans with this CM */
   CM_HB_MX        *hbmx;    /* growable HMM banded float matrix */
   CM_HB_MX        *ohbmx;   /* another, growable HMM banded float matrix for Outside/Posterior calcs */
-  CM_HB_SHADOW_MX *shmx;    /* growable HMM banded shadow matrix, for alignment tracebacks */
+  CM_HB_SHADOW_MX *shhbmx;  /* growable HMM banded shadow matrix, for alignment tracebacks */
   CP9_MX          *cp9_mx;  /* growable CP9 DP matrix */
   CP9_MX          *cp9_bmx; /* another growable CP9 DP matrix, 'b' is for backward,
 			  * only alloc'ed to any significant size if we do Forward,Backward->Posteriors */

@@ -209,12 +209,12 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 
     if(cm->search_opts & CM_SEARCH_HBANDED) {
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, FALSE, 0)) != eslOK) return status; 
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit,                 &sc)) != eslOK) return status; }
-      else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit, 0., NULL, NULL, &sc)) != eslOK) return status; }
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = cm_FInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit,                 &sc)) != eslOK) return status; }
+      else                                   { if((status = cm_CYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit, 0., NULL, NULL, &sc)) != eslOK) return status; }
     }
     else { /* don't do HMM banded search */
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, cutoff, cur_results, do_null3,                 NULL, &sc)) != eslOK) return status; }
-      else                                   { if((status = FastCYKScan    (cm, errbuf, smx, dsq, i0, j0, cutoff, cur_results, do_null3, 0., NULL, NULL, NULL, &sc)) != eslOK) return status; }
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = cm_IInsideScan(cm, errbuf, smx, dsq, i0, j0, cutoff, cur_results, do_null3,                 NULL, &sc)) != eslOK) return status; }
+      else                                   { if((status = cm_CYKScan    (cm, errbuf, smx, dsq, i0, j0, cutoff, cur_results, do_null3, 0., NULL, NULL, NULL, &sc)) != eslOK) return status; }
     }    
     /* If hits were reported greedily, remove overlapping hits, and sort by decreasing end point 
      * (if not greedy, we'll have 0 overlaps, and already be sorted by end point) */
@@ -371,14 +371,12 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
   CP9Map_t          *sub_cp9map;   /* maps the sub_hmm to the sub_cm and vice versa */
   CP9Bands_t        *sub_cp9b;     /* data structure for hmm bands (bands on the hmm states) 
 				    * and arrays for CM state bands, derived from HMM bands */
-  CM_HB_SHADOW_MX   *sub_shmx;     /* sub CM's shadow matrix, only valid if do_hbanded */
 
   CM_t              *orig_cm;      /* the original, template covariance model the sub CM was built from */
   CP9_t             *orig_hmm;     /* original CP9 HMM built from orig_cm */
   CP9Map_t          *orig_cp9map;  /* original CP9 map */
   CP9Bands_t        *orig_cp9b;    /* original CP9Bands */
   Parsetree_t       *orig_tr;      /* parsetree for the orig_cm; created from the sub_cm parsetree */
-  CM_HB_SHADOW_MX   *orig_shmx;    /* the original shadow matrix for the original CM */
 
   /* variables related to query dependent banding (qdb) */
   int    expand_flag;           /* TRUE if the dmin and dmax vectors have just been 
@@ -387,13 +385,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
   int *orig_dmin;               /* original dmin values passed in */
   int *orig_dmax;               /* original dmax values passed in */
 
-  /* variables related to inside/outside */
-  float           ***alpha = NULL;    /* alpha DP matrix for non-banded Inside() */
-  float           ***beta  = NULL;    /* beta DP matrix for non-baned Outside() */
-  CM_HB_MX           *out_mx;         /* outside matrix for HMM banded Outside() */
-
-  /* for HMM banded tracebacks */
-  CM_HB_SHADOW_MX    *shmx;           /* HMM banded shadow matrix */
+  /* variables related to non-banded cyk/inside/outside */
+  CM_MX             *mx   = NULL;       /* alpha DP matrix for non-banded CYK/Inside() */
+  CM_MX             *out_mx = NULL;     /* outside matrix for HMM banded Outside() */
+  CM_SHADOW_MX      *shmx = NULL;       /* shadow matrix for non-banded tracebacks */
 
   float             *parsesc; /* parsetree scores of each sequence */
   float             *parsepp; /* optimal parse posterior probability of each sequence, if any */
@@ -543,16 +538,6 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
   printf("\n");
 #endif
 
-  /* allocate out_mx, if needed, only if !do_sub, if do_sub each sub CM will need to allocate a new out_mx */
-  out_mx = NULL;
-  if((!do_sub) && (do_hbanded && (do_optacc || (do_post)))) out_mx = cm_hb_mx_Create(cm->M);
-
-  /* allocate/initialize shmx, if needed, only if do_hbanded */
-  sub_shmx  = NULL;
-  shmx      = NULL;
-  if(do_hbanded) shmx = cm_hb_shadow_mx_Create(cm);
-  orig_shmx = shmx;
-
   nalign = seqs_to_aln->nseq;
 
   /* If sqmode: potentially allocate tr, cp9_tr, and postcodes. We'll set
@@ -619,6 +604,12 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
     CPlan9SWConfig(cm->cp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE means don't make I_0, D_1, I_M unreachable (like a local CM, undesirable for sub CM strategy)) */
     CP9Logoddsify(hmm);
   }
+  if(! do_hbanded) { /* we need non-banded matrices for alignment */
+    mx     = cm_mx_Create(cm);
+    out_mx = cm_mx_Create(cm);
+    shmx   = cm_shadow_mx_Create(cm);
+  }
+
   orig_cm = cm;
   emap = CreateEmitMap(cm);
   fill_phi_cp9(cm->cp9, &phi, 1, TRUE);
@@ -826,7 +817,6 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	sub_hmm    = sub_cm->cp9;
 	sub_cp9b   = sub_cm->cp9b;
 	sub_cp9map = sub_cm->cp9map;
-	sub_shmx   = cm_hb_shadow_mx_Create(cm); /* a new shadow matrix for the sub CM */
 
 	if(do_p7banded) { 
 	  P7BandsAdjustForSubCM(kmin, kmax, L, spos, epos);
@@ -839,9 +829,6 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	hmm           = sub_hmm;    
 	cp9b          = sub_cp9b;
 	cp9map        = sub_cp9map;
-	/* Create the out_mx if needed, cm == sub_cm */
-	if(do_optacc || do_post) out_mx = cm_hb_mx_Create(cm->M);
-	shmx = sub_shmx; /* orig_shmx still points to the original shadow matrix */
       }
     }
 
@@ -870,10 +857,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
     /* beginning of large if() else if() else if() ... statement */
     if(do_inside) { 
       if(do_hbanded) { /* HMM banded inside only */
-	if((status = FastInsideAlignHB(cm, errbuf, cur_dsq, 1, L, size_limit, cm->hbmx, &sc)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlignHB() */
+	if((status = cm_InsideAlignHB(cm, errbuf, cur_dsq, 1, L, size_limit, cm->hbmx, &sc)) != eslOK) return status; /* errbuf will have been filled by cm_InsideAlignHB() */
       }
       else { /* non-banded inside only */
-	if((status = FastInsideAlign(cm, errbuf, cur_dsq, 1, L, size_limit, NULL, &sc)) != eslOK) return status; 
+	if((status = cm_InsideAlign(cm, errbuf, cur_dsq, 1, L, size_limit, mx, &sc)) != eslOK) return status; 
       }
     }
     else if (do_small) { /* small D&C CYK alignment */
@@ -894,28 +881,28 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
       if(do_hbanded) { 
 	if(do_post) { /* HMM banded CYK or optimal accuracy or sample, posterior annotated */
 	  if(do_sample) { 
-	    if((status = FastAlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
+	    if((status = cm_AlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, cm->shhbmx, do_optacc, do_sample, cm->ohbmx, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
 	  }
 	  else {
-	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
+	    if((status = cm_AlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, cm->shhbmx, do_optacc, do_sample, cm->ohbmx, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
 	  }
 	}
 	else { 
 	  if(do_optacc) { /* HMM banded optimal accuracy, no posteriors */
-	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
+	    if((status = cm_AlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, cm->shhbmx, do_optacc, do_sample, cm->ohbmx, cur_tr, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
 	  }
 	  else if(do_sample) { /* HMM banded sample from Inside, no posteriors */
-	    if((status = FastAlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, &sc, NULL)) != eslOK) return status; /* we can't handle a memory overload if we're sampling */
+	    if((status = cm_AlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, cm->shhbmx, do_optacc, do_sample, cm->ohbmx, cur_tr, NULL, &sc, NULL)) != eslOK) return status; /* we can't handle a memory overload if we're sampling */
 	  }
 	  else { /* HMM banded CYK */
-	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, &sc, NULL)) != eslOK) {
+	    if((status = cm_AlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, cm->shhbmx, do_optacc, do_sample, cm->ohbmx, cur_tr, NULL, &sc, NULL)) != eslOK) {
 	      if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
 		hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
 		ESL_DPRINTF1(("# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));
 		fprintf(ofp, "# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i); 
 		sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
 	      }
-	      else return status; /* get here (!do_optacc) && FastAlignHB() returned status other than eslOK and eslERANGE */
+	      else return status; /* get here (!do_optacc) && cm_AlignHB() returned status other than eslOK and eslERANGE */
 	    }
 	  }
 	}
@@ -936,20 +923,20 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
       else { 
 	if(do_post) { /* non-banded CYK or optimal accuracy or sample an alignment from inside matrix, posterior annotated */
 	  if(do_sample) { 
-	    if((status = FastAlign(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
+	    if((status = cm_Align(cm, errbuf, r,    cur_dsq, L, 1, L, size_limit, mx, shmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
 	  }
 	  else { 
-	    if((status = FastAlign(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
+	    if((status = cm_Align(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, mx, shmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
 	  }
 	}
 	else if(do_optacc) { /* non-banded optimal accuracy no posteriors */
-	  if((status = FastAlign(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, NULL, &sc, &ins_sc)) != eslOK) return status;
+	  if((status = cm_Align(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, mx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, &sc, &ins_sc)) != eslOK) return status;
 	}
 	else if(do_sample) { /* non-banded optimal accuracy no posteriors */
-	  if((status = FastAlign(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, NULL, &sc, NULL)) != eslOK) return status;
+	  if((status = cm_Align(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, mx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, &sc, NULL)) != eslOK) return status;
 	}
 	else { /* non-banded CYK, no posteriors */
-	  if((status = FastAlign(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, NULL, &sc, NULL)) != eslOK) return status;
+	  if((status = cm_Align(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, mx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, &sc, NULL)) != eslOK) return status;
 	}
 	if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* allows you to see where the non-banded parse went outside the bands. */
       } 
@@ -1061,16 +1048,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	FreeParsetree(*cur_tr);
 	*cur_tr = orig_tr;
       }
-      /* free sub_cm variables, we build a new sub CM for each seq */
-      if(out_mx != NULL) { cm_hb_mx_Destroy(out_mx); out_mx = NULL; }
-      if(shmx   != NULL) { cm_hb_shadow_mx_Destroy(shmx); shmx = NULL; }
 
       FreeSubMap(submap);
       FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
     }
-    /* free alpha and beta, we need to allocate new ones for each seq */
-    if(alpha != NULL)  { free_vjd_matrix(alpha, cm->M, 1, L); alpha = NULL; }
-    if(beta  != NULL)  { free_vjd_matrix(beta,  cm->M, 1, L); beta = NULL; }
     if(!silent_mode) { 
       esl_stopwatch_Stop(watch); 
       FormatTimeString(time_buf, watch->user, TRUE);
@@ -1144,11 +1125,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 
   /* done aligning all nalign seqs. */
   /* Clean up. */
-  if(out_mx != NULL) cm_hb_mx_Destroy(out_mx);
-  if(shmx != NULL)      { cm_hb_shadow_mx_Destroy(shmx); shmx = NULL; }
-  /*  if(orig_shmx != NULL) { cm_hb_shadow_mx_Destroy(orig_shmx); orig_shmx = NULL; }*/
-  if(alpha != NULL)  { free_vjd_matrix(alpha, cm->M, 1, L); alpha = NULL; }
-  if(beta  != NULL)  { free_vjd_matrix(beta,  cm->M, 1, L); beta = NULL;  }
+  if(mx != NULL)     cm_mx_Destroy(mx);
+  if(out_mx != NULL) cm_mx_Destroy(out_mx);
+  if(shmx != NULL)   cm_shadow_mx_Destroy(shmx);
   if (do_qdb) {
     free(orig_dmin);
     free(orig_dmax);

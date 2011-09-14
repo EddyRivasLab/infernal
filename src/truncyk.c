@@ -770,8 +770,7 @@ if (v == -1) cm_Die("2Superbad: passing z = -1!\n");
    if ( w_mode )
    {
       InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_k, w, w_mode);
-      tr_generic_splitter(cm, dsq, L, tr, w, wend, best_j - best_d + 1, best_j - best_k, (w_mode == TRMODE_J), (w_mode == TRMODE_L), (w_mode == TRMODE_R));
-   }
+      tr_generic_splitter(cm, dsq, L, tr, w, wend, best_j - best_d + 1, best_j - best_k, (w_mode == TRMODE_J), (w_mode == TRMODE_L), (w_mode == TRMODE_R));   }
    else
    {
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, w, w_mode);

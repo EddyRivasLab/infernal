@@ -2200,16 +2200,16 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   }
   
   if(do_hbanded) { 
-    status = FastAlignHB(cm, pli->errbuf, NULL, subdsq, hitlen, 1, hitlen, 
-			 pli->hb_size_limit,                   /* limit for a single CM_HB_MX, so this is safe */
-			 cm->hbmx, cm->shmx,                   /* inside/posterior, shadow matrices */
-			 do_optacc,                            /* use optimal accuracy alg? */
-			 FALSE,                                /* don't sample aln from Inside matrix */
-			 (do_postcode ? cm->ohbmx : NULL),     /* outside DP matrix */
-			 &tr,                                  /* parsetree */
-			 (do_postcode ? &postcode  : NULL),    /* posterior codes */
-			 (do_optacc   ? &optacc_sc : &cyk_sc), /* optimal accuracy or CYK score */
-			 (do_optacc   ? &ins_sc    : NULL));   /* inside score, NULL if we're not doing opt acc */
+    status = cm_AlignHB(cm, pli->errbuf, NULL, subdsq, hitlen, 1, hitlen, 
+			pli->hb_size_limit,                   /* limit for a single CM_HB_MX, so this is safe */
+			cm->hbmx, cm->shhbmx,                 /* inside/posterior, shadow matrices */
+			do_optacc,                            /* use optimal accuracy alg? */
+			FALSE,                                /* don't sample aln from Inside matrix */
+			(do_postcode ? cm->ohbmx : NULL),     /* outside DP matrix */
+			&tr,                                  /* parsetree */
+			(do_postcode ? &postcode  : NULL),    /* posterior codes */
+			(do_optacc   ? &optacc_sc : &cyk_sc), /* optimal accuracy or CYK score */
+			(do_optacc   ? &ins_sc    : NULL));   /* inside score, NULL if we're not doing opt acc */
     if(status == eslERANGE) { 
       /* matrix was too big, despite our pre-check (should be rare), use D&C CYK */
       do_optacc    = FALSE;

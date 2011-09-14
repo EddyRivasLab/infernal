@@ -42,6 +42,7 @@
 #include "structs.h"
 
 #define DEBUG1 0
+#define DOTRACE 0
 
 static int tr_cyk_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_HB_MX *mx,
 			   CM_TR_HB_SHADOW_MX *shmx, int *ret_b, float *ret_bsc, char *ret_bmode, float *ret_sc);
@@ -204,7 +205,7 @@ tr_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
 
   ESL_STOPWATCH *w = esl_stopwatch_Create();
   esl_stopwatch_Start(w);
-  /* initialize all cells of the matrix to IMPOSSIBLE */
+  /* initialize all cells of the matrix to IMPOSSIBLE, all cells of shadow matrix to USED_EL */
   if(  mx->Jncells_valid   > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
   if(  mx->Lncells_valid   > 0) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(  mx->Rncells_valid   > 0) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
@@ -1186,11 +1187,7 @@ tr_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_li
 	Jalpha[v][j][0] = 0.;
 	Lalpha[v][j][0] = 0.;
 	Ralpha[v][j][0] = 0.;
-	for (d = 1; d <= jp; d++) { 
-	  Jalpha[v][j][d] = IMPOSSIBLE;
-	  Lalpha[v][j][d] = IMPOSSIBLE;
-	  Ralpha[v][j][d] = IMPOSSIBLE;
-	}
+	/* rest of deck remains IMPOSSIBLE */
       }
     }
     else if(cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
@@ -1505,7 +1502,7 @@ tr_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_li
 	bsc   = Lalpha[v][j0][W] + trunc_penalty;
 	bmode = TRMODE_L;
       }
-      }
+    }
     /* check for truncated hit in R matrix */
     if(cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) { 
       if (Ralpha[v][j0][W] + trunc_penalty > bsc) { 
@@ -1534,8 +1531,8 @@ tr_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_li
       }
     }
   } /* end loop over all v */
-  /*FILE *fp1; fp1 = fopen("tmp.amx", "w");   cm_tr_mx_Dump(fp1, mx); fclose(fp1);*/
-  /*FILE *fp2; fp2 = fopen("tmp.ashmx", "w"); cm_tr_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);*/
+  FILE *fp1; fp1 = fopen("tmp.amx", "w");   cm_tr_mx_Dump(fp1, mx); fclose(fp1);
+  FILE *fp2; fp2 = fopen("tmp.ashmx", "w"); cm_tr_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
   
   sc = Jalpha[0][j0][W];
 
@@ -1561,7 +1558,7 @@ tr_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_li
  * Note:     based on insideT() [SRE, Fri Aug 11 12:08:18 2000 [Pittsburgh]]
  *
  * Purpose:  Call either tr_cyk_align_hb() (if !<do_optacc>), 
- *           or tr_optimal_accuracy_align_hb()  (if  <do_optacc>),
+ *           or tr_optacc_align_hb()  (if  <do_optacc>),
  *           fill banded vjd shadow matrix in <shmx>; then trace back. 
  *           Append the trace to a given traceback, which already has state r at tr->n-1.
  *        
@@ -1612,9 +1609,9 @@ tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, Parsetree_t *tr,
   int       **hdmax = cp9b->hdmax;
 
   if(do_optacc) {
-    cm_Fail("tr_optimal_accuracy_align_hb() not yet implemented");
+    cm_Fail("tr_optacc_align_hb() not yet implemented");
 #if 0
-    status = tr_optimal_accuracy_align_hb(cm, errbuf, dsq, L, i0, j0, size_limit,
+    status = tr_optacc_align_hb(cm, errbuf, dsq, L, i0, j0, size_limit,
 					  shmx,	     /* the banded shadow matrix, to expand and fill-in */
 					  &b, &bsc,     /* if allow_begin is TRUE, gives info on optimal b */
 					  mx,           /* the HMM banded mx to fill-in */
@@ -1857,7 +1854,7 @@ tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, Parsetree_t *tr,
  * Note:     based on insideT() [SRE, Fri Aug 11 12:08:18 2000 [Pittsburgh]]
  *
  * Purpose:  Call either tr_cyk_align() (if !<do_optacc>), 
- *           or tr_optimal_accuracy_align()  (if  <do_optacc>),
+ *           or tr_optacc_align()  (if  <do_optacc>),
  *           fill vjd shadow matrix in <shadow>; then trace back. 
  *           and append to an existing but empty parsetree tr.
  *        
@@ -1900,9 +1897,9 @@ tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, Parsetree_t *tr,
   if(do_optacc && post_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "tr_alignT_hb(), do_optacc == TRUE but post_mx == NULL.\n");
 			 
   if(do_optacc) {
-    cm_Fail("tr_optimal_accuracy_align() not yet implemented");
+    cm_Fail("tr_optacc_align() not yet implemented");
 #if 0
-    status = tr_optimal_accuracy_align(cm, errbuf, dsq, L, i0, j0, size_limit,
+    status = tr_optacc_align(cm, errbuf, dsq, L, i0, j0, size_limit,
 				       shmx,	     /* the banded shadow matrix, to expand and fill-in */
 				       &b, &bsc,     /* if allow_begin is TRUE, gives info on optimal b */
 				       mx,           /* the HMM banded mx to fill-in */
@@ -2381,7 +2378,7 @@ TrAlign(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int i0, int j0,
     if(do_post) { /* Inside was called above, now do Outside, then Posterior */
       if((status = TrOutsideAlign(cm, errbuf, dsq, i0, j0, size_limit, post_mx, mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
       /* Note: we can only check the posteriors in FastOutsideAlignHB() if local begin/ends are off */
-      if((status = CMTrPosterior(cm, errbuf, i0, j0, size_limit, mx, post_mx, post_mx)) != eslOK) return status;   
+      if((status = TrCMPosterior(cm, errbuf, i0, j0, size_limit, mx, post_mx, post_mx)) != eslOK) return status;   
       if(cm->align_opts & CM_ALIGN_CHECKINOUT) { 
 	if((status = CMTrCheckPosteriorHB(cm, errbuf, i0, j0, post_mx)) != eslOK) return status;
 	printf("\nHMM banded posteriors checked.\n\n");
@@ -3504,8 +3501,8 @@ TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
 	  }
 	  /* two additional special cases in trCYK (these are not in standard CYK) */
 	  /* special case 1: k == 0 (full sequence aligns to BEGL_S left child */
-	  Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Jalpha[v][j][d]);
-	  Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[v][j][d]);
+	  Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Jalpha[y][j][d]);
+	  Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j][d]);
 	  /* special case 2: k == d (full sequence aligns to BEGR_S right child */
 	  Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Jalpha[z][j][d]);
 	  Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[z][j][d]);
@@ -3542,7 +3539,7 @@ TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
       Jalpha[0][j0][L] = FLogsum(Jalpha[0][j0][L], bsc);
     }
   } /* end of for (v = cm->M-1; v > 0; v--) */
-  /*FILE *fp1; fp1 = fopen("tmp.amx", "w");   cm_tr_mx_Dump(fp1, mx); fclose(fp1);*/
+  /*FILE *fp1; fp1 = fopen("tmp.iamx", "w");   cm_tr_mx_Dump(fp1, mx); fclose(fp1);*/
   
   sc = Jalpha[0][j0][L]; 
 
@@ -3552,6 +3549,399 @@ TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
 
   ESL_DPRINTF1(("TrInsideAlign() return sc: %f\n", sc));
   printf("TrInsideAlign() return sc: %.4f\n", sc);
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
+}
+
+
+/* Function: TrInsideAlign()
+ * Date:     EPN, Mon Sep 12 04:31:43 2011
+ *
+ * Purpose: Run the truncated inside algorithm on a target sequence.
+ *          Uses float log odds scores. Very similar to TrInsideAlign()
+ *          except doesn't use HMM bands.
+ * 
+ *           Very similar to tr_cyk_align(), see 'Purpose'
+ *           of that function for more details. Only differences with
+ *           that function is:
+ *           - we do Inside, not CYK
+ *           - can't return a shadow matrix (we're not aligning)
+ *           - doesn't return bsc, b info about local begins 
+ *
+ *           This function complements TrOutsideAlign().
+ *
+ * Args:     cm        - the model    [0..M-1]
+ *           errbuf    - char buffer for reporting errors
+ *           dsq       - the digitized sequence
+ *           i0        - first position in subseq to align (1, for whole seq)
+ *           j0        - last position in subseq to align  (L, for whole seq)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           mx        - the dp matrix, only cells within bands in cp9b will be valid
+ *           ret_sc    - RETURN: log P(S|M)/P(S|R), as a bit score
+ * 
+ * Returns:  <ret_sc>
+ *
+ * Throws:  <eslOK> on success
+ *          <eslERANGE> if required CM_TR_MX for exceeds <size_limit>, 
+ *                      in this case, alignment has been aborted, ret_sc is not valid
+ */
+int
+TrInsideAlignChoose(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX *mx, float *ret_sc)
+{
+  int      status;          /* easel status code */
+  int      v,y,z;	    /* indices for states  */
+  int      j,d,i,k;	    /* indices in sequence dimensions */
+  int      dp;              /* temporary d value */
+  float    sc;		    /* a temporary variable holding a score */
+  int      yoffset;	    /* y=base+offset -- counter in child states that v can transit to */
+  int      W;	    	    /* subsequence length */
+  int      b;	  	    /* best local begin state */
+  float    bsc;   	    /* score for using the best local begin state */
+  float   *el_scA;          /* [0..d..W-1] probability of local end emissions of length d */
+  int      sd;              /* StateDelta(cm->sttype[v]) */
+  int      sdl;             /* StateLeftDelta(cm->sttype[v] */
+  int      sdr;             /* StateRightDelta(cm->sttype[v] */
+  int      jp;              /* offset j, j = i0-1+jp */
+  int      j_sdr;           /* j - sdr */
+  int      d_sd;            /* d - sd */
+  int      d_sdl;           /* d - sdl */
+  int      d_sdr;           /* d - sdr */
+  float    tsc;             /* a transition score */
+  int      L = j0-i0+1;     /* length of the sequence */
+  int      have_el;         /* TRUE if local ends are on */
+  /* other variables used in truncated version, but not standard version (not in fast_cyk_align()) */
+  float Lsc, Rsc;           /* temporary scores */
+  float trunc_penalty = 0.; /* penalty in bits for a truncated hit */
+  int   bmode = TRMODE_J;   /* mode TRMODE_J, TRMODE_L, TRMODE_R, or TRMODE_T truncation mode for obtaining bsc */
+
+  /* Contract check */
+  if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "fast_cyk_inside_align(), dsq is NULL.\n");
+
+  /* the DP matrix */
+  float ***Jalpha  = mx->Jdp; /* pointer to the Jalpha DP matrix */
+  float ***Lalpha  = mx->Ldp; /* pointer to the Lalpha DP matrix */
+  float ***Ralpha  = mx->Rdp; /* pointer to the Ralpha DP matrix */
+  float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
+
+  /* Allocations and initializations  */
+  b   = -1;
+  bsc = IMPOSSIBLE;
+  W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
+				/* if caller didn't give us a deck pool, make one */
+
+  /* grow the matrices based on the current sequence and bands */
+  if((status = cm_tr_mx_GrowTo       (cm, mx,   errbuf, W, size_limit)) != eslOK) return status;
+
+  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
+  ESL_ALLOC(el_scA, sizeof(float) * (W+1));
+  for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
+
+  ESL_STOPWATCH *w = esl_stopwatch_Create();
+  esl_stopwatch_Start(w);
+  /* initialize all cells of the matrix to IMPOSSIBLE */
+  if(  mx->Jncells_valid   > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
+  if(  mx->Lncells_valid   > 0) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
+  if(  mx->Rncells_valid   > 0) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
+  if(  mx->Tncells_valid   > 0) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
+
+  /* Main recursion */
+  for (v = cm->M-1; v >= 0; v--) {
+    float const *esc_v = cm->oesc[v]; /* emission scores for state v */
+    float const *tsc_v = cm->tsc[v];  /* transition scores for state v */
+    float const *lmesc_v = cm->lmesc[v]; /* marginal left  emission scores for state v */
+    float const *rmesc_v = cm->rmesc[v]; /* marginal right emission scores for state v */
+    sd   = StateDelta(cm->sttype[v]);
+    sdl  = StateLeftDelta(cm->sttype[v]);
+    sdr  = StateRightDelta(cm->sttype[v]);
+
+    /* re-initialize the J deck if we can do a local end from v */
+    if(NOT_IMPOSSIBLE(cm->endsc[v])) {
+      for (j = 0; j <= L; j++) { 
+	for (d = 0; d <= j; d++) { 
+	  dp = ESL_MAX(d-sd, 0);
+	  Jalpha[v][j][d] = el_scA[dp] + cm->endsc[v];
+	  /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
+	}
+      }
+    }
+    /* otherwise this state's deck has already been initialized to IMPOSSIBLE */
+
+    if(cm->sttype[v] == E_st) { 
+      for (jp = 0; jp <= W; jp++) {
+	j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
+	Jalpha[v][j][0] = 0.;
+	Lalpha[v][j][0] = 0.;
+	Ralpha[v][j][0] = 0.;
+	for (d = 1; d <= jp; d++) { 
+	  Jalpha[v][j][d] = IMPOSSIBLE;
+	  Lalpha[v][j][d] = IMPOSSIBLE;
+	  Ralpha[v][j][d] = IMPOSSIBLE;
+	}
+      }
+    }
+    else if(cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+      /* update alpha[v][j][d] cells, for IL states, loop nesting order is:
+       * for j { for d { for y { } } } because they can self transit, and a 
+       * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
+       * before can start calc'ing for alpha[v][j][d+1] 
+       * We do ML states as well as IL states b/c they follow the same rules, 
+       * and we're not worried about efficiency here.
+       */
+      
+      /* In TrCYK: we need to treat R differently from and J and L
+       * here, by doing separate 'for (yoffset...' loops for J and R
+       * because we have to fully calculate Jalpha[v][j][d]) before we
+       * can start to calculate Ralpha[v][j][d].
+       */
+
+      for (jp = sdr; jp <= W; jp++) {
+	j = i0-1+jp;
+	j_sdr = j - sdr;
+	for (d = sd; d <= jp; d++) {
+	  d_sd = d - sd;
+	  i    = j - d + 1;
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = cm->cfirst[v] + yoffset; 
+	    Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	    Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	  }
+	  Jalpha[v][j][d] += esc_v[dsq[i]];
+	  if(d >= 2)                      Lalpha[v][j][d] = Lalpha[v][j][d] + esc_v[dsq[i]];
+	  else if(cm->sttype[v] == ML_st) Lalpha[v][j][d] = esc_v[dsq[i]];
+	  else                            Lalpha[v][j][d] = IMPOSSIBLE;
+
+	  Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
+	  Lalpha[v][j][d]  = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
+	  i--;
+
+	  /* handle R separately */
+	  /* note we use 'd', not 'd_sd' (which we used in the corresponding loop for J,L above) */
+	  Rsc = Ralpha[v][j][d]; /* this sc will be IMPOSSIBLE */
+	  /* impt to use Rsc because Ralpha[v][j][d] is one of the possible child states we transit to! (if IL) */
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = cm->cfirst[v] + yoffset; 
+	    Rsc = FLogsum(Rsc, ESL_MAX(Jalpha[y][j_sdr][d], Ralpha[y][j_sdr][d]) + tsc_v[yoffset]);
+	    ///Rsc = FLogsum(Rsc, Jalpha[y][j_sdr][d] + tsc_v[yoffset]);
+	    ///Rsc = FLogsum(Rsc, Ralpha[y][j_sdr][d] + tsc_v[yoffset]);
+	  }
+	  Ralpha[v][j][d] = ESL_MAX(Rsc, IMPOSSIBLE);
+	}
+      }
+    }
+    else if(cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) { 
+      /* update alpha[v][j][d] cells, for IR states, loop nesting order is:
+       * for j { for d { for y { } } } because they can self transit, and a 
+       * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
+       * before can start calc'ing for alpha[v][j][d+1].
+       * We do MR states as well as IR states b/c they follow the same rules, 
+       * and we're not worried about efficiency here.
+       */
+
+      /* In TrCYK: we need to treat L differently from and J and R
+       * here, by doing separate 'for (yoffset...' loops for J and R
+       * because we have to fully calculate Jalpha[v][j][d]) before we
+       * can start to calculate Lalpha[v][j][d].
+       */
+      for (jp = sdr; jp <= W; jp++) {
+	j = i0-1+jp;
+	j_sdr = j - sdr;
+	for (d = sd; d <= jp; d++) {
+	  d_sd = d - sd;
+	  i = j - d + 1;
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = cm->cfirst[v] + yoffset; 
+	    Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	    Ralpha[v][j][d] = FLogsum(Lalpha[v][j][d], Ralpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	  }
+
+	  Jalpha[v][j][d] += esc_v[dsq[i]];
+	  if(d >= 2)                      Ralpha[v][j][d] = Ralpha[v][j][d] + esc_v[dsq[j]];
+	  else if(cm->sttype[v] == MR_st) Ralpha[v][j][d] = esc_v[dsq[j]];
+	  else                            Ralpha[v][j][d] = IMPOSSIBLE;
+
+	  Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
+	  Ralpha[v][j][d]  = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
+
+	  /* handle L separately */
+	  /* note we use 'j' and 'd', not 'j_sdr' and 'd_sd' (which we used in the corresponding loop for J,R above) */
+	  Lsc = Lalpha[v][j][d]; /* this sc will be IMPOSSIBLE */
+	  /* impt to use Lsc because Lalpha[v][j][d] is one of the possible child states we transit to! (if IR) */
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = cm->cfirst[v] + yoffset; 
+	    Lsc = FLogsum(Lsc, ESL_MAX(Jalpha[y][j][d], Lalpha[y][j][d]) + tsc_v[yoffset]);
+	    ///Lsc = FLogsum(Lsc, Jalpha[y][j][d] + tsc_v[yoffset]);
+	    ///Lsc = FLogsum(Lsc, Lalpha[y][j][d] + tsc_v[yoffset]);
+	  }
+	  Lalpha[v][j][d] = ESL_MAX(Lsc, IMPOSSIBLE);
+	}
+      }
+    }
+    else if(cm->sttype[v] == MP_st) { 
+      /* MP states cannot self transit, this means that all cells in
+       * alpha[v] are independent of each other, only depending on
+       * alpha[y] for previously calc'ed y.  We can do the for loops
+       * in any nesting order, this implementation does what I think
+       * is most efficient: for y { for j { for d { } } }
+       */
+      for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+	yoffset = y - cm->cfirst[v];
+	tsc = tsc_v[yoffset];
+
+	for (jp = sdr; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  j_sdr = j - sdr;
+
+	  for (d = sd; d <= jp; d++) { /* sd == 2 for MP state */
+	    d_sd = d - sd;
+	    Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	  }
+	  /* note we use 'd-sdl' not 'd-sd' for L, plus minimum d is sdl (1) */
+	  for (d = sdl; d <= jp; d++) { /* sdl == 1 for MP state */
+	    d_sdl = d-sdl;
+	    Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], 
+				      ESL_MAX(Jalpha[y][j_sdr][d_sdl], Lalpha[y][j_sdr][d_sdl])
+				      + tsc_v[yoffset]);
+	    ///Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Jalpha[y][j_sdr][d_sdl] + tsc_v[yoffset]);
+	    ///Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j_sdr][d_sdl] + tsc_v[yoffset]);
+	  }
+	  /* note we use 'j' and 'd_sdr' not 'j_sdr' and 'd_sd' for R, plus minimum d is sdr (1) */
+	  for (d = sdr; d <= jp; d++) { /* sdr == 1 for MP state */
+	    d_sdr = d - sdr;
+	    Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Jalpha[y][j][d_sdr] + tsc_v[yoffset]);
+	    Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j][d_sdr] + tsc_v[yoffset]);
+	  }
+	}
+      }
+      /* add in emission score */
+      for (jp = 0; jp <= W; jp++) {
+	j = i0-1+jp;
+	i = j;
+	Jalpha[v][j][1] = IMPOSSIBLE;
+	Lalpha[v][j][1] = lmesc_v[dsq[i]];
+	Ralpha[v][j][1] = rmesc_v[dsq[j]];
+	i--;
+	for (d = 2; d <= jp; d++) {
+	  Jalpha[v][j][d] += esc_v[dsq[i]*cm->abc->Kp+dsq[j]];
+	  Lalpha[v][j][d] += lmesc_v[dsq[i]];
+	  Ralpha[v][j][d] += rmesc_v[dsq[j]];
+	  i--;
+	}
+      }
+      /* ensure all cells are >= IMPOSSIBLE */
+      for (jp = 0; jp <= W; jp++) {
+	j = i0-1+jp;
+	for (d = 1; d <= jp; d++) {
+	  Jalpha[v][j][d] = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
+	  Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
+	  Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
+	}
+      }
+    }
+    else if(cm->sttype[v] != B_st) { /* entered if state v is D or S */
+      /* D, S states cannot self transit, this means that all cells in
+       * alpha[v] are independent of each other, only depending on
+       * alpha[y] for previously calc'ed y.  We can do the for loops
+       * in any nesting order, this implementation does what I think
+       * is most efficient: for y { for j { for d { } } }
+       */
+      for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+	yoffset = y - cm->cfirst[v];
+	tsc = tsc_v[yoffset];
+	
+	for (jp = sdr; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  j_sdr = j - sdr;
+	  
+	  for (d = sd; d <= jp; d++) {
+	    d_sd = d-sd;
+	    Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j_sdr][d_sd] + tsc);
+	    Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j_sdr][d_sd] + tsc);
+	    Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j_sdr][d_sd] + tsc);
+	  }
+	  /* an easy to overlook case: if d == 0, ensure L and R values are IMPOSSIBLE */
+	  Lalpha[v][j][0] = IMPOSSIBLE;
+	  Ralpha[v][j][0] = IMPOSSIBLE;
+	}
+      }
+      /* no emission score to add */
+    }
+    else { /* B_st */
+      assert(cm->sttype[v] == B_st);
+      y = cm->cfirst[v]; /* left  subtree */
+      z = cm->cnum[v];   /* right subtree */
+
+      for (jp = 0; jp <= W; jp++) {
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++) {
+	  for (k = 1; k < d; k++) {
+	    Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j-k][d-k] + Jalpha[z][j][k]);
+	    Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Jalpha[y][j-k][d-k] + Lalpha[z][j][k]);
+	    Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j-k][d-k] + Jalpha[z][j][k]);
+	    /*if((k != i-1) && (k != j)) {*/
+	    Talpha[v][j][d] = FLogsum(Talpha[v][j][d], Ralpha[y][j-k][d-k] + Lalpha[z][j][k]);
+	    /*}*/
+	  }
+	  /* two additional special cases in trCYK (these are not in standard CYK) */
+	  /* special case 1: k == 0 (full sequence aligns to BEGL_S left child */
+	  Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], ESL_MAX(Jalpha[y][j][d], Lalpha[y][j][d]));
+	  ///Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Jalpha[y][j][d]);
+	  ///Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j][d]);
+	  /* special case 2: k == d (full sequence aligns to BEGR_S right child */
+	  Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], ESL_MAX(Jalpha[z][j][d], Ralpha[z][j][d]));
+	  ///Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Jalpha[z][j][d]);
+	  ///Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[z][j][d]);
+	}
+      }
+    } /* end of B_st recursion */
+
+    /* allow for truncated begins into v that emit the full sequence i0..j0 */
+#if 0
+    /* Don't allow local begins, right? */
+    /* check for normal local begins */
+    if((cm->flags & CMH_LOCAL_BEGIN) && allow_begin) {
+      bsc = FLogsum(bsc, (Jalpha[v][j0][W] + cm->beginsc[v]));
+    }
+#endif
+    /* include hits in J matrix (much like a normal local begin) */
+    if(cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st) { 
+      bsc = ESL_MAX(bsc, Jalpha[v][j0][L] + trunc_penalty);
+      ///bsc = FLogsum(bsc, Jalpha[v][j0][L] + trunc_penalty);
+    }
+    /* include truncated hits in L matrix */
+    if(cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) { 
+      bsc = ESL_MAX(bsc, Lalpha[v][j0][L] + trunc_penalty);
+      ///bsc = FLogsum(bsc, Lalpha[v][j0][L] + trunc_penalty);
+    }	    
+    /* check for truncated hit in R matrix */
+    if(cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) { 
+      bsc = ESL_MAX(bsc, Ralpha[v][j0][L] + trunc_penalty);
+      ///bsc = FLogsum(bsc, Ralpha[v][j0][L] + trunc_penalty);
+    }	    
+    /* check for truncated hit in T matrix */
+    if(cm->sttype[v] == B_st) { 
+      bsc = ESL_MAX(bsc, Talpha[v][j0][L] + trunc_penalty);
+      ///bsc = FLogsum(bsc, Talpha[v][j0][L] + trunc_penalty);
+    }	    
+    /* include bsc into alpha[0][j0][L] (full sequence aligned to ROOT_S) */
+    if (v == 0) { 
+      Jalpha[0][j0][L] = ESL_MAX(bsc, Jalpha[0][j0][L]);
+      ///Jalpha[0][j0][L] = FLogsum(bsc, Jalpha[0][j0][L]);
+    }
+  } /* end of for (v = cm->M-1; v > 0; v--) */
+  FILE *fp1; fp1 = fopen("tmp.iamx", "w");   cm_tr_mx_Dump(fp1, mx); fclose(fp1);
+  
+  sc = Jalpha[0][j0][L]; 
+
+  free(el_scA);
+
+  *ret_sc = sc;
+
+  ESL_DPRINTF1(("TrInsideAlignChoose() return sc: %f\n", sc));
+  printf("TrInsideAlignChoose() return sc: %.4f\n", sc);
   return eslOK;
 
  ERROR: 
@@ -3589,6 +3979,7 @@ TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_
   int      status;
   int      v,y,z;	       /* indices for states */
   int      j,d,i,k;	       /* indices in sequence dimensions */
+  float    csc;     	       /* a temporary variable holding a float score */
   float    fsc;     	       /* a temporary variable holding a float score */
   float    escore;	       /* an emission score, tmp variable */
   int      W;		       /* subsequence length */
@@ -3640,35 +4031,33 @@ TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_
   if(  mx->Rncells_valid   > 0) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(  mx->Tncells_valid   > 0) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
 
-  /* now set Jbeta[0][j0][W] to 0., all J parses must end there */
-  Jbeta[0][j0][W] = 0.;
-
-  /* for any MP, ML, MR, B state, any parse can also end for any j and d, these are truncated ends */
+  /* set cells corresponding to full sequence alignments to 0. */
+  //Jbeta[0][W][W] = 0.; /* a full joint alignment is outside this cell */
+  /* full truncated alignments may only be rooted at internal entry points */
   for(v = 1; v < cm->M; v++) { 
-    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || cm->sttype[v] == B_st) { 
-      for(jp = 0; jp <= W; jp++) {
-	j = i0-1+jp;
-	for (d = 0; d <= jp; d++) {
-	  Lalpha[v][j][d] = 0.;
-	  Ralpha[v][j][d] = 0.;
-	}
-      }
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == B_st) {
+      Jbeta[v][W][W] = 0.; /* a full joint alignment is outside this cell */
+      Lbeta[v][0][0] = 0.; /* a truncated end L alignment */
+    }
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == B_st) { 
+      Jbeta[v][W][W] = 0.; /* a full joint alignment is outside this cell */
+      Rbeta[v][W][0] = 0.; /* a truncated end R alignment */
     }
   }
 
   /* No local begins in truncated mode */
   #if 0 
   /* If we can do a local begin into v, overwrite IMPOSSIBLE with the local begin score. 
-   * By definition, beta[0][j0][W] == 0.
+   * By definition, Jbeta[0][W][W] == 0.
    */ 
   if (cm->flags & CMH_LOCAL_BEGIN) {
     for (v = 1; v < cm->M; v++) {
       if(NOT_IMPOSSIBLE(cm->beginsc[v])) {
-	Jbeta[v][j0][W] = cm->beginsc[v];
+	Jbeta[v][W][W] = cm->beginsc[v];
       }
     }
   }
-#endif
+  #endif
 
   /* main loop down through the decks */
   for (v = 1; v < cm->M; v++) {
@@ -3683,30 +4072,64 @@ TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_
      * matrix values for a single d instead of for all d 0..j.
      */
     if (cm->stid[v] == BEGL_S) { 
-      cm_Fail("Outside BEGL_S not yet implemented");
-    }
-    else if(cm->stid[v] == BEGR_S) { 
-      cm_Fail("Outside BEGR_S not yet implemented");
-    }
-    else { /* ! BEGL_S and ! BEGR_S */
+      y = cm->plast[v];	/* the parent bifurcation    */
+      z = cm->cnum[y];	/* the other (right) S state */
       for(jp = 0; jp <= W; jp++) { 
-	j = i0+jp; /* note off-by-one relative to mini-recursion for R matrix */
-	if (j > i0) { 
-	  for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
-	    voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
-	    sd  = StateDelta(cm->sttype[y]);
-	    sdl = StateLeftDelta(cm->sttype[y]);
-	    if     (cm->sttype[y] == MP_st)                           escore = cm->lmesc[y][dsq[j-1]];
-	    else if(cm->sttype[y] == ML_st || cm->sttype[y] == IL_st) escore = cm->oesc[y][dsq[j-1]];
-	    else                                                      escore = 0.;
-
-	    Lbeta[v][jp][0] = FLogsum(Lbeta[v][jp][0], (Lbeta[y][jp-sdl][0] + cm->tsc[y][voffset] + escore));
-	    /* sdl is 1 for MP, ML, IL, else it's 0 */
-	  }
-	  Lbeta[v][jp][0] = ESL_MAX(Lbeta[v][j][0], IMPOSSIBLE);
+	j = i0-1+jp;
+ 	for (d = 0; d <= jp; d++) {
+	  Lbeta[v][j][d] = FLogsum(Lbeta[v][j][d], Lbeta[y][j][d]); /* 11, entire sequence on left, k == 0 */
 	}
       }
     }
+    else if(cm->stid[v] == BEGR_S) { 
+      y = cm->plast[v];	  /* the parent bifurcation    */
+      z = cm->cfirst[y];  /* the other (left) S state  */
+      for(jp = 0; jp <= W; jp++) { 
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++) {
+	  for (k = 0; k <= (j-d); k++) {
+	    Lbeta[v][j][d] = FLogsum(Lbeta[v][j][d], Lbeta[y][j][d+k] + Jalpha[z][j-d][k]); /* 4 */
+	    Lbeta[v][j][d] = FLogsum(Lbeta[v][j][d], Tbeta[y][j][d+k] + Ralpha[z][j-d][k]); /* 8 */
+	  }
+	}
+      }
+    }
+    else { /* ! BEGL_S and ! BEGR_S */
+      for(jp = 0; jp <= W; jp++) { 
+	//j = i0+jp; /* note off-by-one relative to mini-recursion for R matrix */
+	j = i0-1+jp; 
+	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	  voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
+	  switch(cm->sttype[y]) 
+	    {
+	    case MP_st:
+	      if(j >= i0) {
+		escore = cm->lmesc[y][dsq[j]];
+		Lbeta[v][jp][0] = FLogsum(Lbeta[v][jp][0], (Lbeta[y][jp-1][0] + cm->tsc[y][voffset] + escore));
+	      }
+	      break;
+	    case ML_st:
+	    case IL_st:
+	      if(j >= i0) { 
+		escore = cm->oesc[y][dsq[j]];
+		Lbeta[v][jp][0] = FLogsum(Lbeta[v][jp][0], (Lbeta[y][jp-1][0] + cm->tsc[y][voffset] + escore));
+	      }
+	      break;
+	    case MR_st:
+	    case IR_st:
+	    case  B_st:
+	    case  S_st:
+	    case  E_st:
+	    case  D_st:
+	      Lbeta[v][jp][0] = FLogsum(Lbeta[v][jp][0], (Lbeta[y][jp][0]     + cm->tsc[y][voffset]));
+	      break;
+	    }
+	}
+	printf("HEYA Lbeta[%4d][%4d][0]: %.4f\n", v, jp, Lbeta[v][jp][0]);
+	Lbeta[v][jp][0] = ESL_MAX(Lbeta[v][jp][0], IMPOSSIBLE);
+      }
+    }
+
     /* mini-recursion for R matrix: because for any cell in R all
      * 'outside' residues must be emitted rightwise, we don't need to
      * store varying d values, i.e. j defines i and j because (for R)
@@ -3715,60 +4138,92 @@ TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_
      * matrix values for a single d instead of for all d 0..j.
      */
     if (cm->stid[v] == BEGL_S) { 
-      cm_Fail("Outside BEGL_S not yet implemented");
-    }
-    else if(cm->stid[v] == BEGR_S) { 
-      cm_Fail("Outside BEGR_S not yet implemented");
-    }
-    else { /* ! BEGL_S and ! BEGR_S */
-      for (jp = W; jp >= 0; jp--) {
-	j = i0-1+jp; /* note off-by-one relative to mini-recursion for L matrix */
-	if(j < j0) { 
-	  for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
-	    voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
-	    sd  = StateDelta(cm->sttype[y]);
-	    sdr = StateRightDelta(cm->sttype[y]);
-	    if     (cm->sttype[y] == MP_st)                           escore = cm->rmesc[y][dsq[j+1]];
-	    else if(cm->sttype[y] == MR_st || cm->sttype[y] == IR_st) escore = cm->oesc[y][dsq[j+1]];
-	    else                                                      escore = 0.;
-	    Rbeta[v][j][0] = FLogsum(Rbeta[v][j][0], (Rbeta[y][j+sdr][0] + cm->tsc[y][voffset] + escore));
-	    /* sdr is 1 for MP, MR, IR, else it's 0 */
-	  }
-	  Rbeta[v][j][0] = ESL_MAX(Rbeta[v][j][0], IMPOSSIBLE);
-	}
-      }
-    }
-
-    /* main recursion, for J matrix, just like Inside/CYK, we need to do for(j ... for(d ... here */
-    if (cm->stid[v] == BEGL_S) { /* BEGL_S */
-      cm_Fail("Outside BEGL_S not yet implemented");
-#if 0
       y = cm->plast[v];	/* the parent bifurcation    */
       z = cm->cnum[y];	/* the other (right) S state */
       for(jp = 0; jp <= W; jp++) { 
 	j = i0-1+jp;
-	for (d = 0; d <= jp; d++) {
+ 	for (d = 0; d <= jp; d++) {
 	  for (k = 0; k <= (W-j); k++) {
-	    beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j+k][d+k] + alpha[z][j+k][k]));
+	    Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Rbeta[y][j+k][d+k] + Jalpha[z][j+k][k]); /* 5 */
+	    Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Tbeta[y][j+k][d+k] + Lalpha[z][j+k][k]); /* 7 */
 	  }
 	}
       }
-#endif
+    }
+    else if(cm->stid[v] == BEGR_S) { 
+      y = cm->plast[v];	  /* the parent bifurcation    */
+      z = cm->cfirst[y];  /* the other (left) S state  */
+      for(jp = 0; jp <= W; jp++) { 
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++) {
+	  Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Rbeta[y][j][d]); /* 12, entire sequence on right, k == 0 */
+	}
+      }
+    }
+    else { /* ! BEGL_S and ! BEGR_S */
+      for (jp = W; jp >= 0; jp--) {
+	j = i0-1+jp; 
+	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	  voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
+	  switch(cm->sttype[y])
+	    {
+	    case MP_st:
+	      if(j < j0) { 
+		escore = cm->rmesc[y][dsq[j+1]];
+		Rbeta[v][jp][0] = FLogsum(Rbeta[v][jp][0], Rbeta[y][jp+1][0] + cm->tsc[y][voffset] + escore);
+	      }
+	      break;
+	    case MR_st:
+	    case IR_st:
+	      if(j < j0) { 
+		escore = cm->oesc[y][dsq[j+1]];
+		Rbeta[v][jp][0] = FLogsum(Rbeta[v][jp][0], Rbeta[y][jp+1][0] + cm->tsc[y][voffset] + escore);
+	      }
+	      break;
+	    case ML_st:
+	    case IL_st:
+	    case  B_st:
+	    case  S_st:
+	    case  E_st:
+	    case  D_st:
+	      Rbeta[v][jp][0] = FLogsum(Rbeta[v][jp][0], Rbeta[y][jp][0]   + cm->tsc[y][voffset]);
+	      break;
+	    }
+	}
+	printf("HEYA Rbeta[%4d][%4d][0]: %.4f\n", v, jp, Rbeta[v][jp][0]);
+	Rbeta[v][jp][0] = ESL_MAX(Rbeta[v][jp][0], IMPOSSIBLE);
+      }
+    }
+    /**********************************************************************************************/
+    /* main recursion, for J matrix, just like Inside/CYK, we need to do for(j ... for(d ... here */
+    /**********************************************************************************************/
+    if (cm->stid[v] == BEGL_S) { /* BEGL_S */
+      y = cm->plast[v];	/* the parent bifurcation    */
+      z = cm->cnum[y];	/* the other (right) S state */
+      for(jp = 0; jp <= W; jp++) { 
+	j = i0-1+jp;
+ 	for (d = 0; d <= jp; d++) {
+	  for (k = 0; k <= (W-j); k++) {
+	    Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Jbeta[y][j+k][d+k] + Jalpha[z][j+k][k]); /* 1 */
+	    Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][j+k][d+k] + Lalpha[z][j+k][k]); /* 3 */
+	  }
+	  Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][j][d]); /* 9, entire sequence on left, k == 0 */
+	}
+      }
     } /* end of 'if (cm->stid[v] == BEGL_S */
     else if (cm->stid[v] == BEGR_S) {
-      cm_Fail("Outside BEGR_S not yet implemented");
-#if 0
       y = cm->plast[v];	  /* the parent bifurcation    */
       z = cm->cfirst[y];  /* the other (left) S state  */
       for(jp = 0; jp <= W; jp++) { 
 	j = i0-1+jp;
 	for (d = 0; d <= jp; d++) {
 	  for (k = 0; k <= (j-d); k++) {
-	    beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j][d+k] + alpha[z][j-d][k]));
+	    Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Jbeta[y][j][d+k] + Jalpha[z][j-d][k]); /* 2 */
+	    Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Rbeta[y][j][d+k] + Ralpha[z][j-d][k]); /* 6 */
 	  }
+	  Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Rbeta[y][j][d]); /* 10, entire sequence on right, k == 0 */
 	}
       }
-#endif
     } /* end of 'else if (cm->stid[v] == BEGR_S */
     else { /* (cm->sttype[v] != BEGL_S && cm->sttype[v] != BEGR_S */ 
       for (jp = W; jp >= 0; jp--) {
@@ -3785,27 +4240,45 @@ TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_
 	    case MP_st: 
 	      if (j != j0 && d != jp) { 
 		escore = cm->oesc[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+		csc = (Jbeta[y][j+sdr][d+sd], ESL_MAX(Lbeta[y][ip_L-sdl][0], Rbeta[y][j+sdr][0]));
+		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], csc + cm->tsc[y][voffset] + escore);
+#if 0 
 		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
-		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Jbeta[y][j-sdl][0]    + cm->tsc[y][voffset] + escore);
-		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][j+sdr][0]    + cm->tsc[y][voffset] + escore);
+		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][ip_L-sdl][0] + cm->tsc[y][voffset] + escore);
+		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Rbeta[y][j+sdr][0]    + cm->tsc[y][voffset] + escore);
+#endif
 	      }
 	      break;
 	    case ML_st:
 	    case IL_st: 
 	      if (d != jp) { 
 		escore = cm->oesc[y][dsq[i-1]];
+		csc = ESL_MAX(Jbeta[y][j][d+sd], Rbeta[y][j][0]);;
+		if(cm->sttype[y] == ML_st || ((i-1) > i0)) { 
+		  csc = ESL_MAX(csc, Lbeta[y][ip_L-sdl][0]); /* can't emit first residue from an IL */
+		}
+		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], csc + cm->tsc[y][voffset] + escore);
+#if 0 
 		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Jbeta[y][j][d+sd]     + cm->tsc[y][voffset] + escore);
 		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][ip_L-sdl][0] + cm->tsc[y][voffset] + escore);
 		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Rbeta[y][j][0]        + cm->tsc[y][voffset] + escore);
+#endif
 	      }
 	      break;
 	    case MR_st:
 	    case IR_st:
 	      if (j != j0) { 
 		escore = cm->oesc[y][dsq[j+1]];
+		csc = ESL_MAX(Jbeta[y][j+sdr][d+sd], Lbeta[y][ip_L][0]);
+		if(cm->sttype[y] == MR_st || ((j+1) < j0)) { /* can't emit final residue from an IR */
+		  csc = ESL_MAX(csc, Rbeta[y][j+sdr][0]);
+		}
+		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], csc + cm->tsc[y][voffset] + escore);
+#if 0 
 		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
 		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][ip_L][0]     + cm->tsc[y][voffset] + escore);
 		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Rbeta[y][j+sdr][0]    + cm->tsc[y][voffset] + escore);
+#endif
 	      }
 	      break;
 	    case S_st:
@@ -3870,6 +4343,52 @@ TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_
     }
   }
 
+#if DOTRACE  
+  printf("Jalpha[9][2][0]: %.4f  Jbeta[9][2][0]: %.4f  sum: %.4f\n", 
+	 Jalpha[9][2][0],  Jbeta[9][2][0],
+	 Jalpha[9][2][0] + Jbeta[9][2][0]);
+  printf("Lalpha[9][2][0]: %.4f  Lbeta[9][2][0]: %.4f  sum: %.4f\n", 
+	 Lalpha[9][2][0],  Lbeta[9][2][0],
+	 Lalpha[9][2][0] + Lbeta[9][2][0]);
+  printf("Ralpha[9][2][0]: %.4f  Rbeta[9][2][0]: %.4f  sum: %.4f\n", 
+	 Ralpha[9][2][0],  Rbeta[9][2][0],
+	 Ralpha[9][2][0] + Rbeta[9][2][0]);
+  printf("\n");
+
+  printf("Jalpha[6][2][1]: %.4f  Jbeta[6][2][1]: %.4f  sum: %.4f\n", 
+	 Jalpha[6][2][1],  Jbeta[6][2][1],
+	 Jalpha[6][2][1] + Jbeta[6][2][1]);
+  printf("Lalpha[6][2][1]: %.4f  Lbeta[6][2][0]: %.4f  sum: %.4f\n", 
+	 Lalpha[6][2][1],  Lbeta[6][2][0],
+	 Lalpha[6][2][1] + Lbeta[6][2][0]);
+  printf("Ralpha[6][2][1]: %.4f  Rbeta[6][2][0]: %.4f  sum: %.4f\n", 
+	 Ralpha[6][2][1],  Rbeta[6][2][0],
+	 Ralpha[6][2][1] + Rbeta[6][2][0]);
+  printf("\n");
+
+  printf("Jalpha[3][2][2]: %.4f  Jbeta[3][2][2]: %.4f  sum: %.4f\n", 
+	 Jalpha[3][2][2],  Jbeta[3][2][2],
+	 Jalpha[3][2][2] + Jbeta[3][2][2]);
+  printf("Lalpha[3][2][2]: %.4f  Lbeta[3][2][0]: %.4f  sum: %.4f\n", 
+	 Lalpha[3][2][2],  Lbeta[3][2][0],
+	 Lalpha[3][2][2] + Lbeta[3][2][0]);
+  printf("Ralpha[3][2][2]: %.4f  Jbeta[3][2][0]: %.4f  sum: %.4f\n", 
+	 Ralpha[3][2][2],  Lbeta[3][2][0],
+	 Ralpha[3][2][2] + Lbeta[3][2][0]);
+  printf("\n");
+
+  printf("Jalpha[0][2][2]: %.4f  Jbeta[0][2][2]: %.4f  sum: %.4f\n", 
+	 Jalpha[0][2][2],  Jbeta[0][2][2],
+	 Jalpha[0][2][2] + Jbeta[0][2][2]);
+  printf("Lalpha[0][2][2]: %.4f  Lbeta[0][2][0]: %.4f  sum: %.4f\n", 
+	 Lalpha[0][2][2],  Lbeta[0][2][0],
+	 Lalpha[0][2][2] + Lbeta[0][2][0]);
+  printf("Ralpha[0][2][0]: %.4f  Rbeta[0][2][0]: %.4f  sum: %.4f\n", 
+	 Ralpha[0][2][2],  Rbeta[0][2][0],
+	 Ralpha[0][2][2] + Rbeta[0][2][0]);
+  printf("\n");
+#endif
+
   /* If not in local mode, we can calculate P(S|M) / P(S|R) given only the 
    * beta matrix as follows:
    * 
@@ -3890,23 +4409,26 @@ TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_
    */
 #if 0
   if(!(cm->flags & CMH_LOCAL_END)) { 
+#endif
     freturn_sc = IMPOSSIBLE;
     v = cm->M-1;
     for(jp = 0; jp <= W; jp++) { 
-      j = i0+jp; 
+      j = i0-1+jp; 
       printf("\tJalpha[%3d][%3d][%3d]: %5.2f | Jbeta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, Jalpha[(cm->M-1)][jp][0], (cm->M-1), (j), 0, Jbeta[(cm->M-1)][jp][0]);
       printf("\tLalpha[%3d][%3d][%3d]: %5.2f | Lbeta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, Lalpha[(cm->M-1)][jp][0], (cm->M-1), (j), 0, Lbeta[(cm->M-1)][jp][0]);
       printf("\tRalpha[%3d][%3d][%3d]: %5.2f | Rbeta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, Ralpha[(cm->M-1)][jp][0], (cm->M-1), (j), 0, Rbeta[(cm->M-1)][jp][0]);
       freturn_sc = FLogsum(freturn_sc, (Jbeta[v][jp][0]));
-      freturn_sc = FLogsum(freturn_sc, (Lbeta[v][jp][0]));
-      freturn_sc = FLogsum(freturn_sc, (Rbeta[v][jp][0]));
+      //freturn_sc = FLogsum(freturn_sc, (Lbeta[v][jp][0]));
+      //freturn_sc = FLogsum(freturn_sc, (Rbeta[v][jp][0]));
     }
+#if 0
   }
   else { /* return_sc = P(S|M) / P(S|R) from Inside() */
     freturn_sc = Jalpha[0][(j0-jmin[0])][Wp];
   }
 #endif
   if(fail_flag) ESL_FAIL(eslFAIL, errbuf, "Not all nodes passed posterior check.");
+  FILE *fp1; fp1 = fopen("tmp.oamx", "w");   cm_tr_mx_Dump(fp1, mx); fclose(fp1);
 
   if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("\tTrOutsideAlign() sc : %f\n", freturn_sc));
   else                             ESL_DPRINTF1(("\tTrOutsideAlign() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc));
@@ -3914,6 +4436,70 @@ TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_
   if (ret_sc != NULL) *ret_sc = freturn_sc;
   return eslOK;
 }  
+
+/* Function: TrCMPosterior() 
+ * Date:     EPN, Tue Sep 13 16:18:25 2011
+ * Note:     based on Ian Holmes' P7EmitterPosterior() from HMMER's 2.x postprob.c
+ *
+ * Purpose:  Combines non-banded TrInside and TrOutside matrices into a 
+ *           posterior probability matrix. The value in post[v][j][d] 
+ *           is the log of the posterior probability of a parse subtree rooted at v 
+ *           emitting the subsequence i..j (i=j-d+1). 
+ *           The caller must provide a <post> float matrix, but this matrix may 
+ *           be the same matrix as that provided as Outside <out_mx>, 
+ *           (overwriting it will not compromise the algorithm).
+ *           
+ * Args:     cm       - the model
+ *           errbuf   - char buffer for reporting errors
+ *           i0       - first position of target seq we're aligning, must be 1 
+ *           j0       - final position of target seq we're aligning, L (length of seq) 
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           ins_mx   - pre-calculated Inside matrix 
+ *           out_mx   - pre-calculated Outside matrix
+ *           post_mx  - pre-allocated matrix for Posteriors 
+ *
+ * Return:   eslOK on succes, eslEINCOMPAT on contract violation
+ */
+int
+TrCMPosterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, CM_TR_MX *ins_mx, CM_TR_MX *out_mx, CM_TR_MX *post_mx)
+{
+  int   v, j, d, i;
+  float sc;
+  int   vmax;
+  int      L;    /* length of sequence */
+  
+  /* Contract check */
+  if (ins_mx == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "TrCMPosterior(), ins_mx is NULL.\n");
+  if (out_mx == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "TrCMPosterior(), out_mx is NULL.\n");
+  if (post_mx == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "TrCMPosterior(), post_mx is NULL.\n");
+  if (i0 != 1)            ESL_FAIL(eslEINCOMPAT, errbuf, "TrCMPosterior(), i0 != 1.\n");
+
+  L = j0-i0+1;
+  sc = ins_mx->Jdp[0][L][L];
+
+  /* If local ends are on, start with the EL state (cm->M), otherwise
+   * its not a valid deck. */
+  if(cm->flags & CMH_LOCAL_END) { 
+    for (j = L; j >= 0; j--) {
+      for (d = 0; d <= j; d++, i--) {
+	post_mx->Jdp[cm->M][j][d] = ins_mx->Jdp[cm->M][j][d] + out_mx->Jdp[cm->M][j][d] - sc;
+      }
+    }
+  }
+  for (v = cm->M-1; v >= 0; v--) { 
+    for (j = L; j >= 0; j--) {
+      i = j;
+      for (d = 0; d <= j; d++, i--) {
+	post_mx->Jdp[v][j][d] = ins_mx->Jdp[v][j][d] + out_mx->Jdp[v][j][d] - sc;
+	post_mx->Ldp[v][j][d] = ins_mx->Ldp[v][j][d] + out_mx->Ldp[v][i][0] - sc;
+	post_mx->Rdp[v][j][d] = ins_mx->Rdp[v][j][d] + out_mx->Rdp[v][j][0] - sc;
+	if(cm->sttype[v] == B_st) post_mx->Tdp[v][j][d] = ins_mx->Tdp[v][j][d] + out_mx->Tdp[v][j][0] - sc;
+      }
+    }
+  }
+  FILE *fp1; fp1 = fopen("tmp.pmx", "w");   cm_tr_mx_Dump(fp1, post_mx); fclose(fp1);
+  return eslOK;
+}
 
 
 /*****************************************************************
@@ -4349,15 +4935,40 @@ main(int argc, char **argv)
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End TrInsideAlign*****************************/
-      
+	/*********************Begin TrInsideAlignChoose()****************************/
+	cm_tr_mx_Destroy(trmx);
+	trmx   = cm_tr_mx_Create(cm);
+	esl_stopwatch_Start(w);
+	if((status = TrInsideAlignChoose(cm, errbuf, dsq, 1, L, size_limit, trmx, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", (i+1), "TrInsideAlignChoose(): ", sc);
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	/*********************End TrInsideAlignChoose*****************************/
+	
 	/*********************Begin TrOutsideAlign()****************************/
 	out_trmx   = cm_tr_mx_Create(cm);
 	esl_stopwatch_Start(w);
 	if((status = TrOutsideAlign(cm, errbuf, dsq, 1, L, size_limit, TRUE, out_trmx, trmx, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", (i+1), "TrOutsideAlign(): ", sc);
+	printf("%4d %-30s %10.4f bits (FULL LENGTH OUTSIDE)", (i+1), "TrOutsideAlign(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End TrOutsideAlign*****************************/
+	if((status = TrCMPosterior(cm, errbuf, 1, L, size_limit, trmx, out_trmx, out_trmx)) != eslOK) return status;   
+      
+	/*********************Begin FastOutsideAlign()****************************/
+	float ***bigmx;
+	float ***bigmx2;
+	esl_stopwatch_Start(w);
+	if((status = FastInsideAlign (cm, errbuf, dsq, 1, L, size_limit, &bigmx, &sc)) != eslOK) return status;
+	printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", (i+1), "FastInsideAlign(): ", sc);
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	esl_stopwatch_Start(w);
+	if((status = FastOutsideAlign(cm, errbuf, dsq, 1, L, size_limit, &bigmx2, bigmx, TRUE, &sc)) != eslOK) return status;
+	printf("%4d %-30s %10.4f bits (FULL LENGTH OUTSIDE)", (i+1), "FastOutsideAlign(): ", sc);
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	/*********************End FastOutsideAlign*****************************/
 
 	/*********************Begin RefTrCYKScan****************************/
 	esl_stopwatch_Start(w);
