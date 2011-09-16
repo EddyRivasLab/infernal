@@ -35,6 +35,7 @@
  * cm_AlignHB()                cm_Align()
  * cm_InsideAlignHB()          cm_InsideAlign()
  * cm_OutsideAlignHB()         cm_OutsideAlign()
+ * (none)                      cm_CYKOutsideAlign() (for reference/debugging only)
  * cm_PosteriorHB()            cm_Posterior()  
  * cm_SampleFromInsideHB()     cm_SampleFromInside()
  *
@@ -201,6 +202,15 @@ cm_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int ven
 
   /* initialize all cells of the matrix to IMPOSSIBLE */
   /* esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE); */
+
+  /* Note, at this point in the non-banded version (cm_cyk_align()) we
+   * replace EL (cm->M) deck IMPOSSIBLEs with EL scores.  But we don't
+   * here. It's actually not necessary there either, but it is done
+   * for completeness and so if we check that matrix in combination
+   * with an Outside CYK matrix, then scores in the EL deck are valid.
+   * But we won't do that here, and we're concerned with efficiency,
+   * so we don't waste time with resetting the EL deck.
+   */
 
   /* Main recursion */
   for (v = vend; v >= vroot; v--) {
@@ -619,6 +629,7 @@ cm_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, i
   int      j_sdr;       /* j - sdr */
   int      d_sd;        /* d - sd */
   float    tsc;         /* a transition score */
+  int      have_el;            /* TRUE if local ends are on */
 
   /* Contract check */
   if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cyk_align(), dsq is NULL.\n");
@@ -646,6 +657,15 @@ cm_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, i
   esl_vec_FSet(mx->dp_mem, mx->ncells_valid, IMPOSSIBLE);
   for(i = 0; i < shmx->y_ncells_valid; i++) shmx->yshadow_mem[i] = USED_EL;
   esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, USED_EL);
+
+  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores */
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  if(have_el) { 
+    for (jp = 0; jp <= W; jp++) {
+      j = i0-1+jp;
+      for (d = 0;  d <= jp; d++) alpha[cm->M][j][d] = el_scA[d];
+    }
+  }
 
   /* Main recursion */
   for (v = vend; v >= vroot; v--) {
@@ -1243,7 +1263,6 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int i
   if((!do_sample) && shmx == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "cm_AlignHB(), do_sample is FALSE and shadow matrix shmx == NULL.");
   if(do_optacc && do_sample)           ESL_FAIL(eslEINCOMPAT, errbuf, "cm_AlignHB(), do_optacc and do_sample are both TRUE.");
   if(do_sample && r == NULL)           ESL_FAIL(eslEINCOMPAT, errbuf, "cm_AlignHB(), do_sample but r is NULL.");
-  if(!do_sample && r != NULL)          ESL_FAIL(eslEINCOMPAT, errbuf, "cm_AlignHB(), do_sample is FALSE, but r is non-NULL.");
   if(do_sample && i0 != 1)             ESL_FAIL(eslEINCOMPAT, errbuf, "cm_AlignHB(), do_sample but i0!=1.");
   /* PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, (j0-i0+1)); */
 
@@ -1359,7 +1378,6 @@ cm_Align(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int i0,
   if((!do_sample) && shmx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "cm_Align(), do_sample is FALSE and shadow matrix shmx == NULL.");
   if(do_optacc && do_sample)             ESL_FAIL(eslEINCOMPAT, errbuf, "cm_Align(), do_optacc and do_sample are both TRUE.");
   if(do_sample && r == NULL)             ESL_FAIL(eslEINCOMPAT, errbuf, "cm_Align(), do_sample but r is NULL.");
-  if(!do_sample && r != NULL)            ESL_FAIL(eslEINCOMPAT, errbuf, "cm_Align(), do_sample is FALSE, but r is non-NULL.");
   if(do_sample && i0 != 1)               ESL_FAIL(eslEINCOMPAT, errbuf, "cm_Align(), do_sample but i0!=1.");
 
   /* if do_post, fill Inside, Outside, Posterior matrices, in that order */
@@ -1782,8 +1800,7 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
 }
 
 
-/*
- * Function: cm_InsideAlign()
+/* Function: cm_InsideAlign()
  * Date:     EPN, Mon Nov 19 06:21:51 2007
  *
  * Purpose:  Run the inside algorithm on a target sequence 
@@ -2006,6 +2023,7 @@ cm_InsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_
     if(v == 0)  
       alpha[0][j0][W] = FLogsum(alpha[v][j0][W], bsc);
   } /* end loop over all v */
+  FILE *fp1; fp1 = fopen("tmp.stdimx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
 
   sc =  alpha[0][j0][W];
   free(el_scA);
@@ -2570,6 +2588,388 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
 }  
 
 
+/* Function: cm_CYKOutsideAlign()
+ * Date:     EPN, Wed Sep 14 14:01:36 2011
+ *
+ * Purpose:  Run the outside CYK algorithm on a target sequence
+ *           without using bands.
+ *
+ *           Very similar to cm_OutsideAlign() but calculates
+ *           beta[v][j][d]: log probability of the most likely parse that
+ *           emits i0..i-1 and j+1..j0 and passes through v at j,d
+ *           (where i = j-d+1) instead of the summed log probability 
+ *           of all such parses. This means max operations are used
+ *           instead of logsums.
+ *
+ *           This function is mainly useful for testing and reference.
+ *           It is currently not hooked up to any of the main
+ *           Infernal programs.
+ *
+ * Args:     cm        - the model    [0..M-1]
+ *           errbuf    - char buffer for reporting errors
+ *           dsq       - the digitized sequence
+ *           i0        - first position in subseq to align (1, for whole seq)
+ *           j0        - last position in subseq to align  (L, for whole seq)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           mx        - the dp matrix, grown and filled here
+ *           inscyk_mx - the pre-filled dp matrix from the CYK Inside calculation 
+ *                       (performed by cm_cyk_align(), required)
+ *           do_check  - TRUE to attempt to check 
+ *           ret_sc    - RETURN: log P(S|M)/P(S|R), as a bit score, this is from cyk_mx IF local
+ *                       ends are on (see *** comment towards end of function).
+ *
+ * Returns:  <ret_sc>, <ret_mx>
+ *
+ * Throws:   <eslOK> on success
+ *           <eslERANGE> if required DP matrix size exceeds <size_limit>
+ *                       alignment has been aborted, ret_* variables are not valid
+ */
+int 
+cm_CYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_MX *mx,
+		   CM_MX *inscyk_mx, int do_check, float *ret_sc)
+{
+  int      status;
+  int      v,y,z;	       /* indices for states */
+  int      j,d,i,k;	       /* indices in sequence dimensions */
+  float    fsc;     	       /* a temporary variable holding a float score */
+  float  **esc_vAA;            /* ptr to cm->oesc, optimized emission scores */
+  float    escore;	       /* an emission score, tmp variable */
+  int      W;		       /* subsequence length */
+  int      voffset;	       /* index of v in t_v(y) transition scores */
+  int      jp;		       /* j': relative position in the subsequence  */
+  float    bsc;		       /* total score for using local begin states */
+  float    freturn_sc;         /* P(S|M)/P(S|R) */
+  /* variables used only if do_check */
+  int      fail1_flag = FALSE; /* set to TRUE if do_check and we see a problem with check 1*/
+  int      fail2_flag = FALSE; /* set to TRUE if do_check and we see a problem with check 2*/
+  int      fail3_flag = FALSE; /* set to TRUE if do_check and we see a problem with check 3*/
+  int      n;                  /* counter over nodes, used only if do_check = TRUE */
+  int      num_split_states;   /* temp variable used only if do_check = TRUE */
+  float    diff;               /* temp variable used only if do_check = TRUE */
+  int      ip;                 /* i, offset in the matrix */
+  int      i0p, j0p;           /* i0, j0, offset in the matrix */
+  int      vmax;               /* i, offset in the matrix */
+  int     *optseen = NULL;     /* [1..i..W] TRUE is residue i is accounted for in optimal parse */
+  /* indices used in the depths of the DP recursion */
+  int      emitmode;           /* EMITLEFT, EMITRIGHT, EMITPAIR, EMITNONE, for state y */
+  int      sd;                 /* StateDelta(cm->sttype[y]) */
+  int      sdr;                /* StateRightDelta(cm->sttype[y] */
+
+  /* Contract check */
+  if (dsq == NULL)                                     ESL_FAIL(eslEINCOMPAT, errbuf, "cm_OutsideAlign(), dsq is NULL.\n");
+  if (inscyk_mx == NULL)                               ESL_FAIL(eslEINCOMPAT, errbuf, "cm_OutsideAlign(), inscyk_mx is NULL.\n");
+
+  /* inside DP matrix */
+  float ***beta  = mx->dp;        /* pointer to the Oustide DP mx */
+  float ***alpha = inscyk_mx->dp; /* pointer to the CYK Inside DP mx (already calc'ed and passed in) */
+
+  /* Allocations and initializations */
+  bsc = IMPOSSIBLE;              /* the summed prob of all local begins */
+  W   = j0-i0+1;		 /* the length of the subsequence -- used in many loops  */
+				 /* if caller didn't give us a deck pool, make one */
+  esc_vAA = cm->oesc;            /* a ptr to the optimized emission scores */
+
+  /* grow the matrix based on the current sequence */
+  if((status = cm_mx_GrowTo(cm, mx, errbuf, W, size_limit)) != eslOK) return status;
+
+  /* initialize all cells of the matrix to IMPOSSIBLE */
+  esl_vec_FSet(beta[0][0], mx->ncells_valid, IMPOSSIBLE);
+  /* now set beta[0][j0][W] to 0., all parses must end there */
+  beta[0][j0][W] = 0.;
+
+  /* init local begin cells for emitting full seq (j==j0 && d == W) */
+  if (cm->flags & CMH_LOCAL_BEGIN) { 
+    for (v = 1; v < cm->M; v++) 
+      beta[v][j0][W] = cm->beginsc[v];
+  }
+  /* done allocation/initialization */
+
+  /* Recursion: main loop down through the decks */
+  for (v = 1; v < cm->M; v++) {
+    sd  = StateDelta(cm->sttype[v]);
+    sdr = StateRightDelta(cm->sttype[v]);
+
+    if (cm->stid[v] == BEGL_S) { /* BEGL_S */
+      y = cm->plast[v];	/* the parent bifurcation    */
+      z = cm->cnum[y];	/* the other (right) S state */
+      for(jp = 0; jp <= W; jp++) { 
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++) {
+	  for (k = 0; k <= (W-j); k++) {
+	    beta[v][j][d] = ESL_MAX(beta[v][j][d], (beta[y][j+k][d+k] + alpha[z][j+k][k]));
+	  }
+	}
+      }
+    } /* end of 'if (cm->stid[v] == BEGL_S */
+    else if (cm->stid[v] == BEGR_S) {
+      y = cm->plast[v];	  /* the parent bifurcation    */
+      z = cm->cfirst[y];  /* the other (left) S state  */
+      for(jp = 0; jp <= W; jp++) { 
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++) {
+	  for (k = 0; k <= (j-d); k++) {
+ 	    beta[v][j][d] = ESL_MAX(beta[v][j][d], (beta[y][j][d+k] + alpha[z][j-d][k]));
+	  }
+	}
+      }
+    } /* end of 'else if (cm->stid[v] == BEGR_S */
+    else { /* (cm->sttype[v] != BEGL_S && cm->sttype[v] != BEGR_S */ 
+      for (jp = W; jp >= 0; jp--) {
+	j = i0-1+jp;
+	i = j-jp+1;
+	for (d = jp; d >= 0; d--, i++) {
+	  for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	    voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
+	    sd  = StateDelta(cm->sttype[y]);
+	    sdr = StateRightDelta(cm->sttype[y]);
+	    switch(cm->sttype[y]) {
+	      case MP_st: 
+		if (j == j0 || d == jp) continue; /* boundary condition */
+		escore = esc_vAA[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+		beta[v][j][d] = ESL_MAX(beta[v][j][d], (beta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore));
+		break;
+
+	      case ML_st:
+	      case IL_st: 
+		if (d == jp) continue;	/* boundary condition (note when j=0, d=0*/
+		escore = esc_vAA[y][dsq[i-1]];
+		beta[v][j][d] = ESL_MAX(beta[v][j][d], (beta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore));
+		break;
+		  
+	      case MR_st:
+	      case IR_st:
+		if (j == j0) continue;
+		escore = esc_vAA[y][dsq[j+1]];
+		beta[v][j][d] = ESL_MAX(beta[v][j][d], (beta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore));
+		break;
+		  
+	      case S_st:
+	      case E_st:
+	      case D_st:
+		beta[v][j][d] = ESL_MAX(beta[v][j][d], (beta[y][j+sdr][d+sd] + cm->tsc[y][voffset]));
+		break;
+	    } /* end of switch(cm->sttype[y] */  
+	  } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
+	  if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] = IMPOSSIBLE;
+	} /* ends loop over d. We know all beta[v][j][d] in this row j and state v */
+      } /* end loop over jp. We know beta for this whole state */
+    } /* end of 'else if cm->sttype[v] != BEGL_S, BEGR_S */
+    /* we're done calculating deck v for everything but local begins */
+
+    /* deal with local alignment end transitions v->EL (EL = deck at M.) */
+    if ((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) {
+      sdr = StateRightDelta(cm->sttype[v]); /* note sdr is for state v */
+      sd  = StateDelta(cm->sttype[v]);      /* note sd  is for state v */
+      emitmode = Emitmode(cm->sttype[v]);   /* note emitmode is for state v */
+      
+      for (jp = 0; jp <= W; jp++) { 
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++) {
+	  i = j-d+1;
+	  switch (cm->sttype[v]) {
+	  case MP_st: 
+	    if (j == j0 || d == jp) continue; /* boundary condition */
+	    escore = esc_vAA[v][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+	    beta[cm->M][j][d] = ESL_MAX(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v] 
+							    + escore));
+	    break;
+	  case ML_st:
+	  case IL_st:
+	    if (d == jp) continue;	
+	    escore = esc_vAA[v][dsq[i-1]];
+	    beta[cm->M][j][d] = ESL_MAX(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v] 
+							    + escore));
+	    break;
+	  case MR_st:
+	  case IR_st:
+	    if (j == j0) continue;
+	    escore = esc_vAA[v][dsq[j+1]];
+	    beta[cm->M][j][d] = ESL_MAX(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v]
+							    + escore));
+	    break;
+	  case S_st:
+	  case D_st:
+	  case B_st:
+	  case E_st:
+	    beta[cm->M][j][d] = ESL_MAX(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v]));
+	    break;
+	  }
+	}
+      }
+    }
+  }
+  /* Deal with last step needed for local alignment 
+   * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
+   */
+  if (cm->flags & CMH_LOCAL_END) {
+    for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
+      j = i0-1+jp;
+      for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
+	beta[cm->M][j][d] = ESL_MAX(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
+    }
+  }
+
+  fail1_flag = FALSE;
+  fail2_flag = FALSE;
+  fail3_flag = FALSE;
+  printf("DO CHECK: %d\n", do_check);
+  if(do_check) {
+    /* Check for consistency between the Inside alpha matrix and the
+     * Outside beta matrix. We assume the Inside CYK parse score
+     * (optsc) is the optimal score, so for all v,j,d:
+     * 
+     * Jalpha[v][j][d] + Jbeta[v][j][d] <= optsc
+     * 
+     * Further, we know that each residue must be emitted by a state
+     * in the optimal parse. So as we do the above check, we determine
+     * when we're in a cell that may be involved in the optimal parse
+     * (the sum of the Inside and Outside scores are equal to the
+     * optimal parse score), if that cell corresponds to a left
+     * emitter emitting position i, we know an emitted i has been
+     * observed in an optimal parse and set optseen[i] to TRUE.
+     * Likewise, if that cell corresponds to a right emitter emitting
+     * position j, we update optseen[j] to TRUE. At the end of the
+     * check optseen[i] should be TRUE for all i in the range
+     * [i0..j0].
+     *
+     * Note that we don't ensure that all of our presumed optimal
+     * cells make up a valid parse, so it is possible we could pass
+     * this check even if the Inside and Outside matrices are
+     * inconsistent (i.e. there's a bug in the implementation of one
+     * and or the other) but that should be extremely unlikely.  If we
+     * do this test many times for many different models and pass, we
+     * should be confident we have consistent implementations.
+     * 
+     * This is an expensive check and should only be done while
+     * debugging.
+     */
+    ESL_ALLOC(optseen, sizeof(int) * (W+1));
+    esl_vec_ISet(optseen, W+1, FALSE);
+    vmax = (cm->flags & CMH_LOCAL_END) ? cm->M : cm->M-1;
+    assert(i0 == 1);
+    assert(j0 == W);
+    i0p = i0-i0+1;
+    j0p = j0-i0+1;
+    for(v = 0; v <= vmax; v++) { 
+      for(jp = 1; jp <= W; jp++) { 
+	j = jp+i0-1;
+	for(d = 0; d <= j; d++) { 
+	  fsc  = (alpha[v][jp][d] + beta[v][jp][d]) - alpha[0][W][W];
+	  if(fsc > 0.00001) { 
+	    printf("Check 1 J failure: v: %4d j: %4d d: %4d (%.4f + %.4f) %.4f > %.4f\n", 
+		   v, j, d, alpha[v][jp][d], beta[v][jp][d], alpha[v][jp][d] + beta[v][jp][d], alpha[0][W][W]);
+	    fail1_flag = TRUE;
+	  }
+	  if(fabs(fsc) < 0.00001) { /* this cell is involved in a parse with the optimal score */
+	    i  = j-d+1;
+	    ip = jp-d+1;
+	    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st || (cm->sttype[v] == EL_st && d >0)) { 
+	      /* i is accounted for by a parse with an optimal score */
+	      optseen[ip] = TRUE;
+	      printf("\tResidue %4d possibly accounted for by Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);
+	    }
+	    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+	      /* j is accounted for by a parse with an optimal score */
+	      optseen[jp] = TRUE;
+	      printf("\tResidue %4d possibly accounted for by Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);
+	    }
+	  }
+	}
+      }
+    }
+    for(jp = 1; jp <= W; jp++) { 
+      j = jp+i0-1;
+      if(optseen[jp] == FALSE) { 
+	printf("Check 2 failure: residue %d not emitted in the optimal parsetree\n", jp);
+	fail2_flag = TRUE;
+      }	      
+    }
+    free(optseen);
+  }
+  if(do_check && (!(cm->flags & CMH_LOCAL_END))) {
+    /* Local ends make the following test invalid because it is not true that
+     * exactly 1 state in each node's split set must be visited in each parse. 
+     */
+    
+    /* Determine P(pi, S|M) / P(S|R) (probability of the sequence and most likely parse
+     * tree pi given the model) 
+     * using both the Outside (beta) and Inside (alpha) matrices,
+     * and ensure they're consistent with P(pi, S|M) / P(S|R) from the Inside calculation.
+     * For all v in each split set: Max_v [ Max_i,j ( alpha[v][i][j] * beta[v][i][j] ) ] 
+     *                                                = P(pi, S|M) / P(S|R)  
+     * in v,j,d coordinates this is:
+     * For all v in each split set: Max_v [ Max_j,(d<=j) ( alpha[v][j][d] * beta[v][j][d] ) ]
+     *                                                = P(pi, S|M) / P(S|R)
+     */
+    for(n = 0; n < cm->nodes; n++) {
+      fsc = IMPOSSIBLE;
+      num_split_states = SplitStatesInNode(cm->ndtype[n]);
+      for(v = cm->nodemap[n]; v < cm->nodemap[n] + num_split_states; v++) { 
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  for (d = 0; d <= jp; d++) {
+	    fsc = ESL_MAX(fsc, (alpha[v][j][d] + beta[v][j][d]));
+	  }
+	}
+      }
+      printf("checking node: %d | sc: %.6f\n", n, fsc);
+      diff = fsc - alpha[0][j0][W];
+      if(diff > 0.01 || diff < -0.01) { /* we're using floats, this should be pretty precise */
+	fail3_flag = TRUE;
+	printf("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
+	       n, fsc, alpha[0][j0][W], diff);
+      }
+    }
+  }
+  /* If not in local mode, we can calculate P(pi, S|M) / P(S|R) given
+   * only the beta matrix as follows:
+   * 
+   * IF local ends are off, we know the optimal parse MUST visit each END_E state,
+   * we pick final END_E state state cm->M-1 (though any END_E could be used here):
+   *
+   * Max_j=0 to W (alpha[M-1][j][0] * beta[M-1][j][0]) = P(S|M) / P(S|R)
+   *
+   * Note: alpha[M-1][j][0] = 0.0 for all j 
+   *       because all parse subtrees rooted at an END_E must have d=0, (2^0 = 1.0)
+   * therefore: 
+   * Max_j=0 to W (beta[M-1][j][0]) = P(S|M) / P(S|R)
+   * 
+   * *** If local ends are on, each parse MUST visit either each END_E state with d=0
+   * or the EL state but d can vary, so we can't use this test (believe me I tried
+   * to get a similar test working, but I'm convinced you need alpha to get P(S|M)
+   * in local mode).
+   */
+  if(!(cm->flags & CMH_LOCAL_END)) { 
+    freturn_sc = IMPOSSIBLE;
+    v = cm->M-1;
+    for (jp = 0; jp <= W; jp++) {
+      j = i0-1+jp;
+      /*printf("\talpha[%3d][%3d][%3d]: %5.2f | beta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, alpha[(cm->M-1)][j][0], (cm->M-1), (j), 0, beta[(cm->M-1)][j][0]);*/
+      freturn_sc = ESL_MAX(freturn_sc, (beta[v][j][0]));
+    }
+  }
+  else { /* return_sc = P(S|M) / P(S|R) from Inside() */
+    freturn_sc = alpha[0][j0][W];
+  }
+
+  FILE *fp1; fp1 = fopen("tmp.stdocykmx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
+  if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check1 FAILED.");
+  else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check2 FAILED.");
+  else if(fail3_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check3 FAILED.");
+  else                printf("SUCCESS! CYK Inside/Outside checks PASSED.\n");
+
+  if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("\tcm_OutsideCYKAlign() sc : %f\n", freturn_sc));
+  else                             ESL_DPRINTF1(("\tcm_OutsideCYKAlign() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc));
+
+  if(ret_sc != NULL) *ret_sc = freturn_sc;
+
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Out of memory");
+  return status; /* NEVER REACHED */
+}  
+
 /* Function: cm_OutsideAlign()
  * Date:     EPN, Mon Nov 19 07:00:37 2007
  *
@@ -2819,7 +3219,7 @@ cm_OutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size
 	  }
 	}
       }
-      /*printf("checking node: %d | sc: %.6f\n", n, fsc);*/
+      printf("checking node: %d | sc: %.6f\n", n, fsc);
       diff = fsc - alpha[0][j0][W];
       if(diff > 0.01 || diff < -0.01) { /* we're using floats, this should be pretty precise */
 	fail_flag = TRUE;
@@ -2827,6 +3227,7 @@ cm_OutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size
 	       n, fsc, alpha[0][j0][W], diff);
       }
     }
+    if(! fail_flag) printf("SUCCESS! all nodes passed error check (cm_OutsideAlign())\n");
   }
 
   /* If not in local mode, we can calculate P(S|M) / P(S|R) given only the 
@@ -2861,11 +3262,10 @@ cm_OutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size
   }
 
   if(fail_flag) ESL_FAIL(eslFAIL, errbuf, "Not all nodes passed posterior check.");
+  FILE *fp1; fp1 = fopen("tmp.stdomx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
 
   if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("\tcm_OutsideAlign() sc : %f\n", freturn_sc));
   else                             ESL_DPRINTF1(("\tcm_OutsideAlign() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc));
-  if(!(cm->flags & CMH_LOCAL_END)) printf("\tcm_OutsideAlign() sc : %f\n", freturn_sc);
-  else                             printf("\tcm_OutsideAlign() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc);
 
   if(ret_sc != NULL) *ret_sc = freturn_sc;
 
@@ -3020,6 +3420,7 @@ cm_Posterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, CM_MX *in
       }
     }
   }
+  FILE *fp1; fp1 = fopen("tmp.stdpmx", "w");   cm_mx_Dump(fp1, post_mx); fclose(fp1);
   return eslOK;
 }
 
@@ -5136,12 +5537,10 @@ cm_PostCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parsetr
  * Benchmark driver
  *****************************************************************/
 #ifdef IMPL_ALIGN_BENCHMARK
-/* gcc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpalign.c 
- * gcc   -o benchmark-align -g -O2 -I. -L. -I../easel -L../easel -DIMPL_ALIGN_BENCHMARK cm_dpalign.c old_cm_dpalign.o -linfernal -leasel -lm
- * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpalign.c  
- * mpicc -o benchmark-align -g -O2 -I. -L. -I../easel -L../easel -DIMPL_ALIGN_BENCHMARK cm_dpalign.c old_cm_dpalign.o -linfernal -leasel -lm
- * icc -g -O3 -static -DHAVE_CONFIG_H -I../easel  -c old_cm_dpalign.c 
- * icc -o benchmark-align -O3 -static -I. -L. -I../easel -L../easel -DIMPL_ALIGN_BENCHMARK cm_dpalign.c old_cm_dpalign.o -linfernal -leasel -lm
+/* Next line is optimized (debugging on) on MacBook Pro:
+ * gcc   -o benchmark-align -std=gnu99 -g -Wall -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel -DIMPL_ALIGN_BENCHMARK cm_dpalign.c -linfernal -lhmmer -leasel -lm
+ * Next line is optimized (debugging not on) on wyvern:
+ * gcc   -o benchmark-align -std=gnu99 -O3 -fomit-frame-pointer -malign-double -fstrict-aliasing -pthread -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel -DIMPL_ALIGN_BENCHMARK cm_dpalign.c -linfernal -lhmmer -leasel -lm 
  * ./benchmark-align <cmfile>
  */
 
@@ -5164,7 +5563,6 @@ cm_PostCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parsetr
 #include <esl_wuss.h>
 
 #include "funcs.h"		/* function declarations                */
-#include "old_funcs.h"		/* old  function declarations (from v0.81)*/
 #include "structs.h"		/* data structures, macros, #define's   */
 
 static ESL_OPTIONS options[] = {
@@ -5175,16 +5573,16 @@ static ESL_OPTIONS options[] = {
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "configure CM/HMM for local alignment", 0 },
   { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of target seqs",                          0 },
   { "-L",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs, default: consensus length", 0 },
-  { "-o",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute original CYK HMM banded alignment implementation", 0 },
+  { "--cykout",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,"--nonbanded", NULL, "run CYKOutside, to make sure it agrees with CYK (Inside)", 0 },
+  { "--infile",  eslARG_INFILE,  NULL, NULL, NULL,  NULL,  NULL, "-L,-N,-e", "read sequences to search from file <s>", 0 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "use posterior sums during HMM band calculation (widens bands)", 0 },
   { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3",NULL,NULL,NULL, "set verbosity of debugging print statements to <n>", 0 },
   { "--hmmcheck",eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "check that HMM posteriors are correctly calc'ed", 0 },
   { "--cmcheck", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "check that HMM posteriors are correctly calc'ed", 0 },
   { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute optimal accuracy HMM banded alignment alg", 0 },
   { "--post",   eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute fast float HMM banded Inside/Outside alignment algs", 0 },
-  { "--ofpost",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow float HMM banded Inside/Outside alignment algs", 0 },
-  { "--oipost",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow int   HMM banded Inside/Outside alignment algs", 0 },
   { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",NULL,  NULL, NULL, "set maximum allowable DP matrix size to <x> (Mb)", 0 },
+  { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute non-banded alignment algorithms", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -5201,37 +5599,34 @@ main(int argc, char **argv)
   ESL_ALPHABET   *abc     = NULL;
   int             i;
   float           sc;
-  /*float           bsc;
-    int             v;
-    int             b;*/
   char           *cmfile = esl_opt_GetArg(go, 1);
-  CMFILE         *cmfp;	    /* open input CM file stream */
+  CM_FILE        *cmfp;	    /* open input CM file stream */
   int             L;        /* length of sequence */
   int             do_random;
   int             N = esl_opt_GetInteger(go, "-N");
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
-  CM_HB_MX      *fout_mx;
   char           errbuf[cmERRBUFSIZE];
-
-  int             ***oialpha;    
-  float           ***ofalpha;    
-  float              size_limit = esl_opt_GetReal(go, "--mxsize");
+  float          size_limit = esl_opt_GetReal(go, "--mxsize");
+  ESL_SQFILE     *sqfp  = NULL;        /* open sequence input file stream */
+  /* variables related to non-banded cyk/inside/outside */
+  CM_MX             *mx   = NULL;       /* alpha DP matrix for non-banded CYK/Inside() */
+  CM_MX             *out_mx = NULL;     /* outside matrix for HMM banded Outside() */
+  CM_SHADOW_MX      *shmx = NULL;       /* shadow matrix for non-banded tracebacks */
 
   r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
 
   do_random = TRUE;
   if(esl_opt_GetBoolean(go, "-e")) do_random = FALSE; 
 
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
-  if (!(CMFileRead(cmfp, &abc, &cm)))            cm_Fail("Failed to read CM");
-  CMFileClose(cmfp);
+  if ((status = cm_file_Open(cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
+  if ((status = cm_file_Read(cmfp, TRUE, &abc, &cm))                != eslOK) cm_Fail(cmfp->errbuf);
+  cm_file_Close(cmfp);
 
   /* determine sequence length */
   if(esl_opt_IsOn(go, "-L")) L = esl_opt_GetInteger(go, "-L");
   else                       L = cm->clen;      
 
   /* configure CM for HMM banded alignment */
-  cm->config_opts |= CM_CONFIG_ZEROINSERTS;
   cm->align_opts  |= CM_ALIGN_HBANDED;
   if(esl_opt_GetBoolean(go, "--sums")) cm->align_opts |= CM_ALIGN_SUMS;
 
@@ -5242,14 +5637,34 @@ main(int argc, char **argv)
   }
   if(esl_opt_GetBoolean(go, "--hmmcheck")) cm->align_opts |= CM_ALIGN_CHECKFB;
 
-  ConfigCM(cm, FALSE); /* FALSE says don't bother calc'ing W, we won't need it */
+  ConfigCM(cm, errbuf, FALSE, NULL, NULL); /* FALSE says: don't calculate W */
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
 
+  if(esl_opt_GetBoolean(go, "--nonbanded")) { 
+    mx     = cm_mx_Create(cm);
+    out_mx = cm_mx_Create(cm);
+    shmx   = cm_shadow_mx_Create(cm);
+  }
+
   /* get sequences */
-  if(do_random) {
+  if(esl_opt_IsUsed(go, "--infile")) { 
+    /* read sequences from a file */
+    status = esl_sqfile_OpenDigital(cm->abc, esl_opt_GetString(go, "--infile"), eslSQFILE_UNKNOWN, NULL, &sqfp);
+    if (status == eslENOTFOUND)    esl_fatal("File %s doesn't exist or is not readable\n", esl_opt_GetString(go, "--infile"));
+    else if (status == eslEFORMAT) esl_fatal("Couldn't determine format of sequence file %s\n", esl_opt_GetString(go, "--infile"));
+    else if (status == eslEINVAL)  esl_fatal("Can't autodetect stdin or .gz."); 
+    else if (status != eslOK)      esl_fatal("Sequence file open failed with error %d.\n", status);
+
+    seqs_to_aln = CreateSeqsToAln(100, FALSE);
+    if((status = ReadSeqsToAln(cm->abc, sqfp, 0, seqs_to_aln, FALSE)) != eslEOF)
+      esl_fatal("Error reading sqfile: %s\n", esl_opt_GetString(go, "--infile"));
+    esl_sqfile_Close(sqfp);
+    N = seqs_to_aln->nseq;
+  }
+  else if(do_random) {
     double *dnull;
     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
@@ -5257,7 +5672,7 @@ main(int argc, char **argv)
     /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
     int safe_windowlen = cm->clen * 2;
     double **gamma = NULL;
-    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
+    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
       safe_windowlen *= 2;
       /* This is a temporary fix becuase BCE() overwrites gamma, leaking memory
        * Probably better long-term for BCE() to check whether gamma is already allocated
@@ -5272,40 +5687,41 @@ main(int argc, char **argv)
   else /* don't randomly generate seqs, emit them from the CM */
     seqs_to_aln = CMEmitSeqsToAln(r, cm, 1, N, FALSE, NULL, FALSE);
 
-  /* create the matrix, it'll be empty initially */
-  if(esl_opt_GetBoolean(go, "--post") || esl_opt_GetBoolean(go, "--optacc")) { 
-    fout_mx = cm_hb_mx_Create(cm->M);
-  }
   int do_check = esl_opt_GetBoolean(go, "--cmcheck");
   for (i = 0; i < N; i++)
     {
       L = seqs_to_aln->sq[i]->n;
 
       esl_stopwatch_Start(w);
-      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, seqs_to_aln->sq[i]->dsq, 1, L, cm->cp9b, FALSE, 0)) != eslOK) cm_Fail(errbuf);
+      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, seqs_to_aln->sq[i]->dsq, 1, L, cm->cp9b, FALSE, FALSE, 0)) != eslOK) cm_Fail(errbuf);
       esl_stopwatch_Stop(w);
       printf("%4d %-30s %17s", i+1, "Exptl Band calc:", "");
       esl_stopwatch_Display(stdout, w, "CPU time: ");
       
       esl_stopwatch_Start(w);
-      if((status = cm_AlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, size_limit, cm->hbmx, FALSE, NULL, NULL, NULL, NULL, &sc, NULL)) != eslOK) cm_Fail(errbuf);
+      if((status = cm_AlignHB(cm, errbuf, r, seqs_to_aln->sq[i]->dsq, L, 1, L, size_limit, cm->hbmx, cm->shhbmx, FALSE, FALSE, NULL, NULL, NULL, &sc, NULL)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "cm_AlignHB() CYK:", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       /* fpfast = fopen("tempfast", "w");
 	 ParsetreeDump(fpfast, fasttr, cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); */
 
-      if(esl_opt_GetBoolean(go, "-o")) {
+      if(esl_opt_GetBoolean(go, "--nonbanded")) {
 	esl_stopwatch_Start(w);
-	/* sc = CYKInside_b_jd(cm, seqs_to_aln->sq[i]->dsq, L, 0, 1, L, &slowtr, cp9b->jmin, */
-	sc = CYKInside_b_jd(cm, seqs_to_aln->sq[i]->dsq, L, 0, 1, L, NULL, cm->cp9b->jmin, 
-			    cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, cm->cp9b->safe_hdmin, cm->cp9b->safe_hdmax);
-	printf("%4d %-30s %10.4f bits ", (i+1), "CYKInside_b_jd() SLOW:", sc);
+	if((status = cm_Align(cm, errbuf, r, seqs_to_aln->sq[i]->dsq, L, 1, L, size_limit, mx, shmx, FALSE, FALSE, NULL, NULL, NULL, &sc, NULL)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits ", (i+1), "cm_Align() CYK:", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
-	/*fpslow = fopen("tempslow", "w");
-	  ParsetreeDump(fpslow, slowtr, cm, seqs_to_aln->sq[i]->dsq, NULL, NULL);*/
+
+	if(esl_opt_GetBoolean(go, "--cykout")) { 
+	  esl_stopwatch_Start(w);
+	  if((status = cm_CYKOutsideAlign(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, size_limit, out_mx, mx, TRUE,     &sc)) != eslOK) cm_Fail(errbuf);
+	  printf("%4d %-30s %10.4f bits ", (i+1), "cm_Align() CYK:", sc);
+	  esl_stopwatch_Stop(w);
+	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+	}
       }
+      printf("\n");
 
       if(esl_opt_GetBoolean(go, "--post")) {
 	esl_stopwatch_Start(w);
@@ -5317,90 +5733,55 @@ main(int argc, char **argv)
 
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	if((status = cm_OutsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, size_limit, fout_mx, cm->hbmx, do_check, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = cm_OutsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, size_limit, cm->ohbmx, cm->hbmx, do_check, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "cm_OutsideAlignHB():", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+	if(esl_opt_GetBoolean(go, "--nonbanded")) { 
+	  esl_stopwatch_Start(w);
+	  /* need alpha matrix from Inside to do Outside */
+	  if((status = cm_InsideAlign(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, size_limit, mx, &sc)) != eslOK) cm_Fail(errbuf);
+	  printf("%4d %-30s %10.4f bits ", (i+1), "cm_InsideAlign():", sc);
+	  esl_stopwatch_Stop(w);
+	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+	  
+	  esl_stopwatch_Start(w);
+	  /* need alpha matrix from Inside to do Outside */
+	  if((status = cm_OutsideAlign(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, size_limit, out_mx, mx, do_check, &sc)) != eslOK) cm_Fail(errbuf);
+	  printf("%4d %-30s %10.4f bits ", (i+1), "cm_OutsideAlign():", sc);
+	  esl_stopwatch_Stop(w);
+	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+	}
       }
 
       if(esl_opt_GetBoolean(go, "--optacc")) {
 	esl_stopwatch_Start(w);
-	/* need alpha matrix from Inside to do Outside */
-	if((status = cm_AlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, size_limit, cm->hbmx, TRUE,     fout_mx, NULL,   NULL, NULL, &sc, NULL)) != eslOK) cm_Fail(errbuf);
+	if((status = cm_AlignHB(cm, errbuf, r, seqs_to_aln->sq[i]->dsq, L, 1, L, size_limit, cm->hbmx, cm->shhbmx, TRUE,  FALSE,cm->ohbmx, NULL, NULL, &sc, NULL)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "cm_AlignHB() OA:", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
-      }
 
-      /* do old int Inside/Outside if requested */
-      if(esl_opt_GetBoolean(go, "--oipost")) {
-	esl_stopwatch_Start(w);
-	/* need alpha matrix from Inside to do Outside */
-	sc = IInside_b_jd_me(cm, seqs_to_aln->sq[i]->dsq, 1, L,
-			     TRUE,	    /* save full alpha so we can run outside */
-			     NULL, &oialpha, /* fill alpha, and return it, needed for IOutside() */
-			     NULL, NULL,    /* manage your own deckpool, I don't want it */
-			     esl_opt_GetBoolean(go, "-l"), /* TRUE to allow local begins */
-			     cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax); /* j and d bands */
-	printf("%4d %-30s %10.4f bits ", (i+1), "IInside_b_jd_me(): ", sc);
-	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, " CPU time: ");
-
-	esl_stopwatch_Start(w);
-	/* need alpha matrix from Inside to do Outside */
-	sc = IOutside_b_jd_me(cm, seqs_to_aln->sq[i]->dsq, 1, L,
-			      TRUE,	        /* save full beta */
-			      NULL, NULL,	/* manage your own matrix, I don't want it */
-			      NULL, NULL,	/* manage your own deckpool, I don't want it */
-			      esl_opt_GetBoolean(go, "-l"), /* TRUE to allow local begins */
-			      oialpha, NULL,  /* alpha matrix from IInside(), and don't save it for cm_Posterior */
-			      do_check,      /* TRUE to check Outside probs agree with Inside */
-			      cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax); /* j and d bands */
-	printf("%4d %-30s %10.4f bits ", (i+1), "IOutside_b_jd_me(): ", sc);
-	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, " CPU time: ");
-      }
-
-      /* do old float Inside/Outside if requested */
-      if(esl_opt_GetBoolean(go, "--ofpost")) {
-	esl_stopwatch_Start(w);
-	/* need alpha matrix from Inside to do Outside */
-	sc = FInside_b_jd_me(cm, seqs_to_aln->sq[i]->dsq, 1, L,
-			     TRUE,	    /* save full alpha so we can run outside */
-			     NULL, &ofalpha, /* fill alpha, and return it, needed for IOutside() */
-			     NULL, NULL,    /* manage your own deckpool, I don't want it */
-			     esl_opt_GetBoolean(go, "-l"), /* TRUE to allow local begins */
-			     cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax); /* j and d bands */
-	printf("%4d %-30s %10.4f bits ", (i+1), "FInside_b_jd_me(): ", sc);
-	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, " CPU time: ");
-
-	esl_stopwatch_Start(w);
-	/* need alpha matrix from Inside to do Outside */
-	sc = FOutside_b_jd_me(cm, seqs_to_aln->sq[i]->dsq, 1, L,
-			      TRUE,	        /* save full beta */
-			      NULL, NULL,	/* manage your own matrix, I don't want it */
-			      NULL, NULL,	/* manage your own deckpool, I don't want it */
-			      esl_opt_GetBoolean(go, "-l"), /* TRUE to allow local begins */
-			      ofalpha, NULL,  /* alpha matrix from FInside(), and don't save it */
-			      do_check,      /* TRUE to check Outside probs agree with Inside */
-			      cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax); /* j and d bands */
-	printf("%4d %-30s %10.4f bits ", (i+1), "FOutside_b_jd_me(): ", sc);
-	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	if(esl_opt_GetBoolean(go, "--nonbanded")) { 
+	  esl_stopwatch_Start(w);
+	  if((status = cm_Align(cm, errbuf, r, seqs_to_aln->sq[i]->dsq, L, 1, L, size_limit, mx, shmx, TRUE,  FALSE, out_mx, NULL, NULL, &sc, NULL)) != eslOK) cm_Fail(errbuf);
+	  printf("%4d %-30s %10.4f bits ", (i+1), "cm_Align() OA:", sc);
+	  esl_stopwatch_Stop(w);
+	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+	}
       }
       printf("\n");
     }
 
-  if(esl_opt_GetBoolean(go, "--post") || esl_opt_GetBoolean(go, "--optacc")) { 
-    cm_hb_mx_Destroy(fout_mx);
-  }
   FreeCM(cm);
   esl_alphabet_Destroy(abc);
   esl_stopwatch_Destroy(w);
   esl_getopts_Destroy(go);
   esl_randomness_Destroy(r);
   FreeSeqsToAln(seqs_to_aln);
+  if(mx != NULL)     cm_mx_Destroy(mx);
+  if(out_mx != NULL) cm_mx_Destroy(out_mx);
+  if(shmx != NULL)   cm_shadow_mx_Destroy(shmx);
 
   return 0;
 
@@ -5409,80 +5790,3 @@ main(int argc, char **argv)
   return 0; /* NEVERREACHED */
 }
 #endif /*IMPL_ALIGN_BENCHMARK*/
-
-#if 0
-/* EPN, Tue Aug 19 10:19:13 2008
- * hese 2 banded shadow allocation functions are deprecated, replaced by the much more
- * efficient conventions of CM_HB_SHADOW_MX in cm_mx.c.
- */
-
-static int   ** alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
-static char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
-
-char  **
-alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax)
-{
-  int    status;
-  char **a;
-  int    jp;
-  int     bw; /* width of band, depends on jp, so we need to calculate
-	         this inside the jp loop*/
-  int     jfirst, jlast;
-
-  if(jmin < (i-1) || jmax > j) { 
-    cm_Fail("called alloc_jdbanded_vjd_yshadow_deck for i-1: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i-1, j, jmin, jmax);
-  }
-  
-  ESL_ALLOC(a, sizeof(float *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
-  jfirst = ((i-1) > jmin) ? (i-1) : jmin;
-  jlast = (j < jmax) ? j : jmax;
-  for (jp = (jlast-jfirst+1); jp <= L;     jp++) a[jp]     = NULL;
-
-  /* jfirst is the first valid j, jlast is the last */
-  for (jp = jfirst; jp <= jlast; jp++)
-    {
-      /*printf("jp: %d | max : %d\n", jp, (jlast)); */
-      ESL_DASSERT1((hdmax[jp-jmin] <= (jp+1)));
-      /* Based on my current understanding the above line should never be false, if it is means there's a valid d
-       * in the hd band that is invalid because its > j.*/
-      bw = hdmax[jp-jmin] - hdmin[jp-jmin] +1;
-
-      /*printf("\tallocated a[%d]\n", (jp-jfirst));*/
-      ESL_ALLOC(a[jp-jfirst], sizeof(char) * bw);
-    }
-  return a;
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return NULL; /* never reached */
-}
-int** 
-alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax)
-{
-  int   status;
-  int **a;
-  int   jp;
-  int     bw; /* width of band, depends on jp, so we need to calculate
-	         this inside the jp loop*/
-  int     jfirst, jlast;
-
-  if(jmin < (i-1) || jmax > j) { 
-    cm_Fail("ERROR called alloc_jdbanded_vjd_kshadow_deck for i-1: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i-1, j, jmin, jmax);
-  }
-  ESL_ALLOC(a, sizeof(float *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
-  jfirst = ((i-1) > jmin) ? (i-1) : jmin;
-  jlast = (j < jmax) ? j : jmax;
-  for (jp = (jlast-jfirst+1); jp <= L;     jp++) a[jp]     = NULL;
-
-  /* jfirst is the first valid j, jlast is the last */
-  for (jp = jfirst; jp <= jlast; jp++)
-    {
-      ESL_DASSERT1((hdmax[jp-jmin] <= (jp+1)));
-      bw = hdmax[jp-jmin] - hdmin[jp-jmin] +1;
-      ESL_ALLOC(a[jp-jfirst], sizeof(int) * bw);
-    }
-  return a;
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return NULL; /* never reached */
-}
-#endif

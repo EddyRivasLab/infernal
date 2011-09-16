@@ -76,7 +76,6 @@ cm_mx_Create(CM_t *cm)
   int     v, b;
   int allocL = 1;
   int allocW = 1;
-  int B = CMCountNodetype(cm, BIF_nd);
   int M = cm->M;
 
   /* level 1: the structure itself */
