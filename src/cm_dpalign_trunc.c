@@ -4493,7 +4493,7 @@ TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_
   return eslOK;
 }  
 
-/* Function: TrCYKOutsideAlign()
+/* Function: TrCYKOutsideAlignNoBif()
  * Date:     EPN, Wed Sep 14 14:20:20 2011
  *
  * Purpose:  Run the truncated outside CYK algorithm. Non-banded version.
@@ -4535,13 +4535,12 @@ TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_
  *                      in this case, alignment has been aborted, ret_sc is not valid                        
  */
 int
-TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, 
-		  CM_TR_MX *mx, CM_TR_MX *inscyk_mx, float *ret_sc)
+TrCYKOutsideAlignNoBif(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, 
+		       CM_TR_MX *mx, CM_TR_MX *inscyk_mx, float *ret_sc)
 {
   int      status;
   int      v,y,z;	       /* indices for states */
   int      j,d,i,k;	       /* indices in sequence dimensions */
-  float    csc;     	       /* a temporary variable holding a float score */
   float    fsc;     	       /* a temporary variable holding a float score */
   float    escore;	       /* an emission score, tmp variable */
   int      W;		       /* subsequence length */
@@ -4552,9 +4551,6 @@ TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
   /* variables used only if do_check */
   int      fail1_flag = FALSE; /* set to TRUE if do_check and we see a problem */
   int      fail2_flag = FALSE; /* set to TRUE if do_check and we see a problem */
-  int      n;                  /* counter over nodes, used only if do_check = TRUE */
-  int      num_split_states;   /* temp variable used only if do_check = TRUE */
-  float    diff;               /* temp variable used only if do_check = TRUE */
   int      ip;                 /* i, offset in the matrix */
   int      i0p, j0p;           /* i0, j0, offset in the matrix */
   int      vmax;               /* i, offset in the matrix */
@@ -4564,7 +4560,6 @@ TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
   int      sd;                 /* StateDelta(cm->sttype[y]) */
   int      sdl;                /* StateLeftDelta(cm->sttype[y] */
   int      sdr;                /* StateRightDelta(cm->sttype[y] */
-  int      ip_L;               /* i index in L matrix */
 
   /* Contract check */
   if (dsq == NULL)                                     ESL_FAIL(eslEINCOMPAT, errbuf, "TrOutsideAlign(), dsq is NULL.\n");
@@ -4575,12 +4570,10 @@ TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
   float ***Jbeta   = mx->Jdp;     /* pointer to the outside Jbeta DP matrix */
   float ***Lbeta   = mx->Ldp;     /* pointer to the outside Lbeta DP matrix */
   float ***Rbeta   = mx->Rdp;     /* pointer to the outside Rbeta DP matrix */
-  float ***Tbeta   = mx->Tdp;     /* pointer to the outside Tbeta DP matrix */
 
   float ***Jalpha  = inscyk_mx->Jdp; /* pointer to the precalc'ed inside Jalpha DP matrix */
   float ***Lalpha  = inscyk_mx->Ldp; /* pointer to the precalc'ed inside Lalpha DP matrix */
   float ***Ralpha  = inscyk_mx->Rdp; /* pointer to the precalc'ed inside Ralpha DP matrix */
-  float ***Talpha  = inscyk_mx->Tdp; /* pointer to the precalc'ed inside Talpha DP matrix */
 
   /* Allocations and initializations
    */
@@ -4640,34 +4633,33 @@ TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
     sd  = StateDelta(cm->sttype[v]);
     sdr = StateRightDelta(cm->sttype[v]);
 
-    /* mini-recursion for L matrix: because for any cell in L all
+    /***************************************************************
+     * mini-recursion for L matrix: because for any cell in L all
      * 'outside' residues must be emitted leftwise, we don't need to
-     * store varying d values, i.e. j defines i and j because (for L)
-     * j can never change again. Put another way, we are now behaving
-     * like an HMM.  This means we only have to calculate and store L
+     * store varying d values, i.e. j defines i and j because j can
+     * never change again. Put another way, we are now behaving like
+     * an HMM.  This means we only have to calculate and store L
      * matrix values for a single d instead of for all d 0..j.
-     */
+     ***************************************************************/
     if (cm->stid[v] == BEGL_S) { 
+      cm_Fail("BEGL_S states not implemented in this function");
       y = cm->plast[v];	/* the parent bifurcation    */
       z = cm->cnum[y];	/* the other (right) S state */
       for(jp = 0; jp <= W; jp++) { 
 	j = i0-1+jp;
- 	for (d = 0; d <= jp; d++) {
-	  Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d]); /* 11, entire sequence on left, k == 0 */
-	}
+	Lbeta[v][jp][0] = ESL_MAX(Lbeta[v][jp][0], Lbeta[y][jp][0]); /* 11, entire sequence on left, k == 0 */
       }
     }
     else if(cm->stid[v] == BEGR_S) { 
+      cm_Fail("BEGR_S states not implemented in this function");
       y = cm->plast[v];	  /* the parent bifurcation    */
       z = cm->cfirst[y];  /* the other (left) S state  */
       for(jp = 0; jp <= W; jp++) { 
 	j = i0-1+jp;
-	for (d = 0; d <= jp; d++) {
-	  for (k = 0; k <= (j-d); k++) {
-	    Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d+k] + Jalpha[z][j-d][k]); /* 4 */
-	    Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Tbeta[y][j][d+k] + Ralpha[z][j-d][k]); /* 8 */
-	  }
-	}
+	Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d]); /* 4 */
+	//Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Tbeta[y][j][d]); /* 8 */
+	////Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d+k] + Jalpha[z][j-d][k]); /* 4 */
+	////Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Tbeta[y][j][d+k] + Ralpha[z][j-d][k]); /* 8 */
       }
     }
     else { /* ! BEGL_S and ! BEGR_S */
@@ -4712,34 +4704,35 @@ TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
       }
     }
 
-    /* mini-recursion for R matrix: because for any cell in R all
+    /********************************************************************
+     * mini-recursion for R matrix: because for any cell in R all
      * 'outside' residues must be emitted rightwise, we don't need to
      * store varying d values, i.e. j defines i and j because (for R)
      * i can never change again. Put another way, we are now behaving
      * like an HMM.  This means we only have to calculate and store R
      * matrix values for a single d instead of for all d 0..j.
-     */
+     ********************************************************************/
     if (cm->stid[v] == BEGL_S) { 
+      cm_Fail("BEGL_S states not implemented in this function");
       y = cm->plast[v];	/* the parent bifurcation    */
       z = cm->cnum[y];	/* the other (right) S state */
       for(jp = 0; jp <= W; jp++) { 
 	j = i0-1+jp;
- 	for (d = 0; d <= jp; d++) {
-	  for (k = 0; k <= (W-j); k++) {
-	    Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j+k][d+k] + Jalpha[z][j+k][k]); /* 5 */
-	    Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Tbeta[y][j+k][d+k] + Lalpha[z][j+k][k]); /* 7 */
-	  }
-	}
+	Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j][d]); /* 4 */
+	//Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Tbeta[y][j][d]); /* 8 */
+	////Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j+k][d+k] + Jalpha[z][j+k][k]); /* 5 */
+	////Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Tbeta[y][j+k][d+k] + Lalpha[z][j+k][k]); /* 7 */
       }
     }
     else if(cm->stid[v] == BEGR_S) { 
+      cm_Fail("BEGR_S states not implemented in this function");
       y = cm->plast[v];	  /* the parent bifurcation    */
       z = cm->cfirst[y];  /* the other (left) S state  */
       for(jp = 0; jp <= W; jp++) { 
 	j = i0-1+jp;
-	for (d = 0; d <= jp; d++) {
-	  Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j][d]); /* 12, entire sequence on right, k == 0 */
-	}
+	Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j][d]); /* 4 */
+	//Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j][d]); /* 12, entire sequence on right, k == 0 */
+	//Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j][d]); /* 12, entire sequence on right, k == 0 */
       }
     }
     else { /* ! BEGL_S and ! BEGR_S */
@@ -4786,13 +4779,14 @@ TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
     /* main recursion, for J matrix, just like Inside/CYK, we need to do for(j ... for(d ... here */
     /**********************************************************************************************/
     if (cm->stid[v] == BEGL_S) { /* BEGL_S */
+      cm_Fail("BEGL_S states not implemented in this function");
       y = cm->plast[v];	/* the parent bifurcation    */
       z = cm->cnum[y];	/* the other (right) S state */
       for(jp = 0; jp <= W; jp++) { 
 	j = i0-1+jp;
  	for (d = 0; d <= jp; d++) {
 	  for (k = 0; k <= (W-j); k++) {
-	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j+k][d+k] + Jalpha[z][j+k][k]); /* 1 */
+	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j+k][d+k] + Jalpha[z][j+k][k]); /* A */
 	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j+k][d+k] + Lalpha[z][j+k][k]); /* 3 */
 	  }
 	  Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j][d]); /* 9, entire sequence on left, k == 0 */
@@ -4800,13 +4794,14 @@ TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
       }
     } /* end of 'if (cm->stid[v] == BEGL_S */
     else if (cm->stid[v] == BEGR_S) {
+      cm_Fail("BEGR_S states not implemented in this function");
       y = cm->plast[v];	  /* the parent bifurcation    */
       z = cm->cfirst[y];  /* the other (left) S state  */
       for(jp = 0; jp <= W; jp++) { 
 	j = i0-1+jp;
 	for (d = 0; d <= jp; d++) {
 	  for (k = 0; k <= (j-d); k++) {
-	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j][d+k] + Jalpha[z][j-d][k]); /* 2 */
+	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j][d+k] + Jalpha[z][j-d][k]); /* A */
 	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j][d+k] + Ralpha[z][j-d][k]); /* 6 */
 	  }
 	  Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j][d]); /* 10, entire sequence on right, k == 0 */
@@ -5047,6 +5042,1014 @@ TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
    * properly see the 'if(do_check)' loop above.
    */
   freturn_sc = Jalpha[0][W][W];
+
+  FILE *fp1; fp1 = fopen("tmp.trocykmx", "w");   cm_tr_mx_Dump(fp1, mx); fclose(fp1);
+  if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYK Inside/Outside check1 FAILED.");
+  else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYK Inside/Outside check2 FAILED.");
+  else                printf("SUCCESS! TrCYK Inside/Outside checks PASSED.\n");
+
+  ESL_DPRINTF1(("\tTrCYKOutsideAlign() sc : %f (sc is from Inside!)\n", freturn_sc));
+  
+  if (ret_sc != NULL) *ret_sc = freturn_sc;
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "Out of memory");
+}  
+
+
+/* Function: TrCYKOutsideAlignBifSmall()
+ * Date:     EPN, Wed Sep 14 14:20:20 2011
+ *
+ * Purpose:  Run the truncated outside CYK algorithm. Non-banded version.
+ *           A CM_TR_MX DP matrix must be passed in. 
+ *           Very similar to TrOutsideAlign() but calculates log probs
+ *           of most likely parses instead of all possible parses,
+ *           i.e. uses max operations instead of log sums.
+ *           Meaning of cells:
+ *
+ *           Jbeta[v][j][d]: log prob of the most likely parse that
+ *                           emits i0..i-1 and j+1..j0 and passes through 
+ *                           v in Joint marginal mode at j,d.
+ *           Lbeta[v][i][0]: log prob of the most likely parse that
+ *                           emits i0..i and passes through (NOTE off-by-one w.r.t Rbeta)
+ *                           v in Left marginal mode for any j,d that
+ *                           satisfy ip == i+1, where ip=j-d+1.
+ *           Rbeta[v][j][0]: log prob of the most likely parse that
+ *                           emits j+1..j0 and passes through 
+ *                           v in Right marginal mode with j==j
+ *                           and any d.
+ *
+ *           Note: i0 must be 1. This means j0 == L. This ensures we
+ *                 don't have to worry about offset issues in the
+ *                 matrices. (This function is confusing enough
+ *                 without having to worry about them.) Caller should
+ *                 have dsq pointing to the first residue of the
+ *                 sequence to be aligned. We could just pass in L,
+ *                 but use the convention of passing i0 and j0 for
+ *                 consistency with other similar functions.
+ *                   
+ * Args:     cm        - the model    [0..M-1]
+ *           errbuf    - char buffer for reporting errors
+ *           dsq       - the digitized sequence
+ *           i0        - first position in subseq to align (must be 1)
+ *           j0        - last position in subseq to align  (this is L)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           do_check  - TRUE to attempt to check matrices for correctness
+ *           mx        - the dp matrix, only cells within bands in cp9b will be valid
+ *           inscyk_mx - the dp matrix from the CYK Inside run calculation 
+ *                       (performed by tr_cyk_align(), required)
+ *           ret_sc    - RETURN: log P(S|M)/P(S|R), as a bit score, this is from ins_mx IF local
+ *                       ends are on (see *** comment towards end of function).
+ *
+ * Returns:  <ret_sc>
+ *
+ * Throws:  <eslOK> on success
+ *          <eslERANGE> if required CM_TR_MX for exceeds <size_limit>, 
+ *                      in this case, alignment has been aborted, ret_sc is not valid                        
+ */
+int
+TrCYKOutsideAlignBifSmall(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, 
+			  CM_TR_MX *mx, CM_TR_MX *inscyk_mx, float *ret_sc)
+{
+  int      status;
+  int      v,y,z;	       /* indices for states */
+  int      j,d,i,k;	       /* indices in sequence dimensions */
+  float    csc;     	       /* a temporary variable holding a float score */
+  float    fsc;     	       /* a temporary variable holding a float score */
+  float    escore;	       /* an emission score, tmp variable */
+  int      L;		       /* full sequence length, equals j0 (b/c i0 must be 1) */
+  int      voffset;	       /* index of v in t_v(y) transition scores */
+  float    bsc;		       /* total score for using local begin states */
+  float    freturn_sc;         /* P(S|M)/P(S|R), a float (Scorified ireturn_sc) */
+  /* variables used only if do_check */
+  int      fail1_flag = FALSE; /* set to TRUE if do_check and we see a problem */
+  int      fail2_flag = FALSE; /* set to TRUE if do_check and we see a problem */
+  int      vmax;               /* i, offset in the matrix */
+  int     *optseen = NULL;     /* [1..i..W] TRUE is residue i is accounted for in optimal parse */
+  /* indices used in the depths of the DP recursion */
+  int      emitmode;           /* EMITLEFT, EMITRIGHT, EMITPAIR, EMITNONE, for state y */
+  int      sd;                 /* StateDelta(cm->sttype[y]) */
+  int      sdl;                /* StateLeftDelta(cm->sttype[y] */
+  int      sdr;                /* StateRightDelta(cm->sttype[y] */
+  int      ip_L;               /* i index in L matrix */
+
+  /* Contract check */
+  if (dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "TrOutsideAlign(), dsq is NULL.\n");
+  if (mx == NULL)         ESL_FAIL(eslEINCOMPAT, errbuf, "TrOutsideAlign(), mx is NULL.\n");
+  if (inscyk_mx == NULL)  ESL_FAIL(eslEINCOMPAT, errbuf, "TrOutsideAlign(), ins_mx is NULL.\n");
+  if (i0 != 1)            ESL_FAIL(eslEINCOMPAT, errbuf, "TrOutsideAlign(), i0 is not 1.\n");
+
+  /* DP matrix variables */
+  float ***Jbeta   = mx->Jdp;     /* pointer to the outside Jbeta DP matrix */
+  float ***Lbeta   = mx->Ldp;     /* pointer to the outside Lbeta DP matrix */
+  float ***Rbeta   = mx->Rdp;     /* pointer to the outside Rbeta DP matrix */
+  /* Tbeta is not used */
+
+  float ***Jalpha  = inscyk_mx->Jdp; /* pointer to the precalc'ed inside Jalpha DP matrix */
+  float ***Lalpha  = inscyk_mx->Ldp; /* pointer to the precalc'ed inside Lalpha DP matrix */
+  float ***Ralpha  = inscyk_mx->Rdp; /* pointer to the precalc'ed inside Ralpha DP matrix */
+  /* Talpha is not used */
+
+  /* Allocations and initializations
+   */
+  bsc = IMPOSSIBLE;   /* the summed prob of all local begins */
+  L   = j0-i0+1;      /* the length of the full sequence -- used in many loops  */
+
+  /* grow the matrices based on the current sequence and bands */
+  if((status = cm_tr_mx_GrowTo(cm, mx, errbuf, L, size_limit)) != eslOK) return status;
+
+  /* initialize all cells of the matrix to IMPOSSIBLE */
+  if(  mx->Jncells_valid   > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
+  if(  mx->Lncells_valid   > 0) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
+  if(  mx->Rncells_valid   > 0) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
+  if(  mx->Tncells_valid   > 0) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
+
+  /* set cells corresponding to full sequence alignments to 0. */
+  Jbeta[0][L][L] = 0.; /* a full joint alignment is outside this cell */
+
+  /* we also need to allow full truncated alignments, rooted 
+   * at internal truncated entry/exit points.
+   * 
+   * Note that for L and R matrix, v can be 0. This allows ROOT_IL
+   * and ROOT_IR to emit residues in the optimal parsetree, which
+   * is important b/c in alignment, the full target i0..j0 must be
+   * emitted. In a scanner any parse involving ROOT_IL (or ROOT_IR)
+   * would have a non-optimal score (b/c inserted residues are 0
+   * bits and transitions are always negative).
+   */
+  for(v = 0; v < cm->M; v++) { 
+    if(v == 0 || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == B_st) {
+      Jbeta[v][L][L] = 0.; /* a full joint alignment is outside this cell */
+      Lbeta[v][0][0] = 0.; /* a truncated end L alignment */
+    }
+    if(v == 0 || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == B_st) { 
+      Jbeta[v][L][L] = 0.; /* a full joint alignment is outside this cell */
+      Rbeta[v][L][0] = 0.; /* a truncated end R alignment */
+    }
+  }
+
+  /* No local begins in truncated mode */
+  #if 0 
+  /* If we can do a local begin into v, overwrite IMPOSSIBLE with the local begin score. 
+   * By definition, Jbeta[0][L][L] == 0.
+   */ 
+  if (cm->flags & CMH_LOCAL_BEGIN) {
+    for (v = 1; v < cm->M; v++) {
+      if(NOT_IMPOSSIBLE(cm->beginsc[v])) {
+	Jbeta[v][L][L] = cm->beginsc[v];
+      }
+    }
+  }
+  #endif
+
+  /* main loop down through the decks */
+  for (v = 1; v < cm->M; v++) {
+    sd  = StateDelta(cm->sttype[v]);
+    sdr = StateRightDelta(cm->sttype[v]);
+
+    /***************************************************************
+     * mini-recursion for L matrix: because for any cell in L all
+     * 'outside' residues must be emitted leftwise, we don't need to
+     * store varying d values, i.e. j defines i and j because j can
+     * never change again. Put another way, we are now behaving like
+     * an HMM.  This means we only have to calculate and store L
+     * matrix values for a single d instead of for all d 0..j.
+     ***************************************************************/
+    if (cm->stid[v] == BEGL_S) { 
+      y = cm->plast[v];	/* the parent bifurcation    */
+      z = cm->cnum[y];	/* the other (right) S state */
+      for(j = 0; j <= L; j++) { 
+	Lbeta[v][j][0] = Lbeta[y][j][0]; /* entire sequence on left, no sequence on right */
+      }
+    }
+    else if(cm->stid[v] == BEGR_S) { 
+      y = cm->plast[v];	  /* the parent bifurcation    */
+      z = cm->cfirst[y];  /* the other (left) S state  */
+      for(j = 0; j <= L; j++) { /* should this be from 1 to L-1, instead of 0..L? */
+	Lbeta[v][j][0] = 0. + Ralpha[z][j][j];
+	/* Note: the 0. term here is actually Tbeta[v][j+k][d+k],
+	 * which is always 0 because a T alignment must include the
+	 * full target i0..j0 rooted at a B state, and a transition
+	 * from that B state to this BEGR_S is always free
+	 * (probability 1).  Thus the Tbeta value: i.e. probability
+	 * of emitting all target residues i0..j0 (0 residues)
+	 * outside of a T cell, plus the probability of getting from
+	 * there to BEGR_S is always probability 1.0.
+	 */
+      }
+    }
+    else { /* ! BEGL_S and ! BEGR_S */
+      for(j = 0; j <= L; j++) { 
+	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	  voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
+	  switch(cm->sttype[y]) 
+	    {
+	    case MP_st:
+	      if(j >= i0) {
+		escore = cm->lmesc[y][dsq[j]];
+		Lbeta[v][j][0] = ESL_MAX(Lbeta[v][j][0], (Lbeta[y][j-1][0] + cm->tsc[y][voffset] + escore));
+		//if(j > i0) Lbeta[v][j][0] = ESL_MAX(Lbeta[v][j][0], (Lbeta[y][j-1][0] + cm->tsc[y][voffset] + escore));
+		//else       Lbeta[v][j][0] = cm->tsc[y][voffset] + escore; /* truncated begin into y to emit first residue i0 */
+	      }
+	      break;
+	    case ML_st:
+	    case IL_st:
+	      if(j >= i0) { 
+		escore = cm->oesc[y][dsq[j]];
+		Lbeta[v][j][0] = ESL_MAX(Lbeta[v][j][0], (Lbeta[y][j-1][0] + cm->tsc[y][voffset] + escore));
+		//if(j > i0) Lbeta[v][j][0] = ESL_MAX(Lbeta[v][j][0], (Lbeta[y][j-1][0] + cm->tsc[y][voffset] + escore));
+		//else       Lbeta[v][j][0] = cm->tsc[y][voffset] + escore; /* truncated begin into v to emit first residue i0 */
+	      }
+	      break;
+	    case MR_st:
+	    case IR_st:
+	    case  B_st:
+	    case  S_st:
+	    case  E_st:
+	    case  D_st:
+	      Lbeta[v][j][0] = ESL_MAX(Lbeta[v][j][0], (Lbeta[y][j][0]     + cm->tsc[y][voffset]));
+	      break;
+	    }
+	}
+#if DEBUG2
+	printf("HEYA Lbeta[%4d][%4d][0]: %.4f\n", v, j, Lbeta[v][j][0]);
+#endif
+	Lbeta[v][j][0] = ESL_MAX(Lbeta[v][j][0], IMPOSSIBLE);
+      }
+    }
+
+    /********************************************************************
+     * mini-recursion for R matrix: because for any cell in R all
+     * 'outside' residues must be emitted rightwise, we don't need to
+     * store varying d values, i.e. j defines i and j because (for R)
+     * i can never change again. Put another way, we are now behaving
+     * like an HMM.  This means we only have to calculate and store R
+     * matrix values for a single d instead of for all d 0..j.
+     ********************************************************************/
+    if (cm->stid[v] == BEGL_S) { 
+      y = cm->plast[v];	/* the parent bifurcation    */
+      z = cm->cnum[y];	/* the other (right) S state */
+      for(j = 0; j <= L; j++) { /* should this be from 1 to L-1, instead of 0..L? */
+	Rbeta[v][j][0] = ESL_MAX(Rbeta[v][j][0], 0. + Lalpha[z][j0][j0-j]);
+	/* Note: the 0. term here is actually Tbeta[v][j+k][d+k],
+	 * which is always 0 because a T alignment must include the
+	 * full target i0..j0 rooted at a B state, and a transition
+	 * from that B state to this BEGR_S is always free
+	 * (probability 1).  Thus the Tbeta value: i.e. probability
+	 * of emitting all target residues i0..j0 (0 residues)
+	 * outside of a T cell, plus the probability of getting from
+	 * there to BEGR_S is always probability 1.0.
+	 */
+      }
+    }
+    else if(cm->stid[v] == BEGR_S) { 
+      y = cm->plast[v];	  /* the parent bifurcation    */
+      z = cm->cfirst[y];  /* the other (left) S state  */
+      for(j = 0; j <= L; j++) { 
+	Rbeta[v][j][0] = Rbeta[y][j][0]; /* entire sequence on right, no sequence on left */
+      }
+    }
+    else { /* ! BEGL_S and ! BEGR_S */
+      for (j = L; j >= 0; j--) {
+	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	  voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
+	  switch(cm->sttype[y])
+	    {
+	    case MP_st:
+	      if(j < j0) { 
+		escore = cm->rmesc[y][dsq[j+1]];
+		Rbeta[v][j][0] = ESL_MAX(Rbeta[v][j][0], Rbeta[y][j+1][0] + cm->tsc[y][voffset] + escore);
+		//if((j+1) < j0) Rbeta[v][j][0] = ESL_MAX(Rbeta[v][j][0], Rbeta[y][j+1][0] + cm->tsc[y][voffset] + escore);
+		//else           Rbeta[v][j][0] = cm->tsc[y][voffset] + escore; /* truncated begin into v to emit final residue j0 */
+	      }
+	      break;
+	    case MR_st:
+	    case IR_st:
+	      if(j < j0) { 
+		escore = cm->oesc[y][dsq[j+1]];
+		Rbeta[v][j][0] = ESL_MAX(Rbeta[v][j][0], Rbeta[y][j+1][0] + cm->tsc[y][voffset] + escore);
+		//if((j+1) < j0) Rbeta[v][j][0] = ESL_MAX(Rbeta[v][j][0], Rbeta[y][j+1][0] + cm->tsc[y][voffset] + escore);
+		//else           Rbeta[v][j][0] = cm->tsc[y][voffset] + escore; /* truncated begin into v to emit final residue j0 */
+	      }
+	      break;
+	    case ML_st:
+	    case IL_st:
+	    case  B_st:
+	    case  S_st:
+	    case  E_st:
+	    case  D_st:
+	      Rbeta[v][j][0] = ESL_MAX(Rbeta[v][j][0], Rbeta[y][j][0]   + cm->tsc[y][voffset]);
+	      break;
+	    }
+	}
+#if DEBUG2
+	printf("HEYA Rbeta[%4d][%4d][0]: %.4f\n", v, j, Rbeta[v][j][0]);
+#endif
+	Rbeta[v][j][0] = ESL_MAX(Rbeta[v][j][0], IMPOSSIBLE);
+      }
+    }
+    /**********************************************************************************************/
+    /* main recursion, for J matrix, just like Inside/CYK, we need to do for(j ... for(d ... here */
+    /**********************************************************************************************/
+    if (cm->stid[v] == BEGL_S) { /* BEGL_S */
+      y = cm->plast[v];	/* the parent bifurcation    */
+      z = cm->cnum[y];	/* the other (right) S state */
+      for(j = 0; j <= L; j++) { 
+ 	for (d = 0; d <= j; d++) {
+	  for (k = 0; k <= (L-j); k++) {
+	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j+k][d+k] + Jalpha[z][j+k][k]); /* A */
+	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j+k][d+k] + Lalpha[z][j+k][k]); /* B */
+	  }
+	  Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j][d]); /* entire sequence on left, no sequence on right, k == 0 */
+	}
+      }
+    } /* end of 'if (cm->stid[v] == BEGL_S */
+    else if (cm->stid[v] == BEGR_S) {
+      y = cm->plast[v];	  /* the parent bifurcation    */
+      z = cm->cfirst[y];  /* the other (left) S state  */
+      for(j = 0; j <= L; j++) { 
+	for (d = 0; d <= j; d++) {
+	  for (k = 0; k <= (j-d); k++) {
+	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j][d+k] + Jalpha[z][j-d][k]); /* A */
+	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j][d+k] + Ralpha[z][j-d][k]); /* C */
+	  }
+	  Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j][d]); /* entire sequence on right, no sequence on left, k == 0 */
+	}
+      }
+    } /* end of 'else if (cm->stid[v] == BEGR_S */
+    else { /* (cm->sttype[v] != BEGL_S && cm->sttype[v] != BEGR_S */ 
+      for (j = L; j >= 0; j--) {
+	i = i0;
+	for (d = j; d >= 0; d--, i++) {
+	  for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+#if 0 
+	    if(v == 18 && j == 3 && d == 1) { 
+	      printf("HEREHERE 0 y: %4d Jbeta[%4d][%4d][%4d]: %.4f\n", y, v, j, d, Jbeta[v][j][d]);
+	    }
+#endif
+	    voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
+	    sd  = StateDelta(cm->sttype[y]);
+	    sdl = StateLeftDelta(cm->sttype[y]);
+	    sdr = StateRightDelta(cm->sttype[y]);
+	    switch(cm->sttype[y]) {
+	    case MP_st: 
+	      if(j != j0 && d != j) { 
+		escore = cm->oesc[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
+	      }
+	      if(j == j0 && d != j) {
+		escore = cm->lmesc[y][dsq[i-1]];
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][i-1-sdl][0] + cm->tsc[y][voffset] + escore);
+	      }
+	      if(i == i0 && j != j0) { 
+		escore = cm->rmesc[y][dsq[j+1]];
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j+sdr][0]    + cm->tsc[y][voffset] + escore);
+	      }
+	      break;
+	    case ML_st:
+	    case IL_st: 
+	      if (d != j) { 
+		escore = cm->oesc[y][dsq[i-1]];
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j][d+sd]     + cm->tsc[y][voffset] + escore);
+	      }
+	      if(i == i0) { /* only allow transition from R if we're emitting first residue i0 from y */
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j][0]        + cm->tsc[y][voffset]);
+	      }
+	      break;
+	    case MR_st:
+	    case IR_st:
+	      if (j != j0) { 
+		escore = cm->oesc[y][dsq[j+1]];
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
+	      }
+	      if(j == j0) { /* only allow transition from L if we're emitting final residue j0 from y */
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][i-1][0]     + cm->tsc[y][voffset]);
+	      }
+	      break;
+	    case S_st:
+	    case E_st:
+	    case D_st:
+	      Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j][d] + cm->tsc[y][voffset]);
+	      break;
+	    } /* end of switch(cm->sttype[y] */  
+#if 0 
+	    if(v == 18 && j == 3 && d == 1) { 
+	      printf("HEREHERE 1 y: %4d Jbeta[%4d][%4d][%4d]: %.4f\n", y, v, j, d, Jbeta[v][j][d]);
+	    }
+#endif
+	  } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
+	  if (Jbeta[v][j][d] < IMPOSSIBLE) Jbeta[v][j][d] = IMPOSSIBLE;
+	} /* ends loop over d. Le know all beta[v][j][d] in this row j and state v */
+      } /* end loop over j. Le know beta for this whole state */
+    } /* end of 'else if cm->sttype[v] != BEGL_S, BEGR_S */
+    /* we're done calculating deck v for everything but local ends */
+
+    /* deal with local alignment end transitions v->EL J matrix only (EL = deck at M.) */
+    if ((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) {
+      sdr = StateRightDelta(cm->sttype[v]); /* note sdr is for state v */
+      sd  = StateDelta(cm->sttype[v]);      /* note sd  is for state v */
+      emitmode = Emitmode(cm->sttype[v]);   /* note emitmode is for state v */
+      
+      for (j = 0; j <= L; j++) { 
+	for (d = 0; d <= j; d++) {
+	  i = j-d+1;
+	  switch (cm->sttype[v]) {
+	  case MP_st: 
+	    if (j == j0 || d == j) continue; /* boundary condition */
+	    escore = cm->oesc[v][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+	    Jbeta[cm->M][j][d] = ESL_MAX(Jbeta[cm->M][j][d], (Jbeta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
+	    break;
+	  case ML_st:
+	  case IL_st:
+	    if (d == j) continue;	
+	    escore = cm->oesc[v][dsq[i-1]];
+	    Jbeta[cm->M][j][d] = ESL_MAX(Jbeta[cm->M][j][d], (Jbeta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
+	    break;
+	  case MR_st:
+	  case IR_st:
+	    if (j == j0) continue;
+	    escore = cm->oesc[v][dsq[j+1]];
+	    Jbeta[cm->M][j][d] = ESL_MAX(Jbeta[cm->M][j][d], (Jbeta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
+	    break;
+	  case S_st:
+	  case D_st:
+	  case E_st:
+	    Jbeta[cm->M][j][d] = ESL_MAX(Jbeta[cm->M][j][d], (Jbeta[v][j+sdr][d+sd] + cm->endsc[v]));
+	    break;
+	  }
+	}
+      }
+    }
+  }
+  /* Deal with last step needed for local alignment 
+   * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
+   */
+  if (cm->flags & CMH_LOCAL_END) {
+    for (j = L; j > 0; j--) { /* careful w/ boundary here */
+      j = i0-1+j;
+      for (d = j-1; d >= 0; d--) /* careful w/ boundary here */
+	Jbeta[cm->M][j][d] = ESL_MAX(Jbeta[cm->M][j][d], Jbeta[cm->M][j][d+1] + cm->el_selfsc);
+    }
+  }
+
+  fail1_flag = FALSE;
+  fail2_flag = FALSE;
+  printf("DO CHECK: %d\n", do_check);
+  if(do_check) {
+    /* Check for consistency between the Inside alpha matrix and the
+     * Outside beta matrix. Le assume the Inside CYK parse score
+     * (optsc) is the optimal score, so for all v,j,d:
+     * 
+     * Jalpha[v][j][d] + Jbeta[v][j][d] <= optsc
+     * 
+     * and for all v:
+     * Lalpha[v][j0][9]   + Lbeta[v][j0][0]   <= optsc  (Left  marginal alignment of all i0..j0 residues)
+     * Ralpha[v][i0-1][0] + Rbeta[v][i0-1][0] <= optsc  (Right marginal alignment of all i0..j0 residues)
+     *
+     * Further, we know that each residue must be emitted by a state
+     * in the optimal parse. So as we do the above check, we determine
+     * when we're in a cell that may be involved in the optimal parse
+     * (the sum of the Inside and Outside scores are equal to the
+     * optimal parse score), if that cell corresponds to a left
+     * emitter emitting position i, we know an emitted i has been
+     * observed in an optimal parse and set optseen[i] to TRUE.
+     * Likewise, if that cell corresponds to a right emitter emitting
+     * position j, we update optseen[j] to TRUE. At the end of the
+     * check optseen[i] should be TRUE for all i in the range
+     * [i0..j0].
+     *
+     * Note that we don't ensure that all of our presumed optimal
+     * cells make up a valid parse, so it is possible we could pass
+     * this check even if the Inside and Outside matrices are
+     * inconsistent (i.e. there's a bug in the implementation of one
+     * and or the other) but that should be extremely unlikely.  If we
+     * do this test many times for many different models and pass, we
+     * should be confident we have consistent implementations.
+     * 
+     * This is an expensive check and should only be done while
+     * debugging.
+     */
+    ESL_ALLOC(optseen, sizeof(int) * (L+1));
+    esl_vec_ISet(optseen, L+1, FALSE);
+    vmax = (cm->flags & CMH_LOCAL_END) ? cm->M : cm->M-1;
+    assert(i0 == 1);
+    assert(j0 == L);
+    for(v = 0; v <= vmax; v++) { 
+      for(j = 1; j <= L; j++) { 
+	j = j+i0-1;
+	for(d = 0; d <= j; d++) { 
+	  fsc  = (Jalpha[v][j][d] + Jbeta[v][j][d]) - Jalpha[0][L][L];
+	  if(fsc > 0.00001) { 
+	    printf("Check 1 J failure: v: %4d j: %4d d: %4d (%.4f + %.4f) %.4f > %.4f\n", 
+		   v, j, d, Jalpha[v][j][d], Jbeta[v][j][d], Jalpha[v][j][d] + Jbeta[v][j][d], Jalpha[0][L][L]);
+	    fail1_flag = TRUE;
+	  }
+	  if(fabs(fsc) < 0.00001) { /* this cell is involved in a parse with the optimal score */
+	    i = j-d+1;
+	    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st || (cm->sttype[v] == EL_st && d >0)) { 
+	      /* i is accounted for by a parse with an optimal score */
+	      optseen[i] = TRUE;
+	      printf("\tResidue %4d possibly accounted for by J matrix Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);
+	    }
+	    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+	      /* j is accounted for by a parse with an optimal score */
+	      optseen[j] = TRUE;
+	      printf("\tResidue %4d possibly accounted for by J matrix Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);
+	    }
+	  }
+	}
+	/* there's also a single L matrix case for this v and j */
+	if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+	  fsc = (Lalpha[v][j0][j0-i+1] + Lbeta[v][i-1][0]) - Jalpha[0][L][L]; /* i0..i-1 accounted for by Lbeta, i..j0 (d=j0-i+1) accounted for by Lalpha */
+	  /* Note the off-by-one in Lbeta: Lbeta[v][i][0] = residues i0..i emitted outside */
+	  if(fsc > 0.00001) { 
+	    printf("Check 1 L failure: v: %4d j: %4d d: %4d (%.4f + %.4f) %.4f > %.4f\n", 
+		   v, j, d, Lalpha[v][j0][j0-i+1], Lbeta[v][i-1][0], Lalpha[v][j0][j0-i+1] + Lbeta[v][i-1][0], Jalpha[0][L][L]);
+	    fail1_flag = TRUE;
+	  }
+	  if(fabs(fsc) < 0.00001) { /* this cell is involved in a parse with the optimal score */
+	    optseen[j] = TRUE;
+	    printf("\tResidue %4d possibly accounted for by L matrix Left  emitter %2s cell Lalpha[v:%4d][j:%4d][d:%4d]  Lbeta[v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j0, j0-i+1, v, i-1, 0);
+	  }
+	}
+	if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+	  /* j is accounted for by a parse with an optimal score */
+	  /* and an analogous single R matrix case for this v and j */
+	  fsc = (Ralpha[v][j][j-i0+1] + Rbeta[v][j][0]) - Jalpha[0][L][L]; /* i0..j (d=j-i0+1)accounted for by Ralpha, j+1..j0 (d=j0-(j+1)+1) accounted for by Rbeta */
+	  if(fsc > 0.00001) { 
+	    printf("Check 1 R failure: v: %4d j: %4d d: %4d (%.4f + %.4f) %.4f > %.4f\n", 
+		   v, j, d, Ralpha[v][j][j-i0+1], Rbeta[v][j][0], Ralpha[v][j][j-i0+1] + Rbeta[v][j][0], Jalpha[0][L][L]);
+	    fail1_flag = TRUE;
+	  }
+	  if(fabs(fsc) < 0.00001) { /* this cell is involved in a parse with the optimal score */
+	    optseen[j] = TRUE;
+	    printf("\tResidue %4d possibly accounted for by R matrix Right emitter %2s cell Ralpha[v:%4d][j:%4d][d:%4d]  Rbeta[v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, j-i0+1, v, j, 0);
+	  }
+	}
+      }
+    }
+    for(j = 1; j <= L; j++) { 
+      j = j+i0-1;
+      if(optseen[j] == FALSE) { 
+	printf("Check 2 failure: residue %d not emitted in the optimal parsetree\n", j);
+	fail2_flag = TRUE;
+      }	      
+    }
+    free(optseen);
+  }
+
+  if(fail1_flag || fail2_flag) for(j = 1; j <= L; j++) printf("dsq[%4d]: %4d\n", j, dsq[j]);
+
+  /* Return score is from Inside matrix, I can't figure out how to get this
+   * solely from JBeta... If you're paranoid about this function not working
+   * properly see the 'if(do_check)' loop above.
+   */
+  freturn_sc = Jalpha[0][L][L];
+
+  FILE *fp1; fp1 = fopen("tmp.trocykmx", "w");   cm_tr_mx_Dump(fp1, mx); fclose(fp1);
+  if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYK Inside/Outside check1 FAILED.");
+  else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYK Inside/Outside check2 FAILED.");
+  else                printf("SUCCESS! TrCYK Inside/Outside checks PASSED.\n");
+
+  ESL_DPRINTF1(("\tTrCYKOutsideAlign() sc : %f (sc is from Inside!)\n", freturn_sc));
+  
+  if (ret_sc != NULL) *ret_sc = freturn_sc;
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "Out of memory");
+}  
+
+
+/* Function: TrCYKOutsideAlign()
+ * Date:     EPN, Wed Sep 14 14:20:20 2011
+ *
+ * Purpose:  Run the truncated outside CYK algorithm. Non-banded version.
+ *           A CM_TR_MX DP matrix must be passed in. 
+ *           Very similar to TrOutsideAlign() but calculates log probs
+ *           of most likely parses instead of all possible parses,
+ *           i.e. uses max operations instead of log sums.
+ *           Meaning of cells:
+ *
+ *           Jbeta[v][j][d]: log prob of the most likely parse that
+ *                           emits i0..i-1 and j+1..j0 and passes through 
+ *                           v in Joint marginal mode at j,d.
+ *           Lbeta[v][j][d]: log prob of the most likely parse that
+ *                           emits i0..i-1 and j+1..j0 and passes through
+ *                           v in Left marginal mode at j,d.
+ *           Rbeta[v][j][d]: log prob of the most likely parse that
+ *                           emits i0..i-1 and j+1..j0 and passes through 
+ *                           v in Right marginal mode at j,d.
+ *
+ *           Note: i0 must be 1. This means j0 == L. This ensures we
+ *                 don't have to worry about offset issues in the
+ *                 matrices. (This function is confusing enough
+ *                 without having to worry about them.) Caller should
+ *                 have dsq pointing to the first residue of the
+ *                 sequence to be aligned. We could just pass in L,
+ *                 but use the convention of passing i0 and j0 for
+ *                 consistency with other similar functions.
+ *                   
+ * Args:     cm        - the model    [0..M-1]
+ *           errbuf    - char buffer for reporting errors
+ *           dsq       - the digitized sequence
+ *           i0        - first position in subseq to align (must be 1)
+ *           j0        - last position in subseq to align  (this is L)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           do_check  - TRUE to attempt to check matrices for correctness
+ *           mx        - the dp matrix, only cells within bands in cp9b will be valid
+ *           inscyk_mx - the dp matrix from the CYK Inside run calculation 
+ *                       (performed by tr_cyk_align(), required)
+ *           ret_sc    - RETURN: log P(S|M)/P(S|R), as a bit score, this is from ins_mx IF local
+ *                       ends are on (see *** comment towards end of function).
+ *
+ * Returns:  <ret_sc>
+ *
+ * Throws:  <eslOK> on success
+ *          <eslERANGE> if required CM_TR_MX for exceeds <size_limit>, 
+ *                      in this case, alignment has been aborted, ret_sc is not valid                        
+ */
+int
+TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, 
+		  CM_TR_MX *mx, CM_TR_MX *inscyk_mx, float *ret_sc)
+{
+  int      status;
+  int      v,y,z;	       /* indices for states */
+  int      j,d,i,k;	       /* indices in sequence dimensions */
+  float    Jsc,Lsc,Rsc;        /* a temporary variable holding a float score */
+  float    escore;	       /* an emission score, tmp variable */
+  int      L;		       /* full sequence length, equals j0 (b/c i0 must be 1) */
+  int      voffset;	       /* index of v in t_v(y) transition scores */
+  float    bsc;		       /* total score for using local begin states */
+  float    freturn_sc;         /* P(S|M)/P(S|R), a float (Scorified ireturn_sc) */
+  /* variables used only if do_check */
+  int      fail1_flag = FALSE; /* set to TRUE if do_check and we see a problem */
+  int      fail2_flag = FALSE; /* set to TRUE if do_check and we see a problem */
+  int      vmax;               /* i, offset in the matrix */
+  int     *optseen = NULL;     /* [1..i..W] TRUE is residue i is accounted for in optimal parse */
+  /* indices used in the depths of the DP recursion */
+  int      emitmode;           /* EMITLEFT, EMITRIGHT, EMITPAIR, EMITNONE, for state y */
+  int      sd;                 /* StateDelta(cm->sttype[y]) */
+  int      sdl;                /* StateLeftDelta(cm->sttype[y] */
+  int      sdr;                /* StateRightDelta(cm->sttype[y] */
+  int      ip_L;               /* i index in L matrix */
+
+  /* Contract check */
+  if (dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "TrOutsideAlign(), dsq is NULL.\n");
+  if (mx == NULL)         ESL_FAIL(eslEINCOMPAT, errbuf, "TrOutsideAlign(), mx is NULL.\n");
+  if (inscyk_mx == NULL)  ESL_FAIL(eslEINCOMPAT, errbuf, "TrOutsideAlign(), ins_mx is NULL.\n");
+  if (i0 != 1)            ESL_FAIL(eslEINCOMPAT, errbuf, "TrOutsideAlign(), i0 is not 1.\n");
+
+  /* DP matrix variables */
+  float ***Jbeta   = mx->Jdp;     /* pointer to the outside Jbeta DP matrix */
+  float ***Lbeta   = mx->Ldp;     /* pointer to the outside Lbeta DP matrix */
+  float ***Rbeta   = mx->Rdp;     /* pointer to the outside Rbeta DP matrix */
+  /* Tbeta is not used */
+
+  float ***Jalpha  = inscyk_mx->Jdp; /* pointer to the precalc'ed inside Jalpha DP matrix */
+  float ***Lalpha  = inscyk_mx->Ldp; /* pointer to the precalc'ed inside Lalpha DP matrix */
+  float ***Ralpha  = inscyk_mx->Rdp; /* pointer to the precalc'ed inside Ralpha DP matrix */
+  /* Talpha is not used */
+
+  /* Allocations and initializations
+   */
+  bsc = IMPOSSIBLE;   /* the summed prob of all local begins */
+  L   = j0-i0+1;      /* the length of the full sequence -- used in many loops  */
+
+  /* grow the matrices based on the current sequence and bands */
+  if((status = cm_tr_mx_GrowTo(cm, mx, errbuf, L, size_limit)) != eslOK) return status;
+
+  /* initialize all cells of the matrix to IMPOSSIBLE */
+  if(  mx->Jncells_valid   > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
+  if(  mx->Lncells_valid   > 0) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
+  if(  mx->Rncells_valid   > 0) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
+  if(  mx->Tncells_valid   > 0) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
+
+  /* set cells corresponding to full sequence alignments to 0. */
+  Jbeta[0][L][L] = 0.; /* a full joint alignment is outside this cell */
+
+  /* we also need to allow full truncated alignments, rooted 
+   * at internal truncated entry/exit points.
+   * 
+   * Note that for L and R matrix, v can be 0. This allows ROOT_IL
+   * and ROOT_IR to emit residues in the optimal parsetree, which
+   * is important b/c in alignment, the full target i0..j0 must be
+   * emitted. In a scanner any parse involving ROOT_IL (or ROOT_IR)
+   * would have a non-optimal score (b/c inserted residues are 0
+   * bits and transitions are always negative).
+   */
+  for(v = 0; v < cm->M; v++) { 
+    if(v == 0 || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == B_st) {
+      Jbeta[v][L][L] = 0.; /* a full joint alignment is outside this cell */
+      Lbeta[v][L][L] = 0.; /* a truncated end L alignment */
+    }
+    if(v == 0 || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == B_st) { 
+      Jbeta[v][L][L] = 0.; /* a full joint alignment is outside this cell */
+      Rbeta[v][L][L] = 0.; /* a truncated end R alignment */
+    }
+  }
+
+  /* No local begins in truncated mode */
+  #if 0 
+  /* If we can do a local begin into v, overwrite IMPOSSIBLE with the local begin score. 
+   * By definition, Jbeta[0][L][L] == 0.
+   */ 
+  if (cm->flags & CMH_LOCAL_BEGIN) {
+    for (v = 1; v < cm->M; v++) {
+      if(NOT_IMPOSSIBLE(cm->beginsc[v])) {
+	Jbeta[v][L][L] = cm->beginsc[v];
+      }
+    }
+  }
+  #endif
+
+  /* main loop down through the decks */
+  for (v = 1; v < cm->M; v++) {
+    sd  = StateDelta(cm->sttype[v]);
+    sdr = StateRightDelta(cm->sttype[v]);
+
+    if (cm->stid[v] == BEGL_S) { /* BEGL_S */
+      y = cm->plast[v];	/* the parent bifurcation    */
+      z = cm->cnum[y];	/* the other (right) S state */
+      for(j = 0; j <= L; j++) { 
+ 	for (d = 0; d <= j; d++) {
+	  for (k = 0; k <= (L-j); k++) {
+	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j+k][d+k] + Jalpha[z][j+k][k]); /* A */
+	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j+k][d+k] + Lalpha[z][j+k][k]); /* B */
+	    Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j+k][d+k] + Jalpha[z][j+k][k]); /* C */
+	    if(d == j && (j+k) == j0) { 
+	      Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], 0.               + Lalpha[z][j+k][k]); /* D */
+	      /* Note: the 0. term here is actually
+	       * Tbeta[y][j+k==j0][d+k==j0], which is always 0 because
+	       * an alignment including such a T cell includes the
+	       * full target i0..j0 (any T alignment must because we
+	       * must account for the full target) rooted at a B
+	       * state, and a transition from that B state to this
+	       * BEGL_S is always free (probability 1).  Thus the
+	       * Tbeta value: i.e. probability of emitting all target
+	       * residues i0..j0 (0 residues) outside of a T cell,
+	       * plus the probability of getting from there to BEGR_S
+	       * is always probability 1.0.
+	       */
+	    }
+	  }
+	  Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j][d]); /* entire sequence on left, no sequence on right, k == 0 */
+	  Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d]); /* entire sequence on left, no sequence on right, k == 0 */
+	}
+      }
+    } /* end of 'if (cm->stid[v] == BEGL_S */
+    else if (cm->stid[v] == BEGR_S) {
+      y = cm->plast[v];	  /* the parent bifurcation    */
+      z = cm->cfirst[y];  /* the other (left) S state  */
+      for(j = 0; j <= L; j++) { 
+	for (d = 0; d <= j; d++) {
+	  i = j-d+1;
+	  for (k = 0; k <= (j-d); k++) {
+	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j][d+k] + Jalpha[z][j-d][k]); /* A */
+	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j][d+k] + Ralpha[z][j-d][k]); /* C */
+	    Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d+k] + Jalpha[z][j-d][k]); /* B */
+	    if(k == (i-1) && j == j0) { 
+	      Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], 0.             + Ralpha[z][j-d][k]); /* D */
+	      /* Note: the 0. term here is actually
+	       * Tbeta[y][j==j0][d+k==j0], which is always 0 because
+	       * an alignment including such a T cell includes the
+	       * full target i0..j0 (any T alignment must because we
+	       * must account for the full target) rooted at a B
+	       * state, and a transition from that B state to this
+	       * BEGR_S is always free (probability 1).  Thus the
+	       * Tbeta value: i.e. probability of emitting all target
+	       * residues i0..j0 (0 residues) outside of a T cell,
+	       * plus the probability of getting from there to BEGR_S
+	       * is always probability 1.0.
+	       */
+	    }
+	  }
+	  Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j][d]); /* entire sequence on right, no sequence on left, k == 0 */
+	  Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j][d]); /* entire sequence on left, no sequence on right, k == 0 */
+	}
+      }
+    } /* end of 'else if (cm->stid[v] == BEGR_S */
+    else { /* (cm->sttype[v] != BEGL_S && cm->sttype[v] != BEGR_S */ 
+      for (j = L; j >= 0; j--) {
+	i = i0;
+	for (d = j; d >= 0; d--, i++) {
+	  for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+#if 0 
+	    if(v == 18 && j == 3 && d == 1) { 
+	      printf("HEREHERE 0 y: %4d Jbeta[%4d][%4d][%4d]: %.4f\n", y, v, j, d, Jbeta[v][j][d]);
+	    }
+#endif
+	    voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
+	    sd  = StateDelta(cm->sttype[y]);
+	    sdl = StateLeftDelta(cm->sttype[y]);
+	    sdr = StateRightDelta(cm->sttype[y]);
+	    switch(cm->sttype[y]) {
+	    case MP_st: 
+	      if(j != j0 && d != j) { 
+		escore = cm->oesc[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
+	      }
+	      if(j == j0 && d != j) {
+		escore = cm->lmesc[y][dsq[i-1]];
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j][d+sdl]     + cm->tsc[y][voffset] + escore);
+		Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d+sdl]     + cm->tsc[y][voffset] + escore);
+	      }
+	      if(i == i0 && j != j0) { 
+		escore = cm->rmesc[y][dsq[j+1]];
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j+sdr][d+sdr] + cm->tsc[y][voffset] + escore);
+		Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j+sdr][d+sdr] + cm->tsc[y][voffset] + escore);
+	      }
+	      break;
+	    case ML_st:
+	    case IL_st: 
+	      if (d != j) { 
+		escore = cm->oesc[y][dsq[i-1]];
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j][d+sd]     + cm->tsc[y][voffset] + escore);
+		Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d+sd]     + cm->tsc[y][voffset] + escore);
+	      }
+	      if(i == i0) { /* only allow transition from R if we're emitting first residue i0 from y */
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j][d]        + cm->tsc[y][voffset]);
+		Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j][d]        + cm->tsc[y][voffset]);
+	      }
+	      break;
+	    case MR_st:
+	    case IR_st:
+	      if (j != j0) { 
+		escore = cm->oesc[y][dsq[j+1]];
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
+		Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
+	      }
+	      if(j == j0) { /* only allow transition from L if we're emitting final residue j0 from y */
+		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j][d]        + cm->tsc[y][voffset]);
+		Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d]        + cm->tsc[y][voffset]);
+	      }
+	      break;
+	    case S_st:
+	    case E_st:
+	    case D_st:
+	      Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j][d] + cm->tsc[y][voffset]);
+	      Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d] + cm->tsc[y][voffset]);
+	      Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j][d] + cm->tsc[y][voffset]);
+	      break;
+	    } /* end of switch(cm->sttype[y] */  
+#if 0 
+	    if(v == 18 && j == 3 && d == 1) { 
+	      printf("HEREHERE 1 y: %4d Jbeta[%4d][%4d][%4d]: %.4f\n", y, v, j, d, Jbeta[v][j][d]);
+	    }
+#endif
+	  } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
+	  if (Jbeta[v][j][d] < IMPOSSIBLE) Jbeta[v][j][d] = IMPOSSIBLE;
+	} /* ends loop over d. Le know all beta[v][j][d] in this row j and state v */
+      } /* end loop over j. Le know beta for this whole state */
+    } /* end of 'else if cm->sttype[v] != BEGL_S, BEGR_S */
+    /* we're done calculating deck v for everything but local ends */
+
+    /* deal with local alignment end transitions v->EL J matrix only (EL = deck at M.) */
+    if ((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) {
+      sdr = StateRightDelta(cm->sttype[v]); /* note sdr is for state v */
+      sd  = StateDelta(cm->sttype[v]);      /* note sd  is for state v */
+      emitmode = Emitmode(cm->sttype[v]);   /* note emitmode is for state v */
+      
+      for (j = 0; j <= L; j++) { 
+	for (d = 0; d <= j; d++) {
+	  i = j-d+1;
+	  switch (cm->sttype[v]) {
+	  case MP_st: 
+	    if (j == j0 || d == j) continue; /* boundary condition */
+	    escore = cm->oesc[v][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+	    Jbeta[cm->M][j][d] = ESL_MAX(Jbeta[cm->M][j][d], (Jbeta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
+	    break;
+	  case ML_st:
+	  case IL_st:
+	    if (d == j) continue;	
+	    escore = cm->oesc[v][dsq[i-1]];
+	    Jbeta[cm->M][j][d] = ESL_MAX(Jbeta[cm->M][j][d], (Jbeta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
+	    break;
+	  case MR_st:
+	  case IR_st:
+	    if (j == j0) continue;
+	    escore = cm->oesc[v][dsq[j+1]];
+	    Jbeta[cm->M][j][d] = ESL_MAX(Jbeta[cm->M][j][d], (Jbeta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
+	    break;
+	  case S_st:
+	  case D_st:
+	  case E_st:
+	    Jbeta[cm->M][j][d] = ESL_MAX(Jbeta[cm->M][j][d], (Jbeta[v][j+sdr][d+sd] + cm->endsc[v]));
+	    break;
+	  }
+	}
+      }
+    }
+  }
+  /* Deal with last step needed for local alignment 
+   * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
+   */
+  if (cm->flags & CMH_LOCAL_END) {
+    for (j = L; j > 0; j--) { /* careful w/ boundary here */
+      j = i0-1+j;
+      for (d = j-1; d >= 0; d--) /* careful w/ boundary here */
+	Jbeta[cm->M][j][d] = ESL_MAX(Jbeta[cm->M][j][d], Jbeta[cm->M][j][d+1] + cm->el_selfsc);
+    }
+  }
+
+  fail1_flag = FALSE;
+  fail2_flag = FALSE;
+  printf("DO CHECK: %d\n", do_check);
+  if(do_check) {
+    /* Check for consistency between the Inside alpha matrix and the
+     * Outside beta matrix. we assume the Inside CYK parse score
+     * (optsc) is the optimal score, so for all v,j,d:
+     * 
+     * Jalpha[v][j][d] + Jbeta[v][j][d] <= optsc
+     * Lalpha[v][j][d] + Lbeta[v][j][d] <= optsc
+     * Ralpha[v][j][d] + Rbeta[v][j][d] <= optsc
+     *
+     * Further, we know that each residue must be emitted by a state
+     * in the optimal parse. So as we do the above check, we determine
+     * when we're in a cell that may be involved in the optimal parse
+     * (the sum of the Inside and Outside scores are equal to the
+     * optimal parse score), if that cell corresponds to a left
+     * emitter emitting position i, we know an emitted i has been
+     * observed in an optimal parse and set optseen[i] to TRUE.
+     * Likewise, if that cell corresponds to a right emitter emitting
+     * position j, we update optseen[j] to TRUE. At the end of the
+     * check optseen[i] should be TRUE for all i in the range
+     * [i0..j0].
+     *
+     * Note that we don't ensure that all of our presumed optimal
+     * cells make up a valid parse, so it is possible we could pass
+     * this check even if the Inside and Outside matrices are
+     * inconsistent (i.e. there's a bug in the implementation of one
+     * and or the other) but that should be extremely unlikely.  If we
+     * do this test many times for many different models and pass, we
+     * should be confident we have consistent implementations.
+     * 
+     * This is an expensive check and should only be done while
+     * debugging.
+     */
+    ESL_ALLOC(optseen, sizeof(int) * (L+1));
+    esl_vec_ISet(optseen, L+1, FALSE);
+    vmax = (cm->flags & CMH_LOCAL_END) ? cm->M : cm->M-1;
+    assert(i0 == 1);
+    assert(j0 == L);
+    for(v = 0; v <= vmax; v++) { 
+      for(j = 1; j <= L; j++) { 
+	j = j+i0-1;
+	for(d = 0; d <= j; d++) { 
+	  Jsc  = Jalpha[v][j][d] + Jbeta[v][j][d] - Jalpha[0][L][L];
+	  Lsc  = (v == cm->M) ? IMPOSSIBLE : Lalpha[v][j][d] + Lbeta[v][j][d] - Jalpha[0][L][L];
+	  Rsc  = (v == cm->M) ? IMPOSSIBLE : Ralpha[v][j][d] + Rbeta[v][j][d] - Jalpha[0][L][L];
+	  if(Jsc > 0.001) { 
+	    printf("Check 1 J failure: v: %4d j: %4d d: %4d (%.4f + %.4f) %.4f > %.4f\n", 
+		   v, j, d, Jalpha[v][j][d], Jbeta[v][j][d], Jalpha[v][j][d] + Jbeta[v][j][d], Jalpha[0][L][L]);
+	    fail1_flag = TRUE;
+	  }
+	  if(Lsc > 0.001) { 
+	    printf("Check 1 L failure: v: %4d j: %4d d: %4d (%.4f + %.4f) %.4f > %.4f\n", 
+		   v, j, d, Lalpha[v][j][d], Lbeta[v][j][d], Lalpha[v][j][d] + Lbeta[v][j][d], Jalpha[0][L][L]);
+	    fail1_flag = TRUE;
+	  }
+	  if(Rsc > 0.001) { 
+	    printf("Check 1 R failure: v: %4d j: %4d d: %4d (%.4f + %.4f) %.4f > %.4f\n", 
+		   v, j, d, Ralpha[v][j][d], Rbeta[v][j][d], Ralpha[v][j][d] + Rbeta[v][j][d], Jalpha[0][L][L]);
+	    fail1_flag = TRUE;
+	  }
+	  if((fabs(Jsc) < 0.001 || fabs(Lsc) < 0.001) && 
+	     (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st || (cm->sttype[v] == EL_st && d >0))) { 
+	    i = j-d+1;
+	    /* i is accounted for by a parse with an optimal score */
+	    optseen[i] = TRUE;
+	    if     (fabs(Jsc) < 0.001) printf("\tResidue %4d possibly accounted for by J matrix Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);
+	    else if(fabs(Lsc) < 0.001) printf("\tResidue %4d possibly accounted for by L matrix Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);
+	  }
+	  if((fabs(Jsc) < 0.001 || fabs(Rsc) < 0.001) && 
+	     (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)) { 
+	    /* j is accounted for by a parse with an optimal score */
+	    optseen[j] = TRUE;
+	    if     (fabs(Jsc) < 0.001) printf("\tResidue %4d possibly accounted for by J matrix Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);
+	    else if(fabs(Rsc) < 0.001) printf("\tResidue %4d possibly accounted for by R matrix Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);
+	  }
+	}
+      }
+    }
+    for(j = 1; j <= L; j++) { 
+      j = j+i0-1;
+      if(optseen[j] == FALSE) { 
+	printf("Check 2 failure: residue %d not emitted in the optimal parsetree\n", j);
+	fail2_flag = TRUE;
+      }	      
+    }
+    free(optseen);
+  }
+
+  if(fail1_flag || fail2_flag) for(j = 1; j <= L; j++) printf("dsq[%4d]: %4d\n", j, dsq[j]);
+
+  /* Return score is from Inside matrix, I can't figure out how to get this
+   * solely from JBeta... If you're paranoid about this function not working
+   * properly see the 'if(do_check)' loop above.
+   */
+  freturn_sc = Jalpha[0][L][L];
 
   FILE *fp1; fp1 = fopen("tmp.trocykmx", "w");   cm_tr_mx_Dump(fp1, mx); fclose(fp1);
   if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYK Inside/Outside check1 FAILED.");

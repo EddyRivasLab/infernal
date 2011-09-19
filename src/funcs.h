@@ -134,6 +134,7 @@ extern int TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0,
 extern int TrInsideAlign (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX *mx, float *ret_sc);
 extern int TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, 
 	                  CM_TR_MX *mx, CM_TR_MX *ins_mx, float *ret_sc);
+extern int TrCYKOutsideAlignNoBif(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, CM_TR_MX *mx, CM_TR_MX *inscyk_mx, float *ret_sc);
 extern int TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, CM_TR_MX *mx, CM_TR_MX *inscyk_mx, float *ret_sc);
 extern int TrPosterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, CM_TR_MX *ins_mx, CM_TR_MX *out_mx, CM_TR_MX *post_mx);
 
