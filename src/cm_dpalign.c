@@ -29,8 +29,8 @@
  * List of functions: 
  * HMM banded version          non-banded version
  * -------------------------   -----------------------
- * cm_cyk_align_hb()           cm_cyk_align()
- * cm_optacc_align_hb()        cm_optacc_align()
+ * cm_CYKAlignHB()             cm_CYKAlign()
+ * cm_OptAccAlignHB()          cm_OptAccAlignHB()
  * cm_alignT_hb()              cm_alignT()
  * cm_AlignHB()                cm_Align()
  * cm_InsideAlignHB()          cm_InsideAlign()
@@ -64,15 +64,11 @@
 #include "funcs.h"
 #include "structs.h"
 
-static int cm_cyk_align_hb   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit, CM_HB_SHADOW_MX *shmx, int *ret_b, float *ret_bsc, CM_HB_MX *mx, float *ret_sc);
-static int cm_cyk_align      (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit, CM_SHADOW_MX *shmx,    int *ret_b, float *ret_bsc, CM_MX *mx,    float *ret_sc);
-static int cm_optacc_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_SHADOW_MX *shmx, int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx, float *ret_pp);
-static int cm_optacc_align   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_SHADOW_MX    *shmx, int *ret_b, float *ret_bsc, CM_MX    *mx, CM_MX    *post_mx, float *ret_pp);
-static int cm_alignT_hb      (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, int allow_begin, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, int do_optacc, CM_HB_MX *post_mx, float size_limit, float *ret_sc);
-static int cm_alignT         (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, int allow_begin, CM_MX *mx,    CM_SHADOW_MX *shmx,    int do_optacc, CM_MX *post_mx,    float size_limit, float *ret_sc);
+static int cm_alignT_hb    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, int allow_begin, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, int do_optacc, CM_HB_MX *post_mx, float size_limit, float *ret_sc);
+static int cm_alignT       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, int allow_begin, CM_MX *mx,    CM_SHADOW_MX *shmx,    int do_optacc, CM_MX *post_mx,    float size_limit, float *ret_sc);
 static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
 
-/* Function: cm_cyk_align_hb()
+/* Function: cm_CYKAlignHB()
  * Date:     EPN 03.29.06 [EPN started] 
  *           SRE, Mon Aug  7 13:15:37 2000 [St. Louis]
  *
@@ -133,7 +129,7 @@ static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
  *                      this case, alignment has been aborted, ret_* variables are not valid
  */
 int
-cm_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
+cm_CYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
 		  CM_HB_SHADOW_MX *shmx, int *ret_b, float *ret_bsc, CM_HB_MX *mx, float *ret_sc)
 {
   int      status;
@@ -166,9 +162,9 @@ cm_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int ven
   int      yvalid_ct;          /* for keeping track of which children are valid */
 
   /* Contract check */
-  if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cyk_align_hb(), dsq is NULL.\n");
-  if (mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cyk_align_hb(), mx is NULL.\n");
-  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cyk_align_hb(), cm->cp9b is NULL.\n");
+  if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CYKAlignHB(), dsq is NULL.\n");
+  if (mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CYKAlignHB(), mx is NULL.\n");
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CYKAlignHB(), cm->cp9b is NULL.\n");
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
@@ -203,7 +199,7 @@ cm_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int ven
   /* initialize all cells of the matrix to IMPOSSIBLE */
   /* esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE); */
 
-  /* Note, at this point in the non-banded version (cm_cyk_align()) we
+  /* Note, at this point in the non-banded version (cm_CYKAlign()) we
    * replace EL (cm->M) deck IMPOSSIBLEs with EL scores.  But we don't
    * here. It's actually not necessary there either, but it is done
    * for completeness and so if we check that matrix in combination
@@ -546,18 +542,18 @@ cm_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int ven
   free(el_scA);
   free(yvalidA);
 
-  ESL_DPRINTF1(("cm_cyk_align_hb return sc: %f\n", sc));
+  ESL_DPRINTF1(("cm_CYKAlignHB return sc: %f\n", sc));
   return eslOK;
 
  ERROR: 
   ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
-/* Function: cm_cyk_align()
+/* Function: cm_CYKAlign()
  * Date:     EPN, Sun Nov 18 19:37:39 2007
  *           
  * Note:     Very similar to inside(), but slightly more efficient.
- *           Identical to cm_cyk_align_hb() but HMM bands are NOT
+ *           Identical to cm_CYKAlignHB() but HMM bands are NOT
  *           used. Previously called fast_cyk_align() (infernal
  *           1.0->1.0.2)
  * 
@@ -611,7 +607,7 @@ cm_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int ven
  *                      alignment has been aborted, ret_* variables are not valid
  */
 int
-cm_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin,
+cm_CYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin,
 	     float size_limit, CM_SHADOW_MX *shmx, int *ret_b, float *ret_bsc, CM_MX *mx, float *ret_sc)
 {
   int      status;
@@ -632,7 +628,7 @@ cm_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, i
   int      have_el;            /* TRUE if local ends are on */
 
   /* Contract check */
-  if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cyk_align(), dsq is NULL.\n");
+  if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CYKAlign(), dsq is NULL.\n");
 
   /* the DP matrix */
   float ***alpha   = mx->dp;        /* pointer to the alpha DP matrix */
@@ -835,7 +831,7 @@ cm_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, i
 
   free(el_scA);
 
-  ESL_DPRINTF1(("cm_cyk_align return sc: %f\n", sc));
+  ESL_DPRINTF1(("cm_CYKAlign return sc: %f\n", sc));
   return eslOK;
 
  ERROR: 
@@ -848,8 +844,8 @@ cm_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, i
  * Note:     Based on insideT() [SRE, Fri Aug 11 12:08:18 2000 [Pittsburgh]]
  *           Renamed from fast_alignT_hb() [EPN, Wed Sep 14 06:00:51 2011].
  *
- * Purpose: Call either cm_cyk_align_hb() (if !<do_optacc>), or
- *           cm_optacc_align_hb() (if <do_optacc>), fill banded vjd
+ * Purpose: Call either cm_CYKAlignHB() (if !<do_optacc>), or
+ *           cm_OptAccAlignHB() (if <do_optacc>), fill banded vjd
  *           shadow matrix in <shmx>; then trace back.  Append the
  *           trace to a given traceback, which already has state r at
  *           tr->n-1.
@@ -901,7 +897,7 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 #endif
 
   if(do_optacc) {
-    status = cm_optacc_align_hb(cm, errbuf, dsq, L, i0, j0, size_limit,
+    status = cm_OptAccAlignHB(cm, errbuf, dsq, L, i0, j0, size_limit,
 				       shmx,	     /* the banded shadow matrix, to expand and fill-in */
 				       &b, &bsc,     /* if allow_begin is TRUE, gives info on optimal b */
 				       mx,           /* the HMM banded mx to fill-in */
@@ -909,7 +905,7 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 				       &sc);         /* avg post prob of all emissions in optimally accurate parsetree */
   }
   else {
-    status = cm_cyk_align_hb(cm, errbuf, dsq, L, r, z, i0, j0, 
+    status = cm_CYKAlignHB(cm, errbuf, dsq, L, r, z, i0, j0, 
 			       allow_begin,  /* TRUE to allow local begins */
 			       size_limit,   /* max size of DP matrix */
 			       shmx,	     /* the banded shadow matrix, to expand and fill-in */
@@ -1028,8 +1024,8 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  * Note:     Based on insideT() [SRE, Fri Aug 11 12:08:18 2000 [Pittsburgh]]
  *           Renamed from fast_alignT() [EPN, Wed Sep 14 06:04:39 2011].
  *
- * Purpose:  Call either cm_cyk_align() (if !<do_optacc>), 
- *           or cm_optacc_align()  (if  <do_optacc>),
+ * Purpose:  Call either cm_CYKAlign() (if !<do_optacc>), 
+ *           or cm_OptAccAlign()  (if  <do_optacc>),
  *           get vjd shadow matrix; then trace back and
  *           append to an existing but empty parsetree tr.
  *        
@@ -1037,7 +1033,7 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *
  *           Very similar to cm_dpsmall.c:insideT() in case of 
  *           CYK alignment, but uses more efficient implementation
- *           of CYK alignment (cm_cyk_align()) as opposed to
+ *           of CYK alignment (cm_CYKAlign()) as opposed to
  *           inside(). 
  *
  * Returns:  <ret_sc>: if(!do_optacc): score of appended parsetree
@@ -1068,7 +1064,7 @@ cm_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, i
   if(do_optacc && post_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_alignT(), do_optacc == TRUE but post_mx == NULL.\n");
 			 
   if(do_optacc) {
-    status = cm_optacc_align(cm, errbuf, dsq, L, i0, j0, size_limit, 
+    status = cm_OptAccAlign(cm, errbuf, dsq, L, i0, j0, size_limit, 
 			     shmx,	     /* the shadow matrix, expand and fill in */
 			     &b, &bsc,	     /* if allow_begin is TRUE, gives info on optimal b */
 			     mx,             /* the DP mx to fill-in */
@@ -1076,7 +1072,7 @@ cm_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, i
 			     &sc);           /* avg post prob of all emissions in optimally accurate parsetree */
   }
   else {
-    status = cm_cyk_align(cm, errbuf, dsq, L, r, z, i0, j0, 
+    status = cm_CYKAlign(cm, errbuf, dsq, L, r, z, i0, j0, 
 			  allow_begin,    /* TRUE to allow local begins */
 			  size_limit,     /* max size of DP matrix */
 			  shmx,  	  /* the shadow matrix, expand and fill in */
@@ -1236,7 +1232,7 @@ cm_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, i
  * 
  * Throws:  <eslOK> on success; 
  *          <eslERANGE> if required CM_HB_MX for cm_InsideAlignHB(), cm_OutsideAlignHB() or
- *                      cm_cyk_align_hb() exceeds <size_limit>, in this 
+ *                      cm_CYKAlignHB() exceeds <size_limit>, in this 
  *                      case, alignment has been aborted, ret_* variables are not valid 
  */
 
@@ -1314,7 +1310,7 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int i
  *
  * Note:     Very similar to cm_dpsmall.c:CYKInside() for case
  *           of CYK alignment, but uses slightly more efficient
- *           implementation (cm_cyk_align() instead of inside()).
+ *           implementation (cm_CYKAlign() instead of inside()).
  *           Renamed from cm_Align() [EPN, Wed Sep 14 06:12:46 2011].
  *
  * Purpose:  Wrapper for the cm_alignT() routine - solve a full
@@ -1431,7 +1427,7 @@ cm_Align(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int i0,
  *           were obtained from an HMM Forward-Backward parse
  *           of the target sequence. Uses float log odds scores.
  * 
- *           Very similar to cm_cyk_align_hb(), see 'Purpose'
+ *           Very similar to cm_CYKAlignHB(), see 'Purpose'
  *           of that function for more details. Only differences with
  *           that function is:
  *           - can't return a shadow matrix (we're not aligning)
@@ -1809,7 +1805,7 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
  *           Identical to cm_InsideAlignHB() but no bands
  *           are used.
  * 
- *           Very similar to cm_cyk_align(), see 'Purpose'
+ *           Very similar to cm_CYKAlign(), see 'Purpose'
  *           of that function for more details. Only differences with
  *           that function is:
  *           - can't return a shadow matrix (we're not aligning)
@@ -2613,7 +2609,7 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           mx        - the dp matrix, grown and filled here
  *           inscyk_mx - the pre-filled dp matrix from the CYK Inside calculation 
- *                       (performed by cm_cyk_align(), required)
+ *                       (performed by cm_CYKAlign(), required)
  *           do_check  - TRUE to attempt to check 
  *           ret_sc    - RETURN: log P(S|M)/P(S|R), as a bit score, this is from cyk_mx IF local
  *                       ends are on (see *** comment towards end of function).
@@ -3424,7 +3420,7 @@ cm_Posterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, CM_MX *in
   return eslOK;
 }
 
-/* Function: cm_optacc_align_hb()
+/* Function: cm_OptAccAlignHB()
  * Date:     EPN, Thu Nov 15 10:48:37 2007
  *
  * Purpose:  Run the Holmes/Durbin optimal accuracy algorithm 
@@ -3466,7 +3462,7 @@ cm_Posterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, CM_MX *in
  *                      this case, alignment has been aborted, ret_* variables are not valid
  */
 int
-cm_optacc_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_SHADOW_MX *shmx,
+cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_SHADOW_MX *shmx,
 		   int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx, float *ret_pp)
 {
   int      status;
@@ -3503,10 +3499,10 @@ cm_optacc_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, 
   float    pp;                 /* avg posterior probability of aligned res i0..j0 in optimally accurate parse */
 
   /* Contract check */
-  if(dsq == NULL)                ESL_FAIL(eslEINCOMPAT, errbuf, "cm_optacc_align_hb(), dsq is NULL.\n");
-  if (mx == NULL)                ESL_FAIL(eslEINCOMPAT, errbuf, "cm_optacc_align_hb(), mx is NULL.\n");
-  if (cm->cp9b == NULL)          ESL_FAIL(eslEINCOMPAT, errbuf, "cm_optacc_align_hb(), cm->cp9b is NULL.\n");
-  if (post_mx == NULL)           ESL_FAIL(eslEINCOMPAT, errbuf, "cm_optacc_align_hb(), post_mx is NULL.\n");
+  if(dsq == NULL)                ESL_FAIL(eslEINCOMPAT, errbuf, "cm_OptAccAlignHB(), dsq is NULL.\n");
+  if (mx == NULL)                ESL_FAIL(eslEINCOMPAT, errbuf, "cm_OptAccAlignHB(), mx is NULL.\n");
+  if (cm->cp9b == NULL)          ESL_FAIL(eslEINCOMPAT, errbuf, "cm_OptAccAlignHB(), cm->cp9b is NULL.\n");
+  if (post_mx == NULL)           ESL_FAIL(eslEINCOMPAT, errbuf, "cm_OptAccAlignHB(), post_mx is NULL.\n");
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
@@ -3909,7 +3905,7 @@ cm_optacc_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, 
   pp = sreEXP2(sc) / (float) W;
 
   if(ret_pp != NULL) *ret_pp = pp;
-  ESL_DPRINTF1(("cm_optacc_align_hb return pp: %f\n", pp));
+  ESL_DPRINTF1(("cm_OptAccAlignHB return pp: %f\n", pp));
   return eslOK;
 
  ERROR: 
@@ -3918,7 +3914,7 @@ cm_optacc_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, 
 }
 
 
-/* Function: cm_optacc_align()
+/* Function: cm_OptAccAlign()
  * Date:     EPN, Sun Nov 18 20:45:22 2007
  *           
  * Purpose:  Run the Holmes/Durbin optimal accuracy algorithm 
@@ -3961,7 +3957,7 @@ cm_optacc_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, 
  *                      will be) was allocated after surviving the same size check in a previous function.
  */
 int
-cm_optacc_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_SHADOW_MX *shmx,
+cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_SHADOW_MX *shmx,
 		int *ret_b, float *ret_bsc, CM_MX *mx, CM_MX *post_mx, float *ret_pp)
 {
   int      status;
@@ -3982,8 +3978,8 @@ cm_optacc_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, flo
   int      have_el;     /* TRUE if we have local ends */
 
   /* Contract check */
-  if (dsq == NULL)         ESL_FAIL(eslEINCOMPAT, errbuf, "cm_optacc_align(), dsq is NULL.\n");
-  if (post_mx == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "cm_optacc_align(), post_mx is NULL.\n");
+  if (dsq == NULL)         ESL_FAIL(eslEINCOMPAT, errbuf, "cm_OptAccAlign(), dsq is NULL.\n");
+  if (post_mx == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "cm_OptAccAlign(), post_mx is NULL.\n");
 
   /* Allocations and initializations  */
   b   = -1;
@@ -4191,7 +4187,7 @@ cm_optacc_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, flo
 		     * 3057 in infernal trunk. 
 		     * Bug description:
 		     * See analogous section and comment in
-		     * cm_optacc_align_hb() above. In that
+		     * cm_OptAccAlignHB() above. In that
 		     * function, in very rare cases (1 case in the 1.1
 		     * million SSU sequences in release 10_15 of RDP),
 		     * this step will add two alpha values
@@ -4257,7 +4253,7 @@ cm_optacc_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, flo
   /* convert score, a log probability, into the average posterior probability of all W aligned residues */
   pp = sreEXP2(sc) / (float) W;
 
-  ESL_DPRINTF1(("cm_optacc_align return pp: %f\n", pp));
+  ESL_DPRINTF1(("cm_OptAccAlign return pp: %f\n", pp));
   if(ret_pp != NULL) *ret_pp = pp;
 
   return eslOK;
@@ -4363,7 +4359,7 @@ cm_SampleFromInsideHB(ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, i
       esl_vec_FSet(bifvec, (d+1), IMPOSSIBLE); /* only valid d's will be reset to a non-IMPOSSIBLE score */
 
       /* This search for valid k's is complex, and uncommented. It was taken from
-       * cm_dpalign.c:cm_cyk_align_hb(), the B_st case. The code there is commented somewhat
+       * cm_dpalign.c:cm_CYKAlignHB(), the B_st case. The code there is commented somewhat
        * extensively. I'm pretty sure this is the most efficient (or at least close to it) 
        * way to find the valid cells in the DP matrix we're looking for. 
        */

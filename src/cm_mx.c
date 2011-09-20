@@ -165,7 +165,7 @@ cm_mx_GrowTo(CM_t *cm, CM_MX *mx, char *errbuf, int L, float size_limit)
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
   if((status = cm_mx_SizeNeeded(cm, errbuf, L, &ncells, &Mb_needed)) != eslOK) return status;
-  printf("Non-banded matrix requested size: %.2f Mb\n", Mb_needed);
+  /*printf("Non-banded matrix requested size: %.2f Mb\n", Mb_needed);*/
   ESL_DPRINTF2(("Non-banded matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested non-banded DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -218,7 +218,7 @@ cm_mx_GrowTo(CM_t *cm, CM_MX *mx, char *errbuf, int L, float size_limit)
       cur_size += jp+1;
     }      
   }
-  printf("ncells %10" PRId64 " %10" PRId64 "\n", cur_size, mx->ncells_valid);
+  /*printf("ncells %10" PRId64 " %10" PRId64 "\n", cur_size, mx->ncells_valid);*/
   assert(cur_size == mx->ncells_valid);
   ESL_DASSERT1((cur_size == mx->ncells_valid));
 
@@ -511,7 +511,7 @@ cm_tr_mx_GrowTo(CM_t *cm, CM_TR_MX *mx, char *errbuf, int L, float size_limit)
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
   if((status = cm_tr_mx_SizeNeeded(cm, errbuf, L, &Jncells, &Lncells, &Rncells, &Tncells, &Mb_needed)) != eslOK) return status;
-  printf("Non-banded Tr matrix requested size: %.2f Mb\n", Mb_needed);
+  /*printf("Non-banded Tr matrix requested size: %.2f Mb\n", Mb_needed);*/
   ESL_DPRINTF2(("Non-banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested non-banded Tr DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -987,7 +987,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
     }      
   }
   ESL_DASSERT1((cur_size == mx->ncells_valid));
-  printf("ncells %10" PRId64 " %10" PRId64 "\n", cur_size, mx->ncells_valid);
+  /*printf("ncells %10" PRId64 " %10" PRId64 "\n", cur_size, mx->ncells_valid);*/
 
   mx->cp9b = cp9b; /* just a reference */
   
@@ -1842,8 +1842,8 @@ cm_shadow_mx_GrowTo(CM_t *cm, CM_SHADOW_MX *mx, char *errbuf, int L, float size_
   int     realloced_k; /* did we reallocate mx->kshadow_mem? */
 
   if((status = cm_shadow_mx_SizeNeeded(cm, errbuf, L, &y_ncells, &k_ncells, &Mb_needed)) != eslOK) return status;
-  printf("non-banded shadow matrix requested size: %.2f Mb\n", Mb_needed);
-  ESL_DPRINTF2(("non-banded shadow matrix requested size: %.2f Mb\n", Mb_needed));
+  /*printf("Non-banded shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
+  ESL_DPRINTF2(("Non-banded shadow matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested non-banded shadow DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full yshadow and kshadow matrices? 
@@ -1914,8 +1914,8 @@ cm_shadow_mx_GrowTo(CM_t *cm, CM_SHADOW_MX *mx, char *errbuf, int L, float size_
       }
     }
   }
-  printf("y ncells %10" PRId64 " %10" PRId64 "\n", y_cur_size, mx->y_ncells_valid);
-  printf("k ncells %10" PRId64 " %10" PRId64 "\n", k_cur_size, mx->k_ncells_valid);
+  /*printf("y ncells %10" PRId64 " %10" PRId64 "\n", y_cur_size, mx->y_ncells_valid);
+    printf("k ncells %10" PRId64 " %10" PRId64 "\n", k_cur_size, mx->k_ncells_valid);*/
   assert(y_cur_size == mx->y_ncells_valid);
   assert(k_cur_size == mx->k_ncells_valid);
   ESL_DASSERT1((y_cur_size == mx->y_ncells_valid));
@@ -2286,8 +2286,8 @@ cm_tr_shadow_mx_GrowTo(CM_t *cm, CM_TR_SHADOW_MX *mx, char *errbuf, int L, float
   int     realloced_Tk; /* did we reallocate mx->Tkshadow_mem? */
 
   if((status = cm_tr_shadow_mx_SizeNeeded(cm, errbuf, L, &Jy_ncells, &Ly_ncells, &Ry_ncells, &Jk_ncells, &Lk_ncells, &Rk_ncells, &Tk_ncells, &Mb_needed)) != eslOK) return status;
-  printf("non-banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed);
-  ESL_DPRINTF2(("non-banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed));
+  /*printf("Non-banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
+  ESL_DPRINTF2(("Non-banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested non-banded Tr shadow DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full {J,L,R}yshadow and {J,L,R,T}kshadow matrices? 
@@ -2434,13 +2434,14 @@ cm_tr_shadow_mx_GrowTo(CM_t *cm, CM_TR_SHADOW_MX *mx, char *errbuf, int L, float
       }
     }
   }
-  printf("Jy ncells %10" PRId64 " %10" PRId64 "\n", Jy_cur_size, mx->Jy_ncells_valid);
-  printf("Ly ncells %10" PRId64 " %10" PRId64 "\n", Ly_cur_size, mx->Ly_ncells_valid);
-  printf("Ry ncells %10" PRId64 " %10" PRId64 "\n", Ry_cur_size, mx->Ry_ncells_valid);
-  printf("Jk ncells %10" PRId64 " %10" PRId64 "\n", Jk_cur_size, mx->Jk_ncells_valid);
-  printf("Lk ncells %10" PRId64 " %10" PRId64 "\n", Lk_cur_size, mx->Lk_ncells_valid);
-  printf("Rk ncells %10" PRId64 " %10" PRId64 "\n", Rk_cur_size, mx->Rk_ncells_valid);
-  printf("Tk ncells %10" PRId64 " %10" PRId64 "\n", Tk_cur_size, mx->Tk_ncells_valid);
+  /*printf("Jy ncells %10" PRId64 " %10" PRId64 "\n", Jy_cur_size, mx->Jy_ncells_valid);
+    printf("Ly ncells %10" PRId64 " %10" PRId64 "\n", Ly_cur_size, mx->Ly_ncells_valid);
+    printf("Ry ncells %10" PRId64 " %10" PRId64 "\n", Ry_cur_size, mx->Ry_ncells_valid);
+    printf("Jk ncells %10" PRId64 " %10" PRId64 "\n", Jk_cur_size, mx->Jk_ncells_valid);
+    printf("Lk ncells %10" PRId64 " %10" PRId64 "\n", Lk_cur_size, mx->Lk_ncells_valid);
+    printf("Rk ncells %10" PRId64 " %10" PRId64 "\n", Rk_cur_size, mx->Rk_ncells_valid);
+    printf("Tk ncells %10" PRId64 " %10" PRId64 "\n", Tk_cur_size, mx->Tk_ncells_valid);
+  */
   assert(Jy_cur_size == mx->Jy_ncells_valid);
   assert(Ly_cur_size == mx->Ly_ncells_valid);
   assert(Ry_cur_size == mx->Ry_ncells_valid);
