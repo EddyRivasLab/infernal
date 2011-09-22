@@ -517,7 +517,7 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
 	 */
       }
   }
-  /*printf("END %.4f %.4f %5d clen: %5d\n", p_internal_exit / (float) nexits, p_internal_exit, nexits, cm->clen);*/
+  printf("END %.4f %.4f %5d clen: %5d\n", p_internal_exit / (float) nexits, p_internal_exit, nexits, cm->clen);
 
   cm->flags |= CMH_LOCAL_END;
 

@@ -617,10 +617,10 @@ cm_tr_mx_GrowTo(CM_t *cm, CM_TR_MX *mx, char *errbuf, int L, float size_limit)
       Jcur_size += jp+1;
     }      
   }
-  printf("J ncells %10" PRId64 " %10" PRId64 "\n", Jcur_size, mx->Jncells_valid);
-  printf("L ncells %10" PRId64 " %10" PRId64 "\n", Lcur_size, mx->Lncells_valid);
-  printf("R ncells %10" PRId64 " %10" PRId64 "\n", Rcur_size, mx->Rncells_valid);
-  printf("T ncells %10" PRId64 " %10" PRId64 "\n", Tcur_size, mx->Tncells_valid);
+  /*printf("J ncells %10" PRId64 " %10" PRId64 "\n", Jcur_size, mx->Jncells_valid);
+    printf("L ncells %10" PRId64 " %10" PRId64 "\n", Lcur_size, mx->Lncells_valid);
+    printf("R ncells %10" PRId64 " %10" PRId64 "\n", Rcur_size, mx->Rncells_valid);
+    printf("T ncells %10" PRId64 " %10" PRId64 "\n", Tcur_size, mx->Tncells_valid);*/
   assert(Jcur_size == mx->Jncells_valid);
   assert(Lcur_size == mx->Lncells_valid);
   assert(Rcur_size == mx->Rncells_valid);
@@ -1494,10 +1494,10 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
       Jcur_size += jp + 1;
     }      
   }
-  printf("J ncells %10" PRId64 " %10" PRId64 "\n", Jcur_size, mx->Jncells_valid);
-  printf("L ncells %10" PRId64 " %10" PRId64 "\n", Lcur_size, mx->Lncells_valid);
-  printf("R ncells %10" PRId64 " %10" PRId64 "\n", Rcur_size, mx->Rncells_valid);
-  printf("T ncells %10" PRId64 " %10" PRId64 "\n", Tcur_size, mx->Tncells_valid);
+  /*printf("J ncells %10" PRId64 " %10" PRId64 "\n", Jcur_size, mx->Jncells_valid);
+    printf("L ncells %10" PRId64 " %10" PRId64 "\n", Lcur_size, mx->Lncells_valid);
+    printf("R ncells %10" PRId64 " %10" PRId64 "\n", Rcur_size, mx->Rncells_valid);
+    printf("T ncells %10" PRId64 " %10" PRId64 "\n", Tcur_size, mx->Tncells_valid);*/
   assert(Jcur_size == mx->Jncells_valid);
   assert(Lcur_size == mx->Lncells_valid);
   assert(Rcur_size == mx->Rncells_valid);
@@ -3633,13 +3633,13 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
       }
     }
   }
-  printf("Jy ncells %10" PRId64 " %10" PRId64 "\n", Jy_cur_size, mx->Jy_ncells_valid);
-  printf("Ly ncells %10" PRId64 " %10" PRId64 "\n", Ly_cur_size, mx->Ly_ncells_valid);
-  printf("Ry ncells %10" PRId64 " %10" PRId64 "\n", Ry_cur_size, mx->Ry_ncells_valid);
-  printf("Jk ncells %10" PRId64 " %10" PRId64 "\n", Jk_cur_size, mx->Jk_ncells_valid);
-  printf("Lk ncells %10" PRId64 " %10" PRId64 "\n", Lk_cur_size, mx->Lk_ncells_valid);
-  printf("Rk ncells %10" PRId64 " %10" PRId64 "\n", Rk_cur_size, mx->Rk_ncells_valid);
-  printf("Tk ncells %10" PRId64 " %10" PRId64 "\n", Tk_cur_size, mx->Tk_ncells_valid);
+  /*printf("Jy ncells %10" PRId64 " %10" PRId64 "\n", Jy_cur_size, mx->Jy_ncells_valid);
+    printf("Ly ncells %10" PRId64 " %10" PRId64 "\n", Ly_cur_size, mx->Ly_ncells_valid);
+    printf("Ry ncells %10" PRId64 " %10" PRId64 "\n", Ry_cur_size, mx->Ry_ncells_valid);
+    printf("Jk ncells %10" PRId64 " %10" PRId64 "\n", Jk_cur_size, mx->Jk_ncells_valid);
+    printf("Lk ncells %10" PRId64 " %10" PRId64 "\n", Lk_cur_size, mx->Lk_ncells_valid);
+    printf("Rk ncells %10" PRId64 " %10" PRId64 "\n", Rk_cur_size, mx->Rk_ncells_valid);
+    printf("Tk ncells %10" PRId64 " %10" PRId64 "\n", Tk_cur_size, mx->Tk_ncells_valid);*/
   assert(Jy_cur_size == mx->Jy_ncells_valid);
   assert(Ly_cur_size == mx->Ly_ncells_valid);
   assert(Ry_cur_size == mx->Ry_ncells_valid);

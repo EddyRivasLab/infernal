@@ -128,14 +128,14 @@ extern int cm_CheckPosteriorHB (CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX
 extern int cm_CheckPosterior   (CM_t *cm, char *errbuf, int i0, int j0, CM_MX    *post);
 
 /* from cm_dpalign_trunc.c */
-extern int cm_TrCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, int *ret_b, float *ret_bsc, char *ret_bmode, float *ret_sc);
-extern int cm_TrCYKAlign  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, int *ret_b, float *ret_bsc, char *ret_bmode, float *ret_sc);
+extern int cm_TrCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, int *ret_b, char *ret_bmode, float *ret_Jsc, float *ret_Lsc, float *ret_Rsc, float *ret_Tsc, float *ret_sc);
+extern int cm_TrCYKAlign  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, int *ret_b, char *ret_bmode, float *ret_Jsc, float *ret_Lsc, float *ret_Rsc, float *ret_Tsc, float *ret_sc);
 extern int cm_TrAlign(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX *mx, CM_TR_SHADOW_MX *shmx, 
 		      int do_optacc, int do_sample, CM_TR_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode, float *ret_sc, float *ret_ins_sc);
 extern int cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, 
 			int do_optacc, int do_sample, CM_TR_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode, float *ret_sc, float *ret_ins_sc);
 extern int cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_HB_MX *mx, float *ret_sc);
-extern int cm_TrInsideAlign (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX *mx, float *ret_sc);
+extern int cm_TrInsideAlign (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX *mx, float *ret_Jsc, float *ret_Lsc, float *ret_Rsc, float *ret_Tsc, float *ret_sc);
 extern int cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, 
 			     CM_TR_MX *mx, CM_TR_MX *ins_mx, float *ret_sc);
 extern int cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, CM_TR_MX *mx, CM_TR_MX *inscyk_mx, float *ret_sc);
