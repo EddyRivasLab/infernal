@@ -46,6 +46,7 @@
 #define V1P0_NULL3_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null3 model for infernal versions 0.56 through 1.0.2 */
 #define DEFAULT_CP9BANDS_THRESH1 0.01
 #define DEFAULT_CP9BANDS_THRESH2 0.99
+#define DEFAULT_EL_SELFPROB      0.94
 
 
 /* max number of parititons for cmcalibrate */

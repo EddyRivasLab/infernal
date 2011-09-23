@@ -225,8 +225,6 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
   ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
-  ESL_STOPWATCH *w = esl_stopwatch_Create();
-  esl_stopwatch_Start(w);
   /* initialize all cells of the matrix to IMPOSSIBLE, all cells of shadow matrix to USED_EL */
   if(  mx->Jncells_valid   > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
   if(  mx->Lncells_valid   > 0) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
@@ -241,8 +239,6 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
   if(shmx->Tk_ncells_valid > 0) esl_vec_ISet(shmx->Tkshadow_mem, shmx->Tk_ncells_valid, USED_TRUNC_END);
   if(shmx->Lk_ncells_valid > 0) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
   if(shmx->Rk_ncells_valid > 0) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
-  esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
 
   /* Note, at this point in the non-banded version (cm_TrCYKAlign()) we
    * replace EL (cm->M) deck IMPOSSIBLEs with EL scores.  But we don't
@@ -273,10 +269,19 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
       if(NOT_IMPOSSIBLE(cm->endsc[v])) {
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
-	    dp = ESL_MAX(d-sd, 0);
-	    Jalpha[v][jp_v][dp_v] = el_scA[dp] + cm->endsc[v];
-	    /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
+	  if(hdmin[v][jp_v] >= sd) { 
+	    d    = hdmin[v][jp_v];
+	    dp_v = 0;
+	  }
+	  else { 
+	    d    = sd;
+	    dp_v = sd - hdmin[v][jp_v];
+	  }
+	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    if(d >= sd) { 
+	      Jalpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
+	      /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
+	    }
 	  }
 	}
       }
@@ -366,13 +371,12 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
 
 	  if(do_R_v) { 
 	    /* Handle R separately */
-	    Rsc = Ralpha[v][jp_v][dp_v]; /* this sc will be IMPOSSIBLE */
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
 	      do_R_y = cp9b->do_R[y];
 	      do_J_y = cp9b->do_J[y];
-	      if(do_J_y || do_R_y) { 
+	      if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
 		jp_y_sdr = j - jmin[y] - sdr;
 		
 		/* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,L above) */
@@ -382,23 +386,18 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
 		  ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
 
 		  if(do_J_y &&
-		     ((sc = Jalpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]) > Rsc)) { 
-		    Rsc = sc;
+		     ((sc = Jalpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]) > Ralpha[v][jp_v][dp_v])) { 
+		    Ralpha[v][jp_v][dp_v] = sc;
 		    Ryshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
 		  }
-		  if(do_R_y &&
-		     ((sc = Ralpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]) > Rsc)) { 
-		    Rsc = sc;
+		  if(do_R_y && 
+		     ((sc = Ralpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]) > Ralpha[v][jp_v][dp_v])) { 
+		    Ralpha[v][jp_v][dp_v] = sc;
 		    Ryshadow[v][jp_v][dp_v] = yoffset + TRMODE_R_OFFSET;
 		  }
 		}
 	      }
 	    } /* end of for (yvalid_idx = 0... loop */
-	    Ralpha[v][jp_v][dp_v] = Rsc; 
-	    /* we use Rsc instead of Ralpha cell in above loop because
-	     * Ralpha[v][jp_v][dp_v] may be the same cell as
-	     * Ralpha[y][jp_y_sdr][dp_y] if we're an IL state
-	     */
 	  }
 	}
       }
@@ -476,7 +475,7 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
 	  }
 	}
       }
-
+      /* Handle L separately */
       if(do_L_v) { 
 	/* The second MR_st/IR_st 'for (j...' loop is for the L matrix which use a different set of j values */
 	for (j = jmin[v]; j <= jmax[v]; j++) {
@@ -486,13 +485,14 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
 	  /* determine which children y we can legally transit to for v, j */
 	  /* we use 'j' and not 'j_sdr' here for the L matrix, differently from J and R matrices above */
 	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	    if((j) >= jmin[y] && ((j) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
+	    if(y != v       && /* y == v when yoffset == 0 && v is an IR state: we don't want to allow IR self transits in L mode */
+	       j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
 	  
 	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
 	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
 	    
-	    Lsc = Lalpha[v][jp_v][dp_v]; /* this sc will be IMPOSSIBLE */
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+	      /* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
 	      do_L_y = cp9b->do_L[y];
@@ -508,23 +508,18 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
 		  ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y] - hdmin[y][jp_y])));
 
 		  if(do_J_y &&
-		     (sc = Jalpha[y][jp_y][dp_y] + tsc_v[yoffset]) > Lsc) { 
-		    Lsc = sc;
+		     (sc = Jalpha[y][jp_y][dp_y] + tsc_v[yoffset]) > Lalpha[v][jp_v][dp_v]) { 
+		    Lalpha[v][jp_v][dp_v] = sc;
 		    Lyshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
 		  }
 		  if(do_L_y &&
-		     (sc = Lalpha[y][jp_y][dp_y] + tsc_v[yoffset]) > Lsc) { 
-		    Lsc = sc;
+		     (sc = Lalpha[y][jp_y][dp_y] + tsc_v[yoffset]) > Lalpha[v][jp_v][dp_v]) { 
+		    Lalpha[v][jp_v][dp_v] = sc;
 		    Lyshadow[v][jp_v][dp_v] = yoffset + TRMODE_L_OFFSET;
 		  }
 		}
 	      }
 	    } /* end of for (yvalid_idx = 0... loop */
-	    Lalpha[v][jp_v][dp_v] = Lsc; 
-	    /* we use Lsc instead of Lalpha cell in above loop because
-	     * Lalpha[v][jp_v][dp_v] may be the same cell as
-	     * Lalpha[y][jp_y_sdr][dp_y] if we're an IR state
-	     */
 	  }
 	}
       }
@@ -1139,6 +1134,8 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
   float trunc_penalty = 0.; /* penalty in bits for a truncated hit */
   int   bmode = TRMODE_J;   /* mode TRMODE_J, TRMODE_L, TRMODE_R, or TRMODE_T truncation mode for obtaining optimal overall sc */
   int   have_el;            /* TRUE if local ends are on */
+  int   Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
+  int   Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
 
   /* Contract check */
   if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrCYKAlign(), dsq is NULL.\n");
@@ -1172,8 +1169,6 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
   for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
 
-  ESL_STOPWATCH *w = esl_stopwatch_Create();
-  esl_stopwatch_Start(w);
   /* initialize all cells of the matrix to IMPOSSIBLE */
   if(  mx->Jncells_valid   > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
   if(  mx->Lncells_valid   > 0) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
@@ -1188,8 +1183,6 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
   if(shmx->Tk_ncells_valid > 0) esl_vec_ISet(shmx->Tkshadow_mem, shmx->Tk_ncells_valid, USED_TRUNC_END);
   if(shmx->Lk_ncells_valid > 0) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
   if(shmx->Rk_ncells_valid > 0) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
-  esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
 
   /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores */
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
@@ -1213,9 +1206,8 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
     /* re-initialize the J deck if we can do a local end from v */
     if(NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (j = 0; j <= L; j++) { 
-	for (d = 0; d <= j; d++) { 
-	  dp = ESL_MAX(d-sd, 0);
-	  Jalpha[v][j][d] = el_scA[dp] + cm->endsc[v];
+	for (d = sd; d <= j; d++) { 
+	  Jalpha[v][j][d] = el_scA[d-sd] + cm->endsc[v];
 	  /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
 	}
       }
@@ -1246,6 +1238,7 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
        * can start to calculate Ralpha[v][j][d].
        */
 
+      Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
       for (jp = sdr; jp <= W; jp++) {
 	j = i0-1+jp;
 	j_sdr = j - sdr;
@@ -1261,6 +1254,7 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
 	    if ((sc = Lalpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > Lalpha[v][j][d]) {
 	      Lalpha[v][j][d]   = sc; 
 	      Lyshadow[v][j][d] = yoffset + TRMODE_L_OFFSET;
+	      printf("Lalpha[v:%d][j:%d][d:%d] %.4f y: %d tsc: %.4f esc: %.4f\n", v, j, d, Lalpha[v][j][d], y, tsc_v[yoffset], esc_v[dsq[i]]);
 	    }
 	  }
 	  Jalpha[v][j][d] += esc_v[dsq[i]];
@@ -1277,20 +1271,18 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
 
 	  /* handle R separately */
 	  /* note we use 'd', not 'd_sd' (which we used in the corresponding loop for J,L above) */
-	  Rsc = Ralpha[v][j][d]; /* this sc will be IMPOSSIBLE */
-	  /* impt to use Rsc because Ralpha[v][j][d] is one of the possible child states we transit to! (if IL) */
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	  for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
 	    y = cm->cfirst[v] + yoffset; 
-	    if ((sc = Jalpha[y][j_sdr][d] + tsc_v[yoffset]) > Rsc) { 
-	      Rsc = sc; 
+	    if ((sc = Jalpha[y][j_sdr][d] + tsc_v[yoffset]) > Ralpha[v][j][d]) { 
+	      Ralpha[v][j][d] = sc; 
 	      Ryshadow[v][j][d]= yoffset + TRMODE_J_OFFSET;
 	    }
-	    if ((sc = Ralpha[y][j_sdr][d] + tsc_v[yoffset]) > Rsc) { 
-	      Rsc = sc;
+	    if ((sc = Ralpha[y][j_sdr][d] + tsc_v[yoffset]) > Ralpha[v][j][d]) { 
+	      Ralpha[v][j][d] = sc;
 	      Ryshadow[v][j][d] = yoffset + TRMODE_R_OFFSET;
 	    }
 	  }
-	  Ralpha[v][j][d] = Rsc;
+	  Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 	}
       }
     }
@@ -1308,6 +1300,8 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
        * because we have to fully calculate Jalpha[v][j][d]) before we
        * can start to calculate Lalpha[v][j][d].
        */
+
+      Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
       for (jp = sdr; jp <= W; jp++) {
 	j = i0-1+jp;
 	j_sdr = j - sdr;
@@ -1338,20 +1332,20 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
 
 	  /* handle L separately */
 	  /* note we use 'j' and 'd', not 'j_sdr' and 'd_sd' (which we used in the corresponding loop for J,R above) */
-	  Lsc = Lalpha[v][j][d]; /* this sc will be IMPOSSIBLE */
-	  /* impt to use Lsc because Lalpha[v][j][d] is one of the possible child states we transit to! (if IR) */
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	  for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
 	    y = cm->cfirst[v] + yoffset; 
-	    if ((sc = Jalpha[y][j][d] + tsc_v[yoffset]) > Lsc) { 
-	      Lsc = sc;
+	    if ((sc = Jalpha[y][j][d] + tsc_v[yoffset]) > Lalpha[v][j][d]) { 
+	      Lalpha[v][j][d] = sc;
+	      printf("Lalpha[v:%d][j:%d][d:%d] %.4f y: %d tsc: %.4f (J)\n", v, j, d, Lalpha[v][j][d], y, tsc_v[yoffset]);
 	      Lyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
 	    }
-	    if ((sc = Lalpha[y][j][d] + tsc_v[yoffset]) > Lsc) { 
-	      Lsc = sc;
+	    if ((sc = Lalpha[y][j][d] + tsc_v[yoffset]) > Lalpha[v][j][d]) { 
+	      Lalpha[v][j][d] = sc;
+	      printf("Lalpha[v:%d][j:%d][d:%d] %.4f y: %d tsc: %.4f (L)\n", v, j, d, Lalpha[v][j][d], y, tsc_v[yoffset]);
 	      Lyshadow[v][j][d] = yoffset + TRMODE_L_OFFSET;
 	    }
 	  }
-	  Lalpha[v][j][d] = Lsc;
+	  Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	}
       }
     }
@@ -2596,15 +2590,11 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
   ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
-  ESL_STOPWATCH *w = esl_stopwatch_Create();
-  esl_stopwatch_Start(w);
   /* initialize all cells of the matrix to IMPOSSIBLE */
   if(mx->Jncells_valid > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
   if(mx->Lncells_valid > 0) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(mx->Rncells_valid > 0) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(mx->Tncells_valid > 0) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
-  esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
 
   /* Note, at this point in the non-banded version (cm_TrInsideAlign()) we
    * replace EL (cm->M) deck IMPOSSIBLEs with EL scores.  But we don't
@@ -2616,7 +2606,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
    */
 
   /* Main recursion */
-  for (v = cm->M-1; v >= 0; v--) { /* all the way down to root, different from other scanners */
+  for (v = cm->M-1; v > 0; v--) { /* almost down to ROOT, ROOT is a special case */
     float const *esc_v   = cm->oesc[v]; /* emission scores for state v */
     float const *tsc_v   = cm->tsc[v];  /* transition scores for state v */
     float const *lmesc_v = cm->lmesc[v];
@@ -2635,9 +2625,16 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
       if(NOT_IMPOSSIBLE(cm->endsc[v])) {
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
-	    dp = ESL_MAX(d-sd, 0);
-	    Jalpha[v][jp_v][dp_v] = el_scA[dp] + cm->endsc[v];
+	  if(hdmin[v][jp_v] >= sd) { 
+	    d    = hdmin[v][jp_v];
+	    dp_v = 0;
+	  }
+	  else { 
+	    d    = sd;
+	    dp_v = sd - hdmin[v][jp_v];
+	  }
+	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    Jalpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
 	    /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
 	  }
 	}
@@ -2714,13 +2711,12 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
 
 	  if(do_R_v) { 
 	    /* Handle R separately */
-	    Rsc = Ralpha[v][jp_v][dp_v]; /* this sc will be IMPOSSIBLE */
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
 	      do_R_y = cp9b->do_R[y];
 	      do_J_y = cp9b->do_J[y];
-	      if(do_J_y || do_R_y) { 
+	      if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
 		jp_y_sdr = j - jmin[y] - sdr;
 		
 		/* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,L above) */
@@ -2728,16 +2724,12 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
 		  dp_y = d - hdmin[y][jp_y_sdr];
 		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
 		  ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
-		  if(do_J_y) Rsc = FLogsum(Rsc, Jalpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]);
-		  if(do_R_y) Rsc = FLogsum(Rsc, Ralpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]);
+		  if(do_J_y) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]);
+		  if(do_R_y) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Ralpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]);
 		}
 	      }
 	    } /* end of for (yvalid_idx = 0... loop */
-	    Ralpha[v][jp_v][dp_v] = Rsc; 
-	    /* we use Rsc instead of Ralpha cell in above loop because
-	     * Ralpha[v][jp_v][dp_v] may be the same cell as
-	     * Ralpha[y][jp_y_sdr][dp_y] if we're an IL state
-	     */
+	    Ralpha[v][jp_v][dp_v] = ESL_MAX(Ralpha[v][jp_v][dp_v], IMPOSSIBLE);
 	  }
 	}
       }
@@ -2800,7 +2792,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
 	  }
 	}
       }
-
+      /* Handle L separately */
       if(do_L_v) { 
 	/* The second MR_st/IR_st 'for (j...' loop is for the L matrix which use a different set of j values */
 	for (j = jmin[v]; j <= jmax[v]; j++) {
@@ -2810,13 +2802,14 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
 	  /* determine which children y we can legally transit to for v, j */
 	  /* we use 'j' and not 'j_sdr' here for the L matrix, differently from J and R matrices above */
 	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	    if((j) >= jmin[y] && ((j) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
+	    if((y != v) && /* y == v when yoffset == 0 && v is an IR state: we don't want to allow IR self transits in L mode */
+	       (j) >= jmin[y] && ((j) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
 	  
 	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
 	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
 	    
-	    Lsc = Lalpha[v][jp_v][dp_v]; /* this sc will be IMPOSSIBLE */
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+	      /* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
 	      do_L_y = cp9b->do_L[y];
@@ -2830,16 +2823,12 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
 		  dp_y = d - hdmin[y][jp_y];
 		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v] - hdmin[v][jp_v])));
 		  ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y] - hdmin[y][jp_y])));
-		  if(do_J_y) Lsc = FLogsum(Lsc, Jalpha[y][jp_y][dp_y] + tsc_v[yoffset]);
-		  if(do_L_y) Lsc = FLogsum(Lsc, Lalpha[y][jp_y][dp_y] + tsc_v[yoffset]);
+		  if(do_J_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Jalpha[y][jp_y][dp_y] + tsc_v[yoffset]);
+		  if(do_L_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Lalpha[y][jp_y][dp_y] + tsc_v[yoffset]);
 		}
 	      }
 	    } /* end of for (yvalid_idx = 0... loop */
-	    Lalpha[v][jp_v][dp_v] = Lsc; 
-	    /* we use Lsc instead of Lalpha cell in above loop because
-	     * Lalpha[v][jp_v][dp_v] may be the same cell as
-	     * Lalpha[y][jp_y_sdr][dp_y] if we're an IR state
-	     */
+	    Lalpha[v][jp_v][dp_v] = ESL_MAX(Lalpha[v][jp_v][dp_v], IMPOSSIBLE);
 	  }
 	}
       }
@@ -3260,7 +3249,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
   ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
-/* Function: cm_TrInsideAlignSumAll()
+/* Function: cm_TrInsideAlign()
  * Date:     EPN, Mon Sep 12 04:31:43 2011
  *
  * Purpose: Run the truncated inside algorithm on a target sequence.
@@ -3283,6 +3272,10 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
  *           j0        - last position in subseq to align  (L, for whole seq)
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           mx        - the dp matrix, only cells within bands in cp9b will be valid
+ *           ret_Jsc   - RETURN: log P(S|M)/P(S|R), as a bit score, given aln is in Joint    marginal mode
+ *           ret_Lsc   - RETURN: log P(S|M)/P(S|R), as a bit score, given aln is in Left     marginal mode
+ *           ret_Rsc   - RETURN: log P(S|M)/P(S|R), as a bit score, given aln is in Right    marginal mode
+ *           ret_Tsc   - RETURN: log P(S|M)/P(S|R), as a bit score, given aln is in Terminal marginal mode 
  *           ret_sc    - RETURN: log P(S|M)/P(S|R), as a bit score
  * 
  * Returns:  <ret_sc>
@@ -3292,7 +3285,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
  *                      in this case, alignment has been aborted, ret_sc is not valid
  */
 int
-cm_TrInsideAlignSumAll(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX *mx, float *ret_sc)
+cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX *mx, float *ret_Jsc, float *ret_Lsc, float *ret_Rsc, float *ret_Tsc, float *ret_sc)
 {
   int      status;          /* easel status code */
   int      v,y,z;	    /* indices for states  */
@@ -3319,6 +3312,13 @@ cm_TrInsideAlignSumAll(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
   float Lsc, Rsc;           /* temporary scores */
   float trunc_penalty = 0.; /* penalty in bits for a truncated hit */
   int   bmode = TRMODE_J;   /* mode TRMODE_J, TRMODE_L, TRMODE_R, or TRMODE_T truncation mode for obtaining bsc */
+  int      first_b = -1;    /* index of first B state in the model */
+  float    Jsc_full;        /* summed log prob of all J alignments that include full sequence i0..j0 */
+  float    Lsc_full;        /* summed log prob of all L alignments that include full sequence i0..j0 */
+  float    Rsc_full;        /* summed log prob of all R alignments that include full sequence i0..j0 */
+  float    Tsc_full;        /* summed log prob of all T alignments that include full sequence i0..j0 */
+  int      Lyoffset0;       /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
+  int      Ryoffset0;       /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
 
   /* Contract check */
   if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrInsideAlign(), dsq is NULL.\n");
@@ -3333,7 +3333,11 @@ cm_TrInsideAlignSumAll(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
   b   = -1;
   bsc = IMPOSSIBLE;
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
-				/* if caller didn't give us a deck pool, make one */
+  Jsc_full = Lsc_full = Rsc_full = Tsc_full = IMPOSSIBLE;
+
+  first_b = 0;
+  while(first_b < cm->M && cm->sttype[first_b] != B_st) first_b++;
+  if(first_b == cm->M) first_b = -1; /* no B states in the model */
 
   /* grow the matrices based on the current sequence and bands */
   if((status = cm_tr_mx_GrowTo       (cm, mx,   errbuf, W, size_limit)) != eslOK) return status;
@@ -3342,15 +3346,11 @@ cm_TrInsideAlignSumAll(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
   for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
 
-  ESL_STOPWATCH *w = esl_stopwatch_Create();
-  esl_stopwatch_Start(w);
   /* initialize all cells of the matrix to IMPOSSIBLE */
   if(  mx->Jncells_valid   > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
   if(  mx->Lncells_valid   > 0) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(  mx->Rncells_valid   > 0) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(  mx->Tncells_valid   > 0) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
-  esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
 
   /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores */
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
@@ -3362,7 +3362,7 @@ cm_TrInsideAlignSumAll(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
   }
 
   /* Main recursion */
-  for (v = cm->M-1; v >= 0; v--) {
+  for (v = cm->M-1; v > 0; v--) {
     float const *esc_v = cm->oesc[v]; /* emission scores for state v */
     float const *tsc_v = cm->tsc[v];  /* transition scores for state v */
     float const *lmesc_v = cm->lmesc[v]; /* marginal left  emission scores for state v */
@@ -3374,9 +3374,8 @@ cm_TrInsideAlignSumAll(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
     /* re-initialize the J deck if we can do a local end from v */
     if(NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (j = 0; j <= L; j++) { 
-	for (d = 0; d <= j; d++) { 
-	  dp = ESL_MAX(d-sd, 0);
-	  Jalpha[v][j][d] = el_scA[dp] + cm->endsc[v];
+	for (d = sd; d <= j; d++) { 
+	  Jalpha[v][j][d] = el_scA[d-sd] + cm->endsc[v];
 	  /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
 	}
       }
@@ -3406,7 +3405,7 @@ cm_TrInsideAlignSumAll(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
        * because we have to fully calculate Jalpha[v][j][d]) before we
        * can start to calculate Ralpha[v][j][d].
        */
-
+      Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
       for (jp = sdr; jp <= W; jp++) {
 	j = i0-1+jp;
 	j_sdr = j - sdr;
@@ -3427,14 +3426,12 @@ cm_TrInsideAlignSumAll(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
 
 	  /* handle R separately */
 	  /* note we use 'd', not 'd_sd' (which we used in the corresponding loop for J,L above) */
-	  Rsc = Ralpha[v][j][d]; /* this sc will be IMPOSSIBLE */
-	  /* impt to use Rsc because Ralpha[v][j][d] is one of the possible child states we transit to! (if IL) */
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	  for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
 	    y = cm->cfirst[v] + yoffset; 
-	    Rsc = FLogsum(Rsc, Jalpha[y][j_sdr][d] + tsc_v[yoffset]);
-	    Rsc = FLogsum(Rsc, Ralpha[y][j_sdr][d] + tsc_v[yoffset]);
+	    Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Jalpha[y][j_sdr][d] + tsc_v[yoffset]);
+	    Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j_sdr][d] + tsc_v[yoffset]);
 	  }
-	  Ralpha[v][j][d] = ESL_MAX(Rsc, IMPOSSIBLE);
+	  Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 	}
       }
     }
@@ -3452,6 +3449,7 @@ cm_TrInsideAlignSumAll(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
        * because we have to fully calculate Jalpha[v][j][d]) before we
        * can start to calculate Lalpha[v][j][d].
        */
+      Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
       for (jp = sdr; jp <= W; jp++) {
 	j = i0-1+jp;
 	j_sdr = j - sdr;
@@ -3472,14 +3470,12 @@ cm_TrInsideAlignSumAll(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
 
 	  /* handle L separately */
 	  /* note we use 'j' and 'd', not 'j_sdr' and 'd_sd' (which we used in the corresponding loop for J,R above) */
-	  Lsc = Lalpha[v][j][d]; /* this sc will be IMPOSSIBLE */
-	  /* impt to use Lsc because Lalpha[v][j][d] is one of the possible child states we transit to! (if IR) */
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	  for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
 	    y = cm->cfirst[v] + yoffset; 
-	    Lsc = FLogsum(Lsc, Jalpha[y][j][d] + tsc_v[yoffset]);
-	    Lsc = FLogsum(Lsc, Lalpha[y][j][d] + tsc_v[yoffset]);
+	    Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Jalpha[y][j][d] + tsc_v[yoffset]);
+	    Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j][d] + tsc_v[yoffset]);
 	  }
-	  Lalpha[v][j][d] = ESL_MAX(Lsc, IMPOSSIBLE);
+	  Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	}
       }
     }
@@ -3605,33 +3601,53 @@ cm_TrInsideAlignSumAll(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
     }
 #endif
     /* include hits in J matrix (much like a normal local begin) */
-    if(cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st) { 
-      bsc = FLogsum(bsc, Jalpha[v][j0][L] + trunc_penalty);
+    if(cm->sttype[v] == B_st  || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || 
+       cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) { 
+      Jsc_full = FLogsum(Jsc_full, Jalpha[v][j0][L] + trunc_penalty);
+      ///bsc = ESL_MAX(bsc, Jalpha[v][j0][L] + trunc_penalty);
+      //////bsc = FLogsum(bsc, Jalpha[v][j0][L] + trunc_penalty);
     }
     /* include truncated hits in L matrix */
-    if(cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) { 
-      bsc = FLogsum(bsc, Lalpha[v][j0][L] + trunc_penalty);
+    if(cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+      Lsc_full = FLogsum(Lsc_full, Lalpha[v][j0][L] + trunc_penalty);
+      ///bsc = ESL_MAX(bsc, Lalpha[v][j0][L] + trunc_penalty);
+      //////bsc = FLogsum(bsc, Lalpha[v][j0][L] + trunc_penalty);
     }	    
     /* check for truncated hit in R matrix */
-    if(cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) { 
-      bsc = FLogsum(bsc, Ralpha[v][j0][L] + trunc_penalty);
+    if(cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+      Rsc_full = FLogsum(Rsc_full, Ralpha[v][j0][L] + trunc_penalty);
+      ///bsc = ESL_MAX(bsc, Ralpha[v][j0][L] + trunc_penalty);
+      //////bsc = FLogsum(bsc, Ralpha[v][j0][L] + trunc_penalty);
     }	    
     /* check for truncated hit in T matrix */
     if(cm->sttype[v] == B_st) { 
-      bsc = FLogsum(bsc, Talpha[v][j0][L] + trunc_penalty);
-    }	    
-    /* include bsc into alpha[0][j0][L] (full sequence aligned to ROOT_S) */
-    if (v == 0) { 
-      Jalpha[0][j0][L] = FLogsum(Jalpha[0][j0][L], bsc);
+      Tsc_full = FLogsum(Tsc_full, Talpha[v][j0][L] + trunc_penalty);
+      ///bsc = ESL_MAX(bsc, Talpha[v][j0][L] + trunc_penalty);
+      //////bsc = FLogsum(bsc, Talpha[v][j0][L] + trunc_penalty);
     }
   } /* end of for (v = cm->M-1; v > 0; v--) */
-  FILE *fp1; fp1 = fopen("tmp.trisumallmx", "w");   cm_tr_mx_Dump(fp1, mx); fclose(fp1);
+  /* fill in ROOT scores, we only care about those that include the full sequence
+   *  alpha[0][j0][L] (full sequence aligned to ROOT_S) 
+   */
+  Jalpha[0][j0][L] = Jsc_full;
+  Lalpha[0][j0][L] = Lsc_full;
+  Ralpha[0][j0][L] = Rsc_full;
+  if(first_b != -1) Talpha[first_b][j0][L] = Tsc_full;
+  ///Jalpha[0][j0][L] = ESL_MAX(bsc, Jalpha[0][j0][L]);
+  //////Jalpha[0][j0][L] = FLogsum(bsc, Jalpha[0][j0][L]);
+  FILE *fp1; fp1 = fopen("tmp.trimx", "w");   cm_tr_mx_Dump(fp1, mx); fclose(fp1);
   
-  sc = Jalpha[0][j0][L]; 
+  sc = ESL_MAX(Jsc_full, ESL_MAX(Lsc_full, ESL_MAX(Rsc_full, Tsc_full)));
+  ///sc = Jalpha[0][j0][L]; 
 
   free(el_scA);
 
-  if(ret_sc != NULL) *ret_sc = sc;
+  if(ret_Jsc != NULL) *ret_Jsc = Jsc_full;
+  if(ret_Lsc != NULL) *ret_Lsc = Lsc_full;
+  if(ret_Rsc != NULL) *ret_Rsc = Rsc_full;
+  if(ret_Tsc != NULL) *ret_Tsc = Tsc_full;
+
+  if(ret_sc  != NULL) *ret_sc = sc;
 
   ESL_DPRINTF1(("cm_TrInsideAlign() return sc: %f\n", sc));
   printf("cm_TrInsideAlign() return sc: %.4f\n", sc);
@@ -3642,7 +3658,7 @@ cm_TrInsideAlignSumAll(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
 }
 
 
-/* Function: cm_TrInsideAlign()
+/* Function: cm_TrInsideAlignChoose()
  * Date:     EPN, Mon Sep 12 04:31:43 2011
  *
  * Purpose: Run the truncated inside algorithm on a target sequence.
@@ -3678,7 +3694,7 @@ cm_TrInsideAlignSumAll(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
  *                      in this case, alignment has been aborted, ret_sc is not valid
  */
 int
-cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX *mx, float *ret_Jsc, float *ret_Lsc, float *ret_Rsc, float *ret_Tsc, float *ret_sc)
+cm_TrInsideAlignChoose(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX *mx, float *ret_Jsc, float *ret_Lsc, float *ret_Rsc, float *ret_Tsc, float *ret_sc)
 {
   int      status;          /* easel status code */
   int      v,y,z;	    /* indices for states  */
@@ -3710,9 +3726,11 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
   float    Lsc_full;        /* summed log prob of all L alignments that include full sequence i0..j0 */
   float    Rsc_full;        /* summed log prob of all R alignments that include full sequence i0..j0 */
   float    Tsc_full;        /* summed log prob of all T alignments that include full sequence i0..j0 */
+  int   Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
+  int   Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
 
   /* Contract check */
-  if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrInsideAlignSumAll(), dsq is NULL.\n");
+  if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrInsideAlignChoose(), dsq is NULL.\n");
 
   /* the DP matrix */
   float ***Jalpha  = mx->Jdp; /* pointer to the Jalpha DP matrix */
@@ -3737,15 +3755,11 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
   for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
 
-  ESL_STOPWATCH *w = esl_stopwatch_Create();
-  esl_stopwatch_Start(w);
   /* initialize all cells of the matrix to IMPOSSIBLE */
   if(  mx->Jncells_valid   > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
   if(  mx->Lncells_valid   > 0) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(  mx->Rncells_valid   > 0) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(  mx->Tncells_valid   > 0) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
-  esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
 
   /* Main recursion */
   for (v = cm->M-1; v > 0; v--) { /* almost to ROOT, we handle ROOT special */
@@ -3760,9 +3774,8 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
     /* re-initialize the J deck if we can do a local end from v */
     if(NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (j = 0; j <= L; j++) { 
-	for (d = 0; d <= j; d++) { 
-	  dp = ESL_MAX(d-sd, 0);
-	  Jalpha[v][j][d] = el_scA[dp] + cm->endsc[v];
+	for (d = sd; d <= j; d++) { 
+	  Jalpha[v][j][d] = el_scA[d-sd] + cm->endsc[v];
 	  /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
 	}
       }
@@ -3796,7 +3809,7 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
        * because we have to fully calculate Jalpha[v][j][d]) before we
        * can start to calculate Ralpha[v][j][d].
        */
-
+      Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
       for (jp = sdr; jp <= W; jp++) {
 	j = i0-1+jp;
 	j_sdr = j - sdr;
@@ -3818,15 +3831,13 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
 
 	  /* handle R separately */
 	  /* note we use 'd', not 'd_sd' (which we used in the corresponding loop for J,L above) */
-	  Rsc = Ralpha[v][j][d]; /* this sc will be IMPOSSIBLE */
-	  /* impt to use Rsc because Ralpha[v][j][d] is one of the possible child states we transit to! (if IL) */
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	  for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
 	    y = cm->cfirst[v] + yoffset; 
-	    Rsc = FLogsum(Rsc, ESL_MAX(Jalpha[y][j_sdr][d], Ralpha[y][j_sdr][d]) + tsc_v[yoffset]);
-	    ///Rsc = FLogsum(Rsc, Jalpha[y][j_sdr][d] + tsc_v[yoffset]);
-	    ///Rsc = FLogsum(Rsc, Ralpha[y][j_sdr][d] + tsc_v[yoffset]);
+	    Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], ESL_MAX(Jalpha[y][j_sdr][d], Ralpha[y][j_sdr][d]) + tsc_v[yoffset]);
+	    ///Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Jalpha[y][j_sdr][d] + tsc_v[yoffset]);
+	    ///Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j_sdr][d] + tsc_v[yoffset]);
 	  }
-	  Ralpha[v][j][d] = ESL_MAX(Rsc, IMPOSSIBLE);
+	  Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 	}
       }
     }
@@ -3844,13 +3855,14 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
        * because we have to fully calculate Jalpha[v][j][d]) before we
        * can start to calculate Lalpha[v][j][d].
        */
+      Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
       for (jp = sdr; jp <= W; jp++) {
 	j = i0-1+jp;
 	j_sdr = j - sdr;
 	for (d = sd; d <= jp; d++) {
 	  d_sd = d - sd;
 	  i = j - d + 1;
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	  for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
 	    y = cm->cfirst[v] + yoffset; 
 	    Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
 	    Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
@@ -3865,15 +3877,13 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
 
 	  /* handle L separately */
 	  /* note we use 'j' and 'd', not 'j_sdr' and 'd_sd' (which we used in the corresponding loop for J,R above) */
-	  Lsc = Lalpha[v][j][d]; /* this sc will be IMPOSSIBLE */
-	  /* impt to use Lsc because Lalpha[v][j][d] is one of the possible child states we transit to! (if IR) */
 	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 	    y = cm->cfirst[v] + yoffset; 
-	    Lsc = FLogsum(Lsc, ESL_MAX(Jalpha[y][j][d], Lalpha[y][j][d]) + tsc_v[yoffset]);
-	    ///Lsc = FLogsum(Lsc, Jalpha[y][j][d] + tsc_v[yoffset]);
-	    ///Lsc = FLogsum(Lsc, Lalpha[y][j][d] + tsc_v[yoffset]);
+	    Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], ESL_MAX(Jalpha[y][j][d], Lalpha[y][j][d]) + tsc_v[yoffset]);
+	    ///Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Jalpha[y][j][d] + tsc_v[yoffset]);
+	    ///Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j][d] + tsc_v[yoffset]);
 	  }
-	  Lalpha[v][j][d] = ESL_MAX(Lsc, IMPOSSIBLE);
+	  Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	}
       }
     }
@@ -4041,7 +4051,7 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
   if(first_b != -1) Talpha[first_b][j0][L] = Tsc_full;
   ///Jalpha[0][j0][L] = ESL_MAX(bsc, Jalpha[0][j0][L]);
   //////Jalpha[0][j0][L] = FLogsum(bsc, Jalpha[0][j0][L]);
-  FILE *fp1; fp1 = fopen("tmp.trimx", "w");   cm_tr_mx_Dump(fp1, mx); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.trichoosemx", "w");   cm_tr_mx_Dump(fp1, mx); fclose(fp1);
   
   sc = ESL_MAX(Jsc_full, ESL_MAX(Lsc_full, ESL_MAX(Rsc_full, Tsc_full)));
   ///sc = Jalpha[0][j0][L]; 
@@ -4055,8 +4065,8 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
 
   if(ret_sc  != NULL) *ret_sc = sc;
 
-  ESL_DPRINTF1(("cm_TrInsideAlign() return sc: %f\n", sc));
-  printf("cm_TrInsideAlign() return sc: %.4f\n", sc);
+  ESL_DPRINTF1(("cm_TrInsideAlignChoose() return sc: %f\n", sc));
+  printf("cm_TrInsideAlignChoose() return sc: %.4f\n", sc);
   return eslOK;
 
  ERROR: 
@@ -4944,10 +4954,7 @@ cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
   
   if (ret_sc != NULL) *ret_sc = freturn_sc;
   return eslOK;
-
- ERROR: 
-  ESL_FAIL(status, errbuf, "Out of memory");
-}  
+}
 
 
 /* Function: cm_TrCYKOutsideAlign()
@@ -5750,12 +5757,12 @@ main(int argc, char **argv)
 	/*********************End cm_TrCYKOutsideAlign****************************/
       }
       
-      /*********************Begin cm_TrInsideAlignSumAll()****************************/
+      /*********************Begin cm_TrInsideAlignChoose()****************************/
       cm_tr_mx_Destroy(trmx);
       trmx   = cm_tr_mx_Create(cm);
       esl_stopwatch_Start(w);
-      if((status = cm_TrInsideAlignSumAll(cm, errbuf, dsq, 1, L, size_limit, trmx, &sc)) != eslOK) cm_Fail(errbuf);
-      printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", (i+1), "cm_TrInsideAlignSumAll(): ", sc);
+      if((status = cm_TrInsideAlignChoose(cm, errbuf, dsq, 1, L, size_limit, trmx, &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", (i+1), "cm_TrInsideAlignChoose(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       /*********************End cm_TrInsideAlignSumAll*****************************/

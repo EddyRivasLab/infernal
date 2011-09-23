@@ -119,7 +119,7 @@ CreateCMShell(void)
   cm->flags    = 0;
   cm->offset   = 0;
 
-  cm->el_selfsc = 0.;         
+  cm->el_selfsc = sreLOG2(DEFAULT_EL_SELFPROB);         
   
   cm->dmin         = NULL;
   cm->dmax         = NULL;

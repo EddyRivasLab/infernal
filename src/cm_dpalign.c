@@ -608,7 +608,7 @@ cm_CYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int vend,
  */
 int
 cm_CYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin,
-	     float size_limit, CM_SHADOW_MX *shmx, int *ret_b, float *ret_bsc, CM_MX *mx, float *ret_sc)
+	    float size_limit, CM_SHADOW_MX *shmx, int *ret_b, float *ret_bsc, CM_MX *mx, float *ret_sc)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -648,6 +648,7 @@ cm_CYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, in
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
   for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
+  printf("cm->el_selfsc: %f\n", cm->el_selfsc);
 
   /* initialize all cells of the matrix to IMPOSSIBLE, all cells of shadow matrix to USED_EL */
   esl_vec_FSet(mx->dp_mem, mx->ncells_valid, IMPOSSIBLE);

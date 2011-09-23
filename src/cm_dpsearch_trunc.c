@@ -99,6 +99,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int       do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
   int64_t   envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
+  int       Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
+  int       Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, CMH_BITS flag is not raised.\n");
@@ -276,6 +278,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	    y = cm->cfirst[v]; 
 	    i = j - dnA[v] + 1;
 	    assert(dnA[v] == 1);
+	    Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; 
 	      Lsc = IMPOSSIBLE;
@@ -297,7 +300,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	      Jalpha[jp_v][v][d] = Jsc + esc_v[dsq[i]];
 	      Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + esc_v[dsq[i]] : esc_v[dsq[i]];
 	      
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	      for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
 		Rsc = ESL_MAX(Rsc, ESL_MAX(Jalpha[jp_y][y+yoffset][d]      + tsc_v[yoffset],
 					   Ralpha[jp_y][y+yoffset][d]      + tsc_v[yoffset]));
 	      }
@@ -308,6 +311,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	  else if (emitmode == EMITRIGHT) { 
 	    y = cm->cfirst[v]; 
 	    assert(dnA[v] == 1);
+	    Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; 
 	      Lsc = IMPOSSIBLE;
@@ -329,7 +333,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	      Jalpha[jp_v][v][d] = Jsc + esc_j;
 	      Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + esc_j : esc_j;
 
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
+	      for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
 		Lsc = ESL_MAX(Lsc, ESL_MAX(Jalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset],
 					   Lalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset]));
 	      }
@@ -668,6 +672,8 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int       do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
   int64_t   envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
+  int       Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
+  int       Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, CMH_BITS flag is not raised.\n");
@@ -855,6 +861,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	    y = cm->cfirst[v]; 
 	    i = j - dnA[v] + 1;
 	    assert(dnA[v] == 1);
+	    Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; 
 	      Lsc = -INFTY;
@@ -876,7 +883,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	      Jalpha[jp_v][v][d] = Jsc + esc_v[dsq[i]];
 	      Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + esc_v[dsq[i]] : esc_v[dsq[i]];
 	      
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	      for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
 		Rsc = ILogsum(Rsc, ILogsum(Jalpha[jp_y][y+yoffset][d]      + tsc_v[yoffset],
 					   Ralpha[jp_y][y+yoffset][d]      + tsc_v[yoffset]));
 	      }
@@ -887,6 +894,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	  else if (emitmode == EMITRIGHT) { 
 	    y = cm->cfirst[v]; 
 	    assert(dnA[v] == 1);
+	    Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; 
 	      Lsc = -INFTY;
@@ -901,7 +909,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	       * Jalpha[jp_v][v][d]) before we can start to calculate
 	       * Lalpha[jp_v][v][d]. 
 	       */
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
+	      for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
 		Jsc = ILogsum(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 		Rsc = ILogsum(Rsc,         Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 	      }
@@ -1254,11 +1262,14 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   int      jp;                 /* j index in act */
   int      do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
   int64_t  envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
+  /* variables specific to truncated scanning */
   float    trunc_penalty = 0.; /* penalty in bits for a truncated hit */
   int      do_J_v, do_J_y, do_J_z; /* is J matrix valid for state v, y, z? */
   int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
   int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
   int      do_T_v, do_T_y, do_T_z; /* is T matrix valid for state v, y, z? */
+  int      Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
+  int      Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), dsq is NULL.\n");
@@ -1358,9 +1369,16 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
       if(NOT_IMPOSSIBLE(cm->endsc[v])) {
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
-	  dp = ESL_MAX(d-sd, 0);
-	  Jalpha[v][jp_v][dp_v] = el_scA[dp] + cm->endsc[v];
+	  if(hdmin[v][jp_v] >= sd) { 
+	    d    = hdmin[v][jp_v];
+	    dp_v = 0;
+	  }
+	  else { 
+	    d    = sd;
+	    dp_v = sd - hdmin[v][jp_v];
+	  }
+	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    Jalpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
 	  /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
 	  }
 	}
@@ -1443,7 +1461,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	      y = cm->cfirst[v] + yoffset;
 	      do_R_y = cp9b->do_R[y];
 	      do_J_y = cp9b->do_J[y];
-	      if(do_J_y || do_R_y) { 
+	      if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
 		jp_y_sdr = j - jmin[y] - sdr;
 		
 		/* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,L above) */
@@ -1523,7 +1541,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	  }
 	}
       }
-
+      /* Handle L separately */
       if(do_L_v) { 
 	/* The second MR_st/IR_st 'for (j...' loop is for the L matrix which use a different set of j values */
 	for (j = jmin[v]; j <= jmax[v]; j++) {
@@ -1533,13 +1551,15 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	  /* determine which children y we can legally transit to for v, j */
 	  /* we use 'j' and not 'j_sdr' here for the L matrix, differently from J and R matrices above */
 	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	    if((j) >= jmin[y] && ((j) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
+	    if(y != v       && /* y == v when yoffset == 0 && v is an IR state: we don't want to allow IR self transits in L mode */
+	       j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
 	  
 	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
 	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
 	    
 	    Lsc = Lalpha[v][jp_v][dp_v]; /* this sc will be IMPOSSIBLE */
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+	      /* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
 	      do_L_y = cp9b->do_L[y];
@@ -2346,10 +2366,17 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
       if(NOT_IMPOSSIBLE(cm->endsc[v])) {
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
-	  dp = ESL_MAX(d-sd, 0);
-	  Jalpha[v][jp_v][dp_v] = el_scA[dp] + cm->endsc[v];
-	  /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
+	  if(hdmin[v][jp_v] >= sd) { 
+	    d    = hdmin[v][jp_v];
+	    dp_v = 0;
+	  }
+	  else { 
+	    d    = sd;
+	    dp_v = sd - hdmin[v][jp_v];
+	  }
+	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    Jalpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
+	    /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
 	  }
 	}
       }
@@ -2431,7 +2458,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	      y = cm->cfirst[v] + yoffset;
 	      do_R_y = cp9b->do_R[y];
 	      do_J_y = cp9b->do_J[y];
-	      if(do_J_y || do_R_y) { 
+	      if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
 		jp_y_sdr = j - jmin[y] - sdr;
 		
 		/* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,L above) */
@@ -2511,7 +2538,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	  }
 	}
       }
-
+      /* Handle L separately */
       if(do_L_v) { 
 	/* The second MR_st/IR_st 'for (j...' loop is for the L matrix which use a different set of j values */
 	for (j = jmin[v]; j <= jmax[v]; j++) {
@@ -2521,13 +2548,15 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	  /* determine which children y we can legally transit to for v, j */
 	  /* we use 'j' and not 'j_sdr' here for the L matrix, differently from J and R matrices above */
 	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	    if((j) >= jmin[y] && ((j) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
+	    if(y != v       && /* y == v when yoffset == 0 && v is an IR state: we don't want to allow IR self transits in L mode */
+	       j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
 	  
 	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
 	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
 	    
 	    Lsc = Lalpha[v][jp_v][dp_v]; /* this sc will be IMPOSSIBLE */
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+	      /* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
 	      do_L_y = cp9b->do_L[y];
