@@ -25,7 +25,8 @@
  * against those, with the knowledge that the bands can affect the
  * optimal score.
  * 
- * xref: ELN3 p3-5
+ * xref: electronic: ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG
+ *       handwritten lab notebook: ELN3 p3-5
  * EPN, Tue Sep 20 04:37:17 2011
  */
 
@@ -364,8 +365,8 @@ set_brute_matl_params(int do_local, struct cm_brute_matl_param_s *prm)
   prm->t7t8 = 0.0;              /* cm->t[7][0] MATL_D  (7) -> MATL_IL (8) is 0.0, b/c state 8 is detached */
   prm->t7t9 = 1.0;              /* cm->t[7][1] MATL_D  (7) -> END_E   (9) is 1.0, b/c state 8 is detached */
 
-  prm->t8t8 = 0.0;              /* cm->t[8][0] MATL_IL (8) -> MATL_IL (8) is irrelevant, b/c state 8 is detached */
-  prm->t8t9 = 1.0;              /* cm->t[8][1] MATL_IL (8) -> END_E   (9) is irrelevant, b/c state 8 is detached */
+  prm->t8t8 = 1.0;              /* cm->t[8][0] MATL_IL (8) -> MATL_IL (8) is irrelevant, b/c state 8 is detached */
+  prm->t8t9 = 0.0;              /* cm->t[8][1] MATL_IL (8) -> END_E   (9) is irrelevant, b/c state 8 is detached */
 
   prm->alpha   = 0.7;  	        /* cm->e[v][A] emission for both match states (MATL_ML (v=3) and MATL_ML (v=6)) */
   prm->beta    = 0.25;  	/* must be 0.25, insert score 0, cm->e[v][A] emission for all insert states (v = 1, 2, 5, 8) */
@@ -421,8 +422,8 @@ sample_brute_matl_params(ESL_RANDOMNESS *r, int do_local, struct cm_brute_matl_p
   prm->t7t8 = 0.0;              /* cm->t[7][0] MATL_D  (7) -> MATL_IL (8) is 0.0, b/c state 8 is detached */
   prm->t7t9 = 1.0;              /* cm->t[7][1] MATL_D  (7) -> END_E   (9) is 1.0, b/c state 8 is detached */
 
-  prm->t8t8 = 0.0;              /* cm->t[8][0] MATL_IL (8) -> MATL_IL (8) is irrelevant, b/c state 8 is detached */
-  prm->t8t9 = 1.0;              /* cm->t[8][1] MATL_IL (8) -> END_E   (9) is irrelevant, b/c state 8 is detached */
+  prm->t8t8 = 1.0;              /* cm->t[8][0] MATL_IL (8) -> MATL_IL (8) is irrelevant, b/c state 8 is detached */
+  prm->t8t9 = 0.0;              /* cm->t[8][1] MATL_IL (8) -> END_E   (9) is irrelevant, b/c state 8 is detached */
 
   /* sample begin and end transitions */
   esl_vec_DSet(prm->begin, 10, 0.);
@@ -593,7 +594,7 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
 
   double Sp[30];		   /* odds of 30 possible standard (non-truncated) paths through the CM */
   double Jp[29];		   /* odds of 29 possible Joint marginal paths through the CM */
-  double Lp[27];		   /* odds of 27 possible Left  marginal paths through the CM */
+  double Lp[25];		   /* odds of 25 possible Left  marginal paths through the CM */
   double Rp[13];		   /* odds of 13 possible Right marginal paths through the CM */
 
   double SpL[3];		   /* summed odds of all standard (non-truncated) paths of length 0..2  */
@@ -716,11 +717,12 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
   Jp[21] = isc * isc * prm->t5t5 * prm->t5t7 * prm->t7t9;             /* MATL_IL(5J) MATL_IL(5J) MATL_D (7J) END_E  (9J)             (L=2) */
   Jp[22] = isc * msc * prm->t5t6 * prm->t6t9;                         /* MATL_IL(5J) MATL_ML(6J) END_E  (9J)                         (L=2) */
   Jp[23] = isc * isc * prm->t5t7 * prm->t7t8 * prm->t8t9;             /* MATL_IL(5J) MATL_D (7J) MATL_IL(8J) END_E  (9J)             (L=2) will be 0. b/c 8 is detached */
+ 
   Jp[24] = msc * isc * prm->t6t8 * prm->t8t9;                         /* MATL_ML(6J) MATL_IL(8J) END_E  (9J)                         (L=2) will be 0. b/c 8 is detached */
   Jp[25] = isc * isc * prm->t8t8 * prm->t8t9;                         /* MATL_IL(8J) MATL_IL(8J) END_E  (9J)                         (L=2) will be 0. b/c 8 is detached */
   /* local ends */
-  Jp[26] = isc * msc * prm->t1t3 * prm->end[3];                       /* MATL_IL(1J) MATL_ML(3J) EL    (10J)                         (L=2) LOCAL END */
-  Jp[27] = isc * msc * prm->t2t3 * prm->end[3];                       /* MATL_IR(2J) MATL_ML(3J) EL    (10J)                         (L=2) LOCAL END */
+  Jp[26] = isc * msc * prm->t1t3 * prm->end[3];                       /* ROOT_IL(1J) MATL_ML(3J) EL    (10J)                         (L=2) LOCAL END */
+  Jp[27] = isc * msc * prm->t2t3 * prm->end[3];                       /* ROOT_IR(2J) MATL_ML(3J) EL    (10J)                         (L=2) LOCAL END */
   Jp[28] = msc * elsc* prm->end[3] * prm->el_self;                    /* MATL_ML(3J) EL    (10J) EL    (10J)                         (L=2) LOCAL END */
 
   /* L alignments */
@@ -734,34 +736,36 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
   Lp[1]  = msc;             /* MATL_ML(3) (L=1) */
   Lp[2]  = isc;             /* MATL_IL(5) (L=1) */
   Lp[3]  = msc;             /* MATL_ML(6) (L=1) */
-  Lp[4]  = isc;             /* MATL_IL(8) (L=1) */
+  /* Following parsetree would be counted, except that we know MATL_IL(8) is detached so it is not. The DP functions also know to skip any parsetree involving detached states like MATL_IL(8) */
+  /* Lp[]= isc;                MATL_IL(8) (L=1) */
   /* 14 Left marginal alignments that emit 2 residue are possible */
-  Lp[5]  = isc * isc * prm->t1t1;                          /* ROOT_IL(1) ROOT_IL(1)                       (L=2) */
+  Lp[4]  = isc * isc * prm->t1t1;                          /* ROOT_IL(1) ROOT_IL(1)                       (L=2) */
   /* we can use ROOT_IR(2) in L marginal mode without emitting from it */             
-  Lp[6]  = msc * isc * prm->t1t2 * prm->t2t3;                                      /* ROOT_IL(1L) ROOT_IR(2L) MATL_ML(3L)                                     (L=2); L mode: silent IR */
-  Lp[7]  = isc * isc * prm->t1t2 * prm->t2t4 * prm->t4t5;                          /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4L) MATL_IL(5L)                         (L=2); L mode: silent IR */
-  Lp[8]  = msc * isc * prm->t1t2 * prm->t2t4 * prm->t4t6;                          /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4L) MATL_ML(6L)                         (L=2); L mode: silent IR */
-  Lp[9]  = isc * isc * prm->t1t2 * prm->t2t4 * prm->t4t7 * prm->t7t8;              /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4L) MATL_ML(7L) MATL_IL(8L)             (L=2); L mode: silent IR */
+  Lp[5]  = msc * isc * prm->t1t2 * prm->t2t3;                                      /* ROOT_IL(1L) ROOT_IR(2L) MATL_ML(3L)                                     (L=2); L mode: silent IR */
+  Lp[6]  = isc * isc * prm->t1t2 * prm->t2t4 * prm->t4t5;                          /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4L) MATL_IL(5L)                         (L=2); L mode: silent IR */
+  Lp[7]  = msc * isc * prm->t1t2 * prm->t2t4 * prm->t4t6;                          /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4L) MATL_ML(6L)                         (L=2); L mode: silent IR */
+  Lp[8]  = isc * isc * prm->t1t2 * prm->t2t4 * prm->t4t7 * prm->t7t8;              /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4L) MATL_ML(7L) MATL_IL(8L)             (L=2); L mode: silent IR */
   /* we can switch from L marginal mode to J marginal mode in ROOT_IR */                    
-  Lp[10] = msc * isc * prm->t1t2 * prm->t2t3 * prm->t3t7 * prm->t7t9;              /* ROOT_IL(1L) ROOT_IR(2L) MATL_ML(3J) MATL_D (7J) END_E  (9J)             (L=2); L mode: silent IR; L->J switch at IR */
-  Lp[11] = isc * isc * prm->t1t2 * prm->t2t4 * prm->t4t5 * prm->t5t7 * prm->t7t9;  /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4J) MATL_IL(5J) MATL_D (7J) END_E  (9J) (L=2); L mode: silent IR; L->J switch at IR */
-  Lp[12] = msc * isc * prm->t1t2 * prm->t2t4 * prm->t4t6 * prm->t6t9;              /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4J) MATL_ML(6J) END_E  (9J)             (L=2); L mode: silent IR; L->J switch at IR */
-  Lp[13] = isc * isc * prm->t1t2 * prm->t2t4 * prm->t4t7 * prm->t7t8 * prm->t8t9;  /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4J) MATL_D (7J) MATL_IL(8J) END_E  (9J) (L=2); L mode: silent IR; L->J switch at IR */
+  Lp[9]  = msc * isc * prm->t1t2 * prm->t2t3 * prm->t3t7 * prm->t7t9;              /* ROOT_IL(1L) ROOT_IR(2L) MATL_ML(3J) MATL_D (7J) END_E  (9J)             (L=2); L mode: silent IR; L->J switch at IR */
+  Lp[10] = isc * isc * prm->t1t2 * prm->t2t4 * prm->t4t5 * prm->t5t7 * prm->t7t9;  /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4J) MATL_IL(5J) MATL_D (7J) END_E  (9J) (L=2); L mode: silent IR; L->J switch at IR */
+  Lp[11] = msc * isc * prm->t1t2 * prm->t2t4 * prm->t4t6 * prm->t6t9;              /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4J) MATL_ML(6J) END_E  (9J)             (L=2); L mode: silent IR; L->J switch at IR */
+  Lp[12] = isc * isc * prm->t1t2 * prm->t2t4 * prm->t4t7 * prm->t7t8 * prm->t8t9;  /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4J) MATL_D (7J) MATL_IL(8J) END_E  (9J) (L=2); L mode: silent IR; L->J switch at IR */
 
-  Lp[14] = isc * msc * prm->t1t3;                                                  /* ROOT_IL(1L) MATL_ML(3L)                                                 (L=2) */
-  Lp[15] = isc * isc * prm->t1t4 * prm->t4t5;                                      /* ROOT_IL(1L) MATL_D (4L) MATL_IL(5L)                                     (L=2) */
-  Lp[16] = isc * msc * prm->t1t4 * prm->t4t6;                                      /* ROOT_IL(1L) MATL_D (4L) MATL_ML(6L)                                     (L=2) */
-  Lp[17] = isc * isc * prm->t1t4 * prm->t4t7 * prm->t7t8;                          /* ROOT_IL(1L) MATL_D (4L) MATL_D (7L) MATL_IL(8L)                         (L=2) will be 0. b/c 8 is detached */
-  Lp[18] = msc * isc * prm->t3t5;                                                  /* MATL_ML(3L) MATL_IL(5L)                                                 (L=2) */
-  Lp[19] = msc * msc * prm->t3t6;                                                  /* MATL_ML(3L) MATL_ML(6L)                                                 (L=2) */
-  Lp[20] = msc * isc * prm->t3t7 * prm->t7t8;                                      /* MATL_ML(3L) MATL_D (7L) MATL_IL(8L)                                     (L=2) will be 0. b/c 8 is detached */
-  Lp[21] = isc * isc * prm->t5t5;                                                  /* MATL_IL(5L) MATL_IL(5L)                                                 (L=2) */
-  Lp[22] = isc * msc * prm->t5t6;                                                  /* MATL_IL(5L) MATL_ML(6L)                                                 (L=2) */
-  Lp[23] = isc * isc * prm->t5t7 * prm->t7t8;                                      /* MATL_IL(5L) MATL_D (7L) MATL_IL(8L)                                     (L=2) will be 0. b/c 8 is detached */
-  Lp[24] = msc * isc * prm->t6t8;                                                  /* MATL_ML(6L) MATL_IL(8L)                                                 (L=2) will be 0. b/c 8 is detached */
-  Lp[25] = isc * isc * prm->t8t8;                                                  /* MATL_IL(8L) MATL_IL(8L)                                                 (L=2) will be 0. b/c 8 is detached */
+  Lp[13] = isc * msc * prm->t1t3;                                                  /* ROOT_IL(1L) MATL_ML(3L)                                                 (L=2) */
+  Lp[14] = isc * isc * prm->t1t4 * prm->t4t5;                                      /* ROOT_IL(1L) MATL_D (4L) MATL_IL(5L)                                     (L=2) */
+  Lp[15] = isc * msc * prm->t1t4 * prm->t4t6;                                      /* ROOT_IL(1L) MATL_D (4L) MATL_ML(6L)                                     (L=2) */
+  Lp[16] = isc * isc * prm->t1t4 * prm->t4t7 * prm->t7t8;                          /* ROOT_IL(1L) MATL_D (4L) MATL_D (7L) MATL_IL(8L)                         (L=2) will be 0. b/c 8 is detached */
+  Lp[17] = msc * isc * prm->t3t5;                                                  /* MATL_ML(3L) MATL_IL(5L)                                                 (L=2) */
+  Lp[18] = msc * msc * prm->t3t6;                                                  /* MATL_ML(3L) MATL_ML(6L)                                                 (L=2) */
+  Lp[19] = msc * isc * prm->t3t7 * prm->t7t8;                                      /* MATL_ML(3L) MATL_D (7L) MATL_IL(8L)                                     (L=2) will be 0. b/c 8 is detached */
+  Lp[20] = isc * isc * prm->t5t5;                                                  /* MATL_IL(5L) MATL_IL(5L)                                                 (L=2) */
+  Lp[21] = isc * msc * prm->t5t6;                                                  /* MATL_IL(5L) MATL_ML(6L)                                                 (L=2) */
+  Lp[22] = isc * isc * prm->t5t7 * prm->t7t8;                                      /* MATL_IL(5L) MATL_D (7L) MATL_IL(8L)                                     (L=2) will be 0. b/c 8 is detached */
+  Lp[23] = msc * isc * prm->t6t8;                                                  /* MATL_ML(6L) MATL_IL(8L)                                                 (L=2) will be 0. b/c 8 is detached */
+  /* Following parsetree would be counted, except that we know MATL_IL(8) is detached so it is not. The DP functions also know to skip any parsetree involving detached states like MATL_IL(8) */
+  /* Lp[]= isc * isc * prm->t8t8;                                                     MATL_IL(8L) MATL_IL(8L)                                                 (L=2) will be 0. b/c 8 is detached */
   /* local ends */
-  Lp[26] = isc * msc * prm->t1t2 * prm->t2t3 * prm->end[3];                        /* ROOT_IL(1L) ROOT_IR(2L) MATL_ML(3R) EL  (10R)                           (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
+  Lp[24] = isc * msc * prm->t1t2 * prm->t2t3 * prm->end[3];                        /* ROOT_IL(1L) ROOT_IR(2L) MATL_ML(3R) EL  (10R)                           (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
 
   /* R alignments */
   /* No truncated alignments emit 0 residues because you have to enter B,
@@ -788,8 +792,8 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
 
   if(be_very_verbose) { 
     for(i = 0;  i <= 12; i++) printf("%s Sp[%2d]: %10.8f  Jp[%2d]: %10.8f  Lp[%2d]: %10.8f  Rp[%2d]: %10.8f\n", do_local ? "L" : "G", i, Sp[i], i, Jp[i], i, Lp[i], i, Rp[i]); 
-    for(i = 13; i <= 26; i++) printf("%s Sp[%2d]: %10.8f  Jp[%2d]: %10.8f  Lp[%2d]: %10.8f\n", do_local ? "L" : "G", i, Sp[i], i, Jp[i], i, Lp[i]);
-    for(i = 27; i <= 28; i++) printf("%s Sp[%2d]: %10.8f  Jp[%2d]: %10.8f\n", do_local ? "L" : "G", i, Sp[i], i, Jp[i]);
+    for(i = 13; i <= 24; i++) printf("%s Sp[%2d]: %10.8f  Jp[%2d]: %10.8f  Lp[%2d]: %10.8f\n", do_local ? "L" : "G", i, Sp[i], i, Jp[i], i, Lp[i]);
+    for(i = 25; i <= 28; i++) printf("%s Sp[%2d]: %10.8f  Jp[%2d]: %10.8f\n", do_local ? "L" : "G", i, Sp[i], i, Jp[i]);
     for(i = 29; i <= 29; i++) printf("%s Sp[%2d]: %10.8f\n", do_local ? "L" : "G", i, Sp[i]);
   }
 
@@ -813,8 +817,8 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
       Jsc[2] = JpL[2] == 0.0 ? IMPOSSIBLE : sreLOG2(JpL[2]);
 
       LpL[0] = 0.0;
-      LpL[1] = esl_vec_DMax(Lp,    5);
-      LpL[2] = esl_vec_DMax(Lp+5,  22);
+      LpL[1] = esl_vec_DMax(Lp,    4);
+      LpL[2] = esl_vec_DMax(Lp+4,  21);
       Lsc[0] = LpL[0] == 0.0 ? IMPOSSIBLE : sreLOG2(LpL[0]);
       Lsc[1] = LpL[1] == 0.0 ? IMPOSSIBLE : sreLOG2(LpL[1]);
       Lsc[2] = LpL[2] == 0.0 ? IMPOSSIBLE : sreLOG2(LpL[2]);
@@ -848,8 +852,8 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
       Jsc[2] = JpL[2] == 0.0 ? IMPOSSIBLE : sreLOG2(JpL[2]);
 
       LpL[0] = 0.0;
-      LpL[1] = esl_vec_DSum(Lp,    5);
-      LpL[2] = esl_vec_DSum(Lp+5,  22);
+      LpL[1] = esl_vec_DSum(Lp,    4);
+      LpL[2] = esl_vec_DSum(Lp+4,  21);
       Lsc[0] = LpL[0] == 0.0 ? IMPOSSIBLE : sreLOG2(LpL[0]);
       Lsc[1] = LpL[1] == 0.0 ? IMPOSSIBLE : sreLOG2(LpL[1]);
       Lsc[2] = LpL[2] == 0.0 ? IMPOSSIBLE : sreLOG2(LpL[2]);

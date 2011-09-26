@@ -142,7 +142,7 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
   int      status;
   int      v,y,z;	/* indices for states  */
   int      j,d,i,k;	/* indices in sequence dimensions */
-  float    sc, Lsc, Rsc;/* temporary scores */
+  float    sc;          /* temporary score */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int      W;		/* subsequence length */
   int      b;		/* best local begin state */
@@ -159,7 +159,6 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
   int      jpn, jpx;           /* minimum/maximum jp_v */
   int      dp_v, dp_y, dp_z;   /* d index for state v/y/z in alpha */
   int      dn, dx;             /* current minimum/maximum d allowed */
-  int      dp;                 /* ESL_MAX(d-sd, 0) */
   int      dp_y_sd;            /* dp_y - sd */
   int      dp_y_sdr;           /* dp_y - sdr */
   int      dpn, dpx;           /* minimum/maximum dp_v */
@@ -298,7 +297,7 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
 	if(do_R_v) Ralpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
       }
     }
-    else if(cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
+    else if(cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
       /* update {J,L,R}alpha[v][jp_v][dp_v] cells, for IL states, loop
        * nesting order is: for j { for d { for y { } } } because they
        * can self transit, and a {J,L,R}alpha[v][j][d] cell must be
@@ -307,102 +306,104 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
        * We could be slightly more efficient if we separated out 
        * MR from IR b/c self-transits in MRs are impossible, but 
        * we don't do that here. */
-      for (j = jmin[v]; j <= jmax[v]; j++) {
-	jp_v = j - jmin[v];
-	yvalid_ct = 0;
-	j_sdr = j - sdr;
-	
-	/* determine which children y we can legally transit to for v, j */
-	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr valid for state y? */
-	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
-	  i    = j - d + 1;
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
-
-	  /* We need to treat R differently from and J and L here, by
-	   * doing separate 'for (yoffset...' loops for J and R
-	   * because we have to fully calculate Jalpha[v][jp_v][dp_v])
-	   * before we can start to calculate Ralpha[v][jp_v][dp_v].
-	   */
-	  /* Handle J and L first */
-	  if(do_J_v || do_L_v) { 
-	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
-	      yoffset = yvalidA[yvalid_idx];
-	      y = cm->cfirst[v] + yoffset;
-	      do_J_y = cp9b->do_J[y];
-	      do_L_y = cp9b->do_L[y];
-	      if(do_J_y || do_L_y) { 
-		jp_y_sdr = j - jmin[y] - sdr;
-		
-		if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-		  dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-		  ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
-		  if((do_J_v && do_J_y) && 
-		     ((sc = Jalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > Jalpha[v][jp_v][dp_v])) {
-		    Jalpha[v][jp_v][dp_v]   = sc;
-		    Jyshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
-		  }
-		  if((do_L_v && do_L_y) && 
-		     ((sc = Lalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > Lalpha[v][jp_v][dp_v])) {
-		    Lalpha[v][jp_v][dp_v]   = sc;
-		    Lyshadow[v][jp_v][dp_v] = yoffset + TRMODE_L_OFFSET;
-		  }
-		}
-	      }
-	    }
-	    if(do_J_v) { 
-	      Jalpha[v][jp_v][dp_v] += esc_v[dsq[i]];
-	      Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
-	    }
-	    if(do_L_v) { 
-	      if(d >= 2) { 
-		Lalpha[v][jp_v][dp_v] += esc_v[dsq[i]];
-	      }
-	      else { 
-		Lalpha[v][jp_v][dp_v]   = esc_v[dsq[i]];
-		Lyshadow[v][jp_v][dp_v] = USED_TRUNC_END;
-	      }
-	      Lalpha[v][jp_v][dp_v] = ESL_MAX(Lalpha[v][jp_v][dp_v], IMPOSSIBLE);
-	    }
-	    i--;
-	  }
-
-	  if(do_R_v) { 
-	    /* Handle R separately */
-	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
-	      yoffset = yvalidA[yvalid_idx];
-	      y = cm->cfirst[v] + yoffset;
-	      do_R_y = cp9b->do_R[y];
-	      do_J_y = cp9b->do_J[y];
-	      if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
-		jp_y_sdr = j - jmin[y] - sdr;
-		
-		/* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,L above) */
-		if((d) >= hdmin[y][jp_y_sdr] && (d) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-		  dp_y = d - hdmin[y][jp_y_sdr];
-		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-		  ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
-
-		  if(do_J_y &&
-		     ((sc = Jalpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]) > Ralpha[v][jp_v][dp_v])) { 
-		    Ralpha[v][jp_v][dp_v] = sc;
-		    Ryshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
-		  }
-		  if(do_R_y && 
-		     ((sc = Ralpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]) > Ralpha[v][jp_v][dp_v])) { 
-		    Ralpha[v][jp_v][dp_v] = sc;
-		    Ryshadow[v][jp_v][dp_v] = yoffset + TRMODE_R_OFFSET;
+      if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
+	for (j = jmin[v]; j <= jmax[v]; j++) {
+	  jp_v = j - jmin[v];
+	  yvalid_ct = 0;
+	  j_sdr = j - sdr;
+	  
+	  /* determine which children y we can legally transit to for v, j */
+	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
+	    if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr valid for state y? */
+	  
+	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	    i    = j - d + 1;
+	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	    
+	    /* We need to treat R differently from and J and L here, by
+	     * doing separate 'for (yoffset...' loops for J and R
+	     * because we have to fully calculate Jalpha[v][jp_v][dp_v])
+	     * before we can start to calculate Ralpha[v][jp_v][dp_v].
+	     */
+	    /* Handle J and L first */
+	    if(do_J_v || do_L_v) { 
+	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+		yoffset = yvalidA[yvalid_idx];
+		y = cm->cfirst[v] + yoffset;
+		do_J_y = cp9b->do_J[y];
+		do_L_y = cp9b->do_L[y];
+		if(do_J_y || do_L_y) { 
+		  jp_y_sdr = j - jmin[y] - sdr;
+		  
+		  if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
+		    dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+		    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		    if((do_J_v && do_J_y) && 
+		       ((sc = Jalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > Jalpha[v][jp_v][dp_v])) {
+		      Jalpha[v][jp_v][dp_v]   = sc;
+		      Jyshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
+		    }
+		    if((do_L_v && do_L_y) && 
+		       ((sc = Lalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > Lalpha[v][jp_v][dp_v])) {
+		      Lalpha[v][jp_v][dp_v]   = sc;
+		      Lyshadow[v][jp_v][dp_v] = yoffset + TRMODE_L_OFFSET;
+		    }
 		  }
 		}
 	      }
-	    } /* end of for (yvalid_idx = 0... loop */
+	      if(do_J_v) { 
+		Jalpha[v][jp_v][dp_v] += esc_v[dsq[i]];
+		Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
+	      }
+	      if(do_L_v) { 
+		if(d >= 2) { 
+		  Lalpha[v][jp_v][dp_v] += esc_v[dsq[i]];
+		}
+		else { 
+		  Lalpha[v][jp_v][dp_v]   = esc_v[dsq[i]];
+		  Lyshadow[v][jp_v][dp_v] = USED_TRUNC_END;
+		}
+		Lalpha[v][jp_v][dp_v] = ESL_MAX(Lalpha[v][jp_v][dp_v], IMPOSSIBLE);
+	      }
+	      i--;
+	    }
+
+	    if(do_R_v) { 
+	      /* Handle R separately */
+	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+		yoffset = yvalidA[yvalid_idx];
+		y = cm->cfirst[v] + yoffset;
+		do_R_y = cp9b->do_R[y];
+		do_J_y = cp9b->do_J[y];
+		if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
+		  jp_y_sdr = j - jmin[y] - sdr;
+		  
+		  /* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,L above) */
+		  if((d) >= hdmin[y][jp_y_sdr] && (d) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
+		    dp_y = d - hdmin[y][jp_y_sdr];
+		    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		    ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		    
+		    if(do_J_y &&
+		       ((sc = Jalpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]) > Ralpha[v][jp_v][dp_v])) { 
+		      Ralpha[v][jp_v][dp_v] = sc;
+		      Ryshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
+		    }
+		    if(do_R_y && 
+		       ((sc = Ralpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]) > Ralpha[v][jp_v][dp_v])) { 
+		      Ralpha[v][jp_v][dp_v] = sc;
+		      Ryshadow[v][jp_v][dp_v] = yoffset + TRMODE_R_OFFSET;
+		    }
+		  }
+		}
+	      } /* end of for (yvalid_idx = 0... loop */
+	    }
 	  }
 	}
-      }
+      } /* end of if(! StateIsDetached(cm, v)) */
     }
-    else if(cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+    else if(cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) { 
       /* update {J,L,R}alpha[v][jp_v][dp_v] cells, for IR states, loop
        * nesting order is: for j { for d { for y { } } } because they
        * can self transit, and a {J,L,R}alpha[v][j][d] cell must be
@@ -412,117 +413,119 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
        * MR from IR b/c self-transits in MRs are impossible, but 
        * we don't do that here. */
 
-      /* The first MR_st/IR_st 'for (j...' loop is for J and R matrices which use the same set of j values */
-      if(do_J_v || do_R_v) { 
-	for (j = jmin[v]; j <= jmax[v]; j++) {
-	  jp_v = j - jmin[v];
-	  yvalid_ct = 0;
-	  j_sdr = j - sdr;
+      if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
+	/* The first MR_st/IR_st 'for (j...' loop is for J and R matrices which use the same set of j values */
+	if(do_J_v || do_R_v) { 
+	  for (j = jmin[v]; j <= jmax[v]; j++) {
+	    jp_v = j - jmin[v];
+	    yvalid_ct = 0;
+	    j_sdr = j - sdr;
 	  
-	  /* determine which children y we can legally transit to for v, j */
-	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	    if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
+	    /* determine which children y we can legally transit to for v, j */
+	    for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
+	      if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
 	  
-	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
-	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	      dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
 	    
-	    /* We need to treat L differently from and J and R here, by
-	     * doing separate 'for (yoffset...' loops for J because we
-	     * have to fully calculate Jalpha[v][jp_v][dp_v]) before we
-	     * can start to calculate Lalpha[v][jp_v][dp_v].
-	     */
-	    /* Handle J and R first */
-	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
-	      yoffset = yvalidA[yvalid_idx];
-	      y = cm->cfirst[v] + yoffset;
-	      do_J_y = cp9b->do_J[y];
-	      do_R_y = cp9b->do_R[y];
-	      if(do_J_y || do_R_y) { 
-		jp_y_sdr = j - jmin[y] - sdr;
+	      /* We need to treat L differently from and J and R here, by
+	       * doing separate 'for (yoffset...' loops for J because we
+	       * have to fully calculate Jalpha[v][jp_v][dp_v]) before we
+	       * can start to calculate Lalpha[v][jp_v][dp_v].
+	       */
+	      /* Handle J and R first */
+	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+		yoffset = yvalidA[yvalid_idx];
+		y = cm->cfirst[v] + yoffset;
+		do_J_y = cp9b->do_J[y];
+		do_R_y = cp9b->do_R[y];
+		if(do_J_y || do_R_y) { 
+		  jp_y_sdr = j - jmin[y] - sdr;
 		
-		if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-		  dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-		  ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		  if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
+		    dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+		    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
 
-		  if((do_J_v && do_J_y) && 
-		     ((sc = Jalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > Jalpha[v][jp_v][dp_v])) {
-		    Jalpha[v][jp_v][dp_v]   = sc;
-		    Jyshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
-		  }
-		  if((do_R_v && do_R_y) && 
-		     ((sc = Ralpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > Ralpha[v][jp_v][dp_v])) {
-		    Ralpha[v][jp_v][dp_v]   = sc;
-		    Ryshadow[v][jp_v][dp_v] = yoffset + TRMODE_R_OFFSET;
+		    if((do_J_v && do_J_y) && 
+		       ((sc = Jalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > Jalpha[v][jp_v][dp_v])) {
+		      Jalpha[v][jp_v][dp_v]   = sc;
+		      Jyshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
+		    }
+		    if((do_R_v && do_R_y) && 
+		       ((sc = Ralpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > Ralpha[v][jp_v][dp_v])) {
+		      Ralpha[v][jp_v][dp_v]   = sc;
+		      Ryshadow[v][jp_v][dp_v] = yoffset + TRMODE_R_OFFSET;
+		    }
 		  }
 		}
 	      }
-	    }
-	    if(do_J_v) { 
-	      Jalpha[v][jp_v][dp_v] += esc_v[dsq[j]];
-	      Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
-	    }
-	    if(do_R_v) { 
-	      if(d >= 2) { 
-		Ralpha[v][jp_v][dp_v] += esc_v[dsq[j]];
+	      if(do_J_v) { 
+		Jalpha[v][jp_v][dp_v] += esc_v[dsq[j]];
+		Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
 	      }
-	      else { 
-		Ralpha[v][jp_v][dp_v]   = esc_v[dsq[j]];
-		Ryshadow[v][jp_v][dp_v] = USED_TRUNC_END;
-	      }		
-	      Ralpha[v][jp_v][dp_v] = ESL_MAX(Ralpha[v][jp_v][dp_v], IMPOSSIBLE);
+	      if(do_R_v) { 
+		if(d >= 2) { 
+		  Ralpha[v][jp_v][dp_v] += esc_v[dsq[j]];
+		}
+		else { 
+		  Ralpha[v][jp_v][dp_v]   = esc_v[dsq[j]];
+		  Ryshadow[v][jp_v][dp_v] = USED_TRUNC_END;
+		}		
+		Ralpha[v][jp_v][dp_v] = ESL_MAX(Ralpha[v][jp_v][dp_v], IMPOSSIBLE);
+	      }
 	    }
 	  }
 	}
-      }
-      /* Handle L separately */
-      if(do_L_v) { 
-	/* The second MR_st/IR_st 'for (j...' loop is for the L matrix which use a different set of j values */
-	for (j = jmin[v]; j <= jmax[v]; j++) {
-	  jp_v = j - jmin[v];
-	  yvalid_ct = 0;
+	/* Handle L separately */
+	if(do_L_v) { 
+	  /* The second MR_st/IR_st 'for (j...' loop is for the L matrix which use a different set of j values */
+	  for (j = jmin[v]; j <= jmax[v]; j++) {
+	    jp_v = j - jmin[v];
+	    yvalid_ct = 0;
 	  
-	  /* determine which children y we can legally transit to for v, j */
-	  /* we use 'j' and not 'j_sdr' here for the L matrix, differently from J and R matrices above */
-	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	    if(y != v       && /* y == v when yoffset == 0 && v is an IR state: we don't want to allow IR self transits in L mode */
-	       j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
+	    /* determine which children y we can legally transit to for v, j */
+	    /* we use 'j' and not 'j_sdr' here for the L matrix, differently from J and R matrices above */
+	    for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
+	      if(y != v       && /* y == v when yoffset == 0 && v is an IR state: we don't want to allow IR self transits in L mode */
+		 j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
 	  
-	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
-	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	      dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
 	    
-	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
-	      /* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
-	      yoffset = yvalidA[yvalid_idx];
-	      y = cm->cfirst[v] + yoffset;
-	      do_L_y = cp9b->do_L[y];
-	      do_J_y = cp9b->do_J[y];
-	      if(do_L_y || do_J_y) { 
-		/* we use 'jp_y=j-min[y]' here, not 'jp_y_sdr=j-jmin[y]-sdr' (which we used in the corresponding loop for J,R above) */
-		jp_y = j - jmin[y];
+	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+		/* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
+		yoffset = yvalidA[yvalid_idx];
+		y = cm->cfirst[v] + yoffset;
+		do_L_y = cp9b->do_L[y];
+		do_J_y = cp9b->do_J[y];
+		if(do_L_y || do_J_y) { 
+		  /* we use 'jp_y=j-min[y]' here, not 'jp_y_sdr=j-jmin[y]-sdr' (which we used in the corresponding loop for J,R above) */
+		  jp_y = j - jmin[y];
 	      
-		/* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,R above) */
-		if((d) >= hdmin[y][jp_y] && (d) <= hdmax[y][jp_y]) { /* make sure d is valid for this v, j and y */
-		  dp_y = d - hdmin[y][jp_y];
-		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v] - hdmin[v][jp_v])));
-		  ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y] - hdmin[y][jp_y])));
+		  /* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,R above) */
+		  if((d) >= hdmin[y][jp_y] && (d) <= hdmax[y][jp_y]) { /* make sure d is valid for this v, j and y */
+		    dp_y = d - hdmin[y][jp_y];
+		    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v] - hdmin[v][jp_v])));
+		    ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y] - hdmin[y][jp_y])));
 
-		  if(do_J_y &&
-		     (sc = Jalpha[y][jp_y][dp_y] + tsc_v[yoffset]) > Lalpha[v][jp_v][dp_v]) { 
-		    Lalpha[v][jp_v][dp_v] = sc;
-		    Lyshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
-		  }
-		  if(do_L_y &&
-		     (sc = Lalpha[y][jp_y][dp_y] + tsc_v[yoffset]) > Lalpha[v][jp_v][dp_v]) { 
-		    Lalpha[v][jp_v][dp_v] = sc;
-		    Lyshadow[v][jp_v][dp_v] = yoffset + TRMODE_L_OFFSET;
+		    if(do_J_y &&
+		       (sc = Jalpha[y][jp_y][dp_y] + tsc_v[yoffset]) > Lalpha[v][jp_v][dp_v]) { 
+		      Lalpha[v][jp_v][dp_v] = sc;
+		      Lyshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
+		    }
+		    if(do_L_y &&
+		       (sc = Lalpha[y][jp_y][dp_y] + tsc_v[yoffset]) > Lalpha[v][jp_v][dp_v]) { 
+		      Lalpha[v][jp_v][dp_v] = sc;
+		      Lyshadow[v][jp_v][dp_v] = yoffset + TRMODE_L_OFFSET;
+		    }
 		  }
 		}
-	      }
-	    } /* end of for (yvalid_idx = 0... loop */
+	      } /* end of for (yvalid_idx = 0... loop */
+	    }
 	  }
 	}
-      }
+      } /* end of if(! StateIsDetached(cm, v) */
     }
     else if(cm->sttype[v] == MP_st) { 
       /* MP states cannot self transit, this means that all cells in
@@ -1111,7 +1114,6 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
   int      status;          /* easel status code */
   int      v,y,z;	    /* indices for states  */
   int      j,d,i,k;	    /* indices in sequence dimensions */
-  int      dp;              /* temporary d value */
   float    sc;		    /* a temporary variable holding a score */
   int      yoffset;	    /* y=base+offset -- counter in child states that v can transit to */
   int      W;	    	    /* subsequence length */
@@ -1128,7 +1130,6 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
   float    tsc;             /* a transition score */
   int      L = j0-i0+1;     /* length of the sequence */
   /* other variables used in truncated version, but not standard version (not in cm_CYKAlign()) */
-  float Lsc, Rsc;           /* temporary scores */
   float Jsc_full, Lsc_full, Rsc_full, Tsc_full; /* scores of optimal JLRT marginal parsetrees that emit full sequence i0..j0 */
   int   Jb, Lb, Rb, Tb;     /* state rooting JLRT optimal parsetrees */
   float trunc_penalty = 0.; /* penalty in bits for a truncated hit */
@@ -1223,7 +1224,7 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
 	/* rest of deck remains IMPOSSIBLE */
       }
     }
-    else if(cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+    else if(cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) { 
       /* update alpha[v][j][d] cells, for IL states, loop nesting order is:
        * for j { for d { for y { } } } because they can self transit, and a 
        * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
@@ -1238,53 +1239,55 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
        * can start to calculate Ralpha[v][j][d].
        */
 
-      Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
-      for (jp = sdr; jp <= W; jp++) {
-	j = i0-1+jp;
-	j_sdr = j - sdr;
-	for (d = sd; d <= jp; d++) {
-	  d_sd = d - sd;
-	  i    = j - d + 1;
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
-	    y = cm->cfirst[v] + yoffset; 
-	    if ((sc = Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > Jalpha[v][j][d]) {
-	      Jalpha[v][j][d]   = sc; 
-	      Jyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
+      if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
+	Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
+	for (jp = sdr; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  j_sdr = j - sdr;
+	  for (d = sd; d <= jp; d++) {
+	    d_sd = d - sd;
+	    i    = j - d + 1;
+	    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	      y = cm->cfirst[v] + yoffset; 
+	      if ((sc = Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > Jalpha[v][j][d]) {
+		Jalpha[v][j][d]   = sc; 
+		Jyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
+	      }
+	      if ((sc = Lalpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > Lalpha[v][j][d]) {
+		Lalpha[v][j][d]   = sc; 
+		Lyshadow[v][j][d] = yoffset + TRMODE_L_OFFSET;
+		printf("Lalpha[v:%d][j:%d][d:%d] %.4f y: %d tsc: %.4f esc: %.4f\n", v, j, d, Lalpha[v][j][d], y, tsc_v[yoffset], esc_v[dsq[i]]);
+	      }
 	    }
-	    if ((sc = Lalpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > Lalpha[v][j][d]) {
-	      Lalpha[v][j][d]   = sc; 
-	      Lyshadow[v][j][d] = yoffset + TRMODE_L_OFFSET;
-	      printf("Lalpha[v:%d][j:%d][d:%d] %.4f y: %d tsc: %.4f esc: %.4f\n", v, j, d, Lalpha[v][j][d], y, tsc_v[yoffset], esc_v[dsq[i]]);
+	    Jalpha[v][j][d] += esc_v[dsq[i]];
+	    Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
+	    if(d >= 2) { 
+	      Lalpha[v][j][d] += esc_v[dsq[i]];
 	    }
-	  }
-	  Jalpha[v][j][d] += esc_v[dsq[i]];
-	  Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
-	  if(d >= 2) { 
-	    Lalpha[v][j][d] += esc_v[dsq[i]];
-	  }
-	  else { 
-	    Lalpha[v][j][d]   = esc_v[dsq[i]];
-	    Lyshadow[v][j][d] = USED_TRUNC_END;
-	  }
-	  Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
-	  i--;
+	    else { 
+	      Lalpha[v][j][d]   = esc_v[dsq[i]];
+	      Lyshadow[v][j][d] = USED_TRUNC_END;
+	    }
+	    Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
+	    i--;
 
-	  /* handle R separately */
-	  /* note we use 'd', not 'd_sd' (which we used in the corresponding loop for J,L above) */
-	  for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
-	    y = cm->cfirst[v] + yoffset; 
-	    if ((sc = Jalpha[y][j_sdr][d] + tsc_v[yoffset]) > Ralpha[v][j][d]) { 
-	      Ralpha[v][j][d] = sc; 
-	      Ryshadow[v][j][d]= yoffset + TRMODE_J_OFFSET;
+	    /* handle R separately */
+	    /* note we use 'd', not 'd_sd' (which we used in the corresponding loop for J,L above) */
+	    for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
+	      y = cm->cfirst[v] + yoffset; 
+	      if ((sc = Jalpha[y][j_sdr][d] + tsc_v[yoffset]) > Ralpha[v][j][d]) { 
+		Ralpha[v][j][d] = sc; 
+		Ryshadow[v][j][d]= yoffset + TRMODE_J_OFFSET;
+	      }
+	      if ((sc = Ralpha[y][j_sdr][d] + tsc_v[yoffset]) > Ralpha[v][j][d]) { 
+		Ralpha[v][j][d] = sc;
+		Ryshadow[v][j][d] = yoffset + TRMODE_R_OFFSET;
+	      }
 	    }
-	    if ((sc = Ralpha[y][j_sdr][d] + tsc_v[yoffset]) > Ralpha[v][j][d]) { 
-	      Ralpha[v][j][d] = sc;
-	      Ryshadow[v][j][d] = yoffset + TRMODE_R_OFFSET;
-	    }
+	    Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 	  }
-	  Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 	}
-      }
+      } /* end of if(! StateIsDetached(cm,v )) */
     }
     else if(cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) { 
       /* update alpha[v][j][d] cells, for IR states, loop nesting order is:
@@ -1301,53 +1304,55 @@ cm_TrCYKAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_l
        * can start to calculate Lalpha[v][j][d].
        */
 
-      Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
-      for (jp = sdr; jp <= W; jp++) {
-	j = i0-1+jp;
-	j_sdr = j - sdr;
-	for (d = sd; d <= jp; d++) {
-	  d_sd = d - sd;
-	  i = j - d + 1;
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
-	    y = cm->cfirst[v] + yoffset; 
-	    if ((sc = Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > Jalpha[v][j][d]) {
-	      Jalpha[v][j][d]   = sc; 
-	      Jyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
+      if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
+	Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
+	for (jp = sdr; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  j_sdr = j - sdr;
+	  for (d = sd; d <= jp; d++) {
+	    d_sd = d - sd;
+	    i = j - d + 1;
+	    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	      y = cm->cfirst[v] + yoffset; 
+	      if ((sc = Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > Jalpha[v][j][d]) {
+		Jalpha[v][j][d]   = sc; 
+		Jyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
+	      }
+	      if ((sc = Ralpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > Ralpha[v][j][d]) {
+		Ralpha[v][j][d]   = sc; 
+		Ryshadow[v][j][d] = yoffset + TRMODE_R_OFFSET;
+	      }
 	    }
-	    if ((sc = Ralpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > Ralpha[v][j][d]) {
-	      Ralpha[v][j][d]   = sc; 
-	      Ryshadow[v][j][d] = yoffset + TRMODE_R_OFFSET;
+	    Jalpha[v][j][d] += esc_v[dsq[j]];
+	    Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
+	    if(d >= 2) { 
+	      Ralpha[v][j][d] += esc_v[dsq[j]];
 	    }
-	  }
-	  Jalpha[v][j][d] += esc_v[dsq[j]];
-	  Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
-	  if(d >= 2) { 
-	    Ralpha[v][j][d] += esc_v[dsq[j]];
-	  }
-	  else { 
-	    Ralpha[v][j][d]   = esc_v[dsq[j]];
-	    Ryshadow[v][j][d] = USED_TRUNC_END;
-	  }
-	  Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
+	    else { 
+	      Ralpha[v][j][d]   = esc_v[dsq[j]];
+	      Ryshadow[v][j][d] = USED_TRUNC_END;
+	    }
+	    Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 
-	  /* handle L separately */
-	  /* note we use 'j' and 'd', not 'j_sdr' and 'd_sd' (which we used in the corresponding loop for J,R above) */
-	  for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
-	    y = cm->cfirst[v] + yoffset; 
-	    if ((sc = Jalpha[y][j][d] + tsc_v[yoffset]) > Lalpha[v][j][d]) { 
-	      Lalpha[v][j][d] = sc;
-	      printf("Lalpha[v:%d][j:%d][d:%d] %.4f y: %d tsc: %.4f (J)\n", v, j, d, Lalpha[v][j][d], y, tsc_v[yoffset]);
-	      Lyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
+	    /* handle L separately */
+	    /* note we use 'j' and 'd', not 'j_sdr' and 'd_sd' (which we used in the corresponding loop for J,R above) */
+	    for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
+	      y = cm->cfirst[v] + yoffset; 
+	      if ((sc = Jalpha[y][j][d] + tsc_v[yoffset]) > Lalpha[v][j][d]) { 
+		Lalpha[v][j][d] = sc;
+		printf("Lalpha[v:%d][j:%d][d:%d] %.4f y: %d tsc: %.4f (J)\n", v, j, d, Lalpha[v][j][d], y, tsc_v[yoffset]);
+		Lyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
+	      }
+	      if ((sc = Lalpha[y][j][d] + tsc_v[yoffset]) > Lalpha[v][j][d]) { 
+		Lalpha[v][j][d] = sc;
+		printf("Lalpha[v:%d][j:%d][d:%d] %.4f y: %d tsc: %.4f (L)\n", v, j, d, Lalpha[v][j][d], y, tsc_v[yoffset]);
+		Lyshadow[v][j][d] = yoffset + TRMODE_L_OFFSET;
+	      }
 	    }
-	    if ((sc = Lalpha[y][j][d] + tsc_v[yoffset]) > Lalpha[v][j][d]) { 
-	      Lalpha[v][j][d] = sc;
-	      printf("Lalpha[v:%d][j:%d][d:%d] %.4f y: %d tsc: %.4f (L)\n", v, j, d, Lalpha[v][j][d], y, tsc_v[yoffset]);
-	      Lyshadow[v][j][d] = yoffset + TRMODE_L_OFFSET;
-	    }
+	    Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	  }
-	  Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	}
-      }
+      } /* end of if(! StateIsDetached(cm, v)) */
     }
     else if(cm->sttype[v] == MP_st) { 
       /* MP states cannot self transit, this means that all cells in
@@ -1644,7 +1649,6 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, Parsetree_t *tr,
   int       y, yoffset;         /* child state y, it's offset */
   int       bifparent;          /* B_st parent */
   int       b;                  /* local begin state */
-  float     bsc;                /* local begin score */
   int       jp_v;               /* j-jmin[v] for current j, and current v */
   int       dp_v;               /* d-hdmin[v][jp_v] for current j, current v, current d*/
   char      mode;               /* current truncation mode: TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T */
@@ -1946,7 +1950,6 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, Parsetree_t *tr,
   int       y, yoffset;         /* child state y, it's offset */
   int       bifparent;          /* B_st parent */
   int       b;                  /* local begin state */
-  float     bsc;                /* local begin score */
   /* variables specific to truncated version */
   char      mode;               /* current truncation mode: TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T */
   char      prvmode, nxtmode;   /* previous, next truncation mode */
@@ -2522,8 +2525,8 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
 {
   int      status;
   int      v,y,z;	/* indices for states  */
-  int      j,jp,d,i,k;	/* indices in sequence dimensions */
-  float    sc, Lsc, Rsc;/* temporary scores */
+  int      j,d,i,k;	/* indices in sequence dimensions */
+  float    sc;          /* temporary score */
   float    tsc;         /* a temporary variable holding a transition score */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int      W;		/* subsequence length */
@@ -2540,7 +2543,6 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
   int      jpn, jpx;           /* minimum/maximum jp_v */
   int      dp_v, dp_y, dp_z;   /* d index for state v/y/z in alpha w/mem eff bands */
   int      dn, dx;             /* current minimum/maximum d allowed */
-  int      dp;                 /* ESL_MAX(d-sd, 0) */
   int      dp_y_sd;            /* dp_y - sd */
   int      dp_y_sdr;           /* dp_y - sdr */
   int      dpn, dpx;           /* minimum/maximum dp_v */
@@ -2652,7 +2654,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
 	if(do_R_v) Ralpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
       }
     }
-    else if(cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
+    else if(cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) { 
       /* update {J,L,R}alpha[v][jp_v][dp_v] cells, for IL states, loop
        * nesting order is: for j { for d { for y { } } } because they
        * can self transit, and a {J,L,R}alpha[v][j][d] cell must be
@@ -2661,80 +2663,82 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
        * We could be slightly more efficient if we separated out 
        * MR from IR b/c self-transits in MRs are impossible, but 
        * we don't do that here. */
-      for (j = jmin[v]; j <= jmax[v]; j++) {
-	jp_v = j - jmin[v];
-	yvalid_ct = 0;
-	j_sdr = j - sdr;
+      if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
+	for (j = jmin[v]; j <= jmax[v]; j++) {
+	  jp_v = j - jmin[v];
+	  yvalid_ct = 0;
+	  j_sdr = j - sdr;
 	
-	/* determine which children y we can legally transit to for v, j */
-	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr valid for state y? */
+	  /* determine which children y we can legally transit to for v, j */
+	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
+	    if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr valid for state y? */
 	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
-	  i    = j - d + 1;
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	    i    = j - d + 1;
+	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
 
-	  /* We need to treat R differently from and J and L here, by
-	   * doing separate 'for (yoffset...' loops for J and R
-	   * because we have to fully calculate Jalpha[v][jp_v][dp_v])
-	   * before we can start to calculate Ralpha[v][jp_v][dp_v].
-	   */
-	  /* Handle J and L first */
-	  if(do_J_v || do_L_v) { 
-	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
-	      yoffset = yvalidA[yvalid_idx];
-	      y = cm->cfirst[v] + yoffset;
-	      do_J_y = cp9b->do_J[y];
-	      do_L_y = cp9b->do_L[y];
-	      if(do_J_y || do_L_y) { 
-		jp_y_sdr = j - jmin[y] - sdr;
+	    /* We need to treat R differently from and J and L here, by
+	     * doing separate 'for (yoffset...' loops for J and R
+	     * because we have to fully calculate Jalpha[v][jp_v][dp_v])
+	     * before we can start to calculate Ralpha[v][jp_v][dp_v].
+	     */
+	    /* Handle J and L first */
+	    if(do_J_v || do_L_v) { 
+	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+		yoffset = yvalidA[yvalid_idx];
+		y = cm->cfirst[v] + yoffset;
+		do_J_y = cp9b->do_J[y];
+		do_L_y = cp9b->do_L[y];
+		if(do_J_y || do_L_y) { 
+		  jp_y_sdr = j - jmin[y] - sdr;
 		
-		if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-		  dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-		  ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
-		  if(do_J_v && do_J_y) Jalpha[v][jp_v][dp_v] = FLogsum(Jalpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
-		  if(do_L_v && do_L_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Lalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
+		  if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
+		    dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+		    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		    if(do_J_v && do_J_y) Jalpha[v][jp_v][dp_v] = FLogsum(Jalpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
+		    if(do_L_v && do_L_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Lalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
+		  }
 		}
 	      }
-	    }
-	    if(do_J_v) { 
-	      Jalpha[v][jp_v][dp_v] += esc_v[dsq[i]];
-	      Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
-	    }
-	    if(do_L_v) { 
-	      Lalpha[v][jp_v][dp_v] = (d >= 2) ? Lalpha[v][jp_v][dp_v] + esc_v[dsq[i]] : esc_v[dsq[i]];
-	      Lalpha[v][jp_v][dp_v] = ESL_MAX(Lalpha[v][jp_v][dp_v], IMPOSSIBLE);
-	    }
-	    i--;
-	  }
-
-	  if(do_R_v) { 
-	    /* Handle R separately */
-	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
-	      yoffset = yvalidA[yvalid_idx];
-	      y = cm->cfirst[v] + yoffset;
-	      do_R_y = cp9b->do_R[y];
-	      do_J_y = cp9b->do_J[y];
-	      if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
-		jp_y_sdr = j - jmin[y] - sdr;
-		
-		/* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,L above) */
-		if((d) >= hdmin[y][jp_y_sdr] && (d) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-		  dp_y = d - hdmin[y][jp_y_sdr];
-		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-		  ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
-		  if(do_J_y) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]);
-		  if(do_R_y) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Ralpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]);
-		}
+	      if(do_J_v) { 
+		Jalpha[v][jp_v][dp_v] += esc_v[dsq[i]];
+		Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
 	      }
-	    } /* end of for (yvalid_idx = 0... loop */
-	    Ralpha[v][jp_v][dp_v] = ESL_MAX(Ralpha[v][jp_v][dp_v], IMPOSSIBLE);
+	      if(do_L_v) { 
+		Lalpha[v][jp_v][dp_v] = (d >= 2) ? Lalpha[v][jp_v][dp_v] + esc_v[dsq[i]] : esc_v[dsq[i]];
+		Lalpha[v][jp_v][dp_v] = ESL_MAX(Lalpha[v][jp_v][dp_v], IMPOSSIBLE);
+	      }
+	      i--;
+	    }
+
+	    if(do_R_v) { 
+	      /* Handle R separately */
+	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+		yoffset = yvalidA[yvalid_idx];
+		y = cm->cfirst[v] + yoffset;
+		do_R_y = cp9b->do_R[y];
+		do_J_y = cp9b->do_J[y];
+		if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
+		  jp_y_sdr = j - jmin[y] - sdr;
+		
+		  /* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,L above) */
+		  if((d) >= hdmin[y][jp_y_sdr] && (d) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
+		    dp_y = d - hdmin[y][jp_y_sdr];
+		    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		    ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		    if(do_J_y) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]);
+		    if(do_R_y) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Ralpha[y][jp_y_sdr][dp_y] + tsc_v[yoffset]);
+		  }
+		}
+	      } /* end of for (yvalid_idx = 0... loop */
+	      Ralpha[v][jp_v][dp_v] = ESL_MAX(Ralpha[v][jp_v][dp_v], IMPOSSIBLE);
+	    }
 	  }
 	}
-      }
+      } /* end of if(! StateIsDetached(cm, v) */
     }
-    else if(cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+    else if(cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) { 
       /* update {J,L,R}alpha[v][jp_v][dp_v] cells, for IR states, loop
        * nesting order is: for j { for d { for y { } } } because they
        * can self transit, and a {J,L,R}alpha[v][j][d] cell must be
@@ -2744,94 +2748,96 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
        * MR from IR b/c self-transits in MRs are impossible, but 
        * we don't do that here. */
 
+      if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
       /* The first MR_st/IR_st 'for (j...' loop is for J and R matrices which use the same set of j values */
-      if(do_J_v || do_R_v) { 
-	for (j = jmin[v]; j <= jmax[v]; j++) {
-	  jp_v = j - jmin[v];
-	  yvalid_ct = 0;
-	  j_sdr = j - sdr;
+	if(do_J_v || do_R_v) { 
+	  for (j = jmin[v]; j <= jmax[v]; j++) {
+	    jp_v = j - jmin[v];
+	    yvalid_ct = 0;
+	    j_sdr = j - sdr;
 	  
-	  /* determine which children y we can legally transit to for v, j */
-	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	    if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
+	    /* determine which children y we can legally transit to for v, j */
+	    for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
+	      if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
 	  
-	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
-	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	      dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
 	    
-	    /* We need to treat L differently from and J and R here, by
-	     * doing separate 'for (yoffset...' loops for J because we
-	     * have to fully calculate Jalpha[v][jp_v][dp_v]) before we
-	     * can start to calculate Lalpha[v][jp_v][dp_v].
-	     */
-	    /* Handle J and R first */
-	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
-	      yoffset = yvalidA[yvalid_idx];
-	      y = cm->cfirst[v] + yoffset;
-	      do_J_y = cp9b->do_J[y];
-	      do_R_y = cp9b->do_R[y];
-	      if(do_J_y || do_R_y) { 
-		jp_y_sdr = j - jmin[y] - sdr;
+	      /* We need to treat L differently from and J and R here, by
+	       * doing separate 'for (yoffset...' loops for J because we
+	       * have to fully calculate Jalpha[v][jp_v][dp_v]) before we
+	       * can start to calculate Lalpha[v][jp_v][dp_v].
+	       */
+	      /* Handle J and R first */
+	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+		yoffset = yvalidA[yvalid_idx];
+		y = cm->cfirst[v] + yoffset;
+		do_J_y = cp9b->do_J[y];
+		do_R_y = cp9b->do_R[y];
+		if(do_J_y || do_R_y) { 
+		  jp_y_sdr = j - jmin[y] - sdr;
 		
-		if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-		  dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-		  ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
-		  if(do_J_v && do_J_y) Jalpha[v][jp_v][dp_v] = FLogsum(Jalpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
-		  if(do_R_v && do_R_y) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Ralpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
+		  if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
+		    dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+		    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		    if(do_J_v && do_J_y) Jalpha[v][jp_v][dp_v] = FLogsum(Jalpha[v][jp_v][dp_v], Jalpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
+		    if(do_R_v && do_R_y) Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Ralpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
+		  }
 		}
 	      }
-	    }
-	    if(do_J_v) { 
-	      Jalpha[v][jp_v][dp_v] += esc_v[dsq[j]];
-	      Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
-	    }
-	    if(do_R_v) { 
-	      Ralpha[v][jp_v][dp_v] = (d >= 2) ? Ralpha[v][jp_v][dp_v] + esc_v[dsq[j]] : esc_v[dsq[j]];
-	      Ralpha[v][jp_v][dp_v] = ESL_MAX(Ralpha[v][jp_v][dp_v], IMPOSSIBLE);
+	      if(do_J_v) { 
+		Jalpha[v][jp_v][dp_v] += esc_v[dsq[j]];
+		Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
+	      }
+	      if(do_R_v) { 
+		Ralpha[v][jp_v][dp_v] = (d >= 2) ? Ralpha[v][jp_v][dp_v] + esc_v[dsq[j]] : esc_v[dsq[j]];
+		Ralpha[v][jp_v][dp_v] = ESL_MAX(Ralpha[v][jp_v][dp_v], IMPOSSIBLE);
+	      }
 	    }
 	  }
 	}
-      }
-      /* Handle L separately */
-      if(do_L_v) { 
-	/* The second MR_st/IR_st 'for (j...' loop is for the L matrix which use a different set of j values */
-	for (j = jmin[v]; j <= jmax[v]; j++) {
-	  jp_v = j - jmin[v];
-	  yvalid_ct = 0;
+	/* Handle L separately */
+	if(do_L_v) { 
+	  /* The second MR_st/IR_st 'for (j...' loop is for the L matrix which use a different set of j values */
+	  for (j = jmin[v]; j <= jmax[v]; j++) {
+	    jp_v = j - jmin[v];
+	    yvalid_ct = 0;
 	  
-	  /* determine which children y we can legally transit to for v, j */
-	  /* we use 'j' and not 'j_sdr' here for the L matrix, differently from J and R matrices above */
-	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	    if((y != v) && /* y == v when yoffset == 0 && v is an IR state: we don't want to allow IR self transits in L mode */
-	       (j) >= jmin[y] && ((j) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
+	    /* determine which children y we can legally transit to for v, j */
+	    /* we use 'j' and not 'j_sdr' here for the L matrix, differently from J and R matrices above */
+	    for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
+	      if((y != v) && /* y == v when yoffset == 0 && v is an IR state: we don't want to allow IR self transits in L mode */
+		 (j) >= jmin[y] && ((j) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
 	  
-	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
-	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	      dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
 	    
-	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
-	      /* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
-	      yoffset = yvalidA[yvalid_idx];
-	      y = cm->cfirst[v] + yoffset;
-	      do_L_y = cp9b->do_L[y];
-	      do_J_y = cp9b->do_J[y];
-	      if(do_L_y || do_J_y) { 
-		/* we use 'jp_y=j-min[y]' here, not 'jp_y_sdr=j-jmin[y]-sdr' (which we used in the corresponding loop for J,R above) */
-		jp_y = j - jmin[y];
+	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+		/* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
+		yoffset = yvalidA[yvalid_idx];
+		y = cm->cfirst[v] + yoffset;
+		do_L_y = cp9b->do_L[y];
+		do_J_y = cp9b->do_J[y];
+		if(do_L_y || do_J_y) { 
+		  /* we use 'jp_y=j-min[y]' here, not 'jp_y_sdr=j-jmin[y]-sdr' (which we used in the corresponding loop for J,R above) */
+		  jp_y = j - jmin[y];
 	      
-		/* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,R above) */
-		if((d) >= hdmin[y][jp_y] && (d) <= hdmax[y][jp_y]) { /* make sure d is valid for this v, j and y */
-		  dp_y = d - hdmin[y][jp_y];
-		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v] - hdmin[v][jp_v])));
-		  ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y] - hdmin[y][jp_y])));
-		  if(do_J_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Jalpha[y][jp_y][dp_y] + tsc_v[yoffset]);
-		  if(do_L_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Lalpha[y][jp_y][dp_y] + tsc_v[yoffset]);
+		  /* we use 'd' and 'dp_y' here, not 'd-sd' and 'dp_y_sd' (which we used in the corresponding loop for J,R above) */
+		  if((d) >= hdmin[y][jp_y] && (d) <= hdmax[y][jp_y]) { /* make sure d is valid for this v, j and y */
+		    dp_y = d - hdmin[y][jp_y];
+		    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v] - hdmin[v][jp_v])));
+		    ESL_DASSERT1((dp_y    >= 0 && dp_y     <= (hdmax[y][jp_y] - hdmin[y][jp_y])));
+		    if(do_J_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Jalpha[y][jp_y][dp_y] + tsc_v[yoffset]);
+		    if(do_L_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Lalpha[y][jp_y][dp_y] + tsc_v[yoffset]);
+		  }
 		}
-	      }
-	    } /* end of for (yvalid_idx = 0... loop */
-	    Lalpha[v][jp_v][dp_v] = ESL_MAX(Lalpha[v][jp_v][dp_v], IMPOSSIBLE);
+	      } /* end of for (yvalid_idx = 0... loop */
+	      Lalpha[v][jp_v][dp_v] = ESL_MAX(Lalpha[v][jp_v][dp_v], IMPOSSIBLE);
+	    }
 	  }
 	}
-      }
+      } /* end of if(! StateIsDetached(cm, v)) */
     }
     else if(cm->sttype[v] == MP_st) { 
       /* MP states cannot self transit, this means that all cells in
@@ -3290,7 +3296,6 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
   int      status;          /* easel status code */
   int      v,y,z;	    /* indices for states  */
   int      j,d,i,k;	    /* indices in sequence dimensions */
-  int      dp;              /* temporary d value */
   float    sc;		    /* a temporary variable holding a score */
   int      yoffset;	    /* y=base+offset -- counter in child states that v can transit to */
   int      W;	    	    /* subsequence length */
@@ -3309,9 +3314,7 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
   int      L = j0-i0+1;     /* length of the sequence */
   int      have_el;         /* TRUE if local ends are on */
   /* other variables used in truncated version, but not standard version (not in cm_CYKAlign()) */
-  float Lsc, Rsc;           /* temporary scores */
   float trunc_penalty = 0.; /* penalty in bits for a truncated hit */
-  int   bmode = TRMODE_J;   /* mode TRMODE_J, TRMODE_L, TRMODE_R, or TRMODE_T truncation mode for obtaining bsc */
   int      first_b = -1;    /* index of first B state in the model */
   float    Jsc_full;        /* summed log prob of all J alignments that include full sequence i0..j0 */
   float    Lsc_full;        /* summed log prob of all L alignments that include full sequence i0..j0 */
@@ -3363,6 +3366,7 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
 
   /* Main recursion */
   for (v = cm->M-1; v > 0; v--) {
+    if(j0 >= 1) printf("v: %d Jalpha[8][1][1]: %.4f\n", v, Jalpha[8][1][1]);
     float const *esc_v = cm->oesc[v]; /* emission scores for state v */
     float const *tsc_v = cm->tsc[v];  /* transition scores for state v */
     float const *lmesc_v = cm->lmesc[v]; /* marginal left  emission scores for state v */
@@ -3391,7 +3395,7 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
 	/* rest of deck remains IMPOSSIBLE */
       }
     }
-    else if(cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+    else if(cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) { 
       /* update alpha[v][j][d] cells, for IL states, loop nesting order is:
        * for j { for d { for y { } } } because they can self transit, and a 
        * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
@@ -3405,35 +3409,37 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
        * because we have to fully calculate Jalpha[v][j][d]) before we
        * can start to calculate Ralpha[v][j][d].
        */
-      Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
-      for (jp = sdr; jp <= W; jp++) {
-	j = i0-1+jp;
-	j_sdr = j - sdr;
-	for (d = sd; d <= jp; d++) {
-	  d_sd = d - sd;
-	  i    = j - d + 1;
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
-	    y = cm->cfirst[v] + yoffset; 
-	    Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
-	    Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
-	  }
-	  Jalpha[v][j][d] += esc_v[dsq[i]];
-	  Lalpha[v][j][d]  = (d >= 2) ? Lalpha[v][j][d] + esc_v[dsq[i]] : esc_v[dsq[i]];
+      if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
+	Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
+	for (jp = sdr; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  j_sdr = j - sdr;
+	  for (d = sd; d <= jp; d++) {
+	    d_sd = d - sd;
+	    i    = j - d + 1;
+	    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	      y = cm->cfirst[v] + yoffset; 
+	      Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	      Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	    }
+	    Jalpha[v][j][d] += esc_v[dsq[i]];
+	    Lalpha[v][j][d]  = (d >= 2) ? Lalpha[v][j][d] + esc_v[dsq[i]] : esc_v[dsq[i]];
 
-	  Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
-	  Lalpha[v][j][d]  = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
-	  i--;
+	    Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
+	    Lalpha[v][j][d]  = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
+	    i--;
 
-	  /* handle R separately */
-	  /* note we use 'd', not 'd_sd' (which we used in the corresponding loop for J,L above) */
-	  for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
-	    y = cm->cfirst[v] + yoffset; 
-	    Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Jalpha[y][j_sdr][d] + tsc_v[yoffset]);
-	    Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j_sdr][d] + tsc_v[yoffset]);
+	    /* handle R separately */
+	    /* note we use 'd', not 'd_sd' (which we used in the corresponding loop for J,L above) */
+	    for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
+	      y = cm->cfirst[v] + yoffset; 
+	      Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Jalpha[y][j_sdr][d] + tsc_v[yoffset]);
+	      Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j_sdr][d] + tsc_v[yoffset]);
+	    }
+	    Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 	  }
-	  Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 	}
-      }
+      } /* end of if(! StateIsDetached(cm, v)) */
     }
     else if(cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) { 
       /* update alpha[v][j][d] cells, for IR states, loop nesting order is:
@@ -3449,35 +3455,37 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
        * because we have to fully calculate Jalpha[v][j][d]) before we
        * can start to calculate Lalpha[v][j][d].
        */
-      Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
-      for (jp = sdr; jp <= W; jp++) {
-	j = i0-1+jp;
-	j_sdr = j - sdr;
-	for (d = sd; d <= jp; d++) {
-	  d_sd = d - sd;
-	  i = j - d + 1;
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
-	    y = cm->cfirst[v] + yoffset; 
-	    Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
-	    Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+      if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
+	Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
+	for (jp = sdr; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  j_sdr = j - sdr;
+	  for (d = sd; d <= jp; d++) {
+	    d_sd = d - sd;
+	    i = j - d + 1;
+	    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	      y = cm->cfirst[v] + yoffset; 
+	      Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	      Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	    }
+	    
+	    Jalpha[v][j][d] += esc_v[dsq[j]];
+	    Ralpha[v][j][d]  = (d >= 2) ? Ralpha[v][j][d] + esc_v[dsq[j]] : esc_v[dsq[j]];
+	    
+	    Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
+	    Ralpha[v][j][d]  = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
+	    
+	    /* handle L separately */
+	    /* note we use 'j' and 'd', not 'j_sdr' and 'd_sd' (which we used in the corresponding loop for J,R above) */
+	    for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
+	      y = cm->cfirst[v] + yoffset; 
+	      Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Jalpha[y][j][d] + tsc_v[yoffset]);
+	      Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j][d] + tsc_v[yoffset]);
+	    }
+	    Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	  }
-
-	  Jalpha[v][j][d] += esc_v[dsq[j]];
-	  Ralpha[v][j][d]  = (d >= 2) ? Ralpha[v][j][d] + esc_v[dsq[j]] : esc_v[dsq[j]];
-
-	  Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
-	  Ralpha[v][j][d]  = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
-
-	  /* handle L separately */
-	  /* note we use 'j' and 'd', not 'j_sdr' and 'd_sd' (which we used in the corresponding loop for J,R above) */
-	  for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
-	    y = cm->cfirst[v] + yoffset; 
-	    Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Jalpha[y][j][d] + tsc_v[yoffset]);
-	    Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j][d] + tsc_v[yoffset]);
-	  }
-	  Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	}
-      }
+      } /* end of if(! StateIsDetached(cm, v)) */
     }
     else if(cm->sttype[v] == MP_st) { 
       /* MP states cannot self transit, this means that all cells in
@@ -3699,7 +3707,6 @@ cm_TrInsideAlignChoose(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
   int      status;          /* easel status code */
   int      v,y,z;	    /* indices for states  */
   int      j,d,i,k;	    /* indices in sequence dimensions */
-  int      dp;              /* temporary d value */
   float    sc;		    /* a temporary variable holding a score */
   int      yoffset;	    /* y=base+offset -- counter in child states that v can transit to */
   int      W;	    	    /* subsequence length */
@@ -3716,11 +3723,8 @@ cm_TrInsideAlignChoose(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
   int      d_sdr;           /* d - sdr */
   float    tsc;             /* a transition score */
   int      L = j0-i0+1;     /* length of the sequence */
-  int      have_el;         /* TRUE if local ends are on */
   /* other variables used in truncated version, but not standard version (not in cm_CYKAlign()) */
-  float Lsc, Rsc;           /* temporary scores */
   float trunc_penalty = 0.; /* penalty in bits for a truncated hit */
-  int   bmode = TRMODE_J;   /* mode TRMODE_J, TRMODE_L, TRMODE_R, or TRMODE_T truncation mode for obtaining bsc */
   int      first_b = -1;    /* index of first B state in the model */
   float    Jsc_full;        /* summed log prob of all J alignments that include full sequence i0..j0 */
   float    Lsc_full;        /* summed log prob of all L alignments that include full sequence i0..j0 */
@@ -3795,7 +3799,7 @@ cm_TrInsideAlignChoose(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
 	}
       }
     }
-    else if(cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+    else if(cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) { 
       /* update alpha[v][j][d] cells, for IL states, loop nesting order is:
        * for j { for d { for y { } } } because they can self transit, and a 
        * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
@@ -3809,37 +3813,39 @@ cm_TrInsideAlignChoose(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
        * because we have to fully calculate Jalpha[v][j][d]) before we
        * can start to calculate Ralpha[v][j][d].
        */
-      Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
-      for (jp = sdr; jp <= W; jp++) {
-	j = i0-1+jp;
-	j_sdr = j - sdr;
-	for (d = sd; d <= jp; d++) {
-	  d_sd = d - sd;
-	  i    = j - d + 1;
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
-	    y = cm->cfirst[v] + yoffset; 
-	    Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
-	    Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
-	  }
-	  Jalpha[v][j][d] += esc_v[dsq[i]];
-	  if(d >= 2) Lalpha[v][j][d] = Lalpha[v][j][d] + esc_v[dsq[i]];
-	  else       Lalpha[v][j][d] = esc_v[dsq[i]];
+      if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
+	Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
+	for (jp = sdr; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  j_sdr = j - sdr;
+	  for (d = sd; d <= jp; d++) {
+	    d_sd = d - sd;
+	    i    = j - d + 1;
+	    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	      y = cm->cfirst[v] + yoffset; 
+	      Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	      Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	    }
+	    Jalpha[v][j][d] += esc_v[dsq[i]];
+	    if(d >= 2) Lalpha[v][j][d] = Lalpha[v][j][d] + esc_v[dsq[i]];
+	    else       Lalpha[v][j][d] = esc_v[dsq[i]];
 
-	  Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
-	  Lalpha[v][j][d]  = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
-	  i--;
+	    Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
+	    Lalpha[v][j][d]  = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
+	    i--;
 
-	  /* handle R separately */
-	  /* note we use 'd', not 'd_sd' (which we used in the corresponding loop for J,L above) */
-	  for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
-	    y = cm->cfirst[v] + yoffset; 
-	    Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], ESL_MAX(Jalpha[y][j_sdr][d], Ralpha[y][j_sdr][d]) + tsc_v[yoffset]);
-	    ///Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Jalpha[y][j_sdr][d] + tsc_v[yoffset]);
-	    ///Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j_sdr][d] + tsc_v[yoffset]);
+	    /* handle R separately */
+	    /* note we use 'd', not 'd_sd' (which we used in the corresponding loop for J,L above) */
+	    for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
+	      y = cm->cfirst[v] + yoffset; 
+	      Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], ESL_MAX(Jalpha[y][j_sdr][d], Ralpha[y][j_sdr][d]) + tsc_v[yoffset]);
+	      ///Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Jalpha[y][j_sdr][d] + tsc_v[yoffset]);
+	      ///Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j_sdr][d] + tsc_v[yoffset]);
+	    }
+	    Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 	  }
-	  Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 	}
-      }
+      } /* end of if(! StateIsDetached(cm, v) */
     }
     else if(cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) { 
       /* update alpha[v][j][d] cells, for IR states, loop nesting order is:
@@ -3855,37 +3861,39 @@ cm_TrInsideAlignChoose(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, flo
        * because we have to fully calculate Jalpha[v][j][d]) before we
        * can start to calculate Lalpha[v][j][d].
        */
-      Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
-      for (jp = sdr; jp <= W; jp++) {
-	j = i0-1+jp;
-	j_sdr = j - sdr;
-	for (d = sd; d <= jp; d++) {
-	  d_sd = d - sd;
-	  i = j - d + 1;
-	  for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
-	    y = cm->cfirst[v] + yoffset; 
-	    Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
-	    Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
-	  }
+      if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
+	Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
+	for (jp = sdr; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  j_sdr = j - sdr;
+	  for (d = sd; d <= jp; d++) {
+	    d_sd = d - sd;
+	    i = j - d + 1;
+	    for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
+	      y = cm->cfirst[v] + yoffset; 
+	      Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	      Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	    }
 
-	  Jalpha[v][j][d] += esc_v[dsq[j]];
-	  if(d >= 2) Ralpha[v][j][d] = Ralpha[v][j][d] + esc_v[dsq[j]];
-	  else       Ralpha[v][j][d] = esc_v[dsq[j]];
+	    Jalpha[v][j][d] += esc_v[dsq[j]];
+	    if(d >= 2) Ralpha[v][j][d] = Ralpha[v][j][d] + esc_v[dsq[j]];
+	    else       Ralpha[v][j][d] = esc_v[dsq[j]];
 	  
-	  Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
-	  Ralpha[v][j][d]  = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
+	    Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
+	    Ralpha[v][j][d]  = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 
-	  /* handle L separately */
-	  /* note we use 'j' and 'd', not 'j_sdr' and 'd_sd' (which we used in the corresponding loop for J,R above) */
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
-	    y = cm->cfirst[v] + yoffset; 
-	    Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], ESL_MAX(Jalpha[y][j][d], Lalpha[y][j][d]) + tsc_v[yoffset]);
-	    ///Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Jalpha[y][j][d] + tsc_v[yoffset]);
-	    ///Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j][d] + tsc_v[yoffset]);
+	    /* handle L separately */
+	    /* note we use 'j' and 'd', not 'j_sdr' and 'd_sd' (which we used in the corresponding loop for J,R above) */
+	    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	      y = cm->cfirst[v] + yoffset; 
+	      Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], ESL_MAX(Jalpha[y][j][d], Lalpha[y][j][d]) + tsc_v[yoffset]);
+	      ///Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Jalpha[y][j][d] + tsc_v[yoffset]);
+	      ///Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Lalpha[y][j][d] + tsc_v[yoffset]);
+	    }
+	    Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	  }
-	  Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	}
-      }
+      } /* end of if(! StateIsDetached(cm, v) */
     }
     else if(cm->sttype[v] == MP_st) { 
       /* MP states cannot self transit, this means that all cells in
@@ -4105,7 +4113,6 @@ cm_TrOutsideAlignOLD(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float
   int      v,y,z;	       /* indices for states */
   int      j,d,i,k;	       /* indices in sequence dimensions */
   float    csc;     	       /* a temporary variable holding a float score */
-  float    fsc;     	       /* a temporary variable holding a float score */
   float    escore;	       /* an emission score, tmp variable */
   int      W;		       /* subsequence length */
   int      voffset;	       /* index of v in t_v(y) transition scores */
@@ -4113,10 +4120,6 @@ cm_TrOutsideAlignOLD(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float
   float    bsc;		       /* total score for using local begin states */
   float    freturn_sc;         /* P(S|M)/P(S|R), a float (Scorified ireturn_sc) */
   int      fail_flag = FALSE;  /* set to TRUE if do_check and we see a problem */
-  /* variables used only if do_check */
-  int      n;                  /* counter over nodes, used only if do_check = TRUE */
-  int      num_split_states;   /* temp variable used only if do_check = TRUE */
-  float    diff;               /* temp variable used only if do_check = TRUE */
   /* indices used in the depths of the DP recursion */
   int      emitmode;           /* EMITLEFT, EMITRIGHT, EMITPAIR, EMITNONE, for state y */
   int      sd;                 /* StateDelta(cm->sttype[y]) */
@@ -4139,7 +4142,7 @@ cm_TrOutsideAlignOLD(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float
   float ***Jalpha  = ins_mx->Jdp; /* pointer to the precalc'ed inside Jalpha DP matrix */
   float ***Lalpha  = ins_mx->Ldp; /* pointer to the precalc'ed inside Lalpha DP matrix */
   float ***Ralpha  = ins_mx->Rdp; /* pointer to the precalc'ed inside Ralpha DP matrix */
-  float ***Talpha  = ins_mx->Tdp; /* pointer to the precalc'ed inside Talpha DP matrix */
+  /* Talpha isn't used in TrOutside() */
 
   /* Allocations and initializations
    */
@@ -4633,13 +4636,11 @@ cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
   int      fail1_flag = FALSE; /* set to TRUE if do_check and we see a problem */
   int      fail2_flag = FALSE; /* set to TRUE if do_check and we see a problem */
   int      vmax;               /* i, offset in the matrix */
-  int     *optseen = NULL;     /* [1..i..W] TRUE is residue i is accounted for in optimal parse */
   /* indices used in the depths of the DP recursion */
   int      emitmode;           /* EMITLEFT, EMITRIGHT, EMITPAIR, EMITNONE, for state y */
   int      sd;                 /* StateDelta(cm->sttype[y]) */
   int      sdl;                /* StateLeftDelta(cm->sttype[y] */
   int      sdr;                /* StateRightDelta(cm->sttype[y] */
-  int      ip_L;               /* i index in L matrix */
 
   /* Contract check */
   if (dsq == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrOutsideAlign(), dsq is NULL.\n");
@@ -5028,7 +5029,6 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float
   int      sd;                 /* StateDelta(cm->sttype[y]) */
   int      sdl;                /* StateLeftDelta(cm->sttype[y] */
   int      sdr;                /* StateRightDelta(cm->sttype[y] */
-  int      ip_L;               /* i index in L matrix */
 
   /* Contract check */
   if (dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrCYKOutsideAlign(), dsq is NULL.\n");
@@ -5069,8 +5069,8 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float
    * 
    * Note that for L and R matrix, v can be 0. This allows ROOT_IL
    * and ROOT_IR to emit residues in the optimal parsetree, which
-   * is important b/c in alignment, the full target i0..j0 must be
-   * emitted. In a scanner any parse involving ROOT_IL (or ROOT_IR)
+   * is important b/c in alignment the full target i0..j0 must be
+   * emitted. In a scanner any parse involving ROOT_IL or ROOT_IR
    * would have a non-optimal score (b/c inserted residues are 0
    * bits and transitions are always negative).
    */
@@ -5198,7 +5198,7 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float
 		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j][d+sd]     + cm->tsc[y][voffset] + escore);
 		Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d+sd]     + cm->tsc[y][voffset] + escore);
 	      }
-	      if(i == i0) { /* only allow transition from R if we're emitting first residue i0 from y */
+	      if(i == i0 && v != y) { /* only allow transition from R if we're emitting first residue i0 from y  */
 		Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j][d]        + cm->tsc[y][voffset]);
 		Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j][d]        + cm->tsc[y][voffset]);
 	      }
@@ -5418,7 +5418,6 @@ cm_TrPosterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, CM_TR_M
 {
   int   v, j, d, i;
   float sc;
-  int   vmax;
   int      L;    /* length of sequence */
   
   /* Contract check */

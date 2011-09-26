@@ -274,71 +274,75 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	      /* careful: y is in alpha (all children of a BEGL_S must be non BEGL_S) */
 	    }
 	  }
-	  else if (emitmode == EMITLEFT) {
-	    y = cm->cfirst[v]; 
-	    i = j - dnA[v] + 1;
-	    assert(dnA[v] == 1);
-	    Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
-	    for (d = dnA[v]; d <= dxA[v]; d++) {
-	      Jsc = init_scAA[v][d-sd]; 
-	      Lsc = IMPOSSIBLE;
-	      Rsc = IMPOSSIBLE;
-	      Ralpha[jp_v][v][d] = Rsc; /* this is important b/c if we're an IL, we'll access this cell in the recursion below for Ralpha */
-
-	      /* We need to do separate 'for (yoffset...' loops for J
-	       * and R matrices, because jp_v == jp_y for all states
-	       * here, and for IL states, v can equal y+yoffset (when
-	       * yoffset==0).  This means we have to fully calculate
-	       * the Jalpha[jp_v][y+yoffset][d] cell (which is
-	       * Jalpha[jp_v][v][d]) before we can start to calculate
-	       * Ralpha[jp_v][v][d]. 
-	       */
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
-		Jsc = ESL_MAX(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		Lsc = ESL_MAX(Lsc,         Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+	  else if (emitmode == EMITLEFT) { 
+	    if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
+	      y = cm->cfirst[v]; 
+	      i = j - dnA[v] + 1;
+	      assert(dnA[v] == 1);
+	      Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
+	      for (d = dnA[v]; d <= dxA[v]; d++) {
+		Jsc = init_scAA[v][d-sd]; 
+		Lsc = IMPOSSIBLE;
+		Rsc = IMPOSSIBLE;
+		Ralpha[jp_v][v][d] = Rsc; /* this is important b/c if we're an IL, we'll access this cell in the recursion below for Ralpha */
+		
+		/* We need to do separate 'for (yoffset...' loops for J
+		 * and R matrices, because jp_v == jp_y for all states
+		 * here, and for IL states, v can equal y+yoffset (when
+		 * yoffset==0).  This means we have to fully calculate
+		 * the Jalpha[jp_v][y+yoffset][d] cell (which is
+		 * Jalpha[jp_v][v][d]) before we can start to calculate
+		 * Ralpha[jp_v][v][d]. 
+		 */
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+		  Jsc = ESL_MAX(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		  Lsc = ESL_MAX(Lsc,         Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		}
+		Jalpha[jp_v][v][d] = Jsc + esc_v[dsq[i]];
+		Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + esc_v[dsq[i]] : esc_v[dsq[i]];
+		
+		for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
+		  Rsc = ESL_MAX(Rsc, ESL_MAX(Jalpha[jp_y][y+yoffset][d]      + tsc_v[yoffset],
+					     Ralpha[jp_y][y+yoffset][d]      + tsc_v[yoffset]));
+		}
+		Ralpha[jp_v][v][d] = Rsc;
+		i--;
 	      }
-	      Jalpha[jp_v][v][d] = Jsc + esc_v[dsq[i]];
-	      Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + esc_v[dsq[i]] : esc_v[dsq[i]];
-	      
-	      for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
-		Rsc = ESL_MAX(Rsc, ESL_MAX(Jalpha[jp_y][y+yoffset][d]      + tsc_v[yoffset],
-					   Ralpha[jp_y][y+yoffset][d]      + tsc_v[yoffset]));
-	      }
-	      Ralpha[jp_v][v][d] = Rsc;
-	      i--;
-	    }
+	    } /* end of if(! StateIsDetached(cm, v) */
 	  }
 	  else if (emitmode == EMITRIGHT) { 
-	    y = cm->cfirst[v]; 
-	    assert(dnA[v] == 1);
-	    Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
-	    for (d = dnA[v]; d <= dxA[v]; d++) {
-	      Jsc = init_scAA[v][d-sd]; 
-	      Lsc = IMPOSSIBLE;
-	      Rsc = IMPOSSIBLE;
-	      Lalpha[jp_v][v][d] = Lsc; /* this is important b/c if we're an IR, we'll access this cell in the recursion below for Lalpha */
-	      
-	      /* We need to do separate 'for (yoffset...' loops for J
-	       * and L matrices, because jp_v == jq_y for all states
-	       * here, and for IR states, v can equal y+yoffset (when
-	       * yoffset==0).  This means we have to fully calculate
-	       * the Jalpha[jq_y][y+yoffset][d] cell (which is
-	       * Jalpha[jp_v][v][d]) before we can start to calculate
-	       * Lalpha[jp_v][v][d]. 
-	       */
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
-		Jsc = ESL_MAX(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		Rsc = ESL_MAX(Rsc,         Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+	    if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
+	      y = cm->cfirst[v]; 
+	      assert(dnA[v] == 1);
+	      Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
+	      for (d = dnA[v]; d <= dxA[v]; d++) {
+		Jsc = init_scAA[v][d-sd]; 
+		Lsc = IMPOSSIBLE;
+		Rsc = IMPOSSIBLE;
+		Lalpha[jp_v][v][d] = Lsc; /* this is important b/c if we're an IR, we'll access this cell in the recursion below for Lalpha */
+		
+		/* We need to do separate 'for (yoffset...' loops for J
+		 * and L matrices, because jp_v == jq_y for all states
+		 * here, and for IR states, v can equal y+yoffset (when
+		 * yoffset==0).  This means we have to fully calculate
+		 * the Jalpha[jq_y][y+yoffset][d] cell (which is
+		 * Jalpha[jp_v][v][d]) before we can start to calculate
+		 * Lalpha[jp_v][v][d]. 
+		 */
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
+		  Jsc = ESL_MAX(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		  Rsc = ESL_MAX(Rsc,         Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		}
+		Jalpha[jp_v][v][d] = Jsc + esc_j;
+		Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + esc_j : esc_j;
+		
+		for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
+		  Lsc = ESL_MAX(Lsc, ESL_MAX(Jalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset],
+					     Lalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset]));
+		}
+		Lalpha[jp_v][v][d] = Lsc;
 	      }
-	      Jalpha[jp_v][v][d] = Jsc + esc_j;
-	      Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + esc_j : esc_j;
-
-	      for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
-		Lsc = ESL_MAX(Lsc, ESL_MAX(Jalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset],
-					   Lalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset]));
-	      }
-	      Lalpha[jp_v][v][d] = Lsc;
-	    }
+	    } /* end of if(! StateIsDetached(cm, v) */
 	  }
 	  else if (emitmode == EMITPAIR) { 
 	    y = cm->cfirst[v]; 
@@ -857,71 +861,75 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	      /* careful: y is in alpha (all children of a BEGL_S must be non BEGL_S) */
 	    }
 	  }
-	  else if (emitmode == EMITLEFT) {
-	    y = cm->cfirst[v]; 
-	    i = j - dnA[v] + 1;
-	    assert(dnA[v] == 1);
-	    Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
-	    for (d = dnA[v]; d <= dxA[v]; d++) {
-	      Jsc = init_scAA[v][d-sd]; 
-	      Lsc = -INFTY;
-	      Rsc = -INFTY;
-	      Ralpha[jp_v][v][d] = Rsc; /* this is important b/c if we're an IL, we'll access this cell in the recursion below for Ralpha */
-
-	      /* We need to do separate 'for (yoffset...' loops for J
-	       * and R matrices, because jp_v == jp_y for all states
-	       * here, and for IL states, v can equal y+yoffset (when
-	       * yoffset==0).  This means we have to fully calculate
-	       * the Jalpha[jp_v][y+yoffset][d] cell (which is
-	       * Jalpha[jp_v][v][d]) before we can start to calculate
-	       * Ralpha[jp_v][v][d]. 
-	       */
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
-		Jsc = ILogsum(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		Lsc = ILogsum(Lsc,         Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+	  else if (emitmode == EMITLEFT) { 
+	    if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
+	      y = cm->cfirst[v]; 
+	      i = j - dnA[v] + 1;
+	      assert(dnA[v] == 1);
+	      Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
+	      for (d = dnA[v]; d <= dxA[v]; d++) {
+		Jsc = init_scAA[v][d-sd]; 
+		Lsc = -INFTY;
+		Rsc = -INFTY;
+		Ralpha[jp_v][v][d] = Rsc; /* this is important b/c if we're an IL, we'll access this cell in the recursion below for Ralpha */
+		
+		/* We need to do separate 'for (yoffset...' loops for J
+		 * and R matrices, because jp_v == jp_y for all states
+		 * here, and for IL states, v can equal y+yoffset (when
+		 * yoffset==0).  This means we have to fully calculate
+		 * the Jalpha[jp_v][y+yoffset][d] cell (which is
+		 * Jalpha[jp_v][v][d]) before we can start to calculate
+		 * Ralpha[jp_v][v][d]. 
+		 */
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+		  Jsc = ILogsum(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		  Lsc = ILogsum(Lsc,         Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		}
+		Jalpha[jp_v][v][d] = Jsc + esc_v[dsq[i]];
+		Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + esc_v[dsq[i]] : esc_v[dsq[i]];
+		
+		for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
+		  Rsc = ILogsum(Rsc, ILogsum(Jalpha[jp_y][y+yoffset][d]      + tsc_v[yoffset],
+					     Ralpha[jp_y][y+yoffset][d]      + tsc_v[yoffset]));
+		}
+		Ralpha[jp_v][v][d] = Rsc;
+		i--;
 	      }
-	      Jalpha[jp_v][v][d] = Jsc + esc_v[dsq[i]];
-	      Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + esc_v[dsq[i]] : esc_v[dsq[i]];
-	      
-	      for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
-		Rsc = ILogsum(Rsc, ILogsum(Jalpha[jp_y][y+yoffset][d]      + tsc_v[yoffset],
-					   Ralpha[jp_y][y+yoffset][d]      + tsc_v[yoffset]));
-	      }
-	      Ralpha[jp_v][v][d] = Rsc;
-	      i--;
-	    }
+	    } /* end of if(! StateIsDetached(cm, v) */
 	  }
 	  else if (emitmode == EMITRIGHT) { 
-	    y = cm->cfirst[v]; 
-	    assert(dnA[v] == 1);
-	    Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
-	    for (d = dnA[v]; d <= dxA[v]; d++) {
-	      Jsc = init_scAA[v][d-sd]; 
-	      Lsc = -INFTY;
-	      Rsc = -INFTY;
-	      Lalpha[jp_v][v][d] = Lsc; /* this is important b/c if we're an IR, we'll access this cell in the recursion below for Lalpha */
-	      
-	      /* We need to do separate 'for (yoffset...' loops for J
-	       * and L matrices, because jp_v == jq_y for all states
-	       * here, and for IR states, v can equal y+yoffset (when
-	       * yoffset==0).  This means we have to fully calculate
-	       * the Jalpha[jq_y][y+yoffset][d] cell (which is
-	       * Jalpha[jp_v][v][d]) before we can start to calculate
-	       * Lalpha[jp_v][v][d]. 
-	       */
-	      for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
-		Jsc = ILogsum(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		Rsc = ILogsum(Rsc,         Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+	    if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
+	      y = cm->cfirst[v]; 
+	      assert(dnA[v] == 1);
+	      Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
+	      for (d = dnA[v]; d <= dxA[v]; d++) {
+		Jsc = init_scAA[v][d-sd]; 
+		Lsc = -INFTY;
+		Rsc = -INFTY;
+		Lalpha[jp_v][v][d] = Lsc; /* this is important b/c if we're an IR, we'll access this cell in the recursion below for Lalpha */
+		
+		/* We need to do separate 'for (yoffset...' loops for J
+		 * and L matrices, because jp_v == jq_y for all states
+		 * here, and for IR states, v can equal y+yoffset (when
+		 * yoffset==0).  This means we have to fully calculate
+		 * the Jalpha[jq_y][y+yoffset][d] cell (which is
+		 * Jalpha[jp_v][v][d]) before we can start to calculate
+		 * Lalpha[jp_v][v][d]. 
+		 */
+		for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
+		  Jsc = ILogsum(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		  Rsc = ILogsum(Rsc,         Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		}
+		Jalpha[jp_v][v][d] = Jsc + esc_j;
+		Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + esc_j : esc_j;
+		
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
+		  Lsc = ILogsum(Lsc, ILogsum(Jalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset],
+					     Lalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset]));
+		}
+		Lalpha[jp_v][v][d] = Lsc;
 	      }
-	      Jalpha[jp_v][v][d] = Jsc + esc_j;
-	      Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + esc_j : esc_j;
-
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
-		Lsc = ILogsum(Lsc, ILogsum(Jalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset],
-					   Lalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset]));
-	      }
-	      Lalpha[jp_v][v][d] = Lsc;
-	    }
+	    } /* end of if(! StateIsDetached(cm, v) */
 	  }
 	  else if (emitmode == EMITPAIR) { 
 	    y = cm->cfirst[v]; 
