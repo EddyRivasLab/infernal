@@ -51,10 +51,11 @@ static ESL_OPTIONS options[] = {
   { "-s",        eslARG_INT,     "42", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
   { "-v",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "be verbose",                                     0 },
   { "-N",        eslARG_INT,    "100", NULL, NULL,  NULL,  NULL, NULL, "number of randomly sampled CMs",                 0 },
-  { "--nolocal", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL,"--noglobal", "don't test  local, only global",                 0 },
+  { "--nocyk",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL,"--noinside", "don't test  CYK,   only Inside",          0 },
+  { "--noinside",eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "don't test  Inside, only CYK",                   0 },
+  { "--nolocal", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL,"--noglobal", "don't test  local, only global",          0 },
   { "--noglobal",eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "don't test global, only  local",                 0 },
   { "--skip",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "skip handmade CM, only do random ones",          0 },
-  { "--choose",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "use cm_TrInsideChoose()",                        0 },
   { "--vv",      eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "be very verbose",                                0 },
   { "--ev",      eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "be extremely verbose",                           0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -140,6 +141,8 @@ main(int argc, char **argv)
   char           *cmpfile  = esl_opt_GetString (go, "-o");
   int             N        = esl_opt_GetInteger(go, "-N");
   int             do_local;
+  int             do_cyk   = esl_opt_GetBoolean(go, "--nocyk")    ? FALSE : TRUE;
+  int             do_inside= esl_opt_GetBoolean(go, "--noinside") ? FALSE : TRUE;
   double          Sbrute_ins[3];/* best standard (non-truncated) lod Inside scores for seqs L=0..2 calculated by brute force path enumeration */
   double          Jbrute_ins[3];/* best Joint          lod Inside scores for seqs L=0..2 calculated by brute force path enumeration */
   double          Lbrute_ins[3];/* best Left  marginal lod Inside scores for seqs L=0..2 calculated by brute force path enumeration */
@@ -162,15 +165,27 @@ main(int argc, char **argv)
   int             first_j; 
   float           cyk_precision, ins_precision; /* expected bound on absolute accuracy for CYK, Inside */
   char            errbuf[cmERRBUFSIZE];
-  CM_MX            *mx     = NULL;       /* alpha DP matrix for non-banded CYK/Inside() */
-  CM_SHADOW_MX     *shmx   = NULL;       /* shadow matrix for non-banded tracebacks */
-  CM_TR_MX         *trmx   = NULL;       /* alpha DP matrix for non-banded truncated CYK/Inside() */
-  CM_TR_SHADOW_MX  *trshmx = NULL;       /* shadow matrix for non-banded truncated tracebacks */
+  CM_MX            *mx       = NULL;       /* alpha DP matrix for non-banded CYK/Inside() */
+  CM_MX            *out_mx   = NULL;       /* beta DP matrix for non-banded Outside */
+  CM_SHADOW_MX     *shmx     = NULL;       /* shadow matrix for non-banded tracebacks */
+  CM_TR_MX         *trmx     = NULL;       /* alpha DP matrix for non-banded truncated CYK/Inside() */
+  CM_TR_MX         *out_trmx = NULL;       /* beta DP matrix for non-banded truncated Outside() */
+  CM_TR_SHADOW_MX  *trshmx   = NULL;       /* shadow matrix for non-banded truncated tracebacks */
+  char             *mode; 
   Parsetree_t *tr;
   float sc;
 
   /* setup logsum lookups */
   FLogsumInit();
+
+  esl_vec_FSet(Sins_sc, 3, 0.);
+  esl_vec_FSet(Jins_sc, 3, 0.);
+  esl_vec_FSet(Lins_sc, 3, 0.);
+  esl_vec_FSet(Rins_sc, 3, 0.);
+  esl_vec_FSet(Scyk_sc, 3, 0.);
+  esl_vec_FSet(Jcyk_sc, 3, 0.);
+  esl_vec_FSet(Lcyk_sc, 3, 0.);
+  esl_vec_FSet(Rcyk_sc, 3, 0.);
 
   for (do_local = 0; do_local <= 1; do_local++) { /* run tests in both glocal and local mode   */
     
@@ -186,11 +201,13 @@ main(int argc, char **argv)
 	if (j == 0)      set_brute_matl_params(do_local, &prm);
 	else             sample_brute_matl_params(r, do_local, &prm);
 
-	cm     = create_brute_matl_cm(abc, errbuf, do_local, &prm);
-	mx     = cm_mx_Create(cm);
-	shmx   = cm_shadow_mx_Create(cm);
-	trmx   = cm_tr_mx_Create(cm);
-	trshmx = cm_tr_shadow_mx_Create(cm);
+	cm       = create_brute_matl_cm(abc, errbuf, do_local, &prm);
+	mx       = cm_mx_Create(cm);
+	out_mx   = cm_mx_Create(cm);
+	shmx     = cm_shadow_mx_Create(cm);
+	trmx     = cm_tr_mx_Create(cm);
+	out_trmx = cm_tr_mx_Create(cm);
+	trshmx   = cm_tr_shadow_mx_Create(cm);
 
 	score_brute_matl_cm(&prm, cm->null[0], TRUE,  do_local, esl_opt_GetBoolean(go, "--vv"), Sbrute_cyk, Jbrute_cyk, Lbrute_cyk, Rbrute_cyk);
 	score_brute_matl_cm(&prm, cm->null[0], FALSE, do_local, esl_opt_GetBoolean(go, "--vv"), Sbrute_ins, Jbrute_ins, Lbrute_ins, Rbrute_ins);
@@ -207,22 +224,43 @@ main(int argc, char **argv)
 	    dsq[0] = dsq[L+1] = eslDSQ_SENTINEL;       /* Initialize dsq of length L at 0000... (all A) */
 	    for (i = 1; i <= L; i++) dsq[i] = 0;
 	    
-	    if ((status = cm_CYKAlign    (cm, errbuf, dsq, L, 0, cm->M-1, 1, L, do_local, 128., shmx, NULL, NULL, mx, &(Scyk_sc[L])))  != eslOK) esl_fatal("CYK failed: %s", errbuf);
-	    if (esl_opt_GetBoolean(go, "--ev")) cm_mx_Dump(stdout, mx);
-
-	    if ((status = cm_InsideAlign(cm, errbuf, dsq, 1, L, 128., mx, &(Sins_sc[L]))) != eslOK)  esl_fatal("Inside failed: %s", errbuf);
-	    if (esl_opt_GetBoolean(go, "--ev")) cm_mx_Dump(stdout, mx);
-
-	    if ((status = cm_TrCYKAlign    (cm, errbuf, dsq, 1, L, 128., trmx, trshmx, NULL, NULL, &(Jcyk_sc[L]), &(Lcyk_sc[L]), &(Rcyk_sc[L]), NULL, NULL))  != eslOK) esl_fatal("TrCYK failed: %s", errbuf);
-	    if (esl_opt_GetBoolean(go, "--ev")) cm_tr_mx_Dump(stdout, trmx);
-
-	    if(esl_opt_GetBoolean(go, "--choose")) { 
-	      if ((status = cm_TrInsideAlignChoose(cm, errbuf, dsq, 1, L, 128., trmx, &(Jins_sc[L]), &(Lins_sc[L]), &(Rins_sc[L]), NULL, NULL))  != eslOK) esl_fatal("TrInside failed: %s", errbuf);
+	    if(do_cyk) { 
+	      if ((status = cm_CYKAlign    (cm, errbuf, dsq, L, 0, cm->M-1, 1, L, do_local, 128., shmx, NULL, NULL, mx, &(Scyk_sc[L])))  != eslOK) esl_fatal("CYK failed: %s", errbuf);
+	      if (esl_opt_GetBoolean(go, "--ev")) cm_mx_Dump(stdout, mx);
+	      
+	      /* run CYKOutside and enforce a consistency check of the CYKInside/CYKOutside matrices */
+	      if ((status = cm_CYKOutsideAlign(cm, errbuf, dsq, 1, L, 128., out_mx, mx, TRUE, NULL)) != eslOK)  esl_fatal("CYKOutside failed: %s", errbuf);
 	    }
-	    else { 
-	      if ((status = cm_TrInsideAlign (cm, errbuf, dsq, 1, L, 128., trmx, &(Jins_sc[L]), &(Lins_sc[L]), &(Rins_sc[L]), NULL, NULL))  != eslOK) esl_fatal("TrInside failed: %s", errbuf);
+	    
+	    if(do_inside) { 
+	      if ((status = cm_InsideAlign(cm, errbuf, dsq, 1, L, 128., mx, &(Sins_sc[L]))) != eslOK)  esl_fatal("Inside failed: %s", errbuf);
+	      if (esl_opt_GetBoolean(go, "--ev")) cm_mx_Dump(stdout, mx);
+	      
+	      /* run Outside and enforce a consistency check of the Inside/Outside matrices */
+	      if ((status = cm_OutsideAlign(cm, errbuf, dsq, 1, L, 128., out_mx, mx, TRUE, NULL)) != eslOK)  esl_fatal("Outside failed: %s", errbuf);
 	    }
-	    if (esl_opt_GetBoolean(go, "--ev")) cm_tr_mx_Dump(stdout, trmx);
+
+	    if(do_cyk) { 
+	      if ((status = cm_TrCYKAlign       (cm, errbuf, dsq, 1, L, 128., trmx, trshmx, NULL, NULL, NULL, NULL, NULL, NULL))  != eslOK) esl_fatal("TrCYK failed: %s", errbuf);
+	      if (esl_opt_GetBoolean(go, "--ev")) cm_tr_mx_Dump(stdout, trmx);
+	      Jcyk_sc[L] = trmx->Jdp[0][L][L];
+	      Lcyk_sc[L] = trmx->Ldp[0][L][L];
+	      Rcyk_sc[L] = trmx->Rdp[0][L][L];
+	      
+	      /* run TrCYKOutside and enforce a consistency check of the CYKInside/CYKOutside matrices */
+	      if ((status = cm_TrCYKOutsideAlign(cm, errbuf, dsq, 1, L, 128., TRUE, out_trmx, trmx)) != eslOK) esl_fatal("TrCYKOutside failed: %s", errbuf);
+	    }
+
+	    if(do_inside) { 
+	      if ((status = cm_TrInsideAlign (cm, errbuf, dsq, 1, L, 128., trmx, &mode, NULL))  != eslOK) esl_fatal("TrInside failed: %s", errbuf);
+	      if (esl_opt_GetBoolean(go, "--ev")) cm_tr_mx_Dump(stdout, trmx);
+	      Jins_sc[L] = trmx->Jdp[0][L][L];
+	      Lins_sc[L] = trmx->Ldp[0][L][L];
+	      Rins_sc[L] = trmx->Rdp[0][L][L];
+	      
+	      /* run TrOutside and enforce a consistency check of the Inside/Outside matrices */
+	      if ((status = cm_TrOutsideAlign(cm, errbuf, dsq, 1, L, 128., TRUE, mode, out_trmx, trmx)) != eslOK) esl_fatal("TrOutside failed: %s", errbuf);
+	    }
 
 	    cyk_precision = 1e-4;    /* default impl uses fp, should be accurate within machine precision      */
 	    ins_precision = 0.015;   /* default impl uses FLogsum, tolerate 2^0.015 ~= 1% error in Inside probs */
@@ -243,76 +281,99 @@ main(int argc, char **argv)
 		     Rbrute_cyk[L], Rcyk_sc[L]);
 
 	    if(! (do_local && L == 0)) { /* length 0 sequences are IMPOSSIBLE in local mode */
-	      if ((NOT_IMPOSSIBLE(Scyk_sc[L]) || NOT_IMPOSSIBLE(Sbrute_cyk[L])) && 
-		  (fabs(Scyk_sc[L] - Sbrute_cyk[L]) > cyk_precision)) { 
-		if((status = cm_Align(cm, errbuf, NULL, dsq, L, 1, L, 128., mx, shmx, FALSE, FALSE, NULL, &tr, NULL, NULL, NULL)) != eslOK) cm_Fail("cm_Align() call failed");
-		ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
-		ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
-		printf("Parsetree score      : %.4f\n", sc);
-		esl_fatal("CYK        scores mismatched: %-6s %s  L=%1d brute=%8.4f cm_CYKAlign()=%8.4f (difference %g)",
-			  do_local ? "local" : "glocal",
-			  (j > 0)  ? "random": "fixed",
+	      if(do_cyk) { 
+		if ((NOT_IMPOSSIBLE(Scyk_sc[L]) || NOT_IMPOSSIBLE(Sbrute_cyk[L])) && 
+		    (fabs(Scyk_sc[L] - Sbrute_cyk[L]) > cyk_precision)) { 
+		  if((status = cm_Align(cm, errbuf, NULL, dsq, L, 1, L, 128., mx, shmx, FALSE, FALSE, NULL, &tr, NULL, NULL, NULL)) != eslOK) cm_Fail("cm_Align() call failed");
+		  ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+		  ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
+		  printf("Parsetree score      : %.4f\n", sc);
+		  esl_fatal("CYK        scores mismatched: %-6s %s  L=%1d brute=%8.4f cm_CYKAlign()=%8.4f (difference %g)",
+			    do_local ? "local" : "glocal",
+			    (j > 0)  ? "random": "fixed",
 			  L, 
-			  Sbrute_cyk[L], Scyk_sc[L], fabs(Sbrute_cyk[L] - Scyk_sc[L]));
+			    Sbrute_cyk[L], Scyk_sc[L], fabs(Sbrute_cyk[L] - Scyk_sc[L]));
+		}
 	      }
-	      if ((NOT_IMPOSSIBLE(Sins_sc[L]) || NOT_IMPOSSIBLE(Sbrute_ins[L])) && 
-		  (fabs(Sins_sc[L] - Sbrute_ins[L]) > ins_precision)) {
-		esl_fatal("Inside     scores mismatched: %-6s %s L=%1d brute=%8.4f cm_InsideAlign()=%8.4f",
-			  do_local ? "local" : "glocal",
-			  (j > 0)  ? "random": "fixed",
-			  L, 
-			  Sbrute_ins[L], Sins_sc[L]);
+
+	      if(do_inside) { 
+		if ((NOT_IMPOSSIBLE(Sins_sc[L]) || NOT_IMPOSSIBLE(Sbrute_ins[L])) && 
+		    (fabs(Sins_sc[L] - Sbrute_ins[L]) > ins_precision)) {
+		  esl_fatal("Inside     scores mismatched: %-6s %s L=%1d brute=%8.4f cm_InsideAlign()=%8.4f",
+			    do_local ? "local" : "glocal",
+			    (j > 0)  ? "random": "fixed",
+			    L, 
+			    Sbrute_ins[L], Sins_sc[L]);
+		}
 	      }
-	      if ((NOT_IMPOSSIBLE(Jcyk_sc[L]) || NOT_IMPOSSIBLE(Jbrute_cyk[L])) && 
-		  (fabs(Jcyk_sc[L] - Jbrute_cyk[L]) > cyk_precision)) {
-		if((status = cm_TrAlign(cm, errbuf, NULL, dsq, 1, L, 128., trmx, trshmx, FALSE, FALSE, NULL, &tr, NULL, NULL, NULL)) != eslOK) cm_Fail("cm_TrAlign() call failed");
-		ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
-		ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
-		esl_fatal("TrCYK     J scores mismatched: %-6s %s  L=%1d brute=%8.4f cm_TrCYKAlign()=%8.4f (difference %g)",
-			  do_local ? "local" : "glocal",
-			  (j > 0)  ? "random": "fixed",
-			  L, 
-			  Jbrute_cyk[L], Jcyk_sc[L], fabs(Jbrute_cyk[L] - Jcyk_sc[L]));
+
+	      if(do_cyk) { 
+		if ((NOT_IMPOSSIBLE(Jcyk_sc[L]) || NOT_IMPOSSIBLE(Jbrute_cyk[L])) && 
+		    (fabs(Jcyk_sc[L] - Jbrute_cyk[L]) > cyk_precision)) {
+		  if((status = cm_TrAlign(cm, errbuf, NULL, dsq, 1, L, 128., trmx, trshmx, FALSE, FALSE, NULL, &tr, NULL, NULL, NULL)) != eslOK) cm_Fail("cm_TrAlign() call failed");
+		  ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+		  ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
+		  esl_fatal("TrCYK     J scores mismatched: %-6s %s  L=%1d brute=%8.4f cm_TrCYKAlign()=%8.4f (difference %g)",
+			    do_local ? "local" : "glocal",
+			    (j > 0)  ? "random": "fixed",
+			    L, 
+			    Jbrute_cyk[L], Jcyk_sc[L], fabs(Jbrute_cyk[L] - Jcyk_sc[L]));
+		}
 	      }
-	      if ((NOT_IMPOSSIBLE(Jins_sc[L]) || NOT_IMPOSSIBLE(Jbrute_ins[L])) && 
-		  (fabs(Jins_sc[L] - Jbrute_ins[L]) > ins_precision)) {
-		esl_fatal("TrInside J scores mismatched: %-6s %s L=%1d brute=%8.4f cm_TrInsideAlign()=%8.4f",
-			  do_local ? "local" : "glocal",
-			  (j > 0)  ? "random": "fixed",
-			  L, 
-			  Jbrute_ins[L], Jins_sc[L]);
+
+	      if(do_inside) { 
+		if ((NOT_IMPOSSIBLE(Jins_sc[L]) || NOT_IMPOSSIBLE(Jbrute_ins[L])) && 
+		    (fabs(Jins_sc[L] - Jbrute_ins[L]) > ins_precision)) {
+		  esl_fatal("TrInside J scores mismatched: %-6s %s L=%1d brute=%8.4f cm_TrInsideAlign()=%8.4f",
+			    do_local ? "local" : "glocal",
+			    (j > 0)  ? "random": "fixed",
+			    L, 
+			    Jbrute_ins[L], Jins_sc[L]);
+		}
 	      }
-	      if ((NOT_IMPOSSIBLE(Lcyk_sc[L]) || NOT_IMPOSSIBLE(Lbrute_cyk[L])) && 
-		  (fabs(Lcyk_sc[L] - Lbrute_cyk[L]) > cyk_precision)) {
-		esl_fatal("TrCYK     L scores mismatched: %-6s %s  L=%1d brute=%8.4f cm_TrCYKAlign()=%8.4f (difference %g)",
-			  do_local ? "local" : "glocal",
-			  (j > 0)  ? "random": "fixed",
-			  L, 
-			  Lbrute_cyk[L], Lcyk_sc[L], fabs(Lbrute_cyk[L] - Lcyk_sc[L]));
+
+	      if(do_cyk) { 
+		if ((NOT_IMPOSSIBLE(Lcyk_sc[L]) || NOT_IMPOSSIBLE(Lbrute_cyk[L])) && 
+		    (fabs(Lcyk_sc[L] - Lbrute_cyk[L]) > cyk_precision)) {
+		  esl_fatal("TrCYK     L scores mismatched: %-6s %s  L=%1d brute=%8.4f cm_TrCYKAlign()=%8.4f (difference %g)",
+			    do_local ? "local" : "glocal",
+			    (j > 0)  ? "random": "fixed",
+			    L, 
+			    Lbrute_cyk[L], Lcyk_sc[L], fabs(Lbrute_cyk[L] - Lcyk_sc[L]));
+		}
 	      }
-	      if ((NOT_IMPOSSIBLE(Lins_sc[L]) || NOT_IMPOSSIBLE(Lbrute_ins[L])) && 
-		  (fabs(Lins_sc[L] - Lbrute_ins[L]) > ins_precision)) {
-		esl_fatal("TrInside L scores mismatched: %-6s %s L=%1d brute=%8.4f cm_TrInsideAlign()=%8.4f",
-			  do_local ? "local" : "glocal",
-			  (j > 0)  ? "random": "fixed",
-			  L, 
-			  Lbrute_ins[L], Lins_sc[L]);
+	      
+	      if(do_inside) { 
+		if ((NOT_IMPOSSIBLE(Lins_sc[L]) || NOT_IMPOSSIBLE(Lbrute_ins[L])) && 
+		    (fabs(Lins_sc[L] - Lbrute_ins[L]) > ins_precision)) {
+		  esl_fatal("TrInside L scores mismatched: %-6s %s L=%1d brute=%8.4f cm_TrInsideAlign()=%8.4f",
+			    do_local ? "local" : "glocal",
+			    (j > 0)  ? "random": "fixed",
+			    L, 
+			    Lbrute_ins[L], Lins_sc[L]);
+		}
 	      }
-	      if ((NOT_IMPOSSIBLE(Rcyk_sc[L]) || NOT_IMPOSSIBLE(Rbrute_cyk[L])) && 
-		  (fabs(Rcyk_sc[L] - Rbrute_cyk[L]) > cyk_precision)) {
-		esl_fatal("TrCYK     R scores mismatched: %-6s %s  L=%1d brute=%8.4f cm_TrCYKAlign()=%8.4f (difference %g)",
-			  do_local ? "local" : "glocal",
-			  (j > 0)  ? "random": "fixed",
-			  L, 
-			  Rbrute_cyk[L], Rcyk_sc[L], fabs(Rbrute_cyk[L] - Rcyk_sc[L]));
+
+	      if(do_cyk) { 
+		if ((NOT_IMPOSSIBLE(Rcyk_sc[L]) || NOT_IMPOSSIBLE(Rbrute_cyk[L])) && 
+		    (fabs(Rcyk_sc[L] - Rbrute_cyk[L]) > cyk_precision)) {
+		  esl_fatal("TrCYK     R scores mismatched: %-6s %s  L=%1d brute=%8.4f cm_TrCYKAlign()=%8.4f (difference %g)",
+			    do_local ? "local" : "glocal",
+			    (j > 0)  ? "random": "fixed",
+			    L, 
+			    Rbrute_cyk[L], Rcyk_sc[L], fabs(Rbrute_cyk[L] - Rcyk_sc[L]));
+		}
 	      }
-	      if ((NOT_IMPOSSIBLE(Rins_sc[L]) || NOT_IMPOSSIBLE(Rbrute_ins[L])) && 
-		  (fabs(Rins_sc[L] - Rbrute_ins[L]) > ins_precision)) { 
-		esl_fatal("TrInside  R scores mismatched: %-6s %s L=%1d brute=%8.4f cm_TrInsideAlign()=%8.4f",
-			  do_local ? "local" : "glocal",
-			  (j > 0)  ? "random": "fixed",
-			  L, 
-			  Rbrute_ins[L], Rins_sc[L]);
+	      
+	      if(do_inside) { 
+		if ((NOT_IMPOSSIBLE(Rins_sc[L]) || NOT_IMPOSSIBLE(Rbrute_ins[L])) && 
+		    (fabs(Rins_sc[L] - Rbrute_ins[L]) > ins_precision)) { 
+		  esl_fatal("TrInside  R scores mismatched: %-6s %s L=%1d brute=%8.4f cm_TrInsideAlign()=%8.4f",
+			    do_local ? "local" : "glocal",
+			    (j > 0)  ? "random": "fixed",
+			    L, 
+			    Rbrute_ins[L], Rins_sc[L]);
+		}
 	      }
 	    }
 	  }
@@ -731,15 +792,16 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
      which doesn't exist in this model. */
 
   /* If we switch from L mode to J mode, highest valued L mode state must be a right emitter (there's only one in this CM, the ROOT_IR) */
-  /* 5 Left marginal alignments that emit 1 residue are possible */
-  Lp[0]  = isc;             /* ROOT_IL(1) (L=1) */
-  Lp[1]  = msc;             /* MATL_ML(3) (L=1) */
-  Lp[2]  = isc;             /* MATL_IL(5) (L=1) */
-  Lp[3]  = msc;             /* MATL_ML(6) (L=1) */
+  /* 4 Left marginal alignments that emit 1 residue are possible */
+  Lp[0]  = isc;             /* ROOT_IL(1L) (L=1) */
+  Lp[1]  = msc;             /* MATL_ML(3L) (L=1) */
+  Lp[2]  = isc;             /* MATL_IL(5L) (L=1) */
+  Lp[3]  = msc;             /* MATL_ML(6L) (L=1) */
   /* Following parsetree would be counted, except that we know MATL_IL(8) is detached so it is not. The DP functions also know to skip any parsetree involving detached states like MATL_IL(8) */
   /* Lp[]= isc;                MATL_IL(8) (L=1) */
+
   /* 14 Left marginal alignments that emit 2 residue are possible */
-  Lp[4]  = isc * isc * prm->t1t1;                          /* ROOT_IL(1) ROOT_IL(1)                       (L=2) */
+  Lp[4]  = isc * isc * prm->t1t1;                                                  /* ROOT_IL(1L) ROOT_IL(1L)                                                 (L=2) */
   /* we can use ROOT_IR(2) in L marginal mode without emitting from it */             
   Lp[5]  = msc * isc * prm->t1t2 * prm->t2t3;                                      /* ROOT_IL(1L) ROOT_IR(2L) MATL_ML(3L)                                     (L=2); L mode: silent IR */
   Lp[6]  = isc * isc * prm->t1t2 * prm->t2t4 * prm->t4t5;                          /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4L) MATL_IL(5L)                         (L=2); L mode: silent IR */
@@ -750,7 +812,6 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
   Lp[10] = isc * isc * prm->t1t2 * prm->t2t4 * prm->t4t5 * prm->t5t7 * prm->t7t9;  /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4J) MATL_IL(5J) MATL_D (7J) END_E  (9J) (L=2); L mode: silent IR; L->J switch at IR */
   Lp[11] = msc * isc * prm->t1t2 * prm->t2t4 * prm->t4t6 * prm->t6t9;              /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4J) MATL_ML(6J) END_E  (9J)             (L=2); L mode: silent IR; L->J switch at IR */
   Lp[12] = isc * isc * prm->t1t2 * prm->t2t4 * prm->t4t7 * prm->t7t8 * prm->t8t9;  /* ROOT_IL(1L) ROOT_IR(2L) MATL_D (4J) MATL_D (7J) MATL_IL(8J) END_E  (9J) (L=2); L mode: silent IR; L->J switch at IR */
-
   Lp[13] = isc * msc * prm->t1t3;                                                  /* ROOT_IL(1L) MATL_ML(3L)                                                 (L=2) */
   Lp[14] = isc * isc * prm->t1t4 * prm->t4t5;                                      /* ROOT_IL(1L) MATL_D (4L) MATL_IL(5L)                                     (L=2) */
   Lp[15] = isc * msc * prm->t1t4 * prm->t4t6;                                      /* ROOT_IL(1L) MATL_D (4L) MATL_ML(6L)                                     (L=2) */
@@ -765,7 +826,7 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
   /* Following parsetree would be counted, except that we know MATL_IL(8) is detached so it is not. The DP functions also know to skip any parsetree involving detached states like MATL_IL(8) */
   /* Lp[]= isc * isc * prm->t8t8;                                                     MATL_IL(8L) MATL_IL(8L)                                                 (L=2) will be 0. b/c 8 is detached */
   /* local ends */
-  Lp[24] = isc * msc * prm->t1t2 * prm->t2t3 * prm->end[3];                        /* ROOT_IL(1L) ROOT_IR(2L) MATL_ML(3R) EL  (10R)                           (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
+  Lp[24] = isc * msc * prm->t1t2 * prm->t2t3 * prm->end[3];                        /* ROOT_IL(1L) ROOT_IR(2L) MATL_ML(3J) EL  (10J)                           (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
 
   /* R alignments */
   /* No truncated alignments emit 0 residues because you have to enter B,

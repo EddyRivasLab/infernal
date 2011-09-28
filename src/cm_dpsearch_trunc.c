@@ -1254,7 +1254,6 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   int      jpn, jpx;           /* minimum/maximum jp_v */
   int      dp_v, dp_y, dp_z;   /* offset d index for states v, y, z */
   int      dn, dx;             /* current minimum/maximum d allowed */
-  int      dp;                 /* ESL_MAX(d-sd, 0) */
   int      dp_y_sd;            /* dp_y - sd */
   int      dp_y_sdr;           /* dp_y - sdr, often for jp_y_sdr */
   int      dpn, dpx;           /* minimum/maximum dp_v */
@@ -1276,8 +1275,6 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
   int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
   int      do_T_v, do_T_y, do_T_z; /* is T matrix valid for state v, y, z? */
-  int      Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
-  int      Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), dsq is NULL.\n");
@@ -2254,7 +2251,6 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   int      jpn, jpx;           /* minimum/maximum jp_v */
   int      dp_v, dp_y, dp_z;   /* offset d index for states v, y, z */
   int      dn, dx;             /* current minimum/maximum d allowed */
-  int      dp;                 /* ESL_MAX(d-sd, 0) */
   int      dp_y_sd;            /* dp_y - sd */
   int      dp_y_sdr;           /* dp_y - sdr, often for jp_y_sdr */
   int      dpn, dpx;           /* minimum/maximum dp_v */
@@ -2279,7 +2275,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), dsq is NULL.\n");
   if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), mx is NULL.\n");
-  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), mx is NULL.\n");
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), cm->cp9b is NULL.\n");
 
   ESL_DPRINTF1(("cm->search_opts & CM_SEARCH_HMMALNBANDS: %d\n", cm->search_opts & CM_SEARCH_HMMALNBANDS));
 

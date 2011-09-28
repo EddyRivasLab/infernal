@@ -250,9 +250,9 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 
   /* Step 2B: (only if do_trunc) Calculate occupancy and candidate states for marginal alignments */
   if(do_trunc) { 
-    /* xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG */
     cp9_PredictStartAndEndPositions(pmx, cp9b, i0, j0);
     cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b);
+    /* xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG */
   }
 
   /* Step 3: HMM bands  ->  CM bands. */
@@ -5308,7 +5308,7 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
 void
 cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b)
 {
-  int v, p;
+  int v;
   int nd;
   int lpos = 1;
   int rpos = cm->clen;
@@ -5338,7 +5338,33 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b)
     }
   }
 
-  cp9b->do_J[0] = TRUE; /* the ROOT_S state is special, all local or truncated hits will be rooted here */
+  /* The ROOT_S state is special, all hits are rooted there, if we can do a 
+   * truncated {J,L,R,T} begin into v, we need to set do_{J,L,R,T}[0] to TRUE. 
+   */
+  for(v = 0; v < cp9b->cm_M; v++) {
+    switch(cm->sttype[v]) { 
+    case B_st:
+      if(cp9b->do_J[v]) cp9b->do_J[0] = TRUE;
+      if(cp9b->do_L[v]) cp9b->do_L[0] = TRUE;
+      if(cp9b->do_R[v]) cp9b->do_R[0] = TRUE;
+      if(cp9b->do_T[v]) cp9b->do_T[0] = TRUE;
+      break;
+    case MP_st:
+      if(cp9b->do_J[v]) cp9b->do_J[0] = TRUE;
+      if(cp9b->do_L[v]) cp9b->do_L[0] = TRUE;
+      if(cp9b->do_R[v]) cp9b->do_R[0] = TRUE;
+      break;
+    case ML_st:
+    case IL_st:
+      if(cp9b->do_J[v]) cp9b->do_J[0] = TRUE;
+      if(cp9b->do_L[v]) cp9b->do_L[0] = TRUE;
+      break;
+    case MR_st:
+    case IR_st:
+      if(cp9b->do_J[v]) cp9b->do_J[0] = TRUE;
+      if(cp9b->do_R[v]) cp9b->do_R[0] = TRUE;
+    }
+  }
 
   return;
 }

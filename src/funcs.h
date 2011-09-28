@@ -128,19 +128,20 @@ extern int cm_CheckPosteriorHB (CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX
 extern int cm_CheckPosterior   (CM_t *cm, char *errbuf, int i0, int j0, CM_MX    *post);
 
 /* from cm_dpalign_trunc.c */
-extern int cm_TrCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, int *ret_b, char *ret_bmode, float *ret_Jsc, float *ret_Lsc, float *ret_Rsc, float *ret_Tsc, float *ret_sc);
-extern int cm_TrCYKAlign  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, int *ret_b, char *ret_bmode, float *ret_Jsc, float *ret_Lsc, float *ret_Rsc, float *ret_Tsc, float *ret_sc);
-extern int cm_TrAlign(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX *mx, CM_TR_SHADOW_MX *shmx, 
-		      int do_optacc, int do_sample, CM_TR_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode, float *ret_sc, float *ret_ins_sc);
-extern int cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, 
+extern int  cm_TrCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, int *ret_Jb, int *ret_Lb, int *ret_Rb, int *ret_Tb, char *ret_mode, float *ret_sc);
+extern int  cm_TrCYKAlign  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, int *ret_Jb, int *ret_Lb, int *ret_Rb, int *ret_Tb, char *ret_mode, float *ret_sc);
+extern int  cm_TrAlign  (CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX *mx, CM_TR_SHADOW_MX *shmx, 
+		        int do_optacc, int do_sample, CM_TR_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode, float *ret_sc, float *ret_ins_sc);
+extern int  cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, 
 			int do_optacc, int do_sample, CM_TR_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode, float *ret_sc, float *ret_ins_sc);
-extern int cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_HB_MX *mx, float *ret_sc);
-extern int cm_TrInsideAlign (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX *mx, float *ret_Jsc, float *ret_Lsc, float *ret_Rsc, float *ret_Tsc, float *ret_sc);
-extern int cm_TrInsideAlignChoose(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX *mx, float *ret_Jsc, float *ret_Lsc, float *ret_Rsc, float *ret_Tsc, float *ret_sc);
-extern int cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, 
-			     CM_TR_MX *mx, CM_TR_MX *ins_mx, float *ret_sc);
-extern int cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, CM_TR_MX *mx, CM_TR_MX *inscyk_mx, float *ret_sc);
-extern int cm_TrPosterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, CM_TR_MX *ins_mx, CM_TR_MX *out_mx, CM_TR_MX *post_mx);
+extern int  cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_HB_MX *mx, char *ret_mode, float *ret_sc);
+extern int  cm_TrInsideAlign  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_TR_MX    *mx, char *ret_mode, float *ret_sc);
+extern int  cm_TrOutsideAlign   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, char opt_mode, CM_TR_MX *mx, CM_TR_MX *ins_mx);
+extern int  cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, char opt_mode, CM_TR_MX *mx, CM_TR_MX *inscyk_mx);
+extern int  cm_TrPosterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, char mode, CM_TR_MX *ins_mx, CM_TR_MX *out_mx, CM_TR_MX *post_mx);
+extern int  cm_TrCheckPosterior(CM_t *cm, char *errbuf, char mode, int L, CM_TR_MX *post);
+extern void cm_TrModeFromAlphas(CM_TR_MX *mx, int W, int disallow_J, char *ret_mode, float *ret_sc);
+extern int  cm_TrFillFromMode(char mode, int *ret_fill_J, int *ret_fill_L, int *ret_fill_R, int *ret_fill_T);
 
 /* from cm_dpsearch.c */
 extern int  FastCYKScan      (CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);

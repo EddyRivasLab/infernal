@@ -917,21 +917,22 @@ typedef struct _fullmat_t {
  */
 #define USED_LOCAL_BEGIN 101
 #define USED_EL          102
-#define USED_TRUNC_BEGIN 103
-#define USED_TRUNC_END   104
+#define USED_TRUNC_END   103
 
-/* Constants for alignment truncation modes, used during alignment traceback.
- * We use TRMODE{J,L,R}_OFFSET as a way of determining the marginal alignment
- * mode just from the yoffset stored in the {J,L,R}shadow matrices, by 
- * adding the appropriate offset to yoffset depending on the truncation mode.
- * A crucial fact is that yoffset ranges from 0..MAXCONNECT-1 for normal
- * states, but it can also be USED_LOCAL_BEGIN, USED_EL, and USED_TRUNC_BEGIN,
- * so we have to make sure that adding 0..MAXCONNECT-1 to any of the 
- * TRMODE_{J,L,R}_OFFSET values does not add up to USED_LOCAL_BEGIN, USED_EL
- * or USED_TRUNC_BEGIN. And remember that these values have to be able
- * to be stored in a char.
+/* Constants for alignment truncation modes, used during alignment
+ * traceback.  We use TRMODE{J,L,R}_OFFSET as a way of determining the
+ * marginal alignment mode just from the yoffset stored in the
+ * {J,L,R}shadow matrices, by adding the appropriate offset to yoffset
+ * depending on the truncation mode.  A crucial fact is that yoffset
+ * ranges from 0..MAXCONNECT-1 for normal states, but it can also be
+ * USED_LOCAL_BEGIN, USED_EL, and USED_TRUNC_BEGIN, so we have to make
+ * sure that adding 0..MAXCONNECT-1 to any of the
+ * TRMODE_{J,L,R}_OFFSET values does not add up to USED_LOCAL_BEGIN or
+ * USED_EL.  And remember that these values have to be able to be
+ * stored in a char.
  */
-#define NTRMODES        4
+#define NTRMODES        5
+#define TRMODE_UNKNOWN  4
 #define TRMODE_J        3
 #define TRMODE_L        2
 #define TRMODE_R        1
