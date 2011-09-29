@@ -140,8 +140,9 @@ extern int  cm_TrOutsideAlign   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, i
 extern int  cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, int do_check, char opt_mode, CM_TR_MX *mx, CM_TR_MX *inscyk_mx);
 extern int  cm_TrPosterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, char mode, CM_TR_MX *ins_mx, CM_TR_MX *out_mx, CM_TR_MX *post_mx);
 extern int  cm_TrCheckPosterior(CM_t *cm, char *errbuf, char mode, int L, CM_TR_MX *post);
+extern int  cm_TrOptAccAlign   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, char opt_mode, CM_TR_MX *mx, CM_TR_SHADOW_MX *shmx, CM_TR_MX *post_mx, int *ret_b, float *ret_pp);
 extern void cm_TrModeFromAlphas(CM_TR_MX *mx, int W, int disallow_J, char *ret_mode, float *ret_sc);
-extern int  cm_TrFillFromMode(char mode, int *ret_fill_J, int *ret_fill_L, int *ret_fill_R, int *ret_fill_T);
+extern int  cm_TrFillFromMode(char mode, int *ret_fill_L, int *ret_fill_R, int *ret_fill_T);
 
 /* from cm_dpsearch.c */
 extern int  FastCYKScan      (CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
