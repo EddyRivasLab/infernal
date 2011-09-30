@@ -857,10 +857,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
     /* beginning of large if() else if() else if() ... statement */
     if(do_inside) { 
       if(do_hbanded) { /* HMM banded inside only */
-	if((status = cm_InsideAlignHB(cm, errbuf, cur_dsq, 1, L, size_limit, cm->hbmx, &sc)) != eslOK) return status; /* errbuf will have been filled by cm_InsideAlignHB() */
+	if((status = cm_InsideAlignHB(cm, errbuf, cur_dsq, L, size_limit, cm->hbmx, &sc)) != eslOK) return status; /* errbuf will have been filled by cm_InsideAlignHB() */
       }
       else { /* non-banded inside only */
-	if((status = cm_InsideAlign(cm, errbuf, cur_dsq, 1, L, size_limit, mx, &sc)) != eslOK) return status; 
+	if((status = cm_InsideAlign(cm, errbuf, cur_dsq, L, size_limit, mx, &sc)) != eslOK) return status; 
       }
     }
     else if (do_small) { /* small D&C CYK alignment */
@@ -878,67 +878,27 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
       if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
     }
     else { /* non-small, non-QDB CYK or optimal accuracy alignment or sample an alignment from Inside matrix */
-      if(do_hbanded) { 
-	if(do_post) { /* HMM banded CYK or optimal accuracy or sample, posterior annotated */
-	  if(do_sample) { 
-	    if((status = cm_AlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, cm->shhbmx, do_optacc, do_sample, cm->ohbmx, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
-	  }
-	  else {
-	    if((status = cm_AlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, cm->shhbmx, do_optacc, do_sample, cm->ohbmx, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
-	  }
-	}
-	else { 
-	  if(do_optacc) { /* HMM banded optimal accuracy, no posteriors */
-	    if((status = cm_AlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, cm->shhbmx, do_optacc, do_sample, cm->ohbmx, cur_tr, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
-	  }
-	  else if(do_sample) { /* HMM banded sample from Inside, no posteriors */
-	    if((status = cm_AlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, cm->shhbmx, do_optacc, do_sample, cm->ohbmx, cur_tr, NULL, &sc, NULL)) != eslOK) return status; /* we can't handle a memory overload if we're sampling */
-	  }
-	  else { /* HMM banded CYK */
-	    if((status = cm_AlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, cm->shhbmx, do_optacc, do_sample, cm->ohbmx, cur_tr, NULL, &sc, NULL)) != eslOK) {
-	      if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
-		hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
-		ESL_DPRINTF1(("# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));
-		fprintf(ofp, "# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i); 
-		sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
-	      }
-	      else return status; /* get here (!do_optacc) && cm_AlignHB() returned status other than eslOK and eslERANGE */
-	    }
-	  }
-	}
-	/* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits,
-	 * this should never happen if we're doing optimal accuracy or appending posteriors, due to option checking in cmalign, cmscore,
-	 * but we check here to be safe */
-	if(cm->align_opts & CM_ALIGN_HMMSAFE && sc < 0.) { 
-	  if(do_post)   ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_POST.\n");
-	  if(do_optacc) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_OPTACC.\n");
-	  tmpsc = sc;
-	  if(!silent_mode) fprintf(ofp, "\n# %s HMM banded parse had a negative score, realigning with non-banded CYK.\n", seqs_to_aln->sq[i]->name);
-	  FreeParsetree(*cur_tr);
+      if(do_hbanded) { /* HMM banded CYK, optimal accuracy or sample, either with or without posteriors annotated */
+	status = cm_AlignHB(cm, errbuf, cur_dsq, L, size_limit, do_optacc, do_sample, cm->hbmx, cm->shhbmx, cm->ohbmx, 
+			    ( do_sample             ? r              : NULL), 
+			    ( do_post               ? &(postcode[i]) : NULL), 
+			    ((do_post || do_optacc) ? &ins_sc        : NULL), 
+			    cur_tr, &sc);
+	if (status == eslERANGE && (! do_optacc) && (! do_sample) && (! do_post)) { 
+	  ESL_DPRINTF1(("# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));
+	  fprintf(ofp, "# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i); 
 	  sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
-	  if(!silent_mode && fabs(sc-tmpsc) < 0.01) fprintf(ofp, "# HMM banded parse was the optimal parse.\n\n");
-	  else if (!silent_mode) fprintf(ofp, "# HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
 	}
+	else if(status != eslOK) return status;
       } /* end of if(do_hbanded) */
-      else { 
-	if(do_post) { /* non-banded CYK or optimal accuracy or sample an alignment from inside matrix, posterior annotated */
-	  if(do_sample) { 
-	    if((status = cm_Align(cm, errbuf, r,    cur_dsq, L, 1, L, size_limit, mx, shmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
-	  }
-	  else { 
-	    if((status = cm_Align(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, mx, shmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
-	  }
-	}
-	else if(do_optacc) { /* non-banded optimal accuracy no posteriors */
-	  if((status = cm_Align(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, mx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, &sc, &ins_sc)) != eslOK) return status;
-	}
-	else if(do_sample) { /* non-banded optimal accuracy no posteriors */
-	  if((status = cm_Align(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, mx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, &sc, NULL)) != eslOK) return status;
-	}
-	else { /* non-banded CYK, no posteriors */
-	  if((status = cm_Align(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, mx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, &sc, NULL)) != eslOK) return status;
-	}
-	if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* allows you to see where the non-banded parse went outside the bands. */
+      else { /* non-banded */
+	status = cm_Align(cm, errbuf, cur_dsq, L, size_limit, do_optacc, do_sample, mx, shmx, out_mx,
+			  ( do_sample             ? r              : NULL), 
+			  ( do_post               ? &(postcode[i]) : NULL), 
+			  ((do_post || do_optacc) ? &ins_sc        : NULL), 
+			  cur_tr, &sc);
+	if(status != eslOK) return status;
+	if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* allows you to see where the non-banded parse went outside the QD bands. */
       } 
     }
     /* end of large if() else if() else if() else statement */

@@ -2104,14 +2104,14 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
 {
   int                 status;               /* Easel status code */
   Parsetree_t        *tr = NULL;            /* pointer to the pointer to the parsetree we're currently creating */
-  char               *postcode = NULL;      /* posterior decode array of strings */
+  char               *ppstr = NULL;         /* posterior decode array of strings */
   ESL_DSQ            *subdsq;               /* ptr to start of a hit */
   int                 hitlen;               /* hit length */
   float               hbmx_Mb;              /* approximate size in Mb for HMM banded matrix for current hit */
   float               shmx_Mb;              /* approximate size in Mb for HMM banded shadow matrix for current hit */
   float               total_Mb;             /* approximate size in Mb needed for alignment of a hit */
   int                 do_optacc;            /* TRUE to do optimal accuracy alignment */
-  int                 do_postcode;          /* TRUE to derive posteriors for hit alignments */
+  int                 do_ppstr;             /* TRUE to derive posteriors for hit alignments */
   int                 do_hbanded;           /* TRUE to use HMM bands for alignment */
   int                 do_nonbanded;         /* TRUE to align without bands (instead of using HMM bands) */
   ESL_STOPWATCH      *watch = NULL;         /* stopwatch for timing alignment step */
@@ -2125,7 +2125,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   /* set defaults, these may be changed below */
   optacc_sc    = 0.;
   do_optacc    = FALSE;
-  do_postcode  = FALSE;
+  do_ppstr     = FALSE;
   do_hbanded   = FALSE;
   do_nonbanded = FALSE;
 
@@ -2182,15 +2182,15 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
       pli->n_aln_hb++;
       do_optacc    = (pli->align_cyk) ? FALSE : TRUE;
       total_Mb     = (pli->align_cyk) ? (hbmx_Mb + shmx_Mb) : (2*hbmx_Mb + shmx_Mb);
-      do_postcode  = TRUE;
+      do_ppstr     = TRUE;
       do_hbanded   = TRUE;
       do_nonbanded = FALSE;
     }
     else { /* not enough memory for HMM banded alignment, fall back to D&C CYK */
       pli->n_aln_dccyk++;
       do_optacc    = FALSE;
-      do_postcode  = FALSE;
-      postcode     = NULL;
+      do_ppstr     = FALSE;
+      ppstr        = NULL;
       do_hbanded   = FALSE;
       do_nonbanded = TRUE;
     }
@@ -2200,20 +2200,21 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   }
   
   if(do_hbanded) { 
-    status = cm_AlignHB(cm, pli->errbuf, NULL, subdsq, hitlen, 1, hitlen, 
-			pli->hb_size_limit,                   /* limit for a single CM_HB_MX, so this is safe */
-			cm->hbmx, cm->shhbmx,                 /* inside/posterior, shadow matrices */
-			do_optacc,                            /* use optimal accuracy alg? */
-			FALSE,                                /* don't sample aln from Inside matrix */
-			(do_postcode ? cm->ohbmx : NULL),     /* outside DP matrix */
-			&tr,                                  /* parsetree */
-			(do_postcode ? &postcode  : NULL),    /* posterior codes */
-			(do_optacc   ? &optacc_sc : &cyk_sc), /* optimal accuracy or CYK score */
-			(do_optacc   ? &ins_sc    : NULL));   /* inside score, NULL if we're not doing opt acc */
+    status = cm_AlignHB(cm, pli->errbuf, subdsq, hitlen, 
+			pli->hb_size_limit,                  /* limit for a single CM_HB_MX, so this is safe */
+			do_optacc,                           /* use optimal accuracy alg? */
+			FALSE,                               /* don't sample aln from Inside matrix */
+			cm->hbmx, cm->shhbmx,                /* inside, shadow matrices */
+			(do_ppstr ? cm->ohbmx : NULL),       /* outside DP matrix */
+			NULL,                                /* ESL_RANDOMNESS, unneeded b/c we're not sampling */
+			(do_ppstr  ? &ppstr  : NULL),        /* posterior string */
+			(do_optacc ? &ins_sc : NULL),        /* inside score, NULL if we're not doing opt acc */
+			&tr,                                 /* parsetree */
+			(do_optacc ? &optacc_sc : &cyk_sc)); /* optimal accuracy or CYK score */
     if(status == eslERANGE) { 
       /* matrix was too big, despite our pre-check (should be rare), use D&C CYK */
       do_optacc    = FALSE;
-      do_postcode  = FALSE;
+      do_ppstr     = FALSE;
       do_hbanded   = FALSE; 
       do_nonbanded = TRUE;
     }
@@ -2225,18 +2226,18 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
     cyk_sc = CYKDivideAndConquer(cm, subdsq, hitlen, 0, 1, hitlen, &tr, NULL, NULL); 
     esl_stopwatch_Stop(watch);  
     total_Mb = CYKNonQDBSmallMbNeeded(cm, hitlen);
-    postcode = NULL;
+    ppstr = NULL;
   }
     
   
-  hit->ad = cm_alidisplay_Create(cm->abc, tr, cm, cmcons, sq, hit->start, postcode, 
+  hit->ad = cm_alidisplay_Create(cm->abc, tr, cm, cmcons, sq, hit->start, ppstr, 
 				 (do_optacc) ? optacc_sc : cyk_sc, 
 				 do_optacc, do_hbanded, total_Mb, watch->elapsed);
   /*cm_alidisplay_Dump(stdout, hit->ad);*/
 
   /* clean up and return */
   FreeParsetree(tr);
-  if(do_postcode && postcode != NULL) free(postcode);
+  if(do_ppstr && ppstr != NULL) free(ppstr);
   if(watch  != NULL) { esl_stopwatch_Destroy(watch); }
 
   return eslOK;

@@ -1,7 +1,7 @@
 /* cm_dpalign_trunc.c
  * 
  * DP functions for truncated HMM banded and non-banded, non-D&C CM
- * alignment.
+ * alignment of a full target sequence. 
  *
  * All functions use a DP matrix and or shadow matrix, either
  * non-banded (CM_TR_MX, CM_TR_SHADOW_MX) or HMM banded (CM_TR_HB_MX,
@@ -211,7 +211,7 @@ cm_TrCYKAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int i0, int j0, float siz
   if (cp9b->jmin[0] > j0 || cp9b->jmax[0] < j0)             ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKAlignHB(): j0 (%d) is outside ROOT_S's j band (%d..%d)\n", j0, cp9b->jmin[0], cp9b->jmax[0]);
   jp_0 = j0 - jmin[0];
   if (cp9b->hdmin[0][jp_0] > W || cp9b->hdmax[0][jp_0] < W) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKAlignHB(): W (%d) is outside ROOT_S's d band (%d..%d)\n", W, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
-  Wp_0 = j0 - jmin[0];
+  Wp_0 = W - hdmin[0][jp_0];
 
   /* grow the matrices based on the current sequence and bands */
   if((status = cm_tr_hb_mx_GrowTo       (cm,   mx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
@@ -2511,7 +2511,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
   if (cp9b->jmin[0] > j0 || cp9b->jmax[0] < j0)             ESL_FAIL(eslEINVAL, errbuf, "cm_TrInsideAlignHb(): j0 (%d) is outside ROOT_S's j band (%d..%d)\n", j0, cp9b->jmin[0], cp9b->jmax[0]);
   jp_0 = j0 - jmin[0];
   if (cp9b->hdmin[0][jp_0] > W || cp9b->hdmax[0][jp_0] < W) ESL_FAIL(eslEINVAL, errbuf, "cm_TrInsideAlignHB(): W (%d) is outside ROOT_S's d band (%d..%d)\n", W, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
-  Wp_0 = j0 - jmin[0];
+  Wp_0 = W - hdmin[0][jp_0];
 
   /* grow the matrix based on the current sequence and bands */
   if((status = cm_tr_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
@@ -4917,9 +4917,9 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
     sdl  = StateLeftDelta(cm->sttype[v]);
     sdr  = StateRightDelta(cm->sttype[v]);
 
-    /* re-initialize the J deck if we can do a local end from v and
-     * check for a special optimal-accuracy-specific initialization
-     * case*/
+    /* re-initialize if we can do a local end from v and check for a
+     * special optimal-accuracy-specific initialization case
+     */
     if(NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (jp = 0; jp <= W; jp++) {
 	j = i0-1+jp;
@@ -5438,6 +5438,7 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
 int
 cm_TrPostCode(CM_t *cm, char *errbuf, int L, CM_MX *post, Parsetree_t *tr, int do_normalize, char **ret_pcode, float *ret_avgp)
 {
+#if 0
   int        status; /* easel status code */
   int        x, v, i, j, d, r, jp, rp; 
   int        v2, j2, d2;
@@ -5479,8 +5480,7 @@ cm_TrPostCode(CM_t *cm, char *errbuf, int L, CM_MX *post, Parsetree_t *tr, int d
    * M deck is not valid. Note: there are no bands on the EL state */
   if (have_el) { 
     /* add contributions of ELs */
-    for (jp = 0; jp <= L; jp++) {
-      j = i0-1+jp;
+    for (j = 0; j <= L; j++) {
       ip = jp;
       for (d = 1; d <= jp; d++) { 
 	res_logp[ip] = FLogsum(res_logp[ip], post->dp[cm->M][jp][d]);
@@ -5636,6 +5636,8 @@ cm_TrPostCode(CM_t *cm, char *errbuf, int L, CM_MX *post, Parsetree_t *tr, int d
  ERROR:
   ESL_FAIL(eslEMEM, errbuf, "cm_TrPostcode(): Memory allocation error.");
   return status; /* never reached */
+#endif
+  return eslOK;
 }
 
 /*****************************************************************
