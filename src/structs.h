@@ -1282,6 +1282,62 @@ typedef struct cm_tr_hb_shadow_mx_s {
 			 * it when mx is freed. */
 } CM_TR_HB_SHADOW_MX;
 
+/* CM_EMIT_MX: Two 2-dimensional matrices <l_pp> and <r_pp>
+ * where: 
+ *
+ * l_pp[v][i]: log of the posterior probability that state v emitted
+ *             residue i leftwise either at (if a match state) or
+ *             *after* (if an insert state) the left consensus
+ *             position modeled by state v's node.
+ *
+ * r_pp[v][i]: log of the posterior probability that state v emitted
+ *             residue i rightwise either at (if a match state) or
+ *             *before* (if an insert state) the right consensus
+ *             position modeled by state v's node.
+ *
+ * l_pp[v] is NULL for states that do not emit leftwise  (B,S,D,E,IR,MR)
+ * r_pp[v] is NULL for states that do not emit rightwise (B,S,D,E,IL,ML)
+ *
+ * Importantly the definition above is not: "l_pp[v][i] is the posterior
+ * probability that residue i was emitted from state v", although that
+ * is true for MATL_ML and all IL states. It is not true however for
+ * MATP_MP states and MATP_MP states because we want to combine the 
+ * posterior probability that either the MATP_MP or the MATP_ML states
+ * from the same node emitted each residue i, it is the sum that is stored
+ * in l_pp[v][i]. The same is true for the analogous case in r_pp with
+ * MATP_MP and MATP_MR states. 
+ */
+typedef struct cm_emit_mx_s {
+  int      M;		    /* number of states (1st dim ptrs) in current mx */
+  int      L;               /* length of sequence the matrix currently corresponds to */
+  int64_t  l_ncells_alloc;  /* current cell allocation limit for dp */
+  int64_t  l_ncells_valid;  /* current number of valid cells for dp */
+  int64_t  r_ncells_alloc;  /* current cell allocation limit for dp */
+  int64_t  r_ncells_valid;  /* current number of valid cells for dp */
+  float    size_Mb;         /* current size of matrix in Megabytes  */
+
+  float   **l_pp;         /* matrix: [0..v..M][0..1..i..L], l_pp[v][0] is
+			   * always IMPOSSIBLE l_pp[v] == NULL if v is
+			   * not a left emitter.
+			   */
+  float   **r_pp;         /* matrix: [0..v..M][0..1..i..L], r_pp[v][0] is
+			   * always IMPOSSIBLE r_pp[v] == NULL if v is
+			   * not a right emitter.
+			   */
+  float    *l_pp_mem;     /* the actual mem for l_pp, points to
+			   * l_pp[v][0], where v is min v for which
+			   * l_pp != NULL */
+  float    *r_pp_mem;     /* the actual mem for r_pp, points to
+			   * r_pp[v][0], where v is min v for which
+			   * r_pp != NULL */
+  float    *sum;          /* [0..1..i..L] log of the summed posterior
+			   * probability that residue i was emitted
+			   * either leftwise or rightwise by any state.
+			   * Used for normalizing l_pp and r_pp.
+			   */
+} CM_EMIT_MX;
+
+
 /* Structure ScanMatrix_t: Information used by all CYK/Inside scanning functions,
  * compiled together into one data structure for convenience. 
  */

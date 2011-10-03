@@ -76,7 +76,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-static int   cm_alignT   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, CM_MX    *mx, CM_SHADOW_MX    *shmx, CM_MX    *post_mx, Parsetree_t **ret_tr, float *ret_sc);
+static int   cm_alignT   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, CM_MX    *mx, CM_SHADOW_MX    *shmx, CM_EMIT_MX *emit_mx, Parsetree_t **ret_tr, float *ret_sc);
 static int   cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, CM_HB_MX *post_mx, Parsetree_t **ret_tr, float *ret_sc);
 static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
 
@@ -93,7 +93,7 @@ static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
  *           append to an existing but empty parsetree tr.
  *           The full sequence 1..L will be aligned.
  *        
- *           If (<do_optacc>) then post_mx must != NULL.
+ *           If (<do_optacc>) then emit_mx must != NULL.
  *
  *           Very similar to cm_dpsmall.c:insideT() in case of 
  *           CYK alignment, but uses more efficient implementation
@@ -108,7 +108,7 @@ static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
  *           do_optacc  - TRUE to align with optimal accuracy, else use CYK
  *           mx         - the DP matrix to fill in
  *           shmx       - the shadow matrix to fill in
- *           post_mx    - the pre-filled posterior matrix, must be non-NULL if do_optacc
+ *           emit_mx    - the pre-filled emit matrix, must be non-NULL if do_optacc
  *           ret_tr     - RETURN: the optimal parsetree
  *           ret_sc     - RETURN: optimal score (CYK if !do_optacc, else avg PP of all 1..L residues) 
  * 
@@ -119,7 +119,7 @@ static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
  */
 int
 cm_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, 
-	  CM_MX *mx, CM_SHADOW_MX *shmx, CM_MX *post_mx, Parsetree_t **ret_tr, float *ret_sc)
+	  CM_MX *mx, CM_SHADOW_MX *shmx, CM_EMIT_MX *emit_mx, Parsetree_t **ret_tr, float *ret_sc)
 {
   int       status;
   Parsetree_t *tr = NULL;       /* the parsetree */
@@ -131,7 +131,7 @@ cm_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_
   int       bifparent;          /* B_st parent */
   int       b;                  /* local begin state */
 
-  if(do_optacc) { if((status = cm_OptAccAlign   (cm, errbuf, dsq, L, size_limit, mx, shmx, post_mx, &b, &sc)) != eslOK) return status; }
+  if(do_optacc) { if((status = cm_OptAccAlign   (cm, errbuf, dsq, L, size_limit, mx, shmx, emit_mx, &b, &sc)) != eslOK) return status; }
   else          { if((status = cm_CYKInsideAlign(cm, errbuf, dsq, L, size_limit, mx, shmx,          &b, &sc)) != eslOK) return status; };
 
   /* Create and initialize the parsetree */
@@ -239,7 +239,7 @@ cm_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_
  *           trace to a given traceback, which already has state 0 at
  *           tr->n-1. 
  *        
- *           If (<do_optacc>) then post_mx must != NULL.
+ *           If (<do_optacc>) then emit_mx must != NULL.
  *
  * Args:     cm         - the model 
  *           errbuf     - char buffer for reporting errors
@@ -440,6 +440,7 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
  *           mx        - the main dp matrix, grown and filled here, must be non-NULL
  *           shmx      - the shadow matrix, grown and filled here
  *           post_mx   - dp matrix for posterior calculation, grown and filled here, can be NULL only if !do_optacc
+ *           emit_mx    - emit matrix to fill
  *           r         - source of randomness, must be non-NULL only if do_sample==TRUE
  *           ret_ppstr - RETURN: posterior code 1, (pass NULL if not wanted, must be NULL if post_mx == NULL)
  *           ret_ins_sc- RETURN: if(do_optacc || ret_ppstr != NULL): inside score of sequence in bits
@@ -454,7 +455,7 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
  */
 int
 cm_Align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample,
-	 CM_MX *mx, CM_SHADOW_MX *shmx, CM_MX *post_mx, ESL_RANDOMNESS *r, 
+	 CM_MX *mx, CM_SHADOW_MX *shmx, CM_MX *post_mx, CM_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, 
 	 char **ret_ppstr, float *ret_ins_sc, Parsetree_t **ret_tr, float *ret_sc)
 {
   int          status;
@@ -484,20 +485,22 @@ cm_Align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_o
     if(do_post) { /* Inside was called above, now do Outside, then Posterior */
       if((status = cm_OutsideAlign(cm, errbuf, dsq, L, size_limit, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), post_mx, mx, NULL)) != eslOK) return status;
       /* Note: we can only check the posteriors in cm_OutsideAlign() if local begin/ends are off */
-      if((status = cm_Posterior(cm, errbuf, L, size_limit, mx, post_mx, post_mx)) != eslOK) return status;   
+      if((status = cm_Posterior       (cm, errbuf, L, size_limit, mx, post_mx, post_mx)) != eslOK) return status;   
+      if((status = cm_EmitterPosterior(cm, errbuf, L, size_limit, post_mx, emit_mx, (cm->align_opts & CM_ALIGN_CHECKINOUT))) != eslOK) return status;   
+
       if(cm->align_opts & CM_ALIGN_CHECKINOUT) { 
 	if((status = cm_CheckPosterior(cm, errbuf, L, post_mx)) != eslOK) return status;
-	printf("Non-banded posteriors checked.");
+	printf("Non-banded posteriors checked.\n");
       }
     }
   }
 
   if(!do_sample) { /* if do_sample, we already have a parsetree */
-    if((status = cm_alignT(cm, errbuf, dsq, L, size_limit, do_optacc, mx, shmx, post_mx, &tr, &sc)) != eslOK) return status;
+    if((status = cm_alignT(cm, errbuf, dsq, L, size_limit, do_optacc, mx, shmx, emit_mx, &tr, &sc)) != eslOK) return status;
   }
   
   if(have_ppstr || do_optacc) { /* call cm_PostCode to get average PP and optionally a PP string (if have_ppstr) */
-    if((status = cm_PostCode(cm, errbuf, 1, L, post_mx, tr, TRUE, (have_ppstr) ? &ppstr : NULL, (do_optacc ? &sc : NULL))) != eslOK) return status;
+    if((status = cm_PostCode(cm, errbuf, L, emit_mx, tr, (have_ppstr) ? &ppstr : NULL, (do_optacc ? &sc : NULL))) != eslOK) return status;
   }
 
   if (ret_ppstr  != NULL) *ret_ppstr  = ppstr; else free(ppstr);
@@ -1518,8 +1521,8 @@ cm_InsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
     }
   } /* finished calculating deck v. */
 
-  /* include the bsc as part of alpha[0][jp_v][Wp] */
-  alpha[0][L][L] = FLogsum(alpha[v][L][L], bsc);
+  /* include the bsc as part of alpha[0][L][L] */
+  alpha[0][L][L] = FLogsum(alpha[0][L][L], bsc);
 
   FILE *fp1; fp1 = fopen("tmp.stdimx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
 
@@ -1915,7 +1918,7 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 }
 
 
-/* Function: cm_OptAccAlign()
+/* Function: cm_OptAccAlignOLD()
  * Date:     EPN, Sun Nov 18 20:45:22 2007
  *           
  * Purpose:  Run the Holmes/Durbin optimal accuracy algorithm 
@@ -1950,15 +1953,13 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
  *           ret_sc    - RETURN: average probability mass that goes through 
  *                       a cell of the optimally accurate parse
  *
- * Returns: <ret_b>, <ret_sc>.
- * 
- * Throws:  <eslOK> on success.                        
- *          <eslERANGE> if required CM_HB_MX size exceeds <size_limit>
+ * Returns: <eslOK>     on success.
+ * Throws:  <eslERANGE> if required CM_HB_MX size exceeds <size_limit>
  *          If !eslOK: alignment has been aborted, ret_* variables are not valid
  */
 int
-cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
-	       CM_MX *mx, CM_SHADOW_MX *shmx, CM_MX *post_mx, int *ret_b, float *ret_sc)
+cm_OptAccAlignOLD(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
+		  CM_MX *mx, CM_SHADOW_MX *shmx, CM_MX *post_mx, int *ret_b, float *ret_sc)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -2195,6 +2196,368 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
     alpha[0][L][L] = bsc;
     yshadow[0][L][L] = USED_LOCAL_BEGIN;
   }
+  FILE *fp1; fp1 = fopen("tmp.oldstdoamx",   "w"); cm_mx_Dump(fp1, mx); fclose(fp1);
+  FILE *fp2; fp2 = fopen("tmp.oldstdoashmx", "w"); cm_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
+
+  sc = alpha[0][L][L];
+
+  /* convert score, a log probability, into the average posterior probability of all W aligned residues */
+  sc = sreEXP2(sc) / (float) L;
+
+  if(ret_b != NULL)  *ret_b  = b;    /* b is -1 if local ends are off */
+  if(ret_sc != NULL) *ret_sc = sc;
+
+  printf("cm_OptAccAlignOLD return sc: %f\n", sc);
+  ESL_DPRINTF1(("cm_OptAccAlignOLD return sc: %f\n", sc));
+  return eslOK;
+}
+
+/* Function: cm_OptAccAlign()
+ * Date:     EPN, Sun Nov 18 20:45:22 2007
+ *           EPN, Sat Oct  1 05:57:49 2011 (updated to use emit matrices)
+ *   
+ * Purpose:  Run the Holmes/Durbin optimal accuracy algorithm 
+ *           on a full target sequence 1..L, given a pre-filled
+ *           posterior matrix. Uses float log odds scores.
+ *           Non-banded version. See cm_OptAccAlignHB() for 
+ *           HMM banded version.
+ * 
+ *           A CM_EMIT_MX matrix <emit_mx> must be passed in, filled by
+ *           cm_EmitterPosterior() and converted to have pairs 
+ *           
+ *           cm_normalize_emit_matrices(). The values in these
+ *           matrices are:
+ *
+ *           l_pp[v][i]: log of the posterior probability that state v
+ *           emitted residue i leftwise either at (if a match state)
+ *           or *after* (if an insert state) the left consensus
+ *           position modeled by state v's node.
+ *
+ *           r_pp[v][i]: log of the posterior probability that state v
+ *           emitted residue i rightwise either at (if a match
+ *           state) or *before* (if an insert state) the right
+ *           consensus position modeled by state v's node.
+ *
+ *           l_pp[v] is NULL for states that do not emit leftwise
+ *           r_pp[v] is NULL for states that do not emit rightwise
+ *
+ *           Additionally, a CM_MX DP matrix <mx> and CM_SHADOW_MX
+ *           <shmx> must be passed in. <shmx> will be expanded and
+ *           filled here with traceback pointers to allow the
+ *           optimally accurate parsetree to be recovered in
+ *           cm_alignT() and <mx> will be expanded and filled with the
+ *           optimal accuracy scores, where:
+ *
+ *           mx->dp[v][j][d]: log of the sum of the posterior
+ *           probabilities of emitting residues i..j in the subtree
+ *           rooted at v.
+ *
+ *           The optimally accurate parsetree, i.e. the parsetree that
+ *           maximizes the sum of the posterior probabilities of all
+ *           1..L emitted residues, will be found.
+ *
+ *           Previously (infernal versions 1.0->1.0.2) this function
+ *           (then named optimal_accuracy_align()) used the posterior
+ *           matrix instead of the emit matrices used here, and thus
+ *           did not determine (or at least was not guaranteed to
+ *           determine) the optimally accurate parsetree as defined
+ *           above. Instead it determined the parsetree that maximized
+ *           the probability mass that passed through emitting states.
+ *
+ *           Local begins are handled the same as they are in
+ *           cm_CYKInsideAlign(), see that function's purpose for specifics.
+ *
+ *           Note: Renamed from optimal_accuracy_align() [EPN, Wed Sep
+ *	     14 06:16:38 2011].  Corrected to use emit matrices
+ *	     instead of a posterior matrix [EPN, Sat Oct 1 06:04:34
+ *	     2011].
+ *
+ * Args:     cm        - the model
+ *           errbuf    - char buffer for reporting errors
+ *           dsq       - the digitaized sequence [i0..j0]   
+ *           L         - length of the dsq
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           mx        - the DP matrix to fill in
+ *           shmx      - the shadow matrix to fill in
+ *           emit_mx    - pre-filled emit matrix
+ *           ret_b     - RETURN: local begin state if local begins are on
+ *           ret_sc    - RETURN: average probability mass that goes through 
+ *                       a cell of the optimally accurate parse
+ *
+ * Returns: <eslOK>     on success.
+ * Throws:  <eslERANGE> if required CM_HB_MX size exceeds <size_limit>
+ *          If !eslOK: alignment has been aborted, ret_* variables are not valid
+ */
+int
+cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_MX *mx, CM_SHADOW_MX *shmx, 
+	       CM_EMIT_MX *emit_mx, int *ret_b, float *ret_sc)
+{
+  int      status;
+  int      v,y,z;	/* indices for states  */
+  int      j,d,i,k;	/* indices in sequence dimensions */
+  float    sc;		/* a temporary variable holding a score */
+  int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
+  int      b;		/* best local begin state */
+  float    bsc;		/* score for using the best local begin state */
+  int      sd;          /* StateDelta(cm->sttype[v]) */
+  int      sdr;         /* StateRightDelta(cm->sttype[v] */
+  int      j_sdr;       /* j - sdr */
+  int      d_sd;        /* d - sd */
+  float    tsc;         /* a transition score */
+
+  /* the DP matrices */
+  float ***alpha   = mx->dp;       /* pointer to the alpha DP matrix, we'll store optimal parse in  */
+  float  **l_pp    = emit_mx->l_pp; /* pointer to the prefilled posterior values for left  emitters */
+  float  **r_pp    = emit_mx->r_pp; /* pointer to the prefilled posterior values for right emitters */
+  char  ***yshadow = shmx->yshadow; /* pointer to the yshadow matrix */
+  int   ***kshadow = shmx->kshadow; /* pointer to the kshadow matrix */
+
+  /* Allocations and initializations  */
+  b   = -1;
+  bsc = IMPOSSIBLE;
+
+  /* grow the matrices based on the current sequence and bands */
+  if((status = cm_mx_GrowTo       (cm, mx,   errbuf, L, size_limit)) != eslOK) return status;
+  if((status = cm_shadow_mx_GrowTo(cm, shmx, errbuf, L, size_limit)) != eslOK) return status;
+
+  /* initialize all cells of the matrix */
+  if(  mx->ncells_valid   > 0) esl_vec_FSet(mx->dp_mem, mx->ncells_valid, IMPOSSIBLE);
+  if(shmx->y_ncells_valid > 0) for(i = 0; i < shmx->y_ncells_valid; i++) shmx->yshadow_mem[i] = USED_EL;
+  /* for B states, shadow matrix holds k, length of right fragment, this will almost certainly be overwritten */
+  if(shmx->k_ncells_valid > 0) esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, 0); 
+
+  /* initialize the EL deck, if it's valid */
+  if(cm->flags & CMH_LOCAL_END) { 
+    for (j = 0; j <= L; j++) {
+      alpha[cm->M][j][0] = IMPOSSIBLE;
+      for (d = 1; d <= j; d++) {
+	alpha[cm->M][j][d] = FLogsum(alpha[cm->M][j][d-1], l_pp[cm->M][j]); /* optimal (and only) parse for EL is to emit all d residues */
+      }
+    }
+  }
+
+  /* Main recursion */
+  for (v = cm->M-1; v >= 0; v--) {
+    float const *tsc_v = cm->tsc[v];  /* transition scores for state v */
+    sd   = StateDelta(cm->sttype[v]);
+    sdr  = StateRightDelta(cm->sttype[v]);
+
+    /* re-initialize if we can do a local end from v and check for a
+     * special optimal-accuracy-specific initialization case
+     */
+    if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) {
+      for (j = 0; j <= L; j++) {
+	/* copy values from saved EL deck */
+	for (d = sd; d <= j; d++) { 
+	  alpha[v][j][d] = alpha[cm->M][j-sdr][d-sd];
+	  /* yshadow[v][j][d] remains USED_EL */
+	}
+      }
+    }
+    else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { /* && cm->endsc[v] == IMPOSSIBLE */
+      for (j = 0; j <= L; j++) {
+	/* Check for special initialization case, specific to
+	 * optimal_accuracy alignment, normally (with TrCYK for
+	 * example) we init shadow matrix to USED_EL for all cells
+	 * b/c we know that will be overwritten for the most
+	 * likely transition, but with optimal accuracy, only
+	 * emissions add to the score, so when d == sd, we know
+	 * we'll emit sd residues from v, so the initialization
+	 * will NOT be overwritten. We get around this for
+	 * cells for which  d == sd and v is a state that has 
+	 * a StateDelta=0 child y (DELETE or END) by initializing
+	 * that transition to y is most likely.
+	 */
+	for (d = 0; d <= sd; d++) { 
+	  y = cm->cfirst[v];
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
+	    if(StateDelta(cm->sttype[y+yoffset]) == 0) { 
+	      yshadow[v][j][d] = yoffset;
+	    }
+	  }
+	}
+      }
+    }
+
+    /* note there's no E state update here, those cells all remain IMPOSSIBLE */
+
+    /* we have to separate out IL_st and IR_st because IL use emit_mx->l_pp and IR use emit_mx->r_pp */
+    if(cm->sttype[v] == IL_st) {
+      /* update alpha[v][j][d] cells, for IL states, loop nesting order is:
+       * for j { for d { for y { } } } because they can self transit, and a 
+       * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
+       * before can start calc'ing for alpha[v][j][d+1] */
+      for (j = 1; j <= L; j++) {
+	i    = j;
+	d_sd = 0;
+	for (d = 1; d <= j; d++, d_sd++, i--) {
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = cm->cfirst[v] + yoffset; 
+	    if ((sc = alpha[y][j][d_sd]) > alpha[v][j][d]) {
+	      alpha[v][j][d]   = sc; 
+	      yshadow[v][j][d] = yoffset;
+	    }
+	  }
+	  alpha[v][j][d] = FLogsum(alpha[v][j][d], l_pp[v][i]);
+	  alpha[v][j][d] = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+	}
+      }
+    }
+    if(cm->sttype[v] == IR_st) {
+      /* IR: same loop nesting order as for IL for same reason, see IL comment above */
+      j_sdr = 0;
+      for (j = 1; j <= L; j++, j_sdr++) {
+	d_sd  = 0;
+	for (d = 1; d <= j; d++, d_sd++) {
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = cm->cfirst[v] + yoffset; 
+	    if ((sc = alpha[y][j_sdr][d_sd]) > alpha[v][j][d]) {
+	      alpha[v][j][d]   = sc; 
+	      yshadow[v][j][d] = yoffset;
+	    }
+	  }
+	  alpha[v][j][d] = FLogsum(alpha[v][j][d], r_pp[v][j]);
+	  alpha[v][j][d] = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+	}
+      }
+    }
+    else if(cm->sttype[v] != B_st) { /* entered if state v is (! IL && ! IR && ! B) */
+      /* ML, MP, MR, D, S, E states cannot self transit, so all cells
+       * in alpha[v] are independent of each other, only depending on
+       * alpha[y] for previously calc'ed y.  We can do the for loops
+       * in any nesting order, this implementation does what I think
+       * is most efficient: for y { for j { for d { } } }.
+       */
+      for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+	yoffset = y - cm->cfirst[v];
+	tsc = tsc_v[yoffset];
+	j_sdr = 0;
+	for (j = sdr; j <= L; j++, j_sdr++) {
+	  d_sd = 0;
+	  for (d = sd; d <= j; d++, d_sd++) {
+	    if((sc = alpha[y][j_sdr][d_sd]) > alpha[v][j][d]) {
+	      alpha[v][j][d] = sc;
+	      yshadow[v][j][d] = yoffset;
+	    }
+	  }
+	}
+      }
+      /* add in emission score, if any */
+      switch(cm->sttype[v]) { 
+      case ML_st:
+	for (j = 1; j <= L; j++) {
+	  i = j;
+	  for (d = sd; d <= j; d++, i--) {
+	    alpha[v][j][d] = FLogsum(alpha[v][j][d], l_pp[v][i]);
+	  }
+	}
+	break;
+      case MR_st:
+	for (j = 1; j <= L; j++) {
+	  for (d = sd; d <= j; d++) {
+	    alpha[v][j][d] = FLogsum(alpha[v][j][d], r_pp[v][j]);
+	  }
+	}
+	break;
+      case MP_st:
+	for (j = 2; j <= L; j++) {
+	  i = j-1;
+	  for (d = sd; d <= j; d++, i--) {
+	    alpha[v][j][d] = FLogsum(alpha[v][j][d], FLogsum(l_pp[v][i], r_pp[v][j])); 
+	  }
+	}
+	break;
+      default:
+	break;
+      }
+      /* ensure all cells are >= IMPOSSIBLE */
+      for (j = 0; j <= L; j++) {
+	for (d = 0; d <= j; d++)
+	  alpha[v][j][d] = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+      }
+    }
+    else { /* B_st */ 
+      y = cm->cfirst[v]; /* left  subtree */
+      z = cm->cnum[v];   /* right subtree */
+      for (j = 0; j <= L; j++) { 
+	for (d = 0; d <= j; d++) {
+	  for (k = 0; k <= d; k++) {
+	    if ((sc = FLogsum(alpha[y][j-k][d-k], alpha[z][j][k])) > alpha[v][j][d])
+	      {
+		if(((d == k) || (NOT_IMPOSSIBLE(alpha[y][j-k][d-k]))) && /* left subtree can only be IMPOSSIBLE if it has length 0 (in which case d==k, and d-k=0) */
+		   ((k == 0) || (NOT_IMPOSSIBLE(alpha[z][j][k]))))       /* right subtree can only be IMPOSSIBLE if it has length 0 (in which case k==0) */
+		  {
+		    alpha[v][j][d]   = sc;
+		    kshadow[v][j][d] = k;
+		    /* Note: we take the logsum here, because we're keeping track of the
+		     * log of the summed probability of emitting all residues up to this
+		     * point, (from i..j) from left subtree (i=j-d+1..j-k) and from the 
+		     * right subtree. (j-k+1..j)
+		     * 
+		     * EPN, Tue Nov 17 10:53:13 2009 
+		     * Bug fix post infernal-1.0.2 release in
+		     * "if(((sc = FLogsum..."  statement above. 
+		     * This is i15 in BUGTRAX, fixed as of svn revision
+		     * 3056 in infernal 1.0 release branch, and revision
+		     * 3057 in infernal trunk. 
+		     * Bug description:
+		     * See analogous section and comment in
+		     * cm_OptAccAlignHB() above. In that
+		     * function, in very rare cases (1 case in the 1.1
+		     * million SSU sequences in release 10_15 of RDP),
+		     * this step will add two alpha values
+		     * (alpha[y][j-k][d-k] for left subtree, and
+		     * alpha[z][j][k] for right subtree) where one of
+		     * them is IMPOSSIBLE and the corresponding
+		     * subtree length ('d-k' in left subtree, or 'k'
+		     * if right subtree) is non-zero, yet their
+		     * FLogsum (which equals the value of the
+		     * non-IMPOSSIBLE cell) is sufficiently high to be
+		     * part of the optimally accurate traceback. This
+		     * will probably cause a seg fault later b/c it
+		     * implies a left or right subtree that is
+		     * IMPOSSIBLE. It is okay if an IMPOSSIBLE scoring
+		     * subtree has length 0 b/c 0 residues will
+		     * contribute nothing to the summed log
+		     * probability (nothing corresponds to a score of
+		     * IMPOSSIBLE). We handle this case here by
+		     * explicitly checking if either left or right
+		     * subtree cell is IMPOSSIBLE with non-zero length
+		     * before reassigning alpha[v][j][d].  I'm not
+		     * sure if this is even possible in the non-banded
+		     * function (this function), but I included the
+		     * analogous fix here (the NOT_IMPOSSIBLE() calls)
+		     * in case it was ever possible. This will slow
+		     * down the implementation, but I'd rather err on
+		     * the side of caution here, since we don't care
+		     * so much about speed in the non-banded function,
+		     * and b/c finding this bug again if the
+		     * non-banded function can have the bug would be a
+		     * pain in the ass.
+		     */		 
+		  }
+	      }
+	  }
+	}
+      }
+    }
+    /* allow local begins, if nec */
+    if(cm->flags & CMH_LOCAL_BEGIN) {
+      if (alpha[v][L][L] > bsc) {
+	b   = v;
+	bsc = alpha[v][L][L];
+      }
+    }
+  } /* finished calculating deck v. */
+
+  /* Check for whether we need to store an optimal local begin score
+   * as the optimal overall score, and if we need to put a flag
+   * in the shadow matrix telling cm_alignT() to use the b we return.
+   */
+  if (bsc > alpha[0][L][L]) {
+    alpha[0][L][L]   = bsc;
+    yshadow[0][L][L] = USED_LOCAL_BEGIN;
+  }
   FILE *fp1; fp1 = fopen("tmp.stdoamx",   "w"); cm_mx_Dump(fp1, mx); fclose(fp1);
   FILE *fp2; fp2 = fopen("tmp.stdoashmx", "w"); cm_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
 
@@ -2206,6 +2569,7 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   if(ret_b != NULL)  *ret_b  = b;    /* b is -1 if local ends are off */
   if(ret_sc != NULL) *ret_sc = sc;
 
+  printf("cm_OptAccAlign return sc: %f\n", sc);
   ESL_DPRINTF1(("cm_OptAccAlign return sc: %f\n", sc));
   return eslOK;
 }
@@ -4686,7 +5050,7 @@ cm_CheckPosterior(CM_t *cm, char *errbuf, int L, CM_MX *post)
   }
   for(x = 1; x <= L; x++) { 
     if(((sum[x] - 0.) > 0.01) || ((sum[x] - 0.) < -0.01))
-      ESL_FAIL(eslFAIL, errbuf, "residue %d has summed prob of %5.4f (2^%5.4f). May not be a DP coding bug, see 'Note:' on precision in cm_CheckPosterior().\n", x, (sreEXP2(sum[x])), sum[x]);
+      ESL_FAIL(eslFAIL, errbuf, "residue %d has summed prob of %5.4f (2^%5.4f).\nMay not be a DP coding bug, see 'Note:' on precision in cm_CheckPosterior().\n", x, (sreEXP2(sum[x])), sum[x]);
     /*printf("x: %d | total: %10.2f\n", x, (sreEXP2(sc)));*/
   }  
   free(sum);
@@ -4737,7 +5101,8 @@ cm_CheckPosterior(CM_t *cm, char *errbuf, int L, CM_MX *post)
  *           L        - length of the sequence
  *           post     - pre-filled dynamic programming cube
  *           
- * Return:   <eslOK> on success, eslFAIL if any residue fails check
+ * Return:   <eslOK> on success
+ * Throws:   <eslFAIL> if any residue fails check
  */
 int
 cm_CheckPosteriorHB(CM_t *cm, char *errbuf, int L, CM_HB_MX *post)
@@ -4790,7 +5155,7 @@ cm_CheckPosteriorHB(CM_t *cm, char *errbuf, int L, CM_HB_MX *post)
   }
   for(x = 1; x <= L; x++) { 
     if(((sum[x] - 0.) > 0.01) || ((sum[x] - 0.) < -0.01))
-      ESL_FAIL(eslFAIL, errbuf, "residue %d has summed prob of %5.4f (2^%5.4f). May not be a DP coding bug, see 'Note:' on precision in cm_CheckPosteriorHB().\n", x, (sreEXP2(sum[x])), sum[x]);
+      ESL_FAIL(eslFAIL, errbuf, "residue %d has summed prob of %5.4f (2^%5.4f).\nMay not be a DP coding bug, see 'Note:' on precision in cm_CheckPosteriorHB().\n", x, (sreEXP2(sum[x])), sum[x]);
     /*printf("x: %d | total: %10.2f\n", x, (sreEXP2(sc)));*/
   }  
   ESL_DPRINTF1(("cm_CheckPosteriorHB() passed, all residues have summed probability of emission of 1.0.\n"));
@@ -4800,6 +5165,176 @@ cm_CheckPosteriorHB(CM_t *cm, char *errbuf, int L, CM_HB_MX *post)
  ERROR:
   ESL_FAIL(eslFAIL, errbuf, "cm_CheckPosteriorHB(), memory allocation error.");
   return status; /* NEVERREACHED */
+}
+
+/* Function: cm_EmitterPosterior()
+ * Date:     EPN, Fri Sep 30 13:53:57 2011
+ *
+ * Purpose: Given a posterior probability cube, where the value in
+ *           post[v][j][d] is the log of the posterior probability of
+ *           a parse subtree rooted at v emitting the subsequence i..j
+ *           (i=j-d+1), fill a CM_EMIT_MX <emit_mx> with two 2-dimensional
+ *           matrices with values:
+ *
+ *           emit_mx->l_pp[v][i]: log of the posterior probability that
+ *           state v emitted residue i leftwise either at (if a match
+ *           state) or *after* (if an insert state) the left consensus
+ *           position modeled by state v's node.
+ *
+ *           emit_mx->r_pp[v][i]: log of the posterior probability that
+ *           state v emitted residue i rightwise either at (if a match
+ *           state) or *before* (if an insert state) the right
+ *           consensus position modeled by state v's node.
+ *
+ *           l_pp[v] is NULL for states that do not emit leftwise 
+ *           r_pp[v] is NULL for states that do not emit rightwise
+ *
+ *          This is done in 3 steps:
+ *          1. Fill l_pp[v][i] and r_pp[v][i] with the posterior
+ *             probability that state v emitted residue i either
+ *             leftwise (l_pp) or rightwise (r_pp).
+ *
+ *          2. Normalize l_pp and r_pp so that probability that
+ *             each residue was emitted by any state is exactly
+ *             1.0.
+ *
+ *          3. Combine l_pp values for MATP_MP (v) and MATP_ML (y=v+1)
+ *             states in the same node so they give the value defined
+ *             above (i.e. l_pp[v] == l_pp[y] = the PP that either v
+ *             or y emitted residue i) instead of l_pp[v] = PP that v
+ *             emitted i, and l_pp[y] = PP that y emitted i.  And
+ *             combine r_pp values for MATP_MP (v) and MATP_MR (y=v+2)
+ *             states in an analogous way.
+ *             
+ *          If <do_check> we check to make sure the summed probability
+ *          of any residue is > 0.98 and < 1.02 prior the step 2 
+ *          normalization, and throw eslFAIL if not. A failure of this
+ *          test does not necessarily mean a bug in the code, see the
+ *          'Note' in cm_CheckPosterior for more on this.
+ * 
+ * Args:     cm         - the model
+ *           errbuf     - for error messages
+ *           L          - length of the sequence
+ *           size_limit - max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           post       - pre-filled posterior cube
+ *           emit_mx     - pre-allocated emit matrix, grown and filled-in here
+ *           do_check   - if TRUE, return eslEFAIL if summed prob of any residue 
+ *                        (before normalization) is < 0.98 or > 1.02.
+ * 
+ * Returns:  <eslOK>     on success.
+ * Throws:   <eslERANGE> if required DP matrix size exceeds <size_limit>
+ *           <eslFAIL>   if (do_check) and any residue check fails
+ *           <eslEMEM>   if we run out of memory. 
+ *           If !eslOK the l_pp and r_pp values are invalid.
+ */
+int 
+cm_EmitterPosterior(CM_t *cm, char *errbuf, int L, float size_limit, CM_MX *post, CM_EMIT_MX *emit_mx, int do_check)
+{
+  int    status;
+  int    v, j, d; /* state, position, subseq length */
+  int    i;       /* sequence position */
+  int    sd;      /* StateDelta(v) */
+  
+  /* grow the emit matrices based on the current sequence */
+  if((status = cm_emit_mx_GrowTo(cm, emit_mx, errbuf, L, size_limit)) != eslOK) return status;
+
+  /* initialize all cells of the emit matrices to IMPOSSIBLE */
+  esl_vec_FSet(emit_mx->l_pp_mem, emit_mx->l_ncells_valid, IMPOSSIBLE);
+  esl_vec_FSet(emit_mx->r_pp_mem, emit_mx->r_ncells_valid, IMPOSSIBLE);
+
+  /* Step 1. Fill l_pp[v][i] and r_pp[v][i] with the posterior
+   *         probability that state v emitted residue i either
+   *         leftwise (l_pp) or rightwise (r_pp).
+   */
+  for(v = 0; v < cm->M; v++) { 
+    sd = StateDelta(cm->sttype[v]);
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
+      for(j = 1; j <= L; j++) { 
+	i = j-sd+1;
+	for(d = sd; d <= j; d++, i--) { 
+	  emit_mx->l_pp[v][i] = FLogsum(emit_mx->l_pp[v][i], post->dp[v][j][d]);
+	}
+      }
+    }
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
+      for(j = 1; j <= L; j++) { 
+	sd = StateDelta(cm->sttype[v]);
+	for(d = sd; d <= j; d++) { 
+	  emit_mx->r_pp[v][j] = FLogsum(emit_mx->r_pp[v][j], post->dp[v][j][d]);
+	}
+      }
+    }
+  }
+  /* factor in contribution of local ends, the EL state may have emitted this residue. */
+  if (cm->flags & CMH_LOCAL_END) {
+    for (j = 1; j <= L; j++) { 
+      i = j;
+      for (d = 1; d <= j; d++, i--) { /* note: d >= 1, b/c EL emits 1 residue */
+	emit_mx->l_pp[cm->M][i] = FLogsum(emit_mx->l_pp[cm->M][i], post->dp[cm->M][j][d]);
+      }
+    }
+  }
+  FILE *fp1; fp1 = fopen("tmp.std_unnorm_emitmx",  "w"); cm_emit_mx_Dump(fp1, cm, emit_mx); fclose(fp1);
+
+  /* Step 2. Normalize l_pp and r_pp so that probability that
+   *         each residue was emitted by any state is exactly
+   *         1.0.
+   */
+  esl_vec_FSet(emit_mx->sum, (L+1), IMPOSSIBLE);
+  for(v = 0; v <= cm->M; v++) { 
+    if(emit_mx->l_pp[v] != NULL) {
+      for(i = 1; i <= L; i++) { 
+	emit_mx->sum[i] = FLogsum(emit_mx->sum[i], emit_mx->l_pp[v][i]);
+      }
+    }
+    if(emit_mx->r_pp[v] != NULL) {
+      for(i = 1; i <= L; i++) { 
+	emit_mx->sum[i] = FLogsum(emit_mx->sum[i], emit_mx->r_pp[v][i]);
+      }
+    }
+  }
+  /* perform the check, if nec */
+  if(do_check) { 
+    for(i = 1; i <= L; i++) { 
+      if((sreEXP2(emit_mx->sum[i]) < 0.98) || (sreEXP2(emit_mx->sum[i]) > 1.02)) { 
+	ESL_FAIL(eslFAIL, errbuf, "residue %d has summed prob of %5.4f (2^%5.4f).\nMay not be a DP coding bug, see 'Note:' on precision in cm_normalize_emit_matrices().\n", i, (sreEXP2(emit_mx->sum[i])), emit_mx->sum[i]);
+      }
+      printf("i: %d | total: %10.4f\n", i, (sreEXP2(emit_mx->sum[i])));
+    }
+    ESL_DPRINTF1(("cm_EmitterPosterior() check passed, all residues have summed probability of emission of between 0.98 and 1.02.\n"));
+  }  
+
+  /* normalize, using the sum vector */
+  for(v = 0; v <= cm->M; v++) { 
+    if(emit_mx->l_pp[v] != NULL) {
+      for(i = 1; i <= L; i++) { 
+	emit_mx->l_pp[v][i] -= emit_mx->sum[i];
+      }
+    }
+    if(emit_mx->r_pp[v] != NULL) {
+      for(i = 1; i <= L; i++) { 
+	emit_mx->r_pp[v][i] -= emit_mx->sum[i];
+      }
+    }
+  }
+
+  /* Step 3. Combine l_pp values for MATP_MP (v) and MATP_ML (y=v+1)
+   *         states in the same node so they give the value defined
+   *         above (i.e. l_pp[v] == l_pp[y] = the PP that either v or
+   *         y emitted residue i) instead of l_pp[v] = PP that v
+   *         emitted i, and l_pp[y] = PP that y emitted i.  And
+   *         combine r_pp values for MATP_MP (v) and MATP_MR (y=v+2)
+   *         states in an analogous way.
+   */
+  for(v = 0; v <= cm->M; v++) { 
+    if(cm->sttype[v] == MP_st) { 
+      emit_mx->l_pp[v][i] = FLogsum(emit_mx->l_pp[v][i], emit_mx->l_pp[v+1][i]); 
+      emit_mx->r_pp[v][i] = FLogsum(emit_mx->r_pp[v][i], emit_mx->r_pp[v+2][i]); 
+    }
+  }
+  FILE *fp2; fp2 = fopen("tmp.std_emitmx",  "w"); cm_emit_mx_Dump(fp2, cm, emit_mx); fclose(fp2);
+
+  return eslOK;
 }
 
 /* Function: cm_SampleParsetree()
@@ -5416,7 +5951,66 @@ FScore2Prob(float sc, float null)
 }
 
 int
-cm_PostCode(CM_t *cm, char *errbuf, int i0, int j0, CM_MX *post, Parsetree_t *tr, int do_marginalize, char **ret_ppstr, float *ret_avgp)
+cm_PostCode(CM_t *cm, char *errbuf, int L, CM_EMIT_MX *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp)
+{
+  int   status;
+  int   x, v, i, j, d, r;
+  char *ppstr;
+  float p;
+  float sum_logp;
+
+  ESL_ALLOC(ppstr, (L+1) * sizeof(char)); 
+  sum_logp = IMPOSSIBLE;
+
+  /* go through each node of the parsetree and determine post code for emissions */
+  for (x = 0; x < tr->n; x++)
+    {
+      v = tr->state[x];
+      i = tr->emitl[x];
+      j = tr->emitr[x];
+      d = j-i+1;
+
+      /* Only P, L, R, and EL states have emissions. */
+      if(cm->sttype[v] == EL_st) { /* EL state, we have to handle this guy special */
+	for(r = i; r <= j; r++) { /* we have to annotate from residues i..j */
+	  ppstr[r-1] = Fscore2postcode(emit_mx->l_pp[v][r]);
+	  sum_logp   = FLogsum(sum_logp, emit_mx->l_pp[v][r]);
+	  /* make sure we've got a valid probability */
+	  p = FScore2Prob(emit_mx->l_pp[v][r], 1.);
+	  if(p >  1.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "cm_PostCode(): probability for EL state v: %d residue r: %d > 1.00 (%.2f)", v, r, p);
+	  if(p < -0.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "cm_PostCode(): probability for EL state v: %d residue r: %d < 0.00 (%.2f)", v, r, p);
+	}
+      }
+      if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+	ppstr[i-1] = Fscore2postcode(emit_mx->l_pp[v][i]);
+	sum_logp   = FLogsum(sum_logp, emit_mx->l_pp[v][i]);
+	/* make sure we've got a valid probability */
+	p = FScore2Prob(emit_mx->l_pp[v][i], 1.);
+	if(p >  1.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "cm_PostCode(): probability for left state v: %d residue i: %d > 1.00 (%.2f)", v, i, p);
+	if(p < -0.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "cm_PostCode(): probability for left state v: %d residue i: %d < 0.00 (%.2f)", v, i, p);
+      }
+      if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+	ppstr[j-1] = Fscore2postcode(emit_mx->r_pp[v][j]);
+	sum_logp   = FLogsum(sum_logp, emit_mx->r_pp[v][j]);
+	/* make sure we've got a valid probability */
+	p = FScore2Prob(emit_mx->r_pp[v][j], 1.);
+	if(p >  1.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "cm_PostCode(): probability for right state v: %d residue i: %d > 1.00 (%.2f)", v, j, p);
+	if(p < -0.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "cm_PostCode(): probability for right state v: %d residue i: %d < 0.00 (%.2f)", v, j, p);
+      }
+    }
+  ppstr[L] = '\0';
+
+  if(ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
+  if(ret_avgp  != NULL) *ret_avgp  = sreEXP2(sum_logp) / (float) L;
+  return eslOK;
+  
+ ERROR:
+  ESL_FAIL(eslEMEM, errbuf, "cm_Postcode(): Memory allocation error.");
+  return status; /* never reached */
+}
+
+int
+cm_PostCodeOLD(CM_t *cm, char *errbuf, int i0, int j0, CM_MX *post, Parsetree_t *tr, int do_marginalize, char **ret_ppstr, float *ret_avgp)
 {
   int status;
   int x, v, i, j, d, r, jp, rp;
@@ -5890,7 +6484,7 @@ static ESL_OPTIONS options[] = {
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "use posterior sums during HMM band calculation (widens bands)", 0 },
   { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3",NULL,NULL,NULL, "set verbosity of debugging print statements to <n>", 0 },
   { "--hmmcheck",eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "check that HMM posteriors are correctly calc'ed", 0 },
-  { "--cmcheck", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "check that HMM posteriors are correctly calc'ed", 0 },
+  { "--cmcheck", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "check that CM posteriors are correctly calc'ed", 0 },
   { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute optimal accuracy HMM banded alignment alg", 0 },
   { "--post",   eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute fast float HMM banded Inside/Outside alignment algs", 0 },
   { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",NULL,  NULL, NULL, "set maximum allowable DP matrix size to <x> (Mb)", 0 },
@@ -5924,6 +6518,7 @@ main(int argc, char **argv)
   CM_MX             *mx   = NULL;       /* alpha DP matrix for non-banded CYK/Inside() */
   CM_MX             *out_mx = NULL;     /* outside matrix for HMM banded Outside() */
   CM_SHADOW_MX      *shmx = NULL;       /* shadow matrix for non-banded tracebacks */
+  CM_EMIT_MX        *emit_mx = NULL;    /* emit matrix for optimal accuracy */
 
   r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
 
@@ -5941,13 +6536,13 @@ main(int argc, char **argv)
   /* configure CM for HMM banded alignment */
   cm->align_opts  |= CM_ALIGN_HBANDED;
   if(esl_opt_GetBoolean(go, "--sums")) cm->align_opts |= CM_ALIGN_SUMS;
-
   if(esl_opt_GetBoolean(go, "-l")) { 
     cm->config_opts  |= CM_CONFIG_LOCAL;
     cm->config_opts  |= CM_CONFIG_HMMLOCAL;
     cm->config_opts  |= CM_CONFIG_HMMEL;
   }
   if(esl_opt_GetBoolean(go, "--hmmcheck")) cm->align_opts |= CM_ALIGN_CHECKFB;
+  if(esl_opt_GetBoolean(go, "--cmcheck"))  cm->align_opts |= CM_ALIGN_CHECKINOUT;
 
   ConfigCM(cm, errbuf, FALSE, NULL, NULL); /* FALSE says: don't calculate W */
 
@@ -5956,9 +6551,10 @@ main(int argc, char **argv)
   FLogsumInit();
 
   if(esl_opt_GetBoolean(go, "--nonbanded")) { 
-    mx     = cm_mx_Create(cm);
-    out_mx = cm_mx_Create(cm);
-    shmx   = cm_shadow_mx_Create(cm);
+    mx      = cm_mx_Create(cm);
+    out_mx  = cm_mx_Create(cm);
+    shmx    = cm_shadow_mx_Create(cm);
+    emit_mx = cm_emit_mx_Create(cm);
   }
 
   /* get sequences */
@@ -6000,6 +6596,7 @@ main(int argc, char **argv)
     seqs_to_aln = CMEmitSeqsToAln(r, cm, 1, N, FALSE, NULL, FALSE);
 
   int do_check = esl_opt_GetBoolean(go, "--cmcheck");
+  if(do_check) 
   for (i = 0; i < N; i++)
     {
       L = seqs_to_aln->sq[i]->n;
@@ -6028,7 +6625,7 @@ main(int argc, char **argv)
 
       if(esl_opt_GetBoolean(go, "--nonbanded")) {
 	esl_stopwatch_Start(w);
-	if((status = cm_Align(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, FALSE, FALSE, mx, shmx, NULL, r, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = cm_Align(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, FALSE, FALSE, mx, shmx, NULL, emit_mx, r, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "cm_Align() CYK:", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -6078,14 +6675,14 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--optacc")) {
 	esl_stopwatch_Start(w);
 	if((status = cm_AlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, TRUE, FALSE, cm->hbmx, cm->shhbmx, cm->ohbmx, r, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "cm_AlignHB() OA:", sc);
+	printf("%4d %-30s %10.4f avgpp ", (i+1), "cm_AlignHB() OA:", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	if(esl_opt_GetBoolean(go, "--nonbanded")) { 
 	  esl_stopwatch_Start(w);
-	  if((status = cm_Align(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, TRUE, FALSE, mx, shmx, out_mx, r, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "cm_Align() OA:", sc);
+	  if((status = cm_Align(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, TRUE, FALSE, mx, shmx, out_mx, emit_mx, r, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  printf("%4d %-30s %10.4f avgpp ", (i+1), "cm_Align() OA:", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
@@ -6099,9 +6696,10 @@ main(int argc, char **argv)
   esl_getopts_Destroy(go);
   esl_randomness_Destroy(r);
   FreeSeqsToAln(seqs_to_aln);
-  if(mx != NULL)     cm_mx_Destroy(mx);
-  if(out_mx != NULL) cm_mx_Destroy(out_mx);
-  if(shmx != NULL)   cm_shadow_mx_Destroy(shmx);
+  if(mx != NULL)      cm_mx_Destroy(mx);
+  if(out_mx != NULL)  cm_mx_Destroy(out_mx);
+  if(shmx != NULL)    cm_shadow_mx_Destroy(shmx);
+  if(emit_mx != NULL) cm_emit_mx_Destroy(emit_mx);
 
   return 0;
 

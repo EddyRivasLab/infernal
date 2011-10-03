@@ -386,9 +386,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
   int *orig_dmax;               /* original dmax values passed in */
 
   /* variables related to non-banded cyk/inside/outside */
-  CM_MX             *mx   = NULL;       /* alpha DP matrix for non-banded CYK/Inside() */
-  CM_MX             *out_mx = NULL;     /* outside matrix for HMM banded Outside() */
-  CM_SHADOW_MX      *shmx = NULL;       /* shadow matrix for non-banded tracebacks */
+  CM_MX             *mx      = NULL;  /* alpha DP matrix for non-banded CYK/Inside() */
+  CM_MX             *out_mx  = NULL;  /* outside matrix for HMM banded Outside() */
+  CM_SHADOW_MX      *shmx    = NULL;  /* shadow matrix for non-banded tracebacks */
+  CM_EMIT_MX        *emit_mx = NULL;  /* emit matrix for OptAccAlign() */
 
   float             *parsesc; /* parsetree scores of each sequence */
   float             *parsepp; /* optimal parse posterior probability of each sequence, if any */
@@ -605,9 +606,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
     CP9Logoddsify(hmm);
   }
   if(! do_hbanded) { /* we need non-banded matrices for alignment */
-    mx     = cm_mx_Create(cm);
-    out_mx = cm_mx_Create(cm);
-    shmx   = cm_shadow_mx_Create(cm);
+    mx      = cm_mx_Create(cm);
+    out_mx  = cm_mx_Create(cm);
+    shmx    = cm_shadow_mx_Create(cm);
+    emit_mx = cm_emit_mx_Create(cm);
   }
 
   orig_cm = cm;
@@ -892,7 +894,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	else if(status != eslOK) return status;
       } /* end of if(do_hbanded) */
       else { /* non-banded */
-	status = cm_Align(cm, errbuf, cur_dsq, L, size_limit, do_optacc, do_sample, mx, shmx, out_mx,
+	status = cm_Align(cm, errbuf, cur_dsq, L, size_limit, do_optacc, do_sample, mx, shmx, out_mx, emit_mx,
 			  ( do_sample             ? r              : NULL), 
 			  ( do_post               ? &(postcode[i]) : NULL), 
 			  ((do_post || do_optacc) ? &ins_sc        : NULL), 
@@ -1085,9 +1087,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 
   /* done aligning all nalign seqs. */
   /* Clean up. */
-  if(mx != NULL)     cm_mx_Destroy(mx);
-  if(out_mx != NULL) cm_mx_Destroy(out_mx);
-  if(shmx != NULL)   cm_shadow_mx_Destroy(shmx);
+  if(mx != NULL)      cm_mx_Destroy(mx);
+  if(out_mx != NULL)  cm_mx_Destroy(out_mx);
+  if(shmx != NULL)    cm_shadow_mx_Destroy(shmx);
+  if(emit_mx != NULL) cm_emit_mx_Destroy(emit_mx);
   if (do_qdb) {
     free(orig_dmin);
     free(orig_dmax);
