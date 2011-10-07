@@ -136,6 +136,7 @@ CreateCMShell(void)
   cm->smx          = NULL;
   cm->hbmx         = NULL;
   cm->ohbmx        = NULL;
+  cm->ehbmx        = NULL;
   cm->shhbmx       = NULL;
   cm->cp9_mx       = NULL;
   cm->cp9_bmx      = NULL;
@@ -434,6 +435,7 @@ FreeCM(CM_t *cm)
   if(cm->root_trans != NULL) free(cm->root_trans);
   if(cm->hbmx       != NULL) cm_hb_mx_Destroy(cm->hbmx);
   if(cm->ohbmx      != NULL) cm_hb_mx_Destroy(cm->ohbmx);
+  if(cm->ehbmx      != NULL) cm_hb_emit_mx_Destroy(cm->ehbmx);
   if(cm->shhbmx     != NULL) cm_hb_shadow_mx_Destroy(cm->shhbmx);
   if(cm->cp9_mx     != NULL) FreeCP9Matrix(cm->cp9_mx);
   if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);

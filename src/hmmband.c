@@ -1225,6 +1225,7 @@ ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
   int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
   int max_sdl_sdr;  /* maximum of StateLeftDelta, StateRightDelta for a state (1 for emitters, 0 for nonemitters) */
   int dn;           /* max_sdl_sdr if do_trunc, else sd */
+  int hdn, hdx;     /* temporary hdmin/hdmax */
   for(v = 0; v < cm->M; v++) {
     if(cm->sttype[v] == E_st) {
       for(jp = 0; jp <= (jmax[v]-jmin[v]); jp++) {
@@ -1238,9 +1239,17 @@ ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
       dn          = do_trunc ? max_sdl_sdr : sd;
       /* if (do_trunc) d can be 1 for MP states, which is the reason we use dn here */
       for(jp = 0; jp <= (jmax[v]-jmin[v]); jp++) {
-	j = jp+jmin[v];
-	hdmin[v][jp] = ESL_MAX((j - imax[v] + 1), dn);
-	hdmax[v][jp] = ESL_MAX((j - imin[v] + 1), dn);
+	j   = jp+jmin[v];
+	hdn = j-imax[v]+1;
+	hdx = j-imin[v]+1;
+	if(hdx < dn) { 
+	  hdmin[v][jp] = -1;
+	  hdmax[v][jp] = -2;
+	}
+	else { 
+	  hdmin[v][jp] = ESL_MAX(hdn, dn);
+	  hdmax[v][jp] = hdx;
+	}
 	/* printf("hd[%d][j=%d]: min: %d | max: %d\n", v, (jp+jmin[v]), hdmin[v][jp], hdmax[v][jp]); */
       }
     }

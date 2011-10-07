@@ -881,7 +881,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
     }
     else { /* non-small, non-QDB CYK or optimal accuracy alignment or sample an alignment from Inside matrix */
       if(do_hbanded) { /* HMM banded CYK, optimal accuracy or sample, either with or without posteriors annotated */
-	status = cm_AlignHB(cm, errbuf, cur_dsq, L, size_limit, do_optacc, do_sample, cm->hbmx, cm->shhbmx, cm->ohbmx, 
+	status = cm_AlignHB(cm, errbuf, cur_dsq, L, size_limit, do_optacc, do_sample, cm->hbmx, cm->shhbmx, cm->ohbmx, cm->ehbmx,
 			    ( do_sample             ? r              : NULL), 
 			    ( do_post               ? &(postcode[i]) : NULL), 
 			    ((do_post || do_optacc) ? &ins_sc        : NULL), 

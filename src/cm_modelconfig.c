@@ -80,6 +80,12 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
   /* Build the emitmap, if necessary */
   if(cm->emap == NULL) cm->emap = CreateEmitMap(cm);
 
+  /* Allocate the emit matrix for alignment traceback, 
+   * Initially this is small, and its only grown as needed.
+   */
+  if(cm->ehbmx != NULL) cm_hb_emit_mx_Destroy(cm->ehbmx);
+  cm->ehbmx = cm_hb_emit_mx_Create(cm);
+
   /* Allocate the shadow matrix for alignment traceback, 
    * Initially this is small, and its only grown as needed.
    */

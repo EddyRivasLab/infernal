@@ -26,13 +26,22 @@
  *   9. CM_EMIT_MX data structure functions,
  *      2D matrix of float scores for nonbanded optimal accuracy alignment
  *      and posterior annotation of alignments
- *  10. ScanMatrix_t data structure functions,
+ *  10. CM_TR_EMIT_MX data structure functions,
+ *      2D matrix of float scores for nonbanded truncated optimal accuracy 
+ *      alignment and posterior annotation of alignments
+ *  11. CM_HB_EMIT_MX data structure functions,
+ *      2D matrix of float scores for HMM-banded optimal accuracy alignment
+ *      and posterior annotation of alignments
+ *  12. CM_TR_HB_EMIT_MX data structure functions,
+ *      2D matrix of float scores for HMM-banded truncated optimal accuracy alignment
+ *      and posterior annotation of alignments
+ *  13. ScanMatrix_t data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      query dependent banded or non-banded CM DP search functions
- *  11. TrScanMatrix_t data structure functions,
+ *  14. TrScanMatrix_t data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      query dependent banded or non-banded truncated CM DP search functions
- *  12. GammaHitMx_t data structure functions,
+ *  15. GammaHitMx_t data structure functions,
  *      semi-HMM data structure for optimal resolution of overlapping
  *      hits for CM DP search functions
  *
@@ -4020,8 +4029,10 @@ cm_emit_mx_Create(CM_t *cm)
     
   /* allocate EL row */
   ESL_ALLOC(mx->l_pp[M], sizeof(float) * (allocL));
-  mx->l_pp[M]  = mx->l_pp_mem + l_n * (allocL);
-  
+  mx->l_pp[M] = mx->l_pp_mem + l_n * (allocL);
+
+  mx->r_pp[M] = NULL;
+
   /* finally allocate the sum vector */
   ESL_ALLOC(mx->sum, sizeof(float) * allocL);
 
@@ -4293,7 +4304,1208 @@ cm_emit_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_l_ncells, int6
 }
 
 /*****************************************************************
- *  10. ScanMatrix_t data structure functions,
+ *  10. CM_TR_EMIT_MX data structure functions, matrix of float log
+ *      posterior probabilities of emitted residues in truncated
+ *      alignments. Used for optimal accuracy alignment and posterior
+ *      annotation of alignments.
+ *****************************************************************/
+
+/* Function:  cm_tr_emit_mx_Create()
+ * Incept:    EPN, Thu Oct  6 14:45:32 2011
+ *
+ * Purpose:   Allocate a reusable, resizeable <CM_TR_EMIT_MX> for a CM.
+ *            
+ * Args:      cm:      the model
+ *
+ * Returns:   a pointer to the new <CM_TR_EMIT_MX>.
+ *
+ * Throws:    <NULL> on allocation error.
+ */
+CM_TR_EMIT_MX *
+cm_tr_emit_mx_Create(CM_t *cm)
+{
+  int            status;
+  CM_TR_EMIT_MX *mx = NULL;
+  int            v, l_n, r_n;
+  int            allocL = 2; /* this corresponds to a sequence of length 1; mx[v][0] is always IMPOSSIBLE, mx[v][1] is residue 1 */
+  int            M = cm->M;
+  int            l_nstates_valid;  /* num states for which mx->Jl_pp[v] and mx->Ll_pp != NULL */
+  int            r_nstates_valid;  /* num states for which mx->Jr_pp[v] and mx->Rr_pp != NULL */
+
+  /* level 1: the structure itself */
+  ESL_ALLOC(mx, sizeof(CM_TR_EMIT_MX));
+  mx->Jl_pp     = NULL;
+  mx->Jl_pp_mem = NULL;
+  mx->Ll_pp     = NULL;
+  mx->Ll_pp_mem = NULL;
+  mx->Jr_pp     = NULL;
+  mx->Jr_pp_mem = NULL;
+  mx->Rr_pp     = NULL;
+  mx->Rr_pp_mem = NULL;
+
+  /* level 2: row (state) pointers, 0.1..M, go all the way to M
+   */
+  ESL_ALLOC(mx->Jl_pp,  sizeof(float *) * (M+1));
+  ESL_ALLOC(mx->Ll_pp,  sizeof(float *) * (M+1));
+  ESL_ALLOC(mx->Jr_pp,  sizeof(float *) * (M+1));
+  ESL_ALLOC(mx->Rr_pp,  sizeof(float *) * (M+1));
+ 
+  /* level 3: dp cell memory, when creating only allocate 2 cells per state, for i = 0 and 1 */
+  /* first count the number of valid emitting states, left and right */
+  l_nstates_valid = 0;
+  r_nstates_valid = 0;
+  for(v = 0; v < cm->M; v++) { 
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) l_nstates_valid++;
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) r_nstates_valid++;
+  }
+  l_nstates_valid++; /* add 1 for the special left emitting EL state, cm->M */
+
+  ESL_ALLOC(mx->Jl_pp_mem,  sizeof(float) * (l_nstates_valid) * (allocL));
+  ESL_ALLOC(mx->Ll_pp_mem,  sizeof(float) * (l_nstates_valid) * (allocL));
+  ESL_ALLOC(mx->Jr_pp_mem,  sizeof(float) * (r_nstates_valid) * (allocL));
+  ESL_ALLOC(mx->Rr_pp_mem,  sizeof(float) * (r_nstates_valid) * (allocL));
+
+  l_n = 0;
+  r_n = 0;
+  for (v = 0; v < M; v++) {
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+      mx->Jl_pp[v] = mx->Jl_pp_mem + l_n * (allocL);
+      mx->Ll_pp[v] = mx->Ll_pp_mem + l_n * (allocL);
+      l_n++;
+    }
+    else { 
+      mx->Jl_pp[v] = NULL;
+      mx->Ll_pp[v] = NULL;
+    }
+
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+      mx->Jr_pp[v] = mx->Jr_pp_mem + r_n * (allocL);
+      mx->Rr_pp[v] = mx->Rr_pp_mem + r_n * (allocL);
+      r_n++;
+    }
+    else { 
+      mx->Jr_pp[v] = NULL;
+      mx->Rr_pp[v] = NULL;
+    }
+  }
+    
+  /* allocate EL row, only valid in Jl */
+  ESL_ALLOC(mx->Jl_pp[M], sizeof(float) * (allocL));
+  ESL_ALLOC(mx->Ll_pp[M], sizeof(float) * (allocL)); 
+  mx->Jl_pp[M] = mx->Jl_pp_mem + l_n * (allocL);
+  mx->Ll_pp[M] = mx->Ll_pp_mem + l_n * (allocL);
+  /* Note that EL emits in left marginal mode are not allowed, but we allocate them so Ll_pp is consistent with
+   * Jl_pp. If we didn't do it this way, we'd need separate Jl_ncells_valid and Ll_ncells_valid parameters.
+   */
+
+  mx->Jr_pp[M] = NULL;
+  mx->Rr_pp[M] = NULL;
+  
+  /* finally allocate the sum vector */
+  ESL_ALLOC(mx->sum, sizeof(float) * allocL);
+
+  mx->M                = M;
+  mx->l_ncells_valid  = 0;
+  mx->l_ncells_alloc  = (l_nstates_valid) * (allocL);
+  mx->r_ncells_valid  = 0;
+  mx->r_ncells_alloc  = (r_nstates_valid) * (allocL);
+  mx->L                = allocL-1; /* allocL = 2 */
+
+  /* calculate size, these are in order of when they were allocated */
+  mx->size_Mb = (float) 
+    (sizeof(CM_EMIT_MX)                     + 
+     (mx->M+1)    * sizeof(float *)         +  /* mx->Jl_pp[] ptrs */
+     (mx->M+1)    * sizeof(float *)         +  /* mx->Ll_pp[] ptrs */
+     (mx->M+1)    * sizeof(float *)         +  /* mx->Jr_pp[] ptrs */
+     (mx->M+1)    * sizeof(float *)         +  /* mx->Rr_pp[] ptrs */
+     mx->l_ncells_alloc * sizeof(float)     +  /* mx->Jl_pp_mem */
+     mx->l_ncells_alloc * sizeof(float)     +  /* mx->Ll_pp_mem */
+     mx->r_ncells_alloc * sizeof(float)     +  /* mx->Jr_pp_mem */
+     mx->r_ncells_alloc * sizeof(float)     +  /* mx->Rr_pp_mem */
+     (mx->L+1) * sizeof(float));                /* mx->sum */
+
+  mx->size_Mb *= 0.000001; /* convert to Mb */
+
+  return mx;
+
+ ERROR:
+  if (mx != NULL) cm_tr_emit_mx_Destroy(mx);
+  return NULL;
+}
+
+/* Function:  cm_tr_emit_mx_GrowTo()
+ * Incept:    EPN, Fri Oct  7 05:42:51 2011
+ *
+ * Purpose: Assures that a CM_TR_EMIT_MX matrix <mx> is allocated for a
+ *            model of exactly <mx->M> states and target sequence of
+ *            length L, reallocating memory as necessary.
+ *            
+ *            If local ends are on (cm->flags & CMH_LOCAL_END), allocates
+ *            a full EL row for the matrix.
+ *
+ *            Checks to make sure desired matrix isn't too big (see throws).
+ *
+ *            We could save a bit of space here by demanding that we
+ *            know the marginal alignment mode when entering this
+ *            function and only allocating cells that we will use. For
+ *            example, if we know we're in Left marginal mode we don't
+ *            use the Rr_pp matrix at all, and so don't need to
+ *            allocate any cells for it. However, if we did this, a
+ *            subsequent alignment that did use Right marginal mode
+ *            would need to reallocate the Rr_pp matrix. Since these
+ *            matrices are only 2D (much smaller than many of the 3D
+ *            matrices used during alignment) we don't care so much
+ *            about space here and so we always allocate Jl_pp, Ll_pp,
+ *            Jr_pp and Rr_pp to full size even though we rarely need
+ *            all of them.
+ *  
+ *            One wrinkle with this strategy is that it forces us to 
+ *            allocate space for Ll_pp[cm->M] for local end alignment
+ *            in Left marginal mode. These cells will never be used
+ *            but are allocated for because the Jl_pp[cm->M] deck is
+ *            used, and we only have a single <l_ncells_allocated> 
+ *            and <l_ncells_valid> count. 
+ *    
+ * Args:      cm     - the CM the matrix is for
+ *            mx     - the matrix to grow
+ *            errbuf - char buffer for reporting errors
+ *            L      - the length of the current target sequence we're aligning
+ *            size_limit- max number of Mb for DP matrix, if matrix is bigger -> return eslERANGE
+ *
+ * Returns:   <eslOK> on success, and <mx> may be reallocated upon
+ *            return; any data that may have been in <mx> must be 
+ *            assumed to be invalidated.
+ *
+ * Throws:    <eslERANGE> if required size to grow to exceeds <size_limit>.
+ *            This should be caught and appropriately handled by caller. 
+ *            <eslEINCOMPAT> on contract violation
+ *            <eslEMEM> on memory allocation error.
+ */
+int
+cm_tr_emit_mx_GrowTo(CM_t *cm, CM_TR_EMIT_MX *mx, char *errbuf, int L, float size_limit)
+{
+  int     status;
+  void   *p;
+  int     v;
+  int64_t l_cur_size = 0;
+  int64_t r_cur_size = 0;
+  int64_t l_ncells;
+  int64_t r_ncells;
+  float   Mb_needed; /* required size of matrix, given the bands */
+  float   Mb_alloc;  /* allocated size of matrix, >= Mb_needed */
+  int     have_el;
+  int     l_realloced;   /* did we reallocate mx->Jl_pp_mem and mx->Ll_pp_mem? */
+  int     r_realloced;   /* did we reallocate mx->Jr_pp_mem and mx->Rr_pp_mem? */
+  int     sum_realloced; /* did we reallocate mx->sum?      */
+
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+
+  if((status = cm_tr_emit_mx_SizeNeeded(cm, errbuf, L, &l_ncells, &r_ncells, &Mb_needed)) != eslOK) return status;
+  /*printf("Non-banded truncated emit matrix requested size: %.2f Mb\n", Mb_needed);*/
+  ESL_DPRINTF2(("Non-banded truncated emit matrix requested size: %.2f Mb\n", Mb_needed));
+  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested non-banded truncated emit mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
+
+  /* must we realloc the full matrix? or can we get away
+   * with just jiggering the pointers, if total required num cells is
+   * less than or equal to what we already have alloc'ed?
+   */
+  l_realloced = FALSE;
+  r_realloced = FALSE;
+  sum_realloced = FALSE;
+  if (l_ncells > mx->l_ncells_alloc) { 
+      ESL_RALLOC(mx->Jl_pp_mem, p, sizeof(float) * l_ncells);
+      ESL_RALLOC(mx->Ll_pp_mem, p, sizeof(float) * l_ncells);
+      mx->l_ncells_alloc = l_ncells;
+      l_realloced = TRUE;
+  }
+  if (r_ncells > mx->r_ncells_alloc) { 
+      ESL_RALLOC(mx->Jr_pp_mem, p, sizeof(float) * r_ncells);
+      ESL_RALLOC(mx->Rr_pp_mem, p, sizeof(float) * r_ncells);
+      mx->r_ncells_alloc = r_ncells;
+      r_realloced = TRUE;
+  }
+  if (L > mx->L) { 
+    ESL_RALLOC(mx->sum, p, sizeof(float) * (L+1));
+    sum_realloced = TRUE;
+  }      
+
+  /* Determine the size of our matrix based on the size it needed to be (Mb_needed).
+   */
+  Mb_alloc = Mb_needed * 1000000; /* convert to bytes */
+  if(! l_realloced) { 
+    Mb_alloc -= (float) (sizeof(float) * l_ncells);           /* Jl_pp */
+    Mb_alloc -= (float) (sizeof(float) * l_ncells);           /* Ll_pp */
+    Mb_alloc += (float) (sizeof(float) * mx->l_ncells_alloc); /* Jl_pp */
+    Mb_alloc += (float) (sizeof(float) * mx->l_ncells_alloc); /* Ll_pp */
+  }
+  if(! r_realloced) { 
+    Mb_alloc -= (float) (sizeof(float) * r_ncells);           /* Jr_pp */
+    Mb_alloc -= (float) (sizeof(float) * r_ncells);           /* Rr_pp */
+    Mb_alloc += (float) (sizeof(float) * mx->r_ncells_alloc); /* Jr_pp */
+    Mb_alloc += (float) (sizeof(float) * mx->r_ncells_alloc); /* Rr_pp */
+  }
+  if(! sum_realloced) { 
+    Mb_alloc -= (float) (sizeof(float) * (L+1));
+    Mb_alloc += (float) (sizeof(float) * (mx->L+1));
+  }
+  Mb_alloc *= 0.000001; /* convert to Mb */
+
+  mx->l_ncells_valid = l_ncells;
+  mx->r_ncells_valid = r_ncells;
+  
+  /* reset the pointers, we keep a tally of cur_size as we go 
+   */
+  l_cur_size = 0;
+  r_cur_size = 0;
+  for(v = 0; v < mx->M; v++) { 
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
+      mx->Jl_pp[v] = mx->Jl_pp_mem + l_cur_size;
+      mx->Ll_pp[v] = mx->Ll_pp_mem + l_cur_size;
+      l_cur_size += L+1;
+    }
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
+      mx->Jr_pp[v] = mx->Jr_pp_mem + r_cur_size;
+      mx->Rr_pp[v] = mx->Rr_pp_mem + r_cur_size;
+      r_cur_size += L+1;
+    }
+  }
+  if(have_el) { 
+    mx->Jl_pp[mx->M] = mx->Jl_pp_mem + l_cur_size;
+    mx->Ll_pp[mx->M] = mx->Ll_pp_mem + l_cur_size; /* these cells will never be used */
+    l_cur_size += L+1;
+  }
+  else { 
+    mx->Jl_pp[mx->M] = NULL;
+    mx->Ll_pp[mx->M] = NULL;
+  }
+  mx->Jr_pp[mx->M] = NULL;
+  mx->Rr_pp[mx->M] = NULL;
+    
+  printf("l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
+  printf("r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
+  assert(l_cur_size == mx->l_ncells_valid);
+  assert(r_cur_size == mx->r_ncells_valid);
+  ESL_DASSERT1((l_cur_size == mx->l_ncells_valid));
+  ESL_DASSERT1((r_cur_size == mx->r_ncells_valid));
+
+  /* now update L and size_Mb */
+  mx->L       = L;    /* length of current seq we're valid for */
+  mx->size_Mb = Mb_alloc;
+
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function:  cm_tr_emit_mx_Destroy()
+ * Synopsis:  Frees a CM_TR_EMIT_MX.
+ * Incept:    EPN, Fri Oct  7 05:51:14 2011
+ *
+ * Purpose:   Frees a <CM_TR_EMIT_MX>.
+ *
+ * Returns:   (void)
+ */
+void
+cm_tr_emit_mx_Destroy(CM_TR_EMIT_MX *mx)
+{
+  if (mx == NULL) return;
+
+  if (mx->Jl_pp     != NULL) free(mx->Jl_pp);
+  if (mx->Ll_pp     != NULL) free(mx->Ll_pp);
+  if (mx->Jr_pp     != NULL) free(mx->Jr_pp);
+  if (mx->Rr_pp     != NULL) free(mx->Rr_pp);
+  if (mx->Jl_pp_mem != NULL) free(mx->Jl_pp_mem);
+  if (mx->Ll_pp_mem != NULL) free(mx->Ll_pp_mem);
+  if (mx->Jr_pp_mem != NULL) free(mx->Jr_pp_mem);
+  if (mx->Rr_pp_mem != NULL) free(mx->Rr_pp_mem);
+  if (mx->sum       != NULL) free(mx->sum);
+
+  free(mx);
+  return;
+}
+
+/* Function:  cm_tr_emit_mx_Dump()
+ * Synopsis:  Dump a truncated emit matrix to a stream, for diagnostics.
+ * Incept:    EPN, Fri Oct  7 05:52:13 2011
+ *
+ * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
+ */
+int
+cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx)
+{
+  int v, i;
+
+  fprintf(ofp, "M: %d\n", mx->M);
+  fprintf(ofp, "L: %d\n", mx->L);
+  fprintf(ofp, "l_ncells_alloc: %" PRId64 "\nl_ncells_valid: %" PRId64 "\n", mx->l_ncells_alloc, mx->l_ncells_valid);
+  fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
+  
+  /* l_pp and r_pp matrix data */
+  for (v = 0; v <= mx->M; v++) {
+    for(i = 0; i <= mx->L; i++) { 
+      if(mx->Jl_pp[v]) fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jl_pp[v][i]), mx->Jl_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      if(mx->Ll_pp[v]) fprintf(ofp, "Ll_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Ll_pp[v][i]), mx->Ll_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      if(mx->Jr_pp[v]) fprintf(ofp, "Jr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jr_pp[v][i]), mx->Jr_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      if(mx->Rr_pp[v]) fprintf(ofp, "Rr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Rr_pp[v][i]), mx->Rr_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+    }
+    fprintf(ofp, "\n");
+  }
+  return eslOK;
+}
+
+/* Function:  cm_tr_emit_mx_SizeNeeded()
+ * Incept:    EPN, Fri Oct  7 05:53:30 2011
+ *
+ * Purpose: Given a model and sequence length, determine the number of
+ *            cells and total size in Mb required in a CM_TR_EMIT_MX for
+ *            the target sequence.
+ * 
+ *            Return number of l_pp, r_pp cells required in
+ *            <ret_l_ncells> and <ret_r_ncells> and size of required
+ *            matrix in Mb in <ret_Mb>.
+ *            
+ * Args:      cm           - the CM the matrix is for
+ *            errbuf       - char buffer for reporting errors
+ *            L            - the length of the current target sequence we're aligning
+ *            ret_l_ncells - RETURN: number of matrix cells required
+ *            ret_r_ncells - RETURN: number of matrix cells required
+ *            ret_Mb       - RETURN: required size of matrix in Mb
+ *           
+ * Returns:   <eslOK> on success
+ *
+ */
+int
+cm_tr_emit_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_l_ncells, int64_t *ret_r_ncells, float *ret_Mb)
+{
+  int     v;
+  int64_t l_ncells;
+  int64_t r_ncells;
+  int     have_el;
+  float   Mb_needed;
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+
+  l_ncells = 0;
+  r_ncells = 0;
+
+  Mb_needed = (float) 
+    (sizeof(CM_EMIT_MX) + 
+     (cm->M+1) * sizeof(float *) + /* mx->Jl_pp ptrs */
+     (cm->M+1) * sizeof(float *) + /* mx->Ll_pp ptrs */
+     (cm->M+1) * sizeof(float *) + /* mx->Jr_pp ptrs */
+     (cm->M+1) * sizeof(float *)); /* mx->Rr_pp ptrs */
+
+  for(v = 0; v < cm->M; v++) { 
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+      l_ncells += L+1;
+    }
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+      r_ncells += L+1;
+    }
+  }
+  if(have_el) l_ncells += L+1; /* space for EL deck */
+
+  Mb_needed += sizeof(float) * (l_ncells + l_ncells + r_ncells + r_ncells + (L+1)); 
+  /* mx->Jl_pp_mem, mx->Ll_pp_mem, mx->Jr_pp_mem, mx->Rr_pp_mem, mx->sum */
+  Mb_needed *= 0.000001; /* convert to megabytes */
+
+  if(ret_l_ncells != NULL) *ret_l_ncells = l_ncells;
+  if(ret_r_ncells != NULL) *ret_r_ncells = r_ncells;
+  if(ret_Mb       != NULL) *ret_Mb       = Mb_needed;
+
+  return eslOK;
+}
+
+/*****************************************************************
+ *  11. CM_HB_EMIT_MX data structure functions,
+ *      matrix of float log posterior probabilities of emitted
+ *      residues. Used for optimal accuracy alignment and posterior
+ *      annotation of alignments. HMM-banded version.
+ *****************************************************************/
+
+/* Function:  cm_hb_emit_mx_Create()
+ * Incept:    EPN, Thu Oct  6 06:43:57 2011
+ *
+ * Purpose:   Allocate a reusable, resizeable <CM_HB_EMIT_MX> for a CM.
+ *            
+ * Args:      cm:      the model
+ * 
+ * Returns:   a pointer to the new <CM_HB_EMIT_MX>.
+ *
+ * Throws:    <NULL> on allocation error.
+ */
+CM_HB_EMIT_MX *
+cm_hb_emit_mx_Create(CM_t *cm)
+{
+  int            status;
+  CM_HB_EMIT_MX *mx = NULL;
+  int            v, l_n, r_n;
+  int            allocL = 1; /* this corresponds to a sequence of length 1 */
+  int            M = cm->M;
+  int            l_nstates_valid;  /* num states for which mx->l_pp[v] != NULL */
+  int            r_nstates_valid;  /* num states for which mx->r_pp[v] != NULL */
+
+  /* level 1: the structure itself */
+  ESL_ALLOC(mx, sizeof(CM_HB_EMIT_MX));
+  mx->l_pp     = NULL;
+  mx->l_pp_mem = NULL;
+  mx->r_pp     = NULL;
+  mx->r_pp_mem = NULL;
+
+  /* level 2: row (state) pointers, 0.1..M, go all the way to M
+   */
+  ESL_ALLOC(mx->l_pp,  sizeof(float *) * (M+1));
+  ESL_ALLOC(mx->r_pp,  sizeof(float *) * (M+1));
+ 
+  /* level 3: dp cell memory, when creating only allocate 2 cells per state, for i = 0 and 1 */
+  /* first count the number of valid emitting states, left and right */
+  l_nstates_valid = 0;
+  r_nstates_valid = 0;
+  for(v = 0; v < cm->M; v++) { 
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) l_nstates_valid++;
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) r_nstates_valid++;
+  }
+  l_nstates_valid++; /* add 1 for the special left emitting EL state, cm->M */
+
+  ESL_ALLOC(mx->l_pp_mem,  sizeof(float) * (l_nstates_valid) * (allocL));
+  ESL_ALLOC(mx->r_pp_mem,  sizeof(float) * (r_nstates_valid) * (allocL));
+
+  l_n = 0;
+  r_n = 0;
+  for (v = 0; v < M; v++) {
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+      mx->l_pp[v] = mx->l_pp_mem + l_n * (allocL);
+      l_n++;
+    }
+    else { 
+      mx->l_pp[v] = NULL;
+    }
+
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+      mx->r_pp[v] = mx->r_pp_mem + r_n * (allocL);
+      r_n++;
+    }
+    else { 
+      mx->r_pp[v] = NULL;
+    }
+  }
+    
+  /* allocate EL row */
+  ESL_ALLOC(mx->l_pp[M], sizeof(float) * (allocL));
+  mx->l_pp[M] = mx->l_pp_mem + l_n * (allocL);
+
+  mx->r_pp[M] = NULL;
+  
+  /* finally allocate the sum vector */
+  ESL_ALLOC(mx->sum, sizeof(float) * allocL);
+
+  mx->M               = M;
+  mx->l_ncells_valid  = 0;
+  mx->l_ncells_alloc  = (l_nstates_valid) * (allocL);
+  mx->r_ncells_valid  = 0;
+  mx->r_ncells_alloc  = (r_nstates_valid) * (allocL);
+  mx->L               = allocL-1; /* allocL = 2 */
+  mx->cp9b            = NULL;
+  /* calculate size, these are in order of when they were allocated */
+  mx->size_Mb = (float) 
+    (sizeof(CM_HB_EMIT_MX)                   + 
+     (mx->M+1)    * sizeof(float *)          +  /* mx->l_pp[] ptrs */
+     (mx->M+1)    * sizeof(float *)          +  /* mx->r_pp[] ptrs */
+     mx->l_ncells_alloc * sizeof(float)      +  /* mx->l_pp_mem */
+     mx->r_ncells_alloc * sizeof(float)      +  /* mx->r_pp_mem */
+     (mx->L+1) * sizeof(float));                /* mx->sum */
+
+  mx->size_Mb *= 0.000001; /* convert to Mb */
+
+  return mx;
+
+ ERROR:
+  if (mx != NULL) cm_hb_emit_mx_Destroy(mx);
+  return NULL;
+}
+
+/* Function:  cm_hb_emit_mx_GrowTo()
+ * Incept:    EPN, Thu Oct  6 06:51:57 2011
+ *
+ * Purpose: Assures that a CM_HB_EMIT_MX matrix <mx> is allocated for a
+ *            model of exactly <mx->M> states and target sequence of
+ *            length L, given bands in <cp9b>, reallocating memory as
+ *            necessary.
+ *            
+ *            If local ends are on (cm->flags & CMH_LOCAL_END), allocates
+ *            a full non-banded EL row for the matrix.
+ *
+ *            Checks to make sure desired matrix isn't too big (see throws).
+ *
+ * Args:      cm     - the CM the matrix is for
+ *            cp9b   - HMM bands for current sequence
+ *            mx     - the matrix to grow
+ *            errbuf - char buffer for reporting errors
+ *            cp9b   - the HMM bands for the target sequence we're growing for
+ *            L      - the length of the current target sequence we're aligning
+ *            size_limit- max number of Mb for DP matrix, if matrix is bigger -> return eslERANGE
+ *
+ * Returns:   <eslOK> on success, and <mx> may be reallocated upon
+ *            return; any data that may have been in <mx> must be 
+ *            assumed to be invalidated.
+ *
+ * Throws:    <eslERANGE> if required size to grow to exceeds <size_limit>.
+ *            This should be caught and appropriately handled by caller. 
+ *            <eslEINCOMPAT> on contract violation
+ *            <eslEMEM> on memory allocation error.
+ */
+int
+cm_hb_emit_mx_GrowTo(CM_t *cm, CM_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit)
+{
+  int     status;
+  void   *p;
+  int     v;
+  int64_t l_cur_size = 0;
+  int64_t r_cur_size = 0;
+  int64_t l_ncells;
+  int64_t r_ncells;
+  float   Mb_needed; /* required size of matrix, given the bands */
+  float   Mb_alloc;  /* allocated size of matrix, >= Mb_needed */
+  int     have_el;
+  int     l_realloced;   /* did we reallocate mx->l_pp_mem? */
+  int     r_realloced;   /* did we reallocate mx->r_pp_mem? */
+  int     sum_realloced; /* did we reallocate mx->sum?      */
+
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+
+  if((status = cm_hb_emit_mx_SizeNeeded(cm, errbuf, cp9b, L, &l_ncells, &r_ncells, &Mb_needed)) != eslOK) return status;
+  /*printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed);*/
+  ESL_DPRINTF2(("HMM banded emit matrix requested size: %.2f Mb\n", Mb_needed));
+  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded emit mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
+
+  /* must we realloc the full matrix? or can we get away
+   * with just jiggering the pointers, if total required num cells is
+   * less than or equal to what we already have alloc'ed?
+   */
+  l_realloced = FALSE;
+  r_realloced = FALSE;
+  sum_realloced = FALSE;
+  if (l_ncells > mx->l_ncells_alloc) { 
+      ESL_RALLOC(mx->l_pp_mem, p, sizeof(float) * l_ncells);
+      mx->l_ncells_alloc = l_ncells;
+      l_realloced = TRUE;
+  }
+  if (r_ncells > mx->r_ncells_alloc) { 
+      ESL_RALLOC(mx->r_pp_mem, p, sizeof(float) * r_ncells);
+      mx->r_ncells_alloc = r_ncells;
+      r_realloced = TRUE;
+  }
+  if (L > mx->L) { 
+    ESL_RALLOC(mx->sum, p, sizeof(float) * (L+1));
+    sum_realloced = TRUE;
+  }      
+
+  /* Determine the size of our matrix based on the size it needed to be (Mb_needed).
+   */
+  Mb_alloc = Mb_needed * 1000000; /* convert to bytes */
+  if(! l_realloced) { 
+    Mb_alloc -= (float) (sizeof(float) * l_ncells);
+    Mb_alloc += (float) (sizeof(float) * mx->l_ncells_alloc);
+  }
+  if(! r_realloced) { 
+    Mb_alloc -= (float) (sizeof(float) * r_ncells);
+    Mb_alloc += (float) (sizeof(float) * mx->r_ncells_alloc);
+  }
+  if(! sum_realloced) { 
+    Mb_alloc -= (float) (sizeof(float) * (L+1));
+    Mb_alloc += (float) (sizeof(float) * (mx->L+1));
+  }
+  Mb_alloc *= 0.000001; /* convert to Mb */
+
+  mx->l_ncells_valid = l_ncells;
+  mx->r_ncells_valid = r_ncells;
+  
+  /* reset the pointers, we keep a tally of cur_size as we go 
+   */
+  l_cur_size = 0;
+  r_cur_size = 0;
+  for(v = 0; v < mx->M; v++) { 
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+      mx->l_pp[v] = mx->l_pp_mem + l_cur_size;
+      if(cp9b->imax[v] >= cp9b->imin[v] && cp9b->imax[v] >= 1) { 
+	l_cur_size += cp9b->imax[v] - cp9b->imin[v] + 1;
+      }
+    }
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
+      mx->r_pp[v] = mx->r_pp_mem + r_cur_size;
+      if(cp9b->jmax[v] >= cp9b->jmin[v] && cp9b->jmax[v] >= 1) { 
+	r_cur_size += cp9b->jmax[v] - cp9b->jmin[v] + 1;
+      }
+    }
+  }
+  if(have_el) { /* EL state is non-banded */
+    mx->l_pp[mx->M] = mx->l_pp_mem + l_cur_size;
+    l_cur_size += L+1;
+  }
+  else { 
+    mx->l_pp[mx->M] = NULL;
+  }
+  mx->r_pp[mx->M] = NULL;
+    
+  printf("l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
+  printf("r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
+  assert(l_cur_size == mx->l_ncells_valid);
+  assert(r_cur_size == mx->r_ncells_valid);
+  ESL_DASSERT1((l_cur_size == mx->l_ncells_valid));
+  ESL_DASSERT1((r_cur_size == mx->r_ncells_valid));
+
+  /* now update L and size_Mb */
+  mx->L       = L;    /* length of current seq we're valid for */
+  mx->size_Mb = Mb_alloc;
+  mx->cp9b    = cp9b;
+
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function:  cm_hb_emit_mx_Destroy()
+ * Synopsis:  Frees a CM_HB_EMIT_MX.
+ * Incept:    EPN, Thu Oct  6 09:06:58 2011
+ *
+ * Purpose:   Frees a CM_HB_EMIT_MX.
+ *
+ * Returns:   (void)
+ */
+void
+cm_hb_emit_mx_Destroy(CM_HB_EMIT_MX *mx)
+{
+  if (mx == NULL) return;
+
+  if (mx->l_pp     != NULL) free(mx->l_pp);
+  if (mx->r_pp     != NULL) free(mx->r_pp);
+  if (mx->l_pp_mem != NULL) free(mx->l_pp_mem);
+  if (mx->r_pp_mem != NULL) free(mx->r_pp_mem);
+  if (mx->sum      != NULL) free(mx->sum);
+
+  /* don't free cp9b, that's just a reference */
+  free(mx);
+  return;
+}
+
+/* Function:  cm_hb_emit_mx_Dump()
+ * Synopsis:  Dump a HMM banded emit matrix to a stream, for diagnostics.
+ * Incept:    EPN, Thu Oct  6 09:07:35 2011
+ *
+ * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
+ */
+int
+cm_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_EMIT_MX *mx)
+{
+  int v, i, j, ip_v, jp_v;
+
+  fprintf(ofp, "M: %d\n", mx->M);
+  fprintf(ofp, "L: %d\n", mx->L);
+  fprintf(ofp, "l_ncells_alloc: %" PRId64 "\nl_ncells_valid: %" PRId64 "\n", mx->l_ncells_alloc, mx->l_ncells_valid);
+  fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
+  
+  /* l_pp and r_pp matrix data */
+  for (v = 0; v <= mx->M; v++) {
+    if(mx->l_pp[v]) { 
+      for(i = mx->cp9b->imin[v]; i <= mx->cp9b->imax[v]; i++) { 
+	ip_v = i - mx->cp9b->imin[v];
+	fprintf(ofp, "l_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->l_pp[v][ip_v]), mx->l_pp[v][ip_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      }
+    }
+    if(mx->r_pp[v]) { 
+      for(j = mx->cp9b->jmin[v]; j <= mx->cp9b->jmax[v]; j++) { 
+	jp_v = j - mx->cp9b->jmin[v];
+	fprintf(ofp, "r_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, j, sreEXP2(mx->r_pp[v][jp_v]), mx->r_pp[v][jp_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      }
+    }
+    fprintf(ofp, "\n");
+  }
+  return eslOK;
+}
+
+/* Function:  cm_hb_emit_mx_SizeNeeded()
+ * Incept:    EPN, Thu Oct  6 09:11:15 2011
+ *
+ * Purpose: Given a model, sequence length, and HMM bands object,
+ *            determine the number of cells and total size in Mb
+ *            required in a CM_HB_EMIT_MX for the target sequence.
+ * 
+ *            Return number of l_pp, r_pp cells required in
+ *            <ret_l_ncells> and <ret_r_ncells> and size of required
+ *            matrix in Mb in <ret_Mb>.
+ *            
+ * Args:      cm           - the CM the matrix is for
+ *            errbuf       - char buffer for reporting errors
+ *            cp9b         - the HMM bands for this sequence 
+ *            L            - the length of the current target sequence we're aligning
+ *            ret_l_ncells - RETURN: number of matrix cells required
+ *            ret_r_ncells - RETURN: number of matrix cells required
+ *            ret_Mb       - RETURN: required size of matrix in Mb
+ *           
+ * Returns:   <eslOK> on success
+ *
+ */
+int
+cm_hb_emit_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_l_ncells, int64_t *ret_r_ncells, float *ret_Mb)
+{
+  int     v;
+  int64_t l_ncells;
+  int64_t r_ncells;
+  int     have_el;
+  float   Mb_needed;
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+
+  l_ncells = 0;
+  r_ncells = 0;
+
+  Mb_needed = (float) 
+    (sizeof(CM_HB_EMIT_MX) + 
+     (cm->M+1) * sizeof(float *) + /* mx->l_pp ptrs */
+     (cm->M+1) * sizeof(float *)); /* mx->r_pp ptrs */
+
+  for(v = 0; v < cm->M; v++) { 
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+      l_ncells += cp9b->imax[v] - cp9b->imin[v] + 1;
+    }
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+      r_ncells += cp9b->jmax[v] - cp9b->jmin[v] + 1;
+    }
+  }
+  if(have_el) l_ncells += L+1; /* space for EL deck */
+
+  Mb_needed += sizeof(float) * (l_ncells + r_ncells + (L+1)); /* mx->l_pp_mem, mx->r_pp_mem, mx->sum */
+  Mb_needed *= 0.000001; /* convert to megabytes */
+
+  if(ret_l_ncells != NULL) *ret_l_ncells = l_ncells;
+  if(ret_r_ncells != NULL) *ret_r_ncells = r_ncells;
+  if(ret_Mb       != NULL) *ret_Mb      = Mb_needed;
+
+  return eslOK;
+}
+
+
+/*****************************************************************
+ *  12. CM_TR_HB_EMIT_MX data structure functions, matrix of float log
+ *      posterior probabilities of emitted residues in truncated
+ *      alignments. Used for optimal accuracy alignment and posterior
+ *      annotation of alignments. HMM-banded version.
+ *****************************************************************/
+
+/* Function:  cm_tr_hb_emit_mx_Create()
+ * Incept:    EPN, Fri Oct  7 09:55:24 2011
+ *
+ * Purpose:   Allocate a reusable, resizeable <CM_TR_HB_EMIT_MX> for a CM.
+ *            
+ * Args:      cm:      the model
+ * 
+ * Returns:   a pointer to the new <CM_TR_HB_EMIT_MX>.
+ *
+ * Throws:    <NULL> on allocation error.
+ */
+CM_TR_HB_EMIT_MX *
+cm_tr_hb_emit_mx_Create(CM_t *cm)
+{
+  int            status;
+  CM_TR_HB_EMIT_MX *mx = NULL;
+  int            v, l_n, r_n;
+  int            allocL = 1; /* this corresponds to a sequence of length 1 */
+  int            M = cm->M;
+  int            l_nstates_valid;  /* num states for which mx->l_pp[v] != NULL */
+  int            r_nstates_valid;  /* num states for which mx->r_pp[v] != NULL */
+
+  /* level 1: the structure itself */
+  ESL_ALLOC(mx, sizeof(CM_TR_HB_EMIT_MX));
+  mx->Jl_pp     = NULL;
+  mx->Jl_pp_mem = NULL;
+  mx->Ll_pp     = NULL;
+  mx->Ll_pp_mem = NULL;
+  mx->Jr_pp     = NULL;
+  mx->Jr_pp_mem = NULL;
+  mx->Rr_pp     = NULL;
+  mx->Rr_pp_mem = NULL;
+
+  /* level 2: row (state) pointers, 0.1..M, go all the way to M
+   */
+  ESL_ALLOC(mx->Jl_pp,  sizeof(float *) * (M+1));
+  ESL_ALLOC(mx->Ll_pp,  sizeof(float *) * (M+1));
+  ESL_ALLOC(mx->Jr_pp,  sizeof(float *) * (M+1));
+  ESL_ALLOC(mx->Rr_pp,  sizeof(float *) * (M+1));
+ 
+  /* level 3: dp cell memory, when creating only allocate 2 cells per state, for i = 0 and 1 */
+  /* first count the number of valid emitting states, left and right */
+  l_nstates_valid = 0;
+  r_nstates_valid = 0;
+  for(v = 0; v < cm->M; v++) { 
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) l_nstates_valid++;
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) r_nstates_valid++;
+  }
+  l_nstates_valid++; /* add 1 for the special left emitting EL state, cm->M */
+
+  ESL_ALLOC(mx->Jl_pp_mem,  sizeof(float) * (l_nstates_valid) * (allocL));
+  ESL_ALLOC(mx->Ll_pp_mem,  sizeof(float) * (l_nstates_valid) * (allocL));
+  ESL_ALLOC(mx->Jr_pp_mem,  sizeof(float) * (r_nstates_valid) * (allocL));
+  ESL_ALLOC(mx->Rr_pp_mem,  sizeof(float) * (r_nstates_valid) * (allocL));
+
+  l_n = 0;
+  r_n = 0;
+  for (v = 0; v < M; v++) {
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+      mx->Jl_pp[v] = mx->Jl_pp_mem + l_n * (allocL);
+      mx->Ll_pp[v] = mx->Ll_pp_mem + l_n * (allocL);
+      l_n++;
+    }
+    else { 
+      mx->Jl_pp[v] = NULL;
+      mx->Ll_pp[v] = NULL;
+    }
+
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+      mx->Jr_pp[v] = mx->Jr_pp_mem + r_n * (allocL);
+      mx->Rr_pp[v] = mx->Rr_pp_mem + r_n * (allocL);
+      r_n++;
+    }
+    else { 
+      mx->Jr_pp[v] = NULL;
+      mx->Rr_pp[v] = NULL;
+    }
+  }
+    
+  /* allocate EL row, only valid in Jl */
+  ESL_ALLOC(mx->Jl_pp[M], sizeof(float) * (allocL));
+  ESL_ALLOC(mx->Ll_pp[M], sizeof(float) * (allocL)); 
+  mx->Jl_pp[M] = mx->Jl_pp_mem + l_n * (allocL);
+  mx->Ll_pp[M] = mx->Ll_pp_mem + l_n * (allocL);
+  /* Note that EL emits in left marginal mode are not allowed, but we allocate them so Ll_pp is consistent with
+   * Jl_pp. If we didn't do it this way, we'd need separate Jl_ncells_valid and Ll_ncells_valid parameters.
+   */
+  mx->Jr_pp[M] = NULL;
+  mx->Rr_pp[M] = NULL;
+
+  /* finally allocate the sum vector */
+  ESL_ALLOC(mx->sum, sizeof(float) * allocL);
+
+  mx->M               = M;
+  mx->l_ncells_valid  = 0;
+  mx->l_ncells_alloc  = (l_nstates_valid) * (allocL);
+  mx->r_ncells_valid  = 0;
+  mx->r_ncells_alloc  = (r_nstates_valid) * (allocL);
+  mx->L               = allocL-1; /* allocL = 2 */
+  mx->cp9b            = NULL;
+  /* calculate size, these are in order of when they were allocated */
+  mx->size_Mb = (float) 
+    (sizeof(CM_TR_HB_EMIT_MX)                   + 
+     (mx->M+1)    * sizeof(float *)          +  /* mx->Jl_pp[] ptrs */
+     (mx->M+1)    * sizeof(float *)          +  /* mx->Ll_pp[] ptrs */
+     (mx->M+1)    * sizeof(float *)          +  /* mx->Jr_pp[] ptrs */
+     (mx->M+1)    * sizeof(float *)          +  /* mx->Rr_pp[] ptrs */
+     mx->l_ncells_alloc * sizeof(float)      +  /* mx->Jl_pp_mem */
+     mx->l_ncells_alloc * sizeof(float)      +  /* mx->Ll_pp_mem */
+     mx->r_ncells_alloc * sizeof(float)      +  /* mx->Jr_pp_mem */
+     mx->r_ncells_alloc * sizeof(float)      +  /* mx->Rr_pp_mem */
+     (mx->L+1) * sizeof(float));                /* mx->sum */
+
+  mx->size_Mb *= 0.000001; /* convert to Mb */
+
+  return mx;
+
+ ERROR:
+  if (mx != NULL) cm_tr_hb_emit_mx_Destroy(mx);
+  return NULL;
+}
+
+/* Function:  cm_tr_hb_emit_mx_GrowTo()
+ * Incept:    EPN, Thu Oct  6 06:51:57 2011
+ *
+ * Purpose: Assures that a CM_TR_HB_EMIT_MX matrix <mx> is allocated for a
+ *            model of exactly <mx->M> states and target sequence of
+ *            length L, given bands in <cp9b>, reallocating memory as
+ *            necessary.
+ *            
+ *            If local ends are on (cm->flags & CMH_LOCAL_END), allocates
+ *            a full non-banded EL row for the matrix.
+ *
+ *            Checks to make sure desired matrix isn't too big (see throws).
+ *
+ * Args:      cm     - the CM the matrix is for
+ *            cp9b   - HMM bands for current sequence
+ *            mx     - the matrix to grow
+ *            errbuf - char buffer for reporting errors
+ *            cp9b   - the HMM bands for the target sequence we're growing for
+ *            L      - the length of the current target sequence we're aligning
+ *            size_limit- max number of Mb for DP matrix, if matrix is bigger -> return eslERANGE
+ *
+ * Returns:   <eslOK> on success, and <mx> may be reallocated upon
+ *            return; any data that may have been in <mx> must be 
+ *            assumed to be invalidated.
+ *
+ * Throws:    <eslERANGE> if required size to grow to exceeds <size_limit>.
+ *            This should be caught and appropriately handled by caller. 
+ *            <eslEINCOMPAT> on contract violation
+ *            <eslEMEM> on memory allocation error.
+ */
+int
+cm_tr_hb_emit_mx_GrowTo(CM_t *cm, CM_TR_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit)
+{
+  int     status;
+  void   *p;
+  int     v;
+  int64_t l_cur_size = 0;
+  int64_t r_cur_size = 0;
+  int64_t l_ncells;
+  int64_t r_ncells;
+  float   Mb_needed; /* required size of matrix, given the bands */
+  float   Mb_alloc;  /* allocated size of matrix, >= Mb_needed */
+  int     have_el;
+  int     l_realloced;   /* did we reallocate mx->l_pp_mem? */
+  int     r_realloced;   /* did we reallocate mx->r_pp_mem? */
+  int     sum_realloced; /* did we reallocate mx->sum?      */
+
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+
+  if((status = cm_tr_hb_emit_mx_SizeNeeded(cm, errbuf, cp9b, L, &l_ncells, &r_ncells, &Mb_needed)) != eslOK) return status;
+  /*printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed);*/
+  ESL_DPRINTF2(("HMM banded emit matrix requested size: %.2f Mb\n", Mb_needed));
+  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded emit mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
+
+  /* must we realloc the full matrix? or can we get away
+   * with just jiggering the pointers, if total required num cells is
+   * less than or equal to what we already have alloc'ed?
+   */
+  l_realloced = FALSE;
+  r_realloced = FALSE;
+  sum_realloced = FALSE;
+  if (l_ncells > mx->l_ncells_alloc) { 
+      ESL_RALLOC(mx->Jl_pp_mem, p, sizeof(float) * l_ncells);
+      ESL_RALLOC(mx->Ll_pp_mem, p, sizeof(float) * l_ncells);
+      mx->l_ncells_alloc = l_ncells;
+      l_realloced = TRUE;
+  }
+  if (r_ncells > mx->r_ncells_alloc) { 
+      ESL_RALLOC(mx->Jr_pp_mem, p, sizeof(float) * r_ncells);
+      ESL_RALLOC(mx->Rr_pp_mem, p, sizeof(float) * r_ncells);
+      mx->r_ncells_alloc = r_ncells;
+      r_realloced = TRUE;
+  }
+  if (L > mx->L) { 
+    ESL_RALLOC(mx->sum, p, sizeof(float) * (L+1));
+    sum_realloced = TRUE;
+  }      
+
+  /* Determine the size of our matrix based on the size it needed to be (Mb_needed).
+   */
+  Mb_alloc = Mb_needed * 1000000; /* convert to bytes */
+  if(! l_realloced) { 
+    Mb_alloc -= (float) (sizeof(float) * l_ncells);           /* Jl_pp */
+    Mb_alloc -= (float) (sizeof(float) * l_ncells);           /* Ll_pp */
+    Mb_alloc += (float) (sizeof(float) * mx->l_ncells_alloc); /* Jl_pp */
+    Mb_alloc += (float) (sizeof(float) * mx->l_ncells_alloc); /* Ll_pp */
+  }
+  if(! r_realloced) { 
+    Mb_alloc -= (float) (sizeof(float) * r_ncells);           /* Jr_pp */
+    Mb_alloc -= (float) (sizeof(float) * r_ncells);           /* Rr_pp */
+    Mb_alloc += (float) (sizeof(float) * mx->r_ncells_alloc); /* Jr_pp */
+    Mb_alloc += (float) (sizeof(float) * mx->r_ncells_alloc); /* Rr_pp */
+  }
+  if(! sum_realloced) { 
+    Mb_alloc -= (float) (sizeof(float) * (L+1));
+    Mb_alloc += (float) (sizeof(float) * (mx->L+1));
+  }
+  Mb_alloc *= 0.000001; /* convert to Mb */
+
+  mx->l_ncells_valid = l_ncells;
+  mx->r_ncells_valid = r_ncells;
+  
+  /* reset the pointers, we keep a tally of cur_size as we go 
+   */
+  l_cur_size = 0;
+  r_cur_size = 0;
+  for(v = 0; v < mx->M; v++) { 
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+      mx->Jl_pp[v] = mx->Jl_pp_mem + l_cur_size;
+      mx->Ll_pp[v] = mx->Ll_pp_mem + l_cur_size;
+      if(cp9b->imax[v] >= cp9b->imin[v] && cp9b->imax[v] >= 1) { 
+	l_cur_size += cp9b->imax[v] - cp9b->imin[v] + 1;
+      }
+    }
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
+      mx->Jr_pp[v] = mx->Jr_pp_mem + r_cur_size;
+      mx->Rr_pp[v] = mx->Rr_pp_mem + r_cur_size;
+      if(cp9b->jmax[v] >= cp9b->jmin[v] && cp9b->jmax[v] >= 1) { 
+	r_cur_size += cp9b->jmax[v] - cp9b->jmin[v] + 1;
+      }
+    }
+  }
+  if(have_el) { /* EL state is non-banded */
+    mx->Jl_pp[mx->M] = mx->Jl_pp_mem + l_cur_size;
+    mx->Ll_pp[mx->M] = mx->Ll_pp_mem + l_cur_size;
+    l_cur_size += L+1;
+  }
+  else { 
+    mx->Jl_pp[mx->M] = NULL;
+    mx->Ll_pp[mx->M] = NULL;
+  }
+  mx->Jr_pp[mx->M] = NULL;
+  mx->Rr_pp[mx->M] = NULL;
+    
+  printf("l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
+  printf("r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
+  assert(l_cur_size == mx->l_ncells_valid);
+  assert(r_cur_size == mx->r_ncells_valid);
+  ESL_DASSERT1((l_cur_size == mx->l_ncells_valid));
+  ESL_DASSERT1((r_cur_size == mx->r_ncells_valid));
+
+  /* now update L and size_Mb */
+  mx->L       = L;    /* length of current seq we're valid for */
+  mx->size_Mb = Mb_alloc;
+  mx->cp9b    = cp9b;
+
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function:  cm_tr_hb_emit_mx_Destroy()
+ * Synopsis:  Frees a CM_TR_HB_EMIT_MX.
+ * Incept:    EPN, Thu Oct  6 09:06:58 2011
+ *
+ * Purpose:   Frees a CM_TR_HB_EMIT_MX.
+ *
+ * Returns:   (void)
+ */
+void
+cm_tr_hb_emit_mx_Destroy(CM_TR_HB_EMIT_MX *mx)
+{
+  if (mx == NULL) return;
+
+  if (mx->Jl_pp     != NULL) free(mx->Jl_pp);
+  if (mx->Ll_pp     != NULL) free(mx->Ll_pp);
+  if (mx->Jr_pp     != NULL) free(mx->Jr_pp);
+  if (mx->Rr_pp     != NULL) free(mx->Rr_pp);
+  if (mx->Jl_pp_mem != NULL) free(mx->Jl_pp_mem);
+  if (mx->Ll_pp_mem != NULL) free(mx->Ll_pp_mem);
+  if (mx->Jr_pp_mem != NULL) free(mx->Jr_pp_mem);
+  if (mx->Rr_pp_mem != NULL) free(mx->Rr_pp_mem);
+  if (mx->sum       != NULL) free(mx->sum);
+
+  /* don't free cp9b, that's just a reference */
+  free(mx);
+  return;
+}
+
+/* Function:  cm_tr_hb_emit_mx_Dump()
+ * Synopsis:  Dump a HMM banded emit matrix to a stream, for diagnostics.
+ * Incept:    EPN, Thu Oct  6 09:07:35 2011
+ *
+ * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
+ */
+int
+cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx)
+{
+  int v, i, j, ip_v, jp_v;
+
+  fprintf(ofp, "M: %d\n", mx->M);
+  fprintf(ofp, "L: %d\n", mx->L);
+  fprintf(ofp, "l_ncells_alloc: %" PRId64 "\nl_ncells_valid: %" PRId64 "\n", mx->l_ncells_alloc, mx->l_ncells_valid);
+  fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
+  
+  /* l_pp and r_pp matrix data */
+  for (v = 0; v <= mx->M; v++) {
+    if(mx->Jl_pp[v]) { 
+      for(i = mx->cp9b->imin[v]; i <= mx->cp9b->imax[v]; i++) { 
+	ip_v = i - mx->cp9b->imin[v];
+	fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jl_pp[v][ip_v]), mx->Jl_pp[v][ip_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      }
+    }
+    if(mx->Ll_pp[v]) { 
+      for(i = mx->cp9b->imin[v]; i <= mx->cp9b->imax[v]; i++) { 
+	ip_v = i - mx->cp9b->imin[v];
+	fprintf(ofp, "Ll_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Ll_pp[v][ip_v]), mx->Ll_pp[v][ip_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      }
+    }
+    if(mx->Jr_pp[v]) { 
+      for(j = mx->cp9b->jmin[v]; j <= mx->cp9b->jmax[v]; j++) { 
+	jp_v = j - mx->cp9b->jmin[v];
+	fprintf(ofp, "Jr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, j, sreEXP2(mx->Jr_pp[v][jp_v]), mx->Jr_pp[v][jp_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      }
+    }
+    if(mx->Rr_pp[v]) { 
+      for(j = mx->cp9b->jmin[v]; j <= mx->cp9b->jmax[v]; j++) { 
+	jp_v = j - mx->cp9b->jmin[v];
+	fprintf(ofp, "Rr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, j, sreEXP2(mx->Rr_pp[v][jp_v]), mx->Rr_pp[v][jp_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      }
+    }
+    fprintf(ofp, "\n");
+  }
+  return eslOK;
+}
+
+/* Function:  cm_tr_hb_emit_mx_SizeNeeded()
+ * Incept:    EPN, Thu Oct  6 09:11:15 2011
+ *
+ * Purpose: Given a model, sequence length, and HMM bands object,
+ *            determine the number of cells and total size in Mb
+ *            required in a CM_TR_HB_EMIT_MX for the target sequence.
+ * 
+ *            Return number of l_pp, r_pp cells required in
+ *            <ret_l_ncells> and <ret_r_ncells> and size of required
+ *            matrix in Mb in <ret_Mb>.
+ *            
+ * Args:      cm           - the CM the matrix is for
+ *            errbuf       - char buffer for reporting errors
+ *            cp9b         - the HMM bands for this sequence 
+ *            L            - the length of the current target sequence we're aligning
+ *            ret_l_ncells - RETURN: number of matrix cells required
+ *            ret_r_ncells - RETURN: number of matrix cells required
+ *            ret_Mb       - RETURN: required size of matrix in Mb
+ *           
+ * Returns:   <eslOK> on success
+ *
+ */
+int
+cm_tr_hb_emit_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_l_ncells, int64_t *ret_r_ncells, float *ret_Mb)
+{
+  int     v;
+  int64_t l_ncells;
+  int64_t r_ncells;
+  int     have_el;
+  float   Mb_needed;
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+
+  l_ncells = 0;
+  r_ncells = 0;
+
+  Mb_needed = (float) 
+    (sizeof(CM_TR_HB_EMIT_MX) + 
+     (cm->M+1) * sizeof(float *) + /* mx->Jl_pp ptrs */
+     (cm->M+1) * sizeof(float *) + /* mx->Ll_pp ptrs */
+     (cm->M+1) * sizeof(float *) + /* mx->Jr_pp ptrs */
+     (cm->M+1) * sizeof(float *)); /* mx->Rr_pp ptrs */
+
+  for(v = 0; v < cm->M; v++) { 
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+      l_ncells += cp9b->imax[v] - cp9b->imin[v] + 1;
+    }
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+      r_ncells += cp9b->jmax[v] - cp9b->jmin[v] + 1;
+    }
+  }
+  if(have_el) l_ncells += L+1; /* space for EL deck */
+
+  Mb_needed += sizeof(float) * (l_ncells + l_ncells + r_ncells + r_ncells + (L+1)); 
+  /* mx->Jl_pp_mem, mx->Ll_pp_mem, mx->Jr_pp_mem, mx->Rr_pp_mem, mx->sum */
+  Mb_needed *= 0.000001; /* convert to megabytes */
+
+  if(ret_l_ncells != NULL) *ret_l_ncells = l_ncells;
+  if(ret_r_ncells != NULL) *ret_r_ncells = r_ncells;
+  if(ret_Mb       != NULL) *ret_Mb      = Mb_needed;
+
+  return eslOK;
+}
+
+/*****************************************************************
+ *  13. ScanMatrix_t data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      query dependent banded or non-banded CM DP search functions
  *****************************************************************/
@@ -4898,7 +6110,7 @@ cm_DumpScanMatrixAlpha(CM_t *cm, int j, int i0, int doing_float)
 
 
 /*****************************************************************
- *  11. TrScanMatrix_t data structure functions,
+ *  14. TrScanMatrix_t data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      truncated query dependent banded or non-banded CM DP search 
  *      functions.
@@ -5695,7 +6907,7 @@ cm_DumpTrScanMatrixAlpha(CM_t *cm, TrScanMatrix_t *trsmx, int j, int i0, int doi
 }
 
 /*****************************************************************
- *  12. GammaHitMx_t data structure functions,
+ *  15. GammaHitMx_t data structure functions,
  *      Semi HMM data structure for optimal resolution of overlapping
  *      hits for CM DP search functions.
  *****************************************************************/

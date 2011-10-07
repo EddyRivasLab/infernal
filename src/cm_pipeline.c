@@ -2201,16 +2201,17 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   
   if(do_hbanded) { 
     status = cm_AlignHB(cm, pli->errbuf, subdsq, hitlen, 
-			pli->hb_size_limit,                  /* limit for a single CM_HB_MX, so this is safe */
-			do_optacc,                           /* use optimal accuracy alg? */
-			FALSE,                               /* don't sample aln from Inside matrix */
-			cm->hbmx, cm->shhbmx,                /* inside, shadow matrices */
-			(do_ppstr ? cm->ohbmx : NULL),       /* outside DP matrix */
-			NULL,                                /* ESL_RANDOMNESS, unneeded b/c we're not sampling */
-			(do_ppstr  ? &ppstr  : NULL),        /* posterior string */
-			(do_optacc ? &ins_sc : NULL),        /* inside score, NULL if we're not doing opt acc */
-			&tr,                                 /* parsetree */
-			(do_optacc ? &optacc_sc : &cyk_sc)); /* optimal accuracy or CYK score */
+			pli->hb_size_limit,                          /* limit for a single CM_HB_MX, so this is safe */
+			do_optacc,                                   /* use optimal accuracy alg? */
+			FALSE,                                       /* don't sample aln from Inside matrix */
+			cm->hbmx, cm->shhbmx,                        /* inside, shadow matrices */
+			(do_ppstr || do_optacc) ? cm->ohbmx : NULL,  /* outside DP matrix */
+			(do_ppstr || do_optacc) ? cm->ehbmx : NULL,  /* emit matrix */
+			NULL,                                        /* ESL_RANDOMNESS, unneeded b/c we're not sampling */
+			(do_ppstr  ? &ppstr  : NULL),                /* posterior string */
+			(do_optacc ? &ins_sc : NULL),                /* inside score, NULL if we're not doing opt acc */
+			&tr,                                         /* parsetree */
+			(do_optacc ? &optacc_sc : &cyk_sc));         /* optimal accuracy or CYK score */
     if(status == eslERANGE) { 
       /* matrix was too big, despite our pre-check (should be rare), use D&C CYK */
       do_optacc    = FALSE;

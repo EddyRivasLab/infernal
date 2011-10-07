@@ -925,11 +925,11 @@ typedef struct _fullmat_t {
  * {J,L,R}shadow matrices, by adding the appropriate offset to yoffset
  * depending on the truncation mode.  A crucial fact is that yoffset
  * ranges from 0..MAXCONNECT-1 for normal states, but it can also be
- * USED_LOCAL_BEGIN, USED_EL, and USED_TRUNC_BEGIN, so we have to make
+ * USED_LOCAL_BEGIN, USED_EL, and USED_TRUNC_END, so we have to make
  * sure that adding 0..MAXCONNECT-1 to any of the
- * TRMODE_{J,L,R}_OFFSET values does not add up to USED_LOCAL_BEGIN or
- * USED_EL.  And remember that these values have to be able to be
- * stored in a char.
+ * TRMODE_{J,L,R}_OFFSET values does not add up to USED_LOCAL_BEGIN,
+ * USED_EL or USED_TRUNC_END. And remember that these values have to
+ * be able to be stored in a char.
  */
 #define NTRMODES        5
 #define TRMODE_UNKNOWN  4
@@ -1310,10 +1310,10 @@ typedef struct cm_tr_hb_shadow_mx_s {
 typedef struct cm_emit_mx_s {
   int      M;		    /* number of states (1st dim ptrs) in current mx */
   int      L;               /* length of sequence the matrix currently corresponds to */
-  int64_t  l_ncells_alloc;  /* current cell allocation limit for dp */
-  int64_t  l_ncells_valid;  /* current number of valid cells for dp */
-  int64_t  r_ncells_alloc;  /* current cell allocation limit for dp */
-  int64_t  r_ncells_valid;  /* current number of valid cells for dp */
+  int64_t  l_ncells_alloc;  /* current cell allocation limit for l_pp */
+  int64_t  l_ncells_valid;  /* current number of valid cells for l_pp */
+  int64_t  r_ncells_alloc;  /* current cell allocation limit for r_pp */
+  int64_t  r_ncells_valid;  /* current number of valid cells for r_pp */
   float    size_Mb;         /* current size of matrix in Megabytes  */
 
   float   **l_pp;         /* matrix: [0..v..M][0..1..i..L], l_pp[v][0] is
@@ -1336,6 +1336,153 @@ typedef struct cm_emit_mx_s {
 			   * Used for normalizing l_pp and r_pp.
 			   */
 } CM_EMIT_MX;
+
+/* CM_TR_EMIT_MX: Same as CM_EMIT_MX except extended for truncated 
+ * alignment. Two l_pp and r_pp matrices exist:
+ * 
+ * Jl_pp, Ll_pp, and Jr_pp, Rr_pp.
+ * 
+ * Each as defined above for CM_EMIT_MX with the caveat that 
+ * residue i for a [v][i] cell in a 'J', 'L', or 'R' matrix
+ * indicates that i was emitted in Joint (J), Left (L), or
+ * Right (R) marginal alignment mode.
+ *
+ * Note that we don't need a Lr_pp or Rl_pp matrix because
+ * in Left marginal mode we can't emit rightwise, and 
+ * in Right marginal mode we can't emit leftwise. Also, 
+ * no Terminal mode matrices are necessary because only
+ * B states can be in Terminal mode, and they don't emit.
+ *
+ * When we're filling a CM_TR_EMIT_MX matrix we'll know the optimal
+ * alignment mode <mode>, which dictates which of the *pp matrices
+ * need be filled:
+ *
+ * <mode> == TRMODE_J, fill Jl_pp, Jr_pp 
+ * <mode> == TRMODE_L, fill Jl_pp, Jr_pp and Ll_pp 
+ * <mode> == TRMODE_R, fill Jl_pp, Jr_pp and Rr_pp 
+ * <mode> == TRMODE_T, fill Jl_pp, Jr_pp, Ll_pp, and Rr_pp. 
+ *
+ * However, we don't store <mode> in the CM_TR_EMIT_MX because, as
+ * it's implemented, it will not affect how the matrix is allocated.
+ * We always allocate for all four *pp matrices because space is
+ * not a big concern because we're using 2D matrices, and this
+ * way prevents future reallocations when the marginal mode
+ * switches in subsequent sequence alignment.
+ */
+typedef struct cm_tr_emit_mx_s {
+  int      M;		     /* number of states (1st dim ptrs) in current mx */
+  int      L;                /* length of sequence the matrix currently corresponds to */
+  int64_t  l_ncells_alloc;   /* current cell allocation limit for Jl_pp, Ll_pp */
+  int64_t  l_ncells_valid;   /* current number of valid cells for Jl_pp, Ll_pp */
+  int64_t  r_ncells_alloc;   /* current cell allocation limit for Jr_pp, Rr_pp */
+  int64_t  r_ncells_valid;   /* current number of valid cells for Jr_pp, Rr_pp */
+  float    size_Mb;          /* current size of matrix in Megabytes  */
+
+  /* for all *_pp matrices, *_pp[v][0] is always IMPOSSIBLE, 
+   * *l_pp[v] == NULL for non-left emitters, 
+   * *r_pp[v] == NULL for non-right emitters.
+   */
+  float   **Jl_pp;         /* matrix: [0..v..M][0..1..i..L], Joint mode */
+  float   **Ll_pp;         /* matrix: [0..v..M][0..1..i..L], Left mode */
+  float   **Jr_pp;         /* matrix: [0..v..M][0..1..i..L], Joint mode */
+  float   **Rr_pp;         /* matrix: [0..v..M][0..1..i..L], Right mode */
+  float    *Jl_pp_mem;     /* the actual mem for Jl_pp */
+  float    *Ll_pp_mem;     /* the actual mem for Ll_pp */
+  float    *Jr_pp_mem;     /* the actual mem for Jr_pp */
+  float    *Rr_pp_mem;     /* the actual mem for Rr_pp */
+  float    *sum;           /* [0..1..i..L] log of the summed posterior
+		 	    * probability that residue i was emitted
+			    * either leftwise or rightwise by any state.
+			    * Used for normalizing *l_pp and *r_pp.
+			    */
+} CM_TR_EMIT_MX;
+
+
+/* CM_HB_EMIT_MX: HMM-banded version of CM_EMIT_MX (see the
+ * description of that structure above). The only difference is that
+ * now bands are enforced by only allocating l_pp and r_pp for
+ * residues within the bands. A pointer to the CP9Bands_t object is in
+ * <cp9b>.  The bandwidth of the l_pp rows are defined by cp9b->imin
+ * and cp9b->imax and for r_pp rows by cp9b->jmin and cp9b->jmax.
+ */
+typedef struct cm_hb_emit_mx_s {
+  int      M;		    /* number of states (1st dim ptrs) in current mx */
+  int      L;               /* length of sequence the matrix currently corresponds to */
+  int64_t  l_ncells_alloc;  /* current cell allocation limit for dp */
+  int64_t  l_ncells_valid;  /* current number of valid cells for dp */
+  int64_t  r_ncells_alloc;  /* current cell allocation limit for dp */
+  int64_t  r_ncells_valid;  /* current number of valid cells for dp */
+  float    size_Mb;         /* current size of matrix in Megabytes  */
+
+  float   **l_pp;         /* matrix: [0..v..M][0..i..(lmax[v]-lmin[v])],
+			   * l_pp[v][i] corresponds to residue i+lmin[v].
+			   * l_pp[v] == NULL if v is not a left emitter.
+			   */
+  float   **r_pp;         /* matrix: [0..v..M][0..i..(rmax[v]-rmin[v])],
+			   * r_pp[v][i] corresponds to residue i+rmin[v].
+			   * r_pp[v] == NULL if v is not a right emitter.
+			   */
+  float    *l_pp_mem;     /* the actual mem for l_pp, points to
+			   * l_pp[v][0], where v is min v for which
+			   * l_pp != NULL */
+  float    *r_pp_mem;     /* the actual mem for r_pp, points to
+			   * r_pp[v][0], where v is min v for which
+			   * r_pp != NULL */
+  float    *sum;          /* [0..1..i..L] log of the summed posterior
+			   * probability that residue i was emitted
+			   * either leftwise or rightwise by any state.
+			   * Used for normalizing l_pp and r_pp.
+			   */
+  CP9Bands_t *cp9b;       /* the CP9Bands_t object associated with
+	  		   * this matrix. We use the imin and imax
+	  		   * arrays as bands on l_pp and jmin and jmax
+	  		   * arrays as bands on r_pp. Only a
+	  		   * reference, so don't free it when mx is
+	  		   * freed. */
+} CM_HB_EMIT_MX;
+
+
+/* CM_TR_HB_EMIT_MX: HMM-banded version of CM_TR_EMIT_MX (see the
+ * description of that structure above). The only difference is that
+ * now bands are enforced by only allocating Jl_pp, Ll_pp, Jr_pp, and
+ * Rr_pp for residues within the bands. A pointer to the CP9Bands_t
+ * object is in <cp9b>. The bandwidth of the {J,L}l_pp rows are
+ * defined by cp9b->imin and cp9b->imax and for {J,R}r_pp rows by
+ * cp9b->jmin and cp9b->jmax.
+ */
+typedef struct cm_tr_hb_emit_mx_s {
+  int      M;		     /* number of states (1st dim ptrs) in current mx */
+  int      L;                /* length of sequence the matrix currently corresponds to */
+  int64_t  l_ncells_alloc;   /* current cell allocation limit for Jl_pp, Ll_pp */
+  int64_t  l_ncells_valid;   /* current number of valid cells for Jl_pp, Ll_pp */
+  int64_t  r_ncells_alloc;   /* current cell allocation limit for Jr_pp, Rr_pp */
+  int64_t  r_ncells_valid;   /* current number of valid cells for Jr_pp, Rr_pp */
+  float    size_Mb;          /* current size of matrix in Megabytes  */
+
+  /* for all *_pp matrices, *_pp[v][0] is always IMPOSSIBLE, 
+   * *l_pp[v] == NULL for non-left emitters, 
+   * *r_pp[v] == NULL for non-right emitters.
+   */
+  float   **Jl_pp;         /* matrix: [0..v..M][0..1..i..L], Joint mode */
+  float   **Ll_pp;         /* matrix: [0..v..M][0..1..i..L], Left mode */
+  float   **Jr_pp;         /* matrix: [0..v..M][0..1..i..L], Joint mode */
+  float   **Rr_pp;         /* matrix: [0..v..M][0..1..i..L], Right mode */
+  float    *Jl_pp_mem;     /* the actual mem for Jl_pp */
+  float    *Ll_pp_mem;     /* the actual mem for Ll_pp */
+  float    *Jr_pp_mem;     /* the actual mem for Jr_pp */
+  float    *Rr_pp_mem;     /* the actual mem for Rr_pp */
+  float    *sum;           /* [0..1..i..L] log of the summed posterior
+		 	    * probability that residue i was emitted
+			    * either leftwise or rightwise by any state.
+			    * Used for normalizing *l_pp and *r_pp.
+			    */
+  CP9Bands_t *cp9b;        /* the CP9Bands_t object associated with
+			    * this matrix. We use the imin and imax
+			    * arrays as bands on l_pp and jmin and jmax
+			    * arrays as bands on r_pp. Only a
+			    * reference, so don't free it when mx is
+			    * freed. */
+} CM_TR_HB_EMIT_MX;
 
 
 /* Structure ScanMatrix_t: Information used by all CYK/Inside scanning functions,
@@ -1647,6 +1794,7 @@ typedef struct cm_s {
   ScanMatrix_t    *smx;     /* matrices, info for CYK/Inside scans with this CM */
   CM_HB_MX        *hbmx;    /* growable HMM banded float matrix */
   CM_HB_MX        *ohbmx;   /* another, growable HMM banded float matrix for Outside/Posterior calcs */
+  CM_HB_EMIT_MX   *ehbmx;   /* growable HMM banded emit matrix for residue posterior probability calcs */
   CM_HB_SHADOW_MX *shhbmx;  /* growable HMM banded shadow matrix, for alignment tracebacks */
   CP9_MX          *cp9_mx;  /* growable CP9 DP matrix */
   CP9_MX          *cp9_bmx; /* another growable CP9 DP matrix, 'b' is for backward,
