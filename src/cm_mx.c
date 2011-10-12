@@ -4389,9 +4389,7 @@ cm_tr_emit_mx_Create(CM_t *cm)
     }
   }
     
-  /* allocate EL row, only valid in Jl */
-  ESL_ALLOC(mx->Jl_pp[M], sizeof(float) * (allocL));
-  ESL_ALLOC(mx->Ll_pp[M], sizeof(float) * (allocL)); 
+  /* setup EL row, only valid in Jl */
   mx->Jl_pp[M] = mx->Jl_pp_mem + l_n * (allocL);
   mx->Ll_pp[M] = mx->Ll_pp_mem + l_n * (allocL);
   /* Note that EL emits in left marginal mode are not allowed, but we allocate them so Ll_pp is consistent with
@@ -4642,7 +4640,7 @@ cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx)
   fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
   
   /* l_pp and r_pp matrix data */
-  for (v = 0; v <= mx->M; v++) {
+  for (v = 0; v < mx->M; v++) {
     for(i = 0; i <= mx->L; i++) { 
       if(mx->Jl_pp[v]) fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jl_pp[v][i]), mx->Jl_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
       if(mx->Ll_pp[v]) fprintf(ofp, "Ll_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Ll_pp[v][i]), mx->Ll_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
@@ -4650,6 +4648,10 @@ cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx)
       if(mx->Rr_pp[v]) fprintf(ofp, "Rr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Rr_pp[v][i]), mx->Rr_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
     }
     fprintf(ofp, "\n");
+  }
+  /* EL state */
+  for(i = 0; i <= mx->L; i++) { 
+    if(mx->Jl_pp[cm->M]) fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Jl_pp[cm->M][i]), mx->Jl_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
   }
   return eslOK;
 }
@@ -4791,7 +4793,6 @@ cm_hb_emit_mx_Create(CM_t *cm)
   }
     
   /* allocate EL row */
-  ESL_ALLOC(mx->l_pp[M], sizeof(float) * (allocL));
   mx->l_pp[M] = mx->l_pp_mem + l_n * (allocL);
 
   mx->r_pp[M] = NULL;
@@ -5172,8 +5173,6 @@ cm_tr_hb_emit_mx_Create(CM_t *cm)
   }
     
   /* allocate EL row, only valid in Jl */
-  ESL_ALLOC(mx->Jl_pp[M], sizeof(float) * (allocL));
-  ESL_ALLOC(mx->Ll_pp[M], sizeof(float) * (allocL)); 
   mx->Jl_pp[M] = mx->Jl_pp_mem + l_n * (allocL);
   mx->Ll_pp[M] = mx->Ll_pp_mem + l_n * (allocL);
   /* Note that EL emits in left marginal mode are not allowed, but we allocate them so Ll_pp is consistent with
@@ -5411,7 +5410,7 @@ cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx)
   fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
   
   /* l_pp and r_pp matrix data */
-  for (v = 0; v <= mx->M; v++) {
+  for (v = 0; v < mx->M; v++) {
     if(mx->Jl_pp[v]) { 
       for(i = mx->cp9b->imin[v]; i <= mx->cp9b->imax[v]; i++) { 
 	ip_v = i - mx->cp9b->imin[v];
@@ -5437,6 +5436,11 @@ cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx)
       }
     }
     fprintf(ofp, "\n");
+  }
+
+  /* EL state */
+  for(i = 0; i <= mx->L; i++) { 
+    if(mx->Jl_pp[cm->M]) fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Jl_pp[cm->M][i]), mx->Jl_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
   }
   return eslOK;
 }

@@ -1479,6 +1479,31 @@ DeriveUniqueStateCode(int ndtype, int sttype)
   }
 }
 
+/* Function:  Marginalmode()
+ * Date:      EPN, Sat Oct  8 06:52:21 2011
+ *
+ * Purpose:   Translate internal flags for truncation mode
+ *            into human-readable strings, for clearer output.
+ * 
+ * Args:      mode - a marginal mode 
+ *                   TRMODE_J, TRMODE_L, TRMODE_R, TRMODE_T or TRMODE_UNKNOWN
+ *
+ * Returns:   the appropriate string
+ */
+char *
+Marginalmode(char mode) 
+{
+  switch (mode) {
+  case TRMODE_J:       return "Joint";
+  case TRMODE_L:       return "Left";
+  case TRMODE_R:       return "Right";
+  case TRMODE_T:       return "Term";
+  case TRMODE_UNKNOWN: return "Unkwn";
+  default: cm_Fail("bogus marginal mode type %d\n", mode);
+  }
+  return "";
+}
+
 
 
 /* Function: StateMapsLeft()
@@ -3561,4 +3586,3 @@ ICalcInitDPScores(CM_t *cm)
   cm_Fail("memory allocation error.");
   return NULL; /* NEVERREACHED */
 }
-

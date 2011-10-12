@@ -969,15 +969,21 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
 
   /* initialize all cells of the matrix to IMPOSSIBLE */
   esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE);
+  if(shmx->y_ncells_valid > 0) for(i = 0; i < shmx->y_ncells_valid; i++) shmx->yshadow_mem[i] = USED_EL;
+  /* for B states, shadow matrix holds k, length of right fragment, this will be overwritten */
+  if(shmx->k_ncells_valid > 0) esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, 0);
 
-  /* Note, at this point in the non-banded version (cm_CYKInsideAlign()) we
-   * replace EL (cm->M) deck IMPOSSIBLEs with EL scores.  But we don't
-   * here. It's actually not necessary there either, but it is done
-   * for completeness and so if we check that matrix in combination
-   * with an Outside CYK matrix, then scores in the EL deck are valid.
-   * But we won't do that here, and we're concerned with efficiency,
-   * so we don't waste time with resetting the EL deck.
+  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores,
+   * Note: we could optimize by skipping this step and using el_scA[d] to
+   * initialize ELs for each state in the first step of the main recursion
+   * below. We fill in the EL deck here for completeness and so that
+   * a check of this alpha matrix with a CYKOutside matrix will pass.
    */
+  if(cm->flags & CMH_LOCAL_END) { 
+    for (j = 0; j <= L; j++) {
+      for (d = 0;  d <= j; d++) alpha[cm->M][j][d] = el_scA[d];
+    }
+  }
 
   /* Main recursion */
   for (v = cm->M-1; v >= 0; v--) {
@@ -987,43 +993,31 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
     sdr  = StateRightDelta(cm->sttype[v]);
     jn   = jmin[v];
     jx   = jmax[v];
-    /* initialize all valid cells for state v */
-    if (cm->sttype[v] != E_st) {
-      if (cm->sttype[v] == B_st) {
-	/* initialize all valid cells for state v to IMPOSSIBLE (local ends are impossible for B states) */
-	assert(! (NOT_IMPOSSIBLE(cm->endsc[v])));
-	for (j = jmin[v]; j <= jmax[v]; j++) { 
-	  ESL_DASSERT1((j >= (0) && j <= L));
-	  jp_v  = j - jmin[v];
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
-	    alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	    kshadow[v][jp_v][dp_v] = USED_EL; 
-	  }
+
+    /* re-initialize if we can do a local end from v */
+    if(NOT_IMPOSSIBLE(cm->endsc[v])) {
+      for (j = jmin[v]; j <= jmax[v]; j++) { 
+	jp_v  = j - jmin[v];
+	if(hdmin[v][jp_v] >= sd) { 
+	  d    = hdmin[v][jp_v];
+	  dp_v = 0;
 	}
-      } else { /* ! B_st && ! E_st */
-	/* initialize all valid cells for state v */
-	if(NOT_IMPOSSIBLE(cm->endsc[v])) {
-	  for (j = jmin[v]; j <= jmax[v]; j++) { 
-	    ESL_DASSERT1((j >= (0) && j <= L));
-	    jp_v  = j - jmin[v];
-	    for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
-	      alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
-	      yshadow[v][jp_v][dp_v] = USED_EL; 
-	    }
-	  }
+	else { 
+	  d    = sd;
+	  dp_v = sd - hdmin[v][jp_v];
 	}
-	else { /* cm->endsc[v] == IMPOSSIBLE */
-	  for (j = jmin[v]; j <= jmax[v]; j++) { 
-	    ESL_DASSERT1((j >= 0 && j <= L));
-	    jp_v  = j - jmin[v];
-	    for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
-	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	      yshadow[v][jp_v][dp_v] = USED_EL; 
-	    }
+	for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	  if(d >= sd) { 
+	    alpha[v][jp_v][dp_v] = alpha[cm->M][j][d-sd] + cm->endsc[v];
+	    /* If we optimize by skipping the filling of the 
+	     * EL deck the above line would become: 
+	     * 'alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];' 
+	     */
 	  }
 	}
       }
     }
+    /* otherwise this state's deck has already been initialized to IMPOSSIBLE */
 
     if(cm->sttype[v] == E_st) { 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
@@ -1636,7 +1630,13 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
-  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores */
+
+  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores,
+   * Note: we could optimize by skipping this step and using el_scA[d] to
+   * initialize ELs for each state in the first step of the main recursion
+   * below. We fill in the EL deck here for completeness and so that
+   * a check of this alpha matrix with a CYKOutside matrix will pass.
+   */
   if(cm->flags & CMH_LOCAL_END) { 
     for (j = 0; j <= L; j++) {
       for (d = 0;  d <= j; d++) alpha[cm->M][j][d] = el_scA[d];
@@ -2329,7 +2329,6 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   int      jp_y_minus_k;       /* jp_y - k, used in one loop, stored to avoid calc'ing twice */
   int      dp_y_minus_k;       /* dp_y - k, used in one loop, stored to avoid calc'ing twice */
   int      kn, kx;             /* current minimum/maximum k value */
-  float    tsc;                /* a transition score */
   int      yvalid_idx;         /* for keeping track of which children are valid */
   int      yvalid_ct;          /* for keeping track of which children are valid */
 
@@ -2390,11 +2389,8 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 
   /* Main recursion */
   for (v = cm->M-1; v >= 0; v--) {
-    float const *tsc_v = cm->tsc[v];  /* transition scores for state v */
     sd   = StateDelta(cm->sttype[v]);
     sdr  = StateRightDelta(cm->sttype[v]);
-    jn   = jmin[v];
-    jx   = jmax[v];
 
     /* re-initialize if we can do a local end from v and check for a
      * special optimal-accuracy-specific initialization case
@@ -2435,11 +2431,13 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	for (d = hdmin[v][jp_v]; d <= sd; d++, dp_v++) { 
 	  alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	  yshadow[v][jp_v][dp_v] = USED_EL;
-	  for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) { 
+	    for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) { 
 	    if(StateDelta(cm->sttype[y]) == 0) { 
 	      if(j >= jmin[y] && j <= jmax[y]) { 
-		if(hdmin[y][j-jmin[y]] == 0) 
-		  yshadow[v][jp_v][dp_v] = y-cm->cfirst[v];
+		if(hdmin[y][j-jmin[y]] == 0) { 
+		  yoffset = y - cm->cfirst[v];
+		  yshadow[v][jp_v][dp_v] = yoffset;
+		}
 	      }
 	    }
 	  }
@@ -2502,7 +2500,6 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
 	yoffset = y - cm->cfirst[v];
-	tsc = tsc_v[yoffset];
 	
 	jn = ESL_MAX(jmin[v], jmin[y]+sdr);
 	jx = ESL_MIN(jmax[v], jmax[y]+sdr);
@@ -3120,7 +3117,7 @@ cm_CYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
  *           (where i = j-d+1) instead of the log of the summed
  *           probability of all such parses. This means max operations
  *           are used instead of logsums.
-
+ *
  *           This function complements cm_CYKInsideAlignHB() but is
  *           mainly useful for testing and reference. It can be used
  *           with do_check=TRUE to verify that the implementation of
@@ -4982,7 +4979,7 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
    *         1.0.
    */
   esl_vec_FSet(emit_mx->sum, (L+1), IMPOSSIBLE);
-  for(v = 0; v <= cm->M; v++) { 
+  for(v = 0; v < cm->M; v++) { /* we'll handle EL special */
     if(emit_mx->l_pp[v] != NULL) {
       for(i = imin[v]; i <= imax[v]; i++) { 
 	ip_v = i - imin[v];
@@ -4996,6 +4993,13 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
       }
     }
   }
+  /* Handle EL deck, remember it is non-banded */
+  if(emit_mx->l_pp[cm->M] != NULL) { 
+    for(i = 1; i <= L; i++) { 
+      emit_mx->sum[i] = FLogsum(emit_mx->sum[i], emit_mx->l_pp[v][i]);
+    }
+  }
+  
   /* perform the check, if nec */
   if(do_check) { 
     for(i = 1; i <= L; i++) { 

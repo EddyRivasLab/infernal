@@ -306,13 +306,10 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
     mode = tr->mode[tidx];
     if (v == cm->M) continue;      	/* special case: v is EL, local alignment end */
     nd = cm->ndidx[v];
-    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) /* no scores in B,E */
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st && tr->nxtl[tidx] != -1) /* no scores in B,E or if nxtl is -1 */
       {
 	y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
-
-        if (tr->nxtl[tidx] == -1)
-          ;
-	else if (v == 0 && (cm->flags & CMH_LOCAL_BEGIN))
+	if (v == 0 && (cm->flags & CMH_LOCAL_BEGIN))
 	  sc += cm->beginsc[y];
 	else if (y == cm->M) /* CMH_LOCAL_END is presumably set, else this wouldn't happen */
 	  sc += cm->endsc[v] + (cm->el_selfsc * (tr->emitr[tidx] - tr->emitl[tidx] + 1 - StateDelta(cm->sttype[v])));
@@ -424,16 +421,16 @@ PrintParsetree(FILE *fp, Parsetree_t *tr)
 {
   int x;
 
-  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s\n",
-	  " idx ","emitl", "emitr", "state", " nxtl", " nxtr", " prv ");
-  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s\n",
-	 "-----", "-----", "-----", "-----", "-----","-----", "-----");
+  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s %5s\n",
+	  " idx ","emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " mode");
+  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s %5s\n",
+	  "-----", "-----", "-----", "-----", "-----","-----", "-----", "-----");
   for (x = 0; x < tr->n; x++)
-    fprintf(fp, "%5d %5d %5d %5d %5d %5d %5d\n",
-	   x, tr->emitl[x], tr->emitr[x], tr->state[x], 
-	   tr->nxtl[x], tr->nxtr[x], tr->prv[x]);
-  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s\n",
-	 "-----", "-----", "-----", "-----","-----","-----", "-----");
+    fprintf(fp, "%5d %5d %5d %5d %5d %5d %5d %5s\n",
+	    x, tr->emitl[x], tr->emitr[x], tr->state[x], 
+	    tr->nxtl[x], tr->nxtr[x], tr->prv[x], Marginalmode(tr->mode[x]));
+  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s %5s\n",
+	  "-----", "-----", "-----", "-----","-----","-----", "-----", "-----");
 
   fprintf(fp, "n      = %d\n", tr->n);
   fprintf(fp, "nalloc = %d\n", tr->nalloc);
@@ -481,19 +478,19 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int 
 
   if(do_banded)
     {
-      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s\n",
-	      " idx ", "emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " tsc ", " esc ", 
+      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s %5s\n",
+	      " idx ", "emitl", "emitr", "state", " mode", " nxtl", " nxtr", " prv ", " tsc ", " esc ", 
 	      " L   ", " dmin", " dmax");
-      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s\n",
-	      "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
+      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s %5s\n",
+	      "-----", "------", "------", "-------", "-----", "-----","-----", "-----","-----", "-----",
 	      "-----", "-----", "-----");
     }
   else
     {
-      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
-	      " idx ","emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " tsc ", " esc ");
-      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
-	      "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----");
+      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s\n",
+	      " idx ","emitl", "emitr", "state", " mode", " nxtl", " nxtr", " prv ", " tsc ", " esc ");
+      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s\n",
+	      "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----", "-----");
     }
   for (x = 0; x < tr->n; x++)
     {
@@ -524,12 +521,9 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int 
        * B, E, and the special EL state (M, local end) have no transitions.
        */
       tsc = 0.;
-      if (v != cm->M && cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
+      if (v != cm->M && cm->sttype[v] != B_st && cm->sttype[v] != E_st && tr->nxtl[x] != -1) {
 	y = tr->state[tr->nxtl[x]];
-
-        if (tr->nxtl[x] == -1)
-          ;
-	else if (v == 0 && (cm->flags & CMH_LOCAL_BEGIN))
+	if (v == 0 && (cm->flags & CMH_LOCAL_BEGIN))
 	  tsc = cm->beginsc[y];
 	else if (y == cm->M) /* CMH_LOCAL_END is presumably set, else this wouldn't happen */
 	  tsc = cm->endsc[v] + (cm->el_selfsc * (tr->emitr[x] - tr->emitl[x] + 1 - StateDelta(cm->sttype[v])));
@@ -542,26 +536,28 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int 
       if(do_banded)
 	{
 	  L = tr->emitr[x]-tr->emitl[x]+1;
-	  fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f %5d %5d %5d %2s\n",
+	  fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5s %5d %5d %5d %5.2f %5.2f %5d %5d %5d %2s\n",
 		  x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
-		  Statetype(cm->sttype[v]), tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc,
+		  Statetype(cm->sttype[v]), Marginalmode(tr->mode[x]), 
+		  tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc,
 		  L, dmin[v], dmax[v],
 		  (L >= dmin[v] && L <= dmax[v]) ? "" : "!!");
 	}
       else
 	{
-	  fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f\n",
+	  fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5s %5d %5d %5d %5.2f %5.2f\n",
 		  x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
-		  Statetype(cm->sttype[v]), tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
+		  Statetype(cm->sttype[v]), Marginalmode(tr->mode[x]),
+		  tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
 	}
     }
   if(do_banded)
-    fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s\n",
-	    "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
+    fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s %5s\n",
+	    "-----", "------", "------", "-------", "-----","-----","-----", "-----","-----", "-----",
 	    "-----", "-----", "-----");
   else
-    fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
-	    "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----");
+    fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s\n",
+	    "-----", "------", "------", "-------", "-----","-----","-----", "-----","-----", "-----");
   fflush(fp);
 } 
 
