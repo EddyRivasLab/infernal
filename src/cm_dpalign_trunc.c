@@ -39,6 +39,69 @@
  * reference and debugging only. They're not called by any of the main
  * Infernal programs, only by test programs.
  *
+ * Notes specific to truncated alignment: 
+ * 
+ * In truncated alignment, four matrices (J, L, R, and T) exist where
+ * there was only one in standard alignment (which is essentially
+ * implicitly the J matrix).  For each mode, TrCYKInside and TrInside
+ * functions will find the optimal alignment for that mode and store
+ * it in {J,L,R,T}alpha[0][L][L] (or the HMM banded equivalent
+ * {J,L,R,T}alpha[0][jp_0][Lp_0]). The overall optimal alignment is
+ * the highest scoring optimal alignment in any mode. That is, in
+ * TrInside we have to choose the mode and then the Inside score is
+ * the score of all alignments in that mode, not the score of all
+ * alignments in any mode.
+ * 
+ * Naively, in non-banded mode we have to fill in all four matrices,
+ * but in many cases we already know the marginal mode of the entire
+ * alignment. This will always be TRUE in TrOutside, TrPosterior and
+ * TrEmitterPosterior because we must have already done TrCYKInside or
+ * TrInside and so we already know the optimal mode. In TrOutside it
+ * is vital that we only consider alignments in the optimal mode or
+ * else the TrPosterior values will be invalid (see XXX). In some
+ * cases we we will know the optimal mode when we enter TrCYKInside or
+ * TrInside functions, i.e. if we're in a search pipeline and we've
+ * already determined there is a hit in a particular marginal mode by
+ * running a scanning TrCYK or TrInside function (see
+ * cm_dpsearch_trunc.c).
+ * 
+ * If we know the optimal mode, stored in <opt_mode>, upon entering
+ * any of these functions we can usually save time by only filling in
+ * a subset of the four matrices, this is controlled within the
+ * functions by the <fill_J>, <fill_L>, <fill_R> and <fill_T>
+ * parameters. Specifically: 
+ *
+ * <opt_mode>       <fill_J>  <fill_L>  <fill_R>  <fill_T>
+ * ---------------  --------  --------  --------  --------
+ * TRMODE_J         TRUE      FALSE     FALSE     FALSE
+ * TRMODE_L         TRUE      TRUE      FALSE     FALSE
+ * TRMODE_R         TRUE      FALSE     TRUE      FALSE
+ * TRMODE_T         TRUE      TRUE      TRUE      TRUE 
+ * TRMODE_UNKNOWN   TRUE      TRUE      TRUE      TRUE 
+ * 
+ * The <fill_*> values are set in cm_TrFillFromMode(). We then use the
+ * <fill_*> variables to save time in the DP recursions by skipping
+ * unnecessary matrices. Since fill_J is always TRUE we don't actually
+ * need a fill_J parameter.  (For Outside functions fill_T
+ * is implicitly TRUE but we only have to set Tbeta values for a
+ * single cell per B state, the one corresponding to a full alignment
+ * of all 1..L residues are that state. This is done when initializing
+ * the Tbeta matrix.)
+ * 
+ * <fill_*> values are used in both non-banded and HMM banded
+ * matrices.  In HMM banded functions we have similar per-state
+ * information stored in cp9b->Jvalid[], cp9b->Lvalid[],
+ * cp9b->Rvalid[], cp9b->Tvalid[] arrays which dictate if we need to
+ * fill in J,L,R,T decks for each state. These were determined based
+ * on the HMM posterior values for the start and end positions of the
+ * alignment (see
+ * hmmband.c:cp9_MarginalCandidatesFromStartEndPositions()).  These
+ * values can be used in combination with the fill_* values, that is,
+ * both are relevant. For example, if fill_L is FALSE, the we never
+ * fill in L matrix values for any state. But if it is TRUE, we only
+ * fill in L matrix values for those states for which cp9b->Lvalid[]
+ * is TRUE.
+ * 
  * EPN, Wed Sep  7 12:13:00 2011
  *
  *****************************************************************
@@ -454,9 +517,9 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, i
 
     /* super special case for HMM banded truncated mode, explained below, after the crazy if */
     if(cm->sttype[v] == S_st && d == 0 && 
-       ((mode == TRMODE_J && (! cp9b->do_J[v]))  ||              /* J mode, but J mode is disallowed for state v */
-	(mode == TRMODE_L && (! cp9b->do_L[v]))  ||              /* L mode, but L mode is disallowed for state v */
-	(mode == TRMODE_R && (! cp9b->do_R[v]))  ||              /* R mode, but R mode is disallowed for state v */
+       ((mode == TRMODE_J && (! cp9b->Jvalid[v]))  ||              /* J mode, but J mode is disallowed for state v */
+	(mode == TRMODE_L && (! cp9b->Lvalid[v]))  ||              /* L mode, but L mode is disallowed for state v */
+	(mode == TRMODE_R && (! cp9b->Rvalid[v]))  ||              /* R mode, but R mode is disallowed for state v */
 	(j < jmin[v]             || j > jmax[v]) ||              /* j is outside v's j band */
 	(d < hdmin[v][j-jmin[v]] || d > hdmax[v][j-jmin[v]]))) { /* j is within v's j band, but d is outside j's d band */
       /* special case: v is a BEGL_S or BEGR_S and either we're in a
@@ -889,7 +952,7 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
  *           each marginal mode in <ret_{J,L,R,T}b>. The optimal score
  *           for each marginal mode is in:
  *           {J,L,R,T}alpha[0][L][L]. The optimal mode (the mode that
- *           gives the max score in {J,L,R,T}alpha[0][L][L] is
+ *           gives the max score in {J,L,R,T}alpha[0][L][L]) is
  *           returned in <ret_mode>, and that max score is returned in
  *           <ret_sc>.
  *
@@ -898,6 +961,7 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
  *           dsq         - the digitaized sequence [1..L]   
  *           L           - length of target sequence, we align 1..L
  *           size_limit  - max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           opt_mode    - the optimal alignment mode, TRMODE_UNKNOWN if unknown
  *           mx          - dp matrix 
  *           shmx        - shadow matrix
  *           ret_Jb      - best internal entry state for Joint    marginal mode
@@ -915,7 +979,7 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
  *           In this case alignment has been aborted, <ret_*> variables are not valid
  */
 int
-cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_TR_MX *mx, CM_TR_SHADOW_MX *shmx, 
+cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char opt_mode, CM_TR_MX *mx, CM_TR_SHADOW_MX *shmx, 
 		    int *ret_Jb, int *ret_Lb, int *ret_Rb, int *ret_Tb, char *ret_mode, float *ret_sc)
 {
   int      status;          /* easel status code */
@@ -939,6 +1003,7 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   int   mode = TRMODE_J;    /* truncation mode for obtaining optimal score <ret_sc> */
   int   Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
   int   Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
+  int   fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
 
   /* the DP matrix */
   float ***Jalpha  = mx->Jdp; /* pointer to the Jalpha DP matrix */
@@ -955,6 +1020,9 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   int   ***Tkshadow = shmx->Tkshadow; /* pointer to the Tkshadow matrix */
   char  ***Lkmode   = shmx->Lkmode;   /* pointer to the Lkmode matrix */
   char  ***Rkmode   = shmx->Rkmode;   /* pointer to the Rkmode matrix */
+
+  /* Determine which matrices we need to fill in, based on <opt_mode> */
+  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) ESL_FAIL(status, errbuf, "cm_TrCYKInsideAlign(), bogus mode: %d", opt_mode);
 
   /* Allocations and initializations  */
   Jb = Lb = Rb = Tb = -1;
@@ -1014,8 +1082,8 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
     if(cm->sttype[v] == E_st) { 
       for (j = 0; j <= L; j++) {
 	Jalpha[v][j][0] = 0.;
-	Lalpha[v][j][0] = 0.;
-	Ralpha[v][j][0] = 0.;
+	if(fill_L) Lalpha[v][j][0] = 0.;
+	if(fill_R) Ralpha[v][j][0] = 0.;
 	/* rest of deck remains IMPOSSIBLE */
       }
     }
@@ -1047,37 +1115,41 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 		Jalpha[v][j][d]   = sc; 
 		Jyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
 	      }
-	      if ((sc = Lalpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > Lalpha[v][j][d]) {
+	      if (fill_L && (sc = Lalpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > Lalpha[v][j][d]) {
 		Lalpha[v][j][d]   = sc; 
 		Lyshadow[v][j][d] = yoffset + TRMODE_L_OFFSET;
 	      }
 	    }
 	    Jalpha[v][j][d] += esc_v[dsq[i]];
 	    Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
-	    if(d >= 2) { 
-	      Lalpha[v][j][d] += esc_v[dsq[i]];
+	    if(fill_L) { 
+	      if(d >= 2) { 
+		Lalpha[v][j][d] += esc_v[dsq[i]];
+	      }
+	      else { 
+		Lalpha[v][j][d]   = esc_v[dsq[i]];
+		Lyshadow[v][j][d] = USED_TRUNC_END;
+	      }
+	      Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	    }
-	    else { 
-	      Lalpha[v][j][d]   = esc_v[dsq[i]];
-	      Lyshadow[v][j][d] = USED_TRUNC_END;
-	    }
-	    Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	    i--;
 
 	    /* handle R separately */
-	    /* note we use 'd', not 'd_sd' (which we used in the corresponding loop for J,L above) */
-	    for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
-	      y = cm->cfirst[v] + yoffset; 
-	      if ((sc = Jalpha[y][j_sdr][d] + tsc_v[yoffset]) > Ralpha[v][j][d]) { 
-		Ralpha[v][j][d] = sc; 
-		Ryshadow[v][j][d]= yoffset + TRMODE_J_OFFSET;
+	    if(fill_R) { 
+	      /* note we use 'd', not 'd_sd' (which we used in the corresponding loop for J,L above) */
+	      for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
+		y = cm->cfirst[v] + yoffset; 
+		if ((sc = Jalpha[y][j_sdr][d] + tsc_v[yoffset]) > Ralpha[v][j][d]) { 
+		  Ralpha[v][j][d] = sc; 
+		  Ryshadow[v][j][d]= yoffset + TRMODE_J_OFFSET;
+		}
+		if ((sc = Ralpha[y][j_sdr][d] + tsc_v[yoffset]) > Ralpha[v][j][d]) { 
+		  Ralpha[v][j][d] = sc;
+		  Ryshadow[v][j][d] = yoffset + TRMODE_R_OFFSET;
+		}
 	      }
-	      if ((sc = Ralpha[y][j_sdr][d] + tsc_v[yoffset]) > Ralpha[v][j][d]) { 
-		Ralpha[v][j][d] = sc;
-		Ryshadow[v][j][d] = yoffset + TRMODE_R_OFFSET;
-	      }
+	      Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 	    }
-	    Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 	  }
 	}
       } /* end of if(! StateIsDetached(cm,v )) */
@@ -1110,36 +1182,40 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 		Jalpha[v][j][d]   = sc; 
 		Jyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
 	      }
-	      if ((sc = Ralpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > Ralpha[v][j][d]) {
+	      if (fill_R && (sc = Ralpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > Ralpha[v][j][d]) {
 		Ralpha[v][j][d]   = sc; 
 		Ryshadow[v][j][d] = yoffset + TRMODE_R_OFFSET;
 	      }
 	    }
 	    Jalpha[v][j][d] += esc_v[dsq[j]];
 	    Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
-	    if(d >= 2) { 
-	      Ralpha[v][j][d] += esc_v[dsq[j]];
+	    if(fill_R) { 
+	      if(d >= 2) { 
+		Ralpha[v][j][d] += esc_v[dsq[j]];
+	      }
+	      else { 
+		Ralpha[v][j][d]   = esc_v[dsq[j]];
+		Ryshadow[v][j][d] = USED_TRUNC_END;
+	      }
+	      Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 	    }
-	    else { 
-	      Ralpha[v][j][d]   = esc_v[dsq[j]];
-	      Ryshadow[v][j][d] = USED_TRUNC_END;
-	    }
-	    Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 
 	    /* handle L separately */
-	    /* note we use 'j' and 'd', not 'j_sdr' and 'd_sd' (which we used in the corresponding loop for J,R above) */
-	    for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
-	      y = cm->cfirst[v] + yoffset; 
-	      if ((sc = Jalpha[y][j][d] + tsc_v[yoffset]) > Lalpha[v][j][d]) { 
-		Lalpha[v][j][d] = sc;
-		Lyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
+	    if(fill_L) { 
+	      /* note we use 'j' and 'd', not 'j_sdr' and 'd_sd' (which we used in the corresponding loop for J,R above) */
+	      for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
+		y = cm->cfirst[v] + yoffset; 
+		if ((sc = Jalpha[y][j][d] + tsc_v[yoffset]) > Lalpha[v][j][d]) { 
+		  Lalpha[v][j][d] = sc;
+		  Lyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
+		}
+		if ((sc = Lalpha[y][j][d] + tsc_v[yoffset]) > Lalpha[v][j][d]) { 
+		  Lalpha[v][j][d] = sc;
+		  Lyshadow[v][j][d] = yoffset + TRMODE_L_OFFSET;
+		}
 	      }
-	      if ((sc = Lalpha[y][j][d] + tsc_v[yoffset]) > Lalpha[v][j][d]) { 
-		Lalpha[v][j][d] = sc;
-		Lyshadow[v][j][d] = yoffset + TRMODE_L_OFFSET;
-	      }
+	      Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	    }
-	    Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	  }
 	}
       } /* end of if(! StateIsDetached(cm, v)) */
@@ -1165,28 +1241,32 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	      Jyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
 	    }
 	  }
-	  /* note we use 'j' and 'd_sdl' not 'j_sdr' for 'd_sd' for L, plus minimum d is sdl (1) */
-	  for (d = sdl; d <= j; d++) { /* sdl == 1 for MP state */
-	    d_sdl = d-sdl;
-	    if((sc = Jalpha[y][j][d_sdl] + tsc) > Lalpha[v][j][d]) {
-	      Lalpha[v][j][d]   = sc;
-	      Lyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
-	    }
-	    if((sc = Lalpha[y][j][d_sdl] + tsc) > Lalpha[v][j][d]) {
-	      Lalpha[v][j][d]   = sc;
+	  if(fill_L) { 
+	    /* note we use 'j' and 'd_sdl' not 'j_sdr' for 'd_sd' for L, plus minimum d is sdl (1) */
+	    for (d = sdl; d <= j; d++) { /* sdl == 1 for MP state */
+	      d_sdl = d-sdl;
+	      if((sc = Jalpha[y][j][d_sdl] + tsc) > Lalpha[v][j][d]) {
+		Lalpha[v][j][d]   = sc;
+		Lyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
+	      }
+	      if((sc = Lalpha[y][j][d_sdl] + tsc) > Lalpha[v][j][d]) {
+		Lalpha[v][j][d]   = sc;
 	      Lyshadow[v][j][d] = yoffset + TRMODE_L_OFFSET;
+	      }
 	    }
 	  }
-	  /* note we use 'd_sdr' not 'd_sd' for R, plus minimum d is sdr (1) */
-	  for (d = sdr; d <= j; d++) { /* sdr == 1 for MP state */
-	    d_sdr = d - sdr;
-	    if((sc = Jalpha[y][j_sdr][d_sdr] + tsc) > Ralpha[v][j][d]) {
-	      Ralpha[v][j][d]   = sc;
-	      Ryshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
-	    }
-	    if((sc = Ralpha[y][j_sdr][d_sdr] + tsc) > Ralpha[v][j][d]) {
-	      Ralpha[v][j][d]   = sc;
-	      Ryshadow[v][j][d] = yoffset + TRMODE_R_OFFSET;
+	  if(fill_R) { 
+	    /* note we use 'd_sdr' not 'd_sd' for R, plus minimum d is sdr (1) */
+	    for (d = sdr; d <= j; d++) { /* sdr == 1 for MP state */
+	      d_sdr = d - sdr;
+	      if((sc = Jalpha[y][j_sdr][d_sdr] + tsc) > Ralpha[v][j][d]) {
+		Ralpha[v][j][d]   = sc;
+		Ryshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
+	      }
+	      if((sc = Ralpha[y][j_sdr][d_sdr] + tsc) > Ralpha[v][j][d]) {
+		Ralpha[v][j][d]   = sc;
+		Ryshadow[v][j][d] = yoffset + TRMODE_R_OFFSET;
+	      }
 	    }
 	  }
 	}
@@ -1195,15 +1275,19 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
       for (j = 0; j <= L; j++) {
 	i = j;
 	Jalpha[v][j][1] = IMPOSSIBLE;
-	Lalpha[v][j][1] = lmesc_v[dsq[i]];
-	Lyshadow[v][j][1] = USED_TRUNC_END;
-	Ralpha[v][j][1] = rmesc_v[dsq[j]];
-	Ryshadow[v][j][1] = USED_TRUNC_END;
+	if(fill_L) { 
+	  Lalpha[v][j][1] = lmesc_v[dsq[i]];
+	  Lyshadow[v][j][1] = USED_TRUNC_END;
+	}
+	if(fill_R) { 
+	  Ralpha[v][j][1] = rmesc_v[dsq[j]];
+	  Ryshadow[v][j][1] = USED_TRUNC_END;
+	}
 	i--;
 	for (d = 2; d <= j; d++) {
 	  Jalpha[v][j][d] += esc_v[dsq[i]*cm->abc->Kp+dsq[j]];
-	  Lalpha[v][j][d] += lmesc_v[dsq[i]];
-	  Ralpha[v][j][d] += rmesc_v[dsq[j]];
+	  if(fill_L) Lalpha[v][j][d] += lmesc_v[dsq[i]];
+	  if(fill_R) Ralpha[v][j][d] += rmesc_v[dsq[j]];
 	  i--;
 	}
       }
@@ -1211,8 +1295,8 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
       for (j = 0; j <= L; j++) {
 	for (d = 1; d <= j; d++) {
 	  Jalpha[v][j][d] = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
-	  Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
-	  Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
+	  if(fill_L) Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
+	  if(fill_R) Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
 	}
       }
     }
@@ -1236,18 +1320,18 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	      Jalpha[v][j][d]   = sc;
 	      Jyshadow[v][j][d] = yoffset + TRMODE_J_OFFSET;
 	    }
-	    if((sc = Lalpha[y][j_sdr][d_sd] + tsc) > Lalpha[v][j][d]) {
+	    if(fill_L && (sc = Lalpha[y][j_sdr][d_sd] + tsc) > Lalpha[v][j][d]) {
 	      Lalpha[v][j][d]   = sc;
 	      Lyshadow[v][j][d] = yoffset + TRMODE_L_OFFSET;
 	    }
-	    if((sc = Ralpha[y][j_sdr][d_sd] + tsc) > Ralpha[v][j][d]) {
+	    if(fill_R && (sc = Ralpha[y][j_sdr][d_sd] + tsc) > Ralpha[v][j][d]) {
 	      Ralpha[v][j][d]   = sc;
 	      Ryshadow[v][j][d] = yoffset + TRMODE_R_OFFSET;
 	    }
 	  }
 	  /* an easy to overlook case: if d == 0, ensure L and R values are IMPOSSIBLE */
-	  Lalpha[v][j][0] = IMPOSSIBLE;
-	  Ralpha[v][j][0] = IMPOSSIBLE;
+	  if(fill_L) Lalpha[v][j][0] = IMPOSSIBLE;
+	  if(fill_R) Ralpha[v][j][0] = IMPOSSIBLE;
 	}
       }
       /* no emission score to add */
@@ -1264,18 +1348,18 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	      Jalpha[v][j][d]   = sc;
 	      Jkshadow[v][j][d] = k;
 	    }
-	    if((sc = Jalpha[y][j-k][d-k] + Lalpha[z][j][k]) > Lalpha[v][j][d]) { 
-	      Lalpha[v][j][d]   = sc;
+	    if(fill_L && (sc = Jalpha[y][j-k][d-k] + Lalpha[z][j][k]) > Lalpha[v][j][d]) { 
+	    Lalpha[v][j][d]   = sc;
 	      Lkshadow[v][j][d] = k;
 	      Lkmode[v][j][d]   = TRMODE_J;
 	    }
-	    if((sc = Ralpha[y][j-k][d-k] + Jalpha[z][j][k]) > Ralpha[v][j][d]) { 
+	    if(fill_R && (sc = Ralpha[y][j-k][d-k] + Jalpha[z][j][k]) > Ralpha[v][j][d]) { 
 	      Ralpha[v][j][d]   = sc;
 	      Rkshadow[v][j][d] = k;
 	      Rkmode[v][j][d]   = TRMODE_J;
 	    }
 	    /*if((k != i-1) && (k != j)) {*/
-	    if((sc = Ralpha[y][j-k][d-k] + Lalpha[z][j][k]) > Talpha[v][j][d]) { 
+	    if(fill_T && (sc = Ralpha[y][j-k][d-k] + Lalpha[z][j][k]) > Talpha[v][j][d]) { 
 	      Talpha[v][j][d]   = sc;
 	      Tkshadow[v][j][d] = k;
 	      /*}*/
@@ -1283,26 +1367,30 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	  }
 	  /* two additional special cases in trCYK (these are not in standard CYK) */
 	  /* special case 1: k == 0 (full sequence aligns to BEGL_S left child */
-	  if((sc = Jalpha[y][j][d]) > Lalpha[v][j][d]) { 
-	    Lalpha[v][j][d]   = sc;
-	    Lkshadow[v][j][d] = 0; /* k == 0 for this case, full sequence is on left */
-	    Lkmode[v][j][d]   = TRMODE_J;
-	  }
-	  if((sc = Lalpha[y][j][d]) > Lalpha[v][j][d]) { 
-	    Lalpha[v][j][d]   = sc;
-	    Lkshadow[v][j][d] = 0; /* k == 0 for this case, full sequence is on left */
-	    Lkmode[v][j][d]   = TRMODE_L;
+	  if(fill_L) { 
+	    if((sc = Jalpha[y][j][d]) > Lalpha[v][j][d]) { 
+	      Lalpha[v][j][d]   = sc;
+	      Lkshadow[v][j][d] = 0; /* k == 0 for this case, full sequence is on left */
+	      Lkmode[v][j][d]   = TRMODE_J;
+	    }
+	    if((sc = Lalpha[y][j][d]) > Lalpha[v][j][d]) { 
+	      Lalpha[v][j][d]   = sc;
+	      Lkshadow[v][j][d] = 0; /* k == 0 for this case, full sequence is on left */
+	      Lkmode[v][j][d]   = TRMODE_L;
+	    }
 	  }
 	  /* special case 2: k == d (full sequence aligns to BEGR_S right child */
-	  if((sc = Jalpha[z][j][d]) > Ralpha[v][j][d]) { 
+	  if(fill_R) { 
+	    if((sc = Jalpha[z][j][d]) > Ralpha[v][j][d]) { 
 	      Ralpha[v][j][d]   = sc;
 	      Rkshadow[v][j][d] = d; /* k == d in this case, full sequence is on right */
 	      Rkmode[v][j][d]   = TRMODE_J;
-	  }
-	  if((sc = Ralpha[z][j][d]) > Ralpha[v][j][d]) { 
+	    }
+	    if((sc = Ralpha[z][j][d]) > Ralpha[v][j][d]) { 
 	      Ralpha[v][j][d]   = sc;
 	      Rkshadow[v][j][d] = d; /* k == d in this case, full sequence is on right */
 	      Rkmode[v][j][d]   = TRMODE_R;
+	    }
 	  }
 	}
       }
@@ -1319,7 +1407,7 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	Jb = v;
       }
       /* check if we have a new optimally scoring Left alignment in L matrix */
-      if(cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+      if(fill_L && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)) { 
 	sc = Lalpha[v][L][L] + trunc_penalty;
 	if (sc > Lalpha[0][L][L]) { 
 	  Lalpha[0][L][L] = sc;
@@ -1327,7 +1415,7 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	}
       }	    
       /* check if we have a new optimally scoring Right alignment in R matrix */
-      if(cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
+      if(fill_R && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)) { 
 	sc = Ralpha[v][L][L] + trunc_penalty;
 	if (sc > Ralpha[0][L][L]) { 
 	  Ralpha[0][L][L] = sc;
@@ -1335,7 +1423,7 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	}
       }	    
       /* check if we have a new optimally scoring Terminal alignment in T matrix */
-      if(cm->sttype[v] == B_st) { 
+      if(fill_T && cm->sttype[v] == B_st) { 
 	sc = Talpha[v][L][L] + trunc_penalty;
 	if (sc > Talpha[0][L][L]) { 
 	  Talpha[0][L][L] = sc;
@@ -1349,15 +1437,15 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 
   sc   = Jalpha[0][L][L];
   mode = TRMODE_J;
-  if (Lalpha[0][L][L] > sc) { 
+  if (fill_L && Lalpha[0][L][L] > sc) { 
     sc   = Lalpha[0][L][L];
     mode = TRMODE_L;
   }
-  if (Ralpha[0][L][L] > sc) { 
+  if (fill_R && Ralpha[0][L][L] > sc) { 
     sc   = Ralpha[0][L][L];
     mode = TRMODE_R;
   }
-  if (Talpha[0][L][L] > sc) { 
+  if (fill_T && Talpha[0][L][L] > sc) { 
     sc   = Talpha[0][L][L];
     mode = TRMODE_T;
   }
@@ -1391,6 +1479,12 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
  *           A CM_TR_HB_MX DP matrix must be passed in. Only cells
  *           valid within the bands given in the CP9Bands_t <cm->cp9b>
  *           will be valid.
+ * 
+ *           We may already know the mode of the optimal alignment
+ *           passed in as <opt_mode>. This will happen if we're being
+ *           called from within a search pipeline, for example. If we
+ *           don't know the optimal mode yet, <opt_mode> will be
+ *           TRMODE_UNKNOWN.
  *
  *           In truncated alignment, standard local begins are not
  *           possible.  We return the best internal entry state for
@@ -1406,6 +1500,7 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
  *           dsq        - the digitaized sequence [1..L]   
  *           L          - length of target sequence, we align 1..L
  *           size_limit - max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           opt_mode   - the optimal alignment mode, TRMODE_UNKNOWN if unknown
  *           mx         - the dp matrix, only cells within bands in cm->cp9b will be valid. 
  *           shmx       - the HMM banded shadow matrix to fill in, only cells within bands are valid
  *           ret_Jb     - best internal entry state for Joint    marginal mode
@@ -1461,10 +1556,11 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   float    trunc_penalty = 0.;     /* penalty in bits for a truncated hit */
   int      Jb, Lb, Rb, Tb;         /* state rooting {J,L,R,T} optimal parsetrees */
   int      mode = TRMODE_J;        /* truncation mode for obtaining optimal score <ret_sc> */
-  int      do_J_v, do_J_y, do_J_z; /* is J matrix valid for state v, y, z? */
-  int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
-  int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
-  int      do_T_v, do_T_y, do_T_z; /* is T matrix valid for state v, y, z? */
+  int      fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
+  int      do_J_v, do_J_y, do_J_z; /* must we fill J matrix deck for state v, y, z? */
+  int      do_L_v, do_L_y, do_L_z; /* must we fill L matrix deck for state v, y, z? */
+  int      do_R_v, do_R_y, do_R_z; /* must we fill R matrix deck for state v, y, z? */
+  int      do_T_v, do_T_y, do_T_z; /* must we fill T matrix deck for state v, y, z? */
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
@@ -1490,12 +1586,21 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   char  ***Lkmode   = shmx->Lkmode;   /* pointer to the Lkmode matrix */
   char  ***Rkmode   = shmx->Rkmode;   /* pointer to the Rkmode matrix */
 
+  /* Determine which matrices we need to fill in, based on <opt_mode> */
+  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) ESL_FAIL(status, errbuf, "cm_TrCYKInsideAlignHB(), bogus mode: %d", opt_mode);
+
   /* Allocations and initializations  */
   Jb = Lb = Rb = Tb = -1;
 
-  /* ensure a full alignment to ROOT_S (v==0) in at least one marginal mode is allowed by the bands */
-  if (! (cp9b->do_J[0] || cp9b->do_L[0] || cp9b->do_R[0] || cp9b->do_T[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKInsideAlignHB(): no marginal mode is allowed for state 0");
-  if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)             ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKInsideAlignHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
+  /* ensure a full alignment to ROOT_S (v==0) is possible, remember In CYK <opt_mode> may be known or unknown */
+  if (opt_mode == TRMODE_J && (! cp9b->Jvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKInsideAlignHB(): opt_mode is J mode, but cp9b->Jvalid[v] is FALSE");
+  if (opt_mode == TRMODE_L && (! cp9b->Lvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKInsideAlignHB(): opt_mode is L mode, but cp9b->Lvalid[v] is FALSE");
+  if (opt_mode == TRMODE_R && (! cp9b->Rvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKInsideAlignHB(): opt_mode is R mode, but cp9b->Rvalid[v] is FALSE");
+  if (opt_mode == TRMODE_T && (! cp9b->Tvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKInsideAlignHB(): opt_mode is T mode, but cp9b->Tvalid[v] is FALSE");
+  if (opt_mode == TRMODE_UNKNOWN && (! (cp9b->Jvalid[0] || cp9b->Lvalid[0] || cp9b->Rvalid[0] || cp9b->Tvalid[0]))) {
+    ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKInsideAlignHB(): no marginal mode is allowed for state 0");
+  }
+  if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)               ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKInsideAlignHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
   jp_0 = L - jmin[0];
   if (cp9b->hdmin[0][jp_0] > L || cp9b->hdmax[0][jp_0] < L) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKInsideAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
   Lp_0 = L - hdmin[0][jp_0];
@@ -1513,7 +1618,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
-  /* initialize all cells of the matrix to IMPOSSIBLE, all cells of shadow matrix to USED_EL */
+  /* initialize all cells of the matrix to IMPOSSIBLE, all cells of shadow matrix to USED_EL or USED_TRUNC_END */
   if(  mx->Jncells_valid   > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
   if(  mx->Lncells_valid   > 0) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(  mx->Rncells_valid   > 0) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
@@ -1551,10 +1656,10 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
     sdr  = StateRightDelta(cm->sttype[v]);
     jn   = jmin[v];
     jx   = jmax[v];
-    do_J_v = cp9b->do_J[v];
-    do_L_v = cp9b->do_L[v];
-    do_R_v = cp9b->do_R[v];
-    do_T_v = cp9b->do_T[v];
+    do_J_v = cp9b->Jvalid[v]           ? TRUE : FALSE;
+    do_L_v = cp9b->Lvalid[v] && fill_L ? TRUE : FALSE;
+    do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
+    do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
   
     /* re-initialize the J deck if we can do a local end from v */
     if(do_J_v) { 
@@ -1627,8 +1732,8 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 		yoffset = yvalidA[yvalid_idx];
 		y = cm->cfirst[v] + yoffset;
-		do_J_y = cp9b->do_J[y];
-		do_L_y = cp9b->do_L[y];
+		do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+		do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 		if(do_J_y || do_L_y) { 
 		  jp_y_sdr = j - jmin[y] - sdr;
 		  
@@ -1671,8 +1776,8 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 		yoffset = yvalidA[yvalid_idx];
 		y = cm->cfirst[v] + yoffset;
-		do_R_y = cp9b->do_R[y];
-		do_J_y = cp9b->do_J[y];
+		do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+		do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
 		if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
 		  jp_y_sdr = j - jmin[y] - sdr;
 		  
@@ -1734,8 +1839,8 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 		yoffset = yvalidA[yvalid_idx];
 		y = cm->cfirst[v] + yoffset;
-		do_J_y = cp9b->do_J[y];
-		do_R_y = cp9b->do_R[y];
+		do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+		do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 		if(do_J_y || do_R_y) { 
 		  jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -1794,8 +1899,8 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 		/* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
 		yoffset = yvalidA[yvalid_idx];
 		y = cm->cfirst[v] + yoffset;
-		do_L_y = cp9b->do_L[y];
-		do_J_y = cp9b->do_J[y];
+		do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+		do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
 		if(do_L_y || do_J_y) { 
 		  /* we use 'jp_y=j-min[y]' here, not 'jp_y_sdr=j-jmin[y]-sdr' (which we used in the corresponding loop for J,R above) */
 		  jp_y = j - jmin[y];
@@ -1832,9 +1937,9 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
        * is most efficient: for y { for j { for d { } } }
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-	do_J_y = cp9b->do_J[y];
-	do_L_y = cp9b->do_L[y];
-	do_R_y = cp9b->do_R[y];
+	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 
@@ -2006,9 +2111,9 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
        * is most efficient: for y { for j { for d { } } }
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-	do_J_y = cp9b->do_J[y];
-	do_L_y = cp9b->do_L[y];
-	do_R_y = cp9b->do_R[y];
+	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 	
@@ -2077,15 +2182,15 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
       y = cm->cfirst[v]; /* left  subtree */
       z = cm->cnum[v];   /* right subtree */
 
-      do_J_y = cp9b->do_J[y];
-      do_L_y = cp9b->do_L[y];
-      do_R_y = cp9b->do_R[y];
-      do_T_y = cp9b->do_T[y]; /* will be FALSE, y is not a B_st */
+      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 
-      do_J_z = cp9b->do_J[z];
-      do_L_z = cp9b->do_L[z];
-      do_R_z = cp9b->do_R[z];
-      do_T_z = cp9b->do_T[z]; /* will be FALSE, z is not a B_st */
+      do_J_z = cp9b->Jvalid[z]           ? TRUE : FALSE;
+      do_L_z = cp9b->Lvalid[z] && fill_L ? TRUE : FALSE;
+      do_R_z = cp9b->Rvalid[z] && fill_R ? TRUE : FALSE;
+      do_T_z = cp9b->Tvalid[z] && fill_T ? TRUE : FALSE; /* will be FALSE, z is not a B_st */
       
       /* Any valid j must be within both state v and state z's j band 
        * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
@@ -2270,7 +2375,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	 */
 
 	/* check if we have a new optimally scoring Joint alignment in J matrix (much like a standard local begin) */
-	if(do_J_v && cp9b->do_J[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st
+	if(do_J_v && cp9b->Jvalid[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st
 		      || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)) { 
 	  sc = Jalpha[v][jp_v][Lp] + trunc_penalty;
 	  if (sc > Jalpha[0][jp_0][Lp_0]) { 
@@ -2279,7 +2384,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	  }
 	}
 	/* check if we have a new optimally scoring Left alignment in L matrix */
-	if(do_L_v && cp9b->do_L[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)) { 
+	if(do_L_v && cp9b->Lvalid[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)) { 
 	  sc = Lalpha[v][jp_v][Lp] + trunc_penalty;
 	  if (sc > Lalpha[0][jp_0][Lp_0]) { 
 	    Lalpha[0][jp_0][Lp_0] = sc;
@@ -2287,7 +2392,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	  }
 	}	    
 	/* check if we have a new optimally scoring Right alignment in R matrix */
-	if(do_R_v && cp9b->do_R[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)) { 
+	if(do_R_v && cp9b->Rvalid[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)) { 
 	  sc = Ralpha[v][jp_v][Lp] + trunc_penalty;
 	  if (sc > Ralpha[0][jp_0][Lp_0]) { 
 	    Ralpha[0][jp_0][Lp_0] = sc;
@@ -2295,7 +2400,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	  }
 	}	    
 	/* check if we have a new optimally scoring Terminal alignment in T matrix */
-	if(do_T_v && cp9b->do_T[0]) { 
+	if(do_T_v && cp9b->Tvalid[0]) { 
 	  sc = Talpha[v][jp_v][Lp] + trunc_penalty;
 	  if (sc > Talpha[0][jp_0][Lp_0]) { 
 	    Talpha[0][jp_0][Lp_0] = sc;
@@ -2309,19 +2414,19 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   FILE *fp2; fp2 = fopen("tmp.trcykhbshmx", "w"); cm_tr_hb_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
 
   sc   = IMPOSSIBLE;
-  if (cp9b->do_J[0] && Jalpha[0][jp_0][Lp_0] > sc) { 
+  if (cp9b->Jvalid[0] && Jalpha[0][jp_0][Lp_0] > sc) { 
     sc   = Jalpha[0][jp_0][Lp_0];
     mode = TRMODE_J;
   }
-  if (cp9b->do_L[0] && Lalpha[0][jp_0][Lp_0] > sc) { 
+  if (cp9b->Lvalid[0] && Lalpha[0][jp_0][Lp_0] > sc) { 
     sc   = Lalpha[0][jp_0][Lp_0];
     mode = TRMODE_L;
   }
-  if (cp9b->do_R[0] && Ralpha[0][jp_0][Lp_0] > sc) { 
+  if (cp9b->Rvalid[0] && Ralpha[0][jp_0][Lp_0] > sc) { 
     sc   = Ralpha[0][jp_0][Lp_0];
     mode = TRMODE_R;
   }
-  if (cp9b->do_T[0] && Talpha[0][jp_0][Lp_0] > sc) { 
+  if (cp9b->Tvalid[0] && Talpha[0][jp_0][Lp_0] > sc) { 
     sc   = Talpha[0][jp_0][Lp_0];
     mode = TRMODE_T;
   }
@@ -2784,10 +2889,10 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   /* variables related to truncated alignment (not in FastInsideAlignHB()) */
   float    trunc_penalty = 0.; /* penalty in bits for a truncated hit */
   int      mode = TRMODE_J;    /* truncation mode for obtaining optimal score <ret_sc> */
-  int      do_J_v, do_J_y, do_J_z; /* is J matrix valid for state v, y, z? */
-  int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
-  int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
-  int      do_T_v, do_T_y, do_T_z; /* is T matrix valid for state v, y, z? */
+  int      do_J_v, do_J_y, do_J_z; /* must we fill J matrix deck for state v, y, z? */
+  int      do_L_v, do_L_y, do_L_z; /* must we fill L matrix deck for state v, y, z? */
+  int      do_R_v, do_R_y, do_R_z; /* must we fill R matrix deck for state v, y, z? */
+  int      do_T_v, do_T_y, do_T_z; /* must we fill T matrix deck for state v, y, z? */
 
   /* Contract check */
   if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastInsideAlignHB(), dsq is NULL.\n");
@@ -2810,7 +2915,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   /* Allocations and initializations */
   bsc = IMPOSSIBLE;
   /* ensure a full alignment to ROOT_S (v==0) in at least one marginal mode is allowed by the bands */
-  if (! (cp9b->do_J[0] || cp9b->do_L[0] || cp9b->do_R[0] || cp9b->do_T[0])) 
+  if (! (cp9b->Jvalid[0] || cp9b->Lvalid[0] || cp9b->Rvalid[0] || cp9b->Tvalid[0])) 
     ESL_FAIL(eslEINVAL, errbuf, "cm_TrInsideAlignHB(): no marginal mode is allowed for state 0");
   if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)
     ESL_FAIL(eslEINVAL, errbuf, "cm_TrInsideAlignHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
@@ -2860,10 +2965,10 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
     sdr    = StateRightDelta(cm->sttype[v]);
     jn     = jmin[v];
     jx     = jmax[v];
-    do_J_v = cp9b->do_J[v];
-    do_L_v = cp9b->do_L[v];
-    do_R_v = cp9b->do_R[v];
-    do_T_v = cp9b->do_T[v];
+    do_J_v = cp9b->Jvalid[v]           ? TRUE : FALSE;
+    do_L_v = cp9b->Lvalid[v] && fill_L ? TRUE : FALSE;
+    do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
+    do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
 
     /* re-initialize the J deck if we can do a local end from v */
     if(do_J_v) { 
@@ -2930,8 +3035,8 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 		yoffset = yvalidA[yvalid_idx];
 		y = cm->cfirst[v] + yoffset;
-		do_J_y = cp9b->do_J[y];
-		do_L_y = cp9b->do_L[y];
+		do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+		do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 		if(do_J_y || do_L_y) { 
 		  jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -2960,8 +3065,8 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 		yoffset = yvalidA[yvalid_idx];
 		y = cm->cfirst[v] + yoffset;
-		do_R_y = cp9b->do_R[y];
-		do_J_y = cp9b->do_J[y];
+		do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+		do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
 		if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
 		  jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -3015,8 +3120,8 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	      for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 		yoffset = yvalidA[yvalid_idx];
 		y = cm->cfirst[v] + yoffset;
-		do_J_y = cp9b->do_J[y];
-		do_R_y = cp9b->do_R[y];
+		do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+		do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 		if(do_J_y || do_R_y) { 
 		  jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -3060,8 +3165,8 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		/* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
 		yoffset = yvalidA[yvalid_idx];
 		y = cm->cfirst[v] + yoffset;
-		do_L_y = cp9b->do_L[y];
-		do_J_y = cp9b->do_J[y];
+		do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+		do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
 		if(do_L_y || do_J_y) { 
 		  /* we use 'jp_y=j-min[y]' here, not 'jp_y_sdr=j-jmin[y]-sdr' (which we used in the corresponding loop for J,R above) */
 		  jp_y = j - jmin[y];
@@ -3090,9 +3195,9 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
        * is most efficient: for y { for j { for d { } } }
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-	do_J_y = cp9b->do_J[y];
-	do_L_y = cp9b->do_L[y];
-	do_R_y = cp9b->do_R[y];
+	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 
@@ -3244,9 +3349,9 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
        * is most efficient: for y { for j { for d { } } }
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-	do_J_y = cp9b->do_J[y];
-	do_L_y = cp9b->do_L[y];
-	do_R_y = cp9b->do_R[y];
+	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 	
@@ -3303,15 +3408,15 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
       y = cm->cfirst[v]; /* left  subtree */
       z = cm->cnum[v];   /* right subtree */
 
-      do_J_y = cp9b->do_J[y];
-      do_L_y = cp9b->do_L[y];
-      do_R_y = cp9b->do_R[y];
-      do_T_y = cp9b->do_T[y]; /* will be FALSE, y is not a B_st */
+      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 
-      do_J_z = cp9b->do_J[z];
-      do_L_z = cp9b->do_L[z];
-      do_R_z = cp9b->do_R[z];
-      do_T_z = cp9b->do_T[z]; /* will be FALSE, z is not a B_st */
+      do_J_z = cp9b->Jvalid[z]           ? TRUE : FALSE;
+      do_L_z = cp9b->Lvalid[z] && fill_L ? TRUE : FALSE;
+      do_R_z = cp9b->Rvalid[z] && fill_R ? TRUE : FALSE;
+      do_T_z = cp9b->Tvalid[z] && fill_T ? TRUE : FALSE; /* will be FALSE, z is not a B_st */
       
       /* Any valid j must be within both state v and state z's j band 
        * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
@@ -3442,20 +3547,20 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	 */
 
 	/* include full length hits in J matrix (much like a normal local begin) */
-	if(do_J_v && cp9b->do_J[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st
+	if(do_J_v && cp9b->Jvalid[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st
 		      || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)) { 
 	  Jalpha[0][jp_0][Lp_0] = FLogsum(Jalpha[0][jp_0][Lp_0], Jalpha[v][jp_v][Lp] + trunc_penalty);
 	}
 	/* include full length truncated hits in L matrix */
-	if(do_L_v && cp9b->do_L[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)) { 
+	if(do_L_v && cp9b->Lvalid[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)) { 
 	  Lalpha[0][jp_0][Lp_0] = FLogsum(Lalpha[0][jp_0][Lp_0], Lalpha[v][jp_v][Lp] + trunc_penalty);
 	}	    
 	/* include full length truncated hits in R matrix */
-	if(do_R_v && cp9b->do_R[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)) { 
+	if(do_R_v && cp9b->Rvalid[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)) { 
 	  Ralpha[0][jp_0][Lp_0] = FLogsum(Ralpha[0][jp_0][Lp_0], Ralpha[v][jp_v][Lp] + trunc_penalty);
 	}	    
 	/* include full length truncated hits in T matrix */
-	if(do_T_v && cp9b->do_T[0] && (cm->sttype[v] == B_st)) { 
+	if(do_T_v && cp9b->Tvalid[0] && (cm->sttype[v] == B_st)) { 
 	  Talpha[0][jp_0][Lp_0] = FLogsum(Talpha[0][jp_0][Lp_0], Talpha[v][jp_v][Lp] + trunc_penalty);
 	}
       }
@@ -3466,19 +3571,19 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   sc = IMPOSSIBLE;
   mode = TRMODE_UNKNOWN;
 
-  if (cp9b->do_J[0] && Jalpha[0][jp_0][Lp_0] > sc) {
+  if (cp9b->Jvalid[0] && Jalpha[0][jp_0][Lp_0] > sc) {
     sc   = Jalpha[0][jp_0][Lp_0];
     mode = TRMODE_J;
   }
-  if (cp9b->do_L[0] && Lalpha[0][jp_0][Lp_0] > sc) { 
+  if (cp9b->Lvalid[0] && Lalpha[0][jp_0][Lp_0] > sc) { 
     sc   = Lalpha[0][jp_0][Lp_0];
     mode = TRMODE_L;
   }
-  if (cp9b->do_R[0] && Ralpha[0][jp_0][Lp_0] > sc) { 
+  if (cp9b->Rvalid[0] && Ralpha[0][jp_0][Lp_0] > sc) { 
     sc   = Ralpha[0][jp_0][Lp_0];
     mode = TRMODE_R;
   }
-  if (cp9b->do_T[0] && Talpha[0][jp_0][Lp_0] > sc) { 
+  if (cp9b->Tvalid[0] && Talpha[0][jp_0][Lp_0] > sc) { 
     sc   = Talpha[0][jp_0][Lp_0];
     mode = TRMODE_T;
   }
@@ -3549,7 +3654,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
  *           dsq        - the digitaized sequence [1..L]   
  *           L          - length of the dsq
  *           size_limit - max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
- *           opt_mode   - the optimal alignment mode, if unknown TRMODE_UNKNOWN is passed
+ *           opt_mode   - the optimal alignment mode, TRMODE_UNKNOWN if unknown
  *           mx         - the DP matrix to fill in
  *           shmx       - the shadow matrix to fill in
  *           emit_mx    - pre-filled emit matrix
@@ -4203,10 +4308,10 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   int   fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
 
   /* variables related to truncated alignment (not in cm_OptAccAlignHB() */
-  int      do_J_v, do_J_y, do_J_z; /* is J matrix valid for state v, y, z? */
-  int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
-  int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
-  int      do_T_v, do_T_y, do_T_z; /* is T matrix valid for state v, y, z? */
+  int      do_J_v, do_J_y, do_J_z; /* must we fill J matrix deck for state v, y, z? */
+  int      do_L_v, do_L_y, do_L_z; /* must we fill L matrix deck for state v, y, z? */
+  int      do_R_v, do_R_y, do_R_z; /* must we fill R matrix deck for state v, y, z? */
+  int      do_T_v, do_T_y, do_T_z; /* must we fill T matrix deck for state v, y, z? */
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
@@ -4248,12 +4353,12 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   b   = -1;
   bsc = IMPOSSIBLE;
 
-  /* ensure a full alignment to ROOT_S (v==0) in at least one marginal mode is allowed by the bands */
+  /* In OptAcc <opt_mode> must be known, ensure a full alignment to ROOT_S (v==0) in the optimal mode is allowed by the bands */
   if (opt_mode != TRMODE_J && opt_mode != TRMODE_L && opt_mode != TRMODE_R && opt_mode != TRMODE_T) ESL_FAIL(eslEINVAL, errbuf, "cm_TrOptAccAlignHB(): opt_mode is not J, L, R, or T");
-  if      (opt_mode == TRMODE_J && (! cp9b->do_J[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrOptAccAlignHB(): opt_mode is J mode, but cp9b->do_J[v] is FALSE");
-  else if (opt_mode == TRMODE_L && (! cp9b->do_L[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrOptAccAlignHB(): opt_mode is L mode, but cp9b->do_L[v] is FALSE");
-  else if (opt_mode == TRMODE_R && (! cp9b->do_R[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrOptAccAlignHB(): opt_mode is R mode, but cp9b->do_R[v] is FALSE");
-  else if (opt_mode == TRMODE_T && (! cp9b->do_T[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrOptAccAlignHB(): opt_mode is T mode, but cp9b->do_T[v] is FALSE");
+  if (opt_mode == TRMODE_J && (! cp9b->Jvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrOptAccAlignHB(): opt_mode is J mode, but cp9b->Jvalid[v] is FALSE");
+  if (opt_mode == TRMODE_L && (! cp9b->Lvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrOptAccAlignHB(): opt_mode is L mode, but cp9b->Lvalid[v] is FALSE");
+  if (opt_mode == TRMODE_R && (! cp9b->Rvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrOptAccAlignHB(): opt_mode is R mode, but cp9b->Rvalid[v] is FALSE");
+  if (opt_mode == TRMODE_T && (! cp9b->Tvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrOptAccAlignHB(): opt_mode is T mode, but cp9b->Tvalid[v] is FALSE");
   if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)             ESL_FAIL(eslEINVAL, errbuf, "cm_TrOptAccAlignHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
   jp_0 = L - jmin[0];
   if (cp9b->hdmin[0][jp_0] > L || cp9b->hdmax[0][jp_0] < L) ESL_FAIL(eslEINVAL, errbuf, "cm_TrOptAccAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
@@ -4301,10 +4406,10 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
     sd   = StateDelta(cm->sttype[v]);
     sdl  = StateLeftDelta(cm->sttype[v]);
     sdr  = StateRightDelta(cm->sttype[v]);
-    do_J_v = cp9b->do_J[v];
-    do_L_v = cp9b->do_L[v];
-    do_R_v = cp9b->do_R[v];
-    do_T_v = cp9b->do_T[v];
+    do_J_v = cp9b->Jvalid[v]           ? TRUE : FALSE;
+    do_L_v = cp9b->Lvalid[v] && fill_L ? TRUE : FALSE;
+    do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
+    do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
 
     /* re-initialize if we can do a local end from v and check for a
      * special optimal-accuracy-specific initialization case
@@ -4432,8 +4537,8 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		  yoffset = yvalidA[yvalid_idx];
 		  y = cm->cfirst[v] + yoffset;
 		  jp_y = j - jmin[y];
-		  do_J_y = cp9b->do_J[y];
-		  do_L_y = cp9b->do_L[y];
+		  do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+		  do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 		  
 		  if(do_J_y || do_L_y) { 
 		    if((d-sd) >= hdmin[y][jp_y] && (d-sd) <= hdmax[y][jp_y]) { /* make sure d is valid for this v, j and y */
@@ -4481,8 +4586,8 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		  yoffset = yvalidA[yvalid_idx];
 		  y = cm->cfirst[v] + yoffset;
 		  jp_y = j - jmin[y];
-		  do_J_y = cp9b->do_J[y];
-		  do_R_y = cp9b->do_R[y];
+		  do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+		  do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 		  
 		  if(do_J_y || do_R_y) { 
 		    /* note we use 'd', not 'd_sd' (which we used in the corresponding loop for J,L above) */
@@ -4550,8 +4655,8 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		  yoffset = yvalidA[yvalid_idx];
 		  y = cm->cfirst[v] + yoffset;
 		  jp_y_sdr = j - jmin[y] - sdr;
-		  do_J_y = cp9b->do_J[y];
-		  do_R_y = cp9b->do_R[y];
+		  do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+		  do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 		  
 		  if(do_J_y || do_R_y) { 
 		    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
@@ -4605,8 +4710,8 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		  yoffset = yvalidA[yvalid_idx];
 		  y = cm->cfirst[v] + yoffset;
 		  jp_y   = j - jmin[y];
-		  do_J_y = cp9b->do_J[y];
-		  do_L_y = cp9b->do_L[y];
+		  do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+		  do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 		  
 		  /* note we use 'd' and not 'd-sd' below because IR/MR are silent in L marginal mode */
 		  if(do_J_y || do_L_y) { 
@@ -4647,9 +4752,9 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
       if(do_J_v || do_L_v || do_R_v) { 
 	for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
 	  yoffset = y - cm->cfirst[v];
-	  do_J_y = cp9b->do_J[y];
-	  do_L_y = cp9b->do_L[y];
-	  do_R_y = cp9b->do_R[y];
+	  do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	  do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	  do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 
 	  if(do_J_v && do_J_y) { 
 	    jn = ESL_MAX(jmin[v], jmin[y]+sdr);
@@ -4839,9 +4944,9 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
       if(do_J_v || do_L_v || do_R_v) { 
 	for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
 	  yoffset = y - cm->cfirst[v];
-	  do_J_y = cp9b->do_J[y];
-	  do_L_y = cp9b->do_L[y];
-	  do_R_y = cp9b->do_R[y];
+	  do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	  do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	  do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	  
 	  if(do_J_v && do_J_y) { 
 	    jn = ESL_MAX(jmin[v], jmin[y]);
@@ -4934,15 +5039,15 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	y = cm->cfirst[v]; /* left  subtree */
 	z = cm->cnum[v];   /* right subtree */
 	
-	do_J_y = cp9b->do_J[y];
-	do_L_y = cp9b->do_L[y];
-	do_R_y = cp9b->do_R[y];
-	do_T_y = cp9b->do_T[y]; /* will be FALSE, y is not a B_st */
+	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+	do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 	
-	do_J_z = cp9b->do_J[z];
-	do_L_z = cp9b->do_L[z];
-	do_R_z = cp9b->do_R[z];
-	do_T_z = cp9b->do_T[z]; /* will be FALSE, z is not a B_st */
+	do_J_z = cp9b->Jvalid[z]           ? TRUE : FALSE;
+	do_L_z = cp9b->Lvalid[z] && fill_L ? TRUE : FALSE;
+	do_R_z = cp9b->Rvalid[z] && fill_R ? TRUE : FALSE;
+	do_T_z = cp9b->Tvalid[z] && fill_T ? TRUE : FALSE; /* will be FALSE, z is not a B_st */
 	
 	/* Any valid j must be within both state v and state z's j band 
 	 * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
@@ -5069,15 +5174,15 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	}
       }
       if(do_R_v && (do_J_z || do_R_z) && fill_R) { 
-	jn = ESL_MAX(jmin[v], jmin[y]);
-	jx = ESL_MIN(jmax[v], jmax[y]);
+	jn = ESL_MAX(jmin[v], jmin[z]);
+	jx = ESL_MIN(jmax[v], jmax[z]);
 	for (j = jn; j <= jx; j++) { 
 	  jp_v = j - jmin[v];
 	  jp_z = j - jmin[z];
 	  ESL_DASSERT1((j >= jmin[v] && j <= jmax[v]));
 	  ESL_DASSERT1((j >= jmin[z] && j <= jmax[z]));
-	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
-	  dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
+	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[z][jp_z]);
+	  dx = ESL_MIN(hdmax[v][jp_v], hdmax[z][jp_z]);
 	  for(d = dn; d <= dx; d++) { 
 	    dp_v = d - hdmin[v][jp_v];
 	    dp_z = d - hdmin[z][jp_z];
@@ -5088,9 +5193,9 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	      Rkshadow[v][jp_v][dp_v] = d; /* k == d for this case, full sequence is on right */
 	      Rkmode[v][jp_v][dp_v]   = TRMODE_J;
 	    }
-	    if(do_R_y && (sc = Ralpha[y][jp_y][dp_y]) > Ralpha[v][jp_v][dp_v]) { 
+	    if(do_R_z && (sc = Ralpha[z][jp_z][dp_z]) > Ralpha[v][jp_v][dp_v]) { 
 	      Ralpha[v][jp_v][dp_v]   = sc;
-	      Rkshadow[v][jp_v][dp_v] = 0; /* k == d for this case, full sequence is on right */
+	      Rkshadow[v][jp_v][dp_v] = d; /* k == d for this case, full sequence is on right */
 	      Rkmode[v][jp_v][dp_v]   = TRMODE_R;
 	    }
 	  }
@@ -5720,9 +5825,10 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   int      Lp_0;               /* L offset in ROOT_S's (v==0) d band */
 
   /* variables related to truncated alignment (not in cm_CYKAlignHB() */
-  int      do_J_v, do_J_y, do_J_z; /* is J matrix valid for state v, y, z? */
-  int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
-  int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
+  int      fill_L, fill_R;         /* must we fill in the L and R matrices? */
+  int      do_J_v, do_J_y, do_J_z; /* must we fill J matrix deck for state v, y, z? */
+  int      do_L_v, do_L_y, do_L_z; /* must we fill L matrix deck for state v, y, z? */
+  int      do_R_v, do_R_y, do_R_z; /* must we fill R matrix deck for state v, y, z? */
   int      do_T_v, do_T_y;         /* is T matrix valid for state v, y?    */
 
   /* DP matrix variables */
@@ -5746,6 +5852,11 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   /* Allocations and initializations */
   esc_vAA = cm->oesc;            /* a ptr to the optimized emission scores */
 
+  /* Determine which matrices we need to fill in, based on <opt_mode> */
+  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, NULL)) != eslOK) ESL_FAIL(status, errbuf, "cm_TrCYKOutsideAlignHB(), bogus mode: %d", opt_mode);
+  printf("in cm_TrCYKOutsideAlignHB(), mode: %d fill_L: %d fill_R: %d\n", opt_mode, fill_L, fill_R);
+  if (opt_mode != TRMODE_J && opt_mode != TRMODE_L && opt_mode != TRMODE_R && opt_mode != TRMODE_T) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB(): opt_mode is not J, L, R, or T");
+
   /* grow the matrix based on the current sequence and bands */
   if((status = cm_tr_hb_mx_GrowTo(cm, mx, errbuf, cm->cp9b, L, size_limit)) != eslOK) return status;
 
@@ -5756,10 +5867,10 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   if(  mx->Tncells_valid   > 0) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
 
   /* ensure a full alignment in <opt_mode> to ROOT_S (v==0) is allowed by the bands */
-  if      (opt_mode == TRMODE_J && (! cp9b->do_J[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is J but cp9b->do_J[0] is FALSE");
-  else if (opt_mode == TRMODE_L && (! cp9b->do_L[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is L but cp9b->do_L[0] is FALSE");
-  else if (opt_mode == TRMODE_R && (! cp9b->do_R[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is R but cp9b->do_R[0] is FALSE");
-  else if (opt_mode == TRMODE_T && (! cp9b->do_T[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is T but cp9b->do_T[0] is FALSE");
+  if      (opt_mode == TRMODE_J && (! cp9b->Jvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is J but cp9b->Jvalid[0] is FALSE");
+  else if (opt_mode == TRMODE_L && (! cp9b->Lvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is L but cp9b->Lvalid[0] is FALSE");
+  else if (opt_mode == TRMODE_R && (! cp9b->Rvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is R but cp9b->Rvalid[0] is FALSE");
+  else if (opt_mode == TRMODE_T && (! cp9b->Tvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is T but cp9b->Tvalid[0] is FALSE");
 
   if (jmin[0] > L        || jmax[0] < L)        ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, jmin[0], jmax[0]);
   jp_0 = L - jmin[0];
@@ -5777,10 +5888,10 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
    */ 
   for(v = 0; v < cm->M; v++) { 
     if(! StateIsDetached(cm, v)) { 
-      do_J_v = cp9b->do_J[v];
-      do_L_v = cp9b->do_L[v];
-      do_R_v = cp9b->do_R[v];
-      do_T_v = cp9b->do_T[v];
+      do_J_v = cp9b->Jvalid[v]           ? TRUE : FALSE;
+      do_L_v = cp9b->Lvalid[v] && fill_L ? TRUE : FALSE;
+      do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
+      do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
       if((L >= jmin[v]) && (L <= jmax[v])) {
 	jp_v = L - jmin[v];
 	if((L >= hdmin[v][jp_v]) && L <= hdmax[v][jp_v]) {
@@ -5813,10 +5924,10 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
     if(! StateIsDetached(cm, v)) { 
       sd  = StateDelta(cm->sttype[v]);
       sdr = StateRightDelta(cm->sttype[v]);
-      do_J_v = cp9b->do_J[v];
-      do_L_v = cp9b->do_L[v];
-      do_R_v = cp9b->do_R[v];
-      do_T_v = cp9b->do_T[v];
+      do_J_v = cp9b->Jvalid[v]           ? TRUE : FALSE;
+      do_L_v = cp9b->Lvalid[v] && fill_L ? TRUE : FALSE;
+      do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
+      do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
 
       /* if the v deck is invalid in J, L R and T mode, all states for v will remain impossible */
       if(! (do_J_v || do_L_v || do_R_v || do_T_v)) continue;
@@ -5825,14 +5936,14 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 	y = cm->plast[v];	/* the parent bifurcation    */
 	z = cm->cnum[y];	/* the other (right) S state */
 
-	do_J_y = cp9b->do_J[y];
-	do_L_y = cp9b->do_L[y];
-	do_R_y = cp9b->do_R[y];
-	do_T_y = cp9b->do_T[y]; /* will be FALSE, y is not a B_st */
+	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+	do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 	
-	do_J_z = cp9b->do_J[z];
-	do_L_z = cp9b->do_L[z];
-	do_R_z = cp9b->do_R[z];
+	do_J_z = cp9b->Jvalid[z]           ? TRUE : FALSE;
+	do_L_z = cp9b->Lvalid[z] && fill_L ? TRUE : FALSE;
+	do_R_z = cp9b->Rvalid[z] && fill_R ? TRUE : FALSE;
 
 	for (j = jmax[v]; j >= jmin[v]; j--) {
 	  ESL_DASSERT1((j >= 0 && j <= L));
@@ -5884,11 +5995,12 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 	      kp_z = k-hdmin[z][jp_z+k];
 	      dp_y = d-hdmin[y][jp_y+k];
 
-	      if(do_J_v && do_J_y && do_J_z) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y+k][dp_y+k] + Jalpha[z][jp_z+k][kp_z]); /* A */
-	      if(do_J_v && do_L_y && do_L_z) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Lbeta[y][jp_y+k][dp_y+k] + Lalpha[z][jp_z+k][kp_z]); /* B */
-	      if(do_R_v && do_R_y && do_J_z) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y+k][dp_y+k] + Jalpha[z][jp_z+k][kp_z]); /* C */
+	      if(do_J_v && do_J_y && do_J_z)           Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y+k][dp_y+k] + Jalpha[z][jp_z+k][kp_z]); /* A */
+	      if(do_J_v && do_L_y && do_L_z && fill_L) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Lbeta[y][jp_y+k][dp_y+k] + Lalpha[z][jp_z+k][kp_z]); /* B */
+	      if(do_R_v && do_R_y && do_J_z && fill_R) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y+k][dp_y+k] + Jalpha[z][jp_z+k][kp_z]); /* C */
 	      if(d == j && (j+k) == L && 
-		 do_R_v && do_T_y && do_L_z) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Tbeta[y][jp_y+k][dp_y+k] + Lalpha[z][jp_z+k][kp_z]); /* D */
+		 do_R_v && do_T_y && do_L_z && 
+		 fill_L && fill_R) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Tbeta[y][jp_y+k][dp_y+k] + Lalpha[z][jp_z+k][kp_z]); /* D */
 	      /* Note: Tbeta[y][j+k==L][d+k==L] will be 0.0 because it
 	       * was initialized that way. That T cell includes the
 	       * full target 1..L (any valid T alignment must because
@@ -5904,7 +6016,7 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 	 * and d has different restrictions than it does in the
 	 * above for j and for d loops we just closed.
 	 */
-	if(do_L_y && (do_J_v || do_L_v)) { 
+	if(do_L_y && (do_J_v || do_L_v) && fill_L) { 
 	  jn = ESL_MAX(jmin[v], jmin[y]);
 	  jx = ESL_MIN(jmax[v], jmax[y]);
 	  for (j = jx; j >= jn; j--) {
@@ -5925,14 +6037,14 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 	y = cm->plast[v];   /* the parent bifurcation    */
 	z = cm->cfirst[y];  /* the other (left) S state  */
 
-	do_J_y = cp9b->do_J[y];
-	do_L_y = cp9b->do_L[y];
-	do_R_y = cp9b->do_R[y];
-	do_T_y = cp9b->do_T[y]; 
+	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+	do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; 
 	
-	do_J_z = cp9b->do_J[z];
-	do_L_z = cp9b->do_L[z];
-	do_R_z = cp9b->do_R[z];
+	do_J_z = cp9b->Jvalid[z]           ? TRUE : FALSE;
+	do_L_z = cp9b->Lvalid[z] && fill_L ? TRUE : FALSE;
+	do_R_z = cp9b->Rvalid[z] && fill_R ? TRUE : FALSE;
 
 	jn = ESL_MAX(jmin[v], jmin[y]);
 	jx = ESL_MIN(jmax[v], jmax[y]);
@@ -5977,11 +6089,12 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 	      kp_z = k-hdmin[z][jp_z-d];
 	      dp_y = d-hdmin[y][jp_y];
 
-	      if(do_J_v && do_J_y && do_J_z) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y+k] + Jalpha[z][jp_z-d][kp_z]); /* A */
-	      if(do_J_v && do_R_y && do_R_z) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y+k] + Ralpha[z][jp_z-d][kp_z]); /* C */
-	      if(do_L_v && do_L_y && do_J_z) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+k] + Jalpha[z][jp_z-d][kp_z]); /* B */
+	      if(do_J_v && do_J_y && do_J_z)           Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y+k] + Jalpha[z][jp_z-d][kp_z]); /* A */
+	      if(do_J_v && do_R_y && do_R_z && fill_R) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y+k] + Ralpha[z][jp_z-d][kp_z]); /* C */
+	      if(do_L_v && do_L_y && do_J_z && fill_L) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+k] + Jalpha[z][jp_z-d][kp_z]); /* B */
 	      if(k == (i-1) && j == L && 
-		 do_L_v && do_T_y && do_R_z) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Tbeta[y][jp_y][dp_y+k] + Ralpha[z][jp_z-d][kp_z]); /* D */
+		 do_L_v && do_T_y && do_R_z && 
+		 fill_L && fill_R) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Tbeta[y][jp_y][dp_y+k] + Ralpha[z][jp_z-d][kp_z]); /* D */
 	      /* Note: Tbeta[y][j==L][d+k==L] will be 0.0 because it
 	       * was initialized that way. That T cell includes the
 	       * full target 1..L (any valid T alignment must because
@@ -5997,7 +6110,7 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 	   * loop we just closed. j's restrictions are the same
 	   * though, so we stay inside the for j loop.
 	   */
-	  if(do_R_y && (do_J_v || do_R_v)) { 
+	  if(do_R_y && (do_J_v || do_R_v) && fill_R) { 
 	    dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
 	    dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
 	    for (d = dx; d >= dn; d--) { 
@@ -6040,10 +6153,10 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 	      sdl = StateLeftDelta(cm->sttype[y]);
 	      sdr = StateRightDelta(cm->sttype[y]);
 	    
-	      do_J_y = cp9b->do_J[y];
-	      do_L_y = cp9b->do_L[y];
-	      do_R_y = cp9b->do_R[y];
-	      do_T_y = cp9b->do_T[y]; /* will be FALSE, y is not a B_st */
+	      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+	      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 
 	      /* if the y deck is invalid in J, L and R mode, we don't have to update v based on transitions from y */
 	      if (! (do_J_y || do_L_y || do_R_y)) continue; 
@@ -6062,7 +6175,8 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 		    Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
 		  }
 		if(j == L && d != j &&                                           /* boundary condition, only allow transition from L if we haven't emitted any residues rightwise (j==L) */
-		   do_L_y &&                                                     /* L deck is valid for y */
+		   fill_L &&                                                     /* L matrix is relevant */
+ 		   do_L_y &&                                                     /* L deck is valid for y */
 		   (j     >= jmin[y]        && j     <= jmax[y]) &&              /* j is within y's j band */
 		   (d+sdl >= hdmin[y][jp_y] && d+sdl <= hdmax[y][jp_y]))         /* d+sdl is within y's d band for j */
 		  {
@@ -6072,6 +6186,7 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 		    if(do_L_v) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sdl] + cm->tsc[y][voffset] + escore);
 		  }
 		if(i == 1 && j != L &&                                           /* boundary condition, only allow transition from R if we haven't emitted any residues leftwise (i==1) */
+		   fill_R &&                                                     /* R matrix is relevant */
 		   do_R_y &&                                                     /* R deck is valid for y */ 
 		   (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&          /* j+sdr is within y's j band */
 		   (d+sdr >= hdmin[y][jp_y+sdr] && d+sdr <= hdmax[y][jp_y+sdr])) /* d+sdr is within y's d band for j+sdr */
@@ -6092,11 +6207,12 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 		  {
 		    dp_y = d - hdmin[y][jp_y]; 
 		    escore = cm->oesc[y][dsq[i-1]];
-		    if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y+sd] + cm->tsc[y][voffset] + escore);
-		    if(do_L_v && do_L_y) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		    if(do_J_v && do_J_y)           Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		    if(do_L_v && do_L_y && fill_L) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sd] + cm->tsc[y][voffset] + escore);
 		  }
 		if(i == 1 &&                                              /* boundary condition, only allow transition from R if we're emitting first residue 1 from y  */
 		   v != y &&                                              /* will only happen if v == IL, we don't allow silent self transitions from IL->IL */
+		   fill_R &&                                              /* R matrix is relevant */
 		   do_R_y &&                                              /* R deck is valid for y */
 		   (j     >= jmin[y]        && j     <= jmax[y]) &&       /* j is within y's j band */
 		   (d     >= hdmin[y][jp_y] && d     <= hdmax[y][jp_y]))  /* d+sdr(==d) is within y's d band for j */
@@ -6116,11 +6232,12 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 		  {		  
 		    dp_y = d - hdmin[y][jp_y+sdr];                                   
 		    escore = cm->oesc[y][dsq[j+1]];
-		    if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
-		    if(do_R_v && do_R_y) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		    if(do_J_v && do_J_y)           Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		    if(do_R_v && do_R_y && fill_R) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
 		  }
 		if(j == L &&                                                     /* boundary condition, only allow transition from L if we're emitting final residue L from y */ 
 		   v != y &&                                                     /* will only happen if v == IR, we don't allow silent self transitions from IR->IR */
+		   fill_L &&                                                     /* L matrix is relevant */
 		   do_L_y &&                                                     /* L deck is valid for y */
 		   (j     >= jmin[y]           && j      <= jmax[y]) &&          /* j is within y's j band */
 		   (d     >= hdmin[y][jp_y]    && d      <= hdmax[y][jp_y]))     /* d+sdl(==d) is within y's d band for j */
@@ -6139,16 +6256,16 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 		   (d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y])) 
 		  {
 		    dp_y = d - hdmin[y][jp_y];  /* d index for state y */
-		    if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		    if(do_L_v && do_L_y) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		    if(do_R_v && do_R_y) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		    if(do_J_v && do_J_y)           Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		    if(do_L_v && do_L_y && fill_L) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		    if(do_R_v && do_R_y && fill_R) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
 		  }
 		break;
 	      } /* end of switch(cm->sttype[y] */  
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
-	    if (do_J_v && Jbeta[v][jp_v][dp_v] < IMPOSSIBLE) Jbeta[v][jp_v][dp_v] = IMPOSSIBLE;
-	    if (do_L_v && Lbeta[v][jp_v][dp_v] < IMPOSSIBLE) Lbeta[v][jp_v][dp_v] = IMPOSSIBLE;
-	    if (do_R_v && Rbeta[v][jp_v][dp_v] < IMPOSSIBLE) Rbeta[v][jp_v][dp_v] = IMPOSSIBLE;
+	    if (do_J_v &&           Jbeta[v][jp_v][dp_v] < IMPOSSIBLE) Jbeta[v][jp_v][dp_v] = IMPOSSIBLE;
+	    if (do_L_v && fill_L && Lbeta[v][jp_v][dp_v] < IMPOSSIBLE) Lbeta[v][jp_v][dp_v] = IMPOSSIBLE;
+	    if (do_R_v && fill_R && Rbeta[v][jp_v][dp_v] < IMPOSSIBLE) Rbeta[v][jp_v][dp_v] = IMPOSSIBLE;
 	  } /* ends loop over d. We know all beta[v][j][d] in this row j and state v */
 	} /* end loop over jp. We know beta for this whole state */
       } /* end of 'else' (entered if cm->sttype[v] != BEGL_S nor BEGR_S */
@@ -6254,10 +6371,10 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
     else if(opt_mode == TRMODE_R) optsc = Ralpha[0][jp_0][Lp_0];
     else if(opt_mode == TRMODE_T) optsc = Talpha[0][jp_0][Lp_0];
     for(v = 0; v <= vmax; v++) { 
-      do_J_v = cp9b->do_J[v];
-      do_L_v = cp9b->do_L[v];
-      do_R_v = cp9b->do_R[v];
-      do_T_v = cp9b->do_T[v];
+      do_J_v = cp9b->Jvalid[v]           ? TRUE : FALSE;
+      do_L_v = cp9b->Lvalid[v] && fill_L ? TRUE : FALSE;
+      do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
+      do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
       jn = (v == cm->M) ? 1 : jmin[v];
       jx = (v == cm->M) ? L : jmax[v];
       for(j = jn; j <= jx; j++) { 
@@ -6795,9 +6912,9 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   int      Lp_0;               /* L offset in ROOT_S's (v==0) d band */
 
   /* variables related to truncated alignment (not in cm_CYKAlignHB() */
-  int      do_J_v, do_J_y, do_J_z; /* is J matrix valid for state v, y, z? */
-  int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
-  int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
+  int      do_J_v, do_J_y, do_J_z; /* must we fill J matrix deck for state v, y, z? */
+  int      do_L_v, do_L_y, do_L_z; /* must we fill L matrix deck for state v, y, z? */
+  int      do_R_v, do_R_y, do_R_z; /* must we fill R matrix deck for state v, y, z? */
   int      do_T_v, do_T_y;         /* is T matrix valid for state v, y?    */
 
   /* DP matrix variables */
@@ -6831,10 +6948,10 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   if(  mx->Tncells_valid   > 0) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
 
   /* ensure a full alignment in <opt_mode> to ROOT_S (v==0) is allowed by the bands */
-  if      (opt_mode == TRMODE_J && (! cp9b->do_J[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is J but cp9b->do_J[0] is FALSE");
-  else if (opt_mode == TRMODE_L && (! cp9b->do_L[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is L but cp9b->do_L[0] is FALSE");
-  else if (opt_mode == TRMODE_R && (! cp9b->do_R[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is R but cp9b->do_R[0] is FALSE");
-  else if (opt_mode == TRMODE_T && (! cp9b->do_T[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is T but cp9b->do_T[0] is FALSE");
+  if      (opt_mode == TRMODE_J && (! cp9b->Jvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is J but cp9b->Jvalid[0] is FALSE");
+  else if (opt_mode == TRMODE_L && (! cp9b->Lvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is L but cp9b->Lvalid[0] is FALSE");
+  else if (opt_mode == TRMODE_R && (! cp9b->Rvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is R but cp9b->Rvalid[0] is FALSE");
+  else if (opt_mode == TRMODE_T && (! cp9b->Tvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB() opt_mode is T but cp9b->Tvalid[0] is FALSE");
 
   if (jmin[0] > L        || jmax[0] < L)        ESL_FAIL(eslEINVAL, errbuf, "cm_TrCYKOutsideAlignHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, jmin[0], jmax[0]);
   jp_0 = L - jmin[0];
@@ -6852,10 +6969,10 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
    */ 
   for(v = 0; v < cm->M; v++) { 
     if(! StateIsDetached(cm, v)) { 
-      do_J_v = cp9b->do_J[v];
-      do_L_v = cp9b->do_L[v];
-      do_R_v = cp9b->do_R[v];
-      do_T_v = cp9b->do_T[v];
+      do_J_v = cp9b->Jvalid[v]           ? TRUE : FALSE;
+      do_L_v = cp9b->Lvalid[v] && fill_L ? TRUE : FALSE;
+      do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
+      do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
       if((L >= jmin[v]) && (L <= jmax[v])) {
 	jp_v = L - jmin[v];
 	if((L >= hdmin[v][jp_v]) && L <= hdmax[v][jp_v]) {
@@ -6888,10 +7005,10 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
     if(! StateIsDetached(cm, v)) { 
       sd  = StateDelta(cm->sttype[v]);
       sdr = StateRightDelta(cm->sttype[v]);
-      do_J_v = cp9b->do_J[v];
-      do_L_v = cp9b->do_L[v];
-      do_R_v = cp9b->do_R[v];
-      do_T_v = cp9b->do_T[v];
+      do_J_v = cp9b->Jvalid[v]           ? TRUE : FALSE;
+      do_L_v = cp9b->Lvalid[v] && fill_L ? TRUE : FALSE;
+      do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
+      do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
 
       /* if the v deck is invalid in J, L R and T mode, all states for v will remain impossible */
       if(! (do_J_v || do_L_v || do_R_v || do_T_v)) continue;
@@ -6900,14 +7017,14 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	y = cm->plast[v];	/* the parent bifurcation    */
 	z = cm->cnum[y];	/* the other (right) S state */
 
-	do_J_y = cp9b->do_J[y];
-	do_L_y = cp9b->do_L[y];
-	do_R_y = cp9b->do_R[y];
-	do_T_y = cp9b->do_T[y]; /* will be FALSE, y is not a B_st */
+	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+	do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 	
-	do_J_z = cp9b->do_J[z];
-	do_L_z = cp9b->do_L[z];
-	do_R_z = cp9b->do_R[z];
+	do_J_z = cp9b->Jvalid[z]           ? TRUE : FALSE;
+	do_L_z = cp9b->Lvalid[z] && fill_L ? TRUE : FALSE;
+	do_R_z = cp9b->Rvalid[z] && fill_R ? TRUE : FALSE;
 
 	for (j = jmax[v]; j >= jmin[v]; j--) {
 	  ESL_DASSERT1((j >= 0 && j <= L));
@@ -7000,14 +7117,14 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	y = cm->plast[v];   /* the parent bifurcation    */
 	z = cm->cfirst[y];  /* the other (left) S state  */
 
-	do_J_y = cp9b->do_J[y];
-	do_L_y = cp9b->do_L[y];
-	do_R_y = cp9b->do_R[y];
-	do_T_y = cp9b->do_T[y]; 
+	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+	do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; 
 	
-	do_J_z = cp9b->do_J[z];
-	do_L_z = cp9b->do_L[z];
-	do_R_z = cp9b->do_R[z];
+	do_J_z = cp9b->Jvalid[z]           ? TRUE : FALSE;
+	do_L_z = cp9b->Lvalid[z] && fill_L ? TRUE : FALSE;
+	do_R_z = cp9b->Rvalid[z] && fill_R ? TRUE : FALSE;
 
 	jn = ESL_MAX(jmin[v], jmin[y]);
 	jx = ESL_MIN(jmax[v], jmax[y]);
@@ -7115,10 +7232,10 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	      sdl = StateLeftDelta(cm->sttype[y]);
 	      sdr = StateRightDelta(cm->sttype[y]);
 	    
-	      do_J_y = cp9b->do_J[y];
-	      do_L_y = cp9b->do_L[y];
-	      do_R_y = cp9b->do_R[y];
-	      do_T_y = cp9b->do_T[y]; /* will be FALSE, y is not a B_st */
+	      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+	      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 
 	      /* if the y deck is invalid in J, L and R mode, we don't have to update v based on transitions from y */
 	      if (! (do_J_y || do_L_y || do_R_y)) continue; 
@@ -7310,10 +7427,10 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
     else if(opt_mode == TRMODE_R) optsc = Ralpha[0][jp_0][Lp_0];
     else if(opt_mode == TRMODE_T) optsc = Talpha[0][jp_0][Lp_0];
     for(v = 0; v <= vmax; v++) { 
-      do_J_v = cp9b->do_J[v];
-      do_L_v = cp9b->do_L[v];
-      do_R_v = cp9b->do_R[v];
-      do_T_v = cp9b->do_T[v];
+      do_J_v = cp9b->Jvalid[v]           ? TRUE : FALSE;
+      do_L_v = cp9b->Lvalid[v] && fill_L ? TRUE : FALSE;
+      do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
+      do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
       jn = (v == cm->M) ? 1 : jmin[v];
       jx = (v == cm->M) ? L : jmax[v];
       for(j = jn; j <= jx; j++) { 
@@ -7543,7 +7660,7 @@ cm_TrPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char opt_mode,
   }
   /* Fill in the rest of the matrices */
   for (v = cm->M-1; v >= 0; v--) { 
-    if(cp9b->do_J[v]) { 
+    if(cp9b->Jvalid[v]) { 
       jx = jmax[v]-jmin[v];
       for (jp_v = 0; jp_v <= jx; jp_v++) { 
 	dx = hdmax[v][jp_v]-hdmin[v][jp_v];
@@ -7554,7 +7671,7 @@ cm_TrPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char opt_mode,
     }
   }
   for (v = cm->M-1; v >= 0; v--) { 
-    if(cp9b->do_L[v]) { 
+    if(cp9b->Lvalid[v]) { 
       jx = jmax[v]-jmin[v];
       for (jp_v = 0; jp_v <= jx; jp_v++) { 
 	dx = hdmax[v][jp_v]-hdmin[v][jp_v];
@@ -7565,7 +7682,7 @@ cm_TrPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char opt_mode,
     }
   }
   for (v = cm->M-1; v >= 0; v--) { 
-    if(cp9b->do_R[v]) { 
+    if(cp9b->Rvalid[v]) { 
       jx = jmax[v]-jmin[v];
       for (jp_v = 0; jp_v <= jx; jp_v++) { 
 	dx = hdmax[v][jp_v]-hdmin[v][jp_v];
@@ -7576,7 +7693,7 @@ cm_TrPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char opt_mode,
     }
   }
   for (v = cm->M-1; v >= 0; v--) { 
-    if(cp9b->do_T[v]) { 
+    if(cp9b->Tvalid[v]) { 
       jx = jmax[v]-jmin[v];
       for (jp_v = 0; jp_v <= jx; jp_v++) { 
 	dx = hdmax[v][jp_v]-hdmin[v][jp_v];
@@ -7918,7 +8035,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
   for(v = 0; v < cm->M; v++) { 
     sd = StateDelta(cm->sttype[v]);
     if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
-      if(cm->cp9b->do_J[v]) { 
+      if(cm->cp9b->Jvalid[v]) { 
 	for(j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v = j - jmin[v];
 	  for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
@@ -7930,7 +8047,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
 	  }
 	}
       }
-      if(cm->cp9b->do_L[v] && fill_L) { 
+      if(cm->cp9b->Lvalid[v] && fill_L) { 
 	for(j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v = j - jmin[v];
 	  for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
@@ -7944,7 +8061,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
       }
     }
     if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
-      if(cm->cp9b->do_J[v]) {
+      if(cm->cp9b->Jvalid[v]) {
 	for(j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v = j - jmin[v];
 	  for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
@@ -7953,7 +8070,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
 	  }
 	}
       }
-      if(cm->cp9b->do_R[v] && fill_R) { 
+      if(cm->cp9b->Rvalid[v] && fill_R) { 
 	for(j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v = j - jmin[v];
 	  for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
@@ -7982,7 +8099,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
    */
   esl_vec_FSet(emit_mx->sum, (L+1), IMPOSSIBLE);
   for(v = 0; v < cm->M; v++) { /* we'll handle EL special */
-    if(emit_mx->Jl_pp[v] != NULL && cm->cp9b->do_J[v]) {
+    if(emit_mx->Jl_pp[v] != NULL && cm->cp9b->Jvalid[v]) {
       in = ESL_MAX(imin[v], 1);
       ix = ESL_MIN(imax[v], L);
       for(i = in; i <= ix; i++) { 
@@ -7990,7 +8107,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
 	emit_mx->sum[i] = FLogsum(emit_mx->sum[i], emit_mx->Jl_pp[v][ip_v]);
       }
     }
-    if(emit_mx->Ll_pp[v] != NULL && cm->cp9b->do_L[v] && fill_L) { 
+    if(emit_mx->Ll_pp[v] != NULL && cm->cp9b->Lvalid[v] && fill_L) { 
       in = ESL_MAX(imin[v], 1);
       ix = ESL_MIN(imax[v], L);
       for(i = in; i <= ix; i++) { 
@@ -7998,7 +8115,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
 	emit_mx->sum[i] = FLogsum(emit_mx->sum[i], emit_mx->Ll_pp[v][ip_v]);
       }
     }
-    if(emit_mx->Jr_pp[v] != NULL && cm->cp9b->do_J[v]) {
+    if(emit_mx->Jr_pp[v] != NULL && cm->cp9b->Jvalid[v]) {
       jn = ESL_MAX(jmin[v], 1);
       jx = ESL_MIN(jmax[v], L);
       for(j = jn; j <= jx; j++) { 
@@ -8006,7 +8123,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
 	emit_mx->sum[j] = FLogsum(emit_mx->sum[j], emit_mx->Jr_pp[v][jp_v]);
       }
     }
-    if(emit_mx->Rr_pp[v] != NULL && cm->cp9b->do_R[v] && fill_R) { 
+    if(emit_mx->Rr_pp[v] != NULL && cm->cp9b->Rvalid[v] && fill_R) { 
       jn = ESL_MAX(jmin[v], 1);
       jx = ESL_MIN(jmax[v], L);
       for(j = jn; j <= jx; j++) { 
@@ -8035,7 +8152,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
 
   /* normalize, using the sum vector */
   for(v = 0; v < cm->M; v++) { 
-    if(emit_mx->Jl_pp[v] != NULL && cm->cp9b->do_J[v]) {
+    if(emit_mx->Jl_pp[v] != NULL && cm->cp9b->Jvalid[v]) {
       in = ESL_MAX(imin[v], 1);
       ix = ESL_MIN(imax[v], L);
       for(i = in; i <= ix; i++) { 
@@ -8043,7 +8160,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
 	emit_mx->Jl_pp[v][ip_v] -= emit_mx->sum[i];
       }
     }
-    if(emit_mx->Ll_pp[v] != NULL && cm->cp9b->do_L[v] && fill_L) { 
+    if(emit_mx->Ll_pp[v] != NULL && cm->cp9b->Lvalid[v] && fill_L) { 
       in = ESL_MAX(imin[v], 1);
       ix = ESL_MIN(imax[v], L);
       for(i = in; i <= ix; i++) { 
@@ -8051,7 +8168,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
 	emit_mx->Ll_pp[v][ip_v] -= emit_mx->sum[i];
       }
     }
-    if(emit_mx->Jr_pp[v] != NULL && cm->cp9b->do_J[v]) {
+    if(emit_mx->Jr_pp[v] != NULL && cm->cp9b->Jvalid[v]) {
       jn = ESL_MAX(jmin[v], 1);
       jx = ESL_MIN(jmax[v], L);
       for(j = jn; j <= jx; j++) { 
@@ -8059,7 +8176,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
 	emit_mx->Jr_pp[v][jp_v] -= emit_mx->sum[j];
       }
     }
-    if(emit_mx->Rr_pp[v] != NULL && cm->cp9b->do_R[v] && fill_R) { 
+    if(emit_mx->Rr_pp[v] != NULL && cm->cp9b->Rvalid[v] && fill_R) { 
       jn = ESL_MAX(jmin[v], 1);
       jx = ESL_MIN(jmax[v], L);
       for(j = jn; j <= jx; j++) { 
@@ -8088,7 +8205,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
       /* we only change {J,L}l_pp[v][i] and {J,L}l_pp[v+1][i] if i is within both
        * state v and v+1's i band.
        */
-      if(cm->cp9b->do_J[v]) { 
+      if(cm->cp9b->Jvalid[v]) { 
 	if(imax[v] >= 1 && imax[v+1] >= 1) { 
 	  in = ESL_MAX(imin[v], imin[v+1]); 
 	  ix = ESL_MIN(imax[v], imax[v+1]);
@@ -8100,7 +8217,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
 	  }
 	}
       }
-      if(cm->cp9b->do_L[v] && fill_L) { 
+      if(cm->cp9b->Lvalid[v] && fill_L) { 
 	if(imax[v] >= 1 && imax[v+1] >= 1) { 
 	  in = ESL_MAX(imin[v], imin[v+1]); 
 	  ix = ESL_MIN(imax[v], imax[v+1]);
@@ -8115,7 +8232,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
       /* we only change {J,R}r_pp[v][j] and {J,R}r_pp[v+2][j] if j is within both
        * state v and v+2's j band.
        */
-      if(cm->cp9b->do_J[v]) { 
+      if(cm->cp9b->Jvalid[v]) { 
 	if(jmax[v] >= 1 && jmax[v+2] >= 1) { 
 	  jn = ESL_MAX(jmin[v], jmin[v+2]); 
 	  jx = ESL_MIN(jmax[v], jmax[v+2]);
@@ -8127,7 +8244,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_TR_H
 	  }
 	}
       }
-      if(cm->cp9b->do_R[v] && fill_R) { 
+      if(cm->cp9b->Rvalid[v] && fill_R) { 
 	if(jmax[v] >= 1 && jmax[v+2] >= 1) { 
 	  jn = ESL_MAX(jmin[v], jmin[v+2]); 
 	  jx = ESL_MIN(jmax[v], jmax[v+2]);
@@ -8482,25 +8599,25 @@ cm_TrModeFromAlphasHB(CM_TR_HB_MX *mx, char *errbuf, int L, CP9Bands_t *cp9b, ch
   int    **hdmin   = cp9b->hdmin;
   int    **hdmax   = cp9b->hdmax;
 
-  if(! (cp9b->do_J[0] || cp9b->do_L[0] || cp9b->do_R[0] || cp9b->do_T[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrModeFromAlphasHB(): alignment to state 0 disallowed for all marginal mode types");
+  if(! (cp9b->Jvalid[0] || cp9b->Lvalid[0] || cp9b->Rvalid[0] || cp9b->Tvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrModeFromAlphasHB(): alignment to state 0 disallowed for all marginal mode types");
   if (jmin[0] > L        || jmax[0] < L)        ESL_FAIL(eslEINVAL, errbuf, "cm_TrModeFromAlphasHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, jmin[0], jmax[0]);
   jp_0 = L - jmin[0];
   if (hdmin[0][jp_0] > L || hdmax[0][jp_0] < L) ESL_FAIL(eslEINVAL, errbuf, "cm_TrModeFromAlphasHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hdmin[0][jp_0], hdmax[0][jp_0]);
   Lp_0 = L - hdmin[0][jp_0];
 
-  if(cp9b->do_J[0] && mx->Jdp[0][jp_0][Lp_0] > sc) { 
+  if(cp9b->Jvalid[0] && mx->Jdp[0][jp_0][Lp_0] > sc) { 
     sc     = mx->Jdp[0][jp_0][Lp_0];
     mode   = TRMODE_J;
   }
-  if(cp9b->do_L[0] && mx->Ldp[0][jp_0][Lp_0] > sc) { 
+  if(cp9b->Lvalid[0] && mx->Ldp[0][jp_0][Lp_0] > sc) { 
     sc     = mx->Ldp[0][jp_0][Lp_0];
     mode   = TRMODE_L;
   }
-  if(cp9b->do_R[0] && mx->Rdp[0][jp_0][Lp_0] > sc) { 
+  if(cp9b->Rvalid[0] && mx->Rdp[0][jp_0][Lp_0] > sc) { 
     sc     = mx->Rdp[0][jp_0][Lp_0];
     mode   = TRMODE_R;
   }
-  if(cp9b->do_T[0] && mx->Tdp[0][jp_0][Lp_0] > sc) { 
+  if(cp9b->Tvalid[0] && mx->Tdp[0][jp_0][Lp_0] > sc) { 
     sc     = mx->Tdp[0][jp_0][Lp_0];
     mode   = TRMODE_T;
   }

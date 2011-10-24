@@ -733,11 +733,11 @@ typedef struct cp9bands_s {
   int Lmarg_jmin;             /* for Left  marginal alignments, minimum target sequence position that can align to CM as j */
   int Lmarg_jmax;             /* for Left  marginal alignments, maximum target sequence position that can align to CM as j */
 
-  /* do_{J,L,R,T} [0..cm_M-1] for trCYK/trInside/trOutside, must we calculate {J,L,R,T} DP matrix cells for state v? */
-  int *do_J;                  /* [0..v..cm_M] TRUE to calculate J DP matrix cells for state v, FALSE not to */
-  int *do_L;                  /* [0..v..cm_M] TRUE to calculate L DP matrix cells for state v, FALSE not to */
-  int *do_R;                  /* [0..v..cm_M] TRUE to calculate R DP matrix cells for state v, FALSE not to */
-  int *do_T;                  /* [0..v..cm_M] TRUE to calculate T DP matrix cells for state v, FALSE not to */
+  /* {J,L,R,T}valid [0..cm_M-1] for trCYK/trInside/trOutside: are {J,L,R,T} do DP matrix cells exist for state v? */
+  int *Jvalid;                /* [0..v..cm_M] TRUE to calculate J DP matrix cells for state v, FALSE not to */
+  int *Lvalid;                /* [0..v..cm_M] TRUE to calculate L DP matrix cells for state v, FALSE not to */
+  int *Rvalid;                /* [0..v..cm_M] TRUE to calculate R DP matrix cells for state v, FALSE not to */
+  int *Tvalid;                /* [0..v..cm_M] TRUE to calculate T DP matrix cells for state v, FALSE not to */
 
   /* arrays for CM state bands, derived from HMM bands */
   int *imin;                  /* [0..cm_M-1] imin[v] = first position in band on i for state v*/

@@ -1364,10 +1364,10 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
     sdr    = StateRightDelta(cm->sttype[v]);
     jn     = jmin[v];
     jx     = jmax[v];
-    do_J_v = cp9b->do_J[v];
-    do_L_v = cp9b->do_L[v];
-    do_R_v = cp9b->do_R[v];
-    do_T_v = cp9b->do_T[v];
+    do_J_v = cp9b->Jvalid[v];
+    do_L_v = cp9b->Lvalid[v];
+    do_R_v = cp9b->Rvalid[v];
+    do_T_v = cp9b->Tvalid[v];
 
     /* re-initialize the J deck if we can do a local end from v */
     if(do_J_v) { 
@@ -1433,8 +1433,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_J_y = cp9b->do_J[y];
-	      do_L_y = cp9b->do_L[y];
+	      do_J_y = cp9b->Jvalid[y];
+	      do_L_y = cp9b->Lvalid[y];
 	      if(do_J_y || do_L_y) { 
 		jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -1464,8 +1464,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_R_y = cp9b->do_R[y];
-	      do_J_y = cp9b->do_J[y];
+	      do_R_y = cp9b->Rvalid[y];
+	      do_J_y = cp9b->Jvalid[y];
 	      if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
 		jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -1521,8 +1521,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_J_y = cp9b->do_J[y];
-	      do_R_y = cp9b->do_R[y];
+	      do_J_y = cp9b->Jvalid[y];
+	      do_R_y = cp9b->Rvalid[y];
 	      if(do_J_y || do_R_y) { 
 		jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -1567,8 +1567,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	      /* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_L_y = cp9b->do_L[y];
-	      do_J_y = cp9b->do_J[y];
+	      do_L_y = cp9b->Lvalid[y];
+	      do_J_y = cp9b->Jvalid[y];
 	      if(do_L_y || do_J_y) { 
 		/* we use 'jp_y=j-min[y]' here, not 'jp_y_sdr=j-jmin[y]-sdr' (which we used in the corresponding loop for J,R above) */
 		jp_y = j - jmin[y];
@@ -1600,9 +1600,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
        * is most efficient: for y { for j { for d { } } }
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-	do_J_y = cp9b->do_J[y];
-	do_L_y = cp9b->do_L[y];
-	do_R_y = cp9b->do_R[y];
+	do_J_y = cp9b->Jvalid[y];
+	do_L_y = cp9b->Lvalid[y];
+	do_R_y = cp9b->Rvalid[y];
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 
@@ -1760,9 +1760,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
        * is most efficient: for y { for j { for d { } } }
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-	do_J_y = cp9b->do_J[y];
-	do_L_y = cp9b->do_L[y];
-	do_R_y = cp9b->do_R[y];
+	do_J_y = cp9b->Jvalid[y];
+	do_L_y = cp9b->Lvalid[y];
+	do_R_y = cp9b->Rvalid[y];
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 	
@@ -1819,15 +1819,15 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
       y = cm->cfirst[v]; /* left  subtree */
       z = cm->cnum[v];   /* right subtree */
 
-      do_J_y = cp9b->do_J[y];
-      do_L_y = cp9b->do_L[y];
-      do_R_y = cp9b->do_R[y];
-      do_T_y = cp9b->do_T[y]; /* will be FALSE, y is not a B_st */
+      do_J_y = cp9b->Jvalid[y];
+      do_L_y = cp9b->Lvalid[y];
+      do_R_y = cp9b->Rvalid[y];
+      do_T_y = cp9b->Tvalid[y]; /* will be FALSE, y is not a B_st */
 
-      do_J_z = cp9b->do_J[z];
-      do_L_z = cp9b->do_L[z];
-      do_R_z = cp9b->do_R[z];
-      do_T_z = cp9b->do_T[z]; /* will be FALSE, z is not a B_st */
+      do_J_z = cp9b->Jvalid[z];
+      do_L_z = cp9b->Lvalid[z];
+      do_R_z = cp9b->Rvalid[z];
+      do_T_z = cp9b->Tvalid[z]; /* will be FALSE, z is not a B_st */
       
       /* Any valid j must be within both state v and state z's j band 
        * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
@@ -1951,10 +1951,10 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
 		printf("H j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
 		       j, v, d, 
-		       (cp9b->do_J[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_L[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_R[v] && NOT_IMPOSSIBLE(Ralpha[v][jp_v][dp_v])) ? Ralpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_T[v] && NOT_IMPOSSIBLE(Talpha[v][jp_v][dp_v])) ? Talpha[v][jp_v][dp_v] : -9999.9);
+		       (cp9b->Jvalid[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Lvalid[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Rvalid[v] && NOT_IMPOSSIBLE(Ralpha[v][jp_v][dp_v])) ? Ralpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Tvalid[v] && NOT_IMPOSSIBLE(Talpha[v][jp_v][dp_v])) ? Talpha[v][jp_v][dp_v] : -9999.9);
 	      }
 	    }
 	  }
@@ -1966,9 +1966,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
 		printf("H j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
 		       j, v, d, 
-		       (cp9b->do_J[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_L[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_R[v] && NOT_IMPOSSIBLE(Ralpha[v][jp_v][dp_v])) ? Ralpha[v][jp_v][dp_v] : -9999.9, 
+		       (cp9b->Jvalid[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Lvalid[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Rvalid[v] && NOT_IMPOSSIBLE(Ralpha[v][jp_v][dp_v])) ? Ralpha[v][jp_v][dp_v] : -9999.9, 
 		       -9999.9);
 	      }
 	    }
@@ -1980,9 +1980,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
 		printf("H j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
 		       j, v, d, 
-		       (cp9b->do_J[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_L[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_R[v] && NOT_IMPOSSIBLE(Ralpha[v][jp_v][dp_v])) ? Ralpha[v][jp_v][dp_v] : -9999.9, 
+		       (cp9b->Jvalid[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Lvalid[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Rvalid[v] && NOT_IMPOSSIBLE(Ralpha[v][jp_v][dp_v])) ? Ralpha[v][jp_v][dp_v] : -9999.9, 
 		       -9999.9);
 	      }
 	    }
@@ -2025,8 +2025,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   /* Finally, allow for local and truncated hits */
   esl_stopwatch_Start(w);
   v = 0;
-  assert(cp9b->do_J[0] == TRUE);
-  ESL_DASSERT1((cp9b->do_J[0] == TRUE));
+  assert(cp9b->Jvalid[0] == TRUE);
+  ESL_DASSERT1((cp9b->Jvalid[0] == TRUE));
   for (j = jmin[v]; j <= jmax[v]; j++) {
     jp_v = j - jmin[v];
     esl_vec_ISet(bestr, (W+1), 0);                /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
@@ -2036,7 +2036,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	jp_y = j - jmin[y];
 	dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
 	dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
-	if(cp9b->do_J[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st)) { 
+	if(cp9b->Jvalid[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
@@ -2048,7 +2048,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	    }
 	  }
 	}
-	if(cp9b->do_J[y] && (cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[y])) { 
+	if(cp9b->Jvalid[y] && (cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[y])) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
@@ -2060,7 +2060,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	    }
 	  }
 	}
-	if(cp9b->do_L[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st)) { 
+	if(cp9b->Lvalid[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
@@ -2072,7 +2072,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	    }
 	  }
 	}
-	if(cp9b->do_R[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st)) { 
+	if(cp9b->Rvalid[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
@@ -2084,7 +2084,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	    }
 	  }
 	}
-	if(cp9b->do_T[y]) { /* will only be true for B states */
+	if(cp9b->Tvalid[y]) { /* will only be true for B states */
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
@@ -2360,10 +2360,10 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
     sdr    = StateRightDelta(cm->sttype[v]);
     jn     = jmin[v];
     jx     = jmax[v];
-    do_J_v = cp9b->do_J[v];
-    do_L_v = cp9b->do_L[v];
-    do_R_v = cp9b->do_R[v];
-    do_T_v = cp9b->do_T[v];
+    do_J_v = cp9b->Jvalid[v];
+    do_L_v = cp9b->Lvalid[v];
+    do_R_v = cp9b->Rvalid[v];
+    do_T_v = cp9b->Tvalid[v];
 
     /* re-initialize the J deck if we can do a local end from v */
     if(do_J_v) { 
@@ -2429,8 +2429,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_J_y = cp9b->do_J[y];
-	      do_L_y = cp9b->do_L[y];
+	      do_J_y = cp9b->Jvalid[y];
+	      do_L_y = cp9b->Lvalid[y];
 	      if(do_J_y || do_L_y) { 
 		jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -2460,8 +2460,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_R_y = cp9b->do_R[y];
-	      do_J_y = cp9b->do_J[y];
+	      do_R_y = cp9b->Rvalid[y];
+	      do_J_y = cp9b->Jvalid[y];
 	      if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
 		jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -2517,8 +2517,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_J_y = cp9b->do_J[y];
-	      do_R_y = cp9b->do_R[y];
+	      do_J_y = cp9b->Jvalid[y];
+	      do_R_y = cp9b->Rvalid[y];
 	      if(do_J_y || do_R_y) { 
 		jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -2563,8 +2563,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	      /* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_L_y = cp9b->do_L[y];
-	      do_J_y = cp9b->do_J[y];
+	      do_L_y = cp9b->Lvalid[y];
+	      do_J_y = cp9b->Jvalid[y];
 	      if(do_L_y || do_J_y) { 
 		/* we use 'jp_y=j-min[y]' here, not 'jp_y_sdr=j-jmin[y]-sdr' (which we used in the corresponding loop for J,R above) */
 		jp_y = j - jmin[y];
@@ -2596,9 +2596,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
        * is most efficient: for y { for j { for d { } } }
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-	do_J_y = cp9b->do_J[y];
-	do_L_y = cp9b->do_L[y];
-	do_R_y = cp9b->do_R[y];
+	do_J_y = cp9b->Jvalid[y];
+	do_L_y = cp9b->Lvalid[y];
+	do_R_y = cp9b->Rvalid[y];
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 
@@ -2756,9 +2756,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
        * is most efficient: for y { for j { for d { } } }
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-	do_J_y = cp9b->do_J[y];
-	do_L_y = cp9b->do_L[y];
-	do_R_y = cp9b->do_R[y];
+	do_J_y = cp9b->Jvalid[y];
+	do_L_y = cp9b->Lvalid[y];
+	do_R_y = cp9b->Rvalid[y];
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 	
@@ -2815,15 +2815,15 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
       y = cm->cfirst[v]; /* left  subtree */
       z = cm->cnum[v];   /* right subtree */
 
-      do_J_y = cp9b->do_J[y];
-      do_L_y = cp9b->do_L[y];
-      do_R_y = cp9b->do_R[y];
-      do_T_y = cp9b->do_T[y]; /* will be FALSE, y is not a B_st */
+      do_J_y = cp9b->Jvalid[y];
+      do_L_y = cp9b->Lvalid[y];
+      do_R_y = cp9b->Rvalid[y];
+      do_T_y = cp9b->Tvalid[y]; /* will be FALSE, y is not a B_st */
 
-      do_J_z = cp9b->do_J[z];
-      do_L_z = cp9b->do_L[z];
-      do_R_z = cp9b->do_R[z];
-      do_T_z = cp9b->do_T[z]; /* will be FALSE, z is not a B_st */
+      do_J_z = cp9b->Jvalid[z];
+      do_L_z = cp9b->Lvalid[z];
+      do_R_z = cp9b->Rvalid[z];
+      do_T_z = cp9b->Tvalid[z]; /* will be FALSE, z is not a B_st */
       
       /* Any valid j must be within both state v and state z's j band 
        * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
@@ -2947,10 +2947,10 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
 		printf("H j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
 		       j, v, d, 
-		       (cp9b->do_J[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_L[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_R[v] && NOT_IMPOSSIBLE(Ralpha[v][jp_v][dp_v])) ? Ralpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_T[v] && NOT_IMPOSSIBLE(Talpha[v][jp_v][dp_v])) ? Talpha[v][jp_v][dp_v] : -9999.9);
+		       (cp9b->Jvalid[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Lvalid[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Rvalid[v] && NOT_IMPOSSIBLE(Ralpha[v][jp_v][dp_v])) ? Ralpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Tvalid[v] && NOT_IMPOSSIBLE(Talpha[v][jp_v][dp_v])) ? Talpha[v][jp_v][dp_v] : -9999.9);
 	      }
 	    }
 	  }
@@ -2962,9 +2962,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
 		printf("H j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
 		       j, v, d, 
-		       (cp9b->do_J[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_L[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_R[v] && NOT_IMPOSSIBLE(Ralpha[v][jp_v][dp_v])) ? Ralpha[v][jp_v][dp_v] : -9999.9, 
+		       (cp9b->Jvalid[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Lvalid[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Rvalid[v] && NOT_IMPOSSIBLE(Ralpha[v][jp_v][dp_v])) ? Ralpha[v][jp_v][dp_v] : -9999.9, 
 		       -9999.9);
 	      }
 	    }
@@ -2976,9 +2976,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
 		printf("H j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
 		       j, v, d, 
-		       (cp9b->do_J[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_L[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
-		       (cp9b->do_R[v] && NOT_IMPOSSIBLE(Ralpha[v][jp_v][dp_v])) ? Ralpha[v][jp_v][dp_v] : -9999.9, 
+		       (cp9b->Jvalid[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Lvalid[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
+		       (cp9b->Rvalid[v] && NOT_IMPOSSIBLE(Ralpha[v][jp_v][dp_v])) ? Ralpha[v][jp_v][dp_v] : -9999.9, 
 		       -9999.9);
 	      }
 	    }
@@ -3021,8 +3021,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   /* Finally, allow for truncated hits */
   esl_stopwatch_Start(w);
   v = 0;
-  assert(cp9b->do_J[0] == TRUE);
-  ESL_DASSERT1((cp9b->do_J[0] == TRUE));
+  assert(cp9b->Jvalid[0] == TRUE);
+  ESL_DASSERT1((cp9b->Jvalid[0] == TRUE));
   for (j = jmin[v]; j <= jmax[v]; j++) {
     jp_v = j - jmin[v];
     esl_vec_ISet(bestr, (W+1), 0);                /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
@@ -3032,7 +3032,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	jp_y = j - jmin[y];
 	dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
 	dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
-	if(cp9b->do_J[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st)) { 
+	if(cp9b->Jvalid[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
@@ -3044,7 +3044,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	    }
 	  }
 	}
-	if(cp9b->do_J[y] && (cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[y])) { 
+	if(cp9b->Jvalid[y] && (cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[y])) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
@@ -3056,7 +3056,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	    }
 	  }
 	}
-	if(cp9b->do_L[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st)) { 
+	if(cp9b->Lvalid[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
@@ -3068,7 +3068,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	    }
 	  }
 	}
-	if(cp9b->do_R[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st)) { 
+	if(cp9b->Rvalid[y] && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
@@ -3080,7 +3080,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	    }
 	  }
 	}
-	if(cp9b->do_T[y]) { /* will only be true for B states */
+	if(cp9b->Tvalid[y]) { /* will only be true for B states */
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
 	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
