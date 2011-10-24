@@ -704,9 +704,11 @@ cm_tr_mx_Destroy(CM_TR_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_mx_Dump(FILE *ofp, CM_TR_MX *mx)
+cm_tr_mx_Dump(FILE *ofp, CM_TR_MX *mx, char opt_mode)
 {
+  int status;
   int v, j, d;
+  int fill_L, fill_R, fill_T; /* are the L, R, and T matrices valid? */
 
   fprintf(ofp, "M: %d\n", mx->M);
   fprintf(ofp, "B: %d\n", mx->B);
@@ -715,15 +717,18 @@ cm_tr_mx_Dump(FILE *ofp, CM_TR_MX *mx)
   fprintf(ofp, "Lncells_alloc: %" PRId64 "\nLncells_valid: %" PRId64 "\n", mx->Lncells_alloc, mx->Lncells_valid);
   fprintf(ofp, "Rncells_alloc: %" PRId64 "\nRncells_valid: %" PRId64 "\n", mx->Rncells_alloc, mx->Rncells_valid);
   fprintf(ofp, "Tncells_alloc: %" PRId64 "\nTncells_valid: %" PRId64 "\n", mx->Tncells_alloc, mx->Tncells_valid);
+  fprintf(ofp, "opt_mode: %d\n", opt_mode);
   
+  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+
   /* DP matrix data */
   for (v = 0; v < mx->M; v++) {
     for(j = 0; j <= mx->L; j++) { 
       for(d = 0; d <= j; d++) { 
-	if(mx->Jdp[v]) fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
-	if(mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][j][d]);
-	if(mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][j][d]);
-	if(mx->Tdp[v]) fprintf(ofp, "Tdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Tdp[v][j][d]);
+	if(mx->Jdp[v])           fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
+	if(fill_L && mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][j][d]);
+	if(fill_R && mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][j][d]);
+	if(fill_T && mx->Tdp[v]) fprintf(ofp, "Tdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Tdp[v][j][d]);
       }
       fprintf(ofp, "\n");
     }
@@ -1406,53 +1411,53 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   for(v = 0; v < mx->M; v++) {
     jbw = cp9b->jmax[v] - cp9b->jmin[v] + 1;
 
-    if(cp9b->do_J[v]) {
+    if(cp9b->Jvalid[v]) {
       if(jbw > mx->JnrowsA[v]) { 
 	if(mx->Jdp[v] != NULL) ESL_RALLOC(mx->Jdp[v], p, sizeof(float *) * jbw);
 	else                   ESL_ALLOC (mx->Jdp[v],    sizeof(float *) * jbw);
 	mx->JnrowsA[v] = jbw;
       }
     }
-    else { /* cp9b->do_J[v] is FALSE */
+    else { /* cp9b->Jvalid[v] is FALSE */
       if(mx->Jdp[v] != NULL) free(mx->Jdp[v]);
       mx->Jdp[v] = NULL;
       mx->JnrowsA[v] = 0;
     }
 
-    if(cp9b->do_L[v]) {
+    if(cp9b->Lvalid[v]) {
       if(jbw > mx->LnrowsA[v]) { 
 	if(mx->Ldp[v] != NULL) ESL_RALLOC(mx->Ldp[v], p, sizeof(float *) * jbw);
 	else                   ESL_ALLOC (mx->Ldp[v],    sizeof(float *) * jbw);
 	mx->LnrowsA[v] = jbw;
       }
     }
-    else { /* cp9b->do_L[v] is FALSE */
+    else { /* cp9b->Lvalid[v] is FALSE */
       if(mx->Ldp[v] != NULL) free(mx->Ldp[v]);
       mx->Ldp[v] = NULL;
       mx->LnrowsA[v] = 0;
     }
 
-    if(cp9b->do_R[v]) {
+    if(cp9b->Rvalid[v]) {
       if(jbw > mx->RnrowsA[v]) { 
 	if(mx->Rdp[v] != NULL) ESL_RALLOC(mx->Rdp[v], p, sizeof(float *) * jbw);
 	else                   ESL_ALLOC (mx->Rdp[v],    sizeof(float *) * jbw);
 	mx->RnrowsA[v] = jbw;
       }
     }
-    else { /* cp9b->do_R[v] is FALSE */
+    else { /* cp9b->Rvalid[v] is FALSE */
       if(mx->Rdp[v] != NULL) free(mx->Rdp[v]);
       mx->Rdp[v] = NULL;
       mx->RnrowsA[v] = 0;
     }
 
-    if(cp9b->do_T[v]) {
+    if(cp9b->Tvalid[v]) {
       if(jbw > mx->TnrowsA[v]) { 
 	if(mx->Tdp[v] != NULL) ESL_RALLOC(mx->Tdp[v], p, sizeof(float *) * jbw);
 	else                   ESL_ALLOC (mx->Tdp[v],    sizeof(float *) * jbw);
 	mx->TnrowsA[v] = jbw;
       }
     }
-    else { /* cp9b->do_T[v] is FALSE */
+    else { /* cp9b->Tvalid[v] is FALSE */
       if(mx->Tdp[v] != NULL) free(mx->Tdp[v]);
       mx->Tdp[v] = NULL;
       mx->TnrowsA[v] = 0;
@@ -1587,9 +1592,11 @@ cm_tr_hb_mx_Destroy(CM_TR_HB_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx)
+cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char opt_mode)
 {
+  int status;
   int v, jp, j, dp, d;
+  int fill_L, fill_R, fill_T; /* are the L, R, and T matrices valid? */
 
   fprintf(ofp, "M: %d\n", mx->M);
   fprintf(ofp, "B: %d\n", mx->B);
@@ -1598,17 +1605,20 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx)
   fprintf(ofp, "Lncells_alloc: %" PRId64 "\nLncells_valid: %" PRId64 "\n", mx->Lncells_alloc, mx->Lncells_valid);
   fprintf(ofp, "Rncells_alloc: %" PRId64 "\nRncells_valid: %" PRId64 "\n", mx->Rncells_alloc, mx->Rncells_valid);
   fprintf(ofp, "Tncells_alloc: %" PRId64 "\nTncells_valid: %" PRId64 "\n", mx->Tncells_alloc, mx->Tncells_valid);
+  fprintf(ofp, "opt_mode: %d\n", opt_mode);
   
+  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+
   /* DP matrix data */
   for (v = 0; v < mx->M; v++) {
     for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
       j = jp + mx->cp9b->jmin[v];
       for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
 	d = dp + mx->cp9b->hdmin[v][jp];
-	if(mx->Jdp[v]) fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][jp][dp]);
-	if(mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][jp][dp]);
-	if(mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][jp][dp]);
-	if(mx->Tdp[v]) fprintf(ofp, "Tdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Tdp[v][jp][dp]);
+	if(mx->Jdp[v])           fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][jp][dp]);
+	if(fill_L && mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][jp][dp]);
+	if(fill_R && mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][jp][dp]);
+	if(fill_T && mx->Tdp[v]) fprintf(ofp, "Tdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Tdp[v][jp][dp]);
       }
       fprintf(ofp, "\n");
     }
@@ -1620,8 +1630,6 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx)
     for(j = 0; j <= mx->L; j++) {
       for(d = 0; d <= j; d++) {
 	if(mx->Jdp[v]) fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
-	if(mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][j][d]);
-	if(mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][j][d]);
       }
       fprintf(ofp, "\n");
     }
@@ -1679,25 +1687,25 @@ cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t 
 
   for(v = 0; v < cp9b->cm_M; v++) { 
     jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
-    if(cp9b->do_J[v]) { 
+    if(cp9b->Jvalid[v]) { 
       Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Jdp[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) {
 	Jncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
       }
     }
-    if(cp9b->do_L[v]) { 
+    if(cp9b->Lvalid[v]) { 
       Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Ldp[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) {
 	Lncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
       }
     }
-    if(cp9b->do_R[v]) { 
+    if(cp9b->Rvalid[v]) { 
       Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Rdp[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) {
 	Rncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
       }
     }
-    if(cp9b->do_T[v]) {
+    if(cp9b->Tvalid[v]) {
       Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Tdp[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) {
 	Tncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
@@ -2566,9 +2574,11 @@ cm_tr_shadow_mx_Destroy(CM_TR_SHADOW_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx)
+cm_tr_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx, char opt_mode)
 {
+  int status;
   int v, j, d;
+  int fill_L, fill_R, fill_T; /* are the L, R, and T matrices valid? */
 
   fprintf(ofp, "M: %d\n", mx->M);
   fprintf(ofp, "B: %d\n", mx->B);
@@ -2580,16 +2590,19 @@ cm_tr_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx)
   fprintf(ofp, "Lk_ncells_alloc: %" PRId64 "\nLk_ncells_valid: %" PRId64 "\n", mx->Lk_ncells_alloc, mx->Lk_ncells_valid);
   fprintf(ofp, "Rk_ncells_alloc: %" PRId64 "\nRk_ncells_valid: %" PRId64 "\n", mx->Rk_ncells_alloc, mx->Rk_ncells_valid);
   fprintf(ofp, "Tk_ncells_alloc: %" PRId64 "\nTk_ncells_valid: %" PRId64 "\n", mx->Tk_ncells_alloc, mx->Tk_ncells_valid);
+  fprintf(ofp, "opt_mode: %d\n", opt_mode);
+
+  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* yshadow/kshadow matrix data */
   for (v = 0; v < mx->M; v++) {
     if(cm->sttype[v] == B_st) { 
       for(j = 0; j <= mx->L; j++) { 
 	for(d = 0; d <= j; d++) { 
-	  if(mx->Jkshadow[v]) fprintf(ofp, "Jkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jkshadow[v][j][d]);
-	  if(mx->Lkshadow[v]) fprintf(ofp, "Lkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lkshadow[v][j][d]);
-	  if(mx->Rkshadow[v]) fprintf(ofp, "Rkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Rkshadow[v][j][d]);
-	  if(mx->Tkshadow[v]) fprintf(ofp, "Tkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Tkshadow[v][j][d]);
+	  if(mx->Jkshadow[v])           fprintf(ofp, "Jkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jkshadow[v][j][d]);
+	  if(mx->Lkshadow[v] && fill_L) fprintf(ofp, "Lkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lkshadow[v][j][d]);
+	  if(mx->Rkshadow[v] && fill_R) fprintf(ofp, "Rkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Rkshadow[v][j][d]);
+	  if(mx->Tkshadow[v] && fill_T) fprintf(ofp, "Tkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Tkshadow[v][j][d]);
 	}
 	fprintf(ofp, "\n");
       }
@@ -2598,9 +2611,9 @@ cm_tr_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx)
     else { /* ! B_st */
       for(j = 0; j <= mx->L; j++) { 
 	for(d = 0; d <= j; d++) { 
-	  if(mx->Jyshadow[v]) fprintf(ofp, "Jyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jyshadow[v][j][d]);
-	  if(mx->Lyshadow[v]) fprintf(ofp, "Lyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lyshadow[v][j][d]);
-	  if(mx->Ryshadow[v]) fprintf(ofp, "Ryshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Ryshadow[v][j][d]);
+	  if(mx->Jyshadow[v])           fprintf(ofp, "Jyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jyshadow[v][j][d]);
+	  if(mx->Lyshadow[v] && fill_L) fprintf(ofp, "Lyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lyshadow[v][j][d]);
+	  if(mx->Ryshadow[v] && fill_R) fprintf(ofp, "Ryshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Ryshadow[v][j][d]);
 	}
 	fprintf(ofp, "\n");
       }
@@ -3482,57 +3495,57 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
     jbw = cp9b->jmax[v] - cp9b->jmin[v] + 1;
 
     if(cm->sttype[v] != B_st) { 
-      if(cp9b->do_J[v]) {
+      if(cp9b->Jvalid[v]) {
 	if(jbw > mx->JnrowsA[v]) { 
 	  if(mx->Jyshadow[v] != NULL) ESL_RALLOC(mx->Jyshadow[v], p, sizeof(char *)  * jbw);
 	  else                        ESL_ALLOC (mx->Jyshadow[v],    sizeof(char *)  * jbw);
 	  mx->JnrowsA[v] = jbw;
 	}
       }	  
-      else { /* cp9b->do_J[v] is FALSE */
+      else { /* cp9b->Jvalid[v] is FALSE */
 	if(mx->Jyshadow[v] != NULL) free(mx->Jyshadow[v]);
 	mx->Jyshadow[v] = NULL;
 	mx->JnrowsA[v] = 0;
       }
-      if(cp9b->do_L[v]) { 
+      if(cp9b->Lvalid[v]) { 
 	if(jbw > mx->LnrowsA[v]) { 
 	  if(mx->Lyshadow[v] != NULL) ESL_RALLOC(mx->Lyshadow[v], p, sizeof(char *)  * jbw);
 	  else                        ESL_ALLOC (mx->Lyshadow[v],    sizeof(char *)  * jbw);
 	  mx->LnrowsA[v] = jbw;
 	}
       }	  
-      else { /* cp9b->do_L[v] is FALSE */
+      else { /* cp9b->Lvalid[v] is FALSE */
 	if(mx->Lyshadow[v] != NULL) free(mx->Lyshadow[v]);
 	mx->Lyshadow[v] = NULL;
 	mx->LnrowsA[v] = 0;
       }
-      if(cp9b->do_R[v]) { 
+      if(cp9b->Rvalid[v]) { 
 	if(jbw > mx->RnrowsA[v]) { 
 	  if(mx->Ryshadow[v] != NULL) ESL_RALLOC(mx->Ryshadow[v], p, sizeof(char *)  * jbw);
 	  else                        ESL_ALLOC (mx->Ryshadow[v],    sizeof(char *)  * jbw);
 	  mx->RnrowsA[v] = jbw;
 	}
       }	  
-      else { /* cp9b->do_R[v] is FALSE */
+      else { /* cp9b->Rvalid[v] is FALSE */
 	if(mx->Ryshadow[v] != NULL) free(mx->Ryshadow[v]);
 	mx->Ryshadow[v] = NULL;
 	mx->RnrowsA[v] = 0;
       }
     }
     else { /* cm->sttype[v] == B_st */
-      if(cp9b->do_J[v]) {
+      if(cp9b->Jvalid[v]) {
 	if(jbw > mx->JnrowsA[v]) { 
 	  if(mx->Jkshadow[v] != NULL) ESL_RALLOC(mx->Jkshadow[v], p, sizeof(int *)  * jbw);
 	  else                        ESL_ALLOC (mx->Jkshadow[v],    sizeof(int *)  * jbw);
 	  mx->JnrowsA[v] = jbw;
 	}
       }	  
-      else { /* cp9b->do_J[v] is FALSE */
+      else { /* cp9b->Jvalid[v] is FALSE */
 	if(mx->Jkshadow[v] != NULL) free(mx->Jkshadow[v]);
 	mx->Jkshadow[v] = NULL;
 	mx->JnrowsA[v] = 0;
       }
-      if(cp9b->do_L[v]) { 
+      if(cp9b->Lvalid[v]) { 
 	if(jbw > mx->LnrowsA[v]) { 
 	  if(mx->Lkshadow[v] != NULL) ESL_RALLOC(mx->Lkshadow[v], p, sizeof(int *)  * jbw);
 	  else                        ESL_ALLOC (mx->Lkshadow[v],    sizeof(int *)  * jbw);
@@ -3541,14 +3554,14 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
 	  mx->LnrowsA[v] = jbw;
 	}
       }	  
-      else { /* cp9b->do_L[v] is FALSE */
+      else { /* cp9b->Lvalid[v] is FALSE */
 	if(mx->Lkshadow[v] != NULL) free(mx->Lkshadow[v]);
 	if(mx->Lkmode[v]   != NULL) free(mx->Lkmode[v]);
 	mx->Lkshadow[v] = NULL;
 	mx->Lkmode[v]   = NULL;
 	mx->LnrowsA[v] = 0;
       }
-      if(cp9b->do_R[v]) { 
+      if(cp9b->Rvalid[v]) { 
 	if(jbw > mx->RnrowsA[v]) { 
 	  if(mx->Rkshadow[v] != NULL) ESL_RALLOC(mx->Rkshadow[v], p, sizeof(int *)  * jbw);
 	  else                        ESL_ALLOC (mx->Rkshadow[v],    sizeof(int *)  * jbw);
@@ -3557,21 +3570,21 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
 	  mx->RnrowsA[v] = jbw;
 	}
       }	  
-      else { /* cp9b->do_R[v] is FALSE */
+      else { /* cp9b->Rvalid[v] is FALSE */
 	if(mx->Rkshadow[v] != NULL) free(mx->Rkshadow[v]);
 	if(mx->Rkmode[v]   != NULL) free(mx->Rkmode[v]);
 	mx->Rkshadow[v] = NULL;
 	mx->Rkmode[v]   = NULL;
 	mx->RnrowsA[v] = 0;
       }
-      if(cp9b->do_T[v]) { 
+      if(cp9b->Tvalid[v]) { 
 	if(jbw > mx->TnrowsA[v]) { 
 	  if(mx->Tkshadow[v] != NULL) ESL_RALLOC(mx->Tkshadow[v], p, sizeof(int *)  * jbw);
 	  else                        ESL_ALLOC (mx->Tkshadow[v],    sizeof(int *)  * jbw);
 	  mx->TnrowsA[v] = jbw;
 	}
       }	  
-      else { /* cp9b->do_T[v] is FALSE */
+      else { /* cp9b->Tvalid[v] is FALSE */
 	if(mx->Tkshadow[v] != NULL) free(mx->Tkshadow[v]);
 	mx->Tkshadow[v] = NULL;
 	mx->TnrowsA[v] = 0;
@@ -3770,10 +3783,11 @@ cm_tr_hb_shadow_mx_Destroy(CM_TR_HB_SHADOW_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx)
+cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char opt_mode)
 {
+  int status;
   int v, jp, j, dp, d;
-
+  int fill_L, fill_R, fill_T; /* are the L, R, and T matrices valid? */
 
   fprintf(ofp, "M: %d\n", mx->M);
   fprintf(ofp, "B: %d\n", mx->B);
@@ -3786,6 +3800,8 @@ cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx)
   fprintf(ofp, "Rk_ncells_alloc: %" PRId64 "\nRk_ncells_valid: %" PRId64 "\n", mx->Rk_ncells_alloc, mx->Rk_ncells_valid);
   fprintf(ofp, "Tk_ncells_alloc: %" PRId64 "\nTk_ncells_valid: %" PRId64 "\n", mx->Tk_ncells_alloc, mx->Tk_ncells_valid);
 
+  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+
   /* yshadow/kshadow matrix data */
   for (v = 0; v < mx->M; v++) {
     if(cm->sttype[v] == B_st) { 
@@ -3793,10 +3809,10 @@ cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx)
 	j = jp + mx->cp9b->jmin[v];
 	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
 	  d = dp + mx->cp9b->hdmin[v][jp];
-	  if(mx->Jkshadow[v]) fprintf(ofp, "Jkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jkshadow[v][jp][dp]);
-	  if(mx->Lkshadow[v]) fprintf(ofp, "Lkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lkshadow[v][jp][dp]);
-	  if(mx->Rkshadow[v]) fprintf(ofp, "Rkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Rkshadow[v][jp][dp]);
-	  if(mx->Tkshadow[v]) fprintf(ofp, "Tkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Tkshadow[v][jp][dp]);
+	  if(mx->Jkshadow[v])           fprintf(ofp, "Jkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jkshadow[v][jp][dp]);
+	  if(mx->Lkshadow[v] && fill_L) fprintf(ofp, "Lkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lkshadow[v][jp][dp]);
+	  if(mx->Rkshadow[v] && fill_R) fprintf(ofp, "Rkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Rkshadow[v][jp][dp]);
+	  if(mx->Tkshadow[v] && fill_T) fprintf(ofp, "Tkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Tkshadow[v][jp][dp]);
 	}
 	fprintf(ofp, "\n");
       }
@@ -3807,9 +3823,9 @@ cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx)
 	j = jp + mx->cp9b->jmin[v];
 	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
 	  d = dp + mx->cp9b->hdmin[v][jp];
-	  if(mx->Jyshadow[v]) fprintf(ofp, "Jyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jyshadow[v][jp][dp]);
-	  if(mx->Lyshadow[v]) fprintf(ofp, "Lyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lyshadow[v][jp][dp]);
-	  if(mx->Ryshadow[v]) fprintf(ofp, "Ryshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Ryshadow[v][jp][dp]);
+	  if(mx->Jyshadow[v])           fprintf(ofp, "Jyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jyshadow[v][jp][dp]);
+	  if(mx->Lyshadow[v] && fill_L) fprintf(ofp, "Lyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lyshadow[v][jp][dp]);
+	  if(mx->Ryshadow[v] && fill_R) fprintf(ofp, "Ryshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Ryshadow[v][jp][dp]);
 	}
 	fprintf(ofp, "\n");
       }
@@ -3883,27 +3899,27 @@ cm_tr_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t 
   for(v = 0; v < cp9b->cm_M; v++) { 
     jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
     if(cm->sttype[v] == B_st) { 
-      if(cp9b->do_J[v]) { 
+      if(cp9b->Jvalid[v]) { 
 	Mb_needed += (float) (sizeof(int *) * (jbw+1)); /* mx->Jkshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
 	  Jk_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
 	}
       }
-      if(cp9b->do_L[v]) { 
+      if(cp9b->Lvalid[v]) { 
 	Mb_needed += (float) (sizeof(int *) * (jbw+1));  /* mx->Lkshadow[v][] ptrs */
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Lkmode[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
 	  Lk_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
 	}
       }
-      if(cp9b->do_R[v]) { 
+      if(cp9b->Rvalid[v]) { 
 	Mb_needed += (float) (sizeof(int *) * (jbw+1));  /* mx->Rkshadow[v][] ptrs */
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Rkmode[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
 	  Rk_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
 	}
       }
-      if(cp9b->do_T[v]) { 
+      if(cp9b->Tvalid[v]) { 
 	Mb_needed += (float) (sizeof(int *) * (jbw+1)); /* mx->Tkshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
 	  Tk_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
@@ -3911,19 +3927,19 @@ cm_tr_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t 
       }
     }
     else { /* not a B state */
-      if(cp9b->do_J[v]) { 
+      if(cp9b->Jvalid[v]) { 
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Jyshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
 	  Jy_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
 	}
       }
-      if(cp9b->do_L[v]) { 
+      if(cp9b->Lvalid[v]) { 
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Lyshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
 	  Ly_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
 	}
       }
-      if(cp9b->do_R[v]) { 
+      if(cp9b->Rvalid[v]) { 
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Ryshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
 	  Ry_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
@@ -4630,22 +4646,27 @@ cm_tr_emit_mx_Destroy(CM_TR_EMIT_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx)
+cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char opt_mode)
 {
+  int status;
   int v, i;
+  int fill_L, fill_R, fill_T; /* are the L, R, and T matrices valid? */
 
   fprintf(ofp, "M: %d\n", mx->M);
   fprintf(ofp, "L: %d\n", mx->L);
   fprintf(ofp, "l_ncells_alloc: %" PRId64 "\nl_ncells_valid: %" PRId64 "\n", mx->l_ncells_alloc, mx->l_ncells_valid);
   fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
+  fprintf(ofp, "opt_mode: %d\n", opt_mode);
   
+  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+
   /* l_pp and r_pp matrix data */
   for (v = 0; v < mx->M; v++) {
     for(i = 0; i <= mx->L; i++) { 
-      if(mx->Jl_pp[v]) fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jl_pp[v][i]), mx->Jl_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
-      if(mx->Ll_pp[v]) fprintf(ofp, "Ll_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Ll_pp[v][i]), mx->Ll_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
-      if(mx->Jr_pp[v]) fprintf(ofp, "Jr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jr_pp[v][i]), mx->Jr_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
-      if(mx->Rr_pp[v]) fprintf(ofp, "Rr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Rr_pp[v][i]), mx->Rr_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      if(mx->Jl_pp[v])           fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jl_pp[v][i]), mx->Jl_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      if(mx->Ll_pp[v] && fill_L) fprintf(ofp, "Ll_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Ll_pp[v][i]), mx->Ll_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      if(mx->Jr_pp[v])           fprintf(ofp, "Jr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jr_pp[v][i]), mx->Jr_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      if(mx->Rr_pp[v] && fill_R) fprintf(ofp, "Rr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Rr_pp[v][i]), mx->Rr_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
     }
     fprintf(ofp, "\n");
   }
@@ -5400,15 +5421,20 @@ cm_tr_hb_emit_mx_Destroy(CM_TR_HB_EMIT_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx)
+cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char opt_mode)
 {
+  int status;
   int v, i, j, ip_v, jp_v;
+  int fill_L, fill_R, fill_T; /* are the L, R, and T matrices valid? */
 
   fprintf(ofp, "M: %d\n", mx->M);
   fprintf(ofp, "L: %d\n", mx->L);
   fprintf(ofp, "l_ncells_alloc: %" PRId64 "\nl_ncells_valid: %" PRId64 "\n", mx->l_ncells_alloc, mx->l_ncells_valid);
   fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
+  fprintf(ofp, "opt_mode: %d\n", opt_mode);
   
+  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+
   /* l_pp and r_pp matrix data */
   for (v = 0; v < mx->M; v++) {
     if(mx->Jl_pp[v]) { 
@@ -5417,7 +5443,7 @@ cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx)
 	fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jl_pp[v][ip_v]), mx->Jl_pp[v][ip_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
       }
     }
-    if(mx->Ll_pp[v]) { 
+    if(mx->Ll_pp[v] && fill_L) { 
       for(i = mx->cp9b->imin[v]; i <= mx->cp9b->imax[v]; i++) { 
 	ip_v = i - mx->cp9b->imin[v];
 	fprintf(ofp, "Ll_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Ll_pp[v][ip_v]), mx->Ll_pp[v][ip_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
@@ -5429,7 +5455,7 @@ cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx)
 	fprintf(ofp, "Jr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, j, sreEXP2(mx->Jr_pp[v][jp_v]), mx->Jr_pp[v][jp_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
       }
     }
-    if(mx->Rr_pp[v]) { 
+    if(mx->Rr_pp[v] && fill_R) { 
       for(j = mx->cp9b->jmin[v]; j <= mx->cp9b->jmax[v]; j++) { 
 	jp_v = j - mx->cp9b->jmin[v];
 	fprintf(ofp, "Rr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, j, sreEXP2(mx->Rr_pp[v][jp_v]), mx->Rr_pp[v][jp_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));

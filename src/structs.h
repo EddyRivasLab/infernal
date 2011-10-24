@@ -718,7 +718,7 @@ typedef struct cp9bands_s {
    * (maybe_-prefixed) and are likely to be (likely_-prefixed) involved
    * in the parse of the sequence based on the HMM posterior
    * probabilities. These are used to determine what types of marginal
-   * alignments should be allowed from each state (the do_{J,L,R,T}
+   * alignments should be allowed from each state (the {J,L,R,T}valid
    * arrays) */
   int sp1;                    /* minimum cpos for which occupancy probability exceeds maybe_thresh */
   int ep1;                    /* maximum cpos for which occupancy probability exceeds maybe_thresh */

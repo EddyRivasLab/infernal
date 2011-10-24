@@ -63,17 +63,17 @@ AllocCP9Bands(int cm_M, int hmm_M)
   cp9bands->Rmarg_imin = cp9bands->Lmarg_jmin = -1;
   cp9bands->Rmarg_imax = cp9bands->Lmarg_jmax = -2;
 
-  ESL_ALLOC(cp9bands->do_J, sizeof(int) * (cm_M+1));
-  ESL_ALLOC(cp9bands->do_L, sizeof(int) * (cm_M+1));
-  ESL_ALLOC(cp9bands->do_R, sizeof(int) * (cm_M+1));
-  ESL_ALLOC(cp9bands->do_T, sizeof(int) * (cm_M+1));
-  esl_vec_ISet(cp9bands->do_J, cm_M+1, TRUE);
-  esl_vec_ISet(cp9bands->do_L, cm_M, TRUE);
-  esl_vec_ISet(cp9bands->do_R, cm_M, TRUE);
-  esl_vec_ISet(cp9bands->do_T, cm_M, TRUE);
-  cp9bands->do_L[cm_M] = FALSE;
-  cp9bands->do_R[cm_M] = FALSE;
-  cp9bands->do_T[cm_M] = FALSE;
+  ESL_ALLOC(cp9bands->Jvalid, sizeof(int) * (cm_M+1));
+  ESL_ALLOC(cp9bands->Lvalid, sizeof(int) * (cm_M+1));
+  ESL_ALLOC(cp9bands->Rvalid, sizeof(int) * (cm_M+1));
+  ESL_ALLOC(cp9bands->Tvalid, sizeof(int) * (cm_M+1));
+  esl_vec_ISet(cp9bands->Jvalid, cm_M+1, TRUE);
+  esl_vec_ISet(cp9bands->Lvalid, cm_M, TRUE);
+  esl_vec_ISet(cp9bands->Rvalid, cm_M, TRUE);
+  esl_vec_ISet(cp9bands->Tvalid, cm_M, TRUE);
+  cp9bands->Lvalid[cm_M] = FALSE;
+  cp9bands->Rvalid[cm_M] = FALSE;
+  cp9bands->Tvalid[cm_M] = FALSE;
 
   ESL_ALLOC(cp9bands->pn_min_m, sizeof(int) * (cp9bands->hmm_M+1));
   ESL_ALLOC(cp9bands->pn_max_m, sizeof(int) * (cp9bands->hmm_M+1));
@@ -138,10 +138,10 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
   free(cp9bands->isum_pn_i);
   free(cp9bands->isum_pn_d);
 
-  free(cp9bands->do_J);
-  free(cp9bands->do_L);
-  free(cp9bands->do_R);
-  free(cp9bands->do_T);
+  free(cp9bands->Jvalid);
+  free(cp9bands->Lvalid);
+  free(cp9bands->Rvalid);
+  free(cp9bands->Tvalid);
 
   free(cp9bands);
 }
@@ -1787,11 +1787,11 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
    */
   if(do_trunc) { 
     for(v = 0; v < cm->M; v++) { 
-      if(cp9b->do_L[v] || cp9b->do_T[v]) { /* allow for left marginal alignment by expanding j band */
+      if(cp9b->Lvalid[v] || cp9b->Tvalid[v]) { /* allow for left marginal alignment by expanding j band */
 	jmin[v] = (jmin[v] == -1) ? cp9b->Lmarg_jmin : ESL_MIN(jmin[v], cp9b->Lmarg_jmin);
 	jmax[v] = (jmax[v] == -2) ? cp9b->Lmarg_jmax : ESL_MAX(jmax[v], cp9b->Lmarg_jmax);
       }
-      if(cp9b->do_R[v] || cp9b->do_T[v]) { /* allow for right marginal alignment by expanding i band */
+      if(cp9b->Rvalid[v] || cp9b->Tvalid[v]) { /* allow for right marginal alignment by expanding i band */
 	imin[v] = (imin[v] == -1) ? cp9b->Rmarg_imin : ESL_MIN(imin[v], cp9b->Rmarg_imin);
 	imax[v] = (imax[v] == -2) ? cp9b->Rmarg_imax : ESL_MAX(imax[v], cp9b->Rmarg_imax);
       }
@@ -5331,19 +5331,19 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b)
     /* below: 'possibly' means probability > cp9b->thresh1 (typically 0.01) */
     /*        'probably' means probability > cp9b->thresh2 (typically 0.99) */
 
-    /* do_J if both lpos and rpos are possibly used */
-    cp9b->do_J[v] = ((lpos >= cp9b->sp1) && (rpos <= cp9b->ep1)) ? TRUE : FALSE;
+    /* Jvalid if both lpos and rpos are possibly used */
+    cp9b->Jvalid[v] = ((lpos >= cp9b->sp1) && (rpos <= cp9b->ep1)) ? TRUE : FALSE;
 
-    /* do_L if lpos is possibly used and rpos is probably not used */
-    cp9b->do_L[v] = ((lpos >= cp9b->sp1 && lpos <= cp9b->ep1) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
+    /* Lvalid if lpos is possibly used and rpos is probably not used */
+    cp9b->Lvalid[v] = ((lpos >= cp9b->sp1 && lpos <= cp9b->ep1) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
 
-    /* do_R if rpos is possibly used and lpos is probably not used */
-    cp9b->do_R[v] = ((rpos <= cp9b->ep1 && rpos >= cp9b->sp1) && (lpos < cp9b->sp2)) ? TRUE : FALSE;
+    /* Rvalid if rpos is possibly used and lpos is probably not used */
+    cp9b->Rvalid[v] = ((rpos <= cp9b->ep1 && rpos >= cp9b->sp1) && (lpos < cp9b->sp2)) ? TRUE : FALSE;
 
-    cp9b->do_T[v] = FALSE; /* possibly changed below for B_st */
+    cp9b->Tvalid[v] = FALSE; /* possibly changed below for B_st */
     if(cm->sttype[v] == B_st) { 
-      /* do_T if lpos and rpos are probably not used */
-      cp9b->do_T[v] = ((lpos < cp9b->sp2) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
+      /* Tvalid if lpos and rpos are probably not used */
+      cp9b->Tvalid[v] = ((lpos < cp9b->sp2) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
     }
   }
 
@@ -5353,25 +5353,25 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b)
   for(v = 0; v < cp9b->cm_M; v++) {
     switch(cm->sttype[v]) { 
     case B_st:
-      if(cp9b->do_J[v]) cp9b->do_J[0] = TRUE;
-      if(cp9b->do_L[v]) cp9b->do_L[0] = TRUE;
-      if(cp9b->do_R[v]) cp9b->do_R[0] = TRUE;
-      if(cp9b->do_T[v]) cp9b->do_T[0] = TRUE;
+      if(cp9b->Jvalid[v]) cp9b->Jvalid[0] = TRUE;
+      if(cp9b->Lvalid[v]) cp9b->Lvalid[0] = TRUE;
+      if(cp9b->Rvalid[v]) cp9b->Rvalid[0] = TRUE;
+      if(cp9b->Tvalid[v]) cp9b->Tvalid[0] = TRUE;
       break;
     case MP_st:
-      if(cp9b->do_J[v]) cp9b->do_J[0] = TRUE;
-      if(cp9b->do_L[v]) cp9b->do_L[0] = TRUE;
-      if(cp9b->do_R[v]) cp9b->do_R[0] = TRUE;
+      if(cp9b->Jvalid[v]) cp9b->Jvalid[0] = TRUE;
+      if(cp9b->Lvalid[v]) cp9b->Lvalid[0] = TRUE;
+      if(cp9b->Rvalid[v]) cp9b->Rvalid[0] = TRUE;
       break;
     case ML_st:
     case IL_st:
-      if(cp9b->do_J[v]) cp9b->do_J[0] = TRUE;
-      if(cp9b->do_L[v]) cp9b->do_L[0] = TRUE;
+      if(cp9b->Jvalid[v]) cp9b->Jvalid[0] = TRUE;
+      if(cp9b->Lvalid[v]) cp9b->Lvalid[0] = TRUE;
       break;
     case MR_st:
     case IR_st:
-      if(cp9b->do_J[v]) cp9b->do_J[0] = TRUE;
-      if(cp9b->do_R[v]) cp9b->do_R[0] = TRUE;
+      if(cp9b->Jvalid[v]) cp9b->Jvalid[0] = TRUE;
+      if(cp9b->Rvalid[v]) cp9b->Rvalid[0] = TRUE;
     }
   }
 

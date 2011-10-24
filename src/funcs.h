@@ -130,22 +130,22 @@ extern float FScore2Prob(float sc, float null);
 extern char  Fscore2postcode(float sc);
 
 /* from cm_dpalign_trunc.c */
-extern int  cm_TrAlign              (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, CM_TR_MX    *post_mx, CM_TR_EMIT_MX    *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, float *ret_ins_sc, Parsetree_t **ret_tr, float *ret_sc);
-extern int  cm_TrAlignHB            (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, CM_TR_HB_MX *post_mx, CM_TR_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, float *ret_ins_sc, Parsetree_t **ret_tr, float *ret_sc);
-extern int  cm_TrCYKInsideAlign     (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, int *ret_Jb, int *ret_Lb, int *ret_Rb, int *ret_Tb, char *ret_mode, float *ret_sc);
-extern int  cm_TrCYKInsideAlignHB   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, int *ret_Jb, int *ret_Lb, int *ret_Rb, int *ret_Tb, char *ret_mode, float *ret_sc);
-extern int  cm_TrInsideAlign        (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_TR_MX    *mx, char *ret_mode, float *ret_sc);
-extern int  cm_TrInsideAlignHB      (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_TR_HB_MX *mx, char *ret_mode, float *ret_sc);
+extern int  cm_TrAlign              (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char opt_mode, int do_optacc, int do_sample, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, CM_TR_MX    *post_mx, CM_TR_EMIT_MX    *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, float *ret_ins_sc, Parsetree_t **ret_tr, float *ret_sc);
+extern int  cm_TrAlignHB            (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char opt_mode, int do_optacc, int do_sample, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, CM_TR_HB_MX *post_mx, CM_TR_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, float *ret_ins_sc, Parsetree_t **ret_tr, float *ret_sc);
+extern int  cm_TrCYKInsideAlign     (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char opt_mode, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, int *ret_Jb, int *ret_Lb, int *ret_Rb, int *ret_Tb, char *ret_mode, float *ret_sc);
+extern int  cm_TrCYKInsideAlignHB   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char opt_mode, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, int *ret_Jb, int *ret_Lb, int *ret_Rb, int *ret_Tb, char *ret_mode, float *ret_sc);
+extern int  cm_TrInsideAlign        (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char opt_mode, CM_TR_MX    *mx, char *ret_mode, float *ret_sc);
+extern int  cm_TrInsideAlignHB      (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char opt_mode, CM_TR_HB_MX *mx, char *ret_mode, float *ret_sc);
 extern int  cm_TrOptAccAlign        (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char opt_mode, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, CM_TR_EMIT_MX    *emit_mx, int *ret_b, float *ret_sc);
 extern int  cm_TrOptAccAlignHB      (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char opt_mode, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, CM_TR_HB_EMIT_MX *emit_mx, int *ret_b, float *ret_sc);
-extern int  cm_TrCYKOutsideAlign    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_check, char opt_mode, CM_TR_MX    *mx, CM_TR_MX    *inscyk_mx);
-extern int  cm_TrCYKOutsideAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_check, char opt_mode, CM_TR_HB_MX *mx, CM_TR_HB_MX *inscyk_mx);
-extern int  cm_TrOutsideAlign       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_check, char opt_mode, CM_TR_MX *mx,    CM_TR_MX    *ins_mx);
-extern int  cm_TrOutsideAlignHB     (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_check, char opt_mode, CM_TR_HB_MX *mx, CM_TR_HB_MX *ins_mx);
+extern int  cm_TrCYKOutsideAlign    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char opt_mode, int do_check, CM_TR_MX    *mx, CM_TR_MX    *inscyk_mx);
+extern int  cm_TrCYKOutsideAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char opt_mode, int do_check, CM_TR_HB_MX *mx, CM_TR_HB_MX *inscyk_mx);
+extern int  cm_TrOutsideAlign       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char opt_mode, int do_check, CM_TR_MX *mx,    CM_TR_MX    *ins_mx);
+extern int  cm_TrOutsideAlignHB     (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char opt_mode, int do_check, CM_TR_HB_MX *mx, CM_TR_HB_MX *ins_mx);
 extern int  cm_TrPosterior          (CM_t *cm, char *errbuf,               int L, float size_limit, char opt_mode, CM_TR_MX    *ins_mx, CM_TR_MX    *out_mx, CM_TR_MX    *post_mx);
 extern int  cm_TrPosteriorHB        (CM_t *cm, char *errbuf,               int L, float size_limit, char opt_mode, CM_TR_HB_MX *ins_mx, CM_TR_HB_MX *out_mx, CM_TR_HB_MX *post_mx);
-extern int  cm_TrEmitterPosterior   (CM_t *cm, char *errbuf,               int L, float size_limit, CM_TR_MX    *post, CM_TR_EMIT_MX    *emit_mx, char opt_mode, int do_check);
-extern int  cm_TrEmitterPosteriorHB (CM_t *cm, char *errbuf,               int L, float size_limit, CM_TR_HB_MX *post, CM_TR_HB_EMIT_MX *emit_mx, char opt_mode, int do_check);
+extern int  cm_TrEmitterPosterior   (CM_t *cm, char *errbuf,               int L, float size_limit, char opt_mode, int do_check, CM_TR_MX    *post, CM_TR_EMIT_MX    *emit_mx);
+extern int  cm_TrEmitterPosteriorHB (CM_t *cm, char *errbuf,               int L, float size_limit, char opt_mode, int do_check, CM_TR_HB_MX *post, CM_TR_HB_EMIT_MX *emit_mx);
 extern int  cm_TrPostCode           (CM_t *cm, char *errbuf,               int L, CM_TR_EMIT_MX    *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp);
 extern int  cm_TrPostCodeHB         (CM_t *cm, char *errbuf,               int L, CM_TR_HB_EMIT_MX *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp);
 extern void cm_TrModeFromAlphas     (CM_TR_MX *mx, int L, char *ret_mode, float *ret_sc);
@@ -275,7 +275,7 @@ extern int              cm_mx_SizeNeeded              (CM_t *cm, char *errbuf, i
 
 extern CM_TR_MX        *cm_tr_mx_Create               (CM_t *cm);
 extern int              cm_tr_mx_GrowTo               (CM_t *cm, CM_TR_MX *mx, char *errbuf, int L, float size_limit);
-extern int              cm_tr_mx_Dump                 (FILE *ofp, CM_TR_MX *mx);
+extern int              cm_tr_mx_Dump                 (FILE *ofp, CM_TR_MX *mx, char opt_mode);
 extern void             cm_tr_mx_Destroy              (CM_TR_MX *mx);
 extern int              cm_tr_mx_SizeNeeded           (CM_t *cm, char *errbuf, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb);
 
@@ -287,7 +287,7 @@ extern int              cm_hb_mx_SizeNeeded           (CM_t *cm, char *errbuf, C
 
 extern CM_TR_HB_MX     *cm_tr_hb_mx_Create            (CM_t *cm);
 extern int              cm_tr_hb_mx_GrowTo            (CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
-extern int              cm_tr_hb_mx_Dump              (FILE *ofp, CM_TR_HB_MX *mx);
+extern int              cm_tr_hb_mx_Dump              (FILE *ofp, CM_TR_HB_MX *mx, char opt_mode);
 extern void             cm_tr_hb_mx_Destroy           (CM_TR_HB_MX *mx);
 extern int              cm_tr_hb_mx_SizeNeeded        (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, 
 						       int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb);
@@ -300,7 +300,7 @@ extern int              cm_shadow_mx_SizeNeeded       (CM_t *cm, char *errbuf, i
 
 extern CM_TR_SHADOW_MX *cm_tr_shadow_mx_Create        (CM_t *cm);
 extern int              cm_tr_shadow_mx_GrowTo        (CM_t *cm, CM_TR_SHADOW_MX *mx, char *errbuf, int L, float size_limit);
-extern int              cm_tr_shadow_mx_Dump          (FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx);
+extern int              cm_tr_shadow_mx_Dump          (FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx, char opt_mode);
 extern void             cm_tr_shadow_mx_Destroy       (CM_TR_SHADOW_MX *mx);
 extern int              cm_tr_shadow_mx_SizeNeeded    (CM_t *cm, char *errbuf, int L, int64_t *ret_Jny_cells, int64_t *ret_Lny_cells, int64_t *ret_Rny_cells, 
 						       int64_t *ret_Jnk_cells, int64_t *ret_Lnk_cells, int64_t *ret_Rnk_cells, int64_t *ret_Tnk_cells, float *ret_Mb);
@@ -313,7 +313,7 @@ extern int              cm_hb_shadow_mx_SizeNeeded    (CM_t *cm, char *errbuf, C
 
 extern CM_TR_HB_SHADOW_MX *cm_tr_hb_shadow_mx_Create  (CM_t *cm);
 extern int              cm_tr_hb_shadow_mx_GrowTo     (CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
-extern int              cm_tr_hb_shadow_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx);
+extern int              cm_tr_hb_shadow_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char opt_mode);
 extern void             cm_tr_hb_shadow_mx_Destroy    (CM_TR_HB_SHADOW_MX *mx);
 extern int              cm_tr_hb_shadow_mx_SizeNeeded (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *ret_Jny_cells, int64_t *ret_Lny_cells, int64_t *ret_Rny_cells, 
 						       int64_t *ret_Jnk_cells, int64_t *ret_Lnk_cells, int64_t *ret_Rnk_cells, int64_t *ret_Tnk_cells, float *ret_Mb);
@@ -326,7 +326,7 @@ extern int              cm_emit_mx_SizeNeeded (CM_t *cm, char *errbuf, int L, in
 
 extern CM_TR_EMIT_MX   *cm_tr_emit_mx_Create     (CM_t *cm);
 extern int              cm_tr_emit_mx_GrowTo     (CM_t *cm, CM_TR_EMIT_MX *mx, char *errbuf, int L, float size_limit);
-extern int              cm_tr_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx);
+extern int              cm_tr_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char opt_mode);
 extern void             cm_tr_emit_mx_Destroy    (CM_TR_EMIT_MX *mx);
 extern int              cm_tr_emit_mx_SizeNeeded (CM_t *cm, char *errbuf, int L, int64_t *ret_l_ncells, int64_t *ret_r_ncells, float *ret_Mb);
 
@@ -338,7 +338,7 @@ extern int              cm_hb_emit_mx_SizeNeeded (CM_t *cm, char *errbuf, CP9Ban
 
 extern CM_TR_HB_EMIT_MX *cm_tr_hb_emit_mx_Create     (CM_t *cm);
 extern int               cm_tr_hb_emit_mx_GrowTo     (CM_t *cm, CM_TR_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
-extern int               cm_tr_hb_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx);
+extern int               cm_tr_hb_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char opt_mode);
 extern void              cm_tr_hb_emit_mx_Destroy    (CM_TR_HB_EMIT_MX *mx);
 extern int               cm_tr_hb_emit_mx_SizeNeeded (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_l_ncells, int64_t *ret_r_ncells, float *ret_Mb);
 
