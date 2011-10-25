@@ -1977,8 +1977,8 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
  *           shmx      - the shadow matrix to fill in
  *           emit_mx    - pre-filled emit matrix
  *           ret_b     - RETURN: local begin state if local begins are on
- *           ret_sc    - RETURN: average probability mass that goes through 
- *                       a cell of the optimally accurate parse
+ *           ret_sc    - RETURN: average posterior probability of aligned residues
+ *                       in optimally accurate parsetree.
  *
  * Returns: <eslOK>     on success.
  * Throws:  <eslERANGE> if required CM_HB_MX size exceeds <size_limit>
@@ -2288,8 +2288,8 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
  *           shmx      - the shadow matrix to fill in
  *           emit_mx   - pre-filled emit matrix
  *           ret_b     - RETURN: local begin state if local begins are on
- *           ret_sc    - RETURN: average probability mass that goes through 
- *                       a cell of the optimally accurate parse
+ *           ret_sc    - RETURN: average posterior probability of aligned residues
+ *                       in optimally accurate parsetree.
  *
  * Returns: <eslOK> on success.
  * 

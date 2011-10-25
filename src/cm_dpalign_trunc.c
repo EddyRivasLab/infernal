@@ -1,5 +1,5 @@
 /* cm_dpalign_trunc.c
- * 
+ *                                                         
  * DP functions for truncated HMM banded and non-banded, non-D&C CM
  * alignment of a full target sequence. 
  *
@@ -171,8 +171,9 @@ static int cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float si
  *           shmx       - the shadow matrix to fill in
  *           emit_mx    - the pre-filled emit matrix, must be non-NULL if do_optacc
  *           ret_tr     - RETURN: the optimal parsetree
- *           ret_sc     - RETURN: optimal score (CYK if !do_optacc, else avg PP of all 1..L residues) 
- * 
+ *           ret_sc     - RETURN: average posterior probability of aligned residues
+ *                        in optimally accurate parsetree.
+ *
  * Returns:  <eslOK>     on success.
  * Throws:   <eslERANGE> if required DP matrix size exceeds <size_limit>, in 
  *                       this case, alignment has been aborted, ret_* variables are not valid
@@ -447,7 +448,8 @@ l       * traceback altogether. This is the only way to break the
  *           shmx       - the shadow matrix to fill in
  *           emit_mx    - the pre-filled emit matrix, must be non-NULL if do_optacc
  *           ret_tr     - RETURN: the optimal parsetree
- *           ret_sc     - RETURN: optimal score (CYK if !do_optacc, else avg PP of all 1..L residues) 
+ *           ret_sc     - RETURN: average posterior probability of aligned residues
+ *                        in optimally accurate parsetree.
  *
  * Returns:  <eslOK>     on success.
  * Throws:   <eslERANGE> if required DP matrix size exceeds <size_limit>, in 
@@ -1698,14 +1700,12 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	    dp_v = sd - hdmin[v][jp_v];
 	  }
 	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
-	    if(d >= sd) { 
-	      Jalpha[v][jp_v][dp_v] = Jalpha[cm->M][j][d-sd] + cm->endsc[v];
-	      /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL 
-	       * If we optimize by skipping the filling of the 
-	       * EL deck the above line would become: 
-	       * 'Jalpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];' 
-	       */
-	    }
+	    Jalpha[v][jp_v][dp_v] = Jalpha[cm->M][j][d-sd] + cm->endsc[v];
+	    /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL 
+	     * If we optimize by skipping the filling of the 
+	     * EL deck the above line would become: 
+	     * 'Jalpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];' 
+	     */
 	  }
 	}
       }
@@ -6639,10 +6639,12 @@ cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	  for (d = 0; d <= j; d++) {
 	    for (k = 0; k <= (L-j); k++) {
 	      Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Jbeta[y][j+k][d+k] + Jalpha[z][j+k][k]); /* A */
-	      Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][j+k][d+k] + Lalpha[z][j+k][k]); /* B */
+	      if(fill_L) { 
+		Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][j+k][d+k] + Lalpha[z][j+k][k]); /* B */
+	      }
 	      if(fill_R) { 
 		Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Rbeta[y][j+k][d+k] + Jalpha[z][j+k][k]); /* C */
-		if(d == j && (j+k) == L) { 
+		if(fill_L && fill_T && d == j && (j+k) == L) { 
 		  Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Tbeta[y][j+k][d+k] + Lalpha[z][j+k][k]); /* D */
 		  /* Note: Tbeta[y][j+k==L][d+k==L] will be 0.0 or
 		   * IMPOSSIBLE because it was initialized that
@@ -6655,8 +6657,10 @@ cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 		}
 	      }
 	    }
-	    Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][j][d]); /* entire sequence on left, no sequence on right, k == 0 */
-	    if(fill_L) Lbeta[v][j][d] = FLogsum(Lbeta[v][j][d], Lbeta[y][j][d]); /* entire sequence on left, no sequence on right, k == 0 */
+	    if(fill_L) { 
+	      Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][j][d]); /* entire sequence on left, no sequence on right, k == 0 */
+	      Lbeta[v][j][d] = FLogsum(Lbeta[v][j][d], Lbeta[y][j][d]); /* entire sequence on left, no sequence on right, k == 0 */
+	    }
 	  }
 	}
       } /* end of 'if (cm->stid[v] == BEGL_S */

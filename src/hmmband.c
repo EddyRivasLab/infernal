@@ -1932,16 +1932,16 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  jmax[v] = ESL_MAX(jmax[v], j0);
 	  imin[w] = imin[v];
 	  imax[w] = imax[v];
-	  jmax[w] = ESL_MAX(jmax[w], imax[w]);
+	  jmax[w] = ESL_MAX(jmax[w], ESL_MIN(j0, imax[w]));
 	  jmin[y] = jmin[v];
 	  jmax[y] = jmax[v];
-	  imin[y] = ESL_MIN(imin[y], jmin[y]);
+	  imin[y] = ESL_MIN(imin[y], ESL_MAX(i0, jmin[y]));
 	  /* now ensure that imin[y] <= jmax[w]+1, so we can definitely emit the full seq */
-	  imin[y] = ESL_MIN(imin[y], jmax[w]+1);
+	  imin[y] = ESL_MIN(imin[y], ESL_MAX(i0, jmax[w]+1));
 	  imax[y] = ESL_MAX(imin[y], imax[y]);
 	}
 	else { /* doing search, we only need to be able to emit some range of residues from BEGL and BEGR's EL states */
-	  imin[y] = ESL_MIN(imin[y], jmax[w]+1);
+	  imin[y] = ESL_MIN(imin[y], ESL_MAX(i0, jmax[w]+1));
 	  imax[y] = ESL_MAX(imin[y], imax[y]);
 	}
       } /* end of if(imin[v] != -1) */
