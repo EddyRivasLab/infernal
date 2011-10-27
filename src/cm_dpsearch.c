@@ -1,4 +1,4 @@
-/* cm_dpsearch.c
+/* Cm_dpsearch.c
  *
  * DP functions for CYK and Inside CM similarity search, includes
  * fast (optimized) and reference versions. 
@@ -4200,6 +4200,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   int      jp;                 /* j index in act */
   int      do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
   int64_t  envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
+  ESL_STOPWATCH *w = esl_stopwatch_Create();
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), dsq is NULL.\n");
@@ -4240,7 +4241,6 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
   /* initialize all cells of the matrix to IMPOSSIBLE */
-  ESL_STOPWATCH *w = esl_stopwatch_Create();
   esl_stopwatch_Start(w);
   esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE);
   esl_stopwatch_Stop(w);

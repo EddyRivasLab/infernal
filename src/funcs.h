@@ -770,7 +770,7 @@ float trinside (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int 
 
 
 /* from cm_pipeline.c */
-extern CM_PIPELINE *cm_pipeline_Create (ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint, int64_t Z, int Z_setby, enum cm_pipemodes_e mode);
+extern CM_PIPELINE *cm_pipeline_Create (ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint, int64_t Z, enum cm_zsetby_e Z_setby, enum cm_pipemodes_e mode);
 extern int          cm_pipeline_Reuse  (CM_PIPELINE *pli);
 extern void         cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm);
 extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);

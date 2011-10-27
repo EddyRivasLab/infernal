@@ -3952,6 +3952,11 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
   __m128i      tmp_d, vb_d;
   __m128i      tmp_v, vb_v;
 #endif
+  float len;
+  float p;
+  float r;
+  float constpart;
+  int16_t logp;
 
   /* Allocations and initializations
    */
@@ -3987,12 +3992,12 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
 //FIXME: it's somewhat unclear here what to use as the 'sequence length' - whether
 //FIXME: that should be the entire sequence L, or just the (i0,j0) window that's
 //FIXME: actually being considered for alignment.  Using 'len' here for ease of changing it.
-  float len = (float) j0-i0+1;
-  float p = len/(len + 2.);
-  float r = len/(len + 1.);
-  float constpart = 2*sreLOG2(1.-p) + len*sreLOG2(p) - len*sreLOG2(r) - sreLOG2(1.-r);
+  len = (float) j0-i0+1;
+  p = len/(len + 2.);
+  r = len/(len + 1.);
+  constpart = 2*sreLOG2(1.-p) + len*sreLOG2(p) - len*sreLOG2(r) - sreLOG2(1.-r);
   tmp = wordify(ocm->scale_w, constpart);
-  int16_t logp = wordify(ocm->scale_w, sreLOG2(p));
+  logp = wordify(ocm->scale_w, sreLOG2(p));
   for (dp = 0; dp <= sW; dp++) {
     tmpv = _mm_mullo_epi16(_mm_set1_epi16(logp), _mm_adds_epi16(doffset, _mm_set1_epi16(dp*vecwidth)));
     mask = _mm_cmpgt_epi16(zerov,tmpv);

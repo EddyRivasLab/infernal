@@ -101,6 +101,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
   int64_t   envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
   int       Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
   int       Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
+  float     trunc_penalty;      /* bit score penalty for truncated hits, often 0. */
+  float     best_tr_sc;         /* best truncated score */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, CMH_BITS flag is not raised.\n");
@@ -507,7 +509,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	jp_y = cur;
 	/*if(NOT_IMPOSSIBLE(cm->beginsc[y])) {*/
 	/*trunc_penalty = cm->beginsc[y];*/
-	float trunc_penalty = 0.;
+	trunc_penalty = 0.;
 	if(cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st) { 
 	  for (d = dnA[y]; d <= dxA[y]; d++) {
 	    if(Jalpha[jp_v][0][d] < (Jalpha[jp_y][y][d] + trunc_penalty)) {
@@ -571,7 +573,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
   if(vsc != NULL) vsc[0] = vsc_root;
 
   /* find the best score in any matrix at any state */
-  float best_tr_sc = IMPOSSIBLE;
+  best_tr_sc = IMPOSSIBLE;
   for(v = 0; v < cm->M; v++) { 
     best_tr_sc = ESL_MAX(best_tr_sc, vsc[v]);
   }
@@ -678,6 +680,8 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   int64_t   envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
   int       Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
   int       Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
+  int       trunc_penalty;      /* bit score penalty for truncated hits, often 0 */
+  float     best_tr_sc;         /* best truncated score */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, CMH_BITS flag is not raised.\n");
@@ -1078,7 +1082,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	jp_y = cur;
 	/*if(cm->ibeginsc[y] != -INFTY) {*/
 	/*trunc_penalty = cm->ibeginsc[y];*/
-	int trunc_penalty = 0;
+	trunc_penalty = 0;
 	if(cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st) { 
 	  for (d = dnA[y]; d <= dxA[y]; d++) {
 	    if(Jalpha[jp_v][0][d] < (Jalpha[jp_y][y][d] + trunc_penalty)) {
@@ -1147,7 +1151,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   if(vsc != NULL) vsc[0] = vsc_root;
 
   /* find the best score in any matrix at any state */
-  float best_tr_sc = IMPOSSIBLE;
+  best_tr_sc = IMPOSSIBLE;
   for(v = 0; v < cm->M; v++) { 
     best_tr_sc = ESL_MAX(best_tr_sc, vsc[v]);
   }
@@ -1269,8 +1273,11 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   int      jp;                 /* j index in act */
   int      do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
   int64_t  envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
+  ESL_STOPWATCH *w = esl_stopwatch_Create();
+
   /* variables specific to truncated scanning */
   float    trunc_penalty = 0.; /* penalty in bits for a truncated hit */
+  float    best_tr_sc;         /* best truncated score */
   int      do_J_v, do_J_y, do_J_z; /* is J matrix valid for state v, y, z? */
   int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
   int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
@@ -1318,7 +1325,6 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
-  ESL_STOPWATCH *w = esl_stopwatch_Create();
   esl_stopwatch_Start(w);
   /* initialize all cells of the matrix to IMPOSSIBLE */
   if(mx->Jncells_valid > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
@@ -2150,7 +2156,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   }
 
   /* find the best score in any matrix at any state */
-  float best_tr_sc = IMPOSSIBLE;
+  best_tr_sc = IMPOSSIBLE;
   best_tr_sc = vsc_root;
   printf("Best truncated score: %.4f (%.4f) (ANY LENGTH CYK)\n",
 	 best_tr_sc - trunc_penalty, 
@@ -2271,6 +2277,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
   int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
   int      do_T_v, do_T_y, do_T_z; /* is T matrix valid for state v, y, z? */
+  float    best_tr_sc;         /* best truncated score */
+  ESL_STOPWATCH *w = esl_stopwatch_Create();
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), dsq is NULL.\n");
@@ -2314,7 +2322,6 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
-  ESL_STOPWATCH *w = esl_stopwatch_Create();
   esl_stopwatch_Start(w);
   /* initialize all cells of the matrix to IMPOSSIBLE */
   if(mx->Jncells_valid > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
@@ -3149,7 +3156,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 
 
   /* find the best score in any matrix at any state */
-  float best_tr_sc = IMPOSSIBLE;
+  best_tr_sc = IMPOSSIBLE;
   best_tr_sc = vsc_root;
   printf("Best truncated score: %.4f (%.4f) (ANY LENGTH INSIDE)\n",
 	 best_tr_sc - trunc_penalty, 

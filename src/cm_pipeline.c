@@ -140,7 +140,7 @@ static int merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1,
  * Throws:    <NULL> on allocation failure.
  */
 CM_PIPELINE *
-cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint, int64_t Z, int Z_setby, enum cm_pipemodes_e mode)
+cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint, int64_t Z, enum cm_zsetby_e Z_setby, enum cm_pipemodes_e mode)
 {
   CM_PIPELINE *pli  = NULL;
   int          seed = esl_opt_GetInteger(go, "--seed");

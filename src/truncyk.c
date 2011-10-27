@@ -3958,19 +3958,16 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
          {
             yoffset = ((char **)   shadow[v])[j][d];
             nxtmode = 3;
-	    printf("HEYA J v: %4d j: %4d d: %4d mode: %4d yoffset: %4d nxtmode: %4d\n", v, j, d, yoffset, nxtmode);
          }
          else if ( mode == TRMODE_L )
          {
             yoffset = ((char **) L_shadow[v])[j][d];
             nxtmode = ((int  **)Lmode_shadow[v])[j][d];
-	    printf("HEYA L v: %4d j: %4d d: %4d mode: %4d yoffset: %4d nxtmode: %4d\n", v, j, d, yoffset, nxtmode);
          }
          else if ( mode == TRMODE_R )
          {
             yoffset = ((char **) R_shadow[v])[j][d];
             nxtmode = ((int  **)Rmode_shadow[v])[j][d];
-	    printf("HEYA R v: %4d j: %4d d: %4d mode: %4d yoffset: %4d nxtmode: %4d\n", v, j, d, yoffset, nxtmode);
          }
          else { cm_Die("Unknown mode in traceback!"); }
 
