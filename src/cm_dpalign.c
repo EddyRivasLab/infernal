@@ -1978,7 +1978,7 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
  *           emit_mx    - pre-filled emit matrix
  *           ret_b     - RETURN: local begin state if local begins are on
  *           ret_sc    - RETURN: average posterior probability of aligned residues
- *                       in optimally accurate parsetree.
+ *                       in the optimally accurate parsetree
  *
  * Returns: <eslOK>     on success.
  * Throws:  <eslERANGE> if required CM_HB_MX size exceeds <size_limit>
@@ -2038,10 +2038,8 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
     sd   = StateDelta(cm->sttype[v]);
     sdr  = StateRightDelta(cm->sttype[v]);
 
-    /* re-initialize if we can do a local end from v and check for a
-     * special optimal-accuracy-specific initialization case
-     */
-    if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) {
+    /* re-initialize if we can do a local end from v */
+    if(NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (j = 0; j <= L; j++) {
 	/* copy values from saved EL deck */
 	for (d = sd; d <= j; d++) { 
@@ -2050,7 +2048,9 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 	}
       }
     }
-    else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { /* && cm->endsc[v] == IMPOSSIBLE */
+
+    /* a special optimal-accuracy-specific initialization case */
+    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
       for (j = 0; j <= L; j++) {
 	/* Check for special initialization case, specific to
 	 * optimal_accuracy alignment, normally (with TrCYK for
@@ -2289,7 +2289,7 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
  *           emit_mx   - pre-filled emit matrix
  *           ret_b     - RETURN: local begin state if local begins are on
  *           ret_sc    - RETURN: average posterior probability of aligned residues
- *                       in optimally accurate parsetree.
+ *                       in the optimally accurate parsetree
  *
  * Returns: <eslOK> on success.
  * 
@@ -2392,9 +2392,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
     sd   = StateDelta(cm->sttype[v]);
     sdr  = StateRightDelta(cm->sttype[v]);
 
-    /* re-initialize if we can do a local end from v and check for a
-     * special optimal-accuracy-specific initialization case
-     */
+    /* re-initialize if we can do a local end from v */
     if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
@@ -2406,7 +2404,9 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	}
       }
     }
-    else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { /* && cm->endsc[v] == IMPOSSIBLE */
+
+    /* a special optimal-accuracy-specific initialization case */
+    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
 	/* Check for special initialization case, specific to

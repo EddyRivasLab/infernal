@@ -4193,8 +4193,10 @@ cm_emit_mx_GrowTo(CM_t *cm, CM_EMIT_MX *mx, char *errbuf, int L, float size_limi
   }
   mx->r_pp[mx->M] = NULL;
     
+#if eslDEBUGLEVEL >= 1  
   printf("l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
   printf("r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
+#endif
   assert(l_cur_size == mx->l_ncells_valid);
   assert(r_cur_size == mx->r_ncells_valid);
   ESL_DASSERT1((l_cur_size == mx->l_ncells_valid));
@@ -4595,8 +4597,10 @@ cm_tr_emit_mx_GrowTo(CM_t *cm, CM_TR_EMIT_MX *mx, char *errbuf, int L, float siz
   mx->Jr_pp[mx->M] = NULL;
   mx->Rr_pp[mx->M] = NULL;
     
+#if eslDEBUGLEVEL >= 1
   printf("l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
   printf("r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
+#endif
   assert(l_cur_size == mx->l_ncells_valid);
   assert(r_cur_size == mx->r_ncells_valid);
   ESL_DASSERT1((l_cur_size == mx->l_ncells_valid));
@@ -4969,8 +4973,10 @@ cm_hb_emit_mx_GrowTo(CM_t *cm, CM_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t *cp9b
   }
   mx->r_pp[mx->M] = NULL;
     
+#if eslDEBUGLEVEL >= 1
   printf("l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
   printf("r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
+#endif
   assert(l_cur_size == mx->l_ncells_valid);
   assert(r_cur_size == mx->r_ncells_valid);
   ESL_DASSERT1((l_cur_size == mx->l_ncells_valid));
@@ -5368,8 +5374,10 @@ cm_tr_hb_emit_mx_GrowTo(CM_t *cm, CM_TR_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t
   mx->Jr_pp[mx->M] = NULL;
   mx->Rr_pp[mx->M] = NULL;
     
+#if eslDEBUGLEVEL >= 1
   printf("l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
   printf("r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
+#endif
   assert(l_cur_size == mx->l_ncells_valid);
   assert(r_cur_size == mx->r_ncells_valid);
   ESL_DASSERT1((l_cur_size == mx->l_ncells_valid));

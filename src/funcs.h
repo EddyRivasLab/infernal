@@ -41,6 +41,7 @@ extern int   StateDelta(int sttype);
 extern int   StateLeftDelta(int sttype);
 extern int   StateRightDelta(int sttype);
 extern int   Emitmode(int sttype);
+extern int   NumReachableInserts(int stid);
 extern void  PrintCM(FILE *fp, CM_t *cm);
 extern void  SummarizeCM(FILE *fp, CM_t *cm);
 extern char *Statetype(int type);

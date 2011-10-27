@@ -5280,15 +5280,17 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
     cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax); /* j can't be more than j0 */
   }
   
-  printf("HEYA Returning from cp9_PredictStartAndEndPositions():\n\t");
-  printf("sp1: %4d\n\t", cp9b->sp1);
-  printf("sp2: %4d\n\t", cp9b->sp2);
-  printf("ep2: %4d\n\t", cp9b->ep2);
-  printf("ep1: %4d\n\t", cp9b->ep1);
-  printf("Ljn: %4d\n\t", cp9b->Lmarg_jmin);
-  printf("Ljx: %4d\n\t", cp9b->Lmarg_jmax);
-  printf("Rin: %4d\n\t", cp9b->Rmarg_imin);
-  printf("Rix: %4d\n\n", cp9b->Rmarg_imax);
+  /*
+    printf("HEYA Returning from cp9_PredictStartAndEndPositions():\n\t");
+    printf("sp1: %4d\n\t", cp9b->sp1);
+    printf("sp2: %4d\n\t", cp9b->sp2);
+    printf("ep2: %4d\n\t", cp9b->ep2);
+    printf("ep1: %4d\n\t", cp9b->ep1);
+    printf("Ljn: %4d\n\t", cp9b->Lmarg_jmin);
+    printf("Ljx: %4d\n\t", cp9b->Lmarg_jmax);
+    printf("Rin: %4d\n\t", cp9b->Rmarg_imin);
+    printf("Rix: %4d\n\n", cp9b->Rmarg_imax);
+  */
 
   return;
 }

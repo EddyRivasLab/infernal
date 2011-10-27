@@ -1215,6 +1215,47 @@ Emitmode(int sttype)
   /*NOTREACHED*/
   return 0;
 }
+/* Function:  NumReachableInserts()
+ * Incept:    EPN, Mon Oct 24 22:41:00 2011
+ *
+ * Purpose:   Returns number of insert states reachable 
+ *            from the current state, depends only on
+ *            stid (node type and state type).
+ *
+ * Args:      stid - state id code, e.g. MATP_MP
+ *
+ * Returns:   (see above)
+ */
+int
+NumReachableInserts(int stid)
+{
+  switch (stid) {
+  case MATL_ML: return 1;
+  case MATL_D:  return 1;
+  case MATL_IL: return 1;
+  case MATP_MP: return 2;
+  case MATP_ML: return 2;
+  case MATP_MR: return 2;
+  case MATP_D:  return 2;
+  case MATP_IL: return 2;
+  case MATP_IR: return 1;
+  case MATR_MR: return 1;
+  case MATR_D:  return 1;
+  case MATR_IR: return 1;
+  case BIF_B:   return 0;
+  case BEGL_S:  return 0;
+  case BEGR_S:  return 1;
+  case BEGR_IL: return 1;
+  case END_E:   return 0;
+  case ROOT_S:  return 2;
+  case ROOT_IL: return 2;
+  case ROOT_IR: return 1;
+  case END_EL:  return 0;
+  default: cm_Fail("bogus state id %d\n", stid);
+  }
+  /*NOTREACHED*/
+  return 0;
+}
 
 
 /* Function: PrintCM()
