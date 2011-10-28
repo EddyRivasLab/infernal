@@ -448,8 +448,15 @@ FreeCM(CM_t *cm)
     free(cm->expA);
   }
 
-  if(cm->mlp7       != NULL) { p7_hmm_Destroy(cm->mlp7); cm->mlp7 = NULL; }
-  if(cm->fp7        != NULL) { p7_hmm_Destroy(cm->fp7);  cm->fp7  = NULL; }
+  if(cm->mlp7 != NULL) { 
+    p7_hmm_Destroy(cm->mlp7); 
+    if(cm->fp7 == cm->mlp7) cm->fp7 = NULL;
+    cm->mlp7 = NULL; 
+  }
+  if(cm->fp7  != NULL) { 
+    p7_hmm_Destroy(cm->fp7);  
+    cm->fp7  = NULL; 
+  }
   if(cm->emap != NULL) FreeEmitMap(cm->emap);
 
   free(cm);

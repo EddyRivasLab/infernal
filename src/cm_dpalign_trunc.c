@@ -8253,7 +8253,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char op
   /* Handle EL deck, remember it is non-banded */
   if(emit_mx->Jl_pp[cm->M] != NULL) { 
     for(i = 1; i <= L; i++) { 
-      emit_mx->sum[i] = FLogsum(emit_mx->sum[i], emit_mx->Jl_pp[v][i]);
+      emit_mx->Jl_pp[cm->M][i] -= emit_mx->sum[i];
     }
   }
 

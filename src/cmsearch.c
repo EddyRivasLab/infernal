@@ -168,8 +168,8 @@ static ESL_OPTIONS options[] = {
   /* options affecting the alignment of hits */
   { "--aln-cyk",      eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "align hits with CYK", 8 },
   { "--aln-nonbanded",eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not use HMM bands when aligning hits", 8 },
-  { "--aln-sizelimit",eslARG_REAL,"128.", NULL, "x>0",   NULL,  NULL,  NULL,            "set maximum allowed size of DP matrices for hit alignment to <x> Mb", 8 },
-  { "--aln-newbands", eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "recalculate HMM bands for alignment of hits, don't use scan bands", 8},
+  { "--aln-sizelimit",eslARG_REAL,"128.", NULL, "x>0",   NULL,  NULL,  NULL,            "set max allowed size of DP matrices to <x> Mb", 8 },
+  { "--aln-newbands", eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "recalculate HMM bands for alignment, don't use scan bands", 8},
   /* Options taken from infernal 1.0.2 cmsearch */
   /* options for algorithm for final round of search */
   { "-g",             eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "configure CM for glocal alignment [default: local]", 1 },
@@ -939,7 +939,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
   /* Broadcast the database size to all workers */
   MPI_Bcast(&(cfg->Z), 1, MPI_LONG_LONG_INT, 0, MPI_COMM_WORLD);
-  printf("MPIM cfg->Z: %" PRId64 " residues\n", cfg->Z);
+  /*printf("MPIM cfg->Z: %" PRId64 " residues\n", cfg->Z);*/
 
   /* Open the query CM file */
   if((status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) mpi_failure(errbuf);
@@ -956,7 +956,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* <abc> is not known 'til first CM is read. */
   hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
-  printf("read cm master\n");
+  /*printf("read cm master\n");*/
   if (hstatus == eslOK)
     {
       /* One-time initializations after alphabet <abc> becomes known */
@@ -1106,7 +1106,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if ((status = cm_pipeline_MPIRecv(dest, INFERNAL_PIPELINE_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, go, &mpi_pli)) != eslOK)
 	    mpi_failure("Unexpected error %d receiving pipeline from %d", status, dest);
 
-	  printf("RECEIVED TOPHITS (%ld hits) FROM %d\n", mpi_th->N, dest);
+	  /*printf("RECEIVED TOPHITS (%ld hits) FROM %d\n", mpi_th->N, dest);*/
 	  cm_tophits_Merge(info->th, mpi_th);
 	  cm_pipeline_Merge(info->pli, mpi_pli);
 
@@ -1116,9 +1116,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       /* Set number of seqs, and subtract number of overlapping residues searched from total */
       info->pli->nseqs = tot_nseq;
       if(info->pli->do_top && info->pli->do_bot) tot_noverlap *= 2; /* count overlaps twice on each strand, if nec */
-      printf("nres: %ld\nnoverlap: %ld\n", info->pli->nres, noverlap);
+      /*printf("nres: %ld\nnoverlap: %ld\n", info->pli->nres, noverlap);*/
       info->pli->nres -= tot_noverlap;
-      printf("nres: %ld\n", info->pli->nres);
+      /*printf("nres: %ld\n", info->pli->nres);*/
 
       /* Sort by sequence index/position and remove duplicates */
       cm_tophits_SortByPosition(info->th);
@@ -1279,7 +1279,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if((status = open_dbfile_ssi(go, cfg, dbfp, errbuf))  != eslOK) mpi_failure(errbuf); 
   /* Receive the database size broadcasted from the master */
   MPI_Bcast(&(cfg->Z), 1, MPI_LONG_LONG_INT, 0, MPI_COMM_WORLD);
-  printf("MPIW cfg->Z: %" PRId64 " residues\n", cfg->Z);
+  /*printf("MPIW cfg->Z: %" PRId64 " residues\n", cfg->Z);*/
 
   /* Open the query CM file */
   if((status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) mpi_failure(errbuf);
@@ -1289,7 +1289,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* <abc> is not known 'til first CM is read. */
   hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
-  printf("read cm worker\n");
+  /*printf("read cm worker\n");*/
   if (hstatus == eslOK)
     {
       /* One-time initializations after alphabet <abc> becomes known */
@@ -1332,7 +1332,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	pkey_idx = block->first_idx;
 	while(pkey_idx <= block->final_idx) 
 	  { 
-	    printf("readL: %ld\n", readL);
+	    /*printf("readL: %ld\n", readL);*/
 	    /* determine the primary key and length of the sequence */
 	    if((status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, &pkey)) != eslOK) { 
 	      if(status == eslENOTFOUND) mpi_failure("(worker) unable to find sequence %d in SSI index file", pkey_idx);
@@ -1362,7 +1362,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    assert(dbsq->n > info->pli->maxW || i_am_start);
 	    ESL_DASSERT1((dbsq->n > info->pli->maxW || i_am_start));
 
-	    printf("MPI %-20s %10ld..%10ld L: %10ld i_am_start: %d i_am_end: %d\n", dbsq->name, dbsq->start, dbsq->end, dbsq->L, i_am_start, i_am_end);
+	    /*printf("MPI %-20s %10ld..%10ld L: %10ld i_am_start: %d i_am_end: %d\n", dbsq->name, dbsq->start, dbsq->end, dbsq->L, i_am_start, i_am_end);*/
 
 	    if(info->pli->research_ends) { 
 	      if(i_am_start)                              copy_subseq(dbsq, start_termsq, 1, ESL_MIN(info->pli->maxW, dbsq->n));
@@ -1532,7 +1532,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
 
   wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
   seq_idx++;
-  printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);
+  /*printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);*/
   while (wstatus == eslOK ) {
     
     cm_pli_NewSeq(info->pli, dbsq, seq_idx-1);
@@ -1610,7 +1610,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
     }
 
     wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
-    printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);
+    /*printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);*/
     if (wstatus == eslEOD) { /* no more left of this sequence ... move along to the next sequence. */
       info->pli->nseqs++;
       /* if nec, re-search the final maxW residues of this sequence, which we saved above to termsq */
@@ -1636,7 +1636,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp)
       }
       esl_sq_Reuse(dbsq);
       wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
-      printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);
+      /*printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);*/
       seq_idx++; /* because we started reading a new sequence, or reached EOF */
     }
   }

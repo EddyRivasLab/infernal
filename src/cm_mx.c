@@ -944,7 +944,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   }
 
   if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &ncells, &Mb_needed)) != eslOK) return status;
-  printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed);
+  /* printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed); */
   ESL_DPRINTF2(("HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -1348,7 +1348,7 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   }
 
   if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &Jncells, &Lncells, &Rncells, &Tncells, &Mb_needed)) != eslOK) return status;
-  printf("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed);
+  /*printf("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed);*/
   ESL_DPRINTF2(("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -2880,7 +2880,7 @@ cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *
   }
 
   if((status = cm_hb_shadow_mx_SizeNeeded(cm, errbuf, cp9b, &y_ncells, &k_ncells, &Mb_needed)) != eslOK) return status;
-  printf("HMM banded shadow matrix requested size: %.2f Mb\n", Mb_needed);
+  /*printf("HMM banded shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
   ESL_DPRINTF2(("HMM banded shadow matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded shadow DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -3398,7 +3398,7 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
   }
 
   if((status = cm_tr_hb_shadow_mx_SizeNeeded(cm, errbuf, cp9b, &Jy_ncells, &Ly_ncells, &Ry_ncells, &Jk_ncells, &Lk_ncells, &Rk_ncells, &Tk_ncells, &Mb_needed)) != eslOK) return status;
-  printf("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed);
+  /*printf("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
   ESL_DPRINTF2(("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr shadow DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -5034,7 +5034,7 @@ cm_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_EMIT_MX *mx)
   fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
   
   /* l_pp and r_pp matrix data */
-  for (v = 0; v <= mx->M; v++) {
+  for (v = 0; v < mx->M; v++) {
     if(mx->l_pp[v]) { 
       for(i = mx->cp9b->imin[v]; i <= mx->cp9b->imax[v]; i++) { 
 	ip_v = i - mx->cp9b->imin[v];
@@ -5048,6 +5048,10 @@ cm_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_EMIT_MX *mx)
       }
     }
     fprintf(ofp, "\n");
+  }
+  /* EL state */
+  for(i = 0; i <= mx->L; i++) { 
+    if(mx->l_pp[cm->M]) fprintf(ofp, "l_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->l_pp[cm->M][i]), mx->l_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
   }
   return eslOK;
 }

@@ -14,7 +14,6 @@
  *    7. Copyright and license information.
  * 
  * EPN, Tue May 24 13:03:31 2011
- * SVN $Id: p7_tophits.c 3546 2011-05-23 14:36:44Z eddys $
  */
 #include "esl_config.h"
 #include "p7_config.h"
@@ -1686,7 +1685,6 @@ main(int argc, char **argv)
   char            name[]   = "not_unique_name";
   char            acc[]    = "not_unique_acc";
   char            desc[]   = "Test description for the purposes of making the test driver allocate space";
-  float           score; 
   CM_HIT         *hit = NULL;
   int             i;
 
@@ -1782,7 +1780,7 @@ main(int argc, char **argv)
   if (strcmp(h1->hit[0]->name,   "third")        != 0)   esl_fatal("sort 1 failed (top is %s = %f)",  h1->hit[0]->name,   h1->hit[0]->score);
   if (strcmp(h1->hit[N+1]->name, "thirdtolast")  != 0)   esl_fatal("sort 1 failed (last is %s = %f)", h1->hit[N+1]->name, h1->hit[N+1]->score);
 
-  cm_tophits_MergeUnsorted(h1, h2);
+  cm_tophits_Merge(h1, h2);
   cm_tophits_SortByPosition(h1);
   cm_tophits_RemoveDuplicates(h1);
   cm_tophits_SortByScore(h1);
@@ -1795,7 +1793,7 @@ main(int argc, char **argv)
   if (   h1->hit[2*N+2]->flags & CM_HIT_IS_DUPLICATE)  esl_fatal("RemoveDuplicates failed");
   if (! (h1->hit[2*N+3]->flags & CM_HIT_IS_DUPLICATE)) esl_fatal("RemoveDuplicates failed");
 
-  cm_tophits_MergeUnsorted(h1, h3);
+  cm_tophits_Merge(h1, h3);
   cm_tophits_SortByPosition(h1);
   cm_tophits_RemoveDuplicates(h1);
   cm_tophits_SortByScore(h1);

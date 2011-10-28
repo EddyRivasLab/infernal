@@ -843,8 +843,11 @@ cm_CYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
     alpha[0][L][L] = bsc;
     yshadow[0][L][L] = USED_LOCAL_BEGIN;
   }
+
+#if eslDEBUGLEVEL >= 2
   FILE *fp1; fp1 = fopen("tmp.stdcykmx",   "w"); cm_mx_Dump(fp1, mx); fclose(fp1);
   FILE *fp2; fp2 = fopen("tmp.stdcykshmx", "w"); cm_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
+#endif
   
   sc = alpha[0][L][L];
 
@@ -1287,7 +1290,10 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
     alpha[0][jp_0][Lp_0] = bsc;
     yshadow[0][jp_0][Lp_0] = USED_LOCAL_BEGIN;
   }
-  /*FILE *fp; fp = fopen("cyk.mx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);*/
+
+#if eslDEBUGLEVEL >= 2
+  FILE *fp; fp = fopen("cyk.mx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);
+#endif
   
   sc = alpha[0][jp_0][Lp_0];
 
@@ -1511,7 +1517,9 @@ cm_InsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   /* include the bsc as part of alpha[0][L][L] */
   alpha[0][L][L] = FLogsum(alpha[0][L][L], bsc);
 
+#if eslDEBUGLEVEL >= 2
   FILE *fp1; fp1 = fopen("tmp.stdimx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
+#endif
 
   sc =  alpha[0][L][L];
 
@@ -1895,7 +1903,10 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if (NOT_IMPOSSIBLE(bsc)) { 
     alpha[0][jp_0][Lp_0] = FLogsum(alpha[0][jp_0][Lp_0], bsc);
   }
-  /*FILE *fp; fp = fopen("ins.mx", "w"); cm_ihb_mx_Dump(fp, mx); fclose(fp);*/
+
+#if eslDEBUGLEVEL >= 2
+  FILE *fp; fp = fopen("ins.mx", "w"); cm_ihb_mx_Dump(fp, mx); fclose(fp);
+#endif
 
   sc = alpha[0][jp_0][Lp_0];
 
@@ -2254,8 +2265,11 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
     alpha[0][L][L]   = bsc;
     yshadow[0][L][L] = USED_LOCAL_BEGIN;
   }
+
+#if eslDEBUGLEVEL >= 2
   FILE *fp1; fp1 = fopen("tmp.stdoamx",   "w"); cm_mx_Dump(fp1, mx); fclose(fp1);
   FILE *fp2; fp2 = fopen("tmp.stdoashmx", "w"); cm_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
+#endif
 
   sc = alpha[0][L][L];
 
@@ -2265,7 +2279,6 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   if(ret_b != NULL)  *ret_b  = b;    /* b is -1 if local ends are off */
   if(ret_sc != NULL) *ret_sc = sc;
 
-  printf("cm_OptAccAlign return sc: %f\n", sc);
   ESL_DPRINTF1(("cm_OptAccAlign return sc: %f\n", sc));
   return eslOK;
 }
@@ -2714,8 +2727,11 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
     alpha[0][jp_0][Lp_0] = bsc;
     yshadow[0][jp_0][Lp_0] = USED_LOCAL_BEGIN;
   }
+
+#if eslDEBUGLEVEL >= 2
   FILE *fp1; fp1 = fopen("tmp.hboamx",   "w"); cm_hb_mx_Dump(fp1, mx); fclose(fp1);
   FILE *fp2; fp2 = fopen("tmp.hboashmx", "w"); cm_hb_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
+#endif
   
   sc = alpha[0][jp_0][Lp_0];
 
@@ -2727,7 +2743,6 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if (ret_b  != NULL)   *ret_b  = b;   /* b is -1 if local begins are off */
   if (ret_sc != NULL)   *ret_sc = sc;  
 
-  printf("cm_OptAccAlignHB return sc: %f\n", sc);
   ESL_DPRINTF1(("cm_OptAccAlignHB return sc: %f\n", sc));
   return eslOK;
 
@@ -2948,7 +2963,10 @@ cm_CYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	beta[cm->M][j][d] = ESL_MAX(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
     }
   }
+
+#if eslDEBUGLEVEL >= 2
   FILE *fp1; fp1 = fopen("tmp.stdocykmx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
+#endif
 
   fail1_flag = FALSE;
   fail2_flag = FALSE;
@@ -3538,7 +3556,10 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
       }
     }
   } /* end loop over decks v. */
-  /*FILE *fp; fp = fopen("tmp.hbomx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);*/
+
+#if eslDEBUGLEVEL >= 2
+  FILE *fp; fp = fopen("tmp.hbomx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);
+#endif
 
   /* Deal with last step needed for local alignment 
    * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
@@ -3549,7 +3570,10 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	beta[cm->M][j][d] = ESL_MAX(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
     }
   }
+
+#if eslDEBUGLEVEL >= 2
   FILE *fp1; fp1 = fopen("tmp.stdocykhbmx", "w");   cm_hb_mx_Dump(fp1, mx); fclose(fp1);
+#endif
 
   fail1_flag = FALSE;
   fail2_flag = FALSE;
@@ -3920,7 +3944,10 @@ cm_OutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, i
 	beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
     }
   }
+
+#if eslDEBUGLEVEL >= 2
   FILE *fp1; fp1 = fopen("tmp.stdomx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
+#endif
 
   if(do_check && (!(cm->flags & CMH_LOCAL_END))) {
     /* Local ends make the following test invalid because it is not true that
@@ -4439,7 +4466,10 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
       }
     }
   } /* end loop over decks v. */
-  /*FILE *fp; fp = fopen("tmp.hbomx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);*/
+
+#if eslDEBUGLEVEL >= 2
+  FILE *fp; fp = fopen("tmp.hbomx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);
+#endif
 
   /* Deal with last step needed for local alignment 
    * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
@@ -4584,7 +4614,11 @@ cm_Posterior(CM_t *cm, char *errbuf, int L, float size_limit, CM_MX *ins_mx, CM_
       }
     }
   }
+
+#if eslDEBUGLEVEL >= 2
   FILE *fp1; fp1 = fopen("tmp.stdpmx", "w");   cm_mx_Dump(fp1, post_mx); fclose(fp1);
+#endif
+
   return eslOK;
 }
 
@@ -4808,7 +4842,10 @@ cm_EmitterPosterior(CM_t *cm, char *errbuf, int L, float size_limit, CM_MX *post
       }
     }
   }
+
+#if eslDEBUGLEVEL >= 2
   FILE *fp1; fp1 = fopen("tmp.std_unnorm_emitmx",  "w"); cm_emit_mx_Dump(fp1, cm, emit_mx); fclose(fp1);
+#endif
 
   /* Step 2. Normalize l_pp and r_pp so that probability that
    *         each residue was emitted by any state is exactly
@@ -4872,7 +4909,10 @@ cm_EmitterPosterior(CM_t *cm, char *errbuf, int L, float size_limit, CM_MX *post
       }
     }
   }
+
+#if eslDEBUGLEVEL >= 2
   FILE *fp2; fp2 = fopen("tmp.std_emitmx",  "w"); cm_emit_mx_Dump(fp2, cm, emit_mx); fclose(fp2);
+#endif
 
   return eslOK;
 }
@@ -4972,7 +5012,10 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
       }
     }
   }
+
+#if eslDEBUGLEVEL >= 2
   FILE *fp1; fp1 = fopen("tmp.std_unnorm_hbemitmx",  "w"); cm_hb_emit_mx_Dump(fp1, cm, emit_mx); fclose(fp1);
+#endif
 
   /* Step 2. Normalize l_pp and r_pp so that probability that
    *         each residue was emitted by any state is exactly
@@ -5012,7 +5055,7 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
   }  
 
   /* normalize, using the sum vector */
-  for(v = 0; v <= cm->M; v++) { 
+  for(v = 0; v < cm->M; v++) { 
     if(emit_mx->l_pp[v] != NULL) {
       for(i = imin[v]; i <= imax[v]; i++) { 
 	ip_v = i - imin[v];
@@ -5024,6 +5067,12 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
 	jp_v = j - jmin[v];
 	emit_mx->r_pp[v][jp_v] -= emit_mx->sum[j];
       }
+    }
+  }
+  /* Handle EL deck, remember it is non-banded */
+  if(emit_mx->l_pp[cm->M] != NULL) { 
+    for(i = 1; i <= L; i++) { 
+      emit_mx->l_pp[cm->M][i] -= emit_mx->sum[i];
     }
   }
 
@@ -5065,7 +5114,11 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
       }
     }
   }
+
+#if eslDEBUGLEVEL >= 2
   FILE *fp2; fp2 = fopen("tmp.std_hbemitmx",  "w"); cm_hb_emit_mx_Dump(fp2, cm, emit_mx); fclose(fp2);
+#endif
+
   return eslOK;
 }
 
@@ -5760,7 +5813,7 @@ cm_PostCodeHB(CM_t *cm, char *errbuf, int L, CM_HB_EMIT_MX *emit_mx, Parsetree_t
   float sum_logp;    /* log of summed probability of all residues emitted thus far */
 
   /* variables used for HMM bands */
-  int ip_v, jp_v, rp_v; /* i, j, r offset within bands */
+  int ip_v, jp_v; /* i, j offset within bands */
   /* ptrs to cp9b info, for convenience */
   CP9Bands_t *cp9b = cm->cp9b;
   int     *imin  = cp9b->imin;  
@@ -5782,13 +5835,11 @@ cm_PostCodeHB(CM_t *cm, char *errbuf, int L, CM_HB_EMIT_MX *emit_mx, Parsetree_t
       /* Only P, L, R, and EL states have emissions. */
       if(cm->sttype[v] == EL_st) { /* EL state, we have to handle this guy special */
 	for(r = i; r <= j; r++) { /* we have to annotate from residues i..j */
-	  assert(r >= imin[v] && r <= imax[v]);
-	  ESL_DASSERT1((r >= imin[v] && r <= imax[v]));
-	  rp_v = r - imin[v];
-	  ppstr[r-1] = Fscore2postcode(emit_mx->l_pp[v][rp_v]);
-	  sum_logp   = FLogsum(sum_logp, emit_mx->l_pp[v][rp_v]);
+	  /* remember the EL deck is non-banded */
+	  ppstr[r-1] = Fscore2postcode(emit_mx->l_pp[v][r]);
+	  sum_logp   = FLogsum(sum_logp, emit_mx->l_pp[v][r]);
 	  /* make sure we've got a valid probability */
-	  p = FScore2Prob(emit_mx->l_pp[v][rp_v], 1.);
+	  p = FScore2Prob(emit_mx->l_pp[v][r], 1.);
 	  if(p >  1.01) ESL_FAIL(eslEINVAL, errbuf, "cm_PostCode(): probability for EL state v: %d residue r: %d > 1.00 (%.2f)", v, r, p);
 	  if(p < -0.01) ESL_FAIL(eslEINVAL, errbuf, "cm_PostCode(): probability for EL state v: %d residue r: %d < 0.00 (%.2f)", v, r, p);
 	}

@@ -1729,7 +1729,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	if (pthread_mutex_unlock (&pli->cmfp->readMutex)      != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
       }
 #endif    
-      printf("CONFIGURING CM: %s (%d)\n", (*opt_cm)->name, cm_config_opts);
+      /*printf("CONFIGURING CM: %s (%d)\n", (*opt_cm)->name, cm_config_opts);*/
       (*opt_cm)->config_opts = cm_config_opts;
       if((status = ConfigCM(*opt_cm, pli->errbuf, FALSE, NULL, NULL)) != eslOK) return status;
       /* update the pipeline about the model */
@@ -1978,10 +1978,10 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	  if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem adding hit to hitlist, out of memory?");
 	}
       }
-      printf("TMP:\n");
-      cm_tophits_Dump(stdout, tmp_hitlist);
-      printf("MASTER:\n");
-      cm_tophits_Dump(stdout, hitlist);
+      //printf("TMP:\n");
+      //cm_tophits_Dump(stdout, tmp_hitlist);
+      //printf("MASTER:\n");
+      //cm_tophits_Dump(stdout, hitlist);
       cm_tophits_Destroy(tmp_hitlist);
     }      
 

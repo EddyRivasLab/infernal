@@ -243,10 +243,6 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode)
     /* build the cp9 HMM */
     if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) cm_Fail("Couldn't build a CP9 HMM from the CM\n");
 
-    CMEmitMap_t *emap;
-    emap = CreateEmitMap(cm);
-    DumpEmitMap(stdout, emap, cm);
-    
     fprintf(stdout, "%6d  %-20s  %-9s  %8d  %8.2f  %4d  %4d  %4d  %4d  %5d  %5.3f  %5.3f\n",
 	    ncm,
 	    cm->name,
