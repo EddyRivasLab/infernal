@@ -1132,7 +1132,7 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
 	jp_y_sdr = jn - jmin[y] - sdr;
 	
 	for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
-	  ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
+	  ESL_DASSERT1((jp_v     >= 0 && jp_v     <= (jmax[v]-jmin[v])));
 	  ESL_DASSERT1((jp_y_sdr >= 0 && jp_y_sdr <= (jmax[y]-jmin[y])));
 	  
 	/* d must satisfy:
@@ -1292,7 +1292,8 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp; fp = fopen("cyk.mx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);
+  FILE *fp1; fp1 = fopen("tmp.cykhbmx", "w");   cm_hb_mx_Dump(fp1, mx); fclose(fp1);
+  FILE *fp2; fp2 = fopen("tmp.cykhbshmx", "w"); cm_hb_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
 #endif
   
   sc = alpha[0][jp_0][Lp_0];
@@ -1579,7 +1580,7 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   float    tsc;         /* a temporary variable holding a transition score */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   float    bsc;		/* summed score for using all local begins */
-  float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
+  float   *el_scA;      /* [0..d..L-1] probability of local end emissions of length d */
   int      sd;          /* StateDelta(cm->sttype[v]) */
   int      sdr;         /* StateRightDelta(cm->sttype[v] */
   int      j_sdr;       /* j - sdr */
@@ -2006,6 +2007,7 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int      b;		/* best local begin state */
   float    bsc;		/* score for using the best local begin state */
+  float   *el_scA;      /* [0..d..L-1] probability of local end emissions of length d */
   int      sd;          /* StateDelta(cm->sttype[v]) */
   int      sdr;         /* StateRightDelta(cm->sttype[v] */
   int      j_sdr;       /* j - sdr */
@@ -2033,12 +2035,16 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   /* for B states, shadow matrix holds k, length of right fragment, this will almost certainly be overwritten */
   if(shmx->k_ncells_valid > 0) esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, 0); 
 
-  /* initialize the EL deck, if it's valid */
-  if(cm->flags & CMH_LOCAL_END) { 
+
+  /* fill in all possible local end scores, for local end emits of 1..L residues */
+  ESL_ALLOC(el_scA, sizeof(float) * (L+1));
+  if(cm->flags & CMH_LOCAL_END && l_pp[cm->M] != NULL) { 
+    el_scA[0] = l_pp[cm->M][0];
+    for(d = 1; d <= L; d++) el_scA[d] = FLogsum(el_scA[d-1], l_pp[cm->M][d]);
+    /* fill in alpha matrix with these scores */
     for (j = 0; j <= L; j++) {
-      alpha[cm->M][j][0] = IMPOSSIBLE;
-      for (d = 1; d <= j; d++) {
-	alpha[cm->M][j][d] = FLogsum(alpha[cm->M][j][d-1], l_pp[cm->M][j]); /* optimal (and only) parse for EL is to emit all d residues */
+      for (d = 0;  d <= j; d++) { 
+	alpha[cm->M][j][d] = el_scA[d];
       }
     }
   }
@@ -2273,6 +2279,8 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 
   sc = alpha[0][L][L];
 
+  free(el_scA);
+
   /* convert score, a log probability, into the average posterior probability of all W aligned residues */
   sc = sreEXP2(sc) / (float) L;
 
@@ -2281,6 +2289,9 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 
   ESL_DPRINTF1(("cm_OptAccAlign return sc: %f\n", sc));
   return eslOK;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 
@@ -2320,6 +2331,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int      b;		/* best local begin state */
   float    bsc;		/* score for using the best local begin state */
+  float   *el_scA;      /* [0..d..L-1] probability of local end emissions of length d */
   int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
   int      jp_0;        /* L offset in ROOT_S's (v==0) j band */
   int      Lp_0;        /* L offset in ROOT_S's (v==0) d band */
@@ -2382,15 +2394,15 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   /* for B states, shadow matrix holds k, length of right fragment, this will almost certainly be overwritten */
   if(shmx->k_ncells_valid > 0) esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, 0); 
 
-  /* initialize the EL deck, if it's valid */
-  if(cm->flags & CMH_LOCAL_END) { 
+  /* fill in all possible local end scores, for local end emits of 1..L residues */
+  ESL_ALLOC(el_scA, sizeof(float) * (L+1));
+  if(cm->flags & CMH_LOCAL_END && l_pp[cm->M] != NULL) { 
+    el_scA[0] = l_pp[cm->M][0];
+    for(d = 1; d <= L; d++) el_scA[d] = FLogsum(el_scA[d-1], l_pp[cm->M][d]);
+    /* fill in alpha matrix with these scores */
     for (j = 0; j <= L; j++) {
-      alpha[cm->M][j][0] = IMPOSSIBLE;
-      for (d = 1; d <= j; d++) {
-	alpha[cm->M][j][d] = FLogsum(alpha[cm->M][j][d-1], l_pp[cm->M][j]); 
-	/* optimal (and only) parse for EL is to emit all d residues,
-	 * l_pp is non-banded for the EL state.
-	 */
+      for (d = 0;  d <= j; d++) { 
+	alpha[cm->M][j][d] = el_scA[d];
       }
     }
   }
@@ -2440,14 +2452,13 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	 * release (rc5) of infernal v1.0 (EPN, Fri Jun 12 14:02:58
 	 * 2009)).
 	 */
-	dp_v = 0;
-	for (d = hdmin[v][jp_v]; d <= sd; d++, dp_v++) { 
-	  alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	  yshadow[v][jp_v][dp_v] = USED_EL;
-	    for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) { 
+	for (d = hdmin[v][jp_v]; d <= sd; d++) { 
+	  dp_v = d-hdmin[v][jp_v];
+	  for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) { 
 	    if(StateDelta(cm->sttype[y]) == 0) { 
-	      if(j >= jmin[y] && j <= jmax[y]) { 
-		if(hdmin[y][j-jmin[y]] == 0) { 
+	      if((j-sdr) >= jmin[y] && (j-sdr) <= jmax[y]) { 
+		jp_y = j - sdr - jmin[y];
+		if(hdmin[y][jp_y] == 0) { 
 		  yoffset = y - cm->cfirst[v];
 		  yshadow[v][jp_v][dp_v] = yoffset;
 		}
@@ -2521,7 +2532,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	jp_y_sdr = jn - jmin[y] - sdr;
 	
 	for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
-	  ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
+	  ESL_DASSERT1((jp_v     >= 0 && jp_v     <= (jmax[v]-jmin[v])));
 	  ESL_DASSERT1((jp_y_sdr >= 0 && jp_y_sdr <= (jmax[y]-jmin[y])));
 	  
 	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
@@ -2535,7 +2546,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
 	    if((sc = alpha[y][jp_y_sdr][dp_y_sd]) > alpha[v][jp_v][dp_v]) {
 	      alpha[v][jp_v][dp_v] = sc;
-	      yshadow[v][jp_v][dp_v]    = yoffset;
+	      yshadow[v][jp_v][dp_v] = yoffset;
 	    }
 	  }
 	}
@@ -2544,8 +2555,8 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       switch(cm->sttype[v]) { 
       case ML_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
-	  jp_v  = j - jmin[v];
-	  i = j - hdmin[v][jp_v] + 1;
+	  jp_v = j - jmin[v];
+	  i    = j - hdmin[v][jp_v] + 1;
 	  ip_v = i - imin[v];
 	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++, ip_v--) { 
 	    /*printf("v: %4d j: %4d (%4d..%4d) d: %4d (%4d..%4d) i: %4d (%4d..%4d)\n", 
@@ -2559,18 +2570,17 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       case MR_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) { 
 	    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], r_pp[v][jp_v]);
+	  }
 	}
 	break;
       case MP_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
-	  jp_v  = j - jmin[v];
-	  i = j - hdmin[v][jp_v] + 1;
+	  jp_v = j - jmin[v];
+	  i    = j - hdmin[v][jp_v] + 1;
 	  ip_v = i - imin[v];
 	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++, ip_v--) {
-	    /*printf("v: %4d j: %4d (%4d..%4d) d: %4d (%4d..%4d) i: %4d (%4d..%4d)\n", 
-	      v, j, jmin[v], jmax[v], d, hdmin[v][jp_v], hdmax[v][jp_v], i, imin[v], imax[v]);*/
 	    assert(ip_v >= 0 && ip_v <= (imax[v] - imin[v]));
 	    ESL_DASSERT1((ip_v >= 0 && ip_v <= (imax[v] - imin[v])));
 	    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], FLogsum(l_pp[v][ip_v], r_pp[v][jp_v])); 
@@ -2582,7 +2592,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       }
       /* ensure all cells are >= IMPOSSIBLE */
       for (j = jmin[v]; j <= jmax[v]; j++) { 
-	jp_v  = j - jmin[v];
+	jp_v = j - jmin[v];
 	for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
 	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
       }
@@ -2734,6 +2744,8 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 #endif
   
   sc = alpha[0][jp_0][Lp_0];
+
+  free(el_scA);
 
   /* convert score, a log probability, into the average posterior probability of all W aligned residues */
   sc = sreEXP2(sc) / (float) L;
@@ -6052,8 +6064,6 @@ main(int argc, char **argv)
       printf("%4d %-30s %10.4f bits ", (i+1), "cm_AlignHB() CYK:", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
-      /* fpfast = fopen("tempfast", "w");
-	 ParsetreeDump(fpfast, fasttr, cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); */
 
       if(esl_opt_GetBoolean(go, "--cykout")) { 
 	esl_stopwatch_Start(w);

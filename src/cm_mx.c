@@ -1069,10 +1069,11 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
     fprintf(ofp, "\n\n");
   }
   /* print EL deck, if it's valid */
+  v = mx->M;
   if(mx->nrowsA[mx->M] == (mx->L+1)) {
     for(j = 0; j <= mx->L; j++) {
-      for(d = 0; d <= jp; d++) {
-	fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][jp][dp]);
+      for(d = 0; d <= j; d++) {
+	fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][j][d]);
       }
       fprintf(ofp, "\n");
     }

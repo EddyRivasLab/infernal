@@ -3741,6 +3741,7 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   int      j,d,i,k;	    /* indices in sequence dimensions */
   float    sc;		    /* temporary log odds score */
   int      yoffset;	    /* y=base+offset -- counter in child states that v can transit to */
+  float   *el_scA;          /* [0..d..L-1] probability of local end emissions of length d */
   int      sd;              /* StateDelta(cm->sttype[v]) */
   int      sdl;             /* StateLeftDelta(cm->sttype[v] */
   int      sdr;             /* StateRightDelta(cm->sttype[v] */
@@ -3807,12 +3808,15 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if(shmx->Lk_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
   if(shmx->Rk_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
 
-  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores */
-  if(cm->flags & CMH_LOCAL_END) { 
+  /* fill in all possible local end scores, for local end emits of 1..L residues */
+  ESL_ALLOC(el_scA, sizeof(float) * (L+1));
+  if(cm->flags & CMH_LOCAL_END && Jl_pp[cm->M] != NULL) { 
+    el_scA[0] = Jl_pp[cm->M][0];
+    for(d = 1; d <= L; d++) el_scA[d] = FLogsum(el_scA[d-1], Jl_pp[cm->M][d]);
+    /* fill in alpha matrix with these scores */
     for (j = 0; j <= L; j++) {
-      Jalpha[cm->M][j][0] = IMPOSSIBLE;
-      for (d = 1;  d <= j; d++) { 
-	Jalpha[cm->M][j][d] = FLogsum(Jalpha[cm->M][j][d-1], Jl_pp[cm->M][j]); /* optimal (and only) parse for EL is to emit all d residues */
+      for (d = 0;  d <= j; d++) { 
+	Jalpha[cm->M][j][d] = el_scA[d];
       }
     }
   }
@@ -4270,6 +4274,8 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if(opt_mode == TRMODE_R) Ralpha[0][L][L] = bsc;
   if(opt_mode == TRMODE_T) Talpha[0][L][L] = bsc;
 
+  free(el_scA);
+
   /* convert bsc, a log probability, into the average posterior probability of all L aligned residues */
   sc = bsc;
   sc = sreEXP2(sc) / (float) L;
@@ -4279,6 +4285,9 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 
   ESL_DPRINTF1(("cm_TrOptAccAlign return pp: %f\n", sc));
   return eslOK;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 
@@ -4321,6 +4330,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   int      j,d,i,k;	    /* indices in sequence dimensions */
   float    sc;		    /* temporary log odds score */
   int      yoffset;	    /* y=base+offset -- counter in child states that v can transit to */
+  float   *el_scA;          /* [0..d..L-1] probability of local end emissions of length d */
   int      sd;              /* StateDelta(cm->sttype[v]) */
   int      sdl;             /* StateLeftDelta(cm->sttype[v] */
   int      sdr;             /* StateRightDelta(cm->sttype[v] */
@@ -4429,13 +4439,16 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   if(shmx->Lk_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
   if(shmx->Rk_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
 
-  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores */
+  /* fill in all possible local end scores, for local end emits of 1..L residues */
   /* Remember the EL deck is non-banded */
-  if(cm->flags & CMH_LOCAL_END) { 
+  ESL_ALLOC(el_scA, sizeof(float) * (L+1));
+  if(cm->flags & CMH_LOCAL_END && Jl_pp[cm->M] != NULL) { 
+    el_scA[0] = Jl_pp[cm->M][0];
+    for(d = 1; d <= L; d++) el_scA[d] = FLogsum(el_scA[d-1], Jl_pp[cm->M][d]);
+    /* fill in alpha matrix with these scores */
     for (j = 0; j <= L; j++) {
-      Jalpha[cm->M][j][0] = IMPOSSIBLE;
-      for (d = 1;  d <= j; d++) { 
-	Jalpha[cm->M][j][d] = FLogsum(Jalpha[cm->M][j][d-1], Jl_pp[cm->M][j]); /* optimal (and only) parse for EL is to emit all d residues */
+      for (d = 0;  d <= j; d++) { 
+	Jalpha[cm->M][j][d] = el_scA[d];
       }
     }
   }
@@ -4495,10 +4508,11 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	    dp_v = d-hdmin[v][jp_v];
 	    for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) { 
 	      if(StateDelta(cm->sttype[y]) == 0) { 
-		if(j >= jmin[y] && j <= jmax[y]) { 
-		  if(hdmin[y][j-jmin[y]] == 0) {
+		if((j-sdr) >= jmin[y] && (j-sdr) <= jmax[y]) { 
+		  jp_y = j - sdr - jmin[y];
+		  if(hdmin[y][jp_y] == 0) { 
 		    yoffset = y - cm->cfirst[v];
-		    Jyshadow[v][jp_v][dp_v] = yoffset;
+		    Jyshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
 		  }
 		}
 	      }
@@ -4534,12 +4548,6 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	  for (j = jmin[v]; j <= jmax[v]; j++) {
 	    jp_v = j - jmin[v];
 	    
-#if 0
-	    for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) { 
-	      if(y != v       && /* y == v when yoffset == 0 && v is an IL state: we don't want to allow IL self transits in R mode */
-		 j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset; /* is j valid for state y? */
-	    }
-#endif    
 	    /* determine which children y we can legally transit to for v, j */
 	    yvalid_ct = 0;
 	    for (yctr = 0; yctr < cm->cnum[v]; yctr++) {
@@ -5315,6 +5323,8 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   if(opt_mode == TRMODE_L) Lalpha[0][jp_0][Lp_0] = bsc;
   if(opt_mode == TRMODE_R) Ralpha[0][jp_0][Lp_0] = bsc;
   if(opt_mode == TRMODE_T) Talpha[0][jp_0][Lp_0] = bsc;
+
+  free(el_scA);
 
   /* convert bsc, a log probability, into the average posterior probability of all L aligned residues */
   sc = bsc;
