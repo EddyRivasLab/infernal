@@ -279,13 +279,14 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
 				 * giving the len of right fragment offset in deck z,
 				 * k = kp_z + hdmin[z][jp_z]
 				 */
+  int       allow_S_local_end;  /* set to true to allow d==0 BEGL_S and BEGR_S local ends if(do_optacc) */
 
   /* pointers to cp9b data for convenience */
-  int        *jmin = cm->cp9b->jmin;
-  int      **hdmin = cm->cp9b->hdmin;
-#if eslDEBUGLEVEL >= 1
-  int      **hdmax = cm->cp9b->hdmax;
-#endif
+  CP9Bands_t  *cp9b = cm->cp9b;
+  int         *jmin = cp9b->jmin;
+  int         *jmax = cp9b->jmax;
+  int       **hdmin = cp9b->hdmin;
+  int       **hdmax = cp9b->hdmax;
 
   if(do_optacc) { if((status = cm_OptAccAlignHB   (cm, errbuf, dsq, L, size_limit, mx, shmx, emit_mx, &b, &sc)) != eslOK) return status; }
   else          { if((status = cm_CYKInsideAlignHB(cm, errbuf, dsq, L, size_limit, mx, shmx,	      &b, &sc)) != eslOK) return status; }
@@ -299,14 +300,49 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
   v = 0;
   i = 1;
   j = d = L;
-  jp_v = j - jmin[v];
-  dp_v = d - hdmin[v][jp_v];
 
   while (1) {
-    ESL_DASSERT1((!(cm->sttype[v] != EL_st && d > hdmax[v][jp_v])));
-    ESL_DASSERT1((!(cm->sttype[v] != EL_st && d < hdmin[v][jp_v])));
+    /* special case for HMM banded optimal accuracy, explained below, after the crazy if */
+    if(do_optacc && d == 0 && (cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) && 
+       ((j < jmin[v]             || j > jmax[v]) ||              /* j is outside v's j band */
+	(d < hdmin[v][j-jmin[v]] || d > hdmax[v][j-jmin[v]]))) { /* j is within v's j band, but d is outside j's d band */
+      /* special case: doing optimal accuracy and v is a BEGL_S or
+       * BEGR_S and d is 0 and j is outside v's j band or j is within
+       * the band but d is outside j's d band.  We allow this case
+       * because although this implies a cell outside the bands, in
+       * optimal accuracy only emissions add to the score and we to
+       * initialize all cells to IMPOSSIBLE. This means when d==0, we
+       * have no way of distinguishing those cells that have been
+       * reset to IMPOSSIBLE because they correspond to a valid cell
+       * (with valid cells in the B deck, BEGL_S and BEGR_S decks) and
+       * those that do not correspond to a valid cell and were never
+       * changed since initialization (i.e. this case). So we allow it
+       * to prevent an out-of-bounds error. We have to catch it though
+       * so we don't try to determine jp_v and dp_v below. We even use
+       * USED_EL here if we're not in local mode. You could argue
+       * either way whether we should or shouldn't allow this (e.g. we
+       * already allow illegal parsetrees in optimal accuracy), but a
+       * big reason I decided to allow it is that it is difficult
+       * implement a way of disallowing it. Plus the goal of optimal
+       * accuracy is to show the alignment that has the maximum
+       * average PP on emitted residues within the bands.  By allowing
+       * this, we also consider a few possible alignments that violate
+       * the bands, which I think is okay.
+       */
+      allow_S_local_end = TRUE; /* this sets yoffset to USED_LOCAL_END in the final 'else' of below code block */
+    }
+    else if (cm->sttype[v] != EL_st){ /* normal case, determine jp_v, dp_v, j, d offset values given bands */
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+      allow_S_local_end = FALSE;
+      assert(j >= jmin[v]        && j <= jmax[v]);
+      assert(d >= hdmin[v][jp_v] && d <= hdmax[v][jp_v]);
+      ESL_DASSERT1((j >= jmin[v]        && j <= jmax[v]));
+      ESL_DASSERT1((d >= hdmin[v][jp_v] && d <= hdmax[v][jp_v]));
+    }
+
     if (cm->sttype[v] == B_st) {
-      kp_z = shmx->kshadow[v][jp_v][dp_v];   /* kp = offset len of right fragment */
+      kp_z = shmx->kshadow[v][jp_v][dp_v];   /* kp_z = offset len of right fragment */
       z    = cm->cnum[v];
       jp_z = j-jmin[z];
       k    = kp_z + hdmin[z][jp_z];  /* k = offset len of right fragment */
@@ -324,9 +360,8 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
       y = cm->cfirst[v];
       InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
       v = y;
-      jp_v = j - jmin[v];
-      dp_v = d - hdmin[v][jp_v];
-    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+    } 
+    else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
       /* We don't trace back from an E or EL. Instead, we're done with the
        * left branch of the tree, and we try to swing over to the right
        * branch by popping a right start off the stack and attaching
@@ -343,10 +378,15 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
 				/* attach the S to the right */
       InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
       v = y;
-      jp_v = j - jmin[v];
-      dp_v = d - hdmin[v][jp_v];
-    } else {
-      yoffset = shmx->yshadow[v][jp_v][dp_v];
+    } 
+    else { 
+      /* get yoffset */
+      if (allow_S_local_end) { 
+	yoffset = USED_EL;
+      }
+      else {
+	yoffset = shmx->yshadow[v][jp_v][dp_v];
+      }
       switch (cm->sttype[v]) {
       case D_st:            break;
       case MP_st: i++; j--; break;
@@ -363,27 +403,23 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
 	{	/* a local alignment end */
 	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
 	  v = cm->M;		/* now we're in EL. */
-	  jp_v = j;
-	  dp_v = d;
 	}
       else if (yoffset == USED_LOCAL_BEGIN) 
 	{ /* local begin; can only happen once, from root */
 	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
 	  v = b;
-	  jp_v = j - jmin[v];
-	  dp_v = d - hdmin[v][jp_v];
 	}
       else 
 	{
 	  y = cm->cfirst[v] + yoffset;
 	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
 	  v = y;
-	  jp_v = j - jmin[v];
-	  dp_v = d - hdmin[v][jp_v];
 	}
     }
   }
   esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+
+  /*ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);*/
 
   if(ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   if(ret_sc != NULL) *ret_sc = sc;
@@ -2056,7 +2092,7 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
     sdr  = StateRightDelta(cm->sttype[v]);
 
     /* re-initialize if we can do a local end from v */
-    if(NOT_IMPOSSIBLE(cm->endsc[v])) {
+    if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
       for (j = 0; j <= L; j++) {
 	/* copy values from saved EL deck */
 	for (d = sd; d <= j; d++) { 
@@ -2065,9 +2101,7 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 	}
       }
     }
-
-    /* a special optimal-accuracy-specific initialization case */
-    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+    else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
       for (j = 0; j <= L; j++) {
 	/* Check for special initialization case, specific to
 	 * optimal_accuracy alignment, normally (with TrCYK for
@@ -2197,7 +2231,7 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 	  for (k = 0; k <= d; k++) {
 	    if ((sc = FLogsum(alpha[y][j-k][d-k], alpha[z][j][k])) > alpha[v][j][d])
 	      {
-		if(((d == k) || (NOT_IMPOSSIBLE(alpha[y][j-k][d-k]))) && /* left subtree can only be IMPOSSIBLE if it has length 0 (in which case d==k, and d-k=0) */
+		if(((d == k) || (NOT_IMPOSSIBLE(alpha[y][j-k][d-k]))) && /* left  subtree can only be IMPOSSIBLE if it has length 0 (in which case d==k, and d-k=0) */
 		   ((k == 0) || (NOT_IMPOSSIBLE(alpha[z][j][k]))))       /* right subtree can only be IMPOSSIBLE if it has length 0 (in which case k==0) */
 		  {
 		    alpha[v][j][d]   = sc;
@@ -2424,14 +2458,12 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	/* copy values from saved EL deck */
 	for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
 	  dp_v = d - hdmin[v][jp_v];
-	  alpha[v][jp_v][dp_v]   = alpha[cm->M][j-sdr][d-sd];
+	  alpha[v][jp_v][dp_v] = alpha[cm->M][j-sdr][d-sd];
 	  /* yshadow[v][jp_v][dp_v] remains USED_EL */
 	}
       }
     }
-
-    /* a special optimal-accuracy-specific initialization case */
-    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+    else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
 	/* Check for special initialization case, specific to
@@ -5883,6 +5915,9 @@ cm_PostCodeHB(CM_t *cm, char *errbuf, int L, CM_HB_EMIT_MX *emit_mx, Parsetree_t
 
   if(ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
   if(ret_avgp  != NULL) *ret_avgp  = sreEXP2(sum_logp) / (float) L;
+  ESL_DPRINTF1(("cm_PostcodeHB(): average pp %.4f\n", sreEXP2(sum_logp) / (float) L));
+  /*printf("cm_PostcodeHB(): average pp %.4f\n", sreEXP2(sum_logp) / (float) L);*/
+
   return eslOK;
   
  ERROR:
@@ -5938,6 +5973,7 @@ static ESL_OPTIONS options[] = {
   { "--hmmcheck",eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "check that HMM posteriors are correctly calc'ed", 0 },
   { "--cmcheck", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "check that CM posteriors are correctly calc'ed", 0 },
   { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute optimal accuracy HMM banded alignment alg", 0 },
+  { "--tau",     eslARG_REAL,   "5e-6",NULL, "0<x<1",NULL, NULL, NULL, "set tail loss prob for HMM bands to <x>", 2 },
   { "--post",   eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute fast float HMM banded Inside/Outside alignment algs", 0 },
   { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",NULL,  NULL, NULL, "set maximum allowable DP matrix size to <x> (Mb)", 0 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute non-banded alignment algorithms", 0 },
@@ -5995,6 +6031,8 @@ main(int argc, char **argv)
   }
   if(esl_opt_GetBoolean(go, "--hmmcheck")) cm->align_opts |= CM_ALIGN_CHECKFB;
   if(esl_opt_GetBoolean(go, "--cmcheck"))  cm->align_opts |= CM_ALIGN_CHECKINOUT;
+
+  cm->tau = esl_opt_GetReal(go, "--tau");
 
   ConfigCM(cm, errbuf, FALSE, NULL, NULL); /* FALSE says: don't calculate W */
 

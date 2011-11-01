@@ -1983,15 +1983,14 @@ determine_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp,
   int status;
   int64_t L;    
   int i;
-  char *pkey = NULL;
   
   if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(status, errbuf, "SSI index failed to open");
 
   /* step through sequence SSI file to get database size */
   cfg->Z = 0;
   for(i = 0; i < dbfp->data.ascii.ssi->nprimary; i++) { 
-    //status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, i, NULL, NULL, NULL, &L, NULL);
-    status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, i, NULL, NULL, NULL, &L, &pkey);
+    status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, i, NULL, NULL, NULL, &L, NULL);
+    /*status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, i, NULL, NULL, NULL, &L, &pkey);*/
     if(status == eslENOTFOUND) ESL_FAIL(status, errbuf, "unable to find sequence %d in SSI index file, try re-indexing with esl-sfetch.", i);
     if(status == eslEFORMAT)   ESL_FAIL(status, errbuf, "SSI index for database file is in incorrect format.");
     if(status != eslOK)        ESL_FAIL(status, errbuf, "proble with SSI index for database file.");
@@ -2688,9 +2687,13 @@ inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, 
    * primary keys in SSI index, probably not the next sequence 
    * in the file) */
   status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, NULL);
+  /*char *tmpname;
+    status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, &tmpname);
+    printf("inspect_next_sequence_using_ssi(): sequence name: %s length %" PRId64 "\n", tmpname, L);*/
   if(status == eslENOTFOUND) ESL_FAIL(status, errbuf, "unable to find sequence %ld in SSI index file, try re-indexing with esl-sfetch.", pkey_idx);
   if(status == eslEFORMAT)   ESL_FAIL(status, errbuf, "SSI index for database file is in incorrect format.");
   if(status != eslOK)        ESL_FAIL(status, errbuf, "proble with SSI index for database file.");
+
 
   /* Create a new block list if necessary */
   if(block_list == NULL) { 

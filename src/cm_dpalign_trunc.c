@@ -476,6 +476,7 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
   char      mode;               /* current truncation mode: TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T */
   char      prvmode, nxtmode;   /* previous, next truncation mode */
   int       allow_S_trunc_end;  /* set to true to allow d==0 BEGL_S and BEGR_S truncated ends */
+  int       allow_S_local_end;  /* set to true to allow d==0 BEGL_S and BEGR_S local ends if(do_optacc) */
   int       b, Jb, Lb, Rb, Tb;  /* entry states for best overall,J,L,R,T alignment */
 
   /* pointers to cp9b data for convenience */
@@ -534,12 +535,11 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
     if(cm->sttype[v] != EL_st) printf("v: %4d  mode: %4d  j: %4d (%4d..%4d)  d: %4d", v, mode, j, jmin[v], jmax[v], d);
     else                       printf("v: %4d  mode: %4d  j: %4d             d: %4d EL\n", v, mode, j, d);*/
 #endif
-
     /* super special case for HMM banded truncated mode, explained below, after the crazy if */
     if(cm->sttype[v] == S_st && d == 0 && 
-       ((mode == TRMODE_J && (! cp9b->Jvalid[v]))  ||              /* J mode, but J mode is disallowed for state v */
-	(mode == TRMODE_L && (! cp9b->Lvalid[v]))  ||              /* L mode, but L mode is disallowed for state v */
-	(mode == TRMODE_R && (! cp9b->Rvalid[v]))  ||              /* R mode, but R mode is disallowed for state v */
+       ((mode == TRMODE_J && (! cp9b->Jvalid[v]))  ||            /* J mode, but J mode is disallowed for state v */
+	(mode == TRMODE_L && (! cp9b->Lvalid[v]))  ||            /* L mode, but L mode is disallowed for state v */
+	(mode == TRMODE_R && (! cp9b->Rvalid[v]))  ||            /* R mode, but R mode is disallowed for state v */
 	(j < jmin[v]             || j > jmax[v]) ||              /* j is outside v's j band */
 	(d < hdmin[v][j-jmin[v]] || d > hdmax[v][j-jmin[v]]))) { /* j is within v's j band, but d is outside j's d band */
       /* special case: v is a BEGL_S or BEGR_S and either we're in a
@@ -548,24 +548,39 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
        * d is outside j's d band.  We allow this case if d == 0 b/c
        * we're doing a truncated end out of this state immediately,
        * i.e. we're not really using the state at all we're just using
-       * it so we can use it's parent B state and it's sister left or
+       * it so we can use its parent B state and its sister left or
        * right start state. This only occurs if the parent bif state
-       * emitted its full sequence via the other child (BEGR_S or
+       * emitted the full sequence via the other child (BEGR_S or
        * BEGL_S).
+       *
+       * This will usually occur if v is a BEGL_S and we're in R mode,
+       * or v is a BEGR_S and we're in L mode, but not always. We need
+       * to also allow a similar case that also occurs in
+       * *non-truncated* optimal accuracy alignment. See
+       * cm_dpalign.c::cm_alignT_hb() at the analogous point in that
+       * function for details.
        */
-      assert((cm->stid[v] == BEGL_S && mode == TRMODE_R) || (cm->stid[v] == BEGR_S && mode == TRMODE_L));
       ESL_DASSERT1(((cm->stid[v] == BEGL_S && mode == TRMODE_R) || (cm->stid[v] == BEGR_S && mode == TRMODE_L)));
-      allow_S_trunc_end = TRUE; /* this sets yoffset to USED_TRUNC_END in the final 'else' of below code block */
+      if((cm->stid[v] == BEGL_S && mode == TRMODE_R) || (cm->stid[v] == BEGR_S && mode == TRMODE_L)) {
+	allow_S_trunc_end = TRUE; /* this sets yoffset to USED_TRUNC_END in the final 'else' of below code block */
+	allow_S_local_end = FALSE;
+      }
+      else if (do_optacc) { 
+	allow_S_local_end = TRUE; /* this sets yoffset to USED_EL in the final 'else' of below code block */
+	allow_S_trunc_end = FALSE;
+      }
     }
-    else if (cm->sttype[v] != EL_st){ /* normal case, determine jp_v, dp_v, j, d offset values given bands */
+    else if (cm->sttype[v] != EL_st){ /* normal case, determine jp_v, dp_v; j, d offset values given bands */
       jp_v = j - jmin[v];
       dp_v = d - hdmin[v][jp_v];
       allow_S_trunc_end = FALSE;
+      allow_S_local_end = FALSE;
       assert(j >= jmin[v]        && j <= jmax[v]);
       assert(d >= hdmin[v][jp_v] && d <= hdmax[v][jp_v]);
       ESL_DASSERT1((j >= jmin[v]        && j <= jmax[v]));
       ESL_DASSERT1((d >= hdmin[v][jp_v] && d <= hdmax[v][jp_v]));
     }
+
     if (cm->sttype[v] == B_st) {
       /* get k, the len of right fragment */
       if     (mode == TRMODE_J) k = shmx->Jkshadow[v][jp_v][dp_v];
@@ -608,7 +623,8 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
       printf("KACHOW added BEGL_S, dumping parsetree (prvmode: %d mode: %d:\n", prvmode, mode);
       ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
 #endif
-    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+    } 
+    else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
       /* We don't trace back from an E or EL. Instead, we're done with the
        * left branch of the tree, and we try to swing over to the right
        * branch by popping a right start off the stack and attaching
@@ -636,6 +652,9 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
       /* get yoffset */
       if(allow_S_trunc_end) { 
 	yoffset = USED_TRUNC_END; /* nxt mode is irrelevant in this case */
+      }
+      else if(allow_S_local_end) { 
+	yoffset = USED_EL; /* nxt mode is irrelevant in this case */
       }
       else { 
 	if     (mode == TRMODE_J) yoffset = shmx->Jyshadow[v][jp_v][dp_v];
@@ -3840,9 +3859,7 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	}
       }
     }
-
-    /* a special optimal-accuracy-specific initialization case */
-    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+    else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
       for (j = 0; j <= L; j++) {
 	/* Check for special initialization case, specific to
 	 * optimal_accuracy alignment, normally (with TrCYK for
@@ -4486,9 +4503,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	}
       }
     }
-
-    /* a special optimal-accuracy-specific initialization case */
-    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+    else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
 	/* Check for special initialization case, specific to
