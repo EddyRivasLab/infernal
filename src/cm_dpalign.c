@@ -881,8 +881,8 @@ cm_CYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.stdcykmx",   "w"); cm_mx_Dump(fp1, mx); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.stdcykshmx", "w"); cm_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
+  FILE *fp1; fp1 = fopen("tmp.std_cykmx",   "w"); cm_mx_Dump(fp1, mx); fclose(fp1);
+  FILE *fp2; fp2 = fopen("tmp.std_cykshmx", "w"); cm_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
 #endif
   
   sc = alpha[0][L][L];
@@ -1328,8 +1328,8 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.cykhbmx", "w");   cm_hb_mx_Dump(fp1, mx); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.cykhbshmx", "w"); cm_hb_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
+  FILE *fp1; fp1 = fopen("tmp.std_cykhbmx", "w");   cm_hb_mx_Dump(fp1, mx); fclose(fp1);
+  FILE *fp2; fp2 = fopen("tmp.std_cykhbshmx", "w"); cm_hb_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
 #endif
   
   sc = alpha[0][jp_0][Lp_0];
@@ -1555,7 +1555,7 @@ cm_InsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   alpha[0][L][L] = FLogsum(alpha[0][L][L], bsc);
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.stdimx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.std_imx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
 #endif
 
   sc =  alpha[0][L][L];
@@ -1942,7 +1942,7 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp; fp = fopen("ins.mx", "w"); cm_ihb_mx_Dump(fp, mx); fclose(fp);
+  FILE *fp; fp = fopen("tmp.std_ihbmx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);
 #endif
 
   sc = alpha[0][jp_0][Lp_0];
@@ -2307,8 +2307,8 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.stdoamx",   "w"); cm_mx_Dump(fp1, mx); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.stdoashmx", "w"); cm_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
+  FILE *fp1; fp1 = fopen("tmp.std_oamx",   "w"); cm_mx_Dump(fp1, mx); fclose(fp1);
+  FILE *fp2; fp2 = fopen("tmp.std_oashmx", "w"); cm_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
 #endif
 
   sc = alpha[0][L][L];
@@ -2771,8 +2771,8 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.hboamx",   "w"); cm_hb_mx_Dump(fp1, mx); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.hboashmx", "w"); cm_hb_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
+  FILE *fp1; fp1 = fopen("tmp.std_oahbmx",   "w"); cm_hb_mx_Dump(fp1, mx); fclose(fp1);
+  FILE *fp2; fp2 = fopen("tmp.std_oahbshmx", "w"); cm_hb_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
 #endif
   
   sc = alpha[0][jp_0][Lp_0];
@@ -3009,7 +3009,7 @@ cm_CYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.stdocykmx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.std_ocykmx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
 #endif
 
   fail1_flag = FALSE;
@@ -3601,10 +3601,6 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
     }
   } /* end loop over decks v. */
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp; fp = fopen("tmp.hbomx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);
-#endif
-
   /* Deal with last step needed for local alignment 
    * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
    */
@@ -3761,6 +3757,10 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   else { /* return sc = P(S|M) / P(S|R) from Inside() */
     sc = alpha[0][jp_0][Lp_0];
   }
+
+#if eslDEBUGLEVEL >= 2
+  FILE *fp; fp = fopen("tmp.std_ocykhbmx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);
+#endif
 
   if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check1 FAILED.");
   else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check2 FAILED.");
@@ -3989,10 +3989,6 @@ cm_OutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, i
     }
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.stdomx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
-#endif
-
   if(do_check && (!(cm->flags & CMH_LOCAL_END))) {
     /* Local ends make the following test invalid because it is not true that
      * exactly 1 state in each node's split set must be visited in each parse. 
@@ -4055,6 +4051,10 @@ cm_OutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, i
   }
 
   if(fail_flag) ESL_FAIL(eslFAIL, errbuf, "Not all nodes passed posterior check.");
+
+#if eslDEBUGLEVEL >= 2
+  FILE *fp1; fp1 = fopen("tmp.std_omx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
+#endif
 
   if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("\tcm_OutsideAlign() sc : %f\n", sc));
   else                             ESL_DPRINTF1(("\tcm_OutsideAlign() sc : %f (LOCAL mode; sc is from Inside)\n", sc));
@@ -4511,10 +4511,6 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
     }
   } /* end loop over decks v. */
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp; fp = fopen("tmp.hbomx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);
-#endif
-
   /* Deal with last step needed for local alignment 
    * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
    */
@@ -4594,6 +4590,11 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 
   if(fail_flag) ESL_FAIL(eslFAIL, errbuf, "Not all nodes passed posterior check.");
 
+#if eslDEBUGLEVEL >= 2
+  FILE *fp1; fp1 = fopen("tmp.std_ohbmx", "w");   cm_hb_mx_Dump(fp1, mx); fclose(fp1);
+#endif
+
+
   if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("\tcm_OutsideAlignHB() sc : %f\n", sc));
   else                             ESL_DPRINTF1(("\tcm_OutsideAlignHB() sc : %f (LOCAL mode; sc is from Inside)\n", sc));
 
@@ -4660,7 +4661,7 @@ cm_Posterior(CM_t *cm, char *errbuf, int L, float size_limit, CM_MX *ins_mx, CM_
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.stdpmx", "w");   cm_mx_Dump(fp1, post_mx); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.std_pmx", "w");   cm_mx_Dump(fp1, post_mx); fclose(fp1);
 #endif
 
   return eslOK;

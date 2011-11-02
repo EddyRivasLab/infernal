@@ -1494,8 +1494,8 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.trcykmx", "w");   cm_tr_mx_Dump(fp1, mx, mode); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.trcykshmx", "w"); cm_tr_shadow_mx_Dump(fp2, cm, shmx, mode); fclose(fp2);
+  FILE *fp1; fp1 = fopen("tmp.tru_cykmx", "w");   cm_tr_mx_Dump(fp1, mx, mode); fclose(fp1);
+  FILE *fp2; fp2 = fopen("tmp.tru_cykshmx", "w"); cm_tr_shadow_mx_Dump(fp2, cm, shmx, mode); fclose(fp2);
 #endif /* eslDEBUGLEVEL >= 2 */
 
   if(ret_Jb   != NULL) *ret_Jb   = Jb;    
@@ -1935,8 +1935,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	    /* determine which children y we can legally transit to for v, j */
 	    /* we use 'j' and not 'j_sdr' here for the L matrix, differently from J and R matrices above */
 	    for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	      if(y != v       && /* y == v when yoffset == 0 && v is an IR state: we don't want to allow IR self transits in L mode */
-		 j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
+	      if(j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
 	  
 	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
 	      dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
@@ -1947,7 +1946,8 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 		y = cm->cfirst[v] + yoffset;
 		do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 		do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
-		if(do_L_y || do_J_y)  { 
+		if((do_J_y || do_L_y) && (y != v)) { /* (y != v) part is to disallow IR self transits in L mode */
+
 		  /* we use 'jp_y=j-min[y]' here, not 'jp_y_sdr=j-jmin[y]-sdr' (which we used in the corresponding loop for J,R above) */
 		  jp_y = j - jmin[y];
 	      
@@ -2476,8 +2476,8 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.trcykhbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, mode); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.trcykhbshmx", "w"); cm_tr_hb_shadow_mx_Dump(fp2, cm, shmx, mode); fclose(fp2);
+  FILE *fp1; fp1 = fopen("tmp.tru_cykhbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, mode); fclose(fp1);
+  FILE *fp2; fp2 = fopen("tmp.tru_cykhbshmx", "w"); cm_tr_hb_shadow_mx_Dump(fp2, cm, shmx, mode); fclose(fp2);
 #endif
 
   if(ret_Jb   != NULL) *ret_Jb   = Jb;    
@@ -2874,7 +2874,7 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.trimx", "w");   cm_tr_mx_Dump(fp1, mx, mode); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.tru_imx", "w");   cm_tr_mx_Dump(fp1, mx, mode); fclose(fp1);
 #endif
 
   if(ret_mode != NULL) *ret_mode = mode;    
@@ -3238,8 +3238,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	    /* determine which children y we can legally transit to for v, j */
 	    /* we use 'j' and not 'j_sdr' here for the L matrix, differently from J and R matrices above */
 	    for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	      if((y != v) && /* y == v when yoffset == 0 && v is an IR state: we don't want to allow IR self transits in L mode */
-		 (j) >= jmin[y] && ((j) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
+	      if(j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset; /* is j is valid for state y? */
 	  
 	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
 	      dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
@@ -3250,7 +3249,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		y = cm->cfirst[v] + yoffset;
 		do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 		do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
-		if(do_L_y || do_J_y) { 
+		if((do_J_y || do_L_y) && (y != v)) { /* (y != v) part is to disallow IR self transits in L mode */
 		  /* we use 'jp_y=j-min[y]' here, not 'jp_y_sdr=j-jmin[y]-sdr' (which we used in the corresponding loop for J,R above) */
 		  jp_y = j - jmin[y];
 	      
@@ -3671,7 +3670,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.trihbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, mode); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.tru_ihbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, mode); fclose(fp1);
 #endif
 
   if(ret_mode != NULL) *ret_mode = mode;    
@@ -4282,8 +4281,8 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   } /* end loop for (v = cm->M-1; v > 0; v--) */
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.troamx", "w");   cm_tr_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.troashmx", "w"); cm_tr_shadow_mx_Dump(fp2, cm, shmx, opt_mode); fclose(fp2);
+  FILE *fp1; fp1 = fopen("tmp.tru_oamx", "w");   cm_tr_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
+  FILE *fp2; fp2 = fopen("tmp.tru_oashmx", "w"); cm_tr_shadow_mx_Dump(fp2, cm, shmx, opt_mode); fclose(fp2);
 #endif
 
   if(opt_mode == TRMODE_J) Jalpha[0][L][L] = bsc;
@@ -4563,13 +4562,12 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	  for (j = jmin[v]; j <= jmax[v]; j++) {
 	    jp_v = j - jmin[v];
 	    
-	    /* determine which children y we can legally transit to for v, j */
+	    /* determine which children y we can legally transit to for v, j in J and L mode */
 	    yvalid_ct = 0;
 	    for (yctr = 0; yctr < cm->cnum[v]; yctr++) {
 	      yoffset = (yctr + nins_v) % cm->cnum[v]; /* special y ordering for TrOptAcc, consider consensus state first, not inserts */
 	      y = cm->cfirst[v] + yoffset;
-	      if(y != v       && /* y == v when yoffset == 0 && v is an IL state: we don't want to allow IL self transits in R mode */
-		 j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset; /* is j valid for state y? */
+	      if(j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset; /* is j valid for state y? */
 	    }
 
 	    if(do_J_v || do_L_v) { 
@@ -4689,11 +4687,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	    jp_v = j - jmin[v];
 	    j_sdr = j - sdr;
 	    
-#if 0
-	    for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	      if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr valid for state y? */
-#endif
-	    /* determine which children y we can legally transit to for v, j */
+	    /* determine which children y we can legally transit to for v, j in J and R mode */
 	    yvalid_ct = 0;
 	    for (yctr = 0; yctr < cm->cnum[v]; yctr++) {
 	      yoffset = (yctr + nins_v) % cm->cnum[v]; /* special y ordering for TrOptAcc, consider consensus state first, not inserts */
@@ -4757,8 +4751,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	      for (yctr = 0; yctr < cm->cnum[v]; yctr++) {
 		yoffset = (yctr + nins_v) % cm->cnum[v]; /* special y ordering for TrOptAcc, consider consensus state first, not inserts */
 		y = cm->cfirst[v] + yoffset;
-		if(y != v       && /* y == v when yoffset == 0 && v is an IR state: we don't want to allow IR self transits in R mode */
-		   j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset; /* is j valid for state y? */
+		if(j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset; /* is j valid for state y? */
 	      }
 
 	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
@@ -4771,7 +4764,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		  do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 		  
 		  /* note we use 'd' and not 'd-sd' below because IR/MR are silent in L marginal mode */
-		  if(do_J_y || do_L_y) { 
+		  if((do_J_y || do_L_y) && (y != v)) { /* (y != v) part is to disallow IR self transits in L mode */
 		    if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]) { /* make sure d is valid for this v, j and y */
 		      dp_y = d - hdmin[y][jp_y] ;
 		      ESL_DASSERT1((dp_v >= 0 && dp_v  <= (hdmax[v][jp_v] - hdmin[v][jp_v])));
@@ -5330,8 +5323,8 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   } /* end loop for (v = cm->M-1; v > 0; v--) */
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.troahbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.troahbshmx", "w"); cm_tr_hb_shadow_mx_Dump(fp2, cm, shmx, opt_mode); fclose(fp2);
+  FILE *fp1; fp1 = fopen("tmp.tru_oahbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
+  FILE *fp2; fp2 = fopen("tmp.tru_oahbshmx", "w"); cm_tr_hb_shadow_mx_Dump(fp2, cm, shmx, opt_mode); fclose(fp2);
 #endif
 
   if(opt_mode == TRMODE_J) Jalpha[0][jp_0][Lp_0] = bsc;
@@ -5789,7 +5782,7 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   if(fail1_flag || fail2_flag) for(j = 1; j <= L; j++) printf("dsq[%4d]: %4d\n", j, dsq[j]);
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.trocykmx", "w");   cm_tr_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.tru_ocykmx", "w");   cm_tr_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
 #endif
 
   if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYK Inside/Outside check1 FAILED.");
@@ -6492,7 +6485,7 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   if(fail1_flag || fail2_flag) for(j = 1; j <= L; j++) printf("dsq[%4d]: %4d\n", j, dsq[j]);
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.trocykhbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.tru_ocykhbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
 #endif
 
   if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYKHB Inside/Outside check1 FAILED.");
@@ -6887,7 +6880,7 @@ cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.tromx", "w");   cm_tr_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.tru_omx", "w");   cm_tr_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
 #endif
 
   if  (fail_flag) ESL_FAIL(eslFAIL, errbuf, "Tr Inside/Outside check FAILED.");
@@ -7541,7 +7534,7 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   if(fail_flag) for(j = 1; j <= L; j++) printf("dsq[%4d]: %4d\n", j, dsq[j]);
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.trohbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.tru_ohbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
 #endif
 
   if     (fail_flag) ESL_FAIL(eslFAIL, errbuf, "Tr Inside/Outside HB check FAILED.");
@@ -7649,7 +7642,7 @@ cm_TrPosterior(CM_t *cm, char *errbuf, int L, float size_limit, char opt_mode, C
     }
   }
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.trpmx", "w");   cm_tr_mx_Dump(fp1, post_mx, opt_mode); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.tru_pmx", "w");   cm_tr_mx_Dump(fp1, post_mx, opt_mode); fclose(fp1);
 #endif
 
   return eslOK;
@@ -7788,7 +7781,7 @@ cm_TrPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char opt_mode,
     }
   }
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.trphbmx", "w");   cm_tr_hb_mx_Dump(fp1, post_mx, opt_mode); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.tru_phbmx", "w");   cm_tr_hb_mx_Dump(fp1, post_mx, opt_mode); fclose(fp1);
 #endif
   return eslOK;
 }
@@ -7956,7 +7949,7 @@ cm_TrEmitterPosterior(CM_t *cm, char *errbuf, int L, float size_limit, char opt_
     }
   }
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.trunc_unnorm_emitmx",  "w"); cm_tr_emit_mx_Dump(fp1, cm, emit_mx, opt_mode); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.tru_unnorm_emitmx",  "w"); cm_tr_emit_mx_Dump(fp1, cm, emit_mx, opt_mode); fclose(fp1);
 #endif
 
   /* Step 2. Normalize *l_pp and *r_pp so that probability that
@@ -8046,7 +8039,7 @@ cm_TrEmitterPosterior(CM_t *cm, char *errbuf, int L, float size_limit, char opt_
     }
   }
 #if eslDEBUGLEVEL >= 2
-  FILE *fp2; fp2 = fopen("tmp.trunc_emitmx",  "w"); cm_tr_emit_mx_Dump(fp2, cm, emit_mx, opt_mode); fclose(fp2);
+  FILE *fp2; fp2 = fopen("tmp.tru_emitmx",  "w"); cm_tr_emit_mx_Dump(fp2, cm, emit_mx, opt_mode); fclose(fp2);
 #endif
 
   return eslOK;
@@ -8180,7 +8173,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char op
     }
   }
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.trunc_unnorm_hbemitmx",  "w"); cm_tr_hb_emit_mx_Dump(fp1, cm, emit_mx, opt_mode); fclose(fp1);
+  FILE *fp1; fp1 = fopen("tmp.tru_unnorm_hbemitmx",  "w"); cm_tr_hb_emit_mx_Dump(fp1, cm, emit_mx, opt_mode); fclose(fp1);
 #endif
 
   /* Step 2. Normalize *l_pp and *r_pp so that probability that
@@ -8349,7 +8342,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char op
     }
   }
 #if eslDEBUGLEVEL >= 2
-  FILE *fp2; fp2 = fopen("tmp.trunc_hbemitmx",  "w"); cm_tr_hb_emit_mx_Dump(fp2, cm, emit_mx, opt_mode); fclose(fp2);
+  FILE *fp2; fp2 = fopen("tmp.tru_hbemitmx",  "w"); cm_tr_hb_emit_mx_Dump(fp2, cm, emit_mx, opt_mode); fclose(fp2);
 #endif
 
   return eslOK;
@@ -8833,7 +8826,6 @@ static ESL_OPTIONS options[] = {
   { "--failok",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "allow failures of Inside vs Outside checks",      2},
   { "--search",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also run search algorithms",                   2},
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "don't use QDBs", 2},
-  { "--noinside",eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "don't run Inside", 2},
   { "--infile",  eslARG_INFILE,  NULL, NULL, NULL,  NULL,  NULL, "-L,-N,-e", "read sequences to search from file <s>", 2 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "use posterior sums during HMM band calculation (widens bands)", 2 },
   { "--onlyhb",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "only run HMM banded scanning trCYK", 2 },
@@ -8892,6 +8884,7 @@ main(int argc, char **argv)
   CM_MX             *mx   = NULL;       /* alpha DP matrix for non-banded CYK/Inside() */
   CM_MX             *out_mx = NULL;     /* outside matrix for HMM banded Outside() */
   CM_SHADOW_MX      *shmx = NULL;       /* shadow matrix for non-banded tracebacks */
+  CM_EMIT_MX        *emit_mx= NULL;     /* emit matrix for non-banded OA */
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
@@ -8907,9 +8900,10 @@ main(int argc, char **argv)
   cm_file_Close(cmfp);
 
   if(esl_opt_GetBoolean(go, "--std")) { 
-    mx     = cm_mx_Create(cm);
-    out_mx = cm_mx_Create(cm);
-    shmx   = cm_shadow_mx_Create(cm);
+    mx      = cm_mx_Create(cm);
+    out_mx  = cm_mx_Create(cm);
+    shmx    = cm_shadow_mx_Create(cm);
+    emit_mx = cm_emit_mx_Create(cm);
   }
 
   if((esl_opt_GetBoolean(go, "--search") && esl_opt_GetBoolean(go, "--std"))) { 
@@ -9104,36 +9098,28 @@ main(int argc, char **argv)
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End cm_TrCYKOutsideAlign****************************/
       }
-
-      if(! esl_opt_GetBoolean(go, "--noinside")) { 
-	/*********************Begin cm_TrInsideAlign()****************************/
-	cm_tr_mx_Destroy(trmx);
-	trmx   = cm_tr_mx_Create(cm);
-	esl_stopwatch_Start(w);
-	if((status = cm_TrInsideAlign(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, trmx, &mode, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", (i+1), "cm_TrInsideAlign(): ", sc);
-	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, " CPU time: ");
-	/*********************End cm_TrInsideAlign*****************************/
-	
-	/*********************Begin cm_TrOutsideAlign()****************************/
-	esl_stopwatch_Start(w);
-	if((status = cm_TrOutsideAlign(cm, errbuf, dsq, L, size_limit, TRUE, mode, out_trmx, trmx)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10s bits (FULL LENGTH OUTSIDE)", (i+1), "cm_TrOutsideAlign(): ", "?");
-	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, " CPU time: ");
-	/*********************End cm_TrOutsideAlign*****************************/
-      }
     }
 
     /* 2. non-banded standard (non-truncated) alignment, if requested */
     if(esl_opt_GetBoolean(go, "--std") && (! esl_opt_GetBoolean(go, "--onlyhb"))) { 
       /*********************Begin cm_Align()****************************/
       esl_stopwatch_Start(w);
-      if((status = cm_Align  (cm, errbuf, dsq, L, size_limit, FALSE, FALSE, mx, shmx, NULL, NULL, NULL, NULL, NULL, &tr, &sc)) != eslOK) return status;
-      printf("%4d %-30s %10.4f bits (FULL LENGTH CYK)", (i+1), "cm_Align(): ", sc);
+      if((status = cm_Align  (cm, errbuf, dsq, L, size_limit, esl_opt_GetBoolean(go, "--optacc"), FALSE, mx, shmx, out_mx, emit_mx, NULL, NULL, NULL, &tr, &sc)) != eslOK) return status;
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+      if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+      ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+      FreeParsetree(tr);
+      if(esl_opt_GetBoolean(go, "--optacc")) { 
+	printf("%4d %-30s %10.4f bits (FULL LENGTH OPTACC)\n", (i+1), "cm_Align(): ", sc);
+	printf("Parsetree score      : %.4f           (FULL LENGTH OPTACC)\n", parsetree_sc);
+      }
+      else { 
+	printf("%4d %-30s %10.4f bits (FULL LENGTH CYK)\n", (i+1), "cm_Align(): ", sc);
+	printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
+      }
+      
       /*********************End cm_Align*****************************/
 
       if(esl_opt_GetBoolean(go, "--cykout")) { 
@@ -9276,10 +9262,22 @@ main(int argc, char **argv)
       /*PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);*/
 	
       esl_stopwatch_Start(w);
-      if((status = cm_AlignHB(cm, errbuf, dsq, L, size_limit, FALSE, FALSE, cm->hbmx, cm->shhbmx, NULL, NULL, NULL, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-      printf("%4d %-30s %10.4f bits ", (i+1), "cm_AlignHB(): ", sc);
+      if((status = cm_AlignHB(cm, errbuf, dsq, L, size_limit, esl_opt_GetBoolean(go, "--optacc"), FALSE, cm->hbmx, cm->shhbmx, cm->ohbmx, cm->ehbmx, NULL, NULL, NULL, &tr, &sc)) != eslOK) cm_Fail(errbuf);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+      if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+      ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+      FreeParsetree(tr);
+      if(esl_opt_GetBoolean(go, "--optacc")) { 
+	printf("%4d %-30s %10.4f bits (FULL LENGTH OPTACC)\n", (i+1), "cm_AlignHB(): ", sc);
+	printf("Parsetree score      : %.4f           (FULL LENGTH OPTACC)\n", parsetree_sc);
+      }
+      else { 
+	printf("%4d %-30s %10.4f bits (FULL LENGTH CYK)\n", (i+1), "cm_AlignHB(): ", sc);
+	printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
+      }
+      
       /*********************End cm_AlignHB()***************************/
     }
 
@@ -9432,6 +9430,7 @@ main(int argc, char **argv)
   if(cons        != NULL) FreeCMConsensus(cons);
   if(mx          != NULL) cm_mx_Destroy(mx);
   if(out_mx      != NULL) cm_mx_Destroy(out_mx);
+  if(emit_mx     != NULL) cm_emit_mx_Destroy(emit_mx);
   if(shmx        != NULL) cm_shadow_mx_Destroy(shmx);
   if(tremit_mx   != NULL) cm_tr_emit_mx_Destroy(tremit_mx);
 
