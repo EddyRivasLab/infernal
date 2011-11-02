@@ -464,10 +464,11 @@ typedef struct cp9map_s {
 #define CM_EMIT_NO_LOCAL_ENDS   (1<<26) /* emitted parsetrees will never have local ends   */
 
 /* model configuration options, cm->config_opts */
-#define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
-#define CM_CONFIG_HMMLOCAL     (1<<1)  /* configure the CP9   for local alignment  */
-#define CM_CONFIG_HMMEL        (1<<2)  /* configure the CP9 for EL local aln       */
-#define CM_CONFIG_QDB          (1<<3)  /* calculate query dependent bands          */
+#define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment  */
+#define CM_CONFIG_HMMLOCAL      (1<<1)  /* configure the CP9 for local alignment  */
+#define CM_CONFIG_V1P0_HMMLOCAL (1<<2)  /* configure the CP9 for local alignment, v1.0 style */
+#define CM_CONFIG_HMMEL         (1<<3)  /* configure the CP9 for EL local aln       */
+#define CM_CONFIG_QDB           (1<<4)  /* calculate query dependent bands          */
 
 /* alignment options, cm->align_opts */
 #define CM_ALIGN_SMALL         (1<<0)  /* use small CYK D&C                        */

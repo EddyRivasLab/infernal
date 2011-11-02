@@ -1496,7 +1496,7 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 #if eslDEBUGLEVEL >= 2
   FILE *fp1; fp1 = fopen("tmp.tru_cykmx", "w");   cm_tr_mx_Dump(fp1, mx, mode); fclose(fp1);
   FILE *fp2; fp2 = fopen("tmp.tru_cykshmx", "w"); cm_tr_shadow_mx_Dump(fp2, cm, shmx, mode); fclose(fp2);
-#endif /* eslDEBUGLEVEL >= 2 */
+#endif 
 
   if(ret_Jb   != NULL) *ret_Jb   = Jb;    
   if(ret_Lb   != NULL) *ret_Lb   = Lb;    
@@ -9098,6 +9098,14 @@ main(int argc, char **argv)
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End cm_TrCYKOutsideAlign****************************/
       }
+
+      /*********************Begin cm_TrInsideAlign()****************************/
+      if((status = cm_TrInsideAlign(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, trmx, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", (i+1), "cm_TrInsideAlign(): ", sc);
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_Display(stdout, w, " CPU time: ");
+      /*********************End cm_TrInsideAlign*****************************/
+
     }
 
     /* 2. non-banded standard (non-truncated) alignment, if requested */
