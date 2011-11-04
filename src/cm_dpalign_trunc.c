@@ -511,7 +511,7 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
 				       shmx,	           /* the HMM banded shadow matrix */
 				       &Jb, &Lb, &Rb, &Tb, /* entry point for optimal J, L, R, T alignment */
 				       &mode, &sc))        /* mode (J,L,R or T) and score of CYK parsetree */
-	!= eslOK) return status;
+       != eslOK) return status;
     if     (mode == TRMODE_J) v = Jb;
     else if(mode == TRMODE_L) v = Lb;
     else if(mode == TRMODE_R) v = Rb;
@@ -533,7 +533,7 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
   while (1) {
 #if eslDEBUGLEVEL >= 1
     if(cm->sttype[v] != EL_st) printf("v: %4d  mode: %4d  j: %4d (%4d..%4d)  d: %4d", v, mode, j, jmin[v], jmax[v], d);
-    else                       printf("v: %4d  mode: %4d  j: %4d             d: %4d EL\n", v, mode, j, d);*/
+    else                       printf("v: %4d  mode: %4d  j: %4d             d: %4d EL\n", v, mode, j, d);
 #endif
     /* super special case for HMM banded truncated mode, explained below, after the crazy if */
     if(cm->sttype[v] == S_st && d == 0 && 
@@ -1041,12 +1041,12 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   int      d_sdr;           /* d - sdr */
   float    tsc;             /* a transition score */
 
-  /* other variables used in truncated version, but not standard version (not in cm_CYKAlign()) */
-  float trunc_penalty = 0.; /* penalty in bits for a truncated hit */
-  int   Jb, Lb, Rb, Tb;     /* state rooting {J,L,R,T} optimal parsetrees */
-  int   mode = TRMODE_J;    /* truncation mode for obtaining optimal score <ret_sc> */
-  int   Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
-  int   Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
+  /* other variables used in truncated version, but not standard version (not in cm_CYKInsideAlign()) */
+  float trunc_penalty = 0.;     /* penalty in bits for a truncated hit */
+  int   Jb, Lb, Rb, Tb;         /* state rooting {J,L,R,T} optimal parsetrees */
+  char  mode = TRMODE_UNKNOWN;  /* truncation mode for obtaining optimal score <ret_sc> */
+  int   Lyoffset0;              /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
+  int   Ryoffset0;              /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
   int   fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
 
   /* the DP matrix */
@@ -1297,7 +1297,7 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	      }
 	      if((sc = Lalpha[y][j][d_sdl] + tsc) > Lalpha[v][j][d]) {
 		Lalpha[v][j][d]   = sc;
-	      Lyshadow[v][j][d] = yoffset + TRMODE_L_OFFSET;
+		Lyshadow[v][j][d] = yoffset + TRMODE_L_OFFSET;
 	      }
 	    }
 	  }
@@ -1578,7 +1578,8 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
   float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
   int      sd;          /* StateDelta(cm->sttype[v]) */
-  int      sdr;         /* StateRightDelta(cm->sttype[v] */
+  int      sdr;         /* StateRightDelta(cm->sttype[v]) */
+  int      sdl;         /* StateLeftDelta(cm->sttype[v]) */
   int      j_sdr;       /* j - sdr */
 
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
@@ -1590,6 +1591,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   int      dn, dx;             /* current minimum/maximum d allowed */
   int      dp_y_sd;            /* dp_y - sd */
   int      dp_y_sdr;           /* dp_y - sdr */
+  int      dp_y_sdl;           /* dp_y - sdl */
   int      dpn, dpx;           /* minimum/maximum dp_v */
   int      kp_z;               /* k (in the d dim) index for state z in alpha w/mem eff bands */
   int      kn, kx;             /* current minimum/maximum k value */
@@ -1600,10 +1602,10 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   int      jp_0;               /* L offset in ROOT_S's (v==0) j band */
   int      Lp_0;               /* L offset in ROOT_S's (v==0) d band */
 
-  /* variables related to truncated alignment (not in cm_CYKAlignHB() */
+  /* variables related to truncated alignment (not in cm_CYKInsideAlignHB() */
   float    trunc_penalty = 0.;     /* penalty in bits for a truncated hit */
   int      Jb, Lb, Rb, Tb;         /* state rooting {J,L,R,T} optimal parsetrees */
-  int      mode = TRMODE_J;        /* truncation mode for obtaining optimal score <ret_sc> */
+  char     mode = TRMODE_UNKNOWN;  /* truncation mode for obtaining optimal score <ret_sc> */
   int      fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
   int      do_J_v, do_J_y, do_J_z; /* must we fill J matrix deck for state v, y, z? */
   int      do_L_v, do_L_y, do_L_z; /* must we fill L matrix deck for state v, y, z? */
@@ -1702,6 +1704,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
     float const *rmesc_v = cm->rmesc[v]; /* marginal right emission scores for state v */
     sd   = StateDelta(cm->sttype[v]);
     sdr  = StateRightDelta(cm->sttype[v]);
+    sdl  = StateLeftDelta(cm->sttype[v]);
     jn   = jmin[v];
     jx   = jmax[v];
     do_J_v = cp9b->Jvalid[v]           ? TRUE : FALSE;
@@ -2087,32 +2090,31 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	  
 	  for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++) {
 	    ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
-	    ESL_DASSERT1((jp_y     >= 0 && jp_y     <= (jmax[y]-jmin[y])));
 	    
 	    /* d must satisfy:
-	   * d >= hdmin[v][jp_v]
-	   * d >= hdmin[y][jp_y_sd]+sd (follows from (d-sd >= hdmin[y][jp_y_sd]))
-	   * d <= hdmax[v][jp_v]
-	   * d <= hdmax[y][jp_y_sd]+sd (follows from (d-sd <= hdmax[y][jp_y_sd]))
-	   * this reduces to two ESL_MAX calls
-	   */
-	    dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y] + sdr);
-	    dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y] + sdr);
+	     * d >= hdmin[v][jp_v]
+	     * d >= hdmin[y][jp_y]+sdl (follows from (d-sdl >= hdmin[y][jp_y]))
+	     * d <= hdmax[v][jp_v]
+	     * d <= hdmax[y][jp_y]+sdl (follows from (d-sdl <= hdmax[y][jp_y]))
+	     * this reduces to two ESL_MAX calls
+	     */
+	    dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y] + sdl);
+	    dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y] + sdl);
 	    dpn       = dn - hdmin[v][jp_v];
 	    dpx       = dx - hdmin[v][jp_v];
-	    dp_y_sdr  = dn - hdmin[y][jp_y] - sdr;
-	    /* for Lalpha, we use 'dp_y_sdr' instead of 'dy_y_sd' */
+	    dp_y_sdl  = dn - hdmin[y][jp_y] - sdl;
+	    /* for Lalpha, we use 'dp_y_sdl' instead of 'dy_y_sd' */
 	    
-	    for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdr++) { 
-	      /* we use 'dp_y_sdr' here, not 'dp_y_sd' (which we used in the corresponding loop for J above) */
-	      ESL_DASSERT1((dp_y_sdr >= 0 && dp_y_sdr  <= (hdmax[y][jp_y]     - hdmin[y][jp_y])));
+	    for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdl++) { 
+	      /* we use 'dp_y_sdl' here, not 'dp_y_sd' (which we used in the corresponding loop for J above) */
+	      ESL_DASSERT1((dp_y_sdl >= 0 && dp_y_sdl <= (hdmax[y][jp_y] - hdmin[y][jp_y])));
 	      if(do_J_y && 
-		 ((sc = Jalpha[y][jp_y][dp_y_sdr] + tsc) > Lalpha[v][jp_v][dp_v])) { 
+		 ((sc = Jalpha[y][jp_y][dp_y_sdl] + tsc) > Lalpha[v][jp_v][dp_v])) { 
 		Lalpha[v][jp_v][dp_v]  = sc;
 		Lyshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
 	      }		
 	      if(do_L_y && 
-		 ((sc = Lalpha[y][jp_y][dp_y_sdr] + tsc) > Lalpha[v][jp_v][dp_v])) { 
+		 ((sc = Lalpha[y][jp_y][dp_y_sdl] + tsc) > Lalpha[v][jp_v][dp_v])) { 
 		Lalpha[v][jp_v][dp_v]  = sc;
 		Lyshadow[v][jp_v][dp_v] = yoffset + TRMODE_L_OFFSET;
 	      }		
@@ -2405,7 +2407,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	}
       }
     } /* finished calculating deck v. */
-           
+
     /* Now handle truncated begin transitions from ROOT_S, state 0 */
     if(L >= jmin[v] && L <= jmax[v]) { 
       jp_v = L - jmin[v];
@@ -2421,8 +2423,8 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	 */
 
 	/* check if we have a new optimally scoring Joint alignment in J matrix (much like a standard local begin) */
-	if(do_J_v && cp9b->Jvalid[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st
-		      || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)) { 
+	if(do_J_v && cp9b->Jvalid[0] && 
+	   (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)) { 
 	  sc = Jalpha[v][jp_v][Lp] + trunc_penalty;
 	  if (sc > Jalpha[0][jp_0][Lp_0]) { 
 	    Jalpha[0][jp_0][Lp_0] = sc;
@@ -2430,7 +2432,8 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	  }
 	}
 	/* check if we have a new optimally scoring Left alignment in L matrix */
-	if(do_L_v && cp9b->Lvalid[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)) { 
+	if(do_L_v && cp9b->Lvalid[0] && 
+	   (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)) { 
 	  sc = Lalpha[v][jp_v][Lp] + trunc_penalty;
 	  if (sc > Lalpha[0][jp_0][Lp_0]) { 
 	    Lalpha[0][jp_0][Lp_0] = sc;
@@ -2438,7 +2441,8 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	  }
 	}	    
 	/* check if we have a new optimally scoring Right alignment in R matrix */
-	if(do_R_v && cp9b->Rvalid[0] && (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)) { 
+	if(do_R_v && cp9b->Rvalid[0] && 
+	   (cm->sttype[v] == B_st || cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)) { 
 	  sc = Ralpha[v][jp_v][Lp] + trunc_penalty;
 	  if (sc > Ralpha[0][jp_0][Lp_0]) { 
 	    Ralpha[0][jp_0][Lp_0] = sc;
@@ -2476,8 +2480,8 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.tru_cykhbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, mode); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.tru_cykhbshmx", "w"); cm_tr_hb_shadow_mx_Dump(fp2, cm, shmx, mode); fclose(fp2);
+  FILE *fp1; fp1 = fopen("tmp.tru_cykhbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
+  FILE *fp2; fp2 = fopen("tmp.tru_cykhbshmx", "w"); cm_tr_hb_shadow_mx_Dump(fp2, cm, shmx, opt_mode); fclose(fp2);
 #endif
 
   if(ret_Jb   != NULL) *ret_Jb   = Jb;    
@@ -2559,12 +2563,12 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   int      d_sdr;           /* d - sdr */
   float    tsc;             /* a transition score */
 
-  /* other variables used in truncated version, but not standard version (not in cm_CYKAlign()) */
-  float    trunc_penalty=0.;/* penalty in bits for a truncated hit */
-  int      mode = TRMODE_J; /* truncation mode for obtaining optimal score <ret_sc> */
-  int      Lyoffset0;       /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
-  int      Ryoffset0;       /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
-  int   fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
+  /* other variables used in truncated version, but not standard version (not in cm_CYKInsideAlign()) */
+  float    trunc_penalty = 0.;     /* penalty in bits for a truncated hit */
+  char     mode = TRMODE_UNKNOWN;  /* truncation mode for obtaining optimal score <ret_sc> */
+  int      Lyoffset0;              /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
+  int      Ryoffset0;              /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
+  int      fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
 
   /* the DP matrix */
   float ***Jalpha  = mx->Jdp; /* pointer to the Jalpha DP matrix */
@@ -2944,7 +2948,8 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   float    tsc;         /* a temporary variable holding a transition score */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int      sd;          /* StateDelta(cm->sttype[v]) */
-  int      sdr;         /* StateRightDelta(cm->sttype[v] */
+  int      sdl;         /* StateLeftDelta(cm->sttype[v]) */
+  int      sdr;         /* StateRightDelta(cm->sttype[v]) */
   int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
   float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
 
@@ -2957,6 +2962,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   int      dp_v, dp_y, dp_z;   /* d index for state v/y/z in alpha w/mem eff bands */
   int      dn, dx;             /* current minimum/maximum d allowed */
   int      dp_y_sd;            /* dp_y - sd */
+  int      dp_y_sdl;           /* dp_y - sdl */
   int      dp_y_sdr;           /* dp_y - sdr */
   int      dpn, dpx;           /* minimum/maximum dp_v */
   int      kp_z;               /* k (in the d dim) index for state z in alpha w/mem eff bands */
@@ -2968,8 +2974,8 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   int      Lp_0;               /* L offset in ROOT_S's (v==0) d band */
 
   /* variables related to truncated alignment (not in cm_InsideAlignHB()) */
-  float    trunc_penalty = 0.; /* penalty in bits for a truncated hit */
-  int      mode = TRMODE_J;    /* truncation mode for obtaining optimal score <ret_sc> */
+  float    trunc_penalty = 0.;     /* penalty in bits for a truncated hit */
+  char     mode = TRMODE_UNKNOWN;  /* truncation mode for obtaining optimal score <ret_sc> */
   int      fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
   int      do_J_v, do_J_y, do_J_z; /* must we fill J matrix deck for state v, y, z? */
   int      do_L_v, do_L_y, do_L_z; /* must we fill L matrix deck for state v, y, z? */
@@ -3045,6 +3051,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
     float const *lmesc_v = cm->lmesc[v];
     float const *rmesc_v = cm->rmesc[v];
     sd     = StateDelta(cm->sttype[v]);
+    sdl    = StateLeftDelta(cm->sttype[v]);
     sdr    = StateRightDelta(cm->sttype[v]);
     jn     = jmin[v];
     jx     = jmax[v];
@@ -3369,7 +3376,6 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	  
 	  for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++) {
 	    ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
-	    ESL_DASSERT1((jp_y     >= 0 && jp_y     <= (jmax[y]-jmin[y])));
 	    
 	    /* d must satisfy:
 	     * d >= hdmin[v][jp_v]
@@ -3382,14 +3388,14 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	    dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y] + sdr);
 	    dpn       = dn - hdmin[v][jp_v];
 	    dpx       = dx - hdmin[v][jp_v];
-	    dp_y_sdr  = dn - hdmin[y][jp_y] - sdr;
-	    /* for Lalpha, we use 'dp_y_sdr' instead of 'dy_y_sd' */
+	    dp_y_sdl  = dn - hdmin[y][jp_y] - sdl;
+	    /* for Lalpha, we use 'dp_y_sdl' instead of 'dy_y_sd' */
 	    
-	    for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdr++) { 
-	      /* we use 'dp_y_sdr' here, not 'dp_y_sd' (which we used in the corresponding loop for J above) */
-	      ESL_DASSERT1((dp_y_sdr >= 0 && dp_y_sdr  <= (hdmax[y][jp_y]     - hdmin[y][jp_y])));
-	      if(do_J_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Jalpha[y][jp_y][dp_y_sdr] + tsc);
-	      if(do_L_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Lalpha[y][jp_y][dp_y_sdr] + tsc);
+	    for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdl++) { 
+	      /* we use 'dp_y_sdl' here, not 'dp_y_sd' (which we used in the corresponding loop for J above) */
+	      ESL_DASSERT1((dp_y_sdl >= 0 && dp_y_sdl  <= (hdmax[y][jp_y] - hdmin[y][jp_y])));
+	      if(do_J_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Jalpha[y][jp_y][dp_y_sdl] + tsc);
+	      if(do_L_y) Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Lalpha[y][jp_y][dp_y_sdl] + tsc);
 	    }
 	  }
 	}
@@ -4556,7 +4562,6 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
        * because we have to fully calculate Jalpha[v][j][d]) before we
        * can start to calculate Ralpha[v][j][d].
        */
-          
       if(! StateIsDetached(cm, v)) { /* if we're detached (unreachable), leave all {J,L,R}alpha values as they were initialized, as IMPOSSIBLE */
 	if(do_J_v || do_L_v || do_R_v) { 
 	  for (j = jmin[v]; j <= jmax[v]; j++) {
@@ -4844,13 +4849,13 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	      ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
 	      ESL_DASSERT1((jp_y >= 0 && jp_y <= (jmax[y]-jmin[y])));
 	      
-	      dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y] + sdl);
-	      dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y] + sdl);
-	      dpn      = dn - hdmin[v][jp_v];
-	      dpx      = dx - hdmin[v][jp_v];
-	      dp_y_sdl = dn - hdmin[y][jp_y] - sdl;
-	  	  
+	      dn  = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y] + sdl);
+	      dx  = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y] + sdl);
+	      dpn = dn - hdmin[v][jp_v];
+	      dpx = dx - hdmin[v][jp_v];
+	      
 	      if (do_J_y) { 
+		dp_y_sdl = dn - hdmin[y][jp_y] - sdl;
 		for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdl++) { 
 		  ESL_DASSERT1((dp_v     >= 0 && dp_v     <= (hdmax[v][jp_v] - hdmin[v][jp_v])));
 		  ESL_DASSERT1((dp_y_sdl >= 0 && dp_y_sdl <= (hdmax[y][jp_y] - hdmin[y][jp_y])));
@@ -4861,6 +4866,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		}
 	      }
 	      if (do_L_y) { 
+		dp_y_sdl = dn - hdmin[y][jp_y] - sdl;
 		for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdl++) { 
 		  ESL_DASSERT1((dp_v     >= 0 && dp_v     <= (hdmax[v][jp_v] - hdmin[v][jp_v])));
 		  ESL_DASSERT1((dp_y_sdl >= 0 && dp_y_sdl <= (hdmax[y][jp_y] - hdmin[y][jp_y])));
@@ -4883,13 +4889,13 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	      ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
 	      ESL_DASSERT1((jp_y_sdr >= 0 && jp_y_sdr <= (jmax[y]-jmin[y])));
 	      
-	      dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sdr);
-	      dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sdr);
-	      dpn      = dn - hdmin[v][jp_v];
-	      dpx      = dx - hdmin[v][jp_v];
-	      dp_y_sdr = dn - hdmin[y][jp_y_sdr] - sdr;
+	      dn  = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sdr);
+	      dx  = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sdr);
+	      dpn = dn - hdmin[v][jp_v];
+	      dpx = dx - hdmin[v][jp_v];
 	  	  
 	      if (do_J_y) { 
+		dp_y_sdr = dn - hdmin[y][jp_y_sdr] - sdr;
 		for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdr++) { 
 		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
 		  ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
@@ -4900,6 +4906,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		}
 	      }
 	      if (do_R_y) { 
+		dp_y_sdr = dn - hdmin[y][jp_y_sdr] - sdr;
 		for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdr++) { 
 		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
 		  ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
@@ -5882,7 +5889,7 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   int      jp_0;               /* L offset in ROOT_S's (v==0) j band */
   int      Lp_0;               /* L offset in ROOT_S's (v==0) d band */
 
-  /* variables related to truncated alignment (not in cm_CYKAlignHB() */
+  /* variables related to truncated alignment (not in cm_CYKInsideAlignHB() */
   int      fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
   int      do_J_v, do_J_y, do_J_z; /* must we fill J matrix deck for state v, y, z? */
   int      do_L_v, do_L_y, do_L_z; /* must we fill L matrix deck for state v, y, z? */
@@ -6971,7 +6978,7 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   int      jp_0;               /* L offset in ROOT_S's (v==0) j band */
   int      Lp_0;               /* L offset in ROOT_S's (v==0) d band */
 
-  /* variables related to truncated alignment (not in cm_CYKAlignHB() */
+  /* variables related to truncated alignment (not in cm_CYKInsideAlignHB() */
   int      fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
   int      do_J_v, do_J_y, do_J_z; /* must we fill J matrix deck for state v, y, z? */
   int      do_L_v, do_L_y, do_L_z; /* must we fill L matrix deck for state v, y, z? */
@@ -8867,10 +8874,6 @@ main(int argc, char **argv)
   ESL_SQFILE     *sqfp  = NULL;        /* open sequence input file stream */
   CMConsensus_t  *cons  = NULL;
   Parsetree_t    *tr    = NULL;
-  CM_TR_HB_MX           *trhbmx= NULL;
-  CM_TR_HB_MX           *out_trhbmx= NULL;
-  CM_TR_HB_EMIT_MX      *trhbemit_mx = NULL;
-  CM_TR_HB_SHADOW_MX    *trhbshmx= NULL;
   CM_TR_MX              *trmx= NULL;
   CM_TR_MX              *out_trmx= NULL;
   CM_TR_EMIT_MX         *tremit_mx= NULL;
@@ -8948,16 +8951,6 @@ main(int argc, char **argv)
   dmin = cm->dmin; 
   dmax = cm->dmax; 
   cm->tau = esl_opt_GetReal(go, "--tau");
-
-  printf("%-30s", "Creating tr hb matrix...");
-  fflush(stdout);
-  esl_stopwatch_Start(w);
-  trhbmx   = cm_tr_hb_mx_Create(cm);
-  trhbshmx = cm_tr_hb_shadow_mx_Create(cm);
-  printf("done.  ");
-  fflush(stdout);
-  esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
   if(! esl_opt_GetBoolean(go, "--onlyhb")) { 
     printf("%-30s", "Creating tr matrix...");
@@ -9191,22 +9184,14 @@ main(int argc, char **argv)
 	
       /*PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);*/
 	
-      cm_tr_hb_mx_Destroy(trhbmx);
-      cm_tr_hb_mx_Destroy(out_trhbmx);
-      cm_tr_hb_emit_mx_Destroy(trhbemit_mx);
-      cm_tr_hb_shadow_mx_Destroy(trhbshmx);
-      trhbmx      = cm_tr_hb_mx_Create(cm);
-      out_trhbmx  = cm_tr_hb_mx_Create(cm);
-      trhbshmx    = cm_tr_hb_shadow_mx_Create(cm);
-      trhbemit_mx = cm_tr_hb_emit_mx_Create(cm);
       esl_stopwatch_Start(w);
 
       if(esl_opt_GetBoolean(go, "--optacc")) { 
-	if((status = cm_TrAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, TRUE, FALSE, trhbmx, trhbshmx, out_trhbmx, trhbemit_mx, NULL, NULL, NULL, &tr, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = cm_TrAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, TRUE, FALSE, cm->trhbmx, cm->trshhbmx, cm->trohbmx, cm->trehbmx, NULL, NULL, NULL, &tr, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits (FULL LENGTH OPTACC)", (i+1), "cm_TrAlignHB(): ", sc);
       }
       else {
-	if((status = cm_TrAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, FALSE, FALSE, trhbmx, trhbshmx, out_trhbmx, trhbemit_mx, NULL, NULL, NULL, &tr, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = cm_TrAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, FALSE, FALSE, cm->trhbmx, cm->trshhbmx, cm->trohbmx, cm->trehbmx, NULL, NULL, NULL, &tr, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits (FULL LENGTH CYK)", (i+1), "cm_TrAlignHB(): ", sc);
       }
       esl_stopwatch_Stop(w);
@@ -9226,8 +9211,8 @@ main(int argc, char **argv)
 	/*********************Begin cm_TrCYKOutsideAlignHB****************************/
 	esl_stopwatch_Start(w);
 	/* determine optimal mode from the trmx */
-	if((status = cm_TrModeFromAlphasHB(trhbmx, errbuf, L, cm->cp9b, &mode, NULL)) != eslOK) cm_Fail(errbuf);
-	status = cm_TrCYKOutsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, TRUE, mode, out_trhbmx, trhbmx);
+	if((status = cm_TrModeFromAlphasHB(cm->trhbmx, errbuf, L, cm->cp9b, &mode, NULL)) != eslOK) cm_Fail(errbuf);
+	status = cm_TrCYKOutsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, TRUE, mode, cm->trohbmx, cm->trhbmx);
 	if     (status != eslOK && esl_opt_GetBoolean(go, "--failok")) printf("%s\nError detected, but continuing thanks to --failok\n", errbuf);
 	else if(status != eslOK)                                       cm_Fail(errbuf);
 	printf("%4d %-30s %10s bits ", (i+1), "cm_TrCYKOutsideAlignHB() CYK:", "?");
@@ -9237,10 +9222,8 @@ main(int argc, char **argv)
       }
 	
       /*********************Begin cm_TrInsideAlignHB()****************************/
-      cm_tr_hb_mx_Destroy(trhbmx);
-      trhbmx = cm_tr_hb_mx_Create(cm);
       esl_stopwatch_Start(w);
-      if((status = cm_TrInsideAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, trhbmx, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = cm_TrInsideAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, cm->trhbmx, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", (i+1), "cm_TrInsideAlignHB(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -9369,20 +9352,16 @@ main(int argc, char **argv)
 	    
 	/*PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);*/
 	    
-	cm_tr_hb_mx_Destroy(trhbmx);
-	trhbmx = cm_tr_hb_mx_Create(cm);
 	esl_stopwatch_Start(w);
-	if((status = TrCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = TrCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, cm->trhbmx, size_limit, 0.,  NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "TrCYKScanHB(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End TrCYKScanHB****************************/
 	    
 	/*********************Begin FTrInsideScanHB****************************/
-	cm_tr_hb_mx_Destroy(trhbmx);
-	trhbmx = cm_tr_hb_mx_Create(cm);
 	esl_stopwatch_Start(w);
-	if((status = FTrInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = FTrInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, cm->trhbmx, size_limit, 0.,  NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FTrInsideScanHB(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -9428,10 +9407,6 @@ main(int argc, char **argv)
   esl_stopwatch_Destroy(w);
   esl_randomness_Destroy(r);
   esl_getopts_Destroy(go);
-  if(trhbmx      != NULL) cm_tr_hb_mx_Destroy(trhbmx);
-  if(out_trhbmx  != NULL) cm_tr_hb_mx_Destroy(out_trhbmx);
-  if(trhbshmx    != NULL) cm_tr_hb_shadow_mx_Destroy(trhbshmx);
-  if(trhbemit_mx != NULL) cm_tr_hb_emit_mx_Destroy(trhbemit_mx);
   if(trmx        != NULL) cm_tr_mx_Destroy(trmx);
   if(out_trmx    != NULL) cm_tr_mx_Destroy(out_trmx);
   if(trshmx      != NULL) cm_tr_shadow_mx_Destroy(trshmx);

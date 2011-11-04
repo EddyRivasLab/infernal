@@ -980,6 +980,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 		(th->hit[h]->ad->used_hbands ? "yes" : "no"),
 		th->hit[h]->ad->matrix_Mb,
 		th->hit[h]->ad->elapsed_secs);
+	/*cm_alidisplay_Dump(ofp, th->hit[h]->ad);*/
 	cm_alidisplay_Print(ofp, th->hit[h]->ad, 40, textw, pli->show_accessions, TRUE);
 	fprintf(ofp, "\n");
       }
@@ -1450,6 +1451,8 @@ cm_hit_Dump(FILE *fp, const CM_HIT *h)
   fprintf(fp, "start     = %" PRId64 "\n", h->start);
   fprintf(fp, "stop      = %" PRId64 "\n", h->stop);
   fprintf(fp, "in_rc     = %s\n",  h->in_rc ? "TRUE" : "FALSE");
+  fprintf(fp, "root      = %d\n",  h->root);
+  fprintf(fp, "mode      = %s\n",  Marginalmode(h->mode));
   fprintf(fp, "score     = %f\n",  h->score);
   fprintf(fp, "pvalue    = %f\n",  h->pvalue);
   fprintf(fp, "evalue    = %f\n",  h->evalue);

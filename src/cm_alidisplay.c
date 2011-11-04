@@ -65,7 +65,7 @@ static int  bp_is_canonical(char lseq, char rseq);
  *            cons  - consensus information for cm; see CreateCMConsensus()
  *            sq    - the sequence, parsetree corresponds to subsequence beginning at spos
  *            spos  - position in sq which corresponds to first position in tr
- *            pcode - posterior code
+ *            ppstr - posterior probability string 
  *            aln_sc       - if(used_optacc) avg post prob of all aligned residues, else CYK score
  *            used_optacc  - TRUE if aln algorithm used was optimal accuracy 
  *            used_hbands  - TRUE if HMM bands were used for alignment
@@ -78,7 +78,7 @@ static int  bp_is_canonical(char lseq, char rseq);
  * Xref:      STL6 p.58
  */
 CM_ALIDISPLAY *
-cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, int64_t seqoffset, char *pcode, float aln_sc, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs)
+cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, int64_t seqoffset, char *ppstr, float aln_sc, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs)
 {
   int            status;
   CM_ALIDISPLAY *ad = NULL;      /* alidisplay structure we're building       */
@@ -160,7 +160,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   /* Allocate the char arrays */
 
   n = (len+1) * 5; /* model, csline, mline, aseq, nline mandatory */
-  if(pcode  != NULL) n += len+1;
+  if(ppstr  != NULL) n += len+1;
   if(cm->rf != NULL) n += len+1;
   cm_namelen = strlen(cm->name);                           n += cm_namelen + 1;
   cm_acclen  = (cm->acc  != NULL ? strlen(cm->acc)  : 0);  n += cm_acclen  + 1; 
@@ -187,7 +187,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   ad->model   = ad->mem + pos;  pos += len+1;
   ad->mline   = ad->mem + pos;  pos += len+1;
   ad->aseq    = ad->mem + pos;  pos += len+1;
-  if (pcode  != NULL) { ad->ppline = ad->mem + pos;  pos += len+1;} else { ad->ppline = NULL; }
+  if (ppstr  != NULL) { ad->ppline = ad->mem + pos;  pos += len+1;} else { ad->ppline = NULL; }
   ad->cmname  = ad->mem + pos;  pos += cm_namelen +1;
   ad->cmacc   = ad->mem + pos;  pos += cm_acclen +1;
   ad->cmdesc  = ad->mem + pos;  pos += cm_desclen +1;
@@ -216,7 +216,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   memset(ad->model,   ' ', ad->N);
   memset(ad->mline,   ' ', ad->N);
   memset(ad->aseq,    ' ', ad->N);
-  if(pcode != NULL)   memset(ad->ppline, ' ', ad->N);
+  if(ppstr != NULL)   memset(ad->ppline, ' ', ad->N);
 
   ESL_ALLOC(ccoord, sizeof(int) * len);
   ESL_ALLOC(scoord, sizeof(int) * len);
@@ -242,7 +242,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	esl_stack_IPop(pda, &rcons);	  ad->model[pos]  = rcons;
 	esl_stack_IPop(pda, &rmid);	  ad->mline[pos]  = rmid;
 	esl_stack_IPop(pda, &rseq);       ad->aseq[pos]   = rseq;
-	if(pcode != NULL) {
+	if(ppstr != NULL) {
 	  esl_stack_IPop(pda, &rpost);    ad->ppline[pos] = rpost;
 	}
 	esl_stack_IPop(pda, &cpos_r);     ccoord[pos] = cpos_r;
@@ -283,7 +283,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
       rc   = cons->rpos[nd];      /* where CM node aligns to in consensus (right) */
       symi = sq->dsq[tr->emitl[ti] + (seqoffset-1)];  /* residue indices that node is aligned to (left) */
       symj = sq->dsq[tr->emitr[ti] + (seqoffset-1)];  /* residue indices that node is aligned to (right) */
-      if(pcode != NULL) { /* posterior codes are indexed 0..alen-1, off-by-one w.r.t dsq */
+      if(ppstr != NULL) { /* posterior codes are indexed 0..alen-1, off-by-one w.r.t dsq */
 	lpost = '.'; /* init to gap, if it corresponds to a residue, we'll reset it below */
 	rpost = '.'; /* init to gap, if it corresponds to a residue, we'll reset it below */
       }
@@ -298,21 +298,23 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	if (cm->rf != NULL) lrf = '.';
 	lstr    = '.';
 	lcons   = '.';
-	if (mode == TRMODE_J || mode == TRMODE_L) lseq = tolower((int) abc->sym[symi]);
-        else                                      lseq = '~';
+	lseq = (mode == TRMODE_J || mode == TRMODE_L) ? tolower((int) abc->sym[symi]) : '~';
 	cpos_l  = 0;
 	spos_l  = tr->emitl[ti] + seqoffset-1;
-	if(pcode != NULL) { lpost = pcode[tr->emitl[ti]-1]; } /* watch off-by-one w.r.t. dsq */
+	if(ppstr != NULL) { 
+	  lpost = (mode == TRMODE_J || mode == TRMODE_L) ? ppstr[tr->emitl[ti]-1] : '~'; /* watch off-by-one b/t ppstr and dsq */
+	}
       } else if (cm->sttype[v] == IR_st) {
 	do_right = TRUE;
 	if (cm->rf != NULL) rrf = '.';
 	rstr    = '.';
 	rcons   = '.';
-	if (mode == TRMODE_J || mode == TRMODE_R) rseq = tolower((int) abc->sym[symj]);
-        else                                      rseq = '~';
+	rseq = (mode == TRMODE_J || mode == TRMODE_R) ? tolower((int) abc->sym[symj]) : '~';
 	cpos_r  = 0;
 	spos_r  = tr->emitr[ti] + seqoffset-1;
-	if(pcode != NULL) { rpost = pcode[tr->emitr[ti]-1]; } /* watch off-by-one w.r.t. dsq */
+	if(ppstr != NULL) { 
+	  rpost = (mode == TRMODE_J || mode == TRMODE_R) ? ppstr[tr->emitr[ti]-1] : '~'; /* watch off-by-one b/t ppstr and dsq */
+	}
       } else {
 	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) {
 	  do_left = TRUE;
@@ -321,16 +323,17 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	  lcons  = (cm->flags & CMH_CONS) ? cm->consensus[(lc+1)] : cons->cseq[lc];
 	  cpos_l = lc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
-	    if      (mode == TRMODE_J)         lseq = abc->sym[symi];
-            else if (mode == TRMODE_L && d>0 ) lseq = abc->sym[symi];
-            else                               lseq = '~';
+	    lseq = (mode == TRMODE_J || mode == TRMODE_L) ? abc->sym[symi] : '~';
 	    spos_l = tr->emitl[ti] + seqoffset-1;
-	    if(pcode != NULL) { lpost = pcode[tr->emitl[ti]-1]; } /* watch off-by-one w.r.t. dsq */
+	    if(ppstr != NULL) { 
+	      lpost = (mode == TRMODE_J || mode == TRMODE_L) ? ppstr[tr->emitl[ti]-1] : '~'; /* watch off-by-one b/t ppstr and dsq */
+	    }
 	  } else {
-	    if (mode == TRMODE_J || mode == TRMODE_L) lseq = '-';
-            else                                      lseq = '~';
+	    lseq   = (mode == TRMODE_J || mode == TRMODE_L) ? '-' : '~';
 	    spos_l = 0;
-	    /* lpost remains as it was init'ed as a gap '.' */
+	    if(ppstr != NULL) { 
+	      lpost  = (mode == TRMODE_J || mode == TRMODE_L) ? '.' : '~';
+	    }
 	  }
 	}
 	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) {
@@ -340,16 +343,17 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	  rcons  = (cm->flags & CMH_CONS) ? cm->consensus[(rc+1)] : cons->cseq[rc];
 	  cpos_r = rc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
-	    if      (mode == TRMODE_J)         rseq = abc->sym[symj];
-            else if (mode == TRMODE_R && d>0 ) rseq = abc->sym[symj];
-            else                               rseq = '~';
+	    rseq = (mode == TRMODE_J || mode == TRMODE_R) ? abc->sym[symj] : '~';
 	    spos_r = tr->emitr[ti] + seqoffset-1;
-	    if(pcode != NULL) { rpost = pcode[tr->emitr[ti]-1]; } /* watch off-by-one w.r.t. dsq */
+	    if(ppstr != NULL) { 
+	      rpost = (mode == TRMODE_J || mode == TRMODE_R) ? ppstr[tr->emitr[ti]-1] : '~'; /* watch off-by-one b/t ppstr and dsq */
+	    }
 	  } else {
-	    if (mode == TRMODE_J || mode == TRMODE_R) rseq = '-';
-            else                                      rseq = '~';
+	    rseq   = (mode == TRMODE_J || mode == TRMODE_R) ? '-' : '~';
 	    spos_r = 0;
-	    /* rpost remains as it was init'ed as a gap '.' */
+	    if(ppstr != NULL) { 
+	      rpost  = (mode == TRMODE_J || mode == TRMODE_R) ? '.' : '~';
+	    }
 	  }
 	}
       }
@@ -407,7 +411,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	ad->model[pos]   = lcons;
 	ad->mline[pos]   = lmid;
 	ad->aseq[pos]    = lseq;
-	if(pcode != NULL)  ad->ppline[pos] = lpost;
+	if(ppstr != NULL)  ad->ppline[pos] = lpost;
 	ccoord[pos] = cpos_l;
 	scoord[pos] = spos_l;
 	pos++;
@@ -415,7 +419,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
       if (do_right) {
 	if ((status = esl_stack_IPush(pda, spos_r)) != eslOK) goto ERROR;
 	if ((status = esl_stack_IPush(pda, cpos_r)) != eslOK) goto ERROR;
-	if(pcode != NULL) {
+	if(ppstr != NULL) {
 	  if ((status = esl_stack_IPush(pda, (int) rpost)) != eslOK) goto ERROR;
 	}
 	if ((status = esl_stack_IPush(pda, (int) rseq))  != eslOK) goto ERROR;
@@ -439,6 +443,8 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	if ((status = esl_stack_IPush(pda, PDA_STATE)) != eslOK) goto ERROR;
       }
       else if (cm->sttype[v] != E_st) {
+	; /* marginal type local end, do nothing */
+#if 0
         /* Catch marginal-type local ends, treat like EL for output */
 	int numwidth;		/* number of chars to leave for displaying width numbers */
 
@@ -453,6 +459,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 	sprintf(ad->aseq+pos, "*[%*d]*", numwidth, tinset);
 	/* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
 	pos += 4 + numwidth;
+#endif
       }
     } /* end loop over the PDA; PDA now empty */
 	 
@@ -462,7 +469,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   ad->model[ad->N]  = '\0';
   ad->mline[ad->N]  = '\0';
   ad->aseq[ad->N]   = '\0';
-  if(pcode != NULL)  ad->ppline[ad->N] = '\0'; 
+  if(ppstr != NULL)  ad->ppline[ad->N] = '\0'; 
 
   /* Laboriously determine the maximum bounds. */
   ad->sqfrom = 0;
@@ -1049,6 +1056,7 @@ cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad)
   fprintf(fp, "csline  = %s\n", ad->csline ? ad->csline : "[none]");
   fprintf(fp, "model   = %s\n", ad->model);
   fprintf(fp, "mline   = %s\n", ad->mline);
+  fprintf(fp, "ppline  = %s\n", ad->ppline ? ad->ppline : "[none]");
   fprintf(fp, "aseq    = %s\n", ad->aseq);
   fprintf(fp, "N       = %d\n", ad->N);
   fprintf(fp, "\n");

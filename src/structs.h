@@ -922,15 +922,15 @@ typedef struct _fullmat_t {
 
 /* Constants for alignment truncation modes, used during alignment
  * traceback.  We use TRMODE{J,L,R}_OFFSET as a way of determining the
- * marginal alignment mode just from the yoffset stored in the
+ * marginal alignment mode solely from the yoffset stored in the
  * {J,L,R}shadow matrices, by adding the appropriate offset to yoffset
  * depending on the truncation mode.  A crucial fact is that yoffset
  * ranges from 0..MAXCONNECT-1 for normal states, but it can also be
  * USED_LOCAL_BEGIN, USED_EL, and USED_TRUNC_END, so we have to make
  * sure that adding 0..MAXCONNECT-1 to any of the
  * TRMODE_{J,L,R}_OFFSET values does not add up to USED_LOCAL_BEGIN,
- * USED_EL or USED_TRUNC_END. And remember that these values have to
- * be able to be stored in a char.
+ * USED_EL or USED_TRUNC_END (defined above). And remember that these
+ * values have to be able to be stored in a char.
  */
 #define NTRMODES        5
 #define TRMODE_UNKNOWN  4
@@ -1499,8 +1499,8 @@ typedef struct scanmx_s {
   int    *dmax;        /* [0..v..cm->M-1] max subtree length for v using beta, just a ref, NULL for non-banded */
   int   **dnAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
-  int    *bestr;       /* auxil info: best root state at alpha[0][cur][d] */
-  int    *bestmode;    /* auxil info: best mode for parsetree at alpha[0][cur][d] */
+  int    *bestr;       /* auxil info: best root state v at alpha[0][cur][d] (0->v local begin used if v != 0)*/
+  char   *bestmode;    /* auxil info: best mode for parsetree at alpha[0][cur][d], always TRMODE_J for all d */
   int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha) */
   double  beta_qdb;    /* tail loss prob used for calc'ing dmin/dmax, invalid if dmin==dmax==NULL */
   double  beta_W;      /* tail loss prob used for calc'ing W, often == beta_qdb, may be greater, can't be less */
@@ -1563,8 +1563,9 @@ typedef struct trscanmx_s {
   int    *dmax;        /* [0..v..cm->M-1] max subtree length for v using beta, just a ref, NULL for non-banded */
   int   **dnAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
-  int    *bestr;       /* auxil info: best root state at alpha[0][cur][d] */
-  int    *bestmode;    /* auxil info: best mode for parsetree at alpha[0][cur][d] */
+  int    *bestr;       /* auxil info: best root state v at alpha[0][cur][d] (0->v truncated begin used if v != 0)*/
+  char   *bestmode;    /* auxil info: best mode for parsetree at alpha[0][cur][d], gives score in bestsc[d] */
+  float  *bestsc;      /* auxil info: best score for parsetree at alpha[0][cur][d] in mode bestmode[d] */
   int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha) */
   double  beta_qdb;    /* tail loss prob used for calc'ing dmin/dmax, invalid if dmin==dmax==NULL */
   double  beta_W;      /* tail loss prob used for calc'ing W, often == beta_qdb, may be greater, can't be less */
@@ -1792,14 +1793,21 @@ typedef struct cm_s {
   int   iel_selfsc;     /* scaled int version of el_selfsc         */
 
   /* DP matrices and some auxiliary info for DP algorithms */
-  ScanMatrix_t    *smx;     /* matrices, info for CYK/Inside scans with this CM */
-  CM_HB_MX        *hbmx;    /* growable HMM banded float matrix */
-  CM_HB_MX        *ohbmx;   /* another, growable HMM banded float matrix for Outside/Posterior calcs */
-  CM_HB_EMIT_MX   *ehbmx;   /* growable HMM banded emit matrix for residue posterior probability calcs */
-  CM_HB_SHADOW_MX *shhbmx;  /* growable HMM banded shadow matrix, for alignment tracebacks */
-  CP9_MX          *cp9_mx;  /* growable CP9 DP matrix */
-  CP9_MX          *cp9_bmx; /* another growable CP9 DP matrix, 'b' is for backward,
-			  * only alloc'ed to any significant size if we do Forward,Backward->Posteriors */
+  /* for standard CM alignment/search */
+  CM_HB_MX           *hbmx;     /* growable HMM banded float matrix */
+  CM_HB_MX           *ohbmx;    /* another, growable HMM banded float matrix for Outside/Posterior calcs */
+  CM_HB_EMIT_MX      *ehbmx;    /* growable HMM banded emit matrix for residue posterior probability calcs */
+  CM_HB_SHADOW_MX    *shhbmx;   /* growable HMM banded shadow matrix, for alignment tracebacks */
+  /* for truncated CM alignment/search */
+  CM_TR_HB_MX        *trhbmx;   /* growable truncated HMM banded float matrix */
+  CM_TR_HB_MX        *trohbmx;  /* another, growable truncated HMM banded float matrix for Outside/Posterior calcs */
+  CM_TR_HB_EMIT_MX   *trehbmx;  /* growable truncated HMM banded emit matrix for residue posterior probability calcs */
+  CM_TR_HB_SHADOW_MX *trshhbmx; /* growable truncated HMM banded shadow matrix, for alignment tracebacks */
+  /* for CM search or CP9 HMM alignment */
+  ScanMatrix_t       *smx;      /* matrices, info for CYK/Inside scans with this CM */
+  CP9_MX             *cp9_mx;   /* growable CP9 DP matrix */
+  CP9_MX             *cp9_bmx;  /* another growable CP9 DP matrix, 'b' is for backward,
+				 * only alloc'ed to any significant size if we do Forward,Backward->Posteriors */
 
   /* statistics */
   ExpInfo_t       **expA;  /* Exponential tail stats, [0..EXP_NMODES-1]  */
@@ -1994,6 +2002,7 @@ typedef struct cm_pipeline_s {
   int     glen_step;            /* step size for halving glc p7 thr if do_glen */
   int     do_glocal_cm_stages;  /* TRUE to use CM in glocal mode for final stages */
   int     research_ends;        /* TRUE to use local env defn at sequence ends */
+  int     do_trunc_ends;        /* TRUE to use truncated CM algs at sequence ends */
 
   /* Parameters controlling p7 domain/envelope defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
@@ -2146,7 +2155,7 @@ typedef struct cm_hit_s {
   int64_t        seq_idx;       /* sequence index in the seqfile, unique id for the sequence */
   int64_t        start, stop;   /* start/end points of hit */
   int            in_rc;         /* TRUE if hit is in reverse complement of a target, FALSE if not */
-  int            root;          /* TRUE if hit is in reverse complement of a target, FALSE if not */
+  int            root;          /* internal state entry point, != 0 if hit involves a local begin */
   int            mode;          /* joint or marginal hit mode: CM_MODE_J | CM_MODE_R | CM_MODE_L | CM_MODE_T */
   float          score;		/* bit score of the hit (with corrections) */
   double         pvalue;	/* P-value of the hit   (with corrections) */

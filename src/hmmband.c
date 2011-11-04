@@ -1546,21 +1546,10 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  y = cm->cnum[v];   /* BEGR_S */
 
 	  /* set v's i band based on left child w, and v's j band based on right child y */
-	  imin[v] = imin[w];
-	  imax[v] = imax[w];
-	  jmin[v] = jmin[y];
-	  jmax[v] = jmax[y];
-
-	  /* check for possibility that either child is not reachable, will only possibly happen with local on */
-	  if(imin[v] == -1 || jmin[v] == -1) { 
-	    /* either the left child, or right child is not reachable, make them both unreachable as well as the BIF state */
-	    imin[v] = imin[w] = imin[y] = jmin[v] = jmin[w] = jmin[y] = -1;
-	    imax[v] = imax[w] = imax[y] = jmax[v] = jmax[w] = jmax[y] = -2;
-	    /* also make the BEGR_IL unreachable */
-	    imin[y+1] = jmin[y+1] = -1; 
-	    imax[y+1] = jmax[y+1] = -2; 
-	  }
-
+	  imin[v] = (imin[w] != -1) ? imin[w] : imin[y]; /* if imin[w] == imin[y] == -1, then imin[v] will be set as -1 */
+	  imax[v] = (imax[w] != -2) ? imax[w] : imax[y]; /* if imax[w] == imax[y] == -2, then imax[v] will be set as -2 */
+	  jmin[v] = (jmin[y] != -1) ? jmin[y] : jmin[w]; /* if jmin[y] == jmin[w] == -1, then jmin[v] will be set as -1 */
+	  jmax[v] = (jmax[y] != -2) ? jmax[y] : jmax[w]; /* if jmax[y] == jmax[w] == -2, then jmax[v] will be set as -2 */
 	  break;
 	    
 	case MATP_nd: 

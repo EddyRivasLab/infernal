@@ -246,7 +246,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->glen_min         = esl_opt_GetInteger(go, "--glN");
   pli->glen_max         = esl_opt_GetInteger(go, "--glX");
   pli->glen_step        = esl_opt_GetInteger(go, "--glstep");
-  pli->research_ends    = (esl_opt_GetBoolean(go, "--noends")) ? FALSE : TRUE;
+  pli->research_ends    = (esl_opt_GetBoolean(go, "--noends"))  ? FALSE : TRUE;
+  pli->do_trunc_ends    = (esl_opt_GetBoolean(go, "--notrunc")) ? FALSE : TRUE;
   pli->xtau             = esl_opt_GetReal(go, "--xtau");
 
   /* Configure acceleration pipeline thresholds */
@@ -527,7 +528,6 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   cm_pipeline_Destroy(pli, NULL);
   return NULL;
 }
-
 
 /* Function:  cm_pipeline_Reuse()
  * Synopsis:  Reuse a pipeline for next target.
@@ -1676,6 +1676,10 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
  *            return it in <*opt_cmcons>. Otherwise, if <*opt_cm>
  *            is valid (non-NULL),  <*opt_cmcons> should be as well.
  *
+ *            If <do_trunc> is TRUE, we are searching the end of 
+ *            a sequence which may contain truncated hits, so we
+ *            use truncated search/alignment algorithms.
+ *
  * Returns:   <eslOK> on success. If a significant hit is obtained,
  *            its information is added to the growing <hitlist>.
  *
@@ -1686,7 +1690,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
+cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int do_trunc, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 {
   int              status;
   char             errbuf[cmERRBUFSIZE];   /* for error messages */
@@ -1799,8 +1803,13 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	 * the resulting HMM banded matrix is under our size limit.
 	 */
 	while(1) { 
-	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, FALSE, 0)) != eslOK) return status;
-	  if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, &hbmx_Mb)) != eslOK) return status; 
+	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, do_trunc, 0)) != eslOK) return status;
+	  if(do_trunc) {
+	    if((status = cm_tr_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; 
+	  }
+	  else { 
+	    if((status = cm_hb_mx_SizeNeeded   (cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, &hbmx_Mb)) != eslOK) return status; 
+	  }
 	  if(hbmx_Mb < pli->hb_size_limit) break; /* our matrix will be small enough, break out of while(1) */
 	  if(cm->tau > 0.01)               break; /* our bands have gotten too tight, break out of while(1) */
 	  /* printf("CYK 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb);*/
@@ -1815,23 +1824,38 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	/* reset search opts */
 	cm->search_opts  = pli->fcyk_cm_search_opts;
 
-	status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
-			       0.,                                 /* minimum score to report, irrelevant */
-			       NULL,                               /* hitlist to add to, irrelevant here */
-			       pli->do_null3,                      /* do the NULL3 correction? */
-			       cm->hbmx,                           /* the HMM banded matrix */
-			       pli->hb_size_limit,                 /* upper limit for size of DP matrix */
-			       cyk_env_cutoff,                     /* bit score == F6env P value, cutoff for envelope redefinition */
+	if(do_trunc) { 
+	  status = TrCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
+			       0.,                                  /* minimum score to report, irrelevant */
+			       NULL,                                /* hitlist to add to, irrelevant here */
+			       pli->do_null3,                       /* do the NULL3 correction? */
+			       cm->trhbmx,                          /* the truncated HMM banded matrix */
+			       pli->hb_size_limit,                  /* upper limit for size of DP matrix */
+			       cyk_env_cutoff,                      /* bit score == F6env P value, cutoff for envelope redefinition */
 			       (pli->do_cykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
 			       (pli->do_cykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
-			       &cyksc);                            /* best score, irrelevant here */
+			       &cyksc);                             /* best score, irrelevant here */
+	  printf("\n\n!!! Returned from TrCYKScanHB(): %.4f bits\n\n\n", cyksc);
+	}
+	else { 
+	  status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
+				 0.,                                  /* minimum score to report, irrelevant */
+				 NULL,                                /* hitlist to add to, irrelevant here */
+				 pli->do_null3,                       /* do the NULL3 correction? */
+				 cm->hbmx,                            /* the HMM banded matrix */
+				 pli->hb_size_limit,                  /* upper limit for size of DP matrix */
+				 cyk_env_cutoff,                      /* bit score == F6env P value, cutoff for envelope redefinition */
+				 (pli->do_cykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
+				 (pli->do_cykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
+				 &cyksc);                             /* best score, irrelevant here */
+	}
 	if     (status == eslERANGE) { do_qdb_or_nonbanded_filter_scan = TRUE; }
 	else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
       }
       if(do_qdb_or_nonbanded_filter_scan) { /* careful, different from just an 'else', b/c we may have just set this as true if status == eslERANGE */
 	/* make sure we have a ScanMatrix_t for this round, if not build one,
 	 * this should be okay because we should only very rarely need to do this */
-	printf("OVERFLOW CYK FILTER above pli->hb_size_limit\n");
+	printf("FIX ME! ADD TRUNC VERSION! OVERFLOW CYK FILTER above pli->hb_size_limit\n");
 	continue;
 	pli->n_overflow_fcyk++;
 	if(pli->fsmx == NULL) { 
@@ -1885,8 +1909,13 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	 * the resulting HMM banded matrix is under our size limit.
 	 */
 	while(1) { 
-	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, FALSE, 0)) != eslOK) return status;
-	  if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, &hbmx_Mb)) != eslOK) return status; 
+	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, do_trunc, 0)) != eslOK) return status;
+	  if(do_trunc) { 
+	    if((status = cm_tr_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; 
+	  }
+	  else { 
+	    if((status = cm_hb_mx_SizeNeeded   (cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, &hbmx_Mb)) != eslOK) return status; 
+	  }
 	  if(hbmx_Mb < pli->hb_size_limit) break; /* our matrix will be small enough, break out of while(1) */
 	  if(cm->tau > 0.01)               break; /* our bands have gotten too tight, break out of while(1) */
 	  /* printf("INS 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
@@ -1894,43 +1923,69 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	}	  
 	/* printf("INS 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
 	if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is HMM banded Inside */
-	status = FastFInsideScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
-				   pli->T,            /* minimum score to report */
+	  if(do_trunc) { 
+	    status = FTrInsideScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
+				     pli->T,            /* minimum score to report */
+				     (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
+				     pli->do_null3,     /* do the NULL3 correction? */
+				     cm->trhbmx,        /* the truncated HMM banded matrix */
+				     pli->hb_size_limit,/* upper limit for size of DP matrix */
+				     0., NULL, NULL,    /* redefined envelope cutoff,start,end, irrelevant here */
+				     &inssc);           /* best score, irrelevant here */
+	    printf("\n\n!!! Returned from FTrInsideScanHB(): %.4f bits\n\n\n", inssc);
+	  }
+	  else { 
+	    status = FastFInsideScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
+				       pli->T,            /* minimum score to report */
+				       (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
+				       pli->do_null3,     /* do the NULL3 correction? */
+				       cm->hbmx,          /* the HMM banded matrix */
+				       pli->hb_size_limit,/* upper limit for size of DP matrix */
+				       &inssc);           /* best score, irrelevant here */
+	  }
+	  /* if status == eslERANGE: HMM banded scan was skipped b/c mx needed to be too large, 
+	   * we'll repeat the scan with QDBs or without bands below */
+	  if     (status == eslERANGE) { do_qdb_or_nonbanded_final_scan = TRUE; }
+	  else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
+	}
+	else { /* final algorithm is HMM banded CYK */
+	  /*printf("calling HMM banded CYK scan\n");*/
+	  if(do_trunc) { 
+	    status = TrCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
+				 pli->T,                             /* minimum score to report */
+				 (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
+				 pli->do_null3,                      /* do the NULL3 correction? */
+				 cm->trhbmx,                         /* the truncated HMM banded matrix */
+				 pli->hb_size_limit,                 /* upper limit for size of DP matrix */
+				 0., NULL, NULL,                     /* envelope redefinition parameters, irrelevant here */
+				 &cyksc);                            /* best score, irrelevant here */
+	    printf("\n\n!!! Returned from TrCYKScanHB(): %.4f bits\n\n\n", cyksc);
+	  }
+	  else { 
+	    status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
+				   pli->T,                             /* minimum score to report */
 				   (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
-				   pli->do_null3,     /* do the NULL3 correction? */
-				   cm->hbmx,          /* the HMM banded matrix */
-				   pli->hb_size_limit,/* upper limit for size of DP matrix */
-				   &inssc);           /* best score, irrelevant here */
-	/* if status == eslERANGE: HMM banded scan was skipped b/c mx needed to be too large, 
-	 * we'll repeat the scan with QDBs or without bands below */
-	if     (status == eslERANGE) { do_qdb_or_nonbanded_final_scan = TRUE; }
-	else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
-      }
-      else { /* final algorithm is HMM banded CYK */
-	/*printf("calling HMM banded CYK scan\n");*/
-	status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
-			       pli->T,                             /* minimum score to report */
-			       (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
-			       pli->do_null3,                      /* do the NULL3 correction? */
-			       cm->hbmx,                           /* the HMM banded matrix */
-			       pli->hb_size_limit,                 /* upper limit for size of DP matrix */
-			       0., NULL, NULL,                     /* envelope redefinition parameters, irrelevant here */
-			       &cyksc);                            /* best score, irrelevant here */
-	/* if status == eslERANGE: HMM banded scan was skipped b/c mx needed to be too large, 
-	 * we'll repeat the scan with QDBs or without bands below */
-	if     (status == eslERANGE) { do_qdb_or_nonbanded_final_scan = TRUE; }
-	else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
-      }
+				   pli->do_null3,                      /* do the NULL3 correction? */
+				   cm->hbmx,                           /* the HMM banded matrix */
+				   pli->hb_size_limit,                 /* upper limit for size of DP matrix */
+				   0., NULL, NULL,                     /* envelope redefinition parameters, irrelevant here */
+				   &cyksc);                            /* best score, irrelevant here */
+	  }
+	  /* if status == eslERANGE: HMM banded scan was skipped b/c mx needed to be too large, 
+	   * we'll repeat the scan with QDBs or without bands below */
+	  if     (status == eslERANGE) { do_qdb_or_nonbanded_final_scan = TRUE; }
+	  else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
+	}
     }
     if(do_qdb_or_nonbanded_final_scan) { /* careful, different from just an 'else', b/c we may have just set this as true if status == eslERANGE */
       /*******************************************************************
        * Run non-HMM banded (probably qdb) version of CYK or Inside *
        *******************************************************************/
+      pli->n_overflow_final++;
       if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is Inside */
 	/* make sure we have a ScanMatrix_t for this round, if not build one,
 	 * this should be okay because we should only very rarely need to do this */
-	pli->n_overflow_final++;
-	printf("OVERFLOW INS FILTER above pli->hb_size_limit\n");
+	printf("FIX ME! ADD TRUNC VERSION! OVERFLOW INS FILTER above pli->hb_size_limit\n");
 	continue;
 	if(pli->smx == NULL) { 
 	  pli->smx  = cm_CreateScanMatrix(cm, cm->W, pli->final_dmin, pli->final_dmax, 
@@ -1951,15 +2006,17 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
       else { /* final algorithm is CYK */
 	/* make sure we have a ScanMatrix_t for this round, if not build one,
 	 * this should be okay because we should only very rarely need to do this */
-	if(pli->fsmx == NULL) { 
-	  pli->fsmx = cm_CreateScanMatrix(cm, cm->W, pli->fcyk_dmin, pli->fcyk_dmax, 
-					  ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? cm->W : pli->fcyk_dmax[0]),
-					  pli->fcyk_beta, 
-					  ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? FALSE : TRUE),
+	printf("FIX ME! ADD TRUNC VERSION! OVERFLOW INS FILTER above pli->hb_size_limit\n");
+	continue;
+	if(pli->smx == NULL) { 
+	  pli->smx = cm_CreateScanMatrix(cm, cm->W, pli->final_dmin, pli->final_dmax, 
+					  ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? cm->W : pli->final_dmax[0]),
+					  pli->final_beta, 
+					  ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? FALSE : TRUE),
 					  TRUE,    /* do     allocate float matrices for CYK filter round */
 					  FALSE);  /* do not allocate int   matrices for CYK filter round  */
 	}
-	if((status = FastCYKScan(cm, errbuf, pli->fsmx, sq->dsq, es[i], ee[i],
+	if((status = FastCYKScan(cm, errbuf, pli->smx, sq->dsq, es[i], ee[i],
 				 pli->T,            /* minimum score to report */
 				 (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
 				 pli->do_null3,     /* apply the null3 correction? */
@@ -1978,10 +2035,11 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	  if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem adding hit to hitlist, out of memory?");
 	}
       }
-      //printf("TMP:\n");
-      //cm_tophits_Dump(stdout, tmp_hitlist);
-      //printf("MASTER:\n");
-      //cm_tophits_Dump(stdout, hitlist);
+      /* printf("TMP:\n");
+	 cm_tophits_Dump(stdout, tmp_hitlist);
+	 printf("MASTER:\n");
+	 cm_tophits_Dump(stdout, hitlist);
+      */
       cm_tophits_Destroy(tmp_hitlist);
     }      
 
@@ -2026,7 +2084,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 #endif
       /* Get an alignment of the hit, if nec */
       if(pli->do_alignments) { 
-	if((status = cm_pli_AlignHit(pli, cm, *opt_cmcons, sq, hit, 
+	if((status = cm_pli_AlignHit(pli, cm, *opt_cmcons, sq, do_trunc, hit, 
 				     (h == nhit) ? TRUE : FALSE,    /* TRUE if this is the first hit we're aligning (h == nhit) */
 				     scan_cp9b))                    /* a copy of the HMM bands determined in the last search stage, NULL if HMM bands not used */
 	   != eslOK) return status;
@@ -2096,11 +2154,14 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
  *            alignment algorithm used is HMM banded optimal accuracy
  *            unless that requires too much memory. See comments
  *            within code for more detail.
+ * 
+ *            If <do_trunc> is TRUE, we use truncated alignment
+ *            algorithms, else we use standard ones.
  *
- * Returns:   <eslOK> on success. 
+ * Returns: <eslOK> on success.
  */
 int
-cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b)
+cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int do_trunc, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b)
 {
   int                 status;               /* Easel status code */
   Parsetree_t        *tr = NULL;            /* pointer to the pointer to the parsetree we're currently creating */
@@ -2142,8 +2203,13 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
        */
       cm->tau = pli->final_tau;
       while(1) { 
-	if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, FALSE, 0)) != eslOK) return status; 
-	if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, hitlen, NULL, &hbmx_Mb)) != eslOK) return status; 
+	if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, do_trunc, 0)) != eslOK) return status; 
+	if(do_trunc) { 
+	  if((status = cm_tr_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, hitlen, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; 
+	}
+	else { 
+	  if((status = cm_hb_mx_SizeNeeded   (cm, pli->errbuf, cm->cp9b, hitlen, NULL, &hbmx_Mb)) != eslOK) return status; 
+	}
 	if(hbmx_Mb < pli->hb_size_limit) break; /* our matrix will be small enough, break out of while(1) */
 	if(cm->tau > 0.01)               break; /* our bands have gotten too tight, break out of while(1) */
 	/* printf("ARC 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
@@ -2174,8 +2240,14 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
      * else if  hbmx_Mb < pli->hb_size_limit  TRUE           CYK               yes         yes
      * else if  hbmx_Mb > pli->hb_size_limit  TRUE/FALSE     D&C CYK           no          no
      */     
-    if((status = cm_hb_mx_SizeNeeded       (cm, pli->errbuf, cm->cp9b, hitlen, NULL, &hbmx_Mb)) != eslOK) return status; 
-    if((status = cm_hb_shadow_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, NULL,   NULL, &shmx_Mb)) != eslOK) return status; 
+    if(do_trunc) { 
+      if((status = cm_tr_hb_mx_SizeNeeded       (cm, pli->errbuf, cm->cp9b, hitlen, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; 
+      if((status = cm_tr_hb_shadow_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, NULL,   NULL, NULL, NULL, NULL, NULL, NULL, &shmx_Mb)) != eslOK) return status; 
+    }
+    else { 
+      if((status = cm_hb_mx_SizeNeeded          (cm, pli->errbuf, cm->cp9b, hitlen, NULL, &hbmx_Mb)) != eslOK) return status; 
+      if((status = cm_hb_shadow_mx_SizeNeeded   (cm, pli->errbuf, cm->cp9b, NULL,   NULL, &shmx_Mb)) != eslOK) return status; 
+    }
     /* printf("ALN 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
     
     if(hbmx_Mb < pli->hb_size_limit) { 
@@ -2200,18 +2272,41 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   }
   
   if(do_hbanded) { 
-    status = cm_AlignHB(cm, pli->errbuf, subdsq, hitlen, 
-			pli->hb_size_limit,                          /* limit for a single CM_HB_MX, so this is safe */
-			do_optacc,                                   /* use optimal accuracy alg? */
-			FALSE,                                       /* don't sample aln from Inside matrix */
-			cm->hbmx, cm->shhbmx,                        /* inside, shadow matrices */
-			(do_ppstr || do_optacc) ? cm->ohbmx : NULL,  /* outside DP matrix */
-			(do_ppstr || do_optacc) ? cm->ehbmx : NULL,  /* emit matrix */
-			NULL,                                        /* ESL_RANDOMNESS, unneeded b/c we're not sampling */
-			(do_ppstr  ? &ppstr  : NULL),                /* posterior string */
-			(do_optacc ? &ins_sc : NULL),                /* inside score, NULL if we're not doing opt acc */
-			&tr,                                         /* parsetree */
-			(do_optacc ? &optacc_sc : &cyk_sc));         /* optimal accuracy or CYK score */
+    if(do_trunc) { 
+      status = cm_TrAlignHB(cm, pli->errbuf, subdsq, hitlen, 
+			    pli->hb_size_limit,                            /* limit for a single CM_HB_MX, so this is safe */
+			    hit->mode,                                     /* alignment mode, determined in truncated scanner function */
+			    do_optacc,                                     /* use optimal accuracy alg? */
+			    FALSE,                                         /* don't sample aln from Inside matrix */
+			    cm->trhbmx, cm->trshhbmx,                      /* inside, shadow matrices */
+			    (do_ppstr || do_optacc) ? cm->trohbmx : NULL,  /* outside DP matrix */
+			    (do_ppstr || do_optacc) ? cm->trehbmx : NULL,  /* emit matrix */
+			    NULL,                                          /* ESL_RANDOMNESS, unneeded b/c we're not sampling */
+			    (do_ppstr  ? &ppstr  : NULL),                  /* posterior string */
+			    (do_optacc ? &ins_sc : NULL),                  /* inside score, NULL if we're not doing opt acc */
+			    &tr,                                           /* parsetree */
+			    (do_optacc ? &optacc_sc : &cyk_sc));           /* optimal accuracy or CYK score */
+      /* TEMP BLOCK */
+      ParsetreeDump(stdout, tr, cm, subdsq, NULL, NULL);
+      float parsetree_sc;
+      ParsetreeScore(cm, NULL, NULL, tr, subdsq, FALSE, &parsetree_sc, NULL, NULL, NULL, NULL);
+      printf("Parsetree score      : %.4f           (TROPTACC OR TRCYK)\n", parsetree_sc);
+      /* END TEMP BLOCK */
+    }
+    else { 
+      status = cm_AlignHB(cm, pli->errbuf, subdsq, hitlen, 
+			  pli->hb_size_limit,                          /* limit for a single CM_HB_MX, so this is safe */
+			  do_optacc,                                   /* use optimal accuracy alg? */
+			  FALSE,                                       /* don't sample aln from Inside matrix */
+			  cm->hbmx, cm->shhbmx,                        /* inside, shadow matrices */
+			  (do_ppstr || do_optacc) ? cm->ohbmx : NULL,  /* outside DP matrix */
+			  (do_ppstr || do_optacc) ? cm->ehbmx : NULL,  /* emit matrix */
+			  NULL,                                        /* ESL_RANDOMNESS, unneeded b/c we're not sampling */
+			  (do_ppstr  ? &ppstr  : NULL),                /* posterior string */
+			  (do_optacc ? &ins_sc : NULL),                /* inside score, NULL if we're not doing opt acc */
+			  &tr,                                         /* parsetree */
+			  (do_optacc ? &optacc_sc : &cyk_sc));         /* optimal accuracy or CYK score */
+    }
     if(status == eslERANGE) { 
       /* matrix was too big, despite our pre-check (should be rare), use D&C CYK */
       do_optacc    = FALSE;
@@ -2441,6 +2536,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
   int64_t  *es = NULL;  /* [0..i..nenv-1] window start positions, filled by cm_pli_p7EnvelopeDef() */
   int64_t  *ee = NULL;  /* [0..i..nenv-1] window end   positions, filled by cm_pli_p7EnvelopeDef() */
   int       do_glocal;  /* TRUE, unless if i_am_terminal == TRUE; this informs p7EnvelopeDef() to use local domain defn */
+  int       do_trunc;   /* TRUE if i_am_terminal == TRUE and pli->do_trunc_ends; this informs cm_pli_CMStage() to use truncated search/aln algs */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
 #if DOPRINT
@@ -2474,10 +2570,11 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
 #endif
   if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, do_glocal, ws, we, nwin, opt_gm, &es, &ee, &nenv)) != eslOK) return status;
 
+  do_trunc = (i_am_terminal && pli->do_trunc_ends) ? TRUE : FALSE;
 #if DOPRINT
   printf("\nPIPELINE calling CMStage() %s  %" PRId64 " residues\n", sq->name, sq->n);
 #endif
-  if((status = cm_pli_CMStage      (pli, cm_offset, cm_config_opts, sq, es,  ee,  nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
+  if((status = cm_pli_CMStage      (pli, cm_offset, cm_config_opts, sq, do_trunc, es,  ee,  nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
 
   if(pli->do_time_F6) return eslOK;
 

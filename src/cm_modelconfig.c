@@ -80,17 +80,31 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
   /* Build the emitmap, if necessary */
   if(cm->emap == NULL) cm->emap = CreateEmitMap(cm);
 
-  /* Allocate the emit matrix for alignment traceback, 
-   * Initially this is small, and its only grown as needed.
+  /* Allocate the truncated HMM banded matrices.
+   * The non-truncated versions (cm->hbmx and cm->ohbmx)
+   * are allocated in CreateCMBody(), but these require
+   * knowledge of B states so are allocated here.
    */
-  if(cm->ehbmx != NULL) cm_hb_emit_mx_Destroy(cm->ehbmx);
-  cm->ehbmx = cm_hb_emit_mx_Create(cm);
+  if(cm->trhbmx  != NULL) cm_tr_hb_mx_Destroy(cm->trhbmx);
+  if(cm->trohbmx != NULL) cm_tr_hb_mx_Destroy(cm->trohbmx);
+  cm->trhbmx  = cm_tr_hb_mx_Create(cm);
+  cm->trohbmx = cm_tr_hb_mx_Create(cm);
 
-  /* Allocate the shadow matrix for alignment traceback, 
-   * Initially this is small, and its only grown as needed.
+  /* Allocate the emit matrices for alignment traceback, 
+   * Initially these are small, and only grown as needed.
    */
-  if(cm->shhbmx != NULL) cm_hb_shadow_mx_Destroy(cm->shhbmx);
-  cm->shhbmx = cm_hb_shadow_mx_Create(cm);
+  if(cm->ehbmx   != NULL) cm_hb_emit_mx_Destroy(cm->ehbmx);
+  if(cm->trehbmx != NULL) cm_tr_hb_emit_mx_Destroy(cm->trehbmx);
+  cm->ehbmx   = cm_hb_emit_mx_Create(cm);
+  cm->trehbmx = cm_tr_hb_emit_mx_Create(cm);
+
+  /* Allocate the shadow matrices for alignment traceback, 
+   * Initially these are small, and only grown as needed.
+   */
+  if(cm->shhbmx   != NULL) cm_hb_shadow_mx_Destroy(cm->shhbmx);
+  if(cm->trshhbmx != NULL) cm_tr_hb_shadow_mx_Destroy(cm->trshhbmx);
+  cm->shhbmx   = cm_hb_shadow_mx_Create(cm);
+  cm->trshhbmx = cm_tr_hb_shadow_mx_Create(cm);
 
   /* Build the CP9 HMM and associated data */
   /* IMPORTANT: do this before setting up CM for local mode

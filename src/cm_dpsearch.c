@@ -585,7 +585,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
       }
 
       /* update gamma, but only if we're reporting hits to hitlist */
-      if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, smx->bestmode, hitlist, W, act)) != eslOK) return status;
+      if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, alpha[jp_v][0], NULL, NULL, NULL, dnA[0], dxA[0], FALSE, smx->bestr, NULL, hitlist, W, act)) != eslOK) return status;
 
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
@@ -916,7 +916,7 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
       }
 
       /* update gamma, but only if we're reporting hits to hitlist */
-      if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, smx->bestmode, hitlist, W, act)) != eslOK) return status;
+      if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, alpha[jp_v][0], NULL, NULL, NULL, dnA[0], dxA[0], FALSE, smx->bestr, NULL, hitlist, W, act)) != eslOK) return status;
 
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
@@ -1468,7 +1468,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
       /* update gamma, but only if we're reporting hits to hitlist */
       if(hitlist != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, smx->bestmode, hitlist, W, act)) != eslOK) return status;
+	if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, gamma_row, NULL, NULL, NULL, dnA[0], dxA[0], FALSE, smx->bestr, NULL, hitlist, W, act)) != eslOK) return status;
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
@@ -1938,7 +1938,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
       /* update gamma, but only if we're reporting hits to hitlist */
       if(hitlist != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, smx->bestmode, hitlist, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, gamma_row, NULL, NULL, NULL, dnA[0], dxA[0], FALSE, smx->bestr, NULL, hitlist, W, act)) != eslOK) return status;
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
@@ -2490,7 +2490,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
       /* update gamma, but only if we're reporting hits to hitlist */
       if(hitlist != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, smx->bestmode, hitlist, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, gamma_row, NULL, NULL, NULL, dnA[0], dxA[0], FALSE, smx->bestr, NULL, hitlist, W, act)) != eslOK) return status;
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
@@ -3032,7 +3032,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to hitlist */
-      if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, smx->bestmode, hitlist, W, act)) != eslOK) return status;
+      if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, alpha[jp_v][0], NULL, NULL, NULL, dnA[0], dxA[0], FALSE, smx->bestr, NULL, hitlist, W, act)) != eslOK) return status;
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -3336,7 +3336,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
       /* update gamma, but only if we're reporting hits to hitlist */
       if(hitlist != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, smx->bestmode, hitlist, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, gamma_row, NULL, NULL, NULL, dnA[0], dxA[0], FALSE, smx->bestr, NULL, hitlist, W, act)) != eslOK) return status;
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE);*/
     } /* end loop over end positions j */
@@ -3659,7 +3659,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
       /* update gamma, but only if we're reporting hits to hitlist */
       if(hitlist != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, smx->bestmode, hitlist, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, gamma_row, NULL, NULL, NULL, dnA[0], dxA[0], FALSE, smx->bestr, NULL, hitlist, W, act)) != eslOK) return status;
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE);*/
     } /* end loop over end positions j */
@@ -3969,7 +3969,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to hitlist */
-      if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, smx->bestmode, hitlist, W, act)) != eslOK) return status;
+      if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, alpha[jp_v][0], NULL, NULL, NULL, dnA[0], dxA[0], FALSE, smx->bestr, NULL, hitlist, W, act)) != eslOK) return status;
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -4169,7 +4169,6 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   int      status;
   GammaHitMx_t *gamma;  /* semi-HMM for hit resoultion */
   int     *bestr;       /* best root state for d at current j */
-  int     *bestmode;    /* best mode for parsetree for d at current j */
   int      v,y,z;	/* indices for states  */
   int      j,d,i,k;	/* indices in sequence dimensions */
   float    sc;		/* a temporary variable holding a score */
@@ -4531,16 +4530,14 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   j   = jmin[v];
   
   ESL_ALLOC(bestr, sizeof(int) * (W+1));
-  ESL_ALLOC(bestmode, sizeof(int) * (W+1));
   esl_vec_ISet(bestr,    W+1, 0);
-  esl_vec_ISet(bestmode, W+1, TRMODE_J);
 
   /* first report all hits with j < jmin[0] are impossible, only if we're reporting hits to hitlist */
   if(hitlist != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
       if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, 
-				    NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMx, this j can't be a hit end pt */
-				    TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+				    NULL, NULL, NULL, NULL, 0, 0,   /* {J,L,R,T}alpha_row's are NULL, we're telling UpdateGammaHitMx, this j can't be a hit end pt */
+				    TRUE, bestr, NULL, hitlist, W, act)) != eslOK) return status;
     }
   }
     
@@ -4571,15 +4568,15 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
     
     /* report all hits with valid d for this j, only if hitlist != NULL */
     if(hitlist != NULL) { 
-      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][jp_v], hdmax[0][jp_v], TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], NULL, NULL, NULL, hdmin[0][jp_v], hdmax[0][jp_v], TRUE, bestr, NULL, hitlist, W, act)) != eslOK) return status;
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to hitlist */
   if(hitlist != NULL) { 
     for(j = jmax[v]+1; j <= j0; j++) {
       if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, 
-				    NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMx, this j is can't be a hit end pt */
-				    TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+				    NULL, NULL, NULL, NULL, 0, 0,   /* {J,L,R,T}alpha_row's are NULL, we're telling UpdateGammaHitMx, this j can't be a hit end pt */
+				    TRUE, bestr, NULL, hitlist, W, act)) != eslOK) return status;
     }
   }
   /* find the best scoring hit, and update envelope boundaries if nec */
@@ -4609,7 +4606,6 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   free(el_scA);
   free(yvalidA);
   free(bestr);
-  free(bestmode);
   if (act != NULL) { 
     for(i = 0; i <= W; i++) free(act[i]); 
     free(act);
@@ -4663,7 +4659,6 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   int      status;
   GammaHitMx_t *gamma;  /* semi-HMM for hit resoultion */
   int     *bestr;       /* best root state for d at current j */
-  int     *bestmode;    /* best mode for parsetree for d at current j */
   int      v,y,z;	/* indices for states  */
   int      j,d,i,k;	/* indices in sequence dimensions */
   float    sc;		/* a temporary variable holding a score */
@@ -4996,16 +4991,14 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   j   = jmin[v];
   
   ESL_ALLOC(bestr, sizeof(int) * (W+1));
-  ESL_ALLOC(bestmode, sizeof(int) * (W+1));
   esl_vec_ISet(bestr,    W+1, 0);
-  esl_vec_ISet(bestmode, W+1, TRMODE_J);
 
   /* first report all hits with j < jmin[0] are impossible, only if we're reporting hits to hitlist */
   if(hitlist != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
       if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, 
-				    NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMx, this j is can't be a hit end pt */
-				    TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+				    NULL, NULL, NULL, NULL, 0, 0,   /* {J,L,R,T}alpha_row's are NULL, we're telling UpdateGammaHitMx, this j can't be a hit end pt */
+				    TRUE, bestr, NULL, hitlist, W, act)) != eslOK) return status;
     }
   }
     
@@ -5036,15 +5029,15 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
     
     /* report all hits with valid d for this j, only if hitlist != NULL */
     if(hitlist != NULL) { 
-      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][jp_v], hdmax[0][jp_v], TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], NULL, NULL, NULL, hdmin[0][jp_v], hdmax[0][jp_v], TRUE, bestr, NULL, hitlist, W, act)) != eslOK) return status;
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to hitlist */
   if(hitlist != NULL) { 
     for(j = jmax[v]+1; j <= j0; j++) {
       if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, 
-				    NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMx, this j is can't be a hit end pt */
-				    TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+				    NULL, NULL, NULL, NULL, 0, 0,   /* {J,L,R,T}alpha_row's are NULL, we're telling UpdateGammaHitMx, this j can't be a hit end pt */
+				    TRUE, bestr, NULL, hitlist, W, act)) != eslOK) return status;
     }
   }
   /* find the best scoring hit */
@@ -5063,7 +5056,6 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   free(el_scA);
   free(yvalidA);
   free(bestr);
-  free(bestmode);
   if (act != NULL) { 
     for(i = 0; i <= W; i++) free(act[i]); 
     free(act);

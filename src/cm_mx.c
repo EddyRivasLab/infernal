@@ -1349,7 +1349,7 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   }
 
   if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &Jncells, &Lncells, &Rncells, &Tncells, &Mb_needed)) != eslOK) return status;
-  /*printf("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed);*/
+  printf("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed);
   ESL_DPRINTF2(("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -3399,7 +3399,7 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
   }
 
   if((status = cm_tr_hb_shadow_mx_SizeNeeded(cm, errbuf, cp9b, &Jy_ncells, &Ly_ncells, &Ry_ncells, &Jk_ncells, &Lk_ncells, &Rk_ncells, &Tk_ncells, &Mb_needed)) != eslOK) return status;
-  /*printf("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
+  printf("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed);
   ESL_DPRINTF2(("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr shadow DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -4901,7 +4901,7 @@ cm_hb_emit_mx_GrowTo(CM_t *cm, CM_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t *cp9b
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
   if((status = cm_hb_emit_mx_SizeNeeded(cm, errbuf, cp9b, L, &l_ncells, &r_ncells, &Mb_needed)) != eslOK) return status;
-  /*printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed);*/
+  /*printf("HMM banded emit matrix requested size: %.2f Mb\n", Mb_needed);*/
   ESL_DPRINTF2(("HMM banded emit matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded emit mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -5295,8 +5295,8 @@ cm_tr_hb_emit_mx_GrowTo(CM_t *cm, CM_TR_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
   if((status = cm_tr_hb_emit_mx_SizeNeeded(cm, errbuf, cp9b, L, &l_ncells, &r_ncells, &Mb_needed)) != eslOK) return status;
-  /*printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("HMM banded emit matrix requested size: %.2f Mb\n", Mb_needed));
+  printf("HMM banded truncated emit matrix requested size: %.2f Mb\n", Mb_needed);
+  ESL_DPRINTF2(("HMM banded truncated emit matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded emit mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full matrix? or can we get away
@@ -5600,11 +5600,10 @@ cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double
       }
     }
   }
-  /* allocate bestr, which holds best root state at alpha[0][cur][d] */
-  ESL_ALLOC(smx->bestr,    (sizeof(int) * (smx->W+1)));
-  ESL_ALLOC(smx->bestmode, (sizeof(int) * (smx->W+1)));
-  /* initialize bestmode to J for all positions */
-  esl_vec_ISet(smx->bestmode, (smx->W+1), TRMODE_J);
+  /* allocate bestr and bestmode, bestmode is set to TRMODE_J for all d and never changed */
+  ESL_ALLOC(smx->bestr,    (sizeof(int)   * (smx->W+1)));
+  /* initialize bestr, bestmode (probably not strictly necessary) */
+  esl_vec_ISet(smx->bestr,    (smx->W+1), 0);
 
   /* Some info about the falpha/ialpha matrix
    * The alpha matrix holds data for all states EXCEPT BEGL_S states
@@ -6210,11 +6209,14 @@ cm_CreateTrScanMatrix(CM_t *cm, int W, int *dmax, double beta_W, double beta_qdb
       }
     }
   }
-  /* allocate bestr, which holds best root state at alpha[0][cur][d] */
-  ESL_ALLOC(trsmx->bestr,    (sizeof(int) * (trsmx->W+1)));
-  ESL_ALLOC(trsmx->bestmode, (sizeof(int) * (trsmx->W+1)));
-  /* initialize bestmode to J for all positions */
-  esl_vec_ISet(trsmx->bestmode, (trsmx->W+1), TRMODE_J);
+  /* allocate bestr, bestsc, bestmode */
+  ESL_ALLOC(trsmx->bestr,    (sizeof(int)   * (trsmx->W+1)));
+  ESL_ALLOC(trsmx->bestsc,   (sizeof(float) * (trsmx->W+1)));
+  ESL_ALLOC(trsmx->bestmode, (sizeof(char)  * (trsmx->W+1)));
+  /* initialize bestr, bestsc, bestmode (probably not strictly necessary) */
+  esl_vec_ISet(trsmx->bestr,    (trsmx->W+1), 0);
+  esl_vec_FSet(trsmx->bestsc,   (trsmx->W+1), IMPOSSIBLE);
+  for(j = 0; j <= trsmx->W; j++) trsmx->bestmode[j] = TRMODE_UNKNOWN;
 
   /* Some info about the falpha/ialpha matrix
    * The alpha matrix holds data for all states EXCEPT BEGL_S states
@@ -6711,6 +6713,7 @@ cm_FreeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   free(trsmx->dnAA);
   free(trsmx->dxAA);
   free(trsmx->bestr);
+  free(trsmx->bestsc);
   free(trsmx->bestmode);
   
   if(trsmx->flags & cmTRSMX_HAS_FLOAT) cm_FreeFloatsFromTrScanMatrix(cm, trsmx);
@@ -7023,33 +7026,50 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  *           EPN, Mon Aug 22 08:54:56 2011 (search_results_t --> CM_TOPHITS)
  *
  * Purpose:  Update a gamma semi-HMM for CM hits that end at gamma-relative position <j>.
+ * 
+
+ *           Can be called from either standard or truncated scanning
+ *           functions.  
  *
- * Args:     cm        - the model, used only for its alphabet and null model
- *           errbuf    - for reporting errors
- *           gamma     - the gamma data structure
- *           j         - offset j for gamma must be between 0 and gamma->L
- *           alpha_row - row of DP matrix to examine, we look at [dn..dx], NULL if we want to report
- *                       this j is IMPOSSIBLE end point of a hit (only possible if using_hmm_bands == TRUE)
- *           dn        - minimum d to look at 
- *           dx        - maximum d to look at
+ *           If standard: Jalpha_row is just alpha_row,
+ *           {L,R,T}alpha_row will all be NULL. bestmode will be NULL.
+ *           All modes are implicitly joint (J).
+ *
+ *           If truncated: any of {J,L,R,T} may be NULL. bestmode will 
+ *           not be NULL, it gives the optimal mode for each d, e.g. 
+ *           if bestmode[d] == TRMODE_L, Lalpha_row[d] is >= Jalpha_row[d], Ralpha_row[d], Talpha_row[d].
+ *
+ * Args:     cm         - the model, used only for its alphabet and null model
+ *           errbuf     - for reporting errors
+ *           gamma      - the gamma data structure
+ *           j          - offset j for gamma must be between 0 and gamma->L
+ *           Jalpha_row - row of DP matrix to examine, we look at [dn..dx], NULL if we want to report
+ *                        this j is IMPOSSIBLE end point of a hit (only possible if using_hmm_bands == TRUE)
+ *           dn         - minimum d to look at 
+ *           dx         - maximum d to look at
  *           using_hmm_bands - if TRUE, alpha_row is offset by dn, so we look at [0..dx-dn]
- *           bestr     - [dn..dx] root state (0 or local entry) corresponding to hit stored in alpha_row
- *           bestmode  - [dn..dx] mode corresponding to hit stored in alpha_row
- *           hitlist   - CM_TOPHITS to add to, only used in this function if gamma->iamgreedy 
- *           W         - window size, max size of a hit, only used if we're doing a NULL3 correction (act != NULL)
- *           act       - [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1)
+ *           bestr      - [dn..dx] root state (0 or local entry) corresponding to hit stored in alpha_row
+ *           bestmode   - [dn..dx] bestmode[d] gives mode of max(Jalpha_row[d], Lalpha_row[d], Ralpha_row[d], Talpha_row[d]) 
+ *                        if NULL, we were called by a non-truncated 
+ *           hitlist    - CM_TOPHITS to add to, only used in this function if gamma->iamgreedy 
+ *           W          - window size, max size of a hit, only used if we're doing a NULL3 correction (act != NULL)
+ *           act        - [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1)
  *
- * Returns:  eslOK on succes; eslEMEM on memory allocation error;
+ * Returns:  eslOK on success
+ * Throws:   eslEMEM on memory allocation error
+ *           eslEINVAL if {J,L,R,T}alpha_row are all NULL and (!using_hmm_bands)
+ *                     or bestmode[d] == x (J|L|R|T) and x_alpha_row is NULL
  *
  */
 int
-UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, 
-		 int *bestr, int *bestmode, CM_TOPHITS *hitlist, int W, double **act)
+UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *Jalpha_row, float *Lalpha_row, float *Ralpha_row, float *Talpha_row,
+		 int dn, int dx, int using_hmm_bands, int *bestr, char *bestmode, CM_TOPHITS *hitlist, int W, double **act)
 {
   int status;
   int i, d;
   int bestd;
-  int r, mode;
+  int r;
+  char mode;
   int dmin, dmax;
   int ip, jp;
   float *comp = NULL;    /* 0..a..cm->abc-K-1, the composition of residue a within the hit being reported */
@@ -7058,24 +7078,47 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alph
   int do_report_hit;
   float hit_sc, cumulative_sc, bestd_sc;
   CM_HIT *hit = NULL;
+  int all_rows_are_null = (Jalpha_row == NULL && Lalpha_row == NULL && Ralpha_row == NULL && Talpha_row == NULL) ? TRUE : FALSE;
 
-  if(alpha_row == NULL && (!using_hmm_bands)) cm_Fail("UpdateGammaHitMxCM(), alpha_row is NULL, but using_hmm_bands is FALSE.\n");
+  if(all_rows_are_null && (!using_hmm_bands)) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), {J,L,R,T}alpha_rows all NULL, but using_hmm_bands is FALSE.\n");
+
   dmin = (using_hmm_bands) ? 0                 : dn; 
   dmax = (using_hmm_bands) ? ESL_MIN(dx-dn, j) : dx;
   if(act != NULL) ESL_ALLOC(comp, sizeof(float) * cm->abc->K);
 
   /* mode 1: non-greedy  */
-  if((! gamma->iamgreedy) || alpha_row == NULL) { 
+  if((! gamma->iamgreedy) || all_rows_are_null) { 
     gamma->mx[j]        = gamma->mx[j-1] + 0; 
     gamma->gback[j]     = -1;
     gamma->savesc[j]    = IMPOSSIBLE;
     gamma->saver[j]     = -1;
     gamma->savemode[j]  = -1;
 
-    if(alpha_row != NULL) { 
+    if(! all_rows_are_null) { 
       for (d = dmin; d <= dmax; d++) {
 	i = using_hmm_bands ? j-(d+dn)+1 : j-d+1;
-	hit_sc = alpha_row[d];
+	mode = (bestmode == NULL) ? TRMODE_J : bestmode[d];
+	switch(mode) {
+	case TRMODE_J:
+	  if(Jalpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_J but J row is NULL");
+	  hit_sc = Jalpha_row[d];
+	  break;
+	case TRMODE_L:
+	  if(Lalpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_L but L row is NULL");
+	  hit_sc = Lalpha_row[d];
+	  break;
+	case TRMODE_R:
+	  if(Ralpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_R but R row is NULL");
+	  hit_sc = Ralpha_row[d];
+	  break;
+	case TRMODE_T:
+	  if(Talpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_T but T row is NULL");
+	  hit_sc = Talpha_row[d];
+	  break;
+	default: 
+	  ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is invalid (not J,L,R, or T)");
+	  break;
+	}
 	cumulative_sc = gamma->mx[i-1] + hit_sc;
 	/* printf("CAND hit %3d..%3d: %8.2f\n", i, j, hit_sc); */
 	if (cumulative_sc > gamma->mx[j]) {
@@ -7098,7 +7141,7 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alph
 	    gamma->gback[j]    = i + (gamma->i0-1);
 	    gamma->savesc[j]   = hit_sc;
 	    gamma->saver[j]    = bestr[d]; 
-	    gamma->savemode[j] = bestmode[d]; 
+	    gamma->savemode[j] = mode;
 	  }
 	}
       }
@@ -7112,11 +7155,31 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alph
      * resolution algorithm.  Specifically, at the given j, any hit with a
      * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
     /* First, report hit with d of dmin (min valid d) if >= cutoff */
-    hit_sc = alpha_row[dmin];
+    mode = (bestmode == NULL) ? TRMODE_J : bestmode[dmin];
+    switch(mode) { 
+    case TRMODE_J:
+      if(Jalpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[dmin] is TRMODE_J but J row is NULL");
+      hit_sc = Jalpha_row[dmin];
+      break;
+    case TRMODE_L:
+      if(Lalpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[dmin] is TRMODE_L but L row is NULL");
+      hit_sc = Lalpha_row[dmin];
+      break;
+    case TRMODE_R:
+      if(Ralpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[dmin] is TRMODE_R but R row is NULL");
+      hit_sc = Ralpha_row[dmin];
+      break;
+    case TRMODE_T:
+      if(Talpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[dmin] is TRMODE_T but T row is NULL");
+      hit_sc = Talpha_row[dmin];
+      break;
+    default: 
+      ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[dmin] is invalid (not J,L,R, or T)");
+      break;
+    }
     if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) {
       do_report_hit = TRUE;
       r    = bestr[dmin]; 
-      mode = bestmode[dmin]; 
       ip   = using_hmm_bands ? j-(dmin+dn)+gamma->i0 : j-dmin+gamma->i0;
       i    = using_hmm_bands ? j-(dmin+dn)+1         : j-dmin+1;
       jp   = j-1+gamma->i0;
@@ -7145,12 +7208,32 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alph
     /* Now, if current score is greater than maximum seen previous, report
      * it if >= cutoff and set new max */
     for (d = dmin+1; d <= dmax; d++) {
-      hit_sc = alpha_row[d];
+      mode = (bestmode == NULL) ? TRMODE_J : bestmode[d];
+      switch(mode) { 
+      case TRMODE_J:
+	if(Jalpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_J but J row is NULL");
+	hit_sc = Jalpha_row[d];
+	break;
+      case TRMODE_L:
+	if(Lalpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_L but L row is NULL");
+	hit_sc = Lalpha_row[d];
+	break;
+      case TRMODE_R:
+	if(Ralpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_R but R row is NULL");
+	hit_sc = Ralpha_row[d];
+	break;
+      case TRMODE_T:
+	if(Talpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_T but T row is NULL");
+	hit_sc = Talpha_row[d];
+	break;
+      default: 
+	ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is invalid (not J,L,R, or T)");
+	break;
+      }
       if (hit_sc > bestd_sc) {
 	if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) { 
 	  do_report_hit = TRUE;
 	  r    = bestr[d]; 
-	  mode = bestmode[d]; 
 	  ip   = using_hmm_bands ? j-(d+dn)+gamma->i0 : j-d+gamma->i0;
 	  i    = using_hmm_bands ? j-(d+dn)+1         : j-d+1;
 	  jp   = j-1+gamma->i0;

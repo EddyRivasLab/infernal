@@ -158,6 +158,7 @@ static ESL_OPTIONS options[] = {
   { "--glX",        eslARG_INT,   "500",  NULL, NULL,    NULL,"--glen",NULL,             "maximum value for len-dependent glocal threshold", 7},
   { "--glstep",     eslARG_INT,   "100",  NULL, NULL,    NULL,"--glen",NULL,             "for len-dependent glocal thr, step size for halving thr", 7},
   { "--noends",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "don't search for local envelopes in first/final cm->W residues", 7},
+  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--noends",       "don't look for truncated hits in first/final cm->W residues", 7},
   { "--xtau",       eslARG_REAL,  "2.",   NULL, NULL,    NULL,  NULL,  NULL,             "set multiplier for tau to <x> when tightening HMM bands", 7},
 /* Other options */
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },

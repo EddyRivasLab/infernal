@@ -170,9 +170,9 @@ extern int  DetermineSeqChunksize(int nproc, int L, int W);
 
 /* from cm_dpsearch_trunc.c */
 extern int  RefTrCYKScan    (CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, 
-			     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
+			     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc);
 extern int  RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist,
-			     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
+			     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc);
 extern int  TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
 			CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
 extern int  FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
@@ -364,7 +364,7 @@ extern void             cm_DumpTrScanMatrixAlpha      (CM_t *cm, TrScanMatrix_t 
 
 extern GammaHitMx_t    *CreateGammaHitMx              (int L, int i0, int be_greedy, float cutoff, int do_backward);
 extern void             FreeGammaHitMx                (GammaHitMx_t *gamma);
-extern int              UpdateGammaHitMx              (CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, int *bestr, int *bestmode, CM_TOPHITS *hitlist, int W, double **act);
+extern int              UpdateGammaHitMx              (CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *Jalpha_row, float *Lalpha_row, float *Ralpha_row, float *Talpha_row, int dn, int dx, int using_hmm_bands, int *bestr, char *bestmode, CM_TOPHITS *hitlist, int W, double **act);
 extern void             TBackGammaHitMx               (GammaHitMx_t *gamma, CM_TOPHITS *hitlist, int i0, int j0);
 
 
@@ -782,8 +782,8 @@ extern int cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
 extern int cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
 extern int cm_pli_p7Filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
 extern int cm_pli_p7EnvelopeDef     (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int do_glocal, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
-extern int cm_pli_CMStage           (CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
-extern int cm_pli_AlignHit          (CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b);
+extern int cm_pli_CMStage           (CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int do_trunc, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
+extern int cm_pli_AlignHit          (CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int do_trunc, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b);
 extern int cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int i_am_terminal, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
 extern int cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
 
