@@ -1896,7 +1896,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 
   /* ALWAYS use the greedy overlap resolution algorithm to return hits for exp calculation
    * it's irrelevant for filter threshold stats, we return best score per seq for that */
-  cm->search_opts |= CM_SEARCH_CMGREEDY;
+  /* don't turn on CM_SEARCH_CMNOTGREEDY */
   cm->search_opts |= CM_SEARCH_HMMGREEDY;
 
   if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status; /* FALSE says do not calculate W unless nec b/c we're using QDBs */

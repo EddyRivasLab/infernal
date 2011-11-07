@@ -499,7 +499,7 @@ typedef struct cp9map_s {
 #define CM_SEARCH_INSIDE       (1<<4)  /* scan with Inside, not CYK                */
 #define CM_SEARCH_NOALIGN      (1<<5)  /* don't align hits, just report locations  */
 #define CM_SEARCH_RSEARCH      (1<<6)  /* use RSEARCH parameterized CM             */
-#define CM_SEARCH_CMGREEDY     (1<<7)  /* use greedy alg to resolve CM overlaps    */
+#define CM_SEARCH_CMNOTGREEDY  (1<<7)  /* don't use greedy alg to resolve CM overlaps */
 #define CM_SEARCH_HMMGREEDY    (1<<8)  /* use greedy alg to resolve HMM overlaps   */
 #define CM_SEARCH_HMMVITERBI   (1<<9)  /* search with CP9 HMM Viterbi              */
 #define CM_SEARCH_HMMFORWARD   (1<<10) /* search with CP9 HMM Forward              */
@@ -1500,6 +1500,7 @@ typedef struct scanmx_s {
   int   **dnAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int    *bestr;       /* auxil info: best root state v at alpha[0][cur][d] (0->v local begin used if v != 0)*/
+  float  *bestsc;      /* auxil info: best score for parsetree at alpha[0][cur][d] in mode bestmode[d] */
   char   *bestmode;    /* auxil info: best mode for parsetree at alpha[0][cur][d], always TRMODE_J for all d */
   int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha) */
   double  beta_qdb;    /* tail loss prob used for calc'ing dmin/dmax, invalid if dmin==dmax==NULL */
@@ -1521,35 +1522,6 @@ typedef struct scanmx_s {
   int      ncells_alpha_begl; /* number of alloc'ed, valid cells for falpha_begl and ialpha_begl matrices, alloc'ed as contiguous block */
 } ScanMatrix_t;
 
-/* Structure GammaHitMx_t: gamma semi-HMM used for optimal hit resolution
- * of a CM or CP9 scan. All arrays are 0..L.
- */
-typedef struct gammahitmx_s {
-  int       L;                  /* length of sequence, arrays are size L+1 */
-  float    *mx;                 /* [0..L] SHMM DP matrix for optimum nonoverlap resolution */
-  int      *gback;              /* [0..L] traceback pointers for SHMM */ 
-  float    *savesc;             /* [0..L] saves score of hit added to best parse at j */
-  int      *saver;		/* [0..L] saves initial non-ROOT state of best parse ended at j */
-  int      *savemode;		/* [0..L] saves mode best parse ended at j (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T) */
-  float     cutoff;             /* minimum score to report */
-  int       i0;                 /* position of first residue in sequence (gamma->mx[0] corresponds to this residue) */
-  int       iamgreedy;          /* TRUE to use RSEARCH's greedy overlap resolution alg, FALSE to use optimal alg */
-} GammaHitMx_t;
-
-/* Structure Theta_t: probability a parsetree of score <= x will be emitted from
- *                    the subtree rooted at v.           
- * of a CM scan. All arrays are 0..L.
- */
-typedef struct theta_s {
-  int       L;                  /* length of sequence, arrays are size L+1 (or L+2 if iambackward = TRUE) */
-  float    *mx;                 /* SHMM DP matrix for optimum nonoverlap resolution */
-  int      *gback;              /* traceback pointers for SHMM */ 
-  float    *savesc;             /* saves score of hit added to best parse at j */
-  int      *saver;		/* saves initial non-ROOT state of best parse ended at j */
-  float     cutoff;             /* minimum score to report */
-  int       i0;                 /* position of first residue in sequence (gamma->mx[0] corresponds to this residue) */
-} Theta_t;
-
 /* Structure TrScanMatrix_t: Information used by all trCYK/trInside
  * scanning functions, compiled together into one data structure for
  * convenience.
@@ -1564,8 +1536,8 @@ typedef struct trscanmx_s {
   int   **dnAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int    *bestr;       /* auxil info: best root state v at alpha[0][cur][d] (0->v truncated begin used if v != 0)*/
-  char   *bestmode;    /* auxil info: best mode for parsetree at alpha[0][cur][d], gives score in bestsc[d] */
   float  *bestsc;      /* auxil info: best score for parsetree at alpha[0][cur][d] in mode bestmode[d] */
+  char   *bestmode;    /* auxil info: best mode for parsetree at alpha[0][cur][d], gives score in bestsc[d] */
   int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha) */
   double  beta_qdb;    /* tail loss prob used for calc'ing dmin/dmax, invalid if dmin==dmax==NULL */
   double  beta_W;      /* tail loss prob used for calc'ing W, often == beta_qdb, may be greater, can't be less */
@@ -1612,6 +1584,21 @@ typedef struct trscanmx_s {
   int      ncells_alpha_begl; /* number of alloc'ed, valid cells for f{J,L,R}alpha_begl and i{J,L,R}alpha_begl matrices, alloc'ed as contiguous block */
   int      ncells_Talpha;     /* number of alloc'ed, valid cells for fTalpha and iTalpha matrices, alloc'ed as contiguous block */
 } TrScanMatrix_t;
+
+
+/* Structure GammaHitMx_t: gamma semi-HMM used for optimal hit resolution
+ * of a CM or CP9 scan. All arrays are 0..L.
+ */
+typedef struct gammahitmx_s {
+  int       L;                  /* length of sequence, arrays are size L+1 */
+  float    *mx;                 /* [0..L] SHMM DP matrix for optimum nonoverlap resolution */
+  int      *gback;              /* [0..L] traceback pointers for SHMM */ 
+  float    *savesc;             /* [0..L] saves score of hit added to best parse at j */
+  int      *saver;		/* [0..L] saves initial non-ROOT state of best parse ended at j */
+  int      *savemode;		/* [0..L] saves mode best parse ended at j (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T) */
+  float     cutoff;             /* minimum score to report */
+  int       i0;                 /* position of first residue in sequence (gamma->mx[0] corresponds to this residue) */
+} GammaHitMx_t;
 
 /* Structure ExpInfo_t:
  *

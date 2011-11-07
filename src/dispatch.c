@@ -218,7 +218,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     }    
     /* If hits were reported greedily, remove overlapping hits, and sort by decreasing end point 
      * (if not greedy, we'll have 0 overlaps, and already be sorted by end point) */
-    if(cm->search_opts & CM_SEARCH_CMGREEDY) { /* resolve overlaps by being greedy */
+    if(! (cm->search_opts & CM_SEARCH_CMNOTGREEDY)) { /* resolve overlaps by being greedy */
       ESL_DASSERT1((i0 == 1)); /* EPN, Tue Nov 27 13:59:31 2007 not sure why this is here */
       RemoveOverlappingHits (cur_results, i0, j0);
       SortResultsByEndPoint(cur_results);

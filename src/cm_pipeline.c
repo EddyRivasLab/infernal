@@ -458,7 +458,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     }
     if(  esl_opt_GetBoolean(go, "--sums"))        pli->final_cm_search_opts |= CM_SEARCH_SUMS;
     if(! esl_opt_GetBoolean(go, "--nonull3"))     pli->final_cm_search_opts |= CM_SEARCH_NULL3;
-    if(! esl_opt_GetBoolean(go, "--nogreedy"))    pli->final_cm_search_opts |= CM_SEARCH_CMGREEDY;
+    if(esl_opt_GetBoolean(go, "--nogreedy"))      pli->final_cm_search_opts |= CM_SEARCH_CMNOTGREEDY;
   }
 
   /* Determine statistics modes for CM stages */
@@ -1698,7 +1698,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   float            cyksc, inssc, finalsc;  /* bit scores                           */
   double           P;                      /* P-value of a hit */
   int              i, h;                   /* counters */
-  CM_TOPHITS      *tmp_hitlist = NULL;     /* hitlist for current sequence, used only if do_final_greedy is TRUE */
   int              nhit;                   /* number of hits reported */
   double           save_tau;               /* CM's tau upon entering function */
   float            save_cp9b_thresh1;      /* cm->cp9b's thresh1 upon entering function */
@@ -1755,7 +1754,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   save_tau          = cm->tau;
   save_cp9b_thresh1 = cm->cp9b->thresh1;
   save_cp9b_thresh2 = cm->cp9b->thresh2;
-  do_final_greedy = (pli->final_cm_search_opts & CM_SEARCH_CMGREEDY) ? TRUE : FALSE;
+  do_final_greedy = (pli->final_cm_search_opts & CM_SEARCH_CMNOTGREEDY) ? FALSE : TRUE;
 
   nhit = hitlist->N;
   /* Determine bit score cutoff for CYK envelope redefinition, 
@@ -1898,7 +1897,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
     /* Final stage: Inside/CYK with CM, report hits to our hitlist */
     cm->search_opts  = pli->final_cm_search_opts;
     cm->tau          = pli->final_tau;
-    if(do_final_greedy) tmp_hitlist = cm_tophits_Create();
         
     /*******************************************************************
      * Determine if we're doing a HMM banded scan, if so, we may already have HMM bands 
@@ -1926,7 +1924,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	  if(do_trunc) { 
 	    status = FTrInsideScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
 				     pli->T,            /* minimum score to report */
-				     (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
+				     hitlist,           /* our hitlist */
 				     pli->do_null3,     /* do the NULL3 correction? */
 				     cm->trhbmx,        /* the truncated HMM banded matrix */
 				     pli->hb_size_limit,/* upper limit for size of DP matrix */
@@ -1937,10 +1935,11 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	  else { 
 	    status = FastFInsideScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
 				       pli->T,            /* minimum score to report */
-				       (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
+				       hitlist,           /* our hitlist */
 				       pli->do_null3,     /* do the NULL3 correction? */
 				       cm->hbmx,          /* the HMM banded matrix */
 				       pli->hb_size_limit,/* upper limit for size of DP matrix */
+				       0., NULL, NULL,    /* redefined envelope cutoff,start,end, irrelevant here */
 				       &inssc);           /* best score, irrelevant here */
 	  }
 	  /* if status == eslERANGE: HMM banded scan was skipped b/c mx needed to be too large, 
@@ -1953,7 +1952,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	  if(do_trunc) { 
 	    status = TrCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
 				 pli->T,                             /* minimum score to report */
-				 (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
+				 hitlist,                            /* our hitlist */
 				 pli->do_null3,                      /* do the NULL3 correction? */
 				 cm->trhbmx,                         /* the truncated HMM banded matrix */
 				 pli->hb_size_limit,                 /* upper limit for size of DP matrix */
@@ -1964,7 +1963,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	  else { 
 	    status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
 				   pli->T,                             /* minimum score to report */
-				   (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
+				   hitlist,                            /* our hitlist */
 				   pli->do_null3,                      /* do the NULL3 correction? */
 				   cm->hbmx,                           /* the HMM banded matrix */
 				   pli->hb_size_limit,                 /* upper limit for size of DP matrix */
@@ -1997,7 +1996,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	}
 	if((status = FastIInsideScan(cm, errbuf, pli->smx, sq->dsq, es[i], ee[i],
 				     pli->T,            /* minimum score to report */
-				     (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
+				     hitlist,           /* our hitlist */
 				     pli->do_null3,     /* apply the null3 correction? */
 				     NULL,              /* ret_vsc, irrelevant here */
 				     &finalsc)) != eslOK) { /* best score, irrelevant here */
@@ -2018,7 +2017,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	}
 	if((status = FastCYKScan(cm, errbuf, pli->smx, sq->dsq, es[i], ee[i],
 				 pli->T,            /* minimum score to report */
-				 (do_final_greedy) ? tmp_hitlist : hitlist, /* our hitlist */
+				 hitlist,           /* our hitlist */
 				 pli->do_null3,     /* apply the null3 correction? */
 				 0., NULL, NULL,    /* envelope redefinition parameters, irrelevant here */
 				 NULL,              /* ret_vsc, irrelevant here */
@@ -2026,22 +2025,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	  printf("ERROR: %s\n", errbuf); return status; }
       }
     }
-
-    if(do_final_greedy) { 
-      cm_tophits_SortByPosition(tmp_hitlist);
-      cm_tophits_RemoveDuplicates(tmp_hitlist);
-      for(h = 0; h < tmp_hitlist->N; h++) { 
-	if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
-	  if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem adding hit to hitlist, out of memory?");
-	}
-      }
-      /* printf("TMP:\n");
-	 cm_tophits_Dump(stdout, tmp_hitlist);
-	 printf("MASTER:\n");
-	 cm_tophits_Dump(stdout, hitlist);
-      */
-      cm_tophits_Destroy(tmp_hitlist);
-    }      
 
     /* save a copy of the bands we calculated for the final search stage */
     if(pli->do_alignments && (! do_qdb_or_nonbanded_final_scan)) { 
@@ -2287,10 +2270,10 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
 			    &tr,                                           /* parsetree */
 			    (do_optacc ? &optacc_sc : &cyk_sc));           /* optimal accuracy or CYK score */
       /* TEMP BLOCK */
-      ParsetreeDump(stdout, tr, cm, subdsq, NULL, NULL);
+      /*ParsetreeDump(stdout, tr, cm, subdsq, NULL, NULL);
       float parsetree_sc;
       ParsetreeScore(cm, NULL, NULL, tr, subdsq, FALSE, &parsetree_sc, NULL, NULL, NULL, NULL);
-      printf("Parsetree score      : %.4f           (TROPTACC OR TRCYK)\n", parsetree_sc);
+      printf("Parsetree score      : %.4f           (TROPTACC OR TRCYK)\n", parsetree_sc);*/
       /* END TEMP BLOCK */
     }
     else { 

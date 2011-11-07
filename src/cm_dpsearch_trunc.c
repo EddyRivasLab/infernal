@@ -69,14 +69,14 @@
  *           Dies immediately if some error occurs.
  */
 int
-RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist,
+RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 	     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc)
 {
   int       status;
-  GammaHitMx_t *gamma;          /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma = NULL;   /* semi-HMM for hit resoultion */
   float     sc;                 /* a temporary score */
   float    *vsc;                /* best score for each state (float) */
-  float     vsc_root;           /* best overall score (score at ROOT_S) */
+  float     vsc_root = IMPOSSIBLE; /* best overall score (score at ROOT_S) */
   float     vmode_root;         /* alignment mode of best overall alignment (that has score = vsc_root) */
   float     bsc_full;           /* best overall score that emits full sequence i0..j0 */
   int       yoffset;		/* offset to a child state */
@@ -102,6 +102,10 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int       do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
   int64_t   envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
+  CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
+  int       h;                  /* counter over hits */
+
+  /* variables specific to truncated search */
   int       Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
   int       Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
   float     trunc_penalty;      /* bit score penalty for truncated hits, often 0. */
@@ -109,7 +113,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, CMH_BITS flag is not raised.\n");
-  if(j0 < i0)                              ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, i0: %d j0: %d\n", i0, j0);
+  if(j0 < i0)                              ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, i0: %" PRId64 " j0: %" PRId64 "\n", i0, j0);
   if(dsq == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, dsq is NULL\n");
   if(trsmx == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, trsmx == NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE)   ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, CM_SEARCH_INSIDE flag raised");
@@ -153,11 +157,24 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
   vmode_root = TRMODE_UNKNOWN;
   bsc_full   = IMPOSSIBLE;
 
-  /* gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits. */
-  if(hitlist != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
-  else                gamma = NULL;
+
+  /* If we were passed a master hitlist <hitlist>, either create a
+   * gamma hit matrix for resolving overlaps optimally (if
+   * cm->search_opts & CM_SEARCH_CMNOTGREEDY) or create a temporary
+   * hitlist that will store overlapping hits, in that case, we'll
+   * remove overlaps greedily before copying the hits to the master
+   * <hitlist>.
+   */
+  gamma       = NULL;
+  tmp_hitlist = NULL;
+  if(hitlist != NULL) { 
+    if(cm->search_opts & CM_SEARCH_CMNOTGREEDY) { 
+      gamma = CreateGammaHitMx(L, i0, cutoff);
+    }
+    else { 
+      tmp_hitlist = cm_tophits_Create();
+    }
+  }
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
   ESL_ALLOC(jp_wA, sizeof(float) * (W+1));
@@ -553,9 +570,13 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	}
       }
 
-      /* update gamma, but only if we're reporting hits to th */
-      if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, Jalpha[jp_v][0], Lalpha[jp_v][0], Ralpha[jp_v][0], Talpha[jp_v][0], dnA[0], dxA[0], FALSE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
-
+      /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
+      if(gamma != NULL) { 
+	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
+      }
+      if(tmp_hitlist != NULL) { 
+	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
+      }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -572,17 +593,30 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
 	 bsc_full, 
 	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))));
 
-  /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in UpdateGammaHitMx() for each position j */
-  if(hitlist != NULL && gamma->iamgreedy == FALSE) 
+  /* If recovering hits in a non-greedy manner, do the gamma traceback, then free gamma */
+  if(gamma != NULL) { 
     TBackGammaHitMx(gamma, hitlist, i0, j0);
+    FreeGammaHitMx(gamma);    
+  }
+  /* If reporting hits in a greedy manner, remove overlaps greedily from the tmp_hitlist 
+   * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
+   */
+  if(tmp_hitlist != NULL) { 
+    cm_tophits_SortByPosition(tmp_hitlist);
+    cm_tophits_RemoveDuplicates(tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) { 
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
+      }
+    }
+    cm_tophits_Destroy(tmp_hitlist);
+  }
 
   /* set envelope return variables if nec */
   if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
   if(ret_envj != NULL) { *ret_envj = (envj == i0-1) ? -1 : envj; }
 
   /* clean up and return */
-  if(gamma != NULL) FreeGammaHitMx(gamma);
   if (act != NULL) { 
     for(i = 0; i <= W; i++) free(act[i]); 
     free(act);
@@ -635,15 +669,15 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0
  *           Dies immediately if some error occurs.
  */
 int
-RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist,
+RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 		 int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc)
 {
   int       status;
-  GammaHitMx_t *gamma;          /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma = NULL;   /* semi-HMM for hit resoultion */
   float     fsc;                /* a temporary score */
   int       sc, ivsc;           /* integer scores */
   float    *vsc;                /* best score for each state (float) */
-  float     vsc_root;           /* best overall score (score at ROOT_S) */
+  float     vsc_root = IMPOSSIBLE; /* best overall score (score at ROOT_S) */
   float     vmode_root;         /* alignment mode of best overall alignment (that has score = vsc_root) */
   float     bsc_full;           /* best overall score that emits full sequence i0..j0 */
   int       yoffset;		/* offset to a child state */
@@ -666,13 +700,13 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
-  float    *Jgamma_row;         /* holds floatized scores for updating gamma matrix, only really used if hitlist != NULL */
-  float    *Lgamma_row;         /* holds floatized scores for updating gamma matrix, only really used if hitlist != NULL */
-  float    *Rgamma_row;         /* holds floatized scores for updating gamma matrix, only really used if hitlist != NULL */
-  float    *Tgamma_row;         /* holds floatized scores for updating gamma matrix, only really used if hitlist != NULL */
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int       do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
   int64_t   envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
+  CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
+  int       h;                  /* counter over hits */
+
+  /* variables specific to truncated search */
   int       Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
   int       Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
   int       trunc_penalty;      /* bit score penalty for truncated hits, often 0 */
@@ -680,7 +714,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, CMH_BITS flag is not raised.\n");
-  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, i0: %d j0: %d\n", i0, j0);
+  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, i0: %" PRId64 " j0: %" PRId64 "\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, dsq is NULL\n");
   if(trsmx == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, trsmx == NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, CM_SEARCH_INSIDE flag not raised");
@@ -724,27 +758,29 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   vmode_root = TRMODE_UNKNOWN;
   bsc_full   = IMPOSSIBLE;
 
-  /* gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits. */
-  if(hitlist != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
-  else                gamma = NULL;
+  /* If we were passed a master hitlist <hitlist>, either create a
+   * gamma hit matrix for resolving overlaps optimally (if
+   * cm->search_opts & CM_SEARCH_CMNOTGREEDY) or create a temporary
+   * hitlist that will store overlapping hits, in that case, we'll
+   * remove overlaps greedily before copying the hits to the master
+   * <hitlist>.
+   */
+  gamma       = NULL;
+  tmp_hitlist = NULL;
+  if(hitlist != NULL) { 
+    if(cm->search_opts & CM_SEARCH_CMNOTGREEDY) { 
+      gamma = CreateGammaHitMx(L, i0, cutoff);
+    }
+    else { 
+      tmp_hitlist = cm_tophits_Create();
+    }
+  }
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
   ESL_ALLOC(jp_wA, sizeof(float) * (W+1));
 
   /* precalculate the initial scores for all cells */
   init_scAA = ICalcInitDPScores(cm);
-
-  /* allocate/initialize {J,L,R,T}gamma_row, only used for updating gamma if hitlist != NULL */
-  ESL_ALLOC(Jgamma_row, sizeof(float) * (W+1));
-  ESL_ALLOC(Lgamma_row, sizeof(float) * (W+1));
-  ESL_ALLOC(Rgamma_row, sizeof(float) * (W+1));
-  ESL_ALLOC(Tgamma_row, sizeof(float) * (W+1));
-  esl_vec_FSet(Jgamma_row, (W+1), IMPOSSIBLE);
-  esl_vec_FSet(Lgamma_row, (W+1), IMPOSSIBLE);
-  esl_vec_FSet(Rgamma_row, (W+1), IMPOSSIBLE);
-  esl_vec_FSet(Tgamma_row, (W+1), IMPOSSIBLE);
 
   /* if do_null3: allocate and initialize act vector */
   if(do_null3) { 
@@ -1127,14 +1163,14 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	}
       }
 
-      /* update gamma, but only if we're reporting hits to th */
-      if(hitlist != NULL) { 
-	for(d = dnA[0]; d <= dxA[0]; d++) { Jgamma_row[d] = Scorify(Jalpha[jp_v][0][d]); }
-	for(d = dnA[0]; d <= dxA[0]; d++) { Lgamma_row[d] = Scorify(Lalpha[jp_v][0][d]); }
-	for(d = dnA[0]; d <= dxA[0]; d++) { Rgamma_row[d] = Scorify(Ralpha[jp_v][0][d]); }
-	for(d = dnA[0]; d <= dxA[0]; d++) { Tgamma_row[d] = Scorify(Talpha[jp_v][0][d]); }
-	if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, Jgamma_row, Lgamma_row, Rgamma_row, Tgamma_row, dnA[0], dxA[0], FALSE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+      /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
+      if(gamma != NULL) { 
+	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
       }
+      if(tmp_hitlist != NULL) { 
+	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
+      }
+
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
 
@@ -1152,17 +1188,30 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	 Scorify(bsc_full), 
 	 Scorify(bsc_full) + sreLOG2(2./(cm->clen * (cm->clen+1))));
 
-  /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in UpdateGammaHitMx() for each position j */
-  if(hitlist != NULL && gamma->iamgreedy == FALSE) 
+  /* If recovering hits in a non-greedy manner, do the gamma traceback, then free gamma */
+  if(gamma != NULL) { 
     TBackGammaHitMx(gamma, hitlist, i0, j0);
+    FreeGammaHitMx(gamma);    
+  }
+  /* If reporting hits in a greedy manner, remove overlaps greedily from the tmp_hitlist 
+   * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
+   */
+  if(tmp_hitlist != NULL) { 
+    cm_tophits_SortByPosition(tmp_hitlist);
+    cm_tophits_RemoveDuplicates(tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) { 
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
+      }
+    }
+    cm_tophits_Destroy(tmp_hitlist);
+  }
 
   /* set envelope return variables if nec */
   if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
   if(ret_envj != NULL) { *ret_envj = (envj == i0-1) ? -1 : envj; }
 
   /* clean up and return */
-  if(gamma != NULL) FreeGammaHitMx(gamma);
   if (act != NULL) { 
     for(i = 0; i <= W; i++) free(act[i]); 
     free(act);
@@ -1170,10 +1219,6 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   free(jp_wA);
   free(init_scAA[0]);
   free(init_scAA);
-  free(Jgamma_row);
-  free(Lgamma_row);
-  free(Rgamma_row);
-  free(Tgamma_row);
   if (ret_vsc != NULL) *ret_vsc = vsc;
   else free(vsc);
   if (ret_sc   != NULL) *ret_sc   = vsc_root;
@@ -1229,21 +1274,21 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
  *          <ret_sc>: score of the best hit.
  */
 int
-TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
+TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
 	    CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc)
 {
   int      status;
-  GammaHitMx_t *gamma;  /* semi-HMM for hit resoultion */
-  float    sc;          /* a temporary score */
-  int     *bestr;       /* best root state for d at current j */
-  char    *bestmode;    /* best mode for parsetree for d at current j */
-  float   *bestsc;      /* best score for parsetree for d at current j */
-  int      v,y,z;	/* indices for states  */
-  int      j,d,i,k;	/* indices in sequence dimensions */
-  float    Jsc, Lsc, Rsc, Tsc; /* temporary scores */
-  int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
-  int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
-  float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
+  GammaHitMx_t *gamma = NULL;  /* semi-HMM for hit resoultion */
+  float    sc;                 /* a temporary score */
+  int     *bestr;              /* best root state for d at current j */
+  char    *bestmode;           /* best mode for parsetree for d at current j */
+  float   *bestsc;             /* best score for parsetree for d at current j */
+  int      v,y,z;	       /* indices for states  */
+  int      j,d,i,k;            /* indices in sequence dimensions */
+  float    Lsc, Rsc;           /* temporary scores */
+  int      yoffset;	       /* y=base+offset -- counter in child states that v can transit to */
+  int     *yvalidA;            /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
+  float   *el_scA;             /* [0..d..W-1] probability of local end emissions of length d */
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      sd;                 /* StateDelta(cm->sttype[v]) */
   int      sdr;                /* StateRightDelta(cm->sttype[v] */
@@ -1262,13 +1307,16 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   float    tsc;                /* a transition score */
   int      yvalid_idx;         /* for keeping track of which children are valid */
   int      yvalid_ct;          /* for keeping track of which children are valid */
-  float    vsc_root;           /* score of best hit */
+  float    vsc_root = IMPOSSIBLE; /* score of best hit */
   float    bsc_full;           /* score of best hit that emits full sequence i0..j0 */
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
   double **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int      jp;                 /* j index in act */
   int      do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
   int64_t  envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
+  CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
+  int       h;                  /* counter over hits */
+
   ESL_STOPWATCH *w = esl_stopwatch_Create();
 
   /* variables specific to truncated scanning */
@@ -1314,7 +1362,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   W = j0-i0+1;
   /* make sure our bands won't allow a hit bigger than W (this could be modified to only execute in debugging mode) */
   for(j = jmin[0]; j <= jmax[0]; j++) {
-    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "TrCYKScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%d)", j, hdmax[0][(j-jmin[0])], j0-i0+1);
+    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "TrCYKScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%" PRId64 ")", j, hdmax[0][(j-jmin[0])], j0-i0+1);
   }
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
@@ -1335,10 +1383,23 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
 
-  /* gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse of multiple nonoverlapping hits. */
-  if(hitlist != NULL) gamma = CreateGammaHitMx(j0-i0+1, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
-  else                gamma = NULL;
+  /* If we were passed a master hitlist <hitlist>, either create a
+   * gamma hit matrix for resolving overlaps optimally (if
+   * cm->search_opts & CM_SEARCH_CMNOTGREEDY) or create a temporary
+   * hitlist that will store overlapping hits, in that case, we'll
+   * remove overlaps greedily before copying the hits to the master
+   * <hitlist>.
+   */
+  gamma       = NULL;
+  tmp_hitlist = NULL;
+  if(hitlist != NULL) { 
+    if(cm->search_opts & CM_SEARCH_CMNOTGREEDY) { 
+      gamma = CreateGammaHitMx(j0-i0+1, i0, cutoff);
+    }
+    else { 
+      tmp_hitlist = cm_tophits_Create();
+    }
+  }
 
   /* if do_null3: allocate and initialize act vector */
   if(do_null3) { 
@@ -1734,7 +1795,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	      printf("dsq[i:%d]: %d\n", i, dsq[i]);
 	      printf("dsq[j:%d]: %d\n", j, dsq[j]);
 	      printf("esc_v[%d]: %.5f\n", dsq[i]*cm->abc->Kp+dsq[j], esc_v[dsq[i]*cm->abc->Kp+dsq[j]]);;
-	      printf("i0: %d j0: %d\n", i0, j0);
+	      printf("i0: %" PRId64 " j0: %" PRId64 "\n", i0, j0);
 	      }*/
 	    if(d >= 2) { 
 	      if(do_J_v) Jalpha[v][jp_v][dp_v] += esc_v[dsq[i]*cm->abc->Kp+dsq[j]];
@@ -2011,16 +2072,15 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   j   = jmin[v];
   
   ESL_ALLOC(bestr, sizeof(int) * (W+1));
+  ESL_ALLOC(bestsc,   sizeof(float) * (W+1));
   ESL_ALLOC(bestmode, sizeof(char) * (W+1));
-  esl_vec_ISet(bestr,    W+1, 0);
-  for(i = 0; i <= W; i++) bestmode[i] = TRMODE_UNKNOWN;
 
-  /* first report all hits with j < jmin[0] are impossible, only if we're reporting hits to hitlist */
-  if(hitlist != NULL) { 
+  /* update gamma, by specifying all hits with j < jmin[0] are impossible */
+  if(gamma != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
-      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, 
-				    NULL, NULL, NULL, NULL, 0, 0,   /* {J,L,R,T}alpha_rows are NULL, we're telling UpdateGammaHitMx, this j can't be a hit end pt */
-				    TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, -1, -1, 
+				      NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
+				      bestr, NULL, W, act)) != eslOK) return status;
     }
   }
 
@@ -2029,7 +2089,6 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
   v = 0;
   ESL_ALLOC(bestr,    sizeof(int)   * (W+1));
   ESL_ALLOC(bestmode, sizeof(char)  * (W+1));
-  ESL_ALLOC(bestsc,   sizeof(float) * (W+1));
   for (j = jmin[v]; j <= jmax[v]; j++) {
     jp_v = j - jmin[v];
     /* initialize bestr, bestsc, bestmode */
@@ -2110,23 +2169,27 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	}
       }
     }
-    /* report all hits with valid d for this j, only if hitlist != NULL */
-    if(hitlist != NULL) { 
-      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, Jalpha[0][jp_v], Lalpha[0][jp_v], Ralpha[0][jp_v], Talpha[0][jp_v], hdmin[0][jp_v], hdmax[0][jp_v], TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+    /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
+    if(gamma != NULL) { 
+      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act)) != eslOK) return status;
     }
-  }
+    if(tmp_hitlist != NULL) { 
+      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
+    }
+  } /* end of 'for (j = jmin[v]; j <= jmax[v]'... */
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, " HEYA2 Considering truncated and local hits time: ");
   /*FILE *fp1; fp1 = fopen("tmp.ismx", "w");   cm_tr_hb_mx_Dump(fp1, mx); fclose(fp1);*/
     
-  /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to hitlist */
-  if(hitlist != NULL) { 
+  /* update gamma, by specifying all hits with j > jmax[0] are impossible */
+  if(gamma != NULL) { 
     for(j = jmax[v]+1; j <= j0; j++) {
-      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, 
-				    NULL, NULL, NULL, NULL, 0, 0,   /* {J,L,R,T}alpha_rows are NULL, we're telling UpdateGammaHitMx, this j can't be a hit end pt */
-				    TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j, -1, -1,
+				    NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
+				    bestr, NULL, W, act)) != eslOK) return status;
     }
   }
+
   /* find the best scoring hit, and update envelope boundaries if nec */
   vsc_root = IMPOSSIBLE;
   bsc_full = IMPOSSIBLE;
@@ -2181,7 +2244,24 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
     free(act);
   }
 
-  if(hitlist != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMx(gamma, hitlist, i0, j0);
+  /* If recovering hits in a non-greedy manner, do the gamma traceback, then free gamma */
+  if(gamma != NULL) { 
+    TBackGammaHitMx(gamma, hitlist, i0, j0);
+    FreeGammaHitMx(gamma);    
+  }
+  /* If reporting hits in a greedy manner, remove overlaps greedily from the tmp_hitlist 
+   * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
+   */
+  if(tmp_hitlist != NULL) { 
+    cm_tophits_SortByPosition(tmp_hitlist);
+    cm_tophits_RemoveDuplicates(tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) { 
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
+      }
+    }
+    cm_tophits_Destroy(tmp_hitlist);
+  }
 
   /* set envelope return variables if nec */
   if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
@@ -2241,21 +2321,21 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
  *          <ret_sc>: score of the best hit.
  */
 int
-FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
+FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
 		CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc)
 {
   int      status;
-  GammaHitMx_t *gamma;  /* semi-HMM for hit resoultion */
-  float    sc;          /* a temporary score */
-  int     *bestr;       /* best root state for d at current j */
-  char    *bestmode;    /* best mode for parsetree for d at current j */
-  float   *bestsc;      /* best score for parsetree for d at current j */
-  int      v,y,z;	/* indices for states  */
-  int      j,d,i,k;	/* indices in sequence dimensions */
-  float    Jsc, Lsc, Rsc, Tsc; /* temporary scores */
-  int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
-  int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
-  float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
+  GammaHitMx_t *gamma = NULL;  /* semi-HMM for hit resoultion */
+  float    sc;                 /* a temporary score */
+  int     *bestr;              /* best root state for d at current j */
+  char    *bestmode;           /* best mode for parsetree for d at current j */
+  float   *bestsc;             /* best score for parsetree for d at current j */
+  int      v,y,z;	       /* indices for states  */
+  int      j,d,i,k;	       /* indices in sequence dimensions */
+  float    Lsc, Rsc;           /* temporary scores */
+  int      yoffset;	       /* y=base+offset -- counter in child states that v can transit to */
+  int     *yvalidA;            /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
+  float   *el_scA;             /* [0..d..W-1] probability of local end emissions of length d */
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      sd;                 /* StateDelta(cm->sttype[v]) */
   int      sdr;                /* StateRightDelta(cm->sttype[v] */
@@ -2274,7 +2354,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   float    tsc;                /* a transition score */
   int      yvalid_idx;         /* for keeping track of which children are valid */
   int      yvalid_ct;          /* for keeping track of which children are valid */
-  float    vsc_root;           /* score of best hit */
+  float    vsc_root = IMPOSSIBLE; /* score of best hit */
   float    bsc_full;           /* best overall score that emits full sequence i0..j0 */
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
   double **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
@@ -2287,6 +2367,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
   int      do_T_v, do_T_y, do_T_z; /* is T matrix valid for state v, y, z? */
   float    best_tr_sc;         /* best truncated score */
+  CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
+  int       h;                  /* counter over hits */
   ESL_STOPWATCH *w = esl_stopwatch_Create();
 
   /* Contract check */
@@ -2319,7 +2401,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   W = j0-i0+1;
   /* make sure our bands won't allow a hit bigger than W (this could be modified to only execute in debugging mode) */
   for(j = jmin[0]; j <= jmax[0]; j++) {
-    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FTrInsideScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%d)", j, hdmax[0][(j-jmin[0])], j0-i0+1);
+    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FTrInsideScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%" PRId64 ")", j, hdmax[0][(j-jmin[0])], j0-i0+1);
   }
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
@@ -2340,10 +2422,23 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
 
-  /* gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse of multiple nonoverlapping hits. */
-  if(hitlist != NULL) gamma = CreateGammaHitMx(j0-i0+1, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
-  else                gamma = NULL;
+  /* If we were passed a master hitlist <hitlist>, either create a
+   * gamma hit matrix for resolving overlaps optimally (if
+   * cm->search_opts & CM_SEARCH_CMNOTGREEDY) or create a temporary
+   * hitlist that will store overlapping hits, in that case, we'll
+   * remove overlaps greedily before copying the hits to the master
+   * <hitlist>.
+   */
+  gamma       = NULL;
+  tmp_hitlist = NULL;
+  if(hitlist != NULL) { 
+    if(cm->search_opts & CM_SEARCH_CMNOTGREEDY) { 
+      gamma = CreateGammaHitMx(j0-i0+1, i0, cutoff);
+    }
+    else { 
+      tmp_hitlist = cm_tophits_Create();
+    }
+  }
 
   /* if do_null3: allocate and initialize act vector */
   if(do_null3) { 
@@ -2739,7 +2834,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	      printf("dsq[i:%d]: %d\n", i, dsq[i]);
 	      printf("dsq[j:%d]: %d\n", j, dsq[j]);
 	      printf("esc_v[%d]: %.5f\n", dsq[i]*cm->abc->Kp+dsq[j], esc_v[dsq[i]*cm->abc->Kp+dsq[j]]);;
-	      printf("i0: %d j0: %d\n", i0, j0);
+	      printf("i0: %" PRId64 " j0: %" PRId64 "\n", i0, j0);
 	      }*/
 	    if(d >= 2) { 
 	      if(do_J_v) Jalpha[v][jp_v][dp_v] += esc_v[dsq[i]*cm->abc->Kp+dsq[j]];
@@ -3020,26 +3115,22 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
   jpx = jmax[v] - jmin[v];
   j   = jmin[v];
   
-  ESL_ALLOC(bestr, sizeof(int) * (W+1));
-  ESL_ALLOC(bestmode, sizeof(char) * (W+1));
-  esl_vec_ISet(bestr,    W+1, 0);
-  for(i = 0; i <= W; i++) bestmode[i] = TRMODE_UNKNOWN;
+  ESL_ALLOC(bestr,    sizeof(int)   * (W+1));
+  ESL_ALLOC(bestmode, sizeof(char)  * (W+1));
+  ESL_ALLOC(bestsc,   sizeof(float) * (W+1));
 
-  /* first report all hits with j < jmin[0] are impossible, only if we're reporting hits to hitlist */
-  if(hitlist != NULL) { 
+  /* update gamma, by specifying all hits with j < jmin[0] are impossible */
+  if(gamma != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
-      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, 
-				    NULL, NULL, NULL, NULL, 0, 0,   /* {J,L,R,T}alpha_rows are NULL, we're telling UpdateGammaHitMx, this j can't be a hit end pt */
-				    TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, -1, -1, 
+				      NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
+				      bestr, NULL, W, act)) != eslOK) return status;
     }
   }
 
   /* Finally, allow for truncated hits */
   esl_stopwatch_Start(w);
   v = 0;
-  ESL_ALLOC(bestr,    sizeof(int)   * (W+1));
-  ESL_ALLOC(bestmode, sizeof(char)  * (W+1));
-  ESL_ALLOC(bestsc,   sizeof(float) * (W+1));
   for (j = jmin[v]; j <= jmax[v]; j++) {
     jp_v = j - jmin[v];
     /* initialize bestr, bestsc, bestmode */
@@ -3120,23 +3211,26 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
 	}
       }
     }
-    /* report all hits with valid d for this j, only if hitlist != NULL */
-    if(hitlist != NULL) { 
-      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, Jalpha[0][jp_v], Lalpha[0][jp_v], Ralpha[0][jp_v], Talpha[0][jp_v], hdmin[0][jp_v], hdmax[0][jp_v], TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+    /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
+    if(gamma != NULL) { 
+      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+    }
+    if(tmp_hitlist != NULL) { 
+      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   }
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, " HEYA2 Considering truncated and local hits time: ");
 
-    
-  /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to hitlist */
-  if(hitlist != NULL) { 
+  /* update gamma, by specifying all hits with j > jmax[0] are impossible */
+  if(gamma != NULL) { 
     for(j = jmax[v]+1; j <= j0; j++) {
-      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j-i0+1, 
-				    NULL, NULL, NULL, NULL, 0, 0,   /* {J,L,R,T}alpha_rows are NULL, we're telling UpdateGammaHitMx, this j can't be a hit end pt */
-				    TRUE, bestr, bestmode, hitlist, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j, -1, -1,
+				    NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
+				    bestr, NULL, W, act)) != eslOK) return status;
     }
   }
+
   /* find the best scoring hit, and update envelope boundaries if nec */
   vsc_root = IMPOSSIBLE;
   bsc_full = IMPOSSIBLE;
@@ -3194,7 +3288,24 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cuto
     free(act);
   }
 
-  if(hitlist != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMx(gamma, hitlist, i0, j0);
+  /* If recovering hits in a non-greedy manner, do the gamma traceback, then free gamma */
+  if(gamma != NULL) { 
+    TBackGammaHitMx(gamma, hitlist, i0, j0);
+    FreeGammaHitMx(gamma);    
+  }
+  /* If reporting hits in a greedy manner, remove overlaps greedily from the tmp_hitlist 
+   * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
+   */
+  if(tmp_hitlist != NULL) { 
+    cm_tophits_SortByPosition(tmp_hitlist);
+    cm_tophits_RemoveDuplicates(tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) { 
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
+      }
+    }
+    cm_tophits_Destroy(tmp_hitlist);
+  }
 
   /* set envelope return variables if nec */
   if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
@@ -3580,26 +3691,8 @@ main(int argc, char **argv)
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	
 	esl_stopwatch_Start(w);
-	if((status = XFastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "XFastIInsideScan(): ", sc);
-	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, " CPU time: ");
-	
-	esl_stopwatch_Start(w);
-	if((status = X2FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);;
-	printf("%4d %-30s %10.4f bits ", (i+1), "X2FastIInsideScan(): ", sc);
-	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, " CPU time: ");
-	
-	esl_stopwatch_Start(w);
 	if((status = RefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "RefIInsideScan(): ", sc);
-	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, " CPU time: ");
-	
-	esl_stopwatch_Start(w);
-	if((status = XRefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "XRefIInsideScan(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	

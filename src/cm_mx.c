@@ -5600,10 +5600,12 @@ cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double
       }
     }
   }
-  /* allocate bestr and bestmode, bestmode is set to TRMODE_J for all d and never changed */
+  /* allocate bestr and bestsc */
   ESL_ALLOC(smx->bestr,    (sizeof(int)   * (smx->W+1)));
-  /* initialize bestr, bestmode (probably not strictly necessary) */
+  ESL_ALLOC(smx->bestsc,   (sizeof(float) * (smx->W+1)));
+  /* initialize bestr, bestsc (probably not strictly necessary) */
   esl_vec_ISet(smx->bestr,    (smx->W+1), 0);
+  esl_vec_FSet(smx->bestsc,   (smx->W+1), IMPOSSIBLE);
 
   /* Some info about the falpha/ialpha matrix
    * The alpha matrix holds data for all states EXCEPT BEGL_S states
@@ -6053,7 +6055,7 @@ cm_FreeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
   free(smx->dnAA);
   free(smx->dxAA);
   free(smx->bestr);
-  free(smx->bestmode);
+  free(smx->bestsc);
   
   if(smx->flags & cmSMX_HAS_FLOAT) cm_FreeFloatsFromScanMatrix(cm, smx);
   if(smx->flags & cmSMX_HAS_INT)   cm_FreeIntsFromScanMatrix(cm, smx);
@@ -6963,13 +6965,11 @@ cm_DumpTrScanMatrixAlpha(CM_t *cm, TrScanMatrix_t *trsmx, int j, int i0, int doi
  *
  * Purpose:  Allocate and initialize a gamma semi-HMM for 
  *           optimal hit resolution of a CM based scan.
- *           If(do_backward), L position is init'ed instead of
- *           0th position, for Backward HMM scans.
  * 
  * Returns:  Newly allocated GammaHitMx_t object:
  */
 GammaHitMx_t *
-CreateGammaHitMx(int L, int i0, int be_greedy, float cutoff, int do_backward)
+CreateGammaHitMx(int L, int64_t i0, float cutoff)
 {
   int status;
   GammaHitMx_t *gamma;
@@ -6977,7 +6977,6 @@ CreateGammaHitMx(int L, int i0, int be_greedy, float cutoff, int do_backward)
 
   gamma->L  = L;
   gamma->i0 = i0;
-  gamma->iamgreedy = be_greedy;
   gamma->cutoff    = cutoff;
   /* allocate/initialize for CYK/Inside */
   ESL_ALLOC(gamma->mx,       sizeof(float) * (L+1));
@@ -6986,14 +6985,9 @@ CreateGammaHitMx(int L, int i0, int be_greedy, float cutoff, int do_backward)
   ESL_ALLOC(gamma->saver,    sizeof(int)   * (L+1));
   ESL_ALLOC(gamma->savemode, sizeof(int)   * (L+1));
     
-  if(do_backward) { 
-    gamma->mx[L]    = 0;
-    gamma->gback[L] = -1;
-  } 
-  else { 
-    gamma->mx[0]    = 0;
-    gamma->gback[0] = -1;
-  }
+  gamma->mx[0]    = 0;
+  gamma->gback[0] = -1;
+
   return gamma;
 
  ERROR:
@@ -7025,238 +7019,192 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  * Date:     EPN, Mon Nov  5 05:41:14 2007
  *           EPN, Mon Aug 22 08:54:56 2011 (search_results_t --> CM_TOPHITS)
  *
- * Purpose:  Update a gamma semi-HMM for CM hits that end at gamma-relative position <j>.
+ * Purpose:  Update a non-greedy gamma semi-HMM for CM hits that end 
+ *           at gamma-relative position <j>.
  * 
-
  *           Can be called from either standard or truncated scanning
- *           functions.  
+ *           functions. <bestsc[d]>, <bestr[d]>, <bestmode[d]> report
+ *           the maximum scoring hit of length d, its root state (0
+ *           for glocal, !=0 for local or truncated), and its marginal
+ *           mode (if truncated) . They are all allocated for 0..W,
+ *           but only dmin..dmax should be considered valid. 
+ * 
+ *           If bestmode is NULL (caller is non-truncated scanner),
+ *           all hits are implictly TRMODE_J mode.
  *
- *           If standard: Jalpha_row is just alpha_row,
- *           {L,R,T}alpha_row will all be NULL. bestmode will be NULL.
- *           All modes are implicitly joint (J).
+ *           If <bestsc> is NULL (caller is an HMM banded scanner) then
+ *           no hit ending at j is possible given the HMM bands, so 
+ *           position j of the gamma matrix is simply initialized and
+ *           then we return. Also if dmin > dmax, no valid d for this
+ *           j exists, so we also just initialize and return.
  *
- *           If truncated: any of {J,L,R,T} may be NULL. bestmode will 
- *           not be NULL, it gives the optimal mode for each d, e.g. 
- *           if bestmode[d] == TRMODE_L, Lalpha_row[d] is >= Jalpha_row[d], Ralpha_row[d], Talpha_row[d].
+ *           This function should only be called if gamma->i_am_greedy
+ *           is FALSE. In this case we store information on the best
+ *           score at each position and then traceback later with a
+ *           TBackGammaHitMx() call. For greedy gamma matrices, we use
+ *           ReportHitsGreedily(), which reports hits immediately.
  *
  * Args:     cm         - the model, used only for its alphabet and null model
  *           errbuf     - for reporting errors
  *           gamma      - the gamma data structure
- *           j          - offset j for gamma must be between 0 and gamma->L
- *           Jalpha_row - row of DP matrix to examine, we look at [dn..dx], NULL if we want to report
- *                        this j is IMPOSSIBLE end point of a hit (only possible if using_hmm_bands == TRUE)
- *           dn         - minimum d to look at 
- *           dx         - maximum d to look at
- *           using_hmm_bands - if TRUE, alpha_row is offset by dn, so we look at [0..dx-dn]
- *           bestr      - [dn..dx] root state (0 or local entry) corresponding to hit stored in alpha_row
- *           bestmode   - [dn..dx] bestmode[d] gives mode of max(Jalpha_row[d], Lalpha_row[d], Ralpha_row[d], Talpha_row[d]) 
- *                        if NULL, we were called by a non-truncated 
- *           hitlist    - CM_TOPHITS to add to, only used in this function if gamma->iamgreedy 
+ *           j          - end point of hit, in actual sequence coordinate space
+ *           dmin       - minimum d to consider
+ *           dmax       - maximum d to consider
+ *           bestsc     - [0..W]; only [dmin..dmax] valid: best scores for current j, copied from alpha matrix(es) by caller
+ *           bestr      - [0..W]; only [dmin..dmax] valid: root state (0 or local entry) corresponding to hit stored in alpha_row
+ *           bestmode   - [0..W]; only [dmin..dmax] valid: marginal mode that gives bestsc[d], if NULL, all modes are implictly TRMODE_J
  *           W          - window size, max size of a hit, only used if we're doing a NULL3 correction (act != NULL)
  *           act        - [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1)
  *
  * Returns:  eslOK on success
  * Throws:   eslEMEM on memory allocation error
- *           eslEINVAL if {J,L,R,T}alpha_row are all NULL and (!using_hmm_bands)
- *                     or bestmode[d] == x (J|L|R|T) and x_alpha_row is NULL
- *
  */
 int
-UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *Jalpha_row, float *Lalpha_row, float *Ralpha_row, float *Talpha_row,
-		 int dn, int dx, int using_hmm_bands, int *bestr, char *bestmode, CM_TOPHITS *hitlist, int W, double **act)
+UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, int dmax, 
+		 float *bestsc, int *bestr, char *bestmode, int W, double **act)
 {
-  int status;
-  int i, d;
-  int bestd;
-  int r;
-  char mode;
-  int dmin, dmax;
-  int ip, jp;
-  float *comp = NULL;    /* 0..a..cm->abc-K-1, the composition of residue a within the hit being reported */
-  int a;
-  float null3_correction = 0.;
-  int do_report_hit;
-  float hit_sc, cumulative_sc, bestd_sc;
-  CM_HIT *hit = NULL;
-  int all_rows_are_null = (Jalpha_row == NULL && Lalpha_row == NULL && Ralpha_row == NULL && Talpha_row == NULL) ? TRUE : FALSE;
+  int status;          /* easel status */
+  int i;               /* position of first residue in hit, in actual sequence coordinates */
+  int ip;              /* position of first residue in hit, in gamma/act coordinates */
+  int jp;              /* position of final residue in hit, in gamma/act coordinates */
+  int d;               /* hit length, d=j-i+1 */
+  char mode;           /* marginal alignment mode */
+  int   do_report_hit; /* should we add info on this hit to gamma? */
+  float hit_sc;        /* score for this hit, possibly null3-corrected */
+  float cumulative_sc; /* cumulative score of all hits in gamma, up to j */
 
-  if(all_rows_are_null && (!using_hmm_bands)) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), {J,L,R,T}alpha_rows all NULL, but using_hmm_bands is FALSE.\n");
+  /* variables related to NULL3 penalty */
+  float *comp = NULL;            /* 0..a..cm->abc-K-1, the composition of residue a within the hit being reported */
+  int    a;                      /* counter for alphabet */
+  float  null3_correction = 0.;  /* null 3 penalty */
 
-  dmin = (using_hmm_bands) ? 0                 : dn; 
-  dmax = (using_hmm_bands) ? ESL_MIN(dx-dn, j) : dx;
-  if(act != NULL) ESL_ALLOC(comp, sizeof(float) * cm->abc->K);
+  /* j is in actual sequence coordinates, jp will be in gamma coordinates (offset by gamma->i0) */
+  jp = j - gamma->i0 + 1;
 
-  /* mode 1: non-greedy  */
-  if((! gamma->iamgreedy) || all_rows_are_null) { 
-    gamma->mx[j]        = gamma->mx[j-1] + 0; 
-    gamma->gback[j]     = -1;
-    gamma->savesc[j]    = IMPOSSIBLE;
-    gamma->saver[j]     = -1;
-    gamma->savemode[j]  = -1;
-
-    if(! all_rows_are_null) { 
-      for (d = dmin; d <= dmax; d++) {
-	i = using_hmm_bands ? j-(d+dn)+1 : j-d+1;
-	mode = (bestmode == NULL) ? TRMODE_J : bestmode[d];
-	switch(mode) {
-	case TRMODE_J:
-	  if(Jalpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_J but J row is NULL");
-	  hit_sc = Jalpha_row[d];
-	  break;
-	case TRMODE_L:
-	  if(Lalpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_L but L row is NULL");
-	  hit_sc = Lalpha_row[d];
-	  break;
-	case TRMODE_R:
-	  if(Ralpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_R but R row is NULL");
-	  hit_sc = Ralpha_row[d];
-	  break;
-	case TRMODE_T:
-	  if(Talpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_T but T row is NULL");
-	  hit_sc = Talpha_row[d];
-	  break;
-	default: 
-	  ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is invalid (not J,L,R, or T)");
-	  break;
+  /* initialize */
+  gamma->mx[jp]       = gamma->mx[jp-1] + 0; 
+  gamma->gback[jp]    = -1;
+  gamma->savesc[jp]   = IMPOSSIBLE;
+  gamma->saver[jp]    = -1;
+  gamma->savemode[jp] = -1;
+  
+  if(bestsc != NULL && dmin <= dmax) { /* if bestsc == NULL or dmin >= dmax, j or d is outside bands, don't report any hits */
+    if(act != NULL) ESL_ALLOC(comp, sizeof(float) * cm->abc->K);
+    for (d = dmin; d <= dmax; d++) {
+      i  = j -d+1;
+      ip = jp-d+1;
+      mode   = (bestmode == NULL) ? TRMODE_J : bestmode[d];
+      hit_sc = bestsc[d];
+      cumulative_sc = gamma->mx[ip-1] + hit_sc;
+      /* printf("CAND hit %3d..%3d: %8.2f\n", i, j, hit_sc); */
+      if (cumulative_sc > gamma->mx[jp]) {
+	do_report_hit = TRUE;
+	if(act != NULL && NOT_IMPOSSIBLE(hit_sc)) { 
+	  /* do a NULL3 score correction */
+	  for(a = 0; a < cm->abc->K; a++) { 
+	    comp[a] = act[jp%(W+1)][a] - act[(ip-1)%(W+1)][a]; 
+	    /*printf("a: %5d jp/W: %5d ip-1/W: %5d jp[a]: %.3f ip-1[a]: %.3f c[a]: %.3f\n", a, jp%(W+1), (ip-1%W), act[(jp%(W+1))][a], act[((ip-1)%(W+1))][a], comp[a]);*/
+	  }
+	  esl_vec_FNorm(comp, cm->abc->K);
+	  ScoreCorrectionNull3(cm->abc, cm->null, comp, d, cm->null3_omega, &null3_correction);
+	  hit_sc -= null3_correction;
+	  cumulative_sc -= null3_correction;
+	  do_report_hit = (cumulative_sc > gamma->mx[jp]) ? TRUE : FALSE;
+	  /* printf("GOOD hit %3d..%3d: %8.2f  %10.6f  %8.2f\n", i, j, hit_sc+null3_correction, null3_correction, hit_sc); */
 	}
-	cumulative_sc = gamma->mx[i-1] + hit_sc;
-	/* printf("CAND hit %3d..%3d: %8.2f\n", i, j, hit_sc); */
-	if (cumulative_sc > gamma->mx[j]) {
-	  do_report_hit = TRUE;
-	  if(act != NULL && NOT_IMPOSSIBLE(hit_sc)) { /* do NULL3 score correction */
-	    for(a = 0; a < cm->abc->K; a++) { 
-	      comp[a] = act[j%(W+1)][a] - act[(i-1)%(W+1)][a]; 
-	      /*printf("a: %5d j/W: %5d i-1/W: %5d j[a]: %.3f i-1[a]: %.3f c[a]: %.3f\n", a, j%(W+1), (i-1%W), act[(j%(W+1))][a], act[((i-1)%(W+1))][a], comp[a]);*/
-	    }
-	    esl_vec_FNorm(comp, cm->abc->K);
-	    ScoreCorrectionNull3(cm->abc, cm->null, comp, j-i+1, cm->null3_omega, &null3_correction);
-	    hit_sc -= null3_correction;
-	    cumulative_sc -= null3_correction;
-	    do_report_hit = (cumulative_sc > gamma->mx[j]) ? TRUE : FALSE;
-	    /* printf("GOOD hit %3d..%3d: %8.2f  %10.6f  %8.2f\n", i, j, hit_sc+null3_correction, null3_correction, hit_sc); */
-	  }
-	  if(do_report_hit) { 
-	    /* printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc); */
-	    gamma->mx[j]       = cumulative_sc;
-	    gamma->gback[j]    = i + (gamma->i0-1);
-	    gamma->savesc[j]   = hit_sc;
-	    gamma->saver[j]    = bestr[d]; 
-	    gamma->savemode[j] = mode;
-	  }
+	if(do_report_hit) { 
+	  /* printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc); */
+	  gamma->mx[jp]       = cumulative_sc;
+	  gamma->gback[jp]    = i;
+	  gamma->savesc[jp]   = hit_sc;
+	  gamma->saver[jp]    = bestr[d]; 
+	  gamma->savemode[jp] = mode;
 	}
       }
     }
   }
-  /* mode 2: greedy */
-  else if(gamma->iamgreedy && dmin <= dmax) { /* if dmin >= dmax, no valid d for this j exists, don't report any hits */
-    /* Resolving overlaps greedily (RSEARCH style),  
-     * At least one hit is sent back for each j here.
-     * However, some hits can already be removed for the greedy overlap
-     * resolution algorithm.  Specifically, at the given j, any hit with a
-     * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
-    /* First, report hit with d of dmin (min valid d) if >= cutoff */
-    mode = (bestmode == NULL) ? TRMODE_J : bestmode[dmin];
-    switch(mode) { 
-    case TRMODE_J:
-      if(Jalpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[dmin] is TRMODE_J but J row is NULL");
-      hit_sc = Jalpha_row[dmin];
-      break;
-    case TRMODE_L:
-      if(Lalpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[dmin] is TRMODE_L but L row is NULL");
-      hit_sc = Lalpha_row[dmin];
-      break;
-    case TRMODE_R:
-      if(Ralpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[dmin] is TRMODE_R but R row is NULL");
-      hit_sc = Ralpha_row[dmin];
-      break;
-    case TRMODE_T:
-      if(Talpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[dmin] is TRMODE_T but T row is NULL");
-      hit_sc = Talpha_row[dmin];
-      break;
-    default: 
-      ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[dmin] is invalid (not J,L,R, or T)");
-      break;
-    }
-    if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) {
-      do_report_hit = TRUE;
-      r    = bestr[dmin]; 
-      ip   = using_hmm_bands ? j-(dmin+dn)+gamma->i0 : j-dmin+gamma->i0;
-      i    = using_hmm_bands ? j-(dmin+dn)+1         : j-dmin+1;
-      jp   = j-1+gamma->i0;
-      assert(ip >= gamma->i0);
-      assert(jp >= gamma->i0);
-      if(act != NULL) { /* do NULL3 score correction */
-	for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(i-1)%(W+1)][a];
-	esl_vec_FNorm(comp, cm->abc->K);
-	ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, cm->null3_omega, &null3_correction);
-	hit_sc -= null3_correction;
-	do_report_hit = (hit_sc >= gamma->cutoff) ? TRUE : FALSE;
-      }
-      if(do_report_hit) { 
-	/*printf("\t0 %.3f %.3f ip: %d jp: %d r: %d\n", hit_sc+null3_correction, hit_sc, ip, jp, r);*/
-	cm_tophits_CreateNextHit(hitlist, &hit);
-	hit->start = ip;
-	hit->stop  = jp;
-	hit->root  = r;
-	hit->mode  = mode;
-	hit->score = hit_sc;
-	/* remainder of fields are filled in a cm_pipeline* function */
-      }
-    }
-    bestd    = dmin;
-    bestd_sc = hit_sc;
-    /* Now, if current score is greater than maximum seen previous, report
-     * it if >= cutoff and set new max */
-    for (d = dmin+1; d <= dmax; d++) {
+  if(comp != NULL) free(comp);
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
+  return eslEMEM; /* NEVERREACHED */
+}
+
+
+/* Function: ReportHitsGreedily()
+ * Date:     EPN, Fri Nov  4 14:01:10 2011
+ *
+ * Purpose:  Report hits when using the greedy hit resolution
+ *           strategy. For the non-greedy strategy, see 
+ *           UpdateGammaHitMx(). 
+ *
+ * Returns:  eslOK on success
+ * Throws:   eslEMEM on memory allocation error
+ */
+int
+ReportHitsGreedily(CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, 
+		   int W, double **act, int64_t i0, float cutoff, CM_TOPHITS *hitlist)
+{
+
+  int   status;          /* easel status */
+  int   i;               /* first residue in hit, in actual sequence coords */
+  int   ip;              /* first residue in hit, in act vector coords */
+  int   jp;              /* first residue in hit, in act vector coords */
+  int   d;               /* hit length, d=j-i+1 */
+  char  mode;            /* marginal alignment mode */
+  int   do_report_hit;   /* should we add create a hit for current d? */
+  float hit_sc;          /* score for this hit, possibly null3-corrected */
+  float max_sc_reported; /* max score of all hits thus far reported */
+  CM_HIT *hit = NULL;    /* a hit */
+
+  /* variables related to NULL3 penalty */
+  float *comp = NULL;            /* 0..a..cm->abc-K-1, the composition of residue a within the hit being reported */
+  int    a;                      /* counter for alphabet */
+  float  null3_correction = 0.;  /* null 3 penalty */
+
+  if(bestsc != NULL && dmin <= dmax) { /* if bestsc == NULL or dmin >= dmax, j or d is outside bands, don't report any hits */
+    /* In greedy mode, we are resolving overlaps greedily (RSEARCH
+     * style). We'll have to remove overlaps after all hits are
+     * reported (i.e. many calls to this function with many different
+     * j values) but we don't have to report all hits above cutoff for
+     * this j. Specifically, at the given j, any hit with a d of d1 is
+     * guaranteed to mask any hit of lesser score with a d > d1.  So,
+     * we step through all d starting at dmin and going up to dmax,
+     * only reporting those that exceed our cutoffs *and* are greater
+     * than maximum seen thus far.
+     */
+    max_sc_reported = IMPOSSIBLE;
+    if(act != NULL) ESL_ALLOC(comp, sizeof(float) * cm->abc->K);
+    for (d = dmin; d <= dmax; d++) {
       mode = (bestmode == NULL) ? TRMODE_J : bestmode[d];
-      switch(mode) { 
-      case TRMODE_J:
-	if(Jalpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_J but J row is NULL");
-	hit_sc = Jalpha_row[d];
-	break;
-      case TRMODE_L:
-	if(Lalpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_L but L row is NULL");
-	hit_sc = Lalpha_row[d];
-	break;
-      case TRMODE_R:
-	if(Ralpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_R but R row is NULL");
-	hit_sc = Ralpha_row[d];
-	break;
-      case TRMODE_T:
-	if(Talpha_row == NULL) ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is TRMODE_T but T row is NULL");
-	hit_sc = Talpha_row[d];
-	break;
-      default: 
-	ESL_FAIL(eslEINVAL, errbuf, "UpdateGammaHitMx(), bestmode[d] is invalid (not J,L,R, or T)");
-	break;
-      }
-      if (hit_sc > bestd_sc) {
-	if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) { 
+      hit_sc = bestsc[d];
+      if (hit_sc >  max_sc_reported && /* hit of length d is best seen so far */
+	  hit_sc >= cutoff          && /* hit of length d has sc >= cutoff */
+	  NOT_IMPOSSIBLE(hit_sc))      /* safety: hit does not have IMPOSSIBLE sc */
+	{  
 	  do_report_hit = TRUE;
-	  r    = bestr[d]; 
-	  ip   = using_hmm_bands ? j-(d+dn)+gamma->i0 : j-d+gamma->i0;
-	  i    = using_hmm_bands ? j-(d+dn)+1         : j-d+1;
-	  jp   = j-1+gamma->i0;
-	  assert(ip >= gamma->i0);
-	  assert(jp >= gamma->i0);
+	  i  = j - d  + 1;
+	  ip = i - i0 + 1;
+	  jp = j - i0 + 1;
 	  if(act != NULL) { /* do NULL3 score correction */
-	    for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(i-1)%(W+1)][a];
+	    for(a = 0; a < cm->abc->K; a++) comp[a] = act[jp%(W+1)][a] - act[(ip-1)%(W+1)][a];
 	    esl_vec_FNorm(comp, cm->abc->K);
-	    ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, cm->null3_omega, &null3_correction);
+	    ScoreCorrectionNull3(cm->abc, cm->null, comp, d, cm->null3_omega, &null3_correction);
 	    hit_sc -= null3_correction;
-	    do_report_hit = ((hit_sc > bestd_sc) && (hit_sc >= gamma->cutoff)) ? TRUE : FALSE;
+	    /* reevaluate do_report_hit: has null3_correction dropped us below our cutoffs? */
+	    do_report_hit = (hit_sc > max_sc_reported && hit_sc >= cutoff) ? TRUE : FALSE;
 	  }
 	  if(do_report_hit) { 
-	    /*printf("\t1 %.3f %.3f ip: %d jp: %d r: %d\n", hit_sc+null3_correction, hit_sc, ip, jp, r);*/
+	    /*printf("\t%.3f %.3f i: %d j: %d r: %d\n", hit_sc+null3_correction, hit_sc, i, j, bestr[d]);*/
 	    cm_tophits_CreateNextHit(hitlist, &hit);
-	    hit->start = ip;
-	    hit->stop  = jp;
-	    hit->root  = r;
+	    hit->start = i;
+	    hit->stop  = j;
+	    hit->root  = bestr[d];
 	    hit->mode  = mode;
 	    hit->score = hit_sc;
-	  }
-	}
-	if(hit_sc > bestd_sc) { bestd = d; bestd_sc = hit_sc; } /* we need to check again b/c if null3, hit_sc -= null3_correction */
+	    max_sc_reported = hit_sc; 
+	} 
       }
     }
   }
@@ -7278,12 +7226,11 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *Jalp
  * Returns:  void; dies immediately upon an error.
  */
 void
-TBackGammaHitMx(GammaHitMx_t *gamma, CM_TOPHITS *hitlist, int i0, int j0)
+TBackGammaHitMx(GammaHitMx_t *gamma, CM_TOPHITS *hitlist, int64_t i0, int64_t j0)
 {
   int j, jp_g;
   CM_HIT *hit = NULL;
 
-  if(gamma->iamgreedy) cm_Fail("cm_TBackGammaHitMx(), gamma->iamgreedy is TRUE.\n");   
   if(hitlist == NULL)  cm_Fail("cm_TBackGammaHitMx(), hitlist == NULL");
   /* Recover all hits: an (i,j,sc) triple for each one.
    */

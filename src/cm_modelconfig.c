@@ -163,6 +163,8 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
     if(! (cm->config_opts & CM_CONFIG_V1P0_HMMLOCAL)) { 
       swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
       swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
+      swentry = cm->pbegin;
+      swexit = cm->pbegin; 
       CPlan9SWConfig(cm->cp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE means don't make I_0, D_1, I_M unreachable */
       /* In previous versions (v1.0-->v1.0.2) we configured the HMM
        * differently if we were NOT doing sub alignment. Specifically,

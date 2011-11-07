@@ -61,7 +61,7 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 //FIXME: needs some cleanup from the scalar detritus; should be able
 //FIXME: to drop the ScanMatrix (I think all we need from it is W
   int       status;
-  GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma = NULL;   /* semi-HMM for hit resoultion */
   float    *vsc;                /* best score for each state (float) */
   float     vsc_root;           /* best overall score (score at ROOT_S) */
   int       yoffset;		/* offset to a child state */
@@ -82,6 +82,8 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
+  CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
+  int       h;                  /* counter over hits */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, CMH_BITS flag is not raised.\n");
@@ -135,11 +137,23 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   }
   vsc_root    = IMPOSSIBLE;
 
-  /* gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits. */
-  if(hitlist != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
-  else                gamma = NULL;
+  /* If we were passed a master hitlist <hitlist>, either create a
+   * gamma hit matrix for resolving overlaps optimally (if
+   * cm->search_opts & CM_SEARCH_CMNOTGREEDY) or create a temporary
+   * hitlist that will store overlapping hits, in that case, we'll
+   * remove overlaps greedily before copying the hits to the master
+   * <hitlist>.
+   */
+  gamma       = NULL;
+  tmp_hitlist = NULL;
+  if(hitlist != NULL) { 
+    if(cm->search_opts & CM_SEARCH_CMNOTGREEDY) { 
+      gamma = CreateGammaHitMx(L, i0, cutoff);
+    }
+    else { 
+      tmp_hitlist = cm_tophits_Create();
+    }
+  }
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
   ESL_ALLOC(jp_wA, sizeof(float) * (W+1));
@@ -672,19 +686,38 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
           if (3*sW+d <= W) bestr[3*sW+d] = tmp.x[3];
         }
       }
-      /* update gamma, but only if we're reporting hits to hitlist */
-      if(hitlist != NULL) if((status = UpdateGammaHitMx(cm, errbuf, gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, smx->bestmode, hitlist, W, act)) != eslOK) return status;
+      /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
+      if(gamma != NULL) { 
+	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], alpha[jp_v][0], bestr, NULL, W, act)) != eslOK) return status;
+      }
+      if(tmp_hitlist != NULL) { 
+	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], alpha[jp_v][0], bestr, NULL, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
+      }
+
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
-  /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in UpdateGammaHitMx() for each position j */
-  if(hitlist != NULL && gamma->iamgreedy == FALSE) 
+  /* If recovering hits in a non-greedy manner, do the gamma traceback, then free gamma */
+  if(gamma != NULL) { 
     TBackGammaHitMx(gamma, hitlist, i0, j0);
+    FreeGammaHitMx(gamma);    
+  }
+  /* If reporting hits in a greedy manner, remove overlaps greedily from the tmp_hitlist 
+   * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
+   */
+  if(tmp_hitlist != NULL) { 
+    cm_tophits_SortByPosition(tmp_hitlist);
+    cm_tophits_RemoveDuplicates(tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) { 
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
+      }
+    }
+    cm_tophits_Destroy(tmp_hitlist);
+  }
 
   /* clean up and return */
-  if(gamma != NULL) FreeGammaHitMx(gamma);
   if (act != NULL) { 
     for(i = 0; i <= W; i++) free(act[i]); 
     free(act);

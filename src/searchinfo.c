@@ -113,11 +113,11 @@ AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_f
   if(forward_filter) si->search_opts[0] |= CM_SEARCH_HMMFORWARD;
   if(sc_cutoff < -eslSMALLX1) { /* if we're asking to return negative scores, turn on the greedy hit resolution algorithm (that's the only way we can return negative scoring hits */
     if(viterbi_filter || forward_filter) si->search_opts[0] |= CM_SEARCH_HMMGREEDY;
-    if(cyk_filter     || inside_filter)  si->search_opts[0] |= CM_SEARCH_CMGREEDY;
+    if(cyk_filter     || inside_filter)  si->search_opts[0] &= ~CM_SEARCH_CMNOTGREEDY;
   }
   else { /* turn greedy options off, (they may already be off) */
     if(cm->si->stype[0] == SEARCH_WITH_HMM) si->search_opts[0] &= ~CM_SEARCH_HMMGREEDY;
-    if(cm->si->stype[0] == SEARCH_WITH_CM)  si->search_opts[0] &= ~CM_SEARCH_CMGREEDY;
+    if(cm->si->stype[0] == SEARCH_WITH_CM)  si->search_opts[0] |= CM_SEARCH_CMNOTGREEDY;
   }
   
   si->cutoff_type[0] = cutoff_type;
@@ -244,7 +244,7 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
     do_inside      = (si->search_opts[n] & CM_SEARCH_INSIDE)       ? TRUE : FALSE;
     do_noalign     = (si->search_opts[n] & CM_SEARCH_NOALIGN)      ? TRUE : FALSE;
     do_rsearch     = (si->search_opts[n] & CM_SEARCH_RSEARCH)      ? TRUE : FALSE;
-    do_cmgreedy    = (si->search_opts[n] & CM_SEARCH_CMGREEDY)     ? TRUE : FALSE;
+    do_cmgreedy    = (si->search_opts[n] & CM_SEARCH_CMNOTGREEDY)  ? FALSE: TRUE;
     do_hmmgreedy   = (si->search_opts[n] & CM_SEARCH_HMMGREEDY)    ? TRUE : FALSE;
     do_hmmviterbi  = (si->search_opts[n] & CM_SEARCH_HMMVITERBI)   ? TRUE : FALSE;
     do_hmmforward  = (si->search_opts[n] & CM_SEARCH_HMMFORWARD)   ? TRUE : FALSE;
@@ -305,11 +305,11 @@ UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float sc_cutoff, f
   cm->si->e_cutoff[nround]    = e_cutoff;
   if(sc_cutoff < -eslSMALLX1) { /* if we're asking to return negative scores, turn on the greedy hit resolution algorithm (that's the only way we can return negative scoring hits */
     if(cm->si->stype[nround] == SEARCH_WITH_HMM) cm->si->search_opts[nround] |= CM_SEARCH_HMMGREEDY;
-    if(cm->si->stype[nround] == SEARCH_WITH_CM)  cm->si->search_opts[nround] |= CM_SEARCH_CMGREEDY;
+    if(cm->si->stype[nround] == SEARCH_WITH_CM)  cm->si->search_opts[nround] &= ~CM_SEARCH_CMNOTGREEDY;
   }
   else { /* turn greedy options off, (they may already be off) */
     if(cm->si->stype[nround] == SEARCH_WITH_HMM) cm->si->search_opts[nround] &= ~CM_SEARCH_HMMGREEDY;
-    if(cm->si->stype[nround] == SEARCH_WITH_CM)  cm->si->search_opts[nround] &= ~CM_SEARCH_CMGREEDY;
+    if(cm->si->stype[nround] == SEARCH_WITH_CM)  cm->si->search_opts[nround] |=  CM_SEARCH_CMNOTGREEDY;
   }
 
   return;
@@ -418,7 +418,7 @@ DumpSearchOpts(int search_opts)
   if(search_opts & CM_SEARCH_INSIDE)       printf("\tCM_SEARCH_INSIDE\n");
   if(search_opts & CM_SEARCH_NOALIGN)      printf("\tCM_SEARCH_NOALIGN\n");
   if(search_opts & CM_SEARCH_RSEARCH)      printf("\tCM_SEARCH_RSEARCH\n");
-  if(search_opts & CM_SEARCH_CMGREEDY)     printf("\tCM_SEARCH_CMGREEDY\n");
+  if(search_opts & CM_SEARCH_CMNOTGREEDY)  printf("\tCM_SEARCH_CMNOTGREEDY\n");
   if(search_opts & CM_SEARCH_HMMGREEDY)    printf("\tCM_SEARCH_HMMGREEDY\n");
   if(search_opts & CM_SEARCH_HMMVITERBI)   printf("\tCM_SEARCH_HMMVITERBI\n");
   if(search_opts & CM_SEARCH_HMMFORWARD)   printf("\tCM_SEARCH_HMMFORWARD\n");
