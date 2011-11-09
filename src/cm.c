@@ -1538,7 +1538,7 @@ DeriveUniqueStateCode(int ndtype, int sttype)
   }
 }
 
-/* Function:  Marginalmode()
+/* Function:  MarginalMode()
  * Date:      EPN, Sat Oct  8 06:52:21 2011
  *
  * Purpose:   Translate internal flags for truncation mode
@@ -1550,7 +1550,7 @@ DeriveUniqueStateCode(int ndtype, int sttype)
  * Returns:   the appropriate string
  */
 char *
-Marginalmode(char mode) 
+MarginalMode(char mode) 
 {
   switch (mode) {
   case TRMODE_J:       return "Joint";

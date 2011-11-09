@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT  0
+#define DOPRINT  1
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -250,6 +250,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_trunc_ends    = (esl_opt_GetBoolean(go, "--notrunc")) ? FALSE : TRUE;
   pli->xtau             = esl_opt_GetReal(go, "--xtau");
 
+  /* Set up truncated scanner information */
+  pli->trsi = (pli->do_trunc_ends) ? CreateTrScanInfo() : NULL;
+
   /* Configure acceleration pipeline thresholds */
   pli->do_cm         = TRUE;
   pli->do_hmm        = TRUE;
@@ -266,7 +269,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_fwdbias    = TRUE;
   pli->do_gfwd       = TRUE;
   pli->do_gfwdbias   = TRUE;
-  pli->do_edefbias    = TRUE;
+  pli->do_edefbias   = TRUE;
   pli->do_cyk        = TRUE;
   pli->do_null2      = FALSE;
   pli->do_null3      = TRUE;
@@ -582,6 +585,7 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if(pli->fcyk_dmax != NULL)          { free(pli->fcyk_dmax);             pli->fcyk_dmax = NULL; }
   if(pli->final_dmin != NULL)         { free(pli->final_dmin);            pli->final_dmin = NULL; }
   if(pli->final_dmax != NULL)         { free(pli->final_dmax);            pli->final_dmax = NULL; }
+  if(pli->trsi != NULL)               { free(pli->trsi);                  pli->trsi = NULL; }
   free(pli);
 }
 /*---------------- end, CM_PIPELINE object ----------------------*/
@@ -1696,6 +1700,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   char             errbuf[cmERRBUFSIZE];   /* for error messages */
   CM_HIT          *hit     = NULL;         /* ptr to the current hit output data   */
   float            cyksc, inssc, finalsc;  /* bit scores                           */
+  char             cykmode, insmode;       /* marginal alignment modes */
   double           P;                      /* P-value of a hit */
   int              i, h;                   /* counters */
   int              nhit;                   /* number of hits reported */
@@ -1824,7 +1829,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	cm->search_opts  = pli->fcyk_cm_search_opts;
 
 	if(do_trunc) { 
-	  status = TrCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
+	  status = TrCYKScanHB(cm, errbuf, pli->trsi, sq->dsq, es[i], ee[i], 
 			       0.,                                  /* minimum score to report, irrelevant */
 			       NULL,                                /* hitlist to add to, irrelevant here */
 			       pli->do_null3,                       /* do the NULL3 correction? */
@@ -1833,6 +1838,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 			       cyk_env_cutoff,                      /* bit score == F6env P value, cutoff for envelope redefinition */
 			       (pli->do_cykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
 			       (pli->do_cykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
+			       &cykmode,                            /* best alignment mode */
 			       &cyksc);                             /* best score, irrelevant here */
 	  printf("\n\n!!! Returned from TrCYKScanHB(): %.4f bits\n\n\n", cyksc);
 	}
@@ -1922,13 +1928,14 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	/* printf("INS 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
 	if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is HMM banded Inside */
 	  if(do_trunc) { 
-	    status = FTrInsideScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
+	    status = FTrInsideScanHB(cm, errbuf, pli->trsi, sq->dsq, es[i], ee[i], 
 				     pli->T,            /* minimum score to report */
 				     hitlist,           /* our hitlist */
 				     pli->do_null3,     /* do the NULL3 correction? */
 				     cm->trhbmx,        /* the truncated HMM banded matrix */
 				     pli->hb_size_limit,/* upper limit for size of DP matrix */
 				     0., NULL, NULL,    /* redefined envelope cutoff,start,end, irrelevant here */
+				     &insmode,          /* best mode, irrelevant here (it's also stored in any reported hits) */
 				     &inssc);           /* best score, irrelevant here */
 	    printf("\n\n!!! Returned from FTrInsideScanHB(): %.4f bits\n\n\n", inssc);
 	  }
@@ -1950,13 +1957,14 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	else { /* final algorithm is HMM banded CYK */
 	  /*printf("calling HMM banded CYK scan\n");*/
 	  if(do_trunc) { 
-	    status = TrCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
+	    status = TrCYKScanHB(cm, errbuf, pli->trsi, sq->dsq, es[i], ee[i], 
 				 pli->T,                             /* minimum score to report */
 				 hitlist,                            /* our hitlist */
 				 pli->do_null3,                      /* do the NULL3 correction? */
 				 cm->trhbmx,                         /* the truncated HMM banded matrix */
 				 pli->hb_size_limit,                 /* upper limit for size of DP matrix */
 				 0., NULL, NULL,                     /* envelope redefinition parameters, irrelevant here */
+				 &cykmode,                           /* best alignment mode, irrevelant here (it's also stored in any reported hits) */
 				 &cyksc);                            /* best score, irrelevant here */
 	    printf("\n\n!!! Returned from TrCYKScanHB(): %.4f bits\n\n\n", cyksc);
 	  }
@@ -2210,7 +2218,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
 	cm->cp9b = cp9_CloneBands(scan_cp9b, pli->errbuf);
 	if(cm->cp9b == NULL) return status;
       }
-      cp9_ShiftCMBands(cm, hit->start, hit->stop, FALSE);
+      cp9_ShiftCMBands(cm, hit->start, hit->stop, do_trunc);
       /* NOTE: cm->cp9b bands would currently fail a cp9_ValidateBands() check..., but they'll work for our purposes here */
     }
     

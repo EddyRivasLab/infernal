@@ -1485,7 +1485,6 @@ typedef struct cm_tr_hb_emit_mx_s {
 			    * freed. */
 } CM_TR_HB_EMIT_MX;
 
-
 /* Structure ScanMatrix_t: Information used by all CYK/Inside scanning functions,
  * compiled together into one data structure for convenience. 
  */
@@ -1585,6 +1584,20 @@ typedef struct trscanmx_s {
   int      ncells_Talpha;     /* number of alloc'ed, valid cells for fTalpha and iTalpha matrices, alloc'ed as contiguous block */
 } TrScanMatrix_t;
 
+/* Structure TrScanInfo_t: Per-scan information for trCYK/trInside
+ * scanning functions, information a given call of that function
+ * which matrices to fill in and other information.
+ */
+typedef struct trscaninfo_s {
+  int allow_L; /* allow left  marginal alignments */
+  int allow_R; /* allow right marginal alignments */
+  /* allow_T is not necessary, it is implicitly TRUE only
+   * if allow_L and allow_R are both TRUE.
+   */
+
+  int need_i0_LT; /* require i0 (first residue) to be included in any Left  or Terminal marginal hit */
+  int need_j0_RT; /* require j0 (final residue) to be included in any Right or Terminal marginal hit */
+} TrScanInfo_t;
 
 /* Structure GammaHitMx_t: gamma semi-HMM used for optimal hit resolution
  * of a CM or CP9 scan. All arrays are 0..L.
@@ -1897,6 +1910,7 @@ typedef struct cm_pipeline_s {
   int          *fcyk_dmax;      /* QDB dmax values for filter CYK round     */
   int          *final_dmin;     /* QDB dmin values for final round          */
   int          *final_dmax;     /* QDB dmax values for final round          */
+  TrScanInfo_t *trsi;           /* information for truncated scanners       */
 
   /* Model-dependent parameters                                             */
   int 		maxW;           /* # residues to overlap in adjacent windows*/

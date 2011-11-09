@@ -41,7 +41,9 @@
  *  14. TrScanMatrix_t data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      query dependent banded or non-banded truncated CM DP search functions
- *  15. GammaHitMx_t data structure functions,
+ *  15. TrScanInfo_t data structure functions,
+ *      per-scan info for truncated CM scanners
+ *  16. GammaHitMx_t data structure functions,
  *      semi-HMM data structure for optimal resolution of overlapping
  *      hits for CM DP search functions
  *
@@ -6320,7 +6322,7 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
    * we allocate only as many cells as necessary,
    * for f{J,L,R,T}alpha,      we only allocate for non-BEGL_S states,
    * for f{J,L,R,T}alpha_begl, we only allocate for     BEGL_S states
-   * for fTalpha,              we only allocate for     BIF_B  states
+   * for fTalpha,              we only allocate for     BIF_B  and ROOT_S states
    *
    * note: deck for the EL state, cm->M is never used for scanners
    */
@@ -6348,8 +6350,8 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   ESL_ALLOC(trsmx->fRalpha_mem,    sizeof(float) * 2 * n_non_begl * (trsmx->W+1));
 
   ESL_ALLOC(trsmx->fTalpha,        sizeof(float **) * 2);
-  ESL_ALLOC(trsmx->fTalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B, fTalpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->fTalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B, fTalpha[1][v] will be NULL */
+  ESL_ALLOC(trsmx->fTalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B and v != ROOT_S, fTalpha[0][v] will be NULL */
+  ESL_ALLOC(trsmx->fTalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B and v != ROOT_S, fTalpha[1][v] will be NULL */
   ESL_ALLOC(trsmx->fTalpha_mem,    sizeof(float) * 2 * n_non_begl * (trsmx->W+1));
 
   if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * n_non_begl * (trsmx->W+1)) != trsmx->ncells_alpha)) 
@@ -6379,13 +6381,13 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   }
   if(cur_cell != trsmx->ncells_alpha) cm_Fail("cm_FloatizeScanMatrix(), error allocating falpha, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_alpha);
 
-  if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * n_bif * (trsmx->W+1)) != trsmx->ncells_Talpha)) 
+  if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * (n_bif+1) * (trsmx->W+1)) != trsmx->ncells_Talpha)) 
     cm_Fail("cm_FloatizeScanMatrix(), cmTRSMX_HAS_INT flag raised, but trsmx->ncells_Talpha %d != %d (predicted num float cells size in Talpha)\n", trsmx->ncells_Talpha, (2 * n_bif * (trsmx->W+1)));
-  trsmx->ncells_Talpha = 2 * n_bif * (trsmx->W+1);
+  trsmx->ncells_Talpha = 2 * (n_bif+1) * (trsmx->W+1);
 
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
-    if (cm->stid[v] == BIF_B) { 
+    if (cm->stid[v] == BIF_B || cm->stid[v] == ROOT_S) { 
       trsmx->fTalpha[0][v] = trsmx->fTalpha_mem + cur_cell;
       cur_cell += trsmx->W+1;
       trsmx->fTalpha[1][v] = trsmx->fTalpha_mem + cur_cell;
@@ -6524,7 +6526,7 @@ cm_IntizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
    * we allocate only as many cells as necessary,
    * for i{J,L,R}alpha,      we only allocate for non-BEGL_S states,
    * for i{J,L,R}alpha_begl, we only allocate for     BEGL_S states
-   * for iTalpha,            we only allocate for     BIF_B  states
+   * for iTalpha,            we only allocate for     BIF_B  and ROOT_S states
    *
    * note: deck for the EL state, cm->M is never used for scanners
    */
@@ -6552,8 +6554,8 @@ cm_IntizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   ESL_ALLOC(trsmx->iRalpha_mem,    sizeof(int) * 2 * n_non_begl * (trsmx->W+1));
 
   ESL_ALLOC(trsmx->iTalpha,        sizeof(int **) * 2);
-  ESL_ALLOC(trsmx->iTalpha[0],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B, fTalpha[0][v] will be NULL */
-  ESL_ALLOC(trsmx->iTalpha[1],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B, fTalpha[1][v] will be NULL */
+  ESL_ALLOC(trsmx->iTalpha[0],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B and v != ROOT_S, fTalpha[0][v] will be NULL */
+  ESL_ALLOC(trsmx->iTalpha[1],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B and v != ROOT_S, fTalpha[1][v] will be NULL */
   ESL_ALLOC(trsmx->iTalpha_mem,    sizeof(int) * 2 * n_non_begl * (trsmx->W+1));
 
   if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * n_non_begl * (trsmx->W+1)) != trsmx->ncells_alpha)) 
@@ -6583,13 +6585,13 @@ cm_IntizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   }
   if(cur_cell != trsmx->ncells_alpha) cm_Fail("cm_IntizeScanMatrix(), error allocating falpha, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_alpha);
 
-  if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * n_bif * (trsmx->W+1)) != trsmx->ncells_Talpha)) 
+  if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * (n_bif+1) * (trsmx->W+1)) != trsmx->ncells_Talpha)) 
     cm_Fail("cm_IntizeScanMatrix(), cmTRSMX_HAS_INT flag raised, but trsmx->ncells_Talpha %d != %d (predicted num int cells size in Talpha)\n", trsmx->ncells_Talpha, (2 * n_bif * (trsmx->W+1)));
-  trsmx->ncells_Talpha = 2 * n_bif * (trsmx->W+1);
+  trsmx->ncells_Talpha = 2 * (n_bif+1) * (trsmx->W+1);
 
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
-    if (cm->stid[v] == BIF_B) { 
+    if (cm->stid[v] == BIF_B || cm->stid[v] == ROOT_S) { 
       trsmx->iTalpha[0][v] = trsmx->iTalpha_mem + cur_cell;
       cur_cell += trsmx->W+1;
       trsmx->iTalpha[1][v] = trsmx->iTalpha_mem + cur_cell;
@@ -6955,7 +6957,37 @@ cm_DumpTrScanMatrixAlpha(CM_t *cm, TrScanMatrix_t *trsmx, int j, int i0, int doi
 }
 
 /*****************************************************************
- *  15. GammaHitMx_t data structure functions,
+ *  15. TrScanInfo_t data structure functions,
+ *      per-scan info for truncated CM scanners
+ *****************************************************************/
+/* Function: CreateTrScanInfo()
+ * Date:     EPN, Tue Nov  8 08:27:16 2011
+ *
+ * Purpose:  Allocate and initialize a TrScanInfo_t object.
+ * 
+ * Returns:  Newly allocated TrScanInfo_t object. NULL if out
+ *           of memory.
+ */
+TrScanInfo_t *
+CreateTrScanInfo()
+{
+  int status;
+  TrScanInfo_t *trsi;
+  ESL_ALLOC(trsi, sizeof(TrScanInfo_t));
+
+  trsi->allow_L = TRUE;
+  trsi->allow_R = TRUE;
+  trsi->need_i0_LT = FALSE;
+  trsi->need_j0_RT = FALSE;
+
+  return trsi;
+
+ ERROR:
+  return NULL;
+}
+
+/*****************************************************************
+ *  16. GammaHitMx_t data structure functions,
  *      Semi HMM data structure for optimal resolution of overlapping
  *      hits for CM DP search functions.
  *****************************************************************/
@@ -6991,7 +7023,6 @@ CreateGammaHitMx(int L, int64_t i0, float cutoff)
   return gamma;
 
  ERROR:
-  cm_Fail("memory allocation error in cm_CreateGammaHitMx().\n");
   return NULL;
 }
 

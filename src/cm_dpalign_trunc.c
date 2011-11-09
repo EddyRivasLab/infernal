@@ -417,7 +417,7 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 
 /* Function: cm_tr_alignT_hb()
  * Date:     EPN, Thu Sep  8 07:59:10 2011
- *           EPN 03.29.06 (cm_alignT_hb()
+ *           EPN 03.29.06 (cm_alignT_hb())
  *
  * Purpose: Call either cm_TrCYKInsideAlignHB() (if !<do_optacc>), or
  *           cm_TrOptAccAlignHB() (if <do_optacc>), get vjd shadow
@@ -570,7 +570,7 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
 	allow_S_trunc_end = FALSE;
       }
     }
-    else if (cm->sttype[v] != EL_st){ /* normal case, determine jp_v, dp_v; j, d offset values given bands */
+    else if (cm->sttype[v] != EL_st) { /* normal case, determine jp_v, dp_v; j, d offset values given bands */
       jp_v = j - jmin[v];
       dp_v = d - hdmin[v][jp_v];
       allow_S_trunc_end = FALSE;
@@ -960,6 +960,7 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 				 (have_ppstr ? &ppstr : NULL), 
 				 (do_optacc  ? &sc    : NULL))) != eslOK) return status;
   }
+  ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
 
   if (ret_ppstr  != NULL) *ret_ppstr  = ppstr; else if(ppstr != NULL) free(ppstr);
   if (ret_tr     != NULL) *ret_tr     = tr;    else if(tr    != NULL) FreeParsetree(tr);
@@ -1711,7 +1712,6 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
     do_L_v = cp9b->Lvalid[v] && fill_L ? TRUE : FALSE;
     do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
     do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
-  
     /* re-initialize the J deck if we can do a local end from v */
     if(do_J_v) { 
       if(NOT_IMPOSSIBLE(cm->endsc[v])) {
@@ -2494,6 +2494,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   free(el_scA);
   free(yvalidA);
 
+  printf("cm_TrCYKInsideAlignHB return sc: %f\n", sc);
   ESL_DPRINTF1(("cm_TrCYKInsideAlignHB return sc: %f\n", sc));
   return eslOK;
 
@@ -3864,7 +3865,8 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	}
       }
     }
-    else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+    /*else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { */
       for (j = 0; j <= L; j++) {
 	/* Check for special initialization case, specific to
 	 * optimal_accuracy alignment, normally (with TrCYK for
@@ -4508,7 +4510,8 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	}
       }
     }
-    else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+      /*else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { */
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
 	/* Check for special initialization case, specific to
@@ -4524,15 +4527,17 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	 * that transition to y is most likely.
 	 */
 	if(do_J_v) { 
-	  for (d = hdmin[v][jp_v]; d <= sd; d++) { 
-	    dp_v = d-hdmin[v][jp_v];
-	    for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) { 
-	      if(StateDelta(cm->sttype[y]) == 0) { 
-		if((j-sdr) >= jmin[y] && (j-sdr) <= jmax[y]) { 
-		  jp_y = j - sdr - jmin[y];
-		  if(hdmin[y][jp_y] == 0) { 
-		    yoffset = y - cm->cfirst[v];
-		    Jyshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
+	  if(hdmin[v][jp_v] <= hdmax[v][jp_v]) { /* if this if FALSE, no valid d exists for this v and j */
+	    for (d = hdmin[v][jp_v]; d <= sd; d++) { 
+	      dp_v = d-hdmin[v][jp_v];
+	      for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) { 
+		if(StateDelta(cm->sttype[y]) == 0) { 
+		  if((j-sdr) >= jmin[y] && (j-sdr) <= jmax[y]) { 
+		    jp_y = j - sdr - jmin[y];
+		    if(hdmin[y][jp_y] == 0) { 
+		      yoffset = y - cm->cfirst[v];
+		      Jyshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
+		    }
 		  }
 		}
 	      }
@@ -5792,9 +5797,11 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   FILE *fp1; fp1 = fopen("tmp.tru_ocykmx", "w");   cm_tr_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
 #endif
 
-  if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYK Inside/Outside check1 FAILED.");
-  else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYK Inside/Outside check2 FAILED.");
-  else                printf("SUCCESS! TrCYK Inside/Outside checks PASSED.\n");
+  if(do_check) { 
+    if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYK Inside/Outside check1 FAILED.");
+    else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYK Inside/Outside check2 FAILED.");
+    else                printf("SUCCESS! TrCYK Inside/Outside checks PASSED.\n");
+  }
 
   if     (opt_mode == TRMODE_J) optsc = Jalpha[0][L][L];
   else if(opt_mode == TRMODE_L) optsc = Lalpha[0][L][L];
@@ -6495,9 +6502,11 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   FILE *fp1; fp1 = fopen("tmp.tru_ocykhbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
 #endif
 
-  if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYKHB Inside/Outside check1 FAILED.");
-  else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYKHB Inside/Outside check2 FAILED.");
-  else                printf("SUCCESS! TrCYKHB Inside/Outside checks PASSED.\n");
+  if(do_check) {
+    if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYKHB Inside/Outside check1 FAILED.");
+    else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYKHB Inside/Outside check2 FAILED.");
+    else                printf("SUCCESS! TrCYKHB Inside/Outside checks PASSED.\n");
+  }
 
   if     (opt_mode == TRMODE_J) optsc = Jalpha[0][jp_0][Lp_0];
   else if(opt_mode == TRMODE_L) optsc = Lalpha[0][jp_0][Lp_0];
@@ -6890,8 +6899,10 @@ cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   FILE *fp1; fp1 = fopen("tmp.tru_omx", "w");   cm_tr_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
 #endif
 
-  if  (fail_flag) ESL_FAIL(eslFAIL, errbuf, "Tr Inside/Outside check FAILED.");
-  else            printf("SUCCESS! Tr Inside/Outside check PASSED.\n");
+  if(do_check) { 
+    if  (fail_flag) ESL_FAIL(eslFAIL, errbuf, "Tr Inside/Outside check FAILED.");
+    else            printf("SUCCESS! Tr Inside/Outside check PASSED.\n");
+  }
 
   if     (opt_mode == TRMODE_J) optsc = Jalpha[0][L][L];
   else if(opt_mode == TRMODE_L) optsc = Lalpha[0][L][L];
@@ -7544,8 +7555,10 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   FILE *fp1; fp1 = fopen("tmp.tru_ohbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, opt_mode); fclose(fp1);
 #endif
 
-  if     (fail_flag) ESL_FAIL(eslFAIL, errbuf, "Tr Inside/Outside HB check FAILED.");
-  else               printf("SUCCESS! Tr Inside/Outside HB check PASSED.\n");
+  if(do_check) { 
+    if(fail_flag) ESL_FAIL(eslFAIL, errbuf, "Tr Inside/Outside HB check FAILED.");
+    else          printf("SUCCESS! Tr Inside/Outside HB check PASSED.\n");
+  }
 
   if     (opt_mode == TRMODE_J) optsc = Jalpha[0][jp_0][Lp_0];
   else if(opt_mode == TRMODE_L) optsc = Lalpha[0][jp_0][Lp_0];
@@ -8235,7 +8248,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char op
       if((sreEXP2(emit_mx->sum[i]) < 0.98) || (sreEXP2(emit_mx->sum[i]) > 1.02)) { 
 	ESL_FAIL(eslFAIL, errbuf, "residue %d has summed prob of %5.4f (2^%5.4f).\nMay not be a DP coding bug, see 'Note:' on precision in cm_TrEmitterPosterior().\n", i, (sreEXP2(emit_mx->sum[i])), emit_mx->sum[i]);
       }
-      /*printf("i: %d | total: %10.4f\n", i, (sreEXP2(emit_mx->sum[i])));*/
+      printf("i: %d | total: %10.4f\n", i, (sreEXP2(emit_mx->sum[i])));
     }
     ESL_DPRINTF1(("cm_TrEmitterPosteriorHB() check passed, all residues have summed probability of emission of between 0.98 and 1.02.\n"));
   }  
@@ -8593,6 +8606,9 @@ cm_TrPostCodeHB(CM_t *cm, char *errbuf, int L, CM_TR_HB_EMIT_MX *emit_mx, Parset
   }
   ppstr[L] = '\0';
 
+  printf("cm_TrPostCodeHB() return avgpp: %f\n", sreEXP2(sum_logp) / (float) L);
+  ESL_DPRINTF1(("cm_TrPostCodeHB() return avgpp: %f\n", sreEXP2(sum_logp) / (float) L));
+
   if(ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
   if(ret_avgp  != NULL) *ret_avgp  = sreEXP2(sum_logp) / (float) L;
   return eslOK;
@@ -8842,7 +8858,7 @@ static ESL_OPTIONS options[] = {
   { "--cp9gloc", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "-g,--cp9noel", "configure CP9 HMM in glocal mode", 2 },
   { "--thresh1", eslARG_REAL,  "0.01", NULL, NULL,  NULL,  NULL,  NULL, "set HMM bands thresh1 to <x>", 2 },
   { "--thresh2", eslARG_REAL,  "0.99", NULL, NULL,  NULL,  NULL,  NULL, "set HMM bands thresh2 to <x>", 2 },
-  { "--sizelimit",eslARG_REAL, "128.", NULL, "x>0", NULL,  NULL,  NULL, "set maximum allowed size of HB matrices to <x> Mb", 2 },
+  { "--mxsize",  eslARG_REAL, "128.", NULL, "x>0", NULL,  NULL,  NULL, "set maximum allowed size of HB matrices to <x> Mb", 2 },
   { "--tr",      eslARG_NONE,  FALSE,  NULL, NULL,  NULL,  NULL,  NULL, "dump parsetrees to stdout", 2 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -8871,6 +8887,7 @@ main(int argc, char **argv)
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
   char            errbuf[cmERRBUFSIZE];
   TrScanMatrix_t *trsmx = NULL;
+  TrScanInfo_t   *trsi  = NULL;
   ESL_SQFILE     *sqfp  = NULL;        /* open sequence input file stream */
   CMConsensus_t  *cons  = NULL;
   Parsetree_t    *tr    = NULL;
@@ -8878,7 +8895,7 @@ main(int argc, char **argv)
   CM_TR_MX              *out_trmx= NULL;
   CM_TR_EMIT_MX         *tremit_mx= NULL;
   CM_TR_SHADOW_MX       *trshmx= NULL;
-  float           size_limit = esl_opt_GetReal(go, "--sizelimit");
+  float           size_limit = esl_opt_GetReal(go, "--mxsize");
   float           save_tau, save_cp9b_thresh1, save_cp9b_thresh2;
   float           hbmx_Mb, trhbmx_Mb;
   float           parsetree_sc, parsetree_struct_sc;
@@ -8894,6 +8911,7 @@ main(int argc, char **argv)
   FLogsumInit();
 
   r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
+  trsi = CreateTrScanInfo();
 
   do_random = TRUE;
   if(esl_opt_GetBoolean(go, "-e")) do_random = FALSE; 
@@ -9276,8 +9294,8 @@ main(int argc, char **argv)
       /* 5. non-banded truncated search, if requested */
       /*********************Begin RefTrCYKScan****************************/
       esl_stopwatch_Start(w);
-      if((status = RefTrCYKScan(cm, errbuf, trsmx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-      printf("%4d %-30s %10.4f bits ", (i+1), "RefTrCYKScan(): ", sc);
+      if((status = RefTrCYKScan(cm, errbuf, trsmx, trsi, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "RefTrCYKScan(): ", sc, MarginalMode(mode));
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       /*********************End RefTrCYKScan****************************/
@@ -9285,8 +9303,8 @@ main(int argc, char **argv)
       /*********************Begin RefITrInsideScan****************************/
       cm->search_opts |= CM_SEARCH_INSIDE;
       esl_stopwatch_Start(w);
-      if((status = RefITrInsideScan(cm, errbuf, trsmx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-      printf("%4d %-30s %10.4f bits ", (i+1), "RefITrInsideScan(): ", sc);
+      if((status = RefITrInsideScan(cm, errbuf, trsmx, trsi, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "RefITrInsideScan(): ", sc, MarginalMode(mode));
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       cm->search_opts &= ~CM_SEARCH_INSIDE;
@@ -9353,16 +9371,16 @@ main(int argc, char **argv)
 	/*PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);*/
 	    
 	esl_stopwatch_Start(w);
-	if((status = TrCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, cm->trhbmx, size_limit, 0.,  NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "TrCYKScanHB(): ", sc);
+	if((status = TrCYKScanHB(cm, errbuf, trsi, dsq, 1, L, 0., NULL, FALSE, cm->trhbmx, size_limit, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "TrCYKScanHB(): ", sc, MarginalMode(mode));
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End TrCYKScanHB****************************/
 	    
 	/*********************Begin FTrInsideScanHB****************************/
 	esl_stopwatch_Start(w);
-	if((status = FTrInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, cm->trhbmx, size_limit, 0.,  NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "FTrInsideScanHB(): ", sc);
+	if((status = FTrInsideScanHB(cm, errbuf, trsi, dsq, 1, L, 0., NULL, FALSE, cm->trhbmx, size_limit, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "FTrInsideScanHB(): ", sc, MarginalMode(mode));
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End FTrInsideScanHB***********************/
@@ -9407,6 +9425,7 @@ main(int argc, char **argv)
   esl_stopwatch_Destroy(w);
   esl_randomness_Destroy(r);
   esl_getopts_Destroy(go);
+  free(trsi);
   if(trmx        != NULL) cm_tr_mx_Destroy(trmx);
   if(out_trmx    != NULL) cm_tr_mx_Destroy(out_trmx);
   if(trshmx      != NULL) cm_tr_shadow_mx_Destroy(trshmx);

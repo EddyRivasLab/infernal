@@ -46,7 +46,8 @@
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           trsmx           - TrScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           trsi            - TrScanInfo_t with information on which modes to allow
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -58,18 +59,18 @@
  *           ret_envj        - max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not wanted
  *           ret_mode        - RETURN: mode of best overall hit (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
- *           ret_sc          - RETURN: score of best overall hit (vsc[0])
+ *           ret_sc          - RETURN: score of best overall hit
  *
  * Note:     This function is heavily synchronized with RefITrInsideScan()
  *           any change to this function should be mirrored in that function.. 
  *
  * Returns:  eslOK on succes;
- *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <hitlist>.
+ *           <ret_sc> is score of best overall hit. Information on hits added to <hitlist>.
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  *           Dies immediately if some error occurs.
  */
 int
-RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 	     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc)
 {
   int       status;
@@ -79,6 +80,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
   float     vsc_root = IMPOSSIBLE; /* best overall score (score at ROOT_S) */
   float     vmode_root;         /* alignment mode of best overall alignment (that has score = vsc_root) */
   float     bsc_full;           /* best overall score that emits full sequence i0..j0 */
+  float     bmode_full;         /* alignment mode of best overall parse that emits full sequence */
   int       yoffset;		/* offset to a child state */
   int       i,j;		/* index of start/end positions in sequence, 0..L */
   int       d;			/* a subsequence length, 0..W */
@@ -95,6 +97,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
+  int       dn, dx;             /* minimum/maximum valid d for current state */
   int       kn, kx;             /* minimum/maximum valid k for current d in B_st recursion */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
@@ -108,8 +111,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
   /* variables specific to truncated search */
   int       Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
   int       Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
-  float     trunc_penalty;      /* bit score penalty for truncated hits, often 0. */
-  float     best_tr_sc;         /* best truncated score */
+  float     trunc_penalty = 0.; /* bit score penalty for truncated hits, often 0. */
+  int   fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, CMH_BITS flag is not raised.\n");
@@ -136,12 +139,13 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
   float  **esc_vAA     = cm->oesc;            /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
  					       * and all possible emissions a (including ambiguities) */
   float  **lmesc_vAA   = cm->lmesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] left  marginal emission scores for v */
+
+  /* determine which matrices we need to fill in based on <trsi> */
+  fill_L = trsi->allow_L      ? TRUE : FALSE;
+  fill_R = trsi->allow_R      ? TRUE : FALSE;
+  fill_T = (fill_L && fill_R) ? TRUE : FALSE;
+
   float  **rmesc_vAA   = cm->rmesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] right marginal emission scores for v */
-
-  int fill_L = TRUE;
-  int fill_R = TRUE;
-  int fill_T = TRUE;
-
   /* determine if we're doing banded/non-banded */
   if(trsmx->dmax != NULL) do_banded = TRUE;
   
@@ -149,14 +153,16 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
   W = trsmx->W;
   if (W > L) W = L; 
 
-  /* set vsc array */
+  /* initializations */
   vsc = NULL;
-  ESL_ALLOC(vsc, sizeof(float) * cm->M);
-  esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
+  if(ret_vsc != NULL) { 
+    ESL_ALLOC(vsc, sizeof(float) * cm->M);
+    esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
+  }
   vsc_root   = IMPOSSIBLE;
   vmode_root = TRMODE_UNKNOWN;
   bsc_full   = IMPOSSIBLE;
-
+  bmode_full = TRMODE_UNKNOWN;
 
   /* If we were passed a master hitlist <hitlist>, either create a
    * gamma hit matrix for resolving overlaps optimally (if
@@ -258,30 +264,35 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 	      else { kmin = 0; kmax = d; }
 
 	      Jsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for B_st */
-	      Lsc = IMPOSSIBLE;
-	      Rsc = IMPOSSIBLE;
-	      Tsc = IMPOSSIBLE;
+	      if(fill_L) Lsc = IMPOSSIBLE;
+	      if(fill_R) Rsc = IMPOSSIBLE;
+	      if(fill_T) Tsc = IMPOSSIBLE;
 
 	      /* Careful with Tsc, it isn't updated for k == 0 or  k == d, 
 	       * but Jsc, Lsc, Rsc, are all updated for k == 0 and k == d */
 	      for (k = kmin; k <= kmax; k++) {
-		Jsc = ESL_MAX(Jsc, (Jalpha_begl[jp_wA[k]][w][d-k] + Jalpha[jp_y][y][k]));
-		Lsc = ESL_MAX(Lsc, (Jalpha_begl[jp_wA[k]][w][d-k] + Lalpha[jp_y][y][k]));
-		Rsc = ESL_MAX(Rsc, (Ralpha_begl[jp_wA[k]][w][d-k] + Jalpha[jp_y][y][k]));
+		Jsc =            ESL_MAX(Jsc, (Jalpha_begl[jp_wA[k]][w][d-k] + Jalpha[jp_y][y][k]));
+		if(fill_L) Lsc = ESL_MAX(Lsc, (Jalpha_begl[jp_wA[k]][w][d-k] + Lalpha[jp_y][y][k]));
+		if(fill_R) Rsc = ESL_MAX(Rsc, (Ralpha_begl[jp_wA[k]][w][d-k] + Jalpha[jp_y][y][k]));
 	      }		
-	      kn = ESL_MAX(1,   kmin);
-	      kx = ESL_MIN(d-1, kmax);
-	      for (k = kn; k <= kx; k++) {
-		Tsc = ESL_MAX(Tsc, (Ralpha_begl[jp_wA[k]][w][d-k] + Lalpha[jp_y][y][k]));
+	      if(fill_T) { 
+		kn = ESL_MAX(1,   kmin);
+		kx = ESL_MIN(d-1, kmax);
+		for (k = kn; k <= kx; k++) {
+		  Tsc = ESL_MAX(Tsc, (Ralpha_begl[jp_wA[k]][w][d-k] + Lalpha[jp_y][y][k]));
+		}
 	      }
 
 	      Jalpha[jp_v][v][d] = Jsc;
-	      Talpha[jp_v][v][d] = Tsc;
-	      if(kmin == 0) Lalpha[jp_v][v][d] = ESL_MAX(Lsc, ESL_MAX(Jalpha_begl[jp_wA[0]][w][d], Lalpha_begl[jp_wA[0]][w][d])); 
-	      else          Lalpha[jp_v][v][d] = Lsc;
-
-	      if(kmax == d) Ralpha[jp_v][v][d] = ESL_MAX(Rsc, ESL_MAX(Jalpha[jp_y][y][d], Ralpha[jp_y][y][d]));
-	      else          Ralpha[jp_v][v][d] = Rsc;
+	      if(fill_T) Talpha[jp_v][v][d] = Tsc;
+	      if(fill_L) { 
+		if(kmin == 0) Lalpha[jp_v][v][d] = ESL_MAX(Lsc, ESL_MAX(Jalpha_begl[jp_wA[0]][w][d], Lalpha_begl[jp_wA[0]][w][d])); 
+		else          Lalpha[jp_v][v][d] = Lsc;
+	      }
+	      if(fill_R) { 
+		if(kmax == d) Ralpha[jp_v][v][d] = ESL_MAX(Rsc, ESL_MAX(Jalpha[jp_y][y][d], Ralpha[jp_y][y][d]));
+		else          Ralpha[jp_v][v][d] = Rsc;
+	      }
 	      /* careful: scores for w, the BEGL_S child of v, are in alpha_begl, not alpha */
 	    }
 	  }
@@ -289,16 +300,16 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 	    y = cm->cfirst[v]; 
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for BEGL_S st */
-	      Lsc = IMPOSSIBLE;
-	      Rsc = IMPOSSIBLE;
+	      if(fill_L) Lsc = IMPOSSIBLE;
+	      if(fill_R) Rsc = IMPOSSIBLE;
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
-		Jsc = ESL_MAX(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		Lsc = ESL_MAX(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		Rsc = ESL_MAX(Rsc, Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		Jsc =            ESL_MAX(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		if(fill_L) Lsc = ESL_MAX(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		if(fill_R) Rsc = ESL_MAX(Rsc, Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 	      }
 	      Jalpha_begl[jp_v][v][d] = Jsc;
-	      Lalpha_begl[jp_v][v][d] = Lsc;
-	      Ralpha_begl[jp_v][v][d] = Rsc;
+	      if(fill_L) Lalpha_begl[jp_v][v][d] = Lsc;
+	      if(fill_R) Ralpha_begl[jp_v][v][d] = Rsc;
 	      /* careful: y is in alpha (all children of a BEGL_S must be non BEGL_S) */
 	    }
 	  }
@@ -310,10 +321,11 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 	      Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
 	      for (d = dnA[v]; d <= dxA[v]; d++) {
 		Jsc = init_scAA[v][d-sd]; 
-		Lsc = IMPOSSIBLE;
-		Rsc = IMPOSSIBLE;
-		Ralpha[jp_v][v][d] = Rsc; /* this is important b/c if we're an IL, we'll access this cell in the recursion below for Ralpha */
-		
+		if(fill_L) Lsc = IMPOSSIBLE;
+		if(fill_R) { 
+		  Rsc = IMPOSSIBLE;
+		  Ralpha[jp_v][v][d] = Rsc; /* this is important b/c if we're an IL, we'll access this cell in the recursion below for Ralpha */
+		}		
 		/* We need to do separate 'for (yoffset...' loops for J
 		 * and R matrices, because jp_v == jp_y for all states
 		 * here, and for IL states, v can equal y+yoffset (when
@@ -323,17 +335,19 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 		 * Ralpha[jp_v][v][d]. 
 		 */
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
-		  Jsc = ESL_MAX(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		  Lsc = ESL_MAX(Lsc,         Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		  Jsc =            ESL_MAX(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		  if(fill_L) Lsc = ESL_MAX(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 		}
-		Jalpha[jp_v][v][d] = Jsc + esc_v[dsq[i]];
-		Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + esc_v[dsq[i]] : esc_v[dsq[i]];
+		Jalpha[jp_v][v][d]            =            Jsc + esc_v[dsq[i]];
+		if(fill_L) Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + esc_v[dsq[i]] : esc_v[dsq[i]];
 		
-		for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
-		  Rsc = ESL_MAX(Rsc, ESL_MAX(Jalpha[jp_y][y+yoffset][d]      + tsc_v[yoffset],
-					     Ralpha[jp_y][y+yoffset][d]      + tsc_v[yoffset]));
+		if(fill_R) { 
+		  for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
+		    Rsc = ESL_MAX(Rsc, ESL_MAX(Jalpha[jp_y][y+yoffset][d]      + tsc_v[yoffset],
+					       Ralpha[jp_y][y+yoffset][d]      + tsc_v[yoffset]));
+		  }
+		  Ralpha[jp_v][v][d] = Rsc;
 		}
-		Ralpha[jp_v][v][d] = Rsc;
 		i--;
 	      }
 	    } /* end of if(! StateIsDetached(cm, v) */
@@ -344,11 +358,13 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 	      assert(dnA[v] == 1);
 	      Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
 	      for (d = dnA[v]; d <= dxA[v]; d++) {
-		Jsc = init_scAA[v][d-sd]; 
-		Lsc = IMPOSSIBLE;
-		Rsc = IMPOSSIBLE;
-		Lalpha[jp_v][v][d] = Lsc; /* this is important b/c if we're an IR, we'll access this cell in the recursion below for Lalpha */
-		
+		           Jsc = init_scAA[v][d-sd]; 
+		if(fill_R) Rsc = IMPOSSIBLE;
+		if(fill_L) { 
+		  Lsc = IMPOSSIBLE;
+		  Lalpha[jp_v][v][d] = Lsc; /* this is important b/c if we're an IR, we'll access this cell in the recursion below for Lalpha */
+		}
+
 		/* We need to do separate 'for (yoffset...' loops for J
 		 * and L matrices, because jp_v == jq_y for all states
 		 * here, and for IR states, v can equal y+yoffset (when
@@ -358,17 +374,19 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 		 * Lalpha[jp_v][v][d]. 
 		 */
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
-		  Jsc = ESL_MAX(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		  Rsc = ESL_MAX(Rsc,         Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		  Jsc            = ESL_MAX(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		  if(fill_R) Rsc = ESL_MAX(Rsc, Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 		}
-		Jalpha[jp_v][v][d] = Jsc + esc_j;
-		Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + esc_j : esc_j;
+		Jalpha[jp_v][v][d]            =            Jsc + esc_j;
+		if(fill_R) Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + esc_j : esc_j;
 		
-		for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
-		  Lsc = ESL_MAX(Lsc, ESL_MAX(Jalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset],
-					     Lalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset]));
+		if(fill_L) { 
+		  for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
+		    Lsc = ESL_MAX(Lsc, ESL_MAX(Jalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset],
+					       Lalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset]));
+		  }
+		  Lalpha[jp_v][v][d] = Lsc;
 		}
-		Lalpha[jp_v][v][d] = Lsc;
 	      }
 	    } /* end of if(! StateIsDetached(cm, v) */
 	  }
@@ -378,18 +396,22 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 	    assert(dnA[v] == 1);
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; 
-	      Lsc = IMPOSSIBLE;
-	      Rsc = IMPOSSIBLE;
+	      if(fill_L) Lsc = IMPOSSIBLE;
+	      if(fill_R) Rsc = IMPOSSIBLE;
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
 		Jsc = ESL_MAX(Jsc,         Jalpha[jp_y][y+yoffset][d - 2] + tsc_v[yoffset]);
-		Lsc = ESL_MAX(Lsc, ESL_MAX(Jalpha[jq_y][y+yoffset][d - 1] + tsc_v[yoffset],
-					   Lalpha[jq_y][y+yoffset][d - 1] + tsc_v[yoffset])),
-		Rsc = ESL_MAX(Rsc, ESL_MAX(Jalpha[jp_y][y+yoffset][d - 1] + tsc_v[yoffset],
-					   Ralpha[jp_y][y+yoffset][d - 1] + tsc_v[yoffset]));
+		if(fill_L) { 
+		  Lsc = ESL_MAX(Lsc, ESL_MAX(Jalpha[jq_y][y+yoffset][d - 1] + tsc_v[yoffset],
+					     Lalpha[jq_y][y+yoffset][d - 1] + tsc_v[yoffset]));
+		}
+		if(fill_R) { 
+		  Rsc = ESL_MAX(Rsc, ESL_MAX(Jalpha[jp_y][y+yoffset][d - 1] + tsc_v[yoffset],
+					     Ralpha[jp_y][y+yoffset][d - 1] + tsc_v[yoffset]));
+		}
 	      }
-	      Jalpha[jp_v][v][d] = (d >= 2) ? Jsc + esc_v[dsq[i]*cm->abc->Kp+dsq[j]] : IMPOSSIBLE;
-	      Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + lmesc_v[dsq[i]]                  : lmesc_v[dsq[i]];
-	      Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + rmesc_j                          : rmesc_j;
+	      Jalpha[jp_v][v][d]            = (d >= 2) ? Jsc + esc_v[dsq[i]*cm->abc->Kp+dsq[j]] : IMPOSSIBLE;
+	      if(fill_L) Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + lmesc_v[dsq[i]]                  : lmesc_v[dsq[i]];
+	      if(fill_R) Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + rmesc_j                          : rmesc_j;
 	      i--;
 	    }
 	  }
@@ -397,40 +419,35 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 	    y = cm->cfirst[v]; 
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; 
-	      Lsc = IMPOSSIBLE;
-	      Rsc = IMPOSSIBLE;
+	      if(fill_L) Lsc = IMPOSSIBLE;
+	      if(fill_R) Rsc = IMPOSSIBLE;
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
-		Jsc = ESL_MAX(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		Lsc = ESL_MAX(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		Rsc = ESL_MAX(Rsc, Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		Jsc            = ESL_MAX(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		if(fill_L) Lsc = ESL_MAX(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		if(fill_R) Rsc = ESL_MAX(Rsc, Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 	      }
 	      Jalpha[jp_v][v][d] = Jsc;
-	      Lalpha[jp_v][v][d] = Lsc;
-	      Ralpha[jp_v][v][d] = Rsc;
+	      if(fill_L) Lalpha[jp_v][v][d] = Lsc;
+	      if(fill_R) Ralpha[jp_v][v][d] = Rsc;
 	    }
 	  }
-
+	  
 	  if(vsc != NULL) {
-	    if(cm->stid[v] == BIF_B) { 
+	    if(cm->stid[v] == BEGL_S) { 
 	      for (d = dnA[v]; d <= dxA[v]; d++) { 
-		vsc[v] = ESL_MAX(vsc[v], 
-				 ESL_MAX(Jalpha[jp_v][v][d], 
-					 ESL_MAX(Lalpha[jp_v][v][d], 
-						 ESL_MAX(Ralpha[jp_v][v][d], Talpha[jp_v][v][d]))));
+		vsc[v] = ESL_MAX(vsc[v], Jalpha_begl[jp_v][v][d]);
+		if(fill_L) vsc[v] = ESL_MAX(vsc[v], Lalpha_begl[jp_v][v][d]);
+		if(fill_R) vsc[v] = ESL_MAX(vsc[v], Ralpha_begl[jp_v][v][d]);
 	      }
 	    }
-	    else if(cm->stid[v] == BEGL_S) { 
+	    else { 
 	      for (d = dnA[v]; d <= dxA[v]; d++) { 
-		vsc[v] = ESL_MAX(vsc[v], 
-				 ESL_MAX(Jalpha_begl[jp_v][v][d], 
-					 ESL_MAX(Lalpha_begl[jp_v][v][d], Ralpha_begl[jp_v][v][d])));
-	      }
-	    }
-	    else {
-	      for (d = dnA[v]; d <= dxA[v]; d++) { 
-		vsc[v] = ESL_MAX(vsc[v], 
-				 ESL_MAX(Jalpha[jp_v][v][d], 
-					 ESL_MAX(Lalpha[jp_v][v][d], Ralpha[jp_v][v][d])));
+		vsc[v] = ESL_MAX(vsc[v], Jalpha[jp_v][v][d]);
+		if(fill_L) vsc[v] = ESL_MAX(vsc[v], Lalpha[jp_v][v][d]);
+		if(fill_R) vsc[v] = ESL_MAX(vsc[v], Ralpha[jp_v][v][d]);
+		if(cm->stid[v] == BIF_B && fill_T) { 
+		  vsc[v] = ESL_MAX(vsc[v], Talpha[jp_v][v][d]);
+		}
 	      }
 	    }
 	  }
@@ -440,9 +457,9 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 	      printf("R j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
 		     j, v, d, 
 		     NOT_IMPOSSIBLE(Jalpha[jp_v][v][d]) ? Jalpha[jp_v][v][d] : -9999.9,
-		     NOT_IMPOSSIBLE(Lalpha[jp_v][v][d]) ? Lalpha[jp_v][v][d] : -9999.9,
-		     NOT_IMPOSSIBLE(Ralpha[jp_v][v][d]) ? Ralpha[jp_v][v][d] : -9999.9,
-		     NOT_IMPOSSIBLE(Talpha[jp_v][v][d]) ? Talpha[jp_v][v][d] : -9999.9);
+		     fill_L && NOT_IMPOSSIBLE(Lalpha[jp_v][v][d]) ? Lalpha[jp_v][v][d] : -9999.9,
+		     fill_R && NOT_IMPOSSIBLE(Ralpha[jp_v][v][d]) ? Ralpha[jp_v][v][d] : -9999.9,
+		     fill_T && NOT_IMPOSSIBLE(Talpha[jp_v][v][d]) ? Talpha[jp_v][v][d] : -9999.9);
 	    }
 	  }
 	  else if(cm->stid[v] == BEGL_S) { 
@@ -450,8 +467,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 	      printf("R j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
 		     j, v, d, 
 		     NOT_IMPOSSIBLE(Jalpha_begl[jp_v][v][d]) ? Jalpha_begl[jp_v][v][d] : -9999.9,
-		     NOT_IMPOSSIBLE(Lalpha_begl[jp_v][v][d]) ? Lalpha_begl[jp_v][v][d] : -9999.9,
-		     NOT_IMPOSSIBLE(Ralpha_begl[jp_v][v][d]) ? Ralpha_begl[jp_v][v][d] : -9999.9, 
+		     fill_L && NOT_IMPOSSIBLE(Lalpha_begl[jp_v][v][d]) ? Lalpha_begl[jp_v][v][d] : -9999.9,
+		     fill_R && NOT_IMPOSSIBLE(Ralpha_begl[jp_v][v][d]) ? Ralpha_begl[jp_v][v][d] : -9999.9, 
 		     -9999.9);
 	    }
 	  }
@@ -460,8 +477,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 	      printf("R j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
 		     j, v, d, 
 		     NOT_IMPOSSIBLE(Jalpha[jp_v][v][d]) ? Jalpha[jp_v][v][d] : -9999.9,
-		     NOT_IMPOSSIBLE(Lalpha[jp_v][v][d]) ? Lalpha[jp_v][v][d] : -9999.9,
-		     NOT_IMPOSSIBLE(Ralpha[jp_v][v][d]) ? Ralpha[jp_v][v][d] : -9999.9,
+		     fill_L && NOT_IMPOSSIBLE(Lalpha[jp_v][v][d]) ? Lalpha[jp_v][v][d] : -9999.9,
+		     fill_R && NOT_IMPOSSIBLE(Ralpha[jp_v][v][d]) ? Ralpha[jp_v][v][d] : -9999.9,
 		     -9999.9);
 	    }
 	  }
@@ -470,8 +487,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 	      printf("R j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
 		     j, v, d, 
 		     NOT_IMPOSSIBLE(Jalpha[jp_v][v][d]) ? Jalpha[jp_v][v][d] : -9999.9,
-		     NOT_IMPOSSIBLE(Lalpha[jp_v][v][d]) ? Lalpha[jp_v][v][d] : -9999.9,
-		     NOT_IMPOSSIBLE(Ralpha[jp_v][v][d]) ? Ralpha[jp_v][v][d] : -9999.9,
+		     fill_L && NOT_IMPOSSIBLE(Lalpha[jp_v][v][d]) ? Lalpha[jp_v][v][d] : -9999.9,
+		     fill_R && NOT_IMPOSSIBLE(Ralpha[jp_v][v][d]) ? Ralpha[jp_v][v][d] : -9999.9,
 		     -9999.9);
 	    }
 	  }
@@ -487,14 +504,22 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
        * It's probably worth looking into that after the 1.1 release.
        */
       v = 0;
+      /* initializations */
       esl_vec_ISet(bestr,  (W+1), 0);
       esl_vec_FSet(bestsc, (W+1), IMPOSSIBLE);
       for(i = 0; i <= W; i++) bestmode[i] = TRMODE_UNKNOWN;
+      for (d = dnA[0]; d <= dxA[0]; d++) Jalpha[jp_v][0][d] = IMPOSSIBLE;
+      if(fill_L) { for (d = dnA[0]; d <= dxA[0]; d++) Lalpha[jp_v][0][d] = IMPOSSIBLE; }
+      if(fill_R) { for (d = dnA[0]; d <= dxA[0]; d++) Ralpha[jp_v][0][d] = IMPOSSIBLE; }
+      if(fill_T) { for (d = dnA[0]; d <= dxA[0]; d++) Talpha[jp_v][0][d] = IMPOSSIBLE; }
+
       for (y = 1; y < cm->M; y++) {
+	dn = ESL_MAX(dnA[0], dnA[y]);
+	dx = ESL_MIN(dxA[0], dxA[y]);
 	jp_y = cur;
 	/* check for new optimally scoring Joint alignments of all lengths in J matrix (much like a standard local begin) */
 	if(cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st || cm->sttype[y] == IL_st || cm->sttype[y] == IR_st) { 
-	  for (d = dnA[y]; d <= dxA[y]; d++) {
+	  for (d = dn; d <= dx; d++) {
 	    sc = Jalpha[jp_y][y][d] + trunc_penalty;
 	    if (sc > Jalpha[jp_v][0][d]) { 
 	      Jalpha[jp_v][0][d] = sc;
@@ -508,7 +533,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 	}
 	/* check for new optimally scoring Left alignments of all lengths in L matrix */
 	if(fill_L && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == IL_st)) { 
-	  for (d = dnA[y]; d <= dxA[y]; d++) {
+	  for (d = dn; d <= dx; d++) {
 	    sc = Lalpha[jp_y][y][d] + trunc_penalty;
 	    if (sc > Lalpha[jp_v][0][d]) { 
 	      Lalpha[jp_v][0][d] = sc;
@@ -522,7 +547,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 	}
 	/* check for new optimally scoring Right alignments of all lengths in L matrix */
 	if(fill_R && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st || cm->sttype[y] == IR_st)) { 
-	  for (d = dnA[y]; d <= dxA[y]; d++) {
+	  for (d = dn; d <= dx; d++) {
 	    sc = Ralpha[jp_y][y][d] + trunc_penalty;
 	    if (sc > Ralpha[jp_v][0][d]) { 
 	      Ralpha[jp_v][0][d] = sc;
@@ -536,7 +561,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
 	}
 	/* check for new optimally scoring Terminal alignments of all lengths in T matrix */
 	if(fill_T && cm->sttype[y] == B_st) { 
-	  for (d = dnA[y]; d <= dxA[y]; d++) {
+	  for (d = dn; d <= dx; d++) {
 	    sc = Talpha[jp_y][y][d] + trunc_penalty;
 	    if (sc > Talpha[jp_v][0][d]) { 
 	      Talpha[jp_v][0][d] = sc;
@@ -558,7 +583,10 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
       }
       /* find the best score (in any mode) that spans the full sequence */
       if(j == j0) { 
-	bsc_full = ESL_MAX(bsc_full, bestsc[j]);
+	if(bestsc[j] > bsc_full) { 
+	  bsc_full   = bestsc[j];
+	  bmode_full = bestmode[j];
+	}
       }
       /* update envi, envj, if nec */
       if(do_env_defn) { 
@@ -582,16 +610,14 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
   if(vsc != NULL) vsc[0] = vsc_root;
 
   /* find the best score in any matrix at any state */
-  best_tr_sc = IMPOSSIBLE;
-  for(v = 0; v < cm->M; v++) { 
-    best_tr_sc = ESL_MAX(best_tr_sc, vsc[v]);
-  }
-  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH CYK)\n",
-	 best_tr_sc, 
-	 best_tr_sc + sreLOG2(2./(cm->clen * (cm->clen+1))));
-  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH CYK)\n",
+  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH CYK mode: %s)\n",
+	 vsc_root,
+	 vsc_root + sreLOG2(2./(cm->clen * (cm->clen+1))),
+	 MarginalMode(vmode_root));
+  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH CYK mode: %s)\n",
 	 bsc_full, 
-	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))));
+	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))),
+	 MarginalMode(bmode_full));
 
   /* If recovering hits in a non-greedy manner, do the gamma traceback, then free gamma */
   if(gamma != NULL) { 
@@ -625,7 +651,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
   free(init_scAA[0]);
   free(init_scAA);
   if (ret_vsc != NULL) *ret_vsc = vsc;
-  else free(vsc);
+  else if(vsc != NULL) free(vsc);
   if (ret_sc   != NULL) *ret_sc   = vsc_root;
   if (ret_mode != NULL) *ret_mode = vmode_root;
 
@@ -646,7 +672,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           trsmx           - TrScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           trsi            - TrScanInfo_t with information on which modes to allow
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -658,18 +685,18 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_
  *           ret_envj        - max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_mode        - RETURN: mode of best overall hit (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
- *           ret_sc          - RETURN: score of best overall hit (vsc[0])
+ *           ret_sc          - RETURN: score of best overall hit
  *
  * Note:     This function is heavily synchronized with RefTrCYKScan()
  *           any change to this function should be mirrored in that functions. 
  *
  * Returns:  eslOK on succes;
- *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <hitlist>.
+ *           <ret_sc> is score of best overall hit. Information on hits added to <hitlist>.
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  *           Dies immediately if some error occurs.
  */
 int
-RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 		 int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc)
 {
   int       status;
@@ -680,6 +707,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   float     vsc_root = IMPOSSIBLE; /* best overall score (score at ROOT_S) */
   float     vmode_root;         /* alignment mode of best overall alignment (that has score = vsc_root) */
   float     bsc_full;           /* best overall score that emits full sequence i0..j0 */
+  float     bmode_full;         /* alignment mode of best overall parse that emits full sequence */
   int       yoffset;		/* offset to a child state */
   int       i,j;		/* index of start/end positions in sequence, 0..L */
   int       d;			/* a subsequence length, 0..W */
@@ -696,6 +724,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
+  int       dn, dx;             /* minimum/maximum valid d for current state */
   int       kn, kx;             /* minimum/maximum valid k for current d in B_st recursion */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
@@ -709,8 +738,8 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   /* variables specific to truncated search */
   int       Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
   int       Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
-  int       trunc_penalty;      /* bit score penalty for truncated hits, often 0 */
-  float     best_tr_sc;         /* best truncated score */
+  int       trunc_penalty = 0.; /* bit score penalty for truncated hits, often 0 */
+  int   fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, CMH_BITS flag is not raised.\n");
@@ -739,9 +768,11 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   int   **lmesc_vAA    = cm->ilmesc;          /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] left  marginal emission scores for v */
   int   **rmesc_vAA    = cm->irmesc;          /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] right marginal emission scores for v */
 
-  int fill_L = TRUE;
-  int fill_R = TRUE;
-  int fill_T = TRUE;
+
+  /* determine which matrices we need to fill in based on <trsi> */
+  fill_L = trsi->allow_L      ? TRUE : FALSE;
+  fill_R = trsi->allow_R      ? TRUE : FALSE;
+  fill_T = (fill_L && fill_R) ? TRUE : FALSE;
 
   /* determine if we're doing banded/non-banded */
   if(trsmx->dmax != NULL) do_banded = TRUE;
@@ -750,13 +781,16 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   W = trsmx->W;
   if (W > L) W = L; 
 
-  /* set vsc array */
+  /* initializations */
   vsc = NULL;
-  ESL_ALLOC(vsc, sizeof(float) * cm->M);
-  esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
+  if(ret_vsc != NULL) { 
+    ESL_ALLOC(vsc, sizeof(float) * cm->M);
+    esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
+  }
   vsc_root   = IMPOSSIBLE;
   vmode_root = TRMODE_UNKNOWN;
   bsc_full   = IMPOSSIBLE;
+  bmode_full = TRMODE_UNKNOWN;
 
   /* If we were passed a master hitlist <hitlist>, either create a
    * gamma hit matrix for resolving overlaps optimally (if
@@ -856,35 +890,37 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 		kmax = ESL_MIN(dmax[y], d);
 	      }
 	      else { kmin = 0; kmax = d; }
-
+	      
 	      Jsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for B_st */
-	      Lsc = -INFTY;
-	      Rsc = -INFTY;
-	      Tsc = -INFTY;
+	      if(fill_L) Lsc = -INFTY;
+	      if(fill_R) Rsc = -INFTY;
+	      if(fill_T) Tsc = -INFTY;
 
 	      /* Careful with Tsc, it isn't updated for k == 0 or  k == d, 
 	       * but Jsc, Lsc, Rsc, are all updated for k == 0 and k == d */
 	      for (k = kmin; k <= kmax; k++) {
-		//Jsc = ESL_MAX(Jsc, (Jalpha_begl[jp_wA[k]][w][d-k] + Jalpha[jp_y][y][k]));
-		//Lsc = ESL_MAX(Lsc, (Jalpha_begl[jp_wA[k]][w][d-k] + Lalpha[jp_y][y][k]));
-		//Rsc = ESL_MAX(Rsc, (Ralpha_begl[jp_wA[k]][w][d-k] + Jalpha[jp_y][y][k]));
-		Jsc = ILogsum(Jsc, (Jalpha_begl[jp_wA[k]][w][d-k] + Jalpha[jp_y][y][k]));
-		Lsc = ILogsum(Lsc, (Jalpha_begl[jp_wA[k]][w][d-k] + Lalpha[jp_y][y][k]));
-		Rsc = ILogsum(Rsc, (Ralpha_begl[jp_wA[k]][w][d-k] + Jalpha[jp_y][y][k]));
+		Jsc =            ILogsum(Jsc, (Jalpha_begl[jp_wA[k]][w][d-k] + Jalpha[jp_y][y][k]));
+		if(fill_L) Lsc = ILogsum(Lsc, (Jalpha_begl[jp_wA[k]][w][d-k] + Lalpha[jp_y][y][k]));
+		if(fill_R) Rsc = ILogsum(Rsc, (Ralpha_begl[jp_wA[k]][w][d-k] + Jalpha[jp_y][y][k]));
 	      }		
-	      kn = ESL_MAX(1,   kmin);
-	      kx = ESL_MIN(d-1, kmax);
-	      for (k = kn; k <= kx; k++) {
-		Tsc = ILogsum(Tsc, (Ralpha_begl[jp_wA[k]][w][d-k] + Lalpha[jp_y][y][k]));
+	      if(fill_T) { 
+		kn = ESL_MAX(1,   kmin);
+		kx = ESL_MIN(d-1, kmax);
+		for (k = kn; k <= kx; k++) {
+		  Tsc = ILogsum(Tsc, (Ralpha_begl[jp_wA[k]][w][d-k] + Lalpha[jp_y][y][k]));
+		}
 	      }
 
 	      Jalpha[jp_v][v][d] = Jsc;
-	      Talpha[jp_v][v][d] = Tsc;
-	      if(kmin == 0) Lalpha[jp_v][v][d] = ILogsum(Lsc, ESL_MAX(Jalpha_begl[jp_wA[0]][w][d], Lalpha_begl[jp_wA[0]][w][d])); 
-	      else          Lalpha[jp_v][v][d] = Lsc;
-
-	      if(kmax == d) Ralpha[jp_v][v][d] = ILogsum(Rsc, ESL_MAX(Jalpha[jp_y][y][d], Ralpha[jp_y][y][d]));
-	      else          Ralpha[jp_v][v][d] = Rsc;
+	      if(fill_T) Talpha[jp_v][v][d] = Tsc;
+	      if(fill_L) { 
+		if(kmin == 0) Lalpha[jp_v][v][d] = ILogsum(Lsc, ESL_MAX(Jalpha_begl[jp_wA[0]][w][d], Lalpha_begl[jp_wA[0]][w][d])); 
+		else          Lalpha[jp_v][v][d] = Lsc;
+	      }
+	      if(fill_R) { 
+		if(kmax == d) Ralpha[jp_v][v][d] = ILogsum(Rsc, ESL_MAX(Jalpha[jp_y][y][d], Ralpha[jp_y][y][d]));
+		else          Ralpha[jp_v][v][d] = Rsc;
+	      }
 	      /* careful: scores for w, the BEGL_S child of v, are in alpha_begl, not alpha */
 	    }
 	  }
@@ -892,19 +928,16 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	    y = cm->cfirst[v]; 
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for BEGL_S st */
-	      Lsc = -INFTY;
-	      Rsc = -INFTY;
+	      if(fill_L) Lsc = -INFTY;
+	      if(fill_R) Rsc = -INFTY;
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
-		//Jsc = ESL_MAX(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		//Lsc = ESL_MAX(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		//Rsc = ESL_MAX(Rsc, Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		Jsc = ILogsum(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		Lsc = ILogsum(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		Rsc = ILogsum(Rsc, Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		Jsc =            ILogsum(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		if(fill_L) Lsc = ILogsum(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		if(fill_R) Rsc = ILogsum(Rsc, Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 	      }
 	      Jalpha_begl[jp_v][v][d] = Jsc;
-	      Lalpha_begl[jp_v][v][d] = Lsc;
-	      Ralpha_begl[jp_v][v][d] = Rsc;
+	      if(fill_L) Lalpha_begl[jp_v][v][d] = Lsc;
+	      if(fill_R) Ralpha_begl[jp_v][v][d] = Rsc;
 	      /* careful: y is in alpha (all children of a BEGL_S must be non BEGL_S) */
 	    }
 	  }
@@ -916,10 +949,12 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	      Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
 	      for (d = dnA[v]; d <= dxA[v]; d++) {
 		Jsc = init_scAA[v][d-sd]; 
-		Lsc = -INFTY;
-		Rsc = -INFTY;
-		Ralpha[jp_v][v][d] = Rsc; /* this is important b/c if we're an IL, we'll access this cell in the recursion below for Ralpha */
-		
+		if(fill_L) Lsc = -INFTY;
+		if(fill_R) { 
+		  Rsc = -INFTY;
+		  Ralpha[jp_v][v][d] = Rsc; /* this is important b/c if we're an IL, we'll access this cell in the recursion below for Ralpha */
+		}
+
 		/* We need to do separate 'for (yoffset...' loops for J
 		 * and R matrices, because jp_v == jp_y for all states
 		 * here, and for IL states, v can equal y+yoffset (when
@@ -929,17 +964,19 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 		 * Ralpha[jp_v][v][d]. 
 		 */
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
-		  Jsc = ILogsum(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		  Lsc = ILogsum(Lsc,         Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		  Jsc =            ILogsum(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		  if(fill_L) Lsc = ILogsum(Lsc,         Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 		}
-		Jalpha[jp_v][v][d] = Jsc + esc_v[dsq[i]];
-		Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + esc_v[dsq[i]] : esc_v[dsq[i]];
+		Jalpha[jp_v][v][d]            =            Jsc + esc_v[dsq[i]];
+		if(fill_L) Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + esc_v[dsq[i]] : esc_v[dsq[i]];
 		
-		for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
-		  Rsc = ILogsum(Rsc, ILogsum(Jalpha[jp_y][y+yoffset][d]      + tsc_v[yoffset],
-					     Ralpha[jp_y][y+yoffset][d]      + tsc_v[yoffset]));
+		if(fill_R) { 
+		  for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Ryoffset0 instead of 0 disallows IL self transits in R mode */
+		    Rsc = ILogsum(Rsc, ILogsum(Jalpha[jp_y][y+yoffset][d]      + tsc_v[yoffset],
+					       Ralpha[jp_y][y+yoffset][d]      + tsc_v[yoffset]));
+		  }
+		  Ralpha[jp_v][v][d] = Rsc;
 		}
-		Ralpha[jp_v][v][d] = Rsc;
 		i--;
 	      }
 	    } /* end of if(! StateIsDetached(cm, v) */
@@ -951,10 +988,12 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	      Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
 	      for (d = dnA[v]; d <= dxA[v]; d++) {
 		Jsc = init_scAA[v][d-sd]; 
-		Lsc = -INFTY;
-		Rsc = -INFTY;
-		Lalpha[jp_v][v][d] = Lsc; /* this is important b/c if we're an IR, we'll access this cell in the recursion below for Lalpha */
-		
+		if(fill_R) Rsc = -INFTY;
+		if(fill_L) { 
+		  Lsc = -INFTY;
+		  Lalpha[jp_v][v][d] = Lsc; /* this is important b/c if we're an IR, we'll access this cell in the recursion below for Lalpha */
+		}		
+
 		/* We need to do separate 'for (yoffset...' loops for J
 		 * and L matrices, because jp_v == jq_y for all states
 		 * here, and for IR states, v can equal y+yoffset (when
@@ -964,38 +1003,44 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 		 * Lalpha[jp_v][v][d]. 
 		 */
 		for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
-		  Jsc = ILogsum(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		  Rsc = ILogsum(Rsc,         Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		  Jsc            = ILogsum(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		  if(fill_R) Rsc = ILogsum(Rsc,         Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 		}
-		Jalpha[jp_v][v][d] = Jsc + esc_j;
-		Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + esc_j : esc_j;
+		Jalpha[jp_v][v][d]            =            Jsc + esc_j;
+		if(fill_R) Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + esc_j : esc_j;
 		
-		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
-		  Lsc = ILogsum(Lsc, ILogsum(Jalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset],
-					     Lalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset]));
+		if(fill_L) { 
+		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
+		    Lsc = ILogsum(Lsc, ILogsum(Jalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset],
+					       Lalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset]));
+		  }
+		  Lalpha[jp_v][v][d] = Lsc;
 		}
-		Lalpha[jp_v][v][d] = Lsc;
 	      }
 	    } /* end of if(! StateIsDetached(cm, v) */
-	  }
+	  } 
 	  else if (emitmode == EMITPAIR) { 
 	    y = cm->cfirst[v]; 
 	    i = j - dnA[v] + 1;
 	    assert(dnA[v] == 1);
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; 
-	      Lsc = -INFTY;
-	      Rsc = -INFTY;
+	      if(fill_L) Lsc = -INFTY;
+	      if(fill_R) Rsc = -INFTY;
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
 		Jsc = ILogsum(Jsc,         Jalpha[jp_y][y+yoffset][d - 2] + tsc_v[yoffset]);
-		Lsc = ILogsum(Lsc, ESL_MAX(Jalpha[jq_y][y+yoffset][d - 1] + tsc_v[yoffset],
-					   Lalpha[jq_y][y+yoffset][d - 1] + tsc_v[yoffset])),
-		Rsc = ILogsum(Rsc, ESL_MAX(Jalpha[jp_y][y+yoffset][d - 1] + tsc_v[yoffset],
-					   Ralpha[jp_y][y+yoffset][d - 1] + tsc_v[yoffset]));
+		if(fill_L) { 
+		  Lsc = ILogsum(Lsc, ESL_MAX(Jalpha[jq_y][y+yoffset][d - 1] + tsc_v[yoffset],
+					     Lalpha[jq_y][y+yoffset][d - 1] + tsc_v[yoffset]));
+		}
+		if(fill_R) { 
+		  Rsc = ILogsum(Rsc, ESL_MAX(Jalpha[jp_y][y+yoffset][d - 1] + tsc_v[yoffset],
+					     Ralpha[jp_y][y+yoffset][d - 1] + tsc_v[yoffset]));
+		}
 	      }
-	      Jalpha[jp_v][v][d] = (d >= 2) ? Jsc + esc_v[dsq[i]*cm->abc->Kp+dsq[j]] : -INFTY;
-	      Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + lmesc_v[dsq[i]]                  : lmesc_v[dsq[i]];
-	      Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + rmesc_j                          : rmesc_j;
+	      Jalpha[jp_v][v][d]            = (d >= 2) ? Jsc + esc_v[dsq[i]*cm->abc->Kp+dsq[j]] : -INFTY;
+	      if(fill_L) Lalpha[jp_v][v][d] = (d >= 2) ? Lsc + lmesc_v[dsq[i]]                  : lmesc_v[dsq[i]];
+	      if(fill_R) Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + rmesc_j                          : rmesc_j;
 	      i--;
 	    }
 	  }
@@ -1003,40 +1048,36 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	    y = cm->cfirst[v]; 
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; 
-	      Lsc = -INFTY;
-	      Rsc = -INFTY;
+	      if(fill_L) Lsc = -INFTY;
+	      if(fill_R) Rsc = -INFTY;
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
-		Jsc = ILogsum(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		Lsc = ILogsum(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		Rsc = ILogsum(Rsc, Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		Jsc            = ILogsum(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		if(fill_L) Lsc = ILogsum(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+		if(fill_R) Rsc = ILogsum(Rsc, Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 	      }
 	      Jalpha[jp_v][v][d] = Jsc;
-	      Lalpha[jp_v][v][d] = Lsc;
-	      Ralpha[jp_v][v][d] = Rsc;
+	      if(fill_L) Lalpha[jp_v][v][d] = Lsc;
+	      if(fill_R) Ralpha[jp_v][v][d] = Rsc;
 	    }
 	  }
+    
 	  if(vsc != NULL) {
 	    ivsc = -INFTY;
-	    if(cm->stid[v] == BIF_B) { 
+	    if(cm->stid[v] == BEGL_S) { 
 	      for (d = dnA[v]; d <= dxA[v]; d++) { 
-		ivsc = ESL_MAX(ivsc,
-			       ESL_MAX(Jalpha[jp_v][v][d], 
-				       ESL_MAX(Lalpha[jp_v][v][d],
-					       ESL_MAX(Ralpha[jp_v][v][d], Talpha[jp_v][v][d]))));
+		ivsc = ESL_MAX(ivsc, Jalpha_begl[jp_v][v][d]);
+		if(fill_L) ivsc = ESL_MAX(ivsc, Lalpha_begl[jp_v][v][d]);
+		if(fill_R) ivsc = ESL_MAX(ivsc, Ralpha_begl[jp_v][v][d]);
 	      }
 	    }
-	    else if(cm->stid[v] == BEGL_S) { 
+	    else { 
 	      for (d = dnA[v]; d <= dxA[v]; d++) { 
-		ivsc = ESL_MAX(ivsc, 
-			       ESL_MAX(Jalpha_begl[jp_v][v][d], 
-				       ESL_MAX(Lalpha_begl[jp_v][v][d], Ralpha_begl[jp_v][v][d])));
-	      }
-	    }
-	    else {
-	      for (d = dnA[v]; d <= dxA[v]; d++) { 
-		ivsc = ESL_MAX(ivsc, 
-			       ESL_MAX(Jalpha[jp_v][v][d], 
-				       ESL_MAX(Lalpha[jp_v][v][d], Ralpha[jp_v][v][d])));
+		ivsc = ESL_MAX(ivsc, Jalpha[jp_v][v][d]);
+		if(fill_L) ivsc = ESL_MAX(ivsc, Lalpha[jp_v][v][d]);
+		if(fill_R) ivsc = ESL_MAX(ivsc, Ralpha[jp_v][v][d]);
+		if(cm->stid[v] == BIF_B && fill_T) { 
+		  ivsc = ESL_MAX(ivsc, Talpha[jp_v][v][d]);
+		}
 	      }
 	    }
 	    vsc[v] = Scorify(ivsc);
@@ -1046,22 +1087,30 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	    for(d = dnA[v]; d <= dxA[v]; d++) { 
 	      printf("R j: %3d  v: %3d  d: %3d   J: %10d  L: %10d  R: %10d  T: %10d\n", 
 		     j, v, d, 
-		     Jalpha[jp_v][v][d], Lalpha[jp_v][v][d], Ralpha[jp_v][v][d],
-		     Talpha[jp_v][v][d]);
+		     Jalpha[jp_v][v][d], 
+		     fill_L ? Lalpha[jp_v][v][d] : -INFTY, 
+		     fill_R ? Ralpha[jp_v][v][d] : -INFTY,
+		     fill_T ? Talpha[jp_v][v][d] : -IFNTY);
 	    }
 	  }
 	  else if(cm->stid[v] == BEGL_S) { 
 	    for(d = dnA[v]; d <= dxA[v]; d++) { 
 	      printf("R j: %3d  v: %3d  d: %3d   J: %10d  L: %10d  R: %10d  T: %10d\n", 
 		     j, v, d, 
-		     Jalpha_begl[jp_v][v][d], Lalpha_begl[jp_v][v][d], Ralpha_begl[jp_v][v][d], -INFTY);
+		     Jalpha_begl[jp_v][v][d] : -INFTY, 
+		     fill_L ? Lalpha_begl[jp_v][v][d] : -INFTY, 
+		     fill_R ? Ralpha_begl[jp_v][v][d] : -INFTY, 
+		     -INFTY);
 	    }
 	  }
 	  else {
 	    for(d = dnA[v]; d <= dxA[v]; d++) { 
-	      printf("R j: %3d  v: %3d  d: %3d   J: %10d  L: %10d  R: %10d\n",
+	      printf("R j: %3d  v: %3d  d: %3d   J: %10d  L: %10d  R: %10d  T: %10d\n",
 		     j, v, d, 
-		     Jalpha[jp_v][v][d], Lalpha[jp_v][v][d], Ralpha[jp_v][v][d]);
+		     Jalpha[jp_v][v][d], 
+		     fill_L ? Lalpha[jp_v][v][d] : -INFTY, 
+		     fill_R ? Ralpha[jp_v][v][d] : -INFTY,
+		     -INFTY);
 	    }
 	  }
 	  printf("\n");
@@ -1076,14 +1125,22 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
        * It's probably worth looking into that after the 1.1 release.
        */
       v = 0;
+      /* initializations */
       esl_vec_ISet(bestr,  (W+1), 0);
       esl_vec_FSet(bestsc, (W+1), IMPOSSIBLE);
       for(i = 0; i <= W; i++) bestmode[i] = TRMODE_UNKNOWN;
+      for (d = dnA[0]; d <= dxA[0]; d++) Jalpha[jp_v][0][d] = -INFTY;
+      if(fill_L) { for (d = dnA[0]; d <= dxA[0]; d++) Lalpha[jp_v][0][d] = -INFTY; }
+      if(fill_R) { for (d = dnA[0]; d <= dxA[0]; d++) Ralpha[jp_v][0][d] = -INFTY; }
+      if(fill_T) { for (d = dnA[0]; d <= dxA[0]; d++) Talpha[jp_v][0][d] = -INFTY; }
+
       for (y = 1; y < cm->M; y++) {
+	dn = ESL_MAX(dnA[0], dnA[y]);
+	dx = ESL_MIN(dxA[0], dxA[y]);
 	jp_y = cur;
 	/* check for new optimally scoring Joint alignments of all lengths in J matrix (much like a standard local begin) */
 	if(cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st || cm->sttype[y] == IL_st || cm->sttype[y] == IR_st) { 
-	  for (d = dnA[y]; d <= dxA[y]; d++) {
+	  for (d = dn; d <= dx; d++) {
 	    sc = Jalpha[jp_y][y][d] + trunc_penalty;
 	    if (sc > Jalpha[jp_v][0][d]) { 
 	      Jalpha[jp_v][0][d] = sc;
@@ -1098,7 +1155,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	}
 	/* check for new optimally scoring Left alignments of all lengths in L matrix */
 	if(fill_L && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == IL_st)) { 
-	  for (d = dnA[y]; d <= dxA[y]; d++) {
+	  for (d = dn; d <= dx; d++) {
 	    sc = Lalpha[jp_y][y][d] + trunc_penalty;
 	    if (sc > Lalpha[jp_v][0][d]) { 
 	      Lalpha[jp_v][0][d] = sc;
@@ -1113,7 +1170,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	}
 	/* check for new optimally scoring Right alignments of all lengths in L matrix */
 	if(fill_R && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st || cm->sttype[y] == IR_st)) { 
-	  for (d = dnA[y]; d <= dxA[y]; d++) {
+	  for (d = dn; d <= dx; d++) {
 	    sc = Ralpha[jp_y][y][d] + trunc_penalty;
 	    if (sc > Ralpha[jp_v][0][d]) { 
 	      Ralpha[jp_v][0][d] = sc;
@@ -1128,7 +1185,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 	}
 	/* check for new optimally scoring Terminal alignments of all lengths in T matrix */
 	if(fill_T && cm->sttype[y] == B_st) { 
-	  for (d = dnA[y]; d <= dxA[y]; d++) {
+	  for (d = dn; d <= dx; d++) {
 	    sc = Talpha[jp_y][y][d] + trunc_penalty;
 	    if (sc > Talpha[jp_v][0][d]) { 
 	      Talpha[jp_v][0][d] = sc;
@@ -1151,7 +1208,10 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
       }
       /* find the best score (in any mode) that spans the full sequence */
       if(j == j0) { 
-	bsc_full = ESL_MAX(bsc_full, bestsc[j]);
+	if(bestsc[j] > bsc_full) { 
+	  bsc_full   = bestsc[j];
+	  bmode_full = bestmode[j];
+	}
       }
       /* update envi, envj, if nec */
       if(do_env_defn) { 
@@ -1165,10 +1225,10 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
 
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
@@ -1176,17 +1236,14 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
 
   if(vsc != NULL) vsc[0] = vsc_root;
 
-  /* find the best score in any matrix at any state */
-  best_tr_sc = IMPOSSIBLE;
-  for(v = 0; v < cm->M; v++) { 
-    best_tr_sc = ESL_MAX(best_tr_sc, vsc[v]);
-  }
-  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH INSIDE)\n",
-	 best_tr_sc, 
-	 best_tr_sc + sreLOG2(2./(cm->clen * (cm->clen+1))));
-  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH INSIDE)\n",
+  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH INSIDE mode %s)\n",
+	 vsc_root,
+	 vsc_root + sreLOG2(2./(cm->clen * (cm->clen+1))),
+	 MarginalMode(vmode_root));
+  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH INSIDE mode %s)\n",
 	 Scorify(bsc_full), 
-	 Scorify(bsc_full) + sreLOG2(2./(cm->clen * (cm->clen+1))));
+	 Scorify(bsc_full) + sreLOG2(2./(cm->clen * (cm->clen+1))),
+	 MarginalMode(bmode_full));
 
   /* If recovering hits in a non-greedy manner, do the gamma traceback, then free gamma */
   if(gamma != NULL) { 
@@ -1220,7 +1277,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
   free(init_scAA[0]);
   free(init_scAA);
   if (ret_vsc != NULL) *ret_vsc = vsc;
-  else free(vsc);
+  else if(vsc != NULL) free(vsc);
   if (ret_sc   != NULL) *ret_sc   = vsc_root;
   if (ret_mode != NULL) *ret_mode = vmode_root;
 
@@ -1255,8 +1312,9 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
  *           there's no motivation to do that now.
  *
  * Args:     cm        - the model    [0..M-1]
- *           sq        - the sequence [1..L]   
- *                     - length of the dsq
+ *           errbuf    - for returning error messages
+ *           trsi      - TrScanInfo_t with information on which modes to allow
+ *           dsq       - the sequence [1..(j0-i0+1)]   
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
  *           cutoff    - minimum score to report
@@ -1265,17 +1323,17 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, ESL_DSQ *dsq, in
  *           env_cutoff- ret_envi..ret_envj will include all hits that exceed this bit sc
  *           ret_envi  - min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
  *           ret_envj  - max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
- *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
- *                       be valid. 
+ *           mx        - the dp matrix, only cells within bands in cm->cp9b will be valid. 
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
- *           ret_sc    - RETURN: score of best overall hit (vsc[0])
+ *           ret_mode  - RETURN: mode of best overall hit (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
+ *           ret_sc    - RETURN: score of best overall hit
  *                       
  * Returns: eslOK on success; eslERANGE if required matrix size exceeds <size_limit>
  *          <ret_sc>: score of the best hit.
  */
 int
-TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
-	    CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc)
+TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
+	    CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc)
 {
   int      status;
   GammaHitMx_t *gamma = NULL;  /* semi-HMM for hit resoultion */
@@ -1308,7 +1366,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
   int      yvalid_idx;         /* for keeping track of which children are valid */
   int      yvalid_ct;          /* for keeping track of which children are valid */
   float    vsc_root = IMPOSSIBLE; /* score of best hit */
+  float    vmode_root;         /* alignment mode of best overall alignment (that has score = vsc_root) */
   float    bsc_full;           /* score of best hit that emits full sequence i0..j0 */
+  float    bmode_full;         /* alignment mode of best overall parse that emits full sequence */
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
   double **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int      jp;                 /* j index in act */
@@ -1321,11 +1381,11 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
 
   /* variables specific to truncated scanning */
   float    trunc_penalty = 0.; /* penalty in bits for a truncated hit */
-  float    best_tr_sc;         /* best truncated score */
-  int      do_J_v, do_J_y, do_J_z; /* is J matrix valid for state v, y, z? */
-  int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
-  int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
-  int      do_T_v, do_T_y, do_T_z; /* is T matrix valid for state v, y, z? */
+  int      fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
+  int      do_J_v, do_J_y, do_J_z, do_J_0; /* is J matrix valid for state v, y, z, 0? */
+  int      do_L_v, do_L_y, do_L_z, do_L_0; /* is L matrix valid for state v, y, z, 0? */
+  int      do_R_v, do_R_y, do_R_z, do_R_0; /* is R matrix valid for state v, y, z, 0? */
+  int      do_T_v, do_T_y, do_T_z, do_T_0; /* is T matrix valid for state v, y, z, 0? */
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), dsq is NULL.\n");
@@ -1348,8 +1408,13 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
   float ***Ralpha  = mx->Rdp; /* pointer to the Ralpha DP matrix */
   float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
 
-  /* ensure a full alignment to ROOT_S (v==0) is possible */
-  if (! (cp9b->Jvalid[0] || cp9b->Lvalid[0] || cp9b->Rvalid[0] || cp9b->Tvalid[0])) {
+  /* determine which matrices we need to fill in based on <trsi> */
+  fill_L = trsi->allow_L      ? TRUE : FALSE;
+  fill_R = trsi->allow_R      ? TRUE : FALSE;
+  fill_T = (fill_L && fill_R) ? TRUE : FALSE;
+
+  /* ensure an alignment to ROOT_S (v==0) is possible */
+  if (! (cp9b->Jvalid[0] || (fill_L && cp9b->Lvalid[0]) || (fill_R && cp9b->Rvalid[0]) || (fill_T &&cp9b->Tvalid[0]))) {
     ESL_FAIL(eslEINVAL, errbuf, "TrCYKScanHB(): no marginal mode is allowed for state 0");
   }
 
@@ -1376,10 +1441,10 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
 
   esl_stopwatch_Start(w);
   /* initialize all cells of the matrix to IMPOSSIBLE */
-  if(mx->Jncells_valid > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
-  if(mx->Lncells_valid > 0) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
-  if(mx->Rncells_valid > 0) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
-  if(mx->Tncells_valid > 0) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
+  if(mx->Jncells_valid > 0)           esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
+  if(mx->Lncells_valid > 0 && fill_L) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
+  if(mx->Rncells_valid > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
+  if(mx->Tncells_valid > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
 
@@ -1432,10 +1497,10 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
     sdr    = StateRightDelta(cm->sttype[v]);
     jn     = jmin[v];
     jx     = jmax[v];
-    do_J_v = cp9b->Jvalid[v];
-    do_L_v = cp9b->Lvalid[v];
-    do_R_v = cp9b->Rvalid[v];
-    do_T_v = cp9b->Tvalid[v];
+    do_J_v = cp9b->Jvalid[v]           ? TRUE : FALSE;
+    do_L_v = cp9b->Lvalid[v] && fill_L ? TRUE : FALSE;
+    do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
+    do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
 
     /* re-initialize the J deck if we can do a local end from v */
     if(do_J_v) { 
@@ -1501,8 +1566,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_J_y = cp9b->Jvalid[y];
-	      do_L_y = cp9b->Lvalid[y];
+	      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 	      if(do_J_y || do_L_y) { 
 		jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -1532,8 +1597,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_R_y = cp9b->Rvalid[y];
-	      do_J_y = cp9b->Jvalid[y];
+	      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+	      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
 	      if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
 		jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -1589,8 +1654,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_J_y = cp9b->Jvalid[y];
-	      do_R_y = cp9b->Rvalid[y];
+	      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	      if(do_J_y || do_R_y) { 
 		jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -1635,8 +1700,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
 	      /* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_L_y = cp9b->Lvalid[y];
-	      do_J_y = cp9b->Jvalid[y];
+	      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
 	      if(do_L_y || do_J_y) { 
 		/* we use 'jp_y=j-min[y]' here, not 'jp_y_sdr=j-jmin[y]-sdr' (which we used in the corresponding loop for J,R above) */
 		jp_y = j - jmin[y];
@@ -1668,9 +1733,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
        * is most efficient: for y { for j { for d { } } }
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-	do_J_y = cp9b->Jvalid[y];
-	do_L_y = cp9b->Lvalid[y];
-	do_R_y = cp9b->Rvalid[y];
+	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 
@@ -1828,9 +1893,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
        * is most efficient: for y { for j { for d { } } }
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-	do_J_y = cp9b->Jvalid[y];
-	do_L_y = cp9b->Lvalid[y];
-	do_R_y = cp9b->Rvalid[y];
+	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 	
@@ -1887,15 +1952,15 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
       y = cm->cfirst[v]; /* left  subtree */
       z = cm->cnum[v];   /* right subtree */
 
-      do_J_y = cp9b->Jvalid[y];
-      do_L_y = cp9b->Lvalid[y];
-      do_R_y = cp9b->Rvalid[y];
-      do_T_y = cp9b->Tvalid[y]; /* will be FALSE, y is not a B_st */
+      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 
-      do_J_z = cp9b->Jvalid[z];
-      do_L_z = cp9b->Lvalid[z];
-      do_R_z = cp9b->Rvalid[z];
-      do_T_z = cp9b->Tvalid[z]; /* will be FALSE, z is not a B_st */
+      do_J_z = cp9b->Jvalid[z]           ? TRUE : FALSE;
+      do_L_z = cp9b->Lvalid[z] && fill_L ? TRUE : FALSE;
+      do_R_z = cp9b->Rvalid[z] && fill_R ? TRUE : FALSE;
+      do_T_z = cp9b->Tvalid[z] && fill_T ? TRUE : FALSE; /* will be FALSE, z is not a B_st */
       
       /* Any valid j must be within both state v and state z's j band 
        * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
@@ -2089,6 +2154,12 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
   v = 0;
   ESL_ALLOC(bestr,    sizeof(int)   * (W+1));
   ESL_ALLOC(bestmode, sizeof(char)  * (W+1));
+
+  do_J_0 = cp9b->Jvalid[0]           ? TRUE : FALSE;
+  do_L_0 = cp9b->Lvalid[0] && fill_L ? TRUE : FALSE;
+  do_R_0 = cp9b->Rvalid[0] && fill_R ? TRUE : FALSE;
+  do_T_0 = cp9b->Tvalid[0] && fill_T ? TRUE : FALSE;
+
   for (j = jmin[v]; j <= jmax[v]; j++) {
     jp_v = j - jmin[v];
     /* initialize bestr, bestsc, bestmode */
@@ -2098,12 +2169,17 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
 
     /* look at all possible states we can do a truncated begin into */
     for (y = 1; y < cm->M; y++) {
+      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE;
+
       if(j >= jmin[y] && j <= jmax[y]) {  /* j is within state y's band */
 	jp_y = j - jmin[y];
 	dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
 	dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
 
-	if(cp9b->Jvalid[0] && cp9b->Jvalid[y] && 
+	if(do_J_0 && do_J_y && 
 	   (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st || cm->sttype[y] == IL_st || cm->sttype[y] == IR_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
@@ -2119,7 +2195,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
 	    }
 	  }
 	}
-	if(cp9b->Lvalid[0] && cp9b->Lvalid[y] && 
+	if(do_L_0 && do_L_y &&
 	   (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == IL_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
@@ -2135,7 +2211,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
 	    }
 	  }
 	}
-	if(cp9b->Rvalid[0] && cp9b->Rvalid[y] && 
+	if(do_R_0 && do_R_y && 
 	   (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st || cm->sttype[y] == IR_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
@@ -2151,7 +2227,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
 	    }
 	  }
 	}
-	if(cp9b->Tvalid[0] && cp9b->Tvalid[y] && 
+	if(do_T_0 && do_T_y && 
 	   (cm->sttype[y] == B_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
@@ -2171,10 +2247,10 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
     }
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
     }
     if(tmp_hitlist != NULL) { 
-      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
+      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   } /* end of 'for (j = jmin[v]; j <= jmax[v]'... */
   esl_stopwatch_Stop(w);
@@ -2191,8 +2267,10 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
   }
 
   /* find the best scoring hit, and update envelope boundaries if nec */
-  vsc_root = IMPOSSIBLE;
-  bsc_full = IMPOSSIBLE;
+  vsc_root   = IMPOSSIBLE;
+  vmode_root = TRMODE_UNKNOWN;
+  bsc_full   = IMPOSSIBLE;
+  bmode_full = TRMODE_UNKNOWN;
   v = 0;
   jpn = 0;
   jpx = jmax[v] - jmin[v];
@@ -2200,13 +2278,31 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
     dpn     = 0;
     dpx     = hdmax[v][jp_v] - hdmin[v][jp_v];
     for(dp_v = dpn; dp_v <= dpx; dp_v++) {
-      vsc_root = ESL_MAX(vsc_root, Jalpha[0][jp_v][dp_v]);
+      if(do_J_0 && Jalpha[0][jp_v][dp_v] > vsc_root) { 
+	vsc_root   = Jalpha[0][jp_v][dp_v];
+	vmode_root = TRMODE_J;
+      }
+      if(do_L_0 && Lalpha[0][jp_v][dp_v] > vsc_root) { 
+	vsc_root   = Lalpha[0][jp_v][dp_v];
+	vmode_root = TRMODE_L;
+      }
+      if(do_R_0 && Ralpha[0][jp_v][dp_v] > vsc_root) { 
+	vsc_root   = Ralpha[0][jp_v][dp_v];
+	vmode_root = TRMODE_R;
+      }
+      if(do_T_0 && Talpha[0][jp_v][dp_v] > vsc_root) { 
+	vsc_root   = Talpha[0][jp_v][dp_v];
+	vmode_root = TRMODE_T;
+      }
     }
     /* update envelope boundaries, if nec */
     if(do_env_defn) { 
       j = jp_v + jmin[v];
       for(dp_v = dpn; dp_v <= dpx; dp_v++) {
-	if(Jalpha[0][jp_v][dp_v] >= env_cutoff) { 
+	if((do_J_0 && Jalpha[0][jp_v][dp_v] >= env_cutoff) || 
+	   (do_L_0 && Lalpha[0][jp_v][dp_v] >= env_cutoff) || 
+	   (do_R_0 && Ralpha[0][jp_v][dp_v] >= env_cutoff) || 
+	   (do_T_0 && Talpha[0][jp_v][dp_v] >= env_cutoff)) { 
 	  i = j - (dp_v + hdmin[v][jp_v]) + 1;
 	  envi = ESL_MIN(envi, i);
 	  envj = ESL_MAX(envj, j);
@@ -2214,25 +2310,39 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
       }
     }
   }
-  /* find the best score in J that spans the full sequence */
+  /* find the best score and mode that spans the full sequence */
   if(j0 >= jmin[0] && j0 <= jmax[0]) {
     jp_v = j0-jmin[0];
     int L = j0-i0+1;
     if(L >= hdmin[0][jp_v] && L <= hdmax[0][jp_v]) {
       dp_v = L-hdmin[0][jp_v];
-      bsc_full = ESL_MAX(bsc_full, Jalpha[0][jp_v][dp_v]);
+      if(do_J_0 && Jalpha[0][jp_v][dp_v] > bsc_full) { 
+	bsc_full   = Jalpha[0][jp_v][dp_v];
+	bmode_full = TRMODE_J;
+      }
+      if(do_L_0 && Lalpha[0][jp_v][dp_v] > bsc_full) { 
+	bsc_full   = Lalpha[0][jp_v][dp_v];
+	bmode_full = TRMODE_L;
+      }
+      if(do_R_0 && Ralpha[0][jp_v][dp_v] > bsc_full) { 
+	bsc_full   = Ralpha[0][jp_v][dp_v];
+	bmode_full = TRMODE_R;
+      }
+      if(do_T_0 && Talpha[0][jp_v][dp_v] > bsc_full) { 
+	bsc_full   = Talpha[0][jp_v][dp_v];
+	bmode_full = TRMODE_T;
+      }
     }
   }
 
-  /* find the best score in any matrix at any state */
-  best_tr_sc = IMPOSSIBLE;
-  best_tr_sc = vsc_root;
-  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH CYK)\n",
-	 best_tr_sc - trunc_penalty, 
-	 best_tr_sc + sreLOG2(2./(cm->clen * (cm->clen+1))));
-  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH CYK)\n",
+  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH CYK mode: %s)\n",
+	 vsc_root - trunc_penalty, 
+	 vsc_root + sreLOG2(2./(cm->clen * (cm->clen+1))), 
+	 MarginalMode(vmode_root));
+  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH CYK mode: %s)\n",
 	 bsc_full, 
-	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))));
+	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))),
+	 MarginalMode(bmode_full));
 
   free(el_scA);
   free(yvalidA);
@@ -2267,16 +2377,16 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
   if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
   if(ret_envj != NULL) { *ret_envj = (envj == i0-1) ? -1 : envj; }
 
-  if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (ret_sc   != NULL) *ret_sc   = vsc_root;
+  if (ret_mode != NULL) *ret_mode = vmode_root;
 
-  if (ret_sc != NULL) *ret_sc = vsc_root;
   ESL_DPRINTF1(("TrCYKScanHB() return sc: %f\n", vsc_root));
   return eslOK;
 
  ERROR: 
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* never reached */
-  }
+}
 
 
 /* Function: FTrInsideScanHB()
@@ -2302,8 +2412,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
  *           there's no motivation to do that now.
  *
  * Args:     cm        - the model    [0..M-1]
- *           sq        - the sequence [1..L]   
- *                     - length of the dsq
+ *           errbuf    - for returning error messages
+ *           trsi      - TrScanInfo_t with information on which modes to allow
+ *           dsq       - the sequence [1..(j0-i0+1)]   
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
  *           cutoff    - minimum score to report
@@ -2312,17 +2423,17 @@ TrCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float 
  *           env_cutoff- ret_envi..ret_envj will include all hits that exceed this bit sc
  *           ret_envi  - min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
  *           ret_envj  - max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
- *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
- *                       be valid. 
+ *           mx        - the dp matrix, only cells within bands in cm->cp9b will be valid. 
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           ret_mode  - RETURN: mode of best overall hit (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
  *           ret_sc    - RETURN: score of best overall hit (vsc[0])
  *                       
  * Returns: eslOK on success; eslERANGE if required matrix size exceeds <size_limit>
  *          <ret_sc>: score of the best hit.
  */
 int
-FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
-		CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc)
+FTrInsideScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
+		CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc)
 {
   int      status;
   GammaHitMx_t *gamma = NULL;  /* semi-HMM for hit resoultion */
@@ -2355,21 +2466,25 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
   int      yvalid_idx;         /* for keeping track of which children are valid */
   int      yvalid_ct;          /* for keeping track of which children are valid */
   float    vsc_root = IMPOSSIBLE; /* score of best hit */
+  float    vmode_root;         /* alignment mode of best overall alignment (that has score = vsc_root) */
   float    bsc_full;           /* best overall score that emits full sequence i0..j0 */
+  float    bmode_full;         /* alignment mode of best overall parse that emits full sequence */
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
   double **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int      jp;                 /* j index in act */
   int      do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
   int64_t  envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
-  float    trunc_penalty = 0.; /* penalty in bits for a truncated hit */
-  int      do_J_v, do_J_y, do_J_z; /* is J matrix valid for state v, y, z? */
-  int      do_L_v, do_L_y, do_L_z; /* is L matrix valid for state v, y, z? */
-  int      do_R_v, do_R_y, do_R_z; /* is R matrix valid for state v, y, z? */
-  int      do_T_v, do_T_y, do_T_z; /* is T matrix valid for state v, y, z? */
-  float    best_tr_sc;         /* best truncated score */
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
   ESL_STOPWATCH *w = esl_stopwatch_Create();
+
+  /* variables specific to truncated scanning */
+  float    trunc_penalty = 0.; /* penalty in bits for a truncated hit */
+  int      fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
+  int      do_J_v, do_J_y, do_J_z, do_J_0; /* is J matrix valid for state v, y, z, 0? */
+  int      do_L_v, do_L_y, do_L_z, do_L_0; /* is L matrix valid for state v, y, z, 0? */
+  int      do_R_v, do_R_y, do_R_z, do_R_0; /* is R matrix valid for state v, y, z, 0? */
+  int      do_T_v, do_T_y, do_T_z, do_T_0; /* is T matrix valid for state v, y, z, 0? */
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), dsq is NULL.\n");
@@ -2391,6 +2506,16 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
   float ***Lalpha  = mx->Ldp; /* pointer to the Lalpha DP matrix */
   float ***Ralpha  = mx->Rdp; /* pointer to the Ralpha DP matrix */
   float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
+
+  /* determine which matrices we need to fill in based on <trsi> */
+  fill_L = trsi->allow_L      ? TRUE : FALSE;
+  fill_R = trsi->allow_R      ? TRUE : FALSE;
+  fill_T = (fill_L && fill_R) ? TRUE : FALSE;
+
+  /* ensure an alignment to ROOT_S (v==0) is possible */
+  if (! (cp9b->Jvalid[0] || (fill_L && cp9b->Lvalid[0]) || (fill_R && cp9b->Rvalid[0]) || (fill_T &&cp9b->Tvalid[0]))) {
+    ESL_FAIL(eslEINVAL, errbuf, "FTrInsideScanHB(): no marginal mode is allowed for state 0");
+  }
 
   /* Allocations and initializations  */
   /* grow the matrix based on the current sequence and bands */
@@ -2416,9 +2541,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
   esl_stopwatch_Start(w);
   /* initialize all cells of the matrix to IMPOSSIBLE */
   if(mx->Jncells_valid > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
-  if(mx->Lncells_valid > 0) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
-  if(mx->Rncells_valid > 0) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
-  if(mx->Tncells_valid > 0) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
+  if(mx->Lncells_valid > 0 && fill_L) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
+  if(mx->Rncells_valid > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
+  if(mx->Tncells_valid > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
 
@@ -2472,9 +2597,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
     jn     = jmin[v];
     jx     = jmax[v];
     do_J_v = cp9b->Jvalid[v];
-    do_L_v = cp9b->Lvalid[v];
-    do_R_v = cp9b->Rvalid[v];
-    do_T_v = cp9b->Tvalid[v];
+    do_L_v = cp9b->Lvalid[v] && fill_L ? TRUE : FALSE;
+    do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
+    do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
 
     /* re-initialize the J deck if we can do a local end from v */
     if(do_J_v) { 
@@ -2540,8 +2665,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_J_y = cp9b->Jvalid[y];
-	      do_L_y = cp9b->Lvalid[y];
+	      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 	      if(do_J_y || do_L_y) { 
 		jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -2571,8 +2696,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_R_y = cp9b->Rvalid[y];
-	      do_J_y = cp9b->Jvalid[y];
+	      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+	      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
 	      if((do_J_y || do_R_y) && (y != v)) { /* (y != v) part is to disallow IL self transits in R mode */
 		jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -2628,8 +2753,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
 	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_J_y = cp9b->Jvalid[y];
-	      do_R_y = cp9b->Rvalid[y];
+	      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	      if(do_J_y || do_R_y) { 
 		jp_y_sdr = j - jmin[y] - sdr;
 		
@@ -2674,8 +2799,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
 	      /* Note if we're an IL state, we can't self transit in R mode, this was ensured above when we set up yvalidA[] (xref:ELN3,p5)*/
 	      yoffset = yvalidA[yvalid_idx];
 	      y = cm->cfirst[v] + yoffset;
-	      do_L_y = cp9b->Lvalid[y];
-	      do_J_y = cp9b->Jvalid[y];
+	      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
 	      if(do_L_y || do_J_y) { 
 		/* we use 'jp_y=j-min[y]' here, not 'jp_y_sdr=j-jmin[y]-sdr' (which we used in the corresponding loop for J,R above) */
 		jp_y = j - jmin[y];
@@ -2707,9 +2832,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
        * is most efficient: for y { for j { for d { } } }
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-	do_J_y = cp9b->Jvalid[y];
-	do_L_y = cp9b->Lvalid[y];
-	do_R_y = cp9b->Rvalid[y];
+	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 
@@ -2867,9 +2992,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
        * is most efficient: for y { for j { for d { } } }
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-	do_J_y = cp9b->Jvalid[y];
-	do_L_y = cp9b->Lvalid[y];
-	do_R_y = cp9b->Rvalid[y];
+	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 	
@@ -2926,15 +3051,15 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
       y = cm->cfirst[v]; /* left  subtree */
       z = cm->cnum[v];   /* right subtree */
 
-      do_J_y = cp9b->Jvalid[y];
-      do_L_y = cp9b->Lvalid[y];
-      do_R_y = cp9b->Rvalid[y];
-      do_T_y = cp9b->Tvalid[y]; /* will be FALSE, y is not a B_st */
+      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 
-      do_J_z = cp9b->Jvalid[z];
-      do_L_z = cp9b->Lvalid[z];
-      do_R_z = cp9b->Rvalid[z];
-      do_T_z = cp9b->Tvalid[z]; /* will be FALSE, z is not a B_st */
+      do_J_z = cp9b->Jvalid[z]           ? TRUE : FALSE;
+      do_L_z = cp9b->Lvalid[z] && fill_L ? TRUE : FALSE;
+      do_R_z = cp9b->Rvalid[z] && fill_R ? TRUE : FALSE;
+      do_T_z = cp9b->Tvalid[z] && fill_T ? TRUE : FALSE; /* will be FALSE, z is not a B_st */
       
       /* Any valid j must be within both state v and state z's j band 
        * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
@@ -3119,6 +3244,11 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
   ESL_ALLOC(bestmode, sizeof(char)  * (W+1));
   ESL_ALLOC(bestsc,   sizeof(float) * (W+1));
 
+  do_J_0 = cp9b->Jvalid[0]           ? TRUE : FALSE;
+  do_L_0 = cp9b->Lvalid[0] && fill_L ? TRUE : FALSE;
+  do_R_0 = cp9b->Rvalid[0] && fill_R ? TRUE : FALSE;
+  do_T_0 = cp9b->Tvalid[0] && fill_T ? TRUE : FALSE;
+
   /* update gamma, by specifying all hits with j < jmin[0] are impossible */
   if(gamma != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
@@ -3131,7 +3261,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
   /* Finally, allow for truncated hits */
   esl_stopwatch_Start(w);
   v = 0;
-  for (j = jmin[v]; j <= jmax[v]; j++) {
+  for (j = jmin[0]; j <= jmax[0]; j++) {
     jp_v = j - jmin[v];
     /* initialize bestr, bestsc, bestmode */
     esl_vec_ISet(bestr,  (W+1), 0);
@@ -3140,12 +3270,17 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
 
     /* look at all possible states we can do a truncated begin into */
     for (y = 1; y < cm->M; y++) {
+      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE;
+
       if(j >= jmin[y] && j <= jmax[y]) {  /* j is within state y's band */
 	jp_y = j - jmin[y];
 	dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
 	dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
 
-	if(cp9b->Jvalid[0] && cp9b->Jvalid[y] && 
+	if(do_J_0 && do_J_y && 
 	   (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st || cm->sttype[y] == IL_st || cm->sttype[y] == IR_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
@@ -3161,7 +3296,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
 	    }
 	  }
 	}
-	if(cp9b->Lvalid[0] && cp9b->Lvalid[y] && 
+	if(do_L_0 && do_L_y &&
 	   (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == IL_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
@@ -3177,7 +3312,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
 	    }
 	  }
 	}
-	if(cp9b->Rvalid[0] && cp9b->Rvalid[y] && 
+	if(do_R_0 && do_R_y && 
 	   (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st || cm->sttype[y] == IR_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
@@ -3193,7 +3328,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
 	    }
 	  }
 	}
-	if(cp9b->Tvalid[0] && cp9b->Tvalid[y] && 
+	if(do_T_0 && do_T_y && 
 	   (cm->sttype[y] == B_st)) { 
 	  dp_v = dn - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
@@ -3213,10 +3348,10 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
     }
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
     }
     if(tmp_hitlist != NULL) { 
-      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
+      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   }
   esl_stopwatch_Stop(w);
@@ -3232,23 +3367,42 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
   }
 
   /* find the best scoring hit, and update envelope boundaries if nec */
-  vsc_root = IMPOSSIBLE;
-  bsc_full = IMPOSSIBLE;
+  vsc_root   = IMPOSSIBLE;
+  vmode_root = TRMODE_UNKNOWN;
+  bsc_full   = IMPOSSIBLE;
+  bmode_full = TRMODE_UNKNOWN;
   v = 0;
   jpn = 0;
   jpx = jmax[v] - jmin[v];
   for(jp_v = jpn; jp_v <= jpx; jp_v++) {
     dpn     = 0;
     dpx     = hdmax[v][jp_v] - hdmin[v][jp_v];
-    /* find the best score in J */
     for(dp_v = dpn; dp_v <= dpx; dp_v++) {
-      vsc_root = ESL_MAX(vsc_root, Jalpha[0][jp_v][dp_v]);
+      if(do_J_0 && Jalpha[0][jp_v][dp_v] > vsc_root) { 
+	vsc_root   = Jalpha[0][jp_v][dp_v];
+	vmode_root = TRMODE_J;
+      }
+      if(do_L_0 && Lalpha[0][jp_v][dp_v] > vsc_root) { 
+	vsc_root   = Lalpha[0][jp_v][dp_v];
+	vmode_root = TRMODE_L;
+      }
+      if(do_R_0 && Ralpha[0][jp_v][dp_v] > vsc_root) { 
+	vsc_root   = Ralpha[0][jp_v][dp_v];
+	vmode_root = TRMODE_R;
+      }
+      if(do_T_0 && Talpha[0][jp_v][dp_v] > vsc_root) { 
+	vsc_root   = Talpha[0][jp_v][dp_v];
+	vmode_root = TRMODE_T;
+      }
     }
     /* update envelope boundaries, if nec */
     if(do_env_defn) { 
       j = jp_v + jmin[v];
       for(dp_v = dpn; dp_v <= dpx; dp_v++) {
-	if(Jalpha[0][jp_v][dp_v] >= env_cutoff) { 
+	if((do_J_0 && Jalpha[0][jp_v][dp_v] >= env_cutoff) || 
+	   (do_L_0 && Lalpha[0][jp_v][dp_v] >= env_cutoff) || 
+	   (do_R_0 && Ralpha[0][jp_v][dp_v] >= env_cutoff) || 
+	   (do_T_0 && Talpha[0][jp_v][dp_v] >= env_cutoff)) { 
 	  i = j - (dp_v + hdmin[v][jp_v]) + 1;
 	  envi = ESL_MIN(envi, i);
 	  envj = ESL_MAX(envj, j);
@@ -3256,27 +3410,40 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
       }
     }
   }
-  
-  /* find the best score in J that spans the full sequence */
+  /* find the best score and mode that spans the full sequence */
   if(j0 >= jmin[0] && j0 <= jmax[0]) {
     jp_v = j0-jmin[0];
     int L = j0-i0+1;
     if(L >= hdmin[0][jp_v] && L <= hdmax[0][jp_v]) {
       dp_v = L-hdmin[0][jp_v];
-      bsc_full = ESL_MAX(bsc_full, Jalpha[0][jp_v][dp_v]);
+      if(do_J_0 && Jalpha[0][jp_v][dp_v] > bsc_full) { 
+	bsc_full   = Jalpha[0][jp_v][dp_v];
+	bmode_full = TRMODE_J;
+      }
+      if(do_L_0 && Lalpha[0][jp_v][dp_v] > bsc_full) { 
+	bsc_full   = Lalpha[0][jp_v][dp_v];
+	bmode_full = TRMODE_L;
+      }
+      if(do_R_0 && Ralpha[0][jp_v][dp_v] > bsc_full) { 
+	bsc_full   = Ralpha[0][jp_v][dp_v];
+	bmode_full = TRMODE_R;
+      }
+      if(do_T_0 && Talpha[0][jp_v][dp_v] > bsc_full) { 
+	bsc_full   = Talpha[0][jp_v][dp_v];
+	bmode_full = TRMODE_T;
+      }
     }
   }
 
-
   /* find the best score in any matrix at any state */
-  best_tr_sc = IMPOSSIBLE;
-  best_tr_sc = vsc_root;
-  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH INSIDE)\n",
-	 best_tr_sc - trunc_penalty, 
-	 best_tr_sc + sreLOG2(2./(cm->clen * (cm->clen+1))));
-  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH INSIDE)\n",
+  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH INSIDE mode: %s)\n",
+	 vsc_root - trunc_penalty, 
+	 vsc_root + sreLOG2(2./(cm->clen * (cm->clen+1))),
+	 MarginalMode(vmode_root));
+  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH INSIDE mode: %s)\n",
 	 bsc_full, 
-	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))));
+	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))),
+	 MarginalMode(bmode_full));
 
   free(el_scA);
   free(yvalidA);
@@ -3298,12 +3465,14 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
    */
   if(tmp_hitlist != NULL) { 
     cm_tophits_SortByPosition(tmp_hitlist);
+    /*cm_tophits_Dump(stdout, tmp_hitlist);*/
     cm_tophits_RemoveDuplicates(tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
+    /*cm_tophits_Dump(stdout, hitlist);*/
     cm_tophits_Destroy(tmp_hitlist);
   }
 
@@ -3311,9 +3480,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, fl
   if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
   if(ret_envj != NULL) { *ret_envj = (envj == i0-1) ? -1 : envj; }
 
-  if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (ret_sc   != NULL) *ret_sc   = vsc_root;
+  if (ret_mode != NULL) *ret_mode = vmode_root;
 
-  if (ret_sc != NULL) *ret_sc = vsc_root;
   ESL_DPRINTF1(("FTrInsideScanHB() return sc: %f\n", vsc_root));
   return eslOK;
 
@@ -3397,6 +3566,7 @@ main(int argc, char **argv)
   ESL_DSQ        *dsq;
   int             i;
   float           sc;
+  char            mode;
   char           *cmfile = esl_opt_GetArg(go, 1);
   CM_FILE        *cmfp;	/* open input CM file stream */
   int            *dmin;
@@ -3405,6 +3575,7 @@ main(int argc, char **argv)
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
   char            errbuf[cmERRBUFSIZE];
   TrScanMatrix_t *trsmx = NULL;
+  TrScanInfo_t   *trsi  = NULL;
   ESL_SQFILE     *sqfp  = NULL;        /* open sequence input file stream */
   CMConsensus_t  *cons  = NULL;
   Parsetree_t    *tr    = NULL;
@@ -3418,6 +3589,7 @@ main(int argc, char **argv)
   FLogsumInit();
 
   r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
+  trsi = CreateTrScanInfo();
 
   if ((status = cm_file_Open(cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = cm_file_Read(cmfp, TRUE, &abc, &cm))                != eslOK) cm_Fail(cmfp->errbuf);
@@ -3434,7 +3606,6 @@ main(int argc, char **argv)
     }
   }
   if( esl_opt_GetBoolean(go, "--noqdb")) cm->search_opts |= CM_SEARCH_NOQDB;
-  cm->search_opts |= CM_SEARCH_CMGREEDY; /* greedy hit resolution is default */
 
   esl_stopwatch_Start(w);
   printf("%-30s", "Configuring CM...");
@@ -3591,7 +3762,7 @@ main(int argc, char **argv)
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	esl_stopwatch_Start(w);
-	if((status = FastFInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, cm->hbmx, size_limit, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = FastFInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, cm->hbmx, size_limit, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideScanHB(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -3626,16 +3797,16 @@ main(int argc, char **argv)
 	cm_tr_hb_mx_Destroy(trhbmx);
 	trhbmx = cm_tr_hb_mx_Create(cm);
 	esl_stopwatch_Start(w);
-	if((status = TrCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "TrCYKScanHB(): ", sc);
+	if((status = TrCYKScanHB(cm, errbuf, trsi, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "TrCYKScanHB(): ", sc, MarginalMode(mode));
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	cm_tr_hb_mx_Destroy(trhbmx);
 	trhbmx = cm_tr_hb_mx_Create(cm);
 	esl_stopwatch_Start(w);
-	if((status = FTrInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "FTrInsideScanHB(): ", sc);
+	if((status = FTrInsideScanHB(cm, errbuf, trsi, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "FTrInsideScanHB(): ", sc, MarginalMode(mode));
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
       }
@@ -3653,8 +3824,8 @@ main(int argc, char **argv)
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	
 	esl_stopwatch_Start(w);
-	if((status = RefTrCYKScan(cm, errbuf, trsmx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "RefTrCYKScan(): ", sc);
+	if((status = RefTrCYKScan(cm, errbuf, trsmx, trsi, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "RefTrCYKScan(): ", sc, MarginalMode(mode));
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	
@@ -3679,8 +3850,8 @@ main(int argc, char **argv)
 	cm->search_opts  |= CM_SEARCH_INSIDE;
 
 	esl_stopwatch_Start(w);
-	if((status = RefITrInsideScan(cm, errbuf, trsmx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "RefITrInsideScan(): ", sc);
+	if((status = RefITrInsideScan(cm, errbuf, trsmx, trsi, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "RefITrInsideScan(): ", sc, MarginalMode(mode));
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	
@@ -3728,6 +3899,7 @@ main(int argc, char **argv)
   esl_stopwatch_Destroy(w);
   esl_randomness_Destroy(r);
   esl_getopts_Destroy(go);
+  free(trsi);
   return 0;
 
  ERROR:

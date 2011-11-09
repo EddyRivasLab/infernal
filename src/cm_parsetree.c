@@ -428,7 +428,7 @@ PrintParsetree(FILE *fp, Parsetree_t *tr)
   for (x = 0; x < tr->n; x++)
     fprintf(fp, "%5d %5d %5d %5d %5d %5d %5d %5s\n",
 	    x, tr->emitl[x], tr->emitr[x], tr->state[x], 
-	    tr->nxtl[x], tr->nxtr[x], tr->prv[x], Marginalmode(tr->mode[x]));
+	    tr->nxtl[x], tr->nxtr[x], tr->prv[x], MarginalMode(tr->mode[x]));
   fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s %5s\n",
 	  "-----", "-----", "-----", "-----","-----","-----", "-----", "-----");
 
@@ -538,7 +538,7 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int 
 	  L = tr->emitr[x]-tr->emitl[x]+1;
 	  fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5s %5d %5d %5d %5.2f %5.2f %5d %5d %5d %2s\n",
 		  x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
-		  Statetype(cm->sttype[v]), Marginalmode(tr->mode[x]), 
+		  Statetype(cm->sttype[v]), MarginalMode(tr->mode[x]), 
 		  tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc,
 		  L, dmin[v], dmax[v],
 		  (L >= dmin[v] && L <= dmax[v]) ? "" : "!!");
@@ -547,7 +547,7 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int 
 	{
 	  fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5s %5d %5d %5d %5.2f %5.2f\n",
 		  x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
-		  Statetype(cm->sttype[v]), Marginalmode(tr->mode[x]),
+		  Statetype(cm->sttype[v]), MarginalMode(tr->mode[x]),
 		  tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
 	}
     }

@@ -331,7 +331,7 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
        */
       allow_S_local_end = TRUE; /* this sets yoffset to USED_LOCAL_END in the final 'else' of below code block */
     }
-    else if (cm->sttype[v] != EL_st){ /* normal case, determine jp_v, dp_v, j, d offset values given bands */
+    else if (cm->sttype[v] != EL_st) { /* normal case, determine jp_v, dp_v, j, d offset values given bands */
       jp_v = j - jmin[v];
       dp_v = d - hdmin[v][jp_v];
       allow_S_local_end = FALSE;
@@ -2101,7 +2101,8 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 	}
       }
     }
-    else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+      /*else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { */
       for (j = 0; j <= L; j++) {
 	/* Check for special initialization case, specific to
 	 * optimal_accuracy alignment, normally (with TrCYK for
@@ -2463,7 +2464,8 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	}
       }
     }
-    else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+    /*else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { */
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
 	/* Check for special initialization case, specific to
@@ -2484,15 +2486,17 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	 * release (rc5) of infernal v1.0 (EPN, Fri Jun 12 14:02:58
 	 * 2009)).
 	 */
-	for (d = hdmin[v][jp_v]; d <= sd; d++) { 
-	  dp_v = d-hdmin[v][jp_v];
-	  for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) { 
-	    if(StateDelta(cm->sttype[y]) == 0) { 
-	      if((j-sdr) >= jmin[y] && (j-sdr) <= jmax[y]) { 
-		jp_y = j - sdr - jmin[y];
-		if(hdmin[y][jp_y] == 0) { 
-		  yoffset = y - cm->cfirst[v];
-		  yshadow[v][jp_v][dp_v] = yoffset;
+	if(hdmin[v][jp_v] <= hdmax[v][jp_v]) { /* if this if FALSE, no valid d exists for this v and j */
+	  for (d = hdmin[v][jp_v]; d <= sd; d++) { 
+	    dp_v = d-hdmin[v][jp_v];
+	    for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) { 
+	      if(StateDelta(cm->sttype[y]) == 0) { 
+		if((j-sdr) >= jmin[y] && (j-sdr) <= jmax[y]) { 
+		  jp_y = j - sdr - jmin[y];
+		  if(hdmin[y][jp_y] == 0) { 
+		    yoffset = y - cm->cfirst[v];
+		    yshadow[v][jp_v][dp_v] = yoffset;
+		  }
 		}
 	      }
 	    }
@@ -3148,10 +3152,12 @@ cm_CYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
     sc = alpha[0][L][L];
   }
 
-  if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check1 FAILED.");
-  else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check2 FAILED.");
-  else if(fail3_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check3 FAILED.");
-  else                printf("SUCCESS! CYK Inside/Outside checks PASSED.\n");
+  if(do_check) { 
+    if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check1 FAILED.");
+    else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check2 FAILED.");
+    else if(fail3_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check3 FAILED.");
+    else                printf("SUCCESS! CYK Inside/Outside checks PASSED.\n");
+  }
 
   if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("\tcm_CYKOutsideAlign() sc : %f\n", sc));
   else                             ESL_DPRINTF1(("\tcm_CYKOutsideAlign() sc : %f (LOCAL mode; sc is from Inside)\n", sc));
@@ -3762,10 +3768,12 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   FILE *fp; fp = fopen("tmp.std_ocykhbmx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);
 #endif
 
-  if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check1 FAILED.");
-  else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check2 FAILED.");
-  else if(fail3_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check3 FAILED.");
-  else                printf("SUCCESS! CYK Inside/Outside HB checks PASSED.\n");
+  if(do_check) {
+    if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check1 FAILED.");
+    else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check2 FAILED.");
+    else if(fail3_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check3 FAILED.");
+    else                printf("SUCCESS! CYK Inside/Outside HB checks PASSED.\n");
+  }
 
   if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("\tcm_CYKOutsideAlignHB() sc : %f\n", sc));
   else                             ESL_DPRINTF1(("\tcm_CYKOutsideAlignHB() sc : %f (LOCAL mode; sc is from Inside)\n", sc));

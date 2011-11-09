@@ -1452,7 +1452,7 @@ cm_hit_Dump(FILE *fp, const CM_HIT *h)
   fprintf(fp, "stop      = %" PRId64 "\n", h->stop);
   fprintf(fp, "in_rc     = %s\n",  h->in_rc ? "TRUE" : "FALSE");
   fprintf(fp, "root      = %d\n",  h->root);
-  fprintf(fp, "mode      = %s\n",  Marginalmode(h->mode));
+  fprintf(fp, "mode      = %s\n",  MarginalMode(h->mode));
   fprintf(fp, "score     = %f\n",  h->score);
   fprintf(fp, "pvalue    = %f\n",  h->pvalue);
   fprintf(fp, "evalue    = %f\n",  h->evalue);

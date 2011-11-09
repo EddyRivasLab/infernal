@@ -1223,7 +1223,7 @@ ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
   int jp;           /* counter over valid j's, but offset. jp+jmin[v] = actual j */
   int j;            /* actual j */
   int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
-  int max_sdl_sdr;  /* maximum of StateLeftDelta, StateRightDelta for a state (1 for emitters, 0 for nonemitters) */
+  int max_sdl_sdr;  /* maximum of StateLeftDelta, StateRightDelta for a state */
   int dn;           /* max_sdl_sdr if do_trunc, else sd */
   int hdn, hdx;     /* temporary hdmin/hdmax */
   for(v = 0; v < cm->M; v++) {
@@ -1237,7 +1237,11 @@ ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
       sd          = StateDelta(cm->sttype[v]);
       max_sdl_sdr = ESL_MAX(StateLeftDelta(cm->sttype[v]), StateRightDelta(cm->sttype[v]));
       dn          = do_trunc ? max_sdl_sdr : sd;
-      /* if (do_trunc) d can be 1 for MP states, which is the reason we use dn here */
+      /* if (do_trunc) d can be 1 for MP states, this is why we use dn
+       * here.  Note: d can't be 0 for ML/IL in R mode, MR/IR in L
+       * mode even though you might think it could be. We'll always do
+       * a truncated begin with d=1 for L,R marginal alignments. */
+
       for(jp = 0; jp <= (jmax[v]-jmin[v]); jp++) {
 	j   = jp+jmin[v];
 	hdn = j-imax[v]+1;
@@ -1808,9 +1812,9 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 
   /* Final pass through all states: 
    * 1. if any band value implies a state is unreachable, make it so by setting imin[v]=jmin[v]=-1, imax[v]=jmax[v]=-2;
-   * 2. set detached inserts unreachble.
-   * 3. for left emitters enforce jmin/jmax allow at least 1 residue to be emitted
-   * 4. for MP states, enforce jmin/jmax allow at least 2 residues to be emitted
+   * 2. set detached inserts unreachable.
+   * 3. if(!do_trunc) for left emitters enforce jmin/jmax allow at least 1 residue to be emitted
+   * 4. if(!do_trunc) for MP states, enforce jmin/jmax allow at least 2 residues to be emitted
    */
   for(v = 0; v < cm->M; v++) { 
     assert((imin[v] == -1 && imax[v] == -2) || (imin[v] >= 0 && imax[v] >= 0)); 
@@ -1825,27 +1829,29 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
       imin[v] = jmin[v] = -1;
       imax[v] = jmax[v] = -2;
     }
-    if(cm->sttype[v] == MP_st) { 
-      if(jmax[v] == i0) { /* HMM tells us right half of MP state must emit first residue in the sequence, we know better, make state unreachable */
-	ESL_DASSERT1((jmin[v] == i0));
-	imin[v] = jmin[v] = -1; /* ignore hmm */
-	imax[v] = jmax[v] = -2; /* ignore hmm */
+    if(! do_trunc) { 
+      if(cm->sttype[v] == MP_st) { 
+	if(jmax[v] == i0) { /* HMM tells us right half of MP state must emit first residue in the sequence, we know better, make state unreachable */
+	  ESL_DASSERT1((jmin[v] == i0));
+	  imin[v] = jmin[v] = -1; /* ignore hmm */
+	  imax[v] = jmax[v] = -2; /* ignore hmm */
+	}
+	else if (jmin[v] == i0) { /* HMM tells us right half of MP state could possibly first residue (i0), but we know it can't (see comment above). */
+	  jmin[v]++;              /* pad 1 onto what the hmm thought, make first emittable residue i0+1 */
+	  /* leave jmax[v] alone, we konw it's not == i0, we checked for that case above */
+	}
       }
-      else if (jmin[v] == i0) { /* HMM tells us right half of MP state could possibly first residue (i0), but we know it can't (see comment above). */
-	jmin[v]++;              /* pad 1 onto what the hmm thought, make first emittable residue i0+1 */
-	/* leave jmax[v] alone, we konw it's not == i0, we checked for that case above */
-      }
-    }
-    /* if a left emitter, enforce jmin/jmax require at least 1 residue is emitted */
-    else if((StateLeftDelta(cm->sttype[v]) == 1) && imin[v] != -1) { 
-      if(jmax[v] == (i0-1)) { /* HMM bands implied state must be entered after emitting exactly 0 residues, we know better, make it unreachable */
-	ESL_DASSERT1((jmin[v] == (i0-1)));
-	imin[v] = jmin[v] = -1; /* ignore hmm */
-	jmin[v] = jmax[v] = -2; /* ignore hmm */
-      }
-      else if (jmin[v] == (i0-1)) { 
-	jmin[v] = i0; /* pad 1 onto what the hmm thought */
-	/* leave jmax[v] alone, we know it's not == i0-1, we checked for that case above */
+      /* if a left emitter, enforce jmin/jmax require at least 1 residue is emitted */
+      if((StateLeftDelta(cm->sttype[v]) == 1) && imin[v] != -1) { 
+	if(jmax[v] == (i0-1)) { /* HMM bands implied state must be entered after emitting exactly 0 residues, we know better, make it unreachable */
+	  ESL_DASSERT1((jmin[v] == (i0-1)));
+	  imin[v] = jmin[v] = -1; /* ignore hmm */
+	  jmin[v] = jmax[v] = -2; /* ignore hmm */
+	}
+	else if (jmin[v] == (i0-1)) { 
+	  jmin[v] = i0; /* pad 1 onto what the hmm thought */
+	  /* leave jmax[v] alone, we know it's not == i0-1, we checked for that case above */
+	}
       }
     }
   }
@@ -5043,17 +5049,24 @@ cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc)
   int v;
   int ip = i-1;
   int Lp = j-i+1;
-  int sd;
+  int sd, sdl, sdr;
   int min_i, max_i, min_j, max_j;
   /* printf("cp9_OffsetCMBands(), i: %d j: %d Lp: %d\n", i, j, Lp); */
 
   for(v = 0; v < cm->M; v++) { 
-    sd = StateDelta(cm->sttype[v]);
+    sd  = StateDelta(cm->sttype[v]);
+    sdl = StateLeftDelta(cm->sttype[v]);
+    sdr = StateRightDelta(cm->sttype[v]);
     if(cm->cp9b->imin[v] > 0) { /* state is currently possible to reach */
       min_i = 1;
       max_i = Lp;
-      min_j = sd;
-      max_j = ESL_MAX(Lp, sd);
+      min_j = do_trunc ? ESL_MAX(sdl, sdr) : sd; 
+      max_j = ESL_MAX(Lp, min_j);
+      /* if (do_trunc) d can be 1 for MP states, this is why we use
+       * ESL_MAX() call for min_j above.  Note: d can't be 0 for ML/IL
+       * in R mode, MR/IR in L mode even though you might think it
+       * could be. We'll always do a truncated begin with d=1 for L,R
+       * marginal alignments. */
 
       cm->cp9b->imin[v] = ESL_MAX(cm->cp9b->imin[v] - ip, min_i); 
       cm->cp9b->imax[v] = ESL_MIN(cm->cp9b->imax[v] - ip, max_i);
@@ -5153,7 +5166,7 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
   int i;
   int k;                                  /* counter over nodes of the model */
   int L = j0-i0+1;                        /* length of sequence */
-  int iocc;         /* occupancy probability, scaled int form */
+  int   iocc;       /* occupancy probability, scaled int form */
   float pocc;       /* occupancy probability, probability form */
 
   /* Calculate minimum start positions: */
@@ -5279,7 +5292,7 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
     cp9b->Lmarg_jmax = ESL_MAX(i0-1, cp9b->Lmarg_jmax); /* j can't be less than i0-1 */
     cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax); /* j can't be more than j0 */
   }
-  
+
   /*
     printf("HEYA Returning from cp9_PredictStartAndEndPositions():\n\t");
     printf("sp1: %4d\n\t", cp9b->sp1);
@@ -5336,17 +5349,21 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b)
     /* Jvalid if both lpos and rpos are possibly used */
     cp9b->Jvalid[v] = ((lpos >= cp9b->sp1) && (rpos <= cp9b->ep1)) ? TRUE : FALSE;
 
-    /* Lvalid if lpos is possibly used and rpos is probably not used */
+    /* Lvalid if lpos is possibly used and rpos is possibly not used */
     cp9b->Lvalid[v] = ((lpos >= cp9b->sp1 && lpos <= cp9b->ep1) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
 
-    /* Rvalid if rpos is possibly used and lpos is probably not used */
+    /* Rvalid if rpos is possibly used and lpos is possibly not used */
     cp9b->Rvalid[v] = ((rpos <= cp9b->ep1 && rpos >= cp9b->sp1) && (lpos < cp9b->sp2)) ? TRUE : FALSE;
 
-    cp9b->Tvalid[v] = FALSE; /* possibly changed below for B_st */
     if(cm->sttype[v] == B_st) { 
-      /* Tvalid if lpos and rpos are probably not used */
+      /* Tvalid if lpos and rpos are possibly not used */
       cp9b->Tvalid[v] = ((lpos < cp9b->sp2) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
     }
+    else { 
+      cp9b->Tvalid[v] = FALSE;
+    }
+    /*printf("v: %4d [%4d..%4d] %4s %2s %d%d%d%d\n", v, lpos, rpos, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), 
+      cp9b->Jvalid[v], cp9b->Lvalid[v], cp9b->Rvalid[v], cp9b->Tvalid[v]);*/
   }
 
   /* The ROOT_S state is special, all hits are rooted there, if we can do a 
@@ -5374,6 +5391,7 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b)
     case IR_st:
       if(cp9b->Jvalid[v]) cp9b->Jvalid[0] = TRUE;
       if(cp9b->Rvalid[v]) cp9b->Rvalid[0] = TRUE;
+      break;
     }
   }
 
