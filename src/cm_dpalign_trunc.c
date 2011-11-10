@@ -960,6 +960,11 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 				 (have_ppstr ? &ppstr : NULL), 
 				 (do_optacc  ? &sc    : NULL))) != eslOK) return status;
   }
+
+  CMEmitMap_t *emap;
+  emap = CreateEmitMap(cm);
+  DumpEmitMap(stdout, emap, cm);
+  FreeEmitMap(emap);
   ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
 
   if (ret_ppstr  != NULL) *ret_ppstr  = ppstr; else if(ppstr != NULL) free(ppstr);

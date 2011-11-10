@@ -631,6 +631,14 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do
     if((status = cm_PostCodeHB(cm, errbuf, L, emit_mx, tr, (have_ppstr) ? &ppstr : NULL, (do_optacc ? &sc : NULL))) != eslOK) return status;
   }
 
+  /*
+    CMEmitMap_t *emap;
+    emap = CreateEmitMap(cm);
+    DumpEmitMap(stdout, emap, cm);
+    FreeEmitMap(emap);
+    ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+  */
+
   if (ret_ppstr  != NULL) *ret_ppstr  = ppstr; else free(ppstr);
   if (ret_tr     != NULL) *ret_tr     = tr;    else FreeParsetree(tr);
   if (ret_ins_sc != NULL) *ret_ins_sc = ins_sc; 

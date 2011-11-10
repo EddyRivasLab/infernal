@@ -64,7 +64,7 @@ static int  bp_is_canonical(char lseq, char rseq);
  *            cm    - model
  *            cons  - consensus information for cm; see CreateCMConsensus()
  *            sq    - the sequence, parsetree corresponds to subsequence beginning at spos
- *            spos  - position in sq which corresponds to first position in tr
+ *            seqoffset - position in sq which corresponds to first position in tr
  *            ppstr - posterior probability string 
  *            aln_sc       - if(used_optacc) avg post prob of all aligned residues, else CYK score
  *            used_optacc  - TRUE if aln algorithm used was optimal accuracy 
@@ -106,9 +106,19 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   int         spos_l, spos_r;	 /* positions in dsq (1..L)                   */
   int        *scoord = NULL;     /* [0..N-1] coordinates for aligned residues */
   int        *ccoord = NULL;     /* [0..N-1] coordinates for model positions  */
+  float       sc;                /* a temporary score */
   int         cm_namelen, cm_acclen, cm_desclen;
   int         sq_namelen, sq_acclen, sq_desclen;
   int         len, n;
+  int         cfrom,  cto;       /* first and final model    positions in alignment */
+  int         cfrom_R;           /* first truncated model position if alignment is R or T marginal mode */
+  int         cto_L;             /* final truncated model position if alignment is L or T marginal mode */
+  int         ntrunc_R;          /* if R or T mode: num positions for truncated begin at start of aln */
+  int         wtrunc_R;          /* if R or T mode: num chars for displaying local begin at aln start */
+  int         ntrunc_L;          /* if L or T mode: num positions for truncated begin at end of aln */
+  int         wtrunc_L;          /* if L or T mode: num chars for displaying local begin at aln end */
+  int         numwidth;		 /* number of chars to leave for displaying width numbers */
+  int         is_left, is_right;
 
   /* Contract check. We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
@@ -121,29 +131,59 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   }
   
   /* Calculate length of the alignment display (len).
-   *   MATP node        : +2
-   *   MATL, MATR node  : +1
-   *   IL, IR state     : +1
-   *   EL:              : 4 + width of length display : "*[nn]*"
-   *   anything else    : 0.
+   *                    :  J    L    R  (alignment mode)
+   *   MATP node        : +2   +1   +1   
+   *   MATL node        : +1   +1   +0
+   *   MATR node        : +1   +0   +1
+   *   IL state         : +1   +1   +0
+   *   IR state         : +1   +0   +1
+   *   EL:              : +4+w N/A  N/A (w=width of length display : "*[nn]*")
+   *   anything else    : +0   +0   +0
+   *
+   * And if marginal mode of alignment is: 
+   * L or T: + 4 + Ltrunc_L where ntrunc_L is cpos
+   *
+   * Also, determine first and final model positions in alignment (cfrom/cto).
+   * We need these to determine length of truncated regions of model at 
+   * beginning and/or end of the alignment in L, R or T marginal modes.
    */
   len = 0;
+  cfrom = cm->clen+1;
+  cto   = 0;
   for (ti = 0; ti < tr->n; ti++) { 
-    v  = tr->state[ti];
+    v    = tr->state[ti];
+    mode = tr->mode[ti];
     if (v == cm->M) {  /* special case: local exit into EL */
       nd = cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
-      qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
-      tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
-      ninset     = ESL_MAX(qinset,tinset);
+      qinset = cons->rpos[nd] - cons->lpos[nd] + 1;
+      tinset = tr->emitr[ti]  - tr->emitl[ti]  + 1;
+      ninset = ESL_MAX(qinset,tinset);
       len += 4;
       do { len++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
       continue;
-    } else {
-      nd = cm->ndidx[v];
-      if      (cm->sttype[v]  == IL_st   || cm->sttype[v]  == IR_st)   len += 1;
-      else if (cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd) len += 1;
-      else if (cm->ndtype[nd] == MATP_nd)                              len += 2;
-    }	
+    } 
+    else {
+      nd  = cm->ndidx[v];
+      if     (cm->sttype[v]  == IL_st)   { is_left = TRUE;  is_right = FALSE; }
+      else if(cm->sttype[v]  == IR_st)   { is_left = FALSE; is_right = TRUE;  }
+      else if(cm->ndtype[nd] == MATP_nd) { is_left = TRUE;  is_right = TRUE;  }
+      else if(cm->ndtype[nd] == MATL_nd) { is_left = TRUE;  is_right = FALSE; }
+      else if(cm->ndtype[nd] == MATR_nd) { is_left = FALSE; is_right = TRUE;  }
+      else                               { is_left = FALSE; is_right = FALSE; }
+
+      if(is_left && (mode == TRMODE_J || mode == TRMODE_L)) { 
+	len++;
+	cfrom = ESL_MIN(cfrom, cons->lpos[nd] + 1);
+	cto   = ESL_MAX(cto,   cons->lpos[nd] + 1);
+      }
+      if(is_right && (mode == TRMODE_J || mode == TRMODE_R)) { 
+	len++;
+	cfrom = ESL_MIN(cfrom, cons->rpos[nd] + 1);
+	cto   = ESL_MAX(cto,   cons->rpos[nd] + 1);
+      }
+    }
+    /* ignore marginal-type local ends, to do otherwise see block below (v1.0->v1.0.2)*/
+#if 0
     /* Catch marginal-type local ends and treat them like EL for output */
     if ((tr->nxtl[ti] == -1) && (cm->sttype[v] != E_st)) {
       nd = cm->ndidx[tr->state[ti]];
@@ -154,6 +194,40 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
       len += 4;
       do { len++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
     }
+#endif
+  }
+  /* One more step for calculating len, catch marginal type local begins 
+   * and treat them similar to EL for output 
+   */
+  ntrunc_R = wtrunc_R = 0;
+  ntrunc_L = wtrunc_L = 0;
+  if (tr->mode[0] == TRMODE_R || tr->mode[0] == TRMODE_T) { 
+    /* We'll put a truncated begin at the beginning of the alignment. */
+    cfrom_R  = cons->lpos[cm->ndidx[tr->state[0]]] + 1;
+    ntrunc_R = cfrom - cfrom_R;
+    ninset   = ntrunc_R;
+    wtrunc_R = 0; do { wtrunc_R++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
+    wtrunc_R += 4; /* space for '<[]*' */
+    len += wtrunc_R;
+  }
+  if (tr->mode[0] == TRMODE_L || tr->mode[0] == TRMODE_T) { 
+    /* We'll put a truncated begin at end of the alignment. */
+    cto_L    = cons->rpos[cm->ndidx[tr->state[0]]] + 1;
+    ntrunc_L = cto_L - cto;
+    ninset   = ntrunc_L;
+    wtrunc_L = 0; do { wtrunc_L++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
+    wtrunc_L += 4; /* space for '*[]>' */
+    len += wtrunc_L;
+  }
+  printf("cfrom:   %4d\n", cfrom);
+  printf("cto:     %4d\n", cto);
+  printf("cto_L:   %4d\n", cto_L);
+  printf("cfrom_R: %4d\n", cfrom_R);
+  if(tr->mode[0] == TRMODE_R || tr->mode[0] == TRMODE_T) { 
+    printf("R T ntrunc_R (cfrom - cfrom_R): %4d\n", ntrunc_R);
+  }
+  if(tr->mode[0] == TRMODE_L || tr->mode[0] == TRMODE_T) { 
+    printf("L T ntrunc_L (cto_L - cto)    : %4d\n", ntrunc_L);
   }
 
   /* Now we know the length of all arrays (len), determine total amount of memory required, and allocate it */
@@ -226,10 +300,23 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   /* Fill in the lines: traverse the traceback.
    */
   pos = 0;
+
+  /* Before we start on the stack, add truncated begin info at the
+   * beginning of the alignment display, if nec (if tr->mode[0] is R
+   * or T).
+   */
+  if(ntrunc_R > 0) { 
+    /* wtrunc_R and ntrunc_R were calc'ed above */
+    memset(ad->csline+pos,  '~', wtrunc_R);
+    sprintf(ad->model+pos, "<[%*d]*", wtrunc_R-4, ntrunc_R);
+    sprintf(ad->aseq+pos,  "<[%*s]*", wtrunc_R-4, "0");
+    /* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
+    pos += wtrunc_R;
+  }    
+
   if((pda = esl_stack_ICreate()) == NULL) goto ERROR;
   if((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
   if((status = esl_stack_IPush(pda, PDA_STATE)) != eslOK) goto ERROR;
-
   while (esl_stack_IPop(pda, &type) != eslEOD)
     {
       if (type == PDA_RESIDUE) {
@@ -261,8 +348,6 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
        * memset() the display strings to blank.
        */
       if (v == cm->M) { 
-	int numwidth;		/* number of chars to leave for displaying width numbers */
-
 	nd = 1 + cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
 	qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
 	tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
@@ -289,117 +374,137 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
       }
       d = tr->emitr[ti] - tr->emitl[ti] + 1;
       mode = tr->mode[ti];
-
+    
       /* Calculate four of the six lines: rfline, csline, model, and aseq.
        */
       do_left = do_right = FALSE;
-      if (cm->sttype[v] == IL_st) {
-	do_left = TRUE;
-	if (cm->rf != NULL) lrf = '.';
-	lstr    = '.';
-	lcons   = '.';
-	lseq = (mode == TRMODE_J || mode == TRMODE_L) ? tolower((int) abc->sym[symi]) : '~';
-	cpos_l  = 0;
-	spos_l  = tr->emitl[ti] + seqoffset-1;
-	if(ppstr != NULL) { 
-	  lpost = (mode == TRMODE_J || mode == TRMODE_L) ? ppstr[tr->emitl[ti]-1] : '~'; /* watch off-by-one b/t ppstr and dsq */
-	}
-      } else if (cm->sttype[v] == IR_st) {
-	do_right = TRUE;
-	if (cm->rf != NULL) rrf = '.';
-	rstr    = '.';
-	rcons   = '.';
-	rseq = (mode == TRMODE_J || mode == TRMODE_R) ? tolower((int) abc->sym[symj]) : '~';
-	cpos_r  = 0;
-	spos_r  = tr->emitr[ti] + seqoffset-1;
-	if(ppstr != NULL) { 
-	  rpost = (mode == TRMODE_J || mode == TRMODE_R) ? ppstr[tr->emitr[ti]-1] : '~'; /* watch off-by-one b/t ppstr and dsq */
-	}
-      } else {
-	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) {
+      if (cm->sttype[v] == IL_st) { 
+	if(mode == TRMODE_J || mode == TRMODE_L) { 
+	  /* careful, its impt the above 2 'if's are separated, we don't want to 
+	   * enter the nearest 'else' below if we're an IL (specifically a MATP_IL 
+	   * with mode==TRMODE_R).
+	   */
+	  do_left = TRUE;
+	  if (cm->rf != NULL) lrf = '.';
+	  lstr    = '.';
+	  lcons   = '.';
+	  lseq = tolower((int) abc->sym[symi]);
+	  cpos_l  = 0;
+	  spos_l  = tr->emitl[ti] + seqoffset-1;
+	  if(ppstr != NULL) lpost = ppstr[tr->emitl[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
+	} 
+      }
+      else if (cm->sttype[v] == IR_st) { 
+	if (mode == TRMODE_J || mode == TRMODE_R) {
+	  /* careful, its impt the above 2 'if's are separated, we don't want to 
+	   * enter the nearest 'else' below if we're an IR (specifically a MATP_IR
+	   * with mode==TRMODE_L).
+	   */
+	  do_right = TRUE;
+	  if (cm->rf != NULL) rrf = '.';
+	  rstr    = '.';
+	  rcons   = '.';
+	  rseq = tolower((int) abc->sym[symj]);
+	  cpos_r  = 0;
+	  spos_r  = tr->emitr[ti] + seqoffset-1;
+	  if(ppstr != NULL) rpost = ppstr[tr->emitr[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
+	} 
+      }
+      else {
+	if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) && (mode == TRMODE_J || mode == TRMODE_L)) {
 	  do_left = TRUE;
 	  if (cm->rf != NULL) lrf = cm->rf[lc+1];
 	  lstr   = cons->cstr[lc];
 	  lcons  = (cm->flags & CMH_CONS) ? cm->consensus[(lc+1)] : cons->cseq[lc];
 	  cpos_l = lc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
-	    lseq = (mode == TRMODE_J || mode == TRMODE_L) ? abc->sym[symi] : '~';
+	    lseq = abc->sym[symi];
 	    spos_l = tr->emitl[ti] + seqoffset-1;
-	    if(ppstr != NULL) { 
-	      lpost = (mode == TRMODE_J || mode == TRMODE_L) ? ppstr[tr->emitl[ti]-1] : '~'; /* watch off-by-one b/t ppstr and dsq */
-	    }
-	  } else {
-	    lseq   = (mode == TRMODE_J || mode == TRMODE_L) ? '-' : '~';
+	    if(ppstr != NULL) lpost = ppstr[tr->emitl[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
+	  } 
+	  else {
+	    lseq   = '-';
 	    spos_l = 0;
-	    if(ppstr != NULL) { 
-	      lpost  = (mode == TRMODE_J || mode == TRMODE_L) ? '.' : '~';
-	    }
+	    if(ppstr != NULL) lpost  = '.';
 	  }
 	}
-	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) {
+	if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) && (mode == TRMODE_J || mode == TRMODE_R)) {
 	  do_right = TRUE;
 	  if (cm->rf != NULL) rrf = cm->rf[rc+1];
 	  rstr   = cons->cstr[rc];
 	  rcons  = (cm->flags & CMH_CONS) ? cm->consensus[(rc+1)] : cons->cseq[rc];
 	  cpos_r = rc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
-	    rseq = (mode == TRMODE_J || mode == TRMODE_R) ? abc->sym[symj] : '~';
+	    rseq = abc->sym[symj];
 	    spos_r = tr->emitr[ti] + seqoffset-1;
-	    if(ppstr != NULL) { 
-	      rpost = (mode == TRMODE_J || mode == TRMODE_R) ? ppstr[tr->emitr[ti]-1] : '~'; /* watch off-by-one b/t ppstr and dsq */
-	    }
-	  } else {
-	    rseq   = (mode == TRMODE_J || mode == TRMODE_R) ? '-' : '~';
+	    if(ppstr != NULL) rpost = ppstr[tr->emitr[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
+	  } 
+	  else {
+	    rseq = '-';
 	    spos_r = 0;
-	    if(ppstr != NULL) { 
-	      rpost  = (mode == TRMODE_J || mode == TRMODE_R) ? '.' : '~';
-	    }
+	    if(ppstr != NULL) rpost = '.';
 	  }
 	}
-      }
+      }      
       
       /* Use emission p and score to set lmid, rmid line for emitting states.
        */
       lmid = rmid = ' ';
       lnnc = rnnc = ' ';
       if (cm->sttype[v] == MP_st) {
-	if (lseq == toupper(lcons) && rseq == toupper(rcons))
-	  {
-	    lmid = lseq;
-	    rmid = rseq;
+	if (mode == TRMODE_L) { 
+	  if(lseq == toupper(lcons)) lmid = lseq;
+	  lnnc = '?';
+	}
+	else if (mode == TRMODE_R) { 
+	  if(rseq == toupper(rcons)) rmid = rseq;
+	  rnnc = '?';
+	}
+	else if (mode == TRMODE_J) { 
+	  sc = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj); 
+	  if (lseq == toupper(lcons) && rseq == toupper(rcons)) { 
+	    lmid = lseq; 
+	    rmid = rseq; 
 	  }
-        else if (mode != 3)
-          {
-            if (mode == TRMODE_L && lseq == toupper(lcons)) lmid = lseq;
-            if (mode == TRMODE_R && rseq == toupper(rcons)) rmid = rseq;
-          }
-	else if (DegeneratePairScore(cm->abc, cm->esc[v], symi, symj) >= 0) 
-	  lmid = rmid = ':';
-	
-	/* determine lnnc, rnnc for optional negative scoring non-canonical annotation, they are 'v' 
-	 * if lseq and rseq are a negative scoring non-canonical (not a AU,UA,GC,CG,GU,UG) pair */
-	if ((mode == TRMODE_J) && (DegeneratePairScore(cm->abc, cm->esc[v], symi, symj) < 0) && (! bp_is_canonical(lseq, rseq))) {
-	  lnnc = rnnc = 'v';
+	  else if (sc >= 0) { 
+	    lmid = rmid = ':';
+	  }
+	  /* determine lnnc, rnnc for optional negative scoring
+	   * non-canonical annotation, they are 'v' if lseq and rseq
+	   * are a negative scoring non-canonical (not a
+	   * AU,UA,GC,CG,GU,UG) pair. 
+	   */
+	  if (sc < 0 && (! bp_is_canonical(lseq, rseq))) {
+	    lnnc = rnnc = 'v';
+	  }
 	}
-      } else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
-	if (lseq == toupper(lcons)) 
-	  lmid = lseq;
-        else if ( (mode != 3) && (mode != 2) )
-          ;
-	else if(esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]) > 0)
+      } 
+      else if ((cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) &&
+	       (mode == TRMODE_J || mode == TRMODE_L)) { 
+	if (lseq == toupper(lcons)) { 
+	  lmid = lseq; 
+	}
+	else if(esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]) > 0) { 
 	  lmid = '+';
-      } else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
-	if (rseq == toupper(rcons)) 
-	  rmid = rseq;
-        else if ( (mode != 3) && (mode != 1) )
-          ;
-	else if(esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]) > 0)
-	  rmid = '+';
-      }
-      if(cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR) { 
-	if(mode == TRMODE_J) { 
-	  lnnc = rnnc = 'v'; /* mark non-truncated half base-pairs (MATP_ML or MATP_MR) with 'v' */
 	}
+      } 
+      else if ((cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && 
+	       (mode == TRMODE_J || mode == TRMODE_R)) {
+	if (rseq == toupper(rcons)) {
+	  rmid = rseq;
+	}
+	else if(esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]) > 0) {
+	  rmid = '+';
+	}
+      }
+      if((cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR) && mode == TRMODE_J) { 
+	lnnc = rnnc = 'v'; /* mark non-truncated half base-pairs (MATP_ML or MATP_MR) with 'v' */
+      }
+      if(cm->stid[v] == MATP_ML && mode == TRMODE_L) { 
+	lnnc = '?'; /* right half is truncated away, we're not sure if its canonical or not */
+      }
+      if(cm->stid[v] == MATP_MR && mode == TRMODE_R) { 
+	rnnc = '?'; /* left half is truncated away, we're not sure if its canonical or not */
       }
       /* If we're storing a residue leftwise - just do it.
        * If rightwise - push it onto stack.
@@ -462,6 +567,18 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 #endif
       }
     } /* end loop over the PDA; PDA now empty */
+
+  /* Final step, add truncated begin info at the end of the alignment
+   * display, if nec (if tr->mode[0] is L or T).
+   */
+  if(ntrunc_L > 0) { 
+    /* wtrunc_L and ntrunc_L were calc'ed above */
+    memset(ad->csline+pos,  '~', wtrunc_L);
+    sprintf(ad->model+pos, "*[%*d]>", wtrunc_L-4, ntrunc_L);
+    sprintf(ad->aseq+pos,  "*[%*s]>", wtrunc_L-4, "0");
+    /* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
+    pos += wtrunc_L; 
+  }
 	 
   if(cm->rf != NULL) ad->rfline[ad->N] = '\0';
   ad->nline[ad->N]  = '\0';
@@ -490,6 +607,14 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   ad->cto = 0;
   for (pos = 0; pos < ad->N; pos++)
     if (ccoord[pos] != 0) ad->cto = ccoord[pos];
+
+  /* sanity check, with previously calc'ed cfrom, cto */
+  printf("ad->sqfrom: %" PRId64 "\n", ad->sqfrom);
+  printf("ad->sqto:   %" PRId64 "\n", ad->sqto);
+  printf("ad->cfrom:  %" PRId64 "  cfrom: %4d (%4d)\n", ad->cfrom, cfrom, (ad->cfrom - cfrom));
+  printf("ad->cto:    %" PRId64 "  cto:   %4d (%4d)\n", ad->cto,   cto, (ad->cto - cto));
+  assert(ad->cfrom  == cfrom);
+  assert(ad->cto    == cto);
 
   if(scoord != NULL) free(scoord);
   if(ccoord != NULL) free(ccoord);
@@ -943,6 +1068,7 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
   long  i1,i2;
   int   k1,k2;
   int   ni_toadd, nk_toadd; 
+  int   trunc_at_start; /* special case, ali begins with a truncated begin */
 
   /* implement the --acc option for preferring accessions over names in output  */
   show_cmname  = (show_accessions && ad->cmacc[0] != '\0') ? ad->cmacc : ad->cmname;
@@ -972,8 +1098,15 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
       cur_aliwidth = aliwidth; /* this will change if a aliwidth-wide block will end in the middle of a local end display */
 
       for (z = pos; z < pos + cur_aliwidth && z < ad->N; z++) {
-	if (ad->aseq[z]  == '*' && ad->model[z] == '*') { 
-	  /* we're at the beginning of a local end display (example: "*[ 7]*"), process it */
+	if ((ad->aseq[z]  == '*' && ad->model[z] == '*') || 
+	    (ad->aseq[z]  == '<' && ad->model[z] == '<')) { 
+	  /* we're at the beginning of a local end or truncated begin display, process it: 
+	   * Examples:
+	   *   "*[ 7]*" (local begin)
+	   *   "<[ 7]*" (trunc begin, at aln start)  (processed differently, modifies 
+	   *   "*[ 7]>" (trunc begin, at aln end)    (we process this just like a local begin here)
+	   */
+	  trunc_at_start = (ad->aseq[z]  == '<' && ad->model[z] == '<') ? TRUE : FALSE;
 	  nk_toadd = ni_toadd = 0;
 	  if(ad->aseq[z+1] != '[' || ad->model[z+1] != '[') { status = eslEINVAL; goto ERROR; }
 
@@ -991,6 +1124,7 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
 	  else { 
 	    nk += nk_toadd;
 	    ni += ni_toadd;
+	    if(trunc_at_start) k1 -= nk_toadd;
 	    z = zp+1; /* position z at end of local end display (one char past the ']', on the '*') */
 	  }
 	}

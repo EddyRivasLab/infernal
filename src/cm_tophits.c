@@ -900,6 +900,13 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   char *showname;
   char *idxstr = NULL;
 
+  /* next 4 characters indicate whether alignment ends internal to model/sequence
+   * and if it is in a truncated alignment mode. */
+  char lmod;
+  char rmod;
+  char lseq; 
+  char rseq;
+
   idxw = integer_textwidth(th->N);
   ESL_ALLOC(idxstr, sizeof(char) * (idxw+1));
   for(i = 0; i < idxw; i++) { idxstr[i] = '-'; } idxstr[idxw] = '\0';
@@ -958,6 +965,22 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       }
       fprintf(ofp, "\n");
       
+      
+      if(th->hit[h]->mode == TRMODE_J || th->hit[h]->mode == TRMODE_L) { 
+	lmod = (th->hit[h]->ad->cfrom == 1 ? '[' : '.');
+      }
+      else { 
+	lmod = (th->hit[h]->ad->cfrom == 1 ? '{' : '~');
+      }
+      if(th->hit[h]->mode == TRMODE_J || th->hit[h]->mode == TRMODE_R) { 
+	rmod = (th->hit[h]->ad->cfrom == 1 ? ']' : '.');
+      }
+      else { 
+	rmod = (th->hit[h]->ad->cfrom == 1 ? '}' : '~');
+      }
+      lseq = (th->hit[h]->start == 1                 ? '[' : '.');
+      rseq = (th->hit[h]->stop  == th->hit[h]->ad->L ? ']' : '.');
+
       fprintf(ofp, " %*d %c %6.1f %9.2g %7d %7d %c%c %11" PRId64 " %11" PRId64 " %c %c%c",
 	      idxw, nprinted+1,
 	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? '!' : '?'),
@@ -965,13 +988,11 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      th->hit[h]->evalue,
 	      th->hit[h]->ad->cfrom,
 	      th->hit[h]->ad->cto,
-	      (th->hit[h]->ad->cfrom == 1 ? '[' : '.'),
-	      (th->hit[h]->ad->cto   == th->hit[h]->ad->clen ? ']' : '.'),
+	      lmod, rmod, 
 	      th->hit[h]->start,
 	      th->hit[h]->stop,
 	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'),
-	      (th->hit[h]->start == 1 ? '[' : '.'),
-	      (th->hit[h]->stop == th->hit[h]->ad->L ? ']' : '.'));
+	      lseq, rseq);
       
       if (pli->do_alignments) { 
 	if(th->hit[h]->ad->used_optacc) { fprintf(ofp, " %4.2f", th->hit[h]->ad->aln_sc); }
