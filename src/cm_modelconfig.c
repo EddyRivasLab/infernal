@@ -473,6 +473,8 @@ ConfigNoLocalEnds(CM_t *cm)
   if((cm->flags |= CMH_CP9) && (cm->cp9->flags |= CPLAN9_EL))
     CPlan9NoEL(cm);
 
+  esl_vec_FSet(cm->end, cm->M, 0.);
+
   cm->flags &= ~CMH_LOCAL_END; /* turn off local ends flag */
   /* new probs invalidate log odds scores */
   cm->flags &= ~CMH_BITS;

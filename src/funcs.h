@@ -127,6 +127,8 @@ extern int   cm_SampleParsetree  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, C
 extern int   cm_SampleParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc);
 extern int   cm_PostCode  (CM_t *cm, char *errbuf, int L, CM_EMIT_MX    *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp);
 extern int   cm_PostCodeHB(CM_t *cm, char *errbuf, int L, CM_HB_EMIT_MX *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp);
+extern int   cm_InitializeOptAccShadowDZero  (CM_t *cm, char *errbuf, char ***yshadow, int L);
+extern int   cm_InitializeOptAccShadowDZeroHB(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, char ***yshadow, int L);
 extern float FScore2Prob(float sc, float null);
 extern char  Fscore2postcode(float sc);
 
@@ -149,8 +151,6 @@ extern int  cm_TrEmitterPosterior   (CM_t *cm, char *errbuf,               int L
 extern int  cm_TrEmitterPosteriorHB (CM_t *cm, char *errbuf,               int L, float size_limit, char opt_mode, int do_check, CM_TR_HB_MX *post, CM_TR_HB_EMIT_MX *emit_mx);
 extern int  cm_TrPostCode           (CM_t *cm, char *errbuf,               int L, CM_TR_EMIT_MX    *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp);
 extern int  cm_TrPostCodeHB         (CM_t *cm, char *errbuf,               int L, CM_TR_HB_EMIT_MX *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp);
-extern void cm_TrModeFromAlphas     (CM_TR_MX *mx, int L, char *ret_mode, float *ret_sc);
-extern int  cm_TrModeFromAlphasHB   (CM_TR_HB_MX *mx, char *errbuf, int L, CP9Bands_t *cp9b, char *ret_mode, float *ret_sc);
 extern int  cm_TrFillFromMode       (char mode, int *ret_fill_L, int *ret_fill_R, int *ret_fill_T);
 
 /* from cm_dpsearch.c */
@@ -368,6 +368,7 @@ extern int              ReportHitsGreedily            (CM_t *cm, char *errbuf, i
 extern void             TBackGammaHitMx               (GammaHitMx_t *gamma, CM_TOPHITS *hitlist, int64_t i0, int64_t j0);
 
 
+
 /* from cm_parsetree.c */
 extern Parsetree_t *CreateParsetree(int size);
 extern void         GrowParsetree(Parsetree_t *tr);
@@ -396,6 +397,7 @@ extern int          ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parset
 extern int          ParsetreeCountMPEmissions(CM_t *cm, Parsetree_t *tr);
 extern void         ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len, float omega, float *ret_sc);
 extern void         ScoreCorrectionNull3CompUnknown(const ESL_ALPHABET *abc, float *null0, ESL_DSQ *dsq, int start, int stop, float omega, float *ret_sc);
+extern char         ParsetreeMode(Parsetree_t *tr);
 
 /* from cm_qdband.c */
 extern void     BandExperiment(CM_t *cm);

@@ -111,8 +111,8 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   int         sq_namelen, sq_acclen, sq_desclen;
   int         len, n;
   int         cfrom,  cto;       /* first and final model    positions in alignment */
-  int         cfrom_R;           /* first truncated model position if alignment is R or T marginal mode */
-  int         cto_L;             /* final truncated model position if alignment is L or T marginal mode */
+  int         cfrom_R = 0;       /* first truncated model position if alignment is R or T marginal mode */
+  int         cto_L = 0;         /* final truncated model position if alignment is L or T marginal mode */
   int         ntrunc_R;          /* if R or T mode: num positions for truncated begin at start of aln */
   int         wtrunc_R;          /* if R or T mode: num chars for displaying local begin at aln start */
   int         ntrunc_L;          /* if L or T mode: num positions for truncated begin at end of aln */
@@ -150,6 +150,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   len = 0;
   cfrom = cm->clen+1;
   cto   = 0;
+
   for (ti = 0; ti < tr->n; ti++) { 
     v    = tr->state[ti];
     mode = tr->mode[ti];
@@ -164,6 +165,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
     } 
     else {
       nd  = cm->ndidx[v];
+
       if     (cm->sttype[v]  == IL_st)   { is_left = TRUE;  is_right = FALSE; }
       else if(cm->sttype[v]  == IR_st)   { is_left = FALSE; is_right = TRUE;  }
       else if(cm->ndtype[nd] == MATP_nd) { is_left = TRUE;  is_right = TRUE;  }
@@ -173,13 +175,17 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
 
       if(is_left && (mode == TRMODE_J || mode == TRMODE_L)) { 
 	len++;
-	cfrom = ESL_MIN(cfrom, cons->lpos[nd] + 1);
-	cto   = ESL_MAX(cto,   cons->lpos[nd] + 1);
+	if(cm->sttype[v] != IL_st) { /* inserts don't impact cpos */
+	  cfrom = ESL_MIN(cfrom, cons->lpos[nd] + 1);
+	  cto   = ESL_MAX(cto,   cons->lpos[nd] + 1);
+	}
       }
       if(is_right && (mode == TRMODE_J || mode == TRMODE_R)) { 
 	len++;
-	cfrom = ESL_MIN(cfrom, cons->rpos[nd] + 1);
-	cto   = ESL_MAX(cto,   cons->rpos[nd] + 1);
+	if(cm->sttype[v] != IR_st) { /* inserts don't impact cpos */
+	  cfrom = ESL_MIN(cfrom, cons->rpos[nd] + 1);
+	  cto   = ESL_MAX(cto,   cons->rpos[nd] + 1);
+	}
       }
     }
     /* ignore marginal-type local ends, to do otherwise see block below (v1.0->v1.0.2)*/
@@ -219,6 +225,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
     wtrunc_L += 4; /* space for '*[]>' */
     len += wtrunc_L;
   }
+#if 0 
   printf("cfrom:   %4d\n", cfrom);
   printf("cto:     %4d\n", cto);
   printf("cto_L:   %4d\n", cto_L);
@@ -229,6 +236,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   if(tr->mode[0] == TRMODE_L || tr->mode[0] == TRMODE_T) { 
     printf("L T ntrunc_L (cto_L - cto)    : %4d\n", ntrunc_L);
   }
+#endif 
 
   /* Now we know the length of all arrays (len), determine total amount of memory required, and allocate it */
   /* Allocate the char arrays */
@@ -609,10 +617,12 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
     if (ccoord[pos] != 0) ad->cto = ccoord[pos];
 
   /* sanity check, with previously calc'ed cfrom, cto */
+#if 0  
   printf("ad->sqfrom: %" PRId64 "\n", ad->sqfrom);
   printf("ad->sqto:   %" PRId64 "\n", ad->sqto);
   printf("ad->cfrom:  %" PRId64 "  cfrom: %4d (%4d)\n", ad->cfrom, cfrom, (ad->cfrom - cfrom));
   printf("ad->cto:    %" PRId64 "  cto:   %4d (%4d)\n", ad->cto,   cto, (ad->cto - cto));
+#endif
   assert(ad->cfrom  == cfrom);
   assert(ad->cto    == cto);
 

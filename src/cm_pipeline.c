@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT  1
+#define DOPRINT  0
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -1840,7 +1840,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 			       (pli->do_cykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
 			       &cykmode,                            /* best alignment mode */
 			       &cyksc);                             /* best score, irrelevant here */
-	  printf("\n\n!!! Returned from TrCYKScanHB(): %.4f bits\n\n\n", cyksc);
+	  /*printf("\n\n!!! Returned from TrCYKScanHB(): %.4f bits\n\n\n", cyksc);*/
 	}
 	else { 
 	  status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
@@ -1937,7 +1937,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 				     0., NULL, NULL,    /* redefined envelope cutoff,start,end, irrelevant here */
 				     &insmode,          /* best mode, irrelevant here (it's also stored in any reported hits) */
 				     &inssc);           /* best score, irrelevant here */
-	    printf("\n\n!!! Returned from FTrInsideScanHB(): %.4f bits\n\n\n", inssc);
+	    /*printf("\n\n!!! Returned from FTrInsideScanHB(): %.4f bits\n\n\n", inssc);*/
 	  }
 	  else { 
 	    status = FastFInsideScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
@@ -1966,7 +1966,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 				 0., NULL, NULL,                     /* envelope redefinition parameters, irrelevant here */
 				 &cykmode,                           /* best alignment mode, irrevelant here (it's also stored in any reported hits) */
 				 &cyksc);                            /* best score, irrelevant here */
-	    printf("\n\n!!! Returned from TrCYKScanHB(): %.4f bits\n\n\n", cyksc);
+	    /*printf("\n\n!!! Returned from TrCYKScanHB(): %.4f bits\n\n\n", cyksc);*/
 	  }
 	  else { 
 	    status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 

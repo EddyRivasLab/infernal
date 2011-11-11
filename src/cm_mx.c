@@ -1351,7 +1351,7 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   }
 
   if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &Jncells, &Lncells, &Rncells, &Tncells, &Mb_needed)) != eslOK) return status;
-  printf("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed);
+  /*printf("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed);*/
   ESL_DPRINTF2(("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -3401,7 +3401,7 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
   }
 
   if((status = cm_tr_hb_shadow_mx_SizeNeeded(cm, errbuf, cp9b, &Jy_ncells, &Ly_ncells, &Ry_ncells, &Jk_ncells, &Lk_ncells, &Rk_ncells, &Tk_ncells, &Mb_needed)) != eslOK) return status;
-  printf("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed);
+  /*printf("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
   ESL_DPRINTF2(("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr shadow DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -5297,7 +5297,7 @@ cm_tr_hb_emit_mx_GrowTo(CM_t *cm, CM_TR_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
   if((status = cm_tr_hb_emit_mx_SizeNeeded(cm, errbuf, cp9b, L, &l_ncells, &r_ncells, &Mb_needed)) != eslOK) return status;
-  printf("HMM banded truncated emit matrix requested size: %.2f Mb\n", Mb_needed);
+  /*printf("HMM banded truncated emit matrix requested size: %.2f Mb\n", Mb_needed);*/
   ESL_DPRINTF2(("HMM banded truncated emit matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded emit mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
@@ -7286,4 +7286,5 @@ TBackGammaHitMx(GammaHitMx_t *gamma, CM_TOPHITS *hitlist, int64_t i0, int64_t j0
   }
   return;
 }
+
 

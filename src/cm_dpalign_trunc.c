@@ -961,11 +961,13 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 				 (do_optacc  ? &sc    : NULL))) != eslOK) return status;
   }
 
+#if 0
   CMEmitMap_t *emap;
   emap = CreateEmitMap(cm);
   DumpEmitMap(stdout, emap, cm);
   FreeEmitMap(emap);
   ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+#endif
 
   if (ret_ppstr  != NULL) *ret_ppstr  = ppstr; else if(ppstr != NULL) free(ppstr);
   if (ret_tr     != NULL) *ret_tr     = tr;    else if(tr    != NULL) FreeParsetree(tr);
@@ -2471,15 +2473,15 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
     sc   = Jalpha[0][jp_0][Lp_0];
     mode = TRMODE_J;
   }
-  if (cp9b->Lvalid[0] && Lalpha[0][jp_0][Lp_0] > sc) { 
+  if (fill_L && cp9b->Lvalid[0] && Lalpha[0][jp_0][Lp_0] > sc) { 
     sc   = Lalpha[0][jp_0][Lp_0];
     mode = TRMODE_L;
   }
-  if (cp9b->Rvalid[0] && Ralpha[0][jp_0][Lp_0] > sc) { 
+  if (fill_R && cp9b->Rvalid[0] && Ralpha[0][jp_0][Lp_0] > sc) { 
     sc   = Ralpha[0][jp_0][Lp_0];
     mode = TRMODE_R;
   }
-  if (cp9b->Tvalid[0] && Talpha[0][jp_0][Lp_0] > sc) { 
+  if (fill_T && cp9b->Tvalid[0] && Talpha[0][jp_0][Lp_0] > sc) { 
     sc   = Talpha[0][jp_0][Lp_0];
     mode = TRMODE_T;
   }
@@ -3668,15 +3670,15 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
     sc   = Jalpha[0][jp_0][Lp_0];
     mode = TRMODE_J;
   }
-  if (cp9b->Lvalid[0] && Lalpha[0][jp_0][Lp_0] > sc) { 
+  if (fill_L && cp9b->Lvalid[0] && Lalpha[0][jp_0][Lp_0] > sc) { 
     sc   = Lalpha[0][jp_0][Lp_0];
     mode = TRMODE_L;
   }
-  if (cp9b->Rvalid[0] && Ralpha[0][jp_0][Lp_0] > sc) { 
+  if (fill_R && cp9b->Rvalid[0] && Ralpha[0][jp_0][Lp_0] > sc) { 
     sc   = Ralpha[0][jp_0][Lp_0];
     mode = TRMODE_R;
   }
-  if (cp9b->Tvalid[0] && Talpha[0][jp_0][Lp_0] > sc) { 
+  if (fill_T && cp9b->Tvalid[0] && Talpha[0][jp_0][Lp_0] > sc) { 
     sc   = Talpha[0][jp_0][Lp_0];
     mode = TRMODE_T;
   }
@@ -3838,6 +3840,11 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if(shmx->Lk_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
   if(shmx->Rk_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
 
+  /* a special optimal accuracy specific step, initialize Jyshadow intelligently for d == 0 
+   * (necessary b/c zero length parsetees have 0 emits and so always score IMPOSSIBLE)
+   */
+  if((status = cm_InitializeOptAccShadowDZero(cm, errbuf, Jyshadow, L)) != eslOK) return status;
+
   /* fill in all possible local end scores, for local end emits of 1..L residues */
   ESL_ALLOC(el_scA, sizeof(float) * (L+1));
   if(cm->flags & CMH_LOCAL_END && Jl_pp[cm->M] != NULL) { 
@@ -3870,8 +3877,9 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	}
       }
     }
+#if 0
     if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
-    /*else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { */
+      /* alternative: else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { (see comment below) */
       for (j = 0; j <= L; j++) {
 	/* Check for special initialization case, specific to
 	 * optimal_accuracy alignment, normally (with TrCYK for
@@ -3884,6 +3892,13 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	 * cells for which  d == sd and v is a state that has 
 	 * a StateDelta=0 child y (DELETE or END) by initializing
 	 * that transition to y is most likely.
+	 *
+	 * This will remove any zero-length (in the target sequence)
+	 * ELs from an OA parsetree when one is possible with all D->D
+	 * transitions. This makes alignment displays look better in
+	 * most cases. To change preference for ELs, change the
+	 * 'if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) to a
+	 * 'else if'.
 	 */
 	for (d = 0; d <= sd; d++) { 
 	  y = cm->cfirst[v];
@@ -3898,7 +3913,7 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	 */
       }
     }
-
+#endif   
     /* note there's no E state update here, those cells all remain IMPOSSIBLE */
 
     if(cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) { 
@@ -4468,6 +4483,11 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   if(shmx->Lk_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
   if(shmx->Rk_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
 
+  /* a special optimal accuracy specific step, initialize Jyshadow intelligently for d == 0 
+   * (necessary b/c zero length parsetees have 0 emits and so always score IMPOSSIBLE)
+   */
+  if((status = cm_InitializeOptAccShadowDZeroHB(cm, cp9b, errbuf, Jyshadow, L)) != eslOK) return status;
+
   /* fill in all possible local end scores, for local end emits of 1..L residues */
   /* Remember the EL deck is non-banded */
   ESL_ALLOC(el_scA, sizeof(float) * (L+1));
@@ -4515,8 +4535,9 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	}
       }
     }
+#if 0
     if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
-      /*else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { */
+      /* alternative: else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { (see comment below) */
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
 	/* Check for special initialization case, specific to
@@ -4530,6 +4551,13 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	 * cells for which  d == sd and v is a state that has 
 	 * a StateDelta=0 child y (DELETE or END) by initializing
 	 * that transition to y is most likely.
+	 *
+	 * This will remove any zero-length (in the target sequence)
+	 * ELs from an OA parsetree when one is possible (within the
+	 * bands) with all D->D transitions. This makes alignment
+	 * displays look better in most cases. To change preference
+	 * for ELs, change the 'if(cm->sttype[v] != B_st &&
+	 * cm->sttype[v] != E_st) to a 'else if'.
 	 */
 	if(do_J_v) { 
 	  if(hdmin[v][jp_v] <= hdmax[v][jp_v]) { /* if this if FALSE, no valid d exists for this v and j */
@@ -4554,6 +4582,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	 */
       }
     }
+#endif
     /* note there's no E state update here, those cells all remain IMPOSSIBLE */
 
     if(cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) { 
@@ -8611,7 +8640,7 @@ cm_TrPostCodeHB(CM_t *cm, char *errbuf, int L, CM_TR_HB_EMIT_MX *emit_mx, Parset
   }
   ppstr[L] = '\0';
 
-  printf("cm_TrPostCodeHB() return avgpp: %f\n", sreEXP2(sum_logp) / (float) L);
+  /*printf("cm_TrPostCodeHB() return avgpp: %f\n", sreEXP2(sum_logp) / (float) L);*/
   ESL_DPRINTF1(("cm_TrPostCodeHB() return avgpp: %f\n", sreEXP2(sum_logp) / (float) L));
 
   if(ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
@@ -8623,128 +8652,6 @@ cm_TrPostCodeHB(CM_t *cm, char *errbuf, int L, CM_TR_HB_EMIT_MX *emit_mx, Parset
   return status; /* never reached */
 }
 
-
-/* Function: cm_TrModeFromAlphas()
- * Date:     EPN, Wed Sep 28 04:56:29 2011
- *
- * Purpose: Given a filled Inside truncated alpha matrix <mx> (a
- *           CM_TR_MX), determine the optimal mode as the mode (J,L,R
- *           or T) that has the highest mx->{J,L,R,T}dp[0][W][W] value
- *           and return it in <*ret_mode> and return the optimal score
- *           in <*ret_sc>. 
- *              
- *           If all of mx->{J,L,R,T}dp[0][L][L] have IMPOSSIBLE scores
- *           return TRMODE_UNKNOWN in <ret_mode>.
- *
- *           Important: this function only works on alpha matrices
- *           filled by 'alignment' TrCYK/TrInside functions where the
- *           full target 1..L must be accounted for in every valid
- *           parsetree. It is not designed for use with matrices
- *           filled by 'scanning' TrCYK/TrInside functions that allow
- *           valid parsetrees that only emit a subsequence of the full
- *           target.
- *
- * Args:     mx         - the Inside matrix, pre-filled.
- *           L          - length of the sequence mx was filled for
- *           ret_mode   - RETURN: optimal mode
- *           ret_sc     - RETURN: optimal score
- */
-void
-cm_TrModeFromAlphas(CM_TR_MX *mx, int L, char *ret_mode, float *ret_sc)
-{
-  char mode; 
-  float sc = IMPOSSIBLE;
-
-  sc     = mx->Jdp[0][L][L];
-  mode   = TRMODE_J;
-
-  if(mx->Ldp[0][L][L] > sc) { 
-    sc     = mx->Ldp[0][L][L];
-    mode   = TRMODE_L;
-  }
-  if(mx->Rdp[0][L][L] > sc) { 
-    sc     = mx->Rdp[0][L][L];
-    mode   = TRMODE_R;
-  }
-  if(mx->Tdp[0][L][L] > sc) { 
-    sc     = mx->Tdp[0][L][L];
-    mode   = TRMODE_T;
-  }
-
-  /* check for special case that all (allowed) scores were IMPOSSIBLE */
-  if(! NOT_IMPOSSIBLE(sc)) { 
-    mode   = TRMODE_UNKNOWN;
-  }
-
-  if(ret_sc     != NULL) *ret_sc     = sc;
-  if(ret_mode   != NULL) *ret_mode   = mode;
-
-  return;
-}
-
-
-/* Function: cm_TrModeFromAlphasHB()
- * Date:     EPN, Mon Oct 10 05:20:15 2011
- *
- * Purpose:  HMM banded version of cm_TrModeFromAlphas(), see the 
- *           'Purpose' of that function for more information.
- *
- * Args:     mx         - the Inside matrix, pre-filled.
- *           L          - length of the sequence mx was filled for
- *           cp9b       - the HMM bands 
- *           ret_mode   - RETURN: optimal mode
- *           ret_sc     - RETURN: optimal score
- *
- * Returns: eslOK on success.
- *          eslEINVAL if full 1..L alignment is outside bands or
- *          all marginal mode alignment types are disallowed for state 0.
- */
-int
-cm_TrModeFromAlphasHB(CM_TR_HB_MX *mx, char *errbuf, int L, CP9Bands_t *cp9b, char *ret_mode, float *ret_sc)
-{
-  char  mode; 
-  float sc = IMPOSSIBLE;
-  int   jp_0, Lp_0;
-
-  /* ptrs to cp9b info, for convenience */
-  int     *jmin    = cp9b->jmin;  
-  int     *jmax    = cp9b->jmax;
-  int    **hdmin   = cp9b->hdmin;
-  int    **hdmax   = cp9b->hdmax;
-
-  if(! (cp9b->Jvalid[0] || cp9b->Lvalid[0] || cp9b->Rvalid[0] || cp9b->Tvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrModeFromAlphasHB(): alignment to state 0 disallowed for all marginal mode types");
-  if (jmin[0] > L        || jmax[0] < L)        ESL_FAIL(eslEINVAL, errbuf, "cm_TrModeFromAlphasHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, jmin[0], jmax[0]);
-  jp_0 = L - jmin[0];
-  if (hdmin[0][jp_0] > L || hdmax[0][jp_0] < L) ESL_FAIL(eslEINVAL, errbuf, "cm_TrModeFromAlphasHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hdmin[0][jp_0], hdmax[0][jp_0]);
-  Lp_0 = L - hdmin[0][jp_0];
-
-  if(cp9b->Jvalid[0] && mx->Jdp[0][jp_0][Lp_0] > sc) { 
-    sc     = mx->Jdp[0][jp_0][Lp_0];
-    mode   = TRMODE_J;
-  }
-  if(cp9b->Lvalid[0] && mx->Ldp[0][jp_0][Lp_0] > sc) { 
-    sc     = mx->Ldp[0][jp_0][Lp_0];
-    mode   = TRMODE_L;
-  }
-  if(cp9b->Rvalid[0] && mx->Rdp[0][jp_0][Lp_0] > sc) { 
-    sc     = mx->Rdp[0][jp_0][Lp_0];
-    mode   = TRMODE_R;
-  }
-  if(cp9b->Tvalid[0] && mx->Tdp[0][jp_0][Lp_0] > sc) { 
-    sc     = mx->Tdp[0][jp_0][Lp_0];
-    mode   = TRMODE_T;
-  }
-
-  /* check for special case that all (allowed) scores were IMPOSSIBLE */
-  if(! NOT_IMPOSSIBLE(sc)) { 
-    mode   = TRMODE_UNKNOWN;
-  }
-
-  if(ret_sc     != NULL) *ret_sc     = sc;
-  if(ret_mode   != NULL) *ret_mode   = mode;
-
-  return eslOK;
-}
 
 /* Function: cm_TrFillFromMode()
  * Date:     EPN, Wed Sep 28 05:29:19 2011
@@ -8932,9 +8839,9 @@ main(int argc, char **argv)
     emit_mx = cm_emit_mx_Create(cm);
   }
 
-  if((esl_opt_GetBoolean(go, "--search") && esl_opt_GetBoolean(go, "--std"))) { 
-    trsmx = cm_CreateTrScanMatrix(cm, cm->W, dmax, cm->beta_W, cm->beta_qdb, 
-				  (dmin == NULL && dmax == NULL) ? FALSE : TRUE,
+  if(esl_opt_GetBoolean(go, "--search")) { 
+    trsmx = cm_CreateTrScanMatrix(cm, cm->W, cm->dmax, cm->beta_W, cm->beta_qdb, 
+				  (cm->dmin == NULL && cm->dmax == NULL) ? FALSE : TRUE,
 				  TRUE, TRUE); /* do_float, do_int */
   }
     
@@ -9104,8 +9011,6 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--cykout")) { 
 	/*********************Begin cm_TrCYKOutsideAlign****************************/
 	esl_stopwatch_Start(w);
-	/* determine optimal mode from the trmx */
-	cm_TrModeFromAlphas(trmx, L, &mode, NULL);
 	status = cm_TrCYKOutsideAlign(cm, errbuf, seqs_to_aln->sq[i]->dsq,  L, size_limit, TRUE, mode, out_trmx, trmx);
 	if     (status != eslOK && esl_opt_GetBoolean(go, "--failok")) printf("%s\nError detected, but continuing thanks to --failok\n", errbuf);
 	else if(status != eslOK)                                       cm_Fail(errbuf);
@@ -9134,6 +9039,7 @@ main(int argc, char **argv)
 
       if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
       ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+      mode = ParsetreeMode(tr);
       FreeParsetree(tr);
       if(esl_opt_GetBoolean(go, "--optacc")) { 
 	printf("%4d %-30s %10.4f bits (FULL LENGTH OPTACC)\n", (i+1), "cm_Align(): ", sc);
@@ -9221,6 +9127,7 @@ main(int argc, char **argv)
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
       ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+      mode = ParsetreeMode(tr);
       FreeParsetree(tr);
       if(esl_opt_GetBoolean(go, "--optacc")) { 
 	printf("Parsetree score      : %.4f           (FULL LENGTH OPTACC)\n", parsetree_sc);
@@ -9233,8 +9140,6 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--cykout")) { 
 	/*********************Begin cm_TrCYKOutsideAlignHB****************************/
 	esl_stopwatch_Start(w);
-	/* determine optimal mode from the trmx */
-	if((status = cm_TrModeFromAlphasHB(cm->trhbmx, errbuf, L, cm->cp9b, &mode, NULL)) != eslOK) cm_Fail(errbuf);
 	status = cm_TrCYKOutsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, TRUE, mode, cm->trohbmx, cm->trhbmx);
 	if     (status != eslOK && esl_opt_GetBoolean(go, "--failok")) printf("%s\nError detected, but continuing thanks to --failok\n", errbuf);
 	else if(status != eslOK)                                       cm_Fail(errbuf);

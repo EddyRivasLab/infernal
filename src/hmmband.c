@@ -254,6 +254,10 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
     cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b);
     /* xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG */
   }
+  else { 
+    /* reset all Jvalid values to TRUE */
+    esl_vec_ISet(cm->cp9b->Jvalid, cm->M+1, TRUE);
+  }
 
   /* Step 3: HMM bands  ->  CM bands. */
   if(do_old_hmm2ij) { 
@@ -1554,6 +1558,18 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  imax[v] = (imax[w] != -2) ? imax[w] : imax[y]; /* if imax[w] == imax[y] == -2, then imax[v] will be set as -2 */
 	  jmin[v] = (jmin[y] != -1) ? jmin[y] : jmin[w]; /* if jmin[y] == jmin[w] == -1, then jmin[v] will be set as -1 */
 	  jmax[v] = (jmax[y] != -2) ? jmax[y] : jmax[w]; /* if jmax[y] == jmax[w] == -2, then jmax[v] will be set as -2 */
+
+	  if(! do_trunc) { 
+	    /* check for possibility that either child is not reachable, will only possibly happen with local on */
+	    if(imin[v] == -1 || jmin[v] == -1) { 
+	      /* either the left child, or right child is not reachable, make them both unreachable as well as the BIF state */
+	      imin[v] = imin[w] = imin[y] = jmin[v] = jmin[w] = jmin[y] = -1;
+	      imax[v] = imax[w] = imax[y] = jmax[v] = jmax[w] = jmax[y] = -2;
+	      /* also make the BEGR_IL unreachable */
+	      imin[y+1] = jmin[y+1] = -1; 
+	      imax[y+1] = jmax[y+1] = -2; 
+	    }
+	  }
 	  break;
 	    
 	case MATP_nd: 

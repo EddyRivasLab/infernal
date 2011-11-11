@@ -2349,3 +2349,15 @@ Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL
   if(aseq != NULL)  free(aseq);
   return status;
 }
+
+
+/* Function: ParsetreeMode()
+ * Incept:   EPN, Thu Nov 10 11:31:04 2011
+ * 
+ * Purpose:  Return the alignment mode of a parsetree.
+ */
+char 
+ParsetreeMode(Parsetree_t *tr)
+{
+  return tr->mode[0];
+}

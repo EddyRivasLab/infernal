@@ -335,6 +335,9 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
       jp_v = j - jmin[v];
       dp_v = d - hdmin[v][jp_v];
       allow_S_local_end = FALSE;
+      if(j < jmin[v] || j > jmax[v]) { 
+	printf("whoa\n");
+      }
       assert(j >= jmin[v]        && j <= jmax[v]);
       assert(d >= hdmin[v][jp_v] && d <= hdmax[v][jp_v]);
       ESL_DASSERT1((j >= jmin[v]        && j <= jmax[v]));
@@ -415,6 +418,7 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
 	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
 	  v = y;
 	}
+      /*ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);*/
     }
   }
   esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
@@ -631,13 +635,13 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do
     if((status = cm_PostCodeHB(cm, errbuf, L, emit_mx, tr, (have_ppstr) ? &ppstr : NULL, (do_optacc ? &sc : NULL))) != eslOK) return status;
   }
 
-  /*
+#if 0
     CMEmitMap_t *emap;
     emap = CreateEmitMap(cm);
     DumpEmitMap(stdout, emap, cm);
     FreeEmitMap(emap);
     ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
-  */
+#endif
 
   if (ret_ppstr  != NULL) *ret_ppstr  = ppstr; else free(ppstr);
   if (ret_tr     != NULL) *ret_tr     = tr;    else FreeParsetree(tr);
@@ -2079,6 +2083,10 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   /* for B states, shadow matrix holds k, length of right fragment, this will almost certainly be overwritten */
   if(shmx->k_ncells_valid > 0) esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, 0); 
 
+  /* a special optimal accuracy specific step, initialize yshadow intelligently for d == 0 
+   * (necessary b/c zero length parsetees have 0 emits and so always score IMPOSSIBLE)
+   */
+  if((status = cm_InitializeOptAccShadowDZero(cm, errbuf, yshadow, L)) != eslOK) return status;
 
   /* fill in all possible local end scores, for local end emits of 1..L residues */
   ESL_ALLOC(el_scA, sizeof(float) * (L+1));
@@ -2109,8 +2117,9 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 	}
       }
     }
+#if 0
     if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
-      /*else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { */
+      /* alternative: else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { (see comment below) */
       for (j = 0; j <= L; j++) {
 	/* Check for special initialization case, specific to
 	 * optimal_accuracy alignment, normally (with TrCYK for
@@ -2123,6 +2132,13 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 	 * cells for which  d == sd and v is a state that has 
 	 * a StateDelta=0 child y (DELETE or END) by initializing
 	 * that transition to y is most likely.
+	 *
+	 * This will remove any zero-length (in the target sequence)
+	 * ELs from an OA parsetree when one is possible with all D->D
+	 * transitions. This makes alignment displays look better in
+	 * most cases. To change preference for ELs, change the
+	 * 'if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) to a
+	 * 'else if'.
 	 */
 	for (d = 0; d <= sd; d++) { 
 	  y = cm->cfirst[v];
@@ -2134,7 +2150,7 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 	}
       }
     }
-
+#endif
     /* note there's no E state update here, those cells all remain IMPOSSIBLE */
 
     /* we have to separate out IL_st and IR_st because IL use emit_mx->l_pp and IR use emit_mx->r_pp */
@@ -2437,6 +2453,11 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   /* for B states, shadow matrix holds k, length of right fragment, this will almost certainly be overwritten */
   if(shmx->k_ncells_valid > 0) esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, 0); 
 
+  /* a special optimal accuracy specific step, initialize yshadow intelligently for d == 0 
+   * (necessary b/c zero length parsetees have 0 emits and so always score IMPOSSIBLE)
+   */
+  if((status = cm_InitializeOptAccShadowDZeroHB(cm, cp9b, errbuf, yshadow, L)) != eslOK) return status;
+
   /* fill in all possible local end scores, for local end emits of 1..L residues */
   ESL_ALLOC(el_scA, sizeof(float) * (L+1));
   if(cm->flags & CMH_LOCAL_END && l_pp[cm->M] != NULL) { 
@@ -2472,8 +2493,9 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	}
       }
     }
+#if 0 
     if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
-    /*else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { */
+      /* alternative: else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { (see comment below) */
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
 	/* Check for special initialization case, specific to
@@ -2493,6 +2515,13 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	 * the first BUGTRAX logged bug found and fixed in the final
 	 * release (rc5) of infernal v1.0 (EPN, Fri Jun 12 14:02:58
 	 * 2009)).
+	 *
+	 * This will remove any zero-length (in the target sequence)
+	 * ELs from an OA parsetree when one is possible (within the
+	 * bands) with all D->D transitions. This makes alignment
+	 * displays look better in most cases. To change preference
+	 * for ELs, change the 'if(cm->sttype[v] != B_st &&
+	 * cm->sttype[v] != E_st) to a 'else if'.
 	 */
 	if(hdmin[v][jp_v] <= hdmax[v][jp_v]) { /* if this if FALSE, no valid d exists for this v and j */
 	  for (d = hdmin[v][jp_v]; d <= sd; d++) { 
@@ -2512,7 +2541,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	}
       }
     }
-
+#endif
     /* note there's no E state update here, those cells all remain IMPOSSIBLE */
 
     /* we could separate out IL_st and IR_st, but I don't it makes a significant difference in run time */
@@ -5940,6 +5969,248 @@ cm_PostCodeHB(CM_t *cm, char *errbuf, int L, CM_HB_EMIT_MX *emit_mx, Parsetree_t
  ERROR:
   ESL_FAIL(eslEMEM, errbuf, "cm_PostcodeHB(): Memory allocation error.");
   return status; /* never reached */
+}
+
+/* Function: cm_InitializeOptAccShadowDZero()
+ * Date:     EPN, Fri Nov 11 13:09:14 2011
+ *
+ * Purpose:  Initialize a optimal accuracy shadow (traceback) matrix
+ *           for d == 0, based on transition scores. Optimal accuracy
+ *           traceback matrices are special when d==0 because only
+ *           emissions contribute to score so the value when d==0 is
+ *           always IMPOSSIBLE. So d==0 cells are never modified
+ *           during the OA DP recursion.
+ *
+ *           In this function we determine the appropriate state to
+ *           traceback to for d==0 for all states v and endpoints
+ *           j. If local ends are off, this is trivial; it is simply
+ *           the child state y for which StateDelta(y) == 0 (there is
+ *           always exactly 1 such child state for each v). If any
+ *           such state is entered for d == 0 in the optimally
+ *           accurate parsetree, the parse will continue along
+ *           delete->delete transitions (all with d==0) until an E_st
+ *           (or E_st's if we go through a B_st) is reached.
+ *      
+ *           If local ends are off, it is more complex because we
+ *           could do a local end instead of a string of deletes until
+ *           an end is reached. We determine the score of the
+ *           transitions from the current state v through y to the
+ *           nearest E_st(s) and if it is less than the score for
+ *           entering a EL state we set the shadow matrix to y, else
+ *           we set it to USED_EL.
+ *           
+ *           In some cases, we initialize to USED_EL for states v for
+ *           which ELs are illegal (not a MATP_MP, MATL_ML, MATR_MR,
+ *           BEGL_S or BEGR_nd). This means that the eventual optimal
+ *           accuracy parsetree may contain an illegal EL, but I think
+ *           this is unavoidable. 
+ *           
+ *           Upon entrance, yshadow should be initialized to USED_EL
+ *           for all values.
+ *
+ *           Note that if we didn't call this function, the optimally
+ *           accurate parsetree would not be affected, nor its score.
+ *           This function is only useful because it affects the
+ *           output of the parsetree's alignment by only using a zero
+ *           length EL transitions only when it is less expensive than
+ *           a string of deletes.
+ *        
+ *           If called by a truncated optimal accuracy function
+ *           (cm_TrOptAccAlign()), yshadow is really a <Jyshadow>
+ *           matrix from a CM_TR_SHADOW_MX object. Otherwise it is a
+ *           <yshadow> matrix from a CM_SHADOW_MX object.
+ *
+ * Args:     cm         - the model, used only for its alphabet and null model
+ *           errbuf     - for reporting errors 
+ *           yshadow    - the shadow matrix to updated, only values for which
+ *                        d==0 will be modified. 
+ *           L          - length of the sequence we're aligning
+ * 
+ *    
+ * Returns:  eslOK on success
+ *
+ * Throws:   eslEMEM on memory error.
+ */
+int
+cm_InitializeOptAccShadowDZero(CM_t *cm, char *errbuf, char ***yshadow, int L)
+{
+  int   status;
+  float *esc;  /* [0..v..M-1] summed transition score for getting from v to nearest E_st(s) 
+		* through only delete states */
+  float endsc; /* score for transitioning to an EL state */
+  int have_el; /* are local ends on? */
+  int v;       /* state counter */
+  int j;       /* sequence position */
+  int y, z;    /* BEGL_S and BEGR_S states */
+  int sd;      /* StateDelta(v) */
+  int yoffset; /* child state index */
+
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  if(have_el) {
+    ESL_ALLOC(esc, sizeof(float) * cm->M);
+    esl_vec_FSet(esc, cm->M, 0.);
+    /* determine score for transitioning to an EL (same for all legal states) */
+    v = 0; while(! NOT_IMPOSSIBLE(cm->endsc[v])) v++;
+    endsc = cm->endsc[v];
+    /*printf("endsc: %.4f end %.4f\n", endsc, cm->end[v]);*/
+  }
+  else { 
+    esc = NULL;
+    endsc = IMPOSSIBLE;
+  }
+
+  for(v = cm->M-1; v >= 0; v--) { 
+    sd = StateDelta(cm->sttype[v]);
+    if(cm->sttype[v] == E_st) { 
+      if(esc != NULL) esc[v] = 0.;
+    }
+    else if(cm->sttype[v] == B_st) { 
+      if(esc != NULL) { 
+	y = cm->cfirst[v]; /* left  subtree */
+	z = cm->cnum[v];   /* right subtree */
+	esc[v] = esc[y] + esc[z];
+      }
+    }
+    else { 
+      /* determine the one and only child state y for which StateDelta(y) == 0 */
+      y = cm->cfirst[v];
+      while(StateDelta(cm->sttype[y]) != 0) y++;
+      yoffset = y-cm->cfirst[v];
+      assert(cm->ndidx[v] == (cm->ndidx[y]-1));
+      if(esc != NULL) { 
+	esc[v] = esc[y] + cm->tsc[v][yoffset];
+	if(endsc > esc[v]) yoffset = USED_EL;
+	/* else yoffset is not changed */
+
+	/*printf("EL: %10.4f  d->d->e %10.4f  ", endsc, esc[v]);
+	  if(yoffset != USED_EL) printf("  path for v: %4d %4s %2s is through deletes!\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+	  else printf("\n");
+	*/
+      }
+      for(j = sd; j <= L; j++) yshadow[v][j][sd] = yoffset;
+    }
+  }
+  
+  if(esc != NULL) free(esc);
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(eslEMEM, errbuf, "Out of memory");
+}
+
+
+/* Function: cm_InitializeOptAccShadowDZeroHB()
+ * Date:     EPN, Fri Nov 11 14:00:55 2011
+ *
+ * Purpose:  Same as cm_InitializeOptAccShadowDZero() but for HMM
+ *           banded matrices, see that function for more information.
+ *
+ * Args:     cm         - the model, used only for its alphabet and null model
+ *           cp9b       - CP9 Bands for current sequence
+ *           errbuf     - for reporting errors 
+ *           yshadow    - the shadow matrix to updated, only values for which
+ *                        d==0 will be modified. 
+ *           L          - length of the sequence we're aligning
+ * 
+ *    
+ * Returns:  eslOK on success
+ *
+ * Throws:   eslEMEM on memory error.
+ */
+int
+cm_InitializeOptAccShadowDZeroHB(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, char ***yshadow, int L)
+{
+  int   status;
+  float *esc;  /* [0..v..M-1] summed transition score for getting from v to nearest E_st(s) 
+		* through only delete states */
+  float endsc; /* score for transitioning to an EL state */
+  int have_el; /* are local ends on? */
+  int v;       /* state counter */
+  int j;       /* sequence position */
+  int y, z;    /* BEGL_S and BEGR_S states */
+  int sd;      /* StateDelta(v) */
+  int yoffset; /* child state index */
+
+  /* variables needed because we've got HMM bands */
+  int sdr;     /* StateRightDelta(v) */
+  int jp_v;    /* j offset for state v given HMM bands */
+  int jp_y;    /* j offset for state y given HMM bands */
+  int dp_v;    /* d offset for state v given HMM bands */
+
+  /* pointers to cp9b data for convenience */
+  int         *jmin = cp9b->jmin;
+  int         *jmax = cp9b->jmax;
+  int       **hdmin = cp9b->hdmin;
+  int       **hdmax = cp9b->hdmax;
+
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  if(have_el) {
+    ESL_ALLOC(esc, sizeof(float) * cm->M);
+    esl_vec_FSet(esc, cm->M, IMPOSSIBLE);
+    /* determine score for transitioning to an EL (same for all legal states) */
+    v = 0; while(! NOT_IMPOSSIBLE(cm->endsc[v])) v++;
+    endsc = cm->endsc[v];
+    /*printf("endsc: %.4f end %.4f\n", endsc, cm->end[v]);*/
+  }
+  else { 
+    esc = NULL;
+    endsc = IMPOSSIBLE;
+  }
+
+  for(v = cm->M-1; v >= 0; v--) { 
+    if(cm->cp9b->Jvalid[v]) { /* only valid v values will have non-impossible esc[v] values */
+      sd  = StateDelta(cm->sttype[v]);
+      sdr = StateRightDelta(cm->sttype[v]);
+      if(cm->sttype[v] == E_st) { 
+	if(esc != NULL) esc[v] = 0.;
+      }
+      else if(cm->sttype[v] == B_st) { 
+	if(esc != NULL) {
+	  y = cm->cfirst[v]; /* left  subtree */
+	  z = cm->cnum[v];   /* right subtree */
+	  esc[v] = esc[y] + esc[z];
+	}
+      }
+      else { 
+	/* determine the one and only child state y for which StateDelta(y) == 0 */
+	y = cm->cfirst[v];
+	while(StateDelta(cm->sttype[y]) != 0) y++;
+	yoffset = y-cm->cfirst[v];
+	assert(cm->ndidx[v] == (cm->ndidx[y]-1));
+	if(esc != NULL) { 
+	esc[v] = esc[y] + cm->tsc[v][yoffset];
+	if(endsc > esc[v]) yoffset = USED_EL;
+	/* else yoffset is not changed */
+
+#if 0 
+	printf("EL: %10.4f  d->d->e %10.4f  ", endsc, esc[v]);
+	if(yoffset != USED_EL) printf("  path for v %4d %4s %2s is through deletes!\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+	else printf("\n");
+#endif
+
+	}
+	for(j = ESL_MAX(sd, jmin[v]); j <= jmax[v]; j++) { 
+	  jp_v = j-jmin[v];
+	  if(hdmin[v][jp_v] <= hdmax[v][jp_v]) { /* at least one valid d exists for this v and j */
+	    if((j-sdr) >= jmin[y] && (j-sdr) <= jmax[y]) { /* j-sdr is valid for state y */
+	      jp_y = j - sdr - jmin[y]; 
+	      if(sd >= hdmin[v][jp_v] && sd <= hdmax[v][jp_v] && /* d==sd is valid for state v and end posn j */
+		 0  >= hdmin[y][jp_y] &&  0 <= hdmax[y][jp_y]) { /* d==0  is valid for state y and end posn j-sdr */
+		dp_v = sd - hdmin[v][jp_v];
+		yshadow[v][jp_v][dp_v] = yoffset;
+	      }
+	    }
+	  }
+	}
+      }
+    }
+  }
+  
+  if(esc != NULL) free(esc);
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(eslEMEM, errbuf, "Out of memory");
 }
 
 

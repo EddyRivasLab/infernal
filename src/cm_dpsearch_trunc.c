@@ -609,7 +609,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *trsi, 
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
-  /* find the best score in any matrix at any state */
+#if 0
   printf("Best truncated score: %.4f (%.4f) (ANY LENGTH CYK mode: %s)\n",
 	 vsc_root,
 	 vsc_root + sreLOG2(2./(cm->clen * (cm->clen+1))),
@@ -618,6 +618,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *trsi, 
 	 bsc_full, 
 	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))),
 	 MarginalMode(bmode_full));
+#endif
 
   /* If recovering hits in a non-greedy manner, do the gamma traceback, then free gamma */
   if(gamma != NULL) { 
@@ -629,12 +630,14 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *trsi, 
    */
   if(tmp_hitlist != NULL) { 
     cm_tophits_SortByPosition(tmp_hitlist);
+    /*cm_tophits_Dump(stdout, tmp_hitlist);*/
     cm_tophits_RemoveDuplicates(tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
+    /*cm_tophits_Dump(stdout, hitlist);*/
     cm_tophits_Destroy(tmp_hitlist);
   }
 
@@ -1236,6 +1239,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *tr
 
   if(vsc != NULL) vsc[0] = vsc_root;
 
+#if 0
   printf("Best truncated score: %.4f (%.4f) (ANY LENGTH INSIDE mode %s)\n",
 	 vsc_root,
 	 vsc_root + sreLOG2(2./(cm->clen * (cm->clen+1))),
@@ -1244,6 +1248,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *tr
 	 Scorify(bsc_full), 
 	 Scorify(bsc_full) + sreLOG2(2./(cm->clen * (cm->clen+1))),
 	 MarginalMode(bmode_full));
+#endif
 
   /* If recovering hits in a non-greedy manner, do the gamma traceback, then free gamma */
   if(gamma != NULL) { 
@@ -1446,7 +1451,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
   if(mx->Rncells_valid > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(mx->Tncells_valid > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
   esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
+  /*esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");*/
 
   /* If we were passed a master hitlist <hitlist>, either create a
    * gamma hit matrix for resolving overlaps optimally (if
@@ -2254,7 +2259,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
     }
   } /* end of 'for (j = jmin[v]; j <= jmax[v]'... */
   esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, " HEYA2 Considering truncated and local hits time: ");
+  /*esl_stopwatch_Display(stdout, w, " HEYA2 Considering truncated and local hits time: ");*/
   /*FILE *fp1; fp1 = fopen("tmp.ismx", "w");   cm_tr_hb_mx_Dump(fp1, mx); fclose(fp1);*/
     
   /* update gamma, by specifying all hits with j > jmax[0] are impossible */
@@ -2335,6 +2340,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
     }
   }
 
+#if 0
   printf("Best truncated score: %.4f (%.4f) (ANY LENGTH CYK mode: %s)\n",
 	 vsc_root - trunc_penalty, 
 	 vsc_root + sreLOG2(2./(cm->clen * (cm->clen+1))), 
@@ -2343,6 +2349,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
 	 bsc_full, 
 	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))),
 	 MarginalMode(bmode_full));
+#endif
 
   free(el_scA);
   free(yvalidA);
@@ -2364,12 +2371,14 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
    */
   if(tmp_hitlist != NULL) { 
     cm_tophits_SortByPosition(tmp_hitlist);
+    /*cm_tophits_Dump(stdout, tmp_hitlist);*/
     cm_tophits_RemoveDuplicates(tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
+    /*cm_tophits_Dump(stdout, hitlist);*/
     cm_tophits_Destroy(tmp_hitlist);
   }
 
@@ -2545,7 +2554,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_
   if(mx->Rncells_valid > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(mx->Tncells_valid > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
   esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");
+  /*esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");*/
 
   /* If we were passed a master hitlist <hitlist>, either create a
    * gamma hit matrix for resolving overlaps optimally (if
@@ -3355,7 +3364,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_
     }
   }
   esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, " HEYA2 Considering truncated and local hits time: ");
+  /*esl_stopwatch_Display(stdout, w, " HEYA2 Considering truncated and local hits time: ");*/
 
   /* update gamma, by specifying all hits with j > jmax[0] are impossible */
   if(gamma != NULL) { 
@@ -3435,7 +3444,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_
     }
   }
 
-  /* find the best score in any matrix at any state */
+#if 0   
   printf("Best truncated score: %.4f (%.4f) (ANY LENGTH INSIDE mode: %s)\n",
 	 vsc_root - trunc_penalty, 
 	 vsc_root + sreLOG2(2./(cm->clen * (cm->clen+1))),
@@ -3444,6 +3453,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_
 	 bsc_full, 
 	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))),
 	 MarginalMode(bmode_full));
+#endif
 
   free(el_scA);
   free(yvalidA);
