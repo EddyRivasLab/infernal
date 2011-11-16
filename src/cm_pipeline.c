@@ -248,6 +248,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->glen_step        = esl_opt_GetInteger(go, "--glstep");
   pli->research_ends    = (esl_opt_GetBoolean(go, "--noends"))  ? FALSE : TRUE;
   pli->do_trunc_ends    = (esl_opt_GetBoolean(go, "--notrunc")) ? FALSE : TRUE;
+  pli->no_local_ends    = (esl_opt_GetBoolean(go, "--nolocal")) ? TRUE  : FALSE;
   pli->xtau             = esl_opt_GetReal(go, "--xtau");
 
   /* Set up truncated scanner information */
@@ -955,7 +956,7 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
  * Purpose:   Run the accelerated pipeline to compare profile <om>
  *            against sequence <sq>. Some combination of the MSV,
  *            Viterbi and Forward algorithms are used, based on 
- *            option flags set in <pli>. 
+*            option flags set in <pli>. 
  *
  *            In a normal pipeline run, this function call should be
  *            followed by a call to cm_pli_p7BoundaryDef().
@@ -1402,7 +1403,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int do_glocal, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv)
+cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int i_am_terminal, int do_glocal, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv)
 {
   int              status;                     
   double           P;                          /* P-value of a hit */
@@ -1423,7 +1424,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
   int64_t          estart, eend;     /* envelope start/end positions */
   float            nullsc, filtersc, fwdsc;
   P7_PROFILE      *gm = NULL;        /* a ptr to *opt_gm, for convenience */
-
+  int              free_glocal_pass; /* TRUE if i_am_terminal, we don't require glocal scores to reach P value thresholds */ 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nwin == 0)  { 
     *ret_es = es;
@@ -1432,6 +1433,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
     return eslOK;    /* if there's no envelopes to search in, return */
   }
 
+  free_glocal_pass = (do_glocal && i_am_terminal) ? TRUE : FALSE;
   nenv_alloc = nwin;
   ESL_ALLOC(es, sizeof(int64_t) * nenv_alloc);
   ESL_ALLOC(ee, sizeof(int64_t) * nenv_alloc);
@@ -1483,7 +1485,13 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
       sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
       /* Does this score exceeds our glocal forward filter threshold? If not, move on to next seq */
       P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
-      if(P > pli->F4) continue;
+
+#if DOPRINT	
+      if(P > pli->F4) { 
+	printf("KILLED   window %5d [%10" PRId64 "..%10" PRId64 "]          gFwd      %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
+      }
+#endif      
+      if(P > pli->F4 && (! free_glocal_pass)) continue;
 
       pli->n_past_gfwd++;
       pli->pos_past_gfwd += wlen;
@@ -1497,7 +1505,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	p7_bg_FilterScore(bg, seq->dsq, wlen, &filtersc);
 	sc_for_pvalue = (fwdsc - filtersc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
-	if(P > pli->F4) continue;
+	if(P > pli->F4b && (! free_glocal_pass)) continue;
 #if DOPRINT	
 	printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwdBias  %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
 #endif 
@@ -1567,7 +1575,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
       /***************************************************/
       
       /* check if we can skip this envelope based on its P-value or bit-score */
-      if(P > pli->F5) continue;
+      if(P > pli->F5 && (! free_glocal_pass)) continue;
     
       /* Define envelope to search with CM:
        *
@@ -1622,7 +1630,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	env_sc_for_pvalue = (env_sc - filtersc) / eslCONST_LOG2;
 	if(do_glocal) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
 	else          P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
-	if (P > pli->F5b) { continue; }
+	if(P > pli->F5b && (! free_glocal_pass)) continue;
       }
 #if DOPRINT
       printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived F5-bias  %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
@@ -2080,10 +2088,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 				     scan_cp9b))                    /* a copy of the HMM bands determined in the last search stage, NULL if HMM bands not used */
 	   != eslOK) return status;
       }
-      if(scan_cp9b != NULL) { 
-	FreeCP9Bands(scan_cp9b);
-	scan_cp9b = NULL;
-      }
 
       /* Finally, if we're using model-specific bit score thresholds,
        * determine if the significance of the hit (is it reported
@@ -2121,8 +2125,11 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	    hit->flags |= CM_HIT_IS_INCLUDED;
 	}
       }
-      
     } /* end of 'for(h = nhit'... */
+    if(scan_cp9b != NULL) { 
+      FreeCP9Bands(scan_cp9b);
+      scan_cp9b = NULL;
+    }
 
     nhit = hitlist->N;
   }
@@ -2555,11 +2562,12 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
   if((status = cm_pli_p7Filter(pli, om, bg, p7_evparam, sq, &ws, &we, &nwin)) != eslOK) return status;
   if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
   
-  do_glocal = (i_am_terminal || pli->do_localenv) ? FALSE : TRUE;
+  do_glocal = ((i_am_terminal && (! pli->no_local_ends)) || pli->do_localenv) ? FALSE : TRUE;
 #if DOPRINT
   printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues (do_glocal: %d)\n", sq->name, sq->n, do_glocal);
 #endif
-  if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, do_glocal, ws, we, nwin, opt_gm, &es, &ee, &nenv)) != eslOK) return status;
+  //if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, do_glocal, ws, we, nwin, opt_gm, &es, &ee, &nenv)) != eslOK) return status;
+  if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, i_am_terminal, do_glocal, ws, we, nwin, opt_gm, &es, &ee, &nenv)) != eslOK) return status;
 
   do_trunc = (i_am_terminal && pli->do_trunc_ends) ? TRUE : FALSE;
 #if DOPRINT

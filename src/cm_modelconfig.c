@@ -160,41 +160,11 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
    *       local HMM goes local.
    */
   if((cm->config_opts & CM_CONFIG_HMMLOCAL) || (cm->align_opts  & CM_ALIGN_SUB)) {
-    if(! (cm->config_opts & CM_CONFIG_V1P0_HMMLOCAL)) { 
-      swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
-      swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
-      swentry = cm->pbegin;
-      swexit = cm->pbegin; 
-      CPlan9SWConfig(cm->cp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE means don't make I_0, D_1, I_M unreachable */
-      /* In previous versions (v1.0-->v1.0.2) we configured the HMM
-       * differently if we were NOT doing sub alignment. Specifically,
-       * we did (next 3 lines are old code):
-       *
-       *  swentry = cm->pbegin;
-       *  swexit = cm->pbegin; 
-       *  CPlan9SWConfig(cm->cp9, swentry, swexit, TRUE, cm->ndtype[1]); 
-       *
-       * We revert to this below if cm->config_opts & CM_CONFIG_1P0_HMMLOCAL.
-       * 
-       * The TRUE sent to CPlan9SWConfig means" do make I_0, D_1, I_M
-       * unreachable, to match the CM. We did away with that and now
-       * make entry/exits equiprobable because that works better with
-       * truncated alignment, and I_0, D_1, I_M should be reachable
-       * because they are in truncated local alignment. I considered
-       * configuring the cp9 differently depending on if we're doing
-       * truncated alignment or not, but this way is simpler and 
-       * much easier to implement. The only fear is that now we have
-       * less appropriate bands in some cases b/c our cp9 HMM doesn't
-       * match the CM as closely as it used to. But another reason
-       * to use equiprobable start/ends is that we'll be forced
-       * to when we switch to using H3 HMMs instead of cp9s anyway.
-       */
-    }
-    else { 
-      swentry = cm->pbegin;
-      swexit = cm->pbegin; 
-      CPlan9SWConfig(cm->cp9, swentry, swexit, TRUE, cm->ndtype[1]); 
-    }
+    swentry = cm->pbegin;
+    swexit  = cm->pbegin; 
+    CPlan9SWConfig(cm->cp9, swentry, swexit, 
+		   FALSE, /* allow I_0, D_1, I_M to be reachable */
+		   cm->ndtype[1]); 
     CP9Logoddsify(cm->cp9);
   }
   if(cm->config_opts & CM_CONFIG_HMMEL) { 

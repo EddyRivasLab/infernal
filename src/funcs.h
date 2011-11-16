@@ -783,7 +783,7 @@ extern int cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, in
 extern int cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
 extern int cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
 extern int cm_pli_p7Filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
-extern int cm_pli_p7EnvelopeDef     (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int do_glocal, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
+extern int cm_pli_p7EnvelopeDef     (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int i_am_terminal, int do_glocal, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 extern int cm_pli_CMStage           (CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int do_trunc, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
 extern int cm_pli_AlignHit          (CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int do_trunc, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b);
 extern int cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int i_am_terminal, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, CM_t **opt_cm, CMConsensus_t **opt_cmcons);

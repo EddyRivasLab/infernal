@@ -2318,9 +2318,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
   /* find the best score and mode that spans the full sequence */
   if(j0 >= jmin[0] && j0 <= jmax[0]) {
     jp_v = j0-jmin[0];
-    int L = j0-i0+1;
-    if(L >= hdmin[0][jp_v] && L <= hdmax[0][jp_v]) {
-      dp_v = L-hdmin[0][jp_v];
+    if(W >= hdmin[0][jp_v] && W <= hdmax[0][jp_v]) {
+      dp_v = W-hdmin[0][jp_v];
       if(do_J_0 && Jalpha[0][jp_v][dp_v] > bsc_full) { 
 	bsc_full   = Jalpha[0][jp_v][dp_v];
 	bmode_full = TRMODE_J;
@@ -3422,9 +3421,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_
   /* find the best score and mode that spans the full sequence */
   if(j0 >= jmin[0] && j0 <= jmax[0]) {
     jp_v = j0-jmin[0];
-    int L = j0-i0+1;
-    if(L >= hdmin[0][jp_v] && L <= hdmax[0][jp_v]) {
-      dp_v = L-hdmin[0][jp_v];
+    if(W >= hdmin[0][jp_v] && W <= hdmax[0][jp_v]) {
+      dp_v = W-hdmin[0][jp_v];
       if(do_J_0 && Jalpha[0][jp_v][dp_v] > bsc_full) { 
 	bsc_full   = Jalpha[0][jp_v][dp_v];
 	bmode_full = TRMODE_J;

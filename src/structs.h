@@ -466,9 +466,8 @@ typedef struct cp9map_s {
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment  */
 #define CM_CONFIG_HMMLOCAL      (1<<1)  /* configure the CP9 for local alignment  */
-#define CM_CONFIG_V1P0_HMMLOCAL (1<<2)  /* configure the CP9 for local alignment, v1.0 style */
-#define CM_CONFIG_HMMEL         (1<<3)  /* configure the CP9 for EL local aln       */
-#define CM_CONFIG_QDB           (1<<4)  /* calculate query dependent bands          */
+#define CM_CONFIG_HMMEL         (1<<2)  /* configure the CP9 for EL local aln       */
+#define CM_CONFIG_QDB           (1<<3)  /* calculate query dependent bands          */
 
 /* alignment options, cm->align_opts */
 #define CM_ALIGN_SMALL         (1<<0)  /* use small CYK D&C                        */
@@ -2004,6 +2003,7 @@ typedef struct cm_pipeline_s {
   int     do_glocal_cm_stages;  /* TRUE to use CM in glocal mode for final stages */
   int     research_ends;        /* TRUE to use local env defn at sequence ends */
   int     do_trunc_ends;        /* TRUE to use truncated CM algs at sequence ends */
+  int     no_local_ends;        /* TRUE to use glocal domain defn even for sequence ends */
 
   /* Parameters controlling p7 domain/envelope defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
