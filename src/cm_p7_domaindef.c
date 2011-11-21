@@ -105,7 +105,6 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
   int save_mode = gm->mode;	/* Likewise for the mode. */
   int status;
 
-  if (p7_IsLocal(save_mode)) { return eslEINCOMPAT; } /* profile should be in glocal mode */
   if ((status = p7_domaindef_GrowTo(ddef, sq->n))       != eslOK) return status;  /* ddef's btot,etot,mocc now ready for seq of length n */
   /*printf("GDD P7 mode: %d\n", gm->mode);*/
   if ((status = p7_GDomainDecoding(gm, gxf, gxb, ddef)) != eslOK) return status;  /* ddef->{btot,etot,mocc} now made.                    */

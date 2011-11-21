@@ -177,20 +177,22 @@ DScore2Prob(int sc, float null)
  *           j0          - end of target subsequence (often L, end of sq)
  *           cp9b        - PRE-ALLOCATED, the HMM bands for this sequence, filled here.
  *           doing_search- TRUE if we're going to use these HMM bands for search, not alignment
- *           do_trunc    - TRUE if we're going to use these bands for truncated CYK/Inside/Outside
+ *           trsi        - truncated scanner info, trsi->allowR and trsi->allowL tell us if 
+ *                         we'll allow right marginal/left marginal alignments, if NULL
+ *                         truncated hits are disallowed.
  *           debug_level - verbosity level for debugging printf()s
  * Return:  eslOK on success;
  * 
  */
 int
-cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int do_trunc, int debug_level)
+cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, TrScanInfo_t *trsi, int debug_level)
 {
   int   status;
   int   use_sums;     /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
   float sc;
   int do_scan2bands;  /* TRUE to use scanning Forward/Backward to get posteriors */
   int do_old_hmm2ij;
-
+  int do_trunc;       /* are we allowing truncated alignments (either L or R)? */
   /* Contract checks */
   if(cm->cp9 == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9map is NULL.\n");
@@ -202,6 +204,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   
   use_sums = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
   do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  do_trunc = (trsi != NULL && (trsi->allowL || trsi->allowR)) ? TRUE : FALSE;
 
   /* Step 1: Get HMM Forward/Backward DP matrices.
    * Step 2: F/B       -> HMM bands.
@@ -248,10 +251,10 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
 
-  /* Step 2B: (only if do_trunc) Calculate occupancy and candidate states for marginal alignments */
-  if(do_trunc) { 
+  /* Step 2B: (only if trsi != NULL (truncated alignments are possible) Calculate occupancy and candidate states for marginal alignments */
+  if(trsi != NULL && (trsi->allowR || trsi->allowL)) { 
     cp9_PredictStartAndEndPositions(pmx, cp9b, i0, j0);
-    cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b);
+    cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, trsi);
     /* xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG */
   }
   else { 
@@ -1559,7 +1562,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  jmin[v] = (jmin[y] != -1) ? jmin[y] : jmin[w]; /* if jmin[y] == jmin[w] == -1, then jmin[v] will be set as -1 */
 	  jmax[v] = (jmax[y] != -2) ? jmax[y] : jmax[w]; /* if jmax[y] == jmax[w] == -2, then jmax[v] will be set as -2 */
 
-	  if(! do_trunc) { 
+	  if(do_trunc) { 
 	    /* check for possibility that either child is not reachable, will only possibly happen with local on */
 	    if(imin[v] == -1 || jmin[v] == -1) { 
 	      /* either the left child, or right child is not reachable, make them both unreachable as well as the BIF state */
@@ -1802,7 +1805,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
       }
     }
 
-  /* If do_trunc, do a final pass through all states, expanding bands to allow for L and/or R and/or T marginal alignments, if necessary,
+  /* If we're allowing truncated alignments, do a final pass through all states, expanding bands to allow for 
+   * L and/or R and/or T marginal alignments, as necessary, 
    * cp9b->{L,R}marg_{i,j}{min,max} were defined in cp9_PredictStartAndEndPositions(). 
    */
   if(do_trunc) { 
@@ -5338,6 +5342,11 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
  *          DP recursion.  And we won't have to allocate memory for
  *          that state in the corresponding (J,L,R,T) DP matrix.
  *
+ *          We also know from passed-in <trsi>, whether L and/or R
+ *          marginal alignments will be allowed via <trsi->allowL> 
+ *          and <trsi->allowR>. If <trsi->allowL> is FALSE cp9b->
+ *          Lvalid[] will be FALSE for all v. Likewise for allowR.
+ *
  * CM_t       cm:   the model
  * CP9Bands_t cp9b: the cp9 bands
  *
@@ -5346,7 +5355,7 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
  * xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG 
  */
 void
-cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b)
+cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, TrScanInfo_t *trsi)
 {
   int v;
   int nd;
@@ -5366,14 +5375,14 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b)
     cp9b->Jvalid[v] = ((lpos >= cp9b->sp1) && (rpos <= cp9b->ep1)) ? TRUE : FALSE;
 
     /* Lvalid if lpos is possibly used and rpos is possibly not used */
-    cp9b->Lvalid[v] = ((lpos >= cp9b->sp1 && lpos <= cp9b->ep1) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
+    cp9b->Lvalid[v] = (trsi->allowL && (lpos >= cp9b->sp1 && lpos <= cp9b->ep1) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
 
     /* Rvalid if rpos is possibly used and lpos is possibly not used */
-    cp9b->Rvalid[v] = ((rpos <= cp9b->ep1 && rpos >= cp9b->sp1) && (lpos < cp9b->sp2)) ? TRUE : FALSE;
+    cp9b->Rvalid[v] = (trsi->allowR && (rpos <= cp9b->ep1 && rpos >= cp9b->sp1) && (lpos < cp9b->sp2)) ? TRUE : FALSE;
 
     if(cm->sttype[v] == B_st) { 
       /* Tvalid if lpos and rpos are possibly not used */
-      cp9b->Tvalid[v] = ((lpos < cp9b->sp2) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
+      cp9b->Tvalid[v] = (trsi->allowL && trsi->allowR && (lpos < cp9b->sp2) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
     }
     else { 
       cp9b->Tvalid[v] = FALSE;

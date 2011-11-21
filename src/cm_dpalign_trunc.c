@@ -9094,7 +9094,7 @@ main(int argc, char **argv)
       while(1) { 
 	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
 				   FALSE, /* doing search? */
-				   TRUE,  /* doing trCYK/Inside/Outside? */
+				   NULL,  /* we're not allowing truncated alignments */
 				   0)) != eslOK) cm_Fail(errbuf);
 	if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, NULL, NULL, NULL, &trhbmx_Mb)) != eslOK) return status; 
 	if(trhbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */
@@ -9165,7 +9165,7 @@ main(int argc, char **argv)
       while(1) { 
 	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
 				   FALSE,  /* doing search? */
-				   FALSE,  /* doing trCYK/Inside/Outside? */
+				   NULL,   /* we're not allowing truncated alignments */
 				   0)) != eslOK) cm_Fail(errbuf);
 	if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, &hbmx_Mb)) != eslOK) return status; 
 	if(hbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */
@@ -9261,7 +9261,7 @@ main(int argc, char **argv)
 	while(1) { 
 	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
 				     TRUE,  /* doing search? */
-				     TRUE,  /* doing trCYK/Inside/Outside? */
+				     NULL,  /* we are not allowing truncated alignments */
 				     0)) != eslOK) cm_Fail(errbuf);
 	  if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, NULL, NULL, NULL, &trhbmx_Mb)) != eslOK) return status; 
 	  if(trhbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */
@@ -9303,7 +9303,7 @@ main(int argc, char **argv)
 	  while(1) { 
 	    if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
 				       TRUE,  /* doing search? */
-				       FALSE,  /* doing trCYK/Inside/Outside? */
+				       NULL,  /* we are not allowing truncated alignments */
 				       0)) != eslOK) cm_Fail(errbuf);
 	    if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, &hbmx_Mb)) != eslOK) return status; 
 	    if(hbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */

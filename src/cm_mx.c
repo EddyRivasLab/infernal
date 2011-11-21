@@ -6975,10 +6975,10 @@ CreateTrScanInfo()
   TrScanInfo_t *trsi;
   ESL_ALLOC(trsi, sizeof(TrScanInfo_t));
 
-  trsi->allow_L = TRUE;
-  trsi->allow_R = TRUE;
-  trsi->need_i0_LT = FALSE;
-  trsi->need_j0_RT = FALSE;
+  trsi->allowL = TRUE;
+  trsi->allowR = TRUE;
+  trsi->force_i0_RT = FALSE;
+  trsi->force_j0_LT = FALSE;
 
   return trsi;
 
@@ -7084,6 +7084,7 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  *           bestsc     - [0..W]; only [dmin..dmax] valid: best scores for current j, copied from alpha matrix(es) by caller
  *           bestr      - [0..W]; only [dmin..dmax] valid: root state (0 or local entry) corresponding to hit stored in alpha_row
  *           bestmode   - [0..W]; only [dmin..dmax] valid: marginal mode that gives bestsc[d], if NULL, all modes are implictly TRMODE_J
+ *           trsi       - truncated scanner info, must we enforce i0/j0 be in any valid hit?, NULL if caller is not a truncated scanner
  *           W          - window size, max size of a hit, only used if we're doing a NULL3 correction (act != NULL)
  *           act        - [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1)
  *
@@ -7092,7 +7093,7 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  */
 int
 UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, int dmax, 
-		 float *bestsc, int *bestr, char *bestmode, int W, double **act)
+		 float *bestsc, int *bestr, char *bestmode, TrScanInfo_t *trsi, int W, double **act)
 {
   int status;          /* easel status */
   int i;               /* position of first residue in hit, in actual sequence coordinates */
@@ -7103,6 +7104,7 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
   int   do_report_hit; /* should we add info on this hit to gamma? */
   float hit_sc;        /* score for this hit, possibly null3-corrected */
   float cumulative_sc; /* cumulative score of all hits in gamma, up to j */
+  int j0 = gamma->i0+gamma->L-1;
 
   /* variables related to NULL3 penalty */
   float *comp = NULL;            /* 0..a..cm->abc-K-1, the composition of residue a within the hit being reported */
@@ -7119,38 +7121,45 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
   gamma->saver[jp]    = -1;
   gamma->savemode[jp] = -1;
   
-  if(bestsc != NULL && dmin <= dmax) { /* if bestsc == NULL or dmin >= dmax, j or d is outside bands, don't report any hits */
-    if(act != NULL) ESL_ALLOC(comp, sizeof(float) * cm->abc->K);
-    for (d = dmin; d <= dmax; d++) {
-      i  = j -d+1;
-      ip = jp-d+1;
-      mode   = (bestmode == NULL) ? TRMODE_J : bestmode[d];
-      hit_sc = bestsc[d];
-      cumulative_sc = gamma->mx[ip-1] + hit_sc;
-      /* printf("CAND hit %3d..%3d: %8.2f\n", i, j, hit_sc); */
-      if (cumulative_sc > gamma->mx[jp]) {
-	do_report_hit = TRUE;
-	if(act != NULL && NOT_IMPOSSIBLE(hit_sc)) { 
-	  /* do a NULL3 score correction */
-	  for(a = 0; a < cm->abc->K; a++) { 
-	    comp[a] = act[jp%(W+1)][a] - act[(ip-1)%(W+1)][a]; 
-	    /*printf("a: %5d jp/W: %5d ip-1/W: %5d jp[a]: %.3f ip-1[a]: %.3f c[a]: %.3f\n", a, jp%(W+1), (ip-1%W), act[(jp%(W+1))][a], act[((ip-1)%(W+1))][a], comp[a]);*/
-	  }
-	  esl_vec_FNorm(comp, cm->abc->K);
-	  ScoreCorrectionNull3(cm->abc, cm->null, comp, d, cm->null3_omega, &null3_correction);
-	  hit_sc -= null3_correction;
-	  cumulative_sc -= null3_correction;
-	  do_report_hit = (cumulative_sc > gamma->mx[jp]) ? TRUE : FALSE;
-	  /* printf("GOOD hit %3d..%3d: %8.2f  %10.6f  %8.2f\n", i, j, hit_sc+null3_correction, null3_correction, hit_sc); */
+  if(bestsc == NULL || dmin > dmax) return eslOK; /* don't report any hits */
+
+  if(act != NULL) ESL_ALLOC(comp, sizeof(float) * cm->abc->K);
+  for (d = ESL_MAX(1, dmin); d <= dmax; d++) { /* don't allow length 0 hits, they cause all sorts of problems */
+    i  = j -d+1;
+    ip = jp-d+1;
+    mode   = (bestmode == NULL) ? TRMODE_J : bestmode[d];
+    hit_sc = bestsc[d];
+    cumulative_sc = gamma->mx[ip-1] + hit_sc;
+    /* printf("CAND hit %3d..%3d: %8.2f\n", i, j, hit_sc); */
+    if (cumulative_sc > gamma->mx[jp]) {
+      do_report_hit = TRUE;
+      if(act != NULL && NOT_IMPOSSIBLE(hit_sc)) { 
+	/* do a NULL3 score correction */
+	for(a = 0; a < cm->abc->K; a++) { 
+	  comp[a] = act[jp%(W+1)][a] - act[(ip-1)%(W+1)][a]; 
+	  /*printf("a: %5d jp/W: %5d ip-1/W: %5d jp[a]: %.3f ip-1[a]: %.3f c[a]: %.3f\n", a, jp%(W+1), (ip-1%W), act[(jp%(W+1))][a], act[((ip-1)%(W+1))][a], comp[a]);*/
 	}
-	if(do_report_hit) { 
-	  /* printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc); */
-	  gamma->mx[jp]       = cumulative_sc;
-	  gamma->gback[jp]    = i;
-	  gamma->savesc[jp]   = hit_sc;
-	  gamma->saver[jp]    = bestr[d]; 
-	  gamma->savemode[jp] = mode;
+	esl_vec_FNorm(comp, cm->abc->K);
+	ScoreCorrectionNull3(cm->abc, cm->null, comp, d, cm->null3_omega, &null3_correction);
+	hit_sc -= null3_correction;
+	cumulative_sc -= null3_correction;
+	do_report_hit = (cumulative_sc > gamma->mx[jp]) ? TRUE : FALSE;
+	/* printf("GOOD hit %3d..%3d: %8.2f  %10.6f  %8.2f\n", i, j, hit_sc+null3_correction, null3_correction, hit_sc); */
+      }
+      /* enforce that i == i0 and/or j == j0, if necessary */
+      if(trsi != NULL && do_report_hit) { 
+	if((trsi->force_j0_LT && j != j0        && (mode == TRMODE_L || mode == TRMODE_T)) || 
+	   (trsi->force_i0_RT && i != gamma->i0 && (mode == TRMODE_R || mode == TRMODE_T))) { 
+	  do_report_hit = FALSE;
 	}
+      }
+      if(do_report_hit) { 
+	/* printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc); */
+	gamma->mx[jp]       = cumulative_sc;
+	gamma->gback[jp]    = i;
+	gamma->savesc[jp]   = hit_sc;
+	gamma->saver[jp]    = bestr[d]; 
+	gamma->savemode[jp] = mode;
       }
     }
   }
@@ -7170,12 +7179,22 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
  *           strategy. For the non-greedy strategy, see 
  *           UpdateGammaHitMx(). 
  *
+ *           If caller is a truncated scanner <bestmode> and <trsi>
+ *           will be non-NULL, and include info on the alignment mode
+ *           of each hit (<bestmode>), and what types of hits we
+ *           should allow (<trsi>).
+ *
+ *           If caller is a standard (non-truncated) scanner both
+ *           <bestmode> and <trsi> will be NULL. All hits will
+ *           implicitly be of the TRMODE_J mode and no hits 
+ *           are disallowed.
+ *
  * Returns:  eslOK on success
  * Throws:   eslEMEM on memory allocation error
  */
 int
 ReportHitsGreedily(CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, 
-		   int W, double **act, int64_t i0, float cutoff, CM_TOPHITS *hitlist)
+		   TrScanInfo_t *trsi, int W, double **act, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist)
 {
 
   int   status;          /* easel status */
@@ -7193,51 +7212,58 @@ ReportHitsGreedily(CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bes
   float *comp = NULL;            /* 0..a..cm->abc-K-1, the composition of residue a within the hit being reported */
   int    a;                      /* counter for alphabet */
   float  null3_correction = 0.;  /* null 3 penalty */
+  
+  if(bestsc == NULL || dmin > dmax) return eslOK; /* don't report any hits */
 
-  if(bestsc != NULL && dmin <= dmax) { /* if bestsc == NULL or dmin >= dmax, j or d is outside bands, don't report any hits */
-    /* In greedy mode, we are resolving overlaps greedily (RSEARCH
-     * style). We'll have to remove overlaps after all hits are
-     * reported (i.e. many calls to this function with many different
-     * j values) but we don't have to report all hits above cutoff for
-     * this j. Specifically, at the given j, any hit with a d of d1 is
-     * guaranteed to mask any hit of lesser score with a d > d1.  So,
-     * we step through all d starting at dmin and going up to dmax,
-     * only reporting those that exceed our cutoffs *and* are greater
-     * than maximum seen thus far.
-     */
-    max_sc_reported = IMPOSSIBLE;
-    if(act != NULL) ESL_ALLOC(comp, sizeof(float) * cm->abc->K);
-    for (d = dmin; d <= dmax; d++) {
-      mode = (bestmode == NULL) ? TRMODE_J : bestmode[d];
-      hit_sc = bestsc[d];
-      if (hit_sc >  max_sc_reported && /* hit of length d is best seen so far */
-	  hit_sc >= cutoff          && /* hit of length d has sc >= cutoff */
-	  NOT_IMPOSSIBLE(hit_sc))      /* safety: hit does not have IMPOSSIBLE sc */
-	{  
-	  do_report_hit = TRUE;
-	  i  = j - d  + 1;
-	  ip = i - i0 + 1;
-	  jp = j - i0 + 1;
-	  if(act != NULL) { /* do NULL3 score correction */
-	    for(a = 0; a < cm->abc->K; a++) comp[a] = act[jp%(W+1)][a] - act[(ip-1)%(W+1)][a];
-	    esl_vec_FNorm(comp, cm->abc->K);
-	    ScoreCorrectionNull3(cm->abc, cm->null, comp, d, cm->null3_omega, &null3_correction);
-	    hit_sc -= null3_correction;
-	    /* reevaluate do_report_hit: has null3_correction dropped us below our cutoffs? */
-	    do_report_hit = (hit_sc > max_sc_reported && hit_sc >= cutoff) ? TRUE : FALSE;
+  /* In greedy mode, we are resolving overlaps greedily (RSEARCH
+   * style). We'll have to remove overlaps after all hits are
+   * reported (i.e. many calls to this function with many different
+   * j values) but we don't have to report all hits above cutoff for
+   * this j. Specifically, at the given j, any hit with a d of d1 is
+   * guaranteed to mask any hit of lesser score with a d > d1.  So,
+   * we step through all d starting at dmin and going up to dmax,
+   * only reporting those that exceed our cutoffs *and* are greater
+   * than maximum seen thus far.
+   */
+  max_sc_reported = IMPOSSIBLE;
+  if(act != NULL) ESL_ALLOC(comp, sizeof(float) * cm->abc->K);
+  for (d = ESL_MAX(1, dmin); d <= dmax; d++) { /* don't allow length 0 hits, they cause all sorts of problems */
+    i  = j-d+1;
+    mode = (bestmode == NULL) ? TRMODE_J : bestmode[d];
+    hit_sc = bestsc[d];
+    if (hit_sc >  max_sc_reported && /* hit of length d is best seen so far */
+	hit_sc >= cutoff          && /* hit of length d has sc >= cutoff */
+	NOT_IMPOSSIBLE(hit_sc))      /* safety: hit does not have IMPOSSIBLE sc */
+      {  
+	do_report_hit = TRUE;
+	ip = i - i0 + 1;
+	jp = j - i0 + 1;
+	if(act != NULL) { /* do NULL3 score correction */
+	  for(a = 0; a < cm->abc->K; a++) comp[a] = act[jp%(W+1)][a] - act[(ip-1)%(W+1)][a];
+	  esl_vec_FNorm(comp, cm->abc->K);
+	  ScoreCorrectionNull3(cm->abc, cm->null, comp, d, cm->null3_omega, &null3_correction);
+	  hit_sc -= null3_correction;
+	  /* reevaluate do_report_hit: has null3_correction dropped us below our cutoffs? */
+	  do_report_hit = (hit_sc > max_sc_reported && hit_sc >= cutoff) ? TRUE : FALSE;
+	}
+	/* enforce that i == i0 and/or j == j0, if necessary */
+	if(trsi != NULL && do_report_hit) { 
+	  if((trsi->force_j0_LT && j != j0 && (mode == TRMODE_L || mode == TRMODE_T)) || 
+	     (trsi->force_i0_RT && i != i0 && (mode == TRMODE_R || mode == TRMODE_T))) { 
+	    do_report_hit = FALSE;
 	  }
-	  if(do_report_hit) { 
-	    /*printf("\t%.3f %.3f i: %d j: %d r: %d\n", hit_sc+null3_correction, hit_sc, i, j, bestr[d]);*/
-	    cm_tophits_CreateNextHit(hitlist, &hit);
-	    hit->start = i;
-	    hit->stop  = j;
-	    hit->root  = bestr[d];
-	    hit->mode  = mode;
-	    hit->score = hit_sc;
-	    max_sc_reported = hit_sc; 
+	}
+	if(do_report_hit) { 
+	  /*printf("\t%.3f %.3f i: %d j: %d r: %d\n", hit_sc+null3_correction, hit_sc, i, j, bestr[d]);*/
+	  cm_tophits_CreateNextHit(hitlist, &hit);
+	  hit->start = i;
+	  hit->stop  = j;
+	  hit->root  = bestr[d];
+	  hit->mode  = mode;
+	  hit->score = hit_sc;
+	  max_sc_reported = hit_sc; 
 	} 
       }
-    }
   }
   if(comp != NULL) free(comp);
   return eslOK;

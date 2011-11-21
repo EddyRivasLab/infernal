@@ -1588,14 +1588,14 @@ typedef struct trscanmx_s {
  * which matrices to fill in and other information.
  */
 typedef struct trscaninfo_s {
-  int allow_L; /* allow left  marginal alignments */
-  int allow_R; /* allow right marginal alignments */
+  int allowR; /* allow right marginal alignments */
+  int allowL; /* allow left  marginal alignments */
   /* allow_T is not necessary, it is implicitly TRUE only
    * if allow_L and allow_R are both TRUE.
    */
 
-  int need_i0_LT; /* require i0 (first residue) to be included in any Left  or Terminal marginal hit */
-  int need_j0_RT; /* require j0 (final residue) to be included in any Right or Terminal marginal hit */
+  int force_i0_RT; /* require i0 (first residue) to be included in any Right or Terminal marginal hit */
+  int force_j0_LT; /* require j0 (final residue) to be included in any Left  or Terminal marginal hit */
 } TrScanInfo_t;
 
 /* Structure GammaHitMx_t: gamma semi-HMM used for optimal hit resolution
@@ -1609,7 +1609,7 @@ typedef struct gammahitmx_s {
   int      *saver;		/* [0..L] saves initial non-ROOT state of best parse ended at j */
   int      *savemode;		/* [0..L] saves mode best parse ended at j (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T) */
   float     cutoff;             /* minimum score to report */
-  int       i0;                 /* position of first residue in sequence (gamma->mx[0] corresponds to this residue) */
+  int       i0;                 /* position of first residue in sequence, in actual sequence coords (gamma->mx[0] corresponds to this residue) */
 } GammaHitMx_t;
 
 /* Structure ExpInfo_t:
@@ -2001,9 +2001,10 @@ typedef struct cm_pipeline_s {
   int     glen_max;             /* max clen for len-dependent glc p7 thr    */
   int     glen_step;            /* step size for halving glc p7 thr if do_glen */
   int     do_glocal_cm_stages;  /* TRUE to use CM in glocal mode for final stages */
-  int     research_ends;        /* TRUE to use local env defn at sequence ends */
+  int     research_ends;        /* TRUE to use re-search sequence ends for truncated his */
   int     do_trunc_ends;        /* TRUE to use truncated CM algs at sequence ends */
-  int     no_local_ends;        /* TRUE to use glocal domain defn even for sequence ends */
+  int     do_force_ends;        /* TRUE to force i0/j0 be part of truncated hits */
+  int     do_local_ends;        /* TRUE to use local env for ends (can only be TRUE if do_force_ends is FALSE) */
 
   /* Parameters controlling p7 domain/envelope defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
@@ -2086,6 +2087,10 @@ typedef struct cm_pipeline_s {
 
   CM_FILE      *cmfp;		/* COPY of open CM database (if scan mode) */
   char          errbuf[eslERRBUFSIZE];
+  
+  /* 'ps_*' parameters: these can be changed per-sequence */
+  int rs5term;  /* are we researching the 5' terminus for local/truncated hits? */
+  int rs3term;  /* are we researching the 3' terminus for local/truncated hits? */
 } CM_PIPELINE;
 
 /* Structure: CM_ALIDISPLAY

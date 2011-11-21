@@ -141,8 +141,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *trsi, 
   float  **lmesc_vAA   = cm->lmesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] left  marginal emission scores for v */
 
   /* determine which matrices we need to fill in based on <trsi> */
-  fill_L = trsi->allow_L      ? TRUE : FALSE;
-  fill_R = trsi->allow_R      ? TRUE : FALSE;
+  fill_L = trsi->allowL       ? TRUE : FALSE;
+  fill_R = trsi->allowR       ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
 
   float  **rmesc_vAA   = cm->rmesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] right marginal emission scores for v */
@@ -600,10 +600,10 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *trsi, 
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, trsi, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, trsi, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
@@ -773,8 +773,8 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *tr
 
 
   /* determine which matrices we need to fill in based on <trsi> */
-  fill_L = trsi->allow_L      ? TRUE : FALSE;
-  fill_R = trsi->allow_R      ? TRUE : FALSE;
+  fill_L = trsi->allowL       ? TRUE : FALSE;
+  fill_R = trsi->allowR       ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
 
   /* determine if we're doing banded/non-banded */
@@ -1228,10 +1228,10 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *tr
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, trsi, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, trsi, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
 
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
@@ -1414,8 +1414,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
   float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
 
   /* determine which matrices we need to fill in based on <trsi> */
-  fill_L = trsi->allow_L      ? TRUE : FALSE;
-  fill_R = trsi->allow_R      ? TRUE : FALSE;
+  fill_L = trsi->allowL       ? TRUE : FALSE;
+  fill_R = trsi->allowR       ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
 
   /* ensure an alignment to ROOT_S (v==0) is possible */
@@ -2150,7 +2150,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
     for(j = i0; j < jmin[v]; j++) {
       if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, -1, -1, 
 				      NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
-				      bestr, NULL, W, act)) != eslOK) return status;
+				      bestr, NULL, NULL, W, act)) != eslOK) return status;
     }
   }
 
@@ -2252,10 +2252,10 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
     }
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, trsi, W, act)) != eslOK) return status;
     }
     if(tmp_hitlist != NULL) { 
-      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
+      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, trsi, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   } /* end of 'for (j = jmin[v]; j <= jmax[v]'... */
   esl_stopwatch_Stop(w);
@@ -2267,7 +2267,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
     for(j = jmax[v]+1; j <= j0; j++) {
       if((status = UpdateGammaHitMx(cm, errbuf, gamma, j, -1, -1,
 				    NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
-				    bestr, NULL, W, act)) != eslOK) return status;
+				    bestr, NULL, NULL, W, act)) != eslOK) return status;
     }
   }
 
@@ -2516,8 +2516,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_
   float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
 
   /* determine which matrices we need to fill in based on <trsi> */
-  fill_L = trsi->allow_L      ? TRUE : FALSE;
-  fill_R = trsi->allow_R      ? TRUE : FALSE;
+  fill_L = trsi->allowL       ? TRUE : FALSE;
+  fill_R = trsi->allowR       ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
 
   /* ensure an alignment to ROOT_S (v==0) is possible */
@@ -3262,7 +3262,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_
     for(j = i0; j < jmin[v]; j++) {
       if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, -1, -1, 
 				      NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
-				      bestr, NULL, W, act)) != eslOK) return status;
+				      bestr, NULL, NULL, W, act)) != eslOK) return status;
     }
   }
 
@@ -3356,10 +3356,10 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_
     }
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, trsi, W, act)) != eslOK) return status;
     }
     if(tmp_hitlist != NULL) { 
-      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act, i0, cutoff, tmp_hitlist)) != eslOK) return status;
+      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, trsi, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   }
   esl_stopwatch_Stop(w);
@@ -3370,7 +3370,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_
     for(j = jmax[v]+1; j <= j0; j++) {
       if((status = UpdateGammaHitMx(cm, errbuf, gamma, j, -1, -1,
 				    NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
-				    bestr, NULL, W, act)) != eslOK) return status;
+				    bestr, NULL, NULL, W, act)) != eslOK) return status;
     }
   }
 
@@ -3748,7 +3748,7 @@ main(int argc, char **argv)
 	while(1) { 
 	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
 				     TRUE,  /* doing search? */
-				     FALSE,  /* doing trCYK/Inside/Outside? */
+				     NULL,  /* we are not allowing truncated alignments */
 				     0)) != eslOK) cm_Fail(errbuf);
 	  if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, &hbmx_Mb)) != eslOK) return status; 
 	  if(hbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */
@@ -3783,7 +3783,7 @@ main(int argc, char **argv)
 	while(1) { 
 	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
 				     TRUE,  /* doing search? */
-				     TRUE,  /* doing trCYK/Inside/Outside? */
+				     NULL,  /* we are not allowing truncated alignments */
 				     0)) != eslOK) cm_Fail(errbuf);
 	  if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, NULL, NULL, NULL, &trhbmx_Mb)) != eslOK) return status; 
 	  if(trhbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */

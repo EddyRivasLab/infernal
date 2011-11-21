@@ -6380,7 +6380,7 @@ main(int argc, char **argv)
       L = seqs_to_aln->sq[i]->n;
 
       esl_stopwatch_Start(w);
-      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, seqs_to_aln->sq[i]->dsq, 1, L, cm->cp9b, FALSE, FALSE, 0)) != eslOK) cm_Fail(errbuf);
+      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, seqs_to_aln->sq[i]->dsq, 1, L, cm->cp9b, FALSE, NULL, 0)) != eslOK) cm_Fail(errbuf);
       esl_stopwatch_Stop(w);
       printf("%4d %-30s %17s", i+1, "Exptl Band calc:", "");
       esl_stopwatch_Display(stdout, w, "CPU time: ");

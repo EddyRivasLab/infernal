@@ -28,11 +28,12 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT  0
+#define DOPRINT  1
 #define DOPRINT2 0
 #define DOPRINT3 0
 
 static int merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, int nwin1, int64_t *ws2, int64_t *we2, double *wp2, int *wl2, int nwin2, int64_t **ret_mws, int64_t **ret_mwe, double **ret_mwp, int **ret_mwl, int *ret_nmwin);
+
 
 /*****************************************************************
  * 1. The CM_PIPELINE object: allocation, initialization, destruction.
@@ -248,11 +249,16 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->glen_step        = esl_opt_GetInteger(go, "--glstep");
   pli->research_ends    = (esl_opt_GetBoolean(go, "--noends"))  ? FALSE : TRUE;
   pli->do_trunc_ends    = (esl_opt_GetBoolean(go, "--notrunc")) ? FALSE : TRUE;
-  pli->no_local_ends    = (esl_opt_GetBoolean(go, "--nolocal")) ? TRUE  : FALSE;
+  pli->do_force_ends    = (esl_opt_GetBoolean(go, "--noforce")) ? FALSE : TRUE;
+  pli->do_local_ends    = (esl_opt_GetBoolean(go, "--locends")) ? TRUE  : FALSE;
   pli->xtau             = esl_opt_GetReal(go, "--xtau");
 
   /* Set up truncated scanner information */
   pli->trsi = (pli->do_trunc_ends) ? CreateTrScanInfo() : NULL;
+
+  /* Initialize per-sequence information */
+  pli->rs5term = FALSE;
+  pli->rs3term = FALSE;
 
   /* Configure acceleration pipeline thresholds */
   pli->do_cm         = TRUE;
@@ -1364,7 +1370,6 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
 
 }
 
-
 /* Function:  cm_pli_p7EnvelopeDef()
  * Synopsis:  Envelope definition of hits surviving Forward, prior to passing to CYK.
  * Incept:    EPN, Wed Nov 24 13:18:54 2010
@@ -1372,14 +1377,6 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
  * Purpose:   For each window x, from <ws[x]>..<we[x]>, determine
  *            the envelope boundaries for any hits within it using 
  *            a p7 profile. 
- *
- *            If <do_glocal> is TRUE (default) use a glocally
- *            configured multihit profile <*opt_gm> for envelope
- *            definition, else use the locally configured <om>.  This
- *            allows us to use the local envelope definition if the
- *            window comes from the first or final <pli->cmW> residues
- *            of the sequence, to help find truncated hits at the
- *            sequence boundaries.
  *
  *            In the SCAN pipeline we may enter this function with
  *            *opt_gm == NULL because we haven't yet read it from the
@@ -1403,7 +1400,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int i_am_terminal, int do_glocal, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv)
+cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv)
 {
   int              status;                     
   double           P;                          /* P-value of a hit */
@@ -1422,9 +1419,20 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
   ESL_DSQ         *subdsq;           /* a ptr to the first position of a window */
   ESL_SQ          *seq = NULL;       /* a copy of a window */
   int64_t          estart, eend;     /* envelope start/end positions */
-  float            nullsc, filtersc, fwdsc;
-  P7_PROFILE      *gm = NULL;        /* a ptr to *opt_gm, for convenience */
-  int              free_glocal_pass; /* TRUE if i_am_terminal, we don't require glocal scores to reach P value thresholds */ 
+  float            nullsc, filtersc, fwdsc, bcksc;
+  P7_PROFILE      *gm  = NULL;        /* a ptr to *opt_gm, for convenience */
+  int              do_local_envdef;  /* TRUE if we define envelopes with p7 in local mode, FALSE for glocal */
+
+  /* variables related to forcing first and/or final residue within truncated hits */
+  P7_PROFILE      *Rgm = NULL;        /* a ptr to *Ropt_gm, for convenience */
+  P7_PROFILE      *Lgm = NULL;        /* a ptr to *Lopt_gm, for convenience */
+  P7_PROFILE      *Tgm = NULL;        /* a ptr to *Topt_gm, for convenience */
+  float            safe_lfwdsc;       /* a score <= local Forward score, determined via a correction to a Forward score with Rgm or Lgm */
+  int              use_Rgm, use_Lgm, use_Tgm; /* only one of these can be TRUE, should we use the specially configured T, R, or L profiles
+					       * because we're defining envelopes for hits possibly truncated 5', 3' or both 5' and 3'? */
+  float            Rgm_correction;    /* nat score correction for windows and envelopes defined with Rgm */
+  float            Lgm_correction;    /* nat score correction for windows and envelopes defined with Lgm */
+
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nwin == 0)  { 
     *ret_es = es;
@@ -1432,8 +1440,10 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
     *ret_nenv = 0;
     return eslOK;    /* if there's no envelopes to search in, return */
   }
+  do_local_envdef = (pli->do_localenv || (pli->do_local_ends && (pli->rs5term || pli->rs3term))) ? TRUE : FALSE;
 
-  free_glocal_pass = (do_glocal && i_am_terminal) ? TRUE : FALSE;
+  if(pli->do_force_ends && (pli->rs5term || pli->rs3term) && nwin > 1) ESL_FAIL(eslFAIL, pli->errbuf, "researching terminus but more than 1 window exist");
+
   nenv_alloc = nwin;
   ESL_ALLOC(es, sizeof(int64_t) * nenv_alloc);
   ESL_ALLOC(ee, sizeof(int64_t) * nenv_alloc);
@@ -1445,19 +1455,49 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 #endif
 
   /* if we're in SCAN mode, we don't yet have the full generic model, read the HMM and create it */
-  if (pli->mode == CM_SCAN_MODELS && (do_glocal) && (*opt_gm) == NULL) { 
+  if (pli->mode == CM_SCAN_MODELS && (do_local_envdef) && (*opt_gm) == NULL) { 
     P7_HMM       *hmm = NULL;
     if (pli->cmfp      == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in cm_pli_p7EnvelopeDef()");
     if (pli->cmfp->hfp == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in cm_pli_p7EnvelopeDef()");
     if((status = cm_p7_hmmfile_Read(pli->cmfp, pli->abc, om->offs[p7_MOFFSET], &hmm)) != eslOK) ESL_FAIL(status, pli->errbuf, pli->cmfp->errbuf);
     *opt_gm = p7_profile_Create(hmm->M, pli->abc);
     p7_ProfileConfig(hmm, bg, *opt_gm, 100, p7_GLOCAL);
+
+    if(pli->do_force_ends) { 
+      if(pli->rs5term) { 
+	*opt_Rgm = p7_profile_Clone(*opt_gm);
+	p7_ProfileConfig5PrimeTrunc(*opt_Rgm, wlen);
+      }
+      if(pli->rs3term) { 
+	*opt_Lgm = p7_profile_Clone(*opt_gm);
+	p7_ProfileConfig3PrimeTrunc(hmm, *opt_Lgm, wlen);
+      }
+      if(pli->rs5term && pli->rs3term) { 
+	*opt_Tgm = p7_profile_Clone(*opt_gm);
+	p7_ProfileConfig(hmm, bg, *opt_Tgm, wlen, p7_LOCAL);
+	p7_ProfileConfig5PrimeAnd3PrimeTrunc(*opt_Tgm, wlen);
+      }  
+    }
     p7_hmm_Destroy(hmm);
   }
-  
-  gm = *opt_gm;
+  gm  = *opt_gm;
+  Rgm = *opt_Rgm;
+  Lgm = *opt_Lgm;
+  Tgm = *opt_Tgm;
+
+  use_Tgm = use_Rgm = use_Lgm = FALSE;
+  if((! do_local_envdef) && pli->do_force_ends) { 
+    if     (pli->rs5term && pli->rs3term) use_Tgm = TRUE;
+    else if(pli->rs5term)                 use_Rgm = TRUE;
+    else if(pli->rs3term)                 use_Lgm = TRUE;
+  }
+
   for (i = 0; i < nwin; i++) {
-    wlen = we[i] - ws[i] + 1;
+    printf("p7 envdef win: %4d of %4d [%6" PRId64 "..%6" PRId64 "] rs5term: %d rs3term: %d\n", i, nwin, ws[i], we[i], pli->rs5term, pli->rs3term);
+    if(pli->do_force_ends && pli->rs5term && ws[i] != 1)     ESL_FAIL(eslFAIL, pli->errbuf, "researching 5' terminus but residue 1 outside window");
+    if(pli->do_force_ends && pli->rs3term && we[i] != sq->n) ESL_FAIL(eslFAIL, pli->errbuf, "researching 3' terminus but residue L outside window");
+
+    wlen   = we[i]   - ws[i] + 1;
     subdsq = sq->dsq + ws[i] - 1;
     
     /* set up seq object for domaindef function */
@@ -1469,7 +1509,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
     p7_bg_SetLength(bg, wlen);
     p7_bg_NullOne(bg, seq->dsq, wlen, &nullsc);
 
-    if(! do_glocal) { /* we can use optimized matrices and, consequently, p7_domaindef_ByPosteriorHeuristics */
+    if(do_local_envdef) { /* we can use optimized matrices and, consequently, p7_domaindef_ByPosteriorHeuristics */
       p7_oprofile_ReconfigLength(om, wlen);
       p7_ForwardParser(seq->dsq, wlen, om, pli->oxf, NULL);
       p7_omx_GrowTo(pli->oxb, om->M, 0, wlen);
@@ -1478,20 +1518,57 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
     }
     else { /* we're defining envelopes in glocal mode, so we need to fill 
 	    * generic fwd/bck matrices and pass them to p7_domaindef_GlocalByPosteriorHeuristics() */
-      p7_ReconfigLength(gm, wlen);
-      p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
-      p7_GForward (seq->dsq, wlen, gm, pli->gxf, &fwdsc);
-      
-      sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
-      /* Does this score exceeds our glocal forward filter threshold? If not, move on to next seq */
-      P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
+      if(use_Tgm) { 
+	/* no length reconfiguration necessary */
+	p7_gmx_GrowTo(pli->gxf, Tgm->M, wlen);
+	p7_GForward (seq->dsq, wlen, Tgm, pli->gxf, &fwdsc);
+	printf("Tfwdsc: %.4f\n", fwdsc);
+	/* we use local Fwd statistics to determine statistical significance of this score,
+	 * it has already had basically a 1/log(M*(M+1)) penalty for equiprobable local begins and ends */
+	sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
+	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
+      }
+      else if(use_Rgm) { 
+	p7_ReconfigLength5PrimeTrunc(Rgm, wlen);
+	p7_gmx_GrowTo(pli->gxf, Rgm->M, wlen);
+	p7_GForward (seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
+	printf("Rfwdsc: %.4f\n", fwdsc);
+	/* we use local Fwd statistics to determine significance of the score, but we need to correct for lack of equiprobable ends in fwdsc */
+	Rgm_correction = (log(2./(Lgm->M * (Lgm->M+1))) - log(1./Lgm->M)); /* GForward penalized 0. for ends and log(1/Lgm->M) for begins into any state */
+	safe_lfwdsc = fwdsc + Rgm_correction;
+	/* safe_lfwdsc is now less than or equal to the local foward score we would get with a truly local model */
+	sc_for_pvalue = (safe_lfwdsc - nullsc) / eslCONST_LOG2;
+	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
+      }
+      else if(use_Lgm) { 
+	p7_ReconfigLength3PrimeTrunc(Lgm, wlen);
+	p7_gmx_GrowTo(pli->gxf, Lgm->M, wlen);
+	p7_GForward (seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
+	printf("Lfwdsc: %.4f\n", fwdsc);
+	/* we use local Fwd statistics to determine significance of the score, but we need to correct for lack of equiprobable begins and ends in fwdsc */
+	Lgm_correction = log(2./(Lgm->M * (Lgm->M+1))); /* GForward penalized 0. for ends and 0. for begins into M1 */
+	safe_lfwdsc = fwdsc + Lgm_correction; 
+	/* safe_lfwdsc is now less than or equal to the local foward score we would get with a truly local model */
+	sc_for_pvalue = (safe_lfwdsc - nullsc) / eslCONST_LOG2;
+	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
+      }
+      else { /* normal case, not looking for truncated hits */
+	p7_ReconfigLength(gm, wlen);
+	p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
+	p7_GForward (seq->dsq, wlen, gm, pli->gxf, &fwdsc);
+	printf(" fwdsc: %.4f\n", fwdsc);
+	sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
+	/* Does this score exceed our glocal forward filter threshold? If not, move on to next seq */
+	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
+      }
+
 
 #if DOPRINT	
       if(P > pli->F4) { 
 	printf("KILLED   window %5d [%10" PRId64 "..%10" PRId64 "]          gFwd      %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
       }
 #endif      
-      if(P > pli->F4 && (! free_glocal_pass)) continue;
+      if(P > pli->F4) continue;
 
       pli->n_past_gfwd++;
       pli->pos_past_gfwd += wlen;
@@ -1505,19 +1582,41 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	p7_bg_FilterScore(bg, seq->dsq, wlen, &filtersc);
 	sc_for_pvalue = (fwdsc - filtersc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
-	if(P > pli->F4b && (! free_glocal_pass)) continue;
+	if(P > pli->F4b) continue;
 #if DOPRINT	
 	printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwdBias  %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
 #endif 
 	pli->n_past_gfwdbias++;
 	pli->pos_past_gfwdbias += wlen;
       }
-      
       if(pli->do_time_F4) continue; 
 
-      p7_gmx_GrowTo(pli->gxb, gm->M, wlen);
-      p7_GBackward(seq->dsq, wlen, gm, pli->gxb, NULL);
-      status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2); 
+      /* this block needs to match up with if..else if...else if...else block calling p7_GForward above */
+      if(use_Tgm) { 
+	/* no length reconfiguration necessary */
+	p7_gmx_GrowTo(pli->gxb, Tgm->M, wlen);
+	p7_GBackward(seq->dsq, wlen, Tgm, pli->gxb, &bcksc);
+	status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Tgm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2); 
+	printf("Tbcksc: %.4f\n", bcksc);
+      }
+      else if(use_Rgm) { 
+	p7_gmx_GrowTo(pli->gxb, Rgm->M, wlen);
+	p7_GBackward(seq->dsq, wlen, Rgm, pli->gxb, &bcksc);
+	status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Rgm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2); 
+	printf("Rbcksc: %.4f\n", bcksc);
+      }
+      else if(use_Lgm) { 
+	p7_gmx_GrowTo(pli->gxb, Lgm->M, wlen);
+	p7_GBackward(seq->dsq, wlen, Lgm, pli->gxb, &bcksc);
+	status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Lgm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2); 
+	printf("Lbcksc: %.4f\n", bcksc);
+      }
+      else { /* normal case, not looking for truncated hits */
+	p7_gmx_GrowTo(pli->gxb, gm->M, wlen);
+	p7_GBackward(seq->dsq, wlen, gm, pli->gxb, &bcksc);
+	status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2); 
+	printf(" bcksc: %.4f\n", bcksc);
+      }
     }
     
     if (status != eslOK) ESL_FAIL(status, pli->errbuf, "envelope definition workflow failure"); /* eslERANGE can happen */
@@ -1527,7 +1626,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
     /* For each domain found in the p7_domaindef_*() function, determine if it passes our criteria */
     for(d = 0; d < pli->ddef->ndom; d++) { 
       
-      if(! do_glocal) { /* we called p7_domaindef_ByPosteriorHeuristics() above, which fills pli->ddef->dcl[d].ad, but we don't need it */
+      if(do_local_envdef) { /* we called p7_domaindef_ByPosteriorHeuristics() above, which fills pli->ddef->dcl[d].ad, but we don't need it */
 	p7_alidisplay_Destroy(pli->ddef->dcl[d].ad);
       }
 
@@ -1570,12 +1669,15 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	env_edefbias       = (pli->do_null2 ? p7_FLogsum(0.0, log(bg->omega) + pli->ddef->dcl[d].domcorrection) : 0.0); /* NATS, and will stay so */
 	env_sc_for_pvalue = (env_sc - (nullsc + env_edefbias)) / eslCONST_LOG2; /* now BITS, as it should be */
       }
-      if(do_glocal) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
-      else          P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
+      if(use_Rgm) env_sc_for_pvalue += Rgm_correction / eslCONST_LOG2; /* glocal env def penalized 0. for ends and log(1/Lgm->M) for begins into any state */
+      if(use_Lgm) env_sc_for_pvalue += Lgm_correction / eslCONST_LOG2; /* glocal env def penalized 0. for ends and 0. for begins into M1 */
+
+      if(do_local_envdef || use_Tgm || use_Rgm || use_Lgm) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
+      else                                                 P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
       /***************************************************/
       
       /* check if we can skip this envelope based on its P-value or bit-score */
-      if(P > pli->F5 && (! free_glocal_pass)) continue;
+      if(P > pli->F5) continue;
     
       /* Define envelope to search with CM:
        *
@@ -1628,9 +1730,9 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	  filtersc += (float) (wlen-env_len) * logf(bg->p1);
 	}
 	env_sc_for_pvalue = (env_sc - filtersc) / eslCONST_LOG2;
-	if(do_glocal) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
-	else          P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
-	if(P > pli->F5b && (! free_glocal_pass)) continue;
+	if(do_local_envdef) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
+	else                P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
+	if(P > pli->F5b) continue;
       }
 #if DOPRINT
       printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived F5-bias  %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
@@ -1688,9 +1790,9 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
  *            return it in <*opt_cmcons>. Otherwise, if <*opt_cm>
  *            is valid (non-NULL),  <*opt_cmcons> should be as well.
  *
- *            If <do_trunc> is TRUE, we are searching the end of 
- *            a sequence which may contain truncated hits, so we
- *            use truncated search/alignment algorithms.
+ *            <pli->trsi> indicates if we should allow L, R, or T marginal
+ *            alignments and if it is necessary to force an marginal
+ *            alignment to include the terminal residues.
  *
  * Returns:   <eslOK> on success. If a significant hit is obtained,
  *            its information is added to the growing <hitlist>.
@@ -1702,7 +1804,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int do_trunc, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
+cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 {
   int              status;
   char             errbuf[cmERRBUFSIZE];   /* for error messages */
@@ -1725,9 +1827,12 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   CM_t            *cm = NULL;              /* ptr to *opt_cm, for convenience only */
   CP9Bands_t      *scan_cp9b = NULL;       /* a copy of the HMM bands derived in the final CM search stage, if its HMM banded */
   float            hbmx_Mb;                /* approximate size in Mb for HMM banded matrix for current hit */
+  int              do_trunc;               /* TRUE if we are allowing L and/or R marginal alignments, FALSE if not */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
+
+  do_trunc = (pli->trsi->allowR || pli->trsi->allowL) ? TRUE : FALSE; 
 
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS) { 
@@ -1815,7 +1920,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	 * the resulting HMM banded matrix is under our size limit.
 	 */
 	while(1) { 
-	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, do_trunc, 0)) != eslOK) return status;
+	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, pli->trsi, 0)) != eslOK) return status;
 	  if(do_trunc) {
 	    if((status = cm_tr_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; 
 	  }
@@ -1921,7 +2026,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	 * the resulting HMM banded matrix is under our size limit.
 	 */
 	while(1) { 
-	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, do_trunc, 0)) != eslOK) return status;
+	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, pli->trsi, 0)) != eslOK) return status;
 	  if(do_trunc) { 
 	    if((status = cm_tr_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; 
 	  }
@@ -2201,7 +2306,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
        */
       cm->tau = pli->final_tau;
       while(1) { 
-	if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, do_trunc, 0)) != eslOK) return status; 
+	if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, pli->trsi, 0)) != eslOK) return status; 
 	if(do_trunc) { 
 	  if((status = cm_tr_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, hitlen, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; 
 	}
@@ -2505,6 +2610,11 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
  *            cm_pli_CMStage().  This organization allows us to
  *            use multiple p7 HMMs as filters.
  *
+ *            <research_5term> and <research_3term> indicate whether we
+ *            are re-searching a terminal chunk of the sequence either
+ *            5' (in which case we have the first residue) and/or 3'
+ *            in which case we have the final residue. 
+ *
  * Returns:   <eslOK> on success. If a significant hit is obtained,
  *            its information is added to the growing <hitlist>.
  *
@@ -2524,17 +2634,28 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int i_am_terminal, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
+cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 {
   int status;
   int       nwin = 0;   /* number of windows surviving MSV & Vit & lFwd, filled by cm_pli_p7Filter() */
   int64_t  *ws = NULL;  /* [0..i..nwin-1] window start positions, filled by cm_pli_p7Filter() */
   int64_t  *we = NULL;  /* [0..i..nwin-1] window end   positions, filled by cm_pli_p7Filter() */
   int       nenv = 0;   /* number of envelopes surviving MSV & Vit & lFwd & gFwd & EnvDef, filled by cm_pli_p7EnvelopeDef */
-  int64_t  *es = NULL;  /* [0..i..nenv-1] window start positions, filled by cm_pli_p7EnvelopeDef() */
-  int64_t  *ee = NULL;  /* [0..i..nenv-1] window end   positions, filled by cm_pli_p7EnvelopeDef() */
-  int       do_glocal;  /* TRUE, unless if i_am_terminal == TRUE; this informs p7EnvelopeDef() to use local domain defn */
-  int       do_trunc;   /* TRUE if i_am_terminal == TRUE and pli->do_trunc_ends; this informs cm_pli_CMStage() to use truncated search/aln algs */
+  int64_t  *es  = NULL; /* [0..i..nenv-1] window start positions, filled by cm_pli_p7EnvelopeDef() */
+  int64_t  *ee  = NULL; /* [0..i..nenv-1] window end   positions, filled by cm_pli_p7EnvelopeDef() */
+
+  /* variables only used in the special case that current sequence contains both the 5' and 3' terminus and
+   * pli->rs5term and pli->rs3term are both TRUE. We have to handle possibility that sequence may contain
+   * 5' truncated hits, 3' truncated hits or hits that are both 5' and 3' truncated, so we need to 
+   * call p7_EnvelopeDef() three times. 
+   */
+  int       nenv2 = 0;  /* number of envelopes surviving second call to cm_pli_p7EnvelopeDef() */
+  int64_t  *es2 = NULL; /* [0..i..nenv2-1] window start positions, filled by cm_pli_p7EnvelopeDef() */
+  int64_t  *ee2 = NULL; /* [0..i..nenv2-1] window end   positions, filled by cm_pli_p7EnvelopeDef() */
+  int       nenv3 = 0;  /* number of envelopes surviving third call to cm_pli_p7EnvelopeDef() */
+  int64_t  *es3 = NULL; /* [0..i..nenv3-1] window start positions, filled by cm_pli_p7EnvelopeDef() */
+  int64_t  *ee3 = NULL; /* [0..i..nenv3-1] window end   positions, filled by cm_pli_p7EnvelopeDef() */
+  int       i;          /* counter over envelopes */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
 #if DOPRINT
@@ -2561,19 +2682,51 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
 #endif
   if((status = cm_pli_p7Filter(pli, om, bg, p7_evparam, sq, &ws, &we, &nwin)) != eslOK) return status;
   if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
-  
-  do_glocal = ((i_am_terminal && (! pli->no_local_ends)) || pli->do_localenv) ? FALSE : TRUE;
-#if DOPRINT
-  printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues (do_glocal: %d)\n", sq->name, sq->n, do_glocal);
-#endif
-  //if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, do_glocal, ws, we, nwin, opt_gm, &es, &ee, &nenv)) != eslOK) return status;
-  if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, i_am_terminal, do_glocal, ws, we, nwin, opt_gm, &es, &ee, &nenv)) != eslOK) return status;
 
-  do_trunc = (i_am_terminal && pli->do_trunc_ends) ? TRUE : FALSE;
+#if DOPRINT
+  printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues (rs5term: %d rs3term: %d)\n", sq->name, sq->n, pli->rs5term, pli->rs3term);
+#endif
+  if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es, &ee, &nenv)) != eslOK) return status;
+  if(pli->do_force_ends && pli->rs5term && pli->rs3term) { 
+    /* special case: we are the 5' *and* 3' terminus (i.e. one short sequence that could be 
+     * truncated 5', 3' or both, so we need to do 3 passes with EnvelopeDef(). We just
+     * did 1 pass with both rs5term and rs3term set as TRUE, now toggle each.
+     */
+    pli->rs5term = TRUE; 
+    pli->rs3term = FALSE;
+    if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es2, &ee2, &nenv2)) != eslOK) return status;
+    pli->rs5term = FALSE;
+    pli->rs3term = TRUE;
+    if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es3, &ee3, &nenv3)) != eslOK) return status;
+    pli->rs5term = pli->rs3term = TRUE; /* reset */
+    if(nenv2 > 0 || nenv3 > 0) { 
+      if(nenv > 0) ESL_REALLOC(es, sizeof(int64_t) * (nenv + nenv2 + nenv3));
+      else         ESL_ALLOC  (es, sizeof(int64_t) * (nenv + nenv2 + nenv3));
+      if(nenv > 0) ESL_REALLOC(ee, sizeof(int64_t) * (nenv + nenv2 + nenv3));
+      else         ESL_ALLOC  (ee, sizeof(int64_t) * (nenv + nenv2 + nenv3));
+      i = nenv;
+      for(i = nenv; i < nenv + nenv2; i++) { 
+	es[i] = es2[i - nenv]; 
+	ee[i] = ee2[i - nenv]; 
+      }
+      for(i = nenv + nenv2; i < nenv + nenv2 + nenv3; i++) { 
+	es[i] = es3[i - (nenv + nenv2)]; 
+	ee[i] = ee3[i - (nenv + nenv2)]; 
+      }
+      nenv = nenv + nenv2 + nenv3;
+    }
+    /* we could try and combine envelopes here, but don't currently */
+  }
+
 #if DOPRINT
   printf("\nPIPELINE calling CMStage() %s  %" PRId64 " residues\n", sq->name, sq->n);
 #endif
-  if((status = cm_pli_CMStage      (pli, cm_offset, cm_config_opts, sq, do_trunc, es,  ee,  nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
+  /* update truncated scanner info based on pipline info */
+  pli->trsi->allowR      = pli->do_trunc_ends && pli->rs5term                       ? TRUE : FALSE;
+  pli->trsi->allowL      = pli->do_trunc_ends && pli->rs3term                       ? TRUE : FALSE;
+  pli->trsi->force_i0_RT = pli->do_trunc_ends && pli->rs5term && pli->do_force_ends ? TRUE : FALSE;
+  pli->trsi->force_j0_LT = pli->do_trunc_ends && pli->rs3term && pli->do_force_ends ? TRUE : FALSE;
+  if((status = cm_pli_CMStage(pli, cm_offset, cm_config_opts, sq, es,  ee,  nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
 
   if(pli->do_time_F6) return eslOK;
 
@@ -2581,8 +2734,15 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
   if(we != NULL) free(we);
   if(es != NULL) free(es);
   if(ee != NULL) free(ee);
+  if(es2 != NULL) free(es2);
+  if(ee2 != NULL) free(ee2);
+  if(es3 != NULL) free(es3);
+  if(ee3 != NULL) free(ee3);
 
   return eslOK;
+
+ ERROR:
+  ESL_EXCEPTION(eslEMEM, "Error: out of memory");
 }
   
 /* Function:  cm_pli_Statistics()

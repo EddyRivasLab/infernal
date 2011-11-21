@@ -2427,7 +2427,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
       cm->search_opts |= CM_SEARCH_HBANDED;
       cm->tau = esl_opt_GetReal(go, "--fil-tau");
       if(esl_opt_GetBoolean(go, "--fil-aln2bands")) cm->search_opts |= CM_SEARCH_HMMALNBANDS;
-      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsqA[i], 1, L_A[i], cm->cp9b, TRUE, 0)) != eslOK) return status; 
+      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsqA[i], 1, L_A[i], cm->cp9b, TRUE, NULL, 0)) != eslOK) return status; 
       if((status = FastCYKScanHB(cm, errbuf, dsqA[i], 1, L_A[i], 0., NULL, do_null3, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), 0., NULL, NULL, &(cyk_scA[i]))) != eslOK) return status; 
 
       cm->search_opts |= CM_SEARCH_INSIDE; 
