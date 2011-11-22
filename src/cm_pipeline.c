@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT  1
+#define DOPRINT  0
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -252,9 +252,6 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_force_ends    = (esl_opt_GetBoolean(go, "--noforce")) ? FALSE : TRUE;
   pli->do_local_ends    = (esl_opt_GetBoolean(go, "--locends")) ? TRUE  : FALSE;
   pli->xtau             = esl_opt_GetReal(go, "--xtau");
-
-  /* Set up truncated scanner information */
-  pli->trsi = (pli->do_trunc_ends) ? CreateTrScanInfo() : NULL;
 
   /* Initialize per-sequence information */
   pli->rs5term = FALSE;
@@ -592,7 +589,6 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if(pli->fcyk_dmax != NULL)          { free(pli->fcyk_dmax);             pli->fcyk_dmax = NULL; }
   if(pli->final_dmin != NULL)         { free(pli->final_dmin);            pli->final_dmin = NULL; }
   if(pli->final_dmax != NULL)         { free(pli->final_dmax);            pli->final_dmax = NULL; }
-  if(pli->trsi != NULL)               { free(pli->trsi);                  pli->trsi = NULL; }
   free(pli);
 }
 /*---------------- end, CM_PIPELINE object ----------------------*/
@@ -1534,7 +1530,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	p7_GForward (seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
 	printf("Rfwdsc: %.4f\n", fwdsc);
 	/* we use local Fwd statistics to determine significance of the score, but we need to correct for lack of equiprobable ends in fwdsc */
-	Rgm_correction = (log(2./(Lgm->M * (Lgm->M+1))) - log(1./Lgm->M)); /* GForward penalized 0. for ends and log(1/Lgm->M) for begins into any state */
+	Rgm_correction = (log(2./(Rgm->M * (Rgm->M+1))) - log(1./Rgm->M)); /* GForward penalized 0. for ends and log(1/Rgm->M) for begins into any state */
 	safe_lfwdsc = fwdsc + Rgm_correction;
 	/* safe_lfwdsc is now less than or equal to the local foward score we would get with a truly local model */
 	sc_for_pvalue = (safe_lfwdsc - nullsc) / eslCONST_LOG2;
@@ -1596,25 +1592,25 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	/* no length reconfiguration necessary */
 	p7_gmx_GrowTo(pli->gxb, Tgm->M, wlen);
 	p7_GBackward(seq->dsq, wlen, Tgm, pli->gxb, &bcksc);
-	status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Tgm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2); 
+	if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Tgm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn"); 
 	printf("Tbcksc: %.4f\n", bcksc);
       }
       else if(use_Rgm) { 
 	p7_gmx_GrowTo(pli->gxb, Rgm->M, wlen);
 	p7_GBackward(seq->dsq, wlen, Rgm, pli->gxb, &bcksc);
-	status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Rgm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2); 
+	if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Rgm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");; 
 	printf("Rbcksc: %.4f\n", bcksc);
       }
       else if(use_Lgm) { 
 	p7_gmx_GrowTo(pli->gxb, Lgm->M, wlen);
 	p7_GBackward(seq->dsq, wlen, Lgm, pli->gxb, &bcksc);
-	status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Lgm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2); 
+	if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Lgm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	printf("Lbcksc: %.4f\n", bcksc);
       }
       else { /* normal case, not looking for truncated hits */
 	p7_gmx_GrowTo(pli->gxb, gm->M, wlen);
 	p7_GBackward(seq->dsq, wlen, gm, pli->gxb, &bcksc);
-	status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2); 
+	if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	printf(" bcksc: %.4f\n", bcksc);
       }
     }
@@ -1790,10 +1786,6 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
  *            return it in <*opt_cmcons>. Otherwise, if <*opt_cm>
  *            is valid (non-NULL),  <*opt_cmcons> should be as well.
  *
- *            <pli->trsi> indicates if we should allow L, R, or T marginal
- *            alignments and if it is necessary to force an marginal
- *            alignment to include the terminal residues.
- *
  * Returns:   <eslOK> on success. If a significant hit is obtained,
  *            its information is added to the growing <hitlist>.
  *
@@ -1804,7 +1796,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
+cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int64_t *es, int64_t *ee, char *em, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 {
   int              status;
   char             errbuf[cmERRBUFSIZE];   /* for error messages */
@@ -1828,11 +1820,10 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   CP9Bands_t      *scan_cp9b = NULL;       /* a copy of the HMM bands derived in the final CM search stage, if its HMM banded */
   float            hbmx_Mb;                /* approximate size in Mb for HMM banded matrix for current hit */
   int              do_trunc;               /* TRUE if we are allowing L and/or R marginal alignments, FALSE if not */
+  TruncOpts_t    *tro = NULL;            /* truncated scanner info */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
-
-  do_trunc = (pli->trsi->allowR || pli->trsi->allowL) ? TRUE : FALSE; 
 
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS) { 
@@ -1890,10 +1881,19 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
     cm->tau           = save_tau;
     cm->cp9b->thresh1 = save_cp9b_thresh1;
     cm->cp9b->thresh2 = save_cp9b_thresh2;
+    /* update tro for this envelope, based on em (envelope mode) */
+    if(tro == NULL) tro = CreateTruncOpts();
+    /*printf("read em[%d] as %s\n", i, MarginalMode(em[i]));*/
+    tro->allowR      = pli->do_trunc_ends && (em[i] == TRMODE_R || em[i] == TRMODE_T) ? TRUE : FALSE;
+    tro->allowL      = pli->do_trunc_ends && (em[i] == TRMODE_L || em[i] == TRMODE_T) ? TRUE : FALSE;
+    tro->force_i0_RT = pli->do_trunc_ends && (em[i] == TRMODE_R || em[i] == TRMODE_T) ? TRUE : FALSE;
+    tro->force_j0_LT = pli->do_trunc_ends && (em[i] == TRMODE_L || em[i] == TRMODE_T) ? TRUE : FALSE;
+    do_trunc         = pli->do_trunc_ends && (em[i] == TRMODE_R || em[i] == TRMODE_L || em[i] == TRMODE_T) ? TRUE : FALSE;
+      
 #if DOPRINT
-    printf("\nSURVIVOR Envelope %5d [%10ld..%10ld] being passed to CYK.\n", i, es[i], ee[i]);
+    printf("\nSURVIVOR Envelope %5d [%10ld..%10ld] being passed to CYK   allowR: %d allowL: %d force_i0_RT: %d force_j0_LT: %d\n", i, es[i], ee[i],
+	   tro->allowR, tro->allowL, tro->force_i0_RT, tro->force_j0_LT); 
 #endif
-
     do_hbanded_filter_scan          = (pli->fcyk_cm_search_opts  & CM_SEARCH_HBANDED) ? TRUE  : FALSE;
     do_qdb_or_nonbanded_filter_scan = (pli->fcyk_cm_search_opts  & CM_SEARCH_HBANDED) ? FALSE : TRUE;
     do_hbanded_final_scan           = (pli->final_cm_search_opts & CM_SEARCH_HBANDED) ? TRUE  : FALSE;
@@ -1920,7 +1920,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	 * the resulting HMM banded matrix is under our size limit.
 	 */
 	while(1) { 
-	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, pli->trsi, 0)) != eslOK) return status;
+	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, tro, 0)) != eslOK) return status;
 	  if(do_trunc) {
 	    if((status = cm_tr_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; 
 	  }
@@ -1942,7 +1942,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	cm->search_opts  = pli->fcyk_cm_search_opts;
 
 	if(do_trunc) { 
-	  status = TrCYKScanHB(cm, errbuf, pli->trsi, sq->dsq, es[i], ee[i], 
+	  status = TrCYKScanHB(cm, errbuf, tro, sq->dsq, es[i], ee[i], 
 			       0.,                                  /* minimum score to report, irrelevant */
 			       NULL,                                /* hitlist to add to, irrelevant here */
 			       pli->do_null3,                       /* do the NULL3 correction? */
@@ -2026,7 +2026,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	 * the resulting HMM banded matrix is under our size limit.
 	 */
 	while(1) { 
-	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, pli->trsi, 0)) != eslOK) return status;
+	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, tro, 0)) != eslOK) return status;
 	  if(do_trunc) { 
 	    if((status = cm_tr_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; 
 	  }
@@ -2041,7 +2041,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	/* printf("INS 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
 	if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is HMM banded Inside */
 	  if(do_trunc) { 
-	    status = FTrInsideScanHB(cm, errbuf, pli->trsi, sq->dsq, es[i], ee[i], 
+	    status = FTrInsideScanHB(cm, errbuf, tro, sq->dsq, es[i], ee[i], 
 				     pli->T,            /* minimum score to report */
 				     hitlist,           /* our hitlist */
 				     pli->do_null3,     /* do the NULL3 correction? */
@@ -2070,7 +2070,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	else { /* final algorithm is HMM banded CYK */
 	  /*printf("calling HMM banded CYK scan\n");*/
 	  if(do_trunc) { 
-	    status = TrCYKScanHB(cm, errbuf, pli->trsi, sq->dsq, es[i], ee[i], 
+	    status = TrCYKScanHB(cm, errbuf, tro, sq->dsq, es[i], ee[i], 
 				 pli->T,                             /* minimum score to report */
 				 hitlist,                            /* our hitlist */
 				 pli->do_null3,                      /* do the NULL3 correction? */
@@ -2190,7 +2190,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
       if(pli->do_alignments) { 
 	if((status = cm_pli_AlignHit(pli, cm, *opt_cmcons, sq, do_trunc, hit, 
 				     (h == nhit) ? TRUE : FALSE,    /* TRUE if this is the first hit we're aligning (h == nhit) */
-				     scan_cp9b))                    /* a copy of the HMM bands determined in the last search stage, NULL if HMM bands not used */
+				     scan_cp9b,                     /* a copy of the HMM bands determined in the last search stage, NULL if HMM bands not used */
+				     tro))                         /* the truncated scanner info */
 	   != eslOK) return status;
       }
 
@@ -2237,12 +2238,13 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
     }
 
     nhit = hitlist->N;
-  }
+  } /* end of for each envelope loop */
   cm->tau = save_tau;
   /* free the scan matrices if we just allocated them */
   if((! pli->need_fsmx) && (pli->fsmx != NULL)) { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL;  }
   if((! pli->need_smx)  && (pli->smx != NULL))  { cm_FreeScanMatrix(cm, pli->smx);  pli->smx = NULL;   }
   if(scan_cp9b != NULL) FreeCP9Bands(scan_cp9b);
+  if(tro      != NULL) free(tro);
 
   return eslOK;
 }
@@ -2264,7 +2266,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
  * Returns: <eslOK> on success.
  */
 int
-cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int do_trunc, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b)
+cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int do_trunc, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b, TruncOpts_t *tro)
 {
   int                 status;               /* Easel status code */
   Parsetree_t        *tr = NULL;            /* pointer to the pointer to the parsetree we're currently creating */
@@ -2306,7 +2308,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
        */
       cm->tau = pli->final_tau;
       while(1) { 
-	if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, pli->trsi, 0)) != eslOK) return status; 
+	if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, tro, 0)) != eslOK) return status; 
 	if(do_trunc) { 
 	  if((status = cm_tr_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, hitlen, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; 
 	}
@@ -2388,6 +2390,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
 			    (do_ppstr  ? &ppstr  : NULL),                  /* posterior string */
 			    (do_optacc ? &ins_sc : NULL),                  /* inside score, NULL if we're not doing opt acc */
 			    &tr,                                           /* parsetree */
+			    NULL,                                          /* mode of optimal alignment, irrelevant */
 			    (do_optacc ? &optacc_sc : &cyk_sc));           /* optimal accuracy or CYK score */
       /* TEMP BLOCK */
       /*ParsetreeDump(stdout, tr, cm, subdsq, NULL, NULL);
@@ -2643,12 +2646,14 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
   int       nenv = 0;   /* number of envelopes surviving MSV & Vit & lFwd & gFwd & EnvDef, filled by cm_pli_p7EnvelopeDef */
   int64_t  *es  = NULL; /* [0..i..nenv-1] window start positions, filled by cm_pli_p7EnvelopeDef() */
   int64_t  *ee  = NULL; /* [0..i..nenv-1] window end   positions, filled by cm_pli_p7EnvelopeDef() */
+  char     *em  = NULL; /* [0..i..nenv-1] marginal modes of envelopes, determined by pli->rs5term and pli->rs3term */
 
   /* variables only used in the special case that current sequence contains both the 5' and 3' terminus and
    * pli->rs5term and pli->rs3term are both TRUE. We have to handle possibility that sequence may contain
    * 5' truncated hits, 3' truncated hits or hits that are both 5' and 3' truncated, so we need to 
    * call p7_EnvelopeDef() three times. 
    */
+  int       nenv1 = 0;  /* number of envelopes surviving first  call to cm_pli_p7EnvelopeDef() */
   int       nenv2 = 0;  /* number of envelopes surviving second call to cm_pli_p7EnvelopeDef() */
   int64_t  *es2 = NULL; /* [0..i..nenv2-1] window start positions, filled by cm_pli_p7EnvelopeDef() */
   int64_t  *ee2 = NULL; /* [0..i..nenv2-1] window end   positions, filled by cm_pli_p7EnvelopeDef() */
@@ -2687,16 +2692,23 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
   printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues (rs5term: %d rs3term: %d)\n", sq->name, sq->n, pli->rs5term, pli->rs3term);
 #endif
   if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es, &ee, &nenv)) != eslOK) return status;
+  nenv1 = nenv; /* save nenv, for determining em[0..nenv-1] below */
   if(pli->do_force_ends && pli->rs5term && pli->rs3term) { 
     /* special case: we are the 5' *and* 3' terminus (i.e. one short sequence that could be 
-     * truncated 5', 3' or both, so we need to do 3 passes with EnvelopeDef(). We just
+     * truncated 5', 3' or both) so we need to do 3 passes with EnvelopeDef(). We just
      * did 1 pass with both rs5term and rs3term set as TRUE, now toggle each.
      */
     pli->rs5term = TRUE; 
     pli->rs3term = FALSE;
+#if DOPRINT
+  printf("\nPIPELINE calling special p7EnvelopeDef() %s  %" PRId64 " residues (rs5term: %d rs3term: %d)\n", sq->name, sq->n, pli->rs5term, pli->rs3term);
+#endif
     if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es2, &ee2, &nenv2)) != eslOK) return status;
     pli->rs5term = FALSE;
     pli->rs3term = TRUE;
+#if DOPRINT
+  printf("\nPIPELINE calling special p7EnvelopeDef() %s  %" PRId64 " residues (rs5term: %d rs3term: %d)\n", sq->name, sq->n, pli->rs5term, pli->rs3term);
+#endif
     if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es3, &ee3, &nenv3)) != eslOK) return status;
     pli->rs5term = pli->rs3term = TRUE; /* reset */
     if(nenv2 > 0 || nenv3 > 0) { 
@@ -2717,23 +2729,29 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
     }
     /* we could try and combine envelopes here, but don't currently */
   }
+  /* determine marginal mode CM should enforce use for alignment of each envelope (if pli->do_force_ends) */
+  ESL_ALLOC(em, sizeof(char) * nenv);
+  if(pli->rs5term && pli->rs3term) { 
+    for(i = 0;             i < nenv1;         i++) em[i] = TRMODE_T;
+    for(i = nenv1;         i < nenv1 + nenv2; i++) em[i] = TRMODE_R;
+    for(i = nenv1 + nenv2; i < nenv;          i++) em[i] = TRMODE_L;
+  }
+  else if(pli->rs5term) { for(i = 0; i < nenv; i++) em[i] = TRMODE_R; }
+  else if(pli->rs3term) { for(i = 0; i < nenv; i++) em[i] = TRMODE_L; }
+  else                  { for(i = 0; i < nenv; i++) em[i] = TRMODE_J; }
+  /*for(i = 0; i < nenv; i++) { printf("set em[%d] to %s\n", i, MarginalMode(em[i])); }*/
 
 #if DOPRINT
   printf("\nPIPELINE calling CMStage() %s  %" PRId64 " residues\n", sq->name, sq->n);
 #endif
-  /* update truncated scanner info based on pipline info */
-  pli->trsi->allowR      = pli->do_trunc_ends && pli->rs5term                       ? TRUE : FALSE;
-  pli->trsi->allowL      = pli->do_trunc_ends && pli->rs3term                       ? TRUE : FALSE;
-  pli->trsi->force_i0_RT = pli->do_trunc_ends && pli->rs5term && pli->do_force_ends ? TRUE : FALSE;
-  pli->trsi->force_j0_LT = pli->do_trunc_ends && pli->rs3term && pli->do_force_ends ? TRUE : FALSE;
-  if((status = cm_pli_CMStage(pli, cm_offset, cm_config_opts, sq, es,  ee,  nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
-
+  if((status = cm_pli_CMStage(pli, cm_offset, cm_config_opts, sq, es, ee, em, nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
   if(pli->do_time_F6) return eslOK;
 
   if(ws != NULL) free(ws);
   if(we != NULL) free(we);
   if(es != NULL) free(es);
   if(ee != NULL) free(ee);
+  if(em  != NULL) free(em);
   if(es2 != NULL) free(es2);
   if(ee2 != NULL) free(ee2);
   if(es3 != NULL) free(es3);

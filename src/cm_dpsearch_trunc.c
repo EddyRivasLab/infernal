@@ -47,7 +47,7 @@
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
  *           trsmx           - TrScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
- *           trsi            - TrScanInfo_t with information on which modes to allow
+ *           tro             - TruncOpts_t with information on which modes to allow
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -70,7 +70,7 @@
  *           Dies immediately if some error occurs.
  */
 int
-RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 	     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc)
 {
   int       status;
@@ -140,9 +140,9 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *trsi, 
  					       * and all possible emissions a (including ambiguities) */
   float  **lmesc_vAA   = cm->lmesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] left  marginal emission scores for v */
 
-  /* determine which matrices we need to fill in based on <trsi> */
-  fill_L = trsi->allowL       ? TRUE : FALSE;
-  fill_R = trsi->allowR       ? TRUE : FALSE;
+  /* determine which matrices we need to fill in based on <tro> */
+  fill_L = tro->allowL        ? TRUE : FALSE;
+  fill_R = tro->allowR        ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
 
   float  **rmesc_vAA   = cm->rmesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] right marginal emission scores for v */
@@ -600,10 +600,10 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *trsi, 
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, trsi, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, tro, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, trsi, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, tro, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
@@ -676,7 +676,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *trsi, 
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
  *           trsmx           - TrScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
- *           trsi            - TrScanInfo_t with information on which modes to allow
+ *           tro            - TruncOpts_t with information on which modes to allow
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -699,7 +699,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *trsi, 
  *           Dies immediately if some error occurs.
  */
 int
-RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 		 int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc)
 {
   int       status;
@@ -772,9 +772,9 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *tr
   int   **rmesc_vAA    = cm->irmesc;          /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] right marginal emission scores for v */
 
 
-  /* determine which matrices we need to fill in based on <trsi> */
-  fill_L = trsi->allowL       ? TRUE : FALSE;
-  fill_R = trsi->allowR       ? TRUE : FALSE;
+  /* determine which matrices we need to fill in based on <tro> */
+  fill_L = tro->allowL        ? TRUE : FALSE;
+  fill_R = tro->allowR        ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
 
   /* determine if we're doing banded/non-banded */
@@ -1228,10 +1228,10 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *tr
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, trsi, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, tro, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, trsi, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, tro, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
 
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
@@ -1318,7 +1318,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *tr
  *
  * Args:     cm        - the model    [0..M-1]
  *           errbuf    - for returning error messages
- *           trsi      - TrScanInfo_t with information on which modes to allow
+ *           tro      - TruncOpts_t with information on which modes to allow
  *           dsq       - the sequence [1..(j0-i0+1)]   
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
@@ -1337,7 +1337,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TrScanInfo_t *tr
  *          <ret_sc>: score of the best hit.
  */
 int
-TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
+TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
 	    CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc)
 {
   int      status;
@@ -1413,9 +1413,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
   float ***Ralpha  = mx->Rdp; /* pointer to the Ralpha DP matrix */
   float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
 
-  /* determine which matrices we need to fill in based on <trsi> */
-  fill_L = trsi->allowL       ? TRUE : FALSE;
-  fill_R = trsi->allowR       ? TRUE : FALSE;
+  /* determine which matrices we need to fill in based on <tro> */
+  fill_L = tro->allowL        ? TRUE : FALSE;
+  fill_R = tro->allowR        ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
 
   /* ensure an alignment to ROOT_S (v==0) is possible */
@@ -2252,10 +2252,10 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
     }
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, trsi, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, tro, W, act)) != eslOK) return status;
     }
     if(tmp_hitlist != NULL) { 
-      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, trsi, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, tro, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   } /* end of 'for (j = jmin[v]; j <= jmax[v]'... */
   esl_stopwatch_Stop(w);
@@ -2421,7 +2421,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
  *
  * Args:     cm        - the model    [0..M-1]
  *           errbuf    - for returning error messages
- *           trsi      - TrScanInfo_t with information on which modes to allow
+ *           tro      - TruncOpts_t with information on which modes to allow
  *           dsq       - the sequence [1..(j0-i0+1)]   
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
@@ -2440,7 +2440,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0
  *          <ret_sc>: score of the best hit.
  */
 int
-FTrInsideScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
+FTrInsideScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
 		CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc)
 {
   int      status;
@@ -2515,9 +2515,9 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_
   float ***Ralpha  = mx->Rdp; /* pointer to the Ralpha DP matrix */
   float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
 
-  /* determine which matrices we need to fill in based on <trsi> */
-  fill_L = trsi->allowL       ? TRUE : FALSE;
-  fill_R = trsi->allowR       ? TRUE : FALSE;
+  /* determine which matrices we need to fill in based on <tro> */
+  fill_L = tro->allowL        ? TRUE : FALSE;
+  fill_R = tro->allowR        ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
 
   /* ensure an alignment to ROOT_S (v==0) is possible */
@@ -3356,10 +3356,10 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TrScanInfo_t *trsi, ESL_DSQ *dsq, int64_
     }
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, trsi, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, tro, W, act)) != eslOK) return status;
     }
     if(tmp_hitlist != NULL) { 
-      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, trsi, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, tro, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   }
   esl_stopwatch_Stop(w);
@@ -3583,7 +3583,7 @@ main(int argc, char **argv)
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
   char            errbuf[cmERRBUFSIZE];
   TrScanMatrix_t *trsmx = NULL;
-  TrScanInfo_t   *trsi  = NULL;
+  TruncOpts_t    *tro  = NULL;
   ESL_SQFILE     *sqfp  = NULL;        /* open sequence input file stream */
   CMConsensus_t  *cons  = NULL;
   Parsetree_t    *tr    = NULL;
@@ -3597,7 +3597,7 @@ main(int argc, char **argv)
   FLogsumInit();
 
   r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
-  trsi = CreateTrScanInfo();
+  tro = CreateTruncOpts();
 
   if ((status = cm_file_Open(cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = cm_file_Read(cmfp, TRUE, &abc, &cm))                != eslOK) cm_Fail(cmfp->errbuf);
@@ -3805,7 +3805,7 @@ main(int argc, char **argv)
 	cm_tr_hb_mx_Destroy(trhbmx);
 	trhbmx = cm_tr_hb_mx_Create(cm);
 	esl_stopwatch_Start(w);
-	if((status = TrCYKScanHB(cm, errbuf, trsi, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = TrCYKScanHB(cm, errbuf, tro, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "TrCYKScanHB(): ", sc, MarginalMode(mode));
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -3813,7 +3813,7 @@ main(int argc, char **argv)
 	cm_tr_hb_mx_Destroy(trhbmx);
 	trhbmx = cm_tr_hb_mx_Create(cm);
 	esl_stopwatch_Start(w);
-	if((status = FTrInsideScanHB(cm, errbuf, trsi, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = FTrInsideScanHB(cm, errbuf, tro, dsq, 1, L, 0., NULL, FALSE, trhbmx, size_limit, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "FTrInsideScanHB(): ", sc, MarginalMode(mode));
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -3832,7 +3832,7 @@ main(int argc, char **argv)
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	
 	esl_stopwatch_Start(w);
-	if((status = RefTrCYKScan(cm, errbuf, trsmx, trsi, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = RefTrCYKScan(cm, errbuf, trsmx, tro, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "RefTrCYKScan(): ", sc, MarginalMode(mode));
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -3858,7 +3858,7 @@ main(int argc, char **argv)
 	cm->search_opts  |= CM_SEARCH_INSIDE;
 
 	esl_stopwatch_Start(w);
-	if((status = RefITrInsideScan(cm, errbuf, trsmx, trsi, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = RefITrInsideScan(cm, errbuf, trsmx, tro, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "RefITrInsideScan(): ", sc, MarginalMode(mode));
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -3907,7 +3907,7 @@ main(int argc, char **argv)
   esl_stopwatch_Destroy(w);
   esl_randomness_Destroy(r);
   esl_getopts_Destroy(go);
-  free(trsi);
+  free(tro);
   return 0;
 
  ERROR:

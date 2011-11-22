@@ -208,7 +208,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     if(sround == si->nrounds && smx != cm->smx) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), final round %d, SEARCH_WITH_CM but smx != cm->smx.\n", sround);
 
     if(cm->search_opts & CM_SEARCH_HBANDED) {
-      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, trsi, 0)) != eslOK) return status; 
+      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, NULL, 0)) != eslOK) return status; 
       if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = cm_FInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit,                 &sc)) != eslOK) return status; }
       else                                   { if((status = cm_CYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit, 0., NULL, NULL, &sc)) != eslOK) return status; }
     }
@@ -319,7 +319,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
  */
 int
 DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, 
-		   int bdump_level, int debug_level, int silent_mode, int do_null3, TrScanInfo_t *trsi,
+		   int bdump_level, int debug_level, int silent_mode, int do_null3, TruncOpts_t *tro,
 		   ESL_RANDOMNESS *r, 
 		   float size_limit, FILE *ofp, FILE *sfp, int iidx,
 		   int pad7, int len7, float sc7, int end7, 
@@ -699,13 +699,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	fprintf(ofp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
 	if(sfp != NULL) fprintf(sfp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       }
-      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 
-			       L,      /* hit len guess, irrelevant (this is for scanning) */
-			       0.,     /* reporting threshold, irrelevant b/c no results are reported */
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, 
 			       FALSE,  /* we are not scanning */
 			       TRUE,   /* we are aligning */
 			       FALSE,  /* don't be memory efficient */
-			       FALSE,  /* don't use NULL3, it's irrelevant anyway b/c results is NULL */
 			       NULL, NULL, /* don't return best sc at each posn, or best scoring posn */
 			       &(cp9_tr[i]), /* return the trace */
 			       &sc)) != eslOK) return status;
@@ -741,7 +738,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	if((status = cp9_Seq2BandsP7B(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, L, orig_cp9b, kmin, kmax, debug_level)) != eslOK) return status; 
       }
       else { 
-	if((status = cp9_Seq2Bands(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, trsi, debug_level)) != eslOK) return status; 
+	if((status = cp9_Seq2Bands(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, tro, debug_level)) != eslOK) return status; 
       }
     }
     else if(do_sub) { 
@@ -826,7 +823,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	}
 	else { /* ! do_p7banded */ 
 	  /* (5) Do Forward/Backward again, and get HMM bands */
-	  if((status = cp9_Seq2Bands(sub_cm, errbuf, sub_cm->cp9_mx, sub_cm->cp9_bmx, sub_cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, trsi, debug_level)) != eslOK) return status;
+	  if((status = cp9_Seq2Bands(sub_cm, errbuf, sub_cm->cp9_mx, sub_cm->cp9_bmx, sub_cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, tro, debug_level)) != eslOK) return status;
 	}
 	hmm           = sub_hmm;    
 	cp9b          = sub_cp9b;

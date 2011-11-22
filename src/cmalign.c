@@ -1317,7 +1317,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 				  esl_opt_GetInteger(go, "--banddump"),
 				  esl_opt_GetInteger(go, "--dlev"), be_quiet, 
 				  (! esl_opt_GetBoolean(go, "--no-null3")), 
-				  FALSE, /* do_trunc? */
+				  NULL, /* don't do truncated alignment */
 				  cfg->r,
 				  esl_opt_GetReal(go, "--mxsize"), stdout, cfg->scorefp, cfg->nseq+1,
 				  esl_opt_GetInteger(go, "--7pad"), 

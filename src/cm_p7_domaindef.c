@@ -76,6 +76,23 @@ static int glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *
  *            necessary full-matrix DP calculations. Caller provides a
  *            new or reused <ddef> object to hold these results.
  *            
+ *            As a special case, if the profile is in unihit mode
+ *            upon entering, we don't ever modify its configuration.
+ *            This is especially important if this function is 
+ *            being used within a search/scan pipeline with a 
+ *            specially configured p7 profile in which N->N and/or
+ *            C->C transitions have been set to IMPOSSIBLE. (If
+ *            we were to call ReconfigLength() on such a profile
+ *            we would make those transitions possible.) 
+ *
+ *            One case in which profile reconfiguration is necessary
+ *            is when multiple domains are suspected. However, we
+ *            guard against this if the profile enters in unihit mode
+ *            by no allowing multiple domains (in fact, it should
+ *            never happen because J states are unreachable in unihit
+ *            profiles). If multiple domains are suspected in this case,
+ *             we return eslEINCONCEIVABLE.
+ * 
  *            Upon return, <ddef> contains the definitions of all the
  *            domains: their bounds, their null-corrected Forward
  *            scores, and their optimal posterior accuracy alignments.
@@ -85,10 +102,13 @@ static int glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *
  *            skipping Backward calls at some stages.
  *
  * Returns:   <eslOK> on success.           
- *            
+ *
  *            <eslERANGE> on numeric overflow in posterior
  *            decoding. This should not be possible for multihit
  *            models.
+ *
+ *            <eslEINCONCEIVABLE> if profile enters as unihit but
+ *            multiple domains are suspected.
  */
 int
 p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, 
@@ -104,6 +124,9 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
   int saveL     = gm->L;	/* Save the length config of <om>; will restore upon return */
   int save_mode = gm->mode;	/* Likewise for the mode. */
   int status;
+  int save_mode_is_unihit;
+  
+  save_mode_is_unihit = (p7_IsMulti(save_mode)) ? FALSE : TRUE; /* if save_mode_is_unihit is TRUE, we never modify profile's configuration (length nor mode) */
 
   if ((status = p7_domaindef_GrowTo(ddef, sq->n))       != eslOK) return status;  /* ddef's btot,etot,mocc now ready for seq of length n */
   /*printf("GDD P7 mode: %d\n", gm->mode);*/
@@ -114,18 +137,19 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
   esl_vec_FSet(ddef->n2sc, sq->n+1, 0.0);          /* ddef->n2sc null2 scores are initialized                        */
   ddef->nexpected = ddef->btot[sq->n];             /* posterior expectation for # of domains (same as etot[sq->n])   */
 
-  p7_ReconfigUnihit(gm, saveL);	                   /* process each domain in unihit mode, regardless of gm->mode     */
+  if(! save_mode_is_unihit) p7_ReconfigUnihit(gm, saveL); /* process each domain in unihit mode, regardless of gm->mode     */
   i     = -1;
   triggered = FALSE;
   for (j = 1; j <= sq->n; j++)
     {
       /*printf("GDD j: %5d  m: %.5f  b: %8.3f  e: %8.3f    bhere: %8.3f  ehere: %8.3f\n", 
-	     j, 
-	     ddef->mocc[j], 
-	     ddef->btot[j], 
-	     ddef->etot[j], 
-	     ddef->btot[j] - ddef->btot[j-1], 
-	     ddef->etot[j] - ddef->etot[j-1]); */
+	j, 
+	ddef->mocc[j], 
+	ddef->btot[j], 
+	ddef->etot[j], 
+	ddef->btot[j] - ddef->btot[j-1], 
+	ddef->etot[j] - ddef->etot[j-1]); 
+      */
       if (! triggered) 
 	{			/* xref J2/101 for what the logic below is: */
 	  if       (ddef->mocc[j] - (ddef->btot[j] - ddef->btot[j-1]) <  ddef->rt2) i = j;
@@ -140,6 +164,8 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
 	  ddef->nregions++;
 	  if (is_multidomain_region(ddef, i, j))
 	    {
+	      if(save_mode_is_unihit) return eslEINCONCEIVABLE;
+
 	      /* This region appears to contain more than one domain, so we have to 
                * resolve it by cluster analysis of posterior trace samples, to define
                * one or more domain envelopes.
@@ -198,9 +224,11 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
 	}
     }
 
-  /* Restore model to uni/multihit local mode, and to its original length model */
-  if (p7_IsMulti(save_mode)) p7_ReconfigMultihit(gm, saveL); 
-  else                       p7_ReconfigUnihit  (gm, saveL); 
+  /* If profile was unihit upon entrance, we didn't modify its configuration (length nor mode),
+   * else restore it to its original multihit mode, and to its original length model */
+  if (! save_mode_is_unihit) { 
+    p7_ReconfigMultihit(gm, saveL); 
+  }
 
   return eslOK;
 }

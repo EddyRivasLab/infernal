@@ -41,7 +41,7 @@
  *  14. TrScanMatrix_t data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      query dependent banded or non-banded truncated CM DP search functions
- *  15. TrScanInfo_t data structure functions,
+ *  15. TruncOpts_t data structure functions,
  *      per-scan info for truncated CM scanners
  *  16. GammaHitMx_t data structure functions,
  *      semi-HMM data structure for optimal resolution of overlapping
@@ -706,7 +706,7 @@ cm_tr_mx_Destroy(CM_TR_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_mx_Dump(FILE *ofp, CM_TR_MX *mx, char opt_mode)
+cm_tr_mx_Dump(FILE *ofp, CM_TR_MX *mx, char optimal_mode)
 {
   int status;
   int v, j, d;
@@ -719,9 +719,9 @@ cm_tr_mx_Dump(FILE *ofp, CM_TR_MX *mx, char opt_mode)
   fprintf(ofp, "Lncells_alloc: %" PRId64 "\nLncells_valid: %" PRId64 "\n", mx->Lncells_alloc, mx->Lncells_valid);
   fprintf(ofp, "Rncells_alloc: %" PRId64 "\nRncells_valid: %" PRId64 "\n", mx->Rncells_alloc, mx->Rncells_valid);
   fprintf(ofp, "Tncells_alloc: %" PRId64 "\nTncells_valid: %" PRId64 "\n", mx->Tncells_alloc, mx->Tncells_valid);
-  fprintf(ofp, "opt_mode: %d\n", opt_mode);
+  fprintf(ofp, "optimal_mode: %d\n", optimal_mode);
   
-  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+  if((status = cm_TrFillFromMode(optimal_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* DP matrix data */
   for (v = 0; v < mx->M; v++) {
@@ -1595,7 +1595,7 @@ cm_tr_hb_mx_Destroy(CM_TR_HB_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char opt_mode)
+cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char optimal_mode)
 {
   int status;
   int v, jp, j, dp, d;
@@ -1608,9 +1608,9 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char opt_mode)
   fprintf(ofp, "Lncells_alloc: %" PRId64 "\nLncells_valid: %" PRId64 "\n", mx->Lncells_alloc, mx->Lncells_valid);
   fprintf(ofp, "Rncells_alloc: %" PRId64 "\nRncells_valid: %" PRId64 "\n", mx->Rncells_alloc, mx->Rncells_valid);
   fprintf(ofp, "Tncells_alloc: %" PRId64 "\nTncells_valid: %" PRId64 "\n", mx->Tncells_alloc, mx->Tncells_valid);
-  fprintf(ofp, "opt_mode: %d\n", opt_mode);
+  fprintf(ofp, "optimal_mode: %d\n", optimal_mode);
   
-  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+  if((status = cm_TrFillFromMode(optimal_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* DP matrix data */
   for (v = 0; v < mx->M; v++) {
@@ -2577,7 +2577,7 @@ cm_tr_shadow_mx_Destroy(CM_TR_SHADOW_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx, char opt_mode)
+cm_tr_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx, char optimal_mode)
 {
   int status;
   int v, j, d;
@@ -2593,9 +2593,9 @@ cm_tr_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx, char opt_mode)
   fprintf(ofp, "Lk_ncells_alloc: %" PRId64 "\nLk_ncells_valid: %" PRId64 "\n", mx->Lk_ncells_alloc, mx->Lk_ncells_valid);
   fprintf(ofp, "Rk_ncells_alloc: %" PRId64 "\nRk_ncells_valid: %" PRId64 "\n", mx->Rk_ncells_alloc, mx->Rk_ncells_valid);
   fprintf(ofp, "Tk_ncells_alloc: %" PRId64 "\nTk_ncells_valid: %" PRId64 "\n", mx->Tk_ncells_alloc, mx->Tk_ncells_valid);
-  fprintf(ofp, "opt_mode: %d\n", opt_mode);
+  fprintf(ofp, "optimal_mode: %d\n", optimal_mode);
 
-  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+  if((status = cm_TrFillFromMode(optimal_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* yshadow/kshadow matrix data */
   for (v = 0; v < mx->M; v++) {
@@ -3786,7 +3786,7 @@ cm_tr_hb_shadow_mx_Destroy(CM_TR_HB_SHADOW_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char opt_mode)
+cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char optimal_mode)
 {
   int status;
   int v, jp, j, dp, d;
@@ -3803,7 +3803,7 @@ cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char opt_mo
   fprintf(ofp, "Rk_ncells_alloc: %" PRId64 "\nRk_ncells_valid: %" PRId64 "\n", mx->Rk_ncells_alloc, mx->Rk_ncells_valid);
   fprintf(ofp, "Tk_ncells_alloc: %" PRId64 "\nTk_ncells_valid: %" PRId64 "\n", mx->Tk_ncells_alloc, mx->Tk_ncells_valid);
 
-  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+  if((status = cm_TrFillFromMode(optimal_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* yshadow/kshadow matrix data */
   for (v = 0; v < mx->M; v++) {
@@ -4653,7 +4653,7 @@ cm_tr_emit_mx_Destroy(CM_TR_EMIT_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char opt_mode)
+cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char optimal_mode)
 {
   int status;
   int v, i;
@@ -4663,9 +4663,9 @@ cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char opt_mode)
   fprintf(ofp, "L: %d\n", mx->L);
   fprintf(ofp, "l_ncells_alloc: %" PRId64 "\nl_ncells_valid: %" PRId64 "\n", mx->l_ncells_alloc, mx->l_ncells_valid);
   fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
-  fprintf(ofp, "opt_mode: %d\n", opt_mode);
+  fprintf(ofp, "optimal_mode: %d\n", optimal_mode);
   
-  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+  if((status = cm_TrFillFromMode(optimal_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* l_pp and r_pp matrix data */
   for (v = 0; v < mx->M; v++) {
@@ -5436,7 +5436,7 @@ cm_tr_hb_emit_mx_Destroy(CM_TR_HB_EMIT_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char opt_mode)
+cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char optimal_mode)
 {
   int status;
   int v, i, j, ip_v, jp_v;
@@ -5446,9 +5446,9 @@ cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char opt_mode)
   fprintf(ofp, "L: %d\n", mx->L);
   fprintf(ofp, "l_ncells_alloc: %" PRId64 "\nl_ncells_valid: %" PRId64 "\n", mx->l_ncells_alloc, mx->l_ncells_valid);
   fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
-  fprintf(ofp, "opt_mode: %d\n", opt_mode);
+  fprintf(ofp, "optimal_mode: %d\n", optimal_mode);
   
-  if((status = cm_TrFillFromMode(opt_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+  if((status = cm_TrFillFromMode(optimal_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* l_pp and r_pp matrix data */
   for (v = 0; v < mx->M; v++) {
@@ -6957,30 +6957,30 @@ cm_DumpTrScanMatrixAlpha(CM_t *cm, TrScanMatrix_t *trsmx, int j, int i0, int doi
 }
 
 /*****************************************************************
- *  15. TrScanInfo_t data structure functions,
+ *  15. TruncOpts_t data structure functions,
  *      per-scan info for truncated CM scanners
  *****************************************************************/
-/* Function: CreateTrScanInfo()
+/* Function: CreateTruncOpts()
  * Date:     EPN, Tue Nov  8 08:27:16 2011
  *
- * Purpose:  Allocate and initialize a TrScanInfo_t object.
+ * Purpose:  Allocate and initialize a TruncOpts_t object.
  * 
- * Returns:  Newly allocated TrScanInfo_t object. NULL if out
+ * Returns:  Newly allocated TruncOpts_t object. NULL if out
  *           of memory.
  */
-TrScanInfo_t *
-CreateTrScanInfo()
+TruncOpts_t *
+CreateTruncOpts()
 {
   int status;
-  TrScanInfo_t *trsi;
-  ESL_ALLOC(trsi, sizeof(TrScanInfo_t));
+  TruncOpts_t *tro;
+  ESL_ALLOC(tro, sizeof(TruncOpts_t));
 
-  trsi->allowL = TRUE;
-  trsi->allowR = TRUE;
-  trsi->force_i0_RT = FALSE;
-  trsi->force_j0_LT = FALSE;
+  tro->allowL = TRUE;
+  tro->allowR = TRUE;
+  tro->force_i0_RT = FALSE;
+  tro->force_j0_LT = FALSE;
 
-  return trsi;
+  return tro;
 
  ERROR:
   return NULL;
@@ -7084,7 +7084,7 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  *           bestsc     - [0..W]; only [dmin..dmax] valid: best scores for current j, copied from alpha matrix(es) by caller
  *           bestr      - [0..W]; only [dmin..dmax] valid: root state (0 or local entry) corresponding to hit stored in alpha_row
  *           bestmode   - [0..W]; only [dmin..dmax] valid: marginal mode that gives bestsc[d], if NULL, all modes are implictly TRMODE_J
- *           trsi       - truncated scanner info, must we enforce i0/j0 be in any valid hit?, NULL if caller is not a truncated scanner
+ *           tro       - truncated scanner info, must we enforce i0/j0 be in any valid hit?, NULL if caller is not a truncated scanner
  *           W          - window size, max size of a hit, only used if we're doing a NULL3 correction (act != NULL)
  *           act        - [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1)
  *
@@ -7093,7 +7093,7 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  */
 int
 UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, int dmax, 
-		 float *bestsc, int *bestr, char *bestmode, TrScanInfo_t *trsi, int W, double **act)
+		 float *bestsc, int *bestr, char *bestmode, TruncOpts_t *tro, int W, double **act)
 {
   int status;          /* easel status */
   int i;               /* position of first residue in hit, in actual sequence coordinates */
@@ -7147,9 +7147,9 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
 	/* printf("GOOD hit %3d..%3d: %8.2f  %10.6f  %8.2f\n", i, j, hit_sc+null3_correction, null3_correction, hit_sc); */
       }
       /* enforce that i == i0 and/or j == j0, if necessary */
-      if(trsi != NULL && do_report_hit) { 
-	if((trsi->force_j0_LT && j != j0        && (mode == TRMODE_L || mode == TRMODE_T)) || 
-	   (trsi->force_i0_RT && i != gamma->i0 && (mode == TRMODE_R || mode == TRMODE_T))) { 
+      if(tro != NULL && do_report_hit) { 
+	if((tro->force_j0_LT && j != j0        && (mode == TRMODE_L || mode == TRMODE_T)) || 
+	   (tro->force_i0_RT && i != gamma->i0 && (mode == TRMODE_R || mode == TRMODE_T))) { 
 	  do_report_hit = FALSE;
 	}
       }
@@ -7179,13 +7179,13 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
  *           strategy. For the non-greedy strategy, see 
  *           UpdateGammaHitMx(). 
  *
- *           If caller is a truncated scanner <bestmode> and <trsi>
+ *           If caller is a truncated scanner <bestmode> and <tro>
  *           will be non-NULL, and include info on the alignment mode
  *           of each hit (<bestmode>), and what types of hits we
- *           should allow (<trsi>).
+ *           should allow (<tro>).
  *
  *           If caller is a standard (non-truncated) scanner both
- *           <bestmode> and <trsi> will be NULL. All hits will
+ *           <bestmode> and <tro> will be NULL. All hits will
  *           implicitly be of the TRMODE_J mode and no hits 
  *           are disallowed.
  *
@@ -7194,7 +7194,7 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
  */
 int
 ReportHitsGreedily(CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, 
-		   TrScanInfo_t *trsi, int W, double **act, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist)
+		   TruncOpts_t *tro, int W, double **act, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist)
 {
 
   int   status;          /* easel status */
@@ -7247,9 +7247,9 @@ ReportHitsGreedily(CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bes
 	  do_report_hit = (hit_sc > max_sc_reported && hit_sc >= cutoff) ? TRUE : FALSE;
 	}
 	/* enforce that i == i0 and/or j == j0, if necessary */
-	if(trsi != NULL && do_report_hit) { 
-	  if((trsi->force_j0_LT && j != j0 && (mode == TRMODE_L || mode == TRMODE_T)) || 
-	     (trsi->force_i0_RT && i != i0 && (mode == TRMODE_R || mode == TRMODE_T))) { 
+	if(tro != NULL && do_report_hit) { 
+	  if((tro->force_j0_LT && j != j0 && (mode == TRMODE_L || mode == TRMODE_T)) || 
+	     (tro->force_i0_RT && i != i0 && (mode == TRMODE_R || mode == TRMODE_T))) { 
 	    do_report_hit = FALSE;
 	  }
 	}

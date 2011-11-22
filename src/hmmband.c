@@ -177,22 +177,22 @@ DScore2Prob(int sc, float null)
  *           j0          - end of target subsequence (often L, end of sq)
  *           cp9b        - PRE-ALLOCATED, the HMM bands for this sequence, filled here.
  *           doing_search- TRUE if we're going to use these HMM bands for search, not alignment
- *           trsi        - truncated scanner info, trsi->allowR and trsi->allowL tell us if 
- *                         we'll allow right marginal/left marginal alignments, if NULL
- *                         truncated hits are disallowed.
+ *           tro         - truncated scanner/alignment info, if NULL bands won't be used for truncated alignment/search
  *           debug_level - verbosity level for debugging printf()s
  * Return:  eslOK on success;
  * 
  */
 int
-cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, TrScanInfo_t *trsi, int debug_level)
+cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, TruncOpts_t *tro, int debug_level)
 {
   int   status;
   int   use_sums;     /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
   float sc;
-  int do_scan2bands;  /* TRUE to use scanning Forward/Backward to get posteriors */
   int do_old_hmm2ij;
   int do_trunc;       /* are we allowing truncated alignments (either L or R)? */
+  int do_fwd_scan;    /* run Forward  in scanning mode? (see long comment on this below by assignment of do_fwd_scan) */
+  int do_bck_scan;    /* run Backward in scanning mode? (see long comment on this below by assignment of do_fwd_scan) */
+			
   /* Contract checks */
   if(cm->cp9 == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9map is NULL.\n");
@@ -202,9 +202,35 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   if((cm->search_opts & CM_SEARCH_HMMALNBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, CM_SEARCH_HMMALNBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
   if(cm->tau > 0.5)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, cm->tau (%f) > 0.5, we can't deal.", cm->tau);
   
-  use_sums = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
+  use_sums      = ((cm->align_opts & CM_ALIGN_SUMS)      || (cm->search_opts & CM_SEARCH_SUMS))      ? TRUE : FALSE;
   do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
-  do_trunc = (trsi != NULL && (trsi->allowL || trsi->allowR)) ? TRUE : FALSE;
+  do_trunc      = (tro != NULL && (tro->allowL || tro->allowR)) ? TRUE : FALSE;
+
+  /* Determine if we should do Forward and Backward in scan mode.
+   *
+   * We should only scan in Forward if i0 does not need to be in any
+   * eventual CM parsetree we derive using these bands.  This is only
+   * true if we'll use these bands for a CM search (doing_search==TRUE)
+   * and that search won't be a special truncated search where i0
+   * must be in any valid parsetree (which is TRUE if tro is non-NULL,
+   * and tro->allowR and tro->force_i0_RT are both TRUE).
+   *
+   * Likewise, we should only scan in Forward if j0 does not need to
+   * be in any eventual CM parsetree we derive using these bands.
+   * This is only true if we'll use these bands for a CM search
+   * (doing_search==TRUE) and that search won't be a special truncated
+   * search where j0 must be in any valid parsetree (which is TRUE if
+   * tro is non-NULL, and tro->allowL and tro->force_j0_LT are both
+   * TRUE).
+   *
+   */
+  if((! doing_search) || (cm->search_opts & CM_SEARCH_HMMALNBANDS)) { 
+    do_fwd_scan = do_bck_scan = FALSE;
+  }
+  else { 
+    do_fwd_scan = (tro != NULL && tro->allowR && tro->force_i0_RT) ? FALSE : TRUE;
+    do_bck_scan = (tro != NULL && tro->allowL && tro->force_j0_LT) ? FALSE : TRUE;
+  }
 
   /* Step 1: Get HMM Forward/Backward DP matrices.
    * Step 2: F/B       -> HMM bands.
@@ -212,25 +238,17 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
    */
 
   /* Step 1: Get HMM Forward/Backward DP matrices. */
-  do_scan2bands = (doing_search && (!(cm->search_opts & CM_SEARCH_HMMALNBANDS))) ? TRUE : FALSE;
-  if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 
-			   cm->W,     /* guess at hit len, irrelevant b/c we're not reporting hits */
-			   0.,        /* reporting threshold, irrelevant b/c we're not reporting hits */
-			   do_scan2bands, /* are we using scanning Forward/Backward */
-			   (! doing_search), /* are we going to use posteriors to align? */
-			   FALSE,     /* don't be memory efficient */
-			   FALSE,     /* don't do a NULL3 score correction */
+  if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, 
+			   do_fwd_scan,      /* allow parses to start at any posn? */
+			   (! doing_search), /* are we going to use bands to align? */
+			   FALSE,            /* don't be memory efficient */
 			   NULL, NULL,
 			   &sc)) != eslOK) return status;
 
-  if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 
-			    cm->W,  /* guess at hit len, irrelevant b/c we're not reporting hits */
-			    0.,     /* reporting threshold, irrelevant b/c we're not reporting hits */
-			    do_scan2bands, /* are we using scanning Forward/Backward */
+  if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0,
+			    do_bck_scan,       /* allow parses to end at any posn? */
 			    (! doing_search),  /* are we going to use posteriors to align? */
-			    (! doing_search),  /* is j0 is the fixed endpoint? */
-			    FALSE, /* don't be memory efficient */
-			    FALSE, /* don't do a NULL3 score correction */
+			    FALSE,             /* don't be memory efficient */
 			    NULL, NULL,
 			    &sc)) != eslOK) return status;
 
@@ -243,18 +261,18 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   /* Step 2: F/B -> HMM bands. */
   if(use_sums){
     if((status = cp9_FB2HMMBandsWithSums(cm->cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, i0, j0, cp9b->hmm_M,
-					 (1.-cm->tau), do_scan2bands, do_old_hmm2ij, debug_level)) != eslOK) return status;
+					 (1.-cm->tau), do_fwd_scan, do_bck_scan, do_old_hmm2ij, debug_level)) != eslOK) return status;
   }
   else {
     if((status = cp9_FB2HMMBands(cm->cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, i0, j0, cp9b->hmm_M,
-				 (1.-cm->tau), do_scan2bands, do_old_hmm2ij, debug_level)) != eslOK) return status;
+				 (1.-cm->tau), do_fwd_scan, do_bck_scan, do_old_hmm2ij, debug_level)) != eslOK) return status;
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
 
-  /* Step 2B: (only if trsi != NULL (truncated alignments are possible) Calculate occupancy and candidate states for marginal alignments */
-  if(trsi != NULL && (trsi->allowR || trsi->allowL)) { 
+  /* Step 2B: (only if tro != NULL (truncated alignments are possible) Calculate occupancy and candidate states for marginal alignments */
+  if(tro != NULL && (tro->allowR || tro->allowL)) { 
     cp9_PredictStartAndEndPositions(pmx, cp9b, i0, j0);
-    cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, trsi);
+    cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, tro);
     /* xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG */
   }
   else { 
@@ -311,8 +329,6 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   /*CP9_MX *cp9_mx;*/    /* growable DP matrix for viterbi                       */
   int status;
   float sc;
-  int do_scan2bands;             /* TRUE to use scanning Forward/Backward to get posteriors
-				  * that we'll use for a CM scan */
 
   /* Contract checks */
   if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors(), dsq is NULL.");
@@ -323,27 +339,18 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   if((cm->search_opts & CM_SEARCH_HMMALNBANDS) && (! (cm->search_opts & CM_SEARCH_HBANDED))) 
     ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_SEARCH_HMMALNBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
 
-  do_scan2bands = ((cm->search_opts & CM_SEARCH_HBANDED) && (!(cm->search_opts & CM_SEARCH_HMMALNBANDS))) ? TRUE : FALSE;
-
   /* Step 1: Get HMM posteriors.*/
-  if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 
-			   cm->W,  /* guess at hit len, irrelevant b/c we're not reporting hits */
-			   0.,     /* reporting threshold, irrelevant b/c we're not reporting hits */
-			   do_scan2bands, /* are we using scanning Forward/Backward */
+  if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, 
+			   FALSE,     /* don't use scanning Forward/Backward */
 			   TRUE,      /* we are going to use posteriors to align */
 			   FALSE,     /* don't be memory efficient */
-			   FALSE,     /* don't do a NULL3 score correction */
 			   NULL, NULL,
 			   &sc)) != eslOK) return status;
   if(debug_level > 0) printf("CP9 Forward  score : %.4f\n", sc);
-  if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 
-			    cm->W,  /* guess at hit len, irrelevant b/c we're not reporting hits */
-			    0.,     /* reporting threshold, irrelevant b/c we're not reporting hits */
-			    do_scan2bands, /* are we using scanning Forward/Backward */
+  if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, 
+			    FALSE, /* don't use scanning Forward/Backward */
 			    TRUE,  /* we are going to use posteriors to align */
-			    TRUE,  /* j0 is the fixed endpoint */
 			    FALSE, /* don't be memory efficient */
-			    FALSE, /* don't do a NULL3 score correction */
 			    NULL, NULL,
 			    &sc)) != eslOK) return status;
   if(debug_level > 0) printf("CP9 Backward  score : %.4f\n", sc);
@@ -354,7 +361,7 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   }
 
   /* Get posteriors */
-  cp9_Posterior(dsq, i0, j0, cm->cp9, fmx, bmx, pmx, do_scan2bands);
+  cp9_Posterior(dsq, i0, j0, cm->cp9, fmx, bmx, pmx, FALSE);
 
   return eslOK;
 }
@@ -383,7 +390,8 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
  * int j0           end of target subsequence (often L, end of dsq)
  * int   M          number of nodes in HMM (num columns of pmx matrix)
  * double p_thresh  the probability mass we're requiring is within each band
- * int did_scan     TRUE if Forward/Backward were run in 'scan mode'
+ * int did_fwd_scan  TRUE if Forward was run in 'scan mode' (parses could start anywhere) 
+ * int did_bck_scan  TRUE if Backward was run in 'scan mode' (parses could end anywhere) 
  * int do_old_hmm2ij TRUE if we'll use old cp9_HMM2ijBands_OLD() function downstream
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
@@ -392,7 +400,7 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
  */
 int
 cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
-		int i0, int j0, int M, double p_thresh, int did_scan, int do_old_hmm2ij, int debug_level)
+		int i0, int j0, int M, double p_thresh, int did_fwd_scan, int did_bck_scan, int do_old_hmm2ij, int debug_level)
 {
   int status;
   int k;                                  /* counter over nodes of the model */
@@ -443,10 +451,10 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
   esl_vec_ISet(xset_i, M+1, FALSE);
   esl_vec_ISet(xset_d, M+1, FALSE);
 
-  if(did_scan) { /* Forward/Backward run in 'scan mode' which allow parses to start/stop anywhere */
+  if(did_fwd_scan) { /* parses were allowed to begin anywhere */
     sc = -INFTY;
     for (ip = 0; ip <= L; ip++) {
-      /*printf("bmx->mmx[i:%d][0]: %d\n", i, bmx->mmx[ip][0]); */
+      /*printf("bmx->mmx[i:%d][0]: %d\n", ip+i0-1, bmx->mmx[ip][0]); */
       sc = ILogsum(sc, (bmx->mmx[ip][0])); 
     }
   }
@@ -454,7 +462,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
   /* sc is summed log prob of all possible parses of seq i0..j0 */
 
   /* note boundary conditions, ip = 0, i = i0-1 */
-  pmx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc; /* fmx->mmx[0][0] is 0, bmx->mmx[1][0] is overall score */
+  pmx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc; /* fmx->mmx[0][0] is 0, bmx->mmx[0][0] is overall score */
   pmx->imx[0][0] = -INFTY; /*need seq to get here*/
   pmx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
   if((mass_m[0] = pmx->mmx[0][0]) > thresh) { 
@@ -609,7 +617,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
 	  cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = -1;
 	  dset = FALSE;
 	}
-	if((!hmm_is_localized && !did_scan) && (mset == FALSE && dset == FALSE)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "node: %d match nor delete HMM state bands were set in non-localized, non-scanning HMM, lower tau (should be << 0.5).\n", k);
+	if((!hmm_is_localized && !did_fwd_scan && !did_bck_scan) && (mset == FALSE && dset == FALSE)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "node: %d match nor delete HMM state bands were set in non-localized, non-scanning HMM, lower tau (should be << 0.5).\n", k);
       }
   }
   else { 
@@ -709,7 +717,8 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
  * int j0           end of target subsequence (often L, end of dsq)
  * int   M          number of nodes in HMM (num columns of post matrix)
  * double p_thresh  the probability mass we're requiring is within each band
- * int did_scan     TRUE if Forward/Backward were run in 'scan mode'
+ * int did_fwd_scan TRUE if Forward was run in 'scan mode'  (parses could start at any posn)
+ * int did_bck_scan TRUE if Backward was run in 'scan mode' (parses could end  at any posn)
  * int do_old_hmm2ij TRUE if we'll use old cp9_HMM2ijBands_OLD() function downstream
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
@@ -718,7 +727,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
  */
 int
 cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
-			int i0, int j0, int M, double p_thresh, int did_scan, int do_old_hmm2ij, int debug_level)
+			int i0, int j0, int M, double p_thresh, int did_fwd_scan, int did_bck_scan, int do_old_hmm2ij, int debug_level)
 {
   int status;
   int k;                                  /* counter over nodes of the model */
@@ -759,7 +768,7 @@ cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9
   esl_vec_ISet(xset_d, M+1, FALSE);
 
   /* get the posterior matrix first, we need it b/c each state will have a different log prob threshold */
-  cp9_Posterior(dsq, i0, j0, hmm, fmx, bmx, pmx, did_scan);
+  cp9_Posterior(dsq, i0, j0, hmm, fmx, bmx, pmx, did_fwd_scan);
 
   /* fill ipost_sums in cp9bands data structure */
   cp9_IFillPostSums(pmx, cp9b, i0, j0);
@@ -908,10 +917,10 @@ cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9
  *           backward matrix can be used instead (overwriting it will not
  *           compromise the algorithm).
  *
- *           if(did_scan == TRUE) forward/backward run in scan mode, which allow
- *           parses to start/stop at any position of sequence, this changes how
+ *           if(did_fwd_scan == TRUE) forward was run in scan mode, which allowed
+ *           parses to start at any position of sequence, this changes how
  *           we calculate summed prob of all parses (calculation of 'sc', see code).
- *           
+ *
  * Args:     dsq      - sequence in digitized form
  *           i0       - start of target subsequence (often 1, beginning of dsq)
  *           j0       - end of target subsequence (often L, end of dsq)
@@ -919,21 +928,15 @@ cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9
  *           forward  - pre-calculated forward matrix
  *           backward - pre-calculated backward matrix
  *           mx       - pre-allocated dynamic programming matrix
- *           did_scan - TRUE if Forward/Backward were run in 'scan' mode, which means
- *                      parses can start and end at any position of the sequence
+ *           did_fwd_scan - TRUE if Forward was run in 'scan' mode, which means
+ *                          parses can start at any position of the sequence
  *           
  * Return:   void
  */
 void
-cp9_Posterior(ESL_DSQ *dsq, int i0, int j0,
-	      CP9_t *hmm,
-	      CP9_MX *fmx,
-	      CP9_MX *bmx,
-	      CP9_MX *mx,
-	      int did_scan)
+cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *mx, int did_fwd_scan)
 {
-  if(dsq == NULL)
-    cm_Fail("in cp9_posterior(), dsq is NULL.");
+  if(dsq == NULL) cm_Fail("in cp9_posterior(), dsq is NULL.");
 
   int i;
   int k;
@@ -944,10 +947,10 @@ cp9_Posterior(ESL_DSQ *dsq, int i0, int j0,
 
   L  = j0-i0+1;		/* the length of the subsequence */
 
-  if(did_scan) { /* parses could start/stop anywhere */
+  if(did_fwd_scan) { /* parses could start/stop anywhere */
     sc = -INFTY;
     for (ip = 0; ip <= L; ip++) {
-      /*printf("bmx->mmx[i:%d][0]: %d\n", i, bmx->mmx[ip][0]); */
+      /*printf("bmx->mmx[i:%d][0]: %d\n", i, bmx->mmx[ip][0]);*/
       sc = ILogsum(sc, (bmx->mmx[ip][0])); 
     }
   } /* parses must start/stop at (i = i0)/(j = j0) */
@@ -1562,7 +1565,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  jmin[v] = (jmin[y] != -1) ? jmin[y] : jmin[w]; /* if jmin[y] == jmin[w] == -1, then jmin[v] will be set as -1 */
 	  jmax[v] = (jmax[y] != -2) ? jmax[y] : jmax[w]; /* if jmax[y] == jmax[w] == -2, then jmax[v] will be set as -2 */
 
-	  if(do_trunc) { 
+	  if(! do_trunc) { 
 	    /* check for possibility that either child is not reachable, will only possibly happen with local on */
 	    if(imin[v] == -1 || jmin[v] == -1) { 
 	      /* either the left child, or right child is not reachable, make them both unreachable as well as the BIF state */
@@ -3576,10 +3579,11 @@ void
 debug_print_ij_bands(CM_t *cm)
 {
   int v;
-  printf("%5s  %-7s    %5s  %5s    %5s  %5s\n", "v",     "type",    "imin",  "imax",  "jmin",  "jmax");
-  printf("%5s  %-7s    %5s  %5s    %5s  %5s\n", "-----", "-------", "-----", "-----", "-----", "-----");
+  printf("%5s  %-7s    %5s  %5s    %5s  %5s  %4s\n", "v",     "type",    "imin",  "imax",  "jmin",  "jmax", "JLRT");
+  printf("%5s  %-7s    %5s  %5s    %5s  %5s  %4s\n", "-----", "-------", "-----", "-----", "-----", "-----", "----");
   for(v = 0; v < cm->M; v++)
-    printf("%5d  %-7s    %5d  %5d    %5d  %5d\n", v, CMStateid(cm->stid[v]), cm->cp9b->imin[v], cm->cp9b->imax[v], cm->cp9b->jmin[v], cm->cp9b->jmax[v]);
+    printf("%5d  %-7s    %5d  %5d    %5d  %5d  %d%d%d%d\n", v, CMStateid(cm->stid[v]), cm->cp9b->imin[v], cm->cp9b->imax[v], cm->cp9b->jmin[v], cm->cp9b->jmax[v], 
+	   cm->cp9b->Jvalid[v], cm->cp9b->Lvalid[v], cm->cp9b->Rvalid[v], cm->cp9b->Tvalid[v]);
   return;
 }
 
@@ -5313,8 +5317,7 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
     cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax); /* j can't be more than j0 */
   }
 
-  /*
-    printf("HEYA Returning from cp9_PredictStartAndEndPositions():\n\t");
+  /*    printf("HEYA Returning from cp9_PredictStartAndEndPositions():\n\t");
     printf("sp1: %4d\n\t", cp9b->sp1);
     printf("sp2: %4d\n\t", cp9b->sp2);
     printf("ep2: %4d\n\t", cp9b->ep2);
@@ -5342,9 +5345,9 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
  *          DP recursion.  And we won't have to allocate memory for
  *          that state in the corresponding (J,L,R,T) DP matrix.
  *
- *          We also know from passed-in <trsi>, whether L and/or R
- *          marginal alignments will be allowed via <trsi->allowL> 
- *          and <trsi->allowR>. If <trsi->allowL> is FALSE cp9b->
+ *          We also know from passed-in <tro>, whether L and/or R
+ *          marginal alignments will be allowed via <tro->allowL> 
+ *          and <tro->allowR>. If <tro->allowL> is FALSE cp9b->
  *          Lvalid[] will be FALSE for all v. Likewise for allowR.
  *
  * CM_t       cm:   the model
@@ -5355,7 +5358,7 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
  * xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG 
  */
 void
-cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, TrScanInfo_t *trsi)
+cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, TruncOpts_t *tro)
 {
   int v;
   int nd;
@@ -5375,14 +5378,14 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, TrScanIn
     cp9b->Jvalid[v] = ((lpos >= cp9b->sp1) && (rpos <= cp9b->ep1)) ? TRUE : FALSE;
 
     /* Lvalid if lpos is possibly used and rpos is possibly not used */
-    cp9b->Lvalid[v] = (trsi->allowL && (lpos >= cp9b->sp1 && lpos <= cp9b->ep1) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
+    cp9b->Lvalid[v] = (tro->allowL && (lpos >= cp9b->sp1 && lpos <= cp9b->ep1) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
 
     /* Rvalid if rpos is possibly used and lpos is possibly not used */
-    cp9b->Rvalid[v] = (trsi->allowR && (rpos <= cp9b->ep1 && rpos >= cp9b->sp1) && (lpos < cp9b->sp2)) ? TRUE : FALSE;
+    cp9b->Rvalid[v] = (tro->allowR && (rpos <= cp9b->ep1 && rpos >= cp9b->sp1) && (lpos < cp9b->sp2)) ? TRUE : FALSE;
 
     if(cm->sttype[v] == B_st) { 
       /* Tvalid if lpos and rpos are possibly not used */
-      cp9b->Tvalid[v] = (trsi->allowL && trsi->allowR && (lpos < cp9b->sp2) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
+      cp9b->Tvalid[v] = (tro->allowL && tro->allowR && (lpos < cp9b->sp2) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
     }
     else { 
       cp9b->Tvalid[v] = FALSE;
