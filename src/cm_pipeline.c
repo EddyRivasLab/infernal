@@ -28,12 +28,12 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT  0
+#define DOPRINT  1
 #define DOPRINT2 0
 #define DOPRINT3 0
 
-static int merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, int nwin1, int64_t *ws2, int64_t *we2, double *wp2, int *wl2, int nwin2, int64_t **ret_mws, int64_t **ret_mwe, double **ret_mwp, int **ret_mwl, int *ret_nmwin);
-
+static int  merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, int nwin1, int64_t *ws2, int64_t *we2, double *wp2, int *wl2, int nwin2, int64_t **ret_mws, int64_t **ret_mwe, double **ret_mwp, int **ret_mwl, int *ret_nmwin);
+static void copy_subseq(const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L);
 
 /*****************************************************************
  * 1. The CM_PIPELINE object: allocation, initialization, destruction.
@@ -256,6 +256,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   /* Initialize per-sequence information */
   pli->rs5term = FALSE;
   pli->rs3term = FALSE;
+
+  pli->tro = CreateTruncOpts();
 
   /* Configure acceleration pipeline thresholds */
   pli->do_cm         = TRUE;
@@ -520,7 +522,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_bot           = (esl_opt_GetBoolean(go, "--toponly"))       ? FALSE : TRUE;
   pli->show_accessions  = (esl_opt_GetBoolean(go, "--acc")            ? TRUE  : FALSE);
   pli->do_alignments    = (esl_opt_GetBoolean(go, "--noali")          ? FALSE : TRUE);
-  pli->align_cyk          = (esl_opt_GetBoolean(go, "--aln-cyk")        ? TRUE  : FALSE);
+  pli->align_cyk        = (esl_opt_GetBoolean(go, "--aln-cyk")        ? TRUE  : FALSE);
   pli->align_hbanded    = (esl_opt_GetBoolean(go, "--aln-nonbanded")  ? FALSE : TRUE);
   pli->hb_size_limit    = esl_opt_GetReal    (go, "--aln-sizelimit");
   pli->do_hb_recalc     = esl_opt_GetBoolean(go, "--aln-newbands")    ? TRUE  : FALSE;
@@ -589,6 +591,7 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if(pli->fcyk_dmax != NULL)          { free(pli->fcyk_dmax);             pli->fcyk_dmax = NULL; }
   if(pli->final_dmin != NULL)         { free(pli->final_dmin);            pli->final_dmin = NULL; }
   if(pli->final_dmax != NULL)         { free(pli->final_dmax);            pli->final_dmax = NULL; }
+  if(pli->tro != NULL) free(pli->tro);
   free(pli);
 }
 /*---------------- end, CM_PIPELINE object ----------------------*/
@@ -868,7 +871,7 @@ cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm)
   pli->cur_seq_idx = cur_seq_idx;
 
   /* Note that we don't update pli->Z, that must be set at beginning
-   * of a search, this differs from hmmsearch and nhmmer, which, by
+   * of a search, this differs from hmmsearch and nhmmer, which by
    * default update Z as sequences are read.
    */
   return eslOK;
@@ -984,7 +987,7 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
  * Xref:      J4/25.
  */
 int
-cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin)
+cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin)
 {
   int              status;
   float            mfsc, vfsc, fwdsc;/* filter scores                           */
@@ -1011,10 +1014,12 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
   int              new_nsurv_fwd;    /* used when merging fwd survivors */
   ESL_DSQ         *subdsq;           /* a ptr to the first position of a window */
   int              have_rest;        /* do we have the full <om> read in? */
+  FM_WINDOWLIST    windowlist;       /* list of windows, structure taken by p7_MSVFilter_longtarget() */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   p7_omx_GrowTo(pli->oxf, om->M, 0, sq->n);    /* expand the one-row omx if needed */
   have_rest = (om->mode == p7_NO_MODE) ? FALSE : TRUE; /* we use om->mode as a flag to tell us whether we already have read the full <om> from disk or not */
+  fm_initWindows(&windowlist);
 
   /* Set false target length. This is a conservative estimate of the length of window that'll
    * soon be passed on to later phases of the pipeline;  used to recover some bits of the score
@@ -1047,6 +1052,18 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     ESL_ALLOC(we, sizeof(int64_t) * nwin);
     for(i = 0; i < nwin; i++) { ws[i] = ws_int[i]; we[i] = we_int[i]; }
     free(ws_int); free(we_int);
+#if 0
+    /* UNCOMMENT THIS BLOCK WHEN UPGRADING TO NEW PROTOTYPE FOR MSVFILTER */
+    status = p7_MSVFilter_longtarget(sq->dsq, sq->n, om, pli->oxf, fm_hmmdata, bg, pli->F1, &windowlist, FALSE);
+    ESL_ALLOC(ws, sizeof(int64_t) * windowlist.count);
+    ESL_ALLOC(we, sizeof(int64_t) * windowlist.count);
+    nwin = windowlist.count;
+    for(i = 0; i < nwin; i++) { 
+      ws[i] =         windowlist.windows[i].n;
+      we[i] = ws[i] + windowlist.windows[i].length - 1;
+    }
+    free(windowlist.windows);
+#endif
 
     if(pli->do_wsplit) { 
       /* split up windows > (pli->wmult * W) into length 2W-1, with W-1 overlapping residues */
@@ -1796,7 +1813,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int64_t *es, int64_t *ee, char *em, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
+cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 {
   int              status;
   char             errbuf[cmERRBUFSIZE];   /* for error messages */
@@ -1820,10 +1837,11 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   CP9Bands_t      *scan_cp9b = NULL;       /* a copy of the HMM bands derived in the final CM search stage, if its HMM banded */
   float            hbmx_Mb;                /* approximate size in Mb for HMM banded matrix for current hit */
   int              do_trunc;               /* TRUE if we are allowing L and/or R marginal alignments, FALSE if not */
-  TruncOpts_t    *tro = NULL;            /* truncated scanner info */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
+
+  do_trunc = (pli->do_trunc_ends && (pli->tro->allowR || pli->tro->allowL)) ? TRUE : FALSE;
 
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS) { 
@@ -1881,18 +1899,10 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
     cm->tau           = save_tau;
     cm->cp9b->thresh1 = save_cp9b_thresh1;
     cm->cp9b->thresh2 = save_cp9b_thresh2;
-    /* update tro for this envelope, based on em (envelope mode) */
-    if(tro == NULL) tro = CreateTruncOpts();
-    /*printf("read em[%d] as %s\n", i, MarginalMode(em[i]));*/
-    tro->allowR      = pli->do_trunc_ends && (em[i] == TRMODE_R || em[i] == TRMODE_T) ? TRUE : FALSE;
-    tro->allowL      = pli->do_trunc_ends && (em[i] == TRMODE_L || em[i] == TRMODE_T) ? TRUE : FALSE;
-    tro->force_i0_RT = pli->do_trunc_ends && (em[i] == TRMODE_R || em[i] == TRMODE_T) ? TRUE : FALSE;
-    tro->force_j0_LT = pli->do_trunc_ends && (em[i] == TRMODE_L || em[i] == TRMODE_T) ? TRUE : FALSE;
-    do_trunc         = pli->do_trunc_ends && (em[i] == TRMODE_R || em[i] == TRMODE_L || em[i] == TRMODE_T) ? TRUE : FALSE;
       
 #if DOPRINT
     printf("\nSURVIVOR Envelope %5d [%10ld..%10ld] being passed to CYK   allowR: %d allowL: %d force_i0_RT: %d force_j0_LT: %d\n", i, es[i], ee[i],
-	   tro->allowR, tro->allowL, tro->force_i0_RT, tro->force_j0_LT); 
+	   pli->tro->allowR, pli->tro->allowL, pli->tro->force_i0_RT, pli->tro->force_j0_LT); 
 #endif
     do_hbanded_filter_scan          = (pli->fcyk_cm_search_opts  & CM_SEARCH_HBANDED) ? TRUE  : FALSE;
     do_qdb_or_nonbanded_filter_scan = (pli->fcyk_cm_search_opts  & CM_SEARCH_HBANDED) ? FALSE : TRUE;
@@ -1920,7 +1930,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	 * the resulting HMM banded matrix is under our size limit.
 	 */
 	while(1) { 
-	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, tro, 0)) != eslOK) return status;
+	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, pli->tro, 0)) != eslOK) return status;
 	  if(do_trunc) {
 	    if((status = cm_tr_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; 
 	  }
@@ -1942,7 +1952,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	cm->search_opts  = pli->fcyk_cm_search_opts;
 
 	if(do_trunc) { 
-	  status = TrCYKScanHB(cm, errbuf, tro, sq->dsq, es[i], ee[i], 
+	  status = TrCYKScanHB(cm, errbuf, pli->tro, sq->dsq, es[i], ee[i], 
 			       0.,                                  /* minimum score to report, irrelevant */
 			       NULL,                                /* hitlist to add to, irrelevant here */
 			       pli->do_null3,                       /* do the NULL3 correction? */
@@ -2026,7 +2036,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	 * the resulting HMM banded matrix is under our size limit.
 	 */
 	while(1) { 
-	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, tro, 0)) != eslOK) return status;
+	  if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, es[i], ee[i], cm->cp9b, TRUE, pli->tro, 0)) != eslOK) return status;
 	  if(do_trunc) { 
 	    if((status = cm_tr_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, ee[i]-es[i]+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; 
 	  }
@@ -2041,7 +2051,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	/* printf("INS 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
 	if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is HMM banded Inside */
 	  if(do_trunc) { 
-	    status = FTrInsideScanHB(cm, errbuf, tro, sq->dsq, es[i], ee[i], 
+	    status = FTrInsideScanHB(cm, errbuf, pli->tro, sq->dsq, es[i], ee[i], 
 				     pli->T,            /* minimum score to report */
 				     hitlist,           /* our hitlist */
 				     pli->do_null3,     /* do the NULL3 correction? */
@@ -2070,7 +2080,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	else { /* final algorithm is HMM banded CYK */
 	  /*printf("calling HMM banded CYK scan\n");*/
 	  if(do_trunc) { 
-	    status = TrCYKScanHB(cm, errbuf, tro, sq->dsq, es[i], ee[i], 
+	    status = TrCYKScanHB(cm, errbuf, pli->tro, sq->dsq, es[i], ee[i], 
 				 pli->T,                             /* minimum score to report */
 				 hitlist,                            /* our hitlist */
 				 pli->do_null3,                      /* do the NULL3 correction? */
@@ -2167,11 +2177,13 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
       hit = &(hitlist->unsrt[h]);
       hit->cm_idx  = pli->cur_cm_idx;
       hit->seq_idx = pli->cur_seq_idx;
+      hit->maxW    = pli->maxW;
       hit->pvalue  = esl_exp_surv(hit->score, cm->expA[pli->final_cm_exp_mode]->mu_extrap, cm->expA[pli->final_cm_exp_mode]->lambda);
+      hit->srcL    = sq->L; /* this may be -1, in which case it will be updated by caller (cmsearch or cmscan) when full length is known */
 
       /* initialize remaining values we don't know yet */
-      hit->evalue   = 0.;
-      hit->ad       = NULL;
+      hit->evalue  = 0.;
+      hit->ad      = NULL;
 	  
       if (pli->mode == CM_SEARCH_SEQS) { 
 	if (                       (status  = esl_strdup(sq->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
@@ -2190,8 +2202,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
       if(pli->do_alignments) { 
 	if((status = cm_pli_AlignHit(pli, cm, *opt_cmcons, sq, do_trunc, hit, 
 				     (h == nhit) ? TRUE : FALSE,    /* TRUE if this is the first hit we're aligning (h == nhit) */
-				     scan_cp9b,                     /* a copy of the HMM bands determined in the last search stage, NULL if HMM bands not used */
-				     tro))                         /* the truncated scanner info */
+				     scan_cp9b))                    /* a copy of the HMM bands determined in the last search stage, NULL if HMM bands not used */
 	   != eslOK) return status;
       }
 
@@ -2244,7 +2255,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   if((! pli->need_fsmx) && (pli->fsmx != NULL)) { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL;  }
   if((! pli->need_smx)  && (pli->smx != NULL))  { cm_FreeScanMatrix(cm, pli->smx);  pli->smx = NULL;   }
   if(scan_cp9b != NULL) FreeCP9Bands(scan_cp9b);
-  if(tro      != NULL) free(tro);
 
   return eslOK;
 }
@@ -2266,7 +2276,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
  * Returns: <eslOK> on success.
  */
 int
-cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int do_trunc, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b, TruncOpts_t *tro)
+cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int do_trunc, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b)
 {
   int                 status;               /* Easel status code */
   Parsetree_t        *tr = NULL;            /* pointer to the pointer to the parsetree we're currently creating */
@@ -2308,7 +2318,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
        */
       cm->tau = pli->final_tau;
       while(1) { 
-	if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, tro, 0)) != eslOK) return status; 
+	if((status = cp9_Seq2Bands(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, subdsq, 1, hitlen, cm->cp9b, FALSE, pli->tro, 0)) != eslOK) return status; 
 	if(do_trunc) { 
 	  if((status = cm_tr_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, hitlen, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; 
 	}
@@ -2637,34 +2647,34 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
+cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 {
-  int status;
+  int       status;
   int       nwin = 0;   /* number of windows surviving MSV & Vit & lFwd, filled by cm_pli_p7Filter() */
   int64_t  *ws = NULL;  /* [0..i..nwin-1] window start positions, filled by cm_pli_p7Filter() */
   int64_t  *we = NULL;  /* [0..i..nwin-1] window end   positions, filled by cm_pli_p7Filter() */
   int       nenv = 0;   /* number of envelopes surviving MSV & Vit & lFwd & gFwd & EnvDef, filled by cm_pli_p7EnvelopeDef */
   int64_t  *es  = NULL; /* [0..i..nenv-1] window start positions, filled by cm_pli_p7EnvelopeDef() */
   int64_t  *ee  = NULL; /* [0..i..nenv-1] window end   positions, filled by cm_pli_p7EnvelopeDef() */
-  char     *em  = NULL; /* [0..i..nenv-1] marginal modes of envelopes, determined by pli->rs5term and pli->rs3term */
 
-  /* variables only used in the special case that current sequence contains both the 5' and 3' terminus and
-   * pli->rs5term and pli->rs3term are both TRUE. We have to handle possibility that sequence may contain
-   * 5' truncated hits, 3' truncated hits or hits that are both 5' and 3' truncated, so we need to 
-   * call p7_EnvelopeDef() three times. 
-   */
-  int       nenv1 = 0;  /* number of envelopes surviving first  call to cm_pli_p7EnvelopeDef() */
-  int       nenv2 = 0;  /* number of envelopes surviving second call to cm_pli_p7EnvelopeDef() */
-  int64_t  *es2 = NULL; /* [0..i..nenv2-1] window start positions, filled by cm_pli_p7EnvelopeDef() */
-  int64_t  *ee2 = NULL; /* [0..i..nenv2-1] window end   positions, filled by cm_pli_p7EnvelopeDef() */
-  int       nenv3 = 0;  /* number of envelopes surviving third call to cm_pli_p7EnvelopeDef() */
-  int64_t  *es3 = NULL; /* [0..i..nenv3-1] window start positions, filled by cm_pli_p7EnvelopeDef() */
-  int64_t  *ee3 = NULL; /* [0..i..nenv3-1] window end   positions, filled by cm_pli_p7EnvelopeDef() */
-  int       i;          /* counter over envelopes */
+  /* variables necessary for re-searching sequence ends */
+  ESL_SQ   *sq2search = NULL;  /* a pointer to the sequence to search on current pass */
+  ESL_SQ   *term5sq   = NULL;  /* a copy of the 5'-most pli->maxW residues from sq */
+  ESL_SQ   *term3sq   = NULL;  /* a copy of the 3'-most pli->maxW residues from sq */
+  int       p;                 /* counter over passes */
+  int       nwin_pass1 = 0;    /* number of windows that survived pass 1 */
+  int       do_pass2;          /* should we do pass 2? re-search the 5'-most pli->maxW residues */
+  int       do_pass3;          /* should we do pass 3? re-search the 3'-most pli->maxW residues */
+  int       do_pass4;          /* should we do pass 4? re-search the full sequence allowing for T truncated hits */
+  int       not5term;          /* TRUE if sq definitely does not contain the 5'-most pli->maxW residues of its source sequence, we can skip passes 2 and 4 */
+  int       not3term;          /* TRUE if sq definitely does not contain the 3'-most pli->maxW residues of its source sequence, we can skip passes 3 and 4 */
+  int       h;                 /* counter over hits */
+  int       prv_ntophits;      /* number of hits */
+  int64_t   start_offset;      /* offset to add to start/stop coordinates of hits found in pass 3, in which we re-search the 3' terminus */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
 #if DOPRINT
-  printf("\nPIPELINE ENTRANCE %s  %s  %" PRId64 " residues\n", sq->name, sq->desc, sq->n);
+  printf("\nPIPELINE ENTRANCE %s  %s  %" PRId64 " residues (pli->maxW: %d om->max_length: %d cm->W: %d)\n", sq->name, sq->desc, sq->n, pli->maxW, om->max_length, (*opt_cm)->W);
 #endif
 
 #if 0
@@ -2682,85 +2692,115 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
   printf("F5b: %f\n", pli->F5b);
 #endif
 
-#if DOPRINT
-  printf("\nPIPELINE calling p7Filter() %s  %" PRId64 " residues\n", sq->name, sq->n);
-#endif
-  if((status = cm_pli_p7Filter(pli, om, bg, p7_evparam, sq, &ws, &we, &nwin)) != eslOK) return status;
-  if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
+  not5term = not3term = FALSE; /* by default, we may have 5' terminus and we may have 3' terminus */
+  /* Determine, if we can, that we definitely do not have the 5' or 3' terminii.
+   * The two if statements involving sq->L are commented out. This has the effect
+   * that sq->L is always treated as unknown and so we always re-search the 3' terminus.
+   * We do this because we want mpi versus serial/threaded cmsearch to give identical
+   * pipeline statistics, and while in mpi we know sq->L (b/c we've read it from an 
+   * SSI index), in serial/threaded we don't. So to get identical results we ignore
+   * the knowledge of sq->L in cmsearch mpi. In cmscan, we always read complete sequences
+   * so we always know L, but we will also always research the 3' terminus, thus 
+   * commenting out these two lines does not affect cmscan.
+   */
+  if(sq->start <= sq->end) { /* not in reverse complement (or 1 residue sequence, in revcomp) */
+    if(sq->start != 1)                  not5term = TRUE;
+    /*if(sq->L != -1 && sq->end != sq->L) not3term = TRUE;*/
+  }
+  else { /* in reverse complement */
+    if(sq->end != 1)                       not3term = TRUE;
+    /*if(sq->L != -1 && sq->start != sq->L)  not5term = TRUE;*/
+  }
 
-#if DOPRINT
-  printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues (rs5term: %d rs3term: %d)\n", sq->name, sq->n, pli->rs5term, pli->rs3term);
-#endif
-  if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es, &ee, &nenv)) != eslOK) return status;
-  nenv1 = nenv; /* save nenv, for determining em[0..nenv-1] below */
-  if(pli->do_force_ends && pli->rs5term && pli->rs3term) { 
-    /* special case: we are the 5' *and* 3' terminus (i.e. one short sequence that could be 
-     * truncated 5', 3' or both) so we need to do 3 passes with EnvelopeDef(). We just
-     * did 1 pass with both rs5term and rs3term set as TRUE, now toggle each.
-     */
-    pli->rs5term = TRUE; 
-    pli->rs3term = FALSE;
-#if DOPRINT
-  printf("\nPIPELINE calling special p7EnvelopeDef() %s  %" PRId64 " residues (rs5term: %d rs3term: %d)\n", sq->name, sq->n, pli->rs5term, pli->rs3term);
-#endif
-    if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es2, &ee2, &nenv2)) != eslOK) return status;
-    pli->rs5term = FALSE;
-    pli->rs3term = TRUE;
-#if DOPRINT
-  printf("\nPIPELINE calling special p7EnvelopeDef() %s  %" PRId64 " residues (rs5term: %d rs3term: %d)\n", sq->name, sq->n, pli->rs5term, pli->rs3term);
-#endif
-    if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es3, &ee3, &nenv3)) != eslOK) return status;
-    pli->rs5term = pli->rs3term = TRUE; /* reset */
-    if(nenv2 > 0 || nenv3 > 0) { 
-      if(nenv > 0) ESL_REALLOC(es, sizeof(int64_t) * (nenv + nenv2 + nenv3));
-      else         ESL_ALLOC  (es, sizeof(int64_t) * (nenv + nenv2 + nenv3));
-      if(nenv > 0) ESL_REALLOC(ee, sizeof(int64_t) * (nenv + nenv2 + nenv3));
-      else         ESL_ALLOC  (ee, sizeof(int64_t) * (nenv + nenv2 + nenv3));
-      i = nenv;
-      for(i = nenv; i < nenv + nenv2; i++) { 
-	es[i] = es2[i - nenv]; 
-	ee[i] = ee2[i - nenv]; 
-      }
-      for(i = nenv + nenv2; i < nenv + nenv2 + nenv3; i++) { 
-	es[i] = es3[i - (nenv + nenv2)]; 
-	ee[i] = ee3[i - (nenv + nenv2)]; 
-      }
-      nenv = nenv + nenv2 + nenv3;
+  printf("\nPIPELINE ENTRANCE %-15s  (n: %6" PRId64 " start: %6" PRId64 " end: %6" PRId64 " C: %6" PRId64 " W: %6" PRId64 " L: %6" PRId64 " not5term: %d not3term: %d have5term: %5s have3term: %5s)\n",
+	 sq->name, sq->n, sq->start, sq->end, sq->C, sq->W, sq->L, not5term, not3term, not5term ? "No" : "Maybe", not3term ? "No" : "Maybe");
+
+  do_pass2 = ((! not5term) && pli->research_ends) ? TRUE : FALSE;
+  do_pass3 = ((! not3term) && pli->research_ends) ? TRUE : FALSE;
+  do_pass4 = ((! not5term) && (! not3term) && pli->research_ends && sq->n <= pli->maxW) ? TRUE : FALSE;
+
+  for(p = 1; p <= 4; p++) { 
+    if(p  > 1 && nwin_pass1 == 0) continue; 
+    if(p == 2 && (! do_pass2))    continue;
+    if(p == 3 && (! do_pass3))    continue;
+    if(p == 4 && (! do_pass4))    continue;
+
+    /* set sq2search and remember start_offset */
+    start_offset = 0;
+    if(p == 1 || p == 4 || sq->n <= pli->maxW) { 
+      sq2search = sq;
     }
-    /* we could try and combine envelopes here, but don't currently */
-  }
-  /* determine marginal mode CM should enforce use for alignment of each envelope (if pli->do_force_ends) */
-  ESL_ALLOC(em, sizeof(char) * nenv);
-  if(pli->rs5term && pli->rs3term) { 
-    for(i = 0;             i < nenv1;         i++) em[i] = TRMODE_T;
-    for(i = nenv1;         i < nenv1 + nenv2; i++) em[i] = TRMODE_R;
-    for(i = nenv1 + nenv2; i < nenv;          i++) em[i] = TRMODE_L;
-  }
-  else if(pli->rs5term) { for(i = 0; i < nenv; i++) em[i] = TRMODE_R; }
-  else if(pli->rs3term) { for(i = 0; i < nenv; i++) em[i] = TRMODE_L; }
-  else                  { for(i = 0; i < nenv; i++) em[i] = TRMODE_J; }
-  /*for(i = 0; i < nenv; i++) { printf("set em[%d] to %s\n", i, MarginalMode(em[i])); }*/
+    else if(p == 2) { /* research first (5') pli->maxW residues */
+      term5sq = esl_sq_CreateDigital(bg->abc);
+      copy_subseq(sq, term5sq, 1, pli->maxW);
+      sq2search = term5sq;
+    }
+    else { /* p must be 3 */
+      term3sq = esl_sq_CreateDigital(bg->abc);
+      copy_subseq(sq, term3sq, sq->n - pli->maxW + 1, pli->maxW);
+      sq2search = term3sq;
+      start_offset = sq->n - pli->maxW;
+    }
+
+    /* Set rs5term and rs3term and tro, this informs the pipeline stages about truncated hit/alignment options */
+    pli->rs5term          = (p == 2 || p == 4) ? TRUE : FALSE;
+    pli->rs3term          = (p == 3 || p == 4) ? TRUE : FALSE;
+    pli->tro->allowR      = (pli->do_trunc_ends && pli->rs5term)                       ? TRUE : FALSE;
+    pli->tro->allowL      = (pli->do_trunc_ends && pli->rs3term)                       ? TRUE : FALSE;
+    pli->tro->force_i0_RT = (pli->do_trunc_ends && pli->rs5term && pli->do_force_ends) ? TRUE : FALSE;
+    pli->tro->force_j0_LT = (pli->do_trunc_ends && pli->rs3term && pli->do_force_ends) ? TRUE : FALSE;
+
+    /* execute the pipeline */
+#if DOPRINT
+    printf("\nPIPELINE calling p7Filter() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allowR: %d allowL: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allowR, pli->tro->allowL, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
+#endif
+    if((status = cm_pli_p7Filter(pli, om, bg, p7_evparam, fm_hmmdata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
+    if(p == 1) nwin_pass1 = nwin;
+    if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
 
 #if DOPRINT
-  printf("\nPIPELINE calling CMStage() %s  %" PRId64 " residues\n", sq->name, sq->n);
+    printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allowR: %d allowL: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allowR, pli->tro->allowL, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
 #endif
-  if((status = cm_pli_CMStage(pli, cm_offset, cm_config_opts, sq, es, ee, em, nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
-  if(pli->do_time_F6) return eslOK;
+    if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es, &ee, &nenv)) != eslOK) return status;
 
-  if(ws != NULL) free(ws);
-  if(we != NULL) free(we);
-  if(es != NULL) free(es);
-  if(ee != NULL) free(ee);
-  if(em  != NULL) free(em);
-  if(es2 != NULL) free(es2);
-  if(ee2 != NULL) free(ee2);
-  if(es3 != NULL) free(es3);
-  if(ee3 != NULL) free(ee3);
+#if DOPRINT
+    printf("\nPIPELINE calling CMStage() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allowR: %d allowL: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allowR, pli->tro->allowL, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
+#endif
+    prv_ntophits = hitlist->N;
+    if((status = cm_pli_CMStage(pli, cm_offset, cm_config_opts, sq2search, es, ee, nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
+    if(pli->do_time_F6) return status;
+
+    /* Two ways we have to update any hits we've just found: */
+    if(hitlist->N > prv_ntophits) { 
+      /* 1. if we're in a terminus researching pass (i.e. not pass 1), raise CM_HIT_FROM_TERMINUS_RESEARCH flag */
+      if(p != 1) { 
+	printf("setting hits %4d..%" PRId64 " flags to CM_HIT_FROM_TERMINUS_RESEARCH\n", prv_ntophits, hitlist->N);
+	for(h = prv_ntophits; h < hitlist->N; h++) hitlist->unsrt[h].flags |= CM_HIT_FROM_TERMINUS_RESEARCH;
+      }
+      /* 2. if we're researching a 3' terminus, adjust the start/stop positions so they are relative to the actual 5' start */
+      if(start_offset != 0) { /* this will only be non-zero if we're in pass3 */
+	for(h = prv_ntophits; h < hitlist->N; h++) { 
+	  hitlist->unsrt[h].start += start_offset;
+	  hitlist->unsrt[h].stop  += start_offset;
+	  if(hitlist->unsrt[h].ad != NULL) { 
+	    hitlist->unsrt[h].ad->sqfrom += start_offset;
+	    hitlist->unsrt[h].ad->sqto   += start_offset;
+	  }
+	}
+      }
+    }
+  /*****************************************************************/
+
+    if(ws  != NULL) free(ws);
+    if(we  != NULL) free(we);
+    if(es  != NULL) free(es);
+    if(ee  != NULL) free(ee);
+  }
+  
+  if(term5sq != NULL) esl_sq_Destroy(term5sq);
+  if(term3sq != NULL) esl_sq_Destroy(term3sq);
 
   return eslOK;
-
- ERROR:
-  ESL_EXCEPTION(eslEMEM, "Error: out of memory");
 }
   
 /* Function:  cm_pli_Statistics()
@@ -2778,60 +2818,62 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
  * Returns:   <eslOK> on success.
  */
 int
-cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
+cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, int passidx, ESL_STOPWATCH *w)
 {
   double  ntargets; 
   int64_t nwin_fcyk  = 0; /* number of windows CYK filter evaluated */
   int64_t nwin_final = 0; /* number of windows final stage evaluated */
 
+  CM_PLI_ACCT *pli_act = pli->acct[passidx];
+
   fprintf(ofp, "Internal pipeline statistics summary:\n");
   fprintf(ofp, "-------------------------------------\n");
   if (pli->mode == CM_SEARCH_SEQS) {
-    fprintf(ofp,   "Query model(s):                                    %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli->nmodels, pli->nnodes);
-    fprintf(ofp,   "Target sequences:                                  %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli->nres);
-    ntargets = pli->nseqs;
+    fprintf(ofp,   "Query model(s):                                    %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli_act->nmodels, pli_act->nnodes);
+    fprintf(ofp,   "Target sequences:                                  %15" PRId64 "  (%" PRId64 " residues)\n",  pli_act->nseqs,   pli_act->nres);
+    ntargets = pli_act->nseqs;
   } else {
-    fprintf(ofp,   "Query sequence(s):                                 %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli->nres);
-    fprintf(ofp,   "Target model(s):                                   %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli->nmodels, pli->nnodes);
-    ntargets = pli->nmodels;
+    fprintf(ofp,   "Query sequence(s):                                 %15" PRId64 "  (%" PRId64 " residues)\n",  pli_act->nseqs,   pli_act->nres);
+    fprintf(ofp,   "Target model(s):                                   %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli_act->nmodels, pli_act->nnodes);
+    ntargets = pli_act->nmodels;
   }
 
-  if(pli->do_msv) { 
+  if(pli_act->do_msv) { 
     fprintf(ofp, "Windows   passing  local HMM MSV           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_msv,
-	    (double) pli->pos_past_msv / pli->nres,
-	    pli->F1 * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_msv;
+	    pli_act->n_past_msv,
+	    (double) pli_act->pos_past_msv / pli_act->nres,
+	    pli_act->F1 * pli_act->nmodels);
+    nwin_fcyk = nwin_final = pli_act->n_past_msv;
   }
   else { 
     fprintf(ofp, "Windows   passing  local HMM MSV           filter: %15s  (off)\n", "");
   }
 
-  if(pli->do_msvbias) { 
+  if(pli_act->do_msvbias) { 
     fprintf(ofp, "Windows   passing  local HMM MSV      bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_msvbias,
-	    (double) pli->pos_past_msvbias / pli->nres,
-	    pli->F1b * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_msvbias;
+	    pli_act->n_past_msvbias,
+	    (double) pli_act->pos_past_msvbias / pli_act->nres,
+	    pli->F1b * pli_act->nmodels);
+    nwin_fcyk = nwin_final = pli_act->n_past_msvbias;
   }
 
-  if(pli->do_vit) { 
+  if(pli_act->do_vit) { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_vit,
-	    (double) pli->pos_past_vit / pli->nres,
-	    pli->F2 * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_vit;
+	    pli_act->n_past_vit,
+	    (double) pli_act->pos_past_vit / pli_act->nres,
+	    pli->F2 * pli_act->nmodels);
+    nwin_fcyk = nwin_final = pli_act->n_past_vit;
   }
   else { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi       filter: %15s  (off)\n", "");
   }
 
-  if(pli->do_vitbias) { 
+  if(pli_act->do_vitbias) { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_vitbias,
-	    (double) pli->pos_past_vitbias / pli->nres,
-	    pli->F2b * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_vitbias;
+	    pli_act->n_past_vitbias,
+	    (double) pli_act->pos_past_vitbias / pli_act->nres,
+	    pli->F2b * pli_act->nmodels);
+    nwin_fcyk = nwin_final = pli_act->n_past_vitbias;
   }
   else { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi  bias filter: %15s  (off)\n", "");
@@ -2839,42 +2881,42 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 
   if(pli->do_fwd) { 
     fprintf(ofp, "Windows   passing  local HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_fwd,
-	    (double) pli->pos_past_fwd / pli->nres,
-	    pli->F3 * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_fwd;
+	    pli_act->n_past_fwd,
+	    (double) pli_act->pos_past_fwd / pli_act->nres,
+	    pli->F3 * pli_act->nmodels);
+    nwin_fcyk = nwin_final = pli_act->n_past_fwd;
   }
   else { 
     fprintf(ofp, "Windows   passing  local HMM Forward       filter: %15s  (off)\n", "");
   }
 
-  if(pli->do_fwdbias) { 
+  if(pli_act->do_fwdbias) { 
     fprintf(ofp, "Windows   passing  local HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_fwdbias,
-	    (double) pli->pos_past_fwdbias / pli->nres,
-	    pli->F3b * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_fwdbias;
+	    pli_act->n_past_fwdbias,
+	    (double) pli_act->pos_past_fwdbias / pli_act->nres,
+	    pli->F3b * pli_act->nmodels);
+    nwin_fcyk = nwin_final = pli_act->n_past_fwdbias;
   }
   else { 
     fprintf(ofp, "Windows   passing  local HMM Forward  bias filter: %15s  (off)\n", "");
   }
 
-  if(pli->do_gfwd) { 
+  if(pli_act->do_gfwd) { 
     fprintf(ofp, "Windows   passing glocal HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_gfwd,
-	    (double) pli->pos_past_gfwd / pli->nres,
-	    pli->F4 * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_gfwd;
+	    pli_act->n_past_gfwd,
+	    (double) pli_act->pos_past_gfwd / pli_act->nres,
+	    pli->F4 * pli_act->nmodels);
+    nwin_fcyk = nwin_final = pli_act->n_past_gfwd;
   }
   else { 
     fprintf(ofp, "Windows   passing glocal HMM Forward       filter: %15s  (off)\n", "");
   }
-  if(pli->do_gfwdbias) { 
+  if(pli_act->do_gfwdbias) { 
     fprintf(ofp, "Windows   passing glocal HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_gfwdbias,
-	    (double) pli->pos_past_gfwdbias / pli->nres,
-	    pli->F4b * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_gfwdbias;
+	    pli_act->n_past_gfwdbias,
+	    (double) pli_act->pos_past_gfwdbias / pli_act->nres,
+	    pli->F4b * pli_act->nmodels);
+    nwin_fcyk = nwin_final = pli_act->n_past_gfwdbias;
   }
   else { 
     fprintf(ofp, "Windows   passing glocal HMM Forward  bias filter: %15s  (off)\n", "");
@@ -2882,21 +2924,21 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 
   if(pli->do_envelopes) { 
     fprintf(ofp, "Envelopes passing glocal HMM envelope defn filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_edef,
-	    (double) pli->pos_past_edef / pli->nres,
-	    pli->F5 * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_edef;
+	    pli_act->n_past_edef,
+	    (double) pli_act->pos_past_edef / pli_act->nres,
+	    pli->F5 * pli_act->nmodels);
+    nwin_fcyk = nwin_final = pli_act->n_past_edef;
   }
   else { 
     fprintf(ofp, "Envelopes passing glocal HMM envelope defn filter: %15s  (off)\n", "");
   }
 
-  if(pli->do_edefbias) { 
+  if(pli_act->do_edefbias) { 
     fprintf(ofp, "Envelopes passing glocal HMM envelope bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_edefbias,
-	    (double) pli->pos_past_edefbias / pli->nres,
-	    pli->F5b * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_edefbias;
+	    pli_act->n_past_edefbias,
+	    (double) pli_act->pos_past_edefbias / pli_act->nres,
+	    pli->F5b * pli_act->nmodels);
+    nwin_fcyk = nwin_final = pli_act->n_past_edefbias;
   }
   else { 
     fprintf(ofp, "Windows passing glocal HMM envelope bias filter: %15s  (off)\n", "");
@@ -2904,28 +2946,28 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 
   if(pli->do_cyk) { 
     fprintf(ofp, "Envelopes passing %6s CM  CYK           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    (pli->do_glocal_cm_stages) ? "glocal" : "local",
-	    pli->n_past_cyk,
-	    (double) pli->pos_past_cyk / pli->nres,
-	    pli->F6 * pli->nmodels);
-    nwin_final = pli->n_past_cyk;
+	    (pli_act->do_glocal_cm_stages) ? "glocal" : "local",
+	    pli_act->n_past_cyk,
+	    (double) pli_act->pos_past_cyk / pli_act->nres,
+	    pli->F6 * pli_act->nmodels);
+    nwin_final = pli_act->n_past_cyk;
   }
   else { 
     fprintf(ofp, "Envelopes passing %6s CM  CYK           filter: %15s  (off)\n", 
-	    (pli->do_glocal_cm_stages) ? "glocal" : "local",
+	    (pli_act->do_glocal_cm_stages) ? "glocal" : "local",
 	    "");
   }
 
   fprintf(ofp, "Total hits reported:                               %15d  (%.4g)\n",
-          (int)pli->n_output,
-          (double) pli->pos_output / pli->nres );
+          (int)pli_act->n_output,
+          (double) pli_act->pos_output / pli_act->nres );
 
   fprintf(ofp, "\n");
   if(nwin_fcyk > 0) { 
     fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15" PRId64 "  (%.4g)\n", 
 	    "CYK", 
-	    pli->n_overflow_fcyk,
-	    (double) pli->n_overflow_fcyk / (double) nwin_fcyk);
+	    pli_act->n_overflow_fcyk,
+	    (double) pli_act->n_overflow_fcyk / (double) nwin_fcyk);
   }
   else { 
     fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15d  (%.4g)\n", 
@@ -2934,25 +2976,73 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   }
   if(nwin_final > 0) { 
     fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15" PRId64 "  (%.4g)\n", 
-	    (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
-	    pli->n_overflow_final,
-	    (double) pli->n_overflow_final / (double) nwin_final);
+	    (pli_act->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
+	    pli_act->n_overflow_final,
+	    (double) pli_act->n_overflow_final / (double) nwin_final);
   }
   else { 
     fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15d  (%.4g)\n", 
-	    (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
+	    (pli_act->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
 	    0, 0.);
   }
   if (w != NULL) {
     esl_stopwatch_Display(ofp, w, "# CPU time: ");
     fprintf(ofp, "# Mc/sec: %.2f\n", 
-        (double) pli->nres * (double) pli->nnodes / (w->elapsed * 1.0e6));
+        (double) pli_act->nres * (double) pli_act->nnodes / (w->elapsed * 1.0e6));
   }
 
   return eslOK;
 }
 /*------------------- end, pipeline API -------------------------*/
 
+ 
+/* Function:  copy_subseq()
+ * Incept:    EPN, Tue Aug  9 11:13:02 2011
+ *
+ * Purpose: Copy a subsequence of an existing sequence <src_sq>
+ *           starting at position <i>, of length <L> to another
+ *           sequence object <dest_sq>. Copy only residues from
+ *           <i>..<i>+<L>-1. <dest_sq> must be pre-allocated.
+ *
+ * Returns: eslOK on success. 
+ */
+void
+copy_subseq(const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L)
+{ 
+  printf("entering copy_subseq i: %" PRId64 " j: %" PRId64 " L: %" PRId64 " start-end: %" PRId64 "... %" PRId64 "\n",
+	 i, i+L-1, L, src_sq->start, src_sq->end);
+  fflush(stdout);
+
+  //ESL_DASSERT1((src_sq->start <= src_sq->end));
+  //assert(src_sq->start <= src_sq->end);
+
+  esl_sq_Reuse(dest_sq);
+  esl_sq_GrowTo(dest_sq, L);
+  memcpy((void*)(dest_sq->dsq+1), src_sq->dsq+i, L * sizeof(ESL_DSQ));
+  dest_sq->dsq[0] = dest_sq->dsq[L+1] = eslDSQ_SENTINEL;
+  dest_sq->n      = L;
+
+  if(src_sq->start <= src_sq->end) { 
+    ESL_DASSERT1((L <= (src_sq->end - src_sq->start + 1)));
+    assert(L <= (src_sq->end - src_sq->start + 1));
+    dest_sq->start = src_sq->start  + i - 1;
+    dest_sq->end   = dest_sq->start + L - 1;
+  }
+  else { 
+    ESL_DASSERT1((L <= (src_sq->start - src_sq->end + 1)));
+    assert(L <= (src_sq->start - src_sq->end + 1));
+    dest_sq->start = src_sq->end    + L - 1;
+    dest_sq->end   = dest_sq->start - L + 1;
+  }
+  printf("leaving copy_subseq dest_sq->start..end: %" PRId64 " %" PRId64 " n: %" PRId64 "\n",
+	 dest_sq->start, dest_sq->end, dest_sq->n);
+
+  esl_sq_SetName     (dest_sq, src_sq->name);
+  esl_sq_SetAccession(dest_sq, src_sq->acc);
+  esl_sq_SetDesc     (dest_sq, src_sq->desc);
+
+  return;
+}
 
 /*****************************************************************
  * 3. Example 1: "search mode" in a sequence db

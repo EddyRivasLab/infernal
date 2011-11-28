@@ -631,9 +631,9 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0,
    */
   if(tmp_hitlist != NULL) { 
     cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveDuplicates(tmp_hitlist);
+    cm_tophits_RemoveOverlaps(tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) { 
-      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
@@ -1002,9 +1002,9 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, 
    */
   if(tmp_hitlist != NULL) { 
     cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveDuplicates(tmp_hitlist);
+    cm_tophits_RemoveOverlaps(tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) { 
-      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
@@ -1587,9 +1587,9 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
    */
   if(tmp_hitlist != NULL) { 
     cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveDuplicates(tmp_hitlist);
+    cm_tophits_RemoveOverlaps(tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) { 
-      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
@@ -2171,9 +2171,9 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
    */
   if(tmp_hitlist != NULL) { 
     cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveDuplicates(tmp_hitlist);
+    cm_tophits_RemoveOverlaps(tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) { 
-      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
@@ -2511,9 +2511,9 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
    */
   if(tmp_hitlist != NULL) { 
     cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveDuplicates(tmp_hitlist);
+    cm_tophits_RemoveOverlaps(tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) { 
-      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
@@ -2856,9 +2856,9 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
    */
   if(tmp_hitlist != NULL) { 
     cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveDuplicates(tmp_hitlist);
+    cm_tophits_RemoveOverlaps(tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) { 
-      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
@@ -3529,9 +3529,9 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, floa
    */
   if(tmp_hitlist != NULL) { 
     cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveDuplicates(tmp_hitlist);
+    cm_tophits_RemoveOverlaps(tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) { 
-      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
@@ -4039,10 +4039,10 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, 
    */
   if(tmp_hitlist != NULL) { 
     cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveDuplicates(tmp_hitlist);
+    cm_tophits_RemoveOverlaps(tmp_hitlist);
     /*cm_tophits_Dump(stdout, tmp_hitlist);*/
     for(h = 0; h < tmp_hitlist->N; h++) { 
-      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_DUPLICATE)) { 
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }

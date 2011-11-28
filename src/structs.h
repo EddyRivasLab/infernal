@@ -1888,6 +1888,43 @@ typedef struct cm_file_s {
  * In the special case of reading from stdin, <fname> is "[STDIN]".
  */
 
+typedef struct cm_pipeline_accounting_s {
+  uint64_t      nmodels;           /* # of models searched                     */
+  uint64_t      nseqs;	           /* # of sequences searched                  */
+  uint64_t      nres;	           /* # of residues searched                   */
+  uint64_t      nnodes;	           /* # of model nodes searched                */
+  uint64_t      n_past_msv;	   /* # windows that pass MSVFilter()          */
+  uint64_t      n_past_vit;	   /* # windows that pass ViterbiFilter()      */
+  uint64_t      n_past_fwd;	   /* # windows that pass ForwardFilter()      */
+  uint64_t      n_past_gfwd;	   /* # windows that pass glocal GForward()    */
+  uint64_t      n_past_edef;	   /* # envelopes that pass envelope definition */
+  uint64_t      n_past_cyk;	   /* # windows that pass CYK filter           */
+  uint64_t      n_past_ins;	   /* # windows that pass Inside               */
+  uint64_t      n_output;	   /* # alignments that make it to the final output */
+  uint64_t      n_past_msvbias;	   /* # windows that pass MSV bias filter      */
+  uint64_t      n_past_vitbias;	   /* # windows that pass Vit bias filter      */
+  uint64_t      n_past_fwdbias;	   /* # windows that pass Fwd bias filter      */
+  uint64_t      n_past_gfwdbias;   /* # windows that pass gFwd bias filter     */
+  uint64_t      n_past_edefbias;   /* # envelopes that pass env bias filter    */
+  uint64_t      pos_past_msv;	   /* # positions that pass MSVFilter()        */
+  uint64_t      pos_past_vit;	   /* # positions that pass ViterbiFilter()    */
+  uint64_t      pos_past_fwd;	   /* # positions that pass ForwardFilter()    */
+  uint64_t      pos_past_gfwd;	   /* # positions that pass glocal GForward()  */
+  uint64_t      pos_past_edef;	   /* # positions that pass env definition     */
+  uint64_t      pos_past_cyk;	   /* # positions that pass CYK filter         */
+  uint64_t      pos_past_ins;      /* # positions that pass Inside             */    
+  uint64_t      pos_output;	   /* # positions that make it to the final output */
+  uint64_t      pos_past_msvbias;  /* # positions that pass MSV bias filter */
+  uint64_t      pos_past_vitbias;  /* # positions that pass Vit bias filter */
+  uint64_t      pos_past_fwdbias;  /* # positions that pass Fwd bias filter */
+  uint64_t      pos_past_gfwdbias; /* # positions that pass gFwd bias filter*/
+  uint64_t      pos_past_edefbias; /* # positions that pass dom def bias filter */
+  uint64_t      n_overflow_fcyk;   /* # hits that couldn't use an HMM banded mx in CYK filter stage */
+  uint64_t      n_overflow_final;  /* # hits that couldn't use an HMM banded mx in final stage */
+  uint64_t      n_aln_hb;          /* # HMM banded alignments computed */
+  uint64_t      n_aln_dccyk;       /* # nonbanded divide and conquer CYK alignments computed */
+} CM_PLI_ACCT;
+
 enum cm_pipemodes_e     { CM_SEARCH_SEQS = 0, CM_SCAN_MODELS = 1 };
 enum cm_newmodelmodes_e { CM_NEWMODEL_MSV = 0, CM_NEWMODEL_CM = 1 };
 enum cm_zsetby_e        { CM_ZSETBY_SSIINFO = 0, CM_ZSETBY_SSI_AND_QLENGTH = 1, CM_ZSETBY_OPTION = 2, CM_ZSETBY_FILEINFO = 3};
@@ -1910,6 +1947,7 @@ typedef struct cm_pipeline_s {
   int          *fcyk_dmax;      /* QDB dmax values for filter CYK round     */
   int          *final_dmin;     /* QDB dmin values for final round          */
   int          *final_dmax;     /* QDB dmax values for final round          */
+  TruncOpts_t  *tro;            /* information for truncated scan/aln       */
 
   /* Model-dependent parameters                                             */
   int 		maxW;           /* # residues to overlap in adjacent windows*/
@@ -2024,40 +2062,7 @@ typedef struct cm_pipeline_s {
   double  xtau;                 /* multiplier for tau when tightening bands */
 
   /* Accounting. (reduceable in threaded/MPI parallel version)              */
-  uint64_t      nmodels;           /* # of HMMs searched                       */
-  uint64_t      nseqs;	           /* # of sequences searched                  */
-  uint64_t      nres;	           /* # of residues searched                   */
-  uint64_t      nnodes;	           /* # of model nodes searched                */
-  uint64_t      n_past_msv;	   /* # windows that pass MSVFilter()          */
-  uint64_t      n_past_vit;	   /* # windows that pass ViterbiFilter()      */
-  uint64_t      n_past_fwd;	   /* # windows that pass ForwardFilter()      */
-  uint64_t      n_past_gfwd;	   /* # windows that pass glocal GForward()    */
-  uint64_t      n_past_edef;	   /* # envelopes that pass envelope definition */
-  uint64_t      n_past_cyk;	   /* # windows that pass CYK filter           */
-  uint64_t      n_past_ins;	   /* # windows that pass Inside               */
-  uint64_t      n_output;	   /* # alignments that make it to the final output */
-  uint64_t      n_past_msvbias;	   /* # windows that pass MSV bias filter      */
-  uint64_t      n_past_vitbias;	   /* # windows that pass Vit bias filter      */
-  uint64_t      n_past_fwdbias;	   /* # windows that pass Fwd bias filter      */
-  uint64_t      n_past_gfwdbias;   /* # windows that pass gFwd bias filter     */
-  uint64_t      n_past_edefbias;   /* # envelopes that pass env bias filter    */
-  uint64_t      pos_past_msv;	   /* # positions that pass MSVFilter()        */
-  uint64_t      pos_past_vit;	   /* # positions that pass ViterbiFilter()    */
-  uint64_t      pos_past_fwd;	   /* # positions that pass ForwardFilter()    */
-  uint64_t      pos_past_gfwd;	   /* # positions that pass glocal GForward()  */
-  uint64_t      pos_past_edef;	   /* # positions that pass env definition     */
-  uint64_t      pos_past_cyk;	   /* # positions that pass CYK filter         */
-  uint64_t      pos_past_ins;      /* # positions that pass Inside             */    
-  uint64_t      pos_output;	   /* # positions that make it to the final output */
-  uint64_t      pos_past_msvbias;  /* # positions that pass MSV bias filter */
-  uint64_t      pos_past_vitbias;  /* # positions that pass Vit bias filter */
-  uint64_t      pos_past_fwdbias;  /* # positions that pass Fwd bias filter */
-  uint64_t      pos_past_gfwdbias; /* # positions that pass gFwd bias filter*/
-  uint64_t      pos_past_edefbias; /* # positions that pass dom def bias filter */
-  uint64_t      n_overflow_fcyk;   /* # hits that couldn't use an HMM banded mx in CYK filter stage */
-  uint64_t      n_overflow_final;  /* # hits that couldn't use an HMM banded mx in final stage */
-  uint64_t      n_aln_hb;          /* # HMM banded alignments computed */
-  uint64_t      n_aln_dccyk;       /* # nonbanded divide and conquer CYK alignments computed */
+  CM_PLI_ACCT   acct[NPLI_STAGES]; 
 
   /* Flags for timing experiments */
   int           do_time_F1;      /* TRUE to abort after Stage 1 MSV */
@@ -2091,6 +2096,7 @@ typedef struct cm_pipeline_s {
   /* 'ps_*' parameters: these can be changed per-sequence */
   int rs5term;  /* are we researching the 5' terminus for local/truncated hits? */
   int rs3term;  /* are we researching the 3' terminus for local/truncated hits? */
+
 } CM_PIPELINE;
 
 /* Structure: CM_ALIDISPLAY
@@ -2124,7 +2130,6 @@ typedef struct cm_alidisplay_s {
   char *sqdesc;			/* description of targ seq; or [0]='\0' */
   long  sqfrom;			/* min bound in scoord, start position in sequence (1..L) */
   long  sqto;		        /* max bound in scoord, end position in sequence   (1..L) */
-  long  L;			/* length of sequence                   */
 
   int    used_optacc;           /* TRUE if aln alg was optacc, FALSE if CYK */
   float  aln_sc;		/* if(used_optacc) avg PP of all aligned residues, else CYK score */
@@ -2137,9 +2142,11 @@ typedef struct cm_alidisplay_s {
 } CM_ALIDISPLAY;
 
 #define CM_HIT_FLAGS_DEFAULT 0
-#define CM_HIT_IS_INCLUDED      (1<<0)
-#define CM_HIT_IS_REPORTED      (1<<1)
-#define CM_HIT_IS_DUPLICATE     (1<<2)
+#define CM_HIT_IS_INCLUDED            (1<<0)
+#define CM_HIT_IS_REPORTED            (1<<1)
+#define CM_HIT_IS_REMOVED_DUPLICATE   (1<<2)
+#define CM_HIT_IS_REMOVED_TERMINUS    (1<<3)
+#define CM_HIT_FROM_TERMINUS_RESEARCH (1<<4)
 
 /* Structure: CM_HIT
  * 
@@ -2167,8 +2174,11 @@ typedef struct cm_hit_s {
   double         pvalue;	/* P-value of the hit   (with corrections) */
   double         evalue;	/* E-value of the hit   (with corrections) */
   CM_ALIDISPLAY *ad;            /* alignment display */
+  uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_REMOVED_DUPLICATE | CM_HIT_IS_REMOVED_TERMINUS | CM_HIT_FROM_TERMINUS_RESEARCH */
 
-  uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_DUPLICATE */
+  /* variables necessary only from removing bogus hits from 5'/3' terminii */
+  int64_t        srcL;          /* full length of source sequence the hit is from */
+  int            maxW;          /* predicted max reasonable size of a hit for model this hit is to */
 } CM_HIT;
 
 /* Structure: CM_TOPHITS

@@ -286,7 +286,6 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   strcpy(ad->sqdesc,  sq->desc);
 
   ad->clen = cm->clen;
-  ad->L    = sq->n;
 
   /* Allocate and initialize.
    * Blank the annotation lines (memset calls) - only needed
@@ -691,7 +690,6 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
       ad2->sqdesc  = ad2->mem + (ad->sqdesc - ad->mem);
       ad2->sqfrom  = ad->sqfrom;
       ad2->sqto    = ad->sqto;
-      ad2->L       = ad->L;
     }
   else				/* deserialized */
     {
@@ -716,7 +714,6 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
       if ( esl_strdup(ad->sqdesc,  -1, &(ad2->sqdesc)) != eslOK) goto ERROR;
       ad2->sqfrom  = ad->sqfrom;
       ad2->sqto    = ad->sqto;
-      ad2->L       = ad->L;      
     }
 
   return ad2;
@@ -1218,7 +1215,6 @@ cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad)
   fprintf(fp, "sqdesc  = %s\n",  ad->sqdesc[0] == '\0' ? "[none]" : ad->sqdesc);
   fprintf(fp, "sqfrom  = %ld\n", ad->sqfrom);
   fprintf(fp, "sqto    = %ld\n", ad->sqto);
-  fprintf(fp, "L       = %ld\n", ad->L);
   fprintf(fp, "\n");
 
   fprintf(fp, "aln_sc  = %.2f\n",ad->aln_sc);
