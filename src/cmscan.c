@@ -692,11 +692,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_tophits_Threshold(info->th, info->pli);
 
       /* tally up total number of hits and target coverage */
-      info->pli->n_output = info->pli->pos_output = 0;
       for (i = 0; i < info->th->N; i++) {
 	if ((info->th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info->th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
-	  info->pli->n_output++;
-	  info->pli->pos_output += abs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
+	  info->pli->acct[info->th->hit[i]->pass_idx].n_output++;
+	  info->pli->acct[info->th->hit[i]->pass_idx].pos_output += abs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
 	}
       }
       cm_tophits_Targets(ofp, info->th, info->pli, textw); fprintf(ofp, "\n\n");
@@ -709,7 +708,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if (tblfp)    cm_tophits_TabularTargets(tblfp,    qsq->name, qsq->acc, info->th, info->pli, (seq_idx == 1));
 
       esl_stopwatch_Stop(w);
-      cm_pli_Statistics(ofp, info->pli, w);
+      cm_pli_Statistics(ofp, info->pli, PLI_PASS_STD, w);
       fprintf(ofp, "//\n"); fflush(ofp);
 
       cm_pipeline_Destroy(info->pli, NULL);
@@ -1162,11 +1161,10 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_tophits_Threshold(th, pli);
 
       /* tally up total number of hits and target coverage */
-      pli->n_output = pli->pos_output = 0;
       for (i = 0; i < th->N; i++) {
 	if ((th->hit[i]->flags & CM_HIT_IS_REPORTED) || (th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
-	  pli->n_output++;
-	  pli->pos_output += abs(th->hit[i]->stop - th->hit[i]->start) + 1;
+	  pli->acct[th->hit[i]->pass_idx].n_output++;
+	  pli->acct[th->hit[i]->pass_idx].pos_output += abs(th->hit[i]->stop - th->hit[i]->start) + 1;
 	}
       }
 
@@ -1179,7 +1177,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if (tblfp)    cm_tophits_TabularTargets(tblfp,    qsq->name, qsq->acc, th, pli, (seq_idx == 1));
       
       esl_stopwatch_Stop(w);
-      cm_pli_Statistics(ofp, pli, w);
+      cm_pli_Statistics(ofp, pli, PLI_PASS_STD, w);
       fprintf(ofp, "//\n");
 
       cm_file_Close(cmfp);

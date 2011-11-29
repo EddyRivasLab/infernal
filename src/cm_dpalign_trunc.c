@@ -2513,7 +2513,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   free(el_scA);
   free(yvalidA);
 
-  printf("cm_TrCYKInsideAlignHB return sc: %f\n", sc);
+  /*printf("cm_TrCYKInsideAlignHB return sc: %f\n", sc);*/
   ESL_DPRINTF1(("cm_TrCYKInsideAlignHB return sc: %f\n", sc));
   return eslOK;
 

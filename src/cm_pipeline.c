@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT  1
+#define DOPRINT  0
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -147,6 +147,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   int          seed = esl_opt_GetInteger(go, "--seed");
   int          status;
   double       Z_Mb; /* database size in Mb */
+  int          pass_idx; /* counter over passes */
 
   ESL_ALLOC(pli, sizeof(CM_PIPELINE));
 
@@ -481,51 +482,26 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   }
 
   /* Accounting as we collect results */
-  pli->nmodels           = 0;
-  pli->nseqs             = 0;
-  pli->nres              = 0;
-  pli->nnodes            = 0;
-  pli->n_past_msv        = 0;
-  pli->n_past_vit        = 0;
-  pli->n_past_fwd        = 0;
-  pli->n_past_gfwd       = 0;
-  pli->n_past_edef       = 0;
-  pli->n_past_cyk        = 0;
-  pli->n_past_ins        = 0;
-  pli->n_output          = 0;
-  pli->n_past_msvbias    = 0;
-  pli->n_past_vitbias    = 0;
-  pli->n_past_fwdbias    = 0;
-  pli->n_past_gfwdbias   = 0;
-  pli->n_past_edefbias   = 0;
-  pli->pos_past_msv      = 0;
-  pli->pos_past_vit      = 0;
-  pli->pos_past_fwd      = 0;
-  pli->pos_past_gfwd     = 0;
-  pli->pos_past_edef     = 0;
-  pli->pos_past_cyk      = 0;
-  pli->pos_past_ins      = 0;      
-  pli->pos_output        = 0;
-  pli->pos_past_msvbias  = 0;
-  pli->pos_past_vitbias  = 0;
-  pli->pos_past_fwdbias  = 0;
-  pli->pos_past_gfwdbias = 0;
-  pli->pos_past_edefbias = 0;
-
-  pli->n_overflow_fcyk    = 0;
-  pli->n_overflow_final   = 0;
-  pli->n_aln_hb           = 0;
-  pli->n_aln_dccyk        = 0;
+  pli->nmodels = 0;
+  pli->nseqs   = 0;
+  pli->nnodes  = 0;
+  for(pass_idx = 0; pass_idx < NPLI_PASSES; pass_idx++) { 
+    cm_pli_ZeroAccounting(&(pli->acct[pass_idx]));
+  }
 
   pli->mode             = mode;
   pli->do_top           = (esl_opt_GetBoolean(go, "--bottomonly"))    ? FALSE : TRUE;
   pli->do_bot           = (esl_opt_GetBoolean(go, "--toponly"))       ? FALSE : TRUE;
   pli->show_accessions  = (esl_opt_GetBoolean(go, "--acc")            ? TRUE  : FALSE);
   pli->do_alignments    = (esl_opt_GetBoolean(go, "--noali")          ? FALSE : TRUE);
-  pli->align_cyk          = (esl_opt_GetBoolean(go, "--aln-cyk")        ? TRUE  : FALSE);
+  pli->align_cyk        = (esl_opt_GetBoolean(go, "--aln-cyk")        ? TRUE  : FALSE);
   pli->align_hbanded    = (esl_opt_GetBoolean(go, "--aln-nonbanded")  ? FALSE : TRUE);
   pli->hb_size_limit    = esl_opt_GetReal    (go, "--aln-sizelimit");
   pli->do_hb_recalc     = esl_opt_GetBoolean(go, "--aln-newbands")    ? TRUE  : FALSE;
+
+  pli->cur_cm_idx   = -1;
+  pli->cur_seq_idx  = -1;
+  pli->cur_pass_idx = -1;
 
   pli->abc              = abc;
   pli->cmfp             = NULL;
@@ -862,8 +838,8 @@ cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm)
  int
  cm_pli_NewSeq(CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx)
 {
-  /* Update number of residues read/searched */
-  pli->nres += sq->n;
+  /* Update number of residues read/searched in standard pipeline passes */
+  pli->acct[PLI_PASS_STD].nres += sq->n;
 
   /* Update cur_seq_idx, which is a unique identifier for the sequence, so 
    * we can reliably remove overlaps. This index is copied to all the 
@@ -900,10 +876,12 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
   /* if we are searching a sequence database, we need to keep track of the
    * number of sequences and residues processed.
    */
+  int p; /* counter over pipeline passes */
+
   if (p1->mode == CM_SEARCH_SEQS)
     {
       p1->nseqs   += p2->nseqs;
-      p1->nres    += p2->nres;
+      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres += p2->acct[p].nres;
     }
   else
     {
@@ -911,41 +889,42 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
       p1->nnodes  += p2->nnodes;
     }
 
-  p1->n_past_msv  += p2->n_past_msv;
-  p1->n_past_vit  += p2->n_past_vit;
-  p1->n_past_fwd  += p2->n_past_fwd;
-  p1->n_past_gfwd += p2->n_past_gfwd;
-  p1->n_past_edef += p2->n_past_edef;
-  p1->n_past_cyk  += p2->n_past_cyk;
-  p1->n_past_ins  += p2->n_past_ins;
-  p1->n_output    += p2->n_output;
+  for(p = 0; p < NPLI_PASSES; p++) { 
+    p1->acct[p].n_past_msv  += p2->acct[p].n_past_msv;
+    p1->acct[p].n_past_vit  += p2->acct[p].n_past_vit;
+    p1->acct[p].n_past_fwd  += p2->acct[p].n_past_fwd;
+    p1->acct[p].n_past_gfwd += p2->acct[p].n_past_gfwd;
+    p1->acct[p].n_past_edef += p2->acct[p].n_past_edef;
+    p1->acct[p].n_past_cyk  += p2->acct[p].n_past_cyk;
+    p1->acct[p].n_past_ins  += p2->acct[p].n_past_ins;
+    p1->acct[p].n_output    += p2->acct[p].n_output;
 
-  p1->n_past_msvbias += p2->n_past_msvbias;
-  p1->n_past_vitbias += p2->n_past_vitbias;
-  p1->n_past_fwdbias += p2->n_past_fwdbias;
-  p1->n_past_gfwdbias+= p2->n_past_gfwdbias;
-  p1->n_past_edefbias += p2->n_past_edefbias;
+    p1->acct[p].n_past_msvbias += p2->acct[p].n_past_msvbias;
+    p1->acct[p].n_past_vitbias += p2->acct[p].n_past_vitbias;
+    p1->acct[p].n_past_fwdbias += p2->acct[p].n_past_fwdbias;
+    p1->acct[p].n_past_gfwdbias+= p2->acct[p].n_past_gfwdbias;
+    p1->acct[p].n_past_edefbias += p2->acct[p].n_past_edefbias;
 
-  p1->pos_past_msv  += p2->pos_past_msv;
-  p1->pos_past_vit  += p2->pos_past_vit;
-  p1->pos_past_fwd  += p2->pos_past_fwd;
-  p1->pos_past_gfwd += p2->pos_past_gfwd;
-  p1->pos_past_edef += p2->pos_past_edef;
-  p1->pos_past_cyk  += p2->pos_past_cyk;
-  p1->pos_past_ins  += p2->pos_past_ins;
-  p1->pos_output    += p2->pos_output;
+    p1->acct[p].pos_past_msv  += p2->acct[p].pos_past_msv;
+    p1->acct[p].pos_past_vit  += p2->acct[p].pos_past_vit;
+    p1->acct[p].pos_past_fwd  += p2->acct[p].pos_past_fwd;
+    p1->acct[p].pos_past_gfwd += p2->acct[p].pos_past_gfwd;
+    p1->acct[p].pos_past_edef += p2->acct[p].pos_past_edef;
+    p1->acct[p].pos_past_cyk  += p2->acct[p].pos_past_cyk;
+    p1->acct[p].pos_past_ins  += p2->acct[p].pos_past_ins;
+    p1->acct[p].pos_output    += p2->acct[p].pos_output;
 
-  p1->pos_past_msvbias += p2->pos_past_msvbias;
-  p1->pos_past_vitbias += p2->pos_past_vitbias;
-  p1->pos_past_fwdbias += p2->pos_past_fwdbias;
-  p1->pos_past_gfwdbias+= p2->pos_past_gfwdbias;
-  p1->pos_past_edefbias += p2->pos_past_edefbias;
+    p1->acct[p].pos_past_msvbias += p2->acct[p].pos_past_msvbias;
+    p1->acct[p].pos_past_vitbias += p2->acct[p].pos_past_vitbias;
+    p1->acct[p].pos_past_fwdbias += p2->acct[p].pos_past_fwdbias;
+    p1->acct[p].pos_past_gfwdbias+= p2->acct[p].pos_past_gfwdbias;
+    p1->acct[p].pos_past_edefbias += p2->acct[p].pos_past_edefbias;
 
-  p1->n_overflow_fcyk  += p2->n_overflow_fcyk;
-  p1->n_overflow_final += p2->n_overflow_final;
-  p1->n_aln_hb         += p2->n_aln_hb;
-  p1->n_aln_dccyk      += p2->n_aln_dccyk;
-
+    p1->acct[p].n_overflow_fcyk  += p2->acct[p].n_overflow_fcyk;
+    p1->acct[p].n_overflow_final += p2->acct[p].n_overflow_final;
+    p1->acct[p].n_aln_hb         += p2->acct[p].n_aln_hb;
+    p1->acct[p].n_aln_dccyk      += p2->acct[p].n_aln_dccyk;
+  }
   if (p1->Z_setby == p7_ZSETBY_NTARGETS) { 
     p1->Z += (p1->mode == p7_SCAN_MODELS) ? p2->nmodels : p2->nseqs;
   }
@@ -1121,7 +1100,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
       /*printf("window %5d/%5d  %10d..%10d (L=%10" PRId64 ")\n", i+1, nwin, ws[i], we[i], sq->n);*/
     }
   }      
-  if(! pli->do_shortmsv) pli->n_past_msv += nwin;
+  if(! pli->do_shortmsv) pli->acct[pli->cur_pass_idx].n_past_msv += nwin;
 
   ESL_ALLOC(wp, sizeof(double) * nwin);
   for(i = 0; i < nwin; i++) { wp[i] = pli->F1; } /* TEMP (?) p7_MSVFilter_longtarget() does not return P-values */
@@ -1157,7 +1136,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
       P = esl_gumbel_surv(wsc,  p7_evparam[CM_p7_LMMU],  p7_evparam[CM_p7_LMLAMBDA]);
       wp[i] = P;
       if (P > pli->F1) continue;
-      pli->n_past_msv++;
+      pli->acct[pli->cur_pass_idx].n_past_msv++;
     }
 
 #if DOPRINT
@@ -1184,7 +1163,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
 
       /******************************************************************************/
     }
-    pli->n_past_msvbias++;
+    pli->acct[pli->cur_pass_idx].n_past_msvbias++;
     survAA[p7_SURV_F1b][i] = TRUE;
 
 #if DOPRINT
@@ -1216,7 +1195,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
       wp[i] = P;
       if (P > pli->F2) continue;
     }
-    pli->n_past_vit++;
+    pli->acct[pli->cur_pass_idx].n_past_vit++;
     survAA[p7_SURV_F2][i] = TRUE;
 
 #if DOPRINT
@@ -1236,7 +1215,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
       if (P > pli->F2b) continue;
       /******************************************************************************/
     }
-    pli->n_past_vitbias++;
+    pli->acct[pli->cur_pass_idx].n_past_vitbias++;
     survAA[p7_SURV_F2b][i] = TRUE;
 
 #if DOPRINT
@@ -1256,7 +1235,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
       if (P > pli->F3) continue;
     }
     /******************************************************************************/
-    pli->n_past_fwd++;
+    pli->acct[pli->cur_pass_idx].n_past_fwd++;
     survAA[p7_SURV_F3][i] = TRUE;
 
 #if DOPRINT
@@ -1275,9 +1254,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
       if (P > pli->F3b) continue;
       /******************************************************************************/
     }
-    pli->n_past_fwdbias++;
+    pli->acct[pli->cur_pass_idx].n_past_fwdbias++;
     nsurv_fwd++;
-    /* Replaced with survAA: pli->pos_past_fwdbias += wlen;*/
     survAA[p7_SURV_F3b][i] = TRUE;
 
 #if DOPRINT
@@ -1295,23 +1273,23 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
   for(i = 0; i < nwin; i++) {
     wlen = we[i] - ws[i] + 1;
     
-    if(survAA[p7_SURV_F1][i])  pli->pos_past_msv     += wlen; 
-    if(survAA[p7_SURV_F1b][i]) pli->pos_past_msvbias += wlen; 
-    if(survAA[p7_SURV_F2][i])  pli->pos_past_vit     += wlen; 
-    if(survAA[p7_SURV_F2b][i]) pli->pos_past_vitbias += wlen; 
-    if(survAA[p7_SURV_F3][i])  pli->pos_past_fwd     += wlen; 
-    if(survAA[p7_SURV_F3b][i]) pli->pos_past_fwdbias += wlen; 
+    if(survAA[p7_SURV_F1][i])  pli->acct[pli->cur_pass_idx].pos_past_msv     += wlen; 
+    if(survAA[p7_SURV_F1b][i]) pli->acct[pli->cur_pass_idx].pos_past_msvbias += wlen; 
+    if(survAA[p7_SURV_F2][i])  pli->acct[pli->cur_pass_idx].pos_past_vit     += wlen; 
+    if(survAA[p7_SURV_F2b][i]) pli->acct[pli->cur_pass_idx].pos_past_vitbias += wlen; 
+    if(survAA[p7_SURV_F3][i])  pli->acct[pli->cur_pass_idx].pos_past_fwd     += wlen; 
+    if(survAA[p7_SURV_F3b][i]) pli->acct[pli->cur_pass_idx].pos_past_fwdbias += wlen; 
 
     /* now subtract residues we've double counted */
     if(i > 0) { 
       overlap = we[i-1] - ws[i] + 1;
       if(overlap > 0) { 
-	if(survAA[p7_SURV_F1][i]  && survAA[p7_SURV_F1][i-1])  pli->pos_past_msv     -= overlap;
-	if(survAA[p7_SURV_F1b][i] && survAA[p7_SURV_F1b][i-1]) pli->pos_past_msvbias -= overlap;
-	if(survAA[p7_SURV_F2][i]  && survAA[p7_SURV_F2][i-1])  pli->pos_past_vit     -= overlap;
-	if(survAA[p7_SURV_F2b][i] && survAA[p7_SURV_F2b][i-1]) pli->pos_past_vitbias -= overlap;
-	if(survAA[p7_SURV_F3][i]  && survAA[p7_SURV_F3][i-1])  pli->pos_past_fwd     -= overlap;
-	if(survAA[p7_SURV_F3b][i] && survAA[p7_SURV_F3b][i-1]) pli->pos_past_fwdbias -= overlap;
+	if(survAA[p7_SURV_F1][i]  && survAA[p7_SURV_F1][i-1])  pli->acct[pli->cur_pass_idx].pos_past_msv     -= overlap;
+	if(survAA[p7_SURV_F1b][i] && survAA[p7_SURV_F1b][i-1]) pli->acct[pli->cur_pass_idx].pos_past_msvbias -= overlap;
+	if(survAA[p7_SURV_F2][i]  && survAA[p7_SURV_F2][i-1])  pli->acct[pli->cur_pass_idx].pos_past_vit     -= overlap;
+	if(survAA[p7_SURV_F2b][i] && survAA[p7_SURV_F2b][i-1]) pli->acct[pli->cur_pass_idx].pos_past_vitbias -= overlap;
+	if(survAA[p7_SURV_F3][i]  && survAA[p7_SURV_F3][i-1])  pli->acct[pli->cur_pass_idx].pos_past_fwd     -= overlap;
+	if(survAA[p7_SURV_F3b][i] && survAA[p7_SURV_F3b][i-1]) pli->acct[pli->cur_pass_idx].pos_past_fwdbias -= overlap;
       }
     }
   }
@@ -1506,7 +1484,9 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
   }
 
   for (i = 0; i < nwin; i++) {
+#if DOPRINT    
     printf("p7 envdef win: %4d of %4d [%6" PRId64 "..%6" PRId64 "] rs5term: %d rs3term: %d\n", i, nwin, ws[i], we[i], pli->rs5term, pli->rs3term);
+#endif
     if(pli->do_force_ends && pli->rs5term && ws[i] != 1)     ESL_FAIL(eslFAIL, pli->errbuf, "researching 5' terminus but residue 1 outside window");
     if(pli->do_force_ends && pli->rs3term && we[i] != sq->n) ESL_FAIL(eslFAIL, pli->errbuf, "researching 3' terminus but residue L outside window");
 
@@ -1535,7 +1515,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	/* no length reconfiguration necessary */
 	p7_gmx_GrowTo(pli->gxf, Tgm->M, wlen);
 	p7_GForward (seq->dsq, wlen, Tgm, pli->gxf, &fwdsc);
-	printf("Tfwdsc: %.4f\n", fwdsc);
+	/*printf("Tfwdsc: %.4f\n", fwdsc);*/
 	/* we use local Fwd statistics to determine statistical significance of this score,
 	 * it has already had basically a 1/log(M*(M+1)) penalty for equiprobable local begins and ends */
 	sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
@@ -1545,7 +1525,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	p7_ReconfigLength5PrimeTrunc(Rgm, wlen);
 	p7_gmx_GrowTo(pli->gxf, Rgm->M, wlen);
 	p7_GForward (seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
-	printf("Rfwdsc: %.4f\n", fwdsc);
+	/*printf("Rfwdsc: %.4f\n", fwdsc);*/
 	/* we use local Fwd statistics to determine significance of the score, but we need to correct for lack of equiprobable ends in fwdsc */
 	Rgm_correction = (log(2./(Rgm->M * (Rgm->M+1))) - log(1./Rgm->M)); /* GForward penalized 0. for ends and log(1/Rgm->M) for begins into any state */
 	safe_lfwdsc = fwdsc + Rgm_correction;
@@ -1557,7 +1537,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	p7_ReconfigLength3PrimeTrunc(Lgm, wlen);
 	p7_gmx_GrowTo(pli->gxf, Lgm->M, wlen);
 	p7_GForward (seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
-	printf("Lfwdsc: %.4f\n", fwdsc);
+	/*printf("Lfwdsc: %.4f\n", fwdsc);*/
 	/* we use local Fwd statistics to determine significance of the score, but we need to correct for lack of equiprobable begins and ends in fwdsc */
 	Lgm_correction = log(2./(Lgm->M * (Lgm->M+1))); /* GForward penalized 0. for ends and 0. for begins into M1 */
 	safe_lfwdsc = fwdsc + Lgm_correction; 
@@ -1569,7 +1549,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	p7_ReconfigLength(gm, wlen);
 	p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
 	p7_GForward (seq->dsq, wlen, gm, pli->gxf, &fwdsc);
-	printf(" fwdsc: %.4f\n", fwdsc);
+	/*printf(" fwdsc: %.4f\n", fwdsc);*/
 	sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
 	/* Does this score exceed our glocal forward filter threshold? If not, move on to next seq */
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
@@ -1583,8 +1563,8 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 #endif      
       if(P > pli->F4) continue;
 
-      pli->n_past_gfwd++;
-      pli->pos_past_gfwd += wlen;
+      pli->acct[pli->cur_pass_idx].n_past_gfwd++;
+      pli->acct[pli->cur_pass_idx].pos_past_gfwd += wlen;
 
 #if DOPRINT	
       printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwd      %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
@@ -1599,8 +1579,8 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 #if DOPRINT	
 	printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwdBias  %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
 #endif 
-	pli->n_past_gfwdbias++;
-	pli->pos_past_gfwdbias += wlen;
+	pli->acct[pli->cur_pass_idx].n_past_gfwdbias++;
+	pli->acct[pli->cur_pass_idx].pos_past_gfwdbias += wlen;
       }
       if(pli->do_time_F4) continue; 
 
@@ -1610,25 +1590,25 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	p7_gmx_GrowTo(pli->gxb, Tgm->M, wlen);
 	p7_GBackward(seq->dsq, wlen, Tgm, pli->gxb, &bcksc);
 	if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Tgm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn"); 
-	printf("Tbcksc: %.4f\n", bcksc);
+	/*printf("Tbcksc: %.4f\n", bcksc);*/
       }
       else if(use_Rgm) { 
 	p7_gmx_GrowTo(pli->gxb, Rgm->M, wlen);
 	p7_GBackward(seq->dsq, wlen, Rgm, pli->gxb, &bcksc);
 	if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Rgm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");; 
-	printf("Rbcksc: %.4f\n", bcksc);
+	/*printf("Rbcksc: %.4f\n", bcksc);*/
       }
       else if(use_Lgm) { 
 	p7_gmx_GrowTo(pli->gxb, Lgm->M, wlen);
 	p7_GBackward(seq->dsq, wlen, Lgm, pli->gxb, &bcksc);
 	if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Lgm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
-	printf("Lbcksc: %.4f\n", bcksc);
+	/*printf("Lbcksc: %.4f\n", bcksc);*/
       }
       else { /* normal case, not looking for truncated hits */
 	p7_gmx_GrowTo(pli->gxb, gm->M, wlen);
 	p7_GBackward(seq->dsq, wlen, gm, pli->gxb, &bcksc);
 	if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
-	printf(" bcksc: %.4f\n", bcksc);
+	/*printf(" bcksc: %.4f\n", bcksc);*/
       }
     }
     
@@ -1727,8 +1707,8 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 #if DOPRINT
       printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived F5       %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
 #endif
-      pli->n_past_edef++;
-      pli->pos_past_edef += env_len;
+      pli->acct[pli->cur_pass_idx].n_past_edef++;
+      pli->acct[pli->cur_pass_idx].pos_past_edef += env_len;
 
       /* if we're doing a bias filter on envelopes - check if we skip envelope due to that */
       if(pli->do_edefbias) {
@@ -1750,8 +1730,8 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 #if DOPRINT
       printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived F5-bias  %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
 #endif
-      pli->n_past_edefbias++;
-      pli->pos_past_edefbias += env_len;
+      pli->acct[pli->cur_pass_idx].n_past_edefbias++;
+      pli->acct[pli->cur_pass_idx].pos_past_edefbias += env_len;
 	
       if(pli->do_time_F5) { continue; }
 
@@ -1985,7 +1965,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	 * this should be okay because we should only very rarely need to do this */
 	printf("FIX ME! ADD TRUNC VERSION! OVERFLOW CYK FILTER above pli->hb_size_limit\n");
 	continue;
-	pli->n_overflow_fcyk++;
+	pli->acct[pli->cur_pass_idx].n_overflow_fcyk++;
 	if(pli->fsmx == NULL) { 
 	  pli->fsmx = cm_CreateScanMatrix(cm, cm->W, pli->fcyk_dmin, pli->fcyk_dmax, 
 					  ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? cm->W : pli->fcyk_dmax[0]),
@@ -2014,8 +1994,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
       if (P > pli->F6) continue;
       /******************************************************************************/
     }	
-    pli->n_past_cyk++;
-    pli->pos_past_cyk += ee[i] - es[i] + 1;
+    pli->acct[pli->cur_pass_idx].n_past_cyk++;
+    pli->acct[pli->cur_pass_idx].pos_past_cyk += ee[i] - es[i] + 1;
 
 #if DOPRINT
     printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived CYK       %6.2f bits  P %g\n", es[i], ee[i], cyksc, P);
@@ -2111,7 +2091,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
       /*******************************************************************
        * Run non-HMM banded (probably qdb) version of CYK or Inside *
        *******************************************************************/
-      pli->n_overflow_final++;
+      pli->acct[pli->cur_pass_idx].n_overflow_final++;
       if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is Inside */
 	/* make sure we have a ScanMatrix_t for this round, if not build one,
 	 * this should be okay because we should only very rarely need to do this */
@@ -2175,11 +2155,12 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
     /* add info to each hit DP scanning functions didn't have access to, and align the hits if nec */
     for (h = nhit; h < hitlist->N; h++) { 
       hit = &(hitlist->unsrt[h]);
-      hit->cm_idx  = pli->cur_cm_idx;
-      hit->seq_idx = pli->cur_seq_idx;
-      hit->maxW    = pli->maxW;
-      hit->pvalue  = esl_exp_surv(hit->score, cm->expA[pli->final_cm_exp_mode]->mu_extrap, cm->expA[pli->final_cm_exp_mode]->lambda);
-      hit->srcL    = sq->L; /* this may be -1, in which case it will be updated by caller (cmsearch or cmscan) when full length is known */
+      hit->cm_idx   = pli->cur_cm_idx;
+      hit->seq_idx  = pli->cur_seq_idx;
+      hit->pass_idx = pli->cur_pass_idx;
+      hit->maxW     = pli->maxW;
+      hit->pvalue   = esl_exp_surv(hit->score, cm->expA[pli->final_cm_exp_mode]->mu_extrap, cm->expA[pli->final_cm_exp_mode]->lambda);
+      hit->srcL     = sq->L; /* this may be -1, in which case it will be updated by caller (cmsearch or cmscan) when full length is known */
 
       /* initialize remaining values we don't know yet */
       hit->evalue  = 0.;
@@ -2366,7 +2347,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
     /* printf("ALN 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
     
     if(hbmx_Mb < pli->hb_size_limit) { 
-      pli->n_aln_hb++;
+      pli->acct[pli->cur_pass_idx].n_aln_hb++;
       do_optacc    = (pli->align_cyk) ? FALSE : TRUE;
       total_Mb     = (pli->align_cyk) ? (hbmx_Mb + shmx_Mb) : (2*hbmx_Mb + shmx_Mb);
       do_ppstr     = TRUE;
@@ -2374,7 +2355,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
       do_nonbanded = FALSE;
     }
     else { /* not enough memory for HMM banded alignment, fall back to D&C CYK */
-      pli->n_aln_dccyk++;
+      pli->acct[pli->cur_pass_idx].n_aln_dccyk++;
       do_optacc    = FALSE;
       do_ppstr     = FALSE;
       ppstr        = NULL;
@@ -2674,7 +2655,9 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
 #if DOPRINT
-  printf("\nPIPELINE ENTRANCE %s  %s  %" PRId64 " residues (pli->maxW: %d om->max_length: %d cm->W: %d)\n", sq->name, sq->desc, sq->n, pli->maxW, om->max_length, (*opt_cm)->W);
+  /*printf("\nPIPELINE ENTRANCE %s  %s  %" PRId64 " residues (pli->maxW: %d om->max_length: %d cm->W: %d)\n", sq->name, sq->desc, sq->n, pli->maxW, om->max_length, (*opt_cm)->W);*/
+  printf("\nPIPELINE ENTRANCE %-15s  (n: %6" PRId64 " start: %6" PRId64 " end: %6" PRId64 " C: %6" PRId64 " W: %6" PRId64 " L: %6" PRId64 " not5term: %d not3term: %d have5term: %5s have3term: %5s)\n",
+	 sq->name, sq->n, sq->start, sq->end, sq->C, sq->W, sq->L, not5term, not3term, not5term ? "No" : "Maybe", not3term ? "No" : "Maybe");
 #endif
 
 #if 0
@@ -2712,18 +2695,23 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
     /*if(sq->L != -1 && sq->start != sq->L)  not5term = TRUE;*/
   }
 
-  printf("\nPIPELINE ENTRANCE %-15s  (n: %6" PRId64 " start: %6" PRId64 " end: %6" PRId64 " C: %6" PRId64 " W: %6" PRId64 " L: %6" PRId64 " not5term: %d not3term: %d have5term: %5s have3term: %5s)\n",
-	 sq->name, sq->n, sq->start, sq->end, sq->C, sq->W, sq->L, not5term, not3term, not5term ? "No" : "Maybe", not3term ? "No" : "Maybe");
-
   do_pass2 = ((! not5term) && pli->research_ends) ? TRUE : FALSE;
   do_pass3 = ((! not3term) && pli->research_ends) ? TRUE : FALSE;
   do_pass4 = ((! not5term) && (! not3term) && pli->research_ends && sq->n <= pli->maxW) ? TRUE : FALSE;
 
   for(p = 1; p <= 4; p++) { 
-    if(p  > 1 && nwin_pass1 == 0) continue; 
     if(p == 2 && (! do_pass2))    continue;
     if(p == 3 && (! do_pass3))    continue;
     if(p == 4 && (! do_pass4))    continue;
+
+    /* Update nres for non-standard pass (this is done by caller via cm_pli_NewSeq() for pass 1)
+     * It's important to do this precisely here, in between the 3 'continue's above, but 
+     * prior the one below that 'continue's only because we know no windows pass local Fwd (F3) 
+     */
+    if(p > 1) pli->acct[p].nres += ESL_MIN(pli->maxW, sq->n);
+
+    /* if we know there's no windows that pass local Fwd (F3), our terminal seqs won't have any either, continue */
+    if(p > 1 && nwin_pass1 == 0) continue; 
 
     /* set sq2search and remember start_offset */
     start_offset = 0;
@@ -2750,6 +2738,8 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
     pli->tro->force_i0_RT = (pli->do_trunc_ends && pli->rs5term && pli->do_force_ends) ? TRUE : FALSE;
     pli->tro->force_j0_LT = (pli->do_trunc_ends && pli->rs3term && pli->do_force_ends) ? TRUE : FALSE;
 
+    pli->cur_pass_idx = p;
+
     /* execute the pipeline */
 #if DOPRINT
     printf("\nPIPELINE calling p7Filter() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allowR: %d allowL: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allowR, pli->tro->allowL, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
@@ -2774,7 +2764,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
     if(hitlist->N > prv_ntophits) { 
       /* 1. if we're in a terminus researching pass (i.e. not pass 1), raise CM_HIT_FROM_TERMINUS_RESEARCH flag */
       if(p != 1) { 
-	printf("setting hits %4d..%" PRId64 " flags to CM_HIT_FROM_TERMINUS_RESEARCH\n", prv_ntophits, hitlist->N);
+	/*printf("setting hits %4d..%" PRId64 " flags to CM_HIT_FROM_TERMINUS_RESEARCH\n", prv_ntophits, hitlist->N);*/
 	for(h = prv_ntophits; h < hitlist->N; h++) hitlist->unsrt[h].flags |= CM_HIT_FROM_TERMINUS_RESEARCH;
       }
       /* 2. if we're researching a 3' terminus, adjust the start/stop positions so they are relative to the actual 5' start */
@@ -2818,30 +2808,32 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
  * Returns:   <eslOK> on success.
  */
 int
-cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
+cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *w)
 {
   double  ntargets; 
   int64_t nwin_fcyk  = 0; /* number of windows CYK filter evaluated */
   int64_t nwin_final = 0; /* number of windows final stage evaluated */
 
-  fprintf(ofp, "Internal pipeline statistics summary:\n");
+  CM_PLI_ACCT *pli_acct = &(pli->acct[pass_idx]);
+
+  fprintf(ofp, "Internal pipeline statistics summary: (%s)\n", cm_pli_DescribePass(pli, pass_idx));
   fprintf(ofp, "-------------------------------------\n");
   if (pli->mode == CM_SEARCH_SEQS) {
     fprintf(ofp,   "Query model(s):                                    %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli->nmodels, pli->nnodes);
-    fprintf(ofp,   "Target sequences:                                  %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli->nres);
+    fprintf(ofp,   "Target sequences:                                  %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli_acct->nres);
     ntargets = pli->nseqs;
   } else {
-    fprintf(ofp,   "Query sequence(s):                                 %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli->nres);
+    fprintf(ofp,   "Query sequence(s):                                 %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli_acct->nres);
     fprintf(ofp,   "Target model(s):                                   %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli->nmodels, pli->nnodes);
     ntargets = pli->nmodels;
   }
 
   if(pli->do_msv) { 
     fprintf(ofp, "Windows   passing  local HMM MSV           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_msv,
-	    (double) pli->pos_past_msv / pli->nres,
+	    pli_acct->n_past_msv,
+	    (double) pli_acct->pos_past_msv / pli_acct->nres,
 	    pli->F1 * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_msv;
+    nwin_fcyk = nwin_final = pli_acct->n_past_msv;
   }
   else { 
     fprintf(ofp, "Windows   passing  local HMM MSV           filter: %15s  (off)\n", "");
@@ -2849,18 +2841,18 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 
   if(pli->do_msvbias) { 
     fprintf(ofp, "Windows   passing  local HMM MSV      bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_msvbias,
-	    (double) pli->pos_past_msvbias / pli->nres,
+	    pli_acct->n_past_msvbias,
+	    (double) pli_acct->pos_past_msvbias / pli_acct->nres,
 	    pli->F1b * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_msvbias;
+    nwin_fcyk = nwin_final = pli_acct->n_past_msvbias;
   }
 
   if(pli->do_vit) { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_vit,
-	    (double) pli->pos_past_vit / pli->nres,
+	    pli_acct->n_past_vit,
+	    (double) pli_acct->pos_past_vit / pli_acct->nres,
 	    pli->F2 * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_vit;
+    nwin_fcyk = nwin_final = pli_acct->n_past_vit;
   }
   else { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi       filter: %15s  (off)\n", "");
@@ -2868,10 +2860,10 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 
   if(pli->do_vitbias) { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_vitbias,
-	    (double) pli->pos_past_vitbias / pli->nres,
+	    pli_acct->n_past_vitbias,
+	    (double) pli_acct->pos_past_vitbias / pli_acct->nres,
 	    pli->F2b * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_vitbias;
+    nwin_fcyk = nwin_final = pli_acct->n_past_vitbias;
   }
   else { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi  bias filter: %15s  (off)\n", "");
@@ -2879,10 +2871,10 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 
   if(pli->do_fwd) { 
     fprintf(ofp, "Windows   passing  local HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_fwd,
-	    (double) pli->pos_past_fwd / pli->nres,
+	    pli_acct->n_past_fwd,
+	    (double) pli_acct->pos_past_fwd / pli_acct->nres,
 	    pli->F3 * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_fwd;
+    nwin_fcyk = nwin_final = pli_acct->n_past_fwd;
   }
   else { 
     fprintf(ofp, "Windows   passing  local HMM Forward       filter: %15s  (off)\n", "");
@@ -2890,10 +2882,10 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 
   if(pli->do_fwdbias) { 
     fprintf(ofp, "Windows   passing  local HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_fwdbias,
-	    (double) pli->pos_past_fwdbias / pli->nres,
+	    pli_acct->n_past_fwdbias,
+	    (double) pli_acct->pos_past_fwdbias / pli_acct->nres,
 	    pli->F3b * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_fwdbias;
+    nwin_fcyk = nwin_final = pli_acct->n_past_fwdbias;
   }
   else { 
     fprintf(ofp, "Windows   passing  local HMM Forward  bias filter: %15s  (off)\n", "");
@@ -2901,20 +2893,20 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 
   if(pli->do_gfwd) { 
     fprintf(ofp, "Windows   passing glocal HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_gfwd,
-	    (double) pli->pos_past_gfwd / pli->nres,
+	    pli_acct->n_past_gfwd,
+	    (double) pli_acct->pos_past_gfwd / pli_acct->nres,
 	    pli->F4 * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_gfwd;
+    nwin_fcyk = nwin_final = pli_acct->n_past_gfwd;
   }
   else { 
     fprintf(ofp, "Windows   passing glocal HMM Forward       filter: %15s  (off)\n", "");
   }
   if(pli->do_gfwdbias) { 
     fprintf(ofp, "Windows   passing glocal HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_gfwdbias,
-	    (double) pli->pos_past_gfwdbias / pli->nres,
+	    pli_acct->n_past_gfwdbias,
+	    (double) pli_acct->pos_past_gfwdbias / pli_acct->nres,
 	    pli->F4b * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_gfwdbias;
+    nwin_fcyk = nwin_final = pli_acct->n_past_gfwdbias;
   }
   else { 
     fprintf(ofp, "Windows   passing glocal HMM Forward  bias filter: %15s  (off)\n", "");
@@ -2922,10 +2914,10 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 
   if(pli->do_envelopes) { 
     fprintf(ofp, "Envelopes passing glocal HMM envelope defn filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_edef,
-	    (double) pli->pos_past_edef / pli->nres,
+	    pli_acct->n_past_edef,
+	    (double) pli_acct->pos_past_edef / pli_acct->nres,
 	    pli->F5 * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_edef;
+    nwin_fcyk = nwin_final = pli_acct->n_past_edef;
   }
   else { 
     fprintf(ofp, "Envelopes passing glocal HMM envelope defn filter: %15s  (off)\n", "");
@@ -2933,10 +2925,10 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 
   if(pli->do_edefbias) { 
     fprintf(ofp, "Envelopes passing glocal HMM envelope bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    pli->n_past_edefbias,
-	    (double) pli->pos_past_edefbias / pli->nres,
+	    pli_acct->n_past_edefbias,
+	    (double) pli_acct->pos_past_edefbias / pli_acct->nres,
 	    pli->F5b * pli->nmodels);
-    nwin_fcyk = nwin_final = pli->n_past_edefbias;
+    nwin_fcyk = nwin_final = pli_acct->n_past_edefbias;
   }
   else { 
     fprintf(ofp, "Windows passing glocal HMM envelope bias filter: %15s  (off)\n", "");
@@ -2945,10 +2937,10 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   if(pli->do_cyk) { 
     fprintf(ofp, "Envelopes passing %6s CM  CYK           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    (pli->do_glocal_cm_stages) ? "glocal" : "local",
-	    pli->n_past_cyk,
-	    (double) pli->pos_past_cyk / pli->nres,
+	    pli_acct->n_past_cyk,
+	    (double) pli_acct->pos_past_cyk / pli_acct->nres,
 	    pli->F6 * pli->nmodels);
-    nwin_final = pli->n_past_cyk;
+    nwin_final = pli_acct->n_past_cyk;
   }
   else { 
     fprintf(ofp, "Envelopes passing %6s CM  CYK           filter: %15s  (off)\n", 
@@ -2957,15 +2949,15 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   }
 
   fprintf(ofp, "Total hits reported:                               %15d  (%.4g)\n",
-          (int)pli->n_output,
-          (double) pli->pos_output / pli->nres );
+          (int)pli_acct->n_output,
+          (double) pli_acct->pos_output / pli_acct->nres );
 
   fprintf(ofp, "\n");
   if(nwin_fcyk > 0) { 
     fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15" PRId64 "  (%.4g)\n", 
 	    "CYK", 
-	    pli->n_overflow_fcyk,
-	    (double) pli->n_overflow_fcyk / (double) nwin_fcyk);
+	    pli_acct->n_overflow_fcyk,
+	    (double) pli_acct->n_overflow_fcyk / (double) nwin_fcyk);
   }
   else { 
     fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15d  (%.4g)\n", 
@@ -2975,8 +2967,8 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   if(nwin_final > 0) { 
     fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15" PRId64 "  (%.4g)\n", 
 	    (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
-	    pli->n_overflow_final,
-	    (double) pli->n_overflow_final / (double) nwin_final);
+	    pli_acct->n_overflow_final,
+	    (double) pli_acct->n_overflow_final / (double) nwin_final);
   }
   else { 
     fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15d  (%.4g)\n", 
@@ -2986,11 +2978,93 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   if (w != NULL) {
     esl_stopwatch_Display(ofp, w, "# CPU time: ");
     fprintf(ofp, "# Mc/sec: %.2f\n", 
-        (double) pli->nres * (double) pli->nnodes / (w->elapsed * 1.0e6));
+	    (double) pli_acct->nres * (double) pli->nnodes / (w->elapsed * 1.0e6));
   }
 
   return eslOK;
 }
+
+  
+/* Function:  cm_pli_ZeroAccounting()
+ * Synopsis:  Zero a set of pipeline accounting statistics.
+ * Incept:    EPN, Mon Nov 28 18:40:00 2011
+ *
+ * Returns:   <eslOK> on success.
+ */
+int
+cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct)
+{
+  pli_acct->nres              = 0;
+  pli_acct->n_past_msv        = 0;
+  pli_acct->n_past_vit        = 0;
+  pli_acct->n_past_fwd        = 0;
+  pli_acct->n_past_gfwd       = 0;
+  pli_acct->n_past_edef       = 0;
+  pli_acct->n_past_cyk        = 0;
+  pli_acct->n_past_ins        = 0;
+  pli_acct->n_output          = 0;
+  pli_acct->n_past_msvbias    = 0;
+  pli_acct->n_past_vitbias    = 0;
+  pli_acct->n_past_fwdbias    = 0;
+  pli_acct->n_past_gfwdbias   = 0;
+  pli_acct->n_past_edefbias   = 0;
+  pli_acct->pos_past_msv      = 0;
+  pli_acct->pos_past_vit      = 0;
+  pli_acct->pos_past_fwd      = 0;
+  pli_acct->pos_past_gfwd     = 0;
+  pli_acct->pos_past_edef     = 0;
+  pli_acct->pos_past_cyk      = 0;
+  pli_acct->pos_past_ins      = 0;      
+  pli_acct->pos_output        = 0;
+  pli_acct->pos_past_msvbias  = 0;
+  pli_acct->pos_past_vitbias  = 0;
+  pli_acct->pos_past_fwdbias  = 0;
+  pli_acct->pos_past_gfwdbias = 0;
+  pli_acct->pos_past_edefbias = 0;
+  
+  pli_acct->n_overflow_fcyk    = 0;
+  pli_acct->n_overflow_final   = 0;
+  pli_acct->n_aln_hb           = 0;
+  pli_acct->n_aln_dccyk        = 0;
+
+  return eslOK;
+}
+
+
+/* Function:  cm_pli_DescribePass()
+ * Date:      EPN, Tue Nov 29 04:39:38 2011
+ *
+ * Purpose:   Translate internal flags for pipeline pass index
+ *            into human-readable strings, for clearer output.
+ * 
+ * Args:      pass_idx - a pipeline pass index
+ *                       PLI_PASS_SUMMED, PLI_PASS_STD, PLI_PASS_5P, PLI_PASS_3P PLI_PASS_5P_AND_3P
+ *
+ * Returns:   the appropriate string
+ */
+char *
+cm_pli_DescribePass(CM_PIPELINE *pli, int pass_idx) 
+{
+  switch (pass_idx) {
+    /*case PLI_PASS_SUMMED:    return "full sequences and terminii allowing for 5', 3' or 5' and 3' truncations";
+      case PLI_PASS_STD:       return "full sequences, not allowing for truncations at terminii";
+      case PLI_PASS_5P:        return "5' terminal sequence regions, specifically looking for 5' truncations";
+      case PLI_PASS_3P:        return "3' terminal sequence regions, specifically looking for 3' truncations";
+      case PLI_PASS_5P_AND_3P: return "short full sequences, specifically looking for hits that are both 5' and 3' truncated";
+    */
+  case PLI_PASS_SUMMED:    return "full sequences and terminii";
+  case PLI_PASS_STD:       return "full sequences";
+  case PLI_PASS_5P:        return "5' terminal sequence regions";
+  case PLI_PASS_3P:        return "3' terminal sequence regions";
+  case PLI_PASS_5P_AND_3P: return "full sequences short enough to contain a 5' and 3' truncated hit";
+  default: cm_Fail("bogus pipeline pass index %d\n", pass_idx);
+  }
+  /* Note: we could return different strings depending on pli->research_ends, pli->do_trunc_ends, pli->do_force_ends,
+   * but we don't currently.
+   */
+  return "";
+}
+
 /*------------------- end, pipeline API -------------------------*/
 
  
@@ -3007,12 +3081,9 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 void
 copy_subseq(const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L)
 { 
-  printf("entering copy_subseq i: %" PRId64 " j: %" PRId64 " L: %" PRId64 " start-end: %" PRId64 "... %" PRId64 "\n",
-	 i, i+L-1, L, src_sq->start, src_sq->end);
-  fflush(stdout);
-
-  //ESL_DASSERT1((src_sq->start <= src_sq->end));
-  //assert(src_sq->start <= src_sq->end);
+  /*printf("entering copy_subseq i: %" PRId64 " j: %" PRId64 " L: %" PRId64 " start-end: %" PRId64 "... %" PRId64 "\n",
+    i, i+L-1, L, src_sq->start, src_sq->end);
+    fflush(stdout);*/
 
   esl_sq_Reuse(dest_sq);
   esl_sq_GrowTo(dest_sq, L);
@@ -3032,8 +3103,8 @@ copy_subseq(const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L)
     dest_sq->start = src_sq->end    + L - 1;
     dest_sq->end   = dest_sq->start - L + 1;
   }
-  printf("leaving copy_subseq dest_sq->start..end: %" PRId64 " %" PRId64 " n: %" PRId64 "\n",
-	 dest_sq->start, dest_sq->end, dest_sq->n);
+  /*printf("leaving copy_subseq dest_sq->start..end: %" PRId64 " %" PRId64 " n: %" PRId64 "\n",
+    dest_sq->start, dest_sq->end, dest_sq->n);*/
 
   esl_sq_SetName     (dest_sq, src_sq->name);
   esl_sq_SetAccession(dest_sq, src_sq->acc);

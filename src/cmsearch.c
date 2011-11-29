@@ -703,11 +703,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_tophits_Threshold(info[0].th, info[0].pli);
 
       /* tally up total number of hits and target coverage */
-      info[0].pli->n_output = info[0].pli->pos_output = 0;
       for (i = 0; i < info->th->N; i++) {
 	if ((info[0].th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info[0].th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
-	  info[0].pli->n_output++;
-	  info[0].pli->pos_output += abs(info[0].th->hit[i]->stop - info[0].th->hit[i]->start) + 1;
+	  info[0].pli->acct[info[0].th->hit[i]->pass_idx].n_output++;
+	  info[0].pli->acct[info[0].th->hit[i]->pass_idx].pos_output += abs(info[0].th->hit[i]->stop - info[0].th->hit[i]->start) + 1;
 	}
       }
 
@@ -727,7 +726,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
   
       esl_stopwatch_Stop(w);
-      cm_pli_Statistics(ofp, info[0].pli, w);
+      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_STD, w);
+      fprintf(ofp, "\n");
+      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_5P, w);
+      fprintf(ofp, "\n");
+      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_3P, w);
+      fprintf(ofp, "\n");
+      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_5P_AND_3P, w);
       fprintf(ofp, "//\n");
 
       free_info(tinfo);
@@ -1136,9 +1141,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       /* Set number of seqs, and subtract number of overlapping residues searched from total */
       info->pli->nseqs = tot_nseq;
       if(info->pli->do_top && info->pli->do_bot) tot_noverlap *= 2; /* count overlaps twice on each strand, if nec */
-      /*printf("nres: %ld\nnoverlap: %ld\n", info->pli->nres, noverlap);*/
-      info->pli->nres -= tot_noverlap;
-      /*printf("nres: %ld\n", info->pli->nres);*/
+      /*printf("nres: %ld\nnoverlap: %ld\n", info->pli->acct[PLI_PASS_STD].nres, noverlap);*/
+      info->pli->acct[PLI_PASS_STD].nres -= tot_noverlap;
+      /*printf("nres: %ld\n", info->pli->acct[PLI_PASS_STD].nres);*/
 
       /* In MPI, we don't need to call cm_tophits_SetSourceLengths()
        * because unlike serial/threaded we always know the length of
@@ -1162,11 +1167,10 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_tophits_Threshold(info->th, info->pli);
 
       /* tally up total number of hits and target coverage */
-      info->pli->n_output = info->pli->pos_output = 0;
       for (i = 0; i < info->th->N; i++) {
 	if ((info->th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info->th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
-	  info->pli->n_output++;
-	  info->pli->pos_output += abs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
+	  info->pli->acct[info->th->hit[i]->pass_idx].n_output++;
+	  info->pli->acct[info->th->hit[i]->pass_idx].pos_output += abs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
 	}
       }
 
@@ -1182,7 +1186,13 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	cm_tophits_TabularTargets(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
       }
       esl_stopwatch_Stop(w);
-      cm_pli_Statistics(ofp, info->pli, w);
+      cm_pli_Statistics(ofp, info->pli, PLI_PASS_STD, w);
+      fprintf(ofp, "\n");
+      cm_pli_Statistics(ofp, info->pli, PLI_PASS_5P, w);
+      fprintf(ofp, "\n");
+      cm_pli_Statistics(ofp, info->pli, PLI_PASS_3P, w);
+      fprintf(ofp, "\n");
+      cm_pli_Statistics(ofp, info->pli, PLI_PASS_5P_AND_3P, w);
       fprintf(ofp, "//\n");
 
       free_info(info);
@@ -1403,7 +1413,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	      if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) 
 		mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	      cm_pipeline_Reuse(info->pli); /* prepare for next search */
-	      if(info->pli->do_top) info->pli->nres += dbsq->n; /* add dbsq->n residues, the reverse complement we just searched */
+	      if(info->pli->do_top) info->pli->acct[PLI_PASS_STD].nres += dbsq->n; /* add dbsq->n residues, the reverse complement we just searched */
 	      
 	      /* Hit positions will be relative to the reverse-complemented sequence
 	       * (i.e. start > end), which may be a subsequence. Update hit positions 
@@ -1507,7 +1517,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL)
     
     cm_pli_NewSeq(info->pli, dbsq, seq_idx-1);
     prv_seq_ntophits = info->th->N; 
-    info->pli->nres -= dbsq->C; /* to account for overlapping region of windows */
+    info->pli->acct[PLI_PASS_STD].nres -= dbsq->C; /* to account for overlapping region of windows */
 
     if (info->pli->do_top) { 
       prv_pli_ntophits = info->th->N;
@@ -1528,7 +1538,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL)
       /* modify hit positions to account for the position of the window in the full sequence */
       cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, TRUE);
 
-      if(info->pli->do_top) info->pli->nres += dbsq->W; /* add dbsq->W residues, the number of unique residues on reverse complement that we just searched */
+      if(info->pli->do_top) info->pli->acct[PLI_PASS_STD].nres += dbsq->W; /* add dbsq->W residues, the number of unique residues on reverse complement that we just searched */
       
       /* Reverse complement again, to get original sequence back.
        * This is necessary so the C overlapping context residues 
@@ -1756,7 +1766,7 @@ pipeline_thread(void *arg)
 
       cm_pli_NewSeq(info->pli, dbsq, block->first_seqidx + i);
       prv_seq_ntophits = info->th->N; 
-      info->pli->nres -= dbsq->C; /* to account for overlapping region of windows */
+      info->pli->acct[PLI_PASS_STD].nres -= dbsq->C; /* to account for overlapping region of windows */
       
       if (info->pli->do_top) { 
 	prv_pli_ntophits = info->th->N;
@@ -1777,7 +1787,7 @@ pipeline_thread(void *arg)
 	/* modify hit positions to account for the position of the window in the full sequence */
 	cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, TRUE);
 	
-	if(info->pli->do_top) info->pli->nres += dbsq->W; /* add dbsq->W residues, the reverse complement we just searched */
+	if(info->pli->do_top) info->pli->acct[PLI_PASS_STD].nres += dbsq->W; /* add dbsq->W residues, the reverse complement we just searched */
 
 	/* Reverse complement again, to get original sequence back.
 	 * This is necessary so the C overlapping context residues 
@@ -2633,9 +2643,11 @@ inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, 
    * primary keys in SSI index, probably not the next sequence 
    * in the file) */
   status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, NULL);
+  /*
   char *tmpname;
   status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, &tmpname);
   printf("inspect_next_sequence_using_ssi(): sequence name: %s length %" PRId64 "\n", tmpname, L);
+  */
   if(status == eslENOTFOUND) ESL_FAIL(status, errbuf, "unable to find sequence %ld in SSI index file, try re-indexing with esl-sfetch.", pkey_idx);
   if(status == eslEFORMAT)   ESL_FAIL(status, errbuf, "SSI index for database file is in incorrect format.");
   if(status != eslOK)        ESL_FAIL(status, errbuf, "proble with SSI index for database file.");

@@ -157,6 +157,7 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
 
   hit->cm_idx           = -1;
   hit->seq_idx          = -1;
+  hit->pass_idx         = -1;
 
   hit->srcL             = -1;
   hit->maxW             = -1;
@@ -540,20 +541,21 @@ cm_tophits_CloneHitMostly(CM_TOPHITS *src_th, int h, CM_TOPHITS *dest_th)
   int     status;
 
   if ((status = cm_tophits_CreateNextHit(dest_th, &hit)) != eslOK) goto ERROR;
-  hit->cm_idx  = src_th->hit[h]->cm_idx;
-  hit->seq_idx = src_th->hit[h]->seq_idx;
-  hit->start   = src_th->hit[h]->start;
-  hit->stop    = src_th->hit[h]->stop;
-  hit->in_rc   = src_th->hit[h]->in_rc;
-  hit->root    = src_th->hit[h]->root;
-  hit->mode    = src_th->hit[h]->mode;
-  hit->score   = src_th->hit[h]->score;
-  hit->pvalue  = src_th->hit[h]->pvalue;
-  hit->evalue  = src_th->hit[h]->evalue;
-  hit->srcL    = src_th->hit[h]->srcL;
-  hit->maxW    = src_th->hit[h]->maxW;
-  hit->flags   = src_th->hit[h]->flags;
-  hit->ad      = NULL;
+  hit->cm_idx   = src_th->hit[h]->cm_idx;
+  hit->seq_idx  = src_th->hit[h]->seq_idx;
+  hit->pass_idx = src_th->hit[h]->pass_idx;
+  hit->start    = src_th->hit[h]->start;
+  hit->stop     = src_th->hit[h]->stop;
+  hit->in_rc    = src_th->hit[h]->in_rc;
+  hit->root     = src_th->hit[h]->root;
+  hit->mode     = src_th->hit[h]->mode;
+  hit->score    = src_th->hit[h]->score;
+  hit->pvalue   = src_th->hit[h]->pvalue;
+  hit->evalue   = src_th->hit[h]->evalue;
+  hit->srcL     = src_th->hit[h]->srcL;
+  hit->maxW     = src_th->hit[h]->maxW;
+  hit->flags    = src_th->hit[h]->flags;
+  hit->ad       = NULL;
 
   return eslOK;
 
@@ -721,7 +723,7 @@ cm_tophits_RemoveBogusTerminusHits(CM_TOPHITS *th)
     if(th->unsrt[i].flags & CM_HIT_FROM_TERMINUS_RESEARCH) { 
       tmp_start = th->unsrt[i].in_rc ? th->unsrt[i].stop  : th->unsrt[i].start;
       tmp_stop  = th->unsrt[i].in_rc ? th->unsrt[i].start : th->unsrt[i].stop;
-      printf("hit %4d %10" PRId64 "..%10" PRId64 "  %10" PRId64 "..%10" PRId64 "  L: %" PRId64 "\n", i, th->unsrt[i].start, th->unsrt[i].stop, tmp_start, tmp_stop, th->unsrt[i].srcL);
+      /*printf("hit %4d %10" PRId64 "..%10" PRId64 "  %10" PRId64 "..%10" PRId64 "  L: %" PRId64 "\n", i, th->unsrt[i].start, th->unsrt[i].stop, tmp_start, tmp_stop, th->unsrt[i].srcL);*/
       if((tmp_start < th->unsrt[i].maxW) ||                           /* start occurs before  end       of 5' terminus */
 	 (tmp_stop  > (th->unsrt[i].srcL - th->unsrt[i].maxW + 1))) { /* stop  occurs after   beginning of 3' terminus */
 	; /* hit is in the actual 5' or 3' terminus, do nothing */
