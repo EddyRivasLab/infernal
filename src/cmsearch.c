@@ -39,8 +39,7 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 
 /* set the max residue count to 100Kb when reading a block */
-///#define CMSEARCH_MAX_RESIDUE_COUNT 100000 /* differs from HMMER's default which is MAX_RESIDUE_COUNT from esl_sqio_(ascii|ncbi).c */
-#define CMSEARCH_MAX_RESIDUE_COUNT 1000 /* differs from HMMER's default which is MAX_RESIDUE_COUNT from esl_sqio_(ascii|ncbi).c */
+#define CMSEARCH_MAX_RESIDUE_COUNT 100000 /* differs from HMMER's default which is MAX_RESIDUE_COUNT from esl_sqio_(ascii|ncbi).c */
 
 typedef struct {
 #ifdef HMMER_THREADS
@@ -687,6 +686,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       /* Set source sequence length (srcL) for all hits */
       int zz; for(zz = 0; zz < info[0].pli->nseqs; zz++) { printf("srcL[%4d]: %" PRId64 "\n", zz, srcL[zz]); }
       cm_tophits_SetSourceLengths(info[0].th, srcL, info[0].pli->nseqs); 
+      free(srcL);
+
       printf("HEYA before\n");
       cm_tophits_Dump(stdout, info[0].th);
       /* Remove hits from terminii-researching stage that we later learned were not actually in terminii */
@@ -1152,12 +1153,16 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
        * those terminii, but we do it anyway so the pipeline
        * statistics between serial/threaded and mpi are identical.  If
        * in the future serial/threaded changes so that source lengths
-       * are known up-front (i.e. read in in at the beginning of each
+       * are known up-front (i.e. read in at the beginning of each
        * sequence in the input file somehow) it would remove the need
        * for cm_tophits_SetSourceLengths() and
        * cm_tophits_RemoveBogusTerminusHits().
        */ 
-      cm_tophits_RemoveBogusTerminusHits(info[0].th);
+      /*printf("HEYA before\n");
+	cm_tophits_Dump(stdout, info[0].th);*/
+      cm_tophits_RemoveBogusTerminusHits(info->th);
+      /*printf("HEYA after\n");
+	cm_tophits_Dump(stdout, info[0].th);*/
 
       /* Sort by sequence index/position and remove duplicates */
       cm_tophits_SortByPosition(info->th);

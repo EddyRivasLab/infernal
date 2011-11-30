@@ -993,12 +993,10 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
   int              new_nsurv_fwd;    /* used when merging fwd survivors */
   ESL_DSQ         *subdsq;           /* a ptr to the first position of a window */
   int              have_rest;        /* do we have the full <om> read in? */
-  FM_WINDOWLIST    windowlist;       /* list of windows, structure taken by p7_MSVFilter_longtarget() */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   p7_omx_GrowTo(pli->oxf, om->M, 0, sq->n);    /* expand the one-row omx if needed */
   have_rest = (om->mode == p7_NO_MODE) ? FALSE : TRUE; /* we use om->mode as a flag to tell us whether we already have read the full <om> from disk or not */
-  fm_initWindows(&windowlist);
 
   /* Set false target length. This is a conservative estimate of the length of window that'll
    * soon be passed on to later phases of the pipeline;  used to recover some bits of the score
@@ -1033,6 +1031,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     free(ws_int); free(we_int);
 #if 0
     /* UNCOMMENT THIS BLOCK WHEN UPGRADING TO NEW PROTOTYPE FOR MSVFILTER */
+    FM_WINDOWLIST    windowlist;       /* list of windows, structure taken by p7_MSVFilter_longtarget() */
+    fm_initWindows(&windowlist);
     status = p7_MSVFilter_longtarget(sq->dsq, sq->n, om, pli->oxf, fm_hmmdata, bg, pli->F1, &windowlist, FALSE);
     ESL_ALLOC(ws, sizeof(int64_t) * windowlist.count);
     ESL_ALLOC(we, sizeof(int64_t) * windowlist.count);
@@ -2654,11 +2654,6 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
   int64_t   start_offset;      /* offset to add to start/stop coordinates of hits found in pass 3, in which we re-search the 3' terminus */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
-#if DOPRINT
-  /*printf("\nPIPELINE ENTRANCE %s  %s  %" PRId64 " residues (pli->maxW: %d om->max_length: %d cm->W: %d)\n", sq->name, sq->desc, sq->n, pli->maxW, om->max_length, (*opt_cm)->W);*/
-  printf("\nPIPELINE ENTRANCE %-15s  (n: %6" PRId64 " start: %6" PRId64 " end: %6" PRId64 " C: %6" PRId64 " W: %6" PRId64 " L: %6" PRId64 " not5term: %d not3term: %d have5term: %5s have3term: %5s)\n",
-	 sq->name, sq->n, sq->start, sq->end, sq->C, sq->W, sq->L, not5term, not3term, not5term ? "No" : "Maybe", not3term ? "No" : "Maybe");
-#endif
 
 #if 0
   printf("F1: %f\n", pli->F1);
@@ -2694,6 +2689,12 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
     if(sq->end != 1)                       not3term = TRUE;
     /*if(sq->L != -1 && sq->start != sq->L)  not5term = TRUE;*/
   }
+
+#if DOPRINT
+  /*printf("\nPIPELINE ENTRANCE %s  %s  %" PRId64 " residues (pli->maxW: %d om->max_length: %d cm->W: %d)\n", sq->name, sq->desc, sq->n, pli->maxW, om->max_length, (*opt_cm)->W);*/
+  printf("\nPIPELINE ENTRANCE %-15s  (n: %6" PRId64 " start: %6" PRId64 " end: %6" PRId64 " C: %6" PRId64 " W: %6" PRId64 " L: %6" PRId64 " not5term: %d not3term: %d have5term: %5s have3term: %5s)\n",
+	 sq->name, sq->n, sq->start, sq->end, sq->C, sq->W, sq->L, not5term, not3term, not5term ? "No" : "Maybe", not3term ? "No" : "Maybe");
+#endif
 
   do_pass2 = ((! not5term) && pli->research_ends) ? TRUE : FALSE;
   do_pass3 = ((! not3term) && pli->research_ends) ? TRUE : FALSE;
@@ -3090,6 +3091,7 @@ copy_subseq(const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L)
   memcpy((void*)(dest_sq->dsq+1), src_sq->dsq+i, L * sizeof(ESL_DSQ));
   dest_sq->dsq[0] = dest_sq->dsq[L+1] = eslDSQ_SENTINEL;
   dest_sq->n      = L;
+  dest_sq->L      = src_sq->L;
 
   if(src_sq->start <= src_sq->end) { 
     ESL_DASSERT1((L <= (src_sq->end - src_sq->start + 1)));

@@ -1382,8 +1382,6 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
 
-  ESL_STOPWATCH *w = esl_stopwatch_Create();
-
   /* variables specific to truncated scanning */
   float    trunc_penalty = 0.; /* penalty in bits for a truncated hit */
   int      fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
@@ -1444,14 +1442,11 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
   ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
-  esl_stopwatch_Start(w);
   /* initialize all cells of the matrix to IMPOSSIBLE */
   if(mx->Jncells_valid > 0)           esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
   if(mx->Lncells_valid > 0 && fill_L) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(mx->Rncells_valid > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(mx->Tncells_valid > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
-  esl_stopwatch_Stop(w);
-  /*esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");*/
 
   /* If we were passed a master hitlist <hitlist>, either create a
    * gamma hit matrix for resolving overlaps optimally (if
@@ -2141,9 +2136,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
   jpx = jmax[v] - jmin[v];
   j   = jmin[v];
   
-  ESL_ALLOC(bestr, sizeof(int) * (W+1));
+  ESL_ALLOC(bestr,    sizeof(int)   * (W+1));
   ESL_ALLOC(bestsc,   sizeof(float) * (W+1));
-  ESL_ALLOC(bestmode, sizeof(char) * (W+1));
+  ESL_ALLOC(bestmode, sizeof(char)  * (W+1));
 
   /* update gamma, by specifying all hits with j < jmin[0] are impossible */
   if(gamma != NULL) { 
@@ -2155,10 +2150,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
   }
 
   /* Finally, allow for local and truncated hits */
-  esl_stopwatch_Start(w);
   v = 0;
-  ESL_ALLOC(bestr,    sizeof(int)   * (W+1));
-  ESL_ALLOC(bestmode, sizeof(char)  * (W+1));
 
   do_J_0 = cp9b->Jvalid[0]           ? TRUE : FALSE;
   do_L_0 = cp9b->Lvalid[0] && fill_L ? TRUE : FALSE;
@@ -2258,8 +2250,6 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
       if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, tro, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   } /* end of 'for (j = jmin[v]; j <= jmax[v]'... */
-  esl_stopwatch_Stop(w);
-  /*esl_stopwatch_Display(stdout, w, " HEYA2 Considering truncated and local hits time: ");*/
   /*FILE *fp1; fp1 = fopen("tmp.ismx", "w");   cm_tr_hb_mx_Dump(fp1, mx); fclose(fp1);*/
     
   /* update gamma, by specifying all hits with j > jmax[0] are impossible */
@@ -2484,7 +2474,6 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t 
   int64_t  envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
-  ESL_STOPWATCH *w = esl_stopwatch_Create();
 
   /* variables specific to truncated scanning */
   float    trunc_penalty = 0.; /* penalty in bits for a truncated hit */
@@ -2546,14 +2535,11 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t 
   ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
-  esl_stopwatch_Start(w);
   /* initialize all cells of the matrix to IMPOSSIBLE */
   if(mx->Jncells_valid > 0) esl_vec_FSet(mx->Jdp_mem, mx->Jncells_valid, IMPOSSIBLE);
   if(mx->Lncells_valid > 0 && fill_L) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(mx->Rncells_valid > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(mx->Tncells_valid > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
-  esl_stopwatch_Stop(w);
-  /*esl_stopwatch_Display(stdout, w, " Matrix init CPU time: ");*/
 
   /* If we were passed a master hitlist <hitlist>, either create a
    * gamma hit matrix for resolving overlaps optimally (if
@@ -3267,7 +3253,6 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t 
   }
 
   /* Finally, allow for truncated hits */
-  esl_stopwatch_Start(w);
   v = 0;
   for (j = jmin[0]; j <= jmax[0]; j++) {
     jp_v = j - jmin[v];
@@ -3362,8 +3347,6 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t 
       if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, tro, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   }
-  esl_stopwatch_Stop(w);
-  /*esl_stopwatch_Display(stdout, w, " HEYA2 Considering truncated and local hits time: ");*/
 
   /* update gamma, by specifying all hits with j > jmax[0] are impossible */
   if(gamma != NULL) { 

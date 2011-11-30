@@ -4406,7 +4406,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   int      dpn, dpx;           /* minimum/maximum dp_v */
   int      kp_z;               /* k (in the d dim) index for state z in alpha w/mem eff bands */
   int      kn, kx;             /* current minimum/maximum k value */
-  int     *yvalidA;            /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
+  int     *yvalidA = NULL;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
   int      yvalid_idx;         /* for keeping track of which children are valid */
   int      yvalid_ct;          /* for keeping track of which children are valid */
   int      Lp;                 /* L index also changes depending on state */
@@ -5391,6 +5391,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   if(optimal_mode == TRMODE_T) Talpha[0][jp_0][Lp_0] = bsc;
 
   free(el_scA);
+  free(yvalidA);
 
   /* convert bsc, a log probability, into the average posterior probability of all L aligned residues */
   sc = bsc;
