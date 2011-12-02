@@ -111,7 +111,6 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro, ES
   /* variables specific to truncated search */
   int       Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
   int       Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
-  float     trunc_penalty = 0.; /* bit score penalty for truncated hits, often 0. */
   int   fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
 
   /* Contract check */
@@ -496,84 +495,142 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro, ES
 #endif
 	}  /*loop over decks v>0 */
       
-      /* Now handle truncated begin transitions from ROOT_S, state 0 
-       * All hits must be rooted at state 0, and use a truncated begin. 
-       * Truncated begin 0->v transitions have constant cost (trunc_penalty) in truncated mode for all v. 
-       * Standard local begins are not allowed in truncated mode (they're kind of like J alignments though).
-       * Note: it may be more efficient to update the 0 deck within the for(v.. loop immediately above,
-       * It's probably worth looking into that after the 1.1 release.
+      /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
+       * 
+       * If local begins are off, the hit must be rooted at v=0.
+       * With local begins on, the hit is rooted at the second state in
+       * the traceback (e.g. after 0), the internal entry point. 
        */
-      v = 0;
       /* initializations */
+      v = 0;
+      float const *tsc_v = cm->tsc[v];
       esl_vec_ISet(bestr,  (W+1), 0);
       esl_vec_FSet(bestsc, (W+1), IMPOSSIBLE);
       for(i = 0; i <= W; i++) bestmode[i] = TRMODE_UNKNOWN;
-      for (d = dnA[0]; d <= dxA[0]; d++) Jalpha[jp_v][0][d] = IMPOSSIBLE;
-      if(fill_L) { for (d = dnA[0]; d <= dxA[0]; d++) Lalpha[jp_v][0][d] = IMPOSSIBLE; }
-      if(fill_R) { for (d = dnA[0]; d <= dxA[0]; d++) Ralpha[jp_v][0][d] = IMPOSSIBLE; }
-      if(fill_T) { for (d = dnA[0]; d <= dxA[0]; d++) Talpha[jp_v][0][d] = IMPOSSIBLE; }
 
-      for (y = 1; y < cm->M; y++) {
-	dn = ESL_MAX(dnA[0], dnA[y]);
-	dx = ESL_MIN(dxA[0], dxA[y]);
-	jp_y = cur;
-	/* check for new optimally scoring Joint alignments of all lengths in J matrix (much like a standard local begin) */
-	if(cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st || cm->sttype[y] == IL_st || cm->sttype[y] == IR_st) { 
-	  for (d = dn; d <= dx; d++) {
-	    sc = Jalpha[jp_y][y][d] + trunc_penalty;
-	    if (sc > Jalpha[jp_v][0][d]) { 
-	      Jalpha[jp_v][0][d] = sc;
-	      if(sc > bestsc[d]) { 
-		bestsc[d]   = sc;
-		bestmode[d] = TRMODE_J;
-		bestr[d]    = y;
+      /* First look at states reachable by ROOT_S via normal
+       * transitions, If local begins are off, this will just
+       * initialize all alpha cells for state 0 to IMPOSSIBLE 
+       */
+      jp_v = cur;
+      y = cm->cfirst[0];
+      for (d = dnA[0]; d <= dxA[0]; d++) {
+	Jsc = IMPOSSIBLE;
+	if(fill_L) Lsc = IMPOSSIBLE;
+	if(fill_R) Rsc = IMPOSSIBLE;
+	for (yoffset = 0; yoffset < cm->cnum[0]; yoffset++) { 
+	  Jsc            = ESL_MAX(Jsc, Jalpha[cur][y+yoffset][d] + tsc_v[yoffset]);
+	  if(fill_L) Lsc = ESL_MAX(Lsc, Lalpha[cur][y+yoffset][d] + tsc_v[yoffset]);
+	  if(fill_R) Rsc = ESL_MAX(Rsc, Ralpha[cur][y+yoffset][d] + tsc_v[yoffset]);
+	}
+	Jalpha[jp_v][0][d] = Jsc;
+	if(fill_L) Lalpha[jp_v][0][d] = Lsc;
+	if(fill_R) Ralpha[jp_v][0][d] = Rsc;
+	bestsc[d]   = Jsc;
+	bestmode[d] = TRMODE_J;
+	if(fill_L && Lsc > bestsc[d]) { 
+	  bestsc[d]   = Lsc;
+	  bestmode[d] = TRMODE_L;
+	}
+	if(fill_R && Rsc > bestsc[d]) { 
+	  bestsc[d]   = Rsc;
+	  bestmode[d] = TRMODE_R;
+	}
+	/* bestr[d] will be 0, as it was initialized */
+      }
+
+      /* now handle local begins, a transition into 
+       * any state with non-IMPOSSIBLE trbeginsc[v] are possible
+       */
+      if (cm->flags & CMH_LOCAL_BEGIN) {
+	for (y = 1; y < cm->M; y++) {
+	  if(NOT_IMPOSSIBLE(cm->trbeginsc[y])) { 
+	    assert(cm->stid[y] != BEGL_S);
+	    dn = ESL_MAX(dnA[0], dnA[y]);
+	    dx = ESL_MIN(dxA[0], dxA[y]);
+	    jp_y = cur;
+	    /* check for new optimally scoring Joint alignments of all lengths in J matrix */
+	    for (d = dn; d <= dx; d++) {
+	      sc = Jalpha[jp_y][y][d] + cm->trbeginsc[y];
+	      if (sc > Jalpha[jp_v][0][d]) { 
+		Jalpha[jp_v][0][d] = sc;
+		if(sc > bestsc[d]) { 
+		  bestsc[d]   = sc;
+		  bestmode[d] = TRMODE_J;
+		  bestr[d]    = y;
+		}
 	      }
 	    }
-	  }
-	}
-	/* check for new optimally scoring Left alignments of all lengths in L matrix */
-	if(fill_L && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == IL_st)) { 
-	  for (d = dn; d <= dx; d++) {
-	    sc = Lalpha[jp_y][y][d] + trunc_penalty;
-	    if (sc > Lalpha[jp_v][0][d]) { 
-	      Lalpha[jp_v][0][d] = sc;
-	      if(sc > bestsc[d]) { 
-		bestsc[d]   = sc;
-		bestmode[d] = TRMODE_L;
-		bestr[d]    = y;
+	    /* check for new optimally scoring Left alignments of all lengths in L matrix */
+	    if(fill_L) { 
+	      for (d = dn; d <= dx; d++) {
+		sc = Lalpha[jp_y][y][d] + cm->trbeginsc[y];
+		if (sc > Lalpha[jp_v][0][d]) { 
+		  Lalpha[jp_v][0][d] = sc;
+		  if(sc > bestsc[d]) { 
+		    bestsc[d]   = sc;
+		    bestmode[d] = TRMODE_L;
+		    bestr[d]    = y;
+		  }
+		}
 	      }
 	    }
-	  }
-	}
-	/* check for new optimally scoring Right alignments of all lengths in L matrix */
-	if(fill_R && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st || cm->sttype[y] == IR_st)) { 
-	  for (d = dn; d <= dx; d++) {
-	    sc = Ralpha[jp_y][y][d] + trunc_penalty;
-	    if (sc > Ralpha[jp_v][0][d]) { 
-	      Ralpha[jp_v][0][d] = sc;
-	      if(sc > bestsc[d]) { 
-		bestsc[d]   = sc;
-		bestmode[d] = TRMODE_R;
-		bestr[d]    = y;
+	    /* check for new optimally scoring Right alignments of all lengths in L matrix */
+	    if(fill_R) { 
+	      for (d = dn; d <= dx; d++) {
+		sc = Ralpha[jp_y][y][d] + cm->trbeginsc[y];
+		if (sc > Ralpha[jp_v][0][d]) { 
+		  Ralpha[jp_v][0][d] = sc;
+		  if(sc > bestsc[d]) { 
+		    bestsc[d]   = sc;
+		    bestmode[d] = TRMODE_R;
+		    bestr[d]    = y;
+		  }
+		}
 	      }
 	    }
-	  }
-	}
-	/* check for new optimally scoring Terminal alignments of all lengths in T matrix */
-	if(fill_T && cm->sttype[y] == B_st) { 
-	  for (d = dn; d <= dx; d++) {
-	    sc = Talpha[jp_y][y][d] + trunc_penalty;
-	    if (sc > Talpha[jp_v][0][d]) { 
-	      Talpha[jp_v][0][d] = sc;
-	      if(sc > bestsc[d]) { 
-		bestsc[d]   = sc;
-		bestmode[d] = TRMODE_T;
-		bestr[d]    = y;
+	    /* check for new optimally scoring Terminal alignments of all lengths in T matrix */
+	    if(fill_T && cm->sttype[y] == B_st) { 
+	      for (d = dn; d <= dx; d++) {
+		sc = Talpha[jp_y][y][d] + cm->trbeginsc[y];
+		if (sc > Talpha[jp_v][0][d]) { 
+		  Talpha[jp_v][0][d] = sc;
+		  if(sc > bestsc[d]) { 
+		    bestsc[d]   = sc;
+		    bestmode[d] = TRMODE_T;
+		    bestr[d]    = y;
+		  }
+		}
 	      }
 	    }
 	  }
 	}
       }
+      /* Check for a special case for truncated alignment with local
+       * begins off.  T alignments are still allowed even though they
+       * require a local begin into the relevant B_st.
+       */
+      if((! (cm->flags & CMH_LOCAL_BEGIN)) && fill_T) { 
+	for (y = 1; y < cm->M; y++) {
+	  if(cm->sttype[y] == B_st) { 
+	    dn = ESL_MAX(dnA[0], dnA[y]);
+	    dx = ESL_MIN(dxA[0], dxA[y]);
+	    jp_y = cur;
+	    for (d = dn; d <= dx; d++) {
+	      sc = Talpha[jp_y][y][d]; /* no begin penalty */
+	      if (sc > Talpha[jp_v][0][d]) { 
+		Talpha[jp_v][0][d] = sc;
+		if(sc > bestsc[d]) { 
+		  bestsc[d]   = sc;
+		  bestmode[d] = TRMODE_T;
+		  bestr[d]    = y;
+		}
+	      }
+	    }
+	  }
+	}
+      }
+      
       /* update the best score (in any mode) stored in vsc_root */
       for (d = dnA[0]; d <= dxA[0]; d++) {
 	if(bestsc[d] > vsc_root) { 
@@ -741,7 +798,6 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro
   /* variables specific to truncated search */
   int       Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
   int       Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
-  int       trunc_penalty = 0.; /* bit score penalty for truncated hits, often 0 */
   int   fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
 
   /* Contract check */
@@ -1120,88 +1176,145 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro
 #endif
 	}  /*loop over decks v>0 */
       
-      /* Now handle truncated begin transitions from ROOT_S, state 0 
-       * All hits must be rooted at state 0, and use a truncated begin. 
-       * Truncated begin 0->v transitions have constant cost (trunc_penalty) in truncated mode for all v. 
-       * Standard local begins are not allowed in truncated mode (they're kind of like J alignments though).
-       * Note: it may be more efficient to update the 0 deck within the for(v.. loop immediately above,
-       * It's probably worth looking into that after the 1.1 release.
+      /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
+       * 
+       * If local begins are off, the hit must be rooted at v=0.
+       * With local begins on, the hit is rooted at the second state in
+       * the traceback (e.g. after 0), the internal entry point. 
        */
-      v = 0;
       /* initializations */
+      v = 0;
+      float const *tsc_v = cm->tsc[v];
       esl_vec_ISet(bestr,  (W+1), 0);
       esl_vec_FSet(bestsc, (W+1), IMPOSSIBLE);
       for(i = 0; i <= W; i++) bestmode[i] = TRMODE_UNKNOWN;
-      for (d = dnA[0]; d <= dxA[0]; d++) Jalpha[jp_v][0][d] = -INFTY;
-      if(fill_L) { for (d = dnA[0]; d <= dxA[0]; d++) Lalpha[jp_v][0][d] = -INFTY; }
-      if(fill_R) { for (d = dnA[0]; d <= dxA[0]; d++) Ralpha[jp_v][0][d] = -INFTY; }
-      if(fill_T) { for (d = dnA[0]; d <= dxA[0]; d++) Talpha[jp_v][0][d] = -INFTY; }
 
-      for (y = 1; y < cm->M; y++) {
-	dn = ESL_MAX(dnA[0], dnA[y]);
-	dx = ESL_MIN(dxA[0], dxA[y]);
-	jp_y = cur;
-	/* check for new optimally scoring Joint alignments of all lengths in J matrix (much like a standard local begin) */
-	if(cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st || cm->sttype[y] == IL_st || cm->sttype[y] == IR_st) { 
-	  for (d = dn; d <= dx; d++) {
-	    sc = Jalpha[jp_y][y][d] + trunc_penalty;
-	    if (sc > Jalpha[jp_v][0][d]) { 
-	      Jalpha[jp_v][0][d] = sc;
-	      fsc = Scorify(sc);
-	      if(fsc > bestsc[d]) { 
-		bestsc[d]   = fsc;
-		bestmode[d] = TRMODE_J;
-		bestr[d]    = y;
+      /* First look at states reachable by ROOT_S via normal transitions, 
+       * If local begins are off, this will just initialize all hits to -INFTY */
+      jp_v = cur;
+      y = cm->cfirst[0];
+      for (d = dnA[0]; d <= dxA[0]; d++) {
+	Jsc = -INFTY;
+	if(fill_L) Lsc = -INFTY;
+	if(fill_R) Rsc = -INFTY;
+	for (yoffset = 0; yoffset < cm->cnum[0]; yoffset++) { 
+	  Jsc            = ILogsum(Jsc, Jalpha[cur][y+yoffset][d] + tsc_v[yoffset]);
+	  if(fill_L) Lsc = ILogsum(Lsc, Lalpha[cur][y+yoffset][d] + tsc_v[yoffset]);
+	  if(fill_R) Rsc = ILogsum(Rsc, Ralpha[cur][y+yoffset][d] + tsc_v[yoffset]);
+	}
+	Jalpha[jp_v][0][d] = Jsc;
+	if(fill_L) Lalpha[jp_v][0][d] = Lsc;
+	if(fill_R) Ralpha[jp_v][0][d] = Rsc;
+	bestsc[d]   = Jsc;
+	bestmode[d] = TRMODE_J;
+	if(fill_L && Lsc > bestsc[d]) { 
+	  bestsc[d]   = Lsc;
+	  bestmode[d] = TRMODE_L;
+	}
+	if(fill_R && Rsc > bestsc[d]) { 
+	  bestsc[d]   = Rsc;
+	  bestmode[d] = TRMODE_R;
+	}
+	/* bestr[d] will be 0, as it was initialized */
+      }
+      
+      /* now handle local begins, a transition into 
+       * any state with non-IMPOSSIBLE trbeginsc[y] are possible
+       */
+      if (cm->flags & CMH_LOCAL_BEGIN) {
+	for (y = 1; y < cm->M; y++) {
+	  if(cm->itrbeginsc[y] != -INFTY) { 
+	    assert(cm->stid[y] != BEGL_S);
+	    dn = ESL_MAX(dnA[0], dnA[y]);
+	    dx = ESL_MIN(dxA[0], dxA[y]);
+	    jp_y = cur;
+	    /* check for new optimally scoring Joint alignments of all lengths in J matrix */
+	    for (d = dn; d <= dx; d++) {
+	      sc = Jalpha[jp_y][y][d] + cm->itrbeginsc[y];
+	      if (sc > Jalpha[jp_v][0][d]) { 
+		Jalpha[jp_v][0][d] = sc;
+		fsc = Scorify(sc);
+		if(fsc > bestsc[d]) { 
+		  bestsc[d]   = fsc;
+		  bestmode[d] = TRMODE_J;
+		  bestr[d]    = y;
+		}
 	      }
 	    }
-	  }
-	}
-	/* check for new optimally scoring Left alignments of all lengths in L matrix */
-	if(fill_L && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == IL_st)) { 
-	  for (d = dn; d <= dx; d++) {
-	    sc = Lalpha[jp_y][y][d] + trunc_penalty;
-	    if (sc > Lalpha[jp_v][0][d]) { 
-	      Lalpha[jp_v][0][d] = sc;
-	      fsc = Scorify(sc);
-	      if(fsc > bestsc[d]) { 
-		bestsc[d]   = fsc;
-		bestmode[d] = TRMODE_L;
-		bestr[d]    = y;
+	    /* check for new optimally scoring Left alignments of all lengths in L matrix */
+	    if(fill_L) { 
+	      for (d = dn; d <= dx; d++) {
+		sc = Lalpha[jp_y][y][d] + cm->itrbeginsc[y];
+		if (sc > Lalpha[jp_v][0][d]) { 
+		  Lalpha[jp_v][0][d] = sc;
+		  fsc = Scorify(sc);
+		  if(fsc > bestsc[d]) { 
+		    bestsc[d]   = fsc;
+		    bestmode[d] = TRMODE_L;
+		    bestr[d]    = y;
+		  }
+		}
 	      }
 	    }
-	  }
-	}
-	/* check for new optimally scoring Right alignments of all lengths in L matrix */
-	if(fill_R && (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st || cm->sttype[y] == IR_st)) { 
-	  for (d = dn; d <= dx; d++) {
-	    sc = Ralpha[jp_y][y][d] + trunc_penalty;
-	    if (sc > Ralpha[jp_v][0][d]) { 
-	      Ralpha[jp_v][0][d] = sc;
-	      fsc = Scorify(sc);
-	      if(fsc > bestsc[d]) { 
-		bestsc[d]   = fsc;
-		bestmode[d] = TRMODE_R;
-		bestr[d]    = y;
+	    /* check for new optimally scoring Right alignments of all lengths in L matrix */
+	    if(fill_R) { 
+	      for (d = dn; d <= dx; d++) {
+		sc = Ralpha[jp_y][y][d] + cm->itrbeginsc[y];
+		if (sc > Ralpha[jp_v][0][d]) { 
+		  Ralpha[jp_v][0][d] = sc;
+		  fsc = Scorify(sc);
+		  if(fsc > bestsc[d]) { 
+		    bestsc[d]   = fsc;
+		    bestmode[d] = TRMODE_R;
+		    bestr[d]    = y;
+		  }
+		}
 	      }
 	    }
-	  }
-	}
-	/* check for new optimally scoring Terminal alignments of all lengths in T matrix */
-	if(fill_T && cm->sttype[y] == B_st) { 
-	  for (d = dn; d <= dx; d++) {
-	    sc = Talpha[jp_y][y][d] + trunc_penalty;
-	    if (sc > Talpha[jp_v][0][d]) { 
-	      Talpha[jp_v][0][d] = sc;
-	      fsc = Scorify(sc);
-	      if(fsc > bestsc[d]) { 
-		bestsc[d]   = fsc;
-		bestmode[d] = TRMODE_T;
-		bestr[d]    = y;
+	    /* check for new optimally scoring Terminal alignments of all lengths in T matrix */
+	    if(fill_T && cm->sttype[y] == B_st) { 
+	      for (d = dn; d <= dx; d++) {
+		sc = Talpha[jp_y][y][d] + cm->itrbeginsc[y];
+		if (sc > Talpha[jp_v][0][d]) { 
+		  Talpha[jp_v][0][d] = sc;
+		  fsc = Scorify(sc);
+		  if(fsc > bestsc[d]) { 
+		    bestsc[d]   = fsc;
+		    bestmode[d] = TRMODE_T;
+		    bestr[d]    = y;
+		  }
+		}
 	      }
 	    }
 	  }
 	}
       }
+      /* Check for a special case for truncated alignment with local
+       * begins off.  T alignments are still allowed even though they
+       * require a local begin into the relevant B_st.
+       */
+      if((! (cm->flags & CMH_LOCAL_BEGIN)) && fill_T) { 
+	for (y = 1; y < cm->M; y++) {
+	  if(cm->sttype[y] == B_st) { 
+	    dn = ESL_MAX(dnA[0], dnA[y]);
+	    dx = ESL_MIN(dxA[0], dxA[y]);
+	    jp_y = cur;
+	    for (d = dn; d <= dx; d++) {
+	      sc = Talpha[jp_y][y][d]; /* no begin penalty */
+	      if (sc > Talpha[jp_v][0][d]) { 
+		Talpha[jp_v][0][d] = sc;
+		fsc = Scorify(sc);
+		if(fsc > bestsc[d]) { 
+		  bestsc[d]   = fsc;
+		  bestmode[d] = TRMODE_T;
+		  bestr[d]    = y;
+		}
+	      }
+	    }
+	  }
+	}
+      }
+
       /* update the best score (in any mode) stored in vsc_root */
       for (d = dnA[0]; d <= dxA[0]; d++) {
 	if(bestsc[d] > vsc_root) { 
@@ -1383,7 +1496,6 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
   int       h;                  /* counter over hits */
 
   /* variables specific to truncated scanning */
-  float    trunc_penalty = 0.; /* penalty in bits for a truncated hit */
   int      fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
   int      do_J_v, do_J_y, do_J_z, do_J_0; /* is J matrix valid for state v, y, z, 0? */
   int      do_L_v, do_L_y, do_L_z, do_L_0; /* is L matrix valid for state v, y, z, 0? */
@@ -1436,6 +1548,11 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
   for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
+
+  /* allocate bestr, bestsc, bestmode arrays */
+  ESL_ALLOC(bestr,    sizeof(int)   * (W+1));
+  ESL_ALLOC(bestsc,   sizeof(float) * (W+1));
+  ESL_ALLOC(bestmode, sizeof(char)  * (W+1));
 
   /* yvalidA[0..cnum[v]] will hold TRUE for states y for which a transition is legal 
    * (some transitions are impossible due to the bands) */
@@ -2122,24 +2239,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
 	  }
 	  printf("\n");
 #endif
-  } /* end of for (v = cm->M-1; v > 0; v--) */
+  } /* end of for (v = cm->M-1; v >= 0; v--) */
         
-  /* Now handle truncated begin transitions from ROOT_S, state 0 
-   * All hits must be rooted at state 0, and use a truncated begin. 
-   * Truncated begin 0->v transitions have constant cost (trunc_penalty) in truncated mode for all v. 
-   * Standard local begins are not allowed in truncated mode (they're kind of like J alignments though).
-   */
-
-  v   = 0;
-  sd  = sdr = 0;
-  jpn = 0;
-  jpx = jmax[v] - jmin[v];
-  j   = jmin[v];
-  
-  ESL_ALLOC(bestr,    sizeof(int)   * (W+1));
-  ESL_ALLOC(bestsc,   sizeof(float) * (W+1));
-  ESL_ALLOC(bestmode, sizeof(char)  * (W+1));
-
   /* update gamma, by specifying all hits with j < jmin[0] are impossible */
   if(gamma != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
@@ -2149,99 +2250,152 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
     }
   }
 
-  /* Finally, allow for local and truncated hits */
-  v = 0;
+  /* Determine best* arrays for functions that report hits
+   * and deal with local begins. 
+   *
+   * If local begins are off, all hits must be rooted at v=0.
+   * With local begins on, the hit is rooted at the second state in
+   * the traceback (e.g. after 0), the internal entry point. 
+   * 
+   * Hits rooted at 0 that not involved with local begins are 
+   * already calc'ed from the v loop with v == 0 
+   */
 
+  /* Report all possible hits, but only after looking at local begins (if they're on) */
   do_J_0 = cp9b->Jvalid[0]           ? TRUE : FALSE;
   do_L_0 = cp9b->Lvalid[0] && fill_L ? TRUE : FALSE;
   do_R_0 = cp9b->Rvalid[0] && fill_R ? TRUE : FALSE;
   do_T_0 = cp9b->Tvalid[0] && fill_T ? TRUE : FALSE;
 
+  v = 0;
   for (j = jmin[v]; j <= jmax[v]; j++) {
     jp_v = j - jmin[v];
     /* initialize bestr, bestsc, bestmode */
-    esl_vec_ISet(bestr,  (W+1), 0);
+    esl_vec_ISet(bestr,  (W+1), 0); /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
     esl_vec_FSet(bestsc, (W+1), IMPOSSIBLE);
     for(i = 0; i <= W; i++) bestmode[i] = TRMODE_UNKNOWN;
-
-    /* look at all possible states we can do a truncated begin into */
-    for (y = 1; y < cm->M; y++) {
-      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
-      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
-      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
-      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE;
-
-      if(j >= jmin[y] && j <= jmax[y]) {  /* j is within state y's band */
-	jp_y = j - jmin[y];
-	dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
-	dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
-
-	if(do_J_0 && do_J_y && 
-	   (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st || cm->sttype[y] == IL_st || cm->sttype[y] == IR_st)) { 
-	  dp_v = dn - hdmin[v][jp_v];
-	  dp_y = dn - hdmin[y][jp_y];
-	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	    sc = Jalpha[y][jp_y][dp_y] + trunc_penalty;
-	    if (sc > Jalpha[0][jp_v][dp_v]) { 
-	      Jalpha[0][jp_v][dp_v] = sc;
-	      if(sc > bestsc[d]) { 
-		bestsc[d]   = sc;
-		bestmode[d] = TRMODE_J;
-		bestr[d]    = y;
+    /* Now update based on best seen without considering local begins, remember v == 0 */
+    for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
+      dp_v = d - hdmin[v][jp_v];
+      if(do_J_0 && Jalpha[v][jp_v][dp_v] > bestsc[d]) { 
+	bestsc[d]   = Jalpha[v][jp_v][dp_v];
+	bestmode[d] = TRMODE_J;
+      }
+      if(do_L_0 && Lalpha[v][jp_v][dp_v] > bestsc[d]) { 
+	bestsc[d]   = Lalpha[v][jp_v][dp_v];
+	bestmode[d] = TRMODE_L;
+      }
+      if(do_R_0 && Ralpha[v][jp_v][dp_v] > bestsc[d]) { 
+	bestsc[d]   = Ralpha[v][jp_v][dp_v];
+	bestmode[d] = TRMODE_R;
+      }
+      /* Talpha[0] must be IMPOSSIBLE at this point */
+    }
+    
+    /* look at all possible states we can do a local begin into */
+    if (cm->flags & CMH_LOCAL_BEGIN) {
+      for (y = 1; y < cm->M; y++) {
+	if(NOT_IMPOSSIBLE(cm->trbeginsc[y]) && 
+	   (j >= jmin[y] && j <= jmax[y])) {  /* j is within state y's band */
+	  do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	  do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	  do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+	  do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE;
+	  
+	  jp_y = j - jmin[y];
+	  dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
+	  dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
+	  
+	  if(do_J_0 && do_J_y) { 
+	    dp_v = dn - hdmin[v][jp_v];
+	    dp_y = dn - hdmin[y][jp_y];
+	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
+	      sc = Jalpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      if (sc > Jalpha[0][jp_v][dp_v]) { 
+		Jalpha[0][jp_v][dp_v] = sc;
+		if(sc > bestsc[d]) { 
+		  bestsc[d]   = sc;
+		  bestmode[d] = TRMODE_J;
+		  bestr[d]    = y;
+		}
 	      }
 	    }
 	  }
-	}
-	if(do_L_0 && do_L_y &&
-	   (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == IL_st)) { 
-	  dp_v = dn - hdmin[v][jp_v];
-	  dp_y = dn - hdmin[y][jp_y];
-	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	    sc = Lalpha[y][jp_y][dp_y] + trunc_penalty;
-	    if (sc > Lalpha[0][jp_v][dp_v]) { 
-	      Lalpha[0][jp_v][dp_v] = sc;
-	      if(sc > bestsc[d]) { 
-		bestsc[d]   = sc;
-		bestmode[d] = TRMODE_L;
-		bestr[d]    = y;
+	  if(do_L_0 && do_L_y) { 
+	    dp_v = dn - hdmin[v][jp_v];
+	    dp_y = dn - hdmin[y][jp_y];
+	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
+	      sc = Lalpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      if (sc > Lalpha[0][jp_v][dp_v]) { 
+		Lalpha[0][jp_v][dp_v] = sc;
+		if(sc > bestsc[d]) { 
+		  bestsc[d]   = sc;
+		  bestmode[d] = TRMODE_L;
+		  bestr[d]    = y;
+		}
 	      }
 	    }
 	  }
-	}
-	if(do_R_0 && do_R_y && 
-	   (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st || cm->sttype[y] == IR_st)) { 
-	  dp_v = dn - hdmin[v][jp_v];
-	  dp_y = dn - hdmin[y][jp_y];
-	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	    sc = Ralpha[y][jp_y][dp_y] + trunc_penalty;
-	    if (sc > Ralpha[0][jp_v][dp_v]) { 
-	      Ralpha[0][jp_v][dp_v] = sc;
-	      if(sc > bestsc[d]) { 
-		bestsc[d]   = sc;
-		bestmode[d] = TRMODE_R;
-		bestr[d]    = y;
+	  if(do_R_0 && do_R_y) { 
+	    dp_v = dn - hdmin[v][jp_v];
+	    dp_y = dn - hdmin[y][jp_y];
+	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
+	      sc = Ralpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      if (sc > Ralpha[0][jp_v][dp_v]) { 
+		Ralpha[0][jp_v][dp_v] = sc;
+		if(sc > bestsc[d]) { 
+		  bestsc[d]   = sc;
+		  bestmode[d] = TRMODE_R;
+		  bestr[d]    = y;
+		}
 	      }
 	    }
 	  }
-	}
-	if(do_T_0 && do_T_y && 
-	   (cm->sttype[y] == B_st)) { 
-	  dp_v = dn - hdmin[v][jp_v];
-	  dp_y = dn - hdmin[y][jp_y];
-	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	    sc = Talpha[y][jp_y][dp_y] + trunc_penalty;
-	    if (sc > Talpha[0][jp_v][dp_v]) { 
-	      Talpha[0][jp_v][dp_v] = sc;
-	      if(sc > bestsc[d]) { 
-		bestsc[d]   = sc;
-		bestmode[d] = TRMODE_T;
-		bestr[d]    = y;
+	  if(do_T_0 && do_T_y && cm->sttype[y] == B_st) { 
+	    dp_v = dn - hdmin[v][jp_v];
+	    dp_y = dn - hdmin[y][jp_y];
+	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
+	      sc = Talpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      if (sc > Talpha[0][jp_v][dp_v]) { 
+		Talpha[0][jp_v][dp_v] = sc;
+		if(sc > bestsc[d]) { 
+		  bestsc[d]   = sc;
+		  bestmode[d] = TRMODE_T;
+		  bestr[d]    = y;
+		}
 	      }
 	    }
 	  }
 	}
       }
     }
+    /* Check for a special case for truncated alignment with local
+     * begins off.  T alignments are still allowed even though they
+     * require a local begin into the relevant B_st.
+     */
+    if((! (cm->flags & CMH_LOCAL_BEGIN)) && do_T_0) { 
+      for (y = 1; y < cm->M; y++) {
+	if(cm->sttype[y] == B_st) { 
+	  do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE;
+	  if(do_T_y) { 
+	    dp_v = dn - hdmin[v][jp_v];
+	    dp_y = dn - hdmin[y][jp_y];
+	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
+	      sc = Talpha[y][jp_y][dp_y];
+	      if (sc > Talpha[0][jp_v][dp_v]) { 
+		Talpha[0][jp_v][dp_v] = sc;
+		if(sc > bestsc[d]) { 
+		  bestsc[d]   = sc;
+		  bestmode[d] = TRMODE_T;
+		  bestr[d]    = y;
+		}
+	      }
+	    }
+	  }
+	}
+      }
+    }
+
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
       if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, tro, W, act)) != eslOK) return status;
@@ -2329,17 +2483,6 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
     }
   }
 
-#if 0
-  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH CYK mode: %s)\n",
-	 vsc_root - trunc_penalty, 
-	 vsc_root + sreLOG2(2./(cm->clen * (cm->clen+1))), 
-	 MarginalMode(vmode_root));
-  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH CYK mode: %s)\n",
-	 bsc_full, 
-	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))),
-	 MarginalMode(bmode_full));
-#endif
-
   free(el_scA);
   free(yvalidA);
   free(bestr);
@@ -2385,7 +2528,6 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* never reached */
 }
-
 
 /* Function: FTrInsideScanHB()
  * Incept:   EPN, Wed Sep  7 11:31:29 2011
@@ -2476,7 +2618,6 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t 
   int       h;                  /* counter over hits */
 
   /* variables specific to truncated scanning */
-  float    trunc_penalty = 0.; /* penalty in bits for a truncated hit */
   int      fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
   int      do_J_v, do_J_y, do_J_z, do_J_0; /* is J matrix valid for state v, y, z, 0? */
   int      do_L_v, do_L_y, do_L_z, do_L_0; /* is L matrix valid for state v, y, z, 0? */
@@ -2529,6 +2670,11 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
   for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
+
+  /* allocate bestr, bestsc, bestmode arrays */
+  ESL_ALLOC(bestr,    sizeof(int)   * (W+1));
+  ESL_ALLOC(bestsc,   sizeof(float) * (W+1));
+  ESL_ALLOC(bestmode, sizeof(char)  * (W+1));
 
   /* yvalidA[0..cnum[v]] will hold TRUE for states y for which a transition is legal 
    * (some transitions are impossible due to the bands) */
@@ -3217,32 +3363,6 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t 
 #endif
   } /* end of for (v = cm->M-1; v > 0; v--) */
         
-  /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
-   * 
-   * If local begins are off, all hits must be rooted at v=0.
-   * With local begins on, the hit is rooted at the second state in
-   * the traceback (e.g. after 0), the internal entry point. 
-   * 
-   * Hits rooted at 0 that not involved with local begins are 
-   * already calc'ed from the v loop with v == 0 
-   */
-
-  /* Report all possible hits, but only after looking at truncated begins (if they're on) */
-  v = 0;
-  sd = sdr = 0;
-  jpn = 0;
-  jpx = jmax[v] - jmin[v];
-  j   = jmin[v];
-  
-  ESL_ALLOC(bestr,    sizeof(int)   * (W+1));
-  ESL_ALLOC(bestmode, sizeof(char)  * (W+1));
-  ESL_ALLOC(bestsc,   sizeof(float) * (W+1));
-
-  do_J_0 = cp9b->Jvalid[0]           ? TRUE : FALSE;
-  do_L_0 = cp9b->Lvalid[0] && fill_L ? TRUE : FALSE;
-  do_R_0 = cp9b->Rvalid[0] && fill_R ? TRUE : FALSE;
-  do_T_0 = cp9b->Tvalid[0] && fill_T ? TRUE : FALSE;
-
   /* update gamma, by specifying all hits with j < jmin[0] are impossible */
   if(gamma != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
@@ -3252,93 +3372,153 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t 
     }
   }
 
-  /* Finally, allow for truncated hits */
+
+  /* Determine best* arrays for functions that report hits
+   * and deal with local begins. 
+   *
+   * If local begins are off, all hits must be rooted at v=0.
+   * With local begins on, the hit is rooted at the second state in
+   * the traceback (e.g. after 0), the internal entry point. 
+   * 
+   * Hits rooted at 0 that not involved with local begins are 
+   * already calc'ed from the v loop with v == 0 
+   */
+
+  /* Report all possible hits, but only after looking at local begins (if they're on) */
+  do_J_0 = cp9b->Jvalid[0]           ? TRUE : FALSE;
+  do_L_0 = cp9b->Lvalid[0] && fill_L ? TRUE : FALSE;
+  do_R_0 = cp9b->Rvalid[0] && fill_R ? TRUE : FALSE;
+  do_T_0 = cp9b->Tvalid[0] && fill_T ? TRUE : FALSE;
+
   v = 0;
-  for (j = jmin[0]; j <= jmax[0]; j++) {
+  for (j = jmin[v]; j <= jmax[v]; j++) {
     jp_v = j - jmin[v];
     /* initialize bestr, bestsc, bestmode */
-    esl_vec_ISet(bestr,  (W+1), 0);
+    esl_vec_ISet(bestr,  (W+1), 0); /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
     esl_vec_FSet(bestsc, (W+1), IMPOSSIBLE);
     for(i = 0; i <= W; i++) bestmode[i] = TRMODE_UNKNOWN;
-
-    /* look at all possible states we can do a truncated begin into */
-    for (y = 1; y < cm->M; y++) {
-      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
-      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
-      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
-      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE;
-
-      if(j >= jmin[y] && j <= jmax[y]) {  /* j is within state y's band */
-	jp_y = j - jmin[y];
-	dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
-	dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
-
-	if(do_J_0 && do_J_y && 
-	   (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == MR_st || cm->sttype[y] == IL_st || cm->sttype[y] == IR_st)) { 
-	  dp_v = dn - hdmin[v][jp_v];
-	  dp_y = dn - hdmin[y][jp_y];
-	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	    sc = Jalpha[y][jp_y][dp_y] + trunc_penalty;
-	    if (sc > Jalpha[0][jp_v][dp_v]) { 
-	      Jalpha[0][jp_v][dp_v] = sc;
-	      if(sc > bestsc[d]) { 
-		bestsc[d]   = sc;
-		bestmode[d] = TRMODE_J;
-		bestr[d]    = y;
+    /* Now update based on best seen without considering local begins, remember v == 0 */
+    for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
+      dp_v = d - hdmin[v][jp_v];
+      if(do_J_0 && Jalpha[v][jp_v][dp_v] > bestsc[d]) { 
+	bestsc[d]   = Jalpha[v][jp_v][dp_v];
+	bestmode[d] = TRMODE_J;
+      }
+      if(do_L_0 && Lalpha[v][jp_v][dp_v] > bestsc[d]) { 
+	bestsc[d]   = Lalpha[v][jp_v][dp_v];
+	bestmode[d] = TRMODE_L;
+      }
+      if(do_R_0 && Ralpha[v][jp_v][dp_v] > bestsc[d]) { 
+	bestsc[d]   = Ralpha[v][jp_v][dp_v];
+	bestmode[d] = TRMODE_R;
+      }
+      /* Talpha[0] must be IMPOSSIBLE at this point */
+    }
+    
+    /* look at all possible states we can do a local begin into */
+    if (cm->flags & CMH_LOCAL_BEGIN) {
+      for (y = 1; y < cm->M; y++) {
+	if(NOT_IMPOSSIBLE(cm->trbeginsc[y]) && 
+	   (j >= jmin[y] && j <= jmax[y])) {  /* j is within state y's band */
+	  do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+	  do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+	  do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+	  do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE;
+	  
+	  jp_y = j - jmin[y];
+	  dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
+	  dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
+	  
+	  if(do_J_0 && do_J_y) { 
+	    dp_v = dn - hdmin[v][jp_v];
+	    dp_y = dn - hdmin[y][jp_y];
+	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
+	      sc = Jalpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      if (sc > Jalpha[0][jp_v][dp_v]) { 
+		Jalpha[0][jp_v][dp_v] = sc;
+		if(sc > bestsc[d]) { 
+		  bestsc[d]   = sc;
+		  bestmode[d] = TRMODE_J;
+		  bestr[d]    = y;
+		}
 	      }
 	    }
 	  }
-	}
-	if(do_L_0 && do_L_y &&
-	   (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == ML_st || cm->sttype[y] == IL_st)) { 
-	  dp_v = dn - hdmin[v][jp_v];
-	  dp_y = dn - hdmin[y][jp_y];
-	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	    sc = Lalpha[y][jp_y][dp_y] + trunc_penalty;
-	    if (sc > Lalpha[0][jp_v][dp_v]) { 
-	      Lalpha[0][jp_v][dp_v] = sc;
-	      if(sc > bestsc[d]) { 
-		bestsc[d]   = sc;
-		bestmode[d] = TRMODE_L;
-		bestr[d]    = y;
+	  if(do_L_0 && do_L_y) { 
+	    dp_v = dn - hdmin[v][jp_v];
+	    dp_y = dn - hdmin[y][jp_y];
+	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
+	      sc = Lalpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      if (sc > Lalpha[0][jp_v][dp_v]) { 
+		Lalpha[0][jp_v][dp_v] = sc;
+		if(sc > bestsc[d]) { 
+		  bestsc[d]   = sc;
+		  bestmode[d] = TRMODE_L;
+		  bestr[d]    = y;
+		}
 	      }
 	    }
 	  }
-	}
-	if(do_R_0 && do_R_y && 
-	   (cm->sttype[y] == B_st || cm->sttype[y] == MP_st || cm->sttype[y] == MR_st || cm->sttype[y] == IR_st)) { 
-	  dp_v = dn - hdmin[v][jp_v];
-	  dp_y = dn - hdmin[y][jp_y];
-	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	    sc = Ralpha[y][jp_y][dp_y] + trunc_penalty;
-	    if (sc > Ralpha[0][jp_v][dp_v]) { 
-	      Ralpha[0][jp_v][dp_v] = sc;
-	      if(sc > bestsc[d]) { 
-		bestsc[d]   = sc;
-		bestmode[d] = TRMODE_R;
-		bestr[d]    = y;
+	  if(do_R_0 && do_R_y) { 
+	    dp_v = dn - hdmin[v][jp_v];
+	    dp_y = dn - hdmin[y][jp_y];
+	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
+	      sc = Ralpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      if (sc > Ralpha[0][jp_v][dp_v]) { 
+		Ralpha[0][jp_v][dp_v] = sc;
+		if(sc > bestsc[d]) { 
+		  bestsc[d]   = sc;
+		  bestmode[d] = TRMODE_R;
+		  bestr[d]    = y;
+		}
 	      }
 	    }
 	  }
-	}
-	if(do_T_0 && do_T_y && 
-	   (cm->sttype[y] == B_st)) { 
-	  dp_v = dn - hdmin[v][jp_v];
-	  dp_y = dn - hdmin[y][jp_y];
-	  for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	    sc = Talpha[y][jp_y][dp_y] + trunc_penalty;
-	    if (sc > Talpha[0][jp_v][dp_v]) { 
-	      Talpha[0][jp_v][dp_v] = sc;
-	      if(sc > bestsc[d]) { 
-		bestsc[d]   = sc;
-		bestmode[d] = TRMODE_T;
-		bestr[d]    = y;
+	  if(do_T_0 && do_T_y && cm->sttype[y] == B_st) { 
+	    dp_v = dn - hdmin[v][jp_v];
+	    dp_y = dn - hdmin[y][jp_y];
+	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
+	      sc = Talpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      if (sc > Talpha[0][jp_v][dp_v]) { 
+		Talpha[0][jp_v][dp_v] = sc;
+		if(sc > bestsc[d]) { 
+		  bestsc[d]   = sc;
+		  bestmode[d] = TRMODE_T;
+		  bestr[d]    = y;
+		}
 	      }
 	    }
 	  }
 	}
       }
     }
+    /* Check for a special case for truncated alignment with local
+     * begins off.  T alignments are still allowed even though they
+     * require a local begin into the relevant B_st.
+     */
+    if((! (cm->flags & CMH_LOCAL_BEGIN)) && do_T_0) { 
+      for (y = 1; y < cm->M; y++) {
+	if(cm->sttype[y] == B_st) { 
+	  do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE;
+	  if(do_T_y) { 
+	    dp_v = dn - hdmin[v][jp_v];
+	    dp_y = dn - hdmin[y][jp_y];
+	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
+	      sc = Talpha[y][jp_y][dp_y];
+	      if (sc > Talpha[0][jp_v][dp_v]) { 
+		Talpha[0][jp_v][dp_v] = sc;
+		if(sc > bestsc[d]) { 
+		  bestsc[d]   = sc;
+		  bestmode[d] = TRMODE_T;
+		  bestr[d]    = y;
+		}
+	      }
+	    }
+	  }
+	}
+      }
+    }
+
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
       if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, tro, W, act)) != eslOK) return status;
@@ -3424,17 +3604,6 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t 
       }
     }
   }
-
-#if 0   
-  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH INSIDE mode: %s)\n",
-	 vsc_root - trunc_penalty, 
-	 vsc_root + sreLOG2(2./(cm->clen * (cm->clen+1))),
-	 MarginalMode(vmode_root));
-  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH INSIDE mode: %s)\n",
-	 bsc_full, 
-	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))),
-	 MarginalMode(bmode_full));
-#endif
 
   free(el_scA);
   free(yvalidA);

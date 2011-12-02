@@ -910,6 +910,7 @@ CP9ReverseTrace(CP9trace_t *tr)
  * 
  * Args:     cm         - the CM the CP9 was built from, needed to get emitmap,
  *                        so we know where to put EL transitions
+ *           cp9        - the CP9 used to determine the traces (cm->cp9loc or cm->cp9glb)   
  *           abc        - alphabet to use to create the return MSA
  *           sq         - sequences 
  *           wgt        - weights for seqs, NULL for none
@@ -923,7 +924,7 @@ CP9ReverseTrace(CP9trace_t *tr)
  *           MSA structure in ret_msa, caller responsible for freeing.
  */          
 int
-CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
+CP9Traces2Alignment(CM_t *cm, CP9_t *cp9, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
 		    int nseq, CP9trace_t **tr, int do_full, int do_matchonly,
 		    ESL_MSA **ret_msa)
 {
@@ -959,21 +960,19 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   char         errbuf[cmERRBUFSIZE];
 
   /* Contract checks */
-  if(cm->cp9 == NULL)
-    cm_Fail("ERROR in CP9Traces2Alignment, cm->cp9 is NULL.\n");
+  if(cp9 == NULL)
+    cm_Fail("ERROR in CP9Traces2Alignment, cp9 is NULL.\n");
   if(cm->cp9map == NULL)
     cm_Fail("ERROR in CP9Traces2Alignment, cm->cp9map is NULL.\n");
-  if(!(cm->flags & CMH_CP9))
-     cm_Fail("ERROR in CP9Traces2Alignment, CMH_CP9 flag is down.");
   /* We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
   if(cm->abc->type == eslRNA)
     { 
       if(abc->type != eslRNA && abc->type != eslDNA)
-	cm_Fail("ERROR in Parsetrees2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+	cm_Fail("ERROR in CP9Traces2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
     }
   else if(cm->abc->K != abc->K)
-    cm_Fail("ERROR in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+    cm_Fail("ERROR in CP9Traces2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
 
   /* create the emit map */
   emap = CreateEmitMap(cm);
@@ -1066,23 +1065,23 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 	  statetype = tr[idx]->statetype[tpos]; /* just for clarity */
 	  cpos      = tr[idx]->nodeidx[tpos];      
 	  if(statetype == CSTM) next_match = cpos;
-	  if(statetype == CSTE) next_match = cm->cp9->M+1;
+	  if(statetype == CSTE) next_match = cp9->M+1;
 	  if(statetype == CSTEL) eposmap[idx][cpos] = next_match; /* this will be overwritten below */
 	}
       for (cpos = 0; cpos <= emap->clen; cpos++) 
 	{
 	  if(eposmap[idx][cpos] != -1)
 	    {
-	      /*printf("cpos: %d eposmap[idx][cpos]: %d ct: %d\n", cpos, eposmap[idx][cpos], cm->cp9->el_from_ct[eposmap[idx][cpos]]);*/
-	      /* determine the epos based on the CM emit map and cm->cp9->el* data structures */
-	      for(c = 0; c < cm->cp9->el_from_ct[eposmap[idx][cpos]]; c++)
+	      /*printf("cpos: %d eposmap[idx][cpos]: %d ct: %d\n", cpos, eposmap[idx][cpos], cp9->el_from_ct[eposmap[idx][cpos]]);*/
+	      /* determine the epos based on the CM emit map and cp9->el* data structures */
+	      for(c = 0; c < cp9->el_from_ct[eposmap[idx][cpos]]; c++)
 		{
-		  if(cm->cp9->el_from_idx[eposmap[idx][cpos]][c] == cpos)
+		  if(cp9->el_from_idx[eposmap[idx][cpos]][c] == cpos)
 		    {
-		      eposmap[idx][cpos] = emap->epos[cm->cp9->el_from_cmnd[eposmap[idx][cpos]][c]];
+		      eposmap[idx][cpos] = emap->epos[cp9->el_from_cmnd[eposmap[idx][cpos]][c]];
 		      break;
 		    }
-		  if(c == (cm->cp9->el_from_ct[eposmap[idx][cpos]] - 1))
+		  if(c == (cp9->el_from_ct[eposmap[idx][cpos]] - 1))
 		    cm_Fail("Couldn't determine epos for cpos: %d\n", cpos);
 		}
 	    }

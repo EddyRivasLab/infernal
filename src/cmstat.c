@@ -49,9 +49,9 @@ static ESL_OPTIONS options[] = {
   { "-E",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,       NULL, "print bit scores that correspond to E-value threshold of <x>", 0 },
   { "-T",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,       NULL, "print E-values that correspond to bit score threshold of <x>", 0 },
   { "-Z",        eslARG_REAL,   "10",      NULL, "x>0",     NULL,      NULL,       NULL, "set database size in *Mb* to <x> for E-value calculations",    0 },
-  { "--cut_ga",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       NULL, "print E-values that correspond to GA bit score thresholds",    0 },
-  { "--cut_nc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       NULL, "print E-values that correspond to NC bit score thresholds",    0 },
-  { "--cut_tc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       NULL, "print E-values that correspond to TC bit score thresholds",    0 },
+  { "--cut_ga",  eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       NULL, "print E-values that correspond to GA bit score thresholds",    0 },
+  { "--cut_nc",  eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       NULL, "print E-values that correspond to NC bit score thresholds",    0 },
+  { "--cut_tc",  eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       NULL, "print E-values that correspond to TC bit score thresholds",    0 },
   { "--key",     eslARG_STRING, NULL,      NULL, NULL,      NULL,      NULL,       NULL, "only print statistics for CM with name or accession <s>",      0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -240,8 +240,8 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode)
   Z = esl_opt_GetReal(go, "-Z") * 1000000.;
 
   if(output_mode == OUTMODE_DEFAULT) { 
-    /* build the cp9 HMM */
-    if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) cm_Fail("Couldn't build a CP9 HMM from the CM\n");
+    /* build the cp9 HMM, just to get HMM RE */
+    if(!(build_cp9_hmm(cm, &(cm->cp9loc), &(cm->cp9map), FALSE, 0.0001, 0))) cm_Fail("Couldn't build a CP9 HMM from the CM\n");
 
     fprintf(stdout, "%6d  %-20s  %-9s  %8d  %8.2f  %4d  %4d  %4d  %4d  %5d  %5.3f  %5.3f\n",
 	    ncm,
@@ -255,7 +255,7 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode)
 	    cm->W,
 	    cm->M,
 	    cm_MeanMatchRelativeEntropy(cm),
-	    cp9_MeanMatchRelativeEntropy(cm));
+	    cp9_MeanMatchRelativeEntropy(cm->cp9loc));
     
   }
   else if(output_mode == OUTMODE_BITSCORES) { 

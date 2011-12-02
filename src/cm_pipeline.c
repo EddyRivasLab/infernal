@@ -2422,7 +2422,6 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
     ppstr = NULL;
   }
     
-  
   hit->ad = cm_alidisplay_Create(cm->abc, tr, cm, cmcons, sq, hit->start, ppstr, 
 				 (do_optacc) ? optacc_sc : cyk_sc, 
 				 do_optacc, do_hbanded, total_Mb, watch->elapsed);

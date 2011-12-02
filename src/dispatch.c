@@ -37,256 +37,7 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#if 0
-/* Function: DispatchSearch()
- * Incept:   EPN, Wed Nov 14 10:43:16 2007
- *
- * Purpose:  Given a CM and a sequence, call the correct search algorithms
- *           based on search_info in cm->si. Handles up to 2 levels of filtering by
- *           calling itself recursively.
- * 
- * Args:     cm              - the covariance model
- *           errbuf          - char buffer for reporting errors
- *           sround          - filtering round we're currently on, 
- *                             if sround == cm->fi->nrounds, we're done filtering (and possibly never filtered)
- *           dsq             - the target sequence (digitized)
- *           i0              - start of target subsequence (often 1, beginning of dsq)
- *           j0              - end of target subsequence (often L, end of dsq)
- *           hit_len_guess   - the presumed length of a hit for HMM scanning functions, this is needed b/c 
- *                             those functions only determine start points or end points (i or j), but when 
- *                             those hits are stored, the need both a start and end point. 
- *                             NOTE: we used to (v1.0->1.0.2) use W implicitly as hit_len_guess, but
- *                                   now we allow it be passed in, and it's usually the average
- *                                   hit length given the model (calc'ed using QDB band calculation
- *                                   in cm.c::cm_GetAvgHitLen()).
- *           results         - [0..cm-fi->nrounds] search_results_t to keep results for each round in, must be non NULL and empty
- *           size_limit      - max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
- *           ret_flen        - RETURN: subseq len that survived filter (NULL if not filtering)
- *           ret_sc          - RETURN: Highest scoring hit from search (even if below cutoff).
- *
- * Returns: eslOK on success. eslERANGE if we're doing HMM banded alignment and requested matrix is too big.
- */
-int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int j0, int hit_len_guess, search_results_t **results, float size_limit, int *ret_flen, float *ret_sc)
-{
-  int               status;          /* easel status code */
-  float             sc;              /* score of best hit in seq */
-  float             bwd_sc;          /* score of best hit from Backward HMM algs */
-  int               h;               /* counter over hits */
-  int               i, j;            /* subseq start/end points */
-  int               do_collapse;     /* TRUE to collapse multiple overlapping hits together into a single hit */
-  int               next_j;          /* for collapsing overlapping hits together */
-  int               min_i;           /* a start point, used if we're scanning with HMM */
-  int               h_existing;      /* number of hits in round_results that exist when this function is entered */
-  SearchInfo_t     *si = cm->si;     /* the SearchInfo */
-  int               do_null2;        /* TRUE to use NULL2 score correction in final round */
-  int               do_null3;        /* TRUE to use NULL3 score correction in final round */
-
-  /* convenience pointers to cm->si for this 'filter round' of searching */
-  float             cutoff;          /* cutoff for this round, HMM or CM, whichever is relevant for this round */
-  int               stype;           /* search type for this round SEARCH_WITH_HMM, or SEARCH_WITH_CM */
-  ScanMatrix_t     *smx;             /* scan matrix for this round, != NULL only if SEARCH_WITH_CM, and must == cm->smx if we're in the final round */
-  search_results_t *round_results;   /* search_results for this round */
-  search_results_t *cur_results;     /* search_results for *this* call to DispatchSearch, copied to round_results at end of function */
-  int               prev_j;          /* used to collapse hits within same W bubble together when filtering */
-  int               nhits;           /* number of hits */
-  
-  /* Contract checks */
-  if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), CMH_BITS flag down.\n");
-  if(si == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): search info cm->si is NULL.\n");
-  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): dsq is NULL.");
-  if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): CMH_BITS flag down.\n");
-  if(sround > si->nrounds)             ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): current round %d is greater than cm->si->nrounds: %d\n", sround, si->nrounds);
-  if(results[sround] == NULL)          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): results for current round %d are NULL\n", sround);
-  if(j0 < i0)                          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): i0: %d < j0: %d (i0 should always be less than j0)\n", i0, j0);
-
-  ESL_DPRINTF1(("In DispatchSearch(), round: %d\n", sround));
-
-  /* copy info for this round from SearchInfo fi */
-  cm->search_opts = si->search_opts[sround]; 
-  cutoff          = si->sc_cutoff[sround]; /* this will be a bit score regardless of whether the cutoff_type == E_CUTOFF */
-  stype           = si->stype[sround];
-  smx             = si->smx[sround]; /* may be NULL */
-  round_results   = results[sround]; /* must not be NULL, contract enforced this */
-  h_existing      = round_results->num_results; /* remember this, b/c we only want to rescan survivors found in *this* function call */
-  do_null2        = (cm->search_opts & CM_SEARCH_NULL2) ? TRUE : FALSE;
-  do_null3        = (cm->search_opts & CM_SEARCH_NULL3) ? TRUE : FALSE;
-
-  cur_results = CreateResults(INIT_RESULTS);
-
-  /* SEARCH_WITH_HMM section */
-  if(stype == SEARCH_WITH_HMM) { 
-    /* some SEARCH_WITH_HMM specific contract checks */
-    if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), trying to use CP9 HMM that is NULL.\n");
-    if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
-    if(! ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)))
-      ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round search type=SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI & CM_SEARCH_HMMFORWARD flags are down.");
-
-    search_results_t *fwd_results;
-    /* Scan the (sub)seq in forward direction w/Viterbi or Forward, getting j end points of hits above cutoff */
-    fwd_results = CreateResults(INIT_RESULTS);
-    if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
-      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, 
-			       hit_len_guess, /* guess at hit length */
-			       cutoff,        /* reporting threshold */
-			       fwd_results,   /* results to append to */
-			       TRUE,   /* we're scanning */
-			       FALSE,  /* we're not ultimately aligning */
-			       TRUE,   /* be memory efficient */
-			       do_null3, /* correct scores with NULL3? */
-			       NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, or traces */
-			       &sc)) != eslOK) return status;
-    }
-    else if(cm->search_opts & CM_SEARCH_HMMFORWARD) { 
-      if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, 
-			       hit_len_guess, /* guess at hit length */
-			       cutoff,        /* reporting threshold */
-			       fwd_results,   /* results to append to */
-			       TRUE,   /* we're scanning */
-			       FALSE,  /* we're not ultimately aligning */
-			       TRUE,   /* be memory efficient */
-			       do_null3, /* correct scores with NULL3? */
-			       NULL, NULL, /* don't return best score at each posn, or best scoring posn */
-			       &sc)) != eslOK) return status;
-    }
-
-    /* If hits were reported greedily, remove overlapping hits, and sort by decreasing end point 
-     * (if not greedy, we'll have 0 overlaps, and already be sorted by end point) */
-    if(cm->search_opts & CM_SEARCH_HMMGREEDY) { /* resolve overlaps by being greedy */
-      ESL_DASSERT1((i0 == 1)); /* EPN, Tue Nov 27 13:59:31 2007 not sure why this is here */
-      RemoveOverlappingHits (fwd_results, i0, j0);
-      SortResultsByEndPoint(fwd_results);
-    }
-
-    /* determine start points (i) of the hits based on backward direction (Viterbi or Backward) scan starting at j */
-    for(h = 0; h < fwd_results->num_results; h++) {
-      min_i = (fwd_results->data[h].stop - cm->W + 1) >= i0 ? (fwd_results->data[h].stop - cm->W + 1) : i0;
-      if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
-	if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, 
-					 hit_len_guess, /* guess at hit length, irrelevant b/c j_is_fixed is TRUE */
-					 cutoff,      /* reporting threshold */
-					 cur_results, /* report hits to cur_results */
-					 TRUE,   /* we're scanning */
-					 FALSE,  /* we're not ultimately aligning */
-					 TRUE,   /* we want j (end point) fixed, so returned score is for a parse that ends at j */
-					 TRUE,   /* be memory efficient */
-					 do_null3, /* correct scores with NULL3? */
-					 NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, or traces */
-					 &bwd_sc)) != eslOK) return status;
-      }
-      else { 
-	if((status = cp9_Backward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, 
-				  hit_len_guess, /* guess at hit length, irrelevant b/c j_is_fixed is TRUE */
-				  cutoff,      /* reporting threshold */
-				  cur_results, /* report hits to this round's results */
-				  TRUE,   /* we're scanning */
-				  FALSE,  /* we're not ultimately aligning */
-				  TRUE,   /* j_is_fixed: we want j (end point) fixed, so returned score is for a parse that ends at j */
-				  TRUE,   /* be memory efficient */
-				  do_null3, /* correct scores with NULL3? */
-				  NULL, NULL,   /* don't return best score at each posn, best scoring posn */
-				  &bwd_sc)) != eslOK) return status;
-      }
-      /* this only works if we've saved the matrices, and didn't do scan mode for both Forward and Backward:
-       * debug_check_CP9_FB(fmx, bmx, cm->cp9, cur_best_hmm_bsc, i0, j0, dsq); */
-
-      /* If hits were reported greedily, remove overlapping hits, and sort by decreasing end point 
-       * (if not greedy, we'll have 0 overlaps, and already be sorted by end point) */
-      if(cm->search_opts & CM_SEARCH_HMMGREEDY) { /* resolve overlaps by being greedy */
-	ESL_DASSERT1((i0 == 1)); /* EPN, Tue Nov 27 13:59:31 2007 not sure why this is here */
-	RemoveOverlappingHits (cur_results, i0, j0);
-	SortResultsByEndPoint(cur_results);
-      }
-      if(bwd_sc > sc) sc = bwd_sc;
-    }	  
-    FreeResults(fwd_results);
-
-  }
-  /* end of SEARCH_WITH_HMM section */
-  else { /* stype == SEARCH_WITH_CM */
-    ESL_DASSERT1((stype == SEARCH_WITH_CM));
-    if(smx == NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_CM but smx == NULL.\n", sround);
-    if(sround == si->nrounds && smx != cm->smx) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), final round %d, SEARCH_WITH_CM but smx != cm->smx.\n", sround);
-
-    if(cm->search_opts & CM_SEARCH_HBANDED) {
-      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, NULL, 0)) != eslOK) return status; 
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = cm_FInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit,                 &sc)) != eslOK) return status; }
-      else                                   { if((status = cm_CYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, cur_results, do_null3, cm->hbmx, size_limit, 0., NULL, NULL, &sc)) != eslOK) return status; }
-    }
-    else { /* don't do HMM banded search */
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = cm_IInsideScan(cm, errbuf, smx, dsq, i0, j0, cutoff, cur_results, do_null3,                 NULL, &sc)) != eslOK) return status; }
-      else                                   { if((status = cm_CYKScan    (cm, errbuf, smx, dsq, i0, j0, cutoff, cur_results, do_null3, 0., NULL, NULL, NULL, &sc)) != eslOK) return status; }
-    }    
-    /* If hits were reported greedily, remove overlapping hits, and sort by decreasing end point 
-     * (if not greedy, we'll have 0 overlaps, and already be sorted by end point) */
-    if(! (cm->search_opts & CM_SEARCH_CMNOTGREEDY)) { /* resolve overlaps by being greedy */
-      ESL_DASSERT1((i0 == 1)); /* EPN, Tue Nov 27 13:59:31 2007 not sure why this is here */
-      RemoveOverlappingHits (cur_results, i0, j0);
-      SortResultsByEndPoint(cur_results);
-    }
-  }
-
-  /* remove hits that were below our safe bit score cutoff but are above our E-value cutoff for their given partition */
-  if(cm->si->cutoff_type[sround] == E_CUTOFF) { 
-    if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, sround, cur_results, dsq, 0,
-				       FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
-				       TRUE))  /* sort by end point at the end of the function */
-				       != eslOK) return status;
-  }
-
-  if(sround < si->nrounds) { /* we're filtering */
-    AppendResults(cur_results, round_results, 1);
-    prev_j = j0;
-    nhits  = cur_results->num_results;
-    /* To be safe, we only trust that i..j of our filter-passing hit is within the real hit,
-     * so we add (W-1) to start point i and subtract (W-1) from j, and treat this region j-(W-1)..i+(W-1)
-     * as having survived the filter.
-     */
-    do_collapse = (((sround+1) == si->nrounds) && (si->search_opts[si->nrounds] & CM_SEARCH_HBANDED)) ? FALSE : TRUE;
-    for(h = 0; h < nhits; h++) {
-      if(cur_results->data[h].stop > prev_j) ESL_EXCEPTION(eslEINCOMPAT, "j's not in descending order");
-      prev_j = cur_results->data[h].stop;
-
-      i = ((cur_results->data[h].stop  - (cm->W-1)) >= i0)   ? (cur_results->data[h].stop  - (cm->W-1)) : i0;
-      j = ((cur_results->data[h].start + (cm->W-1)) <= j0)   ? (cur_results->data[h].start + (cm->W-1)) : j0;
-
-      if((h+1) < nhits) next_j = ((cur_results->data[h+1].start + (cm->W-1)) <= j0) ? (cur_results->data[h+1].start + (cm->W-1)) : j0;
-      else              next_j = -1;
-      
-      /* Collapse multiple overlapping hits together into a single hit. 
-       * *Unless* our next round of searching is the final one, and we're going to do HMM banded search,
-       * in which case we want to treat each hit separately, so we get more reasonable bands.
-       */
-      if(do_collapse) { 
-	while(((h+1) < nhits) && (next_j >= i)) { /* suck in hit */
-	  h++;
-	  i = ((cur_results->data[h].stop - (cm->W-1)) >= i0) ? (cur_results->data[h].stop - (cm->W-1)) : i0;
-	  if((h+1) < nhits) next_j = ((cur_results->data[h+1].start + (cm->W-1)) <= j0) ? (cur_results->data[h+1].start + (cm->W-1)) : j0;
-	  else              next_j = -1;
-	  ESL_DPRINTF1(("\tsucked in subseq: hit %d new_i: %d j (still): %d\n", h, i, j));
-	}
-      }
-      /* next round: research this chunk that survived the filter */
-      if((status = DispatchSearch(cm, errbuf, (sround+1), dsq, i, j, hit_len_guess, results, size_limit, NULL, NULL)) != eslOK) return status;
-    }
-  }
-  else { /* we're done filtering, and we're done searching, get alignments if nec */
-    /* copy cur_results to final_results */
-    AppendResults(cur_results, round_results, 1);
-    if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {
-      if((status = DispatchAlignments(cm, errbuf, NULL, 
-				      dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
-				      0, 0, 0, do_null3, NULL, size_limit, stdout, NULL, 1,
-				      0, 1, 0., 0, 0., 0., 1., 1.)) != eslOK) return status;
-    }
-  }
-  FreeResults(cur_results);
-  if(ret_sc != NULL) *ret_sc = sc;
-  return eslOK;
-}  
-#endif
-
-/* 
- * Function: DispatchAlignments()
+/* Function: DispatchAlignments()
  * Incept:   EPN, Thu Nov 15 11:35:23 2007
  *
  * Purpose:  Given a CM and sequences, do preliminaries, call the
@@ -572,14 +323,14 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
   if((watch = esl_stopwatch_Create()) == NULL) goto ERROR;
   if((watch2 = esl_stopwatch_Create()) == NULL) goto ERROR;
 
-  if(do_hbanded || do_sub) { /* We need a CP9 HMM to build sub_cms */
-    if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, trying to use CP9 HMM that is NULL\n");
-    if(cm->cp9b == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, cm->cp9b is NULL\n");
-    if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+  if(do_hbanded || do_sub) { /* We need a localized CP9 HMM to build sub_cms */
+    if(cm->cp9loc == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, trying to use CP9 HMM that is NULL\n");
+    if(cm->cp9b   == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, cm->cp9b is NULL\n");
+    if(!(cm->cp9loc->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
     
     /* Keep data for the original CM safe; we'll be doing
      * pointer swapping to ease the sub_cm alignment implementation. */
-    hmm         = cm->cp9;
+    hmm         = cm->cp9loc;
     cp9b        = cm->cp9b;
     cp9map      = cm->cp9map;
     orig_hmm    = hmm;
@@ -602,7 +353,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	        * we config the HMM to local mode with equiprobable start/end points.*/
     swentry = ((hmm->M)-1.)/hmm->M; /* all start pts equiprobable, including 1 */
     swexit  = ((hmm->M)-1.)/hmm->M; /* all end   pts equiprobable, including M */
-    CPlan9SWConfig(cm->cp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE means don't make I_0, D_1, I_M unreachable (like a local CM, undesirable for sub CM strategy)) */
+    CPlan9SWConfig(cm->cp9loc, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE means don't make I_0, D_1, I_M unreachable (like a local CM, undesirable for sub CM strategy)) */
     CP9Logoddsify(hmm);
   }
   if(! do_hbanded) { /* we need non-banded matrices for alignment */
@@ -614,7 +365,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 
   orig_cm = cm;
   emap = CreateEmitMap(cm);
-  fill_phi_cp9(cm->cp9, &phi, 1, TRUE);
+  fill_phi_cp9((cm->flags & CMH_LOCAL_BEGIN) ? cm->cp9loc : cm->cp9glb, &phi, 1, TRUE);
   
   /* if not in silent mode, print the header for the sequence info */
   if(!silent_mode) { 
@@ -699,7 +450,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	fprintf(ofp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
 	if(sfp != NULL) fprintf(sfp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       }
-      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, 
+      if((status = cp9_Viterbi((cm->flags & CMH_LOCAL_BEGIN) ? cm->cp9loc : cm->cp9glb,
+			       errbuf, cm->cp9_mx, cur_dsq, 1, L, 
 			       FALSE,  /* we are not scanning */
 			       TRUE,   /* we are aligning */
 			       FALSE,  /* don't be memory efficient */
@@ -813,7 +565,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
       cm    = sub_cm; /* orig_cm still points to the original CM */
       if(do_hbanded) { /* we're doing HMM banded alignment to the sub_cm */
 	/* Get the HMM bands for the sub_cm */
-	sub_hmm    = sub_cm->cp9;
+	sub_hmm    = (sub_cm->flags & CMH_LOCAL_BEGIN) ? sub_cm->cp9loc : sub_cm->cp9glb;
 	sub_cp9b   = sub_cm->cp9b;
 	sub_cp9map = sub_cm->cp9map;
 
@@ -1111,7 +863,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
   p7_gmx_Destroy(gx);
   FreeEmitMap(emap);
   if(phi != NULL) { 
-    for(k = 0; k <= orig_cm->cp9->M; k++) free(phi[k]);
+    for(k = 0; k <= orig_cm->cp9loc->M; k++) free(phi[k]);
     free(phi);
   }
 

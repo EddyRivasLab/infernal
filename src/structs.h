@@ -233,11 +233,11 @@ typedef struct cplan9_s {
 				    * where a transition from kp's EL state to k's
 				    * match state is valid. */
   int  **el_from_idx;              /* [0..M+1][] el_from_idx[k] is an array of 
-				    * size el_from_idx[k] each element is a node 
+				    * size el_from_ct[k] each element is a node 
 				    * kp where a transition from kp's EL state 
 				    * to k's match state is allowed */
   int  **el_from_cmnd;             /* [0..M+1][] el_from_cmnd[k] is an array of 
-				    * size el_from_idx[k] element i is the CM
+				    * size el_from_ct[k] element i is the CM
 				    * node that the EL transition to k to 
 				    * el_from_idx[k][i] corresponds with, used
 				    * only for building alignments from traces. */
@@ -451,17 +451,18 @@ typedef struct cp9map_s {
 #define CMH_QDB                 (1<<14) /* query-dependent bands, QDBs valid        */
 #define CMH_QDB_LOCAL           (1<<15) /* QDBs calc'ed with local begins on        */
 #define CMH_QDB_GLOBAL          (1<<16) /* QDBs calc'ed with local begins off       */
-#define CMH_CP9                 (1<<17) /* CP9 HMM is valid in cm->cp9              */
-#define CMH_SCANMATRIX          (1<<18) /* ScanMatrix smx is valid                  */
-#define CMH_MLP7                (1<<19) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
-#define CMH_FP7                 (1<<20) /* filter p7 is valid in cm->fp7            */
+#define CMH_CP9LOC              (1<<17) /* CP9 HMM is valid in cm->cp9loc           */
+#define CMH_CP9GLB              (1<<18) /* CP9 HMM is valid in cm->cp9glb           */
+#define CMH_SCANMATRIX          (1<<19) /* ScanMatrix smx is valid                  */
+#define CMH_MLP7                (1<<20) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
+#define CMH_FP7                 (1<<21) /* filter p7 is valid in cm->fp7            */
 
-#define CM_IS_SUB               (1<<21) /* the CM is a sub CM                       */
-#define CM_IS_RSEARCH           (1<<22) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS         (1<<23) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT          (1<<24) /* CM has/will have RSEARCH emissions       */
-#define CM_EMIT_NO_LOCAL_BEGINS (1<<25) /* emitted parsetrees will never have local begins */
-#define CM_EMIT_NO_LOCAL_ENDS   (1<<26) /* emitted parsetrees will never have local ends   */
+#define CM_IS_SUB               (1<<22) /* the CM is a sub CM                       */
+#define CM_IS_RSEARCH           (1<<23) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS         (1<<24) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT          (1<<25) /* CM has/will have RSEARCH emissions       */
+#define CM_EMIT_NO_LOCAL_BEGINS (1<<26) /* emitted parsetrees will never have local begins */
+#define CM_EMIT_NO_LOCAL_ENDS   (1<<27) /* emitted parsetrees will never have local ends   */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment  */
@@ -555,6 +556,9 @@ typedef struct parsetree_s {
   int  n;		/* number of elements in use so far        */
   int  nalloc;		/* number of elements allocated for        */
   int  memblock;	/* size of malloc() chunk, # of elems      */
+  int  is_std;          /* TRUE  if alignment was determined using standard  CYK/optacc,
+			 * FALSE if alignment was determined using truncated CYK/optacc
+			 */
 } Parsetree_t;
 
 
@@ -923,7 +927,7 @@ typedef struct _fullmat_t {
  * traceback.  We use TRMODE{J,L,R}_OFFSET as a way of determining the
  * marginal alignment mode solely from the yoffset stored in the
  * {J,L,R}shadow matrices, by adding the appropriate offset to yoffset
- * depending on the truncation mode.  A crucial fact is that yoffset
+ * depending on the truncation mode. A crucial fact is that yoffset
  * ranges from 0..MAXCONNECT-1 for normal states, but it can also be
  * USED_LOCAL_BEGIN, USED_EL, and USED_TRUNC_END, so we have to make
  * sure that adding 0..MAXCONNECT-1 to any of the
@@ -931,8 +935,7 @@ typedef struct _fullmat_t {
  * USED_EL or USED_TRUNC_END (defined above). And remember that these
  * values have to be able to be stored in a char.
  */
-#define NTRMODES        5
-#define TRMODE_UNKNOWN  4
+#define TRMODE_UNKNOWN  4  
 #define TRMODE_J        3
 #define TRMODE_L        2
 #define TRMODE_R        1
@@ -940,7 +943,6 @@ typedef struct _fullmat_t {
 #define TRMODE_J_OFFSET 0
 #define TRMODE_L_OFFSET 10
 #define TRMODE_R_OFFSET 20
-
 
 /* EPN, Fri Sep  7 16:49:43 2007
  * From HMMER3's p7_config.h:
@@ -1734,6 +1736,7 @@ typedef struct cm_s {
   float **t;		/*   Transition prob's [0..M-1][0..MAXCONNECT-1]   */
   float **e;		/*   Emission probabilities.  [0..M-1][0..15]      */
   float  *begin;	/*   Local alignment start probabilities [0..M-1]  */
+  float  *trbegin;	/*   Truncated alnmnt start probabilities [0..M-1] */
   float  *end;		/*   Local alignment ending probabilities [0..M-1] */
 
 			/* Parameters of the log odds model:               */
@@ -1741,8 +1744,8 @@ typedef struct cm_s {
   float **esc;		/*   Emission score vector, log odds               */
   float **oesc;         /*   Optimized emission score log odds float vec   */
   float *beginsc;	/*   Score for ROOT_S -> state v (local alignment) */
+  float *trbeginsc;	/*   Score for ROOT_S -> state v (trunc alignment) */
   float *endsc;   	/*   Score for state_v -> EL (local alignment)     */
-
                         /* Parameters used in marginal alignments          */
   float **lmesc;        /*   Left marginal emission scores (log odds)      */
   float **rmesc;        /*   Right marginal emission scores (log odds)     */                
@@ -1754,6 +1757,7 @@ typedef struct cm_s {
   int  **ilmesc;        /*   Left marginal emission scores (log odds int)  */
   int  **irmesc;        /*   Right marginal emission scores (log odds int) */                
   int   *ibeginsc;      /*   Score for ROOT_S -> state v (local alignment) */
+  int   *itrbeginsc;    /*   Score for ROOT_S -> state v (trunc alignment) */
   int   *iendsc;  	/*   Score for state_v -> EL (local alignment)     */
 
   float   null2_omega;  /* prior probability of the null2 model (if it is used) */
@@ -1777,20 +1781,27 @@ typedef struct cm_s {
 			 * the root that will have their dmax values truncated to <= cm->W.   */
   double tau;           /* tail loss probability for HMM target dependent banding             */
 
-  /* added by EPN, Tue Jan  2 14:24:08 2007 */
-  int        config_opts;/* model configuration options                                        */
-  int        align_opts; /* alignment options                                                  */
-  int        search_opts;/* search options                                                     */
-  CP9_t     *cp9;        /* a CM Plan 9 HMM, always built when the model is read from a file   */
-  CP9Map_t  *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa               */
-  CP9Bands_t *cp9b;      /* the CP9 bands                                                      */
-  float     *root_trans; /* transition probs from state 0, saved IFF zeroed in ConfigLocal()   */
-  float      pbegin;     /* local begin prob to spread across internal nodes for local mode    */
-  float      pend;       /* local end prob to spread across internal nodes for local mode      */
+  int         config_opts;/* model configuration options                                        */
+  int         align_opts; /* alignment options                                                  */
+  int         search_opts;/* search options                                                     */
+  float      *root_trans; /* transition probs from state 0, saved IFF zeroed in ConfigLocal()   */
+  float       pbegin;     /* local begin prob to spread across internal nodes for local mode    */
+  float       pend;       /* local end prob to spread across internal nodes for local mode      */
   
   float  el_selfsc;     /* score of a self transition in the EL state
 			 * the EL state emits only on self transition (EPN 11.15.05)*/
   int   iel_selfsc;     /* scaled int version of el_selfsc         */
+
+  /* CP9 HMMs and associated data structures. If in local mode we only need to build one CP9 
+   * HMM (cp9loc) with local begins/ends turned on. If in global mode we need cp9loc and cp9glb,
+   * which has local begins/ends off, because we need cp9loc for truncated alignment. 
+   * cp9map and cp9b work perfectly well for either cp9loc or cp9glb, so only one of each
+   * is needed.
+   */
+  CP9_t      *cp9loc;     /* a CM Plan 9 HMM, built from CM, local begins/ends always ON        */
+  CP9_t      *cp9glb;     /* a CM Plan 9 HMM, built from CM, local begins/ends always OFF       */
+  CP9Map_t   *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa               */
+  CP9Bands_t *cp9b;       /* the CP9 bands                                                      */
 
   /* DP matrices and some auxiliary info for DP algorithms */
   /* for standard CM alignment/search */

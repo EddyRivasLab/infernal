@@ -392,13 +392,13 @@ CPlan9ELConfig(CM_t *cm)
 {
   /*printf("IN CPlan9ELConfig\n");*/
   /* Contract checks */
-  if(cm->cp9 == NULL)
-    cm_Fail("ERROR in CPlan9ELConfig, cm->cp9 is NULL.\n");
+  if(cm->cp9loc == NULL)
+    cm_Fail("ERROR in CPlan9ELConfig, cm->cp9loc is NULL.\n");
   if(cm->cp9map == NULL)
     cm_Fail("ERROR in CPlan9ELConfig, cm->cp9map is NULL.\n");
-  if(!(cm->flags & CMH_CP9))
-     cm_Fail("ERROR in CPlan9ELConfig, CMH_CP9 flag is down.");
-  if(cm->cp9->flags & CPLAN9_EL)
+  if(!(cm->flags & CMH_CP9LOC))
+     cm_Fail("ERROR in CPlan9ELConfig, CMH_CP9LOC flag is down.");
+  if(cm->cp9loc->flags & CPLAN9_EL)
      cm_Fail("ERROR in CPlan9ELConfig, CP9_EL flag is already up.");
   
   int v;
@@ -455,24 +455,24 @@ CPlan9ELConfig(CM_t *cm)
   }
 
   /* transitions from HMM node 0 to EL is impossible */
-  cm->cp9->t[0][CTMEL] = 0.;
-  for(k = 1; k <= cm->cp9->M; k++) 
+  cm->cp9loc->t[0][CTMEL] = 0.;
+  for(k = 1; k <= cm->cp9loc->M; k++) 
     {
-      if(cm->cp9->has_el[k])
+      if(cm->cp9loc->has_el[k])
 	{
-	  cm->cp9->t[k][CTMEL] = to_el_prob;
-	  norm_factor = 1. - (cm->cp9->t[k][CTMEL] / (1. - cm->cp9->end[k]));
-	  cm->cp9->t[k][CTMM] *= norm_factor;
-	  cm->cp9->t[k][CTMI] *= norm_factor;
-	  cm->cp9->t[k][CTMD] *= norm_factor;
-	  /* cm->cp9->end[k] untouched */
+	  cm->cp9loc->t[k][CTMEL] = to_el_prob;
+	  norm_factor = 1. - (cm->cp9loc->t[k][CTMEL] / (1. - cm->cp9loc->end[k]));
+	  cm->cp9loc->t[k][CTMM] *= norm_factor;
+	  cm->cp9loc->t[k][CTMI] *= norm_factor;
+	  cm->cp9loc->t[k][CTMD] *= norm_factor;
+	  /* cm->cp9loc->end[k] untouched */
 	}
     }
-  cm->cp9->flags &= ~CPLAN9_HASBITS;	/* clear the log-odds ready flag */
+  cm->cp9loc->flags &= ~CPLAN9_HASBITS;	/* clear the log-odds ready flag */
 
-  CP9Logoddsify(cm->cp9);
+  CP9Logoddsify(cm->cp9loc);
 
-  cm->cp9->flags |= CPLAN9_EL;          /* EL end locals now on */
+  cm->cp9loc->flags |= CPLAN9_EL;          /* EL end locals now on */
   /*debug_print_cp9_params(cm->cp9);*/
   return;
 }
@@ -491,25 +491,25 @@ void
 CPlan9NoEL(CM_t *cm)
 {
   /* Contract checks */
-  if(cm->cp9 == NULL)
-    cm_Fail("ERROR in CPlan9ELConfig, cm->cp9 is NULL.\n");
+  if(cm->cp9loc == NULL)
+    cm_Fail("ERROR in CPlan9ELConfig, cm->cp9loc is NULL.\n");
   if(cm->cp9map == NULL)
     cm_Fail("ERROR in CPlan9ELConfig, cm->cp9map is NULL.\n");
-  if(!(cm->flags & CMH_CP9))
-     cm_Fail("ERROR in CPlan9ELConfig, CMH_CP9 flag is down.");
-  if(!(cm->cp9->flags & CPLAN9_EL))
+  if(!(cm->flags & CMH_CP9LOC))
+     cm_Fail("ERROR in CPlan9ELConfig, CMH_CP9LOC flag is down.");
+  if(!(cm->cp9loc->flags & CPLAN9_EL))
      cm_Fail("ERROR in CPlan9ELConfig, CP9_EL flag is already down.");
   
   int k;                     /* counter over HMM nodes */
 
-  for(k = 0; k <= cm->cp9->M; k++) 
-    cm->cp9->t[k][CTMEL] = 0.;
-  CPlan9RenormalizeExits(cm->cp9, 1);
+  for(k = 0; k <= cm->cp9loc->M; k++) 
+    cm->cp9loc->t[k][CTMEL] = 0.;
+  CPlan9RenormalizeExits(cm->cp9loc, 1);
 
-  cm->cp9->flags &= ~CPLAN9_HASBITS;	/* clear the log-odds ready flag */
-  CP9Logoddsify(cm->cp9);
+  cm->cp9loc->flags &= ~CPLAN9_HASBITS;	/* clear the log-odds ready flag */
+  CP9Logoddsify(cm->cp9loc);
 
-  cm->cp9->flags &= ~CPLAN9_EL;          /* EL end locals now off */
+  cm->cp9loc->flags &= ~CPLAN9_EL;          /* EL end locals now off */
 
   return;
 }
@@ -530,10 +530,11 @@ void
 CPlan9InitEL(CM_t *cm, CP9_t *cp9)
 {
   int status;
-  CMEmitMap_t *emap;         /* consensus emit map for the CM */
   int k;                     /* counter over HMM nodes */
   int nd;
   int *tmp_el_from_ct;
+
+  if(cm->emap == NULL) cm_Fail("CPlan9InitEL() cm->emap is NULL");
 
   /* First copy the CM el self transition score/probability: */
   cp9->el_self   = sreEXP2(cm->el_selfsc);
@@ -546,7 +547,6 @@ CPlan9InitEL(CM_t *cm, CP9_t *cp9)
    * This two-pass method saves memory b/c we only allocate for
    * what we'll need.
    */
-  emap = CreateEmitMap(cm); 
 
   /* Initialize to 0 */
   for(k = 0; k <= cp9->M; k++) 
@@ -564,9 +564,9 @@ CPlan9InitEL(CM_t *cm, CP9_t *cp9)
 	   cm->ndtype[nd] == BEGR_nd) && 
 	  cm->ndtype[nd+1] != END_nd)
 	{
-	  /*printf("HMM node %d can be reached from HMM node %d's EL state\n", emap->rpos[nd], emap->lpos[nd]);*/
-	  cp9->el_from_ct[emap->rpos[nd]]++;
-	  cp9->has_el[emap->lpos[nd]] = TRUE;
+	  /*printf("HMM node %d can be reached from HMM node %d's EL state\n", cm->emap->rpos[nd], cm->emap->lpos[nd]);*/
+	  cp9->el_from_ct[cm->emap->rpos[nd]]++;
+	  cp9->has_el[cm->emap->lpos[nd]] = TRUE;
 	}
     }
 
@@ -594,8 +594,8 @@ CPlan9InitEL(CM_t *cm, CP9_t *cp9)
 	   cm->ndtype[nd] == BEGR_nd) && 
 	  cm->ndtype[nd+1] != END_nd)
 	{
-	  k = emap->rpos[nd];
-	  cp9->el_from_idx[k][tmp_el_from_ct[k]] = emap->lpos[nd];
+	  k = cm->emap->rpos[nd];
+	  cp9->el_from_idx[k][tmp_el_from_ct[k]] = cm->emap->lpos[nd];
 	  cp9->el_from_cmnd[k][tmp_el_from_ct[k]] = nd;
 	  tmp_el_from_ct[k]++;
 	}
@@ -612,7 +612,6 @@ CPlan9InitEL(CM_t *cm, CP9_t *cp9)
 
   /* Free memory and exit */
   free(tmp_el_from_ct);
-  FreeEmitMap(emap);
   return;
 
  ERROR:
@@ -731,63 +730,6 @@ float
 Scorify(int sc)
 {
   return ((float) sc / INTSCALE);
-}
-
-/* Function: CPlan9CMLocalBeginConfig()
- * Incept:   EPN, Thu Jun 21 15:43:29 2007
- * based on SRE's Plan7SWConfig() from HMMER's plan7.c
- * 
- * Purpose:  Set up a CM Plan 9 HMM to mimic CM local begins as closely
- *           as it can. We can't enforce that a begin/end point are chosen
- *           the same way a CM's are, as the choice of a CM local begin
- *           (in non-truncated CYK mode) defines both a start and end point,
- *           and some start/end combinations are impossible. For the CP9
- *           we allow all possible start/end combos.
- *           
- * Args:     cm    - the CM, must have valid cm->cp9, we'll use
- *                   the CM local begin probs to set the cm->cp9s
- *                   begin/end probs.
- *                    
- * Return:   (void)
- *           HMM probabilities are modified.
- */
-void
-CPlan9CMLocalBeginConfig(CM_t *cm)
-{
-  CMEmitMap_t *emap;            /* consensus emit map for the CM */
-  int nd;
-
-  /* Contract checks */
-  if(cm->cp9 == NULL)
-    cm_Fail("ERROR in CPlan9CMLocalBeginConfig, cm->cp9 is NULL.\n");
-  if(cm->cp9map == NULL)
-    cm_Fail("ERROR in CPlan9CMLocalBeginConfig, cm->cp9map is NULL.\n");
-  if(!(cm->flags & CMH_CP9))
-     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CMH_CP9 flag is down.");
-  if(!(cm->flags & CMH_LOCAL_BEGIN))
-     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CMH_LOCAL_BEGIN flag is down.");
-  if(!(cm->flags & CMH_LOCAL_END))
-     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_BEGIN flag is already up.");
-  if(cm->cp9->flags & CPLAN9_LOCAL_END)
-     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_END flag is already up.");
-
-  /* Configure entry.
-   * To match CM, we enforce the only way out of the B state (M_0)
-   * is through a local begin into a match state 
-   */
-  esl_vec_FSet(cm->cp9->begin, cm->cp9->M, 0.);
-  emap = CreateEmitMap(cm); 
-  for (nd = 1; nd < cm->nodes; nd++) {
-    if(NOT_IMPOSSIBLE(cm->begin[cm->nodemap[nd]])) {
-      cm->cp9->begin[emap->lpos[nd]] += cm->begin[cm->nodemap[nd]]; /* we do += b/c for lpos of BIFs, there's > 1 way to enter there, the BIF and the first MATP or MATL of the left child of the BIF */
-    }
-  }
-
-  cm->cp9->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
-  cm->cp9->flags       |= CPLAN9_LOCAL_BEGIN; /* local begins now on */
-  cm->cp9->flags       |= CPLAN9_LOCAL_END;   /* local ends now on */
-
-  CP9Logoddsify(cm->cp9);
 }
 
 /* Function: CP9_reconfig2sub()

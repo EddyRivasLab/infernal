@@ -156,7 +156,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   if(cm->flags & CMH_LOCAL_END)
     {
       reset_local_ends = TRUE;
-      if((cm->flags & CMH_CP9) && cm->cp9->flags & CPLAN9_EL)
+      if((cm->flags & CMH_CP9LOC) && cm->cp9loc->flags & CPLAN9_EL)
 	reset_cp9_local_ends = TRUE;
       ConfigNoLocalEnds(cm);
     }
@@ -399,7 +399,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
     if(reset_cp9_local_ends) {
       CPlan9ELConfig(cm);
       reset_cp9_local_ends = FALSE;
-      CP9Logoddsify(cm->cp9);
+      CP9Logoddsify(cm->cp9loc);
     }
   }
   if (ret_dmin  != NULL) *ret_dmin = dmin;   else free(dmin);

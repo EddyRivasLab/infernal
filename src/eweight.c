@@ -611,9 +611,9 @@ cm_MeanMatchRelativeEntropyHMM(const CM_t *cm)
  *            total sequence weight when model building.
  */
 double
-cp9_MeanMatchInfo(const CM_t *cm)
+cp9_MeanMatchInfo(const CP9_t *cp9)
 {
-  return esl_vec_FEntropy(cm->null, cm->abc->K) - cp9_MeanMatchEntropy(cm);
+  return esl_vec_FEntropy(cp9->null, cp9->abc->K) - cp9_MeanMatchEntropy(cp9);
 }
 
 /* Function:  cp9_MeanMatchEntropy()
@@ -630,14 +630,14 @@ cp9_MeanMatchInfo(const CM_t *cm)
  *            from match state $k$.
  */
 double
-cp9_MeanMatchEntropy(const CM_t *cm)
+cp9_MeanMatchEntropy(const CP9_t *cp9)
 {
   int    k;
   double H = 0.;
 
-  for (k = 1; k <= cm->cp9->M; k++)
-    H += esl_vec_FEntropy(cm->cp9->mat[k], cm->abc->K);
-  H /= (double) cm->cp9->M;
+  for (k = 1; k <= cp9->M; k++)
+    H += esl_vec_FEntropy(cp9->mat[k], cp9->abc->K);
+  H /= (double) cp9->M;
   return H;
 }
 
@@ -657,16 +657,15 @@ cp9_MeanMatchEntropy(const CM_t *cm)
  *            background emission probability for $x$. 
  */
 double
-cp9_MeanMatchRelativeEntropy(const CM_t *cm)
+cp9_MeanMatchRelativeEntropy(const CP9_t *cp9)
 {
   int    k;
   double KL = 0.;
 
-  for (k = 1; k <= cm->cp9->M; k++) { 
-    KL += esl_vec_FRelEntropy(cm->cp9->mat[k], cm->null, cm->abc->K);
-    /*printf("cp9 cm nd: %4d (%4s) k: %5d KL: %10.5f (added: %10.5f)\n", cm->cp9map->pos2nd[k], Nodetype(cm->ndtype[cm->cp9map->pos2nd[k]]), k, KL, esl_vec_FRelEntropy(cm->cp9->mat[k], cm->null, cm->abc->K));*/
+  for (k = 1; k <= cp9->M; k++) { 
+    KL += esl_vec_FRelEntropy(cp9->mat[k], cp9->null, cp9->abc->K);
   }
-  KL /= (double) cm->cp9->M;
+  KL /= (double) cp9->M;
   return KL;
 }
 

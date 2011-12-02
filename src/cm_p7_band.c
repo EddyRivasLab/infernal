@@ -935,7 +935,7 @@ DumpP7Bands(FILE *fp, int *i2k, int *kmin, int *kmax, int L)
  *           See additional notes in cp9_Forward() "Purpose" section.
  *
  * Args:
- *           cm        - the covariance model, includes cm->cp9: a CP9 HMM
+ *           cp9       - the CP9 HMM
  *           errbuf    - char buffer for error messages
  *           mx        - the matrix, expanded to correct size (if nec), and filled here
  *           dsq       - sequence in digitized form
@@ -950,33 +950,32 @@ DumpP7Bands(FILE *fp, int *i2k, int *kmin, int *kmax, int L)
 #define INBAND(i,k) ((k >= kmin[i]) && (k <= kmax[i]))
 
 int
-cp9_ForwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc)
+cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc)
 {
   int          status;
   int          i;           /* j-W: position in the subsequence                             */
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
-  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
-  int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
-  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
-  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cm->cp9->M]          */
+  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cp9->M]          */
+  int        **imx;         /* DP matrix for insert state scores [0..1][0..cp9->M]          */
+  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cp9->M]          */
+  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cp9->M]              */
   int         *erow;        /* end score for each position [0..1]                           */
-  int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
+  int          M;           /* cp9->M, query length, number of consensus nodes of model */
 
   int          kp, kn, kx, kpcur, kpprv;
 
   /* Contract checks */
-  if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, cm->cp9 is NULL.\n");
+  if(cp9 == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, cp9 is NULL.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, dsq is NULL.");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, mx is NULL.\n");
-  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, mx->M != cm->clen.\n");
-  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, cm->clen != cm->cp9->M.\n");
+  if(mx->M != cp9->M)                 ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, mx->M != cp9->M.\n");
   if(kmin == NULL || kmax == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, kmin and/or kmax == NULL.\n");
-  if(cm->cp9->flags & CPLAN9_EL)       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, cp9 EL flag up.\n");
+  if(cp9->flags & CPLAN9_EL)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, cp9 EL flag up.\n");
     
-  M = cm->cp9->M;
+  M = cp9->M;
 
-  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
+  int const *tsc = cp9->otsc; /* ptr to efficiently ordered transition scores           */
 
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
@@ -1023,8 +1022,8 @@ cp9_ForwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmi
     { 
       prv = i-1;
       cur = i;
-      int const *isc = cm->cp9->isc[dsq[i]];
-      int const *msc = cm->cp9->msc[dsq[i]];
+      int const *isc = cp9->isc[dsq[i]];
+      int const *msc = cp9->msc[dsq[i]];
       int endsc     = -INFTY;
       int sc;
 
@@ -1164,12 +1163,12 @@ cp9_ForwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmi
  *           This is the original version written to potentially handle EL
  *           states, but I think omitting them when they're off is significantly
  *           more efficient, so I wrote a competing function called
- *           cp9_ForwardP7B(). Not the included EL dp steps HAVE NOT BEEN
+ *           cp9_ForwardP7B(). Note the included EL dp steps HAVE NOT BEEN
  *           TESTED YET! I just left them here as a starting point if I 
  *           ever want to implement them.
  *
  * Args:
- *           cm        - the covariance model, includes cm->cp9: a CP9 HMM
+ *           cp9       - the CP9 HMM
  *           errbuf    - char buffer for error messages
  *           mx        - the matrix, expanded to correct size (if nec), and filled here
  *           dsq       - sequence in digitized form
@@ -1183,33 +1182,32 @@ cp9_ForwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmi
  */
 
 int
-cp9_ForwardP7B_OLD_WITH_EL(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc)
+cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc)
 {
   int          status;
   int          i;           /* j-W: position in the subsequence                             */
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
-  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
-  int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
-  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
-  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cm->cp9->M]          */
+  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cp9->M]      */
+  int        **imx;         /* DP matrix for insert state scores [0..1][0..cp9->M]      */
+  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cp9->M]      */
+  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cp9->M]          */
   int         *erow;        /* end score for each position [0..1]                           */
   int          c;           /* counter for EL states                                        */
-  int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
+  int          M;           /* cp9->M, query length, number of consensus nodes of model */
 
   int          kn, kx, kpcur, kpprv, kpprv_el;
 
   /* Contract checks */
-  if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B_OLD_WITH_EL, cm->cp9 is NULL.\n");
+  if(cp9 == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B_OLD_WITH_EL, cm->cp9 is NULL.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B_OLD_WITH_EL, dsq is NULL.");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B_OLD_WITH_EL, mx is NULL.\n");
-  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B_OLD_WITH_EL, mx->M != cm->clen.\n");
-  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B_OLD_WITH_EL, cm->clen != cm->cp9->M.\n");
+  if(mx->M != cp9->M)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B_OLD_WITH_EL, mx->M != cp9->M.\n");
   if(kmin == NULL || kmax == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B_OLD_WITH_EL, kmin and/or kmax == NULL.\n");
     
-  M = cm->cp9->M;
+  M = cp9->M;
 
-  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
+  int const *tsc = cp9->otsc; /* ptr to efficiently ordered transition scores           */
 
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
@@ -1254,10 +1252,10 @@ cp9_ForwardP7B_OLD_WITH_EL(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int
     { 
       prv = i-1;
       cur = i;
-      int const *isc = cm->cp9->isc[dsq[i]];
-      int const *msc = cm->cp9->msc[dsq[i]];
+      int const *isc = cp9->isc[dsq[i]];
+      int const *msc = cp9->msc[dsq[i]];
       int endsc     = -INFTY;
-      int el_selfsc = cm->cp9->el_selfsc;
+      int el_selfsc = cp9->el_selfsc;
       int sc;
 
       if(kmin[i] == 0) { 
@@ -1303,9 +1301,9 @@ cp9_ForwardP7B_OLD_WITH_EL(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int
 	}
 
 	/* check possibility we came from an EL, if they're valid */
-	for(c = 0; c < cm->cp9->el_from_ct[k]; c++) { /* el_from_ct[k] is >= 0 */
-	  if(INBAND(i-1, cm->cp9->el_from_idx[k][c])) { 
-	    kpprv_el = cm->cp9->el_from_idx[k][c] - kmin[(i-1)];
+	for(c = 0; c < cp9->el_from_ct[k]; c++) { /* el_from_ct[k] is >= 0 */
+	  if(INBAND(i-1, cp9->el_from_idx[k][c])) { 
+	    kpprv_el = cp9->el_from_idx[k][c] - kmin[(i-1)];
 	    sc = ILogsum(sc, elmx[i-1][kpprv_el]);
 	  }
 	} /* transition penalty to EL incurred when EL was entered */
@@ -1322,7 +1320,7 @@ cp9_ForwardP7B_OLD_WITH_EL(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int
 
 	/* el state */
 	sc = -INFTY;
-	if((cm->cp9->flags & CPLAN9_EL) && cm->cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
+	if((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
 								  HMM nodes that map to right half of a MATP_MP) */
 	  {
 	    if(mmx[i][kpcur] != -INFTY) { 
@@ -1378,9 +1376,9 @@ cp9_ForwardP7B_OLD_WITH_EL(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int
       if(INBAND(i, M)) { 
 	endsc = ILogsum(ILogsum(endsc, dmx[i][M-kmin[i]] + CP9TSC(cp9O_DM,M)), /* transition from D_M -> end */
 			imx[i][M-kmin[i]] + CP9TSC(cp9O_IM,M)); /* transition from I_M -> end */
-	for(c = 0; c < cm->cp9->el_from_ct[M+1]; c++) { /* el_from_ct[k] is >= 0 */
-	  if(INBAND(i, cm->cp9->el_from_idx[M+1][c])) { 
-	    kpprv_el = cm->cp9->el_from_idx[M+1][c] - kmin[i];
+	for(c = 0; c < cp9->el_from_ct[M+1]; c++) { /* el_from_ct[k] is >= 0 */
+	  if(INBAND(i, cp9->el_from_idx[M+1][c])) { 
+	    kpprv_el = cp9->el_from_idx[M+1][c] - kmin[i];
 	    endsc = ILogsum(endsc, elmx[i][kpprv_el]);
 	  }
 	}
@@ -1425,7 +1423,7 @@ cp9_ForwardP7B_OLD_WITH_EL(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int
  *           See additional notes in cp9_Backward() "Purpose" section.
  *
  * Args:     
- *           cm        - the covariance model, includes cm->cp9: a CP9 HMM
+ *           cp9       - the CP9 HMM
  *           errbuf    - char buffer for error messages
  *           mx        - the matrix, expanded to correct size (if nec), and filled here
  *           dsq       - sequence in digitized form
@@ -1438,34 +1436,33 @@ cp9_ForwardP7B_OLD_WITH_EL(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc)
+cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc)
 {
   int          status;
   int          i;           /*     j-W: position in the subsequence                         */
   int          k;           /* CP9 HMM node position                                        */
-  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
-  int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
-  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
-  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cm->cp9->M]          */
+  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cp9->M]      */
+  int        **imx;         /* DP matrix for insert state scores [0..1][0..cp9->M]      */
+  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cp9->M]      */
+  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cp9->M]          */
   int         *erow;        /* end score for each position [0..1]                           */
   int          c;           /* counter for EL states */
-  int          M;           /* cm->cp9->M */
+  int          M;           /* cp9->M */
   int          kpcur, kpprv, kpcur_el;
   int          kprv, kprvn, kprvx;
   int          kn, kx;
   float        fsc;
 
   /* Contract checks */
-  if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, cm->cp9 is NULL.\n");
+  if(cp9 == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, cp9 is NULL.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, dsq is NULL.");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, mx is NULL.\n");
-  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, mx->M != cm->clen.\n");
-  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, cm->clen != cm->cp9->M.\n");
-  if(cm->cp9->flags & CPLAN9_EL)       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, cp9 EL flag up!\n");
+  if(mx->M != cp9->M)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, mx->M != cm->clen.\n");
+  if(cp9->flags & CPLAN9_EL)       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, cp9 EL flag up!\n");
     
-  M = cm->cp9->M;
+  M = cp9->M;
 
-  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
+  int const *tsc = cp9->otsc; /* ptr to efficiently ordered transition scores           */
 
   /* Rearrange DP matrix for this seq */
   if((status = GrowCP9Matrix(mx, errbuf, L, M, kmin, kmax, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
@@ -1481,17 +1478,17 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
   /* init to -INFTY */
   kpcur = 0;
   for (k = kmin[i]; k <= kmax[i]; k++, kpcur++) elmx[i][kpcur] = -INFTY;
-  if(cm->cp9->flags & CPLAN9_EL)
+  if(cp9->flags & CPLAN9_EL)
     {
-      for(c = 0; c < cm->cp9->el_from_ct[cm->cp9->M+1]; c++) /* el_from_ct[cm->cp9->M+1] holds # ELs that can go to END */
-	if(INBAND(i, cm->cp9->el_from_idx[M+1][c])) { 
-	  kpcur_el = cm->cp9->el_from_idx[M+1][c] - kmin[i];
+      for(c = 0; c < cp9->el_from_ct[cp9->M+1]; c++) /* el_from_ct[cp9->M+1] holds # ELs that can go to END */
+	if(INBAND(i, cp9->el_from_idx[M+1][c])) { 
+	  kpcur_el = cp9->el_from_idx[M+1][c] - kmin[i];
 	  elmx[i][kpcur_el] = 0.;
 	}
     }
   /*******************************************************************/
 
-  /* elmx[cur][cm->cp9->M] is either 0 (if EL_M exists (it would nec be in el_from_idx[cm->cp9->M+1] array if it does, so
+  /* elmx[cur][cp9->M] is either 0 (if EL_M exists (it would nec be in el_from_idx[cp9->M+1] array if it does, so
    * it would be filled with 0 in above loop), or -INFTY if it doesn't exist. We don't add possibility of EL_M -> EL_M
    * self loop b/c it's impossible to do that without emitting, and we've already seen our last res emitted. 
    * either way we don't have to modify it */
@@ -1502,9 +1499,9 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
     mmx[i][kpcur]  = 0. + 
       ILogsum(elmx[i][kpcur] + CP9TSC(cp9O_MEL, M),/* M_M<-EL_M<-E, with 0 self loops in EL_M */
 	      CP9TSC(cp9O_ME,M));                      /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
-    mmx[i][kpcur] += cm->cp9->msc[dsq[i]][M];  /* ... + emitted match symbol */
+    mmx[i][kpcur] += cp9->msc[dsq[i]][M];  /* ... + emitted match symbol */
     imx[i][kpcur]  = 0. + CP9TSC(cp9O_IM,M);     /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
-    imx[i][kpcur] += cm->cp9->isc[dsq[i]][M];  /* ... + emitted insert symbol */
+    imx[i][kpcur] += cp9->isc[dsq[i]][M];  /* ... + emitted insert symbol */
     dmx[i][kpcur]  = CP9TSC(cp9O_DM,M);          /* D_M<-E */
     kx = M-1;
     kpcur--;
@@ -1523,10 +1520,10 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
       if(INBAND(i, k+1)) { 
 	mmx[i][kpcur]  = ILogsum(mmx[i][kpcur], dmx[i][kpcur+1] + CP9TSC(cp9O_MD,k));
       }
-      if(cm->cp9->flags & CPLAN9_EL)
+      if(cp9->flags & CPLAN9_EL)
 	mmx[i][kpcur]  = ILogsum(mmx[i][kpcur], elmx[i][kpcur] + CP9TSC(cp9O_MEL,k));
       
-      mmx[i][kpcur] += cm->cp9->msc[dsq[i]][k];
+      mmx[i][kpcur] += cp9->msc[dsq[i]][k];
       
       /*******************************************************************
        * No need to look at EL_k->M_M b/c elmx[i] with i == L means last emitted residue was L+1 
@@ -1536,7 +1533,7 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
 
       if(INBAND(i, k+1)) { 
 	imx[i][kpcur]  = dmx[i][kpcur+1] + CP9TSC(cp9O_ID,k);
-	imx[i][kpcur] += cm->cp9->isc[dsq[i]][k];
+	imx[i][kpcur] += cp9->isc[dsq[i]][k];
 
 	dmx[i][kpcur]  = dmx[i][kpcur+1] + CP9TSC(cp9O_DD,k);
       }
@@ -1556,7 +1553,7 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
     mmx[i][0]  = dmx[i][1] + CP9TSC(cp9O_MD,0); /* M_0(B)->D_1, no seq emitted, all deletes */
     /* above line is diff from CPBackwardOLD() which has mmx[i][0] = -INFTY; */
     imx[i][0]  = dmx[i][1] + CP9TSC(cp9O_ID,0);
-    imx[i][0] += cm->cp9->isc[dsq[i]][0];
+    imx[i][0] += cp9->isc[dsq[i]][0];
     
     dmx[i][0]   = -INFTY; /*D_0 doesn't exist*/
     elmx[i][0]  = -INFTY; /*EL_0 doesn't exist*/
@@ -1578,16 +1575,16 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
        */
       if(INBAND(i, M)) { 
 	kpcur = M-kmin[i];
-	if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[M]))
-	  elmx[i][kpcur] = elmx[i][kpcur] + cm->cp9->el_selfsc;
+	if((cp9->flags & CPLAN9_EL) && (cp9->has_el[M]))
+	  elmx[i][kpcur] = elmx[i][kpcur] + cp9->el_selfsc;
 
 	if(INBAND(i+1, M)) { 
 	  kpprv = M-kmin[i+1];
 	  mmx[i][kpcur]  = imx[i+1][kpprv] + CP9TSC(cp9O_MI,M);
-	  mmx[i][kpcur] += cm->cp9->msc[dsq[i]][M];
+	  mmx[i][kpcur] += cp9->msc[dsq[i]][M];
 
 	  imx[i][kpcur]  = imx[i+1][kpprv] + CP9TSC(cp9O_II,M);
-	  imx[i][kpcur] += cm->cp9->isc[dsq[i]][M];
+	  imx[i][kpcur] += cp9->isc[dsq[i]][M];
       
 	  dmx[i][M]  = imx[i+1][kpprv] + CP9TSC(cp9O_DI,M); 
 	}
@@ -1595,18 +1592,18 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
 	  mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = -INFTY;
 	}
 
-	if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[M]))
+	if((cp9->flags & CPLAN9_EL) && (cp9->has_el[M]))
 	  mmx[i][kpcur] = ILogsum(mmx[i][kpcur], elmx[i][kpcur] + CP9TSC(cp9O_MEL,M));
 	 	 
 	/*******************************************************************
 	 * 1b Handle EL, looking at EL_k->M_M for all valid k.
 	 * EL_k->M_M transition, which has no transition penalty */
 	if(INBAND(i+1, M)) { 
-	  if(cm->cp9->flags & CPLAN9_EL)
+	  if(cp9->flags & CPLAN9_EL)
 	    {
-	      for(c = 0; c < cm->cp9->el_from_ct[M]; c++) /* el_from_ct[M] holds # ELs that can go to M_M */
-		if(INBAND(i, cm->cp9->el_from_idx[M][c])) { 
-		  kpcur_el = cm->cp9->el_from_idx[M][c] - kmin[i];
+	      for(c = 0; c < cp9->el_from_ct[M]; c++) /* el_from_ct[M] holds # ELs that can go to M_M */
+		if(INBAND(i, cp9->el_from_idx[M][c])) { 
+		  kpcur_el = cp9->el_from_idx[M][c] - kmin[i];
 		  elmx[i][kpcur_el] = ILogsum(elmx[i][kpcur_el], mmx[i+1][kpprv]);
 		}
 	    }
@@ -1630,10 +1627,10 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
 	   * we're going backwards so we have to work out of order
 	   * we could get around this by storing the nodes each EL goes TO
 	   * in an el_to_ct[] vector. */
-	  if(cm->cp9->flags & CPLAN9_EL) {
-	    for(c = 0; c < cm->cp9->el_from_ct[k]; c++) { /* el_from_ct[k] holds # ELs that can go to M_k */
-	      if(INBAND(i, cm->cp9->el_from_idx[k][c])) { 
-		kpcur_el = cm->cp9->el_from_idx[k][c] - kmin[i];
+	  if(cp9->flags & CPLAN9_EL) {
+	    for(c = 0; c < cp9->el_from_ct[k]; c++) { /* el_from_ct[k] holds # ELs that can go to M_k */
+	      if(INBAND(i, cp9->el_from_idx[k][c])) { 
+		kpcur_el = cp9->el_from_idx[k][c] - kmin[i];
 		elmx[i][kpcur_el] = ILogsum(elmx[i][kpcur_el], mmx[i+1][kpprv]);
 		/* EL<-M, penalty incurred when we enter EL (i.e. leave going backwards) */
 	      }
@@ -1644,8 +1641,8 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
 	   * elmx[i][k] will have been filled by block above for ks > current k,
 	   * no M_k -> EL_k' with k' > k */
 	  if(INBAND(i+1, k)) { 
-	    if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
-	      elmx[i][k] = ILogsum(elmx[i][kpcur], elmx[i+1][kpprv] + cm->cp9->el_selfsc);
+	    if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
+	      elmx[i][k] = ILogsum(elmx[i][kpcur], elmx[i+1][kpprv] + cp9->el_selfsc);
 	  }
 	  mmx[i][kpcur] = mmx[i+1][kpprv+1] + CP9TSC(cp9O_MM,k);
 	  imx[i][kpcur] = mmx[i+1][kpprv+1] + CP9TSC(cp9O_IM,k);
@@ -1681,15 +1678,15 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
 	  dmx[i][kpcur] = ILogsum(dmx[i][kpcur], dmx[i][kpcur+1] + CP9TSC(cp9O_DD,k));
 
 	  /* now add in the emission score */
-	  mmx[i][kpcur] += cm->cp9->msc[dsq[i]][k];
-	  imx[i][kpcur] += cm->cp9->isc[dsq[i]][k];
+	  mmx[i][kpcur] += cp9->msc[dsq[i]][k];
+	  imx[i][kpcur] += cp9->isc[dsq[i]][k];
 	}
       /* there's one valid cell that we didn't consider in above loop to add emission score
        * b/c D_k <- D_k+1 (so k+1 is out of bounds for Delete) */
       for(k = kx+1; k <= kmax[i]; k++) { 
 	kpcur = k - kmin[i]; /* unnec, loop above ends with this */
-	mmx[i][kpcur] += cm->cp9->msc[dsq[i]][k];
-	imx[i][kpcur] += cm->cp9->isc[dsq[i]][k];
+	mmx[i][kpcur] += cp9->msc[dsq[i]][k];
+	imx[i][kpcur] += cp9->isc[dsq[i]][k];
       }
       /*********************************************************/
       kpcur = kmax[i] - kmin[i];
@@ -1953,6 +1950,9 @@ cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int
  *           a CP9Bands_t structure, calculate the CP9 HMM bands and store them
  *           in the CP9Bands_t structure.
  *           
+ *           Note: this function was never updated to handle truncated 
+ *           alignment.
+ *
  * Args:     cm          - the covariance model
  *           errbuf      - char buffer for reporting errors
  *           fmx         - CP9 dp matrix for Forward()
@@ -1974,13 +1974,13 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   int   use_sums;     /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
   float sc;
   int do_old_hmm2ij;
+  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (cm->cp9loc or cm->cp9glb) we'll use for deriving bands */
 
   ESL_STOPWATCH *watch;
   watch = esl_stopwatch_Create();
   char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
 
   /* Contract checks */
-  if(cm->cp9 == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, but cm->cp9map is NULL.\n");
   if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, dsq is NULL.");
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
@@ -1990,6 +1990,10 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   use_sums = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
   do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
 
+  /* Determine which cp9 HMM to use: If the CM has local begins on, use cm->cp9loc, else use cm->cp9glb */
+  cp9 = (cm->flags & CMH_LOCAL_BEGIN) ? cm->cp9loc : cm->cp9glb;
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, but relevant cp9 is NULL.\n");
+
   /* Step 1: Get HMM Forward/Backward DP matrices.
    * Step 2: F/B       -> HMM bands.
    * Step 3: HMM bands -> CM bands.
@@ -1997,14 +2001,14 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
 
   /* Step 1: Get HMM Forward/Backward DP matrices. */
   esl_stopwatch_Start(watch);  
-  if((status = cp9_ForwardP7B (cm, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
+  if((status = cp9_ForwardP7B (cp9, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
   esl_stopwatch_Stop(watch); 
   FormatTimeString(time_buf, watch->user, TRUE);
 #if PRINTNOW
   fprintf(stdout, "Forwp7B         %11s\n", time_buf);
 #endif
   esl_stopwatch_Start(watch);  
-  if((status = cp9_BackwardP7B(cm, errbuf, bmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
+  if((status = cp9_BackwardP7B(cp9, errbuf, bmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
   esl_stopwatch_Stop(watch); 
   FormatTimeString(time_buf, watch->user, TRUE);
 #if PRINTNOW
@@ -2012,7 +2016,7 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
 #endif
 
   if(cm->align_opts & CM_ALIGN_CHECKFB) { 
-    if((status = cp9_CheckFBP7B(fmx, bmx, cm->cp9, errbuf, sc, 1, L, dsq, kmin, kmax)) != eslOK) return status;
+    if((status = cp9_CheckFBP7B(fmx, bmx, cp9, errbuf, sc, 1, L, dsq, kmin, kmax)) != eslOK) return status;
     printf("Forward/Backward matrices checked.\n");
   }
 
@@ -2023,7 +2027,7 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   }
   else {
     esl_stopwatch_Start(watch);  
-    if((status = cp9_FB2HMMBandsP7B(cm->cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, L, cp9b->hmm_M,
+    if((status = cp9_FB2HMMBandsP7B(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, L, cp9b->hmm_M,
 				    (1.-cm->tau), do_old_hmm2ij, kmin, kmax, debug_level)) != eslOK) return status;
     esl_stopwatch_Stop(watch); 
     FormatTimeString(time_buf, watch->user, TRUE);
@@ -2039,7 +2043,7 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   }
   else {
     esl_stopwatch_Start(watch);  
-    if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, 1, L, FALSE, FALSE, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, 1, L, FALSE, FALSE, debug_level)) != eslOK) return status;
     esl_stopwatch_Stop(watch); 
     FormatTimeString(time_buf, watch->user, TRUE);
 #if PRINTNOW
@@ -2084,6 +2088,10 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
  *           run HMM Forward and Backward algorithms, and return a CP9 posterior
  *           matrix.
  *           
+ *           Note: this function was never updated to handle 
+ *           truncated alignment (b/c it's currently not hooked up
+ *           to any of the Infernal applications).
+ *
  * Args:     cm           - the covariance model
  *           errbuf       - char buffer for error messages
  *           fmx          - CP9 dp matrix for Forward()
@@ -2102,6 +2110,7 @@ cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *
 {
   int status;
   float sc;
+  CP9_t *cp9 = NULL;
 
   /* TEMP */
   ESL_STOPWATCH *watch;
@@ -2111,33 +2120,36 @@ cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *
 
   /* Contract checks */
   if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors(), dsq is NULL.");
-  if(cm->cp9 == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9map is NULL.\n");
   if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
     ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if((cm->search_opts & CM_SEARCH_HMMALNBANDS) && (! (cm->search_opts & CM_SEARCH_HBANDED))) 
     ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_SEARCH_HMMALNBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
 
+  /* determine which cp9 HMM to use, if CM is has local begins use cp9 (its local too) else use cp9glb (its global) */
+  cp9 = (cm->flags & CMH_LOCAL_BEGIN) ? cm->cp9loc : cm->cp9glb;
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2PosteriorsP7B, but relevant cp9 is NULL.\n");
+
   /* Step 1: Get HMM posteriors.*/
   esl_stopwatch_Start(watch);  
-  if((status = cp9_ForwardP7B (cm, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
+  if((status = cp9_ForwardP7B (cp9, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
   esl_stopwatch_Stop(watch); 
   FormatTimeString(time_buf, watch->user, TRUE);
   if(debug_level > 0) printf("CP9P7B Forward  score : %.4f\n", sc);
 
   esl_stopwatch_Start(watch);  
-  if((status = cp9_BackwardP7B(cm, errbuf, bmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
+  if((status = cp9_BackwardP7B(cp9, errbuf, bmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
   esl_stopwatch_Stop(watch); 
   FormatTimeString(time_buf, watch->user, TRUE);
   if(debug_level > 0) printf("CP9 Backward  score : %.4f\n", sc);
 
   if(cm->align_opts & CM_ALIGN_CHECKFB) {
-    if((status = cp9_CheckFBP7B(fmx, bmx, cm->cp9, errbuf, sc, 1, L, dsq, kmin, kmax)) != eslOK) return status;
+    if((status = cp9_CheckFBP7B(fmx, bmx, cp9, errbuf, sc, 1, L, dsq, kmin, kmax)) != eslOK) return status;
     printf("Forward/Backward matrices checked.\n");
   }
 
   /* Get posteriors */
-  if((status = cp9_PosteriorP7B(dsq, errbuf, L, cm->cp9, fmx, bmx, pmx, kmin, kmax)) != eslOK) return status;
+  if((status = cp9_PosteriorP7B(dsq, errbuf, L, cp9, fmx, bmx, pmx, kmin, kmax)) != eslOK) return status;
 
   esl_stopwatch_Destroy(watch);
   return eslOK;

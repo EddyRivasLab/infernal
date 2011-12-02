@@ -117,6 +117,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   int         wtrunc_R;          /* if R or T mode: num chars for displaying local begin at aln start */
   int         ntrunc_L;          /* if L or T mode: num positions for truncated begin at end of aln */
   int         wtrunc_L;          /* if L or T mode: num chars for displaying local begin at aln end */
+  int         vroot;             /* internal entry state in truncated alignment, ROOT_S -> vroot */
   int         numwidth;		 /* number of chars to leave for displaying width numbers */
   int         is_left, is_right;
 
@@ -207,9 +208,10 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
    */
   ntrunc_R = wtrunc_R = 0;
   ntrunc_L = wtrunc_L = 0;
+  vroot    = tr->state[1]; /* vroot = root of parsetree (tr->state[0] is always ROOT_S, then ROOT_S->vroot */
   if (tr->mode[0] == TRMODE_R || tr->mode[0] == TRMODE_T) { 
     /* We'll put a truncated begin at the beginning of the alignment. */
-    cfrom_R  = cons->lpos[cm->ndidx[tr->state[0]]] + 1;
+    cfrom_R  = cons->lpos[cm->ndidx[vroot]] + 1;
     ntrunc_R = cfrom - cfrom_R;
     ninset   = ntrunc_R;
     wtrunc_R = 0; do { wtrunc_R++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
@@ -218,7 +220,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   }
   if (tr->mode[0] == TRMODE_L || tr->mode[0] == TRMODE_T) { 
     /* We'll put a truncated begin at end of the alignment. */
-    cto_L    = cons->rpos[cm->ndidx[tr->state[0]]] + 1;
+    cto_L    = cons->rpos[cm->ndidx[vroot]] + 1;
     ntrunc_L = cto_L - cto;
     ninset   = ntrunc_L;
     wtrunc_L = 0; do { wtrunc_L++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */

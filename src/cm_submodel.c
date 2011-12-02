@@ -1967,7 +1967,9 @@ debug_print_cm_params(FILE *fp, CM_t *cm)
     {
       fprintf(fp, "v:%4d:%4d %4s %2s\n", v, cm->ndidx[v], nodetypes[(int) cm->ndtype[cm->ndidx[v]]], sttypes[(int) cm->sttype[v]]);
       if(cm->nodemap[cm->ndidx[v]] == v)
-	fprintf(fp, "beg: %0.3f (%.3f %10d)| end %0.3f (%.3f %10d)\n", cm->begin[v], cm->beginsc[v], cm->ibeginsc[v],
+	fprintf(fp, "beg: %0.3f (%.3f %10d)| trbeg: %0.3f (%.3f %10d) end %0.3f (%.3f %10d)\n", 
+		cm->begin[v], cm->beginsc[v], cm->ibeginsc[v],
+		cm->trbegin[v], cm->trbeginsc[v], cm->itrbeginsc[v],
 		cm->end[v], cm->endsc[v], cm->iendsc[v]);
       if(cm->sttype[v] == MP_st)
 	{

@@ -63,6 +63,7 @@ CreateParsetree(int size)
   ESL_ALLOC(new->nxtr,  sizeof(int) * new->nalloc);
   ESL_ALLOC(new->prv,   sizeof(int) * new->nalloc);
   new->n = 0;
+  new->is_std = TRUE;
   return new;
  ERROR:
   cm_Fail("ERROR allocated parsetree.\n");
@@ -309,8 +310,14 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
     if (cm->sttype[v] != E_st && cm->sttype[v] != B_st && tr->nxtl[tidx] != -1) /* no scores in B,E or if nxtl is -1 */
       {
 	y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
-	if (v == 0 && (cm->flags & CMH_LOCAL_BEGIN))
-	  sc += cm->beginsc[y];
+	if(v == 0) { 
+	  if(cm->flags & CMH_LOCAL_BEGIN)
+	    sc += (tr->is_std) ? cm->beginsc[y] : cm->trbeginsc[y];
+	  else if(tr->mode[tidx] == TRMODE_T && cm->sttype[y] == B_st)
+	    sc += 0.; /* special case in *glocal* truncated alignment, 'local' begins into B states are free to allow for T alignment */                          
+	  else
+	    sc += cm->tsc[v][y - cm->cfirst[v]]; /* non-local transition out of ROOT_S */
+	}
 	else if (y == cm->M) /* CMH_LOCAL_END is presumably set, else this wouldn't happen */
 	  sc += cm->endsc[v] + (cm->el_selfsc * (tr->emitr[tidx] - tr->emitl[tidx] + 1 - StateDelta(cm->sttype[v])));
 	else 		/* y - cm->first[v] gives us the offset in the transition vector */
@@ -523,8 +530,14 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int 
       tsc = 0.;
       if (v != cm->M && cm->sttype[v] != B_st && cm->sttype[v] != E_st && tr->nxtl[x] != -1) {
 	y = tr->state[tr->nxtl[x]];
-	if (v == 0 && (cm->flags & CMH_LOCAL_BEGIN))
-	  tsc = cm->beginsc[y];
+	if(v == 0) { 
+	  if(cm->flags & CMH_LOCAL_BEGIN)
+	    tsc = (tr->is_std) ? cm->beginsc[y] : cm->trbeginsc[y];
+	  else if(tr->mode[x] == TRMODE_T && cm->sttype[y] == B_st)
+	    tsc = 0.; /* special case in *glocal* truncated alignment, 'local' begins into B states are free to allow for T alignment */                          
+	  else
+	    tsc = cm->tsc[v][y - cm->cfirst[v]]; /* non-local transition out of ROOT_S */
+	}
 	else if (y == cm->M) /* CMH_LOCAL_END is presumably set, else this wouldn't happen */
 	  tsc = cm->endsc[v] + (cm->el_selfsc * (tr->emitr[x] - tr->emitl[x] + 1 - StateDelta(cm->sttype[v])));
 	else 		/* y - cm->first[v] gives us the offset in the transition vector */
@@ -1460,7 +1473,7 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_f
  * Returns: eslOK on success
  *
  * Args:    
- * CM_t  *cm                - the CM, must have a valid cm->cp9
+ * CM_t  *cm                - the CM, with valid cp9loc, and cp9glb if CM has local begins off
  * Parsetree_t *cm_tr       - valid parsetree to convert
  * cp9trace_s *ret_cp9_tr   - the CP9 trace to return, alloc'ed here
  */
@@ -1468,8 +1481,8 @@ int
 Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr)
 {
   /* Check the contract */
-  if(cm->cp9 == NULL || (!(cm->flags & CMH_CP9)))
-    cm_Fail("In Parsetree2CP9trace, cm->cp9 is not valid.\n");
+  if(cm->cp9loc == NULL || (!(cm->flags & CMH_CP9LOC)))
+    cm_Fail("In Parsetree2CP9trace, cm->cp9loc is not valid.\n");
   if(cm->cp9map == NULL)
     cm_Fail("In Parsetree2CP9trace, cm->cp9map is NULL.\n");
 
@@ -1482,15 +1495,23 @@ Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr)
   int  k, ks;                    /* HMM nodes and state indices */
   int  i;                        /* generic counter */
   int  cp9_tr_size;              /* number of nodes we'll need for cp9_tr */
-  int  lmost_k = cm->cp9->M + 1; /* left most HMM node visited in parse (often 1) */
-  int  rmost_k = 0;              /* right most HMM node visited in parse (often M) */
+  int  lmost_k;                  /* left most HMM node visited in parse (often 1) */
+  int  rmost_k;                  /* right most HMM node visited in parse (often M) */
   int  ip;
   int  ins_ct = 0;               /* total number of inserts */
+  CP9_t *cp9 = NULL;
+
+  cp9 = (cm->flags & CMH_LOCAL_BEGIN) ? cm->cp9loc : cm->cp9glb;
+  if(cp9 == NULL) cm_Fail("In Parsetree2CP9trace, relevant cp9 does not exist\n");
+
+  lmost_k = cp9->M + 1; 
+  rmost_k = 0;              
+
   ESL_ALLOC(ks_ct,           sizeof(int *) * 3);
   for(ks = 0; ks < 3; ks++)
     {
-      ESL_ALLOC(ks_ct[ks], sizeof(int) * (cm->cp9->M+1));
-      esl_vec_ISet(ks_ct[ks], cm->cp9->M+1, 0);
+      ESL_ALLOC(ks_ct[ks], sizeof(int) * (cp9->M+1));
+      esl_vec_ISet(ks_ct[ks], cp9->M+1, 0);
     }
 
   /* Traverse parsetree, keeping track of implied HMM states used by each HMM node. */
@@ -1514,13 +1535,13 @@ Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr)
   /* Determine the first (leftmost) node used and last (rightmost) node used, 
    * anything else was skipped by a smith-waterman local begin or end. */
   lmost_k = 1; 
-  rmost_k = cm->cp9->M; 
-  if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN)
+  rmost_k = cp9->M; 
+  if(cp9->flags & CPLAN9_LOCAL_BEGIN)
     {
       while((ks_ct[HMMMATCH][lmost_k] + ks_ct[HMMINSERT][lmost_k] + ks_ct[HMMDELETE][lmost_k]) == 0)
 	lmost_k++;
     }
-  if(cm->cp9->flags & CPLAN9_LOCAL_END)
+  if(cp9->flags & CPLAN9_LOCAL_END)
     {
       while((ks_ct[HMMMATCH][rmost_k] + ks_ct[HMMINSERT][rmost_k] + ks_ct[HMMDELETE][rmost_k]) == 0)
 	rmost_k--;

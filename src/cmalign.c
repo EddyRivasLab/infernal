@@ -1217,11 +1217,12 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, int do_output_to_tmp, ch
 
   /* if nec, output the traces */
   if(cfg->tracefp != NULL) { 
+    CP9_t *cp9 = esl_opt_GetBoolean(go, "-g") ? cm->cp9glb : cm->cp9loc;
     for (i = 0; i < seqs_to_aln->nseq; i++) { 
       fprintf(cfg->tracefp, "> %s\n", seqs_to_aln->sq[i]->name);
       if(esl_opt_GetBoolean(go,"--viterbi")) { 
-	fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
-	CP9PrintTrace(cfg->tracefp, seqs_to_aln->cp9_tr[i], cm->cp9, seqs_to_aln->sq[i]->dsq);
+	fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
+	CP9PrintTrace(cfg->tracefp, seqs_to_aln->cp9_tr[i], cp9, seqs_to_aln->sq[i]->dsq);
       }
       else { 
 	if((status = ParsetreeScore(cm, NULL, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;

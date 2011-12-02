@@ -684,16 +684,20 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       /* Set source sequence length (srcL) for all hits */
-      int zz; for(zz = 0; zz < info[0].pli->nseqs; zz++) { printf("srcL[%4d]: %" PRId64 "\n", zz, srcL[zz]); }
+      /*int zz; for(zz = 0; zz < info[0].pli->nseqs; zz++) { printf("srcL[%4d]: %" PRId64 "\n", zz, srcL[zz]); }*/
       cm_tophits_SetSourceLengths(info[0].th, srcL, info[0].pli->nseqs); 
       free(srcL);
 
+#if 0 
       printf("HEYA before\n");
       cm_tophits_Dump(stdout, info[0].th);
+#endif
       /* Remove hits from terminii-researching stage that we later learned were not actually in terminii */
       cm_tophits_RemoveBogusTerminusHits(info[0].th);
+#if 0 
       printf("HEYA after\n");
       cm_tophits_Dump(stdout, info[0].th);
+#endif
 
       /* Sort by sequence index/position and remove duplicates */
       cm_tophits_SortByPosition(info[0].th);
@@ -1158,11 +1162,16 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
        * for cm_tophits_SetSourceLengths() and
        * cm_tophits_RemoveBogusTerminusHits().
        */ 
-      /*printf("HEYA before\n");
-	cm_tophits_Dump(stdout, info[0].th);*/
+#if 0 
+      printf("HEYA before\n");
+      cm_tophits_Dump(stdout, info[0].th);
+#endif
+      /* Remove hits from terminii-researching stage that we later learned were not actually in terminii */
       cm_tophits_RemoveBogusTerminusHits(info->th);
-      /*printf("HEYA after\n");
-	cm_tophits_Dump(stdout, info[0].th);*/
+#if 0 
+      printf("HEYA after\n");
+      cm_tophits_Dump(stdout, info[0].th);
+#endif
 
       /* Sort by sequence index/position and remove duplicates */
       cm_tophits_SortByPosition(info->th);
@@ -1517,7 +1526,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL)
 
   wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
   seq_idx++;
-  printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);
+  /*printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);*/
   while (wstatus == eslOK ) {
     
     cm_pli_NewSeq(info->pli, dbsq, seq_idx-1);

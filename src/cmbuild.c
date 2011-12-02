@@ -973,7 +973,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
 	  CMCountStatetype(cm, MP_st), 
 	  CMCountStatetype(cm, B_st), 
 	  cm_MeanMatchRelativeEntropy(cm),
-	  cp9_MeanMatchRelativeEntropy(cm));
+	  cp9_MeanMatchRelativeEntropy(cm->cp9loc));
 
 
   /* dump optional info to files: */

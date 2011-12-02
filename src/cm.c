@@ -92,24 +92,27 @@ CreateCMShell(void)
   cm->plast  = NULL;
   cm->pnum   = NULL;
 				/* node->state map information */
-  cm->nodes  = 0;
-  cm->nodemap= NULL;
-  cm->ndtype = NULL;
+  cm->nodes   = 0;
+  cm->nodemap = NULL;
+  cm->ndtype  = NULL;
 				/* parameter information */
-  cm->t      = NULL;
-  cm->e      = NULL;
-  cm->begin  = NULL;
-  cm->end    = NULL;
-  cm->tsc    = NULL;
-  cm->esc    = NULL;
-  cm->oesc   = NULL;
-  cm->beginsc= NULL;
-  cm->endsc  = NULL;
-  cm->itsc    = NULL;
-  cm->iesc    = NULL;
-  cm->ioesc   = NULL;
-  cm->ibeginsc= NULL;
-  cm->iendsc  = NULL;
+  cm->t          = NULL;
+  cm->e          = NULL;
+  cm->begin      = NULL;
+  cm->trbegin    = NULL;
+  cm->end        = NULL;
+  cm->tsc        = NULL;
+  cm->esc        = NULL;
+  cm->oesc       = NULL;
+  cm->beginsc    = NULL;
+  cm->trbeginsc  = NULL;
+  cm->endsc      = NULL;
+  cm->itsc       = NULL;
+  cm->iesc       = NULL;
+  cm->ioesc      = NULL;
+  cm->ibeginsc   = NULL;
+  cm->itrbeginsc = NULL;
+  cm->iendsc     = NULL;
 
   cm->lmesc   = NULL;
   cm->rmesc   = NULL;
@@ -128,7 +131,8 @@ CreateCMShell(void)
   cm->tau          = DEFAULT_TAU;        /* 1E-7 the default tau  (tail loss for HMM banding) */
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
-  cm->cp9          = NULL;          
+  cm->cp9loc       = NULL;          
+  cm->cp9glb       = NULL;          
   cm->cp9b         = NULL;
   cm->cp9map       = NULL;
   cm->root_trans   = NULL;
@@ -218,12 +222,15 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
   cm->iesc[0]   = NULL;
   cm->ilmesc[0] = NULL;
   cm->irmesc[0] = NULL;
-  ESL_ALLOC(cm->begin,   (nstates) * sizeof(float));
-  ESL_ALLOC(cm->end,     (nstates) * sizeof(float));
-  ESL_ALLOC(cm->beginsc, (nstates) * sizeof(float));
-  ESL_ALLOC(cm->endsc,   (nstates) * sizeof(float));
-  ESL_ALLOC(cm->ibeginsc,(nstates) * sizeof(int));
-  ESL_ALLOC(cm->iendsc,  (nstates) * sizeof(int));
+  ESL_ALLOC(cm->begin,      (nstates) * sizeof(float));
+  ESL_ALLOC(cm->trbegin,    (nstates) * sizeof(float));
+  ESL_ALLOC(cm->end,        (nstates) * sizeof(float));
+  ESL_ALLOC(cm->beginsc,    (nstates) * sizeof(float));
+  ESL_ALLOC(cm->trbeginsc,  (nstates) * sizeof(float));
+  ESL_ALLOC(cm->endsc,      (nstates) * sizeof(float));
+  ESL_ALLOC(cm->ibeginsc,   (nstates) * sizeof(int));
+  ESL_ALLOC(cm->itrbeginsc, (nstates) * sizeof(int));
+  ESL_ALLOC(cm->iendsc,     (nstates) * sizeof(int));
   /* don't allocate for cm->oesc and cm->ioesc yet, they're
    * alloc'ed and filled by CalcOptimizedEmitScores() called 
    * in CMLogoddsify().
@@ -269,7 +276,8 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
   cm->config_opts   = 0;
   cm->align_opts    = 0;
   cm->search_opts   = 0;
-  cm->cp9           = NULL;
+  cm->cp9loc        = NULL;
+  cm->cp9glb        = NULL;
   cm->cp9b          = NULL;
   cm->cp9map        = NULL;
 
@@ -281,8 +289,9 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
    * the B states are, thus they get created in cm_modelconfig.c::ConfigCM().
    */
 
-  /* we'll allocate the cp9, cp9b, cp9map, cp9_mx and cp9_bmx inside ConfigCM(),
-   * we need some more info about the CM besides M and nnodes to build those
+  /* we'll allocate the cp9loc, cp9glb, cp9b, cp9map, cp9_mx and
+   * cp9_bmx inside ConfigCM(), we need some more info about the CM
+   * besides M and nnodes to build those
    */
 
   /* Optional allocation, status flag dependent */
@@ -321,12 +330,15 @@ CMZero(CM_t *cm)
     esl_vec_ISet(cm->ilmesc[v], cm->abc->Kp,               0);
     esl_vec_ISet(cm->irmesc[v], cm->abc->Kp,               0);
   }
-  esl_vec_FSet(cm->begin,    cm->M, 0.);
-  esl_vec_FSet(cm->end,      cm->M, 0.);
-  esl_vec_FSet(cm->beginsc,  cm->M, 0.);
-  esl_vec_FSet(cm->endsc,    cm->M, 0.);
-  esl_vec_ISet(cm->ibeginsc, cm->M, 0);
-  esl_vec_ISet(cm->iendsc,   cm->M, 0);
+  esl_vec_FSet(cm->begin,      cm->M, 0.);
+  esl_vec_FSet(cm->trbegin,    cm->M, 0.);
+  esl_vec_FSet(cm->end,        cm->M, 0.);
+  esl_vec_FSet(cm->beginsc,    cm->M, 0.);
+  esl_vec_FSet(cm->trbeginsc,  cm->M, 0.);
+  esl_vec_FSet(cm->endsc,      cm->M, 0.);
+  esl_vec_ISet(cm->ibeginsc,   cm->M, 0);
+  esl_vec_ISet(cm->itrbeginsc, cm->M, 0);
+  esl_vec_ISet(cm->iendsc,     cm->M, 0);
 
   esl_vec_ISet(cm->dmin, cm->M, 0);
   esl_vec_ISet(cm->dmax, cm->M, cm->W);
@@ -356,7 +368,7 @@ CMRenormalize(CM_t *cm)
       if (cm->sttype[v] == MP_st)
 	esl_vec_FNorm(cm->e[v], cm->abc->K * cm->abc->K);
     }
-  if (cm->flags & CMH_LOCAL_BEGIN) esl_vec_FNorm(cm->begin, cm->M);
+  if (cm->flags & CMH_LOCAL_BEGIN) { esl_vec_FNorm(cm->begin, cm->M); esl_vec_FNorm(cm->trbegin, cm->M); }
   if (cm->flags & CMH_LOCAL_END)   cm_Fail("Renormalization of models in local end mode not supported yet");
 }
 
@@ -426,19 +438,23 @@ FreeCM(CM_t *cm)
     if(cm->iesc[0] != NULL) free(cm->iesc[0]);
     free(cm->iesc);
   }
-  if(cm->begin    != NULL) free(cm->begin);
-  if(cm->end      != NULL) free(cm->end);
-  if(cm->beginsc  != NULL) free(cm->beginsc);
-  if(cm->ibeginsc != NULL) free(cm->ibeginsc);
-  if(cm->endsc    != NULL) free(cm->endsc);
-  if(cm->iendsc   != NULL) free(cm->iendsc);
-  if(cm->dmin     != NULL) free(cm->dmin);
-  if(cm->dmax     != NULL) free(cm->dmax);
+  if(cm->begin      != NULL) free(cm->begin);
+  if(cm->trbegin    != NULL) free(cm->trbegin);
+  if(cm->end        != NULL) free(cm->end);
+  if(cm->beginsc    != NULL) free(cm->beginsc);
+  if(cm->trbeginsc  != NULL) free(cm->trbeginsc);
+  if(cm->ibeginsc   != NULL) free(cm->ibeginsc);
+  if(cm->itrbeginsc != NULL) free(cm->itrbeginsc);
+  if(cm->endsc      != NULL) free(cm->endsc);
+  if(cm->iendsc     != NULL) free(cm->iendsc);
+  if(cm->dmin       != NULL) free(cm->dmin);
+  if(cm->dmax       != NULL) free(cm->dmax);
 
   if(cm->comlog     != NULL) FreeComLog(cm->comlog);
   if(cm->cp9map     != NULL) FreeCP9Map(cm->cp9map);
   if(cm->cp9b       != NULL) FreeCP9Bands(cm->cp9b);
-  if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
+  if(cm->cp9loc     != NULL) FreeCPlan9(cm->cp9loc);
+  if(cm->cp9glb     != NULL) FreeCPlan9(cm->cp9glb);
   if(cm->root_trans != NULL) free(cm->root_trans);
   if(cm->hbmx       != NULL) cm_hb_mx_Destroy(cm->hbmx);
   if(cm->ohbmx      != NULL) cm_hb_mx_Destroy(cm->ohbmx);
@@ -843,8 +859,10 @@ CMLogoddsify(CM_t *cm)
     /* These work even if begin/end distributions are inactive 0's,
      * sreLOG2 will set beginsc, endsc to -infinity.
      */
-    cm->beginsc[v]  = sreLOG2(cm->begin[v]);
-    cm->ibeginsc[v] = Prob2Score(cm->begin[v], 1.0);
+    cm->beginsc[v]    = sreLOG2(cm->begin[v]);
+    cm->trbeginsc[v]  = sreLOG2(cm->trbegin[v]);
+    cm->ibeginsc[v]   = Prob2Score(cm->begin[v], 1.0);
+    cm->itrbeginsc[v] = Prob2Score(cm->trbegin[v], 1.0);
     /*printf("cm->begin[%4d]: %f ibeginsc->e: %f ibeginsc: %d\n", v, cm->begin[v], Score2Prob(cm->ibeginsc[v], 1.0), cm->ibeginsc[v]);*/
     
     cm->endsc[v]    = sreLOG2(cm->end[v]);
@@ -900,7 +918,8 @@ CMLogoddsify(CM_t *cm)
 	}
       /* Overwrite local begin and end scores */
       for (v=cm->M - 1; v>=0; v--) {
-	cm->beginsc[v] = IMPOSSIBLE;
+	cm->beginsc[v]   = IMPOSSIBLE;
+	cm->trbeginsc[v] = IMPOSSIBLE;
 	cm->endsc[v] = IMPOSSIBLE;
       }
       
@@ -909,9 +928,18 @@ CMLogoddsify(CM_t *cm)
 	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
 	    cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)
 	  {	 
-	    cm->beginsc[cm->nodemap[nd]] = beginsc;
+	    cm->beginsc[cm->nodemap[nd]]  = beginsc;
 	    cm->ibeginsc[cm->nodemap[nd]] = INTSCALE * beginsc;
 	  }
+      }
+
+      /* trbeginsc states (trunc's can begin in insert states) */
+      for (v = 0; v < cm->M; v++) { 
+	if ((StateDelta(cm->sttype[v]) > 0) && 
+	    (cm->stid[v] != MATP_ML && cm->stid[v] != MATP_MR)) { 
+	    cm->trbeginsc[v]  = beginsc;
+	    cm->itrbeginsc[v] = INTSCALE * beginsc;
+	}	  
       }
       
       /* endsc states */
@@ -1917,8 +1945,9 @@ CMRebalance(CM_t *cm)
    */
   for (v = 0; v < cm->M; v++)
     {
-      new->begin[newidx[v]] = cm->begin[v];
-      new->end[newidx[v]]   = cm->end[v];
+      new->begin[newidx[v]]   = cm->begin[v];
+      new->trbegin[newidx[v]] = cm->trbegin[v];
+      new->end[newidx[v]]     = cm->end[v];
     }
   if(cm->dmin != NULL) { 
     ESL_ALLOC(new->dmin, sizeof(int) * cm->M);
@@ -2827,7 +2856,8 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
   if(cm->flags & CMH_BITS)        ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_BITS flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_LOCAL_BEGIN flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_LOCAL_END flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CMH_CP9)         ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_CP9 flag is up (it shouldn't be if the CM was just read from a file");
+  if(cm->flags & CMH_CP9LOC)      ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_CP9LOC flag is up (it shouldn't be if the CM was just read from a file");
+  if(cm->flags & CMH_CP9GLB)      ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_CP9GLB flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CMH_SCANMATRIX)  ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_SCANMATRIX flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CM_IS_SUB)       ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CM_IS_SUB flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CM_EMIT_NO_LOCAL_BEGINS) ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CM_EMIT_NO_LOCAL_BEGINS flag is up (it shouldn't be if the CM was just read from a file");
@@ -2948,7 +2978,8 @@ DumpCMFlags(FILE *fp, CM_t *cm)
   if(cm->flags & CMH_QDB)                  fprintf(fp, "\tCMH_QDB\n");
   if(cm->flags & CMH_QDB_LOCAL)            fprintf(fp, "\tCMH_QDB_LOCAL\n");
   if(cm->flags & CMH_QDB_GLOBAL)           fprintf(fp, "\tCMH_QDB_GLOBAL\n");
-  if(cm->flags & CMH_CP9)                  fprintf(fp, "\tCMH_CP9\n");
+  if(cm->flags & CMH_CP9LOC)               fprintf(fp, "\tCMH_CP9LOC\n");
+  if(cm->flags & CMH_CP9GLB)               fprintf(fp, "\tCMH_CP9GLB\n");
   if(cm->flags & CMH_SCANMATRIX)           fprintf(fp, "\tCMH_SCANMATRIX\n");
   if(cm->flags & CMH_MLP7)                 fprintf(fp, "\tCMH_MLP7\n");
   if(cm->flags & CMH_FP7)                  fprintf(fp, "\tCMH_FP7\n");

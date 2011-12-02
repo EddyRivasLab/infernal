@@ -914,7 +914,6 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, 
       esl_vec_ISet(bestr,  (W+1), -1);
       esl_vec_FSet(bestsc, (W+1), IMPOSSIBLE);
 
-      /* determine min/max d we're allowing for the root state and this position j */
       jp_v = cur;
       for (d = dnA[0]; d <= dxA[0]; d++) {
 	bestr[d] = 0;	/* root of the traceback = root state 0 */
@@ -3424,7 +3423,6 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, floa
 
   /* Report all possible hits, but only after looking at local begins (if they're on) */
   v = 0;
-  sd = sdr = 0;
   jpn = 0;
   jpx = jmax[v] - jmin[v];
   j   = jmin[v];
@@ -3443,7 +3441,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, floa
     
   for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++, j++) {
     esl_vec_ISet(bestr,  (W+1), 0); /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
-    esl_vec_FSet(bestsc, (W+1), IMPOSSIBLE); /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
+    esl_vec_FSet(bestsc, (W+1), IMPOSSIBLE);
     if (cm->flags & CMH_LOCAL_BEGIN) {
       for (y = 1; y < cm->M; y++) {
 	if(NOT_IMPOSSIBLE(cm->beginsc[y]) && (j >= jmin[y] && j <= jmax[y])) {

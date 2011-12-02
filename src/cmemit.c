@@ -357,7 +357,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
   if(cfg->ahmmfp != NULL) {
     if(esl_opt_GetBoolean(go, "-l")) fprintf(cfg->ahmmfp, "# Printing analytically built CP9 HMM parameters (local configuration):\n");
     else                             fprintf(cfg->ahmmfp, "# Printing analytically built CP9 HMM parameters (global configuration):\n");
-    debug_print_cp9_params(cfg->ahmmfp, cm->cp9, TRUE);
+    debug_print_cp9_params(cfg->ahmmfp, (esl_opt_GetBoolean(go, "-l") ? cm->cp9loc : cm->cp9glb), TRUE);
   }
 
   if(esl_opt_IsOn(go, "--exp"))        ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));

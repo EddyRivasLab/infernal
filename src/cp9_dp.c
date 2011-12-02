@@ -73,7 +73,7 @@
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
+cp9_Viterbi(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
 	    int be_efficient, int **ret_psc, int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc)
 {
   int          status;
@@ -82,34 +82,30 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
-  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
-  int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
-  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
-  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cm->cp9->M]          */
+  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cp9->M]      */
+  int        **imx;         /* DP matrix for insert state scores [0..1][0..cp9->M]      */
+  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cp9->M]      */
+  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cp9->M]          */
   int         *erow;        /* end score for each position [0..1]                           */
-  int         *scA;         /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
+  int         *scA;         /* prob (seq from j0..jp | HMM) [0..jp..cp9->M]             */
   float        fsc;         /* float log odds score                                         */
   float        best_sc;     /* score of best hit overall                                    */
   float        best_pos;    /* residue (j) giving best_sc, where best hit ends              */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states                                        */
   CP9trace_t  *tr;          /* CP9 trace for full seq i0..j0, used if ret_tr != NULL        */
-  int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
+  int          M;           /* cp9->M, query length, number of consensus nodes of model */
 
   /* Contract checks */
-  if(cm->cp9 == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, cm->cp9 is NULL.\n");
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, dsq is NULL.");
   if(mx == NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx is NULL.\n");
-  if(mx->M != cm->clen)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx->M != cm->clen.\n");
-  if(cm->clen != cm->cp9->M)                 ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, cm->clen != cm->cp9->M.\n");
-  if(cm->search_opts & CM_SEARCH_HMMFORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, CM_SEARCH_HMMFORWARD flag raised in search_opts.\n");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
   L = j0-i0+1;
-  M = cm->cp9->M;
+  M = cp9->M;
 
-  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
+  int const *tsc = cp9->otsc; /* ptr to efficiently ordered transition scores           */
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -153,11 +149,11 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   /* Recursion. */
   for (j = i0; j <= j0; j++)
     {
-      int const *isc = cm->cp9->isc[dsq[j]];
-      int const *msc = cm->cp9->msc[dsq[j]];
+      int const *isc = cp9->isc[dsq[j]];
+      int const *msc = cp9->msc[dsq[j]];
 
       int endsc     = -INFTY;
-      int el_selfsc = cm->cp9->el_selfsc;
+      int el_selfsc = cp9->el_selfsc;
       int sc;
 
       jp = j-i0+1;     /* jp is relative position in the sequence 1..L */
@@ -190,8 +186,8 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 	  sc = ESL_MAX(sc, dmx[prv][k-1] + CP9TSC(cp9O_DM,k-1));
 	  sc = ESL_MAX(sc, mmx[prv][0]   + CP9TSC(cp9O_BM,k));
 	  /* check possibility we came from an EL, if they're valid */
-	  for(c = 0; c < cm->cp9->el_from_ct[k]; c++) /* el_from_ct[k] is >= 0 */
-	    sc = ESL_MAX(sc, elmx[prv][cm->cp9->el_from_idx[k][c]]);
+	  for(c = 0; c < cp9->el_from_ct[k]; c++) /* el_from_ct[k] is >= 0 */
+	    sc = ESL_MAX(sc, elmx[prv][cp9->el_from_idx[k][c]]);
 	    /* transition penalty to EL incurred when EL was entered */
 	  mmx[cur][k] = ESL_MAX(sc + msc[k], -INFTY);
 
@@ -212,7 +208,7 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 
 	  /*el state*/
 	  sc = -INFTY;
-	  if((cm->cp9->flags & CPLAN9_EL) && cm->cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
+	  if((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
 								    HMM nodes that map to right half of a MATP_MP) */
 	    {
 	      sc = ESL_MAX(sc, mmx[cur][k]  + CP9TSC(cp9O_MEL,k));
@@ -223,9 +219,9 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 
       endsc = ESL_MAX(endsc, dmx[cur][M] + CP9TSC(cp9O_DM,M)); /* transition from D_M -> end */
       endsc = ESL_MAX(endsc, imx[cur][M] + CP9TSC(cp9O_IM,M)); /* transition from I_M -> end */
-      for(c = 0; c < cm->cp9->el_from_ct[M+1]; c++) /* el_from_ct[k] is >= 0 */
+      for(c = 0; c < cp9->el_from_ct[M+1]; c++) /* el_from_ct[k] is >= 0 */
 	/* transition penalty to EL incurred when EL was entered */
-	endsc = ESL_MAX(endsc, elmx[cur][cm->cp9->el_from_idx[M+1][c]]);
+	endsc = ESL_MAX(endsc, elmx[cur][cp9->el_from_idx[M+1][c]]);
 
       erow[cur] = endsc;
       scA[jp]   = endsc;
@@ -238,9 +234,9 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
     best_sc  = Scorify(scA[(j0-i0+1)]); /* L = j0-i0+1 */
     best_pos = i0;
     if(ret_tr != NULL) {
-      CP9ViterbiTrace(cm->cp9, dsq, i0, j0, mx, &tr);
+      CP9ViterbiTrace(cp9, dsq, i0, j0, mx, &tr);
       if(tr == NULL) ESL_FAIL(eslFAIL, errbuf, "CP9ViterbiTrace() returned NULL, problem with traceback.");
-      /* CP9PrintTrace(stdout, tr, cm->cp9, dsq); */
+      /* CP9PrintTrace(stdout, tr, cp9, dsq); */
       *ret_tr = tr;
     }
   }
@@ -274,7 +270,7 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
+cp9_ViterbiBackward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
 		    int be_efficient, int **ret_psc, int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc)
 {
   int          status;
@@ -283,33 +279,30 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
-  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
-  int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
-  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
-  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cm->cp9->M]          */
+  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cp9->M]      */
+  int        **imx;         /* DP matrix for insert state scores [0..1][0..cp9->M]      */
+  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cp9->M]      */
+  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cp9->M]          */
   int         *erow;        /* end score for each position [0..1]                           */
-  int         *scA;         /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
+  int         *scA;         /* prob (seq from j0..jp | HMM) [0..jp..cp9->M]             */
   float        fsc;         /* float log odds score                                         */
   float        best_sc;     /* score of best hit overall                                    */
   float        best_pos;    /* residue (i) giving best_sc, where best hit starts            */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states */
-  int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
+  int          M;           /* cp9->M, query length, number of consensus nodes of model */
 
   /* Contract checks */
-  if(cm->cp9 == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, cm->cp9 is NULL.\n");
+  if(cp9 == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, cp9 is NULL.\n");
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, dsq is NULL.");
   if(mx == NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, mx is NULL.\n");
-  if(mx->M != cm->clen)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, mx->M != cm->clen.\n");
-  if(cm->clen != cm->cp9->M)                 ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, cm->clen != cm->cp9->M.\n");
-  if(cm->search_opts & CM_SEARCH_HMMFORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, CM_SEARCH_HMMFORWARD flag raised.\n");
     
-  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
+  int const *tsc = cp9->otsc; /* ptr to efficiently ordered transition scores           */
 
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
   L = j0-i0+1;
-  M = cm->cp9->M;
+  M = cp9->M;
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -332,37 +325,37 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
    * we're going backwards so we have to work out of order, we could get 
    * around this by storing the nodes each EL goes TO in an el_to_ct[] vec. */
   /* init to -INFTY */
-  for (k = 1; k <= cm->cp9->M; k++) elmx[cur][k] = -INFTY;
-  if(cm->cp9->flags & CPLAN9_EL) {
-    for(c = 0; c < cm->cp9->el_from_ct[cm->cp9->M+1]; c++) /* el_from_ct[cm->cp9->M+1] holds # ELs that can go to END */
-      elmx[cur][cm->cp9->el_from_idx[cm->cp9->M+1][c]] = 0.; /* EL<-E, penalty incurred when we enter EL (i.e. leave going backwards) */
+  for (k = 1; k <= cp9->M; k++) elmx[cur][k] = -INFTY;
+  if(cp9->flags & CPLAN9_EL) {
+    for(c = 0; c < cp9->el_from_ct[cp9->M+1]; c++) /* el_from_ct[cp9->M+1] holds # ELs that can go to END */
+      elmx[cur][cp9->el_from_idx[cp9->M+1][c]] = 0.; /* EL<-E, penalty incurred when we enter EL (i.e. leave going backwards) */
   }
   /*******************************************************************/
 
-  /* elmx[cur][cm->cp9->M] is either 0 (if EL_M exists (it would nec be in el_from_idx[cm->cp9->M+1] array if it does, so
+  /* elmx[cur][cp9->M] is either 0 (if EL_M exists (it would nec be in el_from_idx[cp9->M+1] array if it does, so
    * it would be filled with 0 in above loop), or -INFTY if it doesn't exist. We don't add possibility of EL_M -> EL_M
    * self loop b/c it's impossible to do that without emitting, and we've already seen our last res emitted. 
    * either way we don't have to modify it */
 
-  mmx[cur][cm->cp9->M]  = ESL_MAX(elmx[cur][cm->cp9->M] + CP9TSC(cp9O_MEL,cm->cp9->M),/* M_M<-EL_M<-E, with 0 self loops in EL_M */
-				  CP9TSC(cp9O_ME,cm->cp9->M));                              /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
-  mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M];  /* ... + emitted match symbol */
-  imx[cur][cm->cp9->M]  = CP9TSC(cp9O_IM,cm->cp9->M);    /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
-  imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M];  /* ... + emitted insert symbol */
-  dmx[cur][cm->cp9->M]  = CP9TSC(cp9O_DM,cm->cp9->M);    /* D_M<-E */
+  mmx[cur][cp9->M]  = ESL_MAX(elmx[cur][cp9->M] + CP9TSC(cp9O_MEL,cp9->M),/* M_M<-EL_M<-E, with 0 self loops in EL_M */
+				  CP9TSC(cp9O_ME,cp9->M));                              /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
+  mmx[cur][cp9->M] += cp9->msc[dsq[i]][cp9->M];  /* ... + emitted match symbol */
+  imx[cur][cp9->M]  = CP9TSC(cp9O_IM,cp9->M);    /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
+  imx[cur][cp9->M] += cp9->isc[dsq[i]][cp9->M];  /* ... + emitted insert symbol */
+  dmx[cur][cp9->M]  = CP9TSC(cp9O_DM,cp9->M);    /* D_M<-E */
 
   /*******************************************************************
    * No need to look at EL_k->M_M b/c elmx[cur] with cur == L means last emitted residue was L+1 
    * and this is impossible if we've come from M_M (only would be valid if we were coming from
    * E which is handled above with the EL_k->E code). 
    *******************************************************************/
-  for (k = cm->cp9->M-1; k >= 1; k--)
+  for (k = cp9->M-1; k >= 1; k--)
     {
       mmx[cur][k]  = CP9TSC(cp9O_ME,k);  /*M_k<- E */
       mmx[cur][k]  = ESL_MAX(mmx[cur][k], dmx[cur][k+1] + CP9TSC(cp9O_MD,k));
-      if(cm->cp9->flags & CPLAN9_EL)
+      if(cp9->flags & CPLAN9_EL)
 	mmx[cur][k]  = ESL_MAX(mmx[cur][k], elmx[cur][k] + CP9TSC(cp9O_MEL,k));
-      mmx[cur][k] += cm->cp9->msc[dsq[i]][k];
+      mmx[cur][k] += cp9->msc[dsq[i]][k];
 
       /*******************************************************************
        * No need to look at EL_k->M_M b/c elmx[cur] with cur == L means last emitted residue was L+1 
@@ -370,7 +363,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
        * E which is handled above with the EL_k->E code). 
        *******************************************************************/
       imx[cur][k]  = dmx[cur][k+1] + CP9TSC(cp9O_ID,k);
-      imx[cur][k] += cm->cp9->isc[dsq[i]][k];
+      imx[cur][k] += cp9->isc[dsq[i]][k];
 
       dmx[cur][k]  = dmx[cur][k+1] + CP9TSC(cp9O_DD,k);
       /* elmx[cur][k] was set above, out of order */
@@ -380,7 +373,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
   mmx[cur][0]  = dmx[cur][1] + CP9TSC(cp9O_MD,0); /* M_0(B)->D_1, no seq emitted, all deletes */
   /* above line is diff from CPBackwardOLD() which has mmx[cur][0] = -INFTY; */
   imx[cur][0]  = dmx[cur][1] + CP9TSC(cp9O_ID,0);
-  imx[cur][0] += cm->cp9->isc[dsq[i]][0];
+  imx[cur][0] += cp9->isc[dsq[i]][0];
 
   dmx[cur][0]   = -INFTY; /*D_0 doesn't exist*/
   elmx[cur][0]  = -INFTY; /*EL_0 doesn't exist*/
@@ -408,38 +401,38 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
       else             { cur = ip;          prv = ip+1;         }
 
       /* init EL mx to -INFTY */
-      for (k = 1; k <= cm->cp9->M; k++) elmx[cur][k] = -INFTY;
+      for (k = 1; k <= cp9->M; k++) elmx[cur][k] = -INFTY;
       if(ip > 0) {
 	/* elmx[cur][k] is possibly of coming from self (EL_k), we 
 	 * can't have come from END b/c we haven't emitted the last res of the seq yet.
 	 */
-	if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[cm->cp9->M]))
-	  elmx[cur][cm->cp9->M] = elmx[cur][cm->cp9->M] + cm->cp9->el_selfsc;
+	if((cp9->flags & CPLAN9_EL) && (cp9->has_el[cp9->M]))
+	  elmx[cur][cp9->M] = elmx[cur][cp9->M] + cp9->el_selfsc;
 	
-	mmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + CP9TSC(cp9O_MI,cm->cp9->M);
-	mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M];
+	mmx[cur][cp9->M]  = imx[prv][cp9->M] + CP9TSC(cp9O_MI,cp9->M);
+	mmx[cur][cp9->M] += cp9->msc[dsq[i]][cp9->M];
 	
-	if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[cm->cp9->M]))
-	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], 
-					 elmx[cur][cm->cp9->M] + CP9TSC(cp9O_MEL,cm->cp9->M));
+	if((cp9->flags & CPLAN9_EL) && (cp9->has_el[cp9->M]))
+	  mmx[cur][cp9->M] = ESL_MAX(mmx[cur][cp9->M], 
+					 elmx[cur][cp9->M] + CP9TSC(cp9O_MEL,cp9->M));
 	
-	imx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + CP9TSC(cp9O_II,cm->cp9->M);
-	imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M];
+	imx[cur][cp9->M]  = imx[prv][cp9->M] + CP9TSC(cp9O_II,cp9->M);
+	imx[cur][cp9->M] += cp9->isc[dsq[i]][cp9->M];
       }
       else { /* ip == 0 */
-	mmx[cur][cm->cp9->M] = -INFTY;  /* need seq to get here */
-	imx[cur][cm->cp9->M] = -INFTY;  /* need seq to get here */
-	elmx[cur][cm->cp9->M]= -INFTY;  /* first emitted res can't be from an EL, need to see >= 1 matches */
+	mmx[cur][cp9->M] = -INFTY;  /* need seq to get here */
+	imx[cur][cp9->M] = -INFTY;  /* need seq to get here */
+	elmx[cur][cp9->M]= -INFTY;  /* first emitted res can't be from an EL, need to see >= 1 matches */
       }
-      dmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + CP9TSC(cp9O_DI,cm->cp9->M); 
+      dmx[cur][cp9->M]  = imx[prv][cp9->M] + CP9TSC(cp9O_DI,cp9->M); 
 
       /*******************************************************************
        * 1b Handle EL, looking at EL_k->M_M for all valid k.
        * EL_k->M_M transition, which has no transition penalty */
-      if(cm->cp9->flags & CPLAN9_EL)
+      if(cp9->flags & CPLAN9_EL)
 	{
-	  for(c = 0; c < cm->cp9->el_from_ct[cm->cp9->M]; c++) /* el_from_ct[cm->cp9->M] holds # ELs that can go to M_M */
-	    elmx[cur][cm->cp9->el_from_idx[cm->cp9->M][c]] = ESL_MAX(elmx[cur][cm->cp9->el_from_idx[cm->cp9->M][c]], mmx[prv][cm->cp9->M]);
+	  for(c = 0; c < cp9->el_from_ct[cp9->M]; c++) /* el_from_ct[cp9->M] holds # ELs that can go to M_M */
+	    elmx[cur][cp9->el_from_idx[cp9->M][c]] = ESL_MAX(elmx[cur][cp9->el_from_idx[cp9->M][c]], mmx[prv][cp9->M]);
 	}
 
       /* A main difference between a Backward scanner and 
@@ -451,51 +444,51 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
 	  /*******************************************************************
 	   * 2 Handle EL, looking at EL_k->E for all valid k.
 	   * EL_k->M_M transition, which has no transition penalty */
-	  if(cm->cp9->flags & CPLAN9_EL) {
-	    for(c = 0; c < cm->cp9->el_from_ct[cm->cp9->M+1]; c++) /* el_from_ct[cm->cp9->M] holds # ELs that can go to END */
-	      elmx[cur][cm->cp9->el_from_idx[cm->cp9->M+1][c]] = 0.; /* EL<-E, penalty incurred when we enter EL (i.e. leave going backwards) */
+	  if(cp9->flags & CPLAN9_EL) {
+	    for(c = 0; c < cp9->el_from_ct[cp9->M+1]; c++) /* el_from_ct[cp9->M] holds # ELs that can go to END */
+	      elmx[cur][cp9->el_from_idx[cp9->M+1][c]] = 0.; /* EL<-E, penalty incurred when we enter EL (i.e. leave going backwards) */
 	  }
 	  /*******************************************************************/
-	  /* elmx[cur][cm->cp9->M] is either 0 (if EL_M exists (it would nec be in el_from_idx[cm->cp9->M+1] array if it does, so
+	  /* elmx[cur][cp9->M] is either 0 (if EL_M exists (it would nec be in el_from_idx[cp9->M+1] array if it does, so
 	   * it would be filled with 0 in above loop), or -INFTY if it doesn't exist. We don't add possibility of EL_M -> EL_M
 	   * self loop b/c it's impossible to do that without emitting, and we've already seen our last res emitted,
 	   * either way we don't have to modify it */
 	  
 	  
-	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], 
-					 elmx[cur][cm->cp9->M] + CP9TSC(cp9O_MEL,cm->cp9->M) + cm->cp9->msc[dsq[i]][cm->cp9->M]); /* M_M<-EL_M<-E, with 0 selfs in EL_M */
-	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], 
-					 CP9TSC(cp9O_ME,cm->cp9->M) + cm->cp9->msc[dsq[i]][cm->cp9->M]); /* M_M<-E ... */
+	  mmx[cur][cp9->M] = ESL_MAX(mmx[cur][cp9->M], 
+					 elmx[cur][cp9->M] + CP9TSC(cp9O_MEL,cp9->M) + cp9->msc[dsq[i]][cp9->M]); /* M_M<-EL_M<-E, with 0 selfs in EL_M */
+	  mmx[cur][cp9->M] = ESL_MAX(mmx[cur][cp9->M], 
+					 CP9TSC(cp9O_ME,cp9->M) + cp9->msc[dsq[i]][cp9->M]); /* M_M<-E ... */
 	  /* IMPT DIFFERENCE WITH cp9_Backward(): we need to add in contribution of emission within the ESL_MAX()s above
 	   * here in Viterbi since we're doing a max, but in cp9_Backward we don't b/c we do a sum and don't want 
 	   * to double count that emission, since it was added once already above */
 	  
-	  imx[cur][cm->cp9->M] = ESL_MAX(imx[cur][cm->cp9->M],
-					 (CP9TSC(cp9O_IM,cm->cp9->M) +            /* I_M<-E + (only in scanner)     */
+	  imx[cur][cp9->M] = ESL_MAX(imx[cur][cp9->M],
+					 (CP9TSC(cp9O_IM,cp9->M) +            /* I_M<-E + (only in scanner)     */
 					  0 +                                     /* all parses end in E, 2^0 = 1.0;*/
-					  cm->cp9->isc[dsq[i]][cm->cp9->M]));     /* + emitted insert symbol        */
+					  cp9->isc[dsq[i]][cp9->M]));     /* + emitted insert symbol        */
 	  /* IMPT DIFFERENCE WITH cp9_Backward(): we need to add in contribution of emission within the ESL_MAX() above
 	   * here in Viterbi since we're doing a max, but in cp9_Backward we don't b/c we do a sum and don't want 
 	   * to double count that emission, since it was added once already above */
 	}
-	dmx[cur][cm->cp9->M] =  ESL_MAX(dmx[cur][cm->cp9->M], 
-					(CP9TSC(cp9O_DM,cm->cp9->M) +            /* D_M<-E + (only in scanner)     */
+	dmx[cur][cp9->M] =  ESL_MAX(dmx[cur][cp9->M], 
+					(CP9TSC(cp9O_DM,cp9->M) +            /* D_M<-E + (only in scanner)     */
 					 0));                                        /* all parses end in E, 2^0 = 1.0;*/
       }
-      /*printf("mmx[ip:%d][%d]: %d cur: %d\n", ip, cm->cp9->M, mmx[cur][cm->cp9->M], cur);
-	printf("imx[ip:%d][%d]: %d cur: %d\n", ip, cm->cp9->M, imx[cur][cm->cp9->M], cur);
-	printf("dmx[ip:%d][%d]: %d cur: %d\n", ip, cm->cp9->M, dmx[cur][cm->cp9->M], cur);*/
+      /*printf("mmx[ip:%d][%d]: %d cur: %d\n", ip, cp9->M, mmx[cur][cp9->M], cur);
+	printf("imx[ip:%d][%d]: %d cur: %d\n", ip, cp9->M, imx[cur][cp9->M], cur);
+	printf("dmx[ip:%d][%d]: %d cur: %d\n", ip, cp9->M, dmx[cur][cp9->M], cur);*/
       
-      for (k = cm->cp9->M-1; k >= 1; k--) {
+      for (k = cp9->M-1; k >= 1; k--) {
 	if(ip > 0) {
 	  /*******************************************************************
 	   * 3 Handle EL, looking at EL_k->M_k for all valid k and EL_k->EL_k
 	   * we're going backwards so we have to work out of order
 	   * we could get around this by storing the nodes each EL goes TO
 	   * in an el_to_ct[] vector. */
-	  if(cm->cp9->flags & CPLAN9_EL) {
-	    for(c = 0; c < cm->cp9->el_from_ct[k]; c++) /* el_from_ct[k] holds # ELs that can go to M_k */
-	      elmx[cur][cm->cp9->el_from_idx[k][c]] = ESL_MAX(elmx[cur][cm->cp9->el_from_idx[k][c]], mmx[prv][k]);
+	  if(cp9->flags & CPLAN9_EL) {
+	    for(c = 0; c < cp9->el_from_ct[k]; c++) /* el_from_ct[k] holds # ELs that can go to M_k */
+	      elmx[cur][cp9->el_from_idx[k][c]] = ESL_MAX(elmx[cur][cp9->el_from_idx[k][c]], mmx[prv][k]);
 	    /* EL<-M, penalty incurred when we enter EL (i.e. leave going backwards) */
 	  }
 	  /*******************************************************************/
@@ -503,20 +496,20 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
 	  /* Finish off elmx[cur][k] with possibility of coming from self (EL_k), 
 	   * elmx[cur][k] will have been filled by block above for ks > current k,
 	   * no M_k -> EL_k' with k' > k */
-	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
-	    elmx[cur][k] = ESL_MAX(elmx[cur][k], elmx[prv][k] + cm->cp9->el_selfsc);
+	  if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
+	    elmx[cur][k] = ESL_MAX(elmx[cur][k], elmx[prv][k] + cp9->el_selfsc);
 	  
 	  mmx[cur][k]  = ESL_MAX(ESL_MAX((mmx[prv][k+1] + CP9TSC(cp9O_MM,k)),  
 					 (imx[prv][k]   + CP9TSC(cp9O_MI,k))),
 				 (dmx[cur][k+1] + CP9TSC(cp9O_MD,k)));
-	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
+	  if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
 		mmx[cur][k] = ESL_MAX(mmx[cur][k], elmx[cur][k] + CP9TSC(cp9O_MEL,k)); /* penalty for entering EL */
-	      mmx[cur][k] += cm->cp9->msc[dsq[i]][k];
+	      mmx[cur][k] += cp9->msc[dsq[i]][k];
 
 	      imx[cur][k]  = ESL_MAX(ESL_MAX((mmx[prv][k+1] + CP9TSC(cp9O_IM,k)),
 					     (imx[prv][k]   + CP9TSC(cp9O_II,k))),
 				     (dmx[cur][k+1] + CP9TSC(cp9O_ID,k)));
-	      imx[cur][k] += cm->cp9->isc[dsq[i]][k];
+	      imx[cur][k] += cp9->isc[dsq[i]][k];
 
 	}
 	else { /* ip == 0 */
@@ -529,25 +522,25 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
 	    ESL_MAX(mmx[cur][k], 
 		    (CP9TSC(cp9O_ME,k) +                /* M_k<-E + (only in scanner)     */ 
 		     0 +                                /* all parses end in E, 2^0 = 1.0;*/
-		     cm->cp9->msc[dsq[i]][k]));         /* emitted match symbol */
+		     cp9->msc[dsq[i]][k]));         /* emitted match symbol */
 	  /* IMPT DIFFERENCE WITH cp9_Backward(): we need to add in contribution of emission within the ESL_MAX() above
 	   * here in Viterbi since we're doing a max, but in cp9_Backward we don't b/c we do a sum and don't want 
 	   * to double count that emission, since it was added once already above */
 
 	  /* No EL contribution here b/c we'd be looking for M_k<-EL_k<-E, but EL_k<-E is impossible 
-	   * for k != cm->cp9->M; */
+	   * for k != cp9->M; */
 	}	      
 	dmx[cur][k]  = ESL_MAX(ESL_MAX((mmx[prv][k+1] + CP9TSC(cp9O_DM,k)),
 				       (imx[prv][k]   + CP9TSC(cp9O_DI,k))),
 			       (dmx[cur][k+1] + CP9TSC(cp9O_DD,k)));
-      } /* end of for (k = cm->cp9->M-1; k >= 1; k--) { */
+      } /* end of for (k = cp9->M-1; k >= 1; k--) { */
       /* Case when k == 0 */
       /* imx[cur][0] is filled same as imx[cur][1..k] in the loop above */
       if(ip > 0) {
 	imx[cur][0] = ESL_MAX(ESL_MAX((mmx[prv][1] + CP9TSC(cp9O_IM,0)),
 				      (imx[prv][0] + CP9TSC(cp9O_II,0))),
 			      (dmx[cur][1] + CP9TSC(cp9O_ID,k)));
-	imx[cur][0] += cm->cp9->isc[dsq[i]][k];
+	imx[cur][0] += cp9->isc[dsq[i]][k];
       }
       else /* ip == 0 */
 	imx[cur][0] = -INFTY; /* need seq to get here */
@@ -556,7 +549,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
 
       /*M_0 is the B state, it doesn't emit, and can be reached from any match via a begin transition */
       mmx[cur][0] = -INFTY;
-      for (k = cm->cp9->M; k >= 1; k--) mmx[cur][0] = ESL_MAX(mmx[cur][0], (mmx[prv][k] + CP9TSC(cp9O_BM,k)));
+      for (k = cp9->M; k >= 1; k--) mmx[cur][0] = ESL_MAX(mmx[cur][0], (mmx[prv][k] + CP9TSC(cp9O_BM,k)));
       mmx[cur][0] = ESL_MAX(mmx[cur][0], (imx[prv][0] + CP9TSC(cp9O_MI,0)));
       mmx[cur][0] = ESL_MAX(mmx[cur][0], (dmx[cur][1] + CP9TSC(cp9O_MD,0)));     /* B->D_1 */
       /* No EL contribution here, can't go B->EL_* */
@@ -652,7 +645,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
  *
  *
  * Args:
- *           cm        - the covariance model, includes cm->cp9: a CP9 HMM
+ *           cp9       - the cp9 HMM
  *           errbuf    - char buffer for error messages
  *           dsq       - sequence in digitized form
  *           i0        - start of target subsequence (1 for beginning of dsq)
@@ -672,7 +665,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
+cp9_Forward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
 	    int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
@@ -681,32 +674,30 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
-  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
-  int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
-  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
-  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cm->cp9->M]          */
+  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cp9->M]      */
+  int        **imx;         /* DP matrix for insert state scores [0..1][0..cp9->M]      */
+  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cp9->M]      */
+  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cp9->M]          */
   int         *erow;        /* end score for each position [0..1]                           */
-  int         *scA;         /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
+  int         *scA;         /* prob (seq from j0..jp | HMM) [0..jp..cp9->M]             */
   float        fsc;         /* float log odds score                                         */
   float        best_sc;     /* score of best hit overall                                    */
   float        best_pos;    /* residue (j) giving best_sc, where best hit ends              */
   int          nrows = 2;   /* number of rows for the dp matrix                             */
   int          c;           /* counter for EL states                                        */
-  int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
+  int          M;           /* cp9->M, query length, number of consensus nodes of model */
 
   /* Contract checks */
-  if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, cm->cp9 is NULL.\n");
+  if(cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, cp9 is NULL.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, dsq is NULL.");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, mx is NULL.\n");
-  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, mx->M != cm->clen.\n");
-  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, cm->clen != cm->cp9->M.\n");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
   L = j0-i0+1;
-  M = cm->cp9->M;
+  M = cp9->M;
 
-  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
+  int const *tsc = cp9->otsc; /* ptr to efficiently ordered transition scores           */
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -757,10 +748,10 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   /* int ctr = 0; */
   for (j = i0; j <= j0; j++)
     {
-      int const *isc = cm->cp9->isc[dsq[j]];
-      int const *msc = cm->cp9->msc[dsq[j]];
+      int const *isc = cp9->isc[dsq[j]];
+      int const *msc = cp9->msc[dsq[j]];
       int endsc     = -INFTY;
-      int el_selfsc = cm->cp9->el_selfsc;
+      int el_selfsc = cp9->el_selfsc;
       int sc;
 
       jp = j-i0+1;     /* jp is relative position in the sequence 1..L */
@@ -794,8 +785,8 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 		       ILogsum(dmx[prv][k-1] + CP9TSC(cp9O_DM,k-1),
 			       mmx[prv][0]   + CP9TSC(cp9O_BM,k  )));
 	  /* check possibility we came from an EL, if they're valid */
-	  for(c = 0; c < cm->cp9->el_from_ct[k]; c++) /* el_from_ct[k] is >= 0 */
-	    sc = ILogsum(sc, elmx[prv][cm->cp9->el_from_idx[k][c]]);
+	  for(c = 0; c < cp9->el_from_ct[k]; c++) /* el_from_ct[k] is >= 0 */
+	    sc = ILogsum(sc, elmx[prv][cp9->el_from_idx[k][c]]);
 	    /* transition penalty to EL incurred when EL was entered */
 	  mmx[cur][k] = sc + msc[k];
 
@@ -816,7 +807,7 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 
 	  /*el state*/
 	  sc = -INFTY;
-	  if((cm->cp9->flags & CPLAN9_EL) && cm->cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
+	  if((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
 								    HMM nodes that map to right half of a MATP_MP) */
 	    {
 	      sc = ILogsum(mmx[cur][k]  + CP9TSC(cp9O_MEL,k), /* transitioned from cur node's match state */
@@ -830,8 +821,8 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 	}
       endsc = ILogsum(ILogsum(endsc, dmx[cur][M] + CP9TSC(cp9O_DM,M)), /* transition from D_M -> end */
 		      imx[cur][M] + CP9TSC(cp9O_IM,M)); /* transition from I_M -> end */
-      for(c = 0; c < cm->cp9->el_from_ct[M+1]; c++) /* el_from_ct[k] is >= 0 */
-	endsc = ILogsum(endsc, elmx[cur][cm->cp9->el_from_idx[M+1][c]]);
+      for(c = 0; c < cp9->el_from_ct[M+1]; c++) /* el_from_ct[k] is >= 0 */
+	endsc = ILogsum(endsc, elmx[cur][cp9->el_from_idx[M+1][c]]);
 	/* transition penalty to EL incurred when EL was entered */
       /*printf("endsc: %d\n", endsc);*/
 
@@ -953,12 +944,12 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
  *           in CP9Posterior().
  *
  * Args:     
- *           cm        - the covariance model, includes cm->cp9: a CP9 HMM
+ *           cp9       - the CP9 HMM
  *           errbuf    - char buffer for error messages
  *           dsq       - sequence in digitized form
  *           i0        - start of target subsequence (1 for beginning of dsq)
  *           j0        - end of target subsequence (L for end of dsq)
- *           W         - the maximum size of a hit (often cm->W)
+ *           W         - the maximum size of a hit
  *           hit_len_guess - the presumed length of a hit, this is needed b/c we only
  *                           determine start points (i) in this function, but when we store 'hits'
  *                           we need a start point j, j=i+hit_len_guess-1. 
@@ -981,7 +972,7 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
+cp9_Backward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
 	     int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
@@ -990,32 +981,30 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
-  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
-  int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
-  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
-  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cm->cp9->M]          */
+  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cp9->M]      */
+  int        **imx;         /* DP matrix for insert state scores [0..1][0..cp9->M]      */
+  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cp9->M]      */
+  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cp9->M]          */
   int         *erow;        /* end score for each position [0..1]                           */
-  int         *scA;         /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
+  int         *scA;         /* prob (seq from j0..jp | HMM) [0..jp..cp9->M]             */
   float        fsc;         /* float log odds score                                         */
   float        best_sc;     /* score of best hit overall                                    */
   float        best_pos;    /* residue (i) giving best_sc, where best hit starts            */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states */
-  int          M;           /* cm->cp9->M */
+  int          M;           /* cp9->M */
 
   /* Contract checks */
-  if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, cm->cp9 is NULL.\n");
+  if(cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, cp9 is NULL.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, dsq is NULL.");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, mx is NULL.\n");
-  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, mx->M != cm->clen.\n");
-  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, cm->clen != cm->cp9->M.\n");
     
-  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
+  int const *tsc = cp9->otsc; /* ptr to efficiently ordered transition scores           */
 
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
   L = j0-i0+1;
-  M = cm->cp9->M;
+  M = cp9->M;
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -1039,27 +1028,27 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
    * we're going backwards so we have to work out of order, we could get 
    * around this by storing the nodes each EL goes TO in an el_to_ct[] vec. */
   /* init to -INFTY */
-  for (k = 1; k <= cm->cp9->M; k++)
+  for (k = 1; k <= cp9->M; k++)
     elmx[cur][k] = -INFTY;
-  if(cm->cp9->flags & CPLAN9_EL)
+  if(cp9->flags & CPLAN9_EL)
     {
-      for(c = 0; c < cm->cp9->el_from_ct[cm->cp9->M+1]; c++) /* el_from_ct[cm->cp9->M+1] holds # ELs that can go to END */
-	elmx[cur][cm->cp9->el_from_idx[cm->cp9->M+1][c]] = 0.; /* EL<-E, penalty incurred when we enter EL (i.e. leave going backwards) */
+      for(c = 0; c < cp9->el_from_ct[cp9->M+1]; c++) /* el_from_ct[cp9->M+1] holds # ELs that can go to END */
+	elmx[cur][cp9->el_from_idx[cp9->M+1][c]] = 0.; /* EL<-E, penalty incurred when we enter EL (i.e. leave going backwards) */
     }
   /*******************************************************************/
 
-  /* elmx[cur][cm->cp9->M] is either 0 (if EL_M exists (it would nec be in el_from_idx[cm->cp9->M+1] array if it does, so
+  /* elmx[cur][cp9->M] is either 0 (if EL_M exists (it would nec be in el_from_idx[cp9->M+1] array if it does, so
    * it would be filled with 0 in above loop), or -INFTY if it doesn't exist. We don't add possibility of EL_M -> EL_M
    * self loop b/c it's impossible to do that without emitting, and we've already seen our last res emitted. 
    * either way we don't have to modify it */
 
-  mmx[cur][cm->cp9->M]  = 0. + 
-    ILogsum(elmx[cur][cm->cp9->M] + CP9TSC(cp9O_MEL,cm->cp9->M),/* M_M<-EL_M<-E, with 0 self loops in EL_M */
-	    CP9TSC(cp9O_ME,cm->cp9->M));                             /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
-  mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M];  /* ... + emitted match symbol */
-  imx[cur][cm->cp9->M]  = 0. + CP9TSC(cp9O_IM,cm->cp9->M);     /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
-  imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M];  /* ... + emitted insert symbol */
-  dmx[cur][cm->cp9->M]  = CP9TSC(cp9O_DM,cm->cp9->M);          /* D_M<-E */
+  mmx[cur][cp9->M]  = 0. + 
+    ILogsum(elmx[cur][cp9->M] + CP9TSC(cp9O_MEL,cp9->M),/* M_M<-EL_M<-E, with 0 self loops in EL_M */
+	    CP9TSC(cp9O_ME,cp9->M));                             /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
+  mmx[cur][cp9->M] += cp9->msc[dsq[i]][cp9->M];  /* ... + emitted match symbol */
+  imx[cur][cp9->M]  = 0. + CP9TSC(cp9O_IM,cp9->M);     /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
+  imx[cur][cp9->M] += cp9->isc[dsq[i]][cp9->M];  /* ... + emitted insert symbol */
+  dmx[cur][cp9->M]  = CP9TSC(cp9O_DM,cp9->M);          /* D_M<-E */
 
   /*******************************************************************
    * No need to look at EL_k->M_M b/c elmx[cur] with cur == L means last emitted residue was L+1 
@@ -1067,13 +1056,13 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
    * E which is handled above with the EL_k->E code). 
    *******************************************************************/
 
-  for (k = cm->cp9->M-1; k >= 1; k--)
+  for (k = cp9->M-1; k >= 1; k--)
     {
       mmx[cur][k]  = 0 + CP9TSC(cp9O_ME,k);  /*M_k<- E */
       mmx[cur][k]  = ILogsum(mmx[cur][k], dmx[cur][k+1] + CP9TSC(cp9O_MD,k));
-      if(cm->cp9->flags & CPLAN9_EL)
+      if(cp9->flags & CPLAN9_EL)
 	mmx[cur][k]  = ILogsum(mmx[cur][k], elmx[cur][k] + CP9TSC(cp9O_MEL,k));
-      mmx[cur][k] += cm->cp9->msc[dsq[i]][k];
+      mmx[cur][k] += cp9->msc[dsq[i]][k];
 
       /*******************************************************************
        * No need to look at EL_k->M_M b/c elmx[cur] with cur == L means last emitted residue was L+1 
@@ -1081,7 +1070,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
        * E which is handled above with the EL_k->E code). 
        *******************************************************************/
       imx[cur][k]  = dmx[cur][k+1] + CP9TSC(cp9O_ID,k);
-      imx[cur][k] += cm->cp9->isc[dsq[i]][k];
+      imx[cur][k] += cp9->isc[dsq[i]][k];
 
       dmx[cur][k]  = dmx[cur][k+1] + CP9TSC(cp9O_DD,k);
       /* elmx[cur][k] was set above, out of order */
@@ -1091,7 +1080,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   mmx[cur][0]  = dmx[cur][1] + CP9TSC(cp9O_MD,0); /* M_0(B)->D_1, no seq emitted, all deletes */
   /* above line is diff from CPBackwardOLD() which has mmx[cur][0] = -INFTY; */
   imx[cur][0]  = dmx[cur][1] + CP9TSC(cp9O_ID,0);
-  imx[cur][0] += cm->cp9->isc[dsq[i]][0];
+  imx[cur][0] += cp9->isc[dsq[i]][0];
 
   dmx[cur][0]   = -INFTY; /*D_0 doesn't exist*/
   elmx[cur][0]  = -INFTY; /*EL_0 doesn't exist*/
@@ -1110,33 +1099,33 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
       else { cur = ip; prv = ip+1; }
 
       /* init EL mx to -INFTY */
-      for (k = 0; k <= cm->cp9->M; k++) elmx[cur][k] = -INFTY;
+      for (k = 0; k <= cp9->M; k++) elmx[cur][k] = -INFTY;
       
       /* elmx[cur][k] is possibly of coming from self (EL_k), we 
        * can't have come from END b/c we haven't emitted the last res of the seq yet.
        */
-      if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[cm->cp9->M]))
-	    elmx[cur][cm->cp9->M] = elmx[cur][cm->cp9->M] + cm->cp9->el_selfsc;
+      if((cp9->flags & CPLAN9_EL) && (cp9->has_el[cp9->M]))
+	    elmx[cur][cp9->M] = elmx[cur][cp9->M] + cp9->el_selfsc;
 
-      mmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + CP9TSC(cp9O_MI,cm->cp9->M);
-      mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M];
+      mmx[cur][cp9->M]  = imx[prv][cp9->M] + CP9TSC(cp9O_MI,cp9->M);
+      mmx[cur][cp9->M] += cp9->msc[dsq[i]][cp9->M];
       
-      if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[cm->cp9->M]))
-	mmx[cur][cm->cp9->M] = ILogsum(mmx[cur][cm->cp9->M], 
-				       elmx[cur][cm->cp9->M] + CP9TSC(cp9O_MEL,cm->cp9->M));
+      if((cp9->flags & CPLAN9_EL) && (cp9->has_el[cp9->M]))
+	mmx[cur][cp9->M] = ILogsum(mmx[cur][cp9->M], 
+				       elmx[cur][cp9->M] + CP9TSC(cp9O_MEL,cp9->M));
       
-      imx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + CP9TSC(cp9O_II,cm->cp9->M);
-      imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M];
+      imx[cur][cp9->M]  = imx[prv][cp9->M] + CP9TSC(cp9O_II,cp9->M);
+      imx[cur][cp9->M] += cp9->isc[dsq[i]][cp9->M];
       
-      dmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + CP9TSC(cp9O_DI,cm->cp9->M); 
+      dmx[cur][cp9->M]  = imx[prv][cp9->M] + CP9TSC(cp9O_DI,cp9->M); 
       
       /*******************************************************************
        * 1b Handle EL, looking at EL_k->M_M for all valid k.
        * EL_k->M_M transition, which has no transition penalty */
-      if(cm->cp9->flags & CPLAN9_EL)
+      if(cp9->flags & CPLAN9_EL)
 	{
-	  for(c = 0; c < cm->cp9->el_from_ct[cm->cp9->M]; c++) /* el_from_ct[cm->cp9->M] holds # ELs that can go to M_M */
-	    elmx[cur][cm->cp9->el_from_idx[cm->cp9->M][c]] = ILogsum(elmx[cur][cm->cp9->el_from_idx[cm->cp9->M][c]], mmx[prv][cm->cp9->M]);
+	  for(c = 0; c < cp9->el_from_ct[cp9->M]; c++) /* el_from_ct[cp9->M] holds # ELs that can go to M_M */
+	    elmx[cur][cp9->el_from_idx[cp9->M][c]] = ILogsum(elmx[cur][cp9->el_from_idx[cp9->M][c]], mmx[prv][cp9->M]);
 	}
       
       /* A main difference between a Backward scanner and 
@@ -1147,47 +1136,47 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
 	  /*******************************************************************
 	   * 2 Handle EL, looking at EL_k->E for all valid k.
 	   * EL_k->M_M transition, which has no transition penalty */
-	  if(cm->cp9->flags & CPLAN9_EL)
+	  if(cp9->flags & CPLAN9_EL)
 	    {
-	      for(c = 0; c < cm->cp9->el_from_ct[cm->cp9->M+1]; c++) /* el_from_ct[cm->cp9->M] holds # ELs that can go to END */
-		elmx[cur][cm->cp9->el_from_idx[cm->cp9->M+1][c]] = 0.; /* EL<-E, penalty incurred when we enter EL (i.e. leave going backwards) */
+	      for(c = 0; c < cp9->el_from_ct[cp9->M+1]; c++) /* el_from_ct[cp9->M] holds # ELs that can go to END */
+		elmx[cur][cp9->el_from_idx[cp9->M+1][c]] = 0.; /* EL<-E, penalty incurred when we enter EL (i.e. leave going backwards) */
 	    }
 	  /*******************************************************************/
-	  /* elmx[cur][cm->cp9->M] is either 0 (if EL_M exists (it would nec be in el_from_idx[cm->cp9->M+1] array if it does, so
+	  /* elmx[cur][cp9->M] is either 0 (if EL_M exists (it would nec be in el_from_idx[cp9->M+1] array if it does, so
 	   * it would be filled with 0 in above loop), or -INFTY if it doesn't exist. We don't add possibility of EL_M -> EL_M
 	   * self loop b/c it's impossible to do that without emitting, and we've already seen our last res emitted,
 	   * either way we don't have to modify it */
 	  
-	  mmx[cur][cm->cp9->M]  =  
-	    ILogsum(mmx[cur][cm->cp9->M], 
-		    ILogsum(elmx[cur][cm->cp9->M] + CP9TSC(cp9O_MEL,cm->cp9->M),/* M_M<-EL_M<-E, with 0 selfs in EL_M */
-			    CP9TSC(cp9O_ME,cm->cp9->M)));                             /* M_M<-E ... */
+	  mmx[cur][cp9->M]  =  
+	    ILogsum(mmx[cur][cp9->M], 
+		    ILogsum(elmx[cur][cp9->M] + CP9TSC(cp9O_MEL,cp9->M),/* M_M<-EL_M<-E, with 0 selfs in EL_M */
+			    CP9TSC(cp9O_ME,cp9->M)));                             /* M_M<-E ... */
 	  /* DO NOT add contribution of emitting i from M, it's been added above */
 	  
-	  imx[cur][cm->cp9->M]  =
-	    ILogsum(imx[cur][cm->cp9->M],
-		    (CP9TSC(cp9O_IM,cm->cp9->M) +            /* I_M<-E + (only in scanner)     */
+	  imx[cur][cp9->M]  =
+	    ILogsum(imx[cur][cp9->M],
+		    (CP9TSC(cp9O_IM,cp9->M) +            /* I_M<-E + (only in scanner)     */
 		     0));                                        /* all parses end in E, 2^0 = 1.0;*/
 	  /* DO NOT add contribution of emitting i from M, it's been added above */
-	  dmx[cur][cm->cp9->M] =  
-	    ILogsum(dmx[cur][cm->cp9->M],
-		    (CP9TSC(cp9O_DM,cm->cp9->M) +            /* D_M<-E + (only in scanner)     */
+	  dmx[cur][cp9->M] =  
+	    ILogsum(dmx[cur][cp9->M],
+		    (CP9TSC(cp9O_DM,cp9->M) +            /* D_M<-E + (only in scanner)     */
 		     0));                                        /* all parses end in E, 2^0 = 1.0;*/
 	}
-      /*printf("mmx[ip:%d][%d]: %d cur: %d\n", ip, cm->cp9->M, mmx[cur][cm->cp9->M], cur);
-	printf("imx[ip:%d][%d]: %d cur: %d\n", ip, cm->cp9->M, imx[cur][cm->cp9->M], cur);
-	printf("dmx[ip:%d][%d]: %d cur: %d\n", ip, cm->cp9->M, dmx[cur][cm->cp9->M], cur);*/
+      /*printf("mmx[ip:%d][%d]: %d cur: %d\n", ip, cp9->M, mmx[cur][cp9->M], cur);
+	printf("imx[ip:%d][%d]: %d cur: %d\n", ip, cp9->M, imx[cur][cp9->M], cur);
+	printf("dmx[ip:%d][%d]: %d cur: %d\n", ip, cp9->M, dmx[cur][cp9->M], cur);*/
       
-      for (k = cm->cp9->M-1; k >= 1; k--)
+      for (k = cp9->M-1; k >= 1; k--)
 	{
 	  /*******************************************************************
 	   * 3 Handle EL, looking at EL_k->M_k for all valid k and EL_k->EL_k
 	   * we're going backwards so we have to work out of order
 	   * we could get around this by storing the nodes each EL goes TO
 	   * in an el_to_ct[] vector. */
-	  if(cm->cp9->flags & CPLAN9_EL) {
-	    for(c = 0; c < cm->cp9->el_from_ct[k]; c++) /* el_from_ct[k] holds # ELs that can go to M_k */
-	      elmx[cur][cm->cp9->el_from_idx[k][c]] = ILogsum(elmx[cur][cm->cp9->el_from_idx[k][c]], mmx[prv][k]);
+	  if(cp9->flags & CPLAN9_EL) {
+	    for(c = 0; c < cp9->el_from_ct[k]; c++) /* el_from_ct[k] holds # ELs that can go to M_k */
+	      elmx[cur][cp9->el_from_idx[k][c]] = ILogsum(elmx[cur][cp9->el_from_idx[k][c]], mmx[prv][k]);
 	    /* EL<-M, penalty incurred when we enter EL (i.e. leave going backwards) */
 	  }
 	  /*******************************************************************/
@@ -1195,20 +1184,20 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
 	  /* Finish off elmx[cur][k] with possibility of coming from self (EL_k), 
 	   * elmx[cur][k] will have been filled by block above for ks > current k,
 	   * no M_k -> EL_k' with k' > k */
-	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
-	    elmx[cur][k] = ILogsum(elmx[cur][k], elmx[prv][k] + cm->cp9->el_selfsc);
+	  if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
+	    elmx[cur][k] = ILogsum(elmx[cur][k], elmx[prv][k] + cp9->el_selfsc);
 
 	  mmx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + CP9TSC(cp9O_MM,k)),  
 					 (imx[prv][k]   + CP9TSC(cp9O_MI,k))),
 				 (dmx[cur][k+1] + CP9TSC(cp9O_MD,k)));
-	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
+	  if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
 	    mmx[cur][k] = ILogsum(mmx[cur][k], elmx[cur][k] + CP9TSC(cp9O_MEL,k)); /* penalty for entering EL */
-	  mmx[cur][k] += cm->cp9->msc[dsq[i]][k];
+	  mmx[cur][k] += cp9->msc[dsq[i]][k];
 	  
 	  imx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + CP9TSC(cp9O_IM,k)),
 					 (imx[prv][k]   + CP9TSC(cp9O_II,k))),
 				 (dmx[cur][k+1] + CP9TSC(cp9O_ID,k)));
-	  imx[cur][k] += cm->cp9->isc[dsq[i]][k];
+	  imx[cur][k] += cp9->isc[dsq[i]][k];
 	  
 	  if(do_scan) { /* add possibility of ending at this position from this state */
 	    mmx[cur][k] = 
@@ -1217,7 +1206,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
 		       0));                               /* all parses end in E, 2^0 = 1.0;*/
 	    /* DO NOT add contribution of emitting i from M, it's been added above */
 	    /* No EL contribution here b/c we'd be looking for M_k<-EL_k<-E, but EL_k<-E is impossible 
-	     * for k != cm->cp9->M; */
+	     * for k != cp9->M; */
 	  }	      
 	  dmx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + CP9TSC(cp9O_DM,k)),
 					 (imx[prv][k]   + CP9TSC(cp9O_DI,k))),
@@ -1228,13 +1217,13 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
       imx[cur][0] = ILogsum(ILogsum((mmx[prv][1] + CP9TSC(cp9O_IM,0)),
 				    (imx[prv][0] + CP9TSC(cp9O_II,0))),
 			    (dmx[cur][1] + CP9TSC(cp9O_ID,k)));
-      imx[cur][0] += cm->cp9->isc[dsq[i]][k];
+      imx[cur][0] += cp9->isc[dsq[i]][k];
       dmx[cur][0]   = -INFTY; /* D_0 does not exist */
       elmx[cur][0]  = -INFTY; /* EL_0 does not exist */
 
       /*M_0 is the B state, it doesn't emit, and can be reached from any match via a begin transition */
       mmx[cur][0] = -INFTY;
-      for (k = cm->cp9->M; k >= 1; k--) 
+      for (k = cp9->M; k >= 1; k--) 
 	mmx[cur][0] = ILogsum(mmx[cur][0], (mmx[prv][k] + CP9TSC(cp9O_BM,k)));
       mmx[cur][0] = ILogsum(mmx[cur][0], (imx[prv][0] + CP9TSC(cp9O_MI,0)));
       mmx[cur][0] = ILogsum(mmx[cur][0], (dmx[cur][1] + CP9TSC(cp9O_MD,0)));     /* B->D_1 */
@@ -1273,24 +1262,24 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   }
 
   /* init EL mx to -INFTY */
-  for (k = 1; k <= cm->cp9->M; k++) elmx[cur][k] = -INFTY;
+  for (k = 1; k <= cp9->M; k++) elmx[cur][k] = -INFTY;
 
-  mmx[cur][cm->cp9->M] = -INFTY;  /* need seq to get here */
-  imx[cur][cm->cp9->M] = -INFTY;  /* need seq to get here */
-  elmx[cur][cm->cp9->M]= -INFTY;  /* first emitted res can't be from an EL, need to see >= 1 matches */
-  dmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + CP9TSC(cp9O_DI,cm->cp9->M); 
+  mmx[cur][cp9->M] = -INFTY;  /* need seq to get here */
+  imx[cur][cp9->M] = -INFTY;  /* need seq to get here */
+  elmx[cur][cp9->M]= -INFTY;  /* first emitted res can't be from an EL, need to see >= 1 matches */
+  dmx[cur][cp9->M]  = imx[prv][cp9->M] + CP9TSC(cp9O_DI,cp9->M); 
   /* A main difference between a Backward scanner and 
    * regular Backward: a scanner can end at the END 
    * state at any position, regular can only end at
    * the final position j0. */
   if(do_scan)
     {	
-      dmx[cur][cm->cp9->M] =  
-	ILogsum(dmx[cur][cm->cp9->M],
-		(CP9TSC(cp9O_DM,cm->cp9->M) +            /* D_M<-E + (only in scanner)     */
+      dmx[cur][cp9->M] =  
+	ILogsum(dmx[cur][cp9->M],
+		(CP9TSC(cp9O_DM,cp9->M) +            /* D_M<-E + (only in scanner)     */
 		 0));                                        /* all parses end in E, 2^0 = 1.0;*/
     }
-  for (k = cm->cp9->M-1; k >= 1; k--)
+  for (k = cp9->M-1; k >= 1; k--)
     {
       mmx[cur][k] = -INFTY; /* need seq to get here, unless we come from E in a scanner (below) */
       imx[cur][k] = -INFTY; /* need seq to get here */
@@ -1308,7 +1297,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
 
   /*M_0 is the B state, it doesn't emit, and can be reached from any match via a begin transition */
   mmx[cur][0] = -INFTY;
-  for (k = cm->cp9->M; k >= 1; k--) 
+  for (k = cp9->M; k >= 1; k--) 
     mmx[cur][0] = ILogsum(mmx[cur][0], (mmx[prv][k] + CP9TSC(cp9O_BM,k)));
   mmx[cur][0] = ILogsum(mmx[cur][0], (imx[prv][0] + CP9TSC(cp9O_MI,0)));
   mmx[cur][0] = ILogsum(mmx[cur][0], (dmx[cur][1] + CP9TSC(cp9O_MD,0)));     /* B->D_1 */
@@ -1536,7 +1525,7 @@ main(int argc, char **argv)
       esl_rsq_xfIID(r, cm->null, abc->K, L, dsq);
 
       esl_stopwatch_Start(w);
-      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, 
+      if((status = cp9_Viterbi(cm->cp9, errbuf, cm->cp9_mx, dsq, 1, L, 
 			       do_scan,   /* are we scanning? */
 			       do_align,  /* are we aligning? */
 			       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
@@ -1551,7 +1540,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-b")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, 1, L, 
+	  if((status = cp9_ViterbiBackward(cm->cp9, errbuf, cm->cp9_mx, dsq, 1, L, 
 					   do_scan,   /* are we scanning? */
 					   do_align,  /* are we aligning? */
 					   (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
@@ -1567,7 +1556,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-f")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, 
+	  if((status = cp9_Forward(cm->cp9, errbuf, cm->cp9_mx, dsq, 1, L, 
 				   do_scan,   /* are we scanning? */
 				   do_align,  /* are we aligning? */
 				   (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
@@ -1685,7 +1674,7 @@ main(int argc, char **argv)
   sq = esl_sq_CreateDigital(abc);
   while((status = esl_sqio_Read(sqfp, sq)) == eslOK) { 
       esl_stopwatch_Start(w);
-      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, sq->dsq, 1, sq->n, cm->W, cm->W, 0., NULL,
+      if((status = cp9_Viterbi(cm->cp9, errbuf, cm->cp9_mx, sq->dsq, 1, sq->n, cm->W, cm->W, 0., NULL,
 			       do_scan,   /* are we scanning? */
 			       do_align,  /* are we aligning? */
 			       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
@@ -1699,7 +1688,7 @@ main(int argc, char **argv)
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
       esl_stopwatch_Start(w);
-      if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, sq->dsq, 1,
+      if((status = cp9_ViterbiBackward(cm->cp9, errbuf, cm->cp9_mx, sq->dsq, 1,
 				       (do_align) ? sq->n : maxj, 
 				       cm->W, cm->W, 0., NULL,
 				       do_scan,   /* are we scanning? */

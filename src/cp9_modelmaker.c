@@ -901,6 +901,8 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
   for(v = 0; v < cm->M; v++)
     if(psi[v] == 0. && cm->sttype[(v+1)] != E_st)
       cm_Fail("ERROR: psi of state v:%d is 0.0 and this state is not a detached insert! HMM banding would have failed...\n", v);
+
+  return;
 }
 
 /**************************************************************************
@@ -3179,9 +3181,9 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
   /* Contract check, we can't be in local mode in the CM */
   if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), CMH_LOCAL_BEGIN flag is up.\n");
   if(cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), CMH_LOCAL_END flag is up.\n");
-  if(mother_cm->cp9->flags & CPLAN9_EL) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9 has EL local ends on\n.");
-  if(!(mother_cm->cp9->flags & CPLAN9_LOCAL_BEGIN)) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9 does not have local begins on\n.");
-  if(!(mother_cm->cp9->flags & CPLAN9_LOCAL_END))   ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9 does not have local ends on\n.");
+  if(mother_cm->cp9loc->flags & CPLAN9_EL) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9loc has EL local ends on\n.");
+  if(!(mother_cm->cp9loc->flags & CPLAN9_LOCAL_BEGIN)) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9loc does not have local begins on\n.");
+  if(!(mother_cm->cp9loc->flags & CPLAN9_LOCAL_END))   ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9loc does not have local ends on\n.");
 
   /* Allocate and initialize the cp9map */
   cp9map = AllocCP9Map(cm);
@@ -3244,14 +3246,14 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
   for(k = 0; k <= (mother_map->epos-mother_map->spos+1); k++) { 
     mk = k + mother_map->spos - 1;
       if(k > 0) { 
-	esl_vec_FCopy(mother_cm->cp9->mat[mk], mother_cm->cp9->abc->K,  hmm->mat[k]);
-	for(x = 0; x < mother_cm->cp9->abc->Kp; x++) {
-	  hmm->msc[x][k] = mother_cm->cp9->msc[x][mk];
+	esl_vec_FCopy(mother_cm->cp9loc->mat[mk], mother_cm->cp9loc->abc->K,  hmm->mat[k]);
+	for(x = 0; x < mother_cm->cp9loc->abc->Kp; x++) {
+	  hmm->msc[x][k] = mother_cm->cp9loc->msc[x][mk];
 	}
       }
-      esl_vec_FCopy(mother_cm->cp9->ins[mk], mother_cm->cp9->abc->K,  hmm->ins[k]);
-      for(x = 0; x < mother_cm->cp9->abc->Kp; x++) {
-	hmm->isc[x][k] = mother_cm->cp9->isc[x][mk];
+      esl_vec_FCopy(mother_cm->cp9loc->ins[mk], mother_cm->cp9loc->abc->K,  hmm->ins[k]);
+      for(x = 0; x < mother_cm->cp9loc->abc->Kp; x++) {
+	hmm->isc[x][k] = mother_cm->cp9loc->isc[x][mk];
       }
 
       /* transitions, skip k == 0 and M, we filled them out in cm2hmm_special_trans_cp9() */
@@ -3263,14 +3265,14 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
 	/* careful with transitions out of match, we have to renormalize as 
 	 * we go b/c mother_cm's cp9 has local ends up */
 	for(x = cp9_TRANS_MATCH_OFFSET; x < cp9_TRANS_NMATCH; x++) { 
-	  hmm->t[k][x]   = mother_cm->cp9->t[mk][x]   / (1. - mother_cm->cp9->end[mk]);
+	  hmm->t[k][x]   = mother_cm->cp9loc->t[mk][x]   / (1. - mother_cm->cp9loc->end[mk]);
 	  hmm->tsc[x][k] = Prob2Score(hmm->t[k][x], 1.0);
 	}
 	
 	/* the rest of the probs/scores we can just copy b/c they're unaffected by local begins/ends */
-	esl_vec_FCopy(mother_cm->cp9->t[mk] + cp9_TRANS_INSERT_OFFSET, cp9_NTRANS - cp9_TRANS_INSERT_OFFSET,  hmm->t[k] + cp9_TRANS_INSERT_OFFSET);
+	esl_vec_FCopy(mother_cm->cp9loc->t[mk] + cp9_TRANS_INSERT_OFFSET, cp9_NTRANS - cp9_TRANS_INSERT_OFFSET,  hmm->t[k] + cp9_TRANS_INSERT_OFFSET);
 	for(x = cp9_TRANS_INSERT_OFFSET; x < cp9_NTRANS; x++) { 
-	  hmm->tsc[x][k] = mother_cm->cp9->tsc[x][mk];
+	  hmm->tsc[x][k] = mother_cm->cp9loc->tsc[x][mk];
 	}
 	hmm->end[k]     = 0.;
 	hmm->esc[k]     = -INFTY;

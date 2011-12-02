@@ -320,43 +320,6 @@ double Score2E (float x, double mu, double lambda, long eff_dbsize)
   return esl_exp_surv(x, mu, lambda) * (double) eff_dbsize;
 }
 
-/* Function: CM2ExpMode
- * Date:     EPN, Mon May  7 17:43:28 2007
- * Purpose:  Return the exp_mode for the CM and HMM
- *           given the flags and search options in the
- *           CM data structure.
- */
-int CM2ExpMode(CM_t *cm, int search_opts, int *ret_cm_exp_mode, int *ret_cp9_exp_mode)
-{
-  int cm_exp_mode;
-  int cp9_exp_mode;
-
-  /* check contract */
-  if(!(cm->flags & CMH_CP9) || cm->cp9 == NULL) cm_Fail("ERROR no CP9 in CM2ExpMode()\n");
-  if(cm->flags & CMH_LOCAL_BEGIN) {
-    if(search_opts & CM_SEARCH_INSIDE) cm_exp_mode = EXP_CM_LI;
-    else               	               cm_exp_mode = EXP_CM_LC;
-  }
-  else {
-    if(search_opts & CM_SEARCH_INSIDE) cm_exp_mode = EXP_CM_GI;
-    else        	               cm_exp_mode = EXP_CM_GC;
-  }
-
-  if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) {
-    if(search_opts & CM_SEARCH_HMMFORWARD) cp9_exp_mode = EXP_CP9_LF;
-    else                                   cp9_exp_mode = EXP_CP9_LV;
-  }
-  else {
-    if(search_opts & CM_SEARCH_HMMFORWARD) cp9_exp_mode = EXP_CP9_GF;
-    else                                   cp9_exp_mode = EXP_CP9_GV;
-  }
-
-  if(ret_cm_exp_mode  != NULL) *ret_cm_exp_mode  = cm_exp_mode;
-  if(ret_cp9_exp_mode != NULL) *ret_cp9_exp_mode = cp9_exp_mode;
-  return eslOK;
-}
-
-
 /*
  * Function: CM2FthrMode
  * Date:     EPN, Tue Dec 11 13:16:35 2007

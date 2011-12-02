@@ -98,11 +98,11 @@ AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc)
   ESL_ALLOC(hmm->t,   (M+1) *           sizeof(float *));
   ESL_ALLOC(hmm->mat, (M+1) *           sizeof(float *));
   ESL_ALLOC(hmm->ins, (M+1) *           sizeof(float *));
-  ESL_ALLOC(hmm->t[0],(cp9_NTRANS*(M+1))     *  sizeof(float));
-  ESL_ALLOC(hmm->mat[0],(abc->K*(M+1)) * sizeof(float));
-  ESL_ALLOC(hmm->ins[0],(abc->K*(M+1)) * sizeof(float));
+  ESL_ALLOC(hmm->t[0],(cp9_NTRANS*(M+1)) *  sizeof(float));
+  ESL_ALLOC(hmm->mat[0],(abc->K*(M+1))   * sizeof(float));
+  ESL_ALLOC(hmm->ins[0],(abc->K*(M+1))   * sizeof(float));
 
-  ESL_ALLOC(hmm->tsc, cp9_NTRANS *       sizeof(int *));
+  ESL_ALLOC(hmm->tsc, cp9_NTRANS     *   sizeof(int *));
   ESL_ALLOC(hmm->msc, hmm->abc->Kp   *   sizeof(int *));
   ESL_ALLOC(hmm->isc, hmm->abc->Kp   *   sizeof(int *)); 
   ESL_ALLOC(hmm->tsc_mem,(cp9_NTRANS*(M+1))     *       sizeof(int));
@@ -157,6 +157,12 @@ AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc)
   ESL_ALLOC(hmm->el_from_ct, (M+2) * sizeof(int));
   ESL_ALLOC(hmm->el_from_idx,(M+2) * sizeof(int *));
   ESL_ALLOC(hmm->el_from_cmnd,(M+2) * sizeof(int *));
+  esl_vec_ISet(hmm->has_el,     M+1, FALSE);
+  esl_vec_ISet(hmm->el_from_ct, M+1, 0);
+  for(k = 0; k <= M+1; k++) { 
+    hmm->el_from_idx[k] = NULL;
+    hmm->el_from_cmnd[k] = NULL;
+  }
 
   return;
  ERROR:
@@ -264,96 +270,93 @@ CPlan9SetNullModel(CP9_t *hmm, float *null, float p1)
   hmm->p1 = p1;
 }
 
-/*
- * Function: DuplicateCP9
- * Date:     EPN, Thu Jun 28 13:37:22 2007
- * Purpose:  Given a template cm 'src_cm' copy it's CP9 
- *           to the cm 'dest_cm'. dest_cm->cp9 and dest_cm->cp9map
- *           are alloc'ed here.
- *
- * Args:
- *           src_cm         the source CM, must have valid cp9
- *           dest_cm        the destination CM we're copying src_cm->cp9
- *                          to
+/* Function: cp9_Clone()
+ * Date:     EPN, Thu Dec  1 10:30:18 2011
+ * Purpose:  Clone a CP9 HMM CP9_t object
  */
-void
-DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
+CP9_t *
+cp9_Clone(CP9_t *cp9)
 {
-  int       k,x;	          /* counter over nodes */
+  CP9_t *cp9dup = NULL;
+  int    status;
 
-  /* Contract checks */
-  if(!(src_cm->flags & CMH_CP9))
-    cm_Fail("ERROR in DuplicateCP9() src_cm CMH_CP9 flag down.\n");
-
-  CPlan9Renormalize(src_cm->cp9);
-  CP9Logoddsify(src_cm->cp9);
+  if ((cp9dup = AllocCPlan9(cp9->M, cp9->abc)) == NULL) return NULL;
+  if ((status = cp9_Copy(cp9, cp9dup)) != eslOK) goto ERROR;
+  return cp9dup;
   
-  /* We can fill the map before we copy the CP9 */
-  /* Allocate and initialize the cp9map */
-  dest_cm->cp9map = AllocCP9Map(dest_cm);
-  /* Map the CM states to CP9 states and nodes and vice versa */
-  CP9_map_cm2hmm(dest_cm, dest_cm->cp9map, 0);
-
-  /* Create the new model and copy everything over */
-  dest_cm->cp9 = AllocCPlan9(dest_cm->cp9map->hmm_M, src_cm->abc);
-  ZeroCPlan9(dest_cm->cp9);
-  CPlan9SetNullModel(dest_cm->cp9, dest_cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
-  CPlan9InitEL(dest_cm, dest_cm->cp9); /* set up hmm->el_from_ct and hmm->el_from_idx data, which
-					* explains how the EL states are connected in the HMM. */
-
-  /* Copy the transitions and emission probs and scores */
-  for(k = 0; k <= dest_cm->cp9->M; k++)
-    {
-      dest_cm->cp9->t[k][CTMM] = src_cm->cp9->t[k][CTMM];
-      dest_cm->cp9->t[k][CTMI] = src_cm->cp9->t[k][CTMI];
-      dest_cm->cp9->t[k][CTMD] = src_cm->cp9->t[k][CTMD];
-      dest_cm->cp9->t[k][CTMEL] = src_cm->cp9->t[k][CTMEL];
-
-
-      dest_cm->cp9->t[k][CTIM] = src_cm->cp9->t[k][CTIM];
-      dest_cm->cp9->t[k][CTII] = src_cm->cp9->t[k][CTII];
-      dest_cm->cp9->t[k][CTID] = src_cm->cp9->t[k][CTID];
-
-      dest_cm->cp9->t[k][CTDM] = src_cm->cp9->t[k][CTDM];
-      dest_cm->cp9->t[k][CTDI] = src_cm->cp9->t[k][CTDI];
-      dest_cm->cp9->t[k][CTDD] = src_cm->cp9->t[k][CTDD];
-
-      dest_cm->cp9->begin[k] = src_cm->cp9->begin[k];
-      dest_cm->cp9->end[k] = src_cm->cp9->end[k];
-
-      for(x = 0; x < src_cm->cp9->abc->K; x++)
-	{
-	  dest_cm->cp9->mat[k][x] = src_cm->cp9->mat[k][x];
-	  dest_cm->cp9->ins[k][x] = src_cm->cp9->ins[k][x];
-	}
-    }
-
-  dest_cm->cp9->p1        = src_cm->cp9->p1;
-  dest_cm->cp9->el_self   = src_cm->cp9->el_self;
-  dest_cm->cp9->el_selfsc = src_cm->cp9->el_selfsc;
-  dest_cm->cp9->null2_omega = src_cm->cp9->null2_omega;
-  dest_cm->cp9->null3_omega = src_cm->cp9->null3_omega;
-
-  CPlan9Renormalize(dest_cm->cp9);/* shouldn't be nec */
-  CP9Logoddsify(dest_cm->cp9); /* fill in all the integer log odds scores:
-				* msc, isc, bsc, esc, tsc, the *sc_mem
-				* pointers were set up in AllocCPlan9() */
-    
-  /*
-    FILE *fp;
-    fp = fopen("destcp9" ,"w");
-    debug_print_cp9_params(fp, dest_cm->cp9, TRUE);
-    fclose(fp);
-    fp = fopen("srccp9" ,"w");
-    debug_print_cp9_params(fp, src_cm->cp9, TRUE);
-    fclose(fp);
-  */
-
-  /* finally create the CP9Bands */
-  dest_cm->cp9b = AllocCP9Bands(dest_cm->M, dest_cm->cp9->M);
-
-  dest_cm->cp9->flags = src_cm->cp9->flags;
+ ERROR:
+  FreeCPlan9(cp9dup);
+  return NULL;
 }
+
+
+/* Function:  cp9_Copy()
+ * Synopsis:  Copy a CM plan 9 HMM.
+ *
+ * Purpose:   Copies cp9 hmm <src> to cp9 hmm <dst>, where <dst>
+ *            has already been allocated to be of sufficient size.
+ *
+ *            <src> should be properly normalized and log-oddsified,
+ *            no check is done to ensure that.
+ *
+ * Returns:   <eslOK> on success.
+ * 
+ * Throws:    <eslEMEM> on allocation error; <eslEINVAL> if <dst> is too small 
+ *            to fit <src>.
+ */
+int
+cp9_Copy(const CP9_t *src, CP9_t *dst)
+{
+  int status;
+  int k;
+
+  if (src->M != dst->M) ESL_EXCEPTION(eslEINVAL, "destination hmm not equal to size of source hmm");
+  
+  dst->abc = src->abc;
+  
+  for(k = 0; k <= src->M; k++) { 
+    esl_vec_FCopy(src->t[k],   cp9_NTRANS,  dst->t[k]);
+    esl_vec_FCopy(src->mat[k], src->abc->K, dst->mat[k]);
+    esl_vec_FCopy(src->ins[k], src->abc->K, dst->ins[k]);
+  }
+  esl_vec_FCopy(src->begin, src->M+1, dst->begin);
+  esl_vec_FCopy(src->end,   src->M+1, dst->end);
+  esl_vec_ICopy(src->bsc_mem, src->M+1, dst->bsc_mem);
+  esl_vec_ICopy(src->esc_mem, src->M+1, dst->esc_mem);
+  
+  /* exploit linear-memory of these 2d arrays */
+  esl_vec_ICopy(src->tsc_mem, cp9_NTRANS   * (src->M+1), dst->tsc_mem);
+  esl_vec_ICopy(src->msc_mem, src->abc->Kp * (src->M+1), dst->msc_mem);
+  esl_vec_ICopy(src->isc_mem, src->abc->Kp * (src->M+1), dst->isc_mem);
+  esl_vec_ICopy(src->otsc,    cp9O_NTRANS  * (src->M+1), dst->otsc);
+  
+  /* EL info */
+  dst->el_self     = src->el_self;
+  dst->el_selfsc   = src->el_selfsc;
+  esl_vec_ICopy(src->has_el,     src->M+1,    dst->has_el);
+  esl_vec_ICopy(src->el_from_ct, src->M+2,    dst->el_from_ct);
+  for(k = 0; k <= src->M+1; k++) { 
+    if(src->el_from_ct[k] > 0) { 
+      ESL_ALLOC(dst->el_from_idx[k],  sizeof(int) * src->el_from_ct[k]);
+      ESL_ALLOC(dst->el_from_cmnd[k], sizeof(int) * src->el_from_ct[k]);
+      esl_vec_ICopy(src->el_from_idx[k],  src->el_from_ct[k], dst->el_from_idx[k]);
+      esl_vec_ICopy(src->el_from_cmnd[k], src->el_from_ct[k], dst->el_from_cmnd[k]);
+    }
+  }
+  
+  dst->null2_omega = src->null2_omega;
+  dst->null3_omega = src->null3_omega;
+  esl_vec_FCopy(src->null,       src->abc->K, dst->null);
+  
+  dst->p1          = src->p1;
+  dst->flags       = src->flags;
+  
+  return eslOK;
+
+ ERROR: 
+  return status;
+}
+
 
 /* Function: cp9_GetNCalcsPerResidue()
  * Date:     EPN, Thu Jan 17 06:12:37 2008

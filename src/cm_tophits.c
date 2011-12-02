@@ -185,7 +185,11 @@ hit_sorter_by_score(const void *vh1, const void *vh2)
   else {
     if      (h1->seq_idx > h2->seq_idx) return  1; /* second key, seq_idx (unique id for sequences), low to high */
     else if (h1->seq_idx < h2->seq_idx) return -1;
-    else                                return  (h1->start > h2->start ? 1 : -1 ); /* third key, start position, low to high */
+    else {
+      if      (h1->start > h2->start) return  1; /* third key, start position, low to high */
+      else if (h1->start < h2->start) return -1;
+      else                            return  (h1->pass_idx < h2->pass_idx ? 1 : -1 ); /* fourth key, pass_idx, high to low */
+    }
   }
 }
 
@@ -888,17 +892,19 @@ int
 cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 {
   int    status;
-  char   newness;
   int    h,i;
   int    namew;
   int    posw;
   int    descw;
+  int    rankw;
   char  *showname;
   int    have_printed_incthresh = FALSE;
+  int    nprinted = 0;
 
-  char *namestr   = NULL;
-  char *posstr    = NULL;
-
+  char *namestr     = NULL;
+  char *posstr      = NULL;
+  char *rankstr     = NULL;
+  char *cur_rankstr = NULL;
 
   /* when --acc is on, we'll show accession if available, and fall back to name */
   if (pli->show_accessions) namew = ESL_MAX(8, cm_tophits_GetMaxShownLength(th));
@@ -909,17 +915,23 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   if (textw >  0) descw = ESL_MAX(32, textw - namew - (2*posw) - 31); /* 31 chars excluding desc is from the format: 1 + 2 + 9+2(E-value) + 6+2(score) + 1+2(strand) + 2+2+2+2(spacing) */
   else            descw = 0;                                          /* unlimited desc length is handled separately */
 
-  ESL_ALLOC(namestr, sizeof(char) * (namew+1));
-  ESL_ALLOC(posstr,  sizeof(char) * (posw+1));
+  rankw = ESL_MAX(4, (integer_textwidth(th->nreported)+2));
+
+  ESL_ALLOC(namestr,     sizeof(char) * (namew+1));
+  ESL_ALLOC(posstr,      sizeof(char) * (posw+1));
+  ESL_ALLOC(rankstr,     sizeof(char) * (rankw+1));
+  ESL_ALLOC(cur_rankstr, sizeof(char) * (rankw+1));
 
   for(i = 0; i < namew; i++) { namestr[i] = '-'; } namestr[namew] = '\0';
   for(i = 0; i < posw;  i++) { posstr[i]  = '-'; } posstr[posw]   = '\0';
+  for(i = 0; i < rankw; i++) { rankstr[i] = '-'; } rankstr[rankw] = '\0';
+  cur_rankstr[rankw] = '\0';
 
   fprintf(ofp, "Hit scores:\n");
-  /* The minimum width of the target table is 85 char: 30 from fields, 8 from min name, 32 from min desc, 15 spaces */
-  fprintf(ofp, "   %9s  %6s  %-*s  %*s  %*s  %1s  %s\n", "E-value",   " score", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"model"), posw, "start", posw, "end", "", "description");
-  fprintf(ofp, "   %9s  %6s  %-*s  %*s  %*s  %1s  %s\n", "---------", "------", namew, namestr, posw, posstr, posw, posstr, "", "-----------");
+  fprintf(ofp, " %*s  %9s  %6s  %-*s  %*s  %*s  %1s  %5s  %s\n", rankw, "rank",  "E-value",   " score", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"model"), posw, "start", posw, "end", "", "trunc", "description");
+  fprintf(ofp, " %*s  %9s  %6s  %-*s  %*s  %*s  %1s  %5s  %s\n", rankw, rankstr, "---------", "------", namew, namestr, posw, posstr, posw, posstr, "", "-----", "-----------");
   
+  nprinted = 0;
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED) { 
 
@@ -937,15 +949,20 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	showname = th->hit[h]->name;
       }
       
-      newness = ' '; /* left-over from HMMER3 output, which uses this to mark new/dropped hits in iterative searches */
-      fprintf(ofp, "%c  %9.2g  %6.1f  %-*s  %*" PRId64 "  %*" PRId64 "  %c  ",
-	      newness,
+      sprintf(cur_rankstr, "(%d)", nprinted+1);
+
+      fprintf(ofp, " %*s  %9.2g  %6.1f  %-*s  %*" PRId64 "  %*" PRId64 "  %c  ",
+	      rankw, cur_rankstr,
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
 	      namew, showname,
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'));
+      if     (th->hit[h]->mode == TRMODE_T) fprintf(ofp, "%5s  ", "5'&3'");
+      else if(th->hit[h]->mode == TRMODE_L) fprintf(ofp, "%5s  ", "3'");
+      else if(th->hit[h]->mode == TRMODE_R) fprintf(ofp, "%5s  ", "5'");
+      else                                  fprintf(ofp, "%5s  ", "no");
       
       if (textw > 0) fprintf(ofp, "%-.*s\n", descw, th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
       else           fprintf(ofp, "%s\n",           th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
@@ -953,12 +970,15 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
        * have an fprintf() bug here (we found one on an Opteron/SUSE Linux
        * system (#h66))
        */
+      nprinted++;
     }
   }
   if (th->nreported == 0) fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n");
 
-  if(namestr != NULL) free(namestr);
-  if(posstr  != NULL) free(posstr);
+  if(namestr     != NULL) free(namestr);
+  if(posstr      != NULL) free(posstr);
+  if(rankstr     != NULL) free(rankstr);
+  if(cur_rankstr != NULL) free(cur_rankstr);
 
   return eslOK;
 
@@ -984,9 +1004,10 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 {
   int status;
   int h, i, nprinted;
-  int namew, descw, idxw;
+  int namew, descw, rankw;
   char *showname;
-  char *idxstr = NULL;
+  char *rankstr     = NULL;
+  char *cur_rankstr = NULL;
 
   /* next 4 characters indicate whether alignment ends internal to model/sequence
    * and if it is in a truncated alignment mode. */
@@ -995,9 +1016,11 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   char lseq; 
   char rseq;
 
-  idxw = integer_textwidth(th->N);
-  ESL_ALLOC(idxstr, sizeof(char) * (idxw+1));
-  for(i = 0; i < idxw; i++) { idxstr[i] = '-'; } idxstr[idxw] = '\0';
+  rankw = ESL_MAX(4, (integer_textwidth(th->nreported)+2));
+  ESL_ALLOC(rankstr,     sizeof(char) * (rankw+1));
+  ESL_ALLOC(cur_rankstr, sizeof(char) * (rankw+1));
+  for(i = 0; i < rankw; i++) { rankstr[i] = '-'; } rankstr[rankw] = '\0';
+  cur_rankstr[rankw] = '\0';
 
   fprintf(ofp, "Hit alignments:\n");
 
@@ -1021,32 +1044,32 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	fprintf(ofp, ">> %s  %s\n",    showname,        (th->hit[h]->desc == NULL ? "" : th->hit[h]->desc));
       }
 
-      /* The hit info display is 95+idxw char wide:, where idxw is the the number of digits in th->N. 
-       * If (! pli->show_alignments) the width drops to 65+idxw.
-       *     #  score   E-value cm from   cm to       seq from      seq to     | acc  bands   mx Mb aln secs  
-       *     - ------ --------- ------- -------    ----------- -----------     |---- ------ ------- --------
-       *     1  123.4    6.8e-9       3      72 []         412         492 + ..|0.98    yes    1.30     0.04  
-       *     2  123.4    1.8e-3       1      72 []         180         103 - ..|0.90    yes    0.65     2.23  
-       *  idxw 123456 123456789 1234567 1234567 12 12345678901 12345678901 1 12|1234  12345 1234567 12345678
-       *     0        1         2         3         4         5         6      |  7         8        9      
-       *     12345678901234567890123456789012345678901234567890123456789012345678901234567890123457890123456
-       *                                                                       |
-       *                                                                       ^
-       *                                                                       end of output if (! pli->show_alignments)
+      /* The hit info display is 101+rankw char wide:, where rankw is the maximum of 4 and 2 plus the number of digits in th->N. 
+       * If (! pli->show_alignments) the width drops to 72+rankw.
+       *     rank  score   E-value cm from   cm to       seq from      seq to      trunc| acc  bands   mx Mb aln secs  
+       *     ---- ------ --------- ------- -------    ----------- -----------      -----|---- ------ ------- --------
+       *      (1)  123.4    6.8e-9       3      72 []         412         492 + ..      |0.98    yes    1.30     0.04  
+       *     (12)  123.4    1.8e-3       1      72 []         180         103 - ..      |0.90    yes    0.65     2.23  
+       *    rankw 123456 123456789 1234567 1234567 12 12345678901 12345678901 1 12 12345|1234  12345 1234567 12345678
+       *        0         1         2         3         4         5         6         7 |       8        9        10
+       *        01234567890123456789012345678901234567890123456789012345678901234567890123456789012345789012345678901
+       *                                                                                |
+       *                                                                                ^
+       *                                                                                end of output if (! pli->show_alignments)
        * 
        * In rare cases, when optimal accuracy alignment is infeasible in allowable memory, 
        * the "acc" column will be replaced by a "cyksc" colum which is 6 characters wide 
        * instead of 4. 
        */
 
-      fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s",  idxw, "#", "", "score", "E-value", "cm from", "cm to", "", "seq from", "seq to", "", "");
+      fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s %5s",  rankw, "rank", "", "score", "E-value", "cm from", "cm to", "", "seq from", "seq to", "", "", "trunc");
       if(pli->do_alignments) { 
 	if(th->hit[h]->ad->used_optacc) { fprintf(ofp, " %4s %5s %7s %7s", "acc",   "bands", "mx Mb",   "seconds"); }
 	else                            { fprintf(ofp, " %6s %5s %7s %7s", "cyksc", "bands", "mx Mb",   "seconds"); }
       }
       fprintf(ofp, "\n");
 
-      fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s",  idxw, idxstr,  "", "------", "---------", "-------", "-------", "", "-----------", "-----------", "", "");
+      fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s %5s",  rankw, rankstr,  "", "------", "---------", "-------", "-------", "", "-----------", "-----------", "", "", "-----");
       if(pli->do_alignments) { 
 	if(th->hit[h]->ad->used_optacc) { fprintf(ofp, " %4s %5s %7s %7s", "----",   "-----", "-------", "-------"); }
 	else                            { fprintf(ofp, " %6s %5s %7s %7s", "------", "-----", "-------", "-------"); }
@@ -1071,8 +1094,10 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	rseq = th->hit[h]->ad->sqto == th->hit[h]->srcL     ? '}' : '~';
       }
 
-      fprintf(ofp, " %*d %c %6.1f %9.2g %7d %7d %c%c %11" PRId64 " %11" PRId64 " %c %c%c",
-	      idxw, nprinted+1,
+      sprintf(cur_rankstr, "(%d)", nprinted+1);
+
+      fprintf(ofp, " %*s %c %6.1f %9.2g %7d %7d %c%c %11" PRId64 " %11" PRId64 " %c %c%c ",
+	      rankw, cur_rankstr,
 	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? '!' : '?'),
 	      th->hit[h]->score,
 	      th->hit[h]->evalue,
@@ -1083,6 +1108,10 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      th->hit[h]->stop,
 	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'),
 	      lseq, rseq);
+      if     (th->hit[h]->mode == TRMODE_T) fprintf(ofp, "%5s", "5'&3'");
+      else if(th->hit[h]->mode == TRMODE_L) fprintf(ofp, "%5s", "3'");
+      else if(th->hit[h]->mode == TRMODE_R) fprintf(ofp, "%5s", "5'");
+      else                                  fprintf(ofp, "%5s", "no");
       
       if (pli->do_alignments) { 
 	if(th->hit[h]->ad->used_optacc) { fprintf(ofp, " %4.2f", th->hit[h]->ad->aln_sc); }
@@ -1103,11 +1132,12 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   }
   if (th->nreported == 0) { fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n"); return eslOK; }
 
-  if(idxstr != NULL) free(idxstr);
+  if(rankstr     != NULL) free(rankstr);
+  if(cur_rankstr != NULL) free(cur_rankstr);
   return eslOK;
 
 ERROR: 
-  if(idxstr != NULL) free(idxstr);
+  if(rankstr != NULL) free(rankstr);
   return status;
 
 }
@@ -1558,7 +1588,9 @@ cm_hit_Dump(FILE *fp, const CM_HIT *h)
   fprintf(fp, "name      = %s\n",  h->name);
   fprintf(fp, "acc       = %s\n",  (h->acc  != NULL) ? h->acc  : "NULL");
   fprintf(fp, "desc      = %s\n",  (h->desc != NULL) ? h->desc : "NULL");
+  fprintf(fp, "cm_idx    = %" PRId64 "\n", h->cm_idx);
   fprintf(fp, "seq_idx   = %" PRId64 "\n", h->seq_idx);
+  fprintf(fp, "pass_idx  = %d\n",          h->pass_idx);
   fprintf(fp, "start     = %" PRId64 "\n", h->start);
   fprintf(fp, "stop      = %" PRId64 "\n", h->stop);
   fprintf(fp, "srcL      = %" PRId64 "\n", h->srcL);

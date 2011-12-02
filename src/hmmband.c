@@ -192,9 +192,9 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   int do_trunc;       /* are we allowing truncated alignments (either L or R)? */
   int do_fwd_scan;    /* run Forward  in scanning mode? (see long comment on this below by assignment of do_fwd_scan) */
   int do_bck_scan;    /* run Backward in scanning mode? (see long comment on this below by assignment of do_fwd_scan) */
-			
+  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (cm->cp9loc or cm->cp9glb) we'll use for deriving bands */
+
   /* Contract checks */
-  if(cm->cp9 == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9map is NULL.\n");
   if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, dsq is NULL.");
   if(i0 > j0)            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, i0: %d > j0: %d\n", i0, j0);
@@ -205,6 +205,15 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   use_sums      = ((cm->align_opts & CM_ALIGN_SUMS)      || (cm->search_opts & CM_SEARCH_SUMS))      ? TRUE : FALSE;
   do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
   do_trunc      = (tro != NULL && (tro->allowL || tro->allowR)) ? TRUE : FALSE;
+
+  /* Determine which cp9 HMM to use: If the CM has local begins OR
+   * we're doing truncated alignment, then use cm->cp9 (it has local
+   * begins/ends), else (CM has no local begins and we're not doing
+   * truncated alignment) use cm->cp9glb, it has local begins/ends
+   * turned off.
+   */
+  cp9 = ((cm->flags & CMH_LOCAL_BEGIN) || do_trunc) ? cm->cp9loc : cm->cp9glb;
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but relevant cp9 is NULL.\n");
 
   /* Determine if we should do Forward and Backward in scan mode.
    *
@@ -238,14 +247,14 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
    */
 
   /* Step 1: Get HMM Forward/Backward DP matrices. */
-  if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, 
+  if((status = cp9_Forward(cp9, errbuf, fmx, dsq, i0, j0, 
 			   do_fwd_scan,      /* allow parses to start at any posn? */
 			   (! doing_search), /* are we going to use bands to align? */
 			   FALSE,            /* don't be memory efficient */
 			   NULL, NULL,
 			   &sc)) != eslOK) return status;
 
-  if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0,
+  if((status = cp9_Backward(cp9, errbuf, bmx, dsq, i0, j0,
 			    do_bck_scan,       /* allow parses to end at any posn? */
 			    (! doing_search),  /* are we going to use posteriors to align? */
 			    FALSE,             /* don't be memory efficient */
@@ -253,39 +262,39 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 			    &sc)) != eslOK) return status;
 
   if(cm->align_opts & CM_ALIGN_CHECKFB) { 
-    if((status = cp9_CheckFB(fmx, bmx, cm->cp9, errbuf, sc, i0, j0, dsq)) != eslOK) return status;
+    if((status = cp9_CheckFB(fmx, bmx, cp9, errbuf, sc, i0, j0, dsq)) != eslOK) return status;
     printf("Forward/Backward matrices checked.\n");
   }
 
 
   /* Step 2: F/B -> HMM bands. */
   if(use_sums){
-    if((status = cp9_FB2HMMBandsWithSums(cm->cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, i0, j0, cp9b->hmm_M,
+    if((status = cp9_FB2HMMBandsWithSums(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, i0, j0, cp9b->hmm_M,
 					 (1.-cm->tau), do_fwd_scan, do_bck_scan, do_old_hmm2ij, debug_level)) != eslOK) return status;
   }
   else {
-    if((status = cp9_FB2HMMBands(cm->cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, i0, j0, cp9b->hmm_M,
+    if((status = cp9_FB2HMMBands(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, i0, j0, cp9b->hmm_M,
 				 (1.-cm->tau), do_fwd_scan, do_bck_scan, do_old_hmm2ij, debug_level)) != eslOK) return status;
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
 
   /* Step 2B: (only if tro != NULL (truncated alignments are possible) Calculate occupancy and candidate states for marginal alignments */
-  if(tro != NULL && (tro->allowR || tro->allowL)) { 
+  if(do_trunc) { 
     cp9_PredictStartAndEndPositions(pmx, cp9b, i0, j0);
     cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, tro);
     /* xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG */
   }
   else { 
     /* reset all Jvalid values to TRUE */
-    esl_vec_ISet(cm->cp9b->Jvalid, cm->M+1, TRUE);
+    esl_vec_ISet(cp9b->Jvalid, cm->M+1, TRUE);
   }
 
   /* Step 3: HMM bands  ->  CM bands. */
   if(do_old_hmm2ij) { 
-    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
   }
   else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, do_trunc, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cp9b, cm->cp9map, i0, j0, doing_search, do_trunc, debug_level)) != eslOK) return status;
   }
   
   /* Use the CM bands on i and j to get bands on d, specific to j. */
@@ -311,6 +320,10 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
  *           run HMM Forward and Backward algorithms, and return a CP9 posterior
  *           matrix.
  *           
+ *           Note: this function was never updated to handle 
+ *           truncated alignment (b/c it's no longer hooked up
+ *           to any of the Infernal applications).
+ *
  * Args:     cm           - the covariance model
  *           errbuf       - char buffer for error messages
  *           fmx          - CP9 dp matrix for Forward()
@@ -326,28 +339,32 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 int
 cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level)
 {
-  /*CP9_MX *cp9_mx;*/    /* growable DP matrix for viterbi                       */
   int status;
   float sc;
+  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (cm->cp9loc or cm->cp9glb) we'll use for deriving bands */
 
   /* Contract checks */
   if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors(), dsq is NULL.");
-  if(cm->cp9 == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9 is NULL.\n");
+  if(cm->cp9loc == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9loc is NULL.\n");
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9map is NULL.\n");
   if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
     ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if((cm->search_opts & CM_SEARCH_HMMALNBANDS) && (! (cm->search_opts & CM_SEARCH_HBANDED))) 
     ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_SEARCH_HMMALNBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
 
+  /* determine which cp9 HMM to use, if CM is has local begins use cp9 (its local too) else use cp9glb (its global) */
+  cp9 = (cm->flags & CMH_LOCAL_BEGIN) ? cm->cp9loc : cm->cp9glb;
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Posteriors, but relevant cp9 is NULL.\n");
+
   /* Step 1: Get HMM posteriors.*/
-  if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, 
+  if((status = cp9_Forward(cp9, errbuf, fmx, dsq, i0, j0, 
 			   FALSE,     /* don't use scanning Forward/Backward */
 			   TRUE,      /* we are going to use posteriors to align */
 			   FALSE,     /* don't be memory efficient */
 			   NULL, NULL,
 			   &sc)) != eslOK) return status;
   if(debug_level > 0) printf("CP9 Forward  score : %.4f\n", sc);
-  if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, 
+  if((status = cp9_Backward(cp9, errbuf, bmx, dsq, i0, j0, 
 			    FALSE, /* don't use scanning Forward/Backward */
 			    TRUE,  /* we are going to use posteriors to align */
 			    FALSE, /* don't be memory efficient */
@@ -356,12 +373,12 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   if(debug_level > 0) printf("CP9 Backward  score : %.4f\n", sc);
 
   if(cm->align_opts & CM_ALIGN_CHECKFB) {
-    if((status = cp9_CheckFB(fmx, bmx, cm->cp9, errbuf, sc, i0, j0, dsq)) != eslOK) return status;
+    if((status = cp9_CheckFB(fmx, bmx, cp9, errbuf, sc, i0, j0, dsq)) != eslOK) return status;
     printf("Forward/Backward matrices checked.\n");
   }
 
   /* Get posteriors */
-  cp9_Posterior(dsq, i0, j0, cm->cp9, fmx, bmx, pmx, FALSE);
+  cp9_Posterior(dsq, i0, j0, cp9, fmx, bmx, pmx, FALSE);
 
   return eslOK;
 }
@@ -1406,6 +1423,7 @@ hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
  *
  * Args:     <cm>     - the model
  *           <errbuf> - for returning error messages
+ *           <cp9>    - the CP9 HMM used to determine the bands
  *           <cp9b>   - the bands data structure
  *           <cp9map> - map between the CM and HMM
  *           <i0>     - first position in the sequence we're considering
@@ -1421,7 +1439,7 @@ hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
  *           <eslEMEM> on memory error
  */
 int
-cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int do_trunc, int debug_level)
+cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int do_trunc, int debug_level)
 {
 
   int status;
@@ -1481,11 +1499,14 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
   if(i0 < 1) ESL_FAIL(eslEINCOMPAT,  errbuf, "cp9_HMM2ijBands(), i0 < 1: %d\n", i0);
   if(j0 < 1) ESL_FAIL(eslEINCOMPAT,  errbuf, "cp9_HMM2ijBands(), j0 < 1: %d\n", j0);
   if(j0 < i0) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), i0 (%d) < j0 (%d)\n", i0, j0);
-  hmm_is_localized = ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) || (cm->cp9->flags & CPLAN9_LOCAL_END) || (cm->cp9->flags & CPLAN9_EL)) ? TRUE : FALSE;
+  hmm_is_localized = ((cp9->flags & CPLAN9_LOCAL_BEGIN) || (cp9->flags & CPLAN9_LOCAL_END) || (cp9->flags & CPLAN9_EL)) ? TRUE : FALSE;
+#if 0 
   if(hmm_is_localized) { 
     if(!(cm->flags & CMH_LOCAL_BEGIN)) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), HMM is locally configured, but CM's local begins are off.\n");
     if(!(cm->flags & CMH_LOCAL_END))   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), HMM is locally configured, but CM's local ends are off.\n");
   }
+#endif
+
   /* ptrs to cp9b arrays, for convenience */
   pn_min_m = cp9b->pn_min_m;
   pn_max_m = cp9b->pn_max_m;
@@ -1505,7 +1526,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
   esl_vec_ISet(jmax, cm->M, -2);
 
   /* Step 1: Check for valid HMM parse within the HMM bands, if there isn't one messily expand the bands so that there is one */
-  if((status = HMMBandsEnforceValidParse(cm, cp9b, cp9map, errbuf, i0, j0, doing_search, NULL, 
+  if((status = HMMBandsEnforceValidParse(cp9, cp9b, cp9map, errbuf, i0, j0, doing_search, NULL, 
 					 &r_mn, &r_mx, &r_in, &r_ix, &r_dn, &r_dx, &r_nn_i, &r_nx_i, &r_nn_j, &r_nx_j)) != eslOK) return status;
 
   /* debugging printf block */
@@ -1890,10 +1911,17 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
   }
 #endif
 
-  /* A final, brutal hack. If the hmm used to derive bands has local begins, ends and ELs on,
-   * it's possible (but extremely rare empirically, even with very high tau values (0.49!)) that no valid 
-   * CM parse exists within the i and j bands. To avoid this, we implement a brutal hack here.
-   * There's 2 relevant cases: 
+  /* A final, brutal hack. If the hmm used to derive bands has local
+   * begins, ends and ELs on, it's possible (but extremely rare
+   * empirically, even with very high tau values (0.49!)) that no
+   * valid CM parse exists within the i and j bands. To avoid this, we
+   * implement a brutal hack here. We don't do this if do_trunc is
+   * TRUE. In that case it may be possible we don't have a valid
+   * parse and the caller must do something sensible like catching an
+   * IMPOSSIBLE score from one of the aligners and doing a non-banded
+   * alignment.
+   *
+   * There's 2 relevant cases. 
    * 
    * Case 1: node 1 is a MATP, MATR, or MATL node (this is the easier case)
    * Case 2: node 1 is a BIF node 
@@ -1917,7 +1945,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
    *        imax[v] = imax[0]; 
    *        jmin[v] = jmin[0]; 
    *        jmax[v] = jmax[0]; 
-   *    then we'll be able to emit some residues from v, (so we're guaranteed a valid parse.
+   *    then we'll be able to emit some residues from v, (so we're guaranteed a valid parse.)
    *
    * Case 2: node 1 is a BIF node 
    * v = cm->nodemap[nd] (the BIF_B state)
@@ -1933,8 +1961,15 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
    * if v is not reachable (if we're doing search or not), we enforce 1 valid parse, 
    * the BIF must emit the full target, residues i0..j0-1 from its' BEGL_S's EL state, and
    * residue j0 from it's BEGR_S EL state.
+   *
+   * If the HMM is in local mode but the CM does not have local begins or ends on, 
+   * then we must be doing truncated alignment to a glocal CM. We handle this
+   * case immediately below after the if that begins with 'do_trunc'.
    */
-  if(hmm_is_localized) { 
+  if(hmm_is_localized && (! do_trunc)) { 
+    if(! (cm->flags & CMH_LOCAL_BEGIN)) { 
+      printf("uh\n");
+    }
     assert(cm->flags & CMH_LOCAL_BEGIN); /* asserted in contract too */
     assert(cm->flags & CMH_LOCAL_END);   /* asserted in contract too */
     if(imin[0] == -1) { /* ROOT_S is unreachable, uhh... */
@@ -2051,7 +2086,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
   }
   /* end of brutal hack */
 #if eslDEBUGLEVEL >= 1
-  /* check for valid CM parse, there should be one */
+  /* check for valid CM parse, there should be one, unless do_trunc is true, then we may not... */
   if((status = CMBandsCheckValidParse(cm, cp9b, errbuf, i0, j0, doing_search)) != eslOK) return status;
 #endif
 
@@ -2117,11 +2152,12 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
  *           so worried about enforcing a valid parse and we skip
  *           this hack.
  *
- * Args:     cp9b - the CP9 bands object
+ * Args:     cp9    - the HMM the bands were derived from
+ *           cp9b   - the CP9 bands object
  *           cp9map - map from CM to cp9 
  *           errbuf - for error messages
- *           i0   - first residue of sequence we're using bands for 
- *           j0   - final residue of sequence we're using bands for 
+ *           i0     - first residue of sequence we're using bands for 
+ *           j0     - final residue of sequence we're using bands for 
  *
  * Returns:  eslOK on success
  *           eslEINCONCEIVABLE if we can't expand the bands to make a valid parse (shouldn't happen)
@@ -2129,7 +2165,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
  *           <ret_did_expand> set to TRUE if we had to expand the HMM bands, FALSE if not 
  */
 int
-HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *errbuf, int i0, int j0, int doing_search, int *ret_did_expand, 
+HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *errbuf, int i0, int j0, int doing_search, int *ret_did_expand, 
 			  int **ret_r_mn, int **ret_r_mx, int **ret_r_in,  int **ret_r_ix, int **ret_r_dn, int **ret_r_dx,
 			  int **ret_r_nn_i, int **ret_r_nx_i, int **ret_r_nn_j, int **ret_r_nx_j)
 {
@@ -2183,8 +2219,8 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
   int *pn_min_d;      /* pn_min_d[k] = first position in HMM band for delete state of HMM node k */
   int *pn_max_d;      /* pn_max_d[k] = final position in HMM band for delete state of HMM node k */
 
-  if((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) && (! (cm->cp9->flags & CPLAN9_LOCAL_END))) ESL_FAIL(eslEINCOMPAT, errbuf, "HMMBandsEnforceValidParse(), HMM has local begins ON but local ends OFF. Both must be on, or both must be off.");
-  local_begins_ends_on = ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) && (cm->cp9->flags & CPLAN9_LOCAL_END)) ? TRUE : FALSE;
+  if((cp9->flags & CPLAN9_LOCAL_BEGIN) && (! (cp9->flags & CPLAN9_LOCAL_END))) ESL_FAIL(eslEINCOMPAT, errbuf, "HMMBandsEnforceValidParse(), HMM has local begins ON but local ends OFF. Both must be on, or both must be off.");
+  local_begins_ends_on = ((cp9->flags & CPLAN9_LOCAL_BEGIN) && (cp9->flags & CPLAN9_LOCAL_END)) ? TRUE : FALSE;
   
   pn_min_m = cp9b->pn_min_m;
   pn_max_m = cp9b->pn_max_m;
@@ -2220,10 +2256,6 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
   ESL_ALLOC(filled_gap, sizeof(int) * (hmm_M+1));
   esl_vec_ISet(was_unr,    (hmm_M+1), FALSE);
   esl_vec_ISet(filled_gap, (hmm_M+1), FALSE);
-
-  /* debugging printf block */
-  /*////cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);*/
-  /*////printf("j0: %d\n", j0); */
 
   /* Note on comment nomenclature: 
    * M_k: match  state of node k
@@ -2368,10 +2400,10 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	}
       }
       /* EL_kp->M_k+1 transition, we could have come from 1 or more EL states */
-      if(cm->cp9->flags & CPLAN9_EL) { 
+      if(cp9->flags & CPLAN9_EL) { 
 	if(pn_min_m[k+1] != -1) { 
-	  for(c = 0; c < cm->cp9->el_from_ct[k+1]; c++) { /* el_from_ct[k+1] holds # ELs that can go to k+1 */
-	    kp = cm->cp9->el_from_idx[k+1][c];
+	  for(c = 0; c < cp9->el_from_ct[k+1]; c++) { /* el_from_ct[k+1] holds # ELs that can go to k+1 */
+	    kp = cp9->el_from_idx[k+1][c];
 	    if(r_mn[kp] <= r_mx[kp]) { 
 	      n = r_mn[kp]; /* EL's can emit 0 or more residues */
 	      x = j0;       /* EL's can emit 0 or more residues */
@@ -2417,7 +2449,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
     } /* end of if(k < hmm_M) */
     /* transitions to END state */
     if(k == hmm_M || local_begins_ends_on) { /* handle transitions from M_k to END */
-      if(r_mn[k] <= r_mx[k] && cm->cp9->esc[k] != -INFTY) { /* if M_k is reachable and we're allowed to transit to E */
+      if(r_mn[k] <= r_mx[k] && cp9->esc[k] != -INFTY) { /* if M_k is reachable and we're allowed to transit to E */
 	/* M_k->E transition */
 	n = r_mn[k];
 	x = r_mx[k];
@@ -2432,7 +2464,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
       }
     }
     if(k == hmm_M) { /* if we're at the last node, we could also get to END from D_k, or I_k */
-      if(r_dn[k] <= r_dx[k] && cm->cp9->tsc[CTDM][k] != -INFTY) { /* if D_k is reachable and we're allowed to transit to E */
+      if(r_dn[k] <= r_dx[k] && cp9->tsc[CTDM][k] != -INFTY) { /* if D_k is reachable and we're allowed to transit to E */
 	/* D_M->E transition */
 	n = r_dn[k];
 	x = r_dx[k];
@@ -2442,7 +2474,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	/*////printf("1 r_endn,x: %d..%d\n", r_endn, r_endx);*/
 	ESL_DASSERT1((r_endn <= r_endx));
       }
-      if(r_in[k] <= r_ix[k] && cm->cp9->tsc[CTIM][k] != -INFTY) { /* if I_k is reachable and we're allowed to transit to E */
+      if(r_in[k] <= r_ix[k] && cp9->tsc[CTIM][k] != -INFTY) { /* if I_k is reachable and we're allowed to transit to E */
 	/* I_M->E transition */
 	n = r_in[k];
 	x = r_in[k];
@@ -2453,9 +2485,9 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	ESL_DASSERT1((r_endn <= r_endx));
       }
       /* finally, deal with the possibility that we go to E from an EL state */
-      if(cm->cp9->flags & CMH_LOCAL_END) { 
-	for(c = 0; c < cm->cp9->el_from_ct[k+1]; c++) { /* el_from_ct[k+1] holds # ELs that can go to k+1 */
-	  kp = cm->cp9->el_from_idx[k+1][c];
+      if(cp9->flags & CMH_LOCAL_END) { 
+	for(c = 0; c < cp9->el_from_ct[k+1]; c++) { /* el_from_ct[k+1] holds # ELs that can go to k+1 */
+	  kp = cp9->el_from_idx[k+1][c];
 	  if(r_mn[kp] <= r_mx[kp]) { 
 	    n = r_mn[kp]; /* EL's can emit 0 or more residues */
 	    x = j0; 
@@ -2710,29 +2742,6 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
   free(filled_gap);
   free(r_nn_hmm);
   free(r_nx_hmm);
-
-  /* debugging printf block */
-  int v, nd;
-  for(k = 0; k <= hmm_M; k++) { 
-    /*////printf("HMM k:%4d\t\t", k);*/
-    v = cp9map->hns2cs[k][HMMMATCH][0];
-    nd = cm->ndidx[v];
-    /*////if(r_mn[k] != -1) { printf(" %4d  %4d (v: %4d %4d %4s %2s)  ", r_mn[k], r_mx[k], v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }*/
-    /*////else { printf(" %4s  %4s (v: %4d %4d %4s %2s)  ", "", "", v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }*/
-
-    v = cp9map->hns2cs[k][HMMINSERT][0];
-    nd = cm->ndidx[v];
-    /*////if(r_in[k] != -1) { printf(" %4d  %4d (v: %4d %4d %4s %2s)  ", r_in[k], r_ix[k], v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }*/
-    /*////else { printf(" %4s  %4s (v: %4d %4d %4s %2s)  ", "", "", v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }*/
-
-    if(k != 0) { 
-      v = cp9map->hns2cs[k][HMMDELETE][0];
-      nd = cm->ndidx[v];
-      /*////if(r_dn[k] != -1) { printf(" %4d  %4d (v: %4d %4d %4s %2s)\n", r_dn[k], r_dx[k], v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }*/
-      /*////else { printf(" %4s  %4s (v: %4d %4d %4s %2s)\n", "", "", v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }*/
-      }
-    /*////else { printf("\n"); }*/
-    }
 
   return eslOK;
 

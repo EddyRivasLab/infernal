@@ -2117,40 +2117,6 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 	}
       }
     }
-#if 0
-    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
-      /* alternative: else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { (see comment below) */
-      for (j = 0; j <= L; j++) {
-	/* Check for special initialization case, specific to
-	 * optimal_accuracy alignment, normally (with TrCYK for
-	 * example) we init shadow matrix to USED_EL for all cells
-	 * b/c we know that will be overwritten for the most
-	 * likely transition, but with optimal accuracy, only
-	 * emissions add to the score, so when d == sd, we know
-	 * we'll emit sd residues from v, so the initialization
-	 * will NOT be overwritten. We get around this for
-	 * cells for which  d == sd and v is a state that has 
-	 * a StateDelta=0 child y (DELETE or END) by initializing
-	 * that transition to y is most likely.
-	 *
-	 * This will remove any zero-length (in the target sequence)
-	 * ELs from an OA parsetree when one is possible with all D->D
-	 * transitions. This makes alignment displays look better in
-	 * most cases. To change preference for ELs, change the
-	 * 'if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) to a
-	 * 'else if'.
-	 */
-	for (d = 0; d <= sd; d++) { 
-	  y = cm->cfirst[v];
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
-	    if(StateDelta(cm->sttype[y+yoffset]) == 0) { 
-	      yshadow[v][j][d] = yoffset;
-	    }
-	  }
-	}
-      }
-    }
-#endif
     /* note there's no E state update here, those cells all remain IMPOSSIBLE */
 
     /* we have to separate out IL_st and IR_st because IL use emit_mx->l_pp and IR use emit_mx->r_pp */
@@ -2322,11 +2288,18 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
     }
   } /* finished calculating deck v. */
 
-  /* Check for whether we need to store an optimal local begin score
-   * as the optimal overall score, and if we need to put a flag
-   * in the shadow matrix telling cm_alignT() to use the b we return.
+  /* If local begins are on, the only way out of ROOT_S is via a local
+   * begin, so update the optimal score and put a flag in the shadow
+   * matrix telling cm_alignT() to use the b we return. 
+   *
+   * Note that because we're in OptAcc alpha[0][L][L] will already be
+   * equal to bsc because transition scores (and thus impossible
+   * transitions out of ROOT_S) have no effect on the score, so
+   * whereas we can check to see if 'bsc > alpha[0][L][L]' at an
+   * analogous point in CYK before setting the USED_LOCAL_BEGIN
+   * flag, we can't here because it would be FALSE.
    */
-  if (bsc > alpha[0][L][L]) {
+  if(NOT_IMPOSSIBLE(bsc) && (cm->flags & CMH_LOCAL_BEGIN)) {
     alpha[0][L][L]   = bsc;
     yshadow[0][L][L] = USED_LOCAL_BEGIN;
   }
@@ -2802,12 +2775,19 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
     }
   } /* end loop over all v */
 
-  /* Check for whether we need to store an optimal local begin score
-   * as the optimal overall score, and if we need to put a flag
-   * in the shadow matrix telling cm_alignT() to use the b we return.
+  /* If local begins are on, the only way out of ROOT_S is via a local
+   * begin, so update the optimal score and put a flag in the shadow
+   * matrix telling cm_alignT() to use the b we return. 
+   *
+   * Note that because we're in OptAcc alpha[0][L][L] will already be
+   * equal to bsc because transition scores (and thus impossible
+   * transitions out of ROOT_S) have no effect on the score, so
+   * whereas we can check to see if 'bsc > alpha[0][L][L]' at an
+   * analogous point in CYK before setting the USED_LOCAL_BEGIN
+   * flag, we can't here because it would be FALSE.
    */
-  if (NOT_IMPOSSIBLE(bsc) && (bsc > alpha[0][jp_0][Lp_0])) {
-    alpha[0][jp_0][Lp_0] = bsc;
+  if(NOT_IMPOSSIBLE(bsc) && (cm->flags & CMH_LOCAL_BEGIN)) {
+    alpha[0][jp_0][Lp_0]   = bsc;
     yshadow[0][jp_0][Lp_0] = USED_LOCAL_BEGIN;
   }
 
@@ -2930,7 +2910,7 @@ cm_CYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   }
 
   /* Main recursion */
-  for (v = 1; v < cm->M; v++) {
+  for (v = 1; v < cm->M; v++) { /* start at state 1 because we set all values for ROOT_S state 0 above */
     sd  = StateDelta(cm->sttype[v]);
     sdr = StateRightDelta(cm->sttype[v]);
 
@@ -3335,7 +3315,7 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   /* done allocation/initialization */
 
   /* Recursion: main loop down through the decks */
-  for (v = 1; v < cm->M; v++) {
+  for (v = 1; v < cm->M; v++) { /* start at state 1 because we set all values for ROOT_S state 0 above */
     if (cm->stid[v] == BEGL_S) { /* BEGL_S */
       y = cm->plast[v];	/* the parent bifurcation    */
       z = cm->cnum[y];	/* the other (right) S state */
@@ -3915,7 +3895,7 @@ cm_OutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, i
   }
 
   /* Main recursion */
-  for (v = 1; v < cm->M; v++) {
+  for (v = 1; v < cm->M; v++) { /* start at state 1 because we set all values for ROOT_S state 0 above */
     sd  = StateDelta(cm->sttype[v]);
     sdr = StateRightDelta(cm->sttype[v]);
 
@@ -4232,7 +4212,7 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 
   /* If we can do a local begin into v, overwrite IMPOSSIBLE with the local begin score. */
   if (cm->flags & CMH_LOCAL_BEGIN) {
-    for (v = 1; v < cm->M; v++) {
+    for (v = 1; v < cm->M; v++) { 
       if(NOT_IMPOSSIBLE(cm->beginsc[v])) {
 	if((L >= jmin[v]) && (L <= jmax[v])) {
 	  jp_v = L - jmin[v];
@@ -4247,7 +4227,7 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   /* done allocation/initialization */
 
   /* Recursion: main loop down through the decks */
-  for (v = 1; v < cm->M; v++) {
+  for (v = 1; v < cm->M; v++) { /* start at state 1 because we set all values for ROOT_S state 0 above */
     if (cm->stid[v] == BEGL_S) { /* BEGL_S */
       y = cm->plast[v];	/* the parent bifurcation    */
       z = cm->cnum[y];	/* the other (right) S state */
@@ -6265,6 +6245,7 @@ static ESL_OPTIONS options[] = {
   { "--post",   eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute fast float HMM banded Inside/Outside alignment algs", 0 },
   { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",NULL,  NULL, NULL, "set maximum allowable DP matrix size to <x> (Mb)", 0 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute non-banded alignment algorithms", 0 },
+  { "--tr",       eslARG_NONE,  FALSE, NULL, NULL,  NULL,  NULL, NULL, "dump parsetrees to stdout", 2 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -6295,6 +6276,8 @@ main(int argc, char **argv)
   CM_MX             *out_mx = NULL;     /* outside matrix for HMM banded Outside() */
   CM_SHADOW_MX      *shmx = NULL;       /* shadow matrix for non-banded tracebacks */
   CM_EMIT_MX        *emit_mx = NULL;    /* emit matrix for optimal accuracy */
+  float              parsetree_sc, parsetree_struct_sc;
+  Parsetree_t       *tr    = NULL;
 
   r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
 
@@ -6386,10 +6369,15 @@ main(int argc, char **argv)
       esl_stopwatch_Display(stdout, w, "CPU time: ");
       
       esl_stopwatch_Start(w);
-      if((status = cm_AlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, FALSE, FALSE, cm->hbmx, cm->shhbmx, NULL, NULL, r, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = cm_AlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, FALSE, FALSE, cm->hbmx, cm->shhbmx, NULL, NULL, r, NULL, NULL, &tr, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "cm_AlignHB() CYK:", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+      if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, seqs_to_aln->sq[i]->dsq, NULL, NULL);
+      ParsetreeScore(cm, NULL, NULL, tr, seqs_to_aln->sq[i]->dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+      FreeParsetree(tr);
+      printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
 
       if(esl_opt_GetBoolean(go, "--cykout")) { 
 	esl_stopwatch_Start(w);
@@ -6401,10 +6389,15 @@ main(int argc, char **argv)
 
       if(esl_opt_GetBoolean(go, "--nonbanded")) {
 	esl_stopwatch_Start(w);
-	if((status = cm_Align(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, FALSE, FALSE, mx, shmx, NULL, emit_mx, r, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = cm_Align(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, FALSE, FALSE, mx, shmx, NULL, emit_mx, r, NULL, NULL, &tr, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "cm_Align() CYK:", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+	if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, seqs_to_aln->sq[i]->dsq, NULL, NULL);
+	ParsetreeScore(cm, NULL, NULL, tr, seqs_to_aln->sq[i]->dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+	FreeParsetree(tr);
+	printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
 
 	if(esl_opt_GetBoolean(go, "--cykout")) { 
 	  esl_stopwatch_Start(w);
@@ -6450,17 +6443,27 @@ main(int argc, char **argv)
 
       if(esl_opt_GetBoolean(go, "--optacc")) {
 	esl_stopwatch_Start(w);
-	if((status = cm_AlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, TRUE, FALSE, cm->hbmx, cm->shhbmx, cm->ohbmx, cm->ehbmx, r, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = cm_AlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, TRUE, FALSE, cm->hbmx, cm->shhbmx, cm->ohbmx, cm->ehbmx, r, NULL, NULL, &tr, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f avgpp ", (i+1), "cm_AlignHB() OA:", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
+	if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, seqs_to_aln->sq[i]->dsq, NULL, NULL);
+	ParsetreeScore(cm, NULL, NULL, tr, seqs_to_aln->sq[i]->dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+	FreeParsetree(tr);
+	printf("Parsetree score      : %.4f           (FULL LENGTH OPTACC)\n", parsetree_sc);
+
 	if(esl_opt_GetBoolean(go, "--nonbanded")) { 
 	  esl_stopwatch_Start(w);
-	  if((status = cm_Align(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, TRUE, FALSE, mx, shmx, out_mx, emit_mx, r, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = cm_Align(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, TRUE, FALSE, mx, shmx, out_mx, emit_mx, r, NULL, NULL, &tr, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f avgpp ", (i+1), "cm_Align() OA:", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+	  if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, seqs_to_aln->sq[i]->dsq, NULL, NULL);
+	  ParsetreeScore(cm, NULL, NULL, tr, seqs_to_aln->sq[i]->dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+	  FreeParsetree(tr);
+	  printf("Parsetree score      : %.4f           (FULL LENGTH OPTACC)\n", parsetree_sc);
 	}
       }
       printf("\n");

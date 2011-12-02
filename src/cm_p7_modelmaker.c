@@ -46,6 +46,7 @@
  *           the p7 model parameters are irrelevant. 
  * 
  * Args:     cm        - the cm
+ *           cp9       - the cp9 HMM to build the p7 HMM from (usually cm->cp9loc)
  *           ret_p7    - RETURN: new p7 model 
  *           
  * Return:   eslOK   on success
@@ -54,7 +55,7 @@
  *           eslEMEM on memory error
  */
 int
-BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7)
+BuildP7HMM_MatchEmitsOnly(CM_t *cm, CP9_t *cp9, P7_HMM **ret_p7)
 {
   int        status;
   P7_HMM     *hmm = NULL;        /* RETURN: new hmm */
@@ -62,14 +63,14 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7)
   P7_OPROFILE *om = NULL;        /* RETURN: new optimized profile */
   int        k;
 
-  if(cm->cp9 == NULL)         return eslEINCOMPAT; 
-  if(! (cm->flags & CMH_CP9)) return eslEINCOMPAT; 
+  if(cp9 == NULL)         return eslEINCOMPAT; 
+  if(cp9->M != cm->clen)  return eslEINCOMPAT;
 
   if ((hmm    = p7_hmm_Create(cm->clen, cm->abc)) == NULL)  return eslEMEM;
   if ((status = p7_hmm_Zero(hmm))                 != eslOK) return status;
 
   /* copy only match emissions */
-  for (k = 1; k <= cm->clen; k++) esl_vec_FCopy(cm->cp9->mat[k], cm->abc->K, hmm->mat[k]);
+  for (k = 1; k <= cm->clen; k++) esl_vec_FCopy(cp9->mat[k], cm->abc->K, hmm->mat[k]);
 
   /* parameterize, hacked from hmmer/p7_prior.c::p7_ParameterEstimation() */
   /* match transitions */
@@ -123,6 +124,7 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7)
  *           the p7 model parameters are irrelevant. 
  * 
  * Args:     cm        - the cm
+ *           cp9       - the cp9 HMM to build the p7 HMM from (usually cm->cp9loc)
  *           ret_p7    - RETURN: new p7 model 
  *           
  * Return:   eslOK   on success
@@ -131,20 +133,20 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7)
  *           eslEMEM on memory error
  */
 int
-BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7)
+BuildP7HMM_MatchEmitsOnly(CM_t *cm, CP9_t *cp9, P7_HMM **ret_p7)
 {
   int        status;
   P7_HMM     *hmm = NULL;        /* RETURN: new hmm */
   int        k;
 
-  if(cm->cp9 == NULL)         return eslEINCOMPAT; 
-  if(! (cm->flags & CMH_CP9)) return eslEINCOMPAT; 
+  if(cp9 == NULL)         return eslEINCOMPAT; 
+  if(cp9->M != cm->clen)  return eslEINCOMPAT;
 
   if ((hmm    = p7_hmm_Create(cm->clen, cm->abc)) == NULL)  return eslEMEM;
   if ((status = p7_hmm_Zero(hmm))                 != eslOK) return status;
 
   /* copy only match emissions */
-  for (k = 1; k <= cm->clen; k++) esl_vec_FCopy(cm->cp9->mat[k], cm->abc->K, hmm->mat[k]);
+  for (k = 1; k <= cm->clen; k++) esl_vec_FCopy(cp9->mat[k], cm->abc->K, hmm->mat[k]);
 
   /* parameterize, hacked from hmmer/p7_prior.c::p7_ParameterEstimation() */
   /* match transitions */
@@ -192,37 +194,37 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7)
 /* Function: cm_cp9_to_p7()
  * Incept:   EPN, Fri Sep 24 13:46:37 2010
  * 
- * Purpose:  Create and fill a P7_HMM object from a CM and it's CP9 HMM.
+ * Purpose:  Create and fill a P7_HMM object from a CM and a CP9 HMM.
  * 
- * Args:     cm        - the cm, must have a cp9 model in it.
- *
+ * Args:     cm    - the cm, must have a cp9 model in it.
+ *           cp9   - the CP9 HMM, usually cm->cp9loc
  * Return:   eslOK   on success
  *
  * Throws:   eslEINCOMPAT on contract violation
  *           eslEMEM on memory error
  */
 int
-cm_cp9_to_p7(CM_t *cm)
+cm_cp9_to_p7(CM_t *cm, CP9_t *cp9)
 {
   int        status;
   int        k;
 
-  if(cm->cp9 == NULL)         return eslEINCOMPAT; 
-  if(! (cm->flags & CMH_CP9)) return eslEINCOMPAT; 
-  if(cm->mlp7 != NULL)          return eslEINCOMPAT;
+  if(cp9 == NULL)            return eslEINCOMPAT; 
+  if(cm->mlp7 != NULL)       return eslEINCOMPAT;
+  if(cp9->M != cm->clen)     return eslEINCOMPAT;
 
   if ((cm->mlp7 = p7_hmm_Create(cm->clen, cm->abc)) == NULL)  return eslEMEM;
   if ((status = p7_hmm_Zero(cm->mlp7))                 != eslOK) return status;
 
   /* copy transitions */
   for (k = 0; k <= cm->mlp7->M; k++) { 
-    cm->mlp7->t[k][p7H_MM] = cm->cp9->t[k][CTMM];
-    cm->mlp7->t[k][p7H_MI] = cm->cp9->t[k][CTMI];
-    cm->mlp7->t[k][p7H_MD] = cm->cp9->t[k][CTMD];
-    cm->mlp7->t[k][p7H_IM] = cm->cp9->t[k][CTIM];
-    cm->mlp7->t[k][p7H_II] = cm->cp9->t[k][CTII];
-    cm->mlp7->t[k][p7H_DM] = cm->cp9->t[k][CTDM];
-    cm->mlp7->t[k][p7H_DD] = cm->cp9->t[k][CTDD];
+    cm->mlp7->t[k][p7H_MM] = cp9->t[k][CTMM];
+    cm->mlp7->t[k][p7H_MI] = cp9->t[k][CTMI];
+    cm->mlp7->t[k][p7H_MD] = cp9->t[k][CTMD];
+    cm->mlp7->t[k][p7H_IM] = cp9->t[k][CTIM];
+    cm->mlp7->t[k][p7H_II] = cp9->t[k][CTII];
+    cm->mlp7->t[k][p7H_DM] = cp9->t[k][CTDM];
+    cm->mlp7->t[k][p7H_DD] = cp9->t[k][CTDD];
     /* note: the cp9 CTDI and CTID transitions do not exist the p7 model */
   }
   /* normalize match transitions */
@@ -239,18 +241,18 @@ cm_cp9_to_p7(CM_t *cm)
   cm->mlp7->t[0][p7H_DD] = cm->mlp7->t[cm->mlp7->M][p7H_DD] = 0.0;
 
   /* enforce INFERNAL CP9 convention, the 0'th node's MM transition is really begin[0] */
-  cm->mlp7->t[0][p7H_MM] = cm->cp9->begin[1];
+  cm->mlp7->t[0][p7H_MM] = cp9->begin[1];
   esl_vec_FNorm(cm->mlp7->t[0], 3);
 
   /* match emissions: copy, then normalize (should be unnec actually) */
-  for (k = 1; k <= cm->clen; k++) esl_vec_FCopy(cm->cp9->mat[k], cm->abc->K, cm->mlp7->mat[k]);
+  for (k = 1; k <= cm->clen; k++) esl_vec_FCopy(cp9->mat[k], cm->abc->K, cm->mlp7->mat[k]);
   for (k = 1; k <= cm->clen; k++) esl_vec_FNorm(cm->mlp7->mat[k], cm->abc->K);
   /* special case */
   esl_vec_FSet(cm->mlp7->mat[0], cm->mlp7->abc->K, 0.);
   cm->mlp7->mat[0][0] = 1.0;
 
   /* insert emissions: copy, then normalize (should be unnec actually) */
-  for (k = 0; k <= cm->clen; k++) esl_vec_FCopy(cm->cp9->ins[k], cm->abc->K, cm->mlp7->ins[k]);
+  for (k = 0; k <= cm->clen; k++) esl_vec_FCopy(cp9->ins[k], cm->abc->K, cm->mlp7->ins[k]);
   for (k = 0; k <= cm->clen; k++) esl_vec_FNorm(cm->mlp7->ins[k], cm->abc->K);
 
   /* copy the max length parameter */
