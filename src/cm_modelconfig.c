@@ -172,11 +172,11 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
     if((cm->Lcp9 = cp9_Clone(cm->cp9)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't clone cm->cp9 to get cm->Lcp9");
     if((cm->Rcp9 = cp9_Clone(cm->cp9)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't clone cm->cp9 to get cm->Rcp9");
     if((cm->Tcp9 = cp9_Clone(cm->cp9)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't clone cm->cp9 to get cm->Tcp9");
-    /* L mode alignment, 5' truncation: begin into node 1, equiprobable ends */
+    /* L mode alignment, 3' truncation: begin into node 1, equiprobable ends */
     swentry = (cm->config_opts & CM_CONFIG_TRUNC_NOFORCE) ? ((float) cm->cp9->M - 1.) / (float) cm->cp9->M : 0.;
     swexit  = ((float) cm->cp9->M - 1.) / (float) cm->cp9->M;
     CPlan9SWConfig(cm->Lcp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE: let I_0, D_1, I_M be reachable */
-    /* R mode alignment, 3' truncation: equiprobable begins, end out of node M */
+    /* R mode alignment, 5' truncation: equiprobable begins, end out of node M */
     swentry = ((float) cm->cp9->M - 1.) / (float) cm->cp9->M;
     swexit  = (cm->config_opts & CM_CONFIG_TRUNC_NOFORCE) ? ((float) cm->cp9->M - 1.) / (float) cm->cp9->M : 0.;
     CPlan9SWConfig(cm->Rcp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE: let I_0, D_1, I_M be reachable */
