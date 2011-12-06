@@ -131,8 +131,10 @@ CreateCMShell(void)
   cm->tau          = DEFAULT_TAU;        /* 1E-7 the default tau  (tail loss for HMM banding) */
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
-  cm->cp9loc       = NULL;          
-  cm->cp9glb       = NULL;          
+  cm->cp9          = NULL;          
+  cm->Lcp9         = NULL;          
+  cm->Rcp9         = NULL;          
+  cm->Tcp9         = NULL;          
   cm->cp9b         = NULL;
   cm->cp9map       = NULL;
   cm->root_trans   = NULL;
@@ -276,8 +278,10 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
   cm->config_opts   = 0;
   cm->align_opts    = 0;
   cm->search_opts   = 0;
-  cm->cp9loc        = NULL;
-  cm->cp9glb        = NULL;
+  cm->cp9           = NULL;
+  cm->Lcp9          = NULL;
+  cm->Rcp9          = NULL;
+  cm->Tcp9          = NULL;
   cm->cp9b          = NULL;
   cm->cp9map        = NULL;
 
@@ -289,9 +293,9 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
    * the B states are, thus they get created in cm_modelconfig.c::ConfigCM().
    */
 
-  /* we'll allocate the cp9loc, cp9glb, cp9b, cp9map, cp9_mx and
-   * cp9_bmx inside ConfigCM(), we need some more info about the CM
-   * besides M and nnodes to build those
+  /* we'll allocate the cp9, Lcp9, Rcp9, Tcp9, cp9b, cp9map, cp9_mx
+   * and cp9_bmx inside ConfigCM(), we need some more info about the
+   * CM besides M and nnodes to build those
    */
 
   /* Optional allocation, status flag dependent */
@@ -453,8 +457,10 @@ FreeCM(CM_t *cm)
   if(cm->comlog     != NULL) FreeComLog(cm->comlog);
   if(cm->cp9map     != NULL) FreeCP9Map(cm->cp9map);
   if(cm->cp9b       != NULL) FreeCP9Bands(cm->cp9b);
-  if(cm->cp9loc     != NULL) FreeCPlan9(cm->cp9loc);
-  if(cm->cp9glb     != NULL) FreeCPlan9(cm->cp9glb);
+  if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
+  if(cm->Lcp9       != NULL) FreeCPlan9(cm->Lcp9);
+  if(cm->Rcp9       != NULL) FreeCPlan9(cm->Rcp9);
+  if(cm->Tcp9       != NULL) FreeCPlan9(cm->Tcp9);
   if(cm->root_trans != NULL) free(cm->root_trans);
   if(cm->hbmx       != NULL) cm_hb_mx_Destroy(cm->hbmx);
   if(cm->ohbmx      != NULL) cm_hb_mx_Destroy(cm->ohbmx);
@@ -2856,8 +2862,8 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
   if(cm->flags & CMH_BITS)        ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_BITS flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_LOCAL_BEGIN flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_LOCAL_END flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CMH_CP9LOC)      ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_CP9LOC flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CMH_CP9GLB)      ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_CP9GLB flag is up (it shouldn't be if the CM was just read from a file");
+  if(cm->flags & CMH_CP9)         ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_CP9 flag is up (it shouldn't be if the CM was just read from a file");
+  if(cm->flags & CMH_CP9_TRUNC)   ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_CP9_TRUNC flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CMH_SCANMATRIX)  ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_SCANMATRIX flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CM_IS_SUB)       ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CM_IS_SUB flag is up (it shouldn't be if the CM was just read from a file");
   if(cm->flags & CM_EMIT_NO_LOCAL_BEGINS) ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CM_EMIT_NO_LOCAL_BEGINS flag is up (it shouldn't be if the CM was just read from a file");
@@ -2978,8 +2984,8 @@ DumpCMFlags(FILE *fp, CM_t *cm)
   if(cm->flags & CMH_QDB)                  fprintf(fp, "\tCMH_QDB\n");
   if(cm->flags & CMH_QDB_LOCAL)            fprintf(fp, "\tCMH_QDB_LOCAL\n");
   if(cm->flags & CMH_QDB_GLOBAL)           fprintf(fp, "\tCMH_QDB_GLOBAL\n");
-  if(cm->flags & CMH_CP9LOC)               fprintf(fp, "\tCMH_CP9LOC\n");
-  if(cm->flags & CMH_CP9GLB)               fprintf(fp, "\tCMH_CP9GLB\n");
+  if(cm->flags & CMH_CP9)                  fprintf(fp, "\tCMH_CP9\n");
+  if(cm->flags & CMH_CP9_TRUNC)            fprintf(fp, "\tCMH_CP9_TRUNC\n");
   if(cm->flags & CMH_SCANMATRIX)           fprintf(fp, "\tCMH_SCANMATRIX\n");
   if(cm->flags & CMH_MLP7)                 fprintf(fp, "\tCMH_MLP7\n");
   if(cm->flags & CMH_FP7)                  fprintf(fp, "\tCMH_FP7\n");

@@ -1473,7 +1473,7 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_f
  * Returns: eslOK on success
  *
  * Args:    
- * CM_t  *cm                - the CM, with valid cp9loc, and cp9glb if CM has local begins off
+ * CM_t  *cm                - the CM, with valid cp9
  * Parsetree_t *cm_tr       - valid parsetree to convert
  * cp9trace_s *ret_cp9_tr   - the CP9 trace to return, alloc'ed here
  */
@@ -1481,8 +1481,8 @@ int
 Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr)
 {
   /* Check the contract */
-  if(cm->cp9loc == NULL || (!(cm->flags & CMH_CP9LOC)))
-    cm_Fail("In Parsetree2CP9trace, cm->cp9loc is not valid.\n");
+  if(cm->cp9 == NULL || (!(cm->flags & CMH_CP9)))
+    cm_Fail("In Parsetree2CP9trace, cm->cp9 is not valid.\n");
   if(cm->cp9map == NULL)
     cm_Fail("In Parsetree2CP9trace, cm->cp9map is NULL.\n");
 
@@ -1501,8 +1501,7 @@ Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr)
   int  ins_ct = 0;               /* total number of inserts */
   CP9_t *cp9 = NULL;
 
-  cp9 = (cm->flags & CMH_LOCAL_BEGIN) ? cm->cp9loc : cm->cp9glb;
-  if(cp9 == NULL) cm_Fail("In Parsetree2CP9trace, relevant cp9 does not exist\n");
+  cp9 = cm->cp9;
 
   lmost_k = cp9->M + 1; 
   rmost_k = 0;              

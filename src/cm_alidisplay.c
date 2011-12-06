@@ -110,14 +110,21 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   int         cm_namelen, cm_acclen, cm_desclen;
   int         sq_namelen, sq_acclen, sq_desclen;
   int         len, n;
-  int         cfrom,  cto;       /* first and final model    positions in alignment */
-  int         cfrom_R = 0;       /* first truncated model position if alignment is R or T marginal mode */
-  int         cto_L = 0;         /* final truncated model position if alignment is L or T marginal mode */
-  int         ntrunc_R;          /* if R or T mode: num positions for truncated begin at start of aln */
-  int         wtrunc_R;          /* if R or T mode: num chars for displaying local begin at aln start */
-  int         ntrunc_L;          /* if L or T mode: num positions for truncated begin at end of aln */
-  int         wtrunc_L;          /* if L or T mode: num chars for displaying local begin at aln end */
-  int         vroot;             /* internal entry state in truncated alignment, ROOT_S -> vroot */
+  
+  /* Variables for possibly dealing with truncated alignments */
+  int         cfrom_span;        /* first model position spanned by any state in parsetree (regardless of truncation mode) */
+  int         cto_span;          /* final model position spanned by any state in parsetree (regardless of truncation mode) */
+  int         cfrom_emit;        /* first model position spanned by any state in parsetree in relevant mode 
+				  * (J or L for MATP&MATL, J or R for MATP&MATR) */
+  int         cto_emit;          /* final model position spanned by any state in parsetree in relevant mode 
+				  * (J or L for MATP&MATL, J or R for MATP&MATR) */
+  /* if alignment is in J mode (not L, R, or T) then 
+   * cfrom_span == cfrom_emit and cto_span == cto_emit
+   */
+  int         ntrunc_R = 0;      /* num positions truncated at 5' end of alignment */
+  int         wtrunc_R = 0;      /* num chars for displaying 5' truncated begin */
+  int         ntrunc_L = 0;      /* num positions truncated at 3' end of alignment */
+  int         wtrunc_L = 0;      /* num chars for displaying 3' truncated begin */
   int         numwidth;		 /* number of chars to leave for displaying width numbers */
   int         is_left, is_right;
 
@@ -149,8 +156,8 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
    * beginning and/or end of the alignment in L, R or T marginal modes.
    */
   len = 0;
-  cfrom = cm->clen+1;
-  cto   = 0;
+  cfrom_span = cfrom_emit = cm->clen+1;
+  cto_span   = cto_emit   = 0;
 
   for (ti = 0; ti < tr->n; ti++) { 
     v    = tr->state[ti];
@@ -166,7 +173,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
     } 
     else {
       nd  = cm->ndidx[v];
-
+      
       if     (cm->sttype[v]  == IL_st)   { is_left = TRUE;  is_right = FALSE; }
       else if(cm->sttype[v]  == IR_st)   { is_left = FALSE; is_right = TRUE;  }
       else if(cm->ndtype[nd] == MATP_nd) { is_left = TRUE;  is_right = TRUE;  }
@@ -174,18 +181,30 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
       else if(cm->ndtype[nd] == MATR_nd) { is_left = FALSE; is_right = TRUE;  }
       else                               { is_left = FALSE; is_right = FALSE; }
 
-      if(is_left && (mode == TRMODE_J || mode == TRMODE_L)) { 
-	len++;
+      if(is_left) { 
 	if(cm->sttype[v] != IL_st) { /* inserts don't impact cpos */
-	  cfrom = ESL_MIN(cfrom, cons->lpos[nd] + 1);
-	  cto   = ESL_MAX(cto,   cons->lpos[nd] + 1);
+	  cfrom_span = ESL_MIN(cfrom_span, cons->lpos[nd] + 1);
+	  cto_span   = ESL_MAX(cto_span,   cons->lpos[nd] + 1);
+	}	  
+	if(mode == TRMODE_J || mode == TRMODE_L) { 
+	  len++;
+	  if(cm->sttype[v] != IL_st) { /* inserts don't impact cpos */
+	    cfrom_emit = ESL_MIN(cfrom_emit, cons->lpos[nd] + 1);
+	    cto_emit   = ESL_MAX(cto_emit,   cons->lpos[nd] + 1);
+	  }
 	}
       }
-      if(is_right && (mode == TRMODE_J || mode == TRMODE_R)) { 
-	len++;
+      if(is_right) { 
 	if(cm->sttype[v] != IR_st) { /* inserts don't impact cpos */
-	  cfrom = ESL_MIN(cfrom, cons->rpos[nd] + 1);
-	  cto   = ESL_MAX(cto,   cons->rpos[nd] + 1);
+	  cfrom_span = ESL_MIN(cfrom_span, cons->rpos[nd] + 1);
+	  cto_span   = ESL_MAX(cto_span,   cons->rpos[nd] + 1);
+	}
+	if(mode == TRMODE_J || mode == TRMODE_R) { 
+	  len++;
+	  if(cm->sttype[v] != IR_st) { /* inserts don't impact cpos */
+	    cfrom_emit = ESL_MIN(cfrom_emit, cons->rpos[nd] + 1);
+	    cto_emit   = ESL_MAX(cto_emit,   cons->rpos[nd] + 1);
+	  }
 	}
       }
     }
@@ -203,42 +222,32 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
     }
 #endif
   }
-  /* One more step for calculating len, catch marginal type local begins 
+  /* One more step for calculating len, catch 5' and 3' truncations
    * and treat them similar to EL for output 
    */
   ntrunc_R = wtrunc_R = 0;
   ntrunc_L = wtrunc_L = 0;
-  vroot    = tr->state[1]; /* vroot = root of parsetree (tr->state[0] is always ROOT_S, then ROOT_S->vroot */
-  if (tr->mode[0] == TRMODE_R || tr->mode[0] == TRMODE_T) { 
+  if (cfrom_span != cfrom_emit) { 
     /* We'll put a truncated begin at the beginning of the alignment. */
-    cfrom_R  = cons->lpos[cm->ndidx[vroot]] + 1;
-    ntrunc_R = cfrom - cfrom_R;
+    ntrunc_R = cfrom_emit - cfrom_span;
     ninset   = ntrunc_R;
     wtrunc_R = 0; do { wtrunc_R++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
     wtrunc_R += 4; /* space for '<[]*' */
     len += wtrunc_R;
   }
-  if (tr->mode[0] == TRMODE_L || tr->mode[0] == TRMODE_T) { 
+  if (cto_span != cto_emit) { 
     /* We'll put a truncated begin at end of the alignment. */
-    cto_L    = cons->rpos[cm->ndidx[vroot]] + 1;
-    ntrunc_L = cto_L - cto;
+    ntrunc_L = cto_span - cto_emit;
     ninset   = ntrunc_L;
     wtrunc_L = 0; do { wtrunc_L++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
     wtrunc_L += 4; /* space for '*[]>' */
     len += wtrunc_L;
   }
-#if 0 
-  printf("cfrom:   %4d\n", cfrom);
-  printf("cto:     %4d\n", cto);
-  printf("cto_L:   %4d\n", cto_L);
-  printf("cfrom_R: %4d\n", cfrom_R);
-  if(tr->mode[0] == TRMODE_R || tr->mode[0] == TRMODE_T) { 
-    printf("R T ntrunc_R (cfrom - cfrom_R): %4d\n", ntrunc_R);
-  }
-  if(tr->mode[0] == TRMODE_L || tr->mode[0] == TRMODE_T) { 
-    printf("L T ntrunc_L (cto_L - cto)    : %4d\n", ntrunc_L);
-  }
-#endif 
+
+  printf("cfrom_span: %4d\n", cfrom_span);
+  printf("cfrom_emit: %4d\n", cfrom_emit);
+  printf("cto_emit:   %4d\n", cto_emit);
+  printf("cto_span:   %4d\n", cto_span);
 
   /* Now we know the length of all arrays (len), determine total amount of memory required, and allocate it */
   /* Allocate the char arrays */
@@ -624,8 +633,8 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   printf("ad->cfrom:  %" PRId64 "  cfrom: %4d (%4d)\n", ad->cfrom, cfrom, (ad->cfrom - cfrom));
   printf("ad->cto:    %" PRId64 "  cto:   %4d (%4d)\n", ad->cto,   cto, (ad->cto - cto));
 #endif
-  assert(ad->cfrom  == cfrom);
-  assert(ad->cto    == cto);
+  assert(ad->cfrom  == cfrom_emit);
+  assert(ad->cto    == cto_emit);
 
   if(scoord != NULL) free(scoord);
   if(ccoord != NULL) free(ccoord);

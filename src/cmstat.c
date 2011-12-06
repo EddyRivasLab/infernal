@@ -241,7 +241,7 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode)
 
   if(output_mode == OUTMODE_DEFAULT) { 
     /* build the cp9 HMM, just to get HMM RE */
-    if(!(build_cp9_hmm(cm, &(cm->cp9loc), &(cm->cp9map), FALSE, 0.0001, 0))) cm_Fail("Couldn't build a CP9 HMM from the CM\n");
+    if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) cm_Fail("Couldn't build a CP9 HMM from the CM\n");
 
     fprintf(stdout, "%6d  %-20s  %-9s  %8d  %8.2f  %4d  %4d  %4d  %4d  %5d  %5.3f  %5.3f\n",
 	    ncm,
@@ -255,7 +255,7 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode)
 	    cm->W,
 	    cm->M,
 	    cm_MeanMatchRelativeEntropy(cm),
-	    cp9_MeanMatchRelativeEntropy(cm->cp9loc));
+	    cp9_MeanMatchRelativeEntropy(cm->cp9));
     
   }
   else if(output_mode == OUTMODE_BITSCORES) { 

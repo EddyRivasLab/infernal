@@ -1974,7 +1974,7 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   int   use_sums;     /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
   float sc;
   int do_old_hmm2ij;
-  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (cm->cp9loc or cm->cp9glb) we'll use for deriving bands */
+  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (this could be Lcp9, Rcp9, Tcp9 if we update this function to possibly handle truncated alignment) */
 
   ESL_STOPWATCH *watch;
   watch = esl_stopwatch_Create();
@@ -1991,8 +1991,8 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
 
   /* Determine which cp9 HMM to use: If the CM has local begins on, use cm->cp9loc, else use cm->cp9glb */
-  cp9 = (cm->flags & CMH_LOCAL_BEGIN) ? cm->cp9loc : cm->cp9glb;
-  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, but relevant cp9 is NULL.\n");
+  cp9 = cm->cp9;
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Posteriors, relevant cp9 is NULL.\n");
 
   /* Step 1: Get HMM Forward/Backward DP matrices.
    * Step 2: F/B       -> HMM bands.
@@ -2110,7 +2110,7 @@ cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *
 {
   int status;
   float sc;
-  CP9_t *cp9 = NULL;
+  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (this could be Lcp9, Rcp9, Tcp9 if we update this function to possibly handle truncated alignment) */
 
   /* TEMP */
   ESL_STOPWATCH *watch;
@@ -2127,8 +2127,8 @@ cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *
     ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_SEARCH_HMMALNBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
 
   /* determine which cp9 HMM to use, if CM is has local begins use cp9 (its local too) else use cp9glb (its global) */
-  cp9 = (cm->flags & CMH_LOCAL_BEGIN) ? cm->cp9loc : cm->cp9glb;
-  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2PosteriorsP7B, but relevant cp9 is NULL.\n");
+  cp9 = cm->cp9;
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Posteriors, relevant cp9 is NULL.\n");
 
   /* Step 1: Get HMM posteriors.*/
   esl_stopwatch_Start(watch);  

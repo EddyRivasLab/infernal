@@ -112,21 +112,23 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
    * and not a big deal b/c we 'should' only call ConfigCM() once
    * per CM.  
    */
-  if(cm->cp9map     != NULL) { FreeCP9Map(cm->cp9map);     cm->cp9map = NULL; }
-  if(cm->cp9b       != NULL) { FreeCP9Bands(cm->cp9b);     cm->cp9b   = NULL; }
-  if(cm->cp9loc     != NULL) { FreeCPlan9(cm->cp9loc);     cm->cp9loc = NULL; }
-  if(cm->cp9glb     != NULL) { FreeCPlan9(cm->cp9glb);     cm->cp9glb = NULL; }
-  if(cm->cp9_mx     != NULL) { FreeCP9Matrix(cm->cp9_mx);  cm->cp9_mx = NULL; }
-  if(cm->cp9_bmx    != NULL) { FreeCP9Matrix(cm->cp9_bmx); cm->cp9_bmx = NULL; }
-  cm->flags &= ~CMH_CP9GLB;
-  cm->flags &= ~CMH_CP9LOC;
+  if(cm->cp9map  != NULL) { FreeCP9Map(cm->cp9map);     cm->cp9map  = NULL; }
+  if(cm->cp9b    != NULL) { FreeCP9Bands(cm->cp9b);     cm->cp9b    = NULL; }
+  if(cm->cp9     != NULL) { FreeCPlan9(cm->cp9);        cm->cp9     = NULL; }
+  if(cm->Lcp9    != NULL) { FreeCPlan9(cm->Lcp9);       cm->Lcp9    = NULL; }
+  if(cm->Rcp9    != NULL) { FreeCPlan9(cm->Rcp9);       cm->Rcp9    = NULL; }
+  if(cm->Tcp9    != NULL) { FreeCPlan9(cm->Tcp9);       cm->Tcp9    = NULL; }
+  if(cm->cp9_mx  != NULL) { FreeCP9Matrix(cm->cp9_mx);  cm->cp9_mx  = NULL; }
+  if(cm->cp9_bmx != NULL) { FreeCP9Matrix(cm->cp9_bmx); cm->cp9_bmx = NULL; }
+  cm->flags &= ~CMH_CP9;
+  cm->flags &= ~CMH_CP9_TRUNC;
   
   esl_stopwatch_Start(w);  
   if(have_mother) { 
-    if(!(sub_build_cp9_hmm_from_mother(cm, errbuf, mother_cm, mother_map, &(cm->cp9loc), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a CP9 HMM from the sub CM and it's mother\n");
+    if(!(sub_build_cp9_hmm_from_mother(cm, errbuf, mother_cm, mother_map, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a CP9 HMM from the sub CM and it's mother\n");
   }
   else { 
-    if(!(build_cp9_hmm(cm, &(cm->cp9loc), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a CP9 HMM from the CM\n");
+    if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a CP9 HMM from the CM\n");
   }
 
   esl_stopwatch_Stop(w); 
@@ -135,14 +137,14 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
   fprintf(stdout, "\tcp9 build time        %11s\n", time_buf);
 #endif
 
-  cm->cp9b = AllocCP9Bands(cm->M, cm->cp9loc->M);
+  cm->cp9b = AllocCP9Bands(cm->M, cm->cp9->M);
   /* create the CP9 matrices, we init to 1 row, which is tiny so it's okay
    * that we have two of them, we only grow them as needed, cp9_bmx is 
    * only needed if we're doing Forward -> Backward -> Posteriors.
    */
-  cm->cp9_mx  = CreateCP9Matrix(1, cm->cp9loc->M);
-  cm->cp9_bmx = CreateCP9Matrix(1, cm->cp9loc->M);
-  cm->flags |= CMH_CP9LOC; /* raise the CP9 flag */
+  cm->cp9_mx  = CreateCP9Matrix(1, cm->cp9->M);
+  cm->cp9_bmx = CreateCP9Matrix(1, cm->cp9->M);
+  cm->flags |= CMH_CP9; /* raise the CP9 flag */
   
   /* build the p7 and profiles from the cp9 */
   if(cm->mlp7    != NULL) p7_hmm_Destroy(cm->mlp7);
@@ -150,39 +152,52 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
   if((status = BuildP7HMM_MatchEmitsOnly(cm, &(cm->mlp7)) != eslOK)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 HMM from the CM\n");
 #endif
   /* EPN, Tue Nov  9 09:46:48 2010 */
-  if((status = cm_cp9_to_p7(cm, cm->cp9loc)) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 from the CM");
+  if((status = cm_cp9_to_p7(cm, cm->cp9)) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 from the CM");
 
   /* Possibly configure the CM for local alignment. */
   if (cm->config_opts & CM_CONFIG_LOCAL) { 
     ConfigLocal(cm, cm->pbegin, cm->pend);
     CMLogoddsify(cm);
-    cm->cp9glb = NULL;        /* actually, this will already be NULL, but just to be clear */
-    cm->flags &= ~CMH_CP9GLB; 
-  }
-  else { /* CM will stay configured in global mode */
-    /* Clone the globally configured CP9 HMM cm->cp9 before its put into local mode,
-     * the global version will be cm->cp9glb and will be used for standard
-     * (non-truncated) alignment. cm->cp9 is still needed for truncated alignment.
-     */
-    if((cm->cp9glb = cp9_Clone(cm->cp9loc)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't clone cm->cp9loc into cm->cp9glb");
-    cm->flags |= CMH_CP9GLB; 
   }
 
-  /* Always configure one of the CP9 HMMs for local begins/ends alignment (cm->cp9) 
-   * we'll use this for truncated alignment regardless of whether the CM is
-   * in local or glocal mode. Optionally turn on ELs for cm->cp9. Always leave
-   * cm->cp9glb untouched, it is either NULL (if the CM is not in local mode) 
-   * or it remains in glocal mode and is used for standard (non-truncated) 
-   * alignment.
+  /* Setup Lcp9, Rcp9, Tcp9 CP9 HMMs for truncated alignment */
+  if(! (cm->config_opts & CM_CONFIG_NOTRUNC)) { 
+    /* Clone the globally configured CP9 HMM cm->cp9 before its put
+     * into local mode into each of cm->Lcp9, cm->Rcp9, cm->Tcp9 and
+     * configure them for their specific mode of truncated alignment.
+     * As a special case, if CM_CONFIG_TRUNC_NOFORCE Lcp9, Rcp9 and
+     * Tcp9 are configured identically for equiprobable begins and
+     * ends.
+     */
+    if((cm->Lcp9 = cp9_Clone(cm->cp9)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't clone cm->cp9 to get cm->Lcp9");
+    if((cm->Rcp9 = cp9_Clone(cm->cp9)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't clone cm->cp9 to get cm->Rcp9");
+    if((cm->Tcp9 = cp9_Clone(cm->cp9)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't clone cm->cp9 to get cm->Tcp9");
+    /* L mode alignment, 5' truncation: begin into node 1, equiprobable ends */
+    swentry = (cm->config_opts & CM_CONFIG_TRUNC_NOFORCE) ? ((float) cm->cp9->M - 1.) / (float) cm->cp9->M : 0.;
+    swexit  = ((float) cm->cp9->M - 1.) / (float) cm->cp9->M;
+    CPlan9SWConfig(cm->Lcp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE: let I_0, D_1, I_M be reachable */
+    /* R mode alignment, 3' truncation: equiprobable begins, end out of node M */
+    swentry = ((float) cm->cp9->M - 1.) / (float) cm->cp9->M;
+    swexit  = (cm->config_opts & CM_CONFIG_TRUNC_NOFORCE) ? ((float) cm->cp9->M - 1.) / (float) cm->cp9->M : 0.;
+    CPlan9SWConfig(cm->Rcp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE: let I_0, D_1, I_M be reachable */
+    /* T mode alignment, 5' and 3' truncation: equiprobable begins, equiprobable ends */
+    swentry = ((float) cm->cp9->M - 1.) / (float) cm->cp9->M;
+    swexit  = ((float) cm->cp9->M - 1.) / (float) cm->cp9->M;
+    CPlan9SWConfig(cm->Tcp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE: let I_0, D_1, I_M be reachable */
+
+    cm->flags |= CMH_CP9_TRUNC;
+  }
+
+  /* Configure cm->cp9 to match the CM as closely as possible in 
+   * terms of locality. If CM has local begins on, we allow 
+   * internal entries and exits, if not, we don't. 
    */
-  swentry = cm->pbegin;
-  swexit  = cm->pbegin; 
-  CPlan9SWConfig(cm->cp9loc, swentry, swexit, 
-		 FALSE, /* allow I_0, D_1, I_M to be reachable */
-		 cm->ndtype[1]); 
-  CP9Logoddsify(cm->cp9loc);
-  if(cm->config_opts & CM_CONFIG_HMMEL) { 
-    CPlan9ELConfig(cm);
+  if(cm->config_opts & CM_CONFIG_HMMLOCAL) {   
+    swentry = cm->pbegin;
+    swexit  = cm->pbegin; 
+    CPlan9SWConfig(cm->cp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE: let I_0, D_1, I_M be reachable */
+    CP9Logoddsify(cm->cp9);
+    if(cm->config_opts & CM_CONFIG_HMMEL) CPlan9ELConfig(cm->cp9, cm);
   }
 
   /* If nec, set up the query dependent bands, this has to be done after 
@@ -191,11 +206,12 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
    * before QDB calc, then turned off in BandCalculationEngine() then 
    * back on. */
   if(cm->config_opts & CM_CONFIG_QDB) {
-    if(cm->flags & CMH_QDB) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "ERROR in ConfigCM() CM already has QDBs\n");
+    if(cm->flags & CMH_QDB) ESL_FAIL(eslEINVAL, errbuf, "ERROR in ConfigCM() CM already has QDBs\n");
     ConfigQDBAndW(cm, TRUE);
   }
-
-  else if(always_calc_W) ConfigQDBAndW(cm, FALSE); /* FALSE says: don't calculate QDBs, W will still be calc'ed and set */
+  else if(always_calc_W) { 
+    ConfigQDBAndW(cm, FALSE); /* FALSE says: don't calculate QDBs, W will still be calc'ed and set */
+  }
   
   /* We need to ensure that cm->el_selfsc * W >= IMPOSSIBLE
    * (cm->el_selfsc is the score for an EL self transition) This is
@@ -224,8 +240,10 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
   esl_stopwatch_Destroy(w);
 
   /*debug_print_cm_params(stdout, cm);
-    debug_print_cp9_params(stdout, cm->cp9loc, TRUE);
-    debug_print_cp9_params(stdout, cm->cp9glb, TRUE);*/
+    debug_print_cp9_params(stdout, cm->cp9, TRUE);
+    debug_print_cp9_params(stdout, cm->Lcp9, TRUE);
+    debug_print_cp9_params(stdout, cm->Rcp9, TRUE);
+    debug_print_cp9_params(stdout, cm->Tcp9, TRUE);*/
   return eslOK;
 }
 
@@ -272,14 +290,12 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   int      i, j;                /* counters for transition maps */
   double  *psi    = NULL;       /* psi[v] = expected number of times state v entered (occupancy) */
   float    tmpvec[3];           /* temporary vector for normalizing trbegin */
+  int      vins1, vins2;        /* insert state indices */
 
   /* contract check */
-  if(cm->flags & CMH_LOCAL_BEGIN)
-    cm_Fail("ERROR in ConfigLocal(), CMH_LOCAL_BEGIN flag already up.\n");
-  if(cm->flags & CMH_LOCAL_END)
-    cm_Fail("ERROR in ConfigLocal(), CMH_LOCAL_END flag already up.\n");
-  if(cm->flags & CM_IS_SUB)
-    cm_Fail("ERROR in ConfigLocal(), CM is a sub CM, we can't localize it, we could if we first checked if its invalid (see cm_from_guide()).");
+  if(cm->flags & CMH_LOCAL_BEGIN)  cm_Fail("ERROR in ConfigLocal(), CMH_LOCAL_BEGIN flag already up.\n");
+  if(cm->flags & CMH_LOCAL_END)    cm_Fail("ERROR in ConfigLocal(), CMH_LOCAL_END flag already up.\n");
+  if(cm->flags & CM_IS_SUB)        cm_Fail("ERROR in ConfigLocal(), CM is a sub CM, we can't localize it, we could if we first checked if its invalid (see cm_from_guide()).");
 
   had_scanmatrix = (cm->flags & CMH_SCANMATRIX) ? TRUE : FALSE;
 
@@ -300,9 +316,8 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   /* Zero everything.
    */
   esl_vec_FSet(cm->begin,   cm->M, 0.);
-  esl_vec_FSet(cm->trbegin, cm->M, 0.);
 
-  /* Fill psi, used for setting trbegin */
+  /* Fill psi, used for setting trbegin (have to do this before setting cm->begin) */
   ESL_ALLOC(psi, sizeof(double) * cm->M);
   make_tmap(&tmap);
   fill_psi(cm, psi, tmap);
@@ -330,18 +345,6 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   /* Node 1 gets prob 1-p_internal_start.
    */
   cm->begin[cm->nodemap[1]] = 1.-p_internal_start;
-
-  /* for trbegin, we allow transitions into ROOT_IL and ROOT_IR */
-  esl_vec_FSet(tmpvec, 3, 0.);
-  assert(cm->nodemap[1] == 3);
-  tmpvec[0] = psi[1]; /* ROOT_IL */
-  tmpvec[1] = psi[2]; /* ROOT_IR */
-  tmpvec[2] = psi[3]; /* main state of node 1 (MATP_MP, MATR_MR, MATL_ML or BIF_B) */
-  esl_vec_FNorm(tmpvec, 3);
-  cm->trbegin[1] = tmpvec[0] * (1.-p_internal_start);
-  cm->trbegin[2] = tmpvec[1] * (1.-p_internal_start);
-  cm->trbegin[3] = tmpvec[2] * (1.-p_internal_start);
-
   /* Remaining nodes share p_internal_start.
    */
   p = p_internal_start / (float) nstarts;
@@ -350,37 +353,81 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
     	cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)  
       cm->begin[cm->nodemap[nd]] = p;
   }
-  /* set trbegin */
-  esl_vec_FSet(tmpvec, 3, 0.);
-  esl_vec_FNorm(tmpvec, 3);
-  for (nd = 2; nd < cm->nodes; nd++) {
-    v = cm->nodemap[nd];
-    tmpvec[0] = psi[v];
-    if (cm->ndtype[nd] == MATP_nd) { 
-      tmpvec[1] = psi[v+4]; /* MATP_IL */
-      tmpvec[2] = psi[v+5]; /* MATP_IR */
-      esl_vec_FNorm(tmpvec, 3);
-      cm->trbegin[v]   = tmpvec[0] * p;
-      cm->trbegin[v+4] = tmpvec[1] * p;
-      cm->trbegin[v+5] = tmpvec[2] * p;
-    }
-    else if(cm->ndtype[nd] == MATL_nd) { 
-      tmpvec[1] = psi[v+2]; /* MATL_IL */
-      esl_vec_FNorm(tmpvec, 2);
-      cm->trbegin[v]   = tmpvec[0] * p;
-      cm->trbegin[v+2] = tmpvec[1] * p;
-    }
-    else if(cm->ndtype[nd] == MATR_nd) { 
-      tmpvec[1] = psi[v+2]; /* MATR_IR */
-      esl_vec_FNorm(tmpvec, 2);
-      cm->trbegin[v]   = tmpvec[0] * p;
-      cm->trbegin[v+2] = tmpvec[1] * p;
-    }
-    else if(cm->ndtype[nd] == BIF_nd) { 
-      cm->trbegin[v] = p;
-    }      
-  }
 
+  /* set trbegin: local begin probabilities for truncated parsetrees 
+   * 
+   * As with standard local begins, truncated local begins are
+   * possible into any BIF_B, MATP_MP, MATL_ML or MATR_MR state, but
+   * unlike standard local begins we can also do a begin into any
+   * insert state. (We need to do this so we can enforce that
+   * truncated alignments include the first and/or final position of a
+   * target sequence which may be an insert.)
+   * 
+   * Insert states share some of the local begin probability mass p 
+   * (p == p_internal_start / nstarts) with the nearest downstream
+   * standard local begin (slb) state (slb states are BIF_B, MATP_MP,
+   * MATL_ML or MATR_MR), weighted by occupancy (the psi[v] values).
+   * 
+   * The loop through the states to do this is a little strange. We
+   * need to keep track of 1 or 2 insert states we're currently
+   * setting trbegin for, these will be the (non-detached) insert
+   * states we've seen since the previous slb state. When we get to a
+   * slb state we normalize the psi values for the current slb state
+   * and the 1 or 2 inserts. The slb plus the 1 or 2 inserts form a
+   * set that will share the standard local begin probability, weighted
+   * by each states' relative psi value. 
+   * 
+   * There is a wrinkle with this approach. For any MATP node followed
+   * by an END node, the MATP_IL will have an IMPOSSIBLE trbegin
+   * probability (the MATP_IR will be detached). I don't see how to
+   * avoid this cleanly, but it shouldn't matter much because any
+   * truncated local begin into that MATP_IL would have to insert the
+   * entire sequence and then go the the adjacent END_E, which would
+   * be a silly parsetree.
+   */
+
+  esl_vec_FSet(cm->trbegin, cm->M, 0.);
+
+  vins1 = -1; /* first  insert state seen since previous BIF_B, MATP_MP, MATL_ML, MATR_MR, END_E */
+  vins2 = -1; /* second insert state seen since previous BIF_B, MATP_MP, MATL_ML, MATR_MR, END_E */
+  p = p_internal_start / (float) nstarts; 
+  for(v = 0; v < cm->M; v++) { 
+    if((cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) && (! StateIsDetached(cm, v))) { 
+      if     (vins1 == -1) vins1 = v;
+      else if(vins2 == -1) vins2 = v;
+      else cm_Fail("ConfigLocal() bogus state topology when setting truncated local begin probabilities (1)");
+    } 
+    else if(cm->stid[v] == BIF_B || cm->stid[v] == MATP_MP || cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR) { 
+      esl_vec_FSet(tmpvec, 3, 0.);
+      if(vins1 != -1 && vins2 != -1) { 
+	tmpvec[0] = psi[vins1];
+	tmpvec[1] = psi[vins2];
+	tmpvec[2] = psi[v];
+	esl_vec_FNorm(tmpvec, 3);
+	cm->trbegin[vins1] = (cm->ndidx[v] == 1) ? tmpvec[0] * (1. - p_internal_start) : tmpvec[0] * p;
+	cm->trbegin[vins2] = (cm->ndidx[v] == 1) ? tmpvec[1] * (1. - p_internal_start) : tmpvec[1] * p;
+	cm->trbegin[v]     = (cm->ndidx[v] == 1) ? tmpvec[2] * (1. - p_internal_start) : tmpvec[2] * p;
+      }
+      else if(vins1 != -1 && vins2 == -1) { 
+	tmpvec[0] = psi[vins1];
+	tmpvec[1] = psi[v];
+	esl_vec_FNorm(tmpvec, 2);
+	cm->trbegin[vins1] = (cm->ndidx[v] == 1) ? tmpvec[0] * (1. - p_internal_start) : tmpvec[0] * p;
+	cm->trbegin[v]     = (cm->ndidx[v] == 1) ? tmpvec[1] * (1. - p_internal_start) : tmpvec[1] * p;
+      }
+      /* reset */
+      vins1 = vins2 = -1;
+    }
+    else if(cm->sttype[v] == E_st) { 
+      /* reset vins1 and vins2 */ 
+      vins1 = vins2 = -1;
+      /* this means detached inserts immediately prior to a END_E
+       * will keep a impossible trbegin score, but also means
+       * MATP_ILs just before a END node will stay impossible as 
+       * well (see 'wrinkle' in comments above).
+       */
+    }
+  }
   cm->flags |= CMH_LOCAL_BEGIN;
   
   /* New local begin probs invalidate QDBs if:
@@ -537,10 +584,13 @@ ConfigNoLocalEnds(CM_t *cm)
 	esl_vec_FNorm(cm->t[v], cm->cnum[v]);
       }
   }
-  /* Disable the local end probs in the CP9 */
-  if((cm->flags |= CMH_CP9LOC) && (cm->cp9loc->flags |= CPLAN9_EL))
-    CPlan9NoEL(cm);
-
+  /* Disable the local end probs in the CP9s */
+  if((cm->flags & CMH_CP9) && (cm->cp9->flags & CPLAN9_EL)) CPlan9NoEL(cm->cp9);
+  if(cm->flags & CMH_CP9_TRUNC) { 
+    if(cm->Lcp9->flags & CPLAN9_EL) CPlan9NoEL(cm->Lcp9);
+    if(cm->Rcp9->flags & CPLAN9_EL) CPlan9NoEL(cm->Rcp9);
+    if(cm->Tcp9->flags & CPLAN9_EL) CPlan9NoEL(cm->Tcp9);
+  }
   esl_vec_FSet(cm->end, cm->M, 0.);
 
   cm->flags &= ~CMH_LOCAL_END; /* turn off local ends flag */
@@ -610,7 +660,6 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
 	 */
       }
   }
-
   cm->flags |= CMH_LOCAL_END;
 
   /* new probs invalidate log odds scores */

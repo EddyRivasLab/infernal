@@ -140,6 +140,9 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   int      yoffset;             /* counter over children */
   int      reset_local_ends;    /* TRUE if we erased them and need to reset */
   int      reset_cp9_local_ends;/* TRUE if we erased them and need to reset */
+  int      reset_Lcp9_local_ends;/* TRUE if we erased them and need to reset */
+  int      reset_Rcp9_local_ends;/* TRUE if we erased them and need to reset */
+  int      reset_Tcp9_local_ends;/* TRUE if we erased them and need to reset */
   float   *seqlen;              /* average seqlen for each state, only calc'ed if
 				 * ret_seqlen != NULL */
   double  *tmp_gamma_v;         /* temp copy of gamma[v] when calc'ing seqlen */
@@ -152,14 +155,15 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
    * impossible for the band calculation than make them
    * possible again before exiting this function.
    */
-  reset_local_ends = reset_cp9_local_ends = FALSE;
-  if(cm->flags & CMH_LOCAL_END)
-    {
-      reset_local_ends = TRUE;
-      if((cm->flags & CMH_CP9LOC) && cm->cp9loc->flags & CPLAN9_EL)
-	reset_cp9_local_ends = TRUE;
-      ConfigNoLocalEnds(cm);
-    }
+  reset_local_ends = reset_cp9_local_ends = reset_Lcp9_local_ends = reset_Rcp9_local_ends = FALSE;
+  if(cm->flags & CMH_LOCAL_END) { 
+    reset_local_ends = TRUE;
+    if((cm->flags & CMH_CP9)       && (cm->cp9->flags  & CPLAN9_EL)) reset_cp9_local_ends  = TRUE;
+    if((cm->flags & CMH_CP9_TRUNC) && (cm->Lcp9->flags & CPLAN9_EL)) reset_Lcp9_local_ends = TRUE;
+    if((cm->flags & CMH_CP9_TRUNC) && (cm->Rcp9->flags & CPLAN9_EL)) reset_Rcp9_local_ends = TRUE;
+    if((cm->flags & CMH_CP9_TRUNC) && (cm->Tcp9->flags & CPLAN9_EL)) reset_Tcp9_local_ends = TRUE;
+    ConfigNoLocalEnds(cm);
+  }
   /* gamma[v][n] is Prob(state v generates subseq of length n)
    */
   ESL_ALLOC(gamma, sizeof(double *) * cm->M);        
@@ -397,9 +401,24 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
     reset_local_ends = FALSE;
     CMLogoddsify(cm);
     if(reset_cp9_local_ends) {
-      CPlan9ELConfig(cm);
+      CPlan9ELConfig(cm->cp9, cm);
       reset_cp9_local_ends = FALSE;
-      CP9Logoddsify(cm->cp9loc);
+      CP9Logoddsify(cm->cp9);
+    }
+    if(reset_Lcp9_local_ends) {
+      CPlan9ELConfig(cm->Lcp9, cm);
+      reset_Lcp9_local_ends = FALSE;
+      CP9Logoddsify(cm->Lcp9);
+    }
+    if(reset_Rcp9_local_ends) {
+      CPlan9ELConfig(cm->Rcp9, cm);
+      reset_Rcp9_local_ends = FALSE;
+      CP9Logoddsify(cm->Rcp9);
+    }
+    if(reset_Tcp9_local_ends) {
+      CPlan9ELConfig(cm->Tcp9, cm);
+      reset_Tcp9_local_ends = FALSE;
+      CP9Logoddsify(cm->Tcp9);
     }
   }
   if (ret_dmin  != NULL) *ret_dmin = dmin;   else free(dmin);

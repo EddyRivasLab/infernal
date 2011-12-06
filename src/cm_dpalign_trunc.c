@@ -5556,8 +5556,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
  *           <eslFAIL>   if <do_check>==TRUE and we fail a test
  */
 int
-cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, int do_check, 
-		     CM_TR_MX *mx, CM_TR_MX *inscyk_mx)
+cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, int do_check, CM_TR_MX *mx, CM_TR_MX *inscyk_mx)
 {
   int      status;
   int      v,y,z;	       /* indices for states */
@@ -5658,7 +5657,7 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	      }
 	      if(fill_R) {
 		Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j+k][d+k] + Jalpha[z][j+k][k]); /* C */
-		if(d == j && (j+k) == L) { 
+		if(fill_T && fill_L && d == j && (j+k) == L) { 
 		  Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Tbeta[y][j+k][d+k] + Lalpha[z][j+k][k]); /* D */
 		  /* Note: Tbeta[y][j+k==L][d+k==L] will be 0.0 or
 		   * IMPOSSIBLE because it was initialized that
@@ -5671,8 +5670,10 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 		}
 	      }
 	    } /* end of for k loop */
-	    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j][d]); /* entire sequence on left, no sequence on right, k == 0 */
-	    if(fill_L) Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d]); /* entire sequence on left, no sequence on right, k == 0 */
+	    if(fill_L) { 
+	      Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j][d]); /* entire sequence on left, no sequence on right, k == 0 */
+	      Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d]); /* entire sequence on left, no sequence on right, k == 0 */
+	    }
 	  }
 	}
       } /* end of 'if (cm->stid[v] == BEGL_S */
@@ -5689,7 +5690,7 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	      }
 	      if(fill_L) { 
 		Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d+k] + Jalpha[z][j-d][k]); /* B */
-		if(k == (i-1) && j == L) { 
+		if(fill_T && fill_R && k == (i-1) && j == L) { 
 		  Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Tbeta[y][j][d+k] + Ralpha[z][j-d][k]); /* D */
 		  /* Note: Tbeta[y][j==L][d+k==L] will be 0.0 or
 		   * IMPOSSIBLE because it was initialized that
@@ -6804,7 +6805,7 @@ cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	      }
 	      if(fill_R) { 
 		Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Rbeta[y][j+k][d+k] + Jalpha[z][j+k][k]); /* C */
-		if(fill_L && fill_T && d == j && (j+k) == L) { 
+		if(fill_T && fill_L && d == j && (j+k) == L) { 
 		  Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Tbeta[y][j+k][d+k] + Lalpha[z][j+k][k]); /* D */
 		  /* Note: Tbeta[y][j+k==L][d+k==L] will be 0.0 or
 		   * IMPOSSIBLE because it was initialized that
@@ -8961,6 +8962,8 @@ main(int argc, char **argv)
 				  (cm->dmin == NULL && cm->dmax == NULL) ? FALSE : TRUE,
 				  TRUE, TRUE); /* do_float, do_int */
   }
+
+  /*DumpEmitMap(stdout, cm->emap, cm);*/
     
   /* determine sequence length */
   if(esl_opt_IsUsed(go, "-L")) L = esl_opt_GetInteger(go, "-L");

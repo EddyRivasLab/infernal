@@ -958,8 +958,6 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
   int i;
   char time_buf[128];	  /* another string for printing elapsed time */
   float sc, struct_sc;
-  CP9_t *cp9used = NULL;
-  cp9used = esl_opt_GetBoolean(go, "-l") ? cm->cp9loc : cm->cp9glb;
 
   /* print the parsetrees to regression file or parse file */
   for(i = 0; i < seqs_to_aln->nseq; i++)
@@ -970,8 +968,8 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  if(cfg->s > 0 && esl_opt_GetBoolean(go,"--viterbi")) 
 	    {
 	      ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
-	      fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", CP9TraceScore(cp9used, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
-	      CP9PrintTrace(cfg->regressfp, seqs_to_aln->cp9_tr[i], cp9used, seqs_to_aln->sq[i]->dsq);
+	      fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
+	      CP9PrintTrace(cfg->regressfp, seqs_to_aln->cp9_tr[i], cm->cp9, seqs_to_aln->sq[i]->dsq);
 	    }
 	  else
 	    {
@@ -989,8 +987,8 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  if(cfg->s > 0 && esl_opt_GetBoolean(go,"--viterbi")) 
 	    {
 	      ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
-	      fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cp9used, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
-	      CP9PrintTrace(cfg->tracefp, seqs_to_aln->cp9_tr[i], cp9used, seqs_to_aln->sq[i]->dsq);
+	      fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
+	      CP9PrintTrace(cfg->tracefp, seqs_to_aln->cp9_tr[i], cm->cp9, seqs_to_aln->sq[i]->dsq);
 	    }
 	  else
 	    {

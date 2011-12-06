@@ -192,7 +192,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   int do_trunc;       /* are we allowing truncated alignments (either L or R)? */
   int do_fwd_scan;    /* run Forward  in scanning mode? (see long comment on this below by assignment of do_fwd_scan) */
   int do_bck_scan;    /* run Backward in scanning mode? (see long comment on this below by assignment of do_fwd_scan) */
-  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (cm->cp9loc or cm->cp9glb) we'll use for deriving bands */
+  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (cm->cp9, cm->Lcp9, cm->Rcp9, or cm->Tcp9) we'll use for deriving bands */
 
   /* Contract checks */
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9map is NULL.\n");
@@ -206,14 +206,20 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
   do_trunc      = (tro != NULL && (tro->allowL || tro->allowR)) ? TRUE : FALSE;
 
-  /* Determine which cp9 HMM to use: If the CM has local begins OR
-   * we're doing truncated alignment, then use cm->cp9 (it has local
-   * begins/ends), else (CM has no local begins and we're not doing
-   * truncated alignment) use cm->cp9glb, it has local begins/ends
-   * turned off.
+  /* Determine which cp9 HMM to use and whether or not we're doing 
+   * truncated alignment. 
    */
-  cp9 = ((cm->flags & CMH_LOCAL_BEGIN) || do_trunc) ? cm->cp9loc : cm->cp9glb;
-  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but relevant cp9 is NULL.\n");
+  if(tro != NULL) { 
+    if     (   tro->allowL  && (! tro->allowR)) { do_trunc = TRUE;  cp9 = cm->Lcp9; }
+    else if((! tro->allowL) &&    tro->allowR)  { do_trunc = TRUE;  cp9 = cm->Rcp9; }
+    else if(   tro->allowL  &&    tro->allowR)  { do_trunc = TRUE;  cp9 = cm->Tcp9; }
+    else                                        { do_trunc = FALSE; cp9 = cm->cp9;  }
+  }
+  else { 
+    do_trunc = FALSE; cp9 = cm->cp9; 
+  }
+  if(! (cm->flags & CMH_CP9_TRUNC)) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, doing trunc alignment but CMH_CP9_TRUNC flag is not raised");
+  if(cp9 == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, relevant cp9 is NULL.\n");
 
   /* Determine if we should do Forward and Backward in scan mode.
    *
@@ -341,20 +347,19 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
 {
   int status;
   float sc;
-  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (cm->cp9loc or cm->cp9glb) we'll use for deriving bands */
+  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (this could be Lcp9, Rcp9, Tcp9 if we update this function to possibly handle truncated alignment) */
 
   /* Contract checks */
   if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors(), dsq is NULL.");
-  if(cm->cp9loc == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9loc is NULL.\n");
+  if(cm->cp9    == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9map is NULL.\n");
   if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
     ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if((cm->search_opts & CM_SEARCH_HMMALNBANDS) && (! (cm->search_opts & CM_SEARCH_HBANDED))) 
     ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_SEARCH_HMMALNBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
 
-  /* determine which cp9 HMM to use, if CM is has local begins use cp9 (its local too) else use cp9glb (its global) */
-  cp9 = (cm->flags & CMH_LOCAL_BEGIN) ? cm->cp9loc : cm->cp9glb;
-  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Posteriors, but relevant cp9 is NULL.\n");
+  cp9 = cm->cp9;
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Posteriors, relevant cp9 is NULL.\n");
 
   /* Step 1: Get HMM posteriors.*/
   if((status = cp9_Forward(cp9, errbuf, fmx, dsq, i0, j0, 
@@ -5326,7 +5331,7 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
     cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax); /* j can't be more than j0 */
   }
 
-  /*    printf("HEYA Returning from cp9_PredictStartAndEndPositions():\n\t");
+  printf("HEYA Returning from cp9_PredictStartAndEndPositions():\n\t");
     printf("sp1: %4d\n\t", cp9b->sp1);
     printf("sp2: %4d\n\t", cp9b->sp2);
     printf("ep2: %4d\n\t", cp9b->ep2);
@@ -5335,7 +5340,6 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
     printf("Ljx: %4d\n\t", cp9b->Lmarg_jmax);
     printf("Rin: %4d\n\t", cp9b->Rmarg_imin);
     printf("Rix: %4d\n\n", cp9b->Rmarg_imax);
-  */
 
   return;
 }

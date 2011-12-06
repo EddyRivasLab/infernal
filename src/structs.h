@@ -451,8 +451,8 @@ typedef struct cp9map_s {
 #define CMH_QDB                 (1<<14) /* query-dependent bands, QDBs valid        */
 #define CMH_QDB_LOCAL           (1<<15) /* QDBs calc'ed with local begins on        */
 #define CMH_QDB_GLOBAL          (1<<16) /* QDBs calc'ed with local begins off       */
-#define CMH_CP9LOC              (1<<17) /* CP9 HMM is valid in cm->cp9loc           */
-#define CMH_CP9GLB              (1<<18) /* CP9 HMM is valid in cm->cp9glb           */
+#define CMH_CP9                 (1<<17) /* CP9 HMM is valid in cm->cp9loc           */
+#define CMH_CP9_TRUNC           (1<<18) /* cm->Lcp9, cm->Rcp9, cm->Tcp9 are valid   */
 #define CMH_SCANMATRIX          (1<<19) /* ScanMatrix smx is valid                  */
 #define CMH_MLP7                (1<<20) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
 #define CMH_FP7                 (1<<21) /* filter p7 is valid in cm->fp7            */
@@ -469,6 +469,8 @@ typedef struct cp9map_s {
 #define CM_CONFIG_HMMLOCAL      (1<<1)  /* configure the CP9 for local alignment  */
 #define CM_CONFIG_HMMEL         (1<<2)  /* configure the CP9 for EL local aln       */
 #define CM_CONFIG_QDB           (1<<3)  /* calculate query dependent bands          */
+#define CM_CONFIG_NOTRUNC       (1<<4)  /* don't set up for truncated alignment (cm->{L,R,T}cp9 won't be built */
+#define CM_CONFIG_TRUNC_NOFORCE (1<<5)  /* don't force sequence endpoints exist in truncated alignments */
 
 /* alignment options, cm->align_opts */
 #define CM_ALIGN_SMALL         (1<<0)  /* use small CYK D&C                        */
@@ -1792,16 +1794,27 @@ typedef struct cm_s {
 			 * the EL state emits only on self transition (EPN 11.15.05)*/
   int   iel_selfsc;     /* scaled int version of el_selfsc         */
 
-  /* CP9 HMMs and associated data structures. If in local mode we only need to build one CP9 
-   * HMM (cp9loc) with local begins/ends turned on. If in global mode we need cp9loc and cp9glb,
-   * which has local begins/ends off, because we need cp9loc for truncated alignment. 
-   * cp9map and cp9b work perfectly well for either cp9loc or cp9glb, so only one of each
-   * is needed.
+  /* CP9 HMMs and associated data structures. These are built and
+   * configured in cm_modelconfig.c:ConfigCM(). <cp9> is always built
+   * and is configured (local begins/ ends and ELs) to match the CM.
+   * <Lcp9>, <Rcp9> and <Tcp9> are for truncated alignment, one each
+   * for L, R and T modes. These are built unless the
+   * CM_CONFIG_NOTRUNC flag is raised. They are configured to match
+   * their alignment mode. For example, Lcp9 has a global-like begin
+   * (prob of ~1.0 into match state 1) but local-like ends
+   * (equiprobable end points) to match the possibility of a 3'
+   * truncation (L mode alignment). If the CM_CONFIG_TRUNC_NOFORCE
+   * flag is raised then Lcp9, Rcp9, Tcp9 are all configured 
+   * identically with equiprobable begin/ends (this is wasteful, 
+   * we only need one in this case, but its easier to deal with 
+   * this way and its non-default).
    */
-  CP9_t      *cp9loc;     /* a CM Plan 9 HMM, built from CM, local begins/ends always ON        */
-  CP9_t      *cp9glb;     /* a CM Plan 9 HMM, built from CM, local begins/ends always OFF       */
-  CP9Map_t   *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa               */
-  CP9Bands_t *cp9b;       /* the CP9 bands                                                      */
+  CP9_t      *cp9;        /* a CM Plan 9 HMM, built from and configured to match CM */
+  CP9_t      *Lcp9;       /* a CM Plan 9 HMM for L mode truncated alignment (global begins, equiprobable local ends) */
+  CP9_t      *Rcp9;       /* a CM Plan 9 HMM for R mode truncated alignment (equiprobable local begins, global ends) */
+  CP9_t      *Tcp9;       /* a CM Plan 9 HMM for T mode truncated alignment (equiprobable local begin/ends) */
+  CP9Map_t   *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa   */
+  CP9Bands_t *cp9b;       /* the CP9 bands                                          */
 
   /* DP matrices and some auxiliary info for DP algorithms */
   /* for standard CM alignment/search */

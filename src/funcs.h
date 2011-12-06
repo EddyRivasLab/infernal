@@ -247,9 +247,6 @@ extern void  ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit
 extern void  ConfigGlobal(CM_t *cm);
 extern void  ConfigNoLocalEnds(CM_t *cm);
 extern void  ConfigLocalEnds(CM_t *cm, float p_internal_exit);
-extern void  ConfigLocal_fullsub(CM_t *cm, float p_internal_start, 
-				float p_internal_exit, int sstruct_nd,
-				int estruct_nd);
 extern void  ConfigLocal_DisallowELEmissions(CM_t *cm);
 extern int   ConfigQDBAndW(CM_t *cm, int do_calc_qdb);
 
@@ -464,9 +461,9 @@ extern int cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float
 extern void  CP9Logoddsify(CP9_t *hmm);
 extern void  CPlan9Renormalize(CP9_t *hmm);
 extern void  CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit, int do_match_local_cm, int first_cm_ndtype);
-extern void  CPlan9ELConfig(CM_t *cm);
-extern void  CPlan9NoEL(CM_t *cm);
-extern void  CPlan9InitEL(CM_t *cm, CP9_t *cp9);
+extern void  CPlan9ELConfig(CP9_t *cp9, CM_t *cm);
+extern void  CPlan9NoEL(CP9_t *cp9);
+extern void  CPlan9InitEL(CP9_t *cp9, CM_t *cm);
 extern void  CPlan9RenormalizeExits(CP9_t *hmm, int spos);
 extern int   Prob2Score(float p, float null);
 extern float Score2Prob(int sc, float null);

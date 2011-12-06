@@ -1198,13 +1198,13 @@ DumpEmitMap(FILE *fp, CMEmitMap_t *map, CM_t *cm)
 
   fprintf(fp, "CM to consensus emit map; consensus length = %d \n",
 	  map->clen);
-  fprintf(fp, "%4s %9s %4s %4s %4s\n", 
-	  "Node", "Node type", "lpos", "rpos", "epos");
-  fprintf(fp, "%4s %9s %4s %4s %4s\n", 
-	  "----", "---------", "----", "----", "----");
+  fprintf(fp, "%4s %7s %9s %4s %4s %4s\n", 
+	  "Node", "State 1", "Node type", "lpos", "rpos", "epos");
+  fprintf(fp, "%4s %7s %9s %4s %4s %4s\n", 
+	  "----", "-------", "---------", "----", "----", "----");
   for (nd = 0; nd < cm->nodes; nd++)
-    fprintf(fp, "%4d %9s %4d %4d %4d\n", 
-	    nd, Nodetype(cm->ndtype[nd]), 
+    fprintf(fp, "%4d %7d %9s %4d %4d %4d\n", 
+	    nd, cm->nodemap[nd], Nodetype(cm->ndtype[nd]), 
 	    map->lpos[nd], map->rpos[nd], map->epos[nd]);
 }
 

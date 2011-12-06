@@ -324,13 +324,13 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
   if((watch2 = esl_stopwatch_Create()) == NULL) goto ERROR;
 
   if(do_hbanded || do_sub) { /* We need a localized CP9 HMM to build sub_cms */
-    if(cm->cp9loc == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, trying to use CP9 HMM that is NULL\n");
-    if(cm->cp9b   == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, cm->cp9b is NULL\n");
-    if(!(cm->cp9loc->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+    if(cm->cp9   == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, trying to use CP9 HMM that is NULL\n");
+    if(cm->cp9b  == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, cm->cp9b is NULL\n");
+    if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
     
     /* Keep data for the original CM safe; we'll be doing
      * pointer swapping to ease the sub_cm alignment implementation. */
-    hmm         = cm->cp9loc;
+    hmm         = cm->cp9;
     cp9b        = cm->cp9b;
     cp9map      = cm->cp9map;
     orig_hmm    = hmm;
@@ -353,7 +353,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	        * we config the HMM to local mode with equiprobable start/end points.*/
     swentry = ((hmm->M)-1.)/hmm->M; /* all start pts equiprobable, including 1 */
     swexit  = ((hmm->M)-1.)/hmm->M; /* all end   pts equiprobable, including M */
-    CPlan9SWConfig(cm->cp9loc, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE means don't make I_0, D_1, I_M unreachable (like a local CM, undesirable for sub CM strategy)) */
+    CPlan9SWConfig(cm->cp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE means don't make I_0, D_1, I_M unreachable (like a local CM, undesirable for sub CM strategy)) */
     CP9Logoddsify(hmm);
   }
   if(! do_hbanded) { /* we need non-banded matrices for alignment */
@@ -365,7 +365,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 
   orig_cm = cm;
   emap = CreateEmitMap(cm);
-  fill_phi_cp9((cm->flags & CMH_LOCAL_BEGIN) ? cm->cp9loc : cm->cp9glb, &phi, 1, TRUE);
+  fill_phi_cp9(cm->cp9, &phi, 1, TRUE);
   
   /* if not in silent mode, print the header for the sequence info */
   if(!silent_mode) { 
@@ -450,7 +450,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 	fprintf(ofp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
 	if(sfp != NULL) fprintf(sfp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       }
-      if((status = cp9_Viterbi((cm->flags & CMH_LOCAL_BEGIN) ? cm->cp9loc : cm->cp9glb,
+      if((status = cp9_Viterbi(cm->cp9,
 			       errbuf, cm->cp9_mx, cur_dsq, 1, L, 
 			       FALSE,  /* we are not scanning */
 			       TRUE,   /* we are aligning */
@@ -565,7 +565,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
       cm    = sub_cm; /* orig_cm still points to the original CM */
       if(do_hbanded) { /* we're doing HMM banded alignment to the sub_cm */
 	/* Get the HMM bands for the sub_cm */
-	sub_hmm    = (sub_cm->flags & CMH_LOCAL_BEGIN) ? sub_cm->cp9loc : sub_cm->cp9glb;
+	sub_hmm    = sub_cm->cp9;
 	sub_cp9b   = sub_cm->cp9b;
 	sub_cp9map = sub_cm->cp9map;
 
@@ -863,7 +863,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
   p7_gmx_Destroy(gx);
   FreeEmitMap(emap);
   if(phi != NULL) { 
-    for(k = 0; k <= orig_cm->cp9loc->M; k++) free(phi[k]);
+    for(k = 0; k <= orig_cm->cp9->M; k++) free(phi[k]);
     free(phi);
   }
 

@@ -382,24 +382,20 @@ CPlan9SWConfigEnforce(CP9_t *hmm, float pentry, float pexit,
  * Purpose:  Turn EL local ends in a CM Plan 9 HMM on based on 
  *           the local end probs in the CM. 
  *           
- * Args:     cm     - the CM, must have valid CP9 HMM
+ * Args:     cp9 - the cp9 HMM
+ *           cm  - the CM the cp9 was built from
  *                    
  * Return:   (void)
  *           HMM probabilities are modified.
  */
 void
-CPlan9ELConfig(CM_t *cm)
+CPlan9ELConfig(CP9_t *cp9, CM_t *cm)
 {
   /*printf("IN CPlan9ELConfig\n");*/
   /* Contract checks */
-  if(cm->cp9loc == NULL)
-    cm_Fail("ERROR in CPlan9ELConfig, cm->cp9loc is NULL.\n");
-  if(cm->cp9map == NULL)
-    cm_Fail("ERROR in CPlan9ELConfig, cm->cp9map is NULL.\n");
-  if(!(cm->flags & CMH_CP9LOC))
-     cm_Fail("ERROR in CPlan9ELConfig, CMH_CP9LOC flag is down.");
-  if(cm->cp9loc->flags & CPLAN9_EL)
-     cm_Fail("ERROR in CPlan9ELConfig, CP9_EL flag is already up.");
+  if(cp9->M != cm->clen)  cm_Fail("CPlan9ELConfig(), cp9 and cm model length do not match");
+  if(cm->cp9map == NULL)  cm_Fail("CPlan9ELConfig(), cm->cp9map is NULL.\n");
+  if(cp9->flags & CPLAN9_EL) cm_Fail("CPlan9ELConfig(), cp9's CPLAN9_EL flag is already up.");
   
   int v;
   int k;                     /* counter over HMM nodes */
@@ -455,25 +451,25 @@ CPlan9ELConfig(CM_t *cm)
   }
 
   /* transitions from HMM node 0 to EL is impossible */
-  cm->cp9loc->t[0][CTMEL] = 0.;
-  for(k = 1; k <= cm->cp9loc->M; k++) 
+  cp9->t[0][CTMEL] = 0.;
+  for(k = 1; k <= cp9->M; k++) 
     {
-      if(cm->cp9loc->has_el[k])
+      if(cp9->has_el[k])
 	{
-	  cm->cp9loc->t[k][CTMEL] = to_el_prob;
-	  norm_factor = 1. - (cm->cp9loc->t[k][CTMEL] / (1. - cm->cp9loc->end[k]));
-	  cm->cp9loc->t[k][CTMM] *= norm_factor;
-	  cm->cp9loc->t[k][CTMI] *= norm_factor;
-	  cm->cp9loc->t[k][CTMD] *= norm_factor;
-	  /* cm->cp9loc->end[k] untouched */
+	  cp9->t[k][CTMEL] = to_el_prob;
+	  norm_factor = 1. - (cp9->t[k][CTMEL] / (1. - cp9->end[k]));
+	  cp9->t[k][CTMM] *= norm_factor;
+	  cp9->t[k][CTMI] *= norm_factor;
+	  cp9->t[k][CTMD] *= norm_factor;
+	  /* cp9->end[k] untouched */
 	}
     }
-  cm->cp9loc->flags &= ~CPLAN9_HASBITS;	/* clear the log-odds ready flag */
+  cp9->flags &= ~CPLAN9_HASBITS;	/* clear the log-odds ready flag */
 
-  CP9Logoddsify(cm->cp9loc);
+  CP9Logoddsify(cp9);
 
-  cm->cp9loc->flags |= CPLAN9_EL;          /* EL end locals now on */
-  /*debug_print_cp9_params(cm->cp9);*/
+  cp9->flags |= CPLAN9_EL;          /* EL end locals now on */
+  /*debug_print_cp9_params(cp9);*/
   return;
 }
 
@@ -482,34 +478,26 @@ CPlan9ELConfig(CM_t *cm)
  * 
  * Purpose:  Turn EL local ends off in a CM Plan 9 HMM
  *           
- * Args:     cm     - the CM, must have valid CP9 HMM
+ * Args:     cp9 - the HMM
  *                    
  * Return:   (void)
  *           HMM probabilities are modified.
  */
 void
-CPlan9NoEL(CM_t *cm)
+CPlan9NoEL(CP9_t *cp9)
 {
   /* Contract checks */
-  if(cm->cp9loc == NULL)
-    cm_Fail("ERROR in CPlan9ELConfig, cm->cp9loc is NULL.\n");
-  if(cm->cp9map == NULL)
-    cm_Fail("ERROR in CPlan9ELConfig, cm->cp9map is NULL.\n");
-  if(!(cm->flags & CMH_CP9LOC))
-     cm_Fail("ERROR in CPlan9ELConfig, CMH_CP9LOC flag is down.");
-  if(!(cm->cp9loc->flags & CPLAN9_EL))
-     cm_Fail("ERROR in CPlan9ELConfig, CP9_EL flag is already down.");
+  if(! (cp9->flags & CPLAN9_EL)) cm_Fail("CPlan9NoEL, CPLAN9_EL flag is already down.");
   
   int k;                     /* counter over HMM nodes */
 
-  for(k = 0; k <= cm->cp9loc->M; k++) 
-    cm->cp9loc->t[k][CTMEL] = 0.;
-  CPlan9RenormalizeExits(cm->cp9loc, 1);
+  for(k = 0; k <= cp9->M; k++) cp9->t[k][CTMEL] = 0.;
+  CPlan9RenormalizeExits(cp9, 1);
 
-  cm->cp9loc->flags &= ~CPLAN9_HASBITS;	/* clear the log-odds ready flag */
-  CP9Logoddsify(cm->cp9loc);
+  cp9->flags &= ~CPLAN9_HASBITS; /* clear the log-odds ready flag */
+  CP9Logoddsify(cp9);
 
-  cm->cp9loc->flags &= ~CPLAN9_EL;          /* EL end locals now off */
+  cp9->flags &= ~CPLAN9_EL;      /* EL local ends now off */
 
   return;
 }
@@ -521,13 +509,13 @@ CPlan9NoEL(CM_t *cm)
  *           by determining how the EL states should be connected
  *           based on the CM node topology.
  *           
- * Args:     cm     - the CM
- *           cp9    - the CP9 HMM, built from cm
+ * Args:     cp9 - the CP9 HMM, built from cm
+ *           cm  - the CM the cp9 was built from 
  *
  * Return:   (void)
  */
 void
-CPlan9InitEL(CM_t *cm, CP9_t *cp9)
+CPlan9InitEL(CP9_t *cp9, CM_t *cm)
 {
   int status;
   int k;                     /* counter over HMM nodes */
