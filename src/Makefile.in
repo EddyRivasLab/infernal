@@ -54,7 +54,6 @@ PROGS = cmalign\
 	cmfetch\
 	cmpress\
 	cmscan\
-	cmscore\
 	cmsearch\
 	cmstat\
 	trcyk\

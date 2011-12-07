@@ -1028,7 +1028,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     ESL_ALLOC(ws, sizeof(int64_t) * nwin);
     ESL_ALLOC(we, sizeof(int64_t) * nwin);
     for(i = 0; i < nwin; i++) { ws[i] = ws_int[i]; we[i] = we_int[i]; }
-    free(ws_int); free(we_int);
+    //free(ws_int); free(we_int);
 #if 0
     /* UNCOMMENT THIS BLOCK WHEN UPGRADING TO NEW PROTOTYPE FOR MSVFILTER */
     FM_WINDOWLIST    windowlist;       /* list of windows, structure taken by p7_MSVFilter_longtarget() */

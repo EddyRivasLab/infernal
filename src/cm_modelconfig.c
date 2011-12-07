@@ -64,6 +64,7 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
   int status;
   float swentry, swexit;
   int have_mother;
+  int local_and_noforce; /* TRUE iff both CM_CONFIG_LOCAL && CM_CONFIG_TRUNC_NOFORCE */
   have_mother = (mother_cm != NULL && mother_map != NULL)  ? TRUE : FALSE;
 
   /* contract check */
@@ -157,7 +158,6 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
   /* Possibly configure the CM for local alignment. */
   if (cm->config_opts & CM_CONFIG_LOCAL) { 
     ConfigLocal(cm, cm->pbegin, cm->pend);
-    CMLogoddsify(cm);
   }
 
   /* Setup Lcp9, Rcp9, Tcp9 CP9 HMMs for truncated alignment */
@@ -172,13 +172,15 @@ ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t 
     if((cm->Lcp9 = cp9_Clone(cm->cp9)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't clone cm->cp9 to get cm->Lcp9");
     if((cm->Rcp9 = cp9_Clone(cm->cp9)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't clone cm->cp9 to get cm->Rcp9");
     if((cm->Tcp9 = cp9_Clone(cm->cp9)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't clone cm->cp9 to get cm->Tcp9");
+    local_and_noforce = ((cm->config_opts & CM_CONFIG_LOCAL) && (cm->config_opts & CM_CONFIG_TRUNC_NOFORCE)) ? TRUE : FALSE;
+    
     /* L mode alignment, 3' truncation: begin into node 1, equiprobable ends */
-    swentry = (cm->config_opts & CM_CONFIG_TRUNC_NOFORCE) ? ((float) cm->cp9->M - 1.) / (float) cm->cp9->M : 0.;
+    swentry = local_and_noforce ? ((float) cm->cp9->M - 1.) / (float) cm->cp9->M : 0.;
     swexit  = ((float) cm->cp9->M - 1.) / (float) cm->cp9->M;
     CPlan9SWConfig(cm->Lcp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE: let I_0, D_1, I_M be reachable */
     /* R mode alignment, 5' truncation: equiprobable begins, end out of node M */
     swentry = ((float) cm->cp9->M - 1.) / (float) cm->cp9->M;
-    swexit  = (cm->config_opts & CM_CONFIG_TRUNC_NOFORCE) ? ((float) cm->cp9->M - 1.) / (float) cm->cp9->M : 0.;
+    swexit  = local_and_noforce ? ((float) cm->cp9->M - 1.) / (float) cm->cp9->M : 0.;
     CPlan9SWConfig(cm->Rcp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE: let I_0, D_1, I_M be reachable */
     /* T mode alignment, 5' and 3' truncation: equiprobable begins, equiprobable ends */
     swentry = ((float) cm->cp9->M - 1.) / (float) cm->cp9->M;
@@ -282,7 +284,8 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   int v;			/* counter over states */
   int nd;			/* counter over nodes */
   int nstarts;			/* number of possible internal starts */
-  int had_scanmatrix;           /* true if CM had a scan matrix when function was entered */
+  int had_scanmatrix;           /* TRUE if CM had a scan matrix when function was entered */
+  int had_bits;                 /* TRUE if CM had valid log-odds scores when function was entered */
   float p;                      /* p_internal_start / nstarts */
 
   /* variables used for setting truncated begin probs (trbegin) */
@@ -298,6 +301,7 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   if(cm->flags & CM_IS_SUB)        cm_Fail("ERROR in ConfigLocal(), CM is a sub CM, we can't localize it, we could if we first checked if its invalid (see cm_from_guide()).");
 
   had_scanmatrix = (cm->flags & CMH_SCANMATRIX) ? TRUE : FALSE;
+  had_bits       = (cm->flags & CMH_BITS)       ? TRUE : FALSE;
 
   /*****************************************************************
    * Internal entry.
@@ -451,18 +455,17 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
     ConfigQDBAndW(cm, TRUE); /* TRUE says: calc QDBs */
   }      
   /* ConfigQDBAndW should rebuild scan matrix, if it existed */
-  if((! (cm->flags & CMH_SCANMATRIX)) && had_scanmatrix)
+  if((! (cm->flags & CMH_SCANMATRIX)) && had_scanmatrix) { 
     cm_Fail("ConfigLocal(), CM had a scan matrix, but ConfigQDBAndW didn't rebuild it.");
-
+  }
   /*****************************************************************
    * Internal exit.
    *****************************************************************/
   ConfigLocalEnds(cm, p_internal_exit);
 
-  /* new local probs invalidate bit scores */
+  /* new local probs invalidate bit scores, recalc them only if we had valid ones upon entering the function */
   cm->flags &= ~CMH_BITS;
-     
-  CMLogoddsify(cm);
+  if(had_bits) CMLogoddsify(cm);
 
   /* free tmap */
   if(tmap != NULL) { 
@@ -481,8 +484,7 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   cm_Fail("Memory allocation error.");
 }
 
-/*
- * Function: ConfigGlobal
+/* Function: ConfigGlobal
  * Purpose:  Configure a CM in local alignment mode to global
  *           alignment mode.
  *
@@ -494,8 +496,10 @@ ConfigGlobal(CM_t *cm)
 {
   int v;			/* counter over states */
   int had_scanmatrix;           /* true if CM had a scan matrix when function was entered */
+  int had_bits;                 /* TRUE if CM had valid log-odds scores when function was entered */
 
   had_scanmatrix = (cm->flags & CMH_SCANMATRIX) ? TRUE : FALSE;
+  had_bits       = (cm->flags & CMH_BITS)       ? TRUE : FALSE;
 
   /*printf("in configGlobal\n");*/
   /* Contract check: local begins MUST be active, if not then cm->root_trans (the 
@@ -525,7 +529,7 @@ ConfigGlobal(CM_t *cm)
   /*****************************************************************
    * Make local ends impossible
    *****************************************************************/
-  ConfigNoLocalEnds(cm);
+  ConfigNoLocalEnds(cm, TRUE);
 
   /* Recalc QDBs if they exist and were calc'ed in local mode */
   if((cm->flags & CMH_QDB) && (cm->flags & CMH_QDB_LOCAL)) {
@@ -541,64 +545,9 @@ ConfigGlobal(CM_t *cm)
     if((! (cm->flags & CMH_SCANMATRIX)) && had_scanmatrix)
       cm_Fail("ConfigLocal(), CM had a scan matrix, but ConfigQDBAndW didn't rebuild it.");
   }
-  /* new probs invalidate log odds scores */
+  /* new probs invalidate bit scores, recalc them only if we had valid ones upon entering the function */
   cm->flags &= ~CMH_BITS;
-
-  CMLogoddsify(cm);
-  return;
-}
-
-/**************************************************************************
- * EPN 10.02.06
- * Function: ConfigNoLocalEnds()
- *
- * Purpose:  Set the probability of local ends to 0.0 for all states.
- *           This function was introduced for use in BandCalculationEngine()
- *           because allowing local ends when calculating bands dramatically
- *           widens all bands and decreases search acceleration. So this
- *           is the ad-hoc fix.                    
- * 
- * Args:    
- * CM_t *cm               - the CM
- * Returns: (void) 
- */
-void
-ConfigNoLocalEnds(CM_t *cm)
-{
-  int v;			/* counter over states */
-  int nd;                       /* counter over nodes  */
-
-  /* Contract check */
-  if(!(cm->flags & CMH_LOCAL_END))
-    cm_Fail("ERROR in ConfigNoLocalEnds() CMH_LOCAL_END flag already down.\n");
-
-  for (v = 0; v < cm->M; v++) cm->end[v] = 0.;
-  /* Now, renormalize transitions */
-  for (nd = 1; nd < cm->nodes; nd++) {
-    if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
-	 cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
-	 cm->ndtype[nd] == BEGR_nd) && 
-	cm->ndtype[nd+1] != END_nd)
-      {
-	v = cm->nodemap[nd];
-	esl_vec_FNorm(cm->t[v], cm->cnum[v]);
-      }
-  }
-  /* Disable the local end probs in the CP9s */
-  if((cm->flags & CMH_CP9) && (cm->cp9->flags & CPLAN9_EL)) CPlan9NoEL(cm->cp9);
-  if(cm->flags & CMH_CP9_TRUNC) { 
-    if(cm->Lcp9->flags & CPLAN9_EL) CPlan9NoEL(cm->Lcp9);
-    if(cm->Rcp9->flags & CPLAN9_EL) CPlan9NoEL(cm->Rcp9);
-    if(cm->Tcp9->flags & CPLAN9_EL) CPlan9NoEL(cm->Tcp9);
-  }
-  esl_vec_FSet(cm->end, cm->M, 0.);
-
-  cm->flags &= ~CMH_LOCAL_END; /* turn off local ends flag */
-  /* new probs invalidate log odds scores */
-  cm->flags &= ~CMH_BITS;
-  /* local end changes don't invalidate QDBs, which means
-   * they don't affect the ScanMatrix either. 
-   */
+  if(had_bits) CMLogoddsify(cm);
 
   return;
 }
@@ -671,24 +620,63 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
   return;
 }
 
-/*
- * Function: ConfigLocal_DisallowELEmissions()
- * Purpose:  Silence the EL state.
+/* Function: ConfigNoLocalEnds()
+ * Date:     EPN 10.02.06
+ * 
+ * Purpose:  Set the probability of local ends to 0.0 for all states.
+ *           This function was introduced for use in BandCalculationEngine()
+ *           because allowing local ends when calculating bands dramatically
+ *           widens all bands and decreases search acceleration. So this
+ *           is the ad-hoc fix. cp9 HMMs are not changed. 
+ *           The caller (currently only BandCalculationEngine() should 
+ *           turn CM local ends back on with a call to ConfigLocalEnds(cm)
+ *           upon exiting. 
+ * 
+ * Args:     cm         - the CM
+ *           do_cp9s    - TRUE to turn local ends in CP9s off too, else leave them alone
+ *
+ * Returns: (void) 
  */
 void
-ConfigLocal_DisallowELEmissions(CM_t *cm)
+ConfigNoLocalEnds(CM_t *cm, int do_cp9s)
 {
-  /* Set the EL self transition score to as close to IMPOSSIBLE 
-   * as we can while still guaranteeing we won't get underflow errors.
-   * we need cm->el_selfsc * W >= IMPOSSIBLE 
-   * because we will potentially multiply cm->el_selfsc * W, and add that to 
-   * 2 * IMPOSSIBLE, and IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
-   * times (see structs.h). 
+  int v;			/* counter over states */
+  int nd;                       /* counter over nodes  */
+
+  /* Contract check */
+  if(!(cm->flags & CMH_LOCAL_END)) cm_Fail("ERROR in ConfigNoLocalEnds() CMH_LOCAL_END flag already down.\n");
+
+  for (v = 0; v < cm->M; v++) cm->end[v] = 0.;
+  /* Now, renormalize transitions */
+  for (nd = 1; nd < cm->nodes; nd++) {
+    if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	 cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	 cm->ndtype[nd] == BEGR_nd) && 
+	cm->ndtype[nd+1] != END_nd)
+      {
+	v = cm->nodemap[nd];
+	esl_vec_FNorm(cm->t[v], cm->cnum[v]);
+      }
+  }
+  /* Disable the local end probs in the CP9s, if nec */
+  if(do_cp9s) { 
+    if((cm->flags & CMH_CP9) && (cm->cp9->flags & CPLAN9_EL)) CPlan9NoEL(cm->cp9);
+    if(cm->flags & CMH_CP9_TRUNC) { 
+      if(cm->Lcp9->flags & CPLAN9_EL) CPlan9NoEL(cm->Lcp9);
+      if(cm->Rcp9->flags & CPLAN9_EL) CPlan9NoEL(cm->Rcp9);
+      if(cm->Tcp9->flags & CPLAN9_EL) CPlan9NoEL(cm->Tcp9);
+    }
+  }
+
+  esl_vec_FSet(cm->end, cm->M, 0.);
+
+  cm->flags &= ~CMH_LOCAL_END; /* turn off local ends flag */
+  /* new probs invalidate log odds scores */
+  cm->flags &= ~CMH_BITS;
+  /* local end changes don't invalidate QDBs, which means
+   * they don't affect the ScanMatrix either. 
    */
-  cm_Fail("ConfigLocal_DisallowELEmissions is deprecated.");
-  cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
-  cm->iel_selfsc = -INFTY; 
-  cm->iel_selfsc = -100 * INTSCALE; 
+
   return;
 }
 
@@ -726,16 +714,16 @@ ConfigQDBAndW(CM_t *cm, int do_calc_qdb)
   else { /* do_calc_qdb */
     if((cm->beta_W - cm->beta_qdb) > eslSMALLX1) { 
       mode = 3;
-      /* TRUE if cm->beta_W used to calc W is greater than cm->beta_qdb,
-       * in this case, we're in mode 3, cm->W will be less than
-       * cm->dmax[0] (and cm->dmax[v] for other v as well). 
-       * That's okay, we'll truncate those bands on d to 
-       * never exceed W, but they'll be wider for some v than
-       * they would have if we used cm->beta_W to calc qdbs.
-       * (Imagine a CM with node 1 == BIF_nd, the BEGL and BEGR
-       * subtrees can have wide bands, they just can't both 
-       * combine to have a BIF subtree that exceeds cm->W, this
-       * allows insertions in BEGL or BEGR subtrees, but not both.
+      /* TRUE if cm->beta_W used to calc W is greater than
+       * cm->beta_qdb, in this case, we're in mode 3, cm->W will be
+       * less than cm->dmax[0] (and cm->dmax[v] for other v as well).
+       * That's okay, we'll truncate those bands on d to never exceed
+       * W, but they'll be wider for some v than they would have if we
+       * used cm->beta_W to calc qdbs.  (Imagine a CM with node 1 ==
+       * BIF_nd, the BEGL and BEGR subtrees can have wide bands, they
+       * just can't both combine to have a BIF subtree that exceeds
+       * cm->W, this allows insertions in BEGL or BEGR subtrees, but
+       * not both.)
        */
     }
     else mode = 2; 
@@ -808,60 +796,3 @@ ConfigQDBAndW(CM_t *cm, int do_calc_qdb)
   return eslOK;
 }
 
-
-#if 0
-/* Function: ConfigQDB
- * Date:     EPN, Thu May  3 14:37:09 2007
- * Purpose:  Configure a CM's query dependent bands (QDBs).
- * Args:
- *           CM           - the covariance model
- */
-int
-ConfigQDB(CM_t *cm)
-{
-  int safe_windowlen;
-  int local_begins_on = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
-
-  /* Contract check */
-  if(cm->flags & CMH_QDB)
-    cm_Fail("ERROR in ConfigQDB() CMH_QDB flag already up.\n");
-
-  safe_windowlen = cm->W * 2;
-  if(cm->dmin != NULL) {
-    free(cm->dmin);
-    cm->dmin = NULL;
-  }
-  if(cm->dmax != NULL) {
-    free(cm->dmax);
-    cm->dmax = NULL;
-  }
-  /*debug_print_cm_params(cm);*/
-  while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(cm->dmin), &(cm->dmax), NULL, NULL)))
-    {
-      free(cm->dmin);
-      free(cm->dmax);
-      cm->dmin = NULL;
-      cm->dmax = NULL;
-      safe_windowlen *= 2;
-      if(safe_windowlen > (cm->clen * 1000))
-	cm_Fail("ERROR safe_windowlen big: %d\n", safe_windowlen);
-    }
-  /* Set W as dmax[0], we're wasting time otherwise, looking at
-   * hits that are bigger than we're allowing with QDB. */
-  cm->W = cm->dmax[0];
-  cm->flags |= CMH_QDB; /* raise the QDB flag */
-  if(local_begins_on) cm->flags |= CMH_QDB_LOCAL;
-  else                cm->flags |= CMH_QDB_GLOBAL;
-
-  /* free and rebuild scan matrix to correspond to new QDBs, if it exists */
-  if(cm->flags & CMH_SCANMATRIX) {
-    int do_float = cm->smx->flags & cmSMX_HAS_FLOAT;
-    int do_int   = cm->smx->flags & cmSMX_HAS_INT;
-    cm_FreeScanMatrixForCM(cm);
-    cm_CreateScanMatrixForCM(cm, do_float, do_int);
-  }
-
-  CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
-  return eslOK;
-}
-#endif

@@ -245,9 +245,8 @@ extern int     cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset);
 extern int   ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t *mother_map);
 extern void  ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
 extern void  ConfigGlobal(CM_t *cm);
-extern void  ConfigNoLocalEnds(CM_t *cm);
+extern void  ConfigNoLocalEnds(CM_t *cm, int do_cp9s);
 extern void  ConfigLocalEnds(CM_t *cm, float p_internal_exit);
-extern void  ConfigLocal_DisallowELEmissions(CM_t *cm);
 extern int   ConfigQDBAndW(CM_t *cm, int do_calc_qdb);
 
 /* from cm_modelmaker.c */
