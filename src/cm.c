@@ -784,7 +784,6 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 int
 CMLogoddsify(CM_t *cm)
 {
-  printf("Kachow! in CMLogoddsify()\n");
   int v, x, y;
 
   /* zero lmesc, rmesc, we'll sum up probs then convert to scores */

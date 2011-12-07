@@ -2273,6 +2273,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   int                 do_nonbanded;         /* TRUE to align without bands (instead of using HMM bands) */
   ESL_STOPWATCH      *watch = NULL;         /* stopwatch for timing alignment step */
   float               optacc_sc, ins_sc, cyk_sc;  /* optimal accuracy score, inside score, CYK score */
+  float               null3_correction;     /* null 3 bit score penalty, for CYK score */
 
   watch = esl_stopwatch_Create();
   if(! watch) ESL_FAIL(eslEMEM, pli->errbuf, "out of memory");
@@ -2422,6 +2423,12 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
     ppstr = NULL;
   }
     
+  /* add null3 correction to cyk_sc if necessary (optacc_sc doesn't get null3-corrected, it's an avg PP) */
+  if((! do_optacc) && pli->do_null3) { 
+    ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, subdsq, 1, hitlen, cm->null3_omega, &null3_correction);
+    cyk_sc -= null3_correction;
+  }
+
   hit->ad = cm_alidisplay_Create(cm->abc, tr, cm, cmcons, sq, hit->start, ppstr, 
 				 (do_optacc) ? optacc_sc : cyk_sc, 
 				 do_optacc, do_hbanded, total_Mb, watch->elapsed);
