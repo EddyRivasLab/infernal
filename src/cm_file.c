@@ -564,7 +564,9 @@ int
 cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
 {
   int x, v, nd, y;
-  
+
+  if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END)) cm_Fail("cm_file_WriteASCII(): CM is in local mode");
+
   if (format == -1) format = CM_FILE_1a;
 
   if      (format == CM_FILE_1a) fprintf(fp, "INFERNAL1/a [%s | %s]\n",                             INFERNAL_VERSION, INFERNAL_DATE);
@@ -585,8 +587,11 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
   fprintf(fp, "BDATE    %s\n",  cm->comlog->bdate);
   if(cm->comlog->ccom != NULL) fprintf(fp, "CCOM     %s\n", cm->comlog->ccom);
   if(cm->comlog->cdate!= NULL) fprintf(fp, "CDATE    %s\n", cm->comlog->cdate);
+  fprintf(fp, "PBEGIN   %g\n", cm->pbegin);
+  fprintf(fp, "PEND     %g\n", cm->pend);
   fprintf(fp, "WBETA    %g\n", cm->beta_W);
-  fprintf(fp, "QDBBETA  %g\n", cm->beta_qdb);
+  fprintf(fp, "QDBBETA1 %g\n", cm->qdbinfo->beta1);
+  fprintf(fp, "QDBBETA2 %g\n", cm->qdbinfo->beta2);
   fprintf(fp, "N2OMEGA  %6g\n",cm->null2_omega);
   fprintf(fp, "N3OMEGA  %6g\n",cm->null3_omega);
   fprintf(fp, "ELSELF   %.8f\n",cm->el_selfsc);
@@ -617,20 +622,6 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
       fprintf(fp, "ECMGI   %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 	      cm->expA[EXP_CM_GI]->lambda, cm->expA[EXP_CM_GI]->mu_extrap, cm->expA[EXP_CM_GI]->mu_orig, 
 	      cm->expA[EXP_CM_GI]->dbsize, cm->expA[EXP_CM_GI]->nrandhits, cm->expA[EXP_CM_GI]->tailp);
-
-      /* no longer used in cmsearch, but kept in for cmcalibrate and cmstat, etc. */
-      fprintf(fp, "ECP9LV  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
-	      cm->expA[EXP_CP9_LV]->lambda, cm->expA[EXP_CP9_LV]->mu_extrap, cm->expA[EXP_CP9_LV]->mu_orig, 
-	      cm->expA[EXP_CP9_LV]->dbsize, cm->expA[EXP_CP9_LV]->nrandhits, cm->expA[EXP_CP9_LV]->tailp);
-      fprintf(fp, "ECP9GV  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
-	      cm->expA[EXP_CP9_GV]->lambda, cm->expA[EXP_CP9_GV]->mu_extrap, cm->expA[EXP_CP9_GV]->mu_orig, 
-	      cm->expA[EXP_CP9_GV]->dbsize, cm->expA[EXP_CP9_GV]->nrandhits, cm->expA[EXP_CP9_GV]->tailp);
-      fprintf(fp, "ECP9LF  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
-	      cm->expA[EXP_CP9_LF]->lambda, cm->expA[EXP_CP9_LF]->mu_extrap, cm->expA[EXP_CP9_LF]->mu_orig, 
-	      cm->expA[EXP_CP9_LF]->dbsize, cm->expA[EXP_CP9_LF]->nrandhits, cm->expA[EXP_CP9_LF]->tailp);
-      fprintf(fp, "ECP9GF  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
-	      cm->expA[EXP_CP9_GF]->lambda, cm->expA[EXP_CP9_GF]->mu_extrap, cm->expA[EXP_CP9_GF]->mu_orig, 
-	      cm->expA[EXP_CP9_GF]->dbsize, cm->expA[EXP_CP9_GF]->nrandhits, cm->expA[EXP_CP9_GF]->tailp);
     }
 
   /* main model section */
@@ -678,12 +669,13 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
       fputs("\n", fp);
     }    
 
-    /* State line, w/ parents, children, dmin, dmax, transitions and emissions */
-    fprintf(fp, "    %2s %5d %5d %1d %5d %5d %5d %5d ", 
+    /* State line, w/ parents, children, dmin2, dmin1, dmax1, dmax2, transitions and emissions */
+    fprintf(fp, "    %2s %5d %5d %1d %5d %5d %5d %5d %5d %5d ", 
 	    Statetype(cm->sttype[v]), v, 
 	    cm->plast[v], cm->pnum[v],
 	    cm->cfirst[v], cm->cnum[v], 
-	    cm->dmin[v], cm->dmax[v]);
+	    cm->qdbinfo->dmin2[v], cm->qdbinfo->dmin1[v], 
+	    cm->qdbinfo->dmax1[v], cm->qdbinfo->dmax2[v]);
 
     /* Transitions */
     if (cm->sttype[v] != B_st) { 
@@ -751,6 +743,8 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
   int v, z;
   off_t fp7_offset;
 
+  if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END)) cm_Fail("cm_file_WriteASCII(): CM is in local mode");
+
   if (format == -1) format = CM_FILE_1a;
 
   /* ye olde magic number */
@@ -768,17 +762,20 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
   /* main model section 
    */
 
-  if (fwrite((char *) cm->sttype,  sizeof(char), cm->M,     fp) != cm->M)     return eslFAIL;
-  if (fwrite((char *) cm->ndidx,   sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
-  if (fwrite((char *) cm->stid,    sizeof(char), cm->M,     fp) != cm->M)     return eslFAIL;
-  if (fwrite((char *) cm->cfirst,  sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
-  if (fwrite((char *) cm->cnum,    sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
-  if (fwrite((char *) cm->plast,   sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
-  if (fwrite((char *) cm->pnum,    sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
-  if (fwrite((char *) cm->nodemap, sizeof(int),  cm->nodes, fp) != cm->nodes) return eslFAIL;
-  if (fwrite((char *) cm->ndtype,  sizeof(char), cm->nodes, fp) != cm->nodes) return eslFAIL;
-  if (fwrite((char *) cm->dmin,    sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
-  if (fwrite((char *) cm->dmax,    sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
+  if (fwrite((char *) cm->sttype,         sizeof(char), cm->M,     fp) != cm->M)     return eslFAIL;
+  if (fwrite((char *) cm->ndidx,          sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
+  if (fwrite((char *) cm->stid,           sizeof(char), cm->M,     fp) != cm->M)     return eslFAIL;
+  if (fwrite((char *) cm->cfirst,         sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
+  if (fwrite((char *) cm->cnum,           sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
+  if (fwrite((char *) cm->plast,          sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
+  if (fwrite((char *) cm->pnum,           sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
+  if (fwrite((char *) cm->nodemap,        sizeof(int),  cm->nodes, fp) != cm->nodes) return eslFAIL;
+  if (fwrite((char *) cm->ndtype,         sizeof(char), cm->nodes, fp) != cm->nodes) return eslFAIL;
+  if (fwrite((char *) cm->qdbinfo->dmin1, sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
+  if (fwrite((char *) cm->qdbinfo->dmax1, sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
+  if (fwrite((char *) cm->qdbinfo->dmin2, sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
+  if (fwrite((char *) cm->qdbinfo->dmax2, sizeof(int),  cm->M,     fp) != cm->M)     return eslFAIL;
+
   for (v = 0; v < cm->M; v++) {
     if (fwrite((char *) cm->t[v], sizeof(float), MAXCONNECT,            fp) != MAXCONNECT)              return eslFAIL;
     if (fwrite((char *) cm->e[v], sizeof(float), cm->abc->K*cm->abc->K, fp) != (cm->abc->K*cm->abc->K)) return eslFAIL;
@@ -792,22 +789,25 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
   if ((cm->flags & CMH_RF)   && (fwrite((char *) cm->rf,          sizeof(char), cm->clen+2, fp) != cm->clen+2)) return eslFAIL; /* +2: 1..clen and trailing \0 */
   if ((cm->flags & CMH_CONS) && (fwrite((char *) cm->consensus,   sizeof(char), cm->clen+2, fp) != cm->clen+2)) return eslFAIL; /* consensus is mandatory */
   if ((cm->flags & CMH_MAP)  && (fwrite((char *) cm->map,         sizeof(int),  cm->clen+1, fp) != cm->clen+1)) return eslFAIL; /* +2: 1..clen and trailing \0 */
-  if (fwrite((char *) &(cm->W),         sizeof(int),      1,   fp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm->W), sizeof(int),      1,   fp) != 1) return eslFAIL;
 
   if (write_bin_string(fp, cm->comlog->bcom)  != eslOK) return eslFAIL;
   if (write_bin_string(fp, cm->comlog->bdate) != eslOK) return eslFAIL;
   if (write_bin_string(fp, cm->comlog->ccom)  != eslOK) return eslFAIL;
   if (write_bin_string(fp, cm->comlog->cdate) != eslOK) return eslFAIL;
 
-  if (fwrite((char *) &(cm->beta_W),      sizeof(double),   1,   fp) != 1) return eslFAIL;
-  if (fwrite((char *) &(cm->beta_qdb),    sizeof(double),   1,   fp) != 1) return eslFAIL;
-  if (fwrite((char *) &(cm->null2_omega), sizeof(float),    1,   fp) != 1) return eslFAIL;
-  if (fwrite((char *) &(cm->null3_omega), sizeof(float),    1,   fp) != 1) return eslFAIL;
-  if (fwrite((char *) &(cm->el_selfsc),   sizeof(float),    1,   fp) != 1) return eslFAIL;
-  if (fwrite((char *) &(cm->nseq),        sizeof(int),      1,   fp) != 1) return eslFAIL;
-  if (fwrite((char *) &(cm->eff_nseq),    sizeof(float),    1,   fp) != 1) return eslFAIL;
-  if (fwrite((char *) &(cm->checksum),    sizeof(uint32_t), 1,   fp) != 1) return eslFAIL;
-  if (fwrite((char *) cm->null,           sizeof(float), cm->abc->K, fp) != cm->abc->K) return eslFAIL;
+  if (fwrite((char *) &(cm->pbegin),         sizeof(float),    1,   fp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm->pend),           sizeof(float),    1,   fp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm->beta_W),         sizeof(double),   1,   fp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm->qdbinfo->beta1), sizeof(double),   1,   fp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm->qdbinfo->beta2), sizeof(double),   1,   fp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm->null2_omega),    sizeof(float),    1,   fp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm->null3_omega),    sizeof(float),    1,   fp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm->el_selfsc),      sizeof(float),    1,   fp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm->nseq),           sizeof(int),      1,   fp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm->eff_nseq),       sizeof(float),    1,   fp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm->checksum),       sizeof(uint32_t), 1,   fp) != 1) return eslFAIL;
+  if (fwrite((char *) cm->null,              sizeof(float), cm->abc->K, fp) != cm->abc->K) return eslFAIL;
 
   /* Rfam cutoffs 
    */
@@ -1464,7 +1464,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   off_t         fp7_offset = 0;
   int           v, x, y, nd;            /* counters */
   int           read_fp7_stats = FALSE;
-  uint32_t      cmcp9_statstracker = 0; /* for making sure we have all CM/CP9 E-value stats, if we have any */
+  uint32_t      cm_statstracker = 0; /* for making sure we have all CM E-value stats, if we have any */
   int           exp_mode;   
   int           read_el_selfsc = FALSE; /* set to true when we read ELSELF line */
 
@@ -1476,6 +1476,8 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   float *tmp_null          = NULL;
   float  tmp_fp7_gfmu;
   float  tmp_fp7_gflambda;
+  double tmp_qdbbeta1;
+  double tmp_qdbbeta2;
 
   /* temporary per-node annotation, will be converted to per-consensus position once the model
    * architecture is known, after the full model is read */
@@ -1598,14 +1600,29 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	if (esl_strdup(tok1, -1, &(tmp_cdate))                                 != eslOK)  ESL_XFAIL(eslEMEM,    cmfp->errbuf, "strdup() failed to set build date (BDATE)");
       }
 
+      else if (strcmp(tag, "PBEGIN") == 0) {
+	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Nothing follows WBETA tag");
+	if ((cm->pbegin = atof(tok1)) <= 0.0f)                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid beta on WBETA line: should be a positive real number, not %s", tok1);
+      }
+
+      else if (strcmp(tag, "PEND") == 0) {
+	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Nothing follows WBETA tag");
+	if ((cm->pend = atof(tok1)) <= 0.0f)                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid beta on WBETA line: should be a positive real number, not %s", tok1);
+      }
+
       else if (strcmp(tag, "WBETA") == 0) {
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Nothing follows WBETA tag");
 	if ((cm->beta_W = atof(tok1)) <= 0.0f)                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid beta on WBETA line: should be a positive real number, not %s", tok1);
       }
 
-      else if (strcmp(tag, "QDBBETA") == 0) {
+      else if (strcmp(tag, "QDBBETA1") == 0) {
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Nothing follows QDBBETA tag");
-	if ((cm->beta_qdb = atof(tok1)) <= 0.0f)                                          ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid beta on QDBBETA line: should be a positive real number, not %s", tok1);
+	if ((tmp_qdbbeta1 = atof(tok1)) <= 0.0f)                                          ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid beta on QDBBETA line: should be a positive real number, not %s", tok1);
+      }
+
+      else if (strcmp(tag, "QDBBETA2") == 0) {
+	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Nothing follows QDBBETA tag");
+	if ((tmp_qdbbeta2 = atof(tok1)) <= 0.0f)                                          ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid beta on QDBBETA line: should be a positive real number, not %s", tok1);
       }
 
       else if (strcmp(tag, "N2OMEGA") == 0) {
@@ -1677,10 +1694,10 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 
       else if (strncmp(tag, "ECM", 3) == 0) { /* one of 4 possible CM E-value lines */
 	/* determine which one */
-	if      (strncmp(tag+3, "LC", 2) == 0) { exp_mode = EXP_CM_LC; cmcp9_statstracker += 1; }
-	else if (strncmp(tag+3, "GC", 2) == 0) { exp_mode = EXP_CM_GC; cmcp9_statstracker += 2; }
-	else if (strncmp(tag+3, "LI", 2) == 0) { exp_mode = EXP_CM_LI; cmcp9_statstracker += 4; }
-	else if (strncmp(tag+3, "GI", 2) == 0) { exp_mode = EXP_CM_GI; cmcp9_statstracker += 8; }
+	if      (strncmp(tag+3, "LC", 2) == 0) { exp_mode = EXP_CM_LC; cm_statstracker += 1; }
+	else if (strncmp(tag+3, "GC", 2) == 0) { exp_mode = EXP_CM_GC; cm_statstracker += 2; }
+	else if (strncmp(tag+3, "LI", 2) == 0) { exp_mode = EXP_CM_LI; cm_statstracker += 4; }
+	else if (strncmp(tag+3, "GI", 2) == 0) { exp_mode = EXP_CM_GI; cm_statstracker += 8; }
 	else                                   { ESL_XFAIL(status, cmfp->errbuf, "Invalid tag beginning with ECM"); }
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECM.. line"); /* lambda    */
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECM.. line"); /* mu_extrap */
@@ -1690,31 +1707,6 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok6, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECM.. line"); /* tailp     */
 	if (cm->expA == NULL) { 
 	  ESL_ALLOC(cm->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
-	  for(x = 0; x < EXP_NMODES; x++) { cm->expA[x] = CreateExpInfo(); }
-	}
-	cm->expA[exp_mode]->lambda    = atof(tok1);
-	cm->expA[exp_mode]->mu_extrap = atof(tok2);
-	cm->expA[exp_mode]->mu_orig   = atof(tok3);
-	cm->expA[exp_mode]->dbsize    = atoll(tok4);
-	cm->expA[exp_mode]->nrandhits = atoi(tok5);
-	cm->expA[exp_mode]->tailp     = atof(tok6);
-	cm->expA[exp_mode]->is_valid  = TRUE;
-      }
-
-      else if (strncmp(tag, "ECP9", 4) == 0) { /* one of 4 possible CP9 E-value lines */
-	/* determine which one */
-	if      (strncmp(tag+4, "LV", 2) == 0) { exp_mode = EXP_CP9_LV; cmcp9_statstracker += 16;  } 
-	else if (strncmp(tag+4, "GV", 2) == 0) { exp_mode = EXP_CP9_GV; cmcp9_statstracker += 32;  }
-	else if (strncmp(tag+4, "LF", 2) == 0) { exp_mode = EXP_CP9_LF; cmcp9_statstracker += 64;  }
-	else if (strncmp(tag+4, "GF", 2) == 0) { exp_mode = EXP_CP9_GF; cmcp9_statstracker += 128; }
- 	else                                   { ESL_XFAIL(status, cmfp->errbuf, "Invalid tag beginning with ECP9"); }
-	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECP9.. line"); /* lambda    */
-	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECP9.. line"); /* mu_extrap */
-	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok3, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECP9.. line"); /* mu_orig   */
-	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok4, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECP9.. line"); /* dbsize    */
-	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok5, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECP9.. line"); /* nrandhits */
-	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok6, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on ECP9.. line"); /* tailp     */
-	if (cm->expA == NULL) { 
 	  for(x = 0; x < EXP_NMODES; x++) { cm->expA[x] = CreateExpInfo(); }
 	}
 	cm->expA[exp_mode]->lambda    = atof(tok1);
@@ -1749,8 +1741,8 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   /* Check to make sure we parsed CM E-value stats correctly. 
    */
   if (cm->expA != NULL) { 
-    if      (cmcp9_statstracker == 255) cm->flags |= CMH_EXPTAIL_STATS;
-    else if (cmcp9_statstracker != 0)   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Missing one or more ECM.. or ECP9.. parameter lines");
+    if      (cm_statstracker == 15) cm->flags |= CMH_EXPTAIL_STATS;
+    else if (cm_statstracker != 0)  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Missing one or more ECM.. parameter lines");
   }
 
   /* Allocate body of CM now that # states (M) and # nodes (nnodes) are known */
@@ -1762,6 +1754,8 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   if(esl_strdup(tmp_bcom, -1,  &(cm->comlog->bcom))  != eslOK) ESL_XFAIL(eslEMEM, cmfp->errbuf, "strdup() failed to set build command (BCOM)");
   if(tmp_cdate != NULL) if(esl_strdup(tmp_cdate, -1, &(cm->comlog->cdate)) != eslOK) ESL_XFAIL(eslEMEM, cmfp->errbuf, "strdup() failed to set calibration date (CDATE)");
   if(tmp_ccom  != NULL) if(esl_strdup(tmp_ccom,  -1, &(cm->comlog->ccom))  != eslOK) ESL_XFAIL(eslEMEM, cmfp->errbuf, "strdup() failed to set calibration command (CCOM)");
+  cm->qdbinfo->beta1 = tmp_qdbbeta1;
+  cm->qdbinfo->beta2 = tmp_qdbbeta2;
     
   /* Allocate and initialize temporary parameters for values we can't store 
    * until after we've  read the full model and are able to construct an emit map */
@@ -1889,7 +1883,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	} /* done with node line */
       
       /* Process state line.
-       * <statecode> <v> <plast> <pnum> <cfirst> <cnum> <dmin> <dmax> <transition probs (variable number)> <emission probs (variable number)>
+       * <statecode> <v> <plast> <pnum> <cfirst> <cnum> <dmin2> <dmin1> <dmax1> <dmax2> <transition probs (variable number)> <emission probs (variable number)>
        */
 
       /* <statecode> */
@@ -1920,15 +1914,25 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
       if (! is_integer(tok1))                                                            ESL_XFAIL(status,     cmfp->errbuf, "Invalid cnum value on state line: should be integer, not %s", tok1);
       cm->cnum[v] = atoi(tok1);
       
-      /* <dmin> */
+      /* <dmin2> */
       if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL)) != eslOK)     ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on state %d line: expected at least %d, got %d", v, 8, 6);
-      if (! is_integer(tok1))                                                            ESL_XFAIL(status,     cmfp->errbuf, "Invalid dmin value on state line: should be integer, not %s", tok1);
-      cm->dmin[v] = atoi(tok1);
+      if (! is_integer(tok1))                                                            ESL_XFAIL(status,     cmfp->errbuf, "Invalid dmin2 value on state line: should be integer, not %s", tok1);
+      cm->qdbinfo->dmin2[v] = atoi(tok1);
+
+      /* <dmin1> */
+      if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL)) != eslOK)     ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on state %d line: expected at least %d, got %d", v, 8, 6);
+      if (! is_integer(tok1))                                                            ESL_XFAIL(status,     cmfp->errbuf, "Invalid dmin1 value on state line: should be integer, not %s", tok1);
+      cm->qdbinfo->dmin1[v] = atoi(tok1);
       
-      /* <dmax> */
+      /* <dmax1> */
       if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL)) != eslOK)     ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on state %d line: expected at least %d, got %d", v, 8, 7);
-      if (! is_integer(tok1))                                                            ESL_XFAIL(status,     cmfp->errbuf, "Invalid dmax value on state line: should be integer, not %s", tok1);
-      cm->dmax[v] = atoi(tok1);
+      if (! is_integer(tok1))                                                            ESL_XFAIL(status,     cmfp->errbuf, "Invalid dmax1 value on state line: should be integer, not %s", tok1);
+      cm->qdbinfo->dmax1[v] = atoi(tok1);
+
+      /* <dmax2> */
+      if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL)) != eslOK)     ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on state %d line: expected at least %d, got %d", v, 8, 7);
+      if (! is_integer(tok1))                                                            ESL_XFAIL(status,     cmfp->errbuf, "Invalid dmax2 value on state line: should be integer, not %s", tok1);
+      cm->qdbinfo->dmax2[v] = atoi(tok1);
 
       /* Transition probabilities. */
       if (cm->sttype[v] != B_st) {
@@ -1973,8 +1977,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   } 
 
   CMRenormalize(cm);
-  cm->flags |= CMH_QDB;       /* we just read QDBs */
-  cm->flags |= CMH_QDB_LOCAL; /* QDBs from CM file are always calc'ed in local mode, they just are */
+  cm->qdbinfo->setby = CM_QDBINFO_SETBY_CMFILE;
 
   /* Create emit map now that we know the model architecture */
   cm->emap = CreateEmitMap(cm);
@@ -2095,21 +2098,22 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   CreateCMBody(cm, cm->nodes, cm->M, cm->clen, abc);
   
   /* Core model probabilities. */
-  if (! fread((char *) cm->sttype, sizeof(char), cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read sttype array");
-  if (! fread((char *) cm->ndidx,  sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read ndidx array");
-  if (! fread((char *) cm->stid,   sizeof(char), cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read stid array");
-  if (! fread((char *) cm->cfirst, sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read cfirst array");
-  if (! fread((char *) cm->cnum,   sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read cnum array");
-  if (! fread((char *) cm->plast,  sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read plast array");
-  if (! fread((char *) cm->pnum,   sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read pnum array");
-  if (! fread((char *) cm->nodemap,sizeof(int),  cm->nodes,  cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read nodemap array");
-  if (! fread((char *) cm->ndtype, sizeof(char), cm->nodes,  cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read ndtype array");
-  if (! fread((char *) cm->dmin,   sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read dmin array");
-  if (! fread((char *) cm->dmax,   sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read dmax array");
+  if (! fread((char *) cm->sttype,         sizeof(char), cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read sttype array");
+  if (! fread((char *) cm->ndidx,          sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read ndidx array");
+  if (! fread((char *) cm->stid,           sizeof(char), cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read stid array");
+  if (! fread((char *) cm->cfirst,         sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read cfirst array");
+  if (! fread((char *) cm->cnum,           sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read cnum array");
+  if (! fread((char *) cm->plast,          sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read plast array");
+  if (! fread((char *) cm->pnum,           sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read pnum array");
+  if (! fread((char *) cm->nodemap,        sizeof(int),  cm->nodes,  cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read nodemap array");
+  if (! fread((char *) cm->ndtype,         sizeof(char), cm->nodes,  cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read ndtype array");
+  if (! fread((char *) cm->qdbinfo->dmin1, sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read dmin1 array");
+  if (! fread((char *) cm->qdbinfo->dmax1, sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read dmax1 array");
+  if (! fread((char *) cm->qdbinfo->dmin2, sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read dmin2 array");
+  if (! fread((char *) cm->qdbinfo->dmax2, sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read dmax2 array");
 
-  cm->flags |= CMH_QDB;       /* we just read QDBs */
-  cm->flags |= CMH_QDB_LOCAL; /* QDBs from CM file are always calc'ed in local mode, they just are */
-
+  cm->qdbinfo->setby = CM_QDBINFO_SETBY_CMFILE;
+  
   /* Create emit map now that we know the model architecture */
   cm->emap = CreateEmitMap(cm);
   if(cm->emap == NULL) ESL_XFAIL(eslEINVAL, cmfp->errbuf, "After reading complete model, failed to create an emit map");
@@ -2133,20 +2137,23 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   if (read_bin_string(cmfp->f, &(cm->comlog->ccom))  != eslOK)                                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read calibration command");
   if (read_bin_string(cmfp->f, &(cm->comlog->cdate)) != eslOK)                                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read calibration date");
 
-  if (! fread((char *) &(cm->beta_W),      sizeof(double),   1,          cmfp->f))                   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read beta_W");
-  if (! fread((char *) &(cm->beta_qdb),    sizeof(double),   1,          cmfp->f))                   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read beta_qdb");
-  if (! fread((char *) &(cm->null2_omega), sizeof(float),    1,          cmfp->f))                   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read null2_omega");
-  if (! fread((char *) &(cm->null3_omega), sizeof(float),    1,          cmfp->f))                   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read null3_omega");
-  if (! fread((char *) &(cm->el_selfsc),   sizeof(float),    1,          cmfp->f))                   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read el_selfsc");
-  if (! fread((char *) &(cm->nseq),        sizeof(int),      1,          cmfp->f))                   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read nseq");
-  if (! fread((char *) &(cm->eff_nseq),    sizeof(float),    1,          cmfp->f))                   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read eff_nseq");
-  if (! fread((char *) &(cm->checksum),    sizeof(uint32_t), 1,          cmfp->f))                   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read checksum");
-  if (! fread((char *) cm->null,           sizeof(float),    cm->abc->K, cmfp->f))                   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read null vector");
+  if (! fread((char *) &(cm->pbegin),         sizeof(float),    1,          cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read beta_W");
+  if (! fread((char *) &(cm->pend),           sizeof(float),    1,          cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read beta_W");
+  if (! fread((char *) &(cm->beta_W),         sizeof(double),   1,          cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read beta_W");
+  if (! fread((char *) &(cm->qdbinfo->beta1), sizeof(double),   1,          cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read betaqdb1");
+  if (! fread((char *) &(cm->qdbinfo->beta2), sizeof(double),   1,          cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read betaqdb2");
+  if (! fread((char *) &(cm->null2_omega),    sizeof(float),    1,          cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read null2_omega");
+  if (! fread((char *) &(cm->null3_omega),    sizeof(float),    1,          cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read null3_omega");
+  if (! fread((char *) &(cm->el_selfsc),      sizeof(float),    1,          cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read el_selfsc");
+  if (! fread((char *) &(cm->nseq),           sizeof(int),      1,          cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read nseq");
+  if (! fread((char *) &(cm->eff_nseq),       sizeof(float),    1,          cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read eff_nseq");
+  if (! fread((char *) &(cm->checksum),       sizeof(uint32_t), 1,          cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read checksum");
+  if (! fread((char *) cm->null,              sizeof(float),    cm->abc->K, cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read null vector");
 
   /* Rfam cutoffs */
-  if ((cm->flags & CMH_GA) && (! fread((char *) &(cm->ga), sizeof(float), 1, cmfp->f)))                  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read GA cutoff");
-  if ((cm->flags & CMH_TC) && (! fread((char *) &(cm->tc), sizeof(float), 1, cmfp->f)))                  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read TC cutoff");
-  if ((cm->flags & CMH_NC) && (! fread((char *) &(cm->nc), sizeof(float), 1, cmfp->f)))                  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read NC cutoff");
+  if ((cm->flags & CMH_GA) && (! fread((char *) &(cm->ga), sizeof(float), 1, cmfp->f)))              ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read GA cutoff");
+  if ((cm->flags & CMH_TC) && (! fread((char *) &(cm->tc), sizeof(float), 1, cmfp->f)))              ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read TC cutoff");
+  if ((cm->flags & CMH_NC) && (! fread((char *) &(cm->nc), sizeof(float), 1, cmfp->f)))              ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read NC cutoff");
 
   /* E-value parameters */
   if (cm->flags & CMH_FP7) { /* should always be true */
@@ -2333,7 +2340,6 @@ read_asc_1p0_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	{
 	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No WBETA found on WBETA line");
 	  cm->beta_W = (double) atof(tok);
-	  cm->beta_qdb = cm->beta_W;
 	}
       else if (strcmp(tok, "NSEQ") == 0) 
 	{
@@ -2420,15 +2426,15 @@ read_asc_1p0_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
       else if ((strncmp(tok, "E-", 2) == 0) && (! evalues_are_invalid)) /* skip the E- lines if we've read more than one partition above */
 	{				
 	  /* determine which exp tail we're reading */
-	  if      (strncmp(tok+2, "LC", 2) == 0) 	  exp_mode = EXP_CM_LC;
-	  else if (strncmp(tok+2, "GC", 2) == 0) 	  exp_mode = EXP_CM_GC;
-	  else if (strncmp(tok+2, "LI", 2) == 0) 	  exp_mode = EXP_CM_LI;
-	  else if (strncmp(tok+2, "GI", 2) == 0) 	  exp_mode = EXP_CM_GI;
-	  else if (strncmp(tok+2, "LV", 2) == 0) 	  exp_mode = EXP_CP9_LV;
-	  else if (strncmp(tok+2, "GV", 2) == 0) 	  exp_mode = EXP_CP9_GV;
-	  else if (strncmp(tok+2, "LF", 2) == 0) 	  exp_mode = EXP_CP9_LF;
-	  else if (strncmp(tok+2, "GF", 2) == 0) 	  exp_mode = EXP_CP9_GF;
-	  else                                      ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid xx on E-xx line");
+	  if      (strncmp(tok+2, "LC", 2) == 0) exp_mode = EXP_CM_LC;
+	  else if (strncmp(tok+2, "GC", 2) == 0) exp_mode = EXP_CM_GC;
+	  else if (strncmp(tok+2, "LI", 2) == 0) exp_mode = EXP_CM_LI;
+	  else if (strncmp(tok+2, "GI", 2) == 0) exp_mode = EXP_CM_GI;
+	  else if (strncmp(tok+2, "LV", 2) == 0) continue; /* cp9 HMM  local viterbi, irrelevant in current format */
+	  else if (strncmp(tok+2, "GV", 2) == 0) continue; /* cp9 HMM glocal viterbi, irrelevant in current format */
+	  else if (strncmp(tok+2, "LF", 2) == 0) continue; /* cp9 HMM  local forward, irrelevant in current format */
+	  else if (strncmp(tok+2, "GF", 2) == 0) continue; /* cp9 HMM glocal forward, irrelevant in current format */
+	  else ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid xx on E-xx line");
 	  
 	  /* create the expA array if this is the first E- line we've read */
 	  if (cm->expA == NULL) { 

@@ -160,10 +160,6 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   if ((pli->gbck = p7_gmx_Create(clen_hint, L_hint))         == NULL) goto ERROR;
   if ((pli->gxf  = p7_gmx_Create(clen_hint, L_hint))         == NULL) goto ERROR;
   if ((pli->gxb  = p7_gmx_Create(clen_hint, L_hint))         == NULL) goto ERROR;     
-  pli->fsmx = NULL; /* can't allocate this until we know dmin/dmax/W etc. */
-  pli->smx  = NULL; /* can't allocate this until we know dmin/dmax/W etc. */
-  //pli->need_fsmx = pli->need_smx = FALSE; /* we'll change this later if nec */
-  pli->fcyk_dmin = pli->fcyk_dmax = pli->final_dmin = pli->final_dmax = NULL;
 
   /* intialize model-dependent parameters, these are invalid until we call cm_pli_NewModel() */
   pli->maxW = 0;
@@ -436,8 +432,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   /* Configure options for the CM stages */
   pli->fcyk_cm_search_opts  = 0;
   pli->final_cm_search_opts = 0;
-  pli->fcyk_beta = esl_opt_GetReal(go, "--fbeta");
-  pli->fcyk_tau  = esl_opt_GetReal(go, "--ftau");
+  pli->fcyk_beta  = esl_opt_GetReal(go, "--fbeta");
+  pli->fcyk_tau   = esl_opt_GetReal(go, "--ftau");
   pli->final_beta = esl_opt_GetReal(go, "--beta");
   pli->final_tau  = esl_opt_GetReal(go, "--tau");
 
@@ -449,26 +445,45 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
      * neither:        HMM bands
      */
     /* CYK filter settings */
-    if(  esl_opt_GetBoolean(go, "--fnonbanded"))  { 
-      pli->fcyk_cm_search_opts  |= CM_SEARCH_NOQDB;
-    }
-    else if(! esl_opt_GetBoolean(go, "--fqdb")) { 
-      pli->fcyk_cm_search_opts  |= CM_SEARCH_HBANDED;
-    }
-    if(  esl_opt_GetBoolean(go, "--fsums"))       pli->fcyk_cm_search_opts  |= CM_SEARCH_SUMS;
-    if(! esl_opt_GetBoolean(go, "--nonull3"))     pli->fcyk_cm_search_opts  |= CM_SEARCH_NULL3;
+    if     (esl_opt_GetBoolean(go, "--fnonbanded"))  pli->fcyk_cm_search_opts  |= CM_SEARCH_NONBANDED;
+    else if(esl_opt_GetBoolean(go, "--fqdb"))        pli->fcyk_cm_search_opts  |= CM_SEARCH_QDB;
+    else                                             pli->fcyk_cm_search_opts  |= CM_SEARCH_HBANDED;
+
+    if(  esl_opt_GetBoolean(go, "--fsums"))          pli->fcyk_cm_search_opts  |= CM_SEARCH_SUMS;
+    if(! esl_opt_GetBoolean(go, "--nonull3"))        pli->fcyk_cm_search_opts  |= CM_SEARCH_NULL3;
 
     /* set up final round parameters */
-    if(! esl_opt_GetBoolean(go, "--cyk"))         pli->final_cm_search_opts |= CM_SEARCH_INSIDE;
-    if(esl_opt_GetBoolean(go, "--nonbanded")) { 
-      pli->final_cm_search_opts |= CM_SEARCH_NOQDB;
+    if(! esl_opt_GetBoolean(go, "--cyk"))            pli->final_cm_search_opts |= CM_SEARCH_INSIDE;
+
+    if     (esl_opt_GetBoolean(go, "--nonbanded"))   pli->final_cm_search_opts |= CM_SEARCH_NONBANDED;
+    else if(esl_opt_GetBoolean(go, "--qdb"))         pli->final_cm_search_opts |= CM_SEARCH_QDB;
+    else                                             pli->final_cm_search_opts |= CM_SEARCH_HBANDED;
+
+    if(  esl_opt_GetBoolean(go, "--sums"))           pli->final_cm_search_opts |= CM_SEARCH_SUMS;
+    if(! esl_opt_GetBoolean(go, "--nonull3"))        pli->final_cm_search_opts |= CM_SEARCH_NULL3;
+    if(esl_opt_GetBoolean(go, "--nogreedy"))         pli->final_cm_search_opts |= CM_SEARCH_CMNOTGREEDY;
+  }
+
+  /* Determine cm->config_opts we'll use to configure CMs after reading within a SCAN pipeline */
+  pli->cm_config_opts = 0;
+  /* should we configure CM/CP9 into local mode? */
+  if(! esl_opt_GetBoolean(go, "-g")) { 
+    pli->cm_config_opts |= CM_CONFIG_LOCAL;
+    if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
+      pli->cm_config_opts |= CM_CONFIG_HMMLOCAL;
+      if(! esl_opt_GetBoolean(go, "--cp9noel")) pli->cm_config_opts |= CM_CONFIG_HMMEL; 
     }
-    else if(! esl_opt_GetBoolean(go, "--qdb")) { 
-      pli->final_cm_search_opts |= CM_SEARCH_HBANDED;
+  }
+  /* should we setup for truncated alignments? */
+  if(! esl_opt_GetBoolean(go, "--notrunc")) pli->cm_config_opts |= CM_CONFIG_TRUNC; 
+  if(  esl_opt_GetBoolean(go, "--noforce")) pli->cm_config_opts |= CM_CONFIG_TRUNC_NOFORCE;
+
+  /* will we be requiring a CM_SCAN_MX? a CM_TR_SCAN_MX? */
+  if(esl_opt_GetBoolean(go, "--fqdb") || esl_opt_GetBoolean(go, "--qdb")) { 
+    pli->cm_config_opts |= CM_CONFIG_SCANMX;
+    if(! esl_opt_GetBoolean(go, "--notrunc")) { 
+      pli->cm_config_opts |= CM_CONFIG_TRSCANMX; 
     }
-    if(  esl_opt_GetBoolean(go, "--sums"))        pli->final_cm_search_opts |= CM_SEARCH_SUMS;
-    if(! esl_opt_GetBoolean(go, "--nonull3"))     pli->final_cm_search_opts |= CM_SEARCH_NULL3;
-    if(esl_opt_GetBoolean(go, "--nogreedy"))      pli->final_cm_search_opts |= CM_SEARCH_CMNOTGREEDY;
   }
 
   /* Determine statistics modes for CM stages */
@@ -561,12 +576,6 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   p7_gmx_Destroy(pli->gxb);
   esl_randomness_Destroy(pli->r);
   p7_domaindef_Destroy(pli->ddef);
-  if(pli->fsmx != NULL && cm != NULL) { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL; }
-  if(pli->smx != NULL  && cm != NULL) { cm_FreeScanMatrix(cm, pli->smx);  pli->smx  = NULL; }
-  if(pli->fcyk_dmin != NULL)          { free(pli->fcyk_dmin);             pli->fcyk_dmin = NULL; }
-  if(pli->fcyk_dmax != NULL)          { free(pli->fcyk_dmax);             pli->fcyk_dmax = NULL; }
-  if(pli->final_dmin != NULL)         { free(pli->final_dmin);            pli->final_dmin = NULL; }
-  if(pli->final_dmax != NULL)         { free(pli->final_dmax);            pli->final_dmax = NULL; }
   if(pli->tro != NULL) free(pli->tro);
   free(pli);
 }
@@ -619,7 +628,7 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *
  *            The information of the model we may receive varies, as
  *            indicated by <modmode> and <pli->mode>. This is enforced 
- *            by a contract check upon entrace, failure causes immediate
+ *            by a contract check upon entrance, failure causes immediate
  *            return of eslEINCOMPAT.
  *
  *      case  <pli->mode>     <modmode>         <cm>      <om> and <bg>
@@ -640,7 +649,7 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            have entered this function previously for the same
  *            'model' with modmode==CM_NEWMODEL_MSV.
  *
- *            The pipeline may alter the null models in <bgA> in a
+ *            The pipeline may alter the null model in <bg> in a
  *            model-specific way (if we're using composition bias
  *            filter HMMs in the pipeline).
  *
@@ -653,16 +662,13 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            have the appropriate ones set.
  */
 int
-cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int need_fsmx, int need_smx, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE *om, P7_BG *bg, int64_t cur_cm_idx)
+cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, P7_OPROFILE *om, P7_BG *bg, int64_t cur_cm_idx)
 {
   int status = eslOK;
   int i, nsteps;
   float T;
 
   /* check contract */
-  /* fsmx/smx have to be NULL, b/c they require the CM used to create them (gone now) to free them (poorly designed) */
-  if(pli->fsmx != NULL)            ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, pli->fsmx non-null"); 
-  if(pli->smx != NULL)             ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, pli->smx  non-null"); /* smx has to be NULL,  b/c it requires the CM used to create it to free it (poorly designed) */
   if(pli->mode == CM_SEARCH_SEQS) { /* case 1 */
     if(modmode != CM_NEWMODEL_CM) 
     if(cm == NULL)                 ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and CM is NULL"); 
@@ -688,13 +694,13 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
 
   pli->cur_cm_idx = cur_cm_idx;
 
-  /* Two sets of value updates: 
+  /* Two sets (A and B) of value updates: 
    * case 1: we do both sets 
-   * case 2: we do set 1 only
-   * case 3: we do set 2 only
+   * case 2: we do set A only
+   * case 3: we do set B only
    */
   if(pli->mode == CM_SEARCH_SEQS || modmode == CM_NEWMODEL_MSV) { 
-    /* set 1 updates: case 1 and 2 do these */
+    /* set A updates: case 1 and 2 do these */
     pli->nmodels++;
     pli->nnodes += cm_clen;
 
@@ -731,35 +737,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     }
   }
   if(pli->mode == CM_SEARCH_SEQS || modmode == CM_NEWMODEL_CM) { 
-    /* set 2 updates: case 1 and 3 do these (they require a valid CM) */
-    if(pli->fcyk_dmin != NULL)  { free(pli->fcyk_dmin);             pli->fcyk_dmin = NULL; }
-    if(pli->fcyk_dmax != NULL)  { free(pli->fcyk_dmax);             pli->fcyk_dmax = NULL; }
-    if(pli->final_dmin != NULL) { free(pli->final_dmin);            pli->final_dmin = NULL; }
-    if(pli->final_dmax != NULL) { free(pli->final_dmax);            pli->final_dmax = NULL; }
-
-    pli->need_fsmx  = need_fsmx;
-    pli->need_smx   = need_smx;
-    pli->fcyk_dmin  = fcyk_dmin;
-    pli->fcyk_dmax  = fcyk_dmax;
-    pli->final_dmin = final_dmin;
-    pli->final_dmax = final_dmax;
-    
-    if(pli->need_fsmx) { 
-      pli->fsmx = cm_CreateScanMatrix(cm, cm->W, pli->fcyk_dmin, pli->fcyk_dmax, 
-				      ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? cm->W : pli->fcyk_dmax[0]),
-				      pli->fcyk_beta, 
-				      ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? FALSE : TRUE),
-				      TRUE,    /* do     allocate float matrices for CYK filter round */
-				      FALSE);  /* do not allocate int   matrices for CYK filter round  */
-    }
-    if(pli->need_smx) { 
-      pli->smx  = cm_CreateScanMatrix(cm, cm->W, pli->final_dmin, pli->final_dmax, 
-				      ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? cm->W : pli->final_dmax[0]),
-				      pli->final_beta, 
-				      ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? FALSE : TRUE),
-				      FALSE,  /* do not allocate float matrices for Inside round */
-				      TRUE);  /* do     allocate int   matrices for Inside round */
-    }
+    /* set B updates: case 1 and 3 do these (they require a valid CM) */
 
     /* Update the current effective database size so it pertains to the
      * new model. Also, If we're using an E-value threshold determine
@@ -776,7 +754,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
       if((status = cm_pli_NewModelThresholds(pli, cm)) != eslOK) return status;
     }
   }
-  return status;
+  return eslOK;
 }
 
 /* Function:  cm_pli_NewModelThresholds()
@@ -1778,10 +1756,10 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
  *            (*opt_cm == NULL). If so, we read the CM from the file
  *            after positioning it to position <cm_offset> and
  *            configure the CM after setting cm->config_opts to
- *            <cm_config_opts>. In this case, <*opt_cmcons> should
- *            also be NULL and we create a CMConsensus_t object and
- *            return it in <*opt_cmcons>. Otherwise, if <*opt_cm>
- *            is valid (non-NULL),  <*opt_cmcons> should be as well.
+ *            <pli->cm_config_opts>. In this case, <*opt_cmcons>
+ *            should also be NULL and we create a CMConsensus_t object
+ *            and return it in <*opt_cmcons>. Otherwise, if <*opt_cm>
+ *            is valid (non-NULL), <*opt_cmcons> should be as well.
  *
  * Returns:   <eslOK> on success. If a significant hit is obtained,
  *            its information is added to the growing <hitlist>.
@@ -1793,7 +1771,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
+cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 {
   int              status;
   char             errbuf[cmERRBUFSIZE];   /* for error messages */
@@ -1817,6 +1795,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   CP9Bands_t      *scan_cp9b = NULL;       /* a copy of the HMM bands derived in the final CM search stage, if its HMM banded */
   float            hbmx_Mb;                /* approximate size in Mb for HMM banded matrix for current hit */
   int              do_trunc;               /* TRUE if we are allowing L and/or R marginal alignments, FALSE if not */
+  int              check_fcyk_beta;        /* TRUE if we just read a CM and we need to check if its beta1 == pli->fcyk_beta */
+  int              check_final_beta;       /* TRUE if we just read a CM and we need to check if its beta2 == pli->final_beta */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
@@ -1839,12 +1819,23 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	if (pthread_mutex_unlock (&pli->cmfp->readMutex)      != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
       }
 #endif    
-      /*printf("CONFIGURING CM: %s (%d)\n", (*opt_cm)->name, cm_config_opts);*/
-      (*opt_cm)->config_opts = cm_config_opts;
-      if((status = ConfigCM(*opt_cm, pli->errbuf, FALSE, NULL, NULL)) != eslOK) return status;
+      /*printf("CONFIGURING CM: %s (%d)\n", (*opt_cm)->name, pli->cm_config_opts);*/
+      (*opt_cm)->config_opts = pli->cm_config_opts;
+      /* check if we need to recalculate QDBs prior to building the scan matrix in cm_Configure() 
+       * (we couldn't do this until we read the CM file to find out what cm->qdbinfo->beta1/beta2 were 
+       */
+      check_fcyk_beta  = (pli->fcyk_cm_search_opts  & CM_SEARCH_QDB) ? TRUE : FALSE;
+      check_final_beta = (pli->final_cm_search_opts & CM_SEARCH_QDB) ? TRUE : FALSE;
+      if((status = CheckCMQDBInfo(cm->qdbinfo, pli->fcyk_beta, check_fcyk_beta, pli->final_beta, check_final_beta)) != eslOK) { 
+	(*opt_cm)->config_opts   |= CM_CONFIG_QDB;
+	(*opt_cm)->qdbinfo->beta1 = pli->fcyk_beta;
+	(*opt_cm)->qdbinfo->beta2 = pli->final_beta;
+      }
+      /* else we don't have to change (*opt_cm)->qdbinfo->beta1/beta2 */
+
+      if((status = cm_Configure(*opt_cm, pli->errbuf)) != eslOK) return status;
       /* update the pipeline about the model */
       if((status = cm_pli_NewModel(pli, CM_NEWMODEL_CM, *opt_cm, (*opt_cm)->clen, (*opt_cm)->W, 
-				   FALSE, FALSE, NULL, NULL, NULL, NULL,  /* need_fsmx, need_smx, fcyk_dmin, fcyk_dmax, final_dmin, final_dmax */
 				   NULL, NULL, pli->cur_cm_idx)) /* om, bg */
 	 != eslOK); 
     }
@@ -1903,9 +1894,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
        * we fail over to option 2.
        */
       if(do_hbanded_filter_scan) { /* get HMM bands */
-	/* put up CM_SEARCH_HBANDED flag temporarily */
-	cm->search_opts |= CM_SEARCH_HBANDED;
-	
 	/* Calculate HMM bands. We'll tighten tau and recalculate bands until 
 	 * the resulting HMM banded matrix is under our size limit.
 	 */
@@ -1932,12 +1920,10 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	cm->search_opts  = pli->fcyk_cm_search_opts;
 
 	if(do_trunc) { 
-	  status = TrCYKScanHB(cm, errbuf, pli->tro, sq->dsq, es[i], ee[i], 
+	  status = TrCYKScanHB(cm, errbuf, cm->trhbmx, pli->hb_size_limit, pli->tro, sq->dsq, es[i], ee[i], 
 			       0.,                                  /* minimum score to report, irrelevant */
 			       NULL,                                /* hitlist to add to, irrelevant here */
 			       pli->do_null3,                       /* do the NULL3 correction? */
-			       cm->trhbmx,                          /* the truncated HMM banded matrix */
-			       pli->hb_size_limit,                  /* upper limit for size of DP matrix */
 			       cyk_env_cutoff,                      /* bit score == F6env P value, cutoff for envelope redefinition */
 			       (pli->do_cykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
 			       (pli->do_cykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
@@ -1946,12 +1932,10 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	  /*printf("\n\n!!! Returned from TrCYKScanHB(): %.4f bits\n\n\n", cyksc);*/
 	}
 	else { 
-	  status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
+	  status = FastCYKScanHB(cm, errbuf, cm->hbmx, pli->hb_size_limit, sq->dsq, es[i], ee[i], 
 				 0.,                                  /* minimum score to report, irrelevant */
 				 NULL,                                /* hitlist to add to, irrelevant here */
 				 pli->do_null3,                       /* do the NULL3 correction? */
-				 cm->hbmx,                            /* the HMM banded matrix */
-				 pli->hb_size_limit,                  /* upper limit for size of DP matrix */
 				 cyk_env_cutoff,                      /* bit score == F6env P value, cutoff for envelope redefinition */
 				 (pli->do_cykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
 				 (pli->do_cykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
@@ -1961,20 +1945,13 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
       }
       if(do_qdb_or_nonbanded_filter_scan) { /* careful, different from just an 'else', b/c we may have just set this as true if status == eslERANGE */
-	/* make sure we have a ScanMatrix_t for this round, if not build one,
+	/* make sure we have a CM_SCAN_MX for this CM, if not build one,
 	 * this should be okay because we should only very rarely need to do this */
 	printf("FIX ME! ADD TRUNC VERSION! OVERFLOW CYK FILTER above pli->hb_size_limit\n");
 	continue;
 	pli->acct[pli->cur_pass_idx].n_overflow_fcyk++;
-	if(pli->fsmx == NULL) { 
-	  pli->fsmx = cm_CreateScanMatrix(cm, cm->W, pli->fcyk_dmin, pli->fcyk_dmax, 
-					  ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? cm->W : pli->fcyk_dmax[0]),
-					  pli->fcyk_beta, 
-					  ((pli->fcyk_dmin == NULL && pli->fcyk_dmax == NULL) ? FALSE : TRUE),
-					  TRUE,    /* do     allocate float matrices for CYK filter round */
-					  FALSE);  /* do not allocate int   matrices for CYK filter round  */
-	}
-	if((status = FastCYKScan(cm, errbuf, pli->fsmx, sq->dsq, es[i], ee[i],
+	/* if(cm->smx == NULL) create a scan matrix for the CM? */
+	if((status = FastCYKScan(cm, errbuf, cm->smx, SMX_QDB1_TIGHT, sq->dsq, es[i], ee[i],
 				 0.,                                 /* minimum score to report, irrelevant */
 				 NULL,                               /* hitlist to add to, irrelevant here */
 				 pli->do_null3,                      /* do the NULL3 correction? */
@@ -2031,24 +2008,20 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	/* printf("INS 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
 	if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is HMM banded Inside */
 	  if(do_trunc) { 
-	    status = FTrInsideScanHB(cm, errbuf, pli->tro, sq->dsq, es[i], ee[i], 
+	    status = FTrInsideScanHB(cm, errbuf, cm->trhbmx, pli->hb_size_limit, pli->tro, sq->dsq, es[i], ee[i], 
 				     pli->T,            /* minimum score to report */
 				     hitlist,           /* our hitlist */
 				     pli->do_null3,     /* do the NULL3 correction? */
-				     cm->trhbmx,        /* the truncated HMM banded matrix */
-				     pli->hb_size_limit,/* upper limit for size of DP matrix */
 				     0., NULL, NULL,    /* redefined envelope cutoff,start,end, irrelevant here */
 				     &insmode,          /* best mode, irrelevant here (it's also stored in any reported hits) */
 				     &inssc);           /* best score, irrelevant here */
 	    /*printf("\n\n!!! Returned from FTrInsideScanHB(): %.4f bits\n\n\n", inssc);*/
 	  }
 	  else { 
-	    status = FastFInsideScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
+	    status = FastFInsideScanHB(cm, errbuf, cm->hbmx, pli->hb_size_limit, sq->dsq, es[i], ee[i], 
 				       pli->T,            /* minimum score to report */
 				       hitlist,           /* our hitlist */
 				       pli->do_null3,     /* do the NULL3 correction? */
-				       cm->hbmx,          /* the HMM banded matrix */
-				       pli->hb_size_limit,/* upper limit for size of DP matrix */
 				       0., NULL, NULL,    /* redefined envelope cutoff,start,end, irrelevant here */
 				       &inssc);           /* best score, irrelevant here */
 	  }
@@ -2060,24 +2033,20 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	else { /* final algorithm is HMM banded CYK */
 	  /*printf("calling HMM banded CYK scan\n");*/
 	  if(do_trunc) { 
-	    status = TrCYKScanHB(cm, errbuf, pli->tro, sq->dsq, es[i], ee[i], 
+	    status = TrCYKScanHB(cm, errbuf, cm->trhbmx, pli->hb_size_limit, pli->tro, sq->dsq, es[i], ee[i], 
 				 pli->T,                             /* minimum score to report */
 				 hitlist,                            /* our hitlist */
 				 pli->do_null3,                      /* do the NULL3 correction? */
-				 cm->trhbmx,                         /* the truncated HMM banded matrix */
-				 pli->hb_size_limit,                 /* upper limit for size of DP matrix */
 				 0., NULL, NULL,                     /* envelope redefinition parameters, irrelevant here */
 				 &cykmode,                           /* best alignment mode, irrevelant here (it's also stored in any reported hits) */
 				 &cyksc);                            /* best score, irrelevant here */
 	    /*printf("\n\n!!! Returned from TrCYKScanHB(): %.4f bits\n\n\n", cyksc);*/
 	  }
 	  else { 
-	    status = FastCYKScanHB(cm, errbuf, sq->dsq, es[i], ee[i], 
+	    status = FastCYKScanHB(cm, errbuf, cm->hbmx, pli->hb_size_limit, sq->dsq, es[i], ee[i], 
 				   pli->T,                             /* minimum score to report */
 				   hitlist,                            /* our hitlist */
 				   pli->do_null3,                      /* do the NULL3 correction? */
-				   cm->hbmx,                           /* the HMM banded matrix */
-				   pli->hb_size_limit,                 /* upper limit for size of DP matrix */
 				   0., NULL, NULL,                     /* envelope redefinition parameters, irrelevant here */
 				   &cyksc);                            /* best score, irrelevant here */
 	  }
@@ -2097,18 +2066,12 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	 * this should be okay because we should only very rarely need to do this */
 	printf("FIX ME! ADD TRUNC VERSION! OVERFLOW INS FILTER above pli->hb_size_limit\n");
 	continue;
-	if(pli->smx == NULL) { 
-	  pli->smx  = cm_CreateScanMatrix(cm, cm->W, pli->final_dmin, pli->final_dmax, 
-					  ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? cm->W : pli->final_dmax[0]),
-					  pli->final_beta, 
-					  ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? FALSE : TRUE),
-					  FALSE,  /* do not allocate float matrices for Inside round */
-					  TRUE);  /* do     allocate int   matrices for Inside round */
-	}
-	if((status = FastIInsideScan(cm, errbuf, pli->smx, sq->dsq, es[i], ee[i],
+	/* if(cm->smx == NULL) create a scan matrix for the CM? */
+	if((status = FastIInsideScan(cm, errbuf, cm->smx, SMX_QDB2_LOOSE, sq->dsq, es[i], ee[i],
 				     pli->T,            /* minimum score to report */
 				     hitlist,           /* our hitlist */
 				     pli->do_null3,     /* apply the null3 correction? */
+				     0., NULL, NULL,    /* envelope redefinition parameters, irrelevant here */
 				     NULL,              /* ret_vsc, irrelevant here */
 				     &finalsc)) != eslOK) { /* best score, irrelevant here */
 	  printf("ERROR: %s\n", errbuf); return status; }
@@ -2118,15 +2081,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
 	 * this should be okay because we should only very rarely need to do this */
 	printf("FIX ME! ADD TRUNC VERSION! OVERFLOW INS FILTER above pli->hb_size_limit\n");
 	continue;
-	if(pli->smx == NULL) { 
-	  pli->smx = cm_CreateScanMatrix(cm, cm->W, pli->final_dmin, pli->final_dmax, 
-					  ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? cm->W : pli->final_dmax[0]),
-					  pli->final_beta, 
-					  ((pli->final_dmin == NULL && pli->final_dmax == NULL) ? FALSE : TRUE),
-					  TRUE,    /* do     allocate float matrices for CYK filter round */
-					  FALSE);  /* do not allocate int   matrices for CYK filter round  */
-	}
-	if((status = FastCYKScan(cm, errbuf, pli->smx, sq->dsq, es[i], ee[i],
+	/* if(cm->smx == NULL) create a scan matrix for the CM? */
+	if((status = FastCYKScan(cm, errbuf, cm->smx, SMX_QDB2_LOOSE, sq->dsq, es[i], ee[i],
 				 pli->T,            /* minimum score to report */
 				 hitlist,           /* our hitlist */
 				 pli->do_null3,     /* apply the null3 correction? */
@@ -2233,8 +2189,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_
   } /* end of for each envelope loop */
   cm->tau = save_tau;
   /* free the scan matrices if we just allocated them */
-  if((! pli->need_fsmx) && (pli->fsmx != NULL)) { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL;  }
-  if((! pli->need_smx)  && (pli->smx != NULL))  { cm_FreeScanMatrix(cm, pli->smx);  pli->smx = NULL;   }
   if(scan_cp9b != NULL) FreeCP9Bands(scan_cp9b);
 
   return eslOK;
@@ -2634,7 +2588,7 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
+cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 {
   int       status;
   int       nwin = 0;   /* number of windows surviving MSV & Vit & lFwd, filled by cm_pli_p7Filter() */
@@ -2764,7 +2718,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *
     printf("\nPIPELINE calling CMStage() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allowR: %d allowL: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allowR, pli->tro->allowL, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
 #endif
     prv_ntophits = hitlist->N;
-    if((status = cm_pli_CMStage(pli, cm_offset, cm_config_opts, sq2search, es, ee, nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
+    if((status = cm_pli_CMStage(pli, cm_offset, sq2search, es, ee, nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
     if(pli->do_time_F6) return status;
 
     /* Two ways we have to update any hits we've just found: */

@@ -49,6 +49,7 @@ MYINCDIRS = -I../${ESLDIR} \
 
 PROGS = cmalign\
 	cmbuild\
+	cmcalibrate\
 	cmconvert\
 	cmemit\
 	cmfetch\
@@ -99,7 +100,6 @@ OBJS  = cm.o\
 	cm_p7_modelmaker.o\
 	cp9.o\
 	cp9_dp.o\
-	cp9_modelconfig.o\
 	cp9_modelmaker.o\
 	cp9_mx.o\
 	cp9_trace.o\
@@ -174,8 +174,8 @@ ${UTESTS}: libinfernal.a  ${HDRS} config.h
 	@BASENAME=`echo $@ | sed -e 's/_utest//' | sed -e 's/^cm_//'` ;\
 	DFLAG=`echo $${BASENAME} | sed -e 'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/'`;\
 	DFLAG=CM_$${DFLAG}_TESTDRIVE ;\
-	if test -e ${srcdir}/CM_$${BASENAME}.c; then \
-           DFILE=${srcdir}/CM_$${BASENAME}.c ;\
+	if test -e ${srcdir}/cm_$${BASENAME}.c; then \
+           DFILE=${srcdir}/cm_$${BASENAME}.c ;\
         else \
            DFILE=${srcdir}/$${BASENAME}.c ;\
 	fi;\

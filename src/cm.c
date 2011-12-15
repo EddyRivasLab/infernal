@@ -124,10 +124,8 @@ CreateCMShell(void)
 
   cm->el_selfsc = sreLOG2(DEFAULT_EL_SELFPROB);         
   
-  cm->dmin         = NULL;
-  cm->dmax         = NULL;
-  cm->beta_W       = DEFAULT_BETA;       /* will be set when beta_W is read from cmfile */
-  cm->beta_qdb     = DEFAULT_BETA;       /* will be set to beta_W when beta_W is read from cmfile */
+  cm->qdbinfo      = NULL;
+  cm->beta_W       = DEFAULT_BETA_W;     /* will be set when beta_W is read from cmfile */
   cm->tau          = DEFAULT_TAU;        /* 1E-7 the default tau  (tail loss for HMM banding) */
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
@@ -140,6 +138,7 @@ CreateCMShell(void)
   cm->root_trans   = NULL;
   cm->expA         = NULL;
   cm->smx          = NULL;
+  cm->trsmx        = NULL;
   cm->hbmx         = NULL;
   cm->ohbmx        = NULL;
   cm->ehbmx        = NULL;
@@ -187,8 +186,6 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
 
   CMAllocNullModel(cm);         
 
-  if((cm->comlog = CreateComLog()) == NULL) goto ERROR;
-
   ESL_ALLOC(cm->sttype, (nstates+1) * sizeof(char));
   ESL_ALLOC(cm->ndidx,   nstates    * sizeof(int));
   ESL_ALLOC(cm->stid,   (nstates+1) * sizeof(char));
@@ -196,12 +193,13 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
   ESL_ALLOC(cm->cnum,    nstates    * sizeof(int));
   ESL_ALLOC(cm->plast,   nstates    * sizeof(int));
   ESL_ALLOC(cm->pnum,    nstates    * sizeof(int));
-  ESL_ALLOC(cm->dmin,    nstates    * sizeof(int));
-  ESL_ALLOC(cm->dmax,    nstates    * sizeof(int));
 				/* node->state map information */
   ESL_ALLOC(cm->nodemap, nnodes  * sizeof(int));
   ESL_ALLOC(cm->ndtype,  nnodes  * sizeof(char));
-  
+
+  if((cm->comlog  = CreateComLog())                 == NULL) goto ERROR;
+  if((cm->qdbinfo = CreateCMQDBInfo(nstates, clen)) == NULL) goto ERROR;
+
   /* parameter information */
   /* level 1 */
   ESL_ALLOC(cm->t,      (nstates) * sizeof(float *));
@@ -239,31 +237,32 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
    */
   
   /* level 2 */
-  ESL_ALLOC(cm->t[0],     MAXCONNECT * nstates * sizeof(float));
-  ESL_ALLOC(cm->e[0],     cm->abc->K * cm->abc->K * nstates * sizeof(float));
-  ESL_ALLOC(cm->tsc[0],   MAXCONNECT * nstates * sizeof(float));
-  ESL_ALLOC(cm->esc[0],   cm->abc->K * cm->abc->K * nstates * sizeof(float));
-  ESL_ALLOC(cm->lmesc[0], cm->abc->Kp * nstates * sizeof(float));
-  ESL_ALLOC(cm->rmesc[0], cm->abc->Kp * nstates * sizeof(float));
-  ESL_ALLOC(cm->itsc[0], MAXCONNECT * nstates * sizeof(int));
-  ESL_ALLOC(cm->iesc[0], cm->abc->K * cm->abc->K * nstates * sizeof(int));
-  ESL_ALLOC(cm->ilmesc[0], cm->abc->Kp * nstates * sizeof(int));
-  ESL_ALLOC(cm->irmesc[0], cm->abc->Kp * nstates * sizeof(int));
+  ESL_ALLOC(cm->t[0],      MAXCONNECT  * nstates              * sizeof(float));
+  ESL_ALLOC(cm->e[0],      cm->abc->K  * cm->abc->K * nstates * sizeof(float));
+  ESL_ALLOC(cm->tsc[0],    MAXCONNECT  * nstates              * sizeof(float));
+  ESL_ALLOC(cm->esc[0],    cm->abc->K  * cm->abc->K * nstates * sizeof(float));
+  ESL_ALLOC(cm->lmesc[0],  cm->abc->Kp * nstates              * sizeof(float));
+  ESL_ALLOC(cm->rmesc[0],  cm->abc->Kp * nstates              * sizeof(float));
+  ESL_ALLOC(cm->itsc[0],   MAXCONNECT  * nstates              * sizeof(int));
+  ESL_ALLOC(cm->iesc[0],   cm->abc->K  * cm->abc->K * nstates * sizeof(int));
+  ESL_ALLOC(cm->ilmesc[0], cm->abc->Kp * nstates              * sizeof(int));
+  ESL_ALLOC(cm->irmesc[0], cm->abc->Kp * nstates              * sizeof(int));
   for (v = 0; v < nstates; v++) 
     {
-      cm->e[v]      = cm->e[0]     + v * (cm->abc->K * cm->abc->K);
-      cm->t[v]      = cm->t[0]     + v * MAXCONNECT;
-      cm->tsc[v]    = cm->tsc[0]   + v * MAXCONNECT;
-      cm->esc[v]    = cm->esc[0]   + v * (cm->abc->K * cm->abc->K);
-      cm->lmesc[v]  = cm->lmesc[0] + v * cm->abc->Kp;
-      cm->rmesc[v]  = cm->rmesc[0] + v * cm->abc->Kp;
-      cm->iesc[v]   = cm->iesc[0]  + v * (cm->abc->K * cm->abc->K);
-      cm->itsc[v]   = cm->itsc[0]  + v * MAXCONNECT;
+      cm->e[v]      = cm->e[0]      + v * (cm->abc->K * cm->abc->K);
+      cm->t[v]      = cm->t[0]      + v * MAXCONNECT;
+      cm->tsc[v]    = cm->tsc[0]    + v * MAXCONNECT;
+      cm->esc[v]    = cm->esc[0]    + v * (cm->abc->K * cm->abc->K);
+      cm->lmesc[v]  = cm->lmesc[0]  + v * cm->abc->Kp;
+      cm->rmesc[v]  = cm->rmesc[0]  + v * cm->abc->Kp;
+      cm->iesc[v]   = cm->iesc[0]   + v * (cm->abc->K * cm->abc->K);
+      cm->itsc[v]   = cm->itsc[0]   + v * MAXCONNECT;
       cm->ilmesc[v] = cm->ilmesc[0] + v * cm->abc->Kp;
       cm->irmesc[v] = cm->irmesc[0] + v * cm->abc->Kp;
     }
 
   /* Zero model */
+
   CMZero(cm);
 
   /* the EL state at M is special: we only need state
@@ -285,16 +284,8 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
   cm->cp9b          = NULL;
   cm->cp9map        = NULL;
 
-  /* create HMM banded dp matrices, this only depends (at first) on num states, M.
-   * it is initially empty, but expanded to fit target sequences as needed */
-  cm->hbmx    = cm_hb_mx_Create(cm->M);
-  cm->ohbmx   = cm_hb_mx_Create(cm->M);
-  /* we can't make the truncated HMM banded matrices here, b/c they need to where
-   * the B states are, thus they get created in cm_modelconfig.c::ConfigCM().
-   */
-
-  /* we'll allocate the cp9, Lcp9, Rcp9, Tcp9, cp9b, cp9map, cp9_mx
-   * and cp9_bmx inside ConfigCM(), we need some more info about the
+  /* we'll allocate all matrices and all cp9 related data structuers
+   * inside cm_Configure(), we need some more info about the
    * CM besides M and nnodes to build those
    */
 
@@ -344,8 +335,6 @@ CMZero(CM_t *cm)
   esl_vec_ISet(cm->itrbeginsc, cm->M, 0);
   esl_vec_ISet(cm->iendsc,     cm->M, 0);
 
-  esl_vec_ISet(cm->dmin, cm->M, 0);
-  esl_vec_ISet(cm->dmax, cm->M, cm->W);
 }
 
 /* Function:  CMRenormalize()
@@ -394,7 +383,9 @@ FreeCM(CM_t *cm)
 {
   int i;
 
-  if (cm->smx       != NULL) cm_FreeScanMatrixForCM(cm); /* free this first, it needs some info from cm->stid */
+  if (cm->smx       != NULL) cm_scan_mx_Destroy   (cm, cm->smx);   /* free this early, it needs some info from cm->stid */
+  if (cm->trsmx     != NULL) cm_tr_scan_mx_Destroy(cm, cm->trsmx); /* ditto */
+
   if (cm->name      != NULL) free(cm->name);
   if (cm->acc       != NULL) free(cm->acc);
   if (cm->desc      != NULL) free(cm->desc);
@@ -451,10 +442,9 @@ FreeCM(CM_t *cm)
   if(cm->itrbeginsc != NULL) free(cm->itrbeginsc);
   if(cm->endsc      != NULL) free(cm->endsc);
   if(cm->iendsc     != NULL) free(cm->iendsc);
-  if(cm->dmin       != NULL) free(cm->dmin);
-  if(cm->dmax       != NULL) free(cm->dmax);
 
   if(cm->comlog     != NULL) FreeComLog(cm->comlog);
+  if(cm->qdbinfo    != NULL) FreeCMQDBInfo(cm->qdbinfo);
   if(cm->cp9map     != NULL) FreeCP9Map(cm->cp9map);
   if(cm->cp9b       != NULL) FreeCP9Bands(cm->cp9b);
   if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
@@ -784,6 +774,7 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 int
 CMLogoddsify(CM_t *cm)
 {
+  printf("in CMLogoddsify()\n");
   int v, x, y;
 
   /* zero lmesc, rmesc, we'll sum up probs then convert to scores */
@@ -885,7 +876,7 @@ CMLogoddsify(CM_t *cm)
    * If they already exist, free them and recalculate them, slightly wasteful, oh well.
    */
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
-  cm->oesc  = FCalcOptimizedEmitScores(cm);
+  cm->oesc = FCalcOptimizedEmitScores(cm);
   /* EPN, Wed Aug 20 15:26:01 2008 
    * old, slow way: 
    * cm->ioesc = ICalcOptimizedEmitScores(cm);
@@ -1597,8 +1588,6 @@ MarginalMode(char mode)
   return "";
 }
 
-
-
 /* Function: StateMapsLeft()
  * 
  * Purpose:  Returns TRUE if cm unique states type <stid> is
@@ -1784,9 +1773,9 @@ StateIsDetached(CM_t *cm, int v)
  * Purpose:  Rebalance a CM tree to guarantee O(N^2 log N) memory in
  *           smallcyk.c's divide and conquer algorithm.
  * 
- *           Input: a CM that's numbered in preorder traversal: 
- *           visit root, visit left, visit right. (e.g., left
- *           child S always visited before right child S, 
+ *           Input: a non-configured CM that's numbered in preorder
+ *           traversal: visit root, visit left, visit right. (e.g.,
+ *           left child S always visited before right child S,
  *           cfirst[w] < cnum[y], as produced by cm_modelmaker.c).
  *           
  *           Output: a renumbered CM, in a modified preorder traversal:
@@ -1796,20 +1785,23 @@ StateIsDetached(CM_t *cm, int v)
  *           
  * Args:     cm - the old CM
  *
- * Returns:  A new CM. 
- *           Caller is responsible for free'ing this with FreeCM().
+ * Returns:  eslOK on success, ret_new_cm is valid rebalanced CM
+ *           eslFAIL if source (old) CM has been configured, ret_new_cm set as NULL
+ *           eslEMEM if we run out of memory 
  */
-CM_t *
-CMRebalance(CM_t *cm)
+int 
+CMRebalance(CM_t *cm, char *errbuf, CM_t **ret_new_cm)
 {
   int       status;
-  ESL_STACK *pda = NULL;  /* stack used for traversing old CM */
-  CM_t     *new;          /* new CM we're creating */
-  int      *wgt;          /* # of extra CYK decks required to calc subgraphs */
-  int      *newidx;       /* newidx[v] = old CM state v's new index in new CM */
-  int       v, w, y,z;	  /* state indices in old CM */
-  int       nv;		  /* state index in new CM */
-  int       x;		  /* counter over transitions, residues, nodes */
+  ESL_STACK *pda = NULL;   /* stack used for traversing old CM */
+  CM_t     *new = NULL;    /* new CM we're creating */
+  int      *wgt = NULL;    /* # of extra CYK decks required to calc subgraphs */
+  int      *newidx = NULL; /* newidx[v] = old CM state v's new index in new CM */
+  int       v, w, y,z;	   /* state indices in old CM */
+  int       nv;		   /* state index in new CM */
+  int       x;		   /* counter over transitions, residues, nodes */
+
+  if((status = cm_nonconfigured_Verify(cm, errbuf)) != eslOK) goto ERROR;
 
   /* Create the new model. Copy information that's unchanged by
    * renumbering the CM.
@@ -1955,13 +1947,12 @@ CMRebalance(CM_t *cm)
       new->trbegin[newidx[v]] = cm->trbegin[v];
       new->end[newidx[v]]     = cm->end[v];
     }
-  if(cm->dmin != NULL) { 
-    ESL_ALLOC(new->dmin, sizeof(int) * cm->M);
-    for (v = 0; v < cm->M; v++) new->dmin[newidx[v]] = cm->dmin[v];
-  }
-  if(cm->dmax != NULL) { 
-    ESL_ALLOC(new->dmax, sizeof(int) * cm->M);
-    for (v = 0; v < cm->M; v++) new->dmax[newidx[v]] = cm->dmax[v];
+  if(cm->qdbinfo != NULL) { 
+    if((status = CopyCMQDBInfo(cm->qdbinfo, new->qdbinfo, errbuf)) != eslOK) goto ERROR;
+    for (v = 0; v < cm->M; v++) new->qdbinfo->dmin1[newidx[v]] = cm->qdbinfo->dmin1[v];
+    for (v = 0; v < cm->M; v++) new->qdbinfo->dmax1[newidx[v]] = cm->qdbinfo->dmax1[v];
+    for (v = 0; v < cm->M; v++) new->qdbinfo->dmin2[newidx[v]] = cm->qdbinfo->dmin2[v];
+    for (v = 0; v < cm->M; v++) new->qdbinfo->dmax2[newidx[v]] = cm->qdbinfo->dmax2[v];
   }
 
   /* Guide tree numbering is unchanged - still in preorder.
@@ -1973,15 +1964,21 @@ CMRebalance(CM_t *cm)
       new->ndtype[x]  = cm->ndtype[x];
     }
 
-  free(wgt);
-  free(newidx);
-  esl_stack_Destroy(pda);
-  return new;
+  if(wgt    != NULL) free(wgt);
+  if(newidx != NULL) free(newidx);
+  if(pda    != NULL) esl_stack_Destroy(pda);
+  *ret_new_cm = new;
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.\n");
-  return NULL; /* never reached */
-}
+  if(wgt    != NULL) free(wgt);
+  if(newidx != NULL) free(newidx);
+  if(pda    != NULL) esl_stack_Destroy(pda);
+  if(new    != NULL) FreeCM(new);
+  *ret_new_cm = NULL;
+  if(status == eslEMEM) ESL_FAIL(status, errbuf, "out of memory");
+  else return status;  /* status is eslFAIL, errbuf was filled by cm_nonconfigured_Verify() */
+  }
 
 /*
  * EPN, Wed Mar 21 09:29:55 2007
@@ -2137,18 +2134,17 @@ float rsearch_calculate_gap_penalty (char from_state, char to_state,
   return (0);
 }
 
-/*
- * Function: ExponentiateCM
+/* Function: ExponentiateCM
  * Date:     EPN, Sun May 20 13:10:06 2007
+ *
  * Purpose:  Exponentiate the emission and transition probabilities 
- *           of a CM by z. If CM is in local mode, put it in global mode,
- *           exponentiate it and put it back in local mode, otherwise
- *           the cm->end probabilities would change, and we don't want
- *           that.
+ *           of a CM by z. We can only do this if a CM is in global
+ *           mode. Otherwise, the cm->end probabilities would change, 
+ *           and we don't want that.
  * 
  * Args:
- *           CM           - the covariance model
- *           z            - factor to exponentiate by
+ *           CM - the covariance model
+ *           z  - factor to exponentiate by
  */
 int
 ExponentiateCM(CM_t *cm, double z)
@@ -2156,14 +2152,11 @@ ExponentiateCM(CM_t *cm, double z)
   /*printf("in ExponentiateCM, z: %f\n", z);*/
   int v;
   int x,y;
-  int local_flag = FALSE;
 
   /* If in local mode, configure to global first. */
-  if(cm->flags & CMH_LOCAL_BEGIN || cm->flags & CMH_LOCAL_END) 
-    {
-      ConfigGlobal(cm);
-      local_flag = TRUE;
-    }
+  if(cm->flags & CMH_LOCAL_BEGIN || cm->flags & CMH_LOCAL_END) { 
+    cm_Fail("ExponentiateCM() model is not in global configuration");
+  }
 
   for(v = 0; v < cm->M; v++)
     {
@@ -2183,10 +2176,8 @@ ExponentiateCM(CM_t *cm, double z)
 	    cm->e[v][x]  = pow(cm->e[v][x], z);
 	}
     }
-
   CMRenormalize(cm);
 
-  if(local_flag) ConfigLocal(cm, cm->pbegin, cm->pend);
   /* new probs invalidate log odds scores */
   cm->flags &= ~CMH_BITS;
   return eslOK;
@@ -2387,8 +2378,7 @@ cm_Validate(CM_t *cm, float tol, char *errbuf)
   if (cm->M          <  1)          ESL_XFAIL(eslFAIL, errbuf, "CM has M < 1");
   if (cm->abc        == NULL)       ESL_XFAIL(eslFAIL, errbuf, "CM has no alphabet reference");
   if (cm->abc->type  == eslUNKNOWN) ESL_XFAIL(eslFAIL, errbuf, "CM's alphabet is set to unknown");
-  if (cm->dmin       == NULL)       ESL_XFAIL(eslFAIL, errbuf, "CM's dmin vector is NULL");
-  if (cm->dmax       == NULL)       ESL_XFAIL(eslFAIL, errbuf, "CM's dmax vector is NULL");
+  if (cm->qdbinfo    == NULL)       ESL_XFAIL(eslFAIL, errbuf, "CM's qdbinfo is NULL");
   
   esl_vec_FSet(pvec, MAXCONNECT+1, 0.); 
   for (v = 0; v < cm->M; v++)
@@ -2788,29 +2778,32 @@ IntDigits(int i)
 }
 
 /* Function: cm_GetAvgHitLen()
+ * Synopsis: Calculate the average local and global hit length for a CM
  * Date:     EPN, Thu Jan 17 05:52:00 2008
  * 
- * Returns: eslOK on success, eslEINCOMPAT on contract violation
- *          <ret_avg_hit_len> set as average hit length of a hit for a CM, 
- *          determined using the QDB band calculation engine.
+ * Returns: eslOK on success, <ret_avgL_loc> and <ret_avgL_glb> set as average local/global hit length
+ *          eslEMEM if we're out of memory
  */
 int
-cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len)
+cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avgL_loc, float *ret_avgL_glb)
 {
+  int    status;
   int    safe_windowlen;
-  float *avglenA;
-  float  avg_hit_len;
+  float  avgL_loc;
+  float  avgL_glb;
+  double *gamma0_loc;
+  double *gamma0_glb;
+  int     n;
 
-  if(ret_avg_hit_len == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_GetAvgHitLen(), ret_avg_hit_len == NULL.");
+  if((status = CalculateQueryDependentBands(cm, errbuf, NULL, DEFAULT_BETA_W, NULL, &gamma0_loc, &gamma0_glb)) != eslOK) return status;
+  avgL_loc = avgL_glb = 0.;
+  for(n = 0; n <= safe_windowlen; n++) avgL_loc += gamma0_loc[n] * (float) n;
+  for(n = 0; n <= safe_windowlen; n++) avgL_glb += gamma0_glb[n] * (float) n;
+  free(gamma0_loc);
+  free(gamma0_glb);
 
-  safe_windowlen = cm->W * 2;
-  while(!(BandCalculationEngine(cm, safe_windowlen, 1E-15, TRUE, NULL, NULL, NULL, &avglenA))) {
-    safe_windowlen *= 2;
-    if(safe_windowlen > (cm->clen * 1000)) cm_Fail("GetCMAvgHitLen(), band calculation safe_windowlen big: %d\n", safe_windowlen);
-  }
-  avg_hit_len = avglenA[0];
-  free(avglenA);
-  *ret_avg_hit_len = avg_hit_len;
+  if(ret_avgL_loc != NULL) *ret_avgL_loc = avgL_loc;
+  if(ret_avgL_glb != NULL) *ret_avgL_glb = avgL_glb;
 
   return eslOK;
 }
@@ -2837,88 +2830,232 @@ CompareCMGuideTrees(CM_t *cm1, CM_t *cm2)
   return TRUE;
 }
 
-
-/* Function: CloneCMJustReadFromFile()
- * EPN, Tue May 24 09:11:13 2011
+/* Function: cm_nonconfigured_Verify()
+ * EPN, Fri Dec  9 14:20:03 2011
  *
- * Purpose:  Given a CM just read from a file, clone it and return
- *           the clone in *ret_cm.
+ * Purpose:  Verify that a cm is non-configured by checking its
+ *           flags and internal variables. A design goal of Infernal
+ *           is that the only way to configure a CM is with the 
+ *           cm_Configure() function (but that's difficult to 
+ *           be absolutely sure of). The motivation for this
+ *           goal is so there's only 1 execution path through
+ *           all the configuration functions. If there are many
+ *           possible paths, dictated by combinations of options
+ *           to an application for example, its very possible that
+ *           some of those paths screw something up.
  *
- * Args:     cm     - CM to clone
- *           ret_cm - copy of CM, allocated here, must be freed by caller.
+ * Args:     cm     - CM to check
+ *           errbuf - string explaining evidence CM is configured, if it is
  * 
- * Returns:  eslEINCOMPAT if cm seems to have been manipulated in some 
- *           way after being read from a file.
+ * Returns:  eslOK   if CM does not seem to be configured
+ *           eslFAIL if the CM has been configured in some way.
  */
 int 
-CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
+cm_nonconfigured_Verify(CM_t *cm, char *errbuf)
+{
+  /* Check for flags that indicate the CM has been configured in 
+   * any way. A CM has been configured if it has been manipulated
+   * after being read from a file.
+   */
+  if(cm->flags & CM_IS_CONFIGURED)        ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CMH_BITS flag is up (should be down in a non-configured CM)");
+  if(cm->flags & CMH_BITS)                ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CMH_BITS flag is up (should be down in a non-configured CM)");
+  if(cm->flags & CMH_LOCAL_BEGIN)         ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CMH_LOCAL_BEGIN flag is up (should be down in a non-configured CM)");
+  if(cm->flags & CMH_LOCAL_END)           ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CMH_LOCAL_END flag is up (should be down in a non-configured CM)");
+  if(cm->flags & CMH_CP9)                 ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CMH_CP9 flag is up (should be down in a non-configured CM)");
+  if(cm->flags & CMH_CP9_TRUNC)           ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CMH_CP9_TRUNC flag is up (should be down in a non-configured CM)");
+  if(cm->flags & CM_IS_SUB)               ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CM_IS_SUB flag is up (should be down in a non-configured CM)");
+  if(cm->flags & CM_EMIT_NO_LOCAL_BEGINS) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CM_EMIT_NO_LOCAL_BEGINS flag is up (should be down in a non-configured CM)");
+  if(cm->flags & CM_EMIT_NO_LOCAL_ENDS)   ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CM_EMIT_NO_LOCAL_ENDS flag is up (should be down in a non-configured CM)");
+  if(cm->flags & CMH_MLP7)                ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CMH_MLP7 flag is up (should be down in a non-configured CM)");
+
+
+  /* verify variables that should be NULL are NULL */
+  /* cp9-related variables */
+  if(cm->cp9        != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): cp9 is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->Lcp9       != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): Lcp9 is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->Rcp9       != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): Rcp9 is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->Tcp9       != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): Tcp9 is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->cp9map     != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): cp9map is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->cp9b       != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): cp9b is non-NULL (it should be NULL in a non-configured CM)");
+  /* matrices */
+  if(cm->hbmx       != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): hbmx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->ohbmx      != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): ohbmx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->ehbmx      != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): ehbmx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->shhbmx     != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): shhbmx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trhbmx     != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trhbmx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trohbmx    != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trohbmx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trehbmx    != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trehbmx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trshhbmx   != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trshhbmx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->smx        != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): smx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trsmx      != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trsmx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->cp9_mx     != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): cp9_mx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->cp9_bmx    != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): cp9_bmx is non-NULL (it should be NULL in a non-configured CM)");
+  /* other variables */
+  if(cm->mlp7       != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): mlp7 is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->root_trans != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): root_trans is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->qdbinfo != NULL && cm->qdbinfo->setby != CM_QDBINFO_SETBY_INIT) { 
+    ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): qdbinfo is not in its initial state (it should be NULL in a non-configured CM)");
+  }  
+  return eslOK;
+}
+
+/* Function: cm_Clone()
+ * Incept:   EPN, Thu Dec 15 05:43:25 2011
+ *
+ * Purpose:  Duplicates a CM.
+ *
+ *           For objects the CM refers to, new ones are created
+ *           either by cloning (e.g. cm->cp9, cm->mlp7) or by 
+ *           creating a new one (e.g. cm->hbmx, cm->smx).
+ *
+ * Args:     cm     - CM to clone
+ *           ret_cm - copy of CM, allocated here, must be free'd by caller.
+ * 
+ * Returns:  eslOK on success.
+ *           eslEMEM on memory error, errbuf filled.
+ *           eslEINCOMPAT on contract exception.
+ *           if(! eslOK) *ret_cm set to NULL, errbuf is filled.
+ */
+int 
+cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
 {
   int status;
   CM_t *new = NULL;
-  int i;
+  int i, v;
 
-  /* Check for flags that indicate the CM was manipulated after being
-   * read from a file. Return an error if any are found. */
-  if(cm->flags & CMH_BITS)        ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_BITS flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_LOCAL_BEGIN flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_LOCAL_END flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CMH_CP9)         ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_CP9 flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CMH_CP9_TRUNC)   ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_CP9_TRUNC flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CMH_SCANMATRIX)  ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CMH_SCANMATRIX flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CM_IS_SUB)       ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CM_IS_SUB flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CM_EMIT_NO_LOCAL_BEGINS) ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CM_EMIT_NO_LOCAL_BEGINS flag is up (it shouldn't be if the CM was just read from a file");
-  if(cm->flags & CM_EMIT_NO_LOCAL_ENDS)   ESL_FAIL(eslEINCOMPAT, errbuf, "CloneCMJustReadFromFile(): CM_EMIT_NO_LOCAL_ENDS flag is up (it shouldn't be if the CM was just read from a file");
+  if ((new = CreateCM(cm->nodes, cm->M, cm->clen, cm->abc)) == NULL) { status = eslEMEM; goto ERROR;}
+  /* CM is zeroed within CreateCMBody() which is called by CreateCM() */
 
-  if ((new = CreateCM(cm->nodes, cm->M, cm->clen, cm->abc)) == NULL) { status = eslEMEM; goto ERROR; }
-  CMZero(new);
+  if (esl_strdup(cm->name,      -1, &(new->name))      != eslOK) { status = eslEMEM; goto ERROR;}
+  if (cm->acc       != NULL) { if (esl_strdup(cm->acc,       -1, &(new->acc))       != eslOK) { status = eslEMEM; goto ERROR;} }
+  if (cm->desc      != NULL) { if (esl_strdup(cm->desc,      -1, &(new->desc))      != eslOK) { status = eslEMEM; goto ERROR;} }
+  if (cm->rf        != NULL) { if (esl_strdup(cm->rf,        -1, &(new->rf))        != eslOK) { status = eslEMEM; goto ERROR;} }
+  if (cm->consensus != NULL) { if (esl_strdup(cm->consensus, -1, &(new->consensus)) != eslOK) { status = eslEMEM; goto ERROR;} }
+  if(cm->map != NULL) { 
+    ESL_ALLOC(new->map, sizeof(int) * (new->clen+1));
+    esl_vec_ICopy(cm->map, (new->clen+1), new->map);
+  }
+  /* new->comlog was allocated in CreateCMBody() */
+  if (esl_strdup(cm->comlog->bcom,  -1, &(new->comlog->bcom))  != eslOK) { status = eslEMEM; goto ERROR;}
+  if (esl_strdup(cm->comlog->bdate, -1, &(new->comlog->bdate)) != eslOK) { status = eslEMEM; goto ERROR;}
+  if (esl_strdup(cm->comlog->ccom,  -1, &(new->comlog->ccom))  != eslOK) { status = eslEMEM; goto ERROR;}
+  if (esl_strdup(cm->comlog->cdate, -1, &(new->comlog->cdate)) != eslOK) { status = eslEMEM; goto ERROR;}
 
   new->flags       = cm->flags;
+  new->checksum    = cm->checksum;
+  new->nseq        = cm->nseq;
+  new->eff_nseq    = cm->eff_nseq;
+  new->ga          = cm->ga;
+  new->tc          = cm->tc;
+  new->nc          = cm->nc;
   new->offset      = cm->offset;
   new->clen        = cm->clen;
   new->W           = cm->W;
   new->beta_W      = cm->beta_W;
-  new->beta_qdb    = cm->beta_qdb;
+  new->pbegin      = cm->pbegin;
+  new->pend        = cm->pend;
   new->null2_omega = cm->null2_omega;
   new->null3_omega = cm->null3_omega;
   new->el_selfsc   = cm->el_selfsc;
-  new->nseq        = cm->nseq;
-  new->eff_nseq    = cm->eff_nseq;
-  new->checksum    = cm->checksum;
-  new->ga          = cm->ga;
-  new->tc          = cm->tc;
-  new->nc          = cm->nc;
+  new->iel_selfsc  = cm->el_selfsc;
   new->tau         = cm->tau;
+  new->config_opts = cm->config_opts;
+  new->align_opts  = cm->align_opts;
+  new->search_opts = cm->search_opts;
 
-  /* these arrays were alloc'ed in CreateCM() */
-  esl_vec_FCopy(cm->null,   new->abc->K, new->null);
+  esl_vec_FCopy(cm->null,   cm->abc->K, new->null);
   esl_vec_ICopy(cm->ndidx,  cm->M, new->ndidx);
   esl_vec_ICopy(cm->cfirst, cm->M, new->cfirst);
   esl_vec_ICopy(cm->cnum,   cm->M, new->cnum);
   esl_vec_ICopy(cm->plast,  cm->M, new->plast);
   esl_vec_ICopy(cm->pnum,   cm->M, new->pnum);
-  esl_vec_ICopy(cm->dmin,   cm->M, new->dmin);
-  esl_vec_ICopy(cm->dmax,   cm->M, new->dmax);
   for(i = 0; i < cm->M+1; i++) new->sttype[i] = cm->sttype[i];
   for(i = 0; i < cm->M+1; i++) new->stid[i]   = cm->stid[i];
 
   esl_vec_ICopy(cm->nodemap, cm->nodes, new->nodemap);
-  for(i = 0; i < cm->nodes;    i++) new->ndtype[i]  = cm->ndtype[i];
+  for(i = 0; i < cm->nodes; i++) new->ndtype[i]  = cm->ndtype[i];
 
-  esl_vec_FCopy(cm->e[0], cm->M * cm->abc->K * cm->abc->K, new->e[0]);
-  esl_vec_FCopy(cm->t[0], cm->M * MAXCONNECT,              new->t[0]);
-
-  if (esl_strdup(cm->name, -1, &(new->name))  != eslOK) { status = eslEMEM; goto ERROR; }
-  if (cm->acc       != NULL) { if (esl_strdup(cm->acc,       -1, &(new->acc))       != eslOK) { status = eslEMEM; goto ERROR; } }
-  if (cm->desc      != NULL) { if (esl_strdup(cm->desc,      -1, &(new->desc))      != eslOK) { status = eslEMEM; goto ERROR; } }
-  if (cm->rf        != NULL) { if (esl_strdup(cm->rf,        -1, &(new->rf))        != eslOK) { status = eslEMEM; goto ERROR; } }
-  if (cm->consensus != NULL) { if (esl_strdup(cm->consensus, -1, &(new->consensus)) != eslOK) { status = eslEMEM; goto ERROR; } }
-
-  if (esl_strdup(cm->comlog->bcom,  -1, &(new->comlog->bcom))  != eslOK) { status = eslEMEM; goto ERROR; }
-  if (esl_strdup(cm->comlog->bdate, -1, &(new->comlog->bdate)) != eslOK) { status = eslEMEM; goto ERROR; }
-  if (esl_strdup(cm->comlog->ccom,  -1, &(new->comlog->ccom))  != eslOK) { status = eslEMEM; goto ERROR; }
-  if (esl_strdup(cm->comlog->cdate, -1, &(new->comlog->cdate)) != eslOK) { status = eslEMEM; goto ERROR; }
+  if(cm->root_trans != NULL) { 
+    ESL_ALLOC(new->root_trans, sizeof(float) * cm->cnum[0]);
+    esl_vec_FCopy(cm->root_trans, cm->cnum[0], new->root_trans);
+  }
   
-  /* clone the CM expA */
+  /* emission and transition probabilities and scores (should be consistent with CMZero()) */
+  for (v = 0; v < cm->M; v++) {
+    esl_vec_FCopy(cm->e[v],      (cm->abc->K * cm->abc->K), new->e[v]);
+    esl_vec_FCopy(cm->t[v],      MAXCONNECT,                  new->t[v]);
+    esl_vec_FCopy(cm->tsc[v],    MAXCONNECT,                  new->tsc[v]);
+    esl_vec_FCopy(cm->esc[v],    (cm->abc->K * cm->abc->K), new->esc[v]);
+    esl_vec_FCopy(cm->lmesc[v],  cm->abc->Kp,                new->lmesc[v]);
+    esl_vec_FCopy(cm->rmesc[v],  cm->abc->Kp,                new->rmesc[v]);
+    esl_vec_ICopy(cm->itsc[v],   MAXCONNECT,                  new->itsc[v]);
+    esl_vec_ICopy(cm->iesc[v],   (cm->abc->K * cm->abc->K), new->iesc[v]);
+    esl_vec_ICopy(cm->ilmesc[v], cm->abc->Kp,                new->ilmesc[v]);
+    esl_vec_ICopy(cm->irmesc[v], cm->abc->Kp,                new->irmesc[v]);
+  }
+  esl_vec_FCopy(cm->begin,      cm->M, new->begin);
+  esl_vec_FCopy(cm->trbegin,    cm->M, new->trbegin);
+  esl_vec_FCopy(cm->end,        cm->M, new->end);
+  esl_vec_FCopy(cm->beginsc,    cm->M, new->beginsc);
+  esl_vec_FCopy(cm->trbeginsc,  cm->M, new->trbeginsc);
+  esl_vec_FCopy(cm->endsc,      cm->M, new->endsc);
+  esl_vec_ICopy(cm->ibeginsc,   cm->M, new->ibeginsc);
+  esl_vec_ICopy(cm->itrbeginsc, cm->M, new->itrbeginsc);
+  esl_vec_ICopy(cm->iendsc,     cm->M, new->iendsc);
+
+  /* oesc and ioesc (not yet allocated for in new) */
+  if(cm->oesc  != NULL && cm->ioesc == NULL) ESL_XFAIL(eslEINCOMPAT, errbuf, "cloning cm, cm->oesc != NULL and cm->ioesc == NULL");
+  if(cm->oesc  == NULL && cm->ioesc != NULL) ESL_XFAIL(eslEINCOMPAT, errbuf, "cloning cm, cm->oesc == NULL and cm->ioesc != NULL");
+  if(cm->oesc  != NULL && cm->ioesc != NULL) { 
+    if((status = CloneOptimizedEmitScores(cm, new, errbuf)) != eslOK) goto ERROR;
+  }
+
+  /* QDBInfo */
+  if(cm->qdbinfo != NULL) { 
+    if((status = CopyCMQDBInfo(cm->qdbinfo, new->qdbinfo, errbuf)) != eslOK) return status;
+  }
+
+  /* cp9 HMMs */
+  if(cm->cp9  != NULL) { if((new->cp9  = cp9_Clone(cm->cp9))  == NULL) ESL_XFAIL(eslFAIL, errbuf, "Cloning CM, couldn't clone cp9");  }
+  if(cm->Lcp9 != NULL) { if((new->Lcp9 = cp9_Clone(cm->Lcp9)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Cloning CM, couldn't clone Lcp9"); }
+  if(cm->Rcp9 != NULL) { if((new->Rcp9 = cp9_Clone(cm->Rcp9)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Cloning CM, couldn't clone Rcp9"); }
+  if(cm->Tcp9 != NULL) { if((new->Tcp9 = cp9_Clone(cm->Tcp9)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Cloning CM, couldn't clone Tcp9"); }
+  /* cp9map, don't clone, just make a new one */
+  if(cm->cp9map != NULL) {
+    new->cp9map = AllocCP9Map(new);
+    CP9_map_cm2hmm(new, new->cp9map, 0); /* 0 is debug_level, for debugging output */
+    /* cp9 bands and cp9 matrices, don't clone, just make new ones (these grow to fit a target sequence) */
+  }
+  if(cm->cp9b    != NULL) new->cp9b   = AllocCP9Bands(new->M, new->cp9->M);
+  if(cm->cp9_mx  != NULL) new->cp9_mx = CreateCP9Matrix(1, new->cp9->M);
+  if(cm->cp9_bmx != NULL) new->cp9_bmx = CreateCP9Matrix(1, new->cp9->M);
+
+  /* p7 HMMs */
+  if(cm->mlp7 != NULL) { 
+    if((new->mlp7 = p7_hmm_Clone(cm->mlp7)) == NULL) { status = eslEMEM; goto ERROR; }
+  }
+  if(cm->fp7  != NULL) { 
+    if((new->fp7  = p7_hmm_Clone(cm->fp7))  == NULL) { status = eslEMEM; goto ERROR; }
+    esl_vec_FCopy(cm->fp7_evparam, CM_p7_NEVPARAM, new->fp7_evparam);
+  }
+  
+  /* CM HMM banded DP matrices, don't clone these, just make new ones (these grow to fit a target sequence) */
+  if(cm->hbmx     != NULL) new->hbmx     = cm_hb_mx_Create(new->M);
+  if(cm->ohbmx    != NULL) new->ohbmx    = cm_hb_mx_Create(new->M);
+  if(cm->trhbmx   != NULL) new->trhbmx   = cm_tr_hb_mx_Create(new);
+  if(cm->trohbmx  != NULL) new->trohbmx  = cm_tr_hb_mx_Create(new);
+  if(cm->ehbmx    != NULL) new->ehbmx    = cm_hb_emit_mx_Create(new);
+  if(cm->trehbmx  != NULL) new->trehbmx  = cm_tr_hb_emit_mx_Create(new);
+  if(cm->shhbmx   != NULL) new->shhbmx   = cm_hb_shadow_mx_Create(new);
+  if(cm->trshhbmx != NULL) new->trshhbmx = cm_tr_hb_shadow_mx_Create(new);
+
+  /* CM scan matrices, don't clone these either, just make new ones.
+   * Importantly we've already copied cm->qdbinfo into new->qdbinfo.
+   */
+  if(cm->smx   != NULL) { if((status = cm_scan_mx_Create   (new, errbuf, cm->smx->floats_valid,   cm->smx->ints_valid,   &(new->smx)))   != eslOK) goto ERROR; }
+  if(cm->trsmx != NULL) { if((status = cm_tr_scan_mx_Create(new, errbuf, cm->trsmx->floats_valid, cm->trsmx->ints_valid, &(new->trsmx))) != eslOK) goto ERROR; }
+
+  /* expA */
   if(cm->expA != NULL) { 
     ESL_ALLOC(new->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
     for(i = 0; i < EXP_NMODES; i++) { 
@@ -2927,20 +3064,8 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
     }
   }
 
-  /* clone the alignment map */
-  if(cm->map != NULL) { 
-    ESL_ALLOC(new->map, sizeof(int) * (new->clen+1));
-    esl_vec_ICopy(cm->map, (new->clen+1), new->map);
-  }
-
-  /* clone the p7 models, if any */
-  if(cm->mlp7 != NULL) { 
-    new->mlp7 = p7_hmm_Clone(cm->mlp7);
-  }
-  if(cm->fp7 != NULL) { 
-    new->fp7 = p7_hmm_Clone(cm->fp7);
-    esl_vec_FCopy(cm->fp7_evparam, CM_p7_NEVPARAM, new->fp7_evparam);
-  }
+  /* create the emit map */
+  if(cm->emap != NULL) new->emap = CreateEmitMap(new);
 
   *ret_cm = new;
 
@@ -2951,10 +3076,9 @@ CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm)
     FreeCM(new);
     *ret_cm = NULL;
   }
-  ESL_FAIL(status, errbuf, "CloneCMJustReadFromFile() out of memory");
-  return status;
+  if(status == eslEMEM) ESL_FAIL(status, errbuf, "Cloning CM, out of memory");
+  return status; /* reached if status != eslEMEM, errbuf was filled earlier */
 }
-
 
 /* Function: DumpCMFlags()
  * Date:     EPN, Wed Jun 22 19:24:54 2011
@@ -2980,13 +3104,8 @@ DumpCMFlags(FILE *fp, CM_t *cm)
   if(cm->flags & CMH_LOCAL_BEGIN)          fprintf(fp, "\tCMH_LOCAL_BEGIN\n");
   if(cm->flags & CMH_LOCAL_END)            fprintf(fp, "\tCMH_LOCAL_END\n");
   if(cm->flags & CMH_EXPTAIL_STATS)        fprintf(fp, "\tCMH_EXPTAIL_STATS\n");
-  if(cm->flags & CMH_FILTER_STATS)         fprintf(fp, "\tCMH_FILTER_STATS\n");
-  if(cm->flags & CMH_QDB)                  fprintf(fp, "\tCMH_QDB\n");
-  if(cm->flags & CMH_QDB_LOCAL)            fprintf(fp, "\tCMH_QDB_LOCAL\n");
-  if(cm->flags & CMH_QDB_GLOBAL)           fprintf(fp, "\tCMH_QDB_GLOBAL\n");
   if(cm->flags & CMH_CP9)                  fprintf(fp, "\tCMH_CP9\n");
   if(cm->flags & CMH_CP9_TRUNC)            fprintf(fp, "\tCMH_CP9_TRUNC\n");
-  if(cm->flags & CMH_SCANMATRIX)           fprintf(fp, "\tCMH_SCANMATRIX\n");
   if(cm->flags & CMH_MLP7)                 fprintf(fp, "\tCMH_MLP7\n");
   if(cm->flags & CMH_FP7)                  fprintf(fp, "\tCMH_FP7\n");
 
@@ -3288,7 +3407,6 @@ FCalcOptimizedEmitScores(CM_t *cm)
   return NULL; /* NEVERREACHED */
 }
 
-
 /* Function: ICalcOptimizedEmitScores()
  * Date:     EPN, Tue Nov  6 17:27:34 2007
  *
@@ -3412,7 +3530,6 @@ ICalcOptimizedEmitScores(CM_t *cm)
   return NULL; /* NEVERREACHED */
 }
 
-
 /* Function: ICopyOptimizedEmitScoresFromFloats()
  * Date:     EPN, Wed Aug 20 14:47:13 2008
  *
@@ -3514,6 +3631,76 @@ ICopyOptimizedEmitScoresFromFloats(CM_t *cm, float **oesc)
  ERROR:
   cm_Fail("memory allocation error.");
   return NULL; /* NEVERREACHED */
+}
+
+/* Function: CloneOptimizedEmitScores()
+ * Date:     EPN, Thu Dec 15 09:27:06 2011
+ *
+ * Purpose:  Allocate <oesc> and <ioesc> in <dest> and 
+ *           copy <src->oesc> and <src->ioesc> into it.
+ *            
+ * Returns:  eslOK on success.
+ *           eslEMEM if out of memory, errbuf filled.
+ *           eslEINCOMPAT if <dest> is not the same size as <src>, or <dest->oesc> != NULL or <dest->ioesc>, errbuf filled
+ */
+int 
+CloneOptimizedEmitScores(const CM_t *src, CM_t *dest, char *errbuf)
+{
+  int    status;
+  int    v;
+  int    nsinglets = 0;
+  int    npairs    = 0;
+  float *fptr_to_start; /* points to block allocated to cm->oesc[0],  nec b/c it gets set to NULL, because v == 0 is non-emitter */
+  int   *iptr_to_start; /* points to block allocated to cm->ioesc[0], nec b/c it gets set to NULL, because v == 0 is non-emitter */
+  int    cur_cell;
+
+  if(src->M         != dest->M)         ESL_FAIL(eslEINCOMPAT, errbuf, "cloning optimized emit scores, src->M != dest->M");
+  if(src->nodes     != dest->nodes)     ESL_FAIL(eslEINCOMPAT, errbuf, "cloning optimized emit scores, src->nodes != dest->nodes");
+  if(src->clen      != dest->clen)      ESL_FAIL(eslEINCOMPAT, errbuf, "cloning optimized emit scores, src->clen != dest->clen");
+  if(src->abc->type != dest->abc->type) ESL_FAIL(eslEINCOMPAT, errbuf, "cloning optimized emit scores, src->abc->type != dest->abc->type");
+  if(dest->oesc     != NULL)            ESL_FAIL(eslEINCOMPAT, errbuf, "cloning optimized emit scores, dest->oesc != NULL");
+  if(dest->ioesc    != NULL)            ESL_FAIL(eslEINCOMPAT, errbuf, "cloning optimized emit scores, dest->ioesc != NULL");
+  if(src->oesc      == NULL)            ESL_FAIL(eslEINCOMPAT, errbuf, "cloning optimized emit scores, src->oesc == NULL");
+  if(src->ioesc     == NULL)            ESL_FAIL(eslEINCOMPAT, errbuf, "cloning optimized emit scores, src->ioesc == NULL");
+
+  /* count pairs, singlets */
+  for(v = 0; v < src->M; v++) {
+    if(src->sttype[v] == IL_st || src->sttype[v] == ML_st || src->sttype[v] == IR_st || src->sttype[v] == MR_st) nsinglets++;
+    if(src->sttype[v] == MP_st) npairs++;
+  }
+  /* allocate and fill (should be consistent with CalcFOptimizedEmitScores()) */
+  ESL_ALLOC(dest->oesc,     sizeof(float *) * (src->M));
+  ESL_ALLOC(dest->oesc[0],  sizeof(float)   * ((src->abc->Kp * nsinglets) + (src->abc->Kp * src->abc->Kp * npairs)));
+  ESL_ALLOC(dest->ioesc,    sizeof(int *)   * (src->M));
+  ESL_ALLOC(dest->ioesc[0], sizeof(int)     * ((src->abc->Kp * nsinglets) + (src->abc->Kp * src->abc->Kp * npairs)));
+  fptr_to_start = dest->oesc[0];
+  iptr_to_start = dest->ioesc[0];
+  cur_cell = 0;
+  for(v = 0; v < src->M; v++) {
+    if(src->sttype[v] == IL_st || src->sttype[v] == ML_st || src->sttype[v] == IR_st || src->sttype[v] == MR_st) { 
+      dest->oesc[v]  = fptr_to_start + cur_cell;
+      dest->ioesc[v] = iptr_to_start + cur_cell;
+      esl_vec_FCopy(src->oesc[v],  src->abc->Kp, dest->oesc[v]);
+      esl_vec_ICopy(src->ioesc[v], src->abc->Kp, dest->ioesc[v]);
+      cur_cell += src->abc->Kp;
+    }
+    else if(src->sttype[v] == MP_st) { 
+      dest->oesc[v]  = fptr_to_start + cur_cell;
+      dest->ioesc[v] = iptr_to_start + cur_cell;
+      esl_vec_FCopy(src->oesc[v],  src->abc->Kp * src->abc->Kp, dest->oesc[v]);
+      esl_vec_ICopy(src->ioesc[v], src->abc->Kp * src->abc->Kp, dest->ioesc[v]);
+      cur_cell += src->abc->Kp * src->abc->Kp;
+    }
+    else { 
+      dest->oesc[v] = NULL; 
+      dest->ioesc[v] = NULL; 
+    }
+  }
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "out of memory");
+  return status; /* NEVERREACHED */
 }
 
 /* Function: DumpOptimizedEmitScores()
@@ -3681,4 +3868,54 @@ ICalcInitDPScores(CM_t *cm)
  ERROR:
   cm_Fail("memory allocation error.");
   return NULL; /* NEVERREACHED */
+}
+
+
+/************************************************************************
+ * Functions stolen from HMMER 2.4 for use with CM plan 9 HMMs.
+ * Eventually, these should go away, replaced with Easel funcs. 
+ * These first 3 were stolen from HMMER:mathsupport.c
+ * 
+ * Score2Prob()
+ * Prob2Score()
+ * Scorify()
+ * 
+ * NOTE: ILogSum() (and auxiliary funcs associated with it) used to be here
+ * but moved to logsum.c (EPN, Sat Sep  8 15:49:47 2007)
+ */
+
+/* Function: Prob2Score()
+ * 
+ * Purpose:  Convert a probability to a scaled integer log_2 odds score. 
+ *           Round to nearest integer (i.e. note use of +0.5 and floor())
+ *           Return the score. 
+ */
+int
+Prob2Score(float p, float null)
+{
+  if(p == 0.0) return -INFTY;
+  else         return (int) floor(0.5 + INTSCALE * sreLOG2(p/null));
+}
+
+/* Function: Score2Prob()
+ * 
+ * Purpose:  Convert an integer log_2 odds score back to a probability;
+ *           needs the null model probability, if any, to do the conversion.
+ */
+float 
+Score2Prob(int sc, float null)
+{
+  if (sc == -INFTY) return 0.;
+  else              return (null * sreEXP2((float) sc / INTSCALE));
+}
+
+/* Function: Scorify()
+ * 
+ * Purpose:  Convert a scaled integer log-odds score to a floating
+ *           point score for output. (could be a macro but who cares.)
+ */
+float 
+Scorify(int sc)
+{
+  return ((float) sc / INTSCALE);
 }

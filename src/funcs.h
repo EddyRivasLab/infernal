@@ -59,7 +59,7 @@ extern int   StateMapsDelete(char st);
 extern int   NodeMapsLeft(char ndtype);
 extern int   NodeMapsRight(char ndtype);
 extern int   StateIsDetached(CM_t *cm, int v);
-extern CM_t *CMRebalance(CM_t *cm);
+extern int   CMRebalance(CM_t *cm, char *errbuf, CM_t **ret_new_cm);
 extern int **IMX2Alloc(int rows, int cols);
 extern void  IMX2Free(int **mx);
 extern float rsearch_calculate_gap_penalty (char from_state, char to_state, int from_node, int to_node, float input_alpha, float input_beta, float input_alphap, float input_betap);
@@ -84,9 +84,8 @@ extern int   IntDigits(int i);
 extern ComLog_t * CreateComLog();
 extern void       FreeComLog(ComLog_t *clog);
 extern int        CopyComLog(const ComLog_t *src, ComLog_t *dest);
-extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len);
+extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avgL_loc, float *ret_avgL_glb);
 extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
-extern int        CloneCMJustReadFromFile(CM_t *cm, char *errbuf, CM_t **ret_cm);
 extern void       DumpCMFlags(FILE *fp, CM_t *cm);
 extern ESL_GETOPTS *cm_CreateDefaultApp(ESL_OPTIONS *options, int nargs, int argc, char **argv, char *banner, char *usage);
 extern CM_P7_OM_BLOCK *cm_p7_oprofile_CreateBlock(int size);
@@ -94,14 +93,18 @@ extern void            cm_p7_oprofile_DestroyBlock(CM_P7_OM_BLOCK *block);
 extern float **FCalcOptimizedEmitScores      (CM_t *cm);
 extern int   **ICalcOptimizedEmitScores      (CM_t *cm);
 extern int   **ICopyOptimizedEmitScoresFromFloats(CM_t *cm, float **oesc);
+extern int     CloneOptimizedEmitScores      (const CM_t *src, CM_t *dest, char *errbuf);
 extern void    DumpOptimizedEmitScores       (CM_t *cm, FILE *fp);
 extern void    FreeOptimizedEmitScores       (float **fesc_vAA, int **iesc_vAA, int M);
 extern float **FCalcInitDPScores             (CM_t *cm);
 extern int   **ICalcInitDPScores             (CM_t *cm);
+extern int     cm_nonconfigured_Verify(CM_t *cm, char *errbuf);
+extern int     cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm);
+extern int     Prob2Score(float p, float null);
+extern float   Score2Prob(int sc, float null);
+extern float   Scorify(int sc);
 
 /* from dispatch.c */
-extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, int hit_len_guess, 
-			      CM_TOPHITS **hitlistA, float size_limit, int *ret_flen, float *ret_sc);
 extern int DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, 
 			      int bdump_level, int debug_level, int silent_mode, int do_null3, TruncOpts_t *tro, ESL_RANDOMNESS *r, float size_limit, FILE *ofp, FILE *sfp, int iidx,
 			      int pad7, int len7, float sc7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7);
@@ -154,26 +157,26 @@ extern int  cm_TrPostCodeHB         (CM_t *cm, char *errbuf,               int L
 extern int  cm_TrFillFromMode       (char mode, int *ret_fill_L, int *ret_fill_R, int *ret_fill_T);
 
 /* from cm_dpsearch.c */
-extern int  FastCYKScan      (CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
-extern int  RefCYKScan       (CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
-extern int  FastIInsideScan  (CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float **ret_vsc, float *ret_sc);
-extern int  RefIInsideScan   (CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float **ret_vsc, float *ret_sc);
-extern int  FastFInsideScan  (CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float **ret_vsc, float *ret_sc);
-extern int  RefFInsideScan   (CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float **ret_vsc, float *ret_sc);
-extern int  FastCYKScanHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, CM_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
-extern int  FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, CM_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
+extern int  FastCYKScan      (CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
+extern int  RefCYKScan       (CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
+extern int  FastIInsideScan  (CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
+extern int  RefIInsideScan   (CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
+extern int  FastFInsideScan  (CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
+extern int  RefFInsideScan   (CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
+extern int  FastCYKScanHB    (CM_t *cm, char *errbuf, CM_HB_MX   *mx,  float size_limit, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
+extern int  FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX   *mx,  float size_limit, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
 extern int  cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, int correct_for_first_W, float **ret_vcalcs, float *ret_calcs);
 extern int  DetermineSeqChunksize(int nproc, int L, int W);
 
 /* from cm_dpsearch_trunc.c */
-extern int  RefTrCYKScan    (CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
+extern int  RefTrCYKScan    (CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
 			     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc);
-extern int  RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+extern int  RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 			     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc);
-extern int  TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
-			CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc);
-extern int  FTrInsideScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
-			    CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc);
+extern int  TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
+			int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc);
+extern int  FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
+			    int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc);
 
 /* from cm_dpsmall.c */
 extern float CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, 
@@ -242,12 +245,9 @@ extern int     cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc
 extern int     cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset);
 
 /* from cm_modelconfig.c */
-extern int   ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t *mother_map);
-extern void  ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
-extern void  ConfigGlobal(CM_t *cm);
-extern void  ConfigNoLocalEnds(CM_t *cm, int do_cp9s);
-extern void  ConfigLocalEnds(CM_t *cm, float p_internal_exit);
-extern int   ConfigQDBAndW(CM_t *cm, int do_calc_qdb);
+extern int   cm_Configure   (CM_t *cm, char *errbuf);
+extern int   cm_ConfigureSub(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map);
+extern int   cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float *begin, float *trbegin);
 
 /* from cm_modelmaker.c */
 extern int  HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_mtr);
@@ -336,24 +336,15 @@ extern int               cm_tr_hb_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR
 extern void              cm_tr_hb_emit_mx_Destroy    (CM_TR_HB_EMIT_MX *mx);
 extern int               cm_tr_hb_emit_mx_SizeNeeded (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_l_ncells, int64_t *ret_r_ncells, float *ret_Mb);
 
-extern ScanMatrix_t    *cm_CreateScanMatrix           (CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
-extern int              cm_CreateScanMatrixForCM      (CM_t *cm, int do_float, int do_int);           
-extern int              cm_FloatizeScanMatrix         (CM_t *cm, ScanMatrix_t *smx);
-extern int              cm_IntizeScanMatrix           (CM_t *cm, ScanMatrix_t *smx);
-extern int              cm_UpdateScanMatrixForCM      (CM_t *cm);
-extern int              cm_FreeFloatsFromScanMatrix   (CM_t *cm, ScanMatrix_t *smx);
-extern int              cm_FreeIntsFromScanMatrix     (CM_t *cm, ScanMatrix_t *smx);
-extern void             cm_FreeScanMatrix             (CM_t *cm, ScanMatrix_t *smx);
-extern void             cm_FreeScanMatrixForCM        (CM_t *cm);
-extern void             cm_DumpScanMatrixAlpha        (CM_t *cm, int j, int i0, int doing_float);
+extern int   cm_scan_mx_Create    (CM_t *cm, char *errbuf, int do_float, int do_int, CM_SCAN_MX **ret_smx);
+extern float cm_scan_mx_SizeNeeded(CM_t *cm, char *errbuf, int do_float, int do_int);
+extern void  cm_scan_mx_Destroy   (CM_t *cm, CM_SCAN_MX *smx);
+extern void  cm_scan_mx_Dump      (CM_t *cm, int j, int i0, int qdbidx, int doing_float);
 
-extern TrScanMatrix_t  *cm_CreateTrScanMatrix         (CM_t *cm, int W, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
-extern int              cm_FloatizeTrScanMatrix       (CM_t *cm, TrScanMatrix_t *trsmx);
-extern int              cm_IntizeTrScanMatrix         (CM_t *cm, TrScanMatrix_t *trsmx);
-extern int              cm_FreeFloatsFromTrScanMatrix (CM_t *cm, TrScanMatrix_t *trsmx);
-extern int              cm_FreeIntsFromTrScanMatrix   (CM_t *cm, TrScanMatrix_t *trsmx);
-extern void             cm_FreeTrScanMatrix           (CM_t *cm, TrScanMatrix_t *trsmx);
-extern void             cm_DumpTrScanMatrixAlpha      (CM_t *cm, TrScanMatrix_t *trsmx, int j, int i0, int doing_float);
+extern int   cm_tr_scan_mx_Create    (CM_t *cm, char *errbuf, int do_float, int do_int, CM_TR_SCAN_MX **ret_smx);
+extern float cm_tr_scan_mx_SizeNeeded(CM_t *cm, char *errbuf, int do_float, int do_int);
+extern void  cm_tr_scan_mx_Destroy   (CM_t *cm, CM_TR_SCAN_MX *smx);
+extern void  cm_tr_scan_mx_Dump      (CM_t *cm, int j, int i0, int qdbidx, int doing_float);
 
 extern TruncOpts_t *   CreateTruncOpts();
 
@@ -397,22 +388,23 @@ extern char         ParsetreeMode(Parsetree_t *tr);
 
 /* from cm_qdband.c */
 extern void     BandExperiment(CM_t *cm);
-extern double **BandDistribution(CM_t *cm, int W, int do_local);
-extern int      BandCalculationEngine(CM_t *cm, int W, double p_thresh, 
-				      int save_densities,
-				      int **ret_dmin, int **ret_dmax, 
-				      double ***ret_gamma, float **ret_seqlen);
-extern int      BandTruncationNegligible(double *density, int b, int W, double *ret_beta);
-extern int      BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma);
+extern int      CalculateQueryDependentBands(CM_t *cm, char *errbuf, CM_QDBINFO *qdbinfo, double beta_W, int *ret_W, double **ret_gamma0_loc, double **ret_gamma0_glb);
+extern int      BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int save_densities, int *ret_W, double ***ret_gamma, double **ret_gamma0_loc, double **ret_gamma0_glb);
+extern int      BandTruncationNegligible(double *density, int b, int Z, double *ret_beta);
+extern int      BandMonteCarlo(CM_t *cm, int nsample, int Z, double ***ret_gamma);
 extern void     FreeBandDensities(CM_t *cm, double **gamma);
-extern void     BandBounds(double **gamma, int M, int W, double p, 
+extern void     BandBounds(double **gamma, int M, int Z, double p, 
 			   int **ret_min, int **ret_max);
-extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int v, int W);
-
+extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int v, int Z);
 extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
 extern void     ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
 extern void     qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_level);
-extern int      cm_GetNCalcsPerResidueForGivenBeta(CM_t *cm, char *errbuf, int no_qdb, double beta, float *ret_cm_ncalcs_per_res, int *ret_W);
+extern CM_QDBINFO  *CreateCMQDBInfo(int M, int clen);
+extern void         FreeCMQDBInfo(CM_QDBINFO *qdbinfo);
+extern int          CopyCMQDBInfo(const CM_QDBINFO *src, CM_QDBINFO *dst, char *errbuf);
+extern CM_QDBINFO * CloneCMQDBInfo(CM_QDBINFO *qdbinfo);
+extern void         DumpCMQDBInfo(FILE *fp, CM_t *cm, CM_QDBINFO *qdbinfo);
+extern int          CheckCMQDBInfo(CM_QDBINFO *qdbinfo, double beta1, int do_check1, double beta2, int do_check2);
 
 /* from cm_submodel.c */
 extern int  build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, int print_flag);
@@ -433,6 +425,7 @@ extern void         FreeSubInfo(CMSubInfo_t *subinfo);
 extern void  debug_print_cm_params(FILE *fp, CM_t *cm);
 extern int   SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map);
 extern float ** SubFCalcAndCopyOptimizedEmitScoresFromMother(CM_t *cm, CM_t *mother_cm, CMSubMap_t *mother_map);
+extern void  CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
 
 /* from cp9.c */
 extern CP9_t *AllocCPlan9(int M, const ESL_ALPHABET *abc);
@@ -444,6 +437,8 @@ extern void   CPlan9SetNullModel(CP9_t *hmm, float *null, float p1);
 extern int    cp9_GetNCalcsPerResidue(CP9_t *cp9, char *errbuf, float *ret_cp9_ncalcs_per_res);
 extern CP9_t *cp9_Clone(CP9_t *cp9);    
 extern int    cp9_Copy(const CP9_t *src, CP9_t *dst);
+extern void   CP9Logoddsify(CP9_t *hmm);
+extern void   CPlan9Renormalize(CP9_t *hmm);
 
 /* from cp9_dp.c */
 extern int cp9_Viterbi(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
@@ -457,17 +452,9 @@ extern int cp9_Backward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int 
 extern int cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq);
 
 /* from cp9_modelconfig.c */
-extern void  CP9Logoddsify(CP9_t *hmm);
-extern void  CPlan9Renormalize(CP9_t *hmm);
 extern void  CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit, int do_match_local_cm, int first_cm_ndtype);
 extern void  CPlan9ELConfig(CP9_t *cp9, CM_t *cm);
-extern void  CPlan9NoEL(CP9_t *cp9);
-extern void  CPlan9InitEL(CP9_t *cp9, CM_t *cm);
 extern void  CPlan9RenormalizeExits(CP9_t *hmm, int spos);
-extern int   Prob2Score(float p, float null);
-extern float Score2Prob(int sc, float null);
-extern float Scorify(int sc);
-extern void  CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
 
 /* from cp9_modelmaker.c */
 extern CP9Map_t *AllocCP9Map(CM_t *cm);
@@ -486,6 +473,7 @@ extern void debug_print_phi_cp9(CP9_t *hmm, double **phi);
 extern int  MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, char *ss, char **ret_s);
 extern int  sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 					  float psi_vs_phi_threshold, int debug_level);
+extern void  CPlan9InitEL(CP9_t *cp9, CM_t *cm);
 
 /* from cp9_mx.c */
 extern CP9_MX *CreateCP9Matrix(int N, int M);
@@ -615,7 +603,7 @@ extern int p7_ReconfigLength3PrimeTrunc(P7_PROFILE *gm, int L);
 
 /* from cm_p7_modelmaker.c */
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, CP9_t *cp9, P7_HMM **ret_p7);
-extern int          cm_cp9_to_p7(CM_t *cm, CP9_t *cp9);
+extern int          cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf);
 extern int          cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN, double ElfT, double EgfT, double *ret_gfmu, double *ret_gflambda);
 extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, int L, int N, double lambda, double tailp, double *ret_tau);
 extern int          cm_SetFilterHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda);
@@ -659,11 +647,11 @@ extern float FLogsum(float p1, float p2);
 
 /* from mpisupport.c */
 #if HAVE_MPI
-extern int cm_master_MPIBcast(CM_t *cm, int tag, MPI_Comm comm, char **buf, int *nalloc);
-extern int cm_worker_MPIBcast(int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_ALPHABET **abc, CM_t **ret_cm);
-extern int cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t **ret_cm);
-extern int cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm);
-extern int cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
+extern int cm_master_MPIBcast(CM_t *cm, char *errbuf, int tag, MPI_Comm comm, char **buf, int *nalloc);
+extern int cm_worker_MPIBcast(char *errbuf, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_ALPHABET **abc, CM_t **ret_cm);
+extern int cm_nonconfigured_MPIUnpack(ESL_ALPHABET **abc, char *errbuf, char *buf, int n, int *pos, MPI_Comm comm, CM_t **ret_cm);
+extern int cm_nonconfigured_MPIPack(CM_t *cm, char *errbuf, char *buf, int n, int *pos, MPI_Comm comm);
+extern int cm_nonconfigured_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
 extern int cm_dsq_MPISend(ESL_DSQ *dsq, int L, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
 extern int cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_DSQ **ret_dsq, int *ret_L);
 extern int cm_seqs_to_aln_MPISend(seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to_send, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
@@ -734,15 +722,12 @@ extern int        GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *r
 extern int        GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, double **ret_gc_ct);
 extern int        E2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, float E, float *ret_sc);
 extern double     Score2E(float x, double mu, double lambda, long eff_dbsize);
-extern int        CM2FthrMode(CM_t *cm, char *errbuf, int search_opts, int *ret_fthr_mode);
 extern int        ExpModeIsLocal(int exp_mode);
-extern int        ExpModeIsForCM(int exp_mode);
-extern int        ExpModeToFthrMode(int exp_mode);
+extern int        ExpModeIsInside(int exp_mode);
 extern ExpInfo_t *CreateExpInfo();
 extern void       SetExpInfo(ExpInfo_t *exp, double lambda, double mu_orig, long dbsize, int nrandhits, double tailp);
 extern ExpInfo_t *DuplicateExpInfo(ExpInfo_t *src);
 extern char      *DescribeExpMode(int exp_mode);
-extern char      *DescribeFthrMode(int fthr_mode);
 extern int        UpdateExpsForDBSize(CM_t *cm, char *errbuf, long dbsize);
 extern int        CreateGenomicHMM(const ESL_ALPHABET *abc, char *errbuf, double **ret_sA, double ***ret_tAA, double ***ret_eAA, int *ret_nstates);
 extern int        SampleGenomicSequenceFromHMM(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, char *errbuf, double *sA, double **tAA, double **eAA, int nstates, int L, ESL_DSQ **ret_dsq);
@@ -770,14 +755,14 @@ extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
 
 extern int cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
 extern int cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
-extern int cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int need_fsmx, int need_smx, int *fcyk_dmin, int *fcyk_dmax, int *final_dmin, int *final_dmax, P7_OPROFILE *om, P7_BG *bg, int64_t cur_cm_idx);
+extern int cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, P7_OPROFILE *om, P7_BG *bg, int64_t cur_cm_idx);
 extern int cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
 extern int cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
 extern int cm_pli_p7Filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
 extern int cm_pli_p7EnvelopeDef     (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
-extern int cm_pli_CMStage           (CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
+extern int cm_pli_CMStage           (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
 extern int cm_pli_AlignHit          (CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int do_trunc, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b);
-extern int cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, int cm_config_opts, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
+extern int cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
 extern int cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *w);
 extern int cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct);
 extern char *cm_pli_DescribePass(CM_PIPELINE *pli, int pass_idx);

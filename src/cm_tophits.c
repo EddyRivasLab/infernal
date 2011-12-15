@@ -63,7 +63,7 @@ cm_tophits_Create(void)
   h->is_sorted_by_score    = TRUE;  /* but only because there's 0 hits */
   h->is_sorted_by_position = FALSE; /* actually this is true with 0 hits, but for safety, 
 				     * we don't want both sorted_* fields as TRUE */
-  h->hit[0]    = h->unsrt;         /* if you're going to call it "sorted" when it contains just one hit, you need this */
+  h->hit[0]    = h->unsrt;          /* if you're going to call it "sorted" when it contains just one hit, you need this */
   return h;
 
  ERROR:
@@ -1970,7 +1970,7 @@ main(int argc, char **argv)
   esl_getopts_Destroy(go);
   return eslOK;
 }
-#endif /*p7TOPHITS_TESTDRIVE*/
+#endif /*CM_TOPHITS_TESTDRIVE*/
 /*****************************************************************
  * @LICENSE@
  *****************************************************************/

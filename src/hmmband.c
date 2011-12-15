@@ -1293,51 +1293,6 @@ ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
 }
 
 /*****************************************************************************
- * EPN, Thu Apr 26 13:27:16 2007
- * Function: combine_qdb_hmm_d_bands()
- *
- * Purpose:  Given hdmin and hdmax bands, and query dependent bands (QDBs)
- *           in cm->dmin and cm->dmax, combine them by redefining the 
- *           hdmin and hdmax bands where necessary:
- *           hdmin[v][j] = max(hdmin[v][j], dmin[v])
- *           hdmax[v][j] = min(hdmin[v][j], dmin[v])
- * 
- * arguments:
- *
- * CM_t *cm         the CM 
- * int *jmin        jmin[v] = first position in band on j for state v
- * int *jmax        jmax[v] = last position in band on j for state v
- * int **hdmin      hdmin[v][j0] = first position in band on d for state v
- *                                 and j position: j = j0+jmin[v].
- *                  Redefined in this function.
- * int **hdmax      hdmax[v][j0] = last position in band on d for state v
- *                                 and j position: j = j0+jmin[v].
- *                  Redefined in this function.
- *****************************************************************************/
-void
-combine_qdb_hmm_d_bands(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax)
-{
-  int v;            /* counter over states of the CM */
-  int jp;           /* counter over valid j's, but offset. jp+jmin[v] = actual j */
-
-  /* Contract check */
-  if(!(cm->flags & CMH_QDB))
-    cm_Fail("ERROR, in combine_qdb_hmm_d_bands(), CM QDBs invalid.\n");
-  if(cm->dmin == NULL || cm->dmax == NULL)
-    cm_Fail("ERROR, in combine_qdb_hmm_d_bands() but cm->dmin and/or cm->dmax is NULL.\n");
-
-  for(v = 0; v < cm->M; v++)
-    {
-      for(jp = 0; jp <= (jmax[v]-jmin[v]); jp++)
-	{
-	  hdmin[v][jp] = hdmin[v][jp] > cm->dmin[v] ? hdmin[v][jp] : cm->dmin[v];
-	  hdmax[v][jp] = hdmax[v][jp] < cm->dmax[v] ? hdmax[v][jp] : cm->dmax[v];
-	}
-    }
-}
-
-
-/*****************************************************************************
  * EPN 11.04.05
  * Function: hd2safe_hd_bands
  *
@@ -4752,13 +4707,6 @@ cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, 
   }
 #endif
 
-  if(debug_level > 0) { 
-    printf("bands on i\n");
-    debug_print_bands(stdout, cm, imin, imax);
-    
-    printf("bands on j\n");
-    debug_print_bands(stdout, cm, jmin, jmax);
-  }
   /* debug_print_ij_bands(cm); */
 
   free(nss_imin);

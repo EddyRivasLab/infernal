@@ -22,7 +22,7 @@
  * The 1.0 functions that end in 'HB()' use HMM bands to perform 
  * the search.
  * The 1.0 non-HB functions can be run with QDB on or off, which 
- * is implicit in the cm->smx ScanMatrix_t data structure,
+ * is implicit in the cm->smx CM_SCAN_MX data structure,
  * which includes min/max d values for each state.
  *
  * Note: Prior to 1.1 release, removed three experimental Inside
@@ -59,12 +59,16 @@
  * Date:     EPN, Wed Sep 12 16:55:28 2007
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
- *           an optimized CYK scanning algorithm. Query-dependent 
- *           bands are used or not used as specified in ScanMatrix_t <cm->smx>.
+ *           an optimized scanning CYK scanning implementation. 
  *
- * Args:     cm              - the covariance model, must have valid scanmatrix (si)
+ *           The choice of using one of two sets of query-dependent
+ *           bands (QDBs) or not using QDBs is controlled by
+ *           <qdbidx>. The QDBs are stored in <smx>.
+ *
+ * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           smx             - CM_SCAN_MX for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           qdbidx          - controls which QDBs to use: SMX_NOQDB | SMX_QDB1_TIGHT | SMX_QDB2_LOOSE
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -72,20 +76,20 @@
  *           hitlist         - CM_TOPHITS hitlist to add to; if NULL, don't add to it
  *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           env_cutoff      - ret_envi..ret_envj will include all hits that exceed this bit sc
- *           ret_envi        - min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
- *           ret_envj        - max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
+ *           ret_envi        - RETURN: min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
+ *           ret_envj        - RETURN: max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  * 
  * Note:     This function is heavily synchronized with FastFInsideScan() and FastIInsideScan(),
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  eslOK on succes;
- *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <hitlist>.
- *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
+ * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
+ *           eslEINCOMPAT on contract violation, errbuf if filled with informative error message.
+ *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 	    int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -109,6 +113,8 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0,
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn,   dx;           /* minimum/maximum valid d for current state */
+  int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
+  int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float    *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
@@ -120,27 +126,29 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0,
   int       h;                  /* counter over hits */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CMH_BITS flag is not raised.\n");
-  if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
-  if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, dsq is NULL\n");
-  if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CM_SEARCH_INSIDE flag raised");
-  if(smx == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, smx == NULL\n");
-  if(! (smx->flags & cmSMX_HAS_FLOAT))   ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
-  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
+  if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CMH_BITS flag is not raised.\n");
+  if(j0 < i0)                              ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
+  if(dsq == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, dsq is NULL\n");
+  if(cm->search_opts & CM_SEARCH_INSIDE)   ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CM_SEARCH_INSIDE flag raised");
+  if(smx == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, smx == NULL\n");
+  if(! smx->floats_valid)                  ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, smx->floats_valid if FALSE");
+  if(cm->qdbinfo == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, cm->qdbinfo == NULL\n");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
-  float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  float ***alpha_begl = smx->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  float  *bestsc      = smx->bestsc;      /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
-  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
-  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
-  float **esc_vAA     = cm->oesc;         /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
-					   * and all possible emissions a (including ambiguities) */
-  /* determine if we're doing banded/non-banded */
-  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
+  float ***alpha      = smx->falpha;        /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  float ***alpha_begl = smx->falpha_begl;   /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  float  *bestsc      = smx->bestsc;        /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
+  int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
+  float **esc_vAA     = cm->oesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
+					     * and all possible emissions a (including ambiguities) */
+
+  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
+  else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
+  else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin2; dmax = cm->qdbinfo->dmax2; }
+  else ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, qdbidx is invalid");
 
   L = j0-i0+1;
   W = smx->W;
@@ -657,22 +665,24 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0,
   
  ERROR:
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
-  return 0.; /* NEVERREACHED */
+  return status; /* NEVERREACHED */
 }
 
 /* Function: RefCYKScan()
  * Date:     EPN, Wed Sep 12 16:55:28 2007
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
- *           a reference CYK scanning algorithm. Query-dependent 
- *           bands are used or not used as specified in ScanMatrix_t <si>.
+ *           a reference scanning CYK implementation. This function
+ *           is slower but easier to understand than FastCYKScan(). 
  *
- *           This function is slower, but easier to understand than the
- *           FastCYKScan() version.
+ *           The choice of using one of two sets of query-dependent
+ *           bands (QDBs) or not using QDBs is controlled by
+ *           <qdbidx>. The QDBs are stored in <smx>.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           smx             - CM_SCAN_MX for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           qdbidx          - controls which QDBs to use: SMX_NOQDB | SMX_QDB1_TIGHT | SMX_QDB2_LOOSE
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -680,21 +690,20 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0,
  *           hitlist         - CM_TOPHITS hitlist to add to; if NULL, don't add to it
  *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           env_cutoff      - ret_envi..ret_envj will include all hits that exceed this bit sc
- *           ret_envi        - min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
- *           ret_envj        - max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
+ *           ret_envi        - RETURN: min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
+ *           ret_envj        - RETURN: max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
  * Note:     This function is heavily synchronized with RefIInsideScan() and RefCYKScan()
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  eslOK on succes;
- *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <hitlist>.
- *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
- *           Dies immediately if some error occurs.
+ * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
+ *           eslEINCOMPAT on contract violation, errbuf if filled with informative error message.
+ *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 	   int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -717,6 +726,8 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, 
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn,   dx;           /* minimum/maximum valid d for current state */
+  int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
+  int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
@@ -727,28 +738,29 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, 
   int       h;                  /* counter over hits */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CMH_BITS flag is not raised.\n");
-  if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
-  if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, dsq is NULL\n");
-  if(smx == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, smx == NULL\n");
-  if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CM_SEARCH_INSIDE flag raised");
-  if(! (cm->smx->flags & cmSMX_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
-  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
+  if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CMH_BITS flag is not raised.\n");
+  if(j0 < i0)                              ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
+  if(dsq == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, dsq is NULL\n");
+  if(cm->search_opts & CM_SEARCH_INSIDE)   ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CM_SEARCH_INSIDE flag raised");
+  if(smx == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, smx == NULL\n");
+  if(! smx->floats_valid)                  ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, smx->floats_valid if FALSE");
+  if(cm->qdbinfo == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, cm->qdbinfo == NULL\n");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
-  float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  float ***alpha_begl = smx->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  float  *bestsc      = smx->bestsc;      /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
-  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
-  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
-  float **esc_vAA     = cm->oesc;        /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
-					  * and all possible emissions a (including ambiguities) */
+  float ***alpha      = smx->falpha;        /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  float ***alpha_begl = smx->falpha_begl;   /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  float  *bestsc      = smx->bestsc;        /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
+  int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
+  float **esc_vAA     = cm->oesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
+					     * and all possible emissions a (including ambiguities) */
 
-  /* determine if we're doing banded/non-banded */
-  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
+  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
+  else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
+  else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin2; dmax = cm->qdbinfo->dmax2; }
+  else ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, qdbidx is invalid");
 
   L = j0-i0+1;
   W = smx->W;
@@ -1027,41 +1039,46 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, 
   
  ERROR:
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
-  return 0.; /* NEVERREACHED */
+  return status; /* NEVERREACHED */
 }
 
 /* Function: FastIInsideScan()
  * Date:     EPN, Tue Nov  6 05:42:44 2007
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
- *           an optimized Inside scanning algorithm that uses integer scores. 
- *           Query-dependent bands are used or not used as specified in 
- *           ScanMatrix_t <si>.
+ *           an optimized scanning Inside implementation that uses 
+ *           integer scores.
+ *
+ *           The choice of using one of two sets of query-dependent
+ *           bands (QDBs) or not using QDBs is controlled by
+ *           <qdbidx>. The QDBs are stored in <smx>.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
- *           si              - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           smx             - CM_SCAN_MX for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           qdbidx          - controls which QDBs to use: SMX_NOQDB | SMX_QDB1_TIGHT | SMX_QDB2_LOOSE
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
  *           hitlist         - CM_TOPHITS to add to; if NULL, don't add to it
  *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
+ *           env_cutoff      - ret_envi..ret_envj will include all hits that exceed this bit sc
+ *           ret_envi        - RETURN: min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
+ *           ret_envj        - RETURN: max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  * 
  * Note:     This function is heavily synchronized with FastCYKScan() and FastFInsideScan(),
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  eslOK on succes;
- *           <ret_sc> is score of best Inside hit (vsc[0]). Information on hits added to <hitlist>.
- *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
- *           Dies immediately if some error occurs.
+ * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
+ *           eslEINCOMPAT on contract violation, errbuf if filled with informative error message.
+ *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, 
-		CM_TOPHITS *hitlist, int do_null3, float **ret_vsc, float *ret_sc)
+FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
+		int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc)
 {
   int       status;
   GammaHitMx_t *gamma = NULL;   /* semi-HMM for hit resoultion */
@@ -1084,39 +1101,41 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn,   dx;           /* minimum/maximum valid d for current state */
+  int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
+  int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
-  float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if hitlist != NULL */
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
+  int       do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
+  int64_t   envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
-
-  /*printf("TEMP in FastIInsideScan(): i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);*/
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, dsq is NULL\n");
-  if(smx == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, smx == NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
-  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
+  if(smx == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, smx == NULL\n");
+  if(! smx->ints_valid)                      ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, smx->ints_valid if FALSE");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
-  int   ***alpha      = smx->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  int   ***alpha_begl = smx->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  float  *bestsc      = smx->bestsc;      /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
-  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
-  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
-  int   **esc_vAA     = cm->ioesc;       /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
-					  * and all possible emissions a (including ambiguities) */
-  /* determine if we're doing banded/non-banded */
-  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
+  int   ***alpha      = smx->ialpha;        /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  int   ***alpha_begl = smx->ialpha_begl;   /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  float  *bestsc      = smx->bestsc;        /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
+  int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
+  int   **esc_vAA     = cm->ioesc;          /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
+					     * and all possible emissions a (including ambiguities) */
+
+  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
+  else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
+  else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin2; dmax = cm->qdbinfo->dmax2; }
+  else ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, qdbidx is invalid");
 
   L = j0-i0+1;
   W = smx->W;
@@ -1157,11 +1176,6 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
   /* precalculate the initial scores for all cells */
   init_scAA = ICalcInitDPScores(cm);
   
-  /* allocate/initialize gamma_row, only used for updating gamma if hitlist != NULL */
-  ESL_ALLOC(gamma_row, sizeof(float) * (W+1));
-  esl_vec_FSet(gamma_row, (W+1), IMPOSSIBLE);
-
-
   /* if do_null3: allocate and initialize act vector */
   if(do_null3) { 
     ESL_ALLOC(act, sizeof(double *) * (W+1));
@@ -1171,6 +1185,11 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
     }
   }
   else act = NULL;
+
+  /* initialize envelope boundary variables */
+  do_env_defn = (ret_envi != NULL || ret_envj != NULL) ? TRUE : FALSE;
+  envi = j0+1;
+  envj = i0-1;
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -1564,6 +1583,16 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
 	/* Note: currently we NOT do a null3 correction for vsc_root */
       }
 
+      /* update envi, envj, if nec */
+      if(do_env_defn) { 
+	for (d = dnA[0]; d <= dxA[0]; d++) {
+	  if(alpha[jp_v][0][d] >= env_cutoff) { 
+	    envi = ESL_MIN(envi, j-d+1);
+	    envj = ESL_MAX(envj, j);
+	  }
+	}
+      }
+
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
 	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, NULL, W, act)) != eslOK) return status;
@@ -1575,6 +1604,10 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
+
+  /* set envelope return variables if nec */
+  if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
+  if(ret_envj != NULL) { *ret_envj = (envj == i0-1) ? -1 : envj; }
 
   /* If recovering hits in a non-greedy manner, do the gamma traceback, then free gamma */
   if(gamma != NULL) { 
@@ -1600,7 +1633,6 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
     for(i = 0; i <= W; i++) free(act[i]); 
     free(act);
   }
-  free(gamma_row);
   free(jp_wA);
   free(sc_v);
   free(init_scAA[0]);
@@ -1614,7 +1646,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
   
  ERROR:
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
-  return 0.; /* NEVERREACHED */
+  return status; /* NEVERREACHED */
 }
 
 
@@ -1623,33 +1655,38 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
  * Date:     EPN, Wed Sep 12 16:55:28 2007
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
- *           an optimized Inside scanning algorithm that uses float scores. 
- *           Query-dependent bands are used or not used as specified in 
- *           ScanMatrix_t <si>.
+ *           an optimized scanning Inside implementation that uses 
+ *           float scores.
+ *
+ *           The choice of using one of two sets of query-dependent
+ *           bands (QDBs) or not using QDBs is controlled by
+ *           <qdbidx>. The QDBs are stored in <smx>.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           smx             - CM_SCAN_MX for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
  *           hitlist         - CM_TOPHITS to add to; if NULL, don't add to it
  *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
+ *           env_cutoff      - ret_envi..ret_envj will include all hits that exceed this bit sc
+ *           ret_envi        - RETURN: min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
+ *           ret_envj        - RETURN: max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  * 
  * Note:     This function is heavily synchronized with FastCYKScan() and FastIInsideScan(),
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  eslOK on succes;
- *           <ret_sc> is score of best Inside hit (vsc[0]). Information on hits added to <hitlist>.
- *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
- *           Dies immediately if some error occurs.
+ * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
+ *           eslEINCOMPAT on contract violation, errbuf if filled with informative error message.
+ *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, 
-		CM_TOPHITS *hitlist, int do_null3, float **ret_vsc, float *ret_sc)
+FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
+		int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc)
 {
   int       status;
   GammaHitMx_t *gamma = NULL;   /* semi-HMM for hit resoultion */
@@ -1672,36 +1709,41 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn,   dx;           /* minimum/maximum valid d for current state */
+  int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
+  int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float    *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
+  int       do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
+  int64_t   envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CMH_BITS flag is not raised.\n");
-  if(j0 < i0)                               ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
-  if(dsq == NULL)                           ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, dsq is NULL\n");
-  if(smx == NULL)                           ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, smx == NULL\n");
-  if(!(cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (cm->smx->flags & cmSMX_HAS_FLOAT))    ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
-  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
+  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CMH_BITS flag is not raised.\n");
+  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
+  if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, dsq is NULL\n");
+  if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(smx == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, smx == NULL\n");
+  if(! smx->ints_valid)                      ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, smx->ints_valid if FALSE");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
-  float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  float ***alpha_begl = smx->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  float  *bestsc      = smx->bestsc;      /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
-  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
-  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
-  float **esc_vAA     = cm->oesc;        /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
-					  * and all possible emissions a (including ambiguities) */
-  /* determine if we're doing banded/non-banded */
-  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
+  float ***alpha      = smx->falpha;        /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  float ***alpha_begl = smx->falpha_begl;   /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  float  *bestsc      = smx->bestsc;        /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
+  int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
+  float **esc_vAA     = cm->oesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
+					     * and all possible emissions a (including ambiguities) */
+
+  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
+  else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
+  else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin2; dmax = cm->qdbinfo->dmax2; }
+  else ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, qdbidx is invalid");
 
   L = j0-i0+1;
   W = smx->W;
@@ -1751,6 +1793,11 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
     }
   }
   else act = NULL;
+
+  /* initialize envelope boundary variables */
+  do_env_defn = (ret_envi != NULL || ret_envj != NULL) ? TRUE : FALSE;
+  envi = j0+1;
+  envj = i0-1;
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -2148,6 +2195,16 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
 	/* Note: currently we NOT do a null3 correction for vsc_root */
       }
 
+      /* update envi, envj, if nec */
+      if(do_env_defn) { 
+	for (d = dnA[0]; d <= dxA[0]; d++) {
+	  if(alpha[jp_v][0][d] >= env_cutoff) { 
+	    envi = ESL_MIN(envi, j-d+1);
+	    envj = ESL_MAX(envj, j);
+	  }
+	}
+      }
+
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
 	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, NULL, W, act)) != eslOK) return status;
@@ -2159,6 +2216,10 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
+
+  /* set envelope return variables if nec */
+  if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
+  if(ret_envj != NULL) { *ret_envj = (envj == i0-1) ? -1 : envj; }
 
   /* If recovering hits in a non-greedy manner, do the gamma traceback, then free gamma */
   if(gamma != NULL) { 
@@ -2197,7 +2258,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
   
  ERROR:
   ESL_FAIL(eslEINCOMPAT, errbuf, "Memory allocation error.\n");
-  return 0.; /* NEVERREACHED */
+  return status; /* NEVERREACHED */
 }
 
 
@@ -2205,32 +2266,40 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t
  * Date:     EPN, Tue Nov  6 06:13:35 2007
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
- *           a reference CYK scanning algorithm. Query-dependent 
- *           bands are used or not used as specified in ScanMatrix_t <si>.
+ *           a reference scanning Inside that uses integer scores. 
+ *           This function is slower but easier to understand than 
+ *           FastIInsideScan().
+ *
+ *           The choice of using one of two sets of query-dependent
+ *           bands (QDBs) or not using QDBs is controlled by
+ *           <qdbidx>. The QDBs are stored in <smx>.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           smx             - CM_SCAN_MX for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           qdbidx          - controls which QDBs to use: SMX_NOQDB | SMX_QDB1_TIGHT | SMX_QDB2_LOOSE
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
  *           hitlist         - CM_TOPHITS hitlist to add to; if NULL, don't add to it
  *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
+ *           env_cutoff      - ret_envi..ret_envj will include all hits that exceed this bit sc
+ *           ret_envi        - RETURN: min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
+ *           ret_envj        - RETURN: max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
  * Note:     This function is heavily synchronized with RefCYKScan() and RefFInsideScan(), 
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  eslOK on success
- *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <hitlist>.
- *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
- *           Dies immediately if some error occurs.
+ * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
+ *           eslEINCOMPAT on contract violation, errbuf if filled with informative error message.
+ *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, 
-	       CM_TOPHITS *hitlist, int do_null3, float **ret_vsc, float *ret_sc)
+RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
+	       int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc)
 {
   int       status;
   GammaHitMx_t *gamma = NULL;   /* semi-HMM for hit resoultion */
@@ -2252,37 +2321,41 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn,   dx;           /* minimum/maximum valid d for current state */
+  int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
+  int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
-  float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if hitlist != NULL */
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
+  int       do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
+  int64_t   envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
+
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CMH_BITS flag is not raised.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, dsq is NULL\n");
-  if(smx == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, smx == NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
-  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
+  if(smx == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, smx == NULL\n");
+  if(! smx->ints_valid)                      ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, smx->ints_valid if FALSE");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
-  int   ***alpha      = smx->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  int   ***alpha_begl = smx->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  float  *bestsc      = smx->bestsc;      /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
-  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
-  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
-  int   **esc_vAA     = cm->ioesc;       /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
-					  * and all possible emissions a (including ambiguities) */
+  int   ***alpha      = smx->ialpha;        /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  int   ***alpha_begl = smx->ialpha_begl;   /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  float  *bestsc      = smx->bestsc;        /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
+  int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
+  int   **esc_vAA     = cm->ioesc;          /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
+					     * and all possible emissions a (including ambiguities) */
 
-  /* determine if we're doing banded/non-banded */
-  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
+  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
+  else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
+  else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin2; dmax = cm->qdbinfo->dmax2; }
+  else ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, qdbidx is invalid");
 
   L = j0-i0+1;
   W = smx->W;
@@ -2320,10 +2393,6 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
   /* precalculate the initial scores for all cells */
   init_scAA = ICalcInitDPScores(cm);
 
-  /* allocate/initialize gamma_row, only used for updating gamma if hitlist != NULL */
-  ESL_ALLOC(gamma_row, sizeof(float) * (W+1));
-  esl_vec_FSet(gamma_row, (W+1), IMPOSSIBLE);
-
   /* if do_null3: allocate and initialize act vector */
   if(do_null3) { 
     ESL_ALLOC(act, sizeof(double *) * (W+1));
@@ -2333,6 +2402,11 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
     }
   }
   else act = NULL;
+
+  /* initialize envelope boundary variables */
+  do_env_defn = (ret_envi != NULL || ret_envj != NULL) ? TRUE : FALSE;
+  envi = j0+1;
+  envj = i0-1;
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -2493,6 +2567,16 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
 	/* Note: currently we NOT do a null3 correction for vsc_root */
       }
 
+      /* update envi, envj, if nec */
+      if(do_env_defn) { 
+	for (d = dnA[0]; d <= dxA[0]; d++) {
+	  if(alpha[jp_v][0][d] >= env_cutoff) { 
+	    envi = ESL_MIN(envi, j-d+1);
+	    envj = ESL_MAX(envj, j);
+	  }
+	}
+      }
+
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
 	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, NULL, W, act)) != eslOK) return status;
@@ -2504,6 +2588,10 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE);*/
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
+
+  /* set envelope return variables if nec */
+  if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
+  if(ret_envj != NULL) { *ret_envj = (envj == i0-1) ? -1 : envj; }
 
   /* If reporting hits in a greedy manner, remove overlaps greedily from the tmp_hitlist 
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
@@ -2527,7 +2615,6 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
   free(jp_wA);
   free(init_scAA[0]);
   free(init_scAA);
-  free(gamma_row);
   if (ret_vsc != NULL) *ret_vsc = vsc;
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
@@ -2537,25 +2624,34 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
   
  ERROR:
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
-  return 0.; /* NEVERREACHED */
+  return status; /* NEVERREACHED */
 }
 
 /* Function: RefFInsideScan()
  * Date:     EPN, Sun Nov  4 16:02:17 2007
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
- *           a reference CYK scanning algorithm. Query-dependent 
- *           bands are used or not used as specified in ScanMatrix_t <si>.
+ *           a reference scanning Inside that uses float scores. 
+ *           This function is slower but easier to understand than 
+ *           FastFInsideScan().
+ *
+ *           The choice of using one of two sets of query-dependent
+ *           bands (QDBs) or not using QDBs is controlled by
+ *           <qdbidx>. The QDBs are stored in <smx>.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           smx             - CM_SCAN_MX for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           qdbidx          - controls which QDBs to use: SMX_NOQDB | SMX_QDB1_TIGHT | SMX_QDB2_LOOSE
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
  *           hitlist         - CM_TOPHITS hitlist to add to; if NULL, don't add to it
  *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
+ *           env_cutoff      - ret_envi..ret_envj will include all hits that exceed this bit sc
+ *           ret_envi        - RETURN: min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
+ *           ret_envj        - RETURN: max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
@@ -2568,8 +2664,8 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
  *           Dies immediately if some error occurs.
  */
 int
-RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, 
-	       CM_TOPHITS *hitlist, int do_null3, float **ret_vsc, float *ret_sc)
+RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
+	       int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc)
 {
   int       status;
   GammaHitMx_t *gamma = NULL;   /* semi-HMM for hit resoultion */
@@ -2591,37 +2687,41 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn,   dx;           /* minimum/maximum valid d for current state */
+  int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
+  int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float    *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
+  int       do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
+  int64_t   envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
-  
+
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CMH_BITS flag is not raised.\n");
-  if(j0 < i0)                               ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
-  if(dsq == NULL)                           ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, dsq is NULL\n");
+  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CMH_BITS flag is not raised.\n");
+  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
+  if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, dsq is NULL\n");
+  if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CM_SEARCH_INSIDE flag not raised");
   if(smx == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, smx == NULL\n");
-  if(!(cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (cm->smx->flags & cmSMX_HAS_FLOAT))    ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
-  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
-
+  if(! smx->floats_valid)                    ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, smx->floats_valid if FALSE");
+  
   /* make pointers to the ScanMatrix/CM data for convenience */
-  float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  float ***alpha_begl = smx->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  float  *bestsc      = smx->bestsc;      /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
-  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
-  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
-  float **esc_vAA     = cm->oesc;        /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
-					  * and all possible emissions a (including ambiguities) */
+  float ***alpha      = smx->falpha;        /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  float ***alpha_begl = smx->falpha_begl;   /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  float  *bestsc      = smx->bestsc;        /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
+  int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
+  float **esc_vAA     = cm->oesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
+					     * and all possible emissions a (including ambiguities) */
 
-  /* determine if we're doing banded/non-banded */
-  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
+  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
+  else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
+  else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin2; dmax = cm->qdbinfo->dmax2; }
+  else ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, qdbidx is invalid");
 
   L = j0-i0+1;
   W = smx->W;
@@ -2672,6 +2772,11 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
     }
   }
   else act = NULL;
+
+  /* initialize envelope boundary variables */
+  do_env_defn = (ret_envi != NULL || ret_envj != NULL) ? TRUE : FALSE;
+  envi = j0+1;
+  envj = i0-1;
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -2839,6 +2944,16 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
 	/* Note: currently we NOT do a null3 correction for vsc_root */
       }
 
+      /* update envi, envj, if nec */
+      if(do_env_defn) { 
+	for (d = dnA[0]; d <= dxA[0]; d++) {
+	  if(alpha[jp_v][0][d] >= env_cutoff) { 
+	    envi = ESL_MIN(envi, j-d+1);
+	    envj = ESL_MAX(envj, j);
+	  }
+	}
+      }
+
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
 	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, NULL, W, act)) != eslOK) return status;
@@ -2849,6 +2964,10 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
+
+  /* set envelope return variables if nec */
+  if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
+  if(ret_envj != NULL) { *ret_envj = (envj == i0-1) ? -1 : envj; }
 
   /* If reporting hits in a greedy manner, remove overlaps greedily from the tmp_hitlist 
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
@@ -2882,7 +3001,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int64_t 
   
  ERROR:
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
-  return 0.; /* NEVERREACHED */
+  return status; /* NEVERREACHED */
 }
 
 /* Function: cm_CountSearchDPCalcs()
@@ -3019,34 +3138,36 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
 /* Function: FastCYKScanHB()
  * Incept:   EPN, Mon Nov 12 17:45:57 2007
  *
- * Purpose:  An HMM banded version of a scanning CYK algorithm. Takes
- *           a CM_HB_MX data structure which is indexed [v][j][d] with
- *           only cells within the bands allocated.
- *           (different than other (non-HB) scanning function's convention 
- *            of [j][v][d]).
+ * Purpose:  An HMM banded scanning CYK implementation. Takes a
+ *           CM_HB_MX data structure which is indexed [v][j][d] with
+ *           only cells within the bands allocated (different than
+ *           other (non-HB) scanning function's convention of
+ *           [j][v][d]). QDBs are not used.
  *
  * Args:     cm        - the model    [0..M-1]
- *           sq        - the sequence [1..L]   
- *                     - length of the dsq
+ *           errbuf    - char buffer for reporting errors
+ *           mx        - the HMM banded dp matrix, usually cm->hbmx.
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           dsq       - the sequence [1..L]   
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
  *           cutoff    - minimum score to report
  *           hitlist   - CM_TOPHITS hitlist to add to; if NULL, don't add to it
  *           do_null3  - TRUE to do NULL3 score correction, FALSE not to
  *           env_cutoff- ret_envi..ret_envj will include all hits that exceed this bit sc
- *           ret_envi  - min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
- *           ret_envj  - max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
- *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
- *                       be valid. This is usually cm->hbmx.
- *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           ret_envi  - RETURN: min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
+ *           ret_envj  - RETURN: max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_sc    - RETURN: score of best overall hit (vsc[0])
  *                       
- * Returns: eslOK on success; eslERANGE if required matrix size exceeds <size_limit>
- *          <ret_sc>: score of the best hit.
+ * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
+ *           eslEINCOMPAT on contract violation, errbuf if filled with informative error message.
+ *           eslEINCONCEIVABLE if bands allow a hit > L, errbuf filled.
+ *           eslERANGE if required HMM banded matrix size exceeds <size_limit>, errbuf filled.
+ *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
-	      CM_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc)
+FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
+	      int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc)
 {
 
   int      status;
@@ -3089,7 +3210,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, floa
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), dsq is NULL.\n");
   if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), mx is NULL.\n");
-  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), mx is NULL.\n");
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), cm->cp9b is NULL.\n");
 
   ESL_DPRINTF1(("cm->search_opts & CM_SEARCH_HMMALNBANDS: %d\n", cm->search_opts & CM_SEARCH_HMMALNBANDS));
 
@@ -3552,33 +3673,36 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, floa
 /* Function: FastFInsideScanHB()
  * Incept:   EPN, Wed Nov 14 18:17:28 2007
  *
- * Purpose:  An HMM banded version of a scanning Inside algorithm. Takes
- *           a CM_HB_MX data structure which is indexed [v][j][d] with
- *           only cells within the bands allocated.
- *           (different than non-HB scanning function's convention of [j][v][d]).
+ * Purpose:  An HMM banded scanning Inside implementation that uses
+ *           float scores. Takes a CM_HB_MX data structure which is
+ *           indexed [v][j][d] with only cells within the bands
+ *           allocated (different than other (non-HB) scanning
+ *           function's convention of [j][v][d]). QDBs are not used.
  *
  * Args:     cm        - the model    [0..M-1]
- *           sq        - the sequence [1..L]   
- *                     - length of the dsq
+ *           errbuf    - char buffer for reporting errors
+ *           mx        - the HMM banded dp matrix, usually cm->hbmx.
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           dsq       - the sequence [1..L]   
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
  *           cutoff    - minimum score to report
  *           hitlist   - CM_TOPHITS hitlist to add to; if NULL, don't add to it
  *           do_null3  - TRUE to do NULL3 score correction, FALSE not to
  *           env_cutoff- ret_envi..ret_envj will include all hits that exceed this bit sc
- *           ret_envi  - min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
- *           ret_envj  - max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
- *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
- *                       be valid. This is usually cm->hbmx.
- *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           ret_envi  - RETURN: min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
+ *           ret_envj  - RETURN: max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_sc    - RETURN: score of best overall hit (vsc[0])
  *                       
- * Returns: eslOK on success; eslERANGE if required matrix size exceeds <size_limit>
- *          <ret_sc>: score of the best hit.
+ * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
+ *           eslEINCOMPAT on contract violation, errbuf if filled with informative error message.
+ *           eslEINCONCEIVABLE if bands allow a hit > L, errbuf filled.
+ *           eslERANGE if required HMM banded matrix size exceeds <size_limit>, errbuf filled.
+ *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
-		  CM_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc)
+FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+		  int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc)
 {
 
   int      status;
@@ -4223,18 +4347,14 @@ main(int argc, char **argv)
     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
     esl_vec_DNorm(dnull, cm->abc->K);
     /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
-    int safe_windowlen = cm->clen * 2;
-    double **gamma = NULL;
-    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
-      safe_windowlen *= 2;
-      /* This is a temporary fix becuase BCE() overwrites gamma, leaking memory
-       * Probably better long-term for BCE() to check whether gamma is already allocated
-       */
-      FreeBandDensities(cm, gamma);
-      if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
-    }
-    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, gamma[0], safe_windowlen, FALSE);
-    FreeBandDensities(cm, gamma);
+    double *gamma0_loc;
+    double *gamma0_glb;
+    if((status = CalculateQueryDependentBands(cm, errbuf, NULL, DEFAULT_BETA_W, NULL, &gamma0_loc, &gamma0_glb)) != eslOK) cm_Fail(errbuf);
+    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, 
+				      (cm->flags & CMH_LOCAL_BEGIN) ? gamma0_loc : gamma0_glb, 
+				      safe_windowlen, FALSE);
+    free(gamma0_loc);
+    free(gamma0_glb);
     free(dnull);
   }
   else /* don't randomly generate seqs, emit them from the CM */

@@ -35,7 +35,9 @@
 
 /* various default parameters for CMs and CP9 HMMs */ 
 #define DEFAULT_MIN_CP9_E_CUTOFF 1.0
-#define DEFAULT_BETA             0.0000001
+#define DEFAULT_BETA_W           1E-7
+#define DEFAULT_BETA_QDB1        1E-7
+#define DEFAULT_BETA_QDB2        1E-15
 #define DEFAULT_TAU              0.0000001
 #define DEFAULT_PBEGIN           0.05   /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_PEND             0.05   /* EPN 06.29.07 (formerly 0.5) */
@@ -406,8 +408,8 @@ typedef struct cp9trace_s {
  *
  * The lpos and rpos arrays are somewhat redundant with 
  * CMEmitMap_t, but they're not identical. I didn't realize emitmap existed
- * prior to implementing CP9 HMMs - if I had I would have used emitmap's, but
- * it's difficult to go back and use emitmap's now.
+ * prior to implementing CP9 HMMs - if I had I would have used emitmaps, but
+ * it's difficult to go back and use emitmaps now.
  * 
  * See emitmap.c for implementation and more documentation.
  */
@@ -447,30 +449,28 @@ typedef struct cp9map_s {
 #define CMH_LOCAL_BEGIN         (1<<10) /* Begin distribution is active (local ali) */
 #define CMH_LOCAL_END           (1<<11) /* End distribution is active (local ali)   */
 #define CMH_EXPTAIL_STATS       (1<<12) /* exponential tail stats set               */
-#define CMH_FILTER_STATS        (1<<13) /* filter threshold stats are set           */
-#define CMH_QDB                 (1<<14) /* query-dependent bands, QDBs valid        */
-#define CMH_QDB_LOCAL           (1<<15) /* QDBs calc'ed with local begins on        */
-#define CMH_QDB_GLOBAL          (1<<16) /* QDBs calc'ed with local begins off       */
-#define CMH_CP9                 (1<<17) /* CP9 HMM is valid in cm->cp9loc           */
-#define CMH_CP9_TRUNC           (1<<18) /* cm->Lcp9, cm->Rcp9, cm->Tcp9 are valid   */
-#define CMH_SCANMATRIX          (1<<19) /* ScanMatrix smx is valid                  */
-#define CMH_MLP7                (1<<20) /* 'maximum likelihood' p7 is valid in cm->mlp7 */
-#define CMH_FP7                 (1<<21) /* filter p7 is valid in cm->fp7            */
-
-#define CM_IS_SUB               (1<<22) /* the CM is a sub CM                       */
-#define CM_IS_RSEARCH           (1<<23) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS         (1<<24) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT          (1<<25) /* CM has/will have RSEARCH emissions       */
-#define CM_EMIT_NO_LOCAL_BEGINS (1<<26) /* emitted parsetrees will never have local begins */
-#define CM_EMIT_NO_LOCAL_ENDS   (1<<27) /* emitted parsetrees will never have local ends   */
+#define CMH_CP9                 (1<<13) /* CP9 HMM is valid in cm->cp9              */
+#define CMH_CP9_TRUNC           (1<<14) /* cm->Lcp9, cm->Rcp9, cm->Tcp9 are valid   */
+#define CMH_MLP7                (1<<15) /* 'maximum likelihood' cm->mlp7 is valid   */
+#define CMH_FP7                 (1<<16) /* filter p7 is valid in cm->fp7            */
+#define CM_IS_SUB               (1<<17) /* the CM is a sub CM                       */
+#define CM_IS_RSEARCH           (1<<18) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS         (1<<19) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT          (1<<20) /* CM has/will have RSEARCH emissions       */
+#define CM_EMIT_NO_LOCAL_BEGINS (1<<21) /* emitted parsetrees will never have local begins */
+#define CM_EMIT_NO_LOCAL_ENDS   (1<<22) /* emitted parsetrees will never have local ends   */
+#define CM_IS_CONFIGURED        (1<<23) /* TRUE if CM has been configured in some way */
 
 /* model configuration options, cm->config_opts */
-#define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment  */
-#define CM_CONFIG_HMMLOCAL      (1<<1)  /* configure the CP9 for local alignment  */
-#define CM_CONFIG_HMMEL         (1<<2)  /* configure the CP9 for EL local aln       */
-#define CM_CONFIG_QDB           (1<<3)  /* calculate query dependent bands          */
-#define CM_CONFIG_NOTRUNC       (1<<4)  /* don't set up for truncated alignment (cm->{L,R,T}cp9 won't be built */
-#define CM_CONFIG_TRUNC_NOFORCE (1<<5)  /* don't force sequence endpoints exist in truncated alignments */
+#define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
+#define CM_CONFIG_HMMLOCAL      (1<<1)  /* configure the CP9 for local alignment   */
+#define CM_CONFIG_HMMEL         (1<<2)  /* configure the CP9 for EL local aln      */
+#define CM_CONFIG_QDB           (1<<3)  /* recalculate query dependent bands       */
+#define CM_CONFIG_W             (1<<4)  /* recalculate W                           */
+#define CM_CONFIG_TRUNC         (1<<5)  /* set up for truncated alignment (cm->{L,R,T}cp9 will be built */
+#define CM_CONFIG_TRUNC_NOFORCE (1<<6)  /* don't force sequence endpoints exist in truncated alignments */
+#define CM_CONFIG_SCANMX        (1<<7)  /* create a CM_SCAN_MX in cm->smx          */
+#define CM_CONFIG_TRSCANMX      (1<<8)  /* create a CM_TR_SCAN_MX in cm->trsmx     */
 
 /* alignment options, cm->align_opts */
 #define CM_ALIGN_SMALL         (1<<0)  /* use small CYK D&C                        */
@@ -494,20 +494,18 @@ typedef struct cp9map_s {
 #define CM_ALIGN_P7BANDED      (1<<18) /* use p7 HMM bands to band the CP9 HMM     */
 
 /* search options, cm->search_opts */
-#define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
-#define CM_SEARCH_HBANDED      (1<<1)  /* use HMM bands for search                 */
-#define CM_SEARCH_HMMALNBANDS  (1<<2)  /* force full aln when deriving HMM bands   */
-#define CM_SEARCH_SUMS         (1<<3)  /* if using HMM bands, use posterior sums   */
-#define CM_SEARCH_INSIDE       (1<<4)  /* scan with Inside, not CYK                */
-#define CM_SEARCH_NOALIGN      (1<<5)  /* don't align hits, just report locations  */
-#define CM_SEARCH_RSEARCH      (1<<6)  /* use RSEARCH parameterized CM             */
-#define CM_SEARCH_CMNOTGREEDY  (1<<7)  /* don't use greedy alg to resolve CM overlaps */
-#define CM_SEARCH_HMMGREEDY    (1<<8)  /* use greedy alg to resolve HMM overlaps   */
-#define CM_SEARCH_HMMVITERBI   (1<<9)  /* search with CP9 HMM Viterbi              */
-#define CM_SEARCH_HMMFORWARD   (1<<10) /* search with CP9 HMM Forward              */
-#define CM_SEARCH_HMM2IJOLD    (1<<11) /* use old hmm2ij band calculation alg      */
-#define CM_SEARCH_NULL2        (1<<12) /* use NULL2 score correction               */
-#define CM_SEARCH_NULL3        (1<<13) /* use NULL3 score correction               */
+#define CM_SEARCH_HBANDED      (1<<0)  /* use HMM bands to search (default)        */
+#define CM_SEARCH_QDB          (1<<1)  /* use QDBs to search                       */
+#define CM_SEARCH_NONBANDED    (1<<2)  /* do not use QDBs or HMM bands for search  */
+#define CM_SEARCH_HMMALNBANDS  (1<<3)  /* force full aln when deriving HMM bands   */
+#define CM_SEARCH_SUMS         (1<<4)  /* if using HMM bands, use posterior sums   */
+#define CM_SEARCH_INSIDE       (1<<5)  /* scan with Inside, not CYK                */
+#define CM_SEARCH_NOALIGN      (1<<6)  /* don't align hits, just report locations  */
+#define CM_SEARCH_RSEARCH      (1<<7)  /* use RSEARCH parameterized CM             */
+#define CM_SEARCH_CMNOTGREEDY  (1<<8)  /* don't use greedy alg to resolve CM overlaps */
+#define CM_SEARCH_HMM2IJOLD    (1<<9)  /* use old hmm2ij band calculation alg      */
+#define CM_SEARCH_NULL2        (1<<10) /* use NULL2 score correction               */
+#define CM_SEARCH_NULL3        (1<<11) /* use NULL3 score correction               */
 
 /* Structure: Parsetree_t
  * Incept:    SRE 29 Feb 2000 [Seattle]
@@ -1017,6 +1015,25 @@ enum emitmode_e {
 };
 #define nEMITMODES 4 
 
+enum cm_qdbinfo_setby_e    { CM_QDBINFO_SETBY_INIT = 0, CM_QDBINFO_SETBY_CMFILE = 1, CM_QDBINFO_SETBY_BANDCALC = 2 };
+
+/* Structure CM_QDBINFO: Per-model information on QDBs including 
+ * two sets of dmin/dmax values and the beta values used to 
+ * calculate them.
+ */
+typedef struct cm_qdbinfo_s { 
+  int    M;       /* number of states in CM these QDBs are for, size of dmin/dmax arrays */
+  double beta1;   /* tail loss probability for calculating QDBs dmin1/dmax1 */
+  int   *dmin1;   /* [0..cm_M-1] minimum subsequence length d allowed for state v */
+  int   *dmax1;   /* [0..cm_M-1] maximum subsequence length d allowed for state v */
+  double beta2;   /* tail loss probability for calculating QDBs dmin2/dmax2 */
+  int   *dmin2;   /* [0..cm_M-1] minimum subsequence length d allowed for state v */
+  int   *dmax2;   /* [0..cm_M-1] maximum subsequence length d allowed for state v */
+  enum cm_qdbinfo_setby_e setby; /* how current dmin/dmax values were set: 
+				  * CM_QDBINFO_SETBY_INIT | CM_QDBINFO_SETBY_CMFILE | CM_QDBINFO_SETBY_BANDCALC */
+
+} CM_QDBINFO;
+
 /* Declaration of CM dynamic programming matrices for alignment.
  * There are eight matrices here, four DP matrices for DP calculations
  * and four shadow matrices for alignment tracebacks. There is one DP
@@ -1488,25 +1505,56 @@ typedef struct cm_tr_hb_emit_mx_s {
 			    * freed. */
 } CM_TR_HB_EMIT_MX;
 
-/* Structure ScanMatrix_t: Information used by all CYK/Inside scanning functions,
- * compiled together into one data structure for convenience. 
+/* Structure CM_SCAN_MX: 
+ *
+ * Information used by all CYK/Inside scanning
+ * functions, compiled together into one data structure for
+ * convenience. The matrix is allocated to allow either non-banded or
+ * query-dependent banded (QDB) scans. 
+ *
+ * QDB information, including two sets of dmin/dmax values, W, and
+ * the three beta values used to calculate those numbers are in 
+ * <qdbinfo> (see that structure definition for more information).
+ *
+ * The CM_SCAN_MX contains three sets of dn and dx values for each
+ * state and each possible endpoint in the sequence. The first set
+ * dnAAA[0]/dxAAA[0] does not use bands. The second set
+ * dnAAA[1]/dxAAA[1] uses the tighter set of bands in <qdbinfo> (which
+ * is qdbinfo->dmin1/dmax1) and the third set dnAAA[2]/dxAAA[2] uses
+ * the looser set of bands in <qdbinfo> (which is
+ * qdbinfo->dmin2/dmax2). Each one of these sets is itself a
+ * two-dimensional array indexed [0..j..W] (first dim) and [0..v..M-1]
+ * (second dim), indicating the minimum and maximum d value to 
+ * be considered by a DP scanner for the sequence position j and
+ * CM state v (if the position is > W, then the value for W is used).
+ * 
+ * This set of three bands is necessary so we can call any DP scanner
+ * function and specify the use of any of these three sets of bands,
+ * and all the function has to do is point to the appropriate 
+ * dnAAA/dxAAA two-dimensional array.
+ *
+ * Additionally, each matrix can have valid float matrices, int
+ * matrices or both. The status of each is stored in the <floats_valid>
+ * and <ints_valid> parameters.
  */
-#define cmSMX_HAS_FLOAT (1 << 0)  /* if float versions of alpha and precalc'ed scores are valid */
-#define cmSMX_HAS_INT   (1 << 1)  /* if int   versions of alpha and precalc'ed scores are valid */
-typedef struct scanmx_s {
+
+#define SMX_NOQDB       0
+#define SMX_QDB1_TIGHT  1
+#define SMX_QDB2_LOOSE  2
+#define NSMX_QDB_IDX 3
+
+typedef struct cm_scan_mx_s {
   /* general info about the model/search */
-  int     cm_M;        /* # states in the CM */
-  int     W;           /* max hit size */
-  int    *dmin;        /* [0..v..cm->M-1] min subtree length for v using beta, just a ref, NULL for non-banded */
-  int    *dmax;        /* [0..v..cm->M-1] max subtree length for v using beta, just a ref, NULL for non-banded */
-  int   **dnAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
-  int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
-  int    *bestr;       /* auxil info: best root state v at alpha[0][cur][d] (0->v local begin used if v != 0)*/
-  float  *bestsc;      /* auxil info: best score for parsetree at alpha[0][cur][d] in mode bestmode[d] */
-  char   *bestmode;    /* auxil info: best mode for parsetree at alpha[0][cur][d], always TRMODE_J for all d */
-  int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha) */
-  double  beta_qdb;    /* tail loss prob used for calc'ing dmin/dmax, invalid if dmin==dmax==NULL */
-  double  beta_W;      /* tail loss prob used for calc'ing W, often == beta_qdb, may be greater, can't be less */
+  CM_QDBINFO *qdbinfo;   /* a pointer to the qdbinfo related to the matrix */
+  int      M;            /* copy of cm->M from cm this CM_SCAN_MX is associated with */
+  int      W;            /* copy of cm->W from cm this CM_SCAN_MX is associated with */
+  int   ***dnAAA;        /* [0..n..NSMX_QDB_IDX-1][1..j..W][0..v..M-1] min d value allowed for posn j, state v using QDB set n */
+  int   ***dxAAA;        /* [0..n..NSMX_QDB_IDX-1][1..j..W][0..v..M-1] max d value allowed for posn j, state v using QDB set n */
+  int     *bestr;        /* auxil info: best root state v at alpha[0][cur][d] (0->v local begin used if v != 0)*/
+  float   *bestsc;       /* auxil info: best score for parsetree at alpha[0][cur][d] in mode bestmode[d] */
+  int      floats_valid; /* TRUE if float alpha matrices are valid, FALSE if not */
+  int      ints_valid;   /* TRUE if int   alpha matrices are valid, FALSE if not */
+  float    size_Mb;      /* size of matrix in Megabytes */
 
   /* falpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] for float implementations of CYK/Inside */
   float ***falpha;          /* non-BEGL_S states for float versions of CYK/Inside */
@@ -1520,29 +1568,33 @@ typedef struct scanmx_s {
   int     *ialpha_mem;      /* ptr to the actual memory for ialpha */
   int     *ialpha_begl_mem; /* ptr to the actual memory for ialpha_begl */
 
-  int      ncells_alpha;      /* number of alloc'ed, valid cells for falpha and ialpha matrices, alloc'ed as contiguous block */
-  int      ncells_alpha_begl; /* number of alloc'ed, valid cells for falpha_begl and ialpha_begl matrices, alloc'ed as contiguous block */
-} ScanMatrix_t;
+  int64_t  ncells_alpha;      /* number of alloc'ed, valid cells for falpha and ialpha matrices, alloc'ed as contiguous block */
+  int64_t  ncells_alpha_begl; /* number of alloc'ed, valid cells for falpha_begl and ialpha_begl matrices, alloc'ed as contiguous block */
+} CM_SCAN_MX;
 
-/* Structure TrScanMatrix_t: Information used by all trCYK/trInside
- * scanning functions, compiled together into one data structure for
- * convenience.
+/* Structure TrCM_SCAN_MX: 
+ *
+ * Similar to CM_SCAN_MX except that additional matrices are allocated
+ * for L and R marginal type (truncated) alignments. Also, dmin values cannot be 
+ * enforced for any state because in truncated alignments we assume a
+ * truncation is possible anywhere so enforcing minimum subsequence lengths
+ * is illogical. Enforcing maximum lengths (dmax) still makes sense 
+ * though and these are enforced. See the explanation of CM_SCAN_MX
+ * above for more information.
  */
-#define cmTRSMX_HAS_FLOAT (1 << 0)  /* if float versions of alpha and precalc'ed scores are valid */
-#define cmTRSMX_HAS_INT   (1 << 1)  /* if int   versions of alpha and precalc'ed scores are valid */
-typedef struct trscanmx_s {
+typedef struct cm_tr_scan_mx_s {
   /* general info about the model/search */
-  int     cm_M;        /* # states in the CM */
-  int     W;           /* max hit size */
-  int    *dmax;        /* [0..v..cm->M-1] max subtree length for v using beta, just a ref, NULL for non-banded */
-  int   **dnAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
-  int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
-  int    *bestr;       /* auxil info: best root state v at alpha[0][cur][d] (0->v truncated begin used if v != 0)*/
-  float  *bestsc;      /* auxil info: best score for parsetree at alpha[0][cur][d] in mode bestmode[d] */
-  char   *bestmode;    /* auxil info: best mode for parsetree at alpha[0][cur][d], gives score in bestsc[d] */
-  int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha) */
-  double  beta_qdb;    /* tail loss prob used for calc'ing dmin/dmax, invalid if dmin==dmax==NULL */
-  double  beta_W;      /* tail loss prob used for calc'ing W, often == beta_qdb, may be greater, can't be less */
+  CM_QDBINFO *qdbinfo;   /* a pointer to the qdbinfo related to the matrix */
+  int      M;            /* copy of cm->M from cm this CM_TR_SCAN_MX is associated with */
+  int      W;            /* copy of cm->W from cm this CM_TR_SCAN_MX is associated with */
+  int   ***dnAAA;        /* [0..n..NSMX_QDB_IDX-1][1..j..W][0..v..M-1] min d value allowed for posn j, state v using QDB set n */
+  int   ***dxAAA;        /* [0..n..NSMX_QDB_IDX-1][1..j..W][0..v..M-1] max d value allowed for posn j, state v using QDB set n */
+  int     *bestr;        /* auxil info: best root state v at alpha[0][cur][d] (0->v truncated begin used if v != 0)*/
+  float   *bestsc;       /* auxil info: best score for parsetree at alpha[0][cur][d] in mode bestmode[d] */
+  char    *bestmode;     /* auxil info: best mode for parsetree at alpha[0][cur][d], gives score in bestsc[d] */
+  int      floats_valid; /* TRUE if float alpha matrices are valid, FALSE if not */
+  int      ints_valid;   /* TRUE if int   alpha matrices are valid, FALSE if not */
+  float    size_Mb;      /* size of matrix in Megabytes */
 
   /* f{J,L,R,T}alpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] for float implementations of CYK/Inside */
   float ***fJalpha;          /* non-BEGL_S states for float versions of CYK/Inside */
@@ -1582,10 +1634,10 @@ typedef struct trscanmx_s {
   int   ***iTalpha;          /* BIF states for int   versions of CYK/Inside */
   int     *iTalpha_mem;      /* ptr to the actual memory for iTalpha */
 
-  int      ncells_alpha;      /* number of alloc'ed, valid cells for f{J,L,R}alpha and i{J,L,R}alpha matrices, alloc'ed as contiguous block */
-  int      ncells_alpha_begl; /* number of alloc'ed, valid cells for f{J,L,R}alpha_begl and i{J,L,R}alpha_begl matrices, alloc'ed as contiguous block */
-  int      ncells_Talpha;     /* number of alloc'ed, valid cells for fTalpha and iTalpha matrices, alloc'ed as contiguous block */
-} TrScanMatrix_t;
+  int64_t  ncells_alpha;      /* number of alloc'ed, valid cells for f{J,L,R}alpha and i{J,L,R}alpha matrices, alloc'ed as contiguous block */
+  int64_t  ncells_alpha_begl; /* number of alloc'ed, valid cells for f{J,L,R}alpha_begl and i{J,L,R}alpha_begl matrices, alloc'ed as contiguous block */
+  int64_t  ncells_Talpha;     /* number of alloc'ed, valid cells for fTalpha and iTalpha matrices, alloc'ed as contiguous block */
+} CM_TR_SCAN_MX;
 
 /* Structure TruncOpts_t: Per-scan information for trCYK/trInside
  * scanning and alignment functions, information a given call of that
@@ -1642,30 +1694,14 @@ typedef struct expinfo_s {
 
 
 /* Exponential tail statistics modes, a different exp tail fit exists for each mode
- * 0..EXP_NMODES-1 are first dimension of cmstats->expAA 
- * order is important, it's exploited by cmcalibrate 
+ * 0..EXP_NMODES-1 are first dimension of cm->expA
+ * order is important, to cmcalibrate at least
  */
-/* 
-As of 1.0.2:
-*/
-#define EXP_CP9_GV 0
-#define EXP_CP9_GF 1
-#define EXP_CM_GC  2  
-#define EXP_CM_GI  3
-#define EXP_CP9_LV 4
-#define EXP_CP9_LF 5
-#define EXP_CM_LC  6
-#define EXP_CM_LI  7
-#define EXP_NMODES 8
-
-/* Filter threshold modes, used in cmcalibrate 
- * 0..FTHR_MODES-1 are only dimension cmstats->fthrA 
- */
-#define FTHR_CM_GC 0
-#define FTHR_CM_GI 1
-#define FTHR_CM_LC 2
-#define FTHR_CM_LI 3
-#define FTHR_NMODES 4
+#define EXP_CM_GC  0
+#define EXP_CM_GI  1
+#define EXP_CM_LC  2
+#define EXP_CM_LI  3
+#define EXP_NMODES 4
 
 /* Structure ComLog_t: command line info used to build/calibrate a CM.
  * 
@@ -1745,12 +1781,12 @@ typedef struct cm_s {
   float **tsc;		/*   Transition score vector, log odds             */
   float **esc;		/*   Emission score vector, log odds               */
   float **oesc;         /*   Optimized emission score log odds float vec   */
+  float **lmesc;        /*   Left marginal emission scores (log odds)      */
+  float **rmesc;        /*   Right marginal emission scores (log odds)     */                
   float *beginsc;	/*   Score for ROOT_S -> state v (local alignment) */
   float *trbeginsc;	/*   Score for ROOT_S -> state v (trunc alignment) */
   float *endsc;   	/*   Score for state_v -> EL (local alignment)     */
                         /* Parameters used in marginal alignments          */
-  float **lmesc;        /*   Left marginal emission scores (log odds)      */
-  float **rmesc;        /*   Right marginal emission scores (log odds)     */                
 
 			/* Scaled int parameters of the log odds model:    */
   int  **itsc;		/*   Transition score vector, scaled log odds int  */
@@ -1762,33 +1798,25 @@ typedef struct cm_s {
   int   *itrbeginsc;    /*   Score for ROOT_S -> state v (trunc alignment) */
   int   *iendsc;  	/*   Score for state_v -> EL (local alignment)     */
 
+  float  pbegin;        /* local begin prob to spread across internal nodes for local mode    */
+  float  pend;          /* local end prob to spread across internal nodes for local mode      */
+
   float   null2_omega;  /* prior probability of the null2 model (if it is used) */
   float   null3_omega;  /* prior probability of the null3 model (if it is used) */
 
   int    flags;		/* status flags                                    */
 
-  /* W and query dependent bands (QDB) on subsequence lengths at each state */
-  int    *dmin;         /* minimum d bound for each state v; [0..v..M-1]    */
-  int    *dmax;         /* maximum d bound for each state v; [0..v..M-1]    */
-  int     W;            /* max d: max size of a hit (EPN 08.18.05)                            */
-  double  beta_qdb;     /* tail loss probability for QDB calculation used to set dmin/dmax    */
-  double  beta_W;       /* tail loss probability for QDB calculation used to set W, often     *
-			 * equal to beta_qdb, but not always. beta_W >= beta_qdb ALWAYS.      *
-			 * If beta_W > beta_qdb, dmax[0] > W, d values > W are not allowed    *
-			 * in the DP algorithms though (enforced sneakily when the            *
-			 * ScanMatrix_t is built). However, if beta_W > beta_qdb, we still    *
-			 * can get less sensitivity loss w.r.t non-banded than if bands were  * 
-			 * tighter with beta_W == beta_qdb; because some subtrees (think      * 
-			 * BEGL's and BEGRs) still have wider bands, it's just the nodes near * 
-			 * the root that will have their dmax values truncated to <= cm->W.   */
-  double tau;           /* tail loss probability for HMM target dependent banding             */
+  /* W and query dependent bands (QDBs) on subsequence lengths at each state */
+  int     W;            /* max d: max size of a hit (EPN 08.18.05)                 */
+  double  beta_W;       /* tail loss probability for QDB calculation used to set W */
+  CM_QDBINFO *qdbinfo;  /* two sets of QDBs and the beta values used to calc them  */
+
+  double  tau;          /* tail loss probability for HMM target dependent banding             */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
   int         search_opts;/* search options                                                     */
   float      *root_trans; /* transition probs from state 0, saved IFF zeroed in ConfigLocal()   */
-  float       pbegin;     /* local begin prob to spread across internal nodes for local mode    */
-  float       pend;       /* local end prob to spread across internal nodes for local mode      */
   
   float  el_selfsc;     /* score of a self transition in the EL state
 			 * the EL state emits only on self transition (EPN 11.15.05)*/
@@ -1798,8 +1826,8 @@ typedef struct cm_s {
    * configured in cm_modelconfig.c:ConfigCM(). <cp9> is always built
    * and is configured (local begins/ ends and ELs) to match the CM.
    * <Lcp9>, <Rcp9> and <Tcp9> are for truncated alignment, one each
-   * for L, R and T modes. These are built unless the
-   * CM_CONFIG_NOTRUNC flag is raised. They are configured to match
+   * for L, R and T modes. These are built only if the 
+   * CM_CONFIG_TRUNC flag is raised. They are configured to match
    * their alignment mode. For example, Lcp9 has a global-like begin
    * (prob of ~1.0 into match state 1) but local-like ends
    * (equiprobable end points) to match the possibility of a 3'
@@ -1817,18 +1845,21 @@ typedef struct cm_s {
   CP9Bands_t *cp9b;       /* the CP9 bands                                          */
 
   /* DP matrices and some auxiliary info for DP algorithms */
-  /* for standard CM alignment/search */
+  /* for standard HMM banded CM alignment/search */
   CM_HB_MX           *hbmx;     /* growable HMM banded float matrix */
   CM_HB_MX           *ohbmx;    /* another, growable HMM banded float matrix for Outside/Posterior calcs */
   CM_HB_EMIT_MX      *ehbmx;    /* growable HMM banded emit matrix for residue posterior probability calcs */
   CM_HB_SHADOW_MX    *shhbmx;   /* growable HMM banded shadow matrix, for alignment tracebacks */
-  /* for truncated CM alignment/search */
+  /* for truncated HMM banded CM alignment/search */
   CM_TR_HB_MX        *trhbmx;   /* growable truncated HMM banded float matrix */
   CM_TR_HB_MX        *trohbmx;  /* another, growable truncated HMM banded float matrix for Outside/Posterior calcs */
   CM_TR_HB_EMIT_MX   *trehbmx;  /* growable truncated HMM banded emit matrix for residue posterior probability calcs */
   CM_TR_HB_SHADOW_MX *trshhbmx; /* growable truncated HMM banded shadow matrix, for alignment tracebacks */
-  /* for CM search or CP9 HMM alignment */
-  ScanMatrix_t       *smx;      /* matrices, info for CYK/Inside scans with this CM */
+  /* for standard non-HMM banded CM search */
+  CM_SCAN_MX         *smx;      /* matrices, info for CYK/Inside scans with this CM */
+  /* for truncated non-HMM banded CM search */
+  CM_TR_SCAN_MX      *trsmx;    /* matrices, info for CYK/Inside scans with this CM */
+  /* for CP9 HMM search/alignment */
   CP9_MX             *cp9_mx;   /* growable CP9 DP matrix */
   CP9_MX             *cp9_bmx;  /* another growable CP9 DP matrix, 'b' is for backward,
 				 * only alloc'ed to any significant size if we do Forward,Backward->Posteriors */
@@ -1839,7 +1870,7 @@ typedef struct cm_s {
   /* p7 hmms, added 08.05.08 */
   P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
   P7_HMM       *fp7;          /* the filter p7 HMM, read from CM file */
-  float        fp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_FP7_STATS) */
+  float         fp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_FP7_STATS) */
 
   /* emitmap, added 06.20.11 (post v1.0.2) */
   CMEmitMap_t   *emap;  /* maps model nodes to consensus positions */ 
@@ -1968,14 +1999,6 @@ typedef struct cm_pipeline_s {
   P7_GMX       *gxb;		/* generic Backward matrix                  */
   P7_GMX       *gfwd;		/* generic full Fwd matrix for envelopes    */
   P7_GMX       *gbck;		/* generic full Bck matrix for envelopes    */
-  ScanMatrix_t *fsmx;           /* scan matrix for CYK filter stage         */
-  int           need_fsmx;      /* TRUE if fsmx is necessary                */
-  ScanMatrix_t *smx;            /* scan matrix for final stage              */
-  int           need_smx;       /* TRUE if smx is necessary                 */
-  int          *fcyk_dmin;      /* QDB dmin values for filter CYK round     */
-  int          *fcyk_dmax;      /* QDB dmax values for filter CYK round     */
-  int          *final_dmin;     /* QDB dmin values for final round          */
-  int          *final_dmax;     /* QDB dmax values for final round          */
   TruncOpts_t  *tro;            /* information for truncated scan/aln       */
 
   /* Model-dependent parameters                                             */
@@ -2079,7 +2102,7 @@ typedef struct cm_pipeline_s {
   float  rt3;		/* controls when regions are flagged for split: if expected # of E preceding B is >= dt3   */
   int    ns;            /* number of traceback samples for domain/envelope def */
 
-  /* CM search options for fourth filter and final stage */
+  /* CM search options for CYK filter and final stage */
   int     fcyk_cm_search_opts;  /* CYK filter stage search opts             */
   int     final_cm_search_opts; /* final stage search opts                  */
   int     fcyk_cm_exp_mode;     /* CYK filter exp mode                      */
@@ -2089,6 +2112,9 @@ typedef struct cm_pipeline_s {
   double  fcyk_tau;             /* HMM bands tau for CYK filter stage       */
   double  final_tau;            /* HMM bands tau for final stage            */
   double  xtau;                 /* multiplier for tau when tightening bands */
+
+  /* configure options for all CMs we'll use in the pipeline */
+  int     cm_config_opts;
 
   /* Accounting. (reduceable in threaded/MPI parallel version)              */
   uint64_t      nmodels;           /* # of models searched                  */
@@ -2215,9 +2241,10 @@ typedef struct cm_hit_s {
   int            maxW;          /* predicted max reasonable size of a hit for model this hit is to */
 } CM_HIT;
 
-/* Structure: CM_TOPHITS
- * merging when we prepare to output results. "hit" list is NULL and
- * unavailable until after we do a sort.  
+/* Structure: CM_TOPHITS: Collection of hits that can be sorted by
+ * position or by score. This allows many hits to be merged when we
+ * prepare to output results. "hit" list is NULL and unavailable until
+ * after we do a sort.
  */
 typedef struct cm_tophits_s {
   CM_HIT **hit;                   /* sorted pointer array                     */
@@ -2229,6 +2256,7 @@ typedef struct cm_tophits_s {
   int      is_sorted_by_score;    /* TRUE when hits sorted by score, length, th->hit valid for all N hits */
   int      is_sorted_by_position; /* TRUE when hits sorted by cm_idx, seq_idx, position, th->hit valid for all N hits */
 } CM_TOPHITS;
+
 
 
 #endif /*STRUCTSH_INCLUDED*/

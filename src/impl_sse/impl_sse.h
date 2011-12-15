@@ -158,7 +158,7 @@ int SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int 
 CM_TOPHITS * ResolveMSCYK(CM_TOPHITS *initial, int i0, int j0, int W, float cutoff);
 
 /* sse_cm_dpsearch.c */
-int SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq,
+int SSE_CYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, ESL_DSQ *dsq,
 		int i0, int j0, float cutoff, CM_TOPHITS *hitlist,
 		int do_null3, float **ret_vsc, float *ret_sc);
 

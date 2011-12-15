@@ -42,7 +42,7 @@ static ESL_OPTIONS options[] = {
   { "-n",        eslARG_INT,  "10000", NULL, NULL,  NULL,  NULL, NULL, "number of monte carlo samples to do",           0 },
   { "-s",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, NULL, "set random number seed for Monte Carlo to <n>", 0 },
   { "-t",        eslARG_REAL,   "0.01",NULL, "x>0.",NULL,  NULL, NULL, "threshold for rejecting hypothesis that distros are identical ", 0 },
-  { "-W",        eslARG_INT,   "1000", NULL, "n>0", NULL,  NULL, NULL, "set maximum W (subseq length) to <n>",          0 },
+  { "-Z",        eslARG_INT,   "1000", NULL, "n>0", NULL,  NULL, NULL, "set maximum Z (subseq length) to <n>",          0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -65,7 +65,7 @@ main(int argc, char **argv)
   double   p;			/* p from chi squared test */
   double   threshold;		/* probability threshold for rejecting */
 
-  int      maxW;		/* maximum length that densities are calc'ed for */
+  int      maxZ;		/* maximum length that densities are calc'ed for */
   int      mc_nsample;		/* # of monte carlo samples to do */
   ESL_RANDOMNESS *r       = NULL;
   ESL_ALPHABET   *abc     = NULL;
@@ -75,7 +75,7 @@ main(int argc, char **argv)
    * Parse command line
    ***********************************************/
 
-  maxW           = esl_opt_GetInteger(go, "-W");
+  maxZ           = esl_opt_GetInteger(go, "-Z");
   mc_nsample     = esl_opt_GetInteger(go, "-n");
   threshold      = esl_opt_GetReal   (go, "-t");
 
@@ -97,18 +97,18 @@ main(int argc, char **argv)
 
   /* BandMonteCarlo() collects "density" as unnormalized counts
    */
-  if (! BandMonteCarlo(cm, mc_nsample, maxW, &mc_gamma))
-    cm_Fail("Your maxW (%d) must be too small, sorry...\n", maxW);
+  if (! BandMonteCarlo(cm, mc_nsample, maxZ, &mc_gamma))
+    cm_Fail("Your maxZ (%d) must be too small, sorry...\n", maxZ);
 
   /* BandCalculationEngine() calculates a real density for each state v
    */
-  if (! BandCalculationEngine(cm, maxW, 0.001, TRUE, NULL, NULL, &gamma, NULL))
-    cm_Fail("Your maxW (%d) must be too small, sorry...\n", maxW);
+  if ((status = BandCalculationEngine(cm, maxZ, NULL, 0.001, TRUE, NULL, &gamma, NULL, NULL)) != eslOK)
+    cm_Fail("Your maxZ (%d) must be too small, sorry...\n", maxZ);
 
   for (v = 0; v < cm->M; v++)
     {
-      esl_vec_DScale(gamma[v],    maxW+1, esl_vec_DSum(mc_gamma[v], maxW+1)); /* convert to #'s */
-      p = DChiSquareFit(gamma[v], mc_gamma[v], maxW+1);	      /* compare #'s    */
+      esl_vec_DScale(gamma[v],    maxZ+1, esl_vec_DSum(mc_gamma[v], maxZ+1)); /* convert to #'s */
+      p = DChiSquareFit(gamma[v], mc_gamma[v], maxZ+1);	      /* compare #'s    */
 
       if (cm->sttype[v] != E_st 
 	  && cm->ndtype[cm->ndidx[v]+1] != END_nd /* skip nodes with unreachable inserts */

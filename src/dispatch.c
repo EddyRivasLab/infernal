@@ -106,8 +106,6 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
   CP9Bands_t  *cp9b;            /* data structure for hmm bands (bands on the hmm states) 
 				 * and arrays for CM state bands, derived from HMM bands */
   CP9Map_t       *cp9map;       /* maps the hmm to the cm and vice versa */
-  float           swentry;	/* S/W aggregate entry probability       */
-  float           swexit;       /* S/W aggregate exit probability        */
 
   /* variables related to the do_sub option */
   int                spos;         /* HMM node most likely to have emitted posn 1 of target seq */
@@ -339,22 +337,24 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
   }
   /* Copy the QD bands in case we expand them. */
   if(do_qdb) {
-    if(bdump_level > 1) debug_print_bands(stdout, cm, cm->dmin, cm->dmax);
+    if(bdump_level > 1) DumpCMQDBInfo(stdout, cm, cm->qdbinfo);
     expand_flag = FALSE;
     /* Copy dmin and dmax, so we can replace them after expansion */
     ESL_ALLOC(orig_dmin, sizeof(int) * cm->M);
     ESL_ALLOC(orig_dmax, sizeof(int) * cm->M);
     for(v = 0; v < cm->M; v++) {
-      orig_dmin[v] = cm->dmin[v];
-      orig_dmax[v] = cm->dmax[v];
+      orig_dmin[v] = cm->qdbinfo->dmin1[v];
+      orig_dmax[v] = cm->qdbinfo->dmax1[v];
     }	  
   }
-  if(do_sub) { /* to get spos and epos for the sub_cm, 
-	        * we config the HMM to local mode with equiprobable start/end points.*/
-    swentry = ((hmm->M)-1.)/hmm->M; /* all start pts equiprobable, including 1 */
-    swexit  = ((hmm->M)-1.)/hmm->M; /* all end   pts equiprobable, including M */
-    CPlan9SWConfig(cm->cp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE means don't make I_0, D_1, I_M unreachable (like a local CM, undesirable for sub CM strategy)) */
-    CP9Logoddsify(hmm);
+  if(do_sub) { 
+    /* To get spos and epos for the sub_cm, we config the HMM to local
+     * mode with equiprobable start/end points.  Actually we just copy
+     * cm->Tcp9 (which is already setup that way) parameters into
+     * cm->cp9.
+     */
+    if(cm->Tcp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, do_sub is TRUE, but cm->Tcp9 is NULL");
+    if((status = cp9_Copy(cm->Tcp9, cm->cp9)) != eslOK) ESL_FAIL(status, errbuf, "DispatchAlignments, unable to copy cm->Tcp9 to cm->cp9");
   }
   if(! do_hbanded) { /* we need non-banded matrices for alignment */
     mx      = cm_mx_Create(cm);
@@ -556,7 +556,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
       /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
       /* (4) Build a new CP9 HMM from the sub CM. */
       esl_stopwatch_Start(watch2);
-      if((status = ConfigCM(sub_cm, errbuf, FALSE, orig_cm, submap)) != eslOK) return status; /* FALSE says: don't calculate W, we won't need it */
+      if((status = cm_ConfigureSub(sub_cm, errbuf, orig_cm, submap)) != eslOK) return status; /* FALSE says: don't calculate W, we won't need it */
       esl_stopwatch_Stop(watch2);
       FormatTimeString(time_buf, watch2->user, TRUE);
 #if PRINTNOW
@@ -586,14 +586,14 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
     if(do_qdb) {
       /*Check if we need to reset the query dependent bands b/c they're currently expanded. */
       if(expand_flag) {
-	for(v = 0; v < cm->M; v++) { cm->dmin[v] = orig_dmin[v]; cm->dmax[v] = orig_dmax[v]; }
+	for(v = 0; v < cm->M; v++) { cm->qdbinfo->dmin1[v] = orig_dmin[v]; cm->qdbinfo->dmax1[v] = orig_dmax[v]; }
 	expand_flag = FALSE;
       }
-      if((L < cm->dmin[0]) || (L > cm->dmax[0])) { 
+      if((L < cm->qdbinfo->dmin1[0]) || (L > cm->qdbinfo->dmax1[0])) { 
 	/* the seq we're aligning is outside the root band, so we expand.*/
-	ExpandBands(cm, L, cm->dmin, cm->dmax);
+	ExpandBands(cm, L, cm->qdbinfo->dmin1, cm->qdbinfo->dmax1);
 	if(debug_level > 0) fprintf(ofp, "# Expanded bands for seq : %s\n", seqs_to_aln->sq[i]->name);
-	if(bdump_level > 2) { fprintf(ofp, "printing expanded bands :\n"); debug_print_bands(ofp, cm, cm->dmin, cm->dmax); }
+	if(bdump_level > 2) { fprintf(ofp, "printing expanded bands :\n"); DumpCMQDBInfo(ofp, cm, cm->qdbinfo); }
 	expand_flag = TRUE;
       }
     }
@@ -616,17 +616,17 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
     }
     else if (do_small) { /* small D&C CYK alignment */
       if(do_qdb) { /* use QDBs when doing D&C CYK */
-	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->dmin, cm->dmax);
-	if(bdump_level > 0) qdb_trace_info_dump(cm, *cur_tr, cm->dmin, cm->dmax, bdump_level);
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->qdbinfo->dmin1, cm->qdbinfo->dmax1);
+	if(bdump_level > 0) qdb_trace_info_dump(cm, *cur_tr, cm->qdbinfo->dmin1, cm->qdbinfo->dmax1, bdump_level);
       }
       else { /* small D&C CYK non-banded alignment */
 	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
-	if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* informative as to where optimal parse goes outside bands */
+	if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->qdbinfo->dmin1, cm->qdbinfo->dmax1, bdump_level); /* informative as to where optimal parse goes outside bands */
       }
     }
     else if(do_qdb) { /* non-small, QDB banded CYK alignment */
-      sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->dmin, cm->dmax);
-      if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
+      sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->qdbinfo->dmin1, cm->qdbinfo->dmax1);
+      if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->qdbinfo->dmin1, cm->qdbinfo->dmax1, bdump_level);
     }
     else { /* non-small, non-QDB CYK or optimal accuracy alignment or sample an alignment from Inside matrix */
       if(do_hbanded) { /* HMM banded CYK, optimal accuracy or sample, either with or without posteriors annotated */
@@ -649,7 +649,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
 			  ((do_post || do_optacc) ? &ins_sc        : NULL), 
 			  cur_tr, &sc);
 	if(status != eslOK) return status;
-	if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* allows you to see where the non-banded parse went outside the QD bands. */
+	if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->qdbinfo->dmin1, cm->qdbinfo->dmax1, bdump_level); /* allows you to see where the non-banded parse went outside the QD bands. */
       } 
     }
     /* end of large if() else if() else if() else statement */
@@ -873,3 +873,4 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
   return status; /* NEVERREACHED */
 }
 
+  

@@ -78,7 +78,7 @@ static ESL_OPTIONS options[] = {
   { "--small",   eslARG_NONE,   FALSE, NULL, NULL,     NULL,"--cyk,--no-prob", "--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
   { "--hbanded", eslARG_NONE,"default",NULL, NULL,     NULL,      NULL,     ACCOPTS, "accelerate using CM plan 9 HMM derived bands", 3 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,"--hbanded",    NULL,     ACCOPTS, "do not use bands to accelerate aln algorithm", 3 },
-  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",  NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
+  { "--tau",     eslARG_REAL,   "1E-7",NULL, "1E-18<x<1",  NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
   { "--mxsize",  eslARG_REAL, "2048.0",NULL, "x>0.",   NULL,      NULL,"--small,--qdb", "set maximum allowable DP matrix size to <x> Mb", 3},
   /* Options that modify how the output alignment is created */
   { "--rna",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, OUTALPHOPTS, "output alignment as RNA sequence data", 4},
@@ -117,7 +117,7 @@ static ESL_OPTIONS options[] = {
   { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       "-l", "check that HMM posteriors for bands were correctly calc'ed", 102},
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 102 },
   { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,"--hbanded","--no-prob,--cyk",ACCOPTS, "use query dependent banded CYK alignment algorithm", 102 },
-  { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 102 },
+  { "--beta",    eslARG_REAL,   "1E-7",NULL, "1E-18<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 102 },
   { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded,--no-prob","--viterbi,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 102 },
   /* developer options related to output files and debugging */
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 103 },
@@ -125,11 +125,6 @@ static ESL_OPTIONS options[] = {
   { "--banddump",eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,"--nonbanded","set verbosity of band info print statements to <n>", 103 },
   { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of debugging print statements to <n>", 103 },
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb", 103 },  
-  /* Developer options related to experiment local begin/end modes */
-  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 104 },
-  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 104 },
-  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 104 },
-  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local end prob to <x>", 104 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -1344,19 +1339,17 @@ static int
 initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   int status;
-  int nstarts, nexits, nd;
 
   /* set up params/flags/options of the CM */
-  cm->beta_qdb = esl_opt_GetReal(go, "--beta");
-  cm->tau      = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
+  cm->tau = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
 
   /* update cm->config_opts */
-  if(esl_opt_GetBoolean(go, "-l"))
-    {
-      cm->config_opts |= CM_CONFIG_LOCAL;
-      cm->config_opts |= CM_CONFIG_HMMLOCAL;
-      cm->config_opts |= CM_CONFIG_HMMEL;
-    }
+  cm->config_opts |= CM_CONFIG_TRUNC; /* set up for truncated alignment */
+  if(esl_opt_GetBoolean(go, "-l")) { 
+    cm->config_opts |= CM_CONFIG_LOCAL;
+    cm->config_opts |= CM_CONFIG_HMMLOCAL;
+    cm->config_opts |= CM_CONFIG_HMMEL;
+  }
 
   /* update cm->align_opts */
   /* optimal accuracy alignment is default */
@@ -1388,48 +1381,21 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     cm->align_opts  |= CM_ALIGN_POST;
   }
   /* config QDB? */
-  if(esl_opt_GetBoolean(go, "--qdb"))          
-    { 
-      cm->align_opts  |= CM_ALIGN_QDB;
+  if(esl_opt_GetBoolean(go, "--qdb")) {
+    cm->align_opts  |= CM_ALIGN_QDB;
+    /* check if we need to reconfigure QDBs, if beta is the same as beta1 from the CM file, we don't have to */
+    if((status = CheckCMQDBInfo(cm->qdbinfo, esl_opt_GetReal(go, "--beta"), TRUE, 0., FALSE)) != eslOK) {
+      /* we'll use beta1 for alignment, setting them both as equal makes it slightly more efficient */
       cm->config_opts |= CM_CONFIG_QDB;
+      cm->qdbinfo->beta1 = esl_opt_GetReal(go, "--beta");
+      cm->qdbinfo->beta2 = esl_opt_GetReal(go, "--beta");
     }
-
-  /* BEGIN (POTENTIALLY) TEMPORARY BLOCK */
-  /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
-  cm->pbegin = esl_opt_GetReal(go, "--pbegin");
-  cm->pend   = esl_opt_GetReal(go, "--pend");
-  /* possibly overwrite local begin probs such that all begin points are equiprobable (--pebegin) */
-  if(esl_opt_GetBoolean(go, "--pebegin")) {
-    nstarts = 0;
-    for (nd = 2; nd < cm->nodes; nd++) 
-      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) 
-	nstarts++;
-    /* printf("nstarts: %d\n", nstarts); */
-    cm->pbegin = 1.- (1./(1+nstarts));
-    /* printf("pbegin: %.5f\n", cm->pbegin); */
   }
-  /* possibly overwrite cm->pend so that local end prob from all legal states is fixed,
-   * this is strange in that cm->pend may be placed as a number greater than 1., this number
-   * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
-   * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
-  if( esl_opt_IsOn(go, "--pfend")) {
-    nexits = 0;
-    for (nd = 1; nd < cm->nodes; nd++) {
-      if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
-	   cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
-	   cm->ndtype[nd] == BEGR_nd) && 
-	  cm->ndtype[nd+1] != END_nd)
-	nexits++;
-    }
-    cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
-  }
-  /* END (POTENTIALLY) TEMPORARY BLOCK */
-
 
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
-   * set local mode, make cp9 HMM, calculate QD bands etc. 
+   * set local mode, make cp9 HMM, calculate QD bands if nec etc. 
    */
-  if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status; /* FALSE says do not calculate W unless nec b/c we're using QDBs */
+  if((status = cm_Configure(cm, errbuf)) != eslOK) return status;
 
   /* if(cfg->my_rank == 0) printf("CM %d: %s\n", (cfg->ncm), cm->name); 
    * debug_print_cm_params(stdout, cm);
@@ -1924,7 +1890,7 @@ print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
 	  (esl_opt_GetBoolean(go, "--sub")) ? "yes" : "no");
   /* bands and beta/tau */
   if     (do_hbanded)    fprintf(stdout, "  %5s  %6.0e\n", "hmm", cm->tau);
-  else if(do_qdb)        fprintf(stdout, "  %5s  %6.0e\n", "qdb", cm->beta_qdb);
+  else if(do_qdb)        fprintf(stdout, "  %5s  %6.0e\n", "qdb", cm->qdbinfo->beta1);
   else                   fprintf(stdout, "  %5s  %6s\n", "none", "");
 
   if(cfg->scorefp != NULL) { 
@@ -1937,7 +1903,7 @@ print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
 	    (esl_opt_GetBoolean(go, "--sub")) ? "yes" : "no");
     /* bands and beta/tau */
     if     (do_hbanded)    fprintf(cfg->scorefp, "  %5s  %6.0e\n", "hmm", cm->tau);
-    else if(do_qdb)        fprintf(cfg->scorefp, "  %5s  %6.0e\n", "qdb", cm->beta_qdb);
+    else if(do_qdb)        fprintf(cfg->scorefp, "  %5s  %6.0e\n", "qdb", cm->qdbinfo->beta1);
     else                   fprintf(cfg->scorefp, "  %5s  %6s\n", "none", "");
   }
   return;
@@ -3369,7 +3335,7 @@ validate_meta(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t **cml
     if((status = HandModelmaker(cfg->mali_msa[m], errbuf, TRUE, FALSE, 0.5, &tmp_cm, &(cfg->mali_mtr[m]))) != eslOK) return status;
     /*                              !use RF! */
     if(!(CompareCMGuideTrees(cmlist[m], tmp_cm))) { 
-      tmp2_cm = CMRebalance(tmp_cm);
+      if((status = CMRebalance(tmp_cm, errbuf, &tmp2_cm)) != eslOK) cm_Fail(errbuf);
       FreeCM(tmp_cm);
       tmp_cm = NULL;
       if(!(CompareCMGuideTrees(cmlist[m], tmp2_cm))) cm_Fail("with -M, CM %d could not have been built by aligment %d. Did you remember to use --rf to cmbuild?", m+1, m+1);

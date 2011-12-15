@@ -196,25 +196,28 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, CP9_t *cp9, P7_HMM **ret_p7)
  * 
  * Purpose:  Create and fill a P7_HMM object from a CM and a CP9 HMM.
  * 
- * Args:     cm    - the cm, must have a cp9 model in it.
- *           cp9   - the CP9 HMM, usually cm->cp9loc
- * Return:   eslOK   on success
+ * Args:     cm     - the cm, must have a cp9 model in it.
+ *           cp9    - the CP9 HMM, usually cm->cp9loc
+ *           errbuf - for error messages
  *
- * Throws:   eslEINCOMPAT on contract violation
- *           eslEMEM on memory error
+ * Return:   eslOK on success
+ * Throws:   eslEINCOMPAT on contract violation, errbuf filled.
+ *           eslEMEM on memory error, errbuf filled.
  */
 int
-cm_cp9_to_p7(CM_t *cm, CP9_t *cp9)
+cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
 {
   int        status;
   int        k;
 
-  if(cp9 == NULL)            return eslEINCOMPAT; 
-  if(cm->mlp7 != NULL)       return eslEINCOMPAT;
-  if(cp9->M != cm->clen)     return eslEINCOMPAT;
+  /* contract check */
+  if(cp9 == NULL)            ESL_XFAIL(eslEINCOMPAT, errbuf, "trying to create a p7 from cp9 HMM, but cp9 is NULL");
+  if(cm->mlp7 != NULL)       ESL_XFAIL(eslEINCOMPAT, errbuf, "trying to create ml p7, but it already exists");
+  if(cm->W == 0)             ESL_XFAIL(eslEINCOMPAT, errbuf, "trying to create ml p7, cm->W is 0");
+  if(cp9->M != cm->clen)     ESL_XFAIL(eslEINCOMPAT, errbuf, "trying to create ml p7, cm->clen != cp9->M");
 
-  if ((cm->mlp7 = p7_hmm_Create(cm->clen, cm->abc)) == NULL)  return eslEMEM;
-  if ((status = p7_hmm_Zero(cm->mlp7))                 != eslOK) return status;
+  if ((cm->mlp7 = p7_hmm_Create(cm->clen, cm->abc)) == NULL) ESL_XFAIL(status, errbuf, "out of memory");
+  p7_hmm_Zero(cm->mlp7);
 
   /* copy transitions */
   for (k = 0; k <= cm->mlp7->M; k++) { 
@@ -255,14 +258,14 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9)
   for (k = 0; k <= cm->clen; k++) esl_vec_FCopy(cp9->ins[k], cm->abc->K, cm->mlp7->ins[k]);
   for (k = 0; k <= cm->clen; k++) esl_vec_FNorm(cm->mlp7->ins[k], cm->abc->K);
 
-  /* copy the max length parameter */
+  /* copy cm->W as max_length */
   cm->mlp7->max_length = cm->W;
 
   p7_hmm_SetName       (cm->mlp7, cm->name);
   p7_hmm_SetAccession  (cm->mlp7, cm->acc);
   p7_hmm_SetDescription(cm->mlp7, cm->desc);
   p7_hmm_SetCtime      (cm->mlp7);
-  if((status = p7_hmm_SetConsensus(cm->mlp7, NULL)) != eslOK) goto ERROR;
+  if((status = p7_hmm_SetConsensus(cm->mlp7, NULL)) != eslOK) ESL_XFAIL(status, errbuf, "out of memory");
   if(cm->comlog != NULL && cm->comlog->bcom != NULL) { 
     ESL_ALLOC(cm->mlp7->comlog, sizeof(char)* (strlen(cm->comlog->bcom)+1));
     *(cm->mlp7->comlog) = '\0'; /* need this to make strcat work */
@@ -275,7 +278,7 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9)
   cm->mlp7->checksum = 0;
 
   /* set the model composition */
-  if ((status = p7_hmm_SetComposition(cm->mlp7)) != eslOK) goto ERROR;
+  if ((status = p7_hmm_SetComposition(cm->mlp7)) != eslOK) ESL_XFAIL(status, errbuf, "out of memory");
 
   cm->flags |= CMH_MLP7; /* raise the P7 flag */
 

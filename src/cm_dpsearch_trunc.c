@@ -41,12 +41,19 @@
  * Date:     EPN, Tue Aug 16 04:16:03 2011
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
- *           a reference trCYK scanning algorithm. Query-dependent 
- *           bands are used or not used as specified in ScanMatrix_t <smx>.
+ *           a reference scanning trCYK implementation. 
+ *
+ *           The choice of using one of two sets of query-dependent
+ *           bands (QDBs) or not using QDBs is controlled by
+ *           <qdbidx>. The QDBs are stored in <trsmx>. Note that with
+ *           trCYK only maximum subsequence length bands (dmax) are
+ *           used. Because the target can be truncated anywhere, using
+ *           minimum subsequence lengths (dmin) doesn't make sense.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
  *           trsmx           - TrScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           qdbidx          - controls which QDBs to use: SMX_NOQDB | SMX_QDB1_TIGHT | SMX_QDB2_LOOSE
  *           tro             - TruncOpts_t with information on which modes to allow
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
@@ -55,8 +62,8 @@
  *           th              - CM_TOPHITS to add to; if NULL, don't add to it
  *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           env_cutoff      - ret_envi..ret_envj will include all hits that exceed this bit sc
- *           ret_envi        - min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
- *           ret_envj        - max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
+ *           ret_envi        - RETURN: min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
+ *           ret_envj        - RETURN: max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not wanted
  *           ret_mode        - RETURN: mode of best overall hit (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
  *           ret_sc          - RETURN: score of best overall hit
@@ -64,13 +71,12 @@
  * Note:     This function is heavily synchronized with RefITrInsideScan()
  *           any change to this function should be mirrored in that function.. 
  *
- * Returns:  eslOK on succes;
- *           <ret_sc> is score of best overall hit. Information on hits added to <hitlist>.
- *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
- *           Dies immediately if some error occurs.
+ * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
+ *           eslEINCOMPAT on contract violation, errbuf if filled with informative error message.
+ *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 	     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc)
 {
   int       status;
@@ -99,6 +105,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro, ES
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn, dx;             /* minimum/maximum valid d for current state */
   int       kn, kx;             /* minimum/maximum valid k for current d in B_st recursion */
+  int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
@@ -114,39 +121,41 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro, ES
   int   fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, CMH_BITS flag is not raised.\n");
-  if(j0 < i0)                              ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, i0: %" PRId64 " j0: %" PRId64 "\n", i0, j0);
-  if(dsq == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, dsq is NULL\n");
-  if(trsmx == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, trsmx == NULL\n");
-  if(cm->search_opts & CM_SEARCH_INSIDE)   ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, CM_SEARCH_INSIDE flag raised");
-  if(! (trsmx->flags & cmTRSMX_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, ScanMatrix's cmTRSMX_HAS_FLOAT flag is not raised");
+  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, CMH_BITS flag is not raised.\n");
+  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
+  if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, dsq is NULL\n");
+  if(cm->search_opts & CM_SEARCH_INSIDE)     ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, CM_SEARCH_INSIDE flag raised");
+  if(trsmx == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, trsmx == NULL\n");
+  if(! trsmx->floats_valid)                  ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, trsmx->floats_valid if FALSE");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
-  float ***Jalpha      = trsmx->fJalpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] Jalpha DP matrix, NULL for v == BEGL_S */
-  float ***Jalpha_begl = trsmx->fJalpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] Jalpha DP matrix, NULL for v != BEGL_S */
-  float ***Lalpha      = trsmx->fLalpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] Lalpha DP matrix, NULL for v == BEGL_S */
-  float ***Lalpha_begl = trsmx->fLalpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] Lalpha DP matrix, NULL for v != BEGL_S */
-  float ***Ralpha      = trsmx->fRalpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v == BEGL_S */
-  float ***Ralpha_begl = trsmx->fRalpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v != BEGL_S */
-  float ***Talpha      = trsmx->fTalpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] Talpha DP matrix, NULL for v != BIF_B  */
-  int    **dnAA        = trsmx->dnAA;         /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int    **dxAA        = trsmx->dxAA;         /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  int     *bestr       = trsmx->bestr;        /* [0..d..W] best entry state v (0->v truncated begin) for this d (recalc'ed for each endpoint j) */
-  char    *bestmode    = trsmx->bestmode;     /* [0..d..W] mode of best parsetree for this d (recalc'ed for each endpoint j) */
-  float   *bestsc      = trsmx->bestsc;       /* [0..d..W] score of best parsetree for this d (recalc'ed for each endpoint j) */
-  int     *dmax        = trsmx->dmax;         /* [0..v..cm->M-1] maximum d allowed for this state */
-  float  **esc_vAA     = cm->oesc;            /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
- 					       * and all possible emissions a (including ambiguities) */
-  float  **lmesc_vAA   = cm->lmesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] left  marginal emission scores for v */
+  float ***Jalpha      = trsmx->fJalpha;       /* [0..j..1][0..v..cm->M-1][0..d..W] Jalpha DP matrix, NULL for v == BEGL_S */
+  float ***Jalpha_begl = trsmx->fJalpha_begl;  /* [0..j..W][0..v..cm->M-1][0..d..W] Jalpha DP matrix, NULL for v != BEGL_S */
+  float ***Lalpha      = trsmx->fLalpha;       /* [0..j..1][0..v..cm->M-1][0..d..W] Lalpha DP matrix, NULL for v == BEGL_S */
+  float ***Lalpha_begl = trsmx->fLalpha_begl;  /* [0..j..W][0..v..cm->M-1][0..d..W] Lalpha DP matrix, NULL for v != BEGL_S */
+  float ***Ralpha      = trsmx->fRalpha;       /* [0..j..1][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v == BEGL_S */
+  float ***Ralpha_begl = trsmx->fRalpha_begl;  /* [0..j..W][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v != BEGL_S */
+  float ***Talpha      = trsmx->fTalpha;       /* [0..j..1][0..v..cm->M-1][0..d..W] Talpha DP matrix, NULL for v != BIF_B  */
+  int    **dnAA        = trsmx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int    **dxAA        = trsmx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int     *bestr       = trsmx->bestr;         /* [0..d..W] best entry state v (0->v truncated begin) for this d (recalc'ed for each endpoint j) */
+  char    *bestmode    = trsmx->bestmode;      /* [0..d..W] mode of best parsetree for this d (recalc'ed for each endpoint j) */
+  float   *bestsc      = trsmx->bestsc;        /* [0..d..W] score of best parsetree for this d (recalc'ed for each endpoint j) */
+  float  **esc_vAA     = cm->oesc;             /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
+ 					        * and all possible emissions a (including ambiguities) */
+  float  **lmesc_vAA   = cm->lmesc;            /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] left  marginal emission scores for v */
+  float  **rmesc_vAA   = cm->rmesc;            /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] right marginal emission scores for v */
+
+  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmax = NULL; }
+  else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmax = cm->qdbinfo->dmax1; }
+  else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmax = cm->qdbinfo->dmax2; }
+  else ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, qdbidx is invalid");
 
   /* determine which matrices we need to fill in based on <tro> */
   fill_L = tro->allowL        ? TRUE : FALSE;
   fill_R = tro->allowR        ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
-
-  float  **rmesc_vAA   = cm->rmesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] right marginal emission scores for v */
-  /* determine if we're doing banded/non-banded */
-  if(trsmx->dmax != NULL) do_banded = TRUE;
   
   L = j0-i0+1;
   W = trsmx->W;
@@ -720,20 +729,27 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro, ES
   
  ERROR:
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
-  return 0.; /* NEVERREACHED */
+  return status; /* NEVERREACHED */
 }
 
 /* Function: RefITrInsideScan()
  * Date:     EPN, Wed Aug 24 15:23:37 2011
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
- *           a reference trInside scanning algorithm. Query-dependent 
- *           bands are used or not used as specified in ScanMatrix_t <smx>.
+ *           a reference scanning trInside implementation. 
+ *
+ *           The choice of using one of two sets of query-dependent
+ *           bands (QDBs) or not using QDBs is controlled by
+ *           <qdbidx>. The QDBs are stored in <trsmx>. Note that with
+ *           trCYK only maximum subsequence length bands (dmax) are
+ *           used. Because the target can be truncated anywhere, using
+ *           minimum subsequence lengths (dmin) doesn't make sense.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           trsmx           - TrScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
- *           tro            - TruncOpts_t with information on which modes to allow
+ *           trsmx           - CM_TR_SCAN_MX for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           qdbidx          - controls which QDBs to use: SMX_NOQDB | SMX_QDB1_TIGHT | SMX_QDB2_LOOSE
+ *           tro             - TruncOpts_t with information on which modes to allow
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -741,8 +757,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro, ES
  *           th              - CM_TOPHITS to add to; if NULL, don't add to it
  *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           env_cutoff      - ret_envi..ret_envj will include all hits that exceed this bit sc
- *           ret_envi        - min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
- *           ret_envj        - max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
+ *           ret_envi        - RETURN: min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
+ *           ret_envj        - RETURN: max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_mode        - RETURN: mode of best overall hit (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
  *           ret_sc          - RETURN: score of best overall hit
@@ -750,13 +766,12 @@ RefTrCYKScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro, ES
  * Note:     This function is heavily synchronized with RefTrCYKScan()
  *           any change to this function should be mirrored in that functions. 
  *
- * Returns:  eslOK on succes;
- *           <ret_sc> is score of best overall hit. Information on hits added to <hitlist>.
- *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
- *           Dies immediately if some error occurs.
+ * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
+ *           eslEINCOMPAT on contract violation, errbuf if filled with informative error message.
+ *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 		 int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc)
 {
   int       status;
@@ -786,6 +801,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn, dx;             /* minimum/maximum valid d for current state */
   int       kn, kx;             /* minimum/maximum valid k for current d in B_st recursion */
+  int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
@@ -802,39 +818,40 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, CMH_BITS flag is not raised.\n");
-  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, i0: %" PRId64 " j0: %" PRId64 "\n", i0, j0);
+  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, dsq is NULL\n");
-  if(trsmx == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, trsmx == NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (trsmx->flags & cmTRSMX_HAS_INT))     ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, ScanMatrix's cmTRSMX_HAS_FLOAT flag is not raised");
+  if(trsmx == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, trsmx == NULL\n");
+  if(! trsmx->ints_valid)                    ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, trsmx->ints_valid if FALSE");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
-  int  ***Jalpha       = trsmx->iJalpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] Jalpha DP matrix, NULL for v == BEGL_S */
-  int  ***Jalpha_begl  = trsmx->iJalpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] Jalpha DP matrix, NULL for v != BEGL_S */
-  int  ***Lalpha       = trsmx->iLalpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] Lalpha DP matrix, NULL for v == BEGL_S */
-  int  ***Lalpha_begl  = trsmx->iLalpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] Lalpha DP matrix, NULL for v != BEGL_S */
-  int  ***Ralpha       = trsmx->iRalpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v == BEGL_S */
-  int  ***Ralpha_begl  = trsmx->iRalpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v != BEGL_S */
-  int  ***Talpha       = trsmx->iTalpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] Talpha DP matrix, NULL for v != BIF_B  */
-  int   **dnAA         = trsmx->dnAA;         /* [0..j..W][0..v..cm->M-1] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA         = trsmx->dxAA;         /* [0..j..W][0..v..cm->M-1] maximum d for v, j (for j > W use [v][W]) */
-  int    *bestr        = trsmx->bestr;        /* [0..d..W] best root state (for local begins or 0) for this d */
-  char   *bestmode     = trsmx->bestmode;     /* [0..d..W] mode of best parsetree for this d */
-  float  *bestsc      = trsmx->bestsc;        /* [0..d..W] score of best parsetree for this d (recalc'ed for each endpoint j) */
-  int    *dmax         = trsmx->dmax;         /* [0..v..cm->M-1] maximum d allowed for this state */
-  int   **esc_vAA      = cm->ioesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
- 					       * and all possible emissions a (including ambiguities) */
-  int   **lmesc_vAA    = cm->ilmesc;          /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] left  marginal emission scores for v */
-  int   **rmesc_vAA    = cm->irmesc;          /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] right marginal emission scores for v */
+  int  ***Jalpha       = trsmx->iJalpha;       /* [0..j..1][0..v..cm->M-1][0..d..W] Jalpha DP matrix, NULL for v == BEGL_S */
+  int  ***Jalpha_begl  = trsmx->iJalpha_begl;  /* [0..j..W][0..v..cm->M-1][0..d..W] Jalpha DP matrix, NULL for v != BEGL_S */
+  int  ***Lalpha       = trsmx->iLalpha;       /* [0..j..1][0..v..cm->M-1][0..d..W] Lalpha DP matrix, NULL for v == BEGL_S */
+  int  ***Lalpha_begl  = trsmx->iLalpha_begl;  /* [0..j..W][0..v..cm->M-1][0..d..W] Lalpha DP matrix, NULL for v != BEGL_S */
+  int  ***Ralpha       = trsmx->iRalpha;       /* [0..j..1][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v == BEGL_S */
+  int  ***Ralpha_begl  = trsmx->iRalpha_begl;  /* [0..j..W][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v != BEGL_S */
+  int  ***Talpha       = trsmx->iTalpha;       /* [0..j..1][0..v..cm->M-1][0..d..W] Talpha DP matrix, NULL for v != BIF_B  */
+  int   **dnAA         = trsmx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA         = trsmx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *bestr        = trsmx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d */
+  char   *bestmode     = trsmx->bestmode;      /* [0..d..W] mode of best parsetree for this d */
+  float  *bestsc       = trsmx->bestsc;        /* [0..d..W] score of best parsetree for this d (recalc'ed for each endpoint j) */
+  int   **esc_vAA      = cm->ioesc;            /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
+ 					        * and all possible emissions a (including ambiguities) */
+  int   **lmesc_vAA    = cm->ilmesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] left  marginal emission scores for v */
+  int   **rmesc_vAA    = cm->irmesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] right marginal emission scores for v */
 
+  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmax = NULL; }
+  else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmax = cm->qdbinfo->dmax1; }
+  else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmax = cm->qdbinfo->dmax2; }
+  else ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, qdbidx is invalid");
 
   /* determine which matrices we need to fill in based on <tro> */
   fill_L = tro->allowL        ? TRUE : FALSE;
   fill_R = tro->allowR        ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
-
-  /* determine if we're doing banded/non-banded */
-  if(trsmx->dmax != NULL) do_banded = TRUE;
   
   L = j0-i0+1;
   W = trsmx->W;
@@ -1404,17 +1421,17 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro
   
  ERROR:
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
-  return 0.; /* NEVERREACHED */
+  return status; /* NEVERREACHED */
 }
 
 /* Function: TrCYKScanHB()
  * Incept:   EPN, Thu Aug 25 15:19:28 2011
  *
- * Purpose:  An HMM banded version of a scanning TrCYK algorithm. Takes
- *           a CM_TR_HB_MX data structure which is indexed [v][j][d] with
- *           only cells within the bands allocated.
- *           (different than other (non-HB) scanning function's convention 
- *            of [j][v][d]).
+ * Purpose:  An HMM banded scanning TrCYK implementation. Takes a
+ *           CM_TR_HB_MX data structure which is indexed [v][j][d]
+ *           with only cells within the bands allocated (different
+ *           than other (non-HB) scanning function's convention of
+ *           [j][v][d]). QDBs are not used.
  *
  *           This function is very similar to FTrInsideScanHB(). Any changes
  *           should be mirrored there.
@@ -1431,7 +1448,9 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro
  *
  * Args:     cm        - the model    [0..M-1]
  *           errbuf    - for returning error messages
- *           tro      - TruncOpts_t with information on which modes to allow
+ *           mx        - the dp matrix, only cells within bands in cm->cp9b will be valid. 
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           tro       - TruncOpts_t with information on which modes to allow
  *           dsq       - the sequence [1..(j0-i0+1)]   
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
@@ -1439,19 +1458,21 @@ RefITrInsideScan(CM_t *cm, char *errbuf, TrScanMatrix_t *trsmx, TruncOpts_t *tro
  *           hitlist   - CM_TOPHITS hitlist to add to; if NULL, don't add to it
  *           do_null3  - TRUE to do NULL3 score correction, FALSE not to
  *           env_cutoff- ret_envi..ret_envj will include all hits that exceed this bit sc
- *           ret_envi  - min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
- *           ret_envj  - max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
- *           mx        - the dp matrix, only cells within bands in cm->cp9b will be valid. 
- *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           ret_envi  - RETURN: min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
+ *           ret_envj  - RETURN: max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_mode  - RETURN: mode of best overall hit (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
  *           ret_sc    - RETURN: score of best overall hit
  *                       
- * Returns: eslOK on success; eslERANGE if required matrix size exceeds <size_limit>
- *          <ret_sc>: score of the best hit.
+ * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
+ *           eslEINCOMPAT on contract violation, errbuf if filled with informative error message.
+ *           eslEINCONCEIVABLE if bands allow a hit > L, errbuf filled.
+ *           eslEINVAL if no marginal mode is allowed for state 0, given the bands, errbuf filled.
+ *           eslERANGE if required HMM banded matrix size exceeds <size_limit>, errbuf filled.
+ *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
-	    CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc)
+TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
+	    int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc)
 {
   int      status;
   GammaHitMx_t *gamma = NULL;  /* semi-HMM for hit resoultion */
@@ -1505,7 +1526,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), dsq is NULL.\n");
   if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), mx is NULL.\n");
-  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), mx is NULL.\n");
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), cm->cp9 is NULL.\n");
 
   ESL_DPRINTF1(("cm->search_opts & CM_SEARCH_HMMALNBANDS: %d\n", cm->search_opts & CM_SEARCH_HMMALNBANDS));
 
@@ -2526,17 +2547,17 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
 
  ERROR: 
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
-  return 0.; /* never reached */
+  return status; /* never reached */
 }
 
 /* Function: FTrInsideScanHB()
  * Incept:   EPN, Wed Sep  7 11:31:29 2011
  *
- * Purpose:  An HMM banded version of a scanning TrInside algorithm. Takes
- *           a CM_TR_HB_MX data structure which is indexed [v][j][d] with
- *           only cells within the bands allocated.
- *           (different than other (non-HB) scanning function's convention 
- *            of [j][v][d]). This version uses float scores, not integers.
+ * Purpose:  An HMM banded scanning TrInside implementation. Takes a
+ *           CM_TR_HB_MX data structure which is indexed [v][j][d]
+ *           with only cells within the bands allocated (different
+ *           than other (non-HB) scanning function's convention of
+ *           [j][v][d]). QDBs are not used.
  *
  *           This function is very similar to TrCYKScanHB(). Any changes
  *           should be mirrored there.
@@ -2553,7 +2574,9 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
  *
  * Args:     cm        - the model    [0..M-1]
  *           errbuf    - for returning error messages
- *           tro      - TruncOpts_t with information on which modes to allow
+ *           mx        - the dp matrix, only cells within bands in cm->cp9b will be valid. 
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           tro       - TruncOpts_t with information on which modes to allow
  *           dsq       - the sequence [1..(j0-i0+1)]   
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
@@ -2563,17 +2586,19 @@ TrCYKScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, 
  *           env_cutoff- ret_envi..ret_envj will include all hits that exceed this bit sc
  *           ret_envi  - min position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted
  *           ret_envj  - max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
- *           mx        - the dp matrix, only cells within bands in cm->cp9b will be valid. 
- *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_mode  - RETURN: mode of best overall hit (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
  *           ret_sc    - RETURN: score of best overall hit (vsc[0])
  *                       
- * Returns: eslOK on success; eslERANGE if required matrix size exceeds <size_limit>
- *          <ret_sc>: score of the best hit.
+ * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
+ *           eslEINCOMPAT on contract violation, errbuf if filled with informative error message.
+ *           eslEINVAL if no marginal mode is allowed for state 0, given the bands, errbuf filled.
+ *           eslEINCONCEIVABLE if bands allow a hit > L, errbuf filled.
+ *           eslERANGE if required HMM banded matrix size exceeds <size_limit>, errbuf filled.
+ *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-FTrInsideScanHB(CM_t *cm, char *errbuf, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, 
-		CM_TR_HB_MX *mx, float size_limit, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc)
+FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+		int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc)
 {
   int      status;
   GammaHitMx_t *gamma = NULL;  /* semi-HMM for hit resoultion */
@@ -3734,7 +3759,7 @@ main(int argc, char **argv)
   int             do_random;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
   char            errbuf[cmERRBUFSIZE];
-  TrScanMatrix_t *trsmx = NULL;
+  CM_TR_SCAN_MX  *trsmx = NULL;
   TruncOpts_t    *tro  = NULL;
   ESL_SQFILE     *sqfp  = NULL;        /* open sequence input file stream */
   CMConsensus_t  *cons  = NULL;
@@ -3857,18 +3882,14 @@ main(int argc, char **argv)
     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
     esl_vec_DNorm(dnull, cm->abc->K);
     /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
-    int safe_windowlen = cm->clen * 2;
-    double **gamma = NULL;
-    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
-      safe_windowlen *= 2;
-      /* This is a temporary fix becuase BCE() overwrites gamma, leaking memory
-       * Probably better long-term for BCE() to check whether gamma is already allocated
-       */
-      FreeBandDensities(cm, gamma);
-      if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
-    }
-    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, gamma[0], safe_windowlen, FALSE);
-    FreeBandDensities(cm, gamma);
+    double *gamma0_loc;
+    double *gamma0_glb;
+    if((status = CalculateQueryDependentBands(cm, errbuf, NULL, DEFAULT_BETA_W, NULL, &gamma0_loc, &gamma0_glb)) != eslOK) cm_Fail(errbuf);
+    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, 
+				      (cm->flags & CMH_LOCAL_BEGIN) ? gamma0_loc : gamma0_glb, 
+				      safe_windowlen, FALSE);
+    free(gamma0_loc);
+    free(gamma0_glb);
     free(dnull);
   }
   else /* don't randomly generate seqs, emit them from the CM */

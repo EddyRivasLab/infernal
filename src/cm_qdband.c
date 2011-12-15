@@ -29,39 +29,69 @@
 #include "funcs.h"
 #include "structs.h"
 
-void
-BandExperiment(CM_t *cm)
-{
-  int  W;
-  int *dmin, *dmax;
+static char *qdbinfo_setby_to_string(int setby);
 
-  W = 1000;
-  while (! BandCalculationEngine(cm, W, 0.00001, FALSE, &dmin, &dmax, NULL, NULL))
-    {
-      W += 1000;
-      ESL_DPRINTF1(("increasing W to %d, redoing band calculation...\n", W));
-    }
+/* Function:  CalculateQueryDependentBands()
+ * Incept:    EPN, Sat Dec 10 16:23:53 2011
+ *
+ * Purpose:   A wrapper for BandCalculationEngine() (see that function
+ *            for more information). BCE() requires a guess at a maximum
+ *            length Z hat may or may not satisfy our criteria for 
+ *            truncation error, so if it fails we continue to call it
+ *            with larger Z until it passes.
+ *
+ * Returns:   eslOK on success.
+ *            eslEINVAL if qdbinfo->beta1 is < qdbinfo->beta2 (beta1 should always be higher (tighter bands))
+ *            eslEMEM if we're out of memory 
+ *            eslEINCONCEIVABLE if (Z = cm->clen * 1000) is still not big enough
+ */
+int
+CalculateQueryDependentBands(CM_t *cm, char *errbuf, CM_QDBINFO *qdbinfo, double beta_W, int *ret_W, 
+			     double **ret_gamma0_loc, double **ret_gamma0_glb)
+{
+  int status;
+  int Z;
+
+  if(qdbinfo != NULL && (qdbinfo->beta1 - qdbinfo->beta2 < 1E-20)) ESL_FAIL(eslEINVAL, errbuf, "Calculating QDBs, qdbinfo->beta1 < qdbinfo->beta2"); 
+
+  Z = cm->clen * 4;
+  while((status = BandCalculationEngine(cm, Z, qdbinfo, beta_W, FALSE, ret_W, NULL, ret_gamma0_loc, ret_gamma0_glb)) != eslOK) { 
+    if(status == eslEMEM)     ESL_FAIL(status, errbuf, "Calculating QDBs, out of memory");    
+    if(status != eslERANGE)   ESL_FAIL(status, errbuf, "Calculating QDBs, unexpected error");    
+    Z *= 2;
+    if(Z > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Calculating QDBs, Z got insanely large (> 1000*clen)");
+  }
+
+  return eslOK;
 }
+
 
 /* Function:  BandCalculationEngine()
  * Incept:    SRE, Sat Oct 11 14:17:40 2003 [St. Louis]
  *
- * Purpose:   Given a CM and a maximum length W;
+ * Purpose:   Given a CM and a maximum length Z;
  *            calculate probability densities gamma_v(n), probability
  *            of a parse subtree rooted at state v emitting a sequence
  *            of length n.
- *            Then use these to return bounds dmin[v] and dmax[v] which
- *            include a probability mass of >= 1-2(p_thresh).
- *            Each truncated tail (left and right) contains <= p_thresh
- *            probability mass.
- *             
+ * 
+ *            Then use these to return up to two sets of bounds 
+ *            dmin1[v]..dmax1[v] and dmin2[v]..dmax2[v] which
+ *            include a probability mass of >= 1-2(beta1) and 
+ *            >= 1-2(beta2) respectively. Each truncated tail 
+ *            (left and right) contains <= beta1 and <= beta2 
+ *            * probability mass.
+ *       
+ *            dmin1, dmax2, dmin2, dmax2, beta1, beta2 are all
+ *            part of the passed in <qdbinfo> data structure.
+ *            If <qdbinfo> is NULL, don't calculate these bands.
+ *
  *            Let L_v(n) be the cumulative probability distribution,
  *            P(length <= n), for state v:
  *                L_v(n) = \sum_{i=0}^{n}  \gamma_v(i)
  *                
  *            For each state v, find dmin such that the probability
- *            of missing a hit is <= p on the low side:
- *                dmin = max_dmin L_v(dmin-1) <= p
+ *            of missing a hit is <= \beta on the low side:
+ *                dmin = max_dmin L_v(dmin-1) <= \beta
  *                
  *            On the high side, let H_v(n) be 1-L_v(n): e.g.
  *            P(length > n) for state v. But it is important not 
@@ -70,48 +100,67 @@ BandExperiment(CM_t *cm)
  *                H_v(n) = \sum_{i=n+1}{\infty} \gamma_v(i)
  *                
  *            Then for each state v, find a dmax such that the 
- *            probability of missing a hit is <= p on the high
+ *            probability of missing a hit is <= \beta on the high
  *            side:
- *               dmax = min_dmax  H_v(dmax) <= p
+ *               dmax = min_dmax  H_v(dmax) <= \beta
  *               
  *            Note on truncation error:
  *            Of course we can't calculate the sum to \infty; we have
  *            to truncate somewhere. Truncation error must be negligible,
- *            else our choice of bands will depend on the choice of W.
+ *            else our choice of bands will depend on the choice of Z.
  *            See BandTruncationNegligible() for the test.
  *            
+ *            Note on model configuration:
+ *            We always calculate QDBs with local ends off and local
+ *            begins on. This makes the QDBs safe to use for local or
+ *            global search: putting local begins on only affects the
+ *            ROOT_S state 0, which must be able to transit to any
+ *            state for which a legal local begin is possible. A
+ *            scanner function (e.g. cm_dpsearch.c:FastCYKScan()) can
+ *            restrict dmin[0] and dmax[0] in global mode as a small
+ *            optimization.
+ *         
+ *            However, we don't want to modify the model configuration
+ *            since local begins on and local ends off is a strange
+ *            combination. So we make copies of <cm->t> and calculate
+ *            new versions of <cm->begin> and <cm->trbegin> vectors
+ *            just to use to calculate bands. This way we don't have
+ *            to reconfigure the model twice: once upon entering the
+ *            function and then back to its original state upon exit.
+ *            This would be relatively quick, our main motivation is 
+ *            that we want to limit the possible paths through the 
+ *            different configuration functions as much as possible
+ *            to limit the chance that some of those paths would 
+ *            screw something up.
  *
- * Args:      cm        - model to build the bands for
- *            W         - maximum subsequence length W.
- *            p_thresh  - tail probability mass; bounds will be set
- *                        so that we miss <= p_thresh of the mass in
- *                        the left tail and the right tail.
+ * Args:      cm             - model to build the bands for
+ *            Z              - maximum subsequence length Z
+ *            qdbinfo        - data structure with two sets of preallocated 
+ *                             dmin/dmax arrays and two beta values, if 
+ *                             NULL we don't care about d bounds.
+ *            beta_W         - tail probability mass used to set ret_W, 
+ *                             the maximum size of a hit to be allowed
  *            save_densities - TRUE if we want to keep all of the
- *                        gamma matrix. Probably only useful if you're
- *                        also asking for gamma to be returned. Memory usage
- *                        is O(WM). If FALSE, uses a memory-efficient O(W lnM) 
- *                        algorithm instead; if you get the gamma matrix
- *                        back, you're guaranteed the root gamma[0]
- *                        is valid, but don't count on anything else.
- *            ret_dmin  - RETURN: dmin[v] is the minimum subsequence length
- *                        (inclusive) that satisfies p_thresh for left tail.
- *                        Pass NULL if you don't want dmin back.
- *            ret_dmax  - RETURN: dmax[v] is the maximum subsequence length
- *                        (inclusive) that satisfies p_thresh for right tail.
- *                        Pass NULL if you don't want dmax back.
- *            ret_gamma - RETURN: gamma[v][n], [0..M-1][0..W], is the prob
- *                        density Prob(length=n | parse subtree rooted at v).
- *            ret_seqlen- RETURN: average hit length for a subtree rooted 
- *                        at each state. NULL if not wanted. If non-NULL
- *                        save_densities must be TRUE (contract checks this).
+ *                             gamma matrix. Probably only useful if you're
+ *                             also asking for gamma to be returned. Memory usage
+ *                             is O(ZM). If FALSE, uses a memory-efficient O(Z lnM) 
+ *                             algorithm instead; if you get the gamma matrix
+ *                             back, you're guaranteed the root gamma[0]
+ *                             is valid, but don't count on anything else.
+ *            ret_W          - RETURN: dmax[0] set with tail loss prob == beta_W
+ *            ret_gamma      - RETURN: gamma[v][n], [0..M-1][0..Z], is the prob
+ *                             density Prob(length=n | parse subtree rooted at v).
+ *            ret_gamma0_loc - RETURN: [0..Z] probability of hit lengths (rooted at ROOT_S) in local mode
+ *            ret_gamma0_glb - RETURN: [0..Z] probability of hit lengths (rooted at ROOT_S) in global mode
  *
- * Returns:   1 on success.
- *            0 if W was too small; caller needs to increase W and
- *            call the engine again.
+ * Returns:   eslOK on success.
+ *            eslERANGE if Z was too small; caller needs to increase Z and call the engine again.
+ *            eslEINVAL if qdbinfo->beta1 is < qdbinfo->beta2 (beta1 should always be higher (tighter bands))
+ *            eslEMEM if we're out of memory 
  *            
- *            The dependency on a sensible W a priori is an annoyance;
+ *            The dependency on a sensible Z a priori is an annoyance;
  *            it may be possible to write an algorithm that calculates
- *            W on the fly, but I don't see it.
+ *            Z on the fly, but I don't see it.
  *
  * Xref:      STL7 p.127 - rearranged calculations of previous BandBounds()
  *                         imp., for better numerical precision
@@ -119,54 +168,68 @@ BandExperiment(CM_t *cm)
  *            STL7 p.130 - tests/evaluations.
  */
 int
-BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
-		      int **ret_dmin, int **ret_dmax, double ***ret_gamma,
-		      float **ret_seqlen)
+BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int save_densities,
+		      int *ret_W, double ***ret_gamma, double **ret_gamma0_loc, double **ret_gamma0_glb)
 {
+  printf("in BandCalculationEngine() Z: %d\n", Z);
+  int      status;		/* return status. */
   double **gamma;               /* P(length = n) for each state v            */
-  double  *tmp;
-  int     *dmin;                /* lower bound for band. */
-  int     *dmax;                /* upper bound for band. */
   int      v;			/* counter over states, 0..M-1               */
   int      y;			/* counter over connected states             */
-  int      n;			/* counter over lengths, 0..W */
+  int      n;			/* counter over lengths, 0..Z */
   int      dv;			/* Delta for state v */
   int      leftn;		/* length of left subsequence under a bifurc */
   double   pdf; 		/* P(<=n) or P(>=n) for this state v         */
+  double   root_pdf; 		/* P(<=n) or P(>=n) for state 0 (ROOT_S)     */
   int     *touch;               /* touch[y] = # higher states depending on y */
   ESL_STACK *beamstack;         /* pool of beams we can reuse  */
-  int      status;		/* return status. */
-  int      nd;                  /* counter over nodes */
+  double  *tmp;                 /* for freeing beamstack only */
   int      yoffset;             /* counter over children */
-  int      reset_local_ends;    /* TRUE if we erased them and need to reset */
-  float   *seqlen;              /* average seqlen for each state, only calc'ed if
-				 * ret_seqlen != NULL */
-  double  *tmp_gamma_v;         /* temp copy of gamma[v] when calc'ing seqlen */
+  double  *gamma0_loc = NULL;   /* length distribution of  local hits (gamma[0]) */
+  double  *gamma0_glb = NULL;   /* length distribution of global hits (gamma[0] if we were in global mode) */
+  double   max_beta;            /* max of beta_W, qdbinfo->beta1 and qdbinfo->beta2 */
+  int      dmin2_set = FALSE;   /* qdbinfo->dmin2 has been set for this state, used when setting bands */
+  int      dmax2_set = FALSE;   /* qdbinfo->dmax2 has been set for this state, used when setting bands */
+  int      W;                   /* dmax[0] when using beta_W, returned as *ret_W */
 
-  if(ret_seqlen != NULL && (! save_densities))
-    cm_Fail("BandCalculationEngine() ret_seqlen non-NULL and save_densities is FALSE.");
+  /* copies of CM parameters */
+  float  **t_copy       = NULL;  /* copy of cm->t[0..v..M-1][0..MAXCONNECT-1], transition probs */
+  float   *begin_copy   = NULL;  /* cm->begin[0..v..M-1], standard local begin probabilities  */
+  float   *trbegin_copy = NULL;  /* cm->trbegin[0..v..M-1], standard local begin probabilities  */
 
-  /* If we're in local to avoid extremely wide bands due to 
-   * the permissive nature of local ends, we make local ends
-   * impossible for the band calculation than make them
-   * possible again before exiting this function.
+  if(qdbinfo != NULL && (qdbinfo->beta1 - qdbinfo->beta2 < 1E-20)) return eslEINVAL;
+  max_beta = beta_W;
+  if(qdbinfo != NULL) max_beta = ESL_MAX(max_beta, ESL_MAX(qdbinfo->beta1, qdbinfo->beta2));
+
+  /* Make copies of cm->t, cm->begin and cm->trbegin, so we can 
+   * modify the copies without changing the originals. 
    */
-  reset_local_ends = FALSE;
-  if(cm->flags & CMH_LOCAL_END) {
-    reset_local_ends = TRUE;
-    ConfigNoLocalEnds(cm, FALSE);
+  ESL_ALLOC(t_copy,    cm->M * sizeof(float *));
+  ESL_ALLOC(t_copy[0], cm->M * MAXCONNECT * sizeof(float));
+  for (v = 0; v < cm->M; v++) { 
+    t_copy[v] = t_copy[0] + v * MAXCONNECT;
   }
+  ESL_ALLOC(begin_copy,   sizeof(float) * cm->M);
+  ESL_ALLOC(trbegin_copy, sizeof(float) * cm->M);
+  esl_vec_FCopy(cm->t[0],    cm->M * MAXCONNECT, t_copy[0]);
+  esl_vec_FCopy(cm->begin,   cm->M, begin_copy);
+  esl_vec_FCopy(cm->trbegin, cm->M, trbegin_copy);
+
+  /* Now modify our copies to reflect a CM with local begins on but local ends off */
+  /* first negate local ends */
+  if(cm->flags & CMH_LOCAL_END) {
+    for (v = 0; v < cm->M; v++) {
+      if(NOTZERO(cm->end[v])) { 
+	esl_vec_FNorm(t_copy[v], cm->cnum[v]);
+      }
+    }
+  }	
+  cm_CalculateLocalBeginProbs(cm, cm->pbegin, begin_copy, trbegin_copy);
+
   /* gamma[v][n] is Prob(state v generates subseq of length n)
    */
   ESL_ALLOC(gamma, sizeof(double *) * cm->M);        
   for (v = 0; v < cm->M; v++) gamma[v] = NULL;
-
-  /* dmin[v] and dmax[v] are the determined bounds that we return.
-   */
-  ESL_ALLOC(dmin, sizeof(int) * cm->M);
-  ESL_ALLOC(dmax, sizeof(int) * cm->M);  
-  if (ret_dmin != NULL) *ret_dmin = NULL;
-  if (ret_dmax != NULL) *ret_dmax = NULL;
 
   /* beamstack is a trick for reusing memory: a pushdown stack of 
    * "beams" (gamma[v] rows) we can reuse.
@@ -183,251 +246,243 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   ESL_ALLOC(touch, sizeof(int) * cm->M);
   for (v = 0; v < cm->M; v++) touch[v] = cm->pnum[v];
 
-  /* Allocate and initialize the shared end beam.
+  /* Allocate and initialize the shared end beam and the special
+   * ROOT_S beam which we need to keep around the entire time.
    */
-  ESL_ALLOC(gamma[cm->M-1], (sizeof(double) * (W+1)));
-  esl_vec_DSet(gamma[cm->M-1], W+1, 0.);
+  ESL_ALLOC(gamma[0],       (sizeof(double) * (Z+1)));
+  ESL_ALLOC(gamma[cm->M-1], (sizeof(double) * (Z+1)));
+  esl_vec_DSet(gamma[0],       Z+1, 0.);
+  esl_vec_DSet(gamma[cm->M-1], Z+1, 0.);
   gamma[cm->M-1][0] = 1.0;
 
-  for (v = cm->M-1; v >= 0; v--)
-    {
-      /* Get a beam of memory from somewhere.
-       *   1. If we're an E_st, we're sharing the end beam, and
-       *      it's already initialized for us; don't do anything
-       *      else to it. Bounds are 0..0 by definition.
-       *   2. If there's a beam in the pool we can reuse, take it
-       *      and set it back to 0's. 
-       *   3. Else, allocate and initialize to 0's.
-       */
-      if (cm->sttype[v] == E_st) {
-	gamma[v] = gamma[cm->M-1];
-	dmin[v]  = dmax[v] = 0;
-	continue;
+  root_pdf = 0.;
+  for (v = cm->M-1; v >= 0; v--) { 
+    if (cm->sttype[v] == E_st) {
+      gamma[v] = gamma[cm->M-1];
+      if(qdbinfo != NULL) { 
+	qdbinfo->dmin1[v] = qdbinfo->dmax1[v] = 0;
+	qdbinfo->dmin2[v] = qdbinfo->dmax2[v] = 0;
       }
-
-      if (esl_stack_PPop(beamstack, (void **) &gamma[v]) == eslEOD) 
-	ESL_ALLOC(gamma[v], sizeof(double) * (W+1));		    
-      esl_vec_DSet(gamma[v], W+1, 0.);
-
-      /* Recursively calculate prob density P(length=n) for this state v.
-       * (The heart of the algorithm is right here.)
-       */
-      if (cm->sttype[v] == B_st) 
-	{			/* a bifurcation state: */
-	  pdf = 0.;
-	  for (n = 0; n <= W; n++)
-	    {
-	      for (leftn = 0; leftn <= n; leftn++) 
-		gamma[v][n] += gamma[cm->cfirst[v]][leftn]*gamma[cm->cnum[v]][n-leftn];
-	      pdf += gamma[v][n];
-	    }
-	}
-      /*EPN 11.11.05 adding following else if () to handle local begins*/
-      else if ((cm->flags & CMH_LOCAL_BEGIN) && v == 0) /*state 0 is the one and only ROOT_S state*/
-	{
-	  pdf = 0.;
-	  for (n = 0; n <= W; n++)
-	    {
-	      /* Step through by nodes, not states. Only one local begin transition 
-	       * is possible into each MATP, MATL, MATR, and BIF nodes, specifically
-	       * to the first state of that node.
-	       */
-	      for (nd = 1; nd < cm->nodes; nd++)
-		if (cm->ndtype[nd] == MATP_nd || 
-		    cm->ndtype[nd] == MATL_nd ||
-		    cm->ndtype[nd] == MATR_nd || 
-		    cm->ndtype[nd] == BIF_nd) 
-		  {
-		    gamma[v][n] += cm->begin[cm->nodemap[nd]] * gamma[cm->nodemap[nd]][n];
-		    /* cm->begin[y] is probability we transition to state y from root */
-		  }
-	      pdf += gamma[v][n];
-	    }	      
-	}
-      /*end EPN block*/
-      else 
-	{
-	  pdf = 0.;
-	  dv = StateDelta(cm->sttype[v]);
-	  for (n = dv; n <= W; n++)
-	    {
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		{
-		  y = cm->cfirst[v] + yoffset;
-		  gamma[v][n] += cm->t[v][yoffset] * gamma[y][n-dv];
-		}
-	      pdf += gamma[v][n];
-	    }
-	}
-
-      /* Make sure we've captured "enough" of the distribution (e.g.,
-       * we have captured the right tail; our truncation error is
-       * negligible).
-       *   Of our 3 criteria, we apply two to every state:
-       *     1. we're on the right side of the density (pdf is > 0.5
-       *        would be enough, but we use .999)
-       *     2. gamma_v(W) < p * DBL_EPSILON
-       *        Must be true if \sum_{i=W+1...\infty} g(i) < p*DBL_EPSILON,
-       *        which is really what we're trying to prove
-       */
-      if (pdf <= 0.999 || gamma[v][W] > p_thresh * DBL_EPSILON)
-	{
-	  /* fail; truncation error is unacceptable; 
-	   * caller is supposed to increase W and rerun. 
-	   */
-	  /*printf("truncation error unacceptable, failing.\n");
-	    printf("p_thresh: %g\n", p_thresh);
-	    printf("pdf : %g\n", pdf);
-	    printf("gamma[v][W] : %g\n", gamma[v][W]);*/
-	  status = 0; 
-	  goto CLEANUP;
-	}
-      
-      /* Renormalize this beam. (Should we really be doing this?)
-       */
-      if (pdf > 1.0) esl_vec_DNorm(gamma[v], W+1);
-
-      /* Determine our left bound, dmin.
-       */
-      pdf = 0.;
-      for (n = 0; n <= W; n++)
-	{
-	  pdf += gamma[v][n];
-	  if (pdf > p_thresh) { dmin[v] = n; break; }
-	}
-
-      /* And our right bound, dmax.
-       */
-      pdf = 0.;
-      for (n = W; n >= 0; n--)
-	{
-	  pdf += gamma[v][n];
-	  if (pdf > p_thresh) { dmax[v] = n; break; }
-	}
-
-      /* Reuse memory where possible, using the "touch" trick:
-       *   look at all children y \in C_v.
-       *   decrement touch[y]
-       *   if touch[y] reaches 0, no higher state v depends on this
-       *     state's numbers; release the memory.
-       *   we're reusing the end state for every E, so don't free it
-       *   'til we're done.
-       * But it if the save_densities flag is up, don't do this - the
-       * caller is telling us to keep the whole gamma matrix around,
-       * prob because it's going to be returned and examined.
-       * 
-       * EPN 11.11.05
-       * If we're doing banded local, we don't want to free any match states,
-       * to enforce this, we (hackishly) just don't reuse beams. Although
-       * we could just save the match state beams...
-       */
-      if ((! save_densities) && (! (cm->flags & CMH_LOCAL_BEGIN))) {
-	if (cm->sttype[v] == B_st)
-	  {  /* connected children of a B st are handled specially, remember */
-	    y = cm->cfirst[v]; 
-	    if((status = esl_stack_PPush(beamstack, gamma[y])) != eslOK) goto ERROR; 
-	    gamma[y] = NULL;
-	    y = cm->cnum[v];   
-	    if((status = esl_stack_PPush(beamstack, gamma[y])) != eslOK) goto ERROR;
-	    gamma[y] = NULL;
-	  }
-	else
-	  {
-	    for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++)
-	      {
-		touch[y]--;
-		if (touch[y] == 0 && cm->sttype[y] != E_st) {
-		  if((status = esl_stack_PPush(beamstack, gamma[y])) != eslOK) goto ERROR; 
-		  gamma[y] = NULL;
-		}
-	      }
-	  }
-      }
-
-    } /*end loop up through all states v*/
-
-  /* EPN 11.13.05
-   * Step through band for each step and ensure that dmax[v] <= dmax[0]
-   * for all v. Because all hits must be rooted at state 0, it doesn't
-   * make sense to allow the maximum subseq length for any state to 
-   * be greater than the maximum allowable length for state 0. Important
-   * because the maximum length of a hit in a banded scan or alignment
-   * can be reset to dmax[0] after this step.
-   */
-  for (v = 1; v <= cm->M-1; v++)
-    if (dmax[v] > dmax[0]) dmax[v] = dmax[0];
-
-  if (! BandTruncationNegligible(gamma[0], dmax[0], W, NULL)) 
-    { status = 0; goto CLEANUP; }
-
-  if(ret_seqlen != NULL) {
-    ESL_ALLOC(seqlen, sizeof(float) * cm->M);
-    esl_vec_FSet(seqlen, cm->M, 0.);
-    /* for each state, copy gamma[v] into tmp_gamma_v only from
-     * dmin[v]..dmax[v]. Then normalize tmp_gamma_v, and use it
-     * to calculate the average subseq len at v. We don't use
-     * n = 1..W b/c it would take much longer and is unlikely
-     * to change the average length much at all (unless beta is large).
-     */
-    for(v = 0; v < cm->M; v++) {
-      ESL_ALLOC(tmp_gamma_v, sizeof(double) * (dmax[v] - dmin[v] + 1));
-      for(n = dmin[v]; n <= dmax[v]; n++) 
-	tmp_gamma_v[(n-dmin[v])] = gamma[v][n];
-      esl_vec_DNorm(tmp_gamma_v, (dmax[v] - dmin[v] + 1));
-      for(n = 0; n <= (dmax[v]-dmin[v]); n++) 
-	seqlen[v] += tmp_gamma_v[n] * ((float) (n + dmin[v]));
-      free(tmp_gamma_v);
+      continue;
     }
-    *ret_seqlen = seqlen;
+
+    if(v != 0) { 
+      if (esl_stack_PPop(beamstack, (void **) &gamma[v]) == eslEOD) { 
+	ESL_ALLOC(gamma[v], sizeof(double) * (Z+1));		    
+      }
+      esl_vec_DSet(gamma[v], Z+1, 0.);
+    }
+    /* Recursively calculate prob density P(length=n) for this state v.
+     * (The heart of the algorithm is right here.)
+     */
+    if(cm->sttype[v] == B_st) { /* a bifurcation state: */
+      pdf = 0.;
+      for (n = 0; n <= Z; n++) { 
+	for (leftn = 0; leftn <= n; leftn++) {
+	  gamma[v][n] += gamma[cm->cfirst[v]][leftn]*gamma[cm->cnum[v]][n-leftn];
+	}
+	pdf += gamma[v][n];
+      }
+    }
+    else if (v != 0) { 
+      /* not a B_st, not the ROOT_S state (only way out of ROOT_S is via a local begin) */
+      pdf = 0.;
+      dv = StateDelta(cm->sttype[v]);
+      for (n = dv; n <= Z; n++) { 
+	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
+	  y = cm->cfirst[v] + yoffset;
+	  gamma[v][n] += t_copy[v][yoffset] * gamma[y][n-dv];
+	}
+	pdf += gamma[v][n];
+      }
+    }
+
+    /* update gamma[0] by considering local begins from ROOT_S into v */
+    if(NOT_IMPOSSIBLE(begin_copy[v])) { /* standard local begin transition into v is possible */
+      for (n = 0; n <= Z; n++) { 
+	gamma[0][n] += begin_copy[v] * gamma[v][n];
+	root_pdf += gamma[0][n];
+	/* Note: we only consider possible standard local
+	 * begins, not truncated local begins. This could be
+	 * considered 'wrong', but it is consistent with earlier
+	 * versions of Infernal that didn't allow truncated
+	 * begins. If we did consider truncated local begins we
+	 * may have slightly looser bands that were more
+	 * relevant for truncated scans. However, standard
+	 * scans dominate truncated scans, so this approach
+	 * is reasonable.
+	 */
+      }  
+    }
+
+    /* Make sure we've captured "enough" of the distribution (e.g.,
+     * we have captured the right tail; our truncation error is
+     * negligible).
+     *   Of our 3 criteria, we apply two to every state:
+     *     1. we're on the right side of the density (pdf is > 0.5
+     *        would be enough, but we use .999)
+     *     2. gamma_v(Z) < p * DBL_EPSILON
+     *        Must be true if \sum_{i=Z+1...\infty} g(i) < p*DBL_EPSILON,
+     *        which is really what we're trying to prove
+     */
+    if (v == 0) pdf = root_pdf;
+    if (pdf <= 0.999 || gamma[v][Z] > max_beta * DBL_EPSILON)
+      {
+	/* fail; truncation error is unacceptable; 
+	 * caller is supposed to increase Z and rerun. 
+	 */
+	status = eslERANGE; 
+	goto ERROR;
+      }
+    
+    /* Renormalize this beam. (Should we really be doing this?) */
+    if (pdf > 1.0) esl_vec_DNorm(gamma[v], Z+1);
+    
+    if(qdbinfo != NULL) { 
+      /* Determine our left bounds, dmin1 and dmin2, use knowledge that beta2 < beta1*/
+      pdf = 0.;
+      dmin2_set = FALSE;
+      for (n = 0; n <= Z; n++) { 
+	pdf += gamma[v][n];
+	if ((! dmin2_set) && pdf > qdbinfo->beta2) { qdbinfo->dmin2[v] = n; dmin2_set = TRUE; }
+	if ((  dmin2_set) && pdf > qdbinfo->beta1) { qdbinfo->dmin1[v] = n; break; }
+      }
+      /* And our right bounds, dmax1 and dmax2 */
+      pdf = 0.;
+      dmax2_set = FALSE;
+      for (n = Z; n >= 0; n--) { 
+	pdf += gamma[v][n];
+	if ((! dmax2_set) && pdf > qdbinfo->beta2) { qdbinfo->dmax2[v] = n; dmax2_set = TRUE; }
+	if ((  dmax2_set) && pdf > qdbinfo->beta1) { qdbinfo->dmax1[v] = n; break; }
+      }
+    }
+    if(v == 0) { /* calculate right bound, to set as ret_W (will be max size of a hit) */
+      pdf = 0.;
+      for (n = Z; n >= 0; n--) { 
+	pdf += gamma[0][n];
+	if (pdf > beta_W) { W = n; break; }
+      }
+    }
+    /* Reuse memory where possible, using the "touch" trick:
+     *   look at all children y \in C_v.
+     *   decrement touch[y]
+     *   if touch[y] reaches 0, no higher state v depends on this
+     *     state's numbers; release the memory.
+     *   we're reusing the end state for every E, so don't free it
+     *   'til we're done.
+     * But it if ret_gamma != NULL, don't do this - the
+     * caller wants the whole gamma matrix back.
+     */
+    if (ret_gamma != NULL) { 
+      if (cm->sttype[v] == B_st)
+	{  /* connected children of a B st are handled specially, remember */
+	  y = cm->cfirst[v]; 
+	  if((status = esl_stack_PPush(beamstack, gamma[y])) != eslOK) goto ERROR;
+	  gamma[y] = NULL;
+	  y = cm->cnum[v];   
+	  if((status = esl_stack_PPush(beamstack, gamma[y])) != eslOK) goto ERROR;
+	  gamma[y] = NULL;
+	}
+      else
+	{
+	  for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++)
+	    {
+	      touch[y]--;
+	      if (touch[y] == 0 && cm->sttype[y] != E_st) {
+		if((status = esl_stack_PPush(beamstack, gamma[y])) != eslOK) goto ERROR;
+		gamma[y] = NULL;
+	      }
+	    }
+	}
+    }
+  } /*end loop up through all states v*/
+
+  /* Get length distributions of local hits and global hits */
+  ESL_ALLOC(gamma0_loc, sizeof(double) * (Z+1));
+  ESL_ALLOC(gamma0_glb, sizeof(double) * (Z+1));
+  /* local mode is easy, gamma[0] already contains the length distribution */
+  esl_vec_DCopy(gamma[0],   Z+1, gamma0_loc);
+  esl_vec_DNorm(gamma0_loc, Z+1);
+  /* global: we need to do some more calculations first */
+  /* reset global-mode transition probabilities */
+  if(cm->root_trans != NULL) { 
+    for (v = 0; v < cm->cnum[0]; v++) t_copy[0][v] = cm->root_trans[v];
+  } /* else t_copy[0] includes appropriate global transition probs */
+  /* recalculate what gamma[0] would be if local begins were off */
+  esl_vec_DSet(gamma0_glb, Z+1, 0.);
+  for (n = 0; n <= Z; n++) { 
+    for (yoffset = 0; yoffset < cm->cnum[0]; yoffset++) { 
+      y = cm->cfirst[0] + yoffset;
+      gamma0_glb[n] += t_copy[0][yoffset] * gamma[y][n];
+    }
+  }
+  esl_vec_DNorm(gamma0_glb, Z+1);
+
+  if ((! BandTruncationNegligible(gamma[0], W, Z, NULL)) || 
+      (qdbinfo != NULL && (! BandTruncationNegligible(gamma[0], qdbinfo->dmax1[0], Z, NULL))) || 
+      (qdbinfo != NULL && (! BandTruncationNegligible(gamma[0], qdbinfo->dmax2[0], Z, NULL)))) 
+    {
+      status = eslERANGE; 
+      goto ERROR; 
+    }
+
+  if(qdbinfo != NULL) qdbinfo->setby = CM_QDBINFO_SETBY_BANDCALC;
+
+  DumpCMQDBInfo(stdout, cm, qdbinfo);
+
+  if (ret_W          != NULL) *ret_W          = W;
+  if (ret_gamma      != NULL) *ret_gamma      = gamma;      else FreeBandDensities(cm, gamma);
+  if (ret_gamma0_loc != NULL) *ret_gamma0_loc = gamma0_loc; else free(gamma0_loc);
+  if (ret_gamma0_glb != NULL) *ret_gamma0_glb = gamma0_glb; else free(gamma0_glb);
+  status = eslOK;
+
+ ERROR: 
+  if(status != eslOK) { 
+    if (ret_W          != NULL) *ret_W          = 0;
+    if (ret_gamma      != NULL) *ret_gamma      = NULL;
+    if (ret_gamma0_loc != NULL) *ret_gamma0_loc = NULL;
+    if (ret_gamma0_glb != NULL) *ret_gamma0_glb = NULL;
+    if (gamma      != NULL) FreeBandDensities(cm, gamma);
+    if (gamma0_loc != NULL) free(gamma0_loc);
+    if (gamma0_glb != NULL) free(gamma0_glb);
   }
 
-  status = 1;
-
- CLEANUP:
-  free(touch);
-  /* If we're in local mode, we set all local ends to impossible at
-   * the beginning of this function, we set them back here.
-   */
-  if(reset_local_ends) { 
-    ConfigLocalEnds(cm, cm->pend);
-    CMLogoddsify(cm);
-    reset_local_ends = FALSE;
-  }
-
-  if (ret_dmin  != NULL) *ret_dmin = dmin;   else free(dmin);
-  if (ret_dmax  != NULL) *ret_dmax = dmax;   else free(dmax);
-  if (ret_gamma != NULL) *ret_gamma = gamma; else FreeBandDensities(cm, gamma);
-  
   /* Free the reused stack of beams.
    */
+  if(t_copy != NULL) { 
+    if(t_copy[0] != NULL) free(t_copy[0]);
+    free(t_copy);
+  }
+  if(begin_copy   != NULL) free(begin_copy);
+  if(trbegin_copy != NULL) free(trbegin_copy);
+
+  free(touch);
   while (esl_stack_PPop(beamstack, (void **) &tmp) != eslEOD) free(tmp);
   esl_stack_Destroy(beamstack);
-  return status;
 
- ERROR:
-  cm_Fail("Memory allocation error.\n");
-  return eslFAIL; /* never reached */
+  return status;
 }
+
 
 /* Function:  BandTruncationNegligible()
  * Incept:    SRE, Sun Oct 19 10:43:21 2003 [St. Louis]
  *
- * Purpose:   Verifies that for this choice of W, the truncation error,
- *                 D = \sum_{n=W+1}{\infty} \gamma_v(n), 
+ * Purpose:   Verifies that for this choice of Z, the truncation error,
+ *                 D = \sum_{n=Z+1}{\infty} \gamma_v(n), 
  *            will not affect our calculation of the right bound, b (dmax),
  *            based on the probability mass we can observe,
- *                 C = \sum_{n=b+1}{W} \gamma_v(n).     
+ *                 C = \sum_{n=b+1}{Z} \gamma_v(n).     
  *                 
  *            Specifically, we want D such that C + D = C; that is,
  *                 D < C * DBL_EPSILON.
  *                 
  *            We assume that the tail of \gamma is decreasing
  *            geometrically. This lets us predict the tail is
- *                  \gamma_v(n) = \gamma_v(W+1) \beta^{n-W-1} 
+ *                  \gamma_v(n) = \gamma_v(Z+1) \beta^{n-Z-1} 
  *                  
  *            and from the sum of an infinite geometric series, combined
- *            with \gamma_v(W+1) = \beta \gamma_v(W), we obtain:
- *                            \gamma_v(W) \beta
+ *            with \gamma_v(Z+1) = \beta \gamma_v(Z), we obtain:
+ *                            \gamma_v(Z) \beta
  *                    D'  =     -----------------
  *                                1 - \beta
  *                                    
@@ -446,58 +501,58 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
  *            
  *            Using ret_beta to verify:
  *            
- *               D' = (beta / (1.-beta)) * density[W];
- *               D  = \sum_{n=b+1}{\infty} density[W];
+ *               D' = (beta / (1.-beta)) * density[Z];
+ *               D  = \sum_{n=b+1}{\infty} density[Z];
  *               D' >= D.
  *               
  *               test for an even stronger criterion:
- *               let estimated density g(n) = gamma[W] * \beta^(n-W);
- *               g(n) >= gamma[n] for all n > W.
+ *               let estimated density g(n) = gamma[Z] * \beta^(n-Z);
+ *               g(n) >= gamma[n] for all n > Z.
  *            
  *            In the testsuite, "check_bandtruncation" empirically verifies 
  *            D' > D. 
  *
  * Args:      density    - one density \gamma_v() calculated by BandCalculationEngine();
- *                         usually the root (if W is big enough for the root, it's
+ *                         usually the root (if Z is big enough for the root, it's
  *                         big enough for every state).
  *            b          - the left bound dmax[v]
- *            W          - the maximum length; gamma_v[] runs [0..W]
+ *            Z          - the maximum length; gamma_v[] runs [0..Z]
  *            ret_beta   - RETURN (optional): the geometric decay constant \beta,
  *                         obtained by simple linear fit to log gamma().
  *                         
  *
  * Returns:   1 if truncation error is negligible (D' < C * DBL_EPSILON)
  *            0 if truncation error is not negigible, and caller will
- *              have to worry about increasing W.
+ *              have to worry about increasing Z.
  *
  * Xref: STL7 p.128.  
  */
 int
-BandTruncationNegligible(double *density, int b, int W, double *ret_beta)
+BandTruncationNegligible(double *density, int b, int Z, double *ret_beta)
 {
   double logbeta;
   double beta;		/* geometric decay parameter                  */
-  double C;		/* area under density from b+1..W inclusive   */
-  double D;		/* area under unseen density from W+1..\infty */
+  double C;		/* area under density from b+1..Z inclusive   */
+  double D;		/* area under unseen density from Z+1..\infty */
   int    i;
   
   /* Sum up how much probability mass we do see,
-   * in the truncated tail from b+1..W.
+   * in the truncated tail from b+1..Z.
    */
   C = 0.;
-  for (i = b+1; i <= W; i++) C += density[i];
+  for (i = b+1; i <= Z; i++) C += density[i];
 
   /* If density is falling off as a geometric, log(beta) is 
    * the slope of log(p). Estimate slope quickly and crudely, by a
-   * simple 2-point fit at our boundaries b+1 and W.  
+   * simple 2-point fit at our boundaries b+1 and Z.  
    */
-  logbeta = (log(density[W]) - log(density[b+1])) / (W - b - 1);
+  logbeta = (log(density[Z]) - log(density[b+1])) / (Z - b - 1);
   beta = exp(logbeta);
 	     
-  /* We can now guess at the missing probability mass from W+1...\infty,
+  /* We can now guess at the missing probability mass from Z+1...\infty,
    * because a finite geometric series converges to 1/(1+\beta).
    */
-  D = (beta / (1.-beta)) * density[W];
+  D = (beta / (1.-beta)) * density[Z];
 
   if (ret_beta != NULL) *ret_beta = beta;
 
@@ -519,13 +574,13 @@ BandTruncationNegligible(double *density, int b, int W, double *ret_beta)
  *
  * Args:      cm         - the model to sample from
  *            nsample    - number of Monte Carlo sampled parsetrees    
- *            W          - maximum subsequence length in densities
- *            ret_gamma  - RETURN: gamma[v][n], [0..M-1][0..W] as
+ *            Z          - maximum subsequence length in densities
+ *            ret_gamma  - RETURN: gamma[v][n], [0..M-1][0..Z] as
  *                         unnormalized observed counts.
  *
  * Returns:   1 on success.
  *            0 on failure: one or more samples had a length too great to be
- *              captured by W.
+ *              captured by Z.
  *
  *            Caller frees the returned gamma with FreeBandDensities().
  *
@@ -533,7 +588,7 @@ BandTruncationNegligible(double *density, int b, int W, double *ret_beta)
  *           cleanup.
  */
 int
-BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
+BandMonteCarlo(CM_t *cm, int nsample, int Z, double ***ret_gamma)
 {
   Parsetree_t  *tr;             /* sampled parsetree */
   double      **gamma;          /* RETURN: the densities */
@@ -560,14 +615,14 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
    * for gamma matrices alloc'ed in either function.
    */                                                     
   ESL_ALLOC(gamma, (sizeof(double *) * cm->M));
-  ESL_ALLOC(gamma[cm->M-1], (sizeof(double) * (W+1))); 
-  esl_vec_DSet(gamma[cm->M-1], W+1, 0.0);
+  ESL_ALLOC(gamma[cm->M-1], (sizeof(double) * (Z+1))); 
+  esl_vec_DSet(gamma[cm->M-1], Z+1, 0.0);
   for (v = 0; v < cm->M-1; v++)
     {
       if (cm->sttype[v] != E_st)
 	{
-	  ESL_ALLOC(gamma[v], sizeof(double) * (W+1));
-	  esl_vec_DSet(gamma[v], W+1, 0.0);
+	  ESL_ALLOC(gamma[v], sizeof(double) * (Z+1));
+	  esl_vec_DSet(gamma[v], Z+1, 0.0);
 	}
       else
 	gamma[v] = gamma[cm->M-1];
@@ -584,7 +639,7 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
     sprintf(name, "seq%d", i+1);
     if(EmitParsetree(cm, errbuf, r, NULL, FALSE, &tr, NULL, &seqlen) != eslOK) cm_Fail(errbuf);
     free(name);
-    if (seqlen > W) {
+    if (seqlen > Z) {
       FreeParsetree(tr);
       status = 0;		/* set status to FAILED */
       continue;
@@ -652,11 +707,11 @@ FreeBandDensities(CM_t *cm, double **gamma)
  * SRE, Wed Feb 19 08:35:32 2003
  */
 void
-PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int v, int W)
+PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int v, int Z)
 {
   int n;
 
-  for (n = 0; n <= W; n++)
+  for (n = 0; n <= Z; n++)
     fprintf(fp, "%d %.6f\n", n, gamma[v][n]);
   fprintf(fp, "&\n");
   fprintf(fp, "%d  0\n",   min[v]);
@@ -848,50 +903,168 @@ qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_l
   cm_Fail("Memory allocation error.");
 }
 
-
-/* Function: cm_GetNCalcsPerResidueForGivenBeta()
- * Date:     EPN, Thu Jan 17 05:54:51 2008
+/* Function: CreateCMQDBInfo()
+ * Date:     EPN, Sat Dec 10 06:24:53 2011
+ *
+ * Purpose:  Allocate and initialize a CM_QDBINFO object
+ *           given <M> the number of states in the CM
+ *           we'll use the QDBs for.
  * 
- * Returns: eslOK on success, eslEINCOMPAT on contract violation.
- *          <ret_cm_ncalcs_per_res> set as millions of DP calculations 
- *          per residue using beta tail loss for QDB. If no_qdb == TRUE,
- *          without using QDBs, but still get W from QDB calc with beta.
- *          <ret_W> set as W from QDB calc (dmax[0]) with beta. 
+ * Returns:  Newly allocated CM_QDBINFO object. NULL if out
+ *           of memory.
+ */
+CM_QDBINFO *
+CreateCMQDBInfo(int M, int clen)
+{
+  int status;
+  CM_QDBINFO *qdbinfo = NULL;
+  ESL_ALLOC(qdbinfo, sizeof(CM_QDBINFO));
+
+  qdbinfo->M = M;
+
+  qdbinfo->beta1 = DEFAULT_BETA_QDB1; 
+  ESL_ALLOC(qdbinfo->dmin1, sizeof(int) * M);
+  ESL_ALLOC(qdbinfo->dmax1, sizeof(int) * M);
+  esl_vec_ISet(qdbinfo->dmin1, M, 0);
+  esl_vec_ISet(qdbinfo->dmax1, M, clen*2);
+
+  qdbinfo->beta2 = DEFAULT_BETA_QDB2; 
+  ESL_ALLOC(qdbinfo->dmin2, sizeof(int) * M);
+  ESL_ALLOC(qdbinfo->dmax2, sizeof(int) * M);
+  esl_vec_ISet(qdbinfo->dmin2, M, 0);
+  esl_vec_ISet(qdbinfo->dmax2, M, clen*2);
+
+  qdbinfo->setby = CM_QDBINFO_SETBY_INIT;
+
+  return qdbinfo;
+
+ ERROR:
+  if(qdbinfo != NULL) FreeCMQDBInfo(qdbinfo);
+  return NULL;
+}
+
+/* Function: FreeCMQDBInfo()
+ * Date:     EPN, Sat Dec 10 06:31:12 2011
+ *
+ * Purpose:  Free a CM_QDBINFO object.
+ * 
+ * Returns:  void
+ */
+void
+FreeCMQDBInfo(CM_QDBINFO *qdbinfo)
+{
+  if(qdbinfo == NULL) return;
+
+  if(qdbinfo->dmin1 != NULL) free(qdbinfo->dmin1);
+  if(qdbinfo->dmax1 != NULL) free(qdbinfo->dmax1);
+  if(qdbinfo->dmin2 != NULL) free(qdbinfo->dmin2);
+  if(qdbinfo->dmax2 != NULL) free(qdbinfo->dmax2);
+
+  free(qdbinfo);
+  return;
+}
+
+/* Function:  CopyCMQDBInfo()
+ * Synopsis:  Copy a CM_QDBINFO object.
+ * Date:      EPN, Sat Dec 10 06:55:17 2011
+ *
+ * Purpose:   Copies qdbinfo <src> to qdbinfo <dst>, where <dst>
+ *            has already been allocated to be of sufficient size.
+ *
+ * Returns:   <eslOK> on success.
+ * Throws:    <eslEINVAL> if <dst> is too small 
+ *            to fit <src>, errbuf is filled.
  */
 int
-cm_GetNCalcsPerResidueForGivenBeta(CM_t *cm, char *errbuf, int no_qdb, double beta, float *ret_cm_ncalcs_per_res, int *ret_W)
+CopyCMQDBInfo(const CM_QDBINFO *src, CM_QDBINFO *dst, char *errbuf)
 {
-  int    status;
-  int    safe_windowlen;
-  float  cm_ncalcs_per_res;
-  int   *dmin, *dmax;
-  int    W;
+  if (src->M != dst->M) ESL_FAIL(eslEINVAL, errbuf, "destination qdbinfo not equal to size of source qdbinfo");
   
-  if(ret_cm_ncalcs_per_res == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_GetNCalcsPerResForGivenBeta(), ret_cm_ncalcs_per_res == NULL.");
-  if(ret_W == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "cm_GetNCalcsPerResForGivenBeta(), ret_W == NULL.");
+  dst->beta1 = src->beta1;
+  esl_vec_ICopy(src->dmin1, src->M, dst->dmin1);
+  esl_vec_ICopy(src->dmax1, src->M, dst->dmax1);
 
-  /* even if no_qdb == TRUE, use QDB calc with beta tail loss to get W */
-  safe_windowlen = cm->clen * 2;
-  while(!(BandCalculationEngine(cm, safe_windowlen, beta, FALSE, &(dmin), &(dmax), NULL, NULL))) {
-    free(dmin);
-    free(dmax);
-    safe_windowlen *= 2;
-    if(safe_windowlen > (cm->clen * 1000))
-      cm_Fail("initialize_cm_for_filter_stats(), safe_windowlen big: %d\n", safe_windowlen);
-  }
-  W = dmax[0];
-  if(no_qdb) { /* count millions of DP calcs per resiude for non-banded search, with W as just calculated with beta (NOT cm->W) */
-    if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*W, NULL, NULL, W, TRUE,  NULL, &(cm_ncalcs_per_res))) != eslOK) return status;
-  }
-  else {
-    if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*W, dmin, dmax, W, TRUE,  NULL, &cm_ncalcs_per_res)) != eslOK) cm_Fail(errbuf);
-  }
-  free(dmin);
-  free(dmax);
+  dst->beta2 = src->beta2;
+  esl_vec_ICopy(src->dmin2, src->M, dst->dmin2);
+  esl_vec_ICopy(src->dmax2, src->M, dst->dmax2);
 
-  *ret_cm_ncalcs_per_res = cm_ncalcs_per_res;
-  *ret_W = W;
+  dst->setby = src->setby;
 
   return eslOK;
 }
 
+
+/* Function:  qdbinfo_setby_to_string()
+ * Date:      EPN, Tue Dec 13 09:55:42 2011
+ */
+char *
+qdbinfo_setby_to_string(int setby)
+{
+  switch (setby) {
+  case CM_QDBINFO_SETBY_INIT:     return "CM_QDBINFO_SETBY_INIT";
+  case CM_QDBINFO_SETBY_CMFILE:   return "CM_QDBINFO_SETBY_CMFILE";
+  case CM_QDBINFO_SETBY_BANDCALC: return "CM_QDBINFO_SETBY_BANDCALC";
+  default: cm_Fail("bogus CM_QDBINFO_SETBY type: %d\n", setby);
+  }
+  return ""; /* NEVERREACHED */
+}
+
+/* Function:  DumpCMQDBInfo()
+ * Synopsis:  Print contents of a CM_QDBINFO object to <fp>.
+ * Date:      EPN, Tue Dec 13 09:52:05 2011
+ *
+ * Returns:   void.
+ */
+void
+DumpCMQDBInfo(FILE *fp, CM_t *cm, CM_QDBINFO *qdbinfo)
+{
+  int v;
+
+  fprintf(fp, "CM_QDBINFO dump\n");
+  fprintf(fp, "------------------\n");
+  fprintf(fp, "# M:        %d\n", qdbinfo->M);
+  fprintf(fp, "# setby:    %s\n", qdbinfo_setby_to_string(qdbinfo->setby));
+  fprintf(fp, "# beta1:    %g\n", qdbinfo->beta1);
+  fprintf(fp, "# beta2:    %g\n", qdbinfo->beta2);
+  fprintf(fp, "# %8s  %8s  %6s  %6s    %5s  %5s  %5s  %5s    %5s  %5s\n", "stidx(v)", "ndidx",    "ndtype", "sttype", "dmin2","dmin1", "dmax1", "dmax2", "bwd1",  "bwd2");
+  fprintf(fp, "# %8s  %8s  %6s  %6s    %5s  %5s  %5s  %5s    %5s  %5s\n", "--------", "--------", "------", "------", "-----", "----", "-----", "-----", "------","-----");
+  for(v = 0; v < cm->M; v++) {
+    fprintf(fp, "  %8d  %8d  %-6s  %-6s    %5d  %5d  %5d  %5d    %5d  %5d\n", v, cm->ndidx[v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), 
+	    qdbinfo->dmin2[v], qdbinfo->dmin1[v], qdbinfo->dmax1[v], qdbinfo->dmax2[v], 
+	    qdbinfo->dmax1[v] - qdbinfo->dmin1[v] + 1, qdbinfo->dmax2[v] - qdbinfo->dmin2[v] + 1);
+  }
+  fprintf(fp, "//\n");
+  return;
+}
+
+/* Function:  CheckCMQDBInfo()
+ * Synopsis:  Check if QDBs in CM_QDBINFO need to be recalculated.
+ * Date:      EPN, Tue Dec 13 13:39:06 2011
+ *
+ * Purpose:   Check if beta values in a CM_QDBINFO object are equal to
+ *            passed in beta values. If <do_check1>, we check if
+ *            cm->qdbinfo->beta1 == <beta1> and if <do_check2>, we
+ *            check if cm->qdbinfo->beta2 == <beta2>. We return eslOK
+ *            if neither check fails and eslFAIL if one or both
+ *            does. As a special case if cm->qdbinfo->setby ==
+ *            CM_QDBINFO_SETBY_INIT then we always return eslFAIL
+ *            because it means the QDBs in cm->qdbinfo are in their
+ *            initialized state and haven't yet been calculated.
+ *            
+ * Returns:   eslOK   if we don't need to recalculate the QDBs in cm->qdbinfo
+ *            eslFAIL if we do    need to recalculate the QDBs in cm->qdbinfo
+ */
+int
+CheckCMQDBInfo(CM_QDBINFO *qdbinfo, double beta1, int do_check1, double beta2, int do_check2)
+{
+  if(qdbinfo->setby == CM_QDBINFO_SETBY_INIT) return eslFAIL;
+
+  if(do_check1) { 
+    if(fabs(qdbinfo->beta1 - beta1) > 1E-20) return eslFAIL;
+  }
+  if(do_check2) { 
+    if(fabs(qdbinfo->beta2 - beta2) > 1E-20) return eslFAIL;
+  }
+
+  return eslOK;
+}

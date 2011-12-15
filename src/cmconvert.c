@@ -97,38 +97,21 @@ configure_model(CM_t *cm, char *errbuf)
   float lftailp, gftailp;
   double fil_gfmu, fil_gflambda;
 
-  /* configure local for calculating W (ignores ROOT_IL, ROOT_IR), this way is consistent with Infernal 1.0->1.0.2 */
-  cm->config_opts |= CM_CONFIG_LOCAL;    
-  cm->config_opts |= CM_CONFIG_HMMLOCAL; 
-  cm->config_opts |= CM_CONFIG_HMMEL;    
-
-  /* ConfigCM() should calculate QDBs */
+  /* Configure the model, we must calculate QDBs so we can write them to the CM file */
   cm->config_opts |= CM_CONFIG_QDB;   
-  if((status = ConfigCM(cm, errbuf, 
-			TRUE, /* do calculate W */
-			NULL, NULL)) != eslOK) return status;
-
-  /* Some hackery, to match v1.0-->v1.0.2's method */
-  cm->flags &= ~CMH_QDB;        /* so QDBs/W are not recalculated after globalizing in ConfigGlobal() */
-  cm->flags &= ~CMH_QDB_LOCAL;  
-
-  /* Convert back to global */
-  ConfigGlobal(cm);
-
-  cm->flags |= CMH_QDB;
-  cm->flags |= CMH_QDB_LOCAL;  
+  if((status = cm_Configure(cm, errbuf)) != eslOK) return status;
 
   CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &(cons));
   if ((status = cm_SetConsensus  (cm, cons, NULL)) != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate consensus sequence");
   FreeCMConsensus(cons);
 
-  /* We'll define the filter HMM as the ML p7 HMM because
-   * that's the only option available (by default, in cmbuild,
-   * a filter HMM gets built separately that's different from
-   * the ml p7, but that requires the cmbuild input alignment).
-   * The cm->mlp7 HMM was created in ConfigCM(), now calibrate it.
-   * There are more options than this in cmbuild, but here we enforce
-   * defaults. See cmbuild.c::build_and_calibrate_p7_filters(). */
+  /* We'll define the filter HMM as the ML p7 HMM because that's the
+   * only option available (by default, in cmbuild, a filter HMM gets
+   * built separately that's different from the ml p7, but that
+   * requires the cmbuild input alignment).  The cm->mlp7 HMM was
+   * created in cm_Configure(), and we calibrate it here. There are
+   * more options than this in cmbuild, but here we enforce
+   * defaults. See cmbuild.c::build_and_calibrate_p7_filter(). */
   lmsvL = lvitL = 200;
   lfwdL = 100;
   gfwdL = ESL_MAX(100, 2.*cm->clen);
@@ -138,10 +121,10 @@ configure_model(CM_t *cm, char *errbuf)
 
   /* Calibrate the ML p7 hmm */
   if((status = cm_p7_Calibrate(cm->mlp7, errbuf, 
-			       lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for local (lL) and glocal (gL) modes */    
-			       lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
-			       lftailp,                                    /* fraction of tail mass to fit for local Fwd */
-			       gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
+			       lmsvL, lvitL, lfwdL, gfwdL, /* length of sequences to search for local (lL) and glocal (gL) modes */    
+			       lmsvN, lvitN, lfwdN, gfwdN, /* number of seqs to search for each alg */
+			       lftailp,                    /* fraction of tail mass to fit for local Fwd */
+			       gftailp,                    /* fraction of tail mass to fit for glocal Fwd */
 			       &fil_gfmu, &fil_gflambda))  
      != eslOK) return status;
   if((status = cm_SetFilterHMM(cm, cm->mlp7, fil_gfmu, fil_gflambda)) != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter for the CM");

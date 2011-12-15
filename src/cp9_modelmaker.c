@@ -302,18 +302,9 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 #if PRINTNOW
   fprintf(stdout, "\t\tcp9 trans    %11s\n", time_buf);
 #endif
-
-  CPlan9Renormalize(hmm);
-
-  esl_stopwatch_Start(w);  
-  CP9Logoddsify(hmm);
-  esl_stopwatch_Stop(w); 
-  FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "\t\tcp9 logoddsify        %11s\n", time_buf);
-#endif
   esl_stopwatch_Destroy(w);
 
+  CPlan9Renormalize(hmm);
 
   if(debug_level > 1) 
     debug_print_cp9_params(stdout, hmm, TRUE);
@@ -3333,4 +3324,109 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
  ERROR: 
   ESL_FAIL(eslEMEM, errbuf, "memory allocation error.");
   return 0; /* NEVERREACHED */
+}
+
+
+/* Function: CPlan9InitEL()
+ * Incept:   EPN, Tue Jun 19 13:10:56 2007
+ * 
+ * Purpose:  Initialize a CP9 HMM for possible EL local ends
+ *           by determining how the EL states should be connected
+ *           based on the CM node topology.
+ *           
+ * Args:     cp9 - the CP9 HMM, built from cm
+ *           cm  - the CM the cp9 was built from 
+ *
+ * Return:   (void)
+ */
+void
+CPlan9InitEL(CP9_t *cp9, CM_t *cm)
+{
+  int status;
+  int k;                     /* counter over HMM nodes */
+  int nd;
+  int *tmp_el_from_ct;
+
+  if(cm->emap == NULL) cm_Fail("CPlan9InitEL() cm->emap is NULL");
+
+  /* First copy the CM el self transition score/probability: */
+  cp9->el_self   = sreEXP2(cm->el_selfsc);
+  cp9->el_selfsc = Prob2Score(cp9->el_self, 1.0);
+
+  /* For each HMM node k, we can transit FROM >= 0 EL states from 
+   * HMM nodes kp. Determine how many such valid transitions exist
+   * from each node, then allocate and fill cp9->el_from_idx[k] and 
+   * cp9->el_from_cmnd arrays based on that.
+   * This two-pass method saves memory b/c we only allocate for
+   * what we'll need.
+   */
+
+  /* Initialize to 0 */
+  for(k = 0; k <= cp9->M; k++) 
+    {
+      cp9->el_from_ct[k] = 0;
+      cp9->has_el[k] = FALSE;
+    }
+  cp9->el_from_ct[(cp9->M+1)] = 0; /* special case, we can get to E state from EL states */
+    
+  /* first pass to get number of valid transitions */
+  for(nd = 0; nd < cm->nodes; nd++)
+    {
+      if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	   cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	   cm->ndtype[nd] == BEGR_nd) && 
+	  cm->ndtype[nd+1] != END_nd)
+	{
+	  /*printf("HMM node %d can be reached from HMM node %d's EL state\n", cm->emap->rpos[nd], cm->emap->lpos[nd]);*/
+	  cp9->el_from_ct[cm->emap->rpos[nd]]++;
+	  cp9->has_el[cm->emap->lpos[nd]] = TRUE;
+	}
+    }
+
+  /* allocate cp9->el_from_idx[k], cp9->el_from_cmnd for all k */
+  for(k = 0; k <= (cp9->M+1); k++) 
+    {
+      if(cp9->el_from_idx[k] != NULL) /* if !NULL we already filled it, shouldn't happen */
+	cm_Fail("ERROR in CPlan9InitEL() el_from_idx has already been initialized\n");
+      if(cp9->el_from_ct[k] > 0)
+	{
+	  ESL_ALLOC(cp9->el_from_idx[k], sizeof(int) * cp9->el_from_ct[k]);
+	  ESL_ALLOC(cp9->el_from_cmnd[k],sizeof(int) * cp9->el_from_ct[k]);
+	}
+      /* else it remains NULL */
+    }
+
+  /* now fill in cp9->el_from_idx, we need a new counter array */
+  ESL_ALLOC(tmp_el_from_ct, sizeof(int) * (cp9->M+2));
+  for(k = 0; k <= (cp9->M+1); k++) 
+    tmp_el_from_ct[k] = 0;
+  for(nd = 0; nd < cm->nodes; nd++)
+    {
+      if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	   cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	   cm->ndtype[nd] == BEGR_nd) && 
+	  cm->ndtype[nd+1] != END_nd)
+	{
+	  k = cm->emap->rpos[nd];
+	  cp9->el_from_idx[k][tmp_el_from_ct[k]] = cm->emap->lpos[nd];
+	  cp9->el_from_cmnd[k][tmp_el_from_ct[k]] = nd;
+	  tmp_el_from_ct[k]++;
+	}
+    }
+
+  /* Debugging printfs */
+  /*  for(k = 0; k <= (cp9->M+1); k++) 
+    {
+      for(c = 0; c < cp9->el_from_ct[k]; c++)
+	printf("cp9->el_from_idx[%3d][%2d]: %4d\n", k, c, cp9->el_from_idx[k][c]);
+      if(cp9->has_el[k])
+      printf("node k:%3d HAS an EL!\n", k);
+      }*/
+
+  /* Free memory and exit */
+  free(tmp_el_from_ct);
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
 }

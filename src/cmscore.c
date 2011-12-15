@@ -1276,12 +1276,13 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   else if(do_random) {
     lengths_specified = (esl_opt_IsOn(go, "--Lmin") && esl_opt_IsOn(go, "--Lmax")) ? TRUE : FALSE;
     if(!lengths_specified) { /* set random sequence length distribution as length distribution of generative CM, obtained from QDB calc */
-      while(!(BandCalculationEngine(cm, safe_windowlen, 1E-15, TRUE, NULL, NULL, &(gamma), NULL))) {
+      while((status = (BandCalculationEngine(cm, safe_windowlen, 1E-15, TRUE, NULL, NULL, &(gamma), NULL))) != eslOK) {
+	if(status == eslEMEM) ESL_FAIL(status, errbuf, "out of memory");
 	safe_windowlen *= 2;
 	if(safe_windowlen > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
 	FreeBandDensities(cm, gamma);
       }
-      Ldistro = gamma[0];
+      Ldistro = gamma[3];
       Lmax    = safe_windowlen;
     }
     else { /* --Lmin <n1> and --Lmax <n2> enabled, set length distribution as uniform from <n1>..<n2> inclusive */

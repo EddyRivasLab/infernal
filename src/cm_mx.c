@@ -1,10 +1,10 @@
 /* CM_MX, CM_TR_MX, CM_HB_MX, CM_TR_HB_MX, CM_TR_SHADOW_MX, CM_HB_SHADOW_MX,
- * CM_TR_HB_SHADOW_MX, CM_EMIT_MX, ScanMatrix_t, and GammaHitMx_t implementations:
- * dynamic programming matrices for CMs.
+ * CM_TR_HB_SHADOW_MX, CM_EMIT_MX, CM_SCAN_MX, CM_TR_SCAN_MX and 
+ * GammaHitMx_t implementations: dynamic programming matrices for CMs.
  * 
  * CM_HB_MX is based heavily on HMMER 3's p7_gmx.c module.
  * That was the first of the CM_*_MX's data structures written,
- * and all subsequent structures were derived from that one.
+ * and all other CM_*_MX's were derived from that one.
  *
  * Table of contents:
  *   1. CM_MX data structure functions,
@@ -35,10 +35,10 @@
  *  12. CM_TR_HB_EMIT_MX data structure functions,
  *      2D matrix of float scores for HMM-banded truncated optimal accuracy alignment
  *      and posterior annotation of alignments
- *  13. ScanMatrix_t data structure functions,
+ *  13. CM_SCAN_MX data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      query dependent banded or non-banded CM DP search functions
- *  14. TrScanMatrix_t data structure functions,
+ *  14. CM_TR_SCAN_MX data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      query dependent banded or non-banded truncated CM DP search functions
  *  15. TruncOpts_t data structure functions,
@@ -64,6 +64,14 @@
 #include "funcs.h"
 #include "structs.h"
 
+static int cm_scan_mx_integerize     (CM_t *cm, CM_SCAN_MX *smx);
+static int cm_scan_mx_floatize       (CM_t *cm, CM_SCAN_MX *smx);
+static int cm_scan_mx_freefloats     (CM_t *cm, CM_SCAN_MX *smx);
+static int cm_scan_mx_freeintegers   (CM_t *cm, CM_SCAN_MX *smx);
+static int cm_tr_scan_mx_integerize  (CM_t *cm, CM_TR_SCAN_MX *trsmx);
+static int cm_tr_scan_mx_floatize    (CM_t *cm, CM_TR_SCAN_MX *trsmx);
+static int cm_tr_scan_mx_freefloats  (CM_t *cm, CM_TR_SCAN_MX *trsmx);
+static int cm_tr_scan_mx_freeintegers(CM_t *cm, CM_TR_SCAN_MX *trsmx);
 
 /*****************************************************************
  *   1. CM_MX data structure functions,
@@ -5550,61 +5558,76 @@ cm_tr_hb_emit_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int
 }
 
 /*****************************************************************
- *  13. ScanMatrix_t data structure functions,
+ *  13. CM_SCAN_MX data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      query dependent banded or non-banded CM DP search functions
  *****************************************************************/
 
-/* Function: cm_CreateScanMatrix()
+/* Function: cm_scan_mx_Create()
  * Date:     EPN, Sun Nov  4 19:56:58 2007
  *
- * Purpose:  Given relevant info, allocate and initialize ScanMatrix_t object.
+ * Purpose:  Given relevant info, allocate and initialize CM_SCAN_MX.
  *            
- * Returns:  eslOK on success, dies immediately on some error
+ * Returns:  eslOK on success.
+ *           eslEINVAL upon contract error, *ret_smx is set to NULL.
+ *           eslEMEM if out of memory, *ret_smx is set to NULL.
  */
-ScanMatrix_t *
-cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int)
+int
+cm_scan_mx_Create(CM_t *cm, char *errbuf, int do_float, int do_int, CM_SCAN_MX **ret_smx)
 { 
   int status;
-  ScanMatrix_t *smx;
-  int v,j;
+  CM_SCAN_MX *smx = NULL;
+  int v,j,n;
 
-  if((!do_float) && (!do_int)) cm_Fail("cm_CreateScanMatrix(), do_float and do_int both FALSE.\n");
-  if(do_banded && (dmin == NULL || dmax == NULL)) cm_Fail("cm_CreateScanMatrix(), do_banded is TRUE, but dmin or dmax is NULL.\n");
+  if((!do_float) && (!do_int)) ESL_FAIL(eslEINVAL, errbuf, "cm_scan_mx_Create(), do_float and do_int both FALSE.");
+  if(cm->qdbinfo == NULL || cm->qdbinfo->setby == CM_QDBINFO_SETBY_INIT) { 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_scan_mx_Create(), qdbinfo is invalid");
+  }
 
-  ESL_ALLOC(smx, sizeof(ScanMatrix_t));
+  ESL_ALLOC(smx, sizeof(CM_SCAN_MX));
 
-  smx->flags    = 0;
-  smx->cm_M     = cm->M;
-  smx->W        = W;
-  smx->dmin     = dmin; /* could be NULL */
-  smx->dmax     = dmax; /* could be NULL */
-  smx->beta_W   = beta_W; 
-  smx->beta_qdb = beta_qdb; 
+  /* copy M and W */
+  smx->M = cm->M;
+  smx->W = cm->W;
 
-  /* precalculate minimum and maximum d for each state and each sequence index (1..j..W). 
-   * this is not always just dmin, dmax, (for ex. if j < W). */
-  ESL_ALLOC(smx->dnAA, sizeof(int *) * (smx->W+1));
-  ESL_ALLOC(smx->dxAA, sizeof(int *) * (smx->W+1));
-  smx->dnAA[0] = smx->dxAA[0] = NULL; /* corresponds to j == 0, which is out of bounds */
-  for(j = 1; j <= smx->W; j++) {
-    ESL_ALLOC(smx->dnAA[j], sizeof(int) * cm->M);
-    ESL_ALLOC(smx->dxAA[j], sizeof(int) * cm->M);
-    for(v = 0; v < cm->M; v++) {
-      if(do_banded) { 
-	smx->dnAA[j][v] = (cm->sttype[v] == MP_st) ? ESL_MAX(smx->dmin[v], 2) : ESL_MAX(smx->dmin[v], 1); 
-	smx->dxAA[j][v] = ESL_MIN(j, smx->dmax[v]); 
-	smx->dxAA[j][v] = ESL_MIN(smx->dxAA[j][v], smx->W);
-      }
-      else { 
-	smx->dnAA[j][v] = (cm->sttype[v] == MP_st) ? 2 : 1;
-	smx->dxAA[j][v] = ESL_MIN(j, smx->W); 
-      }
+  /* point to the all-important qdbinfo */
+  smx->qdbinfo = cm->qdbinfo;
+
+  /* Allocate dnAAA and dxAAA */
+  ESL_ALLOC(smx->dnAAA, sizeof(int **) * NSMX_QDB_IDX);
+  ESL_ALLOC(smx->dxAAA, sizeof(int **) * NSMX_QDB_IDX);
+  for(n = 0; n < NSMX_QDB_IDX; n++) { 
+    ESL_ALLOC(smx->dnAAA[n], sizeof(int *) * (smx->W+1));
+    ESL_ALLOC(smx->dxAAA[n], sizeof(int *) * (smx->W+1));
+    for(j = 1; j <= smx->W; j++) {
+      ESL_ALLOC(smx->dnAAA[n][j], sizeof(int) * smx->M);
+      ESL_ALLOC(smx->dxAAA[n][j], sizeof(int) * smx->M);
     }
   }
+
+  /* For each set of bands, precalculate minimum and maximum d for
+   * each state and each sequence index (1..j..W).  this is not always
+   * just dmin, dmax, (for ex. if j < W). 
+   */
+  smx->dnAAA[SMX_NOQDB][0]      = smx->dxAAA[SMX_NOQDB][0]      = NULL; /* corresponds to j == 0, which is out of bounds */
+  smx->dnAAA[SMX_QDB1_TIGHT][0] = smx->dxAAA[SMX_QDB1_TIGHT][0] = NULL; /* corresponds to j == 0, which is out of bounds */
+  smx->dnAAA[SMX_QDB2_LOOSE][0] = smx->dxAAA[SMX_QDB2_LOOSE][0] = NULL; /* corresponds to j == 0, which is out of bounds */
+  for(j = 1; j <= smx->W; j++) {
+    for(v = 0; v < smx->M; v++) {
+      smx->dnAAA[SMX_NOQDB][j][v]      = (cm->sttype[v] == MP_st) ? 2 : 1;
+      smx->dnAAA[SMX_QDB1_TIGHT][j][v] = (cm->sttype[v] == MP_st) ? ESL_MAX(smx->qdbinfo->dmin1[v], 2) : ESL_MAX(smx->qdbinfo->dmin1[v], 1); 
+      smx->dnAAA[SMX_QDB2_LOOSE][j][v] = (cm->sttype[v] == MP_st) ? ESL_MAX(smx->qdbinfo->dmin2[v], 2) : ESL_MAX(smx->qdbinfo->dmin2[v], 1); 
+
+      smx->dxAAA[SMX_NOQDB][j][v]      = ESL_MIN(j, smx->W); 
+      smx->dxAAA[SMX_QDB1_TIGHT][j][v] = ESL_MIN(j, ESL_MIN(smx->qdbinfo->dmax1[v], smx->W));
+      smx->dxAAA[SMX_QDB2_LOOSE][j][v] = ESL_MIN(j, ESL_MIN(smx->qdbinfo->dmax2[v], smx->W));
+    }
+  }
+
   /* allocate bestr and bestsc */
-  ESL_ALLOC(smx->bestr,    (sizeof(int)   * (smx->W+1)));
-  ESL_ALLOC(smx->bestsc,   (sizeof(float) * (smx->W+1)));
+  ESL_ALLOC(smx->bestr,      (sizeof(int)   * (smx->W+1)));
+  ESL_ALLOC(smx->bestsc,     (sizeof(float) * (smx->W+1)));
+
   /* initialize bestr, bestsc (probably not strictly necessary) */
   esl_vec_ISet(smx->bestr,    (smx->W+1), 0);
   esl_vec_FSet(smx->bestsc,   (smx->W+1), IMPOSSIBLE);
@@ -5661,79 +5684,66 @@ cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double
   smx->ncells_alpha      = 0;
   smx->ncells_alpha_begl = 0;
 
-  if(do_float) /* allocate float mx and scores */
-    cm_FloatizeScanMatrix(cm, smx);
-  if(do_int)   /* allocate int mx and scores */
-    cm_IntizeScanMatrix(cm, smx);
-  return smx;
+  if(do_float) { 
+    if((status = cm_scan_mx_floatize(cm, smx)) != eslOK) { 
+      if(status == eslEMEM) ESL_FAIL(status, errbuf, "out of memory (creating float scan matrix)");
+      else                  ESL_FAIL(status, errbuf, "problem laying out float scan matrix");
+    }
+  }
+  if(do_int) { 
+    if((status = cm_scan_mx_integerize(cm, smx)) != eslOK) { 
+      if(status == eslEMEM) ESL_FAIL(status, errbuf, "out of memory (creating int scan matrix)");
+      else                  ESL_FAIL(status, errbuf, "problem laying out int scan matrix");
+    }
+  }
+
+  /* tally up size */
+  smx->size_Mb  = (float) sizeof(CM_SCAN_MX);
+  smx->size_Mb += (float) sizeof(int **)  * NSMX_QDB_IDX;                       /* dnAAA (1st dim) */
+  smx->size_Mb += (float) sizeof(int **)  * NSMX_QDB_IDX;                       /* dxAAA (1st dim) */
+  smx->size_Mb += (float) sizeof(int  *)  * NSMX_QDB_IDX * (smx->W+1);          /* dnAAA (2nd dim) */
+  smx->size_Mb += (float) sizeof(int  *)  * NSMX_QDB_IDX * (smx->W+1);          /* dxAAA (2nd dim) */
+  smx->size_Mb += (float) sizeof(int)     * NSMX_QDB_IDX * (smx->W+1) * smx->M; /* dnAAA (3rd dim) */
+  smx->size_Mb += (float) sizeof(int)     * NSMX_QDB_IDX * (smx->W+1) * smx->M; /* dnAAA (3rd dim) */
+  smx->size_Mb += (float) sizeof(int)     * (smx->W+1);                         /* bestr  */
+  smx->size_Mb += (float) sizeof(float)   * (smx->W+1);                         /* bestsc */
+  if(do_float) { 
+    smx->size_Mb += (float) sizeof(float) * smx->ncells_alpha;                  /* falpha      */
+    smx->size_Mb += (float) sizeof(float) * smx->ncells_alpha_begl;             /* falpha_begl */
+  }
+  if(do_int) { 
+    smx->size_Mb += (float) sizeof(int)   * smx->ncells_alpha;                  /* ialpha      */
+    smx->size_Mb += (float) sizeof(int)   * smx->ncells_alpha_begl;             /* ialpha_begl */
+  }
+  smx->size_Mb *= 0.000001; /* convert to Mb */
+
+  *ret_smx = smx;
+  return eslOK;
 
  ERROR:
-  cm_Fail("memory allocation error in cm_CreateScanMatrix().\n");
-  return NULL; /* NEVERREACHED */
+  cm_scan_mx_Destroy(cm, smx);
+  *ret_smx = NULL;
+  ESL_FAIL(status, errbuf, "out of memory (creating scan matrix)");
+  return status; /* not reached */
 }
 
-/* Function: cm_CreateScanMatrixForCM()
- * Date:     EPN, Fri Nov 30 06:07:23 2007
- *
- * Purpose:  Given a CM, allocate and initialize ScanMatrix_t object for that CM. 
- *           Most of work is done by cm_CreateScanMatrix(). 
- *
- * Returns:  eslOK on success, dies immediately on some error
- */
-int
-cm_CreateScanMatrixForCM(CM_t *cm, int do_float, int do_int)
-{
-  int do_banded;
-  double beta_W;
-
-  if(cm->flags & CMH_SCANMATRIX)               cm_Fail("cm_CreateScanMatrixForCM(), the CM flag for valid scan info is already up.");
-  if(cm->smx != NULL)                          cm_Fail("cm_CreateScanMatrixForCM(), the cm already points to a ScanMatrix_t object.\n");
-  if(cm->dmin == NULL && cm->dmax != NULL)     cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin == NULL, cm->dmax != NULL\n"); 
-  if(cm->dmin != NULL && cm->dmax == NULL)     cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin == NULL, cm->dmax != NULL\n"); 
-  if(cm->dmax != NULL && cm->W > cm->dmax[0])  cm_Fail("cm_CreateScanMatrixForCM(), cm->W: %d > cm->dmax[0]: %d (cm->W can be less than cm->dmax[0] but not greater)\n", cm->W, cm->dmax[0]); 
-  if((cm->dmin != NULL && cm->dmax != NULL) && (! (cm->flags & CMH_QDB))) 
-     cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin != NULL, cm->dmax != NULL, but CMH_QDB flag down, bands are invalid\n"); 
-  if((! cm->search_opts & CM_SEARCH_NOQDB) && (cm->dmin == NULL || cm->dmax == NULL))
-    cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin == NULL || cm->dmax == NULL, but !(cm->search_opts & CM_SEARCH_NOQDB)\n");
-
-  do_banded   = (cm->search_opts & CM_SEARCH_NOQDB) ? FALSE : TRUE;
-  
-  if(do_banded) beta_W = ESL_MAX(cm->beta_W, cm->beta_qdb);
-  else beta_W = cm->beta_W;
-  /*printf("TEMP cm_CreateScanMatrix(), do_banded: %d beta_W: %g beta_qdb: %g\n", do_banded, beta_W, cm->beta_qdb);*/
-  cm->smx = cm_CreateScanMatrix(cm, cm->W, cm->dmin, cm->dmax, beta_W, cm->beta_qdb, do_banded, do_float, do_int);
-  cm->flags |= CMH_SCANMATRIX; /* raise the flag for valid CMH_SCANMATRIX */
-
-  return eslOK;
-}
-
-/* Function: cm_FloatizeScanMatrix()
+/* Function: cm_scan_mx_floatize()
  * Date:     EPN, Wed Nov  7 10:05:55 2007
  *
- * Purpose:  Allocate and initialize float data structures in a ScanMatrix_t object for <cm>.
- *           This initializes a scanning float DP matrix for CYK/Inside, for details on that
- *           matrix see the notes by the cm_FloatizeScanMatrix() function call in 
- *           cm_CreateScanMatrix().
- *            
- * Returns:  eslOK on success, dies immediately on an error.
+ * Returns:  eslOK on success.
+ *           eslEINVAL if internal consistency check of cell count fails. 
+ *           eslEMEM if out of memory.
  */
 int
-cm_FloatizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
+cm_scan_mx_floatize(CM_t *cm, CM_SCAN_MX *smx)
 {
   int status;
   int j, v;
   int y, yoffset, w;
-  int use_hmmonly;
-  use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
   int n_begl;
   int n_non_begl;
   int cur_cell;
 
-  /* contract check */
-  if(smx->flags & cmSMX_HAS_FLOAT) cm_Fail("cm_FloatizeScanMatrix(), si's cmSMX_HAS_FLOAT flag is already up.");
-  if(smx->falpha != NULL)       cm_Fail("cm_FloatizeScanMatrix(), smx->falpha is not NULL.");
-  if(smx->falpha_begl != NULL)  cm_Fail("cm_FloatizeScanMatrix(), smx->falpha_begl is not NULL.");
-  
   /* allocate alpha 
    * we allocate only as many cells as necessary,
    * for falpha,      we only allocate for non-BEGL_S states,
@@ -5751,8 +5761,6 @@ cm_FloatizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
   ESL_ALLOC(smx->falpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
   ESL_ALLOC(smx->falpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
   ESL_ALLOC(smx->falpha_mem,    sizeof(float) * 2 * n_non_begl * (smx->W+1));
-  if((smx->flags & cmSMX_HAS_INT) && ((2 * n_non_begl * (smx->W+1)) != smx->ncells_alpha)) 
-    cm_Fail("cm_FloatizeScanMatrix(), cmSMX_HAS_INT flag raised, but smx->ncells_alpha %d != %d (predicted num float cells size)\n", smx->ncells_alpha, (2 * n_non_begl * (smx->W+1)));
   smx->ncells_alpha = 2 * n_non_begl * (smx->W+1);
 
   cur_cell = 0;
@@ -5768,7 +5776,7 @@ cm_FloatizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
       smx->falpha[1][v] = NULL;
     }
   }
-  if(cur_cell != smx->ncells_alpha) cm_Fail("cm_FloatizeScanMatrix(), error allocating falpha, cell cts differ %d != %d\n", cur_cell, smx->ncells_alpha);
+  if(cur_cell != smx->ncells_alpha) { status = eslEINVAL; goto ERROR; }
 
   /* allocate falpha_begl */
   /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
@@ -5776,8 +5784,6 @@ cm_FloatizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
   for (j = 0; j <= smx->W; j++) 
     ESL_ALLOC(smx->falpha_begl[j],  sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, falpha_begl[0][v] will be NULL */
   ESL_ALLOC(smx->falpha_begl_mem,   sizeof(float) * (smx->W+1) * n_begl * (smx->W+1));
-  if((smx->flags & cmSMX_HAS_INT) && (((smx->W+1) * n_begl * (smx->W+1)) != smx->ncells_alpha_begl)) 
-    cm_Fail("cm_IntizeScanMatrix(), cmSMX_HAS_FLOAT flag raised, but smx->ncells_alpha_begl %d != %d (predicted num float cells size)\n", smx->ncells_alpha_begl, ((smx->W+1) * n_begl * (smx->W+1)));
   smx->ncells_alpha_begl = (smx->W+1) * n_begl * (smx->W+1);
 
   cur_cell = 0;
@@ -5790,7 +5796,7 @@ cm_FloatizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
       else smx->falpha_begl[j][v] = NULL;
     }
   }
-  if(cur_cell != smx->ncells_alpha_begl) cm_Fail("cm_FloatizeScanMatrix(), error allocating falpha_begl, cell cts differ %d != %d\n", cur_cell, smx->ncells_alpha_begl);
+  if(cur_cell != smx->ncells_alpha_begl) { status = eslEINVAL; goto ERROR; }
 
   /* Initialize matrix */
   /* First, init entire matrix to IMPOSSIBLE */
@@ -5828,40 +5834,29 @@ cm_FloatizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
     }
   }
   /* set the flag that tells us we've got valid floats */
-  smx->flags |= cmSMX_HAS_FLOAT;
+  smx->floats_valid = TRUE;
   return eslOK;
 
  ERROR: 
-  cm_Fail("memory allocation error.");
-  return status; /* NEVERREACHED */
-  }
+  return status;
+}
 
 
-/* Function: cm_IntizeScanMatrix()
+/* Function: cm_scan_mx_integerize()
  * Date:     EPN, Wed Nov  7 10:10:39 2007
  *
- * Purpose:  Allocate and initialize int data structures in a ScanMatrix_t object for <cm>.
- *           This initializes a scanning float DP matrix for CYK/Inside, for details on that
- *           matrix see the notes by the cm_FloatizeScanMatrix() function call in 
- *           cm_CreateScanMatrix().
- *            
- * Returns:  eslOK on success, dies immediately on an error.
+ * Returns:  eslOK on success.
+ *           eslEINVAL if internal consistency check of cell count fails. 
+ *           eslEMEM if out of memory.
  */
 int
-cm_IntizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
+cm_scan_mx_integerize(CM_t *cm, CM_SCAN_MX *smx)
 {
   int status;
   int v, j, y, yoffset, w;
-  int use_hmmonly;
-  use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
   int n_begl;
   int n_non_begl;
   int cur_cell;
-
-  /* contract check */
-  if(smx->flags & cmSMX_HAS_INT) cm_Fail("cm_IntizeScanMatrix(), si's cmSMX_HAS_INT flag is already up.");
-  if(smx->ialpha != NULL)       cm_Fail("cm_IntizeScanMatrix(), smx->ialpha is not NULL.");
-  if(smx->ialpha_begl != NULL)  cm_Fail("cm_IntizeScanMatrix(), smx->ialpha_begl is not NULL.");
 
   /* allocate alpha 
    * we allocate only as many cells as necessary,
@@ -5880,8 +5875,7 @@ cm_IntizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
   ESL_ALLOC(smx->ialpha[0],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, ialpha[0][v] will be NULL */
   ESL_ALLOC(smx->ialpha[1],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, ialpha[0][v] will be NULL */
   ESL_ALLOC(smx->ialpha_mem,    sizeof(int) * 2 * n_non_begl * (smx->W+1));
-  if((smx->flags & cmSMX_HAS_FLOAT) && ((2 * n_non_begl * (smx->W+1)) != smx->ncells_alpha)) 
-    cm_Fail("cm_IntizeScanMatrix(), cmSMX_HAS_INT flag raised, but smx->ncells_alpha %d != %d (predicted num int cells size)\n", smx->ncells_alpha, (2 * n_non_begl * (smx->W+1)));
+
   smx->ncells_alpha = 2 * n_non_begl * (smx->W+1);
 
   cur_cell = 0;
@@ -5897,7 +5891,7 @@ cm_IntizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
       smx->ialpha[1][v] = NULL;
     }
   }
-  if(cur_cell != smx->ncells_alpha) cm_Fail("cm_IntizeScanMatrix(), error allocating ialpha, cell cts differ %d != %d\n", cur_cell, smx->ncells_alpha);
+  if(cur_cell != smx->ncells_alpha) { status = eslEINVAL; goto ERROR; }
   
   /* allocate ialpha_begl */
   /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
@@ -5905,8 +5899,6 @@ cm_IntizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
   for (j = 0; j <= smx->W; j++) 
     ESL_ALLOC(smx->ialpha_begl[j],  sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, ialpha_begl[0][v] will be NULL */
   ESL_ALLOC(smx->ialpha_begl_mem,   sizeof(int) * (smx->W+1) * n_begl * (smx->W+1));
-  if((smx->flags & cmSMX_HAS_FLOAT) && (((smx->W+1) * n_begl * (smx->W+1)) != smx->ncells_alpha_begl)) 
-    cm_Fail("cm_IntizeScanMatrix(), cmSMX_HAS_INT flag raised, but smx->ncells_alpha_begl %d != %d (predicted num int cells size)\n", smx->ncells_alpha_begl, ((smx->W+1) * n_begl * (smx->W+1)));
   smx->ncells_alpha_begl = (smx->W+1) * n_begl * (smx->W+1);
 
   cur_cell = 0;
@@ -5919,7 +5911,7 @@ cm_IntizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
       else smx->ialpha_begl[j][v] = NULL;
     }
   }
-  if(cur_cell != smx->ncells_alpha_begl) cm_Fail("cm_IntizeScanMatrix(), error allocating ialpha_begl, cell cts differ %d != %d\n", cur_cell, smx->ncells_alpha_begl);
+  if(cur_cell != smx->ncells_alpha_begl) { status = eslEINVAL; goto ERROR; }
 
   /* Initialize matrix */
   /* First, init entire matrix to -INFTY */
@@ -5958,141 +5950,175 @@ cm_IntizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
   }
 
   /* set the flag that tells us we've got valid ints */
-  smx->flags |= cmSMX_HAS_INT;
+  smx->ints_valid = TRUE;
   return eslOK;
 
  ERROR: 
-  cm_Fail("memory allocation error.");
-  return status; /* NEVERREACHED */
+  return status;
 }  
 
-
-/* Function: cm_FreeFloatsFromScanMatrix()
- * Date:     EPN, Wed Nov  7 10:03:55 2007
+/* Function: cm_scan_mx_SizeNeeded()
+ * Date:     EPN, Tue Dec 13 04:33:42 2011
  *
- * Purpose:  Free float data structures in a ScanMatrix_t object 
- *           corresponding to <cm>.
+ * Purpose:  Predict the size needed in Mb to create a 
+ *           CM_SCAN_MX for <cm>.
  *            
- * Returns:  eslOK on success, dies immediately on an error.
+ * Returns:  Size needed in Mb.
  */
-int
-cm_FreeFloatsFromScanMatrix(CM_t *cm, ScanMatrix_t *smx)
-{
-  int j;
+float
+cm_scan_mx_SizeNeeded(CM_t *cm, char *errbuf, int do_float, int do_int)
+{ 
+  int     n_begl             = 0;
+  int     n_non_begl         = 0;
+  int64_t ncells_alpha       = 0;
+  int64_t ncells_alpha_begl  = 0;
+  int     v;
+  float   Mb_needed = 0.;
 
-  /* contract check */
-  if(! smx->flags & cmSMX_HAS_FLOAT)    cm_Fail("cm_FreeFloatsFromScanMatrix(), si's cmSMX_HAS_FLOAT flag is down.");
-  if(smx->falpha == NULL)       cm_Fail("cm_FreeFloatsFromScanMatrix(), smx->falpha is already NULL.");
-  if(smx->falpha_begl == NULL)  cm_Fail("cm_FreeFloatsFromScanMatrix(), smx->falpha_begl is already NULL.");
+  /* calculate number of cells in alpha and alpha_begl */
+  n_begl = 0;
+  for (v = 0; v < cm->M; v++) if (cm->stid[v] == BEGL_S) n_begl++;
+  n_non_begl = cm->M - n_begl;
+  ncells_alpha      = 2         * n_non_begl * (cm->W+1);
+  ncells_alpha_begl = (cm->W+1) * n_begl     * (cm->W+1);
 
-  free(smx->falpha_mem);
-  free(smx->falpha[1]);
-  free(smx->falpha[0]);
-  free(smx->falpha);
-  smx->falpha = NULL;
+  /* tally up size */
+  Mb_needed  = (float) sizeof(CM_SCAN_MX);
+  Mb_needed += (float) sizeof(int **)  * NSMX_QDB_IDX;                     /* dnAAA (1st dim) */
+  Mb_needed += (float) sizeof(int **)  * NSMX_QDB_IDX;                     /* dxAAA (1st dim) */
+  Mb_needed += (float) sizeof(int  *)  * NSMX_QDB_IDX * (cm->W+1);         /* dnAAA (2nd dim) */
+  Mb_needed += (float) sizeof(int  *)  * NSMX_QDB_IDX * (cm->W+1);         /* dxAAA (2nd dim) */
+  Mb_needed += (float) sizeof(int)     * NSMX_QDB_IDX * (cm->W+1) * cm->M; /* dnAAA (3rd dim) */
+  Mb_needed += (float) sizeof(int)     * NSMX_QDB_IDX * (cm->W+1) * cm->M; /* dnAAA (3rd dim) */
+  Mb_needed += (float) sizeof(int)     * (cm->W+1);                        /* bestr  */
+  Mb_needed += (float) sizeof(float)   * (cm->W+1);                        /* bestsc */
+  if(do_float) { 
+    Mb_needed += (float) sizeof(float) * ncells_alpha;                     /* falpha      */
+    Mb_needed += (float) sizeof(float) * ncells_alpha_begl;                /* falpha_begl */
+  }
+  if(do_int) { 
+    Mb_needed += (float) sizeof(int)   * ncells_alpha;                     /* ialpha      */
+    Mb_needed += (float) sizeof(int)   * ncells_alpha_begl;                /* ialpha_begl */
+  }
+  Mb_needed *= 0.000001; /* convert to Mb */
 
-  free(smx->falpha_begl_mem);
-  for (j = 0; j <= smx->W; j++) free(smx->falpha_begl[j]);
-  free(smx->falpha_begl);
-  smx->falpha_begl = NULL;
-
-  smx->flags &= ~cmSMX_HAS_FLOAT;
-  return eslOK;
+  return Mb_needed;
 }
 
-/* Function: cm_FreeIntsFromScanMatrix()
- * Date:     EPN, Wed Nov  7 09:56:01 2007
- *
- * Purpose:  Free int data structures in a ScanMatrix_t object 
- *           corresponding to <cm>.
- *            
- * Returns:  eslOK on success, dies immediately on an error.
- */
-int
-cm_FreeIntsFromScanMatrix(CM_t *cm, ScanMatrix_t *smx)
-{
-  int j;
-
-  /* contract check */
-  if(! smx->flags & cmSMX_HAS_INT)    cm_Fail("cm_FreeIntsFromScanMatrix(), si's cmSMX_HAS_INT flag is down.");
-  if(smx->ialpha == NULL)       cm_Fail("cm_FreeIntsFromScanMatrix(), smx->ialpha is already NULL.");
-  if(smx->ialpha_begl == NULL)  cm_Fail("cm_FreeIntsFromScanMatrix(), smx->ialpha_begl is already NULL.");
-
-  free(smx->ialpha_mem);
-  free(smx->ialpha[1]);
-  free(smx->ialpha[0]);
-  free(smx->ialpha);
-  smx->ialpha = NULL;
-
-  free(smx->ialpha_begl_mem);
-  for (j = 0; j <= smx->W; j++) free(smx->ialpha_begl[j]);
-  free(smx->ialpha_begl);
-  smx->ialpha_begl = NULL;
-
-  smx->flags &= ~cmSMX_HAS_INT;
-  return eslOK;
-}
-
-/* Function: cm_FreeScanMatrix()
+/* Function: cm_scan_mx_Destroy()
  * Date:     EPN, Sun Nov  4 20:57:32 2007
  *
- * Purpose:  Free a ScanMatrix_t object corresponding
+ * Purpose:  Free a CM_SCAN_MX object corresponding
  *           to CM <cm>.
  *            
  * Returns:  void
  */
 void
-cm_FreeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
+cm_scan_mx_Destroy(CM_t *cm, CM_SCAN_MX *smx)
 {
-  int j;
-  if(! ((cm->flags & CMH_SCANMATRIX) && (smx == cm->smx))) { /* don't free the cm->smx's dmin, dmax */
-    if(smx->dmin != cm->dmin && smx->dmin != NULL) { free(smx->dmin); smx->dmin = NULL; }
-    if(smx->dmax != cm->dmax && smx->dmax != NULL) { free(smx->dmax); smx->dmax = NULL; }
-  }
+  int n, j;
 
-  for(j = 1; j <= smx->W; j++) {
-    free(smx->dnAA[j]);
-    free(smx->dxAA[j]);
+  for(n = 0; n < NSMX_QDB_IDX; n++) { 
+    for(j = 1; j <= smx->W; j++) {
+      free(smx->dnAAA[n][j]);
+      free(smx->dxAAA[n][j]);
+    }
+    free(smx->dnAAA[n]);
+    free(smx->dxAAA[n]);
   }
-  free(smx->dnAA);
-  free(smx->dxAA);
+  free(smx->dnAAA);
+  free(smx->dxAAA);
   free(smx->bestr);
   free(smx->bestsc);
   
-  if(smx->flags & cmSMX_HAS_FLOAT) cm_FreeFloatsFromScanMatrix(cm, smx);
-  if(smx->flags & cmSMX_HAS_INT)   cm_FreeIntsFromScanMatrix(cm, smx);
+  if(smx->floats_valid) cm_scan_mx_freefloats  (cm, smx);
+  if(smx->ints_valid)   cm_scan_mx_freeintegers(cm, smx);
+
   free(smx);
   return;
 }
 
-
-/* Function: cm_FreeScanMatrixForCM()
- * Date:     EPN, Fri Nov 30 06:47:12 2007
+/* Function: cm_scan_mx_freefloats()
+ * Date:     EPN, Wed Nov  7 10:03:55 2007
  *
- * Purpose:  Free a ScanMatrix_t object cm->smx for <cm>.
+ * Purpose:  Free float data structures in a CM_SCAN_MX object 
+ *           corresponding to <cm>.
  *            
- * Returns:  void
+ * Returns:  eslOK on success.
  */
-void
-cm_FreeScanMatrixForCM(CM_t *cm)
+int
+cm_scan_mx_freefloats(CM_t *cm, CM_SCAN_MX *smx)
 {
-  /* contract check */
-  if(cm->smx == NULL) cm_Fail("cm_FreeScanMatrixForCM(), cm->smx is NULL.\n");
-  cm_FreeScanMatrix(cm, cm->smx);
-  cm->smx = NULL;
-  cm->flags &= ~CMH_SCANMATRIX; /* drop the 'cm has valid scanmatrix flag */
-  return;
+  int j;
+
+  if(smx->falpha_mem != NULL) free(smx->falpha_mem);
+  if(smx->falpha     != NULL) {
+    if(smx->falpha[1]  != NULL) free(smx->falpha[1]);
+    if(smx->falpha[0]  != NULL) free(smx->falpha[0]);
+    free(smx->falpha);
+    smx->falpha = NULL;
+  }
+
+  if(smx->falpha_begl_mem != NULL) { 
+    free(smx->falpha_begl_mem);
+  }
+  if(smx->falpha_begl != NULL) { 
+    for (j = 0; j <= smx->W; j++) { 
+      if(smx->falpha_begl[j] != NULL) free(smx->falpha_begl[j]);
+    }
+    free(smx->falpha_begl);
+    smx->falpha_begl = NULL;
+  }
+
+  smx->floats_valid = FALSE;
+  return eslOK;
 }
 
-/* Function: cm_DumpScanMatrixAlpha()
+/* Function: cm_scan_mx_freeintegers()
+ * Date:     EPN, Wed Nov  7 09:56:01 2007
+ *
+ * Purpose:  Free int data structures in a CM_SCAN_MX object 
+ *           corresponding to <cm>.
+ *            
+ * Returns:  eslOK on success, dies immediately on an error.
+ */
+int
+cm_scan_mx_freeintegers(CM_t *cm, CM_SCAN_MX *smx)
+{
+  int j;
+
+  if(smx->ialpha_mem != NULL) free(smx->ialpha_mem);
+  if(smx->ialpha     != NULL) {
+    if(smx->ialpha[1]  != NULL) free(smx->ialpha[1]);
+    if(smx->ialpha[0]  != NULL) free(smx->ialpha[0]);
+    free(smx->ialpha);
+    smx->ialpha = NULL;
+  }
+
+  if(smx->ialpha_begl_mem != NULL) { 
+    free(smx->ialpha_begl_mem);
+  }
+  if(smx->ialpha_begl != NULL) { 
+    for (j = 0; j <= smx->W; j++) { 
+      if(smx->ialpha_begl[j] != NULL) free(smx->ialpha_begl[j]);
+    }
+    free(smx->ialpha_begl);
+    smx->ialpha_begl = NULL;
+  }
+
+  smx->ints_valid = FALSE;
+  return eslOK;
+}
+
+/* Function: cm_scan_mx_Dump()
  * Date:     EPN, Tue Nov  6 05:11:26 2007
  *
  * Purpose:  Dump current alpha matrix (either float or int).
  *            
- * Returns:  void.
+ * Returns:  void, dies upon an error.
  */
 void
-cm_DumpScanMatrixAlpha(CM_t *cm, int j, int i0, int doing_float)
+cm_scan_mx_Dump(CM_t *cm, int j, int i0, int qdbidx, int doing_float)
 {
   int d, v;
   int jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
@@ -6100,19 +6126,18 @@ cm_DumpScanMatrixAlpha(CM_t *cm, int j, int i0, int doing_float)
   int prv = (j-1)%2;
   int *dnA, *dxA;
 
-  if(cm->smx == NULL) cm_Fail("cm_DumpScanMatrixAlpha(), cm->smx is NULL.\n");
-  ScanMatrix_t *smx = cm->smx;
-  if(doing_float && (! smx->flags & cmSMX_HAS_FLOAT)) cm_Fail("cm_DumpScanMatrixAlpha(), trying to print float alpha, but cmSMX_HAS_FLOAT flag is down.\n");
-  if((! doing_float) && (! smx->flags & cmSMX_HAS_INT)) cm_Fail("cm_DumpScanMatrixAlpha(), trying to print int alpha, but cmSMX_HAS_INT flag is down.\n");
+  CM_SCAN_MX *smx = cm->smx;
+  if(   doing_float  && (! smx->floats_valid)) cm_Fail("cm_scan_mx_Dump(), trying to print float alpha, but floats are not valid");
+  if((! doing_float) && (! smx->ints_valid))   cm_Fail("cm_scan_mx_Dump(), trying to print int   alpha, but ints   are not valid");
 
   int begl_prv = j-1 % (smx->W+1);
   int begl_cur = j   % (smx->W+1);
 
   printf("Dumping Alpha: j: %d\n", j);
-  if(jp_g >= smx->W) { dnA = smx->dnAA[smx->W]; dxA = smx->dxAA[smx->W]; }
-  else              { dnA = smx->dnAA[jp_g];  dxA = smx->dxAA[jp_g]; }
+  if(jp_g >= smx->W) { dnA = smx->dnAAA[qdbidx][smx->W]; dxA = smx->dxAAA[qdbidx][smx->W]; }
+  else               { dnA = smx->dnAAA[qdbidx][jp_g];   dxA = smx->dxAAA[qdbidx][jp_g]; }
   if(doing_float) {
-    for (v = smx->cm_M-1; v >= 0; v--) {	
+    for (v = smx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) { 
 	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, smx->falpha_begl[begl_prv][v][d]); 
       }
@@ -6121,7 +6146,7 @@ cm_DumpScanMatrixAlpha(CM_t *cm, int j, int i0, int doing_float)
       }
       printf("\n");
     }
-    for (v = smx->cm_M-1; v >= 0; v--) {	
+    for (v = smx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) {
 	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, smx->falpha_begl[begl_cur][v][d]); 
       }
@@ -6132,7 +6157,7 @@ cm_DumpScanMatrixAlpha(CM_t *cm, int j, int i0, int doing_float)
     }
   }
   else { /* doing int */
-    for (v = smx->cm_M-1; v >= 0; v--) {	
+    for (v = smx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) {
 	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, smx->ialpha_begl[begl_prv][v][d]); 
       }
@@ -6141,7 +6166,7 @@ cm_DumpScanMatrixAlpha(CM_t *cm, int j, int i0, int doing_float)
       }
       printf("\n\n");
     }
-    for (v = smx->cm_M-1; v >= 0; v--) {	
+    for (v = smx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) {
 	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, smx->ialpha_begl[begl_cur][v][d]); 
       }
@@ -6154,65 +6179,78 @@ cm_DumpScanMatrixAlpha(CM_t *cm, int j, int i0, int doing_float)
   return;
 }
 
-
 /*****************************************************************
- *  14. TrScanMatrix_t data structure functions,
+ *  14. CM_TR_SCAN_MX data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      truncated query dependent banded or non-banded CM DP search 
  *      functions.
  *****************************************************************/
 
-/* Function: cm_CreateTrScanMatrix()
+/* Function: cm_tr_scan_mx_Create()
  * Date:     EPN, Tue Aug 16 04:23:41 2011
  *
  * Purpose:  Given relevant info, allocate and initialize
- *           TrScanMatrix_t object.  Note that unlike a ScanMatrix_t,
+ *           CM_TR_SCAN_MX object.  Note that unlike a CM_SCAN_MX,
  *           dmin is not used to set minimum values, even if we're
  *           going to use QDBs, because minimum subtree lengths are
  *           illogical with the truncated version of CYK/Inside, but
  *           maximum lengths are not, so <dmax> is considered here.
  *            
- * Returns:  eslOK on success, dies immediately on some error
+ * Returns:  eslOK on success.
+ *           eslEINVAL upon contract error, *ret_trsmx is set to NULL.
+ *           eslEMEM if out of memory, *ret_trsmx is set to NULL.
  */
-TrScanMatrix_t *
-cm_CreateTrScanMatrix(CM_t *cm, int W, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int)
+int
+cm_tr_scan_mx_Create(CM_t *cm, char *errbuf, int do_float, int do_int, CM_TR_SCAN_MX **ret_trsmx)
 { 
   int status;
-  TrScanMatrix_t *trsmx;
-  int v,j;
+  CM_TR_SCAN_MX *trsmx = NULL;
+  int v,j,n;
 
-  if((!do_float) && (!do_int)) cm_Fail("cm_CreateScanMatrix(), do_float and do_int both FALSE.\n");
-  if(do_banded && dmax == NULL) cm_Fail("cm_CreateScanMatrix(), do_banded is TRUE, but dmax is NULL.\n");
+  if((!do_float) && (!do_int)) ESL_FAIL(eslEINVAL, errbuf, "cm_tr_scan_mx_Create(), do_float and do_int both FALSE.");
+  if(cm->qdbinfo == NULL || cm->qdbinfo->setby == CM_QDBINFO_SETBY_INIT) { 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_tr_scan_mx_Create(), qdbinfo is invalid");
+  }
 
-  ESL_ALLOC(trsmx, sizeof(TrScanMatrix_t));
+  ESL_ALLOC(trsmx, sizeof(CM_TR_SCAN_MX));
 
-  trsmx->flags    = 0;
-  trsmx->cm_M     = cm->M;
-  trsmx->W        = W;
-  trsmx->dmax     = dmax; /* could be NULL */
-  trsmx->beta_W   = beta_W; 
-  trsmx->beta_qdb = beta_qdb; 
+  /* copy W */
+  trsmx->W = cm->W;
 
-  /* precalculate minimum and maximum d for each state and each sequence index (1..j..W). 
-   * this is not always just 0, dmax, (for ex. if j < W). */
-  ESL_ALLOC(trsmx->dnAA, sizeof(int *) * (trsmx->W+1));
-  ESL_ALLOC(trsmx->dxAA, sizeof(int *) * (trsmx->W+1));
-  trsmx->dnAA[0] = trsmx->dxAA[0] = NULL; /* corresponds to j == 0, which is out of bounds */
-  for(j = 1; j <= trsmx->W; j++) {
-    ESL_ALLOC(trsmx->dnAA[j], sizeof(int) * cm->M);
-    ESL_ALLOC(trsmx->dxAA[j], sizeof(int) * cm->M);
-    for(v = 0; v < cm->M; v++) {
-      /* dnAA[j][v] is 1 for all states, even MATP, b/c d == 1 is valid for MATP in L,R matrices */
-      trsmx->dnAA[j][v] = 1;
-      if(do_banded) { 
-	trsmx->dxAA[j][v] = ESL_MIN(j, trsmx->dmax[v]); 
-	trsmx->dxAA[j][v] = ESL_MIN(trsmx->dxAA[j][v], trsmx->W);
-      }
-      else { 
-	trsmx->dxAA[j][v] = ESL_MIN(j, trsmx->W); 
-      }
+  /* point to the all-important qdbinfo */
+  trsmx->qdbinfo = cm->qdbinfo;
+
+  /* Allocate dnAAA and dxAAA */
+  ESL_ALLOC(trsmx->dnAAA, sizeof(int **) * NSMX_QDB_IDX);
+  ESL_ALLOC(trsmx->dxAAA, sizeof(int **) * NSMX_QDB_IDX);
+  for(n = 0; n < NSMX_QDB_IDX; n++) { 
+    ESL_ALLOC(trsmx->dnAAA[n], sizeof(int *) * (trsmx->W+1));
+    ESL_ALLOC(trsmx->dxAAA[n], sizeof(int *) * (trsmx->W+1));
+    for(j = 1; j <= trsmx->W; j++) {
+      ESL_ALLOC(trsmx->dnAAA[n][j], sizeof(int) * cm->M);
+      ESL_ALLOC(trsmx->dxAAA[n][j], sizeof(int) * cm->M);
     }
   }
+
+  /* For each set of bands, precalculate minimum and maximum d for
+   * each state and each sequence index (1..j..W).  this is not always
+   * just dmin, dmax, (for ex. if j < W). 
+   */
+  trsmx->dnAAA[SMX_NOQDB][0]      = trsmx->dxAAA[SMX_NOQDB][0]      = NULL; /* corresponds to j == 0, which is out of bounds */
+  trsmx->dnAAA[SMX_QDB1_TIGHT][0] = trsmx->dxAAA[SMX_QDB1_TIGHT][0] = NULL; /* corresponds to j == 0, which is out of bounds */
+  trsmx->dnAAA[SMX_QDB2_LOOSE][0] = trsmx->dxAAA[SMX_QDB2_LOOSE][0] = NULL; /* corresponds to j == 0, which is out of bounds */
+  for(j = 1; j <= trsmx->W; j++) {
+    for(v = 0; v < cm->M; v++) {
+      trsmx->dnAAA[SMX_NOQDB][j][v]      = (cm->sttype[v] == MP_st) ? 2 : 1;
+      trsmx->dnAAA[SMX_QDB1_TIGHT][j][v] = (cm->sttype[v] == MP_st) ? ESL_MAX(trsmx->qdbinfo->dmin1[v], 2) : ESL_MAX(trsmx->qdbinfo->dmin1[v], 1); 
+      trsmx->dnAAA[SMX_QDB2_LOOSE][j][v] = (cm->sttype[v] == MP_st) ? ESL_MAX(trsmx->qdbinfo->dmin2[v], 2) : ESL_MAX(trsmx->qdbinfo->dmin2[v], 1); 
+
+      trsmx->dxAAA[SMX_NOQDB][j][v]      = ESL_MIN(j, trsmx->W); 
+      trsmx->dxAAA[SMX_QDB1_TIGHT][j][v] = ESL_MIN(j, ESL_MIN(trsmx->qdbinfo->dmax1[v], trsmx->W));
+      trsmx->dxAAA[SMX_QDB2_LOOSE][j][v] = ESL_MIN(j, ESL_MIN(trsmx->qdbinfo->dmax2[v], trsmx->W));
+    }
+  }
+
   /* allocate bestr, bestsc, bestmode */
   ESL_ALLOC(trsmx->bestr,    (sizeof(int)   * (trsmx->W+1)));
   ESL_ALLOC(trsmx->bestsc,   (sizeof(float) * (trsmx->W+1)));
@@ -6275,31 +6313,68 @@ cm_CreateTrScanMatrix(CM_t *cm, int W, int *dmax, double beta_W, double beta_qdb
   trsmx->ncells_alpha_begl = 0;
   trsmx->ncells_Talpha     = 0;
 
-  if(do_float) /* allocate float mx and scores */
-    cm_FloatizeTrScanMatrix(cm, trsmx);
-  if(do_int)   /* allocate int mx and scores */
-    cm_IntizeTrScanMatrix(cm, trsmx);
-  return trsmx;
+  if(do_float) { 
+    if((status = cm_tr_scan_mx_floatize(cm, trsmx)) != eslOK) { 
+      if(status == eslEMEM) ESL_FAIL(status, errbuf, "out of memory (creating float tr scan matrix)");
+      else                  ESL_FAIL(status, errbuf, "problem laying out float tr scan matrix");
+    }
+  }
+  if(do_int) { 
+    if((status = cm_tr_scan_mx_integerize(cm, trsmx)) != eslOK) { 
+      if(status == eslEMEM) ESL_FAIL(status, errbuf, "out of memory (creating int tr scan matrix)");
+      else                  ESL_FAIL(status, errbuf, "problem laying out int tr scan matrix");
+    }
+  }
+
+  /* tally up size */
+  trsmx->size_Mb  = (float) sizeof(CM_SCAN_MX);
+  trsmx->size_Mb += (float) sizeof(int **)  * NSMX_QDB_IDX;                           /* dnAAA (1st dim) */
+  trsmx->size_Mb += (float) sizeof(int **)  * NSMX_QDB_IDX;                           /* dxAAA (1st dim) */
+  trsmx->size_Mb += (float) sizeof(int  *)  * NSMX_QDB_IDX * (trsmx->W+1);            /* dnAAA (2nd dim) */
+  trsmx->size_Mb += (float) sizeof(int  *)  * NSMX_QDB_IDX * (trsmx->W+1);            /* dxAAA (2nd dim) */
+  trsmx->size_Mb += (float) sizeof(int)     * NSMX_QDB_IDX * (trsmx->W+1) * trsmx->M; /* dnAAA (3rd dim) */
+  trsmx->size_Mb += (float) sizeof(int)     * NSMX_QDB_IDX * (trsmx->W+1) * trsmx->M; /* dnAAA (3rd dim) */
+  trsmx->size_Mb += (float) sizeof(int)     * (trsmx->W+1);                           /* bestr  */
+  trsmx->size_Mb += (float) sizeof(float)   * (trsmx->W+1);                           /* bestsc */
+  if(do_float) { 
+    trsmx->size_Mb += (float) sizeof(float) * trsmx->ncells_alpha;                    /* fJalpha     */
+    trsmx->size_Mb += (float) sizeof(float) * trsmx->ncells_alpha;                    /* fLalpha     */
+    trsmx->size_Mb += (float) sizeof(float) * trsmx->ncells_alpha;                    /* fRalpha     */
+    trsmx->size_Mb += (float) sizeof(float) * trsmx->ncells_Talpha;                   /* fTalpha     */
+    trsmx->size_Mb += (float) sizeof(float) * trsmx->ncells_alpha_begl;               /* fJalpha_begl */
+    trsmx->size_Mb += (float) sizeof(float) * trsmx->ncells_alpha_begl;               /* fLalpha_begl */
+    trsmx->size_Mb += (float) sizeof(float) * trsmx->ncells_alpha_begl;               /* fRalpha_begl */
+  }
+  if(do_int) { 
+    trsmx->size_Mb += (float) sizeof(int)   * trsmx->ncells_alpha;                    /* iJalpha     */
+    trsmx->size_Mb += (float) sizeof(int)   * trsmx->ncells_alpha;                    /* iLalpha     */
+    trsmx->size_Mb += (float) sizeof(int)   * trsmx->ncells_alpha;                    /* iRalpha     */
+    trsmx->size_Mb += (float) sizeof(int)   * trsmx->ncells_Talpha;                   /* iTalpha     */
+    trsmx->size_Mb += (float) sizeof(int)   * trsmx->ncells_alpha_begl;               /* iJalpha_begl */
+    trsmx->size_Mb += (float) sizeof(int)   * trsmx->ncells_alpha_begl;               /* iLalpha_begl */
+    trsmx->size_Mb += (float) sizeof(int)   * trsmx->ncells_alpha_begl;               /* iRalpha_begl */
+  }
+  trsmx->size_Mb *= 0.000001; /* convert to Mb */
+
+  *ret_trsmx = trsmx;
+  return eslOK;
 
  ERROR:
-  cm_Fail("memory allocation error in cm_CreateTrScanMatrix().\n");
-  return NULL; /* NEVERREACHED */
+  cm_tr_scan_mx_Destroy(cm, trsmx);
+  *ret_trsmx = NULL;
+  ESL_FAIL(status, errbuf, "out of memory (creating tr scan matrix)");
+  return status; /* not reached */
 }
 
-/* Function: cm_FloatizeTrScanMatrix()
+/* Function: cm_tr_scan_mx_Floatize()
  * Date:     EPN, Tue Aug 16 04:36:29 2011
  *
- * Purpose: Allocate and initialize float data structures in a
- *           TrScanMatrix_t object for <cm>.  This initializes a
- *           scanning float DP matrix for trCYK/trInside, for details
- *           on that matrix see the notes by the
- *           cm_TrFloatizeScanMatrix() function call in
- *           cm_CreateTrScanMatrix().
- *            
- * Returns:  eslOK on success, dies immediately on an error.
+ * Returns:  eslOK on success.
+ *           eslEINVAL if internal consistency check of cell count fails. 
+ *           eslEMEM if out of memory.
  */
 int
-cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
+cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx)
 {
   int status;
   int j, v;
@@ -6308,16 +6383,6 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   int n_non_begl;
   int cur_cell;
 
-  /* contract check */
-  if(trsmx->flags & cmTRSMX_HAS_FLOAT) cm_Fail("cm_FloatizeScanMatrix(), trsmx's cmTRSMX_HAS_FLOAT flag is already up.");
-  if(trsmx->fJalpha != NULL)       cm_Fail("cm_FloatizeScanMatrix(), trsmx->fJalpha is not NULL.");
-  if(trsmx->fJalpha_begl != NULL)  cm_Fail("cm_FloatizeScanMatrix(), trsmx->fJalpha_begl is not NULL.");
-  if(trsmx->fLalpha != NULL)       cm_Fail("cm_FloatizeScanMatrix(), trsmx->fLalpha is not NULL.");
-  if(trsmx->fLalpha_begl != NULL)  cm_Fail("cm_FloatizeScanMatrix(), trsmx->fLalpha_begl is not NULL.");
-  if(trsmx->fRalpha != NULL)       cm_Fail("cm_FloatizeScanMatrix(), trsmx->fRalpha is not NULL.");
-  if(trsmx->fRalpha_begl != NULL)  cm_Fail("cm_FloatizeScanMatrix(), trsmx->fRalpha_begl is not NULL.");
-  if(trsmx->fTalpha != NULL)       cm_Fail("cm_FloatizeScanMatrix(), trsmx->fTalpha is not NULL.");
-  
   /* allocate alpha 
    * we allocate only as many cells as necessary,
    * for f{J,L,R,T}alpha,      we only allocate for non-BEGL_S states,
@@ -6353,9 +6418,6 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   ESL_ALLOC(trsmx->fTalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B and v != ROOT_S, fTalpha[0][v] will be NULL */
   ESL_ALLOC(trsmx->fTalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B and v != ROOT_S, fTalpha[1][v] will be NULL */
   ESL_ALLOC(trsmx->fTalpha_mem,    sizeof(float) * 2 * n_non_begl * (trsmx->W+1));
-
-  if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * n_non_begl * (trsmx->W+1)) != trsmx->ncells_alpha)) 
-    cm_Fail("cm_FloatizeScanMatrix(), cmTRSMX_HAS_INT flag raised, but trsmx->ncells_alpha %d != %d (predicted num float cells size)\n", trsmx->ncells_alpha, (2 * n_non_begl * (trsmx->W+1)));
   trsmx->ncells_alpha = 2 * n_non_begl * (trsmx->W+1);
 
   cur_cell = 0;
@@ -6379,10 +6441,8 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
       trsmx->fRalpha[1][v] = NULL;
     }
   }
-  if(cur_cell != trsmx->ncells_alpha) cm_Fail("cm_FloatizeScanMatrix(), error allocating falpha, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_alpha);
+  if(cur_cell != trsmx->ncells_alpha) { status = eslEINVAL; goto ERROR; }
 
-  if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * (n_bif+1) * (trsmx->W+1)) != trsmx->ncells_Talpha)) 
-    cm_Fail("cm_FloatizeScanMatrix(), cmTRSMX_HAS_INT flag raised, but trsmx->ncells_Talpha %d != %d (predicted num float cells size in Talpha)\n", trsmx->ncells_Talpha, (2 * n_bif * (trsmx->W+1)));
   trsmx->ncells_Talpha = 2 * (n_bif+1) * (trsmx->W+1);
 
   cur_cell = 0;
@@ -6398,9 +6458,8 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
       trsmx->fTalpha[1][v] = NULL;
     }
   }
-  if(cur_cell != trsmx->ncells_Talpha) cm_Fail("cm_FloatizeScanMatrix(), error allocating fTalpha, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_Talpha);
+  if(cur_cell != trsmx->ncells_Talpha) { status = eslEINVAL; goto ERROR; }
   
-
   /* allocate falpha_begl */
   /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
   ESL_ALLOC(trsmx->fJalpha_begl, sizeof(float **) * (trsmx->W+1));
@@ -6414,8 +6473,6 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   ESL_ALLOC(trsmx->fJalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
   ESL_ALLOC(trsmx->fLalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
   ESL_ALLOC(trsmx->fRalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  if((trsmx->flags & cmTRSMX_HAS_INT) && (((trsmx->W+1) * n_begl * (trsmx->W+1)) != trsmx->ncells_alpha_begl)) 
-    cm_Fail("cm_IntizeScanMatrix(), cmTRSMX_HAS_FLOAT flag raised, but trsmx->ncells_alpha_begl %d != %d (predicted num float cells size)\n", trsmx->ncells_alpha_begl, ((trsmx->W+1) * n_begl * (trsmx->W+1)));
   trsmx->ncells_alpha_begl = (trsmx->W+1) * n_begl * (trsmx->W+1);
 
   cur_cell = 0;
@@ -6434,7 +6491,7 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
       }
     }
   }
-  if(cur_cell != trsmx->ncells_alpha_begl) cm_Fail("cm_FloatizeScanMatrix(), error allocating falpha_begl, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_alpha_begl);
+  if(cur_cell != trsmx->ncells_alpha_begl) { status = eslEINVAL; goto ERROR; }
 
   /* Initialize matrix */
   /* First, init entire matrix to IMPOSSIBLE */
@@ -6482,28 +6539,22 @@ cm_FloatizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
     }
   }
   /* set the flag that tells us we've got valid floats */
-  trsmx->flags |= cmTRSMX_HAS_FLOAT;
+  trsmx->floats_valid = TRUE;
   return eslOK;
 
  ERROR: 
-  cm_Fail("memory allocation error.");
-  return status; /* NEVERREACHED */
+  return status;
 }
 
-/* Function: cm_IntizeTrScanMatrix()
+/* Function: cm_tr_scan_mx_integerize()
  * Date:     EPN, Wed Aug 24 15:00:32 2011
  *
- * Purpose: Allocate and initialize integer data structures in a
- *           TrScanMatrix_t object for <cm>.  This initializes a
- *           scanning int DP matrix for trCYK/trInside, for details
- *           on that matrix see the notes by the
- *           cm_TrIntizeScanMatrix() function call in
- *           cm_CreateTrScanMatrix().
- *            
- * Returns:  eslOK on success, dies immediately on an error.
+ * Returns:  eslOK on success.
+ *           eslEINVAL if internal consistency check of cell count fails. 
+ *           eslEMEM if out of memory.
  */
 int
-cm_IntizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
+cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx)
 {
   int status;
   int j, v;
@@ -6512,16 +6563,6 @@ cm_IntizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   int n_non_begl;
   int cur_cell;
 
-  /* contract check */
-  if(trsmx->flags & cmTRSMX_HAS_INT) cm_Fail("cm_IntizeScanMatrix(), trsmx's cmTRSMX_HAS_INT flag is already up.");
-  if(trsmx->iJalpha != NULL)         cm_Fail("cm_IntizeScanMatrix(), trsmx->iJalpha is not NULL.");
-  if(trsmx->iJalpha_begl != NULL)    cm_Fail("cm_IntizeScanMatrix(), trsmx->iJalpha_begl is not NULL.");
-  if(trsmx->iLalpha != NULL)         cm_Fail("cm_IntizeScanMatrix(), trsmx->iLalpha is not NULL.");
-  if(trsmx->iLalpha_begl != NULL)    cm_Fail("cm_IntizeScanMatrix(), trsmx->iLalpha_begl is not NULL.");
-  if(trsmx->iRalpha != NULL)         cm_Fail("cm_IntizeScanMatrix(), trsmx->iRalpha is not NULL.");
-  if(trsmx->iRalpha_begl != NULL)    cm_Fail("cm_IntizeScanMatrix(), trsmx->iRalpha_begl is not NULL.");
-  if(trsmx->iTalpha != NULL)         cm_Fail("cm_IntizeScanMatrix(), trsmx->iTalpha is not NULL.");
-  
   /* allocate alpha 
    * we allocate only as many cells as necessary,
    * for i{J,L,R}alpha,      we only allocate for non-BEGL_S states,
@@ -6558,8 +6599,6 @@ cm_IntizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   ESL_ALLOC(trsmx->iTalpha[1],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B and v != ROOT_S, fTalpha[1][v] will be NULL */
   ESL_ALLOC(trsmx->iTalpha_mem,    sizeof(int) * 2 * n_non_begl * (trsmx->W+1));
 
-  if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * n_non_begl * (trsmx->W+1)) != trsmx->ncells_alpha)) 
-    cm_Fail("cm_IntizeScanMatrix(), cmTRSMX_HAS_INT flag raised, but trsmx->ncells_alpha %d != %d (predicted num int cells size)\n", trsmx->ncells_alpha, (2 * n_non_begl * (trsmx->W+1)));
   trsmx->ncells_alpha = 2 * n_non_begl * (trsmx->W+1);
 
   cur_cell = 0;
@@ -6583,10 +6622,8 @@ cm_IntizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
       trsmx->iRalpha[1][v] = NULL;
     }
   }
-  if(cur_cell != trsmx->ncells_alpha) cm_Fail("cm_IntizeScanMatrix(), error allocating falpha, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_alpha);
+  if(cur_cell != trsmx->ncells_alpha) { status = eslEINVAL; goto ERROR; }
 
-  if((trsmx->flags & cmTRSMX_HAS_INT) && ((2 * (n_bif+1) * (trsmx->W+1)) != trsmx->ncells_Talpha)) 
-    cm_Fail("cm_IntizeScanMatrix(), cmTRSMX_HAS_INT flag raised, but trsmx->ncells_Talpha %d != %d (predicted num int cells size in Talpha)\n", trsmx->ncells_Talpha, (2 * n_bif * (trsmx->W+1)));
   trsmx->ncells_Talpha = 2 * (n_bif+1) * (trsmx->W+1);
 
   cur_cell = 0;
@@ -6602,8 +6639,7 @@ cm_IntizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
       trsmx->iTalpha[1][v] = NULL;
     }
   }
-  if(cur_cell != trsmx->ncells_Talpha) cm_Fail("cm_IntizeScanMatrix(), error allocating iTalpha, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_Talpha);
-  
+  if(cur_cell != trsmx->ncells_Talpha) { status = eslEINVAL; goto ERROR; }
 
   /* allocate falpha_begl */
   /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
@@ -6618,8 +6654,7 @@ cm_IntizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
   ESL_ALLOC(trsmx->iJalpha_begl_mem,   sizeof(int) * (trsmx->W+1) * n_begl * (trsmx->W+1));
   ESL_ALLOC(trsmx->iLalpha_begl_mem,   sizeof(int) * (trsmx->W+1) * n_begl * (trsmx->W+1));
   ESL_ALLOC(trsmx->iRalpha_begl_mem,   sizeof(int) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  if((trsmx->flags & cmTRSMX_HAS_INT) && (((trsmx->W+1) * n_begl * (trsmx->W+1)) != trsmx->ncells_alpha_begl)) 
-    cm_Fail("cm_IntizeScanMatrix(), cmTRSMX_HAS_INT flag raised, but trsmx->ncells_alpha_begl %d != %d (predicted num int cells size)\n", trsmx->ncells_alpha_begl, ((trsmx->W+1) * n_begl * (trsmx->W+1)));
+
   trsmx->ncells_alpha_begl = (trsmx->W+1) * n_begl * (trsmx->W+1);
 
   cur_cell = 0;
@@ -6638,7 +6673,7 @@ cm_IntizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
       }
     }
   }
-  if(cur_cell != trsmx->ncells_alpha_begl) cm_Fail("cm_IntizeScanMatrix(), error allocating ialpha_begl, cell cts differ %d != %d\n", cur_cell, trsmx->ncells_alpha_begl);
+  if(cur_cell != trsmx->ncells_alpha_begl) { status = eslEINVAL; goto ERROR; }
 
  /* Initialize matrix */
   /* First, init entire matrix to -INFTY */
@@ -6686,189 +6721,271 @@ cm_IntizeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
     }
   }
   /* set the flag that tells us we've got valid ints */
-  trsmx->flags |= cmTRSMX_HAS_INT;
+  trsmx->ints_valid = TRUE;
   return eslOK;
 
  ERROR: 
-  cm_Fail("memory allocation error.");
-  return status; /* NEVERREACHED */
+  return status;
 }
 
-/* Function: cm_FreeTrScanMatrix()
+/* Function: cm_tr_scan_mx_SizeNeeded()
+ * Date:     EPN, Tue Dec 13 05:01:54 2011
+ *
+ * Purpose:  Predict the size needed in Mb to create a 
+ *           CM_TR_SCAN_MX for <cm>.
+ *            
+ * Returns:  Size needed in Mb.
+ */
+float
+cm_tr_scan_mx_SizeNeeded(CM_t *cm, char *errbuf, int do_float, int do_int)
+{ 
+  int     n_begl             = 0;
+  int     n_non_begl         = 0;
+  int64_t ncells_alpha       = 0;
+  int64_t ncells_alpha_begl  = 0;
+  int64_t ncells_Talpha      = 0;
+  int     v;
+  float   Mb_needed = 0.;
+
+  /* calculate number of cells in alpha and alpha_begl */
+  n_begl = 0;
+  for (v = 0; v < cm->M; v++) if (cm->stid[v] == BEGL_S) n_begl++;
+  n_non_begl = cm->M - n_begl;
+  ncells_alpha      = 2         * n_non_begl * (cm->W+1);
+  ncells_alpha_begl = (cm->W+1) * n_begl     * (cm->W+1);
+
+  /* tally up size */
+  Mb_needed  = (float) sizeof(CM_SCAN_MX);
+  Mb_needed += (float) sizeof(int **)  * NSMX_QDB_IDX;                      /* dnAAA (1st dim) */
+  Mb_needed += (float) sizeof(int **)  * NSMX_QDB_IDX;                      /* dxAAA (1st dim) */
+  Mb_needed += (float) sizeof(int  *)  * NSMX_QDB_IDX * (cm->W+1);          /* dnAAA (2nd dim) */
+  Mb_needed += (float) sizeof(int  *)  * NSMX_QDB_IDX * (cm->W+1);          /* dxAAA (2nd dim) */
+  Mb_needed += (float) sizeof(int)     * NSMX_QDB_IDX * (cm->W+1) * cm->M;  /* dnAAA (3rd dim) */
+  Mb_needed += (float) sizeof(int)     * NSMX_QDB_IDX * (cm->W+1) * cm->M;  /* dnAAA (3rd dim) */
+  Mb_needed += (float) sizeof(int)     * (cm->W+1);                         /* bestr  */
+  Mb_needed += (float) sizeof(float)   * (cm->W+1);                         /* bestsc */
+  if(do_float) { 
+    Mb_needed += (float) sizeof(float) * ncells_alpha;                      /* fJalpha     */
+    Mb_needed += (float) sizeof(float) * ncells_alpha;                      /* fLalpha     */
+    Mb_needed += (float) sizeof(float) * ncells_alpha;                      /* fRalpha     */
+    Mb_needed += (float) sizeof(float) * ncells_Talpha;                     /* fTalpha     */
+    Mb_needed += (float) sizeof(float) * ncells_alpha_begl;                 /* fJalpha_begl */
+    Mb_needed += (float) sizeof(float) * ncells_alpha_begl;                 /* fLalpha_begl */
+    Mb_needed += (float) sizeof(float) * ncells_alpha_begl;                 /* fRalpha_begl */
+  }
+  if(do_int) { 
+    Mb_needed += (float) sizeof(int)   * ncells_alpha;                      /* iJalpha     */
+    Mb_needed += (float) sizeof(int)   * ncells_alpha;                      /* iLalpha     */
+    Mb_needed += (float) sizeof(int)   * ncells_alpha;                      /* iRalpha     */
+    Mb_needed += (float) sizeof(int)   * ncells_Talpha;                     /* iTalpha     */
+    Mb_needed += (float) sizeof(int)   * ncells_alpha_begl;                 /* iJalpha_begl */
+    Mb_needed += (float) sizeof(int)   * ncells_alpha_begl;                 /* iLalpha_begl */
+    Mb_needed += (float) sizeof(int)   * ncells_alpha_begl;                 /* iRalpha_begl */
+  }
+  Mb_needed *= 0.000001; /* convert to Mb */
+
+  return Mb_needed;
+}
+
+
+/* Function: cm_tr_scan_mx_Destroy()
  * Date:     EPN, Wed Aug 17 14:22:45 2011
  *
- * Purpose:  Free a TrScanMatrix_t object corresponding
+ * Purpose:  Free a CM_TR_SCAN_MX object corresponding
  *           to CM <cm>.
  *            
  * Returns:  void
  */
 void
-cm_FreeTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
+cm_tr_scan_mx_Destroy(CM_t *cm, CM_TR_SCAN_MX *trsmx)
 {
-  int j;
-  //if(! ((cm->flags & CMH_TRSCANMATRIX) && (trsmx == cm->trsmx))) { /* don't free the cm->trsmx's dmax */
-  //if(trsmx->dmax != cm->dmax && trsmx->dmax != NULL) { free(trsmx->dmax); trsmx->dmax = NULL; }
-  //}
+  int n, j;
 
-  for(j = 1; j <= trsmx->W; j++) {
-    free(trsmx->dnAA[j]);
-    free(trsmx->dxAA[j]);
+  for(n = 0; n < NSMX_QDB_IDX; n++) { 
+    for(j = 1; j <= trsmx->W; j++) {
+      free(trsmx->dnAAA[n][j]);
+      free(trsmx->dxAAA[n][j]);
+    }
+    free(trsmx->dnAAA[n]);
+    free(trsmx->dxAAA[n]);
   }
-  free(trsmx->dnAA);
-  free(trsmx->dxAA);
+  free(trsmx->dnAAA);
+  free(trsmx->dxAAA);
   free(trsmx->bestr);
   free(trsmx->bestsc);
   free(trsmx->bestmode);
   
-  if(trsmx->flags & cmTRSMX_HAS_FLOAT) cm_FreeFloatsFromTrScanMatrix(cm, trsmx);
-  if(trsmx->flags & cmTRSMX_HAS_INT)   cm_FreeIntsFromTrScanMatrix(cm, trsmx);
+  if(trsmx->floats_valid) cm_tr_scan_mx_freefloats  (cm, trsmx);
+  if(trsmx->ints_valid)   cm_tr_scan_mx_freeintegers(cm, trsmx);
+
   free(trsmx);
   return;
 }
 
-/* Function: cm_FreeFloatsFromTrScanMatrix()
+/* Function: cm_tr_scan_mx_freefloats()
  * Date:     EPN, Wed Aug 17 14:19:21 2011
  *
- * Purpose:  Free float data structures in a TrScanMatrix_t object 
+ * Purpose:  Free float data structures in a CM_TR_SCAN_MX object 
  *           corresponding to <cm>.
  *            
- * Returns:  eslOK on success, dies immediately on an error.
+ * Returns:  eslOK on success
  */
 int
-cm_FreeFloatsFromTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
+cm_tr_scan_mx_freefloats(CM_t *cm, CM_TR_SCAN_MX *trsmx)
 {
   int j;
 
-  /* contract check */
-  if(! trsmx->flags & cmTRSMX_HAS_FLOAT)  cm_Fail("cm_FreeFloatsFromScanMatrix(), si's cmTRSMX_HAS_FLOAT flag is down.");
-  if(trsmx->fJalpha == NULL)              cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fJalpha is already NULL.");
-  if(trsmx->fJalpha_begl == NULL)         cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fJalpha_begl is already NULL.");
-  if(trsmx->fLalpha == NULL)              cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fLalpha is already NULL.");
-  if(trsmx->fLalpha_begl == NULL)         cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fLalpha_begl is already NULL.");
-  if(trsmx->fRalpha == NULL)              cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fRalpha is already NULL.");
-  if(trsmx->fRalpha_begl == NULL)         cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fRalpha_begl is already NULL.");
-  if(trsmx->fTalpha == NULL)              cm_Fail("cm_FreeFloatsFromScanMatrix(), trsmx->fTalpha is already NULL.");
+  if(trsmx->fJalpha_mem != NULL) free(trsmx->fJalpha_mem);
+  if(trsmx->fJalpha     != NULL) {
+    if(trsmx->fJalpha[1]  != NULL) free(trsmx->fJalpha[1]);
+    if(trsmx->fJalpha[0]  != NULL) free(trsmx->fJalpha[0]);
+    free(trsmx->fJalpha);
+    trsmx->fJalpha = NULL;
+  }
+  if(trsmx->fLalpha_mem != NULL) free(trsmx->fLalpha_mem);
+  if(trsmx->fLalpha     != NULL) {
+    if(trsmx->fLalpha[1]  != NULL) free(trsmx->fLalpha[1]);
+    if(trsmx->fLalpha[0]  != NULL) free(trsmx->fLalpha[0]);
+    free(trsmx->fLalpha);
+    trsmx->fLalpha = NULL;
+  }
+  if(trsmx->fRalpha_mem != NULL) free(trsmx->fRalpha_mem);
+  if(trsmx->fRalpha     != NULL) {
+    if(trsmx->fRalpha[1]  != NULL) free(trsmx->fRalpha[1]);
+    if(trsmx->fRalpha[0]  != NULL) free(trsmx->fRalpha[0]);
+    free(trsmx->fRalpha);
+    trsmx->fRalpha = NULL;
+  }
+  if(trsmx->fTalpha_mem != NULL) free(trsmx->fTalpha_mem);
+  if(trsmx->fTalpha     != NULL) {
+    if(trsmx->fTalpha[1]  != NULL) free(trsmx->fTalpha[1]);
+    if(trsmx->fTalpha[0]  != NULL) free(trsmx->fTalpha[0]);
+    free(trsmx->fTalpha);
+    trsmx->fTalpha = NULL;
+  }
 
-  free(trsmx->fJalpha_mem);
-  free(trsmx->fJalpha[1]);
-  free(trsmx->fJalpha[0]);
-  free(trsmx->fJalpha);
-  trsmx->fJalpha = NULL;
+  if(trsmx->fJalpha_begl_mem != NULL) { 
+    free(trsmx->fJalpha_begl_mem);
+  }
+  if(trsmx->fJalpha_begl != NULL) { 
+    for (j = 0; j <= trsmx->W; j++) { 
+      if(trsmx->fJalpha_begl[j] != NULL) free(trsmx->fJalpha_begl[j]);
+    }
+    free(trsmx->fJalpha_begl);
+    trsmx->fJalpha_begl = NULL;
+  }
+  if(trsmx->fLalpha_begl_mem != NULL) { 
+    free(trsmx->fLalpha_begl_mem);
+  }
+  if(trsmx->fLalpha_begl != NULL) { 
+    for (j = 0; j <= trsmx->W; j++) { 
+      if(trsmx->fLalpha_begl[j] != NULL) free(trsmx->fLalpha_begl[j]);
+    }
+    free(trsmx->fLalpha_begl);
+    trsmx->fLalpha_begl = NULL;
+  }
+  if(trsmx->fRalpha_begl_mem != NULL) { 
+    free(trsmx->fRalpha_begl_mem);
+  }
+  if(trsmx->fRalpha_begl != NULL) { 
+    for (j = 0; j <= trsmx->W; j++) { 
+      if(trsmx->fRalpha_begl[j] != NULL) free(trsmx->fRalpha_begl[j]);
+    }
+    free(trsmx->fRalpha_begl);
+    trsmx->fRalpha_begl = NULL;
+  }
 
-  free(trsmx->fLalpha_mem);
-  free(trsmx->fLalpha[1]);
-  free(trsmx->fLalpha[0]);
-  free(trsmx->fLalpha);
-  trsmx->fLalpha = NULL;
-
-  free(trsmx->fRalpha_mem);
-  free(trsmx->fRalpha[1]);
-  free(trsmx->fRalpha[0]);
-  free(trsmx->fRalpha);
-  trsmx->fRalpha = NULL;
-
-  free(trsmx->fTalpha_mem);
-  free(trsmx->fTalpha[1]);
-  free(trsmx->fTalpha[0]);
-  free(trsmx->fTalpha);
-  trsmx->fTalpha = NULL;
-
-  free(trsmx->fJalpha_begl_mem);
-  for (j = 0; j <= trsmx->W; j++) free(trsmx->fJalpha_begl[j]);
-  free(trsmx->fJalpha_begl);
-  trsmx->fJalpha_begl = NULL;
-
-  free(trsmx->fLalpha_begl_mem);
-  for (j = 0; j <= trsmx->W; j++) free(trsmx->fLalpha_begl[j]);
-  free(trsmx->fLalpha_begl);
-  trsmx->fLalpha_begl = NULL;
-
-  free(trsmx->fRalpha_begl_mem);
-  for (j = 0; j <= trsmx->W; j++) free(trsmx->fRalpha_begl[j]);
-  free(trsmx->fRalpha_begl);
-  trsmx->fRalpha_begl = NULL;
-
-  trsmx->flags &= ~cmTRSMX_HAS_FLOAT;
+  trsmx->floats_valid = FALSE;
   return eslOK;
 }
 
 
-/* Function: cm_FreeIntsFromTrScanMatrix()
+/* Function: cm_tr_scan_mx_freeintegers()
  * Date:     EPN, Wed Aug 24 14:56:18 2011
  *
- * Purpose:  Free float data structures in a TrScanMatrix_t object 
+ * Purpose:  Free int data structures in a CM_TR_SCAN_MX object 
  *           corresponding to <cm>.
  *            
- * Returns:  eslOK on success, dies immediately on an error.
+ * Returns:  eslOK on success
  */
 int
-cm_FreeIntsFromTrScanMatrix(CM_t *cm, TrScanMatrix_t *trsmx)
+cm_tr_scan_mx_freeintegers(CM_t *cm, CM_TR_SCAN_MX *trsmx)
 {
   int j;
 
-  /* contract check */
-  if(! trsmx->flags & cmTRSMX_HAS_INT)  cm_Fail("cm_FreeIntsFromScanMatrix(), si's cmTRSMX_HAS_FLOAT flag is down.");
-  if(trsmx->iJalpha == NULL)            cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iJalpha is already NULL.");
-  if(trsmx->iJalpha_begl == NULL)       cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iJalpha_begl is already NULL.");
-  if(trsmx->iLalpha == NULL)            cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iLalpha is already NULL.");
-  if(trsmx->iLalpha_begl == NULL)       cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iLalpha_begl is already NULL.");
-  if(trsmx->iRalpha == NULL)            cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iRalpha is already NULL.");
-  if(trsmx->iRalpha_begl == NULL)       cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iRalpha_begl is already NULL.");
-  if(trsmx->iTalpha == NULL)            cm_Fail("cm_FreeIntsFromScanMatrix(), trsmx->iTalpha is already NULL.");
+  if(trsmx->iJalpha_mem != NULL) free(trsmx->iJalpha_mem);
+  if(trsmx->iJalpha     != NULL) {
+    if(trsmx->iJalpha[1]  != NULL) free(trsmx->iJalpha[1]);
+    if(trsmx->iJalpha[0]  != NULL) free(trsmx->iJalpha[0]);
+    free(trsmx->iJalpha);
+    trsmx->iJalpha = NULL;
+  }
+  if(trsmx->iLalpha_mem != NULL) free(trsmx->iLalpha_mem);
+  if(trsmx->iLalpha     != NULL) {
+    if(trsmx->iLalpha[1]  != NULL) free(trsmx->iLalpha[1]);
+    if(trsmx->iLalpha[0]  != NULL) free(trsmx->iLalpha[0]);
+    free(trsmx->iLalpha);
+    trsmx->iLalpha = NULL;
+  }
+  if(trsmx->iRalpha_mem != NULL) free(trsmx->iRalpha_mem);
+  if(trsmx->iRalpha     != NULL) {
+    if(trsmx->iRalpha[1]  != NULL) free(trsmx->iRalpha[1]);
+    if(trsmx->iRalpha[0]  != NULL) free(trsmx->iRalpha[0]);
+    free(trsmx->iRalpha);
+    trsmx->iRalpha = NULL;
+  }
+  if(trsmx->iTalpha_mem != NULL) free(trsmx->iTalpha_mem);
+  if(trsmx->iTalpha     != NULL) {
+    if(trsmx->iTalpha[1]  != NULL) free(trsmx->iTalpha[1]);
+    if(trsmx->iTalpha[0]  != NULL) free(trsmx->iTalpha[0]);
+    free(trsmx->iTalpha);
+    trsmx->iTalpha = NULL;
+  }
 
-  free(trsmx->iJalpha_mem);
-  free(trsmx->iJalpha[1]);
-  free(trsmx->iJalpha[0]);
-  free(trsmx->iJalpha);
-  trsmx->iJalpha = NULL;
+  if(trsmx->iJalpha_begl_mem != NULL) { 
+    free(trsmx->iJalpha_begl_mem);
+  }
+  if(trsmx->iJalpha_begl != NULL) { 
+    for (j = 0; j <= trsmx->W; j++) { 
+      if(trsmx->iJalpha_begl[j] != NULL) free(trsmx->iJalpha_begl[j]);
+    }
+    free(trsmx->iJalpha_begl);
+    trsmx->iJalpha_begl = NULL;
+  }
+  if(trsmx->iLalpha_begl_mem != NULL) { 
+    free(trsmx->iLalpha_begl_mem);
+  }
+  if(trsmx->iLalpha_begl != NULL) { 
+    for (j = 0; j <= trsmx->W; j++) { 
+      if(trsmx->iLalpha_begl[j] != NULL) free(trsmx->iLalpha_begl[j]);
+    }
+    free(trsmx->iLalpha_begl);
+    trsmx->iLalpha_begl = NULL;
+  }
+  if(trsmx->iRalpha_begl_mem != NULL) { 
+    free(trsmx->iRalpha_begl_mem);
+  }
+  if(trsmx->iRalpha_begl != NULL) { 
+    for (j = 0; j <= trsmx->W; j++) { 
+      if(trsmx->iRalpha_begl[j] != NULL) free(trsmx->iRalpha_begl[j]);
+    }
+    free(trsmx->iRalpha_begl);
+    trsmx->iRalpha_begl = NULL;
+  }
 
-  free(trsmx->iLalpha_mem);
-  free(trsmx->iLalpha[1]);
-  free(trsmx->iLalpha[0]);
-  free(trsmx->iLalpha);
-  trsmx->iLalpha = NULL;
-
-  free(trsmx->iRalpha_mem);
-  free(trsmx->iRalpha[1]);
-  free(trsmx->iRalpha[0]);
-  free(trsmx->iRalpha);
-  trsmx->iRalpha = NULL;
-
-  free(trsmx->iTalpha_mem);
-  free(trsmx->iTalpha[1]);
-  free(trsmx->iTalpha[0]);
-  free(trsmx->iTalpha);
-  trsmx->iTalpha = NULL;
-
-  free(trsmx->iJalpha_begl_mem);
-  for (j = 0; j <= trsmx->W; j++) free(trsmx->iJalpha_begl[j]);
-  free(trsmx->iJalpha_begl);
-  trsmx->iJalpha_begl = NULL;
-
-  free(trsmx->iLalpha_begl_mem);
-  for (j = 0; j <= trsmx->W; j++) free(trsmx->iLalpha_begl[j]);
-  free(trsmx->iLalpha_begl);
-  trsmx->iLalpha_begl = NULL;
-
-  free(trsmx->iRalpha_begl_mem);
-  for (j = 0; j <= trsmx->W; j++) free(trsmx->iRalpha_begl[j]);
-  free(trsmx->iRalpha_begl);
-  trsmx->iRalpha_begl = NULL;
-
-  trsmx->flags &= ~cmTRSMX_HAS_INT;
+  trsmx->ints_valid = FALSE;
   return eslOK;
 }
 
-
-/* Function: cm_DumpTrScanMatrixAlpha()
+/* Function: cm_tr_scan_mx_Dump()
  * Date:     EPN, Thu Aug 18 07:35:20 2011
  *
- * Purpose:  Dump current {J,L,R,T}alpha matrices from a TrScanMatrix (either float or int).
+ * Purpose:  Dump current {J,L,R,T}alpha matrices from a CM_TR_SCAN_MX (either float or int).
  *            
  * Returns:  void.
  */
 void
-cm_DumpTrScanMatrixAlpha(CM_t *cm, TrScanMatrix_t *trsmx, int j, int i0, int doing_float)
+cm_tr_scan_mx_Dump(CM_t *cm, int j, int i0, int qdbidx, int doing_float)
 {
   int d, v;
   int jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
@@ -6876,17 +6993,18 @@ cm_DumpTrScanMatrixAlpha(CM_t *cm, TrScanMatrix_t *trsmx, int j, int i0, int doi
   int prv = (j-1)%2;
   int *dnA, *dxA;
 
-  if(doing_float && (! trsmx->flags & cmTRSMX_HAS_FLOAT))  cm_Fail("cm_DumpScanMatrixAlpha(), trying to print float alpha, but cmTRSMX_HAS_FLOAT flag is down.\n");
-  if((! doing_float) && (! trsmx->flags & cmTRSMX_HAS_INT)) cm_Fail("cm_DumpScanMatrixAlpha(), trying to print int alpha, but cmTRSMX_HAS_INT flag is down.\n");
+  CM_TR_SCAN_MX *trsmx = cm->trsmx;
+  if(   doing_float  && (! trsmx->floats_valid)) cm_Fail("cm_tr_scan_mx_Dump(), trying to print float alpha, but floats are not valid");
+  if((! doing_float) && (! trsmx->ints_valid))   cm_Fail("cm_tr_scan_mx_Dump(), trying to print int   alpha, but ints   are not valid");
 
   int begl_prv = j-1 % (trsmx->W+1);
   int begl_cur = j   % (trsmx->W+1);
 
   printf("Dumping {J,L,R,T}Alpha: j: %d\n", j);
-  if(jp_g >= trsmx->W) { dnA = trsmx->dnAA[trsmx->W]; dxA = trsmx->dxAA[trsmx->W]; }
-  else              { dnA = trsmx->dnAA[jp_g];  dxA = trsmx->dxAA[jp_g]; }
+  if(jp_g >= trsmx->W) { dnA = trsmx->dnAAA[qdbidx][trsmx->W]; dxA = trsmx->dxAAA[qdbidx][trsmx->W]; }
+  else                 { dnA = trsmx->dnAAA[qdbidx][jp_g];     dxA = trsmx->dxAAA[qdbidx][jp_g]; }
   if(doing_float) {
-    for (v = trsmx->cm_M-1; v >= 0; v--) {	
+    for (v = trsmx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) { 
 	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fJalpha_begl[begl_prv][v][d]); 
 	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fLalpha_begl[begl_prv][v][d]); 
@@ -6902,7 +7020,7 @@ cm_DumpTrScanMatrixAlpha(CM_t *cm, TrScanMatrix_t *trsmx, int j, int i0, int doi
       }
       printf("\n");
     }
-    for (v = trsmx->cm_M-1; v >= 0; v--) {	
+    for (v = trsmx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) {
 	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fJalpha_begl[begl_cur][v][d]); 
 	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fLalpha_begl[begl_cur][v][d]); 
@@ -6920,7 +7038,7 @@ cm_DumpTrScanMatrixAlpha(CM_t *cm, TrScanMatrix_t *trsmx, int j, int i0, int doi
     }
   }
   else { /* doing int */
-    for (v = trsmx->cm_M-1; v >= 0; v--) {	
+    for (v = trsmx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) {
 	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iJalpha_begl[begl_prv][v][d]); 
 	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iLalpha_begl[begl_prv][v][d]); 
@@ -6936,7 +7054,7 @@ cm_DumpTrScanMatrixAlpha(CM_t *cm, TrScanMatrix_t *trsmx, int j, int i0, int doi
       }
       printf("\n\n");
     }
-    for (v = trsmx->cm_M-1; v >= 0; v--) {	
+    for (v = trsmx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) {
 	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iJalpha_begl[begl_cur][v][d]); 
 	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iLalpha_begl[begl_cur][v][d]); 

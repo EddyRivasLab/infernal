@@ -339,18 +339,6 @@ main(int argc, char **argv)
 	  emit_sdistro[i] = 0.;
 	  emit_edistro[i] = 0.;
 	}
-      /* build a CP9 for the CM if nec. (we may have already if --hbanded enabled) */
-      if(!(cm->flags & CM_CP9))
-	{
-	  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
-	    Die("Couldn't build a CP9 HMM from the CM\n");
-	  cm->flags |= CM_CP9; /* raise the CP9 flag */
-	  /* configure the CP9 HMM for local alignment, all positions equiprobable */
-	  swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
-	  swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
-	  CPlan9SWConfig(cm->cp9, swentry, swexit);
-	  CP9Logoddsify(cm->cp9);
-	}
       for (i = 0; i < distro_nseq; i++) 
 	{
 	  distro_dsq[i] = DigitizeSequence(distro_seq[i], distro_sqinfo[i].len);

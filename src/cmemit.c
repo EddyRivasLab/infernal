@@ -62,11 +62,6 @@ static ESL_OPTIONS options[] = {
   /* Developer options for testing CP9 construction empirically */
   { "--shmm",    eslARG_OUTFILE,NULL,  NULL, NULL,   OUTOPTS,      NULL, "-l,--tfile","build, output a ML CM Plan 9 HMM from generated alignment to <f>", 101 },
   { "--ahmm",    eslARG_OUTFILE,NULL,  NULL, NULL,   OUTOPTS,      NULL,        NULL, "output parameters of analytically built CM Plan 9 HMM to <f>", 101 },
-  /* Developer options related to experiment local begin/end modes */
-  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 102 },
-  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 102 },
-  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 102 },
-  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local end prob to <x>", 102 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -141,8 +136,6 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
       puts("\nundocumented developer options for empirically checking CP9 HMM construction:");
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
-      puts("\nundocumented developer options related to experimental local begin/end modes:");
-      esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
       exit(0);
     }
   if (esl_opt_GetBoolean(go, "-h") == TRUE) 
@@ -308,14 +301,13 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 /* initialize_cm()
  * Setup the CM based on the command-line options/defaults;
- * only set flags and a few parameters. ConfigCM() configures
+ * only set flags and a few parameters. cm_Configure() configures
  * the CM.
  */
 static int
 initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
 {
   int status;
-  int nstarts, nexits, nd;
 
   /* Update cfg->cm->config_opts and cfg->cm->align_opts based on command line options */
   if(esl_opt_GetBoolean(go, "-l")) {
@@ -324,34 +316,10 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
     cm->config_opts |= CM_CONFIG_HMMEL;
   }
 
-  /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
-  cm->pbegin = esl_opt_GetReal(go, "--pbegin");
-  cm->pend   = esl_opt_GetReal(go, "--pend");
-  /* possibly overwrite local begin probs such that all begin points are equiprobable (--pebegin) */
-  if(esl_opt_GetBoolean(go, "--pebegin")) {
-    nstarts = 0;
-    for (nd = 2; nd < cm->nodes; nd++) 
-      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) 
-	nstarts++;
-    cm->pbegin = 1.- (1./(1+nstarts));
-  }
-  /* possibly overwrite cm->pend so that local end prob from all legal states is fixed,
-   * this is strange in that cm->pend may be placed as a number greater than 1., this number
-   * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
-   * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
-  if( esl_opt_IsOn(go, "--pfend")) {
-    nexits = 0;
-    for (nd = 1; nd < cm->nodes; nd++) {
-      if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
-	   cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
-	   cm->ndtype[nd] == BEGR_nd) && 
-	  cm->ndtype[nd+1] != END_nd)
-	nexits++;
-    }
-    cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
-  }
-  
-  if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status; /* FALSE says do not calculate W unless nec b/c we're using QDBs */
+  /* exponentiate the CM, if nec. do this before possibly configuring to local alignment in cm_Configure() */
+  if(esl_opt_IsOn(go, "--exp")) ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));
+
+  if((status = cm_Configure(cm, errbuf)) != eslOK) return status;
 
   /* print the CP9 params if nec */
   if(cfg->ahmmfp != NULL) {
@@ -360,7 +328,6 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
     debug_print_cp9_params(cfg->ahmmfp, cm->cp9, TRUE);
   }
 
-  if(esl_opt_IsOn(go, "--exp"))        ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));
   
   return eslOK;
 }

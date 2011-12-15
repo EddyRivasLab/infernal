@@ -75,10 +75,10 @@ endif
 #
 PROGS = cmalign\
 	cmbuild\
+	cmcalibrate\
 	cmemit\
 	cmfetch\
 	cmscan\
-	cmscore\
 	cmsearch\
 	cmstat
 

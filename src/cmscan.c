@@ -40,12 +40,11 @@ typedef struct {
   ESL_WORK_QUEUE   *queue;
 #endif /*HMMER_THREADS*/
   ESL_SQ           *qsq;
-  P7_BG            *bg;	             /* null model                            */
-  CM_PIPELINE      *pli;             /* work pipeline                         */
-  CM_TOPHITS       *th;              /* top hit results                       */
-  float            *p7_evparam;      /* E-value parameters for p7 filter      */
-  int               cm_config_opts;  /* set based on command-line options     */
-  int               in_rc;           /* TRUE if qsq is currently revcomp'ed   */
+  P7_BG            *bg;	             /* null model                                    */
+  CM_PIPELINE      *pli;             /* work pipeline                                 */
+  CM_TOPHITS       *th;              /* top hit results                               */
+  float            *p7_evparam;      /* E-value parameters for p7 filter              */
+  int               in_rc;           /* TRUE if qsq is currently revcomp'ed           */
 } WORKER_INFO;
 
 #define REPOPTS         "-E,-T,--cut_ga,--cut_nc,--cut_tc"
@@ -144,10 +143,10 @@ static ESL_OPTIONS options[] = {
   { "--glN",        eslARG_INT,   "201",  NULL, NULL,    NULL,"--glen",NULL,             "minimum value to start len-dependent glocal threshold", 7},
   { "--glX",        eslARG_INT,   "500",  NULL, NULL,    NULL,"--glen",NULL,             "maximum value for len-dependent glocal threshold", 7},
   { "--glstep",     eslARG_INT,   "100",  NULL, NULL,    NULL,"--glen",NULL,             "for len-dependent glocal thr, step size for halving thr", 7},
-  { "--noends",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--notrunc,--noforce",  "--locends","don't search for local envelopes in first/final cm->W residues", 7},
-  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noforce","--noends",    "don't look for truncated hits in first/final cm->W residues", 7},
-  { "--noforce",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--noends",       "force first/last residue be within any truncated hit", 7},
-  { "--locends",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noforce", "--noends",   "use local envelope definition when researching ends", 7},
+  { "--noends",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--notrunc,--noforce",  "--locends","don't search for truncated hits in first/final cm->W residues", 7},
+  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noforce", NULL,         "only allow normal local begins in truncated hits", 7},
+  { "--noforce",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not force first/final residue be within any truncated hit", 7},
+  { "--locends",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noforce", NULL,         "use local envelope definition when researching ends", 7},
   { "--xtau",       eslARG_REAL,  "2.",   NULL, NULL,    NULL,  NULL,  NULL,             "set multiplier for tau to <x> when tightening HMM bands", 7},
   /* Other options */
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },
@@ -228,7 +227,6 @@ static int  setup_cm     (CM_t *cm, const ESL_ALPHABET *abc, WORKER_INFO *info, 
 			  int *opt_nhmm, P7_HMM ***opt_hmmA, P7_BG ***opt_bgA, P7_OPROFILE ***opt_omA, 
 			  P7_PROFILE ***opt_gmA, float ***opt_p7evpAA);
 #endif
-static int  determine_config_opts(const ESL_GETOPTS *go);
 
 #ifdef HMMER_THREADS
 #define BLOCK_SIZE 25
@@ -579,7 +577,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info[i].bg    = p7_bg_Create(abc);
       info[i].in_rc = FALSE;
       ESL_ALLOC(info[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
-      info[i].cm_config_opts = determine_config_opts(go);
 #ifdef HMMER_THREADS
       info[i].queue = queue;
 #endif
@@ -1027,7 +1024,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   output_header(ofp, go, cfg->cmfile, cfg->seqfile);
   qsq = esl_sq_CreateDigital(abc);
-  bg = p7_bg_Create(abc);
+  bg  = p7_bg_Create(abc);
 
   /* Outside loop: over each query sequence in <seqfile>. */
   while ((sstatus = esl_sqio_Read(sqfp, qsq)) == eslOK)
@@ -1266,7 +1263,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              cm_clen, cm_W;          /* consensus, window length for current CM */        
   float            gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
   off_t            cm_offset;              /* file offset for current CM */
-  int              cm_config_opts;         /* sent to the pipeline so we can appropriately configure CMs */
   float           *p7_evparam;             /* E-value parameters for the p7 filter */
   int              prv_ntophits;           /* number of top hits before cm_Pipeline() call */
   int              in_rc;                  /* in_rc == TRUE; our qsq has been reverse complemented */
@@ -1314,9 +1310,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   else if (status == eslEINVAL)    mpi_failure("Can't autodetect format of a stdin or .gz seqfile");
   else if (status != eslOK)        mpi_failure("Unexpected error %d opening sequence file %s\n", status, cfg->seqfile);
 
-  qsq            = esl_sq_CreateDigital(abc);
-  bg             = p7_bg_Create(abc);
-  cm_config_opts = determine_config_opts(go);
+  qsq = esl_sq_CreateDigital(abc);
+  bg  = p7_bg_Create(abc);
 
   ESL_ALLOC(p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
 
@@ -1384,12 +1379,11 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 		if((status = cm_pli_NewModel(pli, CM_NEWMODEL_MSV, 
 					     cm,                                   /* this is NULL b/c we don't have one yet */
 					     cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
-					     FALSE, FALSE, NULL, NULL, NULL, NULL, /* all these are irrelevant in CM_NEWMODEL_MSV mode */
 					     om, bg, cm_idx-1)) != eslOK) mpi_failure(pli->errbuf);
 		
 		prv_ntophits = th->N;
 
-		if((status = cm_Pipeline(pli, cm_offset, cm_config_opts, om, bg, p7_evparam, NULL, qsq, th, &gm, &Rgm, &Lgm, &Tgm, &cm, &cmcons)) != eslOK)
+		if((status = cm_Pipeline(pli, cm_offset, om, bg, p7_evparam, NULL, qsq, th, &gm, &Rgm, &Lgm, &Tgm, &cm, &cmcons)) != eslOK)
 		  mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s", status, pli->errbuf);
 		cm_pipeline_Reuse(pli);
 		if(in_rc && th->N != prv_ntophits) cm_tophits_UpdateHitPositions(th, prv_ntophits, qsq->start, in_rc);
@@ -1399,14 +1393,12 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 		}
 
 		if(cmcons != NULL) FreeCMConsensus(cmcons);
-		if(pli->fsmx != NULL && cm != NULL) { cm_FreeScanMatrix(cm, pli->fsmx); pli->fsmx = NULL; }
-		if(pli->smx  != NULL && cm != NULL) { cm_FreeScanMatrix(cm, pli->smx);  pli->smx  = NULL; }
-		if(cm  != NULL) FreeCM(cm);
-		if(om  != NULL) p7_oprofile_Destroy(om);
-		if(gm  != NULL) p7_profile_Destroy(gm);
-		if(Rgm != NULL) p7_profile_Destroy(Rgm);
-		if(Lgm != NULL) p7_profile_Destroy(Lgm);
-		if(Tgm != NULL) p7_profile_Destroy(Tgm);
+		if(cm     != NULL) FreeCM(cm);
+		if(om     != NULL) p7_oprofile_Destroy(om);
+		if(gm     != NULL) p7_profile_Destroy(gm);
+		if(Rgm    != NULL) p7_profile_Destroy(Rgm);
+		if(Lgm    != NULL) p7_profile_Destroy(Lgm);
+		if(Tgm    != NULL) p7_profile_Destroy(Tgm);
 		
 		--count;
 	      }
@@ -1501,11 +1493,10 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
       if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
 				   cm,                                   /* this is NULL b/c we don't have one yet */
 				   cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
-				   FALSE, FALSE, NULL, NULL, NULL, NULL, /* all these are irrelevant in CM_NEWMODEL_MSV mode */
 				   om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
 
       prv_ntophits = info->th->N;
-      if((status = cm_Pipeline(info->pli, cm_offset, info->cm_config_opts, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm, &cmcons)) != eslOK)
+      if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm, &cmcons)) != eslOK)
 	cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); 
       if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
@@ -1515,14 +1506,12 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
       }
 
       if(cmcons != NULL) FreeCMConsensus(cmcons);
-      if(info->pli->fsmx != NULL && cm != NULL) { cm_FreeScanMatrix(cm, info->pli->fsmx); info->pli->fsmx = NULL; }
-      if(info->pli->smx  != NULL && cm != NULL) { cm_FreeScanMatrix(cm, info->pli->smx);  info->pli->smx  = NULL; }
-      if(cm  != NULL) FreeCM(cm);
-      if(om  != NULL) p7_oprofile_Destroy(om);
-      if(gm  != NULL) p7_profile_Destroy(gm);
-      if(Rgm != NULL) p7_profile_Destroy(Rgm);
-      if(Lgm != NULL) p7_profile_Destroy(Lgm);
-      if(Tgm != NULL) p7_profile_Destroy(Tgm);
+      if(cm     != NULL) FreeCM(cm);
+      if(om     != NULL) p7_oprofile_Destroy(om);
+      if(gm     != NULL) p7_profile_Destroy(gm);
+      if(Rgm    != NULL) p7_profile_Destroy(Rgm);
+      if(Lgm    != NULL) p7_profile_Destroy(Lgm);
+      if(Tgm    != NULL) p7_profile_Destroy(Tgm);
     } /* end of while(cm_p7_oprofile_ReadMSV() == eslOK) */
 
   esl_alphabet_Destroy(abc);
@@ -1645,11 +1634,10 @@ pipeline_thread(void *arg)
 	  if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
 				       cm,                                   /* this is NULL b/c we don't have one yet */
 				       cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
-				       FALSE, FALSE, NULL, NULL, NULL, NULL, /* all these are irrelevant in CM_NEWMODEL_MSV mode */
 				       om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
 
 	  prv_ntophits = info->th->N;
-	  if((status = cm_Pipeline(info->pli, cm_offset, info->cm_config_opts, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm, &cmcons)) != eslOK)
+	  if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm, &cmcons)) != eslOK)
 	    cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
 	  cm_pipeline_Reuse(info->pli);
 	  if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
@@ -1659,14 +1647,12 @@ pipeline_thread(void *arg)
 	  }
 		
 	  if(cmcons != NULL) FreeCMConsensus(cmcons);
-	  if(info->pli->fsmx != NULL && cm != NULL) { cm_FreeScanMatrix(cm, info->pli->fsmx); info->pli->fsmx = NULL; }
-	  if(info->pli->smx  != NULL && cm != NULL) { cm_FreeScanMatrix(cm, info->pli->smx);  info->pli->smx  = NULL; }
-	  if(cm  != NULL) FreeCM(cm);
-	  if(om  != NULL) p7_oprofile_Destroy(om);
-	  if(gm  != NULL) p7_profile_Destroy(gm);
-	  if(Rgm != NULL) p7_profile_Destroy(Rgm);
-	  if(Lgm != NULL) p7_profile_Destroy(Lgm);
-	  if(Tgm != NULL) p7_profile_Destroy(Tgm);
+	  if(cm     != NULL) FreeCM(cm);
+	  if(om     != NULL) p7_oprofile_Destroy(om);
+	  if(gm     != NULL) p7_profile_Destroy(gm);
+	  if(Rgm    != NULL) p7_profile_Destroy(Rgm);
+	  if(Lgm    != NULL) p7_profile_Destroy(Lgm);
+	  if(Tgm    != NULL) p7_profile_Destroy(Tgm);
 	  
 	  block->list[i] = NULL;
 	  block->cm_offsetA[i] = 0;
@@ -1692,30 +1678,6 @@ pipeline_thread(void *arg)
   return;
 }
 #endif   /* HMMER_THREADS */
-
-/* Function:  determine_config_opts()
- * Incept:    EPN, Wed Jul  6 13:45:44 2011
- *
- * Purpose:  Determine what a CM's <config_opts> flags 
- *           should be based on command-line options.
- *
- * Returns: void.
- */
-int
-determine_config_opts(const ESL_GETOPTS *go)
-{ 
-  int config_opts = 0;
-
-  if(! esl_opt_GetBoolean(go, "-g")) { 
-    if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
-      config_opts |= CM_CONFIG_LOCAL;
-      config_opts |= CM_CONFIG_HMMLOCAL;
-      if(! esl_opt_GetBoolean(go, "--cp9noel")) config_opts |= CM_CONFIG_HMMEL; 
-    }
-  }
-
-  return config_opts;
-}
 
 /*****************************************************************
  * @LICENSE@

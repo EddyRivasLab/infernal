@@ -113,7 +113,7 @@ main(int argc, char **argv)
   CMHackInsertScores(cm);*/	/* TEMPORARY: FIXME */
 
   if (do_local) cm->config_opts |= CM_CONFIG_LOCAL;
-  ConfigCM(cm, NULL, TRUE, NULL, NULL);
+  if ((status = cm_Configure(cm, errbuf)) != eslOK) return status;
   SetMarginalScores_reproduce_bug_i27(cm);
 
   /* EPN 11.18.05 Now that know what windowlen is, we need to ensure that

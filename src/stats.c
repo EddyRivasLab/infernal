@@ -52,14 +52,6 @@ int debug_print_expinfo_array(CM_t *cm, char *errbuf, ExpInfo_t **expA)
     debug_print_expinfo(expA[EXP_CM_LI]);
     printf("cm_gi  exp tail:\t");
     debug_print_expinfo(expA[EXP_CM_GI]);
-    printf("cp9_lv exp tail:\t");
-    debug_print_expinfo(expA[EXP_CP9_LV]);
-    printf("cp9_gv exp tail:\t");
-    debug_print_expinfo(expA[EXP_CP9_GV]);
-    printf("cp9_lf exp tail:\t");
-    debug_print_expinfo(expA[EXP_CP9_LF]);
-    printf("cp9_gf exp tail:\t");
-    debug_print_expinfo(expA[EXP_CP9_GF]);
     printf("\n\n");
   }
   free(namedashes);
@@ -320,37 +312,6 @@ double Score2E (float x, double mu, double lambda, long eff_dbsize)
   return esl_exp_surv(x, mu, lambda) * (double) eff_dbsize;
 }
 
-/*
- * Function: CM2FthrMode
- * Date:     EPN, Tue Dec 11 13:16:35 2007
- * Purpose:  Return the filter threshold mode for the CM 
- *           given CM's flags and a passed in search options
- *           int.
- * 
- * Returns: eslOK on success, eslEINCOMPAT if search_opts indicate
- *          we're doing HMM search, errbuf is filled with error message.
- */
-int CM2FthrMode(CM_t *cm, char *errbuf, int search_opts, int *ret_fthr_mode)
-{
-  int fthr_mode;
-
-  /* check contract */
-  if(search_opts & CM_SEARCH_HMMVITERBI) ESL_FAIL(eslEINCOMPAT, errbuf, "CM2FThrMode(), search_opts CM_SEARCH_HMMVITERBI flag raised.\n");
-  if(search_opts & CM_SEARCH_HMMFORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "CM2FThrMode(), search_opts CM_SEARCH_HMMFORWARD flag raised.\n");
-  if(ret_fthr_mode == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "CM2FThrMode(), ret_fthr_mode is NULL.");
-
-  if(cm->flags & CMH_LOCAL_BEGIN) {
-    if(search_opts & CM_SEARCH_INSIDE) fthr_mode = FTHR_CM_LI;
-    else               	               fthr_mode = FTHR_CM_LC;
-  }
-  else {
-    if(search_opts & CM_SEARCH_INSIDE) fthr_mode = FTHR_CM_GI;
-    else        	               fthr_mode = FTHR_CM_GC;
-  }
-  if(ret_fthr_mode  != NULL) *ret_fthr_mode  = fthr_mode;
-  return eslOK;
-}
-
 /* Function: ExpModeIsLocal()
  * Date:     EPN, Mon Dec 10 09:07:59 2007
  * Purpose:  Given a exp tail mode, return TRUE if it corresponds to 
@@ -366,14 +327,10 @@ ExpModeIsLocal(int exp_mode)
   switch (exp_mode) {
   case EXP_CM_LC: 
   case EXP_CM_LI: 
-  case EXP_CP9_LV: 
-  case EXP_CP9_LF: 
     return TRUE;
     break;
   case EXP_CM_GC:
   case EXP_CM_GI: 
-  case EXP_CP9_GV: 
-  case EXP_CP9_GF: 
     return FALSE;
     break;
   default: 
@@ -382,71 +339,31 @@ ExpModeIsLocal(int exp_mode)
   return FALSE; /* never reached */
 }
 
-
-/* Function: ExpModeIsForCM()
+/* Function: ExpModeIsInside()
  * Date:     EPN, Mon Dec 10 09:11:55 2007
  * Purpose:  Given a exp tail mode, return TRUE if it corresponds to 
- *           a CM (not a CP9 HMM).
+ *           Inside, false if it corresponds to Inside.
  *
- * Args:     exp_mode     - the mode 0..EXP_NMODES-1
+ * Args:     exp_mode  - the mode 0..EXP_NMODES-1
  */
 int
-ExpModeIsForCM(int exp_mode)
+ExpModeIsInside(int exp_mode)
 {
   ESL_DASSERT1((exp_mode >= 0 && exp_mode < EXP_NMODES));
 
   switch (exp_mode) {
-  case EXP_CM_LC: 
   case EXP_CM_LI: 
-  case EXP_CM_GC:
-  case EXP_CM_GI: 
+  case EXP_CM_GI:
     return TRUE;
     break;
-  case EXP_CP9_LV: 
-  case EXP_CP9_LF: 
-  case EXP_CP9_GV: 
-  case EXP_CP9_GF: 
+
+  case EXP_CM_LC: 
+  case EXP_CM_GC: 
     return FALSE;
     break;
-  default: 
-    cm_Fail("ExpModeIsForCM(): bogus exp_mode: %d\n", exp_mode);
-  }
-  return FALSE; /* never reached */
-}
 
-/* Function: ExpModeToFthrMode()
- * Date:     EPN, Mon Dec 10 09:31:48 2007
- * Purpose:  Given a exp tail mode, return it's corresponding
- *           filter threshold mode, or -1 if there is none
- *
- * Args:     exp_mode     - the mode 0..EXP_NMODES-1
- */
-int
-ExpModeToFthrMode(int exp_mode)
-{
-  ESL_DASSERT1((exp_mode >= 0 && exp_mode < EXP_NMODES));
-
-  switch (exp_mode) {
-  case EXP_CM_GC: 
-    return FTHR_CM_GC;
-    break;
-  case EXP_CM_GI: 
-    return FTHR_CM_GI;
-    break;
-  case EXP_CM_LC: 
-    return FTHR_CM_LC;
-    break;
-  case EXP_CM_LI: 
-    return FTHR_CM_LI;
-    break;
-  case EXP_CP9_LV: 
-  case EXP_CP9_LF: 
-  case EXP_CP9_GV: 
-  case EXP_CP9_GF: 
-    return -1;
-    break;
   default: 
-    cm_Fail("ExpModeToFthrMode(): bogus exp_mode: %d\n", exp_mode);
+    cm_Fail("ExpModeIsInside(): bogus exp_mode: %d\n", exp_mode);
   }
   return FALSE; /* never reached */
 }
@@ -550,34 +467,10 @@ char *
 DescribeExpMode(int exp_mode)
 {
   switch (exp_mode) {
-  case EXP_CP9_GV: return "hmm  glc  vit";
-  case EXP_CP9_GF: return "hmm  glc  fwd";
   case EXP_CM_GC:  return " cm  glc  cyk";
   case EXP_CM_GI:  return " cm  glc  ins";
-  case EXP_CP9_LV: return "hmm  loc  vit";
-  case EXP_CP9_LF: return "hmm  loc  fwd";
   case EXP_CM_LC:  return " cm  loc  cyk";
   case EXP_CM_LI:  return " cm  loc  ins";
-  default:     return "?";
-  }
-}
-
-
-/* Function:  DescribeFthrMode()
- * Incept:    EPN, Mon Jan  7 18:41:41 2008
- *
- * Purpose:   Returns the Filter thresold mode in text.
- *            For example, <DescribeFThrMode(EXP_CM_GC)>
- *            returns "glocal CM CYK".
- */
-char *
-DescribeFthrMode(int fthr_mode)
-{
-  switch (fthr_mode) {
-  case FTHR_CM_GC:  return "glc  cyk";
-  case FTHR_CM_GI:  return "glc  ins";
-  case FTHR_CM_LC:  return "loc  cyk";
-  case FTHR_CM_LI:  return "loc  ins";
   default:     return "?";
   }
 }

@@ -36,7 +36,7 @@
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           smx             - CM_SCAN_MX for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -55,11 +55,11 @@
  *           Dies immediately if some error occurs.
  */
 int
-SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
+SSE_CYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	    CM_TOPHITS *hitlist, int do_null3, float **ret_vsc, float *ret_sc)
 {
 //FIXME: needs some cleanup from the scalar detritus; should be able
-//FIXME: to drop the ScanMatrix (I think all we need from it is W
+//FIXME: to drop the CM_SCAN_MX (I think all we need from it is W
   int       status;
   GammaHitMx_t *gamma = NULL;   /* semi-HMM for hit resoultion */
   float    *vsc;                /* best score for each state (float) */
@@ -91,14 +91,13 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, dsq is NULL\n");
   if(smx == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, smx == NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, CM_SEARCH_INSIDE flag raised");
-  if(! (cm->smx->flags & cmSMX_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
-  if(smx == cm->smx && (! (cm->flags & CMH_SCANMATRIX))) ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
+  if(! smx->floats_valid)                  ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, smx->floats_valid if FALSE");
 
-  /* make pointers to the ScanMatrix/CM data for convenience */
+  /* make pointers to the scan matrix Matrix/CM data for convenience */
   float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
   float ***alpha_begl = smx->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int   **dnAA        = smx->dnAAA[SMX_NOQDB]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAAA[SMX_NOQDB]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
   int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
 
   /* Re-ordered SIMD vectors */
@@ -694,7 +693,6 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], alpha[jp_v][0], bestr, NULL, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
 
-      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 

@@ -9052,18 +9052,14 @@ main(int argc, char **argv)
     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
     esl_vec_DNorm(dnull, cm->abc->K);
     /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
-    int safe_windowlen = cm->clen * 2;
-    double **gamma = NULL;
-    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
-      safe_windowlen *= 2;
-      /* This is a temporary fix becuase BCE() overwrites gamma, leaking memory
-       * Probably better long-term for BCE() to check whether gamma is already allocated
-       */
-      FreeBandDensities(cm, gamma);
-      if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
-    }
-    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, gamma[0], safe_windowlen, FALSE);
-    FreeBandDensities(cm, gamma);
+    double *gamma0_loc;
+    double *gamma0_glb;
+    if((status = CalculateQueryDependentBands(cm, errbuf, NULL, DEFAULT_BETA_W, NULL, &gamma0_loc, &gamma0_glb)) != eslOK) cm_Fail(errbuf);
+    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, 
+				      (cm->flags & CMH_LOCAL_BEGIN) ? gamma0_loc : gamma0_glb, 
+				      safe_windowlen, FALSE);
+    free(gamma0_loc);
+    free(gamma0_glb);
     free(dnull);
   }
   else /* don't randomly generate seqs, emit them from the CM */

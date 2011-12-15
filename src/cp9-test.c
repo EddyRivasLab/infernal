@@ -90,6 +90,11 @@ main(int argc, char **argv)
     cm_Fail("CM Plan 9 HMM fails the psi/phi comparison test.\n");
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, "CP9 construction CPU time: ");
+
+  esl_stopwatch_Start(w);
+  CP9Logoddsify(hmm);
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, "CP9 score calc CPU time: ");
   
   if(!do_psionly) {
     esl_stopwatch_Start(w);

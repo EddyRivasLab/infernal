@@ -416,6 +416,9 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
   /* don't turn on CM_SEARCH_CMNOTGREEDY; */
   cm->search_opts |= CM_SEARCH_HMMGREEDY;
 
+  /* exponentiate the CM, if nec. do this before possibly configuring to local alignment in ConfigCM */
+  if(esl_opt_IsOn(go, "--exp"))        ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));
+
   if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status; /* FALSE says do not calculate W unless nec b/c we're using QDBs */
   
   /* create and initialize scan info for CYK/Inside scanning functions */
@@ -426,8 +429,6 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
   exp_cutoff = -eslINFINITY;
   CreateSearchInfo(cm, SCORE_CUTOFF, exp_cutoff, -1.);
   ValidateSearchInfo(cm, cm->si);
-  
-  if(esl_opt_IsOn(go, "--exp"))        ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));
   
   return eslOK;
 }

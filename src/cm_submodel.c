@@ -672,7 +672,7 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
 
   /* Rebalance the CM for optimization of D&C */
   CM_t *new;
-  new = CMRebalance(sub_cm);
+  if((status = CMRebalance(sub_cm, errbuf, &new)) != eslOK) return status;
   FreeCM(sub_cm);
   sub_cm = new;
 
@@ -695,7 +695,6 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
   CMSetNullModel(sub_cm, orig_cm->null);
   sub_cm->el_selfsc = orig_cm->el_selfsc;
   sub_cm->beta_W    = orig_cm->beta_W;
-  sub_cm->beta_qdb  = orig_cm->beta_qdb;
   sub_cm->tau       = orig_cm->tau;
    
   /* copy the options from the template CM, but turn off the CM_ALIGN_SUB options 
@@ -2056,6 +2055,8 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, CMSubMa
     cm_Fail("Couldn't build a CP9 HMM from the CM\n");
   if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  FALSE, 0.0001, print_flag))
     cm_Fail("Couldn't build a CP9 HMM from the CM\n");
+  CP9Logoddsify(orig_hmm);
+  CP9Logoddsify(sub_hmm);
 
   /* Look for 'impossible' cases where we know the sub_cm 
    * construction procedure fails, in that the distribution of transitions out of CP9 nodes 
@@ -3132,6 +3133,8 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
     cm_Fail("Couldn't build a CP9 HMM from the CM\n");
   if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  FALSE, 0.0001, print_flag))
     cm_Fail("Couldn't build a CP9 HMM from the CM\n");
+  CP9Logoddsify(orig_hmm);
+  CP9Logoddsify(sub_hmm);
 
   /* Look for 'impossible' cases where we know the sub_cm 
    * construction procedure fails, in that the distribution of transitions out of CP9 nodes 
@@ -3153,7 +3156,7 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
       
       printf("PRINTING BUILT & RECONFIGED ORIG HMM PARAMS:\n");
       debug_print_cp9_params(stdout, orig_hmm, TRUE);
-      printf("DONE PRINTING BUILT & RECONFIGED SAMPLED HMM PARAMS:\n");
+      printf("DONE PRINTING BUILT & RECONFIGED ORIG HMM PARAMS:\n");
     }
 
   /* Check the parameters of the two CP9 HMMs */
@@ -4055,6 +4058,104 @@ SubFCalcAndCopyOptimizedEmitScoresFromMother(CM_t *cm, CM_t *mother_cm, CMSubMap
  ERROR:
   cm_Fail("memory allocation error.");
   return NULL; /* NEVERREACHED */
+}
+
+
+/* Function: CP9_reconfig2sub()
+ * EPN 10.16.06
+ * 
+ * Purpose:  Given a CM Plan 9 HMM and a start position
+ *           (spos) and end position (epos) that a sub CM models, 
+ *           reconfigure the HMM so that it can only start in the 
+ *           node that models spos (spos_nd) end in the node that 
+ *           models epos (epos_nd).
+ *
+ *           If we're reconfiguring a CP9 HMM that ONLY models the
+ *           consensus columns spos to epos, then spos_nd == 1 
+ *           and epos_nd == hmm->M, but this is not necessarily true.
+ *           We may be reconfiguring a CP9 HMM that models the
+ *           full alignment including positions before and/or after
+ *           spos and epos. In this case spos_nd == spos and
+ *           epos_nd == epos;
+ *           
+ * Args:     hmm         - the CP9 model w/ data-dep prob's valid
+ *           spos        - first consensus column modelled by some original
+ *                         full length, template CP9 HMM that 'hmm' models.
+ *           epos        - final consensus column modelled by some original
+ *                         CP9 HMM that 'hmm' models.
+ *           spos_nd     - the node of 'hmm' that models spos.
+ *                         (1 if 'hmm' only has (epos-spos+1) nodes 
+ *                         (spos if 'hmm' has a node for each column of original aln)
+ *           epos_nd     - the node of the 'hmm' in that models epos.
+ *                         (hmm->M if 'hmm' only has (epos-spos+1) nodes 
+ *                         (epos if 'hmm' has a node for each column of original aln)
+ *           orig_phi    - the 2D phi array for the original CP9 HMM.         
+ * Return:   (void)
+ *           HMM probabilities are modified.
+ */
+void
+CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd,
+		 int epos_nd, double **orig_phi)
+{
+  /* Make the necessary modifications. Since in cmalign --sub mode this
+   * function will be called potentially once for each sequence, we 
+   * don't want to call CP9Logoddsify(), but rather only logoddsify
+   * the parameters that are different.
+   */
+
+  /* Configure entry.
+   * Exactly 3 ways to start, B->M_1 (hmm->begin[1]), B->I_0 (hmm->t[0][CTMI]),
+   *                      and B->D_1 (hmm->t[0][CTMD])
+   */
+  /* prob of starting in M_spos is (1. - prob of starting in I_spos-1) as there is no D_spos-1 -> M_spos trans */
+      
+  if(spos > 1)
+    {
+      hmm->begin[spos_nd] = 1.-((orig_phi[spos-1][HMMINSERT] * (1. - hmm->t[spos-1][CTII])) + 
+			        (orig_phi[spos  ][HMMDELETE] - (orig_phi[spos-1][HMMINSERT] * hmm->t[spos-1][CTID])));
+      hmm->t[spos_nd-1][CTMI] =   (orig_phi[spos-1][HMMINSERT] * (1. - hmm->t[spos-1][CTII]));
+      hmm->t[spos_nd-1][CTMD] =    orig_phi[spos  ][HMMDELETE] - (orig_phi[spos-1][HMMINSERT] * hmm->t[spos-1][CTID]);
+      hmm->t[spos_nd-1][CTMM] = 0.; /* probability of going from B(M_0) to M_1 is begin[1] */
+      hmm->t[spos_nd-1][CTMEL] = 0.; /* can't go to EL from B(M_0) */
+      hmm->t[spos_nd-1][CTDM] = 0.; /* D_0 doesn't exist */
+      hmm->t[spos_nd-1][CTDI] = 0.; /* D_0 doesn't exist */
+      hmm->t[spos_nd-1][CTDD] = 0.; /* D_0 doesn't exist */
+      
+      hmm->bsc[spos_nd]       = Prob2Score(hmm->begin[1], 1.0);
+
+      hmm->tsc[CTMM][spos_nd-1] = -INFTY; /* probability of going from B(M_0) to M_1 is begin[1] */
+      hmm->tsc[CTMEL][spos_nd-1] = -INFTY; 
+      hmm->tsc[CTDM][spos_nd-1] = -INFTY; /* D_0 doesn't exist */
+      hmm->tsc[CTDI][spos_nd-1] = -INFTY; /* D_0 doesn't exist */
+      hmm->tsc[CTDD][spos_nd-1] = -INFTY; /* D_0 doesn't exist */
+      
+      hmm->tsc[CTMI][spos_nd-1] = Prob2Score(hmm->t[spos_nd-1][CTMI], 1.0);
+      hmm->tsc[CTMD][spos_nd-1] = Prob2Score(hmm->t[spos_nd-1][CTMD], 1.0);
+    }
+
+  if(epos < hmm->M)
+    {
+      hmm->end[epos_nd]      = hmm->t[epos][CTMM] + hmm->t[epos][CTMD];
+      hmm->t[epos_nd][CTDM] += hmm->t[epos][CTDD];
+      hmm->t[epos_nd][CTIM] += hmm->t[epos][CTID];
+      hmm->t[epos_nd][CTMM]  = 0.; /* M->E is actually end[M] */
+      hmm->t[epos_nd][CTMEL]  = 0.; 
+      hmm->t[epos_nd][CTMD]  = 0.; /* D_M+1 doesn't exist */
+      hmm->t[epos_nd][CTDD]  = 0.; /* D_M+1 doesn't exist */
+      hmm->t[epos_nd][CTID]  = 0.; /* D_M+1 doesn't exist */
+      
+      hmm->esc[epos_nd]       = Prob2Score(hmm->end[epos_nd], 1.0);
+      hmm->tsc[CTDM][epos_nd] = Prob2Score(hmm->t[epos_nd][CTDM], 1.0);
+      hmm->tsc[CTIM][epos_nd] = Prob2Score(hmm->t[epos_nd][CTIM], 1.0);
+      hmm->tsc[CTMM][epos_nd] = -INFTY; /* M->E is actually end[M] */
+      hmm->tsc[CTMEL][epos_nd] = -INFTY; 
+      hmm->tsc[CTMD][epos_nd] = -INFTY; /* D_M+1 doesn't exist */
+      hmm->tsc[CTDD][epos_nd] = -INFTY; /* D_M+1 doesn't exist */
+      hmm->tsc[CTID][epos_nd] = -INFTY; /* D_M+1 doesn't exist */
+    }
+  hmm->flags |= CPLAN9_HASBITS;	/* raise the log-odds ready flag */
+
+  return;
 }
 
 

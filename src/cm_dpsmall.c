@@ -6372,31 +6372,6 @@ debug_print_alpha_banded(float ***alpha, CM_t *cm, int L, int *dmin, int *dmax)
   printf("****************\n\n");
 }
 
-
-/* EPN 05.09.05
- * debug_print_bands()
- * Function: debug_print_bands
- *
- * Purpose:  Print bands for each state.
- */
-
-void
-debug_print_bands(FILE *fp, CM_t *cm, int *dmin, int *dmax)
-{
-  int v;
-  fprintf(fp, "# CM:       %s\n", cm->name);
-  fprintf(fp, "# clen:     %d\n", cm->clen);
-  fprintf(fp, "# W:        %d\n", cm->W);
-  fprintf(fp, "# beta_W:   %g\n", cm->beta_W);
-  fprintf(fp, "# beta_qdb: %g\n", cm->beta_qdb);
-  fprintf(fp, "# %8s  %8s  %6s  %6s  %7s  %7s  %7s\n", "stidx(v)", "ndidx",    "ndtype", "sttype", "dmin[v]","dmax[v]", "bwidth");
-  fprintf(fp, "# %8s  %8s  %6s  %6s  %7s  %7s  %7s\n", "--------", "--------", "------", "------", "------", "------",  "-------");
-  for(v = 0; v < cm->M; v++)
-    fprintf(fp, "  %8d  %8d  %-6s  %-6s  %7d  %7d  %7d\n", v, cm->ndidx[v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), dmin[v], dmax[v], (dmax[v] - dmin[v] + 1));
-  fprintf(fp, "//\n");
-  return;
-}
-
 /* EPN 05.09.05
    debug_print_alpha()
  * Function: debug_print_alpha

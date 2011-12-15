@@ -47,7 +47,9 @@ static ESL_OPTIONS options[] = {
   { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow overwriting of <cmfile>",   1 },
   { "-v",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "be verbose with output", 1 },
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
-  { "--Wbeta",   eslARG_REAL,   "1E-7",NULL, "x>0.0000000000000001",NULL,NULL,  NULL, "set tail loss prob for calc'ing W (max size of a hit) to <x>", 1 },
+  { "--betaW",   eslARG_REAL,  "1E-7", NULL, "x>1E-18", NULL,      NULL,        NULL, "set tail loss prob for calc'ing W (max size of a hit) to <x>", 1 },
+  { "--beta1",   eslARG_REAL,  "1E-7", NULL, "x>1E-18", NULL,      NULL,        NULL, "set tail loss prob for calc'ing tighter QDBs to <x>", 1 },
+  { "--beta2",   eslARG_REAL, "1E-15", NULL, "x>1E-18", NULL,      NULL,        NULL, "set tail loss prob for calc'ing looser  QDBs to <x>", 1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 /* Expert model construction options */
   { "--rsearch", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
@@ -142,6 +144,12 @@ static ESL_OPTIONS options[] = {
   { "--gtbl",    eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tabular description of master tree to file <s>", 102 },
   { "--tfile",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence tracebacks to file <s>", 102 },
 
+  /* Developer options related to experiment local begin/end modes */
+  { "--pbegin",  eslARG_REAL,  "0.05", NULL, "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 103 },
+  { "--pend",    eslARG_REAL,  "0.05", NULL, "0<x<1",   NULL,      "-l",        NULL, "set aggregate local end prob to <x>", 103 },
+  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 103 },
+  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 103 },
+
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -208,7 +216,7 @@ static int    set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, 
 static int    set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, const Prior_t *pri);
 static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, CM_t *cm, const Prior_t *prior, float msa_nseq);
 static int    configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int    build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
+static int    build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali);
 static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen);
 static double version_1p0_default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
@@ -216,7 +224,7 @@ static void   strip_wuss(char *ss);
 static int    refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *orig_cm, ESL_MSA *input_msa, Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr, Parsetree_t ***ret_tr, int *ret_niter);
 static int    get_unaln_seqs_from_msa(const ESL_MSA *msa, ESL_SQ ***ret_sq);
 static int    convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa);
-static int    initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static int    initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, CM_t **ret_nc_cm);
 /* static void   model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq); */
 /* functions for dividing input MSA into clusters */
 static int    select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc, int *ret_best, char *errbuf);
@@ -286,6 +294,8 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
       puts("\nundocumented developer options for verbose output/debugging:");
       esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
+      puts("\nundocumented developer options related to experimental local begin/end modes:");
+      esl_opt_DisplayHelp(stdout, go, 103, 2, 80);
       exit(0);
     }
   if (esl_opt_GetBoolean(go, "-h") == TRUE) 
@@ -711,9 +721,9 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    fprintf(stdout, "#\n");
 	    fprintf(stdout, "# Refining MSA for CM: %s (aln: %4d cm: %6d)\n", cm->name, cfg->nali, cfg->ncm_total);
 	    if ((status = refine_msa(go, cfg, errbuf, cm, msa, tr, &new_cm, &new_msa, &new_mtr, &new_tr, &niter)) != eslOK) cm_Fail(errbuf);
-	    if (niter > 1) { /* if niter == 1, we didn't make a new CM (new_cm == cm) mtr, or tr, so we don't free them */
-	      FreeCM(cm); 
-	      cm = new_cm; 
+	    FreeCM(cm); 
+	    cm = new_cm; 
+	    if (niter > 1) { /* if niter == 1, we didn't make a new mtr, or tr, so we don't free them */
 	      for(i = 0; i < msa->nseq; i++) FreeParsetree(tr[i]);
 	      tr = new_tr;
 	      FreeParsetree(mtr);
@@ -760,16 +770,16 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
   uint32_t checksum = 0;  /* checksum calculated for the input MSA. cmalign --mapali verifies against this. */
   CM_t    *cm = NULL;     /* the CM */
 
-  if ((status =  check_and_clean_msa           (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
-  if ((status =  esl_msa_Checksum              (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
-  if ((status =  set_relative_weights          (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
-  if ((status =  build_model                   (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
-  if ((status =  set_model_cutoffs             (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
-  if ((status =  set_effective_seqnumber       (go, cfg, errbuf, msa, cm, cfg->pri))                   != eslOK) goto ERROR;
-  if ((status =  parameterize                  (go, cfg, errbuf, TRUE, cm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
-  if ((status =  annotate                      (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
-  if ((status =  configure_model               (go, cfg, errbuf, cm))                                  != eslOK) goto ERROR;
-  if ((status =  build_and_calibrate_p7_filters(go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
+  if ((status =  check_and_clean_msa          (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
+  if ((status =  esl_msa_Checksum             (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
+  if ((status =  set_relative_weights         (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
+  if ((status =  build_model                  (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
+  if ((status =  set_model_cutoffs            (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
+  if ((status =  set_effective_seqnumber      (go, cfg, errbuf, msa, cm, cfg->pri))                   != eslOK) goto ERROR;
+  if ((status =  parameterize                 (go, cfg, errbuf, TRUE, cm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
+  if ((status =  configure_model              (go, cfg, errbuf, cm))                                  != eslOK) goto ERROR;
+  if ((status =  annotate                     (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
+  if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
 
   cm->checksum = checksum;
   cm->flags   |= CMH_CHKSUM;
@@ -814,7 +824,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   Parsetree_t     *mtr         = NULL;
   Parsetree_t    **tr          = NULL;
   int              max_niter   = 200;  /* maximum number of iterations */
-
+  CM_t            *nc_cm       = NULL; /* the non-configured CM we'll output */
   /* check contract */
   if(input_msa       == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), input_msa passed in as NULL");
   if(input_msa->name == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), input_msa must have a name");
@@ -855,12 +865,13 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       /* 1. cm -> parsetrees */
       if(iter > 1) FreePartialSeqsToAln(seqs_to_aln, FALSE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE);
                                                   /* sq,    tr, cp9_tr, post, sc,   pp,   struct_sc */ 
-      /* initialize/configure CM, we may be doing HMM banded alignment for ex. */
-      initialize_cm(go, cfg, errbuf, cm);
+      /* initialize/configure CM, we may be doing HMM banded alignment for ex., 
+       * but make a clone first, in case it gets locally configured (we need to output a globally-configured model) */
+      if((status = initialize_cm(go, cfg, errbuf, cm, &nc_cm)) != eslOK) return status;
       if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, 0, 0, (! esl_opt_GetBoolean(go, "-a")), TRUE, FALSE, cfg->r, 
 				      esl_opt_GetReal(go, "--mxsize"), stdout, NULL, 1,
 				      0, 1, 0., 0, 0., 0., 1., 1.)) != eslOK) return status;
-      
+    
       /* sum parse scores and check for convergence */
       totscore = esl_vec_FSum(seqs_to_aln->sc, nseq);
       delta    = (totscore - oldscore) / fabs(totscore);
@@ -889,6 +900,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
 	for(i = 0; i < nseq; i++) FreeParsetree(tr[i]);
 	free(tr);
       }
+      if(nc_cm != NULL) { FreeCM(nc_cm); nc_cm = NULL; }
       cm = NULL; /* even if iter == 1; we set cm to NULL, so we don't klobber init_cm */
       mtr= NULL;
       tr = NULL;
@@ -899,10 +911,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   if((status = eslx_msafile_Write(cfg->refinefp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
     ESL_FAIL(status, errbuf, "refine_msa(), esl_msafile_Write() call failed.");
 
-  /* if CM was in local mode for aligning input MSA seqs, make it global so we can write it out */
-  if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END)) ConfigGlobal(cm);
-
-  *ret_cm  = cm;
+  *ret_cm  = nc_cm; /* pass back the non-configured clone in initialize_cm() (it's in global mode, ready to output) */
   *ret_msa = msa;
   *ret_tr  = tr;
   *ret_mtr = mtr;
@@ -912,6 +921,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   FreeSeqsToAln(seqs_to_aln);
   free(sc);
   free(msa_name);
+  if(cm != NULL) FreeCM(cm);
 
   return eslOK;
 
@@ -1121,10 +1131,10 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
   if(esl_opt_GetString(go, "--rsearch") != NULL) cm->flags |= CM_RSEARCHEMIT;
 
   /* rebalance CM */
-  if(!esl_opt_GetBoolean(go, "--nobalance"))
+  if(! esl_opt_GetBoolean(go, "--nobalance"))
     {
-      CM_t *new;
-      new = CMRebalance(cm);
+      CM_t *new = NULL;
+      if((status = CMRebalance(cm, errbuf, &new)) != eslOK) cm_Fail(errbuf);
       FreeCM(cm);
       cm = new;
     }
@@ -1163,12 +1173,17 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
 	esl_stopwatch_Display(stdout, w, "CPU time: ");
       }
     }
+
+  /* create the emitmap */
+  if(cm->emap == NULL) cm->emap = CreateEmitMap(cm);
+
   /* set the EL self transition probability */
   cm->el_selfsc = sreLOG2(esl_opt_GetReal(go, "--elself"));
 
-  /* set the cm->beta_W parameter, which is not used in cmbuild, but is used by cmcalibrate and
-   * cmsearch (and possibly others) to set cm->W */
-  cm->beta_W = esl_opt_GetReal(go, "--Wbeta");
+  /* set the beta parameters, these will be used to calculate W and QDBs that get stored in the CM file */
+  cm->beta_W         = esl_opt_GetReal(go, "--betaW");
+  cm->qdbinfo->beta1 = esl_opt_GetReal(go, "--beta1");
+  cm->qdbinfo->beta2 = esl_opt_GetReal(go, "--beta2");
 
   /* set the cm->null2_omega and cm->null3_omega parameters */
   if(esl_opt_IsOn(go, "--n2omega")) { /* user set --n2omega, use that */
@@ -1210,7 +1225,6 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
   return status;
 }
 
-
 /* annotate()
  * Transfer annotation information from MSA to new HMM.
  * 
@@ -1238,7 +1252,7 @@ annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *
     fflush(stdout);
   }
 
-  if(! (cm->flags & CMH_BITS)) ESL_XFAIL(status, errbuf, "Trying to set cm->consensus before bit scores are valid");
+  if(! (cm->flags & CMH_BITS)) ESL_XFAIL(eslEINVAL, errbuf, "Trying to set cm->consensus before bit scores are valid");
 
   if ((status = cm_SetName       (cm, msa->name)) != eslOK)  ESL_XFAIL(status, errbuf, "Unable to set name for CM");
   if ((status = cm_SetAccession  (cm, msa->acc))  != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA accession");
@@ -1421,7 +1435,7 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int d
   }
 
   CMRenormalize(cm);
-  CMLogoddsify(cm);
+  /* don't CMLogoddsify() here, that will come when we configure with cm_Configure() */
 
   if (cfg->be_verbose && do_print) { 
     fprintf(stdout, "done.  ");
@@ -1434,14 +1448,14 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int d
 }
 
 /* configure_model()
- * Configure the model. This determines QDBs, W, and builds the ML p7 filter, 
- * which we'll calibrate in build_and_calibrate_p7_filters() 
+ * Configure the model. This determines QDBs and W.
  */
 static int
 configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   int status; 
   ESL_STOPWATCH *w = NULL;
+  int nstarts, nexits, nd;
 
   if (cfg->be_verbose){
     w = esl_stopwatch_Create();
@@ -1450,26 +1464,38 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
     fflush(stdout);
   }
 
-  /* configure local for calculating W (ignores ROOT_IL, ROOT_IR), this way is consistent with Infernal 1.0->1.0.2 */
-  cm->config_opts |= CM_CONFIG_LOCAL;    
-  cm->config_opts |= CM_CONFIG_HMMLOCAL; 
-  cm->config_opts |= CM_CONFIG_HMMEL;    
+  /* potentially redefine pbegin, pend based on command line options */
+  /* (defaults are DEFAULT_PBEGIN, DEFAULT_PEND (set in CreateCMShell()) */
+  if(esl_opt_IsUsed(go, "--pbegin")) cm->pbegin = esl_opt_GetReal(go, "--pbegin"); 
+  if(esl_opt_IsUsed(go, "--pend"))   cm->pend   = esl_opt_GetReal(go, "--pend"); 
 
-  /* ConfigCM() must calculate QDBs */
+  /* possibly overwrite local begin probs such that all begin points are equiprobable (--pebegin) */
+  if(esl_opt_GetBoolean(go, "--pebegin")) {
+    nstarts = 0;
+    for (nd = 2; nd < cm->nodes; nd++) 
+      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) 
+	nstarts++;
+    cm->pbegin = 1.- (1./(1+nstarts));
+  }
+  /* possibly overwrite cm->pend so that local end prob from all legal states is fixed,
+   * this is strange in that cm->pend may be placed as a number greater than 1., this number
+   * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
+   * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
+  if(esl_opt_IsOn(go, "--pfend")) {
+    nexits = 0;
+    for (nd = 1; nd < cm->nodes; nd++) {
+      if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	   cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	   cm->ndtype[nd] == BEGR_nd) && 
+	  cm->ndtype[nd+1] != END_nd)
+	nexits++;
+    }
+    cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
+  }
+
+  /* Configure the model, we must calculate QDBs so we can write them to the CM file */
   cm->config_opts |= CM_CONFIG_QDB;   
-  if((status = ConfigCM(cm, errbuf, 
-			TRUE, /* do calculate W */
-			NULL, NULL)) != eslOK) return status;
-
-  /* Some hackery, to match v1.0-->v1.0.2's method */
-  cm->flags &= ~CMH_QDB;        /* so QDBs/W are not recalculated after globalizing in ConfigGlobal() */
-  cm->flags &= ~CMH_QDB_LOCAL;  
-
-  /* Convert back to global */
-  ConfigGlobal(cm);
-
-  cm->flags |= CMH_QDB;
-  cm->flags |= CMH_QDB_LOCAL;  
+  if((status = cm_Configure(cm, errbuf)) != eslOK) return status;
 
   if (cfg->be_verbose) { 
     fprintf(stdout, "done.  ");
@@ -1482,14 +1508,12 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
   return eslOK;
 }
 
-/* build_and_calibrate_p7_filters()
- * Build any additional p7 HMM filters other than the 
- * ML p7 HMM filter which was built in configure_model().
- * Calibrate the ML p7 HMM filter and any other p7 filters
- * built here.
+/* build_and_calibrate_p7_filter()
+ * Build and calibrate the additional p7 HMM filter (differs from the
+ * ML p7 HMM filter which was built in configure_model()).  
  */
 static int
-build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm)
+build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm)
 {
   int status; 
   CM_t    *acm = NULL; 
@@ -1507,11 +1531,11 @@ build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, c
   if (cfg->be_verbose){
     w = esl_stopwatch_Create();
     esl_stopwatch_Start(w);
-    fprintf(stdout, "%-40s ... ", "Calibrating p7 HMM filters"); 
+    fprintf(stdout, "%-40s ... ", "Calibrating p7 HMM filter"); 
     fflush(stdout);
   }
 
-  /* calibrate p7 HMM(s) */
+  /* calibrate p7 HMM */
 
   /* Define relevant parameters: */
   /* first, set all to default */
@@ -1594,7 +1618,7 @@ build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, c
     for (cpos = 1; cpos <= cm->clen;   cpos++) amsa->rf[cm->map[cpos]-1] = 'x'; /* note off by one */
     cfg->fp7_bld->arch_strategy = p7_ARCH_HAND;
     
-    if ((status = p7_Builder(cfg->fp7_bld, amsa, cfg->fp7_bg, &fhmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->fp7_bld->errbuf); goto ERROR; }
+    if ((status = p7_Builder(cfg->fp7_bld, amsa, cfg->fp7_bg, &fhmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->fp7_bld->errbuf); return status; }
     esl_msa_Destroy(amsa); 
 
     if(! esl_opt_GetBoolean(go, "--p7-hemit")) { 
@@ -1604,17 +1628,21 @@ build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, c
        * mean match state entropy as the fhmm we just 
        * built.
        */
-      if ((status =  build_model(go, cfg, errbuf, FALSE, msa, &acm, NULL, NULL)) != eslOK) goto ERROR;
+      if ((status =  build_model(go, cfg, errbuf, FALSE, msa, &acm, NULL, NULL)) != eslOK) return status;
       fhmm_re = p7_MeanMatchRelativeEntropy(fhmm, cfg->fp7_bg);
       status = cm_EntropyWeight(acm, cfg->pri, fhmm_re, esl_opt_GetReal(go, "--eminseq"), TRUE, &mlp7_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
       if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
       else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
       acm->eff_nseq = neff;
       cm_Rescale(acm, acm->eff_nseq / (float) msa->nseq);
-      if ((status =  parameterize(go, cfg, errbuf, FALSE, acm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
-      if((status = ConfigCM(acm, errbuf, 
-			    FALSE, /* don't need to calculate W */
-			    NULL, NULL)) != eslOK) { printf("Error configuring aCM: %s\n", acm->name); goto ERROR; }
+      if((status = parameterize   (go, cfg, errbuf, FALSE, acm, cfg->pri, msa->nseq)) != eslOK) return status;
+      /* We have to configure the model to get cm->W, which gets 
+       * copied to cm->mlp7->max_length. Alternatively we could 
+       * use p7_Builder_MaxLength() but anecdotally that gives 
+       * lengths >> W (more than 2*W commonly).
+       * configure_model() will build the mlp7 HMM.
+       */
+      if((status = configure_model(go, cfg, errbuf, acm)) != eslOK) return status;
 
       /* copy the ML p7 emission probs from the CM we just built */
       /* match emissions: copy, then normalize (norm should be unnec actually) */
@@ -1640,7 +1668,7 @@ build_and_calibrate_p7_filters(const ESL_GETOPTS *go, const struct cfg_s *cfg, c
 			       lftailp,                                    /* fraction of tail mass to fit for local Fwd */
 			       gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
 			       &agfmu, &agflambda))  
-     != eslOK) cm_Fail("Error calibrating additional p7 HMM");
+     != eslOK) ESL_FAIL(status, errbuf, "Error calibrating additional p7 HMM");
   
   if((status = cm_SetFilterHMM(cm, fhmm, agfmu, agflambda)) != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter for the CM");
 
@@ -1992,12 +2020,15 @@ convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa)
 
 /* initialize_cm()
  * Setup the CM based on the command-line options/defaults.
- * Configures the CM with a ConfigCM() call at end.
+ * Configures the CM with a cm_Configure() call at end.
  */
 static int
-initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
+initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, CM_t **ret_nc_cm)
 {
   int status;
+  CM_t *nc_cm = NULL;
+  /* clone the CM first */
+  if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) return status;
 
   /* set up params/flags/options of the CM */
   cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
@@ -2011,7 +2042,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     cm->align_opts &= ~CM_ALIGN_OPTACC; /* turn optimal accuracy OFF */
   }
   else                                        cm->align_opts  |= CM_ALIGN_HBANDED;
-
+  
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
   if(esl_opt_GetBoolean(go, "--fins"))        cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
 
@@ -2026,7 +2057,10 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * this may make a cp9 HMM, for example.
    */
-  if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status; /* FALSE says do not calculate W unless nec b/c we're using QDBs */
+  if((status = cm_Configure(cm, errbuf)) != eslOK) return status;
+
+  if(ret_nc_cm != NULL) *ret_nc_cm = nc_cm;
+  else                   FreeCM(nc_cm);
 
   return eslOK;
 }

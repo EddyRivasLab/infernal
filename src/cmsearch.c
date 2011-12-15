@@ -58,13 +58,7 @@ typedef struct {
   FM_HMMDATA       *fm_hmmdata;  /* hmm-specific data for FM-index for fast MSV, required by p7_MSVFilter_longtarget() */
   float            *p7_evparam;  /* 0..CM_p7_NEVPARAM] E-value parameters */
   /* do we need to allocate and use CM scan matrices? only if we're not using HMM bands */
-  int               need_fsmx;   /* TRUE if a ScanMatrix_t is required for filter round */
-  int               need_smx;    /* TRUE if a ScanMatrix_t is required for final round */
-  /* QDBs for CM, only necessary if --qdb or --fqdb are enabled, else they are NULL */
-  int              *fcyk_dmin;
-  int              *fcyk_dmax;
-  int              *final_dmin;
-  int              *final_dmax;
+  int               need_smx;    /* TRUE if a ScanMatrix_t is required for CM rounds */
 
 } WORKER_INFO;
 
@@ -184,16 +178,16 @@ static ESL_OPTIONS options[] = {
   { "--cyk",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL, "--nocyk,--hmm", "use scanning CM CYK algorithm", 20 },
   { "--hmm",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,         "--cyk",  "do not use the CM, use only the HMM", 20},
   /* banded options for CYK filter round of searching */
-  { "--ftau",         eslARG_REAL,    "1e-4",    NULL, "0<x<1", NULL,        NULL,"--fqdb,--hmm,--nocyk",  "set tail loss prob for --fhbanded to <x>", 20 },
+  { "--ftau",         eslARG_REAL,    "1e-4",    NULL, "1E-18<x<1", NULL,    NULL,"--fqdb,--hmm,--nocyk",  "set tail loss prob for --fhbanded to <x>", 20 },
   { "--fsums",        eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--fqdb,--hmm,--nocyk",  "w/--fhbanded use posterior sums (widens bands)", 20 },
   { "--fqdb",         eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--hmm,--nocyk",  "use QDBs in CYK filter round, not HMM bands", 20 },
-  { "--fbeta",        eslARG_REAL,    "1e-9",    NULL, "0<x<1", NULL,    "--fqdb","--hmm,--nocyk",  "set tail loss prob for CYK filter QDB calculation to <x>", 20 },
+  { "--fbeta",        eslARG_REAL,    "1e-7",    NULL, "1E-18<x<1", NULL,"--fqdb","--hmm,--nocyk",  "set tail loss prob for CYK filter QDB calculation to <x>", 20 },
   { "--fnonbanded",   eslARG_NONE,    FALSE,     NULL, NULL,    NULL,    "--fqdb","--hmm,--nocyk",  "do not use any bands for CYK filter round", 20},
   /* banded options for final round of searching */
-  { "--tau",          eslARG_REAL,   "5e-6",     NULL, "0<x<1", NULL,        NULL,       "--qdb,--nonbanded,--hmm", "set tail loss prob for --hbanded to <x>", 20 },
+  { "--tau",          eslARG_REAL,   "5e-6",     NULL, "1E-18<x<1", NULL,    NULL,       "--qdb,--nonbanded,--hmm", "set tail loss prob for --hbanded to <x>", 20 },
   { "--sums",         eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,       "--qdb,--nonbanded,--hmm", "w/--hbanded use posterior sums (widens bands)", 20 },
   { "--qdb",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--nonbanded,--hmm,--tau", "use QDBs (instead of HMM bands) in final Inside round", 20 },
-  { "--beta",         eslARG_REAL,   "1e-15",    NULL, "0<x<1",  NULL,     "--qdb",        "--hmm", "set tail loss prob for final Inside QDB calculation to <x>", 20 },
+  { "--beta",         eslARG_REAL,   "1e-15",    NULL, "1E-18<x<1",  NULL,"--qdb",       "--hmm", "set tail loss prob for final Inside QDB calculation to <x>", 20 },
   { "--nonbanded",    eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--hmm,--tau,--sums,--beta", "do not use QDBs or HMM bands in final Inside round of CM search", 20 },
   /* other infernal 1.0.2 options */
   { "--toponly",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "only search the top strand", 20 },
@@ -248,9 +242,8 @@ static int   determine_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_
 static WORKER_INFO *create_info();
 static int   clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int dest_infocnt, char *errbuf);
 static void  free_info(WORKER_INFO *info);
-static int   setup_cm(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf);
-static int   setup_qdbs(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf);
-static int   setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info, const ESL_ALPHABET *abc, char *errbuf);
+static int   configure_cm(WORKER_INFO *info);
+static int   setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info);
 
 #ifdef HMMER_THREADS
 #define BLOCK_SIZE 1000
@@ -314,6 +307,15 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (esl_opt_ArgNumber(go)                  != 2)     { puts("Incorrect number of command line arguments.");      goto ERROR; }
   if ((*ret_cmfile = esl_opt_GetArg(go, 1))  == NULL)  { puts("Failed to get <cmfile> argument on command line"); goto ERROR; }
   if ((*ret_seqfile = esl_opt_GetArg(go, 2)) == NULL)  { puts("Failed to get <seqfile> argument on command line"); goto ERROR; }
+  
+  /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
+  if (esl_opt_GetBoolean(go, "--qdb") && esl_opt_GetBoolean(go, "--fqdb")) { 
+    if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
+      puts("Error parsing options, with --fbeta <x1> --beta <x2>, <x1> must be >= <x2>\n");
+      exit(1);
+    }
+  }
+
   *ret_go = go;
   return;
   
@@ -582,12 +584,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info[i].cm           = NULL;
       info[i].om           = NULL;
       info[i].bg           = NULL;
-      info[i].need_fsmx    = FALSE;
       info[i].need_smx     = FALSE;
-      info[i].fcyk_dmin    = NULL;
-      info[i].fcyk_dmax    = NULL;
-      info[i].final_dmin   = NULL;
-      info[i].final_dmax   = NULL;
       ESL_ALLOC(info[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
 #ifdef HMMER_THREADS
       info[i].queue        = queue;
@@ -629,20 +626,21 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if (tinfo->cm->acc)  fprintf(ofp, "Accession:   %s\n", tinfo->cm->acc);
     if (tinfo->cm->desc) fprintf(ofp, "Description: %s\n", tinfo->cm->desc);
     
-    /* Setup profiles in the tinfo (template info), then clone it into each thread's info: info[] */
-    /* Determine QDBs, if necessary. By default they are not needed. */
-    if((status = setup_qdbs(go, tinfo, errbuf)) != eslOK) cm_Fail(errbuf);
-    /* Setup HMM filters */
-    if((status = setup_hmm_filter(go, tinfo, abc, errbuf)) != eslOK) cm_Fail(errbuf);
+    /* configure the CM (this builds QDBs if nec) and setup HMM filters 
+     * (we need to do this before clone_info()). We need a pipeline to 
+     * do this only to get pli->cm_config_opts
+     */
+    tinfo->pli = cm_pipeline_Create(go, abc, tinfo->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+    if((status = configure_cm(tinfo))         != eslOK) cm_Fail(errbuf);
+    if((status = setup_hmm_filter(go, tinfo)) != eslOK) cm_Fail(errbuf);
     /* Clone all data structures in tinfo into the WORKER_INFO's in info */
     if((status = clone_info(go, tinfo, info, infocnt, errbuf)) != eslOK) cm_Fail(errbuf);
-    
+
     /* Create processing pipeline and hit list */
     for (i = 0; i < infocnt; ++i) {
       info[i].th   = cm_tophits_Create();
-      info[i].pli  = cm_pipeline_Create(go, abc, info[i].om->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      if((status = cm_pli_NewModel(info[i].pli, CM_NEWMODEL_CM, info[i].cm, info[i].cm->clen, info[i].cm->W, info[i].need_fsmx, 
-				   info[i].need_smx, info[i].fcyk_dmin, info[i].fcyk_dmax, info[i].final_dmin, info[i].final_dmax, 
+      info[i].pli  = cm_pipeline_Create(go, abc, tinfo->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+      if((status = cm_pli_NewModel(info[i].pli, CM_NEWMODEL_CM, info[i].cm, info[i].cm->clen, info[i].cm->W, 
 				   info[i].om, info[i].bg, cm_idx-1)) != eslOK) { 
 	cm_Fail(info[i].pli->errbuf);
       }
@@ -653,6 +651,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
 
 #ifdef HMMER_THREADS
+    printf("calling thread_loop i: %d\n", i);
     if (ncpus > 0)  sstatus = thread_loop(info, threadObj, queue, dbfp, &srcL);
     else            sstatus = serial_loop(info, dbfp, &srcL);
 #else
@@ -1008,19 +1007,17 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if (info->cm->acc)  fprintf(ofp, "Accession:   %s\n", info->cm->acc);
       if (info->cm->desc) fprintf(ofp, "Description: %s\n", info->cm->desc);
 
-      /* Setup the CM and calculate QDBs, if nec */
-      if((status = setup_cm(go, info, errbuf))   != eslOK) mpi_failure(errbuf);
-      if((status = setup_qdbs(go, info, errbuf)) != eslOK) mpi_failure(errbuf);
-      /* Setup HMM filters */
-      if((status = setup_hmm_filter(go, info, abc, errbuf)) != eslOK) mpi_failure(errbuf);
+      /* Configure the CM and setup the HMM filter */
+      if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
+      if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
 
       /* Create processing pipeline and hit list */
       info->th  = cm_tophits_Create(); 
-      info->pli = cm_pipeline_Create(go, abc, info->om->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->need_fsmx, info->need_smx, 
-				   info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->om, info->bg, cm_idx-1)) != eslOK) { 
-	mpi_failure(info[i].pli->errbuf);
+      info->pli = cm_pipeline_Create(go, abc, info->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+      if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->om, info->bg, cm_idx-1)) != eslOK) { 
+	mpi_failure(info->pli->errbuf);
       }
+
       /* Create block_list and add an empty block to it */
       block_list = create_mpi_block_list();
       block_list->blocks[0] = create_mpi_block();
@@ -1356,17 +1353,14 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       /* inform the master we're ready for a block of sequences */
       MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
 
-      /* Setup the CM and calculate QDBs, if nec */
-      if((status = setup_cm  (go, info, errbuf)) != eslOK) mpi_failure(errbuf);
-      if((status = setup_qdbs(go, info, errbuf)) != eslOK) mpi_failure(errbuf);
-      /* Setup HMM filters */
-      if((status = setup_hmm_filter(go, info, abc, errbuf)) != eslOK) mpi_failure(errbuf);
+      /* Configure the CM and setup the HMM filter */
+      if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
+      if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
 
       /* Create processing pipeline and hit list */
       info->th  = cm_tophits_Create(); 
-      info->pli = cm_pipeline_Create(go, abc, info->om->M, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->need_fsmx, info->need_smx, 
-				   info->fcyk_dmin, info->fcyk_dmax, info->final_dmin, info->final_dmax, info->om, info->bg, cm_idx-1)) != eslOK) { 
+      info->pli = cm_pipeline_Create(go, abc, info->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+      if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->om, info->bg, cm_idx-1)) != eslOK) { 
 	mpi_failure(info->pli->errbuf);
       }
 
@@ -1535,7 +1529,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL)
 
     if (info->pli->do_top) { 
       prv_pli_ntophits = info->th->N;
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
       /* modify hit positions to account for the position of the window in the full sequence */
@@ -1546,7 +1540,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL)
     if (info->pli->do_bot && dbsq->abc->complement != NULL) { 
       prv_pli_ntophits = info->th->N;
       esl_sq_ReverseComplement(dbsq);
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
       /* modify hit positions to account for the position of the window in the full sequence */
@@ -1612,13 +1606,13 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
   /* variables used to keep track of full length of all target sequences 
    * these are only necessary so we can update hit->srcL for all hits after
    * search of all target sequences is complete */
-  int64_t  *srcL = NULL;    /* [0..pli->nseqs-1] full length of each target sequence read */
-  int64_t   nalloc_srcL = 0;     /* current allocation size of srcL */
-  int       alloc_srcL  = 1000;  /* chunk size to increase allocation by for srcL */
-  int       s;
-  uint64_t  prv_nseqs_started = 0;  /* number of sequences started,  as of previous iter */
-  uint64_t  nseqs_started = 0;      /* number of sequences started,  as of current  iter */
-  uint64_t  prv_nseqs_finished = 0;  /* number of sequences finished, as of previous iter */
+  int64_t  *srcL               = NULL;  /* [0..pli->nseqs-1] full length of each target sequence read */
+  int64_t   nalloc_srcL        = 0;     /* current allocation size of srcL */
+  int       alloc_srcL         = 1000;  /* chunk size to increase allocation by for srcL */
+  int       s                  = 0;     /* counter over sequences */
+  uint64_t  prv_nseqs_started  = 0;     /* number of sequences started,  as of previous iter */
+  uint64_t  nseqs_started      = 0;     /* number of sequences started,  as of current  iter */
+  uint64_t  prv_nseqs_finished = 0;     /* number of sequences finished, as of previous iter */
   /* info->pli->nseqs acts as nseqs_finished */
 
   esl_workqueue_Reset(queue);
@@ -1631,6 +1625,8 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
   /* Main loop: */
   while (sstatus == eslOK ) {
       block = (ESL_SQ_BLOCK *) newBlock;
+
+      printf("thread received block");
 
       /* reset block as an empty vessel, possibly keeping the first sq intact for reading in the next window */
       for (i=0; i < block->count; i++) esl_sq_Reuse(block->list + i);
@@ -1784,7 +1780,7 @@ pipeline_thread(void *arg)
       
       if (info->pli->do_top) { 
 	prv_pli_ntophits = info->th->N;
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* modify hit positions to account for the position of the window in the full sequence */
@@ -1795,7 +1791,7 @@ pipeline_thread(void *arg)
       if (info->pli->do_bot && dbsq->abc->complement != NULL) {
 	prv_pli_ntophits = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 	
 	/* modify hit positions to account for the position of the window in the full sequence */
@@ -1963,12 +1959,7 @@ create_info()
   info->Tgm          = NULL;
   info->om           = NULL;
   info->bg           = NULL;
-  info->need_fsmx    = FALSE;
   info->need_smx     = FALSE;
-  info->fcyk_dmin    = NULL;
-  info->fcyk_dmax    = NULL;
-  info->final_dmin   = NULL;
-  info->final_dmax   = NULL;
   ESL_ALLOC(info->p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
 
   return info;
@@ -1985,7 +1976,8 @@ create_info()
  *          <dest_infocnt> WORKER_INFOs in <dest_infoA>. After cloning the CM,
  *          configure it.
  *
- * Returns: <eslOK> on success. Dies immediately upon an error.
+ * Returns: <eslOK> on success.
+ *          <eslEMEM> if out of memory, errbuf filled.
  */
 int
 clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int dest_infocnt, char *errbuf)
@@ -1994,50 +1986,28 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
   int i;
 
   for (i = 0; i < dest_infocnt; ++i) {
-    /* Clone the CM in src_info, it should have just been read from the file (it should not have been
-     * configured yet). It's difficult to clone a configured CM due to extra data structures that 
-     * get added during configuration. 
-     */
-    if((status = CloneCMJustReadFromFile(src_info->cm, errbuf, &(dest_infoA[i].cm))) != eslOK) return status;
-    dest_infoA[i].need_fsmx    = src_info->need_fsmx;
-    dest_infoA[i].need_smx     = src_info->need_smx;
-
-    /* configure the CM */
-    if((status = setup_cm(go, (&dest_infoA[i]), errbuf)) != eslOK) return status;
-
-    dest_infoA[i].gm  = p7_profile_Clone(src_info->gm);
-    dest_infoA[i].Rgm = src_info->Rgm == NULL ? NULL : p7_profile_Clone(src_info->Rgm);
-    dest_infoA[i].Lgm = src_info->Lgm == NULL ? NULL : p7_profile_Clone(src_info->Lgm);
-    dest_infoA[i].Tgm = src_info->Tgm == NULL ? NULL : p7_profile_Clone(src_info->Tgm);
-    dest_infoA[i].om  = p7_oprofile_Clone(src_info->om);
-    dest_infoA[i].bg  = p7_bg_Create(src_info->bg->abc);
+    if((status = cm_Clone(src_info->cm, errbuf, &(dest_infoA[i].cm))) != eslOK) return status;
+    if((dest_infoA[i].gm  = p7_profile_Clone(src_info->gm)) == NULL) goto ERROR;
+    dest_infoA[i].Rgm = dest_infoA[i].Lgm = dest_infoA[i].Tgm = NULL; /* changed below if nec */
+    if(src_info->Rgm != NULL) { if((dest_infoA[i].Rgm = p7_profile_Clone(src_info->Rgm)) == NULL) goto ERROR; }
+    if(src_info->Lgm != NULL) { if((dest_infoA[i].Lgm = p7_profile_Clone(src_info->Lgm)) == NULL) goto ERROR; }
+    if(src_info->Tgm != NULL) { if((dest_infoA[i].Tgm = p7_profile_Clone(src_info->Tgm)) == NULL) goto ERROR; }
+    if((dest_infoA[i].om  = p7_oprofile_Clone(src_info->om)) == NULL) goto ERROR;
+    if((dest_infoA[i].bg  = p7_bg_Create(src_info->bg->abc)) == NULL) goto ERROR;
     dest_infoA[i].fm_hmmdata = NULL;
-    ///dest_infoA[i].fm_hmmdata = fm_hmmdataCreate(dest_infoA[i].gm, dest_infoA[i].om);
-
+    ///if((dest_infoA[i].fm_hmmdata = fm_hmmdataCreate(dest_infoA[i].gm, dest_infoA[i].om)) == NULL) goto ERROR;
     if(dest_infoA[i].p7_evparam == NULL) ESL_ALLOC(dest_infoA[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
     esl_vec_FCopy(src_info->cm->fp7_evparam, CM_p7_NEVPARAM, dest_infoA[i].p7_evparam);
-  
-    if(src_info->fcyk_dmin != NULL) { 
-      ESL_ALLOC(dest_infoA[i].fcyk_dmin, sizeof(int) * src_info->cm->M);
-      esl_vec_ICopy(src_info->fcyk_dmin, src_info->cm->M, dest_infoA[i].fcyk_dmin);
-    }
-    if(src_info->fcyk_dmax != NULL) { 
-      ESL_ALLOC(dest_infoA[i].fcyk_dmax, sizeof(int) * src_info->cm->M);
-      esl_vec_ICopy(src_info->fcyk_dmax, src_info->cm->M, dest_infoA[i].fcyk_dmax);
-    }
-    if(src_info->final_dmin != NULL) { 
-      ESL_ALLOC(dest_infoA[i].final_dmin, sizeof(int) * src_info->cm->M);
-      esl_vec_ICopy(src_info->final_dmin, src_info->cm->M, dest_infoA[i].final_dmin);
-    }
-    if(src_info->final_dmax != NULL) { 
-      ESL_ALLOC(dest_infoA[i].final_dmax, sizeof(int) * src_info->cm->M);
-      esl_vec_ICopy(src_info->final_dmax, src_info->cm->M, dest_infoA[i].final_dmax);
-    }
+
+    /* create (don't clone) the CM consensus */
+    if((status = CreateCMConsensus(dest_infoA[i].cm, dest_infoA[i].cm->abc, 3.0, 1.0, &(dest_infoA[i].cmcons)))!= eslOK) {
+      ESL_FAIL(status, errbuf, "Failed to create CMConsensus data structure.\n");
+    }      
   }
   return eslOK;
   
   ERROR:
-  ESL_FAIL(status, errbuf, "Out of memory");
+  ESL_FAIL(status, errbuf, "clone_info(): out of memory");
 }
 
 /* Function:  free_info
@@ -2056,145 +2026,80 @@ free_info(WORKER_INFO *info)
   if(info->cm     != NULL) FreeCM(info->cm);                      info->cm  = NULL;
   if(info->cmcons != NULL) FreeCMConsensus(info->cmcons);         info->cmcons = NULL;
   
-  if(info->om     != NULL) p7_oprofile_Destroy(info->om);         info->om = NULL;
-  if(info->gm     != NULL) p7_profile_Destroy(info->gm);          info->gm = NULL;
-  if(info->Rgm    != NULL) p7_profile_Destroy(info->Rgm);         info->Rgm = NULL;
-  if(info->Lgm    != NULL) p7_profile_Destroy(info->Lgm);         info->Lgm = NULL;
-  if(info->Tgm    != NULL) p7_profile_Destroy(info->Tgm);         info->Tgm = NULL;
-  if(info->bg     != NULL) p7_bg_Destroy(info->bg);               info->bg = NULL;
+  if(info->om         != NULL) p7_oprofile_Destroy(info->om);     info->om = NULL;
+  if(info->gm         != NULL) p7_profile_Destroy(info->gm);      info->gm = NULL;
+  if(info->Rgm        != NULL) p7_profile_Destroy(info->Rgm);     info->Rgm = NULL;
+  if(info->Lgm        != NULL) p7_profile_Destroy(info->Lgm);     info->Lgm = NULL;
+  if(info->Tgm        != NULL) p7_profile_Destroy(info->Tgm);     info->Tgm = NULL;
+  if(info->bg         != NULL) p7_bg_Destroy(info->bg);           info->bg = NULL;
   if(info->p7_evparam != NULL) free(info->p7_evparam);            info->p7_evparam = NULL;
       
-  if(info->fcyk_dmin  != NULL) free(info->fcyk_dmin);             info->fcyk_dmin = NULL;
-  if(info->fcyk_dmax  != NULL) free(info->fcyk_dmax);             info->fcyk_dmax = NULL;
-  if(info->final_dmin != NULL) free(info->final_dmin);            info->final_dmin = NULL;
-  if(info->final_dmin != NULL) free(info->final_dmax);            info->final_dmax = NULL;
-
   if(info->fm_hmmdata != NULL) fm_hmmdataDestroy(info->fm_hmmdata); info->fm_hmmdata = NULL;
 
 
   return;
 }
 
-/* Function:  setup_cm()
+/* Function:  configure_cm()
  * Incept:    EPN, Mon Jun  6 12:06:38 2011
  *
- * Purpose:  Given a WORKER_INFO <info> with a valid CM just read
- *           from a file, configure the CM and create the CMConsensus data. 
+ * Purpose: Given a WORKER_INFO <info> with a valid CM just read from
+ *          a file and config_opts from <info->pli>, configure the CM
+ *          and create the CMConsensus data. We use
+ *          pli->cm_config_opts created in cm_pipeline_Create() so
+ *          that cmscan and cmsearch create config_opts identically
+ *          based on their common esl_getopts object.
+ *
+ *          Also create all the structures related to the p7 HMM
+ *          filter.
  *
  * Returns: eslOK on success. Upon an error, fills errbuf with
  *          message and returns appropriate error status code.
  */
 int
-setup_cm(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
+configure_cm(WORKER_INFO *info)
 { 
   int status;
+  
+  /* cm_pipeline_Create() sets configure options in pli->cm_config_opts */
+  info->cm->config_opts = info->pli->cm_config_opts;
+  if((status = cm_Configure(info->cm, info->pli->errbuf)) != eslOK) return status;
 
-  /* Configure the CM */
-  if(! esl_opt_GetBoolean(go, "-g")) { 
-      info->cm->config_opts |= CM_CONFIG_LOCAL;
-    if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
-      info->cm->config_opts |= CM_CONFIG_HMMLOCAL;
-      if(! esl_opt_GetBoolean(go, "--cp9noel")) info->cm->config_opts |= CM_CONFIG_HMMEL; 
-    }
-  }
-  if((status = ConfigCM(info->cm, errbuf, 
-			FALSE, /* we don't have to calculate W, its in the CM file */
-			NULL, NULL)) != eslOK) { 
-    return status;
-  }
+  /* create CM consensus */
   if((status = CreateCMConsensus(info->cm, info->cm->abc, 3.0, 1.0, &(info->cmcons)))!= eslOK) {
-    ESL_FAIL(status, errbuf, "Failed to create CMConsensus data structure.\n");
+    ESL_FAIL(status, info->pli->errbuf, "Failed to create CMConsensus data structure.\n");
   }      
 
   return eslOK;
 }
 
-/* Function:  setup_qdbs()
- * Incept:    EPN, Mon Jun  6 14:04:36 2011
- *
- * Purpose:  Given a WORKER_INFO <info> with a valid CM 
- *           determine QDBs, if necessary.
- *
- * Returns: eslOK on success. Upon an error, fills errbuf with
- *          message and returns appropriate error status code.
- */
-int
-setup_qdbs(ESL_GETOPTS *go, WORKER_INFO *info, char *errbuf)
-{
-  int status;
-  int safe_W;
-
-  /* Determine if we need to allocate and use ScanMatrix_t's for 
-   * CYK filter and final Inside rounds */
-  info->need_fsmx = (esl_opt_GetBoolean(go, "--fnonbanded") || esl_opt_GetBoolean(go, "--fqdb")) ? TRUE : FALSE;
-  info->need_smx  = (esl_opt_GetBoolean(go, "--nonbanded")  || esl_opt_GetBoolean(go, "--qdb"))  ? TRUE : FALSE;
-
-  /* Determine QDBs, if necessary. By default they are not needed. */
-  info->fcyk_dmin  = info->fcyk_dmax  = NULL; 
-  info->final_dmin = info->final_dmax = NULL; 
-
-  if(esl_opt_GetBoolean(go, "--fqdb")) { /* determine CYK filter QDBs */
-    /* it may be that --fbeta is the same as info->cm->beta_qdb, if so, we read the desired QDBs from the CM file */
-    if((info->cm->flags & CMH_QDB) && (fabs(esl_opt_GetReal(go, "--fbeta") - info->cm->beta_qdb) < eslSMALLX1)) { 
-      ESL_ALLOC(info->fcyk_dmin, sizeof(int) * info->cm->M);
-      ESL_ALLOC(info->fcyk_dmax, sizeof(int) * info->cm->M);
-      esl_vec_ICopy(info->cm->dmin, info->cm->M, info->fcyk_dmin);
-      esl_vec_ICopy(info->cm->dmax, info->cm->M, info->fcyk_dmax);
-    }
-    else { 
-      safe_W = info->cm->clen * 3;
-      while(!(BandCalculationEngine(info->cm, safe_W, esl_opt_GetReal(go, "--fbeta"), FALSE, &(info->fcyk_dmin), &(info->fcyk_dmax), NULL, NULL))) { 
-	free(info->fcyk_dmin);
-	free(info->fcyk_dmax);
-	safe_W *= 2;
-	if(safe_W > (info->cm->clen * 1000)) ESL_FAIL(eslEINVAL, errbuf, "Unable to calculate QDBs");
-      }
-    }
-  }
-
-  if(esl_opt_GetBoolean(go, "--qdb")) { /* determine CYK filter QDBs */
-    /* it may be that --beta is the same as info->cm->beta_qdb, if so, we read the desired QDBs from the CM file */
-    if((info->cm->flags & CMH_QDB) && (fabs(esl_opt_GetReal(go, "--beta") - info->cm->beta_qdb) < eslSMALLX1)) { 
-      ESL_ALLOC(info->final_dmin, sizeof(int) * info->cm->M);
-      ESL_ALLOC(info->final_dmax, sizeof(int) * info->cm->M);
-      esl_vec_ICopy(info->cm->dmin, info->cm->M, info->final_dmin);
-      esl_vec_ICopy(info->cm->dmax, info->cm->M, info->final_dmax);
-    }
-    else { 
-      safe_W = info->cm->clen * 3;
-      while(!(BandCalculationEngine(info->cm, safe_W, esl_opt_GetReal(go, "--beta"), FALSE, &(info->final_dmin), &(info->final_dmax), NULL, NULL))) { 
-	free(info->final_dmin);
-	free(info->final_dmax);
-	safe_W *= 2;
-	if(safe_W > (info->cm->clen * 1000)) ESL_FAIL(eslEINVAL, errbuf, "Unable to calculate QDBs");
-      }
-    }
-  }
-
-  return eslOK;
-
- ERROR: 
-  return status;
-}
-
 /* Function:  setup_hmm_filter()
  * Incept:    EPN, Mon Jun  6 11:31:42 2011
  *
- * Purpose:  Given a WORKER_INFO <info> with a valid CM just read
- *           from a file, set up the HMM filter related data in
- *           <info>.
+ * Purpose:  Given a WORKER_INFO <info> with a valid non-configured
+ *           CM (just read from a file), set up the HMM 
+ *           filter related data in <info>.
+ *
+ *           Note: this is separate from cm_Configure() only 
+ *           because we need to call this before we call
+ *           clone_info(), but we have to call cm_Configure()
+ *           after we call clone_info() (only because we 
+ *           can't clone a configured CM, just a non-configured
+ *           one).
  *
  * Returns: <eslOK> on success. Dies immediately upon an error.
  */
 int
-setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info, const ESL_ALPHABET *abc, char *errbuf)
-{
-  info->gm = p7_profile_Create (info->cm->fp7->M, abc);
-  info->om = p7_oprofile_Create(info->cm->fp7->M, abc);
-  info->bg = p7_bg_Create(abc);
+setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
+{ 
+  /* set up the HMM filter-related structures */
+  info->gm = p7_profile_Create (info->cm->fp7->M, info->cm->abc);
+  info->om = p7_oprofile_Create(info->cm->fp7->M, info->cm->abc);
+  info->bg = p7_bg_Create(info->cm->abc);
   p7_ProfileConfig(info->cm->fp7, info->bg, info->gm, 100, p7_LOCAL);  /* 100 is a dummy length for now; and MSVFilter requires local mode */
   p7_oprofile_Convert(info->gm, info->om);                             /* <om> is now p7_LOCAL, multihit */
-  if(! esl_opt_GetBoolean(go, "--noforce")) { 
+  /* clone gm into Tgm before putting it into glocal mode */
+  if(! (esl_opt_GetBoolean(go, "--notrunc") && esl_opt_GetBoolean(go, "--noforce"))) { 
     info->Tgm = p7_profile_Clone(info->gm);
   }
   /* after om has been created, convert gm to glocal, to define envelopes in cm_pipeline() */
@@ -2203,11 +2108,12 @@ setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info, const ESL_ALPHABET *abc, ch
   info->fm_hmmdata = NULL;
   ///info->fm_hmmdata = fm_hmmdataCreate(info->gm, info->om);
 
-  if(! esl_opt_GetBoolean(go, "--noforce")) { 
+  if(! (esl_opt_GetBoolean(go, "--notrunc") && esl_opt_GetBoolean(go, "--noforce"))) { 
     /* create Rgm, Lgm, and Tgm specially-configured profiles for defining envelopes around 
      * hits that may be truncated 5' (Rgm), 3' (Lgm) or both (Tgm). */
     info->Rgm = p7_profile_Clone(info->gm);
     info->Lgm = p7_profile_Clone(info->gm);
+    /* info->Tgm was created when gm was still in local mode above */
     /* we cloned Tgm from the while profile was still locally configured, above */
     p7_ProfileConfig5PrimeTrunc         (info->Rgm, 100);
     p7_ProfileConfig3PrimeTrunc         (info->cm->fp7, info->Lgm, 100);
