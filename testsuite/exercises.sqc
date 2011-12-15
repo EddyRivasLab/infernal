@@ -3,6 +3,87 @@
 # SVN $Id$
 #
 
+#######################################
+# Exercises of cmbuild.
+#
+1  exercise    cmbuild:help/1     @src/cmbuild@ -h
+1  exercise    cmbuild:help/2     @src/cmbuild@ --devhelp
+1  exercise    cmbuild/rf/trna    @src/cmbuild@ -F --rf --wnone %MODEL% trna1415G.sto
+1  exercise    cmbuild/trna       @src/cmbuild@ -F  %MODEL% trna1415G.sto
+1  exercise    cmbuild/rf/RNaseP  @src/cmbuild@ -F --rf  %MODEL% rnaseP-eubact.sto
+1  exercise    cmbuild/RNaseP     @src/cmbuild@ -F  %MODEL% rnaseP-eubact.sto
+1  exercise    cmbuild/SRP        @src/cmbuild@ -F  %MODEL% srp-euk.sto
+#######################################
+
+#######################################
+# Exercises of cmsearch (it requires a calibrated CM)
+1  exercise  cmsearch:help/1      @src/cmsearch@ -h
+1  exercise  trna/search          @src/cmsearch@ -Z 1000 tRNA.calibrated.cm 3trnas.fa
+1  exercise  vault/search         @src/cmsearch@ -Z 1000 Vault.calibrated.cm 3trnas.fa
+1  exercise  srp/search           @src/cmsearch@ -Z 1000 Plant_SRP.calibrated.cm 3trnas.fa
+1  exercise  multi/search         @src/cmsearch@ -Z 1000 3.calibrated.cm 3trnas.fa
+#######################################
+
+#######################################
+# Exercises of cmstat
+1  exercise  cmstat:help/1        @src/cmstat@ -h
+1  exercise  trna/stat            @src/cmstat@   %TRNA.CM% 
+1  exercise  rnaseP/stat          @src/cmstat@   %RNASEP.CM% 
+1  exercise  srp/stat             @src/cmstat@   %SRP.CM% 
+#######################################
+
+#######################################
+# Exercises of cmpress (we first need to remove old index files if they exist)
+1  exercise  cmpress:help/1       @src/cmpress@ -h
+1  prep      cleanup/trna         rm %TRNA.CM%.*
+1  exercise  trna/press           @src/cmpress@ %TRNA.CM%
+1  prep      cleanup/rnasep       rm %RNASEP.CM%.*
+1  exercise  rnasep/press         @src/cmpress@ %RNASEP.CM%
+1  prep      cleanup/srp          rm %SRP.CM%.*
+1  exercise  srp/press            @src/cmpress@ %SRP.CM%
+1  prep      cleanup/multi        rm %3.4.12.CM%.*
+1  exercise  multi/press          @src/cmpress@ %3.4.12.CM%
+
+1  prep      cleanup/trnaC        rm tRNA.calibrated.cm.*
+1  exercise  trnaC/press          @src/cmpress@ tRNA.calibrated.cm
+1  prep      cleanup/vaultC       rm Vault.calibrated.cm.*
+1  exercise  vaultC/press         @src/cmpress@ Vault.calibrated.cm
+1  prep      cleanup/srpC         rm Plant_SRP.calibrated.cm.*
+1  exercise  srpC/press           @src/cmpress@ Plant_SRP.calibrated.cm
+1  prep      cleanup/multiC       rm 3.calibrated.cm.*
+1  exercise  multiC/press         @src/cmpress@ 3.calibrated.cm
+#######################################
+
+#######################################
+# Exercises of cmscan (it requires a press'd CM file)
+1  exercise  cmscan:help/1        @src/cmscan@ -h
+1  exercise  trna/scan            @src/cmscan@ -Z 1000 tRNA.calibrated.cm 3trnas.fa
+1  exercise  vault/scan           @src/cmscan@ -Z 1000 Vault.calibrated.cm 3trnas.fa
+1  exercise  srp/scan             @src/cmscan@ -Z 1000 Plant_SRP.calibrated.cm 3trnas.fa
+1  exercise  multi/scan           @src/cmscan@ -Z 1000 3.calibrated.cm 3trnas.fa
+#######################################
+
+#######################################
+# Exercises of cmemit
+1  exercise  cmemit:help/1        @src/cmemit@ -h
+1  exercise  cmemit:help/2        @src/cmemit@ --devhelp
+1  exercise  trna/emit            @src/cmemit@   %TRNA.CM% 
+1  exercise  rnaseP/emit          @src/cmemit@   %RNASEP.CM% 
+1  exercise  srp/emit             @src/cmemit@   %SRP.CM% 
+#######################################
+
+#######################################
+# Exercises of cmconvert and cmstat to verify the conversion 
+1  exercise  cmconvert:help/1     @src/cmconvert@ -h
+1  exercise  trna/convert         @src/cmconvert@ tRNA.1p0.cm > %CONVERTED.TRNA.CM%
+1  exercise  trna/convert-stat    @src/cmstat@   %CONVERTED.TRNA.CM% 
+1  exercise  vault/convert        @src/cmconvert@ Vault.1p0.cm > %CONVERTED.VAULT.CM%
+1  exercise  vault/convert-stat   @src/cmstat@   %CONVERTED.VAULT.CM% 
+1  exercise  srp/convert          @src/cmconvert@ Plant_SRP.1p0.cm > %CONVERTED.SRP.CM%
+1  exercise  srp/convert-stat     @src/cmstat@   %CONVERTED.SRP.CM% 
+#######################################
+
+#######################################
 # Exercises of cmalign.
 #
 1  exercise  cmalign:help/1       @src/cmalign@ -h
@@ -13,25 +94,18 @@
 2  prep      model/vault          @src/cmbuild@ -F --rf %VAULT.CM% vault.sto
 2  exercise  cmalign:vault/1      @src/cmalign@ %VAULT.CM% vault.fa
 2  exercise  cmalign:vault/2      @src/cmalign@ -l %VAULT.CM% vault.fa
+#######################################
 
-# Exercises of cmbuild.
-#
-1  exercise    cmbuild:help/1     @src/cmbuild@ -h
-1  exercise    cmbuild:help/2     @src/cmbuild@ --devhelp
-1  exercise    cmbuild/rf/trna    @src/cmbuild@ -F --rf --wnone %MODEL% trna1415G.sto
-1  exercise    cmbuild/trna       @src/cmbuild@ -F  %MODEL% trna1415G.sto
-1  exercise    cmbuild/rf/RNaseP  @src/cmbuild@ -F --rf  %MODEL% rnaseP-eubact.sto
-1  exercise    cmbuild/RNaseP     @src/cmbuild@ -F  %MODEL% rnaseP-eubact.sto
-1  exercise    cmbuild/SRP        @src/cmbuild@ -F  %MODEL% srp-euk.sto
-
-
+#######################################
 # Exercises of cmcalibrate 
-#
-1  exercise    cmcalibrate:help/1     @src/cmcalibrate@ -h
-1  exercise    cmcalibrate:help/2     @src/cmcalibrate@ --devhelp
-1  prep        model/trna             @src/cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
-1  exercise    cmcalibrate:trna       @src/cmcalibrate@ --forecast 1 %TRNA.CM%
+# CURRENTLY NOT COMPILED!
+###1  exercise    cmcalibrate:help/1     @src/cmcalibrate@ -h
+###1  exercise    cmcalibrate:help/2     @src/cmcalibrate@ --devhelp
+###1  prep        model/trna             @src/cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
+###1  exercise    cmcalibrate:trna       @src/cmcalibrate@ --forecast 1 %TRNA.CM%
+#######################################
 
+#######################################
 # Exercises of cmfetch
 #
 1  prep      model/3.4.12            @src/cmbuild@ -F --wnone %3.4.12.CM% !testsuite/3.4.12.stk!
@@ -42,7 +116,9 @@
 # clean up
 1  prep      cleanup/3.4.12/c0       rm %3.4.12.CM%.ssi 
 1  prep      cleanup/3.4.12/c1       rm U2
+#######################################
 
+#######################################
 # Exercises of cmscore.
 #
 1  exercise  cmscore:help/1       @src/cmscore@ -h
@@ -70,26 +146,7 @@
 3  prep      rand20               @easel/miniapps/esl-shuffle@ -G -N 20 -L 100 --dna --seed 42 -o %RAND20%
 3  exercise  rnaseP/rand          @src/cmscore@ --infile %RAND20% %RNASEP.CM% 
 3  exercise  rnaseP/rand/local    @src/cmscore@ --infile %RAND20% -l %RNASEP.CM% 
-
-# Exercises of cmsearch 
-1  exercise  cmsearch:help/1      @src/cmsearch@ -h
-1  exercise  cmsearch:help/2      @src/cmsearch@ --devhelp
-1  exercise  trna/search          @src/cmsearch@ -Z 1000 %TRNA.CM% 3trnas.fa
-1  exercise  rnaseP/search        @src/cmsearch@ -Z 1000 %RNASEP.CM% 3trnas.fa
-1  exercise  srp/search           @src/cmsearch@ -Z 1000 %SRP.CM% 3trnas.fa
-
-# Exercises of cmemit
-1  exercise  cmemit:help/1        @src/cmemit@ -h
-1  exercise  cmemit:help/2        @src/cmemit@ --devhelp
-1  exercise  trna/emit            @src/cmemit@   %TRNA.CM% %TMP.FA%
-1  exercise  rnaseP/emit          @src/cmemit@   %RNASEP.CM% %TMP.FA%
-1  exercise  srp/emit             @src/cmemit@   %SRP.CM% %TMP.FA%
-
-# Exercises of cmstat
-1  exercise  cmstat:help/1        @src/cmstat@ -h
-1  exercise  trna/stat            @src/cmstat@   %TRNA.CM% 
-1  exercise  rnaseP/stat          @src/cmstat@   %RNASEP.CM% 
-1  exercise  srp/stat             @src/cmstat@   %SRP.CM% 
+#######################################
 
 # Exercises developed for bandcyk.c
 # xref notebook/1015-infernal-bands; xref STL7 p.130.

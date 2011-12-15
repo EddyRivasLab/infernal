@@ -108,6 +108,7 @@ dev:
 #
 tests:
 	${QUIET_SUBDIR0}${ESLDIR}  ${QUIET_SUBDIR1} tests
+	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} libhmmer.a
 	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} tests
 	${QUIET_SUBDIR0}src        ${QUIET_SUBDIR1} tests
 
@@ -115,6 +116,7 @@ tests:
 #
 check:
 	${QUIET_SUBDIR0}${ESLDIR}  ${QUIET_SUBDIR1} tests
+	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} libhmmer.a
 	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} tests
 	${QUIET_SUBDIR0}src        ${QUIET_SUBDIR1} tests
 	${QUIET_SUBDIR0}${ESLDIR}  ${QUIET_SUBDIR1} check
