@@ -379,12 +379,13 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   if(esl_opt_GetBoolean(go, "--shortmsv")) pli->do_shortmsv   = TRUE;
   if(esl_opt_GetBoolean(go, "--noF2"))     pli->do_vit        = FALSE; 
   if(esl_opt_GetBoolean(go, "--noF3"))     pli->do_fwd        = FALSE; 
+  if(esl_opt_GetBoolean(go, "--noF4"))     pli->do_gfwd       = FALSE; 
   if(esl_opt_GetBoolean(go, "--noF6"))     pli->do_cyk        = FALSE; 
   if(esl_opt_GetBoolean(go, "--doF1b"))    pli->do_msvbias    = TRUE;
   if(esl_opt_GetBoolean(go, "--noF2b"))    pli->do_vitbias    = FALSE;
-  if(esl_opt_GetBoolean(go, "--noF3"))     pli->do_fwdbias    = FALSE;
+  if(esl_opt_GetBoolean(go, "--noF3b"))    pli->do_fwdbias    = FALSE;
   if(esl_opt_GetBoolean(go, "--noF4b"))    pli->do_gfwdbias   = FALSE;
-  if(esl_opt_GetBoolean(go, "--noF5b"))    pli->do_edefbias    = FALSE;
+  if(esl_opt_GetBoolean(go, "--noF5b"))    pli->do_edefbias   = FALSE;
   if(esl_opt_GetBoolean(go, "--hmm")) { 
     pli->do_cm  = FALSE;
     pli->do_cyk = FALSE; 
@@ -394,12 +395,13 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->do_msv        = FALSE; 
     pli->do_vit        = FALSE;
     pli->do_fwd        = FALSE; 
+    pli->do_gfwd       = FALSE; 
     pli->do_envelopes  = FALSE; 
     pli->do_msvbias    = FALSE;
     pli->do_vitbias    = FALSE;
     pli->do_fwdbias    = FALSE;
     pli->do_gfwdbias   = FALSE;
-    pli->do_edefbias    = FALSE;
+    pli->do_edefbias   = FALSE;
   }
   if(esl_opt_GetBoolean(go, "--max")) { /* turn off all filters */
     pli->do_max = TRUE;
@@ -1947,10 +1949,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
       if(do_qdb_or_nonbanded_filter_scan) { /* careful, different from just an 'else', b/c we may have just set this as true if status == eslERANGE */
 	/* make sure we have a CM_SCAN_MX for this CM, if not build one,
 	 * this should be okay because we should only very rarely need to do this */
-	printf("FIX ME! ADD TRUNC VERSION! OVERFLOW CYK FILTER above pli->hb_size_limit\n");
-	continue;
+	if(cm->smx == NULL) { printf("FIX ME! ADD TRUNC VERSION! cm->smx is NULL, probably overflow sized hb mx\n"); continue; }
 	pli->acct[pli->cur_pass_idx].n_overflow_fcyk++;
-	/* if(cm->smx == NULL) create a scan matrix for the CM? */
 	if((status = FastCYKScan(cm, errbuf, cm->smx, SMX_QDB1_TIGHT, sq->dsq, es[i], ee[i],
 				 0.,                                 /* minimum score to report, irrelevant */
 				 NULL,                               /* hitlist to add to, irrelevant here */
@@ -2060,13 +2060,9 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
       /*******************************************************************
        * Run non-HMM banded (probably qdb) version of CYK or Inside *
        *******************************************************************/
+      if(cm->smx == NULL) { printf("FIX ME! ADD TRUNC VERSION! cm->smx is NULL, probably overflow sized hb mx\n"); continue; }
       pli->acct[pli->cur_pass_idx].n_overflow_final++;
       if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is Inside */
-	/* make sure we have a ScanMatrix_t for this round, if not build one,
-	 * this should be okay because we should only very rarely need to do this */
-	printf("FIX ME! ADD TRUNC VERSION! OVERFLOW INS FILTER above pli->hb_size_limit\n");
-	continue;
-	/* if(cm->smx == NULL) create a scan matrix for the CM? */
 	if((status = FastIInsideScan(cm, errbuf, cm->smx, SMX_QDB2_LOOSE, sq->dsq, es[i], ee[i],
 				     pli->T,            /* minimum score to report */
 				     hitlist,           /* our hitlist */
@@ -2077,11 +2073,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	  printf("ERROR: %s\n", errbuf); return status; }
       }
       else { /* final algorithm is CYK */
-	/* make sure we have a ScanMatrix_t for this round, if not build one,
-	 * this should be okay because we should only very rarely need to do this */
-	printf("FIX ME! ADD TRUNC VERSION! OVERFLOW INS FILTER above pli->hb_size_limit\n");
-	continue;
-	/* if(cm->smx == NULL) create a scan matrix for the CM? */
 	if((status = FastCYKScan(cm, errbuf, cm->smx, SMX_QDB2_LOOSE, sq->dsq, es[i], ee[i],
 				 pli->T,            /* minimum score to report */
 				 hitlist,           /* our hitlist */

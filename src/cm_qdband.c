@@ -47,7 +47,7 @@ static char *qdbinfo_setby_to_string(int setby);
  */
 int
 CalculateQueryDependentBands(CM_t *cm, char *errbuf, CM_QDBINFO *qdbinfo, double beta_W, int *ret_W, 
-			     double **ret_gamma0_loc, double **ret_gamma0_glb)
+			     double **ret_gamma0_loc, double **ret_gamma0_glb, int *ret_Z)
 {
   int status;
   int Z;
@@ -62,6 +62,7 @@ CalculateQueryDependentBands(CM_t *cm, char *errbuf, CM_QDBINFO *qdbinfo, double
     if(Z > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Calculating QDBs, Z got insanely large (> 1000*clen)");
   }
 
+  if(ret_Z != NULL) *ret_Z = Z;
   return eslOK;
 }
 
@@ -224,7 +225,7 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int s
       }
     }
   }	
-  cm_CalculateLocalBeginProbs(cm, cm->pbegin, begin_copy, trbegin_copy);
+  cm_CalculateLocalBeginProbs(cm, cm->pbegin, t_copy, begin_copy, trbegin_copy);
 
   /* gamma[v][n] is Prob(state v generates subseq of length n)
    */
@@ -428,7 +429,7 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int s
 
   if(qdbinfo != NULL) qdbinfo->setby = CM_QDBINFO_SETBY_BANDCALC;
 
-  DumpCMQDBInfo(stdout, cm, qdbinfo);
+  /* TEMP */ if(qdbinfo != NULL) DumpCMQDBInfo(stdout, cm, qdbinfo);
 
   if (ret_W          != NULL) *ret_W          = W;
   if (ret_gamma      != NULL) *ret_gamma      = gamma;      else FreeBandDensities(cm, gamma);

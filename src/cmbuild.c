@@ -55,9 +55,9 @@ static ESL_OPTIONS options[] = {
   { "--rsearch", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
   { "--binary",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "save the model(s) in binary format",     2 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--rsearch", "use reference coordinate annotation to specify consensus", 2 },
-  { "--v1p0",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "parameterize CM using methods from Infernal v1.0.2", 2 },
+  { "--v1p0",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL,  "parameterize CM using methods from Infernal v1.0.2", 2 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,      NULL,  "--rsearch", "fraction of gaps to allow in a consensus column [0..1]", 2 },
-  { "--ignorant", eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "strip the structural info from input alignment", 2 },
+  { "--ignorant", eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL,  "strip the structural info from input alignment", 2 },
 /* Alternate relative sequence weighting strategies */
   /* --wme not implemented in Infernal yet (b/c it's not in HMMER3) */
   { "--wgsc",    eslARG_NONE,"default",NULL, NULL,    WGTOPTS,    NULL,      NULL, "Gerstein/Sonnhammer/Chothia tree weights",         3},
@@ -1186,13 +1186,13 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
   cm->qdbinfo->beta2 = esl_opt_GetReal(go, "--beta2");
 
   /* set the cm->null2_omega and cm->null3_omega parameters */
-  if(esl_opt_IsOn(go, "--n2omega")) { /* user set --n2omega, use that */
+  if(esl_opt_IsUsed(go, "--n2omega")) { /* user set --n2omega, use that */
     cm->null2_omega = esl_opt_GetReal(go, "--n2omega");
   }
   else { /* user didn't set --n2omega, definition of cm->null2_omega depends on whether --p56 was set or not */
     cm->null2_omega = ((esl_opt_GetBoolean(go, "--p56") == TRUE) ? V1P0_NULL2_OMEGA : esl_opt_GetReal(go, "--n2omega"));
   }
-  if(esl_opt_IsOn(go, "--n3omega")) { /* user set --n3omega, use that */
+  if(esl_opt_IsUsed(go, "--n3omega")) { /* user set --n3omega, use that */
     cm->null3_omega = esl_opt_GetReal(go, "--n3omega");
   }
   else { /* user didn't set --n3omega, definition of cm->null3_omega depends on whether --p56 was set or not */

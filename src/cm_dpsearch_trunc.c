@@ -136,8 +136,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
   float ***Ralpha      = trsmx->fRalpha;       /* [0..j..1][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v == BEGL_S */
   float ***Ralpha_begl = trsmx->fRalpha_begl;  /* [0..j..W][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v != BEGL_S */
   float ***Talpha      = trsmx->fTalpha;       /* [0..j..1][0..v..cm->M-1][0..d..W] Talpha DP matrix, NULL for v != BIF_B  */
-  int    **dnAA        = trsmx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int    **dxAA        = trsmx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    **dnAA        = trsmx->dnAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] minimum d for v, j (for j > W use [W][v]) */
+  int    **dxAA        = trsmx->dxAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] maximum d for v, j (for j > W use [W][v]) */
   int     *bestr       = trsmx->bestr;         /* [0..d..W] best entry state v (0->v truncated begin) for this d (recalc'ed for each endpoint j) */
   char    *bestmode    = trsmx->bestmode;      /* [0..d..W] mode of best parsetree for this d (recalc'ed for each endpoint j) */
   float   *bestsc      = trsmx->bestsc;        /* [0..d..W] score of best parsetree for this d (recalc'ed for each endpoint j) */
@@ -695,9 +695,10 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    cm_tophits_SortByPosition(tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
+    cm_tophits_SortForOverlapRemoval(tmp_hitlist);
     /*cm_tophits_Dump(stdout, tmp_hitlist);*/
-    cm_tophits_RemoveOverlaps(tmp_hitlist);
+    if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
@@ -832,8 +833,8 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
   int  ***Ralpha       = trsmx->iRalpha;       /* [0..j..1][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v == BEGL_S */
   int  ***Ralpha_begl  = trsmx->iRalpha_begl;  /* [0..j..W][0..v..cm->M-1][0..d..W] Ralpha DP matrix, NULL for v != BEGL_S */
   int  ***Talpha       = trsmx->iTalpha;       /* [0..j..1][0..v..cm->M-1][0..d..W] Talpha DP matrix, NULL for v != BIF_B  */
-  int   **dnAA         = trsmx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA         = trsmx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int   **dnAA         = trsmx->dnAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] minimum d for v, j (for j > W use [W][v]) */
+  int   **dxAA         = trsmx->dxAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] maximum d for v, j (for j > W use [W][v]) */
   int    *bestr        = trsmx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d */
   char   *bestmode     = trsmx->bestmode;      /* [0..d..W] mode of best parsetree for this d */
   float  *bestsc       = trsmx->bestsc;        /* [0..d..W] score of best parsetree for this d (recalc'ed for each endpoint j) */
@@ -1389,8 +1390,9 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveOverlaps(tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
+    cm_tophits_SortForOverlapRemoval(tmp_hitlist);
+    if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
@@ -2523,9 +2525,10 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    cm_tophits_SortByPosition(tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
+    cm_tophits_SortForOverlapRemoval(tmp_hitlist);
     /*cm_tophits_Dump(stdout, tmp_hitlist);*/
-    cm_tophits_RemoveOverlaps(tmp_hitlist);
+    if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
@@ -3649,9 +3652,10 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, Trunc
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    cm_tophits_SortByPosition(tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
+    cm_tophits_SortForOverlapRemoval(tmp_hitlist);
     /*cm_tophits_Dump(stdout, tmp_hitlist);*/
-    cm_tophits_RemoveOverlaps(tmp_hitlist);
+    if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
@@ -3884,10 +3888,11 @@ main(int argc, char **argv)
     /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
     double *gamma0_loc;
     double *gamma0_glb;
-    if((status = CalculateQueryDependentBands(cm, errbuf, NULL, DEFAULT_BETA_W, NULL, &gamma0_loc, &gamma0_glb)) != eslOK) cm_Fail(errbuf);
+    int Z;
+    if((status = CalculateQueryDependentBands(cm, errbuf, NULL, DEFAULT_BETA_W, NULL, &gamma0_loc, &gamma0_glb, &Z)) != eslOK) cm_Fail(errbuf);
     seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, 
 				      (cm->flags & CMH_LOCAL_BEGIN) ? gamma0_loc : gamma0_glb, 
-				      safe_windowlen, FALSE);
+				      Z, FALSE);
     free(gamma0_loc);
     free(gamma0_glb);
     free(dnull);

@@ -150,9 +150,9 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
   if(mother_cm == NULL && mother_map != NULL)            ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, mother_cm == NULL but mother_map != NULL (both must be NULL or both non-NULL).");
   if(have_mother && (cm->config_opts & CM_CONFIG_LOCAL)) ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, configuring a sub CM, but CM_CONFIG_LOCAL config flag up.");
   if((  cm->config_opts & CM_CONFIG_HMMLOCAL) && 
-     (! cm->config_opts & CM_CONFIG_LOCAL))    ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, cp9 is to be configured locally, but CM is not");
+     (! (cm->config_opts & CM_CONFIG_LOCAL)))    ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, cp9 is to be configured locally, but CM is not");
   if((  cm->config_opts & CM_CONFIG_HMMEL) && 
-     (! cm->config_opts & CM_CONFIG_HMMLOCAL)) ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, cp9 is to be configured without local entries exists but with ELs on");
+     (! (cm->config_opts & CM_CONFIG_HMMLOCAL))) ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, cp9 is to be configured without local entries exists but with ELs on");
 
   /* validate the CM */
   if((status = cm_Validate(cm, 0.0001, errbuf)) != eslOK) return status;
@@ -171,7 +171,7 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
      (cm->config_opts & CM_CONFIG_W)   || 
      (cm->qdbinfo->setby == CM_QDBINFO_SETBY_INIT))
     {
-      if((status = CalculateQueryDependentBands(cm, errbuf, cm->qdbinfo, cm->beta_W, &(cm->W), NULL, NULL)) != eslOK) return status;
+      if((status = CalculateQueryDependentBands(cm, errbuf, cm->qdbinfo, cm->beta_W, &(cm->W), NULL, NULL, NULL)) != eslOK) return status;
     }
   
   /* Allocate the HMM banded matrices, these are originally 
@@ -312,12 +312,19 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
 /* Function: cm_CalculateLocalBeginProbs()
  * Incept:   EPN, Fri Dec  9 05:20:35 2011
  *
- * Purpose:  Calculate local begin probabilities for 
- *           both standard local alignment and truncated local 
- *           alignment, <begin> and <trbegin> respectively.
+ * Purpose: 
+ *
+ *           Calculate local begin probabilities for both standard
+ *           local alignment and truncated local alignment, <begin>
+ *           and <trbegin> respectively.  The transitions in <t>
+ *           should be for a CM in global mode, not local mode. By
+ *           specifying <t> as not necessarily equal to <cm->t>, we
+ *           can calculate local begin probs for a model already in 
+ *           local mode.
  *           
  * Args:     cm               - the covariance model
  *           p_internal_start - prob mass to spread for local begins
+ *           t                - [0..M-1][0..MAXCONNECT-1] transition probabilities (not necessarily cm->t) 
  *           begin            - [0..M-1] standard local begin probs to set
  *           trbegin          - [0..M-1] truncated local begin probs to set
  *
@@ -326,7 +333,7 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
  */        
 
 int
-cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float *begin, float *trbegin)
+cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float **t, float *begin, float *trbegin)
 {
   int status;
   int v;			/* counter over states */
@@ -400,7 +407,7 @@ cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float *begin, floa
   /* Fill psi, used for setting trbegin */
   ESL_ALLOC(psi, sizeof(double) * cm->M);
   make_tmap(&tmap);
-  fill_psi(cm, psi, tmap);
+  fill_psi(cm, t, psi, tmap);
 
   vins1 = -1; /* first  insert state seen since previous BIF_B, MATP_MP, MATL_ML, MATR_MR, END_E */
   vins2 = -1; /* second insert state seen since previous BIF_B, MATP_MP, MATL_ML, MATR_MR, END_E */
@@ -517,7 +524,7 @@ cm_localize(CM_t *cm, float p_internal_start, float p_internal_exit)
   float denom;
 
   /* Local begins: */
-  cm_CalculateLocalBeginProbs(cm, p_internal_start, cm->begin, cm->trbegin);
+  cm_CalculateLocalBeginProbs(cm, p_internal_start, cm->t, cm->begin, cm->trbegin);
   /* Erase the previous transition probs from node 0. The only way out
    * of node 0 in standard scanners/aligners is going to be local
    * begin transitions from the root v=0 directly to MATP_MP, MATR_MR, 

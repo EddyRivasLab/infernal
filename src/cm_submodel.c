@@ -689,7 +689,7 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
   /* Fill orig_psi, which we need to determine the sub_cm parameters. */
   make_tmap(&tmap);
   ESL_ALLOC(orig_psi, sizeof(double) * orig_cm->M);
-  fill_psi(orig_cm, orig_psi, tmap);
+  fill_psi(orig_cm, orig_cm->t, orig_psi, tmap);
    
   CMZero(sub_cm);
   CMSetNullModel(sub_cm, orig_cm->null);
@@ -2120,9 +2120,9 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, doubl
   /* Fill orig_psi and sub_psi parameters. */
   make_tmap(&tmap);
   ESL_ALLOC(orig_psi, sizeof(double) * orig_cm->M);
-  fill_psi(orig_cm, orig_psi, tmap);
+  fill_psi(orig_cm, orig_cm->t, orig_psi, tmap);
   ESL_ALLOC(sub_psi,  sizeof(double) * sub_cm->M);
-  fill_psi(sub_cm, sub_psi, tmap);
+  fill_psi(sub_cm, sub_cm->t, sub_psi, tmap);
   
   if(print_flag)
     {

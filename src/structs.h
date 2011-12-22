@@ -39,9 +39,9 @@
 #define DEFAULT_BETA_QDB1        1E-7
 #define DEFAULT_BETA_QDB2        1E-15
 #define DEFAULT_TAU              0.0000001
-#define DEFAULT_PBEGIN           0.05   /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_PEND             0.05   /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_ETARGET          0.59   /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
+#define DEFAULT_PBEGIN           0.05           /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_PEND             0.05           /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_ETARGET          0.59           /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
 #define DEFAULT_NULL2_OMEGA      0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null2 model */
 #define DEFAULT_NULL3_OMEGA      0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
 #define V1P0_NULL2_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null2 model for infernal versions 0.56 through 1.0.2 */
@@ -2247,14 +2247,14 @@ typedef struct cm_hit_s {
  * after we do a sort.
  */
 typedef struct cm_tophits_s {
-  CM_HIT **hit;                   /* sorted pointer array                     */
-  CM_HIT  *unsrt;	          /* unsorted data storage                    */
-  uint64_t Nalloc;	          /* current allocation size                  */
-  uint64_t N;	  	          /* number of hits in list now               */
-  uint64_t nreported;             /* number of hits that are reportable       */
-  uint64_t nincluded;	          /* number of hits that are includable       */
-  int      is_sorted_by_score;    /* TRUE when hits sorted by score, length, th->hit valid for all N hits */
-  int      is_sorted_by_position; /* TRUE when hits sorted by cm_idx, seq_idx, position, th->hit valid for all N hits */
+  CM_HIT **hit;                           /* sorted pointer array                     */
+  CM_HIT  *unsrt;	                  /* unsorted data storage                    */
+  uint64_t Nalloc;	                  /* current allocation size                  */
+  uint64_t N;	  	                  /* number of hits in list now               */
+  uint64_t nreported;                     /* number of hits that are reportable       */
+  uint64_t nincluded;	                  /* number of hits that are includable       */
+  int      is_sorted_by_score;            /* TRUE when hits sorted by score, length, th->hit valid for all N hits */
+  int      is_sorted_for_overlap_removal; /* TRUE when hits are sorted by cm_idx, seq_idx, strand, score, th->hit valid for all N hits */
 } CM_TOPHITS;
 
 

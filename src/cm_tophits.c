@@ -60,10 +60,10 @@ cm_tophits_Create(void)
   h->N         = 0;
   h->nreported = 0;
   h->nincluded = 0;
-  h->is_sorted_by_score    = TRUE;  /* but only because there's 0 hits */
-  h->is_sorted_by_position = FALSE; /* actually this is true with 0 hits, but for safety, 
-				     * we don't want both sorted_* fields as TRUE */
-  h->hit[0]    = h->unsrt;          /* if you're going to call it "sorted" when it contains just one hit, you need this */
+  h->is_sorted_by_score            = TRUE;  /* but only because there's 0 hits */
+  h->is_sorted_for_overlap_removal = FALSE; /* actually this is true with 0 hits, but for safety, 
+				             * we don't want both sorted_* fields as TRUE */
+  h->hit[0]    = h->unsrt;  /* if you're going to call it "sorted" when it contains just one hit, you need this */
   return h;
 
  ERROR:
@@ -102,7 +102,7 @@ cm_tophits_Grow(CM_TOPHITS *h)
   /* If we grow a sorted list, we have to translate the pointers
    * in h->hit, because h->unsrt might have just moved in memory. 
    */
-  if (h->is_sorted_by_score || h->is_sorted_by_position) { 
+  if (h->is_sorted_by_score || h->is_sorted_for_overlap_removal) { 
     for (i = 0; i < h->N; i++)
       h->hit[i] = h->unsrt + (h->hit[i] - ori);
   }
@@ -140,8 +140,8 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   hit = &(h->unsrt[h->N]);
   h->N++;
   if (h->N >= 2) { 
-    h->is_sorted_by_score    = FALSE;
-    h->is_sorted_by_position = FALSE;
+    h->is_sorted_by_score            = FALSE;
+    h->is_sorted_for_overlap_removal = FALSE;
   }
 
   hit->name             = NULL;
@@ -194,29 +194,28 @@ hit_sorter_by_score(const void *vh1, const void *vh2)
 }
 
 static int
-hit_sorter_by_position(const void *vh1, const void *vh2)
+hit_sorter_for_overlap_removal(const void *vh1, const void *vh2)
 {
   CM_HIT *h1 = *((CM_HIT **) vh1);  /* don't ask. don't change. Don't Panic. */
   CM_HIT *h2 = *((CM_HIT **) vh2);
 
-  if      (h1->cm_idx > h2->cm_idx)     return  1; /* first key, cm_idx (unique id for models), low to high */
-  else if (h1->cm_idx < h2->cm_idx)     return -1; /* first key, cm_idx (unique id for models), low to high */
+  if      (h1->cm_idx > h2->cm_idx)       return  1; /* first key, cm_idx (unique id for models), low to high */
+  else if (h1->cm_idx < h2->cm_idx)       return -1; /* first key, cm_idx (unique id for models), low to high */
   else { 
-    if      (h1->seq_idx > h2->seq_idx) return  1; /* second key, seq_idx (unique id for sequences), low to high */
-    else if (h1->seq_idx < h2->seq_idx) return -1;
+    if      (h1->seq_idx > h2->seq_idx)   return  1; /* second key, seq_idx (unique id for sequences), low to high */
+    else if (h1->seq_idx < h2->seq_idx)   return -1;
     else { 
       /* same sequence, sort by strand, stop position then start position (if revcomp) or start position then stop position (if !revcomp) */
-      if     (h1->in_rc > h2->in_rc)    return  1; /* third key, strand (h1->in_rc = 1, h1->in_rc = 0), forward, then reverse */
-      else if(h1->in_rc < h2->in_rc)    return -1; /*                   (h1->in_rc = 0, h2->in_rc = 1), forward, then reverse */
-      else if(h1->in_rc) { 
-	if     (h1->stop > h2->stop)    return  1; /* both revcomp:     fourth key is stop  position, low to high */
-	else if(h1->stop < h2->stop)    return -1; 
-	else                            return (h1->start  > h2->start  ? 1 : -1 ); /* both revcomp, same stop position, fourth key is start position, low to high */
-      }
-      else               {
-	if     (h1->start > h2->start)  return  1; /* both !revcomp:    fourth key is start position, low to high */
-	else if(h1->start < h2->start)  return -1; 
-	else                            return (h1->stop  > h2->stop    ? 1 : -1 ); /* both !revcomp, same start position, fourth key is stop position, low to high */
+      if     (h1->in_rc > h2->in_rc)      return  1; /* third key, strand (h1->in_rc = 1, h1->in_rc = 0), forward, then reverse */
+      else if(h1->in_rc < h2->in_rc)      return -1; /*                   (h1->in_rc = 0, h2->in_rc = 1), forward, then reverse */
+      else {
+	if     (h1->score < h2->score)    return  1; /* fourth key is bit score, high to low */
+	else if(h1->score > h2->score)    return -1; 
+	else { 
+	  if     (h1->start > h2->start)  return  1; /* fifth key is start position, low to high (irregardless of in_rc value) */
+	  else if(h1->start < h2->start)  return -1; 
+	  else                            return  0;
+	}
       }
     }
   }
@@ -241,20 +240,52 @@ cm_tophits_SortByScore(CM_TOPHITS *h)
   int i;
 
   if (h->is_sorted_by_score) { 
-    h->is_sorted_by_position = FALSE;
+    h->is_sorted_for_overlap_removal = FALSE;
     return eslOK;
   }
   /* initialize hit ptrs, this also unsorts if already sorted by seq_idx */
   for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
   if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_score);
-  h->is_sorted_by_position = FALSE;
+  h->is_sorted_for_overlap_removal = FALSE;
   h->is_sorted_by_score    = TRUE;
   return eslOK;
 }
 
-/* Function:  cm_tophits_SortByPosition()
- * Synopsis:  Sorts a hit list by cm index, sequence index, strand, then position.
- * Incept:    EPN, Tue Jun 14 05:15:17 2011
+/* Function:  cm_tophits_SortForOverlapRemoval()
+ * Synopsis:  Sorts a hit list by cm index, sequence index, strand, then score.
+ * Incept:    EPN, Tue Dec 20 09:17:47 2011
+ *
+ * Purpose:   Sorts a top hit list to ease removal of duplicates.
+ *            After this call, <h->hit[i]> points to the i'th ranked
+ *            <CM_HIT> for all <h->N> hits. First sort key is cm_idx
+ *            (low to high), second is seq_idx (low to high) position
+ *            (low to high), third is strand (forward then reverse),
+ *            fourth key is score. 
+ *
+ * Returns:   <eslOK> on success.
+ */
+int
+cm_tophits_SortForOverlapRemoval(CM_TOPHITS *h)
+{
+  int i;
+
+  if (h->is_sorted_for_overlap_removal) { 
+    h->is_sorted_by_score = FALSE;
+    return eslOK;
+  }
+  /* initialize hit ptrs, this also unsorts if already sorted by score */
+  for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
+  if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_for_overlap_removal);
+  h->is_sorted_by_score            = FALSE;
+  h->is_sorted_for_overlap_removal = TRUE;
+
+  return eslOK;
+}
+
+#if 0
+/* Function:  cm_tophits_SortForOverlapRemoval()
+ * Synopsis:  Sorts a hit list by cm index, sequence index, strand, then score.
+ * Incept:    EPN, Tue Dec 20 09:17:47 2011
  *
  * Purpose:   Sorts a top hit list to ease removal of duplicates.
  *            After this call, <h->hit[i]> points to the i'th ranked
@@ -271,18 +302,19 @@ cm_tophits_SortByPosition(CM_TOPHITS *h)
 {
   int i;
 
-  if (h->is_sorted_by_position) { 
+  if (h->is_sorted_for_overlap_removal) { 
     h->is_sorted_by_score = FALSE;
     return eslOK;
   }
   /* initialize hit ptrs, this also unsorts if already sorted by score */
   for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
   if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_position);
-  h->is_sorted_by_score    = FALSE;
-  h->is_sorted_by_position = TRUE;
+  h->is_sorted_by_score            = FALSE;
+  h->is_sorted_for_overlap_removal = TRUE;
 
   return eslOK;
 }
+#endif
 
 /* Function:  cm_tophits_Merge()
  * Synopsis:  Merge two top hits lists.
@@ -332,8 +364,8 @@ cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2)
   /* Construct the new grown h1 */
   h1->Nalloc = Nalloc;
   h1->N     += h2->N;
-  h1->is_sorted_by_score    = FALSE;
-  h1->is_sorted_by_position = FALSE;
+  h1->is_sorted_by_score            = FALSE;
+  h1->is_sorted_for_overlap_removal = FALSE;
 
   /* reset pointers in sorted list (not really nec because we're not sorted) */
   for (i = 0; i < h1->N; i++) h1->hit[i] = h1->unsrt + i;
@@ -493,9 +525,9 @@ cm_tophits_Reuse(CM_TOPHITS *h)
     }
   }
   h->N         = 0;
-  h->is_sorted_by_score    = TRUE;  /* because there's no hits */
-  h->is_sorted_by_position = FALSE; /* actually this is true with 0 hits, but for safety, 
-				     * we don't want both sorted_* fields as TRUE */
+  h->is_sorted_by_score            = TRUE;  /* because there's no hits */
+  h->is_sorted_for_overlap_removal = FALSE; /* actually this is true with 0 hits, but for safety, 
+			           	     * we don't want both sorted_* fields as TRUE */
   h->hit[0]    = h->unsrt;
   return eslOK;
 }
@@ -588,107 +620,197 @@ cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eZ, int istart)
   return eslOK;
 }
 
-/* Function:  cm_tophits_RemoveOverlaps()
- * Synopsis:  Remove overlapping hits from a tophits object sorted by seq_idx.
- * Incept:    EPN, Tue Jun 14 05:42:31 2011
- *            TJW, Wed Mar 10 13:38:36 EST 2010 (p7_tophits_RemoveDuplicates())
+/* Helper functions for removing overlapping hits from a set of hits
+ * that all use the same model, are to the same sequence and are on
+ * the same strand. The hits in the set are sorted by score. 
+ * 
+ * remove_overlaps_one_seq_fast(): O(N) with number of hits N, but
+ * less memory efficient (O(L), requiring an allocation of a char
+ * array the length of the sequence). This is how RSEARCH and infernal
+ * 1.0.2 did overlap removal. 
+ * 
+ * remove_overlaps_one_seq_memeff(): O(N^2), but O(1) memory (not
+ * counting the O(N) memory hit list). This is fast for small numbers
+ * of sequences; up to about 10k seqs (10,000 hits takes about ~0.3
+ * seconds with benchmark_cm_tophits, but 100,000 hits takes 43s).
+ * 
+ * cm_tophits_RemoveOverlaps() picks a function to call based on 
+ * length of the sequence L and number of hits N.
  *
- * Purpose:   After the CM pipeline has completed, the CM_TOPHITS object
- *            may contain overlapping hits if the target was broken into
- *            overlapping windows. Scan through the tophits object,
- *            which, upon entering, is sorted by sequence index,
- *            strand, and start position (stop position for hits on
- *            the reverse strand and remove duplicates by keeping the
- *            one with the better bit score. Hits are marked as
- *            'removed' by raising the CM_HIT_IS_REMOVED_DUPLICATE flag in
- *            the hit. At the end, no individual residue on one strand
- *            should exist in more than one hit.
- *
- * Returns:   <eslOK> on success. <eslEINVAL> if th is not sorted by 
- *            seq_idx upon entry.
+ * Both functions: 
+ * Returns eslOK on success
+ * Returns eslEINVAL if not all hits in the set have equal srcL, cm_idx, seq_idx, or in_rc values
+ * Returns eslERANGE if a hit includes positions outside of 1..srcL
+ * Returns eslEMEM if out of memory (remove_overlaps_one_seq_fast() only)
+ * errbuf is filled if not returning eslOK
  */
-int
-cm_tophits_RemoveOverlaps(CM_TOPHITS *th)
-{
+int remove_overlaps_one_seq_fast(CM_TOPHITS *th, int64_t idx1, int64_t idx2, char *errbuf)
+{ 
+  int     status;
+  int64_t i;
+  char   *covered = NULL;  /* [1..pos..srcL] is position pos covered by a hit we've examined and kept? */
+  int     remove_flag = FALSE;
+  int64_t srcL    = th->hit[idx1]->srcL;
+  int64_t cm_idx  = th->hit[idx1]->cm_idx;
+  int64_t seq_idx = th->hit[idx1]->seq_idx;
+  int     in_rc   = th->hit[idx1]->in_rc;
+  int64_t pos, min, max; /* position indices in the sequence */
 
-  uint64_t i;               /* counter over hits */
-  int64_t s_prv, e_prv;     /* start, end of previous hit */
-  int64_t s_cur, e_cur;     /* start, end of current hit */
-  float   sc_prv;           /* bit score of previous hit */
-  float   sc_cur;           /* bit score of current hit */
-  int     rc_prv;           /* TRUE if previous hit is in reverse complement, FALSE if not */
-  int     rc_cur;           /* TRUE if current hit is in reverse complement, FALSE if not */
-  int     ci_prv;           /* cm_idx  (unique model    identifier) of previous hit */
-  int     ci_cur;           /* cm_idx  (unique model    identifier) of current hit */
-  int     si_prv;           /* seq_idx (unique sequence identifier) of previous hit */
-  int     si_cur;           /* seq_idx (unique sequence identifier) of current hit */
-  int     i_prv;            /* index in th->hit of previous hit */
-  int     nremoved = 0;
+  /*printf("in remove_overlaps_one_seq_fast() i: %" PRId64 " j: %" PRId64 "\n", idx1, idx2);*/
 
-  if (! th->is_sorted_by_position) return eslEINVAL;
-  if (th->N<2) return eslOK;
+  ESL_ALLOC(covered, sizeof(char) * (srcL+1));
+  for(i = 0; i <= srcL; i++) covered[i] = FALSE;
 
-  /* set initial previous hit as the first hit that isn't already removed */
-  i = 0; 
-  while(i < th->N && 
-	((th->hit[i]->flags & CM_HIT_IS_REMOVED_DUPLICATE) || 
-	 (th->hit[i]->flags & CM_HIT_IS_REMOVED_TERMINUS))) { 
-    i++;
-  }
-  if(i == th->N) return eslOK;
+  for(i = idx1; i <= idx2; i++) { 
+    /* verify that what we think is true is true */
+    if(th->hit[i]->srcL    != srcL)                       ESL_FAIL(eslEINVAL, errbuf, "removing overlapping hits, srcL inconsistent, hit %" PRId64, i);
+    if(th->hit[i]->cm_idx  != cm_idx)                     ESL_FAIL(eslEINVAL, errbuf, "removing overlapping hits, cm_idx is inconsistent, hit %" PRId64, i);
+    if(th->hit[i]->seq_idx != seq_idx)                    ESL_FAIL(eslEINVAL, errbuf, "removing overlapping hits, seq_idx is inconsistent, hit %" PRId64, i);
+    if(th->hit[i]->in_rc   != in_rc)                      ESL_FAIL(eslEINVAL, errbuf, "removing overlapping hits, in_rc is inconsistent, hit %" PRId64, i);
+    if(th->hit[i]->start < 1 || th->hit[i]->start > srcL) ESL_FAIL(eslERANGE, errbuf, "removing overlapping hits, start posn is inconsistent, hit %" PRId64, i);
+    if(th->hit[i]->stop  < 1 || th->hit[i]->stop  > srcL) ESL_FAIL(eslERANGE, errbuf, "removing overlapping hits, stop posn is inconsistent, hit %" PRId64, i);
 
-  s_prv  = th->hit[i]->start;
-  e_prv  = th->hit[i]->stop;
-  sc_prv = th->hit[i]->score;
-  rc_prv = th->hit[i]->in_rc;
-  ci_prv = th->hit[i]->cm_idx;
-  si_prv = th->hit[i]->seq_idx;
-  i_prv  = i;
-
-  for (i = i+1; i < th->N; i++) {
-    if((th->hit[i]->flags & CM_HIT_IS_REMOVED_DUPLICATE) || 
-       (th->hit[i]->flags & CM_HIT_IS_REMOVED_TERMINUS)) continue; /* skip hits that are already removed */
-    s_cur  = th->hit[i]->start;
-    e_cur  = th->hit[i]->stop;
-    sc_cur = th->hit[i]->score;
-    rc_cur = th->hit[i]->in_rc;
-    ci_cur = th->hit[i]->cm_idx;
-    si_cur = th->hit[i]->seq_idx;
-
-    /* check for overlap, we take advantage of the fact that we're sorted by strand and position */
-    if((ci_cur == ci_prv) && /* same model */
-       (si_cur == si_prv) && /* same sequence */
-       (((rc_cur == FALSE && rc_prv == FALSE) && (e_prv >= s_cur)) ||  /* overlap on forward strand */
-	((rc_cur == TRUE  && rc_prv == TRUE)  && (s_prv >= e_cur))))   /* overlap on reverse strand */
-      {
-	/* an overlap, remove the hit with the smaller score */
-	nremoved++;
-	if(sc_prv > sc_cur) { /* keep previous hit i_prv, remove current hit i*/
-	  th->hit[i]->flags     |=  CM_HIT_IS_REMOVED_DUPLICATE;
-	  th->hit[i]->flags     &= ~CM_HIT_IS_REPORTED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
-	  th->hit[i]->flags     &= ~CM_HIT_IS_INCLUDED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
-	}
-	else { /* keep current hit i, remove previous hit i_prv */
-	  th->hit[i_prv]->flags |=  CM_HIT_IS_REMOVED_DUPLICATE;
-	  th->hit[i_prv]->flags &= ~CM_HIT_IS_REPORTED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
-	  th->hit[i_prv]->flags &= ~CM_HIT_IS_INCLUDED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
-	}
+    if((! (th->hit[i]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) && 
+       (! (th->hit[i]->flags & CM_HIT_IS_REMOVED_TERMINUS))) { 
+      /* i is not a duplicate that's already been removed */
+      min = ESL_MIN(th->hit[i]->start, th->hit[i]->stop); 
+      max = ESL_MAX(th->hit[i]->start, th->hit[i]->stop); 
+      remove_flag = FALSE;
+      for(pos = min; pos <= max; pos++) { 
+	if(covered[pos] == TRUE) { remove_flag = TRUE; break; }
       }
-    if(! (th->hit[i]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
-      /* i wasn't removed, update *_prv values to correspond to i, 
-       * else leave them alone, they'll correspond to latest hit 
-       * that wasn't removed. */
-      s_prv  = s_cur;
-      e_prv  = e_cur;
-      sc_prv = sc_cur;
-      rc_prv = rc_cur;
-      ci_prv = ci_cur;
-      si_prv = si_cur;
-      i_prv  = i;
+
+      if(remove_flag) { 
+	th->hit[i]->flags |=  CM_HIT_IS_REMOVED_DUPLICATE;
+	th->hit[i]->flags &= ~CM_HIT_IS_REPORTED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
+	th->hit[i]->flags &= ~CM_HIT_IS_INCLUDED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
+      }
+      else { 
+	for(pos = min; pos <= max; pos++) covered[pos] = TRUE;
+      }
     }
   }
 
-  /*printf("Leaving cm_tophits_RemoveOverlaps(), %d total, %d removed\n", th->N, nremoved);
+  if(covered != NULL) free(covered);
+  return eslOK;
+
+ ERROR:
+  if(covered != NULL) free(covered);
+  ESL_FAIL(status, errbuf, "removing overlapping hits, out of memory");
+  return status; /* NOT REACHED */
+}
+
+int remove_overlaps_one_seq_memeff(CM_TOPHITS *th, int64_t idx1, int64_t idx2, char *errbuf)
+{
+  int64_t i, j;            
+  int64_t srcL    = th->hit[idx1]->srcL;
+  int64_t cm_idx  = th->hit[idx1]->cm_idx;
+  int64_t seq_idx = th->hit[idx1]->seq_idx;
+  int     in_rc   = th->hit[idx1]->in_rc;
+
+  /*printf("in remove_overlaps_one_seq_memeff() i: %" PRId64 " j: %" PRId64 "\n", idx1, idx2);*/
+
+  for(i = idx1; i <= idx2; i++) { 
+    /* verify that what we think is true is true */
+    if(th->hit[i]->srcL    != srcL)                       ESL_FAIL(eslEINVAL, errbuf, "removing overlapping hits, srcL inconsistent, hit %" PRId64, i);
+    if(th->hit[i]->cm_idx  != cm_idx)                     ESL_FAIL(eslEINVAL, errbuf, "removing overlapping hits, cm_idx is inconsistent, hit %" PRId64, i);
+    if(th->hit[i]->seq_idx != seq_idx)                    ESL_FAIL(eslEINVAL, errbuf, "removing overlapping hits, seq_idx is inconsistent, hit %" PRId64, i);
+    if(th->hit[i]->in_rc   != in_rc)                      ESL_FAIL(eslEINVAL, errbuf, "removing overlapping hits, in_rc is inconsistent, hit %" PRId64, i);
+    if(th->hit[i]->start < 1 || th->hit[i]->start > srcL) ESL_FAIL(eslERANGE, errbuf, "removing overlapping hits, start posn is inconsistent, hit %" PRId64, i);
+    if(th->hit[i]->stop  < 1 || th->hit[i]->stop  > srcL) ESL_FAIL(eslERANGE, errbuf, "removing overlapping hits, stop posn is inconsistent, hit %" PRId64, i);
+
+    if((! (th->hit[i]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) && 
+       (! (th->hit[i]->flags & CM_HIT_IS_REMOVED_TERMINUS))) { 
+      /* i is not a duplicate that's already been removed */
+      for(j = i+1; j <= idx2; j++) { 
+	if((! (th->hit[j]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) && 
+	   (! (th->hit[j]->flags & CM_HIT_IS_REMOVED_TERMINUS))) { 
+	  /* j has not already been removed */
+	  /*printf("comparing %" PRId64 " and %" PRId64 "\n", i, j);*/
+	  if(th->hit[j]->in_rc == FALSE &&                 /* both i and j are on forward strand */
+	     (! (th->hit[j]->stop < th->hit[i]->start)) && /* one of two ways in which i and j DO NOT overlap */
+	     (! (th->hit[i]->stop < th->hit[j]->start))) { /* the other way   in which i and j DO NOT overlap */
+	    /* i and j overlap, i is better scoring so remove j */
+	    th->hit[j]->flags |=  CM_HIT_IS_REMOVED_DUPLICATE;
+	    th->hit[j]->flags &= ~CM_HIT_IS_REPORTED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
+	    th->hit[j]->flags &= ~CM_HIT_IS_INCLUDED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
+	    /*printf("\tremoved j (FWD) %5" PRId64 "..%5" PRId64 " overlaps with %5" PRId64 "..%5" PRId64 "\n", th->hit[i]->start, th->hit[i]->stop, th->hit[j]->start, th->hit[j]->stop);*/
+	  }
+	  else if(th->hit[j]->in_rc == TRUE &&                  /* both i and j are on reverse strand */
+		  (! (th->hit[j]->start < th->hit[i]->stop)) && /* one of two ways in which i and j DO NOT overlap */
+		  (! (th->hit[i]->start < th->hit[j]->stop))) { /* the other way   in which i and j DO NOT overlap */
+	    /* i and j overlap, i is better scoring so remove j */
+	    th->hit[j]->flags |=  CM_HIT_IS_REMOVED_DUPLICATE;
+	    th->hit[j]->flags &= ~CM_HIT_IS_REPORTED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
+	    th->hit[j]->flags &= ~CM_HIT_IS_INCLUDED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
+	    /*printf("\tremoved j (REV) %5" PRId64 "..%5" PRId64 " overlaps with %5" PRId64 "..%5" PRId64 "\n", th->hit[i]->start, th->hit[i]->stop, th->hit[j]->start, th->hit[j]->stop);*/
+	  }
+	}
+      }
+    }
+  }
+  return eslOK;
+}
+/* Function:  cm_tophits_RemoveOverlaps()
+ * Synopsis:  Remove overlapping hits from a tophits object sorted by seq_idx.
+ * Incept:    EPN, Tue Jun 14 05:42:31 2011
+ *
+ * Purpose:   After the CM pipeline has completed, the CM_TOPHITS
+ *            object may contain overlapping hits if the target was
+ *            broken into overlapping windows. Scan through the
+ *            tophits object, which, upon entering, is sorted by cm
+ *            index, sequence index, strand, and score and remove hits
+ *            greedily. For each hit for the same model, sequence and
+ *            strand, remove all lower scoring hits that overlap with
+ *            it. This is done by one of two helper functions
+ *            (remove_overlaps_one_seq_fast() or
+ *            remove_overlaps_one_seq_memeff() described near their
+ *            definition above) depending on the length of the 
+ *            sequence and the number of hits.
+ *         
+ * Returns:   eslOK on success. 
+ *            eslEINVAL if th is not sorted appropriately, errbuf filled
+ *            eslERANGE if a hit includes positions outside of 1..srcL, errbuf filled
+ *            eslEMEM if we run out of memory, errbuf filled
+ */
+int
+cm_tophits_RemoveOverlaps(CM_TOPHITS *th, char *errbuf)
+{
+  int status;
+  int64_t i, j;            
+  int64_t nhits  = 0;
+
+  if (! th->is_sorted_for_overlap_removal) ESL_FAIL(status, errbuf, "cm_tophits_RemoveOverlaps() list is not sorted appropriately");
+  if (th->N<2) return eslOK;
+
+  i = 0;
+  while(i < th->N) { 
+    j = i+1;
+    while(j < th->N && 
+	  th->hit[j]->cm_idx  == th->hit[i]->cm_idx  &&
+	  th->hit[j]->seq_idx == th->hit[i]->seq_idx &&
+	  th->hit[j]->in_rc   == th->hit[i]->in_rc) { 
+      j++;
+    }
+    if(j != (i+1)) { 
+      /* Hits i to j-1 form a set of hits that all share cm_idx, seq_idx
+       * and in_rc. Remove overlaps from this set in 1 of 2 ways,
+       * depending on length of source sequence and number of hits.
+       * remove_overlaps_one_seq_fast() will need to allocate a char
+       * array of size srcL, but it is significantly faster when nhits
+       * is big.
+       */ 
+      nhits = (j-1)-i+1;
+      if(nhits < 5000 || th->hit[i]->srcL > 256000000) { 
+	if((status = remove_overlaps_one_seq_memeff(th, i, j-1, errbuf)) != eslOK) return status;
+      }
+      else { /* use fast, non mem-efficient way if >= 5000 hits and L is < 256 Mb */
+	if((status = remove_overlaps_one_seq_fast  (th, i, j-1, errbuf)) != eslOK) return status;
+      }
+    }
+    i = j; /* skip ahead to begin next set */
+  }
+  /*printf("Leaving cm_tophits_RemoveOverlaps()\n");
     cm_tophits_Dump(stdout, th);*/
 
   return eslOK;
@@ -721,7 +843,7 @@ cm_tophits_RemoveBogusTerminusHits(CM_TOPHITS *th)
   int64_t tmp_start;
   int64_t tmp_stop;
 
-  if (th->is_sorted_by_position) return eslEINVAL;
+  if (th->is_sorted_for_overlap_removal) return eslEINVAL;
 
   for (i = 0; i < th->N ; i++) {
     if(th->unsrt[i].flags & CM_HIT_FROM_TERMINUS_RESEARCH) { 
@@ -1545,21 +1667,21 @@ cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th)
   fprintf(fp, "CM_TOPHITS dump\n");
   fprintf(fp, "------------------\n");
 
-  fprintf(fp, "N                     = %" PRId64 "\n", th->N);
-  fprintf(fp, "Nalloc                = %" PRId64 "\n", th->Nalloc);
-  fprintf(fp, "nreported             = %" PRId64 "\n", th->nreported);
-  fprintf(fp, "nincluded             = %" PRId64 "\n", th->nincluded);
-  fprintf(fp, "is_sorted_by_score    = %s\n",  th->is_sorted_by_score    ? "TRUE" : "FALSE");
-  fprintf(fp, "is_sorted_by_position = %s\n",  th->is_sorted_by_position ? "TRUE" : "FALSE");
+  fprintf(fp, "N                             = %" PRId64 "\n", th->N);
+  fprintf(fp, "Nalloc                        = %" PRId64 "\n", th->Nalloc);
+  fprintf(fp, "nreported                     = %" PRId64 "\n", th->nreported);
+  fprintf(fp, "nincluded                     = %" PRId64 "\n", th->nincluded);
+  fprintf(fp, "is_sorted_by_score            = %s\n",  th->is_sorted_by_score            ? "TRUE" : "FALSE");
+  fprintf(fp, "is_sorted_for_overlap_removal = %s\n",  th->is_sorted_for_overlap_removal ? "TRUE" : "FALSE");
   if(th->is_sorted_by_score) { 
     for (i = 0; i < th->N; i++) {
       fprintf(fp, "SCORE SORTED HIT %" PRId64 ":\n", i);
       cm_hit_Dump(fp, th->hit[i]);
     }
   }
-  else if(th->is_sorted_by_position) { 
+  else if(th->is_sorted_for_overlap_removal) { 
     for (i = 0; i < th->N; i++) {
-      fprintf(fp, "POSITION SORTED HIT %" PRId64 ":\n", i);
+      fprintf(fp, "OVERLAP REMOVAL SORTED HIT %" PRId64 ":\n", i);
       cm_hit_Dump(fp, th->hit[i]);
     }
   }
@@ -1658,6 +1780,8 @@ static ESL_OPTIONS options[] = {
   { "-M",        eslARG_INT,     "10", NULL, NULL,  NULL,  NULL, NULL, "number of top hits lists to simulate and merge",   0 },
   { "-N",        eslARG_INT,  "10000", NULL, NULL,  NULL,  NULL, NULL, "number of top hits to simulate per list",          0 },
   { "-X",        eslARG_INT,   "1000", NULL, NULL,  NULL,  NULL, NULL, "number of target sequences hits can come from",    0 },
+  { "-Y",        eslARG_INT,     "10", NULL, NULL,  NULL,  NULL, NULL, "number of models hits can be to",                  0 },
+  { "-Z",        eslARG_INT,    "100", NULL, NULL,  NULL,  NULL, NULL, "length of hits (fixed)",                           0 },
   { "-L",        eslARG_INT, "100000", NULL, NULL,  NULL,  NULL, NULL, "length of target sequences",                       0 },
   { "-v",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "dump hit list after removing overlaps",            0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -1674,11 +1798,14 @@ main(int argc, char **argv)
   int             N        = esl_opt_GetInteger(go, "-N");
   int             M        = esl_opt_GetInteger(go, "-M");
   int             X        = esl_opt_GetInteger(go, "-X");
+  int             Y        = esl_opt_GetInteger(go, "-Y");
   int             L        = esl_opt_GetInteger(go, "-L");
+  int             hitlen   = esl_opt_GetInteger(go, "-Z");
   CM_TOPHITS    **h        = NULL;
   CM_HIT         *hit      = NULL;
   float          *scores   = NULL;
   int            *seq_idxes= NULL;
+  int            *cm_idxes = NULL;
   int            *starts   = NULL;
   int            *stops    = NULL;
   char            name[]   = "not_unique_name";
@@ -1687,17 +1814,20 @@ main(int argc, char **argv)
   int             i,j;
   int             nhits;
   int             status;
+  char            errbuf[eslERRBUFSIZE];
 
   /* prep work: generate our sort keys before starting to time anything    */
   ESL_ALLOC(h,         sizeof(CM_TOPHITS *) * M); /* allocate pointers for M lists */
   ESL_ALLOC(scores,    sizeof(double) * N * M);   
   ESL_ALLOC(seq_idxes, sizeof(int) * N * M);   
+  ESL_ALLOC(cm_idxes,  sizeof(int) * N * M);   
   ESL_ALLOC(starts,    sizeof(int) * N * M);   
   ESL_ALLOC(stops,     sizeof(int) * N * M);   
   for (i = 0; i < N*M; i++) scores[i]    = esl_random(r);
   for (i = 0; i < N*M; i++) seq_idxes[i] = esl_rnd_Roll(r, X);
+  for (i = 0; i < N*M; i++) cm_idxes[i]  = esl_rnd_Roll(r, Y);
   for (i = 0; i < N*M; i++) starts[i]    = esl_rnd_Roll(r, L) + 1;
-  for (i = 0; i < N*M; i++) stops[i]     = esl_rnd_Roll(r, L) + 1;
+  for (i = 0; i < N*M; i++) stops[i]     = (esl_rnd_Roll(r, 2) == 0) ? ESL_MIN(starts[i] + hitlen - 1, L) : ESL_MAX(starts[i] - hitlen + 1, 1); 
 
   esl_stopwatch_Start(w);
 
@@ -1715,6 +1845,8 @@ main(int argc, char **argv)
 	  hit->stop    = stops[j*N+i];
 	  hit->score   = scores[j*N+i];
 	  hit->seq_idx = seq_idxes[j*N+i];
+	  hit->cm_idx  = cm_idxes[j*N+i];
+	  hit->srcL    = L;
 	  if     (hit->start < hit->stop) { hit->in_rc = FALSE; }
 	  else if(hit->start > hit->stop) { hit->in_rc = TRUE;  }
 	  else                            { hit->in_rc = (esl_rnd_Roll(r, 2) == 0) ? FALSE : TRUE; }
@@ -1723,7 +1855,7 @@ main(int argc, char **argv)
     }
 
   esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, "# CPU time hit creation:                  ");
+  esl_stopwatch_Display(stdout, w, "# CPU time hit creation:                            ");
   esl_stopwatch_Start(w);
 
   /* then merge them into one big list in h[0] */
@@ -1733,26 +1865,26 @@ main(int argc, char **argv)
       cm_tophits_Destroy(h[j]);
     }      
   esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_Merge():            ");
+  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_Merge():                      ");
   esl_stopwatch_Start(w);
   
-  cm_tophits_SortByPosition(h[0]);
+  cm_tophits_SortForOverlapRemoval(h[0]);
   esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_SortBySeqIdx():     ");
+  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_SortForOverlapRemoval():      ");
   esl_stopwatch_Start(w);
 
   if(esl_opt_GetBoolean(go, "-v")) cm_tophits_Dump(stdout, h[0]);
 
-  cm_tophits_RemoveOverlaps(h[0]);
+  if((status = cm_tophits_RemoveOverlaps(h[0], errbuf)) != eslOK) cm_Fail(errbuf);
 
   esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_RemoveOverlaps(): ");
+  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_RemoveOverlaps():             ");
   esl_stopwatch_Start(w);
 
   cm_tophits_SortByScore(h[0]);
 
   esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_SortByScore():      ");
+  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_SortByScore():                ");
   
   if(esl_opt_GetBoolean(go, "-v")) cm_tophits_Dump(stdout, h[0]);
 
@@ -1766,7 +1898,9 @@ main(int argc, char **argv)
   printf("# number of lists:               %d\n", M);
   printf("# sequence length                %d\n", L);
   printf("# number of sequences            %d\n", X);
+  printf("# number of models               %d\n", Y);
   printf("# initial number of hits         %d\n", N*M);
+  printf("# hit length                     %d\n", hitlen);
   printf("# number of non-overlapping hits %d\n", nhits);
 
   cm_tophits_Destroy(h[0]);
@@ -1778,6 +1912,7 @@ main(int argc, char **argv)
   esl_randomness_Destroy(r);
   if (scores    != NULL) free(scores);
   if (seq_idxes != NULL) free(seq_idxes);
+  if (cm_idxes  != NULL) free(cm_idxes);
   if (starts    != NULL) free(starts);
   if (stops     != NULL) free(stops);
   if (h         != NULL) free(h);
@@ -1815,6 +1950,7 @@ static ESL_OPTIONS options[] = {
   { "-s",        eslARG_INT,    "181", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                    0 },
   { "-N",        eslARG_INT,    "100", NULL, NULL,  NULL,  NULL, NULL, "number of top hits to simulate",                   0 },
   { "-X",        eslARG_INT,   "1000", NULL, NULL,  NULL,  NULL, NULL, "number of target sequences hits can come from",    0 },
+  { "-Y",        eslARG_INT,     "10", NULL, NULL,  NULL,  NULL, NULL, "number of CMs hits can be to",                     0 },
   { "-L",        eslARG_INT, "100000", NULL, NULL,  NULL,  NULL, NULL, "length of target sequences",                       0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -1830,6 +1966,7 @@ main(int argc, char **argv)
   int             N        = esl_opt_GetInteger(go, "-N");
   int             L        = esl_opt_GetInteger(go, "-L");
   int             X        = esl_opt_GetInteger(go, "-X");
+  int             Y        = esl_opt_GetInteger(go, "-Y");
   CM_TOPHITS     *h1       = NULL;
   CM_TOPHITS     *h2       = NULL;
   CM_TOPHITS     *h3       = NULL;
@@ -1838,6 +1975,8 @@ main(int argc, char **argv)
   char            desc[]   = "Test description for the purposes of making the test driver allocate space";
   CM_HIT         *hit = NULL;
   int             i;
+  int             status;
+  char            errbuf[eslERRBUFSIZE];
 
   h1 = cm_tophits_Create();
   h2 = cm_tophits_Create();
@@ -1854,6 +1993,8 @@ main(int argc, char **argv)
       hit->stop    = esl_rnd_Roll(r, L);
       hit->score   = esl_random(r);
       hit->seq_idx = esl_rnd_Roll(r, X);
+      hit->cm_idx  = esl_rnd_Roll(r, Y);
+      hit->srcL    = L;
 
       /* add hit to h2 */
       cm_tophits_CreateNextHit(h2, &hit);
@@ -1864,6 +2005,8 @@ main(int argc, char **argv)
       hit->stop    = esl_rnd_Roll(r, L);
       hit->score   = 10.0 * esl_random(r);
       hit->seq_idx = esl_rnd_Roll(r, X);
+      hit->cm_idx  = esl_rnd_Roll(r, Y);
+      hit->srcL    = L;
 
       /* add hit to h3 */
       cm_tophits_CreateNextHit(h3, &hit);
@@ -1874,6 +2017,8 @@ main(int argc, char **argv)
       hit->stop    = esl_rnd_Roll(r, L);
       hit->score   = 0.1 * esl_random(r);
       hit->seq_idx = esl_rnd_Roll(r, X);
+      hit->cm_idx  = esl_rnd_Roll(r, Y);
+      hit->srcL    = L;
     }
 
   /* add a few more hits */
@@ -1884,6 +2029,7 @@ main(int argc, char **argv)
   hit->score   = 20.0;
   hit->cm_idx  = 0;
   hit->seq_idx = 0;
+  hit->srcL    = L+1;
 
   cm_tophits_CreateNextHit(h2, &hit);
   esl_strdup("second", -1, &(hit->name));
@@ -1892,6 +2038,7 @@ main(int argc, char **argv)
   hit->score   = 30.0;
   hit->cm_idx  = 0;
   hit->seq_idx = 0;
+  hit->srcL    = L+1;
 
   cm_tophits_CreateNextHit(h3, &hit);
   esl_strdup("first", -1, &(hit->name));
@@ -1900,6 +2047,7 @@ main(int argc, char **argv)
   hit->score   = 40.0;
   hit->cm_idx  = 0;
   hit->seq_idx = 0;
+  hit->srcL    = L+1;
 
   cm_tophits_CreateNextHit(h1, &hit);
   esl_strdup("thirdtolast", -1, &(hit->name));
@@ -1908,6 +2056,7 @@ main(int argc, char **argv)
   hit->score   = -1.0;
   hit->cm_idx  = 0;
   hit->seq_idx = 0;
+  hit->srcL    = L+1;
 
   cm_tophits_CreateNextHit(h2, &hit);
   esl_strdup("secondtolast", -1, &(hit->name));
@@ -1916,6 +2065,7 @@ main(int argc, char **argv)
   hit->score   = -2.0;
   hit->cm_idx  = 0;
   hit->seq_idx = 0;
+  hit->srcL    = L+1;
 
   cm_tophits_CreateNextHit(h3, &hit);
   esl_strdup("last", -1, &(hit->name));
@@ -1924,29 +2074,30 @@ main(int argc, char **argv)
   hit->score   = -3.0;
   hit->cm_idx  = 0;
   hit->seq_idx = 0;
-
-  cm_tophits_SortByPosition(h1);
-  cm_tophits_RemoveOverlaps(h1);
+  hit->srcL    = L+1;
+  
+  cm_tophits_SortForOverlapRemoval(h1);
+  if((status = cm_tophits_RemoveOverlaps(h1, errbuf)) != eslOK) cm_Fail(errbuf);
   cm_tophits_SortByScore(h1);
   if (strcmp(h1->hit[0]->name,   "third")        != 0)   esl_fatal("sort 1 failed (top is %s = %f)",  h1->hit[0]->name,   h1->hit[0]->score);
   if (strcmp(h1->hit[N+1]->name, "thirdtolast")  != 0)   esl_fatal("sort 1 failed (last is %s = %f)", h1->hit[N+1]->name, h1->hit[N+1]->score);
 
   cm_tophits_Merge(h1, h2);
-  cm_tophits_SortByPosition(h1);
-  cm_tophits_RemoveOverlaps(h1);
+  cm_tophits_SortForOverlapRemoval(h1);
+  if((status = cm_tophits_RemoveOverlaps(h1, errbuf)) != eslOK) cm_Fail(errbuf);
   cm_tophits_SortByScore(h1);
   if (strcmp(h1->hit[0]->name,     "second")        != 0)   esl_fatal("sort 2 failed (top is %s = %f)",            h1->hit[0]->name,     h1->hit[0]->score);
   if (strcmp(h1->hit[1]->name,     "third")         != 0)   esl_fatal("sort 2 failed (second is %s = %f)",         h1->hit[1]->name,     h1->hit[1]->score);
   if (strcmp(h1->hit[2*N+2]->name, "thirdtolast")   != 0)   esl_fatal("sort 2 failed (second to last is %s = %f)", h1->hit[2*N+2]->name, h1->hit[2*N+2]->score);
   if (strcmp(h1->hit[2*N+3]->name, "secondtolast")  != 0)   esl_fatal("sort 2 failed (last is %s = %f)",           h1->hit[2*N+3]->name, h1->hit[2*N+3]->score);
-  if (   h1->hit[0]->flags     & CM_HIT_IS_REMOVED_DUPLICATE)  esl_fatal("RemoveOverlaps failed");
-  if (! (h1->hit[1]->flags     & CM_HIT_IS_REMOVED_DUPLICATE)) esl_fatal("RemoveOverlaps failed");
-  if (   h1->hit[2*N+2]->flags & CM_HIT_IS_REMOVED_DUPLICATE)  esl_fatal("RemoveOverlaps failed");
-  if (! (h1->hit[2*N+3]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) esl_fatal("RemoveOverlaps failed");
+  if (   h1->hit[0]->flags     & CM_HIT_IS_REMOVED_DUPLICATE)  esl_fatal("RemoveOverlaps failed 1");
+  if (! (h1->hit[1]->flags     & CM_HIT_IS_REMOVED_DUPLICATE)) esl_fatal("RemoveOverlaps failed 2");
+  if (   h1->hit[2*N+2]->flags & CM_HIT_IS_REMOVED_DUPLICATE)  esl_fatal("RemoveOverlaps failed 3");
+  if (! (h1->hit[2*N+3]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) esl_fatal("RemoveOverlaps failed 4");
 
   cm_tophits_Merge(h1, h3);
-  cm_tophits_SortByPosition(h1);
-  cm_tophits_RemoveOverlaps(h1);
+  cm_tophits_SortForOverlapRemoval(h1);
+  if((status = cm_tophits_RemoveOverlaps(h1, errbuf)) != eslOK) cm_Fail(errbuf);
   cm_tophits_SortByScore(h1);
   if (strcmp(h1->hit[0]->name,     "first")         != 0)   esl_fatal("sort 3 failed (top    is %s = %f)",         h1->hit[0]->name,     h1->hit[0]->score);
   if (strcmp(h1->hit[1]->name,     "second")        != 0)   esl_fatal("sort 3 failed (second is %s = %f)",         h1->hit[1]->name,     h1->hit[1]->score);
@@ -1954,12 +2105,12 @@ main(int argc, char **argv)
   if (strcmp(h1->hit[3*N+3]->name, "thirdtolast")   != 0)   esl_fatal("sort 3 failed (third to last is %s = %f)",  h1->hit[3*N+3]->name, h1->hit[3*N+3]->score);
   if (strcmp(h1->hit[3*N+4]->name, "secondtolast")  != 0)   esl_fatal("sort 3 failed (second to last is %s = %f)", h1->hit[3*N+4]->name, h1->hit[3*N+4]->score);
   if (strcmp(h1->hit[3*N+5]->name, "last")          != 0)   esl_fatal("sort 3 failed (last is %s = %f)",           h1->hit[3*N+5]->name, h1->hit[3*N+5]->score);
-  if (   h1->hit[0]->flags     & CM_HIT_IS_REMOVED_DUPLICATE)  esl_fatal("RemoveOverlaps failed");
-  if (! (h1->hit[1]->flags     & CM_HIT_IS_REMOVED_DUPLICATE)) esl_fatal("RemoveOverlaps failed");
-  if (! (h1->hit[2]->flags     & CM_HIT_IS_REMOVED_DUPLICATE)) esl_fatal("RemoveOverlaps failed");
-  if (   h1->hit[3*N+3]->flags & CM_HIT_IS_REMOVED_DUPLICATE)  esl_fatal("RemoveOverlaps failed");
-  if (! (h1->hit[3*N+4]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) esl_fatal("RemoveOverlaps failed");
-  if (! (h1->hit[3*N+5]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) esl_fatal("RemoveOverlaps failed");
+  if (   h1->hit[0]->flags     & CM_HIT_IS_REMOVED_DUPLICATE)  esl_fatal("RemoveOverlaps failed 5");
+  if (! (h1->hit[1]->flags     & CM_HIT_IS_REMOVED_DUPLICATE)) esl_fatal("RemoveOverlaps failed 6");
+  if (! (h1->hit[2]->flags     & CM_HIT_IS_REMOVED_DUPLICATE)) esl_fatal("RemoveOverlaps failed 7");
+  if (   h1->hit[3*N+3]->flags & CM_HIT_IS_REMOVED_DUPLICATE)  esl_fatal("RemoveOverlaps failed 8");
+  if (! (h1->hit[3*N+4]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) esl_fatal("RemoveOverlaps failed 9");
+  if (! (h1->hit[3*N+5]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) esl_fatal("RemoveOverlaps failed 10");
 
   if (cm_tophits_GetMaxNameLength(h1) != strlen(name)) esl_fatal("GetMaxNameLength() failed");
 

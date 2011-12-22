@@ -2788,17 +2788,17 @@ int
 cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avgL_loc, float *ret_avgL_glb)
 {
   int    status;
-  int    safe_windowlen;
+  int    Z;
   float  avgL_loc;
   float  avgL_glb;
   double *gamma0_loc;
   double *gamma0_glb;
   int     n;
 
-  if((status = CalculateQueryDependentBands(cm, errbuf, NULL, DEFAULT_BETA_W, NULL, &gamma0_loc, &gamma0_glb)) != eslOK) return status;
+  if((status = CalculateQueryDependentBands(cm, errbuf, NULL, DEFAULT_BETA_W, NULL, &gamma0_loc, &gamma0_glb, &Z)) != eslOK) return status;
   avgL_loc = avgL_glb = 0.;
-  for(n = 0; n <= safe_windowlen; n++) avgL_loc += gamma0_loc[n] * (float) n;
-  for(n = 0; n <= safe_windowlen; n++) avgL_glb += gamma0_glb[n] * (float) n;
+  for(n = 0; n <= Z; n++) avgL_loc += gamma0_loc[n] * (float) n;
+  for(n = 0; n <= Z; n++) avgL_glb += gamma0_glb[n] * (float) n;
   free(gamma0_loc);
   free(gamma0_glb);
 
@@ -2893,8 +2893,8 @@ cm_nonconfigured_Verify(CM_t *cm, char *errbuf)
   /* other variables */
   if(cm->mlp7       != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): mlp7 is non-NULL (it should be NULL in a non-configured CM)");
   if(cm->root_trans != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): root_trans is non-NULL (it should be NULL in a non-configured CM)");
-  if(cm->qdbinfo != NULL && cm->qdbinfo->setby != CM_QDBINFO_SETBY_INIT) { 
-    ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): qdbinfo is not in its initial state (it should be NULL in a non-configured CM)");
+  if(cm->qdbinfo != NULL && cm->qdbinfo->setby == CM_QDBINFO_SETBY_BANDCALC) { 
+    ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): qdbinfo is not in its initial state");
   }  
   return eslOK;
 }
@@ -2957,7 +2957,7 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->null2_omega = cm->null2_omega;
   new->null3_omega = cm->null3_omega;
   new->el_selfsc   = cm->el_selfsc;
-  new->iel_selfsc  = cm->el_selfsc;
+  new->iel_selfsc  = cm->iel_selfsc;
   new->tau         = cm->tau;
   new->config_opts = cm->config_opts;
   new->align_opts  = cm->align_opts;
@@ -2983,15 +2983,15 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   /* emission and transition probabilities and scores (should be consistent with CMZero()) */
   for (v = 0; v < cm->M; v++) {
     esl_vec_FCopy(cm->e[v],      (cm->abc->K * cm->abc->K), new->e[v]);
-    esl_vec_FCopy(cm->t[v],      MAXCONNECT,                  new->t[v]);
-    esl_vec_FCopy(cm->tsc[v],    MAXCONNECT,                  new->tsc[v]);
+    esl_vec_FCopy(cm->t[v],      MAXCONNECT,                new->t[v]);
+    esl_vec_FCopy(cm->tsc[v],    MAXCONNECT,                new->tsc[v]);
     esl_vec_FCopy(cm->esc[v],    (cm->abc->K * cm->abc->K), new->esc[v]);
-    esl_vec_FCopy(cm->lmesc[v],  cm->abc->Kp,                new->lmesc[v]);
-    esl_vec_FCopy(cm->rmesc[v],  cm->abc->Kp,                new->rmesc[v]);
-    esl_vec_ICopy(cm->itsc[v],   MAXCONNECT,                  new->itsc[v]);
+    esl_vec_FCopy(cm->lmesc[v],  cm->abc->Kp,               new->lmesc[v]);
+    esl_vec_FCopy(cm->rmesc[v],  cm->abc->Kp,               new->rmesc[v]);
+    esl_vec_ICopy(cm->itsc[v],   MAXCONNECT,                new->itsc[v]);
     esl_vec_ICopy(cm->iesc[v],   (cm->abc->K * cm->abc->K), new->iesc[v]);
-    esl_vec_ICopy(cm->ilmesc[v], cm->abc->Kp,                new->ilmesc[v]);
-    esl_vec_ICopy(cm->irmesc[v], cm->abc->Kp,                new->irmesc[v]);
+    esl_vec_ICopy(cm->ilmesc[v], cm->abc->Kp,               new->ilmesc[v]);
+    esl_vec_ICopy(cm->irmesc[v], cm->abc->Kp,               new->irmesc[v]);
   }
   esl_vec_FCopy(cm->begin,      cm->M, new->begin);
   esl_vec_FCopy(cm->trbegin,    cm->M, new->trbegin);
@@ -3026,8 +3026,8 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
     CP9_map_cm2hmm(new, new->cp9map, 0); /* 0 is debug_level, for debugging output */
     /* cp9 bands and cp9 matrices, don't clone, just make new ones (these grow to fit a target sequence) */
   }
-  if(cm->cp9b    != NULL) new->cp9b   = AllocCP9Bands(new->M, new->cp9->M);
-  if(cm->cp9_mx  != NULL) new->cp9_mx = CreateCP9Matrix(1, new->cp9->M);
+  if(cm->cp9b    != NULL) new->cp9b    = AllocCP9Bands(new->M, new->cp9->M);
+  if(cm->cp9_mx  != NULL) new->cp9_mx  = CreateCP9Matrix(1, new->cp9->M);
   if(cm->cp9_bmx != NULL) new->cp9_bmx = CreateCP9Matrix(1, new->cp9->M);
 
   /* p7 HMMs */

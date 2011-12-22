@@ -6118,7 +6118,7 @@ cm_scan_mx_freeintegers(CM_t *cm, CM_SCAN_MX *smx)
  * Returns:  void, dies upon an error.
  */
 void
-cm_scan_mx_Dump(CM_t *cm, int j, int i0, int qdbidx, int doing_float)
+cm_scan_mx_Dump(FILE *ofp, CM_t *cm, int j, int i0, int qdbidx, int doing_float)
 {
   int d, v;
   int jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
@@ -6133,47 +6133,47 @@ cm_scan_mx_Dump(CM_t *cm, int j, int i0, int qdbidx, int doing_float)
   int begl_prv = j-1 % (smx->W+1);
   int begl_cur = j   % (smx->W+1);
 
-  printf("Dumping Alpha: j: %d\n", j);
+  fprintf(ofp, "Dumping Alpha: j: %d\n", j);
   if(jp_g >= smx->W) { dnA = smx->dnAAA[qdbidx][smx->W]; dxA = smx->dxAAA[qdbidx][smx->W]; }
   else               { dnA = smx->dnAAA[qdbidx][jp_g];   dxA = smx->dxAAA[qdbidx][jp_g]; }
   if(doing_float) {
     for (v = smx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) { 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, smx->falpha_begl[begl_prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "A[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, smx->falpha_begl[begl_prv][v][d]); 
       }
       else {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, smx->falpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "A[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, smx->falpha[prv][v][d]); 
       }
-      printf("\n");
+      fprintf(ofp, "\n");
     }
     for (v = smx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, smx->falpha_begl[begl_cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "A[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, smx->falpha_begl[begl_cur][v][d]); 
       }
       else {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, smx->falpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "A[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, smx->falpha[cur][v][d]); 
       }
-      printf("\n");
+      fprintf(ofp, "\n");
     }
   }
   else { /* doing int */
     for (v = smx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, smx->ialpha_begl[begl_prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "A[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, smx->ialpha_begl[begl_prv][v][d]); 
       }
       else {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, smx->ialpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "A[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, smx->ialpha[prv][v][d]); 
       }
-      printf("\n\n");
+      fprintf(ofp, "\n\n");
     }
     for (v = smx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, smx->ialpha_begl[begl_cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "A[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, smx->ialpha_begl[begl_cur][v][d]); 
       }
       else {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, smx->ialpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "A[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, smx->ialpha[cur][v][d]); 
       }
-      printf("\n\n");
+      fprintf(ofp, "\n\n");
     }
   }
   return;
@@ -6985,7 +6985,7 @@ cm_tr_scan_mx_freeintegers(CM_t *cm, CM_TR_SCAN_MX *trsmx)
  * Returns:  void.
  */
 void
-cm_tr_scan_mx_Dump(CM_t *cm, int j, int i0, int qdbidx, int doing_float)
+cm_tr_scan_mx_Dump(FILE *ofp, CM_t *cm, int j, int i0, int qdbidx, int doing_float)
 {
   int d, v;
   int jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
@@ -7000,75 +7000,75 @@ cm_tr_scan_mx_Dump(CM_t *cm, int j, int i0, int qdbidx, int doing_float)
   int begl_prv = j-1 % (trsmx->W+1);
   int begl_cur = j   % (trsmx->W+1);
 
-  printf("Dumping {J,L,R,T}Alpha: j: %d\n", j);
+  fprintf(ofp, "Dumping {J,L,R,T}Alpha: j: %d\n", j);
   if(jp_g >= trsmx->W) { dnA = trsmx->dnAAA[qdbidx][trsmx->W]; dxA = trsmx->dxAAA[qdbidx][trsmx->W]; }
   else                 { dnA = trsmx->dnAAA[qdbidx][jp_g];     dxA = trsmx->dxAAA[qdbidx][jp_g]; }
   if(doing_float) {
     for (v = trsmx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) { 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fJalpha_begl[begl_prv][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fLalpha_begl[begl_prv][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fRalpha_begl[begl_prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "JA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fJalpha_begl[begl_prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "LA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fLalpha_begl[begl_prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "RA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fRalpha_begl[begl_prv][v][d]); 
       }
       else {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fJalpha[prv][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fLalpha[prv][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fRalpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "JA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fJalpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "LA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fLalpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "RA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fRalpha[prv][v][d]); 
       }
       if(cm->stid[v] == BIF_B) { 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("TA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fTalpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "TA[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, trsmx->fTalpha[prv][v][d]); 
       }
-      printf("\n");
+      fprintf(ofp, "\n");
     }
     for (v = trsmx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fJalpha_begl[begl_cur][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fLalpha_begl[begl_cur][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fRalpha_begl[begl_cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "JA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fJalpha_begl[begl_cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "LA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fLalpha_begl[begl_cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "RA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fRalpha_begl[begl_cur][v][d]); 
       }
       else {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fJalpha[cur][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fLalpha[cur][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fRalpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "JA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fJalpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "LA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fLalpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "RA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fRalpha[cur][v][d]); 
       }
       if(cm->stid[v] == BIF_B) { 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("TA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fTalpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "TA[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, trsmx->fTalpha[cur][v][d]); 
       }
-      printf("\n");
+      fprintf(ofp, "\n");
     }
   }
   else { /* doing int */
     for (v = trsmx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iJalpha_begl[begl_prv][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iLalpha_begl[begl_prv][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iRalpha_begl[begl_prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "JA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iJalpha_begl[begl_prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "LA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iLalpha_begl[begl_prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "RA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iRalpha_begl[begl_prv][v][d]); 
       }
       else {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iJalpha[prv][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iLalpha[prv][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iRalpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "JA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iJalpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "LA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iLalpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "RA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iRalpha[prv][v][d]); 
       }
       if(cm->stid[v] == BIF_B) { 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("TA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iTalpha[prv][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "TA[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, trsmx->iTalpha[prv][v][d]); 
       }
-      printf("\n\n");
+      fprintf(ofp, "\n\n");
     }
     for (v = trsmx->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iJalpha_begl[begl_cur][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iLalpha_begl[begl_cur][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iRalpha_begl[begl_cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "JA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iJalpha_begl[begl_cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "LA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iLalpha_begl[begl_cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "RA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iRalpha_begl[begl_cur][v][d]); 
       }
       else {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("JA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iJalpha[cur][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("LA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iLalpha[cur][v][d]); 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("RA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iRalpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "JA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iJalpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "LA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iLalpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "RA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iRalpha[cur][v][d]); 
       }
       if(cm->stid[v] == BIF_B) { 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("TA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iTalpha[cur][v][d]); 
+	for(d = dnA[v]; d <= dxA[v]; d++) fprintf(ofp, "TA[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, trsmx->iTalpha[cur][v][d]); 
       }
-      printf("\n\n");
+      fprintf(ofp, "\n\n");
     }
   }
   return;
@@ -7371,7 +7371,7 @@ ReportHitsGreedily(CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bes
 	    do_report_hit = FALSE;
 	  }
 	}
-	if(do_report_hit) { 
+	if(do_report_hit) { /* this may have been set to FALSE if we did a null3 sc correction */
 	  /*printf("\t%.3f %.3f i: %d j: %d r: %d\n", hit_sc+null3_correction, hit_sc, i, j, bestr[d]);*/
 	  cm_tophits_CreateNextHit(hitlist, &hit);
 	  hit->start = i;

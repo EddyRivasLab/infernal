@@ -57,9 +57,6 @@ typedef struct {
   P7_PROFILE       *Tgm;         /* generic   query profile HMM for 5' and 3' truncated hits */
   FM_HMMDATA       *fm_hmmdata;  /* hmm-specific data for FM-index for fast MSV, required by p7_MSVFilter_longtarget() */
   float            *p7_evparam;  /* 0..CM_p7_NEVPARAM] E-value parameters */
-  /* do we need to allocate and use CM scan matrices? only if we're not using HMM bands */
-  int               need_smx;    /* TRUE if a ScanMatrix_t is required for CM rounds */
-
 } WORKER_INFO;
 
 #define REPOPTS     "-E,-T,--cut_ga,--cut_nc,--cut_tc"
@@ -584,7 +581,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info[i].cm           = NULL;
       info[i].om           = NULL;
       info[i].bg           = NULL;
-      info[i].need_smx     = FALSE;
       ESL_ALLOC(info[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
 #ifdef HMMER_THREADS
       info[i].queue        = queue;
@@ -675,7 +671,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	cm_tophits_ComputeEvalues(info[i].th, (double) info[0].cm->expA[info[0].pli->final_cm_exp_mode]->cur_eff_dbsize, 0);
       }
 
-      /* merge the results of the search results */
+      /* merge the search results */
       for (i = 1; i < infocnt; ++i) {
 	cm_tophits_Merge(info[0].th,   info[i].th);
 	cm_pipeline_Merge(info[0].pli, info[i].pli);
@@ -699,8 +695,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 #endif
 
       /* Sort by sequence index/position and remove duplicates */
-      cm_tophits_SortByPosition(info[0].th);
-      cm_tophits_RemoveOverlaps(info[0].th);
+      cm_tophits_SortForOverlapRemoval(info[0].th);
+      if((status = cm_tophits_RemoveOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
 
       /* Resort by score and enforce threshold */
       cm_tophits_SortByScore(info[0].th);
@@ -719,7 +715,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       fprintf(ofp, "\n\n");
 
       if(info[0].pli->do_alignments) {
-	if((status = cm_tophits_HitAlignments(ofp, info[0].th, info[0].pli, textw)) != eslOK) esl_fatal("Out of memory");
+	if((status = cm_tophits_HitAlignments(ofp, info[0].th, info[0].pli, textw)) != eslOK) cm_Fail("Out of memory");
 	fprintf(ofp, "\n\n");
 	cm_tophits_HitAlignmentStatistics(ofp, info[0].th, info[0].pli->align_cyk);
 	fprintf(ofp, "\n\n");
@@ -730,14 +726,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
   
       esl_stopwatch_Stop(w);
-      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_STD, w);
-      fprintf(ofp, "\n");
-      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_5P, w);
-      fprintf(ofp, "\n");
-      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_3P, w);
-      fprintf(ofp, "\n");
-      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_5P_AND_3P, w);
-      fprintf(ofp, "//\n");
+      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_STD,       w); fprintf(ofp, "\n");
+      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_5P,        w); fprintf(ofp, "\n");
+      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_3P,        w); fprintf(ofp, "\n");
+      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_5P_AND_3P, w); fprintf(ofp, "//\n");
 
       free_info(tinfo);
       free(tinfo);
@@ -1171,8 +1163,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 #endif
 
       /* Sort by sequence index/position and remove duplicates */
-      cm_tophits_SortByPosition(info->th);
-      cm_tophits_RemoveOverlaps(info->th);
+      cm_tophits_SortForOverlapRemoval(info->th);
+      if((status = cm_tophits_RemoveOverlaps(info->th, errbuf)) != eslOK) mpi_failure(errbuf);
       /* Resort by score and enforce threshold */
       cm_tophits_SortByScore(info->th);
       cm_tophits_Threshold(info->th, info->pli);
@@ -1188,7 +1180,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_tophits_Targets(ofp, info->th, info->pli, textw); 
       fprintf(ofp, "\n\n");
       if(info->pli->do_alignments) {
-	if((status = cm_tophits_HitAlignments(ofp, info->th, info->pli, textw)) != eslOK) esl_fatal("Out of memory");
+	if((status = cm_tophits_HitAlignments(ofp, info->th, info->pli, textw)) != eslOK) mpi_failure("Out of memory");
 	fprintf(ofp, "\n\n");
 	cm_tophits_HitAlignmentStatistics(ofp, info->th, info->pli->align_cyk);
 	fprintf(ofp, "\n\n");
@@ -1624,75 +1616,75 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
 
   /* Main loop: */
   while (sstatus == eslOK ) {
-      block = (ESL_SQ_BLOCK *) newBlock;
+    block = (ESL_SQ_BLOCK *) newBlock;
+    
+    printf("thread received block");
+    
+    /* reset block as an empty vessel, possibly keeping the first sq intact for reading in the next window */
+    for (i=0; i < block->count; i++) esl_sq_Reuse(block->list + i);
+    
+    if (! prv_block_complete) { 
+      esl_sq_Copy(tmpsq, block->list);
+      block->complete = FALSE;  /* this lets ReadBlock know that it needs to append to a small bit of previously-read sequence */
+      block->list->C = info->pli->maxW;
+      /* Overload the ->C value, which ReadBlock uses to determine how much 
+       * overlap should be retained in the ReadWindow step. */
+    }
 
-      printf("thread received block");
-
-      /* reset block as an empty vessel, possibly keeping the first sq intact for reading in the next window */
-      for (i=0; i < block->count; i++) esl_sq_Reuse(block->list + i);
-
-      if (! prv_block_complete) { 
-	esl_sq_Copy(tmpsq, block->list);
-	block->complete = FALSE;  /* this lets ReadBlock know that it needs to append to a small bit of previously-read sequence */
-	block->list->C = info->pli->maxW;
-	/* Overload the ->C value, which ReadBlock uses to determine how much 
-	 * overlap should be retained in the ReadWindow step. */
+    sstatus = esl_sqio_ReadBlock(dbfp, block, CMSEARCH_MAX_RESIDUE_COUNT, TRUE);
+    
+    if (sstatus == eslOK) { /* we read a block */
+      if(! block->complete) { 
+	/* The final sequence on the block was a probably-incomplete window of the active sequence,
+	 * so capture a copy of that window to use as a template on which the next ReadWindow() call
+	 * (internal to ReadBlock) will be based */
+	esl_sq_Copy(block->list + (block->count - 1) , tmpsq);
       }
-
-      sstatus = esl_sqio_ReadBlock(dbfp, block, CMSEARCH_MAX_RESIDUE_COUNT, TRUE);
       
-      if (sstatus == eslOK) { /* we read a block */
-	if(! block->complete) { 
-	  /* The final sequence on the block was a probably-incomplete window of the active sequence,
-	   * so capture a copy of that window to use as a template on which the next ReadWindow() call
-	   * (internal to ReadBlock) will be based */
-	  esl_sq_Copy(block->list + (block->count - 1) , tmpsq);
-	}
-	
-	/* handle the rare case that the final window of previous block ended at final residue, yet we didn't know it at the time */
-	if((! prv_block_complete) && block->list[0].start == 1) { 
-	  info->pli->nseqs++;    /* we finished the previous sequence, but didn't know it at the time */
-	  prv_nseqs_finished++;  /* ditto */
-	  nseqs_started++;       /* we started a new sequence, even though we thought we were adding to an old one */
-	}
-	block->first_seqidx = info->pli->nseqs;
-	info->pli->nseqs   += (block->complete)    ? block->count : block->count-1; /* if there's an incomplete sequence read into the block, wait to count it until it's complete. */
-	nseqs_started      += (prv_block_complete) ? block->count : block->count-1; /* if our previous iteration didn't complete a sequence, account for that */
-	
-	/* update srcL list of full lengths of all sequences */
-	while(nseqs_started > nalloc_srcL) { /* reallocate if nec */
-	  nalloc_srcL += alloc_srcL;
-	  if(nalloc_srcL == alloc_srcL) ESL_ALLOC  (srcL, sizeof(int64_t) * nalloc_srcL);
-	  else                          ESL_REALLOC(srcL, sizeof(int64_t) * nalloc_srcL);
-	  for(i = nalloc_srcL-alloc_srcL; i < nalloc_srcL; i++) srcL[i] = -1; /* initialize */
-	}
-	for(s = prv_nseqs_finished; s < nseqs_started; s++) { 
-	  if(srcL[s] == -1) srcL[s]  = block->list[s-prv_nseqs_finished].W;
-	  else              srcL[s] += block->list[s-prv_nseqs_finished].W;
-	}
-      } 
-
-      if (sstatus == eslEOF) {
-	if (eofCount < esl_threads_GetWorkerCount(obj)) sstatus = eslOK;
-	++eofCount;
+      /* handle the rare case that the final window of previous block ended at final residue, yet we didn't know it at the time */
+      if((! prv_block_complete) && block->list[0].start == 1) { 
+	info->pli->nseqs++;    /* we finished the previous sequence, but didn't know it at the time */
+	prv_nseqs_finished++;  /* ditto */
+	nseqs_started++;       /* we started a new sequence, even though we thought we were adding to an old one */
       }
-      if (sstatus == eslOK) { /* note that this isn't an 'else if', sstatus may have been eslEOF before but just set to eslOK */
-	status = esl_workqueue_ReaderUpdate(queue, block, &newBlock);
-	if (status != eslOK) esl_fatal("Work queue reader failed");
+      block->first_seqidx = info->pli->nseqs;
+      info->pli->nseqs   += (block->complete)    ? block->count : block->count-1; /* if there's an incomplete sequence read into the block, wait to count it until it's complete. */
+      nseqs_started      += (prv_block_complete) ? block->count : block->count-1; /* if our previous iteration didn't complete a sequence, account for that */
+      
+      /* update srcL list of full lengths of all sequences */
+      while(nseqs_started > nalloc_srcL) { /* reallocate if nec */
+	nalloc_srcL += alloc_srcL;
+	if(nalloc_srcL == alloc_srcL) ESL_ALLOC  (srcL, sizeof(int64_t) * nalloc_srcL);
+	else                          ESL_REALLOC(srcL, sizeof(int64_t) * nalloc_srcL);
+	for(i = nalloc_srcL-alloc_srcL; i < nalloc_srcL; i++) srcL[i] = -1; /* initialize */
       }
-
-      /* newBlock needs all this information so the next ReadBlock call will know what to do */
-      ((ESL_SQ_BLOCK *)newBlock)->complete = block->complete;
-      if (! block->complete) {
-	/* the final sequence on the block was a probably-incomplete window of the active sequence, 
-	 * so prep the next block to read in the next window */
-	esl_sq_Copy(block->list + (block->count - 1) , ((ESL_SQ_BLOCK *)newBlock)->list);
-	((ESL_SQ_BLOCK *)newBlock)->list->C = info->pli->maxW;
+      for(s = prv_nseqs_finished; s < nseqs_started; s++) { 
+	if(srcL[s] == -1) srcL[s]  = block->list[s-prv_nseqs_finished].W;
+	else              srcL[s] += block->list[s-prv_nseqs_finished].W;
       }
+    } 
+    
+    if (sstatus == eslEOF) {
+      if (eofCount < esl_threads_GetWorkerCount(obj)) sstatus = eslOK;
+      ++eofCount;
+    }
+    if (sstatus == eslOK) { /* note that this isn't an 'else if', sstatus may have been eslEOF before but just set to eslOK */
+      status = esl_workqueue_ReaderUpdate(queue, block, &newBlock);
+      if (status != eslOK) esl_fatal("Work queue reader failed");
+    }
+    
+    /* newBlock needs all this information so the next ReadBlock call will know what to do */
+    ((ESL_SQ_BLOCK *)newBlock)->complete = block->complete;
+    if (! block->complete) {
+      /* the final sequence on the block was a probably-incomplete window of the active sequence, 
+       * so prep the next block to read in the next window */
+      esl_sq_Copy(block->list + (block->count - 1) , ((ESL_SQ_BLOCK *)newBlock)->list);
+      ((ESL_SQ_BLOCK *)newBlock)->list->C = info->pli->maxW;
+    }
 
-      prv_nseqs_started  = nseqs_started;
-      prv_nseqs_finished = info->pli->nseqs;
-      prv_block_complete = block->complete;
+    prv_nseqs_started  = nseqs_started;
+    prv_nseqs_finished = info->pli->nseqs;
+    prv_block_complete = block->complete;
   }
 
   status = esl_workqueue_ReaderUpdate(queue, block, NULL);
@@ -1959,7 +1951,6 @@ create_info()
   info->Tgm          = NULL;
   info->om           = NULL;
   info->bg           = NULL;
-  info->need_smx     = FALSE;
   ESL_ALLOC(info->p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
 
   return info;

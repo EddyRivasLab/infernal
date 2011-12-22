@@ -6341,10 +6341,11 @@ main(int argc, char **argv)
     /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
     double *gamma0_loc;
     double *gamma0_glb;
-    if((status = CalculateQueryDependentBands(cm, errbuf, NULL, DEFAULT_BETA_W, NULL, &gamma0_loc, &gamma0_glb)) != eslOK) cm_Fail(errbuf);
+    int Z;
+    if((status = CalculateQueryDependentBands(cm, errbuf, NULL, DEFAULT_BETA_W, NULL, &gamma0_loc, &gamma0_glb, &Z)) != eslOK) cm_Fail(errbuf);
     seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, 
 				      (cm->flags & CMH_LOCAL_BEGIN) ? gamma0_loc : gamma0_glb, 
-				      safe_windowlen, FALSE);
+				      Z, FALSE);
     free(gamma0_loc);
     free(gamma0_glb);
     free(dnull);

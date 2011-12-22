@@ -198,8 +198,6 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9map is NULL.\n");
   if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, dsq is NULL.");
   if(i0 > j0)            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, i0: %d > j0: %d\n", i0, j0);
-  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
-  if((cm->search_opts & CM_SEARCH_HMMALNBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, CM_SEARCH_HMMALNBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
   if(cm->tau > 0.5)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, cm->tau (%f) > 0.5, we can't deal.", cm->tau);
   
   use_sums      = ((cm->align_opts & CM_ALIGN_SUMS)      || (cm->search_opts & CM_SEARCH_SUMS))      ? TRUE : FALSE;
@@ -353,8 +351,6 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors(), dsq is NULL.");
   if(cm->cp9    == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9map is NULL.\n");
-  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
-    ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if((cm->search_opts & CM_SEARCH_HMMALNBANDS) && (! (cm->search_opts & CM_SEARCH_HBANDED))) 
     ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_SEARCH_HMMALNBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
 
@@ -1455,7 +1451,6 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
 
   /* Contract checks */
   if (cp9b == NULL)                                                                   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), cp9b is NULL.\n");
-  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
   if(i0 < 1) ESL_FAIL(eslEINCOMPAT,  errbuf, "cp9_HMM2ijBands(), i0 < 1: %d\n", i0);
   if(j0 < 1) ESL_FAIL(eslEINCOMPAT,  errbuf, "cp9_HMM2ijBands(), j0 < 1: %d\n", j0);
   if(j0 < i0) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), i0 (%d) < j0 (%d)\n", i0, j0);
@@ -3856,7 +3851,6 @@ cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, 
 
   /* Contract checks */
   if (cp9b == NULL)                                                                   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands_OLD(), cp9b is NULL.\n");
-  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands_OLD(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
   if(i0 < 1) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands_OLD(), i0 < 1: %d\n", i0);
   if(j0 < 1) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands_OLD(), j0 < 1: %d\n", j0);
   if(j0 < i0) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands_OLD(), i0 (%d) < j0 (%d)\n", i0, j0);

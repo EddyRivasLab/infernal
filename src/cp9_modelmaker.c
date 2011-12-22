@@ -224,7 +224,7 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 
   ESL_ALLOC(psi, sizeof(double) * cm->M);
   esl_stopwatch_Start(w);  
-  fill_psi(cm, psi, tmap);
+  fill_psi(cm, cm->t, psi, tmap);
   esl_stopwatch_Stop(w); 
   FormatTimeString(time_buf, w->user, TRUE);
 #if PRINTNOW
@@ -771,13 +771,14 @@ map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v)
  * 
  * Args:    
  * CM_t *cm          - the CM
+ * float **t         - CM transition probs [0..v..cm->M-1][0..MAXCONNECT-1], usually cm->t
  * double *psi       - psi[v] is expected number of times v is entered
  * char ***tmap      - eases coding transition use, hard-coded
  * 
  * Returns: (void) 
  */
 void
-fill_psi(CM_t *cm, double *psi, char ***tmap)
+fill_psi(CM_t *cm, float **t, double *psi, char ***tmap)
 {
   int v; /*first state in cm node n*/
   int y;
@@ -820,13 +821,13 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
 		  exit(1);
 		}
 	      /*printf("before: psi[%d]: %f\n", v, psi[v]);
-		printf("x: %d | tmap_val: %d | cm->t[x][tmap_val] : %f\n", x, tmap_val, cm->t[x][tmap_val]);*/
+		printf("x: %d | tmap_val: %d | t[x][tmap_val] : %f\n", x, tmap_val, t[x][tmap_val]);*/
 #endif
-	      psi[v] += psi[x] * cm->t[x][(int) tmap_val];
+	      psi[v] += psi[x] * t[x][(int) tmap_val];
 	      /*printf("after: psi[%d]: %f\n", v, psi[v]);*/
 	    }
-	  /*printf("added self loop contribution of %f\n", (psi[v] * cm->t[v][0] / (1-cm->t[v][0])));*/
-	  psi[v] += psi[v] * (cm->t[v][0] / (1-cm->t[v][0])); /*the contribution of the self insertion loops*/
+	  /*printf("added self loop contribution of %f\n", (psi[v] * t[v][0] / (1-t[v][0])));*/
+	  psi[v] += psi[v] * (t[v][0] / (1-t[v][0])); /*the contribution of the self insertion loops*/
 	  /*printf("SL after: psi[%d]: %f\n", v, psi[v]);*/
 	}
       else
@@ -848,10 +849,10 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
 		exit(1);
 	      }
 	      /*printf("before: psi[%d]: %f\n", v, psi[v]);
-		printf("x: %d | y: %d | tmap_val: %d | cm->t[x][tmap_val] : %f\n", x, y, tmap_val, cm->t[x][tmap_val]);
+		printf("x: %d | y: %d | tmap_val: %d | t[x][tmap_val] : %f\n", x, y, tmap_val, t[x][tmap_val]);
 	      */
 #endif
-	      psi[v] += psi[x] * cm->t[x][(int) tmap_val];
+	      psi[v] += psi[x] * t[x][(int) tmap_val];
 	      /*printf("after: psi[%d]: %f\n", v, psi[v]);*/
 	    }
 	}
@@ -3194,7 +3195,7 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
   make_tmap(&tmap);
   ESL_ALLOC(psi, sizeof(double) * cm->M);
   esl_stopwatch_Start(w);  
-  fill_psi(cm, psi, tmap);
+  fill_psi(cm, cm->t, psi, tmap);
   esl_stopwatch_Stop(w); 
   FormatTimeString(time_buf, w->user, TRUE);
 #if PRINTNOW

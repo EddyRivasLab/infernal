@@ -247,7 +247,7 @@ extern int     cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset);
 /* from cm_modelconfig.c */
 extern int   cm_Configure   (CM_t *cm, char *errbuf);
 extern int   cm_ConfigureSub(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map);
-extern int   cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float *begin, float *trbegin);
+extern int   cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float **t, float *begin, float *trbegin);
 
 /* from cm_modelmaker.c */
 extern int  HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_mtr);
@@ -339,12 +339,12 @@ extern int               cm_tr_hb_emit_mx_SizeNeeded (CM_t *cm, char *errbuf, CP
 extern int   cm_scan_mx_Create    (CM_t *cm, char *errbuf, int do_float, int do_int, CM_SCAN_MX **ret_smx);
 extern float cm_scan_mx_SizeNeeded(CM_t *cm, char *errbuf, int do_float, int do_int);
 extern void  cm_scan_mx_Destroy   (CM_t *cm, CM_SCAN_MX *smx);
-extern void  cm_scan_mx_Dump      (CM_t *cm, int j, int i0, int qdbidx, int doing_float);
+extern void  cm_scan_mx_Dump      (FILE *ofp, CM_t *cm, int j, int i0, int qdbidx, int doing_float);
 
 extern int   cm_tr_scan_mx_Create    (CM_t *cm, char *errbuf, int do_float, int do_int, CM_TR_SCAN_MX **ret_smx);
 extern float cm_tr_scan_mx_SizeNeeded(CM_t *cm, char *errbuf, int do_float, int do_int);
 extern void  cm_tr_scan_mx_Destroy   (CM_t *cm, CM_TR_SCAN_MX *smx);
-extern void  cm_tr_scan_mx_Dump      (CM_t *cm, int j, int i0, int qdbidx, int doing_float);
+extern void  cm_tr_scan_mx_Dump      (FILE *ofp, CM_t *cm, int j, int i0, int qdbidx, int doing_float);
 
 extern TruncOpts_t *   CreateTruncOpts();
 
@@ -388,7 +388,7 @@ extern char         ParsetreeMode(Parsetree_t *tr);
 
 /* from cm_qdband.c */
 extern void     BandExperiment(CM_t *cm);
-extern int      CalculateQueryDependentBands(CM_t *cm, char *errbuf, CM_QDBINFO *qdbinfo, double beta_W, int *ret_W, double **ret_gamma0_loc, double **ret_gamma0_glb);
+extern int      CalculateQueryDependentBands(CM_t *cm, char *errbuf, CM_QDBINFO *qdbinfo, double beta_W, int *ret_W, double **ret_gamma0_loc, double **ret_gamma0_glb, int *ret_Z);
 extern int      BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int save_densities, int *ret_W, double ***ret_gamma, double **ret_gamma0_loc, double **ret_gamma0_glb);
 extern int      BandTruncationNegligible(double *density, int b, int Z, double *ret_beta);
 extern int      BandMonteCarlo(CM_t *cm, int nsample, int Z, double ***ret_gamma);
@@ -462,7 +462,7 @@ extern void FreeCP9Map(CP9Map_t *cp9map);
 extern int  build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 			  float psi_vs_phi_threshold, int debug_level);
 extern void CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
-extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
+extern void fill_psi(CM_t *cm, float **t, double *psi, char ***tmap);
 extern void fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos, int entered_only);
 extern void map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v);
 extern void make_tmap(char ****ret_tmap);
@@ -775,7 +775,7 @@ extern CM_TOPHITS *cm_tophits_Create(void);
 extern int         cm_tophits_Grow(CM_TOPHITS *h);
 extern int         cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit);
 extern int         cm_tophits_SortByScore(CM_TOPHITS *h);
-extern int         cm_tophits_SortByPosition(CM_TOPHITS *h);
+extern int         cm_tophits_SortForOverlapRemoval(CM_TOPHITS *h);
 extern int         cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2);
 extern int         cm_tophits_GetMaxPositionLength(CM_TOPHITS *h);
 extern int         cm_tophits_GetMaxNameLength(CM_TOPHITS *h);
@@ -785,7 +785,7 @@ extern int         cm_tophits_Reuse(CM_TOPHITS *h);
 extern void        cm_tophits_Destroy(CM_TOPHITS *h);
 extern int         cm_tophits_CloneHitMostly(CM_TOPHITS *src_th, int h, CM_TOPHITS *dest_th);
 extern int         cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eZ, int istart);
-extern int         cm_tophits_RemoveOverlaps(CM_TOPHITS *th);
+extern int         cm_tophits_RemoveOverlaps(CM_TOPHITS *th, char *errbuf);
 extern int         cm_tophits_RemoveBogusTerminusHits(CM_TOPHITS *th);
 extern int         cm_tophits_UpdateHitPositions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_revcomp);
 extern int         cm_tophits_SetSourceLengths(CM_TOPHITS *th, int64_t *srcL, uint64_t nseqs);

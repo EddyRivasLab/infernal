@@ -510,7 +510,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* validate options if running as a daemon */
   if (esl_opt_IsOn(go, "--daemon")) {
-
     /* running as a daemon, the input format must be type daemon */
     if (seqfmt != eslSQFILE_UNKNOWN && seqfmt != eslSQFILE_DAEMON) 
       esl_fatal("Input format %s not supported.  Must be daemon\n", esl_opt_GetString(go, "--qformat"));
@@ -518,6 +517,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     if (strcmp(cfg->seqfile, "-") != 0) esl_fatal("Query sequence file must be '-'\n");
   }
+
   /* Open the target CM database and read 1 CM, but only to get the sequence alphabet */
   status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
   if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cfg->cmfile, errbuf);
@@ -531,7 +531,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(hstatus == eslEFORMAT)  cm_Fail("bad file format in CM file %s\n%s",           cfg->cmfile, cmfp->errbuf);
   else if (hstatus != eslOK) cm_Fail("Unexpected error in reading CMs from %s\n%s", cfg->cmfile, cmfp->errbuf); 
 
-  /* Determine database size: default is to updated as we read target CMs */
+  /* Determine database size: default is to update it as we read target CMs */
   if(esl_opt_IsUsed(go, "-Z")) { 
     cfg->Z       = (int64_t) esl_opt_GetReal(go, "-Z");
     cfg->Z_setby = CM_ZSETBY_OPTION; 
@@ -669,10 +669,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
 
       if(info[0].pli->do_top && info[0].pli->do_bot) { 
-	/* A brutish hack: we've searched all models versus each
-	 * sequence then reverse complement it and search all models
-	 * versus it again, so we think we've double counted all
-	 * models
+	/* we've searched all models versus each sequence then reverse
+	 * complement it and search all models versus it again, so
+	 * we've double counted all models.
 	 */
 	info[0].pli->nmodels /= 2;
 	info[0].pli->nnodes  /= 2;
@@ -680,8 +679,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       if(info[0].pli->research_ends) { 
 	/* We may have overlaps so sort by sequence index/position and remove duplicates */
-	cm_tophits_SortByPosition(info[0].th);
-	cm_tophits_RemoveOverlaps(info[0].th);
+	cm_tophits_SortForOverlapRemoval(info[0].th);
+	if((status = cm_tophits_RemoveOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
       }
 
       /* Sort by score and enforce threshold. */
@@ -1149,8 +1148,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       
       if(pli->research_ends) { 
 	/* We may have overlaps so sort by sequence index/position and remove duplicates */
-	cm_tophits_SortByPosition(th);
-	cm_tophits_RemoveOverlaps(th);
+	cm_tophits_SortForOverlapRemoval(th);
+	if((status = cm_tophits_RemoveOverlaps(th, errbuf)) != eslOK) mpi_failure(errbuf);
       }
       
       /* Print the results.  */
@@ -1167,7 +1166,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       cm_tophits_Targets(ofp, th, pli, textw); fprintf(ofp, "\n\n");
       if(pli->do_alignments) {
-	if((status = cm_tophits_HitAlignments(ofp, th, pli, textw)) != eslOK) esl_fatal("Out of memory");
+	if((status = cm_tophits_HitAlignments(ofp, th, pli, textw)) != eslOK) mpi_failure("Out of memory");
 	fprintf(ofp, "\n\n");
       }
       

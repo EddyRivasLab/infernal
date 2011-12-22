@@ -125,6 +125,8 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
 
+  printf("in FastCYKScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");
+
   /* Contract check */
   if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CMH_BITS flag is not raised.\n");
   if(j0 < i0)                              ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
@@ -137,13 +139,12 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
   /* make pointers to the ScanMatrix/CM data for convenience */
   float ***alpha      = smx->falpha;        /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
   float ***alpha_begl = smx->falpha_begl;   /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] minimum d for v, j (for j > W use [W][v]) */
+  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] maximum d for v, j (for j > W use [W][v]) */
   float  *bestsc      = smx->bestsc;        /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
   int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
   float **esc_vAA     = cm->oesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					     * and all possible emissions a (including ambiguities) */
-
   /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
   if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
   else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
@@ -638,14 +639,23 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveOverlaps(tmp_hitlist);
+    printf("tmp_hitlist before removing overlaps: %" PRId64 " hits\n", tmp_hitlist->N);
+    ///cm_tophits_Dump(stdout, tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
+    ///for(h = 0; h < tmp_hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, tmp_hitlist->unsrt[h].start, tmp_hitlist->unsrt[h].stop, tmp_hitlist->unsrt[h].score); }
+    cm_tophits_SortForOverlapRemoval(tmp_hitlist);
+    if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
+    printf("    hitlist after  removing overlaps: %" PRId64" hits\n", hitlist->N);
+    ///for(h = 0; h < hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, hitlist->unsrt[h].start, hitlist->unsrt[h].stop, hitlist->unsrt[h].score); }
+    ///cm_tophits_Dump(stdout, tmp_hitlist);
+    ///cm_tophits_Dump(stdout, hitlist);
     cm_tophits_Destroy(tmp_hitlist);
+    ///if(cm->flags & CMH_LOCAL_BEGIN) cm_Fail("done");
   }
 
   /* clean up and return */
@@ -737,6 +747,8 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
 
+  printf("in RefCYKScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");
+
   /* Contract check */
   if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CMH_BITS flag is not raised.\n");
   if(j0 < i0)                              ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
@@ -749,8 +761,8 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
   /* make pointers to the ScanMatrix/CM data for convenience */
   float ***alpha      = smx->falpha;        /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
   float ***alpha_begl = smx->falpha_begl;   /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] minimum d for v, j (for j > W use [W][v]) */
+  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] maximum d for v, j (for j > W use [W][v]) */
   float  *bestsc      = smx->bestsc;        /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
   int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
   float **esc_vAA     = cm->oesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
@@ -1012,13 +1024,21 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveOverlaps(tmp_hitlist);
+    printf("tmp_hitlist before removing overlaps: %" PRId64 " hits\n", tmp_hitlist->N);
+    ///cm_tophits_Dump(stdout, tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
+    ///for(h = 0; h < tmp_hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, tmp_hitlist->unsrt[h].start, tmp_hitlist->unsrt[h].stop, tmp_hitlist->unsrt[h].score); }
+    cm_tophits_SortForOverlapRemoval(tmp_hitlist);
+    if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
+    printf("    hitlist after  removing overlaps: %" PRId64" hits\n", hitlist->N);
+    ///for(h = 0; h < hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, hitlist->unsrt[h].start, hitlist->unsrt[h].stop, hitlist->unsrt[h].score); }
+    ///cm_tophits_Dump(stdout, tmp_hitlist);
+    ///cm_tophits_Dump(stdout, hitlist);
     cm_tophits_Destroy(tmp_hitlist);
   }
 
@@ -1113,6 +1133,10 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
 
+  printf("in FastIInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");
+
+  if(cm->flags & CMH_LOCAL_BEGIN) { FILE *fp; fp = fopen("cmp.txt", "w");  debug_print_cm_params(fp, cm); }
+
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
@@ -1124,13 +1148,12 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   /* make pointers to the ScanMatrix/CM data for convenience */
   int   ***alpha      = smx->ialpha;        /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
   int   ***alpha_begl = smx->ialpha_begl;   /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] minimum d for v, j (for j > W use [W][v]) */
+  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] maximum d for v, j (for j > W use [W][v]) */
   float  *bestsc      = smx->bestsc;        /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
   int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
   int   **esc_vAA     = cm->ioesc;          /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					     * and all possible emissions a (including ambiguities) */
-
   /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
   if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
   else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
@@ -1553,6 +1576,8 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
       if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  if(cm->ibeginsc[y] != -INFTY) {
+	    dn = ESL_MAX(dnA[0], dnA[y]);
+	    dx = ESL_MIN(dxA[0], dxA[y]);
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = jp_wA[0];
 	      for (d = dn; d <= dx; d++) {
@@ -1601,7 +1626,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
 	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
 
-      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
+      /* cm_scan_mx_Dump(stdout, cm, j, i0, qdbidx, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
@@ -1618,13 +1643,20 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveOverlaps(tmp_hitlist);
+    printf("tmp_hitlist before removing overlaps: %" PRId64 " hits\n", tmp_hitlist->N);
+    ///cm_tophits_Dump(stdout, tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
+    ///for(h = 0; h < tmp_hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, tmp_hitlist->unsrt[h].start, tmp_hitlist->unsrt[h].stop, tmp_hitlist->unsrt[h].score); }
+    cm_tophits_SortForOverlapRemoval(tmp_hitlist);
+    if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
+    printf("    hitlist after  removing overlaps: %" PRId64 " hits\n", hitlist->N);
+    ///for(h = 0; h < hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, hitlist->unsrt[h].start, hitlist->unsrt[h].stop, hitlist->unsrt[h].score); }
+    ///if(cm->flags & CMH_LOCAL_BEGIN) cm_Fail("done");
     cm_tophits_Destroy(tmp_hitlist);
   }
 
@@ -1721,6 +1753,8 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
 
+  printf("in FastFInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");
+
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CMH_BITS flag is not raised.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
@@ -1732,8 +1766,8 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   /* make pointers to the ScanMatrix/CM data for convenience */
   float ***alpha      = smx->falpha;        /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
   float ***alpha_begl = smx->falpha_begl;   /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] minimum d for v, j (for j > W use [W][v]) */
+  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] maximum d for v, j (for j > W use [W][v]) */
   float  *bestsc      = smx->bestsc;        /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
   int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
   float **esc_vAA     = cm->oesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
@@ -2213,7 +2247,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
 	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
 
-      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
+      /*FILE *fp; fp = fopen("tmp.ffins.smx", "w"); cm_scan_mx_Dump(fp, cm, j, i0, qdbidx, TRUE); fclose(fp); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
@@ -2230,13 +2264,20 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveOverlaps(tmp_hitlist);
+    printf("tmp_hitlist before removing overlaps: %" PRId64 " hits\n", tmp_hitlist->N);
+    ///cm_tophits_Dump(stdout, tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
+    ///for(h = 0; h < tmp_hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, tmp_hitlist->unsrt[h].start, tmp_hitlist->unsrt[h].stop, tmp_hitlist->unsrt[h].score); }
+    cm_tophits_SortForOverlapRemoval(tmp_hitlist);
+    if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
+    printf("    hitlist after  removing overlaps: %" PRId64 " hits\n", hitlist->N);
+    ///for(h = 0; h < hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, hitlist->unsrt[h].start, hitlist->unsrt[h].stop, hitlist->unsrt[h].score); }
+    ///if(cm->flags & CMH_LOCAL_BEGIN) cm_Fail("done");
     cm_tophits_Destroy(tmp_hitlist);
   }
 
@@ -2333,6 +2374,8 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   int       h;                  /* counter over hits */
 
 
+  printf("in RefIInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");
+
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CMH_BITS flag is not raised.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
@@ -2344,8 +2387,8 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   /* make pointers to the ScanMatrix/CM data for convenience */
   int   ***alpha      = smx->ialpha;        /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
   int   ***alpha_begl = smx->ialpha_begl;   /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] minimum d for v, j (for j > W use [W][v]) */
+  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] maximum d for v, j (for j > W use [W][v]) */
   float  *bestsc      = smx->bestsc;        /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
   int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
   int   **esc_vAA     = cm->ioesc;          /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
@@ -2597,13 +2640,21 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveOverlaps(tmp_hitlist);
+    printf("tmp_hitlist before removing overlaps: %" PRId64 " hits\n", tmp_hitlist->N);
+    ///cm_tophits_Dump(stdout, tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
+    ///for(h = 0; h < tmp_hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, tmp_hitlist->unsrt[h].start, tmp_hitlist->unsrt[h].stop, tmp_hitlist->unsrt[h].score); }
+    cm_tophits_SortForOverlapRemoval(tmp_hitlist);
+    if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
+    printf("    hitlist after  removing overlaps: %" PRId64" hits\n", hitlist->N);
+    ///for(h = 0; h < hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, hitlist->unsrt[h].start, hitlist->unsrt[h].stop, hitlist->unsrt[h].score); }
+    ///cm_tophits_Dump(stdout, tmp_hitlist);
+    ///cm_tophits_Dump(stdout, hitlist);
     cm_tophits_Destroy(tmp_hitlist);
   }
 
@@ -2631,9 +2682,9 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
  * Date:     EPN, Sun Nov  4 16:02:17 2007
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
- *           a reference scanning Inside that uses float scores. 
+ *           a reference scanning Inside that uses integer scores. 
  *           This function is slower but easier to understand than 
- *           FastFInsideScan().
+ *           FastIInsideScan().
  *
  *           The choice of using one of two sets of query-dependent
  *           bands (QDBs) or not using QDBs is controlled by
@@ -2655,13 +2706,12 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
- * Note:     This function is heavily synchronized with RefCYKScan() and RefIInsideScan()
+ * Note:     This function is heavily synchronized with RefCYKScan() and RefFInsideScan(), 
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  eslOK on success
- *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <hitlist>.
- *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
- *           Dies immediately if some error occurs.
+ * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
+ *           eslEINCOMPAT on contract violation, errbuf if filled with informative error message.
+ *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
 RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
@@ -2691,13 +2741,14 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  float    *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int       do_env_defn;        /* TRUE to calculate envi, envj, FALSE not to (TRUE if ret_envi != NULL or ret_envj != NULL */
   int64_t   envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
+
+  printf("in RefFInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CMH_BITS flag is not raised.\n");
@@ -2706,12 +2757,12 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CM_SEARCH_INSIDE flag not raised");
   if(smx == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, smx == NULL\n");
   if(! smx->floats_valid)                    ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, smx->floats_valid if FALSE");
-  
+
   /* make pointers to the ScanMatrix/CM data for convenience */
   float ***alpha      = smx->falpha;        /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
   float ***alpha_begl = smx->falpha_begl;   /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int   **dnAA        = smx->dnAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] minimum d for v, j (for j > W use [W][v]) */
+  int   **dxAA        = smx->dxAAA[qdbidx]; /* [0..j..W][0..v..cm->M-1] maximum d for v, j (for j > W use [W][v]) */
   float  *bestsc      = smx->bestsc;        /* [0..d..W] best score for this d, recalc'ed for each j endpoint  */
   int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
   float **esc_vAA     = cm->oesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
@@ -2755,10 +2806,6 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
   ESL_ALLOC(jp_wA, sizeof(float) * (W+1));
-
-  /* Initialize sc_v to size of M */
-  ESL_ALLOC(sc_v, (sizeof(float) * (W+1)));
-  esl_vec_FSet(sc_v, (W+1), IMPOSSIBLE);
 
   /* precalculate the initial scores for all cells */
   init_scAA = FCalcInitDPScores(cm);
@@ -2851,18 +2898,11 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
 	  else { /* ! B_st, ! BEGL_S st */
 	    y = cm->cfirst[v]; 
 	    i = j - dnA[v] + 1;
-	    /* printf("B BEGL j: %d, v: %d\n", j, v);*/
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      sc = init_scAA[v][d-sd]; 
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		{
-		  /*printf("sc: %f\n", sc);
-		  printf("d: %d\n", d);
-		  printf("sd: %d\n", sd);
-		  printf("tsc: %d\n", tsc_v[yoffset]);
-		  printf("alpha: %f\n", alpha[jp_y][y+yoffset][d - sd]);*/
-		  sc = FLogsum(sc, alpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
-		}
+		sc = FLogsum(sc, alpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
+
 	      switch (emitmode) {
 	      case EMITLEFT:
 		alpha[jp_v][v][d] = sc + esc_v[dsq[i--]];
@@ -2884,7 +2924,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
 	    else                      for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha_begl[jp_v][v][d]);
 	  }
 	} /*loop over decks v>0 */
-      
+
       /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
        * 
        * If local begins are off, the hit must be rooted at v=0.
@@ -2892,7 +2932,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
        * the traceback (e.g. after 0), the internal entry point. Divide & conquer
        * can only handle this if it's a non-insert state; this is guaranteed
        * by the way local alignment is parameterized (other transitions are
-       * -INFTY), which is probably a little too fragile of a method. 
+       * IMPOSSIBLE), which is probably a little too fragile of a method. 
        */
 
       float const *tsc_v = cm->tsc[0];
@@ -2915,7 +2955,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
 	    dn = ESL_MAX(dnA[0], dnA[y]);
 	    dx = ESL_MIN(dxA[0], dxA[y]);
 	    if(cm->stid[y] == BEGL_S) {
-	      jp_y = jp_wA[0];
+	      jp_y = j % (W+1);
 	      for (d = dn; d <= dx; d++) {
 		/*alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->beginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->beginsc[y])) {
@@ -2939,8 +2979,8 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
       }
       /* fill in bestsc for all valid d values, and update vsc_root (best overall score) */
       for (d = dnA[0]; d <= dxA[0]; d++) {
-	bestsc[d] = Scorify(alpha[jp_v][0][d]);
-	vsc_root  = ESL_MAX(vsc_root, Scorify(alpha[jp_v][0][d]));
+	bestsc[d] = alpha[jp_v][0][d];
+	vsc_root  = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
 	/* Note: currently we NOT do a null3 correction for vsc_root */
       }
 
@@ -2961,7 +3001,8 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
       if(tmp_hitlist != NULL) { 
 	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
-      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
+
+      /*FILE *fp; fp = fopen("tmp.rfins.smx", "w"); cm_scan_mx_Dump(fp, cm, j, i0, qdbidx, TRUE); fclose(fp); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
@@ -2973,13 +3014,21 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveOverlaps(tmp_hitlist);
+    printf("tmp_hitlist before removing overlaps: %" PRId64 " hits\n", tmp_hitlist->N);
+    ///cm_tophits_Dump(stdout, tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
+    ///for(h = 0; h < tmp_hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, tmp_hitlist->unsrt[h].start, tmp_hitlist->unsrt[h].stop, tmp_hitlist->unsrt[h].score); }
+    cm_tophits_SortForOverlapRemoval(tmp_hitlist);
+    if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
+    printf("    hitlist after  removing overlaps: %" PRId64" hits\n", hitlist->N);
+    ///for(h = 0; h < hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, hitlist->unsrt[h].start, hitlist->unsrt[h].stop, hitlist->unsrt[h].score); }
+    ///cm_tophits_Dump(stdout, tmp_hitlist);
+    ///cm_tophits_Dump(stdout, hitlist);
     cm_tophits_Destroy(tmp_hitlist);
   }
 
@@ -2991,8 +3040,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   free(jp_wA);
   free(init_scAA[0]);
   free(init_scAA);
-  free(sc_v);
-  if (ret_vsc != NULL) *ret_vsc         = vsc;
+  if (ret_vsc != NULL) *ret_vsc = vsc;
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
   
@@ -3647,8 +3695,9 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveOverlaps(tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
+    cm_tophits_SortForOverlapRemoval(tmp_hitlist);
+    if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
@@ -4160,8 +4209,9 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    cm_tophits_SortByPosition(tmp_hitlist);
-    cm_tophits_RemoveOverlaps(tmp_hitlist);
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
+    cm_tophits_SortForOverlapRemoval(tmp_hitlist);
+    if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     /*cm_tophits_Dump(stdout, tmp_hitlist);*/
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
@@ -4218,11 +4268,8 @@ DetermineSeqChunksize(int nproc, int L, int W)
  * Benchmark driver
  *****************************************************************/
 #ifdef IMPL_SEARCH_BENCHMARK
-/* gcc -o benchmark-search -g -O2 -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c -linfernal -lhmmer -leasel -lm
- * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * mpicc -o benchmark-search -g -O2 -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c -linfernal -leasel -lm
- * icc -g -O3 -static -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * icc -o benchmark-search -O3 -static -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c -linfernal -leasel -lm
+/* Next line is not optimized (debugging on) on MacBook Pro:
+ * gcc   -o benchmark-search -std=gnu99 -g -Wall -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c -linfernal -lhmmer -leasel -lm
  * ./benchmark-search <cmfile>
  */
 
@@ -4238,6 +4285,7 @@ DetermineSeqChunksize(int nproc, int L, int W)
 #include <esl_getopts.h>
 #include <esl_histogram.h>
 #include <esl_random.h>
+#include <esl_randomseq.h>
 #include <esl_sqio.h>
 #include <esl_stats.h>
 #include <esl_stopwatch.h>
@@ -4256,8 +4304,8 @@ static ESL_OPTIONS options[] = {
   { "-L",        eslARG_INT,  "10000", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",                   0 },
   { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                   0 },
   { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute reference CYK scan implementation", 0 },
-  { "-x",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute experimental CYK scan implementation", 0 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute non-banded optimized CYK scan implementation", 0 },
+  { "--infile",  eslARG_INFILE,  NULL, NULL, NULL,  NULL,  NULL, "-L,-N,-e", "read sequences to search from file <s>", 2 },
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute optimized int inside scan implementation", 0 },
   { "--riins",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute reference int inside scan implementation", 0 },
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute optimized float inside scan implementation", 0 },
@@ -4288,11 +4336,11 @@ main(int argc, char **argv)
   float           sc;
   char           *cmfile = esl_opt_GetArg(go, 1);
   CM_FILE        *cmfp;	/* open input CM file stream */
-  int            *dmin;
-  int            *dmax;
+  ESL_SQFILE     *sqfp  = NULL;        /* open sequence input file stream */
   int             do_random;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
-  char           errbuf[cmERRBUFSIZE];
+  int             qdbidx;
+  char            errbuf[cmERRBUFSIZE];
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
@@ -4309,23 +4357,32 @@ main(int argc, char **argv)
 
   if(! esl_opt_GetBoolean(go, "-g")) cm->config_opts  |= CM_CONFIG_LOCAL;
   if(  esl_opt_GetBoolean(go, "--sums"))        cm->search_opts |= CM_SEARCH_SUMS;
-  //if(  esl_opt_GetBoolean(go, "--aln2bands"))   cm->search_opts |= CM_SEARCH_HMMALNBANDS;
   if(  esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts |= CM_SEARCH_HBANDED;
   if(  esl_opt_GetBoolean(go, "--ihbanded"))    cm->search_opts |= CM_SEARCH_HBANDED;
   cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
-  if( esl_opt_GetBoolean(go, "--noqdb"))        cm->search_opts |= CM_SEARCH_NOQDB;
-  else                                          cm->config_opts |= CM_CONFIG_QDB;
-  ConfigCM(cm, errbuf, TRUE, NULL, NULL); /* TRUE says: calculate W */
+  if( esl_opt_GetBoolean(go, "--noqdb"))        cm->search_opts |= CM_SEARCH_NONBANDED;
+  else                                          cm->search_opts |= CM_SEARCH_QDB;
 
-  if (esl_opt_GetBoolean(go, "--noqdb")) { 
-    dmin = NULL; dmax = NULL;
-  }
-  else { dmin = cm->dmin; dmax = cm->dmax; }
-
-  cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
+  cm->config_opts |= CM_CONFIG_SCANMX;
+  if((status = cm_Configure(cm, errbuf)) != eslOK) cm_Fail(errbuf);
+  qdbidx = esl_opt_GetBoolean(go, "--noqdb") ? SMX_NOQDB : SMX_QDB1_TIGHT; 
 
   /* get sequences */
-  if(esl_opt_IsUsed(go, "-L")) {
+  if(esl_opt_IsUsed(go, "--infile")) { 
+    /* read sequences from a file */
+    status = esl_sqfile_OpenDigital(cm->abc, esl_opt_GetString(go, "--infile"), eslSQFILE_UNKNOWN, NULL, &sqfp);
+    if (status == eslENOTFOUND)    esl_fatal("File %s doesn't exist or is not readable\n", esl_opt_GetString(go, "--infile"));
+    else if (status == eslEFORMAT) esl_fatal("Couldn't determine format of sequence file %s\n", esl_opt_GetString(go, "--infile"));
+    else if (status == eslEINVAL)  esl_fatal("Can't autodetect stdin or .gz."); 
+    else if (status != eslOK)      esl_fatal("Sequence file open failed with error %d.\n", status);
+
+    seqs_to_aln = CreateSeqsToAln(100, FALSE);
+    if((status = ReadSeqsToAln(cm->abc, sqfp, 0, seqs_to_aln, FALSE)) != eslEOF)
+      esl_fatal("Error reading sqfile: %s\n", esl_opt_GetString(go, "--infile"));
+    esl_sqfile_Close(sqfp);
+    N = seqs_to_aln->nseq;
+  }
+  else if(esl_opt_IsUsed(go, "-L")) {
      double *dnull;
      ESL_DSQ *randdsq = NULL;
      ESL_ALLOC(randdsq, sizeof(ESL_DSQ)* (L+2));
@@ -4349,10 +4406,11 @@ main(int argc, char **argv)
     /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
     double *gamma0_loc;
     double *gamma0_glb;
-    if((status = CalculateQueryDependentBands(cm, errbuf, NULL, DEFAULT_BETA_W, NULL, &gamma0_loc, &gamma0_glb)) != eslOK) cm_Fail(errbuf);
+    int Z;
+    if((status = CalculateQueryDependentBands(cm, errbuf, NULL, DEFAULT_BETA_W, NULL, &gamma0_loc, &gamma0_glb, &Z)) != eslOK) cm_Fail(errbuf);
     seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, 
 				      (cm->flags & CMH_LOCAL_BEGIN) ? gamma0_loc : gamma0_glb, 
-				      safe_windowlen, FALSE);
+				      Z, FALSE);
     free(gamma0_loc);
     free(gamma0_glb);
     free(dnull);
@@ -4367,7 +4425,7 @@ main(int argc, char **argv)
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
 
       esl_stopwatch_Start(w);
-      if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = FastCYKScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4375,7 +4433,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-w")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  if((status = RefCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = RefCYKScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefCYKScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4385,7 +4443,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = FastIInsideScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4395,7 +4453,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = RefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = RefIInsideScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4405,7 +4463,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = FastFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = FastFInsideScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4415,7 +4473,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = RefFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = RefFInsideScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefFInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
