@@ -826,7 +826,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
       char tmpfile[32] = "esltmpXXXXXX"; /* name of the tmpfile, needs to be here, so it's reset for each CM, else esl_tmpfile_named will fail on second CM */
 
-      if((status = cm_master_MPIBcast(cm, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
+      if((status = cm_master_MPIBcast(cm, errbuf, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail(errbuf);
       
       /* initialize the flags/options/params of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
@@ -1002,7 +1002,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    * Shut down workers cleanly. 
    */
   ESL_DPRINTF1(("MPI master is done. Shutting down all the workers cleanly\n"));
-  if((cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
+  if((cm_master_MPIBcast(NULL, errbuf, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail(errbuf);
   free(buf);
   
   if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); return xstatus; }
@@ -1051,7 +1051,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_DPRINTF1(("worker %d: initialized seed: %ld\n", cfg->my_rank, seed));
 
   /* source = 0 (master); tag = 0 */
-  while ((status = cm_worker_MPIBcast(0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm)) == eslOK)
+  while ((status = cm_worker_MPIBcast(errbuf, 0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm)) == eslOK)
     {
       ESL_DPRINTF1(("Worker %d succesfully received CM, num states: %d num nodes: %d\n", cfg->my_rank, cm->M, cm->nodes));
       
@@ -1121,7 +1121,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * the current CM, and then a 'empty' CM broadcast that tells us we're done with all CMs in the file.
    */
   status = cm_seqs_to_aln_MPIRecv(cfg->abc, 0, 0, MPI_COMM_WORLD, &wbuf, &wn, &seqs_to_aln);
-  status = cm_worker_MPIBcast(0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm);
+  status = cm_worker_MPIBcast(errbuf, 0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm);
   /* status after each of the above calls should be eslEOD, but if it isn't we can't really do anything 
    * about it b/c we've already sent our error message, so in that scenario the MPI will break uncleanly 
    */
@@ -1395,7 +1395,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * set local mode, make cp9 HMM, calculate QD bands if nec etc. 
    */
-  if((status = cm_Configure(cm, errbuf)) != eslOK) return status;
+  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
 
   /* if(cfg->my_rank == 0) printf("CM %d: %s\n", (cfg->ncm), cm->name); 
    * debug_print_cm_params(stdout, cm);

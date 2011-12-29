@@ -89,17 +89,18 @@ static void  cp9_renormalize_exits(CP9_t *hmm);
  *             CM_CONFIG_SMX 
  * 
  *          
- * Args:     cm            - the covariance model
- *           errbuf        - for error messages
+ * Args:     cm             - the covariance model
+ *           errbuf         - for error messages
+ *           W_from_cmdline - W set on cmdline, -1 if W not set on cmdline (usually -1)
  *
  * Returns:   <eslOK> on success.
  *            <eslEINVAL> on contract violation.
  *            <eslEMEM> on memory allocation error.
  */
 int 
-cm_Configure(CM_t *cm, char *errbuf)
+cm_Configure(CM_t *cm, char *errbuf, int W_from_cmdline)
 {
-  return cm_ConfigureSub(cm, errbuf, NULL, NULL);
+  return cm_ConfigureSub(cm, errbuf, W_from_cmdline, NULL, NULL);
 }
 
 /* Function: cm_ConfigureSub() 
@@ -121,15 +122,16 @@ cm_Configure(CM_t *cm, char *errbuf)
  *           some of the parameters of the mother model instead of
  *           calc'ing them.
  *          
- * Args:     cm            - the covariance model
- *           errbuf        - for error messages
- *           mother_cm     - if non-NULL, <cm> is a sub CM construced from 
- *                           <mother_cm>. In this case we use <mother_map>
- *                           to help streamline the two steps that dominate the 
- *                           running time of this function (b/c speed is an issue):
- *                           building a cp9 HMM, and logoddsifying the model.
- *           mother_map    - must be non-NULL iff <mother_cm> is non-NULL, the 
- *                           map from <cm> to <mother_cm>.
+ * Args:     cm             - the covariance model
+ *           errbuf         - for error messages
+ *           W_from_cmdline - W set on cmdline, -1 if W not set on cmdline (usually -1)
+ *           mother_cm      - if non-NULL, <cm> is a sub CM construced from 
+ *                            <mother_cm>. In this case we use <mother_map>
+ *                            to help streamline the two steps that dominate the 
+ *                            running time of this function (b/c speed is an issue):
+ *                            building a cp9 HMM, and logoddsifying the model.
+ *           mother_map     - must be non-NULL iff <mother_cm> is non-NULL, the 
+ *                            map from <cm> to <mother_cm>.
  *
  * Returns:   <eslOK> on success.
  *            <eslEINVAL> on contract violation.
@@ -137,7 +139,7 @@ cm_Configure(CM_t *cm, char *errbuf)
  *            <eslFAIL> on other failure (errbuf filled)
  */
 int 
-cm_ConfigureSub(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
+cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMSubMap_t *mother_map)
 {
   int   status;
   float swentry, swexit;
@@ -166,13 +168,43 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
   /* Build the emitmap, if necessary */
   if(cm->emap == NULL) cm->emap = CreateEmitMap(cm);
 
-  /* If nec, set up the query dependent bands (it's important to do this before creating the ml p7 HMM (which needs to know cm->W) */
-  if((cm->config_opts & CM_CONFIG_QDB) || 
-     (cm->config_opts & CM_CONFIG_W)   || 
-     (cm->qdbinfo->setby == CM_QDBINFO_SETBY_INIT))
-    {
-      if((status = CalculateQueryDependentBands(cm, errbuf, cm->qdbinfo, cm->beta_W, &(cm->W), NULL, NULL, NULL)) != eslOK) return status;
+  /* Define W and set up query dependent bands. This is confusing. We need
+   * the user to be able to set W on the command line if they want, but W
+   * and the QDBs used to define the CM_SCAN_MX (created later) are dependent
+   * on one another. 
+   * 
+   * If W was set on the command line (W_from_cmdline != -1): 
+   * Set W, and calculate QDBs if nec, without redefining W.
+   * 
+   * Else, if W was not set on the command line (W_from_cmdline ==
+   * -1): Calculate QDBs if nec, and redefine W using beta=cm->beta_W,
+   * which may or may not have been changed by caller from what BETA_W
+   * was in the CM file.
+   *
+   * Then, W (regardless of how it was set) is enforced when the scan
+   * matrix is created, i.e. no dmin/dmax values from cm->qdbinfo 
+   * that exceed W will be treated as begin equal to W. 
+   */
+  if(W_from_cmdline != -1) { 
+    cm->W       = W_from_cmdline;
+    cm->W_setby = CM_W_SETBY_CMDLINE;
+  }
+  /* If nec, set up the query dependent bands (it's important to do this before creating the ml p7 HMM (which needs to know cm->W)) */
+  if((cm->config_opts & CM_CONFIG_QDB)    || 
+     (cm->config_opts & CM_CONFIG_W_BETA) || 
+     (cm->qdbinfo->setby == CM_QDBINFO_SETBY_INIT)) { 
+    if(W_from_cmdline != -1) { 
+      if((status = CalculateQueryDependentBands(cm, errbuf, cm->qdbinfo, 
+						ESL_MIN(cm->qdbinfo->beta1, cm->qdbinfo->beta2), NULL, /* don't redefine W, we just set it above as W_from_cmdline */
+						NULL, NULL, NULL)) != eslOK) return status;
     }
+    else { 
+      if((status = CalculateQueryDependentBands(cm, errbuf, cm->qdbinfo, 
+						cm->beta_W, &(cm->W), /* do redefine W, as that calc'ed with cm->beta_W */
+						NULL, NULL, NULL)) != eslOK) return status;
+      cm->W_setby = CM_W_SETBY_BANDCALC;
+    }
+  }
   
   /* Allocate the HMM banded matrices, these are originally 
    * very small and only grown as needed.

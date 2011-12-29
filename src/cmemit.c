@@ -319,7 +319,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
   /* exponentiate the CM, if nec. do this before possibly configuring to local alignment in cm_Configure() */
   if(esl_opt_IsOn(go, "--exp")) ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));
 
-  if((status = cm_Configure(cm, errbuf)) != eslOK) return status;
+  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
 
   /* print the CP9 params if nec */
   if(cfg->ahmmfp != NULL) {

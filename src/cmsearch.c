@@ -260,7 +260,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 {
   ESL_GETOPTS *go = NULL;
 
-  if ((go = esl_getopts_Create(options))     == NULL)     p7_Die("Internal failure creating options object");
+  if ((go = esl_getopts_Create(options))     == NULL)     cm_Fail("Internal failure creating options object");
   if (esl_opt_ProcessEnvironment(go)         != eslOK)  { printf("Failed to process environment: %s\n", go->errbuf); goto ERROR; }
   if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf); goto ERROR; }
   if (esl_opt_VerifyConfig(go)               != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf); goto ERROR; }
@@ -1397,7 +1397,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    /* search top strand */
 	    if (info->pli->do_top) { 
 	      prv_pli_ntophits = info->th->N;
-	      if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) 
+	      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) 
 		mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	      cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
@@ -1410,7 +1410,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    if(info->pli->do_bot && dbsq->abc->complement != NULL) { 
 	      esl_sq_ReverseComplement(dbsq);
 	      prv_pli_ntophits = info->th->N;
-	      if((status = cm_Pipeline(info->pli, info->cm->offset, info->cm->config_opts, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) 
+	      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) 
 		mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	      cm_pipeline_Reuse(info->pli); /* prepare for next search */
 	      if(info->pli->do_top) info->pli->acct[PLI_PASS_STD].nres += dbsq->n; /* add dbsq->n residues, the reverse complement we just searched */
@@ -2054,7 +2054,7 @@ configure_cm(WORKER_INFO *info)
   
   /* cm_pipeline_Create() sets configure options in pli->cm_config_opts */
   info->cm->config_opts = info->pli->cm_config_opts;
-  if((status = cm_Configure(info->cm, info->pli->errbuf)) != eslOK) return status;
+  if((status = cm_Configure(info->cm, info->pli->errbuf, -1)) != eslOK) return status;
 
   /* create CM consensus */
   if((status = CreateCMConsensus(info->cm, info->cm->abc, 3.0, 1.0, &(info->cmcons)))!= eslOK) {

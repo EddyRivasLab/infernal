@@ -50,7 +50,6 @@
 #define DEFAULT_CP9BANDS_THRESH2 0.99
 #define DEFAULT_EL_SELFPROB      0.94
 
-
 /* max number of parititons for cmcalibrate */
 #define MAX_PARTITIONS 20
 
@@ -466,7 +465,7 @@ typedef struct cp9map_s {
 #define CM_CONFIG_HMMLOCAL      (1<<1)  /* configure the CP9 for local alignment   */
 #define CM_CONFIG_HMMEL         (1<<2)  /* configure the CP9 for EL local aln      */
 #define CM_CONFIG_QDB           (1<<3)  /* recalculate query dependent bands       */
-#define CM_CONFIG_W             (1<<4)  /* recalculate W                           */
+#define CM_CONFIG_W_BETA        (1<<4)  /* recalculate W using band calculation    */
 #define CM_CONFIG_TRUNC         (1<<5)  /* set up for truncated alignment (cm->{L,R,T}cp9 will be built */
 #define CM_CONFIG_TRUNC_NOFORCE (1<<6)  /* don't force sequence endpoints exist in truncated alignments */
 #define CM_CONFIG_SCANMX        (1<<7)  /* create a CM_SCAN_MX in cm->smx          */
@@ -1016,6 +1015,7 @@ enum emitmode_e {
 #define nEMITMODES 4 
 
 enum cm_qdbinfo_setby_e    { CM_QDBINFO_SETBY_INIT = 0, CM_QDBINFO_SETBY_CMFILE = 1, CM_QDBINFO_SETBY_BANDCALC = 2 };
+enum cm_w_setby_e          { CM_W_SETBY_INIT = 0, CM_W_SETBY_CMFILE = 1, CM_W_SETBY_BANDCALC = 2, CM_W_SETBY_CMDLINE = 3 };
 
 /* Structure CM_QDBINFO: Per-model information on QDBs including 
  * two sets of dmin/dmax values and the beta values used to 
@@ -1809,6 +1809,11 @@ typedef struct cm_s {
   /* W and query dependent bands (QDBs) on subsequence lengths at each state */
   int     W;            /* max d: max size of a hit (EPN 08.18.05)                 */
   double  beta_W;       /* tail loss probability for QDB calculation used to set W */
+  enum cm_qdbinfo_setby_e W_setby; /* how current W value was set: 
+				    * CM_W_SETBY_INIT | CM_W_SETBY_CMFILE | CM_W_SETBY_BANDCALC | CM_W_SETBY_CMDLINE */
+  /* regarding W: if W_setby is CM_W_SETBY_INIT or CM_W_SETBY_CMDLINE, then beta_W does not correspond
+   * to a band calculation beta value used to compute W (set as dmax[0]). Otherwise, it does. */
+
   CM_QDBINFO *qdbinfo;  /* two sets of QDBs and the beta values used to calc them  */
 
   double  tau;          /* tail loss probability for HMM target dependent banding             */

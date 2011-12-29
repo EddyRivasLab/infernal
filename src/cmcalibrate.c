@@ -50,6 +50,8 @@
 
 #define REALLYSMALLX        1e-20
 #define EXPTAIL_CHUNKLEN    10000 /* sequence chunk length for random sequence searches */
+///#define EXPTAIL_CHUNKLEN    1000 /* sequence chunk length for random sequence searches */
+#define DEBUGMPI 0
 
 typedef struct {
 #ifdef HMMER_THREADS
@@ -57,7 +59,7 @@ typedef struct {
 #endif /*HMMER_THREADS*/
   CM_t             *cm;        /* a covariance model        */
   float            *scA;       /* vector of scores of hits  */
-  int               nhits;     /* number of hits in scA     */
+  int64_t           nhits;     /* number of hits in scA     */
   float             cutoff;    /* minimum hit score to keep */
 } WORKER_INFO;
 
@@ -72,8 +74,18 @@ typedef struct {
 static ESL_OPTIONS options[] = {
   /* name                  type   default   env        range      toggles      reqs       incomp  help  docgroup*/
   { "-h",           eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "show brief help on version and usage",   1 },
+  { "-L",           eslARG_REAL,    "1.6",  NULL,"0.01<=x<=100.",  NULL,        NULL,         NULL, "set random seq length to search in Mb to <x>", 2 },
   { "--forecast",   eslARG_INT,     NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "don't do calibration, forecast running time with <n> processors", 1 },
   { "--seed",       eslARG_INT,     "181",  NULL,      "n>=0",    NULL,        NULL,        NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)", 1 },
+  { "--beta",       eslARG_REAL,    "1E-15",NULL,      "x>0",     NULL,        NULL,"--nonbanded","set tail loss prob for QDB to <x>", 1 },
+  { "--nonbanded",  eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not use QDBs for calibrating CM search modes", 1 },
+  { "--gtailn",     eslARG_INT,     "250",  NULL,   "n>=100",     NULL,        NULL,   "--tailp", "fit the top <n> hits/Mb in histogram for  CM glocal modes", 1 },
+  { "--ltailn",     eslARG_INT,     "750",  NULL,   "n>=100",     NULL,        NULL,   "--tailp", "fit the top <n> hits/Mb in histogram for  CM  local modes", 1 },
+  { "--tailp",      eslARG_REAL,    NULL,   NULL,"0.0<x<0.6",     NULL,        NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 1 },
+  { "--hfile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save fitted score histogram(s) to file <f>", 1 },
+  { "--sfile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save survival plot to file <f>", 1 },
+  { "--qqfile",     eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save Q-Q plot for score histograms to file <f>", 1 },
+  { "--ffile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save lambdas for different tail fit probs to file <f>", 1 },
   { "--devhelp",    eslARG_NONE,    NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HMMER_THREADS 
   { "--cpu",        eslARG_INT,     NULL,"HMMER_NCPU", "n>=0",    NULL,        NULL,     CPUOPTS, "number of parallel CPU workers to use for multithreads", 1 },
@@ -82,18 +94,8 @@ static ESL_OPTIONS options[] = {
   { "--mpi",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,     MPIOPTS, "run as an MPI parallel program", 1 },  
   { "--stall",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 1 },  
 #endif
-  /* options for exp tail fitting */
-  { "-L",           eslARG_REAL,    "1.6",  NULL,"0.1<=x<=100.",  NULL,        NULL,         NULL, "set random seq length to search in Mb to <x>", 2 },
-  { "--gtailn",     eslARG_INT,     "250",  NULL,   "n>=100",     NULL,        NULL,   "--tailp", "fit the top <n> hits/Mb in histogram for  CM glocal modes", 2 },
-  { "--ltailn",     eslARG_INT,     "750",  NULL,   "n>=100",     NULL,        NULL,   "--tailp", "fit the top <n> hits/Mb in histogram for  CM  local modes", 2 },
-  { "--tailp",      eslARG_REAL,    NULL,   NULL,"0.0<x<0.6",     NULL,        NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
-  { "--beta",       eslARG_REAL,    "1E-15",NULL,      "x>0",     NULL,        NULL,"--nonbanded","set tail loss prob for QDB to <x>", 2 },
-  { "--nonbanded",  eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not use QDBs for calibrating CM search modes", 2 },
-  { "--hfile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save fitted score histogram(s) to file <f>", 2 },
-  { "--sfile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save survival plot to file <f>", 2 },
-  { "--qqfile",     eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save Q-Q plot for score histograms to file <f>", 2 },
-  { "--ffile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save lambdas for different tail fit probs to file <f>", 2 },
   /* Developer options the average user doesn't need to know about (only shown if --devhelp) */
+  { "-x",           eslARG_NONE,   FALSE,   NULL, NULL,     NULL,        NULL, "--forecast", "print arguably interesting info",  101},
   { "-v",           eslARG_NONE,   FALSE,   NULL, NULL,     NULL,        NULL, "--forecast", "print arguably interesting info",  101},
   { "-T",           eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 101 },
   { "--random",     eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content of random null background model of CM",  101},
@@ -107,7 +109,8 @@ static ESL_OPTIONS options[] = {
 
 struct cfg_s {
   char              *cmfile;	         /* name of input CM file  */ 
-  ESL_RANDOMNESS    *r;                  /* random number generator */
+  ESL_RANDOMNESS    *r;                  /* random number generator, for sequences to search */
+  ESL_RANDOMNESS    *r_est;              /* random number generator, for sequences used in time estimates */
   ESL_ALPHABET      *abc;                /* alphabet */
   ESL_STOPWATCH     *w_stage;            /* stopwatch for each stage */
   double            *gc_freq;            /* gc frequence [0..100], only used if --gc */
@@ -166,10 +169,11 @@ static int  serial_loop  (WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_bloc
 
 /* Functions to avoid code duplication for common tasks */
 static int  init_master_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+static int  init_shared_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  initialize_cm   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int do_local);
 static int  initialize_stats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp);
-static int  get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int L, ESL_DSQ **ret_dsq);
+static int  get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int L, ESL_RANDOMNESS *r, ESL_DSQ **ret_dsq);
 static int  get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  update_comlog(const ESL_GETOPTS *go, char *errbuf, char *ccom, char *cdate, CM_t *cm);
 static int  set_dnull(struct cfg_s *cfg, CM_t *cm, char *errbuf);
@@ -182,6 +186,8 @@ static int  print_post_calibration_info (const ESL_GETOPTS *go, struct cfg_s *cf
 static int  estimate_time_for_exp_round (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, double *ret_sec_per_res);
 static int  process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, CM_TOPHITS **ret_th);
 static int  generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block);
+static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile);
+static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile);
 
 #ifdef HMMER_THREADS
 #define BLOCK_SIZE 150
@@ -195,6 +201,478 @@ static int  mpi_master   (ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  mpi_worker   (ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif /*HAVE_MPI*/
 
+
+#ifdef HAVE_MPI
+
+/* Define common tags used by the MPI master/slave processes */
+#define INFERNAL_ERROR_TAG          1
+#define INFERNAL_SEQIDX_TAG         2
+#define INFERNAL_SCORES_TAG         3
+#define INFERNAL_TERMINATING_TAG    4
+#define INFERNAL_READY_TAG          5
+
+/* mpi_failure()
+ * Generate an error message.  If the clients rank is not 0, a
+ * message is created with the error message and sent to the
+ * master process for handling.
+ */
+static void
+mpi_failure(char *format, ...)
+{
+  va_list  argp;
+  int      status = eslFAIL;
+  int      len;
+  int      rank;
+  char     str[512];
+
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  /* format the error mesg */
+  va_start(argp, format);
+  len = vsnprintf(str, sizeof(str), format, argp);
+  va_end(argp);
+
+  /* make sure the error string is terminated */
+  str[sizeof(str)-1] = '\0';
+
+  /* if the caller is the master, print the results and abort */
+  if (rank == 0)
+    {
+      fprintf(stderr, "\nError: ");
+      fprintf(stderr, "%s", str);
+      fprintf(stderr, "\n");
+      fflush(stderr);
+
+      MPI_Abort(MPI_COMM_WORLD, status);
+      exit(1);
+    }
+  else
+    {
+      MPI_Send(str, len, MPI_CHAR, 0, INFERNAL_ERROR_TAG, MPI_COMM_WORLD);
+      pause();
+    }
+}
+
+/* mpi_master()
+ * The MPI version of cmcalibrate.
+ * Follows standard pattern for a master/worker load-balanced MPI program 
+ * (SRE notes J1/78-79).
+ * 
+ * A master returns eslOK if it's successful.  Errors in an MPI master
+ * come in two classes: recoverable and nonrecoverable.  
+ * 
+ * Recoverable errors include most worker-side errors, and any
+ * master-side error that do not affect MPI communication. Error
+ * messages from recoverable messages are delayed until we've cleanly
+ * shut down the workers. The 
+ * 
+ * Some worker side errors (such as ESL_ALLOCs) are likely to be 
+ * unrecoverable and will almost certainly cause MPI to crash
+ * uncleanly, they're only here because I couldn't find a way around
+ * them without massive reimplementation. Hopefully they rarely occur.
+ * 
+ * Unrecoverable errors are master-side errors that may affect MPI
+ * communication, meaning we cannot count on being able to reach the
+ * workers and shut them down. Unrecoverable errors result in immediate
+ * cm_Fail()'s, which will cause MPI to shut down the worker processes
+ * uncleanly.
+ */
+static int
+mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
+{
+  int      status;                /* Easel status */
+  int      qhstatus = eslOK;      /* status from cm_file_Read() */
+  char     errbuf[cmERRBUFSIZE];  /* for printing error messages */
+  CM_t    *cm    = NULL;          /* the CM */
+  CM_t    *nc_cm = NULL;          /* a non-configured copy of the CM */
+  int      i, h;                  /* counters */
+  int      cmi;                   /* CM index, which model we're working on */
+  char     time_buf[128];	  /* string for printing elapsed time (safely holds up to 10^14 years) */
+  int      exp_mode;              /* ctr over exp tail modes */
+  double   cm_psec;               /* predicted number of seconds for calibrating current CM */
+  double   cm_asec;               /* predicted number of seconds for calibrating current CM */
+  double   total_psec = 0.;       /* predicted number of seconds for calibrating all CMs */
+  double   total_asec = 0.;       /* predicted number of seconds for calibrating all CMs */
+  double   asecA[EXP_NMODES];     /* stores actual timings for each exp tail fit stage, for each CM */
+  double   psecA[EXP_NMODES];     /* stores predicted timings for each exp tail fit stage, for each CM */
+  double   psec;                  /* predicted seconds */
+  int64_t  merged_nhits = 0;      /* number of hits reported thus far, for all seqs */
+  float   *merged_scA = NULL;     /* [0..merged_nhits-1] hit scores for all seqs */
+  double   tmp_mu, tmp_lambda;    /* temporary mu and lambda used for setting exp tails */
+  int      tmp_nrandhits;         /* temporary number of rand hits found */
+  float    tmp_tailp;             /* temporary tail mass probability fit to an exponential */
+
+  MPI_Status       mpistatus;       /* the mpi status */
+  char            *mpibuf  = NULL;  /* buffer used to pack/unpack structures */
+  int              mpibuf_size = 0; /* current size of mpibuf_size */
+  int              buf_size;        /* size of received buffer */
+  int              dest;            /* destination for MPISend() */
+  int              pos;             /* for packing/unpacking an MPI buffer */
+  int64_t          nhits;           /* nhits received from a worker */
+  
+  if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+  if ((status = print_run_info (go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+
+  /* <cfg->abc> is not known 'til first CM is read. Could be DNA or RNA*/
+  qhstatus = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
+
+  if (qhstatus == eslOK) {
+    /* One-time initializations after alphabet <abc> becomes known */
+    output_header(stdout, go, cfg->cmfile);
+
+    /* master needs to be able to generate sequences only for timing predictions */
+    if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
+    if((status = set_dnull(cfg, cm, errbuf)) != eslOK) cm_Fail("unable to create set_dnull\n%s\n", errbuf);
+  }
+
+  /* Outer loop: over each query CM in <cmfile>. */
+  while (qhstatus == eslOK) {
+    /* clone the non-configured CM we just read, we'll come back to it when we switch from global to local */
+    if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) cm_Fail("unable to clone CM");
+
+    cfg->ncm++;
+    if(cfg->ncm == cfg->cmalloc) { /* expand our memory */
+      cfg->cmalloc  += 128;
+      ESL_REALLOC(cfg->expAA, sizeof(ExpInfo_t **) * cfg->cmalloc);
+    }
+    cmi = cfg->ncm-1;
+    cm_asec = cm_psec = 0.;
+
+    if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))          != eslOK) cm_Fail(errbuf);
+    if((status = initialize_stats(go, cfg, errbuf))                  != eslOK) cm_Fail(errbuf);
+    if((status = print_per_cm_column_headings(go, cfg, errbuf, cm))  != eslOK) cm_Fail(errbuf);
+
+    for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
+      /* do we need to switch from global configuration to local? */
+      if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
+	/* switch from global to local by copying the current exptail stats from <cm>
+	 * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
+	 * way because as a rule we don't allow reconfiguration of CMs (to limit
+	 * execution paths through configuration functions)
+	 */
+	FreeCM(cm);
+	cm = nc_cm;
+	if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) cm_Fail(errbuf);
+      }
+      /* update search info for round 0 (final round) for exp tail mode */
+      if(ExpModeIsInside(exp_mode)) cm->search_opts |= CM_SEARCH_INSIDE;
+      else                          cm->search_opts &= ~CM_SEARCH_INSIDE;
+
+      /* estimate time for this round */
+      if((status = estimate_time_for_exp_round(go, cfg, errbuf, cm, exp_mode, &psec)) != eslOK) cm_Fail(errbuf); 
+      psec *= cfg->N * cfg->L; /* psec was per residue */
+      if(cfg->nproc > 1) psec /= (cfg->nproc-1); /* parallelization will speed us up */
+      psecA[exp_mode] = psec;
+      cm_psec    += psec;
+      total_psec += psec;
+      print_exp_line(go, cfg, errbuf, exp_mode, cfg->N, cfg->L, psec);
+
+      esl_stopwatch_Start(cfg->w_stage);
+      fflush(stdout);
+
+      /* for each sequence i from 0..N-1, tell the appropriate worker (widx = (i+1) % nworkers) to search it */
+      for(i = 0; i < cfg->N; i++) { 
+	if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
+	    
+	MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size);
+	if (mpibuf == NULL || buf_size > mpibuf_size) {
+	  ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
+	  mpibuf_size = buf_size; 
+	}
+	dest = mpistatus.MPI_SOURCE;
+	MPI_Recv(mpibuf, buf_size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
+	
+	if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)  mpi_failure("MPI client %d raised error:\n%s\n", dest, mpibuf);
+	if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)  mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
+
+#if DEBUGMPI
+	printf("master rec'd INFERNAL_READY_TAG from worker %d\n", dest);
+#endif
+	
+	/* send the int 'i' to the worker, telling it to search his copy of the i'th sequence for this CM/mode pair */
+	if (MPI_Send(&i, 1, MPI_INT, dest, INFERNAL_SEQIDX_TAG, MPI_COMM_WORLD) != 0) mpi_failure("mpi send failed");
+#if DEBUGMPI
+	printf("master sent i: %d to worker %d\n", i, dest);
+#endif
+      }
+
+      /* wait for all workers to finish up their work blocks */
+      for (i = 1; i < cfg->nproc; ++i) { 
+	if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
+
+	MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size);
+	if (mpibuf == NULL || buf_size > mpibuf_size) {
+	  ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
+	  mpibuf_size = buf_size; 
+	}
+	dest = mpistatus.MPI_SOURCE;
+	MPI_Recv(mpibuf, buf_size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
+
+	if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)  mpi_failure("MPI client %d raised error:\n%s\n", dest, mpibuf);
+	if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)  mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
+#if DEBUGMPI
+	printf("master done sending indices, recived INFERNAL_READY_TAG from worker %d\n", dest);
+#endif 
+      }
+
+      ESL_STOPWATCH *merge_w = esl_stopwatch_Create();
+      esl_stopwatch_Start(merge_w);
+      /* merge the arrays of scores we get back from the workers */
+      for (dest = 1; dest < cfg->nproc; ++dest) { 
+	/* send -1 to the worker, telling it we're done with this CM/mode pair */
+	i = -1;
+	if (MPI_Send(&i, 1, MPI_INT, dest, INFERNAL_SEQIDX_TAG, MPI_COMM_WORLD) != 0) ESL_EXCEPTION(eslESYS, "mpi send failed");
+#if DEBUGMPI
+	printf("master sent -1 to worker %d\n", dest);
+#endif 
+
+	/* wait for the results */
+	if (MPI_Probe(dest, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
+	MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size);
+	if (mpibuf == NULL || buf_size > mpibuf_size) {
+	  ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
+	  mpibuf_size = buf_size; 
+	}
+
+	/* receive and unpack the array of hit scores */
+	MPI_Recv(mpibuf, buf_size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
+#if DEBUGMPI
+	printf("master received results from worker %d\n", dest);
+#endif 
+
+	if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)  mpi_failure("MPI client %d raised error:\n%s\n", dest, mpibuf);
+	if (mpistatus.MPI_TAG != INFERNAL_SCORES_TAG) mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
+	pos = 0;
+	if (MPI_Unpack(mpibuf, buf_size, &pos, &nhits, 1, MPI_LONG_LONG_INT, MPI_COMM_WORLD) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed");
+	if(nhits > 0) { 
+	  if(merged_nhits == 0) ESL_ALLOC  (merged_scA, sizeof(float) * (merged_nhits + nhits));
+	  else                  ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + nhits));
+	  for(h = 0; h < nhits; h++) { 
+	    if (MPI_Unpack(mpibuf, buf_size, &pos, &(merged_scA[merged_nhits+h]), 1, MPI_FLOAT, MPI_COMM_WORLD) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed");
+	  }
+	  merged_nhits += nhits;
+#if DEBUGMPI
+	  printf("master added %" PRId64 " hits to merged_nhits, now %" PRId64 " total\n", nhits, merged_nhits);
+#endif 
+	}
+      }
+      esl_stopwatch_Stop(merge_w);
+      esl_stopwatch_Display(stdout, merge_w, "# Merge CPU time: ");
+
+      if(cfg->exptfitfp != NULL) { 
+	fprintf(cfg->exptfitfp, "# CM: %s\n", cm->name);
+	fprintf(cfg->exptfitfp, "# mode: %12s\n", DescribeExpMode(exp_mode));
+      }
+#if DEBUGMPI
+      printf("about to call fit_histogram, %" PRId64 " hits\n", merged_nhits);
+#endif 
+      if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) mpi_failure(errbuf);
+      SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (long) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
+	
+      esl_stopwatch_Stop(cfg->w_stage);
+      asecA[exp_mode] = cfg->w_stage->elapsed;
+      cm_asec    += cfg->w_stage->elapsed;
+      total_asec += cfg->w_stage->elapsed;
+      FormatTimeString(time_buf, cfg->w_stage->elapsed, FALSE);
+      printf("  %10s\n", time_buf);
+      fflush(stdout);
+
+      /* clear hits */
+      if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
+      merged_nhits = 0;
+    } /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
+
+    if(cfg->be_verbose) if((status = debug_print_expinfo_array(cm, errbuf, cfg->expAA[cmi])) != eslOK) mpi_failure(errbuf);
+    print_per_cm_summary(go, cfg, errbuf, cm, cm_psec, cm_asec);
+    if((status = print_post_calibration_info(go, cfg, errbuf, stdout, cm, psecA, asecA)) != eslOK) mpi_failure(errbuf); 
+    FreeCM(cm);
+
+    printf("//\n");
+    fflush(stdout);
+
+    /* read the next CM */
+    qhstatus = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
+  } /* end of while(qhstatus == eslOK) */
+  if(qhstatus != eslEOF) mpi_failure(cfg->cmfp->errbuf);
+  
+  if(cfg->ncm > 1 && (esl_opt_IsOn(go, "--forecast"))) { 
+    fprintf(stdout, "#\n");
+    FormatTimeString(time_buf, total_psec, FALSE);
+    fprintf(stdout, "# total predicted time for all %d CMs: %s\n", cfg->ncm, time_buf);
+    fprintf(stdout, "#\n");
+  }
+  return eslOK;
+      
+ ERROR:
+  mpi_failure("Memory allocation error.");
+  return eslEMEM;
+}
+
+/* mpi_worker()
+ * 
+ * Receive information from the master on which sequences to search
+ * and send back hit scores for, and do it.
+ */
+
+
+static int
+mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
+{
+  int      status;                /* Easel status */
+  int      qhstatus = eslOK;      /* status from cm_file_Read() */
+  char     errbuf[cmERRBUFSIZE];  /* for printing error messages */
+  CM_t    *cm    = NULL;          /* the CM */
+  CM_t    *nc_cm = NULL;          /* a non-configured copy of the CM */
+  int      i, h;                  /* counters */
+  int      cmi;                   /* CM index, which model we're working on */
+  int      exp_mode;              /* ctr over exp tail modes */
+
+  char    *mpibuf  = NULL;        /* buffer used to pack/unpack structures */
+  int      mpibuf_size = 0;       /* size of the mpibuf                    */
+  ESL_SQ_BLOCK    *sq_block  = NULL;
+  WORKER_INFO     info;           /* the worker info */
+
+  MPI_Status       mpistatus;        /* the mpi status */
+  int              buf_size, n, pos; /* for packing/unpacking an MPI buffer */
+  CM_TOPHITS *th = NULL;
+
+  if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) mpi_failure(errbuf);
+
+  /* <cfg->abc> is not known 'til first CM is read. Could be DNA or RNA*/
+  qhstatus = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
+
+  if (qhstatus == eslOK) {
+    /* One-time initializations after alphabet <abc> becomes known */
+    if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
+    if((status = set_dnull(cfg, cm, errbuf)) != eslOK) cm_Fail("unable to create set_dnull\n%s\n", errbuf);
+
+    info.cm     = NULL;
+    info.scA    = NULL;
+    info.nhits  = 0;
+    info.cutoff = cfg->sc_cutoff;
+  }
+
+  /* Outer loop: over each query CM in <cmfile>. */
+  while (qhstatus == eslOK) {
+    /* clone the non-configured CM we just read, we'll come back to it when we switch from global to local */
+    if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) cm_Fail("unable to clone CM");
+
+    cfg->ncm++;
+    if(cfg->ncm == cfg->cmalloc) { /* expand our memory */
+      cfg->cmalloc  += 128;
+      ESL_REALLOC(cfg->expAA, sizeof(ExpInfo_t **) * cfg->cmalloc);
+    }
+    cmi = cfg->ncm-1;
+
+    if((status = initialize_cm(go, cfg, errbuf, cm, FALSE)) != eslOK) mpi_failure(errbuf);
+
+    /* get the sequences to search for all modes for this CM (we'll only search some of them, the ones the master tells us to) */
+    if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block)) != eslOK) mpi_failure(errbuf);
+
+    for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
+      /* do we need to switch from global configuration to local? */
+      if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
+	/* switch from global to local by copying the current exptail stats from <cm>
+	 * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
+	 * way because as a rule we don't allow reconfiguration of CMs (to limit
+	 * execution paths through configuration functions)
+	 */
+	FreeCM(cm);
+	cm = nc_cm;
+	if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) cm_Fail(errbuf);
+      }
+      /* update search info for round 0 (final round) for exp tail mode */
+      if(ExpModeIsInside(exp_mode)) cm->search_opts |= CM_SEARCH_INSIDE;
+      else                          cm->search_opts &= ~CM_SEARCH_INSIDE;
+      
+      if((status = cm_Clone(cm, errbuf, &(info.cm))) != eslOK) cm_Fail(errbuf);
+
+      /* inform the master that we're ready for our first index */
+      status = 0;
+      MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
+
+#if DEBUGMPI
+      printf("worker %d waiting for 1st index from master\n", cfg->my_rank);
+#endif 
+      /* receive a sequence index from the master */
+      if((status = MPI_Recv(&i, 1, MPI_INT, 0, INFERNAL_SEQIDX_TAG, MPI_COMM_WORLD, &mpistatus)) != 0) mpi_failure("failed to receive sequence index to search");
+
+      while(i != -1) { 
+#if DEBUGMPI
+	printf("worker %d received i: %d from master\n", cfg->my_rank, i);
+#endif 
+
+	if((status = process_search_workunit(info.cm, errbuf, sq_block->list[i].dsq, sq_block->list[i].L, info.cutoff, &th)) != eslOK) mpi_failure("(worker) %s", errbuf);
+#if DEBUGMPI
+	printf("worker %d finished with i: %d\n", cfg->my_rank, i);
+#endif 
+	/* append copy of hit scores to scA */
+	if(th->N > 0) { 
+	  ESL_REALLOC(info.scA, sizeof(float) * (info.nhits + th->N)); /* this works even if info.scA is NULL */
+	  for(h = 0; h < th->N; h++) info.scA[(info.nhits+h)] = th->unsrt[h].score;
+	  info.nhits += th->N;
+	}
+#if DEBUGMPI
+	printf("worker %d just added %" PRId64" hits to scA, now %" PRId64 " hits\n", cfg->my_rank, th->N, info.nhits);
+#endif 
+	cm_tophits_Destroy(th);
+
+	/* inform the master we need another sequence index */
+	status = 0;
+	MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
+	
+#if DEBUGMPI
+	printf("worker %d sent ready tag back to master\n", cfg->my_rank);
+#endif 
+
+	/* wait for the next sequence index */
+	if((status = MPI_Recv(&i, 1, MPI_INT, 0, INFERNAL_SEQIDX_TAG, MPI_COMM_WORLD, &mpistatus)) != 0) mpi_failure("failed to receive sequence index to search");
+      }
+
+#if DEBUGMPI
+      printf("worker %d received -1 seq idx from master, about to pack up hits\n", cfg->my_rank);
+#endif 
+
+      /* done with this CM/mode pair, pack up results */
+      buf_size = 0;
+      status = MPI_Pack_size(1, MPI_LONG_LONG_INT, MPI_COMM_WORLD, &n); buf_size += n; if (status != 0) mpi_failure("pack size failed");
+      for(h = 0; h < info.nhits; h++) { 
+	status = MPI_Pack_size(1, MPI_FLOAT, MPI_COMM_WORLD, &n); buf_size += n; if (status != 0) mpi_failure("pack size failed");
+      }
+      if (mpibuf == NULL || buf_size > mpibuf_size) {
+	ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
+	mpibuf_size = buf_size;
+      }
+      pos = 0;
+      if (MPI_Pack(&(info.nhits),    1, MPI_LONG_LONG_INT, mpibuf, buf_size, &pos, MPI_COMM_WORLD) != 0) mpi_failure("mpi pack failed"); 
+      for(h = 0; h < info.nhits; h++) { 
+	if (MPI_Pack(&(info.scA[h]), 1, MPI_FLOAT,         mpibuf, buf_size, &pos, MPI_COMM_WORLD) != 0) mpi_failure("mpi pack failed"); 
+      }
+#if DEBUGMPI
+      printf("worker %d about to send %d byte-sized buf back to master\n", cfg->my_rank, n);
+#endif 
+
+      /* send results back to master */
+      if (MPI_Send(mpibuf, buf_size, MPI_PACKED, 0, INFERNAL_SCORES_TAG, MPI_COMM_WORLD)    != 0) mpi_failure("mpi send failed");
+
+      if(info.scA != NULL) { free(info.scA); info.scA = NULL; }
+      info.nhits = 0;
+    } /* end of for loop over exp_mode */
+    FreeCM(cm);
+    if(sq_block != NULL) esl_sq_DestroyBlock(sq_block);
+    /* read the next CM */
+    qhstatus = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
+  }
+  if(qhstatus != eslEOF) mpi_failure(cfg->cmfp->errbuf);
+
+  return eslOK;
+
+ ERROR:
+  mpi_failure("Memory allocation error.");
+  return eslEMEM;
+}
+#endif /*HAVE_MPI*/
+
 static void
 process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile)
 {
@@ -202,29 +680,26 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 
   if ((go = esl_getopts_Create(options))     == NULL)     cm_Fail("Internal failure creating options object");
   if (esl_opt_ProcessEnvironment(go)         != eslOK)  { printf("Failed to process environment: %s\n", go->errbuf); goto ERROR; }
-  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { printf("Failed to parse command line: %s\n",  go->errbuf); goto ERROR; }
-  if (esl_opt_VerifyConfig(go)               != eslOK)  { printf("Failed to parse command line: %s\n",  go->errbuf); goto ERROR; }
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf); goto ERROR; }
+  if (esl_opt_VerifyConfig(go)               != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf); goto ERROR; }
  
   /* help format: */
-  if (esl_opt_GetBoolean(go, "-h") == TRUE || esl_opt_GetBoolean(go, "--devhelp") == TRUE) {
+  if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) {
     cm_banner(stdout, argv[0], banner);
     esl_usage(stdout, argv[0], usage);
+    puts("\nStandard options:");
+    esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 120=textwidth*/
+    puts("\nUndocumented developer options:");
+    esl_opt_DisplayHelp(stdout, go, 101, 2, 80); /* 1= group; 2 = indentation; 120=textwidth*/
+  }    
+  if (esl_opt_GetBoolean(go, "-h") == TRUE) {
+    cm_banner(stdout, argv[0], banner);
+    esl_usage(stdout, argv[0], usage);
+    puts("\nOptions:");
+    esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 120=textwidth*/
+  }    
 
-    puts("\nBasic options:");
-    esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-
-    puts("\nOptions for exponential tail distribution fitting:");
-    esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-
-    if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) {
-      puts("\nUndocumented developer options:");
-      esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
-    }
-
-    exit(0);
-  }
-
-  if (esl_opt_ArgNumber(go)                  != 1)     { puts("Incorrect number of command line arguments.");     goto ERROR; }
+  if (esl_opt_ArgNumber(go)                  != 1)     { puts("Incorrect number of command line arguments.");      goto ERROR; }
   if ((*ret_cmfile = esl_opt_GetArg(go, 1))  == NULL)  { puts("Failed to get <cmfile> argument on command line"); goto ERROR; }
   
   *ret_go = go;
@@ -334,6 +809,7 @@ main(int argc, char **argv)
   FLogsumInit();
   process_commandline(argc, argv, &go, &(cfg.cmfile));
   cfg.N = (int) (((esl_opt_GetReal(go, "-L") * 1000000.) / (float) cfg.L) + 0.5);
+  ///cfg.N = 1;
 
   /* Figure out who we are, and send control there: 
    * we might be an MPI master, an MPI worker, or a serial program.
@@ -361,6 +837,8 @@ main(int argc, char **argv)
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
       MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
 
+      if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you execute mpirun?)");
+
       if (cfg.my_rank > 0)  status = mpi_worker(go, &cfg);
       else 		    status = mpi_master(go, &cfg);
 
@@ -380,7 +858,7 @@ main(int argc, char **argv)
     int   cmi;
     CM_t *cm;
     FILE *outfp;
-    sigset_t blocksigs;  /* list of signals to protect from             */
+    sigset_t blocksigs;  /* list of signals to protect from */
 
     cm_file_Position(cfg.cmfp, (off_t) 0);
 
@@ -452,6 +930,7 @@ main(int argc, char **argv)
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.w_stage   != NULL) esl_stopwatch_Destroy(cfg.w_stage);
   if (cfg.r         != NULL) esl_randomness_Destroy(cfg.r);
+  if (cfg.r_est     != NULL) esl_randomness_Destroy(cfg.r_est);
   if (cfg.my_rank == 0) { 
     printf("#\n");
     esl_stopwatch_Display(stdout, w, "# CPU time: ");
@@ -497,63 +976,34 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int status;
 
-  /* open CM file */
-  status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cfg->cmfp), errbuf);
-  if      (status == eslENOTFOUND) return status;
-  else if (status == eslEFORMAT)   return status;
-  else if (status != eslOK)        return status;
+  /* initialize cfg variables used by masters and workers */
+  if((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) return status;
 
-  /* optionally, open exp tail histogram file */
-  if (esl_opt_GetString(go, "--hfile") != NULL) 
-    {
-      if ((cfg->exphfp = fopen(esl_opt_GetString(go, "--hfile"), "w")) == NULL)
-	ESL_FAIL(eslFAIL, errbuf, "Failed to open exp tail histogram save file %s for writing\n", esl_opt_GetString(go, "--hfile"));
-    }
-
-  /* optionally, open survival plot */
-  if (esl_opt_GetString(go, "--sfile") != NULL) 
-    {
-      if ((cfg->expsfp = fopen(esl_opt_GetString(go, "--sfile"), "w")) == NULL)
-	ESL_FAIL(eslFAIL, errbuf, "Failed to open survival plot save file %s for writing\n", esl_opt_GetString(go, "--sfile"));
-    }
-
-  /* optionally, open exp tail QQ plot file */
-  if (esl_opt_GetString(go, "--qqfile") != NULL) 
-    {
-      if ((cfg->expqfp = fopen(esl_opt_GetString(go, "--qqfile"), "w")) == NULL)
-	ESL_FAIL(eslFAIL, errbuf, "Failed to open exp tail QQ plot save file %s for writing\n", esl_opt_GetString(go, "--qqfile"));
-    }
-
-  /* optionally, open exp tail tail fit prob file */
-  if (esl_opt_GetString(go, "--ffile") != NULL) 
-    {
-      if ((cfg->exptfitfp = fopen(esl_opt_GetString(go, "--ffile"), "w")) == NULL)
-	ESL_FAIL(eslFAIL, errbuf, "Failed to open exp tail save file %s for writing\n", esl_opt_GetString(go, "--ffile"));
-    }
-
-  /* optionally, get distribution of GC content from an input database (default is use cm->null for GC distro) */
-  if(esl_opt_GetString(go, "--gc") != NULL) {
-    ESL_ALPHABET *tmp_abc = NULL;
-    tmp_abc = esl_alphabet_Create(eslRNA);
-    ESL_SQFILE   *dbfp;             
-    status = esl_sqfile_Open(esl_opt_GetString(go, "--gc"), eslSQFILE_UNKNOWN, NULL, &dbfp);
-    if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "No such file: %s.", esl_opt_GetString(go, "--gc")); 
-    else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "file: %s format unrecognized.", esl_opt_GetString(go, "--gc")); 
-    else if (status != eslOK)      ESL_FAIL(status, errbuf, "Failed to open sequence database file %s, code %d.", esl_opt_GetString(go, "--gc"), status); 
-    if((status = GetDBInfo(tmp_abc, dbfp, errbuf, NULL, NULL, &(cfg->gc_freq))) != eslOK) return status; 
-    esl_vec_DNorm(cfg->gc_freq, GC_SEGMENTS);
-    esl_alphabet_Destroy(tmp_abc);
-    esl_sqfile_Close(dbfp); 
+  /* Masters only initializations: */
+  /* open optional output files */
+  if (esl_opt_GetString(go, "--hfile") != NULL) {
+    if ((cfg->exphfp = fopen(esl_opt_GetString(go, "--hfile"), "w")) == NULL)
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open exp tail histogram save file %s for writing\n", esl_opt_GetString(go, "--hfile"));
+  }
+  if (esl_opt_GetString(go, "--sfile") != NULL) { 
+    if ((cfg->expsfp = fopen(esl_opt_GetString(go, "--sfile"), "w")) == NULL)
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open survival plot save file %s for writing\n", esl_opt_GetString(go, "--sfile"));
+  }
+  if (esl_opt_GetString(go, "--qqfile") != NULL) {
+    if ((cfg->expqfp = fopen(esl_opt_GetString(go, "--qqfile"), "w")) == NULL)
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open exp tail QQ plot save file %s for writing\n", esl_opt_GetString(go, "--qqfile"));
+  }
+  if (esl_opt_GetString(go, "--ffile") != NULL) {
+    if ((cfg->exptfitfp = fopen(esl_opt_GetString(go, "--ffile"), "w")) == NULL)
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open exp tail save file %s for writing\n", esl_opt_GetString(go, "--ffile"));
   }
 
   cfg->be_verbose = FALSE;
   if (esl_opt_GetBoolean(go, "-v")) cfg->be_verbose = TRUE;        
   
-  /* seed master's RNG */
-  cfg->r = esl_randomness_Create(esl_opt_GetInteger(go, "--seed"));
-
   /* create the stopwatch */
   cfg->w_stage = esl_stopwatch_Create();
+  if(cfg->w_stage == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create stopwatch.");
 
   /* From HMMER 2.4X hmmcalibrate.c:
    * Generate calibrated CM(s) in a tmp file in the current
@@ -572,20 +1022,66 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (cfg->cmfp->is_binary) cfg->mode = "wb";
   else                      cfg->mode = "w"; 
 
-  if(cfg->r        == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create master RNG.");
-  if(cfg->w_stage  == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create stopwatch.");
-
   /* fill cfg->ccom, and cfg->cdate */
   if((status = get_cmcalibrate_comlog_info(go, cfg, errbuf)) != eslOK) return status;
-
-  if(esl_opt_IsOn(go, "-T")) cfg->sc_cutoff = esl_opt_GetReal(go, "-T");
-  else                       cfg->sc_cutoff = -eslINFINITY;
 
   return eslOK;
 
  ERROR:
   ESL_FAIL(eslEMEM, errbuf, "init_master_cfg(), memory allocation error."); 
   return eslEMEM; /* NEVER REACHED */
+}
+
+
+/* init_shared_cfg()
+ * Called by serial masters and mpi workers and masters.
+ * Allocates/sets: 
+ *    cfg->cmfp        - open CM file                
+ *    cfg->gc_freq     - observed GC freqs (if --gc invoked)
+ *    cfg->r           - source of randomness
+ *    cfg->sc_cutoff   - cutoff score for collecting hits 
+ * Errors in the MPI master here are considered to be "recoverable",
+ * in the sense that we'll try to delay output of the error message
+ * until we've cleanly shut down the worker processes. Therefore
+ * errors return (code, errbuf) by the ESL_FAIL mech.
+ */
+static int
+init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
+{
+  int status;
+
+  /* open CM file */
+  status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cfg->cmfp), errbuf);
+  if      (status == eslENOTFOUND) return status;
+  else if (status == eslEFORMAT)   return status;
+  else if (status != eslOK)        return status;
+
+  /* optionally, get distribution of GC content from an input database (default is use cm->null for GC distro) */
+  if(esl_opt_GetString(go, "--gc") != NULL) {
+    ESL_ALPHABET *tmp_abc = NULL;
+    tmp_abc = esl_alphabet_Create(eslRNA);
+    ESL_SQFILE   *dbfp;             
+    status = esl_sqfile_Open(esl_opt_GetString(go, "--gc"), eslSQFILE_UNKNOWN, NULL, &dbfp);
+    if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "No such file: %s.", esl_opt_GetString(go, "--gc")); 
+    else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "file: %s format unrecognized.", esl_opt_GetString(go, "--gc")); 
+    else if (status != eslOK)      ESL_FAIL(status, errbuf, "Failed to open sequence database file %s, code %d.", esl_opt_GetString(go, "--gc"), status); 
+    if((status = GetDBInfo(tmp_abc, dbfp, errbuf, NULL, NULL, &(cfg->gc_freq))) != eslOK) return status; 
+    esl_vec_DNorm(cfg->gc_freq, GC_SEGMENTS);
+    esl_alphabet_Destroy(tmp_abc);
+    esl_sqfile_Close(dbfp); 
+  }
+  
+  /* seed RNG */
+  cfg->r     = esl_randomness_Create(esl_opt_GetInteger(go, "--seed"));
+  cfg->r_est = esl_randomness_Create(esl_opt_GetInteger(go, "--seed"));
+
+  if(cfg->r     == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create RNG.");
+  if(cfg->r_est == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create RNG.");
+
+  if(esl_opt_IsOn(go, "-T")) cfg->sc_cutoff = esl_opt_GetReal(go, "-T");
+  else                       cfg->sc_cutoff = -eslINFINITY;
+
+  return eslOK;
 }
 
 
@@ -614,7 +1110,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   double   psecA[EXP_NMODES];     /* stores predicted timings for each exp tail fit stage, for each CM */
   double   psec;                  /* predicted seconds */
   int      ncpus        = 0;      /* number of CPUs working */
-  int      merged_nhits = 0;      /* number of hits reported thus far, for all seqs */
+  int64_t  merged_nhits = 0;      /* number of hits reported thus far, for all seqs */
   float   *merged_scA = NULL;     /* [0..merged_nhits-1] hit scores for all seqs */
   double   tmp_mu, tmp_lambda;    /* temporary mu and lambda used for setting exp tails */
   int      tmp_nrandhits;         /* temporary number of rand hits found */
@@ -686,10 +1182,14 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       ESL_REALLOC(cfg->expAA, sizeof(ExpInfo_t **) * cfg->cmalloc);
     }
     cmi = cfg->ncm-1;
+    cm_asec = cm_psec = 0.;
 
     if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))          != eslOK) cm_Fail(errbuf);
     if((status = initialize_stats(go, cfg, errbuf))                  != eslOK) cm_Fail(errbuf);
     if((status = print_per_cm_column_headings(go, cfg, errbuf, cm))  != eslOK) cm_Fail(errbuf);
+
+    /* get the sequences to search */
+    if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block)) != eslOK) cm_Fail(errbuf);
       
     for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
       /* do we need to switch from global configuration to local? */
@@ -728,16 +1228,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       print_exp_line(go, cfg, errbuf, exp_mode, cfg->N, cfg->L, psec);
       if(esl_opt_IsUsed(go, "--forecast")) continue; /* special mode, we don't do the calibration, just print the predicting timings */
 
-      /* get the sequences to search */
-      if(sq_block != NULL) esl_sq_DestroyBlock(sq_block);
-      if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block)) != eslOK) cm_Fail(errbuf);
-
       esl_stopwatch_Start(cfg->w_stage);
       fflush(stdout);
 	
-      /* Create processing pipeline and hit list */
+      /* clone CM for each thread */
       for (i = 0; i < infocnt; ++i) {
 	if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
+	if(esl_opt_GetBoolean(go, "-x")) info[i].cm = cm;
 	info[i].scA    = NULL;
 	info[i].nhits  = 0;
 	info[i].cutoff = cfg->sc_cutoff;
@@ -756,11 +1253,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if(status != eslOK) cm_Fail(errbuf);
 
       merged_nhits = 0;
-      if(merged_scA != NULL) free(merged_scA);
+      if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
       for (i = 0; i < infocnt; ++i) {
 	if(info[i].nhits > 0) { 
-	  if(merged_nhits == 0) ESL_ALLOC  (merged_scA, sizeof(float) * (merged_nhits + info[i].nhits));
-	  else                  ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + info[i].nhits));
+	  ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + info[i].nhits)); /* this works even if merged_scA == NULL */
 	  for(h = 0; h < info[i].nhits; h++) merged_scA[(merged_nhits+h)] = info[i].scA[h];
 	  merged_nhits += info[i].nhits;
 	}
@@ -770,7 +1266,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	fprintf(cfg->exptfitfp, "# CM: %s\n", cm->name);
 	fprintf(cfg->exptfitfp, "# mode: %12s\n", DescribeExpMode(exp_mode));
       }
-      printf("about to call fit_histogram, %d hits\n", merged_nhits);
+      printf("about to call fit_histogram, %" PRId64 " hits\n", merged_nhits);
       if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
       SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (long) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
 	
@@ -787,6 +1283,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     print_per_cm_summary(go, cfg, errbuf, cm, cm_psec, cm_asec);
     if(!esl_opt_IsOn(go, "--forecast")) { if((status = print_post_calibration_info(go, cfg, errbuf, stdout, cm, psecA, asecA)) != eslOK) cm_Fail(errbuf); }
     FreeCM(cm);
+    if(sq_block != NULL) esl_sq_DestroyBlock(sq_block);
 
     printf("//\n");
     fflush(stdout);
@@ -825,17 +1322,14 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
   if(info->scA != NULL) free(info->scA);
 
   for(i = 0; i < sq_block->count; i++) { 
-    printf("\ncalling process_search_workunit() from serial_loop() i: %d\n", i);
     if((status = process_search_workunit(info->cm, errbuf, sq_block->list[i].dsq, sq_block->list[i].L, info->cutoff, &th)) != eslOK) cm_Fail(errbuf);
-    /* we don't have to remove overlaps, that's already been done in
-     * FastCYKScan() or FastIInsideScan(), which is called by
-     * process_search_workunit().
-     */
-
+    ///int zz; for(zz = 0; zz < th->N; zz++) {
+    ///printf("hit %3d  %4" PRId64 "..%4" PRId64 "  (%4" PRId64 ")  %6.2f bits\n", zz, th->unsrt[zz].start, th->unsrt[zz].stop, th->unsrt[zz].stop - th->unsrt[zz].start + 1, th->unsrt[zz].score);
+    ///}
+    ///if(info->cm->search_opts & CM_SEARCH_INSIDE) cm_Fail("done");
     /* append copy of hit scores to scA */
     if(th->N > 0) { 
-      if(info->nhits == 0) ESL_ALLOC  (info->scA, sizeof(float) * (info->nhits + th->N));
-      else                 ESL_REALLOC(info->scA, sizeof(float) * (info->nhits + th->N));
+      ESL_REALLOC(info->scA, sizeof(float) * (info->nhits + th->N)); /* this works even if info->scA == NULL */
       for(h = 0; h < th->N; h++) info->scA[(info->nhits+h)] = th->unsrt[h].score;
       info->nhits += th->N;
     }
@@ -855,6 +1349,7 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
   int     status   = eslOK;
   ESL_SQ *sq       = NULL;
   void   *new_sq   = NULL;
+  ESL_SQ *empty_sq = NULL;
   int     nworkers = esl_threads_GetWorkerCount(obj);
   int     i, j;       
 
@@ -865,7 +1360,6 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
   if (status != eslOK) cm_Fail("Work queue reader failed");
 
   /* Main loop: */
-  printf("thread_loop sq_block->count: %d\n", sq_block->count);
   for(i = 0; i < sq_block->count; i++) { 
     sq = (ESL_SQ *) new_sq;
     sq = sq_block->list + i;
@@ -874,11 +1368,9 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
   }
 
   /* now send a empty sq to all workers signaling them to stop */
+  empty_sq = esl_sq_Create();
   for(j = 0; j < nworkers; j++) { 
-    sq = (ESL_SQ *) new_sq;
-    sq = sq_block->list + (i % nworkers);
-    esl_sq_Reuse(sq); /* sets sq->L as -1 */
-    status = esl_workqueue_ReaderUpdate(queue, sq, &new_sq);
+    status = esl_workqueue_ReaderUpdate(queue, empty_sq, &new_sq);
     if (status != eslOK) cm_Fail("Work queue reader failed");
   }
 
@@ -888,6 +1380,7 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
   esl_threads_WaitForFinish(obj);
   esl_workqueue_Complete(queue);  
 
+  esl_sq_Destroy(empty_sq);
   return status;
 }
 
@@ -930,18 +1423,11 @@ pipeline_thread(void *arg)
 
   /* loop until all sequences have been processed */
   sq = (ESL_SQ *) new_sq;
-  printf("pipeline_thread sq->L: %" PRId64 "\n", sq->L);
   while (sq->L != -1) { 
     if((status = process_search_workunit(info->cm, errbuf, sq->dsq, sq->L, info->cutoff, &th)) != eslOK) cm_Fail(errbuf);
-    /* we don't have to remove overlaps, that's already been done in
-     * FastCYKScan() or FastIInsideScan(), which is called by
-     * process_search_workunit().
-     */
-
     /* append copy of hit scores to scA */
     if(th->N > 0) { 
-      if(info->nhits == 0) ESL_ALLOC  (info->scA, sizeof(float) * (info->nhits + th->N));
-      else                 ESL_REALLOC(info->scA, sizeof(float) * (info->nhits + th->N));
+      ESL_REALLOC(info->scA, sizeof(float) * (info->nhits + th->N)); /* this works even if info->scA == NULL */
       for(h = 0; h < th->N; h++) info->scA[(info->nhits+h)] = th->unsrt[h].score;
       info->nhits += th->N;
     }
@@ -1008,7 +1494,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
   cm->config_opts |= CM_CONFIG_SCANMX;
 
   /* configure */
-  if((status = cm_Configure(cm, errbuf)) != eslOK) return status; 
+  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status; 
 
   if(cm->smx == NULL) ESL_FAIL(eslEINVAL, errbuf, "unable to create scan matrix for CM");
   return eslOK;
@@ -1147,7 +1633,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
  *           some other status code on failure.
  */
 int
-get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int L, ESL_DSQ **ret_dsq)
+get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int L, ESL_RANDOMNESS *r, ESL_DSQ **ret_dsq)
 {
   int      status;
   double   gc_comp;
@@ -1165,13 +1651,13 @@ get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int L, ESL_DSQ *
     assert(cm->abc->K == 4);
     ESL_ALLOC(distro, sizeof(double) * cm->abc->K);
     do_free_distro = TRUE;
-    gc_comp = 0.01 * esl_rnd_DChoose(cfg->r, cfg->gc_freq, GC_SEGMENTS);
+    gc_comp = 0.01 * esl_rnd_DChoose(r, cfg->gc_freq, GC_SEGMENTS);
     distro[1] = distro[2] = 0.5 * gc_comp;
     distro[0] = distro[3] = 0.5 * (1. - gc_comp);
   }
   /* generate sequence */
   ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
-  if ((status = esl_rsq_xIID(cfg->r, distro, cm->abc->K, L, dsq) != eslOK)) return status;
+  if ((status = esl_rsq_xIID(r, distro, cm->abc->K, L, dsq) != eslOK)) return status;
 
   if (do_free_distro) free(distro);
   *ret_dsq = dsq;
@@ -1427,8 +1913,7 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   ESL_DSQ *dsq;            /* the random seq we'll create and search to get predicted time */
   ESL_STOPWATCH *w  = esl_stopwatch_Create(); /* for timings */
 
-  if(w == NULL)               ESL_FAIL(status, errbuf, "estimate_time_for_exp_round(): memory error, stopwatch not created.\n");
-  if(ret_sec_per_res == NULL) ESL_FAIL(status, errbuf, "estimate_time_for_exp_round(): ret_sec_per_res is NULL");
+  if(w == NULL) ESL_FAIL(status, errbuf, "estimate_time_for_exp_round(): memory error, stopwatch not created.\n");
 
   orig_search_opts = cm->search_opts; /* we'll restore this at end of func, just to be safe */
   if(ExpModeIsInside(exp_mode)) cm->search_opts |= CM_SEARCH_INSIDE;
@@ -1461,17 +1946,13 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   /* simulate a workunit, generate a sequence, search it, and remove overlaps */
   /*printf("exptL: %d\n", L);*/
   if(esl_opt_GetBoolean(go, "--random")) { 
-    if((status = get_random_dsq(cfg, errbuf, cm, L, &dsq)) != eslOK) return status;
+    if((status = get_random_dsq(cfg, errbuf, cm, L, cfg->r_est, &dsq)) != eslOK) return status;
   }
   else { 
-    if((status = SampleGenomicSequenceFromHMM(cfg->r, cm->abc, errbuf, cfg->ghmm_sA, cfg->ghmm_tAA, cfg->ghmm_eAA, cfg->ghmm_nstates, L, &dsq)) != eslOK) cm_Fail(errbuf);
+    if((status = SampleGenomicSequenceFromHMM(cfg->r_est, cm->abc, errbuf, cfg->ghmm_sA, cfg->ghmm_tAA, cfg->ghmm_eAA, cfg->ghmm_nstates, L, &dsq)) != eslOK) cm_Fail(errbuf);
   }
 
   if((status = process_search_workunit(cm, errbuf, dsq, L, cfg->sc_cutoff, NULL)) != eslOK) cm_Fail(errbuf);
-  /* we don't have to remove overlaps, that's already been done in
-   * FastCYKScan() or FastIInsideScan(), which is called by
-   * process_search_workunit().
-   */
   esl_stopwatch_Stop(w);
 
   cm->search_opts = orig_search_opts;
@@ -1492,7 +1973,7 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
 
   free(dsq);
   
-  *ret_sec_per_res = sec_per_res;
+  if(ret_sec_per_res != NULL) *ret_sec_per_res = sec_per_res;
   return eslOK;
 }
 
@@ -1602,11 +2083,14 @@ generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf,
   for(i = 0; i < cfg->N; i++) { 
     /* generate the dsq */
     if(esl_opt_GetBoolean(go, "--random")) {
-      if((status = get_random_dsq(cfg, errbuf, cm, cfg->L, &dsq)) != eslOK) goto ERROR;
+      if((status = get_random_dsq(cfg, errbuf, cm, cfg->L, cfg->r, &dsq)) != eslOK) goto ERROR;
     }
     else { 
       if((status = SampleGenomicSequenceFromHMM(cfg->r, cfg->abc, errbuf, cfg->ghmm_sA, cfg->ghmm_tAA, cfg->ghmm_eAA, cfg->ghmm_nstates, cfg->L, &dsq)) != eslOK) goto ERROR;
     }
+
+    /* TEMP */
+    ///int x; for(x = 1; x <= cfg->L; x++) dsq[x] = x % 4;
 
     /* Copy dsq we just created into sq_block->list+i 
      * We can't use esl_sq_CreateDigitalFrom() bc sq_block->list already contains a contiguous set of ESL_SQ objects 
@@ -1618,7 +2102,9 @@ generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf,
     ESL_ALLOC(sq->name, sizeof(char) * (namelen+1));
     strcpy(sq->name, "irrelevant");
     sq->nalloc = namelen;
-    printf("sq->L: %" PRId64 " sq_block->list[i].L: %" PRId64 "\n", sq->L, sq_block->list[i].L);
+    /*printf("sq->L: %" PRId64 " sq_block->list[i].L: %" PRId64 " first 10 letters: %d%d%d%d%d%d%d%d%d%d\n", sq->L, sq_block->list[i].L, 
+      sq->dsq[1], sq->dsq[2], sq->dsq[3], sq->dsq[4], sq->dsq[5], sq->dsq[6], sq->dsq[7], sq->dsq[8], sq->dsq[9], sq->dsq[10]);*/
+
     sq_block->count++;
   }
   sq_block->first_seqidx = 0;
@@ -1685,13 +2171,14 @@ process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutof
 			    NULL, NULL))                           /* ret_vsc, ret_sc, irrelevant here */
        != eslOK) return status;
   }
+  /* we don't have to remove overlaps, that's already been done in
+   * FastCYKScan() or FastIInsideScan() 
+   */
   
   if(ret_th != NULL) *ret_th = th;
   else                cm_tophits_Destroy(th);
   return eslOK;
 }
-
-
 
 
 /*****************************************************************

@@ -412,7 +412,7 @@ cp9_GetNCalcsPerResidue(CP9_t *cp9, char *errbuf, float *ret_cp9_ncalcs_per_res)
 void
 CP9Logoddsify(CP9_t *hmm)
 {
-  printf("in CP9Logoddsify()\n");
+  /*printf("in CP9Logoddsify()\n");*/
   int k;			/* counter for model position */
   int x;			/* counter for symbols        */
   int *sc;

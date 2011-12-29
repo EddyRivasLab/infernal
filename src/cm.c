@@ -81,16 +81,17 @@ CreateCMShell(void)
   cm->null   = NULL;
 
 				/* structural information */
-  cm->M      = 0;
-  cm->clen   = 0;
-  cm->W      = 0;
-  cm->sttype = NULL;
-  cm->ndidx  = NULL;
-  cm->stid   = NULL;
-  cm->cfirst = NULL;
-  cm->cnum   = NULL;
-  cm->plast  = NULL;
-  cm->pnum   = NULL;
+  cm->M       = 0;
+  cm->clen    = 0;
+  cm->W       = 0;
+  cm->W_setby = CM_W_SETBY_INIT;
+  cm->sttype  = NULL;
+  cm->ndidx   = NULL;
+  cm->stid    = NULL;
+  cm->cfirst  = NULL;
+  cm->cnum    = NULL;
+  cm->plast   = NULL;
+  cm->pnum    = NULL;
 				/* node->state map information */
   cm->nodes   = 0;
   cm->nodemap = NULL;
@@ -774,7 +775,7 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 int
 CMLogoddsify(CM_t *cm)
 {
-  printf("in CMLogoddsify()\n");
+  /*printf("in CMLogoddsify()\n");*/
   int v, x, y;
 
   /* zero lmesc, rmesc, we'll sum up probs then convert to scores */
@@ -2951,6 +2952,7 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->offset      = cm->offset;
   new->clen        = cm->clen;
   new->W           = cm->W;
+  new->W_setby     = cm->W_setby;
   new->beta_W      = cm->beta_W;
   new->pbegin      = cm->pbegin;
   new->pend        = cm->pend;
@@ -3079,6 +3081,8 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   if(status == eslEMEM) ESL_FAIL(status, errbuf, "Cloning CM, out of memory");
   return status; /* reached if status != eslEMEM, errbuf was filled earlier */
 }
+
+
 
 /* Function: DumpCMFlags()
  * Date:     EPN, Wed Jun 22 19:24:54 2011
@@ -3917,5 +3921,6 @@ Score2Prob(int sc, float null)
 float 
 Scorify(int sc)
 {
-  return ((float) sc / INTSCALE);
+  if (sc == -INFTY) return IMPOSSIBLE;
+  else              return ((float) sc / INTSCALE);
 }

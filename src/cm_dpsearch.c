@@ -113,6 +113,8 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn,   dx;           /* minimum/maximum valid d for current state */
+  int       dn_y, dx_y;         /* minimum/maximum valid d for state y */
+  int       dn_w, dx_w;         /* minimum/maximum valid d for state w */
   int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
@@ -124,8 +126,6 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
   int64_t   envi, envj;         /* min/max positions that exist in any hit with sc >= env_cutoff */
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
-
-  printf("in FastCYKScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CMH_BITS flag is not raised.\n");
@@ -145,7 +145,11 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
   int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
   float **esc_vAA     = cm->oesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					     * and all possible emissions a (including ambiguities) */
-  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+
+  /* Determine if we're doing banded/non-banded and get pointers to
+   * dmin/dmax. (We only need dmin/dmax so we can compute kmin/kmax
+   * for B states.)
+   */
   if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
   else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
   else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin2; dmax = cm->qdbinfo->dmax2; }
@@ -154,6 +158,9 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
   L = j0-i0+1;
   W = smx->W;
   if (W > L) W = L; 
+
+  /* initialize the scan matrix */
+  if((status = cm_scan_mx_InitializeFloats(cm, smx, errbuf)) != eslOK) return status;
 
   /* set vsc array */
   vsc = NULL;
@@ -250,11 +257,16 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
 	    y = cm->cnum[v];   /* BEGR_S */
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      /* k is the length of the right fragment */
-	      /* Careful, make sure k is consistent with bands in state w and state y. */
 	      if(do_banded) {
-		kmin = ESL_MAX(dmin[y], (d-dmax[w]));
-		kmin = ESL_MAX(kmin, 0);
-		kmax = ESL_MIN(dmax[y], (d-dmin[w]));
+		/* Careful, make sure k is consistent with bands in
+		 * state w and state y, and don't forget that
+		 * dmin/dmax values can exceed W. */
+		dn_y = ESL_MIN(dmin[y], smx->W); 
+		dx_y = ESL_MIN(dmax[y], smx->W);
+		dn_w = ESL_MIN(dmin[w], smx->W);
+		dx_w = ESL_MIN(dmax[w], smx->W);
+		kmin = ESL_MAX(0, ESL_MAX(dn_y, d-dx_w));
+		kmax = ESL_MIN(dx_y, d-dn_w);
 	      }
 	      else { kmin = 0; kmax = d; }
 
@@ -622,7 +634,7 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
       if(tmp_hitlist != NULL) { 
 	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
-      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
+      /*cm_scan_mx_Dump(stdout, cm, j, i0, qdbidx, TRUE);*/
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
@@ -736,6 +748,8 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn,   dx;           /* minimum/maximum valid d for current state */
+  int       dn_y, dx_y;         /* minimum/maximum valid d for state y */
+  int       dn_w, dx_w;         /* minimum/maximum valid d for state w */
   int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
@@ -747,7 +761,7 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
 
-  printf("in RefCYKScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");
+  /*printf("in RefCYKScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");*/
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CMH_BITS flag is not raised.\n");
@@ -768,7 +782,10 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
   float **esc_vAA     = cm->oesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					     * and all possible emissions a (including ambiguities) */
 
-  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  /* Determine if we're doing banded/non-banded and get pointers to
+   * dmin/dmax. (We only need dmin/dmax so we can compute kmin/kmax
+   * for B states.)
+   */
   if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
   else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
   else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin2; dmax = cm->qdbinfo->dmax2; }
@@ -777,6 +794,9 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
   L = j0-i0+1;
   W = smx->W;
   if (W > L) W = L; 
+
+  /* initialize the scan matrix */
+  if((status = cm_scan_mx_InitializeFloats(cm, smx, errbuf)) != eslOK) return status;
 
   /* set vsc array */
   vsc = NULL;
@@ -869,11 +889,16 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
 	    y = cm->cnum[v];   /* BEGR_S */
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      /* k is the length of the right fragment */
-	      /* Careful, make sure k is consistent with bands in state w and state y. */
 	      if(do_banded) {
-		kmin = ESL_MAX(dmin[y], (d-dmax[w]));
-		kmin = ESL_MAX(kmin, 0);
-		kmax = ESL_MIN(dmax[y], (d-dmin[w]));
+		/* Careful, make sure k is consistent with bands in
+		 * state w and state y, and don't forget that
+		 * dmin/dmax values can exceed W. */
+		dn_y = ESL_MIN(dmin[y], smx->W); 
+		dx_y = ESL_MIN(dmax[y], smx->W);
+		dn_w = ESL_MIN(dmin[w], smx->W);
+		dx_w = ESL_MIN(dmax[w], smx->W);
+		kmin = ESL_MAX(0, ESL_MAX(dn_y, d-dx_w));
+		kmax = ESL_MIN(dx_y, d-dn_w);
 	      }
 	      else { kmin = 0; kmax = d; }
 
@@ -1121,6 +1146,8 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn,   dx;           /* minimum/maximum valid d for current state */
+  int       dn_y, dx_y;         /* minimum/maximum valid d for state y */
+  int       dn_w, dx_w;         /* minimum/maximum valid d for state w */
   int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
@@ -1133,9 +1160,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
 
-  printf("in FastIInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");
-
-  if(cm->flags & CMH_LOCAL_BEGIN) { FILE *fp; fp = fopen("cmp.txt", "w");  debug_print_cm_params(fp, cm); }
+  /*printf("in FastIInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");*/
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
@@ -1154,7 +1179,11 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   int    *bestr       = smx->bestr;         /* [0..d..W] best root state (for local begins or 0) for this d, recalc'ed for each j endpoint */
   int   **esc_vAA     = cm->ioesc;          /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					     * and all possible emissions a (including ambiguities) */
-  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+
+  /* Determine if we're doing banded/non-banded and get pointers to
+   * dmin/dmax. (We only need dmin/dmax so we can compute kmin/kmax
+   * for B states.)
+   */
   if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
   else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
   else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin2; dmax = cm->qdbinfo->dmax2; }
@@ -1163,6 +1192,9 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   L = j0-i0+1;
   W = smx->W;
   if (W > L) W = L; 
+
+  /* initialize the scan matrix */
+  if((status = cm_scan_mx_InitializeIntegers(cm, smx, errbuf)) != eslOK) return status;
 
   /* set vsc array */
   vsc = NULL;
@@ -1257,11 +1289,16 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
 	    y = cm->cnum[v];   /* BEGR_S */
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      /* k is the length of the right fragment */
-	      /* Careful, make sure k is consistent with bands in state w and state y. */
 	      if(do_banded) {
-		kmin = ESL_MAX(dmin[y], (d-dmax[w]));
-		kmin = ESL_MAX(kmin, 0);
-		kmax = ESL_MIN(dmax[y], (d-dmin[w]));
+		/* Careful, make sure k is consistent with bands in
+		 * state w and state y, and don't forget that
+		 * dmin/dmax values can exceed W. */
+		dn_y = ESL_MIN(dmin[y], smx->W); 
+		dx_y = ESL_MIN(dmax[y], smx->W);
+		dn_w = ESL_MIN(dmin[w], smx->W);
+		dx_w = ESL_MIN(dmax[w], smx->W);
+		kmin = ESL_MAX(0, ESL_MAX(dn_y, d-dx_w));
+		kmax = ESL_MIN(dx_y, d-dn_w);
 	      }
 	      else { kmin = 0; kmax = d; }
 
@@ -1625,7 +1662,6 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
       if(tmp_hitlist != NULL) { 
 	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
-
       /* cm_scan_mx_Dump(stdout, cm, j, i0, qdbidx, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -1741,6 +1777,8 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn,   dx;           /* minimum/maximum valid d for current state */
+  int       dn_y, dx_y;         /* minimum/maximum valid d for state y */
+  int       dn_w, dx_w;         /* minimum/maximum valid d for state w */
   int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
@@ -1753,7 +1791,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
 
-  printf("in FastFInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");
+  /*printf("in FastFInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");*/
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CMH_BITS flag is not raised.\n");
@@ -1773,7 +1811,10 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   float **esc_vAA     = cm->oesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					     * and all possible emissions a (including ambiguities) */
 
-  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  /* Determine if we're doing banded/non-banded and get pointers to
+   * dmin/dmax. (We only need dmin/dmax so we can compute kmin/kmax
+   * for B states.)
+   */
   if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
   else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
   else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin2; dmax = cm->qdbinfo->dmax2; }
@@ -1782,6 +1823,9 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   L = j0-i0+1;
   W = smx->W;
   if (W > L) W = L; 
+
+  /* initialize the scan matrix */
+  if((status = cm_scan_mx_InitializeFloats(cm, smx, errbuf)) != eslOK) return status;
 
   /* set vsc array */
   vsc = NULL;
@@ -1878,11 +1922,16 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
 	    y = cm->cnum[v];   /* BEGR_S */
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      /* k is the length of the right fragment */
-	      /* Careful, make sure k is consistent with bands in state w and state y. */
 	      if(do_banded) {
-		kmin = ESL_MAX(dmin[y], (d-dmax[w]));
-		kmin = ESL_MAX(kmin, 0);
-		kmax = ESL_MIN(dmax[y], (d-dmin[w]));
+		/* Careful, make sure k is consistent with bands in
+		 * state w and state y, and don't forget that
+		 * dmin/dmax values can exceed W. */
+		dn_y = ESL_MIN(dmin[y], smx->W); 
+		dx_y = ESL_MIN(dmax[y], smx->W);
+		dn_w = ESL_MIN(dmin[w], smx->W);
+		dx_w = ESL_MIN(dmax[w], smx->W);
+		kmin = ESL_MAX(0, ESL_MAX(dn_y, d-dx_w));
+		kmax = ESL_MIN(dx_y, d-dn_w);
 	      }
 	      else { kmin = 0; kmax = d; }
 
@@ -2246,7 +2295,6 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
       if(tmp_hitlist != NULL) { 
 	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
-
       /*FILE *fp; fp = fopen("tmp.ffins.smx", "w"); cm_scan_mx_Dump(fp, cm, j, i0, qdbidx, TRUE); fclose(fp); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -2362,6 +2410,8 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn,   dx;           /* minimum/maximum valid d for current state */
+  int       dn_y, dx_y;         /* minimum/maximum valid d for state y */
+  int       dn_w, dx_w;         /* minimum/maximum valid d for state w */
   int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
@@ -2374,7 +2424,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   int       h;                  /* counter over hits */
 
 
-  printf("in RefIInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");
+  /*printf("in RefIInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");*/
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CMH_BITS flag is not raised.\n");
@@ -2394,7 +2444,10 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   int   **esc_vAA     = cm->ioesc;          /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					     * and all possible emissions a (including ambiguities) */
 
-  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  /* Determine if we're doing banded/non-banded and get pointers to
+   * dmin/dmax. (We only need dmin/dmax so we can compute kmin/kmax
+   * for B states.)
+   */
   if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
   else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
   else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin2; dmax = cm->qdbinfo->dmax2; }
@@ -2404,13 +2457,15 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   W = smx->W;
   if (W > L) W = L; 
 
+  /* initialize the scan matrix */
+  if((status = cm_scan_mx_InitializeIntegers(cm, smx, errbuf)) != eslOK) return status;
+
   /* set vsc array */
   vsc = NULL;
   if(ret_vsc != NULL) { 
     ESL_ALLOC(vsc, sizeof(float) * cm->M);
     esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
   }
-  vsc_root    = IMPOSSIBLE;
 
   /* If we were passed a master hitlist <hitlist>, either create a
    * gamma hit matrix for resolving overlaps optimally (if
@@ -2496,11 +2551,16 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
 	    y = cm->cnum[v];   /* BEGR_S */
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      /* k is the length of the right fragment */
-	      /* Careful, make sure k is consistent with bands in state w and state y. */
 	      if(do_banded) {
-		kmin = ESL_MAX(dmin[y], (d-dmax[w]));
-		kmin = ESL_MAX(kmin, 0);
-		kmax = ESL_MIN(dmax[y], (d-dmin[w]));
+		/* Careful, make sure k is consistent with bands in
+		 * state w and state y, and don't forget that
+		 * dmin/dmax values can exceed W. */
+		dn_y = ESL_MIN(dmin[y], smx->W); 
+		dx_y = ESL_MIN(dmax[y], smx->W);
+		dn_w = ESL_MIN(dmin[w], smx->W);
+		dx_w = ESL_MIN(dmax[w], smx->W);
+		kmin = ESL_MAX(0, ESL_MAX(dn_y, d-dx_w));
+		kmax = ESL_MIN(dx_y, d-dn_w);
 	      }
 	      else { kmin = 0; kmax = d; }
 
@@ -2737,6 +2797,8 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn,   dx;           /* minimum/maximum valid d for current state */
+  int       dn_y, dx_y;         /* minimum/maximum valid d for state y */
+  int       dn_w, dx_w;         /* minimum/maximum valid d for state w */
   int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
@@ -2748,7 +2810,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   CM_TOPHITS *tmp_hitlist = NULL; /* temporary hitlist, containing possibly overlapping hits */
   int       h;                  /* counter over hits */
 
-  printf("in RefFInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");
+  /*printf("in RefFInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");*/
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CMH_BITS flag is not raised.\n");
@@ -2768,7 +2830,10 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   float **esc_vAA     = cm->oesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					     * and all possible emissions a (including ambiguities) */
 
-  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  /* Determine if we're doing banded/non-banded and get pointers to
+   * dmin/dmax. (We only need dmin/dmax so we can compute kmin/kmax
+   * for B states.)
+   */
   if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmin = NULL;               dmax = NULL; }
   else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin1; dmax = cm->qdbinfo->dmax1; }
   else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmin = cm->qdbinfo->dmin2; dmax = cm->qdbinfo->dmax2; }
@@ -2778,13 +2843,15 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   W = smx->W;
   if (W > L) W = L; 
 
+  /* initialize the scan matrix */
+  if((status = cm_scan_mx_InitializeFloats(cm, smx, errbuf)) != eslOK) return status;
+
   /* set vsc array */
   vsc = NULL;
   if(ret_vsc != NULL) { 
     ESL_ALLOC(vsc, sizeof(float) * cm->M);
     esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
   }
-  vsc_root    = IMPOSSIBLE;
 
   /* If we were passed a master hitlist <hitlist>, either create a
    * gamma hit matrix for resolving overlaps optimally (if
@@ -2870,11 +2937,16 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
 	    y = cm->cnum[v];   /* BEGR_S */
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      /* k is the length of the right fragment */
-	      /* Careful, make sure k is consistent with bands in state w and state y. */
 	      if(do_banded) {
-		kmin = ESL_MAX(dmin[y], (d-dmax[w]));
-		kmin = ESL_MAX(kmin, 0);
-		kmax = ESL_MIN(dmax[y], (d-dmin[w]));
+		/* Careful, make sure k is consistent with bands in
+		 * state w and state y, and don't forget that
+		 * dmin/dmax values can exceed W. */
+		dn_y = ESL_MIN(dmin[y], smx->W); 
+		dx_y = ESL_MIN(dmax[y], smx->W);
+		dn_w = ESL_MIN(dmin[w], smx->W);
+		dx_w = ESL_MIN(dmax[w], smx->W);
+		kmin = ESL_MAX(0, ESL_MAX(dn_y, d-dx_w));
+		kmax = ESL_MIN(dx_y, d-dn_w);
 	      }
 	      else { kmin = 0; kmax = d; }
 
@@ -3001,7 +3073,6 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
       if(tmp_hitlist != NULL) { 
 	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
-
       /*FILE *fp; fp = fopen("tmp.rfins.smx", "w"); cm_scan_mx_Dump(fp, cm, j, i0, qdbidx, TRUE); fclose(fp); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;

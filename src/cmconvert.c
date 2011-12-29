@@ -99,7 +99,7 @@ configure_model(CM_t *cm, char *errbuf)
 
   /* Configure the model, we must calculate QDBs so we can write them to the CM file */
   cm->config_opts |= CM_CONFIG_QDB;   
-  if((status = cm_Configure(cm, errbuf)) != eslOK) return status;
+  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
 
   CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &(cons));
   if ((status = cm_SetConsensus  (cm, cons, NULL)) != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate consensus sequence");

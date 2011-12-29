@@ -1495,7 +1495,7 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
 
   /* Configure the model, we must calculate QDBs so we can write them to the CM file */
   cm->config_opts |= CM_CONFIG_QDB;   
-  if((status = cm_Configure(cm, errbuf)) != eslOK) return status;
+  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
 
   if (cfg->be_verbose) { 
     fprintf(stdout, "done.  ");
@@ -2057,7 +2057,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * this may make a cp9 HMM, for example.
    */
-  if((status = cm_Configure(cm, errbuf)) != eslOK) return status;
+  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
 
   if(ret_nc_cm != NULL) *ret_nc_cm = nc_cm;
   else                   FreeCM(nc_cm);

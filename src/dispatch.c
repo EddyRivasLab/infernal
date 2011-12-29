@@ -556,7 +556,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln,
       /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
       /* (4) Build a new CP9 HMM from the sub CM. */
       esl_stopwatch_Start(watch2);
-      if((status = cm_ConfigureSub(sub_cm, errbuf, orig_cm, submap)) != eslOK) return status; /* FALSE says: don't calculate W, we won't need it */
+      if((status = cm_ConfigureSub(sub_cm, errbuf, -1, orig_cm, submap)) != eslOK) return status; /* FALSE says: don't calculate W, we won't need it */
       esl_stopwatch_Stop(watch2);
       FormatTimeString(time_buf, watch2->user, TRUE);
 #if PRINTNOW

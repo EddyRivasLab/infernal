@@ -1978,6 +1978,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 
   CMRenormalize(cm);
   cm->qdbinfo->setby = CM_QDBINFO_SETBY_CMFILE;
+  cm->W_setby        = CM_W_SETBY_CMFILE;
 
   /* Create emit map now that we know the model architecture */
   cm->emap = CreateEmitMap(cm);
@@ -2113,6 +2114,7 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   if (! fread((char *) cm->qdbinfo->dmax2, sizeof(int),  cm->M,      cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read dmax2 array");
 
   cm->qdbinfo->setby = CM_QDBINFO_SETBY_CMFILE;
+  cm->W_setby        = CM_W_SETBY_CMFILE;
   
   /* Create emit map now that we know the model architecture */
   cm->emap = CreateEmitMap(cm);

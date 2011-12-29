@@ -71,7 +71,7 @@ main(int argc, char **argv)
 
    if (do_local) cm->config_opts |= CM_CONFIG_LOCAL;
 
-   if((status = cm_Configure(cm, errbuf)) != eslOK) cm_Die(errbuf);
+   if((status = cm_Configure(cm, errbuf, -1)) != eslOK) cm_Die(errbuf);
    CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &cons);
    /*SetMarginalScores_reproduce_bug_i27(cm);*/
 

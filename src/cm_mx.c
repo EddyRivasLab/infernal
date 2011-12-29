@@ -64,12 +64,12 @@
 #include "funcs.h"
 #include "structs.h"
 
-static int cm_scan_mx_integerize     (CM_t *cm, CM_SCAN_MX *smx);
-static int cm_scan_mx_floatize       (CM_t *cm, CM_SCAN_MX *smx);
+static int cm_scan_mx_integerize     (CM_t *cm, CM_SCAN_MX *smx, char *errbuf);
+static int cm_scan_mx_floatize       (CM_t *cm, CM_SCAN_MX *smx, char *errbuf);
 static int cm_scan_mx_freefloats     (CM_t *cm, CM_SCAN_MX *smx);
 static int cm_scan_mx_freeintegers   (CM_t *cm, CM_SCAN_MX *smx);
-static int cm_tr_scan_mx_integerize  (CM_t *cm, CM_TR_SCAN_MX *trsmx);
-static int cm_tr_scan_mx_floatize    (CM_t *cm, CM_TR_SCAN_MX *trsmx);
+static int cm_tr_scan_mx_integerize  (CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf);
+static int cm_tr_scan_mx_floatize    (CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf);
 static int cm_tr_scan_mx_freefloats  (CM_t *cm, CM_TR_SCAN_MX *trsmx);
 static int cm_tr_scan_mx_freeintegers(CM_t *cm, CM_TR_SCAN_MX *trsmx);
 
@@ -5618,7 +5618,11 @@ cm_scan_mx_Create(CM_t *cm, char *errbuf, int do_float, int do_int, CM_SCAN_MX *
       smx->dnAAA[SMX_QDB1_TIGHT][j][v] = (cm->sttype[v] == MP_st) ? ESL_MAX(smx->qdbinfo->dmin1[v], 2) : ESL_MAX(smx->qdbinfo->dmin1[v], 1); 
       smx->dnAAA[SMX_QDB2_LOOSE][j][v] = (cm->sttype[v] == MP_st) ? ESL_MAX(smx->qdbinfo->dmin2[v], 2) : ESL_MAX(smx->qdbinfo->dmin2[v], 1); 
 
-      smx->dxAAA[SMX_NOQDB][j][v]      = ESL_MIN(j, smx->W); 
+      smx->dnAAA[SMX_NOQDB][j][v]      = ESL_MIN(smx->dnAAA[SMX_NOQDB][j][v],      smx->W);
+      smx->dnAAA[SMX_QDB1_TIGHT][j][v] = ESL_MIN(smx->dnAAA[SMX_QDB1_TIGHT][j][v], smx->W);
+      smx->dnAAA[SMX_QDB2_LOOSE][j][v] = ESL_MIN(smx->dnAAA[SMX_QDB2_LOOSE][j][v], smx->W);
+
+      smx->dxAAA[SMX_NOQDB][j][v]      = j;
       smx->dxAAA[SMX_QDB1_TIGHT][j][v] = ESL_MIN(j, ESL_MIN(smx->qdbinfo->dmax1[v], smx->W));
       smx->dxAAA[SMX_QDB2_LOOSE][j][v] = ESL_MIN(j, ESL_MIN(smx->qdbinfo->dmax2[v], smx->W));
     }
@@ -5685,16 +5689,10 @@ cm_scan_mx_Create(CM_t *cm, char *errbuf, int do_float, int do_int, CM_SCAN_MX *
   smx->ncells_alpha_begl = 0;
 
   if(do_float) { 
-    if((status = cm_scan_mx_floatize(cm, smx)) != eslOK) { 
-      if(status == eslEMEM) ESL_FAIL(status, errbuf, "out of memory (creating float scan matrix)");
-      else                  ESL_FAIL(status, errbuf, "problem laying out float scan matrix");
-    }
+    if((status = cm_scan_mx_floatize(cm, smx, errbuf)) != eslOK) goto ERROR;
   }
   if(do_int) { 
-    if((status = cm_scan_mx_integerize(cm, smx)) != eslOK) { 
-      if(status == eslEMEM) ESL_FAIL(status, errbuf, "out of memory (creating int scan matrix)");
-      else                  ESL_FAIL(status, errbuf, "problem laying out int scan matrix");
-    }
+    if((status = cm_scan_mx_integerize(cm, smx, errbuf)) != eslOK) goto ERROR;
   }
 
   /* tally up size */
@@ -5735,11 +5733,10 @@ cm_scan_mx_Create(CM_t *cm, char *errbuf, int do_float, int do_int, CM_SCAN_MX *
  *           eslEMEM if out of memory.
  */
 int
-cm_scan_mx_floatize(CM_t *cm, CM_SCAN_MX *smx)
+cm_scan_mx_floatize(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
 {
   int status;
   int j, v;
-  int y, yoffset, w;
   int n_begl;
   int n_non_begl;
   int cur_cell;
@@ -5776,7 +5773,7 @@ cm_scan_mx_floatize(CM_t *cm, CM_SCAN_MX *smx)
       smx->falpha[1][v] = NULL;
     }
   }
-  if(cur_cell != smx->ncells_alpha) { status = eslEINVAL; goto ERROR; }
+  if(cur_cell != smx->ncells_alpha) ESL_FAIL(eslEINVAL, errbuf, "problem laying out float scan matrix");
 
   /* allocate falpha_begl */
   /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
@@ -5796,49 +5793,19 @@ cm_scan_mx_floatize(CM_t *cm, CM_SCAN_MX *smx)
       else smx->falpha_begl[j][v] = NULL;
     }
   }
-  if(cur_cell != smx->ncells_alpha_begl) { status = eslEINVAL; goto ERROR; }
+  if(cur_cell != smx->ncells_alpha_begl) ESL_FAIL(eslEINVAL, errbuf, "problem laying out float scan matrix");
 
-  /* Initialize matrix */
-  /* First, init entire matrix to IMPOSSIBLE */
-  esl_vec_FSet(smx->falpha_mem,      smx->ncells_alpha,      IMPOSSIBLE);
-  esl_vec_FSet(smx->falpha_begl_mem, smx->ncells_alpha_begl, IMPOSSIBLE);
-  /* Now, initialize cells that should not be IMPOSSIBLE in falpha and falpha_begl */
-  for(v = cm->M-1; v >= 0; v--) {
-    if(cm->stid[v] != BEGL_S) {
-      if (cm->sttype[v] == E_st) { 
-	smx->falpha[0][v][0] = smx->falpha[1][v][0] = 0.;
-	/* rest of E deck is IMPOSSIBLE, it's already set */
-      }
-      else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) {
-	y = cm->cfirst[v];
-	smx->falpha[0][v][0] = cm->endsc[v];
-	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	  smx->falpha[0][v][0] = ESL_MAX(smx->falpha[0][v][0], (smx->falpha[0][y+yoffset][0] + cm->tsc[v][yoffset]));
-	smx->falpha[0][v][0] = ESL_MAX(smx->falpha[0][v][0], IMPOSSIBLE);
-      }
-      else if (cm->sttype[v] == B_st) {
-	w = cm->cfirst[v]; /* BEGL_S, left child state */
-	y = cm->cnum[v];
-	smx->falpha[0][v][0] = smx->falpha_begl[0][w][0] + smx->falpha[0][y][0]; 
-      }
-      smx->falpha[1][v][0] = smx->falpha[0][v][0];
-    }
-    else { /* v == BEGL_S */
-      y = cm->cfirst[v];
-      smx->falpha_begl[0][v][0] = cm->endsc[v];
-      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	smx->falpha_begl[0][v][0] = ESL_MAX(smx->falpha_begl[0][v][0], (smx->falpha[0][y+yoffset][0] + cm->tsc[v][yoffset])); /* careful: y is in smx->falpha */
-      smx->falpha_begl[0][v][0] = ESL_MAX(smx->falpha_begl[0][v][0], IMPOSSIBLE);
-      for (j = 1; j <= smx->W; j++) 
-	smx->falpha_begl[j][v][0] = smx->falpha_begl[0][v][0];
-    }
-  }
   /* set the flag that tells us we've got valid floats */
   smx->floats_valid = TRUE;
+
+  /* Initialize matrix */
+  if((status = cm_scan_mx_InitializeFloats(cm, smx, errbuf)) != eslOK) return status;
+
   return eslOK;
 
  ERROR: 
-  return status;
+  ESL_FAIL(eslEMEM, errbuf, "out of memory (creating float scan matrix)");
+  return status; /* NOT REACHED */
 }
 
 
@@ -5850,13 +5817,13 @@ cm_scan_mx_floatize(CM_t *cm, CM_SCAN_MX *smx)
  *           eslEMEM if out of memory.
  */
 int
-cm_scan_mx_integerize(CM_t *cm, CM_SCAN_MX *smx)
+cm_scan_mx_integerize(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
 {
   int status;
-  int v, j, y, yoffset, w;
   int n_begl;
   int n_non_begl;
   int cur_cell;
+  int v, j;
 
   /* allocate alpha 
    * we allocate only as many cells as necessary,
@@ -5891,7 +5858,7 @@ cm_scan_mx_integerize(CM_t *cm, CM_SCAN_MX *smx)
       smx->ialpha[1][v] = NULL;
     }
   }
-  if(cur_cell != smx->ncells_alpha) { status = eslEINVAL; goto ERROR; }
+  if(cur_cell != smx->ncells_alpha) ESL_FAIL(eslEINVAL, errbuf, "problem laying out int scan matrix");
   
   /* allocate ialpha_begl */
   /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
@@ -5911,9 +5878,93 @@ cm_scan_mx_integerize(CM_t *cm, CM_SCAN_MX *smx)
       else smx->ialpha_begl[j][v] = NULL;
     }
   }
-  if(cur_cell != smx->ncells_alpha_begl) { status = eslEINVAL; goto ERROR; }
+  if(cur_cell != smx->ncells_alpha_begl) ESL_FAIL(eslEINVAL, errbuf, "problem laying out int scan matrix");
+
+  /* set the flag that tells us we've got valid ints */
+  smx->ints_valid = TRUE;
 
   /* Initialize matrix */
+  if((status = cm_scan_mx_InitializeIntegers(cm, smx, errbuf)) != eslOK) return status;
+
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(eslEMEM, errbuf, "out of memory (creating int scan matrix)");
+  return status; /* NOT REACHED */
+}  
+
+/* Function: cm_scan_mx_InitializeFloats()
+ * Date:     EPN, Tue Dec 27 10:41:53 2011
+ *
+ * Purpose:  Initialize float scores in a CM_SCAN_MX. This 
+ *           should be done before using the scan matrix for
+ *           a new target sequence.
+ *            
+ * Returns:  eslOK on success.
+ *           eslEINVAL if float matrix is not allocated.
+ */
+int
+cm_scan_mx_InitializeFloats(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
+{ 
+  int v, j, y, w, yoffset;
+
+  if(! smx->floats_valid) ESL_FAIL(eslEINVAL, errbuf, "cm_scan_mx_InitializeFloats(), smx->floats_valid is FALSE");
+
+  /* First, init entire matrix to IMPOSSIBLE */
+  esl_vec_FSet(smx->falpha_mem,      smx->ncells_alpha,      IMPOSSIBLE);
+  esl_vec_FSet(smx->falpha_begl_mem, smx->ncells_alpha_begl, IMPOSSIBLE);
+  /* Now, initialize cells that should not be IMPOSSIBLE in falpha and falpha_begl */
+  for(v = cm->M-1; v >= 0; v--) {
+    if(cm->stid[v] != BEGL_S) {
+      if (cm->sttype[v] == E_st) { 
+	smx->falpha[0][v][0] = smx->falpha[1][v][0] = 0.;
+	/* rest of E deck is IMPOSSIBLE, it's already set */
+      }
+      else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) {
+	y = cm->cfirst[v];
+	smx->falpha[0][v][0] = cm->endsc[v];
+	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+	  smx->falpha[0][v][0] = ESL_MAX(smx->falpha[0][v][0], (smx->falpha[0][y+yoffset][0] + cm->tsc[v][yoffset]));
+	smx->falpha[0][v][0] = ESL_MAX(smx->falpha[0][v][0], IMPOSSIBLE);
+      }
+      else if (cm->sttype[v] == B_st) {
+	w = cm->cfirst[v]; /* BEGL_S, left child state */
+	y = cm->cnum[v];
+	smx->falpha[0][v][0] = smx->falpha_begl[0][w][0] + smx->falpha[0][y][0]; 
+      }
+      smx->falpha[1][v][0] = smx->falpha[0][v][0];
+    }
+    else { /* v == BEGL_S */
+      y = cm->cfirst[v];
+      smx->falpha_begl[0][v][0] = cm->endsc[v];
+      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+	smx->falpha_begl[0][v][0] = ESL_MAX(smx->falpha_begl[0][v][0], (smx->falpha[0][y+yoffset][0] + cm->tsc[v][yoffset])); /* careful: y is in smx->falpha */
+      smx->falpha_begl[0][v][0] = ESL_MAX(smx->falpha_begl[0][v][0], IMPOSSIBLE);
+      for (j = 1; j <= smx->W; j++) 
+	smx->falpha_begl[j][v][0] = smx->falpha_begl[0][v][0];
+    }
+  }
+
+  return eslOK;
+}
+
+/* Function: cm_scan_mx_InitializeIntegers()
+ * Date:     EPN, Tue Dec 27 10:45:02 2011
+ *
+ * Purpose:  Initialize integer scores in a CM_SCAN_MX. This 
+ *           should be done before using the scan matrix for
+ *           a new target sequence.
+ *            
+ * Returns:  eslOK on success.
+ *           eslEINVAL if float matrix is not allocated.
+ */
+int
+cm_scan_mx_InitializeIntegers(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
+{ 
+  int v, j, y, w, yoffset;
+
+  if(! smx->ints_valid) ESL_FAIL(eslEINVAL, errbuf, "cm_scan_mx_InitializeIntegers(), smx->ints_valid is FALSE");
+
   /* First, init entire matrix to -INFTY */
   esl_vec_ISet(smx->ialpha_mem,      smx->ncells_alpha,      -INFTY);
   esl_vec_ISet(smx->ialpha_begl_mem, smx->ncells_alpha_begl, -INFTY);
@@ -5949,13 +6000,8 @@ cm_scan_mx_integerize(CM_t *cm, CM_SCAN_MX *smx)
     }
   }
 
-  /* set the flag that tells us we've got valid ints */
-  smx->ints_valid = TRUE;
   return eslOK;
-
- ERROR: 
-  return status;
-}  
+}
 
 /* Function: cm_scan_mx_SizeNeeded()
  * Date:     EPN, Tue Dec 13 04:33:42 2011
@@ -6314,16 +6360,10 @@ cm_tr_scan_mx_Create(CM_t *cm, char *errbuf, int do_float, int do_int, CM_TR_SCA
   trsmx->ncells_Talpha     = 0;
 
   if(do_float) { 
-    if((status = cm_tr_scan_mx_floatize(cm, trsmx)) != eslOK) { 
-      if(status == eslEMEM) ESL_FAIL(status, errbuf, "out of memory (creating float tr scan matrix)");
-      else                  ESL_FAIL(status, errbuf, "problem laying out float tr scan matrix");
-    }
+    if((status = cm_tr_scan_mx_floatize(cm, trsmx, errbuf)) != eslOK) goto ERROR;
   }
   if(do_int) { 
-    if((status = cm_tr_scan_mx_integerize(cm, trsmx)) != eslOK) { 
-      if(status == eslEMEM) ESL_FAIL(status, errbuf, "out of memory (creating int tr scan matrix)");
-      else                  ESL_FAIL(status, errbuf, "problem laying out int tr scan matrix");
-    }
+    if((status = cm_tr_scan_mx_integerize(cm, trsmx, errbuf)) != eslOK) goto ERROR;
   }
 
   /* tally up size */
@@ -6366,7 +6406,7 @@ cm_tr_scan_mx_Create(CM_t *cm, char *errbuf, int do_float, int do_int, CM_TR_SCA
   return status; /* not reached */
 }
 
-/* Function: cm_tr_scan_mx_Floatize()
+/* Function: cm_tr_scan_mx_floatize()
  * Date:     EPN, Tue Aug 16 04:36:29 2011
  *
  * Returns:  eslOK on success.
@@ -6374,11 +6414,10 @@ cm_tr_scan_mx_Create(CM_t *cm, char *errbuf, int do_float, int do_int, CM_TR_SCA
  *           eslEMEM if out of memory.
  */
 int
-cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx)
+cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
 {
   int status;
   int j, v;
-  int y, yoffset, w;
   int n_begl, n_bif;
   int n_non_begl;
   int cur_cell;
@@ -6458,7 +6497,7 @@ cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx)
       trsmx->fTalpha[1][v] = NULL;
     }
   }
-  if(cur_cell != trsmx->ncells_Talpha) { status = eslEINVAL; goto ERROR; }
+  if(cur_cell != trsmx->ncells_alpha) ESL_FAIL(eslEINVAL, errbuf, "problem laying out float truncated scan matrix");
   
   /* allocate falpha_begl */
   /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
@@ -6491,60 +6530,21 @@ cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx)
       }
     }
   }
-  if(cur_cell != trsmx->ncells_alpha_begl) { status = eslEINVAL; goto ERROR; }
+  if(cur_cell != trsmx->ncells_alpha_begl) ESL_FAIL(eslEINVAL, errbuf, "problem laying out truncated float scan matrix");
 
-  /* Initialize matrix */
-  /* First, init entire matrix to IMPOSSIBLE */
-  esl_vec_FSet(trsmx->fJalpha_mem,      trsmx->ncells_alpha,      IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fLalpha_mem,      trsmx->ncells_alpha,      IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fRalpha_mem,      trsmx->ncells_alpha,      IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fTalpha_mem,      trsmx->ncells_Talpha,     IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fJalpha_begl_mem, trsmx->ncells_alpha_begl, IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fLalpha_begl_mem, trsmx->ncells_alpha_begl, IMPOSSIBLE);
-  esl_vec_FSet(trsmx->fRalpha_begl_mem, trsmx->ncells_alpha_begl, IMPOSSIBLE);
-  /* Now, initialize cells that should not be IMPOSSIBLE in f{J,L,RT}alpha and f{J,L,R}alpha_begl */
-  for(v = cm->M-1; v >= 0; v--) {
-    if(cm->stid[v] != BEGL_S) {
-      if (cm->sttype[v] == E_st) { 
-	trsmx->fJalpha[0][v][0] = trsmx->fJalpha[1][v][0] = 0.;
-	trsmx->fLalpha[0][v][0] = trsmx->fLalpha[1][v][0] = 0.;
-	trsmx->fRalpha[0][v][0] = trsmx->fRalpha[1][v][0] = 0.;
-	/* rest of E deck is IMPOSSIBLE, it's already set */
-      }
-      else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) {
-	y = cm->cfirst[v];
-	trsmx->fJalpha[0][v][0] = cm->endsc[v];
-	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	  trsmx->fJalpha[0][v][0] = ESL_MAX(trsmx->fJalpha[0][v][0], (trsmx->fJalpha[0][y+yoffset][0] + cm->tsc[v][yoffset]));
-	trsmx->fJalpha[0][v][0] = ESL_MAX(trsmx->fJalpha[0][v][0], IMPOSSIBLE);
-	/* {L,R}alpha[0][v][0] remain IMPOSSIBLE */
-      }
-      else if (cm->sttype[v] == B_st) {
-	w = cm->cfirst[v]; /* BEGL_S, left child state */
-	y = cm->cnum[v];
-	trsmx->fJalpha[0][v][0] = trsmx->fJalpha_begl[0][w][0] + trsmx->fJalpha[0][y][0]; 
-      }
-      trsmx->fJalpha[1][v][0] = trsmx->fJalpha[0][v][0];
-      /* {L,R,T}alpha[{0,1}][v][0] remain IMPOSSIBLE */
-    }
-    else { /* v == BEGL_S */
-      y = cm->cfirst[v];
-      trsmx->fJalpha_begl[0][v][0] = cm->endsc[v];
-      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	trsmx->fJalpha_begl[0][v][0] = ESL_MAX(trsmx->fJalpha_begl[0][v][0], (trsmx->fJalpha[0][y+yoffset][0] + cm->tsc[v][yoffset])); /* careful: y is in trsmx->fJalpha */
-      trsmx->fJalpha_begl[0][v][0] = ESL_MAX(trsmx->fJalpha_begl[0][v][0], IMPOSSIBLE);
-      for (j = 1; j <= trsmx->W; j++) 
-	trsmx->fJalpha_begl[j][v][0] = trsmx->fJalpha_begl[0][v][0];
-      /* {L,R}alpha_begl[j][v][0] remain IMPOSSIBLE for all j */
-    }
-  }
   /* set the flag that tells us we've got valid floats */
   trsmx->floats_valid = TRUE;
+
+  /* Initialize matrix */
+  if((status = cm_tr_scan_mx_InitializeFloats(cm, trsmx, errbuf)) != eslOK) return status;
+
   return eslOK;
 
  ERROR: 
-  return status;
+  ESL_FAIL(eslEMEM, errbuf, "out of memory (creating float truncated scan matrix)");
+  return status; /* NOT REACHED */
 }
+
 
 /* Function: cm_tr_scan_mx_integerize()
  * Date:     EPN, Wed Aug 24 15:00:32 2011
@@ -6554,11 +6554,10 @@ cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx)
  *           eslEMEM if out of memory.
  */
 int
-cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx)
+cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
 {
   int status;
   int j, v;
-  int y, yoffset, w;
   int n_begl, n_bif;
   int n_non_begl;
   int cur_cell;
@@ -6622,7 +6621,7 @@ cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx)
       trsmx->iRalpha[1][v] = NULL;
     }
   }
-  if(cur_cell != trsmx->ncells_alpha) { status = eslEINVAL; goto ERROR; }
+  if(cur_cell != trsmx->ncells_alpha) ESL_FAIL(eslEINVAL, errbuf, "problem laying out truncated int scan matrix");
 
   trsmx->ncells_Talpha = 2 * (n_bif+1) * (trsmx->W+1);
 
@@ -6639,7 +6638,7 @@ cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx)
       trsmx->iTalpha[1][v] = NULL;
     }
   }
-  if(cur_cell != trsmx->ncells_Talpha) { status = eslEINVAL; goto ERROR; }
+  if(cur_cell != trsmx->ncells_alpha_begl) ESL_FAIL(eslEINVAL, errbuf, "problem laying out int truncated scan matrix");
 
   /* allocate falpha_begl */
   /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
@@ -6673,9 +6672,102 @@ cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx)
       }
     }
   }
-  if(cur_cell != trsmx->ncells_alpha_begl) { status = eslEINVAL; goto ERROR; }
+  if(cur_cell != trsmx->ncells_alpha_begl) ESL_FAIL(eslEINVAL, errbuf, "problem laying out truncated int scan matrix");
 
- /* Initialize matrix */
+  /* set the flag that tells us we've got valid ints */
+  trsmx->ints_valid = TRUE;
+
+  /* Initialize matrix */
+  if((status = cm_tr_scan_mx_InitializeIntegers(cm, trsmx, errbuf)) != eslOK) return status;
+
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(eslEMEM, errbuf, "out of memory (creating int truncated scan matrix)");
+  return status; /* NOT REACHED */
+}
+
+/* Function: cm_tr_scan_mx_InitializeFloats()
+ * Date:     EPN, Tue Dec 27 11:09:42 2011
+ *
+ * Purpose:  Initialize float scores in a CM_TR_SCAN_MX. This 
+ *           should be done before using the scan matrix for
+ *           a new target sequence.
+ *            
+ * Returns:  eslOK on success.
+ *           eslEINVAL if float matrix is not allocated.
+ */
+int
+cm_tr_scan_mx_InitializeFloats(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
+{ 
+  int v, j, y, w, yoffset;
+
+  if(! trsmx->floats_valid) ESL_FAIL(eslEINVAL, errbuf, "cm_tr_scan_mx_InitializeFloats(), trsmx->floats_valid is FALSE");
+
+  /* First, init entire matrix to IMPOSSIBLE */
+  esl_vec_FSet(trsmx->fJalpha_mem,      trsmx->ncells_alpha,      IMPOSSIBLE);
+  esl_vec_FSet(trsmx->fLalpha_mem,      trsmx->ncells_alpha,      IMPOSSIBLE);
+  esl_vec_FSet(trsmx->fRalpha_mem,      trsmx->ncells_alpha,      IMPOSSIBLE);
+  esl_vec_FSet(trsmx->fTalpha_mem,      trsmx->ncells_Talpha,     IMPOSSIBLE);
+  esl_vec_FSet(trsmx->fJalpha_begl_mem, trsmx->ncells_alpha_begl, IMPOSSIBLE);
+  esl_vec_FSet(trsmx->fLalpha_begl_mem, trsmx->ncells_alpha_begl, IMPOSSIBLE);
+  esl_vec_FSet(trsmx->fRalpha_begl_mem, trsmx->ncells_alpha_begl, IMPOSSIBLE);
+  /* Now, initialize cells that should not be IMPOSSIBLE in f{J,L,RT}alpha and f{J,L,R}alpha_begl */
+  for(v = cm->M-1; v >= 0; v--) {
+    if(cm->stid[v] != BEGL_S) {
+      if (cm->sttype[v] == E_st) { 
+	trsmx->fJalpha[0][v][0] = trsmx->fJalpha[1][v][0] = 0.;
+	trsmx->fLalpha[0][v][0] = trsmx->fLalpha[1][v][0] = 0.;
+	trsmx->fRalpha[0][v][0] = trsmx->fRalpha[1][v][0] = 0.;
+	/* rest of E deck is IMPOSSIBLE, it's already set */
+      }
+      else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) {
+	y = cm->cfirst[v];
+	trsmx->fJalpha[0][v][0] = cm->endsc[v];
+	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+	  trsmx->fJalpha[0][v][0] = ESL_MAX(trsmx->fJalpha[0][v][0], (trsmx->fJalpha[0][y+yoffset][0] + cm->tsc[v][yoffset]));
+	trsmx->fJalpha[0][v][0] = ESL_MAX(trsmx->fJalpha[0][v][0], IMPOSSIBLE);
+	/* {L,R}alpha[0][v][0] remain IMPOSSIBLE */
+      }
+      else if (cm->sttype[v] == B_st) {
+	w = cm->cfirst[v]; /* BEGL_S, left child state */
+	y = cm->cnum[v];
+	trsmx->fJalpha[0][v][0] = trsmx->fJalpha_begl[0][w][0] + trsmx->fJalpha[0][y][0]; 
+      }
+      trsmx->fJalpha[1][v][0] = trsmx->fJalpha[0][v][0];
+      /* {L,R,T}alpha[{0,1}][v][0] remain IMPOSSIBLE */
+    }
+    else { /* v == BEGL_S */
+      y = cm->cfirst[v];
+      trsmx->fJalpha_begl[0][v][0] = cm->endsc[v];
+      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+	trsmx->fJalpha_begl[0][v][0] = ESL_MAX(trsmx->fJalpha_begl[0][v][0], (trsmx->fJalpha[0][y+yoffset][0] + cm->tsc[v][yoffset])); /* careful: y is in trsmx->fJalpha */
+      trsmx->fJalpha_begl[0][v][0] = ESL_MAX(trsmx->fJalpha_begl[0][v][0], IMPOSSIBLE);
+      for (j = 1; j <= trsmx->W; j++) 
+	trsmx->fJalpha_begl[j][v][0] = trsmx->fJalpha_begl[0][v][0];
+      /* {L,R}alpha_begl[j][v][0] remain IMPOSSIBLE for all j */
+    }
+  }
+  return eslOK;
+}
+
+/* Function: cm_tr_scan_mx_InitializeIntegers()
+ * Date:     EPN, Tue Dec 27 11:10:35 2011
+ *
+ * Purpose:  Initialize integer scores in a CM_TR_SCAN_MX. This 
+ *           should be done before using the scan matrix for
+ *           a new target sequence.
+ *            
+ * Returns:  eslOK on success.
+ *           eslEINVAL if float matrix is not allocated.
+ */
+int
+cm_tr_scan_mx_InitializeIntegers(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
+{ 
+  int v, j, y, w, yoffset;
+
+  if(! trsmx->ints_valid) ESL_FAIL(eslEINVAL, errbuf, "cm_tr_scan_mx_InitializeIntegers(), trsmx->ints_valid is FALSE");
+
   /* First, init entire matrix to -INFTY */
   esl_vec_ISet(trsmx->iJalpha_mem,      trsmx->ncells_alpha,      -INFTY);
   esl_vec_ISet(trsmx->iLalpha_mem,      trsmx->ncells_alpha,      -INFTY);
@@ -6720,12 +6812,8 @@ cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx)
       /* {L,R}alpha_begl[j][v][0] remain -INFTY for all j */
     }
   }
-  /* set the flag that tells us we've got valid ints */
-  trsmx->ints_valid = TRUE;
-  return eslOK;
 
- ERROR: 
-  return status;
+  return eslOK;
 }
 
 /* Function: cm_tr_scan_mx_SizeNeeded()

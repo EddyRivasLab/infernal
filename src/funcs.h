@@ -245,8 +245,8 @@ extern int     cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc
 extern int     cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset);
 
 /* from cm_modelconfig.c */
-extern int   cm_Configure   (CM_t *cm, char *errbuf);
-extern int   cm_ConfigureSub(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map);
+extern int   cm_Configure   (CM_t *cm, char *errbuf, int W_from_cmdline);
+extern int   cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMSubMap_t *mother_map);
 extern int   cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float **t, float *begin, float *trbegin);
 
 /* from cm_modelmaker.c */
@@ -336,15 +336,19 @@ extern int               cm_tr_hb_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR
 extern void              cm_tr_hb_emit_mx_Destroy    (CM_TR_HB_EMIT_MX *mx);
 extern int               cm_tr_hb_emit_mx_SizeNeeded (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_l_ncells, int64_t *ret_r_ncells, float *ret_Mb);
 
-extern int   cm_scan_mx_Create    (CM_t *cm, char *errbuf, int do_float, int do_int, CM_SCAN_MX **ret_smx);
-extern float cm_scan_mx_SizeNeeded(CM_t *cm, char *errbuf, int do_float, int do_int);
-extern void  cm_scan_mx_Destroy   (CM_t *cm, CM_SCAN_MX *smx);
-extern void  cm_scan_mx_Dump      (FILE *ofp, CM_t *cm, int j, int i0, int qdbidx, int doing_float);
+extern int   cm_scan_mx_Create            (CM_t *cm, char *errbuf, int do_float, int do_int, CM_SCAN_MX **ret_smx);
+extern int   cm_scan_mx_InitializeFloats  (CM_t *cm, CM_SCAN_MX *smx, char *errbuf);
+extern int   cm_scan_mx_InitializeIntegers(CM_t *cm, CM_SCAN_MX *smx, char *errbuf);
+extern float cm_scan_mx_SizeNeeded        (CM_t *cm, char *errbuf, int do_float, int do_int);
+extern void  cm_scan_mx_Destroy           (CM_t *cm, CM_SCAN_MX *smx);
+extern void  cm_scan_mx_Dump              (FILE *ofp, CM_t *cm, int j, int i0, int qdbidx, int doing_float);
 
-extern int   cm_tr_scan_mx_Create    (CM_t *cm, char *errbuf, int do_float, int do_int, CM_TR_SCAN_MX **ret_smx);
-extern float cm_tr_scan_mx_SizeNeeded(CM_t *cm, char *errbuf, int do_float, int do_int);
-extern void  cm_tr_scan_mx_Destroy   (CM_t *cm, CM_TR_SCAN_MX *smx);
-extern void  cm_tr_scan_mx_Dump      (FILE *ofp, CM_t *cm, int j, int i0, int qdbidx, int doing_float);
+extern int   cm_tr_scan_mx_Create            (CM_t *cm, char *errbuf, int do_float, int do_int, CM_TR_SCAN_MX **ret_smx);
+extern int   cm_tr_scan_mx_InitializeFloats  (CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf);
+extern int   cm_tr_scan_mx_InitializeIntegers(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf);
+extern float cm_tr_scan_mx_SizeNeeded        (CM_t *cm, char *errbuf, int do_float, int do_int);
+extern void  cm_tr_scan_mx_Destroy           (CM_t *cm, CM_TR_SCAN_MX *smx);
+extern void  cm_tr_scan_mx_Dump              (FILE *ofp, CM_t *cm, int j, int i0, int qdbidx, int doing_float);
 
 extern TruncOpts_t *   CreateTruncOpts();
 
@@ -402,7 +406,6 @@ extern void     qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *d
 extern CM_QDBINFO  *CreateCMQDBInfo(int M, int clen);
 extern void         FreeCMQDBInfo(CM_QDBINFO *qdbinfo);
 extern int          CopyCMQDBInfo(const CM_QDBINFO *src, CM_QDBINFO *dst, char *errbuf);
-extern CM_QDBINFO * CloneCMQDBInfo(CM_QDBINFO *qdbinfo);
 extern void         DumpCMQDBInfo(FILE *fp, CM_t *cm, CM_QDBINFO *qdbinfo);
 extern int          CheckCMQDBInfo(CM_QDBINFO *qdbinfo, double beta1, int do_check1, double beta2, int do_check2);
 

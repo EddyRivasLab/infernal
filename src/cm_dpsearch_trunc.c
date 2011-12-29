@@ -99,11 +99,13 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
   int       jp_g;               /* offset j for gamma (j-i0+1) */
   int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
-  int       W;                  /* max d; max size of a hit, this is min(L, smx->W) */
+  int       W;                  /* max d; max size of a hit, this is min(L, trsmx->W) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn, dx;             /* minimum/maximum valid d for current state */
+  int       dx_y;               /* maximum valid d for state y */
+  int       dx_w;               /* maximum valid d for state w */
   int       kn, kx;             /* minimum/maximum valid k for current d in B_st recursion */
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
@@ -146,7 +148,10 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
   float  **lmesc_vAA   = cm->lmesc;            /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] left  marginal emission scores for v */
   float  **rmesc_vAA   = cm->rmesc;            /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] right marginal emission scores for v */
 
-  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  /* Determine if we're doing banded/non-banded and get a pointer to
+   * dmax. (We only need dmax so we can compute kmin/kmax for B
+   * states.)
+   */
   if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmax = NULL; }
   else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmax = cm->qdbinfo->dmax1; }
   else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmax = cm->qdbinfo->dmax2; }
@@ -161,7 +166,10 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
   W = trsmx->W;
   if (W > L) W = L; 
 
-  /* initializations */
+  /* initialize the scan matrix */
+  if((status = cm_tr_scan_mx_InitializeFloats(cm, trsmx, errbuf)) != eslOK) return status;
+
+  /* other initializations */
   vsc = NULL;
   if(ret_vsc != NULL) { 
     ESL_ALLOC(vsc, sizeof(float) * cm->M);
@@ -263,11 +271,14 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
 	    y = cm->cnum[v];   /* BEGR_S */
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      /* k is the length of the right fragment */
-	      /* Careful, make sure k is consistent with bands in state w and state y. */
 	      if(do_banded) {
-		kmin = ESL_MAX(0, (d-dmax[w]));
-		kmin = ESL_MAX(kmin, 0);
-		kmax = ESL_MIN(dmax[y], d);
+		/* Careful, make sure k is consistent with bands in
+		 * state w and state y, and don't forget that
+		 * dmin/dmax values can exceed W. */
+		dx_y = ESL_MIN(dmax[y], trsmx->W);
+		dx_w = ESL_MIN(dmax[w], trsmx->W);
+		kmin = ESL_MAX(0,    d-dx_w);
+		kmax = ESL_MIN(dx_y, d);
 	      }
 	      else { kmin = 0; kmax = d; }
 
@@ -796,12 +807,14 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
   int       jp_g;               /* offset j for gamma (j-i0+1) */
   int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
-  int       W;                  /* max d; max size of a hit, this is min(L, smx->W) */
+  int       W;                  /* max d; max size of a hit, this is min(L, trsmx->W) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
   int       dn, dx;             /* minimum/maximum valid d for current state */
   int       kn, kx;             /* minimum/maximum valid k for current d in B_st recursion */
+  int       dx_y;               /* maximum valid d for state y */
+  int       dx_w;               /* maximum valid d for state w */
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
@@ -843,7 +856,10 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
   int   **lmesc_vAA    = cm->ilmesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] left  marginal emission scores for v */
   int   **rmesc_vAA    = cm->irmesc;           /* [0..v..cm->M-1][0..a..(cm->abc->Kp-1)] right marginal emission scores for v */
 
-  /* determine if we're doing banded/non-banded and get pointers to dmin/dmax */
+  /* Determine if we're doing banded/non-banded and get a pointer to
+   * dmax. (We only need dmax so we can compute kmin/kmax for B
+   * states.)
+   */
   if     (qdbidx == SMX_NOQDB)      { do_banded = FALSE; dmax = NULL; }
   else if(qdbidx == SMX_QDB1_TIGHT) { do_banded = TRUE;  dmax = cm->qdbinfo->dmax1; }
   else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmax = cm->qdbinfo->dmax2; }
@@ -858,7 +874,10 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
   W = trsmx->W;
   if (W > L) W = L; 
 
-  /* initializations */
+  /* initialize the scan matrix */
+  if((status = cm_tr_scan_mx_InitializeIntegers(cm, trsmx, errbuf)) != eslOK) return status;
+
+  /* other initializations */
   vsc = NULL;
   if(ret_vsc != NULL) { 
     ESL_ALLOC(vsc, sizeof(float) * cm->M);
@@ -960,11 +979,14 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
 	    y = cm->cnum[v];   /* BEGR_S */
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      /* k is the length of the right fragment */
-	      /* Careful, make sure k is consistent with bands in state w and state y. */
 	      if(do_banded) {
-		kmin = ESL_MAX(0, (d-dmax[w]));
-		kmin = ESL_MAX(kmin, 0);
-		kmax = ESL_MIN(dmax[y], d);
+		/* Careful, make sure k is consistent with bands in
+		 * state w and state y, and don't forget that
+		 * dmin/dmax values can exceed W. */
+		dx_y = ESL_MIN(dmax[y], trsmx->W);
+		dx_w = ESL_MIN(dmax[w], trsmx->W);
+		kmin = ESL_MAX(0,    d-dx_w);
+		kmax = ESL_MIN(dx_y, d);
 	      }
 	      else { kmin = 0; kmax = d; }
 	      

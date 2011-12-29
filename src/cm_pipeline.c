@@ -1835,7 +1835,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
       }
       /* else we don't have to change (*opt_cm)->qdbinfo->beta1/beta2 */
 
-      if((status = cm_Configure(*opt_cm, pli->errbuf)) != eslOK) return status;
+      if((status = cm_Configure(*opt_cm, pli->errbuf, -1)) != eslOK) return status;
       /* update the pipeline about the model */
       if((status = cm_pli_NewModel(pli, CM_NEWMODEL_CM, *opt_cm, (*opt_cm)->clen, (*opt_cm)->W, 
 				   NULL, NULL, pli->cur_cm_idx)) /* om, bg */
