@@ -52,7 +52,7 @@ CalculateQueryDependentBands(CM_t *cm, char *errbuf, CM_QDBINFO *qdbinfo, double
   int status;
   int Z;
 
-  if(qdbinfo != NULL && (qdbinfo->beta1 - qdbinfo->beta2 < 1E-20)) ESL_FAIL(eslEINVAL, errbuf, "Calculating QDBs, qdbinfo->beta1 < qdbinfo->beta2"); 
+  if(qdbinfo != NULL && ((qdbinfo->beta2 - qdbinfo->beta1) > 1E-20)) ESL_FAIL(eslEINVAL, errbuf, "Calculating QDBs, qdbinfo->beta1 < qdbinfo->beta2"); 
 
   Z = cm->clen * 4;
   while((status = BandCalculationEngine(cm, Z, qdbinfo, beta_W, FALSE, ret_W, NULL, ret_gamma0_loc, ret_gamma0_glb)) != eslOK) { 
@@ -198,7 +198,7 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int s
   float   *begin_copy   = NULL;  /* cm->begin[0..v..M-1], standard local begin probabilities  */
   float   *trbegin_copy = NULL;  /* cm->trbegin[0..v..M-1], standard local begin probabilities  */
 
-  if(qdbinfo != NULL && (qdbinfo->beta1 - qdbinfo->beta2 < 1E-20)) return eslEINVAL;
+  if(qdbinfo != NULL && ((qdbinfo->beta2 - qdbinfo->beta1) > 1E-20)) return eslEINVAL;
   max_beta = beta_W;
   if(qdbinfo != NULL) max_beta = ESL_MAX(max_beta, ESL_MAX(qdbinfo->beta1, qdbinfo->beta2));
 
@@ -429,7 +429,7 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int s
 
   if(qdbinfo != NULL) qdbinfo->setby = CM_QDBINFO_SETBY_BANDCALC;
 
-  /* TEMP */ if(qdbinfo != NULL) DumpCMQDBInfo(stdout, cm, qdbinfo);
+  /*if(qdbinfo != NULL) DumpCMQDBInfo(stdout, cm, qdbinfo);*/
 
   if (ret_W          != NULL) *ret_W          = W;
   if (ret_gamma      != NULL) *ret_gamma      = gamma;      else FreeBandDensities(cm, gamma);

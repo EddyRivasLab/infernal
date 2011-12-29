@@ -651,10 +651,7 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    printf("tmp_hitlist before removing overlaps: %" PRId64 " hits\n", tmp_hitlist->N);
-    ///cm_tophits_Dump(stdout, tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
-    ///for(h = 0; h < tmp_hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, tmp_hitlist->unsrt[h].start, tmp_hitlist->unsrt[h].stop, tmp_hitlist->unsrt[h].score); }
     cm_tophits_SortForOverlapRemoval(tmp_hitlist);
     if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
@@ -662,12 +659,7 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
-    printf("    hitlist after  removing overlaps: %" PRId64" hits\n", hitlist->N);
-    ///for(h = 0; h < hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, hitlist->unsrt[h].start, hitlist->unsrt[h].stop, hitlist->unsrt[h].score); }
-    ///cm_tophits_Dump(stdout, tmp_hitlist);
-    ///cm_tophits_Dump(stdout, hitlist);
     cm_tophits_Destroy(tmp_hitlist);
-    ///if(cm->flags & CMH_LOCAL_BEGIN) cm_Fail("done");
   }
 
   /* clean up and return */
@@ -1049,10 +1041,7 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    printf("tmp_hitlist before removing overlaps: %" PRId64 " hits\n", tmp_hitlist->N);
-    ///cm_tophits_Dump(stdout, tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
-    ///for(h = 0; h < tmp_hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, tmp_hitlist->unsrt[h].start, tmp_hitlist->unsrt[h].stop, tmp_hitlist->unsrt[h].score); }
     cm_tophits_SortForOverlapRemoval(tmp_hitlist);
     if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
@@ -1060,10 +1049,6 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
-    printf("    hitlist after  removing overlaps: %" PRId64" hits\n", hitlist->N);
-    ///for(h = 0; h < hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, hitlist->unsrt[h].start, hitlist->unsrt[h].stop, hitlist->unsrt[h].score); }
-    ///cm_tophits_Dump(stdout, tmp_hitlist);
-    ///cm_tophits_Dump(stdout, hitlist);
     cm_tophits_Destroy(tmp_hitlist);
   }
 
@@ -1679,10 +1664,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    printf("tmp_hitlist before removing overlaps: %" PRId64 " hits\n", tmp_hitlist->N);
-    ///cm_tophits_Dump(stdout, tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
-    ///for(h = 0; h < tmp_hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, tmp_hitlist->unsrt[h].start, tmp_hitlist->unsrt[h].stop, tmp_hitlist->unsrt[h].score); }
     cm_tophits_SortForOverlapRemoval(tmp_hitlist);
     if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
@@ -1690,9 +1672,6 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
-    printf("    hitlist after  removing overlaps: %" PRId64 " hits\n", hitlist->N);
-    ///for(h = 0; h < hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, hitlist->unsrt[h].start, hitlist->unsrt[h].stop, hitlist->unsrt[h].score); }
-    ///if(cm->flags & CMH_LOCAL_BEGIN) cm_Fail("done");
     cm_tophits_Destroy(tmp_hitlist);
   }
 
@@ -2312,10 +2291,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    printf("tmp_hitlist before removing overlaps: %" PRId64 " hits\n", tmp_hitlist->N);
-    ///cm_tophits_Dump(stdout, tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
-    ///for(h = 0; h < tmp_hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, tmp_hitlist->unsrt[h].start, tmp_hitlist->unsrt[h].stop, tmp_hitlist->unsrt[h].score); }
     cm_tophits_SortForOverlapRemoval(tmp_hitlist);
     if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
@@ -2323,9 +2299,6 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
-    printf("    hitlist after  removing overlaps: %" PRId64 " hits\n", hitlist->N);
-    ///for(h = 0; h < hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, hitlist->unsrt[h].start, hitlist->unsrt[h].stop, hitlist->unsrt[h].score); }
-    ///if(cm->flags & CMH_LOCAL_BEGIN) cm_Fail("done");
     cm_tophits_Destroy(tmp_hitlist);
   }
 
@@ -2700,10 +2673,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    printf("tmp_hitlist before removing overlaps: %" PRId64 " hits\n", tmp_hitlist->N);
-    ///cm_tophits_Dump(stdout, tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
-    ///for(h = 0; h < tmp_hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, tmp_hitlist->unsrt[h].start, tmp_hitlist->unsrt[h].stop, tmp_hitlist->unsrt[h].score); }
     cm_tophits_SortForOverlapRemoval(tmp_hitlist);
     if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
@@ -2711,10 +2681,6 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
-    printf("    hitlist after  removing overlaps: %" PRId64" hits\n", hitlist->N);
-    ///for(h = 0; h < hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, hitlist->unsrt[h].start, hitlist->unsrt[h].stop, hitlist->unsrt[h].score); }
-    ///cm_tophits_Dump(stdout, tmp_hitlist);
-    ///cm_tophits_Dump(stdout, hitlist);
     cm_tophits_Destroy(tmp_hitlist);
   }
 
@@ -3085,10 +3051,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
-    printf("tmp_hitlist before removing overlaps: %" PRId64 " hits\n", tmp_hitlist->N);
-    ///cm_tophits_Dump(stdout, tmp_hitlist);
     for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
-    ///for(h = 0; h < tmp_hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, tmp_hitlist->unsrt[h].start, tmp_hitlist->unsrt[h].stop, tmp_hitlist->unsrt[h].score); }
     cm_tophits_SortForOverlapRemoval(tmp_hitlist);
     if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
@@ -3096,10 +3059,6 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
-    printf("    hitlist after  removing overlaps: %" PRId64" hits\n", hitlist->N);
-    ///for(h = 0; h < hitlist->N; h++) { printf("hit %4d  %4" PRId64 "..%4" PRId64 "  %.2f bits\n", h, hitlist->unsrt[h].start, hitlist->unsrt[h].stop, hitlist->unsrt[h].score); }
-    ///cm_tophits_Dump(stdout, tmp_hitlist);
-    ///cm_tophits_Dump(stdout, hitlist);
     cm_tophits_Destroy(tmp_hitlist);
   }
 
