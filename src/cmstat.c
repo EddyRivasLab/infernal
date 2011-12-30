@@ -139,13 +139,13 @@ main(int argc, char **argv)
   }
   else { 
     if(output_mode == OUTMODE_BITSCORES) { 
-      fprintf(stdout, "# Printing cmsearch bit score cutoffs corresponding to E-value of %g in a database of size %.6f Mb\n", esl_opt_GetReal(go, "-E"), esl_opt_GetReal(go, "-Z"));
+      fprintf(stdout, "# Printing cmsearch bit scores corresponding to E-value of %g in a database of size %.6f Mb\n", esl_opt_GetReal(go, "-E"), esl_opt_GetReal(go, "-Z"));
       fprintf(stdout, "#\n");
       fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s\n", "idx",  "name", "accession", "local-inside", "local-cyk", "glocal-inside", "glocal-cyk");
       fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s\n", "----", "--------------------", "---------", "-------------", "-------------", "-------------", "-------------");
     }
     else if(output_mode == OUTMODE_EVALUES) { 
-      fprintf(stdout, "# Printing cmsearch E-values corresponding to a bit score threshold of %.2f  in a database of size %.6f Mb\n", esl_opt_GetReal(go, "-T"), esl_opt_GetReal(go, "-Z"));
+      fprintf(stdout, "# Printing cmsearch E-values corresponding to a bit score of %.2f  in a database of size %.6f Mb\n", esl_opt_GetReal(go, "-T"), esl_opt_GetReal(go, "-Z"));
       fprintf(stdout, "#\n");
       fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s\n", "idx",  "name", "accession", "local-inside", "local-cyk", "glocal-inside", "glocal-cyk");
       fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s\n", "----", "--------------------", "---------", "-------------", "-------------", "-------------", "-------------");

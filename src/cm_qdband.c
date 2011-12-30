@@ -172,7 +172,6 @@ int
 BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int save_densities,
 		      int *ret_W, double ***ret_gamma, double **ret_gamma0_loc, double **ret_gamma0_glb)
 {
-  printf("in BandCalculationEngine() Z: %d\n", Z);
   int      status;		/* return status. */
   double **gamma;               /* P(length = n) for each state v            */
   int      v;			/* counter over states, 0..M-1               */

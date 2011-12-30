@@ -75,35 +75,34 @@ typedef struct {
 static ESL_OPTIONS options[] = {
   /* name                  type   default   env        range      toggles      reqs       incomp  help  docgroup*/
   { "-h",           eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-L",           eslARG_REAL,    "1.6",  NULL,"0.01<=x<=100.",  NULL,        NULL,         NULL, "set random seq length to search in Mb to <x>", 2 },
+  { "-L",           eslARG_REAL,    "1.6",  NULL,"0.01<=x<=100.", NULL,        NULL,        NULL, "set random seq length to search in Mb to <x>", 1 },
   { "--forecast",   eslARG_INT,     NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "don't do calibration, forecast running time with <n> processors", 1 },
   { "--seed",       eslARG_INT,     "181",  NULL,      "n>=0",    NULL,        NULL,        NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)", 1 },
-  { "--beta",       eslARG_REAL,    "1E-15",NULL,      "x>0",     NULL,        NULL,"--nonbanded","set tail loss prob for QDB to <x>", 1 },
-  { "--nonbanded",  eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not use QDBs for calibrating CM search modes", 1 },
-  { "--gtailn",     eslARG_INT,     "250",  NULL,   "n>=100",     NULL,        NULL,   "--tailp", "fit the top <n> hits/Mb in histogram for  CM glocal modes", 1 },
-  { "--ltailn",     eslARG_INT,     "750",  NULL,   "n>=100",     NULL,        NULL,   "--tailp", "fit the top <n> hits/Mb in histogram for  CM  local modes", 1 },
+  { "--beta",       eslARG_REAL,    "1E-15",NULL,      "x>0",     NULL,        NULL,"--nonbanded","set tail loss prob for query dependent banding (QDB) to <x>", 1 },
+  { "--nonbanded",  eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not use QDB", 1 },
+  { "--gtailn",     eslARG_INT,     "250",  NULL,   "n>=100",     NULL,        NULL,   "--tailp", "fit the top <n> hits/Mb in histogram for glocal modes", 1 },
+  { "--ltailn",     eslARG_INT,     "750",  NULL,   "n>=100",     NULL,        NULL,   "--tailp", "fit the top <n> hits/Mb in histogram for  local modes", 1 },
   { "--tailp",      eslARG_REAL,    NULL,   NULL,"0.0<x<0.6",     NULL,        NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 1 },
-  { "--hfile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save fitted score histogram(s) to file <f>", 1 },
-  { "--sfile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save survival plot to file <f>", 1 },
-  { "--qqfile",     eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save Q-Q plot for score histograms to file <f>", 1 },
-  { "--ffile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save lambdas for different tail fit probs to file <f>", 1 },
-  { "--devhelp",    eslARG_NONE,    NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HMMER_THREADS 
   { "--cpu",        eslARG_INT,     NULL,"HMMER_NCPU", "n>=0",    NULL,        NULL,     CPUOPTS, "number of parallel CPU workers to use for multithreads", 1 },
 #endif
 #ifdef HAVE_MPI
   { "--mpi",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,     MPIOPTS, "run as an MPI parallel program", 1 },  
-  { "--stall",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 1 },  
 #endif
+  { "--devhelp",    eslARG_NONE,    NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "show list of undocumented developer options", 1 },
+  /* Optional output files */
+  { "--hfile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save fitted score histogram(s) to file <f>", 2 },
+  { "--sfile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save survival plot to file <f>", 2 },
+  { "--qqfile",     eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save Q-Q plot for score histograms to file <f>", 2 },
+  { "--ffile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save lambdas for different tail fit probs to file <f>", 2 },
+  { "--xfile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save scores in fit tail to file <f>", 2 },
   /* Developer options the average user doesn't need to know about (only shown if --devhelp) */
-  { "-x",           eslARG_NONE,   FALSE,   NULL, NULL,     NULL,        NULL, "--forecast", "print arguably interesting info",  101},
-  { "-v",           eslARG_NONE,   FALSE,   NULL, NULL,     NULL,        NULL, "--forecast", "print arguably interesting info",  101},
-  { "-T",           eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 101 },
-  { "--random",     eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content of random null background model of CM",  101},
-  { "--gc",         eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content distribution from file <f>",  101},
-  { "--nonull3",    eslARG_NONE,   FALSE,   NULL, NULL,      NULL,        NULL,        NULL, "turn OFF the NULL3 post hoc additional null model", 101 },
+  { "-T",           eslARG_REAL,    NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 101 },
+  { "--random",     eslARG_NONE,    NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "use GC content of random null background model of CM",  101},
+  { "--gc",         eslARG_INFILE,  NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "use GC content distribution from file <f>",  101},
+  { "--nonull3",    eslARG_NONE,   FALSE,   NULL,      NULL,      NULL,        NULL,        NULL, "turn OFF the NULL3 post hoc additional null model", 101 },
 #ifdef HAVE_MPI
-  /* Developer option, for debugging */
+  { "--stall",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 101 },  
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -118,7 +117,6 @@ struct cfg_s {
   ExpInfo_t       ***expAA;              /* the exponential tail info, 1st dim: 1 for each CM, 2nd dim: EXP_NMODES */
   char             **namesA;             /* names of all the CMs we'll calibrate */
   int                ncm;                /* what number CM we're on */
-  int                be_verbose;	 /* print extra info? */
   int                cmalloc;            /* number of expAA we have allocated (1st dim) */
   char              *tmpfile;            /* tmp file we're writing to */
   char              *mode;               /* write mode, "w" or "wb"                     */
@@ -157,10 +155,11 @@ struct cfg_s {
 
   /* Masters only (i/o streams) */
   CM_FILE         *cmfp;	      /* open input CM file stream       */
-  FILE            *exphfp;            /* optional output for exp tail histograms */
-  FILE            *expsfp;            /* optional output for exp tail survival plot */
-  FILE            *expqfp;            /* optional output for exp tail QQ file */
-  FILE            *exptfitfp;         /* optional output for exp tail fit file */
+  FILE            *hfp;               /* optional output for exp tail histograms */
+  FILE            *sfp;               /* optional output for exp tail survival plot */
+  FILE            *qfp;               /* optional output for exp tail QQ file */
+  FILE            *ffp;               /* optional output for exp tail fit file */
+  FILE            *xfp;               /* optional output for exp tail fit scores */
 };
 
 static char usage[]  = "[-options] <cmfile>";
@@ -184,8 +183,9 @@ static int  generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, c
 static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile);
 static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile);
 static int  forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, double *ret_psec, int *ret_ins_v_cyk);
-static int  print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int  print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec);
+static void print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static void print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec);
+static void print_total_time(const ESL_GETOPTS *go, double total_asec, double total_psec);
 static void print_summary(const struct cfg_s *cfg);
 static int  expand_exp_and_name_arrays(struct cfg_s *cfg);
 
@@ -339,12 +339,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = esl_strdup(cm->name, -1, &(cfg->namesA[cmi])))                       != eslOK) mpi_failure("unable to duplicate CM name");
     if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                           != eslOK) mpi_failure(errbuf);
     if((status = initialize_stats(go, cfg, errbuf))                                   != eslOK) mpi_failure(errbuf);
-    if(cmi == 0) { 
-      if((status = print_calibration_column_headings(go, cfg, errbuf, cm))            != eslOK) mpi_failure(errbuf);
-    }
+
+    if(cmi == 0) print_calibration_column_headings(go, cfg, errbuf, cm);
     if((status = forecast_time(go, cfg, errbuf, cm, cfg->nproc-1, &psec, &ins_v_cyk)) != eslOK) mpi_failure(errbuf); 
     total_psec += psec;
-    if((status = print_forecasted_time(go, cfg, errbuf, cm, psec))                    != eslOK) mpi_failure(errbuf); 
+    print_forecasted_time(go, cfg, errbuf, cm, psec);
 
     esl_stopwatch_Start(cfg->w);
     for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
@@ -478,9 +477,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
       }
       
-      if(cfg->exptfitfp != NULL) { 
-	fprintf(cfg->exptfitfp, "# CM: %s\n", cm->name);
-	fprintf(cfg->exptfitfp, "# mode: %12s\n", DescribeExpMode(exp_mode));
+      if(cfg->ffp != NULL) { 
+	fprintf(cfg->ffp, "# CM: %s\n", cm->name);
+	fprintf(cfg->ffp, "# mode: %12s\n", DescribeExpMode(exp_mode));
       }
 #if DEBUGMPI
       printf("about to call fit_histogram, %" PRId64 " hits\n", merged_nhits);
@@ -500,7 +499,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     asec        = cfg->w->elapsed;
     total_asec += cfg->w->elapsed;
        
-    if(cfg->be_verbose) if((status = debug_print_expinfo_array(cm, errbuf, cfg->expAA[cmi])) != eslOK) mpi_failure(errbuf);
     FreeCM(cm);
 
     fflush(stdout);
@@ -510,12 +508,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   } /* end of while(qhstatus == eslOK) */
   if(qhstatus != eslEOF) mpi_failure(cfg->cmfp->errbuf);
   
-  if(cfg->ncm > 1) { 
-    FormatTimeString(time_buf, total_psec, FALSE);
-    printf("# %-20s  %12s  %42s  ", "# all models", time_buf, "");
-    FormatTimeString(time_buf, total_asec, FALSE);
-    printf("%12s\n", time_buf);
-  }
+  if(cfg->ncm > 1) print_total_time(go, total_asec, total_psec);
+
   return eslOK;
       
  ERROR:
@@ -698,16 +692,22 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) {
     cm_banner(stdout, argv[0], banner);
     esl_usage(stdout, argv[0], usage);
-    puts("\nStandard options:");
-    esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 120=textwidth*/
+    puts("\nBasic options:");
+    esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
+    puts("\nOptional output files:");
+    esl_opt_DisplayHelp(stdout, go, 2, 2, 80);
     puts("\nUndocumented developer options:");
-    esl_opt_DisplayHelp(stdout, go, 101, 2, 80); /* 1= group; 2 = indentation; 120=textwidth*/
+    esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
+    exit(0);
   }    
   if (esl_opt_GetBoolean(go, "-h") == TRUE) {
     cm_banner(stdout, argv[0], banner);
     esl_usage(stdout, argv[0], usage);
-    puts("\nOptions:");
-    esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 120=textwidth*/
+    puts("\nBasic options:");
+    esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
+    puts("\nOptional output files:");
+    esl_opt_DisplayHelp(stdout, go, 2, 2, 80);
+    exit(0);
   }    
 
   if (esl_opt_ArgNumber(go)                  != 1)     { puts("Incorrect number of command line arguments.");      goto ERROR; }
@@ -741,11 +741,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile)
   if (esl_opt_IsUsed(go, "--tailp"))     {     fprintf(ofp, "# fraction of histogram tail to fit:           %g\n", esl_opt_GetReal(go, "--tailp")); }
   if (esl_opt_IsUsed(go, "--beta"))      {     fprintf(ofp, "# tail loss probability for QDBs:              %g\n", esl_opt_GetReal(go, "--beta")); }
   if (esl_opt_IsUsed(go, "--nonbanded")) {     fprintf(ofp, "# query dependent bands (QDBs):                off\n"); }
-  if (esl_opt_IsUsed(go, "--hfile"))     {     fprintf(ofp, "# saving fitted score histograms to file:      %s\n", esl_opt_GetString(go, "--hfile")); }
-  if (esl_opt_IsUsed(go, "--sfile"))     {     fprintf(ofp, "# saving survival plot to file:                %s\n", esl_opt_GetString(go, "--sfile")); }
-  if (esl_opt_IsUsed(go, "--qqfile"))    {     fprintf(ofp, "# saving Q-Q plot for histograms to file:      %s\n", esl_opt_GetString(go, "--qqfile")); }
-  if (esl_opt_IsUsed(go, "--ffile"))     {     fprintf(ofp, "# saving lambdas for tail fit probs to file:   %s\n", esl_opt_GetString(go, "--ffile")); }
-  if (esl_opt_IsUsed(go, "-v"))          {     fprintf(ofp, "# verbose output mode:                         on\n"); }
   if (esl_opt_IsUsed(go, "-T"))          {     fprintf(ofp, "# bit score threshold for histograms:          %g\n", esl_opt_GetReal(go, "-T")); }
   if (esl_opt_IsUsed(go, "--random"))    {     fprintf(ofp, "# generating seqs with cm->null (usually iid): yes\n"); }
   if (esl_opt_IsUsed(go, "--gc"))        {     fprintf(ofp, "# nucleotide distribution from file:           %s\n", esl_opt_GetString(go, "--gc")); }
@@ -756,6 +751,11 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile)
 #ifdef HAVE_MPI
   if (esl_opt_IsUsed(go, "--mpi"))       {     fprintf(ofp, "# MPI:                                         on\n"); }
 #endif
+  if (esl_opt_IsUsed(go, "--hfile"))     {     fprintf(ofp, "# saving fitted score histograms to file:      %s\n", esl_opt_GetString(go, "--hfile")); }
+  if (esl_opt_IsUsed(go, "--sfile"))     {     fprintf(ofp, "# saving survival plot to file:                %s\n", esl_opt_GetString(go, "--sfile")); }
+  if (esl_opt_IsUsed(go, "--qqfile"))    {     fprintf(ofp, "# saving Q-Q plot for histograms to file:      %s\n", esl_opt_GetString(go, "--qqfile")); }
+  if (esl_opt_IsUsed(go, "--ffile"))     {     fprintf(ofp, "# saving lambdas for tail fit probs to file:   %s\n", esl_opt_GetString(go, "--ffile")); }
+  if (esl_opt_IsUsed(go, "--xfile"))     {     fprintf(ofp, "# saving scores from fit tails to file:        %s\n", esl_opt_GetString(go, "--xfile")); }
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n");
   return eslOK;
 }
@@ -785,7 +785,6 @@ main(int argc, char **argv)
   cfg.r            = NULL; 
   cfg.abc          = NULL; 
   cfg.w            = NULL; 
-  cfg.be_verbose   = FALSE;
   cfg.cmalloc      = 128;
   cfg.tmpfile      = NULL;
   cfg.mode         = NULL;
@@ -800,12 +799,12 @@ main(int argc, char **argv)
   cfg.L            = EXPTAIL_CHUNKLEN; /* 10 Kb chunks are searched */
   cfg.N            = 0;    /* gets set below, after go is setup */
   cfg.cmfp         = NULL; /* remains NULL for mpi workers */
-  cfg.exphfp       = NULL; /* remains NULL for mpi workers */
-  cfg.expsfp       = NULL; /* remains NULL for mpi workers */
-  cfg.expqfp       = NULL; /* remains NULL for mpi workers */
-  cfg.exptfitfp    = NULL; /* remains NULL for mpi workers */
+  cfg.hfp          = NULL; /* remains NULL for mpi workers */
+  cfg.sfp          = NULL; /* remains NULL for mpi workers */
+  cfg.qfp          = NULL; /* remains NULL for mpi workers */
+  cfg.ffp          = NULL; /* remains NULL for mpi workers */
+  cfg.xfp          = NULL; /* remains NULL for mpi workers */
 
-  cfg.cmalloc      = 1;
   ESL_ALLOC(cfg.expAA,  sizeof(ExpInfo_t **) * cfg.cmalloc); /* this will grow if needed */
   ESL_ALLOC(cfg.namesA, sizeof(char       *) * cfg.cmalloc); /* this will grow if needed */
   for(i = 0; i < cfg.cmalloc; i++) cfg.namesA[i] = NULL; 
@@ -918,21 +917,25 @@ main(int argc, char **argv)
     free(cfg.tmpfile);
     
     /* master specific cleaning */
-    if (cfg.exphfp   != NULL) { 
-      fclose(cfg.exphfp);
+    if (cfg.hfp   != NULL) { 
+      fclose(cfg.hfp);
       printf("# Histogram of high scoring hits in random seqs saved to file %s.\n", esl_opt_GetString(go, "--hfile"));
     }
-    if (cfg.expsfp   != NULL) { 
-      fclose(cfg.expsfp);
+    if (cfg.sfp   != NULL) { 
+      fclose(cfg.sfp);
       printf("# Survival plot for exponential tails saved to file %s.\n", esl_opt_GetString(go, "--sfile"));
     }
-    if (cfg.expqfp   != NULL) { 
-      fclose(cfg.expqfp);
+    if (cfg.qfp   != NULL) { 
+      fclose(cfg.qfp);
       printf("# Exponential tail QQ plots saved to file %s.\n", esl_opt_GetString(go, "--qqfile"));
     }
-    if (cfg.exptfitfp   != NULL) { 
-      fclose(cfg.exptfitfp);
+    if (cfg.ffp   != NULL) { 
+      fclose(cfg.ffp);
       printf("# Exponential tail fit points saved to file %s.\n", esl_opt_GetString(go, "--ffile"));
+    }
+    if (cfg.xfp   != NULL) { 
+      fclose(cfg.xfp);
+      printf("# Scores from tail fits saved to file %s.\n", esl_opt_GetString(go, "--xfile"));
     }
 
     if (cfg.ccom   != NULL) free(cfg.ccom);
@@ -974,14 +977,13 @@ main(int argc, char **argv)
  * Called by masters, mpi or serial.
  * Allocates/sets: 
  *    cfg->cmfp        - open CM file                
- *    cfg->exphfp      - optional output file
- *    cfg->expsfp      - optional output file
- *    cfg->expqfp      - optional output file
+ *    cfg->hfp      - optional output file
+ *    cfg->sfp      - optional output file
+ *    cfg->qfp      - optional output file
  *    cfg->gc_freq     - observed GC freqs (if --gc invoked)
  *    cfg->expAA       - the exp tail stats, allocated only
  *    cfg->r           - source of randomness
  *    cfg->tmpfile     - temp file for rewriting cm file
- *    cfg->be_verbose  - print extra info? 
  * Errors in the MPI master here are considered to be "recoverable",
  * in the sense that we'll try to delay output of the error message
  * until we've cleanly shut down the worker processes. Therefore
@@ -998,25 +1000,26 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   /* Masters only initializations: */
   /* open optional output files */
   if (esl_opt_GetString(go, "--hfile") != NULL) {
-    if ((cfg->exphfp = fopen(esl_opt_GetString(go, "--hfile"), "w")) == NULL)
+    if ((cfg->hfp = fopen(esl_opt_GetString(go, "--hfile"), "w")) == NULL)
       ESL_FAIL(eslFAIL, errbuf, "Failed to open exp tail histogram save file %s for writing\n", esl_opt_GetString(go, "--hfile"));
   }
   if (esl_opt_GetString(go, "--sfile") != NULL) { 
-    if ((cfg->expsfp = fopen(esl_opt_GetString(go, "--sfile"), "w")) == NULL)
+    if ((cfg->sfp = fopen(esl_opt_GetString(go, "--sfile"), "w")) == NULL)
       ESL_FAIL(eslFAIL, errbuf, "Failed to open survival plot save file %s for writing\n", esl_opt_GetString(go, "--sfile"));
   }
   if (esl_opt_GetString(go, "--qqfile") != NULL) {
-    if ((cfg->expqfp = fopen(esl_opt_GetString(go, "--qqfile"), "w")) == NULL)
+    if ((cfg->qfp = fopen(esl_opt_GetString(go, "--qqfile"), "w")) == NULL)
       ESL_FAIL(eslFAIL, errbuf, "Failed to open exp tail QQ plot save file %s for writing\n", esl_opt_GetString(go, "--qqfile"));
   }
   if (esl_opt_GetString(go, "--ffile") != NULL) {
-    if ((cfg->exptfitfp = fopen(esl_opt_GetString(go, "--ffile"), "w")) == NULL)
+    if ((cfg->ffp = fopen(esl_opt_GetString(go, "--ffile"), "w")) == NULL)
       ESL_FAIL(eslFAIL, errbuf, "Failed to open exp tail save file %s for writing\n", esl_opt_GetString(go, "--ffile"));
   }
+  if (esl_opt_GetString(go, "--xfile") != NULL) {
+    if ((cfg->xfp = fopen(esl_opt_GetString(go, "--xfile"), "w")) == NULL)
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open exp tail scores save file %s for writing\n", esl_opt_GetString(go, "--xfile"));
+  }
 
-  cfg->be_verbose = FALSE;
-  if (esl_opt_GetBoolean(go, "-v")) cfg->be_verbose = TRUE;        
-  
   /* create the stopwatch */
   cfg->w = esl_stopwatch_Create();
   if(cfg->w == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create stopwatch.");
@@ -1197,12 +1200,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = esl_strdup(cm->name, -1, &(cfg->namesA[cmi])))                != eslOK) cm_Fail("unable to duplicate CM name");
     if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                    != eslOK) cm_Fail(errbuf);
     if((status = initialize_stats(go, cfg, errbuf))                            != eslOK) cm_Fail(errbuf);
-    if(cmi == 0) { 
-      if((status = print_calibration_column_headings(go, cfg, errbuf, cm))     != eslOK) cm_Fail(errbuf);
-    }
+
+    if(cmi == 0) print_calibration_column_headings(go, cfg, errbuf, cm);
     if((status = forecast_time(go, cfg, errbuf, cm, ncpus, &psec, &ins_v_cyk)) != eslOK) cm_Fail(errbuf); 
     total_psec += psec;
-    if((status = print_forecasted_time(go, cfg, errbuf, cm, psec))             != eslOK) cm_Fail(errbuf); 
+    print_forecasted_time(go, cfg, errbuf, cm, psec);
+
     if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block))           != eslOK) cm_Fail(errbuf);
 
     if(! esl_opt_IsUsed(go, "--forecast")) { 
@@ -1235,7 +1238,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	/* clone CM for each thread */
 	for (i = 0; i < infocnt; ++i) {
 	  if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
-	  if(esl_opt_GetBoolean(go, "-x")) info[i].cm = cm;
 	  info[i].scA     = NULL;
 	  info[i].nhits   = 0;
 	  info[i].cutoff  = cfg->sc_cutoff;
@@ -1263,9 +1265,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  }
 	}
 
-	if(cfg->exptfitfp != NULL) { 
-	  fprintf(cfg->exptfitfp, "# CM: %s\n", cm->name);
-	  fprintf(cfg->exptfitfp, "# mode: %12s\n", DescribeExpMode(exp_mode));
+	if(cfg->ffp != NULL) { 
+	  fprintf(cfg->ffp, "# CM: %s\n", cm->name);
+	  fprintf(cfg->ffp, "# mode: %12s\n", DescribeExpMode(exp_mode));
 	}
 	if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
 	SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (long) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
@@ -1278,7 +1280,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       asec        = cfg->w->elapsed;
       total_asec += cfg->w->elapsed;
       
-      if(cfg->be_verbose) if((status = debug_print_expinfo_array(cm, errbuf, cfg->expAA[cmi])) != eslOK) cm_Fail(errbuf);
     } /* end of if(! esl_opt_IsUsed(go, "--forecast")) */
     FreeCM(cm);
     if(sq_block != NULL) esl_sq_DestroyBlock(sq_block);
@@ -1290,12 +1291,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   } /* end of while(qhstatus == eslOK) */
   if(qhstatus != eslEOF) cm_Fail(cfg->cmfp->errbuf);
   
-  if(cfg->ncm > 1) { 
-    FormatTimeString(time_buf, total_psec, FALSE);
-    printf("# %-20s  %12s  %42s  ", "# all models", time_buf, "");
-    FormatTimeString(time_buf, total_asec, FALSE);
-    printf("%12s\n", time_buf);
-  }
+  if(cfg->ncm > 1) print_total_time(go, total_asec, total_psec);
+
   return;
       
  ERROR:
@@ -1576,27 +1573,27 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   }
 
   /* fit scores to an exponential tail */
-  if(cfg->exptfitfp != NULL) { 
-    /* fit to 41 different tailp values and print lambda, mu to a save file*/
-    fprintf(cfg->exptfitfp, "# %11s  %10s  %10s  %12s\n", "tail pmass",  "lambda",     "mu",         "nhits");
-    fprintf(cfg->exptfitfp, "# %11s  %10s  %10s  %12s\n", "-----------", "----------", "----------", "------------");
+  if(cfg->ffp != NULL) { 
+    /* fit to 41 different tailp values and print lambda, mu to a save file */
+    fprintf(cfg->ffp, "# %11s  %10s  %10s  %12s\n", "tail pmass",  "lambda",     "mu",         "nhits");
+    fprintf(cfg->ffp, "# %11s  %10s  %10s  %12s\n", "-----------", "----------", "----------", "------------");
     for(a = 0.; a >= -4.; a -= 0.1) { 
       tailp = pow(10., a);
       esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); 
       if(n > 1) { 
 	esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
 	esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
-	fprintf(cfg->exptfitfp, "  %.9f  %10.6f  %10.4f  %12d\n", tailp, params[1], params[0], n);
+	fprintf(cfg->ffp, "  %.9f  %10.6f  %10.4f  %12d\n", tailp, params[1], params[0], n);
       }
       else { 
-	fprintf(cfg->exptfitfp, "  %.9f  %10s  %10s  %12d\n", tailp, "N/A", "N/A", n);
+	fprintf(cfg->ffp, "  %.9f  %10s  %10s  %12d\n", tailp, "N/A", "N/A", n);
       }
     }
-    fprintf(cfg->exptfitfp, "//\n");
+    fprintf(cfg->ffp, "//\n");
   }
-  /* end of if cfg->exptfitfp != NULL) */
+  /* end of if cfg->ffp != NULL) */
 
-  /* determine the fraction of the tail to fit, if --tail-p, it's easy */
+  /* determine the fraction of the tail to fit, if --tailp, it's easy */
   if(esl_opt_IsOn(go, "--tailp")) { 
     tailp = esl_opt_GetReal(go, "--tailp");
     tailp = ESL_MIN(tailp, ((float) esl_opt_GetInteger(go, "--tailxn") / (float) h->n)); /* ensure we don't exceed our max nhits in tail */
@@ -1614,8 +1611,9 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
     }
   }
 
-  esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.01 by default */
+  esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailfit' fraction, 'tailfit' was determined in above block */
   if(n <= 1) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram. Increase <x> with -L <x>.", tailp);
+  if(cfg->xfp != NULL) { for(i = 0; i < n; i++) { fprintf(cfg->xfp, "%.5f\n", xv[i]); } fprintf(cfg->xfp, "&\n"); }
   esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
   esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
 
@@ -1627,11 +1625,11 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   nrandhits = h->n; /* total number of hits in the histogram */
 
   /* print to output files if nec */
-  if(cfg->exphfp != NULL) esl_histogram_Plot(cfg->exphfp, h);
-  if(cfg->expqfp != NULL) esl_histogram_PlotQQ(cfg->expqfp, h, &esl_exp_generic_invcdf, params);
-  if (cfg->expsfp != NULL) {
-    esl_histogram_PlotSurvival(cfg->expsfp, h);
-    esl_exp_Plot(cfg->expsfp, (params[0] - log(1./tailp) / params[1]), 0.693147, esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1); /* extrapolate mu */
+  if(cfg->hfp != NULL) esl_histogram_Plot(cfg->hfp, h);
+  if(cfg->qfp != NULL) esl_histogram_PlotQQ(cfg->qfp, h, &esl_exp_generic_invcdf, params);
+  if (cfg->sfp != NULL) {
+    esl_histogram_PlotSurvival(cfg->sfp, h);
+    esl_exp_Plot(cfg->sfp, (params[0] - log(1./tailp) / params[1]), 0.693147, esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1); /* extrapolate mu */
   }
   esl_histogram_Destroy(h);
 
@@ -1804,14 +1802,14 @@ set_dnull(struct cfg_s *cfg, CM_t *cm, char *errbuf)
   ESL_FAIL(eslEINCOMPAT, errbuf, "set_dnull(), memory allocation error.");
 }
 
-/* Function: print_calibration_column_headings()
- * Date:     EPN, Thu Dec 29 10:49:55 2011
- *
- * Purpose:  Print column headings for calibration output section.
- *
- * Returns:  eslOK on success
+/* print_calibration_column_headings()
+ * print_forecasted_time()
+ * print_total_time()
+ * print_summary()
+ * 
+ * Output functions called by masters. 
  */
-static int
+static void
 print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   printf("#\n");
@@ -1831,17 +1829,11 @@ print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg
     printf("# %-20s  %12s\n", "model name", "(hr:min:sec)");
     printf("# %-20s  %12s\n", "--------------------", "------------");
   }
-  return eslOK;
+
+  return;
 }
 
-/* Function: print_forecasted_time()
- * Date:     EPN, Thu Dec 29 11:03:14 2011
- *
- * Purpose:  Print out forecasted run time.
- *
- * Returns:  eslOK on success
- */
-static int
+static void
 print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec)
 {
   char  time_buf[128];	      /* for printing run time */
@@ -1852,17 +1844,31 @@ print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errb
   else                                   fputs("\n",  stdout);
   fflush(stdout);
 
-  return eslOK;
+  return;
 }
 
-/* Function: print_summary()
- * Date:     EPN, Thu Dec 29 13:21:58 2011
- *
- * Purpose:  Print stats on the exponential tail fits performed
- *           for all CMs.
- *
- * Returns:  void
- */
+static void
+print_total_time(const ESL_GETOPTS *go, double total_asec, double total_psec) 
+{
+  char  time_buf[128];
+
+  printf("# %20s  %12s", "--------------------", "------------");
+  if(! esl_opt_IsUsed(go, "--forecast")) { 
+    FormatTimeString(time_buf, total_asec, FALSE);
+    printf("  %42s  %12s", "------------------------------------------", "------------");
+  }
+  printf("\n");
+  FormatTimeString(time_buf, total_psec, FALSE);
+  printf("# %-20s  %12s", "all models", time_buf, "");
+  if(! esl_opt_IsUsed(go, "--forecast")) { 
+    FormatTimeString(time_buf, total_asec, FALSE);
+    printf("  %42s  %12s", "", time_buf);
+  }
+  printf("\n");
+  
+  return;
+}
+
 static void
 print_summary(const struct cfg_s *cfg)
 {
@@ -1910,7 +1916,7 @@ expand_exp_and_name_arrays(struct cfg_s *cfg)
     ESL_REALLOC(cfg->expAA,  sizeof(ExpInfo_t **) * (cfg->cmalloc + 128));
     ESL_REALLOC(cfg->namesA, sizeof(char *)       * (cfg->cmalloc + 128));
     for(i = cfg->cmalloc; i < cfg->cmalloc + 128; i++) cfg->namesA[i] = NULL;
-    cfg->cmalloc  += 128;
+    cfg->cmalloc += 128;
   }
   return eslOK;
 
