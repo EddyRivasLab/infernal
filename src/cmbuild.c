@@ -636,7 +636,7 @@ static void
 master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int      status;
-  char     errbuf[cmERRBUFSIZE];
+  char     errbuf[eslERRBUFSIZE];
   ESL_MSA *msa = NULL;
   CM_t    *cm = NULL;
   Parsetree_t  *mtr;

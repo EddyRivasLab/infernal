@@ -244,7 +244,7 @@ static void
 master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int      status;
-  char     errbuf[cmERRBUFSIZE];
+  char     errbuf[eslERRBUFSIZE];
   CM_t    *cm = NULL;
   int               exp_mode;      /* exp tail mode */
   int               rscN = 0;      /* number of hits in random seqs reported thus far, for all seqs */

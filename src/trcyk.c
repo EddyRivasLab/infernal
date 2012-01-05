@@ -36,7 +36,7 @@ main(int argc, char **argv)
    int   optind;
 
    int status;
-   char errbuf[cmERRBUFSIZE];
+   char errbuf[eslERRBUFSIZE];
 
    cmfile = seqfile = NULL;
    abc = NULL;

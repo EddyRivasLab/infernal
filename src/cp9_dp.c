@@ -1497,7 +1497,7 @@ main(int argc, char **argv)
   int             do_align;
   int             minL = 0;
   int             be_safe;
-  char            errbuf[cmERRBUFSIZE];
+  char            errbuf[eslERRBUFSIZE];
 
   if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
   else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
@@ -1642,7 +1642,7 @@ main(int argc, char **argv)
   CMFILE          *cmfp;	/* open input CM file stream */
   int             do_scan;
   int             do_align;
-  char            errbuf[cmERRBUFSIZE];
+  char            errbuf[eslERRBUFSIZE];
   ESL_SQFILE     *sqfp;           /* open sequence input file stream */
   int             maxi, maxj, maxi2;
 

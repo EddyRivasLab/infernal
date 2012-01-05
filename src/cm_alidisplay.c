@@ -36,49 +36,38 @@ static int  bp_is_canonical(char lseq, char rseq);
 
 
 /* Function:  cm_alidisplay_Create()
+ * Synopsis:  Create an alignment display, from parsetree and model.
  * Incept:    EPN, Wed May 25 05:38:12 2011
  *            SRE, Thu May 23 13:46:09 2002 [St. Louis] (display.c:CreateFancyAli())
  *
- * Synopsis:  Create an alignment display, from parsetree and model.
- *
- * Purpose:   Creates and returns an alignment display <which> in
- *            traceback <tr>, where the traceback corresponds to an
- *            alignment of optimized profile <om> to digital sequence
- *            <dsq>, and the unique name of that target sequence <dsq>
- *            is <sqname>. The <which> index starts at 0.
- *
- * Args:      tr     - parsetree
- *            cm     - covariance model (query)
- *            sq     - digital sequence (target)
- *
- * Returns:   <eslOK> on success.
- *
- * Throws:    <NULL> on allocation failure, or if something's internally corrupt 
- *            in the data.
- * Purpose:   Given a trace (and the model and sequence it corresponds
- *            to), create a pairwise alignment for display; return in a Fancyali_t
+ * Purpose:   Given a parsetree (and the model and sequence it corresponds
+ *            to), create a pairwise alignment for display; return in a CM_ALIDISPLAY
  *            structure.
  *
- * Args:      abc   - alphabet to create alignment with (often cm->abc)
- *            tr    - parsetree for cm aligned to dsq
- *            cm    - model
- *            cons  - consensus information for cm; see CreateCMConsensus()
- *            sq    - the sequence, parsetree corresponds to subsequence beginning at spos
- *            seqoffset - position in sq which corresponds to first position in tr
- *            ppstr - posterior probability string 
+ * Args:      abc          - alphabet to create alignment with (often cm->abc)
+ *            tr           - parsetree for cm aligned to dsq
+ *            cm           - model
+ *            cons         - consensus information for cm; see CreateCMConsensus()
+ *            sq           - the sequence, parsetree corresponds to subsequence beginning at spos
+ *            seqoffset    - position in sq which corresponds to first position in tr
+ *            ppstr        - posterior probability string 
  *            aln_sc       - if(used_optacc) avg post prob of all aligned residues, else CYK score
  *            used_optacc  - TRUE if aln algorithm used was optimal accuracy 
  *            used_hbands  - TRUE if HMM bands were used for alignment
  *            matrix_Mb    - size of DP matrix in Mb used for alignment
  *            elapsed_secs - time (seconds) required for alignment
+ *            ret_ad       - RETURN: CM_ALIDISPLAY, allocated and filled here.
  *
- * Returns:   CM_ALIDISPLAY structure.
- *            Caller frees, with cm_alidisplay_Destroy().
+ * Returns:   eslOK on success.
+ *            eslFAIL on error, errbuf is filled.
+ *
+ * Throws:    <NULL> on allocation failure, or if something's internally corrupt 
+ *            in the data.
  *
  * Xref:      STL6 p.58
  */
-CM_ALIDISPLAY *
-cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, int64_t seqoffset, char *ppstr, float aln_sc, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs)
+int
+cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, int64_t seqoffset, char *ppstr, float aln_sc, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs, CM_ALIDISPLAY **ret_ad)
 {
   int            status;
   CM_ALIDISPLAY *ad = NULL;      /* alidisplay structure we're building       */
@@ -137,7 +126,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   else if(cm->abc->K != abc->K) {
     cm_Fail("ERROR in cm_alidisplay_Create(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
   }
-  
+
   /* Calculate length of the alignment display (len).
    *                    :  J    L    R  (alignment mode)
    *   MATP node        : +2   +1   +1   
@@ -149,16 +138,10 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
    *   anything else    : +0   +0   +0
    *
    * And if marginal mode of alignment is: 
-   * L or T: + 4 + Ltrunc_L where ntrunc_L is cpos
-   *
-   * Also, determine first and final model positions in alignment (cfrom/cto).
-   * We need these to determine length of truncated regions of model at 
-   * beginning and/or end of the alignment in L, R or T marginal modes.
+   * L or T: + 4 + wtrunc_L where wtrunc_L is number of digits in number of 5' truncated cpos
+   * R or T: + 4 + wtrunc_R where wtrunc_R is number of digits in number of 3' truncated cpos
    */
   len = 0;
-  cfrom_span = cfrom_emit = cm->clen+1;
-  cto_span   = cto_emit   = 0;
-
   for (ti = 0; ti < tr->n; ti++) { 
     v    = tr->state[ti];
     mode = tr->mode[ti];
@@ -181,50 +164,17 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
       else if(cm->ndtype[nd] == MATR_nd) { is_left = FALSE; is_right = TRUE;  }
       else                               { is_left = FALSE; is_right = FALSE; }
 
-      if(is_left) { 
-	if(cm->sttype[v] != IL_st) { /* inserts don't impact cpos */
-	  cfrom_span = ESL_MIN(cfrom_span, cons->lpos[nd] + 1);
-	  cto_span   = ESL_MAX(cto_span,   cons->lpos[nd] + 1);
-	}	  
-	if(mode == TRMODE_J || mode == TRMODE_L) { 
-	  len++;
-	  if(cm->sttype[v] != IL_st) { /* inserts don't impact cpos */
-	    cfrom_emit = ESL_MIN(cfrom_emit, cons->lpos[nd] + 1);
-	    cto_emit   = ESL_MAX(cto_emit,   cons->lpos[nd] + 1);
-	  }
-	}
-      }
-      if(is_right) { 
-	if(cm->sttype[v] != IR_st) { /* inserts don't impact cpos */
-	  cfrom_span = ESL_MIN(cfrom_span, cons->rpos[nd] + 1);
-	  cto_span   = ESL_MAX(cto_span,   cons->rpos[nd] + 1);
-	}
-	if(mode == TRMODE_J || mode == TRMODE_R) { 
-	  len++;
-	  if(cm->sttype[v] != IR_st) { /* inserts don't impact cpos */
-	    cfrom_emit = ESL_MIN(cfrom_emit, cons->rpos[nd] + 1);
-	    cto_emit   = ESL_MAX(cto_emit,   cons->rpos[nd] + 1);
-	  }
-	}
-      }
+      if((is_left)  && (mode == TRMODE_J || mode == TRMODE_L)) len++;
+      if((is_right) && (mode == TRMODE_J || mode == TRMODE_R)) len++;
     }
-    /* ignore marginal-type local ends, to do otherwise see block below (v1.0->v1.0.2)*/
-#if 0
-    /* Catch marginal-type local ends and treat them like EL for output */
-    if ((tr->nxtl[ti] == -1) && (cm->sttype[v] != E_st)) {
-      nd = cm->ndidx[tr->state[ti]];
-      qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
-      tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
-      if (tinset > 0) tinset--;
-      ninset     = ESL_MAX(qinset,tinset);
-      len += 4;
-      do { len++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
-    }
-#endif
+    /* ignore marginal-type local ends, (different from v1.0->v1.0.2)*/
   }
   /* One more step for calculating len, catch 5' and 3' truncations
-   * and treat them similar to EL for output 
+   * and treat them similar to EL for output. First determine 
+   * how many positions were truncationed 5' and 3' 
    */
+  if((status = ParsetreeToCMBounds(cm, tr, errbuf, &cfrom_span, &cto_span, &cfrom_emit, &cto_emit)) != eslOK) return status;
+  /* now determine display length required to show truncations */
   ntrunc_R = wtrunc_R = 0;
   ntrunc_L = wtrunc_L = 0;
   if (cfrom_span != cfrom_emit) { 
@@ -243,7 +193,6 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
     wtrunc_L += 4; /* space for '*[]>' */
     len += wtrunc_L;
   }
-
   printf("cfrom_span: %4d\n", cfrom_span);
   printf("cfrom_emit: %4d\n", cfrom_emit);
   printf("cto_emit:   %4d\n", cto_emit);
@@ -640,14 +589,16 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConse
   if(ccoord != NULL) free(ccoord);
   esl_stack_Destroy(pda);
 
-  return ad;
+  if(ret_ad != NULL) *ret_ad = ad;
+  return eslOK;
 
  ERROR:
   if(pda != NULL)    esl_stack_Destroy(pda);
   if(ad != NULL)     cm_alidisplay_Destroy(ad);
   if(scoord != NULL) free(scoord);
   if(ccoord != NULL) free(ccoord);
-  return NULL; 
+  if(ret_ad != NULL) *ret_ad = NULL;
+  ESL_FAIL(status, errbuf, "cm_alidisplay_Create() out of memory");
 }
 
 /* Function:  cm_alidisplay_Clone()

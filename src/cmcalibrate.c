@@ -282,7 +282,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int      status;                /* Easel status */
   int      qhstatus = eslOK;      /* status from cm_file_Read() */
-  char     errbuf[cmERRBUFSIZE];  /* for printing error messages */
+  char     errbuf[eslERRBUFSIZE];  /* for printing error messages */
   CM_t    *cm    = NULL;          /* the CM */
   CM_t    *nc_cm = NULL;          /* a non-configured copy of the CM */
   int      i, h;                  /* counters */
@@ -529,7 +529,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int      status;                /* Easel status */
   int      qhstatus = eslOK;      /* status from cm_file_Read() */
-  char     errbuf[cmERRBUFSIZE];  /* for printing error messages */
+  char     errbuf[eslERRBUFSIZE];  /* for printing error messages */
   CM_t    *cm    = NULL;          /* the CM */
   CM_t    *nc_cm = NULL;          /* a non-configured copy of the CM */
   int      i, h;                  /* counters */
@@ -689,24 +689,17 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (esl_opt_VerifyConfig(go)               != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf); goto ERROR; }
  
   /* help format: */
-  if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) {
+  if (esl_opt_GetBoolean(go, "-h") || esl_opt_GetBoolean(go, "--devhelp")) { 
     cm_banner(stdout, argv[0], banner);
     esl_usage(stdout, argv[0], usage);
     puts("\nBasic options:");
     esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
     puts("\nOptional output files:");
     esl_opt_DisplayHelp(stdout, go, 2, 2, 80);
-    puts("\nUndocumented developer options:");
-    esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
-    exit(0);
-  }    
-  if (esl_opt_GetBoolean(go, "-h") == TRUE) {
-    cm_banner(stdout, argv[0], banner);
-    esl_usage(stdout, argv[0], usage);
-    puts("\nBasic options:");
-    esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
-    puts("\nOptional output files:");
-    esl_opt_DisplayHelp(stdout, go, 2, 2, 80);
+    if(esl_opt_GetBoolean(go, "--devhelp")) { 
+      puts("\nUndocumented developer options:");
+      esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
+    }
     exit(0);
   }    
 
@@ -767,7 +760,7 @@ main(int argc, char **argv)
 
   ESL_GETOPTS     *go  = NULL;    /* command line processing                 */
   struct cfg_s     cfg;           /* configuration data                      */
-  char             errbuf[cmERRBUFSIZE];
+  char             errbuf[eslERRBUFSIZE];
   int              i;
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
@@ -976,14 +969,16 @@ main(int argc, char **argv)
 /* init_master_cfg()
  * Called by masters, mpi or serial.
  * Allocates/sets: 
- *    cfg->cmfp        - open CM file                
- *    cfg->hfp      - optional output file
- *    cfg->sfp      - optional output file
- *    cfg->qfp      - optional output file
- *    cfg->gc_freq     - observed GC freqs (if --gc invoked)
- *    cfg->expAA       - the exp tail stats, allocated only
- *    cfg->r           - source of randomness
+ *    cfg->hfp         - optional output file
+ *    cfg->xfp         - optional output file
+ *    cfg->ffp         - optional output file
+ *    cfg->sfp         - optional output file
+ *    cfg->qfp         - optional output file
+ *    cfg->w           - stopwatch
  *    cfg->tmpfile     - temp file for rewriting cm file
+ *    cfg->ccom        - command log
+ *    cfg->cdate       - execution date
+ *
  * Errors in the MPI master here are considered to be "recoverable",
  * in the sense that we'll try to delay output of the error message
  * until we've cleanly shut down the worker processes. Therefore
@@ -1058,7 +1053,9 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
  *    cfg->cmfp        - open CM file                
  *    cfg->gc_freq     - observed GC freqs (if --gc invoked)
  *    cfg->r           - source of randomness
+ *    cfg->r_est       - another source of randomness
  *    cfg->sc_cutoff   - cutoff score for collecting hits 
+ *
  * Errors in the MPI master here are considered to be "recoverable",
  * in the sense that we'll try to delay output of the error message
  * until we've cleanly shut down the worker processes. Therefore
@@ -1114,7 +1111,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int      status;                /* Easel status */
   int      qhstatus = eslOK;      /* status from cm_file_Read() */
-  char     errbuf[cmERRBUFSIZE];  /* for printing error messages */
+  char     errbuf[eslERRBUFSIZE];  /* for printing error messages */
   CM_t    *cm    = NULL;          /* the CM */
   CM_t    *nc_cm = NULL;          /* a non-configured copy of the CM */
   int      i, h;                  /* counters */
@@ -1133,12 +1130,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   double   tmp_mu, tmp_lambda;    /* temporary mu and lambda used for setting exp tails */
   int      tmp_nrandhits;         /* temporary number of rand hits found */
   float    tmp_tailp;             /* temporary tail mass probability fit to an exponential */
+  ESL_SQ_BLOCK *sq_block  = NULL; /* block of sequences */
 
   /* variables needed for threaded implementation */
   WORKER_INFO     *info      = NULL; /* the worker info */
   int              infocnt   = 0;    /* number of worker infos */
 #ifdef HMMER_THREADS
-  ESL_SQ_BLOCK    *sq_block  = NULL;
+  ESL_SQ          *sq        = NULL;
   ESL_THREADS     *threadObj = NULL;
   ESL_WORK_QUEUE  *queue     = NULL;
 #endif
@@ -1182,8 +1180,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 #ifdef HMMER_THREADS    
     for (i = 0; i < ncpus * 2; ++i) {
-      if((sq_block = esl_sq_CreateDigitalBlock(BLOCK_SIZE, cfg->abc)) == NULL)  cm_Fail("Failed to allocate sequence block");
-      if((status   = esl_workqueue_Init(queue, sq_block))             != eslOK) cm_Fail("Failed to add block to work queue");
+      if((sq = esl_sq_Create()) == NULL)                     cm_Fail("Failed to allocate sequence");
+      if((status = esl_workqueue_Init(queue, sq))  != eslOK) cm_Fail("Failed to add sequence to work queue");
     }
 #endif
   }
@@ -1407,7 +1405,7 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
 
 /* pipeline_thread()
  * 
- * Receive a sequence(s) from the master, search it
+ * Receive a sequence from the master, search it
  * with the CM, and add scores of hits to info->scA.
  */
 
@@ -1422,7 +1420,7 @@ pipeline_thread(void *arg)
   void        *new_sq;
   int          h;
   CM_TOPHITS  *th = NULL;
-  char         errbuf[cmERRBUFSIZE];
+  char         errbuf[eslERRBUFSIZE];
   
 #ifdef HAVE_FLUSH_ZERO_MODE
   /* In order to avoid the performance penalty dealing with sub-normal
@@ -1474,7 +1472,7 @@ pipeline_thread(void *arg)
 
 /* initialize_cm()
  * Setup the CM based on the command-line options/defaults;
- * only set flags and a few parameters. ConfigCM() configures
+ * only set flags and a few parameters. cm_Configure() configures
  * the CM.
  */
 static int
@@ -1859,7 +1857,7 @@ print_total_time(const ESL_GETOPTS *go, double total_asec, double total_psec)
   }
   printf("\n");
   FormatTimeString(time_buf, total_psec, FALSE);
-  printf("# %-20s  %12s", "all models", time_buf, "");
+  printf("# %-20s  %12s", "all models", time_buf);
   if(! esl_opt_IsUsed(go, "--forecast")) { 
     FormatTimeString(time_buf, total_asec, FALSE);
     printf("  %42s  %12s", "", time_buf);

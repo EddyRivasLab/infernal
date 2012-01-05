@@ -1776,7 +1776,7 @@ int
 cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
 {
   int              status;
-  char             errbuf[cmERRBUFSIZE];   /* for error messages */
+  char             errbuf[eslERRBUFSIZE];  /* for error messages */
   CM_HIT          *hit     = NULL;         /* ptr to the current hit output data   */
   float            cyksc, inssc, finalsc;  /* bit scores                           */
   char             cykmode, insmode;       /* marginal alignment modes */
@@ -2131,7 +2131,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	if((status = cm_pli_AlignHit(pli, cm, *opt_cmcons, sq, do_trunc, hit, 
 				     (h == nhit) ? TRUE : FALSE,    /* TRUE if this is the first hit we're aligning (h == nhit) */
 				     scan_cp9b))                    /* a copy of the HMM bands determined in the last search stage, NULL if HMM bands not used */
-	   != eslOK) return status;
+	   != eslOK) ESL_FAIL(status, pli->errbuf, "error while aligning hit");
       }
 
       /* Finally, if we're using model-specific bit score thresholds,
@@ -2199,7 +2199,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
  *            If <do_trunc> is TRUE, we use truncated alignment
  *            algorithms, else we use standard ones.
  *
- * Returns: <eslOK> on success.
+ * Returns: eslOK on success.
+ *          ! eslOK on an error, pli->errbuf is filled. 
  */
 int
 cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int do_trunc, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b)
@@ -2217,7 +2218,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   int                 do_hbanded;           /* TRUE to use HMM bands for alignment */
   int                 do_nonbanded;         /* TRUE to align without bands (instead of using HMM bands) */
   ESL_STOPWATCH      *watch = NULL;         /* stopwatch for timing alignment step */
-  float               optacc_sc, ins_sc, cyk_sc;  /* optimal accuracy score, inside score, CYK score */
+  float               pp, sc;               /* average PP, bit score of a parsetree */
   float               null3_correction;     /* null 3 bit score penalty, for CYK score */
 
   watch = esl_stopwatch_Create();
@@ -2226,8 +2227,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   esl_stopwatch_Start(watch);  
 	
   /* set defaults, these may be changed below */
-  optacc_sc    = 0.;
-  do_optacc    = FALSE;
+  sc = pp = 0.;
   do_ppstr     = FALSE;
   do_hbanded   = FALSE;
   do_nonbanded = FALSE;
@@ -2324,11 +2324,11 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
 			    (do_ppstr || do_optacc) ? cm->trohbmx : NULL,  /* outside DP matrix */
 			    (do_ppstr || do_optacc) ? cm->trehbmx : NULL,  /* emit matrix */
 			    NULL,                                          /* ESL_RANDOMNESS, unneeded b/c we're not sampling */
-			    (do_ppstr  ? &ppstr  : NULL),                  /* posterior string */
-			    (do_optacc ? &ins_sc : NULL),                  /* inside score, NULL if we're not doing opt acc */
+			    (do_ppstr) ? &ppstr  : NULL,                   /* posterior string */
 			    &tr,                                           /* parsetree */
 			    NULL,                                          /* mode of optimal alignment, irrelevant */
-			    (do_optacc ? &optacc_sc : &cyk_sc));           /* optimal accuracy or CYK score */
+			    (do_ppstr) ? &pp     : NULL,                   /* average PP of all aligned residues */ 
+			    &sc);                                          /* bit score (Inside if do_optacc, else CYK) */
       /* TEMP BLOCK */
       ParsetreeDump(stdout, tr, cm, subdsq, NULL, NULL);
       float parsetree_sc;
@@ -2345,10 +2345,10 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
 			  (do_ppstr || do_optacc) ? cm->ohbmx : NULL,  /* outside DP matrix */
 			  (do_ppstr || do_optacc) ? cm->ehbmx : NULL,  /* emit matrix */
 			  NULL,                                        /* ESL_RANDOMNESS, unneeded b/c we're not sampling */
-			  (do_ppstr  ? &ppstr  : NULL),                /* posterior string */
-			  (do_optacc ? &ins_sc : NULL),                /* inside score, NULL if we're not doing opt acc */
+			  (do_ppstr)  ? &ppstr  : NULL,                /* posterior string */
 			  &tr,                                         /* parsetree */
-			  (do_optacc ? &optacc_sc : &cyk_sc));         /* optimal accuracy or CYK score */
+			  (do_ppstr)  ? &pp     : NULL,                /* average PP of all aligned residues */ 
+			  &sc);                                        /* bit score (Inside if do_optacc, else CYK) */
     }
     if(status == eslERANGE) { 
       /* matrix was too big, despite our pre-check (should be rare), use D&C CYK */
@@ -2362,21 +2362,21 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   }
   if((! do_hbanded) && do_nonbanded) { /* use non-banded D&C CYK (slow!) */
     esl_stopwatch_Start(watch);  
-    cyk_sc = CYKDivideAndConquer(cm, subdsq, hitlen, 0, 1, hitlen, &tr, NULL, NULL); 
+    sc = CYKDivideAndConquer(cm, subdsq, hitlen, 0, 1, hitlen, &tr, NULL, NULL); 
     esl_stopwatch_Stop(watch);  
     total_Mb = CYKNonQDBSmallMbNeeded(cm, hitlen);
     ppstr = NULL;
   }
     
-  /* add null3 correction to cyk_sc if necessary (optacc_sc doesn't get null3-corrected, it's an avg PP) */
-  if((! do_optacc) && pli->do_null3) { 
+  /* add null3 correction to sc if necessary (pp doesn't get null3-corrected, it's an avg PP) */
+  if(pli->do_null3) { 
     ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, subdsq, 1, hitlen, cm->null3_omega, &null3_correction);
-    cyk_sc -= null3_correction;
+    sc -= null3_correction;
   }
 
-  hit->ad = cm_alidisplay_Create(cm->abc, tr, cm, cmcons, sq, hit->start, ppstr, 
-				 (do_optacc) ? optacc_sc : cyk_sc, 
-				 do_optacc, do_hbanded, total_Mb, watch->elapsed);
+  if((status = cm_alidisplay_Create(cm->abc, pli->errbuf, tr, cm, cmcons, sq, hit->start, ppstr, 
+				    (do_optacc) ? pp : sc,
+				    do_optacc, do_hbanded, total_Mb, watch->elapsed, &(hit->ad))) != eslOK) return status;
   /*cm_alidisplay_Dump(stdout, hit->ad);*/
 
   /* clean up and return */

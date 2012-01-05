@@ -957,7 +957,7 @@ CP9Traces2Alignment(CM_t *cm, CP9_t *cp9, const ESL_ALPHABET *abc, ESL_SQ **sq, 
   int          max_ins_or_el[2];/* for regularizing (splitting) inserts */
   int          pass_offset[2];  /* for regularizing (splitting) inserts */
   int          pass;            /* for regularizing (splitting) inserts */
-  char         errbuf[cmERRBUFSIZE];
+  char         errbuf[eslERRBUFSIZE];
 
   /* Contract checks */
   if(cp9 == NULL)

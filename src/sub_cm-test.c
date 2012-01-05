@@ -109,7 +109,7 @@ main(int argc, char **argv)
   CMSubInfo_t *subinfo;
   ESL_RANDOMNESS    *r    = NULL; /* source of randomness */
   ESL_ALPHABET      *abc  = NULL; /* alphabet, for the CM */
-  char     errbuf[cmERRBUFSIZE];
+  char     errbuf[eslERRBUFSIZE];
 
   /*********************************************** 
    * Parse command line

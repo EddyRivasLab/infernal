@@ -376,7 +376,7 @@ seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, i
   int namelen;
   int L;
   int i;
-  char errbuf[cmERRBUFSIZE];
+  char errbuf[eslERRBUFSIZE];
   int padL;
   int half_padL;
   int n, np;

@@ -74,7 +74,7 @@ main(int argc, char **argv)
   CM_FILE         *cmfp;	/* open input CM file stream */
   CM_t            *cm;          /* CM most recently read     */
   int              ncm;         /* CM index                  */
-  char             errbuf[cmERRBUFSIZE]; /* for error messages */
+  char             errbuf[eslERRBUFSIZE]; /* for error messages */
   int              status;      /* easel status */
   int              output_mode; /* 0..5: OUTMODE_DEFAULT | OUTMODE_BITSCORES | OUTMODE_EVALUES | OUTMODE_GA | OUTMODE_TC | OUTMODE_NC */
   char            *key = NULL;  /* <s> from --key, if used */
@@ -228,7 +228,7 @@ static void
 output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode) 
 {
   int  status;
-  char errbuf[cmERRBUFSIZE]; /* for error messages */
+  char errbuf[eslERRBUFSIZE]; /* for error messages */
   float            lins;        /*  local inside bit score */
   float            lcyk;        /*  local CYK    bit score */
   float            gins;        /* glocal inside bit score */

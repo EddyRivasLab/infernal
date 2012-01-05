@@ -26,7 +26,6 @@
 #if 0
 #include "impl_sse.h"
 #endif
-#define cmERRBUFSIZE 1024
 
 /* TEMP EPN, Tue Aug 19 17:40:32 2008 */
 #define PRINTNOW 0
@@ -47,7 +46,7 @@
 #define V1P0_NULL2_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null2 model for infernal versions 0.56 through 1.0.2 */
 #define V1P0_NULL3_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null3 model for infernal versions 0.56 through 1.0.2 */
 #define DEFAULT_CP9BANDS_THRESH1 0.01
-#define DEFAULT_CP9BANDS_THRESH2 0.99
+#define DEFAULT_CP9BANDS_THRESH2 0.98
 #define DEFAULT_EL_SELFPROB      0.94
 
 /* max number of parititons for cmcalibrate */
@@ -470,27 +469,30 @@ typedef struct cp9map_s {
 #define CM_CONFIG_TRUNC_NOFORCE (1<<6)  /* don't force sequence endpoints exist in truncated alignments */
 #define CM_CONFIG_SCANMX        (1<<7)  /* create a CM_SCAN_MX in cm->smx          */
 #define CM_CONFIG_TRSCANMX      (1<<8)  /* create a CM_TR_SCAN_MX in cm->trsmx     */
+#define CM_CONFIG_SUB           (1<<9)  /* set up for submodel alignment (cm->cp9 gets equiprobable begin/ends) */
 
 /* alignment options, cm->align_opts */
-#define CM_ALIGN_SMALL         (1<<0)  /* use small CYK D&C                        */
-#define CM_ALIGN_QDB           (1<<1)  /* use QD bands                             */
-#define CM_ALIGN_HBANDED       (1<<2)  /* use HMM bands                            */
-#define CM_ALIGN_SUMS          (1<<3)  /* if using HMM bands, use posterior sums   */
-#define CM_ALIGN_SUB           (1<<4)  /* build a sub CM for each seq to align     */
-#define CM_ALIGN_HMMVITERBI    (1<<5)  /* use a CP9 HMM only to align, w/viterbi   */
-#define CM_ALIGN_INSIDE        (1<<6)  /* use Inside, not CYK                      */
-#define CM_ALIGN_POST          (1<<7)  /* do inside/outside and append posteriors  */
-#define CM_ALIGN_CHECKINOUT    (1<<8)  /* check inside/outside calculations        */
-#define CM_ALIGN_CHECKPARSESC  (1<<9)  /* check parsetree score against aln alg sc */
-#define CM_ALIGN_PRINTTREES    (1<<10) /* print parsetrees to stdout               */
-#define CM_ALIGN_HMMSAFE       (1<<11) /* realign seqs w/HMM banded CYK bit sc < 0 */
-#define CM_ALIGN_SCOREONLY     (1<<12) /* do full CYK/inside to get score only     */
-#define CM_ALIGN_SAMPLE        (1<<13) /* sample parsetrees from the inside matrix */
-#define CM_ALIGN_FLUSHINSERTS  (1<<14) /* flush inserts L/R like pre 1.0 infernal  */
-#define CM_ALIGN_CHECKFB       (1<<15) /* check forward/backward CP9 HMM calcs     */
-#define CM_ALIGN_OPTACC        (1<<16) /* no CYK, aln w/Holmes/Durbin opt accuracy */
-#define CM_ALIGN_HMM2IJOLD     (1<<17) /* use old hmm2ij band calculation alg      */
-#define CM_ALIGN_P7BANDED      (1<<18) /* use p7 HMM bands to band the CP9 HMM     */
+#define CM_ALIGN_HBANDED       (1<<0)  /* use CP9 HMM bands                        */
+#define CM_ALIGN_P7BANDED      (1<<1)  /* use p7 HMM bands to band the CP9 HMM (CAUTION: only partially implemented) */
+#define CM_ALIGN_NONBANDED     (1<<2)  /* do not use HMM bands                     */
+#define CM_ALIGN_CYK           (1<<3)  /* aln wwith CYK algorithm                  */
+#define CM_ALIGN_OPTACC        (1<<4)  /* aln w/Holmes/Durbin opt accuracy         */
+#define CM_ALIGN_SAMPLE        (1<<5)  /* sample parsetrees from the inside matrix */
+#define CM_ALIGN_POST          (1<<6)  /* do inside/outside and append posteriors  */
+#define CM_ALIGN_SMALL         (1<<7)  /* use small CYK D&C                        */
+#define CM_ALIGN_SUMS          (1<<8)  /* if using HMM bands, use posterior sums   */
+#define CM_ALIGN_SUB           (1<<9)  /* build a sub CM for each seq to align     */
+#define CM_ALIGN_HMMVITERBI    (1<<10) /* use a CP9 HMM only to align, w/viterbi   */
+#define CM_ALIGN_CHECKINOUT    (1<<11) /* check inside/outside calculations        */
+#define CM_ALIGN_CHECKPARSESC  (1<<12) /* check parsetree score against aln alg sc */
+#define CM_ALIGN_PRINTTREES    (1<<13) /* print parsetrees to stdout               */
+#define CM_ALIGN_HMMSAFE       (1<<14) /* realign seqs w/HMM banded CYK bit sc < 0 */
+#define CM_ALIGN_SCOREONLY     (1<<15) /* do full CYK/inside to get score only     */
+#define CM_ALIGN_FLUSHINSERTS  (1<<16) /* flush inserts L/R like pre 1.0 infernal  */
+#define CM_ALIGN_CHECKFB       (1<<17) /* check forward/backward CP9 HMM calcs     */
+#define CM_ALIGN_HMM2IJOLD     (1<<18) /* use old hmm2ij band calculation alg      */
+#define CM_ALIGN_QDB           (1<<19) /* align with QDBs                          */
+#define CM_ALIGN_INSIDE        (1<<20) /* use Inside algorithm                     */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_HBANDED      (1<<0)  /* use HMM bands to search (default)        */

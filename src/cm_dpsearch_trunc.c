@@ -3784,7 +3784,7 @@ main(int argc, char **argv)
   int            *dmax;
   int             do_random;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
-  char            errbuf[cmERRBUFSIZE];
+  char            errbuf[eslERRBUFSIZE];
   CM_TR_SCAN_MX  *trsmx = NULL;
   TruncOpts_t    *tro  = NULL;
   ESL_SQFILE     *sqfp  = NULL;        /* open sequence input file stream */

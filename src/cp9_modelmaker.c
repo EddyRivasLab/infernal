@@ -2612,7 +2612,7 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
   int swrong_total_ct; /* total number of nodes we thought would be violations but were not */
   int namelen;         /* max int size for name */
   char *tmp_name;           /* name for the seqs */
-  char errbuf[cmERRBUFSIZE];
+  char errbuf[eslERRBUFSIZE];
 
   spredict_total_ct = 0;
   swrong_total_ct = 0;

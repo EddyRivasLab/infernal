@@ -697,14 +697,14 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
   sub_cm->beta_W    = orig_cm->beta_W;
   sub_cm->tau       = orig_cm->tau;
    
-  /* copy the options from the template CM, but turn off the CM_ALIGN_SUB options 
-   * and turn on the CM_IS_SUB flag */
+  /* copy the options from the template CM, but turn off the CM_ALIGN_SUB and
+   * CM_CONFIG_SUB options and turn on the CM_IS_SUB flag */
   sub_cm->config_opts      = orig_cm->config_opts;
   sub_cm->align_opts       = orig_cm->align_opts;
   sub_cm->search_opts      = orig_cm->search_opts;
   sub_cm->flags            = 0;
-  if(sub_cm->align_opts & CM_ALIGN_SUB)
-    sub_cm->align_opts &= ~CM_ALIGN_SUB;
+  if(sub_cm->config_opts & CM_CONFIG_SUB) sub_cm->config_opts &= ~CM_CONFIG_SUB;
+  if(sub_cm->align_opts  & CM_ALIGN_SUB)  sub_cm->align_opts  &= ~CM_ALIGN_SUB;
   sub_cm->flags |= CM_IS_SUB;
    
   /* Fill in emission probabilities */
@@ -3363,6 +3363,9 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
  * Parsetree_t *sub_tr       - the sub_cm parstree already filled
  * CMSubMap_t *submap        - map from the sub_cm to orig_cm and vice versa
  * int print_flag    - TRUE to print useful debugging info
+ *
+ * Returns: eslOK on success
+ *          eslEMEM if we run out of memory 
  */
 
 int
@@ -3716,11 +3719,10 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
   free(nodetypes);
   free(sttypes);
   esl_stack_Destroy(pda);
-  return 1;
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
-  return 0; /* never reached*/
+  return eslEMEM;
 }
 
 /* Function: SubCMLogoddsify()

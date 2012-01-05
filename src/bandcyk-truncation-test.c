@@ -81,7 +81,7 @@ main(int argc, char **argv)
   double   g;			/* log of an estimated gamma[n] */
   int      be_verbose;
   ESL_ALPHABET   *abc     = NULL;
-  char            errbuf[cmERRBUFSIZE]; /* for error messages */
+  char            errbuf[eslERRBUFSIZE]; /* for error messages */
   CM_QDBINFO     *qdbinfo1 = NULL; /* holds dmin1/dmax1 and dmin2/dmax2 for first  choice of Z */
   CM_QDBINFO     *qdbinfo2 = NULL; /* holds dmin1/dmax1 and dmin2/dmax2 for second choice of Z */
   int             W1;              /* W calculated with qdbinfo1 */

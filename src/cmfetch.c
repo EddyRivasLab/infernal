@@ -72,7 +72,7 @@ main(int argc, char **argv)
   char         *cmfile  = NULL;	/* CM file name                   */
   CM_FILE      *cmfp    = NULL;	/* open CM file                   */
   FILE         *ofp     = NULL;	/* output stream for CMs          */
-  char          errbuf[cmERRBUFSIZE];
+  char          errbuf[eslERRBUFSIZE];
 
   /***********************************************
    * Parse command line

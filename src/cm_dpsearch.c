@@ -4370,7 +4370,7 @@ main(int argc, char **argv)
   int             do_random;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
   int             qdbidx;
-  char            errbuf[cmERRBUFSIZE];
+  char            errbuf[eslERRBUFSIZE];
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();

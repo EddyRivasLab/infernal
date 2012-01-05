@@ -216,8 +216,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   else { 
     do_trunc = FALSE; cp9 = cm->cp9; 
   }
-  if(! (cm->flags & CMH_CP9_TRUNC)) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, doing trunc alignment but CMH_CP9_TRUNC flag is not raised");
-  if(cp9 == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, relevant cp9 is NULL.\n");
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, relevant cp9 is NULL.\n");
 
   /* Determine if we should do Forward and Backward in scan mode.
    *
@@ -270,7 +269,6 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
     printf("Forward/Backward matrices checked.\n");
   }
 
-
   /* Step 2: F/B -> HMM bands. */
   if(use_sums){
     if((status = cp9_FB2HMMBandsWithSums(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, i0, j0, cp9b->hmm_M,
@@ -282,7 +280,9 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
 
-  /* Step 2B: (only if tro != NULL (truncated alignments are possible) Calculate occupancy and candidate states for marginal alignments */
+  /* Step 2B: (only if tro != NULL (truncated alignments are possible))
+   * Calculate occupancy and candidate states for marginal alignments 
+   */
   if(do_trunc) { 
     cp9_PredictStartAndEndPositions(pmx, cp9b, i0, j0);
     cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, tro);

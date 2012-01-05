@@ -376,7 +376,7 @@ main(int argc, char **argv)
   if (esl_opt_GetBoolean(go, "--mpi")) 
     {
       int              status;               /* easel status */
-      char             errbuf[cmERRBUFSIZE]; /* for error messages in mpi_master() */
+      char             errbuf[eslERRBUFSIZE]; /* for error messages in mpi_master() */
       cfg.do_mpi     = TRUE;
 
       MPI_Init(&argc, &argv);
@@ -590,7 +590,7 @@ static void
 serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int      status;
-  char     errbuf[cmERRBUFSIZE];
+  char     errbuf[eslERRBUFSIZE];
   CM_t     *cm;
   seqs_to_aln_t  *seqs_to_aln;       /* sequences to align, holds seqs, parsetrees, CP9 traces, postcodes */
   int       used_at_least_one_cm = FALSE; 
@@ -936,7 +936,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 			}
 		      else	/* worker reported an error. Get the errbuf. */
 			{
-			  if (MPI_Unpack(buf, bn, &pos, errbuf, cmERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
+			  if (MPI_Unpack(buf, bn, &pos, errbuf, eslERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
 			  ESL_DPRINTF1(("MPI master sees that the result buffer contains an error message\n"));
 			  have_work = FALSE;
 			  wi_error  = wi;
@@ -1022,7 +1022,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int           wn   = 0;	/* allocation size for wbuf */
   int           sz, n;		/* size of a packed message */
   int           pos;
-  char          errbuf[cmERRBUFSIZE];
+  char          errbuf[eslERRBUFSIZE];
   seqs_to_aln_t *seqs_to_aln = NULL;
   uint32_t       seed;                  /* seed for RNG, rec'd from master */
   int           i;
@@ -1111,7 +1111,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_DPRINTF1(("worker %d: fails, is sending an error message, as follows:\n%s\n", cfg->my_rank, errbuf));
   pos = 0;
   MPI_Pack(&status, 1,               MPI_INT,  wbuf, wn, &pos, MPI_COMM_WORLD);
-  MPI_Pack(errbuf,  cmERRBUFSIZE,    MPI_CHAR, wbuf, wn, &pos, MPI_COMM_WORLD);
+  MPI_Pack(errbuf,  eslERRBUFSIZE,    MPI_CHAR, wbuf, wn, &pos, MPI_COMM_WORLD);
   MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
 
   /* if we get here this worker failed and sent an error message, now the master knows a worker
@@ -1445,7 +1445,7 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
   ESL_MSA      *msa      = NULL; /* alignment we're including  */
   CM_t         *new_cm   = NULL; /* CM built from MSA, we check it has same guide tree as 'cm' */
   Parsetree_t  *mtr      = NULL; /* master structure tree from the alignment*/
-  char          errbuf[cmERRBUFSIZE];
+  char          errbuf[eslERRBUFSIZE];
 
   /* cfg->withalifp is open */
   if((status = eslx_msafile_Read(cfg->withalifp, &msa)) != eslOK) { 
@@ -2649,7 +2649,7 @@ static void
 serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int      status;
-  char     errbuf[cmERRBUFSIZE];
+  char     errbuf[eslERRBUFSIZE];
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, holds seqs, parsetrees, CP9 traces, postcodes */
   int    m,i;         /* counters */
   int    nalloc = 1;  /* number of CMs we've allocated */

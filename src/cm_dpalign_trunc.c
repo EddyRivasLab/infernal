@@ -131,8 +131,8 @@
 #define DEBUG2  0
 #define DOTRACE 0
 
-static int cm_tr_alignT   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, int do_optacc, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, CM_TR_EMIT_MX    *emit_mx, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc);
-static int cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, int do_optacc, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, CM_TR_HB_EMIT_MX *emit_mx, Parsetree_t **ret_tr, char *ret_moe, float *ret_sc);
+static int cm_tr_alignT   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, int do_optacc, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, CM_TR_EMIT_MX    *emit_mx, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc_or_pp);
+static int cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, int do_optacc, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, CM_TR_HB_EMIT_MX *emit_mx, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc_or_pp);
 
 /* Function: cm_tr_alignT()
  * Date:     EPN, Sat Sep 10 11:25:37 2011
@@ -160,20 +160,19 @@ static int cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float si
  *           being called for 'cmalign') then <optimal_mode> will be
  *           TRMODE_UNKNOWN and we'll determine it via CYK.
  *
- * Args:     cm         - the model 
- *           errbuf     - char buffer for reporting errors
- *           dsq        - the digitized sequence [1..L]   
- *           L          - length of the dsq to align
- *           size_limit - max size in Mb for DP matrix
+ * Args:     cm           - the model 
+ *           errbuf       - char buffer for reporting errors
+ *           dsq          - the digitized sequence [1..L]   
+ *           L            - length of the dsq to align
+ *           size_limit   - max size in Mb for DP matrix
  *           optimal_mode - the optimal alignment mode, TRMODE_UNKNOWN if unknown
- *           do_optacc  - TRUE to align with optimal accuracy, else use CYK
- *           mx         - the DP matrix to fill in
- *           shmx       - the shadow matrix to fill in
- *           emit_mx    - the pre-filled emit matrix, must be non-NULL if do_optacc
- *           ret_tr     - RETURN: the optimal parsetree
- *           ret_mode   - RETURN: mode of optimal alignment (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
- *           ret_sc     - RETURN: average posterior probability of aligned residues
- *                        in optimally accurate parsetree.
+ *           do_optacc    - TRUE to align with optimal accuracy, else use CYK
+ *           mx           - the DP matrix to fill in
+ *           shmx         - the shadow matrix to fill in
+ *           emit_mx      - the pre-filled emit matrix, must be non-NULL if do_optacc
+ *           ret_tr       - RETURN: the optimal parsetree
+ *           ret_mode     - RETURN: mode of optimal alignment (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
+ *           ret_sc_or_pp - RETURN: optimal score (CYK if !do_optacc, else avg PP of all 1..L residues) 
  *
  * Returns:  <eslOK>     on success.
  * Throws:   <eslERANGE> if required DP matrix size exceeds <size_limit>, in 
@@ -182,11 +181,12 @@ static int cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float si
  */
 int
 cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, int do_optacc, CM_TR_MX *mx, CM_TR_SHADOW_MX *shmx, 
-	     CM_TR_EMIT_MX *emit_mx, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc)
+	     CM_TR_EMIT_MX *emit_mx, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc_or_pp)
 {
   int       status;
   Parsetree_t *tr = NULL;       /* the parsetree */
   float     sc;			/* the score of the CYK alignment */
+  float     pp;			/* avg pp of all emitted residues in optacc alignment */
   ESL_STACK *pda_i;             /* stack that tracks bifurc parent of a right start */
   ESL_STACK *pda_c;             /* stack that tracks mode of bifurc parent of a right start */
   int       v,j,d,i;		/* indices for state, seq positions */
@@ -206,7 +206,7 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 				  shmx,	        /* the shadow matrix, to expand and fill-in */
 				  emit_mx,      /* pre-calc'ed emit matrix */
 				  &b,           /* the entry point for optimal alignment if local begins are on */
-				  &sc))         /* avg post prob of all emissions in optimally accurate parsetree */
+				  &pp))         /* avg post prob of all emissions in optimally accurate parsetree */
        != eslOK) return status;
     mode = optimal_mode;
   }
@@ -402,9 +402,9 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
   esl_stack_Destroy(pda_i);  /* it should be empty; we could check; naaah. */
   esl_stack_Destroy(pda_c);  /* it should be empty; we could check; naaah. */
 
-  if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
-  if(ret_mode != NULL) *ret_mode = optimal_mode;
-  if(ret_sc   != NULL) *ret_sc   = sc;
+  if(ret_tr       != NULL) *ret_tr   = tr; else FreeParsetree(tr);
+  if(ret_mode     != NULL) *ret_mode = optimal_mode;
+  if(ret_sc_or_pp != NULL) *ret_sc_or_pp = do_optacc ? pp : sc;
 
   return eslOK;
 
@@ -437,20 +437,19 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
  *           being called for 'cmalign') then <optimal_mode> will be
  *           TRMODE_UNKNOWN and we'll determine it via CYK.
  *
- * Args:     cm         - the model 
- *           errbuf     - char buffer for reporting errors
- *           dsq        - the digitized sequence [1..L]   
- *           L          - length of the dsq to align
- *           size_limit - max size in Mb for DP matrix
- *           optimal_mode   - the optimal alignment mode, TRMODE_UNKNOWN if unknown
- *           do_optacc  - TRUE to align with optimal accuracy, else use CYK
- *           mx         - the DP matrix to fill in
- *           shmx       - the shadow matrix to fill in
- *           emit_mx    - the pre-filled emit matrix, must be non-NULL if do_optacc
- *           ret_tr     - RETURN: the optimal parsetree
- *           ret_mode   - RETURN: mode of optimal alignment (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
- *           ret_sc     - RETURN: average posterior probability of aligned residues
- *                        in optimally accurate parsetree.
+ * Args:     cm           - the model 
+ *           errbuf       - char buffer for reporting errors
+ *           dsq          - the digitized sequence [1..L]   
+ *           L            - length of the dsq to align
+ *           size_limit   - max size in Mb for DP matrix
+ *           optimal_mode - the optimal alignment mode, TRMODE_UNKNOWN if unknown
+ *           do_optacc    - TRUE to align with optimal accuracy, else use CYK
+ *           mx           - the DP matrix to fill in
+ *           shmx         - the shadow matrix to fill in
+ *           emit_mx      - the pre-filled emit matrix, must be non-NULL if do_optacc
+ *           ret_tr       - RETURN: the optimal parsetree
+ *           ret_mode     - RETURN: mode of optimal alignment (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
+ *           ret_sc_or_pp - RETURN: optimal score (CYK if !do_optacc, else avg PP of all 1..L residues) 
  *
  * Returns:  <eslOK>     on success.
  * Throws:   <eslERANGE> if required DP matrix size exceeds <size_limit>, in 
@@ -459,11 +458,12 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
  */
 int
 cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, int do_optacc, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, 
-		CM_TR_HB_EMIT_MX *emit_mx, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc)
+		CM_TR_HB_EMIT_MX *emit_mx, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc_or_pp)
 {
   int       status;         
   Parsetree_t *tr = NULL;       /* the parsetree */
   float     sc;			/* the score of the CYK alignment */
+  float     pp;			/* avg pp of all emitted residues in optacc alignment */
   ESL_STACK *pda_i;             /* stack that tracks bifurc parent of a right start */
   ESL_STACK *pda_c;             /* stack that tracks mode of bifurc parent of a right start */
   int       v,j,d,i;		/* indices for state, seq positions */
@@ -496,7 +496,7 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
 				    shmx,	  /* the shadow matrix, to expand and fill-in */
 				    emit_mx,      /* pre-calc'ed emit matrix */
 				    &b,           /* the entry point for optimal alignment */
-				    &sc))         /* avg post prob of all emissions in optimally accurate parsetree */
+				    &pp))         /* avg post prob of all emissions in optimally accurate parsetree */
        != eslOK) return status;
     mode = optimal_mode;
   }
@@ -746,9 +746,9 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
   esl_stack_Destroy(pda_i);  /* it should be empty; we could check; naaah. */
   esl_stack_Destroy(pda_c);  /* it should be empty; we could check; naaah. */
 
-  if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
-  if(ret_mode != NULL) *ret_mode = optimal_mode;
-  if(ret_sc   != NULL) *ret_sc   = sc;
+  if(ret_tr       != NULL) *ret_tr   = tr; else FreeParsetree(tr);
+  if(ret_mode     != NULL) *ret_mode = optimal_mode;
+  if(ret_sc_or_pp != NULL) *ret_sc_or_pp = do_optacc ? pp : sc;
 
   return eslOK;
 
@@ -802,12 +802,10 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
  *           emit_mx   - emit matrix to fill
  *           r         - source of randomness, must be non-NULL only if do_sample==TRUE
  *           ret_ppstr - RETURN: posterior code 1, (pass NULL if not wanted, must be NULL if post_mx == NULL)
- *           ret_ins_sc- RETURN: if(do_optacc || ret_ppstr != NULL): inside score of sequence in bits
- *                               else: should be NULL (inside will not be run)
  *           ret_tr    - RETURN: traceback (pass NULL if trace isn't wanted)
  *           ret_mode  - RETURN: mode of optimal alignment (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
- *           ret_sc    - RETURN: if(!do_optacc): score of the alignment in bits.
- *                               if( do_optacc): avg PP of all L aligned residues in optacc parsetree
+ *           ret_avgpp - RETURN: avg PP of emitted residues in parsetree (CYK or optacc) if ret_ppstr == NULL, set as 0.
+ *           ret_sc    - RETURN: score of the alignment in bits (Inside score if do_optacc) 
  * 
  * Returns: <eslOK> on success.
  * 
@@ -817,13 +815,14 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
 int
 cm_TrAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, 
 	   int do_optacc, int do_sample, CM_TR_MX *mx, CM_TR_SHADOW_MX *shmx, CM_TR_MX *post_mx, 
-	   CM_TR_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, float *ret_ins_sc, Parsetree_t **ret_tr, 
-	   char *ret_mode, float *ret_sc)
+	   CM_TR_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, 
+	   char *ret_mode, float *ret_avgpp, float *ret_sc)
 {
   int          status;
   Parsetree_t *tr = NULL;
-  float        sc;
-  float        ins_sc; /* inside score */
+  float        sc     = 0.;
+  float        avgpp  = 0.;
+  float        ins_sc = 0.;
   int          do_post;
   char        *ppstr = NULL;
   int          have_ppstr;
@@ -853,20 +852,18 @@ cm_TrAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char o
   }
 
   if(!do_sample) { /* if do_sample, we already have a parsetree */
-    if((status = cm_tr_alignT(cm, errbuf, dsq, L, size_limit, optimal_mode, do_optacc, mx, shmx, emit_mx, &tr, &optimal_mode, &sc)) != eslOK) return status;
+    if((status = cm_tr_alignT(cm, errbuf, dsq, L, size_limit, optimal_mode, do_optacc, mx, shmx, emit_mx, &tr, &optimal_mode, (do_optacc) ? NULL : &sc)) != eslOK) return status;
   }
 
   if(have_ppstr || do_optacc) { /* call cm_PostCode to get average PP and optionally a PP string (if have_ppstr) */
-    if((status = cm_TrPostCode(cm, errbuf, L, emit_mx, tr, 
-			       (have_ppstr ? &ppstr : NULL), 
-			       (do_optacc  ? &sc    : NULL))) != eslOK) return status;
+    if((status = cm_TrPostCode(cm, errbuf, L, emit_mx, tr, (have_ppstr) ? &ppstr : NULL, &avgpp)) != eslOK) return status;
   }
 
   if (ret_ppstr  != NULL) *ret_ppstr  = ppstr; else if(ppstr != NULL) free(ppstr);
   if (ret_tr     != NULL) *ret_tr     = tr;    else if(tr    != NULL) FreeParsetree(tr);
-  if (ret_ins_sc != NULL) *ret_ins_sc = ins_sc; 
   if (ret_mode   != NULL) *ret_mode   = optimal_mode;    
-  if (ret_sc     != NULL) *ret_sc     = sc;
+  if (ret_avgpp  != NULL) *ret_avgpp  = avgpp;
+  if (ret_sc     != NULL) *ret_sc     = (do_optacc) ? ins_sc : sc;
 
   ESL_DPRINTF1(("returning from cm_TrAlign() sc : %f\n", sc)); 
   return eslOK;
@@ -906,8 +903,7 @@ cm_TrAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char o
  *                               else: should be NULL (inside will not be run)
  *           ret_tr    - RETURN: traceback (pass NULL if trace isn't wanted)
  *           ret_mode  - RETURN: mode of optimal alignment (TRMODE_J | TRMODE_L | TRMODE_R | TRMODE_T)
- *           ret_sc    - RETURN: if(!do_optacc): score of the alignment in bits.
- *                               if( do_optacc): avg PP of all L aligned residues in optacc parsetree
+ *           ret_sc    - RETURN: score of the alignment in bits (Inside score if do_optacc) 
  * 
  * Returns: <ret_tr>, <ret_ppstr>, <ret_sc>, see 'Args' section
  * 
@@ -919,18 +915,19 @@ cm_TrAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char o
 int
 cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, int do_optacc, int do_sample,
 	     CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, CM_TR_HB_MX *post_mx, CM_TR_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, 
-	     char **ret_ppstr, float *ret_ins_sc, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc)
+	     char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc)
 {
   int          status;
   Parsetree_t *tr = NULL;
-  float        sc     = IMPOSSIBLE;
-  float        ins_sc = IMPOSSIBLE; /* inside score */
+  float        sc     = 0.;
+  float        avgpp  = 0.;
+  float        ins_sc = 0.;
   int          do_post;
   char        *ppstr = NULL;
   int          have_ppstr;
 
-  have_ppstr = (ret_ppstr != NULL) ? TRUE : FALSE;
-  do_post = (do_optacc || have_ppstr) ? TRUE : FALSE;
+  have_ppstr = (ret_ppstr != NULL)       ? TRUE : FALSE;
+  do_post    = (do_optacc || have_ppstr) ? TRUE : FALSE;
 
   /* Contract check */
   if(do_optacc && do_sample)         ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrAlignHB(), do_optacc and do_sample are both TRUE.");
@@ -953,13 +950,11 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
   }
 
   if(!do_sample) { /* if do_sample, we already have a parsetree */
-    if((status = cm_tr_alignT_hb(cm, errbuf, dsq, L, size_limit, optimal_mode, do_optacc, mx, shmx, emit_mx, &tr, &optimal_mode, &sc)) != eslOK) return status;
+    if((status = cm_tr_alignT_hb(cm, errbuf, dsq, L, size_limit, optimal_mode, do_optacc, mx, shmx, emit_mx, &tr, &optimal_mode, (do_optacc) ? NULL : &sc)) != eslOK) return status;
   }
 
   if(have_ppstr || do_optacc) {
-    if((status = cm_TrPostCodeHB(cm, errbuf, L, emit_mx, tr, 
-				 (have_ppstr ? &ppstr : NULL), 
-				 (do_optacc  ? &sc    : NULL))) != eslOK) return status;
+    if((status = cm_TrPostCodeHB(cm, errbuf, L, emit_mx, tr, (have_ppstr) ? &ppstr : NULL, &avgpp)) != eslOK) return status;
   }
 
 #if 0
@@ -972,9 +967,9 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 
   if (ret_ppstr  != NULL) *ret_ppstr  = ppstr; else if(ppstr != NULL) free(ppstr);
   if (ret_tr     != NULL) *ret_tr     = tr;    else if(tr    != NULL) FreeParsetree(tr);
-  if (ret_ins_sc != NULL) *ret_ins_sc = ins_sc; 
   if (ret_mode   != NULL) *ret_mode   = optimal_mode;    
-  if (ret_sc     != NULL) *ret_sc     = sc;
+  if (ret_avgpp  != NULL) *ret_avgpp  = avgpp;
+  if (ret_sc     != NULL) *ret_sc     = (do_optacc) ? ins_sc : sc;
 
   ESL_DPRINTF1(("returning from cm_TrAlignHB() sc : %f\n", sc)); 
   return eslOK;
@@ -3829,7 +3824,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
  *           shmx       - the shadow matrix to fill in
  *           emit_mx    - pre-filled emit matrix
  *           ret_b      - optimal entry point (state) for the alignment
- *           ret_sc     - RETURN: average posterior probability of aligned residues
+ *           ret_pp     - RETURN: average posterior probability of aligned residues
  *                        in the optimally accurate parsetree
  *
  * Returns: <eslOK>     on success.
@@ -3838,12 +3833,13 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
  */
 int
 cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, CM_TR_MX *mx, CM_TR_SHADOW_MX *shmx, 
-		 CM_TR_EMIT_MX *emit_mx, int *ret_b, float *ret_sc)
+		 CM_TR_EMIT_MX *emit_mx, int *ret_b, float *ret_pp)
 {
   int      status;          /* easel status code */
   int      v,y,z;	    /* indices for states  */
   int      j,d,i,k;	    /* indices in sequence dimensions */
   float    sc;		    /* temporary log odds score */
+  float    pp;		    /* average posterior probability of all emitted residues */
   int      yoffset;	    /* y=base+offset -- counter in child states that v can transit to */
   float   *el_scA;          /* [0..d..L-1] probability of local end emissions of length d */
   int      sd;              /* StateDelta(cm->sttype[v]) */
@@ -4409,8 +4405,8 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if (optimal_mode == TRMODE_R) sc = Ralpha[0][L][L]; 
   if (optimal_mode == TRMODE_T) sc = Talpha[0][L][L]; 
 
-  /* convert sc, a log probability, into the average posterior probability of all L aligned residues */
-  sc = sreEXP2(sc) / (float) L;
+  /* convert pp, a log probability, into the average posterior probability of all L aligned residues */
+  pp = sreEXP2(sc) / (float) L;
 
 #if eslDEBUGLEVEL >= 2
   FILE *fp1; fp1 = fopen("tmp.tru_oamx", "w");   cm_tr_mx_Dump(fp1, mx, optimal_mode); fclose(fp1);
@@ -4418,11 +4414,11 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 #endif
 
   if(ret_b  != NULL) *ret_b  = b;    
-  if(ret_sc != NULL) *ret_sc = sc;
+  if(ret_pp != NULL) *ret_pp = pp;
 
   free(el_scA);
 
-  ESL_DPRINTF1(("cm_TrOptAccAlign() return pp: %f\n", sc));
+  ESL_DPRINTF1(("cm_TrOptAccAlign() return pp: %f\n", pp));
   return eslOK;
 
  ERROR: 
@@ -4453,7 +4449,7 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
  *           shmx       - the shadow matrix to fill in
  *           emit_mx    - pre-filled emit matrix
  *           ret_b      - optimal entry point (state) for the alignment
- *           ret_sc     - RETURN: average posterior probability of aligned residues
+ *           ret_pp     - RETURN: average posterior probability of aligned residues
  *                        in the optimally accurate parsetree
  *
  * Returns: <eslOK>     on success.
@@ -4462,12 +4458,13 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
  */
 int
 cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, 
-		   CM_TR_HB_EMIT_MX *emit_mx, int *ret_b, float *ret_sc)
+		   CM_TR_HB_EMIT_MX *emit_mx, int *ret_b, float *ret_pp)
 {
   int      status;          /* easel status code */
   int      v,y,z;	    /* indices for states  */
   int      j,d,i,k;	    /* indices in sequence dimensions */
   float    sc;		    /* temporary log odds score */
+  float    pp;		    /* average posterior probability of all emitted residues */
   int      yoffset;	    /* y=base+offset -- counter in child states that v can transit to */
   float   *el_scA;          /* [0..d..L-1] probability of local end emissions of length d */
   int      sd;              /* StateDelta(cm->sttype[v]) */
@@ -5477,7 +5474,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   if (optimal_mode == TRMODE_T) sc = Talpha[0][jp_0][Lp_0]; 
 
   /* convert sc, a log probability, into the average posterior probability of all L aligned residues */
-  sc = sreEXP2(sc) / (float) L;
+  pp = sreEXP2(sc) / (float) L;
 
 #if eslDEBUGLEVEL >= 2
   FILE *fp1; fp1 = fopen("tmp.tru_oahbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, optimal_mode); fclose(fp1);
@@ -5485,12 +5482,12 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 #endif
 
   if(ret_b  != NULL) *ret_b  = b;    
-  if(ret_sc != NULL) *ret_sc = sc;
+  if(ret_pp != NULL) *ret_pp = pp;
 
   free(el_scA);
   free(yvalidA);
 
-  ESL_DPRINTF1(("cm_TrOptAccAlignHB() return pp: %f\n", sc));
+  ESL_DPRINTF1(("cm_TrOptAccAlignHB() return pp: %f\n", pp));
   return eslOK;
 
  ERROR:
@@ -8914,7 +8911,7 @@ main(int argc, char **argv)
   int            *dmax;
   int             do_random;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
-  char            errbuf[cmERRBUFSIZE];
+  char            errbuf[eslERRBUFSIZE];
   TrScanMatrix_t *trsmx = NULL;
   TruncOpts_t   *tro  = NULL;
   ESL_SQFILE     *sqfp  = NULL;        /* open sequence input file stream */

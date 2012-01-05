@@ -47,7 +47,7 @@ MYINCDIRS = -I../${ESLDIR} \
 	    -I${srcdir}
 
 
-PROGS = cmalign\
+PROGS = x-cmalign\
 	cmbuild\
 	cmcalibrate\
 	cmconvert\

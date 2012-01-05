@@ -227,7 +227,7 @@ struct cfg_s {
 };
 
 static char usage[]  = "[options] <query cmfile> <target seqfile>";
-static char banner[] = "search a sequence database with an RNA CM";
+static char banner[] = "search a sequence database with a CM";
 
 static int  serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  serial_loop  (WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL);
@@ -527,7 +527,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_THREADS     *threadObj= NULL;
   ESL_WORK_QUEUE  *queue    = NULL;
 #endif
-  char             errbuf[cmERRBUFSIZE];
+  char             errbuf[eslERRBUFSIZE];
 
   w = esl_stopwatch_Create();
 
@@ -1629,6 +1629,7 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
       block->list->C = info->pli->maxW;
       /* Overload the ->C value, which ReadBlock uses to determine how much 
        * overlap should be retained in the ReadWindow step. */
+
     }
 
     sstatus = esl_sqio_ReadBlock(dbfp, block, CMSEARCH_MAX_RESIDUE_COUNT, TRUE);

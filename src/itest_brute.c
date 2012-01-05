@@ -164,7 +164,7 @@ main(int argc, char **argv)
   int             i,j;
   int             first_j; 
   float           cyk_precision, ins_precision; /* expected bound on absolute accuracy for CYK, Inside */
-  char            errbuf[cmERRBUFSIZE];
+  char            errbuf[eslERRBUFSIZE];
   CM_MX            *mx       = NULL;       /* alpha DP matrix for non-banded CYK/Inside() */
   CM_MX            *out_mx   = NULL;       /* beta DP matrix for non-banded Outside */
   CM_SHADOW_MX     *shmx     = NULL;       /* shadow matrix for non-banded tracebacks */

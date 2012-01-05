@@ -601,7 +601,7 @@ BandMonteCarlo(CM_t *cm, int nsample, int Z, double ***ret_gamma)
   char         *name;           /* name for the seq we've emitted */
   ESL_RANDOMNESS  *r = NULL;    /* source of randomness */
   int           namelen;        /* max int size for name */
-  char errbuf[cmERRBUFSIZE];
+  char errbuf[eslERRBUFSIZE];
 
   /* Create and seed RNG */
   if ((r = esl_randomness_CreateTimeseeded()) == NULL) 

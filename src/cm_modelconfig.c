@@ -155,6 +155,8 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
      (! (cm->config_opts & CM_CONFIG_LOCAL)))    ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, cp9 is to be configured locally, but CM is not");
   if((  cm->config_opts & CM_CONFIG_HMMEL) && 
      (! (cm->config_opts & CM_CONFIG_HMMLOCAL))) ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, cp9 is to be configured without local entries exists but with ELs on");
+  if((cm->config_opts & CM_CONFIG_TRUNC) && (cm->config_opts & CM_CONFIG_SUB)) ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, incompatible configuration options: CM_CONFIG_TRUNC and CM_CONFIG_SUB");
+  if((cm->config_opts & CM_CONFIG_LOCAL) && (cm->config_opts & CM_CONFIG_SUB)) ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, incompatible configuration options: CM_CONFIG_LOCAL and CM_CONFIG_SUB");
 
   /* validate the CM */
   if((status = cm_Validate(cm, 0.0001, errbuf)) != eslOK) return status;
@@ -226,7 +228,6 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
   if(cm->config_opts & CM_CONFIG_TRSCANMX) { 
     if((status = cm_tr_scan_mx_Create(cm, errbuf, TRUE, TRUE, &(cm->trsmx))) != eslOK) return status;
   }
-
 
   /* Build the CP9 HMM and associated data. It's important
    * to do this before setting up CM for local mode.
@@ -303,6 +304,15 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
 	}	 
       } 
     }
+  }
+
+  /* Possibly configure cm->cp9 for submodel alignment (contract
+     enforced that if CM_CONFIG_SUB, CM_CONFIG_LOCAL and
+     CM_CONFIG_TRUNC must both be FALSE) */
+  if(cm->config_opts & CM_CONFIG_SUB) { 
+    swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
+    swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
+    cp9_sw_config(cm->cp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE: let I_0, D_1, I_M be reachable */
   }
 
   /* We need to ensure that cm->el_selfsc * W >= IMPOSSIBLE

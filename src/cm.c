@@ -1589,6 +1589,34 @@ MarginalMode(char mode)
   return "";
 }
 
+/* Function:  ModeEmitsLeft()
+ * Date:      EPN, Thu Jan  5 09:31:18 2012
+ *
+ * Purpose:   Returns TRUE if mode emits left, i.e.
+ *            mode is TRMODE_J or TRMODE_L.
+ *
+ */
+int
+ModeEmitsLeft(char mode) 
+{
+  if(mode == TRMODE_J || mode == TRMODE_L) return TRUE;
+  return FALSE;
+}
+
+/* Function:  ModeEmitsRight()
+ * Date:      EPN, Thu Jan  5 09:32:31 2012
+ *
+ * Purpose:   Returns TRUE if mode emits right, i.e.
+ *            mode is TRMODE_J or TRMODE_R.
+ *
+ */
+int
+ModeEmitsRight(char mode) 
+{
+  if(mode == TRMODE_J || mode == TRMODE_R) return TRUE;
+  return FALSE;
+}
+
 /* Function: StateMapsLeft()
  * 
  * Purpose:  Returns TRUE if cm unique states type <stid> is
@@ -2864,7 +2892,6 @@ cm_nonconfigured_Verify(CM_t *cm, char *errbuf)
   if(cm->flags & CMH_LOCAL_END)           ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CMH_LOCAL_END flag is up (should be down in a non-configured CM)");
   if(cm->flags & CMH_CP9)                 ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CMH_CP9 flag is up (should be down in a non-configured CM)");
   if(cm->flags & CMH_CP9_TRUNC)           ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CMH_CP9_TRUNC flag is up (should be down in a non-configured CM)");
-  if(cm->flags & CM_IS_SUB)               ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CM_IS_SUB flag is up (should be down in a non-configured CM)");
   if(cm->flags & CM_EMIT_NO_LOCAL_BEGINS) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CM_EMIT_NO_LOCAL_BEGINS flag is up (should be down in a non-configured CM)");
   if(cm->flags & CM_EMIT_NO_LOCAL_ENDS)   ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CM_EMIT_NO_LOCAL_ENDS flag is up (should be down in a non-configured CM)");
   if(cm->flags & CMH_MLP7)                ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CMH_MLP7 flag is up (should be down in a non-configured CM)");

@@ -55,7 +55,7 @@ main(int argc, char **argv)
   FILE *regressfp;              /* open filehandle for writing regressions  */
 
   ESL_GETOPTS *go;
-  char         errbuf[cmERRBUFSIZE];
+  char         errbuf[eslERRBUFSIZE];
 
   /*********************************************** 
    * Parse command line
