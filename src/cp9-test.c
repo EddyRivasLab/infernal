@@ -63,7 +63,7 @@ main(int argc, char **argv)
   ESL_STOPWATCH     *w    = NULL; /* for timings */
   ESL_RANDOMNESS    *r    = NULL; /* source of randomness */
   ESL_ALPHABET      *abc  = NULL; /* alphabet, for the CM */
-  char               errbuf[cmERRBUFSIZE]; /* for error messages */
+  char               errbuf[eslERRBUFSIZE]; /* for error messages */
 
   /*********************************************** 
    * Parse command line

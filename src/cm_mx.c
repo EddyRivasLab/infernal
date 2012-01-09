@@ -5721,8 +5721,8 @@ cm_scan_mx_Create(CM_t *cm, char *errbuf, int do_float, int do_int, CM_SCAN_MX *
  ERROR:
   cm_scan_mx_Destroy(cm, smx);
   *ret_smx = NULL;
-  ESL_FAIL(status, errbuf, "out of memory (creating scan matrix)");
-  return status; /* not reached */
+  if(status == eslEMEM) ESL_FAIL(status, errbuf, "out of memory (creating scan matrix)");
+  return status; 
 }
 
 /* Function: cm_scan_mx_floatize()
@@ -6287,9 +6287,10 @@ cm_tr_scan_mx_Create(CM_t *cm, char *errbuf, int do_float, int do_int, CM_TR_SCA
   trsmx->dnAAA[SMX_QDB2_LOOSE][0] = trsmx->dxAAA[SMX_QDB2_LOOSE][0] = NULL; /* corresponds to j == 0, which is out of bounds */
   for(j = 1; j <= trsmx->W; j++) {
     for(v = 0; v < cm->M; v++) {
-      trsmx->dnAAA[SMX_NOQDB][j][v]      = (cm->sttype[v] == MP_st) ? 2 : 1;
-      trsmx->dnAAA[SMX_QDB1_TIGHT][j][v] = (cm->sttype[v] == MP_st) ? ESL_MAX(trsmx->qdbinfo->dmin1[v], 2) : ESL_MAX(trsmx->qdbinfo->dmin1[v], 1); 
-      trsmx->dnAAA[SMX_QDB2_LOOSE][j][v] = (cm->sttype[v] == MP_st) ? ESL_MAX(trsmx->qdbinfo->dmin2[v], 2) : ESL_MAX(trsmx->qdbinfo->dmin2[v], 1); 
+      /* dnAAA[j][v] is 1 for all states, even MATP, b/c d == 1 is valid for MATP in L,R matrices */
+      trsmx->dnAAA[SMX_NOQDB][j][v]      = 1;
+      trsmx->dnAAA[SMX_QDB1_TIGHT][j][v] = 1;
+      trsmx->dnAAA[SMX_QDB2_LOOSE][j][v] = 1;
 
       trsmx->dxAAA[SMX_NOQDB][j][v]      = ESL_MIN(j, trsmx->W); 
       trsmx->dxAAA[SMX_QDB1_TIGHT][j][v] = ESL_MIN(j, ESL_MIN(trsmx->qdbinfo->dmax1[v], trsmx->W));
@@ -6402,8 +6403,8 @@ cm_tr_scan_mx_Create(CM_t *cm, char *errbuf, int do_float, int do_int, CM_TR_SCA
  ERROR:
   cm_tr_scan_mx_Destroy(cm, trsmx);
   *ret_trsmx = NULL;
-  ESL_FAIL(status, errbuf, "out of memory (creating tr scan matrix)");
-  return status; /* not reached */
+  if(status == eslEMEM) ESL_FAIL(status, errbuf, "out of memory (creating tr scan matrix)");
+  return status; 
 }
 
 /* Function: cm_tr_scan_mx_floatize()
@@ -6457,8 +6458,8 @@ cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
   ESL_ALLOC(trsmx->fTalpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B and v != ROOT_S, fTalpha[0][v] will be NULL */
   ESL_ALLOC(trsmx->fTalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B and v != ROOT_S, fTalpha[1][v] will be NULL */
   ESL_ALLOC(trsmx->fTalpha_mem,    sizeof(float) * 2 * n_non_begl * (trsmx->W+1));
-  trsmx->ncells_alpha = 2 * n_non_begl * (trsmx->W+1);
 
+  trsmx->ncells_alpha = 2 * n_non_begl * (trsmx->W+1);
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
     if (cm->stid[v] != BEGL_S) {
@@ -6483,7 +6484,6 @@ cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
   if(cur_cell != trsmx->ncells_alpha) { status = eslEINVAL; goto ERROR; }
 
   trsmx->ncells_Talpha = 2 * (n_bif+1) * (trsmx->W+1);
-
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
     if (cm->stid[v] == BIF_B || cm->stid[v] == ROOT_S) { 
@@ -6497,7 +6497,7 @@ cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
       trsmx->fTalpha[1][v] = NULL;
     }
   }
-  if(cur_cell != trsmx->ncells_alpha) ESL_FAIL(eslEINVAL, errbuf, "problem laying out float truncated scan matrix");
+  if(cur_cell != trsmx->ncells_Talpha) ESL_FAIL(eslEINVAL, errbuf, "problem laying out float truncated scan matrix");
   
   /* allocate falpha_begl */
   /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
@@ -6512,8 +6512,8 @@ cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
   ESL_ALLOC(trsmx->fJalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
   ESL_ALLOC(trsmx->fLalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
   ESL_ALLOC(trsmx->fRalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  trsmx->ncells_alpha_begl = (trsmx->W+1) * n_begl * (trsmx->W+1);
 
+  trsmx->ncells_alpha_begl = (trsmx->W+1) * n_begl * (trsmx->W+1);
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
     for (j = 0; j <= trsmx->W; j++) { 
@@ -6599,7 +6599,6 @@ cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
   ESL_ALLOC(trsmx->iTalpha_mem,    sizeof(int) * 2 * n_non_begl * (trsmx->W+1));
 
   trsmx->ncells_alpha = 2 * n_non_begl * (trsmx->W+1);
-
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
     if (cm->stid[v] != BEGL_S) {
@@ -6624,7 +6623,6 @@ cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
   if(cur_cell != trsmx->ncells_alpha) ESL_FAIL(eslEINVAL, errbuf, "problem laying out truncated int scan matrix");
 
   trsmx->ncells_Talpha = 2 * (n_bif+1) * (trsmx->W+1);
-
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
     if (cm->stid[v] == BIF_B || cm->stid[v] == ROOT_S) { 
@@ -6638,7 +6636,7 @@ cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
       trsmx->iTalpha[1][v] = NULL;
     }
   }
-  if(cur_cell != trsmx->ncells_alpha_begl) ESL_FAIL(eslEINVAL, errbuf, "problem laying out int truncated scan matrix");
+  if(cur_cell != trsmx->ncells_Talpha) ESL_FAIL(eslEINVAL, errbuf, "problem laying out int truncated scan matrix");
 
   /* allocate falpha_begl */
   /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
@@ -6655,7 +6653,6 @@ cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
   ESL_ALLOC(trsmx->iRalpha_begl_mem,   sizeof(int) * (trsmx->W+1) * n_begl * (trsmx->W+1));
 
   trsmx->ncells_alpha_begl = (trsmx->W+1) * n_begl * (trsmx->W+1);
-
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
     for (j = 0; j <= trsmx->W; j++) { 

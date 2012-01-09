@@ -59,28 +59,15 @@
 #define DEBUGMPI    0
 
 typedef struct {
-  ESL_SQ           *sqp;        /* ptr to sequence object */
-  int64_t           idx;        /* index, for ordering sequences properly */
-  float             sc;         /* alignment score for this sequence (CYK or Inside) */
-  float             pp;         /* average posterior probability for this sequence */
-  Parsetree_t      *tr;         /* Parsetree for this sequence */
-  char             *ppstr;      /* posterior probability string for this sequence */
-  int               cm_from;    /* first consensus pos of the CM used in tr */
-  int               cm_to;      /* final consensus pos of the CM used in tr */
-  float             secs_bands; /* seconds elapsed during band calculation */
-  float             secs_aln;   /* seconds elapsed during alignment calculation */
-  float             secs_sub;   /* seconds elapsed during sub-mode specific calculations */
-} OUTPUT_DATA;
-
-typedef struct {
 #ifdef HMMER_THREADS
   ESL_WORK_QUEUE   *queue;
 #endif /*HMMER_THREADS*/
   CM_t             *cm;     /* a covariance model */
-  OUTPUT_DATA     **dataA;  /* array of OUTPUT_DATA objects with ptrs to sqs, parsetrees, scores */
+  CM_ALNDATA      **dataA;  /* array of CM_ALNDATA objects with ptrs to sqs, parsetrees, scores */
   int               n;      /* size of outdataA   */
   float             mxsize; /* max size in Mb of allowable DP mx */
-  ESL_STOPWATCH    *w;      /* stopwatch for timing alignments */
+  ESL_STOPWATCH    *w;      /* stopwatch for timing stages (band calc, alignment) */
+  ESL_STOPWATCH    *w_tot;  /* stopwatch for timing total time for processing 1 seq */
 } WORKER_INFO;
 
 #define ALGOPTS      "--cyk,--optacc,--sample"         /* Exclusive choice for algorithm */
@@ -112,30 +99,30 @@ static ESL_OPTIONS options[] = {
   { "--sample",     eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,     ALGOPTS, "sample alignment of each seq from posterior distribution", 2 },
   ///  { "--viterbi", eslARG_NONE,   FALSE, NULL, NULL,"--optacc","--no-prob",   ALGOPTS, "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
   { "--sub",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,"-g,--notrunc",      NULL, "build sub CM for columns b/t HMM predicted start/end points", 2 },
-  ///  { "--small",   eslARG_NONE,   FALSE, NULL, NULL,     NULL,"--cyk,--no-prob", "--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
-  { "--notrunc",    eslARG_NONE,    FALSE,  NULL,     NULL,       NULL,        NULL,        NULL, "do not use truncated alignment algorithm", 2 },
-  { "--nonbanded",  eslARG_NONE,    FALSE,  NULL,     NULL,       NULL,        NULL,        NULL, "do not use bands to accelerate aln algorithm", 2 },
+  { "--small",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,"--cyk,--noprob,--nonbanded",NULL, "use small memory divide and conquer (d&c) algorithm", 2 },
+  { "--notrunc",    eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not use truncated alignment algorithm", 2 },
+  { "--nonbanded",  eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not use bands to accelerate aln algorithm", 2 },
   { "--tau",        eslARG_REAL,   "1E-7",  NULL,"1E-18<x<1",     NULL,        NULL,"--nonbanded","set tail loss prob for HMM bands to <x>", 2 },
   { "--mxsize",     eslARG_REAL,  "256.0",  NULL,   "x>0.",       NULL,        NULL,   "--small", "set maximum allowable DP matrix size to <x> Mb", 2 },
   { "--seed",        eslARG_INT,    "181",  NULL,   "n>=0",       NULL,  "--sample",        NULL, "w/--sample, set RNG seed to <n> (if 0: one-time arbitrary seed)", 2 },
   /* options for including a preset alignment */
-  { "--mapali",   eslARG_INFILE,     NULL,  NULL,     NULL,       NULL,      NULL,          NULL, "include alignment in file <f> (same ali that CM came from)",       2 },
-  { "--mapstr",     eslARG_NONE,     NULL,  NULL,     NULL,       NULL, "--mapali",         NULL, "include structure (w/pknots) from <f> from --mapali <f>", 4 },
+  { "--mapali",   eslARG_INFILE,     NULL,  NULL,      NULL,      NULL,      NULL,          NULL, "include alignment in file <f> (same ali that CM came from)",       2 },
+  { "--mapstr",     eslARG_NONE,     NULL,  NULL,      NULL,      NULL, "--mapali",         NULL, "include structure (w/pknots) from <f> from --mapali <f>", 4 },
   /* options that modify how the output alignment is created */
-  { "--dna",        eslARG_NONE,    FALSE,  NULL,     NULL,       NULL,        NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 3 },
+  { "--dna",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 3 },
   { "--oneline",    eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "output in non-interleaved (1 line/seq) format ", 3 },
-  { "--noannot",    eslARG_NONE,    FALSE,  NULL,     NULL,       NULL,        NULL,        NULL, "do not add cmalign execution annotation to the alignment", 3 },
-  { "--noprob",     eslARG_NONE,    FALSE,  NULL,     NULL,       NULL,        NULL,        NULL, "do not include posterior probabilities in the alignment", 3 },
-  { "--matchonly",  eslARG_NONE,    FALSE,  NULL,     NULL,       NULL,        NULL,        NULL, "include only match columns in output alignment", 3 },
+  { "--noannot",    eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not add cmalign execution annotation to the alignment", 3 },
+  { "--noprob",     eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not include posterior probabilities in the alignment", 3 },
+  { "--matchonly",  eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "include only match columns in output alignment", 3 },
   /* options controlling optional output */
-  { "--tfile",   eslARG_OUTFILE,     NULL,  NULL,     NULL,       NULL,        NULL,        NULL, "dump individual sequence parsetrees to file <f>", 4 },
-  { "--ifile",   eslARG_OUTFILE,     NULL,  NULL,     NULL,       NULL,        NULL,        NULL, "dump information on per-sequence inserts to file <f>", 4 },
-  { "--elfile",  eslARG_OUTFILE,     NULL,  NULL,     NULL,       NULL,        NULL,        NULL, "dump information on per-sequence EL inserts to file <f>", 4 },
-  { "--sfile",   eslARG_OUTFILE,     NULL,  NULL,     NULL,       NULL,        NULL,        NULL, "dump alignment score information to file <f>", 4 },
+  { "--tfile",   eslARG_OUTFILE,     NULL,  NULL,      NULL,      NULL,        NULL,        NULL, "dump individual sequence parsetrees to file <f>", 4 },
+  { "--ifile",   eslARG_OUTFILE,     NULL,  NULL,      NULL,      NULL,        NULL,        NULL, "dump information on per-sequence inserts to file <f>", 4 },
+  { "--elfile",  eslARG_OUTFILE,     NULL,  NULL,      NULL,      NULL,        NULL,        NULL, "dump information on per-sequence EL inserts to file <f>", 4 },
+  { "--sfile",   eslARG_OUTFILE,     NULL,  NULL,      NULL,      NULL,        NULL,        NULL, "dump alignment score information to file <f>", 4 },
   /* developer options the average user doesn't need to know about (only shown if --devhelp) */
-  { "--regress", eslARG_OUTFILE,     NULL,  NULL,     NULL,       NULL,        "-i",  "--mapali", "save regression test data to file <f>", 101}, 
+  { "--regress", eslARG_OUTFILE,     NULL,  NULL,      NULL,      NULL,        "-i",  "--mapali", "save regression test data to file <f>", 101}, 
 #ifdef HAVE_MPI
-  { "--stall",      eslARG_NONE,    FALSE,  NULL,     NULL,       NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 101 },  
+  { "--stall",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 101 },  
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -174,17 +161,12 @@ static int  serial_loop  (WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK **sq_blo
 static int  init_master_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  init_shared_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int  process_align_workunit    (CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, OUTPUT_DATA ***ret_dataA);
-static int  process_align_workunit_sub(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, OUTPUT_DATA ***ret_dataA);
-static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile);
-static int  output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FILE *ofp, OUTPUT_DATA **dataA, int ndata, char *map_sscons);
+static int  output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FILE *ofp, CM_ALNDATA **dataA, int ndata, char *map_sscons);
 static void output_info_file_header(FILE *fp, char *firstline, char *elstring);
-static int  output_scores(FILE *ofp, CM_t *cm, char *errbuf, OUTPUT_DATA **dataA, int ndata, int first_idx);
+static int  output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, int first_idx);
+static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t *cm);
 static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_sqfile);
-static int  map_alignment(const char *msafile, CM_t *cm, char *errbuf, OUTPUT_DATA ***ret_dataA, int *ret_ndata, char **ret_ss);
-static OUTPUT_DATA *create_output_data();
-static void free_output_data(OUTPUT_DATA *data, int free_tr, int free_sqp);
-static void free_output_data_array(OUTPUT_DATA **dataA, int ndata, int free_tr, int free_sqp);
+static int  map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dataA, int *ret_ndata, char **ret_ss);
 
 /* Functions that enable memory efficiency by storing only a fraction
  * of the seqs/parsetrees from target file in memory at once.
@@ -246,13 +228,22 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   exit(1);  
 }
 
+/* output_header(): 
+ *
+ * Differently from other Infernal applications, which output header to
+ * stdout, we output the header to stdout only if the user has
+ * specified a non-stdout output file for the alignment. Otherwise,
+ * the alignment will be printed to stdout, without a header because
+ * we want it to be a valid Stockholm format alignment.
+ */
+
 static int
-output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile)
+output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t *cm)
 {
   cm_banner(ofp, go->argv[0], banner);
-  
                                                fprintf(ofp, "# CM file:                                     %s\n", cmfile);
 					       fprintf(ofp, "# sequence file:                               %s\n", sqfile);
+                                               fprintf(ofp, "# CM name:                                     %s\n", cm->name);
 #ifdef HMMER_THREADS
   if (esl_opt_IsUsed(go, "--cpu"))       {     fprintf(ofp, "# number of worker threads:                    %d\n", esl_opt_GetInteger(go, "--cpu")); }
 #endif
@@ -260,6 +251,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile)
   if (esl_opt_IsUsed(go, "--mpi"))       {     fprintf(ofp, "# MPI:                                         on\n"); }
 #endif
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n");
+
   return eslOK;
 }
 
@@ -270,9 +262,6 @@ main(int argc, char **argv)
 
   ESL_GETOPTS     *go  = NULL;    /* command line processing                 */
   struct cfg_s     cfg;           /* configuration data                      */
-  ESL_STOPWATCH   *w  = esl_stopwatch_Create();
-  if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
-  esl_stopwatch_Start(w);
   
   /* Set processor specific flags */
   impl_Init();
@@ -353,7 +342,6 @@ main(int argc, char **argv)
   if(cfg.cmfp  != NULL) cm_file_Close(cfg.cmfp);
   if(cfg.sqfp  != NULL) esl_sqfile_Close(cfg.sqfp);
 
-  esl_stopwatch_Stop(w);
   esl_getopts_Destroy(go);
 
   return status;
@@ -451,7 +439,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int      use_tmpfile;              /* print out current alignment to tmpfile? */
   int      created_tmpfile = FALSE;  /* TRUE if we've created a tmp file for current CM */
   char tmpfile[32] = "esltmpXXXXXX"; /* name of the tmpfile */
-  OUTPUT_DATA **merged_dataA = NULL; /* array of all OUTPUT_DATA pointers for current alignment */
+  CM_ALNDATA **merged_dataA = NULL; /* array of all CM_ALNDATA pointers for current alignment */
 
   /* variables related to reading sequence blocks */
   int            sstatus = eslOK;  /* status from esl_sq_ReadBlock() */
@@ -472,9 +460,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* variables related to --mapali */
   char         *map_file   = NULL; /* name of alignment file from --mapali */
-  OUTPUT_DATA **map_dataA  = NULL; /* array of OUTPUT_DATA pointers for mapali alignment */
-  int           nmap_data  = 0;    /* number of OUTPUT_DATA ptrs in map_dataA */
-  int           nmap_cur   = 0;    /* number of OUTPUT_DATA ptrs to include in current iteration, 0 unless nali==0 */
+  CM_ALNDATA **map_dataA  = NULL; /* array of CM_ALNDATA pointers for mapali alignment */
+  int           nmap_data  = 0;    /* number of CM_ALNDATA ptrs in map_dataA */
+  int           nmap_cur   = 0;    /* number of CM_ALNDATA ptrs to include in current iteration, 0 unless nali==0 */
   char         *map_sscons = NULL; /* SS_cons from mapali, only used if --mapstr */
 
   /* variables related to threaded implementation */
@@ -559,6 +547,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     info[k].n      = 0;
     info[k].mxsize = esl_opt_GetReal(go, "--mxsize");
     info[k].w      = esl_stopwatch_Create();
+    info[k].w_tot   = esl_stopwatch_Create();
 #ifdef HMMER_THREADS
     info[k].queue  = queue;
 #endif
@@ -573,7 +562,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* initialization */
   nali = nseq_cur = nseq_tot = 0;
-  ///output_header(stdout, go, cfg->cmfile, cfg->sqfile);
   if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
   for (k = 0; k < infocnt; ++k) {
     if((status = cm_Clone(cm, errbuf, &(info[k].cm))) != eslOK) cm_Fail(errbuf);
@@ -696,24 +684,21 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 #endif
     if(status != eslOK) cm_Fail(errbuf);
 
-    /* create a single array of all OUTPUT_DATA objects, in original (input) order */
+    /* create a single array of all CM_ALNDATA objects, in original (input) order */
     nmap_cur = (nali == 0) ? nmap_data : 0;
-    ESL_ALLOC(merged_dataA, sizeof(OUTPUT_DATA *) * (nseq_cur + nmap_cur));
+    ESL_ALLOC(merged_dataA, sizeof(CM_ALNDATA *) * (nseq_cur + nmap_cur));
     /* prepend mapali data if nec */
     if(nmap_cur > 0) {
       for(j = 0; j < nmap_cur; j++) merged_dataA[j] = map_dataA[j];
-      free(map_dataA); /* don't free the OUTPUT_DATA objects, merged_dataA is pointing at them */
+      free(map_dataA); /* don't free the CM_ALNDATA objects, merged_dataA is pointing at them */
       map_dataA = NULL;
     }
     for(k = 0; k < infocnt; ++k) { 
       for(j = 0; j < info[k].n; j++) merged_dataA[info[k].dataA[j]->idx + nmap_cur] = info[k].dataA[j];
-      free(info[k].dataA); /* don't free the OUTPUT_DATA objects, merged_dataA is pointing at them */
+      free(info[k].dataA); /* don't free the CM_ALNDATA objects, merged_dataA is pointing at them */
       info[k].dataA = NULL;
       info[k].n     = 0;
     }
-
-    /* optionally output to scores file (do this before creating the alignment, which frees parsetrees as it creates the aln */
-    if(cfg->sfp != NULL) if((status = output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_tot, nmap_cur)) != eslOK) cm_Fail(errbuf);
 
     /* output alignment (if do_ileaved we died above if we didn't reach EOF yet) */
     use_tmpfile = reached_eof ? FALSE : TRUE;
@@ -728,6 +713,17 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = output_alignment(go, cfg, errbuf, cm, cfg->rfp,                              merged_dataA, nseq_cur + nmap_cur, map_sscons)) != eslOK) cm_Fail(errbuf);
     }    
     nali++;
+
+    /* output scores to stdout, if -o used */
+    if(cfg->ofp != stdout) { 
+      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
+      if((status =  output_scores(stdout,   cm, errbuf, merged_dataA, nseq_tot, nmap_cur)) != eslOK) cm_Fail(errbuf);
+    }
+    /* output scores to scores file, if --sfp used */
+    if(cfg->sfp != NULL) { 
+      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
+      if((status = output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_tot, nmap_cur)) != eslOK) cm_Fail(errbuf);
+    }
 
     /* free big block and worker data */
     esl_sq_DestroyBlock(big_sq_block);
@@ -780,24 +776,24 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK **sq_blockA, int nbloc
   int status;
   int i, j;                    /* counter over blocks, parsetrees */
   int cur_n = 0;               /* current number of parsetrees valid in info->trA */
-  OUTPUT_DATA **bdataA = NULL; /* array of OUTPUT_DATA for current block */
+  CM_ALNDATA **bdataA = NULL; /* array of CM_ALNDATA for current block */
 
   /* allocate dataA */
   info->n = 0;
   for(i = 0; i < nblocks; i++) { 
     if(sq_blockA[i] != NULL) info->n += sq_blockA[i]->count; 
   }
-  ESL_ALLOC(info->dataA, sizeof(OUTPUT_DATA *) * info->n);
+  ESL_ALLOC(info->dataA, sizeof(CM_ALNDATA *) * info->n);
   for(j = 0; j < info->n; j++) info->dataA[j] = NULL;
 
   for(i = 0; i < nblocks; i++) { 
     if(sq_blockA[i] != NULL && sq_blockA[i]->count > 0) { 
 
-      if((status = process_align_workunit(info->cm, errbuf, sq_blockA[i], info->mxsize, info->w, &bdataA)) != eslOK) cm_Fail(errbuf);
+      if((status = ProcessAlignmentWorkunit(info->cm, errbuf, sq_blockA[i], info->mxsize, info->w, info->w_tot, &bdataA)) != eslOK) cm_Fail(errbuf);
       /* point info->dataA at newly collected data, including parsetrees */
       for(j = 0; j < sq_blockA[i]->count; j++) info->dataA[cur_n + j] = bdataA[j];
       cur_n += sq_blockA[i]->count;
-      free(bdataA);  /* don't free OUTPUT_DATA objects, info->dataA is pointing at them */
+      free(bdataA);  /* don't free CM_ALNDATA objects, info->dataA is pointing at them */
       bdataA = NULL;
     }
   }
@@ -893,7 +889,7 @@ pipeline_thread(void *arg)
 {
   int           status;
   int           j;             /* counter over parsetrees */
-  OUTPUT_DATA **bdataA = NULL; /* OUTPUT_DATA array for the current block */
+  CM_ALNDATA **bdataA = NULL; /* CM_ALNDATA array for the current block */
   int           workeridx;
   WORKER_INFO  *info;
   ESL_THREADS  *obj;
@@ -933,12 +929,12 @@ pipeline_thread(void *arg)
   /* loop until all sequences have been processed */
   sq_block = (ESL_SQ_BLOCK *) new_sq_block;
   while (sq_block->count > 0) { 
-    if((status = process_align_workunit(info->cm, errbuf, sq_block, info->mxsize, info->w, &bdataA)) != eslOK) cm_Fail(errbuf);
+    if((status = ProcessAlignmentWorkunit(info->cm, errbuf, sq_block, info->mxsize, info->w, info->w_tot, &bdataA)) != eslOK) cm_Fail(errbuf);
     /* point info->dataA at newly collected data, including parsetrees */
-    ESL_REALLOC(info->dataA, sizeof(OUTPUT_DATA *) * (info->n + sq_block->count));
+    ESL_REALLOC(info->dataA, sizeof(CM_ALNDATA *) * (info->n + sq_block->count));
     for(j = 0; j < sq_block->count; j++) info->dataA[info->n + j] = bdataA[j];
     info->n += sq_block->count;
-    free(bdataA);  /* don't free actual OUTPUT_DATA objects, info->trA is pointing at them */
+    free(bdataA);  /* don't free actual CM_ALNDATA objects, info->trA is pointing at them */
     bdataA = NULL;
 
     status = esl_workqueue_WorkerUpdate(info->queue, sq_block, &new_sq_block);
@@ -986,7 +982,9 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(  esl_opt_GetBoolean(go, "--cyk"))       cm->align_opts |= CM_ALIGN_CYK;
   if(! esl_opt_GetBoolean(go, "--noprob"))    cm->align_opts |= CM_ALIGN_POST;
   if(  esl_opt_GetBoolean(go, "--sample"))    cm->align_opts |= CM_ALIGN_SAMPLE;
+  if(! esl_opt_GetBoolean(go, "--notrunc"))   cm->align_opts |= CM_ALIGN_TRUNC;
   if(  esl_opt_GetBoolean(go, "--sub"))       cm->align_opts |= CM_ALIGN_SUB;   /* --sub requires --notrunc and -g */
+  if(  esl_opt_GetBoolean(go, "--small"))     cm->align_opts |= CM_ALIGN_SMALL; /* --small requires --noprob --nonbanded --cyk */
 
   /* set up configuration options in cm->config_opts */
   if(! esl_opt_GetBoolean(go, "--notrunc"))   cm->config_opts |= CM_CONFIG_TRUNC;
@@ -1003,361 +1001,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   return eslOK;
 }
 
-/* Function: process_align_workunit()
- * Date:     EPN, Fri Dec 30 14:59:43 2011
- *
- * Purpose:  Given a CM and a block of sequences, align the sequences 
- *           using the appropriate alignment function and return 
- *           relevant data for eventual output in <ret_dataA>.
- *
- * Args:     cm              - the covariance model
- *           errbuf          - char buffer for reporting errors
- *           sq_block        - block of sequences to align
- *           mxsize          - max size in Mb of allowable DP mx
- *           ret_dataA       - array of OUTPUT_DATA objects to return
- *
- * Returns:  eslOK on success;
- *           eslEMEM if we run out of memory;
- *           eslEINVAL on other error, errbuf is filled;
- *           <ret_dataA> is alloc'ed and filled with sq_block->count OUTPUT_DATA objects.
- */
-int
-process_align_workunit(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, OUTPUT_DATA ***ret_dataA)
-{
-  /* immediately call sub-mode alignment function if nec */
-  if(cm->config_opts & CM_CONFIG_SUB) return process_align_workunit_sub(cm, errbuf, sq_block, mxsize, w, ret_dataA);
-
-  int           status;          /* easel status */
-  int           j;               /* counter over parsetrees */
-  OUTPUT_DATA **dataA = NULL;    /* OUTPUT_DATA array we'll create */
-  ESL_SQ       *sqp;             /* ptr to a ESL_SQ */
-  float         sc, pp;          /* score, average PP, from alignment function */
-  Parsetree_t  *tr = NULL;       /* ptr to a parsetree */
-  char         *ppstr = NULL;    /* ptr to a PP string */
-  TruncOpts_t  *tro = NULL;      /* truncated alignment info, remains NULL if --notrunc */
-  float         secs_bands = 0.; /* seconds elapsed for band calculation */
-  float         secs_aln;        /* seconds elapsed for alignment calculation */
-  int   cfrom_emit, cto_emit;    /* CM boundaries of aligned sequence */
-  int   cfrom_span, cto_span;    /* CM boundaries of parsetree */
-
-  /* alignment options */
-  int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE : FALSE;
-  int do_optacc    = (cm->align_opts & CM_ALIGN_OPTACC)    ? TRUE : FALSE;
-  int do_post      = (cm->align_opts & CM_ALIGN_POST)      ? TRUE : FALSE;
-  int do_sample    = (cm->align_opts & CM_ALIGN_SAMPLE)    ? TRUE : FALSE;
-  int do_trunc     = (cm->config_opts & CM_CONFIG_TRUNC)   ? TRUE : FALSE;
-  int doing_search = FALSE;
-
-  /* non-banded truncated matrices, used only if --nonbanded */
-  CM_TR_MX        *trmx   = NULL;
-  CM_TR_SHADOW_MX *trshmx = NULL;
-  CM_TR_MX        *tromx  = NULL;
-  CM_TR_EMIT_MX   *tremx  = NULL;
-
-  /* non-banded matrices, used only if --nonbanded & --notrunc */
-  CM_MX        *mx   = NULL;
-  CM_SHADOW_MX *shmx = NULL;
-  CM_MX        *omx  = NULL;
-  CM_EMIT_MX   *emx  = NULL;
-
-  if(sq_block->count <= 0) ESL_FAIL(eslEINVAL, errbuf, "process_align_workunit() received empty block");
-
-  if(do_trunc) { 
-    tro = CreateTruncOpts();
-    tro->allowL = tro->allowR = TRUE;
-  }
-  if(do_nonbanded) { 
-    if(do_trunc) { 
-      if((trmx   = cm_tr_mx_Create(cm))        == NULL) goto ERROR;
-      if((tromx  = cm_tr_mx_Create(cm))        == NULL) goto ERROR;
-      if((trshmx = cm_tr_shadow_mx_Create(cm)) == NULL) goto ERROR;
-      if((tremx  = cm_tr_emit_mx_Create(cm))   == NULL) goto ERROR;
-    }
-    else { 
-      if((mx     = cm_mx_Create(cm))           == NULL) goto ERROR;
-      if((omx    = cm_mx_Create(cm))           == NULL) goto ERROR;
-      if((shmx   = cm_shadow_mx_Create(cm))    == NULL) goto ERROR;
-      if((emx    = cm_emit_mx_Create(cm))      == NULL) goto ERROR;
-    }
-  }
-
-  ESL_ALLOC(dataA, sizeof(OUTPUT_DATA *) * sq_block->count);
-  for(j = 0; j < sq_block->count; j++) dataA[j] = NULL;
-
-  /* main loop: for each sequence, create a parsetree */
-  for(j = 0; j < sq_block->count; j++) { 
-    sqp = sq_block->list + j;
-    esl_stopwatch_Start(w);
-    if(do_nonbanded) { /* do not use HMM bands */
-      if(do_trunc) { 
-	status = cm_TrAlign(cm, errbuf, sqp->dsq, sqp->L, mxsize, TRMODE_UNKNOWN, do_optacc, do_sample, 
-			    trmx, trshmx, tromx, tremx, NULL, &ppstr, &tr, NULL, &pp, &sc);
-      }
-      else {
-        status = cm_Align(cm, errbuf, sqp->dsq, sqp->L, mxsize, do_optacc, do_sample, 
-			  mx, shmx, omx, emx, NULL, &ppstr, &tr, &pp, &sc);
-      }
-      if(status != eslOK) return status;
-    }
-    else { /* use HMM bands */
-      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sqp->dsq, 
-				 1, sqp->L, cm->cp9b, doing_search, tro, 0)) != eslOK) return status;
-      esl_stopwatch_Stop(w);
-      secs_bands = w->elapsed;
-
-      esl_stopwatch_Start(w);
-      if(do_trunc) { 
-	status = cm_TrAlignHB(cm, errbuf, sqp->dsq, sqp->L, mxsize, TRMODE_UNKNOWN, do_optacc, do_sample, 
-			      cm->trhbmx, cm->trshhbmx, cm->trohbmx, cm->trehbmx, NULL, &ppstr, &tr, NULL, &pp, &sc);
-      }
-      else { 
-	status = cm_AlignHB(cm, errbuf, sqp->dsq, sqp->L, mxsize, do_optacc, do_sample, 
-			    cm->hbmx, cm->shhbmx, cm->ohbmx, cm->ehbmx, NULL, &ppstr, &tr, &pp, &sc);
-      }
-      if(status != eslOK) return status;
-    }
-    esl_stopwatch_Stop(w);
-    secs_aln = w->elapsed;
-
-    /* determine start and end points of the parsetree */
-    if((status = ParsetreeToCMBounds(cm, tr, errbuf, &cfrom_span, &cto_span, &cfrom_emit, &cto_emit)) != eslOK) return status;
-
-    /* create and fill dataA[j] */
-    ESL_ALLOC(dataA[j], sizeof(OUTPUT_DATA));
-    dataA[j]->sqp        = sqp;
-    dataA[j]->idx        = sq_block->first_seqidx + j;
-    dataA[j]->tr         = tr;
-    dataA[j]->sc         = sc;
-    dataA[j]->pp         = (do_post)      ? pp     : 0.;
-    dataA[j]->ppstr      = (do_post)      ? ppstr  : NULL;
-    dataA[j]->cm_from    = cfrom_emit;
-    dataA[j]->cm_to      = cto_emit;
-    dataA[j]->secs_bands = (do_nonbanded) ? 0.     : secs_bands;
-    dataA[j]->secs_aln   = secs_aln;
-    dataA[j]->secs_sub   = 0.;
-  }
-  *ret_dataA = dataA;
-
-  /* clean up */
-  if(mx     != NULL) cm_mx_Destroy(mx);
-  if(shmx   != NULL) cm_shadow_mx_Destroy(shmx);
-  if(omx    != NULL) cm_mx_Destroy(omx);
-  if(emx    != NULL) cm_emit_mx_Destroy(emx);
-  if(trmx   != NULL) cm_tr_mx_Destroy(trmx);
-  if(trshmx != NULL) cm_tr_shadow_mx_Destroy(trshmx);
-  if(tromx  != NULL) cm_tr_mx_Destroy(tromx);
-  if(tremx  != NULL) cm_tr_emit_mx_Destroy(tremx);
-
-  return eslOK;
-
- ERROR: 
-  if(mx    != NULL) cm_mx_Destroy(mx);
-  if(shmx  != NULL) cm_shadow_mx_Destroy(shmx);
-  if(omx   != NULL) cm_mx_Destroy(omx);
-  if(emx   != NULL) cm_emit_mx_Destroy(emx);
-  if(dataA != NULL) { 
-    for(j = 0; j < sq_block->count; j++) {
-      if(dataA[j] != NULL) { 
-	if(dataA[j]->tr    != NULL) FreeParsetree(dataA[j]->tr);
-	if(dataA[j]->ppstr != NULL) free(dataA[j]->ppstr);
-      }
-      free(dataA[j]);
-    }
-    free(dataA);
-  }
-
-  ESL_FAIL(status, errbuf, "process_align_workunit(), out of memory");
-  return status; /* NOT REACHED */
-}
-
-
-/* Function: process_align_workunit_sub()
- * Date:     EPN, Thu Jan  5 05:29:12 2012
- *
- * Purpose:  Given a CM and a block of sequences, align the sequences
- *           using the sub CM method and return relevant data for
- *           eventual output in <ret_dataA>. This is similar to
- *           process_align_workunit(), but with added steps required
- *           for sub alignment, and no code for possible truncated
- *           alignment (which is incompatible with sub mode).
- *
- * Args:     cm        - the covariance model
- *           errbuf    - char buffer for reporting errors
- *           sq_block  - block of sequences to align
- *           mxsize    - max size in Mb of allowable DP mx
- *           ret_dataA - array of OUTPUT_DATA objects to return
- *
- * Returns:  eslOK on success;
- *           eslEMEM if we run out of memory;
- *           eslEINVAL on other error, errbuf is filled;
- *           <ret_dataA> is alloc'ed and filled with sq_block->count OUTPUT_DATA objects.
- */
-int
-process_align_workunit_sub(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, OUTPUT_DATA ***ret_dataA)
-{
-  int           status;          /* easel status */
-  int           j;               /* counter over parsetrees */
-  OUTPUT_DATA **dataA = NULL;    /* OUTPUT_DATA array we'll create */
-  ESL_SQ       *sqp;             /* ptr to a ESL_SQ */
-  float         sc, pp;          /* score, average PP, from alignment function */
-  Parsetree_t  *tr = NULL;       /* ptr to a parsetree */
-  char         *ppstr = NULL;    /* ptr to a PP string */
-  float         secs_bands = 0.; /* seconds elapsed for band calculation */
-  float         secs_aln = 0.;   /* seconds elapsed for alignment calculation */
-  float         secs_sub = 0.;   /* seconds elapsed for extra calculations for sub mode */
-  int   cfrom_emit, cto_emit;    /* CM boundaries of aligned sequence */
-  int   cfrom_span, cto_span;    /* CM boundaries of parsetree */
-
-  /* sub-mode specific variables */
-  CM_t        *sub_cm  = NULL;    /* the sub CM */
-  CMSubMap_t  *submap  = NULL;    /* map from mother CM to sub CM, and vice versa */
-  Parsetree_t *sub_tr  = NULL;    /* map from mother CM to sub CM, and vice versa */
-  int          spos;              /* HMM node most likely to have emitted posn 1 of target seq */
-  int          spos_state;        /* HMM state type for curr spos 0=match or 1=insert */
-  int          epos;              /* HMM node most likely to have emitted posn L of target seq */
-  int          epos_state;        /* HMM state type for curr epos 0=match or 1=insert */
-
-  /* alignment options */
-  int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE : FALSE;
-  int do_optacc    = (cm->align_opts & CM_ALIGN_OPTACC)    ? TRUE : FALSE;
-  int do_post      = (cm->align_opts & CM_ALIGN_POST)      ? TRUE : FALSE;
-  int do_sample    = (cm->align_opts & CM_ALIGN_SAMPLE)    ? TRUE : FALSE;
-  int doing_search = FALSE;
-
-  /* non-banded matrices, used only if --nonbanded */
-  CM_MX        *mx   = NULL;
-  CM_SHADOW_MX *shmx = NULL;
-  CM_MX        *omx  = NULL;
-  CM_EMIT_MX   *emx  = NULL;
-
-  if(sq_block->count <= 0) ESL_FAIL(eslEINVAL, errbuf, "process_align_workunit_sub() received empty block");
-
-  ESL_ALLOC(dataA, sizeof(OUTPUT_DATA *) * sq_block->count);
-  for(j = 0; j < sq_block->count; j++) dataA[j] = NULL;
-
-  /* main loop: for each sequence, create a parsetree */
-  for(j = 0; j < sq_block->count; j++) { 
-    sqp = sq_block->list + j;
-    esl_stopwatch_Start(w);
-
-    /* sub-specific step 1. predict start and end positions (HMM nodes) from posterior matrix */
-    if((status = cp9_Seq2Posteriors(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sqp->dsq, 1, sqp->L, 0)) != eslOK) return status; 
-    CP9NodeForPosn(cm->cp9, 1, sqp->L,      1, cm->cp9_bmx, &spos, &spos_state, 0., TRUE,  0);
-    CP9NodeForPosn(cm->cp9, 1, sqp->L, sqp->L, cm->cp9_bmx, &epos, &epos_state, 0., FALSE, 0);
-    /* Deal with special cases for sub-CM alignment: If the most
-     * likely state to have emitted the first or last residue is the
-     * insert state in node 0, it only makes sense to start modelling
-     * at consensus column 1. */
-    if(spos == 0 && spos_state == 1) spos = 1;
-    if(epos == 0 && epos_state == 1) epos = 1;
-    /* If most-likely HMM node to emit final position comes BEFORE or
-     * EQUALS the most-likely HMM node to emit first position, our HMM
-     * alignment is crap, default to using the full CM. (note: If
-     * EQUALS we could be right, but we can't build a CM from a single
-     * consensus column (see notes in cm_modelmaker.c::cm_from_guide),
-     * and I would argue we don't really care about getting single
-     * residue alignments correct anyway. */
-    if(epos <= spos) { spos = 1; epos = cm->cp9->M; } 
-
-    /* sub-specific step 2. build the sub_cm from the original CM. */
-    if((status = build_sub_cm(cm, errbuf, &sub_cm, 
-			      spos, epos,                /* first and last col of structure kept in the sub_cm  */
-			      &submap,                   /* this maps from the sub_cm to cm and vice versa      */
-			      0)) != eslOK)              /* don't print debugging info */
-      return status;
-    /* sub-specific step 3. configure the sub_cm */
-    if((status = cm_ConfigureSub(sub_cm, errbuf, -1, cm, submap)) != eslOK) return status; /* FALSE says: don't calculate W, we won't need it */
-
-    /* sub-specific step 4. create non-banded matrices, given this sub
-     * CM (we could be a bit smarter about this and reuse at least the
-     * non-shadow matrices, but it's not worth implementing that for
-     * non-default nonbanded alignment
-     */
-    if(do_nonbanded) { /* create the non-banded matrices */
-      if((mx     = cm_mx_Create(sub_cm))        == NULL) goto ERROR;
-      if((omx    = cm_mx_Create(sub_cm))        == NULL) goto ERROR;
-      if((shmx   = cm_shadow_mx_Create(sub_cm)) == NULL) goto ERROR;
-      if((emx    = cm_emit_mx_Create(sub_cm))   == NULL) goto ERROR;
-    }
-    esl_stopwatch_Stop(w);
-    secs_sub = w->elapsed;
-
-    /* now we're ready to do alignment with the sub_cm */
-    esl_stopwatch_Stop(w);
-    if(do_nonbanded) { /* do not use HMM bands */
-      status = cm_Align(sub_cm, errbuf, sqp->dsq, sqp->L, mxsize, do_optacc, do_sample, 
-			mx, shmx, omx, emx, NULL, &ppstr, &sub_tr, &pp, &sc);
-      if(status != eslOK) return status;
-    }
-    else { /* use HMM bands */
-      if((status = cp9_Seq2Bands(sub_cm, errbuf, sub_cm->cp9_mx, sub_cm->cp9_bmx, sub_cm->cp9_bmx, sqp->dsq, 
-				 1, sqp->L, sub_cm->cp9b, doing_search, NULL, 0)) != eslOK) return status;
-      esl_stopwatch_Stop(w);
-      secs_bands = w->elapsed;
-
-      esl_stopwatch_Start(w);
-      status = cm_AlignHB(sub_cm, errbuf, sqp->dsq, sqp->L, mxsize, do_optacc, do_sample, 
-			  sub_cm->hbmx, sub_cm->shhbmx, sub_cm->ohbmx, sub_cm->ehbmx, NULL, &ppstr, &sub_tr, &pp, &sc);
-      if(status != eslOK) return status;
-    }
-    esl_stopwatch_Stop(w);
-    secs_aln = w->elapsed;
-
-    /* convert sub_cm parsetree to a full CM parsetree */
-    esl_stopwatch_Start(w);
-    if((status = sub_cm2cm_parsetree(cm, sub_cm, &tr, sub_tr, submap, 0)) != eslOK) ESL_FAIL(status, errbuf, "out of memory, converting sub parsetree to full parsetree");
-    esl_stopwatch_Stop(w);
-    secs_sub += w->elapsed;
-
-    /* determine start and end points of the parsetree */
-    if((status = ParsetreeToCMBounds(cm, tr, errbuf, &cfrom_span, &cto_span, &cfrom_emit, &cto_emit)) != eslOK) return status;
-
-    /* create and fill dataA[j] */
-    ESL_ALLOC(dataA[j], sizeof(OUTPUT_DATA));
-    dataA[j]->sqp        = sqp;
-    dataA[j]->idx        = sq_block->first_seqidx + j;
-    dataA[j]->tr         = tr;
-    dataA[j]->sc         = sc;
-    dataA[j]->pp         = (do_post)      ? pp     : 0.;
-    dataA[j]->ppstr      = (do_post)      ? ppstr  : NULL;
-    dataA[j]->cm_from    = cfrom_emit;
-    dataA[j]->cm_to      = cto_emit;
-    dataA[j]->secs_bands = (do_nonbanded) ? 0.     : secs_bands;
-    dataA[j]->secs_aln   = secs_aln;
-    dataA[j]->secs_sub   = secs_sub;
-
-    /* free sub* data structures */
-    FreeParsetree(sub_tr); sub_tr = NULL;
-    FreeSubMap(submap);    submap = NULL;
-    FreeCM(sub_cm);        sub_cm = NULL;
-  }
-  *ret_dataA = dataA;
-
-  /* clean up */
-  if(mx     != NULL) cm_mx_Destroy(mx);
-  if(shmx   != NULL) cm_shadow_mx_Destroy(shmx);
-  if(omx    != NULL) cm_mx_Destroy(omx);
-  if(emx    != NULL) cm_emit_mx_Destroy(emx);
-
-  return eslOK;
-
- ERROR: 
-  if(sub_tr != NULL) FreeParsetree(sub_tr);
-  if(submap != NULL) FreeSubMap(submap);
-  if(sub_cm != NULL) FreeCM(sub_cm);
-  if(mx     != NULL) cm_mx_Destroy(mx);
-  if(shmx   != NULL) cm_shadow_mx_Destroy(shmx);
-  if(omx    != NULL) cm_mx_Destroy(omx);
-  if(emx    != NULL) cm_emit_mx_Destroy(emx);
-  if(dataA  != NULL) free_output_data_array(dataA, sq_block->count, TRUE, TRUE);
-  *ret_dataA = NULL;
-
-  ESL_FAIL(status, errbuf, "process_align_workunit(), out of memory");
-  return status; /* NOT REACHED */
-}
-
 static int
-output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FILE *ofp, OUTPUT_DATA **dataA, int ndata, char *map_sscons)
+output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FILE *ofp, CM_ALNDATA **dataA, int ndata, char *map_sscons)
 {
   int           status;
   ESL_MSA      *msa = NULL;
@@ -1395,8 +1040,7 @@ output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FIL
   ESL_ALLOC(sqpA,   sizeof(ESL_SQ *)      * ndata); for(j = 0; j < ndata; j++) sqpA[j]   = dataA[j]->sqp;
   ESL_ALLOC(trA,    sizeof(Parsetree_t *) * ndata); for(j = 0; j < ndata; j++) trA[j]    = dataA[j]->tr;
   ESL_ALLOC(ppstrA, sizeof(char *)        * ndata); for(j = 0; j < ndata; j++) ppstrA[j] = dataA[j]->ppstr;
-  if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, sqpA, NULL, trA, ppstrA, ndata, cfg->ifp, cfg->efp, TRUE, esl_opt_GetBoolean(go, "--matchonly"), TRUE, &msa)) != eslOK) return status;
-  /* parsetrees in dataA were freed by Parsetrees2Alignment() */
+  if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, sqpA, NULL, trA, ppstrA, ndata, cfg->ifp, cfg->efp, TRUE, esl_opt_GetBoolean(go, "--matchonly"), &msa)) != eslOK) return status;
 
   if(ofp == cfg->rfp) { /* --regress file, remove GF author annotation */
     free(msa->au);
@@ -1489,7 +1133,7 @@ output_info_file_header(FILE *fp, char *firstline, char *elstring)
  *           eslEMEM if out of memory.
  */
 int
-output_scores(FILE *ofp, CM_t *cm, char *errbuf, OUTPUT_DATA **dataA, int ndata, int first_idx)
+output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, int first_idx)
 {
   int   status;               /* easel status */
   int   i;                    /* counter */
@@ -1499,7 +1143,6 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, OUTPUT_DATA **dataA, int ndata,
   /* alignment options */
   int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE : FALSE;
   int do_post      = (cm->align_opts & CM_ALIGN_POST)      ? TRUE : FALSE;
-  int do_sub       = (cm->config_opts & CM_CONFIG_SUB)     ? TRUE : FALSE;
 
   for(i = first_idx; i < ndata; i++) namewidth = ESL_MAX(namewidth, strlen(dataA[i]->sqp->name));
 
@@ -1507,11 +1150,9 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, OUTPUT_DATA **dataA, int ndata,
   namedashes[namewidth] = '\0';
   for(i = 0; i < namewidth; i++) namedashes[i] = '-';
 
-  if(dataA[0]->idx == 0) fprintf(ofp, "# CM: %s\n#\n", cm->name); 
-
   fprintf(ofp, "# %9s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %-30s\n",    "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "         running time");
   fprintf(ofp, "# %9s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %30s\n",     "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "-------------------------------");
-  fprintf(ofp, "# %9s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s\n", "seq idx",   namewidth, "seq name", "length", "cm from",   "cm to", "trunc",   "bit sc", "avg pp", "sub mode",  "band calc", "alignment");
+  fprintf(ofp, "# %9s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s\n", "seq idx",   namewidth, "seq name", "length", "cm from",   "cm to", "trunc",   "bit sc", "avg pp", "band calc", "alignment", "total");
   fprintf(ofp, "# %9s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s\n", "---------", namewidth, namedashes, "------", "-------", "-------", "-----", "--------", "------", "---------", "---------", "---------");
 
   for(i = first_idx; i < ndata; i++) { 
@@ -1523,11 +1164,9 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, OUTPUT_DATA **dataA, int ndata,
     fprintf(ofp, "  %8.2f", dataA[i]->sc);
     if(do_post)        fprintf(ofp, "  %6.3f", dataA[i]->pp);
     else               fprintf(ofp, "  %6s",   "-");
-    if(do_sub)         fprintf(ofp, "  %9.2f", dataA[i]->secs_sub);
-    else               fprintf(ofp, "  %9s",   "-");
     if(! do_nonbanded) fprintf(ofp, "  %9.2f", dataA[i]->secs_bands);
     else               fprintf(ofp, "  %9s",   "-");
-    fprintf(ofp, "  %9.2f\n", dataA[i]->secs_aln);
+    fprintf(ofp, "  %9.2f  %9.2f\n", dataA[i]->secs_aln, dataA[i]->secs_tot);
   }
 
   if(namedashes != NULL) free(namedashes);
@@ -2131,7 +1770,7 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
  * was used. 
  */
 static int
-map_alignment(const char *msafile, CM_t *cm, char *errbuf, OUTPUT_DATA ***ret_dataA, int *ret_ndata, char **ret_ss)
+map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dataA, int *ret_ndata, char **ret_ss)
 {
   int            status;
   ESLX_MSAFILE  *afp       = NULL;
@@ -2142,7 +1781,7 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, OUTPUT_DATA ***ret_da
   int            apos, uapos, cpos; /* counter over aligned, unaligned, consensus positions */
   int           *a2u_map   = NULL;  /* map from aligned to unaligned positions */
   Parsetree_t   *mtr       = NULL;  /* the guide tree for mapali */
-  OUTPUT_DATA  **dataA     = NULL;  /* includes ptrs to sq and parsetrees */
+  CM_ALNDATA  **dataA     = NULL;  /* includes ptrs to sq and parsetrees */
   char          *aseq      = NULL;  /* aligned sequence, req'd by Transmogrify() */
   char          *ss        = NULL;  /* msa's SS_cons, if there is one, dealigned to length cm->clen */
   
@@ -2158,8 +1797,8 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, OUTPUT_DATA ***ret_da
   if (cm->checksum != chksum)      cm_Fail("--mapali MSA %s isn't same as the one CM came from (checksum mismatch)", msafile);
 
   /* allocate and initialize dataA */
-  ESL_ALLOC(dataA, sizeof(OUTPUT_DATA *) * msa->nseq);
-  for(i = 0; i < msa->nseq; i++) dataA[i] = create_output_data();
+  ESL_ALLOC(dataA, sizeof(CM_ALNDATA *) * msa->nseq);
+  for(i = 0; i < msa->nseq; i++) dataA[i] = cm_alndata_Create();
 
   /* get SS_cons from the msa possibly for --mapstr, important to do it here, before it is potentially deknotted in HandModelMaker() */
   if(msa->ss_cons != NULL) { 
@@ -2224,55 +1863,15 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, OUTPUT_DATA ***ret_da
  ERROR:
   *ret_ndata = 0;
   *ret_dataA = NULL;
-  if (dataA     != NULL) free_output_data_array(dataA, msa->nseq, TRUE, TRUE);
+  if (dataA     != NULL) { 
+    for(i = 0; i < msa->nseq; i++) cm_alndata_Destroy(dataA[i], TRUE); 
+    dataA = NULL;
+  }
   if (afp       != NULL) eslx_msafile_Close(afp);
   if (msa       != NULL) esl_msa_Destroy(msa);
   if (a2u_map   != NULL) free(a2u_map);
   if (aseq      != NULL) free(aseq);  
   ESL_FAIL(status, errbuf, "out of memory");
-}
-
-static OUTPUT_DATA *
-create_output_data()
-{ 
-  int status;
-  OUTPUT_DATA *data = NULL;
-
-  ESL_ALLOC(data, sizeof(OUTPUT_DATA));
-  data->sqp        = NULL;
-  data->idx        = -1;
-  data->tr         = NULL;
-  data->sc         = 0.;
-  data->pp         = 0.;
-  data->ppstr      = NULL;
-  data->cm_from    = -1;
-  data->cm_to      = -1;
-  data->secs_bands = 0.;
-  data->secs_aln   = 0.;
-  
-  return data;
-
- ERROR: 
-  return NULL;
-}
-
-static void
-free_output_data(OUTPUT_DATA *data, int free_tr, int free_sqp)
-{ 
-  if(free_tr  && data->tr  != NULL) FreeParsetree(data->tr);
-  if(free_sqp && data->sqp != NULL) esl_sq_Destroy(data->sqp);
-  if(data->ppstr != NULL)           free(data->ppstr);
-  free(data);
-}
-
-static void 
-free_output_data_array(OUTPUT_DATA **dataA, int ndata, int free_tr, int free_sqp)
-{
-  int i;
-  for(i = 0; i < ndata; i++) { 
-    if(dataA[i] != NULL) free_output_data(dataA[i], free_tr, free_sqp);
-  }
-  free(dataA);
 }
 
 /*****************************************************************

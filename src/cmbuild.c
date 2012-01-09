@@ -89,20 +89,17 @@ static ESL_OPTIONS options[] = {
   { "--refine",  eslARG_OUTFILE, NULL, NULL, NULL,       NULL,   NULL,          NULL, "refine input aln w/Expectation-Maximization, save to <s>", 7 },
   { "--gibbs",   eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use Gibbs sampling instead of EM", 7 },
   { "-s",        eslARG_INT,      "0", NULL, "n>=0",     NULL,"--gibbs",        NULL, "w/--gibbs, set RNG seed to <n> (if 0: one-time arbitrary seed)", 7 },
-  { "-l",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, align locally w.r.t the model", 7 },
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "print individual sequence scores during MSA refinement", 7 },
-  { "--optacc",  eslARG_NONE,"default",NULL,NULL,        NULL,      NULL,       NULL, "align with the Holmes/Durbin optimal accuracy algorithm", 201 },
-  { "--cyk",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine align w/the CYK algorithm, not optimal accuracy", 7 },
-  { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 7 },
+  { "--notrunc", eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, do not use truncated alignment algorithms", 7 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,       NULL,"--refine",       NULL, "do not use bands to accelerate alignment with --refine", 7 },
+  { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine,--notrunc",NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 7 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 7 },
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, flush inserts left/right in alignments", 7 },
   { "--mxsize",  eslARG_REAL, "2048.0",NULL, "x>0.",     NULL,"--refine",       NULL, "set maximum allowable DP matrix size to <x> Mb", 7 },
   { "--rdump",   eslARG_OUTFILE, NULL, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, print all intermediate alignments to <f>", 7 },
-  { "--ileaved", eslARG_NONE,   FALSE, NULL, NULL,       NULL,     NULL,        NULL, "w/--refine,--cdump, output alnment as interleaved Stockholm", 7 },
 
   /* Options controlling the building of the filter p7 */
-  { "--p7-ml",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "define the filter p7 HMM as the ML p7 HMM", 8},
+  { "--p7-ml",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,          "define the filter p7 HMM as the ML p7 HMM", 8},
   { "--p7-ere",      eslARG_REAL,  "0.38", NULL, NULL,    NULL,  NULL, "--p7-ml",     "for the filter p7 HMM, set minimum rel entropy/posn to <x>", 8},
   { "--p7-prior",    eslARG_INFILE, NULL,  NULL, NULL,    NULL,  NULL, "--p7-ml",     "read p7 prior for the filter HMM from file <f>", 8},
   { "--p7-hprior",   eslARG_NONE,   NULL,  NULL, NULL,    NULL,  NULL, "--p7-ml",     "use HMMER's default p7 prior, not Infernal's p7 prior", 8},
@@ -206,7 +203,7 @@ static char banner[] = "build RNA covariance model(s) from alignment(s)";
 
 static int    init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static void   master (const ESL_GETOPTS *go, struct cfg_s *cfg);
-static int    process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
+static int    process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
 static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, Parsetree_t **tr);
 static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
@@ -215,16 +212,14 @@ static int    annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *err
 static int    set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, const Prior_t *pri);
 static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, CM_t *cm, const Prior_t *prior, float msa_nseq);
-static int    configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static int    configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int iter);
 static int    build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali);
 static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen);
 static double version_1p0_default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
 static void   strip_wuss(char *ss);
-static int    refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *orig_cm, ESL_MSA *input_msa, Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr, Parsetree_t ***ret_tr, int *ret_niter);
-static int    get_unaln_seqs_from_msa(const ESL_MSA *msa, ESL_SQ ***ret_sq);
+static int    refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *orig_cm, ESL_MSA *input_msa, Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr, Parsetree_t ***ret_trA, int *ret_niter);
 static int    convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa);
-static int    initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, CM_t **ret_nc_cm);
 /* static void   model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq); */
 /* functions for dividing input MSA into clusters */
 static int    select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc, int *ret_best, char *errbuf);
@@ -332,13 +327,6 @@ main(int argc, char **argv)
       printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
-
-  /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
-  /* --ileaved requires EITHER --cdump or --rdump */
-  if ((esl_opt_GetBoolean(go, "--ileaved")) && ((esl_opt_IsOn(go, "--cdump")) || (esl_opt_IsOn(go, "--rdump")))) { 
-    printf("Error parsing options, --ileaved only makes sense in combination with --cdump or --rdump.\n");
-    exit(1);
-  }
 
   /* Initialize what we can in the config structure (without knowing the alphabet yet).
    * We could assume RNA, but this HMMER3 based approach is more general.
@@ -715,7 +703,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  }
 
 	  /* msa -> cm */
-	  if ((status = process_workunit(go, cfg, errbuf, msa, &cm, &mtr, &tr)) != eslOK) cm_Fail(errbuf);
+	  if ((status = process_build_workunit(go, cfg, errbuf, msa, &cm, &mtr, &tr)) != eslOK) cm_Fail(errbuf);
 	  /* optionally, iterate over cm -> parsetrees -> msa -> cm ... until convergence, via EM or Gibbs */
 	  if ( esl_opt_IsOn(go, "--refine")) {
 	    fprintf(stdout, "#\n");
@@ -764,7 +752,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
  * 
  */
 static int
-process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
+process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
 {
   int      status;
   uint32_t checksum = 0;  /* checksum calculated for the input MSA. cmalign --mapali verifies against this. */
@@ -777,7 +765,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
   if ((status =  set_model_cutoffs            (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
   if ((status =  set_effective_seqnumber      (go, cfg, errbuf, msa, cm, cfg->pri))                   != eslOK) goto ERROR;
   if ((status =  parameterize                 (go, cfg, errbuf, TRUE, cm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
-  if ((status =  configure_model              (go, cfg, errbuf, cm))                                  != eslOK) goto ERROR;
+  if ((status =  configure_model              (go, cfg, errbuf, cm, 1))                               != eslOK) goto ERROR;
   if ((status =  annotate                     (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
   if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
 
@@ -804,7 +792,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
  */
 static int
 refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *init_cm, ESL_MSA *input_msa, 
-	   Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr, Parsetree_t ***ret_tr, 
+	   Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr, Parsetree_t ***ret_trA, 
 	   int *ret_niter)
 {
   int              status;
@@ -814,24 +802,27 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   float            totscore    = 0.;
   int              i           = 0;
   int              iter        = 0;
-  ESL_SQ         **sq          = NULL;
   float           *sc          = NULL;
   int              nseq        = input_msa->nseq; 
   char            *msa_name    = NULL;
   CM_t            *cm          = NULL;
-  seqs_to_aln_t   *seqs_to_aln = NULL; 
   ESL_MSA         *msa         = NULL;
   Parsetree_t     *mtr         = NULL;
-  Parsetree_t    **tr          = NULL;
+  Parsetree_t    **trA         = NULL;
   int              max_niter   = 200;  /* maximum number of iterations */
-  CM_t            *nc_cm       = NULL; /* the non-configured CM we'll output */
+  ESL_SQ_BLOCK    *sq_block    = NULL;
+  ESL_SQ          *tmp_sqp     = NULL; /* pointer to a sequence, don't free the actual sequence */
+  ESL_SQ         **tmp_sqpA    = NULL; /* array of pointers to ESL_SQ's, don't free individual sequences */
+  Parsetree_t    **tmp_trpA    = NULL; /* array of pointers to parsetrees, don't free individual parsetrees */
+  CM_ALNDATA     **dataA       = NULL; /* alignment data filled in ProcessAlignmentWorkunit(): parsetrees, scores, etc. */
+
   /* check contract */
   if(input_msa       == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), input_msa passed in as NULL");
   if(input_msa->name == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), input_msa must have a name");
   if(init_cm         == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), init_cm passed in as NULL");
   if(ret_cm          == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), ret_cm is NULL");
   if(ret_mtr         == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), ret_mtr is NULL");
-  if(ret_tr          == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), ret_tr is NULL");
+  if(ret_trA         == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), ret_trA is NULL");
 
   /* copy input MSA's name, we'll copy it to the MSA we create at each iteration */
   if((status = esl_strdup(input_msa->name, -1, &(msa_name))) != eslOK) ESL_FAIL(eslEINCOMPAT, errbuf, "Memory allocation error.");
@@ -839,13 +830,24 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   ESL_ALLOC(sc, sizeof(float) * nseq);
   esl_vec_FSet(sc, nseq, 0.);
 
-  get_unaln_seqs_from_msa(input_msa, &sq); /* we need sqs for Parsetrees2Alignment */
-  seqs_to_aln = CreateSeqsToAlnFromSq(sq, nseq, FALSE);
+  /* create a ESL_SQ_BLOCK of the sequences in the input MSA */
+  sq_block = esl_sq_CreateDigitalBlock(nseq, input_msa->abc);
+  sq_block->first_seqidx = 0;
+  for(i = 0; i < nseq; i++) { 
+    tmp_sqp = sq_block->list + i;
+    esl_sq_GetFromMSA(input_msa, i, tmp_sqp);
+    sq_block->count++;
+  }
+
+  /* allocate lists of pointers to sequences and parsetrees */
+  ESL_ALLOC(tmp_sqpA, sizeof(ESL_SQ *)      * nseq);
+  ESL_ALLOC(tmp_trpA, sizeof(Parsetree_t *) * nseq);
 
   /* determine scores of implicit parsetrees of input MSA seqs to initial CM */
   convert_parsetrees_to_unaln_coords(input_msa_tr, input_msa);
   for(i = 0; i < nseq; i++) { 
-    if((status = ParsetreeScore(init_cm, NULL, errbuf, input_msa_tr[i], sq[i]->dsq, FALSE, &(sc[i]), NULL, NULL, NULL, NULL)) != eslOK) return status;
+    tmp_sqp = sq_block->list + i;
+    if((status = ParsetreeScore(init_cm, NULL, errbuf, input_msa_tr[i], tmp_sqp->dsq, FALSE, &(sc[i]), NULL, NULL, NULL, NULL)) != eslOK) return status;
   }
   oldscore = esl_vec_FSum(sc, nseq);
 
@@ -860,20 +862,17 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   while(iter <= max_niter)
     {
       iter++;
-      if(iter == 1) { cm = init_cm; msa = input_msa; }
-      
+      if(iter == 1) { 
+	cm = init_cm; 
+	msa = input_msa; 
+      }
+
       /* 1. cm -> parsetrees */
-      if(iter > 1) FreePartialSeqsToAln(seqs_to_aln, FALSE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE);
-                                                  /* sq,    tr, cp9_tr, post, sc,   pp,   struct_sc */ 
-      /* initialize/configure CM, we may be doing HMM banded alignment for ex., 
-       * but make a clone first, in case it gets locally configured (we need to output a globally-configured model) */
-      if((status = initialize_cm(go, cfg, errbuf, cm, &nc_cm)) != eslOK) return status;
-      if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, 0, 0, (! esl_opt_GetBoolean(go, "-a")), TRUE, FALSE, cfg->r, 
-				      esl_opt_GetReal(go, "--mxsize"), stdout, NULL, 1,
-				      0, 1, 0., 0, 0., 0., 1., 1.)) != eslOK) return status;
+      if((status = ProcessAlignmentWorkunit(cm, errbuf, sq_block, esl_opt_GetReal(go, "--mxsize"), NULL, NULL, &dataA)) != eslOK) return status;
     
       /* sum parse scores and check for convergence */
-      totscore = esl_vec_FSum(seqs_to_aln->sc, nseq);
+      totscore = 0.;
+      for(i = 0; i < nseq; i++) totscore += dataA[i]->sc;
       delta    = (totscore - oldscore) / fabs(totscore);
       if(esl_opt_GetBoolean(go, "-a")) print_refine_column_headings(go, cfg);
       fprintf(stdout, "  %5d %13.2f %10.3f\n", iter, totscore, delta);
@@ -883,45 +882,48 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       /* 2. parsetrees -> msa */
       if( iter > 1) esl_msa_Destroy(msa);
       msa = NULL; /* even if iter == 1; we set msa to NULL, so we don't klobber input_msa */
-      if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, seqs_to_aln->sq, NULL, seqs_to_aln->tr, NULL, nseq, NULL, NULL, FALSE, FALSE, FALSE, &msa)) != eslOK) 
+      /* get list of pointers to sq's, parsetrees in dataA, to pass to Parsetrees2Alignment() */
+      for(i = 0; i < nseq; i++) { tmp_sqpA[i] = dataA[i]->sqp; tmp_trpA[i] = dataA[i]->tr; } 
+      if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, tmp_sqpA, NULL, tmp_trpA, NULL, nseq, NULL, NULL, FALSE, FALSE, &msa)) != eslOK) 
 	ESL_FAIL(status, errbuf, "refine_msa(), Parsetrees2Alignment() call failed.");
       if((status = esl_strdup(msa_name, -1, &(msa->name))) != eslOK) ESL_FAIL(status, errbuf, "refine_msa(), esl_strdup() call failed.");
-      esl_msa_Digitize(msa->abc, msa, NULL);
+      esl_msa_Digitize(cm->abc, msa, NULL);
       
       /* print intermediate alignment to --rdump file, if --rdump was enabled */
       if(cfg->rdfp != NULL) {
-	if((status = eslx_msafile_Write(cfg->rdfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
+	if((status = eslx_msafile_Write(cfg->rdfp, msa, eslMSAFILE_STOCKHOLM)) != eslOK) 
 	  ESL_FAIL(status, errbuf, "refine_msa(), esl_msafile_Write() call failed.");
       }
       /* 3. msa -> cm */
       if(iter > 1) { /* free previous iterations cm, mtr and tr */
 	FreeCM(cm);
 	FreeParsetree(mtr);
-	for(i = 0; i < nseq; i++) FreeParsetree(tr[i]);
-	free(tr);
+	for(i = 0; i < nseq; i++) FreeParsetree(trA[i]);
+	for(i = 0; i < nseq; i++) cm_alndata_Destroy(dataA[i], FALSE); /* FALSE: don't free sequences, ESL_SQ_BLOCK still points at them */
+	free(dataA);
       }
-      if(nc_cm != NULL) { FreeCM(nc_cm); nc_cm = NULL; }
-      cm = NULL; /* even if iter == 1; we set cm to NULL, so we don't klobber init_cm */
-      mtr= NULL;
-      tr = NULL;
-      if ((status = process_workunit(go, cfg, errbuf, msa, &cm, &mtr, &tr))  != eslOK) cm_Fail(errbuf);
+      cm  = NULL; /* even if iter == 1; we set cm to NULL, so we don't klobber init_cm */
+      mtr = NULL;
+      trA = NULL;
+      if ((status = process_build_workunit(go, cfg, errbuf, msa, &cm, &mtr, &trA))  != eslOK) cm_Fail(errbuf);
     }
 
   /* write out final alignment to --refine output file */
-  if((status = eslx_msafile_Write(cfg->refinefp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
+  if((status = eslx_msafile_Write(cfg->refinefp, msa, eslMSAFILE_STOCKHOLM)) != eslOK) 
     ESL_FAIL(status, errbuf, "refine_msa(), esl_msafile_Write() call failed.");
 
-  *ret_cm  = nc_cm; /* pass back the non-configured clone in initialize_cm() (it's in global mode, ready to output) */
+  *ret_cm  = cm; 
   *ret_msa = msa;
-  *ret_tr  = tr;
+  *ret_trA = trA;
   *ret_mtr = mtr;
   *ret_niter = iter;
 
   /* clean up */
-  FreeSeqsToAln(seqs_to_aln);
+  if(sq_block != NULL) esl_sq_DestroyBlock(sq_block);
   free(sc);
   free(msa_name);
-  if(cm != NULL) FreeCM(cm);
+  free(tmp_trpA);
+  free(tmp_sqpA);
 
   return eslOK;
 
@@ -1449,15 +1451,17 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int d
 
 /* configure_model()
  * Configure the model. This determines QDBs and W.
+ * If niter is 1, we possible output in verbose mode,
+ * else we don't.
  */
 static int
-configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
+configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int iter)
 {
   int status; 
   ESL_STOPWATCH *w = NULL;
   int nstarts, nexits, nd;
 
-  if (cfg->be_verbose){
+  if (iter == 1 && cfg->be_verbose){
     w = esl_stopwatch_Create();
     esl_stopwatch_Start(w);
     fprintf(stdout, "%-40s ... ", "Configuring model"); 
@@ -1493,11 +1497,35 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
     cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
   }
 
-  /* Configure the model, we must calculate QDBs so we can write them to the CM file */
+  /* we must calculate QDBs so we can write them to the CM file */
   cm->config_opts |= CM_CONFIG_QDB;   
+
+  /* if --refine, we have to set additional flags and configuration options
+   * before calling cm_Configure().
+   */
+  if(esl_opt_IsUsed(go, "--refine")) { 
+    cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
+
+    /* update cm->align->opts, we'll use CYK unless --gibbs, we never use optacc */
+    if(esl_opt_GetBoolean(go, "--gibbs")) cm->align_opts  |= CM_ALIGN_SAMPLE;
+
+    if(esl_opt_GetBoolean(go, "--nonbanded"))   { 
+      cm->align_opts  |= CM_ALIGN_SMALL; 
+      cm->align_opts &= ~CM_ALIGN_OPTACC; /* turn optimal accuracy OFF */
+    }
+    else cm->align_opts  |= CM_ALIGN_HBANDED;
+  
+    if(esl_opt_GetBoolean(go, "--sub"))  cm->align_opts  |= CM_ALIGN_SUB;
+    if(esl_opt_GetBoolean(go, "--fins")) cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
+
+    /* update cm->config_opts */
+    if(! esl_opt_GetBoolean(go, "--notrunc")) cm->config_opts |= CM_CONFIG_TRUNC;
+  }
+
+  /* finally, configure the model */
   if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
 
-  if (cfg->be_verbose) { 
+  if (iter == 1 && cfg->be_verbose) { 
     fprintf(stdout, "done.  ");
     esl_stopwatch_Stop(w);
     esl_stopwatch_Display(stdout, w, "CPU time: ");
@@ -1642,7 +1670,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
        * lengths >> W (more than 2*W commonly).
        * configure_model() will build the mlp7 HMM.
        */
-      if((status = configure_model(go, cfg, errbuf, acm)) != eslOK) return status;
+      if((status = configure_model(go, cfg, errbuf, acm, 1)) != eslOK) return status;
 
       /* copy the ML p7 emission probs from the CM we just built */
       /* match emissions: copy, then normalize (norm should be unnec actually) */
@@ -1923,51 +1951,6 @@ model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq)
   cm_Fail("Memory allocation error.");
 }
 
-/* get_unaln_seqs_from_msa
- * Given a digitized MSA, allocate and create digitized versions
- * of the unaligned sequences within it.
- */
-static int
-get_unaln_seqs_from_msa(const ESL_MSA *msa, ESL_SQ ***ret_sq)
-{
-  int status;
-  ESL_DSQ *uadsq = NULL;
-  ESL_SQ **sq    = NULL;
-  int nongap_len = 0;
-  int i          = 0;
-  int apos       = 1;
-  int uapos      = 1;
-
-  /* contract check */
-  if(! (msa->flags & eslMSA_DIGITAL)) cm_Fail("get_unaln_seqs_from_msa() msa is not digitized.\n");
-
-  ESL_ALLOC(sq, sizeof(ESL_SQ *) * msa->nseq);
-
-  for (i = 0; i < msa->nseq; i++)
-    {
-      nongap_len = 0;
-      for(apos = 1; apos <= msa->alen; apos++)
-	nongap_len += (! esl_abc_XIsGap(msa->abc, msa->ax[i][apos]));
-      ESL_ALLOC(uadsq, sizeof(ESL_DSQ) * (nongap_len + 2));
-      uadsq[0] = uadsq[(nongap_len+1)] = eslDSQ_SENTINEL;
-
-      uapos = 1;
-      for(apos = 1; apos <= msa->alen; apos++)
-	if(! esl_abc_XIsGap(msa->abc, msa->ax[i][apos])) 
-	  uadsq[uapos++] = msa->ax[i][apos];
-      
-      sq[i] = esl_sq_CreateDigitalFrom(msa->abc, msa->sqname[i], uadsq, nongap_len, NULL, NULL, NULL); 
-      if(sq[i] == NULL) goto ERROR;
-      free(uadsq);
-    }
-  *ret_sq = sq;
-  return eslOK;
-  
- ERROR:
-  cm_Fail("memory allocation error.");
-  return status; /* NEVERREACHED */
-}
-
 /* convert_parsetrees_to_unaln_coords()
  *
  * Given a digitized MSA <msa> and parsetrees <tr> that correspond to 
@@ -2017,53 +2000,6 @@ convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa)
   return status; /* NEVERREACHED */
 }
 
-
-/* initialize_cm()
- * Setup the CM based on the command-line options/defaults.
- * Configures the CM with a cm_Configure() call at end.
- */
-static int
-initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, CM_t **ret_nc_cm)
-{
-  int status;
-  CM_t *nc_cm = NULL;
-  /* clone the CM first */
-  if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) return status;
-
-  /* set up params/flags/options of the CM */
-  cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
-
-  /* update cm->align->opts */
-  if(esl_opt_GetBoolean(go, "--gibbs"))       cm->align_opts  |= CM_ALIGN_SAMPLE;
-  else if(esl_opt_GetBoolean(go, "--optacc")) cm->align_opts  |= CM_ALIGN_OPTACC;
-
-  if(esl_opt_GetBoolean(go, "--nonbanded"))   { 
-    cm->align_opts  |= CM_ALIGN_SMALL; 
-    cm->align_opts &= ~CM_ALIGN_OPTACC; /* turn optimal accuracy OFF */
-  }
-  else                                        cm->align_opts  |= CM_ALIGN_HBANDED;
-  
-  if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
-  if(esl_opt_GetBoolean(go, "--fins"))        cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
-
-  /* update cm->config_opts */
-  if(esl_opt_GetBoolean(go, "-l"))
-    {
-      cm->config_opts |= CM_CONFIG_LOCAL;
-      cm->config_opts |= CM_CONFIG_HMMLOCAL;
-      cm->config_opts |= CM_CONFIG_HMMEL;
-    }
-
-  /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
-   * this may make a cp9 HMM, for example.
-   */
-  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
-
-  if(ret_nc_cm != NULL) *ret_nc_cm = nc_cm;
-  else                   FreeCM(nc_cm);
-
-  return eslOK;
-}
 
 
 /* Function: MSADivide()

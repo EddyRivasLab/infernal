@@ -119,7 +119,7 @@ float tr_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
                   int r_allow_J, int r_allow_L, int r_allow_R,
                   int z_allow_J, int z_allow_L, int z_allow_R);
 
-/* Function: SetMarginalScores_reproduce_bug_i27()
+/* Function: SetMarginalScores_reproduce_i27()
  * Author:   DLK
  *
  * Purpose:  Given an otherwise initialized CM,
@@ -129,8 +129,8 @@ float tr_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
  *           EPN, Thu Aug 25 09:21:13 2011
  *           This function contains an unfixed version of bug i27 from
  *           BUGTRAX in that it calls
- *           LeftMarginalScore_reproduce_bug_i27 and
- *           RightMarginalScore_reproduce_bug_i27. See those functions
+ *           LeftMarginalScore_reproduce_i27 and
+ *           RightMarginalScore_reproduce_i27. See those functions
  *           below for more information.
  *
  * Args:     cm
@@ -138,7 +138,7 @@ float tr_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
  * Returns:  none (cm is modified)
  */
 void
-SetMarginalScores_reproduce_bug_i27(CM_t *cm)
+SetMarginalScores_reproduce_i27(CM_t *cm)
 {
    int i,v;
 
@@ -158,8 +158,8 @@ SetMarginalScores_reproduce_bug_i27(CM_t *cm)
       if (cm->sttype[v] == MP_st)
          for (i = 0; i < cm->abc->Kp; i++)
          {
-	   cm->lmesc[v][i] =  LeftMarginalScore_reproduce_bug_i27(cm->abc, cm->esc[v], i);
-	   cm->rmesc[v][i] = RightMarginalScore_reproduce_bug_i27(cm->abc, cm->esc[v], i);
+	   cm->lmesc[v][i] =  LeftMarginalScore_reproduce_i27(cm->abc, cm->esc[v], i);
+	   cm->rmesc[v][i] = RightMarginalScore_reproduce_i27(cm->abc, cm->esc[v], i);
          }
        else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)
          for (i = 0; i < cm->abc->Kp; i++)
@@ -185,7 +185,7 @@ SetMarginalScores_reproduce_bug_i27(CM_t *cm)
 }
 
 
-/* Function: LeftMarginalScore_reproduce_bug_i27()
+/* Function: LeftMarginalScore_reproduce_i27()
  * Author:   DLK
  *
  * Purpose:  Calculate marginal probability for left half
@@ -207,7 +207,7 @@ SetMarginalScores_reproduce_bug_i27(CM_t *cm)
  *           this function.
  */
 float
-LeftMarginalScore_reproduce_bug_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
+LeftMarginalScore_reproduce_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
 {
    float *left = NULL;
    int status;
@@ -242,7 +242,7 @@ LeftMarginalScore_reproduce_bug_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ
   return 0.0; /* never reached */
 }
 
-/* Function: RightMarginalScore_reproduce_bug_i27()
+/* Function: RightMarginalScore_reproduce_i27()
  * Author:   DLK
  *
  * Purpose:  Calculate marginal probability for right half
@@ -264,7 +264,7 @@ LeftMarginalScore_reproduce_bug_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ
  *           function.
  */
 float
-RightMarginalScore_reproduce_bug_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
+RightMarginalScore_reproduce_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
 {
    float *right = NULL;
    int status;
@@ -317,10 +317,10 @@ RightMarginalScore_reproduce_bug_i27(const ESL_ALPHABET *abc, float *esc, ESL_DS
 float
 TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
 {
+  printf("in TrCYK_DnC\n");
    Parsetree_t *tr;
    int          z;
    float        sc, bsc;
-   int          v, model_len;
 
    /* Check input parameters */
    if ( cm->stid[r] != ROOT_S )
@@ -347,16 +347,9 @@ TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **re
    /* Solve by calling tr_generic_splitter() */
    sc = tr_generic_splitter(cm, dsq, L, tr, r, z, i0, j0, TRUE, TRUE, TRUE);
 
-   model_len = 0;
-   for ( v = r; v < cm->M; v++ )
-   {
-      if      ( cm->stid[v] == MATP_MP ) model_len += 2;
-      else if ( cm->stid[v] == MATL_ML ) model_len += 1;
-      else if ( cm->stid[v] == MATR_MR ) model_len += 1;
-   }
    /* 2.0 instead of 2 to force floating point division, not integer division */
    /* This is the fragment penalty */
-   bsc = sreLOG2(2.0/(model_len*(model_len+1)));
+   bsc = sreLOG2(2.0/(cm->clen*(cm->clen+1)));
    printf("Best truncated score: %.4f (%.4f)\n", sc, (sc+bsc));
    sc += bsc;
 

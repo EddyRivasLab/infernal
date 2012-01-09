@@ -795,6 +795,7 @@ void search_send_terminate (int i) {
   MPI_Send (buf, position, MPI_PACKED, i, JOB_PACKET_TAG, MPI_COMM_WORLD);
 }
 
+#if 0
 /**************************************************************
  * MPI alignment functions ("aln_*") (EPN 01.04.07)
  **************************************************************/
@@ -813,6 +814,7 @@ int aln_procs_working (int *process_status, int mpi_num_procs, int mpi_master_ra
     }
   return (FALSE);
 }
+
 
 /*
  * Function: aln_send_next_job
@@ -1109,6 +1111,7 @@ void aln_send_terminate (int rank_to_send_to)
   MPI_Pack (&job_type, 1, MPI_CHAR, buf, bufsize, &position, MPI_COMM_WORLD);
   MPI_Send (buf, position, MPI_PACKED, rank_to_send_to, ALN_JOB_PACKET_TAG, MPI_COMM_WORLD);
 }
+#endif
 
 /**************************************************************************************/
 /* EPN, Thu May 10 10:11:18 2007 New functions roughly following Easel/H3 conventions */

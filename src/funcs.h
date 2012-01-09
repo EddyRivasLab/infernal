@@ -111,6 +111,11 @@ extern int DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln
 			      int bdump_level, int debug_level, int silent_mode, int do_null3, TruncOpts_t *tro, ESL_RANDOMNESS *r, float size_limit, FILE *ofp, FILE *sfp, int iidx,
 			      int pad7, int len7, float sc7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7);
 
+/* from cm_alndata.c */
+CM_ALNDATA * cm_alndata_Create(void);
+void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sqp);
+int          ProcessAlignmentWorkunit(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, CM_ALNDATA ***ret_dataA);
+
 /* from cm_dpalign.c */
 extern int   cm_Align             (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_MX *mx,    CM_SHADOW_MX    *shmx, CM_MX    *post_mx, CM_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
 extern int   cm_AlignHB           (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, CM_HB_MX *post_mx, CM_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
@@ -376,9 +381,7 @@ extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *
 extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
 extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
-extern int          Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, Parsetree_t **tr, 
-					 char **postcode, int nseq, FILE *insertfp, FILE *elfp, 
-					 int do_full, int do_matchonly, int be_efficient, ESL_MSA **ret_msa);
+extern int          Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, Parsetree_t **tr, char **postcode, int nseq, FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, ESL_MSA **ret_msa);
 extern int          Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr);
 extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_flag);
 extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr);
@@ -740,9 +743,9 @@ extern int        SampleGenomicSequenceFromHMM(ESL_RANDOMNESS *r, const ESL_ALPH
 extern int        CopyExpInfo(ExpInfo_t *src, ExpInfo_t *dest);
 
 /* from truncyk.c */
-void  SetMarginalScores_reproduce_bug_i27(CM_t *cm);
-float LeftMarginalScore_reproduce_bug_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres);
-float RightMarginalScore_reproduce_bug_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres);
+void  SetMarginalScores_reproduce_i27(CM_t *cm);
+float LeftMarginalScore_reproduce_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres);
+float RightMarginalScore_reproduce_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres);
 
 float TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr);
 float TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int lenCORREX, Parsetree_t **ret_tr);

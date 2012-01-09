@@ -80,6 +80,7 @@ HDRS =  funcs.h\
 
 OBJS  = cm.o\
 	cm_alidisplay.o\
+	cm_alndata.o\
 	cm_dpalign.o\
 	cm_dpalign_trunc.o\
 	cm_dpsearch.o\
@@ -104,7 +105,6 @@ OBJS  = cm.o\
 	cp9_mx.o\
 	cp9_trace.o\
 	alphabet.o\
-	dispatch.o\
 	display.o\
 	eweight.o\
 	errors.o\
@@ -113,7 +113,6 @@ OBJS  = cm.o\
 	mpisupport.o\
 	prior.o\
 	rnamat.o\
-	seqstoaln.o\
 	stats.o\
 	truncyk.o
 

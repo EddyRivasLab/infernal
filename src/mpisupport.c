@@ -652,6 +652,7 @@ cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_
   return status;
 }
 
+#if 0 
 /* Function:  cm_seqs_to_aln_MPISend()
  *
  * Incept:    EPN, Mon Sep  3 14:58:12 2007
@@ -1133,6 +1134,7 @@ cm_seqs_to_aln_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MP
   *ret_seqs_to_aln = NULL;
   return status;
 }
+#endif
 
 /* Function:  cm_parsetree_MPIPackSize()
  * Synopsis:  Calculates number of bytes needed to pack a 

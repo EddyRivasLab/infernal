@@ -493,6 +493,7 @@ typedef struct cp9map_s {
 #define CM_ALIGN_HMM2IJOLD     (1<<18) /* use old hmm2ij band calculation alg      */
 #define CM_ALIGN_QDB           (1<<19) /* align with QDBs                          */
 #define CM_ALIGN_INSIDE        (1<<20) /* use Inside algorithm                     */
+#define CM_ALIGN_TRUNC         (1<<21) /* use truncated alignment algorithms       */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_HBANDED      (1<<0)  /* use HMM bands to search (default)        */
@@ -772,22 +773,6 @@ typedef struct cp9bands_s {
 #define HMMDELETE 2
 #define NHMMSTATETYPES 3
 
-/* sequences to align, for cmalign and cmscore (implemented to ease MPI) */
-typedef struct _seqs_to_aln_t {
-  ESL_SQ  **sq;                  /* the sequences */
-  int nseq;                      /* number of sequences */
-  int nalloc;                    /* number of sequences alloc'ed */
-  Parsetree_t **tr;              /* parsetrees */
-  CP9trace_t **cp9_tr;           /* CP9 traces, usually NULL unless tr is NULL */
-  char **postcode;               /* posterior code string, sometimes NULL */
-  float *sc;                     /* score for each seq, can be parsetree score (usually if tr != NULL),
-				  * CP9 trace score (usually if cp9_tr != NULL), but could also be
-				  * score for the sub parsetree (in case of sub CM alignment)
-				  */
-  float *pp;                     /* average posterior probability for each seq, if applicable, IMPOSSIBLE if not */
-  float *struct_sc;              /* contribution of (MATP emission scores minus marginalized scores) for each tr */ 
-} seqs_to_aln_t;
-
 struct deckpool_s {
   float ***pool;
   int      n;
@@ -1035,6 +1020,25 @@ typedef struct cm_qdbinfo_s {
 				  * CM_QDBINFO_SETBY_INIT | CM_QDBINFO_SETBY_CMFILE | CM_QDBINFO_SETBY_BANDCALC */
 
 } CM_QDBINFO;
+
+/* Structure CM_ALNDATA: Per-sequence information relevant to the
+ * collection and output of an alignment of one sequence to a CM.
+ * Used primarily in cmalign, but also used in cmbuild if the input
+ * alignment refinement is used (--refine).
+ */
+typedef struct {
+  ESL_SQ           *sqp;        /* ptr to sequence object */
+  int64_t           idx;        /* index, for ordering sequences properly in output aln */
+  float             sc;         /* alignment score for this sequence (CYK or Inside) */
+  float             pp;         /* average posterior probability for this sequence */
+  Parsetree_t      *tr;         /* Parsetree for this sequence */
+  char             *ppstr;      /* posterior probability string for this sequence */
+  int               cm_from;    /* first consensus pos of the CM used in tr */
+  int               cm_to;      /* final consensus pos of the CM used in tr */
+  float             secs_bands; /* seconds elapsed during band calculation */
+  float             secs_aln;   /* seconds elapsed during alignment calculation */
+  float             secs_tot;   /* seconds elapsed for entire processing of this sequence */
+} CM_ALNDATA;
 
 /* Declaration of CM dynamic programming matrices for alignment.
  * There are eight matrices here, four DP matrices for DP calculations

@@ -114,7 +114,7 @@ main(int argc, char **argv)
 
   if (do_local) cm->config_opts |= CM_CONFIG_LOCAL;
   if ((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
-  SetMarginalScores_reproduce_bug_i27(cm);
+  SetMarginalScores_reproduce_i27(cm);
 
   /* EPN 11.18.05 Now that know what windowlen is, we need to ensure that
    * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)

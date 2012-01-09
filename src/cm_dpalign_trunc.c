@@ -8849,8 +8849,6 @@ cm_TrFillFromMode(char mode, int *ret_fill_L, int *ret_fill_R, int *ret_fill_T)
 #include "easel.h"
 #include <esl_getopts.h>
 #include <esl_histogram.h>
-#include <esl_random.h>
-#include <esl_randomseq.h>
 #include <esl_sqio.h>
 #include <esl_stats.h>
 #include <esl_stopwatch.h>
@@ -8863,11 +8861,7 @@ cm_TrFillFromMode(char mode, int *ret_fill_L, int *ret_fill_R, int *ret_fill_T)
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
   { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
-  { "-s",        eslARG_INT,    "181", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>, '0' for one-time arbitrary", 0 },
-  { "-e",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "emit sequences from CM, don't randomly create them", 0 },
-  { "-g",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "search in glocal mode [default: local]", 0 },
-  { "-L",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs, default: consensus length", 0 },
-  { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of target seqs",                          0 },
+  { "-l",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "configure CM/HMM for local alignment", 0 },
   { "--cykout",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL,"--optacc", "run TrCYKOutside, to make sure it agrees with TrCYK (Inside)", 0 },
   { "--std",     eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also do standard (non-truncated) alignments",    2},
   { "--orig",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,"--search", NULL, "also do search with original trCYK",         2},
@@ -8875,13 +8869,12 @@ static ESL_OPTIONS options[] = {
   { "--failok",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "allow failures of Inside vs Outside checks",      2},
   { "--search",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also run search algorithms",                   2},
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "don't use QDBs", 2},
-  { "--infile",  eslARG_INFILE,  NULL, NULL, NULL,  NULL,  NULL, "-L,-N,-e", "read sequences to search from file <s>", 2 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "use posterior sums during HMM band calculation (widens bands)", 2 },
   { "--onlyhb",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "only run HMM banded scanning trCYK", 2 },
   { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "run optimal accuracy alignment instead of CYK", 2 },
   { "--tau",     eslARG_REAL,   "5e-6",NULL, "0<x<1",NULL, NULL, NULL, "set tail loss prob for HMM bands to <x>", 2 },
-  { "--cp9noel", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "-g",           "turn OFF local ends in cp9 HMMs", 2 },
-  { "--cp9gloc", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "-g,--cp9noel", "configure CP9 HMM in glocal mode", 2 },
+  { "--cp9noel", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  "-l", NULL,         "turn OFF local ends in cp9 HMMs", 2 },
+  { "--cp9gloc", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "--cp9noel",  "configure CP9 HMM in glocal mode", 2 },
   { "--thresh1", eslARG_REAL,  "0.01", NULL, NULL,  NULL,  NULL,  NULL, "set HMM bands thresh1 to <x>", 2 },
   { "--thresh2", eslARG_REAL,  "0.99", NULL, NULL,  NULL,  NULL,  NULL, "set HMM bands thresh2 to <x>", 2 },
   { "--mxsize",  eslARG_REAL, "128.", NULL, "x>0", NULL,  NULL,  NULL, "set maximum allowed size of HB matrices to <x> Mb", 2 },
@@ -8894,59 +8887,81 @@ static char banner[] = "benchmark driver for truncated alignment implementations
 int 
 main(int argc, char **argv)
 {
-  int             status;
-  ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 1, argc, argv, banner, usage);
-  CM_t           *cm;
-  ESL_STOPWATCH  *w       = esl_stopwatch_Create();
-  ESL_RANDOMNESS *r       = NULL;
-  ESL_ALPHABET   *abc     = NULL;
-  int64_t         L;
-  int             N       = esl_opt_GetInteger(go, "-N");
-  ESL_DSQ        *dsq;
-  int             i;
-  float           sc;
-  char           *cmfile = esl_opt_GetArg(go, 1);
-  CM_FILE        *cmfp;	/* open input CM file stream */
-  int            *dmin;
-  int            *dmax;
-  int             do_random;
-  seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
-  char            errbuf[eslERRBUFSIZE];
-  TrScanMatrix_t *trsmx = NULL;
-  TruncOpts_t   *tro  = NULL;
-  ESL_SQFILE     *sqfp  = NULL;        /* open sequence input file stream */
-  CMConsensus_t  *cons  = NULL;
-  Parsetree_t    *tr    = NULL;
-  CM_TR_MX              *trmx= NULL;
-  CM_TR_MX              *out_trmx= NULL;
-  CM_TR_EMIT_MX         *tremit_mx= NULL;
-  CM_TR_SHADOW_MX       *trshmx= NULL;
-  float           size_limit = esl_opt_GetReal(go, "--mxsize");
-  float           save_tau, save_cp9b_thresh1, save_cp9b_thresh2;
-  float           hbmx_Mb, trhbmx_Mb;
-  float           parsetree_sc, parsetree_struct_sc;
-  char            mode;   
+  int                status;
+  ESL_GETOPTS       *go      = esl_getopts_CreateDefaultApp(options, 2, argc, argv, banner, usage);
+  CM_t              *cm;
+  ESL_STOPWATCH     *w       = esl_stopwatch_Create();
+  ESL_ALPHABET      *abc     = NULL;
+  ESL_DSQ           *dsq;
+  int                i;
+  float              sc;
+  float              pp;
+  char              *cmfile  = esl_opt_GetArg(go, 1);
+  char              *seqfile = esl_opt_GetArg(go, 2);
+  CM_FILE           *cmfp;	/* open input CM file stream */
+  int                L;         /* length of sequence */
+  char               errbuf[eslERRBUFSIZE];
+  TruncOpts_t       *tro       = NULL;
+  ESL_SQFILE        *sqfp      = NULL;        /* open sequence input file stream */
+  ESL_SQ            *sq        = NULL;  /* a sequence */
+  CMConsensus_t     *cons      = NULL;
+  Parsetree_t       *tr        = NULL;
+  CM_TR_MX          *trmx      = NULL;
+  CM_TR_MX          *out_trmx  = NULL;
+  CM_TR_EMIT_MX     *tremit_mx = NULL;
+  CM_TR_SHADOW_MX   *trshmx    = NULL;
+  float              size_limit = esl_opt_GetReal(go, "--mxsize");
+  float              save_tau, save_cp9b_thresh1, save_cp9b_thresh2;
+  float              hbmx_Mb, trhbmx_Mb;
+  float              parsetree_sc, parsetree_struct_sc;
+  char               mode;   
+  int                qdbidx; 
   /* variables related to non-banded cyk/inside/outside */
-  CM_MX             *mx   = NULL;       /* alpha DP matrix for non-banded CYK/Inside() */
-  CM_MX             *out_mx = NULL;     /* outside matrix for HMM banded Outside() */
-  CM_SHADOW_MX      *shmx = NULL;       /* shadow matrix for non-banded tracebacks */
-  CM_EMIT_MX        *emit_mx= NULL;     /* emit matrix for non-banded OA */
+  CM_MX             *mx      = NULL;     /* alpha DP matrix for non-banded CYK/Inside() */
+  CM_MX             *out_mx  = NULL;     /* outside matrix for HMM banded Outside() */
+  CM_SHADOW_MX      *shmx    = NULL;     /* shadow matrix for non-banded tracebacks */
+  CM_EMIT_MX        *emit_mx = NULL;     /* emit matrix for non-banded OA */
+
+  /* open CM file */
+  if ((status = cm_file_Open(cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
+  if ((status = cm_file_Read(cmfp, TRUE, &abc, &cm))                != eslOK) cm_Fail(cmfp->errbuf);
+  cm_file_Close(cmfp);
+
+  /* open the sequence file */
+  status = esl_sqfile_OpenDigital(cm->abc, seqfile, eslSQFILE_UNKNOWN, NULL, &sqfp);
+  if (status == eslENOTFOUND)    esl_fatal("File %s doesn't exist or is not readable\n", seqfile);
+  else if (status == eslEFORMAT) esl_fatal("Couldn't determine format of sequence file %s\n", seqfile);
+  else if (status == eslEINVAL)  esl_fatal("Can't autodetect stdin or .gz."); 
+  else if (status != eslOK)      esl_fatal("Sequence file open failed with error %d.\n", status);
+
+  cm->config_opts |= CM_CONFIG_TRUNC;
+  cm->align_opts  |= CM_ALIGN_HBANDED;
+  if(esl_opt_GetBoolean(go, "--sums")) cm->align_opts |= CM_ALIGN_SUMS;
+
+  if(esl_opt_GetBoolean(go, "-l")) { 
+    cm->config_opts |= CM_CONFIG_LOCAL;
+    if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
+      cm->config_opts |= CM_CONFIG_HMMLOCAL;
+      if(! esl_opt_GetBoolean(go, "--cp9noel")) cm->config_opts |= CM_CONFIG_HMMEL; 
+    }
+  }
+  if(esl_opt_GetBoolean(go, "--search")) { 
+    cm->config_opts |= CM_CONFIG_SCANMX;
+    cm->config_opts |= CM_CONFIG_TRSCANMX;
+  }
+
+  cm->align_opts |= CM_ALIGN_CHECKINOUT;
+
+  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) cm_Fail(errbuf);
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
 
-  r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
   tro = CreateTruncOpts();
   tro->allowL = tro->allowR = TRUE;
 
-  do_random = TRUE;
-  if(esl_opt_GetBoolean(go, "-e")) do_random = FALSE; 
-
-  if ((status = cm_file_Open(cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
-  if ((status = cm_file_Read(cmfp, TRUE, &abc, &cm))                != eslOK) cm_Fail(cmfp->errbuf);
-  cm_file_Close(cmfp);
-
+  /* create nonbanded matrices if nec */
   if(esl_opt_GetBoolean(go, "--std")) { 
     mx      = cm_mx_Create(cm);
     out_mx  = cm_mx_Create(cm);
@@ -8954,50 +8969,19 @@ main(int argc, char **argv)
     emit_mx = cm_emit_mx_Create(cm);
   }
 
-  if(esl_opt_GetBoolean(go, "--search")) { 
-    trsmx = cm_CreateTrScanMatrix(cm, cm->W, cm->dmax, cm->beta_W, cm->beta_qdb, 
-				  (cm->dmin == NULL && cm->dmax == NULL) ? FALSE : TRUE,
-				  TRUE, TRUE); /* do_float, do_int */
-  }
-
-  /*DumpEmitMap(stdout, cm->emap, cm);*/
-    
-  /* determine sequence length */
-  if(esl_opt_IsUsed(go, "-L")) L = esl_opt_GetInteger(go, "-L");
-  else                         L = cm->clen;      
-
-  /* configure CM for HMM banded alignment */
-  cm->align_opts  |= CM_ALIGN_HBANDED;
-  if(esl_opt_GetBoolean(go, "--sums")) cm->align_opts |= CM_ALIGN_SUMS;
-
-  if(! esl_opt_GetBoolean(go, "-g")) { 
-    cm->config_opts |= CM_CONFIG_LOCAL;
-    if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
-      cm->config_opts |= CM_CONFIG_HMMLOCAL;
-      if(! esl_opt_GetBoolean(go, "--cp9noel")) cm->config_opts |= CM_CONFIG_HMMEL; 
-    }
-  }
-  cm->align_opts |= CM_ALIGN_CHECKINOUT;
-
-  esl_stopwatch_Start(w);
-  printf("%-30s", "Configuring CM...");
-  fflush(stdout);
-  ConfigCM(cm, errbuf, FALSE, NULL, NULL); /* FALSE says: don't calculate W */
-  printf("done.  ");
-  fflush(stdout);
-  esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, " CPU time: ");
-
   if (esl_opt_IsUsed(go, "--thresh1")) { cm->cp9b->thresh1 = esl_opt_GetReal(go, "--thresh1"); }
   if (esl_opt_IsUsed(go, "--thresh2")) { cm->cp9b->thresh2 = esl_opt_GetReal(go, "--thresh2"); }
 
   if (esl_opt_GetBoolean(go, "--noqdb")) { 
-    if(cm->dmin != NULL) { free(cm->dmin); cm->dmin = NULL; }
-    if(cm->dmax != NULL) { free(cm->dmax); cm->dmax = NULL; }
+    cm->search_opts |= CM_SEARCH_NONBANDED; /* don't use QDB to search */
+    qdbidx = SMX_NOQDB;
   }
-  dmin = cm->dmin; 
-  dmax = cm->dmax; 
+  else { 
+    qdbidx = SMX_QDB1_TIGHT; 
+  }
+
   cm->tau = esl_opt_GetReal(go, "--tau");
+  CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &cons);
 
   if(! esl_opt_GetBoolean(go, "--onlyhb")) { 
     printf("%-30s", "Creating tr matrix...");
@@ -9013,68 +8997,17 @@ main(int argc, char **argv)
     esl_stopwatch_Display(stdout, w, " CPU time: ");
   }
   
-  /* get sequences */
-  if(esl_opt_IsUsed(go, "--infile")) { 
-    /* read sequences from a file */
-    status = esl_sqfile_OpenDigital(cm->abc, esl_opt_GetString(go, "--infile"), eslSQFILE_UNKNOWN, NULL, &sqfp);
-    if (status == eslENOTFOUND)    esl_fatal("File %s doesn't exist or is not readable\n", esl_opt_GetString(go, "--infile"));
-    else if (status == eslEFORMAT) esl_fatal("Couldn't determine format of sequence file %s\n", esl_opt_GetString(go, "--infile"));
-    else if (status == eslEINVAL)  esl_fatal("Can't autodetect stdin or .gz."); 
-    else if (status != eslOK)      esl_fatal("Sequence file open failed with error %d.\n", status);
-
-    seqs_to_aln = CreateSeqsToAln(100, FALSE);
-    if((status = ReadSeqsToAln(cm->abc, sqfp, 0, seqs_to_aln, FALSE)) != eslEOF)
-      esl_fatal("Error reading sqfile: %s\n", esl_opt_GetString(go, "--infile"));
-    esl_sqfile_Close(sqfp);
-    N = seqs_to_aln->nseq;
-  }
-  else if(esl_opt_IsUsed(go, "-L")) {
-     double *dnull;
-     ESL_DSQ *randdsq = NULL;
-     ESL_ALLOC(randdsq, sizeof(ESL_DSQ)* (L+2));
-     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
-     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
-     esl_vec_DNorm(dnull, cm->abc->K);
-     seqs_to_aln = CreateSeqsToAln(N, FALSE);
-
-     for (i = 0; i < N; i++) {
-       if (esl_rsq_xIID(r, dnull, cm->abc->K, L, randdsq)  != eslOK) cm_Fail("Failure creating random sequence.");
-       if((seqs_to_aln->sq[i] = esl_sq_CreateDigitalFrom(abc, NULL, randdsq, L, NULL, NULL, NULL)) == NULL)
-         cm_Fail("Failure digitizing/copying random sequence.");
-     }
-  }
-  else if(do_random) {
-    double *dnull;
-    ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
-    for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
-    esl_vec_DNorm(dnull, cm->abc->K);
-    /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
-    double *gamma0_loc;
-    double *gamma0_glb;
-    int Z;
-    if((status = CalculateQueryDependentBands(cm, errbuf, NULL, DEFAULT_BETA_W, NULL, &gamma0_loc, &gamma0_glb, &Z)) != eslOK) cm_Fail(errbuf);
-    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, 
-				      (cm->flags & CMH_LOCAL_BEGIN) ? gamma0_loc : gamma0_glb, 
-				      Z, FALSE);
-    free(gamma0_loc);
-    free(gamma0_glb);
-    free(dnull);
-  }
-  else /* don't randomly generate seqs, emit them from the CM */
-    seqs_to_aln = CMEmitSeqsToAln(r, cm, 1, N, FALSE, NULL, FALSE);
-
-  CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &cons);
-  
   save_tau = cm->tau;
   save_cp9b_thresh1 = cm->cp9b->thresh1;
   save_cp9b_thresh2 = cm->cp9b->thresh2;
 
-  for (i = 0; i < N; i++) { 
-    if(L == 0) continue;
-    L = seqs_to_aln->sq[i]->n;
-    dsq = seqs_to_aln->sq[i]->dsq;
+  i = 0;
+  sq = esl_sq_CreateDigital(cm->abc);
+  while((status = esl_sqio_Read(sqfp, sq)) == eslOK) { 
+    i++;
+    L = sq->n;
+    dsq = sq->dsq;
     cm->search_opts &= ~CM_SEARCH_INSIDE;
-    /* int x; for(x = 1; x <= L; x++) printf("dsq[%4d]: %4d\n", x, dsq[x]); */
 
     cm->tau = save_tau;
     cm->cp9b->thresh1 = save_cp9b_thresh1;
@@ -9095,18 +9028,14 @@ main(int argc, char **argv)
     /* 1. non-banded truncated alignment, unless --onlyhb */
     if(! esl_opt_GetBoolean(go, "--onlyhb")) { 
       /*********************Begin cm_TrAlign****************************/
-      cm_tr_mx_Destroy(trmx);
-      cm_tr_shadow_mx_Destroy(trshmx);
-      trmx   = cm_tr_mx_Create(cm);
-      trshmx = cm_tr_shadow_mx_Create(cm);
       esl_stopwatch_Start(w);
       if(esl_opt_GetBoolean(go, "--optacc")) { 
-	if((status = cm_TrAlign(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, TRUE, FALSE, trmx, trshmx, out_trmx, tremit_mx, NULL, NULL, NULL, &tr, &mode, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f PP (mode: %s)  (FULL LENGTH OPTACC)\n", (i+1), "cm_TrAlign(): ", sc, MarginalMode(mode));
+	if((status = cm_TrAlign(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, TRUE, FALSE, trmx, trshmx, out_trmx, tremit_mx, NULL, NULL, &tr, &mode, &pp, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f PP (mode: %s)  (FULL LENGTH OPTACC)\n", i, "cm_TrAlign(): ", pp, MarginalMode(mode));
       }
       else { 
-	if((status = cm_TrAlign(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, FALSE, FALSE, trmx, trshmx, out_trmx, tremit_mx, NULL, NULL, NULL, &tr, &mode, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits (mode: %s) (FULL LENGTH CYK)\n", (i+1), "cm_TrAlign(): ", sc, MarginalMode(mode));
+	if((status = cm_TrAlign(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, FALSE, FALSE, trmx, trshmx, out_trmx, tremit_mx, NULL, NULL, &tr, &mode, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits (mode: %s) (FULL LENGTH CYK)\n", i, "cm_TrAlign(): ", sc, MarginalMode(mode));
       }
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -9125,10 +9054,10 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--cykout")) { 
 	/*********************Begin cm_TrCYKOutsideAlign****************************/
 	esl_stopwatch_Start(w);
-	status = cm_TrCYKOutsideAlign(cm, errbuf, seqs_to_aln->sq[i]->dsq,  L, size_limit, mode, TRUE, out_trmx, trmx);
+	status = cm_TrCYKOutsideAlign(cm, errbuf, dsq,  L, size_limit, mode, TRUE, out_trmx, trmx);
 	if     (status != eslOK && esl_opt_GetBoolean(go, "--failok")) printf("%s\nError detected, but continuing thanks to --failok\n", errbuf);
 	else if(status != eslOK)                                       cm_Fail(errbuf);
-	printf("%4d %-30s %10s bits ", (i+1), "cm_TrCYKOutsideAlign() CYK:", "?");
+	printf("%4d %-30s %10s bits ", i, "cm_TrCYKOutsideAlign() CYK:", "?");
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End cm_TrCYKOutsideAlign****************************/
@@ -9136,18 +9065,17 @@ main(int argc, char **argv)
 
       /*********************Begin cm_TrInsideAlign()****************************/
       if((status = cm_TrInsideAlign(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, trmx, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-      printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", (i+1), "cm_TrInsideAlign(): ", sc);
+      printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", i, "cm_TrInsideAlign(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       /*********************End cm_TrInsideAlign*****************************/
-
     }
 
     /* 2. non-banded standard (non-truncated) alignment, if requested */
     if(esl_opt_GetBoolean(go, "--std") && (! esl_opt_GetBoolean(go, "--onlyhb"))) { 
       /*********************Begin cm_Align()****************************/
       esl_stopwatch_Start(w);
-      if((status = cm_Align  (cm, errbuf, dsq, L, size_limit, esl_opt_GetBoolean(go, "--optacc"), FALSE, mx, shmx, out_mx, emit_mx, NULL, NULL, NULL, &tr, &sc)) != eslOK) return status;
+      if((status = cm_Align  (cm, errbuf, dsq, L, size_limit, esl_opt_GetBoolean(go, "--optacc"), FALSE, mx, shmx, out_mx, emit_mx, NULL, NULL, &tr, &pp, &sc)) != eslOK) return status;
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
@@ -9156,11 +9084,11 @@ main(int argc, char **argv)
       mode = ParsetreeMode(tr);
       FreeParsetree(tr);
       if(esl_opt_GetBoolean(go, "--optacc")) { 
-	printf("%4d %-30s %10.4f bits (FULL LENGTH OPTACC)\n", (i+1), "cm_Align(): ", sc);
+	printf("%4d %-30s %10.4f pp   (FULL LENGTH OPTACC)\n", i, "cm_Align(): ", pp);
 	printf("Parsetree score      : %.4f           (FULL LENGTH OPTACC)\n", parsetree_sc);
       }
       else { 
-	printf("%4d %-30s %10.4f bits (FULL LENGTH CYK)\n", (i+1), "cm_Align(): ", sc);
+	printf("%4d %-30s %10.4f bits (FULL LENGTH CYK)\n", i, "cm_Align(): ", sc);
 	printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
       }
       
@@ -9169,10 +9097,10 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--cykout")) { 
 	/*********************Begin cm_CYKOutsideAlign****************************/
 	esl_stopwatch_Start(w);
-	status = cm_CYKOutsideAlign(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, TRUE, out_mx, mx, &sc);
+	status = cm_CYKOutsideAlign(cm, errbuf, dsq, L, size_limit, TRUE, out_mx, mx, &sc);
 	if     (status != eslOK && esl_opt_GetBoolean(go, "--failok")) printf("%s\nError detected, but continuing thanks to --failok\n", errbuf);
 	else if(status != eslOK)                                       cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "cm_CYKOutsideAlign() CYK:", sc);
+	printf("%4d %-30s %10.4f bits ", i, "cm_CYKOutsideAlign() CYK:", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End cm_CYKOutsideAlign****************************/
@@ -9182,7 +9110,7 @@ main(int argc, char **argv)
       /*********************Begin cm_InsideAlign()****************************/
       esl_stopwatch_Start(w);
       if((status = cm_InsideAlign (cm, errbuf, dsq, L, size_limit, mx, &sc)) != eslOK) return status;
-      printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", (i+1), "cm_InsideAlign(): ", sc);
+      printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", i, "cm_InsideAlign(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       /*********************End cm_InsideAlign*****************************/
@@ -9190,7 +9118,7 @@ main(int argc, char **argv)
       /*********************Begin cm_OutsideAlign*****************************/
       esl_stopwatch_Start(w);
       if((status = cm_OutsideAlign(cm, errbuf, dsq, L, size_limit, TRUE, out_mx, mx, &sc)) != eslOK) return status;
-      printf("%4d %-30s %10.4f bits (FULL LENGTH OUTSIDE)", (i+1), "cm_OutsideAlign(): ", sc);
+      printf("%4d %-30s %10.4f bits (FULL LENGTH OUTSIDE)", i, "cm_OutsideAlign(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       /*********************End cm_OutsideAlign*****************************/
@@ -9230,12 +9158,12 @@ main(int argc, char **argv)
       esl_stopwatch_Start(w);
 
       if(esl_opt_GetBoolean(go, "--optacc")) { 
-	if((status = cm_TrAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, TRUE, FALSE, cm->trhbmx, cm->trshhbmx, cm->trohbmx, cm->trehbmx, NULL, NULL, NULL, &tr, &mode, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f PP  (mode: %s)  (FULL LENGTH OPTACC)", (i+1), "cm_TrAlignHB(): ", sc, MarginalMode(mode));
+	if((status = cm_TrAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, TRUE, FALSE, cm->trhbmx, cm->trshhbmx, cm->trohbmx, cm->trehbmx, NULL, NULL, &tr, &mode, &pp, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f PP  (mode: %s)  (FULL LENGTH OPTACC)", i, "cm_TrAlignHB(): ", pp, MarginalMode(mode));
       }
       else {
-	if((status = cm_TrAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, FALSE, FALSE, cm->trhbmx, cm->trshhbmx, cm->trohbmx, cm->trehbmx, NULL, NULL, NULL, &tr, &mode, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits (mode: %s)  (FULL LENGTH CYK)", (i+1), "cm_TrAlignHB(): ", sc, MarginalMode(mode));
+	if((status = cm_TrAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, FALSE, FALSE, cm->trhbmx, cm->trshhbmx, cm->trohbmx, cm->trehbmx, NULL, NULL, &tr, &mode, &pp, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits (mode: %s)  (FULL LENGTH CYK)", i, "cm_TrAlignHB(): ", sc, MarginalMode(mode));
       }
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -9254,10 +9182,10 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--cykout")) { 
 	/*********************Begin cm_TrCYKOutsideAlignHB****************************/
 	esl_stopwatch_Start(w);
-	status = cm_TrCYKOutsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, size_limit, mode, TRUE, cm->trohbmx, cm->trhbmx);
+	status = cm_TrCYKOutsideAlignHB(cm, errbuf, dsq, L, size_limit, mode, TRUE, cm->trohbmx, cm->trhbmx);
 	if     (status != eslOK && esl_opt_GetBoolean(go, "--failok")) printf("%s\nError detected, but continuing thanks to --failok\n", errbuf);
 	else if(status != eslOK)                                       cm_Fail(errbuf);
-	printf("%4d %-30s %10s bits ", (i+1), "cm_TrCYKOutsideAlignHB() CYK:", "?");
+	printf("%4d %-30s %10s bits ", i, "cm_TrCYKOutsideAlignHB() CYK:", "?");
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End cm_TrCYKOutsideAlignHB****************************/
@@ -9266,7 +9194,7 @@ main(int argc, char **argv)
       /*********************Begin cm_TrInsideAlignHB()****************************/
       esl_stopwatch_Start(w);
       if((status = cm_TrInsideAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, cm->trhbmx, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-      printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", (i+1), "cm_TrInsideAlignHB(): ", sc);
+      printf("%4d %-30s %10.4f bits (FULL LENGTH INSIDE)", i, "cm_TrInsideAlignHB(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       /*********************End cm_TrInsideAlignHB*****************************/
@@ -9295,7 +9223,7 @@ main(int argc, char **argv)
       /*PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);*/
 	
       esl_stopwatch_Start(w);
-      if((status = cm_AlignHB(cm, errbuf, dsq, L, size_limit, esl_opt_GetBoolean(go, "--optacc"), FALSE, cm->hbmx, cm->shhbmx, cm->ohbmx, cm->ehbmx, NULL, NULL, NULL, &tr, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = cm_AlignHB(cm, errbuf, dsq, L, size_limit, esl_opt_GetBoolean(go, "--optacc"), FALSE, cm->hbmx, cm->shhbmx, cm->ohbmx, cm->ehbmx, NULL, NULL, &tr, &pp, &sc)) != eslOK) cm_Fail(errbuf);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
@@ -9303,11 +9231,11 @@ main(int argc, char **argv)
       ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
       FreeParsetree(tr);
       if(esl_opt_GetBoolean(go, "--optacc")) { 
-	printf("%4d %-30s %10.4f bits (FULL LENGTH OPTACC)\n", (i+1), "cm_AlignHB(): ", sc);
+	printf("%4d %-30s %10.4f pp   (FULL LENGTH OPTACC)\n", i, "cm_AlignHB(): ", pp);
 	printf("Parsetree score      : %.4f           (FULL LENGTH OPTACC)\n", parsetree_sc);
       }
       else { 
-	printf("%4d %-30s %10.4f bits (FULL LENGTH CYK)\n", (i+1), "cm_AlignHB(): ", sc);
+	printf("%4d %-30s %10.4f bits (FULL LENGTH CYK)\n", i, "cm_AlignHB(): ", sc);
 	printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
       }
       
@@ -9318,8 +9246,8 @@ main(int argc, char **argv)
       /* 5. non-banded truncated search, if requested */
       /*********************Begin RefTrCYKScan****************************/
       esl_stopwatch_Start(w);
-      if((status = RefTrCYKScan(cm, errbuf, trsmx, tro, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
-      printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "RefTrCYKScan(): ", sc, MarginalMode(mode));
+      if((status = RefTrCYKScan(cm, errbuf, cm->trsmx, qdbidx, tro, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%4d %-30s %10.4f bits (mode: %s)", i, "RefTrCYKScan(): ", sc, MarginalMode(mode));
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       /*********************End RefTrCYKScan****************************/
@@ -9327,8 +9255,8 @@ main(int argc, char **argv)
       /*********************Begin RefITrInsideScan****************************/
       cm->search_opts |= CM_SEARCH_INSIDE;
       esl_stopwatch_Start(w);
-      if((status = RefITrInsideScan(cm, errbuf, trsmx, tro, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
-      printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "RefITrInsideScan(): ", sc, MarginalMode(mode));
+      if((status = RefITrInsideScan(cm, errbuf, cm->trsmx, qdbidx, tro, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%4d %-30s %10.4f bits (mode: %s)", i, "RefITrInsideScan(): ", sc, MarginalMode(mode));
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       cm->search_opts &= ~CM_SEARCH_INSIDE;
@@ -9338,18 +9266,17 @@ main(int argc, char **argv)
 	/*********************Begin TrCYK_Inside****************************/
 	esl_stopwatch_Start(w);
 	sc = TrCYK_Inside(cm, dsq, L, 0, 1, L, FALSE, NULL);
-	printf("%4d %-30s %10.4f bits ", (i+1), "TrCYK_Inside():   ", sc);
+	printf("%4d %-30s %10.4f bits ", i, "TrCYK_Inside():   ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End TrCYK_Inside****************************/
       }
 
       /* 6. non-banded standard search, if requested */
-      if(cm->smx == NULL) cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
       /*********************Begin FastCYKScan****************************/
       esl_stopwatch_Start(w);
-      if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-      printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
+      if((status = FastCYKScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%4d %-30s %10.4f bits ", i, "FastCYKScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       /*********************End FastCYKScan****************************/
@@ -9357,8 +9284,8 @@ main(int argc, char **argv)
       /*********************Begin FastIInsideScan****************************/
       cm->search_opts |= CM_SEARCH_INSIDE;
       esl_stopwatch_Start(w);
-      if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-      printf("%4d %-30s %10.4f bits ", (i+1), "FastIInsideScan(): ", sc);
+      if((status = FastIInsideScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%4d %-30s %10.4f bits ", i, "FastIInsideScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       cm->search_opts &= ~CM_SEARCH_INSIDE;
@@ -9395,16 +9322,16 @@ main(int argc, char **argv)
 	/*PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);*/
 	    
 	esl_stopwatch_Start(w);
-	if((status = TrCYKScanHB(cm, errbuf, tro, dsq, 1, L, 0., NULL, FALSE, cm->trhbmx, size_limit, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "TrCYKScanHB(): ", sc, MarginalMode(mode));
+	if((status = TrCYKScanHB(cm, errbuf, cm->trhbmx, size_limit, tro, dsq, 1, L, 0., NULL, FALSE, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits (mode: %s)", i, "TrCYKScanHB(): ", sc, MarginalMode(mode));
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End TrCYKScanHB****************************/
 	    
 	/*********************Begin FTrInsideScanHB****************************/
 	esl_stopwatch_Start(w);
-	if((status = FTrInsideScanHB(cm, errbuf, tro, dsq, 1, L, 0., NULL, FALSE, cm->trhbmx, size_limit, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits (mode: %s)", (i+1), "FTrInsideScanHB(): ", sc, MarginalMode(mode));
+	if((status = FTrInsideScanHB(cm, errbuf, cm->trhbmx, size_limit, tro, dsq, 1, L, 0., NULL, FALSE, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits (mode: %s)", i, "FTrInsideScanHB(): ", sc, MarginalMode(mode));
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*********************End FTrInsideScanHB***********************/
@@ -9433,8 +9360,8 @@ main(int argc, char **argv)
 	  /*PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);*/
 	      
 	  esl_stopwatch_Start(w);
-	  if((status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, cm->hbmx, size_limit, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScanHB(): ", sc);
+	  if((status = FastCYKScanHB(cm, errbuf, cm->hbmx, size_limit, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  printf("%4d %-30s %10.4f bits ", i, "FastCYKScanHB(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	  /*********************End FastCYKScanHB****************************/
@@ -9442,13 +9369,16 @@ main(int argc, char **argv)
       }
     }
     printf("\n");
+    esl_sq_Reuse(sq);
   }
+  if(status != eslEOF) cm_Fail("ERROR reading sequence file, sequence number %d\n", i);
+
   FreeCM(cm);
-  FreeSeqsToAln(seqs_to_aln);
+  esl_sq_Destroy(sq);
   esl_alphabet_Destroy(abc);
   esl_stopwatch_Destroy(w);
-  esl_randomness_Destroy(r);
   esl_getopts_Destroy(go);
+  esl_sqfile_Close(sqfp);
   free(tro);
   if(trmx        != NULL) cm_tr_mx_Destroy(trmx);
   if(out_trmx    != NULL) cm_tr_mx_Destroy(out_trmx);
@@ -9461,10 +9391,6 @@ main(int argc, char **argv)
   if(tremit_mx   != NULL) cm_tr_emit_mx_Destroy(tremit_mx);
 
   return 0;
-
- ERROR:
-  cm_Fail("memory allocation error");
-  return 0; /* never reached */
 }
 #endif /*IMPL_TRUNC_ALIGN_BENCHMARK*/
 

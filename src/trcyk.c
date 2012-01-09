@@ -85,13 +85,13 @@ main(int argc, char **argv)
       
       if (seq->dsq == NULL) 
          esl_sq_Digitize(abc, seq);
-      //sc = TrCYK_DnC(cm, seq->dsq, seq->n, 0, i0, j0, &tr);
-      sc = TrCYK_Inside(cm, seq->dsq, seq->n, 0, i0, j0, FALSE, &tr);
+      sc = TrCYK_DnC(cm, seq->dsq, seq->n, 0, i0, j0, &tr);
+      //sc = TrCYK_Inside(cm, seq->dsq, seq->n, 0, i0, j0, FALSE, &tr);
       fali = CreateFancyAli(cm->abc, tr, cm, cons, seq->dsq, FALSE, NULL);
-      float sc, struct_sc;
-      ParsetreeScore(cm, NULL, NULL, tr, seq->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL);
-      printf("Parsetree score: %.4f\n", sc);
-      ParsetreeDump(stdout, tr, cm, seq->dsq, NULL, NULL);
+      //float sc, struct_sc;
+      //ParsetreeScore(cm, NULL, NULL, tr, seq->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL);
+      //printf("Parsetree score: %.4f\n", sc);
+      //ParsetreeDump(stdout, tr, cm, seq->dsq, NULL, NULL);
       FreeParsetree(tr);
 
       revcomp(abc, seq, seq);

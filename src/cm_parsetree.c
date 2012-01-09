@@ -689,7 +689,6 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
  *           elfp         - file to print per-seq EL insert information to (NULL if none)
  *           do_full      - TRUE to always include all match columns in alignment
  *           do_matchonly - TRUE to ONLY include match columns
- *           be_efficient - TRUE to free a parsetree as soon as we've created an aligned seq
  *           ret_msa      - RETURN: MSA, alloc'ed/created here
  *
  * Returns:  eslOK on success, eslEMEM on memory error, eslEINVALID on contract violation.
@@ -699,7 +698,7 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
 int
 Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
 		     Parsetree_t **tr, char **postcode, int nseq, 
-		     FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, int be_efficient, ESL_MSA **ret_msa)
+		     FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, ESL_MSA **ret_msa)
 {
   int          status;          /* easel status flag */
   CMEmitMap_t *emap  = NULL;    /* ptr to cm->emap, for convenience */
@@ -862,9 +861,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   }
   
   /* We're getting closer.
-   * Now we know the size of the MSA, but we only allocate a chunk of seqs
-   * at a time, so that if <be_efficient>, we can free each parsetree as 
-   * we create an aligned seq, to save memory.
+   * Now we know the size of the MSA, allocate it. 
    */
   msa = esl_msa_Create(nseq, -1);
   if(msa == NULL) goto ERROR;
@@ -1060,11 +1057,6 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 
     /* copy tmp_aseq to the msa */
     if((status = esl_strdup(tmp_aseq, msa->alen, &(msa->aseq[i]))) != eslOK) goto ERROR;
-    /* if be_efficient, free tr[i], we're done with it */
-    if(be_efficient) { 
-      FreeParsetree(tr[i]);
-      tr[i] = NULL; 
-    }
 
     /* add tmp_apc posterior probabilities to msa, if nec */
     if(do_cur_post) { 

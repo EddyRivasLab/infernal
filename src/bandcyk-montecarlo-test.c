@@ -69,7 +69,7 @@ main(int argc, char **argv)
   int      mc_nsample;		/* # of monte carlo samples to do */
   ESL_RANDOMNESS *r       = NULL;
   ESL_ALPHABET   *abc     = NULL;
-  char            errbuf[cmERRBUFSIZE]; /* for error messages */
+  char            errbuf[eslERRBUFSIZE]; /* for error messages */
 
   /*********************************************** 
    * Parse command line
