@@ -1585,14 +1585,14 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
  * Incept:    SRE, Tue Jan 11 16:13:30 2011 [Janelia]
  *
  * Purpose:   Print some metadata as a trailer on a tabular output file:
- *            date/time, the program, HMMER3 version info, the
+ *            date/time, the program, INFERNAL version info, the
  *            pipeline mode (SCAN or SEARCH), the query and target
  *            filenames, a spoof commandline recording the entire
  *            program configuration, and a "fini!" that's useful for
  *            detecting successful output completion.
  *
- * Args:      ofp       - open tabular output file (either --tblout or --domtblout)
- *            progname  - "hmmscan", for example
+ * Args:      ofp       - open tabular output file (--tblout)
+ *            progname  - "cmscan", for example
  *            pipemode  - CM_SEARCH_SEQS | CM_SCAN_MODELS
  *            qfile     - name of query file, or '-' for stdin, or '[none]' if NULL
  *            tfile     - name of target file, or '-' for stdin, or '[none]' if NULL

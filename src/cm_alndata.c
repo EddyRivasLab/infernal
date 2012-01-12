@@ -153,13 +153,14 @@ sub_alignment_workunit_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t 
  *           using the appropriate alignment function and return 
  *           relevant data for eventual output in <ret_dataA>.
  *
- * Args:     cm              - the covariance model
- *           errbuf          - char buffer for reporting errors
- *           sq_block        - block of sequences to align
- *           mxsize          - max size in Mb of allowable DP mx
- *           w               - stopwatch for timing individual stages
- *           w_tot           - stopwatch for timing total time per seq
- *           ret_dataA       - array of CM_ALNDATA objects to return
+ * Args:     cm        - the covariance model
+ *           errbuf    - char buffer for reporting errors
+ *           sq_block  - block of sequences to align
+ *           mxsize    - max size in Mb of allowable DP mx
+ *           w         - stopwatch for timing individual stages
+ *           w_tot     - stopwatch for timing total time per seq
+ *           r         - RNG, req'd if CM_ALIGN_SAMPLE, can be NULL otherwise
+ *           ret_dataA - array of CM_ALNDATA objects to return
  *
  * Returns:  eslOK on success;
  *           eslEINCOMPAT on contract violation, errbuf is filled;
@@ -167,7 +168,7 @@ sub_alignment_workunit_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t 
  *           <ret_dataA> is alloc'ed and filled with sq_block->count CM_ALNDATA objects.
  */
 int
-ProcessAlignmentWorkunit(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, CM_ALNDATA ***ret_dataA)
+ProcessAlignmentWorkunit(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA)
 {
   int           status;          /* easel status */
   int           j;               /* counter over parsetrees */
@@ -179,14 +180,19 @@ ProcessAlignmentWorkunit(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
   TruncOpts_t  *tro = NULL;      /* truncated alignment info, remains NULL if --notrunc */
   float         secs_bands = 0.; /* seconds elapsed for band calculation */
   float         secs_aln;        /* seconds elapsed for alignment calculation */
-  int   cfrom_emit, cto_emit;    /* CM boundaries of aligned sequence */
-  int   cfrom_span, cto_span;    /* CM boundaries of parsetree */
+  float         mb_tot = 0.;      /* size of all DP matrices used for alignment */
+  /* first/final CM consensus posns used in the alignment */
+  int           cfrom_emit;      
+  int           cto_emit;        
+  /* first/final CM consensus posns used in parsetree, includes silent off-mode posns in trunc alns */
+  int           cfrom_span;      
+  int           cto_span;        
 
   /* alignment options */
   int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE : FALSE;
   int do_optacc    = (cm->align_opts & CM_ALIGN_OPTACC)    ? TRUE : FALSE;
-  int do_post      = (cm->align_opts & CM_ALIGN_POST)      ? TRUE : FALSE;
   int do_sample    = (cm->align_opts & CM_ALIGN_SAMPLE)    ? TRUE : FALSE;
+  int do_post      = (cm->align_opts & CM_ALIGN_POST)      ? TRUE : FALSE;
   int do_sub       = (cm->align_opts & CM_ALIGN_SUB)       ? TRUE : FALSE;
   int do_small     = (cm->align_opts & CM_ALIGN_SMALL)     ? TRUE : FALSE;
   int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)     ? TRUE : FALSE;
@@ -211,11 +217,13 @@ ProcessAlignmentWorkunit(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
   Parsetree_t *full_tr  = NULL;   /* converted parsetree to full CM */
 
   /* contract check */
-  if(do_small && (! do_nonbanded)) ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to do small and HMM banded alignment");
-  if(do_post  && do_small)         ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to do PP and small alignment");
-  if(do_sub   && do_small)         ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to do sub and small alignment");
-  if(do_sub   && do_trunc)         ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to do sub and truncated alignment");
-  if(sq_block->count <= 0)         ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() received empty block");
+  if(do_small  && (! do_nonbanded)) ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to do small and HMM banded alignment");
+  if(do_post   && do_small)         ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to do PP and small alignment");
+  if(do_optacc && do_sample)        ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to sample and do optacc alignment");
+  if(do_sub    && do_small)         ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to do sub and small alignment");
+  if(do_sub    && do_trunc)         ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to do sub and truncated alignment");
+  if(do_sample && r == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to sample but RNG r == NULL");
+  if(sq_block->count <= 0)          ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() received empty block");
 
   if(do_trunc) { 
     tro = CreateTruncOpts();
@@ -260,20 +268,29 @@ ProcessAlignmentWorkunit(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
     if(w != NULL) esl_stopwatch_Start(w);
     /* do small D&C alignment, if nec */
     if(do_small) { 
-      if(do_trunc) sc = TrCYK_DnC          (cm, sqp->dsq, sqp->L, 0, 1, sqp->L, &tr);
-      else         sc = CYKDivideAndConquer(cm, sqp->dsq, sqp->L, 0, 1, sqp->L, &tr, NULL, NULL);
+      if(do_trunc) { 
+	sc = TrCYK_DnC(cm, sqp->dsq, sqp->L, 0, 1, sqp->L, &tr);
+	mb_tot = 0.; /* TODO: write a function that determines Mb for truncated D&C */
+      }
+      else { 
+        sc = CYKDivideAndConquer(cm, sqp->dsq, sqp->L, 0, 1, sqp->L, &tr, NULL, NULL);
+	mb_tot = CYKNonQDBSmallMbNeeded(cm, sqp->L);
+      }
     }
     else { /* do_small is FALSE */
       if(do_nonbanded) { /* do not use HMM bands */
 	if(do_trunc) { 
-	  status = cm_TrAlign(cm, errbuf, sqp->dsq, sqp->L, mxsize, TRMODE_UNKNOWN, do_optacc, do_sample, 
-			      trmx, trshmx, tromx, tremx, NULL, &ppstr, &tr, NULL, &pp, &sc);
+	  if((status = cm_TrAlignSizeNeeded(cm, errbuf, sqp->L, mxsize, do_sample, do_post, 
+					    NULL, NULL, NULL, &mb_tot)) != eslOK) return status;
+	  if((status = cm_TrAlign(cm, errbuf, sqp->dsq, sqp->L, mxsize, TRMODE_UNKNOWN, do_optacc, do_sample, 
+				  trmx, trshmx, tromx, tremx, r, &ppstr, &tr, NULL, &pp, &sc)) != eslOK) return status;
 	}
 	else {
-	  status = cm_Align(cm, errbuf, sqp->dsq, sqp->L, mxsize, do_optacc, do_sample, 
-			    mx, shmx, omx, emx, NULL, &ppstr, &tr, &pp, &sc);
+	  if((status = cm_AlignSizeNeeded(cm, errbuf, sqp->L, mxsize, do_sample, do_post, 
+					  NULL, NULL, NULL, &mb_tot)) != eslOK) return status;
+	  if((status = cm_Align(cm, errbuf, sqp->dsq, sqp->L, mxsize, do_optacc, do_sample, 
+				mx, shmx, omx, emx, r, &ppstr, &tr, &pp, &sc)) != eslOK) return status;
 	}
-	if(status != eslOK) return status;
       }
       else { /* use HMM bands */
 	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sqp->dsq, 
@@ -283,14 +300,24 @@ ProcessAlignmentWorkunit(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
 	
 	if(w != NULL) esl_stopwatch_Start(w);
 	if(do_trunc) { 
-	  status = cm_TrAlignHB(cm, errbuf, sqp->dsq, sqp->L, mxsize, TRMODE_UNKNOWN, do_optacc, do_sample, 
-				cm->trhbmx, cm->trshhbmx, cm->trohbmx, cm->trehbmx, NULL, &ppstr, &tr, NULL, &pp, &sc);
+	  if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sqp->L, mxsize, do_sample, do_post, 
+					      NULL, NULL, NULL, &mb_tot)) != eslOK) return status;
+	  if((status = cm_TrAlignHB(cm, errbuf, sqp->dsq, sqp->L, mxsize, TRMODE_UNKNOWN, do_optacc, do_sample, 
+				    cm->trhbmx, cm->trshhbmx, cm->trohbmx, cm->trehbmx, r, &ppstr, &tr, NULL, &pp, &sc)) != eslOK) return status;
 	}
 	else { 
-	  status = cm_AlignHB(cm, errbuf, sqp->dsq, sqp->L, mxsize, do_optacc, do_sample, 
-			      cm->hbmx, cm->shhbmx, cm->ohbmx, cm->ehbmx, NULL, &ppstr, &tr, &pp, &sc);
+	  if((status = cm_AlignSizeNeededHB(cm, errbuf, sqp->L, mxsize, do_sample, do_post, 
+					    NULL, NULL, NULL, &mb_tot)) != eslOK) return status;
+	  if((status = cm_AlignHB(cm, errbuf, sqp->dsq, sqp->L, mxsize, do_optacc, do_sample, 
+				  cm->hbmx, cm->shhbmx, cm->ohbmx, cm->ehbmx, r, &ppstr, &tr, &pp, &sc)) != eslOK) return status;
 	}
-	if(status != eslOK) return status;
+	/* add size of CP9 matrices used for calculating bands */
+	mb_tot += ((float) cm->cp9_mx->ncells_valid  * sizeof(int)) / 1000000.;
+	mb_tot += ((float) cm->cp9_bmx->ncells_valid * sizeof(int)) / 1000000.;
+	if(do_sub) { /* add size of original CM's CP9 matrices used for calculating start/end position */
+	  mb_tot += ((float) orig_cm->cp9_mx->ncells_valid  * sizeof(int)) / 1000000.;
+	  mb_tot += ((float) orig_cm->cp9_bmx->ncells_valid * sizeof(int)) / 1000000.;
+	}
       }
     }
     if(w != NULL) esl_stopwatch_Stop(w);
@@ -326,6 +353,7 @@ ProcessAlignmentWorkunit(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
     dataA[j]->secs_aln   = secs_aln;
     if(w_tot != NULL) esl_stopwatch_Stop(w_tot);
     dataA[j]->secs_tot   = (w_tot == NULL) ? 0. : w_tot->elapsed;
+    dataA[j]->mb_tot     = mb_tot;
   }
   *ret_dataA = dataA;
 

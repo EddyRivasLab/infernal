@@ -307,77 +307,80 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
     mode = tr->mode[tidx];
     if (v == cm->M) continue;      	/* special case: v is EL, local alignment end */
     nd = cm->ndidx[v];
-    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st && tr->nxtl[tidx] != -1) /* no scores in B,E or if nxtl is -1 */
-      {
-	y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
-	if(v == 0) { 
-	  if(cm->flags & CMH_LOCAL_BEGIN)
-	    sc += (tr->is_std) ? cm->beginsc[y] : cm->trbeginsc[y];
-	  else if(tr->mode[tidx] == TRMODE_T && cm->sttype[y] == B_st)
-	    sc += 0.; /* special case in *glocal* truncated alignment, 'local' begins into B states are free to allow for T alignment */                          
-	  else
-	    sc += cm->tsc[v][y - cm->cfirst[v]]; /* non-local transition out of ROOT_S */
-	}
-	else if (y == cm->M) /* CMH_LOCAL_END is presumably set, else this wouldn't happen */
-	  sc += cm->endsc[v] + (cm->el_selfsc * (tr->emitr[tidx] - tr->emitl[tidx] + 1 - StateDelta(cm->sttype[v])));
-	else 		/* y - cm->first[v] gives us the offset in the transition vector */
-	  sc += cm->tsc[v][y - cm->cfirst[v]];
-	
-	if (cm->sttype[v] == MP_st) 
-	  {
-	    symi = dsq[tr->emitl[tidx]];
-	    symj = dsq[tr->emitr[tidx]];
-            if (mode == TRMODE_J)
-              {
-  	        if (symi < cm->abc->K && symj < cm->abc->K) { 
-	          sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
-		  struct_sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
-		}
-	        else { 
-	          sc += DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
-		  struct_sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
-		}
-		lsc = cm->lmesc[v][symi];
-		rsc = cm->rmesc[v][symj];
-		struct_sc -= lsc;  /* subtract left  marginalized score */
-		struct_sc -= rsc; /* subtract right marginalized score */
-		primary_sc += lsc;
-		primary_sc += rsc;
-	      }
-            else if (mode == TRMODE_L)
-              sc += cm->lmesc[v][symi];
-            else if (mode == TRMODE_R)
-              sc += cm->rmesc[v][symj];
-	    if(emap != NULL) { 
-	      spos = ESL_MIN(spos, emap->lpos[nd]);
-	      epos = ESL_MAX(epos, emap->rpos[nd]);
-	    }
-	  } 
-	else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == TRMODE_J || mode == TRMODE_L) )
-	  {
-	    symi = dsq[tr->emitl[tidx]];
-	    if (symi < cm->abc->K) lsc = cm->esc[v][(int) symi];
-	    else                   lsc = esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]);
-	    sc += lsc;
-	    primary_sc += lsc;
-	    if(emap != NULL && cm->stid[v] == MATL_ML) { 
-	      spos = ESL_MIN(spos, emap->lpos[nd]);
-	      epos = ESL_MAX(epos, emap->lpos[nd]);
-	    }
-	  } 
-	else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == TRMODE_J || mode == TRMODE_R) )
-	  {
-	    symj = dsq[tr->emitr[tidx]];
-	    if (symj < cm->abc->K) rsc = cm->esc[v][(int) symj];
-	    else                   rsc = esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]);
-	    sc += rsc;
-	    primary_sc += rsc;
-	    if(emap != NULL && cm->stid[v] == MATR_MR) { 
-	      spos = ESL_MIN(spos, emap->rpos[nd]);
-	      epos = ESL_MAX(epos, emap->rpos[nd]);
-	    }
-	  }
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) { /* no scores in B,E */
+      y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
+
+      /* add in contribution of transition score */
+      if(v == 0) { 
+	if(cm->flags & CMH_LOCAL_BEGIN)
+	  sc += (tr->is_std) ? cm->beginsc[y] : cm->trbeginsc[y];
+	else if(tr->mode[tidx] == TRMODE_T && cm->sttype[y] == B_st)
+	  sc += 0.; /* special case in *glocal* truncated alignment, 'local' begins into B states are free to allow for T alignment */                          
+	else
+	  sc += cm->tsc[v][y - cm->cfirst[v]]; /* non-local transition out of ROOT_S */
       }
+      else if (y == cm->M) { 
+	/* CMH_LOCAL_END is presumably set, else this wouldn't happen */
+	sc += cm->endsc[v] + (cm->el_selfsc * (tr->emitr[tidx] - tr->emitl[tidx] + 1 - StateDelta(cm->sttype[v])));
+      }
+      else if (tr->nxtl[tidx] != -1) { 
+	/* y - cm->first[v] gives us the offset in the transition vector */
+	sc += cm->tsc[v][y - cm->cfirst[v]];
+      }
+      /* else: tr->nxtl[tidx] == -1, we've done a truncated end, no transition score contribution */
+
+      /* add in contribution of emission score */
+      if (cm->sttype[v] == MP_st) { 
+	symi = dsq[tr->emitl[tidx]];
+	symj = dsq[tr->emitr[tidx]];
+	if (mode == TRMODE_J) { 
+	  if (symi < cm->abc->K && symj < cm->abc->K) { 
+	    sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
+	    struct_sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
+	  }
+	  else { 
+	    sc += DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
+	    struct_sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
+	  }
+	  lsc = cm->lmesc[v][symi];
+	  rsc = cm->rmesc[v][symj];
+	  struct_sc -= lsc;  /* subtract left  marginalized score */
+	  struct_sc -= rsc;  /* subtract right marginalized score */
+	  primary_sc += lsc;
+	  primary_sc += rsc;
+	}
+	else if (mode == TRMODE_L)
+	  sc += cm->lmesc[v][symi];
+	else if (mode == TRMODE_R)
+	  sc += cm->rmesc[v][symj];
+	if(emap != NULL) { 
+	  spos = ESL_MIN(spos, emap->lpos[nd]);
+	  epos = ESL_MAX(epos, emap->rpos[nd]);
+	}
+      } 
+      else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && ModeEmitsLeft(mode)) { 
+	symi = dsq[tr->emitl[tidx]];
+	if (symi < cm->abc->K) lsc = cm->esc[v][(int) symi];
+	else                   lsc = esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]);
+	sc += lsc;
+	primary_sc += lsc;
+	if(emap != NULL && cm->stid[v] == MATL_ML) { 
+	  spos = ESL_MIN(spos, emap->lpos[nd]);
+	  epos = ESL_MAX(epos, emap->lpos[nd]);
+	}
+      } 
+      else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && ModeEmitsRight(mode)) { 
+	symj = dsq[tr->emitr[tidx]];
+	if (symj < cm->abc->K) rsc = cm->esc[v][(int) symj];
+	else                   rsc = esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]);
+	sc += rsc;
+	primary_sc += rsc;
+	if(emap != NULL && cm->stid[v] == MATR_MR) { 
+	  spos = ESL_MIN(spos, emap->rpos[nd]);
+	  epos = ESL_MAX(epos, emap->rpos[nd]);
+	}
+      }
+    }
   }
 
   if(do_null2) { 

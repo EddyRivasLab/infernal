@@ -22,6 +22,7 @@
  * non-banded version        HMM banded version
  * -----------------------   ------------------------
  * cm_alignT()               cm_alignT_hb()
+ * cm_AlignSizeNeeded()      cm_AlignSizeNeededHB()
  * cm_Align()                cm_AlignHB()
  * cm_CYKInsideAlign()       cm_CYKInsideAlignHB()
  * cm_InsideAlign()          cm_InsideAlignHB()
@@ -327,7 +328,7 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
        * big reason I decided to allow it is that it is difficult
        * implement a way of disallowing it. Plus the goal of optimal
        * accuracy is to show the alignment that has the maximum
-       * average PP on emitted residues within the bands.  By allowing
+       * average PP on emitted residues within the bands. By allowing
        * this, we also consider a few possible alignments that violate
        * the bands, which I think is okay.
        */
@@ -436,6 +437,133 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
   return status; /* NEVERREACHED */
 }
 
+/* Function: cm_AlignSizeNeeded()
+ * Date:     EPN, Thu Jan 12 09:51:11 2012
+ *
+ * Purpose:  Determine size in Mb required to successfully call
+ *           cm_Align() for a given model <cm>, sequence length
+ *           <L> and alignment options in <do_sample> and <do_post>.
+ *
+ *           Return <eslERANGE> if required size exceeds size_limit.
+ *           
+ * Args:     cm         - the covariance model
+ *           errbuf     - char buffer for reporting errors
+ *           L          - length of sequence 
+ *           size_limit - max size in Mb for all required matrices, return eslERANGE if exceeded
+ *           do_sample  - TRUE to sample a parsetree from the Inside matrix
+ *           do_post    - TRUE to do posteriors
+ *           ret_mxmb   - RETURN: size in Mb of required CM_MX (we'll need 2 of these if do_post)
+ *           ret_emxmb  - RETURN: size in Mb of required CM_EMIT_MX   (0. if we won't need one) 
+ *           ret_shmxmb - RETURN: size in Mb of required CM_SHADOW_MX (0. if we won't need one)
+ *           ret_totmb  - RETURN: size in Mb of all required matrices 
+ * 
+ * Returns: <eslOK> on success.
+ * 
+ * Throws:  <eslEINVAL> on contract violation
+ *          <eslERANGE> if total size of all matrices exceeds <size_limit>
+ */
+int
+cm_AlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post,
+		   float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb)
+{
+  int          status;
+  float        totmb    = 0.;  /* total Mb required for all matrices (that must be simultaneously in memory) */
+  float        mxmb     = 0.;  /* Mb required for CM_MX */
+  float        emxmb    = 0.;  /* Mb required for CM_EMIT_MX */
+  float        shmxmb   = 0.;  /* Mb required for CM_SHADOW_MX */
+
+  /* we pass NULL values to the *_mx_SizeNeeded() functions because we don't care about cell counts */
+  if(do_post || do_sample) { /* we'll need an Inside matrix */
+    if((status = cm_mx_SizeNeeded(cm, errbuf, L, NULL, &mxmb)) != eslOK) return status;
+    totmb += mxmb;
+    if(do_post) { 
+      /* we'll need an Outside matrix (which we'll reuse as the Posterior matrix, 
+       *  so only count it once) and a emit matrix
+       */
+      totmb += mxmb; 
+      if((status = cm_emit_mx_SizeNeeded(cm, errbuf, L, NULL, NULL, &emxmb)) != eslOK) return status;
+      totmb += emxmb;
+    }
+  }
+  if(! do_sample) { /* if do_sample, we won't need a shadow matrix */
+    if((status = cm_shadow_mx_SizeNeeded(cm, errbuf, L, NULL, NULL, &shmxmb)) != eslOK) return status;
+    totmb += shmxmb;
+  }
+
+  if (ret_mxmb   != NULL) *ret_mxmb    = mxmb;
+  if (ret_emxmb  != NULL) *ret_emxmb   = emxmb;
+  if (ret_shmxmb != NULL) *ret_shmxmb  = shmxmb;
+  if (ret_totmb  != NULL) *ret_totmb   = totmb;
+
+  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "non-banded standard alignment will require matrices totalling %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", totmb, (float) size_limit);
+
+  return eslOK;
+}
+
+/* Function: cm_AlignSizeNeededHB()
+ * Date:     EPN, Thu Jan 12 10:06:20 2012
+ *
+ * Purpose:  Determine size in Mb required to successfully call
+ *           cm_AlignHB() for a given model <cm>, sequence length
+ *           <L>, HMM bands <cm->cp9b> and alignment options 
+ *           in <do_sample> and <do_post>.
+ *
+ *           Return <eslERANGE> if required size exceeds size_limit.
+ *           
+ * Args:     cm         - the covariance model
+ *           errbuf     - char buffer for reporting errors
+ *           L          - length of sequence 
+ *           size_limit - max size in Mb for all required matrices, return eslERANGE if exceeded
+ *           do_sample  - TRUE to sample a parsetree from the Inside matrix
+ *           do_post    - TRUE to do posteriors
+ *           ret_mxmb   - RETURN: size in Mb of required CM_HB_MX (we'll need 2 of these if do_post)
+ *           ret_emxmb  - RETURN: size in Mb of required CM_HB_EMIT_MX   (0. if we won't need one) 
+ *           ret_shmxmb - RETURN: size in Mb of required CM_HB_SHADOW_MX (0. if we won't need one)
+ *           ret_totmb  - RETURN: size in Mb of all required matrices 
+ * 
+ * Returns: <eslOK> on success.
+ * 
+ * Throws:  <eslEINVAL> on contract violation
+ *          <eslERANGE> if total size of all matrices exceeds <size_limit>
+ */
+int
+cm_AlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post,
+		     float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb)
+{
+  int          status;
+  float        totmb    = 0.;  /* total Mb required for all matrices (that must be simultaneously in memory) */
+  float        mxmb     = 0.;  /* Mb required for CM_MX */
+  float        emxmb    = 0.;  /* Mb required for CM_EMIT_MX */
+  float        shmxmb   = 0.;  /* Mb required for CM_SHADOW_MX */
+
+  /* we pass NULL values to the *_mx_SizeNeeded() functions because we don't care about cell counts */
+  if(do_post || do_sample) { /* we'll need an Inside matrix */
+    if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, &mxmb)) != eslOK) return status;
+    totmb += mxmb;
+    if(do_post) { 
+      /* we'll need an Outside matrix (which we'll reuse as the Posterior matrix, 
+       *  so only count it once) and a emit matrix
+       */
+      totmb += mxmb; 
+      if((status = cm_hb_emit_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, NULL, &emxmb)) != eslOK) return status;
+      totmb += emxmb;
+    }
+  }
+  if(! do_sample) { /* if do_sample, we won't need a shadow matrix */
+    if((status = cm_hb_shadow_mx_SizeNeeded(cm, errbuf, cm->cp9b, NULL, NULL, &shmxmb)) != eslOK) return status;
+    totmb += shmxmb;
+  }
+
+  if (ret_mxmb   != NULL) *ret_mxmb    = mxmb;
+  if (ret_emxmb  != NULL) *ret_emxmb   = emxmb;
+  if (ret_shmxmb != NULL) *ret_shmxmb  = shmxmb;
+  if (ret_totmb  != NULL) *ret_totmb   = totmb;
+
+  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded standard alignment will require matrices totalling %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", totmb, (float) size_limit);
+
+  return eslOK;
+}
+
 /* Function: cm_Align()
  * Date:     EPN, Sun Nov 18 19:26:45 2007
  *
@@ -499,9 +627,9 @@ cm_Align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_o
 {
   int          status;
   Parsetree_t *tr = NULL;
-  float        sc     = 0.;
-  float        avgpp  = 0.;
-  float        ins_sc = 0.;
+  float        sc       = 0.;
+  float        avgpp    = 0.;
+  float        ins_sc   = 0.;
   int          do_post;
   char        *ppstr = NULL;
   int          have_ppstr;
@@ -546,6 +674,7 @@ cm_Align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_o
   ESL_DPRINTF1(("returning from cm_Align() sc : %f\n", sc)); 
   return eslOK;
 }
+
 
 
 /* Function: cm_AlignHB()
@@ -5196,12 +5325,12 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
 
 /* Function: cm_SampleParsetree()
  * Incept:   EPN, Thu Nov 15 16:45:32 2007
- *          
- * Purpose: Sample a parsetree from a non-banded float
- *           Inside matrix.  The Inside matrix must have
- *           been already filled by cm_InsideAlign().
- *           Renamed from SampleFromInside() [EPN, Wed
- *           Sep 14 06:17:11 2011].
+ *           EPN, Wed Jan 11 10:52:11 2012 [Updated]
+ *
+ * Purpose: Sample a parsetree from a non-banded float Inside
+ *          matrix. The Inside matrix must have been already filled by
+ *          cm_InsideAlign().  Renamed from SampleFromInside() [EPN,
+ *          Wed Sep 14 06:17:11 2011].
  *          
  * Args:     cm       - the model
  *           errbuf   - char buffer for reporting errors
@@ -5215,44 +5344,53 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
  * Returns:  <eslOK> on success.
  * Throws:   <eslEMEM> if we run out of memory.
  */
+
 int
 cm_SampleParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc)
 {
   int          status;             /* easel status code */
   int          v, y, z, b;         /* state indices */
   int          yoffset;            /* transition offset in a states transition vector */
+  int          p;                  /* counter over vector indices */
   int          i, j;               /* sequence position indices */
   int          d;                  /* j - i + 1; the current subseq length */
   int          k;                  /* right subseq fragment length for bifurcs */
-  int          nd;                 /* node index */
   int          bifparent;          /* for connecting bifurcs */
   Parsetree_t *tr;                 /* trace we're building */
-  ESL_STACK   *pda;                /* the stack */
-  float        pvec[MAXCONNECT+1]; /* prob vector of possible paths to take, (max num children + 1 for possibility of EL) */
-  float       *bifvec;             /* pvec for choosing transition out of BIF_B states */
-  float       *rootvec;            /* pvec for choosing transition out of ROOT_S if local begins are on */
+  ESL_STACK   *pda       = NULL;   /* the stack */
+  int          vec_size;           /* size of pA, validA */
+  int          cur_vec_size;       /* number of elements we're currently using in pA, validA */ 
+  float       *pA        = NULL;   /* prob vector of  possible paths to take, used for various state types */
+  int         *validA    = NULL;   /* is pA a valid choice? (or was it supposed to be IMPOSSIBLE) */
   float        maxsc;              /* max score in our vector of scores of possible subparses */
   int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
-  int          ntrans;             /* number of transitions for current state */
   float        fsc = 0.;           /* score of the parsetree we're sampling */
+  int          choice;             /* index represeting sampled choice */
+  int          seen_valid;         /* validA[] is TRUE for at least one element */
+  int          sd, sdl, sdr;       /* state delta, state left delta, state right delta */
 
   /* the DP matrix, filled by prior call to cm_InsideAlign() */
-  float ***alpha = mx->dp; /* pointer to the alpha DP matrix */
+  float ***alpha  = mx->dp; /* pointer to the alpha DP matrix */
 
-  /* initialize pvec */
-  esl_vec_FSet(pvec, (MAXCONNECT+1), 0.);
+  /* allocate and initialize probability vectors */
+  vec_size  = ESL_MAX(L+1, ESL_MAX(cm->M, MAXCONNECT+1)); 
+  /* multipurpose vectors, we need up to L+1 elements for bifs, M elements for root, MAXCONNECT+1 for other states */
+  ESL_ALLOC(pA,       sizeof(float) * vec_size);
+  ESL_ALLOC(validA,   sizeof(int)   * vec_size);
+  esl_vec_FSet(pA,       vec_size, IMPOSSIBLE);          
+  esl_vec_ISet(validA,   vec_size, FALSE);          
 
-  /* Create a parse tree structure and initialize it by adding the root state. */
+  /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */
   tr = CreateParsetree(100);
   InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
 
-  /* Stochastically traceback through the Inside matrix 
+  /* Stochastically traceback through the TrInside matrix 
    * this section of code is adapted from cm_dpsmall.c:insideT(). 
    */
   pda = esl_stack_ICreate();
   if(pda == NULL) goto ERROR;
-  v = 0;
 
+  v = 0;
   j = d = L;
   i = 1;
   fsc = 0.;
@@ -5261,22 +5399,34 @@ cm_SampleParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, ESL_R
       y = cm->cfirst[v];
       z = cm->cnum[v];
 
-      ESL_ALLOC(bifvec, sizeof(float) * (d+1));
-      /* set bifvec[] as (float-ized) log odds scores for each valid left fragment length */
-      for(k = 0; k <= d; k++) 
-	bifvec[k] = alpha[y][j-k][d-k] + alpha[z][j][k];
-      maxsc = esl_vec_FMax   (bifvec, (d+1));
-      esl_vec_FIncrement     (bifvec, (d+1), (-1. * maxsc));
-      esl_vec_FScale         (bifvec, (d+1), log(2.));
-      esl_vec_FLogNorm       (bifvec, (d+1));
-      k = esl_rnd_FChoose (r, bifvec, (d+1));
-      free(bifvec);
+      cur_vec_size = d+1;
+      esl_vec_FSet(pA,     cur_vec_size, IMPOSSIBLE); /* only valid k's will be reset to a non-IMPOSSIBLE score, d+1 and d+2 store special cases in L and R mode, remain invalid for J and T mode */
+
+      /* Set pA[] as (float-ized) log odds scores for each valid right fragment length, k, and choose a k. */
+      for(k = 0; k <= d; k++) { 
+	pA[k] = alpha[y][j-k][d-k] + alpha[z][j][k]; 
+      }
+
+      /* determine which are valid by checking if they're IMPOSSIBLE */
+      esl_vec_ISet(validA, cur_vec_size, FALSE); 
+      for(p = 0; p < cur_vec_size; p++) { if(NOT_IMPOSSIBLE(pA[p])) validA[p] = TRUE; }
+      /* make sure we have at least one valid choice */
+      seen_valid = FALSE;
+      for(p = 0; p < cur_vec_size; p++) { if(validA[p] == TRUE) { seen_valid = TRUE; break; } }
+      if(! seen_valid) ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetree() number of valid transitions (for a B_st) is 0. You thought this was impossible.");
+
+      /* normalize and make the choice */
+      maxsc = esl_vec_FMax   (pA, cur_vec_size);
+      esl_vec_FIncrement     (pA, cur_vec_size, (-1. * maxsc));
+      esl_vec_FScale         (pA, cur_vec_size, log(2.));
+      esl_vec_FLogNorm       (pA, cur_vec_size);
+      do { k = esl_rnd_FChoose (r, pA, cur_vec_size); } while(validA[k] == FALSE); 
 
       /* Store info about the right fragment that we'll retrieve later:
        */
-      if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;	/* remember the end j    */
-      if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;	/* remember the subseq length k */
-      if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;	/* remember the trace index of the parent B state */
+      if((status = esl_stack_IPush(pda, j))       != eslOK) goto ERROR; /* remember the end j    */
+      if((status = esl_stack_IPush(pda, k))       != eslOK) goto ERROR; /* remember the subseq length k */
+      if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR; /* remember the trace index of the parent B state */
 
       /* Deal with attaching left start state.
        */
@@ -5285,7 +5435,8 @@ cm_SampleParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, ESL_R
       i = j-d+1;
       InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
       v = y;
-    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+    }
+    else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
       /* We don't trace back from an E or EL. Instead, we're done with the
        * left branch of the tree, and we try to swing over to the right
        * branch by popping a right start off the stack and attaching
@@ -5299,78 +5450,88 @@ cm_SampleParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, ESL_R
       v = tr->state[bifparent];	/* recover state index of B */
       y = cm->cnum[v];		/* find state index of right S */
       i = j-d+1;
-				/* attach the S to the right */
+      /* attach the S to the right */
       InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
-
       v = y;
-    } else {
-      if((v > 0) || (! (cm->flags & CMH_LOCAL_BEGIN))) /* ROOT_S with local begins on is a special case that we handle below */
-	{ 
-	  /* choose which transition we take */
-	  esl_vec_FSet(pvec, (MAXCONNECT+1), IMPOSSIBLE); /* not really necessary */
-	  fsc += get_femission_score(cm, dsq, v, i, j); 
-	  
-	  /* set pvec[] as (float-ized) log odds scores for each child we can transit to, 
-	   * plus a local end (if possible) */
-	  ntrans = cm->cnum[v];
-	  el_is_possible = FALSE;
-	  if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
-	    el_is_possible = TRUE; 
-	    ntrans++; 
-	  }
-	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
-	    y = yoffset + cm->cfirst[v];
-	    pvec[yoffset] = cm->tsc[v][yoffset] + 
-	      alpha[y][j - StateRightDelta(cm->sttype[v])][d - StateDelta(cm->sttype[v])];
-	  }
-	  if(el_is_possible) pvec[cm->cnum[v]] = cm->endsc[v] + 
-			       alpha[cm->M][j][d]; /* EL is silent when we transition into it from non-EL */
-	  /* note: we can treat the log odds scores as log probs, because
-	   * the log probability of the null model is the same for each,
-	   * so essentially we've divided each score by the same constant, so 
-	   * the *relative* proportion of the log odds scores is the
-	   * same as the relative proportion of the log probabilities (seq | model) */
-	  
-	  maxsc = esl_vec_FMax(pvec, ntrans);
-	  esl_vec_FIncrement(pvec, ntrans, (-1. * maxsc));
-	  /* get from log_2 to log_e, so we can use easel's log vec ops */
-	  esl_vec_FScale  (pvec, ntrans, log(2));
-	  esl_vec_FLogNorm(pvec, ntrans);
-	  yoffset = esl_rnd_FChoose(r, pvec, ntrans);
-	  if(yoffset < cm->cnum[v]) fsc += cm->tsc[v][yoffset]; 
-	  else {
-	    fsc += cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
-	    yoffset = USED_EL; /* we chose EL */
-	  }
+    }
+    else {
+      if((v > 0) || (! (cm->flags & CMH_LOCAL_BEGIN))) { /* not a ROOT_S or local begins are off */
+	/* add in emission score (or 0.0 if we're a non-emitter) */
+	fsc += get_femission_score(cm, dsq, v, i, j); 
+	sd  = StateDelta(cm->sttype[v]);
+	sdl = StateLeftDelta(cm->sttype[v]);
+	sdr = StateRightDelta(cm->sttype[v]);
+
+	/* set pA[] as (float-ized) log odds scores for each child we can transit to, 
+	 * plus a local end (if possible) */
+	cur_vec_size = cm->cnum[v];
+	el_is_possible = FALSE;
+	if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
+	  el_is_possible = TRUE; 
+	  cur_vec_size++; 
 	}
-      else /* v == 0 && (cm->flags && CMH_LOCAL_BEGIN) ( local begins are on )*/
-	{
-	  ntrans = cm->M; /* pretend all states are possible to begin into, but they're not as some will remain IMPOSSIBLE */
-	  ESL_ALLOC(rootvec, sizeof(float) * (ntrans));
-	  esl_vec_FSet(rootvec, ntrans, IMPOSSIBLE);
-	  rootvec[cm->nodemap[1]] = cm->beginsc[cm->nodemap[1]] + alpha[cm->nodemap[1]][j][d]; /* ROOT_S is silent */
-	  for (nd = 2; nd < cm->nodes; nd++) {
-	    if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
-		cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)  
-	      {
-		rootvec[cm->nodemap[nd]] = cm->beginsc[cm->nodemap[nd]] + alpha[cm->nodemap[nd]][j][d]; /* ROOT_S is silent */
-	      }
-	  }
-	  /* this block is shared with v > 0 block, but we repeat it here so we don't need another if statement */
-	  maxsc = esl_vec_FMax(rootvec, ntrans);
-	  esl_vec_FIncrement(rootvec, ntrans, (-1. * maxsc));
-	  /* get from log_2 to log_e, so we can use easel's log vec ops */
-	  esl_vec_FScale  (rootvec, ntrans, log(2));
-	  esl_vec_FLogNorm(rootvec, ntrans);
-	  b = esl_rnd_FChoose(r, rootvec, ntrans);
-	  /* end of similar block with v > 0 */
-	  fsc += cm->beginsc[b];
-	  yoffset = USED_LOCAL_BEGIN; 
-	  free(rootvec); /* we will not need this again */
+	esl_vec_FSet(pA, cur_vec_size, IMPOSSIBLE);
+	for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	  y = cm->cfirst[v] + yoffset;
+	  pA[yoffset] = cm->tsc[v][yoffset] + alpha[y][j-sdr][d-sd];
+	}
+	if(el_is_possible) { 
+	  pA[cur_vec_size-1] = cm->endsc[v] + alpha[cm->M][j][d];
 	}
 
-      /*printf("v : %d | r : %d | z : %d | 1 : %d | \n", v, r, z, 1);*/
-      /*printf("\tyoffset : %d\n", yoffset);*/
+	/* determine which are valid by checking if they're IMPOSSIBLE */
+	esl_vec_ISet(validA, cur_vec_size, FALSE);
+	for(p = 0; p < cur_vec_size; p++) { if(NOT_IMPOSSIBLE(pA[p])) validA[p] = TRUE; }
+	/* make sure we have at least one valid choice */
+	seen_valid = FALSE;
+	for(p = 0; p < cur_vec_size; p++) { if(validA[p] == TRUE) { seen_valid = TRUE; break; } }
+	if(! seen_valid) ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetree() number of valid transitions (for a non-B_st) is 0. You thought this was impossible.");
+
+	/* note: we can treat the log odds scores as log probs, because
+	 * the log probability of the null model is the same for each,
+	 * so essentially we've divided each score by the same constant, so 
+	 * the *relative* proportion of the log odds scores is the
+	 * same as the relative proportion of the log probabilities (seq | model) */
+	maxsc = esl_vec_FMax(pA, cur_vec_size);
+	esl_vec_FIncrement  (pA, cur_vec_size, (-1. * maxsc));
+	esl_vec_FScale      (pA, cur_vec_size, log(2.));
+	esl_vec_FLogNorm    (pA, cur_vec_size);
+	do { choice = esl_rnd_FChoose(r, pA, cur_vec_size); } while(validA[choice] == FALSE); 
+	yoffset = choice;
+	if(yoffset < cm->cnum[v]) { 
+	  fsc += cm->tsc[v][yoffset];
+	}
+	else { 
+	  yoffset = USED_EL; /* we chose EL */
+	  fsc += cm->endsc[v] + (cm->el_selfsc * (d - sd)); /* transition to EL plus score of all EL emissions */
+	}
+      }
+      else { /* v == 0 && (cm->flags && CMH_LOCAL_BEGIN) ( local begins are on ) */
+	cur_vec_size = cm->M; /* pretend all states are possible to begin into, but they're not as some will remain IMPOSSIBLE */
+	esl_vec_FSet(pA,     cur_vec_size, IMPOSSIBLE);
+	for(y = 0; y < cm->M; y++) { 
+	  if(NOT_IMPOSSIBLE(cm->beginsc[y])) { 
+	    pA[y] = cm->beginsc[y] + alpha[y][j][d];   
+	  }
+	}
+	/* determine which are valid by checking if IMPOSSIBLE */
+	esl_vec_ISet(validA, cur_vec_size, FALSE);
+	for(p = 0; p < cur_vec_size; p++) { if(NOT_IMPOSSIBLE(pA[p])) validA[p] = TRUE; }
+	/* make sure we have at least one valid choice */
+	seen_valid = FALSE;
+	for(p = 0; p < cur_vec_size; p++) { if(validA[p] == TRUE) { seen_valid = TRUE; break; } }
+	if(! seen_valid) ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetree() number of valid transitions (for a ROOT_S in local mode) is 0. You thought this was impossible.");
+
+	maxsc = esl_vec_FMax  (pA, cur_vec_size);
+	esl_vec_FIncrement    (pA, cur_vec_size, (-1. * maxsc));
+	esl_vec_FScale        (pA, cur_vec_size, log(2.));
+	esl_vec_FLogNorm      (pA, cur_vec_size);
+	do { b = esl_rnd_FChoose(r, pA, cur_vec_size); } while(validA[b] == FALSE);
+	fsc += cm->beginsc[b];
+	yoffset = USED_LOCAL_BEGIN; 
+      }
+      
+      /* adjust i and j appropriately based on state type */
       switch (cm->sttype[v]) {
       case D_st:            break;
       case MP_st: i++; j--; break;
@@ -5382,55 +5543,77 @@ cm_SampleParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, ESL_R
       default:    ESL_FAIL(eslEINCONCEIVABLE, errbuf, "'Inconceivable!'\n'You keep using that word...'");
       }
       d = j-i+1;
-
-      if (yoffset == USED_EL) 
-	{	/* a local alignment end */
-	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
-	  v = cm->M;		/* now we're in EL. */
-	}
-      else if (yoffset == USED_LOCAL_BEGIN) 
-	{ /* local begin; can only happen once, from root */
-	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
-	  v = b;
-	}
-      else 
-	{
-	  y = cm->cfirst[v] + yoffset;
-	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
-	  v = y;
-	}
+      
+      if (yoffset == USED_EL) { 
+	/* a local alignment end */
+	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	v = cm->M; /* now we're in EL */
+      }
+      else if (yoffset == USED_LOCAL_BEGIN) { 
+	/* local begin; can only happen once, from root */
+	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+	v = b;
+      }
+      else {
+	y = cm->cfirst[v] + yoffset;
+	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+	v = y;
+      }
+      /* ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL); */
     }
   }
-  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+  if(pda       != NULL) esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+  if(pA        != NULL) free(pA);
+  if(validA    != NULL) free(validA);
 
-  if(ret_tr != NULL) *ret_tr = tr;  else FreeParsetree(tr);
-  if(ret_sc != NULL) *ret_sc = fsc;
+#if 0 
+  ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+#endif
+  float sc;
+  ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
+  printf("parsetree score: %.4f\n", sc);
+  printf("fsc:             %.4f\n", fsc);
+
+  if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
+  if(ret_sc   != NULL) *ret_sc   = fsc;
 
   ESL_DPRINTF1(("cm_SampleParsetree() return sc: %f\n", fsc));
   return eslOK;
 
  ERROR:
-  ESL_FAIL(status, errbuf, "memory error.");
+  if(pda     != NULL) esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+  if(pA      != NULL) free(pA);
+  if(validA  != NULL) free(validA);
+
+  if(tr       != NULL) FreeParsetree(tr);
+
+  if(ret_tr   != NULL) *ret_tr   = NULL;
+  if(ret_sc   != NULL) *ret_sc   = 0.;
+
+  ESL_FAIL(status, errbuf, "out of memory");
+  return status; /* NEVER REACHED */
 }
 
 /* Function: cm_SampleParsetreeHB()
  * Incept:   EPN, Fri Sep  7 11:02:15 2007
+ *           EPN, Wed Jan 11 16:21:59 2012 [updated]
  *          
- * Purpose:  Sample a parsetree from a HMM banded Inside matrix.
- *           Renamed from SampleFromInsideHB() [EPN, Wed Sep 14 06:17:22 2011].
- *           
- * Args:     cm       - the model
- *           errbuf   - char buffer for reporting errors
- *           dsq      - digitized sequence
- *           L        - length of dsq, alpha *must* go from 1..L
- *           mx       - pre-calculated Inside matrix
- *           r        - source of randomness
- *           ret_tr   - RETURN: the sampled parsetree
- *           ret_sc   - RETURN: score of sampled parsetree
+ * Purpose: Sample a parsetree from a HMM banded float
+ *          Inside matrix. The Inside matrix must have been already
+ *          filled by cm_InsideAlignHB(). Analogous
+ *          to cm_SampleParsetree(), but uses HMM bands.
+ *          
+ * Args:     cm          - the model
+ *           errbuf      - char buffer for reporting errors
+ *           dsq         - digitized sequence
+ *           L           - length of dsq
+ *           mx          - pre-calculated Inside matrix
+ *           r           - source of randomness
+ *           ret_tr      - RETURN: sampled parsetree
+ *           ret_sc      - RETURN: score of sampled parsetree
  * 
  * Returns:  <eslOK> on success.
  * Throws:   <eslEMEM> if we run out of memory.
- *           <eslFAIL> if we somehow get outside of the bands.
  */
 int
 cm_SampleParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc)
@@ -5438,107 +5621,128 @@ cm_SampleParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, 
   int          status;             /* easel status code */
   int          v, y, z, b;         /* state indices */
   int          yoffset;            /* transition offset in a states transition vector */
+  int          p;                  /* counter over vector indices */
   int          i, j;               /* sequence position indices */
-  int          jp_v, jp_y, jp_z;   /* positions, offset inside j band */
-  int          kmin, kmax;         /* min/max k in current d band */
   int          d;                  /* j - i + 1; the current subseq length */
-  int          dp_v, dp_y;         /* length, offset inside a d band */
   int          k;                  /* right subseq fragment length for bifurcs */
-  int          kp_z;               /* right fragment length, offset inside a d band */
-  int          nd;                 /* node index */
   int          bifparent;          /* for connecting bifurcs */
   Parsetree_t *tr;                 /* trace we're building */
-  ESL_STACK   *pda;                /* the stack */
-  float        pvec[MAXCONNECT+1]; /* prob vector of possible paths to take, (max num children + 1 for possibility of EL) */
-  float       *bifvec;             /* pvec for choosing transition out of BIF_B states */
-  float       *rootvec;            /* pvec for choosing transition out of ROOT_S if local begins are on */
+  ESL_STACK   *pda       = NULL;   /* the stack */
+  int          vec_size;           /* size of pA, validA, y_modeA, z_modeA, kA, yoffsetA */
+  int          cur_vec_size;       /* number of elements we're currently using in pA, validA, y_modeA, z_modeA, kA, yoffsetA */
+  float       *pA        = NULL;   /* prob vector of  possible paths to take, used for various state types */
+  int         *validA    = NULL;   /* is pA a valid choice? (or was it supposed to be IMPOSSIBLE) */
   float        maxsc;              /* max score in our vector of scores of possible subparses */
   int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
-  int          ntrans;             /* number of transitions for current state */
   float        fsc = 0.;           /* score of the parsetree we're sampling */
-  int          seen_valid;         /* for checking we have at least one valid path to take  */
-  int          sd;                 /* state delta for current state, residues emitted left + residues emitted right */
-  int          sdr;                /* state right delta for current state, residues emitted right */
+  int          choice;             /* index represeting sampled choice */
+  int          seen_valid;         /* validA[] is TRUE for at least one element */
+  int          sd, sdl, sdr;       /* state delta, state left delta, state right delta */
+
+  /* variables used in HMM banded version but no nonbanded version */
+  int      jp_v, dp_v;    /* j - jmin[v], d - hdmin[v][jp_v] */
+  int      jp_y, dp_y ;   /* j - jmin[y], d - hdmin[y][jp_y] */
+  int      jp_z, kp_z;    /* j - jmin[z], d - hdmin[z][jp_z] */
+  int      jp_y_sdr;      /* j - jmin[y] - vms_sdr */
+  int      dp_y_sd;       /* hdmin[y][jp_y_vms_sdr] - vms_sd */
+  int      jp_0;          /* L offset in ROOT_S's (v==0) j band */
+  int      Lp_0;          /* L offset in ROOT_S's (v==0) d band */
+  int      kmin, kmax;    /* min/max k */
 
   /* the DP matrix */
-  float ***alpha = mx->dp; /* pointer to the alpha DP matrix */
+  float ***alpha  = mx->dp; /* pointer to the alpha DP matrix */
 
   /* ptrs to cp9b info, for convenience */
-  int     *jmin  = cm->cp9b->jmin;  
-  int     *jmax  = cm->cp9b->jmax;
-  int    **hdmin = cm->cp9b->hdmin;
-  int    **hdmax = cm->cp9b->hdmax;
-  
-  /* initialize pvec */
-  esl_vec_FSet(pvec, (MAXCONNECT+1), 0.);
+  CP9Bands_t *cp9b = cm->cp9b;
+  int     *jmin  = cp9b->jmin;  
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
 
-  /* Create a parse tree structure and initialize it by adding the root state. */
+  /* allocate and initialize probability vectors */
+  vec_size  = ESL_MAX(L+3, ESL_MAX(cm->M, MAXCONNECT+1)); 
+  /* multipurpose vectors, we need up to L+3 elements for bifs, M elements for root, 3*MAXCONNECT+1 for other states */
+  ESL_ALLOC(pA,       sizeof(float) * vec_size);
+  ESL_ALLOC(validA,   sizeof(int)   * vec_size);
+  esl_vec_FSet(pA,       vec_size, IMPOSSIBLE);          
+  esl_vec_ISet(validA,   vec_size, FALSE);          
+
+  /* ensure a full alignment to ROOT_S (v==0) is possible */
+  if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)               ESL_FAIL(eslEINVAL, errbuf, "cm_SampleParsetreeHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
+  jp_0 = L - jmin[0];
+  if (cp9b->hdmin[0][jp_0] > L || cp9b->hdmax[0][jp_0] < L) ESL_FAIL(eslEINVAL, errbuf, "cm_SampleParsetreeHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
+  Lp_0 = L - hdmin[0][jp_0];
+
+
+  /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */
   tr = CreateParsetree(100);
   InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
 
-  /* Stochastically traceback through the Inside matrix 
-   * this section of code is adapted from hbandcyk.c:insideTHB() 
+  /* Stochastically traceback through the TrInside matrix 
+   * this section of code is adapted from cm_dpsmall.c:insideT(). 
    */
   pda = esl_stack_ICreate();
   if(pda == NULL) goto ERROR;
-  v = 0;
 
+  v = 0;
   j = d = L;
   i = 1;
   jp_v = j - jmin[v];
   dp_v = d - hdmin[v][jp_v];
-  fsc  = 0.;
+  fsc = 0.;
   while (1) {
-    if(cm->sttype[v] != EL_st && d > hdmax[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "ERROR in cm_SampleParsetreeHB(). d : %d > hdmax[%d] (%d)\n", d, v, hdmax[v][jp_v]);
-    if(cm->sttype[v] != EL_st && d < hdmin[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "ERROR in cm_SampleParsetreeHB(). d : %d < hdmin[%d] (%d)\n", d, v, hdmin[v][jp_v]);
-
     if (cm->sttype[v] == B_st) {
       y = cm->cfirst[v];
       z = cm->cnum[v];
       jp_z = j-jmin[z];
       k = kp_z + hdmin[z][jp_z];  /* k = offset len of right fragment */
 
-      ESL_ALLOC(bifvec, sizeof(float) * (d+1));
-      /* set bifvec[] as (float-ized) log odds scores for each valid left fragment length,
-       * we have to be careful to check that the corresponding alpha cell for each length is valid  */
-      esl_vec_FSet(bifvec, (d+1), IMPOSSIBLE); /* only valid d's will be reset to a non-IMPOSSIBLE score */
-
-      /* This search for valid k's is complex, and uncommented. It was taken from
-       * cm_dpalign.c:cm_CYKInsideAlignHB(), the B_st case. The code there is commented somewhat
-       * extensively. I'm pretty sure this is the most efficient (or at least close to it) 
-       * way to find the valid cells in the DP matrix we're looking for. 
+      /* Determine valid k values. This is complex, and
+       * uncommented. It was taken from
+       * cm_dpalign.c:cm_CYKInsideAlignHB(), the B_st case. The code
+       * there is commented somewhat extensively. I'm pretty sure this
+       * is the most efficient (or at least close to it) way to find
+       * the valid cells in the DP matrix we're looking for.
        */
       jp_v = j - jmin[v];
       jp_y = j - jmin[y];
       jp_z = j - jmin[z];
       if(j < jmin[v] || j > jmax[v])               ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetreeHB() B_st v: %d j: %d outside band jmin: %d jmax: %d\n", v, j, jmin[v], jmax[v]);
       if(d < hdmin[v][jp_v] || d > hdmax[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetreeHB() B_st v: %d j: %d d: %d outside band dmin: %d dmax: %d\n", v, j, d, hdmin[v][jp_v], hdmax[v][jp_v]);
-      seen_valid = FALSE;
       kmin = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
       kmax = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
-      for(k = kmin; k <= kmax; k++)
-	{
-	  if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k])
-	    {
-	      kp_z = k-hdmin[z][jp_z];
-	      dp_y = d-hdmin[y][jp_y-k];
-	      bifvec[k] = alpha[y][jp_y-k][dp_y-k] + alpha[z][jp_z][kp_z]; 
-	      seen_valid = TRUE;
-	    }
+
+      cur_vec_size = d+1;
+      esl_vec_FSet(pA, cur_vec_size, IMPOSSIBLE); /* only valid k's will be reset to a non-IMPOSSIBLE score */
+
+      /* set pA[] as (float-ized) log odds scores for each valid right fragment length, k, and choose a k */
+      for(k = kmin; k <= kmax; k++) { 
+	if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) { 
+	  kp_z       = k-hdmin[z][jp_z];
+	  dp_y       = d-hdmin[y][jp_y-k];
+	  pA[k]      = alpha[y][jp_y-k][dp_y-k] + alpha[z][jp_z][kp_z]; 
 	}
-      if(!seen_valid) ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetreeHB() number of valid transitions (for a B_st) is 0. You thought this was impossible.");
-      maxsc = esl_vec_FMax(bifvec, (d+1));
-      esl_vec_FIncrement(bifvec, (d+1), (-1. * maxsc));
-      esl_vec_FScale(bifvec, (d+1), log(2));
-      esl_vec_FLogNorm(bifvec, (d+1));
-      k = esl_rnd_FChoose(r, bifvec, (d+1));
-      free(bifvec);
+      }
+      /* determine which are valid by checking if they're IMPOSSIBLE */
+      esl_vec_ISet(validA, cur_vec_size, FALSE); 
+      for(p = 0; p < cur_vec_size; p++) { if(NOT_IMPOSSIBLE(pA[p])) validA[p] = TRUE; }
+      /* make sure we have at least one valid choice */
+      seen_valid = FALSE;
+      for(p = 0; p < cur_vec_size; p++) { if(validA[p] == TRUE) { seen_valid = TRUE; break; } }
+      if(! seen_valid) ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetreeHB() number of valid transitions (for a B_st) is 0. You thought this was impossible.");
+
+      /* normalize and make the choice */
+      maxsc = esl_vec_FMax   (pA, cur_vec_size);
+      esl_vec_FIncrement     (pA, cur_vec_size, (-1. * maxsc));
+      esl_vec_FScale         (pA, cur_vec_size, log(2.));
+      esl_vec_FLogNorm       (pA, cur_vec_size);
+      do { k = esl_rnd_FChoose (r, pA, cur_vec_size); } while(validA[k] == FALSE); 
 
       /* Store info about the right fragment that we'll retrieve later:
        */
-      if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;	/* remember the end j    */
-      if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;	/* remember the subseq length k */
-      if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;	/* remember the trace index of the parent B state */
+      if((status = esl_stack_IPush(pda, j))       != eslOK) goto ERROR; /* remember the end j    */
+      if((status = esl_stack_IPush(pda, k))       != eslOK) goto ERROR; /* remember the subseq length k */
+      if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR; /* remember the trace index of the parent B state */
 
       /* Deal with attaching left start state.
        */
@@ -5547,9 +5751,8 @@ cm_SampleParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, 
       i = j-d+1;
       InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
       v = y;
-      jp_v = j - jmin[v];
-      dp_v = d - hdmin[v][jp_v];
-    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+    }
+    else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
       /* We don't trace back from an E or EL. Instead, we're done with the
        * left branch of the tree, and we try to swing over to the right
        * branch by popping a right start off the stack and attaching
@@ -5563,110 +5766,99 @@ cm_SampleParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, 
       v = tr->state[bifparent];	/* recover state index of B */
       y = cm->cnum[v];		/* find state index of right S */
       i = j-d+1;
-				/* attach the S to the right */
+      /* attach the S to the right */
       InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
-
       v = y;
-      jp_v = j - jmin[v];
-      dp_v = d - hdmin[v][jp_v];
-    } else {
-      if((v > 0) || (! (cm->flags & CMH_LOCAL_BEGIN))) /* ROOT_S with local begins on is a special case that we handle below */
-	{ 
-	  /* Choose which transition we take.
-	   * Set pvec[] as (float-ized) log odds scores for each child we can transit to, 
-	   * plus a local end (if possible). We only want to look at valid transitions, that
-	   * is, those that do not violate the bands (correspond to accessing cells that actually
-	   * exist in the DP matrix). 
-	   */
-	  seen_valid = FALSE;
-	  esl_vec_FSet(pvec, (MAXCONNECT+1), IMPOSSIBLE); /* only transitions that correspond to valid cells will be reset to a non-IMPOSSIBLE score */
-	  fsc += get_femission_score(cm, dsq, v, i, j); 
-	  sdr = StateRightDelta(cm->sttype[v]);
-	  sd  = StateDelta(cm->sttype[v]);
-	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
-	    {
-	      y = yoffset + cm->cfirst[v];
-	      if((j - sdr) >= jmin[y] && (j - sdr) <= jmax[y]) 
-		{ /* enforces j is valid for state y */
-		  jp_y = j - jmin[y];
-		  if((d - sd) >= hdmin[y][jp_y-sdr] && (d - sd) <= hdmax[y][jp_y-sdr])
-		    {
-		      dp_y = d - hdmin[y][(jp_y - sdr)];  /* d index for state y 
-							     in alpha w/mem eff bands */
-		      /* if we get here alpha[y][jp_y-sdr][dp_y-sd] is a valid alpha cell
-		       * corresponding to alpha[y][j-sdr][d-sd] in the platonic matrix.
-		       */
-		      pvec[yoffset] = cm->tsc[v][yoffset] + alpha[y][jp_y - sdr][dp_y - sd];
-		      seen_valid = TRUE;
-		    }
-		}		
+    }
+    else {
+      if((v > 0) || (! (cm->flags & CMH_LOCAL_BEGIN))) { /* not a ROOT_S or local begins are off */
+	/* add in emission score (or 0.0 if we're a non-emitter) */
+	fsc += get_femission_score(cm, dsq, v, i, j); 
+	sd  = StateDelta(cm->sttype[v]);
+	sdl = StateLeftDelta(cm->sttype[v]);
+	sdr = StateRightDelta(cm->sttype[v]);
+
+	/* set pA[] as (float-ized) log odds scores for each child we can transit to, 
+	 * plus a local end (if possible) */
+	cur_vec_size = cm->cnum[v];
+	el_is_possible = FALSE;
+	if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
+	  el_is_possible = TRUE; 
+	  cur_vec_size++; 
+	}
+	esl_vec_FSet(pA, cur_vec_size, IMPOSSIBLE);
+	for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	  y = cm->cfirst[v] + yoffset;
+	  if((j-sdr) >= jmin[y] && (j-sdr) <= jmax[y]) { /* j-sdr is valid in y */
+	    jp_y_sdr = j - jmin[y] - sdr;
+	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { 
+	      dp_y_sd = d - hdmin[y][jp_y_sdr] - sd;
+	      pA[yoffset] = cm->tsc[v][yoffset] + alpha[y][jp_y_sdr][dp_y_sd];
 	    }
-	  if(!seen_valid) {
-	    ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetreeHB() number of valid transitions is 0. You thought this was impossible.");
-	  }
-	  if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) 
-	    el_is_possible = TRUE; 
-	  else 
-	    el_is_possible = FALSE;
-	  if(el_is_possible) pvec[cm->cnum[v]] = cm->endsc[v] + alpha[cm->M][j][d]; /* EL is silent when we transition into it from non-EL */
-	  ntrans = cm->cnum[v] + el_is_possible;
-	  maxsc = esl_vec_FMax(pvec, ntrans);
-	  esl_vec_FIncrement(pvec, ntrans, (-1. * maxsc));
-	  /* get from log_2 to log_e, so we can use easel's log vec ops */
-	  esl_vec_FScale  (pvec, ntrans, log(2));
-	  esl_vec_FLogNorm(pvec, ntrans);
-	  yoffset = esl_rnd_FChoose(r, pvec, ntrans);
-	  if(yoffset < cm->cnum[v]) fsc += cm->tsc[v][yoffset]; 
-	  else {
-	    fsc += cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
-	    yoffset = USED_EL; /* we chose EL */
 	  }
 	}
-      else /* v == 0 && (cm->flags && CMH_LOCAL_BEGIN) ( local begins are on )*/
-	{
-	  seen_valid = FALSE;
-	  ntrans = cm->M; /* pretend all states are possible to begin into, but they're not as some will remain IMPOSSIBLE */
-	  ESL_ALLOC(rootvec, sizeof(float) * (ntrans));
-	  esl_vec_FSet(rootvec, ntrans, IMPOSSIBLE);
+	if(el_is_possible) {
+	  pA[cur_vec_size-1] = cm->endsc[v] + alpha[cm->M][j][d]; /* remember EL deck is non-banded */
+	}
 
-	  /* Set all the legal states that we can local begin into to appropriate scores.
-	   * Only states y that have a non-zero cm->beginsc[y] AND have alpha[y][j][d]
-	   * within their bands are legal.
-	   */
-	  for (nd = 1; nd < cm->nodes; nd++) {
-	    if ((nd == 1) || /* we can transit into node 1 no matter what */
-		(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
-		 cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd))
-	      {
-		y = cm->nodemap[nd];
-		if(j >= jmin[y] && j <= jmax[y]) 
-		  { /* enforces j is valid for state y */
-		    jp_y = j - jmin[y];
-		    if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y])
-		      {
-			dp_y = d - hdmin[y][jp_y];
-			rootvec[y] = cm->beginsc[y] + alpha[y][jp_y][dp_y]; /* ROOT_S is silent */
-			seen_valid = TRUE;
-		      }
-		  }
+	/* determine which are valid by checking if they're IMPOSSIBLE */
+	esl_vec_ISet(validA, cur_vec_size, FALSE);
+	for(p = 0; p < cur_vec_size; p++) { if(NOT_IMPOSSIBLE(pA[p])) validA[p] = TRUE; }
+	/* make sure we have at least one valid choice */
+	seen_valid = FALSE;
+	for(p = 0; p < cur_vec_size; p++) { if(validA[p] == TRUE) { seen_valid = TRUE; break; } }
+	if(! seen_valid) ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetreeHB() number of valid transitions (for a non-B_st) is 0. You thought this was impossible.");
+	/* note: we can treat the log odds scores as log probs, because
+	 * the log probability of the null model is the same for each,
+	 * so essentially we've divided each score by the same constant, so 
+	 * the *relative* proportion of the log odds scores is the
+	 * same as the relative proportion of the log probabilities (seq | model) */
+	maxsc = esl_vec_FMax(pA, cur_vec_size);
+	esl_vec_FIncrement  (pA, cur_vec_size, (-1. * maxsc));
+	esl_vec_FScale      (pA, cur_vec_size, log(2.));
+	esl_vec_FLogNorm    (pA, cur_vec_size);
+	do { choice = esl_rnd_FChoose(r, pA, cur_vec_size); } while(validA[choice] == FALSE); 
+	yoffset = choice;
+	if(yoffset < cm->cnum[v]) { 
+	  fsc += cm->tsc[v][yoffset];
+	}
+	else { 
+	  yoffset = USED_EL; /* we chose EL */
+	  fsc += cm->endsc[v] + (cm->el_selfsc * (d - sd)); /* transition to EL plus score of all EL emissions */
+	}
+      }
+      else { /* v == 0 && (cm->flags && CMH_LOCAL_BEGIN) ( local begins are on ) */
+	cur_vec_size = cm->M; /* pretend all states are possible to begin into, but they're not as some will remain IMPOSSIBLE */
+	esl_vec_FSet(pA, cur_vec_size, IMPOSSIBLE);
+	for(y = 0; y < cm->M; y++) { 
+	  if(NOT_IMPOSSIBLE(cm->beginsc[y])) { 
+	    if(j >= jmin[y] && j <= jmax[y]) { /* j is valid in y */
+	      jp_y = j - jmin[y];
+	      if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]) { 
+		dp_y = d - hdmin[y][jp_y];
+		pA[y] = cm->beginsc[y] + alpha[y][jp_y][dp_y];   
 	      }
+	    }
 	  }
-	  if(!seen_valid) ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetreeHB() number of valid transitions (from ROOT_S!) is 0. You thought this was impossible.");
-	  /* this block is shared with v > 0 block, but we repeat it here so we don't need another if statement */
-	  maxsc = esl_vec_FMax(rootvec, ntrans);
-	  esl_vec_FIncrement(rootvec, ntrans, (-1. * maxsc));
-	  /* get from log_2 to log_e, so we can use easel's log vec ops */
-	  esl_vec_FScale  (rootvec, ntrans, log(2));
-	  esl_vec_FLogNorm(rootvec, ntrans);
-	  b = esl_rnd_FChoose(r, rootvec, ntrans);
-	  /* end of similar block with v > 0 */
-	  fsc += cm->beginsc[b];
-	  yoffset = USED_LOCAL_BEGIN; 
-	  free(rootvec); /* we will not need this again */
 	}
+	/* determine which are valid by checking if they're IMPOSSIBLE */
+	esl_vec_ISet(validA, cur_vec_size, FALSE); 
+	for(p = 0; p < cur_vec_size; p++) { if(NOT_IMPOSSIBLE(pA[p])) validA[p] = TRUE; }
+	/* make sure we have at least one valid choice */
+	seen_valid = FALSE;
+	for(p = 0; p < cur_vec_size; p++) { if(validA[p] == TRUE) { seen_valid = TRUE; break; } }
+	if(! seen_valid) ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetreeHB() number of valid transitions (for a ROOT_S in local mode) is 0. You thought this was impossible.");
 
-      /*printf("v : %d | r : %d | z : %d | 1 : %d | \n", v, r, z, 1);*/
-      /*printf("\tyoffset : %d\n", yoffset);*/
+	maxsc = esl_vec_FMax  (pA, cur_vec_size);
+	esl_vec_FIncrement    (pA, cur_vec_size, (-1. * maxsc));
+	esl_vec_FScale        (pA, cur_vec_size, log(2.));
+	esl_vec_FLogNorm      (pA, cur_vec_size);
+	do { b = esl_rnd_FChoose(r, pA, cur_vec_size); } while(validA[b] == FALSE);
+	fsc += cm->beginsc[b];
+	yoffset = USED_LOCAL_BEGIN; 
+      }
+      
+      /* adjust i and j appropriately based on state type */
       switch (cm->sttype[v]) {
       case D_st:            break;
       case MP_st: i++; j--; break;
@@ -5678,41 +5870,55 @@ cm_SampleParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, 
       default:    ESL_FAIL(eslEINCONCEIVABLE, errbuf, "'Inconceivable!'\n'You keep using that word...'");
       }
       d = j-i+1;
-
-      if (yoffset == USED_EL) 
-	{	/* a local alignment end */
-	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
-	  v = cm->M;		/* now we're in EL. */
-	  jp_v = j;
-	  dp_v = d;
-	}
-      else if (yoffset == USED_LOCAL_BEGIN) 
-	{ /* local begin; can only happen once, from root */
-	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
-	  v = b;
-	  jp_v = j - jmin[v];
-	  dp_v = d - hdmin[v][jp_v];
-	}
-      else 
-	{
-	  y = cm->cfirst[v] + yoffset;
-	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
-	  v = y;
-	  jp_v = j - jmin[v];
-	  dp_v = d - hdmin[v][jp_v];
-	}
+      
+      if (yoffset == USED_EL) { 
+	/* a local alignment end */
+	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	v = cm->M; /* now we're in EL */
+      }
+      else if (yoffset == USED_LOCAL_BEGIN) { 
+	/* local begin; can only happen once, from root */
+	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+	v = b;
+      }
+      else {
+	y = cm->cfirst[v] + yoffset;
+	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+	v = y;
+      }
+      /* ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL); */
     }
   }
-  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+  if(pda       != NULL) esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+  if(pA        != NULL) free(pA);
+  if(validA    != NULL) free(validA);
 
-  if(ret_tr != NULL) *ret_tr = tr;  else FreeParsetree(tr);
-  if(ret_sc != NULL) *ret_sc = fsc;
+#if 0 
+  ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL); 
+#endif
+  float sc;
+  ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
+  printf("parsetree score: %f\n", sc);
+  printf("fsc:             %.4f\n", fsc);
+
+  if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
+  if(ret_sc   != NULL) *ret_sc   = fsc;
 
   ESL_DPRINTF1(("cm_SampleParsetreeHB() return sc: %f\n", fsc));
   return eslOK;
 
  ERROR:
-  ESL_FAIL(status, errbuf, "memory error.");
+  if(pda       != NULL) esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+  if(pA        != NULL) free(pA);
+  if(validA    != NULL) free(validA);
+
+  if(tr        != NULL) FreeParsetree(tr);
+
+  if(ret_tr   != NULL) *ret_tr   = NULL;
+  if(ret_sc   != NULL) *ret_sc   = 0.;
+
+  ESL_FAIL(status, errbuf, "out of memory");
+  return status; /* NEVER REACHED */
 }
 
 /* Function: get_femission_score()
@@ -6442,3 +6648,531 @@ main(int argc, char **argv)
   return 0;
 }
 #endif /*IMPL_ALIGN_BENCHMARK*/
+
+
+
+
+
+
+#if 0
+/* Function: cm_SampleParsetree()
+ * Incept:   EPN, Thu Nov 15 16:45:32 2007
+ *          
+ * Purpose: Sample a parsetree from a non-banded float
+ *           Inside matrix.  The Inside matrix must have
+ *           been already filled by cm_InsideAlign().
+ *           Renamed from SampleFromInside() [EPN, Wed
+ *           Sep 14 06:17:11 2011].
+ *          
+ * Args:     cm       - the model
+ *           errbuf   - char buffer for reporting errors
+ *           dsq      - digitized sequence
+ *           L        - length of dsq
+ *           mx       - pre-calculated Inside matrix (floats)
+ *           r        - source of randomness
+ *           ret_tr   - RETURN: sampled parsetree
+ *           ret_sc   - RETURN: score of sampled parsetree
+ * 
+ * Returns:  <eslOK> on success.
+ * Throws:   <eslEMEM> if we run out of memory.
+ */
+int
+cm_SampleParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc)
+{
+  int          status;             /* easel status code */
+  int          v, y, z, b;         /* state indices */
+  int          yoffset;            /* transition offset in a states transition vector */
+  int          i, j;               /* sequence position indices */
+  int          d;                  /* j - i + 1; the current subseq length */
+  int          k;                  /* right subseq fragment length for bifurcs */
+  int          nd;                 /* node index */
+  int          bifparent;          /* for connecting bifurcs */
+  Parsetree_t *tr;                 /* trace we're building */
+  ESL_STACK   *pda;                /* the stack */
+  float        pvec[MAXCONNECT+1]; /* prob vector of possible paths to take, (max num children + 1 for possibility of EL) */
+  float       *bifvec;             /* pvec for choosing transition out of BIF_B states */
+  float       *rootvec;            /* pvec for choosing transition out of ROOT_S if local begins are on */
+  float        maxsc;              /* max score in our vector of scores of possible subparses */
+  int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
+  int          ntrans;             /* number of transitions for current state */
+  float        fsc = 0.;           /* score of the parsetree we're sampling */
+
+  /* the DP matrix, filled by prior call to cm_InsideAlign() */
+  float ***alpha = mx->dp; /* pointer to the alpha DP matrix */
+
+  /* initialize pvec */
+  esl_vec_FSet(pvec, (MAXCONNECT+1), 0.);
+
+  /* Create a parse tree structure and initialize it by adding the root state. */
+  tr = CreateParsetree(100);
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
+
+  /* Stochastically traceback through the Inside matrix 
+   * this section of code is adapted from cm_dpsmall.c:insideT(). 
+   */
+  pda = esl_stack_ICreate();
+  if(pda == NULL) goto ERROR;
+  v = 0;
+
+  j = d = L;
+  i = 1;
+  fsc = 0.;
+  while (1) {
+    if (cm->sttype[v] == B_st) {
+      y = cm->cfirst[v];
+      z = cm->cnum[v];
+
+      ESL_ALLOC(bifvec, sizeof(float) * (d+1));
+      /* set bifvec[] as (float-ized) log odds scores for each valid left fragment length */
+      for(k = 0; k <= d; k++) 
+	bifvec[k] = alpha[y][j-k][d-k] + alpha[z][j][k];
+      maxsc = esl_vec_FMax   (bifvec, (d+1));
+      esl_vec_FIncrement     (bifvec, (d+1), (-1. * maxsc));
+      esl_vec_FScale         (bifvec, (d+1), log(2.));
+      esl_vec_FLogNorm       (bifvec, (d+1));
+      k = esl_rnd_FChoose (r, bifvec, (d+1));
+      free(bifvec);
+
+      /* Store info about the right fragment that we'll retrieve later:
+       */
+      if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;	/* remember the end j    */
+      if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;	/* remember the subseq length k */
+      if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;	/* remember the trace index of the parent B state */
+
+      /* Deal with attaching left start state.
+       */
+      j = j-k;
+      d = d-k;
+      i = j-d+1;
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+      v = y;
+    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      /* We don't trace back from an E or EL. Instead, we're done with the
+       * left branch of the tree, and we try to swing over to the right
+       * branch by popping a right start off the stack and attaching
+       * it. If the stack is empty, then we're done with the
+       * traceback altogether. This is the only way to break the
+       * while (1) loop.
+       */
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
+      esl_stack_IPop(pda, &d);
+      esl_stack_IPop(pda, &j);
+      v = tr->state[bifparent];	/* recover state index of B */
+      y = cm->cnum[v];		/* find state index of right S */
+      i = j-d+1;
+				/* attach the S to the right */
+      InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
+
+      v = y;
+    } else {
+      if((v > 0) || (! (cm->flags & CMH_LOCAL_BEGIN))) /* ROOT_S with local begins on is a special case that we handle below */
+	{ 
+	  /* choose which transition we take */
+	  esl_vec_FSet(pvec, (MAXCONNECT+1), IMPOSSIBLE); /* not really necessary */
+	  fsc += get_femission_score(cm, dsq, v, i, j); 
+	  
+	  /* set pvec[] as (float-ized) log odds scores for each child we can transit to, 
+	   * plus a local end (if possible) */
+	  ntrans = cm->cnum[v];
+	  el_is_possible = FALSE;
+	  if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
+	    el_is_possible = TRUE; 
+	    ntrans++; 
+	  }
+	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = yoffset + cm->cfirst[v];
+	    pvec[yoffset] = cm->tsc[v][yoffset] + 
+	      alpha[y][j - StateRightDelta(cm->sttype[v])][d - StateDelta(cm->sttype[v])];
+	  }
+	  if(el_is_possible) pvec[cm->cnum[v]] = cm->endsc[v] + 
+			       alpha[cm->M][j][d]; /* EL is silent when we transition into it from non-EL */
+	  /* note: we can treat the log odds scores as log probs, because
+	   * the log probability of the null model is the same for each,
+	   * so essentially we've divided each score by the same constant, so 
+	   * the *relative* proportion of the log odds scores is the
+	   * same as the relative proportion of the log probabilities (seq | model) */
+	  
+	  maxsc = esl_vec_FMax(pvec, ntrans);
+	  esl_vec_FIncrement(pvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (pvec, ntrans, log(2));
+	  esl_vec_FLogNorm(pvec, ntrans);
+	  yoffset = esl_rnd_FChoose(r, pvec, ntrans);
+	  if(yoffset < cm->cnum[v]) fsc += cm->tsc[v][yoffset]; 
+	  else {
+	    fsc += cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+	    yoffset = USED_EL; /* we chose EL */
+	  }
+	}
+      else /* v == 0 && (cm->flags && CMH_LOCAL_BEGIN) ( local begins are on )*/
+	{
+	  ntrans = cm->M; /* pretend all states are possible to begin into, but they're not as some will remain IMPOSSIBLE */
+	  ESL_ALLOC(rootvec, sizeof(float) * (ntrans));
+	  esl_vec_FSet(rootvec, ntrans, IMPOSSIBLE);
+	  rootvec[cm->nodemap[1]] = cm->beginsc[cm->nodemap[1]] + alpha[cm->nodemap[1]][j][d]; /* ROOT_S is silent */
+	  for (nd = 2; nd < cm->nodes; nd++) {
+	    if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+		cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)  
+	      {
+		rootvec[cm->nodemap[nd]] = cm->beginsc[cm->nodemap[nd]] + alpha[cm->nodemap[nd]][j][d]; /* ROOT_S is silent */
+	      }
+	  }
+	  /* this block is shared with v > 0 block, but we repeat it here so we don't need another if statement */
+	  maxsc = esl_vec_FMax(rootvec, ntrans);
+	  esl_vec_FIncrement(rootvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (rootvec, ntrans, log(2));
+	  esl_vec_FLogNorm(rootvec, ntrans);
+	  b = esl_rnd_FChoose(r, rootvec, ntrans);
+	  /* end of similar block with v > 0 */
+	  fsc += cm->beginsc[b];
+	  yoffset = USED_LOCAL_BEGIN; 
+	  free(rootvec); /* we will not need this again */
+	}
+
+      /*printf("v : %d | r : %d | z : %d | 1 : %d | \n", v, r, z, 1);*/
+      /*printf("\tyoffset : %d\n", yoffset);*/
+      switch (cm->sttype[v]) {
+      case D_st:            break;
+      case MP_st: i++; j--; break;
+      case ML_st: i++;      break;
+      case MR_st:      j--; break;
+      case IL_st: i++;      break;
+      case IR_st:      j--; break;
+      case S_st:            break;
+      default:    ESL_FAIL(eslEINCONCEIVABLE, errbuf, "'Inconceivable!'\n'You keep using that word...'");
+      }
+      d = j-i+1;
+
+      if (yoffset == USED_EL) 
+	{	/* a local alignment end */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	  v = cm->M;		/* now we're in EL. */
+	}
+      else if (yoffset == USED_LOCAL_BEGIN) 
+	{ /* local begin; can only happen once, from root */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+	  v = b;
+	}
+      else 
+	{
+	  y = cm->cfirst[v] + yoffset;
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+	  v = y;
+	}
+    }
+  }
+  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+
+  if(ret_tr != NULL) *ret_tr = tr;  else FreeParsetree(tr);
+  if(ret_sc != NULL) *ret_sc = fsc;
+
+  ESL_DPRINTF1(("cm_SampleParsetree() return sc: %f\n", fsc));
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "memory error.");
+}
+
+/* Function: cm_SampleParsetreeHB()
+ * Incept:   EPN, Fri Sep  7 11:02:15 2007
+ *          
+ * Purpose:  Sample a parsetree from a HMM banded Inside matrix.
+ *           Renamed from SampleFromInsideHB() [EPN, Wed Sep 14 06:17:22 2011].
+ *           
+ * Args:     cm       - the model
+ *           errbuf   - char buffer for reporting errors
+ *           dsq      - digitized sequence
+ *           L        - length of dsq, alpha *must* go from 1..L
+ *           mx       - pre-calculated Inside matrix
+ *           r        - source of randomness
+ *           ret_tr   - RETURN: the sampled parsetree
+ *           ret_sc   - RETURN: score of sampled parsetree
+ * 
+ * Returns:  <eslOK> on success.
+ * Throws:   <eslEMEM> if we run out of memory.
+ *           <eslFAIL> if we somehow get outside of the bands.
+ */
+int
+cm_SampleParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc)
+{
+  int          status;             /* easel status code */
+  int          v, y, z, b;         /* state indices */
+  int          yoffset;            /* transition offset in a states transition vector */
+  int          i, j;               /* sequence position indices */
+  int          jp_v, jp_y, jp_z;   /* positions, offset inside j band */
+  int          kmin, kmax;         /* min/max k in current d band */
+  int          d;                  /* j - i + 1; the current subseq length */
+  int          dp_v, dp_y;         /* length, offset inside a d band */
+  int          k;                  /* right subseq fragment length for bifurcs */
+  int          kp_z;               /* right fragment length, offset inside a d band */
+  int          nd;                 /* node index */
+  int          bifparent;          /* for connecting bifurcs */
+  Parsetree_t *tr;                 /* trace we're building */
+  ESL_STACK   *pda;                /* the stack */
+  float        pvec[MAXCONNECT+1]; /* prob vector of possible paths to take, (max num children + 1 for possibility of EL) */
+  float       *bifvec;             /* pvec for choosing transition out of BIF_B states */
+  float       *rootvec;            /* pvec for choosing transition out of ROOT_S if local begins are on */
+  float        maxsc;              /* max score in our vector of scores of possible subparses */
+  int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
+  int          ntrans;             /* number of transitions for current state */
+  float        fsc = 0.;           /* score of the parsetree we're sampling */
+  int          seen_valid;         /* for checking we have at least one valid path to take  */
+  int          sd;                 /* state delta for current state, residues emitted left + residues emitted right */
+  int          sdr;                /* state right delta for current state, residues emitted right */
+
+  /* the DP matrix */
+  float ***alpha = mx->dp; /* pointer to the alpha DP matrix */
+
+  /* ptrs to cp9b info, for convenience */
+  int     *jmin  = cm->cp9b->jmin;  
+  int     *jmax  = cm->cp9b->jmax;
+  int    **hdmin = cm->cp9b->hdmin;
+  int    **hdmax = cm->cp9b->hdmax;
+  
+  /* initialize pvec */
+  esl_vec_FSet(pvec, (MAXCONNECT+1), 0.);
+
+  /* Create a parse tree structure and initialize it by adding the root state. */
+  tr = CreateParsetree(100);
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
+
+  /* Stochastically traceback through the Inside matrix 
+   * this section of code is adapted from hbandcyk.c:insideTHB() 
+   */
+  pda = esl_stack_ICreate();
+  if(pda == NULL) goto ERROR;
+  v = 0;
+
+  j = d = L;
+  i = 1;
+  jp_v = j - jmin[v];
+  dp_v = d - hdmin[v][jp_v];
+  fsc  = 0.;
+  while (1) {
+    if(cm->sttype[v] != EL_st && d > hdmax[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "ERROR in cm_SampleParsetreeHB(). d : %d > hdmax[%d] (%d)\n", d, v, hdmax[v][jp_v]);
+    if(cm->sttype[v] != EL_st && d < hdmin[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "ERROR in cm_SampleParsetreeHB(). d : %d < hdmin[%d] (%d)\n", d, v, hdmin[v][jp_v]);
+
+    if (cm->sttype[v] == B_st) {
+      y = cm->cfirst[v];
+      z = cm->cnum[v];
+      jp_z = j-jmin[z];
+      k = kp_z + hdmin[z][jp_z];  /* k = offset len of right fragment */
+
+      ESL_ALLOC(bifvec, sizeof(float) * (d+1));
+      /* set bifvec[] as (float-ized) log odds scores for each valid left fragment length,
+       * we have to be careful to check that the corresponding alpha cell for each length is valid  */
+      esl_vec_FSet(bifvec, (d+1), IMPOSSIBLE); /* only valid d's will be reset to a non-IMPOSSIBLE score */
+
+      /* This search for valid k's is complex, and uncommented. It was taken from
+       * cm_dpalign.c:cm_CYKInsideAlignHB(), the B_st case. The code there is commented somewhat
+       * extensively. I'm pretty sure this is the most efficient (or at least close to it) 
+       * way to find the valid cells in the DP matrix we're looking for. 
+       */
+      jp_v = j - jmin[v];
+      jp_y = j - jmin[y];
+      jp_z = j - jmin[z];
+      if(j < jmin[v] || j > jmax[v])               ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetreeHB() B_st v: %d j: %d outside band jmin: %d jmax: %d\n", v, j, jmin[v], jmax[v]);
+      if(d < hdmin[v][jp_v] || d > hdmax[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetreeHB() B_st v: %d j: %d d: %d outside band dmin: %d dmax: %d\n", v, j, d, hdmin[v][jp_v], hdmax[v][jp_v]);
+      seen_valid = FALSE;
+      kmin = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+      kmax = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+      for(k = kmin; k <= kmax; k++)
+	{
+	  if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k])
+	    {
+	      kp_z = k-hdmin[z][jp_z];
+	      dp_y = d-hdmin[y][jp_y-k];
+	      bifvec[k] = alpha[y][jp_y-k][dp_y-k] + alpha[z][jp_z][kp_z]; 
+	      seen_valid = TRUE;
+	    }
+	}
+      if(!seen_valid) ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetreeHB() number of valid transitions (for a B_st) is 0. You thought this was impossible.");
+      maxsc = esl_vec_FMax(bifvec, (d+1));
+      esl_vec_FIncrement(bifvec, (d+1), (-1. * maxsc));
+      esl_vec_FScale(bifvec, (d+1), log(2));
+      esl_vec_FLogNorm(bifvec, (d+1));
+      k = esl_rnd_FChoose(r, bifvec, (d+1));
+      free(bifvec);
+
+      /* Store info about the right fragment that we'll retrieve later:
+       */
+      if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;	/* remember the end j    */
+      if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;	/* remember the subseq length k */
+      if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;	/* remember the trace index of the parent B state */
+
+      /* Deal with attaching left start state.
+       */
+      j = j-k;
+      d = d-k;
+      i = j-d+1;
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+      v = y;
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      /* We don't trace back from an E or EL. Instead, we're done with the
+       * left branch of the tree, and we try to swing over to the right
+       * branch by popping a right start off the stack and attaching
+       * it. If the stack is empty, then we're done with the
+       * traceback altogether. This is the only way to break the
+       * while (1) loop.
+       */
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
+      esl_stack_IPop(pda, &d);
+      esl_stack_IPop(pda, &j);
+      v = tr->state[bifparent];	/* recover state index of B */
+      y = cm->cnum[v];		/* find state index of right S */
+      i = j-d+1;
+				/* attach the S to the right */
+      InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
+
+      v = y;
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+    } else {
+      if((v > 0) || (! (cm->flags & CMH_LOCAL_BEGIN))) /* ROOT_S with local begins on is a special case that we handle below */
+	{ 
+	  /* Choose which transition we take.
+	   * Set pvec[] as (float-ized) log odds scores for each child we can transit to, 
+	   * plus a local end (if possible). We only want to look at valid transitions, that
+	   * is, those that do not violate the bands (correspond to accessing cells that actually
+	   * exist in the DP matrix). 
+	   */
+	  seen_valid = FALSE;
+	  esl_vec_FSet(pvec, (MAXCONNECT+1), IMPOSSIBLE); /* only transitions that correspond to valid cells will be reset to a non-IMPOSSIBLE score */
+	  fsc += get_femission_score(cm, dsq, v, i, j); 
+	  sdr = StateRightDelta(cm->sttype[v]);
+	  sd  = StateDelta(cm->sttype[v]);
+	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
+	    {
+	      y = yoffset + cm->cfirst[v];
+	      if((j - sdr) >= jmin[y] && (j - sdr) <= jmax[y]) 
+		{ /* enforces j is valid for state y */
+		  jp_y = j - jmin[y];
+		  if((d - sd) >= hdmin[y][jp_y-sdr] && (d - sd) <= hdmax[y][jp_y-sdr])
+		    {
+		      dp_y = d - hdmin[y][(jp_y - sdr)];  /* d index for state y 
+							     in alpha w/mem eff bands */
+		      /* if we get here alpha[y][jp_y-sdr][dp_y-sd] is a valid alpha cell
+		       * corresponding to alpha[y][j-sdr][d-sd] in the platonic matrix.
+		       */
+		      pvec[yoffset] = cm->tsc[v][yoffset] + alpha[y][jp_y - sdr][dp_y - sd];
+		      seen_valid = TRUE;
+		    }
+		}		
+	    }
+	  if(!seen_valid) {
+	    ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetreeHB() number of valid transitions is 0. You thought this was impossible.");
+	  }
+	  if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) 
+	    el_is_possible = TRUE; 
+	  else 
+	    el_is_possible = FALSE;
+	  if(el_is_possible) pvec[cm->cnum[v]] = cm->endsc[v] + alpha[cm->M][j][d]; /* EL is silent when we transition into it from non-EL */
+	  ntrans = cm->cnum[v] + el_is_possible;
+	  maxsc = esl_vec_FMax(pvec, ntrans);
+	  esl_vec_FIncrement(pvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (pvec, ntrans, log(2));
+	  esl_vec_FLogNorm(pvec, ntrans);
+	  yoffset = esl_rnd_FChoose(r, pvec, ntrans);
+	  if(yoffset < cm->cnum[v]) fsc += cm->tsc[v][yoffset]; 
+	  else {
+	    fsc += cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+	    yoffset = USED_EL; /* we chose EL */
+	  }
+	}
+      else /* v == 0 && (cm->flags && CMH_LOCAL_BEGIN) ( local begins are on )*/
+	{
+	  seen_valid = FALSE;
+	  ntrans = cm->M; /* pretend all states are possible to begin into, but they're not as some will remain IMPOSSIBLE */
+	  ESL_ALLOC(rootvec, sizeof(float) * (ntrans));
+	  esl_vec_FSet(rootvec, ntrans, IMPOSSIBLE);
+
+	  /* Set all the legal states that we can local begin into to appropriate scores.
+	   * Only states y that have a non-zero cm->beginsc[y] AND have alpha[y][j][d]
+	   * within their bands are legal.
+	   */
+	  for (nd = 1; nd < cm->nodes; nd++) {
+	    if ((nd == 1) || /* we can transit into node 1 no matter what */
+		(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+		 cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd))
+	      {
+		y = cm->nodemap[nd];
+		if(j >= jmin[y] && j <= jmax[y]) 
+		  { /* enforces j is valid for state y */
+		    jp_y = j - jmin[y];
+		    if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y])
+		      {
+			dp_y = d - hdmin[y][jp_y];
+			rootvec[y] = cm->beginsc[y] + alpha[y][jp_y][dp_y]; /* ROOT_S is silent */
+			seen_valid = TRUE;
+		      }
+		  }
+	      }
+	  }
+	  if(!seen_valid) ESL_FAIL(eslFAIL, errbuf, "cm_SampleParsetreeHB() number of valid transitions (from ROOT_S!) is 0. You thought this was impossible.");
+	  /* this block is shared with v > 0 block, but we repeat it here so we don't need another if statement */
+	  maxsc = esl_vec_FMax(rootvec, ntrans);
+	  esl_vec_FIncrement(rootvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (rootvec, ntrans, log(2));
+	  esl_vec_FLogNorm(rootvec, ntrans);
+	  b = esl_rnd_FChoose(r, rootvec, ntrans);
+	  /* end of similar block with v > 0 */
+	  fsc += cm->beginsc[b];
+	  yoffset = USED_LOCAL_BEGIN; 
+	  free(rootvec); /* we will not need this again */
+	}
+
+      /*printf("v : %d | r : %d | z : %d | 1 : %d | \n", v, r, z, 1);*/
+      /*printf("\tyoffset : %d\n", yoffset);*/
+      switch (cm->sttype[v]) {
+      case D_st:            break;
+      case MP_st: i++; j--; break;
+      case ML_st: i++;      break;
+      case MR_st:      j--; break;
+      case IL_st: i++;      break;
+      case IR_st:      j--; break;
+      case S_st:            break;
+      default:    ESL_FAIL(eslEINCONCEIVABLE, errbuf, "'Inconceivable!'\n'You keep using that word...'");
+      }
+      d = j-i+1;
+
+      if (yoffset == USED_EL) 
+	{	/* a local alignment end */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	  v = cm->M;		/* now we're in EL. */
+	  jp_v = j;
+	  dp_v = d;
+	}
+      else if (yoffset == USED_LOCAL_BEGIN) 
+	{ /* local begin; can only happen once, from root */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+	  v = b;
+	  jp_v = j - jmin[v];
+	  dp_v = d - hdmin[v][jp_v];
+	}
+      else 
+	{
+	  y = cm->cfirst[v] + yoffset;
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+	  v = y;
+	  jp_v = j - jmin[v];
+	  dp_v = d - hdmin[v][jp_v];
+	}
+    }
+  }
+  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+
+  if(ret_tr != NULL) *ret_tr = tr;  else FreeParsetree(tr);
+  if(ret_sc != NULL) *ret_sc = fsc;
+
+  ESL_DPRINTF1(("cm_SampleParsetreeHB() return sc: %f\n", fsc));
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "memory error.");
+}
+#endif

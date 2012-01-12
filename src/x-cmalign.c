@@ -13,6 +13,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <float.h>
+#include <limits.h>
 
 #include "easel.h"		/* general seq analysis library   */
 #include "esl_alphabet.h"
@@ -96,8 +97,7 @@ static ESL_OPTIONS options[] = {
   /* options controlling the alignment algorithm */
   { "--optacc",     eslARG_NONE,"default",  NULL,      NULL,"--optacc",        NULL,  BIGALGOPTS, "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
   { "--cyk",        eslARG_NONE,    FALSE,  NULL,      NULL,"--optacc",        NULL,     ALGOPTS, "align with the CYK algorithm", 2 },
-  { "--sample",     eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,     ALGOPTS, "sample alignment of each seq from posterior distribution", 2 },
-  ///  { "--viterbi", eslARG_NONE,   FALSE, NULL, NULL,"--optacc","--no-prob",   ALGOPTS, "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
+  { "--sample",     eslARG_NONE,    FALSE,  NULL,      NULL,"--optacc",        NULL,     ALGOPTS, "sample alignment of each seq from posterior distribution", 2 },
   { "--sub",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,"-g,--notrunc",      NULL, "build sub CM for columns b/t HMM predicted start/end points", 2 },
   { "--small",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,"--cyk,--noprob,--nonbanded",NULL, "use small memory divide and conquer (d&c) algorithm", 2 },
   { "--notrunc",    eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not use truncated alignment algorithm", 2 },
@@ -155,7 +155,7 @@ static char usage[]  = "[-options] <cmfile> <sequence file>";
 static char banner[] = "align sequences to a CM";
 
 static void serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
-static int  serial_loop  (WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK **sq_blockA, int nblocks);
+static int  serial_loop  (WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK **sq_blockA, int nblocks, ESL_RANDOMNESS *r);
 
 /* Functions to avoid code duplication for common tasks */
 static int  init_master_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -167,6 +167,7 @@ static int  output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA,
 static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t *cm);
 static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_sqfile);
 static int  map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dataA, int *ret_ndata, char **ret_ss);
+static int  add_annotation_to_msa(ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa);
 
 /* Functions that enable memory efficiency by storing only a fraction
  * of the seqs/parsetrees from target file in memory at once.
@@ -216,7 +217,29 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (esl_opt_ArgNumber(go)                 != 2)     { puts("Incorrect number of command line arguments.");      goto ERROR; }
   if ((*ret_cmfile = esl_opt_GetArg(go, 1)) == NULL)  { puts("Failed to get <cmfile> argument on command line");  goto ERROR; }
   if ((*ret_sqfile = esl_opt_GetArg(go, 2)) == NULL)  { puts("Failed to get <seqfile> argument on command line"); goto ERROR; }
-  
+
+#ifdef HMMER_THREADS
+  /* if --sample, enforce that --cpu 0 is used if HMMER_THREADS, otherwise number of threads would
+   * affect the sampled alignments (each thread requires its own RNG) 
+   */
+  if (esl_opt_GetBoolean(go, "--sample")) { 
+    if((! esl_opt_IsUsed(go, "--cpu")) || 
+       (  esl_opt_IsUsed(go, "--cpu") && (esl_opt_GetInteger(go, "--cpu") != 0))) { 
+      puts("Error: --sample requires --cpu 0\n");
+      exit(1);
+    }
+  }
+#endif /* HMMER_THREADS */
+#ifdef HAVE_MPI
+  /* --sample is incompatible with --mpi b/c sampled parsetrees would be dependent
+   * on number of workers (each of which needs its own (separately seeded) RNG)
+   */
+  if (esl_opt_GetBoolean(go, "--sample") && esl_opt_IsUsed(go, "--mpi")) {
+    puts("Error: --sample is incompatible with --mpi\n");
+    exit(1);
+  }	
+#endif /* HAVE_MPI */  
+
   *ret_go = go;
   return;
   
@@ -262,7 +285,12 @@ main(int argc, char **argv)
 
   ESL_GETOPTS     *go  = NULL;    /* command line processing                 */
   struct cfg_s     cfg;           /* configuration data                      */
-  
+
+  /* start stopwatch */
+  ESL_STOPWATCH   *w   = NULL;    /* for overall timing                      */
+  if((w = esl_stopwatch_Create()) == NULL) cm_Fail("out of memory, trying to create stopwatch");
+  esl_stopwatch_Start(w);
+
   /* Set processor specific flags */
   impl_Init();
 
@@ -331,9 +359,15 @@ main(int argc, char **argv)
     {
       serial_master(go, &cfg);
     }
+  esl_stopwatch_Stop(w);
 
   /* Close output files */
-  if(cfg.ofp   != NULL && esl_opt_IsUsed(go, "-o")) fclose(cfg.ofp); 
+  if(cfg.ofp   != NULL && esl_opt_IsUsed(go, "-o")) { 
+    fclose(cfg.ofp); 
+    /* print timing to stdout, only if aln was not output to stdout */
+    printf("#\n");
+    esl_stopwatch_Display(stdout, w, "# CPU time: ");
+  }
   if(cfg.tmpfp != NULL) fclose(cfg.tmpfp); 
   if(cfg.tfp   != NULL) fclose(cfg.tfp); 
   if(cfg.ifp   != NULL) fclose(cfg.ifp); 
@@ -343,6 +377,7 @@ main(int argc, char **argv)
   if(cfg.sqfp  != NULL) esl_sqfile_Close(cfg.sqfp);
 
   esl_getopts_Destroy(go);
+  esl_stopwatch_Destroy(w);
 
   return status;
 }
@@ -432,14 +467,18 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int      i, j, k;                  /* counter over blocks, parsetrees and workers */
   int      nali;                     /* index of the (possibly temporary) alignment we are working on */
   int      nseq_cur;                 /* number of sequences in current alignment */
-  int      nseq_tot;                 /* number of sequences in all alignments */
+  int      nseq_aligned;             /* number of sequences so far aligned */
+  int      do_sample;                /* TRUE if we're sampling alignments (--sample) */
+  ESL_RANDOMNESS *r = NULL;          /* RNG, used only if --sample */
 
   /* variables related to output, we may use a tmpfile if seqfile is large */
   int      do_ileaved;               /* TRUE to output interleaved alignment */ 
+
   int      use_tmpfile;              /* print out current alignment to tmpfile? */
   int      created_tmpfile = FALSE;  /* TRUE if we've created a tmp file for current CM */
   char tmpfile[32] = "esltmpXXXXXX"; /* name of the tmpfile */
-  CM_ALNDATA **merged_dataA = NULL; /* array of all CM_ALNDATA pointers for current alignment */
+  CM_ALNDATA **merged_dataA = NULL;  /* array of all CM_ALNDATA pointers for current alignment */
+  int          merged_data_idx = 0;  /* index in merged_dataA */
 
   /* variables related to reading sequence blocks */
   int            sstatus = eslOK;  /* status from esl_sq_ReadBlock() */
@@ -460,7 +499,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* variables related to --mapali */
   char         *map_file   = NULL; /* name of alignment file from --mapali */
-  CM_ALNDATA **map_dataA  = NULL; /* array of CM_ALNDATA pointers for mapali alignment */
+  CM_ALNDATA  **map_dataA  = NULL; /* array of CM_ALNDATA pointers for mapali alignment */
   int           nmap_data  = 0;    /* number of CM_ALNDATA ptrs in map_dataA */
   int           nmap_cur   = 0;    /* number of CM_ALNDATA ptrs to include in current iteration, 0 unless nali==0 */
   char         *map_sscons = NULL; /* SS_cons from mapali, only used if --mapstr */
@@ -519,7 +558,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
    */
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-  do_ileaved = esl_opt_GetBoolean(go, "-i") ? TRUE : FALSE;
+  do_ileaved = esl_opt_GetBoolean(go, "-i")       ? TRUE : FALSE;
+  do_sample  = esl_opt_GetBoolean(go, "--sample") ? TRUE : FALSE;
+  if(do_sample) { 
+    if((r = esl_randomness_Create(esl_opt_GetInteger(go, "--seed"))) == NULL) cm_Fail("out of memory, trying to create RNG");
+  }
 
 #ifdef HMMER_THREADS
   /* initialize thread data */
@@ -561,11 +604,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 #endif
 
   /* initialization */
-  nali = nseq_cur = nseq_tot = 0;
+  nali = nseq_cur = nseq_aligned = 0;
   if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
   for (k = 0; k < infocnt; ++k) {
     if((status = cm_Clone(cm, errbuf, &(info[k].cm))) != eslOK) cm_Fail(errbuf);
   }
+  reached_eof = FALSE;
 
   /* include the mapali, if nec */
   if((map_file = esl_opt_GetString(go, "--mapali")) != NULL) { 
@@ -623,7 +667,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * after seemingly going along fine for a while.
      */
     big_sq_block               = nxt_big_sq_block; /* our current big_sq_block becomes the one we read on the previous iteration */
-    big_sq_block->first_seqidx = nseq_tot;
+    big_sq_block->first_seqidx = nseq_aligned;
     nxt_big_sq_block = esl_sq_CreateDigitalBlock(block_max_nseq, cfg->abc);
     sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_big_sq_block, block_max_nres, FALSE); /* FALSE says: read complete sequences */
     if(sstatus == eslEOF) reached_eof = TRUE; /* nxt_big_sq_block will be NULL */
@@ -663,7 +707,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	if(nseq_this_block > 0) { 
 	  sq_blockA[i]               = esl_sq_CreateDigitalBlock(nseq_this_block, cfg->abc);
 	  sq_blockA[i]->list         = big_sq_block->list + (x - nseq_this_block);
-	  sq_blockA[i]->first_seqidx = nseq_tot + x - nseq_this_block;
+	  sq_blockA[i]->first_seqidx = nseq_aligned + x - nseq_this_block;
 	  sq_blockA[i]->count        = nseq_this_block;
 	  sq_blockA[i]->complete     = TRUE;
 	  nblocks++;
@@ -673,14 +717,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
     }
     nseq_cur  = big_sq_block->count;
-    nseq_tot += big_sq_block->count;
 
     /* now we have an array of <nblocks> valid seq blocks, each is a workunit, align them all */
 #ifdef HMMER_THREADS
     if (ncpus > 0)  status = thread_loop(info, errbuf, threadObj, queue, sq_blockA, nblocks);
-    else            status = serial_loop(info, errbuf, sq_blockA, nblocks);
+    else            status = serial_loop(info, errbuf, sq_blockA, nblocks, r);
 #else
-    status = serial_loop(info, errbuf, sq_blockA, nblocks);
+    status = serial_loop(info, errbuf, sq_blockA, nblocks, r);
 #endif
     if(status != eslOK) cm_Fail(errbuf);
 
@@ -694,14 +737,19 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       map_dataA = NULL;
     }
     for(k = 0; k < infocnt; ++k) { 
-      for(j = 0; j < info[k].n; j++) merged_dataA[info[k].dataA[j]->idx + nmap_cur] = info[k].dataA[j];
-      free(info[k].dataA); /* don't free the CM_ALNDATA objects, merged_dataA is pointing at them */
-      info[k].dataA = NULL;
+      for(j = 0; j < info[k].n; j++) { 
+	merged_data_idx = (info[k].dataA[j]->idx - nseq_aligned) + nmap_cur;
+	merged_dataA[merged_data_idx] = info[k].dataA[j];
+      }
+      if(info[k].dataA != NULL) { 
+	free(info[k].dataA); /* don't free the CM_ALNDATA objects, merged_dataA is pointing at them */
+	info[k].dataA = NULL;
+      }
       info[k].n     = 0;
     }
 
     /* output alignment (if do_ileaved we died above if we didn't reach EOF yet) */
-    use_tmpfile = reached_eof ? FALSE : TRUE;
+    use_tmpfile = (reached_eof && (! created_tmpfile)) ? FALSE : TRUE; /* output to tmpfile only if this is the first alignment and we've aligned all seqs */
     if(use_tmpfile && (! created_tmpfile)) { 
       /* first aln for temporary output file, open the file */	
       if ((status = esl_tmpfile_named(tmpfile, &(cfg->tmpfp))) != eslOK) cm_Fail("Failed to open temporary output file (status %d)", status);
@@ -713,16 +761,17 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = output_alignment(go, cfg, errbuf, cm, cfg->rfp,                              merged_dataA, nseq_cur + nmap_cur, map_sscons)) != eslOK) cm_Fail(errbuf);
     }    
     nali++;
+    nseq_aligned += nseq_cur;
 
     /* output scores to stdout, if -o used */
     if(cfg->ofp != stdout) { 
       if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
-      if((status =  output_scores(stdout,   cm, errbuf, merged_dataA, nseq_tot, nmap_cur)) != eslOK) cm_Fail(errbuf);
+      if((status =  output_scores(stdout,   cm, errbuf, merged_dataA, nseq_cur, nmap_cur)) != eslOK) cm_Fail(errbuf);
     }
     /* output scores to scores file, if --sfp used */
     if(cfg->sfp != NULL) { 
       if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
-      if((status = output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_tot, nmap_cur)) != eslOK) cm_Fail(errbuf);
+      if((status = output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur, nmap_cur)) != eslOK) cm_Fail(errbuf);
     }
 
     /* free big block and worker data */
@@ -739,7 +788,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       sq_blockA = NULL;
     }
   } /* end of outer while loop 'while(sstatus == eslOK)' */
-  if     (sstatus == eslEFORMAT) esl_fatal("Parse failed (sequence file %s):\n%s\n", cfg->sqfp->filename, esl_sqfile_GetErrorBuf(cfg->sqfp));
+  if     (sstatus == eslEFORMAT) cm_Fail("Parse failed (sequence file %s):\n%s\n", cfg->sqfp->filename, esl_sqfile_GetErrorBuf(cfg->sqfp));
   else if(sstatus == eslEMEM)    cm_Fail("Out of memory");
   else if(sstatus != eslEOF)     cm_Fail("Unexpected error while reading sequence file");
     
@@ -749,13 +798,15 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     cfg->tmpfp = NULL;
     /* merge all temporary alignments now in cfg->tmpfp, and output merged alignment */
     if((status = create_and_output_final_msa(go, cfg, errbuf, cm, nali, tmpfile)) != eslOK) cm_Fail(errbuf);
-    remove(tmpfile); 
+    /*remove(tmpfile); */
   }
     
   /* finish insert and el files */
   if(cfg->ifp != NULL) { fprintf(cfg->ifp, "//\n"); }
   if(cfg->efp != NULL) { fprintf(cfg->efp, "//\n"); }
-      
+
+  /* clean up */
+  if(r != NULL) esl_randomness_Destroy(r);
   FreeCM(cm);
 
   return;
@@ -769,9 +820,17 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
  * 
  * Align all sequences in array of sequence blocks (sq_blockA) 
  * and store parsetrees.
+ * 
+ * serial_loop() unlike thread_loop() gets a ESL_RANDOMNESS <r> passed
+ * in, it is required for sampling alignments with --sample.
+ * serial_loop() will always be called if --sample is used, because we
+ * enforce that if HMMER_THREADS is defined --cpu 0 must accompany
+ * --sample. The reason for this is otherwise the sampled alignments
+ * would be affected by the number of threads, since each thread
+ * requires its own (separately-seeded) RNG.
  */
 static int
-serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK **sq_blockA, int nblocks)
+serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK **sq_blockA, int nblocks, ESL_RANDOMNESS *r)
 {
   int status;
   int i, j;                    /* counter over blocks, parsetrees */
@@ -789,7 +848,7 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK **sq_blockA, int nbloc
   for(i = 0; i < nblocks; i++) { 
     if(sq_blockA[i] != NULL && sq_blockA[i]->count > 0) { 
 
-      if((status = ProcessAlignmentWorkunit(info->cm, errbuf, sq_blockA[i], info->mxsize, info->w, info->w_tot, &bdataA)) != eslOK) cm_Fail(errbuf);
+      if((status = ProcessAlignmentWorkunit(info->cm, errbuf, sq_blockA[i], info->mxsize, info->w, info->w_tot, r, &bdataA)) != eslOK) cm_Fail(errbuf);
       /* point info->dataA at newly collected data, including parsetrees */
       for(j = 0; j < sq_blockA[i]->count; j++) info->dataA[cur_n + j] = bdataA[j];
       cur_n += sq_blockA[i]->count;
@@ -929,7 +988,7 @@ pipeline_thread(void *arg)
   /* loop until all sequences have been processed */
   sq_block = (ESL_SQ_BLOCK *) new_sq_block;
   while (sq_block->count > 0) { 
-    if((status = ProcessAlignmentWorkunit(info->cm, errbuf, sq_block, info->mxsize, info->w, info->w_tot, &bdataA)) != eslOK) cm_Fail(errbuf);
+    if((status = ProcessAlignmentWorkunit(info->cm, errbuf, sq_block, info->mxsize, info->w, info->w_tot, NULL, &bdataA)) != eslOK) cm_Fail(errbuf);
     /* point info->dataA at newly collected data, including parsetrees */
     ESL_REALLOC(info->dataA, sizeof(CM_ALNDATA *) * (info->n + sq_block->count));
     for(j = 0; j < sq_block->count; j++) info->dataA[info->n + j] = bdataA[j];
@@ -976,19 +1035,19 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   ///if(! esl_opt_GetBoolean(go, "--nonull3")) cm->search_opts |= CM_SEARCH_NULL3;
 
   /* set up alignment options in cm->align_opts */
-  if(  esl_opt_GetBoolean(go, "--nonbanded")) cm->align_opts |= CM_ALIGN_NONBANDED;
-  else                                        cm->align_opts |= CM_ALIGN_HBANDED;
-  if(  esl_opt_GetBoolean(go, "--optacc"))    cm->align_opts |= CM_ALIGN_OPTACC;
-  if(  esl_opt_GetBoolean(go, "--cyk"))       cm->align_opts |= CM_ALIGN_CYK;
-  if(! esl_opt_GetBoolean(go, "--noprob"))    cm->align_opts |= CM_ALIGN_POST;
-  if(  esl_opt_GetBoolean(go, "--sample"))    cm->align_opts |= CM_ALIGN_SAMPLE;
-  if(! esl_opt_GetBoolean(go, "--notrunc"))   cm->align_opts |= CM_ALIGN_TRUNC;
-  if(  esl_opt_GetBoolean(go, "--sub"))       cm->align_opts |= CM_ALIGN_SUB;   /* --sub requires --notrunc and -g */
-  if(  esl_opt_GetBoolean(go, "--small"))     cm->align_opts |= CM_ALIGN_SMALL; /* --small requires --noprob --nonbanded --cyk */
+  if     (  esl_opt_GetBoolean(go, "--cyk"))    cm->align_opts |= CM_ALIGN_CYK;
+  else if(  esl_opt_GetBoolean(go, "--sample")) cm->align_opts |= CM_ALIGN_SAMPLE;
+  else                                          cm->align_opts |= CM_ALIGN_OPTACC;
+  if(  esl_opt_GetBoolean(go, "--nonbanded"))   cm->align_opts |= CM_ALIGN_NONBANDED;
+  else                                          cm->align_opts |= CM_ALIGN_HBANDED;
+  if(! esl_opt_GetBoolean(go, "--noprob"))      cm->align_opts |= CM_ALIGN_POST;
+  if(! esl_opt_GetBoolean(go, "--notrunc"))     cm->align_opts |= CM_ALIGN_TRUNC;
+  if(  esl_opt_GetBoolean(go, "--sub"))         cm->align_opts |= CM_ALIGN_SUB;   /* --sub requires --notrunc and -g */
+  if(  esl_opt_GetBoolean(go, "--small"))       cm->align_opts |= CM_ALIGN_SMALL; /* --small requires --noprob --nonbanded --cyk */
 
   /* set up configuration options in cm->config_opts */
-  if(! esl_opt_GetBoolean(go, "--notrunc"))   cm->config_opts |= CM_CONFIG_TRUNC;
-  if(  esl_opt_GetBoolean(go, "--sub"))       cm->config_opts |= CM_CONFIG_SUB;   /* --sub requires --notrunc and -g */
+  if(! esl_opt_GetBoolean(go, "--notrunc"))     cm->config_opts |= CM_CONFIG_TRUNC;
+  if(  esl_opt_GetBoolean(go, "--sub"))         cm->config_opts |= CM_CONFIG_SUB;   /* --sub requires --notrunc and -g */
   if(! esl_opt_GetBoolean(go, "-g")) { 
     cm->config_opts |= CM_CONFIG_LOCAL;
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
@@ -1036,7 +1095,7 @@ output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FIL
   if(first_ali == 0 && cfg->ifp != NULL) { fprintf(cfg->ifp, "%s %d\n", cm->name, cm->clen); } 
   if(first_ali == 0 && cfg->efp != NULL) { fprintf(cfg->efp, "%s %d\n", cm->name, cm->clen); } 
 
-  /* create the alignment, Parsetrees2Alignment frees the parsetrees as it is creating the alignment */
+  /* create the alignment */
   ESL_ALLOC(sqpA,   sizeof(ESL_SQ *)      * ndata); for(j = 0; j < ndata; j++) sqpA[j]   = dataA[j]->sqp;
   ESL_ALLOC(trA,    sizeof(Parsetree_t *) * ndata); for(j = 0; j < ndata; j++) trA[j]    = dataA[j]->tr;
   ESL_ALLOC(ppstrA, sizeof(char *)        * ndata); for(j = 0; j < ndata; j++) ppstrA[j] = dataA[j]->ppstr;
@@ -1057,6 +1116,11 @@ output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FIL
 	msa->ss_cons[apos] = map_sscons[cpos++];    
       }
     }
+  }
+
+  /* add GF annotation to MSA with command line, date, and current dir information */
+  if(ofp != cfg->rfp && (! esl_opt_GetBoolean(go, "--noannot"))) { 
+    if((status = add_annotation_to_msa(go, errbuf, msa)) != eslOK) return status;
   }
 
   /* Determine format: we print in interleaved Stockholm if we're not
@@ -1139,34 +1203,55 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, 
   int   i;                    /* counter */
   int   namewidth = 8;        /* length of 'seq name' */
   char *namedashes = NULL;    /* namewidth-long string of dashes */
+  int   idxwidth;    ;        /* length of max index */
+  char *idxdashes = NULL;     /* idxwidth-long string of dashes */
+  int64_t maxidx;             /* maximum index */
   
   /* alignment options */
   int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE : FALSE;
   int do_post      = (cm->align_opts & CM_ALIGN_POST)      ? TRUE : FALSE;
+  int do_sub       = (cm->align_opts & CM_ALIGN_SUB)       ? TRUE : FALSE;
 
   for(i = first_idx; i < ndata; i++) namewidth = ESL_MAX(namewidth, strlen(dataA[i]->sqp->name));
+
+  maxidx = first_idx + ndata - 1;
+  idxwidth = 0; do { idxwidth++; maxidx/=10; } while (maxidx); /* poor man's (int)log_10(maxidx)+1 */
+  idxwidth = ESL_MAX(idxwidth, 3);
 
   ESL_ALLOC(namedashes, sizeof(char) * (namewidth+1));
   namedashes[namewidth] = '\0';
   for(i = 0; i < namewidth; i++) namedashes[i] = '-';
 
-  fprintf(ofp, "# %9s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %-30s\n",    "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "         running time");
-  fprintf(ofp, "# %9s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %30s\n",     "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "-------------------------------");
-  fprintf(ofp, "# %9s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s\n", "seq idx",   namewidth, "seq name", "length", "cm from",   "cm to", "trunc",   "bit sc", "avg pp", "band calc", "alignment", "total");
-  fprintf(ofp, "# %9s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s\n", "---------", namewidth, namedashes, "------", "-------", "-------", "-----", "--------", "------", "---------", "---------", "---------");
+  ESL_ALLOC(idxdashes, sizeof(char) * (idxwidth+1));
+  idxdashes[idxwidth] = '\0';
+  for(i = 0; i < idxwidth; i++) idxdashes[i] = '-';
+
+  fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %-30s  %8s\n",    idxwidth, "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "       running time (s)",         "");
+  fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %30s  %8s\n",     idxwidth, "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "-------------------------------", "");
+  fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s  %8s\n", idxwidth, "idx",   namewidth, "seq name", "length", "cm from",   "cm to", "trunc",   "bit sc", "avg pp", "band calc", "alignment", "total", "mem (Mb)");
+  fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s  %8s\n", idxwidth, idxdashes, namewidth, namedashes, "------", "-------", "-------", "-----", "--------", "------", "---------", "---------", "---------", "--------");
 
   for(i = first_idx; i < ndata; i++) { 
-    fprintf(ofp, "  %9" PRId64 "  %-*s  %6" PRId64 "  %7d  %7d", dataA[i]->idx+1, namewidth, dataA[i]->sqp->name, dataA[i]->sqp->n, dataA[i]->cm_from, dataA[i]->cm_to);
-    if     (dataA[i]->tr->mode[0] == TRMODE_T) fprintf(ofp, "  %5s", "5'&3'");
-    else if(dataA[i]->tr->mode[0] == TRMODE_L) fprintf(ofp, "  %5s", "3'");
-    else if(dataA[i]->tr->mode[0] == TRMODE_R) fprintf(ofp, "  %5s", "5'");
-    else                                       fprintf(ofp, "  %5s", "no");
+    fprintf(ofp, "  %*" PRId64 "  %-*s  %6" PRId64 "  %7d  %7d", idxwidth, dataA[i]->idx+1, namewidth, dataA[i]->sqp->name, dataA[i]->sqp->n, dataA[i]->cm_from, dataA[i]->cm_to);
+    if(do_sub) { 
+      if     (dataA[i]->cm_from != 1 && dataA[i]->cm_to != cm->clen) fprintf(ofp, "  %5s", "5'&3'");
+      else if(dataA[i]->cm_from == 1 && dataA[i]->cm_to != cm->clen) fprintf(ofp, "  %5s", "3'");
+      else if(dataA[i]->cm_from != 1 && dataA[i]->cm_to == cm->clen) fprintf(ofp, "  %5s", "5'");
+      else if(dataA[i]->cm_from == 1 && dataA[i]->cm_to == cm->clen) fprintf(ofp, "  %5s", "no");
+    }
+    else { 
+      if     (dataA[i]->tr->mode[0] == TRMODE_T) fprintf(ofp, "  %5s", "5'&3'");
+      else if(dataA[i]->tr->mode[0] == TRMODE_L) fprintf(ofp, "  %5s", "3'");
+      else if(dataA[i]->tr->mode[0] == TRMODE_R) fprintf(ofp, "  %5s", "5'");
+      else                                       fprintf(ofp, "  %5s", "no");
+    }
     fprintf(ofp, "  %8.2f", dataA[i]->sc);
     if(do_post)        fprintf(ofp, "  %6.3f", dataA[i]->pp);
     else               fprintf(ofp, "  %6s",   "-");
     if(! do_nonbanded) fprintf(ofp, "  %9.2f", dataA[i]->secs_bands);
     else               fprintf(ofp, "  %9s",   "-");
-    fprintf(ofp, "  %9.2f  %9.2f\n", dataA[i]->secs_aln, dataA[i]->secs_tot);
+    fprintf(ofp, "  %9.2f  %9.2f", dataA[i]->secs_aln, dataA[i]->secs_tot);
+    fprintf(ofp, "  %8.2f\n", dataA[i]->mb_tot);
   }
 
   if(namedashes != NULL) free(namedashes);
@@ -1872,6 +1957,42 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dat
   if (a2u_map   != NULL) free(a2u_map);
   if (aseq      != NULL) free(aseq);  
   ESL_FAIL(status, errbuf, "out of memory");
+}
+
+/* Function: add_annotation_to_msa()
+ * Date:     EPN, Thu Jan 12 06:23:20 2012
+ *
+ * Purpose:  Print the header section of an insert or EL insert
+ *           (--ifile, --elfile) information file.
+ *
+ * Returns:  void
+ */
+int
+add_annotation_to_msa(ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa)
+{
+  int    status;
+  time_t date           = time(NULL);
+  char  *spoof_cmd      = NULL;
+  char  *cwd            = NULL;
+  char   timestamp[32];
+
+  esl_getcwd(&cwd);
+  if ((status = esl_opt_SpoofCmdline(go, &spoof_cmd)) != eslOK) ESL_XFAIL(eslFAIL, errbuf, "unable to create spoof cmdline");
+  if (date == -1)                                               ESL_XFAIL(eslESYS, errbuf, "time() failed");
+  if ((ctime_r(&date, timestamp)) == NULL)                      ESL_XFAIL(eslESYS, errbuf, "ctime_r() failed");
+  
+  esl_msa_AddGF(msa, "AM", 2, spoof_cmd, -1);
+  esl_msa_AddGF(msa, "AM", 3, (cwd == NULL) ? "[unknown]" : cwd, -1);
+  esl_msa_AddGF(msa, "AM", 2, timestamp, -1);
+  
+  free(spoof_cmd);
+  if (cwd) free(cwd);
+  return eslOK;
+  
+ ERROR:
+  if (spoof_cmd) free(spoof_cmd);
+  if (cwd)       free(cwd);
+  return status;
 }
 
 /*****************************************************************

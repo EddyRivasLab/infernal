@@ -714,7 +714,7 @@ cm_tr_mx_Destroy(CM_TR_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_mx_Dump(FILE *ofp, CM_TR_MX *mx, char optimal_mode)
+cm_tr_mx_Dump(FILE *ofp, CM_TR_MX *mx, char mode)
 {
   int status;
   int v, j, d;
@@ -727,9 +727,9 @@ cm_tr_mx_Dump(FILE *ofp, CM_TR_MX *mx, char optimal_mode)
   fprintf(ofp, "Lncells_alloc: %" PRId64 "\nLncells_valid: %" PRId64 "\n", mx->Lncells_alloc, mx->Lncells_valid);
   fprintf(ofp, "Rncells_alloc: %" PRId64 "\nRncells_valid: %" PRId64 "\n", mx->Rncells_alloc, mx->Rncells_valid);
   fprintf(ofp, "Tncells_alloc: %" PRId64 "\nTncells_valid: %" PRId64 "\n", mx->Tncells_alloc, mx->Tncells_valid);
-  fprintf(ofp, "optimal_mode: %d\n", optimal_mode);
+  fprintf(ofp, "mode: %d\n", mode);
   
-  if((status = cm_TrFillFromMode(optimal_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+  if((status = cm_TrFillFromMode(mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* DP matrix data */
   for (v = 0; v < mx->M; v++) {
@@ -1603,7 +1603,7 @@ cm_tr_hb_mx_Destroy(CM_TR_HB_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char optimal_mode)
+cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char mode)
 {
   int status;
   int v, jp, j, dp, d;
@@ -1616,9 +1616,9 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char optimal_mode)
   fprintf(ofp, "Lncells_alloc: %" PRId64 "\nLncells_valid: %" PRId64 "\n", mx->Lncells_alloc, mx->Lncells_valid);
   fprintf(ofp, "Rncells_alloc: %" PRId64 "\nRncells_valid: %" PRId64 "\n", mx->Rncells_alloc, mx->Rncells_valid);
   fprintf(ofp, "Tncells_alloc: %" PRId64 "\nTncells_valid: %" PRId64 "\n", mx->Tncells_alloc, mx->Tncells_valid);
-  fprintf(ofp, "optimal_mode: %d\n", optimal_mode);
+  fprintf(ofp, "mode: %d\n", mode);
   
-  if((status = cm_TrFillFromMode(optimal_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+  if((status = cm_TrFillFromMode(mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* DP matrix data */
   for (v = 0; v < mx->M; v++) {
@@ -2585,7 +2585,7 @@ cm_tr_shadow_mx_Destroy(CM_TR_SHADOW_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx, char optimal_mode)
+cm_tr_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx, char mode)
 {
   int status;
   int v, j, d;
@@ -2601,9 +2601,9 @@ cm_tr_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx, char optimal_mode
   fprintf(ofp, "Lk_ncells_alloc: %" PRId64 "\nLk_ncells_valid: %" PRId64 "\n", mx->Lk_ncells_alloc, mx->Lk_ncells_valid);
   fprintf(ofp, "Rk_ncells_alloc: %" PRId64 "\nRk_ncells_valid: %" PRId64 "\n", mx->Rk_ncells_alloc, mx->Rk_ncells_valid);
   fprintf(ofp, "Tk_ncells_alloc: %" PRId64 "\nTk_ncells_valid: %" PRId64 "\n", mx->Tk_ncells_alloc, mx->Tk_ncells_valid);
-  fprintf(ofp, "optimal_mode: %d\n", optimal_mode);
+  fprintf(ofp, "mode: %d\n", mode);
 
-  if((status = cm_TrFillFromMode(optimal_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+  if((status = cm_TrFillFromMode(mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* yshadow/kshadow matrix data */
   for (v = 0; v < mx->M; v++) {
@@ -3075,12 +3075,12 @@ cm_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx)
  *            required in <ret_nk_cells) and size of required 
  *            matrix in Mb in <ret_Mb>.
  *
- * Args:      cm              - the CM the matrix is for
- *            errbuf          - char buffer for reporting errors
- *            cp9b            - the bands for the current target sequence
+ * Args:      cm           - the CM the matrix is for
+ *            errbuf       - char buffer for reporting errors
+ *            cp9b         - the bands for the current target sequence
  *            ret_ny_cells - RETURN: number of required char cells (yshadow)
- *            ret_nk_cells  - RETURN: number of required int  cells (kshadow)
- *            ret_Mb          - RETURN: required size of matrix in Mb
+ *            ret_nk_cells - RETURN: number of required int  cells (kshadow)
+ *            ret_Mb       - RETURN: required size of matrix in Mb
  *
  * Returns:   <eslOK> on success
  *
@@ -3124,8 +3124,8 @@ cm_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *re
   Mb_needed *= 0.000001; /* convert to megabytes */
 
   if(ret_ny_cells != NULL) *ret_ny_cells = y_ncells;
-  if(ret_nk_cells  != NULL) *ret_nk_cells  = k_ncells;
-  if(ret_Mb          != NULL) *ret_Mb     = Mb_needed;
+  if(ret_nk_cells != NULL) *ret_nk_cells = k_ncells;
+  if(ret_Mb       != NULL) *ret_Mb       = Mb_needed;
 
   return eslOK;
 
@@ -3794,7 +3794,7 @@ cm_tr_hb_shadow_mx_Destroy(CM_TR_HB_SHADOW_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char optimal_mode)
+cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char mode)
 {
   int status;
   int v, jp, j, dp, d;
@@ -3811,7 +3811,7 @@ cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char optima
   fprintf(ofp, "Rk_ncells_alloc: %" PRId64 "\nRk_ncells_valid: %" PRId64 "\n", mx->Rk_ncells_alloc, mx->Rk_ncells_valid);
   fprintf(ofp, "Tk_ncells_alloc: %" PRId64 "\nTk_ncells_valid: %" PRId64 "\n", mx->Tk_ncells_alloc, mx->Tk_ncells_valid);
 
-  if((status = cm_TrFillFromMode(optimal_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+  if((status = cm_TrFillFromMode(mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* yshadow/kshadow matrix data */
   for (v = 0; v < mx->M; v++) {
@@ -4661,7 +4661,7 @@ cm_tr_emit_mx_Destroy(CM_TR_EMIT_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char optimal_mode)
+cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char mode)
 {
   int status;
   int v, i;
@@ -4671,9 +4671,9 @@ cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char optimal_mode)
   fprintf(ofp, "L: %d\n", mx->L);
   fprintf(ofp, "l_ncells_alloc: %" PRId64 "\nl_ncells_valid: %" PRId64 "\n", mx->l_ncells_alloc, mx->l_ncells_valid);
   fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
-  fprintf(ofp, "optimal_mode: %d\n", optimal_mode);
+  fprintf(ofp, "mode: %d\n", mode);
   
-  if((status = cm_TrFillFromMode(optimal_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+  if((status = cm_TrFillFromMode(mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* l_pp and r_pp matrix data */
   for (v = 0; v < mx->M; v++) {
@@ -5444,7 +5444,7 @@ cm_tr_hb_emit_mx_Destroy(CM_TR_HB_EMIT_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char optimal_mode)
+cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char mode)
 {
   int status;
   int v, i, j, ip_v, jp_v;
@@ -5454,9 +5454,9 @@ cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char optimal_mo
   fprintf(ofp, "L: %d\n", mx->L);
   fprintf(ofp, "l_ncells_alloc: %" PRId64 "\nl_ncells_valid: %" PRId64 "\n", mx->l_ncells_alloc, mx->l_ncells_valid);
   fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
-  fprintf(ofp, "optimal_mode: %d\n", optimal_mode);
+  fprintf(ofp, "mode: %d\n", mode);
   
-  if((status = cm_TrFillFromMode(optimal_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+  if((status = cm_TrFillFromMode(mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* l_pp and r_pp matrix data */
   for (v = 0; v < mx->M; v++) {

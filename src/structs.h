@@ -93,6 +93,7 @@ enum cm_p7_evparams_e {CM_p7_LMMU  = 0, CM_p7_LMLAMBDA = 1, CM_p7_LVMU = 2,  CM_
 #define MAXSCOREVAL  1e35
 #define IMPROBABLE  -5e35
 #define NOT_IMPOSSIBLE(x)  ((x) > -9.999e35) 
+#define NOT_IMPROBABLE(x)  ((x) > -4.999e35) 
 #define sreLOG2(x)  ((x) > 0 ? log(x) * 1.44269504 : IMPOSSIBLE)
 #define sreEXP2(x)  (exp((x) * 0.69314718 )) 
 #define epnEXP10(x) (exp((x) * 2.30258509 ))
@@ -1038,6 +1039,7 @@ typedef struct {
   float             secs_bands; /* seconds elapsed during band calculation */
   float             secs_aln;   /* seconds elapsed during alignment calculation */
   float             secs_tot;   /* seconds elapsed for entire processing of this sequence */
+  float             mb_tot;     /* total Mb required for all DP matrices for alignment */
 } CM_ALNDATA;
 
 /* Declaration of CM dynamic programming matrices for alignment.

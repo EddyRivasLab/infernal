@@ -3,7 +3,7 @@
  * DP functions for truncated CYK and Inside CM similarity search.
  * 
  * RefTrCYKScan():  reference implementation of a scanning version
- *                  trCYK [Kolbe, Eddy 2009]. No FastTrCYKScan()
+ *                  of trCYK [Kolbe, Eddy 2009]. No FastTrCYKScan()
  *                  exists. I wrote one based on FastCYKScan() but
  *                  it was only about 5% faster and three times
  *                  as many lines of code as RefTrCYKScan(), so 

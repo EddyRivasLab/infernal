@@ -868,7 +868,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       }
 
       /* 1. cm -> parsetrees */
-      if((status = ProcessAlignmentWorkunit(cm, errbuf, sq_block, esl_opt_GetReal(go, "--mxsize"), NULL, NULL, &dataA)) != eslOK) return status;
+      if((status = ProcessAlignmentWorkunit(cm, errbuf, sq_block, esl_opt_GetReal(go, "--mxsize"), NULL, NULL, NULL, &dataA)) != eslOK) return status;
     
       /* sum parse scores and check for convergence */
       totscore = 0.;
