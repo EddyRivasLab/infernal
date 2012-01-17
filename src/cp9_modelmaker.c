@@ -26,7 +26,6 @@
 #include "esl_msa.h"
 #include "esl_random.h"
 #include "esl_stats.h"
-#include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
 #include "funcs.h"
@@ -3164,12 +3163,6 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
   float d;
   int i, j;
 
-  /* TEMP EPN, Tue Aug 19 18:07:25 2008 */
-  ESL_STOPWATCH *w;
-  w = esl_stopwatch_Create();
-  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
-  /* TEMP */
-  
   /* Contract check, we can't be in local mode in the CM */
   if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), CMH_LOCAL_BEGIN flag is up.\n");
   if(cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), CMH_LOCAL_END flag is up.\n");
@@ -3190,17 +3183,11 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
   hmm->null2_omega = cm->null2_omega;
   hmm->null3_omega = cm->null3_omega;
   
-  /* COULD BE TEMP IF WE DON"T DO THE PHI/PSI TEST! */
+  /* COULD BE REMOVED IF WE DON"T DO THE PHI/PSI TEST! */
   char     ***tmap;
   make_tmap(&tmap);
   ESL_ALLOC(psi, sizeof(double) * cm->M);
-  esl_stopwatch_Start(w);  
   fill_psi(cm, cm->t, psi, tmap);
-  esl_stopwatch_Stop(w); 
-  FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "\t\tpsi       %11s\n", time_buf);
-#endif
   
   /* fill in transitions into node 1 and out of node M */
   cm2hmm_special_trans_cp9(cm, hmm, cp9map, psi, tmap);

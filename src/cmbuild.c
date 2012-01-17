@@ -814,7 +814,8 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   ESL_SQ          *tmp_sqp     = NULL; /* pointer to a sequence, don't free the actual sequence */
   ESL_SQ         **tmp_sqpA    = NULL; /* array of pointers to ESL_SQ's, don't free individual sequences */
   Parsetree_t    **tmp_trpA    = NULL; /* array of pointers to parsetrees, don't free individual parsetrees */
-  CM_ALNDATA     **dataA       = NULL; /* alignment data filled in ProcessAlignmentWorkunit(): parsetrees, scores, etc. */
+  CM_ALNDATA     **dataA       = NULL; /* alignment data filled in AlignSequenceBlock(): parsetrees, scores, etc. */
+  TruncOpts_t     *tro         = NULL; /* truncated alignment opts, remains null if --notrunc */
 
   /* check contract */
   if(input_msa       == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), input_msa passed in as NULL");
@@ -829,6 +830,13 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
 
   ESL_ALLOC(sc, sizeof(float) * nseq);
   esl_vec_FSet(sc, nseq, 0.);
+
+  /* create tro, if nec */
+  if(! esl_opt_GetBoolean(go, "--notrunc")) { 
+    tro    = CreateTruncOpts();
+    tro->allowL = TRUE;
+    tro->allowR = TRUE;
+  }
 
   /* create a ESL_SQ_BLOCK of the sequences in the input MSA */
   sq_block = esl_sq_CreateDigitalBlock(nseq, input_msa->abc);
@@ -868,7 +876,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       }
 
       /* 1. cm -> parsetrees */
-      if((status = ProcessAlignmentWorkunit(cm, errbuf, sq_block, esl_opt_GetReal(go, "--mxsize"), NULL, NULL, NULL, &dataA)) != eslOK) return status;
+      if((status = DispatchSqBlockAlignment(cm, errbuf, sq_block, esl_opt_GetReal(go, "--mxsize"), tro, NULL, NULL, NULL, &dataA)) != eslOK) return status;
     
       /* sum parse scores and check for convergence */
       totscore = 0.;
@@ -883,7 +891,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       if( iter > 1) esl_msa_Destroy(msa);
       msa = NULL; /* even if iter == 1; we set msa to NULL, so we don't klobber input_msa */
       /* get list of pointers to sq's, parsetrees in dataA, to pass to Parsetrees2Alignment() */
-      for(i = 0; i < nseq; i++) { tmp_sqpA[i] = dataA[i]->sqp; tmp_trpA[i] = dataA[i]->tr; } 
+      for(i = 0; i < nseq; i++) { tmp_sqpA[i] = dataA[i]->sq; tmp_trpA[i] = dataA[i]->tr; } 
       if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, tmp_sqpA, NULL, tmp_trpA, NULL, nseq, NULL, NULL, FALSE, FALSE, &msa)) != eslOK) 
 	ESL_FAIL(status, errbuf, "refine_msa(), Parsetrees2Alignment() call failed.");
       if((status = esl_strdup(msa_name, -1, &(msa->name))) != eslOK) ESL_FAIL(status, errbuf, "refine_msa(), esl_strdup() call failed.");
@@ -911,6 +919,8 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   /* write out final alignment to --refine output file */
   if((status = eslx_msafile_Write(cfg->refinefp, msa, eslMSAFILE_STOCKHOLM)) != eslOK) 
     ESL_FAIL(status, errbuf, "refine_msa(), esl_msafile_Write() call failed.");
+
+  if(tro != NULL) free(tro);
 
   *ret_cm  = cm; 
   *ret_msa = msa;
@@ -1507,7 +1517,8 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
     cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
 
     /* update cm->align->opts, we'll use CYK unless --gibbs, we never use optacc */
-    if(esl_opt_GetBoolean(go, "--gibbs")) cm->align_opts  |= CM_ALIGN_SAMPLE;
+    if(esl_opt_GetBoolean(go, "--gibbs"))     cm->align_opts |= CM_ALIGN_SAMPLE;
+    if(! esl_opt_GetBoolean(go, "--notrunc")) cm->align_opts |= CM_ALIGN_TRUNC;
 
     if(esl_opt_GetBoolean(go, "--nonbanded"))   { 
       cm->align_opts  |= CM_ALIGN_SMALL; 
@@ -1520,6 +1531,7 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
 
     /* update cm->config_opts */
     if(! esl_opt_GetBoolean(go, "--notrunc")) cm->config_opts |= CM_CONFIG_TRUNC;
+    if(esl_opt_GetBoolean(go, "--nonbanded")) cm->config_opts |= CM_CONFIG_NONBANDEDMX;
   }
 
   /* finally, configure the model */

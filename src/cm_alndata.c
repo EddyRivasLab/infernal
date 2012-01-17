@@ -42,7 +42,7 @@ cm_alndata_Create(void)
   CM_ALNDATA *data = NULL;
 
   ESL_ALLOC(data, sizeof(CM_ALNDATA));
-  data->sqp        = NULL;
+  data->sq         = NULL;
   data->idx        = -1;
   data->tr         = NULL;
   data->sc         = 0.;
@@ -71,11 +71,11 @@ cm_alndata_Create(void)
  * Returns:  void.
  */
 void
-cm_alndata_Destroy(CM_ALNDATA *data, int free_sqp)
+cm_alndata_Destroy(CM_ALNDATA *data, int free_sq)
 { 
-  if(free_sqp && data->sqp != NULL) esl_sq_Destroy(data->sqp);
-  if(data->tr    != NULL)           FreeParsetree(data->tr);
-  if(data->ppstr != NULL)           free(data->ppstr);
+  if(free_sq && data->sq != NULL) esl_sq_Destroy(data->sq);
+  if(data->tr    != NULL)         FreeParsetree(data->tr);
+  if(data->ppstr != NULL)         free(data->ppstr);
   free(data);
 }
 
@@ -83,7 +83,7 @@ cm_alndata_Destroy(CM_ALNDATA *data, int free_sqp)
  * 2. Alignment workunit processing functions
  *****************************************************************/
 
-/* Function: sub_alignment_workunit_prep()
+/* Function: sub_alignment_prep()
  * Date:     EPN, Mon Jan  9 05:25:26 2012
  *
  * Purpose:  Prepare for an alignment workunit in sub-mode.
@@ -100,7 +100,7 @@ cm_alndata_Destroy(CM_ALNDATA *data, int free_sqp)
  *           <ret_dataA> is alloc'ed and filled with sq_block->count CM_ALNDATA objects.
  */
 int
-sub_alignment_workunit_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_submap, CM_t **ret_sub_cm)
+sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_submap, CM_t **ret_sub_cm)
 {
   int          status;            /* easel status */
   CM_t        *sub_cm  = NULL;    /* the sub CM */
@@ -146,21 +146,25 @@ sub_alignment_workunit_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t 
   return eslOK;
 }
 
-/* Function: ProcessAlignmentWorkunit()
+/* Function: DispatchSqBlockAlignment()
  * Date:     EPN, Fri Dec 30 14:59:43 2011
  *
- * Purpose:  Given a CM and a block of sequences, align the sequences 
- *           using the appropriate alignment function and return 
- *           relevant data for eventual output in <ret_dataA>.
+ * Purpose:  Given a CM and a block of sequences, align the
+ *           sequence(s) using the appropriate alignment function and
+ *           return relevant data for eventual output in <ret_dataA>.
+ *           This function simply calls DispatchSqAlignment() serially
+ *           for each sequence in the block, and creates an array
+ *           of the <ret_data> DispatchSqAlignment() returns.
  *
  * Args:     cm        - the covariance model
  *           errbuf    - char buffer for reporting errors
  *           sq_block  - block of sequences to align
  *           mxsize    - max size in Mb of allowable DP mx
+ *           tro       - truncated aln options, can be NULL if not doing trunc aln
  *           w         - stopwatch for timing individual stages
  *           w_tot     - stopwatch for timing total time per seq
  *           r         - RNG, req'd if CM_ALIGN_SAMPLE, can be NULL otherwise
- *           ret_dataA - array of CM_ALNDATA objects to return
+ *           ret_dataA - RETURN: newly created array of CM_ALNDATA objects
  *
  * Returns:  eslOK on success;
  *           eslEINCOMPAT on contract violation, errbuf is filled;
@@ -168,25 +172,76 @@ sub_alignment_workunit_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t 
  *           <ret_dataA> is alloc'ed and filled with sq_block->count CM_ALNDATA objects.
  */
 int
-ProcessAlignmentWorkunit(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA)
+DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, TruncOpts_t *tro, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA)
 {
   int           status;          /* easel status */
   int           j;               /* counter over parsetrees */
-  CM_ALNDATA **dataA = NULL;    /* CM_ALNDATA array we'll create */
+  CM_ALNDATA  **dataA = NULL;    /* CM_ALNDATA array we'll create and return */
   ESL_SQ       *sqp;             /* ptr to a ESL_SQ */
-  float         sc, pp;          /* score, average PP, from alignment function */
-  Parsetree_t  *tr = NULL;       /* ptr to a parsetree */
-  char         *ppstr = NULL;    /* ptr to a PP string */
-  TruncOpts_t  *tro = NULL;      /* truncated alignment info, remains NULL if --notrunc */
-  float         secs_bands = 0.; /* seconds elapsed for band calculation */
-  float         secs_aln;        /* seconds elapsed for alignment calculation */
-  float         mb_tot = 0.;      /* size of all DP matrices used for alignment */
+
+  ESL_ALLOC(dataA, sizeof(CM_ALNDATA *) * sq_block->count);
+  for(j = 0; j < sq_block->count; j++) dataA[j] = NULL;
+
+  /* main loop: for each sequence, call DispatchSqAlignment() to do the work */
+  for(j = 0; j < sq_block->count; j++) { 
+    sqp = sq_block->list + j;
+    if((status = DispatchSqAlignment(cm, errbuf, sqp, sq_block->first_seqidx + j, mxsize, tro, w, w_tot, r, &(dataA[j]))) != eslOK) goto ERROR;
+  }
+  *ret_dataA = dataA;
+
+  return eslOK;
+
+ ERROR: 
+  if(dataA != NULL) { 
+    for(j = 0; j < sq_block->count; j++) cm_alndata_Destroy(dataA[j], FALSE);
+    free(dataA);
+  }
+  *ret_dataA = NULL;
+  if(status == eslEMEM) ESL_FAIL(status, errbuf, "DispatchSqBlockAlignment(), out of memory");
+  else return status; /* errbuf was filled by DispatchSqAlignment() */
+}
+
+/* Function: DispatchSqAlignment()
+ * Date:     EPN, Thu Jan 12 14:47:26 2012
+ *
+ * Purpose:  Given a CM and a sequence, align the sequence(s) using
+ *           the appropriate alignment function and return relevant
+ *           data for eventual output in <ret_data>. 
+ *
+ * Args:     cm        - the covariance model
+ *           errbuf    - char buffer for reporting errors
+ *           sq        - sequence to align
+ *           idx       - index of sequence (may be used to reorder data later)
+ *           mxsize    - max size in Mb of allowable DP mx
+ *           tro       - truncated aln options, can be NULL if not doing trunc aln
+ *           w         - stopwatch for timing individual stages
+ *           w_tot     - stopwatch for timing total time per seq
+ *           r         - RNG, req'd if CM_ALIGN_SAMPLE, can be NULL otherwise
+ *           ret_data  - RETURN: newly created CM_ALNDATA object
+ *
+ * Returns:  eslOK on success;
+ *           eslEINCOMPAT on contract violation, errbuf is filled;
+ *           eslEMEM if we run out of memory;
+ *           <ret_data> is alloc'ed and filled.
+ */
+int
+DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, TruncOpts_t *tro, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data)
+{
+  int           status;            /* easel status */
+  CM_ALNDATA   *data       = NULL; /* CM_ALNDATA we'll create and fill */
+  float         sc         = 0.;   /* score from alignment function */
+  float         pp         = 0.;   /* average PP from alignment function */
+  Parsetree_t  *tr         = NULL; /* ptr to a parsetree */
+  char         *ppstr      = NULL; /* ptr to a PP string */
+  float         secs_bands = 0.;   /* seconds elapsed for band calculation */
+  float         secs_aln   = 0.;   /* seconds elapsed for alignment calculation */
+  float         mb_tot     = 0.;   /* size of all DP matrices used for alignment */
   /* first/final CM consensus posns used in the alignment */
-  int           cfrom_emit;      
-  int           cto_emit;        
+  int           cfrom_emit;
+  int           cto_emit;
   /* first/final CM consensus posns used in parsetree, includes silent off-mode posns in trunc alns */
-  int           cfrom_span;      
-  int           cto_span;        
+  int           cfrom_span;
+  int           cto_span;
 
   /* alignment options */
   int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE : FALSE;
@@ -197,19 +252,7 @@ ProcessAlignmentWorkunit(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
   int do_small     = (cm->align_opts & CM_ALIGN_SMALL)     ? TRUE : FALSE;
   int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)     ? TRUE : FALSE;
   int doing_search = FALSE;
-
-  /* non-banded truncated matrices, used only if --nonbanded */
-  CM_TR_MX        *trmx   = NULL;
-  CM_TR_SHADOW_MX *trshmx = NULL;
-  CM_TR_MX        *tromx  = NULL;
-  CM_TR_EMIT_MX   *tremx  = NULL;
-
-  /* non-banded matrices, used only if --nonbanded & --notrunc */
-  CM_MX        *mx   = NULL;
-  CM_SHADOW_MX *shmx = NULL;
-  CM_MX        *omx  = NULL;
-  CM_EMIT_MX   *emx  = NULL;
-
+  
   /* sub-mode specific variables (wouldn't be needed if sub mode were not supported) */
   CM_t        *orig_cm = cm;      /* pointer to the original CM */
   CM_t        *sub_cm  = NULL;    /* the sub CM */
@@ -217,175 +260,116 @@ ProcessAlignmentWorkunit(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
   Parsetree_t *full_tr  = NULL;   /* converted parsetree to full CM */
 
   /* contract check */
-  if(do_small  && (! do_nonbanded)) ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to do small and HMM banded alignment");
-  if(do_post   && do_small)         ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to do PP and small alignment");
-  if(do_optacc && do_sample)        ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to sample and do optacc alignment");
-  if(do_sub    && do_small)         ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to do sub and small alignment");
-  if(do_sub    && do_trunc)         ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to do sub and truncated alignment");
-  if(do_sample && r == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() trying to sample but RNG r == NULL");
-  if(sq_block->count <= 0)          ESL_FAIL(eslEINCOMPAT, errbuf, "ProcessAlignmentWorkunit() received empty block");
+  if(do_small  && (! do_nonbanded)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do small and HMM banded alignment");
+  if(do_post   && do_small)         ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do PP and small alignment");
+  if(do_optacc && do_sample)        ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to sample and do optacc alignment");
+  if(do_sub    && do_small)         ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do sub and small alignment");
+  if(do_sub    && do_trunc)         ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do sub and truncated alignment");
+  if(do_trunc  && tro == NULL)      ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do truncated alignment, but tro == NULL");
+  if(do_sample && r == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to sample but RNG r == NULL");
 
-  if(do_trunc) { 
-    tro = CreateTruncOpts();
-    tro->allowL = tro->allowR = TRUE;
+  if(w_tot != NULL) esl_stopwatch_Start(w_tot);
+
+  /* do sub-mode specific pre-alignment steps, if nec */
+  if(do_sub) { 
+    if((status = sub_alignment_prep(cm, errbuf, sq, &submap, &sub_cm)) != eslOK) return status;
+    cm = sub_cm;
   }
-  /* create non-banded matrices, if nec (if do_sub: matrices will be built per-sequence) */
-  if(do_nonbanded && (! do_sub) && (! do_small)) { 
+
+  if(w != NULL) esl_stopwatch_Start(w);
+  /* do small D&C alignment, if nec */
+  if(do_small) { 
     if(do_trunc) { 
-      if((trmx   = cm_tr_mx_Create(cm))        == NULL) goto ERROR;
-      if((tromx  = cm_tr_mx_Create(cm))        == NULL) goto ERROR;
-      if((trshmx = cm_tr_shadow_mx_Create(cm)) == NULL) goto ERROR;
-      if((tremx  = cm_tr_emit_mx_Create(cm))   == NULL) goto ERROR;
+      sc = TrCYK_DnC(cm, sq->dsq, sq->L, 0, 1, sq->L, &tr);
+      mb_tot = 0.; /* TODO: write a function that determines Mb for truncated D&C */
     }
     else { 
-      if((mx     = cm_mx_Create(cm))           == NULL) goto ERROR;
-      if((omx    = cm_mx_Create(cm))           == NULL) goto ERROR;
-      if((shmx   = cm_shadow_mx_Create(cm))    == NULL) goto ERROR;
-      if((emx    = cm_emit_mx_Create(cm))      == NULL) goto ERROR;
+      sc = CYKDivideAndConquer(cm, sq->dsq, sq->L, 0, 1, sq->L, &tr, NULL, NULL);
+      mb_tot = CYKNonQDBSmallMbNeeded(cm, sq->L);
     }
   }
-
-  ESL_ALLOC(dataA, sizeof(CM_ALNDATA *) * sq_block->count);
-  for(j = 0; j < sq_block->count; j++) dataA[j] = NULL;
-
-  /* main loop: for each sequence, create a parsetree */
-  for(j = 0; j < sq_block->count; j++) { 
-    if(w_tot != NULL) esl_stopwatch_Start(w_tot);
-    sqp = sq_block->list + j;
-
-    /* do sub-mode specific pre-alignment steps, if nec */
-    if(do_sub) { 
-      if((status = sub_alignment_workunit_prep(cm, errbuf, sqp, &submap, &sub_cm)) != eslOK) return status;
-      if(do_nonbanded) { /* create the non-banded matrices */
-	if((mx   = cm_mx_Create(sub_cm))        == NULL) goto ERROR;
-	if((omx  = cm_mx_Create(sub_cm))        == NULL) goto ERROR;
-	if((shmx = cm_shadow_mx_Create(sub_cm)) == NULL) goto ERROR;
-	if((emx  = cm_emit_mx_Create(sub_cm))   == NULL) goto ERROR;
-      }
-      cm = sub_cm;
-    }
-
-    if(w != NULL) esl_stopwatch_Start(w);
-    /* do small D&C alignment, if nec */
-    if(do_small) { 
+  else { /* do_small is FALSE */
+    if(do_nonbanded) { /* do not use HMM bands */
       if(do_trunc) { 
-	sc = TrCYK_DnC(cm, sqp->dsq, sqp->L, 0, 1, sqp->L, &tr);
-	mb_tot = 0.; /* TODO: write a function that determines Mb for truncated D&C */
+	if((status = cm_TrAlignSizeNeeded(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
+					  NULL, NULL, NULL, &mb_tot)) != eslOK) return status;
+	if((status = cm_TrAlign(cm, errbuf, sq->dsq, sq->L, mxsize, TRMODE_UNKNOWN, do_optacc, do_sample, 
+				cm->trnb_mx, cm->trnb_shmx, cm->trnb_omx, cm->trnb_emx, r, &ppstr, &tr, NULL, &pp, &sc)) != eslOK) return status;
+      }
+      else {
+	if((status = cm_AlignSizeNeeded(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
+					NULL, NULL, NULL, &mb_tot)) != eslOK) return status;
+	if((status = cm_Align(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, 
+			      cm->nb_mx, cm->nb_shmx, cm->nb_omx, cm->nb_emx, r, &ppstr, &tr, &pp, &sc)) != eslOK) return status;
+      }
+    }
+    else { /* use HMM bands */
+      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, 
+				 1, sq->L, cm->cp9b, doing_search, tro, 0)) != eslOK) return status;
+      if(w != NULL) esl_stopwatch_Stop(w);
+      secs_bands = (w == NULL) ? 0. : w->elapsed;
+      
+      if(w != NULL) esl_stopwatch_Start(w);
+      if(do_trunc) { 
+	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
+					    NULL, NULL, NULL, &mb_tot)) != eslOK) return status;
+	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, TRMODE_UNKNOWN, do_optacc, do_sample, 
+				  cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, cm->trhb_emx, r, &ppstr, &tr, NULL, &pp, &sc)) != eslOK) return status;
       }
       else { 
-        sc = CYKDivideAndConquer(cm, sqp->dsq, sqp->L, 0, 1, sqp->L, &tr, NULL, NULL);
-	mb_tot = CYKNonQDBSmallMbNeeded(cm, sqp->L);
-      }
-    }
-    else { /* do_small is FALSE */
-      if(do_nonbanded) { /* do not use HMM bands */
-	if(do_trunc) { 
-	  if((status = cm_TrAlignSizeNeeded(cm, errbuf, sqp->L, mxsize, do_sample, do_post, 
-					    NULL, NULL, NULL, &mb_tot)) != eslOK) return status;
-	  if((status = cm_TrAlign(cm, errbuf, sqp->dsq, sqp->L, mxsize, TRMODE_UNKNOWN, do_optacc, do_sample, 
-				  trmx, trshmx, tromx, tremx, r, &ppstr, &tr, NULL, &pp, &sc)) != eslOK) return status;
-	}
-	else {
-	  if((status = cm_AlignSizeNeeded(cm, errbuf, sqp->L, mxsize, do_sample, do_post, 
+	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
 					  NULL, NULL, NULL, &mb_tot)) != eslOK) return status;
-	  if((status = cm_Align(cm, errbuf, sqp->dsq, sqp->L, mxsize, do_optacc, do_sample, 
-				mx, shmx, omx, emx, r, &ppstr, &tr, &pp, &sc)) != eslOK) return status;
-	}
+	if((status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, 
+				cm->hb_mx, cm->hb_shmx, cm->hb_omx, cm->hb_emx, r, &ppstr, &tr, &pp, &sc)) != eslOK) return status;
       }
-      else { /* use HMM bands */
-	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sqp->dsq, 
-				   1, sqp->L, cm->cp9b, doing_search, tro, 0)) != eslOK) return status;
-	if(w != NULL) esl_stopwatch_Stop(w);
-	secs_bands = (w == NULL) ? 0. : w->elapsed;
-	
-	if(w != NULL) esl_stopwatch_Start(w);
-	if(do_trunc) { 
-	  if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sqp->L, mxsize, do_sample, do_post, 
-					      NULL, NULL, NULL, &mb_tot)) != eslOK) return status;
-	  if((status = cm_TrAlignHB(cm, errbuf, sqp->dsq, sqp->L, mxsize, TRMODE_UNKNOWN, do_optacc, do_sample, 
-				    cm->trhbmx, cm->trshhbmx, cm->trohbmx, cm->trehbmx, r, &ppstr, &tr, NULL, &pp, &sc)) != eslOK) return status;
-	}
-	else { 
-	  if((status = cm_AlignSizeNeededHB(cm, errbuf, sqp->L, mxsize, do_sample, do_post, 
-					    NULL, NULL, NULL, &mb_tot)) != eslOK) return status;
-	  if((status = cm_AlignHB(cm, errbuf, sqp->dsq, sqp->L, mxsize, do_optacc, do_sample, 
-				  cm->hbmx, cm->shhbmx, cm->ohbmx, cm->ehbmx, r, &ppstr, &tr, &pp, &sc)) != eslOK) return status;
-	}
-	/* add size of CP9 matrices used for calculating bands */
-	mb_tot += ((float) cm->cp9_mx->ncells_valid  * sizeof(int)) / 1000000.;
-	mb_tot += ((float) cm->cp9_bmx->ncells_valid * sizeof(int)) / 1000000.;
-	if(do_sub) { /* add size of original CM's CP9 matrices used for calculating start/end position */
-	  mb_tot += ((float) orig_cm->cp9_mx->ncells_valid  * sizeof(int)) / 1000000.;
-	  mb_tot += ((float) orig_cm->cp9_bmx->ncells_valid * sizeof(int)) / 1000000.;
-	}
+      /* add size of CP9 matrices used for calculating bands */
+      mb_tot += ((float) cm->cp9_mx->ncells_valid  * sizeof(int)) / 1000000.;
+      mb_tot += ((float) cm->cp9_bmx->ncells_valid * sizeof(int)) / 1000000.;
+      if(do_sub) { /* add size of original CM's CP9 matrices used for calculating start/end position */
+	mb_tot += ((float) orig_cm->cp9_mx->ncells_valid  * sizeof(int)) / 1000000.;
+	mb_tot += ((float) orig_cm->cp9_bmx->ncells_valid * sizeof(int)) / 1000000.;
       }
     }
-    if(w != NULL) esl_stopwatch_Stop(w);
-    secs_aln = (w == NULL) ? 0. : w->elapsed;
-
-    if(do_sub) { 
-      /* convert sub cm parsetree to a full CM parsetree */
-      if((status = sub_cm2cm_parsetree(orig_cm, cm, &full_tr, tr, submap, 0)) != eslOK) ESL_FAIL(status, errbuf, "out of memory, converting sub parsetree to full parsetree");
-      /* free sub data structures, we're done with them */
-      FreeParsetree(tr);   tr     = full_tr;
-      FreeCM(cm);          cm     = orig_cm;
-      FreeSubMap(submap);  submap = NULL;
-      if(mx     != NULL) cm_mx_Destroy(mx);
-      if(shmx   != NULL) cm_shadow_mx_Destroy(shmx);
-      if(omx    != NULL) cm_mx_Destroy(omx);
-      if(emx    != NULL) cm_emit_mx_Destroy(emx);
-    }
-
-    /* determine start and end points of the parsetree */
-    if((status = ParsetreeToCMBounds(cm, tr, errbuf, &cfrom_span, &cto_span, &cfrom_emit, &cto_emit)) != eslOK) return status;
-
-    /* create and fill dataA[j] */
-    ESL_ALLOC(dataA[j], sizeof(CM_ALNDATA));
-    dataA[j]->sqp        = sqp;
-    dataA[j]->idx        = sq_block->first_seqidx + j;
-    dataA[j]->tr         = tr;
-    dataA[j]->sc         = sc;
-    dataA[j]->pp         = (do_post)      ? pp     : 0.;
-    dataA[j]->ppstr      = (do_post)      ? ppstr  : NULL;
-    dataA[j]->cm_from    = cfrom_emit;
-    dataA[j]->cm_to      = cto_emit;
-    dataA[j]->secs_bands = (do_nonbanded) ? 0.     : secs_bands;
-    dataA[j]->secs_aln   = secs_aln;
-    if(w_tot != NULL) esl_stopwatch_Stop(w_tot);
-    dataA[j]->secs_tot   = (w_tot == NULL) ? 0. : w_tot->elapsed;
-    dataA[j]->mb_tot     = mb_tot;
   }
-  *ret_dataA = dataA;
+  if(w != NULL) esl_stopwatch_Stop(w);
+  secs_aln = (w == NULL) ? 0. : w->elapsed;
 
-  /* clean up */
-  if(! do_sub) { 
-    if(mx     != NULL) cm_mx_Destroy(mx);
-    if(shmx   != NULL) cm_shadow_mx_Destroy(shmx);
-    if(omx    != NULL) cm_mx_Destroy(omx);
-    if(emx    != NULL) cm_emit_mx_Destroy(emx);
+  if(do_sub) { 
+    /* convert sub cm parsetree to a full CM parsetree */
+    if((status = sub_cm2cm_parsetree(orig_cm, cm, &full_tr, tr, submap, 0)) != eslOK) ESL_FAIL(status, errbuf, "out of memory, converting sub parsetree to full parsetree");
+    /* free sub data structures, we're done with them */
+    FreeParsetree(tr);   tr     = full_tr;
+    FreeCM(cm);          cm     = orig_cm;
+    FreeSubMap(submap);  submap = NULL;
   }
-  if(trmx   != NULL) cm_tr_mx_Destroy(trmx);
-  if(trshmx != NULL) cm_tr_shadow_mx_Destroy(trshmx);
-  if(tromx  != NULL) cm_tr_mx_Destroy(tromx);
-  if(tremx  != NULL) cm_tr_emit_mx_Destroy(tremx);
+  
+  /* determine start and end points of the parsetree */
+  if((status = ParsetreeToCMBounds(cm, tr, errbuf, &cfrom_span, &cto_span, &cfrom_emit, &cto_emit)) != eslOK) return status;
+  
+  /* create and fill dataA[j] */
+  ESL_ALLOC(data, sizeof(CM_ALNDATA));
+  data->sq         = sq;
+  data->idx        = idx;
+  data->tr         = tr;
+  data->sc         = sc;
+  data->pp         = (do_post)      ? pp     : 0.;
+  data->ppstr      = (do_post)      ? ppstr  : NULL;
+  data->cm_from    = cfrom_emit;
+  data->cm_to      = cto_emit;
+  data->secs_bands = (do_nonbanded) ? 0.     : secs_bands;
+  data->secs_aln   = secs_aln;
+  data->mb_tot     = mb_tot;
+  if(w_tot != NULL) esl_stopwatch_Stop(w_tot);
+  data->secs_tot   = (w_tot == NULL) ? 0. : w_tot->elapsed;
+
+  *ret_data = data;
+
   return eslOK;
 
  ERROR: 
-  if(! do_sub) { 
-    if(mx    != NULL) cm_mx_Destroy(mx);
-    if(shmx  != NULL) cm_shadow_mx_Destroy(shmx);
-    if(omx   != NULL) cm_mx_Destroy(omx);
-    if(emx   != NULL) cm_emit_mx_Destroy(emx);
-  }
-  if(trmx   != NULL) cm_tr_mx_Destroy(trmx);
-  if(trshmx != NULL) cm_tr_shadow_mx_Destroy(trshmx);
-  if(tromx  != NULL) cm_tr_mx_Destroy(tromx);
-  if(tremx  != NULL) cm_tr_emit_mx_Destroy(tremx);
-  if(dataA != NULL) { 
-    for(j = 0; j < sq_block->count; j++) cm_alndata_Destroy(dataA[j], FALSE);
-    free(dataA);
-  }
+  if(data != NULL) cm_alndata_Destroy(data, FALSE);
+  *ret_data = NULL;
 
-  ESL_FAIL(status, errbuf, "ProcessAlignmentWorkunit(), out of memory");
+  ESL_FAIL(status, errbuf, "DispatchSqAlignment(), out of memory");
   return status; /* NOT REACHED */
 }

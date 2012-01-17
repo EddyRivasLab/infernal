@@ -108,8 +108,9 @@ extern float   Scorify(int sc);
 
 /* from cm_alndata.c */
 CM_ALNDATA * cm_alndata_Create(void);
-void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sqp);
-int          ProcessAlignmentWorkunit(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA);
+void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sq);
+int          DispatchSqAlignment     (CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, TruncOpts_t *tro, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data);
+int          DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, TruncOpts_t *tro, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA);
 
 /* from cm_dpalign.c */
 extern int   cm_AlignSizeNeeded   (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
@@ -126,12 +127,10 @@ extern int   cm_CYKOutsideAlign   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, 
 extern int   cm_CYKOutsideAlignHB (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_check, CM_HB_MX *mx, CM_HB_MX *ins_mx, float *ret_sc);
 extern int   cm_OutsideAlign      (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_check, CM_MX    *mx, CM_MX    *ins_mx, float *ret_sc);
 extern int   cm_OutsideAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_check, CM_HB_MX *mx, CM_HB_MX *ins_mx, float *ret_sc);
-extern int   cm_PosteriorHB       (CM_t *cm, char *errbuf,               int L, float size_limit,               CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx);
 extern int   cm_Posterior         (CM_t *cm, char *errbuf,               int L, float size_limit,               CM_MX    *ins_mx, CM_MX    *out_mx, CM_MX    *post_mx);
+extern int   cm_PosteriorHB       (CM_t *cm, char *errbuf,               int L, float size_limit,               CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx);
 extern int   cm_EmitterPosterior  (CM_t *cm, char *errbuf,               int L, float size_limit, CM_MX    *post, CM_EMIT_MX    *emit_mx, int do_check);
 extern int   cm_EmitterPosteriorHB(CM_t *cm, char *errbuf,               int L, float size_limit, CM_HB_MX *post, CM_HB_EMIT_MX *emit_mx, int do_check);
-extern int   cm_SampleParsetree   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX    *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc);
-extern int   cm_SampleParsetreeHB (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc);
 extern int   cm_PostCode  (CM_t *cm, char *errbuf, int L, CM_EMIT_MX    *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp);
 extern int   cm_PostCodeHB(CM_t *cm, char *errbuf, int L, CM_HB_EMIT_MX *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp);
 extern int   cm_InitializeOptAccShadowDZero  (CM_t *cm, char *errbuf, char ***yshadow, int L);
@@ -158,8 +157,6 @@ extern int  cm_TrPosterior          (CM_t *cm, char *errbuf,               int L
 extern int  cm_TrPosteriorHB        (CM_t *cm, char *errbuf,               int L, float size_limit, char preset_mode, CM_TR_HB_MX *ins_mx, CM_TR_HB_MX *out_mx, CM_TR_HB_MX *post_mx);
 extern int  cm_TrEmitterPosterior   (CM_t *cm, char *errbuf,               int L, float size_limit, char preset_mode, int do_check, CM_TR_MX    *post, CM_TR_EMIT_MX    *emit_mx);
 extern int  cm_TrEmitterPosteriorHB (CM_t *cm, char *errbuf,               int L, float size_limit, char preset_mode, int do_check, CM_TR_HB_MX *post, CM_TR_HB_EMIT_MX *emit_mx);
-extern int  cm_TrSampleParsetree    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, CM_TR_MX    *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc);
-extern int  cm_TrSampleParsetreeHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, CM_TR_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc);
 extern int  cm_TrPostCode           (CM_t *cm, char *errbuf,               int L, CM_TR_EMIT_MX    *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp);
 extern int  cm_TrPostCodeHB         (CM_t *cm, char *errbuf,               int L, CM_TR_HB_EMIT_MX *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp);
 extern int  cm_TrFillFromMode       (char mode, int *ret_fill_L, int *ret_fill_R, int *ret_fill_T);
@@ -269,7 +266,7 @@ extern int  cm_detach_state(CM_t *cm, int insert1, int insert2);
 extern int  clean_cs(char *cs, int alen, int be_quiet);
 
 /* from cm_mx.c */
-extern CM_MX           *cm_mx_Create                  (CM_t *cm);
+extern CM_MX           *cm_mx_Create                  (int M);
 extern int              cm_mx_GrowTo                  (CM_t *cm, CM_MX *mx, char *errbuf, int L, float size_limit);
 extern int              cm_mx_Dump                    (FILE *ofp, CM_MX *mx);
 extern void             cm_mx_Destroy                 (CM_MX *mx);
@@ -396,6 +393,10 @@ extern void         ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, 
 extern void         ScoreCorrectionNull3CompUnknown(const ESL_ALPHABET *abc, float *null0, ESL_DSQ *dsq, int start, int stop, float omega, float *ret_sc);
 extern char         ParsetreeMode(Parsetree_t *tr);
 extern int          ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, char *errbuf, int *ret_cfrom_span, int *ret_cto_span, int *ret_cfrom_emit, int *ret_cto_emit); 
+extern int          cm_StochasticParsetree    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX    *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc);
+extern int          cm_StochasticParsetreeHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc);
+extern int          cm_TrStochasticParsetree  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, CM_TR_MX    *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc);
+extern int          cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, CM_TR_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc);
 
 /* from cm_qdband.c */
 extern void     BandExperiment(CM_t *cm);
@@ -662,33 +663,18 @@ extern int cm_worker_MPIBcast(char *errbuf, int tag, MPI_Comm comm, char **buf, 
 extern int cm_nonconfigured_MPIUnpack(ESL_ALPHABET **abc, char *errbuf, char *buf, int n, int *pos, MPI_Comm comm, CM_t **ret_cm);
 extern int cm_nonconfigured_MPIPack(CM_t *cm, char *errbuf, char *buf, int n, int *pos, MPI_Comm comm);
 extern int cm_nonconfigured_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
-extern int cm_dsq_MPISend(ESL_DSQ *dsq, int L, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
-extern int cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_DSQ **ret_dsq, int *ret_L);
-extern int cm_parsetree_MPIPackSize(const Parsetree_t *tr, MPI_Comm comm, int *ret_n);
-extern int cm_parsetree_MPIPack(const Parsetree_t *tr, char *buf, int n, int *position, MPI_Comm comm);
+extern int cm_dsq_MPISend(ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
+extern int cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_DSQ **ret_dsq, int64_t *ret_L, int64_t *ret_idx);
+extern int cm_parsetree_MPIPackSize(Parsetree_t *tr, MPI_Comm comm, int *ret_n);
+extern int cm_parsetree_MPIPack(Parsetree_t *tr, char *buf, int n, int *position, MPI_Comm comm);
 extern int cm_parsetree_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, Parsetree_t **ret_tr);
-extern int cm_cp9trace_MPIPackSize(const CP9trace_t *cp9_tr, MPI_Comm comm, int *ret_n);
-extern int cm_cp9trace_MPIPack(const CP9trace_t *cp9_tr, char *buf, int n, int *position, MPI_Comm comm);
-extern int cm_cp9trace_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CP9trace_t **ret_cp9_tr);
-extern int cm_digitized_sq_MPIPackSize(const ESL_SQ *sq, MPI_Comm comm, int *ret_n);
-extern int cm_digitized_sq_MPIPack(const ESL_SQ *sq, char *buf, int n, int *position, MPI_Comm comm);
-extern int cm_digitized_sq_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MPI_Comm comm, ESL_SQ **ret_sq);
-extern int exp_info_MPIPackSize(ExpInfo_t *exp, MPI_Comm comm, int *ret_n);
-extern int exp_info_MPIPack(ExpInfo_t *exp, char *buf, int n, int *position, MPI_Comm comm);
-extern int exp_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ExpInfo_t **ret_exp);
-extern int cmcalibrate_exp_results_MPIPackSize(float *scA, int nseq, MPI_Comm comm, int *ret_n);
-extern int cmcalibrate_exp_results_MPIPack(float *scA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
-extern int cmcalibrate_exp_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_scA, int *ret_nseq);
-extern int cmcalibrate_filter_results_MPIPackSize(int nseq, MPI_Comm comm, int *ret_n);
-extern int cmcalibrate_filter_results_MPIPack(float *cyk_scA, float *ins_scA, float *fwd_scA, int nseq, int seq_offset, char *buf, int n, int *position, MPI_Comm comm);
-extern int cmcalibrate_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cyk_scA, float **ret_ins_scA, float **ret_fwd_scA, int *ret_nseq, int *ret_seq_offset);
-extern int comlog_MPIPackSize(ComLog_t *comlog, MPI_Comm comm, int *ret_n);
-extern int comlog_MPIPack    (ComLog_t *comlog, char *buf, int n, int *position, MPI_Comm comm);
-extern int comlog_MPIUnpack  (char *buf, int n, int *pos, MPI_Comm comm, ComLog_t **ret_comlog);
 extern int cm_pipeline_MPISend(CM_PIPELINE *pli, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
 extern int cm_pipeline_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_GETOPTS *go, CM_PIPELINE **ret_pli);
 extern int cm_tophits_MPISend(CM_TOPHITS *th, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
 extern int cm_tophits_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, CM_TOPHITS **ret_th);
+extern int cm_alndata_MPISend(CM_ALNDATA *data, int include_sq, char *errbuf, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
+extern int cm_alndata_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ESL_ALPHABET *abc, CM_ALNDATA **ret_data);
+
 #endif
 
 /* from prior.c */

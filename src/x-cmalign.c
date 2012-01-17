@@ -50,11 +50,8 @@
 #define OUTALPHOPTS  "--rna,--dna"                               /* Exclusive choice for output alphabet */
 
 #define CMALIGN_MAX_NSEQ_ILEAVED  100000     /* 100k sequences, most we allow to be aligned and output in interleaved format */
+#define CMALIGN_MAX_NRES          10000000   /* 10 Mb, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
 #define CMALIGN_MAX_NRES_ILEAVED  100000000  /* 100Mb, most we allow to be aligned and output in interleaved format */
-/* What I will eventually set these as: */
-///#define CMALIGN_MAX_NRES 10000000  /* 10 Mb, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
-
-#define CMALIGN_MAX_NRES 1000
 
 #define DEBUGSERIAL 0
 #define DEBUGMPI    0
@@ -67,6 +64,7 @@ typedef struct {
   CM_ALNDATA      **dataA;  /* array of CM_ALNDATA objects with ptrs to sqs, parsetrees, scores */
   int               n;      /* size of outdataA   */
   float             mxsize; /* max size in Mb of allowable DP mx */
+  TruncOpts_t      *tro;    /* truncated alignment options */
   ESL_STOPWATCH    *w;      /* stopwatch for timing stages (band calc, alignment) */
   ESL_STOPWATCH    *w_tot;  /* stopwatch for timing total time for processing 1 seq */
 } WORKER_INFO;
@@ -155,7 +153,7 @@ static char usage[]  = "[-options] <cmfile> <sequence file>";
 static char banner[] = "align sequences to a CM";
 
 static void serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
-static int  serial_loop  (WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK **sq_blockA, int nblocks, ESL_RANDOMNESS *r);
+static int  serial_loop  (WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMNESS *r);
 
 /* Functions to avoid code duplication for common tasks */
 static int  init_master_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -178,13 +176,509 @@ static int  determine_gap_columns_to_add(ESL_MSA *msa, int *maxins, int *maxel, 
 static void inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_elA, char **ret_ss_cons2print, char **ret_rf2print);
 
 #ifdef HMMER_THREADS
-static int  thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQ_BLOCK **sq_blockA, int nblocks);
+static int  thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQ_BLOCK *sq_block);
 static void pipeline_thread(void *arg);
 #endif /*HMMER_THREADS*/
 
 #ifdef HAVE_MPI
 static int  mpi_master   (ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  mpi_worker   (ESL_GETOPTS *go, struct cfg_s *cfg);
+#endif /*HAVE_MPI*/
+
+
+#ifdef HAVE_MPI
+
+/* Define common tags used by the MPI master/slave processes */
+#define INFERNAL_ERROR_TAG          1
+#define INFERNAL_DSQ_TAG            2
+#define INFERNAL_INITIALREADY_TAG   3
+#define INFERNAL_ALNDATA_TAG        4
+
+/* mpi_failure()
+ * Generate an error message.  If the clients rank is not 0, a
+ * message is created with the error message and sent to the
+ * master process for handling.
+ */
+static void
+mpi_failure(char *format, ...)
+{
+  va_list  argp;
+  int      status = eslFAIL;
+  int      len;
+  int      rank;
+  char     str[512];
+
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  /* format the error mesg */
+  va_start(argp, format);
+  len = vsnprintf(str, sizeof(str), format, argp);
+  va_end(argp);
+
+  /* make sure the error string is terminated */
+  str[sizeof(str)-1] = '\0';
+
+  /* if the caller is the master, print the results and abort */
+  if (rank == 0)
+    {
+      fprintf(stderr, "\nError: ");
+      fprintf(stderr, "%s", str);
+      fprintf(stderr, "\n");
+      fflush(stderr);
+
+      MPI_Abort(MPI_COMM_WORLD, status);
+      exit(1);
+    }
+  else
+    {
+      MPI_Send(str, len, MPI_CHAR, 0, INFERNAL_ERROR_TAG, MPI_COMM_WORLD);
+      pause();
+    }
+}
+
+/* mpi_master()
+ * The MPI version of cmalign.
+ * Follows standard pattern for a master/worker load-balanced MPI program 
+ * (SRE notes J1/78-79).
+ * 
+ * A master returns eslOK if it's successful.  Errors in an MPI master
+ * come in two classes: recoverable and nonrecoverable.  
+ * 
+ * Recoverable errors include most worker-side errors, and any
+ * master-side error that do not affect MPI communication. Error
+ * messages from recoverable messages are delayed until we've cleanly
+ * shut down the workers. The 
+ * 
+ * Some worker side errors (such as ESL_ALLOCs) are likely to be 
+ * unrecoverable and will almost certainly cause MPI to crash
+ * uncleanly, they're only here because I couldn't find a way around
+ * them without massive reimplementation. Hopefully they rarely occur.
+ * 
+ * Unrecoverable errors are master-side errors that may affect MPI
+ * communication, meaning we cannot count on being able to reach the
+ * workers and shut them down. Unrecoverable errors result in immediate
+ * cm_Fail()'s, which will cause MPI to shut down the worker processes
+ * uncleanly.
+ */
+static int
+mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
+{
+  int             status;                /* Easel status */
+  char            errbuf[eslERRBUFSIZE]; /* for printing error messages */
+  CM_t           *cm = NULL;             /* a CM */
+  int             i;                     /* counter over parsetrees */
+  int             si;                    /* sequence index */
+  int             nali;                  /* index of the (possibly temporary) alignment we are working on */
+  int             nseq_cur;              /* number of sequences in current alignment */
+  int             nseq_aligned;          /* number of sequences so far aligned */
+  /* MPI is incompatible with --sample, b/c it would not be reproducible */
+
+  /* variables related to output, we may use a tmpfile if seqfile is large */
+  int      do_ileaved;               /* TRUE to output interleaved alignment */ 
+  int      use_tmpfile;              /* print out current alignment to tmpfile? */
+  int      created_tmpfile = FALSE;  /* TRUE if we've created a tmp file for current CM */
+  char tmpfile[32] = "esltmpXXXXXX"; /* name of the tmpfile */
+  CM_ALNDATA **merged_dataA = NULL;  /* array of all CM_ALNDATA pointers for current alignment */
+  int          merged_data_idx = 0;  /* index in merged_dataA */
+  int          nmerged;              /* size of merged_dataA */
+
+  /* variables related to reading sequence blocks */
+  int            sstatus = eslOK;  /* status from esl_sq_ReadBlock() */
+  ESL_SQ_BLOCK  *sq_block;         /* a sequence block */
+  ESL_SQ_BLOCK  *nxt_sq_block;     /* sequence block for next loop iteration */
+  int            block_max_nres;   /* maximum number of residues  we'll allow in sq_block */
+  int            block_max_nseq;   /* maximum number of sequences we'll allow in sq_block */
+  int            reached_eof;      /* TRUE if we've reached EOF in target sequence file */
+
+  /* variables related to --mapali */
+  char         *map_file   = NULL; /* name of alignment file from --mapali */
+  CM_ALNDATA  **map_dataA  = NULL; /* array of CM_ALNDATA pointers for mapali alignment */
+  int           nmap_data  = 0;    /* number of CM_ALNDATA ptrs in map_dataA */
+  int           nmap_cur   = 0;    /* number of CM_ALNDATA ptrs to include in current iteration, 0 unless nali==0 */
+  char         *map_sscons = NULL; /* SS_cons from mapali, only used if --mapstr */
+
+  /* variables related to MPI implementation */
+  MPI_Status       mpistatus;       /* the mpi status */
+  char            *mpibuf  = NULL;  /* buffer used to pack/unpack structures */
+  int              mpibuf_size = 0; /* current size of mpibuf_size */
+  int              buf_size;        /* size of received buffer */
+  int              pos;             /* for packing/unpacking an MPI buffer */
+  int              wi;              /* worker index that we're about to send to or receive from */
+  int              nworkers;        /* number of workers */
+  int              nworking;        /* number of workers currently doing work */
+  int              have_work;       /* TRUE while work remains (sqs remain in sq_block) */
+  CM_ALNDATA      *wkr_data = NULL; /* data recieved from a worker */
+  ESL_SQ          *sq = NULL;       /* sequence to send to a worker */
+
+  /* See 'General notes on {serial,mpi}_master()'s strategy' for details
+   * on the code organization here. 
+   */
+
+  if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) mpi_failure(errbuf);
+  do_ileaved = esl_opt_GetBoolean(go, "-i")       ? TRUE : FALSE;
+  if(esl_opt_GetBoolean(go, "--sample")) mpi_failure("--sample does not work with in MPI mode (b/c results would not be exactly reproducible)");
+
+  /* Read one CM, and make sure there's only one. This fills cfg->abc. */
+  status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
+  if(status != eslOK) mpi_failure(cfg->cmfp->errbuf);
+  status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
+  if(status != eslEOF) mpi_failure("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
+
+  /* initialization */
+  nali = nseq_cur = nseq_aligned = 0;
+  if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) mpi_failure(errbuf);
+  reached_eof = FALSE;
+
+  /* include the mapali, if nec */
+  if((map_file = esl_opt_GetString(go, "--mapali")) != NULL) { 
+    if((status = map_alignment(map_file, cm, errbuf, &map_dataA, &nmap_data, &map_sscons)) != eslOK) mpi_failure(errbuf);
+    if(esl_opt_GetBoolean(go, "--mapstr") && map_sscons == NULL) mpi_failure("Failed to read SS_cons for --mapstr from %s", map_file);
+  }
+
+  /* Our main loop will loop over reading a single large block
+   * (<sq_block>) of sequences, up to CMALIGN_MAX_NRES residues or
+   * <block_max_nseq> sequences, but potentially less if we reach the
+   * end of the sequence file first. If do_ileaved == TRUE, we require
+   * a single block of a different maximum size.
+   */
+  if(do_ileaved) { 
+    block_max_nres = CMALIGN_MAX_NRES_ILEAVED;
+    block_max_nseq = CMALIGN_MAX_NSEQ_ILEAVED;
+  }
+  else { 
+    block_max_nres = CMALIGN_MAX_NRES;
+    block_max_nseq = CMALIGN_MAX_NRES / ESL_MIN(cm->clen/2., 100.);
+    block_max_nseq = ESL_MAX(block_max_nseq, 1);
+    /* We guess that most sequences will be 100 residues or larger, or
+     * half of clen if clen < 200. In most cases they'll probably be
+     * roughly clen, but we are specifically worried about aligning many
+     * short truncated SSU reads. If sequences are larger,
+     * CMALIGN_MAX_NRES will kick in before <block_max_nseq>.
+     */
+  }
+
+  /* Read the first block */
+  sq_block = esl_sq_CreateDigitalBlock(block_max_nseq, cfg->abc);
+  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, block_max_nres, FALSE); /* FALSE says: read complete sequences */
+  nxt_sq_block = sq_block; /* special case of first block read */
+
+#if DEBUGMPI
+  printf("master read the first block\n");
+#endif 
+
+  while(sstatus == eslOK) { 
+    sq_block = nxt_sq_block; /* our current sq_block becomes the one we read on the previous iteration */
+    sq_block->first_seqidx = nseq_aligned;
+    nseq_cur = sq_block->count;
+
+    /* Before we do any aligning, read the next sequence block, so we
+     * can determine if we've reached the end of the seqfile. We need
+     * to know this for two reasons:
+     *
+     * (1) if the first block read above included all sequences (which
+     * we won't know until we try to read another block), we don't
+     * need to go into memory-saving mode and output to a tmpfile, we
+     * can output (in interleaved mode) to the final output file.
+     *
+     * (2) if -i used (do_ileaved = TRUE) we need to fail if we still
+     * have sequences left, because the sequence file exceeded the
+     * size limits. And we want to fail *before* we align all the
+     * sequences, so the user isn't cross when the job fails after
+     * seemingly going along fine for a while.
+     */
+    nxt_sq_block = esl_sq_CreateDigitalBlock(block_max_nseq, cfg->abc);
+    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, block_max_nres, FALSE); /* FALSE says: read complete sequences */
+    if(sstatus == eslEOF) { 
+      reached_eof = TRUE; /* nxt_sq_block will not have been filled */
+      esl_sq_DestroyBlock(nxt_sq_block); 
+    }
+    if(! reached_eof && do_ileaved) esl_fatal("Error: to use -i the sequence file must have less than %d sequences and %d residues", CMALIGN_MAX_NSEQ_ILEAVED, CMALIGN_MAX_NRES_ILEAVED);
+
+    /* allocate an array for all CM_ALNDATA objects we'll receive from workers */
+    nmap_cur = (nali == 0) ? nmap_data : 0;
+    nmerged = nseq_cur + nmap_cur;
+    ESL_ALLOC(merged_dataA, sizeof(CM_ALNDATA *) * (nseq_cur + nmap_cur));
+    /* prepend mapali data if nec */
+    if(nmap_cur > 0) {
+      for(i = 0; i < nmap_cur; i++) merged_dataA[i] = map_dataA[i];
+      free(map_dataA); /* don't free the CM_ALNDATA objects, merged_dataA is pointing at them */
+      map_dataA = NULL;
+    }
+#if DEBUGMPI
+    printf("master about to enter main loop\n");
+#endif 
+
+    /* main send/recv loop: send sequences to workers and receive their results */
+    have_work = TRUE;
+    nworkers  = cfg->nproc - 1;
+    nworking  = 0;
+    si        = 0; /* sequence index */
+    while(have_work || nworking > 0) { 
+#if DEBUGMPI
+      printf("master waiting for a message from any worker\n");
+#endif	
+      /* wait for message (results, ready tag or error) from any worker */
+      if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
+      if (MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size)                   != 0) mpi_failure("MPI get count failed");;
+      if (mpibuf == NULL || buf_size > mpibuf_size) {
+	ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
+	mpibuf_size = buf_size; 
+      }
+      wi = mpistatus.MPI_SOURCE;
+      MPI_Recv(mpibuf, buf_size, MPI_PACKED, wi, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
+      
+#if DEBUGMPI
+      printf("master received message from worker %d, tag %d\n", wi, mpistatus.MPI_TAG);
+#endif	
+      /* tag should be either:
+       * INFERNAL_INITIALREADY_TAG: worker just initialized, and is ready for work 
+       * INFERNAL_ALNDATA_TAG:      worker finished work, and sent us results 
+       * INFERNAL_ERROR_TAG:        worker sent us an error
+       */
+      if (mpistatus.MPI_TAG == INFERNAL_ALNDATA_TAG) { 
+	/* receive CM_ALNDATA result from worker, and point merged_dataA at it */
+	pos = 0;
+	status = cm_alndata_MPIUnpack(mpibuf, buf_size, &pos, MPI_COMM_WORLD, cfg->abc, &wkr_data);
+	if(status != eslOK) mpi_failure("problem with alignment results received from worker %d", wi);
+	merged_data_idx = wkr_data->idx - nseq_aligned + nmap_cur;
+	merged_dataA[merged_data_idx]     = wkr_data; /* wkr_data we received had everything we need except the sq */
+	merged_dataA[merged_data_idx]->sq = sq_block->list + (wkr_data->idx - sq_block->first_seqidx); /* point sq at appropriate sequence */
+	nworking--; /* one less worker is working now */
+#if DEBUGMPI
+	printf("received results from worker %d, %d workers now working\n", wi, nworking);
+#endif	
+      }
+      else if(mpistatus.MPI_TAG == INFERNAL_ERROR_TAG) { 
+	mpi_failure("MPI client %d raised error:\n%s\n", wi, mpibuf);
+      }
+      else if (mpistatus.MPI_TAG != INFERNAL_INITIALREADY_TAG) { 
+	mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, wi);
+      }
+      
+      if(have_work) { /* send new sequence: si's dsq, L, and seqidx to the worker */
+	sq = sq_block->list + si;
+	status = cm_dsq_MPISend(sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
+	if(status != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
+	nworking++; /* one more worker is working now */
+	si++;       /* move onto next sequence */
+#if DEBUGMPI
+	printf("master sent dsq si: %d/%d to worker %d, %d workers now working\n", si, sq_block->count, wi, nworking);
+#endif
+	if(si == sq_block->count) { 
+	  have_work = FALSE;
+	  ESL_DPRINTF1(("MPI master has sent all %d of its sequences\n", sq_block->count));
+#if DEBUGMPI
+	  printf("master is out of work\n");
+#endif 
+	}
+      }
+    }
+    if(nworking != 0) mpi_failure("%d workers still working when all should be idle", nworking);
+
+    /* we're done with sq_block, tell the workers by sending a NULL dsq */
+#if DEBUGMPI
+    printf("master sending NULL dsq to all workers signalling we're done with the file\n");
+#endif
+    for (wi = 1; wi < cfg->nproc; wi++) {
+      if((status = cm_dsq_MPISend(NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size)) != eslOK) mpi_failure(errbuf);
+    }
+
+    /* output alignment (if do_ileaved we died above if we didn't reach EOF yet) */
+    use_tmpfile = (reached_eof && (! created_tmpfile)) ? FALSE : TRUE; /* output to tmpfile only if this is the first alignment and we've aligned all seqs */
+    if(use_tmpfile && (! created_tmpfile)) { 
+      /* first aln for temporary output file, open the file */	
+      if ((status = esl_tmpfile_named(tmpfile, &(cfg->tmpfp))) != eslOK) mpi_failure("Failed to open temporary output file (status %d)", status);
+      created_tmpfile = TRUE;
+    }
+    if((status   = output_alignment(go, cfg, errbuf, cm, (use_tmpfile ? cfg->tmpfp : cfg->ofp), merged_dataA, nseq_cur + nmap_cur, map_sscons)) != eslOK) cm_Fail(errbuf);
+    /* optionally output same alignment to regress file */
+    if(cfg->rfp != NULL) { 
+      if((status = output_alignment(go, cfg, errbuf, cm, cfg->rfp,                              merged_dataA, nseq_cur + nmap_cur, map_sscons)) != eslOK) mpi_failure(errbuf);
+    }    
+    nali++;
+    nseq_aligned += nseq_cur;
+
+    /* output scores to stdout, if -o used */
+    if(cfg->ofp != stdout) { 
+      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
+      if((status =  output_scores(stdout,   cm, errbuf, merged_dataA, nseq_cur, nmap_cur)) != eslOK) mpi_failure(errbuf);
+    }
+    /* output scores to scores file, if --sfp used */
+    if(cfg->sfp != NULL) { 
+      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
+      if((status =  output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur, nmap_cur)) != eslOK) mpi_failure(errbuf);
+    }
+
+    /* free block and worker data */
+    esl_sq_DestroyBlock(sq_block);
+    sq_block = NULL;
+    for(i = 0; i < nmerged; i++) { 
+      cm_alndata_Destroy(merged_dataA[i], FALSE); /* FALSE: don't free sq's, we just free'd them by destroying the block */
+    }
+    free(merged_dataA);
+  } /* end of outer while loop 'while(sstatus == eslOK)' */
+
+  /* done with all sequences/blocks in the sequence file, tell the workers */
+#if DEBUGMPI
+  printf("master sending NULL dsq to all workers signalling we're done with the file\n");
+#endif
+  for (wi = 1; wi < cfg->nproc; wi++) {
+    if((status = cm_dsq_MPISend(NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size)) != eslOK) mpi_failure(errbuf);
+  }
+  
+  if     (sstatus == eslEFORMAT) mpi_failure("Parse failed (sequence file %s):\n%s\n", cfg->sqfp->filename, esl_sqfile_GetErrorBuf(cfg->sqfp));
+  else if(sstatus == eslEMEM)    mpi_failure("Out of memory");
+  else if(sstatus != eslEOF)     mpi_failure("Unexpected error while reading sequence file");
+    
+  /* if nec, close tmpfile then merge all alignments in it */
+  if(created_tmpfile) { 
+    fclose(cfg->tmpfp); /* we're done writing to tmpfp */
+    cfg->tmpfp = NULL;
+    /* merge all temporary alignments now in cfg->tmpfp, and output merged alignment */
+    if((status = create_and_output_final_msa(go, cfg, errbuf, cm, nali, tmpfile)) != eslOK) mpi_failure(errbuf);
+    remove(tmpfile); 
+  }
+    
+  /* finish insert and el files */
+  if(cfg->ifp != NULL) { fprintf(cfg->ifp, "//\n"); }
+  if(cfg->efp != NULL) { fprintf(cfg->efp, "//\n"); }
+
+  /* clean up */
+  FreeCM(cm);
+  if(mpibuf != NULL) free(mpibuf);
+
+  return eslOK;
+  
+  ERROR:
+  mpi_failure("Memory allocation error.");
+  return status;
+}
+
+/* mpi_worker()
+ * 
+ * Receive sequences from the master, align them and 
+ * send CM_ALNDATA results back to master.
+ */
+static int
+mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
+{
+  int             status;                 /* Easel status */
+  char            errbuf[eslERRBUFSIZE];  /* for printing error messages */
+  CM_t           *cm          = NULL;     /* the CM */
+  WORKER_INFO     info;                   /* the worker info */
+  ESL_SQ         *sq          = NULL;     /* sequence we're aligning */
+  ESL_DSQ        *dsq         = NULL;     /* digitial sequence, rec'd from master */
+  CM_ALNDATA     *data        = NULL;     /* data we fill for each seq and send back to master */
+  int64_t         L, idx;                 /* sequence length, index, rec'd from master */
+  char           *mpibuf      = NULL;     /* buffer used to pack/unpack structures */
+  int             mpibuf_size = 0;        /* size of the mpibuf                    */
+  int             blocks_remain_in_file;  /* set to FALSE to break outer loop over blocks */
+  int             seqs_remain_in_block;   /* set to FALSE to break inner loop over seqs  */
+
+  if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) mpi_failure(errbuf);
+  if(esl_opt_GetBoolean(go, "--sample")) mpi_failure("--sample does not work with in MPI mode (b/c results would not be exactly reproducible)");
+
+  /* Read one CM, and make sure there's only one. This fills cfg->abc. */
+  status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
+  if(status != eslOK) mpi_failure(cfg->cmfp->errbuf);
+  status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
+  if(status != eslEOF) mpi_failure("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
+
+  if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) mpi_failure(errbuf);
+
+  /* initialize our worker info */
+  info.cm     = cm;
+  info.dataA  = NULL;
+  info.n      = 0;
+  info.mxsize = esl_opt_GetReal(go, "--mxsize");
+  info.w      = esl_stopwatch_Create();
+  info.w_tot  = esl_stopwatch_Create();
+  if(esl_opt_GetBoolean(go, "--notrunc")) { 
+    info.tro = NULL;
+  }
+  else { 
+    info.tro    = CreateTruncOpts();
+    info.tro->allowL = TRUE;
+    info.tro->allowR = TRUE;
+  }
+  /* Main loop: actually two nested while loops, over sequence blocks
+   * (while(blocks_remain_in_file)) and over sequences within blocks
+   * (while(seqs_remain_in_block)). We exit each loop when the master
+   * tells us to, by sending a NULL dsq. If we receive a NULL dsq,
+   * we'll exit the inner loop over sequences, and if we immediately
+   * receive another NULL dsq we'll exit the outer loop over blocks.
+   */
+  blocks_remain_in_file = TRUE; 
+  while(blocks_remain_in_file) { 
+    /* inform the master that we're ready for our first seq of the block */
+    status = eslOK;
+    MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_INITIALREADY_TAG, MPI_COMM_WORLD);
+
+#if DEBUGMPI
+    printf("worker %d sent initial ready tag to master, waiting for 1st dsq\n", cfg->my_rank);
+#endif 
+
+    /* receive first dsq in block, if it's NULL, we know we're out of blocks */
+    status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx);
+    if     (status == eslOK  && dsq    == NULL)   mpi_failure("problem receiving 1st dsq");
+    else if(status == eslEOD && dsq    != NULL)   mpi_failure("problem receiving termination signal");
+    else if(status != eslOK  && status != eslEOD) mpi_failure("problem receiving 1st dsq");
+
+    if(dsq == NULL) { /* master is telling us that we're finished with the sequence file */
+      blocks_remain_in_file = FALSE;
+      seqs_remain_in_block  = FALSE;
+#if DEBUGMPI
+      printf("worker %d received NULL 1st dsq from master, shutting down\n", cfg->my_rank);
+#endif 
+    }
+    else { /* dsq is valid */
+      blocks_remain_in_file = TRUE;
+      seqs_remain_in_block  = TRUE;
+    }
+
+    while(seqs_remain_in_block) { 
+#if DEBUGMPI
+      printf("worker %d dsq %" PRId64 " of length %" PRId64 " received from master\n", cfg->my_rank, idx, L);
+#endif 
+      /* create a sequence object from dsq */
+      if ((sq = esl_sq_CreateDigitalFrom(cfg->abc, "irrelevant", dsq, L, NULL, NULL, NULL)) == NULL) mpi_failure("out of memory");
+      free(dsq); /* esl_sq_CreateDigitalFrom() makes a copy of dsq */
+      
+      /* align the sequence */
+      if((status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize, info.tro, 
+				       info.w, info.w_tot, NULL, &data)) != eslOK) mpi_failure(errbuf);
+      
+      /* pack up the data and send it back to the master (FALSE: don't send data->sq) */
+      status = cm_alndata_MPISend(data, FALSE, errbuf, 0, INFERNAL_ALNDATA_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
+      if(status != eslOK) mpi_failure(errbuf);
+
+      /* clean up old sequence */
+      esl_sq_Destroy(sq);
+      cm_alndata_Destroy(data, FALSE); /* don't free data->sq, it was pointing at the sq we just free'd */
+      
+      /* receive next sequence from the master, if it's null that's our signal to stop with this block */
+      status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx);
+      if     (status == eslOK  && dsq    == NULL)   mpi_failure("problem receiving dsq");
+      else if(status == eslEOD && dsq    != NULL)   mpi_failure("problem receiving termination signal");
+      else if(status != eslOK  && status != eslEOD) mpi_failure("problem receiving dsq");
+      
+      if(dsq == NULL) seqs_remain_in_block = FALSE; /* we're done with this block */
+#if DEBUGMPI
+      if(dsq == NULL) printf("worker received NULL dsq from master, block is done");
+#endif
+      
+    } /* end of 'while(seqs_remain_in_block)' */
+  } /* end of 'while(blocks_remain_in_file)' */
+
+  if(info.cm    != NULL) FreeCM(info.cm);
+  if(info.dataA != NULL) free(info.dataA);
+  if(info.w     != NULL) esl_stopwatch_Destroy(info.w);
+  if(info.w_tot != NULL) esl_stopwatch_Destroy(info.w_tot);
+  if(info.tro   != NULL) free(info.tro);
+  if(mpibuf     != NULL) free(mpibuf);
+
+  return eslOK;
+}
 #endif /*HAVE_MPI*/
 
 static void
@@ -376,8 +870,10 @@ main(int argc, char **argv)
   if(cfg.cmfp  != NULL) cm_file_Close(cfg.cmfp);
   if(cfg.sqfp  != NULL) esl_sqfile_Close(cfg.sqfp);
 
-  esl_getopts_Destroy(go);
+  if(cfg.abc     != NULL) esl_alphabet_Destroy(cfg.abc);
+  if(cfg.abc_out != NULL) esl_alphabet_Destroy(cfg.abc_out);
   esl_stopwatch_Destroy(w);
+  esl_getopts_Destroy(go);
 
   return status;
 }
@@ -423,7 +919,6 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   return eslOK;
 }
 
-
 /* init_shared_cfg()
  * Called by serial masters and mpi workers and masters.
  *
@@ -461,41 +956,32 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 static void
 serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 {
-  int      status;                   /* Easel status */
-  char     errbuf[eslERRBUFSIZE];    /* for printing error messages */
-  CM_t    *cm = NULL;                /* a CM */
-  int      i, j, k;                  /* counter over blocks, parsetrees and workers */
-  int      nali;                     /* index of the (possibly temporary) alignment we are working on */
-  int      nseq_cur;                 /* number of sequences in current alignment */
-  int      nseq_aligned;             /* number of sequences so far aligned */
-  int      do_sample;                /* TRUE if we're sampling alignments (--sample) */
-  ESL_RANDOMNESS *r = NULL;          /* RNG, used only if --sample */
+  int             status;                /* Easel status */
+  char            errbuf[eslERRBUFSIZE]; /* for printing error messages */
+  CM_t           *cm = NULL;             /* a CM */
+  int             i, k;                  /* counter over parsetrees and workers */
+  int             nali;                  /* index of the (possibly temporary) alignment we are working on */
+  int             nseq_cur;              /* number of sequences in current alignment */
+  int             nseq_aligned;          /* number of sequences so far aligned */
+  int             do_sample;             /* TRUE if we're sampling alignments (--sample) */
+  ESL_RANDOMNESS *r = NULL;              /* RNG, used only if --sample */
 
   /* variables related to output, we may use a tmpfile if seqfile is large */
   int      do_ileaved;               /* TRUE to output interleaved alignment */ 
-
   int      use_tmpfile;              /* print out current alignment to tmpfile? */
   int      created_tmpfile = FALSE;  /* TRUE if we've created a tmp file for current CM */
   char tmpfile[32] = "esltmpXXXXXX"; /* name of the tmpfile */
   CM_ALNDATA **merged_dataA = NULL;  /* array of all CM_ALNDATA pointers for current alignment */
   int          merged_data_idx = 0;  /* index in merged_dataA */
+  int          nmerged;              /* size of merged_dataA */
 
   /* variables related to reading sequence blocks */
   int            sstatus = eslOK;  /* status from esl_sq_ReadBlock() */
-  ESL_SQ_BLOCK  *big_sq_block;     /* a large sequence block, this gets split into sq_blockA */
-  ESL_SQ_BLOCK  *nxt_big_sq_block; /* a large sequence block */
-  ESL_SQ_BLOCK **sq_blockA;        /* array of seq blocks, these point at seqs in big_sq_block */
-  int            target_nblocks;   /* target number of blocks we'll split big_sq_block into */
-  int            nblocks;          /* actual number of blocks we split big_sq_block into */
-  int            block_max_nres;   /* maximum number of residues we'll allow in a sq_blockA[] block */
-  int            block_max_nseq;   /* maximum number of sequences we'll allow in a sq_blockA[] block */
-  int            nres_big_block;   /* number of residues in big_sq_block */
-  int            nres_this_block;  /* number of residues in sq_blockA[] block */
-  int            nseq_this_block;  /* number of sequences in sq_blockA[] block */
-  int     target_nres_per_block;   /* target number of residues per sq_blockA[] block */
+  ESL_SQ_BLOCK  *sq_block;         /* a sequence block */
+  ESL_SQ_BLOCK  *nxt_sq_block;     /* sequence block for next loop iteration */
+  int            block_max_nres;   /* maximum number of residues  we'll allow in sq_block */
+  int            block_max_nseq;   /* maximum number of sequences we'll allow in sq_block */
   int            reached_eof;      /* TRUE if we've reached EOF in target sequence file */
-  int            x;                /* counter over sequences in big_sq_block */
-  ESL_SQ        *sqp = NULL;       /* pointer to a sequence in a block */
 
   /* variables related to --mapali */
   char         *map_file   = NULL; /* name of alignment file from --mapali */
@@ -505,7 +991,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   char         *map_sscons = NULL; /* SS_cons from mapali, only used if --mapstr */
 
   /* variables related to threaded implementation */
-  int              ncpus = 0;        /* number of CPUs working */
+  int              ncpus     = 0;    /* number of CPUs working */
+  ESL_SQ          *sq        = NULL; /* for initializing workers */
   WORKER_INFO     *info      = NULL; /* the worker info */
   int              infocnt   = 0;    /* number of worker infos */
 #ifdef HMMER_THREADS
@@ -513,48 +1000,36 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_WORK_QUEUE  *queue     = NULL;
 #endif
   
-  /* General notes on serial_master()'s strategy: 
+  /* General notes on {serial,mpi}_master()'s strategy: 
    * 
    * Ideally, we'd read in all sequences, align them all, and output
    * the alignment. But we're worried about running out of memory, so
-   * we read in sequence blocks (big_sq_block) of at most
-   * CMALIGN_MAX_NRES (10 Mb) at a time, and process each in turn. (A
-   * parsetree is about 25 bytes per residue, so that should be about
-   * 250 Mb). If there's more than one such block, we output each to a
-   * tmp file and free the parsetrees afterwards so we don't require
-   * too much memory. Once finished, we go through the tmp file and
-   * merge all the alignments within it into a single one (without
-   * ever storing all of them simultaneously) and output it to the
-   * standard output file. In this case we need to use Pfam (1
-   * line/seq) format so we don't have to store the full alignment/set
-   * of parsetrees at once. If there's only one block we just output
-   * it to the standard output file in interleaved format (which is
-   * what previous versions of cmalign did).
+   * we read in sequence blocks (sq_block) of at most CMALIGN_MAX_NRES
+   * (10 Mb) at a time, and process each in turn. (A parsetree is
+   * about 25 bytes per residue, so that should be about 250 Mb). If
+   * there's more than one such block, we output each to a tmp file
+   * and free the parsetrees afterwards so we don't require too much
+   * memory. Once finished, we go through the tmp file and merge all
+   * the alignments within it into a single one (without ever storing
+   * all of them simultaneously) and output it to the standard output
+   * file. In this case we need to use Pfam (1 line/seq) format so we
+   * don't have to store the full alignment/set of parsetrees at
+   * once. If there's only one block we just output it to the standard
+   * output file in interleaved format (which is what previous
+   * versions of cmalign did), no tmp file is needed.
    * 
-   * The code could be simplified if we read the sequences into 
-   * a array of sequence blocks of preset size, instead of the two-step
-   * process of into a big sequence block and then dividing it up.
-   * The reason we do the latter is so we can optimize the distribution
-   * of work amongst all available workers, regardless of the remaining 
-   * amount of sequence data in the file. One undesirable side effect
-   * is that we point our small blocks at data in the big blocks (to 
-   * avoid copying the data) and so we have to be careful about how
-   * we free the data in the blocks.
-   * 
-   * Exceptions: 
-   *
-   * if -i: the user wants interleaved output, which we'll do but 
-   *        only if we can read the full sequence file into a single
-   *        big_sq_block that doesn't exceed CMALIGN_MAX_NSEQ_ILEAVED
-   *        (100K) sequences or CMALIGN_MAX_NRES_ILEAVED (100 Mb)
-   *        residues. If it does, we die immediately once we realize
-   *        it's too big, and tell the user. (I considered allowing
-   *        arbitrarily large alignments with -i, but it would
-   *        significantly complicate the code, and the user can still
-   *        create such an alignment with esl-alimerge and/or
-   *        esl-reformat).
-   *
-   * if --oneline: alignment will always be output in 1 line/seq format.
+   * Each sequence in the current block is processed independently,
+   * i.e. a workunit for a threaded/MPI worker is a single
+   * sequence. We could make a workunit a smaller sequence block so
+   * workers wouldn't have to update as much, but empirically it seems
+   * there's not too much overhead to the updates and sequence
+   * alignment times vary significantly so it's advantageous to have a
+   * worker process a single sequence at a time, lest they have
+   * multiple difficult sequences in a single block. I originally
+   * implemented the strategy of splitting big blocks into smaller
+   * ones for the threaded implementation, each of which was an
+   * independent unit (r3808) but it was significantly more complex
+   * with little to no advantage in speed over this implementation.
    */
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
@@ -582,7 +1057,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
   if(status != eslOK) cm_Fail(cfg->cmfp->errbuf);
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
-  if(status != eslEOF) cm_Fail("HMM file %s does not contain just one CM\n", cfg->cmfp->fname);
+  if(status != eslEOF) cm_Fail("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
 
   for (k = 0; k < infocnt; ++k)    {
     info[k].cm     = NULL;
@@ -590,7 +1065,15 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     info[k].n      = 0;
     info[k].mxsize = esl_opt_GetReal(go, "--mxsize");
     info[k].w      = esl_stopwatch_Create();
-    info[k].w_tot   = esl_stopwatch_Create();
+    info[k].w_tot  = esl_stopwatch_Create();
+    if(esl_opt_GetBoolean(go, "--notrunc")) { 
+      info[k].tro    = NULL;
+    }
+    else { 
+      info[k].tro    = CreateTruncOpts();
+      info[k].tro->allowL = TRUE;
+      info[k].tro->allowR = TRUE;
+    }
 #ifdef HMMER_THREADS
     info[k].queue  = queue;
 #endif
@@ -598,8 +1081,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   
 #ifdef HMMER_THREADS    
   for (k = 0; k < ncpus * 2; ++k) {
-    if((big_sq_block = esl_sq_CreateDigitalBlock(1, cfg->abc)) == NULL)   cm_Fail("Failed to allocate sequence block");
-    if((status       = esl_workqueue_Init(queue, big_sq_block)) != eslOK) cm_Fail("Failed to add block to work queue");
+    if((sq     = esl_sq_CreateDigital(cfg->abc)) == NULL)  cm_Fail("Failed to allocate a sequence");
+    if((status = esl_workqueue_Init(queue, sq))  != eslOK) cm_Fail("Failed to add block to work queue");
   }
 #endif
 
@@ -618,12 +1101,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
 
   /* Our main loop will loop over reading a single large block
-   * (<big_sq_block>) of sequences, up to CMALIGN_MAX_NRES residues or
+   * (<sq_block>) of sequences, up to CMALIGN_MAX_NRES residues or
    * <block_max_nseq> sequences, but potentially less if we reach the
-   * end of the sequence file first. Then, based on <big_sq_block>'s
-   * size, we divide that block up into smaller blocks. Each of these
-   * smaller blocks will be a workunit for a worker.  If (do_ileaved)
-   * we require a single big block of a different maximum size.
+   * end of the sequence file first. If do_ileaved == TRUE, we require
+   * a single block of a different maximum size.
    */
   if(do_ileaved) { 
     block_max_nres = CMALIGN_MAX_NRES_ILEAVED;
@@ -631,7 +1112,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
   else { 
     block_max_nres = CMALIGN_MAX_NRES;
-    block_max_nseq = CMALIGN_MAX_NRES / ESL_MIN(cm->clen/2, 100); 
+    block_max_nseq = CMALIGN_MAX_NRES / ESL_MIN(cm->clen/2., 100.);
+    block_max_nseq = ESL_MAX(block_max_nseq, 1);
     /* We guess that most sequences will be 100 residues or larger, or
      * half of clen if clen < 200. In most cases they'll probably be
      * roughly clen, but we are specifically worried about aligning many
@@ -640,10 +1122,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      */
   }
 
-  /* Read the first big block */
-  big_sq_block = esl_sq_CreateDigitalBlock(block_max_nseq, cfg->abc);
-  sstatus = esl_sqio_ReadBlock(cfg->sqfp, big_sq_block, block_max_nres, FALSE); /* FALSE says: read complete sequences */
-  nxt_big_sq_block = big_sq_block; /* special case of first block read */
+  /* Read the first block */
+  sq_block = esl_sq_CreateDigitalBlock(block_max_nseq, cfg->abc);
+  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, block_max_nres, FALSE); /* FALSE says: read complete sequences */
+  nxt_sq_block = sq_block; /* special case of first block read */
 
   while(sstatus == eslOK) { 
 #ifdef HMMER_THREADS
@@ -651,101 +1133,63 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       for (k = 0; k < infocnt; ++k) esl_threads_AddThread(threadObj, &info[k]);
     }
 #endif
-    /* First, read the next big sequence block, so we can determine if
-     * we've reached the end of the seqfile. We need to know this for
-     * two reasons:
+    sq_block = nxt_sq_block; /* our current sq_block becomes the one we read on the previous iteration */
+    sq_block->first_seqidx = nseq_aligned;
+    nseq_cur = sq_block->count;
+
+    /* Before we do any aligning, read the next sequence block, so we
+     * can determine if we've reached the end of the seqfile. We need
+     * to know this for two reasons:
      *
-     * (1) if the first big block read above included all sequences,
-     * we don't need to go into memory-saving mode and output to a
-     * tmpfile, we can output (in interleaved mode) to the final 
-     * output file. 
+     * (1) if the first block read above included all sequences (which
+     * we won't know until we try to read another block), we don't
+     * need to go into memory-saving mode and output to a tmpfile, we
+     * can output (in interleaved mode) to the final output file.
      *
      * (2) if -i used (do_ileaved = TRUE) we need to fail if we still
      * have sequences left, because the sequence file exceeded the
-     * size limits. And we want to fail *before* we align all the 
-     * sequences, so the user doesn't get pissed when the job fails
-     * after seemingly going along fine for a while.
+     * size limits. And we want to fail *before* we align all the
+     * sequences, so the user isn't cross when the job fails after
+     * seemingly going along fine for a while.
      */
-    big_sq_block               = nxt_big_sq_block; /* our current big_sq_block becomes the one we read on the previous iteration */
-    big_sq_block->first_seqidx = nseq_aligned;
-    nxt_big_sq_block = esl_sq_CreateDigitalBlock(block_max_nseq, cfg->abc);
-    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_big_sq_block, block_max_nres, FALSE); /* FALSE says: read complete sequences */
-    if(sstatus == eslEOF) reached_eof = TRUE; /* nxt_big_sq_block will be NULL */
+    nxt_sq_block = esl_sq_CreateDigitalBlock(block_max_nseq, cfg->abc);
+    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, block_max_nres, FALSE); /* FALSE says: read complete sequences */
+    if(sstatus == eslEOF) { 
+      reached_eof = TRUE; /* nxt_sq_block will not have been filled */
+      esl_sq_DestroyBlock(nxt_sq_block); 
+    }
     if(! reached_eof && do_ileaved) esl_fatal("Error: to use -i the sequence file must have less than %d sequences and %d residues", CMALIGN_MAX_NSEQ_ILEAVED, CMALIGN_MAX_NRES_ILEAVED);
 
-    /* if we have workers, divide up big_sq_block into smaller blocks */
-    if(infocnt == 1) { /* one worker, no need to divide up the block: sq_blockA will have 1 element: big_sq_block */
-      target_nblocks = nblocks = 1;
-      ESL_ALLOC(sq_blockA, sizeof(ESL_SQ_BLOCK *) * 1);
-      sq_blockA[0] = big_sq_block;
-    }
-    else { /* we have multiple workers, divide up big_sq_block into smaller blocks */
-      target_nblocks = ESL_MIN(10 * ncpus, big_sq_block->count); /* create 10 times as many blocks as workers, in case some blocks happen to take longer */ 
-      /* determine how many residues each small block should have */
-      nres_big_block = 0;
-      for(i = 0; i < big_sq_block->count; i++) { 
-	sqp = big_sq_block->list + i; 
-	nres_big_block += sqp->n;
-      }
-      /* if there's fewer sequences than CPUs set target_nres to 1, this forces 1 seq/block */
-      target_nres_per_block = (big_sq_block->count > ncpus) ? nres_big_block / target_nblocks : 1;
-
-      /* create the small blocks and point them at the ESL_SQ elements in big_sq_block */
-      ESL_ALLOC(sq_blockA, sizeof(ESL_SQ_BLOCK *) * target_nblocks);
-      for(i = 0; i < target_nblocks; i++) sq_blockA[i] = NULL;
-      nblocks = 0;
-      x = 0; /* counter over sequences in big_sq_block */
-      for(i = 0; i < target_nblocks; i++) { 
-	nres_this_block = 0;
-	nseq_this_block = 0;
-	while(nres_this_block < target_nres_per_block && x < big_sq_block->count) { 
-	  sqp = big_sq_block->list + x;
-	  nres_this_block += sqp->n;
-	  nseq_this_block++;
-	  x++;
-	}
-	if(nseq_this_block > 0) { 
-	  sq_blockA[i]               = esl_sq_CreateDigitalBlock(nseq_this_block, cfg->abc);
-	  sq_blockA[i]->list         = big_sq_block->list + (x - nseq_this_block);
-	  sq_blockA[i]->first_seqidx = nseq_aligned + x - nseq_this_block;
-	  sq_blockA[i]->count        = nseq_this_block;
-	  sq_blockA[i]->complete     = TRUE;
-	  nblocks++;
-	  printf("created block: %2d/%2d with %5d sequences %8d/%8d residues\n", nblocks, target_nblocks, nseq_this_block, nres_this_block, target_nres_per_block);
-	  /* be careful not to free big_sq_block->list, sq_blockA[i] is pointing at elements within it! */
-	}
-      }
-    }
-    nseq_cur  = big_sq_block->count;
-
-    /* now we have an array of <nblocks> valid seq blocks, each is a workunit, align them all */
+    /* align the sequences in the block */
 #ifdef HMMER_THREADS
-    if (ncpus > 0)  status = thread_loop(info, errbuf, threadObj, queue, sq_blockA, nblocks);
-    else            status = serial_loop(info, errbuf, sq_blockA, nblocks, r);
+    if (ncpus > 0)  status = thread_loop(info, errbuf, threadObj, queue, sq_block);
+    else            status = serial_loop(info, errbuf, sq_block, r);
 #else
-    status = serial_loop(info, errbuf, sq_blockA, nblocks, r);
+    status = serial_loop(info, errbuf, sq_block);
 #endif
     if(status != eslOK) cm_Fail(errbuf);
 
     /* create a single array of all CM_ALNDATA objects, in original (input) order */
     nmap_cur = (nali == 0) ? nmap_data : 0;
-    ESL_ALLOC(merged_dataA, sizeof(CM_ALNDATA *) * (nseq_cur + nmap_cur));
+    nmerged  = nseq_cur + nmap_cur;
+    ESL_ALLOC(merged_dataA, sizeof(CM_ALNDATA *) * nmerged);
     /* prepend mapali data if nec */
     if(nmap_cur > 0) {
-      for(j = 0; j < nmap_cur; j++) merged_dataA[j] = map_dataA[j];
+      for(i = 0; i < nmap_cur; i++) merged_dataA[i] = map_dataA[i];
       free(map_dataA); /* don't free the CM_ALNDATA objects, merged_dataA is pointing at them */
       map_dataA = NULL;
     }
     for(k = 0; k < infocnt; ++k) { 
-      for(j = 0; j < info[k].n; j++) { 
-	merged_data_idx = (info[k].dataA[j]->idx - nseq_aligned) + nmap_cur;
-	merged_dataA[merged_data_idx] = info[k].dataA[j];
+      for(i = 0; i < info[k].n; i++) { 
+	merged_data_idx = (info[k].dataA[i]->idx - nseq_aligned) + nmap_cur;
+	merged_dataA[merged_data_idx] = info[k].dataA[i];
       }
+      /* free dataA pointer from info, but not actual CM_ALNDATA objects, merged_dataA is pointing at them  */
       if(info[k].dataA != NULL) { 
-	free(info[k].dataA); /* don't free the CM_ALNDATA objects, merged_dataA is pointing at them */
+	free(info[k].dataA); 
 	info[k].dataA = NULL;
       }
-      info[k].n     = 0;
+      info[k].n = 0;
     }
 
     /* output alignment (if do_ileaved we died above if we didn't reach EOF yet) */
@@ -771,34 +1215,28 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* output scores to scores file, if --sfp used */
     if(cfg->sfp != NULL) { 
       if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
-      if((status = output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur, nmap_cur)) != eslOK) cm_Fail(errbuf);
+      if((status =  output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur, nmap_cur)) != eslOK) cm_Fail(errbuf);
     }
 
-    /* free big block and worker data */
-    esl_sq_DestroyBlock(big_sq_block);
-    big_sq_block = NULL;
-    if(infocnt > 1) { 
-      for(i = 0; i < nblocks; i++) { 
-	if(sq_blockA[i] != NULL) { 
-	  /* remember: sequences inside sq_blockA[] were just pointing at big_sq_block's sequences */
-	  free(sq_blockA[i]);
-	}      
-      }
-      if(sq_blockA != NULL) free(sq_blockA);
-      sq_blockA = NULL;
+    /* free block and worker data */
+    esl_sq_DestroyBlock(sq_block);
+    sq_block = NULL;
+    for(i = 0; i < nmerged; i++) { 
+      cm_alndata_Destroy(merged_dataA[i], FALSE); /* FALSE: don't free sq's, we just free'd them by destroying the block */
     }
+    free(merged_dataA);
   } /* end of outer while loop 'while(sstatus == eslOK)' */
   if     (sstatus == eslEFORMAT) cm_Fail("Parse failed (sequence file %s):\n%s\n", cfg->sqfp->filename, esl_sqfile_GetErrorBuf(cfg->sqfp));
   else if(sstatus == eslEMEM)    cm_Fail("Out of memory");
   else if(sstatus != eslEOF)     cm_Fail("Unexpected error while reading sequence file");
-    
+
   /* if nec, close tmpfile then merge all alignments in it */
   if(created_tmpfile) { 
     fclose(cfg->tmpfp); /* we're done writing to tmpfp */
     cfg->tmpfp = NULL;
     /* merge all temporary alignments now in cfg->tmpfp, and output merged alignment */
     if((status = create_and_output_final_msa(go, cfg, errbuf, cm, nali, tmpfile)) != eslOK) cm_Fail(errbuf);
-    /*remove(tmpfile); */
+    remove(tmpfile); 
   }
     
   /* finish insert and el files */
@@ -806,7 +1244,22 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(cfg->efp != NULL) { fprintf(cfg->efp, "//\n"); }
 
   /* clean up */
+#ifdef HMMER_THREADS
+  if (ncpus > 0) {
+    esl_workqueue_Reset(queue); /* queue should be empty, all sq's previously free'd */
+    esl_workqueue_Destroy(queue);
+    esl_threads_Destroy(threadObj);
+  }
+#endif
   if(r != NULL) esl_randomness_Destroy(r);
+  for(k = 0; k < infocnt; ++k) { 
+    if(info[k].cm    != NULL) FreeCM(info[k].cm);
+    if(info[k].dataA != NULL) free(info[k].dataA);
+    if(info[k].w     != NULL) esl_stopwatch_Destroy(info[k].w);
+    if(info[k].w_tot != NULL) esl_stopwatch_Destroy(info[k].w_tot);
+    if(info[k].tro   != NULL) free(info[k].tro);
+  }
+  free(info);
   FreeCM(cm);
 
   return;
@@ -818,8 +1271,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 /* serial_loop(): 
  * 
- * Align all sequences in array of sequence blocks (sq_blockA) 
- * and store parsetrees.
+ * Align all sequences in a sequence block and store parsetrees.
  * 
  * serial_loop() unlike thread_loop() gets a ESL_RANDOMNESS <r> passed
  * in, it is required for sampling alignments with --sample.
@@ -830,33 +1282,20 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
  * requires its own (separately-seeded) RNG.
  */
 static int
-serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK **sq_blockA, int nblocks, ESL_RANDOMNESS *r)
+serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMNESS *r)
 {
   int status;
-  int i, j;                    /* counter over blocks, parsetrees */
-  int cur_n = 0;               /* current number of parsetrees valid in info->trA */
-  CM_ALNDATA **bdataA = NULL; /* array of CM_ALNDATA for current block */
+  int i;  /* counter over sequences */
 
   /* allocate dataA */
-  info->n = 0;
-  for(i = 0; i < nblocks; i++) { 
-    if(sq_blockA[i] != NULL) info->n += sq_blockA[i]->count; 
-  }
+  info->n = sq_block->count;
   ESL_ALLOC(info->dataA, sizeof(CM_ALNDATA *) * info->n);
-  for(j = 0; j < info->n; j++) info->dataA[j] = NULL;
+  for(i = 0; i < info->n; i++) info->dataA[i] = NULL;
 
-  for(i = 0; i < nblocks; i++) { 
-    if(sq_blockA[i] != NULL && sq_blockA[i]->count > 0) { 
-
-      if((status = ProcessAlignmentWorkunit(info->cm, errbuf, sq_blockA[i], info->mxsize, info->w, info->w_tot, r, &bdataA)) != eslOK) cm_Fail(errbuf);
-      /* point info->dataA at newly collected data, including parsetrees */
-      for(j = 0; j < sq_blockA[i]->count; j++) info->dataA[cur_n + j] = bdataA[j];
-      cur_n += sq_blockA[i]->count;
-      free(bdataA);  /* don't free CM_ALNDATA objects, info->dataA is pointing at them */
-      bdataA = NULL;
-    }
+  for(i = 0; i < info->n; i++) { 
+    if((status = DispatchSqAlignment(info->cm, errbuf, sq_block->list + i, sq_block->first_seqidx + i, info->mxsize, 
+				     info->tro, info->w, info->w_tot, r, &(info->dataA[i]))) != eslOK) cm_Fail(errbuf);
   }
-      
   return eslOK;
   
  ERROR: 
@@ -866,14 +1305,14 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK **sq_blockA, int nbloc
  
 #ifdef HMMER_THREADS
 static int
-thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQ_BLOCK **sq_blockA, int nblocks)
+thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQ_BLOCK *sq_block)
 {
-  int           status = eslOK;
-  int           i, k;            /* counter over blocks, workers */
-  ESL_SQ_BLOCK *sq_block;
-  void         *new_sq_block;
-  ESL_SQ_BLOCK *empty_sq_block;
-  int           nworkers = esl_threads_GetWorkerCount(obj);
+  int      status = eslOK;
+  int      i, k;           /* counter over sequences, workers */
+  ESL_SQ  *sq;
+  void    *new_sq;
+  ESL_SQ  *empty_sq;
+  int      nworkers = esl_threads_GetWorkerCount(obj);
 
   esl_workqueue_Reset(queue);
 #if DEBUGSERIAL
@@ -886,38 +1325,38 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
   printf("master threads started\n");
 #endif
 
-  status = esl_workqueue_ReaderUpdate(queue, NULL, &new_sq_block);
+  status = esl_workqueue_ReaderUpdate(queue, NULL, &new_sq);
   if (status != eslOK) cm_Fail("Work queue reader failed");
 
 #if DEBUGSERIAL
-  printf("master initial update (blocks: %d)\n", nblocks);
+  printf("master initial update\n");
 #endif 
 
   /* main loop: */
-  for(i = 0; i < nblocks; i++) { 
-    if(sq_blockA[i] != NULL && sq_blockA[i]->count > 0) { 
-      sq_block = (ESL_SQ_BLOCK *) new_sq_block;
-      sq_block = sq_blockA[i];
-      status = esl_workqueue_ReaderUpdate(queue, sq_block, &new_sq_block);
-      if (status != eslOK) cm_Fail("Work queue reader failed");
+  for(i = 0; i < sq_block->count; i++) { 
+    sq    = (ESL_SQ *) new_sq;
+    sq    = sq_block->list + i;
+    sq->W = sq_block->first_seqidx + i; 
+    /* we overload sq->W w/seqidx (the original value is irrelevant in this context) */
+    status = esl_workqueue_ReaderUpdate(queue, sq, &new_sq);
+    if (status != eslOK) cm_Fail("Work queue reader failed");
 
 #if DEBUGSERIAL
-      printf("master internal update\n");
+    printf("master internal update\n");
 #endif
-    }
   }
 
-  /* now send a empty sq_block to all workers signaling them to stop */
-  empty_sq_block = esl_sq_CreateBlock(1);
+  /* now send a empty sq to all workers signaling them to stop */
+  empty_sq = esl_sq_Create();
   for(k = 0; k < nworkers; k++) { 
-    status = esl_workqueue_ReaderUpdate(queue, empty_sq_block, &new_sq_block);
+    status = esl_workqueue_ReaderUpdate(queue, empty_sq, &new_sq);
     if (status != eslOK) cm_Fail("Work queue reader failed");
 #if DEBUGSERIAL
     printf("master termination update\n");
 #endif
   }
 
-  status = esl_workqueue_ReaderUpdate(queue, sq_block, NULL);
+  status = esl_workqueue_ReaderUpdate(queue, sq, NULL);
 #if DEBUGSERIAL
   printf("master final update\n");
 #endif
@@ -933,7 +1372,7 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
   printf("master completed\n");
 #endif
 
-  esl_sq_DestroyBlock(empty_sq_block);
+  esl_sq_Destroy(empty_sq);
   return status;
 }
 
@@ -942,20 +1381,19 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
  * Receive a block of sequences from the master, 
  * align them and store their parsetrees.
  */
-
 static void 
 pipeline_thread(void *arg)
 {
   int           status;
-  int           j;             /* counter over parsetrees */
-  CM_ALNDATA **bdataA = NULL; /* CM_ALNDATA array for the current block */
+  int           i, j;
   int           workeridx;
   WORKER_INFO  *info;
   ESL_THREADS  *obj;
-  ESL_SQ_BLOCK *sq_block = NULL;
-  void         *new_sq_block;
+  ESL_SQ       *sq = NULL;
+  void         *new_sq = NULL;
   char          errbuf[eslERRBUFSIZE];
-  
+  int           nalloc    = 0;
+  int           allocsize = 1000;
 #ifdef HAVE_FLUSH_ZERO_MODE
   /* In order to avoid the performance penalty dealing with sub-normal
    * values in the floating point calculations, set the processor flag
@@ -978,7 +1416,7 @@ pipeline_thread(void *arg)
   printf("got data %d\n", workeridx);
 #endif
 
-  status = esl_workqueue_WorkerUpdate(info->queue, NULL, &new_sq_block);
+  status = esl_workqueue_WorkerUpdate(info->queue, NULL, &new_sq);
   if (status != eslOK) cm_Fail("Work queue worker failed\n");
 
 #if DEBUGSERIAL
@@ -986,26 +1424,33 @@ pipeline_thread(void *arg)
 #endif
 
   /* loop until all sequences have been processed */
-  sq_block = (ESL_SQ_BLOCK *) new_sq_block;
-  while (sq_block->count > 0) { 
-    if((status = ProcessAlignmentWorkunit(info->cm, errbuf, sq_block, info->mxsize, info->w, info->w_tot, NULL, &bdataA)) != eslOK) cm_Fail(errbuf);
-    /* point info->dataA at newly collected data, including parsetrees */
-    ESL_REALLOC(info->dataA, sizeof(CM_ALNDATA *) * (info->n + sq_block->count));
-    for(j = 0; j < sq_block->count; j++) info->dataA[info->n + j] = bdataA[j];
-    info->n += sq_block->count;
-    free(bdataA);  /* don't free actual CM_ALNDATA objects, info->trA is pointing at them */
-    bdataA = NULL;
+  sq = (ESL_SQ *) new_sq;
+  i = 0;
+  while (sq->L != -1) { 
+    /* reallocate info->dataA if necessary */
+    if(info->n == nalloc) { 
+      ESL_REALLOC(info->dataA, sizeof(CM_ALNDATA *) * (nalloc + allocsize));
+      for(j = nalloc; j < info->n + allocsize; j++) info->dataA[j] = NULL;
+      nalloc += allocsize;
+    }
+    if((status = DispatchSqAlignment(info->cm, errbuf, sq, sq->W, info->mxsize, info->tro, 
+				     info->w, info->w_tot, NULL, &(info->dataA[i]))) != eslOK) cm_Fail(errbuf);
+    /* sq->W has been overloaded (its original value is irrelevant in this context).
+     * It is now the sequence index, defined in thread_loop() 
+     */
+    i++;
+    info->n++;
 
-    status = esl_workqueue_WorkerUpdate(info->queue, sq_block, &new_sq_block);
+    status = esl_workqueue_WorkerUpdate(info->queue, sq, &new_sq);
     if (status != eslOK) cm_Fail("Work queue worker failed");
-    sq_block = (ESL_SQ_BLOCK *) new_sq_block;
+    sq = (ESL_SQ *) new_sq;
 
 #if DEBUGSERIAL
-    printf("internal update %d\n", workeridx);
+    printf("internal update %d sq->L: %" PRId64 "\n", workeridx, sq->L);
 #endif
   }
 
-  status = esl_workqueue_WorkerUpdate(info->queue, sq_block, NULL);
+  status = esl_workqueue_WorkerUpdate(info->queue, sq, NULL);
   if (status != eslOK) cm_Fail("Work queue worker failed");
   
 #if DEBUGSERIAL
@@ -1046,6 +1491,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(  esl_opt_GetBoolean(go, "--small"))       cm->align_opts |= CM_ALIGN_SMALL; /* --small requires --noprob --nonbanded --cyk */
 
   /* set up configuration options in cm->config_opts */
+  if(  esl_opt_GetBoolean(go, "--nonbanded"))   cm->config_opts |= CM_CONFIG_NONBANDEDMX;
   if(! esl_opt_GetBoolean(go, "--notrunc"))     cm->config_opts |= CM_CONFIG_TRUNC;
   if(  esl_opt_GetBoolean(go, "--sub"))         cm->config_opts |= CM_CONFIG_SUB;   /* --sub requires --notrunc and -g */
   if(! esl_opt_GetBoolean(go, "-g")) { 
@@ -1082,11 +1528,11 @@ output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FIL
   /* output the parsetrees, if nec */
   if(cfg->tfp != NULL) { 
     for (j = 0; j < ndata; j++) { 
-      if((status = ParsetreeScore(cm, NULL, errbuf, dataA[j]->tr, dataA[j]->sqp->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
-      fprintf(cfg->tfp, ">%s\n", dataA[j]->sqp->name);
+      if((status = ParsetreeScore(cm, NULL, errbuf, dataA[j]->tr, dataA[j]->sq->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
+      fprintf(cfg->tfp, ">%s\n", dataA[j]->sq->name);
       fprintf(cfg->tfp, "  %16s %.2f bits\n", "SCORE:", sc);
       fprintf(cfg->tfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
-      ParsetreeDump(cfg->tfp, dataA[j]->tr, cm, dataA[j]->sqp->dsq, NULL, NULL); /* NULLs are dmin, dmax */
+      ParsetreeDump(cfg->tfp, dataA[j]->tr, cm, dataA[j]->sq->dsq, NULL, NULL); /* NULLs are dmin, dmax */
       fprintf(cfg->tfp, "//\n");
     }
   }
@@ -1096,7 +1542,7 @@ output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FIL
   if(first_ali == 0 && cfg->efp != NULL) { fprintf(cfg->efp, "%s %d\n", cm->name, cm->clen); } 
 
   /* create the alignment */
-  ESL_ALLOC(sqpA,   sizeof(ESL_SQ *)      * ndata); for(j = 0; j < ndata; j++) sqpA[j]   = dataA[j]->sqp;
+  ESL_ALLOC(sqpA,   sizeof(ESL_SQ *)      * ndata); for(j = 0; j < ndata; j++) sqpA[j]   = dataA[j]->sq;
   ESL_ALLOC(trA,    sizeof(Parsetree_t *) * ndata); for(j = 0; j < ndata; j++) trA[j]    = dataA[j]->tr;
   ESL_ALLOC(ppstrA, sizeof(char *)        * ndata); for(j = 0; j < ndata; j++) ppstrA[j] = dataA[j]->ppstr;
   if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, sqpA, NULL, trA, ppstrA, ndata, cfg->ifp, cfg->efp, TRUE, esl_opt_GetBoolean(go, "--matchonly"), &msa)) != eslOK) return status;
@@ -1212,7 +1658,7 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, 
   int do_post      = (cm->align_opts & CM_ALIGN_POST)      ? TRUE : FALSE;
   int do_sub       = (cm->align_opts & CM_ALIGN_SUB)       ? TRUE : FALSE;
 
-  for(i = first_idx; i < ndata; i++) namewidth = ESL_MAX(namewidth, strlen(dataA[i]->sqp->name));
+  for(i = first_idx; i < ndata; i++) namewidth = ESL_MAX(namewidth, strlen(dataA[i]->sq->name));
 
   maxidx = first_idx + ndata - 1;
   idxwidth = 0; do { idxwidth++; maxidx/=10; } while (maxidx); /* poor man's (int)log_10(maxidx)+1 */
@@ -1232,7 +1678,7 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, 
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s  %8s\n", idxwidth, idxdashes, namewidth, namedashes, "------", "-------", "-------", "-----", "--------", "------", "---------", "---------", "---------", "--------");
 
   for(i = first_idx; i < ndata; i++) { 
-    fprintf(ofp, "  %*" PRId64 "  %-*s  %6" PRId64 "  %7d  %7d", idxwidth, dataA[i]->idx+1, namewidth, dataA[i]->sqp->name, dataA[i]->sqp->n, dataA[i]->cm_from, dataA[i]->cm_to);
+    fprintf(ofp, "  %*" PRId64 "  %-*s  %6" PRId64 "  %7d  %7d", idxwidth, dataA[i]->idx+1, namewidth, dataA[i]->sq->name, dataA[i]->sq->n, dataA[i]->cm_from, dataA[i]->cm_to);
     if(do_sub) { 
       if     (dataA[i]->cm_from != 1 && dataA[i]->cm_to != cm->clen) fprintf(ofp, "  %5s", "5'&3'");
       else if(dataA[i]->cm_from == 1 && dataA[i]->cm_to != cm->clen) fprintf(ofp, "  %5s", "3'");
@@ -1383,9 +1829,9 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
   if(status != eslEOF) ESL_FAIL(status, errbuf, "More alignments in temp file than expected.");
   esl_msafile2_Close(afp);
   
-  /*********************************************
-   *  Merge all alignments into the merged MSA *
-   *********************************************/
+  /********************************************
+   * Merge all alignments into the merged MSA *
+   ********************************************/
 
   /* We allocate space for all sequences, but leave sequences as NULL
    * (nseq = -1).  We didn't store the sequences on the first pass
@@ -1931,7 +2377,7 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dat
   }   
 
   /* get sequences */
-  for (i = 0; i < msa->nseq; i++) esl_sq_FetchFromMSA(msa, i, &(dataA[i]->sqp));
+  for (i = 0; i < msa->nseq; i++) esl_sq_FetchFromMSA(msa, i, &(dataA[i]->sq));
 
   *ret_dataA = dataA;
   *ret_ndata = msa->nseq;

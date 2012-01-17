@@ -61,8 +61,8 @@ static void  cp9_renormalize_exits(CP9_t *hmm);
  *
  *           - emitmap (if not yet built)
  *
- *           - all HMM banded matrices for the CM (hbmx, ohbmx,
- *             trhbmx, trohbmx, ehbmx, trehbmx, shhbmx, trshhbmx)
+ *           - all HMM banded matrices for the CM (hb_mx, hb_omx, hb_emx,
+ *             hb_shmx, trhb_mx, trhb_omx, trhb_emx, trhb_shmx)
  *
  *           - CP9 HMMs (cp9, Lcp9, Rcp9, Tcp9)
  *
@@ -84,6 +84,9 @@ static void  cp9_renormalize_exits(CP9_t *hmm);
  *
  *           - W is also recalculated if cm->config_opts & 
  *             CM_CONFIG_W.
+ *
+ *           - all non-banded matrices for the CM (nbmx, onbmx,
+ *             trnbmx, tronbmx, enbmx, trenbmx, shnbmx, trshnbmx)
  *
  *           - the scan matrix (smx) is created if cm->config_opts &
  *             CM_CONFIG_SMX 
@@ -209,16 +212,33 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
   }
   
   /* Allocate the HMM banded matrices, these are originally 
-   * very small and only grown as needed.
+   * very small and only grown as needed. Optionally create
+   * the truncated alignment matrices. 
    */
-  cm->hbmx     = cm_hb_mx_Create(cm->M);
-  cm->ohbmx    = cm_hb_mx_Create(cm->M);
-  cm->trhbmx   = cm_tr_hb_mx_Create(cm);
-  cm->trohbmx  = cm_tr_hb_mx_Create(cm);
-  cm->ehbmx    = cm_hb_emit_mx_Create(cm);
-  cm->trehbmx  = cm_tr_hb_emit_mx_Create(cm);
-  cm->shhbmx   = cm_hb_shadow_mx_Create(cm);
-  cm->trshhbmx = cm_tr_hb_shadow_mx_Create(cm);
+  cm->hb_mx    = cm_hb_mx_Create(cm->M);
+  cm->hb_omx   = cm_hb_mx_Create(cm->M);
+  cm->hb_emx   = cm_hb_emit_mx_Create(cm);
+  cm->hb_shmx  = cm_hb_shadow_mx_Create(cm);
+  if(cm->config_opts & CM_CONFIG_TRUNC) { 
+    cm->trhb_mx   = cm_tr_hb_mx_Create(cm);
+    cm->trhb_omx  = cm_tr_hb_mx_Create(cm);
+    cm->trhb_emx  = cm_tr_hb_emit_mx_Create(cm);
+    cm->trhb_shmx = cm_tr_hb_shadow_mx_Create(cm);
+  }
+
+  /* If nec, create the nonbanded matrices (usually we won't, these get real big) */
+  if(cm->config_opts & CM_CONFIG_NONBANDEDMX) { 
+    cm->nb_mx     = cm_mx_Create(cm->M);
+    cm->nb_omx    = cm_mx_Create(cm->M);
+    cm->nb_emx    = cm_emit_mx_Create(cm);
+    cm->nb_shmx   = cm_shadow_mx_Create(cm);
+    if(cm->config_opts & CM_CONFIG_TRUNC) { 
+      cm->trnb_mx   = cm_tr_mx_Create(cm);
+      cm->trnb_omx  = cm_tr_mx_Create(cm);
+      cm->trnb_emx  = cm_tr_emit_mx_Create(cm);
+      cm->trnb_shmx = cm_tr_shadow_mx_Create(cm);
+    }
+  }
 
   /* If nec, create the scan matrix and truncated scan matrix */
   /* (we could the check size of matrices first, return error if too big, but don't currently) */

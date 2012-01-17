@@ -1922,7 +1922,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	cm->search_opts  = pli->fcyk_cm_search_opts;
 
 	if(do_trunc) { 
-	  status = TrCYKScanHB(cm, errbuf, cm->trhbmx, pli->hb_size_limit, pli->tro, sq->dsq, es[i], ee[i], 
+	  status = TrCYKScanHB(cm, errbuf, cm->trhb_mx, pli->hb_size_limit, pli->tro, sq->dsq, es[i], ee[i], 
 			       0.,                                  /* minimum score to report, irrelevant */
 			       NULL,                                /* hitlist to add to, irrelevant here */
 			       pli->do_null3,                       /* do the NULL3 correction? */
@@ -1934,7 +1934,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	  /*printf("\n\n!!! Returned from TrCYKScanHB(): %.4f bits\n\n\n", cyksc);*/
 	}
 	else { 
-	  status = FastCYKScanHB(cm, errbuf, cm->hbmx, pli->hb_size_limit, sq->dsq, es[i], ee[i], 
+	  status = FastCYKScanHB(cm, errbuf, cm->hb_mx, pli->hb_size_limit, sq->dsq, es[i], ee[i], 
 				 0.,                                  /* minimum score to report, irrelevant */
 				 NULL,                                /* hitlist to add to, irrelevant here */
 				 pli->do_null3,                       /* do the NULL3 correction? */
@@ -2008,7 +2008,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	/* printf("INS 1 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
 	if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is HMM banded Inside */
 	  if(do_trunc) { 
-	    status = FTrInsideScanHB(cm, errbuf, cm->trhbmx, pli->hb_size_limit, pli->tro, sq->dsq, es[i], ee[i], 
+	    status = FTrInsideScanHB(cm, errbuf, cm->trhb_mx, pli->hb_size_limit, pli->tro, sq->dsq, es[i], ee[i], 
 				     pli->T,            /* minimum score to report */
 				     hitlist,           /* our hitlist */
 				     pli->do_null3,     /* do the NULL3 correction? */
@@ -2018,7 +2018,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	    /*printf("\n\n!!! Returned from FTrInsideScanHB(): %.4f bits\n\n\n", inssc);*/
 	  }
 	  else { 
-	    status = FastFInsideScanHB(cm, errbuf, cm->hbmx, pli->hb_size_limit, sq->dsq, es[i], ee[i], 
+	    status = FastFInsideScanHB(cm, errbuf, cm->hb_mx, pli->hb_size_limit, sq->dsq, es[i], ee[i], 
 				       pli->T,            /* minimum score to report */
 				       hitlist,           /* our hitlist */
 				       pli->do_null3,     /* do the NULL3 correction? */
@@ -2033,7 +2033,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	else { /* final algorithm is HMM banded CYK */
 	  /*printf("calling HMM banded CYK scan\n");*/
 	  if(do_trunc) { 
-	    status = TrCYKScanHB(cm, errbuf, cm->trhbmx, pli->hb_size_limit, pli->tro, sq->dsq, es[i], ee[i], 
+	    status = TrCYKScanHB(cm, errbuf, cm->trhb_mx, pli->hb_size_limit, pli->tro, sq->dsq, es[i], ee[i], 
 				 pli->T,                             /* minimum score to report */
 				 hitlist,                            /* our hitlist */
 				 pli->do_null3,                      /* do the NULL3 correction? */
@@ -2043,7 +2043,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	    /*printf("\n\n!!! Returned from TrCYKScanHB(): %.4f bits\n\n\n", cyksc);*/
 	  }
 	  else { 
-	    status = FastCYKScanHB(cm, errbuf, cm->hbmx, pli->hb_size_limit, sq->dsq, es[i], ee[i], 
+	    status = FastCYKScanHB(cm, errbuf, cm->hb_mx, pli->hb_size_limit, sq->dsq, es[i], ee[i], 
 				   pli->T,                             /* minimum score to report */
 				   hitlist,                            /* our hitlist */
 				   pli->do_null3,                      /* do the NULL3 correction? */
@@ -2320,9 +2320,9 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
 			    hit->mode,                                     /* alignment mode, determined in truncated scanner function */
 			    do_optacc,                                     /* use optimal accuracy alg? */
 			    FALSE,                                         /* don't sample aln from Inside matrix */
-			    cm->trhbmx, cm->trshhbmx,                      /* inside, shadow matrices */
-			    (do_ppstr || do_optacc) ? cm->trohbmx : NULL,  /* outside DP matrix */
-			    (do_ppstr || do_optacc) ? cm->trehbmx : NULL,  /* emit matrix */
+			    cm->trhb_mx, cm->trhb_shmx,                    /* inside, shadow matrices */
+			    (do_ppstr || do_optacc) ? cm->trhb_omx : NULL, /* outside DP matrix */
+			    (do_ppstr || do_optacc) ? cm->trhb_emx : NULL, /* emit matrix */
 			    NULL,                                          /* ESL_RANDOMNESS, unneeded b/c we're not sampling */
 			    (do_ppstr) ? &ppstr  : NULL,                   /* posterior string */
 			    &tr,                                           /* parsetree */
@@ -2341,9 +2341,9 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
 			  pli->hb_size_limit,                          /* limit for a single CM_HB_MX, so this is safe */
 			  do_optacc,                                   /* use optimal accuracy alg? */
 			  FALSE,                                       /* don't sample aln from Inside matrix */
-			  cm->hbmx, cm->shhbmx,                        /* inside, shadow matrices */
-			  (do_ppstr || do_optacc) ? cm->ohbmx : NULL,  /* outside DP matrix */
-			  (do_ppstr || do_optacc) ? cm->ehbmx : NULL,  /* emit matrix */
+			  cm->hb_mx, cm->hb_shmx,                      /* inside, shadow matrices */
+			  (do_ppstr || do_optacc) ? cm->hb_omx : NULL, /* outside DP matrix */
+			  (do_ppstr || do_optacc) ? cm->hb_emx : NULL, /* emit matrix */
 			  NULL,                                        /* ESL_RANDOMNESS, unneeded b/c we're not sampling */
 			  (do_ppstr)  ? &ppstr  : NULL,                /* posterior string */
 			  &tr,                                         /* parsetree */

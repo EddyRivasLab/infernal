@@ -91,14 +91,13 @@ static int cm_tr_scan_mx_freeintegers(CM_t *cm, CM_TR_SCAN_MX *trsmx);
  * Throws:    <NULL> on allocation error.
  */
 CM_MX *
-cm_mx_Create(CM_t *cm)
+cm_mx_Create(int M)
 {
   int     status;
   CM_MX *mx = NULL;
   int     v;
   int allocL = 1;
   int allocW = 1;
-  int M = cm->M;
 
   /* level 1: the structure itself */
   ESL_ALLOC(mx, sizeof(CM_MX));
@@ -4054,10 +4053,8 @@ cm_emit_mx_Create(CM_t *cm)
     }
   }
     
-  /* allocate EL row */
-  ESL_ALLOC(mx->l_pp[M], sizeof(float) * (allocL));
+  /* EL row */
   mx->l_pp[M] = mx->l_pp_mem + l_n * (allocL);
-
   mx->r_pp[M] = NULL;
 
   /* finally allocate the sum vector */
@@ -4828,9 +4825,8 @@ cm_hb_emit_mx_Create(CM_t *cm)
     }
   }
     
-  /* allocate EL row */
+  /* EL row */
   mx->l_pp[M] = mx->l_pp_mem + l_n * (allocL);
-
   mx->r_pp[M] = NULL;
   
   /* finally allocate the sum vector */

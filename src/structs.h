@@ -471,6 +471,7 @@ typedef struct cp9map_s {
 #define CM_CONFIG_SCANMX        (1<<7)  /* create a CM_SCAN_MX in cm->smx          */
 #define CM_CONFIG_TRSCANMX      (1<<8)  /* create a CM_TR_SCAN_MX in cm->trsmx     */
 #define CM_CONFIG_SUB           (1<<9)  /* set up for submodel alignment (cm->cp9 gets equiprobable begin/ends) */
+#define CM_CONFIG_NONBANDEDMX   (1<<10) /* set up for non-banded alignment (cm->*nb*mx will be created) */
 
 /* alignment options, cm->align_opts */
 #define CM_ALIGN_HBANDED       (1<<0)  /* use CP9 HMM bands                        */
@@ -1028,7 +1029,7 @@ typedef struct cm_qdbinfo_s {
  * alignment refinement is used (--refine).
  */
 typedef struct {
-  ESL_SQ           *sqp;        /* ptr to sequence object */
+  ESL_SQ           *sq;         /* sequence, often just a reference - not to be free'd */
   int64_t           idx;        /* index, for ordering sequences properly in output aln */
   float             sc;         /* alignment score for this sequence (CYK or Inside) */
   float             pp;         /* average posterior probability for this sequence */
@@ -1859,15 +1860,27 @@ typedef struct cm_s {
 
   /* DP matrices and some auxiliary info for DP algorithms */
   /* for standard HMM banded CM alignment/search */
-  CM_HB_MX           *hbmx;     /* growable HMM banded float matrix */
-  CM_HB_MX           *ohbmx;    /* another, growable HMM banded float matrix for Outside/Posterior calcs */
-  CM_HB_EMIT_MX      *ehbmx;    /* growable HMM banded emit matrix for residue posterior probability calcs */
-  CM_HB_SHADOW_MX    *shhbmx;   /* growable HMM banded shadow matrix, for alignment tracebacks */
+  CM_HB_MX           *hb_mx;     /* growable HMM banded float matrix */
+  CM_HB_MX           *hb_omx;    /* another, growable HMM banded float matrix for Outside/Posterior calcs */
+  CM_HB_EMIT_MX      *hb_emx;    /* growable HMM banded emit matrix for residue posterior probability calcs */
+  CM_HB_SHADOW_MX    *hb_shmx;   /* growable HMM banded shadow matrix, for alignment tracebacks */
   /* for truncated HMM banded CM alignment/search */
-  CM_TR_HB_MX        *trhbmx;   /* growable truncated HMM banded float matrix */
-  CM_TR_HB_MX        *trohbmx;  /* another, growable truncated HMM banded float matrix for Outside/Posterior calcs */
-  CM_TR_HB_EMIT_MX   *trehbmx;  /* growable truncated HMM banded emit matrix for residue posterior probability calcs */
-  CM_TR_HB_SHADOW_MX *trshhbmx; /* growable truncated HMM banded shadow matrix, for alignment tracebacks */
+  CM_TR_HB_MX        *trhb_mx;   /* growable truncated HMM banded float matrix */
+  CM_TR_HB_MX        *trhb_omx;  /* another, growable truncated HMM banded float matrix for Outside/Posterior calcs */
+  CM_TR_HB_EMIT_MX   *trhb_emx;  /* growable truncated HMM banded emit matrix for residue posterior probability calcs */
+  CM_TR_HB_SHADOW_MX *trhb_shmx; /* growable truncated HMM banded shadow matrix, for alignment tracebacks */
+
+  /* for standard non-banded CM alignment/search (these will usually stay unallocated, as NULL) */
+  CM_MX              *nb_mx;     /* growable non-banded float matrix */
+  CM_MX              *nb_omx;    /* another, growable non-banded float matrix for Outside/Posterior calcs */
+  CM_EMIT_MX         *nb_emx;    /* growable non-banded emit matrix for residue posterior probability calcs */
+  CM_SHADOW_MX       *nb_shmx;   /* growable non-banded shadow matrix, for alignment tracebacks */
+  /* for truncated HMM banded CM alignment/search (these will usually stay unallocated, as NULL) */
+  CM_TR_MX           *trnb_mx;   /* growable truncated non-banded float matrix */
+  CM_TR_MX           *trnb_omx;  /* another, growable truncated non-banded float matrix for Outside/Posterior calcs */
+  CM_TR_EMIT_MX      *trnb_emx;  /* growable truncated non-banded emit matrix for residue posterior probability calcs */
+  CM_TR_SHADOW_MX    *trnb_shmx; /* growable truncated non-banded shadow matrix, for alignment tracebacks */
+
   /* for standard non-HMM banded CM search */
   CM_SCAN_MX         *smx;      /* matrices, info for CYK/Inside scans with this CM */
   /* for truncated non-HMM banded CM search */

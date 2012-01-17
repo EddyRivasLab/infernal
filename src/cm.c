@@ -140,14 +140,22 @@ CreateCMShell(void)
   cm->expA         = NULL;
   cm->smx          = NULL;
   cm->trsmx        = NULL;
-  cm->hbmx         = NULL;
-  cm->ohbmx        = NULL;
-  cm->ehbmx        = NULL;
-  cm->shhbmx       = NULL;
-  cm->trhbmx       = NULL;
-  cm->trohbmx      = NULL;
-  cm->trehbmx      = NULL;
-  cm->trshhbmx     = NULL;
+  cm->hb_mx        = NULL;
+  cm->hb_omx       = NULL;
+  cm->hb_emx       = NULL;
+  cm->hb_shmx      = NULL;
+  cm->trhb_mx      = NULL;
+  cm->trhb_omx     = NULL;
+  cm->trhb_emx     = NULL;
+  cm->trhb_shmx    = NULL;
+  cm->nb_mx        = NULL;
+  cm->nb_omx       = NULL;
+  cm->nb_emx       = NULL;
+  cm->nb_shmx      = NULL;
+  cm->trnb_mx      = NULL;
+  cm->trnb_omx     = NULL;
+  cm->trnb_emx     = NULL;
+  cm->trnb_shmx    = NULL;
   cm->cp9_mx       = NULL;
   cm->cp9_bmx      = NULL;
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
@@ -453,14 +461,22 @@ FreeCM(CM_t *cm)
   if(cm->Rcp9       != NULL) FreeCPlan9(cm->Rcp9);
   if(cm->Tcp9       != NULL) FreeCPlan9(cm->Tcp9);
   if(cm->root_trans != NULL) free(cm->root_trans);
-  if(cm->hbmx       != NULL) cm_hb_mx_Destroy(cm->hbmx);
-  if(cm->ohbmx      != NULL) cm_hb_mx_Destroy(cm->ohbmx);
-  if(cm->ehbmx      != NULL) cm_hb_emit_mx_Destroy(cm->ehbmx);
-  if(cm->shhbmx     != NULL) cm_hb_shadow_mx_Destroy(cm->shhbmx);
-  if(cm->trhbmx     != NULL) cm_tr_hb_mx_Destroy(cm->trhbmx);
-  if(cm->trohbmx    != NULL) cm_tr_hb_mx_Destroy(cm->trohbmx);
-  if(cm->trehbmx    != NULL) cm_tr_hb_emit_mx_Destroy(cm->trehbmx);
-  if(cm->trshhbmx   != NULL) cm_tr_hb_shadow_mx_Destroy(cm->trshhbmx);
+  if(cm->hb_mx      != NULL) cm_hb_mx_Destroy(cm->hb_mx);
+  if(cm->hb_omx     != NULL) cm_hb_mx_Destroy(cm->hb_omx);
+  if(cm->hb_emx     != NULL) cm_hb_emit_mx_Destroy(cm->hb_emx);
+  if(cm->hb_shmx    != NULL) cm_hb_shadow_mx_Destroy(cm->hb_shmx);
+  if(cm->trhb_mx    != NULL) cm_tr_hb_mx_Destroy(cm->trhb_mx);
+  if(cm->trhb_omx   != NULL) cm_tr_hb_mx_Destroy(cm->trhb_omx);
+  if(cm->trhb_emx   != NULL) cm_tr_hb_emit_mx_Destroy(cm->trhb_emx);
+  if(cm->trhb_shmx  != NULL) cm_tr_hb_shadow_mx_Destroy(cm->trhb_shmx);
+  if(cm->nb_mx      != NULL) cm_mx_Destroy(cm->nb_mx);
+  if(cm->nb_omx     != NULL) cm_mx_Destroy(cm->nb_omx);
+  if(cm->nb_emx     != NULL) cm_emit_mx_Destroy(cm->nb_emx);
+  if(cm->nb_shmx    != NULL) cm_shadow_mx_Destroy(cm->nb_shmx);
+  if(cm->trnb_mx    != NULL) cm_tr_mx_Destroy(cm->trnb_mx);
+  if(cm->trnb_omx   != NULL) cm_tr_mx_Destroy(cm->trnb_omx);
+  if(cm->trnb_emx   != NULL) cm_tr_emit_mx_Destroy(cm->trnb_emx);
+  if(cm->trnb_shmx  != NULL) cm_tr_shadow_mx_Destroy(cm->trnb_shmx);
   if(cm->cp9_mx     != NULL) FreeCP9Matrix(cm->cp9_mx);
   if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
@@ -2909,14 +2925,22 @@ cm_nonconfigured_Verify(CM_t *cm, char *errbuf)
   if(cm->cp9map     != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): cp9map is non-NULL (it should be NULL in a non-configured CM)");
   if(cm->cp9b       != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): cp9b is non-NULL (it should be NULL in a non-configured CM)");
   /* matrices */
-  if(cm->hbmx       != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): hbmx is non-NULL (it should be NULL in a non-configured CM)");
-  if(cm->ohbmx      != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): ohbmx is non-NULL (it should be NULL in a non-configured CM)");
-  if(cm->ehbmx      != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): ehbmx is non-NULL (it should be NULL in a non-configured CM)");
-  if(cm->shhbmx     != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): shhbmx is non-NULL (it should be NULL in a non-configured CM)");
-  if(cm->trhbmx     != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trhbmx is non-NULL (it should be NULL in a non-configured CM)");
-  if(cm->trohbmx    != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trohbmx is non-NULL (it should be NULL in a non-configured CM)");
-  if(cm->trehbmx    != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trehbmx is non-NULL (it should be NULL in a non-configured CM)");
-  if(cm->trshhbmx   != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trshhbmx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->hb_mx      != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): hb_mx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->hb_omx     != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): hb_omx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->hb_emx     != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): hb_emx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->hb_shmx    != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): hb_shmx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trhb_mx    != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trhb_mx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trhb_omx   != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trhb_omx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trhb_emx   != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trhb_emx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trhb_shmx  != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trhb_shmx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->nb_mx      != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): nb_mx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->nb_omx     != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): nb_omx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->nb_emx     != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): nb_emx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->nb_shmx    != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): nb_shmx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trnb_mx    != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trnb_mx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trnb_omx   != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trnb_omx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trnb_emx   != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trnb_emx is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trnb_shmx  != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trnb_shmx is non-NULL (it should be NULL in a non-configured CM)");
   if(cm->smx        != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): smx is non-NULL (it should be NULL in a non-configured CM)");
   if(cm->trsmx      != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trsmx is non-NULL (it should be NULL in a non-configured CM)");
   if(cm->cp9_mx     != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): cp9_mx is non-NULL (it should be NULL in a non-configured CM)");
@@ -2937,7 +2961,7 @@ cm_nonconfigured_Verify(CM_t *cm, char *errbuf)
  *
  *           For objects the CM refers to, new ones are created
  *           either by cloning (e.g. cm->cp9, cm->mlp7) or by 
- *           creating a new one (e.g. cm->hbmx, cm->smx).
+ *           creating a new one (e.g. cm->hb_mx, cm->smx).
  *
  * Args:     cm     - CM to clone
  *           ret_cm - copy of CM, allocated here, must be free'd by caller.
@@ -3072,14 +3096,24 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   }
   
   /* CM HMM banded DP matrices, don't clone these, just make new ones (these grow to fit a target sequence) */
-  if(cm->hbmx     != NULL) new->hbmx     = cm_hb_mx_Create(new->M);
-  if(cm->ohbmx    != NULL) new->ohbmx    = cm_hb_mx_Create(new->M);
-  if(cm->trhbmx   != NULL) new->trhbmx   = cm_tr_hb_mx_Create(new);
-  if(cm->trohbmx  != NULL) new->trohbmx  = cm_tr_hb_mx_Create(new);
-  if(cm->ehbmx    != NULL) new->ehbmx    = cm_hb_emit_mx_Create(new);
-  if(cm->trehbmx  != NULL) new->trehbmx  = cm_tr_hb_emit_mx_Create(new);
-  if(cm->shhbmx   != NULL) new->shhbmx   = cm_hb_shadow_mx_Create(new);
-  if(cm->trshhbmx != NULL) new->trshhbmx = cm_tr_hb_shadow_mx_Create(new);
+  if(cm->hb_mx     != NULL) new->hb_mx     = cm_hb_mx_Create(new->M);
+  if(cm->hb_omx    != NULL) new->hb_omx    = cm_hb_mx_Create(new->M);
+  if(cm->hb_emx    != NULL) new->hb_emx    = cm_hb_emit_mx_Create(new);
+  if(cm->hb_shmx   != NULL) new->hb_shmx   = cm_hb_shadow_mx_Create(new);
+  if(cm->trhb_mx   != NULL) new->trhb_mx   = cm_tr_hb_mx_Create(new);
+  if(cm->trhb_omx  != NULL) new->trhb_omx  = cm_tr_hb_mx_Create(new);
+  if(cm->trhb_emx  != NULL) new->trhb_emx  = cm_tr_hb_emit_mx_Create(new);
+  if(cm->trhb_shmx != NULL) new->trhb_shmx = cm_tr_hb_shadow_mx_Create(new);
+
+  /* CM non-banded DP matrices, don't clone these, just make new ones (these grow to fit a target sequence) */
+  if(cm->nb_mx     != NULL) new->nb_mx     = cm_mx_Create(new->M);
+  if(cm->nb_omx    != NULL) new->nb_omx    = cm_mx_Create(new->M);
+  if(cm->nb_emx    != NULL) new->nb_emx    = cm_emit_mx_Create(new);
+  if(cm->nb_shmx   != NULL) new->nb_shmx   = cm_shadow_mx_Create(new);
+  if(cm->trnb_mx   != NULL) new->trnb_mx   = cm_tr_mx_Create(new);
+  if(cm->trnb_omx  != NULL) new->trnb_omx  = cm_tr_mx_Create(new);
+  if(cm->trnb_emx  != NULL) new->trnb_emx  = cm_tr_emit_mx_Create(new);
+  if(cm->trnb_shmx != NULL) new->trnb_shmx = cm_tr_shadow_mx_Create(new);
 
   /* CM scan matrices, don't clone these either, just make new ones.
    * Importantly we've already copied cm->qdbinfo into new->qdbinfo.
