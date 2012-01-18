@@ -2381,6 +2381,10 @@ ParsetreeMode(Parsetree_t *tr)
  *           any state in parsetree in relevant truncation mode 
  *           (J or L for MATP&MATL, J or R for MATP&MATR)
  * 
+ *           <first_emit>..<final_emit>: first..final cpos that
+ *           emits a residue (doesn't use a delete state or
+ *           silent off-mode state).
+ * 
  * Args:     cm             - the covariance model
  *           tr             - the parsetree
  *           errbuf         - for error messages
@@ -2388,15 +2392,19 @@ ParsetreeMode(Parsetree_t *tr)
  *           ret_cto_span   - RETURN: cto_span,   explained in Purpose.
  *           ret_cfrom_emit - RETURN: cfrom_emit, explained in Purpose.
  *           ret_cto_span   - RETURN: cto_emit,   explained in Purpose.
- *  
+ *           ret_first_emit - RETURN: first_emit, explained in Purpose.
+ *           ret_final_emit - RETURN: final_emit, explained in Purpose.
+ *
+ *
  * Returns:  eslOK on success.
  *           eslEINVAL if cm->emap is NULL.
  */
 int
-ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, char *errbuf, int *ret_cfrom_span, int *ret_cto_span, int *ret_cfrom_emit, int *ret_cto_emit) 
+ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, char *errbuf, int *ret_cfrom_span, int *ret_cto_span, int *ret_cfrom_emit, int *ret_cto_emit, int *ret_first_emit, int *ret_final_emit) 
 {
   int  ti;         /* counter over parsetree nodes */
   int  v, nd;      /* state, node index */
+  int  sdl, sdr;   /* state left delta, state right delta for current state */
   char mode;       /* truncation mode */
   int  is_left;    /* does current node/state emit left? */
   int  is_right;   /* does current node/state emit right? */
@@ -2406,18 +2414,27 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, char *errbuf, int *ret_cfrom_span
 		    * (J or L for MATP&MATL, J or R for MATP&MATR) */
   int  cto_emit;   /* final model position spanned by any state in parsetree in relevant mode 
 		    * (J or L for MATP&MATL, J or R for MATP&MATR) */
+  int  first_emit; /* first model consensus position that emits a residue */
+  int  final_emit; /* final model consensus position that emits a residue */
+
   /* if parsetree/alignment is in J mode (not L, R, or T) then 
    * cfrom_span == cfrom_emit and cto_span == cto_emit
+   *
+   * if first/final consensus positions used are not 
+   * gaps (aligned to delete states) then 
+   * cfrom_emit == first_emit and cto_emit == final_emit
    */
 
   if(cm->emap == NULL) ESL_FAIL(eslEINVAL, errbuf, "ParsetreeToCMBounds(), cm->emap is NULL");
 
-  cfrom_span = cfrom_emit = cm->clen+1;
-  cto_span   = cto_emit   = 0;
+  cfrom_span = cfrom_emit = first_emit = cm->clen+1;
+  cto_span   = cto_emit   = final_emit = 0;
 
   for (ti = 0; ti < tr->n; ti++) { 
     v    = tr->state[ti];
     mode = tr->mode[ti];
+    sdl  = StateLeftDelta(cm->sttype[v]);
+    sdr  = StateRightDelta(cm->sttype[v]);
     if(v != cm->M) { 
       nd  = cm->ndidx[v];
       
@@ -2437,6 +2454,10 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, char *errbuf, int *ret_cfrom_span
 	  if(cm->sttype[v] != IL_st) { /* inserts don't impact cpos */
 	    cfrom_emit = ESL_MIN(cfrom_emit, cm->emap->lpos[nd]);
 	    cto_emit   = ESL_MAX(cto_emit,   cm->emap->lpos[nd]);
+	    if(sdl > 0) { 
+	      first_emit = ESL_MIN(first_emit, cm->emap->lpos[nd]);
+	      final_emit = ESL_MAX(final_emit, cm->emap->lpos[nd]);
+	    }
 	  }
 	}
       }
@@ -2449,6 +2470,10 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, char *errbuf, int *ret_cfrom_span
 	  if(cm->sttype[v] != IR_st) { /* inserts don't impact cpos */
 	    cfrom_emit = ESL_MIN(cfrom_emit, cm->emap->rpos[nd]);
 	    cto_emit   = ESL_MAX(cto_emit,   cm->emap->rpos[nd]);
+	    if(sdr > 0) { 
+	      first_emit = ESL_MIN(first_emit, cm->emap->rpos[nd]);
+	      final_emit = ESL_MAX(final_emit, cm->emap->rpos[nd]);
+	    }
 	  }
 	}
       }
@@ -2458,6 +2483,8 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, char *errbuf, int *ret_cfrom_span
   if(ret_cto_span   != NULL) *ret_cto_span   = cto_span;
   if(ret_cfrom_emit != NULL) *ret_cfrom_emit = cfrom_emit;
   if(ret_cto_emit   != NULL) *ret_cto_emit   = cto_emit;
+  if(ret_first_emit != NULL) *ret_first_emit = first_emit;
+  if(ret_final_emit != NULL) *ret_final_emit = final_emit;
   
   return eslOK;
 }

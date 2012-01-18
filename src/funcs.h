@@ -102,6 +102,7 @@ extern float **FCalcInitDPScores             (CM_t *cm);
 extern int   **ICalcInitDPScores             (CM_t *cm);
 extern int     cm_nonconfigured_Verify(CM_t *cm, char *errbuf);
 extern int     cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm);
+extern float   cm_Sizeof(CM_t *cm);
 extern int     Prob2Score(float p, float null);
 extern float   Score2Prob(int sc, float null);
 extern float   Scorify(int sc);
@@ -344,14 +345,14 @@ extern int               cm_tr_hb_emit_mx_SizeNeeded (CM_t *cm, char *errbuf, CP
 extern int   cm_scan_mx_Create            (CM_t *cm, char *errbuf, int do_float, int do_int, CM_SCAN_MX **ret_smx);
 extern int   cm_scan_mx_InitializeFloats  (CM_t *cm, CM_SCAN_MX *smx, char *errbuf);
 extern int   cm_scan_mx_InitializeIntegers(CM_t *cm, CM_SCAN_MX *smx, char *errbuf);
-extern float cm_scan_mx_SizeNeeded        (CM_t *cm, char *errbuf, int do_float, int do_int);
+extern float cm_scan_mx_SizeNeeded        (CM_t *cm, int do_float, int do_int);
 extern void  cm_scan_mx_Destroy           (CM_t *cm, CM_SCAN_MX *smx);
 extern void  cm_scan_mx_Dump              (FILE *ofp, CM_t *cm, int j, int i0, int qdbidx, int doing_float);
 
 extern int   cm_tr_scan_mx_Create            (CM_t *cm, char *errbuf, int do_float, int do_int, CM_TR_SCAN_MX **ret_smx);
 extern int   cm_tr_scan_mx_InitializeFloats  (CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf);
 extern int   cm_tr_scan_mx_InitializeIntegers(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf);
-extern float cm_tr_scan_mx_SizeNeeded        (CM_t *cm, char *errbuf, int do_float, int do_int);
+extern float cm_tr_scan_mx_SizeNeeded        (CM_t *cm, int do_float, int do_int);
 extern void  cm_tr_scan_mx_Destroy           (CM_t *cm, CM_TR_SCAN_MX *smx);
 extern void  cm_tr_scan_mx_Dump              (FILE *ofp, CM_t *cm, int j, int i0, int qdbidx, int doing_float);
 
@@ -392,7 +393,7 @@ extern int          ParsetreeCountMPEmissions(CM_t *cm, Parsetree_t *tr);
 extern void         ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len, float omega, float *ret_sc);
 extern void         ScoreCorrectionNull3CompUnknown(const ESL_ALPHABET *abc, float *null0, ESL_DSQ *dsq, int start, int stop, float omega, float *ret_sc);
 extern char         ParsetreeMode(Parsetree_t *tr);
-extern int          ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, char *errbuf, int *ret_cfrom_span, int *ret_cto_span, int *ret_cfrom_emit, int *ret_cto_emit); 
+extern int          ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, char *errbuf, int *ret_cfrom_span, int *ret_cto_span, int *ret_cfrom_emit, int *ret_cto_emit, int *ret_first_emit, int *ret_final_emit); 
 extern int          cm_StochasticParsetree    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX    *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc);
 extern int          cm_StochasticParsetreeHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc);
 extern int          cm_TrStochasticParsetree  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, CM_TR_MX    *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc);
@@ -412,6 +413,7 @@ extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
 extern void     ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
 extern void     qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_level);
 extern CM_QDBINFO  *CreateCMQDBInfo(int M, int clen);
+extern float        SizeofCMQDBInfo(CM_QDBINFO *qdbinfo);
 extern void         FreeCMQDBInfo(CM_QDBINFO *qdbinfo);
 extern int          CopyCMQDBInfo(const CM_QDBINFO *src, CM_QDBINFO *dst, char *errbuf);
 extern void         DumpCMQDBInfo(FILE *fp, CM_t *cm, CM_QDBINFO *qdbinfo);
@@ -448,6 +450,7 @@ extern void   CPlan9SetNullModel(CP9_t *hmm, float *null, float p1);
 extern int    cp9_GetNCalcsPerResidue(CP9_t *cp9, char *errbuf, float *ret_cp9_ncalcs_per_res);
 extern CP9_t *cp9_Clone(CP9_t *cp9);    
 extern int    cp9_Copy(const CP9_t *src, CP9_t *dst);
+extern float  cp9_Sizeof(CP9_t *cp9);
 extern void   CP9Logoddsify(CP9_t *hmm);
 extern void   CPlan9Renormalize(CP9_t *hmm);
 
@@ -462,16 +465,12 @@ extern int cp9_Backward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int 
 			int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc);
 extern int cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq);
 
-/* from cp9_modelconfig.c */
-extern void  CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit, int do_match_local_cm, int first_cm_ndtype);
-extern void  CPlan9ELConfig(CP9_t *cp9, CM_t *cm);
-extern void  CPlan9RenormalizeExits(CP9_t *hmm, int spos);
-
 /* from cp9_modelmaker.c */
 extern CP9Map_t *AllocCP9Map(CM_t *cm);
-extern void FreeCP9Map(CP9Map_t *cp9map);
-extern int  build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
-			  float psi_vs_phi_threshold, int debug_level);
+extern float SizeofCP9Map(CP9Map_t *cp9map);
+extern void  FreeCP9Map(CP9Map_t *cp9map);
+extern int   build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
+		 	  float psi_vs_phi_threshold, int debug_level);
 extern void CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
 extern void fill_psi(CM_t *cm, float **t, double *psi, char ***tmap);
 extern void fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos, int entered_only);
@@ -538,6 +537,7 @@ extern int            CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float
 extern void           FreeCMConsensus(CMConsensus_t *con);
 extern int            IsCompensatory(const ESL_ALPHABET *abc, float *pij, int symi, int symj);
 extern CMEmitMap_t   *CreateEmitMap(CM_t *cm); 
+extern float          SizeofEmitMap(CM_t *cm, CMEmitMap_t *emap);
 extern void           DumpEmitMap(FILE *fp, CMEmitMap_t *map, CM_t *cm);
 extern void           FreeEmitMap(CMEmitMap_t *map);
 extern void           FormatTimeString(char *buf, double sec, int do_frac);
@@ -565,6 +565,7 @@ extern double cp9_MeanMatchRelativeEntropy(const CP9_t *cp9);
 extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int do_trunc, int debug_level);
 extern int          cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
 extern CP9Bands_t  *AllocCP9Bands(int cm_M, int hmm_M);
+extern float        SizeofCP9Bands(CP9Bands_t *cp9b);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, TruncOpts_t *tro, int debug_level);
 extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
@@ -619,6 +620,7 @@ extern int          cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, int ElmL, int Elv
 extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, int L, int N, double lambda, double tailp, double *ret_tau);
 extern int          cm_SetFilterHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda);
 extern int          dump_p7(P7_HMM *hmm, FILE *fp);
+extern float        cm_p7_hmm_Sizeof(P7_HMM *hmm);
 
 /* from cm_p7_band.c */
 #if 0

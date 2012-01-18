@@ -1191,6 +1191,29 @@ CreateEmitMap(CM_t *cm)
   return NULL; 
 }
   
+
+/* Function: SizeofEmitMap()
+ * Date:     EPN, Wed Jan 18 10:15:46 2012
+ *
+ * Purpose:  Calculate and return the size of an emit map 
+ *           in Mb.
+ */
+
+float 
+SizeofEmitMap(CM_t *cm, CMEmitMap_t *emap)
+{
+  float bytes = 0.;
+
+  if(emap == NULL) return 0.;
+  
+  bytes = sizeof(CMEmitMap_t);
+  bytes += sizeof(int) * cm->nodes; /* lpos */
+  bytes += sizeof(int) * cm->nodes; /* rpos */
+  bytes += sizeof(int) * cm->nodes; /* epos */
+
+  return bytes / 1000000.;
+}
+
 void
 DumpEmitMap(FILE *fp, CMEmitMap_t *map, CM_t *cm)
 {

@@ -48,8 +48,8 @@ cm_alndata_Create(void)
   data->sc         = 0.;
   data->pp         = 0.;
   data->ppstr      = NULL;
-  data->cm_from    = -1;
-  data->cm_to      = -1;
+  data->spos       = -1;
+  data->epos       = -1;
   data->secs_bands = 0.;
   data->secs_aln   = 0.;
   
@@ -236,12 +236,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   float         secs_bands = 0.;   /* seconds elapsed for band calculation */
   float         secs_aln   = 0.;   /* seconds elapsed for alignment calculation */
   float         mb_tot     = 0.;   /* size of all DP matrices used for alignment */
-  /* first/final CM consensus posns used in the alignment */
-  int           cfrom_emit;
-  int           cto_emit;
-  /* first/final CM consensus posns used in parsetree, includes silent off-mode posns in trunc alns */
-  int           cfrom_span;
-  int           cto_span;
+  int           spos;              /* start posn: first non-gap CM consensus position */
+  int           epos;              /* end   posn: final non-gap CM consensus position */
 
   /* alignment options */
   int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE : FALSE;
@@ -344,7 +340,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   }
   
   /* determine start and end points of the parsetree */
-  if((status = ParsetreeToCMBounds(cm, tr, errbuf, &cfrom_span, &cto_span, &cfrom_emit, &cto_emit)) != eslOK) return status;
+  if((status = ParsetreeToCMBounds(cm, tr, errbuf, NULL, NULL, NULL, NULL, &spos, &epos)) != eslOK) return status;
   
   /* create and fill dataA[j] */
   ESL_ALLOC(data, sizeof(CM_ALNDATA));
@@ -354,8 +350,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   data->sc         = sc;
   data->pp         = (do_post)      ? pp     : 0.;
   data->ppstr      = (do_post)      ? ppstr  : NULL;
-  data->cm_from    = cfrom_emit;
-  data->cm_to      = cto_emit;
+  data->spos       = spos;
+  data->epos       = epos;
   data->secs_bands = (do_nonbanded) ? 0.     : secs_bands;
   data->secs_aln   = secs_aln;
   data->mb_tot     = mb_tot;

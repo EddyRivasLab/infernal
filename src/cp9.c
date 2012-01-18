@@ -365,6 +365,58 @@ cp9_Copy(const CP9_t *src, CP9_t *dst)
 }
 
 
+/* Function: cp9_Sizeof()
+ * Date:     EPN, Wed Jan 18 05:46:02 2012
+ * Purpose:  Return size of a CP9_t object, in Mb.
+ */
+float 
+cp9_Sizeof(CP9_t *cp9)
+{
+  float bytes = 0.;
+  int   M = cp9->M; /* for convenience */
+
+  bytes += sizeof(CP9_t);
+  if(cp9->M > 0 && cp9->abc != NULL) { 
+    /* from AllocCPlan9Body() */
+    bytes += sizeof(float *) * (M+1); /* hmm->t */
+    bytes += sizeof(float *) * (M+1); /* hmm->mat */
+    bytes += sizeof(float *) * (M+1); /* hmm->ins */
+    bytes += sizeof(float)   * (cp9_NTRANS*(M+1)); /* hmm->t[0] */
+    bytes += sizeof(float)   * (cp9->abc->K*(M+1));     /* hmm->mat[0] */
+    bytes += sizeof(float)   * (cp9->abc->K*(M+1));     /* hmm->ins[0] */
+
+    bytes += sizeof(int *) * cp9_NTRANS;   /* hmm->tsc */
+    bytes += sizeof(int *) * cp9->abc->Kp; /* hmm->msc */
+    bytes += sizeof(int *) * cp9->abc->Kp; /* hmm->isc */
+    bytes += sizeof(int)   * (cp9_NTRANS*(M+1)); /* hmm->tsc_mem */
+    bytes += sizeof(int)   * (cp9->abc->Kp*(M+1)); /* hmm->msc_mem */
+    bytes += sizeof(int)   * (cp9->abc->Kp*(M+1)); /* hmm->isc_mem */
+
+    bytes += sizeof(int)   * (M+1) * cp9O_NTRANS; /* hmm->otsc */
+
+    bytes += sizeof(float) * (M+1); /* hmm->begin */
+    bytes += sizeof(float) * (M+1); /* hmm->end   */
+    bytes += sizeof(int)   * (M+1); /* hmm->bsc_mem */
+    bytes += sizeof(int)   * (M+1); /* hmm->esc_mem */
+    bytes += sizeof(float) * (cp9->abc->K); /* hmm->null */
+
+    bytes += sizeof(int)   * (M+1); /* hmm->has_el */
+    bytes += sizeof(int)   * (M+2); /* hmm->el_from_ct */
+    bytes += sizeof(int *) * (M+2); /* hmm->el_from_idx */
+    bytes += sizeof(int *) * (M+2); /* hmm->el_from_cmnd */
+
+    int k;
+    for(k = 0; k <= cp9->M+1; k++) { 
+      if(cp9->el_from_ct[k] > 0) { 
+	bytes += sizeof(int) * cp9->el_from_ct[k]; /* hmm->el_from_idx */
+	bytes += sizeof(int) * cp9->el_from_ct[k]; /* hmm->el_from_cmnd */
+      }
+    }
+  }
+
+  return (bytes / 1000000.);
+}
+
 /* Function: cp9_GetNCalcsPerResidue()
  * Date:     EPN, Thu Jan 17 06:12:37 2008
  * 

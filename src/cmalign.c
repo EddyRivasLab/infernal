@@ -83,7 +83,7 @@ static ESL_OPTIONS options[] = {
   /* name                  type   default   env        range      toggles      reqs       incomp  help  docgroup*/
   { "-h",           eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "show brief help on version and usage",   1 },
   { "-o",        eslARG_OUTFILE,     NULL,  NULL,      NULL,      NULL,        NULL,        NULL, "output the alignment to file <f>, not stdout", 1 },
-  { "-g",           eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "configure CM for glocal alignment [default: local]", 1 },
+  { "-l",           eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "configure CM for local alignment [default: glocal]", 1 },
   { "-i",           eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "output in interleaved format (WARNING: memory intensive for large inputs)", 1 },
 #ifdef HMMER_THREADS 
   { "--cpu",        eslARG_INT,      NULL,"HMMER_NCPU", "n>=0",   NULL,        NULL,     CPUOPTS, "number of parallel CPU workers to use for multithreads", 1 },
@@ -96,7 +96,7 @@ static ESL_OPTIONS options[] = {
   { "--optacc",     eslARG_NONE,"default",  NULL,      NULL,"--optacc",        NULL,  BIGALGOPTS, "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
   { "--cyk",        eslARG_NONE,    FALSE,  NULL,      NULL,"--optacc",        NULL,     ALGOPTS, "align with the CYK algorithm", 2 },
   { "--sample",     eslARG_NONE,    FALSE,  NULL,      NULL,"--optacc",        NULL,     ALGOPTS, "sample alignment of each seq from posterior distribution", 2 },
-  { "--sub",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,"-g,--notrunc",      NULL, "build sub CM for columns b/t HMM predicted start/end points", 2 },
+  { "--sub",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL, "--notrunc",        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
   { "--small",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,"--cyk,--noprob,--nonbanded",NULL, "use small memory divide and conquer (d&c) algorithm", 2 },
   { "--notrunc",    eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not use truncated alignment algorithm", 2 },
   { "--nonbanded",  eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not use bands to accelerate aln algorithm", 2 },
@@ -109,7 +109,7 @@ static ESL_OPTIONS options[] = {
   /* options that modify how the output alignment is created */
   { "--dna",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 3 },
   { "--oneline",    eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "output in non-interleaved (1 line/seq) format ", 3 },
-  { "--noannot",    eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not add cmalign execution annotation to the alignment", 3 },
+  ///{ "--noannot",    eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not add cmalign execution annotation to the alignment", 3 },
   { "--noprob",     eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not include posterior probabilities in the alignment", 3 },
   { "--matchonly",  eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "include only match columns in output alignment", 3 },
   /* options controlling optional output */
@@ -165,7 +165,7 @@ static int  output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA,
 static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t *cm);
 static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_sqfile);
 static int  map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dataA, int *ret_ndata, char **ret_ss);
-static int  add_annotation_to_msa(ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa);
+///static int  add_annotation_to_msa(ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa);
 
 /* Functions that enable memory efficiency by storing only a fraction
  * of the seqs/parsetrees from target file in memory at once.
@@ -323,6 +323,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(status != eslOK) mpi_failure(cfg->cmfp->errbuf);
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
   if(status != eslEOF) mpi_failure("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
+
+  if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
 
   /* initialization */
   nali = nseq_cur = nseq_aligned = 0;
@@ -500,7 +502,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* output scores to stdout, if -o used */
     if(cfg->ofp != stdout) { 
-      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
       if((status =  output_scores(stdout,   cm, errbuf, merged_dataA, nseq_cur, nmap_cur)) != eslOK) mpi_failure(errbuf);
     }
     /* output scores to scores file, if --sfp used */
@@ -758,15 +759,38 @@ static int
 output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t *cm)
 {
   cm_banner(ofp, go->argv[0], banner);
-                                               fprintf(ofp, "# CM file:                                     %s\n", cmfile);
-					       fprintf(ofp, "# sequence file:                               %s\n", sqfile);
-                                               fprintf(ofp, "# CM name:                                     %s\n", cm->name);
+                                            fprintf(ofp, "# CM file:                                     %s\n", cmfile);
+			                    fprintf(ofp, "# sequence file:                               %s\n", sqfile);
+                                            fprintf(ofp, "# CM name:                                     %s\n", cm->name);
+  if (esl_opt_IsUsed(go, "-o"))          {  fprintf(ofp, "# saving alignment to file:                    %s\n", esl_opt_GetString(go, "-o")); }
+  if (esl_opt_IsUsed(go, "-l"))          {  fprintf(ofp, "# model configuration:                         local\n"); }
+  if (esl_opt_IsUsed(go, "-i"))          {  fprintf(ofp, "# forcing interleaved output alignment:        yes\n"); }
+  if (esl_opt_IsUsed(go, "--cyk"))       {  fprintf(ofp, "# alignment algorithm:                         CYK\n"); }
+  if (esl_opt_IsUsed(go, "--sample"))    {  fprintf(ofp, "# sampling aln from posterior distribution:    yes\n"); }
+  if (esl_opt_IsUsed(go, "--sub"))       {  fprintf(ofp, "# alternative truncated seq alignment mode:    on\n"); }
+  if (esl_opt_IsUsed(go, "--notrunc"))   {  fprintf(ofp, "# truncated sequence alignment mode:           off\n"); }
+  if (esl_opt_IsUsed(go, "--tau"))       {  fprintf(ofp, "# tail loss probability for HMM bands set to:  %g\n", esl_opt_GetReal(go, "--tau")); }
+  if (esl_opt_IsUsed(go, "--mxsize"))    {  fprintf(ofp, "# maximum DP matrix size set to:               %.2f Mb\n", esl_opt_GetReal(go, "--mxsize")); }
+  if (esl_opt_IsUsed(go, "--seed"))      {
+    if (esl_opt_GetInteger(go, "--seed") == 0) fprintf(ofp, "# random number seed:                          one-time arbitrary\n");
+    else                                       fprintf(ofp, "# random number seed set to:                   %d\n", esl_opt_GetInteger(go, "--seed"));
+  }
+  if (esl_opt_IsUsed(go, "--mapali"))    {  fprintf(ofp, "# including alignment from file:               %s\n", esl_opt_GetString(go, "--mapali")); }
+  if (esl_opt_IsUsed(go, "--mapstr"))    {  fprintf(ofp, "# including structure from alnment from file:  %s\n", esl_opt_GetString(go, "--mapali")); }
+  if (esl_opt_IsUsed(go, "--dna"))       {  fprintf(ofp, "# output alignment alphabet:                   DNA\n"); }
+  if (esl_opt_IsUsed(go, "--oneline"))   {  fprintf(ofp, "# forcing 1 line/seq (Pfam) output alignment:  yes\n"); }
+  if (esl_opt_IsUsed(go, "--noprob"))    {  fprintf(ofp, "# posterior probability annotation:            off\n"); }
+  if (esl_opt_IsUsed(go, "--matchonly")) {  fprintf(ofp, "# include alignment insert columns:            no\n"); }
 #ifdef HMMER_THREADS
-  if (esl_opt_IsUsed(go, "--cpu"))       {     fprintf(ofp, "# number of worker threads:                    %d\n", esl_opt_GetInteger(go, "--cpu")); }
+  if (esl_opt_IsUsed(go, "--cpu"))       {     fprintf(ofp, "# number of worker threads:                 %d\n", esl_opt_GetInteger(go, "--cpu")); }
 #endif
 #ifdef HAVE_MPI
-  if (esl_opt_IsUsed(go, "--mpi"))       {     fprintf(ofp, "# MPI:                                         on\n"); }
+  if (esl_opt_IsUsed(go, "--mpi"))       {     fprintf(ofp, "# MPI:                                      on\n"); }
 #endif
+  if (esl_opt_IsUsed(go, "--tfile"))     {     fprintf(ofp, "# saving parsetrees to file:                %s\n", esl_opt_GetString(go, "--tfile")); }
+  if (esl_opt_IsUsed(go, "--ifile"))     {     fprintf(ofp, "# saving insert information to file:        %s\n", esl_opt_GetString(go, "--ifile")); }
+  if (esl_opt_IsUsed(go, "--elfile"))    {     fprintf(ofp, "# saving local end information to file:     %s\n", esl_opt_GetString(go, "--elfile")); }
+  if (esl_opt_IsUsed(go, "--sfile"))     {     fprintf(ofp, "# saving alignment score info to file:      %s\n", esl_opt_GetString(go, "--sfile")); }
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n");
 
   return eslOK;
@@ -1059,6 +1083,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
   if(status != eslEOF) cm_Fail("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
 
+  if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
+
   for (k = 0; k < infocnt; ++k)    {
     info[k].cm     = NULL;
     info[k].dataA  = NULL;
@@ -1209,7 +1235,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* output scores to stdout, if -o used */
     if(cfg->ofp != stdout) { 
-      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
       if((status =  output_scores(stdout,   cm, errbuf, merged_dataA, nseq_cur, nmap_cur)) != eslOK) cm_Fail(errbuf);
     }
     /* output scores to scores file, if --sfp used */
@@ -1487,14 +1512,14 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   else                                          cm->align_opts |= CM_ALIGN_HBANDED;
   if(! esl_opt_GetBoolean(go, "--noprob"))      cm->align_opts |= CM_ALIGN_POST;
   if(! esl_opt_GetBoolean(go, "--notrunc"))     cm->align_opts |= CM_ALIGN_TRUNC;
-  if(  esl_opt_GetBoolean(go, "--sub"))         cm->align_opts |= CM_ALIGN_SUB;   /* --sub requires --notrunc and -g */
+  if(  esl_opt_GetBoolean(go, "--sub"))         cm->align_opts |= CM_ALIGN_SUB;   /* --sub requires --notrunc */
   if(  esl_opt_GetBoolean(go, "--small"))       cm->align_opts |= CM_ALIGN_SMALL; /* --small requires --noprob --nonbanded --cyk */
 
   /* set up configuration options in cm->config_opts */
   if(  esl_opt_GetBoolean(go, "--nonbanded"))   cm->config_opts |= CM_CONFIG_NONBANDEDMX;
   if(! esl_opt_GetBoolean(go, "--notrunc"))     cm->config_opts |= CM_CONFIG_TRUNC;
-  if(  esl_opt_GetBoolean(go, "--sub"))         cm->config_opts |= CM_CONFIG_SUB;   /* --sub requires --notrunc and -g */
-  if(! esl_opt_GetBoolean(go, "-g")) { 
+  if(  esl_opt_GetBoolean(go, "--sub"))         cm->config_opts |= CM_CONFIG_SUB;   /* --sub requires --notrunc */
+  if(esl_opt_GetBoolean(go, "-l")) { 
     cm->config_opts |= CM_CONFIG_LOCAL;
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
     cm->config_opts |= CM_CONFIG_HMMEL;
@@ -1564,10 +1589,12 @@ output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FIL
     }
   }
 
-  /* add GF annotation to MSA with command line, date, and current dir information */
+#if 0 
+  /* add GF annotation to MSA with command line, date */
   if(ofp != cfg->rfp && (! esl_opt_GetBoolean(go, "--noannot"))) { 
     if((status = add_annotation_to_msa(go, errbuf, msa)) != eslOK) return status;
   }
+#endif
 
   /* Determine format: we print in interleaved Stockholm if we're not
    * outputting to the tmpfile and --oneline was not used. This will
@@ -1678,12 +1705,12 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, 
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s  %8s\n", idxwidth, idxdashes, namewidth, namedashes, "------", "-------", "-------", "-----", "--------", "------", "---------", "---------", "---------", "--------");
 
   for(i = first_idx; i < ndata; i++) { 
-    fprintf(ofp, "  %*" PRId64 "  %-*s  %6" PRId64 "  %7d  %7d", idxwidth, dataA[i]->idx+1, namewidth, dataA[i]->sq->name, dataA[i]->sq->n, dataA[i]->cm_from, dataA[i]->cm_to);
+    fprintf(ofp, "  %*" PRId64 "  %-*s  %6" PRId64 "  %7d  %7d", idxwidth, dataA[i]->idx+1, namewidth, dataA[i]->sq->name, dataA[i]->sq->n, dataA[i]->spos, dataA[i]->epos);
     if(do_sub) { 
-      if     (dataA[i]->cm_from != 1 && dataA[i]->cm_to != cm->clen) fprintf(ofp, "  %5s", "5'&3'");
-      else if(dataA[i]->cm_from == 1 && dataA[i]->cm_to != cm->clen) fprintf(ofp, "  %5s", "3'");
-      else if(dataA[i]->cm_from != 1 && dataA[i]->cm_to == cm->clen) fprintf(ofp, "  %5s", "5'");
-      else if(dataA[i]->cm_from == 1 && dataA[i]->cm_to == cm->clen) fprintf(ofp, "  %5s", "no");
+      if     (dataA[i]->spos != 1 && dataA[i]->epos != cm->clen) fprintf(ofp, "  %5s", "5'&3'");
+      else if(dataA[i]->spos == 1 && dataA[i]->epos != cm->clen) fprintf(ofp, "  %5s", "3'");
+      else if(dataA[i]->spos != 1 && dataA[i]->epos == cm->clen) fprintf(ofp, "  %5s", "5'");
+      else if(dataA[i]->spos == 1 && dataA[i]->epos == cm->clen) fprintf(ofp, "  %5s", "no");
     }
     else { 
       if     (dataA[i]->tr->mode[0] == TRMODE_T) fprintf(ofp, "  %5s", "5'&3'");
@@ -2405,6 +2432,7 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dat
   ESL_FAIL(status, errbuf, "out of memory");
 }
 
+#if 0 
 /* Function: add_annotation_to_msa()
  * Date:     EPN, Thu Jan 12 06:23:20 2012
  *
@@ -2419,27 +2447,23 @@ add_annotation_to_msa(ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa)
   int    status;
   time_t date           = time(NULL);
   char  *spoof_cmd      = NULL;
-  char  *cwd            = NULL;
   char   timestamp[32];
 
-  esl_getcwd(&cwd);
   if ((status = esl_opt_SpoofCmdline(go, &spoof_cmd)) != eslOK) ESL_XFAIL(eslFAIL, errbuf, "unable to create spoof cmdline");
   if (date == -1)                                               ESL_XFAIL(eslESYS, errbuf, "time() failed");
   if ((ctime_r(&date, timestamp)) == NULL)                      ESL_XFAIL(eslESYS, errbuf, "ctime_r() failed");
   
   esl_msa_AddGF(msa, "AM", 2, spoof_cmd, -1);
-  esl_msa_AddGF(msa, "AM", 3, (cwd == NULL) ? "[unknown]" : cwd, -1);
   esl_msa_AddGF(msa, "AM", 2, timestamp, -1);
   
   free(spoof_cmd);
-  if (cwd) free(cwd);
   return eslOK;
   
  ERROR:
   if (spoof_cmd) free(spoof_cmd);
-  if (cwd)       free(cwd);
   return status;
 }
+#endif
 
 /*****************************************************************
  * @LICENSE@

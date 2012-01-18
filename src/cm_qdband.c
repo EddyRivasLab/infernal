@@ -943,6 +943,33 @@ CreateCMQDBInfo(int M, int clen)
   return NULL;
 }
 
+
+/* Function: SizeofCMQDBInfo()
+ * Date:     EPN, Wed Jan 18 05:01:42 2012
+ *
+ * Purpose:  Determine and return the size of 
+ *           a CM_QDBINFO object in Mb.
+ * 
+ * Returns:  Size of the CM_QDBINFO object in Mb.
+ */
+float 
+SizeofCMQDBInfo(CM_QDBINFO *qdbinfo)
+{
+  float bytes;
+
+  if(qdbinfo == NULL) return 0.;
+
+  bytes = sizeof(CM_QDBINFO);
+  bytes += sizeof(int) * qdbinfo->M; /* dmin1 */
+  bytes += sizeof(int) * qdbinfo->M; /* dmax1 */
+  bytes += sizeof(int) * qdbinfo->M; /* dmin2 */
+  bytes += sizeof(int) * qdbinfo->M; /* dmax2 */
+
+  bytes *= 0.000001; /* convert to Mb */
+
+  return bytes;
+}
+
 /* Function: FreeCMQDBInfo()
  * Date:     EPN, Sat Dec 10 06:31:12 2011
  *

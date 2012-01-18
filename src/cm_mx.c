@@ -6008,7 +6008,7 @@ cm_scan_mx_InitializeIntegers(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
  * Returns:  Size needed in Mb.
  */
 float
-cm_scan_mx_SizeNeeded(CM_t *cm, char *errbuf, int do_float, int do_int)
+cm_scan_mx_SizeNeeded(CM_t *cm, int do_float, int do_int)
 { 
   int     n_begl             = 0;
   int     n_non_begl         = 0;
@@ -6818,7 +6818,7 @@ cm_tr_scan_mx_InitializeIntegers(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
  * Returns:  Size needed in Mb.
  */
 float
-cm_tr_scan_mx_SizeNeeded(CM_t *cm, char *errbuf, int do_float, int do_int)
+cm_tr_scan_mx_SizeNeeded(CM_t *cm, int do_float, int do_int)
 { 
   int     n_begl             = 0;
   int     n_non_begl         = 0;

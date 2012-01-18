@@ -1035,8 +1035,8 @@ typedef struct {
   float             pp;         /* average posterior probability for this sequence */
   Parsetree_t      *tr;         /* Parsetree for this sequence */
   char             *ppstr;      /* posterior probability string for this sequence */
-  int               cm_from;    /* first consensus pos of the CM used in tr */
-  int               cm_to;      /* final consensus pos of the CM used in tr */
+  int               spos;       /* first consensus pos of the CM that emits in tr */
+  int               epos;       /* final consensus pos of the CM that emits in tr */
   float             secs_bands; /* seconds elapsed during band calculation */
   float             secs_aln;   /* seconds elapsed during alignment calculation */
   float             secs_tot;   /* seconds elapsed for entire processing of this sequence */

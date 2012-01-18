@@ -3146,7 +3146,149 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   return status; /* reached if status != eslEMEM, errbuf was filled earlier */
 }
 
+/* Function: cm_Sizeof()
+ * Incept:   EPN, Wed Jan 18 04:53:29 2012
+ *
+ * Purpose:  Calculate and return size of a CM_t object in Mb.
+ *
+ *           Size will include all objects the CM refers to, 
+ *           such as HMM banded matrices and scan matrices.
+ *
+ * Args:     cm     - CM to get size of
+ * 
+ * Returns:  size of CM_t in Mg (megabytes)
+ */
+float
+cm_Sizeof(CM_t *cm)
+{
+  float bytes = 0.;
 
+  bytes  = sizeof(CM_t);
+  /* from CreateCMBody() */
+  if(cm->M > 0 && cm->abc != NULL) { 
+    bytes += sizeof(char) * (cm->M+1);   /* cm->sttype */
+    bytes += sizeof(int)  *  cm->M;      /* cm->ndidx  */
+    bytes += sizeof(char) * (cm->M+1);   /* cm->stid   */
+    bytes += sizeof(int)  *  cm->M;      /* cm->cfirst */
+    bytes += sizeof(int)  *  cm->M;      /* cm->cnum   */
+    bytes += sizeof(int)  *  cm->M;      /* cm->plast  */
+    bytes += sizeof(int)  *  cm->M;      /* cm->pnum   */
+    bytes += sizeof(int)  *  cm->nodes;  /* cm->nodemap */
+    bytes += sizeof(int)  *  cm->nodes;  /* cm->ndtype  */
+
+    if(cm->comlog  != NULL) bytes += sizeof(ComLog_t);
+    if(cm->qdbinfo != NULL) bytes += (1000000. * SizeofCMQDBInfo(cm->qdbinfo));
+    if(cm->null    != NULL) bytes += sizeof(float) * (cm->abc->K);
+
+    bytes += sizeof(float *) * cm->M;   /* cm->t level 1 ptrs */
+    bytes += sizeof(float *) * cm->M;   /* cm->e level 1 ptrs */
+    bytes += sizeof(float *) * cm->M;   /* cm->tsc level 1 ptrs */
+    bytes += sizeof(float *) * cm->M;   /* cm->esc level 1 ptrs */
+    bytes += sizeof(float *) * cm->M;   /* cm->lmesc level 1 ptrs */
+    bytes += sizeof(float *) * cm->M;   /* cm->rmesc level 1 ptrs */
+    bytes += sizeof(int *)   * cm->M;   /* cm->itsc level 1 ptrs */
+    bytes += sizeof(int *)   * cm->M;   /* cm->iesc level 1 ptrs */
+    bytes += sizeof(int *)   * cm->M;   /* cm->ilmesc level 1 ptrs */
+    bytes += sizeof(int *)   * cm->M;   /* cm->irmesc level 1 ptrs */
+
+    bytes += sizeof(float)   * cm->M;   /* cm->begin */
+    bytes += sizeof(float)   * cm->M;   /* cm->trbegin */
+    bytes += sizeof(float)   * cm->M;   /* cm->end */
+    bytes += sizeof(float)   * cm->M;   /* cm->beginsc */
+    bytes += sizeof(float)   * cm->M;   /* cm->trbegin */
+    bytes += sizeof(float)   * cm->M;   /* cm->endsc */
+    bytes += sizeof(int)     * cm->M;   /* cm->ibeginsc */
+    bytes += sizeof(int)     * cm->M;   /* cm->itrbeginsc */
+    bytes += sizeof(int)     * cm->M;   /* cm->iendsc */
+
+    bytes += sizeof(float) * MAXCONNECT * cm->M;              /* cm->t level 2 */
+    bytes += sizeof(float) * cm->abc->K * cm->abc->K * cm->M; /* cm->e level 2 */
+    bytes += sizeof(float) * MAXCONNECT * cm->M;              /* cm->tsc level 2 */
+    bytes += sizeof(float) * cm->abc->K * cm->abc->K * cm->M; /* cm->esc level 2 */
+    bytes += sizeof(float) * cm->abc->Kp * cm->M;             /* cm->lmesc level 2 */
+    bytes += sizeof(float) * cm->abc->Kp * cm->M;             /* cm->rmesc level 2 */
+    bytes += sizeof(int)   * MAXCONNECT * cm->M;              /* cm->itsc level 2 */
+    bytes += sizeof(int)   * cm->abc->K * cm->abc->K * cm->M; /* cm->iesc level 2 */
+    bytes += sizeof(int)   * cm->abc->Kp * cm->M;             /* cm->ilmesc level 2 */
+    bytes += sizeof(int)   * cm->abc->Kp * cm->M;             /* cm->irmesc level 2 */
+  }
+    
+  if(cm->name       != NULL) bytes += sizeof(char)  * (strlen(cm->name) + 2);
+  if(cm->acc        != NULL) bytes += sizeof(char)  * (strlen(cm->acc) + 2);
+  if(cm->desc       != NULL) bytes += sizeof(char)  * (strlen(cm->desc) + 2);
+  if(cm->rf         != NULL) bytes += sizeof(char)  * (strlen(cm->rf) + 2);
+  if(cm->consensus  != NULL) bytes += sizeof(char)  * (strlen(cm->consensus) + 2);
+  if(cm->map        != NULL) bytes += sizeof(int)   * (cm->clen+1);
+  if(cm->root_trans != NULL) bytes += sizeof(float) * (cm->cnum[0]);
+
+  if(cm->oesc != NULL || cm->ioesc != NULL) { 
+    int    nsinglets = 0;
+    int    npairs    = 0;
+    int    v;
+    for(v = 0; v < cm->M; v++) {
+      if(cm->sttype[v] == IL_st || cm->sttype[v] == ML_st || cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) nsinglets++;
+      if(cm->sttype[v] == MP_st) npairs++;
+    }
+    if(cm->oesc != NULL) { 
+      bytes += sizeof(float *) * cm->M;
+      bytes += sizeof(float)   * ((cm->abc->Kp * nsinglets) + (cm->abc->Kp * cm->abc->Kp * npairs));
+    }
+    if(cm->ioesc != NULL) { 
+      bytes += sizeof(int *) * cm->M;
+      bytes += sizeof(int)   * ((cm->abc->Kp * nsinglets) + (cm->abc->Kp * cm->abc->Kp * npairs));
+    }
+  }
+
+  /* cp9 HMMs */
+  if(cm->cp9   != NULL) bytes += (1000000. * cp9_Sizeof(cm->cp9));
+  if(cm->Lcp9  != NULL) bytes += (1000000. * cp9_Sizeof(cm->Lcp9));
+  if(cm->Rcp9  != NULL) bytes += (1000000. * cp9_Sizeof(cm->Rcp9));
+  if(cm->Tcp9  != NULL) bytes += (1000000. * cp9_Sizeof(cm->Tcp9));
+
+  if(cm->cp9map  != NULL) bytes += (1000000. * SizeofCP9Map(cm->cp9map));
+  if(cm->cp9b    != NULL) bytes += (1000000. * SizeofCP9Bands(cm->cp9b));
+  if(cm->cp9_mx  != NULL) bytes += cm->cp9_mx->size_Mb;
+  if(cm->cp9_bmx != NULL) bytes += cm->cp9_bmx->size_Mb;
+
+  /* p7 HMMs */
+  if(cm->mlp7 != NULL) bytes += (1000000. * cm_p7_hmm_Sizeof(cm->mlp7));
+  if(cm->fp7  != NULL) bytes += (1000000. * cm_p7_hmm_Sizeof(cm->fp7));
+
+  /* CM HMM banded DP matrices */
+  if(cm->hb_mx     != NULL) bytes += (1000000. * cm->hb_mx->size_Mb);
+  if(cm->hb_omx    != NULL) bytes += (1000000. * cm->hb_omx->size_Mb);
+  if(cm->hb_emx    != NULL) bytes += (1000000. * cm->hb_emx->size_Mb);
+  if(cm->hb_shmx   != NULL) bytes += (1000000. * cm->hb_shmx->size_Mb);
+  if(cm->trhb_mx   != NULL) bytes += (1000000. * cm->trhb_mx->size_Mb);
+  if(cm->trhb_omx  != NULL) bytes += (1000000. * cm->trhb_omx->size_Mb);
+  if(cm->trhb_emx  != NULL) bytes += (1000000. * cm->trhb_emx->size_Mb);
+  if(cm->trhb_shmx != NULL) bytes += (1000000. * cm->trhb_shmx->size_Mb);
+
+  /* CM non-banded DP matrices */
+  if(cm->nb_mx     != NULL) bytes += (1000000. * cm->nb_mx->size_Mb);
+  if(cm->nb_omx    != NULL) bytes += (1000000. * cm->nb_omx->size_Mb);
+  if(cm->nb_emx    != NULL) bytes += (1000000. * cm->nb_emx->size_Mb);
+  if(cm->nb_shmx   != NULL) bytes += (1000000. * cm->nb_shmx->size_Mb);
+  if(cm->trnb_mx   != NULL) bytes += (1000000. * cm->trnb_mx->size_Mb);
+  if(cm->trnb_omx  != NULL) bytes += (1000000. * cm->trnb_omx->size_Mb);
+  if(cm->trnb_emx  != NULL) bytes += (1000000. * cm->trnb_emx->size_Mb);
+  if(cm->trnb_shmx != NULL) bytes += (1000000. * cm->trnb_shmx->size_Mb);
+
+  /* CM scan matrices */
+  if(cm->smx   != NULL) bytes += (1000000. * cm->smx->size_Mb);
+  if(cm->trsmx != NULL) bytes += (1000000. * cm->trsmx->size_Mb);
+
+  /* expA */
+  if(cm->expA != NULL) { 
+    bytes += sizeof(ExpInfo_t *) * EXP_NMODES;
+    bytes += sizeof(ExpInfo_t)   * EXP_NMODES;
+  }
+
+  /* the emit map */
+  if(cm->emap != NULL) bytes += (1000000. * SizeofEmitMap(cm, cm->emap));
+
+  return (bytes / 1000000.);
+}
 
 /* Function: DumpCMFlags()
  * Date:     EPN, Wed Jun 22 19:24:54 2011

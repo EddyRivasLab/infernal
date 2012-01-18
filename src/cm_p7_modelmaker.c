@@ -547,3 +547,40 @@ dump_p7(P7_HMM *hmm, FILE *fp)
   return p7_hmmfile_WriteASCII(fp, -1, hmm);
 }
 
+
+/* Function: cm_p7_hmm_Sizeof()
+ * Incept:   EPN, Wed Jan 18 10:10:10 2012
+ * 
+ * Purpose:  Calculate and return size of a P7_HMM
+ *           in Mb.
+ * 
+ * Args:     hmm       - the p7 HMM
+ *           
+ * Return:   size of hmm in Mb
+ */
+float
+cm_p7_hmm_Sizeof(P7_HMM *hmm)
+{
+  float bytes = 0.;
+
+  bytes = sizeof(P7_HMM);
+
+  if(hmm->M > 0 && hmm->abc != NULL) 
+  /* following from p7_hmm_CreateBody() */
+  bytes += sizeof(float *) * (hmm->M+1); /* t */
+  bytes += sizeof(float *) * (hmm->M+1); /* mat */
+  bytes += sizeof(float *) * (hmm->M+1); /* ins */
+
+  bytes += sizeof(float) * p7H_NTRANSITIONS*(hmm->M+1); /* t */
+  bytes += sizeof(float *) * hmm->abc->K * (hmm->M+1); /* mat */
+  bytes += sizeof(float *) * hmm->abc->K * (hmm->M+1); /* ins */
+
+  if(hmm->rf        != NULL) bytes += sizeof(char) * (hmm->M+2); 
+  if(hmm->consensus != NULL) bytes += sizeof(char) * (hmm->M+2); 
+  if(hmm->cs        != NULL) bytes += sizeof(char) * (hmm->M+2); 
+  if(hmm->ca        != NULL) bytes += sizeof(char) * (hmm->M+2); 
+  if(hmm->map       != NULL) bytes += sizeof(int)  * (hmm->M+1); 
+
+  return bytes / 1000000.;
+}
+

@@ -111,6 +111,33 @@ AllocCP9Map(CM_t *cm)
   return NULL; /* never reached */
 }
 
+/* Function: SizeofCP9Map()
+ * Incept:   EPN, Wed Jan 18 09:50:56 2012
+ * Purpose:  Calculate and return the size of 
+ *           a CP9Map_t object in megabytes.
+ */
+float 
+SizeofCP9Map(CP9Map_t *cp9map)
+{
+  float bytes = 0.;
+
+  bytes = sizeof(CP9Map_t);
+
+  /* following from AllocCP9Map() */
+  bytes += sizeof(int)    *  cp9map->cm_nodes; /* nd2lpos */
+  bytes += sizeof(int)    *  cp9map->cm_nodes; /* nd2rpos */
+  bytes += sizeof(int)    * (cp9map->hmm_M+1);  /* pos2nd */
+  bytes += sizeof(int **) * (cp9map->hmm_M+1);  /* hns2cs */
+  bytes += sizeof(int *)  * (cp9map->hmm_M+1) * 3;  /* hns2cs */
+  bytes += sizeof(int)    * (cp9map->hmm_M+1) * 3 * 2;  /* hns2cs */
+  bytes += sizeof(int *)  * (cp9map->cm_M+1);  /* cs2hn */
+  bytes += sizeof(int *)  * (cp9map->cm_M+1);  /* cs2hs */
+  bytes += sizeof(int *)  * (cp9map->cm_M+1) * 2;  /* cs2hs */
+  bytes += sizeof(int *)  * (cp9map->cm_M+1) * 2;  /* cs2hn */
+
+  return (bytes / 1000000.);
+}
+
 /* Function: FreeCP9Map()
  * Returns:  void
  */

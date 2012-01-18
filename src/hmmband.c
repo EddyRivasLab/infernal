@@ -109,6 +109,47 @@ AllocCP9Bands(int cm_M, int hmm_M)
   return NULL; /* never reached */
 }
 
+/* Function: SizeofCP9Bands() 
+ * Returns:  Size (Mb) of cp9b.
+ */
+float
+SizeofCP9Bands(CP9Bands_t *cp9b)
+{
+  float bytes = 0.;
+
+  bytes += sizeof(CP9Bands_t);
+
+  /* following from AllocCP9Bands() */
+  bytes += sizeof(int) * (cp9b->cm_M+1); /* Jvalid */
+  bytes += sizeof(int) * (cp9b->cm_M+1); /* Lvalid */
+  bytes += sizeof(int) * (cp9b->cm_M+1); /* Rvalid */
+  bytes += sizeof(int) * (cp9b->cm_M+1); /* Tvalid */
+
+  bytes += sizeof(int) * (cp9b->hmm_M+1); /* pn_min_m */
+  bytes += sizeof(int) * (cp9b->hmm_M+1); /* pn_max_m */
+  bytes += sizeof(int) * (cp9b->hmm_M+1); /* pn_min_i */
+  bytes += sizeof(int) * (cp9b->hmm_M+1); /* pn_max_i */
+  bytes += sizeof(int) * (cp9b->hmm_M+1); /* pn_min_d */
+  bytes += sizeof(int) * (cp9b->hmm_M+1); /* pn_max_d */
+  bytes += sizeof(int) * (cp9b->hmm_M+1); /* isum_pn_m */
+  bytes += sizeof(int) * (cp9b->hmm_M+1); /* isum_pn_i */
+  bytes += sizeof(int) * (cp9b->hmm_M+1); /* isum_pn_d */
+
+  bytes += sizeof(int) *  cp9b->cm_M; /* imin */
+  bytes += sizeof(int) *  cp9b->cm_M; /* imax */
+  bytes += sizeof(int) *  cp9b->cm_M; /* jmin */
+  bytes += sizeof(int) *  cp9b->cm_M; /* jmax */
+  bytes += sizeof(int) *  cp9b->cm_M; /* safe_hdmin */
+  bytes += sizeof(int) *  cp9b->cm_M; /* safe_hdmax */
+  bytes += sizeof(int *) *  cp9b->cm_M; /* hdmin */
+  bytes += sizeof(int *) *  cp9b->cm_M; /* hdmax */
+
+  bytes += sizeof(int) * cp9b->hd_alloced; /* hdmin */
+  bytes += sizeof(int) * cp9b->hd_alloced; /* hdmax */
+
+  return bytes / 1000000.;
+}
+
 /* Function: FreeCP9Bands() 
  * Returns: (void) 
  */

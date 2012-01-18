@@ -173,7 +173,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
    * and treat them similar to EL for output. First determine 
    * how many positions were truncationed 5' and 3' 
    */
-  if((status = ParsetreeToCMBounds(cm, tr, errbuf, &cfrom_span, &cto_span, &cfrom_emit, &cto_emit)) != eslOK) return status;
+  if((status = ParsetreeToCMBounds(cm, tr, errbuf, &cfrom_span, &cto_span, &cfrom_emit, &cto_emit, NULL, NULL)) != eslOK) return status;
   /* now determine display length required to show truncations */
   ntrunc_R = wtrunc_R = 0;
   ntrunc_L = wtrunc_L = 0;

@@ -190,9 +190,9 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
 
     /* update size */
     mx->size_Mb =  (float) sizeof(CP9_MX);
-    mx->size_Mb += (float) (sizeof(int *) * (N+1) * 4); /* mx->*mx ptrs */
-    mx->size_Mb += (float) (sizeof(int)   * ncells_needed); /* mx->*mx_mem */
-    mx->size_Mb += (float) (sizeof(int)   * (N+1));             /* mx->erow */
+    mx->size_Mb += (float) (sizeof(int *) * (N+1) * 4);           /* mx->*mx ptrs */
+    mx->size_Mb += (float) (sizeof(int)   * (ncells_needed * 4)); /* mx->*mx_mem */
+    mx->size_Mb += (float) (sizeof(int)   * (N+1));               /* mx->erow */
     mx->size_Mb /= 1000000.;
   }
 
