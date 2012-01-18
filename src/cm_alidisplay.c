@@ -193,10 +193,12 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
     wtrunc_L += 4; /* space for '*[]>' */
     len += wtrunc_L;
   }
+#if 0
   printf("cfrom_span: %4d\n", cfrom_span);
   printf("cfrom_emit: %4d\n", cfrom_emit);
   printf("cto_emit:   %4d\n", cto_emit);
   printf("cto_span:   %4d\n", cto_span);
+#endif
 
   /* Now we know the length of all arrays (len), determine total amount of memory required, and allocate it */
   /* Allocate the char arrays */

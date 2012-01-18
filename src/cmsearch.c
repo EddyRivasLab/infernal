@@ -647,7 +647,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
 
 #ifdef HMMER_THREADS
-    printf("calling thread_loop i: %d\n", i);
     if (ncpus > 0)  sstatus = thread_loop(info, threadObj, queue, dbfp, &srcL);
     else            sstatus = serial_loop(info, dbfp, &srcL);
 #else
@@ -1617,8 +1616,6 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
   /* Main loop: */
   while (sstatus == eslOK ) {
     block = (ESL_SQ_BLOCK *) newBlock;
-    
-    printf("thread received block");
     
     /* reset block as an empty vessel, possibly keeping the first sq intact for reading in the next window */
     for (i=0; i < block->count; i++) esl_sq_Reuse(block->list + i);

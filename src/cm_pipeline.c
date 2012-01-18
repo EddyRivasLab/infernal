@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT  1
+#define DOPRINT  0
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -2329,12 +2329,6 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
 			    NULL,                                          /* mode of optimal alignment, irrelevant */
 			    (do_ppstr) ? &pp     : NULL,                   /* average PP of all aligned residues */ 
 			    &sc);                                          /* bit score (Inside if do_optacc, else CYK) */
-      /* TEMP BLOCK */
-      ParsetreeDump(stdout, tr, cm, subdsq, NULL, NULL);
-      float parsetree_sc;
-      ParsetreeScore(cm, NULL, NULL, tr, subdsq, FALSE, &parsetree_sc, NULL, NULL, NULL, NULL);
-      printf("Parsetree score      : %.4f           (TROPTACC OR TRCYK)\n", parsetree_sc);
-      /* END TEMP BLOCK */
     }
     else { 
       status = cm_AlignHB(cm, pli->errbuf, subdsq, hitlen, 
