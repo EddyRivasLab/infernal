@@ -786,6 +786,7 @@ main(int argc, char **argv)
   cfg.tmpfile      = NULL;
   cfg.mode         = NULL;
   cfg.dnull        = NULL;
+  cfg.gc_freq      = NULL;
   cfg.ghmm_nstates = 0;
   cfg.ghmm_sA      = NULL;
   cfg.ghmm_tAA     = NULL;
@@ -1180,7 +1181,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info[i].nhits  = 0;
       info[i].cutoff = cfg->sc_cutoff;
 #ifdef HMMER_THREADS
-      info[i].queue      = queue;
+      info[i].queue  = queue;
 #endif
     }
 
