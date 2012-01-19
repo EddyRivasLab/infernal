@@ -1036,7 +1036,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
 	  ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
 	  ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
 	}
-	if(wlen > (pli->wmult * pli->cmW)) { 
+	if(wlen > (pli->wmult * pli->maxW)) { 
 	  /* split this window */
 	  new_ws[i2] = ws[i]; 
 	  new_we[i2] = ESL_MIN((new_ws[i2] + (2 * pli->cmW) - 1), we[i]);
@@ -2921,7 +2921,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *w)
 	    (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
 	    0, 0.);
   }
-  if (w != NULL) {
+  if (w != NULL) { 
     esl_stopwatch_Display(ofp, w, "# CPU time: ");
     fprintf(ofp, "# Mc/sec: %.2f\n", 
 	    (double) pli_acct->nres * (double) pli->nnodes / (w->elapsed * 1.0e6));
