@@ -54,7 +54,7 @@
  *           errbuf          - char buffer for reporting errors
  *           trsmx           - TrScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           qdbidx          - controls which QDBs to use: SMX_NOQDB | SMX_QDB1_TIGHT | SMX_QDB2_LOOSE
- *           tro             - TruncOpts_t with information on which modes to allow
+ *           tro             - CM_TR_OPTS with information on which modes to allow
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -76,7 +76,7 @@
  *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR_OPTS *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 	     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc)
 {
   int       status;
@@ -118,9 +118,11 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
   int       h;                  /* counter over hits */
 
   /* variables specific to truncated search */
-  int       Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
-  int       Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
+  int   Lyoffset0;              /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
+  int   Ryoffset0;              /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
   int   fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
+  int   pty_idx;                /* index for truncation penalty, determined by values in tro */
+  float trpenalty;              /* truncation penalty, differs based on pty_idx and if we're local or global */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, CMH_BITS flag is not raised.\n");
@@ -158,9 +160,10 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
   else ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, qdbidx is invalid");
 
   /* determine which matrices we need to fill in based on <tro> */
-  fill_L = tro->allowL        ? TRUE : FALSE;
-  fill_R = tro->allowR        ? TRUE : FALSE;
+  fill_L = tro->allow_L       ? TRUE : FALSE;
+  fill_R = tro->allow_R       ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
+  pty_idx = cm_tr_opts_PenaltyIdx(tro);
   
   L = j0-i0+1;
   W = trsmx->W;
@@ -529,9 +532,15 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
       for(i = 0; i <= W; i++) bestmode[i] = TRMODE_UNKNOWN;
 
       /* First look at states reachable by ROOT_S via normal
-       * transitions, If local begins are off, this will just
+       * transitions and assess the truncation penalty. 
+       * If local begins are off, this will just
        * initialize all alpha cells for state 0 to IMPOSSIBLE 
        */
+      trpenalty = 0.;
+      if(! (cm->flags & CMH_LOCAL_BEGIN)) { 
+	trpenalty = cm->trp->ptyAA[pty_idx][0];
+      }
+
       jp_v = cur;
       y = cm->cfirst[0];
       for (d = dnA[0]; d <= dxA[0]; d++) {
@@ -539,9 +548,9 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
 	if(fill_L) Lsc = IMPOSSIBLE;
 	if(fill_R) Rsc = IMPOSSIBLE;
 	for (yoffset = 0; yoffset < cm->cnum[0]; yoffset++) { 
-	  Jsc            = ESL_MAX(Jsc, Jalpha[cur][y+yoffset][d] + tsc_v[yoffset]);
-	  if(fill_L) Lsc = ESL_MAX(Lsc, Lalpha[cur][y+yoffset][d] + tsc_v[yoffset]);
-	  if(fill_R) Rsc = ESL_MAX(Rsc, Ralpha[cur][y+yoffset][d] + tsc_v[yoffset]);
+	  Jsc            = ESL_MAX(Jsc, Jalpha[cur][y+yoffset][d] + tsc_v[yoffset] + trpenalty);
+	  if(fill_L) Lsc = ESL_MAX(Lsc, Lalpha[cur][y+yoffset][d] + tsc_v[yoffset] + trpenalty);
+	  if(fill_R) Rsc = ESL_MAX(Rsc, Ralpha[cur][y+yoffset][d] + tsc_v[yoffset] + trpenalty);
 	}
 	Jalpha[jp_v][0][d] = Jsc;
 	if(fill_L) Lalpha[jp_v][0][d] = Lsc;
@@ -560,18 +569,20 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
       }
 
       /* now handle local begins, a transition into 
-       * any state with non-IMPOSSIBLE trbeginsc[v] are possible
+       * any state with non-IMPOSSIBLE trbeginsc[v] are possible.
+       * Assess truncation penalty here.
        */
       if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  if(NOT_IMPOSSIBLE(cm->trbeginsc[y])) { 
+	    trpenalty = cm->trp->ptyAA[pty_idx][y];
 	    assert(cm->stid[y] != BEGL_S);
 	    dn = ESL_MAX(dnA[0], dnA[y]);
 	    dx = ESL_MIN(dxA[0], dxA[y]);
 	    jp_y = cur;
 	    /* check for new optimally scoring Joint alignments of all lengths in J matrix */
 	    for (d = dn; d <= dx; d++) {
-	      sc = Jalpha[jp_y][y][d] + cm->trbeginsc[y];
+	      sc = Jalpha[jp_y][y][d] + cm->trbeginsc[y] + trpenalty;
 	      if (sc > Jalpha[jp_v][0][d]) { 
 		Jalpha[jp_v][0][d] = sc;
 		if(sc > bestsc[d]) { 
@@ -584,7 +595,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
 	    /* check for new optimally scoring Left alignments of all lengths in L matrix */
 	    if(fill_L) { 
 	      for (d = dn; d <= dx; d++) {
-		sc = Lalpha[jp_y][y][d] + cm->trbeginsc[y];
+		sc = Lalpha[jp_y][y][d] + cm->trbeginsc[y] + trpenalty;
 		if (sc > Lalpha[jp_v][0][d]) { 
 		  Lalpha[jp_v][0][d] = sc;
 		  if(sc > bestsc[d]) { 
@@ -598,7 +609,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
 	    /* check for new optimally scoring Right alignments of all lengths in L matrix */
 	    if(fill_R) { 
 	      for (d = dn; d <= dx; d++) {
-		sc = Ralpha[jp_y][y][d] + cm->trbeginsc[y];
+		sc = Ralpha[jp_y][y][d] + cm->trbeginsc[y] + trpenalty;
 		if (sc > Ralpha[jp_v][0][d]) { 
 		  Ralpha[jp_v][0][d] = sc;
 		  if(sc > bestsc[d]) { 
@@ -612,7 +623,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
 	    /* check for new optimally scoring Terminal alignments of all lengths in T matrix */
 	    if(fill_T && cm->sttype[y] == B_st) { 
 	      for (d = dn; d <= dx; d++) {
-		sc = Talpha[jp_y][y][d] + cm->trbeginsc[y];
+		sc = Talpha[jp_y][y][d] + cm->trbeginsc[y] + trpenalty;
 		if (sc > Talpha[jp_v][0][d]) { 
 		  Talpha[jp_v][0][d] = sc;
 		  if(sc > bestsc[d]) { 
@@ -631,13 +642,14 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
        * require a local begin into the relevant B_st.
        */
       if((! (cm->flags & CMH_LOCAL_BEGIN)) && fill_T) { 
+	trpenalty = cm->trp->ptyAA[pty_idx][0]; /* use state 0's penalty, not state v's */
 	for (y = 1; y < cm->M; y++) {
 	  if(cm->sttype[y] == B_st) { 
 	    dn = ESL_MAX(dnA[0], dnA[y]);
 	    dx = ESL_MIN(dxA[0], dxA[y]);
 	    jp_y = cur;
 	    for (d = dn; d <= dx; d++) {
-	      sc = Talpha[jp_y][y][d]; /* no begin penalty */
+	      sc = Talpha[jp_y][y][d] + trpenalty; /* no begin penalty */
 	      if (sc > Talpha[jp_v][0][d]) { 
 		Talpha[jp_v][0][d] = sc;
 		if(sc > bestsc[d]) { 
@@ -761,7 +773,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
  *           errbuf          - char buffer for reporting errors
  *           trsmx           - CM_TR_SCAN_MX for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           qdbidx          - controls which QDBs to use: SMX_NOQDB | SMX_QDB1_TIGHT | SMX_QDB2_LOOSE
- *           tro             - TruncOpts_t with information on which modes to allow
+ *           tro             - CM_TR_OPTS with information on which modes to allow
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -783,7 +795,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts
  *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR_OPTS *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 		 int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc)
 {
   int       status;
@@ -826,9 +838,11 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
   int       h;                  /* counter over hits */
 
   /* variables specific to truncated search */
-  int       Lyoffset0;          /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
-  int       Ryoffset0;          /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
+  int   Lyoffset0;              /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
+  int   Ryoffset0;              /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
   int   fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
+  int   pty_idx;                /* index for truncation penalty, determined by values in tro */
+  int   itrpenalty;             /* truncation penalty, differs based on pty_idx and if we're local or global */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, CMH_BITS flag is not raised.\n");
@@ -866,9 +880,10 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
   else ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, qdbidx is invalid");
 
   /* determine which matrices we need to fill in based on <tro> */
-  fill_L = tro->allowL        ? TRUE : FALSE;
-  fill_R = tro->allowR        ? TRUE : FALSE;
+  fill_L = tro->allow_L       ? TRUE : FALSE;
+  fill_R = tro->allow_R       ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
+  pty_idx = cm_tr_opts_PenaltyIdx(tro);
   
   L = j0-i0+1;
   W = trsmx->W;
@@ -1229,8 +1244,16 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
       esl_vec_FSet(bestsc, (W+1), IMPOSSIBLE);
       for(i = 0; i <= W; i++) bestmode[i] = TRMODE_UNKNOWN;
 
-      /* First look at states reachable by ROOT_S via normal transitions, 
-       * If local begins are off, this will just initialize all hits to -INFTY */
+      /* First look at states reachable by ROOT_S via normal
+       * transitions and assess the truncation penalty. 
+       * If local begins are off, this will just
+       * initialize all alpha cells for state 0 to IMPOSSIBLE 
+       */
+      itrpenalty = 0;
+      if(! (cm->flags & CMH_LOCAL_BEGIN)) { 
+	itrpenalty = cm->trp->iptyAA[pty_idx][0];
+      }
+
       jp_v = cur;
       y = cm->cfirst[0];
       for (d = dnA[0]; d <= dxA[0]; d++) {
@@ -1238,9 +1261,9 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
 	if(fill_L) Lsc = -INFTY;
 	if(fill_R) Rsc = -INFTY;
 	for (yoffset = 0; yoffset < cm->cnum[0]; yoffset++) { 
-	  Jsc            = ILogsum(Jsc, Jalpha[cur][y+yoffset][d] + tsc_v[yoffset]);
-	  if(fill_L) Lsc = ILogsum(Lsc, Lalpha[cur][y+yoffset][d] + tsc_v[yoffset]);
-	  if(fill_R) Rsc = ILogsum(Rsc, Ralpha[cur][y+yoffset][d] + tsc_v[yoffset]);
+	  Jsc            = ILogsum(Jsc, Jalpha[cur][y+yoffset][d] + tsc_v[yoffset] + itrpenalty);
+	  if(fill_L) Lsc = ILogsum(Lsc, Lalpha[cur][y+yoffset][d] + tsc_v[yoffset] + itrpenalty);
+	  if(fill_R) Rsc = ILogsum(Rsc, Ralpha[cur][y+yoffset][d] + tsc_v[yoffset] + itrpenalty);
 	}
 	Jalpha[jp_v][0][d] = Jsc;
 	if(fill_L) Lalpha[jp_v][0][d] = Lsc;
@@ -1265,18 +1288,20 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
       }
       
       /* now handle local begins, a transition into 
-       * any state with non-IMPOSSIBLE trbeginsc[y] are possible
+       * any state with non-IMPOSSIBLE trbeginsc[y] are possible.
+       * Assess truncation penalty here.
        */
       if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  if(cm->itrbeginsc[y] != -INFTY) { 
+	    itrpenalty = cm->trp->iptyAA[pty_idx][y];
 	    assert(cm->stid[y] != BEGL_S);
 	    dn = ESL_MAX(dnA[0], dnA[y]);
 	    dx = ESL_MIN(dxA[0], dxA[y]);
 	    jp_y = cur;
 	    /* check for new optimally scoring Joint alignments of all lengths in J matrix */
 	    for (d = dn; d <= dx; d++) {
-	      sc = Jalpha[jp_y][y][d] + cm->itrbeginsc[y];
+	      sc = Jalpha[jp_y][y][d] + cm->itrbeginsc[y] + itrpenalty;
 	      if (sc > Jalpha[jp_v][0][d]) { 
 		Jalpha[jp_v][0][d] = sc;
 		fsc = Scorify(sc);
@@ -1290,7 +1315,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
 	    /* check for new optimally scoring Left alignments of all lengths in L matrix */
 	    if(fill_L) { 
 	      for (d = dn; d <= dx; d++) {
-		sc = Lalpha[jp_y][y][d] + cm->itrbeginsc[y];
+		sc = Lalpha[jp_y][y][d] + cm->itrbeginsc[y] + itrpenalty;
 		if (sc > Lalpha[jp_v][0][d]) { 
 		  Lalpha[jp_v][0][d] = sc;
 		  fsc = Scorify(sc);
@@ -1305,7 +1330,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
 	    /* check for new optimally scoring Right alignments of all lengths in L matrix */
 	    if(fill_R) { 
 	      for (d = dn; d <= dx; d++) {
-		sc = Ralpha[jp_y][y][d] + cm->itrbeginsc[y];
+		sc = Ralpha[jp_y][y][d] + cm->itrbeginsc[y] + itrpenalty;
 		if (sc > Ralpha[jp_v][0][d]) { 
 		  Ralpha[jp_v][0][d] = sc;
 		  fsc = Scorify(sc);
@@ -1320,7 +1345,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
 	    /* check for new optimally scoring Terminal alignments of all lengths in T matrix */
 	    if(fill_T && cm->sttype[y] == B_st) { 
 	      for (d = dn; d <= dx; d++) {
-		sc = Talpha[jp_y][y][d] + cm->itrbeginsc[y];
+		sc = Talpha[jp_y][y][d] + cm->itrbeginsc[y] + itrpenalty;
 		if (sc > Talpha[jp_v][0][d]) { 
 		  Talpha[jp_v][0][d] = sc;
 		  fsc = Scorify(sc);
@@ -1340,13 +1365,14 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
        * require a local begin into the relevant B_st.
        */
       if((! (cm->flags & CMH_LOCAL_BEGIN)) && fill_T) { 
+	itrpenalty = cm->trp->iptyAA[pty_idx][0]; /* use state 0's penalty, not state v's */
 	for (y = 1; y < cm->M; y++) {
 	  if(cm->sttype[y] == B_st) { 
 	    dn = ESL_MAX(dnA[0], dnA[y]);
 	    dx = ESL_MIN(dxA[0], dxA[y]);
 	    jp_y = cur;
 	    for (d = dn; d <= dx; d++) {
-	      sc = Talpha[jp_y][y][d]; /* no begin penalty */
+	      sc = Talpha[jp_y][y][d] + itrpenalty; /* no begin penalty */
 	      if (sc > Talpha[jp_v][0][d]) { 
 		Talpha[jp_v][0][d] = sc;
 		fsc = Scorify(sc);
@@ -1478,7 +1504,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
  *           errbuf    - for returning error messages
  *           mx        - the dp matrix, only cells within bands in cm->cp9b will be valid. 
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
- *           tro       - TruncOpts_t with information on which modes to allow
+ *           tro       - CM_TR_OPTS with information on which modes to allow
  *           dsq       - the sequence [1..(j0-i0+1)]   
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
@@ -1499,7 +1525,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, Trunc
  *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
+TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, CM_TR_OPTS *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
 	    int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc)
 {
   int      status;
@@ -1550,6 +1576,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
   int      do_L_v, do_L_y, do_L_z, do_L_0; /* is L matrix valid for state v, y, z, 0? */
   int      do_R_v, do_R_y, do_R_z, do_R_0; /* is R matrix valid for state v, y, z, 0? */
   int      do_T_v, do_T_y, do_T_z, do_T_0; /* is T matrix valid for state v, y, z, 0? */
+  int      pty_idx;                /* index for truncation penalty, derived from tro */
+  float    trpenalty;              /* truncation penalty, differs based on pty_idx and if we're local or global */
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), dsq is NULL.\n");
@@ -1573,13 +1601,24 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
   float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
 
   /* determine which matrices we need to fill in based on <tro> */
-  fill_L = tro->allowL        ? TRUE : FALSE;
-  fill_R = tro->allowR        ? TRUE : FALSE;
+  fill_L = tro->allow_L       ? TRUE : FALSE;
+  fill_R = tro->allow_R       ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
-
+  pty_idx = cm_tr_opts_PenaltyIdx(tro);
+  
   /* ensure an alignment to ROOT_S (v==0) is possible */
   if (! (cp9b->Jvalid[0] || (fill_L && cp9b->Lvalid[0]) || (fill_R && cp9b->Rvalid[0]) || (fill_T &&cp9b->Tvalid[0]))) {
-    ESL_FAIL(eslEINVAL, errbuf, "TrCYKScanHB(): no marginal mode is allowed for state 0");
+    /* if we're enforcing i0 or j0 in the alignment, this shouldn't happen */
+    if((tro->allow_L && tro->force_j0_LT) || (tro->allow_R && tro->force_i0_RT)) { 
+      ESL_FAIL(eslEINVAL, errbuf, "TrCYKScanHB(): no marginal mode is allowed for state 0");
+    }
+    else { /* if we're not enforcing, this is rare but possible, we won't find any hits, so we return */
+      if(ret_envi != NULL) { *ret_envi = -1; }
+      if(ret_envj != NULL) { *ret_envj = -1; }
+      if(ret_sc   != NULL) { *ret_sc   = IMPOSSIBLE; }
+      if(ret_mode != NULL) { *ret_mode = TRMODE_UNKNOWN; }
+      return eslOK;
+    }
   }
 
   /* Allocations and initializations  */
@@ -2058,12 +2097,18 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
        * in any nesting order, this implementation does what I think
        * is most efficient: for y { for j { for d { } } }
        */
+      /* assess the truncation penalty if we're at state 0 and local begins are off */
+      trpenalty = 0.;
+      if(v == 0 && (! (cm->flags & CMH_LOCAL_BEGIN))) { 
+	trpenalty = cm->trp->ptyAA[pty_idx][0];
+      }
+
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
 	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
 	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	yoffset = y - cm->cfirst[v];
-	tsc = tsc_v[yoffset];
+	tsc = tsc_v[yoffset] + trpenalty; /* we've combined the trpenalty (0 unless v==0 and local begins off) with the transition score */
 	
 	if((do_J_v && do_J_y) || (do_L_v && do_L_y) || (do_R_v && do_R_y)) { 
 	  /* j must satisfy:
@@ -2323,25 +2368,32 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
     esl_vec_ISet(bestr,  (W+1), 0); /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
     esl_vec_FSet(bestsc, (W+1), IMPOSSIBLE);
     for(i = 0; i <= W; i++) bestmode[i] = TRMODE_UNKNOWN;
-    /* Now update based on best seen without considering local begins, remember v == 0 */
-    for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
-      dp_v = d - hdmin[v][jp_v];
-      if(do_J_0 && Jalpha[v][jp_v][dp_v] > bestsc[d]) { 
-	bestsc[d]   = Jalpha[v][jp_v][dp_v];
-	bestmode[d] = TRMODE_J;
+
+    /* Now update based on best seen if we're not doing local begins
+     * (remember v == 0 and we filled this deck and assessed the
+     * truncation penalty in the main loop above).
+     */
+    if (! (cm->flags & CMH_LOCAL_BEGIN)) {
+      for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
+	dp_v = d - hdmin[v][jp_v];
+	if(do_J_0 && Jalpha[v][jp_v][dp_v] > bestsc[d]) { 
+	  bestsc[d]   = Jalpha[v][jp_v][dp_v];
+	  bestmode[d] = TRMODE_J;
+	}
+	if(do_L_0 && Lalpha[v][jp_v][dp_v] > bestsc[d]) { 
+	  bestsc[d]   = Lalpha[v][jp_v][dp_v];
+	  bestmode[d] = TRMODE_L;
+	}
+	if(do_R_0 && Ralpha[v][jp_v][dp_v] > bestsc[d]) { 
+	  bestsc[d]   = Ralpha[v][jp_v][dp_v];
+	  bestmode[d] = TRMODE_R;
+	}
+	/* Talpha[0] must be IMPOSSIBLE at this point */
       }
-      if(do_L_0 && Lalpha[v][jp_v][dp_v] > bestsc[d]) { 
-	bestsc[d]   = Lalpha[v][jp_v][dp_v];
-	bestmode[d] = TRMODE_L;
-      }
-      if(do_R_0 && Ralpha[v][jp_v][dp_v] > bestsc[d]) { 
-	bestsc[d]   = Ralpha[v][jp_v][dp_v];
-	bestmode[d] = TRMODE_R;
-      }
-      /* Talpha[0] must be IMPOSSIBLE at this point */
     }
-    
-    /* look at all possible states we can do a local begin into */
+    /* look at all possible states we can do a local begin into,
+     * and assess state-specific truncation penalty
+     */
     if (cm->flags & CMH_LOCAL_BEGIN) {
       for (y = 1; y < cm->M; y++) {
 	if(NOT_IMPOSSIBLE(cm->trbeginsc[y]) && 
@@ -2350,6 +2402,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
 	  do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 	  do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	  do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE;
+	  trpenalty = cm->trp->ptyAA[pty_idx][v];
 	  
 	  jp_y = j - jmin[y];
 	  dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
@@ -2359,7 +2412,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
 	    dp_v = dn - hdmin[v][jp_v];
 	    dp_y = dn - hdmin[y][jp_y];
 	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	      sc = Jalpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      sc = Jalpha[y][jp_y][dp_y] + cm->trbeginsc[y] + trpenalty;
 	      if (sc > Jalpha[0][jp_v][dp_v]) { 
 		Jalpha[0][jp_v][dp_v] = sc;
 		if(sc > bestsc[d]) { 
@@ -2374,7 +2427,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
 	    dp_v = dn - hdmin[v][jp_v];
 	    dp_y = dn - hdmin[y][jp_y];
 	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	      sc = Lalpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      sc = Lalpha[y][jp_y][dp_y] + cm->trbeginsc[y] + trpenalty;
 	      if (sc > Lalpha[0][jp_v][dp_v]) { 
 		Lalpha[0][jp_v][dp_v] = sc;
 		if(sc > bestsc[d]) { 
@@ -2389,7 +2442,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
 	    dp_v = dn - hdmin[v][jp_v];
 	    dp_y = dn - hdmin[y][jp_y];
 	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	      sc = Ralpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      sc = Ralpha[y][jp_y][dp_y] + cm->trbeginsc[y] + trpenalty;
 	      if (sc > Ralpha[0][jp_v][dp_v]) { 
 		Ralpha[0][jp_v][dp_v] = sc;
 		if(sc > bestsc[d]) { 
@@ -2404,7 +2457,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
 	    dp_v = dn - hdmin[v][jp_v];
 	    dp_y = dn - hdmin[y][jp_y];
 	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	      sc = Talpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      sc = Talpha[y][jp_y][dp_y] + cm->trbeginsc[y] + trpenalty;
 	      if (sc > Talpha[0][jp_v][dp_v]) { 
 		Talpha[0][jp_v][dp_v] = sc;
 		if(sc > bestsc[d]) { 
@@ -2423,6 +2476,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
      * require a local begin into the relevant B_st.
      */
     if((! (cm->flags & CMH_LOCAL_BEGIN)) && do_T_0) { 
+      trpenalty = cm->trp->ptyAA[pty_idx][0]; /* use state 0's penalty, not state v's */
       for (y = 1; y < cm->M; y++) {
 	if(cm->sttype[y] == B_st) { 
 	  do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE;
@@ -2430,7 +2484,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
 	    dp_v = dn - hdmin[v][jp_v];
 	    dp_y = dn - hdmin[y][jp_y];
 	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	      sc = Talpha[y][jp_y][dp_y];
+	      sc = Talpha[y][jp_y][dp_y] + trpenalty; /* no local begin penalty */
 	      if (sc > Talpha[0][jp_v][dp_v]) { 
 		Talpha[0][jp_v][dp_v] = sc;
 		if(sc > bestsc[d]) { 
@@ -2564,12 +2618,11 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
     cm_tophits_Destroy(tmp_hitlist);
   }
 
-  /* set envelope return variables if nec */
+  /* set return values */
   if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
   if(ret_envj != NULL) { *ret_envj = (envj == i0-1) ? -1 : envj; }
-
-  if (ret_sc   != NULL) *ret_sc   = vsc_root;
-  if (ret_mode != NULL) *ret_mode = vmode_root;
+  if(ret_sc   != NULL) { *ret_sc   = vsc_root;   }
+  if(ret_mode != NULL) { *ret_mode = vmode_root; }
 
   ESL_DPRINTF1(("TrCYKScanHB() return sc: %f\n", vsc_root));
   return eslOK;
@@ -2605,7 +2658,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
  *           errbuf    - for returning error messages
  *           mx        - the dp matrix, only cells within bands in cm->cp9b will be valid. 
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
- *           tro       - TruncOpts_t with information on which modes to allow
+ *           tro       - CM_TR_OPTS with information on which modes to allow
  *           dsq       - the sequence [1..(j0-i0+1)]   
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
@@ -2626,7 +2679,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts
  *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, TruncOpts_t *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, CM_TR_OPTS *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 		int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc)
 {
   int      status;
@@ -2677,6 +2730,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, Trunc
   int      do_L_v, do_L_y, do_L_z, do_L_0; /* is L matrix valid for state v, y, z, 0? */
   int      do_R_v, do_R_y, do_R_z, do_R_0; /* is R matrix valid for state v, y, z, 0? */
   int      do_T_v, do_T_y, do_T_z, do_T_0; /* is T matrix valid for state v, y, z, 0? */
+  int      pty_idx;                /* index for truncation penalty, derived from tro */
+  float    trpenalty;              /* truncation penalty, differs based on pty_idx and if we're local or global */
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), dsq is NULL.\n");
@@ -2700,13 +2755,24 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, Trunc
   float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
 
   /* determine which matrices we need to fill in based on <tro> */
-  fill_L = tro->allowL        ? TRUE : FALSE;
-  fill_R = tro->allowR        ? TRUE : FALSE;
+  fill_L = tro->allow_L       ? TRUE : FALSE;
+  fill_R = tro->allow_R       ? TRUE : FALSE;
   fill_T = (fill_L && fill_R) ? TRUE : FALSE;
+  pty_idx = cm_tr_opts_PenaltyIdx(tro);
 
   /* ensure an alignment to ROOT_S (v==0) is possible */
   if (! (cp9b->Jvalid[0] || (fill_L && cp9b->Lvalid[0]) || (fill_R && cp9b->Rvalid[0]) || (fill_T &&cp9b->Tvalid[0]))) {
-    ESL_FAIL(eslEINVAL, errbuf, "FTrInsideScanHB(): no marginal mode is allowed for state 0");
+    /* if we're enforcing i0 or j0 in the alignment, this shouldn't happen */
+    if((tro->allow_L && tro->force_j0_LT) || (tro->allow_R && tro->force_i0_RT)) { 
+      ESL_FAIL(eslEINVAL, errbuf, "FTrInsideScanHB(): no marginal mode is allowed for state 0");
+    }
+    else { /* if we're not enforcing, this is rare but possible, we won't find any hits, so we return */
+      if(ret_envi != NULL) { *ret_envi = -1; }
+      if(ret_envj != NULL) { *ret_envj = -1; }
+      if(ret_sc   != NULL) { *ret_sc   = IMPOSSIBLE; }
+      if(ret_mode != NULL) { *ret_mode = TRMODE_UNKNOWN; }
+      return eslOK;
+    }
   }
 
   /* Allocations and initializations  */
@@ -3185,12 +3251,18 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, Trunc
        * in any nesting order, this implementation does what I think
        * is most efficient: for y { for j { for d { } } }
        */
+      /* assess the truncation penalty if we're at state 0 and local begins are off */
+      trpenalty = 0.;
+      if(v == 0 && (! (cm->flags & CMH_LOCAL_BEGIN))) { 
+	trpenalty = cm->trp->ptyAA[pty_idx][0];
+      }
+
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
 	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
 	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	yoffset = y - cm->cfirst[v];
-	tsc = tsc_v[yoffset];
+	tsc = tsc_v[yoffset] + trpenalty; /* we've combined the trpenalty (0 unless v==0 and local begins off) with the transition score */
 	
 	if((do_J_v && do_J_y) || (do_L_v && do_L_y) || (do_R_v && do_R_y)) { 
 	  /* j must satisfy:
@@ -3451,25 +3523,33 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, Trunc
     esl_vec_ISet(bestr,  (W+1), 0); /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
     esl_vec_FSet(bestsc, (W+1), IMPOSSIBLE);
     for(i = 0; i <= W; i++) bestmode[i] = TRMODE_UNKNOWN;
-    /* Now update based on best seen without considering local begins, remember v == 0 */
-    for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
-      dp_v = d - hdmin[v][jp_v];
-      if(do_J_0 && Jalpha[v][jp_v][dp_v] > bestsc[d]) { 
-	bestsc[d]   = Jalpha[v][jp_v][dp_v];
-	bestmode[d] = TRMODE_J;
-      }
-      if(do_L_0 && Lalpha[v][jp_v][dp_v] > bestsc[d]) { 
-	bestsc[d]   = Lalpha[v][jp_v][dp_v];
-	bestmode[d] = TRMODE_L;
-      }
-      if(do_R_0 && Ralpha[v][jp_v][dp_v] > bestsc[d]) { 
-	bestsc[d]   = Ralpha[v][jp_v][dp_v];
-	bestmode[d] = TRMODE_R;
-      }
+
+    /* Now update based on best seen if we're not doing local begins
+     * (remember v == 0 and we filled this deck and assessed the
+     * truncation penalty in the main loop above).
+     */
+    if (! (cm->flags & CMH_LOCAL_BEGIN)) {
+      for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
+	dp_v = d - hdmin[v][jp_v];
+	if(do_J_0 && Jalpha[v][jp_v][dp_v] > bestsc[d]) { 
+	  bestsc[d]   = Jalpha[v][jp_v][dp_v];
+	  bestmode[d] = TRMODE_J;
+	}
+	if(do_L_0 && Lalpha[v][jp_v][dp_v] > bestsc[d]) { 
+	  bestsc[d]   = Lalpha[v][jp_v][dp_v];
+	  bestmode[d] = TRMODE_L;
+	}
+	if(do_R_0 && Ralpha[v][jp_v][dp_v] > bestsc[d]) { 
+	  bestsc[d]   = Ralpha[v][jp_v][dp_v];
+	  bestmode[d] = TRMODE_R;
+	}
       /* Talpha[0] must be IMPOSSIBLE at this point */
+      }
     }
-    
-    /* look at all possible states we can do a local begin into */
+
+    /* look at all possible states we can do a local begin into,
+     * and assess state-specific truncation penalty
+     */
     if (cm->flags & CMH_LOCAL_BEGIN) {
       for (y = 1; y < cm->M; y++) {
 	if(NOT_IMPOSSIBLE(cm->trbeginsc[y]) && 
@@ -3478,6 +3558,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, Trunc
 	  do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 	  do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
 	  do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE;
+	  trpenalty = cm->trp->ptyAA[pty_idx][v];
 	  
 	  jp_y = j - jmin[y];
 	  dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
@@ -3487,7 +3568,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, Trunc
 	    dp_v = dn - hdmin[v][jp_v];
 	    dp_y = dn - hdmin[y][jp_y];
 	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	      sc = Jalpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      sc = Jalpha[y][jp_y][dp_y] + cm->trbeginsc[y] + trpenalty;
 	      if (sc > Jalpha[0][jp_v][dp_v]) { 
 		Jalpha[0][jp_v][dp_v] = sc;
 		if(sc > bestsc[d]) { 
@@ -3502,7 +3583,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, Trunc
 	    dp_v = dn - hdmin[v][jp_v];
 	    dp_y = dn - hdmin[y][jp_y];
 	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	      sc = Lalpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      sc = Lalpha[y][jp_y][dp_y] + cm->trbeginsc[y] + trpenalty;
 	      if (sc > Lalpha[0][jp_v][dp_v]) { 
 		Lalpha[0][jp_v][dp_v] = sc;
 		if(sc > bestsc[d]) { 
@@ -3517,7 +3598,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, Trunc
 	    dp_v = dn - hdmin[v][jp_v];
 	    dp_y = dn - hdmin[y][jp_y];
 	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	      sc = Ralpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      sc = Ralpha[y][jp_y][dp_y] + cm->trbeginsc[y] + trpenalty;
 	      if (sc > Ralpha[0][jp_v][dp_v]) { 
 		Ralpha[0][jp_v][dp_v] = sc;
 		if(sc > bestsc[d]) { 
@@ -3532,7 +3613,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, Trunc
 	    dp_v = dn - hdmin[v][jp_v];
 	    dp_y = dn - hdmin[y][jp_y];
 	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	      sc = Talpha[y][jp_y][dp_y] + cm->trbeginsc[y];
+	      sc = Talpha[y][jp_y][dp_y] + cm->trbeginsc[y] + trpenalty;
 	      if (sc > Talpha[0][jp_v][dp_v]) { 
 		Talpha[0][jp_v][dp_v] = sc;
 		if(sc > bestsc[d]) { 
@@ -3551,6 +3632,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, Trunc
      * require a local begin into the relevant B_st.
      */
     if((! (cm->flags & CMH_LOCAL_BEGIN)) && do_T_0) { 
+      trpenalty = cm->trp->ptyAA[pty_idx][0]; /* use state 0's penalty, not state v's */
       for (y = 1; y < cm->M; y++) {
 	if(cm->sttype[y] == B_st) { 
 	  do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE;
@@ -3558,7 +3640,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, Trunc
 	    dp_v = dn - hdmin[v][jp_v];
 	    dp_y = dn - hdmin[y][jp_y];
 	    for(d = dn; d <= dx; d++, dp_v++, dp_y++) { 
-	      sc = Talpha[y][jp_y][dp_y];
+	      sc = Talpha[y][jp_y][dp_y] + trpenalty; /* no local begin penalty */
 	      if (sc > Talpha[0][jp_v][dp_v]) { 
 		Talpha[0][jp_v][dp_v] = sc;
 		if(sc > bestsc[d]) { 
@@ -3706,6 +3788,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, Trunc
   return 0.; /* never reached */
 }
 
+
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/
@@ -3781,7 +3864,7 @@ main(int argc, char **argv)
   ESL_SQFILE     *sqfp  = NULL;  /* open sequence input file stream */
   ESL_SQ         *sq    = NULL;  /* a sequence */
   char            errbuf[eslERRBUFSIZE];
-  TruncOpts_t    *tro  = NULL;
+  CM_TR_OPTS     *tro   = NULL;
   CMConsensus_t  *cons  = NULL;
   Parsetree_t    *tr    = NULL;
   float           size_limit = esl_opt_GetReal(go, "--sizelimit");
@@ -3824,11 +3907,10 @@ main(int argc, char **argv)
   init_ilogsum();
   FLogsumInit();
 
-  tro = CreateTruncOpts();
-  tro->allowL = tro->allowR = TRUE;
+  tro = cm_tr_opts_Create(cm);
 
   if(esl_opt_GetBoolean(go, "--i27")) { 
-    SetMarginalScores_reproduce_bug_i27(cm);
+    SetMarginalScores_reproduce_i27(cm);
   }
   CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &cons);
   
@@ -3871,13 +3953,13 @@ main(int argc, char **argv)
       PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);
 
       esl_stopwatch_Start(w);
-      if((status = FastCYKScanHB(cm, errbuf, cm->hbmx, size_limit, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = FastCYKScanHB(cm, errbuf, cm->hb_mx, size_limit, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", i, "FastCYKScanHB(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
       esl_stopwatch_Start(w);
-      if((status = FastFInsideScanHB(cm, errbuf, cm->hbmx, size_limit, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = FastFInsideScanHB(cm, errbuf, cm->hb_mx, size_limit, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", i, "FastFInsideScanHB(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -3910,13 +3992,13 @@ main(int argc, char **argv)
       PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);
 
       esl_stopwatch_Start(w);
-      if((status = TrCYKScanHB(cm, errbuf, cm->trhbmx, size_limit, tro, dsq, 1, L, 0., NULL, FALSE, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = TrCYKScanHB(cm, errbuf, cm->trhb_mx, size_limit, tro, dsq, 1, L, 0., NULL, FALSE, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits (mode: %s)", i, "TrCYKScanHB(): ", sc, MarginalMode(mode));
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
       esl_stopwatch_Start(w);
-      if((status = FTrInsideScanHB(cm, errbuf, cm->trhbmx, size_limit, tro, dsq, 1, L, 0., NULL, FALSE, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = FTrInsideScanHB(cm, errbuf, cm->trhb_mx, size_limit, tro, dsq, 1, L, 0., NULL, FALSE, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits (mode: %s)", i, "FTrInsideScanHB(): ", sc, MarginalMode(mode));
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -3998,7 +4080,7 @@ main(int argc, char **argv)
   esl_alphabet_Destroy(abc);
   esl_stopwatch_Destroy(w);
   esl_getopts_Destroy(go);
-  free(tro);
+  if(tro != NULL) free(tro);
   return 0;
 }
 #endif /*IMPL_TRUNC_SEARCH_BENCHMARK*/

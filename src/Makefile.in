@@ -95,6 +95,7 @@ OBJS  = cm.o\
 	cm_qdband.o\
 	cm_submodel.o\
 	cm_tophits.o\
+	cm_trunc.o\
 	cm_p7_band.o\
 	cm_p7_domaindef.o\
 	cm_p7_modelconfig_trunc.o\

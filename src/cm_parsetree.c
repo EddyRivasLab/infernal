@@ -67,7 +67,8 @@ CreateParsetree(int size)
   ESL_ALLOC(new->nxtr,  sizeof(int) * new->nalloc);
   ESL_ALLOC(new->prv,   sizeof(int) * new->nalloc);
   new->n = 0;
-  new->is_std = TRUE;
+  new->is_std    = TRUE;
+  new->trpenalty = 0.;
   return new;
  ERROR:
   cm_Fail("ERROR allocated parsetree.\n");
@@ -306,6 +307,7 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
 
 		/* trivial preorder traverse, since we're already numbered that way */
   sc = struct_sc = primary_sc = 0.;
+  if(tr->is_std == FALSE) sc += tr->trpenalty; /* if we're a truncated alignment, initialize score to truncation penalty */
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
     mode = tr->mode[tidx];
@@ -462,13 +464,11 @@ PrintParsetree(FILE *fp, Parsetree_t *tr)
  *          tr    - parsetree to examine.
  *          cm    - model that was aligned to dsq to generate the parsetree
  *          dsq   - digitized sequence that was aligned to cm to generate the parsetree
- *          dmin  - minimum subseq length for each state; [0..v..M-1] NULL for non-banded output
- *          dmax  - maximum subseq length for each state; [0..v..M-1] NULL for non-banded output
  *
  * Returns:  (void)
  */
 void
-ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax)
+ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq)
 {
   int   x;
   char  syml, symr;
@@ -476,36 +476,18 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int 
   float esc;
   int   v,y;
   char  mode;
-  int   do_banded;
-  int   L;
 
-  /* Contract check */
-  if(dmin == NULL && dmax != NULL)
-    cm_Fail("In ParsetreeDump(), dmin is NULL, dmax is not.\n");
-  if(dmin != NULL && dmax == NULL)
-    cm_Fail("In ParsetreeDump(), dmax is NULL, dmin is not.\n");
-  if(dsq == NULL)
-    cm_Fail("In ParsetreeDump(), dsq is NULL");
+  /* if we're a truncated alignment first line is special, it shows the truncation penalty only */
+  fprintf(fp, "Parsetree dump\n");
+  fprintf(fp, "------------------\n");
+  fprintf(fp, "is_std              = %s\n",   tr->is_std ? "TRUE (alignment is not truncated)" : "FALSE (parsetree was found by a truncated DP algorithm)");
+  fprintf(fp, "truncation penalty  = %.3f\n", tr->trpenalty);
+  fprintf(fp, "parsetree:\n\n");
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s\n",
+	  " idx ","emitl", "emitr", "state", " mode", " nxtl", " nxtr", " prv ", " tsc ", " esc ");
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s\n",
+	  "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----", "-----");
 
-  if(dmin != NULL && dmax != NULL) do_banded = TRUE;
-  else                             do_banded = FALSE;
-
-  if(do_banded)
-    {
-      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s %5s\n",
-	      " idx ", "emitl", "emitr", "state", " mode", " nxtl", " nxtr", " prv ", " tsc ", " esc ", 
-	      " L   ", " dmin", " dmax");
-      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s %5s\n",
-	      "-----", "------", "------", "-------", "-----", "-----","-----", "-----","-----", "-----",
-	      "-----", "-----", "-----");
-    }
-  else
-    {
-      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s\n",
-	      " idx ","emitl", "emitr", "state", " mode", " nxtl", " nxtr", " prv ", " tsc ", " esc ");
-      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s\n",
-	      "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----", "-----");
-    }
   for (x = 0; x < tr->n; x++)
     {
       v = tr->state[x];
@@ -553,31 +535,13 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int 
 
       /* Print the info line for this state
        */
-      if(do_banded)
-	{
-	  L = tr->emitr[x]-tr->emitl[x]+1;
-	  fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5s %5d %5d %5d %5.2f %5.2f %5d %5d %5d %2s\n",
-		  x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
-		  Statetype(cm->sttype[v]), MarginalMode(tr->mode[x]), 
-		  tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc,
-		  L, dmin[v], dmax[v],
-		  (L >= dmin[v] && L <= dmax[v]) ? "" : "!!");
-	}
-      else
-	{
-	  fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5s %5d %5d %5d %5.2f %5.2f\n",
-		  x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
-		  Statetype(cm->sttype[v]), MarginalMode(tr->mode[x]),
-		  tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
-	}
+      fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5s %5d %5d %5d %5.2f %5.2f\n",
+	      x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
+	      Statetype(cm->sttype[v]), MarginalMode(tr->mode[x]),
+	      tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
     }
-  if(do_banded)
-    fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s %5s\n",
-	    "-----", "------", "------", "-------", "-----","-----","-----", "-----","-----", "-----",
-	    "-----", "-----", "-----");
-  else
-    fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s\n",
-	    "-----", "------", "------", "-------", "-----","-----","-----", "-----","-----", "-----");
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s\n",
+	  "-----", "------", "------", "-------", "-----","-----","-----", "-----","-----", "-----");
   fflush(fp);
 } 
 
@@ -2321,7 +2285,7 @@ Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL
     /* Transmogrify the aligned seq to get a parsetree */
     if(ret_tr != NULL) { 
       tr[i] = Transmogrify(cm, mtr, msa->ax[i], aseq, msa->alen);
-      /*ParsetreeDump(stdout, tr[i], cm, msa->ax[i], NULL, NULL);*/
+      /*ParsetreeDump(stdout, tr[i], cm, msa->ax[i]);*/
       /* tr[i] is in alignment coords, convert it to unaligned coords, */
       for(x = 0; x < tr[i]->n; x++) { 
 	/*printf("i: %d x: %d emitl %d emitr %d\n", i, x, tr[i]->emitl[x], tr[i]->emitr[x]);*/
@@ -2687,7 +2651,7 @@ cm_StochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, E
 	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
 	v = y;
       }
-      /* ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL); */
+      /* ParsetreeDump(stdout, tr, cm, dsq);*/
     }
   }
   if(pda       != NULL) esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
@@ -2695,7 +2659,7 @@ cm_StochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, E
   if(validA    != NULL) free(validA);
 
 #if 0 
-  ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+  ParsetreeDump(stdout, tr, cm, dsq);
 #endif
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
@@ -2975,7 +2939,7 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
 	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
 	v = y;
       }
-      /* ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL); */
+      /* ParsetreeDump(stdout, tr, cm, dsq); */
     }
   }
   if(pda       != NULL) esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
@@ -2983,7 +2947,7 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   if(validA    != NULL) free(validA);
 
 #if 0 
-  ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL); 
+  ParsetreeDump(stdout, tr, cm, dsq);
 #endif
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
@@ -3023,6 +2987,7 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
  *           dsq         - digitized sequence
  *           L           - length of dsq
  *           preset_mode - pre-determined alignment mode, TRMODE_UNKNOWN to allow any
+ *           pty_idx     - cm->trp->ptyAA[pty_idx][0..v..M-1] is truncation penalty
  *           mx          - pre-calculated Inside matrix (floats)
  *           r           - source of randomness
  *           ret_tr      - RETURN: sampled parsetree
@@ -3033,7 +2998,8 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
  * Throws:   <eslEMEM> if we run out of memory.
  */
 int
-cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, CM_TR_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc)
+cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, int pty_idx, 
+			 CM_TR_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc)
 {
   int          status;             /* easel status code */
   int          v, y, z, b;         /* state indices */
@@ -3125,6 +3091,13 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */
   tr = CreateParsetree(100);
   tr->is_std = FALSE; /* lower is_std flag, now we'll know this parsetree was created by a truncated (non-standard) alignment function */
+  if(! (cm->flags & CMH_LOCAL_BEGIN)) { 
+    /* local ends are off, set truncation penalty, else, if 
+     * local ends are off we'll set this below when we pick
+     * our local begin state and set it below 
+     */
+    tr->trpenalty = cm->trp->ptyAA[pty_idx][0]; 
+  }
   InsertTraceNodewithMode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0, parsetree_mode); /* init: attach the root S */
 
   /* Stochastically traceback through the TrInside matrix 
@@ -3397,6 +3370,9 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	b_mode = v_mode; /* can't change mode out of a S_st */
 	fsc += cm->trbeginsc[b];
 	yoffset = USED_LOCAL_BEGIN; 
+
+	/* set the truncation penalty parameter of the parsetree, we set this earlier if local ends are off */
+	tr->trpenalty = cm->trp->ptyAA[pty_idx][b]; 
       }
       
       /* adjust i and j appropriately based on state type and mode */
@@ -3451,7 +3427,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	v = y;
 	v_mode = y_mode;
       }
-      /* ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL); */
+      /* ParsetreeDump(stdout, tr, cm, dsq); */
     }
   }
   if(i_pda     != NULL) esl_stack_Destroy(i_pda);  /* it should be empty; we could check; naaah. */
@@ -3466,7 +3442,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   if(RpA       != NULL) free(RpA);
 
 #if 0 
-  ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+  ParsetreeDump(stdout, tr, cm, dsq);
 #endif
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
@@ -3516,6 +3492,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
  *           dsq         - digitized sequence
  *           L           - length of dsq
  *           preset_mode - pre-determined alignment mode, TRMODE_UNKNOWN to allow any
+ *           pty_idx     - cm->trp->ptyAA[pty_idx][0..v..M-1] is truncation penalty
  *           mx          - pre-calculated Inside matrix (floats)
  *           r           - source of randomness
  *           ret_tr      - RETURN: sampled parsetree
@@ -3526,7 +3503,8 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
  * Throws:   <eslEMEM> if we run out of memory.
  */
 int
-cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, CM_TR_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc)
+cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, int pty_idx, 
+			   CM_TR_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc)
 {
   int          status;             /* easel status code */
   int          v, y, z, b;         /* state indices */
@@ -3650,6 +3628,13 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */
   tr = CreateParsetree(100);
   tr->is_std = FALSE; /* lower is_std flag, now we'll know this parsetree was created by a truncated (non-standard) alignment function */
+  if(! (cm->flags & CMH_LOCAL_BEGIN)) { 
+    /* local ends are off, set truncation penalty, else, if 
+     * local ends are off we'll set this below when we pick
+     * our local begin state and set it below 
+     */
+    tr->trpenalty = cm->trp->ptyAA[pty_idx][0]; 
+  }
   InsertTraceNodewithMode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0, parsetree_mode); /* init: attach the root S */
 
   /* Stochastically traceback through the TrInside matrix 
@@ -4006,6 +3991,9 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	b_mode = v_mode; /* can't change mode out of a S_st */
 	fsc += cm->trbeginsc[b];
 	yoffset = USED_LOCAL_BEGIN; 
+
+	/* set the truncation penalty parameter of the parsetree, we set this earlier if local ends are off */
+	tr->trpenalty = cm->trp->ptyAA[pty_idx][b]; 
       }
       
       /* adjust i and j appropriately based on state type and mode */
@@ -4060,7 +4048,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	v = y;
 	v_mode = y_mode;
       }
-      /* ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL); */
+      /* ParsetreeDump(stdout, tr, cm, dsq); */
     }
   }
   if(i_pda     != NULL) esl_stack_Destroy(i_pda);  /* it should be empty; we could check; naaah. */
@@ -4075,7 +4063,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   if(RpA       != NULL) free(RpA);
 
 #if 0 
-  ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+  ParsetreeDump(stdout, tr, cm, dsq);
 #endif
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
@@ -4085,7 +4073,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
   if(ret_mode != NULL) *ret_mode = parsetree_mode; 
   if(ret_sc   != NULL) *ret_sc   = fsc;
-
+    
   ESL_DPRINTF1(("cm_TrStochasticParsetreeHB() return sc: %f\n", fsc));
   return eslOK;
 

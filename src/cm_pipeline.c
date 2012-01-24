@@ -254,7 +254,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->rs5term = FALSE;
   pli->rs3term = FALSE;
 
-  pli->tro = CreateTruncOpts();
+  pli->tro = cm_tr_opts_Create();
 
   /* Configure acceleration pipeline thresholds */
   pli->do_cm         = TRUE;
@@ -1803,7 +1803,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
 
-  do_trunc = (pli->do_trunc_ends && (pli->tro->allowR || pli->tro->allowL)) ? TRUE : FALSE;
+  do_trunc = (pli->do_trunc_ends && (pli->tro->allow_R || pli->tro->allow_L)) ? TRUE : FALSE;
 
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS) { 
@@ -1874,8 +1874,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
     cm->cp9b->thresh2 = save_cp9b_thresh2;
       
 #if DOPRINT
-    printf("\nSURVIVOR Envelope %5d [%10ld..%10ld] being passed to CYK   allowR: %d allowL: %d force_i0_RT: %d force_j0_LT: %d\n", i, es[i], ee[i],
-	   pli->tro->allowR, pli->tro->allowL, pli->tro->force_i0_RT, pli->tro->force_j0_LT); 
+    printf("\nSURVIVOR Envelope %5d [%10ld..%10ld] being passed to CYK   allow_R: %d allow_L: %d force_i0_RT: %d force_j0_LT: %d\n", i, es[i], ee[i],
+	   pli->tro->allow_R, pli->tro->allow_L, pli->tro->force_i0_RT, pli->tro->force_j0_LT); 
 #endif
     do_hbanded_filter_scan          = (pli->fcyk_cm_search_opts  & CM_SEARCH_HBANDED) ? TRUE  : FALSE;
     do_qdb_or_nonbanded_filter_scan = (pli->fcyk_cm_search_opts  & CM_SEARCH_HBANDED) ? FALSE : TRUE;
@@ -2318,6 +2318,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
       status = cm_TrAlignHB(cm, pli->errbuf, subdsq, hitlen, 
 			    pli->hb_size_limit,                            /* limit for a single CM_HB_MX, so this is safe */
 			    hit->mode,                                     /* alignment mode, determined in truncated scanner function */
+			    cm_tr_opts_PenaltyIdx(pli->tro),               /* truncation penalty index */
 			    do_optacc,                                     /* use optimal accuracy alg? */
 			    FALSE,                                         /* don't sample aln from Inside matrix */
 			    cm->trhb_mx, cm->trhb_shmx,                    /* inside, shadow matrices */
@@ -2679,8 +2680,8 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     /* Set rs5term and rs3term and tro, this informs the pipeline stages about truncated hit/alignment options */
     pli->rs5term          = (p == 2 || p == 4) ? TRUE : FALSE;
     pli->rs3term          = (p == 3 || p == 4) ? TRUE : FALSE;
-    pli->tro->allowR      = (pli->do_trunc_ends && pli->rs5term)                       ? TRUE : FALSE;
-    pli->tro->allowL      = (pli->do_trunc_ends && pli->rs3term)                       ? TRUE : FALSE;
+    pli->tro->allow_R     = (pli->do_trunc_ends && pli->rs5term)                       ? TRUE : FALSE;
+    pli->tro->allow_L     = (pli->do_trunc_ends && pli->rs3term)                       ? TRUE : FALSE;
     pli->tro->force_i0_RT = (pli->do_trunc_ends && pli->rs5term && pli->do_force_ends) ? TRUE : FALSE;
     pli->tro->force_j0_LT = (pli->do_trunc_ends && pli->rs3term && pli->do_force_ends) ? TRUE : FALSE;
 
@@ -2688,19 +2689,19 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 
     /* execute the pipeline */
 #if DOPRINT
-    printf("\nPIPELINE calling p7Filter() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allowR: %d allowL: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allowR, pli->tro->allowL, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
+    printf("\nPIPELINE calling p7Filter() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allow_R: %d allow_L: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allow_R, pli->tro->allow_L, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
 #endif
     if((status = cm_pli_p7Filter(pli, om, bg, p7_evparam, fm_hmmdata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
     if(p == 1) nwin_pass1 = nwin;
     if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
 
 #if DOPRINT
-    printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allowR: %d allowL: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allowR, pli->tro->allowL, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
+    printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allow_R: %d allow_L: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allow_R, pli->tro->allow_L, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
 #endif
     if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es, &ee, &nenv)) != eslOK) return status;
 
 #if DOPRINT
-    printf("\nPIPELINE calling CMStage() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allowR: %d allowL: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allowR, pli->tro->allowL, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
+    printf("\nPIPELINE calling CMStage() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allow_R: %d allow_L: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allow_R, pli->tro->allow_L, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
 #endif
     prv_ntophits = hitlist->N;
     if((status = cm_pli_CMStage(pli, cm_offset, sq2search, es, ee, nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;

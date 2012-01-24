@@ -157,7 +157,7 @@ main(int argc, char **argv)
 	  printf("%-12s : %.2f\n", seq->name, sc1);
 	} else {
 	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, FALSE, &tr1);  
-	  ParsetreeDump(stdout, tr1, cm, seq->dsq, NULL, NULL);
+	  ParsetreeDump(stdout, tr1, cm, seq->dsq);
           //ptsc1 = ParsetreeScore(cm, tr1, seq->dsq, FALSE);
           ParsetreeScore(cm, NULL, NULL, tr1, seq->dsq, FALSE, &ptsc1, NULL, NULL, NULL, NULL);
           ptsc1 += bsc;
@@ -172,7 +172,7 @@ main(int argc, char **argv)
       printf("-------------------------------\n");
       esl_stopwatch_Start(watch);
       sc2 = TrCYK_DnC(cm, seq->dsq, seq->n, 0, 1, seq->n, &tr2);  
-      ParsetreeDump(stdout, tr2, cm, seq->dsq, NULL, NULL);
+      ParsetreeDump(stdout, tr2, cm, seq->dsq);
       //ptsc2 = ParsetreeScore(cm, tr2, seq->dsq, FALSE);
       ParsetreeScore(cm, NULL, NULL, tr2, seq->dsq, FALSE, &ptsc2, NULL, NULL, NULL, NULL);
       ptsc2 += bsc;
@@ -199,8 +199,8 @@ main(int argc, char **argv)
       /* Save regression test data
        */
       if (regressfile != NULL) {
-	if (tr1 != NULL) ParsetreeDump(regressfp, tr1, cm, seq->dsq, NULL, NULL);
-	if (tr2 != NULL) ParsetreeDump(regressfp, tr2, cm, seq->dsq, NULL, NULL);
+	if (tr1 != NULL) ParsetreeDump(regressfp, tr1, cm, seq->dsq);
+	if (tr2 != NULL) ParsetreeDump(regressfp, tr2, cm, seq->dsq);
       }
 
       if (tr1 != NULL) FreeParsetree(tr1);  

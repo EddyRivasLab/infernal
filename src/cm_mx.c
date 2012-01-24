@@ -1,5 +1,5 @@
 /* CM_MX, CM_TR_MX, CM_HB_MX, CM_TR_HB_MX, CM_TR_SHADOW_MX, CM_HB_SHADOW_MX,
- * CM_TR_HB_SHADOW_MX, CM_EMIT_MX, CM_SCAN_MX, CM_TR_SCAN_MX and 
+ * CM_TR_HB_SHADOW_MX, CM_EMIT_MX, CM_SCAN_MX, CM_TR_SCAN_MX and
  * GammaHitMx_t implementations: dynamic programming matrices for CMs.
  * 
  * CM_HB_MX is based heavily on HMMER 3's p7_gmx.c module.
@@ -41,9 +41,7 @@
  *  14. CM_TR_SCAN_MX data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      query dependent banded or non-banded truncated CM DP search functions
- *  15. TruncOpts_t data structure functions,
- *      per-scan info for truncated CM scanners
- *  16. GammaHitMx_t data structure functions,
+ *  15. GammaHitMx_t data structure functions,
  *      semi-HMM data structure for optimal resolution of overlapping
  *      hits for CM DP search functions
  *
@@ -7156,37 +7154,7 @@ cm_tr_scan_mx_Dump(FILE *ofp, CM_t *cm, int j, int i0, int qdbidx, int doing_flo
 }
 
 /*****************************************************************
- *  15. TruncOpts_t data structure functions,
- *      per-scan info for truncated CM scanners
- *****************************************************************/
-/* Function: CreateTruncOpts()
- * Date:     EPN, Tue Nov  8 08:27:16 2011
- *
- * Purpose:  Allocate and initialize a TruncOpts_t object.
- * 
- * Returns:  Newly allocated TruncOpts_t object. NULL if out
- *           of memory.
- */
-TruncOpts_t *
-CreateTruncOpts()
-{
-  int status;
-  TruncOpts_t *tro;
-  ESL_ALLOC(tro, sizeof(TruncOpts_t));
-
-  tro->allowL = TRUE;
-  tro->allowR = TRUE;
-  tro->force_i0_RT = FALSE;
-  tro->force_j0_LT = FALSE;
-
-  return tro;
-
- ERROR:
-  return NULL;
-}
-
-/*****************************************************************
- *  16. GammaHitMx_t data structure functions,
+ *  15. GammaHitMx_t data structure functions,
  *      Semi HMM data structure for optimal resolution of overlapping
  *      hits for CM DP search functions.
  *****************************************************************/
@@ -7292,7 +7260,7 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  */
 int
 UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, int dmax, 
-		 float *bestsc, int *bestr, char *bestmode, TruncOpts_t *tro, int W, double **act)
+		 float *bestsc, int *bestr, char *bestmode, CM_TR_OPTS *tro, int W, double **act)
 {
   int status;          /* easel status */
   int i;               /* position of first residue in hit, in actual sequence coordinates */
@@ -7393,7 +7361,7 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
  */
 int
 ReportHitsGreedily(CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, 
-		   TruncOpts_t *tro, int W, double **act, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist)
+		   CM_TR_OPTS *tro, int W, double **act, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist)
 {
 
   int   status;          /* easel status */

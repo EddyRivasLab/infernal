@@ -887,6 +887,7 @@ cm_parsetree_MPIPackSize(Parsetree_t *tr, MPI_Comm comm, int *ret_n)
   /* don't send tr->nalloc, it'll be set is as tr->n when this is unpacked */
   status = MPI_Pack_size(1,     MPI_INT,  comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); /* tr->memblock */
   status = MPI_Pack_size(1,     MPI_INT,  comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); /* tr->is_std */
+  status = MPI_Pack_size(1,     MPI_FLOAT,comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); /* tr->trpenalty */
 
   status = MPI_Pack_size(tr->n, MPI_INT,  comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); /* tr->emitl[] */
   status = MPI_Pack_size(tr->n, MPI_INT,  comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); /* tr->emitr[] */
@@ -935,6 +936,7 @@ cm_parsetree_MPIPack(Parsetree_t *tr, char *buf, int n, int *position, MPI_Comm 
   status = MPI_Pack(&tr->n,                  1, MPI_INT,  buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack(&tr->memblock,           1, MPI_INT,  buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack(&tr->is_std,             1, MPI_INT,  buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(&tr->trpenalty,          1, MPI_FLOAT,buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack(tr->emitl,           tr->n, MPI_INT,  buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack(tr->emitr,           tr->n, MPI_INT,  buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack(tr->state,           tr->n, MPI_INT,  buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
@@ -977,8 +979,9 @@ cm_parsetree_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, Parsetree_t **
   tr = CreateParsetree(tr_n);
   tr->n      = tr_n;
   tr->nalloc = tr_n;
-  status = MPI_Unpack (buf, n, pos, &tr->memblock, 1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = MPI_Unpack (buf, n, pos, &tr->is_std,   1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &tr->memblock,  1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &tr->is_std,    1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &tr->trpenalty, 1, MPI_FLOAT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
 
   status = MPI_Unpack (buf, n, pos, tr->emitl, tr_n, MPI_INT,  comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, tr->emitr, tr_n, MPI_INT,  comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");

@@ -1666,7 +1666,7 @@ cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th)
 
   fprintf(fp, "CM_TOPHITS dump\n");
   fprintf(fp, "------------------\n");
-
+  
   fprintf(fp, "N                             = %" PRId64 "\n", th->N);
   fprintf(fp, "Nalloc                        = %" PRId64 "\n", th->Nalloc);
   fprintf(fp, "nreported                     = %" PRId64 "\n", th->nreported);

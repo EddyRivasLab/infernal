@@ -148,6 +148,7 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
   float swentry, swexit;
   int   have_mother;
   int   local_and_noforce; /* TRUE iff both CM_CONFIG_LOCAL && CM_CONFIG_TRUNC_NOFORCE */
+
   have_mother = (mother_cm != NULL && mother_map != NULL) ? TRUE : FALSE;
 
   /* contract check */
@@ -266,9 +267,13 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
   cm->cp9_mx  = CreateCP9Matrix(1, cm->cp9->M);
   cm->cp9_bmx = CreateCP9Matrix(1, cm->cp9->M);
   cm->flags |= CMH_CP9; /* raise the CP9 flag */
-  /* Setup Lcp9, Rcp9, Tcp9 CP9 HMMs for truncated alignment, if nec */
+
+  /* Configure for truncated search/alignment. */
   if(cm->config_opts & CM_CONFIG_TRUNC) { 
-    /* Clone the globally configured CP9 HMM cm->cp9 before its put
+    /* (1) Define truncated alignment penalty probabilities (cm->trp) */
+    if((cm->trp = cm_tr_penalties_Create(cm)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't create truncation penalties for the CM");
+    /* (2) Setup Lcp9, Rcp9, Tcp9 CP9 HMMs 
+     * Clone the globally configured CP9 HMM cm->cp9 before its put
      * into local mode into each of cm->Lcp9, cm->Rcp9, cm->Tcp9 and
      * configure them for their specific mode of truncated alignment.
      * cm->cp9 is not yet logoddsified and so bit scores will not 

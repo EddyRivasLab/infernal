@@ -173,6 +173,7 @@ CreateCMShell(void)
   cm->clen     = 0;
   cm->comlog   = NULL;
   cm->emap     = NULL;
+  cm->trp      = NULL;
 
   return cm;
 
@@ -343,7 +344,6 @@ CMZero(CM_t *cm)
   esl_vec_ISet(cm->ibeginsc,   cm->M, 0);
   esl_vec_ISet(cm->itrbeginsc, cm->M, 0);
   esl_vec_ISet(cm->iendsc,     cm->M, 0);
-
 }
 
 /* Function:  CMRenormalize()
@@ -447,9 +447,9 @@ FreeCM(CM_t *cm)
   if(cm->end        != NULL) free(cm->end);
   if(cm->beginsc    != NULL) free(cm->beginsc);
   if(cm->trbeginsc  != NULL) free(cm->trbeginsc);
+  if(cm->endsc      != NULL) free(cm->endsc);
   if(cm->ibeginsc   != NULL) free(cm->ibeginsc);
   if(cm->itrbeginsc != NULL) free(cm->itrbeginsc);
-  if(cm->endsc      != NULL) free(cm->endsc);
   if(cm->iendsc     != NULL) free(cm->iendsc);
 
   if(cm->comlog     != NULL) FreeComLog(cm->comlog);
@@ -498,6 +498,7 @@ FreeCM(CM_t *cm)
     cm->fp7  = NULL; 
   }
   if(cm->emap != NULL) FreeEmitMap(cm->emap);
+  if(cm->trp  != NULL) cm_tr_penalties_Destroy(cm->trp);
 
   free(cm);
 }
@@ -1988,9 +1989,15 @@ CMRebalance(CM_t *cm, char *errbuf, CM_t **ret_new_cm)
    */
   for (v = 0; v < cm->M; v++)
     {
-      new->begin[newidx[v]]   = cm->begin[v];
-      new->trbegin[newidx[v]] = cm->trbegin[v];
-      new->end[newidx[v]]     = cm->end[v];
+      new->begin[newidx[v]]      = cm->begin[v];
+      new->beginsc[newidx[v]]    = cm->beginsc[v];
+      new->ibeginsc[newidx[v]]   = cm->ibeginsc[v];
+      new->trbegin[newidx[v]]    = cm->trbegin[v];
+      new->trbeginsc[newidx[v]]  = cm->trbeginsc[v];
+      new->itrbeginsc[newidx[v]] = cm->itrbeginsc[v];
+      new->end[newidx[v]]        = cm->end[v];
+      new->endsc[newidx[v]]      = cm->endsc[v];
+      new->iendsc[newidx[v]]     = cm->iendsc[v];
     }
   if(cm->qdbinfo != NULL) { 
     if((status = CopyCMQDBInfo(cm->qdbinfo, new->qdbinfo, errbuf)) != eslOK) goto ERROR;
@@ -2948,6 +2955,7 @@ cm_nonconfigured_Verify(CM_t *cm, char *errbuf)
   /* other variables */
   if(cm->mlp7       != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): mlp7 is non-NULL (it should be NULL in a non-configured CM)");
   if(cm->root_trans != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): root_trans is non-NULL (it should be NULL in a non-configured CM)");
+  if(cm->trp        != NULL) ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): trp is non-NULL (it should be NULL in a non-configured CM)");
   if(cm->qdbinfo != NULL && cm->qdbinfo->setby == CM_QDBINFO_SETBY_BANDCALC) { 
     ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): qdbinfo is not in its initial state");
   }  
@@ -3066,6 +3074,12 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
     if((status = CloneOptimizedEmitScores(cm, new, errbuf)) != eslOK) goto ERROR;
   }
 
+  /* create the emit map (just as easy as copying) */
+  if(cm->emap != NULL) if((new->emap = CreateEmitMap(new)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Cloning CM, unable to create new emit map");
+
+  /* create the truncation penalties (just as easy as copying) */
+  if(cm->trp != NULL)  if((new->trp  = cm_tr_penalties_Create(new)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Cloning CM, unable to create new truncation penalties");
+
   /* QDBInfo */
   if(cm->qdbinfo != NULL) { 
     if((status = CopyCMQDBInfo(cm->qdbinfo, new->qdbinfo, errbuf)) != eslOK) return status;
@@ -3129,9 +3143,6 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
       CopyExpInfo(cm->expA[i], new->expA[i]);
     }
   }
-
-  /* create the emit map */
-  if(cm->emap != NULL) new->emap = CreateEmitMap(new);
 
   *ret_cm = new;
 
@@ -3286,6 +3297,9 @@ cm_Sizeof(CM_t *cm)
 
   /* the emit map */
   if(cm->emap != NULL) bytes += (1000000. * SizeofEmitMap(cm, cm->emap));
+
+  /* CM_TR_PENALTIES */
+  if(cm->trp != NULL) bytes += (1000000. * cm_tr_penalties_Sizeof(cm->trp));
 
   return (bytes / 1000000.);
 }
@@ -4092,7 +4106,7 @@ ICalcInitDPScores(CM_t *cm)
  * 
  * NOTE: ILogSum() (and auxiliary funcs associated with it) used to be here
  * but moved to logsum.c (EPN, Sat Sep  8 15:49:47 2007)
- */
+ <*/
 
 /* Function: Prob2Score()
  * 

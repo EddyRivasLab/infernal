@@ -1087,7 +1087,6 @@ IsCompensatory(const ESL_ALPHABET *abc, float *pij, int symi, int symj)
  * 
  */
 
-
 /* Function: CreateEmitMap()
  * Date:     ? (SRE pre Infernal version 0.55).
  *

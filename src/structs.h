@@ -561,8 +561,8 @@ typedef struct parsetree_s {
   int  nalloc;		/* number of elements allocated for        */
   int  memblock;	/* size of malloc() chunk, # of elems      */
   int  is_std;          /* TRUE  if alignment was determined using standard  CYK/optacc,
-			 * FALSE if alignment was determined using truncated CYK/optacc
-			 */
+			 * FALSE if alignment was determined using truncated CYK/optacc */
+  float trpenalty;      /* truncated alignment score penalty, 0.0 if is_std is TRUE. */
 } Parsetree_t;
 
 
@@ -1648,21 +1648,37 @@ typedef struct cm_tr_scan_mx_s {
   int64_t  ncells_Talpha;     /* number of alloc'ed, valid cells for fTalpha and iTalpha matrices, alloc'ed as contiguous block */
 } CM_TR_SCAN_MX;
 
-/* Structure TruncOpts_t: Per-scan information for trCYK/trInside
- * scanning and alignment functions, information a given call of that
- * function which matrices to fill in and whether or not to require
- * i0 and/or j0 be required in L, R, T mode alignments.
+/* Structure CM_TR_OPTS: options related to truncated alignment.
  */
-typedef struct truncopts_s {
-  int allowR; /* allow right marginal alignments */
-  int allowL; /* allow left  marginal alignments */
+typedef struct cm_tr_opts_s {
+  int allow_R; /* allow right marginal alignments */
+  int allow_L; /* allow left  marginal alignments */
   /* allow_T is not necessary, it is implicitly TRUE only
    * if allow_L and allow_R are both TRUE.
    */
 
   int force_i0_RT; /* require i0 (first residue) to be included in any Right or Terminal marginal hit */
   int force_j0_LT; /* require j0 (final residue) to be included in any Left  or Terminal marginal hit */
-} TruncOpts_t;
+} CM_TR_OPTS;
+
+/* Truncation penalty parameters, we either allow 5' truncation, 3' truncation or both.
+ * These allow truncated DP aligners and scanners (cm_dpalign_trunc.c and cm_dpsearch_trunc.c)
+ * to know which truncation penalty to apply. 
+ */
+#define TRPENALTY_5P_OR_3P  0
+#define TRPENALTY_5P_AND_3P 1
+#define NTRPENALTY          2
+
+/* Structure CM_TR_PENALTIES: Information on truncated alignment
+ * penalties. 
+ */
+typedef struct cm_tr_penalties_s {
+  int     M;          /* number of states in the CM this object is associated with */
+  float **ptyAA;      /* [TRPENALTY_5P_OR_3][0..v..M-1]  is truncation score penalty used if we allowed 5' or 3' truncation */
+                      /* [TRPENALTY_5P_AND_3][0..v..M-1] is truncation score penalty used if we allowed 5' and 3' truncation */
+  int  **iptyAA;      /* same as ptyAA but scaled int scores */
+
+} CM_TR_PENALTIES;
 
 /* Structure GammaHitMx_t: gamma semi-HMM used for optimal hit resolution
  * of a CM or CP9 scan. All arrays are 0..L.
@@ -1751,73 +1767,72 @@ typedef struct cm_s {
 
   /* new as of v1.0 */
   ComLog_t *comlog;     /* command line calls and execution times of cmbuild and possibly cmcalibrate */
-  int    nseq;		/*   number of training sequences          (mandatory) */
-  float  eff_nseq;	/*   effective number of seqs (<= nseq)    (mandatory) */
-  float  ga;	        /*   per-seq gathering thresholds (bits) (CMH_GA) */
-  float  tc;            /*   per-seq trusted cutoff (bits)       (CMH_TC) */
-  float  nc;	        /*   per-seq noise cutoff (bits)         (CMH_NC) */
+  int    nseq;		/*   number of training sequences        (mandatory)     */
+  float  eff_nseq;	/*   effective number of seqs (<= nseq)  (mandatory)     */
+  float  ga;	        /*   per-seq gathering thresholds (bits) (CMH_GA)        */
+  float  tc;            /*   per-seq trusted cutoff (bits)       (CMH_TC)        */
+  float  nc;	        /*   per-seq noise cutoff (bits)         (CMH_NC)        */
 
-			/* Information about the null model:               */
-  float *null;          /*   residue probabilities [0..3]                  */
+			/* Information about the null model:                     */
+  float *null;          /*   residue probabilities [0..3]                        */
 
-			/* Information about the state type:               */
-  int   M;		/*   number of states in the model                 */
-  int   clen;		/*   consensus length (2*MATP+MATL+MATR)           */
-  char *sttype;		/*   type of state this is; e.g. MP_st             */
-  int  *ndidx;		/*   index of node this state belongs to           */
-  char *stid;		/*   unique state identifier; e.g. MATP_MP         */
+			/* Information about the state type:                     */
+  int   M;		/*   number of states in the model                       */
+  int   clen;		/*   consensus length (2*MATP+MATL+MATR)                 */
+  char *sttype;		/*   type of state this is; e.g. MP_st                   */
+  int  *ndidx;		/*   index of node this state belongs to                 */
+  char *stid;		/*   unique state identifier; e.g. MATP_MP               */
 
-			/* Information about its connectivity in CM:       */
-  int  *cfirst;		/*   index of left child state                     */
-  int  *cnum;		/*   overloaded: for non-BIF: # connections;       */
-			/*               for BIF: right child S_st         */
-  int  *plast;          /*   index to first parent state                   */
-  int  *pnum;           /*   number of parent connections                  */
+			/* Information about its connectivity in CM:             */
+  int  *cfirst;		/*   index of left child state                           */
+  int  *cnum;		/*   overloaded: for non-BIF: # connections;             */
+			/*               for BIF: right child S_st               */
+  int  *plast;          /*   index to first parent state                         */
+  int  *pnum;           /*   number of parent connections                        */
 
-			/* Information mapping nodes->states               */
-  int   nodes;		/*   number of nodes in the model                  */
-  int  *nodemap;        /*   nodemap[5] = idx first state, node 5          */
-  char *ndtype;		/*   type of node, e.g. MATP_nd                    */
+			/* Information mapping nodes->states                     */
+  int   nodes;		/*   number of nodes in the model                        */
+  int  *nodemap;        /*   nodemap[5] = idx first state, node 5                */
+  char *ndtype;		/*   type of node, e.g. MATP_nd                          */
 
-                        /* Parameters of the probabilistic model:          */
-  float **t;		/*   Transition prob's [0..M-1][0..MAXCONNECT-1]   */
-  float **e;		/*   Emission probabilities.  [0..M-1][0..15]      */
-  float  *begin;	/*   Local alignment start probabilities [0..M-1]  */
-  float  *trbegin;	/*   Truncated alnmnt start probabilities [0..M-1] */
-  float  *end;		/*   Local alignment ending probabilities [0..M-1] */
+                        /* Parameters of the probabilistic model:                */
+  float **t;		/*   Transition prob's [0..M-1][0..MAXCONNECT-1]         */
+  float **e;		/*   Emission probabilities.  [0..M-1][0..15]            */
+  float  *begin;	/*   Local alignment start probabilities [0..M-1]        */
+  float  *trbegin;	/*   Local alnmnt start probabilities for truncated alns */
+  float  *end;		/*   Local alignment ending probabilities [0..M-1]       */
 
-			/* Parameters of the log odds model:               */
-  float **tsc;		/*   Transition score vector, log odds             */
-  float **esc;		/*   Emission score vector, log odds               */
-  float **oesc;         /*   Optimized emission score log odds float vec   */
-  float **lmesc;        /*   Left marginal emission scores (log odds)      */
-  float **rmesc;        /*   Right marginal emission scores (log odds)     */                
-  float *beginsc;	/*   Score for ROOT_S -> state v (local alignment) */
-  float *trbeginsc;	/*   Score for ROOT_S -> state v (trunc alignment) */
-  float *endsc;   	/*   Score for state_v -> EL (local alignment)     */
-                        /* Parameters used in marginal alignments          */
+			/* Parameters of the log odds model:                     */
+  float **tsc;		/*   Transition score vector, log odds                   */
+  float **esc;		/*   Emission score vector, log odds                     */
+  float **oesc;         /*   Optimized emission score log odds float vec         */
+  float **lmesc;        /*   Left marginal emission scores (log odds)            */
+  float **rmesc;        /*   Right marginal emission scores (log odds)           */                
+  float *beginsc;	/*   Score for ROOT_S -> state v (local alignment)       */
+  float *trbeginsc;	/*   Score for ROOT_S -> state v (local trunc alignment) */
+  float *endsc;   	/*   Score for state_v -> EL (local alignment)           */
 
-			/* Scaled int parameters of the log odds model:    */
-  int  **itsc;		/*   Transition score vector, scaled log odds int  */
-  int  **iesc;		/*   Emission score vector, scaled log odds int    */
-  int  **ioesc;         /*   Optimized emission score log odds int vector  */
-  int  **ilmesc;        /*   Left marginal emission scores (log odds int)  */
-  int  **irmesc;        /*   Right marginal emission scores (log odds int) */                
-  int   *ibeginsc;      /*   Score for ROOT_S -> state v (local alignment) */
-  int   *itrbeginsc;    /*   Score for ROOT_S -> state v (trunc alignment) */
-  int   *iendsc;  	/*   Score for state_v -> EL (local alignment)     */
+			/* Scaled int parameters of the log odds model:          */
+  int  **itsc;		/*   Transition score vector, scaled log odds int        */
+  int  **iesc;		/*   Emission score vector, scaled log odds int          */
+  int  **ioesc;         /*   Optimized emission score log odds int vector        */
+  int  **ilmesc;        /*   Left marginal emission scores (log odds int)        */
+  int  **irmesc;        /*   Right marginal emission scores (log odds int)       */                
+  int   *ibeginsc;      /*   Score for ROOT_S -> state v (local alignment)       */
+  int   *itrbeginsc;    /*   Score for ROOT_S -> state v (trunc alignment)       */
+  int   *iendsc;  	/*   Score for state_v -> EL (local alignment)           */
 
   float  pbegin;        /* local begin prob to spread across internal nodes for local mode    */
   float  pend;          /* local end prob to spread across internal nodes for local mode      */
 
-  float   null2_omega;  /* prior probability of the null2 model (if it is used) */
-  float   null3_omega;  /* prior probability of the null3 model (if it is used) */
+  float  null2_omega;   /* prior probability of the null2 model (if it is used) */
+  float  null3_omega;   /* prior probability of the null3 model (if it is used) */
 
   int    flags;		/* status flags                                    */
 
   /* W and query dependent bands (QDBs) on subsequence lengths at each state */
-  int     W;            /* max d: max size of a hit (EPN 08.18.05)                 */
-  double  beta_W;       /* tail loss probability for QDB calculation used to set W */
+  int    W;             /* max d: max size of a hit (EPN 08.18.05)                 */
+  double beta_W;        /* tail loss probability for QDB calculation used to set W */
   enum cm_qdbinfo_setby_e W_setby; /* how current W value was set: 
 				    * CM_W_SETBY_INIT | CM_W_SETBY_CMFILE | CM_W_SETBY_BANDCALC | CM_W_SETBY_CMDLINE */
   /* regarding W: if W_setby is CM_W_SETBY_INIT or CM_W_SETBY_CMDLINE, then beta_W does not correspond
@@ -1899,7 +1914,10 @@ typedef struct cm_s {
   float         fp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_FP7_STATS) */
 
   /* emitmap, added 06.20.11 (post v1.0.2) */
-  CMEmitMap_t   *emap;  /* maps model nodes to consensus positions */ 
+  CMEmitMap_t   *emap;    /* maps model nodes to consensus positions */ 
+
+  /* CM_TR_PENALTIES, added 01.21.12 (post v1.0.2) */
+  CM_TR_PENALTIES *trp;   /* stores truncation bit score penalties */
 
   const  ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size)*/
   off_t    offset;          /* CM record offset on disk                              */
@@ -1968,6 +1986,8 @@ typedef struct cm_file_s {
  * be "foo.i1m", so error messages report blame correctly.
  * In the special case of reading from stdin, <fname> is "[STDIN]".
  */
+
+/* Pipeline pass indices */
 #define PLI_PASS_SUMMED    0
 #define PLI_PASS_STD       1
 #define PLI_PASS_5P        2
@@ -2025,7 +2045,7 @@ typedef struct cm_pipeline_s {
   P7_GMX       *gxb;		/* generic Backward matrix                  */
   P7_GMX       *gfwd;		/* generic full Fwd matrix for envelopes    */
   P7_GMX       *gbck;		/* generic full Bck matrix for envelopes    */
-  TruncOpts_t  *tro;            /* information for truncated scan/aln       */
+  CM_TR_OPTS   *tro;            /* information for truncated scanners       */
 
   /* Model-dependent parameters                                             */
   int 		maxW;           /* # residues to overlap in adjacent windows*/

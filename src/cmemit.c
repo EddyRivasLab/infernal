@@ -372,7 +372,7 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 	  if((status = ParsetreeScore(cm, NULL, errbuf, tr, sq->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
 	  fprintf(cfg->pfp, "  %16s %.2f bits\n", "SCORE:", sc);
 	  fprintf(cfg->pfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
-	  ParsetreeDump(cfg->pfp, tr, cm, sq->dsq, NULL, NULL);
+	  ParsetreeDump(cfg->pfp, tr, cm, sq->dsq);
 	  fprintf(cfg->pfp, "//\n");
 	}
       FreeParsetree(tr);
@@ -426,7 +426,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       if(cfg->pfp != NULL)
 	{
 	  fprintf(cfg->pfp, "> %s\n", sqA[i]->name);
-	  ParsetreeDump(cfg->pfp, trA[i], cm, sqA[i]->dsq, NULL, NULL);
+	  ParsetreeDump(cfg->pfp, trA[i], cm, sqA[i]->dsq);
 	  fprintf(cfg->pfp, "//\n");
 	}
     }

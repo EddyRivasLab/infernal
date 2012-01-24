@@ -419,12 +419,12 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
 	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
 	  v = y;
 	}
-      /*ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);*/
+      /*ParsetreeDump(stdout, tr, cm, dsq);*/
     }
   }
   esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
 
-  /*ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);*/
+  /*ParsetreeDump(stdout, tr, cm, dsq);*/
 
   if(ret_tr       != NULL) *ret_tr = tr; else FreeParsetree(tr);
   if(ret_sc_or_pp != NULL) *ret_sc_or_pp = do_optacc ? pp : sc;
@@ -767,7 +767,7 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do
     emap = CreateEmitMap(cm);
     DumpEmitMap(stdout, emap, cm);
     FreeEmitMap(emap);
-    ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+    ParsetreeDump(stdout, tr, cm, dsq);
 #endif
 
   if (ret_ppstr  != NULL) *ret_ppstr  = ppstr; else free(ppstr);
@@ -5901,7 +5901,7 @@ main(int argc, char **argv)
     esl_stopwatch_Stop(w);
     esl_stopwatch_Display(stdout, w, " CPU time: ");
 
-    if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, sq->dsq, NULL, NULL);
+    if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, sq->dsq);
     ParsetreeScore(cm, NULL, NULL, tr, sq->dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
     FreeParsetree(tr);
     printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
@@ -5921,7 +5921,7 @@ main(int argc, char **argv)
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
-      if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, sq->dsq, NULL, NULL);
+      if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, sq->dsq);
       ParsetreeScore(cm, NULL, NULL, tr, sq->dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
       FreeParsetree(tr);
       printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
@@ -5975,7 +5975,7 @@ main(int argc, char **argv)
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
-      if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, sq->dsq, NULL, NULL);
+      if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, sq->dsq);
       ParsetreeScore(cm, NULL, NULL, tr, sq->dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
       FreeParsetree(tr);
       printf("Parsetree score      : %.4f           (FULL LENGTH OPTACC)\n", parsetree_sc);
@@ -5987,7 +5987,7 @@ main(int argc, char **argv)
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
-	if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, sq->dsq, NULL, NULL);
+	if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, sq->dsq);
 	ParsetreeScore(cm, NULL, NULL, tr, sq->dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
 	FreeParsetree(tr);
 	printf("Parsetree score      : %.4f           (FULL LENGTH OPTACC)\n", parsetree_sc);

@@ -815,7 +815,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   ESL_SQ         **tmp_sqpA    = NULL; /* array of pointers to ESL_SQ's, don't free individual sequences */
   Parsetree_t    **tmp_trpA    = NULL; /* array of pointers to parsetrees, don't free individual parsetrees */
   CM_ALNDATA     **dataA       = NULL; /* alignment data filled in AlignSequenceBlock(): parsetrees, scores, etc. */
-  TruncOpts_t     *tro         = NULL; /* truncated alignment opts, remains null if --notrunc */
+  CM_TR_OPTS      *tro         = NULL; /* truncated options, remains null if --notrunc */
 
   /* check contract */
   if(input_msa       == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), input_msa passed in as NULL");
@@ -833,9 +833,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
 
   /* create tro, if nec */
   if(! esl_opt_GetBoolean(go, "--notrunc")) { 
-    tro    = CreateTruncOpts();
-    tro->allowL = TRUE;
-    tro->allowR = TRUE;
+    tro = cm_tr_opts_Create();
   }
 
   /* create a ESL_SQ_BLOCK of the sequences in the input MSA */
@@ -1022,7 +1020,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
       if((status = ParsetreeScore(cm, NULL, errbuf, tr[i], msa->ax[i], FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
       fprintf(cfg->tracefp, "  %16s %.2f bits\n", "SCORE:", sc);
       fprintf(cfg->tracefp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
-      ParsetreeDump(cfg->tracefp, tr[i], cm, msa->ax[i], NULL, NULL); /* NULLs are dmin, dmax */
+      ParsetreeDump(cfg->tracefp, tr[i], cm, msa->ax[i]);
       fprintf(cfg->tracefp, "//\n");
     }
   }

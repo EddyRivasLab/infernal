@@ -208,23 +208,23 @@ DScore2Prob(int sc, float null)
  *           a CP9Bands_t structure, calculate the HMM bands and store them
  *           in the CP9Bands_t structure.
  *           
- * Args:     cm          - the covariance model
- *           errbuf      - char buffer for reporting errors
+ * Args:     cm           - the covariance model
+ *           errbuf       - char buffer for reporting errors
  *           fmx          - CP9 dp matrix for Forward()
  *           bmx          - CP9 dp matrix for Backward()
  *           pmx          - CP9 dp matrix to fill with posteriors, can == bmx
- *           dsq         - sequence in digitized form
- *           i0          - start of target subsequence (often 1, beginning of sq)
- *           j0          - end of target subsequence (often L, end of sq)
- *           cp9b        - PRE-ALLOCATED, the HMM bands for this sequence, filled here.
- *           doing_search- TRUE if we're going to use these HMM bands for search, not alignment
- *           tro         - truncated scanner/alignment info, if NULL bands won't be used for truncated alignment/search
- *           debug_level - verbosity level for debugging printf()s
+ *           dsq          - sequence in digitized form
+ *           i0           - start of target subsequence (often 1, beginning of sq)
+ *           j0           - end of target subsequence (often L, end of sq)
+ *           cp9b         - PRE-ALLOCATED, the HMM bands for this sequence, filled here.
+ *           doing_search - TRUE if we're going to use these HMM bands for search, not alignment
+ *           tro          - truncated scanner/alignment info, if NULL bands won't be used for truncated alignment/search
+ *           debug_level  - verbosity level for debugging printf()s
  * Return:  eslOK on success;
  * 
  */
 int
-cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, TruncOpts_t *tro, int debug_level)
+cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, CM_TR_OPTS *tro, int debug_level)
 {
   int   status;
   int   use_sums;     /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
@@ -243,16 +243,19 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   
   use_sums      = ((cm->align_opts & CM_ALIGN_SUMS)      || (cm->search_opts & CM_SEARCH_SUMS))      ? TRUE : FALSE;
   do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
-  do_trunc      = (tro != NULL && (tro->allowL || tro->allowR)) ? TRUE : FALSE;
+  do_trunc      = (tro != NULL && (tro->allow_L || tro->allow_R)) ? TRUE : FALSE;
 
   /* Determine which cp9 HMM to use and whether or not we're doing 
    * truncated alignment. 
+   * If tro->allow_L we'll allow L marginal alignments (3' truncations)
+   * If tro->allow_R we'll allow R marginal alignments (5' truncations)
+   * If tro->allow_L and tro->allow_R we'll also allow T marginal alignments (5' and 3' truncations)
    */
   if(tro != NULL) { 
-    if     (   tro->allowL  && (! tro->allowR)) { do_trunc = TRUE;  cp9 = cm->Lcp9; }
-    else if((! tro->allowL) &&    tro->allowR)  { do_trunc = TRUE;  cp9 = cm->Rcp9; }
-    else if(   tro->allowL  &&    tro->allowR)  { do_trunc = TRUE;  cp9 = cm->Tcp9; }
-    else                                        { do_trunc = FALSE; cp9 = cm->cp9;  }
+    if     (   tro->allow_L  && (! tro->allow_R)) { do_trunc = TRUE;  cp9 = cm->Lcp9; }
+    else if((! tro->allow_L) &&    tro->allow_R)  { do_trunc = TRUE;  cp9 = cm->Rcp9; }
+    else if(   tro->allow_L  &&    tro->allow_R)  { do_trunc = TRUE;  cp9 = cm->Tcp9; }
+    else                                          { do_trunc = FALSE; cp9 = cm->cp9;  }
   }
   else { 
     do_trunc = FALSE; cp9 = cm->cp9; 
@@ -260,20 +263,24 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, relevant cp9 is NULL.\n");
 
   /* Determine if we should do Forward and Backward in scan mode.
+   * When in scan mode, Forward will allow parses to start at any
+   * position, else they must start at i0.
+   * When in scan mode, Backward will allow parses to end at any
+   * position, else they must end at j0.
    *
    * We should only scan in Forward if i0 does not need to be in any
    * eventual CM parsetree we derive using these bands.  This is only
    * true if we'll use these bands for a CM search (doing_search==TRUE)
    * and that search won't be a special truncated search where i0
    * must be in any valid parsetree (which is TRUE if tro is non-NULL,
-   * and tro->allowR and tro->force_i0_RT are both TRUE).
+   * and tro->allow_R and tro->force_i0_RT are both TRUE).
    *
    * Likewise, we should only scan in Forward if j0 does not need to
    * be in any eventual CM parsetree we derive using these bands.
    * This is only true if we'll use these bands for a CM search
    * (doing_search==TRUE) and that search won't be a special truncated
    * search where j0 must be in any valid parsetree (which is TRUE if
-   * tro is non-NULL, and tro->allowL and tro->force_j0_LT are both
+   * tro is non-NULL, and tro->allow_L and tro->force_j0_LT are both
    * TRUE).
    *
    */
@@ -281,13 +288,14 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
     do_fwd_scan = do_bck_scan = FALSE;
   }
   else { 
-    do_fwd_scan = (tro != NULL && tro->allowR && tro->force_i0_RT) ? FALSE : TRUE;
-    do_bck_scan = (tro != NULL && tro->allowL && tro->force_j0_LT) ? FALSE : TRUE;
+    do_fwd_scan = (tro != NULL && tro->allow_R && tro->force_i0_RT) ? FALSE : TRUE;
+    do_bck_scan = (tro != NULL && tro->allow_L && tro->force_j0_LT) ? FALSE : TRUE;
   }
 
   /* Step 1: Get HMM Forward/Backward DP matrices.
-   * Step 2: F/B       -> HMM bands.
-   * Step 3: HMM bands -> CM bands.
+   * Step 2: F/B -> HMM bands.
+   * Step 3: Calculate candidate states for truncated alignments
+   * Step 4: HMM bands -> CM bands.
    */
 
   /* Step 1: Get HMM Forward/Backward DP matrices. */
@@ -321,7 +329,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
 
-  /* Step 2B: (only if tro != NULL (truncated alignments are possible))
+  /* Step 3: (only if tro != NULL (truncated alignments are possible))
    * Calculate occupancy and candidate states for marginal alignments 
    */
   if(do_trunc) { 
@@ -334,7 +342,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
     esl_vec_ISet(cp9b->Jvalid, cm->M+1, TRUE);
   }
 
-  /* Step 3: HMM bands  ->  CM bands. */
+  /* Step 4: HMM bands  ->  CM bands. */
   if(do_old_hmm2ij) { 
     if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
   }
@@ -5344,9 +5352,9 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
  *          that state in the corresponding (J,L,R,T) DP matrix.
  *
  *          We also know from passed-in <tro>, whether L and/or R
- *          marginal alignments will be allowed via <tro->allowL> 
- *          and <tro->allowR>. If <tro->allowL> is FALSE cp9b->
- *          Lvalid[] will be FALSE for all v. Likewise for allowR.
+ *          marginal alignments will be allowed via <tro->allow_L> 
+ *          and <tro->allow_R>. If <tro->allow_L> is FALSE cp9b->
+ *          Lvalid[] will be FALSE for all v. Likewise for allow_R.
  *
  * CM_t       cm:   the model
  * CP9Bands_t cp9b: the cp9 bands
@@ -5356,13 +5364,13 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
  * xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG 
  */
 void
-cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, TruncOpts_t *tro)
+cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, CM_TR_OPTS *tro)
 {
   int v;
   int nd;
   int lpos = 1;
   int rpos = cm->clen;
-  
+
   for(v = 0; v < cp9b->cm_M; v++) { 
     nd = cm->ndidx[v];
     /* Careful, emitmap is off-by-one for our purposes for lpos if v is not MATP_MP or MATL_ML, and rpos if v is not MATP_MP or MATR_MR */
@@ -5376,14 +5384,14 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, TruncOpt
     cp9b->Jvalid[v] = ((lpos >= cp9b->sp1) && (rpos <= cp9b->ep1)) ? TRUE : FALSE;
 
     /* Lvalid if lpos is possibly used and rpos is possibly not used */
-    cp9b->Lvalid[v] = (tro->allowL && (lpos >= cp9b->sp1 && lpos <= cp9b->ep1) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
+    cp9b->Lvalid[v] = (tro->allow_L && (lpos >= cp9b->sp1 && lpos <= cp9b->ep1) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
 
     /* Rvalid if rpos is possibly used and lpos is possibly not used */
-    cp9b->Rvalid[v] = (tro->allowR && (rpos <= cp9b->ep1 && rpos >= cp9b->sp1) && (lpos < cp9b->sp2)) ? TRUE : FALSE;
+    cp9b->Rvalid[v] = (tro->allow_R && (rpos <= cp9b->ep1 && rpos >= cp9b->sp1) && (lpos < cp9b->sp2)) ? TRUE : FALSE;
 
     if(cm->sttype[v] == B_st) { 
       /* Tvalid if lpos and rpos are possibly not used */
-      cp9b->Tvalid[v] = (tro->allowL && tro->allowR && (lpos < cp9b->sp2) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
+      cp9b->Tvalid[v] = (tro->allow_L && tro->allow_R && (lpos < cp9b->sp2) && (rpos > cp9b->ep2)) ? TRUE : FALSE;
     }
     else { 
       cp9b->Tvalid[v] = FALSE;

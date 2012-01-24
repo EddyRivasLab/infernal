@@ -64,7 +64,7 @@ typedef struct {
   CM_ALNDATA      **dataA;  /* array of CM_ALNDATA objects with ptrs to sqs, parsetrees, scores */
   int               n;      /* size of outdataA   */
   float             mxsize; /* max size in Mb of allowable DP mx */
-  TruncOpts_t      *tro;    /* truncated alignment options */
+  CM_TR_OPTS       *tro;    /* truncated info */
   ESL_STOPWATCH    *w;      /* stopwatch for timing stages (band calc, alignment) */
   ESL_STOPWATCH    *w_tot;  /* stopwatch for timing total time for processing 1 seq */
 } WORKER_INFO;
@@ -598,9 +598,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     info.tro = NULL;
   }
   else { 
-    info.tro    = CreateTruncOpts();
-    info.tro->allowL = TRUE;
-    info.tro->allowR = TRUE;
+    info.tro = cm_tr_opts_Create();
   }
   /* Main loop: actually two nested while loops, over sequence blocks
    * (while(blocks_remain_in_file)) and over sequences within blocks
@@ -1093,12 +1091,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     info[k].w      = esl_stopwatch_Create();
     info[k].w_tot  = esl_stopwatch_Create();
     if(esl_opt_GetBoolean(go, "--notrunc")) { 
-      info[k].tro    = NULL;
+      info[k].tro = NULL;
     }
     else { 
-      info[k].tro    = CreateTruncOpts();
-      info[k].tro->allowL = TRUE;
-      info[k].tro->allowR = TRUE;
+      info[k].tro  = cm_tr_opts_Create();
     }
 #ifdef HMMER_THREADS
     info[k].queue  = queue;
@@ -1557,7 +1553,7 @@ output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FIL
       fprintf(cfg->tfp, ">%s\n", dataA[j]->sq->name);
       fprintf(cfg->tfp, "  %16s %.2f bits\n", "SCORE:", sc);
       fprintf(cfg->tfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
-      ParsetreeDump(cfg->tfp, dataA[j]->tr, cm, dataA[j]->sq->dsq, NULL, NULL); /* NULLs are dmin, dmax */
+      ParsetreeDump(cfg->tfp, dataA[j]->tr, cm, dataA[j]->sq->dsq);
       fprintf(cfg->tfp, "//\n");
     }
   }

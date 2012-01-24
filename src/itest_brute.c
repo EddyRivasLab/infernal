@@ -285,7 +285,7 @@ main(int argc, char **argv)
 		if ((NOT_IMPOSSIBLE(Scyk_sc[L]) || NOT_IMPOSSIBLE(Sbrute_cyk[L])) && 
 		    (fabs(Scyk_sc[L] - Sbrute_cyk[L]) > cyk_precision)) { 
 		  if((status = cm_Align(cm, errbuf, NULL, dsq, L, 1, L, 128., mx, shmx, FALSE, FALSE, NULL, &tr, NULL, NULL, NULL)) != eslOK) cm_Fail("cm_Align() call failed");
-		  ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+		  ParsetreeDump(stdout, tr, cm, dsq);
 		  ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
 		  printf("Parsetree score      : %.4f\n", sc);
 		  esl_fatal("CYK        scores mismatched: %-6s %s  L=%1d brute=%8.4f cm_CYKAlign()=%8.4f (difference %g)",
@@ -311,7 +311,7 @@ main(int argc, char **argv)
 		if ((NOT_IMPOSSIBLE(Jcyk_sc[L]) || NOT_IMPOSSIBLE(Jbrute_cyk[L])) && 
 		    (fabs(Jcyk_sc[L] - Jbrute_cyk[L]) > cyk_precision)) {
 		  if((status = cm_TrAlign(cm, errbuf, NULL, dsq, 1, L, 128., trmx, trshmx, FALSE, FALSE, NULL, &tr, NULL, NULL, NULL)) != eslOK) cm_Fail("cm_TrAlign() call failed");
-		  ParsetreeDump(stdout, tr, cm, dsq, NULL, NULL);
+		  ParsetreeDump(stdout, tr, cm, dsq);
 		  ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
 		  esl_fatal("TrCYK     J scores mismatched: %-6s %s  L=%1d brute=%8.4f cm_TrCYKAlign()=%8.4f (difference %g)",
 			    do_local ? "local" : "glocal",

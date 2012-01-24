@@ -91,13 +91,13 @@ main(int argc, char **argv)
       //float sc, struct_sc;
       //ParsetreeScore(cm, NULL, NULL, tr, seq->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL);
       //printf("Parsetree score: %.4f\n", sc);
-      //ParsetreeDump(stdout, tr, cm, seq->dsq, NULL, NULL);
+      //ParsetreeDump(stdout, tr, cm, seq->dsq);
       FreeParsetree(tr);
 
       revcomp(abc, seq, seq);
       rev_sc = TrCYK_DnC(cm,seq->dsq, seq->n, 0, i0, j0, &tr);
       rev_fali = CreateFancyAli(cm->abc, tr, cm, cons,seq->dsq, FALSE, NULL);
-      /*ParsetreeDump(stdout, tr, cm, seq->dsq, NULL, NULL);*/
+      /*ParsetreeDump(stdout, tr, cm, seq->dsq);*/
       FreeParsetree(tr);
 
       if (sc > rev_sc)
