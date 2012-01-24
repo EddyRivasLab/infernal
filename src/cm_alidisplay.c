@@ -34,7 +34,6 @@ static int  bp_is_canonical(char lseq, char rseq);
  * 1. The CM_ALIDISPLAY object
  *****************************************************************/
 
-
 /* Function:  cm_alidisplay_Create()
  * Synopsis:  Create an alignment display, from parsetree and model.
  * Incept:    EPN, Wed May 25 05:38:12 2011
@@ -91,10 +90,6 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   int         lseq, rseq;	 /* chars in aligned target line; left, right */
   int         lpost, rpost;	 /* chars in aligned posteriors, left, right  */
   int         do_left, do_right; /* flags to generate left, right             */
-  int         cpos_l, cpos_r;    /* positions in consensus (1..clen)          */
-  int         spos_l, spos_r;	 /* positions in dsq (1..L)                   */
-  int        *scoord = NULL;     /* [0..N-1] coordinates for aligned residues */
-  int        *ccoord = NULL;     /* [0..N-1] coordinates for model positions  */
   float       sc;                /* a temporary score */
   int         cm_namelen, cm_acclen, cm_desclen;
   int         sq_namelen, sq_acclen, sq_desclen;
@@ -261,11 +256,6 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   memset(ad->aseq,    ' ', ad->N);
   if(ppstr != NULL)   memset(ad->ppline, ' ', ad->N);
 
-  ESL_ALLOC(ccoord, sizeof(int) * len);
-  ESL_ALLOC(scoord, sizeof(int) * len);
-  esl_vec_ISet(ccoord, ad->N, 0);
-  esl_vec_ISet(scoord, ad->N, 0);
-
   /* Fill in the lines: traverse the traceback.
    */
   pos = 0;
@@ -301,8 +291,6 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	if(ppstr != NULL) {
 	  esl_stack_IPop(pda, &rpost);    ad->ppline[pos] = rpost;
 	}
-	esl_stack_IPop(pda, &cpos_r);     ccoord[pos] = cpos_r;
-	esl_stack_IPop(pda, &spos_r);     scoord[pos] = spos_r;
 	pos++;
 	continue;
       }
@@ -358,8 +346,6 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	  lstr    = '.';
 	  lcons   = '.';
 	  lseq = tolower((int) abc->sym[symi]);
-	  cpos_l  = 0;
-	  spos_l  = tr->emitl[ti] + seqoffset-1;
 	  if(ppstr != NULL) lpost = ppstr[tr->emitl[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
 	} 
       }
@@ -374,8 +360,6 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	  rstr    = '.';
 	  rcons   = '.';
 	  rseq = tolower((int) abc->sym[symj]);
-	  cpos_r  = 0;
-	  spos_r  = tr->emitr[ti] + seqoffset-1;
 	  if(ppstr != NULL) rpost = ppstr[tr->emitr[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
 	} 
       }
@@ -385,15 +369,12 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	  if (cm->rf != NULL) lrf = cm->rf[lc+1];
 	  lstr   = cons->cstr[lc];
 	  lcons  = (cm->flags & CMH_CONS) ? cm->consensus[(lc+1)] : cons->cseq[lc];
-	  cpos_l = lc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
 	    lseq = abc->sym[symi];
-	    spos_l = tr->emitl[ti] + seqoffset-1;
 	    if(ppstr != NULL) lpost = ppstr[tr->emitl[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
 	  } 
 	  else {
 	    lseq   = '-';
-	    spos_l = 0;
 	    if(ppstr != NULL) lpost  = '.';
 	  }
 	}
@@ -402,15 +383,12 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	  if (cm->rf != NULL) rrf = cm->rf[rc+1];
 	  rstr   = cons->cstr[rc];
 	  rcons  = (cm->flags & CMH_CONS) ? cm->consensus[(rc+1)] : cons->cseq[rc];
-	  cpos_r = rc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
 	    rseq = abc->sym[symj];
-	    spos_r = tr->emitr[ti] + seqoffset-1;
 	    if(ppstr != NULL) rpost = ppstr[tr->emitr[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
 	  } 
 	  else {
 	    rseq = '-';
-	    spos_r = 0;
 	    if(ppstr != NULL) rpost = '.';
 	  }
 	}
@@ -486,13 +464,9 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	ad->mline[pos]   = lmid;
 	ad->aseq[pos]    = lseq;
 	if(ppstr != NULL)  ad->ppline[pos] = lpost;
-	ccoord[pos] = cpos_l;
-	scoord[pos] = spos_l;
 	pos++;
       }
       if (do_right) {
-	if ((status = esl_stack_IPush(pda, spos_r)) != eslOK) goto ERROR;
-	if ((status = esl_stack_IPush(pda, cpos_r)) != eslOK) goto ERROR;
 	if(ppstr != NULL) {
 	  if ((status = esl_stack_IPush(pda, (int) rpost)) != eslOK) goto ERROR;
 	}
@@ -556,9 +530,21 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   ad->mline[ad->N]  = '\0';
   ad->aseq[ad->N]   = '\0';
   if(ppstr != NULL)  ad->ppline[ad->N] = '\0'; 
+  ad->sqfrom = tr->emitl[0] + seqoffset-1;
+  ad->sqto   = tr->emitr[0] + seqoffset-1;
+  ad->cfrom  = cfrom_emit;
+  ad->cto    = cto_emit;
 
+  /* Removed old method of determining max bounds.
+   * This old way ignores terminal ELs and terminal
+   * inserts and only considers consensus emissions.
+   * New way considers terminal ELs and inserts, 
+   * which I think is better. Plus we already
+   * have calculated the proper bounds, so we
+   * just set them as such in 4 lines above. 
+   */
+#if 0  
   /* Laboriously determine the maximum bounds. */
-  ad->sqfrom = 0;
   for (pos = 0; pos < ad->N; pos++)
     if (scoord[pos] != 0) {
       ad->sqfrom = scoord[pos];
@@ -567,6 +553,8 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   ad->sqto = 0;
   for (pos = 0; pos < ad->N; pos++)
     if (scoord[pos] != 0) ad->sqto = scoord[pos];
+
+
   ad->cfrom = 0; 
   for (pos = 0; pos < ad->N; pos++)
     if (ccoord[pos] != 0) {
@@ -578,17 +566,14 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
     if (ccoord[pos] != 0) ad->cto = ccoord[pos];
 
   /* sanity check, with previously calc'ed cfrom, cto */
-#if 0  
   printf("ad->sqfrom: %" PRId64 "\n", ad->sqfrom);
   printf("ad->sqto:   %" PRId64 "\n", ad->sqto);
   printf("ad->cfrom:  %" PRId64 "  cfrom: %4d (%4d)\n", ad->cfrom, cfrom, (ad->cfrom - cfrom));
   printf("ad->cto:    %" PRId64 "  cto:   %4d (%4d)\n", ad->cto,   cto, (ad->cto - cto));
-#endif
   assert(ad->cfrom  == cfrom_emit);
   assert(ad->cto    == cto_emit);
+#endif
 
-  if(scoord != NULL) free(scoord);
-  if(ccoord != NULL) free(ccoord);
   esl_stack_Destroy(pda);
 
   if(ret_ad != NULL) *ret_ad = ad;
@@ -597,8 +582,6 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
  ERROR:
   if(pda != NULL)    esl_stack_Destroy(pda);
   if(ad != NULL)     cm_alidisplay_Destroy(ad);
-  if(scoord != NULL) free(scoord);
-  if(ccoord != NULL) free(ccoord);
   if(ret_ad != NULL) *ret_ad = NULL;
   ESL_FAIL(status, errbuf, "cm_alidisplay_Create() out of memory");
 }

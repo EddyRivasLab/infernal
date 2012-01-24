@@ -2368,7 +2368,9 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, char *errbuf, int *ret_cfrom_span
 {
   int  ti;         /* counter over parsetree nodes */
   int  v, nd;      /* state, node index */
+  int  prv_v;      /* previous state */
   int  sdl, sdr;   /* state left delta, state right delta for current state */
+  int  insert_sd;  /* number of insert residues emitted for current state */
   char mode;       /* truncation mode */
   int  is_left;    /* does current node/state emit left? */
   int  is_right;   /* does current node/state emit right? */
@@ -2402,43 +2404,45 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, char *errbuf, int *ret_cfrom_span
     if(v != cm->M) { 
       nd  = cm->ndidx[v];
       
-      if     (cm->sttype[v]  == IL_st)   { is_left = TRUE;  is_right = FALSE; }
-      else if(cm->sttype[v]  == IR_st)   { is_left = FALSE; is_right = TRUE;  }
-      else if(cm->ndtype[nd] == MATP_nd) { is_left = TRUE;  is_right = TRUE;  }
-      else if(cm->ndtype[nd] == MATL_nd) { is_left = TRUE;  is_right = FALSE; }
-      else if(cm->ndtype[nd] == MATR_nd) { is_left = FALSE; is_right = TRUE;  }
-      else                               { is_left = FALSE; is_right = FALSE; }
+      if     (cm->sttype[v]  == IL_st)   { is_left = TRUE;  is_right = FALSE; insert_sd = 1; }
+      else if(cm->sttype[v]  == IR_st)   { is_left = FALSE; is_right = TRUE;  insert_sd = 1; }
+      else if(cm->ndtype[nd] == MATP_nd) { is_left = TRUE;  is_right = TRUE;  insert_sd = 0; }
+      else if(cm->ndtype[nd] == MATL_nd) { is_left = TRUE;  is_right = FALSE; insert_sd = 0; }
+      else if(cm->ndtype[nd] == MATR_nd) { is_left = FALSE; is_right = TRUE;  insert_sd = 0; }
+      else                               { is_left = FALSE; is_right = FALSE; insert_sd = 0; }
+    }
+    else { /* v == cm->M, special case, use previous state and treat as left and right and insert (sounds crazy but works) */
+      prv_v     = tr->state[ti-1];
+      mode      = tr->mode[ti-1];
+      sdl       = 0; 
+      sdr       = 0;
+      is_left   = TRUE; 
+      is_right  = TRUE;
+      insert_sd = 1;
+      nd        = cm->ndidx[prv_v];
+    }
 
-      if(is_left) { 
-	if(cm->sttype[v] != IL_st) { /* inserts don't impact cpos */
-	  cfrom_span = ESL_MIN(cfrom_span, cm->emap->lpos[nd]);
-	  cto_span   = ESL_MAX(cto_span,   cm->emap->lpos[nd]);
-	}	  
-	if(ModeEmitsLeft(mode)) { 
-	  if(cm->sttype[v] != IL_st) { /* inserts don't impact cpos */
-	    cfrom_emit = ESL_MIN(cfrom_emit, cm->emap->lpos[nd]);
-	    cto_emit   = ESL_MAX(cto_emit,   cm->emap->lpos[nd]);
-	    if(sdl > 0) { 
-	      first_emit = ESL_MIN(first_emit, cm->emap->lpos[nd]);
-	      final_emit = ESL_MAX(final_emit, cm->emap->lpos[nd]);
-	    }
-	  }
+    if(is_left) { 
+      cfrom_span = ESL_MIN(cfrom_span, cm->emap->lpos[nd] + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
+      cto_span   = ESL_MAX(cto_span,   cm->emap->lpos[nd]);
+      if(ModeEmitsLeft(mode)) { 
+	cfrom_emit = ESL_MIN(cfrom_emit, cm->emap->lpos[nd] + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
+	cto_emit   = ESL_MAX(cto_emit,   cm->emap->lpos[nd]);
+	if(sdl > 0 && cm->sttype[v] != IL_st) { /* inserts don't impact first_emit/final_emit */
+	  first_emit = ESL_MIN(first_emit, cm->emap->lpos[nd]);
+	  final_emit = ESL_MAX(final_emit, cm->emap->lpos[nd]);
 	}
       }
-      if(is_right) { 
-	if(cm->sttype[v] != IR_st) { /* inserts don't impact cpos */
-	  cfrom_span = ESL_MIN(cfrom_span, cm->emap->rpos[nd]);
-	  cto_span   = ESL_MAX(cto_span,   cm->emap->rpos[nd]);
-	}
-	if(ModeEmitsRight(mode)) { 
-	  if(cm->sttype[v] != IR_st) { /* inserts don't impact cpos */
-	    cfrom_emit = ESL_MIN(cfrom_emit, cm->emap->rpos[nd]);
-	    cto_emit   = ESL_MAX(cto_emit,   cm->emap->rpos[nd]);
-	    if(sdr > 0) { 
-	      first_emit = ESL_MIN(first_emit, cm->emap->rpos[nd]);
-	      final_emit = ESL_MAX(final_emit, cm->emap->rpos[nd]);
-	    }
-	  }
+    }
+    if(is_right) { 
+      cfrom_span = ESL_MIN(cfrom_span, cm->emap->rpos[nd] + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
+      cto_span   = ESL_MAX(cto_span,   cm->emap->rpos[nd]);
+      if(ModeEmitsRight(mode)) { 
+	cfrom_emit = ESL_MIN(cfrom_emit, cm->emap->rpos[nd] + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
+	cto_emit   = ESL_MAX(cto_emit,   cm->emap->rpos[nd]);
+	if(sdr > 0 && cm->sttype[v] != IR_st) { /* inserts don't impact first_emit/final_emit */
+	  first_emit = ESL_MIN(first_emit, cm->emap->rpos[nd]);
+	  final_emit = ESL_MAX(final_emit, cm->emap->rpos[nd]);
 	}
       }
     }
