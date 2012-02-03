@@ -66,7 +66,8 @@ static int  bp_is_canonical(char lseq, char rseq);
  * Xref:      STL6 p.58
  */
 int
-cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, int64_t seqoffset, char *ppstr, float aln_sc, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs, CM_ALIDISPLAY **ret_ad)
+cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, int64_t seqoffset, int pass_idx, 
+		     char *ppstr, float aln_sc, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs, CM_ALIDISPLAY **ret_ad)
 {
   int            status;
   CM_ALIDISPLAY *ad = NULL;      /* alidisplay structure we're building       */
@@ -102,6 +103,9 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 				  * (J or L for MATP&MATL, J or R for MATP&MATR) */
   int         cto_emit;          /* final model position spanned by any state in parsetree in relevant mode 
 				  * (J or L for MATP&MATL, J or R for MATP&MATR) */
+  int         have_i0;           /* TRUE if first residue of source sequence is in the parsetree */
+  int         have_j0;           /* TRUE if final residue of source sequence is in the parsetree */
+
   /* if alignment is in J mode (not L, R, or T) then 
    * cfrom_span == cfrom_emit and cto_span == cto_emit
    */
@@ -166,9 +170,20 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   }
   /* One more step for calculating len, catch 5' and 3' truncations
    * and treat them similar to EL for output. First determine 
-   * how many positions were truncationed 5' and 3' 
+   * how many positions were truncated 5' and 3'. 
+   *
+   * Of course, we don't actually know how many positions were
+   * truncated. Here we guess that it is the maximum possible given
+   * the parsetree and the pass_idx (pipeline pass we found the
+   * hit in). Specifically in the parsetree, the relevant data is
+   * the consensus positions spanned (lpos..rpos) by the internal 
+   * truncated entry state. The guess is made in ParsetreeToCMBounds()
+   * see that function for details.
    */
-  if((status = ParsetreeToCMBounds(cm, tr, errbuf, &cfrom_span, &cto_span, &cfrom_emit, &cto_emit, NULL, NULL)) != eslOK) return status;
+  have_i0 = (seqoffset == 1) ? TRUE : FALSE;
+  have_j0 = ((seqoffset + tr->emitr[0] - 1) == sq->n) ? TRUE : FALSE;
+  if((status = ParsetreeToCMBounds(cm, tr, pass_idx, have_i0, have_j0, errbuf, &cfrom_span, &cto_span, &cfrom_emit, &cto_emit, NULL, NULL)) != eslOK) return status;
+
   /* now determine display length required to show truncations */
   ntrunc_R = wtrunc_R = 0;
   ntrunc_L = wtrunc_L = 0;
@@ -530,49 +545,12 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   ad->mline[ad->N]  = '\0';
   ad->aseq[ad->N]   = '\0';
   if(ppstr != NULL)  ad->ppline[ad->N] = '\0'; 
-  ad->sqfrom = tr->emitl[0] + seqoffset-1;
-  ad->sqto   = tr->emitr[0] + seqoffset-1;
-  ad->cfrom  = cfrom_emit;
-  ad->cto    = cto_emit;
-
-  /* Removed old method of determining max bounds.
-   * This old way ignores terminal ELs and terminal
-   * inserts and only considers consensus emissions.
-   * New way considers terminal ELs and inserts, 
-   * which I think is better. Plus we already
-   * have calculated the proper bounds, so we
-   * just set them as such in 4 lines above. 
-   */
-#if 0  
-  /* Laboriously determine the maximum bounds. */
-  for (pos = 0; pos < ad->N; pos++)
-    if (scoord[pos] != 0) {
-      ad->sqfrom = scoord[pos];
-      break;
-    }
-  ad->sqto = 0;
-  for (pos = 0; pos < ad->N; pos++)
-    if (scoord[pos] != 0) ad->sqto = scoord[pos];
-
-
-  ad->cfrom = 0; 
-  for (pos = 0; pos < ad->N; pos++)
-    if (ccoord[pos] != 0) {
-      ad->cfrom = ccoord[pos];
-      break;
-    }
-  ad->cto = 0;
-  for (pos = 0; pos < ad->N; pos++)
-    if (ccoord[pos] != 0) ad->cto = ccoord[pos];
-
-  /* sanity check, with previously calc'ed cfrom, cto */
-  printf("ad->sqfrom: %" PRId64 "\n", ad->sqfrom);
-  printf("ad->sqto:   %" PRId64 "\n", ad->sqto);
-  printf("ad->cfrom:  %" PRId64 "  cfrom: %4d (%4d)\n", ad->cfrom, cfrom, (ad->cfrom - cfrom));
-  printf("ad->cto:    %" PRId64 "  cto:   %4d (%4d)\n", ad->cto,   cto, (ad->cto - cto));
-  assert(ad->cfrom  == cfrom_emit);
-  assert(ad->cto    == cto_emit);
-#endif
+  ad->sqfrom      = tr->emitl[0] + seqoffset-1;
+  ad->sqto        = tr->emitr[0] + seqoffset-1;
+  ad->cfrom_emit  = cfrom_emit;
+  ad->cto_emit    = cto_emit;
+  ad->cfrom_span  = cfrom_span;
+  ad->cto_span    = cto_span;
 
   esl_stack_Destroy(pda);
 
@@ -625,12 +603,14 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
       ad2->ppline = (ad->ppline ? ad2->mem + (ad->ppline - ad->mem) : NULL );
       ad2->N      = ad->N;
 
-      ad2->cmname = ad2->mem + (ad->cmname - ad->mem);
-      ad2->cmacc  = ad2->mem + (ad->cmacc  - ad->mem);
-      ad2->cmdesc = ad2->mem + (ad->cmdesc - ad->mem);
-      ad2->cfrom  = ad->cfrom;
-      ad2->cto    = ad->cto;
-      ad2->clen   = ad->clen;
+      ad2->cmname     = ad2->mem + (ad->cmname - ad->mem);
+      ad2->cmacc      = ad2->mem + (ad->cmacc  - ad->mem);
+      ad2->cmdesc     = ad2->mem + (ad->cmdesc - ad->mem);
+      ad2->cfrom_emit = ad->cfrom_emit;
+      ad2->cto_emit   = ad->cto_emit;
+      ad2->cfrom_span = ad->cfrom_span;
+      ad2->cto_span   = ad->cto_span;
+      ad2->clen       = ad->clen;
 
       ad2->sqname  = ad2->mem + (ad->sqname - ad->mem);
       ad2->sqacc   = ad2->mem + (ad->sqacc  - ad->mem);
@@ -652,9 +632,11 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
       if ( esl_strdup(ad->cmname, -1, &(ad2->cmname)) != eslOK) goto ERROR;
       if ( esl_strdup(ad->cmacc,  -1, &(ad2->cmacc))  != eslOK) goto ERROR;
       if ( esl_strdup(ad->cmdesc, -1, &(ad2->cmdesc)) != eslOK) goto ERROR;
-      ad2->cfrom  = ad->cfrom;
-      ad2->cto    = ad->cto;
-      ad2->clen   = ad->clen;
+      ad2->cfrom_emit = ad->cfrom_emit;
+      ad2->cto_emit   = ad->cto_emit;
+      ad2->cfrom_span = ad->cfrom_span;
+      ad2->cto_span   = ad->cto_span;
+      ad2->clen       = ad->clen;
 
       if ( esl_strdup(ad->sqname,  -1, &(ad2->sqname)) != eslOK) goto ERROR;
       if ( esl_strdup(ad->sqacc,   -1, &(ad2->sqacc))  != eslOK) goto ERROR;
@@ -1030,8 +1012,8 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
       
   /* dynamically size the output lines */
   namewidth  = ESL_MAX(strlen(show_cmname), strlen(show_seqname));
-  coordwidth = ESL_MAX(ESL_MAX(integer_textwidth(ad->cfrom),
-			       integer_textwidth(ad->cto)),
+  coordwidth = ESL_MAX(ESL_MAX(integer_textwidth(ad->cfrom_emit),
+			       integer_textwidth(ad->cto_emit)),
 		       ESL_MAX(integer_textwidth(ad->sqfrom),
 			       integer_textwidth(ad->sqto)));
   aliwidth   = (linewidth > 0) ? linewidth - namewidth - 2*coordwidth - 5 : ad->N;
@@ -1041,7 +1023,7 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
 
   /* Break the alignment into multiple blocks of width aliwidth for printing */
   i1 = ad->sqfrom;
-  k1 = ad->cfrom ;
+  k1 = ad->cfrom_emit;
   cur_aliwidth = aliwidth; 
 
   for (pos = 0; pos < ad->N; pos += cur_aliwidth)
@@ -1115,6 +1097,72 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
   if (buf != NULL) free(buf);
   return status;
 }  
+
+/* Functions: cm_alidisplay_Is5PTrunc()
+ *            cm_alidisplay_Is3PTrunc()
+ *            cm_alidisplay_Is5PAnd3PTrunc()
+ *            cm_alidisplay_Is5PTruncOnly()
+ *            cm_alidisplay_Is3PTruncOnly()
+ *
+ * Synopsis:  Return TRUE if an alignment is truncated in a specific way.
+ *            These are convenience functions that use a simple tests
+ *            of equality between ad->cfrom_span and ad->cfrom_emit and 
+ *            between ad->cto_span and ad->cto_emit. Those four values 
+ *            were calculated in ParsetreeToCMBounds() (which is called
+ *            by cm_alidisplay_Create()) based on the parsetree of the 
+ *            hit, the pipeline pass the hit was found in and whether
+ *            the parsetree contained the first and/or final residue of
+ *            the source sequence of the hit. See ParsetreeToCMBounds()
+ *            for details.
+ *
+ * Returns:   TRUE or FALSE;
+ */
+int
+cm_alidisplay_Is5PTrunc(const CM_ALIDISPLAY *ad) 
+{
+  return (ad->cfrom_emit != ad->cfrom_span) ? TRUE : FALSE;
+}
+
+int
+cm_alidisplay_Is3PTrunc(const CM_ALIDISPLAY *ad) 
+{
+  return (ad->cto_emit != ad->cto_span) ? TRUE : FALSE;
+}
+
+int
+cm_alidisplay_Is5PAnd3PTrunc(const CM_ALIDISPLAY *ad) 
+{
+  return (ad->cfrom_emit != ad->cfrom_span && ad->cto_emit != ad->cto_span) ? TRUE : FALSE;
+}
+
+int
+cm_alidisplay_Is5PTruncOnly(const CM_ALIDISPLAY *ad) 
+{
+  return (ad->cfrom_emit != ad->cfrom_span && ad->cto_emit == ad->cto_span) ? TRUE : FALSE;
+}
+
+int
+cm_alidisplay_Is3PTruncOnly(const CM_ALIDISPLAY *ad) 
+{
+  return (ad->cfrom_emit == ad->cfrom_span && ad->cto_emit != ad->cto_span) ? TRUE : FALSE;
+}
+
+/* Function:  cm_alidisplay_TruncString()
+ * Synopsis:  Determine if an alignment is truncated 5', 3' or both
+ *            and return a string summarizing the truncation: "5'&3'",
+ *            "5'", "3'", or "no".
+ *
+ * Returns:   informative string
+ */
+char *
+cm_alidisplay_TruncString(const CM_ALIDISPLAY *ad) 
+{
+  if     (cm_alidisplay_Is5PAnd3PTrunc(ad)) return "5'&3'";
+  else if(cm_alidisplay_Is5PTruncOnly(ad))  return "5'";
+  else if(cm_alidisplay_Is3PTruncOnly(ad))  return "3'";
+  else return "no";
+}
+
 /*------------------- end, alidisplay API -----------------------*/
 
 
@@ -1139,40 +1187,42 @@ cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad)
   fprintf(fp, "CM_ALIDISPLAY dump\n");
   fprintf(fp, "------------------\n");
 
-  fprintf(fp, "rfline  = %s\n", ad->rfline ? ad->rfline : "[none]");
-  fprintf(fp, "nline   = %s\n", ad->nline  ? ad->nline : "[none]");
-  fprintf(fp, "csline  = %s\n", ad->csline ? ad->csline : "[none]");
-  fprintf(fp, "model   = %s\n", ad->model);
-  fprintf(fp, "mline   = %s\n", ad->mline);
-  fprintf(fp, "ppline  = %s\n", ad->ppline ? ad->ppline : "[none]");
-  fprintf(fp, "aseq    = %s\n", ad->aseq);
-  fprintf(fp, "N       = %d\n", ad->N);
+  fprintf(fp, "rfline     = %s\n", ad->rfline ? ad->rfline : "[none]");
+  fprintf(fp, "nline      = %s\n", ad->nline  ? ad->nline : "[none]");
+  fprintf(fp, "csline     = %s\n", ad->csline ? ad->csline : "[none]");
+  fprintf(fp, "model      = %s\n", ad->model);
+  fprintf(fp, "mline      = %s\n", ad->mline);
+  fprintf(fp, "ppline     = %s\n", ad->ppline ? ad->ppline : "[none]");
+  fprintf(fp, "aseq       = %s\n", ad->aseq);
+  fprintf(fp, "N          = %d\n", ad->N);
   fprintf(fp, "\n");
 
-  fprintf(fp, "cmname = %s\n", ad->cmname);
-  fprintf(fp, "cmacc  = %s\n", ad->cmacc[0]  == '\0' ? "[none]" : ad->cmacc);
-  fprintf(fp, "cmdesc = %s\n", ad->cmdesc[0] == '\0' ? "[none]" : ad->cmdesc);
-  fprintf(fp, "cfrom  = %d\n", ad->cfrom);
-  fprintf(fp, "cto    = %d\n", ad->cto);
-  fprintf(fp, "clen   = %d\n", ad->clen);
+  fprintf(fp, "cmname     = %s\n", ad->cmname);
+  fprintf(fp, "cmacc      = %s\n", ad->cmacc[0]  == '\0' ? "[none]" : ad->cmacc);
+  fprintf(fp, "cmdesc     = %s\n", ad->cmdesc[0] == '\0' ? "[none]" : ad->cmdesc);
+  fprintf(fp, "cfrom_span = %d\n", ad->cfrom_span);
+  fprintf(fp, "cfrom_emit = %d\n", ad->cfrom_emit);
+  fprintf(fp, "cto_emit   = %d\n", ad->cto_emit);
+  fprintf(fp, "cto_span   = %d\n", ad->cto_span);
+  fprintf(fp, "clen       = %d\n", ad->clen);
   fprintf(fp, "\n");
 
-  fprintf(fp, "sqname  = %s\n",  ad->sqname);
-  fprintf(fp, "sqacc   = %s\n",  ad->sqacc[0]  == '\0' ? "[none]" : ad->sqacc);
-  fprintf(fp, "sqdesc  = %s\n",  ad->sqdesc[0] == '\0' ? "[none]" : ad->sqdesc);
-  fprintf(fp, "sqfrom  = %ld\n", ad->sqfrom);
-  fprintf(fp, "sqto    = %ld\n", ad->sqto);
+  fprintf(fp, "sqname     = %s\n",  ad->sqname);
+  fprintf(fp, "sqacc      = %s\n",  ad->sqacc[0]  == '\0' ? "[none]" : ad->sqacc);
+  fprintf(fp, "sqdesc     = %s\n",  ad->sqdesc[0] == '\0' ? "[none]" : ad->sqdesc);
+  fprintf(fp, "sqfrom     = %ld\n", ad->sqfrom);
+  fprintf(fp, "sqto       = %ld\n", ad->sqto);
   fprintf(fp, "\n");
 
-  fprintf(fp, "aln_sc  = %.2f\n",ad->aln_sc);
-  fprintf(fp, "optacc  = %s\n",  ad->used_optacc ? "TRUE" : "FALSE");
-  fprintf(fp, "CYK     = %s\n",  ad->used_optacc ? "FALSE" : "TRUE");
-  fprintf(fp, "hbanded = %s\n",  ad->used_hbands ? "TRUE" : "FALSE");
-  fprintf(fp, "mx Mb   = %.6f\n",ad->matrix_Mb);
-  fprintf(fp, "seconds = %.6f\n",ad->elapsed_secs);
+  fprintf(fp, "aln_sc     = %.2f\n",ad->aln_sc);
+  fprintf(fp, "optacc     = %s\n",  ad->used_optacc ? "TRUE" : "FALSE");
+  fprintf(fp, "CYK        = %s\n",  ad->used_optacc ? "FALSE" : "TRUE");
+  fprintf(fp, "hbanded    = %s\n",  ad->used_hbands ? "TRUE" : "FALSE");
+  fprintf(fp, "mx Mb      = %.6f\n",ad->matrix_Mb);
+  fprintf(fp, "seconds    = %.6f\n",ad->elapsed_secs);
   fprintf(fp, "\n");
 
-  fprintf(fp, "size    = %d bytes\n",  (int) cm_alidisplay_Sizeof(ad));
+  fprintf(fp, "size       = %d bytes\n",  (int) cm_alidisplay_Sizeof(ad));
   fprintf(fp, "%s\n", ad->mem ? "serialized" : "not serialized");
   return eslOK;
 }
@@ -1208,9 +1258,10 @@ cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2)
   if (esl_strcmp(ad1->cmname, ad2->cmname) != eslOK) return eslFAIL;
   if (esl_strcmp(ad1->cmacc,  ad2->cmacc)  != eslOK) return eslFAIL;
   if (esl_strcmp(ad1->cmdesc, ad2->cmdesc) != eslOK) return eslFAIL;
-  if (ad1->cfrom  != ad2->cfrom)                     return eslFAIL;
-  if (ad1->cto    != ad2->cto)                       return eslFAIL;
-  if (ad1->clen   != ad2->clen)                      return eslFAIL;
+  if (ad1->cfrom_emit != ad2->cfrom_emit)            return eslFAIL;
+  if (ad1->cto_emit   != ad2->cto_emit)              return eslFAIL;
+  if (ad1->cfrom_span != ad2->cfrom_span)            return eslFAIL;
+  if (ad1->cto_span   != ad2->cto_span)              return eslFAIL;
 
   if (esl_strcmp(ad1->sqname,  ad2->sqname)  != eslOK) return eslFAIL;
   if (esl_strcmp(ad1->sqacc,   ad2->sqacc)   != eslOK) return eslFAIL;
@@ -1221,7 +1272,6 @@ cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2)
   
   return eslOK;
 }
-
 
 /*-------------- end, debugging/dev code ------------------------*/
 

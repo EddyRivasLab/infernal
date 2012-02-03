@@ -726,8 +726,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   
       esl_stopwatch_Stop(w);
       cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_STD,       NULL); fprintf(ofp, "\n");
-      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_5P,        NULL); fprintf(ofp, "\n");
-      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_3P,        NULL); fprintf(ofp, "\n");
+      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_5P_ONLY,   NULL); fprintf(ofp, "\n");
+      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_3P_ONLY,   NULL); fprintf(ofp, "\n");
       cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_5P_AND_3P, w);    fprintf(ofp, "//\n");
 
       free_info(tinfo);

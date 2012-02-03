@@ -106,10 +106,14 @@ extern float   cm_Sizeof(CM_t *cm);
 extern int     Prob2Score(float p, float null);
 extern float   Score2Prob(int sc, float null);
 extern float   Scorify(int sc);
+extern double *cm_ExpectedStateOccupancy(CM_t *cm);
+extern int     cm_ExpectedPositionOccupancy(CM_t *cm, float **ret_mexpocc, float **ret_iexpocc, double **opt_psi, int **opt_m2v_1, int **opt_m2v_2, int **opt_i2v);
+extern char ***cm_CreateTransitionMap();
+extern void    cm_FreeTransitionMap(char ***tmap);
 
 /* cm_alidisplay.c */
 extern int            cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, int64_t seqoffset, 
-					   char *pcode, float aln_sc, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs, CM_ALIDISPLAY **ret_ad);
+					   int pass_idx, char *pcode, float aln_sc, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs, CM_ALIDISPLAY **ret_ad);
 extern CM_ALIDISPLAY *cm_alidisplay_Clone(const CM_ALIDISPLAY *ad);
 extern size_t         cm_alidisplay_Sizeof(const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Serialize(CM_ALIDISPLAY *ad);
@@ -118,6 +122,12 @@ extern void           cm_alidisplay_Destroy(CM_ALIDISPLAY *ad);
 extern char           cm_alidisplay_EncodePostProb(float p);
 extern float          cm_alidisplay_DecodePostProb(char pc);
 extern int            cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth, int show_accessions, int do_noncanonicals);
+extern int            cm_alidisplay_Is5PTrunc     (const CM_ALIDISPLAY *ad);
+extern int            cm_alidisplay_Is3PTrunc     (const CM_ALIDISPLAY *ad);
+extern int            cm_alidisplay_Is5PAnd3PTrunc(const CM_ALIDISPLAY *ad);
+extern int            cm_alidisplay_Is5PTruncOnly (const CM_ALIDISPLAY *ad);
+extern int            cm_alidisplay_Is3PTruncOnly (const CM_ALIDISPLAY *ad);
+extern char          *cm_alidisplay_TruncString   (const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2);
 
@@ -269,7 +279,7 @@ extern int     cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset);
 /* from cm_modelconfig.c */
 extern int   cm_Configure   (CM_t *cm, char *errbuf, int W_from_cmdline);
 extern int   cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMSubMap_t *mother_map);
-extern int   cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float **t, float *begin, float *trbegin);
+extern int   cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float **t, float *begin);
 
 /* from cm_modelmaker.c */
 extern int  HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_mtr);
@@ -374,8 +384,8 @@ extern void  cm_tr_scan_mx_Dump              (FILE *ofp, CM_t *cm, int j, int i0
 
 extern GammaHitMx_t    *CreateGammaHitMx              (int L, int64_t i0, float cutoff);
 extern void             FreeGammaHitMx                (GammaHitMx_t *gamma);
-extern int              UpdateGammaHitMx              (CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, CM_TR_OPTS *tro, int W, double **act);
-extern int              ReportHitsGreedily            (CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, CM_TR_OPTS *tro, int W, double **act, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist);
+extern int              UpdateGammaHitMx              (CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, int W, double **act);
+extern int              ReportHitsGreedily            (CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, int W, double **act, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist);
 extern void             TBackGammaHitMx               (GammaHitMx_t *gamma, CM_TOPHITS *hitlist, int64_t i0, int64_t j0);
 
 
@@ -407,7 +417,7 @@ extern int          ParsetreeCountMPEmissions(CM_t *cm, Parsetree_t *tr);
 extern void         ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len, float omega, float *ret_sc);
 extern void         ScoreCorrectionNull3CompUnknown(const ESL_ALPHABET *abc, float *null0, ESL_DSQ *dsq, int start, int stop, float omega, float *ret_sc);
 extern char         ParsetreeMode(Parsetree_t *tr);
-extern int          ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, char *errbuf, int *ret_cfrom_span, int *ret_cto_span, int *ret_cfrom_emit, int *ret_cto_emit, int *ret_first_emit, int *ret_final_emit); 
+extern int          ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int pass_idx, int have_i0, int have_j0, char *errbuf, int *ret_cfrom_span, int *ret_cto_span, int *ret_cfrom_emit, int *ret_cto_emit, int *ret_first_emit, int *ret_final_emit); 
 extern int          cm_StochasticParsetree    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX    *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc);
 extern int          cm_StochasticParsetreeHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc);
 extern int          cm_TrStochasticParsetree  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, int pty_idx, CM_TR_MX    *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc);
@@ -501,17 +511,18 @@ extern int cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int t
 extern int cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw);
 extern int cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_cyk);
 extern int cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
-extern int cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipemode, 
-				  const char *qfile, const char *tfile, const ESL_GETOPTS *go);
-
+extern int cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipemode, const char *qfile, const char *tfile, const ESL_GETOPTS *go);
 extern int cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th);
-extern int cm_hit_Dump    (FILE *fp, const CM_HIT *h);
+
+extern int    cm_hit_AllowTruncation(CM_t *cm, int64_t start, int64_t stop, int64_t i0, int64_t j0, char mode, int b);
+extern int    cm_hit_Dump(FILE *fp, const CM_HIT *h);
 
 /* from cm_trunc.c */
 extern CM_TR_OPTS      *cm_tr_opts_Create();
 extern int              cm_tr_opts_PenaltyIdx(CM_TR_OPTS *tro);
 extern void             cm_tr_opts_Dump(FILE *fp, CM_TR_OPTS *tro);
-extern CM_TR_PENALTIES *cm_tr_penalties_Create(CM_t *cm);
+extern CM_TR_PENALTIES *cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf);
+extern int              cm_tr_penalties_Validate(CM_TR_PENALTIES *trp, CM_t *cm, double tol, char *errbuf);
 extern void             cm_tr_penalties_Dump(FILE *fp, const CM_t *cm, const CM_TR_PENALTIES *trp);
 extern float            cm_tr_penalties_Sizeof(CM_TR_PENALTIES *trp);
 extern void             cm_tr_penalties_Destroy(CM_TR_PENALTIES *trp);
@@ -595,10 +606,8 @@ extern void  FreeCP9Map(CP9Map_t *cp9map);
 extern int   build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 		 	  float psi_vs_phi_threshold, int debug_level);
 extern void CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
-extern void fill_psi(CM_t *cm, float **t, double *psi, char ***tmap);
 extern void fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos, int entered_only);
 extern void map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v);
-extern void make_tmap(char ****ret_tmap);
 extern int  CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS *r, CMSubInfo_t *subinfo, int spos, int epos, 
 				  float chi_thresh, int nsamples, int print_flag);
 extern void debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores);

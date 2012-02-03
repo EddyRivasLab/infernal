@@ -269,27 +269,27 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
    * position, else they must end at j0.
    *
    * We should only scan in Forward if i0 does not need to be in any
-   * eventual CM parsetree we derive using these bands.  This is only
-   * true if we'll use these bands for a CM search (doing_search==TRUE)
-   * and that search won't be a special truncated search where i0
-   * must be in any valid parsetree (which is TRUE if tro is non-NULL,
-   * and tro->allow_R and tro->force_i0_RT are both TRUE).
+   * eventual CM parsetree we derive using these bands. This is only
+   * true if we'll use these bands for a CM search
+   * (doing_search==TRUE) and that search won't be a special truncated
+   * search where i0 must be in any valid parsetree. We will be doing
+   * a special truncated search enforcing i0 inclusion if tro is
+   * non-NULL and tro->allow_R is TRUE.
    *
-   * Likewise, we should only scan in Forward if j0 does not need to
+   * Likewise, we should only scan in Backward if j0 does not need to
    * be in any eventual CM parsetree we derive using these bands.
    * This is only true if we'll use these bands for a CM search
    * (doing_search==TRUE) and that search won't be a special truncated
-   * search where j0 must be in any valid parsetree (which is TRUE if
-   * tro is non-NULL, and tro->allow_L and tro->force_j0_LT are both
-   * TRUE).
-   *
+   * search where j0 must be in any valid parsetree. We will be doing
+   * a special truncated search enforcing j0 inclusion if tro is 
+   * non-NULL and tro->allow_L is TRUE.
    */
   if((! doing_search) || (cm->search_opts & CM_SEARCH_HMMALNBANDS)) { 
     do_fwd_scan = do_bck_scan = FALSE;
   }
   else { 
-    do_fwd_scan = (tro != NULL && tro->allow_R && tro->force_i0_RT) ? FALSE : TRUE;
-    do_bck_scan = (tro != NULL && tro->allow_L && tro->force_j0_LT) ? FALSE : TRUE;
+    do_fwd_scan = (tro != NULL && tro->allow_R) ? FALSE : TRUE;
+    do_bck_scan = (tro != NULL && tro->allow_L) ? FALSE : TRUE;
   }
 
   /* Step 1: Get HMM Forward/Backward DP matrices.

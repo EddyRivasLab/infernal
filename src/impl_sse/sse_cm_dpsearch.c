@@ -687,10 +687,10 @@ SSE_CYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, ESL_DSQ *dsq, int i0, int j
       }
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], alpha[jp_v][0], bestr, NULL, NULL, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], alpha[jp_v][0], bestr, NULL, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], alpha[jp_v][0], bestr, NULL, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], alpha[jp_v][0], bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
 
     } /* end loop over end positions j */

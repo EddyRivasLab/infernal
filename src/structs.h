@@ -560,8 +560,9 @@ typedef struct parsetree_s {
   int  n;		/* number of elements in use so far        */
   int  nalloc;		/* number of elements allocated for        */
   int  memblock;	/* size of malloc() chunk, # of elems      */
-  int  is_std;          /* TRUE  if alignment was determined using standard  CYK/optacc,
-			 * FALSE if alignment was determined using truncated CYK/optacc */
+  int  is_std;          /* TRUE if parsetree was determined using standard  CYK/optacc,
+			 * FALSE if parsetree was determined using truncated CYK/optacc */
+  int  pass_idx;        /* pipeline pass the hit the parsetree is for was found in */
   float trpenalty;      /* truncated alignment score penalty, 0.0 if is_std is TRUE. */
 } Parsetree_t;
 
@@ -907,21 +908,23 @@ typedef struct _fullmat_t {
  * local entry). When yshad[v][][] is USED_EL, there is a v->EL transition
  * and the remaining subsequence is aligned to the EL state. 
  */
-#define USED_LOCAL_BEGIN 101
-#define USED_EL          102
-#define USED_TRUNC_END   103
+#define USED_LOCAL_BEGIN  101
+#define USED_EL           102
+#define USED_TRUNC_BEGIN  103
+#define USED_TRUNC_END    104
 
 /* Constants for alignment truncation modes, used during alignment
- * traceback.  We use TRMODE{J,L,R}_OFFSET as a way of determining the
+ * traceback. We use TRMODE{J,L,R}_OFFSET as a way of determining the
  * marginal alignment mode solely from the yoffset stored in the
  * {J,L,R}shadow matrices, by adding the appropriate offset to yoffset
  * depending on the truncation mode. A crucial fact is that yoffset
  * ranges from 0..MAXCONNECT-1 for normal states, but it can also be
- * USED_LOCAL_BEGIN, USED_EL, and USED_TRUNC_END, so we have to make
- * sure that adding 0..MAXCONNECT-1 to any of the
+ * USED_LOCAL_BEGIN, USED_EL, USED_TRUNC_BEGIN and USED_TRUNC_END, so
+ * we have to make sure that adding 0..MAXCONNECT-1 to any of the
  * TRMODE_{J,L,R}_OFFSET values does not add up to USED_LOCAL_BEGIN,
- * USED_EL or USED_TRUNC_END (defined above). And remember that these
- * values have to be able to be stored in a char.
+ * USED_EL, USED_TRUNC_BEGIN, USED_TRUNC_END (defined above). And
+ * remember that these values have to be able to be stored in a char
+ * (must be 0..255).
  */
 #define TRMODE_UNKNOWN  4  
 #define TRMODE_J        3
@@ -1656,27 +1659,31 @@ typedef struct cm_tr_opts_s {
   /* allow_T is not necessary, it is implicitly TRUE only
    * if allow_L and allow_R are both TRUE.
    */
-
-  int force_i0_RT; /* require i0 (first residue) to be included in any Right or Terminal marginal hit */
-  int force_j0_LT; /* require j0 (final residue) to be included in any Left  or Terminal marginal hit */
 } CM_TR_OPTS;
 
 /* Truncation penalty parameters, we either allow 5' truncation, 3' truncation or both.
  * These allow truncated DP aligners and scanners (cm_dpalign_trunc.c and cm_dpsearch_trunc.c)
  * to know which truncation penalty to apply. 
  */
-#define TRPENALTY_5P_OR_3P  0
-#define TRPENALTY_5P_AND_3P 1
-#define NTRPENALTY          2
+#define TRPENALTY_5P_AND_3P 0
+#define TRPENALTY_5P_ONLY   1
+#define TRPENALTY_3P_ONLY   2
+#define NTRPENALTY          3
 
 /* Structure CM_TR_PENALTIES: Information on truncated alignment
  * penalties. 
  */
 typedef struct cm_tr_penalties_s {
   int     M;          /* number of states in the CM this object is associated with */
-  float **ptyAA;      /* [TRPENALTY_5P_OR_3][0..v..M-1]  is truncation score penalty used if we allowed 5' or 3' truncation */
-                      /* [TRPENALTY_5P_AND_3][0..v..M-1] is truncation score penalty used if we allowed 5' and 3' truncation */
-  int  **iptyAA;      /* same as ptyAA but scaled int scores */
+  int     ignored_inserts; /* TRUE if inserts were ignored, FALSE if not (normally this is FALSE) */
+  float **g_ptyAA;    /* g_ptyAA[TRPENALTY_5P_AND_3][0..v..M-1] sc penalty for global aln if we allowed 5' and 3' truncation 
+		       * g_ptyAA[TRPENALTY_5P_ONLY][0..v..M-1]  sc penalty for global aln if we allowed 5' truncation only 
+		       * g_ptyAA[TRPENALTY_3P_ONLY][0..v..M-1]  sc penalty for global aln if we allowed 3' truncation only */
+  float **l_ptyAA;    /* l_ptyAA[TRPENALTY_5P_AND_3][0..v..M-1] sc penalty for local aln if we allowed 5' and 3' truncation
+		       * l_ptyAA[TRPENALTY_5P_ONLY][0..v..M-1]  sc penalty for local aln if we allowed 5' truncation only
+		       * l_ptyAA[TRPENALTY_5P_ONLY][0..v..M-1]  sc penalty for local aln if we allowed 3' truncation only */
+  int  **ig_ptyAA;    /* same as g_ptyAA but scaled int scores */
+  int  **il_ptyAA;    /* same as l_ptyAA but scaled int scores */
 
 } CM_TR_PENALTIES;
 
@@ -1799,7 +1806,6 @@ typedef struct cm_s {
   float **t;		/*   Transition prob's [0..M-1][0..MAXCONNECT-1]         */
   float **e;		/*   Emission probabilities.  [0..M-1][0..15]            */
   float  *begin;	/*   Local alignment start probabilities [0..M-1]        */
-  float  *trbegin;	/*   Local alnmnt start probabilities for truncated alns */
   float  *end;		/*   Local alignment ending probabilities [0..M-1]       */
 
 			/* Parameters of the log odds model:                     */
@@ -1809,7 +1815,6 @@ typedef struct cm_s {
   float **lmesc;        /*   Left marginal emission scores (log odds)            */
   float **rmesc;        /*   Right marginal emission scores (log odds)           */                
   float *beginsc;	/*   Score for ROOT_S -> state v (local alignment)       */
-  float *trbeginsc;	/*   Score for ROOT_S -> state v (local trunc alignment) */
   float *endsc;   	/*   Score for state_v -> EL (local alignment)           */
 
 			/* Scaled int parameters of the log odds model:          */
@@ -1819,7 +1824,6 @@ typedef struct cm_s {
   int  **ilmesc;        /*   Left marginal emission scores (log odds int)        */
   int  **irmesc;        /*   Right marginal emission scores (log odds int)       */                
   int   *ibeginsc;      /*   Score for ROOT_S -> state v (local alignment)       */
-  int   *itrbeginsc;    /*   Score for ROOT_S -> state v (trunc alignment)       */
   int   *iendsc;  	/*   Score for state_v -> EL (local alignment)           */
 
   float  pbegin;        /* local begin prob to spread across internal nodes for local mode    */
@@ -1987,12 +1991,18 @@ typedef struct cm_file_s {
  * In the special case of reading from stdin, <fname> is "[STDIN]".
  */
 
-/* Pipeline pass indices */
+/* Pipeline pass indices, these values have two interrelated but different roles:
+ * 1. [1..4] are flags indicating which type of truncated alignment is/was allowed in/by
+ *    a DP scanner/alignment function. Each pass of the pipeline allows a 
+ *    different combination of 5' and/or 3' truncated alignment.
+ * 2. [0..4] are indices in cm->pli->acct[], accounting states for each 
+ *    pass of the pipeline.
+ */
 #define PLI_PASS_SUMMED    0
-#define PLI_PASS_STD       1
-#define PLI_PASS_5P        2
-#define PLI_PASS_3P        3
-#define PLI_PASS_5P_AND_3P 4
+#define PLI_PASS_STD       1  /* no truncated alignments allowed */
+#define PLI_PASS_5P_ONLY   2  /* only 5' truncated alignments allowed */
+#define PLI_PASS_3P_ONLY   3  /* only 3' truncated alignments allowed */
+#define PLI_PASS_5P_AND_3P 4  /* 5' and 3' truncated alignments allowed */
 #define NPLI_PASSES        5
 
 typedef struct cm_pipeline_accounting_s {
@@ -2226,8 +2236,10 @@ typedef struct cm_alidisplay_s {
   char *cmname;	    	        /* name of HMM                          */
   char *cmacc;			/* accession of HMM; or [0]='\0'        */
   char *cmdesc;		        /* description of HMM; or [0]='\0'      */
-  int   cfrom;		        /* min bound in ccoord, start position in CM */
-  int   cto;			/* max bound in ccoord, end position in CM   */
+  int   cfrom_emit;             /* min consensus pos, start position in CM */
+  int   cto_emit;		/* max consensus pos, end position in CM   */
+  int   cfrom_span;             /* min consensus pos in predicted non-truncated hit, == cfrom unless hit is 5' truncated */
+  int   cto_span;               /* max consensus pos in predicted non-truncated hit, == cto   unless hit is 3' truncated */
   int   clen;			/* consensus length of model            */
   
   char *sqname;			/* name of target sequence              */
@@ -2285,6 +2297,7 @@ typedef struct cm_hit_s {
   /* variables necessary only from removing bogus hits from 5'/3' terminii */
   int64_t        srcL;          /* full length of source sequence the hit is from */
   int            maxW;          /* predicted max reasonable size of a hit for model this hit is to */
+
 } CM_HIT;
 
 /* Structure: CM_TOPHITS: Collection of hits that can be sorted by

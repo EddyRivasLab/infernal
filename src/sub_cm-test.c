@@ -150,6 +150,8 @@ main(int argc, char **argv)
   if ((status = cm_file_Open(cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
   if ((cm_file_Read(cmfp, TRUE, &abc, &cm)) != eslOK) cm_Fail("Failed to read CM");
   cm_file_Close(cmfp);
+  /* configure our model */
+  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) cm_Fail("Problem configuring CM");
 
   if (esl_opt_IsOn(go, "-s"))  r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
   else                         r = esl_randomness_CreateTimeseeded();

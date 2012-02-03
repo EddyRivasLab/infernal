@@ -580,7 +580,6 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
   double          *orig_psi;    /* expected num times each state visited in orig_cm */
   int              v_s;         /* state counter for sub_cm                         */             
   int              n_s;         /* node  counter for sub_cm                         */             
-  int              i,j;         /* counters                                         */
   FILE            *ofp;         /* an open output file                              */
   int              spos;        /* first consensus (match) column of the orig_cm to 
 				 * model with the sub_cm */
@@ -687,9 +686,9 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
   map_orig2sub_cm(orig_cm, sub_cm, submap, print_flag);
 
   /* Fill orig_psi, which we need to determine the sub_cm parameters. */
-  make_tmap(&tmap);
-  ESL_ALLOC(orig_psi, sizeof(double) * orig_cm->M);
-  fill_psi(orig_cm, orig_cm->t, orig_psi, tmap);
+  orig_psi = cm_ExpectedStateOccupancy(orig_cm);
+  /* we need a transition map too */
+  tmap = cm_CreateTransitionMap();
    
   CMZero(sub_cm);
   CMSetNullModel(sub_cm, orig_cm->null);
@@ -800,20 +799,11 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
     }    
 
   /* Cleanup and exit. */
-  for(i = 0; i < UNIQUESTATES; i++)
-    {
-      for(j = 0; j < NODETYPES; j++)
-	free(tmap[i][j]);
-      free(tmap[i]);
-    }
-  free(tmap);
-
+  cm_FreeTransitionMap(tmap);
   free(sub_cstr);
   free(sub_ct);
-
   FreeCMConsensus(con);
   FreeParsetree(mtr);
-
   free(orig_psi);
 
   *ret_cm = sub_cm;
@@ -1966,9 +1956,8 @@ debug_print_cm_params(FILE *fp, CM_t *cm)
     {
       fprintf(fp, "v:%4d:%4d %4s %2s\n", v, cm->ndidx[v], nodetypes[(int) cm->ndtype[cm->ndidx[v]]], sttypes[(int) cm->sttype[v]]);
       if(cm->nodemap[cm->ndidx[v]] == v)
-	fprintf(fp, "beg: %0.3f (%.3f %10d)| trbeg: %0.3f (%.3f %10d) end %0.3f (%.3f %10d)\n", 
+	fprintf(fp, "beg: %0.3f (%.3f %10d)| end %0.3f (%.3f %10d)\n", 
 		cm->begin[v], cm->beginsc[v], cm->ibeginsc[v],
-		cm->trbegin[v], cm->trbeginsc[v], cm->itrbeginsc[v],
 		cm->end[v], cm->endsc[v], cm->iendsc[v]);
       if(cm->sttype[v] == MP_st)
 	{
@@ -2101,8 +2090,6 @@ int
 check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, double threshold, 
 			  int print_flag)
 {
-  int status;
-  int i,j;
   int v_s; /* sub_cm state index*/ 
   int v_o; /* orig_cm state index*/ 
   double temp_psi;
@@ -2113,17 +2100,13 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, doubl
   int is_insert;
   int root_v_ct;
   float diff;
-  char     ***tmap;        /* hard-coded transition map, for convenience       */
   double     *orig_psi;    /* expected num times each state visited in orig_cm */
   double     *sub_psi;     /* expected num times each state visited in sub_cm  */
   
   /* Fill orig_psi and sub_psi parameters. */
-  make_tmap(&tmap);
-  ESL_ALLOC(orig_psi, sizeof(double) * orig_cm->M);
-  fill_psi(orig_cm, orig_cm->t, orig_psi, tmap);
-  ESL_ALLOC(sub_psi,  sizeof(double) * sub_cm->M);
-  fill_psi(sub_cm, sub_cm->t, sub_psi, tmap);
-  
+  if((orig_psi = cm_ExpectedStateOccupancy(orig_cm)) == NULL) goto ERROR;
+  if((sub_psi  = cm_ExpectedStateOccupancy(sub_cm))  == NULL) goto ERROR;
+
   if(print_flag)
     {
       printf("Printing psi in check_orig_psi_vs_sub_psi():\n");
@@ -2228,13 +2211,6 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, doubl
     printf("ROOT v_ct is %d with thresh: %f!\n", root_v_ct, threshold);
   
   /* Cleanup and exit. */
-  for(i = 0; i < UNIQUESTATES; i++)
-    {
-      for(j = 0; j < NODETYPES; j++)
-	free(tmap[i][j]);
-      free(tmap[i]);
-    }
-  free(tmap);
   free(orig_psi);
   free(sub_psi);
   

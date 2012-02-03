@@ -71,7 +71,6 @@ cm_tophits_Create(void)
   return NULL;
 }
 
-
 /* Function:  cm_tophits_Grow()
  * Synopsis:  Reallocates a larger hit list, if needed.
  * Incept:    EPN, Tue May 24 13:13:52 2011
@@ -1004,6 +1003,9 @@ cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli)
  *            in human-readable ASCII text format to stream <ofp>, using
  *            final pipeline accounting stored in <pli>. 
  * 
+ *            Hits must have a valid alignment display in order
+ *            to determine if they're truncated or not. 
+ *
  *            The tophits list <th> should already be sorted (see
  *            <cm_tophits_Sort()> and thresholded (see
  *            <cm_tophits_Threshold>).
@@ -1050,8 +1052,8 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   cur_rankstr[rankw] = '\0';
 
   fprintf(ofp, "Hit scores:\n");
-  fprintf(ofp, " %*s  %9s  %6s  %-*s  %*s  %*s  %1s  %5s  %s\n", rankw, "rank",  "E-value",   " score", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"model"), posw, "start", posw, "end", "", "trunc", "description");
-  fprintf(ofp, " %*s  %9s  %6s  %-*s  %*s  %*s  %1s  %5s  %s\n", rankw, rankstr, "---------", "------", namew, namestr, posw, posstr, posw, posstr, "", "-----", "-----------");
+  fprintf(ofp, " %*s  %9s  %6s  %-*s  %*s  %*s  %1s  %5s  %4s  %s\n", rankw, "rank",  "E-value",   " score", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"model"), posw, "start", posw, "end", "", "trunc", "pass", "description");
+  fprintf(ofp, " %*s  %9s  %6s  %-*s  %*s  %*s  %1s  %5s  %4s  %s\n", rankw, rankstr, "---------", "------", namew, namestr, posw, posstr, posw, posstr, "", "-----", "----", "-----------");
   
   nprinted = 0;
   for (h = 0; h < th->N; h++) { 
@@ -1073,18 +1075,16 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       
       sprintf(cur_rankstr, "(%d)", nprinted+1);
 
-      fprintf(ofp, " %*s  %9.2g  %6.1f  %-*s  %*" PRId64 "  %*" PRId64 "  %c  ",
+      fprintf(ofp, " %*s  %9.2g  %6.1f  %-*s  %*" PRId64 "  %*" PRId64 "  %c  %5s  %4d",
 	      rankw, cur_rankstr,
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
 	      namew, showname,
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
-	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'));
-      if     (th->hit[h]->mode == TRMODE_T) fprintf(ofp, "%5s  ", "5'&3'");
-      else if(th->hit[h]->mode == TRMODE_L) fprintf(ofp, "%5s  ", "3'");
-      else if(th->hit[h]->mode == TRMODE_R) fprintf(ofp, "%5s  ", "5'");
-      else                                  fprintf(ofp, "%5s  ", "no");
+	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'), 
+	      cm_alidisplay_TruncString(th->hit[h]->ad), 
+	      th->hit[h]->pass_idx);
       
       if (textw > 0) fprintf(ofp, "%-.*s\n", descw, th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
       else           fprintf(ofp, "%s\n",           th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
@@ -1197,44 +1197,39 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	else                            { fprintf(ofp, " %6s %5s %7s %7s", "------", "-----", "-------", "-------"); }
       }
       fprintf(ofp, "\n");
-      
-      
-      if(th->hit[h]->mode == TRMODE_J || th->hit[h]->mode == TRMODE_L) { 
-	lmod = th->hit[h]->ad->cfrom  == 1 ? '[' : '.';
-	lseq = th->hit[h]->ad->sqfrom == 1 ? '[' : '.';
+
+      if(cm_alidisplay_Is5PTrunc(th->hit[h]->ad)) { /* 5' truncated */
+	lmod = '~';
+	lseq = '~';
       }
-      else { /* R or T mode */
-	lmod = th->hit[h]->ad->cfrom  == 1 ? '{' : '~';
-	lseq = th->hit[h]->ad->sqfrom == 1 ? '{' : '~';
+      else { /* not 5' truncated */
+	lmod = th->hit[h]->ad->cfrom_emit == 1 ? '[' : '.';
+	lseq = th->hit[h]->ad->sqfrom     == 1 ? '[' : '.';
       }
-      if(th->hit[h]->mode == TRMODE_J || th->hit[h]->mode == TRMODE_R) { 
-	rmod = th->hit[h]->ad->cto  == th->hit[h]->ad->clen ? ']' : '.';
-	rseq = th->hit[h]->ad->sqto == th->hit[h]->srcL     ? ']' : '.';
+      if(cm_alidisplay_Is3PTrunc(th->hit[h]->ad)) { /* 3' truncated */
+	rmod = '~';
+	rseq = '~';
       }
-      else { /* L or T mode */
-	rmod = th->hit[h]->ad->cto  == th->hit[h]->ad->clen ? '}' : '~';
-	rseq = th->hit[h]->ad->sqto == th->hit[h]->srcL     ? '}' : '~';
+      else { /* not 3' truncated */
+	rmod = th->hit[h]->ad->cto_emit == th->hit[h]->ad->clen ? ']' : '.';
+	rseq = th->hit[h]->ad->sqto     == th->hit[h]->srcL     ? ']' : '.';
       }
 
       sprintf(cur_rankstr, "(%d)", nprinted+1);
 
-      fprintf(ofp, " %*s %c %6.1f %9.2g %7d %7d %c%c %11" PRId64 " %11" PRId64 " %c %c%c ",
+      fprintf(ofp, " %*s %c %6.1f %9.2g %7d %7d %c%c %11" PRId64 " %11" PRId64 " %c %c%c %5s",
 	      rankw, cur_rankstr,
 	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? '!' : '?'),
 	      th->hit[h]->score,
 	      th->hit[h]->evalue,
-	      th->hit[h]->ad->cfrom,
-	      th->hit[h]->ad->cto,
+	      th->hit[h]->ad->cfrom_emit,
+	      th->hit[h]->ad->cto_emit,
 	      lmod, rmod, 
 	      th->hit[h]->start,
 	      th->hit[h]->stop,
 	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'),
-	      lseq, rseq);
-      if     (th->hit[h]->mode == TRMODE_T) fprintf(ofp, "%5s", "5'&3'");
-      else if(th->hit[h]->mode == TRMODE_L) fprintf(ofp, "%5s", "3'");
-      else if(th->hit[h]->mode == TRMODE_R) fprintf(ofp, "%5s", "5'");
-      else                                  fprintf(ofp, "%5s", "no");
-      
+	      lseq, rseq, 
+	      cm_alidisplay_TruncString(th->hit[h]->ad));
       if (pli->do_alignments) { 
 	if(th->hit[h]->ad->used_optacc) { fprintf(ofp, " %4.2f", th->hit[h]->ad->aln_sc); }
       	else                            { fprintf(ofp, " %6.2f", th->hit[h]->ad->aln_sc); }
@@ -1532,14 +1527,14 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
   int h;
 
   if (show_header) { 
-    fprintf(ofp, "#%-*s %-*s %-*s %-*s %7s %7s %*s %*s %6s %9s %6s %-s\n",
+    fprintf(ofp, "#%-*s %-*s %-*s %-*s %7s %7s %*s %*s %6s %5s %4s %9s %6s %-s\n",
 	    tnamew-1, "target name", taccw, "accession",  qnamew, "query name", qaccw, "accession", 
 	    "cm from", "cm to", 
-	    posw, "hit from", posw, "hit to", "strand", "E-value", "score", "description of target");
-    fprintf(ofp, "#%-*s %-*s %-*s %-*s %-7s %-7s %*s %*s %6s %9s %6s %s\n",
+	    posw, "hit from", posw, "hit to", "strand", "trunc", "pass", "E-value", "score", "description of target");
+    fprintf(ofp, "#%-*s %-*s %-*s %-*s %-7s %-7s %*s %*s %6s %5s %4s %9s %6s %s\n",
 	    tnamew-1, tnamestr, taccw, taccstr, qnamew, qnamestr, qaccw, qaccstr, 
 	    "-------", "-------", 
-	    posw, posstr, posw, posstr, "------", "---------", "------", "---------------------");
+	    posw, posstr, posw, posstr, "------", "-----", "----", "---------", "-----", "---------------------");
   }
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED)    {
@@ -1551,12 +1546,14 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
 	      qaccw,  ((qacc != NULL && qacc[0] != '\0') ? qacc : "-"));
 
       if(th->hit[h]->ad == NULL) { fprintf(ofp, "%7s %7s ", "-", "-"); }
-      else                       { fprintf(ofp, "%7d %7d ", th->hit[h]->ad->cfrom, th->hit[h]->ad->cto); }
+      else                       { fprintf(ofp, "%7d %7d ", th->hit[h]->ad->cfrom_emit, th->hit[h]->ad->cto_emit); }
 
-      fprintf(ofp, "%*" PRId64 " %*" PRId64 " %6s %9.2g %6.1f %s\n",
+      fprintf(ofp, "%*" PRId64 " %*" PRId64 " %6s %5s %4d %9.2g %6.1f %s\n",
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->in_rc == TRUE) ? "-" : "+",
+	      cm_alidisplay_TruncString(th->hit[h]->ad), 
+	      th->hit[h]->pass_idx, 
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
 	      (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "-");
@@ -1692,6 +1689,68 @@ cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th)
     }
   }
   return eslOK;
+}
+
+/* Function:  cm_hit_AllowTruncation()
+ * Synopsis:  Determine if a hit returned from a truncated DP scanner
+ *            is allowed, and return TRUE if it is and should be
+ *            reported. Otherwise return FALSE. 
+ *            
+ *            The decision depends on the mode of the hit, 
+ *            locality mode of the CM and whether or not
+ *            the hit contains the first and/or final residue
+ *            of its source sequence. 
+ * 
+ * Args:      cm    - the model, we need its emitmap and clen
+ *            start - start position of the hit
+ *            stop  - end position of the hit
+ *            i0    - start position of source sequence
+ *            j0    - end position of source sequence
+ *            mode  - marginal mode of hit
+ *            b     - entry state of the hit, we used a 
+ *                    truncated begin into this state.
+ * Returns:   informative string
+ */
+int 
+cm_hit_AllowTruncation(CM_t *cm, int64_t start, int64_t stop, int64_t i0, int64_t j0, char mode, int b)
+{
+  int in_local_mode = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
+  int nd = cm->ndidx[b];
+  int lpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) ? cm->emap->lpos[nd] : cm->emap->lpos[nd] + 1;
+  int rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) ? cm->emap->rpos[nd] : cm->emap->rpos[nd] - 1;
+
+  if(start == i0 && stop == j0) return TRUE; /* always allow full sequence hits i0..j0 */
+
+  /* if we get here, hit does not include full seq i0..j0 */
+  if(in_local_mode) { 
+    switch(mode) { 
+    case TRMODE_J: /* local J hit that doesn't span full seq: always allow it */
+      return TRUE; break;
+    case TRMODE_L: /* local L hit that doesn't span full seq: j0 must be included */
+      return (stop  == j0) ? TRUE : FALSE; break;
+    case TRMODE_R: /* local R hit that doesn't span full seq: i0 must be included */
+      return (start == i0) ? TRUE : FALSE; break;
+    case TRMODE_T: /* local T hit that doesn't span full seq: don't allow it */
+      return FALSE; break;
+    default:
+      return FALSE; break;
+    }
+  }
+  else { /* local begins are off */
+    switch(mode) { 
+    case TRMODE_J: /* global J hit that doesn't span full seq: b must span 1..clen to allow it*/
+      return (lpos == 1 && rpos == cm->clen) ? TRUE : FALSE; break;
+    case TRMODE_L: /* global L hit that doesn't span full seq: j0 must be included and b must span 1 to allow it */
+      return (stop  == j0   && lpos == 1)        ? TRUE : FALSE; break;
+    case TRMODE_R: /* global R hit that doesn't span full seq: i0 must be included and b must span clen to allow it */
+      return (start == i0   && rpos == cm->clen) ? TRUE : FALSE; break;
+    case TRMODE_T: /* global T hit that doesn't span full seq: don't allow it */
+      return FALSE; break;
+    default:
+      return FALSE; break;
+    }
+  }
+  return FALSE; /* not reached */
 }
 
 /* Function:  cm_hit_Dump()

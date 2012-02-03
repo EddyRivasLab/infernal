@@ -195,7 +195,6 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int s
   /* copies of CM parameters */
   float  **t_copy       = NULL;  /* copy of cm->t[0..v..M-1][0..MAXCONNECT-1], transition probs */
   float   *begin_copy   = NULL;  /* cm->begin[0..v..M-1], standard local begin probabilities  */
-  float   *trbegin_copy = NULL;  /* cm->trbegin[0..v..M-1], standard local begin probabilities  */
 
   if(qdbinfo != NULL && ((qdbinfo->beta2 - qdbinfo->beta1) > 1E-20)) return eslEINVAL;
   max_beta = beta_W;
@@ -210,10 +209,8 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int s
     t_copy[v] = t_copy[0] + v * MAXCONNECT;
   }
   ESL_ALLOC(begin_copy,   sizeof(float) * cm->M);
-  ESL_ALLOC(trbegin_copy, sizeof(float) * cm->M);
   esl_vec_FCopy(cm->t[0],    cm->M * MAXCONNECT, t_copy[0]);
   esl_vec_FCopy(cm->begin,   cm->M, begin_copy);
-  esl_vec_FCopy(cm->trbegin, cm->M, trbegin_copy);
 
   /* Now modify our copies to reflect a CM with local begins on but local ends off */
   /* first negate local ends */
@@ -224,7 +221,7 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int s
       }
     }
   }	
-  cm_CalculateLocalBeginProbs(cm, cm->pbegin, t_copy, begin_copy, trbegin_copy);
+  cm_CalculateLocalBeginProbs(cm, cm->pbegin, t_copy, begin_copy);
 
   /* gamma[v][n] is Prob(state v generates subseq of length n)
    */
@@ -454,7 +451,6 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int s
     free(t_copy);
   }
   if(begin_copy   != NULL) free(begin_copy);
-  if(trbegin_copy != NULL) free(trbegin_copy);
 
   free(touch);
   while (esl_stack_PPop(beamstack, (void **) &tmp) != eslEOD) free(tmp);

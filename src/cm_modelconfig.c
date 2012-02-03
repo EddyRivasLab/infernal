@@ -271,7 +271,9 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
   /* Configure for truncated search/alignment. */
   if(cm->config_opts & CM_CONFIG_TRUNC) { 
     /* (1) Define truncated alignment penalty probabilities (cm->trp) */
-    if((cm->trp = cm_tr_penalties_Create(cm)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't create truncation penalties for the CM");
+    if((cm->trp = cm_tr_penalties_Create(cm, TRUE, errbuf)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't create truncation penalties for the CM");
+    /* cm_tr_penalties_Dump(stdout, cm, cm->trp); */
+
     /* (2) Setup Lcp9, Rcp9, Tcp9 CP9 HMMs 
      * Clone the globally configured CP9 HMM cm->cp9 before its put
      * into local mode into each of cm->Lcp9, cm->Rcp9, cm->Tcp9 and
@@ -381,39 +383,27 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
  *
  * Purpose: 
  *
- *           Calculate local begin probabilities for both standard
- *           local alignment and truncated local alignment, <begin>
- *           and <trbegin> respectively.  The transitions in <t>
- *           should be for a CM in global mode, not local mode. By
+ *           Calculate local begin probabilities. The transitions in
+ *           <t> should be for a CM in global mode, not local mode. By
  *           specifying <t> as not necessarily equal to <cm->t>, we
- *           can calculate local begin probs for a model already in 
+ *           can calculate local begin probs for a model already in
  *           local mode.
  *           
  * Args:     cm               - the covariance model
  *           p_internal_start - prob mass to spread for local begins
  *           t                - [0..M-1][0..MAXCONNECT-1] transition probabilities (not necessarily cm->t) 
  *           begin            - [0..M-1] standard local begin probs to set
- *           trbegin          - [0..M-1] truncated local begin probs to set
  *
  * Returns:  eslOK on success
  *           eslEMEM if out of memory
  */        
 
 int
-cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float **t, float *begin, float *trbegin)
+cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float **t, float *begin)
 {
-  int status;
-  int v;			/* counter over states */
   int nd;			/* counter over nodes */
   int nstarts;			/* number of possible internal starts */
   float p;                      /* p_internal_start / nstarts */
-
-  /* variables used for setting truncated begin probs (trbegin) */
-  char  ***tmap   = NULL;       /* transition map, used to calc psi */
-  int      i, j;                /* counters for transition maps */
-  double  *psi    = NULL;       /* psi[v] = expected number of times state v entered (occupancy) */
-  float    tmpvec[3];           /* temporary vector for normalizing trbegin */
-  int      vins1, vins2;        /* insert state indices */
 
   /* Count "internal" nodes: MATP, MATL, MATR, and BIF nodes.
    * Ignore all start nodes, and also node 1 (which is always the
@@ -437,110 +427,7 @@ cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float **t, float *
     	cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)  
       begin[cm->nodemap[nd]] = p;
   }
-
-  /* Set trbegin: local begin probabilities for truncated parsetrees 
-   * 
-   * As with standard local begins, truncated local begins are
-   * possible into any BIF_B, MATP_MP, MATL_ML or MATR_MR state, but
-   * unlike standard local begins we can also do a begin into any
-   * insert state. (We need to do this so we can enforce that
-   * truncated alignments include the first and/or final position of a
-   * target sequence which may be an insert.)
-   * 
-   * Insert states share some of the local begin probability mass p 
-   * (p == p_internal_start / nstarts) with the nearest downstream
-   * standard local begin (slb) state (slb states are BIF_B, MATP_MP,
-   * MATL_ML or MATR_MR), weighted by occupancy (the psi[v] values).
-   * 
-   * The loop through the states to do this is a little strange. We
-   * need to keep track of 1 or 2 insert states we're currently
-   * setting trbegin for, these will be the (non-detached) insert
-   * states we've seen since the previous slb state. When we get to a
-   * slb state we normalize the psi values for the current slb state
-   * and the 1 or 2 inserts. The slb plus the 1 or 2 inserts form a
-   * set that will share the standard local begin probability, weighted
-   * by each states' relative psi value. 
-   * 
-   * There is a wrinkle with this approach. For any MATP node followed
-   * by an END node, the MATP_IL will have an IMPOSSIBLE trbegin
-   * probability (the MATP_IR will be detached). I don't see how to
-   * avoid this cleanly, but it shouldn't matter much because any
-   * truncated local begin into that MATP_IL would have to insert the
-   * entire sequence and then go the the adjacent END_E, which would
-   * be a silly parsetree.
-   */
-  esl_vec_FSet(trbegin, cm->M, 0.);
-
-  /* Fill psi, used for setting trbegin */
-  ESL_ALLOC(psi, sizeof(double) * cm->M);
-  make_tmap(&tmap);
-  fill_psi(cm, t, psi, tmap);
-
-  vins1 = -1; /* first  insert state seen since previous BIF_B, MATP_MP, MATL_ML, MATR_MR, END_E */
-  vins2 = -1; /* second insert state seen since previous BIF_B, MATP_MP, MATL_ML, MATR_MR, END_E */
-  p = p_internal_start / (float) nstarts; 
-  for(v = 0; v < cm->M; v++) { 
-    if((cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) && (! StateIsDetached(cm, v))) { 
-      if     (vins1 == -1) vins1 = v;
-      else if(vins2 == -1) vins2 = v;
-      else cm_Fail("cm_CalculateLocalBeginProbs() bogus state topology when setting truncated local begin probabilities (1)");
-    } 
-    else if(cm->stid[v] == BIF_B || cm->stid[v] == MATP_MP || cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR) { 
-      esl_vec_FSet(tmpvec, 3, 0.);
-      if(vins1 != -1 && vins2 != -1) { 
-	tmpvec[0] = psi[vins1];
-	tmpvec[1] = psi[vins2];
-	tmpvec[2] = psi[v];
-	esl_vec_FNorm(tmpvec, 3);
-	trbegin[vins1] = (cm->ndidx[v] == 1) ? tmpvec[0] * (1. - p_internal_start) : tmpvec[0] * p;
-	trbegin[vins2] = (cm->ndidx[v] == 1) ? tmpvec[1] * (1. - p_internal_start) : tmpvec[1] * p;
-	trbegin[v]     = (cm->ndidx[v] == 1) ? tmpvec[2] * (1. - p_internal_start) : tmpvec[2] * p;
-      }
-      else if(vins1 != -1 && vins2 == -1) { 
-	tmpvec[0] = psi[vins1];
-	tmpvec[1] = psi[v];
-	esl_vec_FNorm(tmpvec, 2);
-	trbegin[vins1] = (cm->ndidx[v] == 1) ? tmpvec[0] * (1. - p_internal_start) : tmpvec[0] * p;
-	trbegin[v]     = (cm->ndidx[v] == 1) ? tmpvec[1] * (1. - p_internal_start) : tmpvec[1] * p;
-      }
-      /* reset */
-      vins1 = vins2 = -1;
-    }
-    else if(cm->sttype[v] == E_st) { 
-      /* reset vins1 and vins2 */ 
-      vins1 = vins2 = -1;
-      /* this means detached inserts immediately prior to a END_E
-       * will keep a impossible trbegin score, but also means
-       * MATP_ILs just before a END node will stay impossible as 
-       * well (see 'wrinkle' in comments above).
-       */
-    }
-  }
-
-  if(tmap != NULL) { 
-    for(i = 0; i < UNIQUESTATES; i++) { 
-      for(j = 0; j < NODETYPES; j++) { 
-	free(tmap[i][j]);
-      }
-      free(tmap[i]);
-    }
-    free(tmap);
-  }
-  if(psi != NULL) free(psi);
   return eslOK;
-
- ERROR:
-  if(tmap != NULL) { 
-    for(i = 0; i < UNIQUESTATES; i++) { 
-      for(j = 0; j < NODETYPES; j++) { 
-	free(tmap[i][j]);
-      }
-      free(tmap[i]);
-    }
-    free(tmap);
-  }
-  if(psi != NULL) free(psi);
-  return status;
 }
 
 /* Function: cm_localize()
@@ -591,7 +478,7 @@ cm_localize(CM_t *cm, float p_internal_start, float p_internal_exit)
   float denom;
 
   /* Local begins: */
-  cm_CalculateLocalBeginProbs(cm, p_internal_start, cm->t, cm->begin, cm->trbegin);
+  cm_CalculateLocalBeginProbs(cm, p_internal_start, cm->t, cm->begin);
   /* Erase the previous transition probs from node 0. The only way out
    * of node 0 in standard scanners/aligners is going to be local
    * begin transitions from the root v=0 directly to MATP_MP, MATR_MR, 

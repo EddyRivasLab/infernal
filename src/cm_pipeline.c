@@ -105,7 +105,7 @@ static void copy_subseq(const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_
  *            | --F4b        |  Stage 4 (gFwd) bias filter thresh           |   0.02    |
  *            | --F5         |  Stage 5 (env def) filter thresh             |   0.02    |
  *            | --F5b        |  Stage 5 (env def) bias filter thresh        |   0.02    |
- *            | --F6         |  Stage 5 (CYK) filter thresh                 |   0.0005  |
+ *            | --F6         |  Stage 6 (CYK) filter thresh                 |   0.0005  |
  *            | --fast       |  set filters at strict-level                 |   FALSE   |
  *            | --mid        |  set filters at mid-level                    |   FALSE   |
  *            | --cyk        |  set final search stage as CYK, not inside   |   FALSE   |
@@ -1874,8 +1874,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
     cm->cp9b->thresh2 = save_cp9b_thresh2;
       
 #if DOPRINT
-    printf("\nSURVIVOR Envelope %5d [%10ld..%10ld] being passed to CYK   allow_R: %d allow_L: %d force_i0_RT: %d force_j0_LT: %d\n", i, es[i], ee[i],
-	   pli->tro->allow_R, pli->tro->allow_L, pli->tro->force_i0_RT, pli->tro->force_j0_LT); 
+    printf("\nSURVIVOR Envelope %5d [%10ld..%10ld] being passed to CYK   allow_R: %d allow_L: %d\n", i, es[i], ee[i],
+	   pli->tro->allow_R, pli->tro->allow_L);
 #endif
     do_hbanded_filter_scan          = (pli->fcyk_cm_search_opts  & CM_SEARCH_HBANDED) ? TRUE  : FALSE;
     do_qdb_or_nonbanded_filter_scan = (pli->fcyk_cm_search_opts  & CM_SEARCH_HBANDED) ? FALSE : TRUE;
@@ -2131,7 +2131,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	if((status = cm_pli_AlignHit(pli, cm, *opt_cmcons, sq, do_trunc, hit, 
 				     (h == nhit) ? TRUE : FALSE,    /* TRUE if this is the first hit we're aligning (h == nhit) */
 				     scan_cp9b))                    /* a copy of the HMM bands determined in the last search stage, NULL if HMM bands not used */
-	   != eslOK) ESL_FAIL(status, pli->errbuf, "error while aligning hit");
+	   != eslOK) return status;
       }
 
       /* Finally, if we're using model-specific bit score thresholds,
@@ -2369,10 +2369,10 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
     sc -= null3_correction;
   }
 
-  if((status = cm_alidisplay_Create(cm->abc, pli->errbuf, tr, cm, cmcons, sq, hit->start, ppstr, 
+  /* TEMP, alignment function should set this... */ tr->pass_idx = pli->cur_pass_idx;
+  if((status = cm_alidisplay_Create(cm->abc, pli->errbuf, tr, cm, cmcons, sq, hit->start, hit->pass_idx, ppstr, 
 				    (do_optacc) ? pp : sc,
 				    do_optacc, do_hbanded, total_Mb, watch->elapsed, &(hit->ad))) != eslOK) return status;
-  /*cm_alidisplay_Dump(stdout, hit->ad);*/
 
   /* clean up and return */
   FreeParsetree(tr);
@@ -2680,28 +2680,26 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     /* Set rs5term and rs3term and tro, this informs the pipeline stages about truncated hit/alignment options */
     pli->rs5term          = (p == 2 || p == 4) ? TRUE : FALSE;
     pli->rs3term          = (p == 3 || p == 4) ? TRUE : FALSE;
-    pli->tro->allow_R     = (pli->do_trunc_ends && pli->rs5term)                       ? TRUE : FALSE;
-    pli->tro->allow_L     = (pli->do_trunc_ends && pli->rs3term)                       ? TRUE : FALSE;
-    pli->tro->force_i0_RT = (pli->do_trunc_ends && pli->rs5term && pli->do_force_ends) ? TRUE : FALSE;
-    pli->tro->force_j0_LT = (pli->do_trunc_ends && pli->rs3term && pli->do_force_ends) ? TRUE : FALSE;
+    pli->tro->allow_R     = (pli->do_trunc_ends && pli->rs5term) ? TRUE : FALSE;
+    pli->tro->allow_L     = (pli->do_trunc_ends && pli->rs3term) ? TRUE : FALSE;
 
     pli->cur_pass_idx = p;
 
     /* execute the pipeline */
 #if DOPRINT
-    printf("\nPIPELINE calling p7Filter() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allow_R: %d allow_L: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allow_R, pli->tro->allow_L, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
+    printf("\nPIPELINE calling p7Filter() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allow_R: %d allow_L: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allow_R, pli->tro->allow_L);
 #endif
     if((status = cm_pli_p7Filter(pli, om, bg, p7_evparam, fm_hmmdata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
     if(p == 1) nwin_pass1 = nwin;
     if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
 
 #if DOPRINT
-    printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allow_R: %d allow_L: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allow_R, pli->tro->allow_L, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
+    printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allow_R: %d allow_L: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allow_R, pli->tro->allow_L);
 #endif
     if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es, &ee, &nenv)) != eslOK) return status;
 
 #if DOPRINT
-    printf("\nPIPELINE calling CMStage() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allow_R: %d allow_L: %d force_i0_RT: %d force_j0_LT: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allow_R, pli->tro->allow_L, pli->tro->force_i0_RT, pli->tro->force_j0_LT);
+    printf("\nPIPELINE calling CMStage() %s  %" PRId64 " residues (pass: %d rs5term: %d rs3term: %d allow_R: %d allow_L: %d)\n", sq2search->name, sq2search->n, p, pli->rs5term, pli->rs3term, pli->tro->allow_R, pli->tro->allow_L);
 #endif
     prv_ntophits = hitlist->N;
     if((status = cm_pli_CMStage(pli, cm_offset, sq2search, es, ee, nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
@@ -2985,7 +2983,7 @@ cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct)
  *            into human-readable strings, for clearer output.
  * 
  * Args:      pass_idx - a pipeline pass index
- *                       PLI_PASS_SUMMED, PLI_PASS_STD, PLI_PASS_5P, PLI_PASS_3P PLI_PASS_5P_AND_3P
+ *                       PLI_PASS_SUMMED, PLI_PASS_STD, PLI_PASS_5P_ONLY, PLI_PASS_3P_ONLY, PLI_PASS_5P_AND_3P
  *
  * Returns:   the appropriate string
  */
@@ -3001,8 +2999,8 @@ cm_pli_DescribePass(CM_PIPELINE *pli, int pass_idx)
     */
   case PLI_PASS_SUMMED:    return "full sequences and terminii";
   case PLI_PASS_STD:       return "full sequences";
-  case PLI_PASS_5P:        return "5' terminal sequence regions";
-  case PLI_PASS_3P:        return "3' terminal sequence regions";
+  case PLI_PASS_5P_ONLY:   return "5' terminal sequence regions";
+  case PLI_PASS_3P_ONLY:   return "3' terminal sequence regions";
   case PLI_PASS_5P_AND_3P: return "full sequences short enough to contain a 5' and 3' truncated hit";
   default: cm_Fail("bogus pipeline pass index %d\n", pass_idx);
   }

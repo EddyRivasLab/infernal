@@ -197,7 +197,7 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 {
   int       status;
   int       k;                 /* counter of consensus columns (HMM nodes)*/
-  int       i,j;
+  int       i;
   double    *psi;              /* expected num times each state visited in CM */
   double   **phi;              /* expected num times each state visited in HMM*/
   char     ***tmap;
@@ -208,17 +208,9 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
   CP9Map_t *cp9map;         
   CP9_t  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
 
-  /* TEMP EPN, Tue Aug 19 18:07:25 2008 */
-  ESL_STOPWATCH *w;
-  w = esl_stopwatch_Create();
-  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
-  /* TEMP */
-  
   /* Contract check, we can't be in local mode in the CM */
-  if(cm->flags & CMH_LOCAL_BEGIN)
-    cm_Fail("ERROR in build_cp9_hmm(), CMH_LOCAL_BEGIN flag is up.\n");
-  if(cm->flags & CMH_LOCAL_END)
-    cm_Fail("ERROR in build_cp9_hmm(), CMH_LOCAL_END flag is up.\n");
+  if(cm->flags & CMH_LOCAL_BEGIN)   cm_Fail("ERROR in build_cp9_hmm(), CMH_LOCAL_BEGIN flag is up.\n");
+  if(cm->flags & CMH_LOCAL_END)     cm_Fail("ERROR in build_cp9_hmm(), CMH_LOCAL_END flag is up.\n");
 
   /* Allocate and initialize the cp9map */
   cp9map = AllocCP9Map(cm);
@@ -240,24 +232,9 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
       printf("In build_CP9_hmm()\n");
     }
 
-  esl_stopwatch_Start(w); 
-  make_tmap(&tmap);
-  esl_stopwatch_Stop(w); 
-  FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "\t\ttmap  %11s\n", time_buf);
-#endif
-
-  ESL_ALLOC(psi, sizeof(double) * cm->M);
-  esl_stopwatch_Start(w);  
-  fill_psi(cm, cm->t, psi, tmap);
-  esl_stopwatch_Stop(w); 
-  FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "\t\tpsi       %11s\n", time_buf);
-#endif
+  tmap = cm_CreateTransitionMap();
+  psi  = cm_ExpectedStateOccupancy(cm);
   
-  esl_stopwatch_Start(w);  
   /* Special case 1st insert state maps to state 1 in the CM */
   for(i = 0; i < cm->abc->K; i++)
     {
@@ -304,31 +281,18 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 	      cm2hmm_emit_prob(cm, cp9map, ap[1], i, k);
 	}
     }
-  esl_stopwatch_Stop(w); 
-  FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "\t\tcp9 emits    %11s\n", time_buf);
-#endif
   
   /* Done with emissions, fill in transitions of HMM (significantly more complex) */
 
   /* Step 1. Fill 'special' transitions, those INTO node 1, the N->N and N->M_1 transitions,
    * as well as transitions OUT of node M.
    */
-  esl_stopwatch_Start(w);  
   cm2hmm_special_trans_cp9(cm, hmm, cp9map, psi, tmap);
 
   for(k = 1; k < hmm->M; k++)
     {
       cm2hmm_trans_probs_cp9(cm, hmm, cp9map, k, psi, tmap);
     }
-
-  esl_stopwatch_Stop(w); 
-  FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "\t\tcp9 trans    %11s\n", time_buf);
-#endif
-  esl_stopwatch_Destroy(w);
 
   CPlan9Renormalize(hmm);
 
@@ -351,13 +315,7 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 
   free(ap);
   free(psi);
-  for(i = 0; i < UNIQUESTATES; i++)
-    {
-      for(j = 0; j < NODETYPES; j++)
-	free(tmap[i][j]);
-      free(tmap[i]);
-    }
-  free(tmap);
+  cm_FreeTransitionMap(tmap);
 
   *ret_hmm    = hmm;
   *ret_cp9map = cp9map;
@@ -789,528 +747,6 @@ map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v)
 }
 
 /**************************************************************************
- * EPN 12.02.05
- * fill_psi()
- *
- * Purpose:  Fill psi matrix. Psi[v] is the expected number of times
- *           state v is entered.
- * 
- * Args:    
- * CM_t *cm          - the CM
- * float **t         - CM transition probs [0..v..cm->M-1][0..MAXCONNECT-1], usually cm->t
- * double *psi       - psi[v] is expected number of times v is entered
- * char ***tmap      - eases coding transition use, hard-coded
- * 
- * Returns: (void) 
- */
-void
-fill_psi(CM_t *cm, float **t, double *psi, char ***tmap)
-{
-  int v; /*first state in cm node n*/
-  int y;
-  int x;
-  char tmap_val;
-  int n;
-  double summed_psi;
-  int nstates;
-  int is_insert;
-
-  /*psi[v] is the 'expected number of times state v is entered'.*/
-  for (v = 0; v <= cm->M-1; v++)
-    {
-      psi[v] = 0.;
-      if(cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
-	is_insert = 1;
-      else
-	is_insert = 0;
-
-      if(cm->sttype[v] == S_st)
-	{
-	  /* no transitions into start states - they're necessarily
-	   * visited in every parse.
-	   */
-	  psi[v] = 1.0;
-	}
-      else if(is_insert)
-	{
-	  for (y = cm->pnum[v]-1; y >= 1; y--)
-	    {
-	      x = cm->plast[v] - y;
-	      /* x is a parent of v, we're adding contribution 
-	       * of transition from x to v. */
-	      tmap_val = tmap[(int) cm->stid[x]][(int) cm->ndtype[cm->ndidx[v]+is_insert]][(int) cm->stid[v]];
-#if eslDEBUGLEVEL >= 1
-	      if(tmap_val == -1)
-		{
-		  printf("tmap ERROR 1\n");
-		  printf("v: %d | pnum[v]: %d | plast[v]: %d | y: %d | x: %d | d1: %d | d2: %d | d3: %d\n", v, cm->pnum[v], cm->plast[v], y, x, cm->stid[(int) x], (cm->ndtype[(int) cm->ndidx[v]+is_insert]), cm->stid[(int) v]);
-		  exit(1);
-		}
-	      /*printf("before: psi[%d]: %f\n", v, psi[v]);
-		printf("x: %d | tmap_val: %d | t[x][tmap_val] : %f\n", x, tmap_val, t[x][tmap_val]);*/
-#endif
-	      psi[v] += psi[x] * t[x][(int) tmap_val];
-	      /*printf("after: psi[%d]: %f\n", v, psi[v]);*/
-	    }
-	  /*printf("added self loop contribution of %f\n", (psi[v] * t[v][0] / (1-t[v][0])));*/
-	  psi[v] += psi[v] * (t[v][0] / (1-t[v][0])); /*the contribution of the self insertion loops*/
-	  /*printf("SL after: psi[%d]: %f\n", v, psi[v]);*/
-	}
-      else
-	{
-	  for (y = cm->pnum[v]-1; y >= 0; y--)
-	    /*ERROR If t[y][v] is invalid, should be some number dependent on type of state y is 
-	     *and type of state v is. I need a transition map.*/
-	    {
-	      x = cm->plast[v] - y;
-	      /* x is a parent of v, we're adding contribution 
-	       * of transition from x to v. */
-	      tmap_val = tmap[(int) cm->stid[x]][(int) cm->ndtype[cm->ndidx[v]]][(int) cm->stid[v]];
-	      
-#if eslDEBUGLEVEL >= 1
-	      if(tmap_val == -1)
-	      {
-		printf("tmap ERROR 2\n");
-		printf("v: %d | pnum[v]: %d | plast[v]: %d | y: %d | x: %d | d1: %d | d2: %d | d3: %d\n", v, cm->pnum[v], cm->plast[v], y, x, cm->stid[x], cm->ndtype[cm->ndidx[v]], cm->stid[v]);
-		exit(1);
-	      }
-	      /*printf("before: psi[%d]: %f\n", v, psi[v]);
-		printf("x: %d | y: %d | tmap_val: %d | t[x][tmap_val] : %f\n", x, y, tmap_val, t[x][tmap_val]);
-	      */
-#endif
-	      psi[v] += psi[x] * t[x][(int) tmap_val];
-	      /*printf("after: psi[%d]: %f\n", v, psi[v]);*/
-	    }
-	}
-      /*printf("psi[%d]: %15f\n", v, psi[v]);*/
-    }  
-  /* Sanity check. For any node the sum of psi values over
-   * all split set states should be 1.0. */
-  for(n = 0; n < cm->nodes; n++)
-    {
-      summed_psi = 0.;
-      if(cm->ndtype[n] == ROOT_nd)
-	nstates = 3;
-      else if(cm->ndtype[n] == BEGL_nd)
-	nstates = 1;
-      else if(cm->ndtype[n] == BEGR_nd)
-	nstates = 2;
-      else if(cm->ndtype[n] == BIF_nd)
-	nstates = 1;
-      else if(cm->ndtype[n] == MATP_nd)
-	nstates = 6;
-      else if(cm->ndtype[n] == MATL_nd)
-	nstates = 3;
-      else if(cm->ndtype[n] == MATR_nd)
-	nstates = 3;
-      else if(cm->ndtype[n] == END_nd)
-	nstates = 1;
-      else 
-	cm_Fail("ERROR: bogus node type: %d\n", n);
-      for(v = cm->nodemap[n]; v < cm->nodemap[n] + nstates; v++)
-	if(cm->sttype[v] != IL_st && cm->sttype[v] != IR_st)
-	  summed_psi += psi[v];
-      if((summed_psi < 0.999) || (summed_psi > 1.001))
-	cm_Fail("ERROR: summed psi of split states in node %d not 1.0 but : %f\n", n, summed_psi);
-      /* printf("split summed psi[%d]: %f\n", n, summed_psi);*/
-    }
-  /* Another sanity check, the only states that can have psi equal to 0
-   * are detached insert states (states immediately prior to END_Es) */
-  for(v = 0; v < cm->M; v++)
-    if(psi[v] == 0. && cm->sttype[(v+1)] != E_st)
-      cm_Fail("ERROR: psi of state v:%d is 0.0 and this state is not a detached insert! HMM banding would have failed...\n", v);
-
-  return;
-}
-
-/**************************************************************************
- * EPN 12.02.05
- * make_tmap()
- *
- * Purpose:  Make the predefined transition map which tells you
- *           the index of a given transition from any of the 74
- *           transition sets.
- * 
- * char ***tmap;  A 3D char array. 
- *               1st D: statetype of v
- *               2nd D: type of downstream node.
- *               3rd D: statetype of y, that we're transitioning to.
- *               value: the index of v->y in cm->t[v]
- * Returns: (void) 
- */
-void
-make_tmap(char ****ret_tmap)
-{
-  int status;
-  int i,j,k;
-  char ***tmap;
-
-  ESL_ALLOC(tmap, sizeof(char **) * UNIQUESTATES);
-  for(i = 0; i < UNIQUESTATES; i++)
-    {
-      ESL_ALLOC(tmap[i], sizeof(char *) * NODETYPES);
-      for(j = 0; j < NODETYPES; j++)
-	{
-	  ESL_ALLOC(tmap[i][j], sizeof(char) * UNIQUESTATES);
-	  for(k = 0; k < UNIQUESTATES; k++)
-	    {
-	      tmap[i][j][k] = -1;
-	    }
-	}
-    }
-
-  /*following code block generated by: 
-   *perl ~nawrocki/notebook/5_1128_hmnl_ml_hmm/scripts/gen_tmap.pl
-   */
-  tmap[ROOT_S][BIF_nd][ROOT_IL] = 0;
-  tmap[ROOT_S][BIF_nd][ROOT_IR] = 1;
-  tmap[ROOT_S][BIF_nd][BIF_B] = 2;
-
-  tmap[ROOT_S][MATP_nd][ROOT_IL] = 0;
-  tmap[ROOT_S][MATP_nd][ROOT_IR] = 1;
-  tmap[ROOT_S][MATP_nd][MATP_MP] = 2;
-  tmap[ROOT_S][MATP_nd][MATP_ML] = 3;
-  tmap[ROOT_S][MATP_nd][MATP_MR] = 4;
-  tmap[ROOT_S][MATP_nd][MATP_D] = 5;
-
-  tmap[ROOT_S][MATL_nd][ROOT_IL] = 0;
-  tmap[ROOT_S][MATL_nd][ROOT_IR] = 1;
-  tmap[ROOT_S][MATL_nd][MATL_ML] = 2;
-  tmap[ROOT_S][MATL_nd][MATL_D] = 3;
-
-  tmap[ROOT_S][MATR_nd][ROOT_IL] = 0;
-  tmap[ROOT_S][MATR_nd][ROOT_IR] = 1;
-  tmap[ROOT_S][MATR_nd][MATR_MR] = 2;
-  tmap[ROOT_S][MATR_nd][MATR_D] = 3;
-
-  tmap[ROOT_IL][BIF_nd][ROOT_IL] = 0;
-  tmap[ROOT_IL][BIF_nd][ROOT_IR] = 1;
-  tmap[ROOT_IL][BIF_nd][BIF_B] = 2;
-
-  tmap[ROOT_IL][MATP_nd][ROOT_IL] = 0;
-  tmap[ROOT_IL][MATP_nd][ROOT_IR] = 1;
-  tmap[ROOT_IL][MATP_nd][MATP_MP] = 2;
-  tmap[ROOT_IL][MATP_nd][MATP_ML] = 3;
-  tmap[ROOT_IL][MATP_nd][MATP_MR] = 4;
-  tmap[ROOT_IL][MATP_nd][MATP_D] = 5;
-
-  tmap[ROOT_IL][MATL_nd][ROOT_IL] = 0;
-  tmap[ROOT_IL][MATL_nd][ROOT_IR] = 1;
-  tmap[ROOT_IL][MATL_nd][MATL_ML] = 2;
-  tmap[ROOT_IL][MATL_nd][MATL_D] = 3;
-
-  tmap[ROOT_IL][MATR_nd][ROOT_IL] = 0;
-  tmap[ROOT_IL][MATR_nd][ROOT_IR] = 1;
-  tmap[ROOT_IL][MATR_nd][MATR_MR] = 2;
-  tmap[ROOT_IL][MATR_nd][MATR_D] = 3;
-
-  tmap[ROOT_IR][BIF_nd][ROOT_IR] = 0;
-  tmap[ROOT_IR][BIF_nd][BIF_B] = 1;
-
-  tmap[ROOT_IR][MATP_nd][ROOT_IR] = 0;
-  tmap[ROOT_IR][MATP_nd][MATP_MP] = 1;
-  tmap[ROOT_IR][MATP_nd][MATP_ML] = 2;
-  tmap[ROOT_IR][MATP_nd][MATP_MR] = 3;
-  tmap[ROOT_IR][MATP_nd][MATP_D] = 4;
-
-  tmap[ROOT_IR][MATL_nd][ROOT_IR] = 0;
-  tmap[ROOT_IR][MATL_nd][MATL_ML] = 1;
-  tmap[ROOT_IR][MATL_nd][MATL_D] = 2;
-
-  tmap[ROOT_IR][MATR_nd][ROOT_IR] = 0;
-  tmap[ROOT_IR][MATR_nd][MATR_MR] = 1;
-  tmap[ROOT_IR][MATR_nd][MATR_D] = 2;
-
-  tmap[BEGL_S][BIF_nd][BIF_B] = 0;
-
-  tmap[BEGL_S][MATP_nd][MATP_MP] = 0;
-  tmap[BEGL_S][MATP_nd][MATP_ML] = 1;
-  tmap[BEGL_S][MATP_nd][MATP_MR] = 2;
-  tmap[BEGL_S][MATP_nd][MATP_D] = 3;
-
-  tmap[BEGR_S][BIF_nd][BEGR_IL] = 0;
-  tmap[BEGR_S][BIF_nd][BIF_B] = 1;
-
-  tmap[BEGR_S][MATP_nd][BEGR_IL] = 0;
-  tmap[BEGR_S][MATP_nd][MATP_MP] = 1;
-  tmap[BEGR_S][MATP_nd][MATP_ML] = 2;
-  tmap[BEGR_S][MATP_nd][MATP_MR] = 3;
-  tmap[BEGR_S][MATP_nd][MATP_D] = 4;
-
-  tmap[BEGR_S][MATL_nd][BEGR_IL] = 0;
-  tmap[BEGR_S][MATL_nd][MATL_ML] = 1;
-  tmap[BEGR_S][MATL_nd][MATL_D] = 2;
-
-  tmap[BEGR_IL][BIF_nd][BEGR_IL] = 0;
-  tmap[BEGR_IL][BIF_nd][BIF_B] = 1;
-
-  tmap[BEGR_IL][MATP_nd][BEGR_IL] = 0;
-  tmap[BEGR_IL][MATP_nd][MATP_MP] = 1;
-  tmap[BEGR_IL][MATP_nd][MATP_ML] = 2;
-  tmap[BEGR_IL][MATP_nd][MATP_MR] = 3;
-  tmap[BEGR_IL][MATP_nd][MATP_D] = 4;
-
-  tmap[BEGR_IL][MATL_nd][BEGR_IL] = 0;
-  tmap[BEGR_IL][MATL_nd][MATL_ML] = 1;
-  tmap[BEGR_IL][MATL_nd][MATL_D] = 2;
-
-  tmap[MATP_MP][BIF_nd][MATP_IL] = 0;
-  tmap[MATP_MP][BIF_nd][MATP_IR] = 1;
-  tmap[MATP_MP][BIF_nd][BIF_B] = 2;
-
-  tmap[MATP_MP][MATP_nd][MATP_IL] = 0;
-  tmap[MATP_MP][MATP_nd][MATP_IR] = 1;
-  tmap[MATP_MP][MATP_nd][MATP_MP] = 2;
-  tmap[MATP_MP][MATP_nd][MATP_ML] = 3;
-  tmap[MATP_MP][MATP_nd][MATP_MR] = 4;
-  tmap[MATP_MP][MATP_nd][MATP_D] = 5;
-
-  tmap[MATP_MP][MATL_nd][MATP_IL] = 0;
-  tmap[MATP_MP][MATL_nd][MATP_IR] = 1;
-  tmap[MATP_MP][MATL_nd][MATL_ML] = 2;
-  tmap[MATP_MP][MATL_nd][MATL_D] = 3;
-
-  tmap[MATP_MP][MATR_nd][MATP_IL] = 0;
-  tmap[MATP_MP][MATR_nd][MATP_IR] = 1;
-  tmap[MATP_MP][MATR_nd][MATR_MR] = 2;
-  tmap[MATP_MP][MATR_nd][MATR_D] = 3;
-
-  tmap[MATP_MP][END_nd][MATP_IL] = 0;
-  tmap[MATP_MP][END_nd][MATP_IR] = 1;
-  tmap[MATP_MP][END_nd][END_E] = 2;
-
-  tmap[MATP_ML][BIF_nd][MATP_IL] = 0;
-  tmap[MATP_ML][BIF_nd][MATP_IR] = 1;
-  tmap[MATP_ML][BIF_nd][BIF_B] = 2;
-
-  tmap[MATP_ML][MATP_nd][MATP_IL] = 0;
-  tmap[MATP_ML][MATP_nd][MATP_IR] = 1;
-  tmap[MATP_ML][MATP_nd][MATP_MP] = 2;
-  tmap[MATP_ML][MATP_nd][MATP_ML] = 3;
-  tmap[MATP_ML][MATP_nd][MATP_MR] = 4;
-  tmap[MATP_ML][MATP_nd][MATP_D] = 5;
-
-  tmap[MATP_ML][MATL_nd][MATP_IL] = 0;
-  tmap[MATP_ML][MATL_nd][MATP_IR] = 1;
-  tmap[MATP_ML][MATL_nd][MATL_ML] = 2;
-  tmap[MATP_ML][MATL_nd][MATL_D] = 3;
-
-  tmap[MATP_ML][MATR_nd][MATP_IL] = 0;
-  tmap[MATP_ML][MATR_nd][MATP_IR] = 1;
-  tmap[MATP_ML][MATR_nd][MATR_MR] = 2;
-  tmap[MATP_ML][MATR_nd][MATR_D] = 3;
-
-  tmap[MATP_ML][END_nd][MATP_IL] = 0;
-  tmap[MATP_ML][END_nd][MATP_IR] = 1;
-  tmap[MATP_ML][END_nd][END_E] = 2;
-
-  tmap[MATP_MR][BIF_nd][MATP_IL] = 0;
-  tmap[MATP_MR][BIF_nd][MATP_IR] = 1;
-  tmap[MATP_MR][BIF_nd][BIF_B] = 2;
-
-  tmap[MATP_MR][MATP_nd][MATP_IL] = 0;
-  tmap[MATP_MR][MATP_nd][MATP_IR] = 1;
-  tmap[MATP_MR][MATP_nd][MATP_MP] = 2;
-  tmap[MATP_MR][MATP_nd][MATP_ML] = 3;
-  tmap[MATP_MR][MATP_nd][MATP_MR] = 4;
-  tmap[MATP_MR][MATP_nd][MATP_D] = 5;
-
-  tmap[MATP_MR][MATL_nd][MATP_IL] = 0;
-  tmap[MATP_MR][MATL_nd][MATP_IR] = 1;
-  tmap[MATP_MR][MATL_nd][MATL_ML] = 2;
-  tmap[MATP_MR][MATL_nd][MATL_D] = 3;
-
-  tmap[MATP_MR][MATR_nd][MATP_IL] = 0;
-  tmap[MATP_MR][MATR_nd][MATP_IR] = 1;
-  tmap[MATP_MR][MATR_nd][MATR_MR] = 2;
-  tmap[MATP_MR][MATR_nd][MATR_D] = 3;
-
-  tmap[MATP_MR][END_nd][MATP_IL] = 0;
-  tmap[MATP_MR][END_nd][MATP_IR] = 1;
-  tmap[MATP_MR][END_nd][END_E] = 2;
-
-  tmap[MATP_D][BIF_nd][MATP_IL] = 0;
-  tmap[MATP_D][BIF_nd][MATP_IR] = 1;
-  tmap[MATP_D][BIF_nd][BIF_B] = 2;
-
-  tmap[MATP_D][MATP_nd][MATP_IL] = 0;
-  tmap[MATP_D][MATP_nd][MATP_IR] = 1;
-  tmap[MATP_D][MATP_nd][MATP_MP] = 2;
-  tmap[MATP_D][MATP_nd][MATP_ML] = 3;
-  tmap[MATP_D][MATP_nd][MATP_MR] = 4;
-  tmap[MATP_D][MATP_nd][MATP_D] = 5;
-
-  tmap[MATP_D][MATL_nd][MATP_IL] = 0;
-  tmap[MATP_D][MATL_nd][MATP_IR] = 1;
-  tmap[MATP_D][MATL_nd][MATL_ML] = 2;
-  tmap[MATP_D][MATL_nd][MATL_D] = 3;
-
-  tmap[MATP_D][MATR_nd][MATP_IL] = 0;
-  tmap[MATP_D][MATR_nd][MATP_IR] = 1;
-  tmap[MATP_D][MATR_nd][MATR_MR] = 2;
-  tmap[MATP_D][MATR_nd][MATR_D] = 3;
-
-  tmap[MATP_D][END_nd][MATP_IL] = 0;
-  tmap[MATP_D][END_nd][MATP_IR] = 1;
-  tmap[MATP_D][END_nd][END_E] = 2;
-
-  tmap[MATP_IL][BIF_nd][MATP_IL] = 0;
-  tmap[MATP_IL][BIF_nd][MATP_IR] = 1;
-  tmap[MATP_IL][BIF_nd][BIF_B] = 2;
-
-  tmap[MATP_IL][MATP_nd][MATP_IL] = 0;
-  tmap[MATP_IL][MATP_nd][MATP_IR] = 1;
-  tmap[MATP_IL][MATP_nd][MATP_MP] = 2;
-  tmap[MATP_IL][MATP_nd][MATP_ML] = 3;
-  tmap[MATP_IL][MATP_nd][MATP_MR] = 4;
-  tmap[MATP_IL][MATP_nd][MATP_D] = 5;
-
-  tmap[MATP_IL][MATL_nd][MATP_IL] = 0;
-  tmap[MATP_IL][MATL_nd][MATP_IR] = 1;
-  tmap[MATP_IL][MATL_nd][MATL_ML] = 2;
-  tmap[MATP_IL][MATL_nd][MATL_D] = 3;
-
-  tmap[MATP_IL][MATR_nd][MATP_IL] = 0;
-  tmap[MATP_IL][MATR_nd][MATP_IR] = 1;
-  tmap[MATP_IL][MATR_nd][MATR_MR] = 2;
-  tmap[MATP_IL][MATR_nd][MATR_D] = 3;
-
-  tmap[MATP_IL][END_nd][MATP_IL] = 0;
-  tmap[MATP_IL][END_nd][MATP_IR] = 1;
-  tmap[MATP_IL][END_nd][END_E] = 2;
-
-  tmap[MATP_IR][BIF_nd][MATP_IR] = 0;
-  tmap[MATP_IR][BIF_nd][BIF_B] = 1;
-
-  tmap[MATP_IR][MATP_nd][MATP_IR] = 0;
-  tmap[MATP_IR][MATP_nd][MATP_MP] = 1;
-  tmap[MATP_IR][MATP_nd][MATP_ML] = 2;
-  tmap[MATP_IR][MATP_nd][MATP_MR] = 3;
-  tmap[MATP_IR][MATP_nd][MATP_D] = 4;
-
-  tmap[MATP_IR][MATL_nd][MATP_IR] = 0;
-  tmap[MATP_IR][MATL_nd][MATL_ML] = 1;
-  tmap[MATP_IR][MATL_nd][MATL_D] = 2;
-
-  tmap[MATP_IR][MATR_nd][MATP_IR] = 0;
-  tmap[MATP_IR][MATR_nd][MATR_MR] = 1;
-  tmap[MATP_IR][MATR_nd][MATR_D] = 2;
-
-  tmap[MATP_IR][END_nd][MATP_IR] = 0;
-  tmap[MATP_IR][END_nd][END_E] = 1;
-
-  tmap[MATL_ML][BIF_nd][MATL_IL] = 0;
-  tmap[MATL_ML][BIF_nd][BIF_B] = 1;
-
-  tmap[MATL_ML][MATP_nd][MATL_IL] = 0;
-  tmap[MATL_ML][MATP_nd][MATP_MP] = 1;
-  tmap[MATL_ML][MATP_nd][MATP_ML] = 2;
-  tmap[MATL_ML][MATP_nd][MATP_MR] = 3;
-  tmap[MATL_ML][MATP_nd][MATP_D] = 4;
-
-  tmap[MATL_ML][MATL_nd][MATL_IL] = 0;
-  tmap[MATL_ML][MATL_nd][MATL_ML] = 1;
-  tmap[MATL_ML][MATL_nd][MATL_D] = 2;
-
-  tmap[MATL_ML][MATR_nd][MATL_IL] = 0;
-  tmap[MATL_ML][MATR_nd][MATR_MR] = 1;
-  tmap[MATL_ML][MATR_nd][MATR_D] = 2;
-
-  tmap[MATL_ML][END_nd][MATL_IL] = 0;
-  tmap[MATL_ML][END_nd][END_E] = 1;
-
-  tmap[MATL_D][BIF_nd][MATL_IL] = 0;
-  tmap[MATL_D][BIF_nd][BIF_B] = 1;
-
-  tmap[MATL_D][MATP_nd][MATL_IL] = 0;
-  tmap[MATL_D][MATP_nd][MATP_MP] = 1;
-  tmap[MATL_D][MATP_nd][MATP_ML] = 2;
-  tmap[MATL_D][MATP_nd][MATP_MR] = 3;
-  tmap[MATL_D][MATP_nd][MATP_D] = 4;
-
-  tmap[MATL_D][MATL_nd][MATL_IL] = 0;
-  tmap[MATL_D][MATL_nd][MATL_ML] = 1;
-  tmap[MATL_D][MATL_nd][MATL_D] = 2;
-
-  tmap[MATL_D][MATR_nd][MATL_IL] = 0;
-  tmap[MATL_D][MATR_nd][MATR_MR] = 1;
-  tmap[MATL_D][MATR_nd][MATR_D] = 2;
-
-  tmap[MATL_D][END_nd][MATL_IL] = 0;
-  tmap[MATL_D][END_nd][END_E] = 1;
-
-  tmap[MATL_IL][BIF_nd][MATL_IL] = 0;
-  tmap[MATL_IL][BIF_nd][BIF_B] = 1;
-
-  tmap[MATL_IL][MATP_nd][MATL_IL] = 0;
-  tmap[MATL_IL][MATP_nd][MATP_MP] = 1;
-  tmap[MATL_IL][MATP_nd][MATP_ML] = 2;
-  tmap[MATL_IL][MATP_nd][MATP_MR] = 3;
-  tmap[MATL_IL][MATP_nd][MATP_D] = 4;
-
-  tmap[MATL_IL][MATL_nd][MATL_IL] = 0;
-  tmap[MATL_IL][MATL_nd][MATL_ML] = 1;
-  tmap[MATL_IL][MATL_nd][MATL_D] = 2;
-
-  tmap[MATL_IL][MATR_nd][MATL_IL] = 0;
-  tmap[MATL_IL][MATR_nd][MATR_MR] = 1;
-  tmap[MATL_IL][MATR_nd][MATR_D] = 2;
-
-  tmap[MATL_IL][END_nd][MATL_IL] = 0;
-  tmap[MATL_IL][END_nd][END_E] = 1;
-
-  tmap[MATR_MR][BIF_nd][MATR_IR] = 0;
-  tmap[MATR_MR][BIF_nd][BIF_B] = 1;
-
-  tmap[MATR_MR][MATP_nd][MATR_IR] = 0;
-  tmap[MATR_MR][MATP_nd][MATP_MP] = 1;
-  tmap[MATR_MR][MATP_nd][MATP_ML] = 2;
-  tmap[MATR_MR][MATP_nd][MATP_MR] = 3;
-  tmap[MATR_MR][MATP_nd][MATP_D] = 4;
-
-  tmap[MATR_MR][MATR_nd][MATR_IR] = 0;
-  tmap[MATR_MR][MATR_nd][MATR_MR] = 1;
-  tmap[MATR_MR][MATR_nd][MATR_D] = 2;
-
-  tmap[MATR_D][BIF_nd][MATR_IR] = 0;
-  tmap[MATR_D][BIF_nd][BIF_B] = 1;
-
-  tmap[MATR_D][MATP_nd][MATR_IR] = 0;
-  tmap[MATR_D][MATP_nd][MATP_MP] = 1;
-  tmap[MATR_D][MATP_nd][MATP_ML] = 2;
-  tmap[MATR_D][MATP_nd][MATP_MR] = 3;
-  tmap[MATR_D][MATP_nd][MATP_D] = 4;
-
-  tmap[MATR_D][MATR_nd][MATR_IR] = 0;
-  tmap[MATR_D][MATR_nd][MATR_MR] = 1;
-  tmap[MATR_D][MATR_nd][MATR_D] = 2;
-
-  tmap[MATR_IR][BIF_nd][MATR_IR] = 0;
-  tmap[MATR_IR][BIF_nd][BIF_B] = 1;
-
-  tmap[MATR_IR][MATP_nd][MATR_IR] = 0;
-  tmap[MATR_IR][MATP_nd][MATP_MP] = 1;
-  tmap[MATR_IR][MATP_nd][MATP_ML] = 2;
-  tmap[MATR_IR][MATP_nd][MATP_MR] = 3;
-  tmap[MATR_IR][MATP_nd][MATP_D] = 4;
-
-  tmap[MATR_IR][MATR_nd][MATR_IR] = 0;
-  tmap[MATR_IR][MATR_nd][MATR_MR] = 1;
-  tmap[MATR_IR][MATR_nd][MATR_D] = 2;
-
-  tmap[BIF_B][BEGL_nd][BEGL_S] = 0;
-
-  tmap[BIF_B][BEGR_nd][BEGR_S] = 0;
-
-  *ret_tmap = tmap;
-  return;
-
- ERROR:
-  cm_Fail("Memory allocation error.");
-}
-
-
-/**************************************************************************
  * EPN 03.13.06
  * cm2hmm_emit_prob()
  *
@@ -1440,7 +876,7 @@ cm2hmm_special_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, double *psi,
    *       sum(over states a' and b') psi[b'] * b' -> a'
    * 
    * Where psi[x] is the expected number of times CM state x is entered, as calc'ed
-   * in fill_psi. psi[0] = 1.0
+   * in cm_ExpectedStateOccapancy(). psi[0] = 1.0
    * 
    */
 
@@ -1801,7 +1237,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
    *       sum(over states a' and b') psi[b'] * b' -> a'
    * 
    * Where psi[x] is the expected number of times CM state x is entered, as calc'ed
-   * in fill_psi.
+   * in cm_ExpectedStateOccupancy().
    * 
    */
 
@@ -3179,7 +2615,6 @@ int
 sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 			      float psi_vs_phi_threshold, int debug_level)
 {
-  int       status;
   int       k;                 /* counter of consensus columns (HMM nodes)*/
   int       mk,x;
   double    *psi;              /* expected num times each state visited in CM */
@@ -3188,7 +2623,7 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
   CP9Map_t *cp9map;         
   CP9_t  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
   float d;
-  int i, j;
+  char ***tmap = NULL;
 
   /* Contract check, we can't be in local mode in the CM */
   if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), CMH_LOCAL_BEGIN flag is up.\n");
@@ -3210,11 +2645,9 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
   hmm->null2_omega = cm->null2_omega;
   hmm->null3_omega = cm->null3_omega;
   
-  /* COULD BE REMOVED IF WE DON"T DO THE PHI/PSI TEST! */
-  char     ***tmap;
-  make_tmap(&tmap);
-  ESL_ALLOC(psi, sizeof(double) * cm->M);
-  fill_psi(cm, cm->t, psi, tmap);
+  /* THIS COULD BE REMOVED IF WE DON"T DO THE PHI/PSI TEST! */
+  if((psi = cm_ExpectedStateOccupancy(cm)) == NULL) goto ERROR;
+  tmap = cm_CreateTransitionMap();
   
   /* fill in transitions into node 1 and out of node M */
   cm2hmm_special_trans_cp9(cm, hmm, cp9map, psi, tmap);
@@ -3324,14 +2757,7 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
   *ret_hmm    = hmm;
   *ret_cp9map = cp9map;
   
-  for(i = 0; i < UNIQUESTATES; i++) {
-    for(j = 0; j < NODETYPES; j++) {
-      free(tmap[i][j]);
-    }
-    free(tmap[i]);
-  }
-
-  free(tmap);
+  cm_FreeTransitionMap(tmap);
   free(psi);
 
   return ret_val;

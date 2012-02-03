@@ -100,19 +100,16 @@ CreateCMShell(void)
   cm->t          = NULL;
   cm->e          = NULL;
   cm->begin      = NULL;
-  cm->trbegin    = NULL;
   cm->end        = NULL;
   cm->tsc        = NULL;
   cm->esc        = NULL;
   cm->oesc       = NULL;
   cm->beginsc    = NULL;
-  cm->trbeginsc  = NULL;
   cm->endsc      = NULL;
   cm->itsc       = NULL;
   cm->iesc       = NULL;
   cm->ioesc      = NULL;
   cm->ibeginsc   = NULL;
-  cm->itrbeginsc = NULL;
   cm->iendsc     = NULL;
 
   cm->lmesc   = NULL;
@@ -233,13 +230,10 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
   cm->ilmesc[0] = NULL;
   cm->irmesc[0] = NULL;
   ESL_ALLOC(cm->begin,      (nstates) * sizeof(float));
-  ESL_ALLOC(cm->trbegin,    (nstates) * sizeof(float));
   ESL_ALLOC(cm->end,        (nstates) * sizeof(float));
   ESL_ALLOC(cm->beginsc,    (nstates) * sizeof(float));
-  ESL_ALLOC(cm->trbeginsc,  (nstates) * sizeof(float));
   ESL_ALLOC(cm->endsc,      (nstates) * sizeof(float));
   ESL_ALLOC(cm->ibeginsc,   (nstates) * sizeof(int));
-  ESL_ALLOC(cm->itrbeginsc, (nstates) * sizeof(int));
   ESL_ALLOC(cm->iendsc,     (nstates) * sizeof(int));
   /* don't allocate for cm->oesc and cm->ioesc yet, they're
    * alloc'ed and filled by CalcOptimizedEmitScores() called 
@@ -336,13 +330,10 @@ CMZero(CM_t *cm)
     esl_vec_ISet(cm->irmesc[v], cm->abc->Kp,               0);
   }
   esl_vec_FSet(cm->begin,      cm->M, 0.);
-  esl_vec_FSet(cm->trbegin,    cm->M, 0.);
   esl_vec_FSet(cm->end,        cm->M, 0.);
   esl_vec_FSet(cm->beginsc,    cm->M, 0.);
-  esl_vec_FSet(cm->trbeginsc,  cm->M, 0.);
   esl_vec_FSet(cm->endsc,      cm->M, 0.);
   esl_vec_ISet(cm->ibeginsc,   cm->M, 0);
-  esl_vec_ISet(cm->itrbeginsc, cm->M, 0);
   esl_vec_ISet(cm->iendsc,     cm->M, 0);
 }
 
@@ -370,7 +361,7 @@ CMRenormalize(CM_t *cm)
       if (cm->sttype[v] == MP_st)
 	esl_vec_FNorm(cm->e[v], cm->abc->K * cm->abc->K);
     }
-  if (cm->flags & CMH_LOCAL_BEGIN) { esl_vec_FNorm(cm->begin, cm->M); esl_vec_FNorm(cm->trbegin, cm->M); }
+  if (cm->flags & CMH_LOCAL_BEGIN) esl_vec_FNorm(cm->begin, cm->M); 
   if (cm->flags & CMH_LOCAL_END)   cm_Fail("Renormalization of models in local end mode not supported yet");
 }
 
@@ -443,13 +434,10 @@ FreeCM(CM_t *cm)
     free(cm->iesc);
   }
   if(cm->begin      != NULL) free(cm->begin);
-  if(cm->trbegin    != NULL) free(cm->trbegin);
   if(cm->end        != NULL) free(cm->end);
   if(cm->beginsc    != NULL) free(cm->beginsc);
-  if(cm->trbeginsc  != NULL) free(cm->trbeginsc);
   if(cm->endsc      != NULL) free(cm->endsc);
   if(cm->ibeginsc   != NULL) free(cm->ibeginsc);
-  if(cm->itrbeginsc != NULL) free(cm->itrbeginsc);
   if(cm->iendsc     != NULL) free(cm->iendsc);
 
   if(cm->comlog     != NULL) FreeComLog(cm->comlog);
@@ -875,9 +863,7 @@ CMLogoddsify(CM_t *cm)
      * sreLOG2 will set beginsc, endsc to -infinity.
      */
     cm->beginsc[v]    = sreLOG2(cm->begin[v]);
-    cm->trbeginsc[v]  = sreLOG2(cm->trbegin[v]);
     cm->ibeginsc[v]   = Prob2Score(cm->begin[v], 1.0);
-    cm->itrbeginsc[v] = Prob2Score(cm->trbegin[v], 1.0);
     /*printf("cm->begin[%4d]: %f ibeginsc->e: %f ibeginsc: %d\n", v, cm->begin[v], Score2Prob(cm->ibeginsc[v], 1.0), cm->ibeginsc[v]);*/
     
     cm->endsc[v]    = sreLOG2(cm->end[v]);
@@ -934,7 +920,6 @@ CMLogoddsify(CM_t *cm)
       /* Overwrite local begin and end scores */
       for (v=cm->M - 1; v>=0; v--) {
 	cm->beginsc[v]   = IMPOSSIBLE;
-	cm->trbeginsc[v] = IMPOSSIBLE;
 	cm->endsc[v] = IMPOSSIBLE;
       }
       
@@ -948,15 +933,6 @@ CMLogoddsify(CM_t *cm)
 	  }
       }
 
-      /* trbeginsc states (trunc's can begin in insert states) */
-      for (v = 0; v < cm->M; v++) { 
-	if ((StateDelta(cm->sttype[v]) > 0) && 
-	    (cm->stid[v] != MATP_ML && cm->stid[v] != MATP_MR)) { 
-	    cm->trbeginsc[v]  = beginsc;
-	    cm->itrbeginsc[v] = INTSCALE * beginsc;
-	}	  
-      }
-      
       /* endsc states */
       for (nd = 1; nd < cm->nodes; nd++) {
 	if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
@@ -1992,9 +1968,6 @@ CMRebalance(CM_t *cm, char *errbuf, CM_t **ret_new_cm)
       new->begin[newidx[v]]      = cm->begin[v];
       new->beginsc[newidx[v]]    = cm->beginsc[v];
       new->ibeginsc[newidx[v]]   = cm->ibeginsc[v];
-      new->trbegin[newidx[v]]    = cm->trbegin[v];
-      new->trbeginsc[newidx[v]]  = cm->trbeginsc[v];
-      new->itrbeginsc[newidx[v]] = cm->itrbeginsc[v];
       new->end[newidx[v]]        = cm->end[v];
       new->endsc[newidx[v]]      = cm->endsc[v];
       new->iendsc[newidx[v]]     = cm->iendsc[v];
@@ -3058,13 +3031,10 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
     esl_vec_ICopy(cm->irmesc[v], cm->abc->Kp,               new->irmesc[v]);
   }
   esl_vec_FCopy(cm->begin,      cm->M, new->begin);
-  esl_vec_FCopy(cm->trbegin,    cm->M, new->trbegin);
   esl_vec_FCopy(cm->end,        cm->M, new->end);
   esl_vec_FCopy(cm->beginsc,    cm->M, new->beginsc);
-  esl_vec_FCopy(cm->trbeginsc,  cm->M, new->trbeginsc);
   esl_vec_FCopy(cm->endsc,      cm->M, new->endsc);
   esl_vec_ICopy(cm->ibeginsc,   cm->M, new->ibeginsc);
-  esl_vec_ICopy(cm->itrbeginsc, cm->M, new->itrbeginsc);
   esl_vec_ICopy(cm->iendsc,     cm->M, new->iendsc);
 
   /* oesc and ioesc (not yet allocated for in new) */
@@ -3078,7 +3048,7 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   if(cm->emap != NULL) if((new->emap = CreateEmitMap(new)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Cloning CM, unable to create new emit map");
 
   /* create the truncation penalties (just as easy as copying) */
-  if(cm->trp != NULL)  if((new->trp  = cm_tr_penalties_Create(new)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Cloning CM, unable to create new truncation penalties");
+  if(cm->trp != NULL)  if((new->trp  = cm_tr_penalties_Create(new, cm->trp->ignored_inserts, errbuf)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Cloning CM, unable to create new truncation penalties");
 
   /* QDBInfo */
   if(cm->qdbinfo != NULL) { 
@@ -3203,13 +3173,10 @@ cm_Sizeof(CM_t *cm)
     bytes += sizeof(int *)   * cm->M;   /* cm->irmesc level 1 ptrs */
 
     bytes += sizeof(float)   * cm->M;   /* cm->begin */
-    bytes += sizeof(float)   * cm->M;   /* cm->trbegin */
     bytes += sizeof(float)   * cm->M;   /* cm->end */
     bytes += sizeof(float)   * cm->M;   /* cm->beginsc */
-    bytes += sizeof(float)   * cm->M;   /* cm->trbegin */
     bytes += sizeof(float)   * cm->M;   /* cm->endsc */
     bytes += sizeof(int)     * cm->M;   /* cm->ibeginsc */
-    bytes += sizeof(int)     * cm->M;   /* cm->itrbeginsc */
     bytes += sizeof(int)     * cm->M;   /* cm->iendsc */
 
     bytes += sizeof(float) * MAXCONNECT * cm->M;              /* cm->t level 2 */
@@ -4143,4 +4110,645 @@ Scorify(int sc)
 {
   if (sc == -INFTY) return IMPOSSIBLE;
   else              return ((float) sc / INTSCALE);
+}
+
+/* Function: cm_ExpectedStateOccupancy()
+ * Date:     EPN 12.02.05 
+ *           EPN, Fri Feb  3 09:07:43 2012 [Updated]
+ * 
+ * Purpose:  Fill psi vector. psi[v] is the expected number of times
+ *           state v is entered in a globally configured version of
+ *           the CM. If the model is locally configured upon entry, we
+ *           deal with that by making a copy of the transitions and
+ *           redefine transitions out of state 0.
+ *   
+ *           Note: this function was renamed and updated from 
+ *           'fill_psi()' between versions 1.0.2 and 1.1.
+ * 
+ * Args:     cm - the model
+
+ * Returns: void, dies on an error, which should never happen if the CM is normalized.
+ *         
+ */
+double *
+cm_ExpectedStateOccupancy(CM_t *cm)
+{
+  int status;
+  int v; /* first state in cm node nd */
+  int y;
+  int x;
+  char tmap_val;
+  int nd;
+  double summed_psi;
+  int nstates;
+  int is_insert;
+  int final_y;
+  char  ***tmap = NULL;  /* transition map */
+  float  **t_copy = NULL;  /* copy of transition probabilities */
+  double *psi = NULL;
+
+  /* make a copy of the CM transitions */
+  ESL_ALLOC(t_copy,    cm->M * sizeof(float *));
+  ESL_ALLOC(t_copy[0], cm->M * MAXCONNECT * sizeof(float));
+  for (v = 0; v < cm->M; v++) { 
+    t_copy[v] = t_copy[0] + v * MAXCONNECT;
+  }
+  esl_vec_FCopy(cm->t[0],    cm->M * MAXCONNECT, t_copy[0]);
+  /* deal with possibility that we have local begins on: redefine transitions out state 0 to cm->root_trans in this case */
+  if(cm->root_trans != NULL) { 
+    esl_vec_FCopy(cm->root_trans, cm->cnum[0], t_copy[0]);
+  }
+  /* deal with possibility that we have local ends on: renormalize transitions out of each state (this will discount
+   * the possibility that we transition to a local end) 
+   */
+  if(cm->flags & CMH_LOCAL_END) { 
+    for (nd = 1; nd < cm->nodes; nd++) {
+      if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	   cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	   cm->ndtype[nd] == BEGR_nd) && 
+	  cm->ndtype[nd+1] != END_nd)
+	{
+	  v = cm->nodemap[nd];
+	  esl_vec_FNorm(t_copy[v], cm->cnum[v]);
+	}
+    }
+  }
+
+  /* allocate and initialize psi */
+  ESL_ALLOC(psi, sizeof(double) * cm->M);
+  esl_vec_DSet(psi, cm->M, 0.);
+
+  /* create the transition map */
+  tmap = cm_CreateTransitionMap();
+
+  /*psi[v] is the 'expected number of times state v is entered'.*/
+  for (v = 0; v <= cm->M-1; v++) { 
+    is_insert = (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) ? TRUE : FALSE;
+
+    if(cm->sttype[v] == S_st) { 
+      psi[v] = 1.0; /* no transitions into start states - they're necessarily visited in every parse. */
+    }
+    else { /* not a S_st */
+      final_y = (is_insert) ? 1 : 0; /* insert self loops are handled differently */
+      for (y = cm->pnum[v]-1; y >= final_y; y--) { 
+	x = cm->plast[v] - y; /* x is a parent of v, add contribution from x to v */
+	tmap_val = tmap[(int) cm->stid[x]][(int) cm->ndtype[cm->ndidx[v]+is_insert]][(int) cm->stid[v]];
+	psi[v] += psi[x] * t_copy[x][(int) tmap_val];
+      }
+      if(is_insert) {
+	psi[v] += psi[v] * (t_copy[v][0] / (1.-t_copy[v][0])); /* the contribution of the self insertion loops */
+      }
+    }
+  }
+  /* Sanity check. For any node the sum of psi values over
+   * all split set states should be 1.0. */
+  for(nd = 0; nd < cm->nodes; nd++) { 
+    summed_psi = 0.;
+    nstates = TotalStatesInNode(cm->ndtype[nd]);
+    for(v = cm->nodemap[nd]; v < cm->nodemap[nd] + nstates; v++) { 
+      if(cm->sttype[v] != IL_st && cm->sttype[v] != IR_st) summed_psi += psi[v];
+    }
+    if((summed_psi < 0.999) || (summed_psi > 1.001)) { 
+      cm_Fail("ERROR: summed psi of split states in node %d not 1.0 but : %f\n", nd, summed_psi);
+    }
+    /* printf("split summed psi[%d]: %f\n", nd, summed_psi); */
+  }
+  /* Another sanity check, the only states that can have psi equal to 0
+   * are detached insert states (states immediately prior to END_Es) */
+  for(v = 0; v < cm->M; v++) {
+    if(psi[v] == 0. && (! StateIsDetached(cm, v))) {
+      cm_Fail("ERROR: psi of state v:%d is 0.0 and this state is not a detached insert! HMM banding would have failed...\n", v);
+    }
+  }
+
+  cm_FreeTransitionMap(tmap);
+  if(t_copy != NULL) { 
+    if(t_copy[0] != NULL) free(t_copy[0]);
+    free(t_copy);
+  }
+  return psi;
+
+ ERROR: 
+  cm_FreeTransitionMap(tmap);
+  if(t_copy != NULL) { 
+    if(t_copy[0] != NULL) free(t_copy[0]);
+    free(t_copy);
+  }
+  if(psi != NULL) free(psi);
+  return NULL;
+}
+
+
+/* Function: cm_ExpectedPositionOccupancy()
+ * Date:     EPN, Fri Feb  3 10:20:19 2012
+ * 
+ * Purpose:  Determine the expected occupancy of each consensus
+ *           position 1..clen and return it in <ret_mexpocc> and
+ *           determine the expected occupancy of each insert position
+ *           (after each position 1..clen) and return it in
+ *           <ret_iexpocc>.  Most of the work is done by a call to
+ *           cm_ExpectedStateOccupancy().
+ *
+ *           Caller can also pass in non-NULL values for <opt_psi>
+ *           <opt_m2v_1>, <opt_m2v_2> and <opt_i2v>. <opt_psi> holds
+ *           expected occupancy of each state. The other arrays hold
+ *           the state index that emits at each match position
+ *           <opt_m2v_1> and <opt_m2v_2> or inserts after each match
+ *           position <opt_i2v>. For <opt_m2v_1> only consensus match
+ *           states are used (MATP_MP, MATL_ML and MATR_MR). For
+ *           <opt_m2v_2> only non-consensus match states are used:
+ *           MATP_ML and MATP_MR, both m2v_1 and m2v_2 are necessary
+ *           because 2 states can emit at each position modeled by a
+ *           MATP.
+ *
+ * Args:     cm          - the model
+ *           ret_mexpocc - RETURN: [0..clen] expected occupancy of match positions
+ *           ret_iexpocc - RETURN: [0..clen] expected occupancy of inserts (after cpos)
+ *           opt_psi     - OPTIONAL RETURN: [0..v..M-1] expected occupancy of state v
+ *           opt_m2v_1   - OPTIONAL RETURN: [0..clen] consensus match state that emits at position cpos 
+ *                                                    (must be MATP_MP, MATL_ML or MATR_MR)
+ *           opt_m2v_2   - OPTIONAL RETURN: [0..clen] non-consensus match state that emits at position cpos or -1 
+ *                                                    (if ! -1, must be MATP_ML, MATP_MR)
+ *           opt_i2v     - OPTIONAL RETURN: [0..clen] insert state that emits after each position
+ *
+ * Returns: void, dies on an error, which should never happen if the CM is normalized.
+ *         
+ */
+int
+cm_ExpectedPositionOccupancy(CM_t *cm, float **ret_mexpocc, float **ret_iexpocc, double **opt_psi, int **opt_m2v_1, int **opt_m2v_2, int **opt_i2v)
+{
+  int status;
+  double *psi = NULL;
+  float *mexpocc = NULL;
+  float *iexpocc = NULL;
+  int   *m2v_1 = NULL;
+  int   *m2v_2 = NULL;
+  int   *i2v   = NULL;
+  int lpos, rpos;
+  int v, nd;
+
+  if((psi = cm_ExpectedStateOccupancy(cm)) == NULL) goto ERROR;
+
+  ESL_ALLOC(mexpocc, sizeof(float) * (cm->clen+1));
+  ESL_ALLOC(iexpocc, sizeof(float) * (cm->clen+1));
+  ESL_ALLOC(m2v_1,   sizeof(int) * (cm->clen+1));
+  ESL_ALLOC(m2v_2,   sizeof(int) * (cm->clen+1));
+  ESL_ALLOC(i2v,     sizeof(int) * (cm->clen+1));
+  esl_vec_FSet(mexpocc, (cm->clen+1), 0.);
+  esl_vec_FSet(iexpocc, (cm->clen+1), 0.);
+  esl_vec_ISet(m2v_1, (cm->clen+1), -1);
+  esl_vec_ISet(m2v_2, (cm->clen+1), -1);
+  esl_vec_ISet(i2v,   (cm->clen+1), -1);
+
+  mexpocc[0] = 0.; /* no consensus position 0, this is redundant, but left here to emphasize that it will stay 0. */
+  /* DumpEmitMap(stdout, cm->emap, cm); */
+  for(v = 0; v < cm->M; v++) { 
+    if(! StateIsDetached(cm, v)) { 
+      nd = cm->ndidx[v];
+      lpos = cm->emap->lpos[nd];
+      rpos = cm->emap->rpos[nd];
+      /* printf("v: %4d nd: %4d %4s %2s lpos: %4d rpos: %4d psi: %.6f\n", v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v]), lpos, rpos, psi[v]); */
+      if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) mexpocc[lpos] += psi[v]; /* we do += so MATP_MP and MATP_ML both contribute */
+      if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) mexpocc[rpos] += psi[v]; /* we do += so MATP_MP and MATP_MR both contribute */
+      if(cm->sttype[v] == IL_st) { iexpocc[lpos]   = psi[v]; i2v[lpos] = v; }
+      if(cm->sttype[v] == IR_st) { iexpocc[rpos-1] = psi[v]; i2v[rpos-1] = v; }
+
+      if(cm->stid[v] == MATP_MP) { m2v_1[lpos] = v; m2v_1[rpos] = v; }
+      if(cm->stid[v] == MATP_ML) { m2v_2[lpos] = v; }
+      if(cm->stid[v] == MATP_MR) { m2v_2[rpos] = v; }
+    }
+  }
+
+  /* for(cpos = 0; cpos <= cm->clen; cpos++) printf("cpos: %3d  mexpocc: %.6f  iexpocc: %.6f\n", cpos, mexpocc[cpos], iexpocc[cpos]); */
+
+  *ret_mexpocc = mexpocc;
+  *ret_iexpocc = iexpocc;
+  if(opt_psi   != NULL) *opt_psi   = psi;    else free(psi);
+  if(opt_m2v_1 != NULL) *opt_m2v_1 = m2v_1;  else free(m2v_1);
+  if(opt_m2v_2 != NULL) *opt_m2v_2 = m2v_2;  else free(m2v_2);
+  if(opt_i2v   != NULL) *opt_i2v = i2v;      else free(i2v);
+  return eslOK;
+
+ ERROR: 
+  if(psi != NULL) free(psi);
+  if(mexpocc != NULL) free(mexpocc);
+  if(iexpocc != NULL) free(iexpocc);
+  *ret_mexpocc = NULL;
+  *ret_iexpocc = NULL;
+  if(opt_psi   != NULL) *opt_psi = NULL;
+  if(opt_m2v_1 != NULL) *opt_m2v_1 = NULL;
+  if(opt_m2v_2 != NULL) *opt_m2v_2 = NULL;
+  if(opt_i2v   != NULL) *opt_i2v = NULL;
+  return eslEMEM;
+}
+
+/* Function: cm_CreateTransitionMap()
+ * Date:     EPN 12.02.05 
+ *           EPN, Fri Feb  3 09:07:43 2012 [Updated]
+ *
+ * Purpose:  Make the predefined transition map which tells you
+ *           the index of a given transition from any of the 74
+ *           transition sets.
+ * 
+ *           Note: this function was renamed and updated from 
+ *           'make_tmap()' between versions 1.0.2 and 1.1.
+ *
+ * Args:     void
+ *
+ * Returns: transition map, a 3 dimensional character array:
+ *          1st D: statetype of v
+ *          2nd D: type of downstream node.
+ *          3rd D: statetype of y, that we're transitioning to.
+ *          value: the index of v->y in cm->t[v]
+ *          Caller must free with cm_FreeTransitionMap().
+ */
+char ***
+cm_CreateTransitionMap()
+{
+  int status;
+  int i,j,k;
+  char ***tmap;
+
+  ESL_ALLOC(tmap, sizeof(char **) * UNIQUESTATES);
+  for(i = 0; i < UNIQUESTATES; i++) { 
+    ESL_ALLOC(tmap[i], sizeof(char *) * NODETYPES);
+    for(j = 0; j < NODETYPES; j++) { 
+      ESL_ALLOC(tmap[i][j], sizeof(char) * UNIQUESTATES);
+      for(k = 0; k < UNIQUESTATES; k++) { 
+	tmap[i][j][k] = -1;
+      }
+    }
+  }
+
+  /*following code block generated by: 
+   *perl ~nawrocki/notebook/5_1128_hmnl_ml_hmm/scripts/gen_tmap.pl
+   */
+  tmap[ROOT_S][BIF_nd][ROOT_IL] = 0;
+  tmap[ROOT_S][BIF_nd][ROOT_IR] = 1;
+  tmap[ROOT_S][BIF_nd][BIF_B] = 2;
+
+  tmap[ROOT_S][MATP_nd][ROOT_IL] = 0;
+  tmap[ROOT_S][MATP_nd][ROOT_IR] = 1;
+  tmap[ROOT_S][MATP_nd][MATP_MP] = 2;
+  tmap[ROOT_S][MATP_nd][MATP_ML] = 3;
+  tmap[ROOT_S][MATP_nd][MATP_MR] = 4;
+  tmap[ROOT_S][MATP_nd][MATP_D] = 5;
+
+  tmap[ROOT_S][MATL_nd][ROOT_IL] = 0;
+  tmap[ROOT_S][MATL_nd][ROOT_IR] = 1;
+  tmap[ROOT_S][MATL_nd][MATL_ML] = 2;
+  tmap[ROOT_S][MATL_nd][MATL_D] = 3;
+
+  tmap[ROOT_S][MATR_nd][ROOT_IL] = 0;
+  tmap[ROOT_S][MATR_nd][ROOT_IR] = 1;
+  tmap[ROOT_S][MATR_nd][MATR_MR] = 2;
+  tmap[ROOT_S][MATR_nd][MATR_D] = 3;
+
+  tmap[ROOT_IL][BIF_nd][ROOT_IL] = 0;
+  tmap[ROOT_IL][BIF_nd][ROOT_IR] = 1;
+  tmap[ROOT_IL][BIF_nd][BIF_B] = 2;
+
+  tmap[ROOT_IL][MATP_nd][ROOT_IL] = 0;
+  tmap[ROOT_IL][MATP_nd][ROOT_IR] = 1;
+  tmap[ROOT_IL][MATP_nd][MATP_MP] = 2;
+  tmap[ROOT_IL][MATP_nd][MATP_ML] = 3;
+  tmap[ROOT_IL][MATP_nd][MATP_MR] = 4;
+  tmap[ROOT_IL][MATP_nd][MATP_D] = 5;
+
+  tmap[ROOT_IL][MATL_nd][ROOT_IL] = 0;
+  tmap[ROOT_IL][MATL_nd][ROOT_IR] = 1;
+  tmap[ROOT_IL][MATL_nd][MATL_ML] = 2;
+  tmap[ROOT_IL][MATL_nd][MATL_D] = 3;
+
+  tmap[ROOT_IL][MATR_nd][ROOT_IL] = 0;
+  tmap[ROOT_IL][MATR_nd][ROOT_IR] = 1;
+  tmap[ROOT_IL][MATR_nd][MATR_MR] = 2;
+  tmap[ROOT_IL][MATR_nd][MATR_D] = 3;
+
+  tmap[ROOT_IR][BIF_nd][ROOT_IR] = 0;
+  tmap[ROOT_IR][BIF_nd][BIF_B] = 1;
+
+  tmap[ROOT_IR][MATP_nd][ROOT_IR] = 0;
+  tmap[ROOT_IR][MATP_nd][MATP_MP] = 1;
+  tmap[ROOT_IR][MATP_nd][MATP_ML] = 2;
+  tmap[ROOT_IR][MATP_nd][MATP_MR] = 3;
+  tmap[ROOT_IR][MATP_nd][MATP_D] = 4;
+
+  tmap[ROOT_IR][MATL_nd][ROOT_IR] = 0;
+  tmap[ROOT_IR][MATL_nd][MATL_ML] = 1;
+  tmap[ROOT_IR][MATL_nd][MATL_D] = 2;
+
+  tmap[ROOT_IR][MATR_nd][ROOT_IR] = 0;
+  tmap[ROOT_IR][MATR_nd][MATR_MR] = 1;
+  tmap[ROOT_IR][MATR_nd][MATR_D] = 2;
+
+  tmap[BEGL_S][BIF_nd][BIF_B] = 0;
+
+  tmap[BEGL_S][MATP_nd][MATP_MP] = 0;
+  tmap[BEGL_S][MATP_nd][MATP_ML] = 1;
+  tmap[BEGL_S][MATP_nd][MATP_MR] = 2;
+  tmap[BEGL_S][MATP_nd][MATP_D] = 3;
+
+  tmap[BEGR_S][BIF_nd][BEGR_IL] = 0;
+  tmap[BEGR_S][BIF_nd][BIF_B] = 1;
+
+  tmap[BEGR_S][MATP_nd][BEGR_IL] = 0;
+  tmap[BEGR_S][MATP_nd][MATP_MP] = 1;
+  tmap[BEGR_S][MATP_nd][MATP_ML] = 2;
+  tmap[BEGR_S][MATP_nd][MATP_MR] = 3;
+  tmap[BEGR_S][MATP_nd][MATP_D] = 4;
+
+  tmap[BEGR_S][MATL_nd][BEGR_IL] = 0;
+  tmap[BEGR_S][MATL_nd][MATL_ML] = 1;
+  tmap[BEGR_S][MATL_nd][MATL_D] = 2;
+
+  tmap[BEGR_IL][BIF_nd][BEGR_IL] = 0;
+  tmap[BEGR_IL][BIF_nd][BIF_B] = 1;
+
+  tmap[BEGR_IL][MATP_nd][BEGR_IL] = 0;
+  tmap[BEGR_IL][MATP_nd][MATP_MP] = 1;
+  tmap[BEGR_IL][MATP_nd][MATP_ML] = 2;
+  tmap[BEGR_IL][MATP_nd][MATP_MR] = 3;
+  tmap[BEGR_IL][MATP_nd][MATP_D] = 4;
+
+  tmap[BEGR_IL][MATL_nd][BEGR_IL] = 0;
+  tmap[BEGR_IL][MATL_nd][MATL_ML] = 1;
+  tmap[BEGR_IL][MATL_nd][MATL_D] = 2;
+
+  tmap[MATP_MP][BIF_nd][MATP_IL] = 0;
+  tmap[MATP_MP][BIF_nd][MATP_IR] = 1;
+  tmap[MATP_MP][BIF_nd][BIF_B] = 2;
+
+  tmap[MATP_MP][MATP_nd][MATP_IL] = 0;
+  tmap[MATP_MP][MATP_nd][MATP_IR] = 1;
+  tmap[MATP_MP][MATP_nd][MATP_MP] = 2;
+  tmap[MATP_MP][MATP_nd][MATP_ML] = 3;
+  tmap[MATP_MP][MATP_nd][MATP_MR] = 4;
+  tmap[MATP_MP][MATP_nd][MATP_D] = 5;
+
+  tmap[MATP_MP][MATL_nd][MATP_IL] = 0;
+  tmap[MATP_MP][MATL_nd][MATP_IR] = 1;
+  tmap[MATP_MP][MATL_nd][MATL_ML] = 2;
+  tmap[MATP_MP][MATL_nd][MATL_D] = 3;
+
+  tmap[MATP_MP][MATR_nd][MATP_IL] = 0;
+  tmap[MATP_MP][MATR_nd][MATP_IR] = 1;
+  tmap[MATP_MP][MATR_nd][MATR_MR] = 2;
+  tmap[MATP_MP][MATR_nd][MATR_D] = 3;
+
+  tmap[MATP_MP][END_nd][MATP_IL] = 0;
+  tmap[MATP_MP][END_nd][MATP_IR] = 1;
+  tmap[MATP_MP][END_nd][END_E] = 2;
+
+  tmap[MATP_ML][BIF_nd][MATP_IL] = 0;
+  tmap[MATP_ML][BIF_nd][MATP_IR] = 1;
+  tmap[MATP_ML][BIF_nd][BIF_B] = 2;
+
+  tmap[MATP_ML][MATP_nd][MATP_IL] = 0;
+  tmap[MATP_ML][MATP_nd][MATP_IR] = 1;
+  tmap[MATP_ML][MATP_nd][MATP_MP] = 2;
+  tmap[MATP_ML][MATP_nd][MATP_ML] = 3;
+  tmap[MATP_ML][MATP_nd][MATP_MR] = 4;
+  tmap[MATP_ML][MATP_nd][MATP_D] = 5;
+
+  tmap[MATP_ML][MATL_nd][MATP_IL] = 0;
+  tmap[MATP_ML][MATL_nd][MATP_IR] = 1;
+  tmap[MATP_ML][MATL_nd][MATL_ML] = 2;
+  tmap[MATP_ML][MATL_nd][MATL_D] = 3;
+
+  tmap[MATP_ML][MATR_nd][MATP_IL] = 0;
+  tmap[MATP_ML][MATR_nd][MATP_IR] = 1;
+  tmap[MATP_ML][MATR_nd][MATR_MR] = 2;
+  tmap[MATP_ML][MATR_nd][MATR_D] = 3;
+
+  tmap[MATP_ML][END_nd][MATP_IL] = 0;
+  tmap[MATP_ML][END_nd][MATP_IR] = 1;
+  tmap[MATP_ML][END_nd][END_E] = 2;
+
+  tmap[MATP_MR][BIF_nd][MATP_IL] = 0;
+  tmap[MATP_MR][BIF_nd][MATP_IR] = 1;
+  tmap[MATP_MR][BIF_nd][BIF_B] = 2;
+
+  tmap[MATP_MR][MATP_nd][MATP_IL] = 0;
+  tmap[MATP_MR][MATP_nd][MATP_IR] = 1;
+  tmap[MATP_MR][MATP_nd][MATP_MP] = 2;
+  tmap[MATP_MR][MATP_nd][MATP_ML] = 3;
+  tmap[MATP_MR][MATP_nd][MATP_MR] = 4;
+  tmap[MATP_MR][MATP_nd][MATP_D] = 5;
+
+  tmap[MATP_MR][MATL_nd][MATP_IL] = 0;
+  tmap[MATP_MR][MATL_nd][MATP_IR] = 1;
+  tmap[MATP_MR][MATL_nd][MATL_ML] = 2;
+  tmap[MATP_MR][MATL_nd][MATL_D] = 3;
+
+  tmap[MATP_MR][MATR_nd][MATP_IL] = 0;
+  tmap[MATP_MR][MATR_nd][MATP_IR] = 1;
+  tmap[MATP_MR][MATR_nd][MATR_MR] = 2;
+  tmap[MATP_MR][MATR_nd][MATR_D] = 3;
+
+  tmap[MATP_MR][END_nd][MATP_IL] = 0;
+  tmap[MATP_MR][END_nd][MATP_IR] = 1;
+  tmap[MATP_MR][END_nd][END_E] = 2;
+
+  tmap[MATP_D][BIF_nd][MATP_IL] = 0;
+  tmap[MATP_D][BIF_nd][MATP_IR] = 1;
+  tmap[MATP_D][BIF_nd][BIF_B] = 2;
+
+  tmap[MATP_D][MATP_nd][MATP_IL] = 0;
+  tmap[MATP_D][MATP_nd][MATP_IR] = 1;
+  tmap[MATP_D][MATP_nd][MATP_MP] = 2;
+  tmap[MATP_D][MATP_nd][MATP_ML] = 3;
+  tmap[MATP_D][MATP_nd][MATP_MR] = 4;
+  tmap[MATP_D][MATP_nd][MATP_D] = 5;
+
+  tmap[MATP_D][MATL_nd][MATP_IL] = 0;
+  tmap[MATP_D][MATL_nd][MATP_IR] = 1;
+  tmap[MATP_D][MATL_nd][MATL_ML] = 2;
+  tmap[MATP_D][MATL_nd][MATL_D] = 3;
+
+  tmap[MATP_D][MATR_nd][MATP_IL] = 0;
+  tmap[MATP_D][MATR_nd][MATP_IR] = 1;
+  tmap[MATP_D][MATR_nd][MATR_MR] = 2;
+  tmap[MATP_D][MATR_nd][MATR_D] = 3;
+
+  tmap[MATP_D][END_nd][MATP_IL] = 0;
+  tmap[MATP_D][END_nd][MATP_IR] = 1;
+  tmap[MATP_D][END_nd][END_E] = 2;
+
+  tmap[MATP_IL][BIF_nd][MATP_IL] = 0;
+  tmap[MATP_IL][BIF_nd][MATP_IR] = 1;
+  tmap[MATP_IL][BIF_nd][BIF_B] = 2;
+
+  tmap[MATP_IL][MATP_nd][MATP_IL] = 0;
+  tmap[MATP_IL][MATP_nd][MATP_IR] = 1;
+  tmap[MATP_IL][MATP_nd][MATP_MP] = 2;
+  tmap[MATP_IL][MATP_nd][MATP_ML] = 3;
+  tmap[MATP_IL][MATP_nd][MATP_MR] = 4;
+  tmap[MATP_IL][MATP_nd][MATP_D] = 5;
+
+  tmap[MATP_IL][MATL_nd][MATP_IL] = 0;
+  tmap[MATP_IL][MATL_nd][MATP_IR] = 1;
+  tmap[MATP_IL][MATL_nd][MATL_ML] = 2;
+  tmap[MATP_IL][MATL_nd][MATL_D] = 3;
+
+  tmap[MATP_IL][MATR_nd][MATP_IL] = 0;
+  tmap[MATP_IL][MATR_nd][MATP_IR] = 1;
+  tmap[MATP_IL][MATR_nd][MATR_MR] = 2;
+  tmap[MATP_IL][MATR_nd][MATR_D] = 3;
+
+  tmap[MATP_IL][END_nd][MATP_IL] = 0;
+  tmap[MATP_IL][END_nd][MATP_IR] = 1;
+  tmap[MATP_IL][END_nd][END_E] = 2;
+
+  tmap[MATP_IR][BIF_nd][MATP_IR] = 0;
+  tmap[MATP_IR][BIF_nd][BIF_B] = 1;
+
+  tmap[MATP_IR][MATP_nd][MATP_IR] = 0;
+  tmap[MATP_IR][MATP_nd][MATP_MP] = 1;
+  tmap[MATP_IR][MATP_nd][MATP_ML] = 2;
+  tmap[MATP_IR][MATP_nd][MATP_MR] = 3;
+  tmap[MATP_IR][MATP_nd][MATP_D] = 4;
+
+  tmap[MATP_IR][MATL_nd][MATP_IR] = 0;
+  tmap[MATP_IR][MATL_nd][MATL_ML] = 1;
+  tmap[MATP_IR][MATL_nd][MATL_D] = 2;
+
+  tmap[MATP_IR][MATR_nd][MATP_IR] = 0;
+  tmap[MATP_IR][MATR_nd][MATR_MR] = 1;
+  tmap[MATP_IR][MATR_nd][MATR_D] = 2;
+
+  tmap[MATP_IR][END_nd][MATP_IR] = 0;
+  tmap[MATP_IR][END_nd][END_E] = 1;
+
+  tmap[MATL_ML][BIF_nd][MATL_IL] = 0;
+  tmap[MATL_ML][BIF_nd][BIF_B] = 1;
+
+  tmap[MATL_ML][MATP_nd][MATL_IL] = 0;
+  tmap[MATL_ML][MATP_nd][MATP_MP] = 1;
+  tmap[MATL_ML][MATP_nd][MATP_ML] = 2;
+  tmap[MATL_ML][MATP_nd][MATP_MR] = 3;
+  tmap[MATL_ML][MATP_nd][MATP_D] = 4;
+
+  tmap[MATL_ML][MATL_nd][MATL_IL] = 0;
+  tmap[MATL_ML][MATL_nd][MATL_ML] = 1;
+  tmap[MATL_ML][MATL_nd][MATL_D] = 2;
+
+  tmap[MATL_ML][MATR_nd][MATL_IL] = 0;
+  tmap[MATL_ML][MATR_nd][MATR_MR] = 1;
+  tmap[MATL_ML][MATR_nd][MATR_D] = 2;
+
+  tmap[MATL_ML][END_nd][MATL_IL] = 0;
+  tmap[MATL_ML][END_nd][END_E] = 1;
+
+  tmap[MATL_D][BIF_nd][MATL_IL] = 0;
+  tmap[MATL_D][BIF_nd][BIF_B] = 1;
+
+  tmap[MATL_D][MATP_nd][MATL_IL] = 0;
+  tmap[MATL_D][MATP_nd][MATP_MP] = 1;
+  tmap[MATL_D][MATP_nd][MATP_ML] = 2;
+  tmap[MATL_D][MATP_nd][MATP_MR] = 3;
+  tmap[MATL_D][MATP_nd][MATP_D] = 4;
+
+  tmap[MATL_D][MATL_nd][MATL_IL] = 0;
+  tmap[MATL_D][MATL_nd][MATL_ML] = 1;
+  tmap[MATL_D][MATL_nd][MATL_D] = 2;
+
+  tmap[MATL_D][MATR_nd][MATL_IL] = 0;
+  tmap[MATL_D][MATR_nd][MATR_MR] = 1;
+  tmap[MATL_D][MATR_nd][MATR_D] = 2;
+
+  tmap[MATL_D][END_nd][MATL_IL] = 0;
+  tmap[MATL_D][END_nd][END_E] = 1;
+
+  tmap[MATL_IL][BIF_nd][MATL_IL] = 0;
+  tmap[MATL_IL][BIF_nd][BIF_B] = 1;
+
+  tmap[MATL_IL][MATP_nd][MATL_IL] = 0;
+  tmap[MATL_IL][MATP_nd][MATP_MP] = 1;
+  tmap[MATL_IL][MATP_nd][MATP_ML] = 2;
+  tmap[MATL_IL][MATP_nd][MATP_MR] = 3;
+  tmap[MATL_IL][MATP_nd][MATP_D] = 4;
+
+  tmap[MATL_IL][MATL_nd][MATL_IL] = 0;
+  tmap[MATL_IL][MATL_nd][MATL_ML] = 1;
+  tmap[MATL_IL][MATL_nd][MATL_D] = 2;
+
+  tmap[MATL_IL][MATR_nd][MATL_IL] = 0;
+  tmap[MATL_IL][MATR_nd][MATR_MR] = 1;
+  tmap[MATL_IL][MATR_nd][MATR_D] = 2;
+
+  tmap[MATL_IL][END_nd][MATL_IL] = 0;
+  tmap[MATL_IL][END_nd][END_E] = 1;
+
+  tmap[MATR_MR][BIF_nd][MATR_IR] = 0;
+  tmap[MATR_MR][BIF_nd][BIF_B] = 1;
+
+  tmap[MATR_MR][MATP_nd][MATR_IR] = 0;
+  tmap[MATR_MR][MATP_nd][MATP_MP] = 1;
+  tmap[MATR_MR][MATP_nd][MATP_ML] = 2;
+  tmap[MATR_MR][MATP_nd][MATP_MR] = 3;
+  tmap[MATR_MR][MATP_nd][MATP_D] = 4;
+
+  tmap[MATR_MR][MATR_nd][MATR_IR] = 0;
+  tmap[MATR_MR][MATR_nd][MATR_MR] = 1;
+  tmap[MATR_MR][MATR_nd][MATR_D] = 2;
+
+  tmap[MATR_D][BIF_nd][MATR_IR] = 0;
+  tmap[MATR_D][BIF_nd][BIF_B] = 1;
+
+  tmap[MATR_D][MATP_nd][MATR_IR] = 0;
+  tmap[MATR_D][MATP_nd][MATP_MP] = 1;
+  tmap[MATR_D][MATP_nd][MATP_ML] = 2;
+  tmap[MATR_D][MATP_nd][MATP_MR] = 3;
+  tmap[MATR_D][MATP_nd][MATP_D] = 4;
+
+  tmap[MATR_D][MATR_nd][MATR_IR] = 0;
+  tmap[MATR_D][MATR_nd][MATR_MR] = 1;
+  tmap[MATR_D][MATR_nd][MATR_D] = 2;
+
+  tmap[MATR_IR][BIF_nd][MATR_IR] = 0;
+  tmap[MATR_IR][BIF_nd][BIF_B] = 1;
+
+  tmap[MATR_IR][MATP_nd][MATR_IR] = 0;
+  tmap[MATR_IR][MATP_nd][MATP_MP] = 1;
+  tmap[MATR_IR][MATP_nd][MATP_ML] = 2;
+  tmap[MATR_IR][MATP_nd][MATP_MR] = 3;
+  tmap[MATR_IR][MATP_nd][MATP_D] = 4;
+
+  tmap[MATR_IR][MATR_nd][MATR_IR] = 0;
+  tmap[MATR_IR][MATR_nd][MATR_MR] = 1;
+  tmap[MATR_IR][MATR_nd][MATR_D] = 2;
+
+  tmap[BIF_B][BEGL_nd][BEGL_S] = 0;
+
+  tmap[BIF_B][BEGR_nd][BEGR_S] = 0;
+
+  return tmap;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return NULL; /* not reached */
+}
+
+/* Function: cm_FreeTransitionMap()
+ *
+ * Purpose:  Free a transition map.
+ * 
+ * Returns: (void) 
+ */
+void
+cm_FreeTransitionMap(char ***tmap)
+{
+  int i, j;
+
+  if(tmap != NULL) { 
+    for(i = 0; i < UNIQUESTATES; i++) { 
+      for(j = 0; j < NODETYPES; j++) { 
+	free(tmap[i][j]);
+      }
+      free(tmap[i]);
+    }
+    free(tmap);
+  }
+  return;
 }

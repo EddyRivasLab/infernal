@@ -7227,6 +7227,14 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  *           mode (if truncated) . They are all allocated for 0..W,
  *           but only dmin..dmax should be considered valid. 
  * 
+ *           If caller is a truncated scanner <bestmode> will be
+ *           non-NULL, and include info on the alignment mode of each
+ *           hit (<bestmode>). Some hits will be disallowed based
+ *           on their alignment mode (e.g. 5' truncated hits must
+ *           include residue i0 in their alignment to be allowed, 
+ *           see cm_tophits.c:cm_hit_AllowTruncation() for more 
+ *           information).
+
  *           If bestmode is NULL (caller is non-truncated scanner),
  *           all hits are implictly TRMODE_J mode.
  *
@@ -7260,7 +7268,7 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  */
 int
 UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, int dmax, 
-		 float *bestsc, int *bestr, char *bestmode, CM_TR_OPTS *tro, int W, double **act)
+		 float *bestsc, int *bestr, char *bestmode, int W, double **act)
 {
   int status;          /* easel status */
   int i;               /* position of first residue in hit, in actual sequence coordinates */
@@ -7271,7 +7279,7 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
   int   do_report_hit; /* should we add info on this hit to gamma? */
   float hit_sc;        /* score for this hit, possibly null3-corrected */
   float cumulative_sc; /* cumulative score of all hits in gamma, up to j */
-  int j0 = gamma->i0+gamma->L-1;
+  int   j0 = gamma->i0+gamma->L-1;
 
   /* variables related to NULL3 penalty */
   float *comp = NULL;            /* 0..a..cm->abc-K-1, the composition of residue a within the hit being reported */
@@ -7298,9 +7306,18 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
     hit_sc = bestsc[d];
     cumulative_sc = gamma->mx[ip-1] + hit_sc;
     /* printf("CAND hit %3d..%3d: %8.2f\n", i, j, hit_sc); */
-    if (cumulative_sc > gamma->mx[jp]) {
+    if (cumulative_sc > gamma->mx[jp] && NOT_IMPOSSIBLE(hit_sc)) {
       do_report_hit = TRUE;
-      if(act != NULL && NOT_IMPOSSIBLE(hit_sc)) { 
+
+      if(bestmode != NULL) {
+	/* we're in truncated mode, check if we should allow the hit.
+	 * this enforces that i0/j0 is included if necessary based on the
+	 * marginal alignment mode of the hit 
+	 */
+	do_report_hit = cm_hit_AllowTruncation(cm, i, j, gamma->i0, j0, mode, bestr[d]);
+      }
+
+      if(do_report_hit && act != NULL) { 
 	/* do a NULL3 score correction */
 	for(a = 0; a < cm->abc->K; a++) { 
 	  comp[a] = act[jp%(W+1)][a] - act[(ip-1)%(W+1)][a]; 
@@ -7313,13 +7330,7 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
 	do_report_hit = (cumulative_sc > gamma->mx[jp]) ? TRUE : FALSE;
 	/* printf("GOOD hit %3d..%3d: %8.2f  %10.6f  %8.2f\n", i, j, hit_sc+null3_correction, null3_correction, hit_sc); */
       }
-      /* enforce that i == i0 and/or j == j0, if necessary */
-      if(tro != NULL && do_report_hit) { 
-	if((tro->force_j0_LT && j != j0        && (mode == TRMODE_L || mode == TRMODE_T)) || 
-	   (tro->force_i0_RT && i != gamma->i0 && (mode == TRMODE_R || mode == TRMODE_T))) { 
-	  do_report_hit = FALSE;
-	}
-      }
+
       if(do_report_hit) { 
 	/* printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc); */
 	gamma->mx[jp]       = cumulative_sc;
@@ -7346,24 +7357,25 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
  *           strategy. For the non-greedy strategy, see 
  *           UpdateGammaHitMx(). 
  *
- *           If caller is a truncated scanner <bestmode> and <tro>
- *           will be non-NULL, and include info on the alignment mode
- *           of each hit (<bestmode>), and what types of hits we
- *           should allow (<tro>).
+ *           If caller is a truncated scanner <bestmode> will be
+ *           non-NULL, and include info on the alignment mode of each
+ *           hit (<bestmode>). Some hits will be disallowed based
+ *           on their alignment mode (e.g. 5' truncated hits must
+ *           include residue i0 in their alignment to be allowed, 
+ *           see cm_tophits.c:cm_hit_AllowTruncation() for more 
+ *           information).
  *
- *           If caller is a standard (non-truncated) scanner both
- *           <bestmode> and <tro> will be NULL. All hits will
- *           implicitly be of the TRMODE_J mode and no hits 
- *           are disallowed.
+ *           If caller is a standard (non-truncated) scanner
+ *           <bestmode> will be NULL. All hits will implicitly be of
+ *           the TRMODE_J mode and no hits are disallowed.
  *
  * Returns:  eslOK on success
  * Throws:   eslEMEM on memory allocation error
  */
 int
 ReportHitsGreedily(CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, 
-		   CM_TR_OPTS *tro, int W, double **act, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist)
+		   int W, double **act, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist)
 {
-
   int   status;          /* easel status */
   int   i;               /* first residue in hit, in actual sequence coords */
   int   ip;              /* first residue in hit, in act vector coords */
@@ -7403,9 +7415,18 @@ ReportHitsGreedily(CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bes
 	NOT_IMPOSSIBLE(hit_sc))      /* safety: hit does not have IMPOSSIBLE sc */
       {  
 	do_report_hit = TRUE;
-	ip = i - i0 + 1;
-	jp = j - i0 + 1;
-	if(act != NULL) { /* do NULL3 score correction */
+
+	if(bestmode != NULL) {
+	  /* we're in truncated mode, check if we should allow the hit.
+	   * this enforces that i0/j0 is included if necessary based on the
+	   * marginal alignment mode of the hit 
+	   */
+	  do_report_hit = cm_hit_AllowTruncation(cm, i, j, i0, j0, mode, bestr[d]);
+	}
+
+	if(do_report_hit && act != NULL) { /* do NULL3 score correction and see if we still want to allow it */
+	  ip = i - i0 + 1;
+	  jp = j - i0 + 1;
 	  for(a = 0; a < cm->abc->K; a++) comp[a] = act[jp%(W+1)][a] - act[(ip-1)%(W+1)][a];
 	  esl_vec_FNorm(comp, cm->abc->K);
 	  ScoreCorrectionNull3(cm->abc, cm->null, comp, d, cm->null3_omega, &null3_correction);
@@ -7413,13 +7434,7 @@ ReportHitsGreedily(CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bes
 	  /* reevaluate do_report_hit: has null3_correction dropped us below our cutoffs? */
 	  do_report_hit = (hit_sc > max_sc_reported && hit_sc >= cutoff) ? TRUE : FALSE;
 	}
-	/* enforce that i == i0 and/or j == j0, if necessary */
-	if(tro != NULL && do_report_hit) { 
-	  if((tro->force_j0_LT && j != j0 && (mode == TRMODE_L || mode == TRMODE_T)) || 
-	     (tro->force_i0_RT && i != i0 && (mode == TRMODE_R || mode == TRMODE_T))) { 
-	    do_report_hit = FALSE;
-	  }
-	}
+
 	if(do_report_hit) { /* this may have been set to FALSE if we did a null3 sc correction */
 	  /*printf("\t%.3f %.3f i: %d j: %d r: %d\n", hit_sc+null3_correction, hit_sc, i, j, bestr[d]);*/
 	  cm_tophits_CreateNextHit(hitlist, &hit);
