@@ -113,7 +113,7 @@ extern void    cm_FreeTransitionMap(char ***tmap);
 
 /* cm_alidisplay.c */
 extern int            cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, int64_t seqoffset, 
-					   int pass_idx, char *pcode, float aln_sc, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs, CM_ALIDISPLAY **ret_ad);
+					   int pass_idx, char *pcode, float sc, float avgpp, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs, CM_ALIDISPLAY **ret_ad);
 extern CM_ALIDISPLAY *cm_alidisplay_Clone(const CM_ALIDISPLAY *ad);
 extern size_t         cm_alidisplay_Sizeof(const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Serialize(CM_ALIDISPLAY *ad);

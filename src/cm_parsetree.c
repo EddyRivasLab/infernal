@@ -2420,20 +2420,25 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int pass_idx, int have_i0, int ha
       else if(cm->ndtype[nd] == MATR_nd) { is_left = FALSE; is_right = TRUE;  insert_sd = 0; }
       else                               { is_left = FALSE; is_right = FALSE; insert_sd = 0; }
     }
-    else { /* v == cm->M, special case, use previous state and treat as left and right and insert (sounds crazy but works) */
+    else { /* v == cm->M, special case, use previous state and treat as left and right and possibly insert (see below) */
       prv_v     = tr->state[ti-1];
       mode      = tr->mode[ti-1];
-      sdl       = 0; 
-      sdr       = 0;
+      sdl       = 0; /* this prevents EL from affecting first/final_emit */
+      sdr       = 0; /* this prevents EL from affecting first/final_emit */
       is_left   = TRUE; 
       is_right  = TRUE;
-      insert_sd = 1;
       nd        = cm->ndidx[prv_v];
+      /* tricky case: if previous node was not an emitter, the EL will emit at lpos, not after it */
+      if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd) { 
+	insert_sd = 1;
+      }
+      else { 
+	insert_sd = 0;
+      }
+      /* importantly, lpos and rpos remain as they were for the previous state/nd */
     }
 
     if(is_left) { 
-      //cfrom_span = ESL_MIN(cfrom_span, lpos + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
-      //cto_span   = ESL_MAX(cto_span,   lpos);
       if(ModeEmitsLeft(mode)) { 
 	cfrom_emit = ESL_MIN(cfrom_emit, lpos + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
 	cto_emit   = ESL_MAX(cto_emit,   lpos);
@@ -2444,8 +2449,6 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int pass_idx, int have_i0, int ha
       }
     }
     if(is_right) { 
-      //cfrom_span = ESL_MIN(cfrom_span, rpos + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
-      //cto_span   = ESL_MAX(cto_span,   rpos);
       if(ModeEmitsRight(mode)) { 
 	cfrom_emit = ESL_MIN(cfrom_emit, rpos + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
 	cto_emit   = ESL_MAX(cto_emit,   rpos);

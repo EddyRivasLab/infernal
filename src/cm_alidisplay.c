@@ -50,7 +50,8 @@ static int  bp_is_canonical(char lseq, char rseq);
  *            sq           - the sequence, parsetree corresponds to subsequence beginning at spos
  *            seqoffset    - position in sq which corresponds to first position in tr
  *            ppstr        - posterior probability string 
- *            aln_sc       - if(used_optacc) avg post prob of all aligned residues, else CYK score
+ *            pp           - average posterior probability, 0. if ppstr is NULL
+ *            sc           - score of alignment 
  *            used_optacc  - TRUE if aln algorithm used was optimal accuracy 
  *            used_hbands  - TRUE if HMM bands were used for alignment
  *            matrix_Mb    - size of DP matrix in Mb used for alignment
@@ -67,7 +68,7 @@ static int  bp_is_canonical(char lseq, char rseq);
  */
 int
 cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, int64_t seqoffset, int pass_idx, 
-		     char *ppstr, float aln_sc, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs, CM_ALIDISPLAY **ret_ad)
+		     char *ppstr, float sc, float avgpp, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs, CM_ALIDISPLAY **ret_ad)
 {
   int            status;
   CM_ALIDISPLAY *ad = NULL;      /* alidisplay structure we're building       */
@@ -91,7 +92,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   int         lseq, rseq;	 /* chars in aligned target line; left, right */
   int         lpost, rpost;	 /* chars in aligned posteriors, left, right  */
   int         do_left, do_right; /* flags to generate left, right             */
-  float       sc;                /* a temporary score */
+  float       tmpsc;             /* a temporary score */
   int         cm_namelen, cm_acclen, cm_desclen;
   int         sq_namelen, sq_acclen, sq_desclen;
   int         len, n;
@@ -125,6 +126,11 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   else if(cm->abc->K != abc->K) {
     cm_Fail("ERROR in cm_alidisplay_Create(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
   }
+
+  /* Useful for debugging: 
+   * DumpEmitMap(stdout, cm->emap, cm);
+   * ParsetreeDump(stdout, tr, cm, sq->dsq+seqoffset-1);
+   */
 
   /* Calculate length of the alignment display (len).
    *                    :  J    L    R  (alignment mode)
@@ -226,7 +232,8 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   ESL_ALLOC(ad, sizeof(CM_ALIDISPLAY));
   ad->mem          = NULL;
   ad->memsize      = sizeof(char) * n;
-  ad->aln_sc       = aln_sc;
+  ad->sc           = sc;
+  ad->avgpp        = avgpp;
   ad->used_optacc  = used_optacc;
   ad->used_hbands  = used_hbands;
   ad->matrix_Mb    = matrix_Mb;
@@ -423,7 +430,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	  rnnc = '?';
 	}
 	else if (mode == TRMODE_J) { 
-	  sc = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj); 
+	  tmpsc = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj); 
 	  if (lseq == toupper(lcons) && rseq == toupper(rcons)) { 
 	    lmid = lseq; 
 	    rmid = rseq; 
@@ -1039,7 +1046,7 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
 	  /* we're at the beginning of a local end or truncated begin display, process it: 
 	   * Examples:
 	   *   "*[ 7]*" (local begin)
-	   *   "<[ 7]*" (trunc begin, at aln start)  (processed differently, modifies 
+	   *   "<[ 7]*" (trunc begin, at aln start)  (processed differently, initial k1 will be '1', not ad->cfrom_emit)
 	   *   "*[ 7]>" (trunc begin, at aln end)    (we process this just like a local begin here)
 	   */
 	  trunc_at_start = (ad->aseq[z]  == '<' && ad->model[z] == '<') ? TRUE : FALSE;
@@ -1061,7 +1068,8 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
 	    nk += nk_toadd;
 	    ni += ni_toadd;
 	    if(trunc_at_start) k1 -= nk_toadd;
-	    z = zp+1; /* position z at end of local end display (one char past the ']', on the '*') */
+	    z = zp+1; /* position z at end of local end display (one char past the ']', on the '*'), the 'z++' at end of for loop will increase it 1 more */
+	    /* printf("z: %4d  nk_toadd: %d nk: %4d\n", z, nk_toadd, nk); */
 	  }
 	}
 	else { /* normal case, we're not at the beginning of a local end */
@@ -1214,7 +1222,8 @@ cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad)
   fprintf(fp, "sqto       = %ld\n", ad->sqto);
   fprintf(fp, "\n");
 
-  fprintf(fp, "aln_sc     = %.2f\n",ad->aln_sc);
+  fprintf(fp, "sc         = %.2f\n",ad->sc);
+  fprintf(fp, "avgpp      = %.2f\n",ad->avgpp);
   fprintf(fp, "optacc     = %s\n",  ad->used_optacc ? "TRUE" : "FALSE");
   fprintf(fp, "CYK        = %s\n",  ad->used_optacc ? "FALSE" : "TRUE");
   fprintf(fp, "hbanded    = %s\n",  ad->used_hbands ? "TRUE" : "FALSE");
@@ -1292,3 +1301,4 @@ cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2)
 /*****************************************************************
  * @LICENSE@
  *****************************************************************/
+

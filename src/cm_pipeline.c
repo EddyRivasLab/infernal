@@ -2373,8 +2373,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   }
 
   /* TEMP, alignment function should set this... */ tr->pass_idx = pli->cur_pass_idx;
-  if((status = cm_alidisplay_Create(cm->abc, pli->errbuf, tr, cm, cmcons, sq, hit->start, hit->pass_idx, ppstr, 
-				    (do_optacc) ? pp : sc,
+  if((status = cm_alidisplay_Create(cm->abc, pli->errbuf, tr, cm, cmcons, sq, hit->start, hit->pass_idx, ppstr, sc, pp,
 				    do_optacc, do_hbanded, total_Mb, watch->elapsed, &(hit->ad))) != eslOK) return status;
 
   /* clean up and return */

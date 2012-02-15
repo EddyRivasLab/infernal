@@ -2249,7 +2249,8 @@ typedef struct cm_alidisplay_s {
   long  sqto;		        /* max bound in scoord, end position in sequence   (1..L) */
 
   int    used_optacc;           /* TRUE if aln alg was optacc, FALSE if CYK */
-  float  aln_sc;		/* if(used_optacc) avg PP of all aligned residues, else CYK score */
+  float  sc;		        /* alignment score */
+  float  avgpp;		        /* average PP of all aligned residues, 0.0 if no PPs available */
   int    used_hbands;           /* TRUE if aln used HMM bands, FALSE if not */
   float  matrix_Mb;             /* size of DP matrix used in Mb, either HMM banded CYK/OA or D&C CYK */
   double elapsed_secs;          /* number of seconds required for alignment */

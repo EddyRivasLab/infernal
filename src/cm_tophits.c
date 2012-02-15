@@ -1179,22 +1179,22 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
        *                                                                                ^
        *                                                                                end of output if (! pli->show_alignments)
        * 
-       * In rare cases, when optimal accuracy alignment is infeasible in allowable memory, 
+       * In rare cases, when computing posteriors is not feasible in allowable memory, 
        * the "acc" column will be replaced by a "cyksc" colum which is 6 characters wide 
        * instead of 4. 
        */
 
       fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s %5s",  rankw, "rank", "", "score", "E-value", "cm from", "cm to", "", "seq from", "seq to", "", "", "trunc");
       if(pli->do_alignments) { 
-	if(th->hit[h]->ad->used_optacc) { fprintf(ofp, " %4s %5s %7s %7s", "acc",   "bands", "mx Mb",   "seconds"); }
-	else                            { fprintf(ofp, " %6s %5s %7s %7s", "cyksc", "bands", "mx Mb",   "seconds"); }
+	if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %7s %7s", "acc",   "bands", "mx Mb",   "seconds"); }
+	else                       { fprintf(ofp, " %6s %5s %7s %7s", "cyksc", "bands", "mx Mb",   "seconds"); }
       }
       fprintf(ofp, "\n");
 
       fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s %5s",  rankw, rankstr,  "", "------", "---------", "-------", "-------", "", "-----------", "-----------", "", "", "-----");
       if(pli->do_alignments) { 
-	if(th->hit[h]->ad->used_optacc) { fprintf(ofp, " %4s %5s %7s %7s", "----",   "-----", "-------", "-------"); }
-	else                            { fprintf(ofp, " %6s %5s %7s %7s", "------", "-----", "-------", "-------"); }
+	if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %7s %7s", "----",   "-----", "-------", "-------"); }
+	else                       { fprintf(ofp, " %6s %5s %7s %7s", "------", "-----", "-------", "-------"); }
       }
       fprintf(ofp, "\n");
 
@@ -1231,8 +1231,8 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      lseq, rseq, 
 	      cm_alidisplay_TruncString(th->hit[h]->ad));
       if (pli->do_alignments) { 
-	if(th->hit[h]->ad->used_optacc) { fprintf(ofp, " %4.2f", th->hit[h]->ad->aln_sc); }
-      	else                            { fprintf(ofp, " %6.2f", th->hit[h]->ad->aln_sc); }
+	if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f", th->hit[h]->ad->avgpp); }
+      	else                       { fprintf(ofp, " %6.2f", th->hit[h]->ad->sc); }
 	fprintf(ofp, " %5s %7.2f %7.2f\n\n",	
 		(th->hit[h]->ad->used_hbands ? "yes" : "no"),
 		th->hit[h]->ad->matrix_Mb,
