@@ -393,7 +393,7 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
     }
 
     /* printf("HEYA nd: %3d  %4s  lpos: %4d  rpos: %4d  m: %4d  i1: %4d  i2: %4d\n", nd, Nodetype(cm->ndtype[nd]), lpos, rpos, m, i1, i2); */
-
+    
     /* now set penalties for match and insert states m, i1 and maybe i2 (if we're a MATP_MP or BIF_B) */
     if(cm->ndtype[nd] == END_nd) { 
       prv5 = prv3 = prv53 = 0.;
@@ -415,7 +415,7 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
       }
 
       /* Global penalties */
-      /* divide up the probability g_5and3 amongst relevant states m , m2, m3, i1, i2, weighted by psi */
+      /* divide up the probability g_5and3 amongst relevant states m, i1, i2, weighted by psi */
       trp->g_ptyAA[TRPENALTY_5P_AND_3P][m]  = (m_psi  / summed_psi) * g_5and3;
       trp->g_ptyAA[TRPENALTY_5P_AND_3P][i1] = (i1_psi / summed_psi) * g_5and3;
       if(i2 != -1) trp->g_ptyAA[TRPENALTY_5P_AND_3P][i2] = (i2_psi / summed_psi) * g_5and3;

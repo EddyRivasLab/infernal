@@ -127,7 +127,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
     cm_Fail("ERROR in cm_alidisplay_Create(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
   }
 
-  /* Useful for debugging: 
+  /* Useful for debugging:  
    * DumpEmitMap(stdout, cm->emap, cm);
    * ParsetreeDump(stdout, tr, cm, sq->dsq+seqoffset-1);
    */

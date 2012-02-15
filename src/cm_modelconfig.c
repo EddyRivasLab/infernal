@@ -270,8 +270,15 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
 
   /* Configure for truncated search/alignment. */
   if(cm->config_opts & CM_CONFIG_TRUNC) { 
-    /* (1) Define truncated alignment penalty probabilities (cm->trp) */
-    if((cm->trp = cm_tr_penalties_Create(cm, TRUE, errbuf)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't create truncation penalties for the CM");
+    /* (1) Define truncated alignment penalty probabilities (cm->trp).
+     * 'FALSE' informs the function not to ignore inserts, that is to
+     * allow truncated begins into insert states. This is the
+     * hard-coded behavior. We'd only set it to TRUE if we were
+     * testing the code, because in that case a validation is
+     * performed that isn't possible with truncated begins into
+     * inserts allowed.
+     */
+    if((cm->trp = cm_tr_penalties_Create(cm, FALSE, errbuf)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't create truncation penalties for the CM");
     /* cm_tr_penalties_Dump(stdout, cm, cm->trp); */
 
     /* (2) Setup Lcp9, Rcp9, Tcp9 CP9 HMMs 
