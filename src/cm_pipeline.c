@@ -488,6 +488,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     }
   }
 
+  /* will we be requiring non-banded matrices? */
+  if(esl_opt_GetBoolean(go, "--aln-nonbanded"))   pli->cm_config_opts |= CM_CONFIG_NONBANDEDMX;
+
   /* Determine statistics modes for CM stages */
   pli->do_glocal_cm_stages = (esl_opt_GetBoolean(go, "-g")) ? TRUE : FALSE;
   pli->fcyk_cm_exp_mode  = pli->do_glocal_cm_stages ? EXP_CM_GC : EXP_CM_LC;

@@ -1584,7 +1584,7 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 
       for (j = 0; j <= L; j++) {
 	for (d = 0; d <= j; d++) {
-	  for (k = 1; k < d; k++) {
+	  for (k = 0; k <= d; k++) {
 	    if((sc = Jalpha[y][j-k][d-k] + Jalpha[z][j][k]) > Jalpha[v][j][d]) { 
 	      Jalpha[v][j][d]   = sc;
 	      Jkshadow[v][j][d] = k;
@@ -1599,11 +1599,13 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	      Rkshadow[v][j][d] = k;
 	      Rkmode[v][j][d]   = TRMODE_J;
 	    }
-	    /*if((k != i-1) && (k != j)) {*/
-	    if(fill_T && (sc = Ralpha[y][j-k][d-k] + Lalpha[z][j][k]) > Talpha[v][j][d]) { 
-	      Talpha[v][j][d]   = sc;
-	      Tkshadow[v][j][d] = k;
-	      /*}*/
+	  }
+	  if(fill_T) { 
+	    for(k = 1; k < d; k++) { /* special boundary case for T matrix */
+	      if(fill_T && (sc = Ralpha[y][j-k][d-k] + Lalpha[z][j][k]) > Talpha[v][j][d]) { 
+		Talpha[v][j][d]   = sc;
+		Tkshadow[v][j][d] = k;
+	      }
 	    }
 	  }
 	  /* two additional special cases in trCYK (these are not in standard CYK) */
@@ -1649,7 +1651,7 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
      * whether we are in local or global mode and the value of
      * 'pty_idx' which was passed in.
      */
-    trpenalty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx][v] : cm->trp->g_ptyAA[pty_idx][b];
+    trpenalty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx][v] : cm->trp->g_ptyAA[pty_idx][v];
     if(NOT_IMPOSSIBLE(trpenalty)) { 
       /* check if we have a new optimally scoring Joint alignment in J matrix */
       sc = Jalpha[v][L][L] + trpenalty;
@@ -3033,13 +3035,15 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 
       for (j = 0; j <= L; j++) {
 	for (d = 0; d <= j; d++) {
-	  for (k = 1; k < d; k++) {
+	  for (k = 0; k <= d; k++) {
 	    Jalpha[v][j][d] = FLogsum(Jalpha[v][j][d], Jalpha[y][j-k][d-k] + Jalpha[z][j][k]);
 	    if(fill_L) Lalpha[v][j][d] = FLogsum(Lalpha[v][j][d], Jalpha[y][j-k][d-k] + Lalpha[z][j][k]);
 	    if(fill_R) Ralpha[v][j][d] = FLogsum(Ralpha[v][j][d], Ralpha[y][j-k][d-k] + Jalpha[z][j][k]);
-	    /*if((k != i-1) && (k != j)) {*/
-	    if(fill_T) Talpha[v][j][d] = FLogsum(Talpha[v][j][d], Ralpha[y][j-k][d-k] + Lalpha[z][j][k]);
-	    /*}*/
+	  }
+	  if(fill_T) { 
+	    for(k = 1; k < d; k++) { /* special boundary case for T matrix */
+	      Talpha[v][j][d] = FLogsum(Talpha[v][j][d], Ralpha[y][j-k][d-k] + Lalpha[z][j][k]);
+	    }
 	  }
 	  /* two additional special cases in trCYK (these are not in standard CYK) */
 	  /* special case 1: k == 0 (full sequence aligns to BEGL_S left child */
@@ -4392,19 +4396,19 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 
       for (j = 0; j <= L; j++) {
 	for (d = 0; d <= j; d++) {
-	  for (k = 1; k < d; k++) {
-	    if((NOT_IMPOSSIBLE(Jalpha[y][j-k][d-k])) && 
-	       (NOT_IMPOSSIBLE(Jalpha[z][j][k])) && 
+	  for (k = 0; k <= d; k++) {
+	    if((NOT_IMPOSSIBLE(Jalpha[y][j-k][d-k]) || d == k) && /* left  subtree is not IMPOSSIBLE or IMPOSSIBLE w/length 0 (latter is ok b/c only emits contribute to score) */
+	       (NOT_IMPOSSIBLE(Jalpha[z][j][k])     || k == 0) && /* right subtree is not IMPOSSIBLE or IMPOSSIBLE w/length 0 (latter is ok b/c only emits contribute to score) */
 	       ((sc = FLogsum(Jalpha[y][j-k][d-k], Jalpha[z][j][k])) > Jalpha[v][j][d])) { 
 	      Jalpha[v][j][d]   = sc;
 	      Jkshadow[v][j][d] = k;
 	    }
 	  }
 	  if(fill_L) { 
-	    for (k = 1; k < d; k++) {
-	      if((NOT_IMPOSSIBLE(Jalpha[y][j-k][d-k])) && 
-		 (NOT_IMPOSSIBLE(Lalpha[z][j][k])) && 
-		 ((sc = FLogsum(Jalpha[y][j-k][d-k], Lalpha[z][j][k])) > Lalpha[v][j][d])) { 
+	    for (k = 0; k <= d; k++) {
+	      if((NOT_IMPOSSIBLE(Jalpha[y][j-k][d-k]) || d == k) && /* left  subtree is not IMPOSSIBLE or IMPOSSIBLE w/length 0 (latter is ok b/c only emits contribute to score) */
+		 (NOT_IMPOSSIBLE(Lalpha[z][j][k])     || k == 0) && /* right subtree is not IMPOSSIBLE or IMPOSSIBLE w/length 0 (latter is ok b/c only emits contribute to score) */
+		 ((sc = FLogsum(Jalpha[y][j-k][d-k], Jalpha[z][j][k])) > Jalpha[v][j][d])) { 
 		Lalpha[v][j][d]   = sc;
 		Lkshadow[v][j][d] = k;
 		Lkmode[v][j][d]   = TRMODE_J;
@@ -4412,9 +4416,9 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	    }
 	  }
 	  if(fill_R) { 
-	    for (k = 1; k < d; k++) {
-	      if((NOT_IMPOSSIBLE(Ralpha[y][j-k][d-k])) && 
-		 (NOT_IMPOSSIBLE(Jalpha[z][j][k])) && 
+	    for (k = 0; k <= d; k++) {
+	      if((NOT_IMPOSSIBLE(Ralpha[y][j-k][d-k]) || d == k) && /* left  subtree is not IMPOSSIBLE or IMPOSSIBLE w/length 0 (latter is ok b/c only emits contribute to score) */
+		 (NOT_IMPOSSIBLE(Jalpha[z][j][k])     || k == 0) && /* right subtree is not IMPOSSIBLE or IMPOSSIBLE w/length 0 (latter is ok b/c only emits contribute to score) */
 		 ((sc = FLogsum(Ralpha[y][j-k][d-k], Jalpha[z][j][k])) > Ralpha[v][j][d])) { 
 		Ralpha[v][j][d]   = sc;
 		Rkshadow[v][j][d] = k;
@@ -4423,15 +4427,13 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	    }
 	  }
 	  if(fill_T) { 
-	    for (k = 1; k < d; k++) {
-	      /*if((k != i-1) && (k != j)) {*/
-	      if((NOT_IMPOSSIBLE(Ralpha[y][j-k][d-k])) && 
-		 (NOT_IMPOSSIBLE(Lalpha[z][j][k])) && 
+	    for (k = 1; k < d; k++) { /* special boundary case for T matrix */
+	      if((NOT_IMPOSSIBLE(Ralpha[y][j-k][d-k])) && /* left  subtree is not IMPOSSIBLE (no check for 'd==k' b/c of special T mx boundary case (see for loop above)) */
+		 (NOT_IMPOSSIBLE(Lalpha[z][j][k]))     && /* right subtree is not IMPOSSIBLE (no check for 'k==0' b/c of special T mx boundary case (see for loop above)) */
 		 ((sc = FLogsum(Ralpha[y][j-k][d-k], Lalpha[z][j][k])) > Talpha[v][j][d])) { 
 		Talpha[v][j][d]   = sc;
 		Tkshadow[v][j][d] = k;
 	      }
-	      /*}*/
 	    }
 	  }
 	  /* two additional special cases in trCYK (these are not in standard CYK) */
@@ -4766,7 +4768,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	if(do_J_v || do_L_v || do_R_v) { 
 	  for (j = jmin[v]; j <= jmax[v]; j++) {
 	    jp_v = j - jmin[v];
-	    
+
 	    /* determine which children y we can legally transit to for v, j in J and L mode */
 	    yvalid_ct = 0;
 	    for (yctr = 0; yctr < cm->cnum[v]; yctr++) {
@@ -5366,30 +5368,30 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		kp_z = k-hdmin[z][jp_z];
 		dp_y = d-hdmin[y][jp_y-k];
 		if(do_J_v && do_J_y && do_J_z && 
-		   NOT_IMPOSSIBLE(Jalpha[y][jp_y-k][dp_y-k]) && 
-		   NOT_IMPOSSIBLE(Jalpha[z][jp_z][kp_z]) && 
+		   (NOT_IMPOSSIBLE(Jalpha[y][jp_y-k][dp_y-k]) || d == k) && /* left  subtree is not-IMPOSSIBLE or IMPOSSIBLE w/length 0 (latter is ok b/c only emits contribute to score) */
+		   (NOT_IMPOSSIBLE(Jalpha[z][jp_z][kp_z])     || k == 0) && /* right subtree is not-IMPOSSIBLE or IMPOSSIBLE w/length 0 (latter is ok b/c only emits contribute to score) */
 		   (sc = FLogsum(Jalpha[y][jp_y-k][dp_y-k], Jalpha[z][jp_z][kp_z])) > Jalpha[v][jp_v][dp_v]) { 
 		  Jalpha[v][jp_v][dp_v]   = sc;
 		  Jkshadow[v][jp_v][dp_v] = k;
 		}
 		if(do_L_v && do_J_y && do_L_z &&
-		   NOT_IMPOSSIBLE(Jalpha[y][jp_y-k][dp_y-k]) && 
-		   NOT_IMPOSSIBLE(Lalpha[z][jp_z][kp_z]) && 
+		   (NOT_IMPOSSIBLE(Jalpha[y][jp_y-k][dp_y-k]) || d == k) && /* left  subtree is not-IMPOSSIBLE or IMPOSSIBLE w/length 0 (latter is ok b/c only emits contribute to score) */
+		   (NOT_IMPOSSIBLE(Lalpha[z][jp_z][kp_z])     || k == 0) && /* right subtree is not-IMPOSSIBLE or IMPOSSIBLE w/length 0 (latter is ok b/c only emits contribute to score) */
 		   (sc = FLogsum(Jalpha[y][jp_y-k][dp_y-k], Lalpha[z][jp_z][kp_z])) > Lalpha[v][jp_v][dp_v]) { 
 		  Lalpha[v][jp_v][dp_v]   = sc;
 		  Lkshadow[v][jp_v][dp_v] = k;
 		}
 		if(do_R_v && do_R_y && do_J_z &&
-		   NOT_IMPOSSIBLE(Ralpha[y][jp_y-k][dp_y-k]) && 
-		   NOT_IMPOSSIBLE(Jalpha[z][jp_z][kp_z]) && 
+		   (NOT_IMPOSSIBLE(Ralpha[y][jp_y-k][dp_y-k]) || d == k) && /* left  subtree is not-IMPOSSIBLE or IMPOSSIBLE w/length 0 (latter is ok b/c only emits contribute to score) */
+		   (NOT_IMPOSSIBLE(Jalpha[z][jp_z][kp_z])     || k == 0) && /* right subtree is not-IMPOSSIBLE or IMPOSSIBLE w/length 0 (latter is ok b/c only emits contribute to score) */
 		   (sc = FLogsum(Ralpha[y][jp_y-k][dp_y-k], Jalpha[z][jp_z][kp_z])) > Ralpha[v][jp_v][dp_v]) { 
 		  Ralpha[v][jp_v][dp_v]   = sc;
 		  Rkshadow[v][jp_v][dp_v] = k;
 		}
-		if((k != 0) && (k != d)) {
+		if((k != 0) && (k != d)) { /* special boundary case for T matrix */
 		  if(do_T_v && do_R_y && do_L_z &&
-		     NOT_IMPOSSIBLE(Ralpha[y][jp_y-k][dp_y-k]) && 
-		     NOT_IMPOSSIBLE(Lalpha[z][jp_z][kp_z]) && 
+		     (NOT_IMPOSSIBLE(Ralpha[y][jp_y-k][dp_y-k])) &&  /* left  subtree is not-IMPOSSIBLE (no check for 'd==k' b/c of special T mx boundary case (see 3 lines up)) */
+		     (NOT_IMPOSSIBLE(Lalpha[z][jp_z][kp_z]))      && /* right subtree is not-IMPOSSIBLE (no check for 'k==0' b/c of special T mx boundary case (see 3 lines up)) */
 		     (sc = FLogsum(Ralpha[y][jp_y-k][dp_y-k], Lalpha[z][jp_z][kp_z])) > Talpha[v][jp_v][dp_v]) { 
 		    Talpha[v][jp_v][dp_v]   = sc;
 		    Tkshadow[v][jp_v][dp_v] = k;
@@ -5766,61 +5768,70 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	  i = 1;
 	  for (d = j; d >= 0; d--, i++) {
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
-	      voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
-	      sd  = StateDelta(cm->sttype[y]);
-	      sdl = StateLeftDelta(cm->sttype[y]);
-	      sdr = StateRightDelta(cm->sttype[y]);
-	      switch(cm->sttype[y]) {
-	      case MP_st: 
-		if(j != L && d != j) { 
-		  escore = cm->oesc[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
-		  Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
-		}
-		if(fill_L && j == L && d != j) { /* only allow transition from L if we haven't emitted any residues rightwise (j==L) */
-		  escore = cm->lmesc[y][dsq[i-1]];
-		  Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j][d+sdl] + cm->tsc[y][voffset] + escore);
-		  Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d+sdl] + cm->tsc[y][voffset] + escore);
-		}
-		if(fill_R && i == 1 && j != L) { /* only allow transition from R if we haven't emitted any residues leftwise (i==1) */
-		  escore = cm->rmesc[y][dsq[j+1]];
-		  Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j+sdr][d+sdr] + cm->tsc[y][voffset] + escore);
-		  Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j+sdr][d+sdr] + cm->tsc[y][voffset] + escore);
-		}
-		break;
-	      case ML_st:
-	      case IL_st: 
-		if (d != j) { 
-		  escore = cm->oesc[y][dsq[i-1]];
-		  Jbeta[v][j][d]            = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j][d+sd] + cm->tsc[y][voffset] + escore);
-		  if(fill_L) Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d+sd] + cm->tsc[y][voffset] + escore);
-		}
-		if(fill_R && i == 1 && /* only allow transition from R if we're emitting first residue 1 from y  */
-		   v != y) {           /* will only happen if v == IL, we don't allow silent self transitions from IL->IL */
-		  Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j][d] + cm->tsc[y][voffset]);
-		  Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j][d] + cm->tsc[y][voffset]);
-		}
-		break;
-	      case MR_st:
-	      case IR_st:
-		if (j != L) { 
-		  escore = cm->oesc[y][dsq[j+1]];
-		  Jbeta[v][j][d]            = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
-		  if(fill_R) Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
-		}
-		if(fill_L && j == L && /* only allow transition from L if we're emitting final residue L from y */ 
-		   v != y) {           /* will only happen if v == IR, we don't allow silent self transitions from IR->IR */
-		  Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j][d] + cm->tsc[y][voffset]);
-		  Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d] + cm->tsc[y][voffset]);
-		}
-		break;
-	      case S_st:
-	      case E_st:
-	      case D_st:
-		Jbeta[v][j][d]            = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j][d] + cm->tsc[y][voffset]);
-		if(fill_L) Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d] + cm->tsc[y][voffset]);
-		if(fill_R) Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j][d] + cm->tsc[y][voffset]);
-		break;
-	      } /* end of switch(cm->sttype[y] */  
+	      /* mind the following sneaky if statement: in truncated
+	       * aln, the only way out of state 0 is through a
+	       * truncated begin, which we handled above (search for
+	       * 'trpenalty'). If we're in local mode transitions out
+	       * of 0 will have IMPOSSIBLE scores, but NOT if we're in
+	       * glocal mode, so we need this 'if'.
+	       */
+	      if(y != 0) { 
+		voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
+		sd  = StateDelta(cm->sttype[y]);
+		sdl = StateLeftDelta(cm->sttype[y]);
+		sdr = StateRightDelta(cm->sttype[y]);
+		switch(cm->sttype[y]) {
+		case MP_st: 
+		  if(j != L && d != j) { 
+		    escore = cm->oesc[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+		    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
+		  }
+		  if(fill_L && j == L && d != j) { /* only allow transition from L if we haven't emitted any residues rightwise (j==L) */
+		    escore = cm->lmesc[y][dsq[i-1]];
+		    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j][d+sdl] + cm->tsc[y][voffset] + escore);
+		    Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d+sdl] + cm->tsc[y][voffset] + escore);
+		  }
+		  if(fill_R && i == 1 && j != L) { /* only allow transition from R if we haven't emitted any residues leftwise (i==1) */
+		    escore = cm->rmesc[y][dsq[j+1]];
+		    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j+sdr][d+sdr] + cm->tsc[y][voffset] + escore);
+		    Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j+sdr][d+sdr] + cm->tsc[y][voffset] + escore);
+		  }
+		  break;
+		case ML_st:
+		case IL_st: 
+		  if (d != j) { 
+		    escore = cm->oesc[y][dsq[i-1]];
+		    Jbeta[v][j][d]            = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j][d+sd] + cm->tsc[y][voffset] + escore);
+		    if(fill_L) Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d+sd] + cm->tsc[y][voffset] + escore);
+		  }
+		  if(fill_R && i == 1 && /* only allow transition from R if we're emitting first residue 1 from y  */
+		     v != y) {           /* will only happen if v == IL, we don't allow silent self transitions from IL->IL */
+		    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Rbeta[y][j][d] + cm->tsc[y][voffset]);
+		    Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j][d] + cm->tsc[y][voffset]);
+		  }
+		  break;
+		case MR_st:
+		case IR_st:
+		  if (j != L) { 
+		    escore = cm->oesc[y][dsq[j+1]];
+		    Jbeta[v][j][d]            = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
+		    if(fill_R) Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
+		  }
+		  if(fill_L && j == L && /* only allow transition from L if we're emitting final residue L from y */ 
+		     v != y) {           /* will only happen if v == IR, we don't allow silent self transitions from IR->IR */
+		    Jbeta[v][j][d] = ESL_MAX(Jbeta[v][j][d], Lbeta[y][j][d] + cm->tsc[y][voffset]);
+		    Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d] + cm->tsc[y][voffset]);
+		  }
+		  break;
+		case S_st:
+		case E_st:
+		case D_st:
+		  Jbeta[v][j][d]            = ESL_MAX(Jbeta[v][j][d], Jbeta[y][j][d] + cm->tsc[y][voffset]);
+		  if(fill_L) Lbeta[v][j][d] = ESL_MAX(Lbeta[v][j][d], Lbeta[y][j][d] + cm->tsc[y][voffset]);
+		  if(fill_R) Rbeta[v][j][d] = ESL_MAX(Rbeta[v][j][d], Rbeta[y][j][d] + cm->tsc[y][voffset]);
+		  break;
+		} /* end of switch(cm->sttype[y] */  
+	      } /* end of sneaky if y != 0 */
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (Jbeta[v][j][d] < IMPOSSIBLE) Jbeta[v][j][d] = IMPOSSIBLE;
 	  } /* ends loop over d. We know all beta[v][j][d] in this row j and state v */
@@ -5878,7 +5889,7 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 
   fail1_flag = FALSE;
   fail2_flag = FALSE;
-  if(do_check) {
+  if(do_check) { 
     /* Check for consistency between the Inside alpha matrix and the
      * Outside beta matrix. we assume the Inside CYK parse score
      * (optsc) is the optimal score, so for all v,j,d:
@@ -6401,115 +6412,124 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
 	  
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
-	      voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
-	      sd  = StateDelta(cm->sttype[y]);
-	      sdl = StateLeftDelta(cm->sttype[y]);
-	      sdr = StateRightDelta(cm->sttype[y]);
+	      /* mind the following sneaky if statement: in truncated
+	       * aln, the only way out of state 0 is through a
+	       * truncated begin, which we handled above (search for
+	       * 'trpenalty'). If we're in local mode transitions out
+	       * of 0 will have IMPOSSIBLE scores, but NOT if we're in
+	       * glocal mode, so we need this 'if'.
+	       */
+	      if(y != 0) { 
+		voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
+		sd  = StateDelta(cm->sttype[y]);
+		sdl = StateLeftDelta(cm->sttype[y]);
+		sdr = StateRightDelta(cm->sttype[y]);
 	    
-	      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
-	      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
-	      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
-	      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
+		do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+		do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+		do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+		do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 
-	      /* if the y deck is invalid in J, L and R mode, we don't have to update v based on transitions from y */
-	      if (! (do_J_y || do_L_y || do_R_y)) continue; 
+		/* if the y deck is invalid in J, L and R mode, we don't have to update v based on transitions from y */
+		if (! (do_J_y || do_L_y || do_R_y)) continue; 
 
-	      /* Note: this looks like it can be optimized, I tried but my 'optimization' slowed the code, so I reverted [EPN] */
-	      switch(cm->sttype[y]) {
-	      case MP_st: 
-		jp_y = j - jmin[y];
-		if(j != L && d != j &&                                           /* boundary condition */
-		   do_J_v && do_J_y &&                                           /* J deck is valid for v and y */
-		   (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&          /* j+sdr is within y's j band */
-		   (d+sd  >= hdmin[y][jp_y+sdr] && d+sd  <= hdmax[y][jp_y+sdr])) /* d+sd  is within y's d band for j+sdr */
-		  {
-		    dp_y = d - hdmin[y][jp_y+sdr];  /* d index for state y */
-		    escore = esc_vAA[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
-		    Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
-		  }
-		if(j == L && d != j &&                                           /* boundary condition, only allow transition from L if we haven't emitted any residues rightwise (j==L) */
- 		   do_L_y &&                                                     /* L deck is valid for y */
-		   (j     >= jmin[y]        && j     <= jmax[y]) &&              /* j is within y's j band */
-		   (d+sdl >= hdmin[y][jp_y] && d+sdl <= hdmax[y][jp_y]))         /* d+sdl is within y's d band for j */
-		  {
-		    dp_y = d - hdmin[y][jp_y];  /* d index for state y */
-		    escore = cm->lmesc[y][dsq[i-1]];
-		    if(do_J_v) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sdl] + cm->tsc[y][voffset] + escore);
-		    if(do_L_v) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sdl] + cm->tsc[y][voffset] + escore);
-		  }
-		if(i == 1 && j != L &&                                           /* boundary condition, only allow transition from R if we haven't emitted any residues leftwise (i==1) */
-		   do_R_y &&                                                     /* R deck is valid for y */ 
-		   (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&          /* j+sdr is within y's j band */
-		   (d+sdr >= hdmin[y][jp_y+sdr] && d+sdr <= hdmax[y][jp_y+sdr])) /* d+sdr is within y's d band for j+sdr */
-		  { 
-		    dp_y = d - hdmin[y][jp_y+sdr];  /* d index for state y */
-		    escore = cm->rmesc[y][dsq[j+1]];
-		    if(do_J_v) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sdr] + cm->tsc[y][voffset] + escore);
-		    if(do_R_v) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sdr] + cm->tsc[y][voffset] + escore);
-		  }
-		break;
+		/* Note: this looks like it can be optimized, I tried but my 'optimization' slowed the code, so I reverted [EPN] */
+		switch(cm->sttype[y]) {
+		case MP_st: 
+		  jp_y = j - jmin[y];
+		  if(j != L && d != j &&                                           /* boundary condition */
+		     do_J_v && do_J_y &&                                           /* J deck is valid for v and y */
+		     (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&          /* j+sdr is within y's j band */
+		     (d+sd  >= hdmin[y][jp_y+sdr] && d+sd  <= hdmax[y][jp_y+sdr])) /* d+sd  is within y's d band for j+sdr */
+		    {
+		      dp_y = d - hdmin[y][jp_y+sdr];  /* d index for state y */
+		      escore = esc_vAA[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+		      Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		    }
+		  if(j == L && d != j &&                                           /* boundary condition, only allow transition from L if we haven't emitted any residues rightwise (j==L) */
+		     do_L_y &&                                                     /* L deck is valid for y */
+		     (j     >= jmin[y]        && j     <= jmax[y]) &&              /* j is within y's j band */
+		     (d+sdl >= hdmin[y][jp_y] && d+sdl <= hdmax[y][jp_y]))         /* d+sdl is within y's d band for j */
+		    {
+		      dp_y = d - hdmin[y][jp_y];  /* d index for state y */
+		      escore = cm->lmesc[y][dsq[i-1]];
+		      if(do_J_v) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sdl] + cm->tsc[y][voffset] + escore);
+		      if(do_L_v) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sdl] + cm->tsc[y][voffset] + escore);
+		    }
+		  if(i == 1 && j != L &&                                           /* boundary condition, only allow transition from R if we haven't emitted any residues leftwise (i==1) */
+		     do_R_y &&                                                     /* R deck is valid for y */ 
+		     (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&          /* j+sdr is within y's j band */
+		     (d+sdr >= hdmin[y][jp_y+sdr] && d+sdr <= hdmax[y][jp_y+sdr])) /* d+sdr is within y's d band for j+sdr */
+		    { 
+		      dp_y = d - hdmin[y][jp_y+sdr];  /* d index for state y */
+		      escore = cm->rmesc[y][dsq[j+1]];
+		      if(do_J_v) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sdr] + cm->tsc[y][voffset] + escore);
+		      if(do_R_v) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sdr] + cm->tsc[y][voffset] + escore);
+		    }
+		  break;
 	      
-	      case ML_st:
-	      case IL_st: 
-		jp_y = j - jmin[y];
-		if(d != j &&                                              /* boundary case */
-		   (j     >= jmin[y]        && j     <= jmax[y]) &&       /* j is within y's j band */
-		   (d+sdl >= hdmin[y][jp_y] && d+sdl <= hdmax[y][jp_y]))  /* d+sdl is within y's d band for j */
-		  {
-		    dp_y = d - hdmin[y][jp_y]; 
-		    escore = cm->oesc[y][dsq[i-1]];
-		    if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y+sd] + cm->tsc[y][voffset] + escore);
-		    if(do_L_v && do_L_y) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sd] + cm->tsc[y][voffset] + escore);
-		  }
-		if(i == 1 &&                                              /* boundary condition, only allow transition from R if we're emitting first residue 1 from y  */
-		   v != y &&                                              /* will only happen if v == IL, we don't allow silent self transitions from IL->IL */
-		   do_R_y &&                                              /* R deck is valid for y */
-		   (j     >= jmin[y]        && j     <= jmax[y]) &&       /* j is within y's j band */
-		   (d     >= hdmin[y][jp_y] && d     <= hdmax[y][jp_y]))  /* d+sdr(==d) is within y's d band for j */
-		  {
-		    dp_y = d - hdmin[y][jp_y]; 
-		    if(do_J_v) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		    if(do_R_v) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		  }
-		break;
+		case ML_st:
+		case IL_st: 
+		  jp_y = j - jmin[y];
+		  if(d != j &&                                              /* boundary case */
+		     (j     >= jmin[y]        && j     <= jmax[y]) &&       /* j is within y's j band */
+		     (d+sdl >= hdmin[y][jp_y] && d+sdl <= hdmax[y][jp_y]))  /* d+sdl is within y's d band for j */
+		    {
+		      dp_y = d - hdmin[y][jp_y]; 
+		      escore = cm->oesc[y][dsq[i-1]];
+		      if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		      if(do_L_v && do_L_y) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		    }
+		  if(i == 1 &&                                              /* boundary condition, only allow transition from R if we're emitting first residue 1 from y  */
+		     v != y &&                                              /* will only happen if v == IL, we don't allow silent self transitions from IL->IL */
+		     do_R_y &&                                              /* R deck is valid for y */
+		     (j     >= jmin[y]        && j     <= jmax[y]) &&       /* j is within y's j band */
+		     (d     >= hdmin[y][jp_y] && d     <= hdmax[y][jp_y]))  /* d+sdr(==d) is within y's d band for j */
+		    {
+		      dp_y = d - hdmin[y][jp_y]; 
+		      if(do_J_v) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		      if(do_R_v) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		    }
+		  break;
 		
-	      case MR_st:
-	      case IR_st:
-		jp_y = j - jmin[y];
-		if (j != L &&                                                    /* boundary condition */
-		   (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&          /* j+sdr is within y's j band */
-		   (d+sd  >= hdmin[y][jp_y+sdr] && d+sd  <= hdmax[y][jp_y+sdr])) /* d+sd is within y's d band for j+sdr */
-		  {		  
-		    dp_y = d - hdmin[y][jp_y+sdr];                                   
-		    escore = cm->oesc[y][dsq[j+1]];
-		    if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
-		    if(do_R_v && do_R_y) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
-		  }
-		if(j == L &&                                                     /* boundary condition, only allow transition from L if we're emitting final residue L from y */ 
-		   v != y &&                                                     /* will only happen if v == IR, we don't allow silent self transitions from IR->IR */
-		   do_L_y &&                                                     /* L deck is valid for y */
-		   (j     >= jmin[y]           && j      <= jmax[y]) &&          /* j is within y's j band */
-		   (d     >= hdmin[y][jp_y]    && d      <= hdmax[y][jp_y]))     /* d+sdl(==d) is within y's d band for j */
-		  {
-		    dp_y = d - hdmin[y][jp_y];                                   
-		    if(do_J_v) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		    if(do_L_v) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		  }
-	    		break;
-	      case S_st:
-	      case E_st:
-	      case D_st:
-		jp_y = j - jmin[y];
-		if((j >= jmin[y]        && j <= jmax[y]) &&
-		   (d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y])) 
-		  {
-		    dp_y = d - hdmin[y][jp_y];  /* d index for state y */
-		    if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		    if(do_L_v && do_L_y) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		    if(do_R_v && do_R_y) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		  }
-		break;
-	      } /* end of switch(cm->sttype[y] */  
+		case MR_st:
+		case IR_st:
+		  jp_y = j - jmin[y];
+		  if (j != L &&                                                    /* boundary condition */
+		      (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&          /* j+sdr is within y's j band */
+		      (d+sd  >= hdmin[y][jp_y+sdr] && d+sd  <= hdmax[y][jp_y+sdr])) /* d+sd is within y's d band for j+sdr */
+		    {		  
+		      dp_y = d - hdmin[y][jp_y+sdr];                                   
+		      escore = cm->oesc[y][dsq[j+1]];
+		      if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		      if(do_R_v && do_R_y) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		    }
+		  if(j == L &&                                                     /* boundary condition, only allow transition from L if we're emitting final residue L from y */ 
+		     v != y &&                                                     /* will only happen if v == IR, we don't allow silent self transitions from IR->IR */
+		     do_L_y &&                                                     /* L deck is valid for y */
+		     (j     >= jmin[y]           && j      <= jmax[y]) &&          /* j is within y's j band */
+		     (d     >= hdmin[y][jp_y]    && d      <= hdmax[y][jp_y]))     /* d+sdl(==d) is within y's d band for j */
+		    {
+		      dp_y = d - hdmin[y][jp_y];                                   
+		      if(do_J_v) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		      if(do_L_v) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		    }
+		  break;
+		case S_st:
+		case E_st:
+		case D_st:
+		  jp_y = j - jmin[y];
+		  if((j >= jmin[y]        && j <= jmax[y]) &&
+		     (d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y])) 
+		    {
+		      dp_y = d - hdmin[y][jp_y];  /* d index for state y */
+		      if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = ESL_MAX(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		      if(do_L_v && do_L_y) Lbeta[v][jp_v][dp_v] = ESL_MAX(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		      if(do_R_v && do_R_y) Rbeta[v][jp_v][dp_v] = ESL_MAX(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		    }
+		  break;
+		} /* end of switch(cm->sttype[y] */  
+	      } /* end of sneaky if y != 0 */
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (do_J_v && Jbeta[v][jp_v][dp_v] < IMPOSSIBLE) Jbeta[v][jp_v][dp_v] = IMPOSSIBLE;
 	    if (do_L_v && Lbeta[v][jp_v][dp_v] < IMPOSSIBLE) Lbeta[v][jp_v][dp_v] = IMPOSSIBLE;
@@ -6518,7 +6538,7 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 	} /* end loop over jp. We know beta for this whole state */
       } /* end of 'else' (entered if cm->sttype[v] != BEGL_S nor BEGR_S */
       /* we're done calculating deck v for everything but local ends */
-
+      
       /* deal with local alignment end transitions v->EL (EL = deck at M.) */
       if (do_J_v && (cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) {
 	sdr      = StateRightDelta(cm->sttype[v]); /* note sdr is for state v */
@@ -6860,7 +6880,7 @@ cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	}
       } /* end of 'if (cm->stid[v] == BEGL_S */
       else if (cm->stid[v] == BEGR_S) {
-	y = cm->plast[v];	  /* the parent bifurcation    */
+	y = cm->plast[v];   /* the parent bifurcation    */
 	z = cm->cfirst[y];  /* the other (left) S state  */
 	for(j = 0; j <= L; j++) { 
 	  for (d = 0; d <= j; d++) {
@@ -6897,62 +6917,71 @@ cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	  i = 1;
 	  for (d = j; d >= 0; d--, i++) {
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
-	      voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
-	      sd  = StateDelta(cm->sttype[y]);
-	      sdl = StateLeftDelta(cm->sttype[y]);
-	      sdr = StateRightDelta(cm->sttype[y]);
-	      switch(cm->sttype[y]) {
-	      case MP_st: 
-		if(j != L && d != j) { 
-		  escore = cm->oesc[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
-		  Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
-		}
-		if(fill_L && j == L && d != j)  { /* only allow transition from L if we haven't emitted any residues rightwise (j==L) */
-		  escore = cm->lmesc[y][dsq[i-1]];
-		  Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][j][d+sdl]     + cm->tsc[y][voffset] + escore);
-		  Lbeta[v][j][d] = FLogsum(Lbeta[v][j][d], Lbeta[y][j][d+sdl]     + cm->tsc[y][voffset] + escore);
-		}
-		if(fill_R && i == 1 && j != L) { /* only allow transition from R if we haven't emitted any residues leftwise (i==1) */
-		  escore = cm->rmesc[y][dsq[j+1]];
-		  Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Rbeta[y][j+sdr][d+sdr] + cm->tsc[y][voffset] + escore);
-		  Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Rbeta[y][j+sdr][d+sdr] + cm->tsc[y][voffset] + escore);
-		}
-		break;
-	      case ML_st:
-	      case IL_st: 
-		if (d != j) { 
-		  escore = cm->oesc[y][dsq[i-1]];
-		  Jbeta[v][j][d]            = FLogsum(Jbeta[v][j][d], Jbeta[y][j][d+sd]     + cm->tsc[y][voffset] + escore);
-		  if(fill_L) Lbeta[v][j][d] = FLogsum(Lbeta[v][j][d], Lbeta[y][j][d+sd]     + cm->tsc[y][voffset] + escore);
-		}
-		if(fill_R && i == 1 && /* only allow transition from R if we haven't emitted any residues leftwise (i==1) */
-		   v != y ) {          /* will only happen if v == IL, we don't allow silent self transitions from IL->IL */
-		  Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Rbeta[y][j][d]        + cm->tsc[y][voffset]);
-		  Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Rbeta[y][j][d]        + cm->tsc[y][voffset]);
-		}
-		break;
-	      case MR_st:
-	      case IR_st:
-		if (j != L) { 
-		  escore = cm->oesc[y][dsq[j+1]];
-		  Jbeta[v][j][d]            = FLogsum(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
-		  if(fill_R) Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Rbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
-		}
-		if(fill_L && j == L && /* only allow transition from R if we haven't emitted any residues rightwise (j==L) */
-		   v != y) {           /* will only happen if v == IR, we don't allow silent self transitions from IR->IR */
-		  Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][j][d]        + cm->tsc[y][voffset]);
-		  Lbeta[v][j][d] = FLogsum(Lbeta[v][j][d], Lbeta[y][j][d]        + cm->tsc[y][voffset]);
-		}
-		break;
-	      case S_st:
-	      case E_st:
-	      case D_st:
-		Jbeta[v][j][d]            = FLogsum(Jbeta[v][j][d], Jbeta[y][j][d] + cm->tsc[y][voffset]);
-		if(fill_L) Lbeta[v][j][d] = FLogsum(Lbeta[v][j][d], Lbeta[y][j][d] + cm->tsc[y][voffset]);
-		if(fill_R) Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Rbeta[y][j][d] + cm->tsc[y][voffset]);
-		break;
-	      } /* end of switch(cm->sttype[y] */  
-	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
+	      /* mind the following sneaky if statement: in truncated
+	       * aln, the only way out of state 0 is through a
+	       * truncated begin, which we handled above (search for
+	       * 'trpenalty'). If we're in local mode transitions out
+	       * of 0 will have IMPOSSIBLE scores, but NOT if we're in
+	       * glocal mode, so we need this 'if'.
+	       */
+	      if(y != 0) { 
+		voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
+		sd  = StateDelta(cm->sttype[y]);
+		sdl = StateLeftDelta(cm->sttype[y]);
+		sdr = StateRightDelta(cm->sttype[y]);
+		switch(cm->sttype[y]) {
+		case MP_st: 
+		  if(j != L && d != j) { 
+		    escore = cm->oesc[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+		    Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
+		  }
+		  if(fill_L && j == L && d != j)  { /* only allow transition from L if we haven't emitted any residues rightwise (j==L) */
+		    escore = cm->lmesc[y][dsq[i-1]];
+		    Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][j][d+sdl]     + cm->tsc[y][voffset] + escore);
+		    Lbeta[v][j][d] = FLogsum(Lbeta[v][j][d], Lbeta[y][j][d+sdl]     + cm->tsc[y][voffset] + escore);
+		  }
+		  if(fill_R && i == 1 && j != L) { /* only allow transition from R if we haven't emitted any residues leftwise (i==1) */
+		    escore = cm->rmesc[y][dsq[j+1]];
+		    Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Rbeta[y][j+sdr][d+sdr] + cm->tsc[y][voffset] + escore);
+		    Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Rbeta[y][j+sdr][d+sdr] + cm->tsc[y][voffset] + escore);
+		  }
+		  break;
+		case ML_st:
+		case IL_st: 
+		  if (d != j) { 
+		    escore = cm->oesc[y][dsq[i-1]];
+		    Jbeta[v][j][d]            = FLogsum(Jbeta[v][j][d], Jbeta[y][j][d+sd]     + cm->tsc[y][voffset] + escore);
+		    if(fill_L) Lbeta[v][j][d] = FLogsum(Lbeta[v][j][d], Lbeta[y][j][d+sd]     + cm->tsc[y][voffset] + escore);
+		  }
+		  if(fill_R && i == 1 && /* only allow transition from R if we haven't emitted any residues leftwise (i==1) */
+		     v != y ) {          /* will only happen if v == IL, we don't allow silent self transitions from IL->IL */
+		    Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Rbeta[y][j][d]        + cm->tsc[y][voffset]);
+		    Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Rbeta[y][j][d]        + cm->tsc[y][voffset]);
+		  }
+		  break;
+		case MR_st:
+		case IR_st:
+		  if (j != L) { 
+		    escore = cm->oesc[y][dsq[j+1]];
+		    Jbeta[v][j][d]            = FLogsum(Jbeta[v][j][d], Jbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
+		    if(fill_R) Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Rbeta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore);
+		  }
+		  if(fill_L && j == L && /* only allow transition from R if we haven't emitted any residues rightwise (j==L) */
+		     v != y) {           /* will only happen if v == IR, we don't allow silent self transitions from IR->IR */
+		    Jbeta[v][j][d] = FLogsum(Jbeta[v][j][d], Lbeta[y][j][d]        + cm->tsc[y][voffset]);
+		    Lbeta[v][j][d] = FLogsum(Lbeta[v][j][d], Lbeta[y][j][d]        + cm->tsc[y][voffset]);
+		  }
+		  break;
+		case S_st:
+		case E_st:
+		case D_st:
+		  Jbeta[v][j][d]            = FLogsum(Jbeta[v][j][d], Jbeta[y][j][d] + cm->tsc[y][voffset]);
+		  if(fill_L) Lbeta[v][j][d] = FLogsum(Lbeta[v][j][d], Lbeta[y][j][d] + cm->tsc[y][voffset]);
+		  if(fill_R) Rbeta[v][j][d] = FLogsum(Rbeta[v][j][d], Rbeta[y][j][d] + cm->tsc[y][voffset]);
+		  break;
+		} /* end of switch(cm->sttype[y] */  
+	      } /* end of sneaky if y != 0 */
+	    }  /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (Jbeta[v][j][d] < IMPOSSIBLE) Jbeta[v][j][d] = IMPOSSIBLE;
 	  } /* ends loop over d. We know all beta[v][j][d] in this row j and state v */
 	} /* end loop over j. We know beta for this whole state */
@@ -7008,7 +7037,7 @@ cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   }
 
   fail_flag = FALSE;
-  if(do_check) {
+  if(do_check) { 
     /* Check for consistency between the Inside alpha matrix and the
      * Outside beta matrix. If the Inside score (optsc) really is
      * the log sum of all possible parsetrees that emit the full
@@ -7484,115 +7513,124 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
 	  
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
-	      voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
-	      sd  = StateDelta(cm->sttype[y]);
-	      sdl = StateLeftDelta(cm->sttype[y]);
-	      sdr = StateRightDelta(cm->sttype[y]);
+	      /* mind the following sneaky if statement: in truncated
+	       * aln, the only way out of state 0 is through a
+	       * truncated begin, which we handled above (search for
+	       * 'trpenalty'). If we're in local mode transitions out
+	       * of 0 will have IMPOSSIBLE scores, but NOT if we're in
+	       * glocal mode, so we need this 'if'.
+	       */
+	      if(y != 0) { 
+		voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
+		sd  = StateDelta(cm->sttype[y]);
+		sdl = StateLeftDelta(cm->sttype[y]);
+		sdr = StateRightDelta(cm->sttype[y]);
 	    
-	      do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
-	      do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
-	      do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
-	      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
+		do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
+		do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
+		do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
+		do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 
-	      /* if the y deck is invalid in J, L and R mode, we don't have to update v based on transitions from y */
-	      if (! (do_J_y || do_L_y || do_R_y)) continue; 
+		/* if the y deck is invalid in J, L and R mode, we don't have to update v based on transitions from y */
+		if (! (do_J_y || do_L_y || do_R_y)) continue; 
 
-	      /* Note: this looks like it can be optimized, I tried but my 'optimization' slowed the code, so I reverted [EPN] */
-	      switch(cm->sttype[y]) {
-	      case MP_st: 
-		jp_y = j - jmin[y];
-		if(j != L && d != j &&                                           /* boundary condition */
-		   do_J_v && do_J_y &&                                           /* J deck is valid for v and y */
-		   (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&          /* j+sdr is within y's j band */
-		   (d+sd  >= hdmin[y][jp_y+sdr] && d+sd  <= hdmax[y][jp_y+sdr])) /* d+sd  is within y's d band for j+sdr */
-		  {
-		    dp_y = d - hdmin[y][jp_y+sdr];  /* d index for state y */
-		    escore = esc_vAA[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
-		    Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
-		  }
-		if(j == L && d != j &&                                           /* boundary condition, only allow transition from L if we haven't emitted any residues rightwise (j==L) */
-		   do_L_y &&                                                     /* L deck is valid for y */
-		   (j     >= jmin[y]        && j     <= jmax[y]) &&              /* j is within y's j band */
-		   (d+sdl >= hdmin[y][jp_y] && d+sdl <= hdmax[y][jp_y]))         /* d+sdl is within y's d band for j */
-		  {
-		    dp_y = d - hdmin[y][jp_y];  /* d index for state y */
-		    escore = cm->lmesc[y][dsq[i-1]];
-		    if(do_J_v) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sdl] + cm->tsc[y][voffset] + escore);
-		    if(do_L_v) Lbeta[v][jp_v][dp_v] = FLogsum(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sdl] + cm->tsc[y][voffset] + escore);
-		  }
-		if(i == 1 && j != L &&                                           /* boundary condition, only allow transition from R if we haven't emitted any residues leftwise (i==1) */
-		   do_R_y &&                                                     /* R deck is valid for y */ 
-		   (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&          /* j+sdr is within y's j band */
-		   (d+sdr >= hdmin[y][jp_y+sdr] && d+sdr <= hdmax[y][jp_y+sdr])) /* d+sdr is within y's d band for j+sdr */
-		  { 
-		    dp_y = d - hdmin[y][jp_y+sdr];  /* d index for state y */
-		    escore = cm->rmesc[y][dsq[j+1]];
-		    if(do_J_v) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sdr] + cm->tsc[y][voffset] + escore);
-		    if(do_R_v) Rbeta[v][jp_v][dp_v] = FLogsum(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sdr] + cm->tsc[y][voffset] + escore);
-		  }
-		break;
+		/* Note: this looks like it can be optimized, I tried but my 'optimization' slowed the code, so I reverted [EPN] */
+		switch(cm->sttype[y]) {
+		case MP_st: 
+		  jp_y = j - jmin[y];
+		  if(j != L && d != j &&                                           /* boundary condition */
+		     do_J_v && do_J_y &&                                           /* J deck is valid for v and y */
+		     (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&          /* j+sdr is within y's j band */
+		     (d+sd  >= hdmin[y][jp_y+sdr] && d+sd  <= hdmax[y][jp_y+sdr])) /* d+sd  is within y's d band for j+sdr */
+		    {
+		      dp_y = d - hdmin[y][jp_y+sdr];  /* d index for state y */
+		      escore = esc_vAA[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+		      Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		    }
+		  if(j == L && d != j &&                                           /* boundary condition, only allow transition from L if we haven't emitted any residues rightwise (j==L) */
+		     do_L_y &&                                                     /* L deck is valid for y */
+		     (j     >= jmin[y]        && j     <= jmax[y]) &&              /* j is within y's j band */
+		     (d+sdl >= hdmin[y][jp_y] && d+sdl <= hdmax[y][jp_y]))         /* d+sdl is within y's d band for j */
+		    {
+		      dp_y = d - hdmin[y][jp_y];  /* d index for state y */
+		      escore = cm->lmesc[y][dsq[i-1]];
+		      if(do_J_v) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sdl] + cm->tsc[y][voffset] + escore);
+		      if(do_L_v) Lbeta[v][jp_v][dp_v] = FLogsum(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sdl] + cm->tsc[y][voffset] + escore);
+		    }
+		  if(i == 1 && j != L &&                                           /* boundary condition, only allow transition from R if we haven't emitted any residues leftwise (i==1) */
+		     do_R_y &&                                                     /* R deck is valid for y */ 
+		     (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&          /* j+sdr is within y's j band */
+		     (d+sdr >= hdmin[y][jp_y+sdr] && d+sdr <= hdmax[y][jp_y+sdr])) /* d+sdr is within y's d band for j+sdr */
+		    { 
+		      dp_y = d - hdmin[y][jp_y+sdr];  /* d index for state y */
+		      escore = cm->rmesc[y][dsq[j+1]];
+		      if(do_J_v) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sdr] + cm->tsc[y][voffset] + escore);
+		      if(do_R_v) Rbeta[v][jp_v][dp_v] = FLogsum(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sdr] + cm->tsc[y][voffset] + escore);
+		    }
+		  break;
 	      
-	      case ML_st:
-	      case IL_st: 
-		jp_y = j - jmin[y];
-		if(d != j &&                                              /* boundary case */
-		   (j     >= jmin[y]        && j     <= jmax[y]) &&       /* j is within y's j band */
-		   (d+sdl >= hdmin[y][jp_y] && d+sdl <= hdmax[y][jp_y]))  /* d+sdl is within y's d band for j */
-		  {
-		    dp_y = d - hdmin[y][jp_y]; 
-		    escore = cm->oesc[y][dsq[i-1]];
-		    if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y+sd] + cm->tsc[y][voffset] + escore);
-		    if(do_L_v && do_L_y) Lbeta[v][jp_v][dp_v] = FLogsum(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sd] + cm->tsc[y][voffset] + escore);
-		  }
-		if(i == 1 &&                                              /* boundary condition, only allow transition from R if we're emitting first residue 1 from y  */
-		   v != y &&                                              /* will only happen if v == IL, we don't allow silent self transitions from IL->IL */
-		   do_R_y &&                                              /* R deck is valid for y */
-		   (j     >= jmin[y]        && j     <= jmax[y]) &&       /* j is within y's j band */
-		   (d     >= hdmin[y][jp_y] && d     <= hdmax[y][jp_y]))  /* d+sdr(==d) is within y's d band for j */
-		  {
-		    dp_y = d - hdmin[y][jp_y]; 
-		    if(do_J_v) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		    if(do_R_v) Rbeta[v][jp_v][dp_v] = FLogsum(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		  }
-		break;
+		case ML_st:
+		case IL_st: 
+		  jp_y = j - jmin[y];
+		  if(d != j &&                                              /* boundary case */
+		     (j     >= jmin[y]        && j     <= jmax[y]) &&       /* j is within y's j band */
+		     (d+sdl >= hdmin[y][jp_y] && d+sdl <= hdmax[y][jp_y]))  /* d+sdl is within y's d band for j */
+		    {
+		      dp_y = d - hdmin[y][jp_y]; 
+		      escore = cm->oesc[y][dsq[i-1]];
+		      if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		      if(do_L_v && do_L_y) Lbeta[v][jp_v][dp_v] = FLogsum(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		    }
+		  if(i == 1 &&                                              /* boundary condition, only allow transition from R if we're emitting first residue 1 from y  */
+		     v != y &&                                              /* will only happen if v == IL, we don't allow silent self transitions from IL->IL */
+		     do_R_y &&                                              /* R deck is valid for y */
+		     (j     >= jmin[y]        && j     <= jmax[y]) &&       /* j is within y's j band */
+		     (d     >= hdmin[y][jp_y] && d     <= hdmax[y][jp_y]))  /* d+sdr(==d) is within y's d band for j */
+		    {
+		      dp_y = d - hdmin[y][jp_y]; 
+		      if(do_J_v) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		      if(do_R_v) Rbeta[v][jp_v][dp_v] = FLogsum(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		    }
+		  break;
 		
-	      case MR_st:
-	      case IR_st:
-		jp_y = j - jmin[y];
-		if (j != L &&                                                    /* boundary condition */
-		   (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&          /* j+sdr is within y's j band */
-		   (d+sd  >= hdmin[y][jp_y+sdr] && d+sd  <= hdmax[y][jp_y+sdr])) /* d+sd is within y's d band for j+sdr */
-		  {		  
-		    dp_y = d - hdmin[y][jp_y+sdr];                                   
-		    escore = cm->oesc[y][dsq[j+1]];
-		    if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
-		    if(do_R_v && do_R_y) Rbeta[v][jp_v][dp_v] = FLogsum(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
-		  }
-		if(j == L &&                                                     /* boundary condition, only allow transition from L if we're emitting final residue L from y */ 
-		   v != y &&                                                     /* will only happen if v == IR, we don't allow silent self transitions from IR->IR */
-		   do_L_y &&                                                     /* L deck is valid for y */
-		   (j     >= jmin[y]           && j      <= jmax[y]) &&          /* j is within y's j band */
-		   (d     >= hdmin[y][jp_y]    && d      <= hdmax[y][jp_y]))     /* d+sdl(==d) is within y's d band for j */
-		  {
-		    dp_y = d - hdmin[y][jp_y];                                   
-		    if(do_J_v) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		    if(do_L_v) Lbeta[v][jp_v][dp_v] = FLogsum(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		  }
-	    		break;
-	      case S_st:
-	      case E_st:
-	      case D_st:
-		jp_y = j - jmin[y];
-		if((j >= jmin[y]        && j <= jmax[y]) &&
-		   (d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y])) 
-		  {
-		    dp_y = d - hdmin[y][jp_y];  /* d index for state y */
-		    if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		    if(do_L_v && do_L_y) Lbeta[v][jp_v][dp_v] = FLogsum(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		    if(do_R_v && do_R_y) Rbeta[v][jp_v][dp_v] = FLogsum(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
-		  }
-		break;
-	      } /* end of switch(cm->sttype[y] */  
+		case MR_st:
+		case IR_st:
+		  jp_y = j - jmin[y];
+		  if (j != L &&                                                    /* boundary condition */
+		      (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&          /* j+sdr is within y's j band */
+		      (d+sd  >= hdmin[y][jp_y+sdr] && d+sd  <= hdmax[y][jp_y+sdr])) /* d+sd is within y's d band for j+sdr */
+		    {		  
+		      dp_y = d - hdmin[y][jp_y+sdr];                                   
+		      escore = cm->oesc[y][dsq[j+1]];
+		      if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		      if(do_R_v && do_R_y) Rbeta[v][jp_v][dp_v] = FLogsum(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y+sdr][dp_y+sd] + cm->tsc[y][voffset] + escore);
+		    }
+		  if(j == L &&                                                     /* boundary condition, only allow transition from L if we're emitting final residue L from y */ 
+		     v != y &&                                                     /* will only happen if v == IR, we don't allow silent self transitions from IR->IR */
+		     do_L_y &&                                                     /* L deck is valid for y */
+		     (j     >= jmin[y]           && j      <= jmax[y]) &&          /* j is within y's j band */
+		     (d     >= hdmin[y][jp_y]    && d      <= hdmax[y][jp_y]))     /* d+sdl(==d) is within y's d band for j */
+		    {
+		      dp_y = d - hdmin[y][jp_y];                                   
+		      if(do_J_v) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		      if(do_L_v) Lbeta[v][jp_v][dp_v] = FLogsum(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		    }
+		  break;
+		case S_st:
+		case E_st:
+		case D_st:
+		  jp_y = j - jmin[y];
+		  if((j >= jmin[y]        && j <= jmax[y]) &&
+		     (d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y])) 
+		    {
+		      dp_y = d - hdmin[y][jp_y];  /* d index for state y */
+		      if(do_J_v && do_J_y) Jbeta[v][jp_v][dp_v] = FLogsum(Jbeta[v][jp_v][dp_v], Jbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		      if(do_L_v && do_L_y) Lbeta[v][jp_v][dp_v] = FLogsum(Lbeta[v][jp_v][dp_v], Lbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		      if(do_R_v && do_R_y) Rbeta[v][jp_v][dp_v] = FLogsum(Rbeta[v][jp_v][dp_v], Rbeta[y][jp_y][dp_y] + cm->tsc[y][voffset]);
+		    }
+		  break;
+		} /* end of switch(cm->sttype[y] */  
+	      } /* end of sneaky if y != 0 */
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (do_J_v && Jbeta[v][jp_v][dp_v] < IMPOSSIBLE) Jbeta[v][jp_v][dp_v] = IMPOSSIBLE;
 	    if (do_L_v && Lbeta[v][jp_v][dp_v] < IMPOSSIBLE) Lbeta[v][jp_v][dp_v] = IMPOSSIBLE;
@@ -7660,7 +7698,7 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   }
 
   fail_flag = FALSE;
-  if(do_check) {
+  if(do_check) { 
     /* Check for consistency between the Inside alpha matrix and the
      * Outside beta matrix. we assume the Inside CYK parse score
      * (optsc) is the optimal score, so for all v,j,d:
@@ -7700,22 +7738,22 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	  Tsc  = (do_T_v) ? Talpha[v][jp_v][dp_v] + Tbeta[v][jp_v][dp_v] - optsc : IMPOSSIBLE;
 	  if(Jsc > 0.001) { 
 	    printf("Check 1 J failure: v: %4d j: %4d d: %4d (%.4f + %.4f) %.4f > %.4f\n", 
-		   v, j, d, Jalpha[v][j][d], Jbeta[v][j][d], Jalpha[v][j][d] + Jbeta[v][j][d], optsc);
+		   v, j, d, Jalpha[v][jp_v][dp_v], Jbeta[v][jp_v][dp_v], Jalpha[v][jp_v][dp_v] + Jbeta[v][jp_v][dp_v], optsc);
 	    fail_flag = TRUE;
 	  }
 	  if(Lsc > 0.001) { 
 	    printf("Check 1 L failure: v: %4d j: %4d d: %4d (%.4f + %.4f) %.4f > %.4f\n", 
-		   v, j, d, Lalpha[v][j][d], Lbeta[v][j][d], Lalpha[v][j][d] + Lbeta[v][j][d], optsc);
+		   v, j, d, Lalpha[v][jp_v][dp_v], Lbeta[v][jp_v][dp_v], Lalpha[v][jp_v][dp_v] + Lbeta[v][jp_v][dp_v], optsc);
 	    fail_flag = TRUE;
 	  }
 	  if(Rsc > 0.001) { 
 	    printf("Check 1 R failure: v: %4d j: %4d d: %4d (%.4f + %.4f) %.4f > %.4f\n", 
-		   v, j, d, Ralpha[v][j][d], Rbeta[v][j][d], Ralpha[v][j][d] + Rbeta[v][j][d], optsc);
+		   v, j, d, Ralpha[v][jp_v][dp_v], Rbeta[v][jp_v][dp_v], Ralpha[v][jp_v][dp_v] + Rbeta[v][jp_v][dp_v], optsc);
 	    fail_flag = TRUE;
 	  }
 	  if(Tsc > 0.001) { 
 	    printf("Check 1 T failure: v: %4d j: %4d d: %4d (%.4f + %.4f) %.4f > %.4f\n", 
-		   v, j, d, Talpha[v][j][d], Tbeta[v][j][d], Talpha[v][j][d] + Tbeta[v][j][d], optsc);
+		   v, j, d, Talpha[v][jp_v][dp_v], Tbeta[v][jp_v][dp_v], Talpha[v][jp_v][dp_v] + Tbeta[v][jp_v][dp_v], optsc);
 	    fail_flag = TRUE;
 	  }
 	}
@@ -8290,7 +8328,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char pr
   int     *jmax  = cm->cp9b->jmax;
   int    **hdmin = cm->cp9b->hdmin;
   int    **hdmax = cm->cp9b->hdmax;
-  
+
   /* determine which matrices we need to fill in, based on <preset_mode> */
   if (preset_mode != TRMODE_J && preset_mode != TRMODE_L && preset_mode != TRMODE_R && preset_mode != TRMODE_T) ESL_FAIL(eslEINVAL, errbuf, "cm_TrEmitterPosteriorHB(): preset_mode is not J, L, R, or T");
   if((status = cm_TrFillFromMode(preset_mode, &fill_L, &fill_R, NULL)) != eslOK) ESL_FAIL(status, errbuf, "cm_TrCheckFromPosterior, bogus mode: %d", preset_mode);

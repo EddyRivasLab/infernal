@@ -1200,7 +1200,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 
       if(cm_alidisplay_Is5PTrunc(th->hit[h]->ad)) { /* 5' truncated */
 	lmod = '~';
-	lseq = '~';
+	lseq = th->hit[h]->ad->sqfrom     == 1 ? '{' : '~';
       }
       else { /* not 5' truncated */
 	lmod = th->hit[h]->ad->cfrom_emit == 1 ? '[' : '.';
@@ -1208,7 +1208,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       }
       if(cm_alidisplay_Is3PTrunc(th->hit[h]->ad)) { /* 3' truncated */
 	rmod = '~';
-	rseq = '~';
+	rseq = th->hit[h]->ad->sqto     == th->hit[h]->srcL     ? '}' : '~';
       }
       else { /* not 3' truncated */
 	rmod = th->hit[h]->ad->cto_emit == th->hit[h]->ad->clen ? ']' : '.';

@@ -407,7 +407,7 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
       m_psi = psi[m];
       if(cm->ndtype[nd] == MATP_MP) { m_psi += (psi[m+1] + psi[m+2]); } /* include MATP_ML and MATP_MR psi */
       i1_psi = psi[i1];
-      i2_psi = (i2 != -1) ? 0. : psi[i2]; 
+      i2_psi = (i2 == -1) ? 0. : psi[i2]; 
       summed_psi = m_psi + i1_psi + i2_psi; 
       if(ignore_inserts) { 
 	i1_psi = i2_psi = 0.;
@@ -490,6 +490,8 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
   if(ignore_inserts) { 
     if((status = cm_tr_penalties_Validate(trp, cm, 0.0001, errbuf)) != eslOK) { printf("%s", errbuf);  goto ERROR; }
   }
+
+  /* cm_tr_penalties_Dump(stdout, cm, trp); */
 
   if(mexpocc != NULL) free(mexpocc);
   if(iexpocc != NULL) free(iexpocc);
