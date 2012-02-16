@@ -2354,7 +2354,6 @@ ParsetreeMode(Parsetree_t *tr)
  * 
  * Args:     cm             - the covariance model
  *           tr             - the parsetree
- *           pass_idx       - pipeline pass this parsetree was created from
  *           have_i0        - TRUE if first res of source sequence is emitted in tr
  *           have_j0        - TRUE if final res of source sequence is emitted in tr
  *           errbuf         - for error messages
@@ -2370,7 +2369,7 @@ ParsetreeMode(Parsetree_t *tr)
  *           eslEINVAL if cm->emap is NULL.
  */
 int
-ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int pass_idx, int have_i0, int have_j0, char *errbuf, int *ret_cfrom_span, int *ret_cto_span, int *ret_cfrom_emit, int *ret_cto_emit, int *ret_first_emit, int *ret_final_emit) 
+ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int have_i0, int have_j0, char *errbuf, int *ret_cfrom_span, int *ret_cto_span, int *ret_cfrom_emit, int *ret_cto_emit, int *ret_first_emit, int *ret_final_emit) 
 {
   int  ti;         /* counter over parsetree nodes */
   int  v, nd;      /* state, node index */
@@ -2476,7 +2475,7 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int pass_idx, int have_i0, int ha
     /* aligned fragment is from g..h (1<=g<=h<=clen) in consensus positions, 
      * nd is currently the lowest node in the model tree that spans g..h. 
      */
-    if(pass_idx == PLI_PASS_5P_ONLY && have_i0) { /* a 5' truncation only */
+    if(tr->pass_idx == PLI_PASS_5P_ONLY && have_i0) { /* a 5' truncation only */
       rpos = cto_span;
       /* find highest nd in the tree whose subtree ends at exactly cto_span 
        * we'll guess that our full hit would be rooted at that node if it wasn't truncated. 
@@ -2487,7 +2486,7 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int pass_idx, int have_i0, int ha
       }
       cfrom_span = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) ? cm->emap->lpos[nd] : cm->emap->lpos[nd] + 1;
     }
-    if(pass_idx == PLI_PASS_3P_ONLY && have_j0) { /* a 3' truncation only */
+    if(tr->pass_idx == PLI_PASS_3P_ONLY && have_j0) { /* a 3' truncation only */
       lpos = cfrom_span;
       /* find highest nd in the tree whose subtree begins at exactly cfrom_span 
        * we'll guess that our full hit would be rooted at that node if it wasn't truncated. 
@@ -2498,12 +2497,12 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int pass_idx, int have_i0, int ha
       }
       cto_span   = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) ? cm->emap->rpos[nd] : cm->emap->rpos[nd] - 1;
     }
-    if(pass_idx == PLI_PASS_5P_AND_3P && have_i0 && have_j0) { /* 5' and 3' truncation and we have the first and final residue aligned */
+    if(tr->pass_idx == PLI_PASS_5P_AND_3P && have_i0 && have_j0) { /* 5' and 3' truncation and we have the first and final residue aligned */
       /* we guess it was a full hit */
       cfrom_span = 1;
       cto_span   = cm->clen;
     }
-    if(pass_idx == PLI_PASS_STD) { 
+    if(tr->pass_idx == PLI_PASS_STD) { 
       /* sanity check */
       if(cfrom_emit != cfrom_span) ESL_FAIL(eslFAIL, errbuf, "ParsetreeToCMBounds(), std pipeline pass, cfrom_emit != cfrom_span (bug)");
       if(cto_emit   != cto_span)   ESL_FAIL(eslFAIL, errbuf, "ParsetreeToCMBounds(), std pipeline pass, cto_emit != cto_span (bug)");
@@ -3065,7 +3064,7 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
  * Throws:   <eslEMEM> if we run out of memory.
  */
 int
-cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, int pty_idx, 
+cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, int pass_idx, 
 			 CM_TR_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc)
 {
   int          status;             /* easel status code */
@@ -3102,6 +3101,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   int      do_J, do_L, do_R, do_T;    /* allow transitions to J, L, R modes from current state? */
   int      filled_L, filled_R, filled_T;       /* will we ever use L, R, and T matrices? (determined from <preset_mode>) */
   int      allow_S_trunc_end;         /* set to true to allow d==0 BEGL_S and BEGR_S truncated ends, even if outside bands */
+  int      pty_idx;                   /* index for truncation penalty, determined by pass_idx */
   float    trpenalty;                 /* truncation penalty, differs based on pass_idx and if we're local or global */
 
   /* the DP matrix */
@@ -3136,6 +3136,8 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 
   /* Determine which matrices we might use, based on <preset_mode>, if TRMODE_UNKNOWN, filled_L, filled_R, filled_T will all be set as TRUE */
   if((status = cm_TrFillFromMode(preset_mode, &filled_L, &filled_R, &filled_T)) != eslOK) ESL_FAIL(status, errbuf, "cm_TrStochasticParsetree(), bogus mode: %d", preset_mode);
+  /* Determine truncation penalty index, from <pass_idx> */
+  if((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrStochasticParsetree(), unexpected pass idx: %d", pass_idx);
 
   /* Truncated specific step: sample alignment marginal mode if <preset_mode> == TRMODE_UNKNOWN */
   if(preset_mode == TRMODE_UNKNOWN) { 
@@ -3159,6 +3161,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */
   tr = CreateParsetree(100);
   tr->is_std = FALSE; /* lower is_std flag, now we'll know this parsetree was created by a truncated (non-standard) alignment function */
+  tr->pass_idx = pass_idx; 
   InsertTraceNodewithMode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0, parsetree_mode); /* init: attach the root S */
 
   /* Stochastically traceback through the TrInside matrix 
@@ -3555,7 +3558,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
  *           dsq         - digitized sequence
  *           L           - length of dsq
  *           preset_mode - pre-determined alignment mode, TRMODE_UNKNOWN to allow any
- *           pty_idx     - cm->trp->ptyAA[pty_idx][0..v..M-1] is truncation penalty
+ *           pass_idx    - pipeline pass index, indicates what truncation penalty to use
  *           mx          - pre-calculated Inside matrix (floats)
  *           r           - source of randomness
  *           ret_tr      - RETURN: sampled parsetree
@@ -3566,7 +3569,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
  * Throws:   <eslEMEM> if we run out of memory.
  */
 int
-cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, int pty_idx, 
+cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, int pass_idx, 
 			   CM_TR_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc)
 {
   int          status;             /* easel status code */
@@ -3603,7 +3606,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   int      do_J, do_L, do_R, do_T;    /* allow transitions to J, L, R modes from current state? */
   int      filled_L, filled_R, filled_T;       /* will we ever use L, R, and T matrices? (determined from <preset_mode>) */
   int      allow_S_trunc_end;         /* set to true to allow d==0 BEGL_S and BEGR_S truncated ends, even if outside bands */
-  float    trpenalty;                 /* truncation penalty, differs based on pty_idx and if we're local or global */
+  int      pty_idx;                   /* index for truncation penalty, determined by pass_idx */
+  float    trpenalty;                 /* truncation penalty, differs based on pass_idx and if we're local or global */
 
   /* variables used in HMM banded version but no nonbanded version */
   int      jp_v, dp_v;    /* j - jmin[v], d - hdmin[v][jp_v] */
@@ -3656,6 +3660,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 
   /* Determine which matrices we might use, based on <preset_mode>, if TRMODE_UNKNOWN, filled_L, filled_R, filled_T will all be set as TRUE */
   if((status = cm_TrFillFromMode(preset_mode, &filled_L, &filled_R, &filled_T)) != eslOK) ESL_FAIL(status, errbuf, "cm_TrStochasticParsetreeHB(), bogus mode: %d", preset_mode);
+  /* Determine truncation penalty index, from <pass_idx> */
+  if((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrStochasticParsetreeHB(), unexpected pass idx: %d", pass_idx);
 
   /* ensure a full alignment to ROOT_S (v==0) is possible */
   if (preset_mode == TRMODE_J && (! cp9b->Jvalid[0])) ESL_FAIL(eslEINVAL, errbuf, "cm_TrStochasticParsetreeHB()(): preset_mode is J mode, but cp9b->Jvalid[v] is FALSE");
@@ -3692,6 +3698,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */
   tr = CreateParsetree(100);
   tr->is_std = FALSE; /* lower is_std flag, now we'll know this parsetree was created by a truncated (non-standard) alignment function */
+  tr->pass_idx = pass_idx; 
   InsertTraceNodewithMode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0, parsetree_mode); /* init: attach the root S */
 
   /* Stochastically traceback through the TrInside matrix 

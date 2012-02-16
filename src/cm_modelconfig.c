@@ -147,7 +147,6 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
   int   status;
   float swentry, swexit;
   int   have_mother;
-  int   local_and_noforce; /* TRUE iff both CM_CONFIG_LOCAL && CM_CONFIG_TRUNC_NOFORCE */
 
   have_mother = (mother_cm != NULL && mother_map != NULL) ? TRUE : FALSE;
 
@@ -290,23 +289,18 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
      * we want to be as efficient as possible, and only want to 
      * logoddsify each cp9 exactly once, which will occur after
      * they've been configured into their specific locality mode.
-     *
-     * As a special case, if CM_CONFIG_TRUNC_NOFORCE Lcp9, Rcp9 and
-     * Tcp9 are configured identically for equiprobable begins and
-     * ends.
      */
     if((cm->Lcp9 = cp9_Clone(cm->cp9)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't clone cm->cp9 to get cm->Lcp9");
     if((cm->Rcp9 = cp9_Clone(cm->cp9)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't clone cm->cp9 to get cm->Rcp9");
     if((cm->Tcp9 = cp9_Clone(cm->cp9)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't clone cm->cp9 to get cm->Tcp9");
-    local_and_noforce = ((cm->config_opts & CM_CONFIG_LOCAL) && (cm->config_opts & CM_CONFIG_TRUNC_NOFORCE)) ? TRUE : FALSE;
     
     /* L mode alignment, 3' truncation: begin into node 1, equiprobable ends */
-    swentry = local_and_noforce ? ((float) cm->cp9->M - 1.) / (float) cm->cp9->M : 0.;
+    swentry = 0.;
     swexit  = ((float) cm->cp9->M - 1.) / (float) cm->cp9->M;
     cp9_sw_config(cm->Lcp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE: let I_0, D_1, I_M be reachable */
     /* R mode alignment, 5' truncation: equiprobable begins, end out of node M */
     swentry = ((float) cm->cp9->M - 1.) / (float) cm->cp9->M;
-    swexit  = local_and_noforce ? ((float) cm->cp9->M - 1.) / (float) cm->cp9->M : 0.;
+    swexit  = 0.;
     cp9_sw_config(cm->Rcp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE: let I_0, D_1, I_M be reachable */
     /* T mode alignment, 5' and 3' truncation: equiprobable begins, equiprobable ends */
     swentry = ((float) cm->cp9->M - 1.) / (float) cm->cp9->M;

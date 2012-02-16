@@ -143,10 +143,7 @@ static ESL_OPTIONS options[] = {
   { "--glN",        eslARG_INT,   "201",  NULL, NULL,    NULL,"--glen",NULL,             "minimum value to start len-dependent glocal threshold", 7},
   { "--glX",        eslARG_INT,   "500",  NULL, NULL,    NULL,"--glen",NULL,             "maximum value for len-dependent glocal threshold", 7},
   { "--glstep",     eslARG_INT,   "100",  NULL, NULL,    NULL,"--glen",NULL,             "for len-dependent glocal thr, step size for halving thr", 7},
-  { "--noends",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--notrunc,--noforce",  "--locends","don't search for truncated hits in first/final cm->W residues", 7},
-  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noforce", NULL,         "only allow normal local begins in truncated hits", 7},
-  { "--noforce",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not force first/final residue be within any truncated hit", 7},
-  { "--locends",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noforce", NULL,         "use local envelope definition when researching ends", 7},
+  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "only allow normal local begins in truncated hits", 7},
   { "--xtau",       eslARG_REAL,  "2.",   NULL, NULL,    NULL,  NULL,  NULL,             "set multiplier for tau to <x> when tightening HMM bands", 7},
   /* Other options */
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },
@@ -677,7 +674,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	info[0].pli->nnodes  /= 2;
       }
 
-      if(info[0].pli->research_ends) { 
+      if(info[0].pli->do_trunc_ends) {
 	/* We may have overlaps so sort by sequence index/position and remove duplicates */
 	cm_tophits_SortForOverlapRemoval(info[0].th);
 	if((status = cm_tophits_RemoveOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
@@ -1146,7 +1143,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  cm_tophits_Destroy(mpi_th);
 	}
       
-      if(pli->research_ends) { 
+      if(pli->do_trunc_ends) { 
 	/* We may have overlaps so sort by sequence index/position and remove duplicates */
 	cm_tophits_SortForOverlapRemoval(th);
 	if((status = cm_tophits_RemoveOverlaps(th, errbuf)) != eslOK) mpi_failure(errbuf);

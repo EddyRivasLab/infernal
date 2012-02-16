@@ -60,13 +60,12 @@ typedef struct {
 #ifdef HMMER_THREADS
   ESL_WORK_QUEUE   *queue;
 #endif /*HMMER_THREADS*/
-  CM_t             *cm;     /* a covariance model */
-  CM_ALNDATA      **dataA;  /* array of CM_ALNDATA objects with ptrs to sqs, parsetrees, scores */
-  int               n;      /* size of outdataA   */
-  float             mxsize; /* max size in Mb of allowable DP mx */
-  CM_TR_OPTS       *tro;    /* truncated info */
-  ESL_STOPWATCH    *w;      /* stopwatch for timing stages (band calc, alignment) */
-  ESL_STOPWATCH    *w_tot;  /* stopwatch for timing total time for processing 1 seq */
+  CM_t             *cm;      /* a covariance model */
+  CM_ALNDATA      **dataA;   /* array of CM_ALNDATA objects with ptrs to sqs, parsetrees, scores */
+  int               n;       /* size of outdataA   */
+  float             mxsize;  /* max size in Mb of allowable DP mx */
+  ESL_STOPWATCH    *w;       /* stopwatch for timing stages (band calc, alignment) */
+  ESL_STOPWATCH    *w_tot;   /* stopwatch for timing total time for processing 1 seq */
 } WORKER_INFO;
 
 #define ALGOPTS      "--cyk,--optacc,--sample"         /* Exclusive choice for algorithm */
@@ -588,18 +587,13 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) mpi_failure(errbuf);
 
   /* initialize our worker info */
-  info.cm     = cm;
-  info.dataA  = NULL;
-  info.n      = 0;
-  info.mxsize = esl_opt_GetReal(go, "--mxsize");
-  info.w      = esl_stopwatch_Create();
-  info.w_tot  = esl_stopwatch_Create();
-  if(esl_opt_GetBoolean(go, "--notrunc")) { 
-    info.tro = NULL;
-  }
-  else { 
-    info.tro = cm_tr_opts_Create();
-  }
+  info.cm       = cm;
+  info.dataA    = NULL;
+  info.n        = 0;
+  info.mxsize   = esl_opt_GetReal(go, "--mxsize");
+  info.w        = esl_stopwatch_Create();
+  info.w_tot    = esl_stopwatch_Create();
+
   /* Main loop: actually two nested while loops, over sequence blocks
    * (while(blocks_remain_in_file)) and over sequences within blocks
    * (while(seqs_remain_in_block)). We exit each loop when the master
@@ -644,7 +638,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       free(dsq); /* esl_sq_CreateDigitalFrom() makes a copy of dsq */
       
       /* align the sequence */
-      if((status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize, info.tro, 
+      if((status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize, info.pass_idx, 
 				       info.w, info.w_tot, NULL, &data)) != eslOK) mpi_failure(errbuf);
       
       /* pack up the data and send it back to the master (FALSE: don't send data->sq) */
@@ -673,7 +667,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(info.dataA != NULL) free(info.dataA);
   if(info.w     != NULL) esl_stopwatch_Destroy(info.w);
   if(info.w_tot != NULL) esl_stopwatch_Destroy(info.w_tot);
-  if(info.tro   != NULL) free(info.tro);
   if(mpibuf     != NULL) free(mpibuf);
 
   return eslOK;
@@ -1084,18 +1077,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
 
   for (k = 0; k < infocnt; ++k)    {
-    info[k].cm     = NULL;
-    info[k].dataA  = NULL;
-    info[k].n      = 0;
-    info[k].mxsize = esl_opt_GetReal(go, "--mxsize");
-    info[k].w      = esl_stopwatch_Create();
-    info[k].w_tot  = esl_stopwatch_Create();
-    if(esl_opt_GetBoolean(go, "--notrunc")) { 
-      info[k].tro = NULL;
-    }
-    else { 
-      info[k].tro  = cm_tr_opts_Create();
-    }
+    info[k].cm       = NULL;
+    info[k].dataA    = NULL;
+    info[k].n        = 0;
+    info[k].mxsize   = esl_opt_GetReal(go, "--mxsize");
+    info[k].w        = esl_stopwatch_Create();
+    info[k].w_tot    = esl_stopwatch_Create();
 #ifdef HMMER_THREADS
     info[k].queue  = queue;
 #endif
@@ -1278,7 +1265,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if(info[k].dataA != NULL) free(info[k].dataA);
     if(info[k].w     != NULL) esl_stopwatch_Destroy(info[k].w);
     if(info[k].w_tot != NULL) esl_stopwatch_Destroy(info[k].w_tot);
-    if(info[k].tro   != NULL) free(info[k].tro);
   }
   free(info);
   FreeCM(cm);
@@ -1315,7 +1301,7 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
 
   for(i = 0; i < info->n; i++) { 
     if((status = DispatchSqAlignment(info->cm, errbuf, sq_block->list + i, sq_block->first_seqidx + i, info->mxsize, 
-				     info->tro, info->w, info->w_tot, r, &(info->dataA[i]))) != eslOK) cm_Fail(errbuf);
+				     info->w, info->w_tot, r, &(info->dataA[i]))) != eslOK) cm_Fail(errbuf);
   }
   return eslOK;
   
@@ -1454,7 +1440,7 @@ pipeline_thread(void *arg)
       for(j = nalloc; j < info->n + allocsize; j++) info->dataA[j] = NULL;
       nalloc += allocsize;
     }
-    if((status = DispatchSqAlignment(info->cm, errbuf, sq, sq->W, info->mxsize, info->tro, 
+    if((status = DispatchSqAlignment(info->cm, errbuf, sq, sq->W, info->mxsize, 
 				     info->w, info->w_tot, NULL, &(info->dataA[i]))) != eslOK) cm_Fail(errbuf);
     /* sq->W has been overloaded (its original value is irrelevant in this context).
      * It is now the sequence index, defined in thread_loop() 

@@ -160,7 +160,6 @@ sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_sub
  *           errbuf    - char buffer for reporting errors
  *           sq_block  - block of sequences to align
  *           mxsize    - max size in Mb of allowable DP mx
- *           tro       - truncated options, can be NULL if not doing trunc aln
  *           w         - stopwatch for timing individual stages
  *           w_tot     - stopwatch for timing total time per seq
  *           r         - RNG, req'd if CM_ALIGN_SAMPLE, can be NULL otherwise
@@ -172,7 +171,7 @@ sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_sub
  *           <ret_dataA> is alloc'ed and filled with sq_block->count CM_ALNDATA objects.
  */
 int
-DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, CM_TR_OPTS *tro, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA)
+DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA)
 {
   int           status;          /* easel status */
   int           j;               /* counter over parsetrees */
@@ -185,7 +184,7 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
   /* main loop: for each sequence, call DispatchSqAlignment() to do the work */
   for(j = 0; j < sq_block->count; j++) { 
     sqp = sq_block->list + j;
-    if((status = DispatchSqAlignment(cm, errbuf, sqp, sq_block->first_seqidx + j, mxsize, tro, w, w_tot, r, &(dataA[j]))) != eslOK) goto ERROR;
+    if((status = DispatchSqAlignment(cm, errbuf, sqp, sq_block->first_seqidx + j, mxsize, w, w_tot, r, &(dataA[j]))) != eslOK) goto ERROR;
   }
   *ret_dataA = dataA;
 
@@ -208,16 +207,15 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
  *           the appropriate alignment function and return relevant
  *           data for eventual output in <ret_data>. 
  *
- * Args:     cm        - the covariance model
- *           errbuf    - char buffer for reporting errors
- *           sq        - sequence to align
- *           idx       - index of sequence (may be used to reorder data later)
- *           mxsize    - max size in Mb of allowable DP mx
- *           tro       - truncated aln options, can be NULL if not doing trunc aln
- *           w         - stopwatch for timing individual stages
- *           w_tot     - stopwatch for timing total time per seq
- *           r         - RNG, req'd if CM_ALIGN_SAMPLE, can be NULL otherwise
- *           ret_data  - RETURN: newly created CM_ALNDATA object
+ * Args:     cm       - the covariance model
+ *           errbuf   - char buffer for reporting errors
+ *           sq       - sequence to align
+ *           idx      - index of sequence (may be used to reorder data later)
+ *           mxsize   - max size in Mb of allowable DP mx
+ *           w        - stopwatch for timing individual stages
+ *           w_tot    - stopwatch for timing total time per seq
+ *           r        - RNG, req'd if CM_ALIGN_SAMPLE, can be NULL otherwise
+ *           ret_data - RETURN: newly created CM_ALNDATA object
  *
  * Returns:  eslOK on success;
  *           eslEINCOMPAT on contract violation, errbuf is filled;
@@ -225,7 +223,7 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
  *           <ret_data> is alloc'ed and filled.
  */
 int
-DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, CM_TR_OPTS *tro, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data)
+DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data)
 {
   int           status;            /* easel status */
   CM_ALNDATA   *data       = NULL; /* CM_ALNDATA we'll create and fill */
@@ -238,7 +236,11 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   float         mb_tot     = 0.;   /* size of all DP matrices used for alignment */
   int           spos;              /* start posn: first non-gap CM consensus position */
   int           epos;              /* end   posn: final non-gap CM consensus position */
-  int           pty_idx;           /* penalty index for truncated alignment, determined from tro */
+  int           pass_idx;          /* pipeline pass index, passed to truncated alignment
+				    * functions to determine truncation penalty and to 
+				    * cp9_Seq2Bands() to indicate if we're allowing 
+				    * truncated alignment or not.
+				    */
 
   /* alignment options */
   int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE : FALSE;
@@ -262,14 +264,18 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   if(do_optacc && do_sample)        ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to sample and do optacc alignment");
   if(do_sub    && do_small)         ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do sub and small alignment");
   if(do_sub    && do_trunc)         ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do sub and truncated alignment");
-  if(do_trunc  && tro == NULL)      ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do truncated alignment, but tro == NULL");
   if(do_sample && r == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to sample but RNG r == NULL");
-  if(do_trunc) { 
-    pty_idx = cm_tr_opts_PenaltyIdx(tro); 
-    if(pty_idx == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() tro->allow_L and tro->allow_R are both FALSE"); 
-  }
 
   if(w_tot != NULL) esl_stopwatch_Start(w_tot);
+
+  /* We need a pipeline pass index, even though we're probably
+   * not being called as part of a search/scan pipeline. This
+   * is required by cm_TrAlign() and cp9_Seq2Bands(). If we're
+   * allowing truncation we always allow 5' and/or 3' truncation
+   * (PLI_PASS_5P_AND_3P), if we're not we're only allowing 
+   * standard alignments (PLI_PASS_STD).
+   */
+  pass_idx = do_trunc ? PLI_PASS_5P_AND_3P : PLI_PASS_STD; 
 
   /* do sub-mode specific pre-alignment steps, if nec */
   if(do_sub) { 
@@ -294,8 +300,9 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       if(do_trunc) { 
 	if((status = cm_TrAlignSizeNeeded(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
 					  NULL, NULL, NULL, &mb_tot)) != eslOK) return status;
-	if((status = cm_TrAlign(cm, errbuf, sq->dsq, sq->L, mxsize, TRMODE_UNKNOWN, pty_idx, do_optacc, do_sample, 
-				cm->trnb_mx, cm->trnb_shmx, cm->trnb_omx, cm->trnb_emx, r, &ppstr, &tr, NULL, &pp, &sc)) != eslOK) return status;
+	if((status = cm_TrAlign(cm, errbuf, sq->dsq, sq->L, mxsize, TRMODE_UNKNOWN, pass_idx, 
+				do_optacc, do_sample, cm->trnb_mx, cm->trnb_shmx, cm->trnb_omx, 
+				cm->trnb_emx, r, &ppstr, &tr, NULL, &pp, &sc)) != eslOK) return status;
       }
       else {
 	if((status = cm_AlignSizeNeeded(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
@@ -306,7 +313,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     }
     else { /* use HMM bands */
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, 
-				 1, sq->L, cm->cp9b, doing_search, tro, 0)) != eslOK) return status;
+				 1, sq->L, cm->cp9b, doing_search, pass_idx, 0)) != eslOK) return status;
       if(w != NULL) esl_stopwatch_Stop(w);
       secs_bands = (w == NULL) ? 0. : w->elapsed;
       
@@ -314,8 +321,9 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       if(do_trunc) { 
 	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
 					    NULL, NULL, NULL, &mb_tot)) != eslOK) return status;
-	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, TRMODE_UNKNOWN, pty_idx, do_optacc, do_sample, 
-				  cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, cm->trhb_emx, r, &ppstr, &tr, NULL, &pp, &sc)) != eslOK) return status;
+	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, TRMODE_UNKNOWN, pass_idx, 
+				  do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, 
+				  cm->trhb_emx, r, &ppstr, &tr, NULL, &pp, &sc)) != eslOK) return status;
       }
       else { 
 	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
@@ -345,7 +353,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   }
   
   /* determine start and end points of the parsetree */
-  if((status = ParsetreeToCMBounds(cm, tr, PLI_PASS_5P_AND_3P, TRUE, TRUE, errbuf, NULL, NULL, NULL, NULL, &spos, &epos)) != eslOK) return status;
+  if((status = ParsetreeToCMBounds(cm, tr, TRUE, TRUE, errbuf, NULL, NULL, NULL, NULL, &spos, &epos)) != eslOK) return status;
   
   /* create and fill dataA[j] */
   ESL_ALLOC(data, sizeof(CM_ALNDATA));

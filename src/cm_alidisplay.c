@@ -67,7 +67,7 @@ static int  bp_is_canonical(char lseq, char rseq);
  * Xref:      STL6 p.58
  */
 int
-cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, int64_t seqoffset, int pass_idx, 
+cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, int64_t seqoffset, 
 		     char *ppstr, float sc, float avgpp, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs, CM_ALIDISPLAY **ret_ad)
 {
   int            status;
@@ -180,7 +180,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
    *
    * Of course, we don't actually know how many positions were
    * truncated. Here we guess that it is the maximum possible given
-   * the parsetree and the pass_idx (pipeline pass we found the
+   * the parsetree and the tr->pass_idx (pipeline pass we found the
    * hit in). Specifically in the parsetree, the relevant data is
    * the consensus positions spanned (lpos..rpos) by the internal 
    * truncated entry state. The guess is made in ParsetreeToCMBounds()
@@ -188,7 +188,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
    */
   have_i0 = (seqoffset == 1) ? TRUE : FALSE;
   have_j0 = ((seqoffset + tr->emitr[0] - 1) == sq->n) ? TRUE : FALSE;
-  if((status = ParsetreeToCMBounds(cm, tr, pass_idx, have_i0, have_j0, errbuf, &cfrom_span, &cto_span, &cfrom_emit, &cto_emit, NULL, NULL)) != eslOK) return status;
+  if((status = ParsetreeToCMBounds(cm, tr, have_i0, have_j0, errbuf, &cfrom_span, &cto_span, &cfrom_emit, &cto_emit, NULL, NULL)) != eslOK) return status;
 
   /* now determine display length required to show truncations */
   ntrunc_R = wtrunc_R = 0;

@@ -467,11 +467,10 @@ typedef struct cp9map_s {
 #define CM_CONFIG_QDB           (1<<3)  /* recalculate query dependent bands       */
 #define CM_CONFIG_W_BETA        (1<<4)  /* recalculate W using band calculation    */
 #define CM_CONFIG_TRUNC         (1<<5)  /* set up for truncated alignment (cm->{L,R,T}cp9 will be built */
-#define CM_CONFIG_TRUNC_NOFORCE (1<<6)  /* don't force sequence endpoints exist in truncated alignments */
-#define CM_CONFIG_SCANMX        (1<<7)  /* create a CM_SCAN_MX in cm->smx          */
-#define CM_CONFIG_TRSCANMX      (1<<8)  /* create a CM_TR_SCAN_MX in cm->trsmx     */
-#define CM_CONFIG_SUB           (1<<9)  /* set up for submodel alignment (cm->cp9 gets equiprobable begin/ends) */
-#define CM_CONFIG_NONBANDEDMX   (1<<10) /* set up for non-banded alignment (cm->*nb*mx will be created) */
+#define CM_CONFIG_SCANMX        (1<<6)  /* create a CM_SCAN_MX in cm->smx          */
+#define CM_CONFIG_TRSCANMX      (1<<7)  /* create a CM_TR_SCAN_MX in cm->trsmx     */
+#define CM_CONFIG_SUB           (1<<8)  /* set up for submodel alignment (cm->cp9 gets equiprobable begin/ends) */
+#define CM_CONFIG_NONBANDEDMX   (1<<9)  /* set up for non-banded alignment (cm->*nb*mx will be created) */
 
 /* alignment options, cm->align_opts */
 #define CM_ALIGN_HBANDED       (1<<0)  /* use CP9 HMM bands                        */
@@ -1651,16 +1650,6 @@ typedef struct cm_tr_scan_mx_s {
   int64_t  ncells_Talpha;     /* number of alloc'ed, valid cells for fTalpha and iTalpha matrices, alloc'ed as contiguous block */
 } CM_TR_SCAN_MX;
 
-/* Structure CM_TR_OPTS: options related to truncated alignment.
- */
-typedef struct cm_tr_opts_s {
-  int allow_R; /* allow right marginal alignments */
-  int allow_L; /* allow left  marginal alignments */
-  /* allow_T is not necessary, it is implicitly TRUE only
-   * if allow_L and allow_R are both TRUE.
-   */
-} CM_TR_OPTS;
-
 /* Truncation penalty parameters, we either allow 5' truncation, 3' truncation or both.
  * These allow truncated DP aligners and scanners (cm_dpalign_trunc.c and cm_dpsearch_trunc.c)
  * to know which truncation penalty to apply. 
@@ -1669,6 +1658,7 @@ typedef struct cm_tr_opts_s {
 #define TRPENALTY_5P_ONLY   1
 #define TRPENALTY_3P_ONLY   2
 #define NTRPENALTY          3
+#define TRPENALTY_NONE     -1
 
 /* Structure CM_TR_PENALTIES: Information on truncated alignment
  * penalties. 
@@ -1991,15 +1981,39 @@ typedef struct cm_file_s {
  * In the special case of reading from stdin, <fname> is "[STDIN]".
  */
 
-/* Pipeline pass indices, these values have two interrelated but different roles:
- * 1. [1..4] are flags indicating which type of truncated alignment is/was allowed in/by
- *    a DP scanner/alignment function. Each pass of the pipeline allows a 
- *    different combination of 5' and/or 3' truncated alignment.
+/* Pipeline pass indices. The pipeline potentially does multiple
+ * passes over each sequence. Don't muck with the order here, it'll
+ * screw up things in strange ways. For example, PLI_PASS_STD must
+ * come before the 5P and 3P truncated stages, cm_Pipeline() depends
+ * on it.
+ *
+ * These values have two interrelated but different roles:
+ *
+ * 1. [1..4] are flags indicating which type of truncated alignment
+ * is/was allowed in/by a DP scanner/alignment function. Each pass of
+ * the pipeline allows a different combination of 5' and/or 3'
+ * truncated alignment. 
+ *
+ * A wrinkle is that these indices used for DP truncated alignment
+ * functions called for 'cmalign' (either PLI_PASS_5P_AND_3P or
+ * PLI_PASS_STD) even though those functions are not called as part of
+ * a search/scan pipeline.  In this case, the pass index is still
+ * relevant in informing the alignment function which truncation
+ * penalty score to apply to any resulting alignment score.
+ *
  * 2. [0..4] are indices in cm->pli->acct[], accounting states for each 
- *    pass of the pipeline.
+ * pass of the pipeline.
  */
+///#define PLI_PASS_SUMMED          0
+///#define PLI_PASS_STD_ANY         1  /* only standard alns allowed, no truncated ones, any subseq */
+///#define PLI_PASS_5P_ONLY_I0      2  /* only 5' truncated alns allowed, first (i0) residue must be included */
+///#define PLI_PASS_3P_ONLY_J0      3  /* only 3' truncated alns allowed, final (j0) residue must be included */
+///#define PLI_PASS_5P_AND_3P_I0_J0 4  /* 5' and 3' truncated alns allowed, first & final (i0 & j0) residue must be included */
+///#define PLI_PASS_5P_AND_3P_ANY   5  /* 5' and 3' truncated alns allowed, any subseq can comprise hit */
+///#define NPLI_PASSES              6
+
 #define PLI_PASS_SUMMED    0
-#define PLI_PASS_STD       1  /* no truncated alignments allowed */
+#define PLI_PASS_STD       1  /* only standard alignments allowed, no truncated ones */
 #define PLI_PASS_5P_ONLY   2  /* only 5' truncated alignments allowed */
 #define PLI_PASS_3P_ONLY   3  /* only 3' truncated alignments allowed */
 #define PLI_PASS_5P_AND_3P 4  /* 5' and 3' truncated alignments allowed */
@@ -2055,7 +2069,6 @@ typedef struct cm_pipeline_s {
   P7_GMX       *gxb;		/* generic Backward matrix                  */
   P7_GMX       *gfwd;		/* generic full Fwd matrix for envelopes    */
   P7_GMX       *gbck;		/* generic full Bck matrix for envelopes    */
-  CM_TR_OPTS   *tro;            /* information for truncated scanners       */
 
   /* Model-dependent parameters                                             */
   int 		maxW;           /* # residues to overlap in adjacent windows*/
@@ -2147,10 +2160,7 @@ typedef struct cm_pipeline_s {
   int     glen_max;             /* max clen for len-dependent glc p7 thr    */
   int     glen_step;            /* step size for halving glc p7 thr if do_glen */
   int     do_glocal_cm_stages;  /* TRUE to use CM in glocal mode for final stages */
-  int     research_ends;        /* TRUE to use re-search sequence ends for truncated hits */
   int     do_trunc_ends;        /* TRUE to use truncated CM algs at sequence ends */
-  int     do_force_ends;        /* TRUE to force i0/j0 be part of truncated hits */
-  int     do_local_ends;        /* TRUE to use local env for ends (can only be TRUE if do_force_ends is FALSE) */
 
   /* Parameters controlling p7 domain/envelope defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
@@ -2208,10 +2218,6 @@ typedef struct cm_pipeline_s {
   CM_FILE      *cmfp;		/* COPY of open CM database (if scan mode) */
   char          errbuf[eslERRBUFSIZE];
   
-  /* 'ps_*' parameters: these can be changed per-sequence */
-  int rs5term;  /* are we researching the 5' terminus for local/truncated hits? */
-  int rs3term;  /* are we researching the 3' terminus for local/truncated hits? */
-
 } CM_PIPELINE;
 
 /* Structure: CM_ALIDISPLAY

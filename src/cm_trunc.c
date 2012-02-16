@@ -2,9 +2,7 @@
  * relevant to truncated DP functions.
  * 
  * Contents:
- *    1. CM_TR_SINFO data structure functions,
- *       per-scan info for truncated CM scanners
- *    2. CM_TR_PENALTIES data structure functions,
+ *    1. CM_TR_PENALTIES data structure functions,
  *       info on truncated alignment score penalties.
  *
  * EPN, Sat Jan 21 14:02:26 2012
@@ -24,78 +22,7 @@
 #include "structs.h"
 
 /*****************************************************************
- *   1. CM_TR_OPTS data structure functions,
- *      truncated alignment options
- *****************************************************************/
-
-/* Function: cm_tr_opts_Create()
- * Date:     EPN, Tue Nov  8 08:27:16 2011
- *
- * Purpose:  Allocate and initialize a CM_TR_OPTS object.
- * 
- * Returns:  Newly allocated CM_TR_OPTS object. NULL if out
- *           of memory. Needs a <cm> to create truncation
- *           penalties.
- */
-CM_TR_OPTS *
-cm_tr_opts_Create()
-{
-  int status;
-  CM_TR_OPTS *tro = NULL;
-  ESL_ALLOC(tro, sizeof(CM_TR_OPTS));
-
-  /* set default values */
-  tro->allow_L     = TRUE; /* L mode alignments are allowed */
-  tro->allow_R     = TRUE; /* R mode alignments are allowed */
-
-  return tro;
-
- ERROR:
-  if(tro != NULL) free(tro);
-  return NULL;
-}
-
-/* Function: cm_tr_opts_PenaltyIdx()
- * Date:     EPN, Sun Jan 22 16:03:21 2012
- *
- * Purpose:  Return the appropriate truncation 
- *           penalty index given truncation options.
- *           in <tro>.
- * 
- * Returns:  truncation penalty index, either
- *           TRPENALTY_5P_AND_3P, TRPENALTY_5P_ONLY, or
- *           TRPENALTY_3P_ONLY.
- */
-int
-cm_tr_opts_PenaltyIdx(CM_TR_OPTS *tro)
-{
-  if(tro->allow_R && tro->allow_L) return TRPENALTY_5P_AND_3P;
-  else if(tro->allow_R)            return TRPENALTY_5P_ONLY;
-  else if(tro->allow_L)            return TRPENALTY_3P_ONLY;
-  else return -1;
-}
-
-/* Function: cm_tr_opts_Dump()
- * Date:     EPN, Sat Jan 21 13:47:49 2012
- *
- * Purpose:  Print contents of a CM_TR_OPTS to
- *           stream <fp> for inspection.
- * 
- * Returns:  void
- */
-void
-cm_tr_opts_Dump(FILE *fp, CM_TR_OPTS *tro)
-{
-  fprintf(fp, "CM_TR_OPTS dump\n");
-  fprintf(fp, "------------------\n");
-  fprintf(fp, "allow_R     = %s\n",  tro->allow_R     ? "TRUE" : "FALSE");
-  fprintf(fp, "allow_L     = %s\n",  tro->allow_L     ? "TRUE" : "FALSE");
-
-  return;
-}
-
-/*****************************************************************
- *   2. CM_TR_PENALTIES data structure functions,
+ *   1. CM_TR_PENALTIES data structure functions,
  *       info on truncated alignment score penalties.
  *****************************************************************/
 
@@ -514,6 +441,28 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
   if(trp != NULL) cm_tr_penalties_Destroy(trp);
 
   return NULL;
+}
+
+/* Function: cm_tr_penalties_IdxForPass()
+ * Date:     EPN, Wed Feb 15 15:07:54 2012
+ *
+ * Purpose:  Return the appropriate truncation 
+ *           penalty index given a pipeline pass
+ *           index.
+ * 
+ * Returns:  truncation penalty index, either
+ *           TRPENALTY_5P_AND_3P, TRPENALTY_5P_ONLY, or
+ *           TRPENALTY_3P_ONLY.
+ */
+int
+cm_tr_penalties_IdxForPass(int pass_idx)
+{
+  switch(pass_idx) { 
+  case PLI_PASS_5P_AND_3P: return TRPENALTY_5P_AND_3P; break;
+  case PLI_PASS_5P_ONLY:   return TRPENALTY_5P_ONLY; break;
+  case PLI_PASS_3P_ONLY:   return TRPENALTY_3P_ONLY; break;
+  default: return -1; break;
+  }
 }
 
 /* Function: cm_tr_penalties_Validate()

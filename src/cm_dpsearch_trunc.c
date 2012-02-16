@@ -54,7 +54,7 @@
  *           errbuf          - char buffer for reporting errors
  *           trsmx           - TrScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           qdbidx          - controls which QDBs to use: SMX_NOQDB | SMX_QDB1_TIGHT | SMX_QDB2_LOOSE
- *           tro             - CM_TR_OPTS with information on which modes to allow
+ *           pass_idx        - pipeline pass index, tells us which modes to allow and trunc penalties to use
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -76,7 +76,7 @@
  *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR_OPTS *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_idx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 	     int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc)
 {
   int       status;
@@ -121,7 +121,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR_OPT
   int   Lyoffset0;              /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
   int   Ryoffset0;              /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
   int   fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
-  int   pty_idx;                /* index for truncation penalty, determined by values in tro */
+  int   pty_idx;                /* index for truncation penalty, determined by pass_idx */
   float trpenalty;              /* truncation penalty, differs based on pty_idx and if we're local or global */
 
   /* Contract check */
@@ -159,12 +159,12 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR_OPT
   else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmax = cm->qdbinfo->dmax2; }
   else ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan, qdbidx is invalid");
 
-  /* determine which matrices we need to fill in based on <tro> */
-  fill_L = tro->allow_L       ? TRUE : FALSE;
-  fill_R = tro->allow_R       ? TRUE : FALSE;
-  fill_T = (fill_L && fill_R) ? TRUE : FALSE;
-  if((pty_idx = cm_tr_opts_PenaltyIdx(tro)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan(), tro->allow_L and tro->allow_R are both FALSE");
-  
+  /* from <pass_idx>: determine which matrices we need to fill in and
+   * the appropriate truncation penalty index to use.
+   */
+  if((status = cm_TrFillFromPassIdx(pass_idx, &fill_L, &fill_R, &fill_T)) != eslOK) ESL_FAIL(status,       errbuf, "RefTrCYKScan(), unexpected pass idx: %d", pass_idx);
+  if((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1)                        ESL_FAIL(eslEINCOMPAT, errbuf, "RefTrCYKScan(), unexpected pass idx: %d", pass_idx);
+
   L = j0-i0+1;
   W = trsmx->W;
   if (W > L) W = L; 
@@ -524,9 +524,10 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR_OPT
        * (penalty) from cm->trp into any emitting state. The penalty
        * differs depending on whether we are in local or global mode
        * and the value of 'pty_idx' which was determined from
-       * <tro>. In local mode the penalty includes the standard local
-       * begin probability as part of the penalty. Penalties are
-       * calculated in cm_tr_penalties_Create().
+       * <pass_idx> (passed in). In local mode the penalty includes
+       * the standard local begin probability as part of the
+       * penalty. Penalties are calculated in
+       * cm_tr_penalties_Create().
        */
       /* initializations */
       v = 0;
@@ -708,7 +709,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR_OPT
  *           errbuf          - char buffer for reporting errors
  *           trsmx           - CM_TR_SCAN_MX for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           qdbidx          - controls which QDBs to use: SMX_NOQDB | SMX_QDB1_TIGHT | SMX_QDB2_LOOSE
- *           tro             - CM_TR_OPTS with information on which modes to allow
+ *           pass_idx        - pipeline pass index, tells us which modes to allow and trunc penalties to use
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -730,7 +731,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR_OPT
  *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR_OPTS *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_idx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 		 int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, char *ret_mode, float *ret_sc)
 {
   int       status;
@@ -776,7 +777,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR
   int   Lyoffset0;              /* first yoffset to use for updating L matrix in IR/MR states, 1 if IR, 0 if MR */
   int   Ryoffset0;              /* first yoffset to use for updating R matrix in IL/ML states, 1 if IL, 0 if ML */
   int   fill_L, fill_R, fill_T; /* must we fill in the L, R, and T matrices? */
-  int   pty_idx;                /* index for truncation penalty, determined by values in tro */
+  int   pty_idx;                /* index for truncation penalty, determined by pass_idx */
   int   itrpenalty;             /* truncation penalty, differs based on pty_idx and if we're local or global */
 
   /* Contract check */
@@ -814,11 +815,11 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR
   else if(qdbidx == SMX_QDB2_LOOSE) { do_banded = TRUE;  dmax = cm->qdbinfo->dmax2; }
   else ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan, qdbidx is invalid");
 
-  /* determine which matrices we need to fill in based on <tro> */
-  fill_L = tro->allow_L       ? TRUE : FALSE;
-  fill_R = tro->allow_R       ? TRUE : FALSE;
-  fill_T = (fill_L && fill_R) ? TRUE : FALSE;
-  if((pty_idx = cm_tr_opts_PenaltyIdx(tro)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan(), tro->allow_L and tro->allow_R are both FALSE");
+  /* from <pass_idx>: determine which matrices we need to fill in and
+   * the appropriate truncation penalty index to use.
+   */
+  if((status = cm_TrFillFromPassIdx(pass_idx, &fill_L, &fill_R, &fill_T)) != eslOK) ESL_FAIL(status,       errbuf, "RefITrInsideScan(), unexpected pass idx: %d", pass_idx);
+  if((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1)                        ESL_FAIL(eslEINCOMPAT, errbuf, "RefITrInsideScan(), unexpected pass idx: %d", pass_idx);
   
   L = j0-i0+1;
   W = trsmx->W;
@@ -1172,9 +1173,10 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR
        * (penalty) from cm->trp into any emitting state. The penalty
        * differs depending on whether we are in local or global mode
        * and the value of 'pty_idx' which was determined from
-       * <tro>. In local mode the penalty includes the standard local
-       * begin probability as part of the penalty. Penalties are
-       * calculated in cm_tr_penalties_Create().
+       * <pass_idx> (passed in). In local mode the penalty includes
+       * the standard local begin probability as part of the
+       * penalty. Penalties are calculated in
+       * cm_tr_penalties_Create().
        */
       /* initializations */
       v = 0;
@@ -1367,7 +1369,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR
  *           errbuf    - for returning error messages
  *           mx        - the dp matrix, only cells within bands in cm->cp9b will be valid. 
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
- *           tro       - CM_TR_OPTS with information on which modes to allow
+ *           pass_idx  - pipeline pass index, tells us which modes to allow and trunc penalties to use
  *           dsq       - the sequence [1..(j0-i0+1)]   
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
@@ -1388,7 +1390,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, CM_TR
  *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, CM_TR_OPTS *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
+TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_idx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
 	    int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc)
 {
   int      status;
@@ -1439,7 +1441,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, CM_TR_OPT
   int      do_L_v, do_L_y, do_L_z, do_L_0; /* is L matrix valid for state v, y, z, 0? */
   int      do_R_v, do_R_y, do_R_z, do_R_0; /* is R matrix valid for state v, y, z, 0? */
   int      do_T_v, do_T_y, do_T_z, do_T_0; /* is T matrix valid for state v, y, z, 0? */
-  int      pty_idx;                /* index for truncation penalty, derived from tro */
+  int      pty_idx;                /* index for truncation penalty, determined by pass_idx */
   float    trpenalty;              /* truncation penalty, differs based on pty_idx and if we're local or global */
 
   /* Contract check */
@@ -1463,11 +1465,11 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, CM_TR_OPT
   float ***Ralpha  = mx->Rdp; /* pointer to the Ralpha DP matrix */
   float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
 
-  /* determine which matrices we need to fill in based on <tro> */
-  fill_L = tro->allow_L       ? TRUE : FALSE;
-  fill_R = tro->allow_R       ? TRUE : FALSE;
-  fill_T = (fill_L && fill_R) ? TRUE : FALSE;
-  if((pty_idx = cm_tr_opts_PenaltyIdx(tro)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), tro->allow_L and tro->allow_R are both FALSE");
+  /* from <pass_idx>: determine which matrices we need to fill in and
+   * the appropriate truncation penalty index to use.
+   */
+  if((status = cm_TrFillFromPassIdx(pass_idx, &fill_L, &fill_R, &fill_T)) != eslOK) ESL_FAIL(status,       errbuf, "TrCYKScanHB(), unexpected pass idx: %d", pass_idx);
+  if((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1)                        ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), unexpected pass idx: %d", pass_idx);
   
   /* ensure an alignment to ROOT_S (v==0) is possible */
   if (! (cp9b->Jvalid[0] || (fill_L && cp9b->Lvalid[0]) || (fill_R && cp9b->Rvalid[0]) || (fill_T &&cp9b->Tvalid[0]))) { 
@@ -2198,10 +2200,10 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, CM_TR_OPT
    * 
    * In truncated alignment the only way out of ROOT_S in local or
    * global mode is via a 'truncated begin' with a score (penalty)
-   * from cm->trp into any emitting state. The penalty was
-   * calculated in cm_tr_penalties_Create() and differs depending on
-   * whether we are in local or global mode and the value of
-   * 'pty_idx' which was passed in.
+   * from cm->trp into any emitting state. The penalty was calculated
+   * in cm_tr_penalties_Create() and differs depending on whether we
+   * are in local or global mode and the value of 'pty_idx' which was
+   * determined by the passed in value <pass_idx>.
    * 
    * We also determine best* arrays here for reporting hits.
    */
@@ -2454,7 +2456,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, CM_TR_OPT
  *           errbuf    - for returning error messages
  *           mx        - the dp matrix, only cells within bands in cm->cp9b will be valid. 
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
- *           tro       - CM_TR_OPTS with information on which modes to allow
+ *           pass_idx  - pipeline pass index, tells us which modes to allow and trunc penalties to use
  *           dsq       - the sequence [1..(j0-i0+1)]   
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
@@ -2475,7 +2477,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, CM_TR_OPT
  *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, CM_TR_OPTS *tro, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_idx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 		int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, char *ret_mode, float *ret_sc)
 {
   int      status;
@@ -2526,7 +2528,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, CM_TR
   int      do_L_v, do_L_y, do_L_z, do_L_0; /* is L matrix valid for state v, y, z, 0? */
   int      do_R_v, do_R_y, do_R_z, do_R_0; /* is R matrix valid for state v, y, z, 0? */
   int      do_T_v, do_T_y, do_T_z, do_T_0; /* is T matrix valid for state v, y, z, 0? */
-  int      pty_idx;                /* index for truncation penalty, derived from tro */
+  int      pty_idx;                /* index for truncation penalty, determined by pass_idx */
   float    trpenalty;              /* truncation penalty, differs based on pty_idx and if we're local or global */
 
   /* Contract check */
@@ -2550,11 +2552,11 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, CM_TR
   float ***Ralpha  = mx->Rdp; /* pointer to the Ralpha DP matrix */
   float ***Talpha  = mx->Tdp; /* pointer to the Talpha DP matrix */
 
-  /* determine which matrices we need to fill in based on <tro> */
-  fill_L = tro->allow_L       ? TRUE : FALSE;
-  fill_R = tro->allow_R       ? TRUE : FALSE;
-  fill_T = (fill_L && fill_R) ? TRUE : FALSE;
-  if((pty_idx = cm_tr_opts_PenaltyIdx(tro)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), tro->allow_L and tro->allow_R are both FALSE");
+  /* from <pass_idx>: determine which matrices we need to fill in and
+   * the appropriate truncation penalty index to use.
+   */
+  if((status = cm_TrFillFromPassIdx(pass_idx, &fill_L, &fill_R, &fill_T)) != eslOK) ESL_FAIL(status,       errbuf, "FTrInsideScanHB(), unexpected pass idx: %d", pass_idx);
+  if((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1)                        ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), unexpected pass idx: %d", pass_idx);
 
   /* ensure an alignment to ROOT_S (v==0) is possible */
   if (! (cp9b->Jvalid[0] || (fill_L && cp9b->Lvalid[0]) || (fill_R && cp9b->Rvalid[0]) || (fill_T &&cp9b->Tvalid[0]))) {
@@ -3285,10 +3287,10 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, CM_TR
    * 
    * In truncated alignment the only way out of ROOT_S in local or
    * global mode is via a 'truncated begin' with a score (penalty)
-   * from cm->trp into any emitting state. The penalty was
-   * calculated in cm_tr_penalties_Create() and differs depending on
-   * whether we are in local or global mode and the value of
-   * 'pty_idx' which was passed in.
+   * from cm->trp into any emitting state. The penalty was calculated
+   * in cm_tr_penalties_Create() and differs depending on whether we
+   * are in local or global mode and the value of 'pty_idx' which was
+   * determined by the passed in value <pass_idx>.
    * 
    * We also determine best* arrays here for reporting hits.
    */
@@ -3515,6 +3517,46 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, CM_TR
   return 0.; /* never reached */
 }
 
+/* Function: cm_TrFillFromPassIdx()
+ * Date:     EPN, Wed Feb 15 15:16:45 2012
+ *
+ * Purpose: Given a pipeline pass index, determine which 
+ *          of the marginal matrices we need to fill 
+ *          in to find the alignment in that mode.
+ *
+ *          Return TRUE/FALSE values in <ret_fill_{L,R,T}>.
+ *          Note that we always must fill in J matrices so a fill_J 
+ *          value is unnecessary, it's implicitly true.
+ *
+ * Args:     mode       - optimal mode
+ *           ret_fill_L - RETURN: should we fill in L based on <ret_mode>?
+ *           ret_fill_R - RETURN: should we fill in R based on <ret_mode>?
+ *           ret_fill_T - RETURN: should we fill in T based on <ret_mode>?
+ *
+ * Throws:   eslEINVAL if pass_idx is not PLI_PASS_5P_ONLY, PLI_PASS_3P_ONLY,
+ *           or PLI_PASS_5P_AND_3P.
+ */
+int
+cm_TrFillFromPassIdx(int pass_idx, int *ret_fill_L, int *ret_fill_R, int *ret_fill_T)
+{
+  int fill_L, fill_R, fill_T;
+  int invalid_idx = FALSE;
+
+  fill_L = fill_R = fill_T = FALSE;
+  switch(pass_idx) {
+  case PLI_PASS_5P_AND_3P: fill_L = fill_R = fill_T = TRUE; break;
+  case PLI_PASS_5P_ONLY:   fill_R = TRUE; break;
+  case PLI_PASS_3P_ONLY:   fill_L = TRUE; break;
+  default: invalid_idx = TRUE; break;
+  }
+
+  if(ret_fill_L != NULL) *ret_fill_L = fill_L;
+  if(ret_fill_R != NULL) *ret_fill_R = fill_R;
+  if(ret_fill_T != NULL) *ret_fill_T = fill_T;
+
+  if(invalid_idx) return eslEINVAL;
+  return eslOK;
+}
 
 /*****************************************************************
  * Benchmark driver
@@ -3557,16 +3599,18 @@ static ESL_OPTIONS options[] = {
   { "--orig",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also search with original trCYK",                0},
   { "--dc",      eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also search with D&C trCYK",                     0},
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "don't use QDBs", 0},
-  { "--i27",     eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "reproduce Kolbe, Eddy 2009 marginal score calculation", 2 },
-  { "--hb",      eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also run HMM banded scanning trCYK", 2 },
-  { "--onlyhb",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "only run HMM banded scanning trCYK", 2 },
-  { "--ins",     eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also run trInside", 2 },
-  { "--tau",     eslARG_REAL,   "5e-6",NULL, "0<x<1",NULL, NULL, NULL, "set tail loss prob for --hb to <x>", 2 },
-  { "--cp9noel", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "-g",           "turn OFF local ends in cp9 HMMs", 2 },
-  { "--cp9gloc", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "-g,--cp9noel", "configure CP9 HMM in glocal mode", 2 },
-  { "--thresh1", eslARG_REAL,  "0.01", NULL, NULL,  NULL,  NULL,  NULL, "set HMM bands thresh1 to <x>", 2 },
-  { "--thresh2", eslARG_REAL,  "0.99", NULL, NULL,  NULL,  NULL,  NULL, "set HMM bands thresh2 to <x>", 2 },
-  { "--sizelimit",eslARG_REAL, "128.", NULL, "x>0", NULL,  NULL,  NULL, "set maximum allowed size of HB matrices to <x> Mb", 2 },
+  { "--i27",     eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "reproduce Kolbe, Eddy 2009 marginal score calculation", 0 },
+  { "--hb",      eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also run HMM banded scanning trCYK", 0 },
+  { "--onlyhb",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "only run HMM banded scanning trCYK", 0 },
+  { "--ins",     eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also run trInside", 0 },
+  { "--tau",     eslARG_REAL,   "5e-6",NULL, "0<x<1",NULL, NULL, NULL, "set tail loss prob for --hb to <x>", 0 },
+  { "--cp9noel", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "-g",           "turn OFF local ends in cp9 HMMs", 0 },
+  { "--cp9gloc", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "-g,--cp9noel", "configure CP9 HMM in glocal mode", 0 },
+  { "--thresh1", eslARG_REAL,  "0.01", NULL, NULL,  NULL,  NULL,  NULL, "set HMM bands thresh1 to <x>", 0 },
+  { "--thresh2", eslARG_REAL,  "0.99", NULL, NULL,  NULL,  NULL,  NULL, "set HMM bands thresh2 to <x>", 0 },
+  { "--sizelimit",eslARG_REAL, "128.", NULL, "x>0", NULL,  NULL,  NULL, "set maximum allowed size of HB matrices to <x> Mb", 0 },
+  { "--5ponly",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL,"--3ponly", "only allow 5' truncations", 0 },
+  { "--3ponly",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL,  NULL, "only allow 3' truncations", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -3591,13 +3635,13 @@ main(int argc, char **argv)
   ESL_SQFILE     *sqfp  = NULL;  /* open sequence input file stream */
   ESL_SQ         *sq    = NULL;  /* a sequence */
   char            errbuf[eslERRBUFSIZE];
-  CM_TR_OPTS     *tro   = NULL;
   CMConsensus_t  *cons  = NULL;
   Parsetree_t    *tr    = NULL;
   float           size_limit = esl_opt_GetReal(go, "--sizelimit");
   float           save_tau, save_cp9b_thresh1, save_cp9b_thresh2;
   float           hbmx_Mb, trhbmx_Mb;
   int             qdbidx;
+  int             pass_idx;
 
   /* open CM file */
   if ((status = cm_file_Open(cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
@@ -3628,13 +3672,15 @@ main(int argc, char **argv)
   if (esl_opt_IsUsed(go, "--thresh1")) { cm->cp9b->thresh1 = esl_opt_GetReal(go, "--thresh1"); }
   if (esl_opt_IsUsed(go, "--thresh2")) { cm->cp9b->thresh2 = esl_opt_GetReal(go, "--thresh2"); }
 
+  if     (esl_opt_GetBoolean(go, "--5ponly")) pass_idx = PLI_PASS_5P_ONLY;
+  else if(esl_opt_GetBoolean(go, "--3ponly")) pass_idx = PLI_PASS_3P_ONLY;
+  else                                        pass_idx = PLI_PASS_5P_AND_3P;
+
   if((status = cm_Configure(cm, errbuf, -1)) != eslOK) cm_Fail(errbuf);
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
-
-  tro = cm_tr_opts_Create(cm);
 
   if(esl_opt_GetBoolean(go, "--i27")) { 
     SetMarginalScores_reproduce_i27(cm);
@@ -3664,7 +3710,7 @@ main(int argc, char **argv)
       while(1) { 
 	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
 				   TRUE,  /* doing search? */
-				   NULL,  /* we are not allowing truncated alignments */
+				   PLI_PASS_STD,  /* we are not allowing truncated alignments */
 				   0)) != eslOK) cm_Fail(errbuf);
 	if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, &hbmx_Mb)) != eslOK) return status; 
 	if(hbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */
@@ -3699,8 +3745,7 @@ main(int argc, char **argv)
       while(1) { 
 	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
 				   TRUE,  /* doing search? */
-				   tro,   /* we are allowing truncated alignments */
-				   0)) != eslOK) cm_Fail(errbuf);
+				   pass_idx, 0)) != eslOK) cm_Fail(errbuf);
 	if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, NULL, NULL, NULL, &trhbmx_Mb)) != eslOK) return status; 
 	if(trhbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */
 	if(cm->tau > 0.01)         cm_Fail("tau reached limit, unable to create matrix smaller than size limit of %.2f Mb\n", size_limit);
@@ -3719,13 +3764,13 @@ main(int argc, char **argv)
       PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);
 
       esl_stopwatch_Start(w);
-      if((status = TrCYKScanHB(cm, errbuf, cm->trhb_mx, size_limit, tro, dsq, 1, L, 0., NULL, FALSE, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = TrCYKScanHB(cm, errbuf, cm->trhb_mx, size_limit, pass_idx, dsq, 1, L, 0., NULL, FALSE, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits (mode: %s)", i, "TrCYKScanHB(): ", sc, MarginalMode(mode));
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
       esl_stopwatch_Start(w);
-      if((status = FTrInsideScanHB(cm, errbuf, cm->trhb_mx, size_limit, tro, dsq, 1, L, 0., NULL, FALSE, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = FTrInsideScanHB(cm, errbuf, cm->trhb_mx, size_limit, pass_idx, dsq, 1, L, 0., NULL, FALSE, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits (mode: %s)", i, "FTrInsideScanHB(): ", sc, MarginalMode(mode));
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -3744,7 +3789,7 @@ main(int argc, char **argv)
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 	
       esl_stopwatch_Start(w);
-      if((status = RefTrCYKScan(cm, errbuf, cm->trsmx, qdbidx,  tro, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = RefTrCYKScan(cm, errbuf, cm->trsmx, qdbidx,  pass_idx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits (mode: %s)", i, "RefTrCYKScan(): ", sc, MarginalMode(mode));
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -3770,7 +3815,7 @@ main(int argc, char **argv)
       cm->search_opts  |= CM_SEARCH_INSIDE;
 
       esl_stopwatch_Start(w);
-      if((status = RefITrInsideScan(cm, errbuf, cm->trsmx, qdbidx, tro, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = RefITrInsideScan(cm, errbuf, cm->trsmx, qdbidx, pass_idx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits (mode: %s)", i, "RefITrInsideScan(): ", sc, MarginalMode(mode));
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -3807,7 +3852,6 @@ main(int argc, char **argv)
   esl_alphabet_Destroy(abc);
   esl_stopwatch_Destroy(w);
   esl_getopts_Destroy(go);
-  if(tro != NULL) free(tro);
   return 0;
 }
 #endif /*IMPL_TRUNC_SEARCH_BENCHMARK*/
