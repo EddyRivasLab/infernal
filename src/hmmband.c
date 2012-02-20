@@ -249,10 +249,11 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
    * truncated alignment, based on value of pass_idx.
    */
   switch(pass_idx) { 
-  case PLI_PASS_5P_ONLY:   do_trunc = TRUE;  cp9 = cm->Rcp9; break;
-  case PLI_PASS_3P_ONLY:   do_trunc = TRUE;  cp9 = cm->Lcp9; break;
-  case PLI_PASS_5P_AND_3P: do_trunc = TRUE;  cp9 = cm->Tcp9; break;
-  default:                 do_trunc = FALSE; cp9 = cm->cp9;  break;
+  case PLI_PASS_5P_ONLY_FORCE:   do_trunc = TRUE;  cp9 = cm->Rcp9; break;
+  case PLI_PASS_3P_ONLY_FORCE:   do_trunc = TRUE;  cp9 = cm->Lcp9; break;
+  case PLI_PASS_5P_AND_3P_FORCE: do_trunc = TRUE;  cp9 = cm->Tcp9; break;
+  case PLI_PASS_5P_AND_3P_ANY:   do_trunc = TRUE;  cp9 = cm->Tcp9; break;
+  default:                       do_trunc = FALSE; cp9 = cm->cp9;  break;
   }
   if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, relevant cp9 is NULL.\n");
 

@@ -4797,8 +4797,15 @@ cm_Posterior(CM_t *cm, char *errbuf, int L, float size_limit, CM_MX *ins_mx, CM_
   float ***beta  = out_mx->dp; /* pointer to the beta DP matrix */
   float ***post  = post_mx->dp; /* pointer to the post DP matrix */
 
-  /* grow the posterior matrix based on the current sequence */
-  if((status = cm_mx_GrowTo(cm, post_mx, errbuf, L, size_limit)) != eslOK) return status;
+  /* grow our post matrix, but only if isn't also our out_mx in which
+   * case we know we're already big enought (also in that case we
+   * don't want to call GrowTo b/c it can potentially free the DP
+   * matrix memory and reallocate it, which would be bad b/c we 
+   * need the out_mx!) 
+   */
+  if(post_mx != out_mx) { 
+    if((status = cm_mx_GrowTo(cm, post_mx, errbuf, L, size_limit)) != eslOK) return status;
+  }
 
   sc = ins_mx->dp[0][L][L];
 
@@ -4883,8 +4890,15 @@ cm_PosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX *ins_mx
 
   sc = alpha[0][jp_0][Lp_0];
 
-  /* grow our post matrix */
-  if((status = cm_hb_mx_GrowTo(cm, post_mx, errbuf, cm->cp9b, L, size_limit)) != eslOK) return status; 
+  /* grow our post matrix, but only if isn't also our out_mx in which
+   * case we know we're already big enought (also in that case we
+   * don't want to call GrowTo b/c it can potentially free the DP
+   * matrix memory and reallocate it, which would be bad b/c we 
+   * need the out_mx!) 
+   */
+  if(post_mx != out_mx) { 
+    if((status = cm_hb_mx_GrowTo(cm, post_mx, errbuf, cm->cp9b, L, size_limit)) != eslOK) return status; 
+  }
 
   /* If local ends are on, start with the EL state (cm->M), otherwise
    * M deck is not valid. Note: there are no bands on the EL state 

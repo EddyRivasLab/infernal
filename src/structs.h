@@ -1983,41 +1983,41 @@ typedef struct cm_file_s {
 
 /* Pipeline pass indices. The pipeline potentially does multiple
  * passes over each sequence. Don't muck with the order here, it'll
- * screw up things in strange ways. For example, PLI_PASS_STD must
+ * screw up things in strange ways. For example, PLI_PASS_STD_ANY must
  * come before the 5P and 3P truncated stages, cm_Pipeline() depends
  * on it.
+ * 
+ * Not all passes are performed in a pipeline. If pli->do_trunc_ends,
+ * passes 1,2,3,4 are performed. If pli->do_trunc_any, passes 1 and 5
+ * are performed. If neither of these flags is TRUE only pass 1 is
+ * performed.
  *
  * These values have two interrelated but different roles:
  *
- * 1. [1..4] are flags indicating which type of truncated alignment
+ * 1. [1..5] are flags indicating which type of truncated alignment
  * is/was allowed in/by a DP scanner/alignment function. Each pass of
  * the pipeline allows a different combination of 5' and/or 3'
- * truncated alignment. 
+ * truncated alignment and differs in whether it enforces the 
+ * first and/or final residue be included (_FORCE suffixed) or 
+ * not (_ANY suffixed). 
  *
  * A wrinkle is that these indices used for DP truncated alignment
- * functions called for 'cmalign' (either PLI_PASS_5P_AND_3P or
- * PLI_PASS_STD) even though those functions are not called as part of
- * a search/scan pipeline.  In this case, the pass index is still
- * relevant in informing the alignment function which truncation
+ * functions called for 'cmalign' (either PLI_PASS_5P_AND_3P_FORCE or
+ * PLI_PASS_STD_ANY) even though those functions are not called as
+ * part of a search/scan pipeline. In this case, the pass index is
+ * still relevant in informing the alignment function which truncation
  * penalty score to apply to any resulting alignment score.
  *
- * 2. [0..4] are indices in cm->pli->acct[], accounting states for each 
+ * 2. [0..5] are indices in cm->pli->acct[], accounting states for each 
  * pass of the pipeline.
  */
-///#define PLI_PASS_SUMMED          0
-///#define PLI_PASS_STD_ANY         1  /* only standard alns allowed, no truncated ones, any subseq */
-///#define PLI_PASS_5P_ONLY_I0      2  /* only 5' truncated alns allowed, first (i0) residue must be included */
-///#define PLI_PASS_3P_ONLY_J0      3  /* only 3' truncated alns allowed, final (j0) residue must be included */
-///#define PLI_PASS_5P_AND_3P_I0_J0 4  /* 5' and 3' truncated alns allowed, first & final (i0 & j0) residue must be included */
-///#define PLI_PASS_5P_AND_3P_ANY   5  /* 5' and 3' truncated alns allowed, any subseq can comprise hit */
-///#define NPLI_PASSES              6
-
-#define PLI_PASS_SUMMED    0
-#define PLI_PASS_STD       1  /* only standard alignments allowed, no truncated ones */
-#define PLI_PASS_5P_ONLY   2  /* only 5' truncated alignments allowed */
-#define PLI_PASS_3P_ONLY   3  /* only 3' truncated alignments allowed */
-#define PLI_PASS_5P_AND_3P 4  /* 5' and 3' truncated alignments allowed */
-#define NPLI_PASSES        5
+#define PLI_PASS_SUMMED          0
+#define PLI_PASS_STD_ANY         1  /* only standard alns allowed, no truncated ones, any subseq */
+#define PLI_PASS_5P_ONLY_FORCE   2  /* only 5' truncated alns allowed, first (i0) residue must be included */
+#define PLI_PASS_3P_ONLY_FORCE   3  /* only 3' truncated alns allowed, final (j0) residue must be included */
+#define PLI_PASS_5P_AND_3P_FORCE 4  /* 5' and 3' truncated alns allowed, first & final (i0 & j0) residue must be included */
+#define PLI_PASS_5P_AND_3P_ANY   5  /* 5' and 3' truncated alns allowed, any subseq can comprise hit */
+#define NPLI_PASSES              6
 
 typedef struct cm_pipeline_accounting_s {
   /* CM_PIPELINE accounting. (reduceable in threaded/MPI parallel version)     */
@@ -2161,6 +2161,8 @@ typedef struct cm_pipeline_s {
   int     glen_step;            /* step size for halving glc p7 thr if do_glen */
   int     do_glocal_cm_stages;  /* TRUE to use CM in glocal mode for final stages */
   int     do_trunc_ends;        /* TRUE to use truncated CM algs at sequence ends */
+  int     do_trunc_any;         /* TRUE to use truncated CM algs for entire sequences */
+  int     do_trunc_loc_corr;    /* TRUE to correct glocal HMM scores to local ones for truncated hits */
 
   /* Parameters controlling p7 domain/envelope defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */

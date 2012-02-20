@@ -69,7 +69,7 @@ CreateParsetree(int size)
   new->n = 0;
   new->is_std    = TRUE;
   new->trpenalty = 0.;
-  new->pass_idx  = PLI_PASS_STD;
+  new->pass_idx  = PLI_PASS_STD_ANY;
   return new;
  ERROR:
   cm_Fail("ERROR allocated parsetree.\n");
@@ -1913,7 +1913,7 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
  * based on     TraceScoreCorrection() from HMMER:
  * EPN 08.24.06 Janelia
  * 
- * Purpose:  Calculate a correction (in integer log_2 odds) to be
+ * Purpose:  Calculate a correction (in log_2 odds) to be
  *           applied to a sequence, using a second null model, 
  *           based on a traceback. All emissions are corrected;
  *           The null model is constructed /post hoc/ as the
@@ -2010,7 +2010,7 @@ ParsetreeScoreCorrectionNull2(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
 /* Function: ParsetreeScoreCorrectionNull3()
  * Incept:   EPN, Sat May  3 15:38:24 2008
  * 
- * Purpose:  Calculate a correction (in integer log_2 odds) to be
+ * Purpose:  Calculate a correction (in log_2 odds) to be
  *           applied to a sequence, using a third null model, the
  *           composition of the target sequence. 
  *           All emissions are corrected;
@@ -2101,7 +2101,7 @@ ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
 /* Function: ScoreCorrectionNull3()
  * Incept:   EPN, Sat May 10 17:58:03 2008
  * 
- * Purpose:  Calculate a correction (in integer log_2 odds) to be
+ * Purpose:  Calculate a correction (in log_2 odds) to be
  *           applied to a sequence, using a third null model, the
  *           composition of the target sequence. 
  *           All emissions are corrected;
@@ -2164,7 +2164,7 @@ ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len
 /* Function: ScoreCorrectionNull3CompUnknown()
  * Incept:   EPN, Thu May 22 13:16:04 2008
  * 
- * Purpose:  Calculate a correction (in integer log_2 odds) to be
+ * Purpose:  Calculate a correction (in log_2 odds) to be
  *           applied to a sequence, using a third null model, the
  *           composition of the target sequence. 
  *           All emissions are corrected;
@@ -2475,7 +2475,8 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int have_i0, int have_j0, char *e
     /* aligned fragment is from g..h (1<=g<=h<=clen) in consensus positions, 
      * nd is currently the lowest node in the model tree that spans g..h. 
      */
-    if(tr->pass_idx == PLI_PASS_5P_ONLY && have_i0) { /* a 5' truncation only */
+    if(tr->pass_idx == PLI_PASS_5P_ONLY_FORCE && have_i0) { 
+      /* a 5' truncation only */
       rpos = cto_span;
       /* find highest nd in the tree whose subtree ends at exactly cto_span 
        * we'll guess that our full hit would be rooted at that node if it wasn't truncated. 
@@ -2486,7 +2487,8 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int have_i0, int have_j0, char *e
       }
       cfrom_span = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) ? cm->emap->lpos[nd] : cm->emap->lpos[nd] + 1;
     }
-    if(tr->pass_idx == PLI_PASS_3P_ONLY && have_j0) { /* a 3' truncation only */
+    if(tr->pass_idx == PLI_PASS_3P_ONLY_FORCE && have_j0) { 
+      /* a 3' truncation only */
       lpos = cfrom_span;
       /* find highest nd in the tree whose subtree begins at exactly cfrom_span 
        * we'll guess that our full hit would be rooted at that node if it wasn't truncated. 
@@ -2497,12 +2499,19 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int have_i0, int have_j0, char *e
       }
       cto_span   = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) ? cm->emap->rpos[nd] : cm->emap->rpos[nd] - 1;
     }
-    if(tr->pass_idx == PLI_PASS_5P_AND_3P && have_i0 && have_j0) { /* 5' and 3' truncation and we have the first and final residue aligned */
+    if(tr->pass_idx == PLI_PASS_5P_AND_3P_FORCE && have_i0 && have_j0) { 
+      /* 5' and 3' truncation and we have the first and final residue aligned */
       /* we guess it was a full hit */
       cfrom_span = 1;
       cto_span   = cm->clen;
     }
-    if(tr->pass_idx == PLI_PASS_STD) { 
+    if(tr->pass_idx == PLI_PASS_5P_AND_3P_ANY) { 
+      /* we've allowed truncated hits anywhere, not sure what to do here... */
+      /* we guess it was a full hit */
+      cfrom_span = 1;
+      cto_span   = cm->clen;
+    }
+    if(tr->pass_idx == PLI_PASS_STD_ANY) { 
       /* sanity check */
       if(cfrom_emit != cfrom_span) ESL_FAIL(eslFAIL, errbuf, "ParsetreeToCMBounds(), std pipeline pass, cfrom_emit != cfrom_span (bug)");
       if(cto_emit   != cto_span)   ESL_FAIL(eslFAIL, errbuf, "ParsetreeToCMBounds(), std pipeline pass, cto_emit != cto_span (bug)");

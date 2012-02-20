@@ -144,6 +144,8 @@ static ESL_OPTIONS options[] = {
   { "--glX",        eslARG_INT,   "500",  NULL, NULL,    NULL,"--glen",NULL,             "maximum value for len-dependent glocal threshold", 7},
   { "--glstep",     eslARG_INT,   "100",  NULL, NULL,    NULL,"--glen",NULL,             "for len-dependent glocal thr, step size for halving thr", 7},
   { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "only allow normal local begins in truncated hits", 7},
+  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"-g,--notrunc",     "allow truncated hits anywhere within sequences", 7},
+  /* MAKE THIS A DEVELOPER OPT OR REMOVE IT AFTER TESTING */ { "--loctrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--notrunc",        "treat truncated HMM scores as if they were fully local", 7}, 
   { "--xtau",       eslARG_REAL,  "2.",   NULL, NULL,    NULL,  NULL,  NULL,             "set multiplier for tau to <x> when tightening HMM bands", 7},
   /* Other options */
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },
@@ -701,8 +703,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if (tblfp)    cm_tophits_TabularTargets(tblfp,    qsq->name, qsq->acc, info->th, info->pli, (seq_idx == 1));
 
       esl_stopwatch_Stop(w);
-      cm_pli_Statistics(ofp, info->pli, PLI_PASS_STD, w);
-      fprintf(ofp, "//\n"); fflush(ofp);
+      cm_pli_Statistics(ofp, info->pli, w);
+      fflush(ofp);
 
       cm_pipeline_Destroy(info->pli, NULL);
       cm_tophits_Destroy(info->th);
@@ -1170,8 +1172,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if (tblfp)    cm_tophits_TabularTargets(tblfp,    qsq->name, qsq->acc, th, pli, (seq_idx == 1));
       
       esl_stopwatch_Stop(w);
-      cm_pli_Statistics(ofp, pli, PLI_PASS_STD, w);
-      fprintf(ofp, "//\n");
+      cm_pli_Statistics(ofp, pli, w);
 
       cm_file_Close(cmfp);
       cm_pipeline_Destroy(pli, NULL);

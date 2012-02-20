@@ -1231,7 +1231,8 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      lseq, rseq, 
 	      cm_alidisplay_TruncString(th->hit[h]->ad));
       if (pli->do_alignments) { 
-	if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f", th->hit[h]->ad->avgpp); }
+	//if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f", th->hit[h]->ad->avgpp); }
+	if(th->hit[h]->ad->ppline) { fprintf(ofp, " %8.6f", th->hit[h]->ad->avgpp); }
       	else                       { fprintf(ofp, " %6.2f", th->hit[h]->ad->sc); }
 	fprintf(ofp, " %5s %7.2f %7.2f\n\n",	
 		(th->hit[h]->ad->used_hbands ? "yes" : "no"),
@@ -1696,30 +1697,37 @@ cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th)
  *            is allowed, and return TRUE if it is and should be
  *            reported. Otherwise return FALSE. 
  *            
- *            The decision depends on the mode of the hit, 
- *            locality mode of the CM and whether or not
- *            the hit contains the first and/or final residue
- *            of its source sequence. 
+ *            The decision depends on the pipeline pass index, the
+ *            mode of the hit, the locality mode of the CM and whether
+ *            or not the hit contains the first and/or final residue
+ *            of its source sequence.
  * 
- * Args:      cm    - the model, we need its emitmap and clen
- *            start - start position of the hit
- *            stop  - end position of the hit
- *            i0    - start position of source sequence
- *            j0    - end position of source sequence
- *            mode  - marginal mode of hit
- *            b     - entry state of the hit, we used a 
- *                    truncated begin into this state.
+ * Args:      cm       - the model, we need its emitmap and clen
+ *            pass_idx - pass index hit was found in, if 
+ *                       PLI_PASS_STD_ANY or PLI_PASS_5P_AND_3P_ANY
+ *                       we allow all hits.
+ *            start    - start position of the hit
+ *            stop     - end position of the hit
+ *            i0       - start position of source sequence
+ *            j0       - end position of source sequence
+ *            mode     - marginal mode of hit
+ *            b        - entry state of the hit, we used a 
+ *                       truncated begin into this state.
  * Returns:   informative string
  */
 int 
-cm_hit_AllowTruncation(CM_t *cm, int64_t start, int64_t stop, int64_t i0, int64_t j0, char mode, int b)
+cm_hit_AllowTruncation(CM_t *cm, int pass_idx, int64_t start, int64_t stop, int64_t i0, int64_t j0, char mode, int b)
 {
   int in_local_mode = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
   int nd = cm->ndidx[b];
   int lpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) ? cm->emap->lpos[nd] : cm->emap->lpos[nd] + 1;
   int rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) ? cm->emap->rpos[nd] : cm->emap->rpos[nd] - 1;
 
-  if(start == i0 && stop == j0) return TRUE; /* always allow full sequence hits i0..j0 */
+  /* if our pass index allows 'any' hit, return TRUE */
+  if(pass_idx == PLI_PASS_STD_ANY || pass_idx == PLI_PASS_5P_AND_3P_ANY) return TRUE;
+
+  /* always allow full sequence hits i0..j0 */
+  if(start == i0 && stop == j0) return TRUE; 
 
   /* if we get here, hit does not include full seq i0..j0 */
   if(in_local_mode) { 

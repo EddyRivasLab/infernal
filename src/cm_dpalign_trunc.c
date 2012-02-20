@@ -7556,7 +7556,6 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	  for (d = hdmax[v][jp_v]; d >= hdmin[v][jp_v]; d--) {
 	    i = j-d+1;
 	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
-	  
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
 	      /* mind the following sneaky if statement: in truncated
 	       * aln, the only way out of state 0 is through a
@@ -7869,8 +7868,15 @@ cm_TrPosterior(CM_t *cm, char *errbuf, int L, float size_limit, char preset_mode
   if(preset_mode == TRMODE_R) sc = ins_mx->Rdp[0][L][L];
   if(preset_mode == TRMODE_T) sc = ins_mx->Tdp[0][L][L];
 
-  /* grow the posterior matrix based on the current sequence */
-  if((status = cm_tr_mx_GrowTo(cm, post_mx, errbuf, L, size_limit)) != eslOK) return status;
+  /* grow our post matrix, but only if isn't also our out_mx in which
+   * case we know we're already big enought (also in that case we
+   * don't want to call GrowTo b/c it can potentially free the DP
+   * matrix memory and reallocate it, which would be bad b/c we 
+   * need the out_mx!) 
+   */
+  if(post_mx != out_mx) { 
+    if((status = cm_tr_mx_GrowTo(cm, post_mx, errbuf, L, size_limit)) != eslOK) return status;
+  }
 
   /* If local ends are on, start with the EL state (cm->M), otherwise
    * it's not a valid deck. */
@@ -7996,8 +8002,15 @@ cm_TrPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char preset_mo
   if(preset_mode == TRMODE_R) sc = ins_mx->Rdp[0][jp_0][Lp_0];
   if(preset_mode == TRMODE_T) sc = ins_mx->Tdp[0][jp_0][Lp_0];
 
-  /* grow our post matrix */
-  if((status = cm_tr_hb_mx_GrowTo(cm, post_mx, errbuf, cm->cp9b, L, size_limit)) != eslOK) return status; 
+  /* grow our post matrix, but only if isn't also our out_mx in which
+   * case we know we're already big enought (also in that case we
+   * don't want to call GrowTo b/c it can potentially free the DP
+   * matrix memory and reallocate it, which would be bad b/c we 
+   * need the out_mx!) 
+   */
+  if(post_mx != out_mx) { 
+    if((status = cm_tr_hb_mx_GrowTo(cm, post_mx, errbuf, cm->cp9b, L, size_limit)) != eslOK) return status; 
+  }
 
   /* If local ends are on, start with the non-banded EL state (cm->M), otherwise it's not a valid deck. */
   if(cm->flags & CMH_LOCAL_END) { 
@@ -8819,6 +8832,7 @@ cm_TrPostCodeHB(CM_t *cm, char *errbuf, int L, CM_TR_HB_EMIT_MX *emit_mx, Parset
     if(cm->sttype[v] == EL_st) { /* EL state, we have to handle this guy special */
       if(mode == TRMODE_J) {
 	for(r = i; r <= j; r++) { /* we have to annotate from residues i..j */
+	  if(! (cm->flags & CMH_LOCAL_END)) ESL_FAIL(eslEINVAL, errbuf, "cm_TrPostCodeHB() using EL state to emit residue %d, but ELs are turned off!\n", r);
 	  /* remember the EL deck is non-banded */
 	  cur_log_pp = emit_mx->Jl_pp[v][r];
 	  ppstr[r-1] = Fscore2postcode(cur_log_pp);

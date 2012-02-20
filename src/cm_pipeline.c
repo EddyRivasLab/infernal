@@ -244,8 +244,22 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->glen_min         = esl_opt_GetInteger(go, "--glN");
   pli->glen_max         = esl_opt_GetInteger(go, "--glX");
   pli->glen_step        = esl_opt_GetInteger(go, "--glstep");
-  pli->do_trunc_ends    = (esl_opt_GetBoolean(go, "--notrunc")) ? FALSE : TRUE;
   pli->xtau             = esl_opt_GetReal(go, "--xtau");
+
+  /* configure truncation hit allowance parameters */
+  if(esl_opt_GetBoolean(go, "--anytrunc")) { 
+    pli->do_trunc_ends = FALSE;
+    pli->do_trunc_any  = TRUE;
+  }
+  else if(esl_opt_GetBoolean(go, "--notrunc")) { 
+    pli->do_trunc_ends = FALSE;
+    pli->do_trunc_any  = FALSE;
+  }
+  else { 
+    pli->do_trunc_ends = TRUE;
+    pli->do_trunc_any  = FALSE;
+  }
+  pli->do_trunc_loc_corr = (esl_opt_GetBoolean(go, "--loctrunc")) ? TRUE : FALSE;
 
   /* Configure acceleration pipeline thresholds */
   pli->do_cm         = TRUE;
@@ -811,7 +825,7 @@ cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm)
  cm_pli_NewSeq(CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx)
 {
   /* Update number of residues read/searched in standard pipeline passes */
-  pli->acct[PLI_PASS_STD].nres += sq->n;
+  pli->acct[PLI_PASS_STD_ANY].nres += sq->n;
 
   /* Update cur_seq_idx, which is a unique identifier for the sequence, so 
    * we can reliably remove overlaps. This index is copied to all the 
@@ -1405,9 +1419,14 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
     *ret_nenv = 0;
     return eslOK;    /* if there's no envelopes to search in, return */
   }
-  do_local_envdef = (pli->do_localenv) ? TRUE : FALSE;
 
-  if((pli->cur_pass_idx == PLI_PASS_5P_ONLY || pli->cur_pass_idx == PLI_PASS_3P_ONLY || pli->cur_pass_idx == PLI_PASS_5P_AND_3P) && 
+  /* Will we use local envelope definition? Only if do_localenv is on,
+   * or we're in the special pipeline pass where we allow any
+   * truncated hits (only possibly true if pli->do_trunc_any is TRUE).
+   */
+  do_local_envdef = (pli->do_localenv || pli->cur_pass_idx == PLI_PASS_5P_AND_3P_ANY) ? TRUE : FALSE;
+
+  if((pli->cur_pass_idx == PLI_PASS_5P_ONLY_FORCE || pli->cur_pass_idx == PLI_PASS_3P_ONLY_FORCE || pli->cur_pass_idx == PLI_PASS_5P_AND_3P_FORCE) && 
      (nwin > 1)) ESL_FAIL(eslFAIL, pli->errbuf, "researching terminus but more than 1 window exists");
 
   nenv_alloc = nwin;
@@ -1421,18 +1440,20 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 #endif
 
   /* determine which generic model we'll need to use based on which pass we're in */
-  use_gm = use_Tgm = use_Rgm = use_Lgm = FALSE; /* one of these is set to TRUE below */
-  switch(pli->cur_pass_idx) { 
-  case PLI_PASS_STD:       use_gm  = TRUE; break;
-  case PLI_PASS_5P_ONLY:   use_Rgm = TRUE; break;
-  case PLI_PASS_3P_ONLY:   use_Lgm = TRUE; break;
-  case PLI_PASS_5P_AND_3P: use_Tgm = TRUE; break;
-  default: ESL_FAIL(eslEINVAL, pli->errbuf, "cm_pli_P7Filter() invalid pass index");
+  use_gm = use_Tgm = use_Rgm = use_Lgm = FALSE; /* one of these is set to TRUE below if nec */
+  if(! do_local_envdef) { 
+    switch(pli->cur_pass_idx) { 
+    case PLI_PASS_STD_ANY:          use_gm = TRUE; break;
+    case PLI_PASS_5P_ONLY_FORCE:   use_Rgm = TRUE; break;
+    case PLI_PASS_3P_ONLY_FORCE:   use_Lgm = TRUE; break;
+    case PLI_PASS_5P_AND_3P_FORCE: use_Tgm = TRUE; break;
+    default: ESL_FAIL(eslEINVAL, pli->errbuf, "cm_pli_P7Filter() invalid pass index");
+    }
   }
 
   /* If we're in SCAN mode and we don't yet have the generic model we need, read the 
    * HMM and create it. This could be optimized if we kept the hmm around when we
-   * read the generic profile in pass 1 (PLI_PASS_STD), that way we wouldn't need
+   * read the generic profile in pass 1 (PLI_PASS_STD_ANY), that way we wouldn't need
    * to read the file each time, we could just use the *opt_gm and the hmm to 
    * create Lgm, Rgm or Tgm as needed.
    */
@@ -1489,22 +1510,32 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
     p7_bg_SetLength(bg, wlen);
     p7_bg_NullOne(bg, seq->dsq, wlen, &nullsc);
 
-    if(do_local_envdef) { /* we can use optimized matrices and, consequently, p7_domaindef_ByPosteriorHeuristics */
+    if(do_local_envdef) { 
+      /* Local envelope defn: we can use optimized matrices and,
+       * consequently, p7_domaindef_ByPosteriorHeuristics().
+       */
       p7_oprofile_ReconfigLength(om, wlen);
       p7_ForwardParser(seq->dsq, wlen, om, pli->oxf, NULL);
       p7_omx_GrowTo(pli->oxb, om->M, 0, wlen);
       p7_BackwardParser(seq->dsq, wlen, om, pli->oxf, pli->oxb, NULL);
-      status = p7_domaindef_ByPosteriorHeuristics (seq, om, pli->oxf, pli->oxb, pli->fwd,  pli->bck, pli->ddef, NULL); 
+      status = p7_domaindef_ByPosteriorHeuristics (seq, om, pli->oxf, pli->oxb, pli->fwd, pli->bck, pli->ddef, NULL); 
     }
-    else { /* we're defining envelopes in glocal mode, so we need to fill 
-	    * generic fwd/bck matrices and pass them to p7_domaindef_GlocalByPosteriorHeuristics() */
+    else { 
+      /* We're defining envelopes in glocal mode, so we need to fill
+       * generic fwd/bck matrices and pass them to
+       * p7_domaindef_GlocalByPosteriorHeuristics(), but we have to do
+       * this differently depending on which pass we're in 
+       * (i.e. which type of *gm we're using). 
+       */
       if(use_Tgm) { 
 	/* no length reconfiguration necessary */
 	p7_gmx_GrowTo(pli->gxf, Tgm->M, wlen);
 	p7_GForward (seq->dsq, wlen, Tgm, pli->gxf, &fwdsc);
 	/*printf("Tfwdsc: %.4f\n", fwdsc);*/
-	/* we use local Fwd statistics to determine statistical significance of this score,
-	 * it has already had basically a 1/log(M*(M+1)) penalty for equiprobable local begins and ends */
+	/* We use local Fwd statistics to determine statistical
+	 * significance of this score, it has already had basically a
+	 * 1/log(M*(M+1)) penalty for equiprobable local begins and
+	 * ends */
 	sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
       }
@@ -1513,8 +1544,15 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	p7_gmx_GrowTo(pli->gxf, Rgm->M, wlen);
 	p7_GForward (seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
 	/*printf("Rfwdsc: %.4f\n", fwdsc);*/
-	/* we use local Fwd statistics to determine significance of the score, but we need to correct for lack of equiprobable ends in fwdsc */
-	Rgm_correction = (log(2./(Rgm->M * (Rgm->M+1))) - log(1./Rgm->M)); /* GForward penalized 0. for ends and log(1/Rgm->M) for begins into any state */
+	/* We use local Fwd statistics to determine significance of
+	 * the score, but we need to correct for lack of equiprobable
+	 * ends in fwdsc if pli->do_trunc_loc_corr.  GForward
+	 * penalized 0. for ends and log(1/Rgm->M) for begins into any
+	 * state. If (! pli->do_trunc_loc_corr) the correction
+	 * is 0. because we already properly accounted for equiprobable
+	 * begins and fixed ends out of node M.
+	 */
+	Rgm_correction = (pli->do_trunc_loc_corr) ? (log(2./(Rgm->M * (Rgm->M+1))) - log(1./Rgm->M)) : 0.; 
 	safe_lfwdsc = fwdsc + Rgm_correction;
 	/* safe_lfwdsc is now less than or equal to the local foward score we would get with a truly local model */
 	sc_for_pvalue = (safe_lfwdsc - nullsc) / eslCONST_LOG2;
@@ -1525,29 +1563,35 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	p7_gmx_GrowTo(pli->gxf, Lgm->M, wlen);
 	p7_GForward (seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
 	/*printf("Lfwdsc: %.4f\n", fwdsc);*/
-	/* we use local Fwd statistics to determine significance of the score, but we need to correct for lack of equiprobable begins and ends in fwdsc */
-	Lgm_correction = log(2./(Lgm->M * (Lgm->M+1))); /* GForward penalized 0. for ends and 0. for begins into M1 */
+	/* We use local Fwd statistics to determine significance of
+	 * the score, but we need to correct for lack of equiprobable
+	 * begins and ends in fwdsc. 
+	 * If (pli->do_trunc_loc_corr) we pretend that local begins 
+	 * and ends are equiprobable even though ends are only 
+	 * possible for state M. Else, we only correct for fact
+	 * that local begins should be equiprobable.
+	 */
+	Lgm_correction = (pli->do_trunc_loc_corr) ? log(2./(Lgm->M * (Lgm->M+1))) : log(1./Lgm->M); 
 	safe_lfwdsc = fwdsc + Lgm_correction; 
 	/* safe_lfwdsc is now less than or equal to the local foward score we would get with a truly local model */
 	sc_for_pvalue = (safe_lfwdsc - nullsc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
       }
-      else { /* normal case, not looking for truncated hits */
+      else if(use_gm) { /* normal case, not looking for truncated hits */
 	p7_ReconfigLength(gm, wlen);
 	p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
 	p7_GForward (seq->dsq, wlen, gm, pli->gxf, &fwdsc);
 	/*printf(" fwdsc: %.4f\n", fwdsc);*/
 	sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
-	/* Does this score exceed our glocal forward filter threshold? If not, move on to next seq */
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
       }
-
 
 #if DOPRINT	
       if(P > pli->F4) { 
 	printf("KILLED   window %5d [%10" PRId64 "..%10" PRId64 "]          gFwd      %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
       }
 #endif      
+	/* Does this score exceed our glocal forward filter threshold? If not, move on to next seq */
       if(P > pli->F4) continue;
 
       pli->acct[pli->cur_pass_idx].n_past_gfwd++;
@@ -1560,8 +1604,21 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
       if(pli->do_gfwdbias) {
 	/* calculate bias filter score for entire window */
 	p7_bg_FilterScore(bg, seq->dsq, wlen, &filtersc);
-	sc_for_pvalue = (fwdsc - filtersc) / eslCONST_LOG2;
-	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
+	/* Once again, score and P-value determination depends on which 
+	 * *gm we're using (see F4 code block above for comments).
+	 */
+	if(use_Tgm) { 
+	  sc_for_pvalue = (fwdsc - filtersc) / eslCONST_LOG2;
+	  P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
+	}
+	else if(use_Rgm || use_Lgm) { 
+	  sc_for_pvalue = (safe_lfwdsc - nullsc) / eslCONST_LOG2;
+	  P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
+	}
+	else if(use_gm) { /* normal case */
+	  sc_for_pvalue = (fwdsc - filtersc) / eslCONST_LOG2;
+	  P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
+	}
 	if(P > pli->F4b) continue;
 #if DOPRINT	
 	printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwdBias  %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
@@ -1710,8 +1767,12 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	  filtersc += (float) (wlen-env_len) * logf(bg->p1);
 	}
 	env_sc_for_pvalue = (env_sc - filtersc) / eslCONST_LOG2;
-	if(do_local_envdef) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
-	else                P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
+	
+	if(use_Rgm) env_sc_for_pvalue += Rgm_correction / eslCONST_LOG2; /* glocal env def penalized 0. for ends and log(1/Lgm->M) for begins into any state */
+	if(use_Lgm) env_sc_for_pvalue += Lgm_correction / eslCONST_LOG2; /* glocal env def penalized 0. for ends and 0. for begins into M1 */
+
+	if(do_local_envdef || use_Tgm || use_Rgm || use_Lgm) P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
+	else                                                 P = esl_exp_surv (env_sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
 	if(P > pli->F5b) continue;
       }
 #if DOPRINT
@@ -1810,7 +1871,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
 
-  do_trunc = (pli->cur_pass_idx == PLI_PASS_STD) ? FALSE : TRUE;
+  do_trunc = (pli->cur_pass_idx == PLI_PASS_STD_ANY) ? FALSE : TRUE;
 
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS) { 
@@ -2593,10 +2654,11 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   ESL_SQ   *term5sq   = NULL;  /* a copy of the 5'-most pli->maxW residues from sq */
   ESL_SQ   *term3sq   = NULL;  /* a copy of the 3'-most pli->maxW residues from sq */
   int       p;                 /* counter over passes */
-  int       nwin_pass_std = 0; /* number of windows that survived pass 1 (PLI_PASS_STD) */
-  int       do_pass_5p_only;   /* should we do pass 2 (PLI_PASS_5P_ONLY)? re-search the 5'-most pli->maxW residues */
-  int       do_pass_3p_only;   /* should we do pass 3 (PLI_PASS_3P_ONLY)? re-search the 3'-most pli->maxW residues */
-  int       do_pass_5p_and_3p; /* should we do pass 4 (PLI_PASS_5P_AND_3P)? re-search the full sequence allowing for T truncated hits */
+  int       nwin_pass_std_any = 0; /* number of windows that survived pass 1 (PLI_PASS_STD_ANY) */
+  int       do_pass_5p_only_force;   /* should we do pass 2 (PLI_PASS_5P_ONLY_FORCE)? re-search the 5'-most pli->maxW residues */
+  int       do_pass_3p_only_force;   /* should we do pass 3 (PLI_PASS_3P_ONLY_FORCE)? re-search the 3'-most pli->maxW residues */
+  int       do_pass_5p_and_3p_force; /* should we do pass 4 (PLI_PASS_5P_AND_3P_FORCE)? re-search the full sequence allowing 5' and 3' truncated hits? */
+  int       do_pass_5p_and_3p_any;   /* should we do pass 5 (PLI_PASS_5P_AND_3P_ANY)?   re-search the full sequence allowing for all truncated hits? */
   int       not5term;          /* TRUE if sq definitely does not contain the 5'-most pli->maxW residues of its source sequence, we can skip passes 2 and 4 */
   int       not3term;          /* TRUE if sq definitely does not contain the 3'-most pli->maxW residues of its source sequence, we can skip passes 3 and 4 */
   int       h;                 /* counter over hits */
@@ -2647,48 +2709,56 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #endif
 
   /* determine which passes (besides the mandatory 1st standard pass
-   * PLI_PASS_STD) we'll need to do for this sequence. The 'do_'
+   * PLI_PASS_STD_ANY) we'll need to do for this sequence. The 'do_'
    * variables indicated which type of truncations are allowed in each
-   * pass; e.g. do_pass_5p_only: only 5' truncations are allowed in
+   * pass; e.g. do_pass_5p_only_force: only 5' truncations are allowed in
    * that pass - we do this pass if <do_trunc_ends> is TRUE and
    * not5term is FALSE (we may have the 5' terminus of the source
    * seq).
    */
   if(pli->do_trunc_ends) { 
-    do_pass_5p_only   = (! not5term) ? TRUE : FALSE;
-    do_pass_3p_only   = (! not3term) ? TRUE : FALSE;
-    do_pass_5p_and_3p = ((! not5term) && (! not3term) && (sq->n <= pli->maxW)) ? TRUE : FALSE;
+    do_pass_5p_only_force   = (! not5term) ? TRUE : FALSE;
+    do_pass_3p_only_force   = (! not3term) ? TRUE : FALSE;
+    do_pass_5p_and_3p_force = ((! not5term) && (! not3term) && (sq->n <= pli->maxW)) ? TRUE : FALSE;
+    do_pass_5p_and_3p_any   = FALSE;
   }
-  else { /* we're not allowing truncated hits */
-    do_pass_5p_only = do_pass_3p_only = do_pass_5p_and_3p = FALSE;
+  else if(pli->do_trunc_any) { /* we're allow any truncated hit, in a special pass PLI_PASS_5P_AND_3P_ANY */
+    do_pass_5p_and_3p_any = TRUE;
+    do_pass_5p_only_force = do_pass_3p_only_force = do_pass_5p_and_3p_force = FALSE;
   }
-  for(p = PLI_PASS_STD; p < NPLI_PASSES; p++) { /* p will go from 1..4 */
-    if(p == PLI_PASS_5P_ONLY && (! do_pass_5p_only))    continue;
-    if(p == PLI_PASS_3P_ONLY && (! do_pass_3p_only))    continue;
-    if(p == PLI_PASS_5P_ONLY && (! do_pass_5p_and_3p))  continue;
+  else { /* we're not allowing any truncated hits */
+    do_pass_5p_only_force = do_pass_3p_only_force = do_pass_5p_and_3p_force = do_pass_5p_and_3p_any = FALSE;
+  }
+
+  for(p = PLI_PASS_STD_ANY; p < NPLI_PASSES; p++) { /* p will go from 1..5 */
+    if(p == PLI_PASS_5P_ONLY_FORCE   && (! do_pass_5p_only_force))   continue;
+    if(p == PLI_PASS_3P_ONLY_FORCE   && (! do_pass_3p_only_force))   continue;
+    if(p == PLI_PASS_5P_AND_3P_FORCE && (! do_pass_5p_and_3p_force)) continue;
+    if(p == PLI_PASS_5P_AND_3P_ANY   && (! do_pass_5p_and_3p_any))   continue;
 
     /* Update nres for non-standard pass (this is done by caller via
-     * cm_pli_NewSeq() for pass PLI_PASS_STD) It's important to do
+     * cm_pli_NewSeq() for pass PLI_PASS_STD_ANY) It's important to do
      * this precisely here, in between the 3 'continue's above, but
      * prior the one below that 'continue's only because we know no
      * windows pass local Fwd (F3).
      */
-    if(p != PLI_PASS_STD) pli->acct[p].nres += ESL_MIN(pli->maxW, sq->n);
+    if     (p == PLI_PASS_5P_AND_3P_ANY) pli->acct[p].nres += sq->n;
+    else if(p != PLI_PASS_STD_ANY)       pli->acct[p].nres += ESL_MIN(pli->maxW, sq->n);
 
-    /* if we know there's no windows that pass local Fwd (F3), our terminal seqs won't have any either, continue */
-    if(p != PLI_PASS_STD && nwin_pass_std == 0) continue; 
+    /* if we know there's no windows that pass local Fwd (F3), our terminal (or full) seqs won't have any either, continue */
+    if(p != PLI_PASS_STD_ANY && nwin_pass_std_any == 0) continue; 
 
     /* set sq2search and remember start_offset */
     start_offset = 0;
-    if(p == PLI_PASS_STD || p == PLI_PASS_5P_AND_3P || sq->n <= pli->maxW) { 
+    if(p == PLI_PASS_STD_ANY || p == PLI_PASS_5P_AND_3P_FORCE || p == PLI_PASS_5P_AND_3P_ANY || sq->n <= pli->maxW) { 
       sq2search = sq;
     }
-    else if(p == PLI_PASS_5P_ONLY) { /* research first (5') pli->maxW residues */
+    else if(p == PLI_PASS_5P_ONLY_FORCE) { /* research first (5') pli->maxW residues */
       term5sq = esl_sq_CreateDigital(bg->abc);
       copy_subseq(sq, term5sq, 1, pli->maxW);
       sq2search = term5sq;
     }
-    else if(p == PLI_PASS_3P_ONLY) { /* research first (5') pli->maxW residues */
+    else if(p == PLI_PASS_3P_ONLY_FORCE) { /* research first (5') pli->maxW residues */
       term3sq = esl_sq_CreateDigital(bg->abc);
       copy_subseq(sq, term3sq, sq->n - pli->maxW + 1, pli->maxW);
       sq2search = term3sq;
@@ -2701,7 +2771,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     printf("\nPIPELINE calling p7Filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
     if((status = cm_pli_p7Filter(pli, om, bg, p7_evparam, fm_hmmdata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
-    if(p == PLI_PASS_STD) nwin_pass_std = nwin;
+    if(p == PLI_PASS_STD_ANY) nwin_pass_std_any = nwin;
     if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
 
 #if DOPRINT
@@ -2718,13 +2788,13 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 
     /* Two ways we have to update any hits we've just found: */
     if(hitlist->N > prv_ntophits) { 
-      /* 1. if we're in a terminus researching pass (i.e. not pass 1), raise CM_HIT_FROM_TERMINUS_RESEARCH flag */
-      if(p != PLI_PASS_STD) { 
+      /* 1. if we're in a terminus researching pass (i.e. not pass 1 or 5), raise CM_HIT_FROM_TERMINUS_RESEARCH flag */
+      if(p != PLI_PASS_STD_ANY && p != PLI_PASS_5P_AND_3P_ANY) { 
 	/*printf("setting hits %4d..%" PRId64 " flags to CM_HIT_FROM_TERMINUS_RESEARCH\n", prv_ntophits, hitlist->N);*/
 	for(h = prv_ntophits; h < hitlist->N; h++) hitlist->unsrt[h].flags |= CM_HIT_FROM_TERMINUS_RESEARCH;
       }
       /* 2. if we're researching a 3' terminus, adjust the start/stop positions so they are relative to the actual 5' start */
-      if(start_offset != 0) { /* this will only be non-zero if we're in pass PLI_PASS_3P_ONLY */
+      if(start_offset != 0) { /* this will only be non-zero if we're in pass PLI_PASS_3P_ONLY_FORCE */
 	for(h = prv_ntophits; h < hitlist->N; h++) { 
 	  hitlist->unsrt[h].start += start_offset;
 	  hitlist->unsrt[h].stop  += start_offset;
@@ -2750,7 +2820,41 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 }
   
 /* Function:  cm_pli_Statistics()
- * Synopsis:  Final statistics output from a processing pipeline.
+ * Synopsis:  Final stats output for all passes of a pipeline.
+
+ * Incept:    EPN, Thu Feb 16 15:19:35 2012
+ *
+ * Purpose:   Print a standardized report of the internal statistics of
+ *            a finished processing pipeline <pli> to stream <ofp>
+ *            for all relevant passes in the pipeline. 
+ *
+ *            Actual work is done by repeated calls to 
+ *            cm_pli_PassStatistics().
+ *            
+ * Returns:   <eslOK> on success.
+ */
+int
+cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
+{
+  /* There's 3 possible sets of passes that we've performed: */
+  if(pli->do_trunc_ends) { 
+    cm_pli_PassStatistics(ofp, pli, PLI_PASS_5P_ONLY_FORCE,   NULL); fprintf(ofp, "\n");
+    cm_pli_PassStatistics(ofp, pli, PLI_PASS_3P_ONLY_FORCE,   NULL); fprintf(ofp, "\n");
+    cm_pli_PassStatistics(ofp, pli, PLI_PASS_5P_AND_3P_FORCE, w);    fprintf(ofp, "//\n");
+  }
+  else if(pli->do_trunc_any) { 
+    cm_pli_PassStatistics(ofp, pli, PLI_PASS_STD_ANY,         NULL); fprintf(ofp, "\n");
+    cm_pli_PassStatistics(ofp, pli, PLI_PASS_5P_AND_3P_ANY,   w);    fprintf(ofp, "//\n");
+  }
+  else { 
+    cm_pli_PassStatistics(ofp, pli, PLI_PASS_STD_ANY,         w);    fprintf(ofp, "//\n");
+  }
+
+  return eslOK;
+}
+
+/* Function:  cm_pli_PassStatistics()
+ * Synopsis:  Final stats output for one pass of a pipeline.
  * Incept:    EPN, Fri Sep 24 16:48:06 2010 
  *            SRE, Tue Dec  9 10:19:45 2008 [Janelia] (p7_pli_Statistics())
  *
@@ -2764,7 +2868,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
  * Returns:   <eslOK> on success.
  */
 int
-cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *w)
+cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *w)
 {
   double  ntargets; 
   int64_t nwin_fcyk  = 0; /* number of windows CYK filter evaluated */
@@ -2994,7 +3098,7 @@ cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct)
  *            into human-readable strings, for clearer output.
  * 
  * Args:      pass_idx - a pipeline pass index
- *                       PLI_PASS_SUMMED, PLI_PASS_STD, PLI_PASS_5P_ONLY, PLI_PASS_3P_ONLY, PLI_PASS_5P_AND_3P
+ *                       PLI_PASS_SUMMED, PLI_PASS_STD_ANY, PLI_PASS_5P_ONLY_FORCE, PLI_PASS_3P_ONLY_FORCE, PLI_PASS_5P_AND_3P_FORCE
  *
  * Returns:   the appropriate string
  */
@@ -3002,11 +3106,12 @@ char *
 cm_pli_DescribePass(int pass_idx) 
 {
   switch (pass_idx) {
-  case PLI_PASS_SUMMED:    return "full sequences and terminii";  break;
-  case PLI_PASS_STD:       return "full sequences";               break;
-  case PLI_PASS_5P_ONLY:   return "5' terminal sequence regions"; break;
-  case PLI_PASS_3P_ONLY:   return "3' terminal sequence regions"; break;
-  case PLI_PASS_5P_AND_3P: return "full sequences short enough to contain a 5' and 3' truncated hit"; break;
+  case PLI_PASS_SUMMED:          return "full sequences and terminii";  break;
+  case PLI_PASS_STD_ANY:         return "full sequences";               break;
+  case PLI_PASS_5P_ONLY_FORCE:   return "5' terminal sequence regions"; break;
+  case PLI_PASS_3P_ONLY_FORCE:   return "3' terminal sequence regions"; break;
+  case PLI_PASS_5P_AND_3P_FORCE: return "full sequences short enough to contain a 5' and 3' truncated hit"; break;
+  case PLI_PASS_5P_AND_3P_ANY:   return "full sequences, allowing truncated hits"; break;
   default: cm_Fail("bogus pipeline pass index %d\n", pass_idx); break;
   }
   return "";
@@ -3021,7 +3126,7 @@ cm_pli_DescribePass(int pass_idx)
  *            parsetree/alignment. Else returns FALSE.
  * 
  * Args:      pass_idx - a pipeline pass index
- *                       PLI_PASS_SUMMED, PLI_PASS_STD, PLI_PASS_5P_ONLY, PLI_PASS_3P_ONLY, PLI_PASS_5P_AND_3P
+ *                       PLI_PASS_SUMMED, PLI_PASS_STD_ANY, PLI_PASS_5P_ONLY_FORCE, PLI_PASS_3P_ONLY_FORCE, PLI_PASS_5P_AND_3P_FORCE
  *
  * Returns:   TRUE if i0 inclusion is forced, FALSE if not
  */
@@ -3029,11 +3134,12 @@ int
 cm_pli_PassEnforcesFirstRes(int pass_idx) 
 {
   switch (pass_idx) {
-  case PLI_PASS_STD:       return FALSE; break;
-  case PLI_PASS_5P_ONLY:   return TRUE;  break;
-  case PLI_PASS_3P_ONLY:   return FALSE; break;
-  case PLI_PASS_5P_AND_3P: return TRUE;  break;
-  default:                 return FALSE; break;
+  case PLI_PASS_STD_ANY:         return FALSE; break;
+  case PLI_PASS_5P_ONLY_FORCE:   return TRUE;  break;
+  case PLI_PASS_3P_ONLY_FORCE:   return FALSE; break;
+  case PLI_PASS_5P_AND_3P_FORCE: return TRUE;  break;
+  case PLI_PASS_5P_AND_3P_ANY:   return FALSE; break;
+  default:                       return FALSE; break;
   }
   return FALSE;
 }
@@ -3047,7 +3153,7 @@ cm_pli_PassEnforcesFirstRes(int pass_idx)
  *            parsetree/alignment. Else returns FALSE.
  * 
  * Args:      pass_idx - a pipeline pass index
- *                       PLI_PASS_SUMMED, PLI_PASS_STD, PLI_PASS_5P_ONLY, PLI_PASS_3P_ONLY, PLI_PASS_5P_AND_3P
+ *                       PLI_PASS_SUMMED, PLI_PASS_STD_ANY, PLI_PASS_5P_ONLY_FORCE, PLI_PASS_3P_ONLY_FORCE, PLI_PASS_5P_AND_3P_FORCE
  *
  * Returns:   TRUE if j0 inclusion is forced, FALSE if not
  */
@@ -3055,11 +3161,12 @@ int
 cm_pli_PassEnforcesFinalRes(int pass_idx) 
 {
   switch (pass_idx) {
-  case PLI_PASS_STD:       return FALSE; break;
-  case PLI_PASS_5P_ONLY:   return FALSE; break;
-  case PLI_PASS_3P_ONLY:   return TRUE;  break;
-  case PLI_PASS_5P_AND_3P: return TRUE;  break;
-  default:                 return FALSE; break;
+  case PLI_PASS_STD_ANY:         return FALSE; break;
+  case PLI_PASS_5P_ONLY_FORCE:   return FALSE; break;
+  case PLI_PASS_3P_ONLY_FORCE:   return TRUE;  break;
+  case PLI_PASS_5P_AND_3P_FORCE: return TRUE;  break;
+  case PLI_PASS_5P_AND_3P_ANY:   return FALSE; break;
+  default:                       return FALSE; break;
   }
   return FALSE;
 }

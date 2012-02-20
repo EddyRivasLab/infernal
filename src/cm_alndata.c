@@ -272,10 +272,10 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
    * not being called as part of a search/scan pipeline. This
    * is required by cm_TrAlign() and cp9_Seq2Bands(). If we're
    * allowing truncation we always allow 5' and/or 3' truncation
-   * (PLI_PASS_5P_AND_3P), if we're not we're only allowing 
-   * standard alignments (PLI_PASS_STD).
+   * (PLI_PASS_5P_AND_3P_FORCE), if we're not we're only allowing 
+   * standard alignments (PLI_PASS_STD_ANY).
    */
-  pass_idx = do_trunc ? PLI_PASS_5P_AND_3P : PLI_PASS_STD; 
+  pass_idx = do_trunc ? PLI_PASS_5P_AND_3P_FORCE : PLI_PASS_STD_ANY; 
 
   /* do sub-mode specific pre-alignment steps, if nec */
   if(do_sub) { 

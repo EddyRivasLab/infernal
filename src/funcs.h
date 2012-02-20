@@ -385,8 +385,8 @@ extern void  cm_tr_scan_mx_Dump              (FILE *ofp, CM_t *cm, int j, int i0
 
 extern GammaHitMx_t    *CreateGammaHitMx              (int L, int64_t i0, float cutoff);
 extern void             FreeGammaHitMx                (GammaHitMx_t *gamma);
-extern int              UpdateGammaHitMx              (CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, int W, double **act);
-extern int              ReportHitsGreedily            (CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, int W, double **act, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist);
+extern int              UpdateGammaHitMx              (CM_t *cm, char *errbuf, int pass_idx, GammaHitMx_t *gamma, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, int W, double **act);
+extern int              ReportHitsGreedily            (CM_t *cm, char *errbuf, int pass_idx, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, int W, double **act, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist);
 extern void             TBackGammaHitMx               (GammaHitMx_t *gamma, CM_TOPHITS *hitlist, int64_t i0, int64_t j0);
 
 
@@ -441,7 +441,8 @@ extern int cm_pli_p7EnvelopeDef     (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *b
 extern int cm_pli_CMStage           (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
 extern int cm_pli_AlignHit          (CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int do_trunc, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b);
 extern int cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
-extern int cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *w);
+extern int cm_pli_Statistics    (FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
+extern int cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *w);
 extern int cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct);
 extern char *cm_pli_DescribePass         (int pass_idx);
 extern int cm_pli_PassEnforcesFirstRes(int pass_idx);
@@ -517,7 +518,7 @@ extern int cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPH
 extern int cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipemode, const char *qfile, const char *tfile, const ESL_GETOPTS *go);
 extern int cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th);
 
-extern int    cm_hit_AllowTruncation(CM_t *cm, int64_t start, int64_t stop, int64_t i0, int64_t j0, char mode, int b);
+extern int    cm_hit_AllowTruncation(CM_t *cm, int pass_idx, int64_t start, int64_t stop, int64_t i0, int64_t j0, char mode, int b);
 extern int    cm_hit_Dump(FILE *fp, const CM_HIT *h);
 
 /* from cm_trunc.c */

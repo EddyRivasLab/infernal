@@ -152,7 +152,9 @@ static ESL_OPTIONS options[] = {
   { "--glN",        eslARG_INT,   "201",  NULL, NULL,    NULL,"--glen",NULL,             "minimum value to start len-dependent glocal threshold", 7},
   { "--glX",        eslARG_INT,   "500",  NULL, NULL,    NULL,"--glen",NULL,             "maximum value for len-dependent glocal threshold", 7},
   { "--glstep",     eslARG_INT,   "100",  NULL, NULL,    NULL,"--glen",NULL,             "for len-dependent glocal thr, step size for halving thr", 7},
-  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,         "only allow normal local begins in truncated hits", 7},
+  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not allow truncated hits at sequence terminii", 7},
+  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"-g,--notrunc",        "allow truncated hits anywhere within sequences", 7},
+  /* MAKE THIS A DEVELOPER OPT OR REMOVE IT AFTER TESTING */ { "--loctrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--notrunc",        "treat truncated HMM scores as if they were fully local", 7}, 
   { "--xtau",       eslARG_REAL,  "2.",   NULL, NULL,    NULL,  NULL,  NULL,             "set multiplier for tau to <x> when tightening HMM bands", 7},
   ///{ "--testnull",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "test null", 7},
 /* Other options */
@@ -684,7 +686,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_tophits_Dump(stdout, info[0].th);
 #endif
       /* Remove hits from terminii-researching stage that we later learned were not actually in terminii */
-      cm_tophits_RemoveBogusTerminusHits(info[0].th);
+      if(info[0].pli->do_trunc_ends) { 
+	cm_tophits_RemoveBogusTerminusHits(info[0].th);
+      }
 #if 0 
       printf("HEYA after\n");
       cm_tophits_Dump(stdout, info[0].th);
@@ -722,10 +726,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
   
       esl_stopwatch_Stop(w);
-      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_STD,       NULL); fprintf(ofp, "\n");
-      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_5P_ONLY,   NULL); fprintf(ofp, "\n");
-      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_3P_ONLY,   NULL); fprintf(ofp, "\n");
-      cm_pli_Statistics(ofp, info[0].pli, PLI_PASS_5P_AND_3P, w);    fprintf(ofp, "//\n");
+      cm_pli_Statistics(ofp, info[0].pli, w);
 
       free_info(tinfo);
       free(tinfo);
@@ -1132,8 +1133,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info->pli->nseqs = tot_nseq;
       if(info->pli->do_top && info->pli->do_bot) tot_noverlap *= 2; /* count overlaps twice on each strand, if nec */
       /*printf("nres: %ld\nnoverlap: %ld\n", info->pli->acct[PLI_PASS_STD].nres, noverlap);*/
-      info->pli->acct[PLI_PASS_STD].nres -= tot_noverlap;
-      /*printf("nres: %ld\n", info->pli->acct[PLI_PASS_STD].nres);*/
+      info->pli->acct[PLI_PASS_STD_ANY].nres -= tot_noverlap;
+      if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres -= tot_noverlap;
+      /*printf("nres: %ld\n", info->pli->acct[PLI_PASS_STD_ANY].nres);*/
 
       /* In MPI, we don't need to call cm_tophits_SetSourceLengths()
        * because unlike serial/threaded we always know the length of
@@ -1152,7 +1154,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_tophits_Dump(stdout, info[0].th);
 #endif
       /* Remove hits from terminii-researching stage that we later learned were not actually in terminii */
-      cm_tophits_RemoveBogusTerminusHits(info->th);
+      if(info->pli->do_trunc_ends) { 
+	cm_tophits_RemoveBogusTerminusHits(info->th);
+      }
 #if 0 
       printf("HEYA after\n");
       cm_tophits_Dump(stdout, info[0].th);
@@ -1185,14 +1189,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	cm_tophits_TabularTargets(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
       }
       esl_stopwatch_Stop(w);
-      cm_pli_Statistics(ofp, info->pli, PLI_PASS_STD, w);
-      fprintf(ofp, "\n");
-      cm_pli_Statistics(ofp, info->pli, PLI_PASS_5P, w);
-      fprintf(ofp, "\n");
-      cm_pli_Statistics(ofp, info->pli, PLI_PASS_3P, w);
-      fprintf(ofp, "\n");
-      cm_pli_Statistics(ofp, info->pli, PLI_PASS_5P_AND_3P, w);
-      fprintf(ofp, "//\n");
+      cm_pli_Statistics(ofp, info->pli, w);
 
       free_info(info);
       free(info);
@@ -1409,8 +1406,11 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) 
 		mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	      cm_pipeline_Reuse(info->pli); /* prepare for next search */
-	      if(info->pli->do_top) info->pli->acct[PLI_PASS_STD].nres += dbsq->n; /* add dbsq->n residues, the reverse complement we just searched */
-	      
+	      if(info->pli->do_top) { 
+		info->pli->acct[PLI_PASS_STD_ANY].nres += dbsq->n; /* add dbsq->n residues, the reverse complement we just searched */
+		if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres += dbsq->n;
+	      }
+
 	      /* Hit positions will be relative to the reverse-complemented sequence
 	       * (i.e. start > end), which may be a subsequence. Update hit positions 
 	       * so they're relative to the full-length original sequence (start < end). */
@@ -1513,7 +1513,8 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL)
     
     cm_pli_NewSeq(info->pli, dbsq, seq_idx-1);
     prv_seq_ntophits = info->th->N; 
-    info->pli->acct[PLI_PASS_STD].nres -= dbsq->C; /* to account for overlapping region of windows */
+    info->pli->acct[PLI_PASS_STD_ANY].nres -= dbsq->C; /* to account for overlapping region of windows */
+    if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres -= dbsq->C; /* ditto */
 
     if (info->pli->do_top) { 
       prv_pli_ntophits = info->th->N;
@@ -1534,7 +1535,10 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL)
       /* modify hit positions to account for the position of the window in the full sequence */
       cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, TRUE);
 
-      if(info->pli->do_top) info->pli->acct[PLI_PASS_STD].nres += dbsq->W; /* add dbsq->W residues, the number of unique residues on reverse complement that we just searched */
+      if(info->pli->do_top) { 
+	info->pli->acct[PLI_PASS_STD_ANY].nres += dbsq->W; /* add dbsq->W residues, the number of unique residues on reverse complement that we just searched */
+	if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres += dbsq->W; /* ditto */
+      }
       
       /* Reverse complement again, to get original sequence back.
        * This is necessary so the C overlapping context residues 
@@ -1763,7 +1767,8 @@ pipeline_thread(void *arg)
 
       cm_pli_NewSeq(info->pli, dbsq, block->first_seqidx + i);
       prv_seq_ntophits = info->th->N; 
-      info->pli->acct[PLI_PASS_STD].nres -= dbsq->C; /* to account for overlapping region of windows */
+      info->pli->acct[PLI_PASS_STD_ANY].nres -= dbsq->C; /* to account for overlapping region of windows */
+      if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres -= dbsq->C; /* ditto */
       
       if (info->pli->do_top) { 
 	prv_pli_ntophits = info->th->N;
@@ -1784,7 +1789,10 @@ pipeline_thread(void *arg)
 	/* modify hit positions to account for the position of the window in the full sequence */
 	cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, TRUE);
 	
-	if(info->pli->do_top) info->pli->acct[PLI_PASS_STD].nres += dbsq->W; /* add dbsq->W residues, the reverse complement we just searched */
+	if(info->pli->do_top) { 
+	  info->pli->acct[PLI_PASS_STD_ANY].nres += dbsq->W; /* add dbsq->W residues, the reverse complement we just searched */
+	  if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres += dbsq->W; /* ditto */
+	}
 
 	/* Reverse complement again, to get original sequence back.
 	 * This is necessary so the C overlapping context residues 
@@ -2078,6 +2086,8 @@ configure_cm(WORKER_INFO *info)
 int
 setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
 { 
+  int do_trunc_ends = (esl_opt_GetBoolean(go, "--notrunc") || esl_opt_GetBoolean(go, "--anytrunc")) ? FALSE : TRUE;
+
   /* set up the HMM filter-related structures */
   info->gm = p7_profile_Create (info->cm->fp7->M, info->cm->abc);
   info->om = p7_oprofile_Create(info->cm->fp7->M, info->cm->abc);
@@ -2085,7 +2095,7 @@ setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
   p7_ProfileConfig(info->cm->fp7, info->bg, info->gm, 100, p7_LOCAL);  /* 100 is a dummy length for now; and MSVFilter requires local mode */
   p7_oprofile_Convert(info->gm, info->om);                             /* <om> is now p7_LOCAL, multihit */
   /* clone gm into Tgm before putting it into glocal mode */
-  if(! esl_opt_GetBoolean(go, "--notrunc")) { 
+  if(do_trunc_ends) { 
     info->Tgm = p7_profile_Clone(info->gm);
   }
   /* after om has been created, convert gm to glocal, to define envelopes in cm_pipeline() */
@@ -2094,7 +2104,7 @@ setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
   info->fm_hmmdata = NULL;
   ///info->fm_hmmdata = fm_hmmdataCreate(info->gm, info->om);
 
-  if(! esl_opt_GetBoolean(go, "--notrunc")) { 
+  if(do_trunc_ends) { 
     /* create Rgm, Lgm, and Tgm specially-configured profiles for defining envelopes around 
      * hits that may be truncated 5' (Rgm), 3' (Lgm) or both (Tgm). */
     info->Rgm = p7_profile_Clone(info->gm);

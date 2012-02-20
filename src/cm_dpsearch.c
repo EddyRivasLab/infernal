@@ -629,10 +629,10 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
       /*cm_scan_mx_Dump(stdout, cm, j, i0, qdbidx, TRUE);*/
     } /* end loop over end positions j */
@@ -1018,10 +1018,10 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
 
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
@@ -1642,10 +1642,10 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
       /* cm_scan_mx_Dump(stdout, cm, j, i0, qdbidx, FALSE); */
     } /* end loop over end positions j */
@@ -2269,10 +2269,10 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
       /*FILE *fp; fp = fopen("tmp.ffins.smx", "w"); cm_scan_mx_Dump(fp, cm, j, i0, qdbidx, TRUE); fclose(fp); */
     } /* end loop over end positions j */
@@ -2655,10 +2655,10 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
 
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE);*/
@@ -3034,10 +3034,10 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
       /*FILE *fp; fp = fopen("tmp.rfins.smx", "w"); cm_scan_mx_Dump(fp, cm, j, i0, qdbidx, TRUE); fclose(fp); */
     } /* end loop over end positions j */
@@ -3632,7 +3632,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
   /* update gamma, by specifying all hits with j < jmin[0] are impossible */
   if(gamma != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, -1, -1, 
+      if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, -1, -1, 
 				      NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
 				      bestr, NULL, W, act)) != eslOK) return status;
     }
@@ -3691,17 +3691,17 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
     
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act)) != eslOK) return status;
     }
     if(tmp_hitlist != NULL) { 
-      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+      if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   } /* end of 'for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++, j++) {' */
 
   /* update gamma, by specifying all hits with j > jmax[0] are impossible */
   if(gamma != NULL) { 
     for(j = jmax[v]+1; j <= j0; j++) {
-      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j, -1, -1,
+      if((status = UpdateGammaHitMx(cm, errbuf, PLI_PASS_STD_ANY, gamma, j, -1, -1,
 				    NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
 				    bestr, NULL, W, act)) != eslOK) return status;
     }
@@ -4147,7 +4147,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
   /* update gamma, by specifying all hits with j < jmin[0] are impossible */
   if(gamma != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, -1, -1, 
+      if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, -1, -1, 
 				      NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
 				      bestr, NULL, W, act)) != eslOK) return status;
     }
@@ -4205,17 +4205,17 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
 
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act)) != eslOK) return status;
     }
     if(tmp_hitlist != NULL) { 
-      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+      if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   } /* end of 'for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++, j++) {' */
 
   /* update gamma, by specifying all hits with j > jmax[0] are impossible */
   if(gamma != NULL) { 
     for(j = jmax[v]+1; j <= j0; j++) {
-      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j, -1, -1,
+      if((status = UpdateGammaHitMx(cm, errbuf, PLI_PASS_STD_ANY, gamma, j, -1, -1,
 				    NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
 				    bestr, NULL, W, act)) != eslOK) return status;
     }

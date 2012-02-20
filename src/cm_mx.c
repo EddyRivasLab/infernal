@@ -1682,7 +1682,7 @@ cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t 
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
   /* contract check */
-  if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_SizeNeeded() entered with cp9b == NULL.\n");
+  if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_tr_hb_mx_SizeNeeded() entered with cp9b == NULL.\n");
 
   Jncells = 0;
   Lncells = 0;
@@ -7252,6 +7252,8 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  *
  * Args:     cm         - the model, used only for its alphabet and null model
  *           errbuf     - for reporting errors
+ *           pass_idx   - pipeline pass index we're currently in, dictates which 
+ *                        types of marginal hits to allow
  *           gamma      - the gamma data structure
  *           j          - end point of hit, in actual sequence coordinate space
  *           dmin       - minimum d to consider
@@ -7267,7 +7269,7 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  * Throws:   eslEMEM on memory allocation error
  */
 int
-UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, int dmax, 
+UpdateGammaHitMx(CM_t *cm, char *errbuf, int pass_idx, GammaHitMx_t *gamma, int j, int dmin, int dmax, 
 		 float *bestsc, int *bestr, char *bestmode, int W, double **act)
 {
   int status;          /* easel status */
@@ -7314,7 +7316,7 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
 	 * this enforces that i0/j0 is included if necessary based on the
 	 * marginal alignment mode of the hit 
 	 */
-	do_report_hit = cm_hit_AllowTruncation(cm, i, j, gamma->i0, j0, mode, bestr[d]);
+	do_report_hit = cm_hit_AllowTruncation(cm, pass_idx, i, j, gamma->i0, j0, mode, bestr[d]);
       }
 
       if(do_report_hit && act != NULL) { 
@@ -7359,10 +7361,11 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
  *
  *           If caller is a truncated scanner <bestmode> will be
  *           non-NULL, and include info on the alignment mode of each
- *           hit (<bestmode>). Some hits will be disallowed based
- *           on their alignment mode (e.g. 5' truncated hits must
- *           include residue i0 in their alignment to be allowed, 
- *           see cm_tophits.c:cm_hit_AllowTruncation() for more 
+ *           hit (<bestmode>). Some hits will be disallowed based on
+ *           their alignment mode and the pass_idx (e.g. 5' truncated
+ *           hits in the PLI_PASS_5P_ONLY_FORCE pass must include
+ *           residue i0 in their alignment to be allowed, see
+ *           cm_tophits.c:cm_hit_AllowTruncation() for more
  *           information).
  *
  *           If caller is a standard (non-truncated) scanner
@@ -7373,8 +7376,8 @@ UpdateGammaHitMx(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, int dmin, i
  * Throws:   eslEMEM on memory allocation error
  */
 int
-ReportHitsGreedily(CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bestsc, int *bestr, char *bestmode, 
-		   int W, double **act, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist)
+ReportHitsGreedily(CM_t *cm, char *errbuf, int pass_idx, int j, int dmin, int dmax, float *bestsc, int *bestr, 
+		   char *bestmode, int W, double **act, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist)
 {
   int   status;          /* easel status */
   int   i;               /* first residue in hit, in actual sequence coords */
@@ -7421,7 +7424,7 @@ ReportHitsGreedily(CM_t *cm, char *errbuf, int j, int dmin, int dmax, float *bes
 	   * this enforces that i0/j0 is included if necessary based on the
 	   * marginal alignment mode of the hit 
 	   */
-	  do_report_hit = cm_hit_AllowTruncation(cm, i, j, i0, j0, mode, bestr[d]);
+	  do_report_hit = cm_hit_AllowTruncation(cm, pass_idx, i, j, i0, j0, mode, bestr[d]);
 	}
 
 	if(do_report_hit && act != NULL) { /* do NULL3 score correction and see if we still want to allow it */

@@ -625,10 +625,10 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, pass_idx, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf, pass_idx,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
@@ -1278,10 +1278,10 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
       if(gamma != NULL) { 
-	if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
+	if((status = UpdateGammaHitMx  (cm, errbuf, pass_idx, gamma, j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
       }
       if(tmp_hitlist != NULL) { 
-	if((status = ReportHitsGreedily(cm, errbuf,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+	if((status = ReportHitsGreedily(cm, errbuf, pass_idx,        j, dnA[0], dxA[0], bestsc, bestr, bestmode, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
 
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
@@ -2187,7 +2187,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
   /* update gamma, by specifying all hits with j < jmin[0] are impossible */
   if(gamma != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, -1, -1, 
+      if((status = UpdateGammaHitMx  (cm, errbuf, pass_idx, gamma, j, -1, -1, 
 				      NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
 				      bestr, NULL, W, act)) != eslOK) return status;
     }
@@ -2299,10 +2299,10 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
 
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, pass_idx, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
     }
     if(tmp_hitlist != NULL) { 
-      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+      if((status = ReportHitsGreedily(cm, errbuf, pass_idx,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   } /* end of 'for (j = jmin[v]; j <= jmax[v]'... */
   /*FILE *fp1; fp1 = fopen("tmp.ismx", "w");   cm_tr_hb_mx_Dump(fp1, mx); fclose(fp1);*/
@@ -2310,7 +2310,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
   /* update gamma, by specifying all hits with j > jmax[0] are impossible */
   if(gamma != NULL) { 
     for(j = jmax[v]+1; j <= j0; j++) {
-      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j, -1, -1,
+      if((status = UpdateGammaHitMx(cm, errbuf, pass_idx, gamma, j, -1, -1,
 				    NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
 				    bestr, NULL, W, act)) != eslOK) return status;
     }
@@ -3274,7 +3274,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
   /* update gamma, by specifying all hits with j < jmin[0] are impossible */
   if(gamma != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, -1, -1, 
+      if((status = UpdateGammaHitMx  (cm, errbuf, pass_idx, gamma, j, -1, -1, 
 				      NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
 				      bestr, NULL, W, act)) != eslOK) return status;
     }
@@ -3386,17 +3386,17 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
 
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
-      if((status = UpdateGammaHitMx  (cm, errbuf, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, pass_idx, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act)) != eslOK) return status;
     }
     if(tmp_hitlist != NULL) { 
-      if((status = ReportHitsGreedily(cm, errbuf,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+      if((status = ReportHitsGreedily(cm, errbuf, pass_idx,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, bestmode, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   }
 
   /* update gamma, by specifying all hits with j > jmax[0] are impossible */
   if(gamma != NULL) { 
     for(j = jmax[v]+1; j <= j0; j++) {
-      if((status = UpdateGammaHitMx(cm, errbuf, gamma, j, -1, -1,
+      if((status = UpdateGammaHitMx(cm, errbuf, pass_idx, gamma, j, -1, -1,
 				    NULL, /* NULL for bestsc tells UpdateGammaHitMx() no hits are possible for this j */
 				    bestr, NULL, W, act)) != eslOK) return status;
     }
@@ -3491,14 +3491,14 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
   if(tmp_hitlist != NULL) { 
     for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
     cm_tophits_SortForOverlapRemoval(tmp_hitlist);
-    /*cm_tophits_Dump(stdout, tmp_hitlist);*/
+    /* cm_tophits_Dump(stdout, tmp_hitlist); */
     if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
-    /*cm_tophits_Dump(stdout, hitlist);*/
+    /* cm_tophits_Dump(stdout, hitlist); */
     cm_tophits_Destroy(tmp_hitlist);
   }
 
@@ -3533,8 +3533,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
  *           ret_fill_R - RETURN: should we fill in R based on <ret_mode>?
  *           ret_fill_T - RETURN: should we fill in T based on <ret_mode>?
  *
- * Throws:   eslEINVAL if pass_idx is not PLI_PASS_5P_ONLY, PLI_PASS_3P_ONLY,
- *           or PLI_PASS_5P_AND_3P.
+ * Throws:   eslEINVAL if pass_idx is not PLI_PASS_5P_ONLY_FORCE, PLI_PASS_3P_ONLY_FORCE,
+ *           PLI_PASS_5P_AND_3P_FORCE, or PLI_PASS_5P_AND_3P_ANY.
  */
 int
 cm_TrFillFromPassIdx(int pass_idx, int *ret_fill_L, int *ret_fill_R, int *ret_fill_T)
@@ -3544,9 +3544,10 @@ cm_TrFillFromPassIdx(int pass_idx, int *ret_fill_L, int *ret_fill_R, int *ret_fi
 
   fill_L = fill_R = fill_T = FALSE;
   switch(pass_idx) {
-  case PLI_PASS_5P_AND_3P: fill_L = fill_R = fill_T = TRUE; break;
-  case PLI_PASS_5P_ONLY:   fill_R = TRUE; break;
-  case PLI_PASS_3P_ONLY:   fill_L = TRUE; break;
+  case PLI_PASS_5P_AND_3P_FORCE: fill_L = fill_R = fill_T = TRUE; break;
+  case PLI_PASS_5P_AND_3P_ANY:   fill_L = fill_R = fill_T = TRUE; break;
+  case PLI_PASS_5P_ONLY_FORCE:   fill_R = TRUE; break;
+  case PLI_PASS_3P_ONLY_FORCE:   fill_L = TRUE; break;
   default: invalid_idx = TRUE; break;
   }
 
@@ -3609,8 +3610,9 @@ static ESL_OPTIONS options[] = {
   { "--thresh1", eslARG_REAL,  "0.01", NULL, NULL,  NULL,  NULL,  NULL, "set HMM bands thresh1 to <x>", 0 },
   { "--thresh2", eslARG_REAL,  "0.99", NULL, NULL,  NULL,  NULL,  NULL, "set HMM bands thresh2 to <x>", 0 },
   { "--sizelimit",eslARG_REAL, "128.", NULL, "x>0", NULL,  NULL,  NULL, "set maximum allowed size of HB matrices to <x> Mb", 0 },
-  { "--5ponly",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL,"--3ponly", "only allow 5' truncations", 0 },
-  { "--3ponly",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL,  NULL, "only allow 3' truncations", 0 },
+  { "--anytrunc",eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL,"--5ponly,--3ponly",   "allow truncated hits anywhere in the sequence", 0 },
+  { "--5ponly",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL,"--anytrunc,--3ponly", "only allow 5' truncations", 0 },
+  { "--3ponly",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL,"--anytrunc,--5ponly", "only allow 3' truncations", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -3672,9 +3674,10 @@ main(int argc, char **argv)
   if (esl_opt_IsUsed(go, "--thresh1")) { cm->cp9b->thresh1 = esl_opt_GetReal(go, "--thresh1"); }
   if (esl_opt_IsUsed(go, "--thresh2")) { cm->cp9b->thresh2 = esl_opt_GetReal(go, "--thresh2"); }
 
-  if     (esl_opt_GetBoolean(go, "--5ponly")) pass_idx = PLI_PASS_5P_ONLY;
-  else if(esl_opt_GetBoolean(go, "--3ponly")) pass_idx = PLI_PASS_3P_ONLY;
-  else                                        pass_idx = PLI_PASS_5P_AND_3P;
+  if     (esl_opt_GetBoolean(go, "--anytrunc")) pass_idx = PLI_PASS_5P_AND_3P_ANY;
+  else if(esl_opt_GetBoolean(go, "--5ponly"))   pass_idx = PLI_PASS_5P_ONLY_FORCE;
+  else if(esl_opt_GetBoolean(go, "--3ponly"))   pass_idx = PLI_PASS_3P_ONLY_FORCE;
+  else                                          pass_idx = PLI_PASS_5P_AND_3P;
 
   if((status = cm_Configure(cm, errbuf, -1)) != eslOK) cm_Fail(errbuf);
 

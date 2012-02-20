@@ -458,9 +458,10 @@ int
 cm_tr_penalties_IdxForPass(int pass_idx)
 {
   switch(pass_idx) { 
-  case PLI_PASS_5P_AND_3P: return TRPENALTY_5P_AND_3P; break;
-  case PLI_PASS_5P_ONLY:   return TRPENALTY_5P_ONLY; break;
-  case PLI_PASS_3P_ONLY:   return TRPENALTY_3P_ONLY; break;
+  case PLI_PASS_5P_ONLY_FORCE:   return TRPENALTY_5P_ONLY; break;
+  case PLI_PASS_3P_ONLY_FORCE:   return TRPENALTY_3P_ONLY; break;
+  case PLI_PASS_5P_AND_3P_FORCE: return TRPENALTY_5P_AND_3P; break;
+  case PLI_PASS_5P_AND_3P_ANY:   return TRPENALTY_5P_AND_3P; break;
   default: return -1; break;
   }
 }
