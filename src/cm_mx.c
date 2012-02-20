@@ -941,19 +941,18 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with cp9b == NULL.\n");
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
 
-  if(mx->size_Mb > (0.5 * size_limit)) { 
-    /* matrix is at least half the size of our limit (based on 
-     * bands from previous aligned sequence). Free the main dp_mem.
-     * */
-    free(mx->dp_mem);
-    mx->dp_mem = NULL;
-    mx->ncells_alloc = 0;
-  }
-
   if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &ncells, &Mb_needed)) != eslOK) return status;
   /* printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed); */
   ESL_DPRINTF2(("HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
+
+  /* check if we should free and reallocate the matrix */
+  if((mx->size_Mb > (0.5  * size_limit)) && /* matrix is >= 0.5 * size of our limit (based on bands from previous sequence) */
+     (mx->size_Mb > (1.25 * Mb_needed))) {  /* matrix is at least 25% bigger than we need to process current sequence */
+    free(mx->dp_mem);
+    mx->dp_mem = NULL;
+    mx->ncells_alloc = 0;
+  }
 
   /* must we realloc the full matrix? or can we get away with just
    * jiggering the pointers, if total required num cells is less
@@ -1337,10 +1336,14 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with cp9b == NULL.\n");
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
 
-  if(mx->size_Mb > (0.5 * size_limit)) { 
-    /* matrix is at least half the size of our limit (based on 
-     * bands from previous aligned sequence). Free the main dp_mem.
-     * */
+  if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &Jncells, &Lncells, &Rncells, &Tncells, &Mb_needed)) != eslOK) return status;
+  /*printf("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed);*/
+  ESL_DPRINTF2(("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
+  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
+
+  /* check if we should free the matrix */
+  if((mx->size_Mb > (0.5  * size_limit)) && /* matrix is >= 0.5 * size of our limit (based on bands from previous sequence) */
+     (mx->size_Mb > (1.25 * Mb_needed))) {  /* matrix is at least 25% bigger than we need to process current sequence */
     free(mx->Jdp_mem);
     free(mx->Ldp_mem);
     free(mx->Rdp_mem);
@@ -1354,11 +1357,6 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
     mx->Rncells_alloc = 0;
     mx->Tncells_alloc = 0;
   }
-
-  if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &Jncells, &Lncells, &Rncells, &Tncells, &Mb_needed)) != eslOK) return status;
-  /*printf("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
-  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full {J,L,R.T}matrices? or can we get away with just
    * jiggering the pointers, if total required num cells is less
@@ -2874,11 +2872,15 @@ cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *
    * cp9b has */
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() entered with cp9b == NULL.\n");
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
-  
-  if(mx->size_Mb > (0.5 * size_limit)) { 
-    /* matrix is at least half the size of our limit (based on 
-     * bands from previous aligned sequence). Free the main dp_mem.
-     * */
+
+  if((status = cm_hb_shadow_mx_SizeNeeded(cm, errbuf, cp9b, &y_ncells, &k_ncells, &Mb_needed)) != eslOK) return status;
+  /*printf("HMM banded shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
+  ESL_DPRINTF2(("HMM banded shadow matrix requested size: %.2f Mb\n", Mb_needed));
+  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded shadow DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
+
+  /* check if we should free the matrix, because it is significantly bigger than we need */
+  if((mx->size_Mb > (0.5  * size_limit)) && /* matrix is >= 0.5 * size of our limit (based on bands from previous sequence) */
+     (mx->size_Mb > (1.25 * Mb_needed))) {  /* matrix is at least 25% bigger than we need to process current sequence */
     free(mx->yshadow_mem);
     free(mx->kshadow_mem);
     mx->yshadow_mem = NULL;
@@ -2886,11 +2888,6 @@ cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *
     mx->y_ncells_alloc = 0;
     mx->k_ncells_alloc = 0;
   }
-
-  if((status = cm_hb_shadow_mx_SizeNeeded(cm, errbuf, cp9b, &y_ncells, &k_ncells, &Mb_needed)) != eslOK) return status;
-  /*printf("HMM banded shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("HMM banded shadow matrix requested size: %.2f Mb\n", Mb_needed));
-  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded shadow DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full yshadow and kshadow matrices? 
    * or can we get away with just jiggering the pointers, if 
@@ -3374,10 +3371,14 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_tr_hb_shadow_mx_GrowTo() entered with cp9b == NULL.\n");
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_tr_hb_shadow_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
   
-  if(mx->size_Mb > (0.5 * size_limit)) { 
-    /* matrix is at least half the size of our limit (based on 
-     * bands from previous aligned sequence). Free the main dp_mem.
-     * */
+  if((status = cm_tr_hb_shadow_mx_SizeNeeded(cm, errbuf, cp9b, &Jy_ncells, &Ly_ncells, &Ry_ncells, &Jk_ncells, &Lk_ncells, &Rk_ncells, &Tk_ncells, &Mb_needed)) != eslOK) return status;
+  /*printf("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
+  ESL_DPRINTF2(("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed));
+  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr shadow DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
+
+  /* check if we should free the matrix */
+  if((mx->size_Mb > (0.5  * size_limit)) && /* matrix is >= 0.5 * size of our limit (based on bands from previous sequence) */
+     (mx->size_Mb > (1.25 * Mb_needed))) {  /* matrix is at least 25% bigger than we need to process current sequence */
     free(mx->Jyshadow_mem);
     free(mx->Lyshadow_mem);
     free(mx->Ryshadow_mem);
@@ -3404,11 +3405,6 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
     mx->Rk_ncells_alloc = 0;
     mx->Tk_ncells_alloc = 0;
   }
-
-  if((status = cm_tr_hb_shadow_mx_SizeNeeded(cm, errbuf, cp9b, &Jy_ncells, &Ly_ncells, &Ry_ncells, &Jk_ncells, &Lk_ncells, &Rk_ncells, &Tk_ncells, &Mb_needed)) != eslOK) return status;
-  /*printf("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed));
-  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr shadow DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full {J,L,R}yshadow and {J,L,R,T}kshadow matrices? 
    * or can we get away with just jiggering the pointers, if 
