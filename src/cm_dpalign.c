@@ -2183,7 +2183,6 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int      b;		/* best local begin state */
   float    bsc;		/* score for using the best local begin state */
-  float   *el_scA;      /* [0..d..L-1] probability of local end emissions of length d */
   int      sd;          /* StateDelta(cm->sttype[v]) */
   int      sdr;         /* StateRightDelta(cm->sttype[v] */
   int      j_sdr;       /* j - sdr */
@@ -2216,15 +2215,13 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
    */
   if((status = cm_InitializeOptAccShadowDZero(cm, errbuf, yshadow, L)) != eslOK) return status;
 
-  /* fill in all possible local end scores, for local end emits of 1..L residues */
-  ESL_ALLOC(el_scA, sizeof(float) * (L+1));
+  /* start with the EL state */
   if(cm->flags & CMH_LOCAL_END && l_pp[cm->M] != NULL) { 
-    el_scA[0] = l_pp[cm->M][0];
-    for(d = 1; d <= L; d++) el_scA[d] = FLogsum(el_scA[d-1], l_pp[cm->M][d]);
-    /* fill in alpha matrix with these scores */
     for (j = 0; j <= L; j++) {
-      for (d = 0;  d <= j; d++) { 
-	alpha[cm->M][j][d] = el_scA[d];
+      alpha[cm->M][j][0] = l_pp[cm->M][0];
+      i = j; 
+      for (d = 1; d <= j; d++) { 
+	alpha[cm->M][j][d] = FLogsum(alpha[cm->M][j][d-1], l_pp[cm->M][i--]);
       }
     }
   }
@@ -2439,8 +2436,6 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   
   sc = alpha[0][L][L];
 
-  free(el_scA);
-
   /* convert sc, a log probability, into the average posterior probability of all L aligned residues */
   pp = sreEXP2(sc) / (float) L;
 
@@ -2449,9 +2444,6 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 
   ESL_DPRINTF1(("cm_OptAccAlign return pp: %f\n", pp));
   return eslOK;
-
- ERROR: 
-  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 
@@ -2492,7 +2484,6 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int      b;		/* best local begin state */
   float    bsc;		/* score for using the best local begin state */
-  float   *el_scA;      /* [0..d..L-1] probability of local end emissions of length d */
   int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
   int      jp_0;        /* L offset in ROOT_S's (v==0) j band */
   int      Lp_0;        /* L offset in ROOT_S's (v==0) d band */
@@ -2560,15 +2551,13 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
    */
   if((status = cm_InitializeOptAccShadowDZeroHB(cm, cp9b, errbuf, yshadow, L)) != eslOK) return status;
 
-  /* fill in all possible local end scores, for local end emits of 1..L residues */
-  ESL_ALLOC(el_scA, sizeof(float) * (L+1));
+  /* start with the EL state (remember, cm->M deck is non-banded) */
   if(cm->flags & CMH_LOCAL_END && l_pp[cm->M] != NULL) { 
-    el_scA[0] = l_pp[cm->M][0];
-    for(d = 1; d <= L; d++) el_scA[d] = FLogsum(el_scA[d-1], l_pp[cm->M][d]);
-    /* fill in alpha matrix with these scores */
     for (j = 0; j <= L; j++) {
-      for (d = 0;  d <= j; d++) { 
-	alpha[cm->M][j][d] = el_scA[d];
+      alpha[cm->M][j][0] = l_pp[cm->M][0];
+      i = j; 
+      for (d = 1; d <= j; d++) { 
+	alpha[cm->M][j][d] = FLogsum(alpha[cm->M][j][d-1], l_pp[cm->M][i--]);
       }
     }
   }
@@ -2926,8 +2915,6 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 #endif
   
   sc = alpha[0][jp_0][Lp_0];
-
-  free(el_scA);
 
   /* convert sc, a log probability, into the average posterior probability of all L aligned residues */
   pp = sreEXP2(sc) / (float) L;

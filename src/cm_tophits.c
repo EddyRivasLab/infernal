@@ -1231,8 +1231,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      lseq, rseq, 
 	      cm_alidisplay_TruncString(th->hit[h]->ad));
       if (pli->do_alignments) { 
-	//if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f", th->hit[h]->ad->avgpp); }
-	if(th->hit[h]->ad->ppline) { fprintf(ofp, " %8.6f", th->hit[h]->ad->avgpp); }
+	if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f", th->hit[h]->ad->avgpp); }
       	else                       { fprintf(ofp, " %6.2f", th->hit[h]->ad->sc); }
 	fprintf(ofp, " %5s %7.2f %7.2f\n\n",	
 		(th->hit[h]->ad->used_hbands ? "yes" : "no"),

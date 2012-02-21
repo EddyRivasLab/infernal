@@ -4033,7 +4033,6 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   float    sc;		    /* temporary log odds score */
   float    pp;		    /* average posterior probability of all emitted residues */
   int      yoffset;	    /* y=base+offset -- counter in child states that v can transit to */
-  float   *el_scA;          /* [0..d..L-1] probability of local end emissions of length d */
   int      sd;              /* StateDelta(cm->sttype[v]) */
   int      sdl;             /* StateLeftDelta(cm->sttype[v] */
   int      sdr;             /* StateRightDelta(cm->sttype[v] */
@@ -4109,15 +4108,13 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
    */
   if((status = cm_InitializeOptAccShadowDZero(cm, errbuf, Jyshadow, L)) != eslOK) return status;
 
-  /* fill in all possible local end scores, for local end emits of 1..L residues */
-  ESL_ALLOC(el_scA, sizeof(float) * (L+1));
+  /* start with the EL state */
   if(cm->flags & CMH_LOCAL_END && Jl_pp[cm->M] != NULL) { 
-    el_scA[0] = Jl_pp[cm->M][0];
-    for(d = 1; d <= L; d++) el_scA[d] = FLogsum(el_scA[d-1], Jl_pp[cm->M][d]);
-    /* fill in alpha matrix with these scores */
     for (j = 0; j <= L; j++) {
-      for (d = 0;  d <= j; d++) { 
-	Jalpha[cm->M][j][d] = el_scA[d];
+      Jalpha[cm->M][j][0] = Jl_pp[cm->M][0];
+      i = j; 
+      for (d = 1; d <= j; d++) { 
+	Jalpha[cm->M][j][d] = FLogsum(Jalpha[cm->M][j][d-1], Jl_pp[cm->M][i--]);
       }
     }
   }
@@ -4561,13 +4558,8 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if(ret_b  != NULL) *ret_b  = b;    
   if(ret_pp != NULL) *ret_pp = pp;
 
-  free(el_scA);
-
   ESL_DPRINTF1(("cm_TrOptAccAlign() return pp: %f\n", pp));
   return eslOK;
-
- ERROR: 
-  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 
@@ -4612,7 +4604,6 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   float    sc;		    /* temporary log odds score */
   float    pp;		    /* average posterior probability of all emitted residues */
   int      yoffset;	    /* y=base+offset -- counter in child states that v can transit to */
-  float   *el_scA;          /* [0..d..L-1] probability of local end emissions of length d */
   int      sd;              /* StateDelta(cm->sttype[v]) */
   int      sdl;             /* StateLeftDelta(cm->sttype[v] */
   int      sdr;             /* StateRightDelta(cm->sttype[v] */
@@ -4727,16 +4718,13 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
    */
   if((status = cm_InitializeOptAccShadowDZeroHB(cm, cp9b, errbuf, Jyshadow, L)) != eslOK) return status;
 
-  /* fill in all possible local end scores, for local end emits of 1..L residues */
-  /* Remember the EL deck is non-banded */
-  ESL_ALLOC(el_scA, sizeof(float) * (L+1));
+  /* start with the EL state (remember the EL deck is non-banded) */
   if(cm->flags & CMH_LOCAL_END && Jl_pp[cm->M] != NULL) { 
-    el_scA[0] = Jl_pp[cm->M][0];
-    for(d = 1; d <= L; d++) el_scA[d] = FLogsum(el_scA[d-1], Jl_pp[cm->M][d]);
-    /* fill in alpha matrix with these scores */
     for (j = 0; j <= L; j++) {
-      for (d = 0;  d <= j; d++) { 
-	Jalpha[cm->M][j][d] = el_scA[d];
+      Jalpha[cm->M][j][0] = Jl_pp[cm->M][0];
+      i = j; 
+      for (d = 1; d <= j; d++) { 
+	Jalpha[cm->M][j][d] = FLogsum(Jalpha[cm->M][j][d-1], Jl_pp[cm->M][i--]);
       }
     }
   }
@@ -5573,7 +5561,6 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   if(ret_b  != NULL) *ret_b  = b;    
   if(ret_pp != NULL) *ret_pp = pp;
 
-  free(el_scA);
   free(yvalidA);
 
   ESL_DPRINTF1(("cm_TrOptAccAlignHB() return pp: %f\n", pp));
@@ -8995,6 +8982,7 @@ static ESL_OPTIONS options[] = {
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "use posterior sums during HMM band calculation (widens bands)", 0},
   { "--onlyhb",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "only run HMM banded scanning trCYK", 0},
   { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "run optimal accuracy alignment instead of CYK", 0},
+  { "--compacc", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "run optimal accuracy and CYK and ensure OA avg pp >= CYK avg pp", 0},
   { "--tau",     eslARG_REAL,   "5e-6",NULL, "0<x<1",NULL, NULL, NULL, "set tail loss prob for HMM bands to <x>", 0},
   { "--cp9noel", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  "-l", NULL,         "turn OFF local ends in cp9 HMMs", 0},
   { "--cp9gloc", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "--cp9noel",  "configure CP9 HMM in glocal mode", 0},
@@ -9017,14 +9005,14 @@ main(int argc, char **argv)
   ESL_ALPHABET      *abc     = NULL;
   ESL_DSQ           *dsq;
   int                i;
-  float              sc;
-  float              pp;
+  float              sc, sc_oa, sc_cyk;
+  float              pp_oa, pp_cyk;
   char              *cmfile  = esl_opt_GetArg(go, 1);
   char              *seqfile = esl_opt_GetArg(go, 2);
   CM_FILE           *cmfp;	/* open input CM file stream */
   int                L;         /* length of sequence */
   char               errbuf[eslERRBUFSIZE];
-  int                pass_idx  = PLI_PASS_5P_AND_3P; /* this only affects the truncation penalty, not really impt */
+  int                pass_idx  = PLI_PASS_5P_AND_3P_ANY; /* this only affects the truncation penalty, not really impt */
   ESL_SQFILE        *sqfp      = NULL;        /* open sequence input file stream */
   ESL_SQ            *sq        = NULL;  /* a sequence */
   CMConsensus_t     *cons      = NULL;
@@ -9035,6 +9023,10 @@ main(int argc, char **argv)
   float              parsetree_sc, parsetree_struct_sc;
   char               mode;   
   int                qdbidx; 
+  int                do_optacc = (   esl_opt_GetBoolean(go, "--optacc")  || esl_opt_GetBoolean(go, "--compacc")) ? TRUE : FALSE;
+  int                do_cyk    = ((! esl_opt_GetBoolean(go, "--optacc")) || esl_opt_GetBoolean(go, "--compacc")) ? TRUE : FALSE;
+  int                do_compacc = esl_opt_GetBoolean(go, "--compacc") ? TRUE : FALSE;
+  char              *ppstr = NULL; /* just so cm_*Align*() will return avg PP for CYK */
 
   /* open CM file */
   if ((status = cm_file_Open(cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
@@ -9139,26 +9131,32 @@ main(int argc, char **argv)
     /* 1. non-banded truncated alignment, unless --onlyhb */
     if(! esl_opt_GetBoolean(go, "--onlyhb")) { 
       /*********************Begin cm_TrAlign****************************/
-      esl_stopwatch_Start(w);
-      if(esl_opt_GetBoolean(go, "--optacc")) { 
-	if((status = cm_TrAlign(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, pass_idx, TRUE, FALSE, cm->trnb_mx, cm->trnb_shmx, cm->trnb_omx, cm->trnb_emx, NULL, NULL, &tr, &mode, &pp, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f PP (mode: %s)  (FULL LENGTH OPTACC)\n", i, "cm_TrAlign(): ", pp, MarginalMode(mode));
-      }
-      else { 
-	if((status = cm_TrAlign(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, pass_idx, FALSE, FALSE, cm->trnb_mx, cm->trnb_shmx, cm->trnb_omx, cm->trnb_emx, NULL, NULL, &tr, &mode, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits (mode: %s) (FULL LENGTH CYK)\n", i, "cm_TrAlign(): ", sc, MarginalMode(mode));
-      }
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(stdout, w, " CPU time: ");
-
-      if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq);
-      ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
-      FreeParsetree(tr);
-      if(esl_opt_GetBoolean(go, "--optacc")) { 
+      if(do_optacc) { 
+	esl_stopwatch_Start(w);
+	if((status = cm_TrAlign(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, pass_idx, TRUE, FALSE, cm->trnb_mx, cm->trnb_shmx, cm->trnb_omx, cm->trnb_emx, NULL, &ppstr, &tr, &mode, &pp_oa, &sc_oa)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f PP (mode: %s)  (FULL LENGTH OPTACC)\n", i, "cm_TrAlign(): ", pp_oa, MarginalMode(mode));
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq);
+	ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+	FreeParsetree(tr);
+	free(ppstr);
 	printf("Parsetree score      : %.4f           (FULL LENGTH OPTACC)\n", parsetree_sc);
       }
-      else { 
+      if(do_cyk) { 
+	esl_stopwatch_Start(w);
+	if((status = cm_TrAlign(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, pass_idx, FALSE, FALSE, cm->trnb_mx, cm->trnb_shmx, cm->trnb_omx, cm->trnb_emx, NULL, &ppstr, &tr, &mode, &pp_cyk, &sc_cyk)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f pp %10.4f bits (mode: %s) (FULL LENGTH CYK)\n", i, "cm_TrAlign(): ", pp_cyk, sc_cyk, MarginalMode(mode));
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq);
+	ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+	FreeParsetree(tr);
+	free(ppstr);
 	printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
+      }
+      if(do_compacc) { 
+	;///if((pp_oa - pp_cyk) < -0.0001) cm_Fail("ERROR OA PP: %f < CYK PP: %f\n", pp_oa, pp_cyk);
       }
       /*********************End cm_TrAlign****************************/
 
@@ -9185,24 +9183,35 @@ main(int argc, char **argv)
     /* 2. non-banded standard (non-truncated) alignment, if requested */
     if(esl_opt_GetBoolean(go, "--std") && (! esl_opt_GetBoolean(go, "--onlyhb"))) { 
       /*********************Begin cm_Align()****************************/
-      esl_stopwatch_Start(w);
-      if((status = cm_Align  (cm, errbuf, dsq, L, size_limit, esl_opt_GetBoolean(go, "--optacc"), FALSE, cm->nb_mx, cm->nb_shmx, cm->nb_omx, cm->nb_emx, NULL, NULL, &tr, &pp, &sc)) != eslOK) return status;
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(stdout, w, " CPU time: ");
-
-      if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq);
-      ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
-      mode = ParsetreeMode(tr);
-      FreeParsetree(tr);
-      if(esl_opt_GetBoolean(go, "--optacc")) { 
-	printf("%4d %-30s %10.4f pp   (FULL LENGTH OPTACC)\n", i, "cm_Align(): ", pp);
+      if(do_optacc) { 
+	esl_stopwatch_Start(w);
+	if((status = cm_Align  (cm, errbuf, dsq, L, size_limit, TRUE, FALSE, cm->nb_mx, cm->nb_shmx, cm->nb_omx, cm->nb_emx, NULL, &ppstr, &tr, &pp_oa, &sc_oa)) != eslOK) return status;
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq);
+	ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+	mode = ParsetreeMode(tr);
+	FreeParsetree(tr);
+	free(ppstr);
+	printf("%4d %-30s %10.4f pp   (FULL LENGTH OPTACC)\n", i, "cm_Align(): ", pp_oa);
 	printf("Parsetree score      : %.4f           (FULL LENGTH OPTACC)\n", parsetree_sc);
       }
-      else { 
-	printf("%4d %-30s %10.4f bits (FULL LENGTH CYK)\n", i, "cm_Align(): ", sc);
-	printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
+      if(do_cyk) { 
+	esl_stopwatch_Start(w);
+	if((status = cm_Align  (cm, errbuf, dsq, L, size_limit, FALSE, FALSE, cm->nb_mx, cm->nb_shmx, cm->nb_omx, cm->nb_emx, NULL, &ppstr, &tr, &pp_cyk, &sc_cyk)) != eslOK) return status;
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq);
+	ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+	mode = ParsetreeMode(tr);
+	FreeParsetree(tr);
+	free(ppstr);
+	printf("%4d %-30s %10.4f pp %10.4f bits  (FULL LENGTH OPTACC)\n", i, "cm_Align(): ", pp_cyk, sc_cyk);
+      	printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
       }
-      
+      if(do_compacc) { 
+	if((pp_oa - pp_cyk) < -0.0001) cm_Fail("ERROR OA PP: %f < CYK PP: %f\n", pp_oa, pp_cyk);
+      }
       /*********************End cm_Align*****************************/
 
       if(esl_opt_GetBoolean(go, "--cykout")) { 
@@ -9265,27 +9274,35 @@ main(int argc, char **argv)
 	
       /*PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);*/
 	
-      esl_stopwatch_Start(w);
 
-      if(esl_opt_GetBoolean(go, "--optacc")) { 
-	if((status = cm_TrAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, pass_idx, TRUE, FALSE, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, cm->trhb_emx, NULL, NULL, &tr, &mode, &pp, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f PP  (mode: %s)  (FULL LENGTH OPTACC)", i, "cm_TrAlignHB(): ", pp, MarginalMode(mode));
-      }
-      else {
-	if((status = cm_TrAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, pass_idx, FALSE, FALSE, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, cm->trhb_emx, NULL, NULL, &tr, &mode, &pp, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits (mode: %s)  (FULL LENGTH CYK)", i, "cm_TrAlignHB(): ", sc, MarginalMode(mode));
-      }
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(stdout, w, " CPU time: ");
-      if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq);
-      ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
-      mode = ParsetreeMode(tr);
-      FreeParsetree(tr);
-      if(esl_opt_GetBoolean(go, "--optacc")) { 
+      if(do_optacc) { 
+	esl_stopwatch_Start(w);
+	if((status = cm_TrAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, pass_idx, TRUE, FALSE, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, cm->trhb_emx, NULL, &ppstr, &tr, &mode, &pp_oa, &sc_oa)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f PP  (mode: %s)  (FULL LENGTH OPTACC)", i, "cm_TrAlignHB(): ", pp_oa, MarginalMode(mode));
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq);
+	ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+	mode = ParsetreeMode(tr);
+	FreeParsetree(tr);
+	free(ppstr);
 	printf("Parsetree score      : %.4f           (FULL LENGTH OPTACC)\n", parsetree_sc);
       }
-      else { 
+      if(do_cyk) { 
+	esl_stopwatch_Start(w);
+	if((status = cm_TrAlignHB(cm, errbuf, dsq, L, size_limit, TRMODE_UNKNOWN, pass_idx, FALSE, FALSE, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, cm->trhb_emx, NULL, &ppstr, &tr, &mode, &pp_cyk, &sc_cyk)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f pp %10.4f bits (mode: %s)  (FULL LENGTH CYK)", i, "cm_TrAlignHB(): ", pp_cyk, sc_cyk, MarginalMode(mode));
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq);
+	ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+	mode = ParsetreeMode(tr);
+	FreeParsetree(tr);
+	free(ppstr);
 	printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
+      }
+      if(do_compacc) { 
+	if((pp_oa - pp_cyk) < -0.0001) cm_Fail("ERROR OA PP: %f < CYK PP: %f\n", pp_oa, pp_cyk);
       }
       /*********************End cm_TrAlignHB*****************************/
 
@@ -9317,7 +9334,7 @@ main(int argc, char **argv)
       while(1) { 
 	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
 				   FALSE,  /* doing search? */
-				   PLI_PASS_STD,  /* we are not allowing truncated alignments */
+				   PLI_PASS_STD_ANY,  /* we are not allowing truncated alignments */
 				   0)) != eslOK) cm_Fail(errbuf);
 	if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, &hbmx_Mb)) != eslOK) return status; 
 	if(hbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */
@@ -9332,23 +9349,32 @@ main(int argc, char **argv)
 	
       /*PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);*/
 	
-      esl_stopwatch_Start(w);
-      if((status = cm_AlignHB(cm, errbuf, dsq, L, size_limit, esl_opt_GetBoolean(go, "--optacc"), FALSE, cm->hb_mx, cm->hb_shmx, cm->hb_omx, cm->hb_emx, NULL, NULL, &tr, &pp, &sc)) != eslOK) cm_Fail(errbuf);
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(stdout, w, " CPU time: ");
-
-      if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq);
-      ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
-      FreeParsetree(tr);
-      if(esl_opt_GetBoolean(go, "--optacc")) { 
-	printf("%4d %-30s %10.4f pp   (FULL LENGTH OPTACC)\n", i, "cm_AlignHB(): ", pp);
+      if(do_optacc) { 
+	esl_stopwatch_Start(w);
+	if((status = cm_AlignHB(cm, errbuf, dsq, L, size_limit, TRUE, FALSE, cm->hb_mx, cm->hb_shmx, cm->hb_omx, cm->hb_emx, NULL, &ppstr, &tr, &pp_oa, &sc_oa)) != eslOK) cm_Fail(errbuf);
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq);
+	ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+	FreeParsetree(tr);
+	free(ppstr);
+	printf("%4d %-30s %10.4f pp   (FULL LENGTH OPTACC)\n", i, "cm_AlignHB(): ", pp_oa);
 	printf("Parsetree score      : %.4f           (FULL LENGTH OPTACC)\n", parsetree_sc);
       }
-      else { 
-	printf("%4d %-30s %10.4f bits (FULL LENGTH CYK)\n", i, "cm_AlignHB(): ", sc);
+      if(do_cyk) { 
+	if((status = cm_AlignHB(cm, errbuf, dsq, L, size_limit, FALSE, FALSE, cm->hb_mx, cm->hb_shmx, cm->hb_omx, cm->hb_emx, NULL, &ppstr, &tr, &pp_cyk, &sc_cyk)) != eslOK) cm_Fail(errbuf);
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	if(esl_opt_GetBoolean(go, "--tr")) ParsetreeDump(stdout, tr, cm, dsq);
+	ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &parsetree_sc, &parsetree_struct_sc, NULL, NULL, NULL);
+	FreeParsetree(tr);
+	free(ppstr);
+	printf("%4d %-30s %10.4f pp %10.4f bits (FULL LENGTH CYK)\n", i, "cm_AlignHB(): ", pp_cyk, sc_cyk);
 	printf("Parsetree score      : %.4f           (FULL LENGTH CYK)\n", parsetree_sc);
       }
-      
+      if(do_compacc) { 
+	if((pp_oa - pp_cyk) < -0.0001) cm_Fail("ERROR OA PP: %f < CYK PP: %f\n", pp_oa, pp_cyk);
+      }
       /*********************End cm_AlignHB()***************************/
     }
 
@@ -9453,7 +9479,7 @@ main(int argc, char **argv)
 	  while(1) { 
 	    if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
 				       TRUE,  /* doing search? */
-				       PLI_PASS_STD,  /* we are not allowing truncated alignments */
+				       PLI_PASS_STD_ANY,  /* we are not allowing truncated alignments */
 				       0)) != eslOK) cm_Fail(errbuf);
 	    if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, &hbmx_Mb)) != eslOK) return status; 
 	    if(hbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */
