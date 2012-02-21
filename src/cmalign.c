@@ -638,7 +638,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       free(dsq); /* esl_sq_CreateDigitalFrom() makes a copy of dsq */
       
       /* align the sequence */
-      if((status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize, info.pass_idx, 
+      if((status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize, 
 				       info.w, info.w_tot, NULL, &data)) != eslOK) mpi_failure(errbuf);
       
       /* pack up the data and send it back to the master (FALSE: don't send data->sq) */

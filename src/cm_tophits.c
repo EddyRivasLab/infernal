@@ -1075,7 +1075,7 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       
       sprintf(cur_rankstr, "(%d)", nprinted+1);
 
-      fprintf(ofp, " %*s  %9.2g  %6.1f  %-*s  %*" PRId64 "  %*" PRId64 "  %c  %5s  %4d",
+      fprintf(ofp, " %*s  %9.2g  %6.1f  %-*s  %*" PRId64 "  %*" PRId64 "  %c  %5s  %4d  ",
 	      rankw, cur_rankstr,
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
@@ -1200,19 +1200,23 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 
       if(cm_alidisplay_Is5PTrunc(th->hit[h]->ad)) { /* 5' truncated */
 	lmod = '~';
-	lseq = th->hit[h]->ad->sqfrom     == 1 ? '{' : '~';
+	if(th->hit[h]->in_rc) { lseq = th->hit[h]->ad->sqfrom == th->hit[h]->srcL ? '{' : '~'; }
+	else                  { lseq = th->hit[h]->ad->sqfrom == 1                ? '{' : '~'; }
       }
       else { /* not 5' truncated */
 	lmod = th->hit[h]->ad->cfrom_emit == 1 ? '[' : '.';
-	lseq = th->hit[h]->ad->sqfrom     == 1 ? '[' : '.';
+	if(th->hit[h]->in_rc) { lseq = th->hit[h]->ad->sqfrom == th->hit[h]->srcL ? '[' : '.'; }
+	else                  { lseq = th->hit[h]->ad->sqfrom == 1                ? '[' : '.'; }
       }
       if(cm_alidisplay_Is3PTrunc(th->hit[h]->ad)) { /* 3' truncated */
 	rmod = '~';
-	rseq = th->hit[h]->ad->sqto     == th->hit[h]->srcL     ? '}' : '~';
-      }
+	if(th->hit[h]->in_rc) { rseq = th->hit[h]->ad->sqto == 1                ? '}' : '~'; }
+	else                  { rseq = th->hit[h]->ad->sqto == th->hit[h]->srcL ? '}' : '~'; }
+      }	
       else { /* not 3' truncated */
 	rmod = th->hit[h]->ad->cto_emit == th->hit[h]->ad->clen ? ']' : '.';
-	rseq = th->hit[h]->ad->sqto     == th->hit[h]->srcL     ? ']' : '.';
+	if(th->hit[h]->in_rc) { rseq = th->hit[h]->ad->sqto == 1                ? ']' : '.'; }
+	else                  { rseq = th->hit[h]->ad->sqto == th->hit[h]->srcL ? ']' : '.'; }
       }
 
       sprintf(cur_rankstr, "(%d)", nprinted+1);
