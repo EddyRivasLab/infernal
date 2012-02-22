@@ -1252,9 +1252,9 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
 
   /* Go back through all windows, and tally up total number of
    * residues that survived each stage, without double-counting
-   * overlapping residues.  Note, based on the way the windows were
-   * split, we know that any overlapping residues must occur in
-   * adjacent windows and we exploit that here.
+   * overlapping residues. Based on the way the windows were split, we
+   * know that any overlapping residues must occur in adjacent windows
+   * and we exploit that here.
    */
   for(i = 0; i < nwin; i++) {
     wlen = we[i] - ws[i] + 1;
@@ -2051,10 +2051,6 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
     cm->search_opts  = pli->final_cm_search_opts;
     cm->tau          = pli->final_tau;
         
-    /*******************************************************************
-     * Determine if we're doing a HMM banded scan, if so, we may already have HMM bands 
-     * if our CYK filter also used them. 
-     *******************************************************************/
     if(do_hbanded_final_scan) { /* use HMM bands */
 	/* Calculate HMM bands. We'll tighten tau and recalculate bands until 
 	 * the resulting HMM banded matrix is under our size limit.
@@ -2722,7 +2718,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     do_pass_5p_and_3p_force = ((! not5term) && (! not3term) && (sq->n <= pli->maxW)) ? TRUE : FALSE;
     do_pass_5p_and_3p_any   = FALSE;
   }
-  else if(pli->do_trunc_any) { /* we're allow any truncated hit, in a special pass PLI_PASS_5P_AND_3P_ANY */
+  else if(pli->do_trunc_any) { /* we allow any truncated hit, in a special pass PLI_PASS_5P_AND_3P_ANY */
     do_pass_5p_and_3p_any = TRUE;
     do_pass_5p_only_force = do_pass_3p_only_force = do_pass_5p_and_3p_force = FALSE;
   }

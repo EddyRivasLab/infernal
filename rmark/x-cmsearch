@@ -223,12 +223,12 @@ while (<TABLE>)
 	    while (<OUTPUT>)
 	    {
 		if (/^\#/) { next; }
-		@fields   = split(' ', $_, 11);
+		@fields   = split(' ', $_, 13);
 		$target      = $fields[0];
 		$target_from = $fields[6];
 		$target_to   = $fields[7];
-		$bitscore    = $fields[10];
-		$evalue      = $fields[9];
+		$bitscore    = $fields[12];
+		$evalue      = $fields[11];
 		printf TMPOUTFILE "%10g %10.1f %10d %10d %20s %35s\n", $evalue, $bitscore, $target_from, $target_to, $target, $msaname;
 	    }
 	}

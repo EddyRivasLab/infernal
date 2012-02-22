@@ -2427,8 +2427,8 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int have_i0, int have_j0, char *e
       is_left   = TRUE; 
       is_right  = TRUE;
       nd        = cm->ndidx[prv_v];
-      /* tricky case: if previous node was not an emitter, the EL will emit at lpos, not after it */
-      if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd) { 
+      /* tricky case: if previous node was not a LEFT emitter, the EL will emit at lpos, not after it */
+      if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) { 
 	insert_sd = 1;
       }
       else { 

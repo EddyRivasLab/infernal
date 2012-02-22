@@ -112,10 +112,10 @@ static ESL_OPTIONS options[] = {
   { "--noF4",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the glocal Forward filter stage",                         7 },
   { "--noF6",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmm",          "skip the CYK filter stage",                                    7 },
   { "--doF1b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF1",  "turn on the MSV composition bias filter",                      7 },
-  { "--noF2b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF2",  "turn on the Vit composition bias filter",                      7 },
-  { "--noF3b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF3",  "turn on the Fwd composition bias filter",                      7 },
-  { "--noF4b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF3",  "turn on the glocal Fwd composition bias filter",               7 },
-  { "--noF5b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noenvdef", "turn on the per-domain composition bias filter",               7 },
+  { "--noF2b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF2",  "turn off the Vit composition bias filter",                      7 },
+  { "--noF3b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF3",  "turn off the Fwd composition bias filter",                      7 },
+  { "--noF4b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF3",  "turn off the glocal Fwd composition bias filter",               7 },
+  { "--noF5b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noenvdef", "turn off the per-domain composition bias filter",               7 },
   { "--F1",         eslARG_REAL,  "0.35", NULL, NULL,    NULL,  NULL, "--max",          "Stage 1 (MSV) threshold: promote hits w/ P <= F1",             7 },
   { "--F1b",        eslARG_REAL,  "0.35", NULL, NULL,    NULL,"--domsvbias", "--max",   "Stage 1 (MSV) bias threshold: promote hits w/ P <= F1b",       7 },
   { "--F2",         eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--max",          "Stage 2 (Vit) threshold: promote hits w/ P <= F2",             7 },
@@ -975,232 +975,228 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* <abc> is not known 'til first CM is read. */
   hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
   /*printf("read cm master\n");*/
-  if (hstatus == eslOK)
-    {
-      /* One-time initializations after alphabet <abc> becomes known */
-      output_header(ofp, go, cfg->cmfile, cfg->dbfile);
-      dbsq = esl_sq_CreateDigital(abc);
-    }
+  if (hstatus == eslOK) { 
+    /* One-time initializations after alphabet <abc> becomes known */
+    output_header(ofp, go, cfg->cmfile, cfg->dbfile);
+    dbsq = esl_sq_CreateDigital(abc);
+  }
 
   /* Outer loop: over each query CM in <cmfile>. */
-  while (hstatus == eslOK) 
-    {
-      cm_idx++;
-      esl_stopwatch_Start(w);
-
-      /* Make sure we have E-value stats for both the CM and the p7, if not we can't run the pipeline */
-      if(! (info->cm->flags & CMH_EXPTAIL_STATS)) mpi_failure("no E-value parameters were read for CM: %s\n", info->cm->name);
-      if(! (info->cm->flags & CMH_FP7))           mpi_failure("no filter HMM was read for CM: %s\n", info->cm->name);
-
-      fprintf(ofp, "Query:       %s  [CLEN=%d]\n", info->cm->name, info->cm->clen);
-      if (info->cm->acc)  fprintf(ofp, "Accession:   %s\n", info->cm->acc);
-      if (info->cm->desc) fprintf(ofp, "Description: %s\n", info->cm->desc);
-
-      /* Configure the CM and setup the HMM filter */
-      if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
-      if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
-
-      /* Create processing pipeline and hit list */
-      info->th  = cm_tophits_Create(); 
-      info->pli = cm_pipeline_Create(go, abc, info->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->om, info->bg, cm_idx-1)) != eslOK) { 
-	mpi_failure(info->pli->errbuf);
-      }
-
-      /* Create block_list and add an empty block to it */
-      block_list = create_mpi_block_list();
-      block_list->blocks[0] = create_mpi_block();
-      block_list->N = 1;
-
-      /* Initialize for main loop */
-      pkey_idx = 0;
-      final_pkey_idx = dbfp->data.ascii.ssi->nprimary - 1;
-      sstatus = eslOK;
-      tot_noverlap = noverlap = 0;
-      tot_nseq     = nseq     = 0;
+  while (hstatus == eslOK) {
+    cm_idx++;
+    esl_stopwatch_Start(w);
+    
+    /* Make sure we have E-value stats for both the CM and the p7, if not we can't run the pipeline */
+    if(! (info->cm->flags & CMH_EXPTAIL_STATS)) mpi_failure("no E-value parameters were read for CM: %s\n", info->cm->name);
+    if(! (info->cm->flags & CMH_FP7))           mpi_failure("no filter HMM was read for CM: %s\n", info->cm->name);
+    
+    fprintf(ofp, "Query:       %s  [CLEN=%d]\n", info->cm->name, info->cm->clen);
+    if (info->cm->acc)  fprintf(ofp, "Accession:   %s\n", info->cm->acc);
+    if (info->cm->desc) fprintf(ofp, "Description: %s\n", info->cm->desc);
+    
+    /* Configure the CM and setup the HMM filter */
+    if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
+    if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
+    
+    /* Create processing pipeline and hit list */
+    info->th  = cm_tophits_Create(); 
+    info->pli = cm_pipeline_Create(go, abc, info->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->om, info->bg, cm_idx-1)) != eslOK) { 
+      mpi_failure(info->pli->errbuf);
+    }
+    
+    /* Create block_list and add an empty block to it */
+    block_list = create_mpi_block_list();
+    block_list->blocks[0] = create_mpi_block();
+    block_list->N = 1;
+    
+    /* Initialize for main loop */
+    pkey_idx = 0;
+    final_pkey_idx = dbfp->data.ascii.ssi->nprimary - 1;
+    sstatus = eslOK;
+    tot_noverlap = noverlap = 0;
+    tot_nseq     = nseq     = 0;
 #ifdef HAVE_MPI
-      /* process --sidx and --eidx, if nec */
-      if(esl_opt_IsUsed(go, "--sidx")) { /* start searching at sequence index <n> from --sidx <n> */
-	pkey_idx = esl_opt_GetInteger(go, "--sidx") - 1;
-	if(pkey_idx >= dbfp->data.ascii.ssi->nprimary) {
-	  mpi_failure("--sidx %d is invalid because only %d sequences exist in the target db", pkey_idx+1, dbfp->data.ascii.ssi->nprimary);
-	}
+    /* process --sidx and --eidx, if nec */
+    if(esl_opt_IsUsed(go, "--sidx")) { /* start searching at sequence index <n> from --sidx <n> */
+      pkey_idx = esl_opt_GetInteger(go, "--sidx") - 1;
+      if(pkey_idx >= dbfp->data.ascii.ssi->nprimary) {
+	mpi_failure("--sidx %d is invalid because only %d sequences exist in the target db", pkey_idx+1, dbfp->data.ascii.ssi->nprimary);
       }
-      if(esl_opt_IsUsed(go, "--eidx")) { /* start searching at sequence index <n> from --eidx <n> */
-	final_pkey_idx = esl_opt_GetInteger(go, "--eidx") - 1;
-	if(final_pkey_idx >= dbfp->data.ascii.ssi->nprimary) { 
-	  mpi_failure("--eidx %d is invalid because only %d sequences exist in the target db", final_pkey_idx+1, dbfp->data.ascii.ssi->nprimary);
-	}
-	if(final_pkey_idx < pkey_idx) { 
-	  mpi_failure("with --sidx <n1> --eidx <n2>, <n2> must be >= <n1>");
-	}
+    }
+    if(esl_opt_IsUsed(go, "--eidx")) { /* start searching at sequence index <n> from --eidx <n> */
+      final_pkey_idx = esl_opt_GetInteger(go, "--eidx") - 1;
+      if(final_pkey_idx >= dbfp->data.ascii.ssi->nprimary) { 
+	mpi_failure("--eidx %d is invalid because only %d sequences exist in the target db", final_pkey_idx+1, dbfp->data.ascii.ssi->nprimary);
       }
-      printf("searching seqs %ld to %ld\n", pkey_idx, final_pkey_idx);
+      if(final_pkey_idx < pkey_idx) { 
+	mpi_failure("with --sidx <n1> --eidx <n2>, <n2> must be >= <n1>");
+      }
+    }
+    printf("searching seqs %ld to %ld\n", pkey_idx, final_pkey_idx);
 #endif
-      /* Main loop: */
-      while((pkey_idx <= final_pkey_idx) && 
-	    ((sstatus = add_blocks(dbfp, dbsq, info->pli->maxW, errbuf, final_pkey_idx, block_list, &pkey_idx, &noverlap, &nseq)) == eslOK))
-	{
-	  tot_noverlap += noverlap;
-	  tot_nseq     += nseq;
-
-	  cur_block = block_list->blocks[0];
-	  while(cur_block != NULL && cur_block->complete) { 
-	    /* cur_block points to a valid, complete block, send it to a worker */
-	    if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) 
-	      mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
-	    
-	    MPI_Get_count(&mpistatus, MPI_PACKED, &size);
-	    if (mpi_buf == NULL || size > mpi_size) {
-	      void *tmp;
-	      ESL_RALLOC(mpi_buf, tmp, sizeof(char) * size);
-	      mpi_size = size; 
-	    }
-	    
-	    dest = mpistatus.MPI_SOURCE;
-	    MPI_Recv(mpi_buf, size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
-	    
-	    if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)
-	      mpi_failure("MPI client %d raised error:\n%s\n", dest, mpi_buf);
-	    if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)
-	      mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
-	    
-	    mpi_block_send(cur_block, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size);
-	    
-	    /* Free the block we just sent, and remove it from block_list 
-	     * by swapping pointers and decrementing N. Then update cur_block. */
-	    free(cur_block);
-	    for(i = 0; i < (block_list->N-1); i++) { 
-	      block_list->blocks[i] = block_list->blocks[i+1];
-	    }
-	    block_list->blocks[(block_list->N-1)] = NULL;
-	    block_list->N--;
-	    cur_block = block_list->blocks[0];
-	  }
-	}
-      if(sstatus != eslOK) mpi_failure(errbuf);
-
-      /* create an empty block to send to workers */
-      cur_block = create_mpi_block();
-      cur_block->complete = TRUE;
-
-      /* wait for all workers to finish up their work blocks */
-      for (i = 1; i < cfg->nproc; ++i)
-	{
+    /* Main loop: */
+    while((pkey_idx <= final_pkey_idx) && 
+	  ((sstatus = add_blocks(dbfp, dbsq, info->pli->maxW, errbuf, final_pkey_idx, block_list, &pkey_idx, &noverlap, &nseq)) == eslOK))
+      {
+	tot_noverlap += noverlap;
+	tot_nseq     += nseq;
+	
+	cur_block = block_list->blocks[0];
+	while(cur_block != NULL && cur_block->complete) { 
+	  /* cur_block points to a valid, complete block, send it to a worker */
 	  if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) 
 	    mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
-
+	  
 	  MPI_Get_count(&mpistatus, MPI_PACKED, &size);
 	  if (mpi_buf == NULL || size > mpi_size) {
 	    void *tmp;
 	    ESL_RALLOC(mpi_buf, tmp, sizeof(char) * size);
 	    mpi_size = size; 
 	  }
-
+	  
 	  dest = mpistatus.MPI_SOURCE;
 	  MPI_Recv(mpi_buf, size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
-
+	    
 	  if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)
 	    mpi_failure("MPI client %d raised error:\n%s\n", dest, mpi_buf);
 	  if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)
 	    mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
-	}
-
-      /* merge the results of the search results */
-      for (dest = 1; dest < cfg->nproc; ++dest)
-	{
-	  CM_PIPELINE     *mpi_pli   = NULL;
-	  CM_TOPHITS      *mpi_th    = NULL;
-
-	  /* send an empty block to signal the worker they are done */
+	  
 	  mpi_block_send(cur_block, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size);
-
-	  /* wait for the results */
-	  if ((status = cm_tophits_MPIRecv(dest, INFERNAL_TOPHITS_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, &mpi_th)) != eslOK)
-	    mpi_failure("Unexpected error %d receiving tophits from %d", status, dest);
-
-	  if ((status = cm_pipeline_MPIRecv(dest, INFERNAL_PIPELINE_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, go, &mpi_pli)) != eslOK)
-	    mpi_failure("Unexpected error %d receiving pipeline from %d", status, dest);
-
-	  /*printf("RECEIVED TOPHITS (%ld hits) FROM %d\n", mpi_th->N, dest);*/
-	  cm_tophits_Merge(info->th, mpi_th);
-	  cm_pipeline_Merge(info->pli, mpi_pli);
-
-	  cm_pipeline_Destroy(mpi_pli, NULL);
-	  cm_tophits_Destroy(mpi_th);
-	}
-      /* Set number of seqs, and subtract number of overlapping residues searched from total */
-      info->pli->nseqs = tot_nseq;
-      if(info->pli->do_top && info->pli->do_bot) tot_noverlap *= 2; /* count overlaps twice on each strand, if nec */
-      /*printf("nres: %ld\nnoverlap: %ld\n", info->pli->acct[PLI_PASS_STD].nres, noverlap);*/
-      info->pli->acct[PLI_PASS_STD_ANY].nres -= tot_noverlap;
-      if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres -= tot_noverlap;
-      /*printf("nres: %ld\n", info->pli->acct[PLI_PASS_STD_ANY].nres);*/
-
-      /* In MPI, we don't need to call cm_tophits_SetSourceLengths()
-       * because unlike serial/threaded we always know the length of
-       * the source sequences. In fact we don't actually need to
-       * re-search bogus terminii and subsequently remove hits in
-       * those terminii, but we do it anyway so the pipeline
-       * statistics between serial/threaded and mpi are identical.  If
-       * in the future serial/threaded changes so that source lengths
-       * are known up-front (i.e. read in at the beginning of each
-       * sequence in the input file somehow) it would remove the need
-       * for cm_tophits_SetSourceLengths() and
-       * cm_tophits_RemoveBogusTerminusHits().
-       */ 
-#if 0 
-      printf("HEYA before\n");
-      cm_tophits_Dump(stdout, info[0].th);
-#endif
-      /* Remove hits from terminii-researching stage that we later learned were not actually in terminii */
-      if(info->pli->do_trunc_ends) { 
-	cm_tophits_RemoveBogusTerminusHits(info->th);
-      }
-#if 0 
-      printf("HEYA after\n");
-      cm_tophits_Dump(stdout, info[0].th);
-#endif
-
-      /* Sort by sequence index/position and remove duplicates */
-      cm_tophits_SortForOverlapRemoval(info->th);
-      if((status = cm_tophits_RemoveOverlaps(info->th, errbuf)) != eslOK) mpi_failure(errbuf);
-      /* Resort by score and enforce threshold */
-      cm_tophits_SortByScore(info->th);
-      cm_tophits_Threshold(info->th, info->pli);
-
-      /* tally up total number of hits and target coverage */
-      for (i = 0; i < info->th->N; i++) {
-	if ((info->th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info->th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
-	  info->pli->acct[info->th->hit[i]->pass_idx].n_output++;
-	  info->pli->acct[info->th->hit[i]->pass_idx].pos_output += abs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
+	  
+	  /* Free the block we just sent, and remove it from block_list 
+	   * by swapping pointers and decrementing N. Then update cur_block. */
+	  free(cur_block);
+	  for(i = 0; i < (block_list->N-1); i++) { 
+	    block_list->blocks[i] = block_list->blocks[i+1];
+	  }
+	  block_list->blocks[(block_list->N-1)] = NULL;
+	  block_list->N--;
+	  cur_block = block_list->blocks[0];
 	}
       }
-
-      cm_tophits_Targets(ofp, info->th, info->pli, textw); 
+    if(sstatus != eslOK) mpi_failure(errbuf);
+    
+    /* create an empty block to send to workers */
+    cur_block = create_mpi_block();
+    cur_block->complete = TRUE;
+    
+    /* wait for all workers to finish up their work blocks */
+    for (i = 1; i < cfg->nproc; ++i) {
+      if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) 
+	mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
+      
+      MPI_Get_count(&mpistatus, MPI_PACKED, &size);
+      if (mpi_buf == NULL || size > mpi_size) {
+	void *tmp;
+	ESL_RALLOC(mpi_buf, tmp, sizeof(char) * size);
+	mpi_size = size; 
+      }
+      
+      dest = mpistatus.MPI_SOURCE;
+      MPI_Recv(mpi_buf, size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
+      
+      if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)
+	mpi_failure("MPI client %d raised error:\n%s\n", dest, mpi_buf);
+      if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)
+	mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
+    }
+    
+    /* merge the results of the search results */
+    for (dest = 1; dest < cfg->nproc; ++dest) { 
+      CM_PIPELINE     *mpi_pli   = NULL;
+      CM_TOPHITS      *mpi_th    = NULL;
+      
+      /* send an empty block to signal the worker they are done */
+      mpi_block_send(cur_block, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size);
+      
+      /* wait for the results */
+      if ((status = cm_tophits_MPIRecv(dest, INFERNAL_TOPHITS_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, &mpi_th)) != eslOK)
+	mpi_failure("Unexpected error %d receiving tophits from %d", status, dest);
+      
+      if ((status = cm_pipeline_MPIRecv(dest, INFERNAL_PIPELINE_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, go, &mpi_pli)) != eslOK)
+	mpi_failure("Unexpected error %d receiving pipeline from %d", status, dest);
+      
+      /*printf("RECEIVED TOPHITS (%ld hits) FROM %d\n", mpi_th->N, dest);*/
+      cm_tophits_Merge(info->th, mpi_th);
+      cm_pipeline_Merge(info->pli, mpi_pli);
+      
+      cm_pipeline_Destroy(mpi_pli, NULL);
+      cm_tophits_Destroy(mpi_th);
+    }
+    /* Set number of seqs, and subtract number of overlapping residues searched from total */
+    info->pli->nseqs = tot_nseq;
+    if(info->pli->do_top && info->pli->do_bot) tot_noverlap *= 2; /* count overlaps twice on each strand, if nec */
+    /*printf("nres: %ld\nnoverlap: %ld\n", info->pli->acct[PLI_PASS_STD].nres, noverlap);*/
+    info->pli->acct[PLI_PASS_STD_ANY].nres -= tot_noverlap;
+    if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres -= tot_noverlap;
+    /*printf("nres: %ld\n", info->pli->acct[PLI_PASS_STD_ANY].nres);*/
+    
+    /* In MPI, we don't need to call cm_tophits_SetSourceLengths()
+     * because unlike serial/threaded we always know the length of
+     * the source sequences. In fact we don't actually need to
+     * re-search bogus terminii and subsequently remove hits in
+     * those terminii, but we do it anyway so the pipeline
+     * statistics between serial/threaded and mpi are identical.  If
+     * in the future serial/threaded changes so that source lengths
+     * are known up-front (i.e. read in at the beginning of each
+     * sequence in the input file somehow) it would remove the need
+     * for cm_tophits_SetSourceLengths() and
+     * cm_tophits_RemoveBogusTerminusHits().
+     */ 
+#if 0 
+    printf("HEYA before\n");
+    cm_tophits_Dump(stdout, info[0].th);
+#endif
+    /* Remove hits from terminii-researching stage that we later learned were not actually in terminii */
+    if(info->pli->do_trunc_ends) { 
+      cm_tophits_RemoveBogusTerminusHits(info->th);
+    }
+#if 0 
+    printf("HEYA after\n");
+    cm_tophits_Dump(stdout, info[0].th);
+#endif
+    
+    /* Sort by sequence index/position and remove duplicates */
+    cm_tophits_SortForOverlapRemoval(info->th);
+    if((status = cm_tophits_RemoveOverlaps(info->th, errbuf)) != eslOK) mpi_failure(errbuf);
+    /* Resort by score and enforce threshold */
+    cm_tophits_SortByScore(info->th);
+    cm_tophits_Threshold(info->th, info->pli);
+    
+    /* tally up total number of hits and target coverage */
+    for (i = 0; i < info->th->N; i++) {
+      if ((info->th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info->th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
+	info->pli->acct[info->th->hit[i]->pass_idx].n_output++;
+	info->pli->acct[info->th->hit[i]->pass_idx].pos_output += abs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
+      }
+    }
+    
+    cm_tophits_Targets(ofp, info->th, info->pli, textw); 
+    fprintf(ofp, "\n\n");
+    if(info->pli->do_alignments) {
+      if((status = cm_tophits_HitAlignments(ofp, info->th, info->pli, textw)) != eslOK) mpi_failure("Out of memory");
       fprintf(ofp, "\n\n");
-      if(info->pli->do_alignments) {
-	if((status = cm_tophits_HitAlignments(ofp, info->th, info->pli, textw)) != eslOK) mpi_failure("Out of memory");
-	fprintf(ofp, "\n\n");
-	cm_tophits_HitAlignmentStatistics(ofp, info->th, info->pli->align_cyk);
-	fprintf(ofp, "\n\n");
-      }
-      if (tblfp != NULL) { 
-	cm_tophits_TabularTargets(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
-      }
-      esl_stopwatch_Stop(w);
-      cm_pli_Statistics(ofp, info->pli, w);
+      cm_tophits_HitAlignmentStatistics(ofp, info->th, info->pli->align_cyk);
+      fprintf(ofp, "\n\n");
+    }
+    if (tblfp != NULL) { 
+      cm_tophits_TabularTargets(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
+    }
+    esl_stopwatch_Stop(w);
+    cm_pli_Statistics(ofp, info->pli, w);
 
-      free_info(info);
-      free(info);
-      free_mpi_block_list(block_list);
-      block_list = NULL;
-
-      hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
-      if(hstatus == eslOK) { 
-	if((info = create_info()) == NULL) mpi_failure("Out of memory"); /* for the next model */
-      }
-    } /* end outer loop over query CMs */
+    free_info(info);
+    free(info);
+    free_mpi_block_list(block_list);
+    block_list = NULL;
+    
+    hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
+    if(hstatus == eslOK) { 
+      if((info = create_info()) == NULL) mpi_failure("Out of memory"); /* for the next model */
+    }
+  } /* end outer loop over query CMs */
   
   switch(hstatus) {
   case eslEFORMAT:   mpi_failure("bad file format in CM file %s\n%s",             cfg->cmfile, cmfp->errbuf); break;
@@ -1261,18 +1257,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
  * the sequence file and how much to read. Read the requested sequence
  * and run the search pipeline on it, then reverse complement it and
  * rerun the pipeline on the bottom strand. 
- *
- * For the re-search of the first/final pli->W residues, we take
- * advantage of fact that all sequences in a block are 'complete'
- * (include at least the final pli->maxW residues of the sequence) if
- * they are either: (a) not the final sequence in the block (b) the
- * final sequence in the block and block->complete is TRUE
- * 
- * Notes on re-searching first/final pli->maxW residues in 
- * local envelope defn mode are in my handwritten notebook
- * ELN2: p143 and in 
- * ~nawrockie/notebook/11_0809_inf_local_env_for_seq_ends/00LOG * HERE
- *
  */
 
 
@@ -1320,132 +1304,130 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* <abc> is not known 'til first CM is read. */
   hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
   /*printf("read cm worker\n");*/
-  if (hstatus == eslOK)
-    {
-      /* One-time initializations after alphabet <abc> becomes known */
-      dbsq         = esl_sq_CreateDigital(abc);
-    }
+  if (hstatus == eslOK) { 
+    /* One-time initializations after alphabet <abc> becomes known */
+    dbsq         = esl_sq_CreateDigital(abc);
+  }
 
   /* Outer loop: over each query CM in <cmfile>. */
-  while (hstatus == eslOK) 
-    {
-      MPI_BLOCK *block;
+  while (hstatus == eslOK) { 
+    MPI_BLOCK *block;
 
-      cm_idx++;
-      esl_stopwatch_Start(w);
+    cm_idx++;
+    esl_stopwatch_Start(w);
 
-      status = 0;
-      /* inform the master we're ready for a block of sequences */
-      MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
+    status = 0;
+    /* inform the master we're ready for a block of sequences */
+    MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
 
-      /* Configure the CM and setup the HMM filter */
-      if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
-      if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
+    /* Configure the CM and setup the HMM filter */
+    if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
+    if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
 
-      /* Create processing pipeline and hit list */
-      info->th  = cm_tophits_Create(); 
-      info->pli = cm_pipeline_Create(go, abc, info->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->om, info->bg, cm_idx-1)) != eslOK) { 
-	mpi_failure(info->pli->errbuf);
-      }
+    /* Create processing pipeline and hit list */
+    info->th  = cm_tophits_Create(); 
+    info->pli = cm_pipeline_Create(go, abc, info->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->om, info->bg, cm_idx-1)) != eslOK) { 
+      mpi_failure(info->pli->errbuf);
+    }
 
-      /* receive a sequence info block from the master */
-      if((status = mpi_block_recv(0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, &block)) != eslOK) mpi_failure("Failed to receive sequence block, error status code: %d\n", status); 
+    /* receive a sequence info block from the master */
+    if((status = mpi_block_recv(0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, &block)) != eslOK) mpi_failure("Failed to receive sequence block, error status code: %d\n", status); 
 
-      while(block->first_idx != -1) { /* receipt of a block with first_idx == -1 signals us that we're done with the database */
-	readL = 0;
-	pkey_idx = block->first_idx;
-	while(pkey_idx <= block->final_idx) 
-	  { 
-	    /*printf("readL: %ld\n", readL);*/
-	    /* determine the primary key and length of the sequence */
-	    if((status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, &pkey)) != eslOK) { 
-	      if(status == eslENOTFOUND) mpi_failure("(worker) unable to find sequence %d in SSI index file", pkey_idx);
-	      if(status == eslEFORMAT)   mpi_failure("(worker) SSI index for database file is in incorrect format.");
-	      if(status != eslOK)        mpi_failure("(worker) problem with SSI index for database file.");
-	    }
-
-	    /* determine if we're reading the full sequence or a subsequence */
-	    if((pkey_idx != block->first_idx) && (pkey_idx != block->final_idx)) { 
-	      /* read full sequence */
-	      if((status = esl_sqio_Fetch(dbfp, pkey, dbsq)) != eslOK) mpi_failure("unable to fetch sequence %s\n", pkey);
-	      seq_from = 1;
-	      seq_to   = L;
-	      /*printf("MPI just fetched seq %d (%40s) %10ld..%10ld\n", pkey_idx, pkey, seq_from, seq_to);*/
-	    }
-	    else {
-	      /* read first or final sequence in block, this is probably a subsequence */
-	      seq_from = (pkey_idx == block->first_idx) ? block->first_from : 1;
-	      seq_to   = (pkey_idx == block->final_idx) ? block->final_to   : L;
-	      if((status = esl_sqio_FetchSubseq(dbfp, pkey, seq_from, seq_to, dbsq)) != eslOK) mpi_failure("unable to fetch subsequence %ld..%ld of %s\n", seq_from, seq_to, pkey);
-	      /* FetchSubseq renames the sequence, set it back */
-	      esl_sq_SetName(dbsq, dbsq->source);
-	      /*printf("MPI just fetched seq %d (%40s) %10ld..%10ld\n", pkey_idx, pkey, seq_from, seq_to);*/
-	    }
-
-	    /* tell pipeline we've got a new sequence (this updates info->pli->nres) */
-	    cm_pli_NewSeq(info->pli, dbsq, pkey_idx);
-	    readL += dbsq->n;
-
-	    /* search top strand */
-	    if (info->pli->do_top) { 
-	      prv_pli_ntophits = info->th->N;
-	      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) 
-		mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
-	      cm_pipeline_Reuse(info->pli); /* prepare for next search */
-
-	      /* If we're a subsequence, update hit positions so they're relative 
-	       * to the full-length sequence. */
-	      if(seq_from != 1) cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, seq_from, FALSE);
-	    }
-	    
-	    /* search reverse complement */
-	    if(info->pli->do_bot && dbsq->abc->complement != NULL) { 
-	      esl_sq_ReverseComplement(dbsq);
-	      prv_pli_ntophits = info->th->N;
-	      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) 
-		mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
-	      cm_pipeline_Reuse(info->pli); /* prepare for next search */
-	      if(info->pli->do_top) { 
-		info->pli->acct[PLI_PASS_STD_ANY].nres += dbsq->n; /* add dbsq->n residues, the reverse complement we just searched */
-		if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres += dbsq->n;
-	      }
-
-	      /* Hit positions will be relative to the reverse-complemented sequence
-	       * (i.e. start > end), which may be a subsequence. Update hit positions 
-	       * so they're relative to the full-length original sequence (start < end). */
-	      cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, seq_to, TRUE); /* note we use seq_to, not seq_from */
-	    }
-	    esl_sq_Reuse(dbsq);
-
-	    pkey_idx++;
+    while(block->first_idx != -1) { /* receipt of a block with first_idx == -1 signals us that we're done with the database */
+      readL = 0;
+      pkey_idx = block->first_idx;
+      while(pkey_idx <= block->final_idx) 
+	{ 
+	  /*printf("readL: %ld\n", readL);*/
+	  /* determine the primary key and length of the sequence */
+	  if((status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, &pkey)) != eslOK) { 
+	    if(status == eslENOTFOUND) mpi_failure("(worker) unable to find sequence %d in SSI index file", pkey_idx);
+	    if(status == eslEFORMAT)   mpi_failure("(worker) SSI index for database file is in incorrect format.");
+	    if(status != eslOK)        mpi_failure("(worker) problem with SSI index for database file.");
 	  }
-	/* sanity check to make sure the blocks are the same */
-	if (block->blockL != readL) mpi_failure("Block length mismatch - expected %ld found %ld for block idx:%ld from:%ld\n", block->blockL, readL, block->first_idx, block->first_from);
 
-	/* inform the master we need another block of sequences */
-	status = 0;
-	MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
+	  /* determine if we're reading the full sequence or a subsequence */
+	  if((pkey_idx != block->first_idx) && (pkey_idx != block->final_idx)) { 
+	    /* read full sequence */
+	    if((status = esl_sqio_Fetch(dbfp, pkey, dbsq)) != eslOK) mpi_failure("unable to fetch sequence %s\n", pkey);
+	    seq_from = 1;
+	    seq_to   = L;
+	    /*printf("MPI just fetched seq %d (%40s) %10ld..%10ld\n", pkey_idx, pkey, seq_from, seq_to);*/
+	  }
+	  else {
+	    /* read first or final sequence in block, this is probably a subsequence */
+	    seq_from = (pkey_idx == block->first_idx) ? block->first_from : 1;
+	    seq_to   = (pkey_idx == block->final_idx) ? block->final_to   : L;
+	    if((status = esl_sqio_FetchSubseq(dbfp, pkey, seq_from, seq_to, dbsq)) != eslOK) mpi_failure("unable to fetch subsequence %ld..%ld of %s\n", seq_from, seq_to, pkey);
+	    /* FetchSubseq renames the sequence, set it back */
+	    esl_sq_SetName(dbsq, dbsq->source);
+	    /*printf("MPI just fetched seq %d (%40s) %10ld..%10ld\n", pkey_idx, pkey, seq_from, seq_to);*/
+	  }
+
+	  /* tell pipeline we've got a new sequence (this updates info->pli->nres) */
+	  cm_pli_NewSeq(info->pli, dbsq, pkey_idx);
+	  readL += dbsq->n;
+
+	  /* search top strand */
+	  if (info->pli->do_top) { 
+	    prv_pli_ntophits = info->th->N;
+	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) 
+	      mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
+
+	    /* If we're a subsequence, update hit positions so they're relative 
+	     * to the full-length sequence. */
+	    if(seq_from != 1) cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, seq_from, FALSE);
+	  }
+	    
+	  /* search reverse complement */
+	  if(info->pli->do_bot && dbsq->abc->complement != NULL) { 
+	    esl_sq_ReverseComplement(dbsq);
+	    prv_pli_ntophits = info->th->N;
+	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) 
+	      mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
+	    if(info->pli->do_top) { 
+	      info->pli->acct[PLI_PASS_STD_ANY].nres += dbsq->n; /* add dbsq->n residues, the reverse complement we just searched */
+	      if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres += dbsq->n;
+	    }
+
+	    /* Hit positions will be relative to the reverse-complemented sequence
+	     * (i.e. start > end), which may be a subsequence. Update hit positions 
+	     * so they're relative to the full-length original sequence (start < end). */
+	    cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, seq_to, TRUE); /* note we use seq_to, not seq_from */
+	  }
+	  esl_sq_Reuse(dbsq);
+
+	  pkey_idx++;
+	}
+      /* sanity check to make sure the blocks are the same */
+      if (block->blockL != readL) mpi_failure("Block length mismatch - expected %ld found %ld for block idx:%ld from:%ld\n", block->blockL, readL, block->first_idx, block->first_from);
+
+      /* inform the master we need another block of sequences */
+      status = 0;
+      MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
 	
-	/* wait for the next block of sequences */
-	if((status = mpi_block_recv(0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, &block)) != eslOK) mpi_failure("Failed to receive sequence block, error status code: %d\n", status); 
-      }   
-      esl_stopwatch_Stop(w);
+      /* wait for the next block of sequences */
+      if((status = mpi_block_recv(0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, &block)) != eslOK) mpi_failure("Failed to receive sequence block, error status code: %d\n", status); 
+    }   
+    esl_stopwatch_Stop(w);
       
-      /* compute E-values before sending back to master */
-      cm_tophits_ComputeEvalues(info->th, (double) info->cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, 0);
+    /* compute E-values before sending back to master */
+    cm_tophits_ComputeEvalues(info->th, (double) info->cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, 0);
       
-      cm_tophits_MPISend(info->th,   0, INFERNAL_TOPHITS_TAG,  MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
-      cm_pipeline_MPISend(info->pli, 0, INFERNAL_PIPELINE_TAG, MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
+    cm_tophits_MPISend(info->th,   0, INFERNAL_TOPHITS_TAG,  MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
+    cm_pipeline_MPISend(info->pli, 0, INFERNAL_PIPELINE_TAG, MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
       
-      free_info(info);
-      free(info);
+    free_info(info);
+    free(info);
       
-      hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
-      if(hstatus == eslOK) { 
-	if((info = create_info()) == NULL) mpi_failure("Out of memory"); /* info is for the next model */
-      }
-    } /* end outer loop over query CMs */
+    hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
+    if(hstatus == eslOK) { 
+      if((info = create_info()) == NULL) mpi_failure("Out of memory"); /* info is for the next model */
+    }
+  } /* end outer loop over query CMs */
   
   switch(hstatus) {
   case eslEFORMAT:   mpi_failure("bad file format in CM file %s\n%s",             cfg->cmfile, cmfp->errbuf); break;
@@ -1477,16 +1459,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
  * residues (or one sequence, if seqlen < CMSEARCH_MAX_RESIDUE_COUNT)
  * at a time. Search the top strand of the window, then revcomp it and
  * search the bottom strand.
- * 
- * We also take care to re-search the first and final pli->maxW
- * residues of each sequence for truncated hits.
- * This is straightforward for the first pli->maxW residues.
- * To achieve it for the final pli->maxW residues we're forced
- * to copy the final pli->maxW residues of each window and then
- * search them only once we determine we've finished the sequence.
- * Notes on re-searching first/final pli->maxW residues
- * are in my handwritten notebook ELN2: p143 and in 
- * ~nawrockie/notebook/11_0809_inf_local_env_for_seq_ends/00LOG
  */
 static int
 serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL)
@@ -1710,19 +1682,6 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
  * Receive a block of sequence(s) from the master and run the search
  * pipeline on its top strand, then reverse complement it and run the
  * search pipeline on its bottom strand. 
- * 
- * For the re-search of the first/final pli->W residues within
- * cm_Pipeline(), we take advantage of fact that all sequences in a
- * block are 'complete' (include at least the final pli->maxW residues
- * of the sequence) if they are either: (a) not the final sequence in
- * the block (b) the final sequence in the block and block->complete
- * is TRUE.
- * 
- * Notes on re-searching first/final pli->maxW residues in 
- * local envelope defn mode are in my handwritten notebook
- * ELN2: p143 and in 
- * ~nawrockie/notebook/11_0809_inf_local_env_for_seq_ends/00LOG * HERE
- *
  */
 
 static void 
@@ -2451,7 +2410,7 @@ free_mpi_block_list(MPI_BLOCK_LIST *list)
  *            <block_list> will be incomplete, in which case the next
  *            call to this function will complete it. 
  *     
- *            Likewise, upon entering <block_list> should not be 
+ *            Likewise, upon entering, <block_list> should not be 
  *            empty, but rather contain exactly 1 incomplete block,
  *            that has either been started to be calculated by a 
  *            previous call to next_block(), or that has just been
@@ -2496,7 +2455,7 @@ add_blocks(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, char *errbuf, int64_t
   }
   if(pkey_idx == (final_pkey_idx+1) && (! block_list->blocks[block_list->N-1]->complete)) { 
     /* We reached the end of the file and didn't finish the final
-     * block.  If its non-empty then it's valid, else it's not. */
+     * block. If it's non-empty then it's valid, else it's not. */
     if(block_list->blocks[block_list->N-1]->blockL > 0) { /* valid */
       block_list->blocks[block_list->N-1]->complete = TRUE; 
     }
@@ -2566,7 +2525,7 @@ inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, 
   */
   if(status == eslENOTFOUND) ESL_FAIL(status, errbuf, "unable to find sequence %ld in SSI index file, try re-indexing with esl-sfetch.", pkey_idx);
   if(status == eslEFORMAT)   ESL_FAIL(status, errbuf, "SSI index for database file is in incorrect format.");
-  if(status != eslOK)        ESL_FAIL(status, errbuf, "proble with SSI index for database file.");
+  if(status != eslOK)        ESL_FAIL(status, errbuf, "problem with SSI index for database file.");
 
 
   /* Create a new block list if necessary */
