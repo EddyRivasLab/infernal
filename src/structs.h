@@ -2070,15 +2070,49 @@ typedef struct cm_pipeline_s {
   P7_GMX       *gfwd;		/* generic full Fwd matrix for envelopes    */
   P7_GMX       *gbck;		/* generic full Bck matrix for envelopes    */
 
+  enum cm_pipemodes_e mode;    	/* CM_SCAN_MODELS | CM_SEARCH_SEQS           */
+  ESL_ALPHABET *abc;            /* ptr to alphabet info */
+  CM_FILE      *cmfp;		/* COPY of open CM database (if scan mode, else NULl) */
+  char          errbuf[eslERRBUFSIZE];
+
   /* Model-dependent parameters                                             */
   int 		maxW;           /* # residues to overlap in adjacent windows*/
   int 		cmW;            /* CM's window length                       */
   int 		clen;           /* CM's consensus length of model           */
+  int64_t       cur_cm_idx;     /* model    index currently being used     */
+
+  int64_t       cur_seq_idx;    /* sequence index currently being searched */
+  int64_t       cur_pass_idx;   /* pipeline pass index currently underway */
+
+  /* Accounting. (reduceable in threaded/MPI parallel version)              */
+  uint64_t      nmodels;           /* # of models searched                  */
+  uint64_t      nseqs;	           /* # of sequences searched               */
+  uint64_t      nnodes;	           /* # of model nodes searched             */
+  CM_PLI_ACCT   acct[NPLI_PASSES]; 
+  int           do_allstats;       /* TRUE for verbose statistics mode      */
 
   /* Domain/envelope postprocessing                                         */
   ESL_RANDOMNESS *r;		/* random number generator                  */
   int             do_reseeding; /* TRUE: reseed for reproducible results    */
   P7_DOMAINDEF   *ddef;		/* domain definition workflow               */
+
+  /* miscellaneous parameters */
+  float         hb_size_limit;  /* maximum size in Mb allowed for HB alignment    */
+  int           do_top;         /* TRUE to do top    strand (usually TRUE)   */
+  int           do_bot;         /* TRUE to do bottom strand (usually TRUE)   */
+  int           show_accessions;/* TRUE to output accessions not names      */
+  int           do_alignments;  /* TRUE to compute and output alignments (default)*/
+  int           do_hb_recalc;   /* TRUE to recalculate HMM bands for alignment    */
+  int           do_envwinbias;  /* TRUE to calc env bias for entire window  */
+  int           do_filcmW;      /* TRUE to use CM's window length for all HMM filters */
+  double        xtau;           /* multiplier for tau when tightening bands */
+  /* flags for timing experiments */
+  int           do_time_F1;      /* TRUE to abort after Stage 1 MSV */
+  int           do_time_F2;      /* TRUE to abort after Stage 2 Vit */
+  int           do_time_F3;      /* TRUE to abort after Stage 3 Fwd */
+  int           do_time_F4;      /* TRUE to abort after Stage 4 glocal Fwd */
+  int           do_time_F5;      /* TRUE to abort after Stage 5 env def */
+  int           do_time_F6;      /* TRUE to abort after Stage 6 CYK */
 
   /* Reporting threshold settings                                           */
   int     by_E;		        /* TRUE to cut per-target report off by E   */
@@ -2101,8 +2135,12 @@ typedef struct cm_pipeline_s {
   enum cm_zsetby_e Z_setby;   	/* how Z was set                            */
 
   /* Threshold settings for pipeline                                        */
-  int     do_max;	        /* TRUE to run in slow/max mode             */
-  int     do_rfam;	        /* TRUE to run in Rfam pipeline (fast) mode */
+  /* non-default filter strategies */
+  int     do_max;	        /* TRUE to skip all filters                 */
+  int     do_nohmm;	        /* TRUE to skip all HMM filters             */
+  int     do_mid;	        /* TRUE to skip MSV and Viterbi filters     */
+  int     do_rfam;	        /* TRUE to run in fast, rfam mode           */
+  /* filter thresholds */
   double  F1;		        /* MSV filter threshold                     */
   double  F2;		        /* Viterbi filter threshold                 */
   double  F3;		        /* uncorrected Forward filter threshold     */
@@ -2114,55 +2152,25 @@ typedef struct cm_pipeline_s {
   double  F3b;		        /* bias-corrected Forward filter threshold  */
   double  F4b;		        /* bias-corrected gloc Forward filter threshold  */
   double  F5b;		        /* bias-corrected env def filter threshold  */
-  double  orig_F4;		/* glocal Forward filter thr                */
-  double  orig_F4b;		/* bias-corrected glocal Fwd threshold      */
-  double  orig_F5;		/* per-envelope Forward filter thr          */
-  double  orig_F5b;	        /* bias-corrected per-envelope threshold    */
-  int     do_cykenv;	        /* TRUE to redefine envelopes after CYK     */
-  double  F6env;	        /* CYK envelope P-value threshold           */
-  int     do_F3env;	        /* TRUE to redefine envelopes after local fwd */
-  int     do_F4env;	        /* TRUE to redefine envelopes after glocal fwd */
-  int     do_F4env_strict;      /* TRUE to be strict with glocal fwd env redefn */
-  double  F3envX;               /* max avg number of passes through model for local fwd env redefn */
-  double  F4envX;               /* max avg number of passes through model for glocal fwd env redefn */
-  int     F3ns;                 /* number of samples for local fwd env redfn */
-  int     F4ns;                 /* number of samples for glocal fwd env redfn */
-  int     do_cm;		/* TRUE to use CM for at least one stage    */
-  int     do_hmm;		/* TRUE to use HMM for at least one stage   */
-  int     do_envelopes;		/* TRUE to find envelopes in windows prior to CM stages */
-  int     do_pad;		/* TRUE to pad hits based on cm->W          */
-  int     do_msvmerge;		/* TRUE to merge MSV hits, FALSE not to     */
+  /* on/off parameters for each stage */
   int     do_msv;		/* TRUE to filter with MSV, FALSE not to    */
-  int     do_shortmsv;		/* TRUE to filter with standard MSV, not Longtarget variant */
+  int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */
+  int     do_fwd;		/* TRUE to filter with Fwd, FALSE not to    */
+  int     do_gfwd;		/* TRUE to filter w/glocal Fwd, FALSE not to*/
+  int     do_edef;		/* TRUE to find envelopes in windows prior to CM stages */
+  int     do_fcyk;	        /* TRUE to filter with CYK, FALSE not to    */
   int     do_msvbias;	        /* TRUE to use biased comp HMM filter w/MSV */
   int     do_vitbias;      	/* TRUE to use biased comp HMM filter w/Vit */
   int     do_fwdbias;     	/* TRUE to use biased comp HMM filter w/Fwd */
   int     do_gfwdbias;     	/* TRUE to use biased comp HMM filter w/gFwd*/
   int     do_edefbias;     	/* TRUE to use biased comp HMM filter w/edef*/
-  int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */
-  int     do_fwd;		/* TRUE to filter with Fwd, FALSE not to    */
-  int     do_gfwd;		/* TRUE to filter w/glocal Fwd, FALSE not to*/
-  int     do_cyk;		/* TRUE to filter with CYK, FALSE not to    */
-  int     do_null2;		/* TRUE to use null2 score corrections      */
-  int     do_null3;		/* TRUE to use null3 score corrections      */
-  int     do_localenv;          /* TRUE to define envelopes in local mode   */
-  int     do_wsplit;            /* TRUE to split MSV windows > wmult*W      */
-  int     do_wcorr;             /* TRUE to correct for window size          */
-  double  wmult;                /* scalar * W, for do_wsplit                */
-  int     do_oldcorr;           /* TRUE to use old correction for env def   */
-  int     do_nocorr;            /* TRUE to use no correction for env def    */
-  int     do_envwinbias;        /* TRUE to calc env bias for entire window  */
-  int     do_fwdbias_sampling;  /* TRUE to calculate Fwd bias (F3b) based on sampled traces */
-  int     do_filcmW;            /* TRUE to use CM's window length for all HMM filters */
-  int     fwdbias_ns;           /* number of samples for do_fwdbias_sampling */
-  int     do_glen;              /* TRUE to use len-dependent glc p7 thresholds */
-  int     glen_min;             /* min clen for len-dependent glc p7 thr    */
-  int     glen_max;             /* max clen for len-dependent glc p7 thr    */
-  int     glen_step;            /* step size for halving glc p7 thr if do_glen */
-  int     do_glocal_cm_stages;  /* TRUE to use CM in glocal mode for final stages */
+  /* parameters controlling hit alignment */
+  int     align_cyk;            /* TRUE to use CYK instead of optimal accuracy    */
+  int     align_hbanded;        /* TRUE to do HMM banded alignment, when possible */
+
+  /* truncated sequence detection parameters */
   int     do_trunc_ends;        /* TRUE to use truncated CM algs at sequence ends */
   int     do_trunc_any;         /* TRUE to use truncated CM algs for entire sequences */
-  int     do_trunc_loc_corr;    /* TRUE to correct glocal HMM scores to local ones for truncated hits */
 
   /* Parameters controlling p7 domain/envelope defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
@@ -2171,6 +2179,11 @@ typedef struct cm_pipeline_s {
   int    ns;            /* number of traceback samples for domain/envelope def */
 
   /* CM search options for CYK filter and final stage */
+  int     do_fcykenv;	        /* TRUE to redefine envelopes after CYK     */
+  double  F6env;	        /* CYK envelope P-value threshold           */
+  int     do_null2;		/* TRUE to use null2 score corrections      */
+  int     do_null3;		/* TRUE to use null3 score corrections      */
+  int     do_glocal_cm_stages;  /* TRUE to use CM in glocal mode for final stages */
   int     fcyk_cm_search_opts;  /* CYK filter stage search opts             */
   int     final_cm_search_opts; /* final stage search opts                  */
   int     fcyk_cm_exp_mode;     /* CYK filter exp mode                      */
@@ -2179,47 +2192,10 @@ typedef struct cm_pipeline_s {
   double  final_beta;           /* QDB beta for final stage                 */
   double  fcyk_tau;             /* HMM bands tau for CYK filter stage       */
   double  final_tau;            /* HMM bands tau for final stage            */
-  double  xtau;                 /* multiplier for tau when tightening bands */
 
   /* configure options for all CMs we'll use in the pipeline */
   int     cm_config_opts;
 
-  /* Accounting. (reduceable in threaded/MPI parallel version)              */
-  uint64_t      nmodels;           /* # of models searched                  */
-  uint64_t      nseqs;	           /* # of sequences searched               */
-  uint64_t      nnodes;	           /* # of model nodes searched             */
-  CM_PLI_ACCT   acct[NPLI_PASSES]; 
-
-  /* Flags for timing experiments */
-  int           do_time_F1;      /* TRUE to abort after Stage 1 MSV */
-  int           do_time_F2;      /* TRUE to abort after Stage 2 Vit */
-  int           do_time_F3;      /* TRUE to abort after Stage 3 Fwd */
-  int           do_time_F4;      /* TRUE to abort after Stage 4 glocal Fwd */
-  int           do_time_F5;      /* TRUE to abort after Stage 5 env def */
-  int           do_time_F6;      /* TRUE to abort after Stage 6 CYK */
-
-  /* miscellaneous parameters */
-  enum cm_pipemodes_e mode;    	/* CM_SCAN_MODELS | CM_SEARCH_SEQS           */
-  int           do_top;         /* TRUE to do top    strand (usually TRUE)   */
-  int           do_bot;         /* TRUE to do bottom strand (usually TRUE)   */
-
-  int           show_accessions;/* TRUE to output accessions not names      */
-  int           do_alignments;  /* TRUE to compute and output alignments (default)*/
-
-  int           align_cyk;      /* TRUE to use CYK instead of optimal accuracy    */
-  int           align_hbanded;  /* TRUE to do HMM banded alignment, when possible */
-  float         hb_size_limit;  /* maximum size in Mb allowed for HB alignment    */
-  int           do_hb_recalc;   /* TRUE to recalculate HMM bands for alignment    */
-
-  int64_t       cur_cm_idx;     /* model    index currently being used     */
-  int64_t       cur_seq_idx;    /* sequence index currently being searched */
-  int64_t       cur_pass_idx;   /* pipeline pass index currently underway */
-
-  ESL_ALPHABET *abc;            /* ptr to alphabet info */
-
-  CM_FILE      *cmfp;		/* COPY of open CM database (if scan mode) */
-  char          errbuf[eslERRBUFSIZE];
-  
 } CM_PIPELINE;
 
 /* Structure: CM_ALIDISPLAY

@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT  0
+#define DOPRINT  1
 #define DOPRINT2 0
 #define DOPRINT3 0
 
@@ -70,71 +70,88 @@ static void copy_subseq(const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_
  *            following options:
  *            
  *            || option      ||            description                     || usually  ||
+ *            | -g           |  configure CM for glocal alignment           |   FALSE   |
+ *            | -Z           |  database size in Mb                         |    NULL   |
+ *            | --allstats   |  verbose statistics output mode              |   FALSE   |
+ *            | --acc        |  prefer accessions over names in output      |   FALSE   |
  *            | --noali      |  don't output alignments (smaller output)    |   FALSE   |
  *            | -E           |  report hits <= this E-value threshold       |    10.0   |
  *            | -T           |  report hits >= this bit score threshold     |    NULL   |
- *            | -Z           |  set initial hit search space size           |    NULL   |
  *            | --incE       |  include hits <= this E-value threshold      |    0.01   |
  *            | --incT       |  include hits >= this bit score threshold    |    NULL   |
  *            | --cut_ga     |  model-specific thresholding using GA        |   FALSE   |
  *            | --cut_nc     |  model-specific thresholding using NC        |   FALSE   |
  *            | --cut_tc     |  model-specific thresholding using TC        |   FALSE   |
  *            | --max        |  turn all heuristic filters off              |   FALSE   |
- *            | --fZ <x>     |  set filter thr as if dbsize were <x> Mb     |     OFF   |
- *            | --F1         |  Stage 1 (MSV) thresh: promote hits P <= F1  |    0.35   |
- *            | --F2         |  Stage 2 (Vit) thresh: promote hits P <= F2  |    0.10   |
- *            | --F3         |  Stage 3 (Fwd) thresh: promote hits P <= F3  |    0.02   |
- *            | --null2      |  turn ON biased comp score correction        |   FALSE   |
- *            | --seed       |  RNG seed (0=use arbitrary seed)             |     181   |
- *            | --acc        |  prefer accessions over names in output      |   FALSE   |
- * *** opts below this line are unique to cm_pipeline.c ***
+ *            | --nohmm      |  turn all HMM filters off                    |   FALSE   |
+ *            | --mid        |  turn off MSV and Viterbi filters            |   FALSE   |
+ *            | --rfam       |  set filters to strict Rfam settings         |   FALSE   |
+/// *            | --hmm        |  use only an HMM                             |   FALSE   |
+/// *            | --maxhmm      |  use only an HMM                             |   FALSE   |
+ *            | --FZ <x>     |  set filter thr as if dbsize were <x> Mb     |    NULL   |
+ *            | --Fmid <x>   |  with --mid, set fwd filter thresholds to <x>|    NULL   |
+ *            | --notrunc    |  turn off truncated hit detection            |   FALSE   |
+ *            | --anytrunc   |  allow truncated hits anywhere in the seq    |   FALSE   |
  *            | --nonull3    |  turn off NULL3 correction                   |   FALSE   |
- *            | -g           |  configure the CM for glocal alignment       |   FALSE   |
- *            | --domsvbias  |  turn ON composition bias filter HMM for MSV |   FALSE   |
- *            | --novitbias  |  turn OFF composition bias filter HMM for Vit |   FALSE   |
- *            | --nofwdbias  |  turn OFF composition bias filter HMM for Fwd |   FALSE   |
- *            | --nogfwdbias |  turn OFF composition bias filter HMM for gFwd |   FALSE   |
- *            | --noedefbias  |  turn OFF composition bias filter HMM for ddef| FALSE   |
- *            | --F1         |  Stage 1 (MSV) filter thresh                 |   0.40    |
- *            | --F1b        |  Stage 1 (MSV) bias filter thresh            |   OFF     |
- *            | --F2         |  Stage 2 (Vit) filter thresh                 |   0.15    |
- *            | --F2b        |  Stage 2 (Vit) bias filter thresh            |   0.15    |
- *            | --F3         |  Stage 3 (Fwd) filter thresh                 |   0.02    |
- *            | --F3b        |  Stage 3 (Fwd) bias filter thresh            |   0.02    |
- *            | --F4         |  Stage 4 (gFwd) filter thresh                |   0.02    |
- *            | --F4b        |  Stage 4 (gFwd) bias filter thresh           |   0.02    |
- *            | --F5         |  Stage 5 (env def) filter thresh             |   0.02    |
- *            | --F5b        |  Stage 5 (env def) bias filter thresh        |   0.02    |
- *            | --F6         |  Stage 6 (CYK) filter thresh                 |   0.0005  |
- *            | --fast       |  set filters at strict-level                 |   FALSE   |
- *            | --mid        |  set filters at mid-level                    |   FALSE   |
- *            | --cyk        |  set final search stage as CYK, not inside   |   FALSE   |
- *            | --hmm        |  don't use CM at all, HMM only               |   FALSE   |
- *            | --noenvdef   |  don't define envelopes before CM stages     |   FALSE   |
- *            | --nomsv      |  skip MSV filter stage                       |   FALSE   |
- *            | --shortmsv   |  use standard MSV, not LongTarget variant    |   FALSE   |
- *            | --novit      |  skip Viterbi filter stage                   |   FALSE   |
- *            | --nofwd      |  skip Forward filter stage                   |   FALSE   |
- *            | --nohmm      |  skip all HMM filter stages                  |   FALSE   |
- *            | --nocyk      |  don't filter with CYK, skip to final stage  |   FALSE   |
- *            | --fnoqdb     |  don't use QDBs in CYK filter                |   FALSE   |
- *            | --fbeta      |  set beta for QDBs in CYK filter to this     |   1e-9    |
- *            | --fhbanded   |  use HMM bands for CYK filter                |   FALSE   |
- *            | --ftau       |  set tau for HMM bands in CYK filter to this |   5e-6    |
+ *            | --mxsize <x> |  set max allowed HMM banded DP mx size to <x>|    128 Mb |
+ *            | --cyk        |  set final search stage as CYK, not Inside   |   FALSE   |
+ *            | --aln-cyk    |  align hits with CYK, not optimal accuracy   |   FALSE   |
+ *            | --toponly    |  only search top strand                      |   FALSE   |
+ *            | --bottomonly |  only search bottom strand                   |   FALSE   |
+ * *** all opts below this line are 'developer' options, only visible in cmsearch/cmscan via --devhelp 
+ *            | --noF1       |  turn off MSV filter stage                   |   FALSE   |
+ *            | --noF2       |  turn off Viterbi filter stage               |   FALSE   |
+ *            | --noF3       |  turn off HMM local forward stage            |   FALSE   |
+ *            | --noF4       |  turn off HMM glocal forward stage           |   FALSE   |
+ *            | --noF6       |  turn off CYK filter stage                   |   FALSE   |
+ *            | --doF1b      |  turn on  MSV composition bias filter        |   FALSE   |
+ *            | --noF2b      |  turn off Viterbi composition bias filter    |   FALSE   |
+ *            | --noF3b      |  turn off local forward bias filter          |   FALSE   |
+ *            | --noF4b      |  turn off glocal forward bias filter         |   FALSE   |
+ *            | --noF5b      |  turn off per-envelope bias filter           |   FALSE   |
+ * *** options for defining filter thresholds, usually NULL bc set in DB-size dependent manner
+ *            | --F1         |  Stage 1  (MSV)         P value threshold    |    NULL   |
+ *            | --F1b        |  Stage 1b (MSV bias)    P value threshold    |    NULL   |
+ *            | --F2         |  Stage 2  (Vit)         P value threshold    |    NULL   |
+ *            | --F2b        |  Stage 2b (Vit bias)    P value threshold    |    NULL   |
+ *            | --F3         |  Stage 3  (lFwd)        P value threshold    |    NULL   |
+ *            | --F3b        |  Stage 3b (lFwd bias)   P value threshold    |    NULL   |
+ *            | --F4         |  Stage 4  (gFwd)        P value threshold    |    NULL   |
+ *            | --F4b        |  Stage 4b (gFwd bias)   P value threshold    |    NULL   |
+ *            | --F5         |  Stage 5  (envdef)      P value threshold    |    NULL   |
+ *            | --F5b        |  Stage 5b (envdef bias) P value threshold    |    NULL   |
+ *            | --F6         |  Stage 6  (CYK)         P value threshold    |    NULL   |
+ *            | --ftau       |  HMM band tail loss prob for CYK filter      |    1e-4   |
  *            | --fsums      |  use sums to get CYK filter HMM bands        |   FALSE   |
- *            | --tau        |  set tau for final HMM bands to this         |   FALSE   |
- *            | --sums       |  use sums to get final HMM bands             |   FALSE   |
- *            | --qdb        |  use QDBs, not HMM bands in final stage      |   FALSE   |
- *            | --beta       |  set beta for QDBs in final stage            |   1e-15   |
- *            | --nonbanded  |  don't use QDBs or HMM bands in final stage  |   FALSE   |
- *            | --rt1        |  set envelope def rt1 parameter as <x>         |   0.25    |
- *            | --rt2        |  set envelope def rt2 parameter as <x>         |   0.10    |
- *            | --rt3        |  set envelope def rt3 parameter as <x>         |   0.20    |
- *            | --localweak  |  rescore low-scoring envelopes in local mode   |   FALSE   |
- *            | --localenv   |  define envelopes in local mode                |   FALSE   |
- *            | --ns         |  set number of samples for envelope traceback  |    200    |
- *            | --wsplit     |  split windows after MSV                     |   FALSE   |
- *            | --wmult      |  multiplier for splitting windows if --wsplit|   3.0     |
+ *            | --fbeta      |  beta for QDBs in CYK filter                 |    1e-7   |
+ *            | --fnonbanded |  run CYK filter without bands                |   FALSE   |
+ *            | --nocykenv   |  do not redefine envelopes using CYK         |   FALSE   |
+ *            | --cykenvx    |  P-value multiplier for CYK envelope redefn  |    NULL   |
+ *            | --tau        |  HMM band tail loss prob for final round     |    5e-6   |
+ *            | --sums       |  use sums to get final round HMM bands       |   FALSE   |
+ *            | --beta       |  beta for QDBs in final round                |   1e-15   |
+ *            | --nonbanded  |  run CYK filter without bands                |   FALSE   |
+ *            | --time-F1    |  abort after F1b stage, for timing expts     |   FALSE   | 
+ *            | --time-F2    |  abort after F2b stage, for timing expts     |   FALSE   | 
+ *            | --time-F3    |  abort after F3b stage, for timing expts     |   FALSE   | 
+ *            | --time-F4    |  abort after F4b stage, for timing expts     |   FALSE   | 
+ *            | --time-F5    |  abort after F5b stage, for timing expts     |   FALSE   | 
+ *            | --time-F6    |  abort after F6  stage, for timing expts     |   FALSE   | 
+ *            | --rt1        |  P7_DOMAINDEF rt1 parameter                  |    0.25   |
+ *            | --rt2        |  P7_DOMAINDEF rt2 parameter                  |    0.10   |
+ *            | --rt3        |  P7_DOMAINDEF rt3 parameter                  |    0.20   |
+ *            | --ns         |  number of domain/envelope tracebacks        |     200   |
+ *            | --anonbanded |  do not use bands when aligning hits         |   FALSE   |
+ *            | --anewbands  |  calculate new bands for hit alignment       |   FALSE   |
+ *            | --envhitbias |  env bias restricted to envelope             |   FALSE   |
+ *            | --nogreedy   |  use optimal CM hit resolution, not greedy   |   FALSE   |
+ *            | --filcmW     |  use CM's W not HMM's for all filter stages  |   FALSE   |
+ *            | --cp9noel    |  turn off EL state in CP9 HMM                |   FALSE   |
+ *            | --cp9gloc    |  configure CP9 HMM in glocal mode            |   FALSE   |
+ *            | --null2      |  turn on null2 biased composition model      |   FALSE   |
+ *            | --xtau       |  tau multiplier during band tightening       |     2.0   |
+ *            | --seed       |  RNG seed (0=use arbitrary seed)             |     181   |
+ *
  * Returns:   ptr to new <cm_PIPELINE> object on success. Caller frees this
  *            with <cm_pipeline_Destroy()>.
  *
@@ -161,10 +178,25 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   if ((pli->gxf  = p7_gmx_Create(clen_hint, L_hint))         == NULL) goto ERROR;
   if ((pli->gxb  = p7_gmx_Create(clen_hint, L_hint))         == NULL) goto ERROR;     
 
-  /* intialize model-dependent parameters, these are invalid until we call cm_pli_NewModel() */
-  pli->maxW = 0;
-  pli->cmW  = 0;
-  pli->clen = 0;
+  /* Initializations */
+  pli->mode         = mode;
+  pli->abc          = abc;  
+  pli->errbuf[0]    = '\0'; 
+  pli->maxW         = 0;    /* model-dependent, invalid until cm_pli_NewModel() is called */
+  pli->cmW          = 0;    /* model-dependent, invalid until cm_pli_NewModel() is called */
+  pli->clen         = 0;    /* model-dependent, invalid until cm_pli_NewModel() is called */
+  pli->cur_cm_idx   = -1;   /* model-dependent, invalid until cm_pli_NewModel() is called */
+  pli->cur_seq_idx  = -1;   /* sequence-dependent, invalid until cm_pli_NewSeq() is called */
+  pli->cur_pass_idx = -1;   /* pipeline-pass-dependent, updated in cm_Pipeline() */
+  pli->cmfp         = NULL; /* set by caller only if we're a scan pipeline (i.e. set in cmscan) */
+
+  /* Accounting, as we collect results */
+  pli->nmodels = 0;
+  pli->nseqs   = 0;
+  pli->nnodes  = 0;
+  for(pass_idx = 0; pass_idx < NPLI_PASSES; pass_idx++) { 
+    cm_pli_ZeroAccounting(&(pli->acct[pass_idx]));
+  }
 
   /* Normally, we reinitialize the RNG to the original seed every time we're
    * about to collect a stochastic trace ensemble. This eliminates run-to-run
@@ -176,75 +208,75 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->ddef               = p7_domaindef_Create(pli->r);
   pli->ddef->do_reseeding = pli->do_reseeding;
 
+  /* Miscellaneous parameters */
+  pli->hb_size_limit   = esl_opt_GetReal   (go, "--mxsize");
+  pli->do_top          = esl_opt_GetBoolean(go, "--bottomonly") ? FALSE : TRUE;
+  pli->do_bot          = esl_opt_GetBoolean(go, "--toponly")    ? FALSE : TRUE;
+  pli->do_allstats     = esl_opt_GetBoolean(go, "--allstats")   ? TRUE  : FALSE;
+  pli->show_accessions = esl_opt_GetBoolean(go, "--acc")        ? TRUE  : FALSE;
+  pli->do_alignments   = esl_opt_GetBoolean(go, "--noali")      ? FALSE : TRUE;
+  pli->do_hb_recalc    = esl_opt_GetBoolean(go, "--anewbands")  ? TRUE  : FALSE;
+  pli->do_envwinbias   = esl_opt_GetBoolean(go, "--envhitbias") ? FALSE : TRUE;
+  pli->do_filcmW       = esl_opt_GetBoolean(go, "--filcmW")     ? TRUE : FALSE;
+  pli->xtau            = esl_opt_GetReal(go, "--xtau");
+  pli->do_time_F1      = esl_opt_GetBoolean(go, "--time-F1")    ? TRUE  : FALSE;
+  pli->do_time_F2      = esl_opt_GetBoolean(go, "--time-F2")    ? TRUE  : FALSE;
+  pli->do_time_F3      = esl_opt_GetBoolean(go, "--time-F3")    ? TRUE  : FALSE;
+  pli->do_time_F4      = esl_opt_GetBoolean(go, "--time-F4")    ? TRUE  : FALSE;
+  pli->do_time_F5      = esl_opt_GetBoolean(go, "--time-F5")    ? TRUE  : FALSE;
+  pli->do_time_F6      = esl_opt_GetBoolean(go, "--time-F6")    ? TRUE  : FALSE;
+  
   /* Configure reporting thresholds */
   pli->by_E            = TRUE;
   pli->E               = esl_opt_GetReal(go, "-E");
   pli->T               = 0.0;
   pli->use_bit_cutoffs = FALSE;
-  if (esl_opt_IsOn(go, "-T")) 
-    {
-      pli->T    = esl_opt_GetReal(go, "-T"); 
-      pli->by_E = FALSE;
-    } 
+  if (esl_opt_IsOn(go, "-T")) { 
+    pli->T    = esl_opt_GetReal(go, "-T"); 
+    pli->by_E = FALSE;
+  } 
 
   /* Configure inclusion thresholds */
   pli->inc_by_E           = TRUE;
   pli->incE               = esl_opt_GetReal(go, "--incE");
   pli->incT               = 0.0;
-  if (esl_opt_IsOn(go, "--incT")) 
-    {
-      pli->incT     = esl_opt_GetReal(go, "--incT"); 
-      pli->inc_by_E = FALSE;
-    } 
+  if (esl_opt_IsOn(go, "--incT")) { 
+    pli->incT     = esl_opt_GetReal(go, "--incT"); 
+    pli->inc_by_E = FALSE;
+  } 
 
   /* Configure for one of the model-specific thresholding options */
-  if (esl_opt_GetBoolean(go, "--cut_ga"))
-    {
-      pli->T        = 0.0;
-      pli->by_E     = FALSE;
-      pli->incT     = 0.0;
-      pli->inc_by_E = FALSE;
-      pli->use_bit_cutoffs = CMH_GA;
-    }
-  if (esl_opt_GetBoolean(go, "--cut_nc"))
-    {
-      pli->T        = 0.0;
-      pli->by_E     = FALSE;
-      pli->incT     = 0.0;
-      pli->inc_by_E = FALSE;
-      pli->use_bit_cutoffs = CMH_NC;
-    }
-  if (esl_opt_GetBoolean(go, "--cut_tc"))
-    {
-      pli->T        = 0.0;
-      pli->by_E     = FALSE;
-      pli->incT     = 0.0;
-      pli->inc_by_E = FALSE;
-      pli->use_bit_cutoffs = CMH_TC;
-    }
+  if (esl_opt_GetBoolean(go, "--cut_ga")) {
+    pli->T        = 0.0;
+    pli->by_E     = FALSE;
+    pli->incT     = 0.0;
+    pli->inc_by_E = FALSE;
+    pli->use_bit_cutoffs = CMH_GA;
+  }
+  if (esl_opt_GetBoolean(go, "--cut_nc")) { 
+    pli->T        = 0.0;
+    pli->by_E     = FALSE;
+    pli->incT     = 0.0;
+    pli->inc_by_E = FALSE;
+    pli->use_bit_cutoffs = CMH_NC;
+  }
+  if (esl_opt_GetBoolean(go, "--cut_tc")) { 
+    pli->T        = 0.0;
+    pli->by_E     = FALSE;
+    pli->incT     = 0.0;
+    pli->inc_by_E = FALSE;
+    pli->use_bit_cutoffs = CMH_TC;
+  }
 
   /* Configure envelope definition parameters */
-  pli->rt1 = esl_opt_GetReal(go, "--rt1");
-  pli->rt2 = esl_opt_GetReal(go, "--rt2");
-  pli->rt3 = esl_opt_GetReal(go, "--rt3");
-  pli->ns  = esl_opt_GetInteger(go, "--ns");
-  pli->ddef->rt1 = pli->rt1;
-  pli->ddef->rt2 = pli->rt2;
-  pli->ddef->rt3 = pli->rt3;
+  pli->rt1            = esl_opt_GetReal(go, "--rt1");
+  pli->rt2            = esl_opt_GetReal(go, "--rt2");
+  pli->rt3            = esl_opt_GetReal(go, "--rt3");
+  pli->ns             = esl_opt_GetInteger(go, "--ns");
+  pli->ddef->rt1      = pli->rt1;
+  pli->ddef->rt2      = pli->rt2;
+  pli->ddef->rt3      = pli->rt3;
   pli->ddef->nsamples = pli->ns;
-  pli->do_localenv      = esl_opt_GetBoolean(go, "--localenv");
-  pli->do_wsplit        = (esl_opt_GetBoolean(go, "--wnosplit")) ? FALSE : TRUE;
-  pli->wmult            = esl_opt_GetReal(go, "--wmult");
-  pli->do_wcorr         = esl_opt_GetBoolean(go, "--wcorr");
-  pli->do_nocorr        = esl_opt_GetBoolean(go, "--nocorr");
-  pli->do_oldcorr       = esl_opt_GetBoolean(go, "--oldcorr");
-  pli->do_envwinbias    = (! esl_opt_GetBoolean(go, "--envhitbias"));
-  pli->do_filcmW        = esl_opt_GetBoolean(go, "--filcmW");
-  pli->do_glen          = esl_opt_GetBoolean(go, "--glen");
-  pli->glen_min         = esl_opt_GetInteger(go, "--glN");
-  pli->glen_max         = esl_opt_GetInteger(go, "--glX");
-  pli->glen_step        = esl_opt_GetInteger(go, "--glstep");
-  pli->xtau             = esl_opt_GetReal(go, "--xtau");
 
   /* configure truncation hit allowance parameters */
   if(esl_opt_GetBoolean(go, "--anytrunc")) { 
@@ -255,36 +287,17 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->do_trunc_ends = FALSE;
     pli->do_trunc_any  = FALSE;
   }
-  else { 
+  else { /* default */
     pli->do_trunc_ends = TRUE;
     pli->do_trunc_any  = FALSE;
   }
-  pli->do_trunc_loc_corr = (esl_opt_GetBoolean(go, "--loctrunc")) ? TRUE : FALSE;
 
-  /* Configure acceleration pipeline thresholds */
-  pli->do_cm         = TRUE;
-  pli->do_hmm        = TRUE;
-  pli->do_max        = FALSE;
-  pli->do_rfam       = FALSE;
-  pli->do_envelopes  = TRUE;
-  pli->do_pad        = esl_opt_GetBoolean(go, "--pad");
-  pli->do_msv        = TRUE;
-  pli->do_shortmsv   = FALSE;
-  pli->do_msvbias    = FALSE;
-  pli->do_vit        = TRUE;
-  pli->do_vitbias    = TRUE;
-  pli->do_fwd        = TRUE;
-  pli->do_fwdbias    = TRUE;
-  pli->do_gfwd       = TRUE;
-  pli->do_gfwdbias   = TRUE;
-  pli->do_edefbias   = TRUE;
-  pli->do_cyk        = TRUE;
-  pli->do_null2      = FALSE;
-  pli->do_null3      = TRUE;
-
-  /* Configure search space sizes for E value calculations and filter thresholds.
-   * This is database size dependent. Which was passed in. If -Z <x> enabled, we overwrite
-   * the passed in value with <x>.
+  /* Set Z, the search space size. This is used for E-value
+   * calculations and for setting filter thresholds by default
+   * (i.e. if none of --max, --nohmm, --mid, --rfam are used) which is
+   * why we do this here, before setting filter thresholds.  The
+   * database size was passed in, if -Z <x> enabled, we overwrite the
+   * passed in value with <x>.
    */
   if (esl_opt_IsUsed(go, "-Z")) { 
       pli->Z_setby = CM_ZSETBY_OPTION;
@@ -294,129 +307,87 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->Z       = Z;       /* Z is an input variable to this function */
     pli->Z_setby = Z_setby; /* so is Z_setby */
   }
-  /* set filter thresholds dependent on Z */
-  if(esl_opt_IsUsed(go, "--fZ")) { 
-    Z_Mb = esl_opt_GetReal(go, "--fZ"); 
-  }
-  else { 
-    Z_Mb = pli->Z / 1000000.;
-  }
-  if(Z_Mb >= (100000. - eslSMALLX1)) { /* Z >= 100 Gb */
-    pli->F1 = pli->F1b = 0.05;
-    pli->F2 = pli->F2b = 0.04;
-    pli->F3 = pli->F3b = 0.0004;
-    pli->F4 = pli->F4b = 0.0004;
-    pli->F5 = pli->F5b = 0.0004;
-    pli->F6 = 0.0001;
-  }
-  else if(Z_Mb >= (10000. - eslSMALLX1)) { /* 100 Gb > Z >= 10 Gb */
-    pli->F1 = pli->F1b = 0.06;
-    pli->F2 = pli->F2b = 0.05;
-    pli->F3 = pli->F3b = 0.0005;
-    pli->F4 = pli->F4b = 0.0005;
-    pli->F5 = pli->F5b = 0.0005;
-    pli->F6 = 0.0001;
-  }
-  else if(Z_Mb >= (1000. - eslSMALLX1)) { /* 10 Gb > Z >= 1 Gb */
-    pli->F1 = pli->F1b = 0.06;
-    pli->F2 = pli->F2b = 0.15;
-    pli->F3 = pli->F3b = 0.0005;
-    pli->F4 = pli->F4b = 0.0005;
-    pli->F5 = pli->F5b = 0.0005;
-    pli->F6 = 0.0001;
-  }
-  else if(Z_Mb >= (100. - eslSMALLX1)) { /* 1 Gb  > Z >= 100 Mb */
-    pli->F1 = pli->F1b = 0.30;
-    pli->F2 = pli->F2b = 0.15;
-    pli->F3 = pli->F3b = 0.002;
-    pli->F4 = pli->F4b = 0.002;
-    pli->F5 = pli->F5b = 0.002;
-    pli->F6 = 0.0001;
-  }
-  else if(Z_Mb >= (10. - eslSMALLX1)) { /* 100 Mb  > Z >= 10 Mb */
-    pli->F1 = pli->F1b = 0.35;
-    pli->F2 = pli->F2b = 0.20;
-    pli->F3 = pli->F3b = 0.003;
-    pli->F4 = pli->F4b = 0.003;
-    pli->F5 = pli->F5b = 0.003;
-    pli->F6 = 0.0001;
-  }
-  else if(Z_Mb >= (1. - eslSMALLX1)) { /* 10 Mb  > Z >= 1 Mb */
-    pli->F1 = pli->F1b = 0.35;
-    pli->F2 = pli->F2b = 0.20;
-    pli->F3 = pli->F3b = 0.015;
-    pli->F4 = pli->F4b = 0.015;
-    pli->F5 = pli->F5b = 0.015;
-    pli->F6 = 0.0001;
-  }
-  else { /* 1 Mb  > Z */
-    pli->do_msv = FALSE;
-    pli->F1 = pli->F1b = 1.00; /* this is irrelevant */
-    pli->F2 = pli->F2b = 0.25;
-    pli->F3 = pli->F3b = 0.02;
-    pli->F4 = pli->F4b = 0.02;
-    pli->F5 = pli->F5b = 0.02;
-    pli->F6 = 0.0001;
-  }
 
-  pli->F6env     = ESL_MIN(1.0, pli->F6 * (float) esl_opt_GetInteger(go, "--cykenvx"));
-  pli->do_cykenv = (esl_opt_GetBoolean(go, "--nocykenv")) ? FALSE : TRUE;
-    
-  /* obey manually-defined filter thresholds */
-  if(esl_opt_IsUsed(go, "--F1"))  { pli->do_msv      = TRUE; pli->F1  = esl_opt_GetReal(go, "--F1");  }
-  if(esl_opt_IsUsed(go, "--F1b")) { pli->do_msvbias  = TRUE; pli->F1b = esl_opt_GetReal(go, "--F1b"); }
-  if(esl_opt_IsUsed(go, "--F2"))  { pli->do_vit      = TRUE; pli->F2  = esl_opt_GetReal(go, "--F2");  }
-  if(esl_opt_IsUsed(go, "--F2b")) { pli->do_vitbias  = TRUE; pli->F2b = esl_opt_GetReal(go, "--F2b"); }
-  if(esl_opt_IsUsed(go, "--F3"))  { pli->do_fwd      = TRUE; pli->F3  = esl_opt_GetReal(go, "--F3");  }
-  if(esl_opt_IsUsed(go, "--F3b")) { pli->do_fwdbias  = TRUE; pli->F3b = esl_opt_GetReal(go, "--F3b"); }
-  if(esl_opt_IsUsed(go, "--F4"))  { pli->do_gfwd     = TRUE; pli->F4  = esl_opt_GetReal(go, "--F4");  }
-  if(esl_opt_IsUsed(go, "--F4b")) { pli->do_gfwdbias = TRUE; pli->F4b = esl_opt_GetReal(go, "--F4b"); }
-  if(esl_opt_IsUsed(go, "--F5"))  {                          pli->F5  = esl_opt_GetReal(go, "--F5");  }
-  if(esl_opt_IsUsed(go, "--F5b")) { pli->do_edefbias = TRUE; pli->F5b = esl_opt_GetReal(go, "--F5b"); }
-  if(esl_opt_IsUsed(go, "--F6"))  { pli->do_cyk      = TRUE; pli->F6  = esl_opt_GetReal(go, "--F6");  }
-  
-  pli->orig_F4  = pli->F4;
-  pli->orig_F4b = pli->F4b;
-  pli->orig_F5  = pli->F5;
-  pli->orig_F5b = pli->F5b;
+  /********************************************************************************/
+  /* Configure acceleration pipeline by setting filter on/off parameters
+   * and filter thresholds. 
+   *
+   * Two steps:
+   * 1. Set filter parameters based on which of the five filtering strategies 
+   *    we're using.
+   * 2. Overwrite any filter parameters set on the command-line.
+   *
+   * The five exclusive filtering strategies: 
+   * 1. --max:     turn off all filters
+   * 2. --nohmm:   turn off all HMM filters
+   * 3. --mid:     turn off MSV/Viterbi HMM filters
+   * 4. default:   use all filters with DB-size dependent thresholds
+   * 5. --rfam:    use all filters with strict thresholds (as if DB was size of RFAMSEQ)
+   *
+   * strategy    F1/F1b?  F2/F2b?  F3/F3b?  F4/F4b?  F5/F5b?      F6?
+   * --------    -------  -------  -------  -------  -------  -------  
+   * --max           off      off      off      off      off      off
+   * --nohmm         off      off      off      off      off       on
+   * --mid           off      off       on       on       on       on
+   * default          on       on       on       on       on       on
+   * --rfam           on       on       on       on       on       on
+   *
+   * First set defaults, then make nec changes if --max, --nohmm, --mid or 
+   * --rfam 
+   */
+  pli->do_max        = FALSE;
+  pli->do_rfam       = FALSE;
+  pli->do_mid        = FALSE;
+  pli->do_msv        = TRUE;
+  pli->do_msvbias    = FALSE;
+  pli->do_vit        = TRUE;
+  pli->do_vitbias    = TRUE;
+  pli->do_fwd        = TRUE;
+  pli->do_fwdbias    = TRUE;
+  pli->do_gfwd       = TRUE;
+  pli->do_gfwdbias   = TRUE;
+  pli->do_edef       = TRUE;
+  pli->do_edefbias   = TRUE;
+  pli->do_fcyk       = TRUE;
+  pli->F1            = esl_opt_GetReal(go, "--F1");
+  pli->F1b           = esl_opt_GetReal(go, "--F1b");
+  pli->F2            = esl_opt_GetReal(go, "--F2");
+  pli->F2b           = esl_opt_GetReal(go, "--F2b");
+  pli->F3            = esl_opt_GetReal(go, "--F3");
+  pli->F3b           = esl_opt_GetReal(go, "--F3b");
+  pli->F4            = esl_opt_GetReal(go, "--F4");
+  pli->F4b           = esl_opt_GetReal(go, "--F4b");
+  pli->F5            = esl_opt_GetReal(go, "--F5");
+  pli->F5b           = esl_opt_GetReal(go, "--F5b");
+  pli->F6            = esl_opt_GetReal(go, "--F6");
+  pli->align_cyk     = esl_opt_GetBoolean(go, "--acyk")       ? TRUE  : FALSE;
+  pli->align_hbanded = esl_opt_GetBoolean(go, "--anonbanded") ? FALSE : TRUE;
 
-  if(esl_opt_GetBoolean(go, "--noF1"))     pli->do_msv        = FALSE; 
-  if(esl_opt_GetBoolean(go, "--shortmsv")) pli->do_shortmsv   = TRUE;
-  if(esl_opt_GetBoolean(go, "--noF2"))     pli->do_vit        = FALSE; 
-  if(esl_opt_GetBoolean(go, "--noF3"))     pli->do_fwd        = FALSE; 
-  if(esl_opt_GetBoolean(go, "--noF4"))     pli->do_gfwd       = FALSE; 
-  if(esl_opt_GetBoolean(go, "--noF6"))     pli->do_cyk        = FALSE; 
-  if(esl_opt_GetBoolean(go, "--doF1b"))    pli->do_msvbias    = TRUE;
-  if(esl_opt_GetBoolean(go, "--noF2b"))    pli->do_vitbias    = FALSE;
-  if(esl_opt_GetBoolean(go, "--noF3b"))    pli->do_fwdbias    = FALSE;
-  if(esl_opt_GetBoolean(go, "--noF4b"))    pli->do_gfwdbias   = FALSE;
-  if(esl_opt_GetBoolean(go, "--noF5b"))    pli->do_edefbias   = FALSE;
-  if(esl_opt_GetBoolean(go, "--hmm")) { 
-    pli->do_cm  = FALSE;
-    pli->do_cyk = FALSE; 
-  }
-  if(esl_opt_GetBoolean(go, "--nohmm")) { 
-    pli->do_hmm        = FALSE; 
-    pli->do_msv        = FALSE; 
-    pli->do_vit        = FALSE;
-    pli->do_fwd        = FALSE; 
-    pli->do_gfwd       = FALSE; 
-    pli->do_envelopes  = FALSE; 
-    pli->do_msvbias    = FALSE;
-    pli->do_vitbias    = FALSE;
-    pli->do_fwdbias    = FALSE;
-    pli->do_gfwdbias   = FALSE;
-    pli->do_edefbias   = FALSE;
-  }
-  if(esl_opt_GetBoolean(go, "--max")) { /* turn off all filters */
+  if(esl_opt_GetBoolean(go, "--max")) { 
     pli->do_max = TRUE;
-    pli->do_hmm = pli->do_msv = pli->do_vit = pli->do_fwd = pli->do_cyk = FALSE; 
-    pli->do_msvbias = pli->do_vitbias = pli->do_fwdbias = pli->do_gfwdbias = pli->do_edefbias = FALSE;
-    pli->do_cykenv = FALSE;
-    pli->F1 = pli->F2 = pli->F3 = pli->F4 = pli->F5 = 1.0;
+    pli->do_msv     = pli->do_vit     = pli->do_fwd     = pli->do_gfwd     = pli->do_edef     = pli->do_fcyk    = FALSE; 
+    pli->do_msvbias = pli->do_vitbias = pli->do_fwdbias = pli->do_gfwdbias = pli->do_edefbias = pli->do_fcykenv = FALSE;
+    pli->F1  = pli->F2  = pli->F3  = pli->F4  = pli->F5  = pli->F6 = 1.0;
+    pli->F1b = pli->F2b = pli->F3b = pli->F4b = pli->F5b = pli->F6 = 1.0;
+    pli->align_hbanded = FALSE;
   }
-  if(esl_opt_GetBoolean(go, "--rfam")) { /* set up strict-level filtering, these are the same as the defaults
-					  * for a 100 Gb database or larger */
+  else if(esl_opt_GetBoolean(go, "--nohmm")) { 
+    pli->do_nohmm  = TRUE;
+    pli->do_msv     = pli->do_vit     = pli->do_fwd     = pli->do_gfwd     = pli->do_edef     = FALSE;
+    pli->do_msvbias = pli->do_vitbias = pli->do_fwdbias = pli->do_gfwdbias = pli->do_edefbias = FALSE;
+    pli->F1  = pli->F2  = pli->F3  = pli->F4  = pli->F5  = 1.0;
+    pli->F1b = pli->F2b = pli->F3b = pli->F4b = pli->F5b = 1.0;
+    pli->align_hbanded = FALSE;
+  }
+  else if(esl_opt_GetBoolean(go, "--mid")) { 
+    pli->do_mid  = TRUE;
+    pli->do_msv     = pli->do_vit     = FALSE;
+    pli->do_msvbias = pli->do_vitbias = FALSE;
+    pli->F1  = pli->F2  = 1.0;
+    pli->F1b = pli->F2b = 1.0;
+    pli->F3  = pli->F3b = pli->F4 = pli->F4b = pli->F5 = pli->F5b = esl_opt_GetReal(go, "--Fmid");
+  }
+  else if(esl_opt_GetBoolean(go, "--rfam")) { 
     pli->do_rfam = TRUE;
     pli->F1 = pli->F1b = 0.05;
     pli->F2 = pli->F2b = 0.04;
@@ -424,52 +395,195 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->F4 = pli->F4b = 0.0004;
     pli->F5 = pli->F5b = 0.0004;
     pli->F6 = 0.0001;
+    /* these are the same as the defaults for a 100 Gb database or larger */
   }
+  else { 
+    /* None of --max, --nohmm, --mid, --rfam enabled, use default
+     * strategy, set filter thresholds dependent on Z, which was set
+     * above. These default thresholds are hard-coded and were determined
+     * by a systematic search over possible filter threshold combinations.
+     * xref: ~nawrockie/notebook/11_0513_inf_dcmsearch_thresholds/00LOG
+     */
+    Z_Mb = esl_opt_IsUsed(go, "--FZ") ? esl_opt_GetReal(go, "--FZ") : pli->Z / 1000000.;
+    if(Z_Mb >= (100000. - eslSMALLX1)) { /* Z >= 100 Gb */
+      pli->F1 = pli->F1b = 0.05;
+      pli->F2 = pli->F2b = 0.04;
+      pli->F3 = pli->F3b = 0.0004;
+      pli->F4 = pli->F4b = 0.0004;
+      pli->F5 = pli->F5b = 0.0004;
+      pli->F6 = 0.0001;
+    }
+    else if(Z_Mb >= (10000. - eslSMALLX1)) { /* 100 Gb > Z >= 10 Gb */
+      pli->F1 = pli->F1b = 0.06;
+      pli->F2 = pli->F2b = 0.05;
+      pli->F3 = pli->F3b = 0.0005;
+      pli->F4 = pli->F4b = 0.0005;
+      pli->F5 = pli->F5b = 0.0005;
+      pli->F6 = 0.0001;
+    }
+    else if(Z_Mb >= (1000. - eslSMALLX1)) { /* 10 Gb > Z >= 1 Gb */
+      pli->F1 = pli->F1b = 0.06;
+      pli->F2 = pli->F2b = 0.15;
+      pli->F3 = pli->F3b = 0.0005;
+      pli->F4 = pli->F4b = 0.0005;
+      pli->F5 = pli->F5b = 0.0005;
+      pli->F6 = 0.0001;
+    }
+    else if(Z_Mb >= (100. - eslSMALLX1)) { /* 1 Gb  > Z >= 100 Mb */
+      pli->F1 = pli->F1b = 0.30;
+      pli->F2 = pli->F2b = 0.15;
+      pli->F3 = pli->F3b = 0.002;
+      pli->F4 = pli->F4b = 0.002;
+      pli->F5 = pli->F5b = 0.002;
+      pli->F6 = 0.0001;
+    }
+    else if(Z_Mb >= (10. - eslSMALLX1)) { /* 100 Mb  > Z >= 10 Mb */
+      pli->F1 = pli->F1b = 0.35;
+      pli->F2 = pli->F2b = 0.20;
+      pli->F3 = pli->F3b = 0.003;
+      pli->F4 = pli->F4b = 0.003;
+      pli->F5 = pli->F5b = 0.003;
+      pli->F6 = 0.0001;
+    }
+    else if(Z_Mb >= (1. - eslSMALLX1)) { /* 10 Mb  > Z >= 1 Mb */
+      pli->F1 = pli->F1b = 0.35;
+      pli->F2 = pli->F2b = 0.20;
+      pli->F3 = pli->F3b = 0.015;
+      pli->F4 = pli->F4b = 0.015;
+      pli->F5 = pli->F5b = 0.015;
+      pli->F6 = 0.0001;
+    }
+    else { /* 1 Mb  > Z */
+      pli->do_msv = FALSE;
+      pli->F1 = pli->F1b = 1.00; /* this is irrelevant */
+      pli->F2 = pli->F2b = 0.25;
+      pli->F3 = pli->F3b = 0.02;
+      pli->F4 = pli->F4b = 0.02;
+      pli->F5 = pli->F5b = 0.02;
+      pli->F6 = 0.0001;
+    }
+  } /* end of 'else' entered if none of --max, --nohmm, --mid, --rfam used */
 
-  pli->do_time_F1   = esl_opt_GetBoolean(go, "--time-F1");
-  pli->do_time_F2   = esl_opt_GetBoolean(go, "--time-F2");
-  pli->do_time_F3   = esl_opt_GetBoolean(go, "--time-F3");
-  pli->do_time_F4   = esl_opt_GetBoolean(go, "--time-F4");
-  pli->do_time_F5   = esl_opt_GetBoolean(go, "--time-F5");
-  pli->do_time_F6   = esl_opt_GetBoolean(go, "--time-F6");
+  /* Filter on/off parameters and thresholds are now completely set
+   * based on filtering strategy. Final step is to overwrite any that
+   * the user set on the command-line. (Only expert users should be
+   * doing this.) 
+   * 
+   * We have to be careful here to not turn on filters that our
+   * strategy disallows. The definition of ESL_GETOPTS go should
+   * enforce that incompatible options cause a failure (and thus will
+   * never exist in go), but we do a second check here for some
+   * combinations.
+   */
+  if((! pli->do_max) && (! pli->do_nohmm) && (! pli->do_mid)) { 
+    if(esl_opt_IsUsed(go, "--F1"))  { pli->do_msv      = TRUE; pli->F1  = esl_opt_GetReal(go, "--F1");  }
+    if(esl_opt_IsUsed(go, "--F1b")) { pli->do_msvbias  = TRUE; pli->F1b = esl_opt_GetReal(go, "--F1b"); }
+    if(esl_opt_IsUsed(go, "--F2"))  { pli->do_vit      = TRUE; pli->F2  = esl_opt_GetReal(go, "--F2");  }
+    if(esl_opt_IsUsed(go, "--F2b")) { pli->do_vitbias  = TRUE; pli->F2b = esl_opt_GetReal(go, "--F2b"); }
+  }
+  if((! pli->do_max) && (! pli->do_nohmm)) { 
+    if(esl_opt_IsUsed(go, "--F3"))  { pli->do_fwd      = TRUE; pli->F3  = esl_opt_GetReal(go, "--F3");  }
+    if(esl_opt_IsUsed(go, "--F3b")) { pli->do_fwdbias  = TRUE; pli->F3b = esl_opt_GetReal(go, "--F3b"); }
+    if(esl_opt_IsUsed(go, "--F4"))  { pli->do_gfwd     = TRUE; pli->F4  = esl_opt_GetReal(go, "--F4");  }
+    if(esl_opt_IsUsed(go, "--F4b")) { pli->do_gfwdbias = TRUE; pli->F4b = esl_opt_GetReal(go, "--F4b"); }
+    if(esl_opt_IsUsed(go, "--F5"))  { pli->do_edef     = TRUE; pli->F5  = esl_opt_GetReal(go, "--F5");  }
+    if(esl_opt_IsUsed(go, "--F5b")) { pli->do_edefbias = TRUE; pli->F5b = esl_opt_GetReal(go, "--F5b"); }
+  }
+  if(! pli->do_max) { 
+    if(esl_opt_IsUsed(go, "--F6"))  { pli->do_fcyk     = TRUE; pli->F6  = esl_opt_GetReal(go, "--F6");  }
+  }
+  
+  if(esl_opt_GetBoolean(go, "--noF1"))     pli->do_msv        = FALSE; 
+  if(esl_opt_GetBoolean(go, "--noF2"))     pli->do_vit        = FALSE; 
+  if(esl_opt_GetBoolean(go, "--noF3"))     pli->do_fwd        = FALSE; 
+  if(esl_opt_GetBoolean(go, "--noF4"))     pli->do_gfwd       = FALSE; 
+  if(esl_opt_GetBoolean(go, "--noF6"))     pli->do_fcyk       = FALSE; 
 
-  if (esl_opt_GetBoolean(go, "--null2"))   pli->do_null2      = TRUE;
-  if (esl_opt_GetBoolean(go, "--nonull3")) pli->do_null3      = FALSE;
+  if((! pli->do_max) && (! pli->do_nohmm) && (! pli->do_mid)) { 
+    if(esl_opt_GetBoolean(go, "--doF1b"))    pli->do_msvbias    = TRUE;
+  }
+  if(esl_opt_GetBoolean(go, "--noF2b"))    pli->do_vitbias    = FALSE;
+  if(esl_opt_GetBoolean(go, "--noF3b"))    pli->do_fwdbias    = FALSE;
+  if(esl_opt_GetBoolean(go, "--noF4b"))    pli->do_gfwdbias   = FALSE;
+  if(esl_opt_GetBoolean(go, "--noF5b"))    pli->do_edefbias   = FALSE;
 
+
+  /* Finished setting filter stage on/off parameters and thresholds */
+  /********************************************************************************/
+
+  /********************************************************************************/
   /* Configure options for the CM stages */
+  pli->do_null2   = esl_opt_GetBoolean(go, "--null2")   ? TRUE  : FALSE;
+  pli->do_null3   = esl_opt_GetBoolean(go, "--nonull3") ? FALSE : TRUE;
+
   pli->fcyk_cm_search_opts  = 0;
   pli->final_cm_search_opts = 0;
   pli->fcyk_beta  = esl_opt_GetReal(go, "--fbeta");
   pli->fcyk_tau   = esl_opt_GetReal(go, "--ftau");
+  pli->do_fcykenv = esl_opt_GetBoolean(go, "--nocykenv") ? FALSE : TRUE;
+  /* important to set F6env after F6 is set to final value */
+  pli->F6env       = ESL_MIN(1.0, pli->F6 * (float) esl_opt_GetInteger(go, "--cykenvx")); 
+
   pli->final_beta = esl_opt_GetReal(go, "--beta");
   pli->final_tau  = esl_opt_GetReal(go, "--tau");
 
-  if(! esl_opt_GetBoolean(go, "--hmm")) { 
-    /* set up CYK filter and final round parameters */
-    /* three options for banding in CYK filter and final round: 
-     * --{f}nonbanded: non-banded
-     * --{f}qdb:       QDB
-     * neither:        HMM bands
-     */
-    /* CYK filter settings */
-    if     (esl_opt_GetBoolean(go, "--fnonbanded"))  pli->fcyk_cm_search_opts  |= CM_SEARCH_NONBANDED;
-    else if(esl_opt_GetBoolean(go, "--fqdb"))        pli->fcyk_cm_search_opts  |= CM_SEARCH_QDB;
-    else                                             pli->fcyk_cm_search_opts  |= CM_SEARCH_HBANDED;
+  /* There are 3 options for banding in CYK filter and final round.
+   * Choice of the 3 varies depending on if pli->do_max, pli->do_nohmm
+   * or neither.
+   * 
+   * if(do_max) {
+   *   filter CYK is off. 
+   *   final round: --qdb: use QDBs, else non-banded
+   * }
+   * else if(do_nohmm) {
+   *   filter CYK : --fnonbanded: no bands, else use QDBs 
+   *   final round: --nonbanded:  no bands, else use QDBs 
+   * }
+   * else {  normal case 
+   *   filter CYK : --fnonbanded: no bands, --fqdb: use QDBs, else use HMM bands
+   *   final round: --nonbanded:  no bands, --qdb:  use QDBs, else use HMM bands
+   * }
+   *
+   * In all cases, if QDBs used for filter CYK beta is from --fbeta
+   * <x>, final beta is from --beta <x>.  
+   * 
+   * In all cases, if HMM bands used for filter CYK tau is from --ftau
+   * <x>, final tau is from --tau <x>.
+   */
 
-    if(  esl_opt_GetBoolean(go, "--fsums"))          pli->fcyk_cm_search_opts  |= CM_SEARCH_SUMS;
-    if(! esl_opt_GetBoolean(go, "--nonull3"))        pli->fcyk_cm_search_opts  |= CM_SEARCH_NULL3;
-
-    /* set up final round parameters */
-    if(! esl_opt_GetBoolean(go, "--cyk"))            pli->final_cm_search_opts |= CM_SEARCH_INSIDE;
-
-    if     (esl_opt_GetBoolean(go, "--nonbanded"))   pli->final_cm_search_opts |= CM_SEARCH_NONBANDED;
-    else if(esl_opt_GetBoolean(go, "--qdb"))         pli->final_cm_search_opts |= CM_SEARCH_QDB;
-    else                                             pli->final_cm_search_opts |= CM_SEARCH_HBANDED;
-
-    if(  esl_opt_GetBoolean(go, "--sums"))           pli->final_cm_search_opts |= CM_SEARCH_SUMS;
-    if(! esl_opt_GetBoolean(go, "--nonull3"))        pli->final_cm_search_opts |= CM_SEARCH_NULL3;
-    if(esl_opt_GetBoolean(go, "--nogreedy"))         pli->final_cm_search_opts |= CM_SEARCH_CMNOTGREEDY;
+  /* CYK filter settings, only set these if do_fcyk 
+   */
+  if(pli->do_fcyk) { 
+    if(pli->do_nohmm) { /* special case, default behavior for fcyk is to do QDB, HMM banded is not allowed */
+      if(esl_opt_GetBoolean(go, "--fnonbanded"))       pli->fcyk_cm_search_opts  |= CM_SEARCH_NONBANDED;
+      else                                             pli->fcyk_cm_search_opts  |= CM_SEARCH_QDB;
+    }
+    else { 
+      if     (esl_opt_GetBoolean(go, "--fnonbanded"))  pli->fcyk_cm_search_opts  |= CM_SEARCH_NONBANDED;
+      else if(esl_opt_GetBoolean(go, "--fqdb"))        pli->fcyk_cm_search_opts  |= CM_SEARCH_QDB;
+      else                                             pli->fcyk_cm_search_opts  |= CM_SEARCH_HBANDED;
+    }
+    if(  esl_opt_GetBoolean(go, "--fsums"))            pli->fcyk_cm_search_opts  |= CM_SEARCH_SUMS;
+    if(! esl_opt_GetBoolean(go, "--nonull3"))          pli->fcyk_cm_search_opts  |= CM_SEARCH_NULL3;
   }
+
+  /* set up final round parameters, always set these (we always do the final CM round) */
+  if(! esl_opt_GetBoolean(go, "--cyk"))                pli->final_cm_search_opts |= CM_SEARCH_INSIDE;
+  if     (pli->do_max)   { /* special case, default behavior in final round is to do non-banded, HMM banded is not allowed */
+    if     (esl_opt_GetBoolean(go, "--nonbanded"))     pli->final_cm_search_opts |= CM_SEARCH_NONBANDED;
+    else                                               pli->final_cm_search_opts |= CM_SEARCH_QDB;
+  }
+  else if(pli->do_nohmm) { /* special case, default behavior in final round is to do QDB, HMM banded is not allowed */
+    if(esl_opt_GetBoolean(go, "--qdb"))                pli->final_cm_search_opts |= CM_SEARCH_QDB;
+    else                                               pli->final_cm_search_opts |= CM_SEARCH_NONBANDED;
+  }
+  else { /* normal case, default is HMM banded */
+    if     (esl_opt_GetBoolean(go, "--nonbanded"))     pli->final_cm_search_opts |= CM_SEARCH_NONBANDED;
+    else if(esl_opt_GetBoolean(go, "--qdb"))           pli->final_cm_search_opts |= CM_SEARCH_QDB;
+    else                                               pli->final_cm_search_opts |= CM_SEARCH_HBANDED;
+  }
+  if(esl_opt_GetBoolean(go, "--sums"))                 pli->final_cm_search_opts |= CM_SEARCH_SUMS;
+  if(esl_opt_GetBoolean(go, "--nogreedy"))             pli->final_cm_search_opts |= CM_SEARCH_CMNOTGREEDY;
 
   /* Determine cm->config_opts we'll use to configure CMs after reading within a SCAN pipeline */
   pli->cm_config_opts = 0;
@@ -485,51 +599,32 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   if(! esl_opt_GetBoolean(go, "--notrunc")) pli->cm_config_opts |= CM_CONFIG_TRUNC; 
 
   /* will we be requiring a CM_SCAN_MX? a CM_TR_SCAN_MX? */
-  if(esl_opt_GetBoolean(go, "--fqdb") || esl_opt_GetBoolean(go, "--qdb")) { 
+  if(pli->do_max   ||                    /* max mode, no filters */
+     pli->do_nohmm ||                    /* nohmm mode, no HMM filters */
+     esl_opt_GetBoolean(go, "--fqdb") || /* user specified to use --fqdb, do it */
+     esl_opt_GetBoolean(go, "--qdb")) {  /* user specified to use --qdb,  do it */
     pli->cm_config_opts |= CM_CONFIG_SCANMX;
     if(! esl_opt_GetBoolean(go, "--notrunc")) { 
       pli->cm_config_opts |= CM_CONFIG_TRSCANMX; 
     }
   }
 
-  /* will we be requiring non-banded matrices? */
-  if(esl_opt_GetBoolean(go, "--aln-nonbanded"))   pli->cm_config_opts |= CM_CONFIG_NONBANDEDMX;
+  /* will we be requiring non-banded alignment matrices? */
+  if(! pli->align_hbanded) { 
+    pli->cm_config_opts |= CM_CONFIG_NONBANDEDMX;
+  }
 
   /* Determine statistics modes for CM stages */
   pli->do_glocal_cm_stages = (esl_opt_GetBoolean(go, "-g")) ? TRUE : FALSE;
-  pli->fcyk_cm_exp_mode  = pli->do_glocal_cm_stages ? EXP_CM_GC : EXP_CM_LC;
+  pli->fcyk_cm_exp_mode    = pli->do_glocal_cm_stages ? EXP_CM_GC : EXP_CM_LC;
   if(pli->final_cm_search_opts & CM_SEARCH_INSIDE) { 
     pli->final_cm_exp_mode = pli->do_glocal_cm_stages ? EXP_CM_GI : EXP_CM_LI;
   }
   else {
     pli->final_cm_exp_mode = pli->do_glocal_cm_stages ? EXP_CM_GC : EXP_CM_LC;
   }
-
-  /* Accounting as we collect results */
-  pli->nmodels = 0;
-  pli->nseqs   = 0;
-  pli->nnodes  = 0;
-  for(pass_idx = 0; pass_idx < NPLI_PASSES; pass_idx++) { 
-    cm_pli_ZeroAccounting(&(pli->acct[pass_idx]));
-  }
-
-  pli->mode             = mode;
-  pli->do_top           = (esl_opt_GetBoolean(go, "--bottomonly"))    ? FALSE : TRUE;
-  pli->do_bot           = (esl_opt_GetBoolean(go, "--toponly"))       ? FALSE : TRUE;
-  pli->show_accessions  = (esl_opt_GetBoolean(go, "--acc")            ? TRUE  : FALSE);
-  pli->do_alignments    = (esl_opt_GetBoolean(go, "--noali")          ? FALSE : TRUE);
-  pli->align_cyk        = (esl_opt_GetBoolean(go, "--aln-cyk")        ? TRUE  : FALSE);
-  pli->align_hbanded    = (esl_opt_GetBoolean(go, "--aln-nonbanded")  ? FALSE : TRUE);
-  pli->hb_size_limit    = esl_opt_GetReal    (go, "--aln-sizelimit");
-  pli->do_hb_recalc     = esl_opt_GetBoolean(go, "--aln-newbands")    ? TRUE  : FALSE;
-
-  pli->cur_cm_idx   = -1;
-  pli->cur_seq_idx  = -1;
-  pli->cur_pass_idx = -1;
-
-  pli->abc              = abc;
-  pli->cmfp             = NULL;
-  pli->errbuf[0]        = '\0';
+  /* finished setting up parameters for CM stages */
+  /********************************************************************************/
 
   return pli;
 
@@ -673,7 +768,6 @@ int
 cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, P7_OPROFILE *om, P7_BG *bg, int64_t cur_cm_idx)
 {
   int status = eslOK;
-  int i, nsteps;
   float T;
 
   /* check contract */
@@ -724,25 +818,6 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
      * single sequence, this is MAX of cm->W and om->max_length
      */
     pli->maxW = ESL_MAX(cm_W, om->max_length);
-
-    /* reset consensus length specific thresholds  */
-    pli->F4  = pli->orig_F4;
-    pli->F4b = pli->orig_F4b;
-    pli->F5  = pli->orig_F5;
-    pli->F5b = pli->orig_F5b;
-    
-    /* update consensus length specific thresholds, if nec */
-    if(pli->do_glen) { 
-      if(pli->clen >= pli->glen_min) { 
-	nsteps = (int) (1 + ((ESL_MAX(pli->clen, pli->glen_max) - (pli->glen_min-1)) / pli->glen_step));
-	for(i = 0; i < nsteps; i++) { 
-	  pli->F4  /= 2.;
-	  pli->F4b /= 2.;
-	  pli->F5  /= 2.;
-	  pli->F5b /= 2.;
-	}
-      }
-    }
   }
   if(pli->mode == CM_SEARCH_SEQS || modmode == CM_NEWMODEL_CM) { 
     /* set B updates: case 1 and 3 do these (they require a valid CM) */
@@ -966,7 +1041,6 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
   void            *p;                /* for ESL_RALLOC */
   int             *useme = NULL;     /* used when merging overlapping windows */
   int              overlap;          /* number of overlapping positions b/t 2 adjacent windows */
-  float            wcorr;            /* bit sc correction for a window */
   int            **survAA = NULL;    /* [0..s..Np7_SURV-1][0..i..nwin-1] TRUE if window i survived stage s */
   int              nalloc;           /* currently allocated size for ws, we */
   int64_t         *ws = NULL;        /* [0..nwin-1] window start positions */
@@ -1006,7 +1080,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
 
   /***************************************************/
   /* Filter 1: MSV, long target-variant, with p7 HMM */
-  if(pli->do_msv && (! pli->do_shortmsv)) { 
+  if(pli->do_msv) { 
     /* ws_int, we_int: workaround for p7_MSVFilter_longtarget() taking integers, instead of int64_t */
     int *ws_int;
     int *we_int;
@@ -1030,46 +1104,44 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     free(windowlist.windows);
 #endif
 
-    if(pli->do_wsplit) { 
-      /* split up windows > (pli->wmult * W) into length 2W-1, with W-1 overlapping residues */
-      nalloc = nwin + 100;
-      ESL_ALLOC(new_ws, sizeof(int64_t) * nalloc);
-      ESL_ALLOC(new_we, sizeof(int64_t) * nalloc);
-      for (i = 0, i2 = 0; i < nwin; i++, i2++) {
-	wlen = we[i] - ws[i] + 1;
-	if((i2+1) == nalloc) { 
-	  nalloc += 100;
-	  ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
-	  ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
-	}
-	if(wlen > (pli->wmult * pli->maxW)) { 
-	  /* split this window */
-	  new_ws[i2] = ws[i]; 
-	  new_we[i2] = ESL_MIN((new_ws[i2] + (2 * pli->cmW) - 1), we[i]);
-	  while(new_we[i2] < we[i]) { 
-	    i2++;
-	    if((i2+1) == nalloc) { 
-	      nalloc += 100;
-	      ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
-	      ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
-	    }
+    /* split up windows > (3.0 * W) into length 2W-1, with W-1 overlapping residues */
+    nalloc = nwin + 100;
+    ESL_ALLOC(new_ws, sizeof(int64_t) * nalloc);
+    ESL_ALLOC(new_we, sizeof(int64_t) * nalloc);
+    for (i = 0, i2 = 0; i < nwin; i++, i2++) {
+      wlen = we[i] - ws[i] + 1;
+      if((i2+1) == nalloc) { 
+	nalloc += 100;
+	ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
+	ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
+      }
+      if(wlen > (3. * pli->maxW)) { 
+	/* split this window */
+	new_ws[i2] = ws[i]; 
+	new_we[i2] = ESL_MIN((new_ws[i2] + (2 * pli->cmW) - 1), we[i]);
+	while(new_we[i2] < we[i]) { 
+	  i2++;
+	  if((i2+1) == nalloc) { 
+	    nalloc += 100;
+	    ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
+	    ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
+	  }
 	    new_ws[i2] = ESL_MIN(new_ws[i2-1] + pli->cmW, we[i]);
 	    new_we[i2] = ESL_MIN(new_we[i2-1] + pli->cmW, we[i]);
 	  }	    
-	}
-	else { /* do not split this window */
-	  new_ws[i2] = ws[i]; 
-	  new_we[i2] = we[i];
-	}
       }
-      free(ws);
-      free(we);
-      ws = new_ws;
-      we = new_we;
-      nwin = i2;
+      else { /* do not split this window */
+	new_ws[i2] = ws[i]; 
+	new_we[i2] = we[i];
+      }
     }
+    free(ws);
+    free(we);
+    ws = new_ws;
+    we = new_we;
+    nwin = i2;
   }
-  else { /* do_msv is FALSE or do_shortmsv is TRUE, divide up into windows of 2*W, overlapping by W-1 residues */
+  else { /* do_msv is FALSE */
     nwin = 1; /* first window */
     if(sq->n > (2 * pli->cmW)) { 
       nwin += (int) (sq->n - (2 * pli->cmW)) / ((2 * pli->cmW) - (pli->cmW - 1));
@@ -1083,11 +1155,11 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     for(i = 0; i < nwin; i++) { 
       ws[i] = 1 + (i * (pli->cmW + 1));
       we[i] = ESL_MIN((ws[i] + (2*pli->cmW) - 1), sq->n);
-      /*printf("window %5d/%5d  %10d..%10d (L=%10" PRId64 ")\n", i+1, nwin, ws[i], we[i], sq->n);*/
+      printf("window %5d/%5d  %10" PRId64 "..%10" PRId64 " (L=%10" PRId64 ")\n", i+1, nwin, ws[i], we[i], sq->n);
     }
-  }      
-  if(! pli->do_shortmsv) pli->acct[pli->cur_pass_idx].n_past_msv += nwin;
-
+  }     
+  pli->acct[pli->cur_pass_idx].n_past_msv += nwin;
+  
   ESL_ALLOC(wp, sizeof(double) * nwin);
   for(i = 0; i < nwin; i++) { wp[i] = pli->F1; } /* TEMP (?) p7_MSVFilter_longtarget() does not return P-values */
 
@@ -1104,29 +1176,11 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     have_filtersc = FALSE;
     wlen = we[i] - ws[i] + 1;
 
-    if(pli->do_wcorr) { 
-      wcorr = (2 * log(2. / (pli->cmW+2))) - (2. * log(2. / (wlen+2)));
-      p7_bg_SetLength(bg, pli->cmW);
-      p7_bg_NullOne  (bg, subdsq, pli->cmW, &nullsc);
-    }
-    else { 
-      wcorr = 0.;
-      p7_bg_SetLength(bg, wlen);
-      p7_bg_NullOne  (bg, subdsq, wlen, &nullsc);
-    }
-
-    if(pli->do_shortmsv) { 
-      p7_oprofile_ReconfigMSVLength(om, wlen);
-      p7_MSVFilter(subdsq, wlen, om, pli->oxf, &mfsc);
-      wsc = (mfsc + wcorr - nullsc) / eslCONST_LOG2;
-      P = esl_gumbel_surv(wsc,  p7_evparam[CM_p7_LMMU],  p7_evparam[CM_p7_LMLAMBDA]);
-      wp[i] = P;
-      if (P > pli->F1) continue;
-      pli->acct[pli->cur_pass_idx].n_past_msv++;
-    }
+    p7_bg_SetLength(bg, wlen);
+    p7_bg_NullOne  (bg, subdsq, wlen, &nullsc);
 
 #if DOPRINT
-    printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived MSV       %6.2f bits  P %g\n", i, ws[i], we[i], (pli->do_shortmsv) ? wsc : 0., wp[i]);
+    if(pli->do_msv) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived MSV       %6.2f bits  P %g\n", i, ws[i], we[i], 0., wp[i]);
 #endif
     survAA[p7_SURV_F1][i] = TRUE;
     
@@ -1137,11 +1191,10 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
 	 (using the standard "per-sequence" msv filter this time). */
       p7_oprofile_ReconfigMSVLength(om, wlen);
       p7_MSVFilter(subdsq, wlen, om, pli->oxf, &mfsc);
-      if(pli->do_wcorr) p7_bg_FilterScore(bg, subdsq, pli->cmW,     &filtersc);
-      else              p7_bg_FilterScore(bg, subdsq, wlen, &filtersc);
+      p7_bg_FilterScore(bg, subdsq, wlen, &filtersc);
       have_filtersc = TRUE;
       
-      wsc = (mfsc + wcorr - filtersc) / eslCONST_LOG2;
+      wsc = (mfsc - filtersc) / eslCONST_LOG2;
       P   = esl_gumbel_surv(wsc,  p7_evparam[CM_p7_LMMU],  p7_evparam[CM_p7_LMLAMBDA]);
       wp[i] = P;
 
@@ -1153,7 +1206,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     survAA[p7_SURV_F1b][i] = TRUE;
 
 #if DOPRINT
-    printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived MSV-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], (pli->do_shortmsv) ? wsc : 0., wp[i]);
+    if(pli->do_msv && pli->do_msvbias) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived MSV-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], 0., wp[i]);
 #endif      
     if(pli->do_time_F1) return eslOK;
     
@@ -1176,7 +1229,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
       /* Filter 2: Viterbi with p7 HMM */
       /* Second level filter: ViterbiFilter(), multihit with <om> */
       p7_ViterbiFilter(subdsq, wlen, om, pli->oxf, &vfsc);
-      wsc = (vfsc + wcorr - nullsc) / eslCONST_LOG2; 
+      wsc = (vfsc - nullsc) / eslCONST_LOG2; 
       P   = esl_gumbel_surv(wsc,  p7_evparam[CM_p7_LVMU],  p7_evparam[CM_p7_LVLAMBDA]);
       wp[i] = P;
       if (P > pli->F2) continue;
@@ -1185,17 +1238,16 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     survAA[p7_SURV_F2][i] = TRUE;
 
 #if DOPRINT
-    printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Vit       %6.2f bits  P %g\n", i, ws[i], we[i], wsc, wp[i]);
+    if (pli->do_vit) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Vit       %6.2f bits  P %g\n", i, ws[i], we[i], wsc, wp[i]);
 #endif
 
     /********************************************/
     if (pli->do_vit && pli->do_vitbias) { 
       if(! have_filtersc) { 
-	if(pli->do_wcorr) p7_bg_FilterScore(bg, subdsq, pli->cmW,     &filtersc);
-	else              p7_bg_FilterScore(bg, subdsq, wlen, &filtersc);
+	p7_bg_FilterScore(bg, subdsq, wlen, &filtersc);
       }
       have_filtersc = TRUE;
-      wsc = (vfsc + wcorr - filtersc) / eslCONST_LOG2;
+      wsc = (vfsc - filtersc) / eslCONST_LOG2;
       P = esl_gumbel_surv(wsc,  p7_evparam[CM_p7_LVMU],  p7_evparam[CM_p7_LVLAMBDA]);
       wp[i] = P;
       if (P > pli->F2b) continue;
@@ -1205,7 +1257,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     survAA[p7_SURV_F2b][i] = TRUE;
 
 #if DOPRINT
-    printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Vit-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], wsc, wp[i]);
+    if (pli->do_vit && pli->do_vitbias) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Vit-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], wsc, wp[i]);
 #endif
     if(pli->do_time_F2) continue; 
     /********************************************/
@@ -1215,7 +1267,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
       /* Filter 3: Forward with p7 HMM */
       /* Parse it with Forward and obtain its real Forward score. */
       p7_ForwardParser(subdsq, wlen, om, pli->oxf, &fwdsc);
-      wsc = (fwdsc + wcorr - nullsc) / eslCONST_LOG2; 
+      wsc = (fwdsc - nullsc) / eslCONST_LOG2; 
       P = esl_exp_surv(wsc,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
       wp[i] = P;
       if (P > pli->F3) continue;
@@ -1225,16 +1277,15 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     survAA[p7_SURV_F3][i] = TRUE;
 
 #if DOPRINT
-    printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Fwd       %6.2f bits  P %g\n", i, ws[i], we[i], wsc, wp[i]);
+    if(pli->do_fwd) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Fwd       %6.2f bits  P %g\n", i, ws[i], we[i], wsc, wp[i]);
 #endif
 
     if (pli->do_fwd && pli->do_fwdbias) { 
       if (! have_filtersc) { 
-	if(pli->do_wcorr) p7_bg_FilterScore(bg, subdsq, pli->cmW, &filtersc);
-	else              p7_bg_FilterScore(bg, subdsq, wlen,     &filtersc);
+	p7_bg_FilterScore(bg, subdsq, wlen,     &filtersc);
       }
       have_filtersc = TRUE;
-      wsc = (fwdsc + wcorr - filtersc) / eslCONST_LOG2;
+      wsc = (fwdsc - filtersc) / eslCONST_LOG2;
       P = esl_exp_surv(wsc,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
       wp[i] = P;
       if (P > pli->F3b) continue;
@@ -1245,7 +1296,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     survAA[p7_SURV_F3b][i] = TRUE;
 
 #if DOPRINT
-    printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Fwd-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], wsc, wp[i]);
+    if(pli->do_fwd && pli->do_fwdbias) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Fwd-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], wsc, wp[i]);
 #endif
     if(pli->do_time_F3) continue;
   }
@@ -1292,39 +1343,37 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
 	i2++;
       }
     }
-    if(pli->do_wsplit || (! pli->do_msv)) { 
-      /* we could have overlapping windows, merge those that do overlap */
-      new_nsurv_fwd = 0;
-      ESL_ALLOC(useme, sizeof(int) * nsurv_fwd);
-      esl_vec_ISet(useme, nsurv_fwd, FALSE);
-      i2 = 0;
-      for(i = 0, i2 = 0; i < nsurv_fwd; i++) { 
-	useme[i] = TRUE;
-	i2 = i+1;
-	while((i2 < nsurv_fwd) && ((new_we[i]+1) >= (new_ws[i2]))) { 
-	  useme[i2] = FALSE;
-	  new_we[i] = new_we[i2]; /* merged i with i2, rewrite end for i */
-	  i2++;
-	}
-	i = i2-1;
+    /* we could have overlapping windows, merge those that do overlap */
+    new_nsurv_fwd = 0;
+    ESL_ALLOC(useme, sizeof(int) * nsurv_fwd);
+    esl_vec_ISet(useme, nsurv_fwd, FALSE);
+    i2 = 0;
+    for(i = 0, i2 = 0; i < nsurv_fwd; i++) { 
+      useme[i] = TRUE;
+      i2 = i+1;
+      while((i2 < nsurv_fwd) && ((new_we[i]+1) >= (new_ws[i2]))) { 
+	useme[i2] = FALSE;
+	new_we[i] = new_we[i2]; /* merged i with i2, rewrite end for i */
+	i2++;
       }
-      i2 = 0;
-      for(i = 0; i < nsurv_fwd; i++) { 
-	if(useme[i]) { 
-	  new_ws[i2] = new_ws[i];
-	  new_we[i2] = new_we[i];
-	  i2++;
-	}
-      }
-      nsurv_fwd = i2;
-      free(useme);
+      i = i2-1;
     }
+    i2 = 0;
+    for(i = 0; i < nsurv_fwd; i++) { 
+      if(useme[i]) { 
+	new_ws[i2] = new_ws[i];
+	new_we[i2] = new_we[i];
+	i2++;
+      }
+    }
+    nsurv_fwd = i2;
+    free(useme);
     free(ws);
     free(we);
     free(wp);
     ws = new_ws;
     we = new_we;
-  }
+  }    
   else { 
     if(ws != NULL) free(ws); ws = NULL;
     if(we != NULL) free(we); we = NULL;
@@ -1380,25 +1429,25 @@ int
 cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv)
 {
   int              status;                     
-  double           P;                          /* P-value of a hit */
-  int              d, i;                       /* counters */
-  void            *p;                          /* for ESL_RALLOC */
-  int              ali_len, env_len, env_wlen; /* lengths of alignment, envelope, envelope window */
-  float            env_sc, env_nullsc;         /* envelope bit score, and null1 score */
-  float            sc_for_pvalue;              /* score for window, used for calc'ing P value */
-  float            env_edefbias;                /* null2 correction for envelope */
-  float            env_sc_for_pvalue;          /* corrected score for envelope, used for calc'ing P value */
-  int64_t          wlen;             /* window length of current window */
-  int64_t         *es = NULL;        /* [0..nenv-1] envelope start positions */
-  int64_t         *ee = NULL;        /* [0..nenv-1] envelope end   positions */
-  int              nenv;             /* number of surviving envelopes */
-  int              nenv_alloc;       /* current size of es, ee */
-  ESL_DSQ         *subdsq;           /* a ptr to the first position of a window */
-  ESL_SQ          *seq = NULL;       /* a copy of a window */
-  int64_t          estart, eend;     /* envelope start/end positions */
+  double           P;                 /* P-value of a hit */
+  int              d, i;              /* counters */
+  void            *p;                 /* for ESL_RALLOC */
+  int              env_len;           /* envelope length */
+  float            env_sc;            /* envelope bit score, and null1 score */
+  float            sc_for_pvalue;     /* score for window, used for calc'ing P value */
+  float            env_edefbias;      /* null2 correction for envelope */
+  float            env_sc_for_pvalue; /* corrected score for envelope, used for calc'ing P value */
+  int64_t          wlen;              /* window length of current window */
+  int64_t         *es = NULL;         /* [0..nenv-1] envelope start positions */
+  int64_t         *ee = NULL;         /* [0..nenv-1] envelope end   positions */
+  int              nenv;              /* number of surviving envelopes */
+  int              nenv_alloc;        /* current size of es, ee */
+  ESL_DSQ         *subdsq;            /* a ptr to the first position of a window */
+  ESL_SQ          *seq = NULL;        /* a copy of a window */
+  int64_t          estart, eend;      /* envelope start/end positions */
   float            nullsc, filtersc, fwdsc, bcksc;
   P7_PROFILE      *gm  = NULL;        /* a ptr to *opt_gm, for convenience */
-  int              do_local_envdef;  /* TRUE if we define envelopes with p7 in local mode, FALSE for glocal */
+  int              do_local_envdef;   /* TRUE if we define envelopes with p7 in local mode, FALSE for glocal */
 
   /* variables related to forcing first and/or final residue within truncated hits */
   P7_PROFILE      *Rgm = NULL;        /* a ptr to *Ropt_gm, for convenience */
@@ -1420,11 +1469,11 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
     return eslOK;    /* if there's no envelopes to search in, return */
   }
 
-  /* Will we use local envelope definition? Only if do_localenv is on,
-   * or we're in the special pipeline pass where we allow any
-   * truncated hits (only possibly true if pli->do_trunc_any is TRUE).
+  /* Will we use local envelope definition? Only if we're in the
+   * special pipeline pass where we allow any truncated hits (only
+   * possibly true if pli->do_trunc_any is TRUE).
    */
-  do_local_envdef = (pli->do_localenv || pli->cur_pass_idx == PLI_PASS_5P_AND_3P_ANY) ? TRUE : FALSE;
+  do_local_envdef = (pli->cur_pass_idx == PLI_PASS_5P_AND_3P_ANY) ? TRUE : FALSE;
 
   if((pli->cur_pass_idx == PLI_PASS_5P_ONLY_FORCE || pli->cur_pass_idx == PLI_PASS_3P_ONLY_FORCE || pli->cur_pass_idx == PLI_PASS_5P_AND_3P_FORCE) && 
      (nwin > 1)) ESL_FAIL(eslFAIL, pli->errbuf, "researching terminus but more than 1 window exists");
@@ -1548,13 +1597,12 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	 * the score, but we need to correct for lack of equiprobable
 	 * ends in fwdsc if pli->do_trunc_loc_corr.  GForward
 	 * penalized 0. for ends and log(1/Rgm->M) for begins into any
-	 * state. If (! pli->do_trunc_loc_corr) the correction
-	 * is 0. because we already properly accounted for equiprobable
-	 * begins and fixed ends out of node M.
+	 * state. The correction is 0. because we already properly
+	 * accounted for equiprobable begins and fixed ends out of
+	 * node M.
 	 */
-	Rgm_correction = (pli->do_trunc_loc_corr) ? (log(2./(Rgm->M * (Rgm->M+1))) - log(1./Rgm->M)) : 0.; 
+	Rgm_correction = 0.;
 	safe_lfwdsc = fwdsc + Rgm_correction;
-	/* safe_lfwdsc is now less than or equal to the local foward score we would get with a truly local model */
 	sc_for_pvalue = (safe_lfwdsc - nullsc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
       }
@@ -1565,15 +1613,11 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
 	/*printf("Lfwdsc: %.4f\n", fwdsc);*/
 	/* We use local Fwd statistics to determine significance of
 	 * the score, but we need to correct for lack of equiprobable
-	 * begins and ends in fwdsc. 
-	 * If (pli->do_trunc_loc_corr) we pretend that local begins 
-	 * and ends are equiprobable even though ends are only 
-	 * possible for state M. Else, we only correct for fact
-	 * that local begins should be equiprobable.
+	 * begins and ends in fwdsc. We correct for fact that local
+	 * begins should be equiprobable.
 	 */
-	Lgm_correction = (pli->do_trunc_loc_corr) ? log(2./(Lgm->M * (Lgm->M+1))) : log(1./Lgm->M); 
+	Lgm_correction = log(1./Lgm->M); 
 	safe_lfwdsc = fwdsc + Lgm_correction; 
-	/* safe_lfwdsc is now less than or equal to the local foward score we would get with a truly local model */
 	sc_for_pvalue = (safe_lfwdsc - nullsc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
       }
@@ -1670,42 +1714,21 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
       env_len = pli->ddef->dcl[d].jenv - pli->ddef->dcl[d].ienv +1;
       env_sc  = pli->ddef->dcl[d].envsc;
       
-      /* Make a correction to the score based on the fact that our envsc 
-       * is just a segment of the full window, there are three options here: */
-      if(pli->do_nocorr) { 
-	/* no correction */
-	env_sc_for_pvalue = (env_sc - nullsc) / eslCONST_LOG2;
-      }
-      else if(pli->do_oldcorr) { 
-	/* correction from nhmmer's p7_pipeline.c::p7_Pipeline_LongTarget() */
-	env_len = pli->ddef->dcl[d].jenv - pli->ddef->dcl[d].ienv +1;
-	ali_len = pli->ddef->dcl[d].jali - pli->ddef->dcl[d].iali +1;
-	env_wlen = ESL_MIN(pli->cmW, wlen); //see notes, ~/notebook/20100716_hmmer_score_v_eval_bug/, end of Thu Jul 22 13:36:49 EDT 2010
-	env_sc  = pli->ddef->dcl[d].envsc;
-	/* For these modifications, see notes, ~/notebook/20100716_hmmer_score_v_eval_bug/, end of Thu Jul 22 13:36:49 EDT 2010 */
-	env_sc -= 2 * log(2. / (wlen+2)) +   (env_len-ali_len) * log((float) wlen / (wlen+2));
-	env_sc += 2 * log(2. / (env_wlen+2)) ;
-	/* handle extremely rare case that the env_len is actually larger than om->max_length */
-	/* (I don't think its very rare for dcmsearch b/c MSV P value threshold is so high) */
-	env_sc +=  (ESL_MAX(env_wlen, env_len) - ali_len) * log((float) env_wlen / (float) (env_wlen+2));
-	env_nullsc = (float) env_wlen * log((float)env_wlen/(env_wlen+1)) + log(1./(env_wlen+1));
-	env_sc_for_pvalue = (env_sc - env_nullsc) / eslCONST_LOG2;
-      }
-      else { 
-	/* default correction,  from hmmsearch's p7_pipeline() */
-	/* here is the p7_pipeline code, verbatim: 
-	 *  Ld = hit->dcl[d].jenv - hit->dcl[d].ienv + 1;
-	 *  hit->dcl[d].bitscore = hit->dcl[d].envsc + (sq->n-Ld) * log((float) sq->n / (float) (sq->n+3)); 
-	 *  hit->dcl[d].dombias  = (pli->do_null2 ? p7_FLogsum(0.0, log(bg->omega) + hit->dcl[d].domcorrection) : 0.0); 
-	 *  hit->dcl[d].bitscore = (hit->dcl[d].bitscore - (nullsc + hit->dcl[d].dombias)) / eslCONST_LOG2; 
-	 *  hit->dcl[d].pvalue   = esl_exp_surv (hit->dcl[d].bitscore,  om->evparam[p7_FTAU], om->evparam[p7_FLAMBDA]);
-	 *  
-	 *  and here is the same code, simplified with our different names for the variables, etc 
-	 * (we don't use hit->dcl the way p7_pipeline does after this):  */
-	env_sc            = env_sc + (wlen - env_len) * log((float) wlen / (float) (wlen+3)); /* NATS, for the moment... */
-	env_edefbias       = (pli->do_null2 ? p7_FLogsum(0.0, log(bg->omega) + pli->ddef->dcl[d].domcorrection) : 0.0); /* NATS, and will stay so */
-	env_sc_for_pvalue = (env_sc - (nullsc + env_edefbias)) / eslCONST_LOG2; /* now BITS, as it should be */
-      }
+      /* Make a correction to the score based on the fact that our envsc ,
+       * from hmmsearch's p7_pipeline():
+       * here is the p7_pipeline code, verbatim: 
+       *  Ld = hit->dcl[d].jenv - hit->dcl[d].ienv + 1;
+       *  hit->dcl[d].bitscore = hit->dcl[d].envsc + (sq->n-Ld) * log((float) sq->n / (float) (sq->n+3)); 
+       *  hit->dcl[d].dombias  = (pli->do_null2 ? p7_FLogsum(0.0, log(bg->omega) + hit->dcl[d].domcorrection) : 0.0); 
+       *  hit->dcl[d].bitscore = (hit->dcl[d].bitscore - (nullsc + hit->dcl[d].dombias)) / eslCONST_LOG2; 
+       *  hit->dcl[d].pvalue   = esl_exp_surv (hit->dcl[d].bitscore,  om->evparam[p7_FTAU], om->evparam[p7_FLAMBDA]);
+       *  
+       *  and here is the same code, simplified with our different names for the variables, etc 
+       * (we don't use hit->dcl the way p7_pipeline does after this):  */
+      env_sc            = env_sc + (wlen - env_len) * log((float) wlen / (float) (wlen+3)); /* NATS, for the moment... */
+      env_edefbias      = (pli->do_null2 ? p7_FLogsum(0.0, log(bg->omega) + pli->ddef->dcl[d].domcorrection) : 0.0); /* NATS, and will stay so */
+      env_sc_for_pvalue = (env_sc - (nullsc + env_edefbias)) / eslCONST_LOG2; /* now BITS, as it should be */
+
       if(use_Rgm) env_sc_for_pvalue += Rgm_correction / eslCONST_LOG2; /* glocal env def penalized 0. for ends and log(1/Lgm->M) for begins into any state */
       if(use_Lgm) env_sc_for_pvalue += Lgm_correction / eslCONST_LOG2; /* glocal env def penalized 0. for ends and 0. for begins into M1 */
 
@@ -1716,38 +1739,10 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
       /* check if we can skip this envelope based on its P-value or bit-score */
       if(P > pli->F5) continue;
     
-      /* Define envelope to search with CM:
-       *
-       * if (! pli->do_pad): just pass existing envelope
-       * from the p7DomainDef() function.
-       *
-       * if (pli->do_pad):
-       * 
-       *                envelope/domain
-       *   ----------xxxxxxxxxxxxxxxx---------
-       *   |<-----------------------|
-       *                W
-       *             |---------------------->|
-       *                         W
-       *
-       * On rare occasions, the envelope size may exceed W, in that case we
-       * define dstarts-W-1..dend+W-1 as the envelope.
-       *
-       */
-      if(! pli->do_pad) { 
-	estart = pli->ddef->dcl[d].ienv;
-	eend   = pli->ddef->dcl[d].jenv;
-      }
-      else { /* pli->do_pad is TRUE */
-	if(env_len <= pli->cmW) { /* envelope size is less than or equal to W */
-	  estart = ESL_MAX(1,    pli->ddef->dcl[d].jenv - (pli->cmW-1));
-	  eend   = ESL_MIN(wlen, pli->ddef->dcl[d].ienv + (pli->cmW-1));
-	}
-	else { /* envelope size > W, pad W-1 residues to each side */
-	  estart = ESL_MAX(1,    pli->ddef->dcl[d].ienv - (int) ((pli->cmW - 1)));
-	  eend   = ESL_MIN(wlen, pli->ddef->dcl[d].jenv + (int) ((pli->cmW - 1)));
-	}
-      }
+      /* Define envelope to search with CM */
+      estart = pli->ddef->dcl[d].ienv;
+      eend   = pli->ddef->dcl[d].jenv;
+
 #if DOPRINT
       printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived F5       %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
 #endif
@@ -1949,9 +1944,9 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
     do_hbanded_final_scan           = (pli->final_cm_search_opts & CM_SEARCH_HBANDED) ? TRUE  : FALSE;
     do_qdb_or_nonbanded_final_scan  = (pli->final_cm_search_opts & CM_SEARCH_HBANDED) ? FALSE : TRUE;
 
-    if(pli->do_cyk) { 
+    if(pli->do_fcyk) { 
       /******************************************************************************/
-      /* Filter 4: CYK with CM */
+      /* Filter stage 6: CYK with CM */
       cm->search_opts  = pli->fcyk_cm_search_opts;
       cm->tau          = pli->fcyk_tau;
 
@@ -1994,8 +1989,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 			       NULL,                                /* hitlist to add to, irrelevant here */
 			       pli->do_null3,                       /* do the NULL3 correction? */
 			       cyk_env_cutoff,                      /* bit score == F6env P value, cutoff for envelope redefinition */
-			       (pli->do_cykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
-			       (pli->do_cykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
+			       (pli->do_fcykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
+			       (pli->do_fcykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
 			       &cykmode,                            /* best alignment mode */
 			       &cyksc);                             /* best score, irrelevant here */
 	  /*printf("\n\n!!! Returned from TrCYKScanHB(): %.4f bits\n\n\n", cyksc);*/
@@ -2006,8 +2001,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 				 NULL,                                /* hitlist to add to, irrelevant here */
 				 pli->do_null3,                       /* do the NULL3 correction? */
 				 cyk_env_cutoff,                      /* bit score == F6env P value, cutoff for envelope redefinition */
-				 (pli->do_cykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
-				 (pli->do_cykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
+				 (pli->do_fcykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
+				 (pli->do_fcykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
 				 &cyksc);                             /* best score, irrelevant here */
 	}
 	if     (status == eslERANGE) { do_qdb_or_nonbanded_filter_scan = TRUE; }
@@ -2023,14 +2018,14 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 				 NULL,                               /* hitlist to add to, irrelevant here */
 				 pli->do_null3,                      /* do the NULL3 correction? */
 				 cyk_env_cutoff,                     /* bit score == envF6 P value, cutoff for envelope redefinition */
-				 (pli->do_cykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
-				 (pli->do_cykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
+				 (pli->do_fcykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
+				 (pli->do_fcykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
 				 NULL,                               /* ret_vsc, irrelevant here */
 				 &cyksc)) != eslOK) { 
 	  printf("ERROR: %s\n", errbuf); return status;  }
       }
       /* update envelope boundaries, if nec */
-      if(pli->do_cykenv && (cyk_envi != -1 && cyk_envj != -1)) { 
+      if(pli->do_fcykenv && (cyk_envi != -1 && cyk_envj != -1)) { 
 	es[i] = cyk_envi;
 	ee[i] = cyk_envj;
       }
@@ -2042,7 +2037,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
     pli->acct[pli->cur_pass_idx].pos_past_cyk += ee[i] - es[i] + 1;
 
 #if DOPRINT
-    printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived CYK       %6.2f bits  P %g\n", es[i], ee[i], cyksc, P);
+    if(pli->do_fcyk) printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived CYK       %6.2f bits  P %g\n", es[i], ee[i], cyksc, P);
 #endif
     if(pli->do_time_F6) continue; 
 
@@ -2644,6 +2639,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   int       nenv = 0;   /* number of envelopes surviving MSV & Vit & lFwd & gFwd & EnvDef, filled by cm_pli_p7EnvelopeDef */
   int64_t  *es  = NULL; /* [0..i..nenv-1] window start positions, filled by cm_pli_p7EnvelopeDef() */
   int64_t  *ee  = NULL; /* [0..i..nenv-1] window end   positions, filled by cm_pli_p7EnvelopeDef() */
+  int       i;          /* counter */
 
   /* variables necessary for re-searching sequence ends */
   ESL_SQ   *sq2search = NULL;  /* a pointer to the sequence to search on current pass */
@@ -2734,7 +2730,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 
     /* Update nres for non-standard pass (this is done by caller via
      * cm_pli_NewSeq() for pass PLI_PASS_STD_ANY) It's important to do
-     * this precisely here, in between the 3 'continue's above, but
+     * this precisely here, in between the 'continue's above, but
      * prior the one below that 'continue's only because we know no
      * windows pass local Fwd (F3).
      */
@@ -2763,18 +2759,40 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     pli->cur_pass_idx = p;
 
     /* execute the pipeline */
-#if DOPRINT
-    printf("\nPIPELINE calling p7Filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
-#endif
-    if((status = cm_pli_p7Filter(pli, om, bg, p7_evparam, fm_hmmdata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
-    if(p == PLI_PASS_STD_ANY) nwin_pass_std_any = nwin;
-    if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
 
+    /* cm_pli_p7Filter(): MSV, Viterbi, local Forward filters */
+    if(! pli->do_max) { /* only way to skip is if we're in max mode (if nohmm mode, we still need to split seq into windows) */
 #if DOPRINT
-    printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+      printf("\nPIPELINE calling p7Filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-    if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es, &ee, &nenv)) != eslOK) return status;
+      if((status = cm_pli_p7Filter(pli, om, bg, p7_evparam, fm_hmmdata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
+      if(p == PLI_PASS_STD_ANY) nwin_pass_std_any = nwin;
+      if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
+    } 
+    else { /* pli->do_max, each sequence becomes a window */
+      ESL_ALLOC(ws, sizeof(int64_t) * 1);
+      ESL_ALLOC(we, sizeof(int64_t) * 1);
+      nwin = 1;
+      ws[0] = 1; we[0] = sq2search->n;
+    }
+    /* cm_pli_p7EnvelopeDef(): glocal Forward, and glocal (usually) HMM envelope definition */
+    if(pli->do_edef) { 
+#if DOPRINT
+      printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+#endif
+      if((status = cm_pli_p7EnvelopeDef(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &es, &ee, &nenv)) != eslOK) return status;
+    }
+    else { 
+      /* pli->do_edef is FALSE, only TRUE if --max or --nohmm enabled,
+       * each window becomes an envelope.
+       */
+      ESL_ALLOC(es, sizeof(int64_t) * nwin);
+      ESL_ALLOC(ee, sizeof(int64_t) * nwin);
+      nenv = nwin;
+      for(i = 0; i < nwin; i++) { es[i] = ws[i]; ee[i] = we[i]; }
+    }
 
+    /* cm_pli_CMStage(): CYK filter and final stage Inside (usually) */
 #if DOPRINT
     printf("\nPIPELINE calling CMStage() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
@@ -2813,16 +2831,19 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   if(term3sq != NULL) esl_sq_Destroy(term3sq);
 
   return eslOK;
+
+ ERROR: 
+  ESL_FAIL(eslEMEM, pli->errbuf, "out of memory");
 }
   
 /* Function:  cm_pli_Statistics()
  * Synopsis:  Final stats output for all passes of a pipeline.
-
  * Incept:    EPN, Thu Feb 16 15:19:35 2012
  *
  * Purpose:   Print a standardized report of the internal statistics of
- *            a finished processing pipeline <pli> to stream <ofp>
- *            for all relevant passes in the pipeline. 
+ *            a finished processing pipeline <pli> to stream <ofp>.
+ *            If pli->do_allstats, print statistics for each pass, 
+ *            else only print statistics for the standard pass.
  *
  *            Actual work is done by repeated calls to 
  *            cm_pli_PassStatistics().
@@ -2832,20 +2853,29 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 int
 cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 {
-  /* There's 3 possible sets of passes that we've performed: */
-  if(pli->do_trunc_ends) { 
-    cm_pli_PassStatistics(ofp, pli, PLI_PASS_5P_ONLY_FORCE,   NULL); fprintf(ofp, "\n");
-    cm_pli_PassStatistics(ofp, pli, PLI_PASS_3P_ONLY_FORCE,   NULL); fprintf(ofp, "\n");
-    cm_pli_PassStatistics(ofp, pli, PLI_PASS_5P_AND_3P_FORCE, w);    fprintf(ofp, "//\n");
-  }
-  else if(pli->do_trunc_any) { 
-    cm_pli_PassStatistics(ofp, pli, PLI_PASS_STD_ANY,         NULL); fprintf(ofp, "\n");
-    cm_pli_PassStatistics(ofp, pli, PLI_PASS_5P_AND_3P_ANY,   w);    fprintf(ofp, "//\n");
+  if(! pli->do_allstats) { /* not in verbose mode, only print standard pass statistics */
+    cm_pli_PassStatistics(ofp, pli, PLI_PASS_STD_ANY, w); fprintf(ofp, "//\n");
   }
   else { 
-    cm_pli_PassStatistics(ofp, pli, PLI_PASS_STD_ANY,         w);    fprintf(ofp, "//\n");
+    /* compute summed statistics for all passes */
+    cm_pli_SumStatistics(pli);
+    /* There's 3 possible sets of passes that we've performed: */
+    if(pli->do_trunc_ends) { 
+      cm_pli_PassStatistics(ofp, pli, PLI_PASS_SUMMED,          NULL); fprintf(ofp, "\n");
+      cm_pli_PassStatistics(ofp, pli, PLI_PASS_STD_ANY,         NULL); fprintf(ofp, "\n");
+      cm_pli_PassStatistics(ofp, pli, PLI_PASS_5P_ONLY_FORCE,   NULL); fprintf(ofp, "\n");
+      cm_pli_PassStatistics(ofp, pli, PLI_PASS_3P_ONLY_FORCE,   NULL); fprintf(ofp, "\n");
+      cm_pli_PassStatistics(ofp, pli, PLI_PASS_5P_AND_3P_FORCE, w);    fprintf(ofp, "//\n");
+    }
+    else if(pli->do_trunc_any) { 
+      cm_pli_PassStatistics(ofp, pli, PLI_PASS_SUMMED,          NULL); fprintf(ofp, "\n");
+      cm_pli_PassStatistics(ofp, pli, PLI_PASS_STD_ANY,         NULL); fprintf(ofp, "\n");
+      cm_pli_PassStatistics(ofp, pli, PLI_PASS_5P_AND_3P_ANY,   w);    fprintf(ofp, "//\n");
+    }
+    else { 
+      cm_pli_PassStatistics(ofp, pli, PLI_PASS_STD_ANY,         w);    fprintf(ofp, "//\n");
+    }
   }
-
   return eslOK;
 }
 
@@ -2872,15 +2902,33 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
 
   CM_PLI_ACCT *pli_acct = &(pli->acct[pass_idx]);
 
-  fprintf(ofp, "Internal pipeline statistics summary: (%s)\n", cm_pli_DescribePass(pass_idx));
+  fprintf(ofp, "Internal pipeline statistics summary: %s\n", cm_pli_DescribePass(pass_idx));
   fprintf(ofp, "-------------------------------------\n");
   if (pli->mode == CM_SEARCH_SEQS) {
-    fprintf(ofp,   "Query model(s):                                    %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli->nmodels, pli->nnodes);
-    fprintf(ofp,   "Target sequences:                                  %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli_acct->nres);
+    fprintf(ofp,   "Query model(s):                                    %15" PRId64 "  (%" PRId64 " consensus positions)\n",     
+	    pli->nmodels, pli->nnodes);
+    if(pass_idx == PLI_PASS_STD_ANY || pass_idx == PLI_PASS_SUMMED) { 
+      fprintf(ofp,   "Target sequences:                                  %15" PRId64 "  (%" PRId64 " residues searched)\n",  
+	      pli->nseqs, pli->acct[PLI_PASS_STD_ANY].nres);
+    }
+    if(pass_idx != PLI_PASS_STD_ANY) { 
+      fprintf(ofp,   "Target sequences reexamined for truncated hits:    %15" PRId64 "  (%" PRId64 " residues reexamined)\n",  
+	      (pli->do_trunc_ends || pli->do_trunc_any) ? pli->nseqs : 0, 
+	      (pass_idx == PLI_PASS_SUMMED) ? pli_acct->nres - pli_acct[PLI_PASS_STD_ANY].nres : pli_acct->nres);
+    }
     ntargets = pli->nseqs;
   } else {
-    fprintf(ofp,   "Query sequence(s):                                 %15" PRId64 "  (%" PRId64 " residues)\n",  pli->nseqs,   pli_acct->nres);
-    fprintf(ofp,   "Target model(s):                                   %15" PRId64 "  (%" PRId64 " consensus positions)\n",     pli->nmodels, pli->nnodes);
+    if(pass_idx == PLI_PASS_STD_ANY || pass_idx == PLI_PASS_SUMMED) { 
+      fprintf(ofp,   "Query sequence(s):                                 %15" PRId64 "  (%" PRId64 " residues searched)\n",  
+	      pli->nseqs,   pli->acct[PLI_PASS_STD_ANY].nres);
+    }
+    if(pass_idx != PLI_PASS_STD_ANY) { 
+      fprintf(ofp,   "Query sequences examined for truncated hits:       %15" PRId64 "  (%" PRId64 " residues searched)\n", 
+	      (pli->do_trunc_ends || pli->do_trunc_any) ? pli->nseqs : 0, 
+	      (pass_idx == PLI_PASS_SUMMED) ? pli_acct->nres - pli_acct[PLI_PASS_STD_ANY].nres : pli_acct->nres); 
+    }
+    fprintf(ofp,   "Target model(s):                                   %15" PRId64 "  (%" PRId64 " consensus positions)\n",     
+	    pli->nmodels, pli->nnodes);
     ntargets = pli->nmodels;
   }
 
@@ -2968,7 +3016,7 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
     fprintf(ofp, "Windows   passing glocal HMM Forward  bias filter: %15s  (off)\n", "");
   }
 
-  if(pli->do_envelopes) { 
+  if(pli->do_edef) { 
     fprintf(ofp, "Envelopes passing glocal HMM envelope defn filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_edef,
 	    (double) pli_acct->pos_past_edef / pli_acct->nres,
@@ -2987,10 +3035,10 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
     nwin_fcyk = nwin_final = pli_acct->n_past_edefbias;
   }
   else { 
-    fprintf(ofp, "Windows passing glocal HMM envelope bias filter: %15s  (off)\n", "");
+    fprintf(ofp, "Envelopes passing glocal HMM envelope bias filter: %15s  (off)\n", "");
   }
 
-  if(pli->do_cyk) { 
+  if(pli->do_fcyk) { 
     fprintf(ofp, "Envelopes passing %6s CM  CYK           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    (pli->do_glocal_cm_stages) ? "glocal" : "local",
 	    pli_acct->n_past_cyk,
@@ -3008,28 +3056,31 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
           (int)pli_acct->n_output,
           (double) pli_acct->pos_output / pli_acct->nres );
 
-  fprintf(ofp, "\n");
-  if(nwin_fcyk > 0) { 
-    fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15" PRId64 "  (%.4g)\n", 
-	    "CYK", 
-	    pli_acct->n_overflow_fcyk,
-	    (double) pli_acct->n_overflow_fcyk / (double) nwin_fcyk);
-  }
-  else { 
-    fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15d  (%.4g)\n", 
-	    "CYK", 
-	    0, 0.);
-  }
-  if(nwin_final > 0) { 
-    fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15" PRId64 "  (%.4g)\n", 
-	    (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
-	    pli_acct->n_overflow_final,
-	    (double) pli_acct->n_overflow_final / (double) nwin_final);
-  }
-  else { 
-    fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15d  (%.4g)\n", 
-	    (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
-	    0, 0.);
+
+  if(pli->do_allstats) { 
+     fprintf(ofp, "\n");
+     if(nwin_fcyk > 0) { 
+       fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15" PRId64 "  (%.4g)\n", 
+	       "CYK", 
+	       pli_acct->n_overflow_fcyk,
+	       (double) pli_acct->n_overflow_fcyk / (double) nwin_fcyk);
+     }
+     else { 
+       fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15d  (%.4g)\n", 
+	       "CYK", 
+	       0, 0.);
+     }
+     if(nwin_final > 0) { 
+       fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15" PRId64 "  (%.4g)\n", 
+	       (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
+	       pli_acct->n_overflow_final,
+	       (double) pli_acct->n_overflow_final / (double) nwin_final);
+     }
+     else { 
+       fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15d  (%.4g)\n", 
+	       (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
+	       0, 0.);
+     }
   }
   if (w != NULL) { 
     esl_stopwatch_Display(ofp, w, "# CPU time: ");
@@ -3041,6 +3092,68 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
 }
 
   
+/* Function:  cm_pli_SumStatistics()
+ * Synopsis:  Sum up pipeline statistics for all passes of a pipeline.
+ * Incept:    EPN, Thu Feb 23 11:00:39 2012
+ *
+ * Purpose:   Sum stats for all relevant passes in a pipeline
+ *            and store them in pli->acct[PLI_PASS_SUMMED].
+ *
+ * Returns:   <eslOK> on success.
+ */
+int
+cm_pli_SumStatistics(CM_PIPELINE *pli)
+{
+  int p; /* counter over passes */
+
+  /* first zero out pli->acct[PLI_PASS_SUMMED] */
+  cm_pli_ZeroAccounting(&(pli->acct[PLI_PASS_SUMMED]));
+
+  /* now tally up counts, but only for passes we actually performed
+   * (the others should be zero..., but this way is safest).
+   */
+  for(p = 1; p < NPLI_PASSES; p++) { 
+    if((p == PLI_PASS_STD_ANY) || /* we always do the standard pass */
+       (pli->do_trunc_ends && p != PLI_PASS_5P_AND_3P_ANY) ||   /* do_trunc_ends: do all passes except PLI_PASS_5P_AND_3P_ANY */
+       (pli->do_trunc_any  && p == PLI_PASS_5P_AND_3P_ANY)) /* do_trunc_any:  do PLI_PASS_STD_ANY and PLI_PASS_5P_AND_3P_ANY */
+      { 
+	pli->acct[PLI_PASS_SUMMED].nres              += pli->acct[p].nres;
+	pli->acct[PLI_PASS_SUMMED].n_past_msv        += pli->acct[p].n_past_msv;
+	pli->acct[PLI_PASS_SUMMED].n_past_vit        += pli->acct[p].n_past_vit;
+	pli->acct[PLI_PASS_SUMMED].n_past_fwd        += pli->acct[p].n_past_fwd;
+	pli->acct[PLI_PASS_SUMMED].n_past_gfwd       += pli->acct[p].n_past_gfwd;
+	pli->acct[PLI_PASS_SUMMED].n_past_edef       += pli->acct[p].n_past_edef;
+	pli->acct[PLI_PASS_SUMMED].n_past_cyk        += pli->acct[p].n_past_cyk;
+	pli->acct[PLI_PASS_SUMMED].n_past_ins        += pli->acct[p].n_past_ins;
+	pli->acct[PLI_PASS_SUMMED].n_output          += pli->acct[p].n_output;
+	pli->acct[PLI_PASS_SUMMED].n_past_msvbias    += pli->acct[p].n_past_msvbias;
+	pli->acct[PLI_PASS_SUMMED].n_past_vitbias    += pli->acct[p].n_past_vitbias;
+	pli->acct[PLI_PASS_SUMMED].n_past_fwdbias    += pli->acct[p].n_past_fwdbias;
+	pli->acct[PLI_PASS_SUMMED].n_past_gfwdbias   += pli->acct[p].n_past_gfwdbias;
+	pli->acct[PLI_PASS_SUMMED].n_past_edefbias   += pli->acct[p].n_past_edefbias;
+	pli->acct[PLI_PASS_SUMMED].pos_past_msv      += pli->acct[p].pos_past_msv;
+	pli->acct[PLI_PASS_SUMMED].pos_past_vit      += pli->acct[p].pos_past_vit;
+	pli->acct[PLI_PASS_SUMMED].pos_past_fwd      += pli->acct[p].pos_past_fwd;
+	pli->acct[PLI_PASS_SUMMED].pos_past_gfwd     += pli->acct[p].pos_past_gfwd;
+	pli->acct[PLI_PASS_SUMMED].pos_past_edef     += pli->acct[p].pos_past_edef;
+	pli->acct[PLI_PASS_SUMMED].pos_past_cyk      += pli->acct[p].pos_past_cyk;
+	pli->acct[PLI_PASS_SUMMED].pos_past_ins      += pli->acct[p].pos_past_ins;
+	pli->acct[PLI_PASS_SUMMED].pos_output        += pli->acct[p].pos_output;
+	pli->acct[PLI_PASS_SUMMED].pos_past_msvbias  += pli->acct[p].pos_past_msvbias;
+	pli->acct[PLI_PASS_SUMMED].pos_past_vitbias  += pli->acct[p].pos_past_vitbias;
+	pli->acct[PLI_PASS_SUMMED].pos_past_fwdbias  += pli->acct[p].pos_past_fwdbias;
+	pli->acct[PLI_PASS_SUMMED].pos_past_gfwdbias += pli->acct[p].pos_past_gfwdbias;
+	pli->acct[PLI_PASS_SUMMED].pos_past_edefbias += pli->acct[p].pos_past_edefbias;
+	
+	pli->acct[PLI_PASS_SUMMED].n_overflow_fcyk   += pli->acct[p].n_overflow_fcyk;
+	pli->acct[PLI_PASS_SUMMED].n_overflow_final  += pli->acct[p].n_overflow_final;
+	pli->acct[PLI_PASS_SUMMED].n_aln_hb          += pli->acct[p].n_aln_hb;
+	pli->acct[PLI_PASS_SUMMED].n_aln_dccyk       += pli->acct[p].n_aln_dccyk;
+      }
+  }
+  return eslOK;
+}
+
 /* Function:  cm_pli_ZeroAccounting()
  * Synopsis:  Zero a set of pipeline accounting statistics.
  * Incept:    EPN, Mon Nov 28 18:40:00 2011
@@ -3078,10 +3191,10 @@ cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct)
   pli_acct->pos_past_gfwdbias = 0;
   pli_acct->pos_past_edefbias = 0;
   
-  pli_acct->n_overflow_fcyk    = 0;
-  pli_acct->n_overflow_final   = 0;
-  pli_acct->n_aln_hb           = 0;
-  pli_acct->n_aln_dccyk        = 0;
+  pli_acct->n_overflow_fcyk   = 0;
+  pli_acct->n_overflow_final  = 0;
+  pli_acct->n_aln_hb          = 0;
+  pli_acct->n_aln_dccyk       = 0;
 
   return eslOK;
 }
@@ -3102,12 +3215,12 @@ char *
 cm_pli_DescribePass(int pass_idx) 
 {
   switch (pass_idx) {
-  case PLI_PASS_SUMMED:          return "full sequences and terminii";  break;
-  case PLI_PASS_STD_ANY:         return "full sequences";               break;
-  case PLI_PASS_5P_ONLY_FORCE:   return "5' terminal sequence regions"; break;
-  case PLI_PASS_3P_ONLY_FORCE:   return "3' terminal sequence regions"; break;
-  case PLI_PASS_5P_AND_3P_FORCE: return "full sequences short enough to contain a 5' and 3' truncated hit"; break;
-  case PLI_PASS_5P_AND_3P_ANY:   return "full sequences, allowing truncated hits"; break;
+  case PLI_PASS_SUMMED:          return "(standard and truncated passes)"; break;
+  case PLI_PASS_STD_ANY:         return "(full sequences)";                break;
+  case PLI_PASS_5P_ONLY_FORCE:   return "(5' terminal sequence regions)";  break;
+  case PLI_PASS_3P_ONLY_FORCE:   return "(3' terminal sequence regions)";  break;
+  case PLI_PASS_5P_AND_3P_FORCE: return "(full sequences short enough to contain a 5' and 3' truncated hit)"; break;
+  case PLI_PASS_5P_AND_3P_ANY:   return "(full sequences, allowing truncated hits)"; break;
   default: cm_Fail("bogus pipeline pass index %d\n", pass_idx); break;
   }
   return "";

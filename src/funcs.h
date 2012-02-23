@@ -443,8 +443,9 @@ extern int cm_pli_AlignHit          (CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *
 extern int cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm, CMConsensus_t **opt_cmcons);
 extern int cm_pli_Statistics    (FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
 extern int cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *w);
+extern int cm_pli_SumStatistics (CM_PIPELINE *pli);
 extern int cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct);
-extern char *cm_pli_DescribePass         (int pass_idx);
+extern char *cm_pli_DescribePass(int pass_idx);
 extern int cm_pli_PassEnforcesFirstRes(int pass_idx);
 extern int cm_pli_PassEnforcesFinalRes(int pass_idx);
 
