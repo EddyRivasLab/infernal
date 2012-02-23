@@ -2057,7 +2057,7 @@ typedef struct cm_pipeline_accounting_s {
 
 enum cm_pipemodes_e     { CM_SEARCH_SEQS = 0, CM_SCAN_MODELS = 1 };
 enum cm_newmodelmodes_e { CM_NEWMODEL_MSV = 0, CM_NEWMODEL_CM = 1 };
-enum cm_zsetby_e        { CM_ZSETBY_SSIINFO = 0, CM_ZSETBY_SSI_AND_QLENGTH = 1, CM_ZSETBY_OPTION = 2, CM_ZSETBY_FILEINFO = 3};
+enum cm_zsetby_e        { CM_ZSETBY_SSIINFO = 0, CM_ZSETBY_SSI_AND_QLENGTH = 1, CM_ZSETBY_FILEREAD = 2, CM_ZSETBY_OPTION = 3, CM_ZSETBY_FILEINFO = 4};
 
 typedef struct cm_pipeline_s {
   /* Dynamic programming matrices                                           */

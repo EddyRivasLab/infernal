@@ -226,6 +226,7 @@ static int  serial_loop  (WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_src
 static int   open_dbfile(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQFILE **ret_dbfp);
 static int   open_dbfile_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf);
 static int   determine_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf);
+static int   determine_dbsize_by_reading(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf);
 static WORKER_INFO *create_info();
 static int   clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int dest_infocnt, char *errbuf);
 static void  free_info(WORKER_INFO *info);
@@ -543,15 +544,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Open the database file */
   if((status = open_dbfile(go, cfg, errbuf, &dbfp)) != eslOK) esl_fatal(errbuf); 
-  /* Determine database size */
-  if(esl_opt_IsUsed(go, "-Z")) { /* enabling -Z is the only way to bypass the SSI index file requirement */
-    cfg->Z       = (int64_t) (esl_opt_GetReal(go, "-Z") * 1000000.); 
-    cfg->Z_setby = CM_ZSETBY_OPTION; 
-  }
-  else { 
-    if((status = open_dbfile_ssi           (go, cfg, dbfp, errbuf)) != eslOK) esl_fatal(errbuf); 
-    if((status = determine_dbsize_using_ssi(go, cfg, dbfp, errbuf)) != eslOK) esl_fatal(errbuf); 
-  }
 
   /* Open the query CM file */
   if((status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
@@ -582,6 +574,30 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     output_header(ofp, go, cfg->cmfile, cfg->dbfile);
     dbfp->abc = abc;
     
+    /* Determine database size (do this here and not earlier b/c it
+     *   may take a little while so we make sure we get this far first).
+     */
+    if(esl_opt_IsUsed(go, "-Z")) { /* -Z enabled, use that size */
+      cfg->Z       = (int64_t) (esl_opt_GetReal(go, "-Z") * 1000000.); 
+      cfg->Z_setby = CM_ZSETBY_OPTION; 
+    }
+    else { /* try using SSI or reading the file */
+      status = open_dbfile_ssi(go, cfg, dbfp, errbuf);
+      if(status == eslOK) { /* we opened SSI, now use it */
+	if((status = determine_dbsize_using_ssi(go, cfg, dbfp, errbuf)) != eslOK) esl_fatal(errbuf); 
+      }
+      else if(status != eslENOTFOUND) { /* SSI file was found, but something is amiss */
+	cm_Fail(errbuf);
+      }
+      else { /* no SSI file was found, read the file */
+	if (! esl_sqfile_IsRewindable(dbfp)) cm_Fail("Target sequence file %s isn't rewindable; use esl-sfetch to index the file", cfg->dbfile);
+	status = determine_dbsize_by_reading(go, cfg, dbfp, errbuf);
+	if(status != eslOK) cm_Fail("Parse failed (sequence file %s):\n%s\n", dbfp->filename, esl_sqfile_GetErrorBuf(dbfp));
+	/* else, we're good, Z was set by determine_dbsize_by_reading */
+      }
+    }
+
+
     for (i = 0; i < infocnt; ++i)    {
       info[i].pli          = NULL;
       info[i].th           = NULL;
@@ -1899,6 +1915,55 @@ determine_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp,
     esl_fatal("done.");*/
 
   return eslOK;
+}
+
+/* Function:  determine_dbsize_by_reading
+ * Synopsis:  Determine size of the database by reading it
+ *            (but not storing it).
+ * Incept:    EPN, Mon Jun  6 09:17:32 2011
+ *
+ * Returns:   eslOK on success. cfg->Z is set.
+ *            eslEFORMAT if something is wrong with the format of the database file.
+ */
+static int
+determine_dbsize_by_reading(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf)
+{
+  int status;
+  int64_t   nres = 0;    
+  ESL_SQ   *sq = NULL;
+
+  /*ESL_STOPWATCH *w = esl_stopwatch_Create();
+    esl_stopwatch_Start(w);*/
+
+  sq = esl_sq_Create();
+  while ((status = esl_sqio_ReadInfo(dbfp, sq)) == eslOK) { 
+    nres += sq->L;
+    esl_sq_Reuse(sq);
+  }
+  if(status != eslEOF) goto ERROR; 
+
+  /* if we get here we've successfully read entire file */
+  cfg->Z = nres;
+  if((! esl_opt_GetBoolean(go, "--toponly")) && 
+     (! esl_opt_GetBoolean(go, "--bottomonly"))) { 
+    cfg->Z *= 2; /* we're searching both strands */
+  }
+  cfg->Z_setby = CM_ZSETBY_FILEREAD;
+
+  /*printf("Z: %" PRId64 " residues\n", cfg->Z);
+   esl_stopwatch_Stop(w);
+   esl_stopwatch_Display(stdout, w, "# DB file read CPU time: ");
+   esl_stopwatch_Destroy(w);
+  */
+
+  esl_sqfile_Position(dbfp, 0);
+  if(sq != NULL) esl_sq_Destroy(sq);
+  return eslOK;
+
+ ERROR: 
+  esl_sqfile_Position(dbfp, 0);
+  if(sq != NULL) esl_sq_Destroy(sq);
+  return status;
 }
 
 /* Function:  create_info

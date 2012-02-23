@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DOPRINT  1
+#define DOPRINT  0
 #define DOPRINT2 0
 #define DOPRINT3 0
 
