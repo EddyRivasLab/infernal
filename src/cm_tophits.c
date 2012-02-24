@@ -669,8 +669,7 @@ int remove_overlaps_one_seq_fast(CM_TOPHITS *th, int64_t idx1, int64_t idx2, cha
     if(th->hit[i]->start < 1 || th->hit[i]->start > srcL) ESL_FAIL(eslERANGE, errbuf, "removing overlapping hits, start posn is inconsistent, hit %" PRId64, i);
     if(th->hit[i]->stop  < 1 || th->hit[i]->stop  > srcL) ESL_FAIL(eslERANGE, errbuf, "removing overlapping hits, stop posn is inconsistent, hit %" PRId64, i);
 
-    if((! (th->hit[i]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) && 
-       (! (th->hit[i]->flags & CM_HIT_IS_REMOVED_TERMINUS))) { 
+    if(! (th->hit[i]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
       /* i is not a duplicate that's already been removed */
       min = ESL_MIN(th->hit[i]->start, th->hit[i]->stop); 
       max = ESL_MAX(th->hit[i]->start, th->hit[i]->stop); 
@@ -718,12 +717,10 @@ int remove_overlaps_one_seq_memeff(CM_TOPHITS *th, int64_t idx1, int64_t idx2, c
     if(th->hit[i]->start < 1 || th->hit[i]->start > srcL) ESL_FAIL(eslERANGE, errbuf, "removing overlapping hits, start posn is inconsistent, hit %" PRId64, i);
     if(th->hit[i]->stop  < 1 || th->hit[i]->stop  > srcL) ESL_FAIL(eslERANGE, errbuf, "removing overlapping hits, stop posn is inconsistent, hit %" PRId64, i);
 
-    if((! (th->hit[i]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) && 
-       (! (th->hit[i]->flags & CM_HIT_IS_REMOVED_TERMINUS))) { 
+    if(! (th->hit[i]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
       /* i is not a duplicate that's already been removed */
       for(j = i+1; j <= idx2; j++) { 
-	if((! (th->hit[j]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) && 
-	   (! (th->hit[j]->flags & CM_HIT_IS_REMOVED_TERMINUS))) { 
+	if(! (th->hit[j]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	  /* j has not already been removed */
 	  /*printf("comparing %" PRId64 " and %" PRId64 "\n", i, j);*/
 	  if(th->hit[j]->in_rc == FALSE &&                 /* both i and j are on forward strand */
@@ -812,54 +809,6 @@ cm_tophits_RemoveOverlaps(CM_TOPHITS *th, char *errbuf)
   /*printf("Leaving cm_tophits_RemoveOverlaps()\n");
     cm_tophits_Dump(stdout, th);*/
 
-  return eslOK;
-}
-
-/* Function:  cm_tophits_RemoveBogusTerminusHits()
- * Synopsis:  Remove hits found during terminus researching of non-terminii.
- * Incept:    EPN, Wed Nov 23 11:48:05 2011
- *
- * Purpose: In a pipeline, we can re-search subsequences that are
- *          potentially terminal (5'-most or 3'-most hit->maxW
- *          residues) that end up to not be terminal. This occurs if
- *          we are searching a subsequence of a larger sequence that
- *          we later find out to contain more residues (we coudn't
- *          tell if the sequence was at its end or not when we were
- *          searching it.) In this function we remove any such
- *          sequences before reporting the hits by raising their
- *          CM_HIT_IS_REMOVED_TERMINUS flag. Should be called prior
- *          to sorting and removing overlaps. 
- *
- * Returns: <eslOK> on success.
- *          <eslEINVAL> if called on a hitlist sorted by position
- *          (only b/c this should be called prior to removing overlaps,
- *           which is normally done immediately after sorting by position)..
- */
-int
-cm_tophits_RemoveBogusTerminusHits(CM_TOPHITS *th)
-{ 
-  int i;
-  int64_t tmp_start;
-  int64_t tmp_stop;
-
-  if (th->is_sorted_for_overlap_removal) return eslEINVAL;
-
-  for (i = 0; i < th->N ; i++) {
-    if(th->unsrt[i].flags & CM_HIT_FROM_TERMINUS_RESEARCH) { 
-      tmp_start = th->unsrt[i].in_rc ? th->unsrt[i].stop  : th->unsrt[i].start;
-      tmp_stop  = th->unsrt[i].in_rc ? th->unsrt[i].start : th->unsrt[i].stop;
-      /*printf("hit %4d %10" PRId64 "..%10" PRId64 "  %10" PRId64 "..%10" PRId64 "  L: %" PRId64 "\n", i, th->unsrt[i].start, th->unsrt[i].stop, tmp_start, tmp_stop, th->unsrt[i].srcL);*/
-      if((tmp_start < th->unsrt[i].maxW) ||                           /* start occurs before  end       of 5' terminus */
-	 (tmp_stop  > (th->unsrt[i].srcL - th->unsrt[i].maxW + 1))) { /* stop  occurs after   beginning of 3' terminus */
-	; /* hit is in the actual 5' or 3' terminus, do nothing */
-      }
-      else { /* hit is not in the actual 5' or 3' terminus */
-	th->unsrt[i].flags |= CM_HIT_IS_REMOVED_TERMINUS;
-	th->unsrt[i].flags &= ~CM_HIT_IS_REPORTED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
-	th->unsrt[i].flags &= ~CM_HIT_IS_INCLUDED;  /* could be set if pli->use_bit_cutoffs (--cut_ga, --cut_nc, --cut_tc) */
-      }
-    }
-  }
   return eslOK;
 }
 
@@ -968,8 +917,7 @@ cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli)
   /* Flag reported, included targets (if we're using general thresholds) */
   if (! pli->use_bit_cutoffs) {
     for (h = 0; h < th->N; h++) {
-      if ((! (th->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) && 
-	  (! (th->hit[h]->flags & CM_HIT_IS_REMOVED_TERMINUS))) {
+      if (! (th->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if (cm_pli_TargetReportable(pli, th->hit[h]->score, th->hit[h]->evalue)) {
 	  th->hit[h]->flags |= CM_HIT_IS_REPORTED;
 	  if (cm_pli_TargetIncludable(pli, th->hit[h]->score, th->hit[h]->evalue))
@@ -983,8 +931,7 @@ cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli)
   th->nreported = 0;
   th->nincluded = 0;
   for (h = 0; h < th->N; h++) { 
-    if ((! (th->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) && 
-	(! (th->hit[h]->flags & CM_HIT_IS_REMOVED_TERMINUS))) {
+    if (! (th->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
       if (th->hit[h]->flags & CM_HIT_IS_REPORTED)  th->nreported++;
       if (th->hit[h]->flags & CM_HIT_IS_INCLUDED)  th->nincluded++;
     }
@@ -1798,11 +1745,9 @@ cm_hit_Dump(FILE *fp, const CM_HIT *h)
   }
   else { 
     fprintf(fp, "flags:\n");
-    if(h->flags & CM_HIT_IS_REPORTED)  fprintf(fp, "\tCM_HIT_IS_REPORTED\n");
-    if(h->flags & CM_HIT_IS_INCLUDED)  fprintf(fp, "\tCM_HIT_IS_INCLUDED\n");
+    if(h->flags & CM_HIT_IS_REPORTED)          fprintf(fp, "\tCM_HIT_IS_REPORTED\n");
+    if(h->flags & CM_HIT_IS_INCLUDED)          fprintf(fp, "\tCM_HIT_IS_INCLUDED\n");
     if(h->flags & CM_HIT_IS_REMOVED_DUPLICATE) fprintf(fp, "\tCM_HIT_IS_REMOVED_DUPLICATE\n");
-    if(h->flags & CM_HIT_IS_REMOVED_TERMINUS)  fprintf(fp, "\tCM_HIT_IS_REMOVED_TERMINUS\n");
-    if(h->flags & CM_HIT_FROM_TERMINUS_RESEARCH)  fprintf(fp, "\tCM_HIT_FROM_TERMINUS_RESEARCH\n");
   }
   if(h->ad == NULL) { 
     fprintf(fp, "ad        = NULL\n");
@@ -1961,8 +1906,9 @@ main(int argc, char **argv)
   /* determine number of valid (not removed) hits */
   nhits = 0;
   for(i = 0; i < h[0]->N; i++) { 
-    if((! (h[0]->hit[i]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) && 
-       (! (h[0]->hit[i]->flags & CM_HIT_IS_REMOVED_TERMINUS))) { nhits++; }
+    if(! (h[0]->hit[i]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
+      nhits++; 
+    }
   }
 
   printf("# number of lists:               %d\n", M);

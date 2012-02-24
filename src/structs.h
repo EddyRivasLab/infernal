@@ -2247,8 +2247,6 @@ typedef struct cm_alidisplay_s {
 #define CM_HIT_IS_INCLUDED            (1<<0)
 #define CM_HIT_IS_REPORTED            (1<<1)
 #define CM_HIT_IS_REMOVED_DUPLICATE   (1<<2)
-#define CM_HIT_IS_REMOVED_TERMINUS    (1<<3)
-#define CM_HIT_FROM_TERMINUS_RESEARCH (1<<4)
 
 /* Structure: CM_HIT
  * 
@@ -2277,7 +2275,7 @@ typedef struct cm_hit_s {
   double         pvalue;	/* P-value of the hit   (with corrections) */
   double         evalue;	/* E-value of the hit   (with corrections) */
   CM_ALIDISPLAY *ad;            /* alignment display */
-  uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_REMOVED_DUPLICATE | CM_HIT_IS_REMOVED_TERMINUS | CM_HIT_FROM_TERMINUS_RESEARCH */
+  uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_REMOVED_DUPLICATE */
 
   /* variables necessary only from removing bogus hits from 5'/3' terminii */
   int64_t        srcL;          /* full length of source sequence the hit is from */

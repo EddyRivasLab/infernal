@@ -104,10 +104,10 @@ static ESL_OPTIONS options[] = {
   { "--cut_nc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use CM's NC noise cutoffs as reporting thresholds",            5 },
   { "--cut_tc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use CM's TC trusted cutoffs as reporting thresholds",          5 },
   /* Control of filtering mode/acceleration level */
-  { "--max",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  ICWMAX,          "turn all heuristic filters off             (power: 1st, speed: 5th)", 6 },
-  { "--nohmm",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  ICWNOHMM,        "skip all HMM filter stages, use only CM    (power: 2nd, speed: 4th)", 6 },
-  { "--mid",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  ICWMID,          "skip first two HMM filter stages (MSV&Vit) (power: 3rd, speed: 3rd)", 6 },
-  { "--rfam",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  ICWRFAM,         "set heuristic filters at Rfam-level        (power: 4th, speed: 2nd)", 6 },
+  { "--max",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  ICWMAX,          "turn all heuristic filters off             (power: 1st, speed: 4th)", 6 },
+  { "--nohmm",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  ICWNOHMM,        "skip all HMM filter stages, use only CM    (power: 2nd, speed: 3rd)", 6 },
+  { "--mid",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  ICWMID,          "skip first two HMM filter stages (MSV&Vit) (power: 3rd, speed: 2nd)", 6 },
+  { "--rfam",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  ICWRFAM,         "set heuristic filters at Rfam-level        (power: 4th, speed: 1st)", 6 },
   ///{ "--hmm",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  FMODEOPTS,      "use only an HMM, ignore 2ary structure     (power: 5th, speed: 1st)", 6 },
   ///{ "--maxhmm",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  FMODEOPTS,      "use only an HMM, ignore 2ary structure     (power: 5th, speed: 1st)", 6 },
   { "--FZ",         eslARG_REAL,    NULL, NULL, NULL,    NULL,  NULL,  ICW_FZ,          "set filters to defaults used for a database of size <x> Mb",          6 },
@@ -220,13 +220,14 @@ static char usage[]  = "[options] <query cmfile> <target seqfile>";
 static char banner[] = "search a sequence database with a CM";
 
 static int  serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
-static int  serial_loop  (WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL);
+static int  serial_loop  (WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL);
 
 /* Functions to avoid code duplication for common tasks */
 static int   open_dbfile(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQFILE **ret_dbfp);
 static int   open_dbfile_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf);
-static int   determine_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf);
-static int   determine_dbsize_by_reading(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf);
+static int   dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf, int64_t **ret_srcL, int64_t *ret_nseqs);
+static int   dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf);
+static int   seq_length_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *dbsq, char *errbuf, int64_t *ret_L);
 static WORKER_INFO *create_info();
 static int   clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int dest_infocnt, char *errbuf);
 static void  free_info(WORKER_INFO *info);
@@ -236,7 +237,7 @@ static int   setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info);
 #ifdef HMMER_THREADS
 #define BLOCK_SIZE 1000
 
-static int  thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFILE *dbfp, int64_t **ret_srcL);
+static int  thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFILE *dbfp, int64_t *srcL);
 static void pipeline_thread(void *arg);
 #endif /*HMMER_THREADS*/
 
@@ -321,8 +322,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
 {
   cm_banner(ofp, go->argv[0], banner);
   
-                                          fprintf(ofp, "# query CM file:                         %s\n", cmfile);
-                                          fprintf(ofp, "# target sequence database:              %s\n", seqfile);
+  fprintf(ofp, "# query CM file:                         %s\n", cmfile);
+  fprintf(ofp, "# target sequence database:              %s\n", seqfile);
   if (esl_opt_IsUsed(go, "-g"))           fprintf(ofp, "# CM configuration:                      glocal\n");
   if (esl_opt_IsUsed(go, "-Z"))           fprintf(ofp, "# database size is set to:               %.1f Mb\n",    esl_opt_GetReal(go, "-Z"));
   if (esl_opt_IsUsed(go, "-o"))           fprintf(ofp, "# output directed to file:               %s\n",      esl_opt_GetString(go, "-o"));
@@ -529,6 +530,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              infocnt       = 0;            /* number of worker infos */
 
   int64_t         *srcL = NULL;                  /* [0..pli->nseqs-1] full length of each target sequence read */
+  int64_t          nseqs_expected = 0;           /* nseqs read in first pass, pli->nseqs should equal this at end of function */
 
 #ifdef HMMER_THREADS
   ESL_SQ_BLOCK    *block    = NULL;
@@ -558,8 +560,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   else                                   esl_threads_CPUCount(&ncpus);
   printf("NCPUS: %d\n", ncpus);
   if (ncpus > 0) {
-      threadObj = esl_threads_Create(&pipeline_thread);
-      queue = esl_workqueue_Create(ncpus * 2);
+    threadObj = esl_threads_Create(&pipeline_thread);
+    queue = esl_workqueue_Create(ncpus * 2);
   }
 #endif
 
@@ -584,19 +586,18 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     else { /* try using SSI or reading the file */
       status = open_dbfile_ssi(go, cfg, dbfp, errbuf);
       if(status == eslOK) { /* we opened SSI, now use it */
-	if((status = determine_dbsize_using_ssi(go, cfg, dbfp, errbuf)) != eslOK) esl_fatal(errbuf); 
+	if((status = dbsize_using_ssi(go, cfg, dbfp, errbuf)) != eslOK) esl_fatal(errbuf); 
       }
       else if(status != eslENOTFOUND) { /* SSI file was found, but something is amiss */
 	cm_Fail(errbuf);
       }
       else { /* no SSI file was found, read the file */
-	if (! esl_sqfile_IsRewindable(dbfp)) cm_Fail("Target sequence file %s isn't rewindable; use esl-sfetch to index the file", cfg->dbfile);
-	status = determine_dbsize_by_reading(go, cfg, dbfp, errbuf);
+	if (! esl_sqfile_IsRewindable(dbfp)) cm_Fail("Target sequence file %s isn't rewindable; use esl-sfetch to index it (if possible)", cfg->dbfile);
+	status = dbsize_and_seq_lengths(go, cfg, dbfp, errbuf, &srcL, &nseqs_expected);
 	if(status != eslOK) cm_Fail("Parse failed (sequence file %s):\n%s\n", dbfp->filename, esl_sqfile_GetErrorBuf(dbfp));
-	/* else, we're good, Z was set by determine_dbsize_by_reading */
+	/* else, we're good, Z was set by dbsize_and_seq_lengths */
       }
     }
-
 
     for (i = 0; i < infocnt; ++i)    {
       info[i].pli          = NULL;
@@ -609,14 +610,14 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info[i].queue        = queue;
 #endif
     }
-
+    
 #ifdef HMMER_THREADS    
     for (i = 0; i < ncpus * 2; ++i) {
       block = esl_sq_CreateDigitalBlock(BLOCK_SIZE, abc);
       if (block == NULL)           esl_fatal("Failed to allocate sequence block");
       
       status = esl_workqueue_Init(queue, block);
-      if (status != eslOK)          esl_fatal("Failed to add block to work queue");
+      if (status != eslOK)         esl_fatal("Failed to add block to work queue");
     }
 #endif
   }
@@ -625,7 +626,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   while (qhstatus == eslOK) {
     cm_idx++;
     esl_stopwatch_Start(w);
-
+    
     /* create a new template info, and point it to the cm we just read */
     tinfo = create_info();
     tinfo->cm = cm;
@@ -670,97 +671,79 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
 
 #ifdef HMMER_THREADS
-    if (ncpus > 0)  sstatus = thread_loop(info, threadObj, queue, dbfp, &srcL);
-    else            sstatus = serial_loop(info, dbfp, &srcL);
+    if (ncpus > 0)  sstatus = thread_loop(info, threadObj, queue, dbfp, srcL);
+    else            sstatus = serial_loop(info, dbfp, srcL);
 #else
-      sstatus = serial_loop(info, dbfp, &srcL);
+    sstatus = serial_loop(info, dbfp, srcL);
 #endif
-      switch(sstatus) {
-        case eslEFORMAT:
-          esl_fatal("Parse failed (sequence file %s):\n%s\n",
-                    dbfp->filename, esl_sqfile_GetErrorBuf(dbfp));
-          break;
-        case eslEOF:
-          /* do nothing */
-          break;
-        default:
-          esl_fatal("Unexpected error %d reading sequence file %s", sstatus, dbfp->filename);
+    switch(sstatus) {
+    case eslEFORMAT:
+      esl_fatal("Parse failed (sequence file %s):\n%s\n",
+		dbfp->filename, esl_sqfile_GetErrorBuf(dbfp));
+      break;
+    case eslEOF:
+      /* do nothing */
+      break;
+    default:
+      esl_fatal("Unexpected error %d reading sequence file %s", sstatus, dbfp->filename);
+    }
+
+    /* we need to re-compute e-values before merging (when list will be sorted) */
+    for (i = 0; i < infocnt; ++i) { 
+      /* TO DO: compute E-values differently if --hmm (p7_tophits_ComputeNhmmerEvalues?) */
+      cm_tophits_ComputeEvalues(info[i].th, (double) info[0].cm->expA[info[0].pli->final_cm_exp_mode]->cur_eff_dbsize, 0);
+    }
+
+    /* merge the search results */
+    for (i = 1; i < infocnt; ++i) {
+      cm_tophits_Merge(info[0].th,   info[i].th);
+      cm_pipeline_Merge(info[0].pli, info[i].pli);
+      free_info(&info[i]);
+    }
+
+    /* Sort by sequence index/position and remove duplicates */
+    cm_tophits_SortForOverlapRemoval(info[0].th);
+    if((status = cm_tophits_RemoveOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
+
+    /* Resort by score and enforce threshold */
+    cm_tophits_SortByScore(info[0].th);
+    cm_tophits_Threshold(info[0].th, info[0].pli);
+
+    /* tally up total number of hits and target coverage */
+    for (i = 0; i < info->th->N; i++) {
+      if ((info[0].th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info[0].th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
+	info[0].pli->acct[info[0].th->hit[i]->pass_idx].n_output++;
+	info[0].pli->acct[info[0].th->hit[i]->pass_idx].pos_output += abs(info[0].th->hit[i]->stop - info[0].th->hit[i]->start) + 1;
       }
+    }
+      
+    /* Output */
+    cm_tophits_Targets(ofp, info[0].th, info[0].pli, textw);
+    fprintf(ofp, "\n\n");
 
-      /* we need to re-compute e-values before merging (when list will be sorted) */
-      for (i = 0; i < infocnt; ++i) { 
-	/* TO DO: compute E-values differently if --hmm (p7_tophits_ComputeNhmmerEvalues?) */
-	cm_tophits_ComputeEvalues(info[i].th, (double) info[0].cm->expA[info[0].pli->final_cm_exp_mode]->cur_eff_dbsize, 0);
-      }
-
-      /* merge the search results */
-      for (i = 1; i < infocnt; ++i) {
-	cm_tophits_Merge(info[0].th,   info[i].th);
-	cm_pipeline_Merge(info[0].pli, info[i].pli);
-	free_info(&info[i]);
-      }
-
-      /* Set source sequence length (srcL) for all hits */
-      /*int zz; for(zz = 0; zz < info[0].pli->nseqs; zz++) { printf("srcL[%4d]: %" PRId64 "\n", zz, srcL[zz]); }*/
-      cm_tophits_SetSourceLengths(info[0].th, srcL, info[0].pli->nseqs); 
-      free(srcL);
-
-#if 0 
-      printf("HEYA before\n");
-      cm_tophits_Dump(stdout, info[0].th);
-#endif
-      /* Remove hits from terminii-researching stage that we later learned were not actually in terminii */
-      if(info[0].pli->do_trunc_ends) { 
-	cm_tophits_RemoveBogusTerminusHits(info[0].th);
-      }
-#if 0 
-      printf("HEYA after\n");
-      cm_tophits_Dump(stdout, info[0].th);
-#endif
-
-      /* Sort by sequence index/position and remove duplicates */
-      cm_tophits_SortForOverlapRemoval(info[0].th);
-      if((status = cm_tophits_RemoveOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
-
-      /* Resort by score and enforce threshold */
-      cm_tophits_SortByScore(info[0].th);
-      cm_tophits_Threshold(info[0].th, info[0].pli);
-
-      /* tally up total number of hits and target coverage */
-      for (i = 0; i < info->th->N; i++) {
-	if ((info[0].th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info[0].th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
-	  info[0].pli->acct[info[0].th->hit[i]->pass_idx].n_output++;
-	  info[0].pli->acct[info[0].th->hit[i]->pass_idx].pos_output += abs(info[0].th->hit[i]->stop - info[0].th->hit[i]->start) + 1;
-	}
-      }
-
-      /* Output */
-      cm_tophits_Targets(ofp, info[0].th, info[0].pli, textw);
+    if(info[0].pli->do_alignments) {
+      if((status = cm_tophits_HitAlignments(ofp, info[0].th, info[0].pli, textw)) != eslOK) cm_Fail("Out of memory");
       fprintf(ofp, "\n\n");
-
-      if(info[0].pli->do_alignments) {
-	if((status = cm_tophits_HitAlignments(ofp, info[0].th, info[0].pli, textw)) != eslOK) cm_Fail("Out of memory");
+      if(info[0].pli->do_allstats) { 
+	cm_tophits_HitAlignmentStatistics(ofp, info[0].th, info[0].pli->align_cyk);
 	fprintf(ofp, "\n\n");
-	if(info[0].pli->do_allstats) { 
-	  cm_tophits_HitAlignmentStatistics(ofp, info[0].th, info[0].pli->align_cyk);
-	  fprintf(ofp, "\n\n");
-	}
       }
+    }
 
-      if (tblfp != NULL) { 
-	cm_tophits_TabularTargets(tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1)); 
-      }
-  
-      esl_stopwatch_Stop(w);
-      cm_pli_Statistics(ofp, info[0].pli, w);
+    if (tblfp != NULL) { 
+      cm_tophits_TabularTargets(tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1)); 
+    }
+      
+    esl_stopwatch_Stop(w);
+    cm_pli_Statistics(ofp, info[0].pli, w);
 
-      free_info(tinfo);
-      free(tinfo);
-      free_info(&(info[0]));
+    free_info(tinfo);
+    free(tinfo);
+    free_info(&(info[0]));
 
-      qhstatus = cm_file_Read(cmfp, TRUE, &abc, &cm);
+    qhstatus = cm_file_Read(cmfp, TRUE, &abc, &cm);
   } /* end outer loop over query CMs */
-
+  
   switch(qhstatus) {
   case eslEFORMAT:   cm_Fail("bad file format in CM file %s\n%s",             cfg->cmfile, cmfp->errbuf); break;
   case eslEOF:       /* do nothing. EOF is what we want. */                                               break;
@@ -774,12 +757,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 #ifdef HMMER_THREADS
   if (ncpus > 0) {
-      esl_workqueue_Reset(queue);
-      while (esl_workqueue_Remove(queue, (void **) &block) == eslOK) {
-          esl_sq_DestroyBlock(block);
-      }
-      esl_workqueue_Destroy(queue);
-      esl_threads_Destroy(threadObj);
+    esl_workqueue_Reset(queue);
+    while (esl_workqueue_Remove(queue, (void **) &block) == eslOK) {
+      esl_sq_DestroyBlock(block);
+    }
+    esl_workqueue_Destroy(queue);
+    esl_threads_Destroy(threadObj);
   }
 #endif
 
@@ -977,7 +960,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
   else { 
     esl_stopwatch_Start(w);
-    if((status = determine_dbsize_using_ssi(go, cfg, dbfp, errbuf)) != eslOK) mpi_failure(errbuf); 
+    if((status = dbsize_using_ssi(go, cfg, dbfp, errbuf)) != eslOK) mpi_failure(errbuf); 
     esl_stopwatch_Stop(w);
     esl_stopwatch_Display(ofp, w, "# Determining Z CPU time: ");
   }
@@ -1159,31 +1142,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres -= tot_noverlap;
     /*printf("nres: %ld\n", info->pli->acct[PLI_PASS_STD_ANY].nres);*/
     
-    /* In MPI, we don't need to call cm_tophits_SetSourceLengths()
-     * because unlike serial/threaded we always know the length of
-     * the source sequences. In fact we don't actually need to
-     * re-search bogus terminii and subsequently remove hits in
-     * those terminii, but we do it anyway so the pipeline
-     * statistics between serial/threaded and mpi are identical.  If
-     * in the future serial/threaded changes so that source lengths
-     * are known up-front (i.e. read in at the beginning of each
-     * sequence in the input file somehow) it would remove the need
-     * for cm_tophits_SetSourceLengths() and
-     * cm_tophits_RemoveBogusTerminusHits().
-     */ 
-#if 0 
-    printf("HEYA before\n");
-    cm_tophits_Dump(stdout, info[0].th);
-#endif
-    /* Remove hits from terminii-researching stage that we later learned were not actually in terminii */
-    if(info->pli->do_trunc_ends) { 
-      cm_tophits_RemoveBogusTerminusHits(info->th);
-    }
-#if 0 
-    printf("HEYA after\n");
-    cm_tophits_Dump(stdout, info[0].th);
-#endif
-    
     /* Sort by sequence index/position and remove duplicates */
     cm_tophits_SortForOverlapRemoval(info->th);
     if((status = cm_tophits_RemoveOverlaps(info->th, errbuf)) != eslOK) mpi_failure(errbuf);
@@ -1213,7 +1171,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_tophits_TabularTargets(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
     }
     esl_stopwatch_Stop(w);
-    cm_pl_Statistics(ofp, info->pli, w);
+    cm_pli_Statistics(ofp, info->pli, w);
 
     free_info(info);
     free(info);
@@ -1489,7 +1447,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
  * search the bottom strand.
  */
 static int
-serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL)
+serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
 {
   int       status;
   int       wstatus;
@@ -1497,19 +1455,25 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL)
   int       prv_seq_ntophits;    /* number of top hits before each target sequence */
   int64_t   seq_idx = 0;
   ESL_SQ   *dbsq    = esl_sq_CreateDigital(info->cm->abc);
-
-  /* variables used to keep track of full length of all target sequences 
-   * these are only necessary so we can update hit->srcL for all hits after
-   * search of all target sequences is complete */
-  int64_t  *srcL = NULL;         /* [0..pli->nseqs-1] full length of each target sequence read */
-  int64_t   nalloc_srcL = 0;     /* current allocation size of srcL */
-  int       alloc_srcL  = 1000;  /* chunk size to increase allocation by for srcL */
-  int       i;             
+  char      errbuf[eslERRBUFSIZE];
 
   wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
   seq_idx++;
+
   /*printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);*/
   while (wstatus == eslOK ) {
+    /* if this is the first window for this sequence, set dbsq->L */
+    if(dbsq->start == 1) { 
+      ///printf("\tupdating dbsq->L\n");
+      if(srcL == NULL) { /* this will only be true if dbsq has an open SSI index */
+	if((status = seq_length_using_ssi(dbfp, dbsq, errbuf, &(dbsq->L))) != eslOK) cm_Fail(errbuf);
+      }
+      else { 
+	dbsq->L = srcL[seq_idx-1];
+      }
+    }
+    ///if(srcL == NULL) { printf("srcL is NULL,  dbsq->L is %" PRId64 " start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " name: %s\n", dbsq->L, dbsq->start, dbsq->end, dbsq->n, dbsq->name); }
+    ///else             { printf("srcL not NULL, dbsq->L is %" PRId64 " start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " name: %s\n", dbsq->L, dbsq->start, dbsq->end, dbsq->n, dbsq->name); }
     
     cm_pli_NewSeq(info->pli, dbsq, seq_idx-1);
     prv_seq_ntophits = info->th->N; 
@@ -1552,17 +1516,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL)
     wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
     /*printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);*/
     if (wstatus == eslEOD) { /* no more left of this sequence ... move along to the next sequence. */
-      /* we finally now know full seq length dbsq->L, update hit->srcL values for all hits in this sequence */
       info->pli->nseqs++;
-      /* update srcL list of full lengths of all sequences */
-      while(info->pli->nseqs > nalloc_srcL) { /* reallocate if nec */
-	nalloc_srcL += alloc_srcL;
-	if(nalloc_srcL == alloc_srcL) ESL_ALLOC  (srcL, sizeof(int64_t) * nalloc_srcL);
-	else                          ESL_REALLOC(srcL, sizeof(int64_t) * nalloc_srcL);
-	for(i = nalloc_srcL-alloc_srcL; i < nalloc_srcL; i++) srcL[i] = -1;
-      }
-      srcL[info->pli->nseqs-1] = dbsq->L;
-
       esl_sq_Reuse(dbsq);
       wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
       /*printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);*/
@@ -1572,40 +1526,22 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t **ret_srcL)
 
   esl_sq_Destroy(dbsq);
  
-  if(ret_srcL != NULL) *ret_srcL = srcL;
   return wstatus;
-
- ERROR: 
-  esl_fatal("Out of memory");
-  return eslEMEM; /* NOT REACHED */
 }
  
 #ifdef HMMER_THREADS
 static int
-thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFILE *dbfp, int64_t **ret_srcL)
+thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFILE *dbfp, int64_t *srcL)
 {
-
-  /*int      wstatus, wstatus_next;*/
-  int  status  = eslOK;
-  int  sstatus = eslOK;
-  int  eofCount = 0;
+  int           status  = eslOK;
+  int           sstatus = eslOK;
+  int           eofCount = 0;
+  int           i;
   ESL_SQ       *tmpsq = esl_sq_CreateDigital(info->cm->abc);
   ESL_SQ_BLOCK *block;
   void         *newBlock;
-  int i;
-  int prv_block_complete = TRUE; /* in previous block, was the final sequence completed (TRUE), or probably truncated (FALSE)? */
-
-  /* variables used to keep track of full length of all target sequences 
-   * these are only necessary so we can update hit->srcL for all hits after
-   * search of all target sequences is complete */
-  int64_t  *srcL               = NULL;  /* [0..pli->nseqs-1] full length of each target sequence read */
-  int64_t   nalloc_srcL        = 0;     /* current allocation size of srcL */
-  int       alloc_srcL         = 1000;  /* chunk size to increase allocation by for srcL */
-  int       s                  = 0;     /* counter over sequences */
-  uint64_t  prv_nseqs_started  = 0;     /* number of sequences started,  as of previous iter */
-  uint64_t  nseqs_started      = 0;     /* number of sequences started,  as of current  iter */
-  uint64_t  prv_nseqs_finished = 0;     /* number of sequences finished, as of previous iter */
-  /* info->pli->nseqs acts as nseqs_finished */
+  int           prv_block_complete = TRUE; /* in previous block, was the final sequence completed (TRUE), or probably truncated (FALSE)? */
+  char          errbuf[eslERRBUFSIZE];
 
   esl_workqueue_Reset(queue);
   esl_threads_WaitForStart(obj);
@@ -1627,42 +1563,36 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
       block->list->C = info->pli->maxW;
       /* Overload the ->C value, which ReadBlock uses to determine how much 
        * overlap should be retained in the ReadWindow step. */
-
     }
 
     sstatus = esl_sqio_ReadBlock(dbfp, block, CMSEARCH_MAX_RESIDUE_COUNT, TRUE);
-    
+
     if (sstatus == eslOK) { /* we read a block */
       if(! block->complete) { 
-	/* The final sequence on the block was a probably-incomplete window of the active sequence,
+	/* The final sequence on the block is a probably-incomplete window of the active sequence,
 	 * so capture a copy of that window to use as a template on which the next ReadWindow() call
 	 * (internal to ReadBlock) will be based */
 	esl_sq_Copy(block->list + (block->count - 1) , tmpsq);
       }
-      
-      /* handle the rare case that the final window of previous block ended at final residue, yet we didn't know it at the time */
-      if((! prv_block_complete) && block->list[0].start == 1) { 
-	info->pli->nseqs++;    /* we finished the previous sequence, but didn't know it at the time */
-	prv_nseqs_finished++;  /* ditto */
-	nseqs_started++;       /* we started a new sequence, even though we thought we were adding to an old one */
-      }
       block->first_seqidx = info->pli->nseqs;
-      info->pli->nseqs   += (block->complete)    ? block->count : block->count-1; /* if there's an incomplete sequence read into the block, wait to count it until it's complete. */
-      nseqs_started      += (prv_block_complete) ? block->count : block->count-1; /* if our previous iteration didn't complete a sequence, account for that */
-      
-      /* update srcL list of full lengths of all sequences */
-      while(nseqs_started > nalloc_srcL) { /* reallocate if nec */
-	nalloc_srcL += alloc_srcL;
-	if(nalloc_srcL == alloc_srcL) ESL_ALLOC  (srcL, sizeof(int64_t) * nalloc_srcL);
-	else                          ESL_REALLOC(srcL, sizeof(int64_t) * nalloc_srcL);
-	for(i = nalloc_srcL-alloc_srcL; i < nalloc_srcL; i++) srcL[i] = -1; /* initialize */
+      info->pli->nseqs   += (block->complete) ? block->count : block->count-1; /* if there's an incomplete sequence read into the block, wait to count it until it's complete. */
+
+      /* set L parameters for all sequences in the block */
+      ///printf("\tupdating dbsq->L for %d sequences in block\n", block->count);
+      for(i = 0; i < block->count; i++) { 
+	if(srcL == NULL) { /* this will only be true if dbsq has an open SSI index */
+	  if((status = seq_length_using_ssi(dbfp, &(block->list[i]), errbuf, &(block->list[i].L))) != eslOK) cm_Fail(errbuf);
+	}
+	else { 
+	  block->list[i].L = srcL[block->first_seqidx + i];
+	}
+	///if(srcL == NULL) { printf("srcL is NULL,  block->list[%d].L is %" PRId64 " start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " name: %s\n", i, block->list[i].L, block->list[i].start, block->list[i].end, block->list[i].n, block->list[i].name); }
+	///else             { printf("srcL not NULL, block->list[%d].L is %" PRId64 " start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " name: %s\n", i, block->list[i].L, block->list[i].start, block->list[i].end, block->list[i].n, block->list[i].name); }
+	///printf("HEYA block->list[%d].L is %" PRId64 " start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " name: %s\n", i, block->list[i].L, block->list[i].start, block->list[i].end, block->list[i].n, block->list[i].name); 
       }
-      for(s = prv_nseqs_finished; s < nseqs_started; s++) { 
-	if(srcL[s] == -1) srcL[s]  = block->list[s-prv_nseqs_finished].W;
-	else              srcL[s] += block->list[s-prv_nseqs_finished].W;
-      }
+
     } 
-    
+
     if (sstatus == eslEOF) {
       if (eofCount < esl_threads_GetWorkerCount(obj)) sstatus = eslOK;
       ++eofCount;
@@ -1671,7 +1601,7 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
       status = esl_workqueue_ReaderUpdate(queue, block, &newBlock);
       if (status != eslOK) esl_fatal("Work queue reader failed");
     }
-    
+
     /* newBlock needs all this information so the next ReadBlock call will know what to do */
     ((ESL_SQ_BLOCK *)newBlock)->complete = block->complete;
     if (! block->complete) {
@@ -1680,9 +1610,6 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
       esl_sq_Copy(block->list + (block->count - 1) , ((ESL_SQ_BLOCK *)newBlock)->list);
       ((ESL_SQ_BLOCK *)newBlock)->list->C = info->pli->maxW;
     }
-
-    prv_nseqs_started  = nseqs_started;
-    prv_nseqs_finished = info->pli->nseqs;
     prv_block_complete = block->complete;
   }
 
@@ -1696,14 +1623,9 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
   }
 
   if(tmpsq != NULL) esl_sq_Destroy(tmpsq);
-  if(ret_srcL != NULL) *ret_srcL = srcL;
 
   return sstatus;
-
- ERROR: 
-  esl_fatal("Out of memory");
-  return eslEMEM; /* NOT REACHED */
- }
+}
 
 /* pipeline_thread()
  * 
@@ -1756,7 +1678,7 @@ pipeline_thread(void *arg)
       prv_seq_ntophits = info->th->N; 
       info->pli->acct[PLI_PASS_STD_ANY].nres -= dbsq->C; /* to account for overlapping region of windows */
       if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres -= dbsq->C; /* ditto */
-      
+
       if (info->pli->do_top) { 
 	prv_pli_ntophits = info->th->N;
 	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
@@ -1765,17 +1687,17 @@ pipeline_thread(void *arg)
 	/* modify hit positions to account for the position of the window in the full sequence */
 	cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, FALSE);
       }
-	
+
       /* reverse complement */
       if (info->pli->do_bot && dbsq->abc->complement != NULL) {
 	prv_pli_ntophits = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
 	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
-	
+
 	/* modify hit positions to account for the position of the window in the full sequence */
 	cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, TRUE);
-	
+
 	if(info->pli->do_top) { 
 	  info->pli->acct[PLI_PASS_STD_ANY].nres += dbsq->W; /* add dbsq->W residues, the reverse complement we just searched */
 	  if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres += dbsq->W; /* ditto */
@@ -1789,10 +1711,10 @@ pipeline_thread(void *arg)
 	esl_sq_ReverseComplement(dbsq);
       }
     }
-  
+
     status = esl_workqueue_WorkerUpdate(info->queue, block, &newBlock);
     if (status != eslOK) esl_fatal("Work queue worker failed");
-    
+
     block = (ESL_SQ_BLOCK *) newBlock;
   }
 
@@ -1878,7 +1800,83 @@ open_dbfile_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errb
   return status;
 }
 
-/* Function:  determine_dbsize_using_ssi
+
+/* Function:  dbsize_and_seq_lengths()
+ * Synopsis:  Determine size of the database by reading it
+ *            (but not storing it), as well as sequence lengths.
+ * Incept:    EPN, Mon Jun  6 09:17:32 2011
+ *
+ * 
+ * Returns:   eslOK on success: 
+ *               cfg->Z is set
+ *               array of seq lengths returned in *ret_srcL
+ *               # seqs returned in *ret_nseqs
+ *            eslEFORMAT if database file is screwy.
+ */
+static int
+dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf, int64_t **ret_srcL, int64_t *ret_nseqs)
+{
+  int       status;
+  ESL_SQ   *sq = NULL;
+  int64_t   nres = 0;     /* total number of residues */
+  /* variables used to store lengths of all target sequences */
+  int64_t  *srcL        = NULL;    /* [0..nseqs-1] full length of each target sequence read */
+  int64_t   nseqs       = 0;       /* total number of sequences */
+  int64_t   nalloc_srcL = 0;       /* current allocation size of srcL */
+  int       alloc_srcL  = 100000;  /* chunk size to increase allocation by for srcL */
+  int64_t   i;                     /* counter */       
+
+  ESL_STOPWATCH *w = esl_stopwatch_Create();
+  esl_stopwatch_Start(w);
+
+  sq = esl_sq_Create();
+  while ((status = esl_sqio_ReadInfo(dbfp, sq)) == eslOK) { 
+    nres += sq->L;
+    if(nseqs == nalloc_srcL) { /* reallocate */
+      nalloc_srcL += alloc_srcL;
+      ESL_REALLOC(srcL, sizeof(int64_t) * nalloc_srcL);
+      for(i = nalloc_srcL-alloc_srcL; i < nalloc_srcL; i++) srcL[i] = -1; /* initialize */
+    }      
+    srcL[nseqs++] = sq->L;
+    esl_sq_Reuse(sq);
+  }
+  if(status != eslEOF) goto ERROR; 
+
+  /* if we get here we've successfully read entire file */
+  cfg->Z = nres;
+  if((! esl_opt_GetBoolean(go, "--toponly")) && 
+     (! esl_opt_GetBoolean(go, "--bottomonly"))) { 
+    cfg->Z *= 2; /* we're searching both strands */
+  }
+  cfg->Z_setby = CM_ZSETBY_FILEREAD;
+
+  printf("Z: %" PRId64 " residues\n", cfg->Z);
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, "# DB file read CPU time: ");
+  esl_stopwatch_Destroy(w);
+
+  for(i = 0; i < nseqs; i++) { 
+    ///printf("seq %10" PRId64 " length: %" PRId64 "\n", i, srcL[i]);
+  }
+
+  esl_sqfile_Position(dbfp, 0);
+  if(sq != NULL) esl_sq_Destroy(sq);
+
+  *ret_srcL  = srcL;
+  *ret_nseqs = nseqs;
+
+  return eslOK;
+
+ ERROR: 
+  esl_sqfile_Position(dbfp, 0);
+  if(sq != NULL) esl_sq_Destroy(sq);
+
+  *ret_srcL  = NULL;
+  *ret_nseqs = 0;
+  return status;
+}
+
+/* Function:  dbsize_using_ssi
  * Synopsis:  Determine size of the database using SSI index.
  * Incept:    EPN, Mon Jun  6 09:17:32 2011
  *
@@ -1887,12 +1885,12 @@ open_dbfile_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errb
  *          
  */
 static int
-determine_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf)
+dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf)
 {
   int status;
   int64_t L;    
   int i;
-  
+
   if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(status, errbuf, "SSI index failed to open");
 
   /* step through sequence SSI file to get database size */
@@ -1902,7 +1900,7 @@ determine_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp,
     /*status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, i, NULL, NULL, NULL, &L, &pkey);*/
     if(status == eslENOTFOUND) ESL_FAIL(status, errbuf, "unable to find sequence %d in SSI index file, try re-indexing with esl-sfetch.", i);
     if(status == eslEFORMAT)   ESL_FAIL(status, errbuf, "SSI index for database file is in incorrect format.");
-    if(status != eslOK)        ESL_FAIL(status, errbuf, "proble with SSI index for database file.");
+    if(status != eslOK)        ESL_FAIL(status, errbuf, "problem with SSI index for database file.");
     cfg->Z += L;
   }
   if((! esl_opt_GetBoolean(go, "--toponly")) && 
@@ -1917,52 +1915,58 @@ determine_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp,
   return eslOK;
 }
 
-/* Function:  determine_dbsize_by_reading
- * Synopsis:  Determine size of the database by reading it
- *            (but not storing it).
- * Incept:    EPN, Mon Jun  6 09:17:32 2011
+/* Function:  seq_length_using_ssi
+ * Synopsis:  Determine a sequence's length using a SSI index.
+ * Incept:    EPN, Thu Feb 23 20:27:00 2012
  *
- * Returns:   eslOK on success. cfg->Z is set.
- *            eslEFORMAT if something is wrong with the format of the database file.
+ * Purpose:   Determine the length of the full length source sequence
+ *            <dbsq> derives from and return it in <*ret_L>. If <dbsq>
+ *            is itself full length, just set <*ret_L> = <dbsq->L>.
+ *            If it is not (only a subsequence), determine the length
+ *            of its full length source sequence using an SSI index.
+ *
+ * Returns:   eslOK on success; *ret_L set to source sequence length of dbsq
+ *            eslFAIL if SSI index not open (shouldn't happen)
+ *            eslENOTFOUND if dbsq not in the SSI index
+ *            eslEFORMAT if something is wrong with SSI index format.
  */
 static int
-determine_dbsize_by_reading(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf)
+seq_length_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *dbsq, char *errbuf, int64_t *ret_L)
 {
   int status;
-  int64_t   nres = 0;    
-  ESL_SQ   *sq = NULL;
+  uint16_t fh; /* needed only b/c esl_ssi_FindName() requires it */
+  off_t  roff; /* needed only b/c esl_ssi_FindName() requires it */
+  int64_t L;
 
-  /*ESL_STOPWATCH *w = esl_stopwatch_Create();
-    esl_stopwatch_Start(w);*/
+  if(dbfp->data.ascii.ssi == NULL) ESL_XFAIL(eslFAIL, errbuf, "SSI index does not exist");
 
-  sq = esl_sq_Create();
-  while ((status = esl_sqio_ReadInfo(dbfp, sq)) == eslOK) { 
-    nres += sq->L;
-    esl_sq_Reuse(sq);
+  /* A small optimization: if we're at the beginning of a sequence and
+   * n < CMSEARCH_MAX_RESIDUE_COUNT, then dbsq must be full length and
+   * we don't need to use SSI to get L. This only works because the
+   * call to esl_sqio_ReadWindow() or esl_sqio_ReadBlock() that filled
+   * dbsq had W == CMSEARCH_MAX_RESIDUE_COUNT.
+   */
+#if 0
+  if((dbsq->start == 1 || dbsq->end == 1) && /* have first residue (and are revcomp'ed or not) */
+     (dbsq->end && dbsq->n < CMSEARCH_MAX_RESIDUE_COUNT)) { 
+    ///printf("LT in seq_length_using_ssi() dbsq->n: %10" PRId64 " ", dbsq->n);
+    L = dbsq->n; 
   }
-  if(status != eslEOF) goto ERROR; 
-
-  /* if we get here we've successfully read entire file */
-  cfg->Z = nres;
-  if((! esl_opt_GetBoolean(go, "--toponly")) && 
-     (! esl_opt_GetBoolean(go, "--bottomonly"))) { 
-    cfg->Z *= 2; /* we're searching both strands */
+  else { 
+#endif
+    ///printf("GT in seq_length_using_ssi() dbsq->n: %10" PRId64 " ", dbsq->n);
+    status = esl_ssi_FindName(dbfp->data.ascii.ssi, dbsq->name, &fh, &roff, NULL, &L);
+    if     (status == eslENOTFOUND) ESL_XFAIL(status, errbuf, "SSI index problem, try re-indexing with esl-sfetch; unable to find %s", dbsq->name);
+    else if(status == eslEFORMAT)   ESL_XFAIL(status, errbuf, "problem with SSI index format, try re-indexing with esl-sfetch");
+#if 0
   }
-  cfg->Z_setby = CM_ZSETBY_FILEREAD;
-
-  /*printf("Z: %" PRId64 " residues\n", cfg->Z);
-   esl_stopwatch_Stop(w);
-   esl_stopwatch_Display(stdout, w, "# DB file read CPU time: ");
-   esl_stopwatch_Destroy(w);
-  */
-
-  esl_sqfile_Position(dbfp, 0);
-  if(sq != NULL) esl_sq_Destroy(sq);
+#endif
+  *ret_L = L;
+  ///  printf("returning %" PRId64 "\n", L);
   return eslOK;
 
- ERROR: 
-  esl_sqfile_Position(dbfp, 0);
-  if(sq != NULL) esl_sq_Destroy(sq);
+ ERROR:
+  *ret_L = -1;
   return status;
 }
 
@@ -2036,7 +2040,7 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
   }
   return eslOK;
   
-  ERROR:
+ ERROR:
   ESL_FAIL(status, errbuf, "clone_info(): out of memory");
 }
 
@@ -2596,9 +2600,9 @@ inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, 
    * in the file) */
   status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, NULL);
   /*
-  char *tmpname;
-  status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, &tmpname);
-  printf("inspect_next_sequence_using_ssi(): sequence name: %s length %" PRId64 "\n", tmpname, L);
+    char *tmpname;
+    status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, &tmpname);
+    printf("inspect_next_sequence_using_ssi(): sequence name: %s length %" PRId64 "\n", tmpname, L);
   */
   if(status == eslENOTFOUND) ESL_FAIL(status, errbuf, "unable to find sequence %ld in SSI index file, try re-indexing with esl-sfetch.", pkey_idx);
   if(status == eslEFORMAT)   ESL_FAIL(status, errbuf, "SSI index for database file is in incorrect format.");
@@ -2657,13 +2661,13 @@ inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, 
        *         (plus an overlap of ncontext residues). The new block
        *         is made below, outside of this else.
        */
-	seq_from = L - nremaining + 1;
-	if(cur_block->blockL == 0) { 
-	  cur_block->first_from = seq_from;
-	}
-	cur_block->final_to  = seq_from + ntoadd - 1;
-	cur_block->blockL   += ntoadd;
-	cur_block->complete  = TRUE;
+      seq_from = L - nremaining + 1;
+      if(cur_block->blockL == 0) { 
+	cur_block->first_from = seq_from;
+      }
+      cur_block->final_to  = seq_from + ntoadd - 1;
+      cur_block->blockL   += ntoadd;
+      cur_block->complete  = TRUE;
 
       /* determine the number of residues in next block that will overlap, 
        * our current seq position end point is (seq_from + ntoadd - 1), 

@@ -4,11 +4,9 @@
  *   1. CM_PIPELINE: allocation, initialization, destruction
  *   2. Pipeline API
  *   TODO  3. Example 1: search mode (in a sequence db)
- *   TODO: 4. Example 2: scan mode (in an HMM db)
+ *   TODO: 4. Example 2: scan mode (in a CM db)
  *   5. Copyright and license information
  * 
- * SRE, Fri Dec  5 10:09:39 2008 [Janelia] [BSG3, Bear McCreary]
- * SVN $Id: p7_pipeline.c 3352 2010-08-24 20:56:01Z eddys $
  */
 #include "esl_config.h"
 #include "p7_config.h"
@@ -2651,8 +2649,8 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   int       do_pass_3p_only_force;   /* should we do pass 3 (PLI_PASS_3P_ONLY_FORCE)? re-search the 3'-most pli->maxW residues */
   int       do_pass_5p_and_3p_force; /* should we do pass 4 (PLI_PASS_5P_AND_3P_FORCE)? re-search the full sequence allowing 5' and 3' truncated hits? */
   int       do_pass_5p_and_3p_any;   /* should we do pass 5 (PLI_PASS_5P_AND_3P_ANY)?   re-search the full sequence allowing for all truncated hits? */
-  int       not5term;          /* TRUE if sq definitely does not contain the 5'-most pli->maxW residues of its source sequence, we can skip passes 2 and 4 */
-  int       not3term;          /* TRUE if sq definitely does not contain the 3'-most pli->maxW residues of its source sequence, we can skip passes 3 and 4 */
+  int       have5term;         /* TRUE if sq contains the 5'-most pli->maxW residues of its source sequence */
+  int       have3term;         /* TRUE if sq contains the 3'-most pli->maxW residues of its source sequence */
   int       h;                 /* counter over hits */
   int       prv_ntophits;      /* number of hits */
   int64_t   start_offset;      /* offset to add to start/stop coordinates of hits found in pass 3, in which we re-search the 3' terminus */
@@ -2674,30 +2672,27 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   printf("F5b: %f\n", pli->F5b);
 #endif
 
-  not5term = not3term = FALSE; /* by default, we may have 5' terminus and we may have 3' terminus */
-  /* Determine, if we can, that we definitely do not have the 5' or 3' terminii.
-   * The two if statements involving sq->L are commented out. This has the effect
-   * that sq->L is always treated as unknown and so we always re-search the 3' terminus.
-   * We do this because we want mpi versus serial/threaded cmsearch to give identical
-   * pipeline statistics, and while in mpi we know sq->L (b/c we've read it from an 
-   * SSI index), in serial/threaded we don't. So to get identical results we ignore
-   * the knowledge of sq->L in cmsearch mpi. In cmscan, we always read complete sequences
-   * so we always know L, but we will also always research the 3' terminus, thus 
-   * commenting out these two lines does not affect cmscan.
+  /* Determine if we have the 5' and/or 3' terminii. We can do this
+   * because sq->L should always be valid. (Caller should enforce
+   * this, but it takes some effort if caller is potentially reading
+   * subsequences of large sequences. For example, cmsearch does an
+   * initial readthrough of the entire target database file storing
+   * the sequence lengths prior to doing any cm_Pipeline() calls (or
+   * it uses sequence length info in an SSI index).
    */
   if(sq->start <= sq->end) { /* not in reverse complement (or 1 residue sequence, in revcomp) */
-    if(sq->start != 1)                  not5term = TRUE;
-    /*if(sq->L != -1 && sq->end != sq->L) not3term = TRUE;*/
+    have5term = (sq->start == 1)     ? TRUE : FALSE;
+    have3term = (sq->end   == sq->L) ? TRUE : FALSE;
   }
   else { /* in reverse complement */
-    if(sq->end != 1)                       not3term = TRUE;
-    /*if(sq->L != -1 && sq->start != sq->L)  not5term = TRUE;*/
+    have5term = (sq->start == sq->L) ? TRUE : FALSE;
+    have3term = (sq->end   == 1)     ? TRUE : FALSE;
   }
 
 #if DOPRINT
   /*printf("\nPIPELINE ENTRANCE %s  %s  %" PRId64 " residues (pli->maxW: %d om->max_length: %d cm->W: %d)\n", sq->name, sq->desc, sq->n, pli->maxW, om->max_length, (*opt_cm)->W);*/
-  printf("\nPIPELINE ENTRANCE %-15s  (n: %6" PRId64 " start: %6" PRId64 " end: %6" PRId64 " C: %6" PRId64 " W: %6" PRId64 " L: %6" PRId64 " not5term: %d not3term: %d have5term: %5s have3term: %5s)\n",
-	 sq->name, sq->n, sq->start, sq->end, sq->C, sq->W, sq->L, not5term, not3term, not5term ? "No" : "Maybe", not3term ? "No" : "Maybe");
+  printf("\nPIPELINE ENTRANCE %-15s  (n: %6" PRId64 " start: %6" PRId64 " end: %6" PRId64 " C: %6" PRId64 " W: %6" PRId64 " L: %6" PRId64 " have5term: %d have3term: %d)\n",
+	 sq->name, sq->n, sq->start, sq->end, sq->C, sq->W, sq->L, have5term, have3term);
 #endif
 
   /* determine which passes (besides the mandatory 1st standard pass
@@ -2705,13 +2700,12 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
    * variables indicated which type of truncations are allowed in each
    * pass; e.g. do_pass_5p_only_force: only 5' truncations are allowed in
    * that pass - we do this pass if <do_trunc_ends> is TRUE and
-   * not5term is FALSE (we may have the 5' terminus of the source
-   * seq).
+   * have5term is TRUE.
    */
   if(pli->do_trunc_ends) { 
-    do_pass_5p_only_force   = (! not5term) ? TRUE : FALSE;
-    do_pass_3p_only_force   = (! not3term) ? TRUE : FALSE;
-    do_pass_5p_and_3p_force = ((! not5term) && (! not3term) && (sq->n <= pli->maxW)) ? TRUE : FALSE;
+    do_pass_5p_only_force   = have5term ? TRUE : FALSE;
+    do_pass_3p_only_force   = have3term ? TRUE : FALSE;
+    do_pass_5p_and_3p_force = (have5term && have3term && sq->n <= pli->maxW) ? TRUE : FALSE;
     do_pass_5p_and_3p_any   = FALSE;
   }
   else if(pli->do_trunc_any) { /* we allow any truncated hit, in a special pass PLI_PASS_5P_AND_3P_ANY */
@@ -2800,14 +2794,10 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     if((status = cm_pli_CMStage(pli, cm_offset, sq2search, es, ee, nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
     if(pli->do_time_F6) return status;
 
-    /* Two ways we have to update any hits we've just found: */
+    /* if we're researching a 3' terminus, adjust the start/stop
+     * positions so they are relative to the actual 5' start 
+     */
     if(hitlist->N > prv_ntophits) { 
-      /* 1. if we're in a terminus researching pass (i.e. not pass 1 or 5), raise CM_HIT_FROM_TERMINUS_RESEARCH flag */
-      if(p != PLI_PASS_STD_ANY && p != PLI_PASS_5P_AND_3P_ANY) { 
-	/*printf("setting hits %4d..%" PRId64 " flags to CM_HIT_FROM_TERMINUS_RESEARCH\n", prv_ntophits, hitlist->N);*/
-	for(h = prv_ntophits; h < hitlist->N; h++) hitlist->unsrt[h].flags |= CM_HIT_FROM_TERMINUS_RESEARCH;
-      }
-      /* 2. if we're researching a 3' terminus, adjust the start/stop positions so they are relative to the actual 5' start */
       if(start_offset != 0) { /* this will only be non-zero if we're in pass PLI_PASS_3P_ONLY_FORCE */
 	for(h = prv_ntophits; h < hitlist->N; h++) { 
 	  hitlist->unsrt[h].start += start_offset;
