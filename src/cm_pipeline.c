@@ -334,8 +334,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
    * --rfam 
    */
   pli->do_max        = FALSE;
-  pli->do_rfam       = FALSE;
+  pli->do_nohmm      = FALSE;
   pli->do_mid        = FALSE;
+  pli->do_rfam       = FALSE;
   pli->do_msv        = TRUE;
   pli->do_msvbias    = FALSE;
   pli->do_vit        = TRUE;
@@ -1116,7 +1117,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
       if(wlen > (3. * pli->maxW)) { 
 	/* split this window */
 	new_ws[i2] = ws[i]; 
-	new_we[i2] = ESL_MIN((new_ws[i2] + (2 * pli->cmW) - 1), we[i]);
+	new_we[i2] = ESL_MIN((new_ws[i2] + (2 * pli->maxW) - 1), we[i]);
 	while(new_we[i2] < we[i]) { 
 	  i2++;
 	  if((i2+1) == nalloc) { 
@@ -1124,8 +1125,8 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
 	    ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
 	    ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
 	  }
-	    new_ws[i2] = ESL_MIN(new_ws[i2-1] + pli->cmW, we[i]);
-	    new_we[i2] = ESL_MIN(new_we[i2-1] + pli->cmW, we[i]);
+	    new_ws[i2] = ESL_MIN(new_ws[i2-1] + pli->maxW, we[i]);
+	    new_we[i2] = ESL_MIN(new_we[i2-1] + pli->maxW, we[i]);
 	  }	    
       }
       else { /* do not split this window */
@@ -1141,18 +1142,18 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
   }
   else { /* do_msv is FALSE */
     nwin = 1; /* first window */
-    if(sq->n > (2 * pli->cmW)) { 
-      nwin += (int) (sq->n - (2 * pli->cmW)) / ((2 * pli->cmW) - (pli->cmW - 1));
+    if(sq->n > (2 * pli->maxW)) { 
+      nwin += (int) (sq->n - (2 * pli->maxW)) / ((2 * pli->maxW) - (pli->maxW - 1));
       /*            (L     -  first window)/(number of unique residues per window) */
-      if(((sq->n - (2 * pli->cmW)) % ((2 * pli->cmW) - (pli->cmW - 1))) > 0) { 
+      if(((sq->n - (2 * pli->maxW)) % ((2 * pli->maxW) - (pli->maxW - 1))) > 0) { 
 	nwin++; /* if the (int) cast in previous line removed any fraction of a window, we add it back here */
       }
     }
     ESL_ALLOC(ws, sizeof(int64_t) * nwin);
     ESL_ALLOC(we, sizeof(int64_t) * nwin);
     for(i = 0; i < nwin; i++) { 
-      ws[i] = 1 + (i * (pli->cmW + 1));
-      we[i] = ESL_MIN((ws[i] + (2*pli->cmW) - 1), sq->n);
+      ws[i] = 1 + (i * (pli->maxW + 1));
+      we[i] = ESL_MIN((ws[i] + (2*pli->maxW) - 1), sq->n);
       printf("window %5d/%5d  %10" PRId64 "..%10" PRId64 " (L=%10" PRId64 ")\n", i+1, nwin, ws[i], we[i], sq->n);
     }
   }     
@@ -1520,16 +1521,16 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
     }
     if(use_Rgm && (*opt_Rgm == NULL)) { 
       *opt_Rgm = p7_profile_Clone(*opt_gm);
-      p7_ProfileConfig5PrimeTrunc(*opt_Rgm, wlen);
+      p7_ProfileConfig5PrimeTrunc(*opt_Rgm, 100);
     }
     if(use_Lgm && (*opt_Lgm == NULL)) { 
       *opt_Lgm = p7_profile_Clone(*opt_gm);
-      p7_ProfileConfig3PrimeTrunc(hmm, *opt_Lgm, wlen);
+      p7_ProfileConfig3PrimeTrunc(hmm, *opt_Lgm, 100);
     }
     if(use_Tgm && (*opt_Tgm == NULL)) { 
       *opt_Tgm = p7_profile_Clone(*opt_gm);
-      p7_ProfileConfig(hmm, bg, *opt_Tgm, wlen, p7_LOCAL);
-      p7_ProfileConfig5PrimeAnd3PrimeTrunc(*opt_Tgm, wlen);
+      p7_ProfileConfig(hmm, bg, *opt_Tgm, 100, p7_LOCAL);
+      p7_ProfileConfig5PrimeAnd3PrimeTrunc(*opt_Tgm, 100);
     }
     p7_hmm_Destroy(hmm);
   }
@@ -1889,7 +1890,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
        */
       check_fcyk_beta  = (pli->fcyk_cm_search_opts  & CM_SEARCH_QDB) ? TRUE : FALSE;
       check_final_beta = (pli->final_cm_search_opts & CM_SEARCH_QDB) ? TRUE : FALSE;
-      if((status = CheckCMQDBInfo(cm->qdbinfo, pli->fcyk_beta, check_fcyk_beta, pli->final_beta, check_final_beta)) != eslOK) { 
+      if((status = CheckCMQDBInfo((*opt_cm)->qdbinfo, pli->fcyk_beta, check_fcyk_beta, pli->final_beta, check_final_beta)) != eslOK) { 
 	(*opt_cm)->config_opts   |= CM_CONFIG_QDB;
 	(*opt_cm)->qdbinfo->beta1 = pli->fcyk_beta;
 	(*opt_cm)->qdbinfo->beta2 = pli->final_beta;

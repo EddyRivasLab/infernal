@@ -460,23 +460,23 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     output_header(ofp, go, cfg->cmfile, cfg->dbfile);
     dbfp->abc = abc;
     
-    /* Determine database size (do this here and not earlier b/c it
-     *   may take a little while so we make sure we get this far first).
+    /* Determine database size and sequence lengths (do this here and
+     * not earlier b/c it may take a little while so we make sure we
+     * get this far first) by reading the file (we purposefully don't
+     * use SSI even if it exists, as it's not significantly faster;
+     * xref: ~nawrockie/notebook/12_0221_inf_pipeline_finalize/00LOG,
+     * Feb 24). If -Z is enabled, we still need to read the sequence
+     * file to get seq lengths, we'll set Z in
+     * dbsize_and_seq_lengths() and then overwrite it based on <x>
+     * from -Z <x>.
      */
+    if (! esl_sqfile_IsRewindable(dbfp)) cm_Fail("Target sequence file %s isn't rewindable; use esl-sfetch to index it (if possible)", cfg->dbfile);
+    if((status = dbsize_and_seq_lengths(go, cfg, dbfp, errbuf, &srcL, &nseqs_expected)) != eslOK) { 
+      cm_Fail("Parse failed (sequence file %s):\n%s\n", dbfp->filename, esl_sqfile_GetErrorBuf(dbfp));
+    }
     if(esl_opt_IsUsed(go, "-Z")) { /* -Z enabled, use that size */
       cfg->Z       = (int64_t) (esl_opt_GetReal(go, "-Z") * 1000000.); 
       cfg->Z_setby = CM_ZSETBY_OPTION; 
-    }
-    else { 
-      /* -Z not enabled, read the file (we purposefully don't use SSI
-       * even if it exists, it's not significantly faster; xref:
-       * ~nawrockie/notebook/12_0221_inf_pipeline_finalize/00LOG,
-       * Feb 24).
-       */
-      if (! esl_sqfile_IsRewindable(dbfp)) cm_Fail("Target sequence file %s isn't rewindable; use esl-sfetch to index it (if possible)", cfg->dbfile);
-      if((status = dbsize_and_seq_lengths(go, cfg, dbfp, errbuf, &srcL, &nseqs_expected)) != eslOK) { 
-	cm_Fail("Parse failed (sequence file %s):\n%s\n", dbfp->filename, esl_sqfile_GetErrorBuf(dbfp));
-      }
     }
 
     for (i = 0; i < infocnt; ++i)    {
@@ -528,7 +528,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     
     /* configure the CM (this builds QDBs if nec) and setup HMM filters 
      * (we need to do this before clone_info()). We need a pipeline to 
-     * do this only to get pli->cm_config_opts
+     * do this only b/c we need pli->cm_config_opts.
      */
     tinfo->pli = cm_pipeline_Create(go, abc, tinfo->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
     if((status = configure_cm(tinfo))         != eslOK) cm_Fail(errbuf);
@@ -679,7 +679,6 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
   int       prv_seq_ntophits;    /* number of top hits before each target sequence */
   int64_t   seq_idx = 0;
   ESL_SQ   *dbsq    = esl_sq_CreateDigital(info->cm->abc);
-  char      errbuf[eslERRBUFSIZE];
 
   wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
   seq_idx++;
@@ -757,7 +756,6 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
   ESL_SQ_BLOCK *block;
   void         *newBlock;
   int           prv_block_complete = TRUE; /* in previous block, was the final sequence completed (TRUE), or probably truncated (FALSE)? */
-  char          errbuf[eslERRBUFSIZE];
 
   esl_workqueue_Reset(queue);
   esl_threads_WaitForStart(obj);
@@ -999,22 +997,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Open the database file */
   if((status = open_dbfile    (go, cfg, errbuf, &dbfp)) != eslOK) mpi_failure(errbuf); 
-  /* MPI requires SSI indexing */
-  if((status = mpi_open_dbfile_ssi(go, cfg, dbfp, errbuf)) != eslOK)  mpi_failure(errbuf); 
-  /* Determine database size */
-  if(esl_opt_IsUsed(go, "-Z")) { 
-    cfg->Z       = (int64_t) (esl_opt_GetReal(go, "-Z") * 1000000.); 
-    cfg->Z_setby = CM_ZSETBY_OPTION; 
-  }
-  else { 
-    esl_stopwatch_Start(w);
-    if((status = mpi_dbsize_using_ssi(go, cfg, dbfp, errbuf)) != eslOK) mpi_failure(errbuf); 
-    esl_stopwatch_Stop(w);
-    esl_stopwatch_Display(ofp, w, "# MPI Determining Z CPU time: ");
-  }
-  /* Broadcast the database size to all workers */
-  MPI_Bcast(&(cfg->Z), 1, MPI_LONG_LONG_INT, 0, MPI_COMM_WORLD);
-  /*printf("MPIM cfg->Z: %" PRId64 " residues\n", cfg->Z);*/
 
   /* Open the query CM file */
   if((status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) mpi_failure(errbuf);
@@ -1032,7 +1014,31 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* <abc> is not known 'til first CM is read. */
   hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
   /*printf("read cm master\n");*/
+
   if (hstatus == eslOK) { 
+    /* Determine db size by reading SSI index. This is the slowest
+     * initialization step, so it's done last, after we know all other
+     * steps have passed. This way we can exit quickly earlier if we
+     * had a quickly detectable problem.
+     *
+     * MPI requires SSI indexing, we'll use it to determine db size
+     * unless -Z is set. 
+     */
+    if((status = mpi_open_dbfile_ssi(go, cfg, dbfp, errbuf)) != eslOK)  mpi_failure(errbuf); 
+    if(esl_opt_IsUsed(go, "-Z")) { 
+      cfg->Z       = (int64_t) (esl_opt_GetReal(go, "-Z") * 1000000.); 
+      cfg->Z_setby = CM_ZSETBY_OPTION; 
+    }
+    else { 
+      esl_stopwatch_Start(w);
+      if((status = mpi_dbsize_using_ssi(go, cfg, dbfp, errbuf)) != eslOK) mpi_failure(errbuf); 
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_Display(ofp, w, "# MPI Determining Z CPU time: ");
+    }
+    /* Broadcast the database size to all workers */
+    MPI_Bcast(&(cfg->Z), 1, MPI_LONG_LONG_INT, 0, MPI_COMM_WORLD);
+    /*printf("MPIM cfg->Z: %" PRId64 " residues\n", cfg->Z);*/
+    
     /* One-time initializations after alphabet <abc> becomes known */
     output_header(ofp, go, cfg->cmfile, cfg->dbfile);
     dbsq = esl_sq_CreateDigital(abc);
@@ -1051,13 +1057,13 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if (info->cm->acc)  fprintf(ofp, "Accession:   %s\n", info->cm->acc);
     if (info->cm->desc) fprintf(ofp, "Description: %s\n", info->cm->desc);
     
-    /* Configure the CM and setup the HMM filter */
-    if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
-    if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
-    
     /* Create processing pipeline and hit list */
     info->th  = cm_tophits_Create(); 
     info->pli = cm_pipeline_Create(go, abc, info->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+
+    /* Configure the CM and setup the HMM filter */
+    if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
+    if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
     if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->om, info->bg, cm_idx-1)) != eslOK) { 
       mpi_failure(info->pli->errbuf);
     }
@@ -1100,6 +1106,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	tot_nseq     += nseq;
 	
 	cur_block = block_list->blocks[0];
+	
 	while(cur_block != NULL && cur_block->complete) { 
 	  /* cur_block points to a valid, complete block, send it to a worker */
 	  if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) 
@@ -1322,10 +1329,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* Open the database file */
   if((status = open_dbfile    (go, cfg, errbuf, &dbfp)) != eslOK) mpi_failure(errbuf); 
   /* MPI requires SSI indexing */
-  if((status = mpi_open_dbfile_ssi(go, cfg, dbfp, errbuf))  != eslOK) mpi_failure(errbuf); 
-  /* Receive the database size broadcasted from the master */
-  MPI_Bcast(&(cfg->Z), 1, MPI_LONG_LONG_INT, 0, MPI_COMM_WORLD);
-  /*printf("MPIW cfg->Z: %" PRId64 " residues\n", cfg->Z);*/
 
   /* Open the query CM file */
   if((status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) mpi_failure(errbuf);
@@ -1335,10 +1338,21 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* <abc> is not known 'til first CM is read. */
   hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
-  /*printf("read cm worker\n");*/
+
   if (hstatus == eslOK) { 
+    /* The master determines db size by reading SSI index. This is the
+     * slowest initialization step, so it's done last, after we know
+     * all other steps have passed. This way we can exit quickly
+     * earlier if we had a quickly detectable problem.
+     */
+    if((status = mpi_open_dbfile_ssi(go, cfg, dbfp, errbuf))  != eslOK) mpi_failure(errbuf); 
+    /* Receive the database size broadcasted from the master */
+    MPI_Bcast(&(cfg->Z), 1, MPI_LONG_LONG_INT, 0, MPI_COMM_WORLD);
+    /*printf("MPIW cfg->Z: %" PRId64 " residues\n", cfg->Z);*/
+
+    /*printf("read cm worker\n");*/
     /* One-time initializations after alphabet <abc> becomes known */
-    dbsq         = esl_sq_CreateDigital(abc);
+    dbsq = esl_sq_CreateDigital(abc);
   }
 
   /* Outer loop: over each query CM in <cmfile>. */
@@ -1352,13 +1366,13 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* inform the master we're ready for a block of sequences */
     MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
 
-    /* Configure the CM and setup the HMM filter */
-    if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
-    if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
-
     /* Create processing pipeline and hit list */
     info->th  = cm_tophits_Create(); 
     info->pli = cm_pipeline_Create(go, abc, info->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
+
+    /* Configure the CM and setup the HMM filter */
+    if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
+    if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
     if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->om, info->bg, cm_idx-1)) != eslOK) { 
       mpi_failure(info->pli->errbuf);
     }
@@ -2096,8 +2110,7 @@ mpi_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char 
 
   printf("Z: %" PRId64 " residues\n", cfg->Z);
 
-  /*printf("DBSIZE determined %ld residues (%ld sequences)\n", cfg->Z, dbfp->data.ascii.ssi->nprimary);
-    esl_fatal("done.");*/
+  printf("DBSIZE determined %ld residues (%ld sequences)\n", cfg->Z, dbfp->data.ascii.ssi->nprimary);
 
   return eslOK;
 }

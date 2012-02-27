@@ -47,11 +47,19 @@ typedef struct {
   int               in_rc;           /* TRUE if qsq is currently revcomp'ed           */
 } WORKER_INFO;
 
-#define REPOPTS         "-E,-T,--cut_ga,--cut_nc,--cut_tc"
-#define INCOPTS         "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
-#define THRESHOPTS      "-E,-T,--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
-#define XFASTMIDMAXOPTS "--max,--F1,--F2,--F3,--F4,--F5,--F6,--noF1,--noF2,--noF3,--nogfwd,--nocyk,--nohmm,--hmm"
-#define TIMINGOPTS      "--time-F1,--time-F2,--time-F3,--time-dF3,--time-bfil,--time-F4"
+
+#define REPOPTS     "-E,-T,--cut_ga,--cut_nc,--cut_tc"
+#define INCOPTS     "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
+#define THRESHOPTS  "-E,-T,--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
+#define FMODEOPTS   "--FZ,--rfam,--mid,--nohmm,--max"
+#define TIMINGOPTS  "--time-F1,--time-F2,--time-F3,--time-F4,--time-F5,--time-F6"
+
+/* large sets of options are InCompatible With (ICW) --max, --nohmm, --mid and --rfam */
+#define ICWMAX   "--nohmm,--mid,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--noF6,--doF1b,--noF2b,--noF3b,--noF4b,--noF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--F6,--ftau,--fsums,--fqdb,--fbeta,--fnonbanded,--nocykenv,--cykenvx,--tau,--sums,--nonbanded,--rt1,--rt2,--rt3,--ns,--anonbanded,--anewbands,--envhitbias,--filcmW,--xtau"
+#define ICWNOHMM "--max,--mid,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--doF1b,--noF2b,--noF3b,--noF4b,--noF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--ftau,--fsums,--tau,--sums,--rt1,--rt2,--rt3,--ns,--anonbanded,--anewbands,--envhitbias,--filcmW,--xtau"
+#define ICWMID   "--max,--nohmm,--rfam,--FZ,--noF1,--noF2,--noF3,--doF1b,--noF2b,--F1,--F1b,--F2,--F2b"
+#define ICWRFAM  "--max,--nohmm,--mid,--FZ"
+#define ICW_FZ    "--max,--nohmm,--mid,--rfam"
 
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
 #define CPUOPTS     "--mpi"
@@ -61,140 +69,125 @@ typedef struct {
 #define MPIOPTS     NULL
 #endif
 
-#ifdef HAVE_MPI
-#define DAEMONOPTS  "-o,--tblout,--domtblout,--mpi,--stall"
-#else
-#define DAEMONOPTS  "-o,--tblout,--domtblout"
-#endif
-
 static ESL_OPTIONS options[] = {
-  /* name           type          default  env  range toggles  reqs   incomp                         help                                           docgroup*/
-  { "-h",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "show brief help on version and usage",                          1 },
+  /* name           type      default  env  range     toggles   reqs   incomp              help                                                      docgroup*/
+  { "-h",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "show brief help on version and usage",                         1 },
+  { "-g",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "configure CM for glocal alignment [default: local]",           1 },
+  { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set database size in *Mb* to <x> for E-value calculations",    1 },
   /* Control of output */
-  { "-o",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "direct output to file <f>, not stdout",                         2 },
-  { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of per-sequence hits to file <s>",         2 },
-  { "--acc",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "prefer accessions over names in output",                        2 },
-  { "--noali",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "don't output alignments, so output is smaller",                 2 },
-  { "--notextw",    eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL, "--textw",        "unlimit ASCII text output line width",                          2 },
-  { "--textw",      eslARG_INT,    "120", NULL, "n>=120",NULL,  NULL, "--notextw",      "set max width of ASCII text output lines",                      2 },
+  { "-o",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "direct output to file <f>, not stdout",                        2 },
+  { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of hits to file <s>",                     2 },
+  { "--acc",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "prefer accessions over names in output",                       2 },
+  { "--noali",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "don't output alignments, so output is smaller",                2 },
+  { "--notextw",    eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL, "--textw",        "unlimit ASCII text output line width",                         2 },
+  { "--textw",      eslARG_INT,    "120", NULL, "n>=120",NULL,  NULL, "--notextw",      "set max width of ASCII text output lines",                     2 },
+  { "--allstats",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "print all pipeline statistics",                                2 },
   /* Control of reporting thresholds */
-  { "-E",           eslARG_REAL,  "10.0", NULL, "x>0",   NULL,  NULL,  REPOPTS,         "report models <= this E-value threshold in output",             4 },
-  { "-T",           eslARG_REAL,   FALSE, NULL, NULL,    NULL,  NULL,  REPOPTS,         "report models >= this score threshold in output",               4 },
-  /* Control of inclusion (significance) thresholds: */
-  { "--incE",       eslARG_REAL,  "0.01", NULL, "x>0",   NULL,  NULL,  INCOPTS,         "consider models <= this E-value threshold as significant",      5 },
-  { "--incT",       eslARG_REAL,   FALSE, NULL, NULL,    NULL,  NULL,  INCOPTS,         "consider models >= this score threshold as significant",        5 },
+  { "-E",           eslARG_REAL,  "10.0", NULL, "x>0",   NULL,  NULL,  REPOPTS,         "report sequences <= this E-value threshold in output",         3 },
+  { "-T",           eslARG_REAL,   FALSE, NULL, NULL,    NULL,  NULL,  REPOPTS,         "report sequences >= this score threshold in output",           3 },
+  /* Control of inclusion (significance) thresholds */
+  { "--incE",       eslARG_REAL,  "0.01", NULL, "x>0",   NULL,  NULL,  INCOPTS,         "consider sequences <= this E-value threshold as significant",  4 },
+  { "--incT",       eslARG_REAL,   FALSE, NULL, NULL,    NULL,  NULL,  INCOPTS,         "consider sequences >= this score threshold as significant",    4 },
   /* Model-specific thresholding for both reporting and inclusion */
-  { "--cut_ga",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use profile's GA gathering cutoffs to set all thresholding",    6 },
-  { "--cut_nc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use profile's NC noise cutoffs to set all thresholding",        6 },
-  { "--cut_tc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use profile's TC trusted cutoffs to set all thresholding",      6 },
-  /* Control of acceleration pipeline */
-  /* Control of acceleration pipeline */
-  { "--fZ",         eslARG_REAL,    NULL, NULL, NULL,    NULL,  NULL,  "--rfam",        "set heuristic filters to defaulst used for a db of size <x> Mb", 7 },
-  { "--rfam",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--fZ",          "set heuristic filters at Rfam-level (more speed, less power)", 7 },
-  { "--max",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  XFASTMIDMAXOPTS, "turn all heuristic filters off  (less speed, more power)",     7 },
-  { "--msvmerge",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--noF1,--nohmm","merge MSV windows prior to Viterbi filter",                   7 },
-  { "--pad",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmm",         "pad domains i..j to j-W+1..i+W-1",                             7 },
-  { "--nohmm",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--hmm",    "skip all HMM filter stages (MSV/Vit/Fwd/gFwd/envdef)",         7 },
-  { "--noF1",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the MSV filter stage",                                    7 },
-  { "--shortmsv",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF1",  "run MSV on short 2*W subseqs, not longer subseqs",             7 },
-  { "--noF2",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Viterbi filter stage",                                7 },
-  { "--noF3",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Forward filter stage",                                7 },
-  { "--noF4",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the glocal Forward filter stage",                         7 },
-  { "--noF6",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmm",          "skip the CYK filter stage",                                    7 },
-  { "--doF1b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF1",  "turn on the MSV composition bias filter",                      7 },
-  { "--noF2b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF2",  "turn on the Vit composition bias filter",                      7 },
-  { "--noF3b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF3",  "turn on the Fwd composition bias filter",                      7 },
-  { "--noF4b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF3",  "turn on the glocal Fwd composition bias filter",               7 },
-  { "--noF5b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "turn on the per-domain composition bias filter",               7 },
-  { "--F1",         eslARG_REAL,  "0.35", NULL, NULL,    NULL,  NULL, "--max",          "Stage 1 (MSV) threshold: promote hits w/ P <= F1",             7 },
-  { "--F1b",        eslARG_REAL,  "0.35", NULL, NULL,    NULL,"--domsvbias", "--max",   "Stage 1 (MSV) bias threshold: promote hits w/ P <= F1b",       7 },
-  { "--F2",         eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--max",          "Stage 2 (Vit) threshold: promote hits w/ P <= F2",             7 },
-  { "--F2b",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--noF2b,--max","Stage 2 (Vit) bias threshold: promote hits w/ P <= F2b",   7 },
-  { "--F3",         eslARG_REAL,  "0.003", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) threshold: promote hits w/ P <= F3",             7 },
-  { "--F3b",        eslARG_REAL,  "0.003", NULL, NULL,    NULL,  NULL, "--noF3b,--max","Stage 3 (Fwd) bias threshold: promote hits w/ P <= F3b",       7 },
-  { "--F4",         eslARG_REAL,  "0.003", NULL, NULL,    NULL,  NULL, "--max",          "Stage 4 (gFwd) glocal threshold: promote hits w/ P <= F4", 7 },
-  { "--F4b",        eslARG_REAL,  "0.003", NULL, NULL,    NULL,  NULL, "--nogfwdbias,--max","Stage 4 (gFwd) glocal bias thr: promote hits w/ P <= F4b", 7 },
-  { "--F5",         eslARG_REAL,  "0.003", NULL, NULL,    NULL,  NULL, "--max",          "Stage 5 (env defn) threshold: promote hits w/ P <= F5", 7 },
-  { "--F5b",        eslARG_REAL,  "0.003", NULL, NULL,    NULL,  NULL, "--noedefbias,--max",  "Stage 5 (env defn) bias thr: promote hits w/ P <= F5b", 7 },
-  { "--F6",         eslARG_REAL,  "1e-4", NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm","Stage 6 (CYK) threshold: promote hits w/ P <= F6",         7 },
-  { "--cykenvx",    eslARG_INT,     "10", NULL, "n>=1",  NULL,  NULL, "--max,--nocyk,--hmm","CYK envelope redefinition threshold multiplier, <n> * F4", 7 },
-  { "--nocykenv",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--nocyk,--hmm","Do not redefine envelopes after stage 4 based on CYK hits",7 },
-  { "--time-F1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 1 MSV; for timings",                        7 },
-  { "--time-F2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 2 Vit; for timings",                        7 },
-  { "--time-F3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 3 Fwd; for timings",                        7 },
-  { "--time-F4",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 4 glocal Fwd; for timings",                 7 },
-  { "--time-F5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 5 envelope def; for timings",               7 },
-  { "--time-F6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,        "abort after Stage 6 CYK; for timings",                        7 },
-  { "--rt1",        eslARG_REAL,  "0.25", NULL, NULL,    NULL,  NULL, "--nohmm",         "set domain definition rt1 parameter as <x>",                  7 },
-  { "--rt2",        eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--nohmm",         "set domain definition rt2 parameter as <x>",                  7 },
-  { "--rt3",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--nohmm",         "set domain definition rt3 parameter as <x>",                  7 },
-  { "--ns",         eslARG_INT,   "200",  NULL, NULL,    NULL,  NULL, "--nohmm",         "set number of domain tracebacks to <n>",                      7 },
-  { "--localenv",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmm",         "define domains with HMM in local (not glocal) mode",          7 },
-  { "--wnosplit",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--noF1",          "do not split windows after MSV stage", 7 },
-  { "--wmult",      eslARG_REAL,   "3.0", NULL, NULL,    NULL,  NULL, "--wnosplit,--noF1","scalar multiplier for flagging window to split (if --wsplit)", 7 },
-  { "--wcorr",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use window size correction for Vit/Fwd filters", 7 },
-  { "--nocorr",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use no  correction for domain definition", 7 },
-  { "--oldcorr",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nocorr",        "use old correction for domain definition", 7 },
-  { "--envhitbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--noedefbias",     "calc domain bias for only the domain, not entire window", 7 },
-  { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "do not resolve hits with greedy algorithm, use optimal one", 7 },
-  { "--filcmW",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "use CM's window length for all HMM filters", 7 },
-  { "--glen",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,              "use length dependent glocal p7 filter P-value thresholds", 7},
-  { "--glN",        eslARG_INT,   "201",  NULL, NULL,    NULL,"--glen",NULL,             "minimum value to start len-dependent glocal threshold", 7},
-  { "--glX",        eslARG_INT,   "500",  NULL, NULL,    NULL,"--glen",NULL,             "maximum value for len-dependent glocal threshold", 7},
-  { "--glstep",     eslARG_INT,   "100",  NULL, NULL,    NULL,"--glen",NULL,             "for len-dependent glocal thr, step size for halving thr", 7},
-  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,             "only allow normal local begins in truncated hits", 7},
-  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"-g,--notrunc",     "allow truncated hits anywhere within sequences", 7},
-  /* MAKE THIS A DEVELOPER OPT OR REMOVE IT AFTER TESTING */ { "--loctrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--notrunc",        "treat truncated HMM scores as if they were fully local", 7}, 
-  { "--xtau",       eslARG_REAL,  "2.",   NULL, NULL,    NULL,  NULL,  NULL,             "set multiplier for tau to <x> when tightening HMM bands", 7},
+  { "--cut_ga",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use CM's GA gathering cutoffs as reporting thresholds",        5 },
+  { "--cut_nc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use CM's NC noise cutoffs as reporting thresholds",            5 },
+  { "--cut_tc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use CM's TC trusted cutoffs as reporting thresholds",          5 },
+  /* Control of filtering mode/acceleration level */
+  { "--max",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  ICWMAX,          "turn all heuristic filters off             (power: 1st, speed: 4th)", 6 },
+  { "--nohmm",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  ICWNOHMM,        "skip all HMM filter stages, use only CM    (power: 2nd, speed: 3rd)", 6 },
+  { "--mid",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  ICWMID,          "skip first two HMM filter stages (MSV&Vit) (power: 3rd, speed: 2nd)", 6 },
+  { "--rfam",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  ICWRFAM,         "set heuristic filters at Rfam-level        (power: 4th, speed: 1st)", 6 },
+  ///{ "--hmm",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  FMODEOPTS,      "use only an HMM, ignore 2ary structure     (power: 5th, speed: 1st)", 6 },
+  ///{ "--maxhmm",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  FMODEOPTS,      "use only an HMM, ignore 2ary structure     (power: 5th, speed: 1st)", 6 },
+  { "--FZ",         eslARG_REAL,    NULL, NULL, NULL,    NULL,  NULL,  ICW_FZ,          "set filters to defaults used for a database of size <x> Mb",          6 },
+  { "--Fmid",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--mid", NULL,            "with --mid, set P-value threshold for HMM stages to <x>",             6 },
+  /* Control of truncated hit detection */
+  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not allow truncated hits at sequence terminii",             7 },
+  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"-g,--notrunc",    "allow truncated hits anywhere within sequences",               7 },
   /* Other options */
-  { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on biased composition score corrections",               12 },
-  { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set # of comparisons done, for E-value calculation",           12 },
-  { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",          12 },
-  { "--daemon",     eslARG_NONE,   NULL,  NULL, NULL,    NULL,  NULL,  DAEMONOPTS,      "run program as a daemon",                                      12 },
-  { "--w_beta",     eslARG_REAL,   NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "tail mass at which window length is determined",               12 },
-  { "--w_length",   eslARG_INT,    NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "window length ",                                              12 },
-  /* options affecting the alignment of hits */
-  { "--aln-cyk",      eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "align hits with CYK", 8 },
-  { "--aln-nonbanded",eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not use HMM bands when aligning hits", 8 },
-  { "--aln-sizelimit",eslARG_REAL,"128.", NULL, "x>0",   NULL,  NULL,  NULL,            "set maximum allowed size of DP matrices for hit alignment to <x> Mb", 8 },
-  { "--aln-newbands", eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "recalculate HMM bands for alignment of hits, don't use scan bands", 8},
-  /* Options taken from infernal 1.0.2 cmsearch */
-  /* options for algorithm for final round of search */
-  { "-g",             eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "configure CM for glocal alignment [default: local]", 1 },
-  { "--cyk",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL, "--nocyk,--hmm", "use scanning CM CYK algorithm", 20 },
-  { "--hmm",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,         "--cyk",  "do not use the CM, use only the HMM", 20},
-  /* banded options for CYK filter round of searching */
-  { "--ftau",         eslARG_REAL,    "1e-4",    NULL, "0<x<1", NULL,        NULL,"--fqdb,--hmm,--nocyk",  "set tail loss prob for --fhbanded to <x>", 20 },
-  { "--fsums",        eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--fqdb,--hmm,--nocyk",  "w/--fhbanded use posterior sums (widens bands)", 20 },
-  { "--fqdb",         eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--hmm,--nocyk",  "use QDBs in CYK filter round, not HMM bands", 20 },
-  { "--fbeta",        eslARG_REAL,    "1e-9",    NULL, "0<x<1", NULL,    "--fqdb","--hmm,--nocyk",  "set tail loss prob for CYK filter QDB calculation to <x>", 20 },
-  { "--fnonbanded",   eslARG_NONE,    FALSE,     NULL, NULL,    NULL,    "--fqdb","--hmm,--nocyk",  "do not use any bands for CYK filter round", 20},
-  /* banded options for final round of searching */
-  { "--tau",          eslARG_REAL,   "5e-6",     NULL, "0<x<1", NULL,        NULL,       "--qdb,--nonbanded,--hmm", "set tail loss prob for --hbanded to <x>", 20 },
-  { "--sums",         eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,       "--qdb,--nonbanded,--hmm", "w/--hbanded use posterior sums (widens bands)", 20 },
-  { "--qdb",          eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--nonbanded,--hmm,--tau", "use QDBs (instead of HMM bands) in final Inside round", 20 },
-  { "--beta",         eslARG_REAL,   "1e-15",    NULL, "0<x<1",  NULL,     "--qdb",        "--hmm", "set tail loss prob for final Inside QDB calculation to <x>", 20 },
-  { "--nonbanded",    eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,"--hmm,--tau,--sums,--beta", "do not use QDBs or HMM bands in final Inside round of CM search", 20 },
-  /* other infernal 1.0.2 options */
-  { "--toponly",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "only search the top strand", 20 },
-  { "--bottomonly",   eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "only search the bottom strand", 20 },
-  { "--nonull3",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            NULL, "turn OFF the NULL3 post hoc additional null model", 20 },
-  /* experimental options */
-  { "--cp9noel",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,            "-g", "turn OFF local ends in cp9 HMMs", 20 },
-  { "--cp9gloc",      eslARG_NONE,    FALSE,     NULL, NULL,    NULL,        NULL,  "-g,--cp9noel", "configure CP9 HMM in glocal mode", 20 },
-/* will eventually bring these back, but store in group 99 for now, so they don't print to help */
-  { "--qformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert query <seqfile> is in format <s>: no autodetection",   99 },
-  { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert target <seqfile> is in format <s>>: no autodetection", 99 },
-#ifdef HMMER_THREADS
-  { "--cpu",        eslARG_INT, NULL,"HMMER_NCPU","n>=0",NULL,  NULL,  CPUOPTS,         "number of parallel CPU workers to use for multithreads",       12 },
+  { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn OFF the NULL3 post hoc additional null model",            8 },
+  { "--mxsize",     eslARG_REAL,  "128.", NULL, "x>0",   NULL,  NULL,  NULL,            "set max allowed size of DP matrices to <x> Mb",                8 },
+  { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use scanning CM CYK algorithm, not Inside in final stage",     8 },
+  { "--acyk",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "align hits with CYK, not optimal accuracy",                    8 },
+  { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "only search the top strand",                                   8 },
+  { "--bottomonly", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "only search the bottom strand",                                8 },
+  { "--qformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert query <seqfile> is in format <s>: no autodetection",  12 },
+#ifdef HMMER_THREADS 
+  { "--cpu",        eslARG_INT, NULL,"HMMER_NCPU","n>=0",NULL,  NULL,  CPUOPTS,         "number of parallel CPU workers to use for multithreads",       8 },
 #endif
 #ifdef HAVE_MPI
-  { "--stall",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--mpi", NULL,            "arrest after start: for debugging MPI under gdb",              12 },  
-  { "--mpi",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  MPIOPTS,         "run as an MPI parallel program",                               12 },
+  { "--stall",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--mpi", NULL,            "arrest after start: for debugging MPI under gdb",              8 },  
+  { "--mpi",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  MPIOPTS,         "run as an MPI parallel program",                               8 },
+#endif
+  { "--devhelp",    eslARG_NONE,   NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "show list of undocumented developer options",                  8 },
+
+  /* All options below are developer options, only shown if --devhelp invoked */
+  /* developer options controlling the acceleration pipeline */
+  { "--noF1",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the MSV filter stage",                                  101 },
+  { "--noF2",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Viterbi filter stage",                              101 },
+  { "--noF3",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Forward filter stage",                              101 },
+  { "--noF4",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the glocal Forward filter stage",                       101 },
+  { "--noF6",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "skip the CYK filter stage",                                  101 },
+  { "--doF1b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF1",   "turn on the MSV composition bias filter",                    101 },
+  { "--noF2b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF2",   "turn off the Vit composition bias filter",                   101 },
+  { "--noF3b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF3",   "turn off the Fwd composition bias filter",                   101 },
+  { "--noF4b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF3",   "turn off the glocal Fwd composition bias filter",            101 },
+  { "--noF5b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "turn off the per-envelope composition bias filter",          101 },
+  { "--F1",         eslARG_REAL,  "0.35", NULL, NULL,    NULL,  NULL, "--max",          "Stage 1 (MSV) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F1b",        eslARG_REAL,  "0.35", NULL, NULL,    NULL,"--doF1b", "--max",       "Stage 1 (MSV) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F2",         eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--max",          "Stage 2 (Vit) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F2b",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--noF2b,--max",  "Stage 2 (Vit) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F3",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F3b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF3b,--max",  "Stage 3 (Fwd) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F4",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--max",          "Stage 4 (gFwd) glocal threshold: promote hits w/ P <= <x>",  101 },
+  { "--F4b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF4b,--max",  "Stage 4 (gFwd) glocal bias thr:  promote hits w/ P <= <x>",  101 },
+  { "--F5",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--max",          "Stage 5 (env defn) threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F5b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF5b,--max",  "Stage 5 (env defn) bias thr:     promote hits w/ P <= <x>",  101 },
+  { "--F6",         eslARG_REAL,  "1e-4", NULL, NULL,    NULL,  NULL, "--max",          "Stage 6 (CYK) threshold: promote hits w/ P <= F6",           101 },
+  /* banded options for CYK filter round of searching */
+  { "--ftau",       eslARG_REAL, "1e-4",  NULL, "1E-18<x<1", NULL,    NULL, "--fqdb",   "set HMM band tail loss prob for CYK filter to <x>",       102 },
+  { "--fsums",      eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL, "--fqdb",   "w/--fhbanded use posterior sums (widens bands)",          102 },
+  { "--fqdb",       eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL, NULL,       "use QDBs in CYK filter round, not HMM bands",             102 },
+  { "--fbeta",      eslARG_REAL, "1e-7",  NULL, "1E-18<x<1", NULL,"--fqdb", NULL,       "set tail loss prob for CYK filter QDB calculation to <x>",102 },
+  { "--fnonbanded", eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL, "--ftau,--fsums,--fqdb,--fbeta","do not use any bands for CYK filter round", 102},
+  { "--nocykenv",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "do not redefine envelopes after stage 6 based on CYK hits",  102 },
+  { "--cykenvx",    eslARG_INT,     "10", NULL, "n>=1",  NULL,  NULL, "--max",          "CYK envelope redefinition threshold multiplier, <n> * F6",   102 },
+  /* banded options for final round of searching */
+  { "--tau",        eslARG_REAL,"5e-6",   NULL, "1E-18<x<1", NULL,    NULL,"--qdb", "set HMM band tail loss prob for final round to <x>",        103 },
+  { "--sums",       eslARG_NONE, FALSE,   NULL, NULL,        NULL,    NULL,"--qdb", "w/--hbanded use posterior sums (widens bands)",             103 },
+  { "--qdb",        eslARG_NONE, FALSE,   NULL, NULL,        NULL,    NULL, NULL,   "use QDBs (instead of HMM bands) in final Inside round",           103 },
+  { "--beta",       eslARG_REAL,"1e-15",  NULL, "1E-18<x<1", NULL, "--qdb",NULL,    "set tail loss prob for final Inside QDB calculation to <x>",      103 },
+  { "--nonbanded",  eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,"--tau,--sums,--qdb,--beta", "do not use QDBs or HMM bands in final Inside round of CM search", 103 },
+  /* timing individual pipeline stages */
+  { "--time-F1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 1 MSV; for timings",                       104 },
+  { "--time-F2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 2 Vit; for timings",                       104 },
+  { "--time-F3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 3 Fwd; for timings",                       104 },
+  { "--time-F4",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 4 glocal Fwd; for timings",                104 },
+  { "--time-F5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 5 envelope def; for timings",              104 },
+  { "--time-F6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timings",                       104 },
+  /* controlling envelope definition */
+  { "--rt1",        eslARG_REAL,  "0.25", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt1 parameter as <x>",        105 },
+  { "--rt2",        eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt2 parameter as <x>",        105 },
+  { "--rt3",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt3 parameter as <x>",        105 },
+  { "--ns",         eslARG_INT,   "200",  NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set number of domain/envelope tracebacks to <n>",            105 },
+  /* other developer options */
+  { "--anonbanded", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not use HMM bands when aligning hits",                    106 },
+  { "--anewbands",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "recalculate HMM bands for alignment, don't use scan bands",  106 },
+  { "--envhitbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--noedefbias",   "calc env bias for only the envelope, not entire window",    106 },
+  { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one", 106 },
+  { "--filcmW",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use CM's window length for all HMM filters",                 106 },
+  { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "-g",             "turn off local ends in cp9 HMMs",                            106 },
+  { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",  "configure cp9 HMM in glocal mode",                           106 },
+  { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition score corrections",        106 },
+  { "--xtau",       eslARG_REAL,    "2.", NULL, NULL,    NULL,  NULL,  NULL,            "set multiplier for tau to <x> when tightening HMM bands",    106 },
+  { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",        106 },
+#ifdef HAVE_MPI
+  /* Searching only a subset of sequences in the target database, currently requires MPI b/c SSI is required */
+  { "--sidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "start searching at sequence index <n> in target db SSI index", 106 },
+  { "--eidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "stop  searching at sequence index <n> in target db SSI index", 106 },
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
-
 
 /* struct cfg_s : "Global" application configuration shared by all threads/processes
  * 
@@ -209,10 +202,8 @@ struct cfg_s {
   int              nproc;             /* how many MPI processes, total                   */
   int              my_rank;           /* who am I, in 0..nproc-1                         */
 
-  /* TEMPORARY?: Decide how handle Z */
-  int64_t          Z;                /* database size, in number of models               */
+  int64_t          Z;                /* database size, in number of models * residues    */
   int              Z_setby;          /* how Z was set: CM_ZSETBY_SSIINFO, CM_ZSETBY_OPTION, CM_ZSETBY_FILEINFO */
-
 };
 
 static char usage[]  = "[-options] <cmdb> <seqfile>";
@@ -220,15 +211,9 @@ static char banner[] = "search sequence(s) against a profile database";
 
 static int  serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  serial_loop  (WORKER_INFO *info, CM_FILE *cmfp);
-#if 0 
-static int  setup_cm     (CM_t *cm, const ESL_ALPHABET *abc, WORKER_INFO *info, char *errbuf, 
-			  int *opt_nhmm, P7_HMM ***opt_hmmA, P7_BG ***opt_bgA, P7_OPROFILE ***opt_omA, 
-			  P7_PROFILE ***opt_gmA, float ***opt_p7evpAA);
-#endif
 
 #ifdef HMMER_THREADS
 #define BLOCK_SIZE 25
-
 static int  thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, CM_FILE *cmfp);
 static void pipeline_thread(void *arg);
 #endif /*HMMER_THREADS*/
@@ -238,153 +223,40 @@ static int  mpi_master   (ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  mpi_worker   (ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif /*HAVE_MPI*/
 
-/* process_commandline()
- * 
- * Processes the commandline, filling in fields in <cfg> and creating and returning
- * an <ESL_GETOPTS> options structure. The help page (cmscan -h) is formatted
- * here.
- */
-static void
-process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_seqfile)
-{
-  ESL_GETOPTS *go = NULL;
+static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_seqfile);
+static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile);
 
-  if ((go = esl_getopts_Create(options))     == NULL)     cm_Fail("Internal failure creating options object");
-  if (esl_opt_ProcessEnvironment(go)         != eslOK)  { printf("Failed to process environment: %s\n", go->errbuf); goto ERROR; }
-  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { printf("Failed to parse command line: %s\n",  go->errbuf); goto ERROR; }
-  if (esl_opt_VerifyConfig(go)               != eslOK)  { printf("Failed to parse command line: %s\n",  go->errbuf); goto ERROR; }
- 
-  /* help format: */
-  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
-    {
-      cm_banner(stdout, argv[0], banner);
-      esl_usage(stdout, argv[0], usage);
-      puts("\nBasic options:");
-      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
-
-      puts("\nOptions controlling output:");
-      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-
-      puts("\nOptions controlling reporting thresholds:");
-      esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
-
-      puts("\nOptions controlling inclusion (significance) thresholds:");
-      esl_opt_DisplayHelp(stdout, go, 5, 2, 80); 
-
-      puts("\nOptions for model-specific thresholding:");
-      esl_opt_DisplayHelp(stdout, go, 6, 2, 80); 
-
-      puts("\nOptions controlling acceleration heuristics:");
-      esl_opt_DisplayHelp(stdout, go, 7, 2, 80); 
-
-      puts("\nOther expert options:");
-      esl_opt_DisplayHelp(stdout, go, 12, 2, 80); 
-      exit(0);
-    }
-
-  if (esl_opt_ArgNumber(go)                 != 2)      { puts("Incorrect number of command line arguments.");      goto ERROR; }
-  if ((*ret_cmfile  = esl_opt_GetArg(go, 1)) == NULL)  { puts("Failed to get <cmdb> argument on command line");   goto ERROR; }
-  if ((*ret_seqfile = esl_opt_GetArg(go, 2)) == NULL)  { puts("Failed to get <seqfile> argument on command line"); goto ERROR; }
-
-  /* Validate any attempted use of stdin streams */
-  if (strcmp(*ret_cmfile, "-") == 0) {
-    puts("cmscan cannot read <cm database> from stdin stream, because it must have cmpress'ed auxfiles");
-    goto ERROR;
-  }
-
-  *ret_go = go;
-  return;
-  
- ERROR:  /* all errors handled here are user errors, so be polite.  */
-  esl_usage(stdout, argv[0], usage);
-  puts("\nwhere most common options are:");
-  esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
-  printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
-  exit(1);  
-}
-
-
-static int
-output_header(FILE *ofp, ESL_GETOPTS *go, char *cmfile, char *seqfile)
-{
-  cm_banner(ofp, go->argv[0], banner);
-  
-  fprintf(ofp, "# query sequence file:             %s\n", seqfile);
-  fprintf(ofp, "# target CM database:              %s\n", cmfile);
-  if (esl_opt_IsUsed(go, "-o"))          fprintf(ofp, "# output directed to file:         %s\n",      esl_opt_GetString(go, "-o"));
-  if (esl_opt_IsUsed(go, "--tblout"))    fprintf(ofp, "# per-seq hits tabular output:     %s\n",      esl_opt_GetString(go, "--tblout"));
-  if (esl_opt_IsUsed(go, "--acc"))       fprintf(ofp, "# prefer accessions over names:    yes\n");
-  if (esl_opt_IsUsed(go, "--noali"))     fprintf(ofp, "# show alignments in output:       no\n");
-  if (esl_opt_IsUsed(go, "--notextw"))   fprintf(ofp, "# max ASCII text line length:      unlimited\n");
-  if (esl_opt_IsUsed(go, "--textw"))     fprintf(ofp, "# max ASCII text line length:      %d\n",            esl_opt_GetInteger(go, "--textw"));  
-  if (esl_opt_IsUsed(go, "-E"))          fprintf(ofp, "# profile reporting threshold:     E-value <= %g\n", esl_opt_GetReal(go, "-E"));
-  if (esl_opt_IsUsed(go, "-T"))          fprintf(ofp, "# profile reporting threshold:     score >= %g\n",   esl_opt_GetReal(go, "-T"));
-  if (esl_opt_IsUsed(go, "--incE"))      fprintf(ofp, "# profile inclusion threshold:     E-value <= %g\n", esl_opt_GetReal(go, "--incE"));
-  if (esl_opt_IsUsed(go, "--incT"))      fprintf(ofp, "# profile inclusion threshold:     score >= %g\n",   esl_opt_GetReal(go, "--incT"));
-  if (esl_opt_IsUsed(go, "--cut_ga"))    fprintf(ofp, "# model-specific thresholding:     GA cutoffs\n"); 
-  if (esl_opt_IsUsed(go, "--cut_nc"))    fprintf(ofp, "# model-specific thresholding:     NC cutoffs\n"); 
-  if (esl_opt_IsUsed(go, "--cut_tc"))    fprintf(ofp, "# model-specific thresholding:     TC cutoffs\n"); 
-
-  if (esl_opt_IsUsed(go, "--cyk"))        fprintf(ofp, "# use CYK for final search stage         on\n");
-  if (esl_opt_IsUsed(go, "--fqdb"))       fprintf(ofp, "# QDBs (CYK filter stage)                on\n");
-  if (esl_opt_IsUsed(go, "--fsums"))      fprintf(ofp, "# HMM bands from sums (filter)           on\n");
-  if (esl_opt_IsUsed(go, "--qdb"))        fprintf(ofp, "# QDBs (final stage)                     on\n");
-  if (esl_opt_IsUsed(go, "--nonbanded"))  fprintf(ofp, "# No bands (final stage)                 on\n");
-  if (esl_opt_IsUsed(go, "--sums"))       fprintf(ofp, "# HMM bands from sums (final)            on\n");
-  if (esl_opt_IsUsed(go, "--max"))        fprintf(ofp, "# Max sensitivity mode:                  on [all heuristic filters off]\n");
-  if (esl_opt_IsUsed(go, "--fZ"))         fprintf(ofp, "# Filters set as if DB size in Mb is:    %f\n", esl_opt_GetReal(go, "--fZ"));
-  if (esl_opt_IsUsed(go, "--rfam"))       fprintf(ofp, "# Rfam pipeline mode:                    on\n");
-  if (esl_opt_IsUsed(go, "--pad"))        fprintf(ofp, "# hit padding strategy:                  on\n");
-  if (esl_opt_IsUsed(go, "--noF1"))       fprintf(ofp, "# HMM MSV filter:                        off\n");
-  if (esl_opt_IsUsed(go, "--noF2"))       fprintf(ofp, "# HMM Vit filter:                        off\n");
-  if (esl_opt_IsUsed(go, "--noF3"))       fprintf(ofp, "# HMM Fwd filter:                        off\n");
-  if (esl_opt_IsUsed(go, "--noF4"))       fprintf(ofp, "# HMM glocal Fwd filter:                 off\n");
-  if (esl_opt_IsUsed(go, "--nohmm"))      fprintf(ofp, "# HMM filters (MSV/bias/Vit/Fwd):        off\n");
-  if (esl_opt_IsUsed(go, "--noF6"))       fprintf(ofp, "# CM CYK filter:                         off\n");
-  if (esl_opt_IsUsed(go, "--doF1b"))      fprintf(ofp, "# HMM MSV biased comp filter:            on\n");
-  if (esl_opt_IsUsed(go, "--noF2b"))      fprintf(ofp, "# HMM Vit biased comp filter:            off\n");
-  if (esl_opt_IsUsed(go, "--noF3b"))      fprintf(ofp, "# HMM Fwd biased comp filter:            off\n");
-  if (esl_opt_IsUsed(go, "--noF4b"))      fprintf(ofp, "# HMM gFwd biased comp filter:           off\n");
-  if (esl_opt_IsUsed(go, "--noF5b"))      fprintf(ofp, "# HMM per-envelope biased comp filter:   off\n");
-  if (esl_opt_IsUsed(go, "--F1"))         fprintf(ofp, "# HMM MSV filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F1"));
-  if (esl_opt_IsUsed(go, "--F1b"))        fprintf(ofp, "# HMM MSV bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F1b"));
-  if (esl_opt_IsUsed(go, "--F2"))         fprintf(ofp, "# HMM Vit filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F2"));
-  if (esl_opt_IsUsed(go, "--F2b"))        fprintf(ofp, "# HMM Vit bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F2b"));
-  if (esl_opt_IsUsed(go, "--F3"))         fprintf(ofp, "# HMM Fwd filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F3"));
-  if (esl_opt_IsUsed(go, "--F3b"))        fprintf(ofp, "# HMM Fwd bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F3b"));
-  if (esl_opt_IsUsed(go, "--F4"))         fprintf(ofp, "# HMM glocal Fwd filter P threshold:     <= %g\n", esl_opt_GetReal(go, "--F4"));
-  if (esl_opt_IsUsed(go, "--F4b"))        fprintf(ofp, "# HMM glocal Fwd bias P threshold:       <= %g\n", esl_opt_GetReal(go, "--F4b"));
-  if (esl_opt_IsUsed(go, "--F5"))         fprintf(ofp, "# HMM env defn filter P threshold:       <= %g\n", esl_opt_GetReal(go, "--F5"));
-  if (esl_opt_IsUsed(go, "--F5b"))        fprintf(ofp, "# HMM env defn bias   P threshold:       <= %g\n", esl_opt_GetReal(go, "--F5b"));
-  if (esl_opt_IsUsed(go, "--F6"))         fprintf(ofp, "# CM CYK filter P threshold:             <= %g\n", esl_opt_GetReal(go, "--F6"));
-  if (esl_opt_IsUsed(go, "--rt1"))        fprintf(ofp, "# Domain definition rt1 parameter        %g\n", esl_opt_GetReal(go, "--rt1"));
-  if (esl_opt_IsUsed(go, "--rt2"))        fprintf(ofp, "# Domain definition rt2 parameter        %g\n", esl_opt_GetReal(go, "--rt2"));
-  if (esl_opt_IsUsed(go, "--rt3"))        fprintf(ofp, "# Domain definition rt3 parameter        %g\n", esl_opt_GetReal(go, "--rt3"));
-  if (esl_opt_IsUsed(go, "--ns"))         fprintf(ofp, "# Number of envelope tracebacks sampled  %d\n", esl_opt_GetInteger(go, "--ns"));
-  if (esl_opt_IsUsed(go, "--localenv"))   fprintf(ofp, "# Define envelopes in local mode         on\n");
-  if (esl_opt_IsUsed(go, "--null2"))      fprintf(ofp, "# null2 bias corrections:                on\n");
-  if (esl_opt_IsUsed(go, "--nonull3"))    fprintf(ofp, "# null3 bias corrections:                off\n");
-  if (esl_opt_IsUsed(go, "--toponly"))    fprintf(ofp, "# search top-strand only:                on\n");
-  if (esl_opt_IsUsed(go, "--bottomonly")) fprintf(ofp, "# search bottom-strand only:             on\n");
-
-  if (esl_opt_IsUsed(go, "--null2"))      fprintf(ofp, "# null2 bias corrections:                on\n");
-  if (esl_opt_IsUsed(go, "-Z"))          fprintf(ofp, "# sequence search space set to:    %.0f\n",    esl_opt_GetReal(go, "-Z"));
-  if (esl_opt_IsUsed(go, "--seed"))  {
-    if (esl_opt_GetInteger(go, "--seed")==0)fprintf(ofp, "# random number seed:              one-time arbitrary\n");
-    else                                    fprintf(ofp, "# random number seed set to:       %d\n", esl_opt_GetInteger(go, "--seed"));
-  }
-  if (esl_opt_IsUsed(go, "--qformat"))   fprintf(ofp, "# input seqfile format asserted:   %s\n", esl_opt_GetString(go, "--qformat"));
-  if (esl_opt_IsUsed(go, "--daemon"))    fprintf(ofp, "run as a daemon process\n");
-#ifdef HMMER_THREADS
-  if (esl_opt_IsUsed(go, "--cpu"))       fprintf(ofp, "# number of worker threads:        %d\n", esl_opt_GetInteger(go, "--cpu"));  
-#endif
 #ifdef HAVE_MPI
-  if (esl_opt_IsUsed(go, "--mpi"))       fprintf(ofp, "# MPI:                             on\n");
-#endif
-  fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
-  return eslOK;
-}
+/* Define common tags used by the MPI master/slave processes */
+#define INFERNAL_ERROR_TAG          1
+#define INFERNAL_HMM_TAG            2
+#define INFERNAL_SEQUENCE_TAG       3
+#define INFERNAL_BLOCK_TAG          4
+#define INFERNAL_PIPELINE_TAG       5
+#define INFERNAL_TOPHITS_TAG        6
+#define INFERNAL_HIT_TAG            7
+#define INFERNAL_TERMINATING_TAG    8
+#define INFERNAL_READY_TAG          9
 
+#define MAX_BLOCK_SIZE (512*1024)
+
+typedef struct {
+  uint64_t  offset;
+  uint64_t  length;
+  uint64_t  count;
+} MSV_BLOCK;
+
+typedef struct {
+  int        complete;
+  int        size;
+  int        current;
+  int        last;
+  MSV_BLOCK *blocks;
+} BLOCK_LIST;
+
+static void mpi_failure(char *format, ...);
+static int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, MSV_BLOCK *block);
+#endif /* HAVE_MPI */
 
 int
 main(int argc, char **argv)
@@ -453,7 +325,6 @@ main(int argc, char **argv)
   return status;
 }
 
-
 /* serial_master()
  * The serial version of cmscan.
  * For each query sequence in <seqfile> search the database of CMs for hits.
@@ -503,16 +374,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if (esl_opt_IsOn(go, "--qformat")) {
     seqfmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--qformat"));
     if (seqfmt == eslSQFILE_UNKNOWN) p7_Fail("%s is not a recognized input sequence file format\n", esl_opt_GetString(go, "--qformat"));
-  }
-
-  /* validate options if running as a daemon */
-  if (esl_opt_IsOn(go, "--daemon")) {
-    /* running as a daemon, the input format must be type daemon */
-    if (seqfmt != eslSQFILE_UNKNOWN && seqfmt != eslSQFILE_DAEMON) 
-      esl_fatal("Input format %s not supported.  Must be daemon\n", esl_opt_GetString(go, "--qformat"));
-    seqfmt = eslSQFILE_DAEMON;
-
-    if (strcmp(cfg->seqfile, "-") != 0) esl_fatal("Query sequence file must be '-'\n");
   }
 
   /* Open the target CM database and read 1 CM, but only to get the sequence alphabet */
@@ -759,157 +620,220 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   return eslFAIL;
 }
 
-#ifdef HAVE_MPI
-
-/* Define common tags used by the MPI master/slave processes */
-#define INFERNAL_ERROR_TAG          1
-#define INFERNAL_HMM_TAG            2
-#define INFERNAL_SEQUENCE_TAG       3
-#define INFERNAL_BLOCK_TAG          4
-#define INFERNAL_PIPELINE_TAG       5
-#define INFERNAL_TOPHITS_TAG        6
-#define INFERNAL_HIT_TAG            7
-#define INFERNAL_TERMINATING_TAG    8
-#define INFERNAL_READY_TAG          9
-
-/* mpi_failure()
- * Generate an error message.  If the clients rank is not 0, a
- * message is created with the error message and sent to the
- * master process for handling.
- */
-static void
-mpi_failure(char *format, ...)
+static int
+serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 {
-  va_list  argp;
-  int      status = eslFAIL;
-  int      len;
-  int      rank;
-  char     str[512];
-
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  /* format the error mesg */
-  va_start(argp, format);
-  len = vsnprintf(str, sizeof(str), format, argp);
-  va_end(argp);
-
-  /* make sure the error string is terminated */
-  str[sizeof(str)-1] = '\0';
-
-  /* if the caller is the master, print the results and abort */
-  if (rank == 0)
+  int               status;
+  CM_t             *cm         = NULL; 
+  ESL_ALPHABET     *abc        = NULL;
+  P7_OPROFILE      *om         = NULL;      /* optimized query profile HMM            */
+  P7_PROFILE       *gm         = NULL;      /* generic   query profile HMM            */
+  P7_PROFILE       *Rgm        = NULL;      /* generic query profile HMM for env defn for 5' truncated hits */
+  P7_PROFILE       *Lgm        = NULL;      /* generic query profile HMM for env defn for 3' truncated hits */
+  P7_PROFILE       *Tgm        = NULL;      /* generic query profile HMM for env defn for 5' and 3'truncated hits */
+  CMConsensus_t    *cmcons     = NULL;
+  int               prv_ntophits;           /* number of top hits before cm_Pipeline() call */
+  int               cm_clen, cm_W;          /* consensus, window length for current CM */        
+  float             gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
+  off_t             cm_offset;              /* file offset for current CM */
+  int64_t           cm_idx = 0;                /* index of CM we're currently working with */
+  /* Main loop: */
+  while ((status = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &abc, &cm_offset, &cm_clen, &cm_W, &gfmu, &gflambda, &om)) == eslOK)
     {
-      fprintf(stderr, "\nError: ");
-      fprintf(stderr, "%s", str);
-      fprintf(stderr, "\n");
-      fflush(stderr);
+      cm_idx++;
+      esl_vec_FCopy(om->evparam, p7_NEVPARAM, info->p7_evparam);
+      info->p7_evparam[CM_p7_GFMU]     = gfmu;
+      info->p7_evparam[CM_p7_GFLAMBDA] = gflambda;
+      gm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
+      cm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
+      cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */
+      if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
+				   cm,                                   /* this is NULL b/c we don't have one yet */
+				   cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
+				   om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
 
-      MPI_Abort(MPI_COMM_WORLD, status);
-      exit(1);
-    }
-  else
-    {
-      MPI_Send(str, len, MPI_CHAR, 0, INFERNAL_ERROR_TAG, MPI_COMM_WORLD);
-      pause();
-    }
-}
+      prv_ntophits = info->th->N;
+      if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm, &cmcons)) != eslOK)
+	cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
+      cm_pipeline_Reuse(info->pli); 
+      if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
 
-#define MAX_BLOCK_SIZE (512*1024)
+      if(info->th->N != prv_ntophits) { 
+	cm_tophits_ComputeEvalues(info->th, (double) cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
+      }
 
-typedef struct {
-  uint64_t  offset;
-  uint64_t  length;
-  uint64_t  count;
-} MSV_BLOCK;
+      if(cmcons != NULL) FreeCMConsensus(cmcons);
+      if(cm     != NULL) FreeCM(cm);
+      if(om     != NULL) p7_oprofile_Destroy(om);
+      if(gm     != NULL) p7_profile_Destroy(gm);
+      if(Rgm    != NULL) p7_profile_Destroy(Rgm);
+      if(Lgm    != NULL) p7_profile_Destroy(Lgm);
+      if(Tgm    != NULL) p7_profile_Destroy(Tgm);
+    } /* end of while(cm_p7_oprofile_ReadMSV() == eslOK) */
 
-typedef struct {
-  int        complete;
-  int        size;
-  int        current;
-  int        last;
-  MSV_BLOCK *blocks;
-} BLOCK_LIST;
-
-/* This routine parses the database keeping track of the blocks
- * offset within the file, number of sequences and the length
- * of the block.  These blocks are passed as work units to the
- * MPI workers.  If multiple hmm's are in the query file, the
- * blocks are reused without parsing the database a second time.
- */
-int next_block(CM_FILE *cmfp, BLOCK_LIST *list, MSV_BLOCK *block)
-{
-  P7_OPROFILE   *om       = NULL;
-  ESL_ALPHABET  *abc      = NULL;
-  int            status   = eslOK;
-  off_t          prv_offset = 0;
-
-  /* if the list has been calculated, use it instead of parsing the database */
-  if (list->complete)
-    {
-      if (list->current == list->last)
-	{
-	  block->offset = 0;
-	  block->length = 0;
-	  block->count  = 0;
-
-	  status = eslEOF;
-	}
-      else
-	{
-	  int inx = list->current++;
-
-	  block->offset = list->blocks[inx].offset;
-	  block->length = list->blocks[inx].length;
-	  block->count  = list->blocks[inx].count;
-
-	  status = eslOK;
-	}
-
-      return status;
-    }
-
-  block->offset = 0;
-  block->length = 0;
-  block->count = 0;
-  if((prv_offset = ftello(cmfp->ffp)) < 0) return eslESYS;
-
-  while (block->length < MAX_BLOCK_SIZE && 
-	 (status = cm_p7_oprofile_ReadMSV(cmfp, FALSE, &abc, NULL, NULL, NULL, NULL, NULL, &om)) == eslOK)
-    {
-      if (block->count == 0) block->offset = prv_offset;
-      if((prv_offset = ftello(cmfp->ffp)) < 0) return eslESYS;
-      block->length = om->eoff - block->offset + 1;
-      block->count++;
-      p7_oprofile_Destroy(om);
-    }
-
-  if (status == eslEOF && block->count > 0) status = eslOK;
-  if (status == eslEOF) list->complete = 1;
-
-  /* add the block to the list of known blocks */
-  if (status == eslOK)
-    {
-      int inx;
-
-      if (list->last >= list->size)
-	{
-	  void *tmp;
-	  list->size += 500;
-	  ESL_RALLOC(list->blocks, tmp, sizeof(MSV_BLOCK) * list->size);
-	}
-
-      inx = list->last++;
-      list->blocks[inx].offset = block->offset;
-      list->blocks[inx].length = block->length;
-      list->blocks[inx].count  = block->count;
-    }
+  esl_alphabet_Destroy(abc);
 
   return status;
-
- ERROR:
-  return eslEMEM;
 }
 
+#ifdef HMMER_THREADS
+static int
+thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, CM_FILE *cmfp)
+{
+  int  status   = eslOK;
+  int  sstatus  = eslOK;
+  int  eofCount = 0;
+  CM_P7_OM_BLOCK  *block;
+  ESL_ALPHABET    *abc = NULL;
+  void            *newBlock;
+
+  esl_workqueue_Reset(queue);
+  esl_threads_WaitForStart(obj);
+
+  status = esl_workqueue_ReaderUpdate(queue, NULL, &newBlock);
+  if (status != eslOK) esl_fatal("Work queue reader failed");
+      
+  /* Main loop: */
+  while (sstatus == eslOK)
+    {
+      block = (CM_P7_OM_BLOCK *) newBlock;
+      sstatus = cm_p7_oprofile_ReadBlockMSV(cmfp, &abc, block);
+      if (sstatus == eslEOF) { 
+	if (eofCount < esl_threads_GetWorkerCount(obj)) sstatus = eslOK;
+	++eofCount;
+      }
+      if (sstatus == eslOK) { 
+	status = esl_workqueue_ReaderUpdate(queue, block, &newBlock);
+	if (status != eslOK) esl_fatal("Work queue reader failed");
+      }
+    }
+
+  status = esl_workqueue_ReaderUpdate(queue, block, NULL);
+  if (status != eslOK) esl_fatal("Work queue reader failed");
+
+  if (sstatus == eslEOF)
+    {
+      /* wait for all the threads to complete */
+      esl_threads_WaitForFinish(obj);
+      esl_workqueue_Complete(queue);  
+    }
+  
+  esl_alphabet_Destroy(abc);
+  return sstatus;
+}
+
+static void
+pipeline_thread(void *arg)
+{
+  int i;
+  int status;
+  int workeridx;
+  WORKER_INFO     *info;
+  ESL_THREADS     *obj;
+  CM_P7_OM_BLOCK  *block;
+  void            *newBlock;
+
+  CM_t             *cm         = NULL; 
+  ESL_ALPHABET     *abc        = NULL;
+  P7_PROFILE       *gm         = NULL;      /* generic   query profile HMM            */
+  P7_PROFILE       *Rgm        = NULL;      /* generic query profile HMM for env defn for 5' truncated hits */
+  P7_PROFILE       *Lgm        = NULL;      /* generic query profile HMM for env defn for 3' truncated hits */
+  P7_PROFILE       *Tgm        = NULL;      /* generic query profile HMM for env defn for 5' and 3'truncated hits */
+  CMConsensus_t    *cmcons     = NULL;
+  int               prv_ntophits;           /* number of top hits before cm_Pipeline() call */
+  int               cm_clen, cm_W;          /* consensus, window length for current CM */        
+  float             gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
+  off_t             cm_offset;              /* file offset for current CM */
+  int64_t           cm_idx = 0;             /* index of CM we're currently working with */
+  
+#ifdef HAVE_FLUSH_ZERO_MODE
+  /* In order to avoid the performance penalty dealing with sub-normal
+   * values in the floating point calculations, set the processor flag
+   * so sub-normals are "flushed" immediately to zero.
+   * On OS X, need to reset this flag for each thread
+   * (see TW notes 05/08/10 for details)
+   */
+  _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+#endif
+
+  obj = (ESL_THREADS *) arg;
+  esl_threads_Started(obj, &workeridx);
+
+  info = (WORKER_INFO *) esl_threads_GetData(obj, workeridx);
+
+  status = esl_workqueue_WorkerUpdate(info->queue, NULL, &newBlock);
+  if (status != eslOK) esl_fatal("Work queue worker failed");
+
+  /* loop until all blocks have been processed */
+  block = (CM_P7_OM_BLOCK *) newBlock;
+  while (block->count > 0)
+    {
+      /* Main loop: */
+      for (i = 0; i < block->count; ++i)
+	{
+	  P7_OPROFILE *om = block->list[i];
+	  cm_offset       = block->cm_offsetA[i];
+	  cm_clen         = block->cm_clenA[i];
+	  cm_W            = block->cm_WA[i];
+	  gfmu            = block->gfmuA[i];
+	  gflambda        = block->gflambdaA[i];
+	  cm_idx++;
+
+	  esl_vec_FCopy(om->evparam, p7_NEVPARAM, info->p7_evparam);
+	  info->p7_evparam[CM_p7_GFMU]     = gfmu;
+	  info->p7_evparam[CM_p7_GFLAMBDA] = gflambda;
+	  gm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
+	  cm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
+	  cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */
+	  if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
+				       cm,                                   /* this is NULL b/c we don't have one yet */
+				       cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
+				       om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
+
+	  prv_ntophits = info->th->N;
+	  if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm, &cmcons)) != eslOK)
+	    cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
+	  cm_pipeline_Reuse(info->pli);
+	  if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
+
+	  if(info->th->N != prv_ntophits) { 
+	    cm_tophits_ComputeEvalues(info->th, (double) cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
+	  }
+		
+	  if(cmcons != NULL) FreeCMConsensus(cmcons);
+	  if(cm     != NULL) FreeCM(cm);
+	  if(om     != NULL) p7_oprofile_Destroy(om);
+	  if(gm     != NULL) p7_profile_Destroy(gm);
+	  if(Rgm    != NULL) p7_profile_Destroy(Rgm);
+	  if(Lgm    != NULL) p7_profile_Destroy(Lgm);
+	  if(Tgm    != NULL) p7_profile_Destroy(Tgm);
+	  
+	  block->list[i] = NULL;
+	  block->cm_offsetA[i] = 0;
+	  block->cm_clenA[i]   = 0;
+	  block->cm_WA[i]      = 0;
+	  block->gfmuA[i]      = 0.;
+	  block->gflambdaA[i]  = 0.;
+	}
+      
+      status = esl_workqueue_WorkerUpdate(info->queue, block, &newBlock);
+      if (status != eslOK) esl_fatal("Work queue worker failed");
+      
+      block = (CM_P7_OM_BLOCK *) newBlock;
+    }
+  
+  status = esl_workqueue_WorkerUpdate(info->queue, block, NULL);
+  if (status != eslOK) esl_fatal("Work queue worker failed");
+
+  esl_threads_Finished(obj, workeridx);
+
+  esl_alphabet_Destroy(abc);
+
+  return;
+}
+#endif   /* HMMER_THREADS */
+
+#if HAVE_MPI
 /* mpi_master()
  * The MPI version of cmscan
  * Follows standard pattern for a master/worker load-balanced MPI program (J1/78-79).
@@ -1062,7 +986,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	cm_pli_NewSeq(pli, qsq, seq_idx);
 
 	/* Main loop: */
-	while ((hstatus = next_block(cmfp, list, &block)) == eslOK)
+	while ((hstatus = mpi_next_block(cmfp, list, &block)) == eslOK)
 	{
 	  if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) 
 	    mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
@@ -1234,7 +1158,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   return eslFAIL;
 }
 
-
 static int
 mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 {
@@ -1272,7 +1195,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   w = esl_stopwatch_Create();
 
-  /* Open the target profile database to get the sequence alphabet */
   /* Open the target profile database to get the sequence alphabet */
   status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
   if      (status == eslENOTFOUND) mpi_failure("File existence/permissions problem in trying to open CM file %s.\n%s\n", cfg->cmfile, errbuf);
@@ -1457,222 +1379,321 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 }
 #endif /*HAVE_MPI*/
 
-static int
-serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
+/* process_commandline()
+ * 
+ * Processes the commandline, filling in fields in <cfg> and creating and returning
+ * an <ESL_GETOPTS> options structure. The help page (cmscan -h) is formatted
+ * here.
+ */
+static void
+process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_seqfile)
 {
-  int            status;
+  ESL_GETOPTS *go = NULL;
 
-  CM_t             *cm         = NULL; 
-  ESL_ALPHABET     *abc        = NULL;
-  P7_OPROFILE      *om         = NULL;      /* optimized query profile HMM            */
-  P7_PROFILE       *gm         = NULL;      /* generic   query profile HMM            */
-  P7_PROFILE       *Rgm        = NULL;      /* generic query profile HMM for env defn for 5' truncated hits */
-  P7_PROFILE       *Lgm        = NULL;      /* generic query profile HMM for env defn for 3' truncated hits */
-  P7_PROFILE       *Tgm        = NULL;      /* generic query profile HMM for env defn for 5' and 3'truncated hits */
-  CMConsensus_t    *cmcons     = NULL;
-  int               prv_ntophits;           /* number of top hits before cm_Pipeline() call */
-  int               cm_clen, cm_W;          /* consensus, window length for current CM */        
-  float             gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
-  off_t             cm_offset;              /* file offset for current CM */
-  int64_t           cm_idx = 0;                /* index of CM we're currently working with */
-  /* Main loop: */
-  while ((status = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &abc, &cm_offset, &cm_clen, &cm_W, &gfmu, &gflambda, &om)) == eslOK)
+  if ((go = esl_getopts_Create(options))     == NULL)     cm_Fail("Internal failure creating options object");
+  if (esl_opt_ProcessEnvironment(go)         != eslOK)  { printf("Failed to process environment: %s\n", go->errbuf); goto ERROR; }
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { printf("Failed to parse command line: %s\n",  go->errbuf); goto ERROR; }
+  if (esl_opt_VerifyConfig(go)               != eslOK)  { printf("Failed to parse command line: %s\n",  go->errbuf); goto ERROR; }
+ 
+  /* help format: (identical and synchronized with cmsearch.c:process_commandline()) */
+  if (esl_opt_GetBoolean(go, "-h") || esl_opt_GetBoolean(go, "--devhelp")) {
+    cm_banner(stdout, argv[0], banner);
+    esl_usage(stdout, argv[0], usage);
+    puts("\nBasic options:");
+    esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 120=textwidth*/
+    puts("\nOptions directing output:");
+    esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+    puts("\nOptions controlling reporting thresholds:");
+    esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+    puts("\nOptions controlling inclusion (significance) thresholds:");
+    esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
+    puts("\nOptions controlling model-specific reporting thresholds:");
+    esl_opt_DisplayHelp(stdout, go, 5, 2, 80); 
+    puts("\nOptions controlling acceleration heuristics:");
+    esl_opt_DisplayHelp(stdout, go, 6, 2, 100);
+    puts("\nOptions controlling detection of truncated hits:");
+    esl_opt_DisplayHelp(stdout, go, 7, 2, 80); 
+    puts("\nOther expert options:");
+    esl_opt_DisplayHelp(stdout, go, 8, 2, 80); 
+    if(esl_opt_GetBoolean(go, "--devhelp")) { 
+      puts("\nDeveloper options controlling the filter pipeline:");
+      esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
+      puts("\nDeveloper options controlling the CYK filter stage:");
+      esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
+      puts("\nDeveloper options controlling the final Inside stage:");
+      esl_opt_DisplayHelp(stdout, go, 103, 2, 80);
+      puts("\nDeveloper options for timing pipeline stages:");
+      esl_opt_DisplayHelp(stdout, go, 104, 2, 80);
+      puts("\nDeveloper options controlling envelope definition:");
+      esl_opt_DisplayHelp(stdout, go, 105, 2, 80);
+      puts("\nOther developer options:");
+      esl_opt_DisplayHelp(stdout, go, 106, 2, 80);
+    }
+    exit(0);
+  }
+
+  if (esl_opt_ArgNumber(go)                 != 2)      { puts("Incorrect number of command line arguments.");      goto ERROR; }
+  if ((*ret_cmfile  = esl_opt_GetArg(go, 1)) == NULL)  { puts("Failed to get <cmdb> argument on command line");   goto ERROR; }
+  if ((*ret_seqfile = esl_opt_GetArg(go, 2)) == NULL)  { puts("Failed to get <seqfile> argument on command line"); goto ERROR; }
+
+  /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
+  if (esl_opt_GetBoolean(go, "--qdb") && esl_opt_GetBoolean(go, "--fqdb")) { 
+    if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
+      puts("Error parsing options, with --fbeta <x1> --beta <x2>, <x1> must be >= <x2>\n");
+      exit(1);
+    }
+  }
+
+  /* Validate any attempted use of stdin streams */
+  if (strcmp(*ret_cmfile, "-") == 0) {
+    puts("cmscan cannot read <cm database> from stdin stream, because it must have cmpress'ed auxfiles");
+    goto ERROR;
+  }
+
+  *ret_go = go;
+  return;
+  
+ ERROR:  /* all errors handled here are user errors, so be polite.  */
+  esl_usage(stdout, argv[0], usage);
+  puts("\nwhere most common options are:");
+  esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
+  printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
+  exit(1);  
+}
+
+static int
+output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
+{
+  cm_banner(ofp, go->argv[0], banner);
+  
+  fprintf(ofp, "# query sequence file:             %s\n", seqfile);
+  fprintf(ofp, "# target CM database:              %s\n", cmfile);
+  if (esl_opt_IsUsed(go, "-g"))           fprintf(ofp, "# CM configuration:                      glocal\n");
+  if (esl_opt_IsUsed(go, "-Z"))           fprintf(ofp, "# database size is set to:               %.1f Mb\n",    esl_opt_GetReal(go, "-Z"));
+  if (esl_opt_IsUsed(go, "-o"))           fprintf(ofp, "# output directed to file:               %s\n",      esl_opt_GetString(go, "-o"));
+  if (esl_opt_IsUsed(go, "--tblout"))     fprintf(ofp, "# tabular output of hits:                %s\n",      esl_opt_GetString(go, "--tblout"));
+  if (esl_opt_IsUsed(go, "--acc"))        fprintf(ofp, "# prefer accessions over names:          yes\n");
+  if (esl_opt_IsUsed(go, "--noali"))      fprintf(ofp, "# show alignments in output:             no\n");
+  if (esl_opt_IsUsed(go, "--notextw"))    fprintf(ofp, "# max ASCII text line length:            unlimited\n");
+  if (esl_opt_IsUsed(go, "--textw"))      fprintf(ofp, "# max ASCII text line length:            %d\n",             esl_opt_GetInteger(go, "--textw"));
+  if (esl_opt_IsUsed(go, "--allstats"))   fprintf(ofp, "# verbose pipeline statistics mode:      on\n");
+  if (esl_opt_IsUsed(go, "-E"))           fprintf(ofp, "# sequence reporting threshold:          E-value <= %g\n",  esl_opt_GetReal(go, "-E"));
+  if (esl_opt_IsUsed(go, "-T"))           fprintf(ofp, "# sequence reporting threshold:          score >= %g\n",    esl_opt_GetReal(go, "-T"));
+  if (esl_opt_IsUsed(go, "--incE"))       fprintf(ofp, "# sequence inclusion threshold:          E-value <= %g\n",  esl_opt_GetReal(go, "--incE"));
+  if (esl_opt_IsUsed(go, "--incT"))       fprintf(ofp, "# sequence inclusion threshold:          score >= %g\n",    esl_opt_GetReal(go, "--incT"));
+  if (esl_opt_IsUsed(go, "--cut_ga"))     fprintf(ofp, "# model-specific thresholding:           GA cutoffs\n");
+  if (esl_opt_IsUsed(go, "--cut_nc"))     fprintf(ofp, "# model-specific thresholding:           NC cutoffs\n");
+  if (esl_opt_IsUsed(go, "--cut_tc"))     fprintf(ofp, "# model-specific thresholding:           TC cutoffs\n");
+  if (esl_opt_IsUsed(go, "--max"))        fprintf(ofp, "# Max sensitivity mode:                  on [all heuristic filters off]\n");
+  if (esl_opt_IsUsed(go, "--nohmm"))      fprintf(ofp, "# CM-only mode:                          on [HMM filters off]\n");
+  if (esl_opt_IsUsed(go, "--mid"))        fprintf(ofp, "# HMM MSV and Viterbi filters:           off\n");
+  if (esl_opt_IsUsed(go, "--rfam"))       fprintf(ofp, "# Rfam pipeline mode:                    on [strict filtering]\n");
+  //  if (esl_opt_IsUsed(go, "--hmm"))        fprintf(ofp, "# HMM-only mode:                         on [ignoring structure]\n");
+  if (esl_opt_IsUsed(go, "--FZ"))         fprintf(ofp, "# Filters set as if DB size in Mb is:    %f\n", esl_opt_GetReal(go, "--FZ"));
+  if (esl_opt_IsUsed(go, "--Fmid"))       fprintf(ofp, "# HMM Forward filter thresholds set to:  %g\n", esl_opt_GetReal(go, "--Fmid"));
+  if (esl_opt_IsUsed(go, "--notrunc"))    fprintf(ofp, "# truncated sequence detection:          off\n");
+  if (esl_opt_IsUsed(go, "--anytrunc"))   fprintf(ofp, "# allowing truncated sequences anywhere: on\n");
+  if (esl_opt_IsUsed(go, "--nonull3"))    fprintf(ofp, "# null3 bias corrections:                off\n");
+  if (esl_opt_IsUsed(go, "--mxsize"))     fprintf(ofp, "# maximum DP alignment matrix size:      %.1f Mb\n", esl_opt_GetReal(go, "--mxsize"));
+  if (esl_opt_IsUsed(go, "--cyk"))        fprintf(ofp, "# use CYK for final search stage         on\n");
+  if (esl_opt_IsUsed(go, "--acyk"))       fprintf(ofp, "# use CYK to align hits:                 on\n");
+  if (esl_opt_IsUsed(go, "--toponly"))    fprintf(ofp, "# search top-strand only:                on\n");
+  if (esl_opt_IsUsed(go, "--bottomonly")) fprintf(ofp, "# search bottom-strand only:             on\n");
+  if (esl_opt_IsUsed(go, "--qformat"))    fprintf(ofp, "# query <seqfile> format asserted:       %s\n", esl_opt_GetString(go, "--qformat"));
+#ifdef HMMER_THREADS
+  if (esl_opt_IsUsed(go, "--cpu"))       fprintf(ofp, "# number of worker threads:               %d\n", esl_opt_GetInteger(go, "--cpu"));  
+#endif
+#ifdef HAVE_MPI
+  if (esl_opt_IsUsed(go, "--stall"))     fprintf(ofp, "# MPI stall mode:                        on\n");
+  if (esl_opt_IsUsed(go, "--mpi"))       fprintf(ofp, "# MPI:                                   on\n");
+#endif
+  /* Developer options, only shown to user if --devhelp used */
+  if (esl_opt_IsUsed(go, "--noF1"))       fprintf(ofp, "# HMM MSV filter:                        off\n");
+  if (esl_opt_IsUsed(go, "--noF2"))       fprintf(ofp, "# HMM Vit filter:                        off\n");
+  if (esl_opt_IsUsed(go, "--noF3"))       fprintf(ofp, "# HMM Fwd filter:                        off\n");
+  if (esl_opt_IsUsed(go, "--noF4"))       fprintf(ofp, "# HMM glocal Fwd filter:                 off\n");
+  if (esl_opt_IsUsed(go, "--noF6"))       fprintf(ofp, "# CM CYK filter:                         off\n");
+  if (esl_opt_IsUsed(go, "--doF1b"))      fprintf(ofp, "# HMM MSV biased comp filter:            on\n");
+  if (esl_opt_IsUsed(go, "--noF2b"))      fprintf(ofp, "# HMM Vit biased comp filter:            off\n");
+  if (esl_opt_IsUsed(go, "--noF3b"))      fprintf(ofp, "# HMM Fwd biased comp filter:            off\n");
+  if (esl_opt_IsUsed(go, "--noF4b"))      fprintf(ofp, "# HMM gFwd biased comp filter:           off\n");
+  if (esl_opt_IsUsed(go, "--noF5b"))      fprintf(ofp, "# HMM per-envelope biased comp filter:   off\n");
+  if (esl_opt_IsUsed(go, "--F1"))         fprintf(ofp, "# HMM MSV filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F1"));
+  if (esl_opt_IsUsed(go, "--F1b"))        fprintf(ofp, "# HMM MSV bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F1b"));
+  if (esl_opt_IsUsed(go, "--F2"))         fprintf(ofp, "# HMM Vit filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F2"));
+  if (esl_opt_IsUsed(go, "--F2b"))        fprintf(ofp, "# HMM Vit bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F2b"));
+  if (esl_opt_IsUsed(go, "--F3"))         fprintf(ofp, "# HMM Fwd filter P threshold:            <= %g\n", esl_opt_GetReal(go, "--F3"));
+  if (esl_opt_IsUsed(go, "--F3b"))        fprintf(ofp, "# HMM Fwd bias P threshold:              <= %g\n", esl_opt_GetReal(go, "--F3b"));
+  if (esl_opt_IsUsed(go, "--F4"))         fprintf(ofp, "# HMM glocal Fwd filter P threshold:     <= %g\n", esl_opt_GetReal(go, "--F4"));
+  if (esl_opt_IsUsed(go, "--F4b"))        fprintf(ofp, "# HMM glocal Fwd bias P threshold:       <= %g\n", esl_opt_GetReal(go, "--F4b"));
+  if (esl_opt_IsUsed(go, "--F5"))         fprintf(ofp, "# HMM env defn filter P threshold:       <= %g\n", esl_opt_GetReal(go, "--F5"));
+  if (esl_opt_IsUsed(go, "--F5b"))        fprintf(ofp, "# HMM env defn bias   P threshold:       <= %g\n", esl_opt_GetReal(go, "--F5b"));
+  if (esl_opt_IsUsed(go, "--F6"))         fprintf(ofp, "# CM CYK filter P threshold:             <= %g\n", esl_opt_GetReal(go, "--F6"));
+
+  if (esl_opt_IsUsed(go, "--ftau"))       fprintf(ofp, "# tau parameter for CYK filter stage:    %g\n", esl_opt_GetReal(go, "--ftau"));
+  if (esl_opt_IsUsed(go, "--fsums"))      fprintf(ofp, "# posterior sums (CYK filter stage):     on\n");
+  if (esl_opt_IsUsed(go, "--fqdb"))       fprintf(ofp, "# QDBs (CYK filter stage)                on\n");
+  if (esl_opt_IsUsed(go, "--fbeta"))      fprintf(ofp, "# beta parameter for CYK filter stage:   %g\n", esl_opt_GetReal(go, "--fbeta"));
+  if (esl_opt_IsUsed(go, "--fnonbanded")) fprintf(ofp, "# no bands (CYK filter stage)            on\n");
+  if (esl_opt_IsUsed(go, "--nocykenv"))   fprintf(ofp, "# CYK envelope redefinition:             off\n");
+  if (esl_opt_IsUsed(go, "--cykenvx"))    fprintf(ofp, "# CYK envelope redefn P-val multiplier:  %g\n",  esl_opt_GetReal(go, "--cykenvx"));   
+  if (esl_opt_IsUsed(go, "--tau"))        fprintf(ofp, "# tau parameter for final stage:         %g\n", esl_opt_GetReal(go, "--tau"));
+  if (esl_opt_IsUsed(go, "--sums"))       fprintf(ofp, "# posterior sums (final stage):          on\n");
+  if (esl_opt_IsUsed(go, "--qdb"))        fprintf(ofp, "# QDBs (final stage)                     on\n");
+  if (esl_opt_IsUsed(go, "--beta"))       fprintf(ofp, "# beta parameter for final stage:        %g\n", esl_opt_GetReal(go, "--beta"));
+  if (esl_opt_IsUsed(go, "--nonbanded"))  fprintf(ofp, "# no bands (final stage)                 on\n");
+  if (esl_opt_IsUsed(go, "--time-F1"))    fprintf(ofp, "# abort after Stage 1 MSV (for timing)   on\n");
+  if (esl_opt_IsUsed(go, "--time-F2"))    fprintf(ofp, "# abort after Stage 2 Vit (for timing)   on\n");
+  if (esl_opt_IsUsed(go, "--time-F3"))    fprintf(ofp, "# abort after Stage 3 Fwd (for timing)   on\n");
+  if (esl_opt_IsUsed(go, "--time-F4"))    fprintf(ofp, "# abort after Stage 4 gFwd (for timing)  on\n");
+  if (esl_opt_IsUsed(go, "--time-F5"))    fprintf(ofp, "# abort after Stage 5 env defn (for timing) on\n");
+  if (esl_opt_IsUsed(go, "--time-F6"))    fprintf(ofp, "# abort after Stage 6 CYK (for timing)   on\n");
+  if (esl_opt_IsUsed(go, "--rt1"))        fprintf(ofp, "# domain definition rt1 parameter        %g\n", esl_opt_GetReal(go, "--rt1"));
+  if (esl_opt_IsUsed(go, "--rt2"))        fprintf(ofp, "# domain definition rt2 parameter        %g\n", esl_opt_GetReal(go, "--rt2"));
+  if (esl_opt_IsUsed(go, "--rt3"))        fprintf(ofp, "# domain definition rt3 parameter        %g\n", esl_opt_GetReal(go, "--rt3"));
+  if (esl_opt_IsUsed(go, "--ns"))         fprintf(ofp, "# number of envelope tracebacks sampled  %d\n", esl_opt_GetInteger(go, "--ns"));
+
+  if (esl_opt_IsUsed(go, "--anonbanded")) fprintf(ofp, "# no bands (hit alignment)               on\n");
+  if (esl_opt_IsUsed(go, "--anewbands"))  fprintf(ofp, "# new bands (hit alignment)              on\n");
+  if (esl_opt_IsUsed(go, "--envhitbias")) fprintf(ofp, "# envelope bias only for envelope:       on\n");
+  if (esl_opt_IsUsed(go, "--nogreedy"))   fprintf(ofp, "# greedy CM hit resolution:              off\n");
+  if (esl_opt_IsUsed(go, "--filcmW"))     fprintf(ofp, "# always use CM's W parameter:           on\n");
+  if (esl_opt_IsUsed(go, "--cp9noel"))    fprintf(ofp, "# CP9 HMM local ends:                    off\n");
+  if (esl_opt_IsUsed(go, "--cp9gloc"))    fprintf(ofp, "# CP9 HMM configuration:                 glocal\n");
+  if (esl_opt_IsUsed(go, "--null2"))      fprintf(ofp, "# null2 bias corrections:                on\n");
+  if (esl_opt_IsUsed(go, "--xtau"))       fprintf(ofp, "# tau multiplier for band tightening:    %g\n", esl_opt_GetReal(go, "--xtau"));
+  if (esl_opt_IsUsed(go, "--seed"))  {
+    if (esl_opt_GetInteger(go, "--seed") == 0) fprintf(ofp, "# random number seed:                    one-time arbitrary\n");
+    else                                       fprintf(ofp, "# random number seed set to:             %d\n", esl_opt_GetInteger(go, "--seed"));
+  }
+  fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
+  return eslOK;
+
+}
+
+#if HAVE_MPI 
+/* mpi_failure()
+ * Generate an error message.  If the clients rank is not 0, a
+ * message is created with the error message and sent to the
+ * master process for handling.
+ */
+static void
+mpi_failure(char *format, ...)
+{
+  va_list  argp;
+  int      status = eslFAIL;
+  int      len;
+  int      rank;
+  char     str[512];
+
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  /* format the error mesg */
+  va_start(argp, format);
+  len = vsnprintf(str, sizeof(str), format, argp);
+  va_end(argp);
+
+  /* make sure the error string is terminated */
+  str[sizeof(str)-1] = '\0';
+
+  /* if the caller is the master, print the results and abort */
+  if (rank == 0)
     {
-      cm_idx++;
-      esl_vec_FCopy(om->evparam, p7_NEVPARAM, info->p7_evparam);
-      info->p7_evparam[CM_p7_GFMU]     = gfmu;
-      info->p7_evparam[CM_p7_GFLAMBDA] = gflambda;
-      gm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
-      cm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
-      cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */
-      if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
-				   cm,                                   /* this is NULL b/c we don't have one yet */
-				   cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
-				   om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
+      fprintf(stderr, "\nError: ");
+      fprintf(stderr, "%s", str);
+      fprintf(stderr, "\n");
+      fflush(stderr);
 
-      prv_ntophits = info->th->N;
-      if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm, &cmcons)) != eslOK)
-	cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
-      cm_pipeline_Reuse(info->pli); 
-      if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
+      MPI_Abort(MPI_COMM_WORLD, status);
+      exit(1);
+    }
+  else
+    {
+      MPI_Send(str, len, MPI_CHAR, 0, INFERNAL_ERROR_TAG, MPI_COMM_WORLD);
+      pause();
+    }
+}
 
-      if(info->th->N != prv_ntophits) { 
-	cm_tophits_ComputeEvalues(info->th, (double) cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
-      }
+/* This routine parses the database keeping track of the blocks
+ * offset within the file, number of sequences and the length
+ * of the block.  These blocks are passed as work units to the
+ * MPI workers.  If multiple hmm's are in the query file, the
+ * blocks are reused without parsing the database a second time.
+ */
+int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, MSV_BLOCK *block)
+{
+  P7_OPROFILE   *om       = NULL;
+  ESL_ALPHABET  *abc      = NULL;
+  int            status   = eslOK;
+  off_t          prv_offset = 0;
 
-      if(cmcons != NULL) FreeCMConsensus(cmcons);
-      if(cm     != NULL) FreeCM(cm);
-      if(om     != NULL) p7_oprofile_Destroy(om);
-      if(gm     != NULL) p7_profile_Destroy(gm);
-      if(Rgm    != NULL) p7_profile_Destroy(Rgm);
-      if(Lgm    != NULL) p7_profile_Destroy(Lgm);
-      if(Tgm    != NULL) p7_profile_Destroy(Tgm);
-    } /* end of while(cm_p7_oprofile_ReadMSV() == eslOK) */
+  /* if the list has been calculated, use it instead of parsing the database */
+  if (list->complete)
+    {
+      if (list->current == list->last)
+	{
+	  block->offset = 0;
+	  block->length = 0;
+	  block->count  = 0;
 
-  esl_alphabet_Destroy(abc);
+	  status = eslEOF;
+	}
+      else
+	{
+	  int inx = list->current++;
+
+	  block->offset = list->blocks[inx].offset;
+	  block->length = list->blocks[inx].length;
+	  block->count  = list->blocks[inx].count;
+
+	  status = eslOK;
+	}
+
+      return status;
+    }
+
+  block->offset = 0;
+  block->length = 0;
+  block->count = 0;
+  if((prv_offset = ftello(cmfp->ffp)) < 0) return eslESYS;
+
+  while (block->length < MAX_BLOCK_SIZE && 
+	 (status = cm_p7_oprofile_ReadMSV(cmfp, FALSE, &abc, NULL, NULL, NULL, NULL, NULL, &om)) == eslOK)
+    {
+      if (block->count == 0) block->offset = prv_offset;
+      if((prv_offset = ftello(cmfp->ffp)) < 0) return eslESYS;
+      block->length = om->eoff - block->offset + 1;
+      block->count++;
+      p7_oprofile_Destroy(om);
+    }
+
+  if (status == eslEOF && block->count > 0) status = eslOK;
+  if (status == eslEOF) list->complete = 1;
+
+  /* add the block to the list of known blocks */
+  if (status == eslOK)
+    {
+      int inx;
+
+      if (list->last >= list->size)
+	{
+	  void *tmp;
+	  list->size += 500;
+	  ESL_RALLOC(list->blocks, tmp, sizeof(MSV_BLOCK) * list->size);
+	}
+
+      inx = list->last++;
+      list->blocks[inx].offset = block->offset;
+      list->blocks[inx].length = block->length;
+      list->blocks[inx].count  = block->count;
+    }
 
   return status;
+
+ ERROR:
+  return eslEMEM;
 }
-
-#ifdef HMMER_THREADS
-static int
-thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, CM_FILE *cmfp)
-{
-  int  status   = eslOK;
-  int  sstatus  = eslOK;
-  int  eofCount = 0;
-  CM_P7_OM_BLOCK  *block;
-  ESL_ALPHABET    *abc = NULL;
-  void            *newBlock;
-
-  esl_workqueue_Reset(queue);
-  esl_threads_WaitForStart(obj);
-
-  status = esl_workqueue_ReaderUpdate(queue, NULL, &newBlock);
-  if (status != eslOK) esl_fatal("Work queue reader failed");
-      
-  /* Main loop: */
-  while (sstatus == eslOK)
-    {
-      block = (CM_P7_OM_BLOCK *) newBlock;
-      sstatus = cm_p7_oprofile_ReadBlockMSV(cmfp, &abc, block);
-      if (sstatus == eslEOF)
-	{
-	  if (eofCount < esl_threads_GetWorkerCount(obj)) sstatus = eslOK;
-	  ++eofCount;
-	}
-	  
-      if (sstatus == eslOK)
-	{
-	  status = esl_workqueue_ReaderUpdate(queue, block, &newBlock);
-	  if (status != eslOK) esl_fatal("Work queue reader failed");
-	}
-    }
-
-  status = esl_workqueue_ReaderUpdate(queue, block, NULL);
-  if (status != eslOK) esl_fatal("Work queue reader failed");
-
-  if (sstatus == eslEOF)
-    {
-      /* wait for all the threads to complete */
-      esl_threads_WaitForFinish(obj);
-      esl_workqueue_Complete(queue);  
-    }
-  
-  esl_alphabet_Destroy(abc);
-  return sstatus;
-}
-
-static void
-pipeline_thread(void *arg)
-{
-  int i;
-  int status;
-  int workeridx;
-  WORKER_INFO     *info;
-  ESL_THREADS     *obj;
-  CM_P7_OM_BLOCK  *block;
-  void            *newBlock;
-
-  CM_t             *cm         = NULL; 
-  ESL_ALPHABET     *abc        = NULL;
-  P7_PROFILE       *gm         = NULL;      /* generic   query profile HMM            */
-  P7_PROFILE       *Rgm        = NULL;      /* generic query profile HMM for env defn for 5' truncated hits */
-  P7_PROFILE       *Lgm        = NULL;      /* generic query profile HMM for env defn for 3' truncated hits */
-  P7_PROFILE       *Tgm        = NULL;      /* generic query profile HMM for env defn for 5' and 3'truncated hits */
-  CMConsensus_t    *cmcons     = NULL;
-  int               prv_ntophits;           /* number of top hits before cm_Pipeline() call */
-  int               cm_clen, cm_W;          /* consensus, window length for current CM */        
-  float             gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
-  off_t             cm_offset;              /* file offset for current CM */
-  int64_t           cm_idx = 0;             /* index of CM we're currently working with */
-  
-#ifdef HAVE_FLUSH_ZERO_MODE
-  /* In order to avoid the performance penalty dealing with sub-normal
-   * values in the floating point calculations, set the processor flag
-   * so sub-normals are "flushed" immediately to zero.
-   * On OS X, need to reset this flag for each thread
-   * (see TW notes 05/08/10 for details)
-   */
-  _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
-#endif
-
-  obj = (ESL_THREADS *) arg;
-  esl_threads_Started(obj, &workeridx);
-
-  info = (WORKER_INFO *) esl_threads_GetData(obj, workeridx);
-
-  status = esl_workqueue_WorkerUpdate(info->queue, NULL, &newBlock);
-  if (status != eslOK) esl_fatal("Work queue worker failed");
-
-  /* loop until all blocks have been processed */
-  block = (CM_P7_OM_BLOCK *) newBlock;
-  while (block->count > 0)
-    {
-      /* Main loop: */
-      for (i = 0; i < block->count; ++i)
-	{
-	  P7_OPROFILE *om = block->list[i];
-	  cm_offset       = block->cm_offsetA[i];
-	  cm_clen         = block->cm_clenA[i];
-	  cm_W            = block->cm_WA[i];
-	  gfmu            = block->gfmuA[i];
-	  gflambda        = block->gflambdaA[i];
-	  cm_idx++;
-
-	  esl_vec_FCopy(om->evparam, p7_NEVPARAM, info->p7_evparam);
-	  info->p7_evparam[CM_p7_GFMU]     = gfmu;
-	  info->p7_evparam[CM_p7_GFLAMBDA] = gflambda;
-	  gm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
-	  cm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
-	  cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */
-	  if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
-				       cm,                                   /* this is NULL b/c we don't have one yet */
-				       cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
-				       om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
-
-	  prv_ntophits = info->th->N;
-	  if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm, &cmcons)) != eslOK)
-	    cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
-	  cm_pipeline_Reuse(info->pli);
-	  if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
-
-	  if(info->th->N != prv_ntophits) { 
-	    cm_tophits_ComputeEvalues(info->th, (double) cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
-	  }
-		
-	  if(cmcons != NULL) FreeCMConsensus(cmcons);
-	  if(cm     != NULL) FreeCM(cm);
-	  if(om     != NULL) p7_oprofile_Destroy(om);
-	  if(gm     != NULL) p7_profile_Destroy(gm);
-	  if(Rgm    != NULL) p7_profile_Destroy(Rgm);
-	  if(Lgm    != NULL) p7_profile_Destroy(Lgm);
-	  if(Tgm    != NULL) p7_profile_Destroy(Tgm);
-	  
-	  block->list[i] = NULL;
-	  block->cm_offsetA[i] = 0;
-	  block->cm_clenA[i]   = 0;
-	  block->cm_WA[i]      = 0;
-	  block->gfmuA[i]      = 0.;
-	  block->gflambdaA[i]  = 0.;
-	}
-      
-      status = esl_workqueue_WorkerUpdate(info->queue, block, &newBlock);
-      if (status != eslOK) esl_fatal("Work queue worker failed");
-      
-      block = (CM_P7_OM_BLOCK *) newBlock;
-    }
-  
-  status = esl_workqueue_WorkerUpdate(info->queue, block, NULL);
-  if (status != eslOK) esl_fatal("Work queue worker failed");
-
-  esl_threads_Finished(obj, workeridx);
-
-  esl_alphabet_Destroy(abc);
-
-  return;
-}
-#endif   /* HMMER_THREADS */
+#endif /* HAVE_MPI */
 
 /*****************************************************************
  * @LICENSE@
