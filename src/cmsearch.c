@@ -647,6 +647,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 #endif
 
   free(info);
+  if(srcL != NULL) free(srcL);
 
   cm_file_Close(cmfp);
   esl_sqfile_Close(dbfp);
@@ -1731,7 +1732,7 @@ dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, cha
   int64_t  *srcL        = NULL;    /* [0..nseqs-1] full length of each target sequence read */
   int64_t   nseqs       = 0;       /* total number of sequences */
   int64_t   nalloc_srcL = 0;       /* current allocation size of srcL */
-  int       alloc_srcL  = 100000;  /* chunk size to increase allocation by for srcL */
+  int       alloc_srcL  = 10000;   /* chunk size to increase allocation by for srcL */
   int64_t   i;                     /* counter */       
 
   ESL_STOPWATCH *w = esl_stopwatch_Create();

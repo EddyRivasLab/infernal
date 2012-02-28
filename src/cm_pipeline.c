@@ -1154,7 +1154,7 @@ cm_pli_p7Filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam,
     for(i = 0; i < nwin; i++) { 
       ws[i] = 1 + (i * (pli->maxW + 1));
       we[i] = ESL_MIN((ws[i] + (2*pli->maxW) - 1), sq->n);
-      printf("window %5d/%5d  %10" PRId64 "..%10" PRId64 " (L=%10" PRId64 ")\n", i+1, nwin, ws[i], we[i], sq->n);
+      /*printf("window %5d/%5d  %10" PRId64 "..%10" PRId64 " (L=%10" PRId64 ")\n", i+1, nwin, ws[i], we[i], sq->n);*/
     }
   }     
   pli->acct[pli->cur_pass_idx].n_past_msv += nwin;
@@ -2008,20 +2008,39 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
       }
       if(do_qdb_or_nonbanded_filter_scan) { /* careful, different from just an 'else', b/c we may have just set this as true if status == eslERANGE */
-	/* make sure we have a CM_SCAN_MX for this CM, if not build one,
-	 * this should be okay because we should only very rarely need to do this */
-	if(cm->smx == NULL) { printf("FIX ME! ADD TRUNC VERSION! cm->smx is NULL, probably overflow sized hb mx\n"); continue; }
-	pli->acct[pli->cur_pass_idx].n_overflow_fcyk++;
-	if((status = FastCYKScan(cm, errbuf, cm->smx, SMX_QDB1_TIGHT, sq->dsq, es[i], ee[i],
-				 0.,                                 /* minimum score to report, irrelevant */
-				 NULL,                               /* hitlist to add to, irrelevant here */
-				 pli->do_null3,                      /* do the NULL3 correction? */
-				 cyk_env_cutoff,                     /* bit score == envF6 P value, cutoff for envelope redefinition */
-				 (pli->do_fcykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
-				 (pli->do_fcykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
-				 NULL,                               /* ret_vsc, irrelevant here */
-				 &cyksc)) != eslOK) { 
-	  printf("ERROR: %s\n", errbuf); return status;  }
+	if(do_trunc) { 
+	  /* make sure we have a CM_TR_SCAN_MX for this CM, if not build one,
+	   * this should be okay because we should only very rarely need to do this */
+	  if(cm->trsmx == NULL) { printf("FIX ME! cm->trsmx is NULL, probably overflow sized hb mx\n"); continue; }
+	  pli->acct[pli->cur_pass_idx].n_overflow_fcyk++;
+	  if((status = RefTrCYKScan(cm, errbuf, cm->trsmx, SMX_QDB1_TIGHT, pli->cur_pass_idx, sq->dsq, es[i], ee[i],
+				    0.,                                   /* minimum score to report, irrelevant */
+				    NULL,                                 /* hitlist to add to, irrelevant here */
+				    pli->do_null3,                        /* do the NULL3 correction? */
+				    cyk_env_cutoff,                       /* bit score == envF6 P value, cutoff for envelope redefinition */
+				    (pli->do_fcykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
+				    (pli->do_fcykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
+				    NULL,                                 /* ret_vsc, irrelevant here */
+				    &cykmode,                             /* best alignment mode */
+				    &cyksc)) != eslOK) { 
+	    printf("ERROR: %s\n", errbuf); return status;  }
+	}
+	else { 
+	  /* make sure we have a CM_SCAN_MX for this CM, if not build one,
+	   * this should be okay because we should only very rarely need to do this */
+	  if(cm->smx == NULL) { printf("FIX ME! cm->smx is NULL, probably overflow sized hb mx\n"); continue; }
+	  pli->acct[pli->cur_pass_idx].n_overflow_fcyk++;
+	  if((status = FastCYKScan(cm, errbuf, cm->smx, SMX_QDB1_TIGHT, sq->dsq, es[i], ee[i],
+				   0.,                                 /* minimum score to report, irrelevant */
+				   NULL,                               /* hitlist to add to, irrelevant here */
+				   pli->do_null3,                      /* do the NULL3 correction? */
+				   cyk_env_cutoff,                     /* bit score == envF6 P value, cutoff for envelope redefinition */
+				   (pli->do_fcykenv) ? &cyk_envi : NULL, /* envelope start, derived from CYK hits */
+				   (pli->do_fcykenv) ? &cyk_envj : NULL, /* envelope stop,  derived from CYK hits */
+				   NULL,                               /* ret_vsc, irrelevant here */
+				   &cyksc)) != eslOK) { 
+	    printf("ERROR: %s\n", errbuf); return status;  }
+	}
       }
       /* update envelope boundaries, if nec */
       if(pli->do_fcykenv && (cyk_envi != -1 && cyk_envj != -1)) { 
@@ -2117,27 +2136,55 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
       /*******************************************************************
        * Run non-HMM banded (probably qdb) version of CYK or Inside *
        *******************************************************************/
-      if(cm->smx == NULL) { printf("FIX ME! ADD TRUNC VERSION! cm->smx is NULL, probably overflow sized hb mx\n"); continue; }
-      pli->acct[pli->cur_pass_idx].n_overflow_final++;
-      if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is Inside */
-	if((status = FastIInsideScan(cm, errbuf, cm->smx, SMX_QDB2_LOOSE, sq->dsq, es[i], ee[i],
-				     pli->T,            /* minimum score to report */
-				     hitlist,           /* our hitlist */
-				     pli->do_null3,     /* apply the null3 correction? */
-				     0., NULL, NULL,    /* envelope redefinition parameters, irrelevant here */
-				     NULL,              /* ret_vsc, irrelevant here */
-				     &finalsc)) != eslOK) { /* best score, irrelevant here */
-	  printf("ERROR: %s\n", errbuf); return status; }
+      if(do_trunc) { 
+	if(cm->trsmx == NULL) { printf("FIX ME! final round, cm->trsmx is NULL, probably overflow sized hb mx\n"); continue; }
+	pli->acct[pli->cur_pass_idx].n_overflow_final++;
+	if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is (tr)Inside */
+	  if((status = RefITrInsideScan(cm, errbuf, cm->trsmx, SMX_QDB2_LOOSE, pli->cur_pass_idx, sq->dsq, es[i], ee[i],
+					pli->T,            /* minimum score to report */
+					hitlist,           /* our hitlist */
+					pli->do_null3,     /* apply the null3 correction? */
+					0., NULL, NULL,    /* envelope redefinition parameters, irrelevant here */
+					NULL,              /* ret_vsc, irrelevant here */
+					&insmode,          /* best alignment mode, irrevelant here (it's also stored in any reported hits) */
+					&finalsc)) != eslOK) { /* best score */
+	    printf("ERROR: %s\n", errbuf); return status; }
+	}
+	else { /* final algorithm is (tr)CYK */
+	  if((status = RefTrCYKScan(cm, errbuf, cm->trsmx, SMX_QDB2_LOOSE, pli->cur_pass_idx, sq->dsq, es[i], ee[i],
+				    pli->T,            /* minimum score to report */
+				    hitlist,           /* our hitlist */
+				    pli->do_null3,     /* apply the null3 correction? */
+				    0., NULL, NULL,    /* envelope redefinition parameters, irrelevant here */
+				    NULL,              /* ret_vsc, irrelevant here */
+				    &cykmode,          /* best alignment mode, irrevelant here (it's also stored in any reported hits) */
+				    &finalsc)) != eslOK) { /* best score, irrelevant here */
+	    printf("ERROR: %s\n", errbuf); return status; }
+	}
       }
-      else { /* final algorithm is CYK */
-	if((status = FastCYKScan(cm, errbuf, cm->smx, SMX_QDB2_LOOSE, sq->dsq, es[i], ee[i],
-				 pli->T,            /* minimum score to report */
-				 hitlist,           /* our hitlist */
-				 pli->do_null3,     /* apply the null3 correction? */
-				 0., NULL, NULL,    /* envelope redefinition parameters, irrelevant here */
-				 NULL,              /* ret_vsc, irrelevant here */
-				 &finalsc)) != eslOK) { /* best score, irrelevant here */
-	  printf("ERROR: %s\n", errbuf); return status; }
+      else { 
+	if(cm->smx == NULL) { printf("FIX ME! final round, cm->smx is NULL, probably overflow sized hb mx\n"); continue; }
+	pli->acct[pli->cur_pass_idx].n_overflow_final++;
+	if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is Inside */
+	  if((status = FastIInsideScan(cm, errbuf, cm->smx, SMX_QDB2_LOOSE, sq->dsq, es[i], ee[i],
+				       pli->T,            /* minimum score to report */
+				       hitlist,           /* our hitlist */
+				       pli->do_null3,     /* apply the null3 correction? */
+				       0., NULL, NULL,    /* envelope redefinition parameters, irrelevant here */
+				       NULL,              /* ret_vsc, irrelevant here */
+				       &finalsc)) != eslOK) { /* best score, irrelevant here */
+	    printf("ERROR: %s\n", errbuf); return status; }
+	}
+	else { /* final algorithm is CYK */
+	  if((status = FastCYKScan(cm, errbuf, cm->smx, SMX_QDB2_LOOSE, sq->dsq, es[i], ee[i],
+				   pli->T,            /* minimum score to report */
+				   hitlist,           /* our hitlist */
+				   pli->do_null3,     /* apply the null3 correction? */
+				   0., NULL, NULL,    /* envelope redefinition parameters, irrelevant here */
+				   NULL,              /* ret_vsc, irrelevant here */
+				   &finalsc)) != eslOK) { /* best score, irrelevant here */
+	    printf("ERROR: %s\n", errbuf); return status; }
+	}
       }
     }
 
@@ -2414,11 +2461,19 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   }
   if((! do_hbanded) && do_nonbanded) { /* use non-banded D&C CYK (slow!) */
     esl_stopwatch_Start(watch);  
-    sc = CYKDivideAndConquer(cm, subdsq, hitlen, 0, 1, hitlen, &tr, NULL, NULL); 
+    if(do_trunc) { 
+      sc = TrCYK_DnC(cm, subdsq, hitlen, 0, 1, hitlen, pli->cur_pass_idx, FALSE, &tr); /* FALSE: don't reproduce 1.0 behavior */
+      total_Mb = 4. * CYKNonQDBSmallMbNeeded(cm, hitlen); /* not sure how accurate this is */
+    }
+    else { 
+      sc = CYKDivideAndConquer(cm, subdsq, hitlen, 0, 1, hitlen, &tr, NULL, NULL); 
+      total_Mb = CYKNonQDBSmallMbNeeded(cm, hitlen);
+    }
     esl_stopwatch_Stop(watch);  
-    total_Mb = CYKNonQDBSmallMbNeeded(cm, hitlen);
     ppstr = NULL;
   }
+
+  /* ParsetreeDump(stdout, tr, cm, subdsq); */
     
   /* add null3 correction to sc if necessary (pp doesn't get null3-corrected, it's an avg PP) */
   if(pli->do_null3) { 
@@ -2733,7 +2788,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     else if(p != PLI_PASS_STD_ANY)       pli->acct[p].nres += ESL_MIN(pli->maxW, sq->n);
 
     /* if we know there's no windows that pass local Fwd (F3), our terminal (or full) seqs won't have any either, continue */
-    if(p != PLI_PASS_STD_ANY && nwin_pass_std_any == 0) continue; 
+    if(p != PLI_PASS_STD_ANY && nwin_pass_std_any == 0 && (! pli->do_max)) continue; 
 
     /* set sq2search and remember start_offset */
     start_offset = 0;
@@ -2888,8 +2943,10 @@ int
 cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *w)
 {
   double  ntargets; 
-  int64_t nwin_fcyk  = 0; /* number of windows CYK filter evaluated */
-  int64_t nwin_final = 0; /* number of windows final stage evaluated */
+  int64_t nwin_fcyk  = 0;   /* number of windows CYK filter evaluated */
+  int64_t nwin_final = 0;   /* number of windows final stage evaluated */
+  int64_t n_output_trunc;   /* number of truncated hits */
+  int64_t pos_output_trunc; /* number of residues in truncated hits */
 
   CM_PLI_ACCT *pli_acct = &(pli->acct[pass_idx]);
 
@@ -3043,9 +3100,29 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
 	    "");
   }
 
-  fprintf(ofp, "Total hits reported:                               %15d  (%.4g)\n",
-          (int)pli_acct->n_output,
-          (double) pli_acct->pos_output / pli_acct->nres );
+  if(pass_idx == PLI_PASS_STD_ANY && (! pli->do_allstats)) { 
+    if(pli->do_trunc_ends) { 
+      n_output_trunc   = pli->acct[PLI_PASS_5P_ONLY_FORCE].n_output   + pli->acct[PLI_PASS_3P_ONLY_FORCE].n_output   + pli->acct[PLI_PASS_5P_AND_3P_FORCE].n_output;
+      pos_output_trunc = pli->acct[PLI_PASS_5P_ONLY_FORCE].pos_output + pli->acct[PLI_PASS_3P_ONLY_FORCE].pos_output + pli->acct[PLI_PASS_5P_AND_3P_FORCE].pos_output;
+    }
+    else if(pli->do_trunc_any) { 
+      n_output_trunc   = pli->acct[PLI_PASS_5P_AND_3P_ANY].n_output;
+      pos_output_trunc = pli->acct[PLI_PASS_5P_AND_3P_ANY].pos_output;
+    }
+    else { /* no truncated hits were allowed */
+      n_output_trunc   = 0;
+      pos_output_trunc = 0;
+    }
+    fprintf(ofp, "Total hits reported:                               %15d  (%.4g) [includes %d truncated hit%s]\n",
+	    (int) (pli_acct->n_output + n_output_trunc),
+	    (double) (pli_acct->pos_output + pos_output_trunc) / pli_acct->nres, 
+	    (int) n_output_trunc, (n_output_trunc == 1) ? "" : "s");
+  }
+  else { 
+    fprintf(ofp, "Total hits reported:                               %15d  (%.4g)\n",
+	    (int)pli_acct->n_output,
+	    (double) pli_acct->pos_output / pli_acct->nres );
+  }
 
 
   if(pli->do_allstats) { 

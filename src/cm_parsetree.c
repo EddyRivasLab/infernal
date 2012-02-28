@@ -4286,4 +4286,3 @@ sample_helper(ESL_RANDOMNESS *r, float *pA, int *validA, int n, int *ret_choice)
   *ret_choice = i;
   return eslOK;
 }
-

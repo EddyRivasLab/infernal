@@ -57,9 +57,6 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
   /* variables used for determining ratio of inserts to match at each consensus position */
   float   *mexpocc  = NULL;  /* [0..c..clen] probability match  state is used to emit at cons posn c */     
   float   *iexpocc  = NULL;  /* [0..c..clen] probability insert state is used to emit after cons posn c */     
-  int     *m2v_1    = NULL;  /* [0..c..clen] state index (for MATP_MP, MATL_ML, MATR_MR) that emits at cons position c */
-  int     *m2v_2    = NULL;  /* [0..c..clen] state index (for MATP_ML, MATP_MR) that emits at cons position c */
-  int     *i2v      = NULL;  /* [0..c..clen] state index of insert that emits after cons position c */
   double  *psi      = NULL;  /* [0..v..M-1]  expected occupancy of state v */
   float    m_psi, i1_psi, i2_psi; /* temp psi values */
   float    summed_psi; 
@@ -241,15 +238,11 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
    * probability p of using that state as the root of the truncated
    * alignment, i.e. the truncated begin state. (The log_2 of this
    * probability is the penalty.) We then partition p amongst the
-   * MATP_MP, MATL_ML, MATR_MR, BIF_B states and nearby insert
-   * states. Specifically, for MATP_MP and BIF_B states that span
-   * lpos..rpos in the consensus tree, we find the insert states that
-   * insert before lpos and after rpos, these are 'i1' and 'i2'.  For
-   * MATL_ML states that span lpos..rpos, we find 'i1', the insert
-   * state that inserts before lpos, and for MATR_MR, we find 'i1' the
-   * insert state that inserts after rpos. Then, we partition p based
-   * on the relative expected occupancy of these inserts versus the
-   * match/bif state.
+   * MATP_MP, MATL_ML, MATR_MR, BIF_B states and any parent insert
+   * states, i.e. any insert state that can transition into the
+   * match/bif state. For each match/bif state there's 0, 1 or 2
+   * parent inserts. We then partition p based on the relative
+   * expected occupancy of these inserts versus the match/bif state.
    * 
    * This is certainly 'incorrect' in that it doesn't reflect the
    * true probability of a fragment being aligned to each of the
@@ -280,19 +273,17 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
     esl_vec_ISet(trp->il_ptyAA[i],  cm->M, -INFTY);
   }
 
+  /* DumpEmitMap(stdout, cm->emap, cm); */
+
   /* Calculate local begin probabilities and expected occupancy */
   ESL_ALLOC(begin, sizeof(float) * cm->M);
   cm_CalculateLocalBeginProbs(cm, cm->pbegin, cm->t, begin);
-  if((status = cm_ExpectedPositionOccupancy(cm, &mexpocc, &iexpocc, &psi, &m2v_1, &m2v_2, &i2v)) != eslOK) goto ERROR;
+  if((status = cm_ExpectedPositionOccupancy(cm, &mexpocc, &iexpocc, &psi, NULL, NULL, NULL)) != eslOK) goto ERROR;
 
-  /* Fill global and local truncation penalties in a single loop. This
-   * loop is unconventional. We step through all MATP, MATL, MATR, BIF
-   * nodes and set the truncation penalties for the relevant match and
-   * insert states related to the node (but not necessarily in the
-   * same node).  For MATP and BIF nodes i1/i2 are insert states that emit
-   * before lpos and after rpos. For MATL, i1 is the insert state 
-   * that emits before lpos. For MATR, i1 is the insert state that
-   * emits after rpos.
+  /* Fill global and local truncation penalties in a single loop. We
+   * step through all nodes and set the truncation penalties for the
+   * MATP_MP, MATL_ML, MATR_MR, and BIF_B states and any parent
+   * inserts (i1, i2) of those states.
    */
   g_5and3 = 2. / (cm->clen * (cm->clen+1)); /* for global mode: probability of all fragments if we're truncating 5' and 3' */
   g_5or3  = 1. / cm->clen;                  /* for global mode: probability of all fragments if we're only truncating 5' or  3' */
@@ -302,25 +293,6 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
     lpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) ? cm->emap->lpos[nd] : cm->emap->lpos[nd] + 1;
     rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) ? cm->emap->rpos[nd] : cm->emap->rpos[nd] - 1;
 
-    /* first, determine match states and insert states that pertain to this node */
-    if(cm->ndtype[nd] == MATL_nd) { 
-      m  = cm->nodemap[nd]; /* MATL_ML */
-      i1 = i2v[lpos-1]; /* i1 inserts before the match position MATL_ML emits to */
-      i2 = -1;
-    }
-    if(cm->ndtype[nd] == MATR_nd) { 
-      m  = cm->nodemap[nd]; /* MATR_MR */
-      i1 = i2v[rpos]; /* i1 inserts after the match position MATR_MR emits to */
-      i2 = -1;
-    }
-    if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == BIF_nd) { 
-      m  = cm->nodemap[nd]; /* BIF_B */
-      i1 = i2v[lpos-1]; /* i1 inserts before the leftmost match position MATP_MP/BIF_B spans */
-      i2 = i2v[rpos];   /* i2 inserts after the rightmost match position MATP_MP/BIF_B spans */
-    }
-
-    /* printf("HEYA nd: %3d  %4s  lpos: %4d  rpos: %4d  m: %4d  i1: %4d  i2: %4d\n", nd, Nodetype(cm->ndtype[nd]), lpos, rpos, m, i1, i2); */
-    
     /* now set penalties for match and insert states m, i1 and maybe i2 (if we're a MATP_MP or BIF_B) */
     if(cm->ndtype[nd] == END_nd) { 
       prv5 = prv3 = prv53 = 0.;
@@ -330,10 +302,14 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
       prv3  = (cm->ndtype[nd] == BEGR_nd) ? 0. : trp->l_ptyAA[TRPENALTY_3P_ONLY][cm->plast[cm->nodemap[nd]]];  /* parent BIF_B's probability */;
       prv53 = trp->l_ptyAA[TRPENALTY_5P_AND_3P][cm->plast[cm->nodemap[nd]]];  /* parent BIF_B's probability */
     }
-    else if(cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == BIF_nd) { 
+    else if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) { 
+      /* determine match states and insert states that pertain to this node */
+      m = cm->nodemap[nd]; /* MATP_MP, MATL_ML, MATR_MR, or BIF_B */
+      InsertsGivenNodeIndex(cm, nd-1, &i1, &i2);
+
       m_psi = psi[m];
       if(cm->ndtype[nd] == MATP_MP) { m_psi += (psi[m+1] + psi[m+2]); } /* include MATP_ML and MATP_MR psi */
-      i1_psi = psi[i1];
+      i1_psi = (i1 == -1) ? 0. : psi[i1];
       i2_psi = (i2 == -1) ? 0. : psi[i2]; 
       summed_psi = m_psi + i1_psi + i2_psi; 
       if(ignore_inserts) { 
@@ -342,20 +318,24 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
       }
 
       /* Global penalties */
+      /* sanity check, we should only set truncation penalty once per state */
+      if(NOT_IMPOSSIBLE(trp->g_ptyAA[TRPENALTY_5P_AND_3P][m]))  goto ERROR;
+      if((i1 != -1) && NOT_IMPOSSIBLE(trp->g_ptyAA[TRPENALTY_5P_AND_3P][i1])) goto ERROR;
+      if((i2 != -1) && NOT_IMPOSSIBLE(trp->g_ptyAA[TRPENALTY_5P_AND_3P][i2])) goto ERROR;
       /* divide up the probability g_5and3 amongst relevant states m, i1, i2, weighted by psi */
       trp->g_ptyAA[TRPENALTY_5P_AND_3P][m]  = (m_psi  / summed_psi) * g_5and3;
-      trp->g_ptyAA[TRPENALTY_5P_AND_3P][i1] = (i1_psi / summed_psi) * g_5and3;
+      if(i1 != -1) trp->g_ptyAA[TRPENALTY_5P_AND_3P][i1] = (i1_psi / summed_psi) * g_5and3;
       if(i2 != -1) trp->g_ptyAA[TRPENALTY_5P_AND_3P][i2] = (i2_psi / summed_psi) * g_5and3;
 
       /* same thing, for 5P only and 3P only */
       if(rpos == cm->clen) { /* else it will remain IMPOSSIBLE */
 	trp->g_ptyAA[TRPENALTY_5P_ONLY][m]  = (m_psi / summed_psi) * g_5or3;
-	trp->g_ptyAA[TRPENALTY_5P_ONLY][i1] = (i1_psi / summed_psi) * g_5or3;
+	if(i1 != -1) trp->g_ptyAA[TRPENALTY_5P_ONLY][i1] = (i1_psi / summed_psi) * g_5or3;
 	if(i2 != -1) trp->g_ptyAA[TRPENALTY_5P_ONLY][i2] = (i2_psi / summed_psi) * g_5or3;
       }
       if(lpos == 1) { /* else it will remain IMPOSSIBLE */
 	trp->g_ptyAA[TRPENALTY_3P_ONLY][m]  = (m_psi  / summed_psi) * g_5or3;
-	trp->g_ptyAA[TRPENALTY_3P_ONLY][i1] = (i1_psi / summed_psi) * g_5or3;
+	if(i1 != -1) trp->g_ptyAA[TRPENALTY_3P_ONLY][i1] = (i1_psi / summed_psi) * g_5or3;
 	if(i2 != -1) trp->g_ptyAA[TRPENALTY_3P_ONLY][i2] = (i2_psi / summed_psi) * g_5or3;
       }
 
@@ -374,45 +354,67 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
       cur3  = begin[m] / (float) nfrag3  + prv3;
       cur53 = begin[m] / (float) nfrag53 + prv53;
 
+      /* sanity check, we should only set truncation penalty once per state */
+      if(NOT_IMPOSSIBLE(trp->l_ptyAA[TRPENALTY_5P_AND_3P][m]))  goto ERROR;
+      if((i1 != -1) && NOT_IMPOSSIBLE(trp->l_ptyAA[TRPENALTY_5P_AND_3P][i1])) goto ERROR;
+      if((i2 != -1) && NOT_IMPOSSIBLE(trp->l_ptyAA[TRPENALTY_5P_AND_3P][i2])) goto ERROR;
+
       trp->l_ptyAA[TRPENALTY_5P_AND_3P][m]  = (m_psi  / summed_psi) * cur53;
-      trp->l_ptyAA[TRPENALTY_5P_AND_3P][i1] = (i1_psi / summed_psi) * cur53;
+      if(i1 != -1) trp->l_ptyAA[TRPENALTY_5P_AND_3P][i1] = (i1_psi / summed_psi) * cur53;
       if(i2 != -1) trp->l_ptyAA[TRPENALTY_5P_AND_3P][i2] = (i2_psi / summed_psi) * cur53;
 
       trp->l_ptyAA[TRPENALTY_5P_ONLY][m]  = (m_psi  / summed_psi) * cur5;
-      trp->l_ptyAA[TRPENALTY_5P_ONLY][i1] = (i1_psi / summed_psi) * cur5;
+      if(i1 != -1) trp->l_ptyAA[TRPENALTY_5P_ONLY][i1] = (i1_psi / summed_psi) * cur5;
       if(i2 != -1) trp->l_ptyAA[TRPENALTY_5P_ONLY][i2] = (i2_psi / summed_psi) * cur5;
 
       trp->l_ptyAA[TRPENALTY_3P_ONLY][m]  = (m_psi  / summed_psi) * cur3;
-      trp->l_ptyAA[TRPENALTY_3P_ONLY][i1] = (i1_psi / summed_psi) * cur3;
+      if(i1 != -1) trp->l_ptyAA[TRPENALTY_3P_ONLY][i1] = (i1_psi / summed_psi) * cur3;
       if(i2 != -1) trp->l_ptyAA[TRPENALTY_3P_ONLY][i2] = (i2_psi / summed_psi) * cur3;
 
       prv5  = (cm->ndtype[nd] == MATL_nd) ? cur5 : 0.;
       prv3  = (cm->ndtype[nd] == MATR_nd) ? cur3 : 0.;
       prv53 = cur53;
-
     }
   }
 
-  /* all penalties are currently probabilities, convert them to log probs
-   * and set integer penalties */
-  for(v = 0; v < cm->M; v++) { 
-    if((cm->stid[v] == MATP_MP || cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR || cm->stid[v] == BIF_B) || 
-       ((cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) && (! StateIsDetached(cm, v)))) {
-      trp->ig_ptyAA[TRPENALTY_5P_AND_3P][v] = Prob2Score(trp->g_ptyAA[TRPENALTY_5P_AND_3P][v], 1.0);
-      trp->ig_ptyAA[TRPENALTY_5P_ONLY][v]   = Prob2Score(trp->g_ptyAA[TRPENALTY_5P_ONLY][v], 1.0);
-      trp->ig_ptyAA[TRPENALTY_3P_ONLY][v]   = Prob2Score(trp->g_ptyAA[TRPENALTY_3P_ONLY][v], 1.0);
-      trp->g_ptyAA[TRPENALTY_5P_AND_3P][v]  = sreLOG2(trp->g_ptyAA[TRPENALTY_5P_AND_3P][v]);
-      trp->g_ptyAA[TRPENALTY_5P_ONLY][v]    = sreLOG2(trp->g_ptyAA[TRPENALTY_5P_ONLY][v]);
-      trp->g_ptyAA[TRPENALTY_3P_ONLY][v]    = sreLOG2(trp->g_ptyAA[TRPENALTY_3P_ONLY][v]);
+  /* all penalties are currently probabilities, convert them to log
+   * probs and set integer penalties (careful, we have to check if
+   * IMPOSSIBLE first)
+   */
+  for(v = 0; v < cm->M; v++) 
+    { 
+      if((cm->stid[v] == MATP_MP || cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR || cm->stid[v] == BIF_B) || 
+	 ((cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) && (! StateIsDetached(cm, v)))) 
+	{
+	  /* glocal 5P AND 3P: all of these should have been set to a non-IMPOSSIBLE value */
+	  if(! NOT_IMPOSSIBLE(trp->g_ptyAA[TRPENALTY_5P_AND_3P][v])) goto ERROR;
+	  trp->ig_ptyAA[TRPENALTY_5P_AND_3P][v] = Prob2Score(trp->g_ptyAA[TRPENALTY_5P_AND_3P][v], 1.0);
+	  trp->g_ptyAA[TRPENALTY_5P_AND_3P][v]  = sreLOG2(trp->g_ptyAA[TRPENALTY_5P_AND_3P][v]);
+	  
+	  /* glocal 5P only: some may be IMPOSSIBLE */
+	  if(NOT_IMPOSSIBLE(trp->g_ptyAA[TRPENALTY_5P_ONLY][v])) { 
+	    trp->ig_ptyAA[TRPENALTY_5P_ONLY][v]   = Prob2Score(trp->g_ptyAA[TRPENALTY_5P_ONLY][v], 1.0);
+	    trp->g_ptyAA[TRPENALTY_5P_ONLY][v]    = sreLOG2(trp->g_ptyAA[TRPENALTY_5P_ONLY][v]);
+	  }
+	  /* glocal 5P only: some may be IMPOSSIBLE */
+	  if(NOT_IMPOSSIBLE(trp->g_ptyAA[TRPENALTY_3P_ONLY][v])) { 
+	    trp->ig_ptyAA[TRPENALTY_3P_ONLY][v]   = Prob2Score(trp->g_ptyAA[TRPENALTY_3P_ONLY][v], 1.0);
+	    trp->g_ptyAA[TRPENALTY_3P_ONLY][v]    = sreLOG2(trp->g_ptyAA[TRPENALTY_3P_ONLY][v]);
+	  }
 
-      trp->il_ptyAA[TRPENALTY_5P_AND_3P][v] = Prob2Score(trp->l_ptyAA[TRPENALTY_5P_AND_3P][v], 1.0);
-      trp->il_ptyAA[TRPENALTY_5P_ONLY][v]   = Prob2Score(trp->l_ptyAA[TRPENALTY_5P_ONLY][v], 1.0);
-      trp->il_ptyAA[TRPENALTY_3P_ONLY][v]   = Prob2Score(trp->l_ptyAA[TRPENALTY_3P_ONLY][v], 1.0);
-      trp->l_ptyAA[TRPENALTY_5P_AND_3P][v]  = sreLOG2(trp->l_ptyAA[TRPENALTY_5P_AND_3P][v]);
-      trp->l_ptyAA[TRPENALTY_5P_ONLY][v]    = sreLOG2(trp->l_ptyAA[TRPENALTY_5P_ONLY][v]);
-      trp->l_ptyAA[TRPENALTY_3P_ONLY][v]    = sreLOG2(trp->l_ptyAA[TRPENALTY_3P_ONLY][v]);
+	  /* local penalties all of these should have been set to a non-IMPOSSIBLE value */
+	  if(! NOT_IMPOSSIBLE(trp->il_ptyAA[TRPENALTY_5P_AND_3P][v])) goto ERROR;
+	  if(! NOT_IMPOSSIBLE(trp->il_ptyAA[TRPENALTY_5P_ONLY][v]))   goto ERROR;
+	  if(! NOT_IMPOSSIBLE(trp->il_ptyAA[TRPENALTY_3P_ONLY][v]))   goto ERROR;
+
+	  trp->il_ptyAA[TRPENALTY_5P_AND_3P][v] = Prob2Score(trp->l_ptyAA[TRPENALTY_5P_AND_3P][v], 1.0);
+	  trp->il_ptyAA[TRPENALTY_5P_ONLY][v]   = Prob2Score(trp->l_ptyAA[TRPENALTY_5P_ONLY][v], 1.0);
+	  trp->il_ptyAA[TRPENALTY_3P_ONLY][v]   = Prob2Score(trp->l_ptyAA[TRPENALTY_3P_ONLY][v], 1.0);
+	  trp->l_ptyAA[TRPENALTY_5P_AND_3P][v]  = sreLOG2(trp->l_ptyAA[TRPENALTY_5P_AND_3P][v]);
+	  trp->l_ptyAA[TRPENALTY_5P_ONLY][v]    = sreLOG2(trp->l_ptyAA[TRPENALTY_5P_ONLY][v]);
+	  trp->l_ptyAA[TRPENALTY_3P_ONLY][v]    = sreLOG2(trp->l_ptyAA[TRPENALTY_3P_ONLY][v]);
+	}
     }
-  }
 
   if(ignore_inserts) { 
     if((status = cm_tr_penalties_Validate(trp, cm, 0.0001, errbuf)) != eslOK) { printf("%s", errbuf);  goto ERROR; }
@@ -422,9 +424,6 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
 
   if(mexpocc != NULL) free(mexpocc);
   if(iexpocc != NULL) free(iexpocc);
-  if(m2v_1   != NULL) free(m2v_1);
-  if(m2v_2   != NULL) free(m2v_2);
-  if(i2v     != NULL) free(i2v);
   if(psi     != NULL) free(psi);
   if(begin   != NULL) free(begin);
 
@@ -433,9 +432,6 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
  ERROR:
   if(mexpocc != NULL) free(mexpocc);
   if(iexpocc != NULL) free(iexpocc);
-  if(m2v_1   != NULL) free(m2v_1);
-  if(m2v_2   != NULL) free(m2v_2);
-  if(i2v     != NULL) free(i2v);
   if(psi     != NULL) free(psi);
   if(begin   != NULL) free(begin);
   if(trp != NULL) cm_tr_penalties_Destroy(trp);

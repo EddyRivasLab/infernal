@@ -153,10 +153,10 @@ main(int argc, char **argv)
 	printf("----------------------\n");
 	esl_stopwatch_Start(watch);
 	if (do_scoreonly) {
-	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, FALSE, NULL);
+	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, PLI_PASS_5P_AND_3P_ANY, TRUE, FALSE, NULL); /* TRUE: reproduce 1.0 behavior */
 	  printf("%-12s : %.2f\n", seq->name, sc1);
 	} else {
-	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, FALSE, &tr1);  
+	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, PLI_PASS_5P_AND_3P_ANY, TRUE, FALSE, &tr1); /* TRUE: reproduce 1.0 behavior */
 	  ParsetreeDump(stdout, tr1, cm, seq->dsq);
           //ptsc1 = ParsetreeScore(cm, tr1, seq->dsq, FALSE);
           ParsetreeScore(cm, NULL, NULL, tr1, seq->dsq, FALSE, &ptsc1, NULL, NULL, NULL, NULL);
@@ -171,7 +171,7 @@ main(int argc, char **argv)
       printf("Divide and conquer algorithm:\n");
       printf("-------------------------------\n");
       esl_stopwatch_Start(watch);
-      sc2 = TrCYK_DnC(cm, seq->dsq, seq->n, 0, 1, seq->n, &tr2);  
+      sc2 = TrCYK_DnC(cm, seq->dsq, seq->n, 0, 1, seq->n, PLI_PASS_5P_AND_3P_ANY, TRUE, &tr2); /* TRUE: reproduce 1.0 behavior */
       ParsetreeDump(stdout, tr2, cm, seq->dsq);
       //ptsc2 = ParsetreeScore(cm, tr2, seq->dsq, FALSE);
       ParsetreeScore(cm, NULL, NULL, tr2, seq->dsq, FALSE, &ptsc2, NULL, NULL, NULL, NULL);

@@ -1294,7 +1294,6 @@ NumReachableInserts(int stid)
   return 0;
 }
 
-
 /* Function: PrintCM()
  * Date:     SRE, Sat Jul 29 10:55:16 2000 [St. Louis]
  *
@@ -4314,12 +4313,14 @@ cm_ExpectedPositionOccupancy(CM_t *cm, float **ret_mexpocc, float **ret_iexpocc,
       if(cm->sttype[v] == IR_st) { iexpocc[rpos-1] = psi[v]; i2v[rpos-1] = v; }
 
       if(cm->stid[v] == MATP_MP) { m2v_1[lpos] = v; m2v_1[rpos] = v; }
+      if(cm->stid[v] == MATL_ML) { m2v_1[lpos] = v; } 
+      if(cm->stid[v] == MATR_MR) { m2v_1[rpos] = v; }
       if(cm->stid[v] == MATP_ML) { m2v_2[lpos] = v; }
       if(cm->stid[v] == MATP_MR) { m2v_2[rpos] = v; }
     }
   }
 
-  /* for(cpos = 0; cpos <= cm->clen; cpos++) printf("cpos: %3d  mexpocc: %.6f  iexpocc: %.6f\n", cpos, mexpocc[cpos], iexpocc[cpos]); */
+  /* int cpos; for(cpos = 0; cpos <= cm->clen; cpos++) printf("cpos: %3d  mexpocc: %.6f  iexpocc: %.6f m2v_1: %6d m2v_2: %6d i2v: %6d\n", cpos, mexpocc[cpos], iexpocc[cpos], m2v_1[cpos], m2v_2[cpos], i2v[cpos]); */
 
   *ret_mexpocc = mexpocc;
   *ret_iexpocc = iexpocc;
@@ -4752,3 +4753,36 @@ cm_FreeTransitionMap(char ***tmap)
   }
   return;
 }
+
+
+/* Function: InsertsGivenNodeIndex()
+ * Incept:   EPN, Tue Feb 28 08:50:19 2012
+ *
+ * Purpose:  Given a CM and a node index, return the insert state(s)
+ *           in that node in <ret_i1> and <ret_i2>.  If less than 2
+ *           inserts exist, <ret_i2> will be -1, if no inserts exist,
+ *           <ret_i1> will also be set as -1.
+ * 
+ * Returns:  insert state indices in <i1> and <i2>.
+ */
+void
+InsertsGivenNodeIndex(CM_t *cm, int nd, int *ret_i1, int *ret_i2)
+{
+  int i1 = -1;
+  int i2 = -1;
+  int  v = cm->nodemap[nd];
+
+  switch (cm->ndtype[nd]) {
+  case MATP_nd:  i1 = v+4; i2 = v+5; break;
+  case MATL_nd:  i1 = v+2; break;
+  case MATR_nd:  i1 = v+2; break;
+  case BEGR_nd:  i1 = v+1; break;
+  case ROOT_nd:  i1 = v+1; i2 = v+2; break;
+  }
+  /* other node types don't have any inserts */
+
+  *ret_i1 = i1;
+  *ret_i2 = i2;
+  return;
+}
+

@@ -208,7 +208,7 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 				  mx,	        /* the DP matrix, to expand and fill-in */
 				  shmx,	        /* the shadow matrix, to expand and fill-in */
 				  emit_mx,      /* pre-calc'ed emit matrix */
-				  &b,           /* the entry point for optimal alignment if local begins are on */
+				  &b,           /* the entry point for optimal alignment */
 				  &pp))         /* avg post prob of all emissions in optimally accurate parsetree */
        != eslOK) return status;
     mode  = optimal_mode;
@@ -220,7 +220,7 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 				     pass_idx,           /* truncation penalty index */
 				     mx,                 /* the HMM banded mx */
 				     shmx,	         /* the HMM banded shadow matrix */
-				     &b,                 /* entry point for optimal alignment if local begins are on */
+				     &b,                 /* entry point for optimal alignment */
 				     &mode, &sc))        /* mode (J,L,R or T) and score of CYK parsetree */
        != eslOK) return status; 
     optimal_mode = mode;

@@ -287,8 +287,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   /* do small D&C alignment, if nec */
   if(do_small) { 
     if(do_trunc) { 
-      sc = TrCYK_DnC(cm, sq->dsq, sq->L, 0, 1, sq->L, &tr);
-      mb_tot = 0.; /* TODO: write a function that determines Mb for truncated D&C */
+      sc = TrCYK_DnC(cm, sq->dsq, sq->L, 0, 1, sq->L, pass_idx, FALSE, &tr); /* FALSE: don't reproduce 1.0 behavior */
+      mb_tot = 4. * CYKNonQDBSmallMbNeeded(cm, sq->L); /* not sure how accurate this is */
     }
     else { 
       sc = CYKDivideAndConquer(cm, sq->dsq, sq->L, 0, 1, sq->L, &tr, NULL, NULL);

@@ -1132,7 +1132,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 	    }
 	    vsc[v] = Scorify(ivsc);
 	  }
-#if PRINTIALPHA
+	  #if PRINTIALPHA
 	  if(cm->stid[v] == BIF_B) { 
 	    for(d = dnA[v]; d <= dxA[v]; d++) { 
 	      printf("R j: %3d  v: %3d  d: %3d   J: %10d  L: %10d  R: %10d  T: %10d\n", 
@@ -1140,14 +1140,14 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 		     Jalpha[jp_v][v][d], 
 		     fill_L ? Lalpha[jp_v][v][d] : -INFTY, 
 		     fill_R ? Ralpha[jp_v][v][d] : -INFTY,
-		     fill_T ? Talpha[jp_v][v][d] : -IFNTY);
+		     fill_T ? Talpha[jp_v][v][d] : -INFTY);
 	    }
 	  }
 	  else if(cm->stid[v] == BEGL_S) { 
 	    for(d = dnA[v]; d <= dxA[v]; d++) { 
 	      printf("R j: %3d  v: %3d  d: %3d   J: %10d  L: %10d  R: %10d  T: %10d\n", 
 		     j, v, d, 
-		     Jalpha_begl[jp_v][v][d] : -INFTY, 
+		     Jalpha_begl[jp_v][v][d],
 		     fill_L ? Lalpha_begl[jp_v][v][d] : -INFTY, 
 		     fill_R ? Ralpha_begl[jp_v][v][d] : -INFTY, 
 		     -INFTY);
@@ -1164,7 +1164,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 	    }
 	  }
 	  printf("\n");
-#endif
+	  #endif
 	}  /*loop over decks v>0 */
       
       /* Finish up with the ROOT_S, state v=0; and deal w/truncated
@@ -1288,15 +1288,6 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
     } /* end loop over end positions j */
 
   if(vsc != NULL) vsc[0] = vsc_root;
-
-  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH INSIDE mode %s)\n",
-	 vsc_root,
-	 vsc_root + sreLOG2(2./(cm->clen * (cm->clen+1))),
-	 MarginalMode(vmode_root));
-  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH INSIDE mode %s)\n",
-	 Scorify(bsc_full), 
-	 Scorify(bsc_full) + sreLOG2(2./(cm->clen * (cm->clen+1))),
-	 MarginalMode(bmode_full));
 
   /* If recovering hits in a non-greedy manner, do the gamma traceback, then free gamma */
   if(gamma != NULL) { 
@@ -3677,7 +3668,7 @@ main(int argc, char **argv)
   if     (esl_opt_GetBoolean(go, "--anytrunc")) pass_idx = PLI_PASS_5P_AND_3P_ANY;
   else if(esl_opt_GetBoolean(go, "--5ponly"))   pass_idx = PLI_PASS_5P_ONLY_FORCE;
   else if(esl_opt_GetBoolean(go, "--3ponly"))   pass_idx = PLI_PASS_3P_ONLY_FORCE;
-  else                                          pass_idx = PLI_PASS_5P_AND_3P;
+  else                                          pass_idx = PLI_PASS_5P_AND_3P_FORCE;
 
   if((status = cm_Configure(cm, errbuf, -1)) != eslOK) cm_Fail(errbuf);
 
@@ -3713,7 +3704,7 @@ main(int argc, char **argv)
       while(1) { 
 	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, 
 				   TRUE,  /* doing search? */
-				   PLI_PASS_STD,  /* we are not allowing truncated alignments */
+				   PLI_PASS_STD_ANY,  /* we are not allowing truncated alignments */
 				   0)) != eslOK) cm_Fail(errbuf);
 	if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, &hbmx_Mb)) != eslOK) return status; 
 	if(hbmx_Mb < size_limit) break; /* our matrix will be small enough, break out of while(1) */
@@ -3803,15 +3794,19 @@ main(int argc, char **argv)
 	printf("%4d %-30s %10.4f bits ", i, "TrCYK_Inside():   ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
+	FreeParsetree(tr); 
+	tr = NULL;
       }
     }	
 
     if(esl_opt_GetBoolean(go, "--dc")) { 
       esl_stopwatch_Start(w);
-      sc = TrCYK_DnC(cm, dsq, L, 0, 1, L, FALSE);
+      sc = TrCYK_DnC(cm, dsq, L, 0, 1, L, FALSE, &tr);
       printf("%4d %-30s %10.4f bits ", i, "TrCYK_DnC():      ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
+      FreeParsetree(tr); 
+      tr = NULL;
     }
 
     if(esl_opt_GetBoolean(go, "--ins")) { 
@@ -3849,6 +3844,7 @@ main(int argc, char **argv)
     }	
     printf("\n");
     esl_sq_Reuse(sq);
+    if(tr != NULL) { FreeParsetree(tr); tr = NULL; }
   }
   FreeCM(cm);
   esl_sq_Destroy(sq);

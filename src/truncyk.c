@@ -310,17 +310,26 @@ RightMarginalScore_reproduce_i27(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dr
  * Purpose:  Divide-and-conquer CYK alignment
  *           for truncated sequences with traceback
  *
- * Args:
+ * Args:     cm       - the covariance model
+ *           dsq      - the sequence, 1..L
+ *           L        - length of the sequence
+ *           r        - root of subgraph to align to target subseq (usually 0, the model's root)
+ *           i0       - start of target subsequence (usually 1, beginning of dsq)
+ *           j0       - end of target subsequence (usually L, end of dsq)
+ *           pass_idx - pipeline pass index, tr->pass_idx set as this
+ *           do_1p0   - TRUE: behave like the 1.0 version; 
+ *                      FALSE: be consistent with cm_dpalign_trunc.c functions
+ *           ret_tr   - RETURN: traceback (pass NULL if trace isn't wanted)
  *
  * Returns:  score of the alignment in bits
  */
 float
-TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
+TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int pass_idx, int do_1p0, Parsetree_t **ret_tr)
 {
-  printf("in TrCYK_DnC\n");
    Parsetree_t *tr;
    int          z;
    float        sc, bsc;
+   int          pty_idx; /* index for truncation penalty, determined by pass_idx */
 
    /* Check input parameters */
    if ( cm->stid[r] != ROOT_S )
@@ -334,7 +343,10 @@ TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **re
 
    /* Create parse tree and initialize */
    tr = CreateParsetree(100);
-   /* InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r); */
+   tr->is_std = FALSE; /* lower is_std flag, now we'll know this parsetree was created by a truncated (non-standard) alignment function */
+   tr->pass_idx = pass_idx; 
+
+   if(! do_1p0) InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, 0); /* trcyk 1.0 did not add state 0 */
    z = cm->M-1;
 
    /* If local begin is known */
@@ -347,10 +359,28 @@ TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **re
    /* Solve by calling tr_generic_splitter() */
    sc = tr_generic_splitter(cm, dsq, L, tr, r, z, i0, j0, TRUE, TRUE, TRUE);
 
-   /* 2.0 instead of 2 to force floating point division, not integer division */
-   /* This is the fragment penalty */
-   bsc = sreLOG2(2.0/(cm->clen*(cm->clen+1)));
-   printf("Best truncated score: %.4f (%.4f)\n", sc, (sc+bsc));
+   if(! do_1p0) { 
+     /* modify mode of initial node(s) now that we know the mode of the full alignment */
+     if(r == 0) { 
+       tr->mode[0] = tr->mode[1]; 
+     }
+     else {
+       tr->mode[0] = tr->mode[2];
+       tr->mode[1] = tr->mode[2];
+     }
+   }
+
+   if(do_1p0) { 
+     /* 2.0 instead of 2 to force floating point division, not integer division */
+     /* This is the fragment penalty */
+     bsc = sreLOG2(2.0/(cm->clen*(cm->clen+1)));
+     /* printf("Best truncated score: %.4f (%.4f)\n", sc, (sc+bsc)); */
+   }
+   else { 
+     if((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1) cm_Die("TrCYK_DnC, unexpected pass idx: %d", pass_idx);
+     bsc = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx][tr->state[1]] : cm->trp->g_ptyAA[pty_idx][tr->state[1]];
+   }
+   tr->trpenalty = bsc;
    sc += bsc;
 
    if ( ret_tr != NULL ) { *ret_tr = tr; }
@@ -367,77 +397,85 @@ TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **re
  * 
  *           Based on CYKInside()
  *
- * Args:     cm      - the covariance model
- *           dsq     - the sequence, 1..L
- *           L       - length of the sequence
- *           r       - root of subgraph to align to target subseq (usually 0, the model's root)
- *           i0      - start of target subsequence (usually 1, beginning of dsq)
- *           j0      - end of target subsequence (usually L, end of dsq)
- *           ret_tr  - RETURN: traceback (pass NULL if trace isn't wanted)
+ * Args:     cm       - the covariance model
+ *           dsq      - the sequence, 1..L
+ *           L        - length of the sequence
+ *           r        - root of subgraph to align to target subseq (usually 0, the model's root)
+ *           i0       - start of target subsequence (usually 1, beginning of dsq)
+ *           j0       - end of target subsequence (usually L, end of dsq)
+ *           pass_idx - pipeline pass index, tr->pass_idx set as this
+ *           ret_tr   - RETURN: traceback (pass NULL if trace isn't wanted)
  *
  * Returns;  score of the alignment in bits
  */
 float
-TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int lenCORREX, Parsetree_t **ret_tr)
+TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int pass_idx, int do_1p0, int lenCORREX, Parsetree_t **ret_tr)
 {
-   Parsetree_t *tr;
-   int          z;
-   float        sc, bsc, rsc, nullsc;
-   int          v, model_len;
-
-   /* Check input parameters */
+  Parsetree_t *tr = NULL;
+  int          z;
+  float        sc, bsc, rsc, nullsc;
+  int          pty_idx; /* index for truncation penalty, determined by pass_idx */
+  
+  /* Check input parameters */
    if ( cm->stid[r] != ROOT_S )
-   {
-      if (! (cm->flags & CMH_LOCAL_BEGIN)) cm_Die("internal error: we're not in local mode, but r is not root");
-      if ( (cm->stid[r] != MATP_MP) &&
-           (cm->stid[r] != MATL_ML) &&
-           (cm->stid[r] != MATR_MR) &&
-           (cm->stid[r] != BIF_B  )    )  cm_Die("internal error: trying to do a local begin at a non-mainline start");
-   }
-
+     {
+       if (! (cm->flags & CMH_LOCAL_BEGIN)) cm_Die("internal error: we're not in local mode, but r is not root");
+       if ( (cm->stid[r] != MATP_MP) &&
+	    (cm->stid[r] != MATL_ML) &&
+	    (cm->stid[r] != MATR_MR) &&
+	    (cm->stid[r] != BIF_B  )    )  cm_Die("internal error: trying to do a local begin at a non-mainline start");
+     }
+   
    if ( ret_tr != NULL)
-   {
-      /* Create parse tree and initialize */
-      tr = CreateParsetree(100);
-      /* For purely local alignment, we don't want this state in the parse */
-      /* InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r); */
-      z = cm->M-1;
- 
-      /* If local begin is known */
-      if ( r != 0 )
-      {
-         InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r);
-         z = CMSubtreeFindEnd(cm, r);
-      }
-
-      /* Solve by calling tr_insideT() */
-      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, TRUE, TRUE, TRUE, lenCORREX);
-   }
+     {
+       /* Create parse tree and initialize */
+       tr = CreateParsetree(100);
+       tr->is_std = FALSE; /* lower is_std flag, now we'll know this parsetree was created by a truncated (non-standard) alignment function */
+       tr->pass_idx = pass_idx; 
+       
+       if(! do_1p0) InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, 0); /* trcyk 1.0 did not add state 0 */
+       z = cm->M-1;
+       
+       /* If local begin is known */
+       if ( r != 0 )
+	 {
+	   InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r);
+	   z = CMSubtreeFindEnd(cm, r);
+	 }
+       
+       /* Solve by calling tr_insideT() */
+       sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, TRUE, TRUE, TRUE, lenCORREX);
+       
+       if(! do_1p0) { 
+	 /* modify mode of initial node(s) now that we know the mode of the full alignment */
+	 if(r == 0) { 
+	   tr->mode[0] = tr->mode[1]; /* modify mode of first trace node now that we know the mode of the full alignment */
+	 }
+	 else {
+	   tr->mode[0] = tr->mode[2];
+	   tr->mode[1] = tr->mode[2];
+	 }
+       }
+     }
    else
-   {
-      z = cm->M-1;
- 
-      /* If local begin is known */
-      if ( r != 0 )
-      {
-         InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r);
-         z = CMSubtreeFindEnd(cm, r);
-      }
+     {
+       z = (r == 0) ? cm->M-1 : CMSubtreeFindEnd(cm, r);
+       sc = tr_inside(cm, dsq, L, r, z, i0, j0, BE_EFFICIENT,
+		      TRUE, TRUE, TRUE, TRUE, lenCORREX,
+		      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+     }
 
-      sc = tr_inside(cm, dsq, L, r, z, i0, j0, BE_EFFICIENT,
-                     TRUE, TRUE, TRUE, TRUE, lenCORREX,
-                     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+   if(do_1p0) { 
+     /* 2.0 instead of 2 to force floating point division, not integer division */
+     /* This is the fragment penalty */
+     bsc = sreLOG2(2.0/(cm->clen*(cm->clen+1)));
+     /* printf("Best truncated score: %.4f (%.4f)\n", sc, (sc+bsc)); */
    }
-
-   model_len = 0;
-   for ( v = r; v < cm->M; v++ )
-   {
-      if      ( cm->stid[v] == MATP_MP ) model_len += 2;
-      else if ( cm->stid[v] == MATL_ML ) model_len += 1;
-      else if ( cm->stid[v] == MATR_MR ) model_len += 1;
+   else { 
+     if((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1) cm_Die("TrCYK_DnC, unexpected pass idx: %d", pass_idx);
+     bsc = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx][tr->state[1]] : cm->trp->g_ptyAA[pty_idx][tr->state[1]];
    }
-   /* 2.0 instead of 2 to force floating point division, not integer division */
-   bsc = sreLOG2(2.0/(model_len*(model_len+1)));
+   if(tr != NULL) tr->trpenalty = bsc;
 
    /* null model length correction */
    if (lenCORREX)
@@ -446,11 +484,10 @@ TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int lenCORREX
       nullsc = L*sreLOG2(rsc) + sreLOG2(1 - rsc);
       sc -= nullsc;
    }
-
-   printf("Best truncated score: %.4f (%.4f)\n", sc, (sc+bsc));
    sc += bsc;
 
    if ( ret_tr != NULL ) *ret_tr = tr;
+   else if(tr != NULL) { FreeParsetree(tr); }
 
    return sc;
 }
