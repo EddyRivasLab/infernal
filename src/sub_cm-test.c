@@ -150,7 +150,9 @@ main(int argc, char **argv)
   if ((status = cm_file_Open(cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
   if ((cm_file_Read(cmfp, TRUE, &abc, &cm)) != eslOK) cm_Fail("Failed to read CM");
   cm_file_Close(cmfp);
+
   /* configure our model */
+  cm->config_opts |= CM_CONFIG_SUB;
   if((status = cm_Configure(cm, errbuf, -1)) != eslOK) cm_Fail("Problem configuring CM");
 
   if (esl_opt_IsOn(go, "-s"))  r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
@@ -202,20 +204,24 @@ main(int argc, char **argv)
 	if((status = build_sub_cm(cm, errbuf, &sub_cm, sstruct, estruct, &submap, print_flag)) != eslOK)
 	  cm_Fail("Couldn't build a sub_cm from CM with sstruct: %d estruct: %d\n", sstruct, estruct);
 	/* Do the psi test */
-	if(!check_orig_psi_vs_sub_psi(cm, sub_cm, submap, pthresh, print_flag)) {
+	if((status = check_orig_psi_vs_sub_psi(cm, sub_cm, errbuf, submap, pthresh, print_flag)) != eslOK) { 
 	  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed psi test.\n", sstruct, estruct);
-	  cm_Fail("\tLooks like there's a bug...\n");
+	  cm_Fail(errbuf);
 	}
 	/* Do analytical and/or sampling HMM tests */
 	if(do_atest || do_stest) {
 	  subinfo = AllocSubInfo(submap->epos-submap->spos+1);
-	  if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, print_flag)) {
-	    printf("\nSub CM construction for sstruct: %4d estruct: %4d failed analytical HMM test.\n", sstruct, estruct);
-	    cm_Fail("\tLooks like there's a bug...\n");
+	  if(do_atest) { 
+	    if((status = check_sub_cm(cm, sub_cm, errbuf, submap, subinfo, pthresh, print_flag)) != eslOK) {
+	      printf("\nSub CM construction for sstruct: %4d estruct: %4d failed analytical HMM test.\n", sstruct, estruct);
+	      cm_Fail(errbuf);
+	    }
 	  }
-	  if(do_stest && !check_sub_cm_by_sampling(cm, sub_cm, r, submap, subinfo, chi_thresh, nsamples, print_flag)) {
-	    printf("\nSub CM construction for sstruct: %4d estruct: %4d failed sampling HMM test.\n", sstruct, estruct);
-	    cm_Fail("\tLooks like there's a bug...\n");
+	  if(do_stest) { 
+	    if((status = check_sub_cm_by_sampling(cm, sub_cm, errbuf, r, submap, subinfo, chi_thresh, nsamples, print_flag)) != eslOK) {
+	      printf("\nSub CM construction for sstruct: %4d estruct: %4d failed sampling HMM test.\n", sstruct, estruct);
+	      cm_Fail(errbuf);
+	    }
 	  }
 	  /* keep track of number of each case of wrong prediction */
 	  for(j = 1; j <= npredict_cases; j++) {
@@ -266,24 +272,30 @@ main(int argc, char **argv)
 	  }
 	}
       }
-      if((status = build_sub_cm(cm, errbuf, &sub_cm, sstruct, estruct, &submap, print_flag)) != eslOK) 
-	cm_Fail("Couldn't build a sub_cm from CM with sstruct: %d estruct: %d\n", sstruct, estruct);
-	/* Do the psi test */
-      if(!check_orig_psi_vs_sub_psi(cm, sub_cm, submap, pthresh, print_flag)) {
+      if((status = build_sub_cm(cm, errbuf, &sub_cm, sstruct, estruct, &submap, print_flag)) != eslOK) {
+	printf("Couldn't build a sub_cm from CM with sstruct: %d estruct: %d\n", sstruct, estruct);
+	cm_Fail(errbuf);
+      }
+      /* Do the psi test */
+      if((status = check_orig_psi_vs_sub_psi(cm, sub_cm, errbuf, submap, pthresh, print_flag)) != eslOK) {
 	printf("\nSub CM construction for sstruct: %4d estruct: %4d failed psi test.\n", sstruct, estruct);
-	cm_Fail("\tLooks like there's a bug...\n");
+	cm_Fail(errbuf);
       }
       /* Do analytical and/or sampling HMM tests */
       if(do_atest || do_stest) {
 	subinfo = AllocSubInfo(submap->epos-submap->spos+1);
-	if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, print_flag)) {
-	  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed analytical HMM test.\n", sstruct, estruct);
-	  cm_Fail("\tLooks like there's a bug...\n");
+	if((status = cm_ConfigureSub(sub_cm, errbuf, -1, cm, submap)) != eslOK) cm_Fail(errbuf);
+	if(do_atest) { 
+	  if((status = check_sub_cm(cm, sub_cm, errbuf, submap, subinfo, pthresh, print_flag)) != eslOK) {
+	    printf("\nSub CM construction for sstruct: %4d estruct: %4d failed analytical HMM test.\n", sstruct, estruct);
+	    cm_Fail(errbuf);
+	  }
 	}
-	if(do_stest && !check_sub_cm_by_sampling(cm, sub_cm, r, submap, subinfo, chi_thresh, 
-						 nsamples, print_flag)) {
-	  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed sampling HMM test.\n", sstruct, estruct);
-	  cm_Fail("\tLooks like there's a bug...\n");
+	if(do_stest) { 
+	  if((status = check_sub_cm_by_sampling(cm, sub_cm, errbuf, r, submap, subinfo, chi_thresh, nsamples, print_flag)) != eslOK) {
+	    printf("\nSub CM construction for sstruct: %4d estruct: %4d failed sampling HMM test.\n", sstruct, estruct);
+	    cm_Fail(errbuf);
+	  }
 	}
 	/* keep track of number of each case of wrong prediction */
 	for(j = 1; j <= npredict_cases; j++) {

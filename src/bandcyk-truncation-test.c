@@ -49,9 +49,9 @@
 static ESL_OPTIONS options[] = {
   /* name        type         default  env  range toggles reqs incomp  help                                            docgroup*/
   { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",                0 },
-  { "--betaW",   eslARG_REAL,  "1E-7", NULL, "x>0.",NULL,  NULL, NULL, "set tail probability thresh for W calculation to <x>", 0 },
-  { "--beta1",   eslARG_REAL,  "1E-10",NULL, "x>0.",NULL,  NULL, NULL, "set tail probability thresh for dmin1/dmax1 to <x>",   0 },
-  { "--beta2",   eslARG_REAL,  "1E-15",NULL, "x>0.",NULL,  NULL, NULL, "set tail probability thresh for dmin2/dmax2 to <x>",  0 },
+  { "--betaW",   eslARG_REAL,  "1E-5", NULL, "x>0.",NULL,  NULL, NULL, "set tail probability thresh for W calculation to <x>", 0 },
+  { "--beta1",   eslARG_REAL,  "1E-5", NULL, "x>0.",NULL,  NULL, NULL, "set tail probability thresh for dmin1/dmax1 to <x>",   0 },
+  { "--beta2",   eslARG_REAL,  "1E-6", NULL, "x>0.",NULL,  NULL, NULL, "set tail probability thresh for dmin2/dmax2 to <x>",  0 },
   { "--verbose", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show output (default: silently return 0 on success)", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -109,6 +109,8 @@ main(int argc, char **argv)
   qdbinfo2 = CreateCMQDBInfo(cm->M, cm->clen);
   qdbinfo1->beta1 = beta1;
   qdbinfo1->beta2 = beta2;
+  qdbinfo2->beta1 = beta1;
+  qdbinfo2->beta2 = beta2;
 
   /* Do two band calculations with the different Z's.
    * Save the gamma_0 densities for root state 0.
@@ -116,9 +118,9 @@ main(int argc, char **argv)
    *  qdbinfo->dmin1 and qdbinfo->dmax1 using beta = qdbinfo->beta1
    *  qdbinfo->dmin2 and qdbinfo->dmax2 using beta = qdbinfo->beta2
    */
-  if ((status = BandCalculationEngine(cm, Z1, qdbinfo1, betaW, FALSE, &W1, &gamma1, NULL, NULL)) != eslOK)
+  if ((status = BandCalculationEngine(cm, Z1, qdbinfo1, betaW, &W1, &gamma1, NULL, NULL)) != eslOK)
     cm_Fail("Your Z1 (%d) must be too small, sorry.\n", Z1);
-  if ((status = BandCalculationEngine(cm, Z2, qdbinfo2, betaW, FALSE, &W2, &gamma2, NULL, NULL)) != eslOK)
+  if ((status = BandCalculationEngine(cm, Z2, qdbinfo2, betaW, &W2, &gamma2, NULL, NULL)) != eslOK)
     cm_Fail("Your Z2 (%d) must be too small, sorry.\n", Z1);
 
   if (W1 != W2) cm_Fail("failed, W1 != W2 %d != %d\n", W1, W2);

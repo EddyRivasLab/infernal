@@ -2014,36 +2014,35 @@ debug_print_cm_params(FILE *fp, CM_t *cm)
  *           This is done inside CP9_cm2wrhmm::CP9_check_by_sampling().
  *
  * Args:    
- * CM_t *orig_cm     - the original, template CM
- * CM_t  *sub_cm     - the sub CM built from the orig_cm
- * ESL_RANDOMNESS r  - source of randomness
- * CMSubMap_t submap
- * CMSubInfo_t subinfo       
- * float chi_thresh  - rejection threshold for chi-squared tests
- * int nsamples      - number of samples to use to build the ML HMM
- * int print_flag    - TRUE to print useful info for debugging
- * Returns: TRUE: if CM and sub CM are "close enough" (see code)
- *          FALSE: otherwise
+ * orig_cm     - the original, template CM
+ * sub_cm      - the sub CM built from the orig_cm
+ * errbuf      - for error messages
+ * r           - source of randomness
+ * submap      - map from orig_cm to sub_cm and vice versa
+ * subinfo     - sub cm information
+ * chi_thresh  - rejection threshold for chi-squared tests
+ * nsamples    - number of samples to use to build the ML HMM
+ * print_flag  - TRUE to print useful info for debugging
+ *
+ * Returns: eslOK   if CM and sub CM are "close enough" (see code)
+ *          eslFAIL otherwise, errbuf is filled
  */
 int 
-check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, CMSubMap_t *submap, CMSubInfo_t *subinfo,
+check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, ESL_RANDOMNESS *r, CMSubMap_t *submap, CMSubInfo_t *subinfo,
 			 float chi_thresh, int nsamples, int print_flag)
 {
-  CP9_t       *orig_hmm; /* constructed CP9 HMM from the original cm */
-  CP9_t       *sub_hmm; /* constructed CP9 HMM from the sub_cm */
-  CP9Map_t *orig_cp9map;         /* maps the orig_cm to the orig_hmm and vice versa */
-  CP9Map_t *sub_cp9map;          /* maps the sub_cm to the sub_hmm and vice versa */
-  int ret_val;         /* return value */
+  int       status;
+  CP9_t    *orig_hmm;    /* constructed CP9 HMM from the original cm */
+  CP9_t    *sub_hmm;     /* constructed CP9 HMM from the sub_cm */
+  CP9Map_t *orig_cp9map; /* maps the orig_cm to the orig_hmm and vice versa */
+  CP9Map_t *sub_cp9map;  /* maps the sub_cm to the sub_hmm and vice versa */
   int debug_level;
   
   debug_level = 0;
-  ret_val = TRUE;
   
   /* Build two CP9 HMMs, one for the orig_cm and one for the sub_cm */
-  if(!build_cp9_hmm(orig_cm, &orig_hmm, &orig_cp9map, FALSE, 0.0001, print_flag))
-    cm_Fail("Couldn't build a CP9 HMM from the CM\n");
-  if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  FALSE, 0.0001, print_flag))
-    cm_Fail("Couldn't build a CP9 HMM from the CM\n");
+  if((status = build_cp9_hmm(orig_cm, errbuf, FALSE, 0.0001, print_flag, &orig_hmm, &orig_cp9map)) != eslOK) return status;
+  if((status = build_cp9_hmm(sub_cm,  errbuf, FALSE, 0.0001, print_flag, &sub_hmm,  &sub_cp9map)) != eslOK) return status;
   CP9Logoddsify(orig_hmm);
   CP9Logoddsify(sub_hmm);
 
@@ -2054,17 +2053,14 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, CMSubMa
   cm2sub_cm_find_impossible_misc_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, print_flag);
   cm2sub_cm_find_impossible_matr_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, print_flag);
 
-  if(!(CP9_check_by_sampling(orig_cm, sub_hmm, r, subinfo, submap->spos, submap->epos, chi_thresh,
-			     nsamples, print_flag)))
-    cm_Fail("CM Plan 9 built from sub_cm fails sampling check using orig_cm; sub_cm was built incorrectly.!\n");
-  else
-    if(print_flag) printf("CM Plan 9 built from sub_cm passed sampling check; sub_cm was built correctly.\n");
+  if((status = CP9_check_by_sampling(orig_cm, sub_hmm, errbuf, r, subinfo, submap->spos, submap->epos, chi_thresh, nsamples, print_flag)) != eslOK) return status;
+  if(print_flag) printf("CM Plan 9 built from sub_cm passed sampling check; sub_cm was built correctly.\n");
 
   FreeCPlan9(orig_hmm);
   FreeCPlan9(sub_hmm);
   FreeCP9Map(orig_cp9map);
   FreeCP9Map(sub_cp9map);
-  return TRUE; 
+  return eslOK; 
 }
 
 
@@ -2077,17 +2073,19 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, CMSubMa
  *           from the states of the original to the sub and vice versa.
  *
  * Args:    
- * CM_t *orig_cm     - the original, template CM
- * CM_t  *sub_cm     - the sub CM
- * CMSubMap_t *submap - the map data structure for the sub CM 
- * double threshold  - the threshold that mapping (potentially summed) psi 
- *                     values are allowed to be different by, without throwing an error.
- * int print_flag    - TRUE to print out the values, FALSE not to 
- * Returns: TRUE: if orig_cm and sub_cm are "close enough" (see code)
- *          FALSE: otherwise
+ * orig_cm    - the original, template CM
+ * sub_cm     - the sub CM
+ * errbuf     - for error messages
+ * submap     - the map data structure for the sub CM 
+ * threshold  - the threshold that mapping (potentially summed) psi 
+ *              values are allowed to be different by, without throwing an error.
+ * print_flag  - TRUE to print out the values, FALSE not to 
+ *
+ * Returns: eslOK   if CM and sub CM are "close enough" (see code)
+ *          eslFAIL otherwise, errbuf is filled
  */
 int
-check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, double threshold, 
+check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, char *errbuf,CMSubMap_t *submap, double threshold, 
 			  int print_flag)
 {
   int v_s; /* sub_cm state index*/ 
@@ -2095,7 +2093,6 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, doubl
   double temp_psi;
   int violation;
   int v_ct; /* Number of violations */
-  int ret_val; /* return value */
   int detached_insert;
   int is_insert;
   int root_v_ct;
@@ -2104,8 +2101,8 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, doubl
   double     *sub_psi;     /* expected num times each state visited in sub_cm  */
   
   /* Fill orig_psi and sub_psi parameters. */
-  if((orig_psi = cm_ExpectedStateOccupancy(orig_cm)) == NULL) goto ERROR;
-  if((sub_psi  = cm_ExpectedStateOccupancy(sub_cm))  == NULL) goto ERROR;
+  if((orig_psi = cm_ExpectedStateOccupancy(orig_cm)) == NULL) ESL_FAIL(eslFAIL, errbuf, "check_orig_psi_vs_sub_cm(), unable to calculate expected state occupancy for orig_cm()");
+  if((sub_psi  = cm_ExpectedStateOccupancy(sub_cm))  == NULL) ESL_FAIL(eslFAIL, errbuf, "check_orig_psi_vs_sub_cm(), unable to calculate expected state occupancy for sub_cm()");
 
   if(print_flag)
     {
@@ -2115,7 +2112,6 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, doubl
       
     }
   
-  ret_val = TRUE;
   v_ct = 0;
   root_v_ct = 0;
   if(print_flag == TRUE) printf("\n");
@@ -2138,7 +2134,7 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, doubl
 	  if(v_o != -1)
 	    {
 	      if(is_insert) /* this insert state maps to 2 orig_cm inserts */
-		cm_Fail("ERROR, sub insert state maps to 2 orig_cm inserts.\n");
+		ESL_FAIL(eslFAIL, errbuf, "check_orig_psi_vs_sub_psi(), sub insert state maps to 2 orig_cm inserts.");
 	      temp_psi += orig_psi[v_o];
 	      if(print_flag)
 		printf("v_o2: %4d (%.6f)\n", v_o, orig_psi[v_o]);
@@ -2193,20 +2189,14 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, doubl
 	     sub_cm->sttype[v_s] != B_st &&
 	     sub_cm->sttype[v_s] != S_st &&
 	     sub_cm->sttype[v_s] != EL_st)
-	    cm_Fail("ERROR state v_s:%d maps to nothing and its not E,B,S,EL\n", v_s);
+	    ESL_FAIL(eslFAIL, errbuf, "check_orig_psi_vs_sub_psi() state v_s:%d maps to nothing and its not E,B,S,EL\n", v_s);
 	  if(print_flag) printf("E B S or EL\n");
 	}
     }
   
-  if(v_ct > 0)
-    {
-      printf("ERROR, v_ct: %d sub_cm states violate the %f threshold b/t psi.\n", v_ct, threshold);
-      /*exit(1);*/
-      ret_val = FALSE;
-    }
+  if(v_ct > 0) ESL_FAIL(eslFAIL, errbuf, "check_orig_psi_vs_sub_psi(): check failed");
   else
     if(print_flag) printf("v_ct is 0 with thresh: %f!\n", threshold);
-  
   if(root_v_ct > 0)
     printf("ROOT v_ct is %d with thresh: %f!\n", root_v_ct, threshold);
   
@@ -2214,11 +2204,7 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, doubl
   free(orig_psi);
   free(sub_psi);
   
-  return ret_val;
-
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return 0; /* never reached */
+  return eslOK;
 }
 
 /**************************************************************************
@@ -3043,27 +3029,27 @@ cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
  *              but keeping statistics on these cases.
  *
  * Args:    
- * CM_t *orig_cm     - the original, template CM
- * CM_t  *sub_cm     - the sub CM built from the orig_cm
- * CMSubMap_t *submap
- * CMSubInfo_t *subinfo
- * float  pthresh    - the allowed difference in probability between HMMs
- * int print_flag    - TRUE to print useful debugging info
+ * orig_cm     - the original, template CM
+ * sub_cm      - the sub CM built from the orig_cm
+ * errbuf      - for error messages
+ * submap      - map from orig_cm to sub_cm and vice versa
+ * subinfo     - sub cm information
+ * pthresh     - the allowed difference in probability between HMMs
+ * print_flag  - TRUE to print useful debugging info
  * 
- * Returns: TRUE: if CM and sub CM are "close enough" (see code)
- *          FALSE: otherwise
+ * Returns: eslOK   if CM and sub CM are "close enough" (see code)
+ *          eslFAIL otherwise, errbuf is filled
  */
 int 
-check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh, int print_flag)
+check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh, int print_flag)
 {
-  CP9_t       *sub_hmm; /* constructed CP9 HMM from the sub_cm */
+  int          status;
+  CP9_t       *sub_hmm;  /* constructed CP9 HMM from the sub_cm */
   CP9_t       *orig_hmm; /* constructed CP9 HMM from the original cm 
-				    * this will be reconfiged to match the sub_hmm */
-  CP9Map_t *orig_cp9map;         /* maps the orig_cm to the orig_hmm and vice versa */
-  CP9Map_t *sub_cp9map;          /* maps the sub_cm to the sub_hmm and vice versa */
+			   this will be reconfiged to match the sub_hmm */
+  CP9Map_t *orig_cp9map; /* maps the orig_cm to the orig_hmm and vice versa */
+  CP9Map_t *sub_cp9map;  /* maps the sub_cm to the sub_hmm and vice versa */
 
-  int status;
-  int ret_val;         /* return value */
   int k;
   double **orig_phi;
   int *violation;
@@ -3074,41 +3060,13 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
   float diff;
   int nd;
 
-  char **nodetypes;
-  ESL_ALLOC(nodetypes, sizeof(char *) * 8);
-  nodetypes[0] = "BIF";
-  nodetypes[1] = "MATP";
-  nodetypes[2] = "MATL";
-  nodetypes[3] = "MATR";
-  nodetypes[4] = "BEGL";
-  nodetypes[5] = "BEGR";
-  nodetypes[6] = "ROOT";
-  nodetypes[7] = "END";
-
-  char **sttypes;
-  ESL_ALLOC(sttypes, sizeof(char *) * 10);
-  sttypes[0] = "D";
-  sttypes[1] = "MP";
-  sttypes[2] = "ML";
-  sttypes[3] = "MR";
-  sttypes[4] = "IL";
-  sttypes[5] = "IR";
-  sttypes[6] = "S";
-  sttypes[7] = "E";
-  sttypes[8] = "B";
-  sttypes[9] = "EL";
-
-  ret_val = TRUE;
-
   v_ct = 0;
   apredict_total_ct = 0;
   awrong_total_ct = 0;
 
   /* Build two CP9 HMMs, one for the orig_cm and one for the sub_cm */
-  if(!build_cp9_hmm(orig_cm, &orig_hmm, &orig_cp9map, FALSE, 0.0001, print_flag))
-    cm_Fail("Couldn't build a CP9 HMM from the CM\n");
-  if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  FALSE, 0.0001, print_flag))
-    cm_Fail("Couldn't build a CP9 HMM from the CM\n");
+  if((status = build_cp9_hmm(orig_cm, errbuf, FALSE, 0.0001, print_flag, &orig_hmm, &orig_cp9map)) != eslOK) return status;
+  if((status = build_cp9_hmm(sub_cm,  errbuf, FALSE, 0.0001, print_flag, &sub_hmm,  &sub_cp9map)) != eslOK) return status;
   CP9Logoddsify(orig_hmm);
   CP9Logoddsify(sub_hmm);
 
@@ -3154,7 +3112,7 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
 	      if(print_flag) printf("mat[%d][%d] = %8.5f | %8.5f | (%8.5f)\n", 0, i, orig_hmm->mat[(submap->spos+k-1)][i], sub_hmm->mat[k][i], diff);
 	      if((diff > 0 && diff > pthresh) || (diff < 0 && diff < (-1. * pthresh)))
 		{
-		  cm_Fail("EMISSION PROBABILITY INCORRECT!\n");
+		  ESL_FAIL(eslFAIL, errbuf, "check_sub_cm(): emission probability incorrect");
 		}
 	    }
 	}
@@ -3164,7 +3122,7 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
 	  if(print_flag) printf("ins[%d][%d] = %8.5f | %8.5f | (%8.5f)\n", 0, i, orig_hmm->ins[(submap->spos+k-1)][i], sub_hmm->ins[k][i], diff);
 	  if((diff > 0 && diff > pthresh) || (diff < 0 && diff < (-1. * pthresh)))
 	    {
-	      cm_Fail("EMISSION PROBABILITY INCORRECT!\n");
+	      ESL_FAIL(eslFAIL, errbuf, "check_sub_cm(): emission probability incorrect");
 	    }
 	}
 
@@ -3308,16 +3266,12 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
   FreeCPlan9(sub_hmm);
   FreeCP9Map(orig_cp9map);
   FreeCP9Map(sub_cp9map);
-  free(nodetypes);
-  free(sttypes);
 
-  if(v_ct > 0)
-    return FALSE;
-  else
-    return TRUE;
+  if(v_ct > 0) ESL_FAIL(eslFAIL, errbuf, "check_sub_cm(): check failed");
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
+  ESL_FAIL(status, errbuf, "memory allocation error");
   return FALSE; /* never reached */
 }
 

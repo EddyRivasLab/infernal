@@ -86,8 +86,7 @@ main(int argc, char **argv)
 
   w  = esl_stopwatch_Create();
   esl_stopwatch_Start(w);
-  if(!build_cp9_hmm(cm, &hmm, &cp9map, TRUE, pthresh, debug_level))
-    cm_Fail("CM Plan 9 HMM fails the psi/phi comparison test.\n");
+  if((status = build_cp9_hmm(cm, errbuf, TRUE, pthresh, debug_level, &hmm, &cp9map)) != eslOK) cm_Fail(errbuf);
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, "CP9 construction CPU time: ");
 
@@ -101,12 +100,8 @@ main(int argc, char **argv)
     if ( esl_opt_IsOn(go, "-s")) r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
     else                         r = esl_randomness_CreateTimeseeded();
     
-    if(!(CP9_check_by_sampling(cm, hmm, r,
-			       NULL,     /* Don't keep track of failures (sub_cm feature) */
-			       1, hmm->M, chi_thresh, nsamples, debug_level)))
-	cm_Fail("CP9 HMM fails sampling check!\n");
-      else
-	printf("CP9 HMM passed sampling check.\n");
+    if((status = CP9_check_by_sampling(cm, hmm, errbuf, r, NULL, 1, hmm->M, chi_thresh, nsamples, debug_level)) != eslOK) cm_Fail(errbuf);
+    printf("CP9 HMM passed sampling check.\n");
       
     esl_stopwatch_Stop(w);
     esl_stopwatch_Display(stdout, w, "CP9 sampling check CPU time: ");

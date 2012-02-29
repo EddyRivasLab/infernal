@@ -36,7 +36,7 @@ static void       cm2hmm_special_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9ma
 static void       cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *psi, char ***tmap);
 static void       hmm_add_single_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int a, int b, int k, int hmm_trans_idx, double *psi, char ***tmap);
 static float      cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap, int k, double *psi);
-static int        check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, double threshold, int debug_level);
+static int        check_psi_vs_phi_cp9(CM_t *cm, char *errbuf, CP9Map_t *cp9map, double *psi, double **phi, double threshold, int debug_level);
 static int        CP9_node_chi_squared(CP9_t *ahmm, CP9_t *shmm, int nd, float threshold, int print_flag);
 static int        check_cm_adj_bp(CM_t *cm, CP9Map_t *cp9map);
 static float      FChiSquareFit(float *f1, float *f2, int N);
@@ -179,21 +179,21 @@ FreeCP9Map(CP9Map_t *cp9map)
  *           here. 
  * 
  * Args:    
- * CM_t        *cm         - the CM
- * cplan9_s   **ret_hmm    - CM Plan 9 HMM to be allocated, filled in and returned
- * CP9Map_t   **ret_cp9map - map from the CP9 HMM to the CM and vice versa
- *                           Allocated and returned from here, caller must free.
- * int          do_psi_test - TRUE to do a psi vs phi test, FALSE not to
- * float psi_vs_phi_threshold - allowable difference in expected number of times mapping
- *                              cm and hmm states are entered.
- * Returns: TRUE if CP9 is constructed and passes the psi vs phi test
- *          FALSE if we get some error. 
- *          Its also possible one of the functions called within this function
- *          will print an error statement and exit.
+ * cm          - the CM
+ * do_psi_test - TRUE to do a psi vs phi test, FALSE not to
+ * thresh      - allowable difference in expected number of times mapping
+ *               cm and hmm states are entered
+ * debug_level - level for debugging print statements
+ * ret_hmm     - RETURN: CM Plan 9 HMM 
+ * ret_cp9map  - RETURN: map from the CP9 HMM to the CM and vice versa
+ *
+ * Returns: eslOK if CP9 is constructed (and passes the psi vs phi test if <do_psi_test>)
+ *          eslEINCOMPAT on contract violation, errbuf is filled
+ *          eslFAIL if we get some error, errbuf is filled.
  */
 int
-build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
-	      float psi_vs_phi_threshold, int debug_level)
+build_cp9_hmm(CM_t *cm, char *errbuf, int do_psi_test, float thresh, int debug_level,
+	      CP9_t **ret_hmm, CP9Map_t **ret_cp9map)
 {
   int       status;
   int       k;                 /* counter of consensus columns (HMM nodes)*/
@@ -203,14 +203,12 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
   char     ***tmap;
   int *ap;                     /* CM state(s) (1 or 2) that maps to HMM state in node k*/
   int k_state;                 /* 0, 1 or 2, state in hmm node k*/
-
-  int ret_val;                 /* return value */
   CP9Map_t *cp9map;         
   CP9_t  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
 
   /* Contract check, we can't be in local mode in the CM */
-  if(cm->flags & CMH_LOCAL_BEGIN)   cm_Fail("ERROR in build_cp9_hmm(), CMH_LOCAL_BEGIN flag is up.\n");
-  if(cm->flags & CMH_LOCAL_END)     cm_Fail("ERROR in build_cp9_hmm(), CMH_LOCAL_END flag is up.\n");
+  if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "build_cp9_hmm(): CMH_LOCAL_BEGIN flag is up.\n");
+  if(cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "build_cp9_hmm(): CMH_LOCAL_END flag is up.\n");
 
   /* Allocate and initialize the cp9map */
   cp9map = AllocCP9Map(cm);
@@ -306,12 +304,10 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
      * state v is entered in the CM). 
      */
     fill_phi_cp9(hmm, &phi, 1, FALSE);
-    ret_val = check_psi_vs_phi_cp9(cm, cp9map, psi, phi, (double) psi_vs_phi_threshold, debug_level);
+    if((status = check_psi_vs_phi_cp9(cm, errbuf, cp9map, psi, phi, (double) thresh, debug_level)) != eslOK) return status;
     for(k = 0; k <= hmm->M; k++) free(phi[k]);
     free(phi);
   }
-  else
-    ret_val = TRUE;
 
   free(ap);
   free(psi);
@@ -319,10 +315,10 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 
   *ret_hmm    = hmm;
   *ret_cp9map = cp9map;
-  return ret_val;
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
+  ESL_FAIL(eslEMEM, errbuf, "memory allocation error");
   return 0; /* never reached */
 }
 
@@ -1765,6 +1761,7 @@ cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap
  *           (As of version 0.71 ambiguities are always removed).
  * Args:    
  * CM_t *cm          - the CM
+ * errbuf            - for error messages.
  * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
  * double *psi       - psi[v] is expected number of times CM state v is entered
  * double **phi      - phi array, phi[k][v] is expected number of times
@@ -1772,13 +1769,13 @@ cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap
  *                     node k is visited.
  * double threshold  - the threshold that mapping (potentially summed) psi and 
  *                     phi values are allowed to be different by, without throwing an error.
- * int print_flag    - TRUE to print out the values, FALSE not to 
+ * int debug_level   - level for debugging print statements
  *
- * Returns: TRUE: if CM and HMM are "close enough" (see code)
- *          FALSE: otherwise
+ * Returns: eslOK: if CM and HMM are "close enough" (see code)
+ *          !eslOK: otherwise, errbuf is filled
  */
 static int
-check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, double threshold, 
+check_psi_vs_phi_cp9(CM_t *cm, char *errbuf,CP9Map_t *cp9map, double *psi, double **phi, double threshold, 
 		     int debug_level)
 {
   int status;
@@ -1794,7 +1791,7 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
   int ret_val; /* return value */
   int adj_bp_flag; /* a special case in which we always return TRUE after printing a warning */
 
-  if (cm->flags & CMH_LOCAL_BEGIN) cm_Fail("internal error: we're in CM local mode while trying to build a CP9 HMM");
+  if (cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "internal error: we're in CM local mode while trying to build a CP9 HMM");
 
   adj_bp_flag = FALSE;
   if(check_cm_adj_bp(cm, cp9map))
@@ -1807,14 +1804,6 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
      * for any other possible CM topology situation, so we relax the threshold when
      * checking psi and phi.
      */
-      printf("\n");
-      printf("*******************************************************************************\n");
-      printf("Whoa... this model has a special situtation. The left and right half of \n");
-      printf("a single base pair model adjacent consensus columns. It's impossible to build\n");
-      printf("a CP9 HMM that models this CM *exactly*, so this test will likely fail, but\n");
-      printf("we're still going to return TRUE from check_psi_vs_phi_cp9(), because we don't\n");
-      printf("want the program to stop running.\n");
-      printf("*******************************************************************************\n\n");
     }    
   ret_val = TRUE;
   v_ct = 0;
@@ -1898,8 +1887,11 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
       printf("ERROR, %d HMM states violate the %f threshold b/t psi and phi.\n", v_ct, threshold);
       ret_val = FALSE;
     }
-  if(adj_bp_flag == TRUE) ret_val = TRUE; /* always return true for models with a consensus bp in adjacent columns */
-  return ret_val;
+  if(adj_bp_flag == TRUE) return eslOK; /* always return TRUE for models with bps modelling adjacent columns (should be rare) */
+
+  if(ret_val == FALSE) ESL_FAIL(eslFAIL, errbuf, "cp9 hmm fails psi/phi test");
+
+  return eslOK;
 
  ERROR:
   cm_Fail("Memory allocation error.");
@@ -2036,17 +2028,12 @@ debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores)
  *           
  *           NOTE: code to sample an alignment from the CM taken from
  *                 cmemit.c (which was ported from HMMER's hmmemit.c).
- * Args:    
- * CM_t *cm          - the CM
- * cplan9_s *hmm     - the HMM (models consensus columns spos to epos of the CM)
- * ESL_RANDOMNESS r  - source of randomness
- * int print_flag    - TRUE to print useful debugging info
  *
- * Returns: TRUE: if CM and HMM are "close enough" (see code)
- *          FALSE: otherwise
+ * Returns: eslOK if CM and HMM are "close enough" (see code)
+ *          !eslOK otherwise, errbuf is filled.
  */
 int 
-CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *subinfo, 
+CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, char *errbuf, ESL_RANDOMNESS  *r, CMSubInfo_t *subinfo, 
 		      int spos, int epos, float chi_thresh, int nsamples, int print_flag)
 {
   int status;
@@ -2074,7 +2061,6 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
   int swrong_total_ct; /* total number of nodes we thought would be violations but were not */
   int namelen;         /* max int size for name */
   char *tmp_name;           /* name for the seqs */
-  char errbuf[eslERRBUFSIZE];
 
   spredict_total_ct = 0;
   swrong_total_ct = 0;
@@ -2121,14 +2107,13 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
       for (i = 0; i < msa_nseq; i++) {
 	ESL_ALLOC(name, sizeof(char) * namelen);
 	sprintf(name, "seq%d", i+1);
-	if((status = EmitParsetree(cm, errbuf, r, name, TRUE, &(tr[i]), &(sq[i]), &L)) != eslOK) cm_Fail(errbuf);;
+	if((status = EmitParsetree(cm, errbuf, r, name, TRUE, &(tr[i]), &(sq[i]), &L)) != eslOK) return status;
 	free(name);
       }
       /* Build a new MSA from these parsetrees */
       Parsetrees2Alignment(cm, errbuf, cm->abc, sq, NULL, tr, NULL, msa_nseq, NULL, NULL, TRUE, FALSE, &msa);
       /* MSA should be in text mode, not digitized */
-      if(msa->flags & eslMSA_DIGITAL)
-	cm_Fail("ERROR in CP9_check_by_sampling(), sampled MSA should NOT be digitized.\n");
+      if(msa->flags & eslMSA_DIGITAL) ESL_FAIL(eslEINCOMPAT, errbuf, "CP9_check_by_sampling(): sampled MSA should NOT be digitized.\n");
       
       /* Truncate the alignment prior to consensus column spos and after 
 	 consensus column epos */
@@ -2145,7 +2130,7 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
 	  /* we misassigned this guy, overwrite */ 
 	}
       }
-      if((status = esl_msa_ColumnSubset(msa, errbuf, useme)) != eslOK) cm_Fail(errbuf);
+      if((status = esl_msa_ColumnSubset(msa, errbuf, useme)) != eslOK) return status;
       
       /* Determine match assignment from RF annotation
        */
@@ -2157,7 +2142,7 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
 	  matassign[apos+1] = 1;
       }
       /* make fake tracebacks for each seq */
-      if((status = esl_msa_Digitize(cm->abc, msa, NULL)) == eslEINVAL) cm_Fail("In CP9_check_by_sampling(), esl_msa_Digitize() returned eslEINVAL, some characters must be invalid in msa.");
+      if((status = esl_msa_Digitize(cm->abc, msa, NULL)) == eslEINVAL) ESL_FAIL(status, errbuf, "CP9_check_by_sampling(): esl_msa_Digitize() returned eslEINVAL, some characters must be invalid in msa.");
       CP9_fake_tracebacks(msa, matassign, &cp9_tr);
       
       /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
@@ -2246,11 +2231,11 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
     }      
   FreeCPlan9(shmm);
 
-  if(v_ct > 0) return FALSE;
-  else         return TRUE;
+  if(v_ct > 0) ESL_FAIL(eslFAIL, errbuf, "CP9_check_by_sampling(): check failed");
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
+  ESL_FAIL(status, errbuf, "memory allocation error");
   return FALSE; /* never reached */
 }
 
@@ -2606,31 +2591,29 @@ MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, char *ss, cha
  * int          do_psi_test - TRUE to do a psi vs phi test, FALSE not to
  * float psi_vs_phi_threshold - allowable difference in expected number of times mapping
  *                              cm and hmm states are entered.
- * Returns: TRUE if CP9 is constructed and passes the psi vs phi test
- *          FALSE if we get some error. 
- *          Its also possible one of the functions called within this function
- *          will print an error statement and exit.
+ * Returns: eslOK if CP9 is constructed (and passes the psi vs phi test if do_psi_test is TRUE)
+ *          ! eslOK upon failure, with informative error message written to errbuf.
  */
 int
 sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 			      float psi_vs_phi_threshold, int debug_level)
 {
+  int     status;
   int       k;                 /* counter of consensus columns (HMM nodes)*/
   int       mk,x;
   double    *psi;              /* expected num times each state visited in CM */
   double   **phi;              /* expected num times each state visited in HMM*/
-  int ret_val;                 /* return value */
   CP9Map_t *cp9map;         
   CP9_t  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
   float d;
   char ***tmap = NULL;
 
   /* Contract check, we can't be in local mode in the CM */
-  if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), CMH_LOCAL_BEGIN flag is up.\n");
-  if(cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), CMH_LOCAL_END flag is up.\n");
-  if(mother_cm->cp9->flags & CPLAN9_EL) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9 has EL local ends on\n.");
-  if(!(mother_cm->cp9->flags & CPLAN9_LOCAL_BEGIN)) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9 does not have local begins on\n.");
-  if(!(mother_cm->cp9->flags & CPLAN9_LOCAL_END))   ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9 does not have local ends on\n.");
+  if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), CMH_LOCAL_BEGIN flag is up");
+  if(cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), CMH_LOCAL_END flag is up");
+  if(mother_cm->cp9->flags & CPLAN9_EL) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9 has EL local ends on");
+  if(!(mother_cm->cp9->flags & CPLAN9_LOCAL_BEGIN)) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9 does not have local begins on");
+  if(!(mother_cm->cp9->flags & CPLAN9_LOCAL_END))   ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9 does not have local ends on.");
 
   /* Allocate and initialize the cp9map */
   cp9map = AllocCP9Map(cm);
@@ -2747,12 +2730,10 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
      * state v is entered in the CM). 
      */
     fill_phi_cp9(hmm, &phi, 1, FALSE);
-    ret_val = check_psi_vs_phi_cp9(cm, cp9map, psi, phi, (double) psi_vs_phi_threshold, debug_level);
+    if((status = check_psi_vs_phi_cp9(cm, errbuf, cp9map, psi, phi, (double) psi_vs_phi_threshold, debug_level)) != eslOK) return status;
     for(k = 0; k <= hmm->M; k++) free(phi[k]);
     free(phi);
   }
-  else
-    ret_val = TRUE;
 
   *ret_hmm    = hmm;
   *ret_cp9map = cp9map;
@@ -2760,7 +2741,7 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
   cm_FreeTransitionMap(tmap);
   free(psi);
 
-  return ret_val;
+  return eslOK;
 
  ERROR: 
   ESL_FAIL(eslEMEM, errbuf, "memory allocation error.");

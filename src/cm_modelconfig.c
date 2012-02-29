@@ -253,10 +253,10 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
    * to do this before setting up CM for local mode.
    */
   if(have_mother) { 
-    if(!(sub_build_cp9_hmm_from_mother(cm, errbuf, mother_cm, mother_map, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a CP9 HMM from the sub CM and it's mother\n");
+    if((status = sub_build_cp9_hmm_from_mother(cm, errbuf, mother_cm, mother_map, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0)) != eslOK) return status;
   }
   else { 
-    if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslFAIL, errbuf, "Couldn't build a CP9 HMM from the CM\n");
+    if((status = build_cp9_hmm(cm, errbuf, FALSE, 0.0001, 0, &(cm->cp9), &(cm->cp9map))) != eslOK) return status;
   }
   cm->cp9b = AllocCP9Bands(cm->M, cm->cp9->M);
   /* create the CP9 matrices, we init to 1 row, which is tiny so it's okay

@@ -10,11 +10,12 @@
  *     4. API for reading/writing p7 HMMs/profile filters.
  *     5. Private, specific CM file format parsers.
  *     6. Other private functions involved in i/o.
- *     7. Benchmark driver.
- *     8. Unit tests.
- *     9. Test driver.
- *    10. Example.
- *    11. Copyright and license.
+ *     7. Legacy v1.0 ascii file format output.
+ *     8. Benchmark driver.
+ *     9. Unit tests.
+ *    10. Test driver.
+ *    11. Example.
+ *    12. Copyright and license.
  * 
  */
 #include "esl_config.h"
@@ -3277,10 +3278,106 @@ is_real(char *s)
 
 /*---------------- end, private utilities -----------------------*/
 
+/*****************************************************************
+ * 7. Legacy v1.0 ascii file format output.
+ *****************************************************************/
+
+/* Function:  cm_file_Write1p0Ascii()
+ * Incept:    EPN, Tue Feb 28 14:35:47 2012
+ *
+ * Purpose:   Write a CM in version 1.0 format.
+ *            cm_io.c:write_ascii_cm() from Infernal 1.0.2
+ *            was used as the starting point for this function.
+ *
+ *            Calibration parameters: E-values and HMM filter
+ *            thresholds are not written here. This is because 1.0
+ *            expects either both E-values and HMM filter thresholds
+ *            or neither and HMM filter thresholds don't exist
+ *            in the new format.
+ *
+ * Returns: eslOK on success;
+ */
+int
+cm_file_Write1p0ASCII(FILE *fp, CM_t *cm)
+{
+  int v,x,y,nd;
+  
+  fprintf(fp, "INFERNAL-1 [converted from %s]\n", INFERNAL_VERSION);
+
+  fprintf(fp,                          "NAME     %s\n", cm->name);
+  if (cm->acc  != NULL)    fprintf(fp, "ACC      %s\n", cm->acc);
+  if (cm->desc != NULL)    fprintf(fp, "DESC     %s\n", cm->desc);
+  /* Rfam cutoffs */
+  if (cm->flags & CMH_GA)  fprintf(fp, "GA       %.2f\n", cm->ga);
+  if (cm->flags & CMH_TC)  fprintf(fp, "TC       %.2f\n", cm->tc);
+  if (cm->flags & CMH_NC)  fprintf(fp, "NC       %.2f\n", cm->nc);
+  fprintf(fp, "STATES   %d\n",   cm->M);
+  fprintf(fp, "NODES    %d\n",   cm->nodes);
+  fprintf(fp, "ALPHABET %d\n",   cm->abc->type);
+  fprintf(fp, "ELSELF   %.8f\n", cm->el_selfsc);
+  fprintf(fp, "WBETA    %g\n",   cm->beta_W);
+  fprintf(fp, "NSEQ     %d\n",   cm->nseq);
+  fprintf(fp, "EFFNSEQ  %.3f\n", cm->eff_nseq);
+  fprintf(fp, "CLEN     %d\n",   cm->clen);
+  fprintf(fp, "BCOM     %s\n",   cm->comlog->bcom);
+  fprintf(fp, "BDATE    %s\n",   cm->comlog->bdate);
+  if(cm->comlog->ccom != NULL) fprintf(fp, "CCOM     %s\n", cm->comlog->ccom);
+  if(cm->comlog->cdate!= NULL) fprintf(fp, "CDATE    %s\n", cm->comlog->cdate);
+  fputs(      "NULL    ", fp);
+  for (x = 0; x < cm->abc->K; x++)
+    fprintf(fp, "%6s ", prob2ascii(cm->null[x], 1/(float)(cm->abc->K)));
+  fputs("\n", fp);
+
+  /* E-value statistics skipped in converted output
+   * mainly because HMM filter thresholds no longer exist 
+   * in current version so we can't output them here.
+   */
+  /* main model section */
+  fputs("MODEL:\n", fp);
+  for (v = 0; v < cm->M; v++) 
+    {
+      nd = cm->ndidx[v];
+
+      /* Node line.
+       */
+      if (cm->nodemap[nd] == v) 
+	fprintf(fp, "\t\t\t\t[ %-4s %4d ]\n", Nodetype(cm->ndtype[nd]), nd);
+
+      /* State line, w/ parents, children, and transitions
+       */
+      fprintf(fp, "    %2s %5d %5d %1d %5d %5d ", 
+	      Statetype(cm->sttype[v]), v, 
+	      cm->plast[v], cm->pnum[v],
+	      cm->cfirst[v], cm->cnum[v]);
+      if (cm->sttype[v] != B_st)
+	for (x = 0; x < cm->cnum[v]; x++)
+	  fprintf(fp, "%7s ", prob2ascii(cm->t[v][x], 1.));
+      else x = 0;
+      for (; x < 6; x++)
+	fprintf(fp, "%7s ", "");
+      
+      /* Emission line
+       */
+      if (cm->sttype[v] == MP_st) 
+	{
+	  for (x = 0; x < cm->abc->K; x++)
+	    for (y = 0; y < cm->abc->K; y++)
+	      fprintf(fp, "%6s ", prob2ascii(cm->e[v][x*cm->abc->K+y], cm->null[x]*cm->null[y]));
+	}
+      else if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
+	{
+	  for (x = 0; x < cm->abc->K; x++)
+	    fprintf(fp, "%6s ", prob2ascii(cm->e[v][x], cm->null[x]));
+	}
+      fputs("\n", fp);
+    }
+  fputs("//\n", fp);
+  return eslOK;
+} 
 
 
 /*****************************************************************
- * 7. Benchmark driver.
+ * 8. Benchmark driver.
  *****************************************************************/
 #ifdef CM_FILE_BENCHMARK
 /*

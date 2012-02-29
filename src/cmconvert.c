@@ -22,10 +22,9 @@
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs   incomp  help   docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,    NULL, "show brief help on version and usage",                             0 },
-  { "-a",        eslARG_NONE,"default",NULL, NULL, "-a,-b,-0,-1",   NULL,    NULL, "ascii:  output models in INFERNAL 1.1 ASCII format",               0 },
-  { "-b",        eslARG_NONE,   FALSE, NULL, NULL, "-a,-b,-0,-1",   NULL,    NULL, "binary: output models in INFERNAL 1.1 binary format",              0 },
-  { "-1",        eslARG_NONE,   FALSE, NULL, NULL, "-a,-b,-0,-1",   NULL,    NULL, "output backward compatible Infernal v1.0-->v1.0.2 ASCII format",   0 },
-  { "-0",        eslARG_NONE,   FALSE, NULL, NULL, "-a,-b,-0,-1",   NULL,    NULL, "output backward compatible Infernal v0.1-->v0.81  ASCII format",   0 },
+  { "-a",        eslARG_NONE,"default",NULL, NULL, "-a,-b,-1",      NULL,    NULL, "ascii:  output models in INFERNAL 1.1 ASCII format",               0 },
+  { "-b",        eslARG_NONE,   FALSE, NULL, NULL, "-a,-b,-1",      NULL,    NULL, "binary: output models in INFERNAL 1.1 binary format",              0 },
+  { "-1",        eslARG_NONE,   FALSE, NULL, NULL, "-a,-b,-1",      NULL,    NULL, "output backward compatible Infernal v0.7-->v1.0.2 ASCII format",   0 },
   { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL, "-0,-1", "choose output legacy 1.x file formats by name, such as '1/a'",     0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -67,6 +66,7 @@ main(int argc, char **argv)
       }	
       if      (esl_opt_GetBoolean(go, "-a") == TRUE) cm_file_WriteASCII (ofp, fmtcode, cm);
       else if (esl_opt_GetBoolean(go, "-b") == TRUE) cm_file_WriteBinary(ofp, fmtcode, cm, NULL);
+      else if (esl_opt_GetBoolean(go, "-1") == TRUE) cm_file_Write1p0ASCII(ofp, cm);
 
       FreeCM(cm);
     }

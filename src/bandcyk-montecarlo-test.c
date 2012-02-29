@@ -62,6 +62,7 @@ main(int argc, char **argv)
   
   double **mc_gamma;		/* densities from monte carlo   */
   double **gamma;		/* densities from calculation engine  */
+  double  *gamma0_glb;          /* gamma[0] if local begins were not used */
   double   p;			/* p from chi squared test */
   double   threshold;		/* probability threshold for rejecting */
 
@@ -102,13 +103,19 @@ main(int argc, char **argv)
 
   /* BandCalculationEngine() calculates a real density for each state v
    */
-  if ((status = BandCalculationEngine(cm, maxZ, NULL, 0.001, TRUE, NULL, &gamma, NULL, NULL)) != eslOK)
+  if ((status = BandCalculationEngine(cm, maxZ, NULL, 0.001, NULL, &gamma, NULL, &gamma0_glb)) != eslOK)
     cm_Fail("Your maxZ (%d) must be too small, sorry...\n", maxZ);
 
   for (v = 0; v < cm->M; v++)
     {
-      esl_vec_DScale(gamma[v],    maxZ+1, esl_vec_DSum(mc_gamma[v], maxZ+1)); /* convert to #'s */
-      p = DChiSquareFit(gamma[v], mc_gamma[v], maxZ+1);	      /* compare #'s    */
+      if(v == 0) { /* gamma[0] was calc'ed with local begins on, gamma0_glb is what we want to use */
+	esl_vec_DScale(gamma0_glb,    maxZ+1, esl_vec_DSum(mc_gamma[v], maxZ+1)); /* convert to #'s */
+	p = DChiSquareFit(gamma0_glb, mc_gamma[v], maxZ+1);	      /* compare #'s    */
+      }
+      else { 
+	esl_vec_DScale(gamma[v],    maxZ+1, esl_vec_DSum(mc_gamma[v], maxZ+1)); /* convert to #'s */
+	p = DChiSquareFit(gamma[v], mc_gamma[v], maxZ+1);	      /* compare #'s    */
+      }
 
       if (cm->sttype[v] != E_st 
 	  && cm->ndtype[cm->ndidx[v]+1] != END_nd /* skip nodes with unreachable inserts */
@@ -117,6 +124,7 @@ main(int argc, char **argv)
     }
   FreeBandDensities(cm, mc_gamma);
   FreeBandDensities(cm, gamma);
+  free(gamma0_glb);
   FreeCM(cm);
   esl_alphabet_Destroy(abc);
   esl_randomness_Destroy(r);

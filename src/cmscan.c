@@ -662,13 +662,13 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 	cm_tophits_ComputeEvalues(info->th, (double) cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
       }
 
-      if(cmcons != NULL) FreeCMConsensus(cmcons);
-      if(cm     != NULL) FreeCM(cm);
-      if(om     != NULL) p7_oprofile_Destroy(om);
-      if(gm     != NULL) p7_profile_Destroy(gm);
-      if(Rgm    != NULL) p7_profile_Destroy(Rgm);
-      if(Lgm    != NULL) p7_profile_Destroy(Lgm);
-      if(Tgm    != NULL) p7_profile_Destroy(Tgm);
+      if(cmcons != NULL) { FreeCMConsensus(cmcons); cmcons = NULL; }
+      if(cm     != NULL) { FreeCM(cm);              cm     = NULL; }
+      if(om     != NULL) { p7_oprofile_Destroy(om); om     = NULL; }
+      if(gm     != NULL) { p7_profile_Destroy(gm);  gm     = NULL; }
+      if(Rgm    != NULL) { p7_profile_Destroy(Rgm); Rgm    = NULL; }
+      if(Lgm    != NULL) { p7_profile_Destroy(Lgm); Lgm    = NULL; }
+      if(Tgm    != NULL) { p7_profile_Destroy(Tgm); Tgm    = NULL; }
     } /* end of while(cm_p7_oprofile_ReadMSV() == eslOK) */
 
   esl_alphabet_Destroy(abc);
@@ -800,13 +800,13 @@ pipeline_thread(void *arg)
 	    cm_tophits_ComputeEvalues(info->th, (double) cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
 	  }
 		
-	  if(cmcons != NULL) FreeCMConsensus(cmcons);
-	  if(cm     != NULL) FreeCM(cm);
-	  if(om     != NULL) p7_oprofile_Destroy(om);
-	  if(gm     != NULL) p7_profile_Destroy(gm);
-	  if(Rgm    != NULL) p7_profile_Destroy(Rgm);
-	  if(Lgm    != NULL) p7_profile_Destroy(Lgm);
-	  if(Tgm    != NULL) p7_profile_Destroy(Tgm);
+	  if(cmcons != NULL) { FreeCMConsensus(cmcons); cmcons = NULL; }
+	  if(cm     != NULL) { FreeCM(cm);              cm     = NULL; }
+	  if(om     != NULL) { p7_oprofile_Destroy(om); om     = NULL; }
+	  if(gm     != NULL) { p7_profile_Destroy(gm);  gm     = NULL; }
+	  if(Rgm    != NULL) { p7_profile_Destroy(Rgm); Rgm    = NULL; }
+	  if(Lgm    != NULL) { p7_profile_Destroy(Lgm); Lgm    = NULL; }
+	  if(Tgm    != NULL) { p7_profile_Destroy(Tgm); Tgm    = NULL; }
 	  
 	  block->list[i] = NULL;
 	  block->cm_offsetA[i] = 0;
@@ -1309,13 +1309,13 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 		  cm_tophits_ComputeEvalues(th, (double) cm->expA[pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
 		}
 
-		if(cmcons != NULL) FreeCMConsensus(cmcons);
-		if(cm     != NULL) FreeCM(cm);
-		if(om     != NULL) p7_oprofile_Destroy(om);
-		if(gm     != NULL) p7_profile_Destroy(gm);
-		if(Rgm    != NULL) p7_profile_Destroy(Rgm);
-		if(Lgm    != NULL) p7_profile_Destroy(Lgm);
-		if(Tgm    != NULL) p7_profile_Destroy(Tgm);
+		if(cmcons != NULL) { FreeCMConsensus(cmcons); cmcons = NULL; }
+		if(cm     != NULL) { FreeCM(cm);              cm     = NULL; }
+		if(om     != NULL) { p7_oprofile_Destroy(om); om     = NULL; }
+		if(gm     != NULL) { p7_profile_Destroy(gm);  gm     = NULL; }
+		if(Rgm    != NULL) { p7_profile_Destroy(Rgm); Rgm    = NULL; }
+		if(Lgm    != NULL) { p7_profile_Destroy(Lgm); Lgm    = NULL; }
+		if(Tgm    != NULL) { p7_profile_Destroy(Tgm); Tgm    = NULL; }
 		
 		--count;
 	      }

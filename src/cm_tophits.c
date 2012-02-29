@@ -1198,14 +1198,17 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       nprinted++;
     }
   }
-  if (th->nreported == 0) { fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n"); return eslOK; }
+  if (th->nreported == 0) { 
+    fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n"); 
+  }
 
   if(rankstr     != NULL) free(rankstr);
   if(cur_rankstr != NULL) free(cur_rankstr);
   return eslOK;
 
 ERROR: 
-  if(rankstr != NULL) free(rankstr);
+  if(rankstr     != NULL) free(rankstr);
+  if(cur_rankstr != NULL) free(cur_rankstr);
   return status;
 
 }

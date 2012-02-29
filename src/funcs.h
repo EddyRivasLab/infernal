@@ -274,6 +274,7 @@ extern int     cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int c
 extern int     cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om);
 extern int     cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOCK *hmmBlock);
 extern int     cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset);
+extern int     cm_file_Write1p0ASCII(FILE *fp, CM_t *cm);
 
 /* from cm_modelconfig.c */
 extern int   cm_Configure   (CM_t *cm, char *errbuf, int W_from_cmdline);
@@ -450,7 +451,7 @@ extern int cm_pli_PassEnforcesFinalRes(int pass_idx);
 /* from cm_qdband.c */
 extern void     BandExperiment(CM_t *cm);
 extern int      CalculateQueryDependentBands(CM_t *cm, char *errbuf, CM_QDBINFO *qdbinfo, double beta_W, int *ret_W, double **ret_gamma0_loc, double **ret_gamma0_glb, int *ret_Z);
-extern int      BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int save_densities, int *ret_W, double ***ret_gamma, double **ret_gamma0_loc, double **ret_gamma0_glb);
+extern int      BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W, int *ret_W, double ***ret_gamma, double **ret_gamma0_loc, double **ret_gamma0_glb);
 extern int      BandTruncationNegligible(double *density, int b, int Z, double *ret_beta);
 extern int      BandMonteCarlo(CM_t *cm, int nsample, int Z, double ***ret_gamma);
 extern void     FreeBandDensities(CM_t *cm, double **gamma);
@@ -471,12 +472,10 @@ extern int          CheckCMQDBInfo(CM_QDBINFO *qdbinfo, double beta1, int do_che
 extern int  build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, int print_flag);
 extern void CP9NodeForPosn(CP9_t *hmm, int i0, int j0, int x, CP9_MX *post, int *ret_node, int *ret_type, float pmass, int is_start, int print_flag);
 extern void StripWUSSGivenCC(ESL_MSA *msa, float gapthresh, int first_match, int last_match);
-extern int  check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, double threshold, 
-				       int print_flag);
-extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh, int print_flag);
-extern int  check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, CMSubMap_t *submap, CMSubInfo_t *subinfo,
+extern int  check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, CMSubMap_t *submap, double threshold, int print_flag);
+extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh, int print_flag);
+extern int  check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, ESL_RANDOMNESS *r, CMSubMap_t *submap, CMSubInfo_t *subinfo,
 				     float chi_thresh, int nsamples, int print_flag);
-extern int  check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, int spos, int epos, int nseq);
 extern int  sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Parsetree_t *sub_tr, 
 				CMSubMap_t *submap, int print_flag);
 extern CMSubMap_t  *AllocSubMap(CM_t *sub_cm, CM_t *orig_cm, int sstruct, int estruct);
@@ -604,17 +603,15 @@ extern int cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float
 extern CP9Map_t *AllocCP9Map(CM_t *cm);
 extern float SizeofCP9Map(CP9Map_t *cp9map);
 extern void  FreeCP9Map(CP9Map_t *cp9map);
-extern int   build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
-		 	  float psi_vs_phi_threshold, int debug_level);
-extern void CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
-extern void fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos, int entered_only);
-extern void map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v);
-extern int  CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS *r, CMSubInfo_t *subinfo, int spos, int epos, 
-				  float chi_thresh, int nsamples, int print_flag);
-extern void debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores);
-extern void debug_print_phi_cp9(CP9_t *hmm, double **phi);
-extern int  MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, char *ss, char **ret_s);
-extern int  sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
+extern int   build_cp9_hmm(CM_t *cm, char *errbuf, int do_psi_test, float thresh, int debug_level, CP9_t **ret_hmm, CP9Map_t **ret_cp9map);
+extern void  CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
+extern void  fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos, int entered_only);
+extern void  map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v);
+extern int   CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, char *errbuf, ESL_RANDOMNESS *r, CMSubInfo_t *subinfo, int spos, int epos, float chi_thresh, int nsamples, int print_flag);
+extern void  debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores);
+extern void  debug_print_phi_cp9(CP9_t *hmm, double **phi);
+extern int   MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, char *ss, char **ret_s);
+extern int   sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 					  float psi_vs_phi_threshold, int debug_level);
 extern void  CPlan9InitEL(CP9_t *cp9, CM_t *cm);
 
