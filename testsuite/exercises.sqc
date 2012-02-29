@@ -8,25 +8,25 @@
 #
 1  exercise    cmbuild:help/1     @src/cmbuild@ -h
 1  exercise    cmbuild:help/2     @src/cmbuild@ --devhelp
-1  exercise    cmbuild/trna       @src/cmbuild@ -F %TRNA.CM% tRNA.rfam10p1.seed.msa
-1  exercise    cmbuild/vault      @src/cmbuild@ -F %VAULT.CM% Vault.rfam10p1.seed.msa
-1  exercise    cmbuild/srp        @src/cmbuild@ -F %SRP.CM% Plant_SRP.rfam10p1.seed.msa
-1  exercise    cmbuild/multi      @src/cmbuild@ -F %3.CM% 3.rfam10p1.seed.msa
+1  exercise    cmbuild/trna       @src/cmbuild@ -F %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
+1  exercise    cmbuild/vault      @src/cmbuild@ -F %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto!
+1  exercise    cmbuild/srp        @src/cmbuild@ -F %SRP.CM% !testsuite/Plant_SRP.rfam10p1.seed.sto!
+1  exercise    cmbuild/multi      @src/cmbuild@ -F %3.CM% !testsuite/3.rfam10p1.seed.sto!
 #######################################
 
 #######################################
 # cmsearch exercises (CM must be calibrated)
 1  exercise  cmsearch:help/1      @src/cmsearch@ -h
 1  exercise  cmsearch:help/1      @src/cmsearch@ --devhelp
-1  prep      copy/trnaC           cp tRNA.calibrated.cm %TRNA.C.CM%
-1  prep      copy/vaultC          cp Vault.calibrated.cm %VAULT.C.CM%
-1  prep      copy/srpC            cp Plant_SRP.calibrated.cm %SRP.C.CM%
-1  prep      copy/3C              cp 3.calibrated.cm %3.C.CM%
+1  prep      copy/trnaC           cp !testsuite/tRNA.calibrated.cm! %TRNA.C.CM%
+1  prep      copy/vaultC          cp !testsuite/Vault.calibrated.cm! %VAULT.C.CM%
+1  prep      copy/srpC            cp !testsuite/Plant_SRP.calibrated.cm! %SRP.C.CM%
+1  prep      copy/3C              cp !testsuite/3.calibrated.cm! %3.C.CM%
 
-1  exercise  trna/search          @src/cmsearch@ -Z 1000 %TRNA.C.CM% 3trnas.fa
-1  exercise  vault/search         @src/cmsearch@ -Z 1000 %VAULT.C.CM% 3trnas.fa
-1  exercise  srp/search           @src/cmsearch@ -Z 1000 %SRP.C.CM% 3trnas.fa
-1  exercise  multi/search         @src/cmsearch@ -Z 1000 %3.C.CM% 3trnas.fa
+1  exercise  trna/search          @src/cmsearch@ -Z 1000 %TRNA.C.CM% !testsuite/3trnas.fa!
+1  exercise  vault/search         @src/cmsearch@ -Z 1000 %VAULT.C.CM% !testsuite/3trnas.fa!
+1  exercise  srp/search           @src/cmsearch@ -Z 1000 %SRP.C.CM% !testsuite/3trnas.fa!
+1  exercise  multi/search         @src/cmsearch@ -Z 1000 %3.C.CM% !testsuite/3trnas.fa!
 #######################################
 
 #######################################
@@ -58,20 +58,19 @@
 1  exercise  vaultC/press         @src/cmpress@ %VAULT.C.CM%
 1  exercise  srpC/press           @src/cmpress@ %SRP.C.CM%
 1  exercise  multiC/press         @src/cmpress@ %3.C.CM%
-
 #######################################
 
 #######################################
-# Exercises of cmscan (it requires a press'd CM file with E-values)
+# cmscan exercises (cmscan requires a press'd CM file with E-values)
 1  exercise  cmscan:help/1        @src/cmscan@ -h
 1  exercise  cmscan:help/2        @src/cmscan@ --devhelp
-1  exercise  trnaC/scan           @src/cmscan@ -Z 1000 %TRNA.C.CM% 3trnas.fa
+1  exercise  trnaC/scan           @src/cmscan@ -Z 1000 %TRNA.C.CM% !testsuite/3trnas.fa!
 1  prep      cleanup/trnaC        rm -f %TRNA.C.CM%.*
-1  exercise  vaultC/scan          @src/cmscan@ -Z 1000 %VAULT.C.CM% 3trnas.fa
+1  exercise  vaultC/scan          @src/cmscan@ -Z 1000 %VAULT.C.CM% !testsuite/3trnas.fa!
 1  prep      cleanup/vaultC       rm -f %VAULT.C.CM%.*
-1  exercise  srpC/scan            @src/cmscan@ -Z 1000 %SRP.C.CM% 3trnas.fa
+1  exercise  srpC/scan            @src/cmscan@ -Z 1000 %SRP.C.CM% !testsuite/3trnas.fa!
 1  prep      cleanup/srpC         rm -f %SRP.C.CM%.*
-1  exercise  multiC/scan          @src/cmscan@ -Z 1000 %3.C.CM% 3trnas.fa
+1  exercise  multiC/scan          @src/cmscan@ -Z 1000 %3.C.CM% !testsuite/3trnas.fa!
 1  prep      cleanup/multiC       rm -f %3.C.CM%.*
 #######################################
 
@@ -92,20 +91,20 @@
 #######################################
 # cmconvert exercises (using cmstat to verify the conversion)
 1  exercise  cmconvert:help/1     @src/cmconvert@ -h
-1  exercise  trna/convert         @src/cmconvert@ tRNA.1p0.cm > %CONVERTED.TRNA.CM%
-1  exercise  vault/convert        @src/cmconvert@ Vault.1p0.cm > %CONVERTED.VAULT.CM%
-1  exercise  srp/convert          @src/cmconvert@ Plant_SRP.1p0.cm > %CONVERTED.SRP.CM%
-1  exercise  multi/convert        @src/cmconvert@ 3.1p0.cm > %CONVERTED.3.CM%
+1  exercise  trna/convert         @src/cmconvert@ !testsuite/tRNA.1p0.cm! > %CONVERTED.TRNA.CM%
+1  exercise  vault/convert        @src/cmconvert@ !testsuite/Vault.1p0.cm! > %CONVERTED.VAULT.CM%
+1  exercise  srp/convert          @src/cmconvert@ !testsuite/Plant_SRP.1p0.cm! > %CONVERTED.SRP.CM%
+1  exercise  multi/convert        @src/cmconvert@ !testsuite/3.1p0.cm! > %CONVERTED.3.CM%
 
 1  exercise  trna/convert-stat    @src/cmstat@    %CONVERTED.TRNA.CM% 
 1  exercise  vault/convert-stat   @src/cmstat@    %CONVERTED.VAULT.CM% 
 1  exercise  srp/convert-stat     @src/cmstat@    %CONVERTED.SRP.CM% 
 1  exercise  multi/convert-stat   @src/cmstat@    %CONVERTED.3.CM% 
 
-1  exercise  trna/convertC        @src/cmconvert@ tRNA.1p0.calibrated.cm > %CONVERTED.TRNA.C.CM%
-1  exercise  vault/convertC       @src/cmconvert@ Vault.1p0.calibrated.cm > %CONVERTED.VAULT.C.CM%
-1  exercise  srp/convertC         @src/cmconvert@ Plant_SRP.1p0.calibrated.cm > %CONVERTED.SRP.C.CM%
-1  exercise  multi/convertC       @src/cmconvert@ 3.1p0.calibrated.cm > %CONVERTED.3.C.CM%
+1  exercise  trna/convertC        @src/cmconvert@ !testsuite/tRNA.1p0.calibrated.cm! > %CONVERTED.TRNA.C.CM%
+1  exercise  vault/convertC       @src/cmconvert@ !testsuite/Vault.1p0.calibrated.cm! > %CONVERTED.VAULT.C.CM%
+1  exercise  srp/convertC         @src/cmconvert@ !testsuite/Plant_SRP.1p0.calibrated.cm! > %CONVERTED.SRP.C.CM%
+1  exercise  multi/convertC       @src/cmconvert@ !testsuite/3.1p0.calibrated.cm! > %CONVERTED.3.C.CM%
 
 1  exercise  trna/convertC-stat   @src/cmstat@    %CONVERTED.TRNA.C.CM% 
 1  exercise  vault/convertC-stat  @src/cmstat@    %CONVERTED.VAULT.C.CM% 
@@ -118,11 +117,11 @@
 1  exercise  cmalign:help/1       @src/cmalign@ -h
 1  exercise  cmalign:help/2       @src/cmalign@ --devhelp
 
-1  exercise  cmalign:trna/1       @src/cmalign@ %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna/2       @src/cmalign@ -l %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/1       @src/cmalign@ %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  cmalign:trna/2       @src/cmalign@ -l %TRNA.CM% !testsuite/3trnas.fa!
 
-2  exercise  cmalign:vault/1      @src/cmalign@ %VAULT.CM% vault.fa
-2  exercise  cmalign:vault/2      @src/cmalign@ -l %VAULT.CM% vault.fa
+2  exercise  cmalign:vault/1      @src/cmalign@ %VAULT.CM% !testsuite/vault.fa!
+2  exercise  cmalign:vault/2      @src/cmalign@ -l %VAULT.CM% !testsuite/vault.fa!
 #######################################
 
 #######################################
@@ -130,7 +129,7 @@
 1  exercise    cmcalibrate:help/1     @src/cmcalibrate@ -h
 1  exercise    cmcalibrate:help/2     @src/cmcalibrate@ --devhelp
 1  exercise    cmcalibrate:trnaFC     @src/cmcalibrate@ --forecast 10 %TRNA.CM%
-1  prep        model/se               @src/cmbuild@ -F %SE.CM% se.sto
+1  prep        model/se               @src/cmbuild@ -F %SE.CM% !testsuite/se.sto!
 1  exercise    cmcalibrate:se         @src/cmcalibrate@ -L 0.1 %SE.CM%
 #######################################
 
@@ -140,59 +139,49 @@
 1  exercise  cmfetch:multi/f         @src/cmfetch@ -f %3.CM% !testsuite/2.list!
 1  exercise  cmfetch:multi/o         @src/cmfetch@ -o %TMP.CM% %3.CM% Vault
 1  exercise  cmfetch:multi/O         @src/cmfetch@ -O %3.CM% Vault
-1  exercise  cmstat:multi/O          @src/cmstat@ !Vault!
-1  prep      cleanup/multi1          rm Vault
+1  exercise  cmstat:multi/O          @src/cmstat@ !testsuite/Vault!
+1  prep      cleanup/multi1          rm !testsuite/Vault!
 1  prep      cleanup/multi2          rm %3.CM%.ssi
 
 1  exercise  cmfetch:multiC/index    @src/cmfetch@ --index %3.C.CM% 
 1  exercise  cmfetch:multiC/f        @src/cmfetch@ -f %3.C.CM% !testsuite/2.list!
 1  exercise  cmfetch:multiC/o        @src/cmfetch@ -o %TMP.C.CM% %3.C.CM% Vault
-1  exercise  cmfetch:multiC/O        @src/cmfetch@ -O %3.C.CM% !Vault!
-1  exercise  cmstat:multiC/O         @src/cmstat@ !Vault!
-1  prep      cleanup/multiC1         rm Vault
+1  exercise  cmfetch:multiC/O        @src/cmfetch@ -O %3.C.CM% Vault
+1  exercise  cmstat:multiC/O         @src/cmstat@ !testsuite/Vault!
+1  prep      cleanup/multiC1         rm !testsuite/Vault!
 1  prep      cleanup/multiC2         rm %3.C.CM%.ssi
 #######################################
 
+#######################################
+# test program exercises
+#
 # Exercises developed for bandcyk.c
 # xref notebook/1015-infernal-bands; xref STL7 p.130.
 #
+# Build CMs, these are used by all test programs
 1  prep      model/trna           @src/cmbuild@ --rf -F %TRNA.CM% !intro/trna.sto!
 2  prep      model/rp             @src/cmbuild@ --rf -F %RP.CM%   !intro/RNaseP.sto!
 3  prep      model/ssu            @src/cmbuild@ --rf -F %SSU.CM%  !intro/ssu.sto!
+
+# bandcyk-montecarlo-test exercises (QDB calculation validation)
 1  exercise  bandcyk/mc/trna      @src/bandcyk-montecarlo-test@ %TRNA.CM%
 2  exercise  bandcyk/mc/rp        @src/bandcyk-montecarlo-test@ %RP.CM%
 3  exercise  bandcyk/mc/ssu       @src/bandcyk-montecarlo-test@ -W 2000 %SSU.CM%
+
+# bandcyk-truncation-test exercises (QDB calculation validation)
 1  exercise  bandcyk/trunc/trna   @src/bandcyk-truncation-test@ %TRNA.CM% 160 1000
 2  exercise  bandcyk/trunc/rp     @src/bandcyk-truncation-test@ %RP.CM%  1000 2000
-3  exercise  bandcyk/trunc/ssu    @src/bandcyk-truncation-test@ %SSU.CM% 1687 3000 
+5  exercise  bandcyk/trunc/ssu    @src/bandcyk-truncation-test@ %SSU.CM% 1687 3000 
 
-# Exercises of CM Plan 9 construction
-#
-1  prep      model/trna           @src/cmbuild@ --rf -F %TRNA.CM% ../intro/trna.sto
-2  prep      model/rp             @src/cmbuild@ --rf -F %RP.CM%   ../intro/RNaseP.sto
-2  prep      model/ssu            @src/cmbuild@ --rf -F %SSU.CM%  ../intro/ssu.sto
+# cp9-test exercises (CP9 HMM construction validation)
 1  exercise  cp9/trna             @src/cp9-test@ -s 19 %TRNA.CM%
 2  exercise  cp9/trna             @src/cp9-test@ -s 17 %TRNA.CM%
 2  exercise  cp9/rp               @src/cp9-test@ --psionly %RP.CM%
-2  exercise  cp9/ssu              @src/cp9-test@ --psionly %SSU.CM%
+3  exercise  cp9/ssu              @src/cp9-test@ --psionly %SSU.CM%
 
-# Exercises of sub CM construction
-#
-1  prep      model/trna           @src/cmbuild@ --rf -F %TRNA.CM% ../intro/trna.sto
-1  prep      model/rp             @src/cmbuild@ --rf -F %RP.CM%   ../intro/RNaseP.sto
-2  prep      model/ssu            @src/cmbuild@ --rf -F %SSU.CM%  ../intro/ssu.sto
+# sub_cm-test exercises (sub CM construction validation) 
 1  exercise  sub/trna1            @src/sub_cm-test@ %TRNA.CM%
-1  exercise  sub/rp               @src/sub_cm-test@ %RP.CM%
-2  exercise  sub/ssu              @src/sub_cm-test@ %SSU.CM%
+2  exercise  sub/rp               @src/sub_cm-test@ %RP.CM%
+3  exercise  sub/ssu              @src/sub_cm-test@ %SSU.CM%
 3  exercise  sub/trna2            @src/sub_cm-test@ --exhaust %TRNA.CM%
 
-# Infernal 1.0 is not backwards compatible with pre-1.0 CM files
-#
-#1  exercise  formats/0.55         @src/cmsearch@ DicF-0.55.cm 3trnas.fa
-#1  exercise  formats/0.6          @src/cmsearch@ DicF-0.6.cm  3trnas.fa
-#1  exercise  formats/0.7          @src/cmsearch@ DicF-0.7.cm  3trnas.fa
-#1  exercise  formats/0.71         @src/cmsearch@ DicF-0.71.cm 3trnas.fa
-#1  exercise  formats/0.72         @src/cmsearch@ DicF-0.72.cm 3trnas.fa
-#1  exercise  formats/0.8          @src/cmsearch@ DicF-0.8.cm  3trnas.fa
-1  exercise  formats/1.0          @src/cmsearch@ DicF-1.0.cm  3trnas.fa
-1  exercise  formats/1.0          @src/cmsearch@ DicF-1.1prealpha.cm  3trnas.fa
