@@ -66,7 +66,7 @@ int debug_print_expinfo_array(CM_t *cm, char *errbuf, ExpInfo_t **expA)
  */
 int debug_print_expinfo(ExpInfo_t *exp)
 {
-  if(exp->is_valid) printf("cur_eff_dbsize: %ld lambda: %f mu_extrap: %f mu_orig: %f dbsize: %ld nrandhits: %d tailp: %f (valid)\n", exp->cur_eff_dbsize, exp->lambda, exp->mu_extrap, exp->mu_orig, exp->dbsize, exp->nrandhits, exp->tailp);
+  if(exp->is_valid) printf("cur_eff_dbsize: %f lambda: %f mu_extrap: %f mu_orig: %f dbsize: %ld nrandhits: %d tailp: %f (valid)\n", exp->cur_eff_dbsize, exp->lambda, exp->mu_extrap, exp->mu_orig, exp->dbsize, exp->nrandhits, exp->tailp);
   else              printf("invalid (not yet set)\n");
   fflush(stdout);
   return eslOK;
@@ -288,11 +288,11 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *re
  * Returns:  eslOK on success, <ret_sc> filled with bit score
  *           error code on failure, errbuf filled with message
  */
-int E2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, float E, float *ret_sc)
+int E2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, double E, float *ret_sc)
 {
   float sc;
   /* contract checks */
-  if(ret_sc == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "E2ScoreGivenExpInfo, ret_sc is NULL");
+  if(ret_sc == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "E2ScoreGivenExpInfo, ret_sc is NULL");
   sc  = exp->mu_extrap + ((log(E/exp->cur_eff_dbsize)) / (-1 * exp->lambda));
   *ret_sc = sc;
   return eslOK;
@@ -307,9 +307,9 @@ int E2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, float E, float *ret_sc)
  *
  * Returns:  E value of <x>
  */
-double Score2E (float x, double mu, double lambda, long eff_dbsize)
+double Score2E (float x, double mu, double lambda, double eff_dbsize)
 {
-  return esl_exp_surv(x, mu, lambda) * (double) eff_dbsize;
+  return esl_exp_surv(x, mu, lambda) * eff_dbsize;
 }
 
 /* Function: ExpModeIsLocal()
@@ -383,7 +383,7 @@ CreateExpInfo()
   ExpInfo_t *exp = NULL;
   ESL_ALLOC(exp, sizeof(ExpInfo_t));
 
-  exp->cur_eff_dbsize = 0;
+  exp->cur_eff_dbsize = 0.;
   exp->lambda         = 0.;
   exp->mu_extrap      = 0.;
   exp->mu_orig        = 0.;
@@ -420,7 +420,7 @@ SetExpInfo(ExpInfo_t *exp, double lambda, double mu_orig, long dbsize, int nrand
   /* initialize exp->cur_eff_dbsize as effective database size as exp->nrandhits, this is
    * effective database size if we searched a database of size <exp->dbsize>, which we 
    * just calibrated for. we'll update this in cmsearch for the target database size. */
-  exp->cur_eff_dbsize = (long) exp->nrandhits;
+  exp->cur_eff_dbsize = (double) exp->nrandhits;
 
   exp->is_valid  = TRUE; /* we can now write Exp Info to a cm file */
   return;
@@ -493,9 +493,8 @@ UpdateExpsForDBSize(CM_t *cm, char *errbuf, long dbsize)
   if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateExpsForDBSize(), cm does not have Exp stats.");
 
   for(i = 0; i < EXP_NMODES; i++) { 
-    cm->expA[i]->cur_eff_dbsize = (long) ((((double) dbsize / (double) cm->expA[i]->dbsize) * 
-					   ((double) cm->expA[i]->nrandhits)) + 0.5);
-    }
+    cm->expA[i]->cur_eff_dbsize = ((double) dbsize / (double) cm->expA[i]->dbsize) * ((double) cm->expA[i]->nrandhits);
+  }
   return eslOK;
 }  
 

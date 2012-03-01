@@ -6776,7 +6776,7 @@ cm_tr_scan_mx_InitializeIntegers(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
 	y = cm->cfirst[v];
 	trsmx->iJalpha[0][v][0] = cm->endsc[v];
 	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	  trsmx->iJalpha[0][v][0] = ESL_MAX(trsmx->iJalpha[0][v][0], (trsmx->iJalpha[0][y+yoffset][0] + cm->tsc[v][yoffset]));
+	  trsmx->iJalpha[0][v][0] = ESL_MAX(trsmx->iJalpha[0][v][0], (trsmx->iJalpha[0][y+yoffset][0] + cm->itsc[v][yoffset]));
 	trsmx->iJalpha[0][v][0] = ESL_MAX(trsmx->iJalpha[0][v][0], -INFTY);
 	/* {L,R}alpha[0][v][0] remain -INFTY */
       }
@@ -6792,7 +6792,7 @@ cm_tr_scan_mx_InitializeIntegers(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
       y = cm->cfirst[v];
       trsmx->iJalpha_begl[0][v][0] = cm->endsc[v];
       for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	trsmx->iJalpha_begl[0][v][0] = ESL_MAX(trsmx->iJalpha_begl[0][v][0], (trsmx->iJalpha[0][y+yoffset][0] + cm->tsc[v][yoffset])); /* careful: y is in trsmx->iJalpha */
+	trsmx->iJalpha_begl[0][v][0] = ESL_MAX(trsmx->iJalpha_begl[0][v][0], (trsmx->iJalpha[0][y+yoffset][0] + cm->itsc[v][yoffset])); /* careful: y is in trsmx->iJalpha */
       trsmx->iJalpha_begl[0][v][0] = ESL_MAX(trsmx->iJalpha_begl[0][v][0], -INFTY);
       for (j = 1; j <= trsmx->W; j++) 
 	trsmx->iJalpha_begl[j][v][0] = trsmx->iJalpha_begl[0][v][0];
@@ -7435,7 +7435,7 @@ ReportHitsGreedily(CM_t *cm, char *errbuf, int pass_idx, int j, int dmin, int dm
 	}
 
 	if(do_report_hit) { /* this may have been set to FALSE if we did a null3 sc correction */
-	  /*printf("\t%.3f %.3f i: %d j: %d r: %d\n", hit_sc+null3_correction, hit_sc, i, j, bestr[d]);*/
+	  /*printf("\t%.3f %.3f i: %d j: %d r: %d mode: %d\n", hit_sc+null3_correction, hit_sc, i, j, bestr[d], mode);*/
 	  cm_tophits_CreateNextHit(hitlist, &hit);
 	  hit->start = i;
 	  hit->stop  = j;

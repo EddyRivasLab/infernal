@@ -569,12 +569,12 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   /* set up final round parameters, always set these (we always do the final CM round) */
   if(! esl_opt_GetBoolean(go, "--cyk"))                pli->final_cm_search_opts |= CM_SEARCH_INSIDE;
   if     (pli->do_max)   { /* special case, default behavior in final round is to do non-banded, HMM banded is not allowed */
-    if     (esl_opt_GetBoolean(go, "--nonbanded"))     pli->final_cm_search_opts |= CM_SEARCH_NONBANDED;
-    else                                               pli->final_cm_search_opts |= CM_SEARCH_QDB;
-  }
-  else if(pli->do_nohmm) { /* special case, default behavior in final round is to do QDB, HMM banded is not allowed */
     if(esl_opt_GetBoolean(go, "--qdb"))                pli->final_cm_search_opts |= CM_SEARCH_QDB;
     else                                               pli->final_cm_search_opts |= CM_SEARCH_NONBANDED;
+  }
+  else if(pli->do_nohmm) { /* special case, default behavior in final round is to do QDB, HMM banded is not allowed */
+    if(esl_opt_GetBoolean(go, "--nonbanded"))          pli->final_cm_search_opts |= CM_SEARCH_NONBANDED;
+    else                                               pli->final_cm_search_opts |= CM_SEARCH_QDB;
   }
   else { /* normal case, default is HMM banded */
     if     (esl_opt_GetBoolean(go, "--nonbanded"))     pli->final_cm_search_opts |= CM_SEARCH_NONBANDED;
@@ -1861,6 +1861,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
   int              do_trunc;               /* TRUE if we are allowing L and/or R marginal alignments, FALSE if not */
   int              check_fcyk_beta;        /* TRUE if we just read a CM and we need to check if its beta1 == pli->fcyk_beta */
   int              check_final_beta;       /* TRUE if we just read a CM and we need to check if its beta2 == pli->final_beta */
+  int              qdbidx;                 /* scan matrix qdb idx, defined differently for filter and final round */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
@@ -2008,12 +2009,13 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	else if(status != eslOK)     { printf("ERROR: %s\n", errbuf); return status; }
       }
       if(do_qdb_or_nonbanded_filter_scan) { /* careful, different from just an 'else', b/c we may have just set this as true if status == eslERANGE */
+	qdbidx = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB1_TIGHT;
 	if(do_trunc) { 
 	  /* make sure we have a CM_TR_SCAN_MX for this CM, if not build one,
 	   * this should be okay because we should only very rarely need to do this */
 	  if(cm->trsmx == NULL) { printf("FIX ME! cm->trsmx is NULL, probably overflow sized hb mx\n"); continue; }
 	  pli->acct[pli->cur_pass_idx].n_overflow_fcyk++;
-	  if((status = RefTrCYKScan(cm, errbuf, cm->trsmx, SMX_QDB1_TIGHT, pli->cur_pass_idx, sq->dsq, es[i], ee[i],
+	  if((status = RefTrCYKScan(cm, errbuf, cm->trsmx, qdbidx, pli->cur_pass_idx, sq->dsq, es[i], ee[i],
 				    0.,                                   /* minimum score to report, irrelevant */
 				    NULL,                                 /* hitlist to add to, irrelevant here */
 				    pli->do_null3,                        /* do the NULL3 correction? */
@@ -2030,7 +2032,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	   * this should be okay because we should only very rarely need to do this */
 	  if(cm->smx == NULL) { printf("FIX ME! cm->smx is NULL, probably overflow sized hb mx\n"); continue; }
 	  pli->acct[pli->cur_pass_idx].n_overflow_fcyk++;
-	  if((status = FastCYKScan(cm, errbuf, cm->smx, SMX_QDB1_TIGHT, sq->dsq, es[i], ee[i],
+	  if((status = FastCYKScan(cm, errbuf, cm->smx, qdbidx, sq->dsq, es[i], ee[i],
 				   0.,                                 /* minimum score to report, irrelevant */
 				   NULL,                               /* hitlist to add to, irrelevant here */
 				   pli->do_null3,                      /* do the NULL3 correction? */
@@ -2136,11 +2138,16 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
       /*******************************************************************
        * Run non-HMM banded (probably qdb) version of CYK or Inside *
        *******************************************************************/
+      qdbidx = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB2_LOOSE;
       if(do_trunc) { 
 	if(cm->trsmx == NULL) { printf("FIX ME! final round, cm->trsmx is NULL, probably overflow sized hb mx\n"); continue; }
 	pli->acct[pli->cur_pass_idx].n_overflow_final++;
 	if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is (tr)Inside */
-	  if((status = RefITrInsideScan(cm, errbuf, cm->trsmx, SMX_QDB2_LOOSE, pli->cur_pass_idx, sq->dsq, es[i], ee[i],
+	  /* TEMP */
+	  if (cm->trsmx != NULL) cm_tr_scan_mx_Destroy(cm, cm->trsmx); 
+	  if((status = cm_tr_scan_mx_Create(cm, errbuf, TRUE, TRUE, &(cm->trsmx))) != eslOK) return status;
+	  /* TEMP */
+	  if((status = RefITrInsideScan(cm, errbuf, cm->trsmx, qdbidx, pli->cur_pass_idx, sq->dsq, es[i], ee[i],
 					pli->T,            /* minimum score to report */
 					hitlist,           /* our hitlist */
 					pli->do_null3,     /* apply the null3 correction? */
@@ -2151,7 +2158,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	    printf("ERROR: %s\n", errbuf); return status; }
 	}
 	else { /* final algorithm is (tr)CYK */
-	  if((status = RefTrCYKScan(cm, errbuf, cm->trsmx, SMX_QDB2_LOOSE, pli->cur_pass_idx, sq->dsq, es[i], ee[i],
+	  if((status = RefTrCYKScan(cm, errbuf, cm->trsmx, qdbidx, pli->cur_pass_idx, sq->dsq, es[i], ee[i],
 				    pli->T,            /* minimum score to report */
 				    hitlist,           /* our hitlist */
 				    pli->do_null3,     /* apply the null3 correction? */
@@ -2166,7 +2173,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	if(cm->smx == NULL) { printf("FIX ME! final round, cm->smx is NULL, probably overflow sized hb mx\n"); continue; }
 	pli->acct[pli->cur_pass_idx].n_overflow_final++;
 	if(cm->search_opts & CM_SEARCH_INSIDE) { /* final algorithm is Inside */
-	  if((status = FastIInsideScan(cm, errbuf, cm->smx, SMX_QDB2_LOOSE, sq->dsq, es[i], ee[i],
+	  if((status = FastIInsideScan(cm, errbuf, cm->smx, qdbidx, sq->dsq, es[i], ee[i],
 				       pli->T,            /* minimum score to report */
 				       hitlist,           /* our hitlist */
 				       pli->do_null3,     /* apply the null3 correction? */
@@ -2176,7 +2183,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 	    printf("ERROR: %s\n", errbuf); return status; }
 	}
 	else { /* final algorithm is CYK */
-	  if((status = FastCYKScan(cm, errbuf, cm->smx, SMX_QDB2_LOOSE, sq->dsq, es[i], ee[i],
+	  if((status = FastCYKScan(cm, errbuf, cm->smx, qdbidx, sq->dsq, es[i], ee[i],
 				   pli->T,            /* minimum score to report */
 				   hitlist,           /* our hitlist */
 				   pli->do_null3,     /* apply the null3 correction? */
@@ -2232,6 +2239,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 #endif
       /* Get an alignment of the hit, if nec */
       if(pli->do_alignments) { 
+	/*cm_hit_Dump(stdout, hit);*/
 	if((status = cm_pli_AlignHit(pli, cm, *opt_cmcons, sq, do_trunc, hit, 
 				     (h == nhit) ? TRUE : FALSE,    /* TRUE if this is the first hit we're aligning (h == nhit) */
 				     scan_cp9b))                    /* a copy of the HMM bands determined in the last search stage, NULL if HMM bands not used */
@@ -2335,6 +2343,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   do_ppstr     = FALSE;
   do_hbanded   = FALSE;
   do_nonbanded = FALSE;
+  do_optacc    = FALSE;
 
   hitlen = hit->stop - hit->start + 1;
   subdsq = sq->dsq + hit->start - 1;
@@ -2464,6 +2473,22 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
     if(do_trunc) { 
       sc = TrCYK_DnC(cm, subdsq, hitlen, 0, 1, hitlen, pli->cur_pass_idx, FALSE, &tr); /* FALSE: don't reproduce 1.0 behavior */
       total_Mb = 4. * CYKNonQDBSmallMbNeeded(cm, hitlen); /* not sure how accurate this is */
+      status = cm_TrAlign(cm, pli->errbuf, subdsq, hitlen, 
+			  pli->hb_size_limit,                            /* limit for a single CM_HB_MX, so this is safe */
+			  hit->mode,                                     /* alignment mode, determined in truncated scanner function */
+			  pli->cur_pass_idx,                             /* which pass we're on, dictates truncation penalty */
+			  do_optacc,                                     /* use optimal accuracy alg? */
+			  FALSE,                                         /* don't sample aln from Inside matrix */
+			  cm->trnb_mx, cm->trnb_shmx,                    /* inside, shadow matrices */
+			  (do_ppstr || do_optacc) ? cm->trnb_omx : NULL, /* outside DP matrix */
+			  (do_ppstr || do_optacc) ? cm->trnb_emx : NULL, /* emit matrix */
+			  NULL,                                          /* ESL_RANDOMNESS, unneeded b/c we're not sampling */
+			  (do_ppstr) ? &ppstr  : NULL,                   /* posterior string */
+			  &tr,                                           /* parsetree */
+			  NULL,                                          /* mode of optimal alignment, irrelevant */
+			  (do_ppstr) ? &pp     : NULL,                   /* average PP of all aligned residues */ 
+			  &sc);                                          /* bit score (Inside if do_optacc, else CYK) */
+      total_Mb = 0.; /* TMP*/
     }
     else { 
       sc = CYKDivideAndConquer(cm, subdsq, hitlen, 0, 1, hitlen, &tr, NULL, NULL); 

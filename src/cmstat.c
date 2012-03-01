@@ -233,7 +233,7 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode)
   float            lcyk;        /*  local CYK    bit score */
   float            gins;        /* glocal inside bit score */
   float            gcyk;        /* glocal CYK    bit score */
-  float            E;           /* E-value threshold */
+  double           E;           /* E-value threshold */
   float            T;           /* bit score threshold */
   float            Z;           /* database size */
 

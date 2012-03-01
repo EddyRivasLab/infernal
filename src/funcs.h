@@ -791,8 +791,8 @@ extern int        get_gc_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, 
 extern int        get_alphabet_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, int stop, float **ret_freq); 
 extern int        GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, int *ret_namewidth);
 extern int        GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, double **ret_gc_ct);
-extern int        E2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, float E, float *ret_sc);
-extern double     Score2E(float x, double mu, double lambda, long eff_dbsize);
+extern int        E2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, double E, float *ret_sc);
+extern double     Score2E(float x, double mu, double lambda, double eff_dbsize);
 extern int        ExpModeIsLocal(int exp_mode);
 extern int        ExpModeIsInside(int exp_mode);
 extern ExpInfo_t *CreateExpInfo();

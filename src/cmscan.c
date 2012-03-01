@@ -106,7 +106,7 @@ static ESL_OPTIONS options[] = {
   { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"-g,--notrunc",    "allow truncated hits anywhere within sequences",               7 },
   /* Other options */
   { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn OFF the NULL3 post hoc additional null model",            8 },
-  { "--mxsize",     eslARG_REAL,  "128.", NULL, "x>0",   NULL,  NULL,  NULL,            "set max allowed size of DP matrices to <x> Mb",                8 },
+  { "--mxsize",     eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,            "set max allowed size of DP matrices to <x> Mb",                8 },
   { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use scanning CM CYK algorithm, not Inside in final stage",     8 },
   { "--acyk",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "align hits with CYK, not optimal accuracy",                    8 },
   { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "only search the top strand",                                   8 },
@@ -659,7 +659,7 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
       if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
 
       if(info->th->N != prv_ntophits) { 
-	cm_tophits_ComputeEvalues(info->th, (double) cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
+	cm_tophits_ComputeEvalues(info->th, cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
       }
 
       if(cmcons != NULL) { FreeCMConsensus(cmcons); cmcons = NULL; }
@@ -797,7 +797,7 @@ pipeline_thread(void *arg)
 	  if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
 
 	  if(info->th->N != prv_ntophits) { 
-	    cm_tophits_ComputeEvalues(info->th, (double) cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
+	    cm_tophits_ComputeEvalues(info->th, cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
 	  }
 		
 	  if(cmcons != NULL) { FreeCMConsensus(cmcons); cmcons = NULL; }
@@ -1306,7 +1306,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 		if(in_rc && th->N != prv_ntophits) cm_tophits_UpdateHitPositions(th, prv_ntophits, qsq->start, in_rc);
 
 		if(th->N != prv_ntophits) { 
-		  cm_tophits_ComputeEvalues(th, (double) cm->expA[pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
+		  cm_tophits_ComputeEvalues(th, cm->expA[pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
 		}
 
 		if(cmcons != NULL) { FreeCMConsensus(cmcons); cmcons = NULL; }
@@ -1440,6 +1440,18 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (esl_opt_GetBoolean(go, "--qdb") && esl_opt_GetBoolean(go, "--fqdb")) { 
     if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
       puts("Error parsing options, with --fbeta <x1> --beta <x2>, <x1> must be >= <x2>\n");
+      exit(1);
+    }
+  }
+  else if (esl_opt_GetBoolean(go, "--qdb")) { 
+    if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
+      printf("Error parsing options, with --beta <x> (not in combination with --fbeta), <x> must be <= %g\n", esl_opt_GetReal(go, "--fbeta"));
+      exit(1);
+    }
+  }
+  else if (esl_opt_GetBoolean(go, "--fqdb")) { 
+    if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
+      printf("Error parsing options, with --fbeta <x> (not in combination with --beta), <x> must be >= %g\n", esl_opt_GetReal(go, "--beta"));
       exit(1);
     }
   }

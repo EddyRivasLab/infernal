@@ -1693,16 +1693,17 @@ typedef struct gammahitmx_s {
 
 /* Structure ExpInfo_t:
  *
- * Info on an exponential tail that describes score distribution in random sequence 
- * of a given algorithm, model configuration (can be 1 of 8 modes, local/glocal of
- * each  viterbi, forward, cyk, or inside). Fit in cmcalibrate and stored in the
- * cm file. All values with the sole exception of <cur_eff_dbsize> are never 
- * changed once read, and some of the params are actually unnecessary downstream 
- * of cmcalibrate, but are potentially informative to the user.
+ * Info on an exponential tail that describes score distribution in
+ * random sequence of a given algorithm, model configuration (can be 1
+ * of 4 modes, local/glocal of cyk or inside). Fit in cmcalibrate and
+ * stored in the cm file. All values with the sole exception of
+ * <cur_eff_dbsize> are never changed once read, and some of the
+ * params are actually unnecessary downstream of cmcalibrate, but are
+ * potentially informative to the user.
  */
 typedef struct expinfo_s {
-  long   cur_eff_dbsize;/* the total number of possible hits we expect for current database search, 
-			 * cur_eff_dbsize = ceiling((current dbsize) / <dbsize> * <nrandhits>) */
+  double cur_eff_dbsize;/* the total number of possible hits we expect for current database search, 
+			 * cur_eff_dbsize = (current dbsize) / <dbsize> * <nrandhits>*/
   double lambda;	/* scale param exponential tail */
   double mu_extrap;	/* offset/location param for exponential tail extrapolated to include all <nrandhits> from cmcalibrate, 
 			 * mu_corrected = mu_orig - log(1./tailp) / lambda */

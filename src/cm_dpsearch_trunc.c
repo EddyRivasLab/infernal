@@ -2,14 +2,21 @@
  *
  * DP functions for truncated CYK and Inside CM similarity search.
  * 
- * RefTrCYKScan():  reference implementation of a scanning version
- *                  of trCYK [Kolbe, Eddy 2009]. No FastTrCYKScan()
- *                  exists. I wrote one based on FastCYKScan() but
- *                  it was only about 5% faster and three times
- *                  as many lines of code as RefTrCYKScan(), so 
- *                  I scrapped it. Its in the subversion repository
- *                  though: r3663.
- *                  ref: ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG
+ * RefTrCYKScan():  reference implementation of a scanning version of
+ *                  trCYK [Kolbe, Eddy 2009]. Uses QDBs or no
+ *                  bands. No FastTrCYKScan() exists. I wrote one
+ *                  based on FastCYKScan() but it was only about 5%
+ *                  faster and three times as many lines of code as
+ *                  RefTrCYKScan(), so I scrapped it. Its in the
+ *                  subversion repository though: r3663.  ref:
+ *                  ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG
+ *
+ * RefITrInsideScan(): scanning version of truncated inside, QDBs or
+ *                     non-banded.
+ *
+ * TrCYKScanHB():      scanning HMM banded version of trCYK.
+ *
+ * TrInsideScanHB():   scanning HMM banded version of truncated Inside.
  *
  * EPN, Tue Aug 16 04:15:32 2011
  *****************************************************************
@@ -1052,7 +1059,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 		 * Jalpha[jp_v][v][d]) before we can start to calculate
 		 * Lalpha[jp_v][v][d]. 
 		 */
-		for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
 		  Jsc            = ILogsum(Jsc,         Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 		  if(fill_R) Rsc = ILogsum(Rsc,         Ralpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 		}
@@ -1060,7 +1067,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 		if(fill_R) Ralpha[jp_v][v][d] = (d >= 2) ? Rsc + esc_j : esc_j;
 		
 		if(fill_L) { 
-		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
+		  for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) { /* using Lyoffset0, instead of 0 disallows IR self transits in L mode */
 		    Lsc = ILogsum(Lsc, ILogsum(Jalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset],
 					       Lalpha[jq_y][y+yoffset][d]     + tsc_v[yoffset]));
 		  }
@@ -3717,8 +3724,6 @@ main(int argc, char **argv)
       printf("%4d %-30s %17s", i, "HMM Band calc:", "");
       esl_stopwatch_Display(stdout, w, "CPU time: ");
 
-      PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);
-
       esl_stopwatch_Start(w);
       if((status = FastCYKScanHB(cm, errbuf, cm->hb_mx, size_limit, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", i, "FastCYKScanHB(): ", sc);
@@ -3755,19 +3760,19 @@ main(int argc, char **argv)
       printf("%4d %-30s %17s", i, "HMM Band calc:", "");
       esl_stopwatch_Display(stdout, w, "CPU time: ");
 
-      PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L);
-
       esl_stopwatch_Start(w);
       if((status = TrCYKScanHB(cm, errbuf, cm->trhb_mx, size_limit, pass_idx, dsq, 1, L, 0., NULL, FALSE, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits (mode: %s)", i, "TrCYKScanHB(): ", sc, MarginalMode(mode));
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
-      esl_stopwatch_Start(w);
-      if((status = FTrInsideScanHB(cm, errbuf, cm->trhb_mx, size_limit, pass_idx, dsq, 1, L, 0., NULL, FALSE, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
-      printf("%4d %-30s %10.4f bits (mode: %s)", i, "FTrInsideScanHB(): ", sc, MarginalMode(mode));
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(stdout, w, " CPU time: ");
+      if(esl_opt_GetBoolean(go, "--ins")) { 
+	esl_stopwatch_Start(w);
+	if((status = FTrInsideScanHB(cm, errbuf, cm->trhb_mx, size_limit, pass_idx, dsq, 1, L, 0., NULL, FALSE, 0.,  NULL, NULL, &mode, &sc)) != eslOK) cm_Fail(errbuf);
+	printf("%4d %-30s %10.4f bits (mode: %s)", i, "FTrInsideScanHB(): ", sc, MarginalMode(mode));
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+      }
     }
 
     if(! esl_opt_GetBoolean(go, "--onlyhb")) { 
@@ -3790,7 +3795,7 @@ main(int argc, char **argv)
 	
       if(esl_opt_GetBoolean(go, "--orig")) { 
 	esl_stopwatch_Start(w);
-	sc = TrCYK_Inside(cm, dsq, L, 0, 1, L, FALSE, &tr);
+	sc = TrCYK_Inside(cm, dsq, L, 0, 1, L, pass_idx, TRUE, FALSE, &tr);
 	printf("%4d %-30s %10.4f bits ", i, "TrCYK_Inside():   ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -3801,7 +3806,7 @@ main(int argc, char **argv)
 
     if(esl_opt_GetBoolean(go, "--dc")) { 
       esl_stopwatch_Start(w);
-      sc = TrCYK_DnC(cm, dsq, L, 0, 1, L, FALSE, &tr);
+      sc = TrCYK_DnC(cm, dsq, L, 0, 1, L, pass_idx, TRUE, &tr);
       printf("%4d %-30s %10.4f bits ", i, "TrCYK_DnC():      ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");

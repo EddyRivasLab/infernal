@@ -63,7 +63,7 @@ typedef struct {
   CM_t             *cm;      /* a covariance model */
   CM_ALNDATA      **dataA;   /* array of CM_ALNDATA objects with ptrs to sqs, parsetrees, scores */
   int               n;       /* size of outdataA   */
-  float             mxsize;  /* max size in Mb of allowable DP mx */
+  float             mxsize;  /* max size (Mb) of allowable DP mx */
   ESL_STOPWATCH    *w;       /* stopwatch for timing stages (band calc, alignment) */
   ESL_STOPWATCH    *w_tot;   /* stopwatch for timing total time for processing 1 seq */
 } WORKER_INFO;

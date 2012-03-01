@@ -57,6 +57,7 @@ typedef struct {
   P7_PROFILE       *Tgm;         /* generic   query profile HMM for 5' and 3' truncated hits */
   FM_HMMDATA       *fm_hmmdata;  /* hmm-specific data for FM-index for fast MSV, required by p7_MSVFilter_longtarget() */
   float            *p7_evparam;  /* 0..CM_p7_NEVPARAM] E-value parameters */
+  float             smxsize;     /* max size (Mb) of allowable scan mx (only relevant if --nohmm or --max) */
 } WORKER_INFO;
 
 #define REPOPTS     "-E,-T,--cut_ga,--cut_nc,--cut_tc"
@@ -117,7 +118,8 @@ static ESL_OPTIONS options[] = {
   { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"-g,--notrunc",    "allow truncated hits anywhere within sequences",               7 },
   /* Other options */
   { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn OFF the NULL3 post hoc additional null model",            8 },
-  { "--mxsize",     eslARG_REAL,  "128.", NULL, "x>0",   NULL,  NULL,  NULL,            "set max allowed size of DP matrices to <x> Mb",                8 },
+  { "--mxsize",     eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,            "set max allowed size of alignment DP matrices to <x> Mb",      8 },
+  { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,            "set max allowed size of search DP matrices to <x> Mb",         8 },
   { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use scanning CM CYK algorithm, not Inside in final stage",     8 },
   { "--acyk",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "align hits with CYK, not optimal accuracy",                    8 },
   { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "only search the top strand",                                   8 },
@@ -508,7 +510,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     esl_stopwatch_Start(w);
     
     /* create a new template info, and point it to the cm we just read */
-    tinfo = create_info();
+    tinfo = create_info(go);
     tinfo->cm = cm;
 
     /* Make sure we have E-value stats for both the CM and the p7, if not we can't run the pipeline */
@@ -531,8 +533,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * do this only b/c we need pli->cm_config_opts.
      */
     tinfo->pli = cm_pipeline_Create(go, abc, tinfo->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-    if((status = configure_cm(tinfo))         != eslOK) cm_Fail(errbuf);
-    if((status = setup_hmm_filter(go, tinfo)) != eslOK) cm_Fail(errbuf);
+    if((status = configure_cm(tinfo))         != eslOK) cm_Fail(tinfo->pli->errbuf);
+    if((status = setup_hmm_filter(go, tinfo)) != eslOK) cm_Fail(tinfo->pli->errbuf);
     /* Clone all data structures in tinfo into the WORKER_INFO's in info */
     if((status = clone_info(go, tinfo, info, infocnt, errbuf)) != eslOK) cm_Fail(errbuf);
 
@@ -571,7 +573,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* we need to re-compute e-values before merging (when list will be sorted) */
     for (i = 0; i < infocnt; ++i) { 
       /* TO DO: compute E-values differently if --hmm (p7_tophits_ComputeNhmmerEvalues?) */
-      cm_tophits_ComputeEvalues(info[i].th, (double) info[0].cm->expA[info[0].pli->final_cm_exp_mode]->cur_eff_dbsize, 0);
+      cm_tophits_ComputeEvalues(info[i].th, info[0].cm->expA[info[0].pli->final_cm_exp_mode]->cur_eff_dbsize, 0);
     }
 
     /* merge the search results */
@@ -1462,7 +1464,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     esl_stopwatch_Stop(w);
       
     /* compute E-values before sending back to master */
-    cm_tophits_ComputeEvalues(info->th, (double) info->cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, 0);
+    cm_tophits_ComputeEvalues(info->th, info->cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, 0);
       
     cm_tophits_MPISend(info->th,   0, INFERNAL_TOPHITS_TAG,  MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
     cm_pipeline_MPISend(info->pli, 0, INFERNAL_PIPELINE_TAG, MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
@@ -1558,6 +1560,18 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       exit(1);
     }
   }
+  else if (esl_opt_GetBoolean(go, "--qdb")) { 
+    if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
+      printf("Error parsing options, with --beta <x> (not in combination with --fbeta), <x> must be <= %g\n", esl_opt_GetReal(go, "--fbeta"));
+      exit(1);
+    }
+  }
+  else if (esl_opt_GetBoolean(go, "--fqdb")) { 
+    if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
+      printf("Error parsing options, with --fbeta <x> (not in combination with --beta), <x> must be >= %g\n", esl_opt_GetReal(go, "--beta"));
+      exit(1);
+    }
+  }
 
   *ret_go = go;
   return;
@@ -1604,6 +1618,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--anytrunc"))   fprintf(ofp, "# allowing truncated sequences anywhere: on\n");
   if (esl_opt_IsUsed(go, "--nonull3"))    fprintf(ofp, "# null3 bias corrections:                off\n");
   if (esl_opt_IsUsed(go, "--mxsize"))     fprintf(ofp, "# maximum DP alignment matrix size:      %.1f Mb\n", esl_opt_GetReal(go, "--mxsize"));
+  if (esl_opt_IsUsed(go, "--smxsize"))    fprintf(ofp, "# maximum DP search matrix size:         %.1f Mb\n", esl_opt_GetReal(go, "--smxsize"));
   if (esl_opt_IsUsed(go, "--cyk"))        fprintf(ofp, "# use CYK for final search stage         on\n");
   if (esl_opt_IsUsed(go, "--acyk"))       fprintf(ofp, "# use CYK to align hits:                 on\n");
   if (esl_opt_IsUsed(go, "--toponly"))    fprintf(ofp, "# search top-strand only:                on\n");
@@ -1793,23 +1808,24 @@ dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, cha
  * Returns:  The new WORKER_INFO is returned. NULL is returned upon an error.
  */
 WORKER_INFO *
-create_info()
+create_info(const ESL_GETOPTS *go)
 { 
   int status;
   WORKER_INFO *info = NULL;
 
   ESL_ALLOC(info, sizeof(WORKER_INFO));
-  info->pli          = NULL;
-  info->th           = NULL;
-  info->cm           = NULL;
-  info->cmcons       = NULL;
-  info->gm           = NULL;
-  info->Rgm          = NULL;
-  info->Lgm          = NULL;
-  info->Tgm          = NULL;
-  info->om           = NULL;
-  info->bg           = NULL;
+  info->pli    = NULL;
+  info->th     = NULL;
+  info->cm     = NULL;
+  info->cmcons = NULL;
+  info->gm     = NULL;
+  info->Rgm    = NULL;
+  info->Lgm    = NULL;
+  info->Tgm    = NULL;
+  info->om     = NULL;
+  info->bg     = NULL;
   ESL_ALLOC(info->p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
+  info->smxsize = esl_opt_GetReal(go, "--smxsize");
 
   return info;
 
@@ -1909,9 +1925,29 @@ int
 configure_cm(WORKER_INFO *info)
 { 
   int status;
-  
+  float reqMb = 0.;
+  int   check_fcyk_beta;    /* TRUE if we need to check if cm's beta1 == info->pli->fcyk_beta */
+  int   check_final_beta;   /* TRUE if we need to check if cm's beta2 == info->pli->final_beta */
+
+  if(info->pli->cm_config_opts & CM_CONFIG_SCANMX)   reqMb += cm_scan_mx_SizeNeeded(info->cm, TRUE, TRUE);
+  if(info->pli->cm_config_opts & CM_CONFIG_TRSCANMX) reqMb += cm_tr_scan_mx_SizeNeeded(info->cm, TRUE, TRUE);
+  if(reqMb > info->smxsize) { 
+    ESL_FAIL(eslERANGE, info->pli->errbuf, "search will require %.2f Mb > %.2f Mb limit.\nIncrease limit with --smxsize, or don't use --max,--nohmm,--qdb,--fqdb.", reqMb, info->smxsize);
+  }
+
   /* cm_pipeline_Create() sets configure options in pli->cm_config_opts */
   info->cm->config_opts = info->pli->cm_config_opts;
+
+  /* check if we need to recalculate QDBs prior to building the scan matrix in cm_Configure() */
+  check_fcyk_beta  = (info->pli->fcyk_cm_search_opts  & CM_SEARCH_QDB) ? TRUE : FALSE;
+  check_final_beta = (info->pli->final_cm_search_opts & CM_SEARCH_QDB) ? TRUE : FALSE;
+  if((status = CheckCMQDBInfo(info->cm->qdbinfo, info->pli->fcyk_beta, check_fcyk_beta, info->pli->final_beta, check_final_beta)) != eslOK) { 
+    info->cm->config_opts   |= CM_CONFIG_QDB;
+    info->cm->qdbinfo->beta1 = info->pli->fcyk_beta;
+    info->cm->qdbinfo->beta2 = info->pli->final_beta;
+  }
+  /* else we don't have to change (*opt_cm)->qdbinfo->beta1/beta2 */
+
   if((status = cm_Configure(info->cm, info->pli->errbuf, -1)) != eslOK) return status;
 
   /* create CM consensus */

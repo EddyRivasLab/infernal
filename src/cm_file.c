@@ -2475,7 +2475,7 @@ read_asc_1p0_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	  if (! is_real(tok))                                    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "tailp is not real number on E-xx line");
 	  cm->expA[exp_mode]->tailp = atof(tok);
 	  
-	  cm->expA[exp_mode]->cur_eff_dbsize = (long) (cm->expA[exp_mode]->nrandhits);
+	  cm->expA[exp_mode]->cur_eff_dbsize = (double) (cm->expA[exp_mode]->nrandhits);
 	  /* Previous line is to set cur_eff_dbsize as if database was of size cm->stats->expAA[p]->dbsize, we 
 	   * act as if the max hits we'll see is nrandhits, the number of hits we saw in cmcalibrate,
 	   * so this is the highest possible E-value we can get.

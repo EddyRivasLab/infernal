@@ -615,6 +615,7 @@ cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eZ, int istart)
 
   for (i = istart; i < th->N ; i++) { 
     th->unsrt[i].evalue = th->unsrt[i].pvalue * eZ;
+    printf("HEYA: i: %d pvalue: %g eZ: %f evalue: %g\n", i, th->unsrt[i].pvalue, eZ, th->unsrt[i].evalue);
   }
   return eslOK;
 }
