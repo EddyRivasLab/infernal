@@ -72,7 +72,6 @@ main(int argc, char **argv)
    if (do_local) cm->config_opts |= CM_CONFIG_LOCAL;
 
    if((status = cm_Configure(cm, errbuf, -1)) != eslOK) cm_Die(errbuf);
-   CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &cons);
    /*SetMarginalScores_reproduce_bug_i27(cm);*/
 
    seq = esl_sq_Create();
@@ -87,7 +86,7 @@ main(int argc, char **argv)
          esl_sq_Digitize(abc, seq);
       sc = TrCYK_DnC(cm, seq->dsq, seq->n, 0, i0, j0, PLI_PASS_5P_AND_3P_ANY, TRUE, &tr); /* TRUE: reproduce v1.0 behavior */
       /* sc = TrCYK_Inside(cm, seq->dsq, seq->n, 0, i0, j0, PLI_PASS_5P_AND_3P_ANY, TRUE, FALSE, &tr); */ 
-      fali = CreateFancyAli(cm->abc, tr, cm, cons, seq->dsq, FALSE, NULL);
+      fali = CreateFancyAli(cm->abc, tr, cm, cm->cmcons, seq->dsq, FALSE, NULL);
       /* float sc, struct_sc;
        * ParsetreeScore(cm, NULL, NULL, tr, seq->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL);
        * printf("Parsetree score: %.4f\n", sc);
@@ -97,7 +96,7 @@ main(int argc, char **argv)
 
       revcomp(abc, seq, seq);
       rev_sc = TrCYK_DnC(cm,seq->dsq, seq->n, 0, i0, j0, PLI_PASS_5P_AND_3P_ANY, TRUE, &tr); /* TRUE: reproduce v1.0 behavior */
-      rev_fali = CreateFancyAli(cm->abc, tr, cm, cons,seq->dsq, FALSE, NULL);
+      rev_fali = CreateFancyAli(cm->abc, tr, cm, cm->cmcons,seq->dsq, FALSE, NULL);
       /*ParsetreeDump(stdout, tr, cm, seq->dsq);*/
       FreeParsetree(tr);
 
@@ -123,7 +122,6 @@ main(int argc, char **argv)
    }
    esl_sq_Destroy(seq);
 
-   FreeCMConsensus(cons);
    FreeCM(cm);
    esl_sqfile_Close(sqfp);
 

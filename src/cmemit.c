@@ -489,26 +489,22 @@ static int
 emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
 {
   int status;
-  CMConsensus_t *con = NULL;            /* consensus info for the CM */
   ESL_SQ *csq = NULL;
   char *cseqname = NULL;
 
   /* Determine consensus sequence */
-  CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &con);
   if((status = esl_strdup(cm->name, -1, &cseqname)) != eslOK) goto ERROR;
   if((status = esl_strcat(&cseqname, -1, " CM generated consensus sequence [cmemit]", -1)) != eslOK) goto ERROR;
-  if((csq = esl_sq_CreateFrom(cseqname, con->cseq, NULL, NULL, NULL)) == NULL) { status = eslEMEM; goto ERROR; }
+  if((csq = esl_sq_CreateFrom(cseqname, cm->cmcons->cseq, NULL, NULL, NULL)) == NULL) { status = eslEMEM; goto ERROR; }
   if((esl_sqio_Write(cfg->ofp, csq, eslSQFILE_FASTA, FALSE)) != eslOK) ESL_FAIL(status, errbuf, "Error writing consensus sequence.");
 
   esl_sq_Destroy(csq);
-  FreeCMConsensus(con);
   free(cseqname);
 
   return eslOK;
 
  ERROR:
   if(csq != NULL) esl_sq_Destroy(csq);
-  if(con != NULL) FreeCMConsensus(con);
   if(cseqname != NULL) free(cseqname);
   return status;
 }

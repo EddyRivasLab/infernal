@@ -48,7 +48,6 @@ typedef struct {
   CM_PIPELINE      *pli;         /* work pipeline                           */
   CM_TOPHITS       *th;          /* top hit results                         */
   CM_t             *cm;          /* a covariance model                      */
-  CMConsensus_t    *cmcons;      /* CM consensus info, for display purposes */
   P7_BG            *bg;          /* null models                              */
   P7_OPROFILE      *om;          /* optimized query profile HMM            */
   P7_PROFILE       *gm;          /* generic   query profile HMM            */
@@ -700,7 +699,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
 
     if (info->pli->do_top) { 
       prv_pli_ntophits = info->th->N;
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
       /* modify hit positions to account for the position of the window in the full sequence */
@@ -711,7 +710,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
     if (info->pli->do_bot && dbsq->abc->complement != NULL) { 
       prv_pli_ntophits = info->th->N;
       esl_sq_ReverseComplement(dbsq);
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
       /* modify hit positions to account for the position of the window in the full sequence */
@@ -892,7 +891,7 @@ pipeline_thread(void *arg)
 
       if (info->pli->do_top) { 
 	prv_pli_ntophits = info->th->N;
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* modify hit positions to account for the position of the window in the full sequence */
@@ -903,7 +902,7 @@ pipeline_thread(void *arg)
       if (info->pli->do_bot && dbsq->abc->complement != NULL) {
 	prv_pli_ntophits = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* modify hit positions to account for the position of the window in the full sequence */
@@ -974,7 +973,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              sstatus  = eslOK;
   int              dest;
 
-  WORKER_INFO     *info          = NULL;         /* contains CM, HMMs, p7 profiles, cmcons, etc. */
+  WORKER_INFO     *info          = NULL;         /* contains CM, HMMs, p7 profiles, etc */
 
   int              i;
 
@@ -1315,7 +1314,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_SQ          *dbsq        = NULL;           /* one target sequence (digital)                   */
   int64_t          cm_idx   = 0;                 /* index of CM we're currently working with */
 
-  WORKER_INFO     *info          = NULL;         /* contains CM, HMMs, p7 profiles, cmcons, etc. */
+  WORKER_INFO     *info          = NULL;         /* contains CM, HMMs, p7 profiles, etc. */
 
   char            *mpi_buf  = NULL;              /* buffer used to pack/unpack structures           */
   int              mpi_size = 0;                 /* size of the allocated buffer                    */
@@ -1421,7 +1420,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* search top strand */
 	  if (info->pli->do_top) { 
 	    prv_pli_ntophits = info->th->N;
-	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) 
+	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
 	      mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
@@ -1434,7 +1433,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if(info->pli->do_bot && dbsq->abc->complement != NULL) { 
 	    esl_sq_ReverseComplement(dbsq);
 	    prv_pli_ntophits = info->th->N;
-	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm), &(info->cmcons))) != eslOK) 
+	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
 	      mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
 	    if(info->pli->do_top) { 
@@ -1817,7 +1816,6 @@ create_info(const ESL_GETOPTS *go)
   info->pli    = NULL;
   info->th     = NULL;
   info->cm     = NULL;
-  info->cmcons = NULL;
   info->gm     = NULL;
   info->Rgm    = NULL;
   info->Lgm    = NULL;
@@ -1863,11 +1861,6 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
     ///if((dest_infoA[i].fm_hmmdata = fm_hmmdataCreate(dest_infoA[i].gm, dest_infoA[i].om)) == NULL) goto ERROR;
     if(dest_infoA[i].p7_evparam == NULL) ESL_ALLOC(dest_infoA[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
     esl_vec_FCopy(src_info->cm->fp7_evparam, CM_p7_NEVPARAM, dest_infoA[i].p7_evparam);
-
-    /* create (don't clone) the CM consensus */
-    if((status = CreateCMConsensus(dest_infoA[i].cm, dest_infoA[i].cm->abc, 3.0, 1.0, &(dest_infoA[i].cmcons)))!= eslOK) {
-      ESL_FAIL(status, errbuf, "Failed to create CMConsensus data structure.\n");
-    }      
   }
   return eslOK;
   
@@ -1889,7 +1882,6 @@ free_info(WORKER_INFO *info)
   if(info->th  != NULL) cm_tophits_Destroy(info->th);             info->th  = NULL;
   
   if(info->cm     != NULL) FreeCM(info->cm);                      info->cm  = NULL;
-  if(info->cmcons != NULL) FreeCMConsensus(info->cmcons);         info->cmcons = NULL;
   
   if(info->om         != NULL) p7_oprofile_Destroy(info->om);     info->om = NULL;
   if(info->gm         != NULL) p7_profile_Destroy(info->gm);      info->gm = NULL;
@@ -1909,10 +1901,9 @@ free_info(WORKER_INFO *info)
  * Incept:    EPN, Mon Jun  6 12:06:38 2011
  *
  * Purpose: Given a WORKER_INFO <info> with a valid CM just read from
- *          a file and config_opts from <info->pli>, configure the CM
- *          and create the CMConsensus data. We use
- *          pli->cm_config_opts created in cm_pipeline_Create() so
- *          that cmscan and cmsearch create config_opts identically
+ *          a file and config_opts from <info->pli>, configure the CM.
+ *          We use pli->cm_config_opts created in cm_pipeline_Create()
+ *          so that cmscan and cmsearch create config_opts identically
  *          based on their common esl_getopts object.
  *
  *          Also create all the structures related to the p7 HMM
@@ -1949,11 +1940,6 @@ configure_cm(WORKER_INFO *info)
   /* else we don't have to change (*opt_cm)->qdbinfo->beta1/beta2 */
 
   if((status = cm_Configure(info->cm, info->pli->errbuf, -1)) != eslOK) return status;
-
-  /* create CM consensus */
-  if((status = CreateCMConsensus(info->cm, info->cm->abc, 3.0, 1.0, &(info->cmcons)))!= eslOK) {
-    ESL_FAIL(status, info->pli->errbuf, "Failed to create CMConsensus data structure.\n");
-  }      
 
   return eslOK;
 }

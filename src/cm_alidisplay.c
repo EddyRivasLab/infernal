@@ -44,9 +44,9 @@ static int  bp_is_canonical(char lseq, char rseq);
  *            structure.
  *
  * Args:      abc          - alphabet to create alignment with (often cm->abc)
+ *            errbuf       - for error messages
  *            tr           - parsetree for cm aligned to dsq
  *            cm           - model
- *            cons         - consensus information for cm; see CreateCMConsensus()
  *            sq           - the sequence, parsetree corresponds to subsequence beginning at spos
  *            seqoffset    - position in sq which corresponds to first position in tr
  *            ppstr        - posterior probability string 
@@ -61,13 +61,10 @@ static int  bp_is_canonical(char lseq, char rseq);
  * Returns:   eslOK on success.
  *            eslFAIL on error, errbuf is filled.
  *
- * Throws:    <NULL> on allocation failure, or if something's internally corrupt 
- *            in the data.
- *
  * Xref:      STL6 p.58
  */
 int
-cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, const ESL_SQ *sq, int64_t seqoffset, 
+cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_t *cm, const ESL_SQ *sq, int64_t seqoffset, 
 		     char *ppstr, float sc, float avgpp, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs, CM_ALIDISPLAY **ret_ad)
 {
   int            status;
@@ -119,13 +116,11 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 
   /* Contract check. We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->cmcons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_alidisplay_Create(): cm->cmcons is NULL");
   if(cm->abc->type == eslRNA) { 
-    if(abc->type != eslRNA && abc->type != eslDNA)
-      cm_Fail("ERROR in cm_alidisplay_Create(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+    if(abc->type != eslRNA && abc->type != eslDNA) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_alidisplay_Create(): cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
   }
-  else if(cm->abc->K != abc->K) {
-    cm_Fail("ERROR in cm_alidisplay_Create(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
-  }
+  else if(cm->abc->K != abc->K) ESL_FAIL(eslEINCOMPAT, errbuf,"cm_alidisplay_Create(): cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
 
   /* Useful for debugging:  
    * DumpEmitMap(stdout, cm->emap, cm);
@@ -152,7 +147,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
     mode = tr->mode[ti];
     if (v == cm->M) {  /* special case: local exit into EL */
       nd = cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
-      qinset = cons->rpos[nd] - cons->lpos[nd] + 1;
+      qinset = cm->cmcons->rpos[nd] - cm->cmcons->lpos[nd] + 1;
       tinset = tr->emitr[ti]  - tr->emitl[ti]  + 1;
       ninset = ESL_MAX(qinset,tinset);
       len += 4;
@@ -328,7 +323,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
        */
       if (v == cm->M) { 
 	nd = 1 + cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
-	qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
+	qinset     = cm->cmcons->rpos[nd] - cm->cmcons->lpos[nd] + 1;
 	tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
 	ninset     = ESL_MAX(qinset,tinset);
 	numwidth = 0; do { numwidth++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
@@ -343,8 +338,8 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
       /* Fetch some info into tmp variables, for "clarity"
        */
       nd   = cm->ndidx[v];	  /* what CM node we're in */
-      lc   = cons->lpos[nd];	  /* where CM node aligns to in consensus (left) */
-      rc   = cons->rpos[nd];      /* where CM node aligns to in consensus (right) */
+      lc   = cm->cmcons->lpos[nd];	  /* where CM node aligns to in consensus (left) */
+      rc   = cm->cmcons->rpos[nd];      /* where CM node aligns to in consensus (right) */
       symi = sq->dsq[tr->emitl[ti] + (seqoffset-1)];  /* residue indices that node is aligned to (left) */
       symj = sq->dsq[tr->emitr[ti] + (seqoffset-1)];  /* residue indices that node is aligned to (right) */
       if(ppstr != NULL) { /* posterior codes are indexed 0..alen-1, off-by-one w.r.t dsq */
@@ -389,8 +384,8 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) && (mode == TRMODE_J || mode == TRMODE_L)) {
 	  do_left = TRUE;
 	  if (cm->rf != NULL) lrf = cm->rf[lc+1];
-	  lstr   = cons->cstr[lc];
-	  lcons  = (cm->flags & CMH_CONS) ? cm->consensus[(lc+1)] : cons->cseq[lc];
+	  lstr   = cm->cmcons->cstr[lc];
+	  lcons  = (cm->flags & CMH_CONS) ? cm->consensus[(lc+1)] : cm->cmcons->cseq[lc];
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
 	    lseq = abc->sym[symi];
 	    if(ppstr != NULL) lpost = ppstr[tr->emitl[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
@@ -403,8 +398,8 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) && (mode == TRMODE_J || mode == TRMODE_R)) {
 	  do_right = TRUE;
 	  if (cm->rf != NULL) rrf = cm->rf[rc+1];
-	  rstr   = cons->cstr[rc];
-	  rcons  = (cm->flags & CMH_CONS) ? cm->consensus[(rc+1)] : cons->cseq[rc];
+	  rstr   = cm->cmcons->cstr[rc];
+	  rcons  = (cm->flags & CMH_CONS) ? cm->consensus[(rc+1)] : cm->cmcons->cseq[rc];
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
 	    rseq = abc->sym[symj];
 	    if(ppstr != NULL) rpost = ppstr[tr->emitr[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
@@ -519,7 +514,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	int numwidth;		/* number of chars to leave for displaying width numbers */
 
 	nd = 1 + cm->ndidx[tr->state[ti]]; /* calculate node that EL replaced */
-	qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
+	qinset     = cm->cmcons->rpos[nd] - cm->cmcons->lpos[nd] + 1;
 	tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
         if (tinset > 0) tinset--;
 	ninset     = ESL_MAX(qinset,tinset);

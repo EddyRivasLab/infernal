@@ -631,7 +631,6 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
   P7_PROFILE       *Rgm        = NULL;      /* generic query profile HMM for env defn for 5' truncated hits */
   P7_PROFILE       *Lgm        = NULL;      /* generic query profile HMM for env defn for 3' truncated hits */
   P7_PROFILE       *Tgm        = NULL;      /* generic query profile HMM for env defn for 5' and 3'truncated hits */
-  CMConsensus_t    *cmcons     = NULL;
   int               prv_ntophits;           /* number of top hits before cm_Pipeline() call */
   int               cm_clen, cm_W;          /* consensus, window length for current CM */        
   float             gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
@@ -646,14 +645,13 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
       info->p7_evparam[CM_p7_GFLAMBDA] = gflambda;
       gm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
       cm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
-      cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */
       if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
 				   cm,                                   /* this is NULL b/c we don't have one yet */
 				   cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
 				   om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
 
       prv_ntophits = info->th->N;
-      if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm, &cmcons)) != eslOK)
+      if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
 	cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); 
       if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
@@ -662,7 +660,6 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 	cm_tophits_ComputeEvalues(info->th, cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
       }
 
-      if(cmcons != NULL) { FreeCMConsensus(cmcons); cmcons = NULL; }
       if(cm     != NULL) { FreeCM(cm);              cm     = NULL; }
       if(om     != NULL) { p7_oprofile_Destroy(om); om     = NULL; }
       if(gm     != NULL) { p7_profile_Destroy(gm);  gm     = NULL; }
@@ -739,7 +736,6 @@ pipeline_thread(void *arg)
   P7_PROFILE       *Rgm        = NULL;      /* generic query profile HMM for env defn for 5' truncated hits */
   P7_PROFILE       *Lgm        = NULL;      /* generic query profile HMM for env defn for 3' truncated hits */
   P7_PROFILE       *Tgm        = NULL;      /* generic query profile HMM for env defn for 5' and 3'truncated hits */
-  CMConsensus_t    *cmcons     = NULL;
   int               prv_ntophits;           /* number of top hits before cm_Pipeline() call */
   int               cm_clen, cm_W;          /* consensus, window length for current CM */        
   float             gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
@@ -784,14 +780,13 @@ pipeline_thread(void *arg)
 	  info->p7_evparam[CM_p7_GFLAMBDA] = gflambda;
 	  gm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
 	  cm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
-	  cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */
 	  if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
 				       cm,                                   /* this is NULL b/c we don't have one yet */
 				       cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
 				       om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
 
 	  prv_ntophits = info->th->N;
-	  if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm, &cmcons)) != eslOK)
+	  if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
 	    cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
 	  cm_pipeline_Reuse(info->pli);
 	  if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
@@ -800,7 +795,6 @@ pipeline_thread(void *arg)
 	    cm_tophits_ComputeEvalues(info->th, cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
 	  }
 		
-	  if(cmcons != NULL) { FreeCMConsensus(cmcons); cmcons = NULL; }
 	  if(cm     != NULL) { FreeCM(cm);              cm     = NULL; }
 	  if(om     != NULL) { p7_oprofile_Destroy(om); om     = NULL; }
 	  if(gm     != NULL) { p7_profile_Destroy(gm);  gm     = NULL; }
@@ -1166,7 +1160,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_SQFILE      *sqfp     = NULL;              /* open seqfile                                    */
   CM_FILE         *cmfp     = NULL;		 /* open CM database file                           */
   CM_t            *cm       = NULL;              /* the CM                                          */
-  CMConsensus_t   *cmcons   = NULL;              /* CM consensus information                        */
   ESL_ALPHABET    *abc      = NULL;              /* sequence alphabet                               */
   P7_OPROFILE     *om       = NULL;		 /* target profile                                  */
   P7_PROFILE      *gm       = NULL;              /* generic query profile HMM                       */
@@ -1292,7 +1285,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 		Lgm    = NULL; /* this will get filled in cm_Pipeline() only if necessary */
 		Tgm    = NULL; /* this will get filled in cm_Pipeline() only if necessary */
 		cm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
-		cmcons = NULL; /* this will get filled in cm_Pipeline() only if necessary */
 		if((status = cm_pli_NewModel(pli, CM_NEWMODEL_MSV, 
 					     cm,                                   /* this is NULL b/c we don't have one yet */
 					     cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
@@ -1300,7 +1292,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 		
 		prv_ntophits = th->N;
 
-		if((status = cm_Pipeline(pli, cm_offset, om, bg, p7_evparam, NULL, qsq, th, &gm, &Rgm, &Lgm, &Tgm, &cm, &cmcons)) != eslOK)
+		if((status = cm_Pipeline(pli, cm_offset, om, bg, p7_evparam, NULL, qsq, th, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
 		  mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s", status, pli->errbuf);
 		cm_pipeline_Reuse(pli);
 		if(in_rc && th->N != prv_ntophits) cm_tophits_UpdateHitPositions(th, prv_ntophits, qsq->start, in_rc);
@@ -1309,7 +1301,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 		  cm_tophits_ComputeEvalues(th, cm->expA[pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
 		}
 
-		if(cmcons != NULL) { FreeCMConsensus(cmcons); cmcons = NULL; }
 		if(cm     != NULL) { FreeCM(cm);              cm     = NULL; }
 		if(om     != NULL) { p7_oprofile_Destroy(om); om     = NULL; }
 		if(gm     != NULL) { p7_profile_Destroy(gm);  gm     = NULL; }

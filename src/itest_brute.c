@@ -622,8 +622,7 @@ create_brute_matl_cm(ESL_ALPHABET *abc, char *errbuf, int do_local, struct cm_br
     esl_vec_FSet(cm->begin, 10, 0.);
     esl_vec_FSet(cm->end,   10, 0.);
   }
-  CMLogoddsify(cm);
-
+  if((status = CMLogoddsify(cm)) cm_Fail("problem logoddsifying the CM");
 
   /* Add mandatory annotation */
   cm_SetName(cm, "itest-brute");

@@ -91,7 +91,6 @@ static int
 configure_model(CM_t *cm, char *errbuf)
 {
   int status; 
-  CMConsensus_t *cons    = NULL;
   int lmsvL, lvitL, lfwdL, gfwdL;
   int lmsvN, lvitN, lfwdN, gfwdN;
   float lftailp, gftailp;
@@ -99,11 +98,8 @@ configure_model(CM_t *cm, char *errbuf)
 
   /* Configure the model, we must calculate QDBs so we can write them to the CM file */
   cm->config_opts |= CM_CONFIG_QDB;   
-  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
-
-  CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &(cons));
-  if ((status = cm_SetConsensus  (cm, cons, NULL)) != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate consensus sequence");
-  FreeCMConsensus(cons);
+  if ((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
+  if ((status = cm_SetConsensus(cm, cm->cmcons, NULL)) != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate consensus sequence");
 
   /* We'll define the filter HMM as the ML p7 HMM because that's the
    * only option available (by default, in cmbuild, a filter HMM gets

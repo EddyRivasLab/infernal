@@ -620,7 +620,14 @@ FreeFancyAli(Fancyali_t *ali)
  *            for each emitting node. If score < pthresh (for pairs)
  *            or < sthresh (for singlets), the residue is shown
  *            in lower case. (That is, "strong" consensus residues
- *            are in upper case.)
+ *            are in upper case.) 
+ *
+ *            Currently, pthresh is hard-coded as 3.0 and sthresh as
+ *            1.0 (previously v1.0.2 and earlier had these passed in,
+ *            but they were always set as 3.0/1.0 so I modified the
+ *            function prototype - feel free to change it back if you
+ *            want different values, or want to let caller (user) set
+ *            them)).
  *            
  *            Consensus structure annotates
  *            base pairs according to "multifurcation order" (how
@@ -636,38 +643,25 @@ FreeFancyAli(Fancyali_t *ali)
  *                ::(((,,<<<__>>>,<<<__>>->,,)))::
  *                AAGGGAACCCTTGGGTGGGTTCCACAACCCAA   
  *
- * Args:      cm         - the model
- *            abc        - alphabet to create con->cseq with (often cm->abc)
- *            pthresh    - bit score threshold for base pairs to be lowercased
- *            sthresh    - bit score threshold for singlets to be lowercased
+ * Args:      cm  - the model
+ *            abc - alphabet to create con->cseq with (often cm->abc)
  *            
- * Returns:   <eslOK> on success, returns CMConsensus_t structure in *ret_cons. 
- *            Caller frees w/ FreeCMConsensus(). Dies immediately with cm_Fail()
- *            upon error.
+ * Returns:   Newly created CMConsensus_t. 
+ *            Caller frees w/ FreeCMConsensus(). 
+ *            Returns NULL on any error. 
  *
  * Xref:      STL6 p.58.
  */
-int
-CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh, CMConsensus_t **ret_cons)
+CMConsensus_t *
+CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc)
 {
-  /* Contract check. CM must have log odds scores. 
-   * Also, We allow the caller to specify the alphabet they want the 
-   * resulting MSA in, but it has to make sense (see next few lines). */
-  if(! (cm->flags & CMH_BITS)) cm_Fail("CreateCMConsensus(): CM does not have valid bit scores (CMH_BITS flag is down)\n");
-  if(cm->abc->type == eslRNA) {
-    if(abc->type != eslRNA && abc->type != eslDNA)
-      cm_Fail("CreateCMConsensus(): cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
-  }
-  else if(cm->abc->K != abc->K) { 
-    cm_Fail("CreateCMConsensus(): cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
-  }
-
   int       status;
-  CMConsensus_t *con;           /* growing consensus info */
-  char     *cseq;               /* growing consensus sequence display string   */
-  char     *cstr;               /* growing consensus structure display string  */
+  CMConsensus_t *con = NULL;    /* growing consensus info */
+  char     *cseq = NULL;        /* growing consensus sequence display string   */
+  char     *cstr = NULL;        /* growing consensus structure display string  */
   int      *ct;			/* growing ct Zuker pairing partnet string     */
-  int      *lpos, *rpos;        /* maps node->consensus position, [0..nodes-1] */
+  int      *lpos = NULL;        /* maps node->left consensus position, [0..nodes-1] */
+  int      *rpos = NULL;        /* maps node->right consensus position, [0..nodes-1] */
   int       cpos;		/* current position in cseq, cstr              */
   int       nalloc;		/* current allocated length of cseq, cstr      */
   ESL_STACK *pda;               /* pushdown automaton used to traverse model   */
@@ -681,6 +675,20 @@ CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthres
   int       x;
   int       pairpartner;	/* coord of left pairing partner of a right base */
   void     *tmp;                /* for ESL_RALLOC */
+  /* bit score thresholds for base pairs (pthresh) and singlets
+   * (sthresh) to be lowercased. These are hard-coded. If you want
+   * to change them, consider changing the function prototype so they're
+   * chosen by caller and passed in.
+   */
+  float     pthresh = 3.0; 
+  float     sthresh = 1.0; 
+
+  /* Contract check. CM must have log odds scores. Alphabet must make sense. */
+  if(! (cm->flags & CMH_BITS)) return NULL;
+  if(cm->abc->type == eslRNA) {
+    if(abc->type != eslRNA && abc->type != eslDNA) return NULL;
+  }
+  else if(cm->abc->K != abc->K) return NULL;
 
   ESL_ALLOC(lpos, sizeof(int) * cm->nodes);
   ESL_ALLOC(rpos, sizeof(int) * cm->nodes);
@@ -822,11 +830,16 @@ CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthres
   con->lpos = lpos;
   con->rpos = rpos;
   con->clen = cpos;
-  *ret_cons = con;
-  return eslOK;
+  return con;
 
  ERROR:
-  return status;
+  if(cseq != NULL) free(cseq);
+  if(cstr != NULL) free(cstr);
+  if(ct   != NULL) free(ct);
+  if(lpos != NULL) free(lpos);
+  if(rpos != NULL) free(rpos);
+  if(con  != NULL) free(con);
+  return NULL;
 }
 
 void

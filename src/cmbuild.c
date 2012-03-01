@@ -1245,7 +1245,6 @@ annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *
 {
   int status = eslOK;
   ESL_STOPWATCH *w = NULL;
-  CMConsensus_t *cons = NULL;
 
   if (cfg->be_verbose) {
     w = esl_stopwatch_Create();
@@ -1256,11 +1255,10 @@ annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *
 
   if(! (cm->flags & CMH_BITS)) ESL_XFAIL(eslEINVAL, errbuf, "Trying to set cm->consensus before bit scores are valid");
 
-  if ((status = cm_SetName       (cm, msa->name)) != eslOK)  ESL_XFAIL(status, errbuf, "Unable to set name for CM");
-  if ((status = cm_SetAccession  (cm, msa->acc))  != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA accession");
-  if ((status = cm_SetDescription(cm, msa->desc)) != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA description");
-  CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &(cons));
-  if ((status = cm_SetConsensus  (cm, cons, NULL)) != eslOK) ESL_XFAIL(status, errbuf, "Failed to calculate consensus sequence");
+  if ((status = cm_SetName       (cm, msa->name))        != eslOK)  ESL_XFAIL(status, errbuf, "Unable to set name for CM");
+  if ((status = cm_SetAccession  (cm, msa->acc))         != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA accession");
+  if ((status = cm_SetDescription(cm, msa->desc))        != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA description");
+  if ((status = cm_SetConsensus  (cm, cm->cmcons, NULL)) != eslOK) ESL_XFAIL(status, errbuf, "Failed to calculate consensus sequence");
 
   if (cfg->be_verbose) { 
     fprintf(stdout, "done.  ");
@@ -1269,7 +1267,6 @@ annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *
   }
 
   if(w != NULL) esl_stopwatch_Destroy(w);
-  if(cons != NULL) FreeCMConsensus(cons);
   return eslOK;
 
  ERROR:

@@ -602,7 +602,7 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
 				  TRUE); /* DO detach END_E-1 insert states, making them unreachable */
 
   /* Get the consensus sequence and consensus structure information from the original CM */
-  CreateCMConsensus(orig_cm, orig_cm->abc, 3.0, 1.0, &con);
+  if((con = CreateCMConsensus(orig_cm, orig_cm->abc)) == NULL) ESL_FAIL(eslFAIL, errbuf, "build_sub_cm(), unable to create cm consensus data");
   if(print_flag)
     {
       printf("con->cseq    : %s\n", con->cseq);
@@ -3664,6 +3664,8 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
  *
  * Returns:  eslOK on success;
  * Throws:   eslEINCOMPAT on contract violation.
+ *           eslFAIL if we can't create CMConsensus_t object
+ *           at end of the function.
  */
 int
 SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
@@ -3671,12 +3673,6 @@ SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
   if(!(mother_cm->flags & CMH_BITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "SubCMLogoddsify(), mother_cm's CMH_BITS flag down, it's bit scores are invalid.");
 
   int v, mv, x, y;
-
-  /* TEMP */
-  ESL_STOPWATCH *w;
-  w = esl_stopwatch_Create();
-  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
-  esl_stopwatch_Start(w);
 
   for (v = 0; v < cm->M; v++) { 
     if (mother_map->s2o_id[v] == TRUE) { /* this state maps identically to a mother_cm state, copy parameters */
@@ -3748,41 +3744,18 @@ SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
 	 (sreEXP2(cm->el_selfsc)), cm->iel_selfsc, (Score2Prob(cm->iel_selfsc, 1.0)));
 	 printf("-INFTY: %d prob: %f 2^: %f\n", -INFTY, (Score2Prob(-INFTY, 1.0)), sreEXP2(-INFTY));*/
 
-  esl_stopwatch_Stop(w); 
-  FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "\t\t\tCM df params       %11s\n", time_buf);
-#endif
-
   /* Allocate and fill optimized emission scores for this CM.
    * If they already exist, free them and recalculate them, slightly wasteful, oh well.
    */
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
 
-  esl_stopwatch_Start(w); 
-
   cm->oesc  = SubFCalcAndCopyOptimizedEmitScoresFromMother(cm, mother_cm, mother_map);
-
-  esl_stopwatch_Stop(w); 
-  FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "\t\t\tCM OF params       %11s\n", time_buf);
-#endif
-  esl_stopwatch_Start(w); 
 
   /* EPN, Wed Aug 20 15:26:31 2008
    * old, slow way: 
    * cm->ioesc = ICalcOptimizedEmitScores(cm);
    */
   cm->ioesc = ICopyOptimizedEmitScoresFromFloats(cm, cm->oesc);
-
-  esl_stopwatch_Stop(w); 
-  FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "\t\t\tCM OI params       %11s\n", time_buf);
-#endif  
-
-  esl_stopwatch_Destroy(w);
 
   /* Potentially, overwrite transitions with non-probabilistic 
    * RSEARCH transitions. Currently only default transition
@@ -3849,6 +3822,10 @@ SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
     }
   /* raise flag saying we have valid log odds scores */
   cm->flags |= CMH_BITS;
+
+  /* create cm->cmcons, we expect this to be valid if we have valid log odds score */
+  if(cm->cmcons != NULL) FreeCMConsensus(cm->cmcons);
+  if((cm->cmcons = CreateCMConsensus(cm, cm->abc)) == NULL) return eslFAIL;
 
   return eslOK;
 }

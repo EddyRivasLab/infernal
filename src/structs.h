@@ -1908,14 +1908,13 @@ typedef struct cm_s {
   P7_HMM       *fp7;          /* the filter p7 HMM, read from CM file */
   float         fp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_FP7_STATS) */
 
-  /* emitmap, added 06.20.11 (post v1.0.2) */
-  CMEmitMap_t   *emap;    /* maps model nodes to consensus positions */ 
-
-  /* CM_TR_PENALTIES, added 01.21.12 (post v1.0.2) */
-  CM_TR_PENALTIES *trp;   /* stores truncation bit score penalties */
-
   const  ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size)*/
   off_t    offset;          /* CM record offset on disk                              */
+
+  /* additional data added for convenience, post-v1.0.2, pre-v1.1) */
+  CMEmitMap_t     *emap;   /* maps model nodes to consensus positions */ 
+  CMConsensus_t   *cmcons; /* consensus information for CM_ALIDISPLAY */
+  CM_TR_PENALTIES *trp;    /* stores truncation bit score penalties */
 
 } CM_t;
 
@@ -2218,20 +2217,20 @@ typedef struct cm_alidisplay_s {
   char *ppline;			/* posterior prob annotation; or NULL   */
   int   N;			/* length of strings                    */
   
-  char *cmname;	    	        /* name of HMM                          */
-  char *cmacc;			/* accession of HMM; or [0]='\0'        */
-  char *cmdesc;		        /* description of HMM; or [0]='\0'      */
-  int   cfrom_emit;             /* min consensus pos, start position in CM */
-  int   cto_emit;		/* max consensus pos, end position in CM   */
-  int   cfrom_span;             /* min consensus pos in predicted non-truncated hit, == cfrom unless hit is 5' truncated */
-  int   cto_span;               /* max consensus pos in predicted non-truncated hit, == cto   unless hit is 3' truncated */
+  char *cmname;	    	        /* name of CM                           */
+  char *cmacc;			/* accession of CM; or [0]='\0'         */
+  char *cmdesc;		        /* description of CM; or [0]='\0'       */
+  int   cfrom_emit;             /* min consensus pos, start posn in CM  */
+  int   cto_emit;		/* max consensus pos, end posn in CM    */
+  int   cfrom_span;             /* min cons pos in predicted non-truncated hit, == cfrom unless hit is 5' truncated */
+  int   cto_span;               /* max cons pos in predicted non-truncated hit, == cto   unless hit is 3' truncated */
   int   clen;			/* consensus length of model            */
   
   char *sqname;			/* name of target sequence              */
   char *sqacc;			/* accession of target seq; or [0]='\0' */
   char *sqdesc;			/* description of targ seq; or [0]='\0' */
-  long  sqfrom;			/* min bound in scoord, start position in sequence (1..L) */
-  long  sqto;		        /* max bound in scoord, end position in sequence   (1..L) */
+  long  sqfrom;			/* min bound in scoord, start posn in seq (1..L) */
+  long  sqto;		        /* max bound in scoord, end posn in seq   (1..L) */
 
   int    used_optacc;           /* TRUE if aln alg was optacc, FALSE if CYK */
   float  sc;		        /* alignment score */

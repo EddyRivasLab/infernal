@@ -358,7 +358,7 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
     if((status = SubCMLogoddsify(cm, errbuf, mother_cm, mother_map)) != eslOK) return status; 
   }
   else { 
-    CMLogoddsify(cm);
+    if((status = CMLogoddsify(cm)) != eslOK) ESL_FAIL(status, errbuf, "problem logodisfying CM");
   }
   CP9Logoddsify(cm->cp9);
   if(cm->flags & CMH_CP9_TRUNC) { 

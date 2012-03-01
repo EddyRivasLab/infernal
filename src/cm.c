@@ -170,6 +170,7 @@ CreateCMShell(void)
   cm->clen     = 0;
   cm->comlog   = NULL;
   cm->emap     = NULL;
+  cm->cmcons   = NULL;
   cm->trp      = NULL;
 
   return cm;
@@ -485,8 +486,9 @@ FreeCM(CM_t *cm)
     p7_hmm_Destroy(cm->fp7);  
     cm->fp7  = NULL; 
   }
-  if(cm->emap != NULL) FreeEmitMap(cm->emap);
-  if(cm->trp  != NULL) cm_tr_penalties_Destroy(cm->trp);
+  if(cm->emap   != NULL) FreeEmitMap(cm->emap);
+  if(cm->cmcons != NULL) FreeCMConsensus(cm->cmcons);
+  if(cm->trp    != NULL) cm_tr_penalties_Destroy(cm->trp);
 
   free(cm);
 }
@@ -774,8 +776,11 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 /* Function: CMLogoddsify()
  * Date:     SRE, Tue Aug  1 15:18:26 2000 [St. Louis]
  *
- * Purpose:  Convert the probabilities in a CM to log-odds 
- *           EPN 12.19.06: also fill in integer log-odds scores.
+ * Purpose:  Convert the probabilities in a CM to log-odds.
+ *           Then create consensus data in cm->cmcons.
+ * 
+ * Returns:  eslOK on success; eslFAIL if we can't create
+ *           cmcons.
  */
 int
 CMLogoddsify(CM_t *cm)
@@ -951,6 +956,10 @@ CMLogoddsify(CM_t *cm)
 
   /* raise flag saying we have valid log odds scores */
   cm->flags |= CMH_BITS;
+
+  /* create cm->cmcons, we expect this to be valid if we have valid log odds score */
+  if(cm->cmcons != NULL) FreeCMConsensus(cm->cmcons);
+  if((cm->cmcons = CreateCMConsensus(cm, cm->abc)) == NULL) return eslFAIL;
 
   return eslOK;
 }
@@ -3045,6 +3054,9 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
 
   /* create the emit map (just as easy as copying) */
   if(cm->emap != NULL) if((new->emap = CreateEmitMap(new)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Cloning CM, unable to create new emit map");
+
+  /* create the CM consensus data (just as easy as copying) */
+  if(cm->cmcons != NULL && (new->flags & CMH_BITS)) if((new->cmcons = CreateCMConsensus(cm, cm->abc)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Cloning CM, unable to create a new CMConsensus_t");
 
   /* create the truncation penalties (just as easy as copying) */
   if(cm->trp != NULL)  if((new->trp  = cm_tr_penalties_Create(new, cm->trp->ignored_inserts, errbuf)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Cloning CM, unable to create new truncation penalties");

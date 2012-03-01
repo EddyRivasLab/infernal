@@ -1820,10 +1820,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
  *            (*opt_cm == NULL). If so, we read the CM from the file
  *            after positioning it to position <cm_offset> and
  *            configure the CM after setting cm->config_opts to
- *            <pli->cm_config_opts>. In this case, <*opt_cmcons>
- *            should also be NULL and we create a CMConsensus_t object
- *            and return it in <*opt_cmcons>. Otherwise, if <*opt_cm>
- *            is valid (non-NULL), <*opt_cmcons> should be as well.
+ *            <pli->cm_config_opts>. 
  *
  * Returns:   <eslOK> on success. If a significant hit is obtained,
  *            its information is added to the growing <hitlist>.
@@ -1835,7 +1832,7 @@ cm_pli_p7EnvelopeDef(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evp
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
+cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm)
 {
   int              status;
   char             errbuf[eslERRBUFSIZE];  /* for error messages */
@@ -1904,12 +1901,8 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
 				   NULL, NULL, pli->cur_cm_idx)) /* om, bg */
 	 != eslOK); 
     }
-    if(*opt_cmcons == NULL) { 
-      if((status = CreateCMConsensus(*opt_cm, (*opt_cm)->abc, 3.0, 1.0, opt_cmcons))!= eslOK) ESL_FAIL(status, pli->errbuf, "In cm_pli_CMStage() failed to create CMConsensus data structure.\n");
-    }
   }
-  else { /* not SCAN mode, *opt_cm and *opt_cmconsensus should be valid */
-    if(opt_cmcons == NULL || *opt_cmcons == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "Entered cm_pli_CMStage() with invalid CMConsensus structure"); 
+  else { /* not SCAN mode, *opt_cm should be valid */
     if(opt_cm     == NULL || *opt_cm     == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "Entered cm_pli_CMStage() with invalid CM"); 
   }
 
@@ -2240,7 +2233,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
       /* Get an alignment of the hit, if nec */
       if(pli->do_alignments) { 
 	/*cm_hit_Dump(stdout, hit);*/
-	if((status = cm_pli_AlignHit(pli, cm, *opt_cmcons, sq, do_trunc, hit, 
+	if((status = cm_pli_AlignHit(pli, cm, sq, do_trunc, hit, 
 				     (h == nhit) ? TRUE : FALSE,    /* TRUE if this is the first hit we're aligning (h == nhit) */
 				     scan_cp9b))                    /* a copy of the HMM bands determined in the last search stage, NULL if HMM bands not used */
 	   != eslOK) return status;
@@ -2315,7 +2308,7 @@ cm_pli_CMStage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es,
  *          ! eslOK on an error, pli->errbuf is filled. 
  */
 int
-cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ *sq, int do_trunc, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b)
+cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int do_trunc, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b)
 {
   int                 status;               /* Easel status code */
   Parsetree_t        *tr = NULL;            /* pointer to the pointer to the parsetree we're currently creating */
@@ -2332,6 +2325,8 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
   ESL_STOPWATCH      *watch = NULL;         /* stopwatch for timing alignment step */
   float               pp, sc;               /* average PP, bit score of a parsetree */
   float               null3_correction;     /* null 3 bit score penalty, for CYK score */
+
+  if(cm->cmcons == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_AlignHit() cm->cmcons is NULL");
 
   watch = esl_stopwatch_Create();
   if(! watch) ESL_FAIL(eslEMEM, pli->errbuf, "out of memory");
@@ -2506,7 +2501,7 @@ cm_pli_AlignHit(CM_PIPELINE *pli, CM_t *cm, CMConsensus_t *cmcons, const ESL_SQ 
     sc -= null3_correction;
   }
 
-  if((status = cm_alidisplay_Create(cm->abc, pli->errbuf, tr, cm, cmcons, sq, hit->start, ppstr, sc, pp,
+  if((status = cm_alidisplay_Create(cm->abc, pli->errbuf, tr, cm, sq, hit->start, ppstr, sc, pp,
 				    do_optacc, do_hbanded, total_Mb, watch->elapsed, &(hit->ad))) != eslOK) return status;
 
   /* clean up and return */
@@ -2709,7 +2704,7 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm, CMConsensus_t **opt_cmcons)
+cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm)
 {
   int       status;
   int       nwin = 0;   /* number of windows surviving MSV & Vit & lFwd, filled by cm_pli_p7Filter() */
@@ -2872,7 +2867,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     printf("\nPIPELINE calling CMStage() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
     prv_ntophits = hitlist->N;
-    if((status = cm_pli_CMStage(pli, cm_offset, sq2search, es, ee, nenv, hitlist, opt_cm, opt_cmcons)) != eslOK) return status;
+    if((status = cm_pli_CMStage(pli, cm_offset, sq2search, es, ee, nenv, hitlist, opt_cm)) != eslOK) return status;
     if(pli->do_time_F6) return status;
 
     /* if we're researching a 3' terminus, adjust the start/stop
