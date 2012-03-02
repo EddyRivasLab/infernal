@@ -360,6 +360,67 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   return eslOK;
 }
 
+/* Function:  cp9_IterateSeq2Bands()
+ * Incept:    EPN, Thu Mar  1 17:56:42 2012
+ *
+ * Purpose:   Increase cm->tau (tighten HMM bands) by multiplying it
+ *            by <xtau> until required HMM banded matrix size is below
+ *            <size_limit> Mb, or cm->tau is greater than <maxtau>.
+ *
+ *            Since we can't determine the required size of a HB
+ *            matrix unless we have filled a CP9Bands_t object
+ *            (cm->cp9b), we need to recalculate bands each time tau
+ *            is increased and then check size of resulting matrix
+ *            given the bands.
+ *
+ *            Upon returning cm->tau may be changed. 
+ *
+ * Args       cm           - the CM
+ *            errbuf       - for error messages
+ *            dsq          - sequence we're aligning
+ *            i0           - first position in dsq to align (usually 1)
+ *            j0           - final position in dsq to align (usually sq->n)
+ *            pass_idx     - pipeline pass index
+ *            size_limit   - max allowed size of an HB mx, in Mb
+ *            doing_search - TRUE if we're going to use these HMM bands for search, not alignment
+ *            maxtau       - max value allowed for cm->tau
+ *            xtau         - we multiply tau by this at each iteration (must be > 1.1)
+ *            ret_Mb       - RETURN: required Mb for HB mx for cm->tau upon exit.
+ *
+ * Returns:   <eslOK> on success.
+ *            <eslERANGE> if required matrix size is > <size_limit>,
+ *            for cm->tau = maxtau.
+ *            A different error code upon an error, errbuf is filled.
+ */
+int
+cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, double maxtau, double xtau, float *ret_Mb)
+{
+  int   status;
+  int   do_trunc = (pass_idx == PLI_PASS_STD_ANY) ? TRUE : FALSE;
+  float hbmx_Mb;  /* approximate size in Mb required for HMM banded matrix */
+
+  if(xtau < 1.1) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2Bands() xtau too low: %f < 1.1\n", xtau);
+
+  while(1) { 
+    if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, doing_search, pass_idx, 0)) != eslOK) goto ERROR;
+    if(do_trunc) { if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
+    else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
+    if(hbmx_Mb <  size_limit)          break; /* our matrix will be small enough, break out of while(1) */
+    if(cm->tau >= (maxtau-eslSMALLX1)) break; /* our bands have gotten too tight, break out of while(1) */
+    /* printf("ARC 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
+    cm->tau = ESL_MAX(maxtau, cm->tau * xtau);
+  }
+
+  *ret_Mb = hbmx_Mb;
+
+  if(hbmx_Mb > size_limit) return eslERANGE; 
+
+  return eslOK;
+
+ ERROR:
+  *ret_Mb = 0.;
+  return status;
+}
 
 /* Function: cp9_Seq2Posteriors
  * Date    : EPN, Mon Jan  8 07:27:21 2007

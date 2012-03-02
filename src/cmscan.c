@@ -55,8 +55,8 @@ typedef struct {
 #define TIMINGOPTS  "--time-F1,--time-F2,--time-F3,--time-F4,--time-F5,--time-F6"
 
 /* large sets of options are InCompatible With (ICW) --max, --nohmm, --mid and --rfam */
-#define ICWMAX   "--nohmm,--mid,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--noF6,--doF1b,--noF2b,--noF3b,--noF4b,--noF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--F6,--ftau,--fsums,--fqdb,--fbeta,--fnonbanded,--nocykenv,--cykenvx,--tau,--sums,--nonbanded,--rt1,--rt2,--rt3,--ns,--anonbanded,--anewbands,--envhitbias,--filcmW,--xtau"
-#define ICWNOHMM "--max,--mid,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--doF1b,--noF2b,--noF3b,--noF4b,--noF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--ftau,--fsums,--tau,--sums,--rt1,--rt2,--rt3,--ns,--anonbanded,--anewbands,--envhitbias,--filcmW,--xtau"
+#define ICWMAX   "--nohmm,--mid,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--noF6,--doF1b,--noF2b,--noF3b,--noF4b,--noF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--F6,--ftau,--fsums,--fqdb,--fbeta,--fnonbanded,--nocykenv,--cykenvx,--tau,--sums,--nonbanded,--rt1,--rt2,--rt3,--ns,--anonbanded,--anewbands,--envhitbias,--filcmW,--xtau,--maxtau"
+#define ICWNOHMM "--max,--mid,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--doF1b,--noF2b,--noF3b,--noF4b,--noF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--ftau,--fsums,--tau,--sums,--rt1,--rt2,--rt3,--ns,--anonbanded,--anewbands,--envhitbias,--filcmW,--xtau,--maxtau"
 #define ICWMID   "--max,--nohmm,--rfam,--FZ,--noF1,--noF2,--noF3,--doF1b,--noF2b,--F1,--F1b,--F2,--F2b"
 #define ICWRFAM  "--max,--nohmm,--mid,--FZ"
 #define ICW_FZ    "--max,--nohmm,--mid,--rfam"
@@ -148,7 +148,7 @@ static ESL_OPTIONS options[] = {
   { "--ftau",       eslARG_REAL, "1e-4",  NULL, "1E-18<x<1", NULL,    NULL, "--fqdb",   "set HMM band tail loss prob for CYK filter to <x>",       102 },
   { "--fsums",      eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL, "--fqdb",   "w/--fhbanded use posterior sums (widens bands)",          102 },
   { "--fqdb",       eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL, NULL,       "use QDBs in CYK filter round, not HMM bands",             102 },
-  { "--fbeta",      eslARG_REAL, "1e-7",  NULL, "1E-18<x<1", NULL,"--fqdb", NULL,       "set tail loss prob for CYK filter QDB calculation to <x>",102 },
+  { "--fbeta",      eslARG_REAL, "1e-7",  NULL, "1E-18<x<1", NULL,    NULL, NULL,       "set tail loss prob for CYK filter QDB calculation to <x>",102 },
   { "--fnonbanded", eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL, "--ftau,--fsums,--fqdb,--fbeta","do not use any bands for CYK filter round", 102},
   { "--nocykenv",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "do not redefine envelopes after stage 6 based on CYK hits",  102 },
   { "--cykenvx",    eslARG_INT,     "10", NULL, "n>=1",  NULL,  NULL, "--max",          "CYK envelope redefinition threshold multiplier, <n> * F6",   102 },
@@ -156,7 +156,7 @@ static ESL_OPTIONS options[] = {
   { "--tau",        eslARG_REAL,"5e-6",   NULL, "1E-18<x<1", NULL,    NULL,"--qdb", "set HMM band tail loss prob for final round to <x>",        103 },
   { "--sums",       eslARG_NONE, FALSE,   NULL, NULL,        NULL,    NULL,"--qdb", "w/--hbanded use posterior sums (widens bands)",             103 },
   { "--qdb",        eslARG_NONE, FALSE,   NULL, NULL,        NULL,    NULL, NULL,   "use QDBs (instead of HMM bands) in final Inside round",           103 },
-  { "--beta",       eslARG_REAL,"1e-15",  NULL, "1E-18<x<1", NULL, "--qdb",NULL,    "set tail loss prob for final Inside QDB calculation to <x>",      103 },
+  { "--beta",       eslARG_REAL,"1e-15",  NULL, "1E-18<x<1", NULL,    NULL, NULL,    "set tail loss prob for final Inside QDB calculation to <x>",      103 },
   { "--nonbanded",  eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,"--tau,--sums,--qdb,--beta", "do not use QDBs or HMM bands in final Inside round of CM search", 103 },
   /* timing individual pipeline stages */
   { "--time-F1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 1 MSV; for timings",                       104 },
@@ -180,6 +180,7 @@ static ESL_OPTIONS options[] = {
   { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",  "configure cp9 HMM in glocal mode",                           106 },
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition score corrections",        106 },
   { "--xtau",       eslARG_REAL,    "2.", NULL, NULL,    NULL,  NULL,  NULL,            "set multiplier for tau to <x> when tightening HMM bands",    106 },
+  { "--maxtau",     eslARG_REAL,  "0.01", NULL,"0<x<0.5",NULL,  NULL,  NULL,            "set max tau <x> when tightening HMM bands",                  106 },
   { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",        106 },
 #ifdef HAVE_MPI
   /* Searching only a subset of sequences in the target database, currently requires MPI b/c SSI is required */
@@ -1427,23 +1428,44 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if ((*ret_cmfile  = esl_opt_GetArg(go, 1)) == NULL)  { puts("Failed to get <cmdb> argument on command line");   goto ERROR; }
   if ((*ret_seqfile = esl_opt_GetArg(go, 2)) == NULL)  { puts("Failed to get <seqfile> argument on command line"); goto ERROR; }
 
-  /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
-  if (esl_opt_GetBoolean(go, "--qdb") && esl_opt_GetBoolean(go, "--fqdb")) { 
-    if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
-      puts("Error parsing options, with --fbeta <x1> --beta <x2>, <x1> must be >= <x2>\n");
-      exit(1);
+  /* --beta only makes sense with --qdb, --nohmm or --max */
+  if (esl_opt_IsUsed(go, "--beta") && (! esl_opt_GetBoolean(go, "--qdb")) && 
+      (! esl_opt_GetBoolean(go, "--nohmm")) && (! esl_opt_GetBoolean(go, "--max"))) { 
+    puts("Error parsing options, --beta only makes sense in combination with --qdb, --nohmm or --max");
+    exit(1);
+  }    
+
+  /* --fbeta only makes sense with --fqdb or --nohmm */
+  if (esl_opt_IsUsed(go, "--fbeta") && (! esl_opt_GetBoolean(go, "--fqdb")) && (! esl_opt_GetBoolean(go, "--nohmm"))) { 
+    puts("Error parsing options, --fbeta only makes sense in combination with --fqdb or --nohmm");
+    exit(1);
+  }    
+
+  /* If we'll be using QDBs for both the CYK filter and final round,
+   * make sure that beta (--beta <x>) is <= filter round beta (--fbeta <x>) 
+   * There's two ways we'll need both sets of QDBs: 
+   * 1. --nohmm and neither of --fnonbanded --nonbanded (1st half of ugly if below)
+   * 2. --qdb and --fqdb (2nd half of ugly if below)
+   */
+  if ((esl_opt_GetBoolean(go, "--nohmm") && (! esl_opt_GetBoolean(go, "--fnonbanded")) && (! esl_opt_GetBoolean(go, "--nonbanded"))) || 
+      (esl_opt_GetBoolean(go, "--qdb") && esl_opt_GetBoolean(go, "--fqdb"))) {     
+    if(esl_opt_IsUsed(go, "--beta") && esl_opt_IsUsed(go, "--fbeta")) { 
+      if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
+	puts("Error parsing options, with --nohmm --fbeta <x1> --beta <x2>, <x1> must be >= <x2>\n");
+	exit(1);
+      }
     }
-  }
-  else if (esl_opt_GetBoolean(go, "--qdb")) { 
-    if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
-      printf("Error parsing options, with --beta <x> (not in combination with --fbeta), <x> must be <= %g\n", esl_opt_GetReal(go, "--fbeta"));
-      exit(1);
+    else if(esl_opt_IsUsed(go, "--beta")) { 
+      if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
+	printf("Error parsing options, with --nohmm --beta <x> (not in combination with --fbeta), <x> must be <= %g\n", esl_opt_GetReal(go, "--fbeta"));
+	exit(1);
+      }
     }
-  }
-  else if (esl_opt_GetBoolean(go, "--fqdb")) { 
-    if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
-      printf("Error parsing options, with --fbeta <x> (not in combination with --beta), <x> must be >= %g\n", esl_opt_GetReal(go, "--beta"));
-      exit(1);
+    else if(esl_opt_IsUsed(go, "--fbeta")) { 
+      if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
+	printf("Error parsing options, with --nohmm --fbeta <x> (not in combination with --beta), <x> must be >= %g\n", esl_opt_GetReal(go, "--beta"));
+	exit(1);
+      }
     }
   }
 
@@ -1565,6 +1587,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--cp9gloc"))    fprintf(ofp, "# CP9 HMM configuration:                 glocal\n");
   if (esl_opt_IsUsed(go, "--null2"))      fprintf(ofp, "# null2 bias corrections:                on\n");
   if (esl_opt_IsUsed(go, "--xtau"))       fprintf(ofp, "# tau multiplier for band tightening:    %g\n", esl_opt_GetReal(go, "--xtau"));
+  if (esl_opt_IsUsed(go, "--maxtau"))     fprintf(ofp, "# max tau during band tightening:        %g\n", esl_opt_GetReal(go, "--maxtau"));
   if (esl_opt_IsUsed(go, "--seed"))  {
     if (esl_opt_GetInteger(go, "--seed") == 0) fprintf(ofp, "# random number seed:                    one-time arbitrary\n");
     else                                       fprintf(ofp, "# random number seed set to:             %d\n", esl_opt_GetInteger(go, "--seed"));

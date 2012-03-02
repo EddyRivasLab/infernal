@@ -50,8 +50,10 @@
 #define OUTALPHOPTS  "--rna,--dna"                               /* Exclusive choice for output alphabet */
 
 #define CMALIGN_MAX_NSEQ_ILEAVED  100000     /* 100k sequences, most we allow to be aligned and output in interleaved format */
-#define CMALIGN_MAX_NRES          10000000   /* 10 Mb, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
 #define CMALIGN_MAX_NRES_ILEAVED  100000000  /* 100Mb, most we allow to be aligned and output in interleaved format */
+#define CMALIGN_MAX_NRES          10000000   /* 10 Mb, most residues we allowed output in a single Parsetrees2Alignment call,
+					      * alignment average parsetree is 25 bytes/position this means ~250Mb for all parsetrees 
+					      */
 
 #define DEBUGSERIAL 0
 #define DEBUGMPI    0
@@ -60,12 +62,13 @@ typedef struct {
 #ifdef HMMER_THREADS
   ESL_WORK_QUEUE   *queue;
 #endif /*HMMER_THREADS*/
-  CM_t             *cm;      /* a covariance model */
-  CM_ALNDATA      **dataA;   /* array of CM_ALNDATA objects with ptrs to sqs, parsetrees, scores */
-  int               n;       /* size of outdataA   */
-  float             mxsize;  /* max size (Mb) of allowable DP mx */
-  ESL_STOPWATCH    *w;       /* stopwatch for timing stages (band calc, alignment) */
-  ESL_STOPWATCH    *w_tot;   /* stopwatch for timing total time for processing 1 seq */
+  CM_t             *cm;       /* a covariance model */
+  CM_ALNDATA      **dataA;    /* array of CM_ALNDATA objects with ptrs to sqs, parsetrees, scores */
+  int               n;        /* size of outdataA   */
+  float             mxsize;   /* max size (Mb) of allowable DP mx */
+  int               pass_idx; /* pipeline pass index, controls truncation bit sc penalty */
+  ESL_STOPWATCH    *w;        /* stopwatch for timing stages (band calc, alignment) */
+  ESL_STOPWATCH    *w_tot;    /* stopwatch for timing total time for processing 1 seq */
 } WORKER_INFO;
 
 #define ALGOPTS      "--cyk,--optacc,--sample"         /* Exclusive choice for algorithm */
@@ -591,6 +594,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   info.dataA    = NULL;
   info.n        = 0;
   info.mxsize   = esl_opt_GetReal(go, "--mxsize");
+  info.pass_idx = esl_opt_GetBoolean(go, "--notrunc") ? PLI_PASS_STD_ANY : PLI_PASS_5P_AND_3P_FORCE;
   info.w        = esl_stopwatch_Create();
   info.w_tot    = esl_stopwatch_Create();
 
@@ -638,7 +642,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       free(dsq); /* esl_sq_CreateDigitalFrom() makes a copy of dsq */
       
       /* align the sequence */
-      if((status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize, 
+      if((status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize, TRMODE_UNKNOWN, info.pass_idx, FALSE, /* FALSE: cm->cp9b not valid */
 				       info.w, info.w_tot, NULL, &data)) != eslOK) mpi_failure(errbuf);
       
       /* pack up the data and send it back to the master (FALSE: don't send data->sq) */
@@ -1081,6 +1085,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     info[k].dataA    = NULL;
     info[k].n        = 0;
     info[k].mxsize   = esl_opt_GetReal(go, "--mxsize");
+    info[k].pass_idx = esl_opt_GetBoolean(go, "--notrunc") ? PLI_PASS_STD_ANY : PLI_PASS_5P_AND_3P_FORCE;
     info[k].w        = esl_stopwatch_Create();
     info[k].w_tot    = esl_stopwatch_Create();
 #ifdef HMMER_THREADS
@@ -1301,6 +1306,7 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
 
   for(i = 0; i < info->n; i++) { 
     if((status = DispatchSqAlignment(info->cm, errbuf, sq_block->list + i, sq_block->first_seqidx + i, info->mxsize, 
+				     TRMODE_UNKNOWN, info->pass_idx, FALSE, /* FALSE: info->cm->cp9b not valid */
 				     info->w, info->w_tot, r, &(info->dataA[i]))) != eslOK) cm_Fail(errbuf);
   }
   return eslOK;
@@ -1441,6 +1447,7 @@ pipeline_thread(void *arg)
       nalloc += allocsize;
     }
     if((status = DispatchSqAlignment(info->cm, errbuf, sq, sq->W, info->mxsize, 
+				     TRMODE_UNKNOWN, info->pass_idx, FALSE, /* FALSE: info->cm->cp9b not valid */
 				     info->w, info->w_tot, NULL, &(info->dataA[i]))) != eslOK) cm_Fail(errbuf);
     /* sq->W has been overloaded (its original value is irrelevant in this context).
      * It is now the sequence index, defined in thread_loop() 

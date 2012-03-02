@@ -63,6 +63,7 @@ cm_tophits_Create(void)
   h->is_sorted_by_score            = TRUE;  /* but only because there's 0 hits */
   h->is_sorted_for_overlap_removal = FALSE; /* actually this is true with 0 hits, but for safety, 
 				             * we don't want both sorted_* fields as TRUE */
+  h->is_sorted_by_position         = FALSE; /* ditto */
   h->hit[0]    = h->unsrt;  /* if you're going to call it "sorted" when it contains just one hit, you need this */
   return h;
 
@@ -101,7 +102,7 @@ cm_tophits_Grow(CM_TOPHITS *h)
   /* If we grow a sorted list, we have to translate the pointers
    * in h->hit, because h->unsrt might have just moved in memory. 
    */
-  if (h->is_sorted_by_score || h->is_sorted_for_overlap_removal) { 
+  if (h->is_sorted_by_score || h->is_sorted_for_overlap_removal || h->is_sorted_by_position) { 
     for (i = 0; i < h->N; i++)
       h->hit[i] = h->unsrt + (h->hit[i] - ori);
   }
@@ -141,6 +142,7 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   if (h->N >= 2) { 
     h->is_sorted_by_score            = FALSE;
     h->is_sorted_for_overlap_removal = FALSE;
+    h->is_sorted_by_position         = FALSE;
   }
 
   hit->name             = NULL;
@@ -172,7 +174,7 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   return status;
 }
 
-/* hit_sorter_by_score() and hit_sorter_by_position: qsort's pawns, below */
+/* hit_sorter_by_score(), hit_sorter_for_overlap_removal and hit_sorter_by_position: qsort's pawns, below */
 static int
 hit_sorter_by_score(const void *vh1, const void *vh2)
 {
@@ -220,6 +222,35 @@ hit_sorter_for_overlap_removal(const void *vh1, const void *vh2)
   }
 }
 
+static int
+hit_sorter_by_position(const void *vh1, const void *vh2)
+{
+  CM_HIT *h1 = *((CM_HIT **) vh1);  /* don't ask. don't change. Don't Panic. */
+  CM_HIT *h2 = *((CM_HIT **) vh2);
+
+  if      (h1->cm_idx > h2->cm_idx)     return  1; /* first key, cm_idx (unique id for models), low to high */
+  else if (h1->cm_idx < h2->cm_idx)     return -1; /* first key, cm_idx (unique id for models), low to high */
+  else { 
+    if      (h1->seq_idx > h2->seq_idx) return  1; /* second key, seq_idx (unique id for sequences), low to high */
+    else if (h1->seq_idx < h2->seq_idx) return -1;
+    else { 
+      /* same sequence, sort by strand, stop position then start position (if revcomp) or start position then stop position (if !revcomp) */
+      if     (h1->in_rc > h2->in_rc)    return  1; /* third key, strand (h1->in_rc = 1, h1->in_rc = 0), forward, then reverse */
+      else if(h1->in_rc < h2->in_rc)    return -1; /*                   (h1->in_rc = 0, h2->in_rc = 1), forward, then reverse */
+      else if(h1->in_rc) { 
+	if     (h1->stop > h2->stop)    return  1; /* both revcomp:     fourth key is stop  position, low to high */
+	else if(h1->stop < h2->stop)    return -1; 
+	else                            return (h1->start  > h2->start  ? 1 : -1 ); /* both revcomp, same stop position, fourth key is start position, low to high */
+      }
+      else               {
+	if     (h1->start > h2->start)  return  1; /* both !revcomp:    fourth key is start position, low to high */
+	else if(h1->start < h2->start)  return -1; 
+	else                            return (h1->stop  > h2->stop    ? 1 : -1 ); /* both !revcomp, same start position, fourth key is stop position, low to high */
+      }
+    }
+  }
+}
+
 /* Function:  cm_tophits_SortByScore()
  * Synopsis:  Sorts a hit list by bit score.
  * Incept:    EPN, Tue May 24 13:30:23 2011
@@ -240,13 +271,15 @@ cm_tophits_SortByScore(CM_TOPHITS *h)
 
   if (h->is_sorted_by_score) { 
     h->is_sorted_for_overlap_removal = FALSE;
+    h->is_sorted_by_position         = FALSE;
     return eslOK;
   }
   /* initialize hit ptrs, this also unsorts if already sorted by seq_idx */
   for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
   if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_score);
   h->is_sorted_for_overlap_removal = FALSE;
-  h->is_sorted_by_score    = TRUE;
+  h->is_sorted_by_position         = FALSE;
+  h->is_sorted_by_score            = TRUE;
   return eslOK;
 }
 
@@ -269,30 +302,33 @@ cm_tophits_SortForOverlapRemoval(CM_TOPHITS *h)
   int i;
 
   if (h->is_sorted_for_overlap_removal) { 
-    h->is_sorted_by_score = FALSE;
+    h->is_sorted_by_score    = FALSE;
+    h->is_sorted_by_position = FALSE;
     return eslOK;
   }
   /* initialize hit ptrs, this also unsorts if already sorted by score */
   for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
   if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_for_overlap_removal);
   h->is_sorted_by_score            = FALSE;
+  h->is_sorted_by_position         = FALSE;
   h->is_sorted_for_overlap_removal = TRUE;
 
   return eslOK;
 }
 
-#if 0
-/* Function:  cm_tophits_SortForOverlapRemoval()
- * Synopsis:  Sorts a hit list by cm index, sequence index, strand, then score.
+/* Function:  cm_tophits_SortByPosition()
+ * Synopsis:  Sorts a hit list by cm index, sequence index, strand, then position.
  * Incept:    EPN, Tue Dec 20 09:17:47 2011
  *
- * Purpose:   Sorts a top hit list to ease removal of duplicates.
+ * Purpose:   Sorts a top hit list to ease merging of nearby hits after
+ *            padding start and stop (like we do at the end of 
+ *            cm_pli_SeqCYKFilter()).
  *            After this call, <h->hit[i]> points to the i'th ranked
  *            <CM_HIT> for all <h->N> hits. First sort key is cm_idx
  *            (low to high), second is seq_idx (low to high) position
  *            (low to high), third is strand (forward then reverse),
- *            fourth key is start position (if forward strand) or stop
- *            position (if reverse strand).
+ *            fourth key is start (if ! in_rc) or stop (if in_rc) 
+ *            (low to high for both strands).
  *
  * Returns:   <eslOK> on success.
  */
@@ -301,19 +337,20 @@ cm_tophits_SortByPosition(CM_TOPHITS *h)
 {
   int i;
 
-  if (h->is_sorted_for_overlap_removal) { 
-    h->is_sorted_by_score = FALSE;
+  if (h->is_sorted_by_position) { 
+    h->is_sorted_by_score            = FALSE;
+    h->is_sorted_for_overlap_removal = FALSE;
     return eslOK;
   }
   /* initialize hit ptrs, this also unsorts if already sorted by score */
   for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
   if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_position);
   h->is_sorted_by_score            = FALSE;
-  h->is_sorted_for_overlap_removal = TRUE;
+  h->is_sorted_for_overlap_removal = FALSE;
+  h->is_sorted_by_position         = TRUE;
 
   return eslOK;
 }
-#endif
 
 /* Function:  cm_tophits_Merge()
  * Synopsis:  Merge two top hits lists.
@@ -365,6 +402,7 @@ cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2)
   h1->N     += h2->N;
   h1->is_sorted_by_score            = FALSE;
   h1->is_sorted_for_overlap_removal = FALSE;
+  h1->is_sorted_by_position         = FALSE;
 
   /* reset pointers in sorted list (not really nec because we're not sorted) */
   for (i = 0; i < h1->N; i++) h1->hit[i] = h1->unsrt + i;
@@ -526,7 +564,9 @@ cm_tophits_Reuse(CM_TOPHITS *h)
   h->N         = 0;
   h->is_sorted_by_score            = TRUE;  /* because there's no hits */
   h->is_sorted_for_overlap_removal = FALSE; /* actually this is true with 0 hits, but for safety, 
-			           	     * we don't want both sorted_* fields as TRUE */
+			           	     * we don't want multiple sorted_* fields as TRUE */
+  h->is_sorted_by_position         = FALSE; /* ditto */
+
   h->hit[0]    = h->unsrt;
   return eslOK;
 }
@@ -615,7 +655,6 @@ cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eZ, int istart)
 
   for (i = istart; i < th->N ; i++) { 
     th->unsrt[i].evalue = th->unsrt[i].pvalue * eZ;
-    printf("HEYA: i: %d pvalue: %g eZ: %f evalue: %g\n", i, th->unsrt[i].pvalue, eZ, th->unsrt[i].evalue);
   }
   return eslOK;
 }
@@ -1625,6 +1664,7 @@ cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th)
   fprintf(fp, "nincluded                     = %" PRId64 "\n", th->nincluded);
   fprintf(fp, "is_sorted_by_score            = %s\n",  th->is_sorted_by_score            ? "TRUE" : "FALSE");
   fprintf(fp, "is_sorted_for_overlap_removal = %s\n",  th->is_sorted_for_overlap_removal ? "TRUE" : "FALSE");
+  fprintf(fp, "is_sorted_by_position         = %s\n",  th->is_sorted_by_position         ? "TRUE" : "FALSE");
   if(th->is_sorted_by_score) { 
     for (i = 0; i < th->N; i++) {
       fprintf(fp, "SCORE SORTED HIT %" PRId64 ":\n", i);
@@ -1634,6 +1674,12 @@ cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th)
   else if(th->is_sorted_for_overlap_removal) { 
     for (i = 0; i < th->N; i++) {
       fprintf(fp, "OVERLAP REMOVAL SORTED HIT %" PRId64 ":\n", i);
+      cm_hit_Dump(fp, th->hit[i]);
+    }
+  }
+  else if(th->is_sorted_by_position) { 
+    for (i = 0; i < th->N; i++) {
+      fprintf(fp, "POSITION SORTED HIT %" PRId64 ":\n", i);
       cm_hit_Dump(fp, th->hit[i]);
     }
   }

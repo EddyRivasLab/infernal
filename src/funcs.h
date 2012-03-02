@@ -113,8 +113,8 @@ extern void    cm_FreeTransitionMap(char ***tmap);
 extern void    InsertsGivenNodeIndex(CM_t *cm, int nd, int *ret_i1, int *ret_2);
 
 /* cm_alidisplay.c */
-extern int            cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_t *cm, const ESL_SQ *sq, int64_t seqoffset, 
-					   char *pcode, float sc, float avgpp, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs, CM_ALIDISPLAY **ret_ad);
+extern int            cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq, int64_t seqoffset, 
+					   int used_hbands, double elapsed_secs, CM_ALIDISPLAY **ret_ad);
 extern CM_ALIDISPLAY *cm_alidisplay_Clone(const CM_ALIDISPLAY *ad);
 extern size_t         cm_alidisplay_Sizeof(const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Serialize(CM_ALIDISPLAY *ad);
@@ -135,8 +135,9 @@ extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_A
 /* from cm_alndata.c */
 CM_ALNDATA * cm_alndata_Create(void);
 void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sq);
-int          DispatchSqAlignment     (CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data);
 int          DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA);
+int          DispatchSqAlignment     (CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx, int cp9b_valid, 
+				      ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data);
 
 /* from cm_dpalign.c */
 extern int   cm_AlignSizeNeeded   (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
@@ -430,23 +431,19 @@ extern int          cm_pipeline_Reuse  (CM_PIPELINE *pli);
 extern void         cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm);
 extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
 
-extern int cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
-extern int cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
-extern int cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, P7_OPROFILE *om, P7_BG *bg, int64_t cur_cm_idx);
-extern int cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
-extern int cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
-extern int cm_pli_p7Filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
-extern int cm_pli_p7EnvelopeDef     (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
-extern int cm_pli_CMStage           (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm);
-extern int cm_pli_AlignHit          (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, int do_trunc, CM_HIT *hit, int first_hit, CP9Bands_t *scan_cp9b);
-extern int cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
-extern int cm_pli_Statistics    (FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
-extern int cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *w);
-extern int cm_pli_SumStatistics (CM_PIPELINE *pli);
-extern int cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct);
+extern int   cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
+extern int   cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
+extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, P7_OPROFILE *om, P7_BG *bg, int64_t cur_cm_idx);
+extern int   cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
+extern int   cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
+extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
+extern int   cm_pli_Statistics    (FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
+extern int   cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *w);
+extern int   cm_pli_SumStatistics (CM_PIPELINE *pli);
+extern int   cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct);
 extern char *cm_pli_DescribePass(int pass_idx);
-extern int cm_pli_PassEnforcesFirstRes(int pass_idx);
-extern int cm_pli_PassEnforcesFinalRes(int pass_idx);
+extern int   cm_pli_PassEnforcesFirstRes(int pass_idx);
+extern int   cm_pli_PassEnforcesFinalRes(int pass_idx);
 
 /* from cm_qdband.c */
 extern void     BandExperiment(CM_t *cm);
@@ -494,6 +491,7 @@ extern int         cm_tophits_Grow(CM_TOPHITS *h);
 extern int         cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit);
 extern int         cm_tophits_SortByScore(CM_TOPHITS *h);
 extern int         cm_tophits_SortForOverlapRemoval(CM_TOPHITS *h);
+extern int         cm_tophits_SortByPosition(CM_TOPHITS *h);
 extern int         cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2);
 extern int         cm_tophits_GetMaxPositionLength(CM_TOPHITS *h);
 extern int         cm_tophits_GetMaxNameLength(CM_TOPHITS *h);
@@ -698,6 +696,7 @@ extern CP9Bands_t  *AllocCP9Bands(int cm_M, int hmm_M);
 extern float        SizeofCP9Bands(CP9Bands_t *cp9b);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int pass_idx, int debug_level);
+extern int          cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, double maxtau, double xtau, float *ret_Mb);
 extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
 extern void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *mx, int did_fwd_scan);
 extern void         cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9, int i0, int j0);

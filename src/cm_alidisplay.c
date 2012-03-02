@@ -43,18 +43,12 @@ static int  bp_is_canonical(char lseq, char rseq);
  *            to), create a pairwise alignment for display; return in a CM_ALIDISPLAY
  *            structure.
  *
- * Args:      abc          - alphabet to create alignment with (often cm->abc)
+ * Args:      cm           - model
  *            errbuf       - for error messages
- *            tr           - parsetree for cm aligned to dsq
- *            cm           - model
- *            sq           - the sequence, parsetree corresponds to subsequence beginning at spos
+ *            aln_data     - CM_ALNDATA, includes parsetree, score etc.
+ *            sq           - the sequence, parsetree corresponds to subseq beginning at seqoffset
  *            seqoffset    - position in sq which corresponds to first position in tr
- *            ppstr        - posterior probability string 
- *            pp           - average posterior probability, 0. if ppstr is NULL
- *            sc           - score of alignment 
- *            used_optacc  - TRUE if aln algorithm used was optimal accuracy 
  *            used_hbands  - TRUE if HMM bands were used for alignment
- *            matrix_Mb    - size of DP matrix in Mb used for alignment
  *            elapsed_secs - time (seconds) required for alignment
  *            ret_ad       - RETURN: CM_ALIDISPLAY, allocated and filled here.
  *
@@ -64,10 +58,10 @@ static int  bp_is_canonical(char lseq, char rseq);
  * Xref:      STL6 p.58
  */
 int
-cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_t *cm, const ESL_SQ *sq, int64_t seqoffset, 
-		     char *ppstr, float sc, float avgpp, int used_optacc, int used_hbands, float matrix_Mb, double elapsed_secs, CM_ALIDISPLAY **ret_ad)
+cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq, int64_t seqoffset, 
+		     int used_hbands, double elapsed_secs, CM_ALIDISPLAY **ret_ad)
 {
-  int            status;
+  int         status;
   CM_ALIDISPLAY *ad = NULL;      /* alidisplay structure we're building       */
   ESL_STACK  *pda = NULL;        /* pushdown automaton used to traverse trace */
   int         type;		 /* type of pda move: PDA_RESIDUE, PDA_STATE  */
@@ -93,7 +87,11 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   int         cm_namelen, cm_acclen, cm_desclen;
   int         sq_namelen, sq_acclen, sq_desclen;
   int         len, n;
-  
+
+  /* convenience ptrs */
+  Parsetree_t *tr    = adata->tr;   
+  char        *ppstr = adata->ppstr;
+
   /* Variables for possibly dealing with truncated alignments */
   int         cfrom_span;        /* first model position spanned by any state in parsetree (regardless of truncation mode) */
   int         cto_span;          /* final model position spanned by any state in parsetree (regardless of truncation mode) */
@@ -117,10 +115,6 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   /* Contract check. We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
   if(cm->cmcons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_alidisplay_Create(): cm->cmcons is NULL");
-  if(cm->abc->type == eslRNA) { 
-    if(abc->type != eslRNA && abc->type != eslDNA) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_alidisplay_Create(): cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
-  }
-  else if(cm->abc->K != abc->K) ESL_FAIL(eslEINCOMPAT, errbuf,"cm_alidisplay_Create(): cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
 
   /* Useful for debugging:  
    * DumpEmitMap(stdout, cm->emap, cm);
@@ -215,7 +209,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   /* Allocate the char arrays */
 
   n = (len+1) * 5; /* model, csline, mline, aseq, nline mandatory */
-  if(ppstr  != NULL) n += len+1;
+  if(adata->ppstr  != NULL) n += len+1;
   if(cm->rf != NULL) n += len+1;
   cm_namelen = strlen(cm->name);                           n += cm_namelen + 1;
   cm_acclen  = (cm->acc  != NULL ? strlen(cm->acc)  : 0);  n += cm_acclen  + 1; 
@@ -227,11 +221,10 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   ESL_ALLOC(ad, sizeof(CM_ALIDISPLAY));
   ad->mem          = NULL;
   ad->memsize      = sizeof(char) * n;
-  ad->sc           = sc;
-  ad->avgpp        = avgpp;
-  ad->used_optacc  = used_optacc;
+  ad->sc           = adata->sc;
+  ad->avgpp        = adata->pp;
   ad->used_hbands  = used_hbands;
-  ad->matrix_Mb    = matrix_Mb;
+  ad->matrix_Mb    = adata->mb_tot;
   ad->elapsed_secs = elapsed_secs;
   ad->N            = len;
 
@@ -243,7 +236,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   ad->model   = ad->mem + pos;  pos += len+1;
   ad->mline   = ad->mem + pos;  pos += len+1;
   ad->aseq    = ad->mem + pos;  pos += len+1;
-  if (ppstr  != NULL) { ad->ppline = ad->mem + pos;  pos += len+1;} else { ad->ppline = NULL; }
+  if (adata->ppstr  != NULL) { ad->ppline = ad->mem + pos;  pos += len+1;} else { ad->ppline = NULL; }
   ad->cmname  = ad->mem + pos;  pos += cm_namelen +1;
   ad->cmacc   = ad->mem + pos;  pos += cm_acclen +1;
   ad->cmdesc  = ad->mem + pos;  pos += cm_desclen +1;
@@ -271,7 +264,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
   memset(ad->model,   ' ', ad->N);
   memset(ad->mline,   ' ', ad->N);
   memset(ad->aseq,    ' ', ad->N);
-  if(ppstr != NULL)   memset(ad->ppline, ' ', ad->N);
+  if(adata->ppstr != NULL)   memset(ad->ppline, ' ', ad->N);
 
   /* Fill in the lines: traverse the traceback.
    */
@@ -362,7 +355,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	  if (cm->rf != NULL) lrf = '.';
 	  lstr    = '.';
 	  lcons   = '.';
-	  lseq = tolower((int) abc->sym[symi]);
+	  lseq = tolower((int) cm->abc->sym[symi]);
 	  if(ppstr != NULL) lpost = ppstr[tr->emitl[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
 	} 
       }
@@ -376,7 +369,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	  if (cm->rf != NULL) rrf = '.';
 	  rstr    = '.';
 	  rcons   = '.';
-	  rseq = tolower((int) abc->sym[symj]);
+	  rseq = tolower((int) cm->abc->sym[symj]);
 	  if(ppstr != NULL) rpost = ppstr[tr->emitr[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
 	} 
       }
@@ -387,7 +380,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	  lstr   = cm->cmcons->cstr[lc];
 	  lcons  = (cm->flags & CMH_CONS) ? cm->consensus[(lc+1)] : cm->cmcons->cseq[lc];
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
-	    lseq = abc->sym[symi];
+	    lseq = cm->abc->sym[symi];
 	    if(ppstr != NULL) lpost = ppstr[tr->emitl[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
 	  } 
 	  else {
@@ -401,7 +394,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	  rstr   = cm->cmcons->cstr[rc];
 	  rcons  = (cm->flags & CMH_CONS) ? cm->consensus[(rc+1)] : cm->cmcons->cseq[rc];
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
-	    rseq = abc->sym[symj];
+	    rseq = cm->abc->sym[symj];
 	    if(ppstr != NULL) rpost = ppstr[tr->emitr[ti]-1]; /* watch off-by-one b/t ppstr and dsq */
 	  } 
 	  else {
@@ -430,7 +423,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	    lmid = lseq; 
 	    rmid = rseq; 
 	  }
-	  else if (sc >= 0) { 
+	  else if (tmpsc >= 0) { 
 	    lmid = rmid = ':';
 	  }
 	  /* determine lnnc, rnnc for optional negative scoring
@@ -438,7 +431,7 @@ cm_alidisplay_Create(const ESL_ALPHABET *abc, char *errbuf, Parsetree_t *tr, CM_
 	   * are a negative scoring non-canonical (not a
 	   * AU,UA,GC,CG,GU,UG) pair. 
 	   */
-	  if (sc < 0 && (! bp_is_canonical(lseq, rseq))) {
+	  if (tmpsc < 0 && (! bp_is_canonical(lseq, rseq))) {
 	    lnnc = rnnc = 'v';
 	  }
 	}
@@ -1219,8 +1212,6 @@ cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad)
 
   fprintf(fp, "sc         = %.2f\n",ad->sc);
   fprintf(fp, "avgpp      = %.2f\n",ad->avgpp);
-  fprintf(fp, "optacc     = %s\n",  ad->used_optacc ? "TRUE" : "FALSE");
-  fprintf(fp, "CYK        = %s\n",  ad->used_optacc ? "FALSE" : "TRUE");
   fprintf(fp, "hbanded    = %s\n",  ad->used_hbands ? "TRUE" : "FALSE");
   fprintf(fp, "mx Mb      = %.6f\n",ad->matrix_Mb);
   fprintf(fp, "seconds    = %.6f\n",ad->elapsed_secs);

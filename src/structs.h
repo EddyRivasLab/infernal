@@ -2106,6 +2106,7 @@ typedef struct cm_pipeline_s {
   int           do_envwinbias;  /* TRUE to calc env bias for entire window  */
   int           do_filcmW;      /* TRUE to use CM's window length for all HMM filters */
   double        xtau;           /* multiplier for tau when tightening bands */
+  double        maxtau;         /* max tau when tightening bands            */
   /* flags for timing experiments */
   int           do_time_F1;      /* TRUE to abort after Stage 1 MSV */
   int           do_time_F2;      /* TRUE to abort after Stage 2 Vit */
@@ -2164,9 +2165,6 @@ typedef struct cm_pipeline_s {
   int     do_fwdbias;     	/* TRUE to use biased comp HMM filter w/Fwd */
   int     do_gfwdbias;     	/* TRUE to use biased comp HMM filter w/gFwd*/
   int     do_edefbias;     	/* TRUE to use biased comp HMM filter w/edef*/
-  /* parameters controlling hit alignment */
-  int     align_cyk;            /* TRUE to use CYK instead of optimal accuracy    */
-  int     align_hbanded;        /* TRUE to do HMM banded alignment, when possible */
 
   /* truncated sequence detection parameters */
   int     do_trunc_ends;        /* TRUE to use truncated CM algs at sequence ends */
@@ -2193,8 +2191,9 @@ typedef struct cm_pipeline_s {
   double  fcyk_tau;             /* HMM bands tau for CYK filter stage       */
   double  final_tau;            /* HMM bands tau for final stage            */
 
-  /* configure options for all CMs we'll use in the pipeline */
+  /* configure/alignment options for all CMs we'll use in the pipeline */
   int     cm_config_opts;
+  int     cm_align_opts;
 
 } CM_PIPELINE;
 
@@ -2232,7 +2231,6 @@ typedef struct cm_alidisplay_s {
   long  sqfrom;			/* min bound in scoord, start posn in seq (1..L) */
   long  sqto;		        /* max bound in scoord, end posn in seq   (1..L) */
 
-  int    used_optacc;           /* TRUE if aln alg was optacc, FALSE if CYK */
   float  sc;		        /* alignment score */
   float  avgpp;		        /* average PP of all aligned residues, 0.0 if no PPs available */
   int    used_hbands;           /* TRUE if aln used HMM bands, FALSE if not */
@@ -2297,6 +2295,9 @@ typedef struct cm_tophits_s {
   uint64_t nincluded;	                  /* number of hits that are includable       */
   int      is_sorted_by_score;            /* TRUE when hits sorted by score, length, th->hit valid for all N hits */
   int      is_sorted_for_overlap_removal; /* TRUE when hits are sorted by cm_idx, seq_idx, strand, score, th->hit valid for all N hits */
+  int      is_sorted_by_position;         /* TRUE when hits are sorted by cm_idx, seq_idx, strand, first residue 
+					   * (start if ! in_rc, stop if in_rc), th->hit valid for all N hits 
+					   */
 } CM_TOPHITS;
 
 
