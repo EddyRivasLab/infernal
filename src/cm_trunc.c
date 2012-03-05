@@ -386,6 +386,15 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
       if((cm->stid[v] == MATP_MP || cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR || cm->stid[v] == BIF_B) || 
 	 ((cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) && (! StateIsDetached(cm, v)))) 
 	{
+	  /* Check for rare special case: if we're a MATP_IL and next
+	   * two states are MATP_IR and END_E, then we won't have set
+	   * a trunction penalty. This state will keep an impossible
+	   * truncated begin score, if we did a truncated begin into
+	   * it we'd just emit from the MATP_IL and then go to the
+	   * END_E anyway (the MATP_IR will be detached.
+	   */
+	  if(cm->stid[v] == MATP_IL && cm->ndtype[cm->ndidx[v]+1] == END_nd) continue;
+
 	  /* glocal 5P AND 3P: all of these should have been set to a non-IMPOSSIBLE value */
 	  if(! NOT_IMPOSSIBLE(trp->g_ptyAA[TRPENALTY_5P_AND_3P][v])) goto ERROR;
 	  trp->ig_ptyAA[TRPENALTY_5P_AND_3P][v] = Prob2Score(trp->g_ptyAA[TRPENALTY_5P_AND_3P][v], 1.0);
@@ -393,13 +402,13 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
 	  
 	  /* glocal 5P only: some may be IMPOSSIBLE */
 	  if(NOT_IMPOSSIBLE(trp->g_ptyAA[TRPENALTY_5P_ONLY][v])) { 
-	    trp->ig_ptyAA[TRPENALTY_5P_ONLY][v]   = Prob2Score(trp->g_ptyAA[TRPENALTY_5P_ONLY][v], 1.0);
-	    trp->g_ptyAA[TRPENALTY_5P_ONLY][v]    = sreLOG2(trp->g_ptyAA[TRPENALTY_5P_ONLY][v]);
+	    trp->ig_ptyAA[TRPENALTY_5P_ONLY][v] = Prob2Score(trp->g_ptyAA[TRPENALTY_5P_ONLY][v], 1.0);
+	    trp->g_ptyAA[TRPENALTY_5P_ONLY][v]  = sreLOG2(trp->g_ptyAA[TRPENALTY_5P_ONLY][v]);
 	  }
 	  /* glocal 5P only: some may be IMPOSSIBLE */
 	  if(NOT_IMPOSSIBLE(trp->g_ptyAA[TRPENALTY_3P_ONLY][v])) { 
-	    trp->ig_ptyAA[TRPENALTY_3P_ONLY][v]   = Prob2Score(trp->g_ptyAA[TRPENALTY_3P_ONLY][v], 1.0);
-	    trp->g_ptyAA[TRPENALTY_3P_ONLY][v]    = sreLOG2(trp->g_ptyAA[TRPENALTY_3P_ONLY][v]);
+	    trp->ig_ptyAA[TRPENALTY_3P_ONLY][v] = Prob2Score(trp->g_ptyAA[TRPENALTY_3P_ONLY][v], 1.0);
+	    trp->g_ptyAA[TRPENALTY_3P_ONLY][v]  = sreLOG2(trp->g_ptyAA[TRPENALTY_3P_ONLY][v]);
 	  }
 
 	  /* local penalties all of these should have been set to a non-IMPOSSIBLE value */
