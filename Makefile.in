@@ -23,6 +23,7 @@ SHELL          = /bin/sh
 
 # location of easel
 ESLDIR         = @INFERNAL_ESLDIR@
+SADIR          = @INFERNAL_SADIR@
 
 # Package information
 #
@@ -92,6 +93,7 @@ SSEPROGS = sse_cmsearch\
 #
 all: 
 	${QUIET_SUBDIR0}${ESLDIR}     ${QUIET_SUBDIR1} all
+	${QUIET_SUBDIR0}${SADIR}      ${QUIET_SUBDIR1} all
 	${QUIET_SUBDIR0}hmmer/src     ${QUIET_SUBDIR1} libhmmer.a
 	${QUIET_SUBDIR0}src           ${QUIET_SUBDIR1} all
 	${QUIET_SUBDIR0}rmark         ${QUIET_SUBDIR1} all
@@ -100,6 +102,7 @@ all:
 #
 dev: 
 	${QUIET_SUBDIR0}${ESLDIR}  ${QUIET_SUBDIR1} dev
+	${QUIET_SUBDIR0}${SADIR}   ${QUIET_SUBDIR1} all
 	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} dev
 	${QUIET_SUBDIR0}src        ${QUIET_SUBDIR1} dev
 	${QUIET_SUBDIR0}rmark      ${QUIET_SUBDIR1} all
@@ -108,6 +111,7 @@ dev:
 #
 tests:
 	${QUIET_SUBDIR0}${ESLDIR}  ${QUIET_SUBDIR1} tests
+	${QUIET_SUBDIR0}${SADIR}   ${QUIET_SUBDIR1} all
 	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} libhmmer.a
 	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} tests
 	${QUIET_SUBDIR0}src        ${QUIET_SUBDIR1} tests
@@ -116,6 +120,7 @@ tests:
 #
 check:
 	${QUIET_SUBDIR0}${ESLDIR}  ${QUIET_SUBDIR1} tests
+	${QUIET_SUBDIR0}${SADIR}   ${QUIET_SUBDIR1} all
 	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} libhmmer.a
 	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} tests
 	${QUIET_SUBDIR0}src        ${QUIET_SUBDIR1} tests
