@@ -5,379 +5,232 @@
 
 # Exercises of cmsearch.
 #
-1  exercise  cmsearch:help/1        @src/cmsearch@  -h
-1  exercise  cmsearch:help/2        @src/cmsearch@  --devhelp
+1  exercise  search:help/1        @src/cmsearch@  -h
+1  exercise  search:help/2        @src/cmsearch@  --devhelp
 
 # cmsearch requires calibrated models
-1  prep      copy/trnaC/a         cp !testsuite/tRNA.calibrated.cm! %T.CM%
-1  prep      copy/vaultC/a        cp !testsuite/Vault.calibrated.cm! %V.CM%
-1  prep      copy/multiC/a        cp !testsuite/3.calibrated.cm! %3.CM%
+1  prep      copy:tC/a        cp !testsuite/tRNA.calibrated.cm! %T.CM%
+1  prep      copy:vC/a        cp !testsuite/Vault.calibrated.cm! %V.CM%
+1  prep      copy:3C/a        cp !testsuite/3.calibrated.cm! %3.CM%
 
 # copy fasta files, only so the names are more convenient in rest of this file
-1  prep      copy/trna/fa1k       cp !testsuite/1k-tRNA.fa! %T1K%
-1  prep      copy/trna/fa10k      cp !testsuite/10k-tRNA.fa! %T10K%
-1  prep      copy/trna/fa100k     cp !testsuite/100k-tRNA.fa! %T100K%
-1  prep      copy/trna/faemit     cp !testsuite/emitted-tRNA.fa! %TEMIT%
-1  prep      copy/vault/fa1k      cp !testsuite/1k-Vault.fa! %V1K%
-1  prep      copy/vault/fa10k     cp !testsuite/10k-Vault.fa! %V10K%
-1  prep      copy/vault/fa100k    cp !testsuite/100k-Vault.fa! %V100K%
-1  prep      copy/vault/faemit    cp !testsuite/emitted-Vault.fa! %VEMIT%
-1  prep      copy/vault/fatremit  cp !testsuite/tremitted-Vault.fa! %VTREMIT%
-1  prep      copy/multi/fa1k      cp !testsuite/1k-3.fa! %31K%
-1  prep      copy/multi/fa10k     cp !testsuite/10k-3.fa! %310K%
-1  prep      copy/multi/fa100k    cp !testsuite/100k-3.fa! %3100K%
-1  prep      copy/multi/faemit    cp !testsuite/emitted-3.fa! %3EMIT%
-1  prep      copy/random/fa1k     cp !testsuite/1k.fa! %R1K%
+1  prep      copy:t/fa1k      cp !testsuite/1k-tRNA.fa! %T1K%
+1  prep      copy:t/fa10k     cp !testsuite/10k-tRNA.fa! %T10K%
+1  prep      copy:t/fa100k    cp !testsuite/100k-tRNA.fa! %T100K%
+1  prep      copy:t/faemit    cp !testsuite/emitted-tRNA.fa! %TEMIT%
+1  prep      copy:v/fa1k      cp !testsuite/1k-Vault.fa! %V1K%
+1  prep      copy:v/fa10k     cp !testsuite/10k-Vault.fa! %V10K%
+1  prep      copy:v/fa100k    cp !testsuite/100k-Vault.fa! %V100K%
+1  prep      copy:v/faemit    cp !testsuite/emitted-Vault.fa! %VEMIT%
+1  prep      copy:v/fatremit  cp !testsuite/tremitted-Vault.fa! %VTREMIT%
+1  prep      copy:3/fa1k      cp !testsuite/1k-3.fa! %31K%
+1  prep      copy:3/fa10k     cp !testsuite/10k-3.fa! %310K%
+1  prep      copy:3/fa100k    cp !testsuite/100k-3.fa! %3100K%
+1  prep      copy:3/faemit    cp !testsuite/emitted-3.fa! %3EMIT%
+1  prep      copy:rand/fa1k   cp !testsuite/1k.fa! %R1K%
 
-1  exercise  cmsearch:trna/10k    @src/cmsearch@  %T.CM% %T10K%
-1  exercise  cmsearch:vault/10k   @src/cmsearch@  %V.CM% %V10K%
-1  exercise  cmsearch:multi/10k   @src/cmsearch@  %3.CM% %310K%
-1  exercise  cmsearch:trna/emit   @src/cmsearch@  %T.CM% %TEMIT%
-1  exercise  cmsearch:vault/emit  @src/cmsearch@  %V.CM% %VEMIT%
-1  exercise  cmsearch:multi/emit  @src/cmsearch@  %3.CM% %3EMIT%
+1  exercise  search:t/10k    @src/cmsearch@  %T.CM% %T10K%
+1  exercise  search:v/10k    @src/cmsearch@  %V.CM% %V10K%
+1  exercise  search:3/10k    @src/cmsearch@  %3.CM% %310K%
+1  exercise  search:t/emit   @src/cmsearch@  %T.CM% %TEMIT%
+1  exercise  search:v/emit   @src/cmsearch@  %V.CM% %VEMIT%
+1  exercise  search:3/emit   @src/cmsearch@  %3.CM% %3EMIT%
 
-1  exercise  cmsearch:trna/10k/g    @src/cmsearch@  -g %T.CM% %T10K%
-1  exercise  cmsearch:vault/10k/g   @src/cmsearch@  -g %V.CM% %V10K%
-1  exercise  cmsearch:multi/10k/g   @src/cmsearch@  -g %3.CM% %310K%
-1  exercise  cmsearch:trna/emit/g   @src/cmsearch@  -g %T.CM% %TEMIT%
-1  exercise  cmsearch:vault/emit/g  @src/cmsearch@  -g %V.CM% %VEMIT%
-1  exercise  cmsearch:multi/emit/g  @src/cmsearch@  -g %3.CM% %3EMIT%
+1  exercise  search:t/10k/g    @src/cmsearch@  -g %T.CM% %T10K%
+1  exercise  search:v/10k/g    @src/cmsearch@  -g %V.CM% %V10K%
+1  exercise  search:3/10k/g    @src/cmsearch@  -g %3.CM% %310K%
+1  exercise  search:t/emit/g   @src/cmsearch@  -g %T.CM% %TEMIT%
+1  exercise  search:v/emit/g   @src/cmsearch@  -g %V.CM% %VEMIT%
+1  exercise  search:3/emit/g   @src/cmsearch@  -g %3.CM% %3EMIT%
 
-1  exercise  cmsearch:trna/10k/Z    @src/cmsearch@  -Z 100  %T.CM% %T10K%
-1  exercise  cmsearch:trna/emit/Z   @src/cmsearch@  -Z 1100 %T.CM% %TEMIT%
-1  exercise  cmsearch:multi/10k/Z   @src/cmsearch@  -Z 100  %3.CM% %310K%
-1  exercise  cmsearch:multi/emit/Z  @src/cmsearch@  -Z 1100 %3.CM% %3EMIT%
+1  exercise  search:t/10k/Z    @src/cmsearch@  -Z 100  %T.CM% %T10K%
+1  exercise  search:t/emit/Z   @src/cmsearch@  -Z 1100 %T.CM% %TEMIT%
+1  exercise  search:3/10k/Z    @src/cmsearch@  -Z 100  %3.CM% %310K%
+1  exercise  search:3/emit/Z   @src/cmsearch@  -Z 1100 %3.CM% %3EMIT%
 
-1  exercise  cmsearch:trna/emit/o   @src/cmsearch@  -o %TMPOUT% %T.CM% %TEMIT%
-1  exercise  cmsearch:multi/emit/o  @src/cmsearch@  -o %TMPOUT% %3.CM% %3EMIT%
+1  exercise  search:t/emit/o       @src/cmsearch@  -o %TMPOUT% %T.CM% %TEMIT%
+1  exercise  search:3/emit/o       @src/cmsearch@  -o %TMPOUT% %3.CM% %3EMIT%
+1  exercise  search:t/1k/tbl       @src/cmsearch@  --tblout %TMPOUT% %T.CM% %T1K%
+1  exercise  search:3/1k/tbl       @src/cmsearch@  --tblout %TMPOUT% %3.CM% %31K%
+1  exercise  search:t/1k/tbl       @src/cmsearch@  --acc %T.CM% %T1K%
+1  exercise  search:3/1k/tbl       @src/cmsearch@  --acc %3.CM% %31K%
+1  exercise  search:t/1k/noali     @src/cmsearch@  --noali %T.CM% %T1K%
+1  exercise  search:3/1k/noali     @src/cmsearch@  --noali %3.CM% %31K%
+1  exercise  search:t/1k/notextw   @src/cmsearch@  --notextw %T.CM% %T1K%
+1  exercise  search:3/1k/notextw   @src/cmsearch@  --notextw %3.CM% %31K%
+1  exercise  search:t/1k/textw     @src/cmsearch@  --textw 150 %T.CM% %T1K%
+1  exercise  search:3/1k/textw     @src/cmsearch@  --textw 150 %3.CM% %31K%
+1  exercise  search:t/1k/all       @src/cmsearch@  --allstats %T.CM% %T1K%
+1  exercise  search:3/1k/all       @src/cmsearch@  --allstats %3.CM% %31K%
 
-1  exercise  cmsearch:trna/1k/tbl   @src/cmsearch@  --tblout %TMPOUT% %T.CM% %T1K%
-1  exercise  cmsearch:multi/1k/tbl  @src/cmsearch@  --tblout %TMPOUT% %3.CM% %31K%
+1  exercise  search:t/1k/E   @src/cmsearch@  -E 0.001 %T.CM% %T1K%
+1  exercise  search:3/1k/E   @src/cmsearch@  -E 1000 %3.CM% %31K%
+1  exercise  search:t/1k/T   @src/cmsearch@  -T 25 %T.CM% %T1K%
+1  exercise  search:3/1k/T   @src/cmsearch@  -T 12 %3.CM% %31K%
 
-1  exercise  cmsearch:trna/1k/tbl   @src/cmsearch@  --acc %T.CM% %T1K%
-1  exercise  cmsearch:multi/1k/tbl  @src/cmsearch@  --acc %3.CM% %31K%
+1  exercise  search:t/1k/incE   @src/cmsearch@  --incE 0.001 %T.CM% %T1K%
+1  exercise  search:3/1k/incE   @src/cmsearch@  --incE 1000 %3.CM% %31K%
+1  exercise  search:t/1k/incT   @src/cmsearch@  --incT 25 %T.CM% %T1K%
+1  exercise  search:3/1k/incT   @src/cmsearch@  --incT 12 %3.CM% %31K%
 
-1  exercise  cmsearch:trna/1k/noali   @src/cmsearch@  --noali %T.CM% %T1K%
-1  exercise  cmsearch:multi/1k/noali  @src/cmsearch@  --noali %3.CM% %31K%
-
-1  exercise  cmsearch:trna/1k/notextw   @src/cmsearch@  --notextw %T.CM% %T1K%
-1  exercise  cmsearch:multi/1k/notextw  @src/cmsearch@  --notextw %3.CM% %31K%
-
-1  exercise  cmsearch:trna/1k/textw   @src/cmsearch@  --textw 150 %T.CM% %T1K%
-1  exercise  cmsearch:multi/1k/textw  @src/cmsearch@  --textw 150 %3.CM% %31K%
-
-1  exercise  cmsearch:trna/1k/all   @src/cmsearch@  --allstats %T.CM% %T1K%
-1  exercise  cmsearch:multi/1k/all  @src/cmsearch@  --allstats %3.CM% %31K%
-
-1  exercise  cmsearch:trna/1k/E   @src/cmsearch@  -E 0.001 %T.CM% %T1K%
-1  exercise  cmsearch:multi/1k/E  @src/cmsearch@  -E 1000 %3.CM% %31K%
-
-1  exercise  cmsearch:trna/1k/T   @src/cmsearch@  -T 25 %T.CM% %T1K%
-1  exercise  cmsearch:multi/1k/T  @src/cmsearch@  -T 12 %3.CM% %31K%
-
-1  exercise  cmsearch:trna/1k/incE   @src/cmsearch@  --incE 0.001 %T.CM% %T1K%
-1  exercise  cmsearch:multi/1k/incE  @src/cmsearch@  --incE 1000 %3.CM% %31K%
-
-1  exercise  cmsearch:trna/1k/incT   @src/cmsearch@  --incT 25 %T.CM% %T1K%
-1  exercise  cmsearch:multi/1k/incT  @src/cmsearch@  --incT 12 %3.CM% %31K%
-
-1  exercise  cmsearch:trna/1k/cutga   @src/cmsearch@  --cut_ga %T.CM% %T1K%
-1  exercise  cmsearch:multi/1k/cutga  @src/cmsearch@  --cut_ga %3.CM% %31K%
-
-1  exercise  cmsearch:trna/1k/cuttc   @src/cmsearch@  --cut_tc %T.CM% %T1K%
-1  exercise  cmsearch:multi/1k/cuttc  @src/cmsearch@  --cut_tc %3.CM% %31K%
-
+1  exercise  search:t/1k/cutga   @src/cmsearch@  --cut_ga %T.CM% %T1K%
+1  exercise  search:3/1k/cutga   @src/cmsearch@  --cut_ga %3.CM% %31K%
+1  exercise  search:t/1k/cuttc   @src/cmsearch@  --cut_tc %T.CM% %T1K%
+1  exercise  search:3/1k/cuttc   @src/cmsearch@  --cut_tc %3.CM% %31K%
 # tRNA NC cutoff is undefined in Rfam 10.1
-1  exercise  cmsearch:vault/1k/cutnc  @src/cmsearch@  --cut_nc %V.CM% %V1K%
+1  exercise  search:v/1k/cutnc   @src/cmsearch@  --cut_nc %V.CM% %V1K%
 
 # filtering levels
-1  exercise  cmsearch:trna/emit/max   @src/cmsearch@  --max %T.CM% %TEMIT%
-1  exercise  cmsearch:trna/1k/max     @src/cmsearch@  --max %T.CM% %T1K%
-1  exercise  cmsearch:trna/emit/nohmm @src/cmsearch@  --nohmm %T.CM% %TEMIT%
-1  exercise  cmsearch:trna/1k/nohmm   @src/cmsearch@  --nohmm %T.CM% %T1K%
-1  exercise  cmsearch:trna/emit/mid   @src/cmsearch@  --mid %T.CM% %TEMIT%
-1  exercise  cmsearch:trna/1k/mid     @src/cmsearch@  --mid %T.CM% %T1K%
-1  exercise  cmsearch:trna/emit/Fmid  @src/cmsearch@  --Fmid 0.005 --mid %T.CM% %TEMIT%
-1  exercise  cmsearch:trna/1k/Fmid    @src/cmsearch@  --Fmid 0.10 --mid %T.CM% %T1K%
-1  exercise  cmsearch:trna/emit/rfam  @src/cmsearch@  --rfam %T.CM% %TEMIT%
-1  exercise  cmsearch:trna/1k/rfam    @src/cmsearch@  --rfam %T.CM% %T1K%
-1  exercise  cmsearch:trna/emit/FZ    @src/cmsearch@  --FZ 1000 %T.CM% %TEMIT%
-1  exercise  cmsearch:trna/1k/FZ      @src/cmsearch@  --FZ 10 %T.CM% %T1K%
+1  exercise  search:t/emit/max   @src/cmsearch@  --max %T.CM% %TEMIT%
+1  exercise  search:t/1k/max     @src/cmsearch@  --max %T.CM% %T1K%
+1  exercise  search:t/emit/nohmm @src/cmsearch@  --nohmm %T.CM% %TEMIT%
+1  exercise  search:t/1k/nohmm   @src/cmsearch@  --nohmm %T.CM% %T1K%
+1  exercise  search:t/emit/mid   @src/cmsearch@  --mid %T.CM% %TEMIT%
+1  exercise  search:t/1k/mid     @src/cmsearch@  --mid %T.CM% %T1K%
+1  exercise  search:t/emit/Fmid  @src/cmsearch@  --Fmid 0.005 --mid %T.CM% %TEMIT%
+1  exercise  search:t/1k/Fmid    @src/cmsearch@  --Fmid 0.10 --mid %T.CM% %T1K%
+1  exercise  search:t/emit/rfam  @src/cmsearch@  --rfam %T.CM% %TEMIT%
+1  exercise  search:t/1k/rfam    @src/cmsearch@  --rfam %T.CM% %T1K%
+1  exercise  search:t/emit/FZ    @src/cmsearch@  --FZ 1000 %T.CM% %TEMIT%
+1  exercise  search:t/1k/FZ      @src/cmsearch@  --FZ 10 %T.CM% %T1K%
 
 # truncation
-1  exercise  cmsearch:vault/trunc       @src/cmsearch@  %V.CM% %VTREMIT%
-1  exercise  cmsearch:vault/truncFZ     @src/cmsearch@  --FZ 2000 %V.CM% %VTREMIT%
-1  exercise  cmsearch:vault/notrunc     @src/cmsearch@  --notrunc %V.CM% %VTREMIT%
-1  exercise  cmsearch:vault/notruncFZ   @src/cmsearch@  --notrunc --FZ 2000 %V.CM% %VTREMIT%
-1  exercise  cmsearch:vault/anytrunc    @src/cmsearch@  --anytrunc %V.CM% %VTREMIT%
-1  exercise  cmsearch:vault/anytruncFZ  @src/cmsearch@  --anytrunc --FZ 2000 %V.CM% %VTREMIT%
-1  exercise  cmsearch:vault/trunc/g     @src/cmsearch@  -g %V.CM% %VTREMIT%
-1  exercise  cmsearch:vault/truncFZ/g   @src/cmsearch@  -g --FZ 2000 %V.CM% %VTREMIT%
+1  exercise  search:v/trunc       @src/cmsearch@  %V.CM% %VTREMIT%
+1  exercise  search:v/truncFZ     @src/cmsearch@  --FZ 2000 %V.CM% %VTREMIT%
+1  exercise  search:v/notrunc     @src/cmsearch@  --notrunc %V.CM% %VTREMIT%
+1  exercise  search:v/notruncFZ   @src/cmsearch@  --notrunc --FZ 2000 %V.CM% %VTREMIT%
+1  exercise  search:v/anytrunc    @src/cmsearch@  --anytrunc %V.CM% %VTREMIT%
+1  exercise  search:v/anytruncFZ  @src/cmsearch@  --anytrunc --FZ 2000 %V.CM% %VTREMIT%
+1  exercise  search:v/trunc/g     @src/cmsearch@  -g %V.CM% %VTREMIT%
+1  exercise  search:v/truncFZ/g   @src/cmsearch@  -g --FZ 2000 %V.CM% %VTREMIT%
 
 # other options
-1  exercise  cmsearch:trna/1k/nn3       @src/cmsearch@  --nonull3 %T.CM% %T1K%
-1  exercise  cmsearch:multi/r1k/nn3     @src/cmsearch@  --nonull3 %3.CM% %R1K%
-1  exercise  cmsearch:trna/1k/mx        @src/cmsearch@  --mxsize 32. %T.CM% %T1K%
-1  exercise  cmsearch:multi/r1k/mx      @src/cmsearch@  --mxsize 1024. %3.CM% %R1K%
-1  exercise  cmsearch:trna/1k/smx       @src/cmsearch@  --smxsize 32. %T.CM% %T1K%
-1  exercise  cmsearch:multi/r1k/smx     @src/cmsearch@  --smxsize 1024. %3.CM% %R1K%
-1  exercise  cmsearch:trna/1k/cyk       @src/cmsearch@  --cyk %T.CM% %T1K%
-1  exercise  cmsearch:multi/r1k/cyk     @src/cmsearch@  --cyk %3.CM% %R1K%
-1  exercise  cmsearch:trna/1k/acyk      @src/cmsearch@  --acyk %T.CM% %T1K%
-1  exercise  cmsearch:multi/r1k/acyk    @src/cmsearch@  --acyk %3.CM% %R1K%
-1  exercise  cmsearch:trna/1k/top       @src/cmsearch@  --toponly %T.CM% %T1K%
-1  exercise  cmsearch:multi/r1k/top     @src/cmsearch@  --toponly %3.CM% %R1K%
-1  exercise  cmsearch:trna/1k/bot       @src/cmsearch@  --bottomonly %T.CM% %T1K%
-1  exercise  cmsearch:multi/r1k/bot     @src/cmsearch@  --bottomonly %3.CM% %R1K%
-1  exercise  cmsearch:trna/1k/tfmt      @src/cmsearch@  --tformat fasta %T.CM% !testsuite/3trnas.fa!
-1  exercise  cmsearch:trna/r1k/tfmt     @src/cmsearch@  --tformat Genbank %T.CM% !testsuite/3trnas.gb!
-1  exercise  cmsearch:trna/r1k/tfmt     @src/cmsearch@  --tformat embL %T.CM% !testsuite/3trnas.embl!
-1  exercise  cmsearch:trna/r1k/afmt     @src/cmsearch@  %T.CM% !testsuite/3trnas.gb!
-1  exercise  cmsearch:trna/r1k/afmt     @src/cmsearch@  %T.CM% !testsuite/3trnas.embl!
+1  exercise  search:t/1k/nn3       @src/cmsearch@  --nonull3 %T.CM% %T1K%
+1  exercise  search:3/r1k/nn3      @src/cmsearch@  --nonull3 %3.CM% %R1K%
+1  exercise  search:t/1k/mx        @src/cmsearch@  --mxsize 32. %T.CM% %T1K%
+1  exercise  search:3/r1k/mx       @src/cmsearch@  --mxsize 1024. %3.CM% %R1K%
+1  exercise  search:t/1k/smx       @src/cmsearch@  --smxsize 32. %T.CM% %T1K%
+1  exercise  search:3/r1k/smx      @src/cmsearch@  --smxsize 1024. %3.CM% %R1K%
+1  exercise  search:t/1k/cyk       @src/cmsearch@  --cyk %T.CM% %T1K%
+1  exercise  search:3/r1k/cyk      @src/cmsearch@  --cyk %3.CM% %R1K%
+1  exercise  search:t/1k/acyk      @src/cmsearch@  --acyk %T.CM% %T1K%
+1  exercise  search:3/r1k/acyk     @src/cmsearch@  --acyk %3.CM% %R1K%
+1  exercise  search:t/1k/top       @src/cmsearch@  --toponly %T.CM% %T1K%
+1  exercise  search:3/r1k/top      @src/cmsearch@  --toponly %3.CM% %R1K%
+1  exercise  search:t/1k/bot       @src/cmsearch@  --bottomonly %T.CM% %T1K%
+1  exercise  search:3/r1k/bot      @src/cmsearch@  --bottomonly %3.CM% %R1K%
+1  exercise  search:t/1k/tfmt      @src/cmsearch@  --tformat fasta %T.CM% !testsuite/3trnas.fa!
+1  exercise  search:t/r1k/tfmt     @src/cmsearch@  --tformat Genbank %T.CM% !testsuite/3trnas.gb!
+1  exercise  search:t/r1k/tfmt     @src/cmsearch@  --tformat embL %T.CM% !testsuite/3trnas.embl!
+1  exercise  search:t/r1k/afmt     @src/cmsearch@  %T.CM% !testsuite/3trnas.gb!
+1  exercise  search:t/r1k/afmt     @src/cmsearch@  %T.CM% !testsuite/3trnas.embl!
 
 # developer filter options
-1  exercise  cmsearch:vault/1k/noF1        @src/cmsearch@  --noF1 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF2        @src/cmsearch@  --noF2 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF3        @src/cmsearch@  --noF3 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF4        @src/cmsearch@  --noF4 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF6        @src/cmsearch@  --noF6 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/doF1b       @src/cmsearch@  --doF1b -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF2b       @src/cmsearch@  --noF2b -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF3b       @src/cmsearch@  --noF3b -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF4b       @src/cmsearch@  --noF4b -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF5b       @src/cmsearch@  --noF5b -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F1          @src/cmsearch@  --F1 0.10 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F1b         @src/cmsearch@  --F1b 0.01 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F2          @src/cmsearch@  --F2 0.001 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F2b         @src/cmsearch@  --F2b 0.001 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F3          @src/cmsearch@  --F3 1E-4 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F3b         @src/cmsearch@  --F3b 1E-5 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F4          @src/cmsearch@  --F4 0.10 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F4b         @src/cmsearch@  --F4b 1E-6 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F5          @src/cmsearch@  --F5 0.001 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F5b         @src/cmsearch@  --F5b 0.027 -%V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F6          @src/cmsearch@  --F6 1E-7 -%V.CM% %V1K%
+1  exercise  search:v/1k/noF1        @src/cmsearch@  --noF1 %V.CM% %V1K%
+1  exercise  search:v/1k/noF2        @src/cmsearch@  --noF2 --noF2b %V.CM% %V1K%
+1  exercise  search:v/1k/noF3        @src/cmsearch@  --noF3 --noF3b %V.CM% %V1K%
+1  exercise  search:v/1k/noF4        @src/cmsearch@  --noF4 --noF4b %V.CM% %V1K%
+1  exercise  search:v/1k/noF6        @src/cmsearch@  --noF6 %V.CM% %V1K%
+1  exercise  search:v/1k/doF1b       @src/cmsearch@  --doF1b %V.CM% %V1K%
+1  exercise  search:v/1k/noF2b       @src/cmsearch@  --noF2b %V.CM% %V1K%
+1  exercise  search:v/1k/noF3b       @src/cmsearch@  --noF3b %V.CM% %V1K%
+1  exercise  search:v/1k/noF4b       @src/cmsearch@  --noF4b %V.CM% %V1K%
+1  exercise  search:v/1k/noF5b       @src/cmsearch@  --noF5b %V.CM% %V1K%
+1  exercise  search:v/1k/F1          @src/cmsearch@  --F1 0.10 %V.CM% %V1K%
+1  exercise  search:v/1k/F1b         @src/cmsearch@  --doF1b --F1b 0.01 %V.CM% %V1K%
+1  exercise  search:v/1k/F2          @src/cmsearch@  --F2 0.001 %V.CM% %V1K%
+1  exercise  search:v/1k/F2b         @src/cmsearch@  --F2b 0.001 %V.CM% %V1K%
+1  exercise  search:v/1k/F3          @src/cmsearch@  --F3 1E-4 %V.CM% %V1K%
+1  exercise  search:v/1k/F3b         @src/cmsearch@  --F3b 1E-5 %V.CM% %V1K%
+1  exercise  search:v/1k/F4          @src/cmsearch@  --F4 0.10 %V.CM% %V1K%
+1  exercise  search:v/1k/F4b         @src/cmsearch@  --F4b 1E-6 %V.CM% %V1K%
+1  exercise  search:v/1k/F5          @src/cmsearch@  --F5 0.001 %V.CM% %V1K%
+1  exercise  search:v/1k/F5b         @src/cmsearch@  --F5b 0.027 %V.CM% %V1K%
+1  exercise  search:v/1k/F6          @src/cmsearch@  --F6 1E-7 %V.CM% %V1K%
 
-1  exercise  cmsearch:vault/1k/noF1/FZ     @src/cmsearch@  --noF1 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF2/FZ     @src/cmsearch@  --noF2 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF3/FZ     @src/cmsearch@  --noF3 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF4/FZ     @src/cmsearch@  --noF4 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF6/FZ     @src/cmsearch@  --noF6 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/doF1b/FZ    @src/cmsearch@  --doF1b --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF2b/FZ    @src/cmsearch@  --noF2b --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF3b/FZ    @src/cmsearch@  --noF3b --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF4b/FZ    @src/cmsearch@  --noF4b --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/noF5b/FZ    @src/cmsearch@  --noF5b --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F1/FZ       @src/cmsearch@  --F1 0.10 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F1b/FZ      @src/cmsearch@  --F1b 0.01 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F2/FZ       @src/cmsearch@  --F2 0.001 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F2b/FZ      @src/cmsearch@  --F2b 0.001 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F3/FZ       @src/cmsearch@  --F3 1E-4 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F3b/FZ      @src/cmsearch@  --F3b 1E-5 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F4/FZ       @src/cmsearch@  --F4 0.10 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F4b/FZ      @src/cmsearch@  --F4b 1E-6 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F5/FZ       @src/cmsearch@  --F5 0.001 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F5b/FZ      @src/cmsearch@  --F5b 0.027 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/F6/FZ       @src/cmsearch@  --F6 1E-7 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/noF1/FZ     @src/cmsearch@  --noF1 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/noF2/FZ     @src/cmsearch@  --noF2 --noF2b --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/noF3/FZ     @src/cmsearch@  --noF3 --noF3b --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/noF4/FZ     @src/cmsearch@  --noF4 --noF4b --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/noF6/FZ     @src/cmsearch@  --noF6 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/doF1b/FZ    @src/cmsearch@  --doF1b --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/noF2b/FZ    @src/cmsearch@  --noF2b --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/noF3b/FZ    @src/cmsearch@  --noF3b --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/noF4b/FZ    @src/cmsearch@  --noF4b --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/noF5b/FZ    @src/cmsearch@  --noF5b --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/F1/FZ       @src/cmsearch@  --F1 0.10 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/F1b/FZ      @src/cmsearch@  --doF1b --F1b 0.01 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/F2/FZ       @src/cmsearch@  --F2 0.001 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/F2b/FZ      @src/cmsearch@  --F2b 0.001 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/F3/FZ       @src/cmsearch@  --F3 1E-4 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/F3b/FZ      @src/cmsearch@  --F3b 1E-5 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/F4/FZ       @src/cmsearch@  --F4 0.10 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/F4b/FZ      @src/cmsearch@  --F4b 1E-6 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/F5/FZ       @src/cmsearch@  --F5 0.001 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/F5b/FZ      @src/cmsearch@  --F5b 0.027 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/F6/FZ       @src/cmsearch@  --F6 1E-7 --FZ 1000 %V.CM% %V1K%
 
-1  exercise  cmsearch:vault/1k/Fall        @src/cmsearch@  --F1 0.07 --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --F5b 1.0 --F6 1E-3 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/Fall/FZ     @src/cmsearch@  --F1 0.07 --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --F5b 1.0 --F6 1E-3 --FZ 1000 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/Falloff     @src/cmsearch@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF5b --noF6 %V.CM% %V1K%
-1  exercise  cmsearch:vault/1k/Falloff/FZ  @src/cmsearch@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF5b --noF6 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/Fall      @src/cmsearch@  --F1 0.07 --doF1b --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --F5b 1.0 --F6 1E-3 %V.CM% %V1K%
+1  exercise  search:v/1k/Fall/FZ   @src/cmsearch@  --F1 0.07 --doF1b --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --F5b 1.0 --F6 1E-3 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/Fnone     @src/cmsearch@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF5b --noF6 %V.CM% %V1K%
+1  exercise  search:v/1k/Fnone/FZ  @src/cmsearch@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF5b --noF6 --FZ 1000 %V.CM% %V1K%
 
-HERE HERE HERE
-1  exercise  cmsearch:vault/1k/ftau       @src/cmsearch@  --F6 1E-7 --FZ 1000 %V.CM% %V1K%
+# CYK filter options
+1  exercise  search:v/1k/ftau     @src/cmsearch@  --ftau  1E-7 %V.CM% %V1K%
+1  exercise  search:v/1k/fsums    @src/cmsearch@  --fsums %V.CM% %V1K%
+1  exercise  search:v/1k/fqdb     @src/cmsearch@  --fqdb %V.CM% %V1K%
+1  exercise  search:v/1k/fqdbb    @src/cmsearch@  --fqdb --fbeta 1E-4 %V.CM% %V1K%
+1  exercise  search:v/1k/fnb      @src/cmsearch@  --fnonbanded %V.CM% %V1K%
+1  exercise  search:v/1k/ncyk     @src/cmsearch@  --nocykenv %V.CM% %V1K%
+1  exercise  search:v/1k/cykx     @src/cmsearch@  --cykenvx 100 %V.CM% %V1K%
 
-1  exercise  cmsearch:vault/truncFZ     @src/cmsearch@  --FZ 2000 %V.CM% %VTREMIT%
-1  exercise  cmsearch:vault/notrunc     @src/cmsearch@  --notrunc %V.CM% %VTREMIT%
-1  exercise  cmsearch:vault/notruncFZ   @src/cmsearch@  --notrunc --FZ 2000 %V.CM% %VTREMIT%
-1  exercise  cmsearch:vault/anytrunc    @src/cmsearch@  --anytrunc %V.CM% %VTREMIT%
-1  exercise  cmsearch:vault/anytruncFZ  @src/cmsearch@  --anytrunc --FZ 2000 %V.CM% %VTREMIT%
+1  exercise  search:v/1k/ftau/FZ     @src/cmsearch@  --ftau  1E-7 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/fsums/FZ    @src/cmsearch@  --fsums --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/fqdb/FZ     @src/cmsearch@  --fqdb --FZ 100 %V.CM% %V1K%
+1  exercise  search:v/1k/fqdbb/FZ    @src/cmsearch@  --fqdb --fbeta 1E-4 --FZ 100 %V.CM% %V1K%
+1  exercise  search:v/1k/fnb/FZ      @src/cmsearch@  --fnonbanded --FZ 100 %V.CM% %V1K%
+1  exercise  search:v/1k/ncyk/FZ     @src/cmsearch@  --nocykenv --FZ 100 %V.CM% %V1K%
+1  exercise  search:v/1k/cykx/FZ     @src/cmsearch@  --cykenvx 100 --FZ 100 %V.CM% %V1K%
 
-done
-1  exercise  cmsearch:trna/2        @src/cmsearch@  -o %TMPOUT% %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/3        @src/cmsearch@  -g %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/4        @src/cmsearch@  --toponly %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/5        @src/cmsearch@  --bottomonly %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/6        @src/cmsearch@  --devhelp 
-1  exercise  cmsearch:trna-f/1      @src/cmsearch@  %TRNA.CM% 3trnas.embl
-1  exercise  cmsearch:trna-f/2      @src/cmsearch@  %TRNA.CM% 3trnas.gb
-1  exercise  cmsearch:trna-f/3      @src/cmsearch@  --informat fasta %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna-f/4      @src/cmsearch@  --informat dDBj %TRNA.CM% 3trnas.gb
-1  exercise  cmsearch:trna-f/5      @src/cmsearch@  --informat GENbank %TRNA.CM% 3trnas.gb
-1  exercise  cmsearch:trna-f/6      @src/cmsearch@  --informat uniProt %TRNA.CM% 3trnas.embl
-1  exercise  cmsearch:trna-f/7      @src/cmsearch@  --informat embL %TRNA.CM% 3trnas.embl
+# final stage options
+1  exercise  search:v/1k/tau     @src/cmsearch@  --tau  1E-7 %V.CM% %V1K%
+1  exercise  search:v/1k/sums    @src/cmsearch@  --sums %V.CM% %V1K%
+1  exercise  search:v/1k/qdb     @src/cmsearch@  --qdb %V.CM% %V1K%
+1  exercise  search:v/1k/qdbb    @src/cmsearch@  --qdb --beta 1E-8 %V.CM% %V1K%
+1  exercise  search:v/1k/qdbfb   @src/cmsearch@  --fqdb --fbeta 1E-1 --qdb --beta 1E-2 %V.CM% %V1K%
+1  exercise  search:v/1k/nb      @src/cmsearch@  --nonbanded %V.CM% %V1K%
 
-1  exercise  cmsearch:trna/7        @src/cmsearch@  --inside %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/8        @src/cmsearch@  --cyk %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/9        @src/cmsearch@  --viterbi %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/10       @src/cmsearch@  --forward %TRNA.CM% 1k.fa
+1  exercise  search:v/1k/sums/FZ    @src/cmsearch@  --sums --FZ 34 %V.CM% %V1K%
+1  exercise  search:v/1k/qdb/FZ     @src/cmsearch@  --qdb --FZ 34 %V.CM% %V1K%
+1  exercise  search:v/1k/qdbb/FZ    @src/cmsearch@  --qdb --beta 1E-8 --FZ 34 %V.CM% %V1K%
+1  exercise  search:v/1k/qdbfb/FZ   @src/cmsearch@  --fqdb --fbeta 1E-1 --qdb --beta 1E-2 --FZ 34 %V.CM% %V1K%
+1  exercise  search:v/1k/nb/FZ      @src/cmsearch@  --nonbanded --FZ 34 %V.CM% %V1K%
 
-1  exercise  cmsearch:trna/11        @src/cmsearch@  -T -2 %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/12        @src/cmsearch@  -T 1 %TRNA.CM% 1k.fa
+# timing options
+1  exercise  search:v/1k/timeF1     @src/cmsearch@  --timeF1 -Z 100 %V.CM% %V1K%
+1  exercise  search:v/1k/timeF2     @src/cmsearch@  --timeF2 -Z 100 %V.CM% %V1K%
+1  exercise  search:v/1k/timeF3     @src/cmsearch@  --timeF3 -Z 100 %V.CM% %V1K%
+1  exercise  search:v/1k/timeF4     @src/cmsearch@  --timeF4 -Z 100 %V.CM% %V1K%
+1  exercise  search:v/1k/timeF5     @src/cmsearch@  --timeF5 -Z 100 %V.CM% %V1K%
+1  exercise  search:v/1k/timeF6     @src/cmsearch@  --timeF6 -Z 100 %V.CM% %V1K%
 
-1  exercise  cmsearch:trna/13        @src/cmsearch@  --no-qdb %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/14        @src/cmsearch@  --beta 1E-3 %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/15        @src/cmsearch@  --hbanded %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/16        @src/cmsearch@  --hbanded --tau 1E-3 %TRNA.CM% 1k.fa
+# envelope defn options
+1  exercise  search:v/1k/rt1        @src/cmsearch@  --rt1 0.15 %V.CM% %V1K%
+1  exercise  search:v/1k/rt2        @src/cmsearch@  --rt1 0.15 %V.CM% %V1K%
+1  exercise  search:v/1k/rt3        @src/cmsearch@  --rt1 0.15 %V.CM% %V1K%
+1  exercise  search:v/1k/ns         @src/cmsearch@  --ns 181 %V.CM% %V1K%
 
-1  exercise  cmsearch:trna/17        @src/cmsearch@  --fil-no-hmm %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/18        @src/cmsearch@  --fil-no-qdb %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/19        @src/cmsearch@  --fil-beta 1E-2 %TRNA.CM% 1k.fa
-
-
-1  exercise  cmsearch:trna/20        @src/cmsearch@  --fil-T-qdb 5 %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/21        @src/cmsearch@  --fil-T-qdb -2 %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/22        @src/cmsearch@  --fil-T-hmm 5 %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/23        @src/cmsearch@  --fil-T-hmm -2 %TRNA.CM% 1k.fa
-
-1  exercise  cmsearch:trna/24        @src/cmsearch@  --noalign %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/25        @src/cmsearch@  -x %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/26        @src/cmsearch@  --aln-hbanded %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/27        @src/cmsearch@  --aln-hbanded -p %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/28        @src/cmsearch@  --aln-optacc --aln-hbanded %TRNA.CM% 1k.fa
-
-1  exercise  cmsearch:trna/29        @src/cmsearch@  --tabfile %TAB.TMP% %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/30        @src/cmsearch@  --gcfile %GC.TMP% %TRNA.CM% 1k.fa
-
-1  exercise  cmsearch:trna/31        @src/cmsearch@  --rna %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/32        @src/cmsearch@  --dna %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/33        @src/cmsearch@  -T 0 -v %TRNA.CM% 1k.fa
-
-
-# 3.4.12 (U1, U2, U3)
-2  prep      model/3.4.12             @src/cmbuild@ -F --wnone --rf %3.4.12.CM% 3.4.12.stk
-2  exercise  cmsearch:3.4.12/1        @src/cmsearch@  %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/2        @src/cmsearch@  -o %TMPOUT% %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/3        @src/cmsearch@  -g %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/4        @src/cmsearch@  --toponly %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/5        @src/cmsearch@  --bottomonly %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/6        @src/cmsearch@  --devhelp 
-
-2  exercise  cmsearch:3.4.12/7        @src/cmsearch@  --inside %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/8        @src/cmsearch@  --cyk %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/9        @src/cmsearch@  --viterbi %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/10       @src/cmsearch@  --forward %3.4.12.CM% 1k.fa
-
-2  exercise  cmsearch:3.4.12/11        @src/cmsearch@  -T -2 %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/12        @src/cmsearch@  -T 1 %3.4.12.CM% 1k.fa
-
-2  exercise  cmsearch:3.4.12/13        @src/cmsearch@  --no-qdb %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/14        @src/cmsearch@  --beta 1E-3 %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/15        @src/cmsearch@  --hbanded %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/16        @src/cmsearch@  --hbanded --tau 1E-3 %3.4.12.CM% 1k.fa
-
-2  exercise  cmsearch:3.4.12/17        @src/cmsearch@  --fil-no-hmm %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/18        @src/cmsearch@  --fil-no-qdb %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/19        @src/cmsearch@  --fil-beta 1E-2 %3.4.12.CM% 1k.fa
-
-2  exercise  cmsearch:3.4.12/20        @src/cmsearch@  --fil-T-qdb 5 %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/21        @src/cmsearch@  --fil-T-qdb -2 %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/22        @src/cmsearch@  --fil-T-hmm 5 %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/23        @src/cmsearch@  --fil-T-hmm -2 %3.4.12.CM% 1k.fa
-
-2  exercise  cmsearch:3.4.12/24        @src/cmsearch@  --noalign %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/25        @src/cmsearch@  -x %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/26        @src/cmsearch@  --aln-hbanded %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/27        @src/cmsearch@  --aln-hbanded -p %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/28        @src/cmsearch@  --aln-optacc --aln-hbanded %3.4.12.CM% 1k.fa
-
-2  exercise  cmsearch:3.4.12/29        @src/cmsearch@  --tabfile %TAB.TMP% %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/30        @src/cmsearch@  --gcfile %GC.TMP% %3.4.12.CM% 1k.fa
-
-2  exercise  cmsearch:3.4.12/31        @src/cmsearch@  --rna %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/32        @src/cmsearch@  --dna %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/33        @src/cmsearch@  -T 0 -v %3.4.12.CM% 1k.fa
-
-# test the two options that are only relevant with multi-CM files (and
-# thus weren't tested for tRNA)
-1  exercise  cmsearch:3.4.12/34        @src/cmsearch@  --cm-idx 2 %3.4.12.CM% 1k.fa
-1  exercise  cmsearch:3.4.12/35        @src/cmsearch@ --cm-name U3 %3.4.12.CM% 1k.fa
-
-# options requiring a calibrated model
-# trna
-3  exercise  cmsearch:trnac/1        @src/cmsearch@  --forecast 3 trna.calibrated.cm 1k.fa
-
-3  exercise  cmsearch:trnac/2        @src/cmsearch@  -E 0.0001 trna.calibrated.cm 1k.fa
-3  exercise  cmsearch:trnac/3        @src/cmsearch@  -E 100 trna.calibrated.cm 1k.fa
-3  exercise  cmsearch:trnac/4        @src/cmsearch@  --nc trna.calibrated.cm 1k.fa
-3  exercise  cmsearch:trnac/5        @src/cmsearch@  --ga trna.calibrated.cm 1k.fa
-3  exercise  cmsearch:trnac/6        @src/cmsearch@  --tc trna.calibrated.cm 1k.fa
-
-3  exercise  cmsearch:trnac/7        @src/cmsearch@  --fil-T-qdb 5 trna.calibrated.cm 1k.fa
-3  exercise  cmsearch:trnac/8        @src/cmsearch@  --fil-T-qdb -2 trna.calibrated.cm 1k.fa
-3  exercise  cmsearch:trnac/9        @src/cmsearch@  --fil-T-hmm 5 trna.calibrated.cm 1k.fa
-3  exercise  cmsearch:trnac/10        @src/cmsearch@  --fil-T-hmm -2 trna.calibrated.cm 1k.fa
-3  exercise  cmsearch:trnac/11        @src/cmsearch@  --fil-Smax-hmm 0.0001 trna.calibrated.cm 1k.fa
-
-3  exercise  cmsearch:trnac/12	      @src/cmsearch@  --fil-no-hmm trna.calibrated.cm 1k.fa
-3  exercise  cmsearch:trnac/13        @src/cmsearch@  --fil-no-qdb trna.calibrated.cm 1k.fa
-3  exercise  cmsearch:trnac/14        @src/cmsearch@  --fil-beta 1E-2 trna.calibrated.cm 1k.fa
-
-3  exercise  cmsearch:trnac/15        @src/cmsearch@  --fil-S-hmm 0.04 trna.calibrated.cm 1k.fa
-3  exercise  cmsearch:trnac/16        @src/cmsearch@  --fil-Smin-hmm 0.001 trna.calibrated.cm 1k.fa
-3  exercise  cmsearch:trnac/17        @src/cmsearch@  --fil-Smax-hmm 0.25 --fil-A-hmm trna.calibrated.cm 1k.fa
-3  exercise  cmsearch:trnac/18        @src/cmsearch@  --fil-Smin-hmm 0.03 --fil-Smax-hmm 0.25 --fil-A-hmm trna.calibrated.cm 1k.fa
-
-# 3.4.12 (U1, U2, U3)
-4  exercise  cmsearch:3.4.12c/1        @src/cmsearch@  --forecast 3 3.4.12.calibrated.cm 1k.fa
-
-4  exercise  cmsearch:3.4.12c/2        @src/cmsearch@  -E 0.0001 3.4.12.calibrated.cm 1k.fa
-4  exercise  cmsearch:3.4.12c/3        @src/cmsearch@  -E 100 3.4.12.calibrated.cm 1k.fa
-4  exercise  cmsearch:3.4.12c/4        @src/cmsearch@  --nc 3.4.12.calibrated.cm 1k.fa
-4  exercise  cmsearch:3.4.12c/5        @src/cmsearch@  --ga 3.4.12.calibrated.cm 1k.fa
-4  exercise  cmsearch:3.4.12c/6        @src/cmsearch@  --tc 3.4.12.calibrated.cm 1k.fa
-
-4  exercise  cmsearch:3.4.12c/7        @src/cmsearch@  --fil-T-qdb 5 3.4.12.calibrated.cm 1k.fa
-4  exercise  cmsearch:3.4.12c/8        @src/cmsearch@  --fil-T-qdb -2 3.4.12.calibrated.cm 1k.fa
-4  exercise  cmsearch:3.4.12c/9        @src/cmsearch@  --fil-T-hmm 5 3.4.12.calibrated.cm 1k.fa
-4  exercise  cmsearch:3.4.12c/10        @src/cmsearch@  --fil-T-hmm -2 3.4.12.calibrated.cm 1k.fa
-4  exercise  cmsearch:3.4.12c/11        @src/cmsearch@  --fil-Smax-hmm 0.0001 3.4.12.calibrated.cm 1k.fa
-
-4  exercise  cmsearch:3.4.12c/12	@src/cmsearch@  --fil-no-hmm 3.4.12.calibrated.cm 1k.fa
-4  exercise  cmsearch:3.4.12c/13        @src/cmsearch@  --fil-no-qdb 3.4.12.calibrated.cm 1k.fa
-4  exercise  cmsearch:3.4.12c/14        @src/cmsearch@  --fil-beta 1E-2 3.4.12.calibrated.cm 1k.fa
-
-4  exercise  cmsearch:3.4.12c/15        @src/cmsearch@  --fil-S-hmm 0.04 3.4.12.calibrated.cm 1k.fa
-4  exercise  cmsearch:3.4.12c/16        @src/cmsearch@  --fil-Smin-hmm 0.001 3.4.12.calibrated.cm 1k.fa
-4  exercise  cmsearch:3.4.12c/17        @src/cmsearch@  --fil-Smax-hmm 0.25 --fil-A-hmm 3.4.12.calibrated.cm 1k.fa
-4  exercise  cmsearch:3.4.12c/18        @src/cmsearch@  --fil-Smin-hmm 0.03 --fil-Smax-hmm 0.25 --fil-A-hmm 3.4.12.calibrated.cm 1k.fa
-
-# test the two options that are only relevant with multi-CM files (and
-# thus weren't tested for tRNA)
-1  exercise  cmsearch:3.4.12c/19        @src/cmsearch@  --cm-idx 2 3.4.12.calibrated.cm 1k.fa
-1  exercise  cmsearch:3.4.12c/20        @src/cmsearch@ --cm-name U3 3.4.12.calibrated.cm 1k.fa
-
-#development options
-# with calibrated model (not always necessary to be run with
-# calibrated model)
-# trna
-5  exercise  cmsearch:trnacd/1        @src/cmsearch@  --lambda 0.6913 trna.calibrated.cm 1k.fa
-5  exercise  cmsearch:trnacd/2	     @src/cmsearch@  --hbanded --aln2bands trna.calibrated.cm 1k.fa
-5  exercise  cmsearch:trnacd/3        @src/cmsearch@  --rtrans trna.calibrated.cm 1k.fa
-5  exercise  cmsearch:trnacd/4        @src/cmsearch@  --hbanded --sums trna.calibrated.cm 1k.fa
-5  exercise  cmsearch:trnacd/5        @src/cmsearch@  --null2 --no-null3 trna.calibrated.cm 1k.fa
-5  exercise  cmsearch:trnacd/6        @src/cmsearch@  --no-null3 trna.calibrated.cm 1k.fa
-
-5  exercise  cmsearch:trnacd/7        @src/cmsearch@  --pebegin trna.calibrated.cm 1k.fa
-5  exercise  cmsearch:trnacd/8        @src/cmsearch@  --pfend 0.001 trna.calibrated.cm 1k.fa
-5  exercise  cmsearch:trnacd/9        @src/cmsearch@  --pbegin 0.001 trna.calibrated.cm 1k.fa
-5  exercise  cmsearch:trnacd/10        @src/cmsearch@  --pbegin 0.99 trna.calibrated.cm 1k.fa
-5  exercise  cmsearch:trnacd/11        @src/cmsearch@  --pend 0.5 trna.calibrated.cm 1k.fa
-5  exercise  cmsearch:trnacd/12        @src/cmsearch@  --pend 0.005 trna.calibrated.cm 1k.fa
-
-# 3.4.12
-5  exercise  cmsearch:3.4.12cd/1        @src/cmsearch@  --lambda 0.6913 3.4.12.calibrated.cm 1k.fa
-5  exercise  cmsearch:3.4.12cd/2        @src/cmsearch@  --hbanded --aln2bands 3.4.12.calibrated.cm 1k.fa
-5  exercise  cmsearch:3.4.12cd/3        @src/cmsearch@  --rtrans 3.4.12.calibrated.cm 1k.fa
-5  exercise  cmsearch:3.4.12cd/4        @src/cmsearch@  --hbanded --sums 3.4.12.calibrated.cm 1k.fa
-5  exercise  cmsearch:3.4.12cd/5        @src/cmsearch@  --null2 --no-null3 3.4.12.calibrated.cm 1k.fa
-5  exercise  cmsearch:3.4.12cd/6        @src/cmsearch@  --no-null3 3.4.12.calibrated.cm 1k.fa
-
-5  exercise  cmsearch:3.4.12cd/7        @src/cmsearch@  --pebegin 3.4.12.calibrated.cm 1k.fa
-5  exercise  cmsearch:3.4.12cd/8        @src/cmsearch@  --pfend 0.001 3.4.12.calibrated.cm 1k.fa
-5  exercise  cmsearch:3.4.12cd/9        @src/cmsearch@  --pbegin 0.001 3.4.12.calibrated.cm 1k.fa
-5  exercise  cmsearch:3.4.12cd/10        @src/cmsearch@  --pbegin 0.99 3.4.12.calibrated.cm 1k.fa
-5  exercise  cmsearch:3.4.12cd/11        @src/cmsearch@  --pend 0.5 3.4.12.calibrated.cm 1k.fa
-5  exercise  cmsearch:3.4.12cd/12        @src/cmsearch@  --pend 0.005 3.4.12.calibrated.cm 1k.fa
+# other developer options
+1  exercise  search:v/1k/anb        @src/cmsearch@  --anonbanded %V.CM% %V1K%
+1  exercise  search:v/1k/anwb       @src/cmsearch@  --anewbands %V.CM% %V1K%
+1  exercise  search:v/1k/evb        @src/cmsearch@  --envhitbias %V.CM% %V1K%
+1  exercise  search:v/1k/ng         @src/cmsearch@  --nogreedy %V.CM% %V1K%
+1  exercise  search:v/1k/filcmW     @src/cmsearch@  --filcmW %V.CM% %V1K%
+1  exercise  search:v/1k/cp9noel    @src/cmsearch@  --cp9noel %V.CM% %V1K%
+1  exercise  search:v/1k/cp9gloc    @src/cmsearch@  --cp9gloc %V.CM% %V1K%
+1  exercise  search:v/1k/null2      @src/cmsearch@  --null2 %V.CM% %V1K%
+1  exercise  search:3/100k/xtau     @src/cmsearch@  --xtau 4 %3.CM% %3100K%
+1  exercise  search:3/100k/maxtau   @src/cmsearch@  --maxtau 0.3 %3.CM% %3100K%
+1  exercise  search:v/1k/seed0      @src/cmsearch@  --seed 0 %V.CM% %V1K%
+1  exercise  search:v/1k/seed1      @src/cmsearch@  --seed 1 %V.CM% %V1K%
 
