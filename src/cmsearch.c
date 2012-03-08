@@ -123,7 +123,7 @@ static ESL_OPTIONS options[] = {
   { "--acyk",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "align hits with CYK, not optimal accuracy",                    8 },
   { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "only search the top strand",                                   8 },
   { "--bottomonly", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "only search the bottom strand",                                8 },
-  { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert target <seqfile> is in format <s>: no autodetection",  12 },
+  { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert target <seqfile> is in format <s>: no autodetection",   8 },
 #ifdef HMMER_THREADS 
   { "--cpu",        eslARG_INT, NULL,"HMMER_NCPU","n>=0",NULL,  NULL,  CPUOPTS,         "number of parallel CPU workers to use for multithreads",       8 },
 #endif
@@ -135,27 +135,28 @@ static ESL_OPTIONS options[] = {
 
   /* All options below are developer options, only shown if --devhelp invoked */
   /* developer options controlling the acceleration pipeline */
-  { "--noF1",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the MSV filter stage",                                  101 },
-  { "--noF2",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Viterbi filter stage",                              101 },
-  { "--noF3",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the Forward filter stage",                              101 },
-  { "--noF4",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "skip the glocal Forward filter stage",                       101 },
-  { "--noF6",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "skip the CYK filter stage",                                  101 },
-  { "--doF1b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF1",   "turn on the MSV composition bias filter",                    101 },
-  { "--noF2b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF2",   "turn off the Vit composition bias filter",                   101 },
-  { "--noF3b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF3",   "turn off the Fwd composition bias filter",                   101 },
-  { "--noF4b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max,--noF3",   "turn off the glocal Fwd composition bias filter",            101 },
-  { "--noF5b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--max",          "turn off the per-envelope composition bias filter",          101 },
-  { "--F1",         eslARG_REAL,  "0.35", NULL, NULL,    NULL,  NULL, "--max",          "Stage 1 (MSV) threshold:         promote hits w/ P <= <x>",  101 },
-  { "--F1b",        eslARG_REAL,  "0.35", NULL, NULL,    NULL,"--doF1b", "--max",       "Stage 1 (MSV) bias threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F2",         eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--max",          "Stage 2 (Vit) threshold:         promote hits w/ P <= <x>",  101 },
-  { "--F2b",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--noF2b,--max",  "Stage 2 (Vit) bias threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F3",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--max",          "Stage 3 (Fwd) threshold:         promote hits w/ P <= <x>",  101 },
-  { "--F3b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF3b,--max",  "Stage 3 (Fwd) bias threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F4",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--max",          "Stage 4 (gFwd) glocal threshold: promote hits w/ P <= <x>",  101 },
-  { "--F4b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF4b,--max",  "Stage 4 (gFwd) glocal bias thr:  promote hits w/ P <= <x>",  101 },
-  { "--F5",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--max",          "Stage 5 (env defn) threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F5b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF5b,--max",  "Stage 5 (env defn) bias thr:     promote hits w/ P <= <x>",  101 },
-  { "--F6",         eslARG_REAL,  "1e-4", NULL, NULL,    NULL,  NULL, "--max",          "Stage 6 (CYK) threshold: promote hits w/ P <= F6",           101 },
+  /* name           type         default  env   range  toggles  reqs  incomp            help                                                      docgroup*/
+  { "--noF1",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--doF1b",        "skip the HMM MSV filter stage",                                   101 },
+  { "--noF2",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noF2b", NULL,          "skip the HMM Viterbi filter stage",                              101 },
+  { "--noF3",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noF3b", NULL,          "skip the HMM Forward filter stage",                              101 },
+  { "--noF4",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noF4b", NULL,          "skip the HMM glocal Forward filter stage",                       101 },
+  { "--noF6",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "skip the CM CYK filter stage",                                   101 },
+  { "--doF1b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn on the HMM MSV composition bias filter",                    101 },
+  { "--noF2b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn off the HMM Vit composition bias filter",                   101 },
+  { "--noF3b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn off the HMM Fwd composition bias filter",                   101 },
+  { "--noF4b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn off the HMM glocal Fwd composition bias filter",            101 },
+  { "--noF5b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn off the HMM per-envelope composition bias filter",          101 },
+  { "--F1",         eslARG_REAL,  "0.35", NULL, NULL,    NULL,  NULL, "--noF1",         "Stage 1 (MSV) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F1b",        eslARG_REAL,  "0.35", NULL, NULL,    NULL,"--doF1b", NULL,          "Stage 1 (MSV) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F2",         eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--noF2",         "Stage 2 (Vit) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F2b",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--noF2b",        "Stage 2 (Vit) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F3",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF3",         "Stage 3 (Fwd) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F3b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF3b",        "Stage 3 (Fwd) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F4",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF4",         "Stage 4 (gFwd) glocal threshold: promote hits w/ P <= <x>",  101 },
+  { "--F4b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF4b",        "Stage 4 (gFwd) glocal bias thr:  promote hits w/ P <= <x>",  101 },
+  { "--F5",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, NULL,             "Stage 5 (env defn) threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F5b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF5b",        "Stage 5 (env defn) bias thr:     promote hits w/ P <= <x>",  101 },
+  { "--F6",         eslARG_REAL,  "1e-4", NULL, NULL,    NULL,  NULL, "--noF6",         "Stage 6 (CYK) threshold: promote hits w/ P <= F6",           101 },
   /* banded options for CYK filter round of searching */
   { "--ftau",       eslARG_REAL, "1e-4",  NULL, "1E-18<x<1", NULL,    NULL, "--fqdb",   "set HMM band tail loss prob for CYK filter to <x>",       102 },
   { "--fsums",      eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL, "--fqdb",   "w/--fhbanded use posterior sums (widens bands)",          102 },
@@ -603,7 +604,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     cm_tophits_Targets(ofp, info[0].th, info[0].pli, textw);
     fprintf(ofp, "\n\n");
 
-    if(info[0].pli->do_alignments) {
+    if(info[0].pli->show_alignments) {
       if((status = cm_tophits_HitAlignments(ofp, info[0].th, info[0].pli, textw)) != eslOK) cm_Fail("Out of memory");
       fprintf(ofp, "\n\n");
       if(info[0].pli->do_allstats) { 
@@ -1217,7 +1218,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     
     cm_tophits_Targets(ofp, info->th, info->pli, textw); 
     fprintf(ofp, "\n\n");
-    if(info->pli->do_alignments) {
+    if(info->pli->show_alignments) {
       if((status = cm_tophits_HitAlignments(ofp, info->th, info->pli, textw)) != eslOK) mpi_failure("Out of memory");
       fprintf(ofp, "\n\n");
       if(info->pli->do_allstats) { 
@@ -1553,6 +1554,8 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if ((*ret_cmfile = esl_opt_GetArg(go, 1))  == NULL)  { puts("Failed to get <cmfile> argument on command line"); goto ERROR; }
   if ((*ret_seqfile = esl_opt_GetArg(go, 2)) == NULL)  { puts("Failed to get <seqfile> argument on command line"); goto ERROR; }
   
+  if (strcmp(*ret_seqfile, "-") == 0) { puts("Can't read <seqfile> from stdout: don't use '-'"); goto ERROR; }
+
   /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
 
   /* --beta only makes sense with --qdb, --nohmm or --max */

@@ -4,9 +4,7 @@
  *   1. CM_PIPELINE: allocation, initialization, destruction
  *   2. Pipeline API
  *   3. Non-API filter stage search functions.
- *   4. 
  *   4. Copyright and license information
- * 
  */
 #include "esl_config.h"
 #include "p7_config.h"
@@ -26,7 +24,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DEBUGPIPELINE  0
+#define DEBUGPIPELINE  1
 
 
 static int  pli_p7_filter         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
@@ -219,10 +217,10 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_bot          = esl_opt_GetBoolean(go, "--toponly")    ? FALSE : TRUE;
   pli->do_allstats     = esl_opt_GetBoolean(go, "--allstats")   ? TRUE  : FALSE;
   pli->show_accessions = esl_opt_GetBoolean(go, "--acc")        ? TRUE  : FALSE;
-  pli->do_alignments   = esl_opt_GetBoolean(go, "--noali")      ? FALSE : TRUE;
+  pli->show_alignments = esl_opt_GetBoolean(go, "--noali")      ? FALSE : TRUE;
   pli->do_hb_recalc    = esl_opt_GetBoolean(go, "--anewbands")  ? TRUE  : FALSE;
   pli->do_envwinbias   = esl_opt_GetBoolean(go, "--envhitbias") ? FALSE : TRUE;
-  pli->do_filcmW       = esl_opt_GetBoolean(go, "--filcmW")     ? TRUE : FALSE;
+  pli->do_filcmW       = esl_opt_GetBoolean(go, "--filcmW")     ? TRUE  : FALSE;
   pli->xtau            = esl_opt_GetReal(go, "--xtau");
   pli->maxtau          = esl_opt_GetReal(go, "--maxtau");
   pli->do_time_F1      = esl_opt_GetBoolean(go, "--time-F1")    ? TRUE  : FALSE;
@@ -496,11 +494,11 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     if(esl_opt_IsUsed(go, "--F6"))  { pli->do_fcyk     = TRUE; pli->F6  = esl_opt_GetReal(go, "--F6");  }
   }
   
-  if(esl_opt_GetBoolean(go, "--noF1"))     pli->do_msv        = FALSE; 
-  if(esl_opt_GetBoolean(go, "--noF2"))     pli->do_vit        = FALSE; 
-  if(esl_opt_GetBoolean(go, "--noF3"))     pli->do_fwd        = FALSE; 
-  if(esl_opt_GetBoolean(go, "--noF4"))     pli->do_gfwd       = FALSE; 
-  if(esl_opt_GetBoolean(go, "--noF6"))     pli->do_fcyk       = FALSE; 
+  if(esl_opt_GetBoolean(go, "--noF1"))     pli->do_msv  = FALSE; 
+  if(esl_opt_GetBoolean(go, "--noF2"))     pli->do_vit  = FALSE; 
+  if(esl_opt_GetBoolean(go, "--noF3"))     pli->do_fwd  = FALSE; 
+  if(esl_opt_GetBoolean(go, "--noF4"))     pli->do_gfwd = FALSE; 
+  if(esl_opt_GetBoolean(go, "--noF6"))     pli->do_fcyk = FALSE; 
 
   if((! pli->do_max) && (! pli->do_nohmm) && (! pli->do_mid)) { 
     if(esl_opt_GetBoolean(go, "--doF1b"))    pli->do_msvbias    = TRUE;
@@ -557,7 +555,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   /* CYK filter settings, only set these if do_fcyk 
    */
   if(pli->do_fcyk) { 
-    if(pli->do_nohmm) { /* special case, default behavior for fcyk is to do QDB, HMM banded is not allowed */
+    if(pli->do_nohmm) { 
+      /* special case: default behavior for fcyk is to do QDB, HMM banded is not allowed.
+       */
       if(esl_opt_GetBoolean(go, "--fnonbanded"))       pli->fcyk_cm_search_opts  |= CM_SEARCH_NONBANDED;
       else                                             pli->fcyk_cm_search_opts  |= CM_SEARCH_QDB;
     }
@@ -1056,6 +1056,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   int       nenv = 0;     /* number of envelopes surviving CYK filter, filled by pli_cyk_env_filter() or pli_cyk_seq_filter() */
   int64_t  *es  = NULL;   /* [0..i..nenv-1] window start positions, filled by pli_cyk_env_filter() or pli_cyk_seq_filter() */
   int64_t  *ee  = NULL;   /* [0..i..nenv-1] window end   positions, filled by pli_cyk_env_filter() or pli_cyk_seq_filter() */
+  int       i;            /* counter over envelopes */
 
   /* variables necessary for re-searching sequence ends */
   ESL_SQ   *sq2search = NULL;  /* a pointer to the sequence to search on current pass */
@@ -1155,17 +1156,21 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     }
     pli->cur_pass_idx = p;
 
-    /* Execute the pipeline:
+    /********************************************************************************************************/
+    /* Execute the filter pipeline:
      * Goal of filters is to define envelopes in 1 of 3 ways: 
-     * - using a p7 hmm (if pli->do_edef == TRUE) 
-     * - using CYK      (if pli->do_edef == FALSE && pli->fcyk = TRUE)
-     * - each full seq is an envelope (no filters, if pli->do_edef == FALSE && pli->fcyk = FALSE)
+     * 1. using a p7 hmm (if pli->do_edef == TRUE) 
+     * 2. using CYK      (if pli->do_edef == FALSE && pli->fcyk = TRUE)
+     * 3. each full seq is an envelope (no filters, if pli->do_edef == FALSE && pli->fcyk = FALSE)
      */
+
+    /********************************************************************************************************/
+    /* 1. using a p7 hmm (if pli->do_edef == TRUE) */
     if(pli->do_edef) { 
       /* Defining envelopes with p7 HMM: 
-       * 1. pli_p7_filter(): MSV, Viterbi, local Forward filters 
-       * 2. pli_p7_env_def(): glocal Forward, and glocal (usually) HMM envelope definition, then
-       * 3. pli_cyk_env_filter():  CYK filter, run on each envelope defined by the HMM 
+       * A. pli_p7_filter(): MSV, Viterbi, local Forward filters 
+       * B. pli_p7_env_def(): glocal Forward, and glocal (usually) HMM envelope definition, then
+       * C. pli_cyk_env_filter():  CYK filter, run on each envelope defined by the HMM 
        */
 #if DEBUGPIPELINE
       printf("\nPIPELINE calling p7Filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
@@ -1179,12 +1184,23 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
       if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &p7es, &p7ee, &np7env)) != eslOK) return status;
       if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
 
+      if(pli->do_fcyk) { 
 #if DEBUGPIPELINE
-      printf("\nPIPELINE calling pli_cyk_env_filterf() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+	printf("\nPIPELINE calling pli_cyk_env_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-      if((status = pli_cyk_env_filter(pli, cm_offset, sq2search, p7es, p7ee, np7env, opt_cm, &es, &ee, &nenv)) != eslOK) return status;
-      if(pli->do_time_F4 || pli->do_time_F5) return status;
+	if((status = pli_cyk_env_filter(pli, cm_offset, sq2search, p7es, p7ee, np7env, opt_cm, &es, &ee, &nenv)) != eslOK) return status;
+	if(pli->do_time_F4 || pli->do_time_F5) return status;
+      }
+      else { /* defined envelopes with HMM, but CYK filter is off: act as if p7-defined envelopes survived CYK */
+	ESL_ALLOC(es, sizeof(int64_t) * np7env);
+	ESL_ALLOC(ee, sizeof(int64_t) * np7env);
+	for(i = 0; i < np7env; i++) { es[i] = p7es[i]; ee[i] = p7ee[i]; } 
+	nenv = np7env;
+      }
     }
+    /* end of '1. using a p7 hmm (if pli->do_edef == TRUE)' */
+    /********************************************************************************************************/
+    /* 2. using CYK (if pli->do_edef == FALSE && pli->fcyk = TRUE) */
     else if(pli->do_fcyk) { 
       /* Defining envelopes with CYK */
 #if DEBUGPIPELINE
@@ -1192,6 +1208,9 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #endif
       if((status = pli_cyk_seq_filter(pli, cm_offset, sq2search, opt_cm, &es, &ee, &nenv)) != eslOK) return status;
     }
+    /* end of '2. using CYK (if pli->do_edef == FALSE && pli->fcyk = TRUE)' */
+    /********************************************************************************************************/
+    /* 3. each full seq is an envelope (no filters, if pli->do_edef == FALSE && pli->fcyk = FALSE) */
     else { 
       /* No filters, (pli->do_edef and pli->do_fcyk are both FALSE)
        *  each full sequence becomes an 'envelope' to be searched in
@@ -1201,9 +1220,12 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
       ESL_ALLOC(ee, sizeof(int64_t) * 1);
       nenv = 1; es[0] = 1; ee[0] = sq2search->n;
     }
+    /* end of '3. each full seq is an envelope (no filters, if pli->do_edef == FALSE && pli->fcyk = FALSE)' */
+    /********************************************************************************************************/
     if(pli->do_time_F6) return status;
-
-    /* final stage of pipeline (always run) */
+      
+    /* Filters are finished. Final stage of pipeline (always run).
+     */
 #if DEBUGPIPELINE
     printf("\nPIPELINE calling FinalStage() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
@@ -1225,7 +1247,6 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 	}
       }
     }
-  /*****************************************************************/
 
     if(ws   != NULL) { free(ws);   ws   = NULL; }
     if(we   != NULL) { free(we);   we   = NULL; }
@@ -2897,7 +2918,7 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
     else if(status != eslOK) return status;
 
     /* save a copy of the bands we calculated for the final search stage */
-    if(pli->do_alignments && used_hb && (! pli->do_hb_recalc)) { 
+    if(used_hb && (! pli->do_hb_recalc)) { 
       scan_cp9b = cp9_CloneBands(cm->cp9b, pli->errbuf);
       if(scan_cp9b == NULL) return eslEMEM;
 #if eslDEBUGLEVEL >= 1
@@ -2938,21 +2959,20 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
 #if DEBUGPIPELINE
       printf("SURVIVOR envelope     [%10ld..%10ld] survived Inside    %6.2f bits  P %g\n", hit->start, hit->stop, hit->score, hit->pvalue);
 #endif
-      /* Get an alignment of the hit, if nec */
-      if(pli->do_alignments) { 
-	/* check if we need to overwrite cm->cp9b with scan_cp9b
-	 * because alignment of previous hit modified them in previous 
-	 * call to pli_align_hit(). 
-	 */
-	if(h > nhit && scan_cp9b != NULL) { 
-	  if(cm->cp9b != NULL) FreeCP9Bands(cm->cp9b);
-	  cm->cp9b = cp9_CloneBands(scan_cp9b, pli->errbuf);
-	  if(cm->cp9b == NULL) return status;
-	}
-	/*cm_hit_Dump(stdout, hit);*/
-	if((status = pli_align_hit(pli, cm, sq, hit, used_hb)) != eslOK) return status;
+      /* Get an alignment of the hit. 
+       */
+      /* check if we need to overwrite cm->cp9b with scan_cp9b
+       * because alignment of previous hit modified them in previous 
+       * call to pli_align_hit(). 
+       */
+      if(h > nhit && scan_cp9b != NULL) { 
+	if(cm->cp9b != NULL) FreeCP9Bands(cm->cp9b);
+	cm->cp9b = cp9_CloneBands(scan_cp9b, pli->errbuf);
+	if(cm->cp9b == NULL) return status;
       }
-
+      /*cm_hit_Dump(stdout, hit);*/
+      if((status = pli_align_hit(pli, cm, sq, hit, used_hb)) != eslOK) return status;
+      
       /* Finally, if we're using model-specific bit score thresholds,
        * determine if the significance of the hit (is it reported
        * and/or included?)  Adapted from Sean's comments at an
@@ -2981,7 +3001,7 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
        * 
        * [xref J5/92]
        */
-
+      
       if (pli->use_bit_cutoffs) { 
 	if (cm_pli_TargetReportable(pli, hit->score, hit->evalue)) { /* evalue is invalid, but irrelevant if pli->use_bit_cutoffs */
 	  hit->flags |= CM_HIT_IS_REPORTED;

@@ -759,7 +759,7 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
   if (fwrite((char *) &(cm->nodes),      sizeof(int),  1,   fp) != 1) return eslFAIL;
   if (fwrite((char *) &(cm->clen),       sizeof(int),  1,   fp) != 1) return eslFAIL;
   if (fwrite((char *) &(cm->abc->type),  sizeof(int),  1,   fp) != 1) return eslFAIL;
-
+  
   /* main model section 
    */
 
@@ -2082,6 +2082,18 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 
   /* Get sizes of things */
   if (! fread((char *) &(cm->flags),     sizeof(int), 1, cmfp->f)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read flags");
+
+  /* Important step that's easy to overlook: lower flags that may have
+   * been up when CM was output to file, but that won't be true of the
+   * CM we're about to read (since not all CM parameters go into the
+   * file).
+   */
+  cm->flags &= ~CMH_BITS; 
+  cm->flags &= ~CMH_CP9;
+  cm->flags &= ~CMH_CP9_TRUNC;
+  cm->flags &= ~CMH_MLP7;
+  cm->flags &= ~CM_IS_CONFIGURED;
+
   if (! fread((char *) &(cm->M),         sizeof(int), 1, cmfp->f)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read number of states");
   if (! fread((char *) &(cm->nodes),     sizeof(int), 1, cmfp->f)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read number of nodes");
   if (! fread((char *) &(cm->clen),      sizeof(int), 1, cmfp->f)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read consensus length");

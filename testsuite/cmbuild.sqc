@@ -2,115 +2,131 @@
 # EPN, Fri Dec 28 15:54:44 2007
 #
 
+
 # Exercises of cmbuild.
 #
 1  exercise  cmbuild:help/1        @src/cmbuild@  -h
 1  exercise  cmbuild:help/2        @src/cmbuild@  --devhelp
 
-1  exercise  cmbuild:se/1          @src/cmbuild@ -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/2          @src/cmbuild@ -F -n mine %SE.CM% se.stk 
-1  exercise  cmbuild:se/3          @src/cmbuild@ -A %SE.CM% se.stk 
-1  exercise  cmbuild:se/4          @src/cmbuild@ -v -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/5          @src/cmbuild@ --iins -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/6          @src/cmbuild@ --Wbeta 1E-12 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/7          @src/cmbuild@ --ignorant -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/8          @src/cmbuild@ -F --binary %SE.CM% se.stk 
-1  exercise  cmbuild:se/9          @src/cmbuild@ --rf -F %SE.CM% se.rf.stk 
-1  exercise  cmbuild:se/10         @src/cmbuild@ --gapthresh 0.1 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/11         @src/cmbuild@ --enone --rsearch RIBOSUM85-60.mat -F %SE.CM% se.1.stk 
-1  exercise  cmbuild:se/12         @src/cmbuild@ --wgsc -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/13         @src/cmbuild@ --wblosum -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/14         @src/cmbuild@ --wnone -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/15         @src/cmbuild@ --pbswitch 1 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/16         @src/cmbuild@ --wblosum --wid 0.6 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/17         @src/cmbuild@ --eent -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/18         @src/cmbuild@ --enone -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/19         @src/cmbuild@ --ere 0.8 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/19         @src/cmbuild@ --ehmmre 0.6 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/19         @src/cmbuild@ --eset 6 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/19         @src/cmbuild@ --emin 2 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/21         @src/cmbuild@ -F --null at4.null %SE.CM% se.stk 
-1  exercise  cmbuild:se/22         @src/cmbuild@ -F --prior plus1.prior %SE.CM% se.stk 
-1  exercise  cmbuild:se/23         @src/cmbuild@ -F --ctarget 2 %SE.CM% se.stk 
-1  exercise  cmbuild:se/24         @src/cmbuild@ -F --cmaxid 0.8 %SE.CM% se.stk 
-1  exercise  cmbuild:se/25         @src/cmbuild@ -F --call %SE.CM% se.stk 
-1  exercise  cmbuild:se/26         @src/cmbuild@ -F --call --cdump %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/27         @src/cmbuild@ -F --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/28         @src/cmbuild@ -F --gibbs --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/29         @src/cmbuild@ -F --tau 1E-2 --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/30         @src/cmbuild@ -F --gibbs -s 33 --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/31         @src/cmbuild@ -F --sub --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/32         @src/cmbuild@ -F -l --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/33         @src/cmbuild@ -F -a --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/34         @src/cmbuild@ -F --nonbanded --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/35         @src/cmbuild@ -F --mxsize 512 --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/36         @src/cmbuild@ -F --fins --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/37         @src/cmbuild@ -F -v --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/38         @src/cmbuild@ -F --rdump %TMPRDUMP% --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/41         @src/cmbuild@ --nobalance -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/42         @src/cmbuild@ --regress %TMPOUT% -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/43         @src/cmbuild@ --nodetach -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/44         @src/cmbuild@ --elself 0.5 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/45         @src/cmbuild@ --cfile %TMPOUT% -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/46         @src/cmbuild@ --cmtbl %TMPOUT% -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/47         @src/cmbuild@ --emap %TMPOUT% -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/48         @src/cmbuild@ --gtree %TMPOUT% -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/49         @src/cmbuild@ --gtbl %TMPOUT% -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/50         @src/cmbuild@ --tfile %TMPOUT% -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/51         @src/cmbuild@ --p56 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/52         @src/cmbuild@ --n2omega 0.00390625 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/53         @src/cmbuild@ --n3omega 0.00390625 -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/df         @src/cmbuild@ -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/n          @src/cmbuild@ -F -n mine %SE.CM% !testsuite/se.sto! 
 
-#
-1  exercise  cmbuild:3.4.12/1          @src/cmbuild@ -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/3          @src/cmbuild@ -A %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/4          @src/cmbuild@ -v -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/5          @src/cmbuild@ --iins -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/6          @src/cmbuild@ --Wbeta 1E-12 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/7          @src/cmbuild@ --ignorant -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/8          @src/cmbuild@ -F --binary %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/9          @src/cmbuild@ --rf -F %3.4.12.CM% 3.4.12.rf.stk 
-1  exercise  cmbuild:3.4.12/10         @src/cmbuild@ --gapthresh 0.1 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/11         @src/cmbuild@ --enone --call --rsearch RIBOSUM85-60.mat -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/12         @src/cmbuild@ --wgsc -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/13         @src/cmbuild@ --wblosum -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/14         @src/cmbuild@ --wnone -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/15         @src/cmbuild@ --pbswitch 1 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/16         @src/cmbuild@ --wblosum --wid 0.6 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/17         @src/cmbuild@ --eent -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/18         @src/cmbuild@ --enone -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/19         @src/cmbuild@ --ere 0.8 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/19         @src/cmbuild@ --ehmmre 0.6 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/20         @src/cmbuild@ --eset 3 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/20         @src/cmbuild@ --eminseq 5 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/21         @src/cmbuild@ -F --null at4.null %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/22         @src/cmbuild@ -F --prior plus1.prior %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/23         @src/cmbuild@ -F --ctarget 2 %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/24         @src/cmbuild@ -F --cmaxid 0.8 %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/25         @src/cmbuild@ -F --call --enone %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/26         @src/cmbuild@ -F --cmaxid 0.7 --cdump %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/27         @src/cmbuild@ -F --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/28         @src/cmbuild@ -F --gibbs --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/29         @src/cmbuild@ -F --tau 1E-2 --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/30         @src/cmbuild@ -F --gibbs -s 33 --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/31         @src/cmbuild@ -F --sub --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/32         @src/cmbuild@ -F -l --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/33         @src/cmbuild@ -F -a --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/36         @src/cmbuild@ -F --fins --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/37         @src/cmbuild@ -F -v --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/38         @src/cmbuild@ -F --rdump %TMPRDUMP% --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/41         @src/cmbuild@ --nobalance -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/42         @src/cmbuild@ --regress %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/43         @src/cmbuild@ --nodetach -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/44         @src/cmbuild@ --elself 0.5 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/45         @src/cmbuild@ --cfile %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/46         @src/cmbuild@ --cmtbl %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/47         @src/cmbuild@ --emap %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/48         @src/cmbuild@ --gtree %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/49         @src/cmbuild@ --gtbl %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/50         @src/cmbuild@ --tfile %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/51         @src/cmbuild@ --p56 -F %3.4.12.CM% 3.4.12.stk
-1  exercise  cmbuild:3.4.12/52         @src/cmbuild@ --n2omega 0.00390625 -F %3.4.12.CM% 3.4.12.stk
-1  exercise  cmbuild:3.4.12/54         @src/cmbuild@ --n3omega 0.00390625 -F %3.4.12.CM% 3.4.12.stk
+# model construction:
+1  exercise  cmbuild:se/gt         @src/cmbuild@ --gapthresh 0.1 -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/rf         @src/cmbuild@ --rf -F %SE.CM% !testsuite/se.rf.sto! 
+1  exercise  cmbuild:se/null       @src/cmbuild@ -F --null at4.null %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/pri        @src/cmbuild@ -F --prior plus1.prior %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/rsearch    @src/cmbuild@ --rsearch RIBOSUM85-60.mat -F %SE.CM% !testsuite/se.1.sto!
+1  exercise  cmbuild:se/betaW      @src/cmbuild@ --betaW 1E-12 -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/beta1      @src/cmbuild@ --beta1 1E-12 -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/beta2      @src/cmbuild@ --beta2 1E-12 -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/beta12     @src/cmbuild@ --beta1 1E-2 --beta2 1E-4 -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/infmt      @src/cmbuild@ --informat stockholm -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/infmt2     @src/cmbuild@ --informat Pfam -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/ig         @src/cmbuild@ --ignorant -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/v1p0       @src/cmbuild@ --v1p0 -F %SE.CM% !testsuite/se.rf.sto! 
+1  exercise  cmbuild:se/p56        @src/cmbuild@ -F --p56 %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/iins       @src/cmbuild@ --iins -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/nobal      @src/cmbuild@ --nobalance -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/nodet      @src/cmbuild@ --nodetach -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/el         @src/cmbuild@ --elself 0.5 -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/n2o        @src/cmbuild@ --n2omega 0.03125 -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/n3o        @src/cmbuild@ --n3omega 0.03125 -F %SE.CM% !testsuite/se.sto! 
 
+# seq weighting
+1  exercise  cmbuild:se/wgsc       @src/cmbuild@ --wgsc -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/wblm       @src/cmbuild@ --wblosum -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/wnon       @src/cmbuild@ --wnone -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/pbs        @src/cmbuild@ --pbswitch 1 -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/wid        @src/cmbuild@ --wblosum --wid 0.6 -F %SE.CM% !testsuite/se.sto! 
 
+# eweighting
+1  exercise  cmbuild:se/eent       @src/cmbuild@ --eent -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:vault/enon    @src/cmbuild@ --enone -F %V.CM% !testsuite/Vault.rfam10p1.seed.sto! 
+1  exercise  cmbuild:vault/ere     @src/cmbuild@ --ere 0.8 -F %V.CM% !testsuite/Vault.rfam10p1.seed.sto! 
+1  exercise  cmbuild:vault/eset    @src/cmbuild@ --eset 10.0  -F %V.CM% !testsuite/Vault.rfam10p1.seed.sto! 
+1  exercise  cmbuild:vault/ems     @src/cmbuild@ --eminseq 8.0 -F %V.CM% !testsuite/Vault.rfam10p1.seed.sto! 
+1  exercise  cmbuild:trna/esig     @src/cmbuild@ --esig 3.0 -F %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto! 
+
+# --refine
+1  exercise  cmbuild:se/rfn        @src/cmbuild@ -F --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+2  exercise  cmbuild:vault/rfn     @src/cmbuild@ -F --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto! 
+1  exercise  cmbuild:se/gbs        @src/cmbuild@ -F --gibbs --seed 33 --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+2  exercise  cmbuild:vault/gbs     @src/cmbuild@ -F --gibbs --seed 33 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto! 
+1  exercise  cmbuild:se/nt         @src/cmbuild@ -F --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/sub        @src/cmbuild@ -F --sub --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/nb         @src/cmbuild@ -F --nonbanded --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/nbnt       @src/cmbuild@ -F --nonbanded --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/nb/gbs     @src/cmbuild@ -F --gibbs --seed 33 --nonbanded --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/nbnt/gbs   @src/cmbuild@ -F --gibbs --seed 33 --nonbanded --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/ndi        @src/cmbuild@ -F --refine %TMPOUT% --indi %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/fins       @src/cmbuild@ -F --fins --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/sub/gbs    @src/cmbuild@ -F --sub --gibbs --seed 33 --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/tau        @src/cmbuild@ -F --tau 1E-3 --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:vault/tau     @src/cmbuild@ -F --tau 1E-3 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto!
+1  exercise  cmbuild:se/mxsize     @src/cmbuild@ -F --mxsize 32 --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/rdump      @src/cmbuild@ -F --rdump %TMPOUT% --refine %TMP2OUT% %SE.CM% !testsuite/se.sto!
+
+# --refine plus -l
+1  exercise  cmbuild:se/l/rfn        @src/cmbuild@ -F -l --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+2  exercise  cmbuild:vault/l/rfn     @src/cmbuild@ -F -l --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto! 
+1  exercise  cmbuild:se/l/gbs        @src/cmbuild@ -F -l --gibbs --seed 33 --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+2  exercise  cmbuild:vault/l/gbs     @src/cmbuild@ -F -l --gibbs --seed 33 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto! 
+1  exercise  cmbuild:se/l/nt         @src/cmbuild@ -F -l --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/l/nb         @src/cmbuild@ -F -l --nonbanded --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/l/nbnt       @src/cmbuild@ -F -l --nonbanded --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/l/nb/gbs     @src/cmbuild@ -F -l --gibbs --seed 33 --nonbanded --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/l/nbnt/gbs   @src/cmbuild@ -F -l --gibbs --seed 33 --nonbanded --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/l/ndi        @src/cmbuild@ -F -l --refine %TMPOUT% --indi %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/l/fins       @src/cmbuild@ -F -l --fins --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:vault/l/tau     @src/cmbuild@ -F -l --tau 1E-3 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto!
+1  exercise  cmbuild:se/l/tau        @src/cmbuild@ -F -l --tau 1E-3 --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/l/mxsize     @src/cmbuild@ -F -l --mxsize 32 --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/l/rdump      @src/cmbuild@ -F -l --rdump %TMPOUT% --refine %TMP2OUT% %SE.CM% !testsuite/se.sto!
+
+# filter p7 HMM construction
+1  exercise  cmbuild:se/p7ml         @src/cmbuild@ -F --p7ml %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:vault/p7ere     @src/cmbuild@ -F --p7ere 0.45 %V.CM% !testsuite/Vault.rfam10p1.seed.sto!
+1  exercise  cmbuild:se/p7pri        @src/cmbuild@ -F --p7prior !testsuite/test.hprior! %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/p7hpri       @src/cmbuild@ -F --p7hprior %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/p7hemt       @src/cmbuild@ -F --p7hemit %SE.CM% !testsuite/se.sto!
+
+# filter p7 HMM calibration
+1  exercise  cmbuild:se/EmN          @src/cmbuild@ -F --EmN 100 %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/EvN          @src/cmbuild@ -F --EvN 100 %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/ElfN         @src/cmbuild@ -F --ElfN 100 %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/EgfN         @src/cmbuild@ -F --EgfN 100 %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/Elftp        @src/cmbuild@ -F --Elftp 0.035 %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/Egftp        @src/cmbuild@ -F --Elftp 0.075 %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/Ereal        @src/cmbuild@ -F --Ereal %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/Enull3       @src/cmbuild@ -F --Enull3 %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/Ebias        @src/cmbuild@ -F --Ebias %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/Efitlam      @src/cmbuild@ -F --Efitlam %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/Elcmult      @src/cmbuild@ -F --Elcmult 1.5 %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/Egcmult      @src/cmbuild@ -F --Egcmult 2.5 %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/ElL          @src/cmbuild@ -F --ElL 200 %SE.CM% !testsuite/se.sto!
+1  exercise  cmbuild:se/EgL          @src/cmbuild@ -F --EgL 200 %SE.CM% !testsuite/se.sto!
+
+# verbose output
+1  exercise  cmbuild:se/verb       @src/cmbuild@ --verbose -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/cfile      @src/cmbuild@ --cfile %TMPOUT% -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/efile      @src/cmbuild@ --efile %TMPOUT% -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/tfile      @src/cmbuild@ --tfile %TMPOUT% -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/cmtbl      @src/cmbuild@ --cmtbl %TMPOUT% -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/emap       @src/cmbuild@ --emap %TMPOUT% -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/gtree      @src/cmbuild@ --gtree %TMPOUT% -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/gtbl       @src/cmbuild@ --gtbl %TMPOUT% -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/allout     @src/cmbuild@ --verbose --cfile %COUT% --efile %EOUT% --tfile %TOUT% --cmtbl %C2OUT% --emap %E2OUT% --gtree %GOUT% --gtbl %G2OUT% -F %SE.CM% !testsuite/se.sto! 
+
+# multiple CMs from clusters of MSA
+1  exercise  cmbuild:se/ctrg       @src/cmbuild@ -F --ctarget 2 %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/cmax       @src/cmbuild@ -F --cmaxid 0.8 %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/call       @src/cmbuild@ -F --call %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/corg       @src/cmbuild@ -F --corig --call %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/cdmp       @src/cmbuild@ -F --call --cdump %TMPOUT% %SE.CM% !testsuite/se.sto! 
+
+# exptl local begins/ends
+1  exercise  cmbuild:se/pb         @src/cmbuild@ --pbegin 0.5 -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/pe         @src/cmbuild@ --pend 0.3 -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/peb        @src/cmbuild@ --pebegin -F %SE.CM% !testsuite/se.sto! 
+1  exercise  cmbuild:se/pfe        @src/cmbuild@ --pfend 0.001 -F %SE.CM% !testsuite/se.sto! 

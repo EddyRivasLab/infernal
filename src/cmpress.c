@@ -23,7 +23,7 @@
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs   incomp  help   docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    NULL, "show brief help on version and usage",          0 },
-  { "-f",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    NULL, "force: overwrite any previous pressed files",   0 },
+  { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    NULL, "force: overwrite any previous pressed files",   0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -35,7 +35,7 @@ int
 main(int argc, char **argv)
 {
   int            status;
-  ESL_GETOPTS   *go         = p7_CreateDefaultApp(options, 1, argc, argv, banner, usage);
+  ESL_GETOPTS   *go         = cm_CreateDefaultApp(options, 1, argc, argv, banner, usage);
   ESL_ALPHABET  *abc        = NULL;
   char          *cmfile     = esl_opt_GetArg(go, 1);
   CM_FILE       *cmfp       = NULL;
@@ -73,8 +73,10 @@ main(int argc, char **argv)
 
   while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) == eslOK)
     {
-      if (cm->name == NULL) cm_Fail("Every CM must have a name to be indexed. Failed to find name of CM #%d\n", ncm+1);
-      
+      if (cm->name == NULL)                  cm_Fail("Every CM must have a name to be indexed. Failed to find name of CM #%d\n", ncm+1);
+      if (! (cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("CMs must have E-value statistics to be press'd. Failed to find stats for CM #%d\n", ncm+1);
+      if (! (cm->flags & CMH_FP7))           cm_Fail("Failed to read a p7 HMM filter for CM #%d\n", ncm+1);
+
       if (ncm == 0) { 	/* first time initialization, now that alphabet known */
 	bg = p7_bg_Create(abc);
 	p7_bg_SetLength(bg, 400);
@@ -148,7 +150,7 @@ open_db_files(ESL_GETOPTS *go, char *basename, FILE **ret_mfp, FILE **ret_ffp,  
   FILE       *ffp             = NULL;
   FILE       *pfp             = NULL;
   ESL_NEWSSI *nssi            = NULL;
-  int         allow_overwrite = esl_opt_GetBoolean(go, "-f");
+  int         allow_overwrite = esl_opt_GetBoolean(go, "-F");
   int         status;
 
   if (esl_sprintf(&ssifile, "%s.i1i", basename) != eslOK) cm_Die("esl_sprintf() failed");
@@ -174,7 +176,6 @@ open_db_files(ESL_GETOPTS *go, char *basename, FILE **ret_mfp, FILE **ret_ffp,  
 
   return;
 }
-
 
 /*****************************************************************
  * @LICENSE@

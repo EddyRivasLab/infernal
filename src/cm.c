@@ -2890,10 +2890,6 @@ cm_nonconfigured_Verify(CM_t *cm, char *errbuf)
    * any way. A CM has been configured if it has been manipulated
    * after being read from a file.
    */
-  if(cm->flags & CM_IS_CONFIGURED) { 
-    printf("DONE!");
-  }
-
   if(cm->flags & CM_IS_CONFIGURED)        ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CM_IS_CONFIGURED flag is up (should be down in a non-configured CM)");
   if(cm->flags & CMH_BITS)                ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CMH_BITS flag is up (should be down in a non-configured CM)");
   if(cm->flags & CMH_LOCAL_BEGIN)         ESL_FAIL(eslFAIL, errbuf, "cm_nonconfigured_Verify(): CMH_LOCAL_BEGIN flag is up (should be down in a non-configured CM)");

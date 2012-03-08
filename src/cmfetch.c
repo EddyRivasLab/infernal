@@ -1,4 +1,4 @@
-/* Fetch a CM from a CM database (such as Rfam).
+/* cmfetch: Fetch a CM from a CM database (such as Rfam).
  * Based heavily on SRE's hmmfetch from HMMER3.
  * 
  * EPN, Sat Mar 20 11:17:30 2010
@@ -297,3 +297,7 @@ onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CM_FILE *cmfp, char *cmfile)
 
   esl_alphabet_Destroy(abc);
 }
+
+/*****************************************************************
+ * @LICENSE@
+ *****************************************************************/

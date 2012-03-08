@@ -2735,11 +2735,11 @@ cm_StochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, E
 
 #if 0 
   ParsetreeDump(stdout, tr, cm, dsq);
-#endif
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
   printf("parsetree score: %.4f\n", sc);
   printf("fsc:             %.4f\n", fsc);
+#endif
 
   if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
   if(ret_sc   != NULL) *ret_sc   = fsc;
@@ -3023,11 +3023,11 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
 
 #if 0 
   ParsetreeDump(stdout, tr, cm, dsq);
-#endif
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
   printf("parsetree score: %f\n", sc);
   printf("fsc:             %.4f\n", fsc);
+#endif
 
   if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
   if(ret_sc   != NULL) *ret_sc   = fsc;
@@ -3161,7 +3161,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
     else if(choice == 1) parsetree_mode = TRMODE_L;
     else if(choice == 2) parsetree_mode = TRMODE_R;
     else if(choice == 3) parsetree_mode = TRMODE_T;
-    printf("cm_TrStochasticParsetree() sampled %s (%g %g %g %g)\n", MarginalMode(parsetree_mode), pA[0], pA[1], pA[2], pA[3]);
+    /*printf("cm_TrStochasticParsetree() sampled %s (%g %g %g %g)\n", MarginalMode(parsetree_mode), pA[0], pA[1], pA[2], pA[3]);*/
   }
   else { /* preset_mode != TRMODE_UNKNOWN, enforce sampled parsetree mode is preset_mode */
     parsetree_mode = preset_mode;
@@ -3346,7 +3346,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	if((status = sample_helper(r, pA, validA, cur_vec_size, &choice)) != eslOK) ESL_FAIL(status, errbuf, "cm_StochasticParsetree() number of valid local begins is 0.");
 	b = choice;
 	b_mode = v_mode; /* can't change mode out of a S_st */
-	trpenalty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx][b] : cm->trp->g_ptyAA[pty_idx][y];
+	trpenalty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx][b] : cm->trp->g_ptyAA[pty_idx][b];
 	fsc += trpenalty;
 	yoffset = USED_TRUNC_BEGIN; 
 	
@@ -3490,8 +3490,8 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	v = cm->M; /* now we're in EL (if USED_TRUNC_END, we act like we are) */
 	v_mode = y_mode; 
       }
-      else if (yoffset == USED_LOCAL_BEGIN) { 
-	/* local begin; can only happen once, from root */
+      else if (yoffset == USED_TRUNC_BEGIN) { 
+	/* truncated begin; can only happen once, from root */
 	InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b, b_mode);
 	v = b;
 	v_mode = b_mode;
@@ -3518,11 +3518,11 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 
 #if 0 
   ParsetreeDump(stdout, tr, cm, dsq);
-#endif
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
   printf("parsetree score: %.4f\n", sc);
   printf("fsc:             %.4f\n", fsc);
+#endif
 
   if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
   if(ret_mode != NULL) *ret_mode = parsetree_mode; 
@@ -3698,7 +3698,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
     else if(choice == 1) parsetree_mode = TRMODE_L;
     else if(choice == 2) parsetree_mode = TRMODE_R;
     else if(choice == 3) parsetree_mode = TRMODE_T;
-    printf("cm_TrStochasticParsetreeHB() sampled %s (%g %g %g %g)\n", MarginalMode(parsetree_mode), pA[0], pA[1], pA[2], pA[3]);
+    /*printf("cm_TrStochasticParsetreeHB() sampled %s (%g %g %g %g)\n", MarginalMode(parsetree_mode), pA[0], pA[1], pA[2], pA[3]);*/
   }
   else { /* preset_mode != TRMODE_UNKNOWN, enforce sampled parsetree mode is preset_mode */
     parsetree_mode = preset_mode;
@@ -3962,11 +3962,10 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	if((status = sample_helper(r, pA, validA, cur_vec_size, &choice)) != eslOK) ESL_FAIL(status, errbuf, "cm_StochasticParsetree() number of local begins is 0.");
 	b = choice;
 	b_mode = v_mode; /* can't change mode out of a S_st */
-	trpenalty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx][b] : cm->trp->g_ptyAA[pty_idx][y];
+	trpenalty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx][b] : cm->trp->g_ptyAA[pty_idx][b];
 	fsc += trpenalty;
 	yoffset = USED_TRUNC_BEGIN; 
-
-	/* set the truncation penalty parameter of the parsetree, we set this earlier if local ends are off */
+	/* set the truncation penalty parameter of the parsetree */
 	tr->trpenalty = trpenalty;
       }
       else { /* standard case: v != 0 && v != E_st && v != EL_st && v != B_st */
@@ -4112,8 +4111,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	v = cm->M; /* now we're in EL (if USED_TRUNC_END, we act like we are) */
 	v_mode = y_mode; 
       }
-      else if (yoffset == USED_LOCAL_BEGIN) { 
-	/* local begin; can only happen once, from root */
+      else if (yoffset == USED_TRUNC_BEGIN) { 
+	/* truncated begin; can only happen once, from root */
 	InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b, b_mode);
 	v = b;
 	v_mode = b_mode;
@@ -4138,13 +4137,13 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   if(LpA       != NULL) free(LpA);
   if(RpA       != NULL) free(RpA);
 
-#if 0 
+#if 0
   ParsetreeDump(stdout, tr, cm, dsq);
-#endif
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
   printf("parsetree score: %f\n", sc);
   printf("fsc:             %.4f\n", fsc);
+#endif
 
   if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
   if(ret_mode != NULL) *ret_mode = parsetree_mode; 

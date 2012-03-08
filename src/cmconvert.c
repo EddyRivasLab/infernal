@@ -19,13 +19,17 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
+#define OUTOPTS "-a,--binary,-1,--mlhmm,--fhmm"
+
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs   incomp  help   docgroup*/
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,    NULL, "show brief help on version and usage",                             0 },
-  { "-a",        eslARG_NONE,"default",NULL, NULL, "-a,-b,-1",      NULL,    NULL, "ascii:  output models in INFERNAL 1.1 ASCII format",               0 },
-  { "-b",        eslARG_NONE,   FALSE, NULL, NULL, "-a,-b,-1",      NULL,    NULL, "binary: output models in INFERNAL 1.1 binary format",              0 },
-  { "-1",        eslARG_NONE,   FALSE, NULL, NULL, "-a,-b,-1",      NULL,    NULL, "output backward compatible Infernal v0.7-->v1.0.2 ASCII format",   0 },
-  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL, "-0,-1", "choose output legacy 1.x file formats by name, such as '1/a'",     0 },
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,    OUTOPTS, "show brief help on version and usage",                             0 },
+  { "-a",        eslARG_NONE,"default",NULL, NULL,      NULL,       NULL,    OUTOPTS, "ascii:  output models in INFERNAL 1.1 ASCII format",               0 },
+  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,    OUTOPTS, "output backward compatible Infernal v0.7-->v1.0.2 ASCII format",   0 },
+  { "--binary",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,    OUTOPTS, "binary: output models in INFERNAL 1.1 binary format",              0 },
+  { "--mlhmm",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,    OUTOPTS, "output maximum likelihood HMM for CM in HMMER3 format",            0 },
+  { "--fhmm",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,    OUTOPTS, "output filter HMM for CM in HMMER3 format",                        0 },
+  /*  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm", "choose output legacy 1.x file formats by name, such as '1/a'",     0 },*/
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -42,15 +46,17 @@ main(int argc, char **argv)
   CM_FILE       *cmfp    = NULL;
   CM_t          *cm      = NULL;
   FILE          *ofp     = stdout;
-  char          *outfmt  = esl_opt_GetString(go, "--outfmt");
+  /*char          *outfmt  = esl_opt_GetString(go, "--outfmt");*/
   int            fmtcode = -1;	/* -1 = write the current default format */
   int            status;
   char           errbuf[eslERRBUFSIZE];
 
-  if (outfmt != NULL) {
-    if      (strcmp(outfmt, "1/a") == 0) fmtcode = CM_FILE_1a;
-    else    cm_Fail("No such 1.x output format code %s.\n", outfmt);
-  }
+  /* In the future, when we have another 1.1+ format besides '1/a' put this back in: 
+   * if (outfmt != NULL) {
+   * if      (strcmp(outfmt, "1/a") == 0) fmtcode = CM_FILE_1a;
+   * else    cm_Fail("No such 1.x output format code %s.\n", outfmt);
+   * }
+   */
 
   status = cm_file_Open(cmfile, NULL, TRUE, &cmfp, errbuf); /* TRUE says: allow CM file to be in v1.0 --> v1.0.2 format */
   if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
@@ -59,14 +65,19 @@ main(int argc, char **argv)
 
   while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) == eslOK)
     {
-      if(cmfp->format == CM_FILE_1) { 
-	/* we need to calculate QDBs (cm->dmin, cm->dmax), cm->W, cm->consensus, 
-	 * as well as E-value parameters for the ML p7 HMM  */
-	if ((status = configure_model(cm, errbuf))       != eslOK) cm_Fail(errbuf);
+      if(cmfp->format == CM_FILE_1 || esl_opt_GetBoolean(go, "--mlhmm")) { 
+	/* if format == CM_FILE_1, we need to calculate QDBs
+	 * (cm->dmin, cm->dmax), cm->W, cm->consensus; if --mlhmm, we
+	 * need E-value params for the ML p7 HMM. All of this is
+	 * calculated during model configuration.
+	 */
+	if ((status = configure_model(cm, errbuf)) != eslOK) cm_Fail(errbuf);
       }	
-      if      (esl_opt_GetBoolean(go, "-a") == TRUE) cm_file_WriteASCII (ofp, fmtcode, cm);
-      else if (esl_opt_GetBoolean(go, "-b") == TRUE) cm_file_WriteBinary(ofp, fmtcode, cm, NULL);
-      else if (esl_opt_GetBoolean(go, "-1") == TRUE) cm_file_Write1p0ASCII(ofp, cm);
+      if      (esl_opt_GetBoolean(go, "-a")       == TRUE) cm_file_WriteASCII (ofp, fmtcode, cm);
+      else if (esl_opt_GetBoolean(go, "--binary") == TRUE) cm_file_WriteBinary(ofp, fmtcode, cm, NULL);
+      else if (esl_opt_GetBoolean(go, "-1")       == TRUE) cm_file_Write1p0ASCII(ofp, cm);
+      else if (esl_opt_GetBoolean(go, "--mlhmm")  == TRUE) p7_hmmfile_WriteASCII(ofp, -1, cm->mlp7); /* -1 = write the current default format */
+      else if (esl_opt_GetBoolean(go, "--fhmm")   == TRUE) p7_hmmfile_WriteASCII(ofp, -1, cm->fp7);  /* -1 = write the current default format */
 
       FreeCM(cm);
     }

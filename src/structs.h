@@ -2101,7 +2101,7 @@ typedef struct cm_pipeline_s {
   int           do_top;         /* TRUE to do top    strand (usually TRUE)   */
   int           do_bot;         /* TRUE to do bottom strand (usually TRUE)   */
   int           show_accessions;/* TRUE to output accessions not names      */
-  int           do_alignments;  /* TRUE to compute and output alignments (default)*/
+  int           show_alignments;/* TRUE to compute and output alignments (default)*/
   int           do_hb_recalc;   /* TRUE to recalculate HMM bands for alignment    */
   int           do_envwinbias;  /* TRUE to calc env bias for entire window  */
   int           do_filcmW;      /* TRUE to use CM's window length for all HMM filters */

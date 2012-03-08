@@ -1,0 +1,182 @@
+# Infernal's cmfetch crash exercises, in sqc command format.
+# EPN, Mon Mar 22 13:01:14 2010
+# SVN $Id: exercises.sqc 2237 2007-12-01 00:14:41Z nawrockie $
+#
+
+# Exercises of cmconvert.
+# Some of these are redundant with exercises.sqc.
+#
+# We use cmemit to verify the conversion for both
+# calibrated and non-calibrated models.
+#
+# We use cmstat -E to verify calibrated models
+# are in fact calibrated.
+#
+# We can't confirm HMM file output (--mlhmm, --fhmm)
+#
+1  exercise  cmconvert:help/1     @src/cmconvert@ -h
+
+1  exercise  cmbuild/trna         @src/cmbuild@ -F %A.TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
+1  exercise  cmbuild/multi        @src/cmbuild@ -F %A.3.CM% !testsuite/3.rfam10p1.seed.sto!
+1  exercise  cmbuild/trna/b       @src/cmbuild@ --binary -F %B.TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
+1  exercise  cmbuild/multi/b      @src/cmbuild@ --binary -F %B.3.CM% !testsuite/3.rfam10p1.seed.sto!
+1  exercise  cmconvert/trna/c/b   @src/cmconvert@ --binary !testsuite/tRNA.calibrated.cm! > %B.TRNA.C.CM%
+1  exercise  cmconvert/multi/c/b  @src/cmconvert@ --binary !testsuite/3.calibrated.cm! > %B.3.C.CM%
+
+#################################################
+# convert 1.1ascii->1.1ascii (non calibrated), output will be identical to input 
+1  exercise  trna/convert/aa      @src/cmconvert@ %A.TRNA.CM% > %AA.TRNA.CM%
+1  exercise  multi/convert/aa     @src/cmconvert@ %A.3.CM%    > %AA.3.CM%
+
+1  exercise  trna/emit/aa         @src/cmemit@    %AA.TRNA.CM% 
+1  exercise  multi/emit/aa        @src/cmemit@    %AA.3.CM% 
+
+# convert 1.1ascii->1.1binary (non calibrated)
+1  exercise  trna/convert/ab      @src/cmconvert@ --binary %A.TRNA.CM% > %AB.TRNA.CM%
+1  exercise  multi/convert/ab     @src/cmconvert@ --binary %A.3.CM%    > %AB.3.CM%
+
+1  exercise  trna/emit/ab         @src/cmemit@    %AB.TRNA.CM% 
+1  exercise  multi/emit/ab        @src/cmemit@    %AB.3.CM% 
+
+# convert 1.1binary->1.1binary (non calibrated)
+1  exercise  trna/convert/bb      @src/cmconvert@ --binary %B.TRNA.CM% > %BB.TRNA.CM%
+1  exercise  multi/convert/bb     @src/cmconvert@ --binary %B.3.CM%    > %BB.3.CM%
+
+1  exercise  trna/emit/bb         @src/cmemit@    %BB.TRNA.CM% 
+1  exercise  multi/emit/bb        @src/cmemit@    %BB.3.CM% 
+
+# convert 1.1binary->1.1ascii (non calibrated)
+1  exercise  trna/convert/ba      @src/cmconvert@ %B.TRNA.CM% > %BA.TRNA.CM%
+1  exercise  multi/convert/ba     @src/cmconvert@ %B.3.CM%    > %BA.3.CM%
+
+1  exercise  trna/emit/ba         @src/cmemit@    %BA.TRNA.CM% 
+1  exercise  multi/emit/ba        @src/cmemit@    %BA.3.CM% 
+
+###############################################
+# convert 1.1ascii->1.1ascii (calibrated), output will be identical to input 
+1  exercise  trna/convert/c/aa    @src/cmconvert@ !testsuite/tRNA.calibrated.cm! > %AA.TRNA.C.CM%
+1  exercise  multi/convert/c/aa   @src/cmconvert@ !testsuite/3.calibrated.cm!    > %AA.3.C.CM%
+
+1  exercise  trna/emit/aa         @src/cmemit@    %AA.TRNA.C.CM% 
+1  exercise  multi/emit/aa        @src/cmemit@    %AA.3.C.CM% 
+
+1  exercise  trna/statE/aa         @src/cmstat@  -E 1 %AA.TRNA.C.CM% 
+1  exercise  multi/statE/aa        @src/cmstat@  -E 1 %AA.3.C.CM% 
+
+# convert 1.1ascii->1.1binary (calibrated)
+1  exercise  trna/convert/c/ab    @src/cmconvert@ --binary !testsuite/tRNA.calibrated.cm! > %AB.TRNA.C.CM%
+1  exercise  multi/convert/c/ab   @src/cmconvert@ --binary !testsuite/3.calibrated.cm!    > %AB.3.C.CM%
+
+1  exercise  trna/emit/ab         @src/cmemit@    %AB.TRNA.C.CM% 
+1  exercise  multi/emit/ab        @src/cmemit@    %AB.3.C.CM% 
+
+1  exercise  trna/statE/ab         @src/cmstat@  -E 1 %AB.TRNA.C.CM% 
+1  exercise  multi/statE/ab        @src/cmstat@  -E 1 %AB.3.C.CM% 
+
+# convert 1.1ascii->1.1binary->1.1ascii (calibrated)
+1  exercise  trna/convert/c/aba   @src/cmconvert@ %AB.TRNA.C.CM% > %ABA.TRNA.C.CM%
+1  exercise  multi/convert/c/aba  @src/cmconvert@ %AB.3.C.CM%    > %ABA.3.C.CM%
+
+1  exercise  trna/emit/aba        @src/cmemit@    %ABA.TRNA.C.CM% 
+1  exercise  multi/emit/aba       @src/cmemit@    %ABA.3.C.CM% 
+
+1  exercise  trna/statE/aba       @src/cmstat@  -E 1 %ABA.TRNA.C.CM% 
+1  exercise  multi/statE/aba      @src/cmstat@  -E 1 %ABA.3.C.CM% 
+
+# convert 1.1ascii->1.1binary->1.1binary (calibrated)
+1  exercise  trna/convert/c/aba   @src/cmconvert@ --binary %AB.TRNA.C.CM% > %ABB.TRNA.C.CM%
+1  exercise  multi/convert/c/aba  @src/cmconvert@ --binary %AB.3.C.CM%    > %ABB.3.C.CM%
+
+1  exercise  trna/emit/abb        @src/cmemit@    %ABB.TRNA.C.CM% 
+1  exercise  multi/emit/abb       @src/cmemit@    %ABB.3.C.CM% 
+
+1  exercise  trna/statE/abb       @src/cmstat@  -E 1 %ABB.TRNA.C.CM% 
+1  exercise  multi/statE/abb      @src/cmstat@  -E 1 %ABB.3.C.CM% 
+###############################################
+
+#################################################
+# convert 1.1ascii->1.0->1.1ascii (non calibrated); 
+1  exercise  trna/convert/a1       @src/cmconvert@ -1 %A.TRNA.CM% > %A1.TRNA.CM%
+1  exercise  multi/convert/a1      @src/cmconvert@ -1 %A.3.CM%    > %A1.3.CM%
+
+1  exercise  trna/convert/a1a      @src/cmconvert@ %A1.TRNA.CM% > %A1A.TRNA.CM%
+1  exercise  multi/convert/a1a     @src/cmconvert@ %A1.3.CM%    > %A1A.3.CM%
+
+1  exercise  trna/emit/a1a         @src/cmemit@    %A1A.TRNA.CM% 
+1  exercise  multi/emit/a1a        @src/cmemit@    %A1A.3.CM% 
+
+# convert 1.1ascii->1.0->1.1binary (non calibrated); 
+1  exercise  trna/convert/a1b      @src/cmconvert@ --binary %A1.TRNA.CM% > %A1B.TRNA.CM%
+1  exercise  multi/convert/a1b     @src/cmconvert@ --binary %A1.3.CM%    > %A1B.3.CM%
+
+1  exercise  trna/emit/a1b         @src/cmemit@    %A1B.TRNA.CM% 
+1  exercise  multi/emit/a1b        @src/cmemit@    %A1B.3.CM% 
+
+# convert 1.1binary->1.0->1.1ascii (non calibrated); 
+1  exercise  trna/convert/b1       @src/cmconvert@ -1 %B.TRNA.CM% > %B1.TRNA.CM%
+1  exercise  multi/convert/b1      @src/cmconvert@ -1 %B.3.CM%    > %B1.3.CM%
+
+1  exercise  trna/convert/b1a      @src/cmconvert@ %B1.TRNA.CM% > %B1A.TRNA.CM%
+1  exercise  multi/convert/b1a     @src/cmconvert@ %B1.3.CM%    > %B1A.3.CM%
+
+1  exercise  trna/emit/b1a         @src/cmemit@    %B1A.TRNA.CM% 
+1  exercise  multi/emit/b1a        @src/cmemit@    %B1A.3.CM% 
+
+# convert 1.1binary->1.0->1.1binary (non calibrated); 
+1  exercise  trna/convert/b1b      @src/cmconvert@ --binary %B1.TRNA.CM% > %B1B.TRNA.CM%
+1  exercise  multi/convert/b1b     @src/cmconvert@ --binary %B1.3.CM%    > %B1B.3.CM%
+
+1  exercise  trna/emit/b1b         @src/cmemit@    %B1B.TRNA.CM% 
+1  exercise  multi/emit/b1b        @src/cmemit@    %B1B.3.CM% 
+
+# convert 1.1ascii->1.0->1.1ascii (calibrated); 
+1  exercise  trna/convert/c/a1       @src/cmconvert@ -1 !testsuite/tRNA.calibrated.cm! > %A1.TRNA.C.CM%
+1  exercise  multi/convert/c/a1      @src/cmconvert@ -1 !testsuite/3.calibrated.cm!    > %A1.3.C.CM%
+
+1  exercise  trna/convert/c/a1a      @src/cmconvert@ %A1.TRNA.C.CM% > %A1A.TRNA.C.CM%
+1  exercise  multi/convert/c/a1a     @src/cmconvert@ %A1.3.C.CM%    > %A1A.3.C.CM%
+
+1  exercise  trna/emit/c/a1a          @src/cmemit@    %A1A.TRNA.C.CM% 
+1  exercise  multi/emit/c/a1a         @src/cmemit@    %A1A.3.C.CM% 
+
+# convert 1.1ascii->1.0->1.1binary (calibrated); 
+1  exercise  trna/convert/c/a1b      @src/cmconvert@ --binary %A1.TRNA.CM% > %A1B.TRNA.C.CM%
+1  exercise  multi/convert/c/a1b     @src/cmconvert@ --binary %A1.3.CM%    > %A1B.3.C.CM%
+
+1  exercise  trna/emit/c/a1b         @src/cmemit@    %A1B.TRNA.C.CM% 
+1  exercise  multi/emit/c/a1b        @src/cmemit@    %A1B.3.C.CM% 
+# can't verify E-values with cmstat: new CMs won't have E-values, they're lost when convert to 1.0 
+#############################################
+# ascii --mlhmm (non calibrated) 
+1  exercise  trna/convert/a/mlhmm      @src/cmconvert@ --mlhmm %A.TRNA.CM% > %A.TRNA.MLHMM%
+1  exercise  multi/convert/a/mlhmm     @src/cmconvert@ --mlhmm %A.3.CM%    > %A.3.MLHMM%
+
+# binary --mlhmm (non calibrated) 
+1  exercise  trna/convert/b/mlhmm      @src/cmconvert@ --mlhmm %B.TRNA.CM% > %B.TRNA.MLHMM%
+1  exercise  multi/convert/b/mlhmm     @src/cmconvert@ --mlhmm %B.3.CM%    > %B.3.MLHMM%
+
+# ascii --mlhmm (calibrated) 
+1  exercise  trna/convert/a/mlhmm/c      @src/cmconvert@ --mlhmm !testsuite/tRNA.calibrated.cm! > %A.TRNA.C.MLHMM%
+1  exercise  multi/convert/a/mlhmm/c     @src/cmconvert@ --mlhmm !testsuite/3.calibrated.cm!    > %A.3.C.MLHMM%
+
+# binary --mlhmm (calibrated) 
+1  exercise  trna/convert/b/mlhmm/c      @src/cmconvert@ --mlhmm %B.TRNA.C.CM% > %B.TRNA.C.MLHMM%
+1  exercise  multi/convert/b/mlhmm/c     @src/cmconvert@ --mlhmm %B.3.C.CM%    > %B.3.C.MLHMM%
+
+#############################################
+# ascii --fhmm (non calibrated) 
+1  exercise  trna/convert/a/fhmm      @src/cmconvert@ --fhmm %A.TRNA.CM% > %A.TRNA.FHMM%
+1  exercise  multi/convert/a/fhmm     @src/cmconvert@ --fhmm %A.3.CM%    > %A.3.FHMM%
+
+# binary --fhmm (non calibrated) 
+1  exercise  trna/convert/b/fhmm      @src/cmconvert@ --fhmm %B.TRNA.CM% > %B.TRNA.FHMM%
+1  exercise  multi/convert/b/fhmm     @src/cmconvert@ --fhmm %B.3.CM%    > %B.3.FHMM%
+
+# ascii --fhmm (calibrated) 
+1  exercise  trna/convert/a/fhmm/c      @src/cmconvert@ --fhmm !testsuite/tRNA.calibrated.cm! > %A.TRNA.C.FHMM%
+1  exercise  multi/convert/a/fhmm/c     @src/cmconvert@ --fhmm !testsuite/3.calibrated.cm!    > %A.3.C.FHMM%
+
+# binary --fhmm (calibrated) 
+1  exercise  trna/convert/b/fhmm/c      @src/cmconvert@ --fhmm %B.TRNA.C.CM% > %B.TRNA.C.FHMM%
+1  exercise  multi/convert/b/fhmm/c     @src/cmconvert@ --fhmm %B.3.C.CM%    > %B.3.C.FHMM%
+#################################################

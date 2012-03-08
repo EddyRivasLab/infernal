@@ -5,24 +5,30 @@
 
 # Exercises of cmfetch.
 #
-# 3.4.12 tests, a CM file with 3 CMs in it
+# 3.rfam10p1.seed.sto: tRNA, Vault, Plant_SRP seeds from Rfam 10.1
 
-1  prep      model/3.4.12           @src/cmbuild@ -F --wnone %3.4.12.CM% !../testsuite/3.4.12.stk!
+1  exercise  model/multi            @src/cmbuild@ -F %3.CM% !testsuite/3.rfam10p1.seed.sto!
 
 # First, test without indexing
-1  exercise  cmfetch:3.4.12/1       @src/cmfetch@ %3.4.12.CM% U2
-1  exercise  cmfetch:3.4.12/2       @src/cmfetch@ -f %3.4.12.CM% !../testsuite/12.3.list!
-1  exercise  cmfetch:3.4.12/3       @src/cmfetch@ -o %TMP.CM% %3.4.12.CM% U2
-1  exercise  cmfetch:3.4.12/4       @src/cmfetch@ -O %3.4.12.CM% U2
-# Clean up
-1  prep      cleanup/3.4.12/c1      rm U2
+1  exercise  cmfetch:ni/df1         @src/cmfetch@ %3.CM% Vault
+1  exercise  cmfetch:ni/df2         @src/cmfetch@ %3.CM% RF00006
+1  exercise  cmfetch:ni/f1          @src/cmfetch@ -f %3.CM% !testsuite/2.list!
+1  exercise  cmfetch:ni/f2          @src/cmfetch@ -f %3.CM% !testsuite/2name.list!
+1  exercise  cmfetch:ni/f3          @src/cmfetch@ -f %3.CM% !testsuite/2accn.list!
+1  exercise  cmfetch:ni/o           @src/cmfetch@ -o %TMP.CM% %3.CM% tRNA
+1  exercise  cmfetch:ni/O           @src/cmfetch@ -O %3.CM% RF00006
+1  prep      cleanup/ni1            rm !testsuite/RF00006!
 
 # And again, this time after indexing
-1  exercise  cmfetch:3.4.12/i0       @src/cmfetch@ --index %3.4.12.CM% 
-1  exercise  cmfetch:3.4.12/i1       @src/cmfetch@ -f %3.4.12.CM% !../testsuite/12.3.list!
-1  exercise  cmfetch:3.4.12/i2       @src/cmfetch@ -o %TMP.CM% %3.4.12.CM% U2
-1  exercise  cmfetch:3.4.12/i3       @src/cmfetch@ -O %3.4.12.CM% U2
-# Clean up
-1  prep      cleanup/3.4.12/c0       rm %3.4.12.CM%.ssi 
-1  prep      cleanup/3.4.12/c1       rm U2
+1  exercise  cmfetch:index          @src/cmfetch@ --index %3.CM% 
+1  exercise  cmfetch:yi/df1         @src/cmfetch@ %3.CM% Vault
+1  exercise  cmfetch:yi/df2         @src/cmfetch@ %3.CM% RF00006
+1  exercise  cmfetch:yi/f1          @src/cmfetch@ -f %3.CM% !testsuite/2.list!
+1  exercise  cmfetch:yi/f2          @src/cmfetch@ -f %3.CM% !testsuite/2name.list!
+1  exercise  cmfetch:yi/f3          @src/cmfetch@ -f %3.CM% !testsuite/2accn.list!
+1  exercise  cmfetch:yi/o           @src/cmfetch@ -o %TMP.CM% %3.CM% tRNA
+1  exercise  cmfetch:yi/O           @src/cmfetch@ -O %3.CM% RF00006
+1  prep      cleanup/yi1            rm !testsuite/RF00006!
+
+1  prep      cleanup/yi2            rm %3.CM%.ssi 
 

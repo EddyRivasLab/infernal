@@ -122,6 +122,11 @@ check:
 	${QUIET_SUBDIR0}${ESLDIR}  ${QUIET_SUBDIR1} check
 	${QUIET_SUBDIR0}testsuite  ${QUIET_SUBDIR1} check
 
+# devcheck: Run Infernal developer test suite (slower, but more comprehensive than 'check').
+#
+devcheck:
+	${QUIET_SUBDIR0}testsuite  ${QUIET_SUBDIR1} devcheck
+
 # pdf: compile the User Guides.
 #
 pdf:

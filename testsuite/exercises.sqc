@@ -89,27 +89,51 @@
 #######################################
 
 #######################################
-# cmconvert exercises (using cmstat to verify the conversion)
+# cmconvert exercises 
+# (using cmemit to verify the conversion (I would
+# use cmstat, but it doesn't configure the model))
 1  exercise  cmconvert:help/1     @src/cmconvert@ -h
 1  exercise  trna/convert         @src/cmconvert@ !testsuite/tRNA.1p0.cm! > %CONVERTED.TRNA.CM%
 1  exercise  vault/convert        @src/cmconvert@ !testsuite/Vault.1p0.cm! > %CONVERTED.VAULT.CM%
 1  exercise  srp/convert          @src/cmconvert@ !testsuite/Plant_SRP.1p0.cm! > %CONVERTED.SRP.CM%
 1  exercise  multi/convert        @src/cmconvert@ !testsuite/3.1p0.cm! > %CONVERTED.3.CM%
 
-1  exercise  trna/convert-stat    @src/cmstat@    %CONVERTED.TRNA.CM% 
-1  exercise  vault/convert-stat   @src/cmstat@    %CONVERTED.VAULT.CM% 
-1  exercise  srp/convert-stat     @src/cmstat@    %CONVERTED.SRP.CM% 
-1  exercise  multi/convert-stat   @src/cmstat@    %CONVERTED.3.CM% 
+1  exercise  trna/convert-emit    @src/cemit@    %CONVERTED.TRNA.CM% 
+1  exercise  vault/convert-emit   @src/cemit@    %CONVERTED.VAULT.CM% 
+1  exercise  srp/convert-emit     @src/cemit@    %CONVERTED.SRP.CM% 
+1  exercise  multi/convert-emit   @src/cemit@    %CONVERTED.3.CM% 
+
+# same thing but binary
+1  exercise  trna/b/convert       @src/cmconvert@ -b !testsuite/tRNA.1p0.cm! > %B.CONVERTED.TRNA.CM%
+1  exercise  vault/b/convert      @src/cmconvert@ -b !testsuite/Vault.1p0.cm! > %B.CONVERTED.VAULT.CM%
+1  exercise  srp/b/convert        @src/cmconvert@ -b !testsuite/Plant_SRP.1p0.cm! > %B.CONVERTED.SRP.CM%
+1  exercise  multi/b/convert      @src/cmconvert@ -b !testsuite/3.1p0.cm! > %B.CONVERTED.3.CM%
+
+1  exercise  trna/b/convert-emit    @src/cemit@    %B.CONVERTED.TRNA.CM% 
+1  exercise  vault/b/convert-emit   @src/cemit@    %B.CONVERTED.VAULT.CM% 
+1  exercise  srp/b/convert-emit     @src/cemit@    %B.CONVERTED.SRP.CM% 
+1  exercise  multi/b/convert-emit   @src/cemit@    %B.CONVERTED.3.CM% 
+
+# same thing but with -1 (output in 1.0 format)
+1  exercise  trna/1/convert       @src/cmconvert@ -1 !testsuite/tRNA.1p0.cm! > %B.CONVERTED.TRNA.CM%
+1  exercise  vault/1/convert      @src/cmconvert@ -1 !testsuite/Vault.1p0.cm! > %B.CONVERTED.VAULT.CM%
+1  exercise  srp/1/convert        @src/cmconvert@ -1 !testsuite/Plant_SRP.1p0.cm! > %B.CONVERTED.SRP.CM%
+1  exercise  multi/1/convert      @src/cmconvert@ -1 !testsuite/3.1p0.cm! > %B.CONVERTED.3.CM%
+
+1  exercise  trna/b/convert-emit    @src/cemit@    %B.CONVERTED.TRNA.CM% 
+1  exercise  vault/b/convert-emit   @src/cemit@    %B.CONVERTED.VAULT.CM% 
+1  exercise  srp/b/convert-emit     @src/cemit@    %B.CONVERTED.SRP.CM% 
+1  exercise  multi/b/convert-emit   @src/cemit@    %B.CONVERTED.3.CM% 
 
 1  exercise  trna/convertC        @src/cmconvert@ !testsuite/tRNA.1p0.calibrated.cm! > %CONVERTED.TRNA.C.CM%
 1  exercise  vault/convertC       @src/cmconvert@ !testsuite/Vault.1p0.calibrated.cm! > %CONVERTED.VAULT.C.CM%
 1  exercise  srp/convertC         @src/cmconvert@ !testsuite/Plant_SRP.1p0.calibrated.cm! > %CONVERTED.SRP.C.CM%
 1  exercise  multi/convertC       @src/cmconvert@ !testsuite/3.1p0.calibrated.cm! > %CONVERTED.3.C.CM%
 
-1  exercise  trna/convertC-stat   @src/cmstat@    %CONVERTED.TRNA.C.CM% 
-1  exercise  vault/convertC-stat  @src/cmstat@    %CONVERTED.VAULT.C.CM% 
-1  exercise  srp/convertC-stat    @src/cmstat@    %CONVERTED.SRP.C.CM% 
-1  exercise  multi/convertC-stat  @src/cmstat@    %CONVERTED.3.C.CM% 
+1  exercise  trna/convertC-emit   @src/cemit@    %CONVERTED.TRNA.C.CM% 
+1  exercise  vault/convertC-emit  @src/cemit@    %CONVERTED.VAULT.C.CM% 
+1  exercise  srp/convertC-emit    @src/cemit@    %CONVERTED.SRP.C.CM% 
+1  exercise  multi/convertC-emit  @src/cemit@    %CONVERTED.3.C.CM% 
 #######################################
 
 #######################################
@@ -139,7 +163,7 @@
 1  exercise  cmfetch:multi/f         @src/cmfetch@ -f %3.CM% !testsuite/2.list!
 1  exercise  cmfetch:multi/o         @src/cmfetch@ -o %TMP.CM% %3.CM% Vault
 1  exercise  cmfetch:multi/O         @src/cmfetch@ -O %3.CM% Vault
-1  exercise  cmstat:multi/O          @src/cmstat@ !testsuite/Vault!
+1  exercise  cmemit:multi/O          @src/cmemit@ !testsuite/Vault!
 1  prep      cleanup/multi1          rm !testsuite/Vault!
 1  prep      cleanup/multi2          rm %3.CM%.ssi
 
@@ -147,7 +171,7 @@
 1  exercise  cmfetch:multiC/f        @src/cmfetch@ -f %3.C.CM% !testsuite/2.list!
 1  exercise  cmfetch:multiC/o        @src/cmfetch@ -o %TMP.C.CM% %3.C.CM% Vault
 1  exercise  cmfetch:multiC/O        @src/cmfetch@ -O %3.C.CM% Vault
-1  exercise  cmstat:multiC/O         @src/cmstat@ !testsuite/Vault!
+1  exercise  cmemit:multiC/O         @src/cmemit@ !testsuite/Vault!
 1  prep      cleanup/multiC1         rm !testsuite/Vault!
 1  prep      cleanup/multiC2         rm %3.C.CM%.ssi
 #######################################

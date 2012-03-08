@@ -73,10 +73,14 @@ cm_alndata_Create(void)
 void
 cm_alndata_Destroy(CM_ALNDATA *data, int free_sq)
 { 
+  if(data == NULL) return;
+
   if(free_sq && data->sq != NULL) esl_sq_Destroy(data->sq);
   if(data->tr    != NULL)         FreeParsetree(data->tr);
   if(data->ppstr != NULL)         free(data->ppstr);
   free(data);
+
+  return;
 }
 
 /*****************************************************************
@@ -214,7 +218,9 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
 
  ERROR: 
   if(dataA != NULL) { 
-    for(j = 0; j < sq_block->count; j++) cm_alndata_Destroy(dataA[j], FALSE);
+    for(j = 0; j < sq_block->count; j++) { 
+      if(dataA[j] != NULL) cm_alndata_Destroy(dataA[j], FALSE);
+    }
     free(dataA);
   }
   *ret_dataA = NULL;

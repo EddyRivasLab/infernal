@@ -1,13 +1,6 @@
-/************************************************************
- * @LICENSE@
- ************************************************************/
-
-/* cmstat.c
+/* cmstat: display summary statistics for a CM or CM database.
+ *
  * EPN, Tue Aug 21 12:50:34 2007
- *
- * Display summary statistics for a CM or CM database 
- * (such as Rfam). 
- *
  * Based on SRE's hmmstat.c from HMMER3.
  */
 
@@ -220,9 +213,8 @@ main(int argc, char **argv)
   exit(0);
 }
 
-
 /* output_stats():
- * Print relevant statistics for a CM, dependent on <output_mode>..
+ * Print relevant statistics for a CM, dependent on <output_mode>.
  */
 static void
 output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode) 
@@ -312,3 +304,6 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode)
     }
   }
 }
+/************************************************************
+ * @LICENSE@
+ ************************************************************/

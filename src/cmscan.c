@@ -555,7 +555,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
       cm_tophits_Targets(ofp, info->th, info->pli, textw); fprintf(ofp, "\n\n");
       fprintf(ofp, "\n\n");
-      if(info->pli->do_alignments) {
+      if(info->pli->show_alignments) {
 	if((status = cm_tophits_HitAlignments(ofp, info->th, info->pli, textw)) != eslOK) esl_fatal("Out of memory");
 	fprintf(ofp, "\n\n");
       }
@@ -1081,7 +1081,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       cm_tophits_Targets(ofp, th, pli, textw); fprintf(ofp, "\n\n");
-      if(pli->do_alignments) {
+      if(pli->show_alignments) {
 	if((status = cm_tophits_HitAlignments(ofp, th, pli, textw)) != eslOK) mpi_failure("Out of memory");
 	fprintf(ofp, "\n\n");
       }

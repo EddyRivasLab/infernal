@@ -1155,16 +1155,13 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 
       /* The hit info display is 101+rankw char wide:, where rankw is the maximum of 4 and 2 plus the number of digits in th->N. 
        * If (! pli->show_alignments) the width drops to 72+rankw.
-       *     rank  score   E-value cm from   cm to       seq from      seq to      trunc| acc  bands   mx Mb aln secs  
-       *     ---- ------ --------- ------- -------    ----------- -----------      -----|---- ------ ------- --------
-       *      (1)  123.4    6.8e-9       3      72 []         412         492 + ..      |0.98    yes    1.30     0.04  
-       *     (12)  123.4    1.8e-3       1      72 []         180         103 - ..      |0.90    yes    0.65     2.23  
-       *    rankw 123456 123456789 1234567 1234567 12 12345678901 12345678901 1 12 12345|1234  12345 1234567 12345678
-       *        0         1         2         3         4         5         6         7 |       8        9        10
+       *     rank  score   E-value cm from   cm to       seq from      seq to      trunc  acc  bands   mx Mb aln secs  
+       *     ---- ------ --------- ------- -------    ----------- -----------      ----- ---- ------ ------- --------
+       *      (1)  123.4    6.8e-9       3      72 []         412         492 + ..       0.98    yes    1.30     0.04  
+       *     (12)  123.4    1.8e-3       1      72 []         180         103 - ..       0.90    yes    0.65     2.23  
+       *    rankw 123456 123456789 1234567 1234567 12 12345678901 12345678901 1 12 12345 1234  12345 1234567 12345678
+       *        0         1         2         3         4         5         6         7         8        9        10
        *        01234567890123456789012345678901234567890123456789012345678901234567890123456789012345789012345678901
-       *                                                                                |
-       *                                                                                ^
-       *                                                                                end of output if (! pli->show_alignments)
        * 
        * In rare cases, when computing posteriors is not feasible in allowable memory, 
        * the "acc" column will be replaced by a "cyksc" colum which is 6 characters wide 
@@ -1172,17 +1169,14 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
        */
 
       fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s %5s",  rankw, "rank", "", "score", "E-value", "cm from", "cm to", "", "seq from", "seq to", "", "", "trunc");
-      if(pli->do_alignments) { 
-	if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %7s %7s", "acc",   "bands", "mx Mb",   "seconds"); }
-	else                       { fprintf(ofp, " %6s %5s %7s %7s", "cyksc", "bands", "mx Mb",   "seconds"); }
-      }
+      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %7s %7s", "acc",   "bands", "mx Mb",   "seconds"); }
+      else                       { fprintf(ofp, " %6s %5s %7s %7s", "cyksc", "bands", "mx Mb",   "seconds"); }
+
       fprintf(ofp, "\n");
 
       fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s %5s",  rankw, rankstr,  "", "------", "---------", "-------", "-------", "", "-----------", "-----------", "", "", "-----");
-      if(pli->do_alignments) { 
-	if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %7s %7s", "----",   "-----", "-------", "-------"); }
-	else                       { fprintf(ofp, " %6s %5s %7s %7s", "------", "-----", "-------", "-------"); }
-      }
+      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %7s %7s", "----",   "-----", "-------", "-------"); }
+      else                       { fprintf(ofp, " %6s %5s %7s %7s", "------", "-----", "-------", "-------"); }
       fprintf(ofp, "\n");
 
       if(cm_alidisplay_Is5PTrunc(th->hit[h]->ad)) { /* 5' truncated */
@@ -1221,20 +1215,15 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'),
 	      lseq, rseq, 
 	      cm_alidisplay_TruncString(th->hit[h]->ad));
-      if (pli->do_alignments) { 
-	if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f", th->hit[h]->ad->avgpp); }
-      	else                       { fprintf(ofp, " %6.2f", th->hit[h]->ad->sc); }
-	fprintf(ofp, " %5s %7.2f %7.2f\n\n",	
-		(th->hit[h]->ad->used_hbands ? "yes" : "no"),
-		th->hit[h]->ad->matrix_Mb,
-		th->hit[h]->ad->elapsed_secs);
-	/*cm_alidisplay_Dump(ofp, th->hit[h]->ad);*/
-	cm_alidisplay_Print(ofp, th->hit[h]->ad, 40, textw, pli->show_accessions, TRUE);
-	fprintf(ofp, "\n");
-      }
-      else { 
-	fprintf(ofp, "\n\n");
-      }
+      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f", th->hit[h]->ad->avgpp); }
+      else                       { fprintf(ofp, " %6.2f", th->hit[h]->ad->sc); }
+      fprintf(ofp, " %5s %7.2f %7.2f\n\n",	
+	      (th->hit[h]->ad->used_hbands ? "yes" : "no"),
+	      th->hit[h]->ad->matrix_Mb,
+	      th->hit[h]->ad->elapsed_secs);
+      /*cm_alidisplay_Dump(ofp, th->hit[h]->ad);*/
+      cm_alidisplay_Print(ofp, th->hit[h]->ad, 40, textw, pli->show_accessions, TRUE);
+      fprintf(ofp, "\n");
       nprinted++;
     }
   }

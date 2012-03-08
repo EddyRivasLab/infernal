@@ -1,12 +1,7 @@
-/* cmbuild.c
+/* cmbuild: covariance model construction from a multiple sequence alignment.
+ *
  * SRE, Thu Jul 27 13:19:43 2000 [StL]
  * SVN $Id: cmbuild.c 3399 2010-11-05 19:27:46Z nawrockie $
- * 
- * Construct a CM from a given multiple sequence alignment.
- *  
- *****************************************************************
- * @LICENSE@
- *****************************************************************
  */
 
 #include "esl_config.h"
@@ -41,111 +36,118 @@
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-n",        eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "name the CM(s) <s>, (only if single aln in file)", 1 },
-  { "-A",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "append this CM to <cmfile>",             1 },
-  { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow overwriting of <cmfile>",   1 },
-  { "-v",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "be verbose with output", 1 },
-  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
-  { "--betaW",   eslARG_REAL,  "1E-7", NULL, "x>1E-18", NULL,      NULL,        NULL, "set tail loss prob for calc'ing W (max size of a hit) to <x>", 1 },
-  { "--beta1",   eslARG_REAL,  "1E-7", NULL, "x>1E-18", NULL,      NULL,        NULL, "set tail loss prob for calc'ing tighter QDBs to <x>", 1 },
-  { "--beta2",   eslARG_REAL, "1E-15", NULL, "x>1E-18", NULL,      NULL,        NULL, "set tail loss prob for calc'ing looser  QDBs to <x>", 1 },
-  { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
-/* Expert model construction options */
-  { "--rsearch", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
-  { "--binary",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "save the model(s) in binary format",     2 },
-  { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--rsearch", "use reference coordinate annotation to specify consensus", 2 },
-  { "--v1p0",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL,  "parameterize CM using methods from Infernal v1.0.2", 2 },
-  { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,      NULL,  "--rsearch", "fraction of gaps to allow in a consensus column [0..1]", 2 },
-  { "--ignorant", eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL,  "strip the structural info from input alignment", 2 },
-/* Alternate relative sequence weighting strategies */
-  /* --wme not implemented in Infernal yet (b/c it's not in HMMER3) */
-  { "--wgsc",    eslARG_NONE,"default",NULL, NULL,    WGTOPTS,    NULL,      NULL, "Gerstein/Sonnhammer/Chothia tree weights",         3},
-  { "--wblosum", eslARG_NONE,  FALSE,  NULL, NULL,    WGTOPTS,    NULL,      NULL, "Henikoff simple filter weights",                   3},
-  { "--wpb",     eslARG_NONE,  FALSE,  NULL, NULL,    WGTOPTS,    NULL,      NULL, "Henikoff position-based weights",                  3},
-  { "--wnone",   eslARG_NONE,  FALSE,  NULL, NULL,    WGTOPTS,    NULL,      NULL, "don't do any relative weighting; set all to 1",    3},
-  { "--wgiven",  eslARG_NONE,  FALSE,  NULL, NULL,    WGTOPTS,    NULL,      NULL, "use weights as given in MSA file",                 3},
-  { "--pbswitch",eslARG_INT,  "5000",  NULL,"n>0",       NULL,    NULL,      NULL, "set failover to efficient PB wgts at > <n> seqs",  3},
-  { "--wid",     eslARG_REAL, "0.62",  NULL,"0<=x<=1",   NULL,"--wblosum",   NULL, "for --wblosum: set identity cutoff",               3},
-/* Alternate effective sequence weighting strategies */
-  { "--eent",    eslARG_NONE,"default",NULL, NULL,    EFFOPTS,    NULL,      NULL, "adjust eff seq # to achieve relative entropy target", 4},
-  { "--enone",   eslARG_NONE,  FALSE,  NULL, NULL,    EFFOPTS,    NULL,      NULL, "no effective seq # weighting: just use nseq",         4},
-  { "--ere",     eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set CM target relative entropy to <x>",   4},
-  { "--eminseq", eslARG_REAL,  "0.1",  NULL,"x>=0",      NULL, "--eent",     NULL, "for --eent: set minimum effective sequence number to <x>", 4},
-  { "--ehmmre",  eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set minimum HMM relative entropy to <x>", 4}, 
-  { "--eset",    eslARG_REAL,  NULL,   NULL,"x>=0",   EFFOPTS,    NULL,      NULL, "set eff seq # for all models to <x>",                 4},
-  { "--e1p0df",  eslARG_NONE,  NULL,   NULL, NULL,       NULL, "--eent","--enone,--ere,--eminseq,--ehmmre,--eset", "use Infernal v1.0-v1.0.2 default entropy weighting strategy", 4},
-/* Customizing null model or priors */
-  { "--null",    eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read null (random sequence) model from file <s>", 5 },
-  { "--prior",   eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read priors from file <s>", 5 },
-  { "--p56",     eslARG_NONE,    NULL, NULL, NULL,      NULL,      NULL, "--prior,--rsearch", "use the default prior from Infernal v0.56 through v1.0.2", 5 },
-/* Building multiple CMs after clustering input MSA */
-  { "--ctarget", eslARG_INT,   NULL,   NULL, "n>0" ,    NULL,      NULL,    "--call", "build (at most) <n> CMs by partitioning MSA into <n> clusters", 6 },
-  { "--cmaxid",  eslARG_REAL,  NULL,   NULL,"0.<x<1.",  NULL,      NULL,    "--call", "max fractional id b/t 2 clusters is <x>, each cluster -> CM", 6 }, 
-  { "--call",    eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "build a separate CM from every seq in MSA", 6 },
-  { "--corig",   eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "build an additional CM from the original, full MSA", 6 }, 
-  { "--cdump",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump the MSA for each cluster (CM) to file <s>", 6 },
-/* Refining the seed alignment */
-  { "--refine",  eslARG_OUTFILE, NULL, NULL, NULL,       NULL,   NULL,          NULL, "refine input aln w/Expectation-Maximization, save to <s>", 7 },
-  { "--gibbs",   eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use Gibbs sampling instead of EM", 7 },
-  { "-s",        eslARG_INT,      "0", NULL, "n>=0",     NULL,"--gibbs",        NULL, "w/--gibbs, set RNG seed to <n> (if 0: one-time arbitrary seed)", 7 },
-  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "print individual sequence scores during MSA refinement", 7 },
-  { "--notrunc", eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, do not use truncated alignment algorithms", 7 },
-  { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,       NULL,"--refine",       NULL, "do not use bands to accelerate alignment with --refine", 7 },
-  { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine,--notrunc",NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 7 },
-  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 7 },
-  { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, flush inserts left/right in alignments", 7 },
-  { "--mxsize",  eslARG_REAL, "2048.0",NULL, "x>0.",     NULL,"--refine",       NULL, "set maximum allowable DP matrix size to <x> Mb", 7 },
-  { "--rdump",   eslARG_OUTFILE, NULL, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, print all intermediate alignments to <f>", 7 },
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",                   1 },
+  { "-n",        eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "name the CM(s) <s>, (only if single aln in file)",       1 },
+  { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow overwriting of <cmfile_out>",               1 },
+  { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of otherwise hidden developer/expert options", 1 },
 
-  /* Options controlling the building of the filter p7 */
-  { "--p7-ml",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,          "define the filter p7 HMM as the ML p7 HMM", 8},
-  { "--p7-ere",      eslARG_REAL,  "0.38", NULL, NULL,    NULL,  NULL, "--p7-ml",     "for the filter p7 HMM, set minimum rel entropy/posn to <x>", 8},
-  { "--p7-prior",    eslARG_INFILE, NULL,  NULL, NULL,    NULL,  NULL, "--p7-ml",     "read p7 prior for the filter HMM from file <f>", 8},
-  { "--p7-hprior",   eslARG_NONE,   NULL,  NULL, NULL,    NULL,  NULL, "--p7-ml",     "use HMMER's default p7 prior, not Infernal's p7 prior", 8},
-  { "--p7-hemit",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--p7-ml",     "use HMMER emission priors for additional HMM", 8}, 
+  /* Expert model construction options */
+  /* name          type            default  env  range          toggles    reqs       incomp  help  docgroup*/
+  { "--gapthresh", eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,  "--rsearch", "fraction of gaps to allow in a consensus column [0..1]",         2 },
+  { "--rf",        eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,  "--rsearch", "use reference coordinate annotation to specify consensus",       2 },
+  { "--null",      eslARG_INFILE,  NULL,    NULL, NULL,         NULL,      NULL,  "--rsearch", "read null (random sequence) model from file <f>",                2 },
+  { "--prior",     eslARG_INFILE,  NULL,    NULL, NULL,         NULL,      NULL,  "--rsearch", "read priors from file <f>",                                      2 },
+  { "--rsearch",   eslARG_INFILE,  NULL,    NULL, NULL,         NULL,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
+  { "--betaW",     eslARG_REAL,    "1E-7",  NULL, "x>1E-18",    NULL,      NULL,         NULL, "set tail loss prob for calc'ing W (max size of a hit) to <x>",   2 },
+  { "--beta1",     eslARG_REAL,    "1E-7",  NULL, "x>1E-18",    NULL,      NULL,         NULL, "set tail loss prob for calc'ing tighter set of QDBs to <x>",     2 },
+  { "--beta2",     eslARG_REAL,    "1E-15", NULL, "x>1E-18",    NULL,      NULL,         NULL, "set tail loss prob for calc'ing looser  set of QDBs to <x>",     2 },
+  { "--informat",  eslARG_STRING,  NULL,    NULL, NULL,         NULL,      NULL,         NULL, "specify input alignment is in format <s> (Stockholm or Pfam)", 102 },
+  { "--ignorant",  eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL,  "strip the structural info from input alignment",              102 },
+  { "--v1p0",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL,  "parameterize CM using methods from Infernal v1.0.2",          102 },
+  { "--p56",       eslARG_NONE,    NULL,    NULL, NULL,         NULL,      NULL,    "--prior", "use the default prior from Infernal v0.56 through v1.0.2",     102 },
+  { "--iins",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "allow informative insert emissions, do not zero them",         102 },
+  { "--nobalance", eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "don't rebalance the CM; number in strict preorder",            102 },
+  { "--nodetach",  eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "do not 'detach' one of two inserts that model same column",    102 },
+  { "--elself",    eslARG_REAL,    "0.94",  NULL, "0<=x<=1",    NULL,      NULL,         NULL, "set EL self transition prob to <x>",                           102 },
+  { "--n2omega",   eslARG_REAL,    "0.000015258791",NULL,"x>0", NULL,      NULL,         NULL, "set prior probability of null2 model as <x>",                  102 }, 
+  { "--n3omega",   eslARG_REAL,    "0.000015258791",NULL,"x>0", NULL,      NULL,         NULL, "set prior probability of null3 model as <x>",                  102 }, 
 
-  /* Options controlling the filter p7 calibration */
-  { "--exp-real",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "sample realistic, not iid genomic seqs, for p7 calibration", 9},
-  { "--exp-null3",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use null3 correction in p7 calibrations", 9},
-  { "--exp-bias",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "use bias correction in p7 calibrations", 9},
-  { "--exp-fitlam",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,            "fit lambda, don't use a fixed one  near 0.693", 9},
-  { "--exp-lcmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for local stats is <x> * cm->clen", 9},
-  { "--exp-gcmult",  eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,            "length of seqs to search for glocal stats is <x> * cm->clen", 9},
-  { "--exp-lL",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--exp-lcmult",  "length of seqs to search for local stats is <n>", 9},
-  { "--exp-gL",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--exp-gcmult",  "length of seqs to search for glocal stats is <n>", 9},
-  { "--exp-lmsvN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local MSV calibration", 9},
-  { "--exp-lvitN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local Vit calibration", 9},
-  { "--exp-lfwdN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 local Fwd calibration", 9},
-  { "--exp-gfwdN",   eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,            "number of sampled seqs to use for p7 glocal Fwd calibration", 9},
-  { "--exp-lftp",    eslARG_REAL, "0.055", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 local fwd exp tail to <f> fraction of scoring dist", 9},
-  { "--exp-gftp",    eslARG_REAL, "0.065", NULL, "x>0.",  NULL,  NULL, NULL,            "fit p7 glocal fwd exp tail to <f> fraction of scoring dist", 9},
+  /* Alternate relative sequence weighting strategies */
+  /* name        type         default   env  range     toggles         reqs  incomp  help  docgroup*/
+  { "--wgsc",    eslARG_NONE,"default", NULL, NULL,    WGTOPTS,        NULL, NULL, "Gerstein/Sonnhammer/Chothia tree weights",          3 },
+  { "--wnone",   eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "don't do any relative weighting; set all to 1",     3 },
+  { "--wpb",     eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "Henikoff position-based weights",                   3 },
+  { "--wgiven",  eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "use weights as given in MSA file",                  3 },
+  { "--wblosum", eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "Henikoff simple filter weights",                    3 },
+  { "--wid",     eslARG_REAL,   "0.62", NULL,"0<=x<=1",   NULL, "--wblosum", NULL, "for --wblosum: set identity cutoff",                3 },
+  { "--pbswitch",eslARG_INT,    "5000", NULL,"n>0",       NULL,        NULL, NULL, "set failover to efficient PB wgts at > <n> seqs", 103 },
+
+  /* Alternate effective sequence weighting strategies */
+  /* name        type            default    env     range toggles      reqs   incomp  help  docgroup*/
+  { "--eent",    eslARG_NONE, "default",    NULL,   NULL, EFFOPTS,     NULL,   NULL, "adjust eff seq # to achieve relative entropy target",           4 },
+  { "--enone",   eslARG_NONE,     FALSE,    NULL,   NULL, EFFOPTS,     NULL,   NULL, "no effective seq # weighting: just use nseq",                   4 },
+  { "--ere",     eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set CM target relative entropy to <x>",             4 },
+  { "--eset",    eslARG_REAL,      NULL,    NULL, "x>=0", EFFOPTS,     NULL,   NULL, "set eff seq # for all models to <x>",                           4 },
+  { "--eminseq", eslARG_REAL,     "0.1",    NULL, "x>=0",    NULL, "--eent",   NULL, "for --eent: set minimum effective sequence number to <x>",    104 },
+  { "--ehmmre",  eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set minimum HMM relative entropy to <x>",         104 }, 
+  { "--esigma",  eslARG_REAL,    "45.0",    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set sigma param to <x>",                          104 },
+
+  /* Refining the seed alignment */
+  /* name          type            default  env  range    toggles      reqs         incomp  help  docgroup*/
+  { "--refine",    eslARG_OUTFILE,   NULL, NULL, NULL,    NULL,       NULL,           NULL, "refine input aln w/Expectation-Maximization, save to <f>",          5 },
+  { "-l",          eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, configure model for local alignment [default: global]", 5 },
+  { "--gibbs",     eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, use Gibbs sampling instead of EM",                      5 },
+  { "--seed",      eslARG_INT,        "0", NULL, "n>=0",  NULL,  "--gibbs",           NULL, "w/--gibbs, set RNG seed to <n> (if 0: one-time arbitrary seed)",    5 },
+  { "--notrunc",   eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, do not use truncated alignment algorithm",              5 },
+  { "--sub",       eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine", "--notrunc,-l", "w/--refine, use sub CM for columns b/t HMM start/end points",     105 },
+  { "--nonbanded", eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "do not use bands to accelerate alignment with --refine",          105 },
+  { "--indi",      eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "print individual sequence scores during MSA refinement",          105 },
+  { "--fins",      eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, flush inserts left/right in alignments",              105 },
+  { "--tau",       eslARG_REAL,    "1E-7", NULL, "0<x<1", NULL, "--refine",  "--nonbanded", "set tail loss prob for HMM bands to <x>",                         105 },
+  { "--mxsize",    eslARG_REAL,  "2048.0", NULL, "x>0.",  NULL, "--refine",           NULL, "set maximum allowable DP matrix size to <x> Mb",                  105 },
+  { "--rdump",     eslARG_OUTFILE  , NULL, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, print all intermediate alignments to <f>",            105 },
+
+  /* Options controlling filter p7 HMM construction */
+  /* name         type           default  env  range toggles  reqs  incomp    help  docgroup*/
+  { "--p7ml",     eslARG_NONE,    FALSE, NULL, NULL, NULL,    NULL,     NULL, "define the filter p7 HMM as the ML p7 HMM",                    6 },
+  { "--p7ere",    eslARG_REAL,   "0.38", NULL, NULL, NULL,    NULL, "--p7ml", "for the filter p7 HMM, set minimum rel entropy/posn to <x>",   6 },
+  { "--p7prior",  eslARG_INFILE,   NULL, NULL, NULL, NULL,    NULL, "--p7ml", "read p7 prior for the filter HMM from file <f>",             106 },
+  { "--p7hprior", eslARG_NONE,     NULL, NULL, NULL, NULL,    NULL, "--p7ml", "use HMMER's default p7 prior, not Infernal's p7 prior",      106 },
+  { "--p7hemit",  eslARG_NONE,    FALSE, NULL, NULL, NULL,    NULL, "--p7ml", "use HMMER emission priors for filter HMM",                   106 }, 
+  
+  /* Options controlling filter p7 HMM calibration */
+  /* name        type         default  env   range toggles   reqs  incomp       help  docgroup*/
+  { "--EmN",     eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 local MSV calibration",    7 },
+  { "--EvN",     eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 local Vit calibration",    7 },
+  { "--ElfN",    eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 local Fwd calibration",    7 },
+  { "--EgfN",    eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 glocal Fwd calibration",   7 },
+  { "--Elftp",   eslARG_REAL, "0.055", NULL, "x>0.",  NULL,  NULL, NULL,        "fit p7 local fwd exp tail to <f> fraction of scoring dist",   107 },
+  { "--Egftp",   eslARG_REAL, "0.065", NULL, "x>0.",  NULL,  NULL, NULL,        "fit p7 glocal fwd exp tail to <f> fraction of scoring dist",  107 },
+  { "--Ereal",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,        "sample realistic, not iid genomic seqs, for p7 calibration",  107 },
+  { "--Enull3",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,        "use null3 correction in p7 calibrations",                     107 },
+  { "--Ebias",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,        "use bias correction in p7 calibrations",                      107 },
+  { "--Efitlam", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,        "fit lambda, don't use a fixed one near 0.693",                107 },
+  { "--Elcmult", eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,        "length of seqs to search for local stats is <x> * cm->clen",  107 },
+  { "--Egcmult", eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,        "length of seqs to search for glocal stats is <x> * cm->clen", 107 },
+  { "--ElL",     eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--Elcmult", "length of seqs to search for local stats is <n>",             107 },
+  { "--EgL",     eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--Egcmult", "length of seqs to search for glocal stats is <n>",            107 },
 
   /* All options below are developer options, only shown if --devhelp invoked */
-  /* Developer debugging/experimentation */
-  { "--nobalance",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "don't rebalance the CM; number in strict preorder", 101 },
-  { "--regress",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,       NULL, "save regression test information to file <s>", 101 },  
-  { "--nodetach",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "do not 'detach' one of two inserts that model same column", 101 },
-  { "--elself",  eslARG_REAL,  "0.94", NULL, "0<=x<=1", NULL,      NULL,        NULL, "set EL self transition prob to <x>", 101 },
-  { "--esigma",  eslARG_REAL,  "45.0",  NULL,"x>0",      NULL,  "--eent",       NULL, "for --eent: set sigma param to <x>",  101}, 
-  { "--n2omega",  eslARG_REAL,"0.000015258971",NULL,"x>0",NULL,NULL,            NULL, "set prior probability of null2 model as <x>",  101}, 
-  { "--n3omega",  eslARG_REAL,"0.000015258971",NULL,"x>0",NULL,NULL,            NULL, "set prior probability of null3 model as <x>",  101}, 
-  { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s> (Stockholm or Pfam)",  101 },
-
   /* Developer verbose output options */
-  { "--cfile",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save count vectors to file <s>", 102 },
-  { "--efile",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save emission score information to file <s>", 102 },
-  { "--cmtbl",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tabular description of CM topology to file <s>", 102 },
-  { "--emap",    eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save consensus emit map to file <s>", 102 },
-  { "--gtree",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tree description of master tree to file <s>", 102 },
-  { "--gtbl",    eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tabular description of master tree to file <s>", 102 },
-  { "--tfile",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence tracebacks to file <s>", 102 },
+  /* name        type          default  env   range toggles reqs  incomp help  docgroup*/
+  { "--verbose", eslARG_NONE,    FALSE, NULL, NULL,   NULL, NULL, NULL,  "be verbose with output",                              108 },
+  { "--cfile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save count vectors to file <f>",                      108 },
+  { "--efile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save emission score information to file <f>",         108 },
+  { "--tfile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "dump individual sequence parsetrees to file <f>",     108 },
+  { "--cmtbl",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of CM topology to file <f>", 108 },
+  { "--emap",    eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save consensus emit map to file <f>",                 108 },
+  { "--gtree",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tree description of master tree to file <f>",    108 },
+  { "--gtbl",    eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of master tree to file <f>", 108 },
 
-  /* Developer options related to experiment local begin/end modes */
-  { "--pbegin",  eslARG_REAL,  "0.05", NULL, "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 103 },
-  { "--pend",    eslARG_REAL,  "0.05", NULL, "0<x<1",   NULL,      "-l",        NULL, "set aggregate local end prob to <x>", 103 },
-  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 103 },
-  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 103 },
+  /* Building multiple CMs after clustering input MSA */
+  /* name        type            default env   range      toggles reqs  incomp    help  docgroup*/
+  { "--ctarget", eslARG_INT,     NULL,   NULL, "n>0" ,    NULL,   NULL, "--call", "build (at most) <n> CMs by partitioning MSA into <n> clusters", 109 },
+  { "--cmaxid",  eslARG_REAL,    NULL,   NULL, "0.<x<1.", NULL,   NULL, "--call", "max fractional id b/t 2 clusters is <x>, each cluster -> CM",   109 }, 
+  { "--call",    eslARG_NONE,    FALSE,  NULL, NULL,      NULL,   NULL,     NULL, "build a separate CM from every seq in MSA",                     109 },
+  { "--corig",   eslARG_NONE,    FALSE,  NULL, NULL,      NULL,   NULL,     NULL, "build an additional CM from the original, full MSA",            109 }, 
+  { "--cdump",   eslARG_OUTFILE, NULL,   NULL, NULL,      NULL,   NULL,     NULL, "dump the MSA for each cluster (CM) to file <f>",                109 },
+
+  /* Developer options related to experimental local begin/end modes */
+  /* name        type          default env   range      toggles reqs  incomp       help  docgroup*/
+  { "--pbegin",  eslARG_REAL,  "0.05", NULL, "0<x<1",   NULL,   NULL,  NULL,       "set aggregate local begin prob to <x>", 110 },
+  { "--pend",    eslARG_REAL,  "0.05", NULL, "0<x<1",   NULL,   NULL,  NULL,       "set aggregate local end prob to <x>",   110 },
+  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,   NULL,  "--pbegin", "set all local begins as equiprobable",  110 },
+  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,   NULL,  "--pend",   "set all local end probs to <x>",        110 },
 
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -187,7 +189,7 @@ struct cfg_s {
   FILE         *efp;            /* for --emap */
   FILE         *gfp;            /* for --gtree */
   FILE         *gtblfp;         /* for --gtbl */
-  FILE         *tracefp;        /* for --tfile */
+  FILE         *tfp;            /* for --tfile */
   FILE         *cdfp;           /* if --cdump, output file handle for dumping clustered MSAs */
   FILE         *refinefp;       /* if --refine, output file handle for dumping refined MSAs */
   FILE         *rdfp;           /* if --rfile, output file handle for dumping intermediate MSAs during iterative refinement */
@@ -198,11 +200,13 @@ struct cfg_s {
   char        **argv;          /* used to create the comlog, be careful not to free this though, it's just a ptr */
 };
 
-static char usage[]  = "[-options] <cmfile output> <alignment file>";
-static char banner[] = "build RNA covariance model(s) from alignment(s)";
+static char usage[]  = "[-options] <cmfile_out> <msafile>";
+static char banner[] = "covariance model construction from multiple sequence alignments";
 
+static void   master(const ESL_GETOPTS *go, struct cfg_s *cfg);
+static void   process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_alifile);
+static void   output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile);
 static int    init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
-static void   master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static int    process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
 static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, Parsetree_t **tr);
 static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
@@ -227,7 +231,6 @@ static float  find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_c
 static int    MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, int target_nc, int do_orig, int *ret_num_msa, ESL_MSA ***ret_cmsa, char *errbuf);
 static int    write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int    flatten_insert_emissions(CM_t *cm);
-static int    print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static int    print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static void   print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
 static int    print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm);
@@ -247,92 +250,12 @@ main(int argc, char **argv)
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
-
-  /*********************************************** 
-   * Parse command line
-   ***********************************************/
-
-  /* Process command line options.
-   */
-  go = esl_getopts_Create(options);
-  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK || 
-      esl_opt_VerifyConfig(go)               != eslOK)
-    {
-      printf("Failed to parse command line: %s\n", go->errbuf);
-      esl_usage(stdout, argv[0], usage);
-      printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
-      exit(1);
-    }
-  if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) 
-    {
-      cm_banner(stdout, argv[0], banner);
-      esl_usage(stdout, argv[0], usage);
-      puts("\nwhere general options are:");
-      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\nexpert model construction options:");
-      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-      puts("\nsequence weighting options [default: GSC weighting]:");
-      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
-      puts("\neffective sequence number related options:");
-      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-      puts("\ncustomization of null model and priors:");
-      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
-      puts("\noptions for building multiple CMs after clustering input MSA:");
-      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
-      puts("\nexpert options for refining the input alignment:");
-      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
-      puts("\nexpert options for tuning p7 calibration:");
-      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
-      puts("\nexpert options for building additional p7 models:");
-      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
-      puts("\nundocumented developer options for debugging, experimentation:");
-      esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
-      puts("\nundocumented developer options for verbose output/debugging:");
-      esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
-      puts("\nundocumented developer options related to experimental local begin/end modes:");
-      esl_opt_DisplayHelp(stdout, go, 103, 2, 80);
-      exit(0);
-    }
-  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
-    {
-      cm_banner(stdout, argv[0], banner);
-      esl_usage(stdout, argv[0], usage);
-      puts("\nwhere general options are:");
-      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\nexpert model construction options:");
-      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-      puts("\nsequence weighting options [default: GSC weighting]:");
-      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
-      puts("\neffective sequence number related options:");
-      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-      puts("\ncustomization of null model and priors:");
-      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
-      puts("\noptions for building multiple CMs after clustering input MSA:");
-      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
-      puts("\nexpert options for refining the input alignment:");
-      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
-      puts("\nexpert options controlling how the p7 filter HMM is built:");
-      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
-      puts("\nexpert options for tuning calibration of the p7 filter HMM:");
-      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
-      exit(0);
-    }
-
-  if (esl_opt_ArgNumber(go) != 2) 
-    {
-      puts("Incorrect number of command line arguments.");
-      esl_usage(stdout, argv[0], usage);
-      puts("\n  where basic options are:");
-      esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
-      printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
-      exit(1);
-    }
+  process_commandline(argc, argv, &go, &(cfg.cmfile), &(cfg.alifile));
 
   /* Initialize what we can in the config structure (without knowing the alphabet yet).
    * We could assume RNA, but this HMMER3 based approach is more general.
    */
-  cfg.cmfile     = esl_opt_GetArg(go, 1); 
-  cfg.alifile    = esl_opt_GetArg(go, 2);
+  cfg.fmt        = eslMSAFILE_UNKNOWN;     /* possibly reset below */
   cfg.afp        = NULL;	           /* created in init_cfg() */
   cfg.abc        = NULL;	           /* created in init_cfg() */
   cfg.cmoutfp    = NULL;	           /* opened in init_cfg() */
@@ -350,27 +273,26 @@ main(int argc, char **argv)
   cfg.efp        = NULL;
   cfg.gfp        = NULL;
   cfg.gtblfp     = NULL;
-  cfg.tracefp    = NULL;
+  cfg.tfp        = NULL;
   cfg.cdfp       = NULL;
   cfg.refinefp   = NULL;
   cfg.rdfp       = NULL;
 
-  /* print the banner */
-  cm_banner(stdout, argv[0], banner);
+  if (esl_opt_IsOn(go, "--informat")) {
+    cfg.fmt = eslx_msafile_EncodeFormat(esl_opt_GetString(go, "--informat"));
+    if (cfg.fmt == eslMSAFILE_UNKNOWN)   cm_Fail("%s is not a recognized input sequence file format\n", esl_opt_GetString(go, "--informat"));
+    if (cfg.fmt != eslMSAFILE_STOCKHOLM && cfg.fmt != eslMSAFILE_PFAM) { 
+      cm_Fail("%s is an invalid format for cmbuild, Stockholm or Pfam\n", esl_opt_GetString(go, "--informat"));
+    }
+  }
 
-  if   (esl_opt_IsOn(go, "--informat")) { 
-    cfg.fmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--informat"));
-    if(cfg.fmt == eslSQFILE_UNKNOWN)                                  cm_Fail("Can't recognize sequence file format: %s. valid options are: stockholm or pfam\n", esl_opt_GetString(go, "--informat"));
-    if(cfg.fmt != eslMSAFILE_STOCKHOLM && cfg.fmt != eslMSAFILE_PFAM) cm_Fail("Sequence file format: %s is not accepted by cmbuild, valid options are: stockholm or pfam\n", esl_opt_GetString(go, "--informat"));
-  } else
-    cfg.fmt = eslMSAFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
-
-  cfg.be_verbose = esl_opt_GetBoolean(go, "-v");
+  cfg.be_verbose = esl_opt_GetBoolean(go, "--verbose");
   cfg.nali       = 0;		           
 
   /* check if cmfile already exists, if it does and -F was not enabled then die */
-  if (((! esl_opt_GetBoolean(go, "-F")) && (! esl_opt_GetBoolean(go, "-A"))) && esl_FileExists(cfg.cmfile))
+  if ((! esl_opt_GetBoolean(go, "-F")) && esl_FileExists(cfg.cmfile)) { 
     cm_Fail("CM file %s already exists. Either use -F to overwrite it, rename it, or delete it.", cfg.cmfile); 
+  }
 
   /* do work */
   master(go, &cfg);
@@ -378,6 +300,9 @@ main(int argc, char **argv)
   /* Clean up the cfg. 
    */
   /* close all output files */
+  if (cfg.cfp || cfg.escfp || cfg.tblfp || cfg.efp || cfg.gfp || cfg.gtblfp || cfg.tfp || cfg.cdfp || cfg.refinefp || cfg.rdfp) { 
+    printf("#\n");
+  }
   if (cfg.cfp != NULL) {
     printf("# Count vectors saved in file %s.\n", esl_opt_GetString(go, "--cfile"));
     fclose(cfg.cfp); 
@@ -402,9 +327,9 @@ main(int argc, char **argv)
     printf("# Guide tree tabular description saved in file %s.\n", esl_opt_GetString(go, "--gtbl"));
     fclose(cfg.gtblfp); 
   }
-  if (cfg.tracefp != NULL) {
+  if (cfg.tfp != NULL) {
     printf("# Implicit parsetrees of seqs from input alignment saved in file %s.\n", esl_opt_GetString(go, "--tfile"));
-    fclose(cfg.tracefp); 
+    fclose(cfg.tfp); 
   }
   if (cfg.cdfp != NULL) {
     printf("# Alignments for each cluster saved in file %s.\n", esl_opt_GetString(go, "--cdump"));
@@ -434,6 +359,320 @@ main(int argc, char **argv)
   esl_stopwatch_Display(stdout, w, "# CPU time: ");
   esl_stopwatch_Destroy(w);
   return 0;
+}
+
+static void
+master(const ESL_GETOPTS *go, struct cfg_s *cfg)
+{
+  int      status;
+  char     errbuf[eslERRBUFSIZE];
+  ESL_MSA *msa = NULL;
+  CM_t    *cm = NULL;
+  Parsetree_t  *mtr;
+  Parsetree_t **tr;
+  int          i = 0;
+  int      niter = 0;
+  /* new_* data structures, created in refine_msa() if --refine enabled */
+  CM_t         *new_cm;  
+  Parsetree_t  *new_mtr;
+  Parsetree_t **new_tr;
+  ESL_MSA      *new_msa;
+  /* cluster option related variables */
+  int          do_cluster; /* TRUE if --ctarget || --cmaxid || --call */
+  int          do_ctarget; /* TRUE if --ctarget */
+  int          do_cmindiff; /* TRUE if --cmaxid  */
+  int          do_call;    /* TRUE if --call */
+  int          nc;         /* number of clusters, only != 0 if do_ctarget */
+  float        mindiff;    /* minimum fractional diff b/t clusters, only != 0. if do_cmindiff */
+  int          ncm = 1;    /* number of CMs to be built for current MSA */
+  int          c   = 0;    /* counter over CMs built for a single MSA */
+  ESL_MSA    **cmsa;       /* pointer to cluster MSAs to build CMs from */
+
+  if ((status = init_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+  output_header(stdout, go, cfg->cmfile, cfg->alifile);
+
+  cfg->nali = 0;
+  cfg->ncm_total = 0;
+
+  do_ctarget  = esl_opt_IsOn(go, "--ctarget");
+  do_cmindiff = esl_opt_IsOn(go, "--cmaxid");
+  do_call     = esl_opt_GetBoolean(go, "--call");
+  do_cluster = (do_ctarget || do_cmindiff || do_call) ? TRUE : FALSE;
+  if((do_ctarget + do_cmindiff + do_call) > TRUE) cm_Fail("More than one of --ctarget, --cmaxid, --call were enabled, shouldn't happen.");
+
+  nc      = do_ctarget  ? esl_opt_GetInteger(go, "--ctarget")    : 0;
+  mindiff = do_cmindiff ? (1. - esl_opt_GetReal(go, "--cmaxid")) : 0.;
+
+  while ((status = eslx_msafile_Read(cfg->afp, &msa)) != eslEOF)
+    {
+      if (status != eslOK) eslx_msafile_ReadFailure(cfg->afp, status);
+      cfg->nali++;  
+
+      /* if it's unnamed, name the MSA, we require a name (different from 
+       * HMMER 3), because it will be used to name the CM. */
+      if(name_msa(go, errbuf, msa, cfg->nali) != eslOK) cm_Fail(errbuf);
+      if(msa->name == NULL)                             cm_Fail("Error naming MSA");
+      ncm = 1;     /* default: only build 1 CM for each MSA in alignment file */
+
+      if(do_cluster) /* divide input MSA into clusters, and build CM from each cluster */
+	{
+	  if((status = MSADivide(msa, do_call, do_cmindiff, do_ctarget, mindiff, nc,
+				 esl_opt_GetBoolean(go, "--corig"), &ncm, &cmsa, errbuf)) != eslOK) cm_Fail(errbuf);
+	  esl_msa_Destroy(msa); /* we've copied the master msa into cmsa[ncm], we can delete this copy */
+	}
+      for(c = 0; c < ncm; c++)
+	{
+	  cfg->ncm_total++;  
+	  if(do_cluster) {
+	      msa = cmsa[c];
+	      if(esl_opt_GetString(go, "--cdump") != NULL) { 
+		if((status = eslx_msafile_Write(cfg->cdfp, msa, eslMSAFILE_STOCKHOLM)) != eslOK)
+		  cm_Fail("--cdump related eslx_msafile_Write() call failed.");
+	      }
+	  }
+
+	  /* if being verbose, print some stuff about what we're about to do.
+	   */
+	  if (cfg->be_verbose) {
+	    fprintf(stdout, "Alignment:           %s\n",           msa->name);
+	    fprintf(stdout, "Number of sequences: %d\n",           msa->nseq);
+	    fprintf(stdout, "Number of columns:   %" PRId64 "\n",  msa->alen);
+	    if(esl_opt_GetString(go, "--rsearch") != NULL)
+	      printf ("RIBOSUM Matrix:      %s\n",  cfg->fullmat->name);
+	    fputs("", stdout);
+	    fflush(stdout);
+	  }
+
+	  /* msa -> cm */
+	  if ((status = process_build_workunit(go, cfg, errbuf, msa, &cm, &mtr, &tr)) != eslOK) cm_Fail(errbuf);
+	  /* optionally, iterate over cm -> parsetrees -> msa -> cm ... until convergence, via EM or Gibbs */
+	  if ( esl_opt_IsOn(go, "--refine")) {
+	    fprintf(stdout, "#\n");
+	    fprintf(stdout, "# Refining MSA for CM: %s (aln: %4d cm: %6d)\n", cm->name, cfg->nali, cfg->ncm_total);
+	    if ((status = refine_msa(go, cfg, errbuf, cm, msa, tr, &new_cm, &new_msa, &new_mtr, &new_tr, &niter)) != eslOK) cm_Fail(errbuf);
+	    if(cm != new_cm) FreeCM(cm); 
+	    cm = new_cm; 
+	    if (niter > 1) { /* if niter == 1, we didn't make a new mtr, or tr, so we don't free them */
+	      for(i = 0; i < msa->nseq; i++) FreeParsetree(tr[i]);
+	      tr = new_tr;
+	      FreeParsetree(mtr);
+	      mtr = new_mtr;
+	      esl_msa_Destroy(msa);
+	      msa = new_msa;
+	    } 
+	  }	  
+	  /* output cm */
+	  if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm, mtr, tr)) != eslOK) cm_Fail(errbuf);
+	  
+	  if(cfg->be_verbose) { 
+	    fprintf(stdout, "\n");
+	    SummarizeCM(stdout, cm);  
+	    fprintf(stdout, "//\n");
+	  }
+
+	  FreeCM(cm);
+	  fflush(cfg->cmoutfp);
+
+	  if(tr != NULL) {
+	    for(i = 0; i < msa->nseq; i++) FreeParsetree(tr[i]);
+	    free(tr);
+	  }
+	  if(mtr != NULL) FreeParsetree(mtr);
+
+	  esl_msa_Destroy(msa);
+	}
+    }
+  if(do_cluster) free(cmsa);
+  if(cfg->fullmat != NULL) FreeMat(cfg->fullmat);
+  return;
+}
+
+
+static void
+process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_alifile)
+{
+  ESL_GETOPTS *go      = NULL;
+
+  if ((go = esl_getopts_Create(options))     == NULL)     cm_Fail("Internal failure creating options object");
+  if (esl_opt_ProcessEnvironment(go)         != eslOK)  { printf("Failed to process environment: %s\n", go->errbuf); goto ERROR; }
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf); goto ERROR; }
+  if (esl_opt_VerifyConfig(go)               != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf); goto ERROR; }
+ 
+  /* help format: */
+  /*char *devmsg = " [use --devhelp to see more]";*/
+  char *devmsg = "*";
+  int   do_dev = esl_opt_GetBoolean(go, "--devhelp") ? TRUE : FALSE;
+  if(esl_opt_GetBoolean(go, "-h") || do_dev) { 
+    cm_banner(stdout, argv[0], banner);
+    esl_usage(stdout, argv[0], usage);
+
+    puts("\nBasic options:");
+    esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
+
+    printf("\nModel construction options%s:\n", do_dev ? "" : devmsg);
+    esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+    if(do_dev) esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
+    
+    puts("\nAlternative relative sequence weighting strategies:");
+    esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+    
+    printf("\nAlternative effective sequence weighting strategies%s:\n", do_dev ? "" : devmsg);
+    esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
+    if(do_dev) esl_opt_DisplayHelp(stdout, go, 104, 2, 80);
+    
+    printf("\nOptions for refining the input alignment%s:\n", do_dev ? "" : devmsg);
+    esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
+    if(do_dev) esl_opt_DisplayHelp(stdout, go, 105, 2, 80);
+    
+    printf("\nOptions for HMM filter construction%s:\n", do_dev ? "" : devmsg);
+    esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
+    if(do_dev) esl_opt_DisplayHelp(stdout, go, 106, 2, 80);
+
+    printf("\nOptions for HMM filter calibration%s:\n", do_dev ? "" : devmsg);
+    esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
+    if(do_dev) esl_opt_DisplayHelp(stdout, go, 107, 2, 80);
+    
+    if(do_dev) { 
+      puts("\nDeveloper options for verbose output/debugging:");
+      esl_opt_DisplayHelp(stdout, go, 108, 2, 80);
+
+      puts("\nOptions for building multiple CMs after clustering input MSA:");
+      esl_opt_DisplayHelp(stdout, go, 109, 2, 80);
+    
+      puts("\nDeveloper options related to experimental local begin/end modes:");
+      esl_opt_DisplayHelp(stdout, go, 110, 2, 80);
+    }
+    else { 
+      puts("\n*Use --devhelp to show additional expert options.");
+    }
+    exit(0);
+  }
+
+  if (esl_opt_ArgNumber(go)                 != 2)     { puts("Incorrect number of command line arguments.");      goto ERROR; }
+  if ((*ret_cmfile = esl_opt_GetArg(go, 1)) == NULL)  { puts("Failed to get <cmfile_out> argument on command line");  goto ERROR; }
+  if ((*ret_alifile = esl_opt_GetArg(go, 2)) == NULL) { puts("Failed to get <alifile> argument on command line"); goto ERROR; }
+
+  if (strcmp(*ret_cmfile, "-") == 0) {
+    puts("Can't write <cmfile_out> to stdout: don't use '-'"); goto ERROR; 
+  }
+  if (strcmp(*ret_alifile, "-") == 0 && ! esl_opt_IsOn(go, "--informat")) { 
+    puts("Must specify --informat to read <alifile> from stdin ('-')"); goto ERROR; 
+  }
+
+  *ret_go     = go;
+
+  return;
+  
+ ERROR:  /* all errors handled here are user errors, so be polite.  */
+  esl_usage(stdout, argv[0], usage);
+  puts("\nwhere basic options are:");
+  esl_opt_DisplayHelp(stdout, go, 1, 2, 100); /* 1= group; 2 = indentation; 100=textwidth*/
+  printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
+  exit(1);  
+}
+
+static void
+output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
+{
+  cm_banner(ofp, go->argv[0], banner);
+                                            fprintf(ofp, "# CM file:                                            %s\n", cmfile);
+			                    fprintf(ofp, "# alignment file:                                     %s\n", alifile);
+ if (esl_opt_IsUsed(go, "-n"))            { fprintf(ofp, "# name (the single) CM:                               %s\n", esl_opt_GetString(go, "-n")); }
+ if (esl_opt_IsUsed(go, "-F"))            { fprintf(ofp, "# overwrite CM file if necessary:                     yes\n"); }
+ if (esl_opt_IsUsed(go, "--gapthresh"))   { fprintf(ofp, "# max fraction of gaps in a consensus column:         %g\n", esl_opt_GetReal(go, "--gapthresh")); }
+ if (esl_opt_IsUsed(go, "--rf"))          { fprintf(ofp, "# use #=GC RF annotation to define consensus columns: yes\n"); }
+ if (esl_opt_IsUsed(go, "--null"))        { fprintf(ofp, "# read null model from file:                          %s\n", esl_opt_GetString(go, "--null")); }
+ if (esl_opt_IsUsed(go, "--prior"))       { fprintf(ofp, "# read prior from file:                               %s\n", esl_opt_GetString(go, "--prior")); }
+ if (esl_opt_IsUsed(go, "--rsearch"))     { fprintf(ofp, "# RSEARCH parameterization mode w/RIBOSUM mx file:    %s\n", esl_opt_GetString(go, "--rsearch")); }
+ if (esl_opt_IsUsed(go, "--betaW"))       { fprintf(ofp, "# tail loss probability for defining W:               %g\n", esl_opt_GetReal(go, "--betaW")); }
+ if (esl_opt_IsUsed(go, "--beta1"))       { fprintf(ofp, "# tail loss probability for defining tight QDBs:      %g\n", esl_opt_GetReal(go, "--beta1")); }
+ if (esl_opt_IsUsed(go, "--beta2"))       { fprintf(ofp, "# tail loss probability for defining loose QDBs:      %g\n", esl_opt_GetReal(go, "--beta2")); }
+ if (esl_opt_IsUsed(go, "--informat"))    { fprintf(ofp, "# input format specified as:                          %s\n", esl_opt_GetString(go, "--informat")); }
+ if (esl_opt_IsUsed(go, "--ignorant"))    { fprintf(ofp, "# ignorant mode; build fully single-stranded CMs:     on\n"); }
+ if (esl_opt_IsUsed(go, "--v1p0"))        { fprintf(ofp, "# v1.0 parameterization mode:                         on\n"); }
+ if (esl_opt_IsUsed(go, "--p56"))         { fprintf(ofp, "# use default priors from v0.56 through v1.0.2:       yes\n"); }
+ if (esl_opt_IsUsed(go, "--iins"))        { fprintf(ofp, "# allowing informative insert emission probabilities: yes\n"); }
+ if (esl_opt_IsUsed(go, "--nobalance"))   { fprintf(ofp, "# do default rebalancing of CM:                       no\n"); }
+ if (esl_opt_IsUsed(go, "--nodetach"))    { fprintf(ofp, "# do default detachment of flawed ambiguous inserts:  no\n"); }
+ if (esl_opt_IsUsed(go, "--elself"))      { fprintf(ofp, "# local end (EL) self loop probability:               %g\n", esl_opt_GetReal(go, "--elself")); }        
+ if (esl_opt_IsUsed(go, "--n2omega"))     { fprintf(ofp, "# prior probability of null2 model (if used):         %g\n", esl_opt_GetReal(go, "--n2omega")); }
+ if (esl_opt_IsUsed(go, "--n3omega"))     { fprintf(ofp, "# prior probability of null3 model (if used):         %g\n", esl_opt_GetReal(go, "--n3omega")); } 
+ if (esl_opt_IsUsed(go, "--wgsc"))        { fprintf(ofp, "# relative weighting scheme:                          G/S/C\n"); }
+ if (esl_opt_IsUsed(go, "--wnone"))       { fprintf(ofp, "# relative weighting scheme:                          none\n"); }
+ if (esl_opt_IsUsed(go, "--wpb"))         { fprintf(ofp, "# relative weighting scheme:                          Henikoff PB\n"); }
+ if (esl_opt_IsUsed(go, "--wgiven"))      { fprintf(ofp, "# relative weighting scheme:                          wts from MSA file\n"); }
+ if (esl_opt_IsUsed(go, "--wblosum"))     { fprintf(ofp, "# relative weighting scheme:                          BLOSUM filter\n"); } 
+ if (esl_opt_IsUsed(go, "--wid"))         { fprintf(ofp, "# frac id cutoff for BLOSUM wgts:                     %f\n", esl_opt_GetReal(go, "--wid")); }
+ if (esl_opt_IsUsed(go, "--pbswitch"))    { fprintf(ofp, "# PB weight switchover point:                         %d\n", esl_opt_GetInteger(go, "--pbswitch")); }
+
+ if (esl_opt_IsUsed(go, "--eent"))        { fprintf(ofp, "# effective seq number scheme:                        entropy weighting\n"); }
+ if (esl_opt_IsUsed(go, "--enone"))       { fprintf(ofp, "# effective seq number scheme:                        none\n"); }
+ if (esl_opt_IsUsed(go, "--ere"))         { fprintf(ofp, "# minimum rel entropy target:                         %f bits\n",   esl_opt_GetReal(go, "--ere")); }
+ if (esl_opt_IsUsed(go, "--eset"))        { fprintf(ofp, "# effective seq number:                               set to %f\n", esl_opt_GetReal(go, "--eset")); }
+ if (esl_opt_IsUsed(go, "--eminseq"))     { fprintf(ofp, "# minimum effective sequence number allowed:          %g\n", esl_opt_GetReal(go, "--eminseq")); }
+ if (esl_opt_IsUsed(go, "--ehmmre"))      { fprintf(ofp, "# minimum ML CP9 HMM rel entropy target:              %f bits\n",   esl_opt_GetReal(go, "--ehmmre")); }
+ if (esl_opt_IsUsed(go, "--esigma"))      { fprintf(ofp, "# entropy target sigma parameter:                     %f bits\n",   esl_opt_GetReal(go, "--esigma")); }
+
+ if (esl_opt_IsUsed(go, "--refine"))      { fprintf(ofp, "# input alignment refinement prior to model building: on\n"); }
+ if (esl_opt_IsUsed(go, "-l"))            { fprintf(ofp, "# model configuration for aln refinement:             local\n"); }
+ if (esl_opt_IsUsed(go, "--gibbs"))       { fprintf(ofp, "# Gibbs sampling (instead of EM) for aln refinement:  on\n"); }
+ if (esl_opt_IsUsed(go, "--seed"))  {
+   if (esl_opt_GetInteger(go, "--seed") == 0) { fprintf(ofp,"# random number seed:                                  one-time arbitrary\n"); }
+   else                                       { fprintf(ofp,"# random number seed set to:                           %d\n", esl_opt_GetInteger(go, "--seed")); }
+ }
+ if (esl_opt_IsUsed(go, "--notrunc"))     { fprintf(ofp, "# use truncated aln algorithms for aln refinement:    no\n"); }
+ if (esl_opt_IsUsed(go, "--sub"))         { fprintf(ofp, "# alternative truncated seq alignment 'sub' mode:     on\n"); }
+ if (esl_opt_IsUsed(go, "--nonbanded"))   { fprintf(ofp, "# use HMM bands for accelerating aln refinement:      no\n"); }
+ if (esl_opt_IsUsed(go, "--indi"))        { fprintf(ofp, "# print individual seq scores during aln refinement:  yes\n"); }
+ if (esl_opt_IsUsed(go, "--fins"))        { fprintf(ofp, "# flush inserts left/rigth during aln refinement:     yes\n"); }
+ if (esl_opt_IsUsed(go, "--tau"))         { fprintf(ofp, "# tail loss probability for HMM bands set to:         %g\n", esl_opt_GetReal(go, "--tau")); }
+ if (esl_opt_IsUsed(go, "--mxsize"))      { fprintf(ofp, "# maximum DP matrix size set to:                      %.2f Mb\n", esl_opt_GetReal(go, "--mxsize")); }
+ if (esl_opt_IsUsed(go, "--rdump"))       { fprintf(ofp, "# printing intermediate alns during aln refnment to:  %s\n", esl_opt_GetString(go, "--rdump")); }
+
+ if (esl_opt_IsUsed(go, "--p7ml"))        { fprintf(ofp, "# filter HMM is ML HMM created from CM:               yes\n"); }
+ if (esl_opt_IsUsed(go, "--p7ere"))       { fprintf(ofp, "# filter HMM minimum rel entropy target:              %g bits\n", esl_opt_GetReal(go, "--p7ere")); }
+ if (esl_opt_IsUsed(go, "--p7prior"))     { fprintf(ofp, "# read filter p7 HMM prior from:                      %s\n", esl_opt_GetString(go, "--p7prior")); }
+ if (esl_opt_IsUsed(go, "--p7hprior"))    { fprintf(ofp, "# using HMMER3's default prior for filter p7 HMM:     yes\n"); }
+ if (esl_opt_IsUsed(go, "--p7hemit"))     { fprintf(ofp, "# using HMMER3's emission priors for filter p7 HMM:   yes\n"); }
+
+ if (esl_opt_IsUsed(go, "--EmN"))         { fprintf(ofp, "# seq number for filter HMM MSV Gumbel mu fit:        %d\n", esl_opt_GetInteger(go, "--EmN")); }
+ if (esl_opt_IsUsed(go, "--EvN"))         { fprintf(ofp, "# seq number for filter HMM Vit Gumbel mu fit:        %d\n", esl_opt_GetInteger(go, "--EvN")); }
+ if (esl_opt_IsUsed(go, "--ElfN"))        { fprintf(ofp, "# seq number for filter HMM local Fwd Gumbel mu fit:  %d\n", esl_opt_GetInteger(go, "--ElfN")); }
+ if (esl_opt_IsUsed(go, "--EgfN"))        { fprintf(ofp, "# seq number for filter HMM glocal Fwd Gumbel mu fit: %d\n", esl_opt_GetInteger(go, "--EgfN")); }
+ if (esl_opt_IsUsed(go, "--Elftp"))       { fprintf(ofp, "# tail fit frac for filter HMM local Fwd Gumbel fit:  %g\n", esl_opt_GetReal(go, "--Elftp")); }
+ if (esl_opt_IsUsed(go, "--Egftp"))       { fprintf(ofp, "# tail fit frac for filter HMM glocal Fwd Gumbel fit: %g\n", esl_opt_GetReal(go, "--Egftp")); }
+ if (esl_opt_IsUsed(go, "--Ereal"))       { fprintf(ofp, "# sample realistic, not iid seqs for HMM calibration: yes\n"); }
+ if (esl_opt_IsUsed(go, "--Enull3"))      { fprintf(ofp, "# use null3 correction during HMM calibration:        yes\n"); }
+ if (esl_opt_IsUsed(go, "--Ebias"))       { fprintf(ofp, "# use bias correction during HMM calibration:         yes\n"); }
+ if (esl_opt_IsUsed(go, "--Efitlam"))     { fprintf(ofp, "# fit lambda for HMM calibration:                     yes\n"); }
+ if (esl_opt_IsUsed(go, "--Elcmult"))     { fprintf(ofp, "# cm->clen multiplier for HMM local calib seq len:    %f\n", esl_opt_GetReal(go, "--Elcmult")); }
+ if (esl_opt_IsUsed(go, "--Egcmult"))     { fprintf(ofp, "# cm->clen multiplier for HMM glocal calib seq len:   %f\n", esl_opt_GetReal(go, "--Egcmult")); }
+ if (esl_opt_IsUsed(go, "--ElL"))         { fprintf(ofp, "# seq length for local filter HMM calibration:        %d\n", esl_opt_GetInteger(go, "--ElL")); }
+ if (esl_opt_IsUsed(go, "--EgL"))         { fprintf(ofp, "# seq length for glocal filter HMM calibration:       %d\n", esl_opt_GetInteger(go, "--EgL")); }
+
+ if (esl_opt_IsUsed(go, "--verbose"))     { fprintf(ofp, "# verbose mode:                                       on\n"); }
+ if (esl_opt_IsUsed(go, "--cfile"))       { fprintf(ofp, "# saving count vectors to file:                       %s\n", esl_opt_GetString(go, "--cfile")); }
+ if (esl_opt_IsUsed(go, "--efile"))       { fprintf(ofp, "# saving emission score information to file:          %s\n", esl_opt_GetString(go, "--efile")); }
+ if (esl_opt_IsUsed(go, "--tfile"))       { fprintf(ofp, "# saving individual sequence parsetrees to file:      %s\n", esl_opt_GetString(go, "--tfile")); }
+ if (esl_opt_IsUsed(go, "--cmtbl"))       { fprintf(ofp, "# saving tabular description of CM topology to file:  %s\n", esl_opt_GetString(go, "--cmtbl")); }
+ if (esl_opt_IsUsed(go, "--emap"))        { fprintf(ofp, "# saving consensus emit map to file:                  %s\n", esl_opt_GetString(go, "--emap")); }
+ if (esl_opt_IsUsed(go, "--gtree"))       { fprintf(ofp, "# saving tree description of master tree to file:     %s\n", esl_opt_GetString(go, "--gtree")); }
+ if (esl_opt_IsUsed(go, "--gtbl"))        { fprintf(ofp, "# saving tabular description of master tree to file:  %s\n", esl_opt_GetString(go, "--gtbl")); }
+
+ if (esl_opt_IsUsed(go, "--ctarget"))     { fprintf(ofp, "# building >1 CMs from each MSA; target num CMs:      %d\n", esl_opt_GetInteger(go, "--ctarget")); }
+ if (esl_opt_IsUsed(go, "--cmaxid"))      { fprintf(ofp, "# building >1 CMs from each MSA; max id b/t clusters: %g\n", esl_opt_GetReal(go, "--cmaxid")); }
+ if (esl_opt_IsUsed(go, "--call"))        { fprintf(ofp, "# building a CM from each sequence in each MSA:       yes\n"); }
+ if (esl_opt_IsUsed(go, "--corig"))       { fprintf(ofp, "# appending original CM to cluster CMs:               yes\n"); }
+ if (esl_opt_IsUsed(go, "--cdump"))       { fprintf(ofp, "# writing training alns for each cluster CM to file:  %s\n", esl_opt_GetString(go, "--cdump")); }
+
+ if (esl_opt_IsUsed(go, "--pbegin"))      { fprintf(ofp, "# aggregate probability of local begin:               %g\n", esl_opt_GetReal(go, "--pbegin")); }
+ if (esl_opt_IsUsed(go, "--pend"))        { fprintf(ofp, "# aggregate probability of local end:                 %g\n", esl_opt_GetReal(go, "--pend")); }
+ if (esl_opt_IsUsed(go, "--pebegin"))     { fprintf(ofp, "# set all local begins as equiprobable:               yes\n"); }
+ if (esl_opt_IsUsed(go, "--pfend"))       { fprintf(ofp, "# set all local end probs to:                         %g\n", esl_opt_GetReal(go, "--pfend")); }
+
+  fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n");
+
+  return;
 }
 
 /* init_cfg()
@@ -467,15 +706,10 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if((status = eslx_msafile_Open(&(cfg->abc), cfg->alifile, NULL, cfg->fmt, NULL, &(cfg->afp))) != eslOK) { 
     eslx_msafile_OpenFailure(cfg->afp, status);
   }
-  cfg->fmt = cfg->afp->format;
 
   /* open CM file for writing */
-  if (esl_opt_GetBoolean(go, "-A")) { /* we're appending to a CM file */
-    if ((cfg->cmoutfp = fopen(cfg->cmfile, "a")) == NULL) ESL_FAIL(status, errbuf, "Failed to open CM file %s to append to", cfg->cmfile);
-  }
-  else { /* we're starting a new CM file */
-    if ((cfg->cmoutfp = fopen(cfg->cmfile, "w")) == NULL) ESL_FAIL(status, errbuf, "Failed to open CM file %s for writing", cfg->cmfile);
-  }
+  if ((cfg->cmoutfp = fopen(cfg->cmfile, "w")) == NULL) ESL_FAIL(status, errbuf, "Failed to open CM file %s for writing", cfg->cmfile);
+
   /* Set up the prior */
   if (esl_opt_GetString(go, "--prior") != NULL)
     {
@@ -525,7 +759,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if(esl_opt_GetBoolean(go, "--gibbs"))
     {
       /* create RNG */
-      cfg->r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
+      cfg->r = esl_randomness_Create(esl_opt_GetInteger(go, "--seed"));
       if (cfg->r == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
     }
 
@@ -535,21 +769,21 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   cfg->fp7_bld = p7_builder_Create(NULL, cfg->abc);
   cfg->fp7_bld->w_len = -1;
   cfg->fp7_bld->w_beta = p7_DEFAULT_WINDOW_BETA;
-  if(esl_opt_IsUsed(go, "--p7-prior")) {
+  if(esl_opt_IsUsed(go, "--p7prior")) {
     FILE *pfp;
     if (cfg->fp7_bld->prior != NULL) p7_prior_Destroy(cfg->fp7_bld->prior);
-    if ((pfp = fopen(esl_opt_GetString(go, "--p7-prior"), "r")) == NULL) cm_Fail("Failed to open p7 prior file %s\n", esl_opt_GetString(go, "--p7-prior"));
+    if ((pfp = fopen(esl_opt_GetString(go, "--p7prior"), "r")) == NULL) cm_Fail("Failed to open p7 prior file %s\n", esl_opt_GetString(go, "--p7prior"));
     if((cfg->fp7_bld->prior = p7_prior_Read(pfp)) == NULL) {
-      cm_Fail("Failed to parse p7 prior file %s\n", esl_opt_GetString(go, "--p7-prior"));
+      cm_Fail("Failed to parse p7 prior file %s\n", esl_opt_GetString(go, "--p7prior"));
     }
     fclose(pfp);
   }
-  else if(! esl_opt_GetBoolean(go, "--p7-hprior")) { 
+  else if(! esl_opt_GetBoolean(go, "--p7hprior")) { 
     /* create the default Infernal p7 prior */
     if (cfg->fp7_bld->prior != NULL) p7_prior_Destroy(cfg->fp7_bld->prior);
     cfg->fp7_bld->prior = cm_p7_prior_CreateNucleic();
   }
-  cfg->fp7_bld->re_target = esl_opt_GetReal(go, "--p7-ere");
+  cfg->fp7_bld->re_target = esl_opt_GetReal(go, "--p7ere");
 
   /* open output files */
   /* optionally, open count vector file */
@@ -584,7 +818,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     }
   /* optionally, open trace file */
   if (esl_opt_GetString(go, "--tfile") != NULL) {
-    if ((cfg->tracefp = fopen(esl_opt_GetString(go, "--tfile"), "w")) == NULL) 
+    if ((cfg->tfp = fopen(esl_opt_GetString(go, "--tfile"), "w")) == NULL) 
 	ESL_FAIL(eslFAIL, errbuf, "Failed to open --tfile output file %s\n", esl_opt_GetString(go, "--tfile"));
     }
   /* if --refine enabled, open output file for refined MSAs */
@@ -619,133 +853,6 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   cfg->ncm_total = 0;
   return eslOK;
 }
-
-static void
-master(const ESL_GETOPTS *go, struct cfg_s *cfg)
-{
-  int      status;
-  char     errbuf[eslERRBUFSIZE];
-  ESL_MSA *msa = NULL;
-  CM_t    *cm = NULL;
-  Parsetree_t  *mtr;
-  Parsetree_t **tr;
-  int          i = 0;
-  int      niter = 0;
-  /* new_* data structures, created in refine_msa() if --refine enabled */
-  CM_t         *new_cm;  
-  Parsetree_t  *new_mtr;
-  Parsetree_t **new_tr;
-  ESL_MSA      *new_msa;
-  /* cluster option related variables */
-  int          do_cluster; /* TRUE if --ctarget || --cmaxid || --call */
-  int          do_ctarget; /* TRUE if --ctarget */
-  int          do_cmindiff; /* TRUE if --cmaxid  */
-  int          do_call;    /* TRUE if --call */
-  int          nc;         /* number of clusters, only != 0 if do_ctarget */
-  float        mindiff;    /* minimum fractional diff b/t clusters, only != 0. if do_cmindiff */
-  int          ncm = 1;    /* number of CMs to be built for current MSA */
-  int          c   = 0;    /* counter over CMs built for a single MSA */
-  ESL_MSA    **cmsa;       /* pointer to cluster MSAs to build CMs from */
-
-  if ((status = init_cfg(go, cfg, errbuf))         != eslOK) cm_Fail(errbuf);
-  if ((status = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
-
-  cfg->nali = 0;
-  cfg->ncm_total = 0;
-
-  do_ctarget  = esl_opt_IsOn(go, "--ctarget");
-  do_cmindiff = esl_opt_IsOn(go, "--cmaxid");
-  do_call     = esl_opt_GetBoolean(go, "--call");
-  do_cluster = (do_ctarget || do_cmindiff || do_call) ? TRUE : FALSE;
-  if((do_ctarget + do_cmindiff + do_call) > TRUE) cm_Fail("More than one of --ctarget, --cmaxid, --call were enabled, shouldn't happen.");
-
-  nc      = do_ctarget  ? esl_opt_GetInteger(go, "--ctarget")    : 0;
-  mindiff = do_cmindiff ? (1. - esl_opt_GetReal(go, "--cmaxid")) : 0.;
-
-  while ((status = eslx_msafile_Read(cfg->afp, &msa)) != eslEOF)
-    {
-      if (status != eslOK) eslx_msafile_ReadFailure(cfg->afp, status);
-      cfg->nali++;  
-
-      /* if it's unnamed, name the MSA, we require a name (different from 
-       * HMMER 3), because it will be used to name the CM. */
-      if(name_msa(go, errbuf, msa, cfg->nali) != eslOK) cm_Fail(errbuf);
-      if(msa->name == NULL)                             cm_Fail("Error naming MSA");
-      ncm = 1;     /* default: only build 1 CM for each MSA in alignment file */
-
-      if(do_cluster) /* divide input MSA into clusters, and build CM from each cluster */
-	{
-	  if((status = MSADivide(msa, do_call, do_cmindiff, do_ctarget, mindiff, nc,
-				 esl_opt_GetBoolean(go, "--corig"), &ncm, &cmsa, errbuf)) != eslOK) cm_Fail(errbuf);
-	  esl_msa_Destroy(msa); /* we've copied the master msa into cmsa[ncm], we can delete this copy */
-	}
-      for(c = 0; c < ncm; c++)
-	{
-	  cfg->ncm_total++;  
-	  if(do_cluster) {
-	      msa = cmsa[c];
-	      if(esl_opt_GetString(go, "--cdump") != NULL) { 
-		if((status = eslx_msafile_Write(cfg->cdfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK)
-		  cm_Fail("--cdump related eslx_msafile_Write() call failed.");
-	      }
-	  }
-
-	  /* if being verbose, print some stuff about what we're about to do.
-	   */
-	  if (cfg->be_verbose) {
-	    fprintf(stdout, "Alignment:           %s\n",           msa->name);
-	    fprintf(stdout, "Number of sequences: %d\n",           msa->nseq);
-	    fprintf(stdout, "Number of columns:   %" PRId64 "\n",  msa->alen);
-	    if(esl_opt_GetString(go, "--rsearch") != NULL)
-	      printf ("RIBOSUM Matrix:      %s\n",  cfg->fullmat->name);
-	    fputs("", stdout);
-	    fflush(stdout);
-	  }
-
-	  /* msa -> cm */
-	  if ((status = process_build_workunit(go, cfg, errbuf, msa, &cm, &mtr, &tr)) != eslOK) cm_Fail(errbuf);
-	  /* optionally, iterate over cm -> parsetrees -> msa -> cm ... until convergence, via EM or Gibbs */
-	  if ( esl_opt_IsOn(go, "--refine")) {
-	    fprintf(stdout, "#\n");
-	    fprintf(stdout, "# Refining MSA for CM: %s (aln: %4d cm: %6d)\n", cm->name, cfg->nali, cfg->ncm_total);
-	    if ((status = refine_msa(go, cfg, errbuf, cm, msa, tr, &new_cm, &new_msa, &new_mtr, &new_tr, &niter)) != eslOK) cm_Fail(errbuf);
-	    FreeCM(cm); 
-	    cm = new_cm; 
-	    if (niter > 1) { /* if niter == 1, we didn't make a new mtr, or tr, so we don't free them */
-	      for(i = 0; i < msa->nseq; i++) FreeParsetree(tr[i]);
-	      tr = new_tr;
-	      FreeParsetree(mtr);
-	      mtr = new_mtr;
-	      esl_msa_Destroy(msa);
-	      msa = new_msa;
-	    } 
-	  }	  
-	  /* output cm */
-	  if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm, mtr, tr)) != eslOK) cm_Fail(errbuf);
-	  
-	  if(cfg->be_verbose) { 
-	    fprintf(stdout, "\n");
-	    SummarizeCM(stdout, cm);  
-	    fprintf(stdout, "//\n");
-	  }
-
-	  FreeCM(cm);
-	  fflush(cfg->cmoutfp);
-
-	  if(tr != NULL) {
-	    for(i = 0; i < msa->nseq; i++) FreeParsetree(tr[i]);
-	    free(tr);
-	  }
-	  if(mtr != NULL) FreeParsetree(mtr);
-
-	  esl_msa_Destroy(msa);
-	}
-    }
-  if(do_cluster) free(cmsa);
-  if(cfg->fullmat != NULL) FreeMat(cfg->fullmat);
-  return;
-}
-
 
 /* A work unit consists of one multiple alignment, <msa>.
  * The job is to turn it into a new CM, returned in <*ret_cm>.
@@ -815,6 +922,8 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   ESL_SQ         **tmp_sqpA    = NULL; /* array of pointers to ESL_SQ's, don't free individual sequences */
   Parsetree_t    **tmp_trpA    = NULL; /* array of pointers to parsetrees, don't free individual parsetrees */
   CM_ALNDATA     **dataA       = NULL; /* alignment data filled in AlignSequenceBlock(): parsetrees, scores, etc. */
+  int              v, nd;              /* state and node counters, only used if -l */
+  int              do_trunc    = (esl_opt_GetBoolean(go, "--notrunc") || esl_opt_GetBoolean(go, "--sub")) ? FALSE : TRUE;
 
   /* check contract */
   if(input_msa       == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), input_msa passed in as NULL");
@@ -853,12 +962,25 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
 
   /* print header for tabular output */
   print_refine_column_headings(go, cfg);
-  fprintf(stdout, "  %5d %13.2f %10s\n", iter, oldscore, "-");
-
+  /* Only print initial score (parsetree scores) if we're not doing
+   * truncated alignment (--notrunc or --sub enabled). If we are doing
+   * truncated alignment the parsetree scores will be far higher than
+   * the scores after the first iteration of truncated realignment
+   * since we'll use truncation penalties for those. This is a sloppy
+   * fix. What we should do is determine the most likely *truncated*
+   * parsetree when we convert the alignment to parsetrees, but we
+   * don't do that yet.
+   */
+  if(! do_trunc) { 
+    fprintf(stdout, "  %5d %13.2f %10s\n", iter, oldscore, "-");
+  }
   /* print initial alignment to --rdump file, if --rdump was enabled */
-  if(cfg->rdfp != NULL) 
-    if((status = eslx_msafile_Write(cfg->rdfp, input_msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
+  if(cfg->rdfp != NULL) { 
+    if((status = eslx_msafile_Write(cfg->rdfp, input_msa, eslMSAFILE_STOCKHOLM)) != eslOK) {
       ESL_FAIL(status, errbuf, "refine_msa(), esl_msafile_Write() call failed.");
+    }
+  }
+
   while(iter <= max_niter)
     {
       iter++;
@@ -868,14 +990,15 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       }
 
       /* 1. cm -> parsetrees */
-      if((status = DispatchSqBlockAlignment(cm, errbuf, sq_block, esl_opt_GetReal(go, "--mxsize"), NULL, NULL, NULL, &dataA)) != eslOK) return status;
+      if((status = DispatchSqBlockAlignment(cm, errbuf, sq_block, esl_opt_GetReal(go, "--mxsize"), NULL, NULL, cfg->r, &dataA)) != eslOK) return status;
     
       /* sum parse scores and check for convergence */
       totscore = 0.;
       for(i = 0; i < nseq; i++) totscore += dataA[i]->sc;
       delta    = (totscore - oldscore) / fabs(totscore);
-      if(esl_opt_GetBoolean(go, "-a")) print_refine_column_headings(go, cfg);
-      fprintf(stdout, "  %5d %13.2f %10.3f\n", iter, totscore, delta);
+      if(esl_opt_GetBoolean(go, "--indi")) print_refine_column_headings(go, cfg);
+      if(iter > 1 || (! do_trunc)) { fprintf(stdout, "  %5d %13.2f %10.3f\n", iter, totscore, delta); }
+      else                         { fprintf(stdout, "  %5d %13.2f %10s\n",   iter, totscore, "-"); }
       if(delta <= threshold && delta > (-1. * eslSMALLX1)) break; /* break out of loop before max number of iterations are reached */
       oldscore = totscore;
 
@@ -911,6 +1034,43 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   /* write out final alignment to --refine output file */
   if((status = eslx_msafile_Write(cfg->refinefp, msa, eslMSAFILE_STOCKHOLM)) != eslOK) 
     ESL_FAIL(status, errbuf, "refine_msa(), esl_msafile_Write() call failed.");
+
+  /* If the model is local (-l was used), then we need to convert it
+   * to global before we return, because we can only output CMs in
+   * global mode. This is the one and only place in Infernal where we
+   * go from local back to global.  This is purposefully not done
+   * elsewhere for safety, as part of the rule that a model can only
+   * be 'configured' a single time. (If we converted back to global
+   * this would be in a sense reconfiguring). But here we allow it
+   * since otherwise we couldn't allow -l with the --refine
+   * option. It's purposefully hard-coded here, and not a function,
+   * because we don't want to encourage this sort of thing.
+   */
+  if(cm->flags & CMH_LOCAL_BEGIN) { /* local begins on */
+    if(cm->root_trans == NULL) ESL_FAIL(eslFAIL, errbuf, "trying to globalize model but cm->root_trans is NULL..."); 
+    for (v = 0; v < cm->M; v++)       cm->begin[v] = 0.;
+    for (v = 0; v < cm->cnum[0]; v++) cm->t[0][v] = cm->root_trans[v];
+    cm->flags &= ~CMH_LOCAL_BEGIN; /* drop the local begin flag */
+  }
+  if(cm->flags & CMH_LOCAL_END) { /* local ends on */
+    for (v = 0; v < cm->M; v++) cm->end[v] = 0.;
+    /* now, renormalize transitions */
+    for (nd = 1; nd < cm->nodes; nd++) {
+      if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	   cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	   cm->ndtype[nd] == BEGR_nd) && 
+	  cm->ndtype[nd+1] != END_nd)
+	{
+	  v = cm->nodemap[nd];
+	  esl_vec_FNorm(cm->t[v], cm->cnum[v]);
+	}
+    }
+    /* note: we don't have to worry about globalizing the CP9, it won't be output to the CM file*/
+    cm->flags &= ~CMH_LOCAL_END; /* turn off local ends flag */
+    cm->flags &= ~CMH_BITS; /* local end changes invalidate log odds scores */
+    CMLogoddsify(cm); /* recalculates log odds scores */
+  }
+  /* end of globalization of model */
 
   *ret_cm  = cm; 
   *ret_msa = msa;
@@ -967,12 +1127,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   if ((status = CopyComLog(cfg->comlog, cm->comlog)) != eslOK) ESL_FAIL(eslFAIL, errbuf, "Problem copying com log info to CM. Probably out of memory.");
   if ((status = cm_Validate(cm, 0.0001, errbuf))     != eslOK) return status;
 
-  if (esl_opt_GetBoolean(go, "--binary")) { 
-    if ((status = cm_file_WriteBinary(cfg->cmoutfp, -1, cm, NULL)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
-  }
-  else { 
-    if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
-  }
+  if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
 
   fprintf(stdout, "%6d  %6d  %-20s  %8d  %8.2f  %6" PRId64 "  %5d  %4d  %4d  %5.3f  %5.3f\n",
 	  msaidx,
@@ -1005,15 +1160,15 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   if(cfg->escfp   != NULL) if((status = dump_emission_info(cfg->escfp, cm, errbuf)) != eslOK) return status;
 
   /* save parsetrees if nec */
-  if(cfg->tracefp != NULL) { 
+  if(cfg->tfp != NULL) { 
     for (i = 0; i < msa->nseq; i++) { 
-      fprintf(cfg->tracefp, "> %s\n", msa->sqname[i]);
+      fprintf(cfg->tfp, "> %s\n", msa->sqname[i]);
 
       if((status = ParsetreeScore(cm, NULL, errbuf, tr[i], msa->ax[i], FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
-      fprintf(cfg->tracefp, "  %16s %.2f bits\n", "SCORE:", sc);
-      fprintf(cfg->tracefp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
-      ParsetreeDump(cfg->tracefp, tr[i], cm, msa->ax[i]);
-      fprintf(cfg->tracefp, "//\n");
+      fprintf(cfg->tfp, "  %16s %.2f bits\n", "SCORE:", sc);
+      fprintf(cfg->tfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
+      ParsetreeDump(cfg->tfp, tr[i], cm, msa->ax[i]);
+      fprintf(cfg->tfp, "//\n");
     }
   }
   return eslOK;
@@ -1427,10 +1582,13 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int d
 				      FALSE, /* Don't check states have 0 counts (they won't due to priors) */
 				      TRUE); /* Detach the states by setting trans probs into them as 0.0   */
     }
-  if(! esl_opt_GetBoolean(go, "--iins")) { /* set all insert emission probabilities equal to the cm->null probabilities */ 
+  if(! esl_opt_GetBoolean(go, "--iins")) { 
+    /* set all insert emission probabilities equal to the cm->null probabilities */ 
     if((status = flatten_insert_emissions(cm)) != eslOK) return status; 
-    /* Note: flatten_insert_emissions() is purposefully a static function local to cmbuild.c b/c once CM files are calibrated
-     * no other executable (i.e. cmsearch) should be able to modify the scores of the CM, as that would invalidate the Gumbels */
+    /* Note: flatten_insert_emissions() is purposefully a static
+     * function local to cmbuild.c b/c once CM files are calibrated no
+     * other executable (i.e. cmsearch) should be able to modify the
+     * scores of the CM, as that would invalidate the E-value stats */
   }
 
   CMRenormalize(cm);
@@ -1448,7 +1606,7 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int d
 
 /* configure_model()
  * Configure the model. This determines QDBs and W.
- * If niter is 1, we possible output in verbose mode,
+ * If niter is 1, we possibly output in verbose mode,
  * else we don't.
  */
 static int
@@ -1501,24 +1659,32 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
    * before calling cm_Configure().
    */
   if(esl_opt_IsUsed(go, "--refine")) { 
-    cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
+    cm->tau = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
 
     /* update cm->align->opts, we'll use CYK unless --gibbs, we never use optacc */
-    if(esl_opt_GetBoolean(go, "--gibbs"))     cm->align_opts |= CM_ALIGN_SAMPLE;
-    if(! esl_opt_GetBoolean(go, "--notrunc")) cm->align_opts |= CM_ALIGN_TRUNC;
+    if     (  esl_opt_GetBoolean(go, "--sub"))     { cm->align_opts |= CM_ALIGN_SUB; }
+    else if(! esl_opt_GetBoolean(go, "--notrunc")) { cm->align_opts |= CM_ALIGN_TRUNC; }
+    if(esl_opt_GetBoolean(go, "--gibbs")) cm->align_opts |= CM_ALIGN_SAMPLE;
 
     if(esl_opt_GetBoolean(go, "--nonbanded"))   { 
       cm->align_opts  |= CM_ALIGN_SMALL; 
+      cm->align_opts  |= CM_ALIGN_NONBANDED; 
       cm->align_opts &= ~CM_ALIGN_OPTACC; /* turn optimal accuracy OFF */
     }
     else cm->align_opts  |= CM_ALIGN_HBANDED;
   
-    if(esl_opt_GetBoolean(go, "--sub"))  cm->align_opts  |= CM_ALIGN_SUB;
     if(esl_opt_GetBoolean(go, "--fins")) cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
 
     /* update cm->config_opts */
-    if(! esl_opt_GetBoolean(go, "--notrunc")) cm->config_opts |= CM_CONFIG_TRUNC;
+    if     (  esl_opt_GetBoolean(go, "--sub"))     { cm->config_opts |= CM_CONFIG_SUB; }
+    else if(! esl_opt_GetBoolean(go, "--notrunc")) { cm->config_opts |= CM_CONFIG_TRUNC; }
     if(esl_opt_GetBoolean(go, "--nonbanded")) cm->config_opts |= CM_CONFIG_NONBANDEDMX;
+
+    if(esl_opt_GetBoolean(go, "-l")) { 
+      cm->config_opts |= CM_CONFIG_LOCAL;
+      cm->config_opts |= CM_CONFIG_HMMLOCAL;
+      cm->config_opts |= CM_CONFIG_HMMEL;
+    }
   }
 
   /* finally, configure the model */
@@ -1569,39 +1735,39 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
   lmsvL = lvitL = 200;
   lfwdL = 100;
   gfwdL = ESL_MAX(100, 2.*cm->clen);
-  lmsvN = esl_opt_GetInteger(go, "--exp-lmsvN");
-  lvitN = esl_opt_GetInteger(go, "--exp-lvitN");
-  lfwdN = esl_opt_GetInteger(go, "--exp-lfwdN");
-  gfwdN = esl_opt_GetInteger(go, "--exp-gfwdN");
-  lftailp = esl_opt_GetReal(go, "--exp-lftp");
-  gftailp = esl_opt_GetReal(go, "--exp-gftp");
+  lmsvN = esl_opt_GetInteger(go, "--EmN");
+  lvitN = esl_opt_GetInteger(go, "--EvN");
+  lfwdN = esl_opt_GetInteger(go, "--ElfN");
+  gfwdN = esl_opt_GetInteger(go, "--EgfN");
+  lftailp = esl_opt_GetReal(go, "--Elftp");
+  gftailp = esl_opt_GetReal(go, "--Egftp");
 
   /* now, modify if nec based on command-line options */
-  if(esl_opt_IsUsed(go, "--exp-lL")) { 
-    lmsvL = lvitL = lfwdL = esl_opt_GetInteger(go, "--exp-lL");
+  if(esl_opt_IsUsed(go, "--ElL")) { 
+    lmsvL = lvitL = lfwdL = esl_opt_GetInteger(go, "--ElL");
   }
-  else if(esl_opt_IsUsed(go, "--exp-lcmult")) { 
-    lmsvL = lvitL = lfwdL = esl_opt_GetReal(go, "--exp-lcmult") * cm->clen;
-  }
-
-  if(esl_opt_IsUsed(go, "--exp-gL")) { 
-    gfwdL = esl_opt_GetInteger(go, "--exp-gL");
-  }
-  else if(esl_opt_IsUsed(go, "--exp-gcmult")) { 
-    gfwdL = esl_opt_GetReal(go, "--exp-gcmult") * cm->clen;
+  else if(esl_opt_IsUsed(go, "--Elcmult")) { 
+    lmsvL = lvitL = lfwdL = esl_opt_GetReal(go, "--Elcmult") * cm->clen;
   }
 
-  if(esl_opt_GetBoolean(go, "--exp-fitlam")) { 
-    lmsvN = esl_opt_IsUsed(go, "--exp-lmsvN") ? esl_opt_GetInteger(go, "--exp-lmsvN") : 10000;
-    lvitN = esl_opt_IsUsed(go, "--exp-lvitN") ? esl_opt_GetInteger(go, "--exp-lvitN") : 10000;
-    lfwdN = esl_opt_IsUsed(go, "--exp-lfwdN") ? esl_opt_GetInteger(go, "--exp-lfwdN") : 10000;
-    gfwdN = esl_opt_IsUsed(go, "--exp-gfwdN") ? esl_opt_GetInteger(go, "--exp-gfwdN") : 10000;
-    lftailp = esl_opt_IsUsed(go, "--exp-lftp") ? esl_opt_GetReal(go, "--exp-lftp") : 0.01;
-    gftailp = esl_opt_IsUsed(go, "--exp-gftp") ? esl_opt_GetReal(go, "--exp-gftp") : 0.01;
+  if(esl_opt_IsUsed(go, "--EgL")) { 
+    gfwdL = esl_opt_GetInteger(go, "--EgL");
+  }
+  else if(esl_opt_IsUsed(go, "--Egcmult")) { 
+    gfwdL = esl_opt_GetReal(go, "--Egcmult") * cm->clen;
+  }
+
+  if(esl_opt_GetBoolean(go, "--Efitlam")) { 
+    lmsvN = esl_opt_IsUsed(go, "--EmN") ? esl_opt_GetInteger(go, "--EmN") : 10000;
+    lvitN = esl_opt_IsUsed(go, "--EvN") ? esl_opt_GetInteger(go, "--EvN") : 10000;
+    lfwdN = esl_opt_IsUsed(go, "--ElfN") ? esl_opt_GetInteger(go, "--ElfN") : 10000;
+    gfwdN = esl_opt_IsUsed(go, "--EgfN") ? esl_opt_GetInteger(go, "--EgfN") : 10000;
+    lftailp = esl_opt_IsUsed(go, "--Elftp") ? esl_opt_GetReal(go, "--Elftp") : 0.01;
+    gftailp = esl_opt_IsUsed(go, "--Egftp") ? esl_opt_GetReal(go, "--Egftp") : 0.01;
   }
 
   /* Build the HMM filter (cm->fp7) */
-  if(esl_opt_GetBoolean(go, "--p7-ml")) {
+  if(esl_opt_GetBoolean(go, "--p7ml")) {
     /* use the ML p7 HMM as the HMM filter */
     fhmm = cm->mlp7;
   }
@@ -1609,7 +1775,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
     /* Default strategy: 
      * 
      * Build a p7 HMM <fhmm> with p7_builder with entropy weighting
-     * and rel ent target of <x> from (--p7-ere <x>). Then _overwrite_
+     * and rel ent target of <x> from (--p7ere <x>). Then _overwrite_
      * it's emission probabilities with marginalized emission
      * probabilities from a temporary CM built such that it's ML p7
      * HMM has mean match state entropy the same as <fhmm>.
@@ -1619,7 +1785,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
      * revealed that HMMs built with H3 transitions and emissions from
      * a marginalized CM are the best for filtering.
      * 
-     * The --p7-hemit option makes it so HMMER emissions are used instead
+     * The --p7hemit option makes it so HMMER emissions are used instead
      * of the marginalized CM emissions.
      *
      * NOTE: We could avoid this if we had a way or using Infernal's
@@ -1648,12 +1814,11 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
     if ((status = p7_Builder(cfg->fp7_bld, amsa, cfg->fp7_bg, &fhmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->fp7_bld->errbuf); return status; }
     esl_msa_Destroy(amsa); 
 
-    if(! esl_opt_GetBoolean(go, "--p7-hemit")) { 
-      /* Overwrite the emission probabilities of the HMM
-       * with emissions from a ML HMM built from a CM.
-       * First, build the CM, it will have the same HMM
-       * mean match state entropy as the fhmm we just 
-       * built.
+    if(! esl_opt_GetBoolean(go, "--p7hemit")) { 
+      /* Overwrite the emission probabilities of the HMM with
+       * emissions from a ML HMM built from a CM.  First, build the
+       * CM, it will have the same HMM mean match state entropy as the
+       * fhmm we just built.
        */
       if ((status =  build_model(go, cfg, errbuf, FALSE, msa, &acm, NULL, NULL)) != eslOK) return status;
       fhmm_re = p7_MeanMatchRelativeEntropy(fhmm, cfg->fp7_bg);
@@ -1669,7 +1834,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
        * lengths >> W (more than 2*W commonly).
        * configure_model() will build the mlp7 HMM.
        */
-      if((status = configure_model(go, cfg, errbuf, acm, 1)) != eslOK) return status;
+      if((status = configure_model(go, cfg, errbuf, acm, 2)) != eslOK) return status;
 
       /* copy the ML p7 emission probs from the CM we just built */
       /* match emissions: copy, then normalize (norm should be unnec actually) */
@@ -1684,6 +1849,8 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
       for (k = 0; k <= fhmm->M; k++) esl_vec_FNorm(fhmm->ins[k], fhmm->abc->K);
       /* reset HMM composition */
       if ((status = p7_hmm_SetComposition(fhmm)) != eslOK) goto ERROR;
+      fhmm->eff_nseq = acm->eff_nseq;
+
       FreeCM(acm);
     }
   }
@@ -2443,8 +2610,8 @@ write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
   if(esl_opt_GetBoolean(go, "--gibbs")) {
     if(cfg->r == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r is NULL but --gibbs enabled, shouldn't happen.");
     seed = esl_randomness_GetSeed(cfg->r);
-    if( esl_opt_IsUsed(go, "-s")) { /* -s was enabled with --gibbs, we'll do a sanity check */
-      if(seed != esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r's seed is %" PRIu32 ", but -s was enabled with argument: %" PRIu32 "!, this shouldn't happen.", seed, esl_opt_GetInteger(go, "-s"));
+    if( esl_opt_IsUsed(go, "--seed")) { /* --seed was enabled with --gibbs, we'll do a sanity check */
+      if(seed != esl_opt_GetInteger(go, "--seed")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r's seed is %" PRIu32 ", but -s was enabled with argument: %" PRIu32 "!, this shouldn't happen.", seed, esl_opt_GetInteger(go, "--seed"));
     } else {
       temp = seed; 
       seedlen = 1; 
@@ -2506,23 +2673,6 @@ flatten_insert_emissions(CM_t *cm)
       esl_vec_FCopy(cm->null, cm->abc->K, cm->e[v]); /* overwrite first cm->abc->K values (rest are irrelevant for non-MP states) with cm->null */
     }
   }
-  return eslOK;
-}
-
-/* Function: print_run_info
- * Date:     EPN, Fri Feb 29 09:58:21 2008
- *
- * Purpose:  Print information on this run of cmbuild.
- *           Command used to run it, and execution date.
- *
- * Returns:  eslOK on success
- */
-static int
-print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
-{
-  fprintf(stdout, "%-10s %s\n",  "# command:", cfg->comlog->bcom);
-  fprintf(stdout, "%-10s %s\n",  "# date:",    cfg->comlog->bdate);
-  fprintf(stdout, "#\n");
   return eslOK;
 }
 
@@ -2776,3 +2926,7 @@ P7_PRIOR *cm_p7_prior_CreateNucleic(void)
   if (pri != NULL) p7_prior_Destroy(pri);
   return NULL;
 }
+
+/*****************************************************************
+ * @LICENSE@
+ *****************************************************************/

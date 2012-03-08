@@ -68,15 +68,16 @@ typedef struct {
 #define CPUOPTS     "--mpi,--forecast,--memreq"
 #define MPIOPTS     "--cpu,--forecast,--memreq"
 #else
-#define CPUOPTS     "--forecast,--memreq"
-#define MPIOPTS     "--forecast,--memreq"
+#define CPUOPTS "--forecast,--memreq"
+#define MPIOPTS "--forecast,--memreq"
 #endif
 
 static ESL_OPTIONS options[] = {
   /* name                  type   default   env        range      toggles      reqs       incomp  help  docgroup*/
   { "-h",           eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "show brief help on version and usage",   1 },
   { "-L",           eslARG_REAL,    "1.6",  NULL,"0.01<=x<=100.", NULL,        NULL,        NULL, "set random seq length to search in Mb to <x>", 1 },
-  { "--forecast",   eslARG_INT,     NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "don't do calibration, forecast running time with <n> processors", 1 },
+  { "--forecast",   eslARG_NONE,    NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "don't do calibration, predict running time and exit", 1},
+  { "--nforecast",  eslARG_INT,     NULL,   NULL,     "n>0",      NULL,"--forecast",        NULL, "w/--forecast, predict time with <n> processors (maybe for MPI)", 1},
   { "--memreq",     eslARG_NONE,    NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "don't do calibration, print required memory and exit", 1 },
   { "--seed",       eslARG_INT,     "181",  NULL,      "n>=0",    NULL,        NULL,        NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)", 1 },
   { "--beta",       eslARG_REAL,    "1E-15",NULL,      "x>0",     NULL,        NULL,"--nonbanded","set tail loss prob for query dependent banding (QDB) to <x>", 1 },
@@ -169,7 +170,26 @@ static char banner[] = "fit exponential tails for CM E-values";
 static void serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  serial_loop  (WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block);
 
+#ifdef HMMER_THREADS
+#define BLOCK_SIZE 150
+static int  thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQ_BLOCK *sq_block);
+static void pipeline_thread(void *arg);
+#endif /*HMMER_THREADS*/
+
+#ifdef HAVE_MPI
+static int  mpi_master   (ESL_GETOPTS *go, struct cfg_s *cfg);
+static int  mpi_worker   (ESL_GETOPTS *go, struct cfg_s *cfg);
+static void mpi_failure  (char *format, ...);
+#define INFERNAL_ERROR_TAG          1
+#define INFERNAL_SEQIDX_TAG         2
+#define INFERNAL_SCORES_TAG         3
+#define INFERNAL_TERMINATING_TAG    4
+#define INFERNAL_READY_TAG          5
+#endif /*HAVE_MPI*/
+
 /* Functions to avoid code duplication for common tasks */
+static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile);
+static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpus);
 static int  init_master_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  init_shared_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  initialize_cm   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int do_local);
@@ -179,83 +199,607 @@ static int  get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int 
 static int  get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  update_comlog(const ESL_GETOPTS *go, char *errbuf, char *ccom, char *cdate, CM_t *cm);
 static int  set_dnull(struct cfg_s *cfg, CM_t *cm, char *errbuf);
-static int  process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, CM_TOPHITS **ret_th);
-static int  generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block);
-static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile);
-static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile);
-static int  forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, double *ret_psec, int *ret_ins_v_cyk);
-static void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header);
-static void print_required_memory_tail(int ncpus);
-static void print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static void print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int available_ncpus);
 static void print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec);
 static void print_total_time(const ESL_GETOPTS *go, double total_asec, double total_psec);
 static void print_summary(const struct cfg_s *cfg);
 static int  expand_exp_and_name_arrays(struct cfg_s *cfg);
+static int  generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block);
+static int  process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, CM_TOPHITS **ret_th);
+static int  forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int available_ncpus, double *ret_psec, int *ret_ins_v_cyk);
+static void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header);
+static void print_required_memory_tail(int ncpus);
 
-#ifdef HMMER_THREADS
-#define BLOCK_SIZE 150
-
-static int  thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQ_BLOCK *sq_block);
-static void pipeline_thread(void *arg);
-#endif /*HMMER_THREADS*/
-
-#ifdef HAVE_MPI
-static int  mpi_master   (ESL_GETOPTS *go, struct cfg_s *cfg);
-static int  mpi_worker   (ESL_GETOPTS *go, struct cfg_s *cfg);
-#endif /*HAVE_MPI*/
-
-
-#ifdef HAVE_MPI
-
-/* Define common tags used by the MPI master/slave processes */
-#define INFERNAL_ERROR_TAG          1
-#define INFERNAL_SEQIDX_TAG         2
-#define INFERNAL_SCORES_TAG         3
-#define INFERNAL_TERMINATING_TAG    4
-#define INFERNAL_READY_TAG          5
-
-/* mpi_failure()
- * Generate an error message.  If the clients rank is not 0, a
- * message is created with the error message and sent to the
- * master process for handling.
- */
-static void
-mpi_failure(char *format, ...)
+int
+main(int argc, char **argv)
 {
-  va_list  argp;
-  int      status = eslFAIL;
-  int      len;
-  int      rank;
-  char     str[512];
+  int              status   = eslOK;
 
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  ESL_GETOPTS     *go  = NULL;    /* command line processing                 */
+  struct cfg_s     cfg;           /* configuration data                      */
+  char             errbuf[eslERRBUFSIZE];
+  int              i;
+  ESL_STOPWATCH   *w  = esl_stopwatch_Create();
+  if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
+  esl_stopwatch_Start(w);
+  
+  /* Set processor specific flags */
+  impl_Init();
 
-  /* format the error mesg */
-  va_start(argp, format);
-  len = vsnprintf(str, sizeof(str), format, argp);
-  va_end(argp);
+  /* Initialize what we can in the config structure (without knowing the alphabet yet)
+   */
+  cfg.cmfile       = NULL;
+  cfg.do_mpi       = FALSE;               /* this gets reset below, if we init MPI */
+  cfg.nproc        = 0;                   /* this gets reset below, if we init MPI */
+  cfg.my_rank      = 0;                   /* this gets reset below, if we init MPI */
+  cfg.r            = NULL; 
+  cfg.abc          = NULL; 
+  cfg.w            = NULL; 
+  cfg.cmalloc      = 128;
+  cfg.tmpfile      = NULL;
+  cfg.mode         = NULL;
+  cfg.dnull        = NULL;
+  cfg.gc_freq      = NULL;
+  cfg.ghmm_nstates = 0;
+  cfg.ghmm_sA      = NULL;
+  cfg.ghmm_tAA     = NULL;
+  cfg.ghmm_eAA     = NULL;
+  cfg.ncm          = 0;
+  cfg.ccom         = NULL; /* created in get_cmcalibrate_comlog_info() for masters, stays NULL in workers */
+  cfg.cdate        = NULL; /* created in get_cmcalibrate_comlog_info() for masters, stays NULL in workers */
+  cfg.L            = EXPTAIL_CHUNKLEN; /* 10 Kb chunks are searched */
+  cfg.N            = 0;    /* gets set below, after go is setup */
+  cfg.cmfp         = NULL; /* remains NULL for mpi workers */
+  cfg.hfp          = NULL; /* remains NULL for mpi workers */
+  cfg.sfp          = NULL; /* remains NULL for mpi workers */
+  cfg.qfp          = NULL; /* remains NULL for mpi workers */
+  cfg.ffp          = NULL; /* remains NULL for mpi workers */
+  cfg.xfp          = NULL; /* remains NULL for mpi workers */
 
-  /* make sure the error string is terminated */
-  str[sizeof(str)-1] = '\0';
+  ESL_ALLOC(cfg.expAA,  sizeof(ExpInfo_t **) * cfg.cmalloc); /* this will grow if needed */
+  ESL_ALLOC(cfg.namesA, sizeof(char       *) * cfg.cmalloc); /* this will grow if needed */
+  for(i = 0; i < cfg.cmalloc; i++) cfg.namesA[i] = NULL; 
 
-  /* if the caller is the master, print the results and abort */
-  if (rank == 0)
+  ESL_DASSERT1((EXP_CM_GC  == 0));
+  ESL_DASSERT1((EXP_CM_GI  == 1));
+  ESL_DASSERT1((EXP_CM_LC  == 2));
+  ESL_DASSERT1((EXP_CM_LI  == 3));
+  ESL_DASSERT1((EXP_NMODES == 4));
+
+  /* Initializations */
+  init_ilogsum();
+  FLogsumInit();
+  process_commandline(argc, argv, &go, &(cfg.cmfile));
+  cfg.N = (int) (((esl_opt_GetReal(go, "-L") * 1000000.) / (float) cfg.L) + 0.5);
+
+  /* Figure out who we are, and send control there: 
+   * we might be an MPI master, an MPI worker, or a serial program.
+   */
+#ifdef HAVE_MPI
+
+  /* TEMP */
+  pid_t pid;
+  /* get the process id */
+  pid = getpid();
+  printf("The process id is %d\n", pid);
+  fflush(stdout);
+  /* TEMP */
+
+  /* pause the execution of the programs execution until the user has a
+   * chance to attach with a debugger and send a signal to resume execution
+   * i.e. (gdb) signal SIGCONT
+   */
+  if (esl_opt_GetBoolean(go, "--stall")) pause();
+
+  if (esl_opt_GetBoolean(go, "--mpi")) 
     {
-      fprintf(stderr, "\nError: ");
-      fprintf(stderr, "%s", str);
-      fprintf(stderr, "\n");
-      fflush(stderr);
+      cfg.do_mpi     = TRUE;
+      MPI_Init(&argc, &argv);
+      MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
+      MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
 
-      MPI_Abort(MPI_COMM_WORLD, status);
-      exit(1);
+      if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you execute mpirun?)");
+
+      if (cfg.my_rank > 0)  status = mpi_worker(go, &cfg);
+      else 		    status = mpi_master(go, &cfg);
+
+      MPI_Finalize();
     }
   else
+#endif /*HAVE_MPI*/
     {
-      MPI_Send(str, len, MPI_CHAR, 0, INFERNAL_ERROR_TAG, MPI_COMM_WORLD);
-      pause();
+      serial_master(go, &cfg);
     }
+
+  if(cfg.my_rank == 0 && (! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq"))) { /* master, serial or mpi */
+    /* before writing new CM file, output summary statistics (this requires cfg->expAA) */
+    print_summary(&cfg);
+
+    /* Rewind the CM file for a second pass.
+     * Write a temporary CM file with new stats information in it
+     */
+    int   status;
+    int   cmi;
+    CM_t *cm;
+    FILE *outfp;
+    sigset_t blocksigs;  /* list of signals to protect from */
+
+    cm_file_Position(cfg.cmfp, (off_t) 0);
+
+    if (esl_FileExists(cfg.tmpfile))                    cm_Fail("Ouch. Temporary file %s appeared during the run.", cfg.tmpfile);
+    if ((outfp = fopen(cfg.tmpfile, cfg.mode)) == NULL) cm_Fail("Ouch. Temporary file %s couldn't be opened for writing.", cfg.tmpfile); 
+    
+    for (cmi = 0; cmi < cfg.ncm; cmi++) {
+      if ((status = cm_file_Read(cfg.cmfp, TRUE, &(cfg.abc), &cm)) != eslOK) cm_Fail("Ran out of CMs too early in pass 2");
+      if (cm == NULL)                                                        cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
+
+      /* update the cm->comlog info */
+      if((status = update_comlog(go, errbuf, cfg.ccom, cfg.cdate, cm)) != eslOK) cm_Fail(errbuf);
+	
+      if(cm->expA != NULL) { 
+	for(i = 0; i < EXP_NMODES; i++)  free(cm->expA[i]); free(cm->expA);
+      }
+      ESL_ALLOC(cm->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
+
+      cm->expA   = cfg.expAA[cmi];
+      cm->flags |= CMH_EXPTAIL_STATS; 
+      if(cfg.cmfp->is_binary) { 
+	if ((status = cm_file_WriteBinary(outfp, -1, cm, NULL)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
+      }
+      else { 
+	if ((status = cm_file_WriteASCII(outfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
+      }
+      FreeCM(cm);
+    } /* end of from idx = 0 to ncm */
+    
+    /* Now, carefully remove original file and replace it
+     * with the tmpfile. Note the protection from signals;
+     * we wouldn't want a user to ctrl-C just as we've deleted
+     * their CM file but before the new one is moved.
+     */
+    cm_file_Close(cfg.cmfp);
+    if (fclose(outfp)   != 0)                            cm_Fail("system error during rewrite of CM file");
+    if (sigemptyset(&blocksigs) != 0)                    cm_Fail("system error during rewrite of CM file.");
+    if (sigaddset(&blocksigs, SIGINT) != 0)              cm_Fail("system error during rewrite of CM file.");
+    if (sigprocmask(SIG_BLOCK, &blocksigs, NULL) != 0)   cm_Fail("system error during rewrite of CM file.");
+    if (remove(cfg.cmfile) != 0)                         cm_Fail("system error during rewrite of CM file.");
+    if (rename(cfg.tmpfile, cfg.cmfile) != 0)            cm_Fail("system error during rewrite of CM file.");
+    if (sigprocmask(SIG_UNBLOCK, &blocksigs, NULL) != 0) cm_Fail("system error during rewrite of CM file.");
+    free(cfg.tmpfile);
+    
+    /* master specific cleaning */
+    if (cfg.hfp   != NULL) { 
+      fclose(cfg.hfp);
+      printf("# Histogram of high scoring hits in random seqs saved to file %s.\n", esl_opt_GetString(go, "--hfile"));
+    }
+    if (cfg.sfp   != NULL) { 
+      fclose(cfg.sfp);
+      printf("# Survival plot for exponential tails saved to file %s.\n", esl_opt_GetString(go, "--sfile"));
+    }
+    if (cfg.qfp   != NULL) { 
+      fclose(cfg.qfp);
+      printf("# Exponential tail QQ plots saved to file %s.\n", esl_opt_GetString(go, "--qqfile"));
+    }
+    if (cfg.ffp   != NULL) { 
+      fclose(cfg.ffp);
+      printf("# Exponential tail fit points saved to file %s.\n", esl_opt_GetString(go, "--ffile"));
+    }
+    if (cfg.xfp   != NULL) { 
+      fclose(cfg.xfp);
+      printf("# Scores from tail fits saved to file %s.\n", esl_opt_GetString(go, "--xfile"));
+    }
+
+    if (cfg.ccom   != NULL) free(cfg.ccom);
+    if (cfg.cdate  != NULL) free(cfg.cdate);
+    if (cfg.expAA  != NULL) free(cfg.expAA);
+    if (cfg.namesA != NULL) { for(i = 0; i < cfg.ncm; i++) if(cfg.namesA[i] != NULL) free(cfg.namesA[i]); free(cfg.namesA); }
+  }
+
+  /* clean up */
+  if (cfg.abc   != NULL) esl_alphabet_Destroy(cfg.abc);
+  if (cfg.w     != NULL) esl_stopwatch_Destroy(cfg.w);
+  if (cfg.r     != NULL) esl_randomness_Destroy(cfg.r);
+  if (cfg.r_est != NULL) esl_randomness_Destroy(cfg.r_est);
+  esl_stopwatch_Stop(w);
+  if (cfg.my_rank == 0) { 
+    printf("#\n");
+    esl_stopwatch_Display(stdout, w, "# CPU time: ");
+  }
+  if(cfg.ghmm_eAA != NULL) { 
+    for(i = 0; i < cfg.ghmm_nstates; i++) free(cfg.ghmm_eAA[i]); 
+    free(cfg.ghmm_eAA);
+  }
+  if(cfg.ghmm_tAA != NULL) { 
+    for(i = 0; i < cfg.ghmm_nstates; i++) free(cfg.ghmm_tAA[i]); 
+    free(cfg.ghmm_tAA);
+  }
+  if(cfg.ghmm_sA != NULL) free(cfg.ghmm_sA);
+
+  esl_stopwatch_Destroy(w);
+  esl_getopts_Destroy(go);
+  return eslOK;
+
+ ERROR: 
+  cm_Fail("Memory allocation error.");
+  return status; /* NEVERREACHED */
 }
 
+/* serial_master()
+ * The serial version of cmcalibrate.
+ * 
+ * A master can only return if it's successful. All errors are handled immediately and fatally with cm_Fail().
+ */
+static void
+serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
+{
+  int      status;                /* Easel status */
+  int      qhstatus = eslOK;      /* status from cm_file_Read() */
+  char     errbuf[eslERRBUFSIZE];  /* for printing error messages */
+  CM_t    *cm    = NULL;          /* the CM */
+  CM_t    *nc_cm = NULL;          /* a non-configured copy of the CM */
+  int      i, h;                  /* counters */
+  int      cmi;                   /* CM index, which model we're working on */
+  char     time_buf[128];	  /* string for printing elapsed time (safely holds up to 10^14 years) */
+  int      exp_mode;              /* ctr over exp tail modes */
+  double   asec;                  /* actual    number of seconds for calibrating current CM */
+  double   psec;                  /* predicted number of seconds for calibrating current CM */
+  double   total_psec   = 0.;     /* predicted number of seconds for calibrating all CMs */
+  double   total_asec   = 0.;     /* actual    number of seconds for calibrating all CMs */
+  int      ncpus        = 0;      /* number of CPUs working */
+  int      nequals;               /* number of '=' to output to progress bar for this mode */
+  int64_t  merged_nhits = 0;      /* number of hits reported thus far, for all seqs */
+  float   *merged_scA = NULL;     /* [0..merged_nhits-1] hit scores for all seqs */
+  int      ins_v_cyk;             /* ratio of predicted inside versus cyk running time */
+  double   tmp_mu, tmp_lambda;    /* temporary mu and lambda used for setting exp tails */
+  int      tmp_nrandhits;         /* temporary number of rand hits found */
+  float    tmp_tailp;             /* temporary tail mass probability fit to an exponential */
+  int      available_ncpus = 1;   /* number of CPUs available */
+  ESL_SQ_BLOCK *sq_block  = NULL; /* block of sequences */
+
+  /* variables needed for threaded implementation */
+  WORKER_INFO     *info      = NULL; /* the worker info */
+  int              infocnt   = 0;    /* number of worker infos */
+#ifdef HMMER_THREADS
+  ESL_SQ          *sq        = NULL;
+  ESL_THREADS     *threadObj = NULL;
+  ESL_WORK_QUEUE  *queue     = NULL;
+#endif
+  
+  if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+
+#ifdef HMMER_THREADS
+  /* initialize thread data */
+  if      (esl_opt_IsUsed(go, "--forecast")) ncpus = 0;
+  else if (esl_opt_IsUsed(go, "--memreq"))   ncpus = 0;
+  else if (esl_opt_IsOn  (go, "--cpu"))      ncpus = esl_opt_GetInteger(go, "--cpu");
+  else                                       esl_threads_CPUCount(&ncpus);
+  if (ncpus > 0) {
+      threadObj = esl_threads_Create(&pipeline_thread);
+      queue = esl_workqueue_Create(ncpus * 2);
+  }
+  esl_threads_CPUCount(&available_ncpus);
+#endif
+
+  infocnt = (ncpus == 0) ? 1 : ncpus;
+  ESL_ALLOC(info, sizeof(WORKER_INFO) * infocnt);
+
+  /* <cfg->abc> is not known 'til first CM is read. Could be DNA or RNA*/
+  qhstatus = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
+
+  if (qhstatus == eslOK) {
+    /* One-time initializations after alphabet <abc> becomes known */
+    output_header(stdout, go, cfg->cmfile, available_ncpus);
+
+    if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
+    if((status = set_dnull(cfg, cm, errbuf)) != eslOK) cm_Fail("unable to create set_dnull\n%s\n", errbuf);
+    
+    for (i = 0; i < infocnt; ++i)    {
+      info[i].cm     = NULL;
+      info[i].scA    = NULL;
+      info[i].nhits  = 0;
+      info[i].cutoff = cfg->sc_cutoff;
+#ifdef HMMER_THREADS
+      info[i].queue  = queue;
+#endif
+    }
+
+#ifdef HMMER_THREADS    
+    for (i = 0; i < ncpus * 2; ++i) {
+      if((sq = esl_sq_Create()) == NULL)                     cm_Fail("Failed to allocate sequence");
+      if((status = esl_workqueue_Init(queue, sq))  != eslOK) cm_Fail("Failed to add sequence to work queue");
+    }
+#endif
+  }
+  
+  /* Outer loop: over each query CM in <cmfile>. */
+  while (qhstatus == eslOK) {
+    cfg->ncm++;
+    cmi = cfg->ncm-1;
+    if(cmi == 0 && (! esl_opt_IsUsed(go, "--memreq"))) print_calibration_column_headings(go, cfg, errbuf, cm, available_ncpus);
+    if((status = expand_exp_and_name_arrays(cfg))                              != eslOK) cm_Fail("out of memory");
+    if((status = esl_strdup(cm->name, -1, &(cfg->namesA[cmi])))                != eslOK) cm_Fail("unable to duplicate CM name");
+
+    /* clone the non-configured CM we just read, we'll come back to it when we switch from global to local */
+    if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) cm_Fail("unable to clone CM");
+    if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                    != eslOK) cm_Fail(errbuf);
+
+    if(esl_opt_IsUsed(go, "--memreq")) { /* special case: if --memreq, print required memory and skip to reading next CM */
+      print_required_memory(cm, cfg->L, cfg->N, available_ncpus, (cmi == 0) ? TRUE : FALSE);
+    }
+    else { /* normal case */
+      if((status = initialize_stats(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+      if((status = forecast_time(go, cfg, errbuf, cm, ncpus, available_ncpus, &psec, &ins_v_cyk)) != eslOK) cm_Fail(errbuf); 
+      total_psec += psec;
+      print_forecasted_time(go, cfg, errbuf, cm, psec);
+      
+      if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block))           != eslOK) cm_Fail(errbuf);
+      
+      if(! esl_opt_IsUsed(go, "--forecast")) { 
+	esl_stopwatch_Start(cfg->w);
+	for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
+	  /* do we need to switch from global configuration to local? */
+	  if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
+	    /* switch from global to local by copying the current exptail stats from <cm>
+	     * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
+	     * way because as a rule we don't allow reconfiguration of CMs (to limit
+	     * execution paths through configuration functions)
+	     */
+	    FreeCM(cm);
+	    cm = nc_cm;
+	    if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) cm_Fail(errbuf);
+	  }
+	  /* set search_opts and determine how many '=' to print to status bar for this mode, 
+	   * there is space for 20 '=' for glocal (cyk + ins) and 20 '=' for local (cyk + ins)
+	   */
+	  if(ExpModeIsInside(exp_mode)) { 
+	    cm->search_opts |= CM_SEARCH_INSIDE; 
+	    nequals = 20 - (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
+	  }
+	  else { 
+	    cm->search_opts &= ~CM_SEARCH_INSIDE; 
+	    nequals = (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
+	  }
+	  fflush(stdout);
+	  
+	  /* clone CM for each thread */
+	  for (i = 0; i < infocnt; ++i) {
+	    if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
+	    info[i].scA     = NULL;
+	    info[i].nhits   = 0;
+	    info[i].cutoff  = cfg->sc_cutoff;
+	    info[i].nequals = nequals;
+#ifdef HMMER_THREADS
+	    if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
+#endif
+	  }
+	  
+#ifdef HMMER_THREADS
+	  if (ncpus > 0)  status = thread_loop(info, errbuf, threadObj, queue, sq_block);
+	  else            status = serial_loop(info, errbuf, sq_block);
+#else
+	  status = serial_loop(info, errbuf, sq_block);
+#endif
+	  if(status != eslOK) cm_Fail(errbuf);
+	  
+	  merged_nhits = 0;
+	  if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
+	  for (i = 0; i < infocnt; ++i) {
+	    if(info[i].nhits > 0) { 
+	      ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + info[i].nhits)); /* this works even if merged_scA == NULL */
+	      for(h = 0; h < info[i].nhits; h++) merged_scA[(merged_nhits+h)] = info[i].scA[h];
+	      merged_nhits += info[i].nhits;
+	    }
+	  }
+	  
+	  if(cfg->ffp != NULL) { 
+	    fprintf(cfg->ffp, "# CM: %s\n", cm->name);
+	    fprintf(cfg->ffp, "# mode: %12s\n", DescribeExpMode(exp_mode));
+	  }
+	  if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
+	  SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (long) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
+	} /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
+	
+	esl_stopwatch_Stop(cfg->w);
+	FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
+	printf("]  %12s\n", time_buf);
+	fflush(stdout);
+	asec        = cfg->w->elapsed;
+	total_asec += cfg->w->elapsed;
+	
+      } /* end of if(! esl_opt_IsUsed(go, "--forecast")) */
+    } /* end of else, entered if (! esl_opt_IsUsed(go, "--memreq")) */
+    FreeCM(cm);
+    if(sq_block != NULL) esl_sq_DestroyBlock(sq_block);
+
+    fflush(stdout);
+
+    /* read the next CM */
+    qhstatus = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
+  } /* end of while(qhstatus == eslOK) */
+  if(qhstatus != eslEOF) cm_Fail(cfg->cmfp->errbuf);
+  
+  if(esl_opt_IsUsed(go, "--memreq")) print_required_memory_tail(available_ncpus);
+  else if(cfg->ncm > 1)              print_total_time(go, total_asec, total_psec);
+
+  return;
+      
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return;
+}
+
+/* serial_loop(): 
+ * 
+ * Search each sequence and collect scores of hits. 
+ */
+static int
+serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
+{
+  int status;
+  CM_TOPHITS *th = NULL;
+  int  i, h;             /* counters */
+  int  equalidx; /* when i reaches this, we updated progress bar by printing a '=' */
+  int  equalcnt; /* number of sequences that need to be searched to warrant a '=' */
+  int  nprinted = 0; /* number of equals printed thus far */
+
+  /* reinitialize array of hit scores */
+  info->nhits = 0;
+  if(info->scA != NULL) free(info->scA);
+
+  /* determine how many sequences we need to complete to print a '=' to progress bar */
+  equalcnt = (int) (((float) sq_block->count / (float) info->nequals) + 0.9999999);
+  equalcnt = ESL_MAX(equalcnt, 1);
+  equalidx = equalcnt;
+
+  for(i = 0; i < sq_block->count; i++) { 
+    if((status = process_search_workunit(info->cm, errbuf, sq_block->list[i].dsq, sq_block->list[i].L, info->cutoff, &th)) != eslOK) cm_Fail(errbuf);
+    /* append copy of hit scores to scA */
+    if(th->N > 0) { 
+      ESL_REALLOC(info->scA, sizeof(float) * (info->nhits + th->N)); /* this works even if info->scA == NULL */
+      for(h = 0; h < th->N; h++) info->scA[(info->nhits+h)] = th->unsrt[h].score;
+      info->nhits += th->N;
+    }
+    cm_tophits_Destroy(th);
+    if ((i+1) == equalidx) { 
+      putchar('='); 
+      fflush(stdout);
+      nprinted++;
+      equalidx += equalcnt; 
+    }
+  }
+  while(nprinted < info->nequals) { putchar('='); fflush(stdout); nprinted++; } 
+
+  return eslOK;
+  
+ ERROR: 
+  ESL_FAIL(status, errbuf, "out of memory");
+  return status; /* NEVERREACHED */
+}
+ 
+#ifdef HMMER_THREADS
+static int
+thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQ_BLOCK *sq_block)
+{
+  int     status   = eslOK;
+  ESL_SQ *sq       = NULL;
+  void   *new_sq   = NULL;
+  ESL_SQ *empty_sq = NULL;
+  int     nworkers = esl_threads_GetWorkerCount(obj);
+  int     i, j;       
+  int     equalidx; /* when i reaches this, we updated progress bar by printing a '=' */
+  int     equalcnt; /* number of sequences that need to be searched to warrant a '=' */
+  int     nprinted = 0; /* number of equals printed thus far */
+
+  esl_workqueue_Reset(queue);
+  esl_threads_WaitForStart(obj);
+
+  /* determine how many sequences we need to complete to print a '=' to progress bar */
+  equalcnt = (int) (((float) sq_block->count / (float) info->nequals) + 0.9999999);
+  equalcnt = ESL_MAX(equalcnt, 1);
+  equalidx = equalcnt;
+
+  status = esl_workqueue_ReaderUpdate(queue, NULL, &new_sq);
+  if (status != eslOK) cm_Fail("Work queue reader failed");
+
+  /* Main loop: */
+  for(i = 0; i < sq_block->count; i++) { 
+    sq = (ESL_SQ *) new_sq;
+    sq = sq_block->list + i;
+    status = esl_workqueue_ReaderUpdate(queue, sq, &new_sq);
+    if (status != eslOK) cm_Fail("Work queue reader failed");
+    if ((i+1) == equalidx) { 
+      putchar('='); 
+      fflush(stdout);
+      nprinted++;
+      equalidx += equalcnt; 
+    }
+  }
+  while(nprinted < info->nequals) { putchar('='); fflush(stdout); nprinted++; } 
+
+  /* now send a empty sq to all workers signaling them to stop */
+  empty_sq = esl_sq_Create();
+  for(j = 0; j < nworkers; j++) { 
+    status = esl_workqueue_ReaderUpdate(queue, empty_sq, &new_sq);
+    if (status != eslOK) cm_Fail("Work queue reader failed");
+  }
+
+  status = esl_workqueue_ReaderUpdate(queue, sq, NULL);
+
+  /* wait for all the threads to complete */
+  esl_threads_WaitForFinish(obj);
+  esl_workqueue_Complete(queue);  
+
+  esl_sq_Destroy(empty_sq);
+  return status;
+}
+
+/* pipeline_thread()
+ * 
+ * Receive a sequence from the master, search it
+ * with the CM, and add scores of hits to info->scA.
+ */
+
+static void 
+pipeline_thread(void *arg)
+{
+  int          status;
+  int          workeridx;
+  WORKER_INFO *info;
+  ESL_THREADS *obj;
+  ESL_SQ      *sq = NULL;
+  void        *new_sq;
+  int          h;
+  CM_TOPHITS  *th = NULL;
+  char         errbuf[eslERRBUFSIZE];
+  
+#ifdef HAVE_FLUSH_ZERO_MODE
+  /* In order to avoid the performance penalty dealing with sub-normal
+   * values in the floating point calculations, set the processor flag
+   * so sub-normals are "flushed" immediately to zero.
+   * On OS X, need to reset this flag for each thread
+   * (see TW notes 05/08/10 for details)
+   */
+  _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+#endif
+
+  obj = (ESL_THREADS *) arg;
+  esl_threads_Started(obj, &workeridx);
+
+  info = (WORKER_INFO *) esl_threads_GetData(obj, workeridx);
+
+  status = esl_workqueue_WorkerUpdate(info->queue, NULL, &new_sq);
+  if (status != eslOK) cm_Fail("Work queue worker failed");
+
+  /* loop until all sequences have been processed */
+  sq = (ESL_SQ *) new_sq;
+  while (sq->L != -1) { 
+    if((status = process_search_workunit(info->cm, errbuf, sq->dsq, sq->L, info->cutoff, &th)) != eslOK) cm_Fail(errbuf);
+    /* append copy of hit scores to scA */
+    if(th->N > 0) { 
+      ESL_REALLOC(info->scA, sizeof(float) * (info->nhits + th->N)); /* this works even if info->scA == NULL */
+      for(h = 0; h < th->N; h++) info->scA[(info->nhits+h)] = th->unsrt[h].score;
+      info->nhits += th->N;
+    }
+    cm_tophits_Destroy(th);
+
+    status = esl_workqueue_WorkerUpdate(info->queue, sq, &new_sq);
+    if (status != eslOK) cm_Fail("Work queue worker failed");
+    sq = (ESL_SQ *) new_sq;
+  }
+
+  status = esl_workqueue_WorkerUpdate(info->queue, sq, NULL);
+  if (status != eslOK) cm_Fail("Work queue worker failed");
+
+  esl_threads_Finished(obj, workeridx);
+  return;
+
+ ERROR: 
+  cm_Fail("out of memory");
+  return;  /* NEVERREACHED */
+}
+#endif   /* HMMER_THREADS */
+
+#ifdef HAVE_MPI
 /* mpi_master()
  * The MPI version of cmcalibrate.
  * Follows standard pattern for a master/worker load-balanced MPI program 
@@ -343,8 +887,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                           != eslOK) mpi_failure(errbuf);
     if((status = initialize_stats(go, cfg, errbuf))                                   != eslOK) mpi_failure(errbuf);
 
-    if(cmi == 0) print_calibration_column_headings(go, cfg, errbuf, cm);
-    if((status = forecast_time(go, cfg, errbuf, cm, cfg->nproc-1, &psec, &ins_v_cyk)) != eslOK) mpi_failure(errbuf); 
+    if(cmi == 0) print_calibration_column_headings(go, cfg, errbuf, cm, 1); /* 1 is irrelevant here, since --forecast can't have been enabled */
+    if((status = forecast_time(go, cfg, errbuf, cm, cfg->nproc-1, 1, &psec, &ins_v_cyk)) != eslOK) mpi_failure(errbuf); 
     total_psec += psec;
     print_forecasted_time(go, cfg, errbuf, cm, psec);
 
@@ -679,7 +1223,50 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   mpi_failure("Memory allocation error.");
   return eslEMEM;
 }
+
+/* mpi_failure()
+ * Generate an error message.  If the clients rank is not 0, a
+ * message is created with the error message and sent to the
+ * master process for handling.
+ */
+static void
+mpi_failure(char *format, ...)
+{
+  va_list  argp;
+  int      status = eslFAIL;
+  int      len;
+  int      rank;
+  char     str[512];
+
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  /* format the error mesg */
+  va_start(argp, format);
+  len = vsnprintf(str, sizeof(str), format, argp);
+  va_end(argp);
+
+  /* make sure the error string is terminated */
+  str[sizeof(str)-1] = '\0';
+
+  /* if the caller is the master, print the results and abort */
+  if (rank == 0)
+    {
+      fprintf(stderr, "\nError: ");
+      fprintf(stderr, "%s", str);
+      fprintf(stderr, "\n");
+      fflush(stderr);
+
+      MPI_Abort(MPI_COMM_WORLD, status);
+      exit(1);
+    }
+  else
+    {
+      MPI_Send(str, len, MPI_CHAR, 0, INFERNAL_ERROR_TAG, MPI_COMM_WORLD);
+      pause();
+    }
+}
 #endif /*HAVE_MPI*/
+
 
 static void
 process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile)
@@ -721,12 +1308,12 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 }
 
 static int
-output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile)
+output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpus)
 {
   cm_banner(ofp, go->argv[0], banner);
   
                                                fprintf(ofp, "# CM file:                                     %s\n", cmfile);
-  if (esl_opt_IsUsed(go, "--forecast"))  {     fprintf(ofp, "# forecast mode (no calibration):              on (%d CPUs)\n",  esl_opt_GetInteger(go, "--forecast")); }
+  if(esl_opt_IsUsed(go, "--forecast"))   {     fprintf(ofp, "# forecast mode (no calibration):              on (%d CPUs)\n", (esl_opt_IsUsed(go, "--nforecast")) ? esl_opt_GetInteger(go, "--nforecast") : available_ncpus); }
   if (esl_opt_IsUsed(go, "--memreq"))    {     fprintf(ofp, "# memory-requirement mode (no calibration):    on\n"); }
   if (esl_opt_IsUsed(go, "--seed"))      {
     if (esl_opt_GetInteger(go, "--seed") == 0) fprintf(ofp, "# random number seed:                          one-time arbitrary\n");
@@ -757,219 +1344,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile)
   return eslOK;
 }
 
-int
-main(int argc, char **argv)
-{
-  int              status   = eslOK;
-
-  ESL_GETOPTS     *go  = NULL;    /* command line processing                 */
-  struct cfg_s     cfg;           /* configuration data                      */
-  char             errbuf[eslERRBUFSIZE];
-  int              i;
-  ESL_STOPWATCH   *w  = esl_stopwatch_Create();
-  if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
-  esl_stopwatch_Start(w);
-  
-  /* Set processor specific flags */
-  impl_Init();
-
-  /* Initialize what we can in the config structure (without knowing the alphabet yet)
-   */
-  cfg.cmfile       = NULL;
-  cfg.do_mpi       = FALSE;               /* this gets reset below, if we init MPI */
-  cfg.nproc        = 0;                   /* this gets reset below, if we init MPI */
-  cfg.my_rank      = 0;                   /* this gets reset below, if we init MPI */
-  cfg.r            = NULL; 
-  cfg.abc          = NULL; 
-  cfg.w            = NULL; 
-  cfg.cmalloc      = 128;
-  cfg.tmpfile      = NULL;
-  cfg.mode         = NULL;
-  cfg.dnull        = NULL;
-  cfg.gc_freq      = NULL;
-  cfg.ghmm_nstates = 0;
-  cfg.ghmm_sA      = NULL;
-  cfg.ghmm_tAA     = NULL;
-  cfg.ghmm_eAA     = NULL;
-  cfg.ncm          = 0;
-  cfg.ccom         = NULL; /* created in get_cmcalibrate_comlog_info() for masters, stays NULL in workers */
-  cfg.cdate        = NULL; /* created in get_cmcalibrate_comlog_info() for masters, stays NULL in workers */
-  cfg.L            = EXPTAIL_CHUNKLEN; /* 10 Kb chunks are searched */
-  cfg.N            = 0;    /* gets set below, after go is setup */
-  cfg.cmfp         = NULL; /* remains NULL for mpi workers */
-  cfg.hfp          = NULL; /* remains NULL for mpi workers */
-  cfg.sfp          = NULL; /* remains NULL for mpi workers */
-  cfg.qfp          = NULL; /* remains NULL for mpi workers */
-  cfg.ffp          = NULL; /* remains NULL for mpi workers */
-  cfg.xfp          = NULL; /* remains NULL for mpi workers */
-
-  ESL_ALLOC(cfg.expAA,  sizeof(ExpInfo_t **) * cfg.cmalloc); /* this will grow if needed */
-  ESL_ALLOC(cfg.namesA, sizeof(char       *) * cfg.cmalloc); /* this will grow if needed */
-  for(i = 0; i < cfg.cmalloc; i++) cfg.namesA[i] = NULL; 
-
-  ESL_DASSERT1((EXP_CM_GC  == 0));
-  ESL_DASSERT1((EXP_CM_GI  == 1));
-  ESL_DASSERT1((EXP_CM_LC  == 2));
-  ESL_DASSERT1((EXP_CM_LI  == 3));
-  ESL_DASSERT1((EXP_NMODES == 4));
-
-  /* Initializations */
-  init_ilogsum();
-  FLogsumInit();
-  process_commandline(argc, argv, &go, &(cfg.cmfile));
-  cfg.N = (int) (((esl_opt_GetReal(go, "-L") * 1000000.) / (float) cfg.L) + 0.5);
-
-  /* Figure out who we are, and send control there: 
-   * we might be an MPI master, an MPI worker, or a serial program.
-   */
-#ifdef HAVE_MPI
-
-  /* TEMP */
-  pid_t pid;
-  /* get the process id */
-  pid = getpid();
-  printf("The process id is %d\n", pid);
-  fflush(stdout);
-  /* TEMP */
-
-  /* pause the execution of the programs execution until the user has a
-   * chance to attach with a debugger and send a signal to resume execution
-   * i.e. (gdb) signal SIGCONT
-   */
-  if (esl_opt_GetBoolean(go, "--stall")) pause();
-
-  if (esl_opt_GetBoolean(go, "--mpi")) 
-    {
-      cfg.do_mpi     = TRUE;
-      MPI_Init(&argc, &argv);
-      MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
-      MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
-
-      if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you execute mpirun?)");
-
-      if (cfg.my_rank > 0)  status = mpi_worker(go, &cfg);
-      else 		    status = mpi_master(go, &cfg);
-
-      MPI_Finalize();
-    }
-  else
-#endif /*HAVE_MPI*/
-    {
-      serial_master(go, &cfg);
-    }
-
-  if(cfg.my_rank == 0 && (! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq"))) { /* master, serial or mpi */
-    /* before writing new CM file, output summary statistics (this requires cfg->expAA) */
-    print_summary(&cfg);
-
-    /* Rewind the CM file for a second pass.
-     * Write a temporary CM file with new stats information in it
-     */
-    int   status;
-    int   cmi;
-    CM_t *cm;
-    FILE *outfp;
-    sigset_t blocksigs;  /* list of signals to protect from */
-
-    cm_file_Position(cfg.cmfp, (off_t) 0);
-
-    if (esl_FileExists(cfg.tmpfile))                    cm_Fail("Ouch. Temporary file %s appeared during the run.", cfg.tmpfile);
-    if ((outfp = fopen(cfg.tmpfile, cfg.mode)) == NULL) cm_Fail("Ouch. Temporary file %s couldn't be opened for writing.", cfg.tmpfile); 
-    
-    for (cmi = 0; cmi < cfg.ncm; cmi++) {
-      if ((status = cm_file_Read(cfg.cmfp, TRUE, &(cfg.abc), &cm)) != eslOK) cm_Fail("Ran out of CMs too early in pass 2");
-      if (cm == NULL)                                                        cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
-
-      /* update the cm->comlog info */
-      if((status = update_comlog(go, errbuf, cfg.ccom, cfg.cdate, cm)) != eslOK) cm_Fail(errbuf);
-	
-      if(cm->expA != NULL) { 
-	for(i = 0; i < EXP_NMODES; i++)  free(cm->expA[i]); free(cm->expA);
-      }
-      ESL_ALLOC(cm->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
-
-      cm->expA   = cfg.expAA[cmi];
-      cm->flags |= CMH_EXPTAIL_STATS; 
-      if(cfg.cmfp->is_binary) { 
-	if ((status = cm_file_WriteBinary(outfp, -1, cm, NULL)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
-      }
-      else { 
-	if ((status = cm_file_WriteASCII(outfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
-      }
-      FreeCM(cm);
-    } /* end of from idx = 0 to ncm */
-    
-    /* Now, carefully remove original file and replace it
-     * with the tmpfile. Note the protection from signals;
-     * we wouldn't want a user to ctrl-C just as we've deleted
-     * their CM file but before the new one is moved.
-     */
-    cm_file_Close(cfg.cmfp);
-    if (fclose(outfp)   != 0)                            cm_Fail("system error during rewrite of CM file");
-    if (sigemptyset(&blocksigs) != 0)                    cm_Fail("system error during rewrite of CM file.");
-    if (sigaddset(&blocksigs, SIGINT) != 0)              cm_Fail("system error during rewrite of CM file.");
-    if (sigprocmask(SIG_BLOCK, &blocksigs, NULL) != 0)   cm_Fail("system error during rewrite of CM file.");
-    if (remove(cfg.cmfile) != 0)                         cm_Fail("system error during rewrite of CM file.");
-    if (rename(cfg.tmpfile, cfg.cmfile) != 0)            cm_Fail("system error during rewrite of CM file.");
-    if (sigprocmask(SIG_UNBLOCK, &blocksigs, NULL) != 0) cm_Fail("system error during rewrite of CM file.");
-    free(cfg.tmpfile);
-    
-    /* master specific cleaning */
-    if (cfg.hfp   != NULL) { 
-      fclose(cfg.hfp);
-      printf("# Histogram of high scoring hits in random seqs saved to file %s.\n", esl_opt_GetString(go, "--hfile"));
-    }
-    if (cfg.sfp   != NULL) { 
-      fclose(cfg.sfp);
-      printf("# Survival plot for exponential tails saved to file %s.\n", esl_opt_GetString(go, "--sfile"));
-    }
-    if (cfg.qfp   != NULL) { 
-      fclose(cfg.qfp);
-      printf("# Exponential tail QQ plots saved to file %s.\n", esl_opt_GetString(go, "--qqfile"));
-    }
-    if (cfg.ffp   != NULL) { 
-      fclose(cfg.ffp);
-      printf("# Exponential tail fit points saved to file %s.\n", esl_opt_GetString(go, "--ffile"));
-    }
-    if (cfg.xfp   != NULL) { 
-      fclose(cfg.xfp);
-      printf("# Scores from tail fits saved to file %s.\n", esl_opt_GetString(go, "--xfile"));
-    }
-
-    if (cfg.ccom   != NULL) free(cfg.ccom);
-    if (cfg.cdate  != NULL) free(cfg.cdate);
-    if (cfg.expAA  != NULL) free(cfg.expAA);
-    if (cfg.namesA != NULL) { for(i = 0; i < cfg.ncm; i++) if(cfg.namesA[i] != NULL) free(cfg.namesA[i]); free(cfg.namesA); }
-  }
-
-  /* clean up */
-  if (cfg.abc   != NULL) esl_alphabet_Destroy(cfg.abc);
-  if (cfg.w     != NULL) esl_stopwatch_Destroy(cfg.w);
-  if (cfg.r     != NULL) esl_randomness_Destroy(cfg.r);
-  if (cfg.r_est != NULL) esl_randomness_Destroy(cfg.r_est);
-  esl_stopwatch_Stop(w);
-  if (cfg.my_rank == 0) { 
-    printf("#\n");
-    esl_stopwatch_Display(stdout, w, "# CPU time: ");
-  }
-  if(cfg.ghmm_eAA != NULL) { 
-    for(i = 0; i < cfg.ghmm_nstates; i++) free(cfg.ghmm_eAA[i]); 
-    free(cfg.ghmm_eAA);
-  }
-  if(cfg.ghmm_tAA != NULL) { 
-    for(i = 0; i < cfg.ghmm_nstates; i++) free(cfg.ghmm_tAA[i]); 
-    free(cfg.ghmm_tAA);
-  }
-  if(cfg.ghmm_sA != NULL) free(cfg.ghmm_sA);
-
-  esl_stopwatch_Destroy(w);
-  esl_getopts_Destroy(go);
-  return eslOK;
-
- ERROR: 
-  cm_Fail("Memory allocation error.");
-  return status; /* NEVERREACHED */
-}
 
 /* init_master_cfg()
  * Called by masters, mpi or serial.
@@ -1105,386 +1479,6 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   return eslOK;
 }
 
-
-/* serial_master()
- * The serial version of cmcalibrate.
- * 
- * A master can only return if it's successful. All errors are handled immediately and fatally with cm_Fail().
- */
-static void
-serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
-{
-  int      status;                /* Easel status */
-  int      qhstatus = eslOK;      /* status from cm_file_Read() */
-  char     errbuf[eslERRBUFSIZE];  /* for printing error messages */
-  CM_t    *cm    = NULL;          /* the CM */
-  CM_t    *nc_cm = NULL;          /* a non-configured copy of the CM */
-  int      i, h;                  /* counters */
-  int      cmi;                   /* CM index, which model we're working on */
-  char     time_buf[128];	  /* string for printing elapsed time (safely holds up to 10^14 years) */
-  int      exp_mode;              /* ctr over exp tail modes */
-  double   asec;                  /* actual    number of seconds for calibrating current CM */
-  double   psec;                  /* predicted number of seconds for calibrating current CM */
-  double   total_psec   = 0.;     /* predicted number of seconds for calibrating all CMs */
-  double   total_asec   = 0.;     /* actual    number of seconds for calibrating all CMs */
-  int      ncpus        = 0;      /* number of CPUs working */
-  int      nequals;               /* number of '=' to output to progress bar for this mode */
-  int64_t  merged_nhits = 0;      /* number of hits reported thus far, for all seqs */
-  float   *merged_scA = NULL;     /* [0..merged_nhits-1] hit scores for all seqs */
-  int      ins_v_cyk;             /* ratio of predicted inside versus cyk running time */
-  double   tmp_mu, tmp_lambda;    /* temporary mu and lambda used for setting exp tails */
-  int      tmp_nrandhits;         /* temporary number of rand hits found */
-  float    tmp_tailp;             /* temporary tail mass probability fit to an exponential */
-  int      memreq_ncpus = 0;      /* number of CPUs used for --memreq output */
-  ESL_SQ_BLOCK *sq_block  = NULL; /* block of sequences */
-
-  /* variables needed for threaded implementation */
-  WORKER_INFO     *info      = NULL; /* the worker info */
-  int              infocnt   = 0;    /* number of worker infos */
-#ifdef HMMER_THREADS
-  ESL_SQ          *sq        = NULL;
-  ESL_THREADS     *threadObj = NULL;
-  ESL_WORK_QUEUE  *queue     = NULL;
-#endif
-  
-  if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-
-#ifdef HMMER_THREADS
-  /* initialize thread data */
-  if      (esl_opt_IsUsed(go, "--forecast")) ncpus = 0;
-  else if (esl_opt_IsUsed(go, "--memreq"))   ncpus = 0;
-  else if (esl_opt_IsOn  (go, "--cpu"))      ncpus = esl_opt_GetInteger(go, "--cpu");
-  else                                       esl_threads_CPUCount(&ncpus);
-  printf("NCPUS: %d\n", ncpus);
-  if (ncpus > 0) {
-      threadObj = esl_threads_Create(&pipeline_thread);
-      queue = esl_workqueue_Create(ncpus * 2);
-  }
-#endif
-
-  infocnt = (ncpus == 0) ? 1 : ncpus;
-  ESL_ALLOC(info, sizeof(WORKER_INFO) * infocnt);
-
-  /* <cfg->abc> is not known 'til first CM is read. Could be DNA or RNA*/
-  qhstatus = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
-
-  if (qhstatus == eslOK) {
-    /* One-time initializations after alphabet <abc> becomes known */
-    output_header(stdout, go, cfg->cmfile);
-
-    if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
-    if((status = set_dnull(cfg, cm, errbuf)) != eslOK) cm_Fail("unable to create set_dnull\n%s\n", errbuf);
-    
-    for (i = 0; i < infocnt; ++i)    {
-      info[i].cm     = NULL;
-      info[i].scA    = NULL;
-      info[i].nhits  = 0;
-      info[i].cutoff = cfg->sc_cutoff;
-#ifdef HMMER_THREADS
-      info[i].queue  = queue;
-#endif
-    }
-
-    memreq_ncpus = 1;
-#ifdef HMMER_THREADS    
-    for (i = 0; i < ncpus * 2; ++i) {
-      if((sq = esl_sq_Create()) == NULL)                     cm_Fail("Failed to allocate sequence");
-      if((status = esl_workqueue_Init(queue, sq))  != eslOK) cm_Fail("Failed to add sequence to work queue");
-    }
-    esl_threads_CPUCount(&memreq_ncpus);
-#endif
-  }
-  
-  /* Outer loop: over each query CM in <cmfile>. */
-  while (qhstatus == eslOK) {
-    cfg->ncm++;
-    cmi = cfg->ncm-1;
-    if(cmi == 0 && (! esl_opt_IsUsed(go, "--memreq"))) print_calibration_column_headings(go, cfg, errbuf, cm);
-    if((status = expand_exp_and_name_arrays(cfg))                              != eslOK) cm_Fail("out of memory");
-    if((status = esl_strdup(cm->name, -1, &(cfg->namesA[cmi])))                != eslOK) cm_Fail("unable to duplicate CM name");
-
-    /* clone the non-configured CM we just read, we'll come back to it when we switch from global to local */
-    if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) cm_Fail("unable to clone CM");
-    if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                    != eslOK) cm_Fail(errbuf);
-
-    if(esl_opt_IsUsed(go, "--memreq")) { /* special case: if --memreq, print required memory and skip to reading next CM */
-      print_required_memory(cm, cfg->L, cfg->N, memreq_ncpus, (cmi == 0) ? TRUE : FALSE);
-    }
-    else { /* normal case */
-      if((status = initialize_stats(go, cfg, errbuf))                            != eslOK) cm_Fail(errbuf);
-      if((status = forecast_time(go, cfg, errbuf, cm, ncpus, &psec, &ins_v_cyk)) != eslOK) cm_Fail(errbuf); 
-      total_psec += psec;
-      print_forecasted_time(go, cfg, errbuf, cm, psec);
-      
-      if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block))           != eslOK) cm_Fail(errbuf);
-      
-      if(! esl_opt_IsUsed(go, "--forecast")) { 
-	esl_stopwatch_Start(cfg->w);
-	for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
-	  /* do we need to switch from global configuration to local? */
-	  if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
-	    /* switch from global to local by copying the current exptail stats from <cm>
-	     * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
-	     * way because as a rule we don't allow reconfiguration of CMs (to limit
-	     * execution paths through configuration functions)
-	     */
-	    FreeCM(cm);
-	    cm = nc_cm;
-	    if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) cm_Fail(errbuf);
-	  }
-	  /* set search_opts and determine how many '=' to print to status bar for this mode, 
-	   * there is space for 20 '=' for glocal (cyk + ins) and 20 '=' for local (cyk + ins)
-	   */
-	  if(ExpModeIsInside(exp_mode)) { 
-	    cm->search_opts |= CM_SEARCH_INSIDE; 
-	    nequals = 20 - (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
-	  }
-	  else { 
-	    cm->search_opts &= ~CM_SEARCH_INSIDE; 
-	    nequals = (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
-	  }
-	  fflush(stdout);
-	  
-	  /* clone CM for each thread */
-	  for (i = 0; i < infocnt; ++i) {
-	    if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
-	    info[i].scA     = NULL;
-	    info[i].nhits   = 0;
-	    info[i].cutoff  = cfg->sc_cutoff;
-	    info[i].nequals = nequals;
-#ifdef HMMER_THREADS
-	    if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
-#endif
-	  }
-	  
-#ifdef HMMER_THREADS
-	  if (ncpus > 0)  status = thread_loop(info, errbuf, threadObj, queue, sq_block);
-	  else            status = serial_loop(info, errbuf, sq_block);
-#else
-	  status = serial_loop(info, errbuf, sq_block);
-#endif
-	  if(status != eslOK) cm_Fail(errbuf);
-	  
-	  merged_nhits = 0;
-	  if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
-	  for (i = 0; i < infocnt; ++i) {
-	    if(info[i].nhits > 0) { 
-	      ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + info[i].nhits)); /* this works even if merged_scA == NULL */
-	      for(h = 0; h < info[i].nhits; h++) merged_scA[(merged_nhits+h)] = info[i].scA[h];
-	      merged_nhits += info[i].nhits;
-	    }
-	  }
-	  
-	  if(cfg->ffp != NULL) { 
-	    fprintf(cfg->ffp, "# CM: %s\n", cm->name);
-	    fprintf(cfg->ffp, "# mode: %12s\n", DescribeExpMode(exp_mode));
-	  }
-	  if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
-	  SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (long) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
-	} /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
-	
-	esl_stopwatch_Stop(cfg->w);
-	FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
-	printf("]  %12s\n", time_buf);
-	fflush(stdout);
-	asec        = cfg->w->elapsed;
-	total_asec += cfg->w->elapsed;
-	
-      } /* end of if(! esl_opt_IsUsed(go, "--forecast")) */
-    } /* end of else, entered if (! esl_opt_IsUsed(go, "--memreq")) */
-    FreeCM(cm);
-    if(sq_block != NULL) esl_sq_DestroyBlock(sq_block);
-
-    fflush(stdout);
-
-    /* read the next CM */
-    qhstatus = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
-  } /* end of while(qhstatus == eslOK) */
-  if(qhstatus != eslEOF) cm_Fail(cfg->cmfp->errbuf);
-  
-  if(esl_opt_IsUsed(go, "--memreq")) print_required_memory_tail(memreq_ncpus);
-
-  if(cfg->ncm > 1) print_total_time(go, total_asec, total_psec);
-
-  return;
-      
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return;
-}
-
-/* serial_loop(): 
- * 
- * Search each sequence and collect scores of hits. 
- */
-static int
-serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
-{
-  int status;
-  CM_TOPHITS *th = NULL;
-  int  i, h;             /* counters */
-  int  equalidx; /* when i reaches this, we updated progress bar by printing a '=' */
-  int  equalcnt; /* number of sequences that need to be searched to warrant a '=' */
-  int  nprinted = 0; /* number of equals printed thus far */
-
-  /* reinitialize array of hit scores */
-  info->nhits = 0;
-  if(info->scA != NULL) free(info->scA);
-
-  /* determine how many sequences we need to complete to print a '=' to progress bar */
-  equalcnt = (int) (((float) sq_block->count / (float) info->nequals) + 0.9999999);
-  equalcnt = ESL_MAX(equalcnt, 1);
-  equalidx = equalcnt;
-
-  for(i = 0; i < sq_block->count; i++) { 
-    if((status = process_search_workunit(info->cm, errbuf, sq_block->list[i].dsq, sq_block->list[i].L, info->cutoff, &th)) != eslOK) cm_Fail(errbuf);
-    /* append copy of hit scores to scA */
-    if(th->N > 0) { 
-      ESL_REALLOC(info->scA, sizeof(float) * (info->nhits + th->N)); /* this works even if info->scA == NULL */
-      for(h = 0; h < th->N; h++) info->scA[(info->nhits+h)] = th->unsrt[h].score;
-      info->nhits += th->N;
-    }
-    cm_tophits_Destroy(th);
-    if ((i+1) == equalidx) { 
-      putchar('='); 
-      fflush(stdout);
-      nprinted++;
-      equalidx += equalcnt; 
-    }
-  }
-  while(nprinted < info->nequals) { putchar('='); fflush(stdout); nprinted++; } 
-
-  return eslOK;
-  
- ERROR: 
-  ESL_FAIL(status, errbuf, "out of memory");
-  return status; /* NEVERREACHED */
-}
- 
-#ifdef HMMER_THREADS
-static int
-thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQ_BLOCK *sq_block)
-{
-  int     status   = eslOK;
-  ESL_SQ *sq       = NULL;
-  void   *new_sq   = NULL;
-  ESL_SQ *empty_sq = NULL;
-  int     nworkers = esl_threads_GetWorkerCount(obj);
-  int     i, j;       
-  int     equalidx; /* when i reaches this, we updated progress bar by printing a '=' */
-  int     equalcnt; /* number of sequences that need to be searched to warrant a '=' */
-  int     nprinted = 0; /* number of equals printed thus far */
-
-  esl_workqueue_Reset(queue);
-  esl_threads_WaitForStart(obj);
-
-  /* determine how many sequences we need to complete to print a '=' to progress bar */
-  equalcnt = (int) (((float) sq_block->count / (float) info->nequals) + 0.9999999);
-  equalcnt = ESL_MAX(equalcnt, 1);
-  equalidx = equalcnt;
-
-  status = esl_workqueue_ReaderUpdate(queue, NULL, &new_sq);
-  if (status != eslOK) cm_Fail("Work queue reader failed");
-
-  /* Main loop: */
-  for(i = 0; i < sq_block->count; i++) { 
-    sq = (ESL_SQ *) new_sq;
-    sq = sq_block->list + i;
-    status = esl_workqueue_ReaderUpdate(queue, sq, &new_sq);
-    if (status != eslOK) cm_Fail("Work queue reader failed");
-    if ((i+1) == equalidx) { 
-      putchar('='); 
-      fflush(stdout);
-      nprinted++;
-      equalidx += equalcnt; 
-    }
-  }
-  while(nprinted < info->nequals) { putchar('='); fflush(stdout); nprinted++; } 
-
-  /* now send a empty sq to all workers signaling them to stop */
-  empty_sq = esl_sq_Create();
-  for(j = 0; j < nworkers; j++) { 
-    status = esl_workqueue_ReaderUpdate(queue, empty_sq, &new_sq);
-    if (status != eslOK) cm_Fail("Work queue reader failed");
-  }
-
-  status = esl_workqueue_ReaderUpdate(queue, sq, NULL);
-
-  /* wait for all the threads to complete */
-  esl_threads_WaitForFinish(obj);
-  esl_workqueue_Complete(queue);  
-
-  esl_sq_Destroy(empty_sq);
-  return status;
-}
-
-/* pipeline_thread()
- * 
- * Receive a sequence from the master, search it
- * with the CM, and add scores of hits to info->scA.
- */
-
-static void 
-pipeline_thread(void *arg)
-{
-  int          status;
-  int          workeridx;
-  WORKER_INFO *info;
-  ESL_THREADS *obj;
-  ESL_SQ      *sq = NULL;
-  void        *new_sq;
-  int          h;
-  CM_TOPHITS  *th = NULL;
-  char         errbuf[eslERRBUFSIZE];
-  
-#ifdef HAVE_FLUSH_ZERO_MODE
-  /* In order to avoid the performance penalty dealing with sub-normal
-   * values in the floating point calculations, set the processor flag
-   * so sub-normals are "flushed" immediately to zero.
-   * On OS X, need to reset this flag for each thread
-   * (see TW notes 05/08/10 for details)
-   */
-  _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
-#endif
-
-  obj = (ESL_THREADS *) arg;
-  esl_threads_Started(obj, &workeridx);
-
-  info = (WORKER_INFO *) esl_threads_GetData(obj, workeridx);
-
-  status = esl_workqueue_WorkerUpdate(info->queue, NULL, &new_sq);
-  if (status != eslOK) cm_Fail("Work queue worker failed");
-
-  /* loop until all sequences have been processed */
-  sq = (ESL_SQ *) new_sq;
-  while (sq->L != -1) { 
-    if((status = process_search_workunit(info->cm, errbuf, sq->dsq, sq->L, info->cutoff, &th)) != eslOK) cm_Fail(errbuf);
-    /* append copy of hit scores to scA */
-    if(th->N > 0) { 
-      ESL_REALLOC(info->scA, sizeof(float) * (info->nhits + th->N)); /* this works even if info->scA == NULL */
-      for(h = 0; h < th->N; h++) info->scA[(info->nhits+h)] = th->unsrt[h].score;
-      info->nhits += th->N;
-    }
-    cm_tophits_Destroy(th);
-
-    status = esl_workqueue_WorkerUpdate(info->queue, sq, &new_sq);
-    if (status != eslOK) cm_Fail("Work queue worker failed");
-    sq = (ESL_SQ *) new_sq;
-  }
-
-  status = esl_workqueue_WorkerUpdate(info->queue, sq, NULL);
-  if (status != eslOK) cm_Fail("Work queue worker failed");
-
-  esl_threads_Finished(obj, workeridx);
-  return;
-
- ERROR: 
-  cm_Fail("out of memory");
-  return;  /* NEVERREACHED */
-}
-#endif   /* HMMER_THREADS */
-
-
 /* initialize_cm()
  * Setup the CM based on the command-line options/defaults;
  * only set flags and a few parameters. cm_Configure() configures
@@ -1560,7 +1554,6 @@ initialize_stats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   return status;
 }
 
-
 /* fit_histogram()
  * Create, fill and fit the tail of a histogram to an exponential tail. Data to fill the histogram
  * is given as <scores>.
@@ -1615,7 +1608,6 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   /* determine the fraction of the tail to fit, if --tailp, it's easy */
   if(esl_opt_IsOn(go, "--tailp")) { 
     tailp = esl_opt_GetReal(go, "--tailp");
-    tailp = ESL_MIN(tailp, ((float) esl_opt_GetInteger(go, "--tailxn") / (float) h->n)); /* ensure we don't exceed our max nhits in tail */
   }
   else { /* number of hits is per Mb and specific to local or glocal fits */
     if(ExpModeIsLocal(exp_mode)) { /* local mode */
@@ -1829,11 +1821,12 @@ set_dnull(struct cfg_s *cfg, CM_t *cm, char *errbuf)
  * Output functions called by masters. 
  */
 static void
-print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
+print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int available_ncpus)
 {
   printf("#\n");
   if(esl_opt_IsUsed(go, "--forecast")) { 
-    printf("# Forecasting running time for CM calibration(s):\n");
+    printf("# Forecasting running time for CM calibration(s) on %d cpus:\n", 
+	   (esl_opt_IsUsed(go, "--nforecast") ? esl_opt_GetInteger(go, "--nforecast") : available_ncpus));
     printf("#\n");
     printf("# %-20s  %12s\n", "", " predicted");
     printf("# %-20s  %12s\n", "", "running time");
@@ -2083,7 +2076,7 @@ process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutof
  *           eslOK on success.
  *
  */
-int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, double *ret_psec, int *ret_ins_v_cyk)
+int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int available_ncpus, double *ret_psec, int *ret_ins_v_cyk)
 {
   int      status;
   int      L;                /* length of sequence we'll generate and search to get time estimate, 2 * cm->W */
@@ -2097,6 +2090,7 @@ int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
   ESL_DSQ *dsq = NULL;       /* the random seq we'll create and search to get predicted time */
   double   psec;             /* total number of seconds predicted for calibrating the CM (accounting for parallelization) */
   int      ins_v_cyk;        /* ratio of predicted inside versus cyk running time */
+  int      denom;            /* denominator used for dividing psec if --forecast */
 
   /* contract check */
   if(cm->flags & CMH_LOCAL_BEGIN)        ESL_FAIL(eslEINCOMPAT, errbuf, "forecast_running_time() CM has local begins on");
@@ -2157,7 +2151,8 @@ int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
   psec *= (float) cfg->L * (float) cfg->N;
   /* correct for parallelization */
   if(esl_opt_IsUsed(go, "--forecast")) { 
-    psec /= ESL_MAX(1, (esl_opt_GetInteger(go, "--forecast") - 1)); 
+    denom = (esl_opt_IsUsed(go, "--nforecast")) ? esl_opt_GetInteger(go, "--nforecast") : available_ncpus;
+    psec /= (float) ESL_MAX(1, denom);
     /* Note, this is correct for MPI but will be slightly off for
      * threaded - because all threads do searches, whereas in MPI
      * master doesn't do searches.
@@ -2205,7 +2200,7 @@ void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header)
     printf("#\n");
     if(ncpus > 1) { 
       printf("# %-20s  %10s  %10s\n",         "",          "  total Mb",   "  total Mb");
-      printf("# %-20s  %10s  %2s%2d%6s\n",   "",          "single CPU", "", ncpus, " CPUs");
+      printf("# %-20s  %10s  %2s%3d%5s\n",   "",          "single CPU", "", ncpus, " CPUs");
       printf("# %-20s  %10s  %10s\n",      "--------------------", "----------", "----------");
     }
     else { 

@@ -3,6 +3,7 @@ srcdir         = @srcdir@
 VPATH          = @srcdir@ 
 
 SQCLEVEL = 2
+DEVSQCLEVEL = 4
 
 ESLDIR = @INFERNAL_ESLDIR@
 
@@ -26,6 +27,21 @@ check:
 	@echo Running Infernal test suite...
 	@echo
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${SQCLEVEL} ${srcdir}/exercises.sqc .. ${srcdir}/..
+
+devcheck: 
+	@echo 
+	@echo Running Infernal developer test suite...
+	@echo
+#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/exercises.sqc   .. ${srcdir}/..
+#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmalign.sqc     .. ${srcdir}/..
+#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmbuild.sqc     .. ${srcdir}/..
+#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmcalibrate.sqc .. ${srcdir}/..
+#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmconvert.sqc   .. ${srcdir}/..
+#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmemit.sqc      .. ${srcdir}/..
+#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmfetch.sqc     .. ${srcdir}/..
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmsearch.sqc    .. ${srcdir}/..
+#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmstat.sqc      .. ${srcdir}/..
+# no cmpress.sqc, it's too simple; exercises.sqc covers all use cases
 
 clean:
 	-rm -f *.gcno *.gcda *.gcov
