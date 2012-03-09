@@ -54,10 +54,10 @@
 #define CMALIGN_MAX_NSEQ              10000  /* 10k sequences,  Mb, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
 #define CMALIGN_MAX_NRES           10000000  /* 10 Mb, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
 
-/* Max number of sequences, residues allowed if we're going
- * to try and output the entire alignment in one block.
- * If seq file exceeds either of these and -i enabled, we'll
- * output an error and tell user file is to big to use -i.
+/* Max number of sequences, residues allowed if we're going to try and
+ * output the entire alignment in one block.  If seq file exceeds
+ * either of these and --ileaved enabled, we'll output an error and
+ * tell user file is to big to use --ileaved.
  */
 #define CMALIGN_MAX_NSEQ_ONEBLOCK     100000  /* 100k sequences, most we allow to be aligned and output in interleaved format */
 #define CMALIGN_MAX_NRES_ONEBLOCK  100000000  /* 100Mb, most we allow to be aligned and output in interleaved format */
@@ -78,8 +78,10 @@ typedef struct {
   ESL_STOPWATCH    *w_tot;    /* stopwatch for timing total time for processing 1 seq */
 } WORKER_INFO;
 
+#define ACCOPTS      "--hbanded,--nonbanded"           /* Exclusive choice for acceleration or not */
 #define ALGOPTS      "--cyk,--optacc,--sample"         /* Exclusive choice for algorithm */
 #define BIGALGOPTS   "--cyk,--optacc,--sample,--small" /* Incompatible with --optacc,--sample (except their selves) */
+#define REQDWSMALL   "--cyk,--noprob,--nonbanded"      /* Required with --small */
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
 #define CPUOPTS     "--mpi"
 #define MPIOPTS     "--cpu"
@@ -89,45 +91,45 @@ typedef struct {
 #endif
 
 static ESL_OPTIONS options[] = {
-  /* name                  type   default   env        range      toggles      reqs       incomp  help  docgroup*/
-  { "-h",           eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-o",        eslARG_OUTFILE,     NULL,  NULL,      NULL,      NULL,        NULL,        NULL, "output the alignment to file <f>, not stdout", 1 },
-  { "-l",           eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "configure CM for local alignment [default: glocal]", 1 },
-  { "--mapali",   eslARG_INFILE,     NULL,  NULL,      NULL,      NULL,        NULL,        NULL, "include alignment in file <f> (same ali that CM came from)", 1 },
-  { "--mapstr",     eslARG_NONE,     NULL,  NULL,      NULL,      NULL,  "--mapali",        NULL, "include structure (w/pknots) from <f> from --mapali <f>", 1 },
-  { "--informat", eslARG_STRING,    NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "assert <seqfile> is in format <s>: no autodetection", 1 },
-  { "--outformat",eslARG_STRING,"Stockholm",NULL,      NULL,      NULL,        NULL,        NULL, "output alignment in format <s>", 1 },
-  { "--mxsize",     eslARG_REAL,  "256.0",  NULL,    "x>0.",      NULL,        NULL,   "--small", "set maximum allowable DP matrix size to <x> Mb", 1 },
-#ifdef HMMER_THREADS 
-  { "--cpu",        eslARG_INT,      NULL,"HMMER_NCPU", "n>=0",   NULL,        NULL,     CPUOPTS, "number of parallel CPU workers to use for multithreads", 1 },
-#endif
-#ifdef HAVE_MPI
-  { "--mpi",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,     MPIOPTS, "run as an MPI parallel program", 1 },  
-#endif
+  /* name                   type       default env          range    toggles         reqs         incomp  help  docgroup*/
+  { "-h",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show brief help on version and usage",               1 },
+  { "-o",         eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "output the alignment to file <f>, not stdout",       1 },
+  { "-l",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "configure CM for local alignment [default: glocal]", 1 },
   /* options controlling the alignment algorithm */
-  { "--optacc",     eslARG_NONE,"default",  NULL,      NULL,"--optacc",        NULL,  BIGALGOPTS, "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
-  { "--cyk",        eslARG_NONE,    FALSE,  NULL,      NULL,"--optacc",        NULL,     ALGOPTS, "align with the CYK algorithm", 2 },
-  { "--sample",     eslARG_NONE,    FALSE,  NULL,      NULL,"--optacc",        NULL,     ALGOPTS, "sample alignment of each seq from posterior distribution", 2 },
-  { "--seed",        eslARG_INT,    "181",  NULL,   "n>=0",       NULL,  "--sample",        NULL, "w/--sample, set RNG seed to <n> (if 0: one-time arbitrary seed)", 2 },
-  { "--sub",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL, "--notrunc",        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
-  { "--small",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,"--cyk,--noprob,--nonbanded",NULL, "use small memory divide and conquer (d&c) algorithm", 2 },
-  { "--notrunc",    eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not use truncated alignment algorithm", 2 },
-  { "--nonbanded",  eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not use bands to accelerate aln algorithm", 2 },
-  { "--tau",        eslARG_REAL,   "1E-7",  NULL,"1E-18<x<1",     NULL,        NULL,"--nonbanded","set tail loss prob for HMM bands to <x>", 2 },
+  { "--optacc",      eslARG_NONE,   "default", NULL,        NULL, "--optacc",        NULL,    BIGALGOPTS, "align with the Holmes/Durbin optimal accuracy algorithm",         2 },
+  { "--cyk",         eslARG_NONE,       FALSE, NULL,        NULL, "--optacc",        NULL,       ALGOPTS, "align with the CYK algorithm",                                    2 },
+  { "--sample",      eslARG_NONE,       FALSE, NULL,        NULL, "--optacc",        NULL,       ALGOPTS, "sample alignment of each seq from posterior distribution",        2 },
+  { "--seed",         eslARG_INT,       "181", NULL,      "n>=0",       NULL,  "--sample",          NULL, "w/--sample, set RNG seed to <n> (if 0: one-time arbitrary seed)", 2 },
+  { "--notrunc",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not use truncated alignment algorithm",                        2 },
+  { "--sub",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL, "--notrunc",          "-l", "build sub CM for columns b/t HMM predicted start/end points",     2 },
+  /* options affecting speed and memory */
+  { "--hbanded",     eslARG_NONE,   "default", NULL,        NULL,       NULL,        NULL,       ACCOPTS, "accelerate using CM plan 9 HMM derived bands",        3 },
+  { "--tau",         eslARG_REAL,      "1E-7", NULL, "1E-18<x<1",       NULL,        NULL, "--nonbanded", "set tail loss prob for HMM bands to <x>",              3 },
+  { "--nonbanded",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,       ACCOPTS, "do not use bands to accelerate aln algorithm",        3 },
+  { "--mxsize",      eslARG_REAL,     "256.0", NULL,      "x>0.",       NULL,        NULL,     "--small", "set maximum allowable DP matrix size to <x> Mb",      3 },
+  { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,  REQDWSMALL,          NULL, "use small memory divide and conquer (d&c) algorithm", 3 },
   /* options controlling optional output */
-  { "--tfile",   eslARG_OUTFILE,     NULL,  NULL,      NULL,      NULL,        NULL,        NULL, "dump individual sequence parsetrees to file <f>", 3 },
-  { "--ifile",   eslARG_OUTFILE,     NULL,  NULL,      NULL,      NULL,        NULL,        NULL, "dump information on per-sequence inserts to file <f>", 3 },
-  { "--elfile",  eslARG_OUTFILE,     NULL,  NULL,      NULL,      NULL,        NULL,        NULL, "dump information on per-sequence EL inserts to file <f>", 3 },
-  { "--sfile",   eslARG_OUTFILE,     NULL,  NULL,      NULL,      NULL,        NULL,        NULL, "dump alignment score information to file <f>", 3 },
+  { "--sfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump alignment score information to file <f>",            4 },
+  { "--tfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump individual sequence parsetrees to file <f>",         4 },
+  { "--ifile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump information on per-sequence inserts to file <f>",    4 },
+  { "--elfile",   eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump information on per-sequence EL inserts to file <f>", 4 },
   /* other expert options */
-  { "--dnaout",     eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 4 },
-  { "--noprob",     eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not include posterior probabilities in the alignment", 4 },
-  { "--matchonly",  eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "include only match columns in output alignment", 4 },
-  { "--ileaved",    eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,"--outformat","force output in interleaved Stockholm format", 4 },
-  { "--regress", eslARG_OUTFILE,     NULL,  NULL,      NULL,      NULL,  "--ileaved", "--mapali", "save regression test data to file <f>", 4}, 
-  /*{ "--noannot",    eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not add cmalign execution annotation to the alignment", 4 },*/
+  { "--mapali",    eslARG_INFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "include alignment in file <f> (same ali that CM came from)", 5 },
+  { "--mapstr",      eslARG_NONE,        NULL, NULL,        NULL,       NULL,  "--mapali",          NULL, "include structure (w/pknots) from <f> from --mapali <f>",    5 },
+  { "--informat",  eslARG_STRING,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "assert <seqfile> is in format <s>: no autodetection",        5 },
+  { "--outformat", eslARG_STRING, "Stockholm", NULL,        NULL,       NULL,        NULL,          NULL, "output alignment in format <s>",                             5 },
+  { "--dnaout",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "output alignment as DNA (not RNA) sequence data",            5 },
+  { "--noprob",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not include posterior probabilities in the alignment",    5 },
+  { "--matchonly",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "include only match columns in output alignment",             5 },
+  { "--ileaved",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--outformat","force output in interleaved Stockholm format",                5 },
+  { "--regress",  eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL, "--ileaved",    "--mapali", "save regression test data to file <f>",                      5}, 
+  /*{ "--noannot",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not add cmalign execution annotation to the alignment",   5 },*/
+#ifdef HMMER_THREADS 
+  { "--cpu",          eslARG_INT,        NULL, "HMMER_NCPU","n>=0",     NULL,        NULL,       CPUOPTS, "number of parallel CPU workers to use for multithreads",     5 },
+#endif
 #ifdef HAVE_MPI
-  { "--stall",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 4 },  
+  { "--mpi",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,       MPIOPTS, "run as an MPI parallel program",                             5 },  
+  { "--stall",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "arrest after start: for debugging MPI under gdb",            5 },  
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -162,7 +164,7 @@ struct cfg_s {
   FILE            *rfp;         /* optional output for --regress alignment */
 };
 
-static char usage[]  = "[-options] <cmfile> <sequence file>";
+static char usage[]  = "[-options] <cmfile> <seqfile>";
 static char banner[] = "align sequences to a CM";
 
 static void serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
@@ -1327,15 +1329,17 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     cm_banner(stdout, argv[0], banner);
     esl_usage(stdout, argv[0], usage);
     puts("\nBasic options:");
-    esl_opt_DisplayHelp(stdout, go, 1, 2, 100); /* 1= group; 2 = indentation; 100=textwidth*/
+    esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
     puts("\nOptions controlling alignment algorithm:");
-    esl_opt_DisplayHelp(stdout, go, 2, 2, 100); 
+    esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+    puts("\nOptions controlling speed and memory requirements:");
+    esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
     puts("\nOptional output files:");
-    esl_opt_DisplayHelp(stdout, go, 3, 2, 100); 
-    puts("\nAdditional expert options:");
-    esl_opt_DisplayHelp(stdout, go, 4, 2, 100); 
-    puts("\nSequence input formats include: FASTA, EMBL, GenBank");
-    puts("Alignment output formats include: Stockholm, Pfam, AFA (aligned FASTA), A2M, Clustal, PHYLIP\n");
+    esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
+    puts("\nOther options:");
+    esl_opt_DisplayHelp(stdout, go, 5, 2, 80); 
+    puts("\nSequence input formats:   FASTA, GenBank");
+    puts("Alignment output formats: Stockholm, Pfam, AFA (aligned FASTA), A2M, Clustal, PHYLIP\n");
     exit(0);
   } 
 
@@ -1390,7 +1394,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
  ERROR:  /* all errors handled here are user errors, so be polite.  */
   esl_usage(stdout, argv[0], usage);
   puts("\nwhere basic options are:");
-  esl_opt_DisplayHelp(stdout, go, 1, 2, 100); /* 1= group; 2 = indentation; 100=textwidth*/
+  esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
   printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
   exit(1);  
 }
@@ -1414,34 +1418,43 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
                                             fprintf(ofp, "# CM name:                                     %s\n", cm->name);
   if (esl_opt_IsUsed(go, "-o"))          {  fprintf(ofp, "# saving alignment to file:                    %s\n", esl_opt_GetString(go, "-o")); }
   if (esl_opt_IsUsed(go, "-l"))          {  fprintf(ofp, "# model configuration:                         local\n"); }
-  if (esl_opt_IsUsed(go, "--mapali"))    {  fprintf(ofp, "# including alignment from file:               %s\n", esl_opt_GetString(go, "--mapali")); }
-  if (esl_opt_IsUsed(go, "--mapstr"))    {  fprintf(ofp, "# including structure from alnment from file:  %s\n", esl_opt_GetString(go, "--mapali")); }
-  if (esl_opt_IsUsed(go, "--informat"))  {  fprintf(ofp, "# input sequence file format specified as:     %s\n", esl_opt_GetString(go, "--informat")); }
-  if (esl_opt_IsUsed(go, "--outformat")) {  fprintf(ofp, "# output alignment format specified as:        %s\n", esl_opt_GetString(go, "--outformat")); }
+
+  if (esl_opt_IsUsed(go, "--optacc"))    {  fprintf(ofp, "# alignment algorithm:                         optimal accuracy\n"); }
   if (esl_opt_IsUsed(go, "--cyk"))       {  fprintf(ofp, "# alignment algorithm:                         CYK\n"); }
   if (esl_opt_IsUsed(go, "--sample"))    {  fprintf(ofp, "# sampling aln from posterior distribution:    yes\n"); }
-  if (esl_opt_IsUsed(go, "--sub"))       {  fprintf(ofp, "# alternative truncated seq alignment mode:    on\n"); }
-  if (esl_opt_IsUsed(go, "--notrunc"))   {  fprintf(ofp, "# truncated sequence alignment mode:           off\n"); }
-  if (esl_opt_IsUsed(go, "--tau"))       {  fprintf(ofp, "# tail loss probability for HMM bands set to:  %g\n", esl_opt_GetReal(go, "--tau")); }
-  if (esl_opt_IsUsed(go, "--mxsize"))    {  fprintf(ofp, "# maximum DP matrix size set to:               %.2f Mb\n", esl_opt_GetReal(go, "--mxsize")); }
   if (esl_opt_IsUsed(go, "--seed"))      {
     if (esl_opt_GetInteger(go, "--seed") == 0) fprintf(ofp, "# random number seed:                          one-time arbitrary\n");
     else                                       fprintf(ofp, "# random number seed set to:                   %d\n", esl_opt_GetInteger(go, "--seed"));
   }
+  if (esl_opt_IsUsed(go, "--notrunc"))   {  fprintf(ofp, "# truncated sequence alignment mode:           off\n"); }
+  if (esl_opt_IsUsed(go, "--sub"))       {  fprintf(ofp, "# alternative truncated seq alignment mode:    on\n"); }
+  if (esl_opt_IsUsed(go, "--small"))     {  fprintf(ofp, "# small memory D&C alignment algorithm:        on\n"); }
+
+  if (esl_opt_IsUsed(go, "--hbanded"))   {  fprintf(ofp, "# using HMM bands for acceleration:            yes\n"); }
+  if (esl_opt_IsUsed(go, "--tau"))       {  fprintf(ofp, "# tail loss probability for HMM bands set to:  %g\n", esl_opt_GetReal(go, "--tau")); }
+  if (esl_opt_IsUsed(go, "--nonbanded")) {  fprintf(ofp, "# using HMM bands for acceleration:            nos\n"); }
+  if (esl_opt_IsUsed(go, "--mxsize"))    {  fprintf(ofp, "# maximum DP matrix size set to:               %.2f Mb\n", esl_opt_GetReal(go, "--mxsize")); }
+
+  if (esl_opt_IsUsed(go, "--sfile"))     {  fprintf(ofp, "# saving alignment score info to file:        %s\n", esl_opt_GetString(go, "--sfile")); }
+  if (esl_opt_IsUsed(go, "--tfile"))     {  fprintf(ofp, "# saving parsetrees to file:                   %s\n", esl_opt_GetString(go, "--tfile")); }
+  if (esl_opt_IsUsed(go, "--ifile"))     {  fprintf(ofp, "# saving insert information to file:           %s\n", esl_opt_GetString(go, "--ifile")); }
+  if (esl_opt_IsUsed(go, "--elfile"))    {  fprintf(ofp, "# saving local end information to file:        %s\n", esl_opt_GetString(go, "--elfile")); }
+
+  if (esl_opt_IsUsed(go, "--mapali"))    {  fprintf(ofp, "# including alignment from file:               %s\n", esl_opt_GetString(go, "--mapali")); }
+  if (esl_opt_IsUsed(go, "--mapstr"))    {  fprintf(ofp, "# including structure from alnment from file:  %s\n", esl_opt_GetString(go, "--mapali")); }
+  if (esl_opt_IsUsed(go, "--informat"))  {  fprintf(ofp, "# input sequence file format specified as:     %s\n", esl_opt_GetString(go, "--informat")); }
+  if (esl_opt_IsUsed(go, "--outformat")) {  fprintf(ofp, "# output alignment format specified as:        %s\n", esl_opt_GetString(go, "--outformat")); }
   if (esl_opt_IsUsed(go, "--dnaout"))    {  fprintf(ofp, "# output alignment alphabet:                   DNA\n"); }
   if (esl_opt_IsUsed(go, "--noprob"))    {  fprintf(ofp, "# posterior probability annotation:            off\n"); }
   if (esl_opt_IsUsed(go, "--matchonly")) {  fprintf(ofp, "# include alignment insert columns:            no\n"); }
+  if (esl_opt_IsUsed(go, "--ileaved"))   {  fprintf(ofp, "# forcing interleaved Stockholm output aln:    yes\n"); }
+  if (esl_opt_IsUsed(go, "--regress"))   {  fprintf(ofp, "# saving alignment without author info to:     %s\n", esl_opt_GetString(go, "--regress")); }
 #ifdef HMMER_THREADS
   if (esl_opt_IsUsed(go, "--cpu"))       {  fprintf(ofp, "# number of worker threads:                    %d\n", esl_opt_GetInteger(go, "--cpu")); }
 #endif
 #ifdef HAVE_MPI
   if (esl_opt_IsUsed(go, "--mpi"))       {  fprintf(ofp, "# MPI:                                         on\n"); }
 #endif
-  if (esl_opt_IsUsed(go, "--tfile"))     {  fprintf(ofp, "# saving parsetrees to file:                   %s\n", esl_opt_GetString(go, "--tfile")); }
-  if (esl_opt_IsUsed(go, "--ifile"))     {  fprintf(ofp, "# saving insert information to file:           %s\n", esl_opt_GetString(go, "--ifile")); }
-  if (esl_opt_IsUsed(go, "--elfile"))    {  fprintf(ofp, "# saving local end information to file:        %s\n", esl_opt_GetString(go, "--elfile")); }
-  if (esl_opt_IsUsed(go, "--sfile"))     {  fprintf(ofp, "# saving alignment score info to file:        %s\n", esl_opt_GetString(go, "--sfile")); }
-  if (esl_opt_IsUsed(go, "--ileaved"))   {  fprintf(ofp, "# forcing interleaved Stockholm output aln:    yes\n"); }
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n");
 
   return eslOK;
@@ -1531,8 +1544,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if     (  esl_opt_GetBoolean(go, "--cyk"))    cm->align_opts |= CM_ALIGN_CYK;
   else if(  esl_opt_GetBoolean(go, "--sample")) cm->align_opts |= CM_ALIGN_SAMPLE;
   else                                          cm->align_opts |= CM_ALIGN_OPTACC;
-  if(  esl_opt_GetBoolean(go, "--nonbanded"))   cm->align_opts |= CM_ALIGN_NONBANDED;
-  else                                          cm->align_opts |= CM_ALIGN_HBANDED;
+  if(  esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts |= CM_ALIGN_HBANDED;
+  if(  esl_opt_GetBoolean(go, "--nonbanded"))   cm->align_opts &= ~CM_ALIGN_HBANDED;
   if(! esl_opt_GetBoolean(go, "--noprob"))      cm->align_opts |= CM_ALIGN_POST;
   if(! esl_opt_GetBoolean(go, "--notrunc"))     cm->align_opts |= CM_ALIGN_TRUNC;
   if(  esl_opt_GetBoolean(go, "--sub"))         cm->align_opts |= CM_ALIGN_SUB;   /* --sub requires --notrunc */

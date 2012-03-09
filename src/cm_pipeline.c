@@ -24,8 +24,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define DEBUGPIPELINE  1
-
+#define DEBUGPIPELINE  0
 
 static int  pli_p7_filter         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
 static int  pli_p7_env_def        (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
@@ -133,12 +132,12 @@ static void copy_subseq           (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_
  *            | --sums       |  use sums to get final round HMM bands       |   FALSE   |
  *            | --beta       |  beta for QDBs in final round                |   1e-15   |
  *            | --nonbanded  |  run CYK filter without bands                |   FALSE   |
- *            | --time-F1    |  abort after F1b stage, for timing expts     |   FALSE   | 
- *            | --time-F2    |  abort after F2b stage, for timing expts     |   FALSE   | 
- *            | --time-F3    |  abort after F3b stage, for timing expts     |   FALSE   | 
- *            | --time-F4    |  abort after F4b stage, for timing expts     |   FALSE   | 
- *            | --time-F5    |  abort after F5b stage, for timing expts     |   FALSE   | 
- *            | --time-F6    |  abort after F6  stage, for timing expts     |   FALSE   | 
+ *            | --timeF1    |  abort after F1b stage, for timing expts     |   FALSE   | 
+ *            | --timeF2    |  abort after F2b stage, for timing expts     |   FALSE   | 
+ *            | --timeF3    |  abort after F3b stage, for timing expts     |   FALSE   | 
+ *            | --timeF4    |  abort after F4b stage, for timing expts     |   FALSE   | 
+ *            | --timeF5    |  abort after F5b stage, for timing expts     |   FALSE   | 
+ *            | --timeF6    |  abort after F6  stage, for timing expts     |   FALSE   | 
  *            | --rt1        |  P7_DOMAINDEF rt1 parameter                  |    0.25   |
  *            | --rt2        |  P7_DOMAINDEF rt2 parameter                  |    0.10   |
  *            | --rt3        |  P7_DOMAINDEF rt3 parameter                  |    0.20   |
@@ -223,12 +222,12 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_filcmW       = esl_opt_GetBoolean(go, "--filcmW")     ? TRUE  : FALSE;
   pli->xtau            = esl_opt_GetReal(go, "--xtau");
   pli->maxtau          = esl_opt_GetReal(go, "--maxtau");
-  pli->do_time_F1      = esl_opt_GetBoolean(go, "--time-F1")    ? TRUE  : FALSE;
-  pli->do_time_F2      = esl_opt_GetBoolean(go, "--time-F2")    ? TRUE  : FALSE;
-  pli->do_time_F3      = esl_opt_GetBoolean(go, "--time-F3")    ? TRUE  : FALSE;
-  pli->do_time_F4      = esl_opt_GetBoolean(go, "--time-F4")    ? TRUE  : FALSE;
-  pli->do_time_F5      = esl_opt_GetBoolean(go, "--time-F5")    ? TRUE  : FALSE;
-  pli->do_time_F6      = esl_opt_GetBoolean(go, "--time-F6")    ? TRUE  : FALSE;
+  pli->do_time_F1      = esl_opt_GetBoolean(go, "--timeF1")     ? TRUE  : FALSE;
+  pli->do_time_F2      = esl_opt_GetBoolean(go, "--timeF2")     ? TRUE  : FALSE;
+  pli->do_time_F3      = esl_opt_GetBoolean(go, "--timeF3")     ? TRUE  : FALSE;
+  pli->do_time_F4      = esl_opt_GetBoolean(go, "--timeF4")     ? TRUE  : FALSE;
+  pli->do_time_F5      = esl_opt_GetBoolean(go, "--timeF5")     ? TRUE  : FALSE;
+  pli->do_time_F6      = esl_opt_GetBoolean(go, "--timeF6")     ? TRUE  : FALSE;
   
   /* Configure reporting thresholds */
   pli->by_E            = TRUE;
@@ -1518,18 +1517,18 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
 	       (double) pli_acct->n_overflow_fcyk / (double) nwin_fcyk);
      }
      else { 
-       fprintf(ofp, "%-6s filter stage scan matrix overflows:          %15d  (%.4g)\n", 
+       fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15d  (%.4g)\n", 
 	       "CYK", 
 	       0, 0.);
      }
      if(nwin_final > 0) { 
-       fprintf(ofp, "%-6s final  stage scan matrix overflows:          %15" PRId64 "  (%.4g)\n", 
+       fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15" PRId64 "  (%.4g)\n", 
 	       (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
 	       pli_acct->n_overflow_final,
 	       (double) pli_acct->n_overflow_final / (double) nwin_final);
      }
      else { 
-       fprintf(ofp, "%-6s final  stage scan matrix overflows:          %15d  (%.4g)\n", 
+       fprintf(ofp, "%-6s final  stage scan matrix overflows:         %15d  (%.4g)\n", 
 	       (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? "Inside" : "CYK",
 	       0, 0.);
      }
@@ -3058,7 +3057,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
   int do_hbanded          = (cm->search_opts & CM_SEARCH_HBANDED) ? TRUE : FALSE;
   int do_qdb_or_nonbanded = (do_hbanded) ? FALSE : TRUE; /* will get set to TRUE later if do_hbanded and mx too big */
   double save_tau         = cm->tau;
-  float  hbmx_Mb;          /* approximate size in Mb for HMM banded matrix for this sequence */
+  float  hbmx_Mb = 0.;     /* approximate size in Mb for HMM banded matrix for this sequence */
   float  sc;               /* score returned from DP scanner */
   int    used_hb = FALSE;  /* TRUE if HMM banded scanner was used, FALSE if not */
 
@@ -3096,7 +3095,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
   
   if(do_qdb_or_nonbanded) { /* careful, different from just an 'else', b/c we may have just set this as true if status == eslERANGE */
     if(do_trunc) { 
-      if(cm->trsmx == NULL) { printf("FIX ME! round, cm->trsmx is NULL, probably overflow sized hb mx (do_inside: %d)\n", do_inside); goto ERROR; } 
+      if(cm->trsmx == NULL) { printf("FIX ME! round, cm->trsmx is NULL, probably overflow sized hb mx (do_inside: %d, tau: %g, hbmx_Mb: %g Mb \n", do_inside, cm->tau, hbmx_Mb); goto ERROR; } 
       if(do_inside) { /* not HMM banded, truncated */
 	status = RefITrInsideScan(cm, pli->errbuf, cm->trsmx, qdbidx, pli->cur_pass_idx, dsq, start, stop, 
 				  cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, NULL, NULL, &sc);
@@ -3107,7 +3106,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
       }
     }
     else { /* not HMM banded, not truncated */
-      if(cm->smx == NULL) { printf("FIX ME! round, cm->smx is NULL, probably overflow sized hb mx (do_inside: %d)\n", do_inside); goto ERROR; } 
+      if(cm->smx == NULL) { printf("FIX ME! round, cm->smx is NULL, probably overflow sized hb mx (do_inside: %d, tau: %g, hbmx_Mb: %g Mb)\n", do_inside, cm->tau, hbmx_Mb); goto ERROR; } 
       if(do_inside) { 
 	status = FastIInsideScan(cm, pli->errbuf, cm->smx, qdbidx, dsq, start, stop, 
 				 cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, NULL, &sc);
@@ -3188,7 +3187,7 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit, int cp9
        * reach maximum allowed tau (pli->maxtau).
        */
       cm->tau = pli->final_tau;
-      status = cp9_IterateSeq2Bands(cm, pli->errbuf, sq2aln->dsq, 1, sq->L, pli->cur_pass_idx, pli->hb_size_limit, FALSE, pli->maxtau, pli->xtau, &hbmx_Mb);
+      status = cp9_IterateSeq2Bands(cm, pli->errbuf, sq2aln->dsq, 1, sq2aln->L, pli->cur_pass_idx, pli->hb_size_limit, FALSE, pli->maxtau, pli->xtau, &hbmx_Mb);
       if(status != eslOK && status != eslERANGE) goto ERROR;
       /* eslERANGE is okay, mx is too big, we'll failover to D&C aln
        * below.  But only after we redetermine mx size in

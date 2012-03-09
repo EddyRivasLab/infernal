@@ -816,7 +816,7 @@ cm_tophits_RemoveOverlaps(CM_TOPHITS *th, char *errbuf)
   int64_t i, j;            
   int64_t nhits  = 0;
 
-  if (! th->is_sorted_for_overlap_removal) ESL_FAIL(status, errbuf, "cm_tophits_RemoveOverlaps() list is not sorted appropriately");
+  if (! th->is_sorted_for_overlap_removal) ESL_FAIL(eslEINVAL, errbuf, "cm_tophits_RemoveOverlaps() list is not sorted appropriately");
   if (th->N<2) return eslOK;
 
   i = 0;

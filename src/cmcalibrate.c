@@ -1,5 +1,5 @@
-/* cmcalibrate: score a CM against random sequence data to set 
- *              the statistical parameters for E-value determination.
+/* cmcalibrate: score a CM against random sequence data to fit
+ *              exponential tail parameters for E-value determination.
  * 
  * EPN, Thu Dec 15 19:40:16 2011 [Updated for v1.1 (removed CP9 and fthr)]
  * EPN, Wed May  2 07:02:52 2007
@@ -73,38 +73,36 @@ typedef struct {
 #endif
 
 static ESL_OPTIONS options[] = {
-  /* name                  type   default   env        range      toggles      reqs       incomp  help  docgroup*/
-  { "-h",           eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-L",           eslARG_REAL,    "1.6",  NULL,"0.01<=x<=100.", NULL,        NULL,        NULL, "set random seq length to search in Mb to <x>", 1 },
-  { "--forecast",   eslARG_NONE,    NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "don't do calibration, predict running time and exit", 1},
-  { "--nforecast",  eslARG_INT,     NULL,   NULL,     "n>0",      NULL,"--forecast",        NULL, "w/--forecast, predict time with <n> processors (maybe for MPI)", 1},
-  { "--memreq",     eslARG_NONE,    NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "don't do calibration, print required memory and exit", 1 },
-  { "--seed",       eslARG_INT,     "181",  NULL,      "n>=0",    NULL,        NULL,        NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)", 1 },
-  { "--beta",       eslARG_REAL,    "1E-15",NULL,      "x>0",     NULL,        NULL,"--nonbanded","set tail loss prob for query dependent banding (QDB) to <x>", 1 },
-  { "--nonbanded",  eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "do not use QDB", 1 },
-  { "--gtailn",     eslARG_INT,     "250",  NULL,   "n>=100",     NULL,        NULL,   "--tailp", "fit the top <n> hits/Mb in histogram for glocal modes", 1 },
-  { "--ltailn",     eslARG_INT,     "750",  NULL,   "n>=100",     NULL,        NULL,   "--tailp", "fit the top <n> hits/Mb in histogram for  local modes", 1 },
-  { "--tailp",      eslARG_REAL,    NULL,   NULL,"0.0<x<0.6",     NULL,        NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 1 },
-#ifdef HMMER_THREADS 
-  { "--cpu",        eslARG_INT,     NULL,"HMMER_NCPU", "n>=0",    NULL,        NULL,     CPUOPTS, "number of parallel CPU workers to use for multithreads", 1 },
-#endif
-#ifdef HAVE_MPI
-  { "--mpi",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,     MPIOPTS, "run as an MPI parallel program", 1 },  
-#endif
-  { "--devhelp",    eslARG_NONE,    NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "show list of undocumented developer options", 1 },
+  /* name                  type    default   env             range    toggles         reqs      incomp  help  docgroup*/
+  { "-h",           eslARG_NONE,     FALSE,  NULL,            NULL,      NULL,         NULL,      NULL, "show brief help on version and usage",         1 },
+  { "-L",           eslARG_REAL,     "1.6",  NULL, "0.01<=x<=100.",      NULL,         NULL,      NULL, "set random seq length to search in Mb to <x>", 1 },
+  /* Options for predicting running time and memory requirements */
+  { "--forecast",   eslARG_NONE,      NULL,  NULL,            NULL,      NULL,         NULL,      NULL, "don't do calibration, predict running time and exit",             2 },
+  { "--nforecast",  eslARG_INT,       NULL,  NULL,           "n>0",      NULL, "--forecast",      NULL, "w/--forecast, predict time with <n> processors (maybe for MPI)",  2 },
+  { "--memreq",     eslARG_NONE,      NULL,  NULL,            NULL,      NULL,         NULL,      NULL, "don't do calibration, print required memory and exit",            2 },
+  /* Options controlling exponential tail fits */
+  { "--gtailn",     eslARG_INT,       "250", NULL,        "n>=100",      NULL,         NULL, "--tailp", "fit the top <n> hits/Mb in histogram for glocal modes [df: 250]", 3 },
+  { "--ltailn",     eslARG_INT,       "750", NULL,        "n>=100",      NULL,         NULL, "--tailp", "fit the top <n> hits/Mb in histogram for  local modes [df: 750]", 3 },
+  { "--tailp",      eslARG_REAL,       NULL, NULL,     "0.0<x<0.6",      NULL,         NULL,      NULL, "set fraction of histogram tail to fit to exp tail to <x>",        3 },
   /* Optional output files */
-  { "--hfile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save fitted score histogram(s) to file <f>", 2 },
-  { "--sfile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save survival plot to file <f>", 2 },
-  { "--qqfile",     eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save Q-Q plot for score histograms to file <f>", 2 },
-  { "--ffile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save lambdas for different tail fit probs to file <f>", 2 },
-  { "--xfile",      eslARG_OUTFILE, NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "save scores in fit tail to file <f>", 2 },
-  /* Developer options the average user doesn't need to know about (only shown if --devhelp) */
-  { "-T",           eslARG_REAL,    NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 101 },
-  { "--random",     eslARG_NONE,    NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "use GC content of random null background model of CM",  101},
-  { "--gc",         eslARG_INFILE,  NULL,   NULL,      NULL,      NULL,        NULL,        NULL, "use GC content distribution from file <f>",  101},
-  { "--nonull3",    eslARG_NONE,   FALSE,   NULL,      NULL,      NULL,        NULL,        NULL, "turn OFF the NULL3 post hoc additional null model", 101 },
+  { "--hfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save fitted score histogram(s) to file <f>",            4 },
+  { "--sfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save survival plot to file <f>",                        4 },
+  { "--qqfile",     eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save Q-Q plot for score histograms to file <f>",        4 },
+  { "--ffile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save lambdas for different tail fit probs to file <f>", 4 },
+  { "--xfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save scores in fit tail to file <f>",                   4 },
+  /* Other options: */
+  { "--seed",       eslARG_INT,       "181", NULL,          "n>=0",      NULL,         NULL,      NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)",         5 },
+  { "--beta",       eslARG_REAL,    "1E-15", NULL,           "x>0",      NULL,         NULL,      NULL, "set tail loss prob for query dependent banding (QDB) to <x>", 5 },
+  { "--nonbanded",  eslARG_NONE,      FALSE, NULL,            NULL,      NULL,         NULL,  "--beta", "do not use QDB",                                              5 },
+  { "--nonull3",    eslARG_NONE,      FALSE, NULL,            NULL,      NULL,         NULL,      NULL, "turn OFF the NULL3 post hoc additional null model",           5 },
+  { "--random",     eslARG_NONE,       NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content of random null background model of CM",        5 },
+  { "--gc",         eslARG_INFILE,     NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content distribution from file <f>",                   5 },
+#ifdef HMMER_THREADS 
+  { "--cpu",        eslARG_INT,     NULL,"HMMER_NCPU", "n>=0",    NULL,        NULL,     CPUOPTS, "number of parallel CPU workers to use for multithreads",            5 },
+#endif
 #ifdef HAVE_MPI
-  { "--stall",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 101 },  
+  { "--mpi",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,     MPIOPTS, "run as an MPI parallel program",                                    5 },  
+  { "--stall",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb",                   5 },  
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -368,6 +366,8 @@ main(int argc, char **argv)
     free(cfg.tmpfile);
     
     /* master specific cleaning */
+    if (cfg.hfp || cfg.sfp || cfg.qfp || cfg.ffp || cfg.xfp) printf("#\n");
+
     if (cfg.hfp   != NULL) { 
       fclose(cfg.hfp);
       printf("# Histogram of high scoring hits in random seqs saved to file %s.\n", esl_opt_GetString(go, "--hfile"));
@@ -1279,17 +1279,19 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (esl_opt_VerifyConfig(go)               != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf); goto ERROR; }
  
   /* help format: */
-  if (esl_opt_GetBoolean(go, "-h") || esl_opt_GetBoolean(go, "--devhelp")) { 
+  if (esl_opt_GetBoolean(go, "-h")) { 
     cm_banner(stdout, argv[0], banner);
     esl_usage(stdout, argv[0], usage);
     puts("\nBasic options:");
     esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
-    puts("\nOptional output files:");
+    puts("\nOptions for predicting running time and memory requirements:");
     esl_opt_DisplayHelp(stdout, go, 2, 2, 80);
-    if(esl_opt_GetBoolean(go, "--devhelp")) { 
-      puts("\nUndocumented developer options:");
-      esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
-    }
+    puts("\nOptions controlling exponential tail fits:");
+    esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
+    puts("\nOptional output files:");
+    esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
+    puts("\nOther options:");
+    esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
     exit(0);
   }    
 
@@ -1313,33 +1315,36 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpu
   cm_banner(ofp, go->argv[0], banner);
   
                                                fprintf(ofp, "# CM file:                                     %s\n", cmfile);
-  if(esl_opt_IsUsed(go, "--forecast"))   {     fprintf(ofp, "# forecast mode (no calibration):              on (%d CPUs)\n", (esl_opt_IsUsed(go, "--nforecast")) ? esl_opt_GetInteger(go, "--nforecast") : available_ncpus); }
+  if (esl_opt_IsUsed(go, "-L"))          {     fprintf(ofp, "# total sequence length to search per mode:    %g Mb\n", esl_opt_GetReal(go, "-L")); }
+
+  if (esl_opt_IsUsed(go, "--forecast"))  {     fprintf(ofp, "# forecast mode (no calibration):              on (%d CPUs)\n", (esl_opt_IsUsed(go, "--nforecast")) ? esl_opt_GetInteger(go, "--nforecast") : available_ncpus); }
   if (esl_opt_IsUsed(go, "--memreq"))    {     fprintf(ofp, "# memory-requirement mode (no calibration):    on\n"); }
+
+  if (esl_opt_IsUsed(go, "--gtailn"))    {     fprintf(ofp, "# number of hits/Mb to fit (glocal):           %d\n", esl_opt_GetInteger(go, "--gtailn")); }
+  if (esl_opt_IsUsed(go, "--ltailn"))    {     fprintf(ofp, "# number of hits/Mb to fit (local):            %d\n", esl_opt_GetInteger(go, "--ltailn")); }
+  if (esl_opt_IsUsed(go, "--tailp"))     {     fprintf(ofp, "# fraction of histogram tail to fit:           %g\n", esl_opt_GetReal(go, "--tailp")); }
+
+  if (esl_opt_IsUsed(go, "--hfile"))     {     fprintf(ofp, "# saving fitted score histograms to file:      %s\n", esl_opt_GetString(go, "--hfile")); }
+  if (esl_opt_IsUsed(go, "--sfile"))     {     fprintf(ofp, "# saving survival plot to file:                %s\n", esl_opt_GetString(go, "--sfile")); }
+  if (esl_opt_IsUsed(go, "--qqfile"))    {     fprintf(ofp, "# saving Q-Q plot for histograms to file:      %s\n", esl_opt_GetString(go, "--qqfile")); }
+  if (esl_opt_IsUsed(go, "--ffile"))     {     fprintf(ofp, "# saving lambdas for tail fit probs to file:   %s\n", esl_opt_GetString(go, "--ffile")); }
+  if (esl_opt_IsUsed(go, "--xfile"))     {     fprintf(ofp, "# saving scores from fit tails to file:        %s\n", esl_opt_GetString(go, "--xfile")); }
+
   if (esl_opt_IsUsed(go, "--seed"))      {
     if (esl_opt_GetInteger(go, "--seed") == 0) fprintf(ofp, "# random number seed:                          one-time arbitrary\n");
     else                                       fprintf(ofp, "# random number seed set to:                   %d\n", esl_opt_GetInteger(go, "--seed"));
   }
-  if (esl_opt_IsUsed(go, "-L"))          {     fprintf(ofp, "# total sequence length to search per mode:    %g Mb\n", esl_opt_GetReal(go, "-L")); }
-  if (esl_opt_IsUsed(go, "--gtailn"))    {     fprintf(ofp, "# number of hits/Mb to fit (glocal):           %d\n", esl_opt_GetInteger(go, "--gtailn")); }
-  if (esl_opt_IsUsed(go, "--ltailn"))    {     fprintf(ofp, "# number of hits/Mb to fit (local):            %d\n", esl_opt_GetInteger(go, "--gtailn")); }
-  if (esl_opt_IsUsed(go, "--tailp"))     {     fprintf(ofp, "# fraction of histogram tail to fit:           %g\n", esl_opt_GetReal(go, "--tailp")); }
   if (esl_opt_IsUsed(go, "--beta"))      {     fprintf(ofp, "# tail loss probability for QDBs:              %g\n", esl_opt_GetReal(go, "--beta")); }
   if (esl_opt_IsUsed(go, "--nonbanded")) {     fprintf(ofp, "# query dependent bands (QDBs):                off\n"); }
-  if (esl_opt_IsUsed(go, "-T"))          {     fprintf(ofp, "# bit score threshold for histograms:          %g\n", esl_opt_GetReal(go, "-T")); }
+  if (esl_opt_IsUsed(go, "--nonull3"))   {     fprintf(ofp, "# null3 bias corrections:                      off\n"); }
   if (esl_opt_IsUsed(go, "--random"))    {     fprintf(ofp, "# generating seqs with cm->null (usually iid): yes\n"); }
   if (esl_opt_IsUsed(go, "--gc"))        {     fprintf(ofp, "# nucleotide distribution from file:           %s\n", esl_opt_GetString(go, "--gc")); }
-  if (esl_opt_IsUsed(go, "--nonull3"))   {     fprintf(ofp, "# null3 bias corrections:                      off\n"); }
 #ifdef HMMER_THREADS
   if (esl_opt_IsUsed(go, "--cpu"))       {     fprintf(ofp, "# number of worker threads:                    %d\n", esl_opt_GetInteger(go, "--cpu")); }
 #endif
 #ifdef HAVE_MPI
   if (esl_opt_IsUsed(go, "--mpi"))       {     fprintf(ofp, "# MPI:                                         on\n"); }
 #endif
-  if (esl_opt_IsUsed(go, "--hfile"))     {     fprintf(ofp, "# saving fitted score histograms to file:      %s\n", esl_opt_GetString(go, "--hfile")); }
-  if (esl_opt_IsUsed(go, "--sfile"))     {     fprintf(ofp, "# saving survival plot to file:                %s\n", esl_opt_GetString(go, "--sfile")); }
-  if (esl_opt_IsUsed(go, "--qqfile"))    {     fprintf(ofp, "# saving Q-Q plot for histograms to file:      %s\n", esl_opt_GetString(go, "--qqfile")); }
-  if (esl_opt_IsUsed(go, "--ffile"))     {     fprintf(ofp, "# saving lambdas for tail fit probs to file:   %s\n", esl_opt_GetString(go, "--ffile")); }
-  if (esl_opt_IsUsed(go, "--xfile"))     {     fprintf(ofp, "# saving scores from fit tails to file:        %s\n", esl_opt_GetString(go, "--xfile")); }
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n");
   return eslOK;
 }
@@ -1473,8 +1478,7 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if(cfg->r     == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create RNG.");
   if(cfg->r_est == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create RNG.");
 
-  if(esl_opt_IsOn(go, "-T")) cfg->sc_cutoff = esl_opt_GetReal(go, "-T");
-  else                       cfg->sc_cutoff = -eslINFINITY;
+  cfg->sc_cutoff = -eslINFINITY;
 
   return eslOK;
 }

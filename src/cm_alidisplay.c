@@ -1072,7 +1072,6 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
       if (ad->sqfrom < ad->sqto) { i2 = i1+ni-1; }
       else                       { i2 = i1-ni+1; }
 
-      if (ad->rfline != NULL) { strncpy(buf, ad->rfline+pos, cur_aliwidth); fprintf(fp, "  %*s %s %*sRF\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); }
       if (do_noncanonicals)   { strncpy(buf, ad->nline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s %*sNC\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); }
       strncpy(buf, ad->csline+pos, cur_aliwidth); fprintf(fp, "  %*s %s %*sCS\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, "");
       strncpy(buf, ad->model+pos,  cur_aliwidth); fprintf(fp, "  %*s %*d %s %*s%-*d\n", namewidth,  show_cmname, coordwidth, k1, buf, aliwidth-cur_aliwidth, "", coordwidth, k2);
@@ -1080,6 +1079,7 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
       if (ni > 0) { strncpy(buf, ad->aseq+pos, cur_aliwidth); fprintf(fp, "  %*s %*ld %s %*s%-*ld\n", namewidth, show_seqname, coordwidth, i1,  buf, aliwidth-cur_aliwidth, "", coordwidth, i2);  }
       else        { strncpy(buf, ad->aseq+pos, cur_aliwidth); fprintf(fp, "  %*s %*s %s %*s%*s\n",    namewidth, show_seqname, coordwidth, "-", buf, aliwidth-cur_aliwidth, "", coordwidth, "-"); }
       if (ad->ppline != NULL) { strncpy(buf, ad->ppline+pos, cur_aliwidth); fprintf(fp, "  %*s %s %*sPP\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); }
+      if (ad->rfline != NULL) { strncpy(buf, ad->rfline+pos, cur_aliwidth); fprintf(fp, "  %*s %s %*sRF\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); }
 
       k1 += nk;
       if (ad->sqfrom < ad->sqto) { i1 += ni; }
