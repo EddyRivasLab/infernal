@@ -54,7 +54,7 @@ typedef struct {
   P7_PROFILE       *Rgm;         /* generic   query profile HMM for 5' truncated hits */
   P7_PROFILE       *Lgm;         /* generic   query profile HMM for 3' truncated hits */
   P7_PROFILE       *Tgm;         /* generic   query profile HMM for 5' and 3' truncated hits */
-  FM_HMMDATA       *fm_hmmdata;  /* hmm-specific data for FM-index for fast MSV, required by p7_MSVFilter_longtarget() */
+  P7_MSVDATA       *msvdata;     /* hmm-specific data for fast MSV, required by p7_MSVFilter_longtarget() */
   float            *p7_evparam;  /* 0..CM_p7_NEVPARAM] E-value parameters */
   float             smxsize;     /* max size (Mb) of allowable scan mx (only relevant if --nohmm or --max) */
 } WORKER_INFO;
@@ -712,7 +712,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
 
     if (info->pli->do_top) { 
       prv_pli_ntophits = info->th->N;
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
       /* modify hit positions to account for the position of the window in the full sequence */
@@ -723,7 +723,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
     if (info->pli->do_bot && dbsq->abc->complement != NULL) { 
       prv_pli_ntophits = info->th->N;
       esl_sq_ReverseComplement(dbsq);
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
       /* modify hit positions to account for the position of the window in the full sequence */
@@ -900,7 +900,7 @@ pipeline_thread(void *arg)
 
       if (info->pli->do_top) { 
 	prv_pli_ntophits = info->th->N;
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* modify hit positions to account for the position of the window in the full sequence */
@@ -911,7 +911,7 @@ pipeline_thread(void *arg)
       if (info->pli->do_bot && dbsq->abc->complement != NULL) {
 	prv_pli_ntophits = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* modify hit positions to account for the position of the window in the full sequence */
@@ -1429,7 +1429,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* search top strand */
 	  if (info->pli->do_top) { 
 	    prv_pli_ntophits = info->th->N;
-	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
+	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
 	      mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
@@ -1442,7 +1442,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if(info->pli->do_bot && dbsq->abc->complement != NULL) { 
 	    esl_sq_ReverseComplement(dbsq);
 	    prv_pli_ntophits = info->th->N;
-	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->fm_hmmdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
+	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
 	      mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
 	    if(info->pli->do_top) { 
@@ -2041,10 +2041,9 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
     if(src_info->Tgm != NULL) { if((dest_infoA[i].Tgm = p7_profile_Clone(src_info->Tgm)) == NULL) goto ERROR; }
     if((dest_infoA[i].om  = p7_oprofile_Clone(src_info->om)) == NULL) goto ERROR;
     if((dest_infoA[i].bg  = p7_bg_Create(src_info->bg->abc)) == NULL) goto ERROR;
-    dest_infoA[i].fm_hmmdata = NULL;
-    ///if((dest_infoA[i].fm_hmmdata = fm_hmmdataCreate(dest_infoA[i].gm, dest_infoA[i].om)) == NULL) goto ERROR;
     if(dest_infoA[i].p7_evparam == NULL) ESL_ALLOC(dest_infoA[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
     esl_vec_FCopy(src_info->cm->fp7_evparam, CM_p7_NEVPARAM, dest_infoA[i].p7_evparam);
+    dest_infoA[i].msvdata = p7_hmm_MSVDataCreate(dest_infoA[i].om, FALSE);
   }
   return eslOK;
   
@@ -2062,21 +2061,17 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
 void
 free_info(WORKER_INFO *info)
 { 
-  if(info->pli != NULL) cm_pipeline_Destroy(info->pli, info->cm); info->pli = NULL;
-  if(info->th  != NULL) cm_tophits_Destroy(info->th);             info->th  = NULL;
-  
-  if(info->cm     != NULL) FreeCM(info->cm);                      info->cm  = NULL;
-  
-  if(info->om         != NULL) p7_oprofile_Destroy(info->om);     info->om = NULL;
-  if(info->gm         != NULL) p7_profile_Destroy(info->gm);      info->gm = NULL;
-  if(info->Rgm        != NULL) p7_profile_Destroy(info->Rgm);     info->Rgm = NULL;
-  if(info->Lgm        != NULL) p7_profile_Destroy(info->Lgm);     info->Lgm = NULL;
-  if(info->Tgm        != NULL) p7_profile_Destroy(info->Tgm);     info->Tgm = NULL;
-  if(info->bg         != NULL) p7_bg_Destroy(info->bg);           info->bg = NULL;
-  if(info->p7_evparam != NULL) free(info->p7_evparam);            info->p7_evparam = NULL;
-      
-  if(info->fm_hmmdata != NULL) fm_hmmdataDestroy(info->fm_hmmdata); info->fm_hmmdata = NULL;
-
+  if(info->pli        != NULL) cm_pipeline_Destroy(info->pli, info->cm); info->pli        = NULL;
+  if(info->th         != NULL) cm_tophits_Destroy(info->th);             info->th         = NULL;
+  if(info->cm         != NULL) FreeCM(info->cm);                         info->cm         = NULL;
+  if(info->om         != NULL) p7_oprofile_Destroy(info->om);            info->om         = NULL;
+  if(info->gm         != NULL) p7_profile_Destroy(info->gm);             info->gm         = NULL;
+  if(info->Rgm        != NULL) p7_profile_Destroy(info->Rgm);            info->Rgm        = NULL;
+  if(info->Lgm        != NULL) p7_profile_Destroy(info->Lgm);            info->Lgm        = NULL;
+  if(info->Tgm        != NULL) p7_profile_Destroy(info->Tgm);            info->Tgm        = NULL;
+  if(info->bg         != NULL) p7_bg_Destroy(info->bg);                  info->bg         = NULL;
+  if(info->p7_evparam != NULL) free(info->p7_evparam);                   info->p7_evparam = NULL;
+  if(info->msvdata    != NULL) p7_hmm_MSVDataDestroy(info->msvdata);     info->msvdata    = NULL;
 
   return;
 }
@@ -2162,9 +2157,6 @@ setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
   }
   /* after om has been created, convert gm to glocal, to define envelopes in cm_pipeline() */
   p7_ProfileConfig(info->cm->fp7, info->bg, info->gm, 100, p7_GLOCAL);
-  /* setup fm_hmmdata, this is required by MSVFilter_longtarget (even though we're not using an FM-index) */
-  info->fm_hmmdata = NULL;
-  ///info->fm_hmmdata = fm_hmmdataCreate(info->gm, info->om);
 
   if(do_trunc_ends) { 
     /* create Rgm, Lgm, and Tgm specially-configured profiles for defining envelopes around 
@@ -2185,6 +2177,9 @@ setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
 
   /* copy E-value parameters */
   esl_vec_FCopy(info->cm->fp7_evparam, CM_p7_NEVPARAM, info->p7_evparam); 
+
+  /* compute msvdata */
+  info->msvdata = p7_hmm_MSVDataCreate(info->om, FALSE);
 
   return eslOK;
 }
