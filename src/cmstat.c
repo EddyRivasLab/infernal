@@ -163,14 +163,13 @@ main(int argc, char **argv)
    */
 
   if(! esl_opt_IsUsed(go, "--key")) { 
-    
     ncm = 0;
     while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) != eslEOF) 
       {
 	if      (status == eslEOD)  cm_Fail("read failed, CM file %s may be truncated?", cmfile);
 	else if (status != eslOK)   cm_Fail(cmfp->errbuf);
 	ncm++;
-      
+
 	output_stats(go, cm, ncm, output_mode);
 	FreeCM(cm);
       }
@@ -231,6 +230,16 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode)
 
   Z = esl_opt_GetReal(go, "-Z") * 1000000.;
 
+  if(output_mode != OUTMODE_DEFAULT) { 
+    if(! (cm->flags & CMH_EXPTAIL_STATS)) {
+      if(esl_opt_IsUsed(go, "-E"))       cm_Fail("-E requires E-value statistics (from cmcalibrate), model number %d has none.", ncm); 
+      if(esl_opt_IsUsed(go, "-T"))       cm_Fail("-T requires E-value statistics (from cmcalibrate), model number %d has none.", ncm); 
+      if(esl_opt_IsUsed(go, "--cut_ga")) cm_Fail("--cut_ga requires E-value statistics (from cmcalibrate), model number %d has none.", ncm); 
+      if(esl_opt_IsUsed(go, "--cut_tc")) cm_Fail("--cut_tc requires E-value statistics (from cmcalibrate), model number %d has none.", ncm); 
+      if(esl_opt_IsUsed(go, "--cut_nc")) cm_Fail("--cut_nc requires E-value statistics (from cmcalibrate), model number %d has none.", ncm); 
+    }
+  }
+      
   if(output_mode == OUTMODE_DEFAULT) { 
     /* build the cp9 HMM, just to get HMM RE */
     if((status = build_cp9_hmm(cm, errbuf, FALSE, 0.0001, 0, &(cm->cp9), &(cm->cp9map))) != eslOK) cm_Fail(errbuf);
@@ -292,7 +301,7 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode)
 		  ncm,
 		  cm->name,
 		  cm->acc == NULL ? "-" : cm->acc,
-		  "-", "-", "-", "-", "-");
+		  "<not-set>", "-", "-", "-", "-");
 	}
       else { 
 	fprintf(stdout, "%6d  %-20s  %-9s  %13.2f  %13g  %13g  %13g  %13g\n",

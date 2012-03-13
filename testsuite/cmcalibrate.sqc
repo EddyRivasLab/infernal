@@ -5,29 +5,34 @@
 
 # Exercises of cmcalibrate.
 
-1  exercise  cmcalibrate:help/1          @src/cmcalibrate@  -h
-1  exercise  cmcalibrate:help/2          @src/cmcalibrate@  --devhelp
+1  exercise  calibrate:help/1          @src/cmcalibrate@  -h
 
 1  prep        model/se                  @src/cmbuild@ -F %SE.CM% !testsuite/se.sto!
 1  prep        model/trna                @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
 
 # --forecast or --memreq (doesn't do an actual calibration)
-1  exercise    cmcalibrate:trna/fc       @src/cmcalibrate@ --forecast %TRNA.CM%
-1  exercise    cmcalibrate:trna/fc/nfc   @src/cmcalibrate@ --forecast --nforecast 65 %TRNA.CM%
-1  exercise    cmcalibrate:trna/fc/seed  @src/cmcalibrate@ --forecast --seed 367 %TRNA.CM%
-1  exercise    cmcalibrate:trna/memreq   @src/cmcalibrate@ --memreq %TRNA.CM%
-1  exercise    cmcalibrate:trna/fc/beta  @src/cmcalibrate@ --forecast --beta 1E-4 %TRNA.CM%
-1  exercise    cmcalibrate:trna/fc/nb    @src/cmcalibrate@ --forecast --nonbanded %TRNA.CM%
+1  exercise    calibrate:t/fc       @src/cmcalibrate@ --forecast %TRNA.CM%
+1  exercise    calibrate:t/fc/nfc   @src/cmcalibrate@ --forecast --nforecast 65 %TRNA.CM%
+1  exercise    calibrate:t/fc/sd    @src/cmcalibrate@ --forecast --seed 367 %TRNA.CM%
+1  exercise    calibrate:t/memreq   @src/cmcalibrate@ --memreq %TRNA.CM%
+1  exercise    calibrate:t/fc/bta   @src/cmcalibrate@ --forecast --beta 1E-4 %TRNA.CM%
+1  exercise    calibrate:t/fc/nb    @src/cmcalibrate@ --forecast --nonbanded %TRNA.CM%
+1  exercise    calibrate:t/fc/nn3   @src/cmcalibrate@ --forecast --nonull3 %TRNA.CM%
+1  exercise    calibrate:t/fc/rdm   @src/cmcalibrate@ --forecast --random %TRNA.CM%
+1  exercise    calibrate:t/fc/gc    @src/cmcalibrate@ --forecast --gc !testsuite/3trnas.fa! %TRNA.CM%
 
 # actual calibrations
-1  exercise    cmcalibrate:se/L          @src/cmcalibrate@ -L 0.1 %SE.CM%
-1  exercise    cmcalibrate:se/cpu        @src/cmcalibrate@ -L 0.1 --cpu 0 %SE.CM%
-1  exercise    cmcalibrate:se/gtailn     @src/cmcalibrate@ -L 0.1 --gtailn 300 --hfile %TMP.FILE% %SE.CM%
-1  exercise    cmcalibrate:se/ltailn     @src/cmcalibrate@ -L 0.1 --ltailn 500 --sfile %TMP.FILE% %SE.CM%
-1  exercise    cmcalibrate:se/tailp      @src/cmcalibrate@ -L 0.1 --tailp 0.03 --qqfile %TMP.FILE% --ffile %TMP.FFILE% --xfile %TMP.XFILE% %SE.CM%
+1  exercise    calibrate:se/L          @src/cmcalibrate@ -L 0.1 %SE.CM%
+1  exercise    calibrate:se/cpu        @src/cmcalibrate@ -L 0.1 --cpu 0 %SE.CM%
+1  exercise    calibrate:se/gtail     @src/cmcalibrate@ -L 0.1 --gtailn 300 --hfile %TMP.FILE% %SE.CM%
+1  exercise    calibrate:se/ltail     @src/cmcalibrate@ -L 0.1 --ltailn 500 --sfile %TMP.FILE% %SE.CM%
+1  exercise    calibrate:se/tailp      @src/cmcalibrate@ -L 0.1 --tailp 0.03 --qqfile %TMP.FILE% --ffile %TMP.FFILE% --xfile %TMP.XFILE% %SE.CM%
+1  exercise    calibrate:se/nn3        @src/cmcalibrate@ -L 0.1 --nonull3 %SE.CM%
+1  exercise    calibrate:se/rdm        @src/cmcalibrate@ -L 0.1 --random %SE.CM%
+1  exercise    calibrate:se/gc         @src/cmcalibrate@ -L 0.1 --gc !testsuite/3trnas.fa! %SE.CM%
 
 # repeat some exercises runs with a multi-cm file. 
-1  prep        model/multi               @src/cmbuild@ -F %SE.DBL.CM% !testsuite/se.dbl.sto!
-1  exercise    cmcalibrate:multi/fc      @src/cmcalibrate@ --forecast %SE.DBL.CM%
-1  exercise    cmcalibrate:multi/memreq  @src/cmcalibrate@ --memreq %SE.DBL.CM%
-1  exercise    cmcalibrate:multi         @src/cmcalibrate@ -L 0.1 %SE.DBL.CM%
+1  prep        model/multi         @src/cmbuild@ -F %SE.DBL.CM% !testsuite/se.dbl.sto!
+1  exercise    calibrate:3/fc      @src/cmcalibrate@ --forecast %SE.DBL.CM%
+1  exercise    calibrate:3/memreq  @src/cmcalibrate@ --memreq %SE.DBL.CM%
+1  exercise    calibrate:3         @src/cmcalibrate@ -L 0.1 %SE.DBL.CM%

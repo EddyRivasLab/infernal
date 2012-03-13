@@ -1,4 +1,4 @@
-.TH "cmfetch" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
+.TH "cmfetch" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
 
 .SH NAME
 .TP 
@@ -27,28 +27,27 @@ cmfetch - retrieve CM(s) from a file
 .SH DESCRIPTION
 
 .PP
-Quickly retrieves one or more CMs from an
+Retrieves one or more CMs from an
 .I <cmfile>
 (a large Rfam database, for example). 
 
 .PP
-The 
+To enable very fast retrieval, index the 
 .I <cmfile>
-must be indexed first, using
+first, using
 .B cmfetch --index.
 The index is a binary file named
 .I <cmfile>.ssi.
 
 .PP
-The default mode is to retrieve a single CM by name,
-.\"or accession, 
-called the
+The default mode is to retrieve a single CM by name
+or accession, called the
 .I <key>.
 For example:
 
 .nf
   % cmfetch Rfam.cm tRNA
-.\"  % cmfetch Rfam.cm RF00005
+  % cmfetch Rfam.cm RF00005
 .fi
 
 .PP
@@ -62,20 +61,66 @@ line of the
 .I <keyfile> 
 is used as a 
 .I <key>,
-and any remaining data on the line is ignored; this allows
+and any remaining data on the line is ignored. This allows
 a variety of whitespace delimited datafiles to be used
 as 
 .I <keyfile>s.
-The
-.I <keyfile> 
-argument can be a '-' (dash) character, in which case
-the 
-.I keyfile 
-is read from standard input; this allows unix ninjas to
-construct sophisticated invocations using pipes.
 
 .PP
-By default, the CM is printed to standard output in INFERNAL-1.0 format.
+When using
+.I -f 
+and a
+.I <keyfile>,
+if 
+.B cmfile 
+has been indexed, the keys are retrieved in the order
+they occur in the 
+.I keyfile,
+but if 
+.B cmfile 
+isn't indexed, keys are retrieved in the order they occur
+in the 
+.B cmfile. 
+This is a side effect of an implementation that allows
+multiple keys to be retrieved even if the
+.B <cmfile> 
+is a nonrewindable stream, like a standard input pipe.
+
+.PP 
+In normal use
+(without
+.I --index
+or 
+.I -f
+options),
+.I <cmfile> 
+may be '-' (dash), which
+means reading input from
+.I stdin
+rather than a file.  
+With the
+.I --index
+option, 
+.I <cmfile>
+may not be '-'; it does not make sense
+to index a standard input stream.
+With the 
+.I -f 
+option,  
+either 
+.I <cmfile> 
+or 
+.I <keyfile> 
+(but not both) may be '-'.
+It is often particularly useful to read
+.I <keyfile>
+from standard input, because this allows
+use to use arbitrary command line invocations to
+create a list of CM names or accessions, then fetch them all
+to a new file, just with one command.
+
+.PP
+By default, the CM is printed to standard output in INFERNAL-1.1 format.
 
 .SH OPTIONS
 
@@ -94,8 +139,7 @@ The first field on each line of the
 .I <keyfile> 
 is used as a retrieval 
 .I <key>
-(a CM name)
-.\" or accession). 
+(a CM name or accession). 
 Blank lines and comment lines (that start with
 a # character) are ignored. 
 
@@ -125,39 +169,41 @@ This creates a
 .I <cmfile>.ssi
 binary index file.
 
-.\".SH SEE ALSO 
 
-.\"See 
-.\".B infernal(1)
-.\"for a master man page with a list of all the individual man pages
-.\"for programs in the INFERNAL package.
+.SH SEE ALSO 
 
-.\".PP
-.\"For complete documentation, see the user guide that came with your
-.\"INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
-.\"(@INFERNAL_URL@).
+See 
+.B infernal(1)
+for a master man page with a list of all the individual man pages
+for programs in the INFERNAL package.
 
-
-
-.\".SH COPYRIGHT
-
-.\".nf
-.\"@INFERNAL_COPYRIGHT@
-.\"@INFERNAL_LICENSE@
-.\".fi
-
-.\"For additional information on copyright and licensing, see the file
-.\"called COPYRIGHT in your CMER source distribution, or see the CMER
-.\"web page 
-.\"(@CMER_URL@).
+.PP
+For complete documentation, see the user guide that came with your
+INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
+(@INFERNAL_URL@).
 
 
-.\".SH AUTHOR
+.SH COPYRIGHT
 
-.\".nf
-.\"Eddy/Rivas Laboratory
-.\"Janelia Farm Research Campus
-.\"19700 Helix Drive
-.\"Ashburn VA 20147 USA
-.\"http://eddylab.org
-.\".fi
+.nf
+@INFERNAL_COPYRIGHT@
+@INFERNAL_LICENSE@
+.fi
+
+For additional information on copyright and licensing, see the file
+called COPYRIGHT in your INFERNAL source distribution, or see the INFERNAL
+web page 
+(@INFERNAL_URL@).
+
+.SH AUTHOR
+
+.nf
+The Eddy/Rivas Laboratory
+Janelia Farm Research Campus
+19700 Helix Drive
+Ashburn VA 20147 USA
+http://eddylab.org
+.fi
+
+
+

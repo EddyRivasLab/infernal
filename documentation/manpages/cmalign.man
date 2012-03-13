@@ -1,4 +1,4 @@
-.TH "cmalign" 1 "@RELEASEDATE@" "INFERNAL @RELEASE@" "INFERNAL Manual"
+.TH "cmalign" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
 
 .SH NAME
 .TP 
@@ -25,13 +25,6 @@ and outputs a multiple sequence alignment.
 The sequence file 
 .I seqfile
 must be in FASTA or Genbank format.
-
-.PP
-CMs are profiles of RNA consensus sequence and secondary structure. A
-CM file is produced by the 
-.B cmbuild 
-program, from a given RNA sequence alignment of known 
-consensus structure.
 
 .PP
 .B cmalign 
@@ -181,8 +174,8 @@ option.
 
 .TP
 .B -h
-Print brief help; includes version number and summary of
-all options, including expert options.
+Help; print a brief reminder of command line usage and available
+options.
 
 .TP
 .BI -o " <f>"
@@ -474,9 +467,9 @@ is case-insensitive.
 Specify the output alignment format as
 .I <s>.
 Acceptable formats are: Pfam, AFA, A2M, Clustal, and Phylip.
-AFA is aligned fasta. 
-.I <s>
-is not case sensitive.
+AFA is aligned fasta. Only Pfam and Stockholm alignment formats will
+include consensus structure annotation and posterior probability
+annotation of aligned residues.
 
 .TP
 .B --dnaout

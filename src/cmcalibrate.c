@@ -1660,9 +1660,9 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
  * 
  * Purpose:  Generate a random digitized seq and return it.
  *           Two possible modes:
- *           1. if(cfg->gc_freq == NULL && dnull != NULL) 
+ *           1. if(cfg->gc_freq == NULL)
  *              use dnull disto (a double version of cm->null) to generate
- *           2. if(cfg->gc_freq != NULL && dnull == NULL) 
+ *           2. if(cfg->gc_freq != NULL)
  *              use choose a GC frequency from cfg->gc_freq
  *              and generate with that
  *
@@ -1678,13 +1678,9 @@ get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int L, ESL_RANDO
   int      do_free_distro = FALSE;
   ESL_DSQ *dsq = NULL;
 
-  /* contract check, make sure we're in a valid mode */
-  if(cfg->gc_freq == NULL && cfg->dnull == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "get_random_dsq(), cfg->gc_freq == NULL and cfg->dnull == NULL");
-  if(cfg->gc_freq != NULL && cfg->dnull != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "get_random_dsq(), cfg->gc_freq != NULL and cfg->dnull != NULL");
-
   /* generate sequence */
-  if      (cfg->gc_freq == NULL && cfg->dnull != NULL) distro = cfg->dnull;
-  else if (cfg->gc_freq != NULL && cfg->dnull == NULL) {
+  if      (cfg->gc_freq == NULL) distro = cfg->dnull;
+  else  { /* cfg->gc_freq != NULL, use that */
     assert(cm->abc->K == 4);
     ESL_ALLOC(distro, sizeof(double) * cm->abc->K);
     do_free_distro = TRUE;
@@ -1963,7 +1959,7 @@ generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf,
 
   for(i = 0; i < cfg->N; i++) { 
     /* generate the dsq */
-    if(esl_opt_GetBoolean(go, "--random")) {
+    if(esl_opt_GetBoolean(go, "--random") || esl_opt_IsUsed(go, "--gc")) { 
       if((status = get_random_dsq(cfg, errbuf, cm, cfg->L, cfg->r, &dsq)) != eslOK) goto ERROR;
     }
     else { 
@@ -2108,7 +2104,7 @@ int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
 
   /* generate a sequence of length L=2*W (or 200, whichever is bigger) */
   L = ESL_MAX((2 * cm->W), 200);
-  if(esl_opt_GetBoolean(go, "--random")) { 
+  if(esl_opt_GetBoolean(go, "--random") || esl_opt_IsUsed(go, "--gc")) { 
     if((status = get_random_dsq(cfg, errbuf, cm, L, cfg->r_est, &dsq)) != eslOK) return status;
   }
   else { 

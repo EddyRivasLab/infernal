@@ -2,9 +2,6 @@
 # EPN, Thu Jan  3 05:20:12 2008
 # SVN $Id: exercises.sqc 2237 2007-12-01 00:14:41Z nawrockie $
 #
-
-# Exercises of cmsearch.
-#
 1  exercise  search:help/1        @src/cmsearch@  -h
 1  exercise  search:help/2        @src/cmsearch@  --devhelp
 
@@ -80,6 +77,16 @@
 # tRNA NC cutoff is undefined in Rfam 10.1
 1  exercise  search:v/1k/cutnc   @src/cmsearch@  --cut_nc %V.CM% %V1K%
 
+# truncation
+1  exercise  search:v/trunc       @src/cmsearch@  %V.CM% %VTREMIT%
+1  exercise  search:v/truncFZ     @src/cmsearch@  --FZ 2000 %V.CM% %VTREMIT%
+1  exercise  search:v/notrunc     @src/cmsearch@  --notrunc %V.CM% %VTREMIT%
+1  exercise  search:v/notruncFZ   @src/cmsearch@  --notrunc --FZ 2000 %V.CM% %VTREMIT%
+1  exercise  search:v/anytrunc    @src/cmsearch@  --anytrunc %V.CM% %VTREMIT%
+1  exercise  search:v/anytruncFZ  @src/cmsearch@  --anytrunc --FZ 2000 %V.CM% %VTREMIT%
+1  exercise  search:v/trunc/g     @src/cmsearch@  -g %V.CM% %VTREMIT%
+1  exercise  search:v/truncFZ/g   @src/cmsearch@  -g --FZ 2000 %V.CM% %VTREMIT%
+
 # filtering levels
 1  exercise  search:t/emit/max   @src/cmsearch@  --max %T.CM% %TEMIT%
 1  exercise  search:t/1k/max     @src/cmsearch@  --max %T.CM% %T1K%
@@ -93,16 +100,6 @@
 1  exercise  search:t/1k/rfam    @src/cmsearch@  --rfam %T.CM% %T1K%
 1  exercise  search:t/emit/FZ    @src/cmsearch@  --FZ 1000 %T.CM% %TEMIT%
 1  exercise  search:t/1k/FZ      @src/cmsearch@  --FZ 10 %T.CM% %T1K%
-
-# truncation
-1  exercise  search:v/trunc       @src/cmsearch@  %V.CM% %VTREMIT%
-1  exercise  search:v/truncFZ     @src/cmsearch@  --FZ 2000 %V.CM% %VTREMIT%
-1  exercise  search:v/notrunc     @src/cmsearch@  --notrunc %V.CM% %VTREMIT%
-1  exercise  search:v/notruncFZ   @src/cmsearch@  --notrunc --FZ 2000 %V.CM% %VTREMIT%
-1  exercise  search:v/anytrunc    @src/cmsearch@  --anytrunc %V.CM% %VTREMIT%
-1  exercise  search:v/anytruncFZ  @src/cmsearch@  --anytrunc --FZ 2000 %V.CM% %VTREMIT%
-1  exercise  search:v/trunc/g     @src/cmsearch@  -g %V.CM% %VTREMIT%
-1  exercise  search:v/truncFZ/g   @src/cmsearch@  -g --FZ 2000 %V.CM% %VTREMIT%
 
 # other options
 1  exercise  search:t/1k/nn3       @src/cmsearch@  --nonull3 %T.CM% %T1K%
@@ -175,6 +172,12 @@
 1  exercise  search:v/1k/Fnone     @src/cmsearch@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF5b --noF6 %V.CM% %V1K%
 1  exercise  search:v/1k/Fnone/FZ  @src/cmsearch@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF5b --noF6 --FZ 1000 %V.CM% %V1K%
 
+# envelope defn options
+1  exercise  search:v/1k/rt1        @src/cmsearch@  --rt1 0.15 %V.CM% %V1K%
+1  exercise  search:v/1k/rt2        @src/cmsearch@  --rt1 0.15 %V.CM% %V1K%
+1  exercise  search:v/1k/rt3        @src/cmsearch@  --rt1 0.15 %V.CM% %V1K%
+1  exercise  search:v/1k/ns         @src/cmsearch@  --ns 181 %V.CM% %V1K%
+
 # CYK filter options
 1  exercise  search:v/1k/ftau     @src/cmsearch@  --ftau  1E-7 %V.CM% %V1K%
 1  exercise  search:v/1k/fsums    @src/cmsearch@  --fsums %V.CM% %V1K%
@@ -213,12 +216,6 @@
 1  exercise  search:v/1k/timeF4     @src/cmsearch@  --timeF4 -Z 100 %V.CM% %V1K%
 1  exercise  search:v/1k/timeF5     @src/cmsearch@  --timeF5 -Z 100 %V.CM% %V1K%
 1  exercise  search:v/1k/timeF6     @src/cmsearch@  --timeF6 -Z 100 %V.CM% %V1K%
-
-# envelope defn options
-1  exercise  search:v/1k/rt1        @src/cmsearch@  --rt1 0.15 %V.CM% %V1K%
-1  exercise  search:v/1k/rt2        @src/cmsearch@  --rt1 0.15 %V.CM% %V1K%
-1  exercise  search:v/1k/rt3        @src/cmsearch@  --rt1 0.15 %V.CM% %V1K%
-1  exercise  search:v/1k/ns         @src/cmsearch@  --ns 181 %V.CM% %V1K%
 
 # other developer options
 1  exercise  search:v/1k/anb        @src/cmsearch@  --anonbanded %V.CM% %V1K%

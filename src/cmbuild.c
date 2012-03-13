@@ -30,6 +30,7 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
+#define CONOPTS "--fast,--hand,--rsearch"                      /* Exclusive options for model construction                    */
 #define WGTOPTS "--wgsc,--wblosum,--wpb,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
 #define EFFOPTS "--eent,--enone,--eset"                        /* Exclusive options for effective sequence number calculation */
 #define CLUSTOPTS "--ctarget,--cmaxid,--call,--corig,--cdump"  /* options for clustering the input aln and building a CM from each cluster */
@@ -42,65 +43,56 @@ static ESL_OPTIONS options[] = {
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of otherwise hidden developer/expert options", 1 },
 
   /* Expert model construction options */
-  /* name          type            default  env  range          toggles    reqs       incomp  help  docgroup*/
-  { "--gapthresh", eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,  "--rsearch", "fraction of gaps to allow in a consensus column [0..1]",         2 },
-  { "--rf",        eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,  "--rsearch", "use reference coordinate annotation to specify consensus",       2 },
-  { "--null",      eslARG_INFILE,  NULL,    NULL, NULL,         NULL,      NULL,  "--rsearch", "read null (random sequence) model from file <f>",                2 },
-  { "--prior",     eslARG_INFILE,  NULL,    NULL, NULL,         NULL,      NULL,  "--rsearch", "read priors from file <f>",                                      2 },
-  { "--rsearch",   eslARG_INFILE,  NULL,    NULL, NULL,         NULL,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
-  { "--betaW",     eslARG_REAL,    "1E-7",  NULL, "x>1E-18",    NULL,      NULL,         NULL, "set tail loss prob for calc'ing W (max size of a hit) to <x>",   2 },
-  { "--beta1",     eslARG_REAL,    "1E-7",  NULL, "x>1E-18",    NULL,      NULL,         NULL, "set tail loss prob for calc'ing tighter set of QDBs to <x>",     2 },
-  { "--beta2",     eslARG_REAL,    "1E-15", NULL, "x>1E-18",    NULL,      NULL,         NULL, "set tail loss prob for calc'ing looser  set of QDBs to <x>",     2 },
-  { "--informat",  eslARG_STRING,  NULL,    NULL, NULL,         NULL,      NULL,         NULL, "specify input alignment is in format <s> (Stockholm or Pfam)", 102 },
-  { "--ignorant",  eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL,  "strip the structural info from input alignment",              102 },
-  { "--v1p0",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL,  "parameterize CM using methods from Infernal v1.0.2",          102 },
-  { "--p56",       eslARG_NONE,    NULL,    NULL, NULL,         NULL,      NULL,    "--prior", "use the default prior from Infernal v0.56 through v1.0.2",     102 },
-  { "--iins",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "allow informative insert emissions, do not zero them",         102 },
-  { "--nobalance", eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "don't rebalance the CM; number in strict preorder",            102 },
-  { "--nodetach",  eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "do not 'detach' one of two inserts that model same column",    102 },
-  { "--elself",    eslARG_REAL,    "0.94",  NULL, "0<=x<=1",    NULL,      NULL,         NULL, "set EL self transition prob to <x>",                           102 },
-  { "--n2omega",   eslARG_REAL,    "0.000015258791",NULL,"x>0", NULL,      NULL,         NULL, "set prior probability of null2 model as <x>",                  102 }, 
-  { "--n3omega",   eslARG_REAL,    "0.000015258791",NULL,"x>0", NULL,      NULL,         NULL, "set prior probability of null3 model as <x>",                  102 }, 
+  /* name          type            default  env  range       toggles       reqs        incomp  help  docgroup*/
+  { "--fast",      eslARG_NONE,"default",   NULL, NULL,      CONOPTS,      NULL,         NULL, "assign cols w/ >= symfrac residues as consensus",                2 },
+  { "--hand",      eslARG_NONE,    FALSE,   NULL, NULL,      CONOPTS,      NULL,         NULL, "use reference coordinate annotation to specify consensus",       2 },
+  { "--symfrac",   eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "fraction of non-gaps to require in a consensus column [0..1]",   2 },
+  { "--rsearch",   eslARG_INFILE,  NULL,    NULL, NULL,      CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
+
+  /* Other model construction options */
+  /* name          type            default  env  range       toggles       reqs        incomp  help  docgroup*/
+  { "--null",      eslARG_INFILE,  NULL,    NULL, NULL,         NULL,      NULL,  "--rsearch", "read null (random sequence) model from file <f>",                3 },
+  { "--prior",     eslARG_INFILE,  NULL,    NULL, NULL,         NULL,      NULL,  "--rsearch", "read priors from file <f>",                                      3 },
+  /* below are only shown with --devhelp */
+  { "--betaW",     eslARG_REAL,    "1E-7",  NULL, "x>1E-18",    NULL,      NULL,         NULL, "set tail loss prob for calc'ing W (max size of a hit) to <x>", 103 },
+  { "--beta1",     eslARG_REAL,    "1E-7",  NULL, "x>1E-18",    NULL,      NULL,         NULL, "set tail loss prob for calc'ing tighter set of QDBs to <x>",   103 },
+  { "--beta2",     eslARG_REAL,    "1E-15", NULL, "x>1E-18",    NULL,      NULL,         NULL, "set tail loss prob for calc'ing looser  set of QDBs to <x>",   103 },
+  { "--informat",  eslARG_STRING,  NULL,    NULL, NULL,         NULL,      NULL,         NULL, "specify input alignment is in format <s> (Stockholm or Pfam)", 103 },
+  { "--ignorant",  eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL,  "strip the structural info from input alignment",              103 },
+  { "--v1p0",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL,  "parameterize CM using methods from Infernal v1.0.2",          103 },
+  { "--p56",       eslARG_NONE,    NULL,    NULL, NULL,         NULL,      NULL,    "--prior", "use the default prior from Infernal v0.56 through v1.0.2",     103 },
+  { "--iins",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "allow informative insert emissions, do not zero them",         103 },
+  { "--nobalance", eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "don't rebalance the CM; number in strict preorder",            103 },
+  { "--nodetach",  eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "do not 'detach' one of two inserts that model same column",    103 },
+  { "--elself",    eslARG_REAL,    "0.94",  NULL, "0<=x<=1",    NULL,      NULL,         NULL, "set EL self transition prob to <x>",                           103 },
+  { "--n2omega",   eslARG_REAL,    "0.000015258791",NULL,"x>0", NULL,      NULL,         NULL, "set prior probability of null2 model as <x>",                  103 }, 
+  { "--n3omega",   eslARG_REAL,    "0.000015258791",NULL,"x>0", NULL,      NULL,         NULL, "set prior probability of null3 model as <x>",                  103 }, 
 
   /* Alternate relative sequence weighting strategies */
   /* name        type         default   env  range     toggles         reqs  incomp  help  docgroup*/
-  { "--wgsc",    eslARG_NONE,"default", NULL, NULL,    WGTOPTS,        NULL, NULL, "Gerstein/Sonnhammer/Chothia tree weights",          3 },
-  { "--wnone",   eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "don't do any relative weighting; set all to 1",     3 },
-  { "--wpb",     eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "Henikoff position-based weights",                   3 },
-  { "--wgiven",  eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "use weights as given in MSA file",                  3 },
-  { "--wblosum", eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "Henikoff simple filter weights",                    3 },
-  { "--wid",     eslARG_REAL,   "0.62", NULL,"0<=x<=1",   NULL, "--wblosum", NULL, "for --wblosum: set identity cutoff",                3 },
-  { "--pbswitch",eslARG_INT,    "5000", NULL,"n>0",       NULL,        NULL, NULL, "set failover to efficient PB wgts at > <n> seqs", 103 },
+  { "--wgsc",    eslARG_NONE,"default", NULL, NULL,    WGTOPTS,        NULL, NULL, "Gerstein/Sonnhammer/Chothia tree weights",          4 },
+  { "--wnone",   eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "don't do any relative weighting; set all to 1",     4 },
+  { "--wpb",     eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "Henikoff position-based weights",                   4 },
+  { "--wgiven",  eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "use weights as given in MSA file",                  4 },
+  { "--wblosum", eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "Henikoff simple filter weights",                    4 },
+  { "--wid",     eslARG_REAL,   "0.62", NULL,"0<=x<=1",   NULL, "--wblosum", NULL, "for --wblosum: set identity cutoff",                4 },
+  { "--pbswitch",eslARG_INT,    "5000", NULL,"n>0",       NULL,        NULL, NULL, "set failover to efficient PB wgts at > <n> seqs",   4 },
 
   /* Alternate effective sequence weighting strategies */
   /* name        type            default    env     range toggles      reqs   incomp  help  docgroup*/
-  { "--eent",    eslARG_NONE, "default",    NULL,   NULL, EFFOPTS,     NULL,   NULL, "adjust eff seq # to achieve relative entropy target",           4 },
-  { "--enone",   eslARG_NONE,     FALSE,    NULL,   NULL, EFFOPTS,     NULL,   NULL, "no effective seq # weighting: just use nseq",                   4 },
-  { "--ere",     eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set CM target relative entropy to <x>",             4 },
-  { "--eset",    eslARG_REAL,      NULL,    NULL, "x>=0", EFFOPTS,     NULL,   NULL, "set eff seq # for all models to <x>",                           4 },
-  { "--eminseq", eslARG_REAL,     "0.1",    NULL, "x>=0",    NULL, "--eent",   NULL, "for --eent: set minimum effective sequence number to <x>",    104 },
-  { "--ehmmre",  eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set minimum HMM relative entropy to <x>",         104 }, 
-  { "--esigma",  eslARG_REAL,    "45.0",    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set sigma param to <x>",                          104 },
-
-  /* Refining the seed alignment */
-  /* name          type            default  env  range    toggles      reqs         incomp  help  docgroup*/
-  { "--refine",    eslARG_OUTFILE,   NULL, NULL, NULL,    NULL,       NULL,           NULL, "refine input aln w/Expectation-Maximization, save to <f>",          5 },
-  { "-l",          eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, configure model for local alignment [default: global]", 5 },
-  { "--gibbs",     eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, use Gibbs sampling instead of EM",                      5 },
-  { "--seed",      eslARG_INT,        "0", NULL, "n>=0",  NULL,  "--gibbs",           NULL, "w/--gibbs, set RNG seed to <n> (if 0: one-time arbitrary seed)",    5 },
-  { "--notrunc",   eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, do not use truncated alignment algorithm",              5 },
-  { "--sub",       eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine", "--notrunc,-l", "w/--refine, use sub CM for columns b/t HMM start/end points",     105 },
-  { "--nonbanded", eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "do not use bands to accelerate alignment with --refine",          105 },
-  { "--indi",      eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "print individual sequence scores during MSA refinement",          105 },
-  { "--fins",      eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, flush inserts left/right in alignments",              105 },
-  { "--tau",       eslARG_REAL,    "1E-7", NULL, "0<x<1", NULL, "--refine",  "--nonbanded", "set tail loss prob for HMM bands to <x>",                         105 },
-  { "--mxsize",    eslARG_REAL,  "2048.0", NULL, "x>0.",  NULL, "--refine",           NULL, "set maximum allowable DP matrix size to <x> Mb",                  105 },
-  { "--rdump",     eslARG_OUTFILE  , NULL, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, print all intermediate alignments to <f>",            105 },
+  { "--eent",    eslARG_NONE, "default",    NULL,   NULL, EFFOPTS,     NULL,   NULL, "adjust eff seq # to achieve relative entropy target",           5 },
+  { "--enone",   eslARG_NONE,     FALSE,    NULL,   NULL, EFFOPTS,     NULL,   NULL, "no effective seq # weighting: just use nseq",                   5 },
+  { "--ere",     eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set CM target relative entropy to <x>",             5 },
+  { "--eset",    eslARG_REAL,      NULL,    NULL, "x>=0", EFFOPTS,     NULL,   NULL, "set eff seq # for all models to <x>",                           5 },
+  { "--eminseq", eslARG_REAL,     "0.1",    NULL, "x>=0",    NULL, "--eent",   NULL, "for --eent: set minimum effective sequence number to <x>",      5 },
+  { "--ehmmre",  eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set minimum HMM relative entropy to <x>",           5 }, 
+  { "--esigma",  eslARG_REAL,    "45.0",    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set sigma param to <x>",                            5 },
 
   /* Options controlling filter p7 HMM construction */
   /* name         type           default  env  range toggles  reqs  incomp    help  docgroup*/
-  { "--p7ml",     eslARG_NONE,    FALSE, NULL, NULL, NULL,    NULL,     NULL, "define the filter p7 HMM as the ML p7 HMM",                    6 },
   { "--p7ere",    eslARG_REAL,   "0.38", NULL, NULL, NULL,    NULL, "--p7ml", "for the filter p7 HMM, set minimum rel entropy/posn to <x>",   6 },
+  { "--p7ml",     eslARG_NONE,    FALSE, NULL, NULL, NULL,    NULL,     NULL, "define the filter p7 HMM as the ML p7 HMM",                    6 },
+  /* below are only shown with --devhelp */
   { "--p7prior",  eslARG_INFILE,   NULL, NULL, NULL, NULL,    NULL, "--p7ml", "read p7 prior for the filter HMM from file <f>",             106 },
   { "--p7hprior", eslARG_NONE,     NULL, NULL, NULL, NULL,    NULL, "--p7ml", "use HMMER's default p7 prior, not Infernal's p7 prior",      106 },
   { "--p7hemit",  eslARG_NONE,    FALSE, NULL, NULL, NULL,    NULL, "--p7ml", "use HMMER emission priors for filter HMM",                   106 }, 
@@ -111,6 +103,7 @@ static ESL_OPTIONS options[] = {
   { "--EvN",     eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 local Vit calibration",    7 },
   { "--ElfN",    eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 local Fwd calibration",    7 },
   { "--EgfN",    eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 glocal Fwd calibration",   7 },
+  /* below are only shown with --devhelp */
   { "--Elftp",   eslARG_REAL, "0.055", NULL, "x>0.",  NULL,  NULL, NULL,        "fit p7 local fwd exp tail to <f> fraction of scoring dist",   107 },
   { "--Egftp",   eslARG_REAL, "0.065", NULL, "x>0.",  NULL,  NULL, NULL,        "fit p7 glocal fwd exp tail to <f> fraction of scoring dist",  107 },
   { "--Ereal",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,        "sample realistic, not iid genomic seqs, for p7 calibration",  107 },
@@ -122,32 +115,49 @@ static ESL_OPTIONS options[] = {
   { "--ElL",     eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--Elcmult", "length of seqs to search for local stats is <n>",             107 },
   { "--EgL",     eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--Egcmult", "length of seqs to search for glocal stats is <n>",            107 },
 
+  /* Refining the input alignment */
+  /* name          type            default  env  range    toggles      reqs         incomp  help  docgroup*/
+  { "--refine",    eslARG_OUTFILE,   NULL, NULL, NULL,    NULL,       NULL,           NULL, "refine input aln w/Expectation-Maximization, save to <f>",          8 },
+  { "-l",          eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, configure model for local alignment [default: global]", 8 },
+  { "--gibbs",     eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, use Gibbs sampling instead of EM",                      8 },
+  { "--seed",      eslARG_INT,        "0", NULL, "n>=0",  NULL,  "--gibbs",           NULL, "w/--gibbs, set RNG seed to <n> (if 0: one-time arbitrary seed)",    8 },
+  { "--cyk",       eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, use CYK instead of optimal accuracy",                   8 },
+  { "--notrunc",   eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, do not use truncated alignment algorithm",              8 },
+  /* below are only shown with --devhelp */
+  { "--sub",       eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine", "--notrunc,-l", "w/--refine, use sub CM for columns b/t HMM start/end points",     108 },
+  { "--nonbanded", eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "do not use bands to accelerate alignment with --refine",          108 },
+  { "--indi",      eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "print individual sequence scores during MSA refinement",          108 },
+  { "--fins",      eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, flush inserts left/right in alignments",              108 },
+  { "--tau",       eslARG_REAL,    "1E-7", NULL, "0<x<1", NULL, "--refine",  "--nonbanded", "set tail loss prob for HMM bands to <x>",                         108 },
+  { "--mxsize",    eslARG_REAL,  "2048.0", NULL, "x>0.",  NULL, "--refine",           NULL, "set maximum allowable DP matrix size to <x> Mb",                  108 },
+  { "--rdump",     eslARG_OUTFILE  , NULL, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, print all intermediate alignments to <f>",            108 },
+
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer verbose output options */
   /* name        type          default  env   range toggles reqs  incomp help  docgroup*/
-  { "--verbose", eslARG_NONE,    FALSE, NULL, NULL,   NULL, NULL, NULL,  "be verbose with output",                              108 },
-  { "--cfile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save count vectors to file <f>",                      108 },
-  { "--efile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save emission score information to file <f>",         108 },
-  { "--tfile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "dump individual sequence parsetrees to file <f>",     108 },
-  { "--cmtbl",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of CM topology to file <f>", 108 },
-  { "--emap",    eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save consensus emit map to file <f>",                 108 },
-  { "--gtree",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tree description of master tree to file <f>",    108 },
-  { "--gtbl",    eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of master tree to file <f>", 108 },
+  { "--verbose", eslARG_NONE,    FALSE, NULL, NULL,   NULL, NULL, NULL,  "be verbose with output",                              109 },
+  { "--cfile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save count vectors to file <f>",                      109 },
+  { "--efile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save emission score information to file <f>",         109 },
+  { "--tfile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "dump individual sequence parsetrees to file <f>",     109 },
+  { "--cmtbl",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of CM topology to file <f>", 109 },
+  { "--emap",    eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save consensus emit map to file <f>",                 109 },
+  { "--gtree",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tree description of master tree to file <f>",    109 },
+  { "--gtbl",    eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of master tree to file <f>", 109 },
 
   /* Building multiple CMs after clustering input MSA */
   /* name        type            default env   range      toggles reqs  incomp    help  docgroup*/
-  { "--ctarget", eslARG_INT,     NULL,   NULL, "n>0" ,    NULL,   NULL, "--call", "build (at most) <n> CMs by partitioning MSA into <n> clusters", 109 },
-  { "--cmaxid",  eslARG_REAL,    NULL,   NULL, "0.<x<1.", NULL,   NULL, "--call", "max fractional id b/t 2 clusters is <x>, each cluster -> CM",   109 }, 
-  { "--call",    eslARG_NONE,    FALSE,  NULL, NULL,      NULL,   NULL,     NULL, "build a separate CM from every seq in MSA",                     109 },
-  { "--corig",   eslARG_NONE,    FALSE,  NULL, NULL,      NULL,   NULL,     NULL, "build an additional CM from the original, full MSA",            109 }, 
-  { "--cdump",   eslARG_OUTFILE, NULL,   NULL, NULL,      NULL,   NULL,     NULL, "dump the MSA for each cluster (CM) to file <f>",                109 },
+  { "--ctarget", eslARG_INT,     NULL,   NULL, "n>0" ,    NULL,   NULL, "--call", "build (at most) <n> CMs by partitioning MSA into <n> clusters", 110 },
+  { "--cmaxid",  eslARG_REAL,    NULL,   NULL, "0.<x<1.", NULL,   NULL, "--call", "max fractional id b/t 2 clusters is <x>, each cluster -> CM",   110 }, 
+  { "--call",    eslARG_NONE,    FALSE,  NULL, NULL,      NULL,   NULL,     NULL, "build a separate CM from every seq in MSA",                     110 },
+  { "--corig",   eslARG_NONE,    FALSE,  NULL, NULL,      NULL,   NULL,     NULL, "build an additional CM from the original, full MSA",            110 }, 
+  { "--cdump",   eslARG_OUTFILE, NULL,   NULL, NULL,      NULL,   NULL,     NULL, "dump the MSA for each cluster (CM) to file <f>",                110 },
 
   /* Developer options related to experimental local begin/end modes */
   /* name        type          default env   range      toggles reqs  incomp       help  docgroup*/
-  { "--pbegin",  eslARG_REAL,  "0.05", NULL, "0<x<1",   NULL,   NULL,  NULL,       "set aggregate local begin prob to <x>", 110 },
-  { "--pend",    eslARG_REAL,  "0.05", NULL, "0<x<1",   NULL,   NULL,  NULL,       "set aggregate local end prob to <x>",   110 },
-  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,   NULL,  "--pbegin", "set all local begins as equiprobable",  110 },
-  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,   NULL,  "--pend",   "set all local end probs to <x>",        110 },
+  { "--pbegin",  eslARG_REAL,  "0.05", NULL, "0<x<1",   NULL,   NULL,  NULL,       "set aggregate local begin prob to <x>", 111 },
+  { "--pend",    eslARG_REAL,  "0.05", NULL, "0<x<1",   NULL,   NULL,  NULL,       "set aggregate local end prob to <x>",   111 },
+  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,   NULL,  "--pbegin", "set all local begins as equiprobable",  111 },
+  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,   NULL,  "--pend",   "set all local end probs to <x>",        111 },
 
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -491,7 +501,9 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 static void
 process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_alifile)
 {
-  ESL_GETOPTS *go      = NULL;
+  ESL_GETOPTS *go     = NULL;
+  char        *devmsg = "*";
+  int          do_dev = FALSE; /* set to TRUE if --devhelp used */
 
   if ((go = esl_getopts_Create(options))     == NULL)     cm_Fail("Internal failure creating options object");
   if (esl_opt_ProcessEnvironment(go)         != eslOK)  { printf("Failed to process environment: %s\n", go->errbuf); goto ERROR; }
@@ -499,9 +511,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (esl_opt_VerifyConfig(go)               != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf); goto ERROR; }
  
   /* help format: */
-  /*char *devmsg = " [use --devhelp to see more]";*/
-  char *devmsg = "*";
-  int   do_dev = esl_opt_GetBoolean(go, "--devhelp") ? TRUE : FALSE;
+  do_dev = esl_opt_GetBoolean(go, "--devhelp") ? TRUE : FALSE;
   if(esl_opt_GetBoolean(go, "-h") || do_dev) { 
     cm_banner(stdout, argv[0], banner);
     esl_usage(stdout, argv[0], usage);
@@ -509,20 +519,18 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     puts("\nBasic options:");
     esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
 
-    printf("\nModel construction options%s:\n", do_dev ? "" : devmsg);
+    puts("\nAlternative model construction strategies:");
     esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-    if(do_dev) esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
+
+    printf("\nOther model construction options%s:\n", do_dev ? "" : devmsg);
+    esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+    if(do_dev) esl_opt_DisplayHelp(stdout, go, 103, 2, 80);
     
     puts("\nAlternative relative sequence weighting strategies:");
-    esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+    esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
     
-    printf("\nAlternative effective sequence weighting strategies%s:\n", do_dev ? "" : devmsg);
-    esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-    if(do_dev) esl_opt_DisplayHelp(stdout, go, 104, 2, 80);
-    
-    printf("\nOptions for refining the input alignment%s:\n", do_dev ? "" : devmsg);
+    puts("\nAlternative effective sequence weighting strategies:");
     esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
-    if(do_dev) esl_opt_DisplayHelp(stdout, go, 105, 2, 80);
     
     printf("\nOptions for HMM filter construction%s:\n", do_dev ? "" : devmsg);
     esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
@@ -532,15 +540,19 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
     if(do_dev) esl_opt_DisplayHelp(stdout, go, 107, 2, 80);
     
+    printf("\nOptions for refining the input alignment%s:\n", do_dev ? "" : devmsg);
+    esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
+    if(do_dev) esl_opt_DisplayHelp(stdout, go, 108, 2, 80);
+    
     if(do_dev) { 
       puts("\nDeveloper options for verbose output/debugging:");
-      esl_opt_DisplayHelp(stdout, go, 108, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 109, 2, 80);
 
       puts("\nOptions for building multiple CMs after clustering input MSA:");
-      esl_opt_DisplayHelp(stdout, go, 109, 2, 80);
-    
-      puts("\nDeveloper options related to experimental local begin/end modes:");
       esl_opt_DisplayHelp(stdout, go, 110, 2, 80);
+    
+      puts("\nOptions for experimental local begin/end modes:");
+      esl_opt_DisplayHelp(stdout, go, 111, 2, 80);
     }
     else { 
       puts("\n*Use --devhelp to show additional expert options.");
@@ -579,8 +591,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
 			                    fprintf(ofp, "# alignment file:                                     %s\n", alifile);
  if (esl_opt_IsUsed(go, "-n"))            { fprintf(ofp, "# name (the single) CM:                               %s\n", esl_opt_GetString(go, "-n")); }
  if (esl_opt_IsUsed(go, "-F"))            { fprintf(ofp, "# overwrite CM file if necessary:                     yes\n"); }
- if (esl_opt_IsUsed(go, "--gapthresh"))   { fprintf(ofp, "# max fraction of gaps in a consensus column:         %g\n", esl_opt_GetReal(go, "--gapthresh")); }
- if (esl_opt_IsUsed(go, "--rf"))          { fprintf(ofp, "# use #=GC RF annotation to define consensus columns: yes\n"); }
+ if (esl_opt_IsUsed(go, "--symfrac"))     { fprintf(ofp, "# minimum symbol fraction in a consensus column:      %g\n", esl_opt_GetReal(go, "--symfrac")); }
+ if (esl_opt_IsUsed(go, "--hand"))        { fprintf(ofp, "# use #=GC RF annotation to define consensus columns: yes\n"); }
  if (esl_opt_IsUsed(go, "--null"))        { fprintf(ofp, "# read null model from file:                          %s\n", esl_opt_GetString(go, "--null")); }
  if (esl_opt_IsUsed(go, "--prior"))       { fprintf(ofp, "# read prior from file:                               %s\n", esl_opt_GetString(go, "--prior")); }
  if (esl_opt_IsUsed(go, "--rsearch"))     { fprintf(ofp, "# RSEARCH parameterization mode w/RIBOSUM mx file:    %s\n", esl_opt_GetString(go, "--rsearch")); }
@@ -621,6 +633,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
    else                                       { fprintf(ofp,"# random number seed set to:                           %d\n", esl_opt_GetInteger(go, "--seed")); }
  }
  if (esl_opt_IsUsed(go, "--notrunc"))     { fprintf(ofp, "# use truncated aln algorithms for aln refinement:    no\n"); }
+ if (esl_opt_IsUsed(go, "--cyk"))         { fprintf(ofp, "# use the CYK algorithm instead of optimal accuracy:  yes\n"); }
  if (esl_opt_IsUsed(go, "--sub"))         { fprintf(ofp, "# alternative truncated seq alignment 'sub' mode:     on\n"); }
  if (esl_opt_IsUsed(go, "--nonbanded"))   { fprintf(ofp, "# use HMM bands for accelerating aln refinement:      no\n"); }
  if (esl_opt_IsUsed(go, "--indi"))        { fprintf(ofp, "# print individual seq scores during aln refinement:  yes\n"); }
@@ -1190,7 +1203,7 @@ check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf
     fflush(stdout); 
   }
 
-  if (esl_opt_GetBoolean(go, "--rf") && msa->rf == NULL)        ESL_FAIL(eslFAIL, errbuf, "Alignment has no reference coord annotation.\n");
+  if (esl_opt_GetBoolean(go, "--hand") && msa->rf == NULL)        ESL_FAIL(eslFAIL, errbuf, "Alignment has no reference coord annotation.\n");
   if (msa->ss_cons == NULL)                                     ESL_FAIL(eslFAIL, errbuf, "Alignment did not contain consensus structure annotation.\n");
   if (! clean_cs(msa->ss_cons, msa->alen, (! cfg->be_verbose))) ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation\n");
   if (esl_opt_GetBoolean(go, "--ignorant"))                     strip_wuss(msa->ss_cons); /* --ignorant, remove all bp info */
@@ -1276,9 +1289,9 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
     fflush(stdout);
   }
 
-  use_rf  = (esl_opt_GetBoolean(go, "--rf")) ? TRUE : FALSE;
+  use_rf  = (esl_opt_GetBoolean(go, "--hand")) ? TRUE : FALSE;
   use_wts = (use_rf || esl_opt_GetBoolean(go, "--v1p0")) ? FALSE : TRUE;
-  if((status = HandModelmaker(msa, errbuf, use_rf, use_wts, esl_opt_GetReal(go, "--gapthresh"), &cm, &mtr)) != eslOK) return status;
+  if((status = HandModelmaker(msa, errbuf, use_rf, use_wts, (1. - esl_opt_GetReal(go, "--symfrac")), &cm, &mtr)) != eslOK) return status;
   
   /* set the CM's null model, if rsearch mode, use the bg probs used to calc RIBOSUM */
   if( esl_opt_IsOn(go, "--rsearch")) CMSetNullModel(cm, cfg->fullmat->g); 
@@ -1661,14 +1674,17 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
   if(esl_opt_IsUsed(go, "--refine")) { 
     cm->tau = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
 
-    /* update cm->align->opts, we'll use CYK unless --gibbs, we never use optacc */
-    if     (  esl_opt_GetBoolean(go, "--sub"))     { cm->align_opts |= CM_ALIGN_SUB; }
-    else if(! esl_opt_GetBoolean(go, "--notrunc")) { cm->align_opts |= CM_ALIGN_TRUNC; }
-    if(esl_opt_GetBoolean(go, "--gibbs")) cm->align_opts |= CM_ALIGN_SAMPLE;
+    /* update cm->align->opts */
+    if     (esl_opt_GetBoolean(go, "--gibbs"))     { cm->align_opts |= CM_ALIGN_SAMPLE; }
+    else if(esl_opt_GetBoolean(go, "--cyk"))       { cm->align_opts |= CM_ALIGN_CYK;    }
+    else                                           { cm->align_opts |= CM_ALIGN_OPTACC; }
+    if     (  esl_opt_GetBoolean(go, "--sub"))     { cm->align_opts |= CM_ALIGN_SUB;    }
+    else if(! esl_opt_GetBoolean(go, "--notrunc")) { cm->align_opts |= CM_ALIGN_TRUNC;  }
 
     if(esl_opt_GetBoolean(go, "--nonbanded"))   { 
-      cm->align_opts  |= CM_ALIGN_SMALL; 
-      cm->align_opts  |= CM_ALIGN_NONBANDED; 
+      cm->align_opts |=  CM_ALIGN_SMALL; 
+      cm->align_opts |=  CM_ALIGN_NONBANDED; 
+      cm->align_opts |=  CM_ALIGN_CYK;
       cm->align_opts &= ~CM_ALIGN_OPTACC; /* turn optimal accuracy OFF */
     }
     else cm->align_opts  |= CM_ALIGN_HBANDED;

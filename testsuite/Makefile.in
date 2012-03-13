@@ -32,16 +32,78 @@ devcheck:
 	@echo 
 	@echo Running Infernal developer test suite...
 	@echo
-#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/exercises.sqc   .. ${srcdir}/..
-#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmalign.sqc     .. ${srcdir}/..
-#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmbuild.sqc     .. ${srcdir}/..
-#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmcalibrate.sqc .. ${srcdir}/..
-#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmconvert.sqc   .. ${srcdir}/..
-#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmemit.sqc      .. ${srcdir}/..
-#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmfetch.sqc     .. ${srcdir}/..
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/exercises.sqc   .. ${srcdir}/..
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmalign.sqc     .. ${srcdir}/..
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmbuild.sqc     .. ${srcdir}/..
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmcalibrate.sqc .. ${srcdir}/..
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmconvert.sqc   .. ${srcdir}/..
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmemit.sqc      .. ${srcdir}/..
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmfetch.sqc     .. ${srcdir}/..
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmpress.sqc     .. ${srcdir}/..
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmscan.sqc      .. ${srcdir}/..
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmsearch.sqc    .. ${srcdir}/..
-#	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmstat.sqc      .. ${srcdir}/..
-# no cmpress.sqc, it's too simple; exercises.sqc covers all use cases
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmstat.sqc      .. ${srcdir}/..
+
+cmalign: 
+	@echo 
+	@echo Running Infernal cmalign developer test suite...
+	@echo
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmalign.sqc     .. ${srcdir}/..
+
+cmbuild: 
+	@echo 
+	@echo Running Infernal cmbuild developer test suite...
+	@echo
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmbuild.sqc     .. ${srcdir}/..
+
+cmcalibrate: 
+	@echo 
+	@echo Running Infernal cmcalibrate developer test suite...
+	@echo
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmcalibrate.sqc     .. ${srcdir}/..
+
+
+cmconvert:
+	@echo 
+	@echo Running Infernal cmconvert developer test suite...
+	@echo
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmconvert.sqc     .. ${srcdir}/..
+
+cmemit:
+	@echo 
+	@echo Running Infernal cmemit developer test suite...
+	@echo
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmemit.sqc     .. ${srcdir}/..
+
+cmfetch:
+	@echo 
+	@echo Running Infernal cmfetch developer test suite...
+	@echo
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmfetch.sqc     .. ${srcdir}/..
+
+cmpress:
+	@echo 
+	@echo Running Infernal cmpress developer test suite...
+	@echo
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmpress.sqc     .. ${srcdir}/..
+
+cmscan:
+	@echo 
+	@echo Running Infernal cmscan developer test suite...
+	@echo
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmscan.sqc     .. ${srcdir}/..
+
+cmsearch:
+	@echo 
+	@echo Running Infernal cmsearch developer test suite...
+	@echo
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmsearch.sqc     .. ${srcdir}/..
+
+cmstat:
+	@echo 
+	@echo Running Infernal cmstat developer test suite...
+	@echo
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/cmstat.sqc     .. ${srcdir}/..
 
 clean:
 	-rm -f *.gcno *.gcda *.gcov

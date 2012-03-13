@@ -28,39 +28,32 @@
 #include "funcs.h"		/* function declarations                */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define ALPHOPTS "--rna,--dna"             /* Exclusive options for alphabet choice */
-#define OUTOPTS  "-u,-c,-a,--ahmm,--shmm"  /* Exclusive options for output */
+#define ALPHOPTS "--rna,--dna"  /* Exclusive options for alphabet choice */
+#define OUTOPTS  "-u,-c,-a"     /* Exclusive options for output */
 
 static ESL_OPTIONS options[] = {
-  /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL,"show brief help on version and usage",   1 },
-  { "-o",        eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "send sequence output to file <f>, not stdout",           1 },
-  { "-n",        eslARG_INT,    "10",  NULL, "n>0",     NULL,      NULL,        NULL, "generate <n> sequences",  1 },
-  { "-u",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,      NULL,        NULL, "write generated sequences as unaligned FASTA",  1 },
-  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "write generated sequences as an alignment",  1 },
-  { "-c",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "generate a single \"consensus\" sequence only",  1 },
-  { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "local; emit from a locally configured model [default: global]",  1 },
-  { "-i",        eslARG_INT,    "1",   NULL, "n>0",     NULL,      NULL,        NULL, "start sequence numbering at <n>",  1 },
-  { "--seed",    eslARG_INT,    "0",   NULL, "n>=0",    NULL,      NULL,        NULL, "set RNG seed to <n> [default: one-time arbitrary seed]", 1 },
-  { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of otherwise undocumented developer options", 1 },
-  /* miscellaneous output options */
-  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output as RNA sequence data", 2 },
-  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output as DNA (not RNA) sequence data", 2 },
-  { "--outformat",eslARG_STRING,"Stockholm",NULL,NULL,  NULL,      "-a",        NULL, "w/-a output alignment in format <s>", 2 },
-  { "--tfile",   eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        "-c", "dump parsetrees to file <f>",  2 },
-  /* expert options */
-  { "--embed",   eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,     "-a,-c", "embed emitted sequences in random (iid) sequences of length <n>", 3},
-  { "--begin",   eslARG_INT,    NULL,  NULL, "n>=1",    NULL,    "--end,-a",    NULL, "w/-a: truncate alignment, begin at match column <n>", 3 },
-  { "--end",     eslARG_INT,    NULL,  NULL, "n>=1",    NULL,  "--begin,-a",    NULL, "w/-a: truncate alignment,   end at match column <n>", 3 },
-  { "--tr5p",    eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,     "-a,-c", "truncate sequences 5', randomly", 3 },
-  { "--tr3p",    eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,     "-a,-c", "truncate sequences 3', randomly", 3 },
-  { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before emitting",  3 },
-
-  /* --devhelp options */
-  /* All options below are developer options, only shown if --devhelp invoked */
-  /* Developer options for testing CP9 construction empirically */
-  { "--shmm",    eslARG_OUTFILE,NULL,  NULL, NULL,   OUTOPTS,      NULL, "-l,--tfile","build, output a ML CM Plan 9 HMM from generated alignment to <f>", 101 },
-  { "--ahmm",    eslARG_OUTFILE,NULL,  NULL, NULL,   OUTOPTS,      NULL,        NULL, "output parameters of analytically built CM Plan 9 HMM to <f>", 101 },
+  /* name          type            default       env   range   toggles       reqs  incomp   help                                     docgroup*/
+  { "-h",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,    "show brief help on version and usage",                            1 },
+  { "-o",          eslARG_OUTFILE, FALSE,        NULL, NULL,   NULL,         NULL, NULL,    "send sequence output to file <f>, not stdout",                    1 },
+  { "-N",          eslARG_INT,      "10",        NULL, "n>0",  NULL,         NULL, NULL,    "generate <n> sequences",                                          1 },
+  { "-u",          eslARG_NONE, "default",       NULL, NULL,   OUTOPTS,      NULL, NULL,    "write generated sequences as unaligned FASTA [default]",          1 },
+  { "-a",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,    "write generated sequences as an alignment",                       1 },
+  { "-c",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,    "generate a single \"consensus\" sequence only",                   1 },
+  { "-e",          eslARG_INT,      NULL,        NULL, "n>0",  NULL,         NULL, "-a,-c", "embed emitted sequences in random (iid) sequences of length <n>", 1 },
+  { "-l",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,    "local; emit from a locally configured model [default: global]",   1 },
+  /* options for truncating emitted sequences */
+  { "--u5p",       eslARG_NONE,     NULL,        NULL, NULL,   NULL,         NULL, "-a,-c", "truncate unaligned sequences 5', choosing a random start posn",      2 },
+  { "--u3p",       eslARG_NONE,     NULL,        NULL, NULL,   NULL,         NULL, "-a,-c", "truncate unaligned sequences 3', choosing a random end   posn",      2 },
+  { "--a5p",       eslARG_INT,      NULL,        NULL, "n>=0", NULL,   "--a3p,-a", NULL,    "truncate aln 5', start at match column <n> (use 0 for random posn)", 2 },
+  { "--a3p",       eslARG_INT,      NULL,        NULL, "n>=0", NULL,   "--a5p,-a", NULL,    "truncate aln 3', end   at match column <n> (use 0 for random posn)", 2 },
+  /* other options */
+  { "--seed",      eslARG_INT,      "0",         NULL, "n>=0", NULL,         NULL, NULL,    "set RNG seed to <n> [default: one-time arbitrary seed]",          3 },
+  { "--rna",       eslARG_NONE,     "default",   NULL, NULL,   ALPHOPTS,     NULL, NULL,    "output as RNA sequence data",                                     3 },
+  { "--dna",       eslARG_NONE,     FALSE,       NULL, NULL,   ALPHOPTS,     NULL, NULL,    "output as DNA sequence data",                                     3 },
+  { "--idx",       eslARG_INT,      "1",         NULL, "n>0",  NULL,         NULL, NULL,    "start sequence numbering at <n>",                                 3 },
+  { "--outformat", eslARG_STRING,   "Stockholm", NULL, NULL,   NULL,         "-a", NULL,    "w/-a output alignment in format <s>",                             3 },
+  { "--tfile",     eslARG_OUTFILE,  NULL,        NULL, NULL,   NULL,         NULL, "-c",    "dump parsetrees to file <f>",                                     3 },
+  { "--exp",       eslARG_REAL,     NULL,        NULL, "x>0",  NULL,         NULL, NULL,    "exponentiate CM probabilities by <x> before emitting",            3 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -86,7 +79,7 @@ struct cfg_s {
   int           ncm;            /* number CM we're at in file */
 };
 
-static char usage[]  = "[-options] <cmfile (single model)>";
+static char usage[]  = "[-options] <cmfile>";
 static char banner[] = "sample sequences from a covariance model";
 
 static int  init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -124,19 +117,15 @@ main(int argc, char **argv)
     printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
     exit(1);
   }
-  if (esl_opt_GetBoolean(go, "-h") || esl_opt_GetBoolean(go, "--devhelp")) {
+  if (esl_opt_GetBoolean(go, "-h")) { 
     cm_banner(stdout, argv[0], banner);
     esl_usage(stdout, argv[0], usage);
     puts("\nBasic options:");
     esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-    puts("\nOptions controlling output:");
+    puts("\nOptions for truncating sequences:");
     esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-    puts("\nexpert options:");
+    puts("\nOther options:");
     esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
-    if(esl_opt_GetBoolean(go, "--devhelp")) { 
-      puts("\nDeveloper options for empirically checking CP9 HMM construction:");
-      esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
-    }
     puts("\nAlignment output formats (-a) include: Stockholm, Pfam, AFA (aligned FASTA), A2M, Clustal, PHYLIP\n");
     exit(0);
   }
@@ -225,18 +214,6 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       ESL_FAIL(eslFAIL, errbuf, "Failed to open --tfile output file %s\n", esl_opt_GetString(go, "--tfile"));
   }
 
-  /* open sampled HMM (--shmm) output file if necessary */
-  if (esl_opt_GetString(go, "--shmm") != NULL) {
-    if ((cfg->shmmfp = fopen(esl_opt_GetString(go, "--shmm"), "w")) == NULL)
-      ESL_FAIL(eslFAIL, errbuf, "Failed to open --shmm output file %s\n", esl_opt_GetString(go, "--shmm"));
-  }
-
-  /* open analytically built HMM (--ahmm) output file if necessary */
-  if (esl_opt_GetString(go, "--ahmm") != NULL) {
-    if ((cfg->ahmmfp = fopen(esl_opt_GetString(go, "--ahmm"), "w")) == NULL)
-      ESL_FAIL(eslFAIL, errbuf, "Failed to open --ahmm output file %s\n", esl_opt_GetString(go, "--ahmm"));
-  }
-
   /* create RNG */
   cfg->r = esl_randomness_CreateFast(esl_opt_GetInteger(go, "--seed"));
 
@@ -270,17 +247,14 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = initialize_cm(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
 
     /* Pick 1 of 4 exclusive output options. Output is handled within each function. */
-    if     (esl_opt_GetBoolean(go, "-u")) { 
-      if((status = emit_unaligned(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
-    }
-    else if(esl_opt_GetBoolean(go, "-c")) {
+    if(esl_opt_GetBoolean(go, "-c")) {
       if((status = emit_consensus(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
     }
     else if(esl_opt_GetBoolean(go, "-a")) {
       if((status = emit_alignment(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
     }
-    else if(esl_opt_IsOn(go, "--shmm")) {
-      if((status = build_cp9     (go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
+    else { 
+      if((status = emit_unaligned(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
     }
     FreeCM(cm);
   }
@@ -338,35 +312,35 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   int i, L, embedL;         /* sequence idx, length, length of sq to embed in */
   int x;                    /* residue idx */
   float sc, struct_sc;      /* parsetree score, structure score */
-  int offset = esl_opt_GetInteger(go, "-i"); /* seq index to start naming at */
+  int offset = esl_opt_GetInteger(go, "--idx"); /* seq index to start naming at */
   int start, end, swap;     /* for truncating sequences */
   double *fq = NULL;        /* double vec for esl_rsq_XIID */
 
   /* Contract check, output alphabet must be identical to CM alphabet
    * with sole exception that CM alphabet can be eslRNA with output
-   * alphabet eslDNA. And --embed only works with 0 or 1 of --tr5p,
-   * --tr3p, not both. 
+   * alphabet eslDNA. And -e only works with 0 or 1 of --u5p,
+   * --u3p, not both. 
    */
   if(cm->abc->type != cfg->abc_out->type) { 
     if(! (cm->abc->type == eslRNA && cfg->abc_out->type == eslDNA)) { 
       ESL_FAIL(eslFAIL, errbuf, "CM alphabet type must match output alphabet type (unless CM=RNA and output=DNA).");
     }
   }
-  if(esl_opt_IsOn(go, "--embed") && esl_opt_IsOn(go, "--tr5p") && esl_opt_IsOn(go, "--tr3p")) { 
-    ESL_FAIL(eslFAIL, errbuf, "--embed works in combination with --tr5p or --tr3p but not both");
+  if(esl_opt_IsOn(go, "-e") && esl_opt_IsOn(go, "--u5p") && esl_opt_IsOn(go, "--u3p")) { 
+    ESL_FAIL(eslFAIL, errbuf, "-e works in combination with --u5p or --u3p but not both");
   }
 
   namelen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
   if(cm->name != NULL) namelen += strlen(cm->name) + 1;
   ESL_ALLOC(name, sizeof(char) * namelen);
 
-  if(esl_opt_IsOn(go, "--embed")) { 
-    embedL = esl_opt_GetInteger(go, "--embed");
+  if(esl_opt_IsOn(go, "-e")) { 
+    embedL = esl_opt_GetInteger(go, "-e");
     ESL_ALLOC(fq, sizeof(double) * cfg->abc_out->K); /* iid, currently only option */
     esl_vec_DSet(fq, cfg->abc_out->K, 1.0 / (double) cfg->abc_out->K); 
   }
 
-  for(i = 0; i < esl_opt_GetInteger(go, "-n"); i++)
+  for(i = 0; i < esl_opt_GetInteger(go, "-N"); i++)
     {
       if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+offset);
       else                 sprintf(name, "%d-%d", cfg->ncm, i+offset);
@@ -375,9 +349,9 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       sq2print = esq; /* we may change what sq2print points to below */
 
       /* truncate esq if nec */
-      if(esl_opt_IsOn(go, "--tr5p") || esl_opt_IsOn(go, "--tr3p")) { 
-	start = esl_opt_IsOn(go, "--tr5p") ? esl_rnd_Roll(cfg->r, sq2print->n) + 1 : 1;
-	end   = esl_opt_IsOn(go, "--tr3p") ? esl_rnd_Roll(cfg->r, sq2print->n) + 1 : sq2print->n;
+      if(esl_opt_IsOn(go, "--u5p") || esl_opt_IsOn(go, "--u3p")) { 
+	start = esl_opt_IsOn(go, "--u5p") ? esl_rnd_Roll(cfg->r, sq2print->n) + 1 : 1;
+	end   = esl_opt_IsOn(go, "--u3p") ? esl_rnd_Roll(cfg->r, sq2print->n) + 1 : sq2print->n;
 	if(start > end) { swap = start; start = end; end = swap; }
 	if((tsq = esl_sq_CreateDigitalFrom(sq2print->abc, sq2print->name, (sq2print->dsq+start-1), (end-start+1), 
 					   sq2print->desc, sq2print->acc, sq2print->ss)) == NULL) ESL_FAIL(status, errbuf, "out of memory");
@@ -388,15 +362,15 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       }
 
       /* generate sequence to embed in, and embed in it if nec  */
-      if(esl_opt_IsOn(go, "--embed")) { 
-	if(sq2print->n > embedL) ESL_FAIL(eslEINCOMPAT, errbuf, "<n>=%d from --embedL <n> too small for emitted seq of length %" PRId64 ", increase <n> and rerun", embedL, sq2print->n);
+      if(esl_opt_IsOn(go, "-e")) { 
+	if(sq2print->n > embedL) ESL_FAIL(eslEINCOMPAT, errbuf, "<n>=%d from -eL <n> too small for emitted seq of length %" PRId64 ", increase <n> and rerun", embedL, sq2print->n);
 	gsq = esl_sq_CreateDigital(cfg->abc_out);
 	if((status = esl_sq_GrowTo(gsq, embedL)) != eslOK) ESL_FAIL(status, errbuf, "out of memory");
 	esl_rsq_xIID(cfg->r, fq, cfg->abc_out->K, embedL, gsq->dsq);
 	gsq->n = embedL;
-	/* embed (contract enforced at least one of --tr5p and --tr3p is not on */
-	if     (esl_opt_IsOn(go, "--tr5p")) { start = 1; }
-	else if(esl_opt_IsOn(go, "--tr3p")) { start = embedL - sq2print->n + 1; }
+	/* embed (contract enforced at least one of --u5p and --u3p is not on) */
+	if     (esl_opt_IsOn(go, "--u5p")) { start = 1; }
+	else if(esl_opt_IsOn(go, "--u3p")) { start = embedL - sq2print->n + 1; }
 	else                                { start = esl_rnd_Roll(cfg->r, embedL - sq2print->n + 1) + 1; }
 	for(x = start; x < start + sq2print->n; x++) gsq->dsq[x] = sq2print->dsq[x - start + 1];
 	/* set name */
@@ -419,7 +393,7 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       FreeParsetree(tr);
 
       esl_sq_Destroy(sq2print); 
-      /* we destroyed any other seqs we created due to --tr5p, --tr3p, --embed, above */
+      /* we destroyed any other seqs we created due to --u5p, --u3p, -e, above */
     }
   free(name);
   if(fq != NULL) free(fq);
@@ -443,9 +417,9 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   int namelen;
   int i, L; 
   ESL_MSA *msa = NULL;      /* the MSA we're building */
-  int nseq = esl_opt_GetInteger(go, "-n");
+  int nseq = esl_opt_GetInteger(go, "-N");
   int do_truncate;
-  int offset = esl_opt_GetInteger(go, "-i");;
+  int offset = esl_opt_GetInteger(go, "--idx");
   int outfmt;
 
   /* Contract check, output alphabet must be identical to CM alphabet 
@@ -462,7 +436,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
     ESL_FAIL(eslEINCOMPAT, errbuf, "%s is not a recognized output MSA file format\n\n", esl_opt_GetString(go, "--outformat"));
   }
 
-  do_truncate = (esl_opt_IsOn(go, "--begin") && esl_opt_IsOn(go, "--end")) ? TRUE : FALSE;
+  do_truncate = (esl_opt_IsOn(go, "--a5p") && esl_opt_IsOn(go, "--a3p")) ? TRUE : FALSE;
 
   namelen = IntMaxDigits() + 1;
   if(cm->name != NULL) namelen += strlen(cm->name) + 1;
@@ -562,164 +536,6 @@ emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   return status;
 }
 
-/* build_cp9
- * Given a configured CM, generate counts for a ML HMM
- * (no pseudocounts) by generating >= 1 MSA from the CM.
- * We use more than 1 MSA only to limit memory usage.
- */
-static int
-build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
-{
-  int status;
-  Parsetree_t **tr = NULL;  /* generated parsetrees */
-  ESL_SQ **sq = NULL;       /* generated sequences */
-  char *name;
-  int namelen;
-  int i, L; 
-  ESL_MSA *msa = NULL;      /* an MSA to pull counts from */
-  int nseq = esl_opt_GetInteger(go, "-n");
-  int *matassign = NULL;
-  int nsampled = 0;                 /* number of sequences sampled thus far */
-  int do_truncate;
-  CP9_t  *shmm = NULL;
-  CP9trace_t **cp9_tr;   /* fake tracebacks for each seq            */
-  int bpos = 0;
-  int epos = 0;
-  int apos = 0;
-  int msa_nseq = 1000;          /* number of seqs per MSA, current strategy is to 
-				 * sample (nseq/nseq_per_msa) alignments from the CM, 
-				 * and add counts from each to the shmm in counts form 
-				 *(to limit memory) */
-  
-  /* Allocate and zero the new HMM we're going to build by sampling from the CM.
-   */
-  if( esl_opt_IsOn(go, "--begin") && esl_opt_IsOn(go, "--end")) 
-    {
-      do_truncate = TRUE;
-      bpos = esl_opt_GetInteger(go, "--begin");
-      epos = esl_opt_GetInteger(go, "--end");
-      shmm = AllocCPlan9((epos - bpos + 1), cm->abc);
-    }
-  else 
-    {
-      do_truncate = FALSE;
-      shmm = AllocCPlan9(cm->clen, cm->abc);
-    }
-  ZeroCPlan9(shmm);
-  CPlan9SetNullModel(shmm, cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
-
-  namelen = IntMaxDigits() + 1;
-  if(cm->name != NULL) namelen += strlen(cm->name) + 1;
-  ESL_ALLOC(name, sizeof(char) * namelen);
-
-  /* sample MSA(s) from the CM */
-  ESL_ALLOC(sq,     sizeof(ESL_SQ *)      * msa_nseq);
-  ESL_ALLOC(tr,     sizeof(Parsetree_t *) * msa_nseq);
-  while(nsampled < nseq)
-    {
-      if(nsampled != 0) 
-	{
-	  /* clean up from previous MSA */
-	  esl_msa_Destroy(msa);
-	  free(matassign);
-	  for (i = 0; i < msa_nseq; i++)
-	    {
-	      CP9FreeTrace(cp9_tr[i]);
-	      FreeParsetree(tr[i]);
-	      esl_sq_Reuse(sq[i]);
-	    }
-	}
-      /* Emit msa_nseq parsetrees from the CM */
-      if(nsampled + msa_nseq > nseq) msa_nseq = nseq - nsampled;
-      for (i = 0; i < msa_nseq; i++)
-	{
-	  if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
-	  else                 sprintf(name, "%d-%d", cfg->ncm, i+1);
-	  if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &(tr[i]), &(sq[i]), &L)) != eslOK) cm_Fail(errbuf);
-	  sq[i]->abc = cfg->abc_out;
-	}
-      /* Build a new MSA from these parsetrees */
-      if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, sq, NULL, tr, NULL, nseq,
-					NULL, NULL, /* we're not printing to insert, EL info files */
-					TRUE,  /* we want all match columns */
-					FALSE, /* we don't want ONLY match columns */
-					&msa) != eslOK))
-	ESL_XFAIL(eslFAIL, errbuf, "Error generating alignment from parsetrees during HMM construction.");
-
-      /* Truncate the alignment if nec */
-      if(do_truncate)
-	if((status = truncate_msa(go, cfg, msa, cm->abc, errbuf)) != eslOK) cm_Fail(errbuf);
-
-      /* Determine match assignment from RF annotation
-       */
-      ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
-      matassign[0] = 0;
-      for (apos = 1; apos <= msa->alen; apos++)
-	matassign[apos] = esl_abc_CIsGap(cm->abc, msa->rf[apos-1]) ? FALSE : TRUE;  
-
-      /* Add the counts to the growing counts-based HMM */
-      /* make fake tracebacks for each seq, first we need to digitize the MSA */
-      esl_msa_Digitize(cm->abc, msa, NULL);
-      CP9_fake_tracebacks(msa, matassign, &cp9_tr);
-	  
-      /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
-      for (i = 0; i < msa->nseq; i++) 
-	CP9TraceCount(shmm, sq[i]->dsq, 1.0, cp9_tr[i]);
-      nsampled += msa_nseq;
-    }
-      
-  /* clean up from final MSA */
-  esl_msa_Destroy(msa);
-  free(matassign);
-  for (i = 0; i < msa_nseq; i++)
-    {
-      CP9FreeTrace(cp9_tr[i]);
-      FreeParsetree(tr[i]);
-      esl_sq_Destroy(sq[i]);
-    }
-  free(cp9_tr);
-  free(tr);
-  free(sq);
-  free(name);
-
-  if(cfg->shmmfp == NULL) cm_Fail("build_cp9(): no open file for sampled HMM parameters.");
-  fprintf(cfg->shmmfp, "# Printing NON-normalized sampled HMM parameters (global configuration):\n");
-  debug_print_cp9_params(cfg->shmmfp, shmm, FALSE);
-
-  CPlan9Renormalize(shmm);
-  CP9Logoddsify(shmm);
-
-  fprintf(cfg->shmmfp, "# Printing normalized sampled HMM parameters (global configuration):\n");
-  debug_print_cp9_params(cfg->shmmfp, shmm, TRUE);
-
-
-  FreeCPlan9(shmm);
-  return eslOK;
-
- ERROR:
-  if(shmm != NULL) FreeCPlan9(shmm);
-  if(cp9_tr != NULL)
-    {
-      for(i = 0; i < msa_nseq; i++)
-	CP9FreeTrace(cp9_tr[i]);
-      free(cp9_tr);
-    }
-  if(tr != NULL)
-    {
-      for(i = 0; i < msa_nseq; i++)
-	FreeParsetree(tr[i]);
-      free(tr);
-    }
-  if(sq != NULL)
-    {
-      for(i = 0; i < msa_nseq; i++)
-	esl_sq_Destroy(sq[i]);
-      free(sq);
-    }
-  if(name != NULL) free(name);
-  return status;
-}
-
 /* truncate_msa
  * Truncate a MSA outside begin..end consensus columns 
  * (non-gap RF chars) and return the alignment. Careful
@@ -732,18 +548,61 @@ truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, const
   int *useme = NULL;    /* 1..alen: keep this column? */
   int *ct    = NULL;    /* 1..alen base pair partners array */
   int apos = 0;
-  int bpos = esl_opt_GetInteger(go, "--begin");
-  int epos = esl_opt_GetInteger(go, "--end");
-  int cc = 0;
+  int cc   = 0;
   int clen = 0;
+  int swap;
+  int spos, epos; /* start and end positions */
+  int set_spos = (esl_opt_IsUsed(go, "--a5p")) ? TRUE : FALSE;
+  int set_epos = (esl_opt_IsUsed(go, "--a3p")) ? TRUE : FALSE;
+  int rnd_spos = (esl_opt_IsUsed(go, "--a5p") && (esl_opt_GetInteger(go, "--a5p") == 0)) ? TRUE : FALSE;
+  int rnd_epos = (esl_opt_IsUsed(go, "--a3p") && (esl_opt_GetInteger(go, "--a3p") == 0)) ? TRUE : FALSE;
 
   ESL_ALLOC(useme, sizeof(int) * (msa->alen+1));
   ESL_ALLOC(ct,    sizeof(int) * (msa->alen+1));
-
-  for (apos = 0, cc = 0; apos < msa->alen; apos++)
+  
+  /* determine clen */
+  for (apos = 0, cc = 0; apos < msa->alen; apos++) { 
     if (!esl_abc_CIsGap(abc, msa->rf[apos])) clen++;
-  if(epos > clen)
-    ESL_XFAIL(eslEINCOMPAT, errbuf, "Error, with --end <n> option, <n> must be <= consensus length of CM (%d).\n", clen);
+  }
+  /* make sure w/ --a3p <n>, that <n> <= clen */
+  if(set_spos && esl_opt_GetInteger(go, "--a3p") > clen) { 
+    ESL_XFAIL(eslEINCOMPAT, errbuf, "with --a3p <n> option, <n> must be <= consensus length of CM (%d).\n", clen);
+  }
+  /* enforce that if both --a5p and --a3p are used, they both were set
+   * to 0 (this makes code a little simpler because we can worry about
+   * one less case).
+   */
+  if(set_spos && set_epos) { 
+    if((   rnd_spos  && (! rnd_epos)) || 
+       ((! rnd_spos) &&    rnd_epos)) { 
+      ESL_XFAIL(eslEINCOMPAT, errbuf, "with --a5p <n1> and --a3p <n2>, either <n1> and <n2> must be 0, or neither must be 0");
+    }
+  }
+  /* determine spos (start posn) */
+  if(set_spos) { 
+    if(rnd_spos) spos = esl_rnd_Roll(cfg->r, clen) + 1;
+    else         spos = esl_opt_GetInteger(go, "--a5p");
+  }
+  else spos = 1;
+
+  /* determine epos (end posn) */
+  if(set_epos) { 
+    if(rnd_epos) epos = esl_rnd_Roll(cfg->r, clen) + 1;
+    else         epos = esl_opt_GetInteger(go, "--a3p");
+  }
+  else epos = clen;
+
+  /* make sure spos <= epos */
+  if(spos > epos) { 
+    if(rnd_spos && rnd_epos) { /* random spos and epos, so spos > epos is not an error, swap them */
+      swap = spos; spos = epos; epos = swap;
+    }
+    else { /* user error (assert just to be safe) */
+      assert(esl_opt_IsUsed(go, "--a5p") && esl_opt_IsUsed(go, "--a3p"));
+      assert(esl_opt_GetInteger(go, "--a5p") > esl_opt_GetInteger(go, "--a3p"));
+      ESL_XFAIL(eslEINCOMPAT, errbuf, "with --a5p <n1> and --a3p <n2>, <n1> must be <= <n2>");
+    }
+  }
 
   /* remove pknots in place (actually unnec for CM ss_cons) */
   if((status = esl_wuss_nopseudo(msa->ss_cons, msa->ss_cons)) != eslOK) goto ERROR; 
@@ -751,16 +610,16 @@ truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, const
   /* get a ct array from the structure */
   if((status = esl_wuss2ct(msa->ss_cons, msa->alen, ct)) != eslOK) goto ERROR;  
 
-  /* Truncate the alignment prior to consensus column bpos and after 
+  /* Truncate the alignment prior to consensus column spos and after 
    * consensus column epos.  */
   for (apos = 0, cc = 0; apos < msa->alen; apos++)
     {
       /* Careful here, placement of cc++ increment is impt, we want all 
-       * inserts between cc=bpos-1 and cc=bpos, and b/t cc=epos and 
+       * inserts between cc=spos-1 and cc=spos, and b/t cc=epos and 
        * cc=epos+1. Also be careful: ct[] is index 1..alen, and 
        * msa->ss_cons is 0..alen-1. 
        */
-      if(cc < (bpos-1) || cc > epos) {
+      if(cc < (spos-1) || cc > epos) {
 	useme[apos] = 0;
 	if(ct[(apos+1)] != 0) ct[ct[(apos+1)]] = 0;
 	ct[(apos+1)] = 0;

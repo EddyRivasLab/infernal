@@ -1,4 +1,4 @@
-.TH "cmbuild" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
+.TH "cmbuild" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
 
 .SH NAME
 .TP 
@@ -13,7 +13,7 @@ cmbuild - construct a CM from an RNA multiple sequence alignment
 .SH DESCRIPTION
 
 .B cmbuild
-read an RNA multiple sequence alignment from
+reads an RNA multiple sequence alignment from
 .I alifile,
 constructs a covariance model (CM),
 and saves the CM to
@@ -32,51 +32,33 @@ alignment.  If so, the resulting
 .I cmfile
 will be a database of CMs, one per alignment.
 
-.PP
-The expert options 
-.B --ctarget, --cmindiff, 
-and 
-.B --call
-result in multiple CMs being built from each alignment in
-.I alifile
-as described below.
-
 .SH OUTPUT
-The default output from 
+In addition to writing CM(s) to 
+.I cmfile, 
 .B cmbuild
-is tabular, with a single line printed for each model . Each line has
+also outputs a single line for each model created to stdout. Each line has
 the following fields: 
-.B aln:
-the index of the alignment used to build the CM, 
-.B "cm idx:"
-the index of the CM in the
+"aln": the index of the alignment used to build the CM;
+"cm idx": the index of the CM in the 
 .I cmfile; 
-.B name: 
-the name of the CM, 
-.B nseq: 
-the number of sequences in the
-alignment used to build the CM, 
-.B eff_nseq:
-the effective number of
-sequences used to build the model (see the User Guide); 
-.B alen:
-the length of the alignment used to build the CM; 
-.B clen:
-the number of columns from the alignment defined as consensus columns;
-.B "rel entropy, CM:"
-the total relative entropy of the model divided by
+"name": the name of the CM;
+"nseq": the number of sequences in the alignment used to build the CM, 
+"eff_nseq": the effective number of sequences used to build the model (see the user guide); 
+"alen": the length of the alignment used to build the CM; 
+"clen": the number of columns from the alignment defined as consensus columns;
+"bps": the number of basepairs in the CM;
+"bifs": the number of bifurcations in the CM;
+"rel entropy, CM": the total relative entropy of the model divided by
 the number of consensus columns;
-.B "rel entropy, HMM:"
-the total relative entropy of the model 
-.I ignoring secondary structure
-divided by the number of consensus columns.
+"rel entropy, HMM:" the total relative entropy of the model 
+ignoring secondary structure divided by the number of consensus columns.
 
 .SH OPTIONS
 
 .TP
 .B -h
-Print brief help; includes version number and summary of
-all options, including expert options.
+Help; print a brief reminder of command line usage and available
+options.
 
 .TP
 .BI -n " <s>"
@@ -94,126 +76,124 @@ integer indicating the position of that alignment in the file
 a CM named "myrnas-1", the second alignment would give a CM named "myrnas-2").
 
 .TP
-.BI -A
-Append the CM to 
-.I cmfile,
-if
-.I cmfile
-already exists.
-
-.TP
 .BI -F
 Allow 
 .I cmfile
-to be overwritten. Normally, if
+to be overwritten. Without this option, if
 .I cmfile
 already exists, 
 .B cmbuild 
-exits with an error unless the
-.I -A
-or 
-.I -F
-option is set.
-
-.TP
-.BI -v
-Run in verbose output mode instead of using the 
-default single line tabular format. This output format is similar to
-that used by older versions of Infernal.
-
-.TP
-.B --iins
-Allow informative insert emissions for the CM.
-By default, all CM insert emission scores are set to 0.0 bits.
-The motivation for zero bit scores is 
-to avoid high-scoring hits to low complexity sequence favored by high 
-insert state emission scores.
-
-.TP
-.BI --Wbeta "<x>"
-Set the beta tail loss probability for query-dependent banding (QDB) to 
-.I "<x>"
-The QDB algorithm is used to determine the maximium length of a hit to
-the model. For more information on QDB see 
-(Nawrocki and Eddy, PLoS Computational Biology 3(3): e56). 
-The beta paramater is the amount of
-probability mass considered negligible during band calculation, lower
-values of beta will result in shorter maximum hit lengths, which will
-yield faster searches.
-The default beta is 1E-7: determined
-empirically as a good tradeoff between sensitivity, specificity  and speed.
+exits with an error.
 
 .TP
 .B --devhelp
 Print help, as with  
 .B "-h",
-but also include undocumented developer options. These options are not
-listed below. They are under development or experimental, and are not
-guaranteed to even work correctly. Use developer options at your own
-risk. The only resources for understanding what they actually do are
-the brief one-line description printed when
+but also include expert options that are not displayed with 
+.B "-h". These expert options are not expected to be relevant for the
+vast majority of users and so are not described in the manual page.
+The only resources for understanding what they actually do are the
+brief one-line descriptions output when
 .B "--devhelp"
 is enabled, and the source code.
 
-.SH EXPERT OPTIONS
+.SH OPTIONS CONTROLLING MODEL CONSTRUCTION
+
+These options control how consensus columns are defined in an alignment.
+
+.TP
+.B --fast 
+Define consensus columns automatically as those that have a fraction >= 
+.B symfrac
+of residues as opposed to gaps. (See below for the
+.B --symfrac
+option.) This is the default.
+
+.TP
+.B --hand
+Use reference coordinate annotation (#=GC RF line, in Stockholm)
+to determine which columns are consensus, and which are inserts.
+Any non-gap character indicates a consensus column. (For example,
+mark consensus columns with "x", and insert columns with ".".) This
+option was called 
+.B --rf
+in previous versions of INFERNAL (0.1 through 1.0.2).
+
+.TP
+.BI --symfrac " <x>"
+Define the residue fraction threshold necessary to define a
+consensus column when not using 
+.B --hand.
+The default is 0.5. The symbol fraction in each column is calculated
+after taking relative sequence weighting into account.  Setting this
+to 0.0 means that every alignment column will be assigned as
+consensus, which may be useful in some cases. Setting it to 1.0 means
+that only columns that include 0 gaps will be assigned as consensus.
+This option replaces the 
+.BI --gapthresh " <y>"
+option from previous versions of INFERNAL (0.1 through 1.0.2), with 
+.I <x> equal to 
+1.0 - 
+.I <y>.
+For example to reproduce behavior for a command of
+.B cmbuild --gapthresh " 0.8" 
+in a previous version, use
+.B cmbuild --symfrac " 0.2" 
+with this version.
 
 .TP
 .BI --rsearch " <f>"
 Parameterize emission scores a la RSEARCH, using the RIBOSUM
 matrix in file 
 .I <f>.
-(Actually, the emission scores will not be identical to RIBOSUM scores
-due of differences in the modelling strategy between @PACKAGE@ and
-RSEARCH, but they will be as similar as possible.)
-RIBOSUM matrix files are included with @PACKAGE@ in the "matrices/"
-subdirectory of the top-level @PACKAGE@ directory.
-RIBOSUM matrices are substitution score matrices trained specifically
-for structural RNAs with separate single stranded residue and base pair
-substitution scores. For more information see the RSEARCH publication 
-(Klein and Eddy, BMC Bioinformatics 4:44, 2003). Actually, the
-emission scores will not exactly 
-
 With 
 .B --rsearch 
 enabled, all alignments in 
 .I alifile
 must contain exactly one sequence or the
 .B --call 
-option must also be enabled. 
+option must also be enabled. All positions in each sequence will be
+considered consensus "columns".  Actually, the emission scores for
+these models will not be identical to RIBOSUM scores due of
+differences in the modelling strategy between INFERNAL and RSEARCH,
+but they will be as similar as possible.  RIBOSUM matrix files are
+included with INFERNAL in the "matrices/" subdirectory of the
+top-level "infernal-xxx" directory.  RIBOSUM matrices are substitution
+score matrices trained specifically for structural RNAs with separate
+single stranded residue and base pair substitution scores. For more
+information see the RSEARCH publication (Klein and Eddy, BMC
+Bioinformatics 4:44, 2003).
+
+.SH OTHER MODEL CONSTRUCTION OPTIONS
+
+.TP 
+.BI --null " <f>"
+Read a null model from 
+.I <f>.
+The null model defines the probability of each RNA nucleotide in
+background sequence, the default is to use 0.25 for each nucleotide. 
+The format of null files is specified in the user guide.
 
 .TP
-.BI --binary 
-Save the model in a compact binary format. The default
-is a more readable ASCII text format.
+.BI --prior " <f>"
+Read a Dirichlet prior from 
+.I <f>, 
+replacing the default mixture Dirichlet.
+The format of prior files is specified in the user guide.
 
-.TP
-.B --rf
-Use reference coordinate annotation (#=GC RF line, in Stockholm)
-to determine which columns are consensus, and which are inserts.
-Any non-gap character indicates a consensus column. (For example,
-mark consensus columns with "x", and insert columns with ".".)
-The default is to determine this automatically; if the
-frequency of gap characters in a column is
-greater than a threshold, gapthresh (default 0.5), the column
-is called an insertion. (Note, gap frequency is determined using
-weighted counts from sequences, not raw counts.)
+Use 
+.B --devhelp 
+to see additional, otherwise undocumented, model construction options.
 
-.TP
-.BI --gapthresh " <x>"
-Set the gap threshold (used for determining which columns
-are insertions versus consensus; see 
-.B --rf 
-above) to 
-.I <x>.
-The default is 0.5.
+.SH OPTIONS CONTROLLING RELATIVE WEIGHTS
 
-.TP
-.B --ignorant
-Strip all base pair secondary structure information from all input
-alignments in 
-.I alifile
-before building the CM(s). All resulting CM(s) will
-have zero MATP (base pair) nodes, with zero bifurcations.
+.B cmbuild
+uses an ad hoc sequence weighting algorithm to downweight
+closely related sequences and upweight distantly related ones. This
+has the effect of making models less biased by uneven phylogenetic
+representation. For example, two identical sequences would typically
+each receive half the weight that one sequence would.  These options
+control which algorithm gets used.
 
 .TP 
 .B --wgsc
@@ -225,13 +205,9 @@ in which case the default becomes the faster Henikoff position-based
 weighting scheme.
 
 .TP 
-.B --wblosum
-Use the BLOSUM filtering algorithm to weight the sequences,
-instead of the default GSC weighting.
-Cluster the sequences at a given percentage identity (see
-.B --wid);
-assign each cluster a total weight of 1.0, distributed equally
-amongst the members of that cluster.
+.B --wnone
+Turn sequence weighting off; e.g. explicitly set all
+sequence weights to 1.0.
 
 .TP
 .B --wpb
@@ -243,17 +219,29 @@ and
 if the number of sequences in the alignment exceeds a cutoff (see
 .B --pbswitch).
 
-.TP 
-.B --wnone
-Turn sequence weighting off; e.g. explicitly set all
-sequence weights to 1.0.
-
 .TP
 .B --wgiven
 Use sequence weights as given in annotation in the input alignment
 file. If no weights were given, assume they are all 1.0.  The default
 is to determine new sequence weights by the
 Gerstein/Sonnhammer/Chothia algorithm, ignoring any annotated weights.
+
+.TP 
+.B --wblosum
+Use the BLOSUM filtering algorithm to weight the sequences,
+instead of the default GSC weighting.
+Cluster the sequences at a given percentage identity (see
+.B --wid);
+assign each cluster a total weight of 1.0, distributed equally
+amongst the members of that cluster.
+
+.TP 
+.BI --wid " <x>"
+Controls the behavior of the 
+.I --wblosum 
+weighting option by setting the percent identity for clustering the
+alignment to
+.I <x>.
 
 .TP 
 .BI --pbswitch " <n>"
@@ -267,13 +255,23 @@ By default
 .I <n>
 is 5000.
 
-.TP 
-.BI --wid " <x>"
-Controls the behavior of the 
-.I --wblosum 
-weighting option by setting the percent identity for clustering the
-alignment to
-.I <x>.
+.SH OPTIONS CONTROLLING EFFECTIVE SEQUENCE NUMBER
+
+After relative weights are determined, they are normalized to sum to a
+total effective sequence number, 
+.I eff_nseq. 
+This number may be the actual number of sequences in the alignment,
+but it is almost always smaller than that.
+The default entropy weighting method 
+.I (--eent)
+reduces the effective sequence
+number to reduce the information content (relative entropy, or average
+expected score on true homologs) per consensus position. The target
+relative entropy is controlled by a two-parameter function, where the
+two parameters are settable with
+.I --ere
+and 
+.I --esigma.
 
 .TP
 .B --eent
@@ -320,121 +318,97 @@ basepair emission probabilities.
 Set the effective sequence number for entropy weighting as 
 .I <x>.
 
+.SH OPTIONS CONTROLLING FILTER P7 HMM CONSTRUCTION
+
+For each CM that 
+.B cmbuild
+constructs, an accompanying filter p7 HMM is built from the input
+alignment as well. These options control filter HMM construction:
+
 .TP 
-.BI --null " <f>"
-Read a null model from 
-.I <f>.
-The null model defines the probability of each RNA nucleotide in
-background sequence, the default is to use 0.25 for each nucleotide. 
-The format of null files is documented in the User's Guide.
+.BI --p7ere " <x>"
+Set the target mean match state relative entropy for the filter p7 HMM
+as 
+.I <x>.
+By default the target relative entropy per match position is 0.38 bits.
 
-.TP
-.BI --prior " <f>"
-Read a Dirichlet prior from 
-.I <f>, 
-replacing the default mixture Dirichlet.
-The format of prior files is documented in the User's Guide.
+.TP 
+.BI --p7ml 
+Use a maximum likelihood p7 HMM built from the CM as the filter
+HMM. This HMM will be as similar as possible to the CM (while
+necessarily ignorant of secondary structure).
 
-.TP
-.BI --p56 " <f>"
-Use the default Dirichlet prior from versions 0.56 through 1.0.2 of
-Infernal, which is different from the current prior.
+Use 
+.B --devhelp 
+to see additional, otherwise undocumented, filter HMM construction options.
 
-.TP
-.BI --ctarget " <n>"
-Cluster each alignment in 
-.I alifile 
-by percent identity. Find a cutoff percent id threshold 
-that gives exactly 
-.I <n>
-clusters and build a separate CM from each cluster. If 
-.I <n> 
-is greater than the number of sequences in the alignment
-the program will not complain, and each sequence in the alignment
-will be its own cluster.  Each CM will have a positive integer
-appended to its name indicating the order in which it was built. For
-example, if 
-.B cmbuild --ctarget 3
-is called with 
-.I alifile 
-"myrnas.sto", and "myrnas.sto" has exactly one Stockholm alignment in
-it with no #=GF ID tag annotation, three CMs will be built, the first
-will be named "myrnas-1.1", the second, "myrnas-1.2", and the third "myrnas-1.3".
-(As explained above for the 
-.B -n
-option, the first number "1" after "myrnas" indicates the
-CM was built from the first alignment in "myrnas.sto".)
+.SH OPTIONS CONTROLLING FILTER P7 HMM CALIBRATION 
 
-.TP
-.BI --cmaxid " <x>"
-Cluster each sequence alignment in 
-.I alifile 
-by percent identity. Define clusters at the cutoff fractional id similarity
-of
-.I <x>
-and build a separate CM from each cluster. 
-No two sequences will be be more than 
-.I <x> 
-fractionally identical (
-.I <x>
-* 100 percent identical) if those two sequences are in different
-clusters.
-The CMs are named as described above for
-.B --ctarget.
+After building each filter HMM,
+.B cmbuild
+determines appropriate E-value parameters to use during filtering in 
+.B cmsearch 
+and 
+.B cmscan 
+by sampling a set of sequences and searching them with each HMM
+filter configuration and algorithm.
 
-.TP
-.B --call
-Build a separate CM from each sequence in each alignment in
-.I alifile.
-Naming of CMs takes place as described above for
-.B --ctarget.
-Using this option in combination with
-.B --rsearch
-causes a separate CM to be built and parameterized using a RIBOSUM
-matrix for each sequence in 
-.I alifile.
+.BI --EmN " <n>"
+Set the number of sampled sequences for local MSV filter HMM calibration to 
+.I <n>.
+200 by default.
 
-.TP
-.B --corig
-After building multiple CMs using 
-.B --ctarget, --cmindiff
-or
-.B --call
-as described above, build a final CM using the complete original
-alignment from
-.I alifile.
-The CMs are named as described above for
-.B --ctarget
-with the exception of the final CM built from the original alignment
-which is named in the default manner, without an appended integer. 
+.BI --EvN " <n>"
+Set the number of sampled sequences for local Viterbi filter HMM calibration to 
+.I <n>.
+200 by default.
 
-.TP
-.BI --cdump "<f>"
-Dump the multiple alignments of each cluster to
-.I <f>
-in Stockholm format.
-This option only works in combination with
-.B --ctarget, --cmindiff
-or
-.B --call.
+.BI --ElfN " <n>"
+Set the number of sampled sequences for local Forward filter HMM calibration to 
+.I <n>.
+200 by default.
+
+.BI --EgfN " <n>"
+Set the number of sampled sequences for glocal Forward filter HMM
+calibration to
+.I <n>.
+200 by default.
+
+Use 
+.B --devhelp 
+to see additional, otherwise undocumented, filter HMM calibration options.
+
+.SH OPTIONS FOR REFINING THE INPUT ALIGNMENT
 
 .TP 
 .BI --refine " <f>"
 Attempt to refine the alignment before building the CM using
 expectation-maximization (EM). A CM is first built from the initial
 alignment as usual. Then, the sequences in the alignment are realigned
-optimally (with the HMM banded CYK algorithm, optimal means optimal 
-given the bands) to the CM, and a new CM is built
-from the resulting alignment. The
-sequences are then realigned to the new CM, and a new CM is built from
-that alignment. This is continued until convergence, specifically when 
-the alignments for two successive iterations are not significantly
-different (the summed bit scores of all the sequences in the alignment
-changes less than 1% between two successive iterations). The final
-alignment (the alignment used to build the CM that gets written to 
+optimally (with the HMM banded CYK algorithm, optimal means optimal
+given the bands) to the CM, and a new CM is built from the resulting
+alignment. The sequences are then realigned to the new CM, and a new
+CM is built from that alignment. This is continued until convergence,
+specifically when the alignments for two successive iterations are not
+significantly different (the summed bit scores of all the sequences in
+the alignment changes less than 1% between two successive
+iterations). The final alignment (the alignment used to build the CM
+that gets written to
 .I cmfile)
 is written to 
 .I <f>.
+
+.TP
+.B -l
+With 
+.B --refine,
+turn on the local alignment algorithm, which allows the alignment
+to span two or more subsequences if necessary (e.g. if the structures
+of the query model and target sequence are only partially shared),
+allowing certain large insertions and deletions in the structure
+to be penalized differently than normal indels.
+The default is to globally align the query model to the target
+sequences.
 
 .TP 
 .B --gibbs
@@ -455,7 +429,7 @@ option, in which case the final alignment and CM will always be the
 same. When 
 .B --gibbs 
 is enabled, the 
-.B -s " <n>" 
+.B --seed " <n>" 
 option can be used to seed the random number generator predictably,
 making the results reproducible. 
 The goal of the 
@@ -465,7 +439,7 @@ alignments by allowing them to observe alternative high scoring
 alignments. 
 
 .TP
-.BI -s " <n>"
+.BI --seed " <n>"
 Seed the random number generator with
 .I <n>,
 an integer >= 0. 
@@ -482,22 +456,13 @@ stochastic samplings may vary from run to run of the same command.
 The default seed is 0.
 
 .TP
-.B -l
+.B --notrunc
 With 
 .B --refine,
-turn on the local alignment algorithm, which allows the alignment
-to span two or more subsequences if necessary (e.g. if the structures
-of the query model and target sequence are only partially shared),
-allowing certain large insertions and deletions in the structure
-to be penalized differently than normal indels.
-The default is to globally align the query model to the target
-sequences.
-
-.TP
-.B -a
-With 
-.B --refine,
-print the scores of each individual sequence alignment.
+turn off the the truncated alignment algorithm. There is more
+information on this in the 
+.B cmalign
+manual page.
 
 .TP
 .B --cyk
@@ -508,87 +473,43 @@ algorithm is used. There is more information on this in the
 .B cmalign
 manual page.
 
-.TP
-.BI --sub
-With 
-.B --refine,
-turn on the sub model construction and alignment procedure. For each
-sequence to be realigned an HMM is first used to predict the model start and end
-consensus columns, and a new sub CM is constructed that only models
-consensus columns from start to end. The sequence is then aligned to this sub CM.
-This option is useful for building CMs for alignments with sequences that are known to
-truncated, non-full length sequences. This option is experimental and
-not rigorously tested, use at your own risk.
-This "sub CM" procedure is not the same
-as the "sub CMs" described by Weinberg and Ruzzo.
+Use 
+.B --devhelp 
+to see additional, otherwise undocumented, alignment refinement
+options as well as other output file options and options for building
+multiple models for a single alignment.
 
-.TP
-.BI --nonbanded
-With 
-.B --refine, 
-do not use HMM bands to accelerate alignment.  Use the
-full CYK algorithm which is guaranteed to give the optimal alignment. 
-This will slow down the run significantly, especially for large models.
+.SH SEE ALSO 
 
-.TP
-.BI --tau " <x>"
-With 
-.B --refine, 
-set the tail loss probability used during HMM band calculation to
-.I <f>. 
-This is the amount of probability mass within the HMM posterior
-probabilities that is considered negligible. The default value is 1E-7.
-In general, higher values will result in greater acceleration, but
-increase the chance of missing the optimal alignment due to the HMM
-bands.
+See 
+.B infernal(1)
+for a master man page with a list of all the individual man pages
+for programs in the INFERNAL package.
 
-.TP
-.B --fins
-With
-.B --refine,
-change the 
-behavior of how insert emissions are placed in the alignment. 
-By default, all contiguous blocks of inserts are split in half, and
-half the residues are flushed left against the nearest consensus
-column to the left, and half are flushed right against the nearest
-consensus column on the right. With
-.B --fins
-inserts are not split in half, instead all inserted residues from IL
-states are flushed left, instead all inserted residues from IR states are
-flushed right. This was the default behavior of previous versions of
-@PACKAGE@.
+.PP
+For complete documentation, see the user guide that came with your
+INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
+(@INFERNAL_URL@).
 
-.TP
-.BI --mxsize " <x>"
-With 
-.B --refine, 
-set the maximum allowable matrix size for alignment to 
-.I <x>
-megabytes. By default this size is 2 Gb. 
-This should be large enough for the vast majority of alignments, 
-however it is possible that when run with
-.B --refine, cmbuild 
-will exit prematurely, reporting an error message that 
-the matrix exceeded it's maximum allowable size. In this case, the
-.B --mxsize 
-can be used to raise the limit.
 
-.TP
-.BI --rdump "<f>"
-With 
-.B --refine, 
-output the intermediate alignments at each iteration of the refinement
-procedure (as described above for
-.B --refine
-) to file
-.I <f>.
+.SH COPYRIGHT
 
-.TP 
-.B --ileaved
-Output the alignment in interleaved Stockholm format of a fixed width
-that may be more convenient for reading. This option only makes sense
-if used in combination with
-.B --rdump
-or
-.B --cdump.
+.nf
+@INFERNAL_COPYRIGHT@
+@INFERNAL_LICENSE@
+.fi
 
+For additional information on copyright and licensing, see the file
+called COPYRIGHT in your INFERNAL source distribution, or see the INFERNAL
+web page 
+(@INFERNAL_URL@).
+
+.SH AUTHOR
+
+.nf
+The Eddy/Rivas Laboratory
+Janelia Farm Research Campus
+19700 Helix Drive
+Ashburn VA 20147 USA
+http://eddylab.org
+.fi

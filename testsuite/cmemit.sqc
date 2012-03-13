@@ -5,183 +5,185 @@
 
 # Exercises of cmemit.
 #
-1  exercise  cmemit:help/1        @src/cmemit@  -h
-1  exercise  cmemit:help/2        @src/cmemit@  --devhelp
+1  exercise  emit:help/1        @src/cmemit@  -h
 
 1  prep      model/trna           @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
-1  exercise  cmemit:trna/df       @src/cmemit@  %TRNA.CM%
-1  exercise  cmemit:trna/u        @src/cmemit@  -u %TRNA.CM%
-1  exercise  cmemit:trna/u        @src/cmemit@  -o %TMPOUT% %TRNA.CM%
-1  exercise  cmemit:trna/u        @src/cmemit@  -n 37 %TRNA.CM%
-1  exercise  cmemit:trna/a        @src/cmemit@  -a %TRNA.CM%
-1  exercise  cmemit:trna/c        @src/cmemit@  -c %TRNA.CM%
-1  exercise  cmemit:trna/i        @src/cmemit@  -i 1000 %TRNA.CM%
-1  exercise  cmemit:trna/seed     @src/cmemit@  --seed 33 %TRNA.CM%
-1  exercise  cmemit:trna/rna      @src/cmemit@  --rna %TRNA.CM%
-1  exercise  cmemit:trna/dna      @src/cmemit@  --dna %TRNA.CM%
-1  exercise  cmemit:trna/fmt/stk  @src/cmemit@  -a --outformat stockholm %TRNA.CM%
-1  exercise  cmemit:trna/fmt/pfm  @src/cmemit@  -a --outformat PFAM %TRNA.CM%
-1  exercise  cmemit:trna/fmt/afa  @src/cmemit@  -a --outformat afa %TRNA.CM%
-1  exercise  cmemit:trna/fmt/a2m  @src/cmemit@  -a --outformat a2m %TRNA.CM%
-1  exercise  cmemit:trna/fmt/clu  @src/cmemit@  -a --outformat Clustal %TRNA.CM%
-1  exercise  cmemit:trna/fmt/phy  @src/cmemit@  -a --outformat PHYLIP %TRNA.CM%
-1  exercise  cmemit:trna/fmt/psi  @src/cmemit@  -a --outformat PsiBlast %TRNA.CM%
-1  exercise  cmemit:trna/tfile    @src/cmemit@  --tfile %TMPOUT%  %TRNA.CM%
-1  exercise  cmemit:trna/tfile/a  @src/cmemit@  -a --tfile %TMPOUT%  %TRNA.CM%
+1  exercise  emit:t/df       @src/cmemit@  %TRNA.CM%
+1  exercise  emit:t/u        @src/cmemit@  -u %TRNA.CM%
+1  exercise  emit:t/u        @src/cmemit@  -o %TMPOUT% %TRNA.CM%
+1  exercise  emit:t/u        @src/cmemit@  -N 37 %TRNA.CM%
+1  exercise  emit:t/a        @src/cmemit@  -a %TRNA.CM%
+1  exercise  emit:t/c        @src/cmemit@  -c %TRNA.CM%
+1  exercise  emit:t/i        @src/cmemit@  --idx 1000 %TRNA.CM%
+1  exercise  emit:t/seed     @src/cmemit@  --seed 33 %TRNA.CM%
+1  exercise  emit:t/rna      @src/cmemit@  --rna %TRNA.CM%
+1  exercise  emit:t/dna      @src/cmemit@  --dna %TRNA.CM%
+1  exercise  emit:t/fmt/stk  @src/cmemit@  -a --outformat stockholm %TRNA.CM%
+1  exercise  emit:t/fmt/pfm  @src/cmemit@  -a --outformat PFAM %TRNA.CM%
+1  exercise  emit:t/fmt/afa  @src/cmemit@  -a --outformat afa %TRNA.CM%
+1  exercise  emit:t/fmt/a2m  @src/cmemit@  -a --outformat a2m %TRNA.CM%
+1  exercise  emit:t/fmt/clu  @src/cmemit@  -a --outformat Clustal %TRNA.CM%
+1  exercise  emit:t/fmt/phy  @src/cmemit@  -a --outformat PHYLIP %TRNA.CM%
+1  exercise  emit:t/fmt/psi  @src/cmemit@  -a --outformat PsiBlast %TRNA.CM%
+1  exercise  emit:t/tfile    @src/cmemit@  --tfile %TMPOUT%  %TRNA.CM%
+1  exercise  emit:t/tfile/a  @src/cmemit@  -a --tfile %TMPOUT%  %TRNA.CM%
 
-1  exercise  cmemit:trna/embed    @src/cmemit@  --embed 300 --seed 181 %TRNA.CM%
-1  exercise  cmemit:trna/embed/5t @src/cmemit@  --tr5p --embed 300 --seed 181 %TRNA.CM%
-1  exercise  cmemit:trna/embed/3t @src/cmemit@  --tr3p --embed 300 --seed 181 %TRNA.CM%
-1  exercise  cmemit:trna/begend1  @src/cmemit@  -a --begin 10 --end 50 %TRNA.CM%
-1  exercise  cmemit:trna/begend2  @src/cmemit@  -a --begin 40 --end 45 %TRNA.CM%
+1  exercise  emit:t/embed    @src/cmemit@  -e 300 --seed 181 %TRNA.CM%
+1  exercise  emit:t/embed/5t @src/cmemit@  --u5p -e 300 --seed 181 %TRNA.CM%
+1  exercise  emit:t/embed/3t @src/cmemit@  --u3p -e 300 --seed 181 %TRNA.CM%
+1  exercise  emit:t/begend0  @src/cmemit@  -a --a5p 0 --a3p 0 %TRNA.CM%
+1  exercise  emit:t/begend1  @src/cmemit@  -a --a5p 10 --a3p 50 %TRNA.CM%
+1  exercise  emit:t/begend2  @src/cmemit@  -a --a5p 40 --a3p 45 %TRNA.CM%
 
-1  exercise  cmemit:trna/5t       @src/cmemit@  --tr5p %TRNA.CM%
-1  exercise  cmemit:trna/3t       @src/cmemit@  --tr3p %TRNA.CM%
-1  exercise  cmemit:trna/5t/3t    @src/cmemit@  --tr5p --tr3p %TRNA.CM%
-1  exercise  cmemit:trna/exp1     @src/cmemit@  --exp 0.5 %TRNA.CM%
-1  exercise  cmemit:trna/exp2     @src/cmemit@  --exp 1.5 %TRNA.CM%
+1  exercise  emit:t/5t       @src/cmemit@  --u5p %TRNA.CM%
+1  exercise  emit:t/3t       @src/cmemit@  --u3p %TRNA.CM%
+1  exercise  emit:t/5t/3t    @src/cmemit@  --u5p --u3p %TRNA.CM%
+1  exercise  emit:t/exp1     @src/cmemit@  --exp 0.5 %TRNA.CM%
+1  exercise  emit:t/exp2     @src/cmemit@  --exp 1.5 %TRNA.CM%
 
 # repeat some exercises runs with a multi-cm file. 
-1  prep       model/multi         @src/cmbuild@ -F %MULTI.CM% !testsuite/se.dbl.sto!
-1  exercise  cmemit:multi/df       @src/cmemit@  %MULTI.CM%
-1  exercise  cmemit:multi/u        @src/cmemit@  -u %MULTI.CM%
-1  exercise  cmemit:multi/u        @src/cmemit@  -o %TMPOUT% %MULTI.CM%
-1  exercise  cmemit:multi/u        @src/cmemit@  -n 37 %MULTI.CM%
-1  exercise  cmemit:multi/a        @src/cmemit@  -a %MULTI.CM%
-1  exercise  cmemit:multi/c        @src/cmemit@  -c %MULTI.CM%
-1  exercise  cmemit:multi/i        @src/cmemit@  -i 1000 %MULTI.CM%
+1  prep       model/multi          @src/cmbuild@ -F %MULTI.CM% !testsuite/se.dbl.sto!
+1  exercise  emit:multi/df       @src/cmemit@  %MULTI.CM%
+1  exercise  emit:multi/u        @src/cmemit@  -u %MULTI.CM%
+1  exercise  emit:multi/u        @src/cmemit@  -o %TMPOUT% %MULTI.CM%
+1  exercise  emit:multi/u        @src/cmemit@  -N 37 %MULTI.CM%
+1  exercise  emit:multi/a        @src/cmemit@  -a %MULTI.CM%
+1  exercise  emit:multi/c        @src/cmemit@  -c %MULTI.CM%
+1  exercise  emit:multi/i        @src/cmemit@  --idx 1000 %MULTI.CM%
 
 #######################################
 # all the same as above, with -l added
-1  exercise  cmemit:l/trna/df       @src/cmemit@  -l %TRNA.CM%
-1  exercise  cmemit:l/trna/u        @src/cmemit@  -l -u %TRNA.CM%
-1  exercise  cmemit:l/trna/u        @src/cmemit@  -l -o %TMPOUT% %TRNA.CM%
-1  exercise  cmemit:l/trna/u        @src/cmemit@  -l -n 37 %TRNA.CM%
-1  exercise  cmemit:l/trna/a        @src/cmemit@  -l -a %TRNA.CM%
-1  exercise  cmemit:l/trna/c        @src/cmemit@  -l -c %TRNA.CM%
-1  exercise  cmemit:l/trna/i        @src/cmemit@  -l -i 1000 %TRNA.CM%
-1  exercise  cmemit:l/trna/seed     @src/cmemit@  -l --seed 33 %TRNA.CM%
-1  exercise  cmemit:l/trna/rna      @src/cmemit@  -l --rna %TRNA.CM%
-1  exercise  cmemit:l/trna/dna      @src/cmemit@  -l --dna %TRNA.CM%
-1  exercise  cmemit:l/trna/fmt/stk  @src/cmemit@  -l -a --outformat stockholm %TRNA.CM%
-1  exercise  cmemit:l/trna/fmt/pfm  @src/cmemit@  -l -a --outformat PFAM %TRNA.CM%
-1  exercise  cmemit:l/trna/fmt/afa  @src/cmemit@  -l -a --outformat afa %TRNA.CM%
-1  exercise  cmemit:l/trna/fmt/a2m  @src/cmemit@  -l -a --outformat a2m %TRNA.CM%
-1  exercise  cmemit:l/trna/fmt/clu  @src/cmemit@  -l -a --outformat Clustal %TRNA.CM%
-1  exercise  cmemit:l/trna/fmt/phy  @src/cmemit@  -l -a --outformat PHYLIP %TRNA.CM%
-1  exercise  cmemit:l/trna/fmt/psi  @src/cmemit@  -l -a --outformat PsiBlast %TRNA.CM%
-1  exercise  cmemit:l/trna/tfile    @src/cmemit@  -l --tfile %TMPOUT%  %TRNA.CM%
-1  exercise  cmemit:l/trna/tfile/a  @src/cmemit@  -l -a --tfile %TMPOUT%  %TRNA.CM%
+1  exercise  emit:l/t/df       @src/cmemit@  -l %TRNA.CM%
+1  exercise  emit:l/t/u        @src/cmemit@  -l -u %TRNA.CM%
+1  exercise  emit:l/t/u        @src/cmemit@  -l -o %TMPOUT% %TRNA.CM%
+1  exercise  emit:l/t/u        @src/cmemit@  -l -N 37 %TRNA.CM%
+1  exercise  emit:l/t/a        @src/cmemit@  -l -a %TRNA.CM%
+1  exercise  emit:l/t/c        @src/cmemit@  -l -c %TRNA.CM%
+1  exercise  emit:l/t/i        @src/cmemit@  -l --idx 1000 %TRNA.CM%
+1  exercise  emit:l/t/seed     @src/cmemit@  -l --seed 33 %TRNA.CM%
+1  exercise  emit:l/t/rna      @src/cmemit@  -l --rna %TRNA.CM%
+1  exercise  emit:l/t/dna      @src/cmemit@  -l --dna %TRNA.CM%
+1  exercise  emit:l/t/fmt/stk  @src/cmemit@  -l -a --outformat stockholm %TRNA.CM%
+1  exercise  emit:l/t/fmt/pfm  @src/cmemit@  -l -a --outformat PFAM %TRNA.CM%
+1  exercise  emit:l/t/fmt/afa  @src/cmemit@  -l -a --outformat afa %TRNA.CM%
+1  exercise  emit:l/t/fmt/a2m  @src/cmemit@  -l -a --outformat a2m %TRNA.CM%
+1  exercise  emit:l/t/fmt/clu  @src/cmemit@  -l -a --outformat Clustal %TRNA.CM%
+1  exercise  emit:l/t/fmt/phy  @src/cmemit@  -l -a --outformat PHYLIP %TRNA.CM%
+1  exercise  emit:l/t/fmt/psi  @src/cmemit@  -l -a --outformat PsiBlast %TRNA.CM%
+1  exercise  emit:l/t/tfile    @src/cmemit@  -l --tfile %TMPOUT%  %TRNA.CM%
+1  exercise  emit:l/t/tfile/a  @src/cmemit@  -l -a --tfile %TMPOUT%  %TRNA.CM%
 
-1  exercise  cmemit:l/trna/embed    @src/cmemit@  -l --embed 300 --seed 181 %TRNA.CM%
-1  exercise  cmemit:l/trna/embed/5t @src/cmemit@  -l --tr5p --embed 300 --seed 181 %TRNA.CM%
-1  exercise  cmemit:l/trna/embed/3t @src/cmemit@  -l --tr3p --embed 300 --seed 181 %TRNA.CM%
-1  exercise  cmemit:l/trna/begend1  @src/cmemit@  -l -a --begin 10 --end 50 %TRNA.CM%
-1  exercise  cmemit:l/trna/begend2  @src/cmemit@  -l -a --begin 40 --end 45 %TRNA.CM%
+1  exercise  emit:l/t/embed    @src/cmemit@  -l -e 300 --seed 181 %TRNA.CM%
+1  exercise  emit:l/t/embed/5t @src/cmemit@  -l --u5p -e 300 --seed 181 %TRNA.CM%
+1  exercise  emit:l/t/embed/3t @src/cmemit@  -l --u3p -e 300 --seed 181 %TRNA.CM%
+1  exercise  emit:l/t/begend1  @src/cmemit@  -l -a --a5p 10 --a3p 50 %TRNA.CM%
+1  exercise  emit:l/t/begend2  @src/cmemit@  -l -a --a5p 40 --a3p 45 %TRNA.CM%
 
-1  exercise  cmemit:l/trna/5t       @src/cmemit@  -l --tr5p %TRNA.CM%
-1  exercise  cmemit:l/trna/3t       @src/cmemit@  -l --tr3p %TRNA.CM%
-1  exercise  cmemit:l/trna/5t/3t    @src/cmemit@  -l --tr5p --tr3p %TRNA.CM%
-1  exercise  cmemit:l/trna/exp1     @src/cmemit@  -l --exp 0.5 %TRNA.CM%
-1  exercise  cmemit:l/trna/exp2     @src/cmemit@  -l --exp 1.5 %TRNA.CM%
+1  exercise  emit:l/t/5t       @src/cmemit@  -l --u5p %TRNA.CM%
+1  exercise  emit:l/t/3t       @src/cmemit@  -l --u3p %TRNA.CM%
+1  exercise  emit:l/t/5t/3t    @src/cmemit@  -l --u5p --u3p %TRNA.CM%
+1  exercise  emit:l/t/exp1     @src/cmemit@  -l --exp 0.5 %TRNA.CM%
+1  exercise  emit:l/t/exp2     @src/cmemit@  -l --exp 1.5 %TRNA.CM%
 
 # repeat some exercises runs with a multi-cm file. 
-1  exercise  cmemit:l/multi/df       @src/cmemit@  -l %MULTI.CM%
-1  exercise  cmemit:l/multi/u        @src/cmemit@  -l -u %MULTI.CM%
-1  exercise  cmemit:l/multi/u        @src/cmemit@  -l -o %TMPOUT% %MULTI.CM%
-1  exercise  cmemit:l/multi/u        @src/cmemit@  -l -n 37 %MULTI.CM%
-1  exercise  cmemit:l/multi/a        @src/cmemit@  -l -a %MULTI.CM%
-1  exercise  cmemit:l/multi/c        @src/cmemit@  -l -c %MULTI.CM%
-1  exercise  cmemit:l/multi/i        @src/cmemit@  -l -i 1000 %MULTI.CM%
+1  exercise  emit:l/multi/df       @src/cmemit@  -l %MULTI.CM%
+1  exercise  emit:l/multi/u        @src/cmemit@  -l -u %MULTI.CM%
+1  exercise  emit:l/multi/u        @src/cmemit@  -l -o %TMPOUT% %MULTI.CM%
+1  exercise  emit:l/multi/u        @src/cmemit@  -l -N 37 %MULTI.CM%
+1  exercise  emit:l/multi/a        @src/cmemit@  -l -a %MULTI.CM%
+1  exercise  emit:l/multi/c        @src/cmemit@  -l -c %MULTI.CM%
+1  exercise  emit:l/multi/i        @src/cmemit@  -l --idx 1000 %MULTI.CM%
 #######################################   
 
 
 #######################################
 # Same as above, with binary model files 
 #######################################
-1  prep      model/trna           @src/cmbuild@ --binary -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
-1  exercise  cmemit:b/trna/df       @src/cmemit@  %TRNA.CM%
-1  exercise  cmemit:b/trna/u        @src/cmemit@  -u %TRNA.CM%
-1  exercise  cmemit:b/trna/u        @src/cmemit@  -o %TMPOUT% %TRNA.CM%
-1  exercise  cmemit:b/trna/u        @src/cmemit@  -n 37 %TRNA.CM%
-1  exercise  cmemit:b/trna/a        @src/cmemit@  -a %TRNA.CM%
-1  exercise  cmemit:b/trna/c        @src/cmemit@  -c %TRNA.CM%
-1  exercise  cmemit:b/trna/i        @src/cmemit@  -i 1000 %TRNA.CM%
-1  exercise  cmemit:b/trna/seed     @src/cmemit@  --seed 33 %TRNA.CM%
-1  exercise  cmemit:b/trna/rna      @src/cmemit@  --rna %TRNA.CM%
-1  exercise  cmemit:b/trna/dna      @src/cmemit@  --dna %TRNA.CM%
-1  exercise  cmemit:b/trna/fmt/stk  @src/cmemit@  -a --outformat stockholm %TRNA.CM%
-1  exercise  cmemit:b/trna/fmt/pfm  @src/cmemit@  -a --outformat PFAM %TRNA.CM%
-1  exercise  cmemit:b/trna/fmt/afa  @src/cmemit@  -a --outformat afa %TRNA.CM%
-1  exercise  cmemit:b/trna/fmt/a2m  @src/cmemit@  -a --outformat a2m %TRNA.CM%
-1  exercise  cmemit:b/trna/fmt/clu  @src/cmemit@  -a --outformat Clustal %TRNA.CM%
-1  exercise  cmemit:b/trna/fmt/phy  @src/cmemit@  -a --outformat PHYLIP %TRNA.CM%
-1  exercise  cmemit:b/trna/fmt/psi  @src/cmemit@  -a --outformat PsiBlast %TRNA.CM%
-1  exercise  cmemit:b/trna/tfile    @src/cmemit@  --tfile %TMPOUT%  %TRNA.CM%
-1  exercise  cmemit:b/trna/tfile/a  @src/cmemit@  -a --tfile %TMPOUT%  %TRNA.CM%
+1  prep      model/trna             @src/cmconvert@ -b %TRNA.CM% > %B.TRNA.CM%
+1  exercise  emit:b/t/df       @src/cmemit@  %B.TRNA.CM%
+1  exercise  emit:b/t/u        @src/cmemit@  -u %B.TRNA.CM%
+1  exercise  emit:b/t/u        @src/cmemit@  -o %TMPOUT% %B.TRNA.CM%
+1  exercise  emit:b/t/u        @src/cmemit@  -N 37 %B.TRNA.CM%
+1  exercise  emit:b/t/a        @src/cmemit@  -a %B.TRNA.CM%
+1  exercise  emit:b/t/c        @src/cmemit@  -c %B.TRNA.CM%
+1  exercise  emit:b/t/i        @src/cmemit@  --idx 1000 %B.TRNA.CM%
+1  exercise  emit:b/t/seed     @src/cmemit@  --seed 33 %B.TRNA.CM%
+1  exercise  emit:b/t/rna      @src/cmemit@  --rna %B.TRNA.CM%
+1  exercise  emit:b/t/dna      @src/cmemit@  --dna %B.TRNA.CM%
+1  exercise  emit:b/t/fmt/stk  @src/cmemit@  -a --outformat stockholm %B.TRNA.CM%
+1  exercise  emit:b/t/fmt/pfm  @src/cmemit@  -a --outformat PFAM %B.TRNA.CM%
+1  exercise  emit:b/t/fmt/afa  @src/cmemit@  -a --outformat afa %B.TRNA.CM%
+1  exercise  emit:b/t/fmt/a2m  @src/cmemit@  -a --outformat a2m %B.TRNA.CM%
+1  exercise  emit:b/t/fmt/clu  @src/cmemit@  -a --outformat Clustal %B.TRNA.CM%
+1  exercise  emit:b/t/fmt/phy  @src/cmemit@  -a --outformat PHYLIP %B.TRNA.CM%
+1  exercise  emit:b/t/fmt/psi  @src/cmemit@  -a --outformat PsiBlast %B.TRNA.CM%
+1  exercise  emit:b/t/tfile    @src/cmemit@  --tfile %TMPOUT%  %B.TRNA.CM%
+1  exercise  emit:b/t/tfile/a  @src/cmemit@  -a --tfile %TMPOUT%  %B.TRNA.CM%
 
-1  exercise  cmemit:b/trna/embed    @src/cmemit@  --embed 300 --seed 181 %TRNA.CM%
-1  exercise  cmemit:b/trna/embed/5t @src/cmemit@  --tr5p --embed 300 --seed 181 %TRNA.CM%
-1  exercise  cmemit:b/trna/embed/3t @src/cmemit@  --tr3p --embed 300 --seed 181 %TRNA.CM%
-1  exercise  cmemit:b/trna/begend1  @src/cmemit@  -a --begin 10 --end 50 %TRNA.CM%
-1  exercise  cmemit:b/trna/begend2  @src/cmemit@  -a --begin 40 --end 45 %TRNA.CM%
+1  exercise  emit:b/t/embed    @src/cmemit@  -e 300 --seed 181 %B.TRNA.CM%
+1  exercise  emit:b/t/embed/5t @src/cmemit@  --u5p -e 300 --seed 181 %B.TRNA.CM%
+1  exercise  emit:b/t/embed/3t @src/cmemit@  --u3p -e 300 --seed 181 %B.TRNA.CM%
+1  exercise  emit:b/t/begend0  @src/cmemit@  -a --a5p 0 --a3p 0 %B.TRNA.CM%
+1  exercise  emit:b/t/begend1  @src/cmemit@  -a --a5p 10 --a3p 50 %B.TRNA.CM%
+1  exercise  emit:b/t/begend2  @src/cmemit@  -a --a5p 40 --a3p 45 %B.TRNA.CM%
 
-1  exercise  cmemit:b/trna/5t       @src/cmemit@  --tr5p %TRNA.CM%
-1  exercise  cmemit:b/trna/3t       @src/cmemit@  --tr3p %TRNA.CM%
-1  exercise  cmemit:b/trna/5t/3t    @src/cmemit@  --tr5p --tr3p %TRNA.CM%
-1  exercise  cmemit:b/trna/exp1     @src/cmemit@  --exp 0.5 %TRNA.CM%
-1  exercise  cmemit:b/trna/exp2     @src/cmemit@  --exp 1.5 %TRNA.CM%
+1  exercise  emit:b/t/5t       @src/cmemit@  --u5p %B.TRNA.CM%
+1  exercise  emit:b/t/3t       @src/cmemit@  --u3p %B.TRNA.CM%
+1  exercise  emit:b/t/5t/3t    @src/cmemit@  --u5p --u3p %B.TRNA.CM%
+1  exercise  emit:b/t/exp1     @src/cmemit@  --exp 0.5 %B.TRNA.CM%
+1  exercise  emit:b/t/exp2     @src/cmemit@  --exp 1.5 %B.TRNA.CM%
 
 # repeat some exercises runs with a multi-cm file. 
-1  prep       model/multi         @src/cmbuild@ --binary -F %MULTI.CM% !testsuite/se.dbl.sto!
-1  exercise  cmemit:b/multi/df       @src/cmemit@  %MULTI.CM%
-1  exercise  cmemit:b/multi/u        @src/cmemit@  -u %MULTI.CM%
-1  exercise  cmemit:b/multi/u        @src/cmemit@  -o %TMPOUT% %MULTI.CM%
-1  exercise  cmemit:b/multi/u        @src/cmemit@  -n 37 %MULTI.CM%
-1  exercise  cmemit:b/multi/a        @src/cmemit@  -a %MULTI.CM%
-1  exercise  cmemit:b/multi/c        @src/cmemit@  -c %MULTI.CM%
-1  exercise  cmemit:b/multi/i        @src/cmemit@  -i 1000 %MULTI.CM%
+1  prep      model/multi             @src/cmconvert@ -b %MULTI.CM% > %B.MULTI.CM%
+1  exercise  emit:b/multi/df       @src/cmemit@  %B.MULTI.CM%
+1  exercise  emit:b/multi/u        @src/cmemit@  -u %B.MULTI.CM%
+1  exercise  emit:b/multi/u        @src/cmemit@  -o %TMPOUT% %B.MULTI.CM%
+1  exercise  emit:b/multi/u        @src/cmemit@  -N 37 %B.MULTI.CM%
+1  exercise  emit:b/multi/a        @src/cmemit@  -a %B.MULTI.CM%
+1  exercise  emit:b/multi/c        @src/cmemit@  -c %B.MULTI.CM%
+1  exercise  emit:b/multi/i        @src/cmemit@  --idx 1000 %B.MULTI.CM%
 
 #######################################
 # all the same as above, with -l added
-1  exercise  cmemit:b/l/trna/df       @src/cmemit@  -l %TRNA.CM%
-1  exercise  cmemit:b/l/trna/u        @src/cmemit@  -l -u %TRNA.CM%
-1  exercise  cmemit:b/l/trna/u        @src/cmemit@  -l -o %TMPOUT% %TRNA.CM%
-1  exercise  cmemit:b/l/trna/u        @src/cmemit@  -l -n 37 %TRNA.CM%
-1  exercise  cmemit:b/l/trna/a        @src/cmemit@  -l -a %TRNA.CM%
-1  exercise  cmemit:b/l/trna/c        @src/cmemit@  -l -c %TRNA.CM%
-1  exercise  cmemit:b/l/trna/i        @src/cmemit@  -l -i 1000 %TRNA.CM%
-1  exercise  cmemit:b/l/trna/seed     @src/cmemit@  -l --seed 33 %TRNA.CM%
-1  exercise  cmemit:b/l/trna/rna      @src/cmemit@  -l --rna %TRNA.CM%
-1  exercise  cmemit:b/l/trna/dna      @src/cmemit@  -l --dna %TRNA.CM%
-1  exercise  cmemit:b/l/trna/fmt/stk  @src/cmemit@  -l -a --outformat stockholm %TRNA.CM%
-1  exercise  cmemit:b/l/trna/fmt/pfm  @src/cmemit@  -l -a --outformat PFAM %TRNA.CM%
-1  exercise  cmemit:b/l/trna/fmt/afa  @src/cmemit@  -l -a --outformat afa %TRNA.CM%
-1  exercise  cmemit:b/l/trna/fmt/a2m  @src/cmemit@  -l -a --outformat a2m %TRNA.CM%
-1  exercise  cmemit:b/l/trna/fmt/clu  @src/cmemit@  -l -a --outformat Clustal %TRNA.CM%
-1  exercise  cmemit:b/l/trna/fmt/phy  @src/cmemit@  -l -a --outformat PHYLIP %TRNA.CM%
-1  exercise  cmemit:b/l/trna/fmt/psi  @src/cmemit@  -l -a --outformat PsiBlast %TRNA.CM%
-1  exercise  cmemit:b/l/trna/tfile    @src/cmemit@  -l --tfile %TMPOUT%  %TRNA.CM%
-1  exercise  cmemit:b/l/trna/tfile/a  @src/cmemit@  -l -a --tfile %TMPOUT%  %TRNA.CM%
+1  exercise  emit:b/l/t/df       @src/cmemit@  -l %B.TRNA.CM%
+1  exercise  emit:b/l/t/u        @src/cmemit@  -l -u %B.TRNA.CM%
+1  exercise  emit:b/l/t/u        @src/cmemit@  -l -o %TMPOUT% %B.TRNA.CM%
+1  exercise  emit:b/l/t/u        @src/cmemit@  -l -N 37 %B.TRNA.CM%
+1  exercise  emit:b/l/t/a        @src/cmemit@  -l -a %B.TRNA.CM%
+1  exercise  emit:b/l/t/c        @src/cmemit@  -l -c %B.TRNA.CM%
+1  exercise  emit:b/l/t/i        @src/cmemit@  -l --idx 1000 %B.TRNA.CM%
+1  exercise  emit:b/l/t/seed     @src/cmemit@  -l --seed 33 %B.TRNA.CM%
+1  exercise  emit:b/l/t/rna      @src/cmemit@  -l --rna %B.TRNA.CM%
+1  exercise  emit:b/l/t/dna      @src/cmemit@  -l --dna %B.TRNA.CM%
+1  exercise  emit:b/l/t/fmt/stk  @src/cmemit@  -l -a --outformat stockholm %B.TRNA.CM%
+1  exercise  emit:b/l/t/fmt/pfm  @src/cmemit@  -l -a --outformat PFAM %B.TRNA.CM%
+1  exercise  emit:b/l/t/fmt/afa  @src/cmemit@  -l -a --outformat afa %B.TRNA.CM%
+1  exercise  emit:b/l/t/fmt/a2m  @src/cmemit@  -l -a --outformat a2m %B.TRNA.CM%
+1  exercise  emit:b/l/t/fmt/clu  @src/cmemit@  -l -a --outformat Clustal %B.TRNA.CM%
+1  exercise  emit:b/l/t/fmt/phy  @src/cmemit@  -l -a --outformat PHYLIP %B.TRNA.CM%
+1  exercise  emit:b/l/t/fmt/psi  @src/cmemit@  -l -a --outformat PsiBlast %B.TRNA.CM%
+1  exercise  emit:b/l/t/tfile    @src/cmemit@  -l --tfile %TMPOUT%  %B.TRNA.CM%
+1  exercise  emit:b/l/t/tfile/a  @src/cmemit@  -l -a --tfile %TMPOUT%  %B.TRNA.CM%
 
-1  exercise  cmemit:b/l/trna/embed    @src/cmemit@  -l --embed 300 --seed 181 %TRNA.CM%
-1  exercise  cmemit:b/l/trna/embed/5t @src/cmemit@  -l --tr5p --embed 300 --seed 181 %TRNA.CM%
-1  exercise  cmemit:b/l/trna/embed/3t @src/cmemit@  -l --tr3p --embed 300 --seed 181 %TRNA.CM%
-1  exercise  cmemit:b/l/trna/begend1  @src/cmemit@  -l -a --begin 10 --end 50 %TRNA.CM%
-1  exercise  cmemit:b/l/trna/begend2  @src/cmemit@  -l -a --begin 40 --end 45 %TRNA.CM%
+1  exercise  emit:b/l/t/embed    @src/cmemit@  -l -e 300 --seed 181 %B.TRNA.CM%
+1  exercise  emit:b/l/t/embed/5t @src/cmemit@  -l --u5p -e 300 --seed 181 %B.TRNA.CM%
+1  exercise  emit:b/l/t/embed/3t @src/cmemit@  -l --u3p -e 300 --seed 181 %B.TRNA.CM%
+1  exercise  emit:b/l/t/begend0  @src/cmemit@  -l -a --a5p 0 --a3p 0 %B.TRNA.CM%
+1  exercise  emit:b/l/t/begend1  @src/cmemit@  -l -a --a5p 10 --a3p 50 %B.TRNA.CM%
+1  exercise  emit:b/l/t/begend2  @src/cmemit@  -l -a --a5p 40 --a3p 45 %B.TRNA.CM%
 
-1  exercise  cmemit:b/l/trna/5t       @src/cmemit@  -l --tr5p %TRNA.CM%
-1  exercise  cmemit:b/l/trna/3t       @src/cmemit@  -l --tr3p %TRNA.CM%
-1  exercise  cmemit:b/l/trna/5t/3t    @src/cmemit@  -l --tr5p --tr3p %TRNA.CM%
-1  exercise  cmemit:b/l/trna/exp1     @src/cmemit@  -l --exp 0.5 %TRNA.CM%
-1  exercise  cmemit:b/l/trna/exp2     @src/cmemit@  -l --exp 1.5 %TRNA.CM%
+1  exercise  emit:b/l/t/5t       @src/cmemit@  -l --u5p %B.TRNA.CM%
+1  exercise  emit:b/l/t/3t       @src/cmemit@  -l --u3p %B.TRNA.CM%
+1  exercise  emit:b/l/t/5t/3t    @src/cmemit@  -l --u5p --u3p %B.TRNA.CM%
+1  exercise  emit:b/l/t/exp1     @src/cmemit@  -l --exp 0.5 %B.TRNA.CM%
+1  exercise  emit:b/l/t/exp2     @src/cmemit@  -l --exp 1.5 %B.TRNA.CM%
 
 # repeat some exercises runs with a multi-cm file. 
-1  exercise  cmemit:b/l/multi/df       @src/cmemit@  -l %MULTI.CM%
-1  exercise  cmemit:b/l/multi/u        @src/cmemit@  -l -u %MULTI.CM%
-1  exercise  cmemit:b/l/multi/u        @src/cmemit@  -l -o %TMPOUT% %MULTI.CM%
-1  exercise  cmemit:b/l/multi/u        @src/cmemit@  -l -n 37 %MULTI.CM%
-1  exercise  cmemit:b/l/multi/a        @src/cmemit@  -l -a %MULTI.CM%
-1  exercise  cmemit:b/l/multi/c        @src/cmemit@  -l -c %MULTI.CM%
-1  exercise  cmemit:b/l/multi/i        @src/cmemit@  -l -i 1000 %MULTI.CM%
+1  exercise  emit:b/l/multi/df       @src/cmemit@  -l %B.MULTI.CM%
+1  exercise  emit:b/l/multi/u        @src/cmemit@  -l -u %B.MULTI.CM%
+1  exercise  emit:b/l/multi/u        @src/cmemit@  -l -o %TMPOUT% %B.MULTI.CM%
+1  exercise  emit:b/l/multi/u        @src/cmemit@  -l -N 37 %B.MULTI.CM%
+1  exercise  emit:b/l/multi/a        @src/cmemit@  -l -a %B.MULTI.CM%
+1  exercise  emit:b/l/multi/c        @src/cmemit@  -l -c %B.MULTI.CM%
+1  exercise  emit:b/l/multi/i        @src/cmemit@  -l --idx 1000 %B.MULTI.CM%
 #######################################   

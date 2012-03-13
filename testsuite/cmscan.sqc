@@ -1,0 +1,243 @@
+# Infernal's cmscan crash exercises, in sqc command format.
+# EPN, Thu Jan  3 05:20:12 2008
+# SVN $Id: exercises.sqc 2237 2007-12-01 00:14:41Z nawrockie $
+#
+
+# Exercises of cmscan.
+#
+1  exercise  scan:help/1        @src/cmscan@  -h
+1  exercise  scan:help/2        @src/cmscan@  --devhelp
+
+# cmscan requires calibrated and pressed models
+1  prep      copy:tC           cp !testsuite/tRNA.calibrated.cm! %T.CM%
+1  prep      copy:vC           cp !testsuite/Vault.calibrated.cm! %V.CM%
+1  prep      copy:3C           cp !testsuite/3.calibrated.cm! %3.CM%
+1  exercise  press:tC          @src/cmpress@ %T.CM%
+1  exercise  press:vC          @src/cmpress@ %V.CM%
+1  exercise  press:3C          @src/cmpress@ %3.CM%
+
+# copy fasta files, only so the names are more convenient in rest of this file
+1  prep      copy:t/fa1k      cp !testsuite/1k-tRNA.fa! %T1K%
+1  prep      copy:t/fa10k     cp !testsuite/10k-tRNA.fa! %T10K%
+1  prep      copy:t/fa100k    cp !testsuite/100k-tRNA.fa! %T100K%
+1  prep      copy:t/faemit    cp !testsuite/emitted-tRNA.fa! %TEMIT%
+1  prep      copy:v/fa1k      cp !testsuite/1k-Vault.fa! %V1K%
+1  prep      copy:v/fa10k     cp !testsuite/10k-Vault.fa! %V10K%
+1  prep      copy:v/fa100k    cp !testsuite/100k-Vault.fa! %V100K%
+1  prep      copy:v/faemit    cp !testsuite/emitted-Vault.fa! %VEMIT%
+1  prep      copy:v/fatremit  cp !testsuite/tremitted-Vault.fa! %VTREMIT%
+1  prep      copy:3/fa1k      cp !testsuite/1k-3.fa! %31K%
+1  prep      copy:3/fa10k     cp !testsuite/10k-3.fa! %310K%
+1  prep      copy:3/fa100k    cp !testsuite/100k-3.fa! %3100K%
+1  prep      copy:3/faemit    cp !testsuite/emitted-3.fa! %3EMIT%
+1  prep      copy:rand/fa1k   cp !testsuite/1k.fa! %R1K%
+
+1  exercise  scan:t/10k    @src/cmscan@  %T.CM% %T10K%
+1  exercise  scan:v/10k    @src/cmscan@  %V.CM% %V10K%
+1  exercise  scan:3/10k    @src/cmscan@  %3.CM% %310K%
+1  exercise  scan:t/emit   @src/cmscan@  %T.CM% %TEMIT%
+1  exercise  scan:v/emit   @src/cmscan@  %V.CM% %VEMIT%
+1  exercise  scan:3/emit   @src/cmscan@  %3.CM% %3EMIT%
+
+1  exercise  scan:t/10k/g    @src/cmscan@  -g %T.CM% %T10K%
+1  exercise  scan:v/10k/g    @src/cmscan@  -g %V.CM% %V10K%
+1  exercise  scan:3/10k/g    @src/cmscan@  -g %3.CM% %310K%
+1  exercise  scan:t/emit/g   @src/cmscan@  -g %T.CM% %TEMIT%
+1  exercise  scan:v/emit/g   @src/cmscan@  -g %V.CM% %VEMIT%
+1  exercise  scan:3/emit/g   @src/cmscan@  -g %3.CM% %3EMIT%
+
+1  exercise  scan:t/10k/Z    @src/cmscan@  -Z 100  %T.CM% %T10K%
+1  exercise  scan:t/emit/Z   @src/cmscan@  -Z 1100 %T.CM% %TEMIT%
+1  exercise  scan:3/10k/Z    @src/cmscan@  -Z 100  %3.CM% %310K%
+1  exercise  scan:3/emit/Z   @src/cmscan@  -Z 1100 %3.CM% %3EMIT%
+
+1  exercise  scan:t/emit/o       @src/cmscan@  -o %TMPOUT% %T.CM% %TEMIT%
+1  exercise  scan:3/emit/o       @src/cmscan@  -o %TMPOUT% %3.CM% %3EMIT%
+1  exercise  scan:t/1k/tbl       @src/cmscan@  --tblout %TMPOUT% %T.CM% %T1K%
+1  exercise  scan:3/1k/tbl       @src/cmscan@  --tblout %TMPOUT% %3.CM% %31K%
+1  exercise  scan:t/1k/tbl       @src/cmscan@  --acc %T.CM% %T1K%
+1  exercise  scan:3/1k/tbl       @src/cmscan@  --acc %3.CM% %31K%
+1  exercise  scan:t/1k/noali     @src/cmscan@  --noali %T.CM% %T1K%
+1  exercise  scan:3/1k/noali     @src/cmscan@  --noali %3.CM% %31K%
+1  exercise  scan:t/1k/notextw   @src/cmscan@  --notextw %T.CM% %T1K%
+1  exercise  scan:3/1k/notextw   @src/cmscan@  --notextw %3.CM% %31K%
+1  exercise  scan:t/1k/textw     @src/cmscan@  --textw 150 %T.CM% %T1K%
+1  exercise  scan:3/1k/textw     @src/cmscan@  --textw 150 %3.CM% %31K%
+1  exercise  scan:t/1k/all       @src/cmscan@  --allstats %T.CM% %T1K%
+1  exercise  scan:3/1k/all       @src/cmscan@  --allstats %3.CM% %31K%
+
+1  exercise  scan:t/1k/E   @src/cmscan@  -E 0.001 %T.CM% %T1K%
+1  exercise  scan:3/1k/E   @src/cmscan@  -E 1000 %3.CM% %31K%
+1  exercise  scan:t/1k/T   @src/cmscan@  -T 25 %T.CM% %T1K%
+1  exercise  scan:3/1k/T   @src/cmscan@  -T 12 %3.CM% %31K%
+
+1  exercise  scan:t/1k/incE   @src/cmscan@  --incE 0.001 %T.CM% %T1K%
+1  exercise  scan:3/1k/incE   @src/cmscan@  --incE 1000 %3.CM% %31K%
+1  exercise  scan:t/1k/incT   @src/cmscan@  --incT 25 %T.CM% %T1K%
+1  exercise  scan:3/1k/incT   @src/cmscan@  --incT 12 %3.CM% %31K%
+
+1  exercise  scan:t/1k/cutga   @src/cmscan@  --cut_ga %T.CM% %T1K%
+1  exercise  scan:3/1k/cutga   @src/cmscan@  --cut_ga %3.CM% %31K%
+1  exercise  scan:t/1k/cuttc   @src/cmscan@  --cut_tc %T.CM% %T1K%
+1  exercise  scan:3/1k/cuttc   @src/cmscan@  --cut_tc %3.CM% %31K%
+# tRNA NC cutoff is undefined in Rfam 10.1
+1  exercise  scan:v/1k/cutnc   @src/cmscan@  --cut_nc %V.CM% %V1K%
+
+# filtering levels
+1  exercise  scan:t/emit/max   @src/cmscan@  --max %T.CM% %TEMIT%
+1  exercise  scan:t/1k/max     @src/cmscan@  --max %T.CM% %T1K%
+1  exercise  scan:t/emit/nohmm @src/cmscan@  --nohmm %T.CM% %TEMIT%
+1  exercise  scan:t/1k/nohmm   @src/cmscan@  --nohmm %T.CM% %T1K%
+1  exercise  scan:t/emit/mid   @src/cmscan@  --mid %T.CM% %TEMIT%
+1  exercise  scan:t/1k/mid     @src/cmscan@  --mid %T.CM% %T1K%
+1  exercise  scan:t/emit/Fmid  @src/cmscan@  --Fmid 0.005 --mid %T.CM% %TEMIT%
+1  exercise  scan:t/1k/Fmid    @src/cmscan@  --Fmid 0.10 --mid %T.CM% %T1K%
+1  exercise  scan:t/emit/rfam  @src/cmscan@  --rfam %T.CM% %TEMIT%
+1  exercise  scan:t/1k/rfam    @src/cmscan@  --rfam %T.CM% %T1K%
+1  exercise  scan:t/emit/FZ    @src/cmscan@  --FZ 1000 %T.CM% %TEMIT%
+1  exercise  scan:t/1k/FZ      @src/cmscan@  --FZ 10 %T.CM% %T1K%
+
+# truncation
+1  exercise  scan:v/trunc       @src/cmscan@  %V.CM% %VTREMIT%
+1  exercise  scan:v/truncFZ     @src/cmscan@  --FZ 2000 %V.CM% %VTREMIT%
+1  exercise  scan:v/notrunc     @src/cmscan@  --notrunc %V.CM% %VTREMIT%
+1  exercise  scan:v/notruncFZ   @src/cmscan@  --notrunc --FZ 2000 %V.CM% %VTREMIT%
+1  exercise  scan:v/anytrunc    @src/cmscan@  --anytrunc %V.CM% %VTREMIT%
+1  exercise  scan:v/anytruncFZ  @src/cmscan@  --anytrunc --FZ 2000 %V.CM% %VTREMIT%
+1  exercise  scan:v/trunc/g     @src/cmscan@  -g %V.CM% %VTREMIT%
+1  exercise  scan:v/truncFZ/g   @src/cmscan@  -g --FZ 2000 %V.CM% %VTREMIT%
+
+# other options
+1  exercise  scan:t/1k/nn3       @src/cmscan@  --nonull3 %T.CM% %T1K%
+1  exercise  scan:3/r1k/nn3      @src/cmscan@  --nonull3 %3.CM% %R1K%
+1  exercise  scan:t/1k/mx        @src/cmscan@  --mxsize 32. %T.CM% %T1K%
+1  exercise  scan:3/r1k/mx       @src/cmscan@  --mxsize 1024. %3.CM% %R1K%
+1  exercise  scan:t/1k/smx       @src/cmscan@  --smxsize 32. %T.CM% %T1K%
+1  exercise  scan:3/r1k/smx      @src/cmscan@  --smxsize 1024. %3.CM% %R1K%
+1  exercise  scan:t/1k/cyk       @src/cmscan@  --cyk %T.CM% %T1K%
+1  exercise  scan:3/r1k/cyk      @src/cmscan@  --cyk %3.CM% %R1K%
+1  exercise  scan:t/1k/acyk      @src/cmscan@  --acyk %T.CM% %T1K%
+1  exercise  scan:3/r1k/acyk     @src/cmscan@  --acyk %3.CM% %R1K%
+1  exercise  scan:t/1k/top       @src/cmscan@  --toponly %T.CM% %T1K%
+1  exercise  scan:3/r1k/top      @src/cmscan@  --toponly %3.CM% %R1K%
+1  exercise  scan:t/1k/bot       @src/cmscan@  --bottomonly %T.CM% %T1K%
+1  exercise  scan:3/r1k/bot      @src/cmscan@  --bottomonly %3.CM% %R1K%
+1  exercise  scan:t/1k/qfmt      @src/cmscan@  --qformat fasta %T.CM% !testsuite/3trnas.fa!
+1  exercise  scan:t/r1k/qfmt     @src/cmscan@  --qformat Genbank %T.CM% !testsuite/3trnas.gb!
+1  exercise  scan:t/r1k/qfmt     @src/cmscan@  --qformat embL %T.CM% !testsuite/3trnas.embl!
+1  exercise  scan:t/r1k/afmt     @src/cmscan@  %T.CM% !testsuite/3trnas.gb!
+1  exercise  scan:t/r1k/afmt     @src/cmscan@  %T.CM% !testsuite/3trnas.embl!
+
+# developer filter options
+1  exercise  scan:v/1k/noF1        @src/cmscan@  --noF1 %V.CM% %V1K%
+1  exercise  scan:v/1k/noF2        @src/cmscan@  --noF2 --noF2b %V.CM% %V1K%
+1  exercise  scan:v/1k/noF3        @src/cmscan@  --noF3 --noF3b %V.CM% %V1K%
+1  exercise  scan:v/1k/noF4        @src/cmscan@  --noF4 --noF4b %V.CM% %V1K%
+1  exercise  scan:v/1k/noF6        @src/cmscan@  --noF6 %V.CM% %V1K%
+1  exercise  scan:v/1k/doF1b       @src/cmscan@  --doF1b %V.CM% %V1K%
+1  exercise  scan:v/1k/noF2b       @src/cmscan@  --noF2b %V.CM% %V1K%
+1  exercise  scan:v/1k/noF3b       @src/cmscan@  --noF3b %V.CM% %V1K%
+1  exercise  scan:v/1k/noF4b       @src/cmscan@  --noF4b %V.CM% %V1K%
+1  exercise  scan:v/1k/noF5b       @src/cmscan@  --noF5b %V.CM% %V1K%
+1  exercise  scan:v/1k/F1          @src/cmscan@  --F1 0.10 %V.CM% %V1K%
+1  exercise  scan:v/1k/F1b         @src/cmscan@  --doF1b --F1b 0.01 %V.CM% %V1K%
+1  exercise  scan:v/1k/F2          @src/cmscan@  --F2 0.001 %V.CM% %V1K%
+1  exercise  scan:v/1k/F2b         @src/cmscan@  --F2b 0.001 %V.CM% %V1K%
+1  exercise  scan:v/1k/F3          @src/cmscan@  --F3 1E-4 %V.CM% %V1K%
+1  exercise  scan:v/1k/F3b         @src/cmscan@  --F3b 1E-5 %V.CM% %V1K%
+1  exercise  scan:v/1k/F4          @src/cmscan@  --F4 0.10 %V.CM% %V1K%
+1  exercise  scan:v/1k/F4b         @src/cmscan@  --F4b 1E-6 %V.CM% %V1K%
+1  exercise  scan:v/1k/F5          @src/cmscan@  --F5 0.001 %V.CM% %V1K%
+1  exercise  scan:v/1k/F5b         @src/cmscan@  --F5b 0.027 %V.CM% %V1K%
+1  exercise  scan:v/1k/F6          @src/cmscan@  --F6 1E-7 %V.CM% %V1K%
+
+1  exercise  scan:v/1k/noF1/FZ     @src/cmscan@  --noF1 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/noF2/FZ     @src/cmscan@  --noF2 --noF2b --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/noF3/FZ     @src/cmscan@  --noF3 --noF3b --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/noF4/FZ     @src/cmscan@  --noF4 --noF4b --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/noF6/FZ     @src/cmscan@  --noF6 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/doF1b/FZ    @src/cmscan@  --doF1b --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/noF2b/FZ    @src/cmscan@  --noF2b --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/noF3b/FZ    @src/cmscan@  --noF3b --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/noF4b/FZ    @src/cmscan@  --noF4b --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/noF5b/FZ    @src/cmscan@  --noF5b --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/F1/FZ       @src/cmscan@  --F1 0.10 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/F1b/FZ      @src/cmscan@  --doF1b --F1b 0.01 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/F2/FZ       @src/cmscan@  --F2 0.001 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/F2b/FZ      @src/cmscan@  --F2b 0.001 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/F3/FZ       @src/cmscan@  --F3 1E-4 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/F3b/FZ      @src/cmscan@  --F3b 1E-5 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/F4/FZ       @src/cmscan@  --F4 0.10 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/F4b/FZ      @src/cmscan@  --F4b 1E-6 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/F5/FZ       @src/cmscan@  --F5 0.001 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/F5b/FZ      @src/cmscan@  --F5b 0.027 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/F6/FZ       @src/cmscan@  --F6 1E-7 --FZ 1000 %V.CM% %V1K%
+
+1  exercise  scan:v/1k/Fall      @src/cmscan@  --F1 0.07 --doF1b --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --F5b 1.0 --F6 1E-3 %V.CM% %V1K%
+1  exercise  scan:v/1k/Fall/FZ   @src/cmscan@  --F1 0.07 --doF1b --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --F5b 1.0 --F6 1E-3 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/Fnone     @src/cmscan@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF5b --noF6 %V.CM% %V1K%
+1  exercise  scan:v/1k/Fnone/FZ  @src/cmscan@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF5b --noF6 --FZ 1000 %V.CM% %V1K%
+
+# CYK filter options
+1  exercise  scan:v/1k/ftau     @src/cmscan@  --ftau  1E-7 %V.CM% %V1K%
+1  exercise  scan:v/1k/fsums    @src/cmscan@  --fsums %V.CM% %V1K%
+1  exercise  scan:v/1k/fqdb     @src/cmscan@  --fqdb %V.CM% %V1K%
+1  exercise  scan:v/1k/fqdbb    @src/cmscan@  --fqdb --fbeta 1E-4 %V.CM% %V1K%
+1  exercise  scan:v/1k/fnb      @src/cmscan@  --fnonbanded %V.CM% %V1K%
+1  exercise  scan:v/1k/ncyk     @src/cmscan@  --nocykenv %V.CM% %V1K%
+1  exercise  scan:v/1k/cykx     @src/cmscan@  --cykenvx 100 %V.CM% %V1K%
+
+1  exercise  scan:v/1k/ftau/FZ     @src/cmscan@  --ftau  1E-7 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/fsums/FZ    @src/cmscan@  --fsums --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/fqdb/FZ     @src/cmscan@  --fqdb --FZ 100 %V.CM% %V1K%
+1  exercise  scan:v/1k/fqdbb/FZ    @src/cmscan@  --fqdb --fbeta 1E-4 --FZ 100 %V.CM% %V1K%
+1  exercise  scan:v/1k/fnb/FZ      @src/cmscan@  --fnonbanded --FZ 100 %V.CM% %V1K%
+1  exercise  scan:v/1k/ncyk/FZ     @src/cmscan@  --nocykenv --FZ 100 %V.CM% %V1K%
+1  exercise  scan:v/1k/cykx/FZ     @src/cmscan@  --cykenvx 100 --FZ 100 %V.CM% %V1K%
+
+# final stage options
+1  exercise  scan:v/1k/tau     @src/cmscan@  --tau  1E-7 %V.CM% %V1K%
+1  exercise  scan:v/1k/sums    @src/cmscan@  --sums %V.CM% %V1K%
+1  exercise  scan:v/1k/qdb     @src/cmscan@  --qdb %V.CM% %V1K%
+1  exercise  scan:v/1k/qdbb    @src/cmscan@  --qdb --beta 1E-8 %V.CM% %V1K%
+1  exercise  scan:v/1k/qdbfb   @src/cmscan@  --fqdb --fbeta 1E-1 --qdb --beta 1E-2 %V.CM% %V1K%
+1  exercise  scan:v/1k/nb      @src/cmscan@  --nonbanded %V.CM% %V1K%
+
+1  exercise  scan:v/1k/sums/FZ    @src/cmscan@  --sums --FZ 34 %V.CM% %V1K%
+1  exercise  scan:v/1k/qdb/FZ     @src/cmscan@  --qdb --FZ 34 %V.CM% %V1K%
+1  exercise  scan:v/1k/qdbb/FZ    @src/cmscan@  --qdb --beta 1E-8 --FZ 34 %V.CM% %V1K%
+1  exercise  scan:v/1k/qdbfb/FZ   @src/cmscan@  --fqdb --fbeta 1E-1 --qdb --beta 1E-2 --FZ 34 %V.CM% %V1K%
+1  exercise  scan:v/1k/nb/FZ      @src/cmscan@  --nonbanded --FZ 34 %V.CM% %V1K%
+
+# timing options
+1  exercise  scan:v/1k/timeF1     @src/cmscan@  --timeF1 -Z 100 %V.CM% %V1K%
+1  exercise  scan:v/1k/timeF2     @src/cmscan@  --timeF2 -Z 100 %V.CM% %V1K%
+1  exercise  scan:v/1k/timeF3     @src/cmscan@  --timeF3 -Z 100 %V.CM% %V1K%
+1  exercise  scan:v/1k/timeF4     @src/cmscan@  --timeF4 -Z 100 %V.CM% %V1K%
+1  exercise  scan:v/1k/timeF5     @src/cmscan@  --timeF5 -Z 100 %V.CM% %V1K%
+1  exercise  scan:v/1k/timeF6     @src/cmscan@  --timeF6 -Z 100 %V.CM% %V1K%
+
+# envelope defn options
+1  exercise  scan:v/1k/rt1        @src/cmscan@  --rt1 0.15 %V.CM% %V1K%
+1  exercise  scan:v/1k/rt2        @src/cmscan@  --rt1 0.15 %V.CM% %V1K%
+1  exercise  scan:v/1k/rt3        @src/cmscan@  --rt1 0.15 %V.CM% %V1K%
+1  exercise  scan:v/1k/ns         @src/cmscan@  --ns 181 %V.CM% %V1K%
+
+# other developer options
+1  exercise  scan:v/1k/anb        @src/cmscan@  --anonbanded %V.CM% %V1K%
+1  exercise  scan:v/1k/anwb       @src/cmscan@  --anewbands %V.CM% %V1K%
+1  exercise  scan:v/1k/evb        @src/cmscan@  --envhitbias %V.CM% %V1K%
+1  exercise  scan:v/1k/ng         @src/cmscan@  --nogreedy %V.CM% %V1K%
+1  exercise  scan:v/1k/filcmW     @src/cmscan@  --filcmW %V.CM% %V1K%
+1  exercise  scan:v/1k/cp9noel    @src/cmscan@  --cp9noel %V.CM% %V1K%
+1  exercise  scan:v/1k/cp9gloc    @src/cmscan@  --cp9gloc %V.CM% %V1K%
+1  exercise  scan:v/1k/null2      @src/cmscan@  --null2 %V.CM% %V1K%
+1  exercise  scan:3/100k/xtau     @src/cmscan@  --xtau 4 %3.CM% %3100K%
+1  exercise  scan:3/100k/maxtau   @src/cmscan@  --maxtau 0.3 %3.CM% %3100K%
+1  exercise  scan:v/1k/seed0      @src/cmscan@  --seed 0 %V.CM% %V1K%
+1  exercise  scan:v/1k/seed1      @src/cmscan@  --seed 1 %V.CM% %V1K%
+
+# cleanup, specific to cmscan.sqc (not in cmsearch.sqc)
+1  prep      cleanup/trnaC        rm -f %TRNA.CM%.*
+1  prep      cleanup/vaultC       rm -f %VAULT.CM%.*
+1  prep      cleanup/multiC       rm -f %3.CM%.*

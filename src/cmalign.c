@@ -80,7 +80,8 @@ typedef struct {
 
 #define ACCOPTS      "--hbanded,--nonbanded"           /* Exclusive choice for acceleration or not */
 #define ALGOPTS      "--cyk,--optacc,--sample"         /* Exclusive choice for algorithm */
-#define BIGALGOPTS   "--cyk,--optacc,--sample,--small" /* Incompatible with --optacc,--sample (except their selves) */
+#define ICWOPTACC    "--cyk,--optacc,--sample,--small" /* Incompatible with --optacc,--sample (except their selves) */
+#define ICWSMALL     "--optacc,--sample,--mxsize"      /* Incompatible with --small */
 #define REQDWSMALL   "--cyk,--noprob,--nonbanded"      /* Required with --small */
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
 #define CPUOPTS     "--mpi"
@@ -96,18 +97,18 @@ static ESL_OPTIONS options[] = {
   { "-o",         eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "output the alignment to file <f>, not stdout",       1 },
   { "-l",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "configure CM for local alignment [default: glocal]", 1 },
   /* options controlling the alignment algorithm */
-  { "--optacc",      eslARG_NONE,   "default", NULL,        NULL, "--optacc",        NULL,    BIGALGOPTS, "align with the Holmes/Durbin optimal accuracy algorithm",         2 },
-  { "--cyk",         eslARG_NONE,       FALSE, NULL,        NULL, "--optacc",        NULL,       ALGOPTS, "align with the CYK algorithm",                                    2 },
-  { "--sample",      eslARG_NONE,       FALSE, NULL,        NULL, "--optacc",        NULL,       ALGOPTS, "sample alignment of each seq from posterior distribution",        2 },
+  { "--optacc",      eslARG_NONE,   "default", NULL,        NULL,    ALGOPTS,        NULL,     ICWOPTACC, "align with the Holmes/Durbin optimal accuracy algorithm",         2 },
+  { "--cyk",         eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,          NULL, "align with the CYK algorithm",                                    2 },
+  { "--sample",      eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,          NULL, "sample alignment of each seq from posterior distribution",        2 },
   { "--seed",         eslARG_INT,       "181", NULL,      "n>=0",       NULL,  "--sample",          NULL, "w/--sample, set RNG seed to <n> (if 0: one-time arbitrary seed)", 2 },
   { "--notrunc",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not use truncated alignment algorithm",                        2 },
   { "--sub",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL, "--notrunc",          "-l", "build sub CM for columns b/t HMM predicted start/end points",     2 },
   /* options affecting speed and memory */
-  { "--hbanded",     eslARG_NONE,   "default", NULL,        NULL,       NULL,        NULL,       ACCOPTS, "accelerate using CM plan 9 HMM derived bands",        3 },
+  { "--hbanded",     eslARG_NONE,   "default", NULL,        NULL,    ACCOPTS,        NULL,          NULL, "accelerate using CM plan 9 HMM derived bands",        3 },
   { "--tau",         eslARG_REAL,      "1E-7", NULL, "1E-18<x<1",       NULL,        NULL, "--nonbanded", "set tail loss prob for HMM bands to <x>",              3 },
-  { "--nonbanded",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,       ACCOPTS, "do not use bands to accelerate aln algorithm",        3 },
-  { "--mxsize",      eslARG_REAL,     "256.0", NULL,      "x>0.",       NULL,        NULL,     "--small", "set maximum allowable DP matrix size to <x> Mb",      3 },
-  { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,  REQDWSMALL,          NULL, "use small memory divide and conquer (d&c) algorithm", 3 },
+  { "--nonbanded",   eslARG_NONE,       FALSE, NULL,        NULL,    ACCOPTS,        NULL,          NULL, "do not use bands to accelerate aln algorithm",        3 },
+  { "--mxsize",      eslARG_REAL,     "256.0", NULL,      "x>0.",       NULL,        NULL,          NULL, "set maximum allowable DP matrix size to <x> Mb",      3 },
+  { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,  REQDWSMALL,      ICWSMALL, "use small memory divide and conquer (d&c) algorithm", 3 },
   /* options controlling optional output */
   { "--sfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump alignment score information to file <f>",            4 },
   { "--tfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump individual sequence parsetrees to file <f>",         4 },
@@ -456,7 +457,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 #ifdef HMMER_THREADS    
   for (k = 0; k < ncpus * 2; ++k) {
     if((sq     = esl_sq_CreateDigital(cfg->abc)) == NULL)  cm_Fail("Failed to allocate a sequence");
-    if((status = esl_workqueue_Init(queue, sq))  != eslOK) cm_Fail("Failed to add block to work queue");
+    if((status = esl_workqueue_Init(queue, sq))  != eslOK) cm_Fail("Failed to add sequence to work queue");
   }
 #endif
 
@@ -615,7 +616,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* clean up */
 #ifdef HMMER_THREADS
   if (ncpus > 0) {
-    esl_workqueue_Reset(queue); /* queue should be empty, all sq's previously free'd */
+    esl_workqueue_Reset(queue); 
     esl_workqueue_Destroy(queue);
     esl_threads_Destroy(threadObj);
   }
@@ -1545,7 +1546,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   else if(  esl_opt_GetBoolean(go, "--sample")) cm->align_opts |= CM_ALIGN_SAMPLE;
   else                                          cm->align_opts |= CM_ALIGN_OPTACC;
   if(  esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts |= CM_ALIGN_HBANDED;
-  if(  esl_opt_GetBoolean(go, "--nonbanded"))   cm->align_opts &= ~CM_ALIGN_HBANDED;
+  if(  esl_opt_GetBoolean(go, "--nonbanded"))   cm->align_opts |= CM_ALIGN_NONBANDED;
   if(! esl_opt_GetBoolean(go, "--noprob"))      cm->align_opts |= CM_ALIGN_POST;
   if(! esl_opt_GetBoolean(go, "--notrunc"))     cm->align_opts |= CM_ALIGN_TRUNC;
   if(  esl_opt_GetBoolean(go, "--sub"))         cm->align_opts |= CM_ALIGN_SUB;   /* --sub requires --notrunc */
