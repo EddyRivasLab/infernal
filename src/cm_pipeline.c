@@ -26,7 +26,7 @@
 
 #define DEBUGPIPELINE  0
 
-static int  pli_p7_filter         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
+static int  pli_p7_filter         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
 static int  pli_p7_env_def        (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 static int  pli_cyk_env_filter    (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *p7es, int64_t *p7ee, int np7env, CM_t **opt_cm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 static int  pli_cyk_seq_filter    (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **opt_cm, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
@@ -35,6 +35,8 @@ static int  pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int
 static int  pli_align_hit         (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit, int cp9b_valid);
 static int  pli_scan_mode_read_cm (CM_PIPELINE *pli, off_t cm_offset, CM_t **ret_cm);
 static void copy_subseq           (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L);
+
+static int p7_pli_LooseExtendAndMergeWindows (P7_OPROFILE *om, FM_WINDOWLIST *windowlist, int L);
 
 /*****************************************************************
  * 1. The CM_PIPELINE object: allocation, initialization, destruction.
@@ -218,6 +220,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->show_accessions = esl_opt_GetBoolean(go, "--acc")        ? TRUE  : FALSE;
   pli->show_alignments = esl_opt_GetBoolean(go, "--noali")      ? FALSE : TRUE;
   pli->do_hb_recalc    = esl_opt_GetBoolean(go, "--anewbands")  ? TRUE  : FALSE;
+  pli->do_msvtight     = esl_opt_GetBoolean(go, "--msvtight")   ? TRUE  : FALSE;
   pli->do_envwinbias   = esl_opt_GetBoolean(go, "--envhitbias") ? FALSE : TRUE;
   pli->do_filcmW       = esl_opt_GetBoolean(go, "--filcmW")     ? TRUE  : FALSE;
   pli->xtau            = esl_opt_GetReal(go, "--xtau");
@@ -1043,7 +1046,7 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm)
+cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm)
 {
   int       status;
   int       nwin = 0;     /* number of windows surviving MSV & Vit & lFwd, filled by pli_p7_filter() */
@@ -1172,13 +1175,13 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
        * C. pli_cyk_env_filter():  CYK filter, run on each envelope defined by the HMM 
        */
 #if DEBUGPIPELINE
-      printf("\nPIPELINE calling p7Filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+      printf("\nPIPELINE calling p7_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-      if((status = pli_p7_filter(pli, om, bg, p7_evparam, fm_hmmdata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
+      if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
       if(p == PLI_PASS_STD_ANY) nwin_pass_std_any = nwin;
       if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
 #if DEBUGPIPELINE
-      printf("\nPIPELINE calling p7EnvelopeDef() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+      printf("\nPIPELINE calling p7_env_def() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
       if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &p7es, &p7ee, &np7env)) != eslOK) return status;
       if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
@@ -1773,7 +1776,7 @@ cm_pli_PassEnforcesFinalRes(int pass_idx)
  * Xref:      J4/25.
  */
 int
-pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, FM_HMMDATA *fm_hmmdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin)
+pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin)
 {
   int              status;
   float            mfsc, vfsc, fwdsc;/* filter scores          */
@@ -1799,6 +1802,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, F
   int              new_nsurv_fwd;    /* used when merging fwd survivors */
   ESL_DSQ         *subdsq;           /* a ptr to the first position of a window */
   int              have_rest;        /* do we have the full <om> read in? */
+  FM_WINDOWLIST    wlist;            /* list of windows, structure taken by p7_MSVFilter_longtarget() */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   p7_omx_GrowTo(pli->oxf, om->M, 0, sq->n);    /* expand the one-row omx if needed */
@@ -1827,6 +1831,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, F
   /***************************************************/
   /* Filter 1: MSV, long target-variant, with p7 HMM */
   if(pli->do_msv) { 
+#if 0
     /* ws_int, we_int: workaround for p7_MSVFilter_longtarget() taking integers, instead of int64_t */
     int *ws_int;
     int *we_int;
@@ -1835,21 +1840,33 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, F
     ESL_ALLOC(we, sizeof(int64_t) * nwin);
     for(i = 0; i < nwin; i++) { ws[i] = ws_int[i]; we[i] = we_int[i]; }
     //free(ws_int); free(we_int);
-#if 0
-    /* UNCOMMENT THIS BLOCK WHEN UPGRADING TO NEW PROTOTYPE FOR MSVFILTER */
-    FM_WINDOWLIST    windowlist;       /* list of windows, structure taken by p7_MSVFilter_longtarget() */
-    fm_initWindows(&windowlist);
-    status = p7_MSVFilter_longtarget(sq->dsq, sq->n, om, pli->oxf, fm_hmmdata, bg, pli->F1, &windowlist, FALSE);
-    ESL_ALLOC(ws, sizeof(int64_t) * windowlist.count);
-    ESL_ALLOC(we, sizeof(int64_t) * windowlist.count);
-    nwin = windowlist.count;
-    for(i = 0; i < nwin; i++) { 
-      ws[i] =         windowlist.windows[i].n;
-      we[i] = ws[i] + windowlist.windows[i].length - 1;
-    }
-    free(windowlist.windows);
 #endif
+    fm_initWindows(&wlist);
+    status = p7_MSVFilter_longtarget(sq->dsq, sq->n, om, pli->oxf, msvdata, bg, pli->F1, &wlist);
 
+    if(wlist.count > 0) { 
+      if(pli->do_msvtight) { 
+	/* In scan mode, if at least one window passes the MSV filter, read the rest of the profile */
+	if (pli->mode == CM_SCAN_MODELS && (! have_rest)) {
+	  if (pli->cmfp) p7_oprofile_ReadRest(pli->cmfp->hfp, om);
+	  /* Note: we don't call cm_pli_NewModelThresholds() yet (as p7_pipeline() 
+	   * does at this point), because we don't yet have the CM */
+	  have_rest = TRUE;
+	}
+	p7_hmm_MSVDataComputeRest(om, msvdata);
+	p7_pli_ExtendAndMergeWindows(om, msvdata, &wlist, sq->n);
+      }
+      else { /* do_msvtight is FALSE */
+	p7_pli_LooseExtendAndMergeWindows(om, &wlist, sq->n);
+      }   
+    }   
+    ESL_ALLOC(ws, sizeof(int64_t) * wlist.count);
+    ESL_ALLOC(we, sizeof(int64_t) * wlist.count);
+    nwin = wlist.count;
+    for(i = 0; i < nwin; i++) { 
+      ws[i] =         wlist.windows[i].n;
+      we[i] = ws[i] + wlist.windows[i].length - 1;
+    }
     /* split up windows > (3.0 * W) into length 2W-1, with W-1 overlapping residues */
     nalloc = nwin + 100;
     ESL_ALLOC(new_ws, sizeof(int64_t) * nalloc);
@@ -1872,15 +1889,16 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, F
 	    ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
 	    ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
 	  }
-	    new_ws[i2] = ESL_MIN(new_ws[i2-1] + pli->maxW, we[i]);
-	    new_we[i2] = ESL_MIN(new_we[i2-1] + pli->maxW, we[i]);
-	  }	    
+	  new_ws[i2] = ESL_MIN(new_ws[i2-1] + pli->maxW, we[i]);
+	  new_we[i2] = ESL_MIN(new_we[i2-1] + pli->maxW, we[i]);
+	}	    
       }
       else { /* do not split this window */
 	new_ws[i2] = ws[i]; 
 	new_we[i2] = we[i];
       }
     }
+    free(wlist.windows);
     free(ws);
     free(we);
     ws = new_ws;
@@ -1957,7 +1975,9 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, F
 #endif      
     if(pli->do_time_F1) return eslOK;
     
-    /* In scan mode, if it passes the MSV filter (or if MSV filter is off) read the rest of the profile */
+    /* In scan mode, we may get to this point and not yet have read the rest of 
+     * the profile if the msvfilter is off, if so read the rest of the profile.
+     */
     if (pli->mode == CM_SCAN_MODELS && (! have_rest)) {
       if (pli->cmfp) p7_oprofile_ReadRest(pli->cmfp->hfp, om);
       /* Note: we don't call cm_pli_NewModelThresholds() yet (as p7_pipeline() 
@@ -2210,11 +2230,17 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
   float            Lgm_correction;    /* nat score correction for windows and envelopes defined with Lgm */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
-  if (nwin == 0)  { 
+  if (nwin == 0) { 
     *ret_es = NULL;
     *ret_ee = NULL;
     *ret_nenv = 0;
     return eslOK;    /* if there's no windows to search in, return */
+  }
+
+  if(! pli->do_msvtight) { 
+    /* if ! do_msvtight we should only have 1 window if we're researching a terminus */
+    if((pli->cur_pass_idx == PLI_PASS_5P_ONLY_FORCE || pli->cur_pass_idx == PLI_PASS_3P_ONLY_FORCE || pli->cur_pass_idx == PLI_PASS_5P_AND_3P_FORCE) && 
+       (nwin > 1)) ESL_FAIL(eslFAIL, pli->errbuf, "researching terminus but more than 1 window exists");
   }
 
   /* Will we use local envelope definition? Only if we're in the
@@ -2222,9 +2248,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
    * possibly true if pli->do_trunc_any is TRUE).
    */
   do_local_envdef = (pli->cur_pass_idx == PLI_PASS_5P_AND_3P_ANY) ? TRUE : FALSE;
-
-  if((pli->cur_pass_idx == PLI_PASS_5P_ONLY_FORCE || pli->cur_pass_idx == PLI_PASS_3P_ONLY_FORCE || pli->cur_pass_idx == PLI_PASS_5P_AND_3P_FORCE) && 
-     (nwin > 1)) ESL_FAIL(eslFAIL, pli->errbuf, "researching terminus but more than 1 window exists");
 
   nenv_alloc = nwin;
   ESL_ALLOC(es, sizeof(int64_t) * nenv_alloc);
@@ -2292,8 +2315,18 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 #if DEBUGPIPELINE    
     printf("p7 envdef win: %4d of %4d [%6" PRId64 "..%6" PRId64 "] pass: %" PRId64 "\n", i, nwin, ws[i], we[i], pli->cur_pass_idx);
 #endif
-    if(cm_pli_PassEnforcesFirstRes(pli->cur_pass_idx) && ws[i] != 1)     ESL_FAIL(eslFAIL, pli->errbuf, "researching 5' terminus but residue 1 outside window");
-    if(cm_pli_PassEnforcesFinalRes(pli->cur_pass_idx) && we[i] != sq->n) ESL_FAIL(eslFAIL, pli->errbuf, "researching 3' terminus but residue L outside window");
+    /* if we require first or final residue, and don't have it, then
+     * this window doesn't survive. This should only happen if
+     * do_msvtight, else it's an error.
+     */
+    if(cm_pli_PassEnforcesFirstRes(pli->cur_pass_idx) && ws[i] != 1) { 
+      if(pli->do_msvtight) { continue; }
+      else                 { ESL_FAIL(eslFAIL, pli->errbuf, "researching 5' terminus but residue 1 outside window"); }
+    }
+    if(cm_pli_PassEnforcesFinalRes(pli->cur_pass_idx) && we[i] != sq->n) { 
+      if(pli->do_msvtight) { continue; }
+      else                 { ESL_FAIL(eslFAIL, pli->errbuf, "researching 5' terminus but residue 1 outside window"); }
+    }
 
     wlen   = we[i]   - ws[i] + 1;
     subdsq = sq->dsq + ws[i] - 1;
@@ -2315,7 +2348,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       p7_ForwardParser(seq->dsq, wlen, om, pli->oxf, NULL);
       p7_omx_GrowTo(pli->oxb, om->M, 0, wlen);
       p7_BackwardParser(seq->dsq, wlen, om, pli->oxf, pli->oxb, NULL);
-      status = p7_domaindef_ByPosteriorHeuristics (seq, om, pli->oxf, pli->oxb, pli->fwd, pli->bck, pli->ddef, NULL); 
+      status = p7_domaindef_ByPosteriorHeuristics (seq, om, pli->oxf, pli->oxb, pli->fwd, pli->bck, pli->ddef, NULL, bg, FALSE); 
     }
     else { 
       /* We're defining envelopes in glocal mode, so we need to fill
@@ -3553,3 +3586,69 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
 /*****************************************************************
  * @LICENSE@
  *****************************************************************/
+
+/* Function:  p7_pli_LooseExtendAndMergeWindows
+ * Synopsis:  Turns a list of ssv diagonals into windows, and merges
+ *            overlapping windows.
+ *
+ * Purpose:   Accepts a <windowlist> of SSV diagonals, extends those
+ *            to windows based on a combination of the max_length
+ *            value from <om> and the prefix and suffix lengths stored
+ *            in <msvdata>, then merges overlapping windows in place,
+ *            ensuring that windows stay within the bounds of 1..<L>.
+ *
+ * Returns:   <eslOK>
+ */
+static int
+p7_pli_LooseExtendAndMergeWindows (P7_OPROFILE *om, FM_WINDOWLIST *windowlist, int L) 
+{
+  int i;
+  FM_WINDOW        *prev_window;
+  FM_WINDOW        *curr_window;
+  int              window_start;
+  int              window_end;
+  int new_hit_cnt = 0;
+
+  /* extend windows */
+  for (i=0; i<windowlist->count; i++) {
+    curr_window = windowlist->windows+i;
+
+    /* from Travis' p7_pli_ExtendAndMergeWindows() */
+    /* window_start = ESL_MAX( 1,   curr_window->n - ( om->max_length * (0.1 + msvdata->prefix_lengths[curr_window->k - curr_window->length + 1]  )) ) ;
+       window_end   = ESL_MIN( L ,  curr_window->n + curr_window->length + (om->max_length * (0.1 + msvdata->suffix_lengths[curr_window->k] ) ) )   ;
+    */
+
+    window_start = ESL_MAX( 1, (curr_window->n + curr_window->length - 1) - om->max_length + 1);
+    window_end   = ESL_MIN( L, (curr_window->n + curr_window->length - 1) + om->max_length - 1);
+
+    curr_window->n = window_start;
+    curr_window->length = window_end - window_start + 1;
+  }
+
+
+  /* merge overlapping windows, compressing list in place. */
+  for (i=1; i<windowlist->count; i++) {
+    prev_window = windowlist->windows+new_hit_cnt;
+    curr_window = windowlist->windows+i;
+    if (curr_window->n <= prev_window->n + prev_window->length ) {
+      //merge windows
+      if (  curr_window->n + curr_window->length >  prev_window->n + prev_window->length )
+        prev_window->length = curr_window->n + curr_window->length - prev_window->n;
+
+    } else {
+      new_hit_cnt++;
+      windowlist->windows[new_hit_cnt] = windowlist->windows[i];
+    }
+  }
+  windowlist->count = new_hit_cnt+1;
+
+  /* ensure that window start and end are within target sequence bounds */
+  if ( windowlist->windows[0].n  <  1) 
+    windowlist->windows[0].n =  1;
+
+  if ( windowlist->windows[windowlist->count-1].n + windowlist->windows[windowlist->count-1].length - 1  >  L)
+    windowlist->windows[windowlist->count-1].length =  L - windowlist->windows[windowlist->count-1].n + 1;
+
+
+  return eslOK;
+}

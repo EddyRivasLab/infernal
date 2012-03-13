@@ -196,6 +196,7 @@ static ESL_OPTIONS options[] = {
   /* Other expert options */
   { "--anonbanded", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not use HMM bands when aligning hits",                       106 },
   { "--anewbands",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "recalculate HMM bands for alignment, don't use scan bands",     106 },
+  { "--msvtight",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use tight MSV window calc, based on expected submodel lens",    106 },
   { "--envhitbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--noF5b,--nohmm,--max", "calc env bias for only the envelope, not entire window", 106 },
   { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    106 },
   { "--filcmW",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use CM's window length for all HMM filters",                    106 },
