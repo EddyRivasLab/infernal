@@ -2106,6 +2106,7 @@ typedef struct cm_pipeline_s {
   int           do_msvtight;    /* TRUE to use tight MSV window calculation from nhmmer */
   int           do_envwinbias;  /* TRUE to calc env bias for entire window  */
   int           do_filcmW;      /* TRUE to use CM's window length for all HMM filters */
+  int           do_oldsplit;    /* TRUE to split windows the old way */
   double        xtau;           /* multiplier for tau when tightening bands */
   double        maxtau;         /* max tau when tightening bands            */
   /* flags for timing experiments */

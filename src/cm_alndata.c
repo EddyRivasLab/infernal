@@ -235,6 +235,14 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
  *           the appropriate alignment function and return relevant
  *           data for eventual output in <ret_data>. 
  *
+ *           This function can be called from either an alignment
+ *           pipeline (i.e. cmalign) or a search/scan pipeline
+ *           (i.e. cmsearch or cmscan). <idx> is the (overloaded) flag
+ *           for determining which, if -1, we're a search/scan
+ *           pipeline. This is only relevant because in a search/scan
+ *           pipeline we don't care about determining spos/epos so we
+ *           don't call ParsetreeToCMBounds().
+ *                        
  * Args:     cm         - the covariance model
  *           errbuf     - char buffer for reporting errors
  *           sq         - sequence to align
@@ -266,8 +274,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   float         secs_bands = 0.;   /* seconds elapsed for band calculation */
   float         secs_aln   = 0.;   /* seconds elapsed for alignment calculation */
   float         mb_tot     = 0.;   /* size of all DP matrices used for alignment */
-  int           spos;              /* start posn: first non-gap CM consensus position */
-  int           epos;              /* end   posn: final non-gap CM consensus position */
+  int           spos       = -1;   /* start posn: first non-gap CM consensus position */
+  int           epos       = -1;   /* end   posn: final non-gap CM consensus position */
 
   /* alignment options */
   int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE : FALSE;
@@ -293,7 +301,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   if(do_sub    && do_trunc)         ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do sub and truncated alignment");
   if(do_sample && r == NULL)        ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to sample but RNG r == NULL");
 
-  if(do_trunc && pass_idx == PLI_PASS_STD_ANY) ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do truncated alignment, but pass_idx is PLI_PASS_STD_ANY");
+  if(do_trunc && (! cm_pli_PassAllowsTruncation(pass_idx))) ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do truncated alignment, but pass_idx doesn't allow truncation (PLI_PASS_STD_ANY)");
   if(pass_idx == PLI_PASS_STD_ANY && 
      (mode == TRMODE_L || mode == TRMODE_R || mode == TRMODE_T)) ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() mode is L, R, or T, but pass_idx is PLI_PASS_STD_ANY");
 
@@ -376,8 +384,12 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     FreeSubMap(submap);  submap = NULL;
   }
   
-  /* determine start and end points of the parsetree */
-  if((status = ParsetreeToCMBounds(cm, tr, TRUE, TRUE, errbuf, NULL, NULL, NULL, NULL, &spos, &epos)) != eslOK) goto ERROR;
+  /* determine start and end points of the parsetree, 
+   * but only if we're not in a search/scan pipeline 
+   */
+  if(idx != -1) { /* we're not in a search/scan pipeline */
+    if((status = ParsetreeToCMBounds(cm, tr, TRUE, TRUE, errbuf, NULL, NULL, NULL, NULL, &spos, &epos)) != eslOK) goto ERROR;
+  }
   
   /* create and fill data */
   ESL_ALLOC(data, sizeof(CM_ALNDATA));

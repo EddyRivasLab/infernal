@@ -22,13 +22,13 @@
 #define OUTOPTS "-a,-b,-1,--mlhmm,--fhmm"
 
 static ESL_OPTIONS options[] = {
-  /* name           type      default  env  range     toggles      reqs   incomp  help   docgroup*/
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,    OUTOPTS, "show brief help on version and usage",                             0 },
-  { "-a",        eslARG_NONE,"default",NULL, NULL,      NULL,       NULL,    OUTOPTS, "ascii:  output models in INFERNAL 1.1 ASCII format",               0 },
-  { "-b",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,    OUTOPTS, "binary: output models in INFERNAL 1.1 binary format",              0 },
-  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,    OUTOPTS, "output backward compatible Infernal v0.7-->v1.0.2 ASCII format",   0 },
-  { "--mlhmm",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,    OUTOPTS, "output maximum likelihood HMM for CM in HMMER3 format",            0 },
-  { "--fhmm",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,    OUTOPTS, "output filter HMM for CM in HMMER3 format",                        0 },
+  /* name               type  default   env  range   toggles        reqs      incomp  help                                                         docgroup */
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show brief help on version and usage",                             0 },
+  { "-a",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,       NULL,       NULL, "ascii:  output models in INFERNAL 1.1 ASCII format",               0 },
+  { "-b",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "binary: output models in INFERNAL 1.1 binary format",              0 },
+  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output backward compatible Infernal v0.7-->v1.0.2 ASCII format",   0 },
+  { "--mlhmm",   eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output maximum likelihood HMM for CM in HMMER3 format",            0 },
+  { "--fhmm",    eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output filter HMM for CM in HMMER3 format",                        0 },
   /*  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm", "choose output legacy 1.x file formats by name, such as '1/a'",     0 },*/
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };

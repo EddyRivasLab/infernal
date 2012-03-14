@@ -335,6 +335,10 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   else { 
     /* reset all Jvalid values to TRUE */
     esl_vec_ISet(cp9b->Jvalid, cm->M+1, TRUE);
+    /* and all {L,R,T}valid values to FALSE */
+    esl_vec_ISet(cp9b->Lvalid, cm->M+1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, cm->M+1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, cm->M+1, FALSE);
   }
 
   /* Step 4: HMM bands -> CM bands. */
@@ -396,7 +400,7 @@ int
 cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, double maxtau, double xtau, float *ret_Mb)
 {
   int   status;
-  int   do_trunc = (pass_idx == PLI_PASS_STD_ANY) ? TRUE : FALSE;
+  int   do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
   float hbmx_Mb;  /* approximate size in Mb required for HMM banded matrix */
 
   if(xtau < 1.1) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2Bands() xtau too low: %f < 1.1\n", xtau);
@@ -408,7 +412,7 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
     if(hbmx_Mb <  size_limit)          break; /* our matrix will be small enough, break out of while(1) */
     if(cm->tau >= (maxtau-eslSMALLX1)) break; /* our bands have gotten too tight, break out of while(1) */
     /* printf("ARC 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
-    cm->tau = ESL_MAX(maxtau, cm->tau * xtau);
+    cm->tau = ESL_MIN(maxtau, cm->tau * xtau);
   }
 
   *ret_Mb = hbmx_Mb;

@@ -78,11 +78,11 @@ typedef struct {
   ESL_STOPWATCH    *w_tot;    /* stopwatch for timing total time for processing 1 seq */
 } WORKER_INFO;
 
-#define ACCOPTS      "--hbanded,--nonbanded"           /* Exclusive choice for acceleration or not */
-#define ALGOPTS      "--cyk,--optacc,--sample"         /* Exclusive choice for algorithm */
-#define ICWOPTACC    "--cyk,--optacc,--sample,--small" /* Incompatible with --optacc,--sample (except their selves) */
-#define ICWSMALL     "--optacc,--sample,--mxsize"      /* Incompatible with --small */
-#define REQDWSMALL   "--cyk,--noprob,--nonbanded"      /* Required with --small */
+#define ACCOPTS      "--hbanded,--nonbanded"                 /* Exclusive choice for acceleration or not */
+#define ALGOPTS      "--cyk,--optacc,--sample"               /* Exclusive choice for algorithm */
+#define ICWOPTACC    "--cyk,--optacc,--sample,--small"       /* Incompatible with --optacc,--sample (except their selves) */
+#define ICWSMALL     "--optacc,--sample,--mxsize"            /* Incompatible with --small */
+#define REQDWSMALL   "--cyk,--noprob,--nonbanded,--notrunc"  /* Required with --small (can remove --notrunc if TrDnC() bug fixed) */
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
 #define CPUOPTS     "--mpi"
 #define MPIOPTS     "--cpu"

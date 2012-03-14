@@ -116,7 +116,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
    * resulting MSA in, but it has to make sense (see next few lines). */
   if(cm->cmcons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_alidisplay_Create(): cm->cmcons is NULL");
 
-  /* Useful for debugging:  
+  /* Useful for debugging: 
    * DumpEmitMap(stdout, cm->emap, cm);
    * ParsetreeDump(stdout, tr, cm, sq->dsq+seqoffset-1);
    */

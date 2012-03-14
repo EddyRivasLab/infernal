@@ -223,6 +223,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_msvtight     = esl_opt_GetBoolean(go, "--msvtight")   ? TRUE  : FALSE;
   pli->do_envwinbias   = esl_opt_GetBoolean(go, "--envhitbias") ? FALSE : TRUE;
   pli->do_filcmW       = esl_opt_GetBoolean(go, "--filcmW")     ? TRUE  : FALSE;
+  pli->do_oldsplit     = esl_opt_GetBoolean(go, "--oldsplit")   ? TRUE : FALSE;
   pli->xtau            = esl_opt_GetReal(go, "--xtau");
   pli->maxtau          = esl_opt_GetReal(go, "--maxtau");
   pli->do_time_F1      = esl_opt_GetBoolean(go, "--timeF1")     ? TRUE  : FALSE;
@@ -840,7 +841,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
      * that must overlap between adjacent windows on a
      * single sequence, this is MAX of cm->W and om->max_length
      */
-    pli->maxW = ESL_MAX(cm_W, om->max_length);
+    pli->maxW = (pli->do_filcmW) ? cm_W : ESL_MAX(cm_W, om->max_length);
   }
   if(pli->mode == CM_SEARCH_SEQS || modmode == CM_NEWMODEL_CM) { 
     /* set B updates: case 1 and 3 do these (they require a valid CM) */
@@ -1733,6 +1734,34 @@ cm_pli_PassEnforcesFinalRes(int pass_idx)
   return FALSE;
 }
 
+/* Function:  cm_pli_PassAllowsTruncation()
+ * Date:      EPN, Wed Mar 14 13:53:30 2012
+ *
+ * Purpose:   Return TRUE if the pipeline pass indicated by <pass_idx>
+ *            allows some type of truncated alignment, else return
+ *            FALSE.  In other words, if we can safely call a standard
+ *            (non-truncated) DP alignment/search function for this
+ *            pass then return FALSE, else return TRUE.
+ * 
+ * Args:      pass_idx - a pipeline pass index
+ *                       PLI_PASS_SUMMED, PLI_PASS_STD_ANY, PLI_PASS_5P_ONLY_FORCE, PLI_PASS_3P_ONLY_FORCE, PLI_PASS_5P_AND_3P_FORCE
+ *
+ * Returns:   TRUE if j0 inclusion is forced, FALSE if not
+ */
+int
+cm_pli_PassAllowsTruncation(int pass_idx) 
+{
+  switch (pass_idx) {
+  case PLI_PASS_STD_ANY:         return FALSE; break;
+  case PLI_PASS_5P_ONLY_FORCE:   return TRUE;  break;
+  case PLI_PASS_3P_ONLY_FORCE:   return TRUE;  break;
+  case PLI_PASS_5P_AND_3P_FORCE: return TRUE;  break;
+  case PLI_PASS_5P_AND_3P_ANY:   return TRUE;  break;
+  default:                       return FALSE; break;
+  }
+  return FALSE;
+}
+
 /*------------------- end, pipeline API -------------------------*/
  
 
@@ -1803,6 +1832,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   ESL_DSQ         *subdsq;           /* a ptr to the first position of a window */
   int              have_rest;        /* do we have the full <om> read in? */
   FM_WINDOWLIST    wlist;            /* list of windows, structure taken by p7_MSVFilter_longtarget() */
+  int              Wsplit;           /* number of residues to add when splitting windows */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   p7_omx_GrowTo(pli->oxf, om->M, 0, sq->n);    /* expand the one-row omx if needed */
@@ -1868,6 +1898,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
       we[i] = ws[i] + wlist.windows[i].length - 1;
     }
     /* split up windows > (3.0 * W) into length 2W-1, with W-1 overlapping residues */
+    Wsplit = pli->do_oldsplit ? pli->cmW : pli->maxW;
     nalloc = nwin + 100;
     ESL_ALLOC(new_ws, sizeof(int64_t) * nalloc);
     ESL_ALLOC(new_we, sizeof(int64_t) * nalloc);
@@ -1881,7 +1912,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
       if(wlen > (3. * pli->maxW)) { 
 	/* split this window */
 	new_ws[i2] = ws[i]; 
-	new_we[i2] = ESL_MIN((new_ws[i2] + (2 * pli->maxW) - 1), we[i]);
+	new_we[i2] = ESL_MIN((new_ws[i2] + (2 * Wsplit) - 1), we[i]);
 	while(new_we[i2] < we[i]) { 
 	  i2++;
 	  if((i2+1) == nalloc) { 
@@ -1889,8 +1920,8 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
 	    ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
 	    ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
 	  }
-	  new_ws[i2] = ESL_MIN(new_ws[i2-1] + pli->maxW, we[i]);
-	  new_we[i2] = ESL_MIN(new_we[i2-1] + pli->maxW, we[i]);
+	  new_ws[i2] = ESL_MIN(new_ws[i2-1] + Wsplit, we[i]);
+	  new_we[i2] = ESL_MIN(new_we[i2-1] + Wsplit, we[i]);
 	}	    
       }
       else { /* do not split this window */
@@ -2375,12 +2406,10 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	p7_GForward (seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
 	/*printf("Rfwdsc: %.4f\n", fwdsc);*/
 	/* We use local Fwd statistics to determine significance of
-	 * the score, but we need to correct for lack of equiprobable
-	 * ends in fwdsc if pli->do_trunc_loc_corr.  GForward
-	 * penalized 0. for ends and log(1/Rgm->M) for begins into any
-	 * state. The correction is 0. because we already properly
-	 * accounted for equiprobable begins and fixed ends out of
-	 * node M.
+	 * the score. GForward penalized 0. for ends and log(1/Rgm->M)
+	 * for begins into any state. No further correction is
+	 * required because GForward already properly accounted for
+	 * equiprobable begins and fixed ends out of node M.
 	 */
 	Rgm_correction = 0.;
 	safe_lfwdsc = fwdsc + Rgm_correction;
@@ -3081,11 +3110,11 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
  * Returns: eslOK on success.
  *          eslERANGE if we wanted to do HMM banded, but couldn't.
  */
-int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t start, int64_t stop, CM_TOPHITS *hitlist, float cutoff, float env_cutoff, int qdbidx,
-			      float *ret_sc, int *opt_used_hb, int64_t *opt_envi, int64_t *opt_envj)
+int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t start, int64_t stop, CM_TOPHITS *hitlist, float cutoff, 
+			   float env_cutoff, int qdbidx, float *ret_sc, int *opt_used_hb, int64_t *opt_envi, int64_t *opt_envj)
 {
   int status;   
-  int do_trunc            = (pli->cur_pass_idx == PLI_PASS_STD_ANY) ? FALSE : TRUE;
+  int do_trunc            = cm_pli_PassAllowsTruncation(pli->cur_pass_idx);
   int do_inside           = (cm->search_opts & CM_SEARCH_INSIDE) ? TRUE : FALSE;
   int do_hbanded          = (cm->search_opts & CM_SEARCH_HBANDED) ? TRUE : FALSE;
   int do_qdb_or_nonbanded = (do_hbanded) ? FALSE : TRUE; /* will get set to TRUE later if do_hbanded and mx too big */

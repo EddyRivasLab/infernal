@@ -54,7 +54,7 @@ typedef struct {
   P7_PROFILE       *Rgm;         /* generic   query profile HMM for 5' truncated hits */
   P7_PROFILE       *Lgm;         /* generic   query profile HMM for 3' truncated hits */
   P7_PROFILE       *Tgm;         /* generic   query profile HMM for 5' and 3' truncated hits */
-  P7_MSVDATA       *msvdata;     /* hmm-specific data for fast MSV, required by p7_MSVFilter_longtarget() */
+  P7_MSVDATA       *msvdata;     /* MSV/SSV specific data structure */
   float            *p7_evparam;  /* 0..CM_p7_NEVPARAM] E-value parameters */
   float             smxsize;     /* max size (Mb) of allowable scan mx (only relevant if --nohmm or --max) */
 } WORKER_INFO;
@@ -194,12 +194,13 @@ static ESL_OPTIONS options[] = {
   { "--timeF5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 5 envelope def; for timing expts", 105 },
   { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          105 },
   /* Other expert options */
-  { "--anonbanded", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not use HMM bands when aligning hits",                       106 },
+  { "--anonbanded", eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--notrunc",NULL,         "do not use HMM bands when aligning hits",                       106 },
   { "--anewbands",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "recalculate HMM bands for alignment, don't use scan bands",     106 },
   { "--msvtight",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use tight MSV window calc, based on expected submodel lens",    106 },
   { "--envhitbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--noF5b,--nohmm,--max", "calc env bias for only the envelope, not entire window", 106 },
   { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    106 },
   { "--filcmW",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use CM's window length for all HMM filters",                    106 },
+  { "--oldsplit",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use old method of splitting windows",                           106 },  
   { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "-g",             "turn off local ends in cp9 HMMs",                               106 },
   { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",  "configure cp9 HMM in glocal mode",                              106 },
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition score corrections",           106 },
@@ -1675,6 +1676,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --max is incompatible with option --ns");         goto ERROR; }
     if(esl_opt_IsUsed(go, "--anonbanded")) { puts("Failed to parse command line: Option --max is incompatible with option --anonbanded"); goto ERROR; }
     if(esl_opt_IsUsed(go, "--anewbands"))  { puts("Failed to parse command line: Option --max is incompatible with option --anewbands");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--msvtight"))   { puts("Failed to parse command line: Option --max is incompatible with option --msvtight");   goto ERROR; }
     if(esl_opt_IsUsed(go, "--envhitbias")) { puts("Failed to parse command line: Option --max is incompatible with option --envhitbias"); goto ERROR; }
     if(esl_opt_IsUsed(go, "--filcmW"))     { puts("Failed to parse command line: Option --max is incompatible with option --filcmW");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--xtau"))       { puts("Failed to parse command line: Option --max is incompatible with option --xtau");       goto ERROR; }
@@ -1713,25 +1715,27 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --ns");         goto ERROR; }
     if(esl_opt_IsUsed(go, "--anonbanded")) { puts("Failed to parse command line: Option --nohmm is incompatible with option --anonbanded"); goto ERROR; }
     if(esl_opt_IsUsed(go, "--anewbands"))  { puts("Failed to parse command line: Option --nohmm is incompatible with option --anewbands");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--msvtight"))   { puts("Failed to parse command line: Option --nohmm is incompatible with option --msvtight");   goto ERROR; }
     if(esl_opt_IsUsed(go, "--envhitbias")) { puts("Failed to parse command line: Option --nohmm is incompatible with option --envhitbias"); goto ERROR; }
     if(esl_opt_IsUsed(go, "--filcmW"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --filcmW");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--xtau"))       { puts("Failed to parse command line: Option --nohmm is incompatible with option --xtau");       goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --maxtau");     goto ERROR; }
   }
   if(esl_opt_IsUsed(go, "--mid")) { 
-    if(esl_opt_IsUsed(go, "--max"))   { puts("Failed to parse command line: Option --mid is incompatible with option --max");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nohmm")) { puts("Failed to parse command line: Option --mid is incompatible with option --nohmm"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rfam"))  { puts("Failed to parse command line: Option --mid is incompatible with option --rfam");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--FZ"))    { puts("Failed to parse command line: Option --mid is incompatible with option --FZ");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF1"))  { puts("Failed to parse command line: Option --mid is incompatible with option --noF1");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF2"))  { puts("Failed to parse command line: Option --mid is incompatible with option --noF2");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF3"))  { puts("Failed to parse command line: Option --mid is incompatible with option --noF3");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--doF1b")) { puts("Failed to parse command line: Option --mid is incompatible with option --doF1b"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF2b")) { puts("Failed to parse command line: Option --mid is incompatible with option --noF2b"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F1"))    { puts("Failed to parse command line: Option --mid is incompatible with option --F1");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F1b"))   { puts("Failed to parse command line: Option --mid is incompatible with option --F1b");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F2"))    { puts("Failed to parse command line: Option --mid is incompatible with option --F2");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F2b"))   { puts("Failed to parse command line: Option --mid is incompatible with option --F2b");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--max"))      { puts("Failed to parse command line: Option --mid is incompatible with option --max");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nohmm"))    { puts("Failed to parse command line: Option --mid is incompatible with option --nohmm"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rfam"))     { puts("Failed to parse command line: Option --mid is incompatible with option --rfam");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--FZ"))       { puts("Failed to parse command line: Option --mid is incompatible with option --FZ");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF1"))     { puts("Failed to parse command line: Option --mid is incompatible with option --noF1");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2"))     { puts("Failed to parse command line: Option --mid is incompatible with option --noF2");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF3"))     { puts("Failed to parse command line: Option --mid is incompatible with option --noF3");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--doF1b"))    { puts("Failed to parse command line: Option --mid is incompatible with option --doF1b"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2b"))    { puts("Failed to parse command line: Option --mid is incompatible with option --noF2b"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1"))       { puts("Failed to parse command line: Option --mid is incompatible with option --F1");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1b"))      { puts("Failed to parse command line: Option --mid is incompatible with option --F1b");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2"))       { puts("Failed to parse command line: Option --mid is incompatible with option --F2");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2b"))      { puts("Failed to parse command line: Option --mid is incompatible with option --F2b");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--msvtight")) { puts("Failed to parse command line: Option --mid is incompatible with option --msvtight");   goto ERROR; }
   }
   if(esl_opt_IsUsed(go, "--default")) { 
     if(esl_opt_IsUsed(go, "--max"))   { puts("Failed to parse command line: Option --default is incompatible with option --max");   goto ERROR; }
@@ -1861,9 +1865,11 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
 
   if (esl_opt_IsUsed(go, "--anonbanded")) fprintf(ofp, "# no bands (hit alignment)               on\n");
   if (esl_opt_IsUsed(go, "--anewbands"))  fprintf(ofp, "# new bands (hit alignment)              on\n");
+  if (esl_opt_IsUsed(go, "--msvtight"))   fprintf(ofp, "# tight MSV/SSV window definition:       on\n");
   if (esl_opt_IsUsed(go, "--envhitbias")) fprintf(ofp, "# envelope bias only for envelope:       on\n");
   if (esl_opt_IsUsed(go, "--nogreedy"))   fprintf(ofp, "# greedy CM hit resolution:              off\n");
   if (esl_opt_IsUsed(go, "--filcmW"))     fprintf(ofp, "# always use CM's W parameter:           on\n");
+  if (esl_opt_IsUsed(go, "--oldsplit"))   fprintf(ofp, "# old window splitting strategy          on\n");
   if (esl_opt_IsUsed(go, "--cp9noel"))    fprintf(ofp, "# CP9 HMM local ends:                    off\n");
   if (esl_opt_IsUsed(go, "--cp9gloc"))    fprintf(ofp, "# CP9 HMM configuration:                 glocal\n");
   if (esl_opt_IsUsed(go, "--null2"))      fprintf(ofp, "# null2 bias corrections:                on\n");

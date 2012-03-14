@@ -40,11 +40,11 @@ typedef struct {
   ESL_WORK_QUEUE   *queue;
 #endif /*HMMER_THREADS*/
   ESL_SQ           *qsq;
-  P7_BG            *bg;	             /* null model                                    */
-  CM_PIPELINE      *pli;             /* work pipeline                                 */
-  CM_TOPHITS       *th;              /* top hit results                               */
-  float            *p7_evparam;      /* E-value parameters for p7 filter              */
-  int               in_rc;           /* TRUE if qsq is currently revcomp'ed           */
+  P7_BG            *bg;	        /* null model                          */
+  CM_PIPELINE      *pli;        /* work pipeline                       */
+  CM_TOPHITS       *th;         /* top hit results                     */
+  float            *p7_evparam; /* E-value parameters for p7 filter    */
+  int               in_rc;      /* TRUE if qsq is currently revcomp'ed */
 } WORKER_INFO;
 
 
@@ -183,8 +183,9 @@ static ESL_OPTIONS options[] = {
   { "--timeF5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 5 envelope def; for timing expts", 105 },
   { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          105 },
   /* Other expert options */
-  { "--anonbanded", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not use HMM bands when aligning hits",                       106 },
+  { "--anonbanded", eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--notrunc",NULL,         "do not use HMM bands when aligning hits",                       106 },
   { "--anewbands",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "recalculate HMM bands for alignment, don't use scan bands",     106 },
+  { "--msvtight",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use tight MSV window calc, based on expected submodel lens",    106 },
   { "--envhitbias", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--noF5b,--nohmm,--max", "calc env bias for only the envelope, not entire window", 106 },
   { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    106 },
   { "--filcmW",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use CM's window length for all HMM filters",                    106 },
@@ -639,15 +640,19 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
   P7_PROFILE       *Rgm        = NULL;      /* generic query profile HMM for env defn for 5' truncated hits */
   P7_PROFILE       *Lgm        = NULL;      /* generic query profile HMM for env defn for 3' truncated hits */
   P7_PROFILE       *Tgm        = NULL;      /* generic query profile HMM for env defn for 5' and 3'truncated hits */
+  P7_MSVDATA       *msvdata    = NULL;      /* MSV/SSV specific data structure              */
   int               prv_ntophits;           /* number of top hits before cm_Pipeline() call */
-  int               cm_clen, cm_W;          /* consensus, window length for current CM */        
+  int               cm_clen, cm_W;          /* consensus, window length for current CM      */ 
   float             gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
-  off_t             cm_offset;              /* file offset for current CM */
-  int64_t           cm_idx = 0;                /* index of CM we're currently working with */
+  off_t             cm_offset;              /* file offset for current CM                   */
+  int64_t           cm_idx = 0;             /* index of CM we're currently working with     */
+
+
   /* Main loop: */
   while ((status = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &abc, &cm_offset, &cm_clen, &cm_W, &gfmu, &gflambda, &om)) == eslOK)
     {
       cm_idx++;
+      msvdata = p7_hmm_MSVDataCreate(om, FALSE);
       esl_vec_FCopy(om->evparam, p7_NEVPARAM, info->p7_evparam);
       info->p7_evparam[CM_p7_GFMU]     = gfmu;
       info->p7_evparam[CM_p7_GFLAMBDA] = gflambda;
@@ -659,7 +664,7 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 				   om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
 
       prv_ntophits = info->th->N;
-      if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
+      if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, msvdata, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
 	cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); 
       if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
@@ -668,12 +673,13 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
 	cm_tophits_ComputeEvalues(info->th, cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
       }
 
-      if(cm     != NULL) { FreeCM(cm);              cm     = NULL; }
-      if(om     != NULL) { p7_oprofile_Destroy(om); om     = NULL; }
-      if(gm     != NULL) { p7_profile_Destroy(gm);  gm     = NULL; }
-      if(Rgm    != NULL) { p7_profile_Destroy(Rgm); Rgm    = NULL; }
-      if(Lgm    != NULL) { p7_profile_Destroy(Lgm); Lgm    = NULL; }
-      if(Tgm    != NULL) { p7_profile_Destroy(Tgm); Tgm    = NULL; }
+      if(cm      != NULL) { FreeCM(cm);                     cm      = NULL; }
+      if(om      != NULL) { p7_oprofile_Destroy(om);        om      = NULL; }
+      if(gm      != NULL) { p7_profile_Destroy(gm);         gm      = NULL; }
+      if(Rgm     != NULL) { p7_profile_Destroy(Rgm);        Rgm     = NULL; }
+      if(Lgm     != NULL) { p7_profile_Destroy(Lgm);        Lgm     = NULL; }
+      if(Tgm     != NULL) { p7_profile_Destroy(Tgm);        Tgm     = NULL; }
+      if(msvdata != NULL) { p7_hmm_MSVDataDestroy(msvdata); msvdata = NULL; }
     } /* end of while(cm_p7_oprofile_ReadMSV() == eslOK) */
 
   esl_alphabet_Destroy(abc);
@@ -738,17 +744,18 @@ pipeline_thread(void *arg)
   CM_P7_OM_BLOCK  *block;
   void            *newBlock;
 
-  CM_t             *cm         = NULL; 
-  ESL_ALPHABET     *abc        = NULL;
-  P7_PROFILE       *gm         = NULL;      /* generic   query profile HMM            */
-  P7_PROFILE       *Rgm        = NULL;      /* generic query profile HMM for env defn for 5' truncated hits */
-  P7_PROFILE       *Lgm        = NULL;      /* generic query profile HMM for env defn for 3' truncated hits */
-  P7_PROFILE       *Tgm        = NULL;      /* generic query profile HMM for env defn for 5' and 3'truncated hits */
+  CM_t             *cm      = NULL; 
+  ESL_ALPHABET     *abc     = NULL;
+  P7_PROFILE       *gm      = NULL;         /* generic   query profile HMM            */
+  P7_PROFILE       *Rgm     = NULL;         /* generic query profile HMM for env defn for 5' truncated hits */
+  P7_PROFILE       *Lgm     = NULL;         /* generic query profile HMM for env defn for 3' truncated hits */
+  P7_PROFILE       *Tgm     = NULL;         /* generic query profile HMM for env defn for 5' and 3'truncated hits */
+  P7_MSVDATA       *msvdata = NULL;         /* MSV/SSV specific data structure              */
   int               prv_ntophits;           /* number of top hits before cm_Pipeline() call */
-  int               cm_clen, cm_W;          /* consensus, window length for current CM */        
+  int               cm_clen, cm_W;          /* consensus, window length for current CM      */
   float             gfmu, gflambda;         /* glocal fwd mu, lambda for current hmm filter */
-  off_t             cm_offset;              /* file offset for current CM */
-  int64_t           cm_idx = 0;             /* index of CM we're currently working with */
+  off_t             cm_offset;              /* file offset for current CM                   */
+  int64_t           cm_idx = 0;             /* index of CM we're currently working with     */
   
 #ifdef HAVE_FLUSH_ZERO_MODE
   /* In order to avoid the performance penalty dealing with sub-normal
@@ -783,6 +790,7 @@ pipeline_thread(void *arg)
 	  gflambda        = block->gflambdaA[i];
 	  cm_idx++;
 
+	  msvdata = p7_hmm_MSVDataCreate(om, FALSE);
 	  esl_vec_FCopy(om->evparam, p7_NEVPARAM, info->p7_evparam);
 	  info->p7_evparam[CM_p7_GFMU]     = gfmu;
 	  info->p7_evparam[CM_p7_GFLAMBDA] = gflambda;
@@ -794,7 +802,7 @@ pipeline_thread(void *arg)
 				       om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
 
 	  prv_ntophits = info->th->N;
-	  if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, NULL, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
+	  if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, msvdata, info->qsq, info->th, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
 	    cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
 	  cm_pipeline_Reuse(info->pli);
 	  if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
@@ -803,12 +811,13 @@ pipeline_thread(void *arg)
 	    cm_tophits_ComputeEvalues(info->th, cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
 	  }
 		
-	  if(cm     != NULL) { FreeCM(cm);              cm     = NULL; }
-	  if(om     != NULL) { p7_oprofile_Destroy(om); om     = NULL; }
-	  if(gm     != NULL) { p7_profile_Destroy(gm);  gm     = NULL; }
-	  if(Rgm    != NULL) { p7_profile_Destroy(Rgm); Rgm    = NULL; }
-	  if(Lgm    != NULL) { p7_profile_Destroy(Lgm); Lgm    = NULL; }
-	  if(Tgm    != NULL) { p7_profile_Destroy(Tgm); Tgm    = NULL; }
+	  if(cm      != NULL) { FreeCM(cm);                     cm      = NULL; }
+	  if(om      != NULL) { p7_oprofile_Destroy(om);        om      = NULL; }
+	  if(gm      != NULL) { p7_profile_Destroy(gm);         gm      = NULL; }
+	  if(Rgm     != NULL) { p7_profile_Destroy(Rgm);        Rgm     = NULL; }
+	  if(Lgm     != NULL) { p7_profile_Destroy(Lgm);        Lgm     = NULL; }
+	  if(Tgm     != NULL) { p7_profile_Destroy(Tgm);        Tgm     = NULL; }
+	  if(msvdata != NULL) { p7_hmm_MSVDataDestroy(msvdata); msvdata = NULL; }
 	  
 	  block->list[i] = NULL;
 	  block->cm_offsetA[i] = 0;
@@ -1174,6 +1183,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   P7_PROFILE      *Rgm      = NULL;              /* generic query profile HMM for env defn for 5' truncated hits */
   P7_PROFILE      *Lgm      = NULL;              /* generic query profile HMM for env defn for 3' truncated hits */
   P7_PROFILE      *Tgm      = NULL;              /* generic query profile HMM for env defn for 5' and 3'truncated hits */
+  P7_MSVDATA      *msvdata  = NULL;              /* MSV/SSV specific data structure                 */
+
   ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
   int              status   = eslOK;
@@ -1285,9 +1296,12 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 		cm_idx++;
 		length = om->eoff - block.offset + 1;
 		
+		msvdata = p7_hmm_MSVDataCreate(om, FALSE);
+
 		esl_vec_FCopy(om->evparam, p7_NEVPARAM, p7_evparam);
 		p7_evparam[CM_p7_GFMU]     = gfmu;
 		p7_evparam[CM_p7_GFLAMBDA] = gflambda;
+
 		gm     = NULL; /* this will get filled in cm_Pipeline() only if necessary */
 		Rgm    = NULL; /* this will get filled in cm_Pipeline() only if necessary */
 		Lgm    = NULL; /* this will get filled in cm_Pipeline() only if necessary */
@@ -1300,7 +1314,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 		
 		prv_ntophits = th->N;
 
-		if((status = cm_Pipeline(pli, cm_offset, om, bg, p7_evparam, NULL, qsq, th, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
+		if((status = cm_Pipeline(pli, cm_offset, om, bg, p7_evparam, msvdata, qsq, th, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
 		  mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s", status, pli->errbuf);
 		cm_pipeline_Reuse(pli);
 		if(in_rc && th->N != prv_ntophits) cm_tophits_UpdateHitPositions(th, prv_ntophits, qsq->start, in_rc);
@@ -1309,12 +1323,13 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 		  cm_tophits_ComputeEvalues(th, cm->expA[pli->final_cm_exp_mode]->cur_eff_dbsize, prv_ntophits);
 		}
 
-		if(cm     != NULL) { FreeCM(cm);              cm     = NULL; }
-		if(om     != NULL) { p7_oprofile_Destroy(om); om     = NULL; }
-		if(gm     != NULL) { p7_profile_Destroy(gm);  gm     = NULL; }
-		if(Rgm    != NULL) { p7_profile_Destroy(Rgm); Rgm    = NULL; }
-		if(Lgm    != NULL) { p7_profile_Destroy(Lgm); Lgm    = NULL; }
-		if(Tgm    != NULL) { p7_profile_Destroy(Tgm); Tgm    = NULL; }
+		if(cm      != NULL) { FreeCM(cm);                     cm      = NULL; }
+		if(om      != NULL) { p7_oprofile_Destroy(om);        om      = NULL; }
+		if(gm      != NULL) { p7_profile_Destroy(gm);         gm      = NULL; }
+		if(Rgm     != NULL) { p7_profile_Destroy(Rgm);        Rgm     = NULL; }
+		if(Lgm     != NULL) { p7_profile_Destroy(Lgm);        Lgm     = NULL; }
+		if(Tgm     != NULL) { p7_profile_Destroy(Tgm);        Tgm     = NULL; }
+		if(msvdata != NULL) { p7_hmm_MSVDataDestroy(msvdata); msvdata = NULL; }
 		
 		--count;
 	      }
@@ -1551,6 +1566,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --max is incompatible with option --ns");         goto ERROR; }
     if(esl_opt_IsUsed(go, "--anonbanded")) { puts("Failed to parse command line: Option --max is incompatible with option --anonbanded"); goto ERROR; }
     if(esl_opt_IsUsed(go, "--anewbands"))  { puts("Failed to parse command line: Option --max is incompatible with option --anewbands");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--msvtight"))   { puts("Failed to parse command line: Option --max is incompatible with option --msvtight");   goto ERROR; }
     if(esl_opt_IsUsed(go, "--envhitbias")) { puts("Failed to parse command line: Option --max is incompatible with option --envhitbias"); goto ERROR; }
     if(esl_opt_IsUsed(go, "--filcmW"))     { puts("Failed to parse command line: Option --max is incompatible with option --filcmW");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--xtau"))       { puts("Failed to parse command line: Option --max is incompatible with option --xtau");       goto ERROR; }
@@ -1589,25 +1605,27 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --ns");         goto ERROR; }
     if(esl_opt_IsUsed(go, "--anonbanded")) { puts("Failed to parse command line: Option --nohmm is incompatible with option --anonbanded"); goto ERROR; }
     if(esl_opt_IsUsed(go, "--anewbands"))  { puts("Failed to parse command line: Option --nohmm is incompatible with option --anewbands");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--msvtight"))   { puts("Failed to parse command line: Option --nohmm is incompatible with option --msvtight");   goto ERROR; }
     if(esl_opt_IsUsed(go, "--envhitbias")) { puts("Failed to parse command line: Option --nohmm is incompatible with option --envhitbias"); goto ERROR; }
     if(esl_opt_IsUsed(go, "--filcmW"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --filcmW");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--xtau"))       { puts("Failed to parse command line: Option --nohmm is incompatible with option --xtau");       goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --maxtau");     goto ERROR; }
   }
   if(esl_opt_IsUsed(go, "--mid")) { 
-    if(esl_opt_IsUsed(go, "--max"))   { puts("Failed to parse command line: Option --mid is incompatible with option --max");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nohmm")) { puts("Failed to parse command line: Option --mid is incompatible with option --nohmm"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rfam"))  { puts("Failed to parse command line: Option --mid is incompatible with option --rfam");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--FZ"))    { puts("Failed to parse command line: Option --mid is incompatible with option --FZ");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF1"))  { puts("Failed to parse command line: Option --mid is incompatible with option --noF1");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF2"))  { puts("Failed to parse command line: Option --mid is incompatible with option --noF2");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF3"))  { puts("Failed to parse command line: Option --mid is incompatible with option --noF3");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--doF1b")) { puts("Failed to parse command line: Option --mid is incompatible with option --doF1b"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF2b")) { puts("Failed to parse command line: Option --mid is incompatible with option --noF2b"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F1"))    { puts("Failed to parse command line: Option --mid is incompatible with option --F1");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F1b"))   { puts("Failed to parse command line: Option --mid is incompatible with option --F1b");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F2"))    { puts("Failed to parse command line: Option --mid is incompatible with option --F2");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F2b"))   { puts("Failed to parse command line: Option --mid is incompatible with option --F2b");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--max"))      { puts("Failed to parse command line: Option --mid is incompatible with option --max");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nohmm"))    { puts("Failed to parse command line: Option --mid is incompatible with option --nohmm"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rfam"))     { puts("Failed to parse command line: Option --mid is incompatible with option --rfam");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--FZ"))       { puts("Failed to parse command line: Option --mid is incompatible with option --FZ");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF1"))     { puts("Failed to parse command line: Option --mid is incompatible with option --noF1");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2"))     { puts("Failed to parse command line: Option --mid is incompatible with option --noF2");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF3"))     { puts("Failed to parse command line: Option --mid is incompatible with option --noF3");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--doF1b"))    { puts("Failed to parse command line: Option --mid is incompatible with option --doF1b"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2b"))    { puts("Failed to parse command line: Option --mid is incompatible with option --noF2b"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1"))       { puts("Failed to parse command line: Option --mid is incompatible with option --F1");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1b"))      { puts("Failed to parse command line: Option --mid is incompatible with option --F1b");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2"))       { puts("Failed to parse command line: Option --mid is incompatible with option --F2");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2b"))      { puts("Failed to parse command line: Option --mid is incompatible with option --F2b");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--msvtight")) { puts("Failed to parse command line: Option --mid is incompatible with option --msvtight");   goto ERROR; }
   }
   if(esl_opt_IsUsed(go, "--default")) { 
     if(esl_opt_IsUsed(go, "--max"))   { puts("Failed to parse command line: Option --default is incompatible with option --max");   goto ERROR; }
@@ -1644,8 +1662,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
 {
   cm_banner(ofp, go->argv[0], banner);
   
-  fprintf(ofp, "# query sequence file:             %s\n", seqfile);
-  fprintf(ofp, "# target CM database:              %s\n", cmfile);
+                                          fprintf(ofp, "# query sequence file:                   %s\n", seqfile);
+                                          fprintf(ofp, "# target CM database:                    %s\n", cmfile);
   if (esl_opt_IsUsed(go, "-g"))           fprintf(ofp, "# CM configuration:                      glocal\n");
   if (esl_opt_IsUsed(go, "-Z"))           fprintf(ofp, "# database size is set to:               %.1f Mb\n",    esl_opt_GetReal(go, "-Z"));
   if (esl_opt_IsUsed(go, "-o"))           fprintf(ofp, "# output directed to file:               %s\n",      esl_opt_GetString(go, "-o"));
@@ -1737,6 +1755,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
 
   if (esl_opt_IsUsed(go, "--anonbanded")) fprintf(ofp, "# no bands (hit alignment)               on\n");
   if (esl_opt_IsUsed(go, "--anewbands"))  fprintf(ofp, "# new bands (hit alignment)              on\n");
+  if (esl_opt_IsUsed(go, "--msvtight"))   fprintf(ofp, "# tight MSV/SSV window definition:       on\n");
   if (esl_opt_IsUsed(go, "--envhitbias")) fprintf(ofp, "# envelope bias only for envelope:       on\n");
   if (esl_opt_IsUsed(go, "--nogreedy"))   fprintf(ofp, "# greedy CM hit resolution:              off\n");
   if (esl_opt_IsUsed(go, "--filcmW"))     fprintf(ofp, "# always use CM's W parameter:           on\n");

@@ -444,6 +444,7 @@ extern int   cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct);
 extern char *cm_pli_DescribePass(int pass_idx);
 extern int   cm_pli_PassEnforcesFirstRes(int pass_idx);
 extern int   cm_pli_PassEnforcesFinalRes(int pass_idx);
+extern int   cm_pli_PassAllowsTruncation(int pass_idx);
 
 /* from cm_qdband.c */
 extern void     BandExperiment(CM_t *cm);
