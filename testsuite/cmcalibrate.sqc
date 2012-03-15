@@ -22,14 +22,14 @@
 1  exercise    calibrate:t/fc/gc    @src/cmcalibrate@ --forecast --gc !testsuite/3trnas.fa! %TRNA.CM%
 
 # actual calibrations
-1  exercise    calibrate:se/L          @src/cmcalibrate@ -L 0.1 %SE.CM%
-1  exercise    calibrate:se/cpu        @src/cmcalibrate@ -L 0.1 --cpu 0 %SE.CM%
-1  exercise    calibrate:se/gtail     @src/cmcalibrate@ -L 0.1 --gtailn 300 --hfile %TMP.FILE% %SE.CM%
-1  exercise    calibrate:se/ltail     @src/cmcalibrate@ -L 0.1 --ltailn 500 --sfile %TMP.FILE% %SE.CM%
-1  exercise    calibrate:se/tailp      @src/cmcalibrate@ -L 0.1 --tailp 0.03 --qqfile %TMP.FILE% --ffile %TMP.FFILE% --xfile %TMP.XFILE% %SE.CM%
-1  exercise    calibrate:se/nn3        @src/cmcalibrate@ -L 0.1 --nonull3 %SE.CM%
-1  exercise    calibrate:se/rdm        @src/cmcalibrate@ -L 0.1 --random %SE.CM%
-1  exercise    calibrate:se/gc         @src/cmcalibrate@ -L 0.1 --gc !testsuite/3trnas.fa! %SE.CM%
+1  exercise    calibrate:se/L       @src/cmcalibrate@ -L 0.1 %SE.CM%
+1  exercise    calibrate:se/cpu     @src/cmcalibrate@ -L 0.1 --cpu 0 %SE.CM%
+1  exercise    calibrate:se/gtail   @src/cmcalibrate@ -L 0.1 --gtailn 300 --hfile %TMP.FILE% %SE.CM%
+1  exercise    calibrate:se/ltail   @src/cmcalibrate@ -L 0.1 --ltailn 500 --sfile %TMP.FILE% %SE.CM%
+1  exercise    calibrate:se/tailp   @src/cmcalibrate@ -L 0.1 --tailp 0.03 --qqfile %TMP.FILE% --ffile %TMP.FFILE% --xfile %TMP.XFILE% %SE.CM%
+1  exercise    calibrate:se/nn3     @src/cmcalibrate@ -L 0.1 --nonull3 %SE.CM%
+1  exercise    calibrate:se/rdm     @src/cmcalibrate@ -L 0.1 --random %SE.CM%
+1  exercise    calibrate:se/gc      @src/cmcalibrate@ -L 0.1 --gc !testsuite/3trnas.fa! %SE.CM%
 
 # repeat some exercises runs with a multi-cm file. 
 1  prep        model/multi         @src/cmbuild@ -F %SE.DBL.CM% !testsuite/se.dbl.sto!

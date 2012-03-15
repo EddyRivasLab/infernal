@@ -218,7 +218,7 @@
 1  exercise  search:v/1k/timeF6     @src/cmsearch@  --timeF6 -Z 100 %V.CM% %V1K%
 
 # other developer options
-1  exercise  search:v/1k/anb        @src/cmsearch@  --anonbanded %V.CM% %V1K%
+1  exercise  search:v/1k/anb        @src/cmsearch@  --anonbanded --notrunc %V.CM% %V1K%
 1  exercise  search:v/1k/anwb       @src/cmsearch@  --anewbands %V.CM% %V1K%
 1  exercise  search:v/1k/evb        @src/cmsearch@  --envhitbias %V.CM% %V1K%
 1  exercise  search:v/1k/ng         @src/cmsearch@  --nogreedy %V.CM% %V1K%

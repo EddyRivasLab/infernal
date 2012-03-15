@@ -103,10 +103,8 @@
 1  exercise  align:t/sub/g/nt/hb  @src/cmalign@  --sub             --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
 1  exercise  align:t/sub/g/nt/nb  @src/cmalign@  --sub --nonbanded --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
 
-# --small (requires --cyk,--noprob,--nonbanded)
-1  exercise  align:t/sml/g/yt/nb  @src/cmalign@  --small --cyk --noprob --nonbanded              %TRNA.CM% !testsuite/3trnas.fa!
+# --small (requires --cyk,--noprob,--nonbanded,--notrunc)
 1  exercise  align:t/sml/g/nt/nb  @src/cmalign@  --small --cyk --noprob --nonbanded --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/sml/l/yt/nb  @src/cmalign@  --small --cyk --noprob --nonbanded           -l %TRNA.CM% !testsuite/3trnas.fa!
 1  exercise  align:t/sml/l/nt/nb  @src/cmalign@  --small --cyk --noprob --nonbanded --notrunc -l %TRNA.CM% !testsuite/3trnas.fa!
 
 
