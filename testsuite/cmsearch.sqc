@@ -13,11 +13,9 @@
 # copy fasta files, only so the names are more convenient in rest of this file
 1  prep      copy:t/fa1k      cp !testsuite/1k-tRNA.fa! %T1K%
 1  prep      copy:t/fa10k     cp !testsuite/10k-tRNA.fa! %T10K%
-1  prep      copy:t/fa100k    cp !testsuite/100k-tRNA.fa! %T100K%
 1  prep      copy:t/faemit    cp !testsuite/emitted-tRNA.fa! %TEMIT%
 1  prep      copy:v/fa1k      cp !testsuite/1k-Vault.fa! %V1K%
 1  prep      copy:v/fa10k     cp !testsuite/10k-Vault.fa! %V10K%
-1  prep      copy:v/fa100k    cp !testsuite/100k-Vault.fa! %V100K%
 1  prep      copy:v/faemit    cp !testsuite/emitted-Vault.fa! %VEMIT%
 1  prep      copy:v/fatremit  cp !testsuite/tremitted-Vault.fa! %VTREMIT%
 1  prep      copy:3/fa1k      cp !testsuite/1k-3.fa! %31K%
@@ -32,6 +30,11 @@
 1  exercise  search:t/emit   @src/cmsearch@  %T.CM% %TEMIT%
 1  exercise  search:v/emit   @src/cmsearch@  %V.CM% %VEMIT%
 1  exercise  search:3/emit   @src/cmsearch@  %3.CM% %3EMIT%
+
+1  exercise  search:t/cm/stdin  cat %T.CM% | @src/cmsearch@ - %TEMIT%
+1  exercise  search:3/cm/stdin  cat %3.CM% | @src/cmsearch@ - %3EMIT%
+1  fail      search:t/sq/stdin  cat %TEMIT% | @src/cmsearch@ %T.CM% -
+1  fail      search:3/sq/stdin  cat %3EMIT% | @src/cmsearch@ %3.CM% -
 
 1  exercise  search:t/10k/g    @src/cmsearch@  -g %T.CM% %T10K%
 1  exercise  search:v/10k/g    @src/cmsearch@  -g %V.CM% %V10K%

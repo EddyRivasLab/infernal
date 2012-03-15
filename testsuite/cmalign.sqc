@@ -6,6 +6,9 @@
 
 1  prep      model/trna          @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
 1  exercise  align:t/df          @src/cmalign@  %TRNA.CM% 3trnas.fa
+1  exercise  align:t/stdin/cm    cat %TRNA.CM% | @src/cmalign@  - !testsuite/3trnas.fa!
+1  exercise  align:t/stdin/seq   cat !testsuite/3trnas.fa! | @src/cmalign@  %TRNA.CM% -
+1  fail      align:t/stdin/both  cat !testsuite/3trnas.fa! | @src/cmalign@  - -
 1  exercise  align:t/o           @src/cmalign@  -o %TMPOUT% %TRNA.CM% !testsuite/3trnas.fa!
 1  exercise  align:t/l           @src/cmalign@  -l %TRNA.CM% !testsuite/3trnas.fa!
 

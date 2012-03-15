@@ -1,29 +1,46 @@
 .TH "cmemit" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
 
 .SH NAME
-.TP 
-cmemit - generate sequences from a covariance model
+cmemit - sample sequences from a covariance model
 
 .SH SYNOPSIS
 .B cmemit
 .I [options]
-.I cmfile
+.I <cmfile>
 
 .SH DESCRIPTION
 
+.PP
+The 
 .B cmemit
-reads the covariance model(s) (CMs) in
-.I cmfile
-and generates a number of sequences from the CM(s);
-or if the 
+program 
+samples (emits) sequences from the covariance model(s) in
+.I <cmfile>,
+and writes them to output.
+Sampling sequences may be useful for a variety of purposes, including
+creating synthetic true positives for benchmarks or tests.
+
+.PP
+The default is to sample ten unaligned sequence from each 
+CM. Alternatively, with the
 .B -c
-option is selected, generates a single majority-rule
-consensus. This can be useful for various applications in which one
-needs a simulation of sequences consistent with a sequence family
-consensus. By default,
-.B cmemit 
-generates ten sequences in FASTA (unaligned) format to 
-.I seqfile.
+option, you can emit a single majority-rule consensus sequence;
+or with the
+.B -a 
+option, you can emit an alignment.
+
+.PP
+The
+.I <cmfile>
+may contain a library of CMs, in which case
+each CM will be used in turn.
+
+.PP
+.I <cmfile> 
+may be '-' (dash), which
+means reading this input from
+.I stdin
+rather than a file.  
 
 .SH OPTIONS
 

@@ -3,7 +3,6 @@
 .SH NAME
 cmconvert - convert INFERNAL covariance model files
 
-
 .SH SYNOPSIS
 .B cmconvert
 .I [options]

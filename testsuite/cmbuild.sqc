@@ -11,6 +11,9 @@
 1  exercise  build:se/df         @src/cmbuild@ -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/n          @src/cmbuild@ -F -n mine %SE.CM% !testsuite/se.sto! 
 
+1  exercise  build:se/stdin      cat !testsuite/se.sto! | @src/cmbuild@ -n mine --informat stockholm -F %SE.CM% -
+1  fail      build:se/stdin/nn   cat !testsuite/se.sto! | @src/cmbuild@ --informat stockholm -F %SE.CM% -
+
 # model construction:
 1  exercise  build:se/sf         @src/cmbuild@ --symfrac 0.9 -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/sf0        @src/cmbuild@ --symfrac 1.0 -F %SE.CM% !testsuite/se.sto! 

@@ -1,26 +1,91 @@
 .TH "cmstat" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
 
 .SH NAME
-.TP 
 cmstat - display summary statistics for a CM
 
 .SH SYNOPSIS
 .B cmstat
 .I [options]
-.I cmfile
+.I <cmfile>
 
 .SH DESCRIPTION
 
+The
 .B cmstat
-calculates and displays various types of statistics describing the 
-covariance models (CMs) in
-.I cmfile. 
+utility prints out a tabular file of summary statistics for each
+covariance model in
+.I <cmfile>.
+
+.PP 
+.I <cmfile> 
+may be '-' (a dash character), in which case CMs
+are read from a <stdin> pipe instead of from a file.
 
 By default,
 .B cmstat
 prints general statistics of the model and the alignment it was built
-from. Additionally, if the model(s) in 
-.I cmfile
+from, one line per model in a tabular format. The columns are:
+
+.TP
+.B idx
+The index of this profile, numbering each on in the file starting from 1.
+
+.TP
+.B name
+The name of the profile.
+
+.TP
+.B accession
+The optional accession of the profile, or "-" if there is none.
+
+.TP
+.B nseq
+The number of sequences that the profile was estimated from.
+
+.TP
+.B eff_nseq
+The effective number of sequences that the profile was estimated
+from, after Infernal applied an effective sequence number calculation
+such as the default entropy weighting.
+
+.TP
+.B clen
+The length of the model in consensus residues (match states).
+
+.TP
+.B bps
+The number of basepairs in the model.
+
+.TP
+.B bifs
+The number of bifurcations in the model.
+
+.TP
+.B W
+The expected maximum length of a hit to the model. 
+
+.TP
+.B M
+The total number of states in the model.
+
+.TP
+.B rel entropy, CM:
+Mean relative entropy per match state, in bits. This is the expected
+(mean) score per consensus position. This is what the default
+entropy-weighting method for effective sequence number estimation
+focuses on, so for default Infernal, this value will often
+reflect the default target for entropy-weighting.
+
+.TP
+.B rel entropy, HMM:
+Mean relative entropy per match state, in bits, if the CM were
+transformed into an HMM (information from structure is ignored). 
+The larger the difference between the CM and HMM relative entropy,
+the more the model will rely on structural conservation relative
+sequence conservation when identifying homologs.
+
+If the model(s) in 
+.I <cmfile>
 have been calibrated with 
 .B cmcalibrate
 the 
@@ -28,7 +93,8 @@ the
 .B -T,
 and 
 .BI -Z " <n>"
-options can be used to display E-values and corresponding bit scores
+options can be used to invoke an alternative output mode,
+reporting E-values and corresponding bit scores
 for a specified database size of
 .I <n> 
 megabases (Mb). If the model(s) have been calibrated and

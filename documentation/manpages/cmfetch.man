@@ -1,7 +1,6 @@
 .TH "cmfetch" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
 
 .SH NAME
-.TP 
 cmfetch - retrieve CM(s) from a file
 
 .SH SYNOPSIS
@@ -72,15 +71,15 @@ When using
 and a
 .I <keyfile>,
 if 
-.B cmfile 
+.B <cmfile>
 has been indexed, the keys are retrieved in the order
 they occur in the 
-.I keyfile,
+.I <keyfile>,
 but if 
-.B cmfile 
+.B <cmfile> 
 isn't indexed, keys are retrieved in the order they occur
 in the 
-.B cmfile. 
+.B <cmfile>. 
 This is a side effect of an implementation that allows
 multiple keys to be retrieved even if the
 .B <cmfile> 

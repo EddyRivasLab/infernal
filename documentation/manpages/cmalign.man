@@ -1,7 +1,6 @@
 .TH "cmalign" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
 
 .SH NAME
-.TP 
 cmalign - align sequences to a covariance model
 
 .SH SYNOPSIS
@@ -9,21 +8,37 @@ cmalign - align sequences to a covariance model
 .TP
 .B cmalign
 .I [options]
-.I cmfile
-.I seqfile
+.I <cmfile>
+.I <seqfile>
 
 .SH DESCRIPTION
 
 .B cmalign
 aligns the RNA sequences in
-.I seqfile
+.I <seqfile>
 to the covariance model (CM) in
-.I cmfile,
-and outputs a multiple sequence alignment.
+.I <cmfile>.
+The new alignment is output to 
+.I stdout 
+in Stockholm format, but can be redirected to a file
+.I <f>
+with the 
+.BI -o " <f>"
+option.
+
+.PP
+Either 
+.I <cmfile> 
+or 
+.I <seqfile> 
+(but not both) may be '-' (dash), which
+means reading this input from
+.I stdin
+rather than a file.  
 
 .PP
 The sequence file 
-.I seqfile
+.I <seqfile>
 must be in FASTA or Genbank format.
 
 .PP
@@ -83,9 +98,6 @@ included options to merge alignments but they were deprecated upon development
 of
 .B esl-alimerge, 
 which is significantly more memory efficient. 
-
-
-.SH OUTPUT
 
 By default,
 .B cmalign
@@ -450,7 +462,7 @@ in previous versions of INFERNAL.
 .TP
 .BI --informat " <s>"
 Assert that the input 
-.I seqfile
+.I <seqfile>
 is in format
 .I <s>.
 Do not run Babelfish format autodection. This increases

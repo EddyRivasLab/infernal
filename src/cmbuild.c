@@ -185,6 +185,7 @@ struct cfg_s {
 
   int           be_verbose;	/* standard verbose output, as opposed to one-line-per-CM summary */
   int           nali;		/* which # alignment this is in file */
+  int           nnamed;		/* number of alignments that had their own names */
   int           ncm_total;      /* which # CM this is that we're constructing (we may build > 1 per file) */
   ESL_RANDOMNESS *r;            /* source of randomness, only created if --gibbs enabled */
   
@@ -228,7 +229,7 @@ static int    set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s 
 static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, CM_t *cm, const Prior_t *prior, float msa_nseq);
 static int    configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int iter);
 static int    build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
-static int    name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali);
+static int    set_msa_name(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen);
 static double version_1p0_default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
 static void   strip_wuss(char *ss);
@@ -291,13 +292,14 @@ main(int argc, char **argv)
   if (esl_opt_IsOn(go, "--informat")) {
     cfg.fmt = eslx_msafile_EncodeFormat(esl_opt_GetString(go, "--informat"));
     if (cfg.fmt == eslMSAFILE_UNKNOWN)   cm_Fail("%s is not a recognized input sequence file format\n", esl_opt_GetString(go, "--informat"));
-    if (cfg.fmt != eslMSAFILE_STOCKHOLM && cfg.fmt != eslMSAFILE_PFAM) { 
-      cm_Fail("%s is an invalid format for cmbuild, Stockholm or Pfam\n", esl_opt_GetString(go, "--informat"));
+    if (cfg.fmt != eslMSAFILE_STOCKHOLM && cfg.fmt != eslMSAFILE_PFAM && cfg.fmt != eslMSAFILE_SELEX) { 
+      cm_Fail("%s is an invalid format for cmbuild, must be Stockholm, Pfam, or Selex\n", esl_opt_GetString(go, "--informat"));
     }
   }
 
   cfg.be_verbose = esl_opt_GetBoolean(go, "--verbose");
-  cfg.nali       = 0;		           
+  cfg.nali       = 0;	        /* this counter is incremented in master */
+  cfg.nnamed     = 0;	        /* 0 or 1 if a single MSA; == nali if multiple MSAs */
 
   /* check if cmfile already exists, if it does and -F was not enabled then die */
   if ((! esl_opt_GetBoolean(go, "-F")) && esl_FileExists(cfg.cmfile)) { 
@@ -418,10 +420,8 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if (status != eslOK) eslx_msafile_ReadFailure(cfg->afp, status);
       cfg->nali++;  
 
-      /* if it's unnamed, name the MSA, we require a name (different from 
-       * HMMER 3), because it will be used to name the CM. */
-      if(name_msa(go, errbuf, msa, cfg->nali) != eslOK) cm_Fail(errbuf);
-      if(msa->name == NULL)                             cm_Fail("Error naming MSA");
+      if(set_msa_name(go, cfg, errbuf, msa) != eslOK) cm_Fail(errbuf);
+      if(msa->name == NULL)                           cm_Fail("Error naming MSA");
       ncm = 1;     /* default: only build 1 CM for each MSA in alignment file */
 
       if(do_cluster) /* divide input MSA into clusters, and build CM from each cluster */
@@ -1117,10 +1117,10 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
 static int
 print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
 {
-  fprintf(stdout, "# %-4s  %-6s  %-20s  %8s  %8s  %6s  %5s  %4s  %4s  %12s\n",    "",     "", "",                     "",         "",         "",     "",      "", "", "rel entropy");
-  fprintf(stdout, "# %-4s  %-6s  %-20s  %8s  %8s  %6s  %5s  %4s  %4s  %12s\n",    "",     "", "",                     "",         "",         "",     "",      "", "", "------------");
-  fprintf(stdout, "# %4s  %-6s  %-20s  %8s  %8s  %6s  %5s  %4s  %4s  %5s  %5s\n",  "aln",  "cm idx", "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "bps", "bifs",  "CM",     "HMM");
-  fprintf(stdout, "# %-4s  %-6s  %-20s  %8s  %8s  %6s  %5s  %4s  %4s  %5s  %5s\n", "----", "------", "--------------------", "--------", "--------", "------", "-----", "----", "----", "-----", "-----");
+  fprintf(stdout, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %11s\n",       "",       "",                     "",         "",         "",       "",      "",    "",      "rel entropy");
+  fprintf(stdout, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %11s\n",       "",       "",                     "",         "",         "",       "",      "",    "",      "-----------");
+  fprintf(stdout, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %5s %5s %s\n", "idx",    "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "bps", "bifs",  "CM",    "HMM",   "description");
+  fprintf(stdout, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %5s %5s %s\n", "------", "--------------------", "--------", "--------", "------", "-----", "----", "----", "-----", "-----", "-----------");
 
   return eslOK;
 }
@@ -1142,8 +1142,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
 
   if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
 
-  fprintf(stdout, "%6d  %6d  %-20s  %8d  %8.2f  %6" PRId64 "  %5d  %4d  %4d  %5.3f  %5.3f\n",
-	  msaidx,
+  fprintf(stdout, "%8d %-20s %8d %8.2f %6" PRId64 " %5d %4d %4d %5.3f %5.3f %s\n",
 	  cmidx,
 	  cm->name, 
 	  msa->nseq,
@@ -1153,7 +1152,8 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
 	  CMCountStatetype(cm, MP_st), 
 	  CMCountStatetype(cm, B_st), 
 	  cm_MeanMatchRelativeEntropy(cm),
-	  cp9_MeanMatchRelativeEntropy(cm->cp9));
+	  cp9_MeanMatchRelativeEntropy(cm->cp9), 
+	  (msa->desc) ? msa->desc : "");
 
 
   /* dump optional info to files: */
@@ -1398,7 +1398,7 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
 /* annotate()
  * Transfer annotation information from MSA to new HMM.
  * 
- * We've ensured the msa has a name in name_msa() so if 
+ * We've ensured the msa has a name in set_msa_name() so if 
  * for some inconceivable reason it doesn't 
  * we die.
  *
@@ -1974,59 +1974,68 @@ strip_wuss(char *ss)
   return;
 }
 
-/* name_msa() 
+/* set_msa_name() 
+ * Make sure the alignment has a name; this name will
+ * then be transferred to the model.
+ * 
+ * We can only do this for a single alignment in a file. For multi-MSA
+ * files, each MSA is required to have a name already.
  *
- * Give a MSA a name if it doesn't have one.
- * If -n <s> was enabled, name it <s>, else the 
- * naming rule is the suffixless name of the file it came from,
- * plus a "-<X>" with <X> = number MSA in the file.
- *
- * For example the 3rd MSA in file "alignments.stk" would be
- * named "alignments-3".
+ * Priority is:
+ *      1. Use -n <name> if set, overriding any name the alignment might already have. 
+ *      2. Use alignment's existing name, if non-NULL.
+ *      3. Make a name, from alignment file name without path and without filename extension 
+ *         (e.g. "/usr/foo/globins.slx" gets named "globins")
+ * If none of these succeeds, return <eslEINVAL>.
+ *         
+ * If a multiple MSA database (e.g. Stockholm/Pfam), and we encounter
+ * an MSA that doesn't already have a name, return <eslEINVAL> if nali > 1.
+ * (We don't know we're in a multiple MSA database until we're on the second
+ * alignment.)
+ * 
+ * If we're in MPI mode, we assume we're in a multiple MSA database,
+ * even on the first alignment.
+ * 
+ * Because we can't tell whether we've got more than one
+ * alignment 'til we're on the second one, these fatal errors
+ * only happen after the first HMM has already been built.
+ * Oh well.
  */
-int
-name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali)
+static int
+set_msa_name(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_MSA *msa)
 {
-  int status;
   char *name = NULL;
-  char *buffer = NULL;
-  void *tmp;
-  int n;
-  int maxintlen;
+  int   status;
 
-  if(msa == NULL) ESL_FAIL(eslFAIL, errbuf, "name_msa(), msa is NULL.");
+  if (cfg->nali == 1)  /* first (only?) MSA in file: */
+    {
+      if(esl_opt_IsUsed(go, "-n")) 
+	{  
+	  if((status = esl_msa_SetName(msa, esl_opt_GetString(go, "-n"), -1)) != eslOK) return status;
+	}
+      else if (msa->name != NULL) 
+	{ 
+	  cfg->nnamed++;
+	}
+      else if (cfg->afp->bf->filename) 
+	{ 
+	  if ((status = esl_FileTail(cfg->afp->bf->filename, TRUE, &name)) != eslOK) return status; /* TRUE=nosuffix */	  
+	  if ((status = esl_msa_SetName(msa, name, -1))                    != eslOK) return status;
+	  free(name);
+	}
+      else ESL_FAIL(eslEINVAL, errbuf, "Failed to set model name: msa has no name, no msa filename, and no -n");
+    }
+  else 
+    {
+      if (esl_opt_IsUsed(go, "-n")) ESL_FAIL(eslEINVAL, errbuf, "Oops. Wait. You can't use -n with an alignment database.");
+      else if (msa->name != NULL)   cfg->nnamed++;
+      else                          ESL_FAIL(eslEINVAL, errbuf, "Oops. Wait. I need name annotation on each alignment in a multi MSA file; failed on #%d", cfg->nali+1);
 
-  if( (!esl_opt_IsOn(go, "-n")) && msa->name != NULL) return eslOK; /* keep the msa's existing name */
-
-  if( esl_opt_IsOn(go, "-n")) { /* give the msa the -n name */
-    if(nali > 1) ESL_FAIL(eslEINCOMPAT, errbuf, "The -n option requires exactly 1 alignment, but the alignment file has > 1 alignments.");
-    if((status = esl_strdup(esl_opt_GetString(go, "-n"), -1, &name)) != eslOK) ESL_FAIL(status, errbuf, "name_msa(), esl_strdup, memory allocation error.");
-  }
-  /* give the msa a name, the name of the file it comes from without the filetail, plus an appended "-X" where
-   * X is the index of the alignment in the file 
-   */
-  else { 
-    esl_FileTail(esl_opt_GetArg(go, 2), TRUE, &name); /* TRUE=nosuffix */
-    if (name == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "Error getting file tail of the MSA.\n");
-    n         = strlen(name);
-    maxintlen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
-    ESL_ALLOC(buffer, sizeof(char) * maxintlen);
-    sprintf(buffer, "-%d", (nali));
-    n += strlen(buffer);
-    ESL_RALLOC(name, tmp, sizeof(char)*(n+1));
-    if((status = esl_strcat(&name, -1, buffer, -1)) != eslOK) goto ERROR;
-  }
-
-  if((status = esl_strdup(name, -1, &(msa->name))) != eslOK) ESL_FAIL(status, errbuf, "name_msa(), esl_strdup, memory allocation error.");
-
-  if(name   != NULL) free(name);
-  if(buffer != NULL) free(buffer);
+      /* special kind of failure: the *first* alignment didn't have a name, and we used the filename to
+       * construct one; now that we see a second alignment, we realize this was a boo-boo*/
+      if (cfg->nnamed != cfg->nali) ESL_FAIL(eslEINVAL, errbuf, "Oops. Wait. I need name annotation on each alignment in a multi MSA file; first MSA didn't have one");
+    }
   return eslOK;
-
- ERROR:
-  if(name != NULL)   free(name);
-  if(buffer != NULL) free(buffer);
-  return status;
 }
 
 /* Function: print_countvectors()

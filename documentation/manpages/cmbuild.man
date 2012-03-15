@@ -1,46 +1,62 @@
 .TH "cmbuild" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
 
 .SH NAME
-.TP 
-cmbuild - construct a CM from an RNA multiple sequence alignment
+cmbuild - construct covariance model(s) from RNA multiple sequence alignment(s)
 
 .SH SYNOPSIS
 .B cmbuild
 .I [options]
-.I cmfile
-.I alifile
+.I <cmfile_out>
+.I <msafile>
+
 
 .SH DESCRIPTION
 
-.B cmbuild
-reads an RNA multiple sequence alignment from
-.I alifile,
-constructs a covariance model (CM),
-and saves the CM to
-.I cmfile.
+For each multiple sequence alignment in 
+.I <msafile>
+build a covariance model
+and save it to a new file
+.I <cmfile_out>.
 
 .PP
-The alignment file must be in Stockholm format, and
+The alignment file must be in Stockholm or SELEX format, and
 must contain consensus secondary structure annotation.
 .B cmbuild
 uses the consensus structure to determine the architecture
 of the CM. 
 
 .PP
-The alignment file may be a database containing more than one
-alignment.  If so, the resulting
-.I cmfile
-will be a database of CMs, one per alignment.
+.I <msafile> 
+may be '-' (dash), which means
+reading this input from
+.I stdin
+rather than a file. 
+To use '-', you must also specify the
+alignment file format with
+.BI --informat " <s>",
+as in
+.B --informat stockholm
+(because of a current limitation in our implementation,
+MSA file formats cannot be autodetected in a nonrewindable
+input stream.)
 
-.SH OUTPUT
+.PP
+.I <cmfile_out>
+may not be '-' 
+.I (stdout),
+because sending the CM file to 
+.I stdout
+would conflict with the other text
+output of the program.
+
 In addition to writing CM(s) to 
-.I cmfile, 
+.I <cmfile_out>, 
 .B cmbuild
 also outputs a single line for each model created to stdout. Each line has
 the following fields: 
 "aln": the index of the alignment used to build the CM;
 "cm idx": the index of the CM in the 
-.I cmfile; 
+.I <cmfile_out>; 
 "name": the name of the CM;
 "nseq": the number of sequences in the alignment used to build the CM, 
 "eff_nseq": the effective number of sequences used to build the model (see the user guide); 
@@ -48,10 +64,11 @@ the following fields:
 "clen": the number of columns from the alignment defined as consensus columns;
 "bps": the number of basepairs in the CM;
 "bifs": the number of bifurcations in the CM;
-"rel entropy, CM": the total relative entropy of the model divided by
+"CM re/pos": the total relative entropy of the model divided by
 the number of consensus columns;
-"rel entropy, HMM:" the total relative entropy of the model 
+"HMM re/pos": the total relative entropy of the model 
 ignoring secondary structure divided by the number of consensus columns.
+"description": description of the model/alignment. 
 
 .SH OPTIONS
 
@@ -62,25 +79,28 @@ options.
 
 .TP
 .BI -n " <s>"
-Name the covariance model 
-.I <s>. 
-(Does not work if 
-.I alifile
-contains more than one alignment).
-The default is to use the name of the alignment 
-(given by the #=GF ID tag, in Stockholm format),
-or if that is not present, to use the name of
-the alignment file minus any file type extension plus a "-" and a positive
-integer indicating the position of that alignment in the file
-(that is, the first alignment in a file "myrnas.sto" would give
-a CM named "myrnas-1", the second alignment would give a CM named "myrnas-2").
+Name the new CM 
+.I <s>.
+The default is to use the name of the alignment (if one is present in 
+the 
+.I <msafile>),
+or, failing that, the name of the
+.I <msafile>.
+If 
+.I <msafile>
+contains more than one alignment, 
+.I -n
+doesn't work, and every alignment must have a name 
+annotated in the 
+.I <msafile>
+(as in Stockholm #=GF ID annotation).
 
 .TP
 .BI -F
 Allow 
-.I cmfile
+.I <cmfile_out>
 to be overwritten. Without this option, if
-.I cmfile
+.I <cmfile_out>
 already exists, 
 .B cmbuild 
 exits with an error.
@@ -149,7 +169,7 @@ matrix in file
 With 
 .B --rsearch 
 enabled, all alignments in 
-.I alifile
+.I <msafile>
 must contain exactly one sequence or the
 .B --call 
 option must also be enabled. All positions in each sequence will be
@@ -394,7 +414,7 @@ significantly different (the summed bit scores of all the sequences in
 the alignment changes less than 1% between two successive
 iterations). The final alignment (the alignment used to build the CM
 that gets written to
-.I cmfile)
+.I <cmfile_out>)
 is written to 
 .I <f>.
 

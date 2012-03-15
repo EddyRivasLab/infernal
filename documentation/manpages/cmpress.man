@@ -1,8 +1,7 @@
 .TH "cmpress" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
 
-
 .SH NAME
-cpress - prepare a CM database for cmscan 
+cmpress - prepare a CM database for cmscan 
 
 .SH SYNOPSIS
 

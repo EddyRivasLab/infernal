@@ -23,10 +23,12 @@ INSTALL     = @INSTALL@
 MANS =  cmalign\
 	cmbuild\
 	cmcalibrate\
+	cmconvert\
 	cmemit\
 	cmfetch\
-	cmscore\
+	cmpress\
 	cmsearch\
+	cmscan\
 	cmstat\
 	sse_cmsearch\
 	cmsearch_dual\

@@ -3,37 +3,49 @@
 # EPN, Fri May 23 11:07:09 2008
 #
 # Exercises of cmstat.
-1  exercise  build/trna/a       @src/cmbuild@ -F %A.TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
-1  exercise  build/multi/a      @src/cmbuild@ -F %A.3.CM% !testsuite/3.rfam10p1.seed.sto!
+1  exercise  build/t/a       @src/cmbuild@ -F %A.TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
+1  exercise  build/3/a      @src/cmbuild@ -F %A.3.CM% !testsuite/3.rfam10p1.seed.sto!
 
 1  prep      copy/trnaC/a       cp !testsuite/tRNA.calibrated.cm! %A.TRNA.C.CM%
 1  prep      copy/3C/a          cp !testsuite/3.calibrated.cm! %A.3.C.CM%
 
-1  exercise  convert/trna/b     @src/cmconvert@ --binary %A.TRNA.CM% > %B.TRNA.CM%
-1  exercise  convert/multi/b    @src/cmconvert@ --binary %A.3.CM% > %B.3.CM%
+1  exercise  convert/t/b     @src/cmconvert@ -b %A.TRNA.CM% > %B.TRNA.CM%
+1  exercise  convert/3/b    @src/cmconvert@ -b %A.3.CM% > %B.3.CM%
 
-1  exercise  convert/tC/b       @src/cmconvert@ --binary %A.TRNA.C.CM% > %B.TRNA.C.CM%
-1  exercise  convert/3C/b       @src/cmconvert@ --binary %A.3.C.CM% > %B.3.C.CM%
+1  exercise  convert/tC/b       @src/cmconvert@ -b %A.TRNA.C.CM% > %B.TRNA.C.CM%
+1  exercise  convert/3C/b       @src/cmconvert@ -b %A.3.C.CM% > %B.3.C.CM%
 
 1  exercise  cmstat:help/1      @src/cmstat@ -h
 
-1  exercise  trna/a/stat        @src/cmstat@   %A.TRNA.CM% 
-1  exercise  multi/a/stat       @src/cmstat@   %A.3.CM% 
+1  exercise  t/a/stat           @src/cmstat@   %A.TRNA.CM% 
+1  exercise  3/a/stat           @src/cmstat@   %A.3.CM% 
 
 1  exercise  tC/a/stat          @src/cmstat@   %A.TRNA.C.CM% 
 1  exercise  3C/a/stat          @src/cmstat@   %A.3.C.CM% 
 
-1  exercise  trna/b/stat        @src/cmstat@   %B.TRNA.CM% 
-1  exercise  multi/b/stat       @src/cmstat@   %B.3.CM% 
+1  exercise  t/a/stat/stdin     cat %A.TRNA.CM%   | @src/cmstat@ -
+1  exercise  3/a/stat/stdin     cat %A.3.CM%      | @src/cmstat@ -
+
+1  exercise  tC/a/stat/stdin    cat %A.TRNA.C.CM% | @src/cmstat@ -
+1  exercise  3C/a/stat/stdin    cat %A.3.C.CM%    | @src/cmstat@ -
+
+1  exercise  t/b/stat           @src/cmstat@   %B.TRNA.CM% 
+1  exercise  3/b/stat           @src/cmstat@   %B.3.CM% 
 
 1  exercise  tC/b/stat          @src/cmstat@   %B.TRNA.C.CM% 
 1  exercise  3C/b/stat          @src/cmstat@   %B.3.C.CM% 
 
+1  exercise  t/b/stat/stdin     cat %B.TRNA.CM%   | @src/cmstat@ -
+1  exercise  3/b/stat/stdin     cat %B.3.CM%      | @src/cmstat@ -
+
+1  exercise  tC/b/stat/stdin    cat %B.TRNA.C.CM% | @src/cmstat@ -
+1  exercise  3C/b/stat/stdin    cat %B.3.C.CM%    | @src/cmstat@ -
+
 # --key (works with calibrated or non-calibrated files)
-1  exercise  trna/a/stat/key1   @src/cmstat@   --key tRNA %A.TRNA.CM% 
-1  exercise  trna/a/stat/key2   @src/cmstat@   --key RF00005 %A.TRNA.CM% 
-1  exercise  multi/a/stat/key1  @src/cmstat@   --key Vault %A.3.CM% 
-1  exercise  multi/a/stat/key2  @src/cmstat@   --key RF00006 %A.3.CM% 
+1  exercise  t/a/stat/key1      @src/cmstat@   --key tRNA %A.TRNA.CM% 
+1  exercise  t/a/stat/key2      @src/cmstat@   --key RF00005 %A.TRNA.CM% 
+1  exercise  3/a/stat/key1      @src/cmstat@   --key Vault %A.3.CM% 
+1  exercise  3/a/stat/key2      @src/cmstat@   --key RF00006 %A.3.CM% 
 
 1  exercise  tC/a/stat/key1     @src/cmstat@   --key tRNA %A.TRNA.C.CM% 
 1  exercise  tC/a/stat/key2     @src/cmstat@   --key RF00005 %A.TRNA.C.CM% 
@@ -41,10 +53,10 @@
 1  exercise  3C/a/stat/key2     @src/cmstat@   --key RF00006 %A.3.C.CM% 
 
 
-1  exercise  trna/b/stat/key1   @src/cmstat@   --key tRNA %B.TRNA.CM% 
-1  exercise  trna/b/stat/key2   @src/cmstat@   --key RF00005 %B.TRNA.CM% 
-1  exercise  multi/b/stat/key1  @src/cmstat@   --key Vault %B.3.CM% 
-1  exercise  multi/b/stat/key2  @src/cmstat@   --key RF00006 %B.3.CM% 
+1  exercise  t/b/stat/key1      @src/cmstat@   --key tRNA %B.TRNA.CM% 
+1  exercise  t/b/stat/key2      @src/cmstat@   --key RF00005 %B.TRNA.CM% 
+1  exercise  3/b/stat/key1      @src/cmstat@   --key Vault %B.3.CM% 
+1  exercise  3/b/stat/key2      @src/cmstat@   --key RF00006 %B.3.CM% 
 
 1  exercise  tC/b/stat/key1     @src/cmstat@   --key tRNA %B.TRNA.C.CM% 
 1  exercise  tC/b/stat/key2     @src/cmstat@   --key RF00005 %B.TRNA.C.CM% 

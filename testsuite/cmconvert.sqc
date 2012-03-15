@@ -13,10 +13,15 @@
 #
 1  exercise  cmconvert:help/1     @src/cmconvert@ -h
 
-1  exercise  build:trna         @src/cmbuild@ -F %A.TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
-1  exercise  build:multi        @src/cmbuild@ -F %A.3.CM% !testsuite/3.rfam10p1.seed.sto!
-1  exercise  convert:trna/c/b   @src/cmconvert@ -b !testsuite/tRNA.calibrated.cm! > %B.TRNA.C.CM%
+1  exercise  build:t            @src/cmbuild@ -F %A.TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
+1  exercise  build:3            @src/cmbuild@ -F %A.3.CM% !testsuite/3.rfam10p1.seed.sto!
+1  exercise  convert:t/c/b      @src/cmconvert@ -b !testsuite/tRNA.calibrated.cm! > %B.TRNA.C.CM%
 1  exercise  convert:3/c/b      @src/cmconvert@ -b !testsuite/3.calibrated.cm! > %B.3.C.CM%
+
+1  exercise  convert:t/stdin    cat !testsuite/tRNA.calibrated.cm! | @src/cmconvert@ -
+1  exercise  convert:t/stdin/b  cat !testsuite/tRNA.calibrated.cm! | @src/cmconvert@ -b -
+1  exercise  convert:3/stdin    cat !testsuite/3.calibrated.cm! | @src/cmconvert@ -
+1  exercise  convert:3/stdin/b  cat !testsuite/3.calibrated.cm! | @src/cmconvert@ -b -
 
 #################################################
 # convert 1.1ascii->1.1ascii (non calibrated), output will be identical to input 

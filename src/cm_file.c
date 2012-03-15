@@ -376,7 +376,22 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
    *      
    */
   ESL_ALLOC(cmfp->hfp, sizeof(P7_HMMFILE));
-  if ((cmfp->hfp->f = fopen(cmfp->fname, "r")) == NULL) goto ERROR;
+
+  if (!cmfp->do_stdin && !cmfp->do_gzip) { 
+    if ((cmfp->hfp->f = fopen(cmfp->fname, "r")) == NULL) goto ERROR; 
+  }
+  else if (cmfp->do_stdin) { 
+    cmfp->hfp->f = stdin; 
+  } 
+#ifdef HAVE_POPEN /* gzip functionality */
+  else if (cmfp->do_gzip)  {  /* will only possibly be TRUE if HAVE_POPEN */
+    /* we don't open the file separately for cmfp->hfp in gzip case, 
+     * which works fine (since we're never a press'd db) but we have
+     * to be careful when closing cmfp in cm_file_Close(). 
+     */
+    cmfp->hfp->f = cmfp->f; 
+  } 
+#endif
   cmfp->hfp->do_gzip      = cmfp->do_gzip;
   cmfp->hfp->do_stdin     = cmfp->do_stdin;
   cmfp->hfp->newly_opened = TRUE;	/* well, it will be, real soon now */
@@ -481,7 +496,18 @@ cm_file_Close(CM_FILE *cmfp)
   if (cmfp == NULL) return;
 
 #ifdef HAVE_POPEN /* gzip functionality */
-  if (cmfp->do_gzip && cmfp->f != NULL)    pclose(cmfp->f);
+  if (cmfp->do_gzip && cmfp->f != NULL) { 
+    pclose(cmfp->f);
+    /* careful here: in gzip mode we defined cmfp->hfp->f == cmfp->f,
+     * instead of reopening for cmfp->hfp->f, so we need to set
+     * cmfp->hfp->f to NULL so p7_hmmfile_Close() doesn't try to close
+     * it.
+     */
+    if(cmfp->f == cmfp->hfp->f) { /* this should be TRUE */
+      cmfp->hfp->f = NULL;
+    }
+    cmfp->f = NULL;
+  }
 #endif
   if (!cmfp->do_gzip && !cmfp->do_stdin && cmfp->f != NULL) fclose(cmfp->f);
   if (cmfp->ffp   != NULL) fclose(cmfp->ffp);
@@ -1075,13 +1101,16 @@ cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_
   uint32_t magic;
 
 #ifdef HMMER_THREADS
-  /* lock the mutex to prevent other threads from reading the file at the same time */
-  if (cmfp->hfp->syncRead) { 
-    if (pthread_mutex_lock (&cmfp->hfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex lock failed");
+  if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) { 
+    /* lock the mutex to prevent other threads from reading the file at the same time */
+    if (cmfp->hfp->syncRead) { 
+      if (pthread_mutex_lock (&cmfp->hfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex lock failed");
+    }
   }
 #endif
-  
-  if (fseeko(cmfp->hfp->f, offset, SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for HMM file parser");
+  if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) { 
+    if (fseeko(cmfp->hfp->f, offset, SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for HMM file parser");
+  }
 
   /* set the parser if it's unset (which it is only for first HMM read from cmfp->hfp) */
   if(cmfp->hfp->parser == NULL) { 
@@ -1099,7 +1128,7 @@ cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_
       if ((cmfp->hfp->efp = esl_fileparser_Create(cmfp->hfp->f)) == NULL)   { status = eslEMEM; goto ERROR; }
       if ((status = esl_fileparser_SetCommentChar(cmfp->hfp->efp, '#'))        != eslOK)  goto ERROR;
       if ((status = esl_fileparser_GetToken(cmfp->hfp->efp, &tok1, NULL))      != eslOK)  goto ERROR;
-      
+
       if      (strcmp("HMMER3/e", tok1) == 0) { cmfp->hfp->format = p7_HMMFILE_3e; cmfp->hfp->parser = read_asc30hmm; }
       else if (strcmp("HMMER3/d", tok1) == 0) { cmfp->hfp->format = p7_HMMFILE_3d; cmfp->hfp->parser = read_asc30hmm; }
       else if (strcmp("HMMER3/c", tok1) == 0) { cmfp->hfp->format = p7_HMMFILE_3c; cmfp->hfp->parser = read_asc30hmm; }
@@ -1117,8 +1146,10 @@ cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_
   else if (status != eslOK)        ESL_XFAIL(status, cmfp->errbuf, "Unexpected error in reading HMM filters");
 
 #ifdef HMMER_THREADS
-  if (cmfp->hfp->syncRead) { 
-    if (pthread_mutex_unlock (&cmfp->hfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
+  if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) { 
+    if (cmfp->hfp->syncRead) { 
+      if (pthread_mutex_unlock (&cmfp->hfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
+    }
   }
 #endif    
 
@@ -1127,9 +1158,11 @@ cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_
 
  ERROR:
 #ifdef HMMER_THREADS
+  if(cmfp->hfp->f != NULL) { 
     if (cmfp->hfp->syncRead) { 
       if (pthread_mutex_unlock (&cmfp->hfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
     }
+  }
 #endif    
 
   if(hmm != NULL) p7_hmm_Destroy(hmm);
@@ -1970,11 +2003,18 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 
   /* Finally, read the filter HMM for this CM, unless we're explicitly told not to */
   if(read_fp7) { 
-    if((fp7_offset = ftello(cmfp->f)) < 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "ftello() failed");
+    if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) { 
+      if((fp7_offset = ftello(cmfp->f)) < 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "ftello() failed");
+    }
+    else { 
+      fp7_offset = -1; /* this is irrelevant if stdin or gzip mode, cm_p7_hmmfile_Read will ignore it */
+    } 
     if((status = cm_p7_hmmfile_Read(cmfp, abc, fp7_offset, &hmm)) != eslOK) goto ERROR;
     if((status = cm_SetFilterHMM(cm, hmm, tmp_fp7_gfmu, tmp_fp7_gflambda)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Unable to set filter HMM for CM");
-    /* now position the CM file to the end of the HMM we just read */
-    if (fseeko(cmfp->f, ftello(cmfp->hfp->f), SEEK_SET) != 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "Failed to set position for CM file parser after reading filter HMMs");
+    if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) { 
+      /* now position the CM file to the end of the HMM we just read */
+      if (fseeko(cmfp->f, ftello(cmfp->hfp->f), SEEK_SET) != 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "Failed to set position for CM file parser after reading filter HMMs");
+    }
   } 
 
   CMRenormalize(cm);
@@ -2190,13 +2230,20 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 
   /* Finally, read the filter HMM for this CM, unless we're explicitly asked not to. */
   if(read_fp7) { 
-    if((fp7_offset = ftello(cmfp->f)) < 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "ftello() failed");
+    if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) { 
+      if((fp7_offset = ftello(cmfp->f)) < 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "ftello() failed");
+    }
+    else { 
+      fp7_offset = -1; /* this is irrelevant if stdin or gzip mode, cm_p7_hmmfile_Read will ignore it */
+    }
     if((status = cm_p7_hmmfile_Read(cmfp, abc, fp7_offset, &hmm)) != eslOK) goto ERROR;
     if((status = cm_SetFilterHMM(cm, hmm, tmp_fp7_gfmu, tmp_fp7_gflambda)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Unable to set filter HMM for CM");
-    /* now position the CM file to the end of the HMM we just read */
-    if (fseeko(cmfp->f, ftello(cmfp->hfp->f), SEEK_SET) != 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "Failed to set position for CM file parser after reading filter HMMs");
+    if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) { 
+      /* now position the CM file to the end of the HMM we just read */
+      if (fseeko(cmfp->f, ftello(cmfp->hfp->f), SEEK_SET) != 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "Failed to set position for CM file parser after reading filter HMMs");
+    }
   } 
-
+    
   if (*ret_abc == NULL) *ret_abc = abc;	/* pass our new alphabet back to caller, if caller didn't know it already */
   if ( opt_cm != NULL)  *opt_cm  = cm;  else FreeCM(cm);
   return eslOK;
@@ -3416,7 +3463,6 @@ static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",  0 },
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "include time of CM configuration", 0 }, 
-  { "-W",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  "-a", NULL, "include time of W calculation", 0 }, 
   { "-v",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "verbose: print model info as they're read", 0 }, 
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -3454,12 +3500,9 @@ main(int argc, char **argv)
       nmodel++;
       tot_clen += cm->clen;
 
-      if (esl_opt_GetBoolean(go, "-a") == TRUE) 
-	{
-	  if((status = ConfigCM(cm, errbuf, 
-				esl_opt_GetBoolean(go, "-W"), /* calculate W? */
-				NULL, NULL)) != eslOK) cm_Fail(errbuf);
-	}
+      if (esl_opt_GetBoolean(go, "-a")) { 
+	if((status = cm_Configure(cm, errbuf, -1)) != eslOK) cm_Fail(errbuf);
+      }
 
       if(be_verbose) { 
 	esl_stopwatch_Stop(w2);
@@ -3488,170 +3531,9 @@ main(int argc, char **argv)
 #endif /*cm_FILE_BENCHMARK*/
 /*---------------- end, benchmark driver ------------------------*/
 
-/*****************************************************************
- * 8. Unit tests.
- *****************************************************************/
-#ifdef p7HMMFILE_TESTDRIVE
-
-/* utest_io_30: tests read/write for 3.0 save files.
- *              Caller provides a named tmpfile that we can
- *              open, write to, close, reopen, then read from.
- *              <format> can be -1 or any specified 3.x save
- *              file format.
- *              Caller also provides a test HMM, which might
- *              be a nasty random-sampled HMM.
- */
-static int
-utest_io_30(char *tmpfile, int format, P7_HMM *hmm)
-{
-  FILE         *fp     = NULL;
-  CM_FILE   *cmfp    = NULL;
-  P7_HMM       *new    = NULL;
-  ESL_ALPHABET *newabc = NULL;
-  char          msg[] = "3.0 file i/o unit test failed";
-  
-  /* Write the HMM to disk as ASCII */
-  if ((fp = fopen(tmpfile, "w"))              == NULL)  esl_fatal(msg);
-  if (p7_hmmfile_WriteASCII(fp, format, hmm)  != eslOK) esl_fatal(msg);
-  fclose(fp);
-  
-  /* Read it back */
-  if (p7_hmmfile_OpenE(tmpfile, NULL, &cmfp, NULL) != eslOK)  esl_fatal(msg);
-  if (p7_hmmfile_Read(cmfp, &newabc, &new)         != eslOK)  esl_fatal(msg);
-  
-  /* It should have determined the right file format */
-  if (format == -1) { if (cmfp->format != p7_HMMFILE_3e) esl_fatal(msg); }
-  else              { if (cmfp->format != format)        esl_fatal(msg); } 
-
-  /* It should be identical to what we started with, modulo some legacy format issues */
-  if (format < p7_HMMFILE_3e) { strcpy(new->consensus, hmm->consensus); }
-  if (p7_hmm_Compare(hmm, new, 0.0001)     != eslOK) esl_fatal(msg);
-  p7_hmm_Destroy(new);
-
-  /* Trying to read one more HMM should give us a normal EOF */
-  if (p7_hmmfile_Read(cmfp, &newabc, &new)         != eslEOF) esl_fatal(msg);
-  p7_hmmfile_Close(cmfp);
-
-  /* Do it all again, but with binary format */
-  if ((fp = fopen(tmpfile, "w"))                  == NULL)   esl_fatal(msg);
-  if (p7_hmmfile_WriteBinary(fp, format, hmm)     != eslOK)  esl_fatal(msg);
-  fclose(fp);
-  if (p7_hmmfile_OpenE(tmpfile, NULL, &cmfp, NULL) != eslOK)  esl_fatal(msg);
-  if (p7_hmmfile_Read(cmfp, &newabc, &new)         != eslOK)  esl_fatal(msg);
-  if (format < p7_HMMFILE_3e) { strcpy(new->consensus, hmm->consensus); }
-  if (p7_hmm_Compare(hmm, new, 0.0001)            != eslOK)  esl_fatal(msg);
-
-  if (format == -1) { if (cmfp->format != p7_HMMFILE_3e)      esl_fatal(msg); }
-  else              { if (cmfp->format != format)             esl_fatal(msg); } 
-
-  p7_hmm_Destroy(new);
-  p7_hmmfile_Close(cmfp);
-
-  esl_alphabet_Destroy(newabc);
-  return eslOK;
-}
-
-
-/* Test current (3/e) file formats */
-static int
-utest_io_current(char *tmpfile, P7_HMM *hmm)
-{
-  /* Try to break the 32-bit unsigned checksum, setting high order bit */
-  hmm->checksum = 0xffeeddcc;
-  hmm->flags |= p7H_CHKSUM;
-
-  utest_io_30(tmpfile, -1, hmm);
-  return eslOK;
-}
-
-
-/* Test compatibility mode for 3/a file formats */
-static int
-utest_io_3a(char *tmpfile, P7_HMM *hmm)
-{
-  float oldparam[p7_NEVPARAM];
-
-  /* Try to break the 32-bit unsigned checksum, setting high order bit */
-  hmm->checksum = 0xffeeddcc;
-  hmm->flags |= p7H_CHKSUM;
-
-  /* Make a copy of the old statistics. 
-   * Rearrange stats params to satisfy 3/a's constraints: vmu=mmu, mlambda=vlambda=flambda 
-   */
-  esl_vec_FCopy(hmm->evparam, p7_NEVPARAM, oldparam);
-  hmm->evparam[p7_VMU]     = hmm->evparam[p7_MMU];
-  hmm->evparam[p7_VLAMBDA] = hmm->evparam[p7_MLAMBDA];
-  hmm->evparam[p7_FLAMBDA] = hmm->evparam[p7_MLAMBDA];
-
-  utest_io_30(tmpfile, p7_HMMFILE_3a, hmm);
-  
-  /* Restore the original statistics */
-  esl_vec_FCopy(oldparam, p7_NEVPARAM, hmm->evparam);
-  return eslOK;
-}
-
-#endif /*p7HMMFILE_TESTDRIVE*/
-/*-------------------- end, unit tests --------------------------*/
-
-
-
 
 /*****************************************************************
- * 9. Test driver.
- *****************************************************************/
-
-#ifdef p7HMMFILE_TESTDRIVE
-/* gcc -g -Wall -Dp7HMMFILE_TESTDRIVE -I. -I../easel -L. -L../easel -o p7_hmmfile_test p7_hmmfile.c -lhmmer -leasel -lm
- */
-#include "p7_config.h"
-
-#include "easel.h"
-#include "esl_alphabet.h"
-#include "esl_random.h"
-
-#include "hmmer.h"
-
-int
-main(int argc, char **argv)
-{
-  ESL_RANDOMNESS *r    = NULL;
-  ESL_ALPHABET *aa_abc = NULL,
-               *nt_abc = NULL;
-  P7_HMM       *hmm    = NULL;
-  FILE         *fp     = NULL;
-  char tmpfile[32]     = "tmp-hmmerXXXXXX";
-  int           M      = 20;
-  
-  if ((aa_abc = esl_alphabet_Create(eslAMINO)) == NULL)  esl_fatal("failed to create amino alphabet");
-  if ((nt_abc = esl_alphabet_Create(eslDNA))   == NULL)  esl_fatal("failed to create DNA alphabet");
-  if ((r      = esl_randomness_CreateFast(0))  == NULL)  esl_fatal("failed to create randomness");
-  if ((esl_tmpfile_named(tmpfile, &fp))        != eslOK) esl_fatal("failed to create tmp file");
-  fclose(fp);
-
-  /* Protein HMMs */
-  p7_hmm_Sample(r, M, aa_abc, &hmm);
-  utest_io_current(tmpfile, hmm);
-  utest_io_3a     (tmpfile, hmm);
-  p7_hmm_Destroy(hmm);
-
-  /* Nucleic acid HMMs */
-  p7_hmm_Sample(r, M, nt_abc, &hmm);
-  utest_io_current(tmpfile, hmm);
-  utest_io_3a     (tmpfile, hmm);
-  p7_hmm_Destroy(hmm);
-
-  esl_alphabet_Destroy(aa_abc);
-  esl_alphabet_Destroy(nt_abc);
-  esl_randomness_Destroy(r);
-  remove(tmpfile);
-  exit(0);
-}
-#endif /*p7HMMFILE_TESTDRIVE*/
-/*-------------------- end, test driver -------------------------*/
-
-
-/*****************************************************************
- * 10. Example.
+ * 9. Example.
  *****************************************************************/
 /* On using the example to test error messages from cm_file_Open():
  *    Message
@@ -3693,23 +3575,23 @@ main(int argc, char **argv)
   int           status;
   
   /* An example of reading a single CM from a file, and checking that it is the only one. */
-  status = cm_file_Open(cmfile, NULL, &cmfp, errbuf);
+  status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf);
   if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
   else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
   else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",               status, cmfile, errbuf);  
 
-  status = cm_file_Read(cmfp, &abc, &cm);
+  status = cm_file_Read(cmfp, TRUE, &abc, &cm);
   if      (status == eslEFORMAT)   cm_Fail("Bad file format in CM file %s:\n%s\n",          cmfp->fname, cmfp->errbuf);
   else if (status == eslEINCOMPAT) cm_Fail("CM in %s is not in the expected %s alphabet\n", cmfp->fname, esl_abc_DecodeType(abc->type));
   else if (status == eslEOF)       cm_Fail("Empty CM file %s? No CM data found.\n",         cmfp->fname);
   else if (status != eslOK)        cm_Fail("Unexpected error in reading CMs from %s\n",     cmfp->fname);
 
-  status = cm_file_Read(cmfp, &abc, NULL);
+  status = cm_file_Read(cmfp, TRUE, &abc, NULL);
   if (status != eslEOF)            cm_Fail("CM file %s does not contain just one CM\n", cmfp->fname);
 
   cm_file_Close(cmfp);
 
-  cm_ile_WriteASCII(stdout, -1, cm);
+  cm_file_WriteASCII(stdout, -1, cm);
 
   esl_alphabet_Destroy(abc);
   FreeCM(cm);

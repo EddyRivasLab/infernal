@@ -60,9 +60,9 @@ static ESL_OPTIONS options[] = {
   { 0,0,0,0,0,0,0,0,0,0 },
 };
 
-static void create_ssi_index(ESL_GETOPTS *go, CM_FILE *cmfp, char *cmfile);
-static void multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CM_FILE *cmfp, char *cmfile);
-static void onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CM_FILE *cmfp, char *cmfile);
+static void create_ssi_index(ESL_GETOPTS *go, CM_FILE *cmfp);
+static void multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CM_FILE *cmfp);
+static void onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CM_FILE *cmfp);
 
 int
 main(int argc, char **argv)
@@ -70,6 +70,8 @@ main(int argc, char **argv)
   int           status;
   ESL_GETOPTS  *go      = NULL;	/* application configuration      */
   char         *cmfile  = NULL;	/* CM file name                   */
+  char         *keyfile = NULL;	/* keyfile name                   */
+  char         *keyname = NULL;	/* key name                       */
   CM_FILE      *cmfp    = NULL;	/* open CM file                   */
   FILE         *ofp     = NULL;	/* output stream for CMs          */
   char          errbuf[eslERRBUFSIZE];
@@ -82,9 +84,42 @@ main(int argc, char **argv)
   if (esl_opt_VerifyConfig(go)               != eslOK) cmdline_failure(argv[0], "Error in configuration: %s\n",       go->errbuf);
   if (esl_opt_GetBoolean(go, "-h") )                   cmdline_help   (argv[0], go);
   if (esl_opt_ArgNumber(go) < 1)                       cmdline_failure(argv[0], "Incorrect number of command line arguments.\n");        
+
+  
+  /* Check arguments. Consider three modes separately.
+   */
+  if (esl_opt_GetBoolean(go, "--index")) 
+    {
+      if (esl_opt_ArgNumber(go) != 1) cmdline_failure(argv[0], "Incorrect number of command line arguments.\n");        
+
+      cmfile  = esl_opt_GetArg(go, 1);
+      keyfile = NULL;
+      keyname = NULL;
+
+      if (strcmp(cmfile, "-") == 0) cmdline_failure(argv[0], "Can't use - with --index, can't index <stdin>.\n");
+    }
+
+  else if (esl_opt_GetBoolean(go, "-f"))
+    {
+      if (esl_opt_ArgNumber(go) != 2) cmdline_failure(argv[0], "Incorrect number of command line arguments.\n");        
+
+      cmfile  = esl_opt_GetArg(go, 1);
+      keyfile = esl_opt_GetArg(go, 2);
+      keyname = NULL;
+
+      if (strcmp(cmfile, "-") == 0 && strcmp(keyfile, "-") == 0) 
+	cmdline_failure(argv[0], "Either <cmfile> or <keyfile> can be - but not both.\n");
+    }
+  else
+    {
+      if (esl_opt_ArgNumber(go) != 2) cmdline_failure(argv[0], "Incorrect number of command line arguments.\n");        
+
+      cmfile = esl_opt_GetArg(go, 1);
+      keyfile = NULL;
+      keyname = esl_opt_GetArg(go, 2);
+    }
   
   /* Open the CM file.  */
-  cmfile = esl_opt_GetArg(go, 1);
   status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf);
   if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
   else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
@@ -105,21 +140,12 @@ main(int argc, char **argv)
 
   
   /* Hand off to the appropriate routine */
-  if (esl_opt_GetBoolean(go, "--index")) 
-    {
-      if (esl_opt_ArgNumber(go) != 1) cmdline_failure(argv[0], "Incorrect number of command line arguments.\n");        
-      create_ssi_index(go, cmfp, cmfile);
-    }
-  else if (esl_opt_GetBoolean(go, "-f"))
-    {
-      if (esl_opt_ArgNumber(go) != 2) cmdline_failure(argv[0], "Incorrect number of command line arguments.\n");        
-      multifetch(go, ofp, esl_opt_GetArg(go, 2), cmfp, cmfile);
-    }
+  if (esl_opt_GetBoolean(go, "--index")) create_ssi_index(go, cmfp);
+  else if (esl_opt_GetBoolean(go, "-f")) multifetch(go, ofp, keyfile, cmfp);
   else 
     {
-      if (esl_opt_ArgNumber(go) != 2) cmdline_failure(argv[0], "Incorrect number of command line arguments.\n");        
-      onefetch(go, ofp, esl_opt_GetArg(go, 2), cmfp, cmfile);
-      if (ofp != stdout) printf("\n\nRetrieved CM %s.\n",  esl_opt_GetArg(go, 2));
+      onefetch(go, ofp, keyname, cmfp);
+      if (ofp != stdout) printf("\n\nRetrieved CM %s.\n",  keyname);
     }
 
   if (esl_opt_GetBoolean(go, "-O") || esl_opt_GetString(go, "-o") != NULL) fclose(ofp);
@@ -133,7 +159,7 @@ main(int argc, char **argv)
  * Both name and accession of CMs are stored as keys.
  */
 static void
-create_ssi_index(ESL_GETOPTS *go, CM_FILE *cmfp, char *cmfile)
+create_ssi_index(ESL_GETOPTS *go, CM_FILE *cmfp)
 {
   ESL_NEWSSI   *ns      = NULL;
   ESL_ALPHABET *abc     = NULL;
@@ -143,15 +169,15 @@ create_ssi_index(ESL_GETOPTS *go, CM_FILE *cmfp, char *cmfile)
   uint16_t      fh;
   int           status;
 
-  if (esl_sprintf(&ssifile, "%s.ssi", cmfile) != eslOK) cm_Fail("esl_sprintf() failed");
+  if (esl_sprintf(&ssifile, "%s.ssi", cmfp->fname) != eslOK) cm_Fail("esl_sprintf() failed");
 
   status = esl_newssi_Open(ssifile, FALSE, &ns);
   if      (status == eslENOTFOUND)   cm_Fail("failed to open SSI index %s", ssifile);
   else if (status == eslEOVERWRITE)  cm_Fail("SSI index %s already exists; delete or rename it", ssifile);
   else if (status != eslOK)          cm_Fail("failed to create a new SSI index");
 
-  if (esl_newssi_AddFile(ns, cmfile, 0, &fh) != eslOK) /* 0 = format code (CMs don't have any yet) */
-    cm_Fail("Failed to add CM file %s to new SSI index\n", cmfile);
+  if (esl_newssi_AddFile(ns, cmfp->fname, 0, &fh) != eslOK) /* 0 = format code (CMs don't have any yet) */
+    cm_Fail("Failed to add CM file %s to new SSI index\n", cmfp->fname);
 
   printf("Working...    "); 
   fflush(stdout);
@@ -204,7 +230,7 @@ create_ssi_index(ESL_GETOPTS *go, CM_FILE *cmfp, char *cmfile)
  * the order they occur in the CM file.
  */
 static void
-multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CM_FILE *cmfp, char *cmfile)
+multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CM_FILE *cmfp)
 {
   ESL_KEYHASH    *keys   = esl_keyhash_Create();
   ESL_FILEPARSER *efp    = NULL;
@@ -227,7 +253,7 @@ multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CM_FILE *cmfp, char *cmfil
       status = esl_keyhash_Store(keys, key, keylen, &keyidx);
       if (status == eslEDUP) cm_Fail("CM key %s occurs more than once in file %s\n", key, keyfile);
 	
-      if (cmfp->ssi != NULL) { onefetch(go, ofp, key, cmfp, cmfile);  ncm++; }
+      if (cmfp->ssi != NULL) { onefetch(go, ofp, key, cmfp);  ncm++; }
     }
 
   if (cmfp->ssi == NULL) 
@@ -262,7 +288,7 @@ multifetch(ESL_GETOPTS *go, FILE *ofp, char *keyfile, CM_FILE *cmfp, char *cmfil
  * the one we're after.
  */
 static void
-onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CM_FILE *cmfp, char *cmfile)
+onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CM_FILE *cmfp)
 {
   ESL_ALPHABET *abc  = NULL;
   CM_t         *cm   = NULL;
@@ -271,9 +297,9 @@ onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CM_FILE *cmfp, char *cmfile)
   if (cmfp->ssi != NULL)
     {
       status = cm_file_PositionByKey(cmfp, key);
-      if      (status == eslENOTFOUND) cm_Fail("CM %s not found in SSI index for file %s\n", key, cmfile);
-      else if (status == eslEFORMAT)   cm_Fail("Failed to parse SSI index for %s\n", cmfile);
-      else if (status != eslOK)        cm_Fail("Failed to look up location of CM %s in SSI index of file %s\n", key, cmfile);
+      if      (status == eslENOTFOUND) cm_Fail("CM %s not found in SSI index for file %s\n", key, cmfp->fname);
+      else if (status == eslEFORMAT)   cm_Fail("Failed to parse SSI index for %s\n", cmfp->fname);
+      else if (status != eslOK)        cm_Fail("Failed to look up location of CM %s in SSI index of file %s\n", key, cmfp->fname);
     }
 
   while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) != eslEOF)
@@ -292,7 +318,7 @@ onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CM_FILE *cmfp, char *cmfile)
     cm_Fail(cmfp->errbuf); /* cm_file_Read() returned an error, die. */
   }
   else {
-    cm_Fail("CM %s not found in file %s\n", key, cmfile);
+    cm_Fail("CM %s not found in file %s\n", key, cmfp->fname);
   }
 
   esl_alphabet_Destroy(abc);

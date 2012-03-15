@@ -37,6 +37,11 @@
 1  exercise  scan:v/emit   @src/cmscan@  %V.CM% %VEMIT%
 1  exercise  scan:3/emit   @src/cmscan@  %3.CM% %3EMIT%
 
+1  fail      scan:t/cm/stdin  cat %T.CM%  | @src/cmscan@ - %TEMIT%
+1  fail      scan:3/cm/stdin  cat %3.CM%  | @src/cmscan@ - %3EMIT%
+1  exercise  scan:t/sq/stdin  cat %TEMIT% | @src/cmscan@ %T.CM% -
+1  exercise  scan:3/sq/stdin  cat %3EMIT% | @src/cmscan@ %3.CM% -
+
 1  exercise  scan:t/10k/g    @src/cmscan@  -g %T.CM% %T10K%
 1  exercise  scan:v/10k/g    @src/cmscan@  -g %V.CM% %V10K%
 1  exercise  scan:3/10k/g    @src/cmscan@  -g %3.CM% %310K%

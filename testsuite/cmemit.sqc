@@ -9,6 +9,7 @@
 
 1  prep      model/trna           @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
 1  exercise  emit:t/df       @src/cmemit@  %TRNA.CM%
+1  exercise  emit:t/stdin    cat %TRNA.CM% | @src/cmemit@ -
 1  exercise  emit:t/u        @src/cmemit@  -u %TRNA.CM%
 1  exercise  emit:t/u        @src/cmemit@  -o %TMPOUT% %TRNA.CM%
 1  exercise  emit:t/u        @src/cmemit@  -N 37 %TRNA.CM%
@@ -42,7 +43,7 @@
 1  exercise  emit:t/exp2     @src/cmemit@  --exp 1.5 %TRNA.CM%
 
 # repeat some exercises runs with a multi-cm file. 
-1  prep       model/multi          @src/cmbuild@ -F %MULTI.CM% !testsuite/se.dbl.sto!
+1  prep       model/multi        @src/cmbuild@ -F %MULTI.CM% !testsuite/se.dbl.sto!
 1  exercise  emit:multi/df       @src/cmemit@  %MULTI.CM%
 1  exercise  emit:multi/u        @src/cmemit@  -u %MULTI.CM%
 1  exercise  emit:multi/u        @src/cmemit@  -o %TMPOUT% %MULTI.CM%

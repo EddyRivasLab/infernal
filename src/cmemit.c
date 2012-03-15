@@ -329,7 +329,7 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
     ESL_FAIL(eslFAIL, errbuf, "-e works in combination with --u5p or --u3p but not both");
   }
 
-  namelen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
+  namelen = IntMaxDigits() + strlen("sample") + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
   if(cm->name != NULL) namelen += strlen(cm->name) + 1;
   ESL_ALLOC(name, sizeof(char) * namelen);
 
@@ -341,8 +341,8 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 
   for(i = 0; i < esl_opt_GetInteger(go, "-N"); i++)
     {
-      if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+offset);
-      else                 sprintf(name, "%d-%d", cfg->ncm, i+offset);
+      if(cm->name != NULL) sprintf(name, "%s-sample%d", cm->name, i+offset);
+      else                 sprintf(name, "%d-sample%d", cfg->ncm, i+offset);
       if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &tr, &esq, &L)) != eslOK) return status; /* TRUE: make sq digital */
       esq->abc = cfg->abc_out;
       sq2print = esq; /* we may change what sq2print points to below */
@@ -437,7 +437,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 
   do_truncate = (esl_opt_IsOn(go, "--a5p") && esl_opt_IsOn(go, "--a3p")) ? TRUE : FALSE;
 
-  namelen = IntMaxDigits() + 1;
+  namelen = IntMaxDigits() + strlen("sample") + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
   if(cm->name != NULL) namelen += strlen(cm->name) + 1;
   ESL_ALLOC(name, sizeof(char) * namelen);
 
@@ -446,8 +446,8 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 
   for(i = 0; i < nseq; i++)
     {
-      if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+offset);
-      else                 sprintf(name, "%d-%d", cfg->ncm, i+offset);
+      if(cm->name != NULL) sprintf(name, "%s-sample%d", cm->name, i+offset);
+      else                 sprintf(name, "%d-sample%d", cfg->ncm, i+offset);
       if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &(trA[i]), &(sqA[i]), &L)) != eslOK) return status;
       sqA[i]->abc = cfg->abc_out;
       if(cfg->pfp != NULL) { 
@@ -520,7 +520,7 @@ emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 
   /* Determine consensus sequence */
   if((status = esl_strdup(cm->name, -1, &cseqname)) != eslOK) goto ERROR;
-  if((status = esl_strcat(&cseqname, -1, " CM generated consensus sequence [cmemit]", -1)) != eslOK) goto ERROR;
+  if((status = esl_strcat(&cseqname, -1, "-consensus", -1)) != eslOK) goto ERROR;
   if((csq = esl_sq_CreateFrom(cseqname, cm->cmcons->cseq, NULL, NULL, NULL)) == NULL) { status = eslEMEM; goto ERROR; }
   if((esl_sqio_Write(cfg->ofp, csq, eslSQFILE_FASTA, FALSE)) != eslOK) ESL_FAIL(status, errbuf, "Error writing consensus sequence.");
 
