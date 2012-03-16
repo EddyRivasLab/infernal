@@ -1,7 +1,7 @@
 .TH "cmcalibrate" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
 
 .SH NAME
-cmcalibrate - fit exponential tails for E-value determination
+cmcalibrate - fit exponential tails for covariance model E-value determination
 
 .SH SYNOPSIS
 .B cmcalibrate

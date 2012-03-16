@@ -1,7 +1,7 @@
 .TH "cmbuild" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
 
 .SH NAME
-cmbuild - construct covariance model(s) from RNA multiple sequence alignment(s)
+cmbuild - construct covariance model(s) from structurally annotated RNA multiple sequence alignment(s)
 
 .SH SYNOPSIS
 .B cmbuild

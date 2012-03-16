@@ -301,12 +301,12 @@ Each successive filter is slower than the previous one, but better
 than it at disciminating between subsequences that may contain
 high-scoring CM hits and those that do not. The first three HMM filter
 stages are the same as those used in HMMER3.
-', albeit with different thresholds. Because 
-'.B cmsearch
-'uses an HMM to filter for a more complicated model (a CM) as opposed
-'to for the same HMM in HMMER3, less strict thresholds must be used in
-'order to maintain an acceptably high level of sensitivity compared to
-'a non-filtered search. 
+", albeit with different thresholds. Because 
+".B cmsearch
+"uses an HMM to filter for a more complicated model (a CM) as opposed
+"to for the same HMM in HMMER3, less strict thresholds must be used in
+"order to maintain an acceptably high level of sensitivity compared to
+"a non-filtered search. 
 Stage 1 (F1) is the local HMM MSV filter. Stage 2 (F2) is the local
 HMM Viterbi filter. Stage 3 (F3) is the local HMM Forward filter. Each
 of the first three stages uses the profile HMM in local mode, which

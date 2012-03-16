@@ -1,7 +1,7 @@
 .TH "cmfetch" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
 
 .SH NAME
-cmfetch - retrieve CM(s) from a file
+cmfetch - retrieve covariance model(s) from a file
 
 .SH SYNOPSIS
 
