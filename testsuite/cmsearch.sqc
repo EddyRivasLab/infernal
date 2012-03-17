@@ -91,10 +91,10 @@
 1  exercise  search:v/truncFZ/g   @src/cmsearch@  -g --FZ 2000 %V.CM% %VTREMIT%
 
 # filtering levels
-1  exercise  search:t/emit/max   @src/cmsearch@  --max %T.CM% %TEMIT%
-1  exercise  search:t/1k/max     @src/cmsearch@  --max %T.CM% %T1K%
-1  exercise  search:t/emit/nohmm @src/cmsearch@  --nohmm %T.CM% %TEMIT%
-1  exercise  search:t/1k/nohmm   @src/cmsearch@  --nohmm %T.CM% %T1K%
+1  exercise  search:t/emit/max   @src/cmsearch@  --max --notrunc %T.CM% %TEMIT%
+1  exercise  search:t/1k/max     @src/cmsearch@  --max --notrunc %T.CM% %T1K%
+1  exercise  search:t/emit/nohmm @src/cmsearch@  --nohmm --notrunc %T.CM% %TEMIT%
+1  exercise  search:t/1k/nohmm   @src/cmsearch@  --nohmm --notrunc %T.CM% %T1K%
 1  exercise  search:t/emit/mid   @src/cmsearch@  --mid %T.CM% %TEMIT%
 1  exercise  search:t/1k/mid     @src/cmsearch@  --mid %T.CM% %T1K%
 1  exercise  search:t/emit/Fmid  @src/cmsearch@  --Fmid 0.005 --mid %T.CM% %TEMIT%
@@ -201,16 +201,16 @@
 # final stage options
 1  exercise  search:v/1k/tau     @src/cmsearch@  --tau  1E-7 %V.CM% %V1K%
 1  exercise  search:v/1k/sums    @src/cmsearch@  --sums %V.CM% %V1K%
-1  exercise  search:v/1k/qdb     @src/cmsearch@  --qdb %V.CM% %V1K%
-1  exercise  search:v/1k/qdbb    @src/cmsearch@  --qdb --beta 1E-8 %V.CM% %V1K%
-1  exercise  search:v/1k/qdbfb   @src/cmsearch@  --fqdb --fbeta 1E-1 --qdb --beta 1E-2 %V.CM% %V1K%
-1  exercise  search:v/1k/nb      @src/cmsearch@  --nonbanded %V.CM% %V1K%
+1  exercise  search:v/1k/qdb     @src/cmsearch@  --qdb --notrunc %V.CM% %V1K%
+1  exercise  search:v/1k/qdbb    @src/cmsearch@  --qdb --notrunc --beta 1E-8 %V.CM% %V1K%
+1  exercise  search:v/1k/qdbfb   @src/cmsearch@  --fqdb --notrunc --fbeta 1E-1 --qdb --beta 1E-2 %V.CM% %V1K%
+1  exercise  search:v/1k/nb      @src/cmsearch@  --nonbanded --notrunc %V.CM% %V1K%
 
 1  exercise  search:v/1k/sums/FZ    @src/cmsearch@  --sums --FZ 34 %V.CM% %V1K%
-1  exercise  search:v/1k/qdb/FZ     @src/cmsearch@  --qdb --FZ 34 %V.CM% %V1K%
-1  exercise  search:v/1k/qdbb/FZ    @src/cmsearch@  --qdb --beta 1E-8 --FZ 34 %V.CM% %V1K%
-1  exercise  search:v/1k/qdbfb/FZ   @src/cmsearch@  --fqdb --fbeta 1E-1 --qdb --beta 1E-2 --FZ 34 %V.CM% %V1K%
-1  exercise  search:v/1k/nb/FZ      @src/cmsearch@  --nonbanded --FZ 34 %V.CM% %V1K%
+1  exercise  search:v/1k/qdb/FZ     @src/cmsearch@  --qdb --notrunc --FZ 34 %V.CM% %V1K%
+1  exercise  search:v/1k/qdbb/FZ    @src/cmsearch@  --qdb --notrunc --beta 1E-8 --FZ 34 %V.CM% %V1K%
+1  exercise  search:v/1k/qdbfb/FZ   @src/cmsearch@  --fqdb --notrunc --fbeta 1E-1 --qdb --beta 1E-2 --FZ 34 %V.CM% %V1K%
+1  exercise  search:v/1k/nb/FZ      @src/cmsearch@  --nonbanded --notrunc --FZ 34 %V.CM% %V1K%
 
 # timing options
 1  exercise  search:v/1k/timeF1     @src/cmsearch@  --timeF1 -Z 100 %V.CM% %V1K%

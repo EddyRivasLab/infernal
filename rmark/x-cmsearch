@@ -13,19 +13,22 @@
 #
 # Command-line options:
 # -D     : debugging; don't unlink intermediate files, save them all
+# -T     : only search TOP strand of db seqs (--toponly)
+# -B     : only search BOTTOM strand of db seqs (--bottomonly)
 # -P     : run a positive-only benchmark, only each family's positive sequences will be searched
 # -W     : run a positive-window-only benchmark
 # -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the $optsfile
-# -B <f> : build models as needed, instead of reading them from a file
+# -G <f> : build models as needed, instead of reading them from a file
 # -C <f> : fetch models from existing file <f>
 # -Y     : run a no-positive benchmark; for timings only
 # -Z     : run 'dcmsearch', not 'cmsearch'
+# -K <s> : use key <s> when naming files
 #
 # SRE, Tue Apr 20 10:32:49 2010 [Janelia]
 # SVN $Id$
 #
 use Getopt::Std;
-getopts('DPWB:M:C:ZYH:');
+getopts('DTBPWG:M:C:ZYH:K:');
 $mpi_nprocs = 8;
 $do_build_models = 0;
 $do_debug = 0;
@@ -35,13 +38,20 @@ $do_poswindowonly = 0;
 $do_old_cmsearch = 0;
 $do_p7file = 0;
 $master_p7file = "";
+$do_partial = 0;
+$do_toponly = 0;
+$do_bottomonly = 0;
+$key = "";
 if (defined $opt_D) { $do_debug = 1; }
-if (defined $opt_P) { $do_posonly = 1; }
+if (defined $opt_X) { $do_partial = 1; $partial_seqname = $opt_X; }
+if (defined $opt_T) { $do_toponly = 1; }
+if (defined $opt_B) { $do_bottomonly = 1; }
 if (defined $opt_W) { $do_poswindowonly = 1; }
 if (defined $opt_Y) { $do_nopos = 1; }
-if (defined $opt_B) { $do_build_models = 1; $build_optsfile = $opt_B; }
-if (defined $opt_C) { $do_fetch_models = 1; $master_model = $opt_C; if($do_build_models) { die "-B and -C are incompatible"; } }
+if (defined $opt_G) { $do_build_models = 1; $build_optsfile = $opt_B; }
+if (defined $opt_C) { $do_fetch_models = 1; $master_model = $opt_C; if($do_build_models) { die "-G and -C are incompatible"; } }
 if (defined $opt_Z) { $do_old_cmsearch = 1; }
+if (defined $opt_K) { $key = $opt_K; }
 if (defined $opt_M) { 
     $mpi_nprocs = $opt_M; 
     if($mpi_nprocs < 2 || $mpi_nprocs > 8) { die "ERROR, with -M <n>, <n> must be between 2 and 8"; } 
@@ -54,9 +64,12 @@ $options_usage  = "Options:\n\t";
 $options_usage .= " -P     : run a positive-only benchmark, only each family's positive sequences will be searched\n\t";
 $options_usage .= " -W     : run a positive-window-only benchmark\n\t";
 $options_usage .= " -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the <optsfile>\n\t";
-$options_usage .= " -B <f> : build models as needed, using options in file <f>\n\t";
+$options_usage .= " -G <f> : build models as needed, using options in file <f>\n\t";
 $options_usage .= " -C <f> : fetch models from existing file <f>\n\t";
-$options_usage .= " -Z     : run v1.0 cmsearch\n\n";
+$options_usage .= " -Z     : run v1.0 cmsearch\n\t";
+$options_usage .= " -B     : use --toponly in cmsearch\n\t";
+$options_usage .= " -T     : use --bottomonly in cmsearch\n\t";
+$options_usage .= " -K <s> : use key <s> when naming output files\n\n";
 if(scalar(@ARGV) != 10) { printf("$usage\n$options_usage"); exit(1); }
 
 ($execdir, $scriptdir, $modeldir, $resultdir, $optsfile, $tblfile, $msafile, $posfile, $fafile, $outfile) = @ARGV;
@@ -82,6 +95,10 @@ if(! -e $sfetch) {
 if($do_fetch_models) { 
     if(! -e $cmfetch) { die "$cmfetch does not exist"; }
 }    
+$bo_opt = "";
+$to_opt = "";
+if($do_toponly)    { $to_opt = "--toponly"; }
+if($do_bottomonly) { $bo_opt = "--bottomonly"; }
 
 if (! -d $execdir)                                      { die "didn't find executable directory $execdir"; }
 if (! -d $scriptdir)                                    { die "didn't find script directory $scriptdir"; }
@@ -121,7 +138,7 @@ if((! $do_build_models) && (! $do_fetch_models)) {
     }
     close(TABLE);
 }
-elsif($do_build_models) { # -B <f> enabled, read the options file <f>
+elsif($do_build_models) { # -G <f> enabled, read the options file <f>
     open(OPTS, $build_optsfile) || die "couldn't open options file $build_optsfile"; 
     $buildopts = <OPTS>;
     close(OPTS);
@@ -142,70 +159,75 @@ while (<TABLE>)
     ($msaname) = split;
 
     if($do_build_models) { 
-	$status = system("$afetch -o $resultdir/$msaname.sto $msafile $msaname > /dev/null");
-	if ($status != 0) { die "UH FAILED: $afetch -o $resultdir/$msaname.sto $msafile $msaname > /dev/null"; }
+	$status = system("$afetch -o $resultdir/$msaname" . $key . ".sto $msafile $msaname > /dev/null");
+	if ($status != 0) { die "UH FAILED: $afetch -o $resultdir/$msaname" . $key . ".sto $msafile $msaname > /dev/null"; }
 
-	$status = system("$cmbuild $buildopts $resultdir/$msaname.cm $resultdir/$msaname.sto > /dev/null");
-	if ($status != 0) { die "FAILED: $cmbuild $buildopts $resultdir/$msaname.cm $resultdir/$msaname.sto > /dev/null"; }
+	$status = system("$cmbuild $buildopts $resultdir/$msaname" . $key . ".cm $resultdir/$msaname" . $key . ".sto > /dev/null");
+	if ($status != 0) { die "FAILED: $cmbuild $buildopts $resultdir/$msaname" . $key . ".cm $resultdir/$msaname" . $key . ".sto > /dev/null"; }
+	$cmfile = "$resultdir/$msaname" . $key . ".cm";
     }
     elsif($do_fetch_models) { 
-	$status = system("$cmfetch -o $resultdir/$msaname.cm $master_model $msaname > /dev/null");
-	if ($status != 0) { die "FAILED: $cmfetch -o $resultdir/$msaname.cm $master_model > /dev/null"; }
+	$status = system("$cmfetch -o $resultdir/$msaname" . $key . ".cm $master_model $msaname > /dev/null");
+	if ($status != 0) { die "FAILED: $cmfetch -o $resultdir/$msaname" . $key . ".cm $master_model > /dev/null"; }
+	$cmfile = "$resultdir/$msaname" . $key . ".cm";
+    }
+    else { 
+	$cmfile = "$modeldir/$msaname.cm"; 
     }
     
     $p7file_opt = "";
     $p7file = "";
 
     if($do_posonly) { #fetch this family's sequences
-	$command = "grep \"^$msaname\/\" rmark3.ppos | awk \'{ print \$3 }\' > $resultdir/$msaname.sfetch";
+	$command = "grep \"^$msaname\/\" rmark3.ppos | awk \'{ print \$3 }\' > $resultdir/$msaname" . $key . ".sfetch";
 	$status = system($command);
 	if ($status != 0) { die "FAILED: $command failed"; }
 
-	$command = "$sfetch -o $resultdir/$msaname.pfa -f $orig_fafile $resultdir/$msaname.sfetch > /dev/null";
+	$command = "$sfetch -o $resultdir/$msaname" . $key . ".pfa -f $orig_fafile $resultdir/$msaname" . $key . ".sfetch > /dev/null";
 	$status = system($command);
 	if ($status != 0) { die "FAILED: $command failed"; }
 
-	$fafile = "$resultdir/$msaname.pfa";
+	$fafile = "$resultdir/$msaname" . $key . ".pfa";
     }
     if($do_poswindowonly) { #fetch this family's sequences
-	$command = "grep \"^$msaname\/\" rmark3.wppos | awk \'{ print \$2 }\' > $resultdir/$msaname.sfetch";
+	$command = "grep \"^$msaname\/\" rmark3.wppos | awk \'{ print \$2 }\' > $resultdir/$msaname" . $key . ".sfetch";
 	$status = system($command);
 	if ($status != 0) { die "FAILED: $command failed"; }
 
-	$nl = `wc -l $resultdir/$msaname.sfetch`;
+	$nl = `wc -l $resultdir/$msaname" . $key . ".sfetch`;
 	if($nl =~ m/^0\s+/) { 
 	    printf("WHOA!!!\n");
-	    unlink "$resultdir/$msaname.sfetch";
+	    unlink "$resultdir/$msaname" . $key . ".sfetch";
 	    next;
 	}
-	$command = "$sfetch -o $resultdir/$msaname.wpfa -f $orig_fafile $resultdir/$msaname.sfetch > /dev/null";
+	$command = "$sfetch -o $resultdir/$msaname" . $key . ".wpfa -f $orig_fafile $resultdir/$msaname" . $key . ".sfetch > /dev/null";
 	$status = system($command);
 	if ($status != 0) { die "FAILED: $command failed"; }
 	
-	$fafile = "$resultdir/$msaname.wpfa";
+	$fafile = "$resultdir/$msaname" . $key . ".wpfa";
     }
     $extra_opt = "";
     if($do_old_cmsearch) { 
-	$tab_opt = "--tabfile $resultdir/$msaname.tmp";
+	$tab_opt = "--tabfile $resultdir/$msaname" . $key . ".tmp";
     }
     else { 
-	$tab_opt = "--tblout $resultdir/$msaname.tmp";
+	$tab_opt = "--tblout $resultdir/$msaname" . $key . ".tmp";
 	$extra_opt = "--seed 181";
     }
 
     if($do_mpi) { 
-	$command = "mpirun -np $mpi_nprocs $cmsearch $searchopts $fam_searchopts_H{$msaname} $p7file_opt $tab_opt $extra_opt $modeldir/$msaname.cm $fafile > $resultdir/$msaname.search";
+	$command = "mpirun -np $mpi_nprocs $cmsearch $bo_opt $to_opt $searchopts $fam_searchopts_H{$msaname} $p7file_opt $tab_opt $extra_opt $cmfile $fafile > $resultdir/$msaname" . $key . ".search";
 	$status = system($command);
 	if ($status != 0) { die "FAILED: $command"; }
     }
     else { 
-	$command = "$cmsearch $searchopts $fam_searchopts_H{$msaname} $p7file_opt $tab_opt $extra_opt $modeldir/$msaname.cm $fafile > $resultdir/$msaname.search";
+	$command = "$cmsearch $bo_opt $to_opt $searchopts $fam_searchopts_H{$msaname} $p7file_opt $tab_opt $extra_opt $cmfile $fafile > $resultdir/$msaname" . $key . ".search";
 	$status = system($command);
 	if ($status != 0) { die "FAILED: $command"; }
     }
 
     if(! $do_nopos) { 
-	open(OUTPUT, "$resultdir/$msaname.tmp") || die "FAILED: to open $resultdir/$msaname.tmp tabular output file"; 
+	open(OUTPUT, "$resultdir/$msaname" . $key . ".tmp") || die "FAILED: to open $resultdir/$msaname" . $key . ".tmp tabular output file"; 
 	if($do_old_cmsearch) { 
 	    while (<OUTPUT>)
 	    {
@@ -234,28 +256,28 @@ while (<TABLE>)
 	}
     }
     if($do_debug == 0) { 
-	unlink "$resultdir/$msaname.tmp";
+	unlink "$resultdir/$msaname" . $key . ".tmp";
 	if($do_build_models) { 
-	    unlink "$resultdir/$msaname.cm"; 
-	    unlink "$resultdir/$msaname.sto"; 
+	    unlink "$resultdir/$msaname" . $key . ".cm"; 
+	    unlink "$resultdir/$msaname" . $key . ".sto"; 
 	}
 	elsif($do_fetch_models) { 
-	    unlink "$resultdir/$msaname.cm"; 
+	    unlink "$resultdir/$msaname" . $key . ".cm"; 
 	}
 	if($do_posonly) { 
-	    unlink "$resultdir/$msaname.pfa";
-	    unlink "$resultdir/$msaname.sfetch";
+	    unlink "$resultdir/$msaname" . $key . ".pfa";
+	    unlink "$resultdir/$msaname" . $key . ".sfetch";
 	}
 	if($do_poswindowonly) { 
-	    unlink "$resultdir/$msaname.wpfa";
-	    unlink "$resultdir/$msaname.sfetch";
+	    unlink "$resultdir/$msaname" . $key . ".wpfa";
+	    unlink "$resultdir/$msaname" . $key . ".sfetch";
 	}
     }
 
-    system("grep \"CPU time\" $resultdir/$msaname.search > $resultdir/$msaname.time");
+    system("grep \"CPU time\" $resultdir/$msaname" . $key . ".search > $resultdir/$msaname" . $key . ".time");
     sleep(0.1);
     if($do_debug == 0) { 
-	unlink "$resultdir/$msaname.search";
+	unlink "$resultdir/$msaname" . $key . ".search";
     }
 }
 close TABLE;
