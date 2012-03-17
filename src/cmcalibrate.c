@@ -98,7 +98,7 @@ static ESL_OPTIONS options[] = {
   { "--random",     eslARG_NONE,       NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content of random null background model of CM",        5 },
   { "--gc",         eslARG_INFILE,     NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content distribution from file <f>",                   5 },
 #ifdef HMMER_THREADS 
-  { "--cpu",        eslARG_INT,     NULL,"HMMER_NCPU", "n>=0",    NULL,        NULL,     CPUOPTS, "number of parallel CPU workers to use for multithreads",            5 },
+  { "--cpu",        eslARG_INT,     NULL,"INFERNAL_NCPU",   "n>=0",      NULL,         NULL,   CPUOPTS, "number of parallel CPU workers to use for multithreads",            5 },
 #endif
 #ifdef HAVE_MPI
   { "--mpi",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,     MPIOPTS, "run as an MPI parallel program",                                    5 },  

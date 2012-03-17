@@ -126,7 +126,7 @@ static ESL_OPTIONS options[] = {
   { "--regress",  eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL, "--ileaved",    "--mapali", "save regression test data to file <f>",                      5}, 
   /*{ "--noannot",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not add cmalign execution annotation to the alignment",   5 },*/
 #ifdef HMMER_THREADS 
-  { "--cpu",          eslARG_INT,        NULL, "HMMER_NCPU","n>=0",     NULL,        NULL,       CPUOPTS, "number of parallel CPU workers to use for multithreads",     5 },
+  { "--cpu",          eslARG_INT,        NULL, "INFERNAL_NCPU","n>=0",  NULL,        NULL,       CPUOPTS, "number of parallel CPU workers to use for multithreads",     5 },
 #endif
 #ifdef HAVE_MPI
   { "--mpi",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,       MPIOPTS, "run as an MPI parallel program",                             5 },  

@@ -2,17 +2,21 @@
 %
 % SVN $Id$
 
-\documentclass[11pt]{article}
-\usepackage[pdftex]{graphicx}  
-\usepackage{url}
-\usepackage{apalike}
-\usepackage{fullpage}
+\documentclass[10pt]{article}
+%\usepackage{helvetic}
 \usepackage{times}
-\usepackage{fancyvrb}
+\usepackage{fullpage}
+\usepackage{fancybox}  % Must include fancybox *before* fancyvrb;
+\usepackage{fancyvrb}  % don't know why.
+\usepackage[pdftex]{graphicx}
+\usepackage{url}
+%\usepackage[backref,colorlinks]{hyperref}
+\usepackage{apalike}
+
 \usepackage{verbatim}
 
 \setcounter{secnumdepth}{1}
-
+\renewcommand{\familydefault}{\sfdefault}
 \input{macros}
 
 \begin{document}
@@ -26,22 +30,29 @@
 
 \newpage
 \input{intro}
+
 \newpage
 \input{install}
+
 \newpage
 \input{tutorial}
+
 \newpage
 \input{cmbuild}
+
 \newpage
 \input{scores}
+
 \newpage
 \input{filter}
+
+\newpage
+\input{manpages}
+
 \newpage
 \input{formats}
 \subsection{Dirichlet prior files}
 \input{format_prior}
-\newpage
-\input{manpages}
 
 \newpage
 \section*{Index of frequently asked questions}

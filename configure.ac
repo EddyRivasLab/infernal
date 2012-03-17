@@ -679,12 +679,13 @@ if test -d release-notes; then
   AC_CONFIG_FILES(release-notes/LICENSE.sh)
 fi
 
-AC_CONFIG_FILES(src/Makefile)
-AC_CONFIG_FILES(src/impl_sse/Makefile)
-AC_CONFIG_FILES(testsuite/Makefile)
-AC_CONFIG_FILES(rmark/Makefile)
-AC_CONFIG_FILES(documentation/Makefile)
-AC_CONFIG_FILES(documentation/manpages/Makefile)
+AC_CONFIG_FILES([src/Makefile])
+AC_CONFIG_FILES([src/impl_sse/Makefile])
+AC_CONFIG_FILES([testsuite/Makefile])
+AC_CONFIG_FILES([rmark/Makefile])
+AC_CONFIG_FILES([documentation/Makefile])
+AC_CONFIG_FILES([documentation/manpages/Makefile])
+AC_CONFIG_FILES([documentation/userguide/Makefile])
 
 
 # HMMER files

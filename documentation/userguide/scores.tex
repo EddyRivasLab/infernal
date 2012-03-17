@@ -1,18 +1,20 @@
-\section{How \texttt{cmsearch} scores alignments and determines significance}
+\section{How \texttt{cmsearch} and \texttt{cmscan} score alignments and determine significance}
 
-The \prog{cmsearch} program gives you a ranked list of hits in a
-sequence database.  Which ones are likely to be true homologues and
-which ones are likely to be nonhomologous to your query CM?
+The \prog{cmsearch} and \prog{cmscan} programs give you a ranked list
+of hits in a sequence or CM database.  Which ones are likely to be
+true homologs and which ones are likely to be nonhomologous to your
+query CM?
 
-\software{infernal} gives you at least two scoring criteria to judge
-by: the \software{infernal} raw score, and an E-value. Additionally,
+Infernal gives you at least two scoring criteria to judge
+by: the Infernal raw score, and an E-value. Additionally,
 Rfam models carry a third set of criteria: three expert-calibrated raw
-score cutoffs that the Rfam database maintainers set. How should you
+score cutoffs that the Rfam database curators set. How should you
 interpret all this information?
 
 \subsection{Executive summary}
 
 \begin{itemize}
+
 \item The best criterion of statistical significance is the E-value.
 The E-value is calculated from the bit score. It tells you how many
 false positives you would have expected to see at or above this bit
@@ -20,30 +22,29 @@ score. Therefore a low E-value is best; an E-value of 0.1, for
 instance, means that there's only a 10\% chance that you would've seen
 a hit this good in a target database of random sequences of the same
 size as the one you're searching. {\em
-Typically, I trust the results of searches at about E=0.1 and below,
+Typically, I trust the results of searches at about E=0.01 and below,
 and I examine the hits manually down to E=10 or so.}  However, be
-alert; \software{infernal} E-values are not perfect. 
+alert; Infernal E-values are not perfect. 
 
-\item \software{infernal} bit scores are a stricter criterion: they
-  reflect whether the sequence is a better match to the profile model
-  (positive score) or to the null model of nonhomologous sequences
-  (negative score).  A bit score above $\log_2$ of the size of the
-  target database is likely to be a true
-  homologue. For a 10 Mb genome, this rule-of-thumb number is on
-  the order of 24 bits (remember a 10 Mb genome is really 20 Mb when
-  you search both strands).  Whereas the E-value measures how
-  statistically significant the bit score is, the bit score itself is
-  telling you how well the sequence matches your model. Because these
-  things should be strongly correlated, usually, true homologues will
-  have both a good bit score and a good E-value. However, sometimes
-  (and these are the interesting cases), you will find remote
-  homologues which do not match the model well (and so do not have
-  good bit scores -- possibly even negative), but which nonetheless
-  have significant E-values, indicating that the bit score, though
-  ``bad'', is still better than you would've expected by chance, so it
-  is suggestive of homology. However, as above, be alert; it is
-  possible to get artifactually high bit scores simply because of
-  highly biased residue composition.
+\item Infernal bit scores are a stricter criterion: they reflect
+whether the sequence is a better match to the profile model (positive
+score) or to the null model of nonhomologous sequences (negative
+score).  A bit score above $\log_2$ of the size of the target database
+is likely to be a true homologue. For a 10 Mb genome, this
+rule-of-thumb number is on the order of 24 bits (remember a 10 Mb
+genome is really 20 Mb when you search both strands).  Whereas the
+E-value measures how statistically significant the bit score is, the
+bit score itself is telling you how well the sequence matches your
+model. Because these things should be strongly correlated, usually,
+true homologs will have both a good bit score and a good
+E-value. However, sometimes (and these are the interesting cases), you
+will find remote homologues which do not match the model well (and so
+do not have good bit scores -- possibly even negative), but which
+nonetheless have significant E-values, indicating that the bit score,
+though ``bad'', is still better than you would've expected by chance,
+so it is suggestive of homology. However, as above, be alert; it is
+possible to get artifactually high bit scores simply because of highly
+biased residue composition.
   
 \item For Rfam CMs, you can also examine three other numbers that
   represent bit score thresholds: a TC (trusted cutoff) score, a GA
@@ -65,7 +66,7 @@ these numbers is described below.
   it is significantly related to the bacterial SRP family (also correct).
 \end{srefaq}
 
-\subsection{In more detail: \software{infernal} bit scores}
+\subsection{In more detail: Infernal bit scores}
 
 The bit score is a log-odds score in log base two (thus, in units of
 {\em bits}). Specifically, it is:
@@ -78,7 +79,7 @@ S = \log_2 \frac {P( \mbox{seq} | \mbox{CM})} { P (\mbox{seq} |
 $P( \mbox{seq} | \mbox{CM})$ is the probability of the target
 sequence according to your CM. $ P (\mbox{seq} | \mbox{null}) $ is
 the probability of the target sequence given a ``null hypothesis''
-model of the statistics of random sequence. In \software{infernal}, this null model
+model of the statistics of random sequence. In Infernal, this null model
 is a simple one-state CM that says that random sequences are i.i.d.
 sequences with a specific residue composition, which by default is
 equiprobable across the four RNA nucleotides ($P(A) = P(C) = P(G) =
@@ -97,19 +98,20 @@ bits. (This is discussed in more detail in section 6). Alternatively,
 for a specific sensible use cutoffs, read about how the Rfam
 TC/NC/GA cutoffs are set and used (below).
 
-\subsection{In more detail: \software{infernal} E-values}
+\subsection{In more detail: Infernal E-values}
 
 The E-value is the expected number of false positives with scores at
 least as high as your hit.
 
 Unlike the raw score, the E-value is dependent on the size of the
-database you search. If you detect a hit of length 100 residues 
-with an E-value of 0.1 in a search of a sequence database of size 100
-Mb, then you happen to re-score the sequence all by itself, you will
-get an E-value 1 million times better. The E-value is quite literally
-the expected number of false positives at this raw score; the larger
-the database you search, the greater the number of expected false
-positives.
+database you search. If \prog{cmsearch} detects a hit of length 100
+residues with an E-value of 0.1 in a search of a sequence database of
+size 100 Mb, then you happen to re-score the sequence all by itself
+(i.e. create a new target sequence file that only contains the hit),
+you will get an E-value 1 million times better. The E-value is quite
+literally the expected number of false positives at this raw score;
+the larger the database you search, the greater the number of expected
+false positives.
 
 \begin{srefaq}{Why do I get a different E-value when I search
 against a file containing my sequence, than I got when I searched the
@@ -120,23 +122,36 @@ hit that is marginally significant this year may no longer be
 significant next year, when the database is twice as large. 
 \end{srefaq}
 
+For \prog{cmsearch} the database size is based on the number of
+residues in the target sequence file. For \prog{cmscan} it is based on
+the product of the number of residues in the query sequence and the number
+of models in the target database. This difference is important to keep in mind
+when comparing E-values between \prog{cmsearch} and \prog{cmscan}
+output. Let's say you search a single query CM against a single
+target sequence of length 1000 with \prog{cmsearch} and find a hit
+with an E-value of 0.001. If you use \prog{cmscan} to search the same
+sequence (now called the \emph{query} sequence) against the same
+single CM (now called the \emph{target} CM) you will get the same
+E-value for your hit. However, if you put your CM into a database with
+99 other CMs, the E-value of your hit will increase 100-fold from
+0.001 to 0.1 because now you're target CM database has grown
+100-fold. However, the bit score of the hit will not
+change.
+
 To calculate E-values, models must be calibrated with the
 \prog{cmcalibrate} program. Unfortunately, \prog{cmcalibrate} is
 painfully slow. We're working on making it faster, but for now, it is
 highly recommended that you spend the compute time to calibrate your
-models before searching with them. Not only will calibrated models
-report E-values, but they are often much faster at searching. This is
-because, in addition to calibrating E-value statistics, \prog{cmcalibrate}
-also determines appropriate HMM filter cutoffs to use for each model, as
-explained in section 6.
+models before searching with them.  \prog{cmcalibrate} writes several
+parameters into your CM file on lines with labels starting with
+``E-''. Among these parameters are the $\mu$ (location) and $\lambda$
+(scale) parameters of an exponential tail that best fits a histogram
+of scores calculated on randomly generated sequences. You only need to
+do this calibration once for a given CM. All the Rfam CMs come
+pre-calibrated.
 
-\prog{cmcalibrate} writes several parameters into your CM file on
-lines with labels starting with ``E-''. Among these parameters are the
-$\mu$ (location) and $\lambda$ (scale) parameters of an exponential
-tail that best fits a histogram of scores calculated on randomly
-generated sequences. You only need to do this calibration once
-for a given CM. All the Rfam CMs come pre-calibrated.
-
+\begin{comment}
+% This is no longer relevant with the filter pipeline
 \subsubsection{\textsc{Warning:} Using negative bit score thresholds for local searches}
 If the bit score threshold you use with local searches lower than
  $-5$,  you may begin to observe some strange
@@ -153,184 +168,56 @@ cutoff for a small target database, for example an E-value cutoff of
 $1000$ for a $1000$ nucleotide database. This issue is specific 
 to local searches, and does not apply to glocal searches (enabled with the
  \prog{-g} option). 
+\end{comment}
 
-\subsubsection{fitting exponential tails to \software{infernal} score histograms}
-
-The \prog{cmcalibrate} program fits exponential tails to scores of the
-model against random sequences. When \prog{cmsearch} is run and hits
-are found, the exponential tail parameters are used to calculate
-E-value for the hits. \prog{cmsearch} implements different search
-algorithms and allows searching with both local and glocally
-configured models. Importantly, the configuration and algorithm used
-affect the scores reported, so \prog{cmcalibrate} must fit separate
-exponential tails for each.  In total,
-\prog{cmcalibrate} fits 8 different exponential tail
-distributions. These are listed by the program as it proceeds through
-each of the 8 stages.  Because \prog{cmcalibrate} is so slow, it
-has a \prog{--forecast} option which will list each stage and predict
-it's required running time. Let's examine the output with this option
-for the \prog{my.cm} model from the tutorial:
-
-\user{cmcalibrate --forecast 1 my.cm}\\
-
-\begin{sreoutput}
-# Forecasting time for 1 processor(s) to calibrate CM 1: trna.5-1
-#
-# stage     mod  cfg  alg  expL (Mb)   filN predicted time
-# --------  ---  ---  ---  --------- ------ --------------
-  exp tail  hmm  glc  vit      15.00      -       00:02:29
-  exp tail  hmm  glc  fwd      15.00      -       00:04:44
-  exp tail   cm  glc  cyk       1.50      -       00:07:25
-  exp tail   cm  glc  ins       1.50      -       00:23:34
-  filter      -  glc    -          -  10000       00:02:22
-  exp tail  hmm  loc  vit      15.00      -       00:02:45
-  exp tail  hmm  loc  fwd      15.00      -       00:05:44
-  exp tail   cm  loc  cyk       1.50      -       00:06:43
-  exp tail   cm  loc  ins       1.50      -       00:23:32
-  filter      -  loc    -          -  10000       00:06:24
-# --------  ---  ---  ---  ---------  ----- --------------
-# all         -    -    -          -      -       01:25:47
-\end{sreoutput}
-
-
-Let's go through what each column of the output is telling us:
-
-\begin{wideitem}
-\item[\emprog{stage}] 
-  what type of stage this row pertains to, either
-  ``exp tail'' for exponential tail fitting, or ``filter'' for filter
-  threshold calculation. For now we're just focusing on the exponential tail
-  stages. 
-
-\item[\emprog{mod}] 
-  the model we're fitting an exponential tail for,
-  either the CM or a CP9 HMM. We use the HMM exponential tails during
-  HMM filtering for faster searches.
-  
-\item[\emprog{cfg}] 
-  the configuration of the model for this stage,
-  either ``glc'' for glocal or ``loc'' for local. \prog{cmcalibrate}
-  has to calibrate exponential tails \emph{separately} for glocal and
-  local modes.
-
-\item[\emprog{alg}] 
-  the search algorithm for this stage. There are two
-  algorithms that need to be separately calibrated for each the CM and
-  HMM. These are explained in more detail in section 6.
-
-\item[\emprog{expL}] 
-  the length of random sequence we'll search for
-  this stage. For CM stages, this length is 1,500,000 residues (1.5 Mb)
-  by default. For HMM stages, this length is is the minimum
-  of 15 Mb and a length $x$, where $x$ is the length that will cause
-  this HMM stage to require 10\% as much compute time as a CM
-  calibration stage. The reasoning behind this is that longer sequence
-  lengths tend to result in more accurate E-values.
-  %  Mb, but can be more if the program calculates that searching a
-%  longer sequence with the HMM (which will lead to more accurate
-%  E-values) will not increase the calibration time of this stage to more
-%  than 10\% the total calibration time.
-
-\item[\emprog{filN}] 
-  the number of random sequences that will be
-  searched for the HMM filter threshold calculation. This isn't
-  relevant now; see section 6 for more on HMM filter threshold
-  calculation. 
-
-\item[\emprog{predicted time}] 
-  the predicted run time of this stage. 
-
-\end{wideitem}
-
-
-As you can see, \prog{cmcalibrate} will fit separate exponential tails
-for each combination of model and algorithm (4 choices) and configuration
-(2 choices) that's $4*2=8$ exponential
-tails. We explained the difference between local versus glocal
-configuration in the tutorial, now we'll discuss different search algorithms. 
-
-\subsection{In more detail: different search algorithms in \software{infernal}}
-\prog{cmsearch} implements four several different search 
-algorithms, Inside and CYK for profile SCFG search with CMs, and
-Forward and Viterbi for profile HMM search with CP9 HMMs.
-These algorithms
-differ in the meaning of the score that they calculate. Above we
-oversimplified an \software{infernal} bit score as:
+\subsection{In more detail: the CYK and Inside search algorithms in Infernal}
+\prog{cmsearch} implements two different search algorithms, Inside and
+CYK for profile SCFG search with CMs.  These algorithms differ in the
+meaning of the score that they calculate. Above we oversimplified an
+Infernal bit score as:
 \[
 	S = \log_2 \frac {P( \mbox{seq} | \mbox{CM})} { P (\mbox{seq} |
 	\mbox{null})}.
 \]
 
 This is actually only correct for the Inside
-algorithm. The other three algorithms listed above are calculating
+algorithm. By CYK calculates something 
 something slightly different in the \emph{numerator} (only) of the
 above equation, as follows: 
 
 \begin{wideitem}
 \item[\em{Inside}]  $P(\mbox{seq}      | \mbox{CM})$
 \item[\em{CYK}]     $P(\mbox{seq},\pi  | \mbox{CM})$
-\item[\em{Forward}] $P(\mbox{seq}      | \mbox{HMM})$
-\item[\em{Viterbi}] $P(\mbox{seq},\pi  | \mbox{HMM})$
 \end{wideitem}
 
 Here, $\pi$ represents the optimal (most probable) parse, or
-alignment, of the sequence to the model. So, the CYK and Viterbi
-algorithms report the log-odds score for the optimal alignment 
-of the sequence given the model (either CM or HMM respectively), while
-the Inside and Forward algorithms report the log odds score for the
+alignment, of the sequence to the model. So, CYK
+reports the log-odds score for the optimal alignment 
+of the sequence given the model, while
+Inside reports the log odds score for the
 sequence \emph{summed over all possible alignments} of the sequence to
-the model. 
+the model. The CYK and Inside algorithms for SCFGs are analogous to
+the HMM Viterbi and Forward algorithms, respectively.
 
-From a probabilistic inference standpoint, the Inside and Forward
-scores are giving us what we want to know, the log-odds score that the
+From a probabilistic inference standpoint, the Inside 
+score is giving us what we want to know, the log-odds score that the
 sequence we're looking at is a homolog of the family we're
 modelling. The specific alignment $\pi$ to the model is a nuisance
-variable that is appropriately integrated out. Not only are Inside and
-Forward better in theory, but empirically, benchmarks show that
-they're more sensitive than CYK and Viterbi. So, why use CYK and
-Viterbi at all?  Actually, we rarely use Viterbi really, it's
-only implemented for testing purposes (it's okay; calibrating Viterbi
-E-values takes a very small fraction of the running time of
-\prog{cmcalibrate}, you can see for yourself in the previous
-example). CYK \emph{is} used, but mainly as a filter in
-\prog{cmsearch}. CYK makes a good filter for two reasons. First, it can be
+variable that is appropriately integrated out. Further, 
+benchmarks show that Inside is more sensitive than CYK.
+This is why Infernal search programs use Inside to define final bit
+scores for all hits. CYK is used only as a part of the filter
+pipeline. 
+CYK makes a good filter for two reasons. First, it can be
 more efficiently implemented than the Inside
-algorithm. \software{infernal}'s current implementation of CYK is
-about three times faster than Inside (you can see this in the
-predicted run times in the \prog{--forecast} example). Secondly,
+algorithm. Infernal's current implementation of CYK is
+about three times faster than Inside. Secondly,
 high scoring CYK hits, the ones where interested in, tend to have a
 single well-defined alignment and consequently approximate Inside
 scores well. Combined, these two features mean we can safely and
 effectively filter with CYK, and have the speed of CYK and sensitivity
-of Inside. You can read more about how we use CYK as a filter in
-\prog{cmsearch} in section 6.
-
-
-\begin{srefaq}{Why are you talking about HMM algorithms. I thought CMs
-    were more appropriate for structural RNA sequence analysis than
-    HMMs, isn't that the whole reason you've developed \textsc{infernal}?} 
-  We've implemented HMMs in \textsc{infernal} to help accelerate CM
-    algorithms. As described in section 6, HMMs are used as filters to
-    speedup database searches with \prog{cmsearch}. They're also used to develop
-    constraints for CM alignment with \prog{cmalign}.  
-\end{srefaq}
-
-%This is the main reason \prog{cmcalibrate} is taking so
-%long. Trust us, we'd love to be able to cut down on these stages and
-%accelerate calibration, but currently if we cut out any stages, we get
-%inadequate performance. We're working on it though.
-
-\begin{srefaq}{Why is \prog{cmcalibrate} so slow?} The
-    necessity of doing 8 separate exponential tail fitting stages
-    (see above), and the fact that CM search algorithms scale more
-    than $LN^2$ with sequence length $L$ and model consensus length
-    $N$ make the program excruciatingly slow. Notice that some of the
-    8 stages are much faster than others. The two Inside stages usually
-    take a large majority of the total run time. You might argue this
-    means we shouldn't use Inside, but it's the most sensitive
-    algorithm we have; and sensitivity trumps speed in our design
-    goals.
-\end{srefaq}
+of Inside. 
+%You can read more about how CYK is used as a filter in \prog{cmsearch} in section 6.
 
 \subsection{Accuracy of E-values}
 
@@ -339,9 +226,23 @@ This is because CM scores don't fit the exponential tail distribution
 extremely well. Empirically, local alignment scores returned from
 local searches fit exponential tails fairly well, and glocal alignment
 scores fit less well. We will continue to work on making E-values more
-accurate in future versions of \software{infernal}.
+accurate in future versions of Infernal.
 
-One important factor in the accuracy of E-values is the GC content of
+Certain types of sequences can lead to inaccurate E-values. For
+example, inverted
+tandem repeats often score high against any CM with a simple secondary
+structure, especially those with a single stem loop (such as
+miRNAs). This occurs because the often the repetitive stretches of residues
+may look to Infernal as if they form Watson-Crick basepairs. 
+More complex eukaryotic repeats actually derived from structural RNAs,
+such as the Alu family from SRP RNA in human. In cases like this,
+Infernal may recognize the homology in the repeat, even though the
+element no longer functions as a structural RNA, giving a repeat a
+high score and low E-value. Infernal would actually be right in this
+situation since the homology is real, but users should be wary of this
+situation when trying to annotate structural RNAs. 
+
+An important factor in the accuracy of E-values is the GC content of
 the target database. This is because many CMs are biased towards
 particular GC content (usually low GC), in many cases giving A-rich
 sequence high scores simply due to their high composition of
@@ -361,7 +262,9 @@ example). Conversely, when a target database with GC content above
 46\% is searched, the effect is the opposite, and higher E-values
 often result (you might observe only 1-5 hits with an E-value less than
 25). These effects are the average case, but different models will
-give different results. We consider the E-values in \software{infernal} a
+give different results. 
+
+We consider the E-values in Infernal a
 work in progress, so feel free to report examples of particularly bad
 (or good) performance of E-values to us.
 
@@ -406,7 +309,7 @@ artificially imposes a ``flat'', nonhierarchical structure on RNA
 sequence space.  Rfam asserts that no Rfam family is related to any
 other Rfam family. This is obvious nonsense: many Rfam families are in
 fact homologous.  The different SRP families are one example; the
-different RNaseP families are another. \software{infernal} often
+different RNaseP families are another. Infernal often
 detect significant relationships between families that Rfam chooses to
 suppress. In these cases, the Rfam GA cutoff will be elevated to
 artifically separate two homologous but distantly related subgroups of
@@ -421,7 +324,7 @@ the experiment with CMs (and E-values) instead of just looking at
 curated Rfam classifications.
 \end{srefaq}
 
-The mechanism that \software{infernal} uses to incorporate up these cutoffs is
+The mechanism that Infernal uses to incorporate up these cutoffs is
 general: Stockholm format multiple sequence alignments can carry
 appropriate TC, NC, and GA markup lines. This means that you can use a
 Rfam-like cutoff system if you like, just by adding the appropriate
@@ -444,7 +347,7 @@ filtered searches with Rfam cutoffs using the \prog{cmstat} program.
 
 \subsection{Biased composition filtering: the null3 model}
 
-I've lied. \software{infernal} bit scores are actually calculated as
+I've lied. Infernal bit scores are actually calculated as
 log odds scores relative to \emph{two} null hypotheses. The first is the null model
 built into the CM when it was built with \prog{cmbuild}.
 The second, called \emph{null3}, is an \emph{ad hoc} model calculated
@@ -457,7 +360,7 @@ regions in the target sequence.
 Common biased composition filters like XNU, DUST, and SEG are
 qualitative filters -- if a region is detected as biased composition,
 it is masked (the residues are converted to X's).  The
-\software{infernal} composition filter is a quantitative filter, that
+Infernal composition filter is a quantitative filter, that
 tests whether the sequence is a better match to the CM, the
 null (random composition) model, or a null3 model of biased nucleotide
 composition.
@@ -465,14 +368,14 @@ composition.
 This is a Good Thing, but on the other hand, the null3 model is not
 very sophisticated. It is a single-state HMM just like the main null
 model, which means it only captures residue composition, like DUST; no
-attempt is made in \software{infernal} to filter short-period repetitive sequences
+attempt is made in Infernal to filter short-period repetitive sequences
 like the XNU algorithm does. 
 
 The null3 model was motivated by the observation that many
 high-scoring false positive hits in \prog{cmsearch} are to regions of
 the target database with with highly biased residue composition, in
 particular regions with high percentages of A and U residues. The
-first null model used by \software{infernal} is by default 25\% A, C,
+first null model used by Infernal is by default 25\% A, C,
 G, and U (this model can be changed with the \prog{--null} option to
 \prog{cmbuild}). If a model has a bias for a particular residue, for
 example A, and a target region is composed of an overrepresentation
@@ -490,14 +393,14 @@ then the null3 model probabilitiles will be calculated as $(0.4, 0.1,
 But now we've got \emph{two} null hypotheses. We said we report a bit
 score that's a log-odds ratio of our model likelihood and \emph{one}
 null hypothesis likelihood. How do we calculate a score if we have
-more than one null hypothesis? \software{infernal} does a bit of algebraic sleight
+more than one null hypothesis? Infernal does a bit of algebraic sleight
 of hand here, to arrive at an additive correction to the original
 score that it calls the ``null3 score correction''. 
 
 \subsubsection{derivation of the null3 score correction}
 
 We arrived at the parameters of the null3 model in a very \emph{ad
-hoc} way. However, after that, the way \software{infernal} arrives at the final bit
+hoc} way. However, after that, the way Infernal arrives at the final bit
 score once the null3 parameters have been determined is clean
 (e.g. derivable) Bayesian probability theory. It is analagous to the
 way \software{HMMER} uses the \emph{null2} score correction.
@@ -523,7 +426,7 @@ $M$ is:
 \]
 
 Recall that the log odds score (in units of bits) reported by
-\software{infernal}'s alignment algorithms is
+Infernal's alignment algorithms is
 
 \[
   s = \log_2 \frac{P(D | M)}{P(D | N)}.
@@ -561,9 +464,9 @@ $N_i$. Then, by algebraic rearrangement of Bayes' theorem,
    S = \log \frac{P(D | M) P(M)}{ \sum_{i} P(D | N_i) P(N_i)}. 
 \]
 
-We saw above that \software{infernal} internally calculates a log odds score $s$, of
+We saw above that Infernal internally calculates a log odds score $s$, of
 the model relative to the first null hypothesis. Let's now call that
-$s_M$, the alignment score of the model. \software{infernal} extends that same
+$s_M$, the alignment score of the model. Infernal extends that same
 scoring system to all additional competing hypotheses, calculating a
 log odds score relative to the first null hypothesis for any
 additional null hypotheses $i > 1$:
@@ -596,13 +499,13 @@ original score, $(s_M + \pi_M)$:
   S = (s_M + \pi_M) - \log \left( 1 + \sum_{i>1} e^{s_i + \pi_i} \right)
 \]
 
-So, to calculate its reported score, \software{infernal} uses four quantities:
+So, to calculate its reported score, Infernal uses four quantities:
 
 \begin{enumerate}
 \item [$s_M$] The (simple, uncorrected) log odds score for the model,
 calculated by optimal alignment of the model to the sequence.
 
-\item [$\pi_M$] The log odds of the priors, $\log P(M)/P(N_1)$. \software{infernal}
+\item [$\pi_M$] The log odds of the priors, $\log P(M)/P(N_1)$. Infernal
    implicitly assumes this factor to be 0.
 
 \item [$s_2$] The (simple, uncorrected) log odds score
@@ -610,7 +513,7 @@ calculated by optimal alignment of the model to the sequence.
    of the alignment under the null3 model.
 
 \item [$\pi_2$] The log odds of the priors, $\log P(N_2)/P(N_1)$. 
-\software{infernal} arbitrarily assumes that the null3 model is
+Infernal arbitrarily assumes that the null3 model is
 $\frac{1}{32}$ as likely as the main null model, so this factor
 is -5 bits.
 \end{enumerate}
@@ -621,17 +524,17 @@ The code that calculates the null3 correction is in
 The null3 correction is usually close to zero, for random sequences,
 but becomes a significant quantitative penalty on biased composition
 sequences.  It gets added to the original alignment score to form
-\software{infernal}'s final bit score.
+Infernal's final bit score.
 
 The null3 score correction is introduced in version 1.0 and was not
-present in any of the 0.x versions of \software{infernal}. This can
+present in any of the 0.x versions of Infernal. This can
 lead to large differences in the scores reported by 1.0 and previous
 versions. 
 
 The following table shows the penalty for a $100$ nucleotide hit with
 varying compositions of A, C, G, and U residues. This table is included to give you
 an idea of how severe the null3 correction is, and can be useful for
-comparing bit scores from \software{infernal} 1.0 to previous
+comparing bit scores from Infernal 1.0 to previous
 versions (which did not use the null3 correction). These are just a
 sample of the possible composition of hits you might see. Again, these
 scores are for $100$ nucleotide hits, to determine the correction for
