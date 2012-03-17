@@ -161,7 +161,6 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   hit->pass_idx         = -1;
 
   hit->srcL             = -1;
-  hit->maxW             = -1;
 
   hit->ad               = NULL;
   hit->flags            = CM_HIT_FLAGS_DEFAULT;
@@ -628,7 +627,6 @@ cm_tophits_CloneHitMostly(CM_TOPHITS *src_th, int h, CM_TOPHITS *dest_th)
   hit->pvalue   = src_th->hit[h]->pvalue;
   hit->evalue   = src_th->hit[h]->evalue;
   hit->srcL     = src_th->hit[h]->srcL;
-  hit->maxW     = src_th->hit[h]->maxW;
   hit->flags    = src_th->hit[h]->flags;
   hit->ad       = NULL;
 
@@ -1772,7 +1770,6 @@ cm_hit_Dump(FILE *fp, const CM_HIT *h)
   fprintf(fp, "start     = %" PRId64 "\n", h->start);
   fprintf(fp, "stop      = %" PRId64 "\n", h->stop);
   fprintf(fp, "srcL      = %" PRId64 "\n", h->srcL);
-  fprintf(fp, "maxW      = %d\n",  h->maxW);
   fprintf(fp, "in_rc     = %s\n",  h->in_rc ? "TRUE" : "FALSE");
   fprintf(fp, "root      = %d\n",  h->root);
   fprintf(fp, "mode      = %s\n",  MarginalMode(h->mode));

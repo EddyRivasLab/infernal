@@ -2079,7 +2079,7 @@ typedef struct cm_pipeline_s {
   int 		maxW;           /* # residues to overlap in adjacent windows*/
   int 		cmW;            /* CM's window length                       */
   int 		clen;           /* CM's consensus length of model           */
-  int64_t       cur_cm_idx;     /* model    index currently being used     */
+  int64_t       cur_cm_idx;     /* model    index currently being used      */
 
   int64_t       cur_seq_idx;    /* sequence index currently being searched */
   int64_t       cur_pass_idx;   /* pipeline pass index currently underway */
@@ -2103,12 +2103,15 @@ typedef struct cm_pipeline_s {
   int           show_accessions;/* TRUE to output accessions not names      */
   int           show_alignments;/* TRUE to compute and output alignments (default)*/
   int           do_hb_recalc;   /* TRUE to recalculate HMM bands for alignment    */
-  int           do_msvtight;    /* TRUE to use tight MSV window calculation from nhmmer */
+  int           do_msvbigwin;   /* TRUE to use big MSV window calculation from nhmmer */
   int           do_envwinbias;  /* TRUE to calc env bias for entire window  */
-  int           do_filcmW;      /* TRUE to use CM's window length for all HMM filters */
-  int           do_oldsplit;    /* TRUE to split windows the old way */
   double        xtau;           /* multiplier for tau when tightening bands */
   double        maxtau;         /* max tau when tightening bands            */
+  /* these are all currently hard-coded, in cm_pipeline_Create() */
+  float         smult;          /* 2.0;  W multiplier for window splitting */
+  float         wmult;          /* 1.0;  maxW will be max of wmult * cm->W and cmult * cm->clen */
+  float         cmult;          /* 1.25; maxW will be max of wmult * cm->W and cmult * cm->clen */
+  float         mlmult;         /* 0.10; om->max_length multiplier for MSV window defn */
   /* flags for timing experiments */
   int           do_time_F1;      /* TRUE to abort after Stage 1 MSV */
   int           do_time_F2;      /* TRUE to abort after Stage 2 Vit */
@@ -2267,6 +2270,7 @@ typedef struct cm_hit_s {
   int64_t        cm_idx;        /* model    index in the cmfile,  unique id for the model    */
   int64_t        seq_idx;       /* sequence index in the seqfile, unique id for the sequence */
   int            pass_idx;      /* index of pipeline pass hit was found on */
+  int64_t        srcL;          /* full length of source sequence the hit is from */
   int64_t        start, stop;   /* start/end points of hit */
   int            in_rc;         /* TRUE if hit is in reverse complement of a target, FALSE if not */
   int            root;          /* internal state entry point, != 0 if hit involves a local begin */
@@ -2276,10 +2280,6 @@ typedef struct cm_hit_s {
   double         evalue;	/* E-value of the hit   (with corrections) */
   CM_ALIDISPLAY *ad;            /* alignment display */
   uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_REMOVED_DUPLICATE */
-
-  /* variables necessary only from removing bogus hits from 5'/3' terminii */
-  int64_t        srcL;          /* full length of source sequence the hit is from */
-  int            maxW;          /* predicted max reasonable size of a hit for model this hit is to */
 
 } CM_HIT;
 

@@ -125,10 +125,10 @@ main(int argc, char **argv)
   else if(esl_opt_IsUsed(go, "--cut_nc")) { output_mode = OUTMODE_NC;        }
 
   if(output_mode == OUTMODE_DEFAULT) { /* default mode, general model stats */
-    fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %12s\n",    "",      "",                     "",             "",         "",         "",     "",      "",      "", "",    "rel entropy");
-    fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %12s\n",    "",      "",                     "",             "",         "",         "",     "",      "",      "", "",    "------------");
-    fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %5s  %5s\n", "idx",  "name",                 "accession",    "nseq",     "eff_nseq", "clen", "bps",   "bifs",  "W",     "M",     "CM",     "HMM");
-    fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %5s  %5s\n", "----", "--------------------", "---------", "--------", "--------", "----", "----", "----",   "----", "-----", "-----", "-----");
+    fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %5s  %5s  %4s  %4s  %5s  %12s\n",    "",      "",                     "",             "",         "",         "",     "",      "",      "", "",    "rel entropy");
+    fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %5s  %5s  %4s  %4s  %5s  %12s\n",    "",      "",                     "",             "",         "",         "",     "",      "",      "", "",    "------------");
+    fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %5s  %5s  %4s  %4s  %5s  %5s  %5s\n", "idx",  "name",                 "accession",    "nseq",     "eff_nseq", "clen", "W", "bps",   "bifs",      "M",     "CM",     "HMM");
+    fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %5s  %5s  %4s  %4s  %5s  %5s  %5s\n", "----", "--------------------", "---------", "--------", "--------", "-----", "-----", "----",   "----", "-----", "-----", "-----");
   }
   else { 
     if(output_mode == OUTMODE_BITSCORES) { 
@@ -244,16 +244,16 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode)
     /* build the cp9 HMM, just to get HMM RE */
     if((status = build_cp9_hmm(cm, errbuf, FALSE, 0.0001, 0, &(cm->cp9), &(cm->cp9map))) != eslOK) cm_Fail(errbuf);
 
-    fprintf(stdout, "%6d  %-20s  %-9s  %8d  %8.2f  %4d  %4d  %4d  %4d  %5d  %5.3f  %5.3f\n",
+    fprintf(stdout, "%6d  %-20s  %-9s  %8d  %8.2f  %5d  %5d  %4d  %4d  %5d  %5.3f  %5.3f\n",
 	    ncm,
 	    cm->name,
 	    cm->acc == NULL ? "-" : cm->acc,
 	    cm->nseq,
 	    cm->eff_nseq,
 	    cm->clen,
+	    cm->W,
 	    CMCountStatetype(cm, MP_st),
 	    CMCountStatetype(cm, B_st),
-	    cm->W,
 	    cm->M,
 	    cm_MeanMatchRelativeEntropy(cm),
 	    cp9_MeanMatchRelativeEntropy(cm->cp9));

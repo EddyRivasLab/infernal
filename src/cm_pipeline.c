@@ -25,6 +25,7 @@
 #include "structs.h"
 
 #define DEBUGPIPELINE  0
+#define DEBUGMSVMERGE  0
 
 static int  pli_p7_filter         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
 static int  pli_p7_env_def        (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
@@ -146,7 +147,6 @@ static int p7_pli_LooseExtendAndMergeWindows (P7_OPROFILE *om, FM_WINDOWLIST *wi
  *            | --ns         |  number of domain/envelope tracebacks        |     200   |
  *            | --anonbanded |  do not use bands when aligning hits         |   FALSE   |
  *            | --anewbands  |  calculate new bands for hit alignment       |   FALSE   |
- *            | --envhitbias |  env bias restricted to envelope             |   FALSE   |
  *            | --nogreedy   |  use optimal CM hit resolution, not greedy   |   FALSE   |
  *            | --filcmW     |  use CM's W not HMM's for all filter stages  |   FALSE   |
  *            | --cp9noel    |  turn off EL state in CP9 HMM                |   FALSE   |
@@ -220,10 +220,6 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->show_accessions = esl_opt_GetBoolean(go, "--acc")        ? TRUE  : FALSE;
   pli->show_alignments = esl_opt_GetBoolean(go, "--noali")      ? FALSE : TRUE;
   pli->do_hb_recalc    = esl_opt_GetBoolean(go, "--anewbands")  ? TRUE  : FALSE;
-  pli->do_msvtight     = esl_opt_GetBoolean(go, "--msvtight")   ? TRUE  : FALSE;
-  pli->do_envwinbias   = esl_opt_GetBoolean(go, "--envhitbias") ? FALSE : TRUE;
-  pli->do_filcmW       = esl_opt_GetBoolean(go, "--filcmW")     ? TRUE  : FALSE;
-  pli->do_oldsplit     = esl_opt_GetBoolean(go, "--oldsplit")   ? TRUE : FALSE;
   pli->xtau            = esl_opt_GetReal(go, "--xtau");
   pli->maxtau          = esl_opt_GetReal(go, "--maxtau");
   pli->do_time_F1      = esl_opt_GetBoolean(go, "--timeF1")     ? TRUE  : FALSE;
@@ -232,6 +228,14 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_time_F4      = esl_opt_GetBoolean(go, "--timeF4")     ? TRUE  : FALSE;
   pli->do_time_F5      = esl_opt_GetBoolean(go, "--timeF5")     ? TRUE  : FALSE;
   pli->do_time_F6      = esl_opt_GetBoolean(go, "--timeF6")     ? TRUE  : FALSE;
+
+  /* hard-coded miscellaneous parameters that were command-line
+   * settable in past testing, and could be in future testing.
+   */
+  pli->smult           = 2.0;
+  pli->wmult           = 1.0;
+  pli->cmult           = 1.25;
+  pli->mlmult          = 0.1;
   
   /* Configure reporting thresholds */
   pli->by_E            = TRUE;
@@ -375,6 +379,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->do_msvbias = pli->do_vitbias = pli->do_fwdbias = pli->do_gfwdbias = pli->do_edefbias = pli->do_fcykenv = FALSE;
     pli->F1  = pli->F2  = pli->F3  = pli->F4  = pli->F5  = pli->F6 = 1.0;
     pli->F1b = pli->F2b = pli->F3b = pli->F4b = pli->F5b = pli->F6 = 1.0;
+    /* D&C truncated alignment is not robust, so we don't allow it */
+    pli->do_trunc_ends = FALSE;
+    pli->do_trunc_any  = FALSE;
   }
   else if(esl_opt_GetBoolean(go, "--nohmm")) { 
     pli->do_nohmm  = TRUE;
@@ -382,6 +389,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->do_msvbias = pli->do_vitbias = pli->do_fwdbias = pli->do_gfwdbias = pli->do_edefbias = FALSE;
     pli->F1  = pli->F2  = pli->F3  = pli->F4  = pli->F5  = 1.0;
     pli->F1b = pli->F2b = pli->F3b = pli->F4b = pli->F5b = 1.0;
+    /* D&C truncated alignment is not robust, so we don't allow it */
+    pli->do_trunc_ends = FALSE;
+    pli->do_trunc_any  = FALSE;
   }
   else if(esl_opt_GetBoolean(go, "--mid")) { 
     pli->do_mid  = TRUE;
@@ -608,7 +618,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     }
   }
   /* should we setup for truncated alignments? */
-  if(! esl_opt_GetBoolean(go, "--notrunc")) pli->cm_config_opts |= CM_CONFIG_TRUNC; 
+  if(pli->do_trunc_ends || pli->do_trunc_any) pli->cm_config_opts |= CM_CONFIG_TRUNC; 
 
   /* will we be requiring a CM_SCAN_MX? a CM_TR_SCAN_MX? */
   if(pli->do_max   ||                    /* max mode, no filters */
@@ -616,9 +626,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
      esl_opt_GetBoolean(go, "--fqdb") || /* user specified to use --fqdb, do it */
      esl_opt_GetBoolean(go, "--qdb")) {  /* user specified to use --qdb,  do it */
     pli->cm_config_opts |= CM_CONFIG_SCANMX;
-    if(! esl_opt_GetBoolean(go, "--notrunc")) { 
-      pli->cm_config_opts |= CM_CONFIG_TRSCANMX; 
-    }
+    if(pli->do_trunc_ends || pli->do_trunc_any) pli->cm_config_opts |= CM_CONFIG_TRSCANMX;
   }
   /* will we be requiring non-banded alignment matrices? */
   if(esl_opt_GetBoolean(go, "--anonbanded") || pli->do_max || pli->do_nohmm) { 
@@ -626,6 +634,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->cm_align_opts |= CM_ALIGN_NONBANDED;
     pli->cm_align_opts |= CM_ALIGN_SMALL;
     pli->cm_align_opts |= CM_ALIGN_CYK;
+    /* D&C truncated alignment is not robust, so we don't allow it */
+    pli->do_trunc_ends = FALSE;
+    pli->do_trunc_any  = FALSE;
   }
   else { 
     pli->cm_align_opts |= CM_ALIGN_HBANDED;
@@ -836,12 +847,11 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     /* copy some values from the model */
     pli->cmW  = cm_W;
     pli->clen = cm_clen;
-
-    /* determine pli->maxW, this will be the number of residues
-     * that must overlap between adjacent windows on a
-     * single sequence, this is MAX of cm->W and om->max_length
+    /* determine pli->maxW, this will be the number of residues that
+     * must overlap between adjacent windows on a single sequence,
+     * this is MAX of cm->W and pli->cmult * cm->clen.
      */
-    pli->maxW = (pli->do_filcmW) ? cm_W : ESL_MAX(cm_W, om->max_length);
+    pli->maxW = ESL_MAX(pli->wmult * cm_W, pli->cmult * cm->clen);
   }
   if(pli->mode == CM_SEARCH_SEQS || modmode == CM_NEWMODEL_CM) { 
     /* set B updates: case 1 and 3 do these (they require a valid CM) */
@@ -1337,7 +1347,12 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
 
   CM_PLI_ACCT *pli_acct = &(pli->acct[pass_idx]);
 
-  fprintf(ofp, "Internal pipeline statistics summary: %s\n", cm_pli_DescribePass(pass_idx));
+  if(pli->do_allstats) { 
+    fprintf(ofp, "Internal pipeline statistics summary: %s\n", cm_pli_DescribePass(pass_idx));
+  }
+  else { 
+    fprintf(ofp, "Internal pipeline statistics summary:\n");
+  }
   fprintf(ofp, "-------------------------------------\n");
   if (pli->mode == CM_SEARCH_SEQS) {
     fprintf(ofp,   "Query model(s):                                    %15" PRId64 "  (%" PRId64 " consensus positions)\n",     
@@ -1788,7 +1803,7 @@ cm_pli_PassAllowsTruncation(int pass_idx)
  *            survive all filters, the start and end positions of the
  *            windows are stored and returned in <ret_ws> and
  *            <ret_we> respectively.
-
+ *
  *            <eslEINVAL> if (in a scan pipeline) we're supposed to
  *            set GA/TC/NC bit score thresholds but the model doesn't
  *            have any.
@@ -1832,7 +1847,6 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   ESL_DSQ         *subdsq;           /* a ptr to the first position of a window */
   int              have_rest;        /* do we have the full <om> read in? */
   FM_WINDOWLIST    wlist;            /* list of windows, structure taken by p7_MSVFilter_longtarget() */
-  int              Wsplit;           /* number of residues to add when splitting windows */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   p7_omx_GrowTo(pli->oxf, om->M, 0, sq->n);    /* expand the one-row omx if needed */
@@ -1842,13 +1856,11 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
    * soon be passed on to later phases of the pipeline;  used to recover some bits of the score
    * that we would miss if we left length parameters set to the full target length */
 
-  if(pli->do_filcmW) { 
-    p7_oprofile_ReconfigMSVLength(om, pli->cmW);
-    om->max_length = pli->cmW;
-  }
-  else { 
-    p7_oprofile_ReconfigMSVLength(om, om->max_length); /* nhmmer's way */
-  }
+  /* Set MSV length as pli->maxW/
+   * Note: this differs from nhmmer, which uses om->max_length
+   */
+  p7_oprofile_ReconfigMSVLength(om, pli->maxW);
+  om->max_length = pli->maxW;
 
   #if DEBUGPIPELINE
   printf("\nPIPELINE p7Filter() %s  %" PRId64 " residues\n", sq->name, sq->n);
@@ -1861,21 +1873,14 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   /***************************************************/
   /* Filter 1: MSV, long target-variant, with p7 HMM */
   if(pli->do_msv) { 
-#if 0
-    /* ws_int, we_int: workaround for p7_MSVFilter_longtarget() taking integers, instead of int64_t */
-    int *ws_int;
-    int *we_int;
-    p7_MSVFilter_longtarget(sq->dsq, sq->n, om, pli->oxf, bg, pli->F1, &ws_int, &we_int, &nwin);
-    ESL_ALLOC(ws, sizeof(int64_t) * nwin);
-    ESL_ALLOC(we, sizeof(int64_t) * nwin);
-    for(i = 0; i < nwin; i++) { ws[i] = ws_int[i]; we[i] = we_int[i]; }
-    //free(ws_int); free(we_int);
-#endif
     fm_initWindows(&wlist);
     status = p7_MSVFilter_longtarget(sq->dsq, sq->n, om, pli->oxf, msvdata, bg, pli->F1, &wlist);
 
     if(wlist.count > 0) { 
-      if(pli->do_msvtight) { 
+      if(pli->do_msvbigwin) { 
+	p7_pli_LooseExtendAndMergeWindows(om, &wlist, sq->n);
+      }   
+      else { 
 	/* In scan mode, if at least one window passes the MSV filter, read the rest of the profile */
 	if (pli->mode == CM_SCAN_MODELS && (! have_rest)) {
 	  if (pli->cmfp) p7_oprofile_ReadRest(pli->cmfp->hfp, om);
@@ -1886,9 +1891,6 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
 	p7_hmm_MSVDataComputeRest(om, msvdata);
 	p7_pli_ExtendAndMergeWindows(om, msvdata, &wlist, sq->n);
       }
-      else { /* do_msvtight is FALSE */
-	p7_pli_LooseExtendAndMergeWindows(om, &wlist, sq->n);
-      }   
     }   
     ESL_ALLOC(ws, sizeof(int64_t) * wlist.count);
     ESL_ALLOC(we, sizeof(int64_t) * wlist.count);
@@ -1897,8 +1899,11 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
       ws[i] =         wlist.windows[i].n;
       we[i] = ws[i] + wlist.windows[i].length - 1;
     }
-    /* split up windows > (3.0 * W) into length 2W-1, with W-1 overlapping residues */
-    Wsplit = pli->do_oldsplit ? pli->cmW : pli->maxW;
+    /* split up windows > (pli->wmult * pli->cmW) into length 2W,
+     * with W-1 overlapping residues, pli->wmult is 2.0. (So yes, 
+     * if window is 2*W+1 residues we search all but one residue
+     * twice.)
+     */
     nalloc = nwin + 100;
     ESL_ALLOC(new_ws, sizeof(int64_t) * nalloc);
     ESL_ALLOC(new_we, sizeof(int64_t) * nalloc);
@@ -1909,10 +1914,10 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
 	ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
 	ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
       }
-      if(wlen > (3. * pli->maxW)) { 
+      if(wlen > (pli->wmult * pli->cmW)) { 
 	/* split this window */
-	new_ws[i2] = ws[i]; 
-	new_we[i2] = ESL_MIN((new_ws[i2] + (2 * Wsplit) - 1), we[i]);
+	new_ws[i2]   = ws[i]; 
+	new_we[i2]   = ESL_MIN((new_ws[i2] + (2 * pli->cmW) - 1), we[i]);
 	while(new_we[i2] < we[i]) { 
 	  i2++;
 	  if((i2+1) == nalloc) { 
@@ -1920,8 +1925,8 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
 	    ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
 	    ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
 	  }
-	  new_ws[i2] = ESL_MIN(new_ws[i2-1] + Wsplit, we[i]);
-	  new_we[i2] = ESL_MIN(new_we[i2-1] + Wsplit, we[i]);
+	  new_ws[i2]   = ESL_MIN(new_ws[i2-1] + pli->cmW, we[i]);
+	  new_we[i2]   = ESL_MIN(new_we[i2-1] + pli->cmW, we[i]);
 	}	    
       }
       else { /* do not split this window */
@@ -1945,8 +1950,8 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
 	nwin++; /* if the (int) cast in previous line removed any fraction of a window, we add it back here */
       }
     }
-    ESL_ALLOC(ws, sizeof(int64_t) * nwin);
-    ESL_ALLOC(we, sizeof(int64_t) * nwin);
+    ESL_ALLOC(ws,     sizeof(int64_t) * nwin);
+    ESL_ALLOC(we,     sizeof(int64_t) * nwin);
     for(i = 0; i < nwin; i++) { 
       ws[i] = 1 + (i * (pli->maxW + 1));
       we[i] = ESL_MIN((ws[i] + (2*pli->maxW) - 1), sq->n);
@@ -2137,7 +2142,6 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
       if(survAA[p7_SURV_F3b][i]) { 
 	new_ws[i2] = ws[i];
 	new_we[i2] = we[i];
-	/*printf("window %5d  %10d..%10d\n", i2+1, new_ws[i2], new_we[i2]);*/
 	i2++;
       }
     }
@@ -2166,9 +2170,9 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     }
     nsurv_fwd = i2;
     free(useme);
-    free(ws);
-    free(we);
-    free(wp);
+    free(ws); ws = NULL;
+    free(we); we = NULL;
+    free(wp); wp = NULL;
     ws = new_ws;
     we = new_we;
   }    
@@ -2268,12 +2272,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
     return eslOK;    /* if there's no windows to search in, return */
   }
 
-  if(! pli->do_msvtight) { 
-    /* if ! do_msvtight we should only have 1 window if we're researching a terminus */
-    if((pli->cur_pass_idx == PLI_PASS_5P_ONLY_FORCE || pli->cur_pass_idx == PLI_PASS_3P_ONLY_FORCE || pli->cur_pass_idx == PLI_PASS_5P_AND_3P_FORCE) && 
-       (nwin > 1)) ESL_FAIL(eslFAIL, pli->errbuf, "researching terminus but more than 1 window exists");
-  }
-
   /* Will we use local envelope definition? Only if we're in the
    * special pipeline pass where we allow any truncated hits (only
    * possibly true if pli->do_trunc_any is TRUE).
@@ -2347,17 +2345,10 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
     printf("p7 envdef win: %4d of %4d [%6" PRId64 "..%6" PRId64 "] pass: %" PRId64 "\n", i, nwin, ws[i], we[i], pli->cur_pass_idx);
 #endif
     /* if we require first or final residue, and don't have it, then
-     * this window doesn't survive. This should only happen if
-     * do_msvtight, else it's an error.
+     * this window doesn't survive.
      */
-    if(cm_pli_PassEnforcesFirstRes(pli->cur_pass_idx) && ws[i] != 1) { 
-      if(pli->do_msvtight) { continue; }
-      else                 { ESL_FAIL(eslFAIL, pli->errbuf, "researching 5' terminus but residue 1 outside window"); }
-    }
-    if(cm_pli_PassEnforcesFinalRes(pli->cur_pass_idx) && we[i] != sq->n) { 
-      if(pli->do_msvtight) { continue; }
-      else                 { ESL_FAIL(eslFAIL, pli->errbuf, "researching 5' terminus but residue 1 outside window"); }
-    }
+    if(cm_pli_PassEnforcesFirstRes(pli->cur_pass_idx) && ws[i] != 1)     continue;
+    if(cm_pli_PassEnforcesFinalRes(pli->cur_pass_idx) && we[i] != sq->n) continue; 
 
     wlen   = we[i]   - ws[i] + 1;
     subdsq = sq->dsq + ws[i] - 1;
@@ -2524,7 +2515,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       env_len = pli->ddef->dcl[d].jenv - pli->ddef->dcl[d].ienv +1;
       env_sc  = pli->ddef->dcl[d].envsc;
       
-      /* Make a correction to the score based on the fact that our envsc ,
+      /* Make a correction to the score based on the fact that our envsc,
        * from hmmsearch's p7_pipeline():
        * here is the p7_pipeline code, verbatim: 
        *  Ld = hit->dcl[d].jenv - hit->dcl[d].ienv + 1;
@@ -2561,16 +2552,10 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 
       /* if we're doing a bias filter on envelopes - check if we skip envelope due to that */
       if(pli->do_edefbias) {
-	if(pli->do_envwinbias) { 
-	  /* calculate bias filter score for entire window */
-	  p7_bg_FilterScore(bg, seq->dsq, wlen, &filtersc);
-	}
-	else {
-	  /* calculate bias filter score for only the residues in the envelope */
-	  p7_bg_FilterScore(bg, seq->dsq + pli->ddef->dcl[d].ienv - 1, env_len, &filtersc);
-	  /* add in null1-only score for residues in the window but outside the envelope */
-	  filtersc += (float) (wlen-env_len) * logf(bg->p1);
-	}
+	/* calculate bias filter score for entire window 
+	 * may want to test alternative strategies in the future.
+	 */
+	p7_bg_FilterScore(bg, seq->dsq, wlen, &filtersc);
 	env_sc_for_pvalue = (env_sc - filtersc) / eslCONST_LOG2;
 	
 	if(use_Rgm) env_sc_for_pvalue += Rgm_correction / eslCONST_LOG2; /* glocal env def penalized 0. for ends and log(1/Lgm->M) for begins into any state */
@@ -2999,7 +2984,6 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
       hit->cm_idx   = pli->cur_cm_idx;
       hit->seq_idx  = pli->cur_seq_idx;
       hit->pass_idx = pli->cur_pass_idx;
-      hit->maxW     = pli->maxW;
       hit->pvalue   = esl_exp_surv(hit->score, cm->expA[pli->final_cm_exp_mode]->mu_extrap, cm->expA[pli->final_cm_exp_mode]->lambda);
       hit->srcL     = sq->L; /* this may be -1, in which case it will be updated by caller (cmsearch or cmscan) when full length is known */
 
