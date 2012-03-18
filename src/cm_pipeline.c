@@ -854,7 +854,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
      * must overlap between adjacent windows on a single sequence,
      * this is MAX of cm->W and pli->cmult * cm->clen.
      */
-    pli->maxW = ESL_MAX(pli->wmult * cm_W, pli->cmult * cm->clen);
+    pli->maxW = ESL_MAX(pli->wmult * cm_W, pli->cmult * cm_clen);
   }
   if(pli->mode == CM_SEARCH_SEQS || modmode == CM_NEWMODEL_CM) { 
     /* set B updates: case 1 and 3 do these (they require a valid CM) */
