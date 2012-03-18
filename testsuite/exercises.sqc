@@ -102,16 +102,23 @@
 1  exercise  3/b/convert-emit   @src/cmemit@    %B.CONVERTED.3.CM% 
 
 # same thing but with -1 (output in 1.0 format)
-1  exercise  t/1/convert        @src/cmconvert@ -1 !testsuite/tRNA.1p0.cm! > %B.CONVERTED.TRNA.CM%
-1  exercise  v/1/convert        @src/cmconvert@ -1 !testsuite/Vault.1p0.cm! > %B.CONVERTED.VAULT.CM%
-1  exercise  s/1/convert        @src/cmconvert@ -1 !testsuite/Plant_SRP.1p0.cm! > %B.CONVERTED.SRP.CM%
-1  exercise  3/1/convert        @src/cmconvert@ -1 !testsuite/3.1p0.cm! > %B.CONVERTED.3.CM%
+1  exercise  t/1/convert        @src/cmconvert@ -1 !testsuite/tRNA.1p0.cm! > %1.TRNA.CM%
+1  exercise  v/1/convert        @src/cmconvert@ -1 !testsuite/Vault.1p0.cm! > %1.VAULT.CM%
+1  exercise  s/1/convert        @src/cmconvert@ -1 !testsuite/Plant_SRP.1p0.cm! > %1.SRP.CM%
+1  exercise  3/1/convert        @src/cmconvert@ -1 !testsuite/3.1p0.cm! > %1.3.CM%
 
-1  exercise  t/b/convert-emit    @src/cmemit@    %B.CONVERTED.TRNA.CM% 
-1  exercise  v/b/convert-emit   @src/cmemit@    %B.CONVERTED.VAULT.CM% 
-1  exercise  s/b/convert-emit   @src/cmemit@    %B.CONVERTED.SRP.CM% 
-1  exercise  3/b/convert-emit   @src/cmemit@    %B.CONVERTED.3.CM% 
+#convert 1.0 converted file to 1.1
+1  exercise  t/1back/convert    @src/cmconvert@ %1.TRNA.CM%  > %1.CONVERTED.TRNA.CM%
+1  exercise  v/1back/convert    @src/cmconvert@ %1.VAULT.CM% > %1.CONVERTED.VAULT.CM%
+1  exercise  s/1back/convert    @src/cmconvert@ %1.SRP.CM%   > %1.CONVERTED.SRP.CM%
+1  exercise  3/1back/convert    @src/cmconvert@ %1.3.CM% > %1.CONVERTED.3.CM%
 
+1  exercise  t/b/convert-emit   @src/cmemit@    %1.CONVERTED.TRNA.CM% 
+1  exercise  v/b/convert-emit   @src/cmemit@    %1.CONVERTED.VAULT.CM% 
+1  exercise  s/b/convert-emit   @src/cmemit@    %1.CONVERTED.SRP.CM% 
+1  exercise  3/b/convert-emit   @src/cmemit@    %1.CONVERTED.3.CM% 
+
+# convert calibrated files
 1  exercise  t/convertC         @src/cmconvert@ !testsuite/tRNA.1p0.calibrated.cm! > %CONVERTED.TRNA.C.CM%
 1  exercise  v/convertC         @src/cmconvert@ !testsuite/Vault.1p0.calibrated.cm! > %CONVERTED.VAULT.C.CM%
 1  exercise  s/convertC         @src/cmconvert@ !testsuite/Plant_SRP.1p0.calibrated.cm! > %CONVERTED.SRP.C.CM%
