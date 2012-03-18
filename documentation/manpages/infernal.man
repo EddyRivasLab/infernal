@@ -1,7 +1,7 @@
 .TH "INFERNAL" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
 
 .SH NAME
-INFERNAL - sequence analysis using profiles of RNA sequence and secondary structure consensus
+INFERANAL - sequence analysis using profiles of RNA sequence and secondary structure consensus
 
 .SH SYNOPSIS
 

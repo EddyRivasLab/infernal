@@ -198,7 +198,7 @@ if($do_indi) {
     if($do_onejob_only) { die "-I doesn't work with -O"; }
     if($rmark_script !~ m/x-cmsearch$/) { die "-I only works with x-cmsearch"; }
     for($i = 1; $i <= $nindi; $i++) { 
-	$tmpfile = "$benchmark_pfx-1.fa";
+	$tmpfile = "$benchmark_pfx-$i.fa";
 	if (! -e $tmpfile)  { die "with -I, $tmpfile doesn't exist"; }
 	$fafileA[($i-1)] = $tmpfile;
     }
