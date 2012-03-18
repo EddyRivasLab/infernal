@@ -112,7 +112,7 @@ static int p7_pli_LooseExtendAndMergeWindows (P7_OPROFILE *om, FM_WINDOWLIST *wi
  *            | --noF2b      |  turn off Viterbi composition bias filter    |   FALSE   |
  *            | --noF3b      |  turn off local forward bias filter          |   FALSE   |
  *            | --noF4b      |  turn off glocal forward bias filter         |   FALSE   |
- *            | --noF5b      |  turn off per-envelope bias filter           |   FALSE   |
+ *            | --doF5b      |  turn on  per-envelope bias filter           |   TRUE    |
  * *** options for defining filter thresholds, usually NULL bc set in DB-size dependent manner
  *            | --F1         |  Stage 1  (MSV)         P value threshold    |    NULL   |
  *            | --F1b        |  Stage 1b (MSV bias)    P value threshold    |    NULL   |
@@ -335,13 +335,16 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
    * 4. default:   use all filters with DB-size dependent thresholds
    * 5. --rfam:    use all filters with strict thresholds (as if DB was size of RFAMSEQ)
    *
-   * strategy    F1/F1b?  F2/F2b?  F3/F3b?  F4/F4b?  F5/F5b?      F6?
+   * strategy       F1?*  F2/F2b?  F3/F3b?  F4/F4b?    F5?**      F6?
    * --------    -------  -------  -------  -------  -------  -------  
    * --max           off      off      off      off      off      off
    * --nohmm         off      off      off      off      off       on
    * --mid           off      off       on       on       on       on
    * default          on       on       on       on       on       on
    * --rfam           on       on       on       on       on       on
+   * 
+   *  * By default, F1b is always off.
+   * ** By default, F5b is always off.
    *
    * First set defaults, then make nec changes if --max, --nohmm, --mid or 
    * --rfam 
@@ -359,7 +362,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_gfwd       = TRUE;
   pli->do_gfwdbias   = TRUE;
   pli->do_edef       = TRUE;
-  pli->do_edefbias   = TRUE;
+  pli->do_edefbias   = FALSE;
   pli->do_fcyk       = TRUE;
   pli->F1            = esl_opt_GetReal(go, "--F1");
   pli->F1b           = esl_opt_GetReal(go, "--F1b");
@@ -519,7 +522,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   if(esl_opt_GetBoolean(go, "--noF2b"))    pli->do_vitbias  = FALSE;
   if(esl_opt_GetBoolean(go, "--noF3b"))    pli->do_fwdbias  = FALSE;
   if(esl_opt_GetBoolean(go, "--noF4b"))    pli->do_gfwdbias = FALSE;
-  if(esl_opt_GetBoolean(go, "--noF5b"))    pli->do_edefbias = FALSE;
+  if(esl_opt_GetBoolean(go, "--doF5b"))    pli->do_edefbias = TRUE;
 
 
   /* Finished setting filter stage on/off parameters and thresholds */
@@ -2314,7 +2317,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
     P7_HMM       *hmm = NULL;
     if (pli->cmfp      == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in pli_p7_env_def()");
     if (pli->cmfp->hfp == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in pli_p7_env_def()");
-    if((status = cm_p7_hmmfile_Read(pli->cmfp, pli->abc, om->offs[p7_MOFFSET], &hmm)) != eslOK) ESL_FAIL(status, pli->errbuf, pli->cmfp->errbuf);
+    if((status = cm_p7_hmmfile_Read(pli->cmfp, pli->abc, om->offs[p7_MOFFSET], &hmm)) != eslOK) ESL_FAIL(status, pli->errbuf, "%s", pli->cmfp->errbuf);
     
     if((*opt_gm) == NULL) { /* we need gm to create Lgm, Rgm or Tgm */
       *opt_gm = p7_profile_Create(hmm->M, pli->abc);
@@ -3344,7 +3347,7 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, CM_t **ret_cm)
   }
 #endif
   cm_file_Position(pli->cmfp, cm_offset);
-  if((status = cm_file_Read(pli->cmfp, FALSE, &(pli->abc), &cm)) != eslOK) ESL_FAIL(status, pli->errbuf, pli->cmfp->errbuf);
+  if((status = cm_file_Read(pli->cmfp, FALSE, &(pli->abc), &cm)) != eslOK) ESL_FAIL(status, pli->errbuf, "%s", pli->cmfp->errbuf);
 #ifdef HMMER_THREADS
   if (pli->cmfp->syncRead) { 
     if (pthread_mutex_unlock (&pli->cmfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");

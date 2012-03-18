@@ -499,7 +499,7 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int64_t offset, int in_revcomp, int do_
   int   i2print, j2print; /* i,j indices we'll print, used to deal with case of reverse complement */
   int   have_pcodes;      /* TRUE if posterior codes are valid */
 
-  printf("in PrintFancyAli sqfrom..sqto %d..%d in_revcomp: %d offset: %ld\n", ali->sqfrom, ali->sqto, in_revcomp, offset);
+  printf("in PrintFancyAli sqfrom..sqto %d..%d in_revcomp: %d offset: %" PRId64 "\n", ali->sqfrom, ali->sqto, in_revcomp, offset);
 
   have_pcodes = (ali->pcode != NULL) ? TRUE : FALSE;
 
