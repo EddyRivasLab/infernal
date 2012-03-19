@@ -135,7 +135,7 @@
 1  exercise  search:v/1k/noF2b       @src/cmsearch@  --noF2b %V.CM% %V1K%
 1  exercise  search:v/1k/noF3b       @src/cmsearch@  --noF3b %V.CM% %V1K%
 1  exercise  search:v/1k/noF4b       @src/cmsearch@  --noF4b %V.CM% %V1K%
-1  exercise  search:v/1k/noF5b       @src/cmsearch@  --noF5b %V.CM% %V1K%
+1  exercise  search:v/1k/doF5b       @src/cmsearch@  --doF5b %V.CM% %V1K%
 1  exercise  search:v/1k/F1          @src/cmsearch@  --F1 0.10 %V.CM% %V1K%
 1  exercise  search:v/1k/F1b         @src/cmsearch@  --doF1b --F1b 0.01 %V.CM% %V1K%
 1  exercise  search:v/1k/F2          @src/cmsearch@  --F2 0.001 %V.CM% %V1K%
@@ -145,7 +145,7 @@
 1  exercise  search:v/1k/F4          @src/cmsearch@  --F4 0.10 %V.CM% %V1K%
 1  exercise  search:v/1k/F4b         @src/cmsearch@  --F4b 1E-6 %V.CM% %V1K%
 1  exercise  search:v/1k/F5          @src/cmsearch@  --F5 0.001 %V.CM% %V1K%
-1  exercise  search:v/1k/F5b         @src/cmsearch@  --F5b 0.027 %V.CM% %V1K%
+1  exercise  search:v/1k/F5b         @src/cmsearch@  --doF5b --F5b 0.027 %V.CM% %V1K%
 1  exercise  search:v/1k/F6          @src/cmsearch@  --F6 1E-7 %V.CM% %V1K%
 
 1  exercise  search:v/1k/noF1/FZ     @src/cmsearch@  --noF1 --FZ 1000 %V.CM% %V1K%
@@ -157,7 +157,7 @@
 1  exercise  search:v/1k/noF2b/FZ    @src/cmsearch@  --noF2b --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/noF3b/FZ    @src/cmsearch@  --noF3b --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/noF4b/FZ    @src/cmsearch@  --noF4b --FZ 1000 %V.CM% %V1K%
-1  exercise  search:v/1k/noF5b/FZ    @src/cmsearch@  --noF5b --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/doF5b/FZ    @src/cmsearch@  --doF5b --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/F1/FZ       @src/cmsearch@  --F1 0.10 --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/F1b/FZ      @src/cmsearch@  --doF1b --F1b 0.01 --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/F2/FZ       @src/cmsearch@  --F2 0.001 --FZ 1000 %V.CM% %V1K%
@@ -167,13 +167,13 @@
 1  exercise  search:v/1k/F4/FZ       @src/cmsearch@  --F4 0.10 --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/F4b/FZ      @src/cmsearch@  --F4b 1E-6 --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/F5/FZ       @src/cmsearch@  --F5 0.001 --FZ 1000 %V.CM% %V1K%
-1  exercise  search:v/1k/F5b/FZ      @src/cmsearch@  --F5b 0.027 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/F5b/FZ      @src/cmsearch@  --doF5b --F5b 0.027 --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/F6/FZ       @src/cmsearch@  --F6 1E-7 --FZ 1000 %V.CM% %V1K%
 
-1  exercise  search:v/1k/Fall      @src/cmsearch@  --F1 0.07 --doF1b --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --F5b 1.0 --F6 1E-3 %V.CM% %V1K%
-1  exercise  search:v/1k/Fall/FZ   @src/cmsearch@  --F1 0.07 --doF1b --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --F5b 1.0 --F6 1E-3 --FZ 1000 %V.CM% %V1K%
-1  exercise  search:v/1k/Fnone     @src/cmsearch@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF5b --noF6 %V.CM% %V1K%
-1  exercise  search:v/1k/Fnone/FZ  @src/cmsearch@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF5b --noF6 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/Fall      @src/cmsearch@  --F1 0.07 --doF1b --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --doF5b --F5b 1.0 --F6 1E-3 %V.CM% %V1K%
+1  exercise  search:v/1k/Fall/FZ   @src/cmsearch@  --F1 0.07 --doF1b --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --doF5b --F5b 1.0 --F6 1E-3 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/Fnone     @src/cmsearch@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF6 %V.CM% %V1K%
+1  exercise  search:v/1k/Fnone/FZ  @src/cmsearch@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF6 --FZ 1000 %V.CM% %V1K%
 
 # envelope defn options
 1  exercise  search:v/1k/rt1        @src/cmsearch@  --rt1 0.15 %V.CM% %V1K%
@@ -223,9 +223,7 @@
 # other developer options
 1  exercise  search:v/1k/anb        @src/cmsearch@  --anonbanded --notrunc %V.CM% %V1K%
 1  exercise  search:v/1k/anwb       @src/cmsearch@  --anewbands %V.CM% %V1K%
-1  exercise  search:v/1k/evb        @src/cmsearch@  --envhitbias %V.CM% %V1K%
 1  exercise  search:v/1k/ng         @src/cmsearch@  --nogreedy %V.CM% %V1K%
-1  exercise  search:v/1k/filcmW     @src/cmsearch@  --filcmW %V.CM% %V1K%
 1  exercise  search:v/1k/cp9noel    @src/cmsearch@  --cp9noel %V.CM% %V1K%
 1  exercise  search:v/1k/cp9gloc    @src/cmsearch@  --cp9gloc %V.CM% %V1K%
 1  exercise  search:v/1k/null2      @src/cmsearch@  --null2 %V.CM% %V1K%

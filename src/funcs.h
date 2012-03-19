@@ -436,7 +436,7 @@ extern int   cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double
 extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, P7_OPROFILE *om, P7_BG *bg, int64_t cur_cm_idx);
 extern int   cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
 extern int   cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
-extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
+extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
 extern int   cm_pli_Statistics    (FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
 extern int   cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *w);
 extern int   cm_pli_SumStatistics (CM_PIPELINE *pli);
@@ -792,6 +792,7 @@ extern int        get_alphabet_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int s
 extern int        GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, int *ret_namewidth);
 extern int        GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, double **ret_gc_ct);
 extern int        E2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, double E, float *ret_sc);
+extern int        P2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, double P, float *ret_sc);
 extern double     Score2E(float x, double mu, double lambda, double eff_dbsize);
 extern int        ExpModeIsLocal(int exp_mode);
 extern int        ExpModeIsInside(int exp_mode);

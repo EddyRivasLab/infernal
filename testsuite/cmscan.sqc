@@ -141,7 +141,7 @@
 1  exercise  scan:v/1k/noF2b       @src/cmscan@  --noF2b %V.CM% %V1K%
 1  exercise  scan:v/1k/noF3b       @src/cmscan@  --noF3b %V.CM% %V1K%
 1  exercise  scan:v/1k/noF4b       @src/cmscan@  --noF4b %V.CM% %V1K%
-1  exercise  scan:v/1k/noF5b       @src/cmscan@  --noF5b %V.CM% %V1K%
+1  exercise  scan:v/1k/doF5b       @src/cmscan@  --doF5b %V.CM% %V1K%
 1  exercise  scan:v/1k/F1          @src/cmscan@  --F1 0.10 %V.CM% %V1K%
 1  exercise  scan:v/1k/F1b         @src/cmscan@  --doF1b --F1b 0.01 %V.CM% %V1K%
 1  exercise  scan:v/1k/F2          @src/cmscan@  --F2 0.001 %V.CM% %V1K%
@@ -151,7 +151,7 @@
 1  exercise  scan:v/1k/F4          @src/cmscan@  --F4 0.10 %V.CM% %V1K%
 1  exercise  scan:v/1k/F4b         @src/cmscan@  --F4b 1E-6 %V.CM% %V1K%
 1  exercise  scan:v/1k/F5          @src/cmscan@  --F5 0.001 %V.CM% %V1K%
-1  exercise  scan:v/1k/F5b         @src/cmscan@  --F5b 0.027 %V.CM% %V1K%
+1  exercise  scan:v/1k/F5b         @src/cmscan@  --doF5b --F5b 0.027 %V.CM% %V1K%
 1  exercise  scan:v/1k/F6          @src/cmscan@  --F6 1E-7 %V.CM% %V1K%
 
 1  exercise  scan:v/1k/noF1/FZ     @src/cmscan@  --noF1 --FZ 1000 %V.CM% %V1K%
@@ -163,7 +163,7 @@
 1  exercise  scan:v/1k/noF2b/FZ    @src/cmscan@  --noF2b --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/noF3b/FZ    @src/cmscan@  --noF3b --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/noF4b/FZ    @src/cmscan@  --noF4b --FZ 1000 %V.CM% %V1K%
-1  exercise  scan:v/1k/noF5b/FZ    @src/cmscan@  --noF5b --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/doF5b/FZ    @src/cmscan@  --doF5b --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/F1/FZ       @src/cmscan@  --F1 0.10 --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/F1b/FZ      @src/cmscan@  --doF1b --F1b 0.01 --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/F2/FZ       @src/cmscan@  --F2 0.001 --FZ 1000 %V.CM% %V1K%
@@ -173,11 +173,11 @@
 1  exercise  scan:v/1k/F4/FZ       @src/cmscan@  --F4 0.10 --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/F4b/FZ      @src/cmscan@  --F4b 1E-6 --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/F5/FZ       @src/cmscan@  --F5 0.001 --FZ 1000 %V.CM% %V1K%
-1  exercise  scan:v/1k/F5b/FZ      @src/cmscan@  --F5b 0.027 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/F5b/FZ      @src/cmscan@  --doF5b --F5b 0.027 --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/F6/FZ       @src/cmscan@  --F6 1E-7 --FZ 1000 %V.CM% %V1K%
 
-1  exercise  scan:v/1k/Fall      @src/cmscan@  --F1 0.07 --doF1b --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --F5b 1.0 --F6 1E-3 %V.CM% %V1K%
-1  exercise  scan:v/1k/Fall/FZ   @src/cmscan@  --F1 0.07 --doF1b --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --F5b 1.0 --F6 1E-3 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/Fall      @src/cmscan@  --F1 0.07 --doF1b --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --doF5b --F5b 1.0 --F6 1E-3 %V.CM% %V1K%
+1  exercise  scan:v/1k/Fall/FZ   @src/cmscan@  --F1 0.07 --doF1b --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --doF5b --F5b 1.0 --F6 1E-3 --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/Fnone     @src/cmscan@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF5b --noF6 %V.CM% %V1K%
 1  exercise  scan:v/1k/Fnone/FZ  @src/cmscan@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF5b --noF6 --FZ 1000 %V.CM% %V1K%
 
@@ -229,9 +229,7 @@
 # other developer options
 1  exercise  scan:v/1k/anb        @src/cmscan@  --anonbanded --notrunc %V.CM% %V1K%
 1  exercise  scan:v/1k/anwb       @src/cmscan@  --anewbands %V.CM% %V1K%
-1  exercise  scan:v/1k/evb        @src/cmscan@  --envhitbias %V.CM% %V1K%
 1  exercise  scan:v/1k/ng         @src/cmscan@  --nogreedy %V.CM% %V1K%
-1  exercise  scan:v/1k/filcmW     @src/cmscan@  --filcmW %V.CM% %V1K%
 1  exercise  scan:v/1k/cp9noel    @src/cmscan@  --cp9noel %V.CM% %V1K%
 1  exercise  scan:v/1k/cp9gloc    @src/cmscan@  --cp9gloc %V.CM% %V1K%
 1  exercise  scan:v/1k/null2      @src/cmscan@  --null2 %V.CM% %V1K%

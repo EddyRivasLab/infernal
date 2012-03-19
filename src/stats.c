@@ -298,6 +298,26 @@ int E2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, double E, float *ret_sc)
   return eslOK;
 }
 
+/* Function: P2ScoreGivenExpInfo()
+ * Date:     EPN, Sun Mar 18 10:58:17 2012
+ *
+ * Purpose:  Given a P-value <P> <E> and a exp tail stat structure
+ *           determine the bit score that will give a P-value 
+ *           of <P>.
+ *
+ * Returns:  eslOK on success, <ret_sc> filled with bit score
+ *           error code on failure, errbuf filled with message
+ */
+int P2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, double P, float *ret_sc)
+{
+  float sc;
+  /* contract checks */
+  if(ret_sc == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "P2ScoreGivenExpInfo, ret_sc is NULL");
+  sc  = exp->mu_extrap + (log(P) / (-1 * exp->lambda));
+  *ret_sc = sc;
+  return eslOK;
+}
+
 /* Function: Score2E()
  * Date:     EPN, Fri Feb 15 12:40:21 2008
  *

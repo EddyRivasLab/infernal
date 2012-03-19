@@ -28,7 +28,7 @@
 #define DEBUGMSVMERGE  0
 
 static int  pli_p7_filter         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
-static int  pli_p7_env_def        (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
+static int  pli_p7_env_def        (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 static int  pli_cyk_env_filter    (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *p7es, int64_t *p7ee, int np7env, CM_t **opt_cm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 static int  pli_cyk_seq_filter    (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **opt_cm, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
 static int  pli_final_stage       (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm);
@@ -310,7 +310,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
    * database size was passed in, if -Z <x> enabled, we overwrite the
    * passed in value with <x>.
    */
-  if (esl_opt_IsUsed(go, "-Z")) { 
+  if (esl_opt_IsOn(go, "-Z")) { 
       pli->Z_setby = CM_ZSETBY_OPTION;
       pli->Z       = (int64_t) (esl_opt_GetReal(go, "-Z") * 1000000.); 
   }
@@ -421,7 +421,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
      * by a systematic search over possible filter threshold combinations.
      * xref: ~nawrockie/notebook/11_0513_inf_dcmsearch_thresholds/00LOG
      */
-    Z_Mb = esl_opt_IsUsed(go, "--FZ") ? esl_opt_GetReal(go, "--FZ") : pli->Z / 1000000.;
+    Z_Mb = esl_opt_IsOn(go, "--FZ") ? esl_opt_GetReal(go, "--FZ") : pli->Z / 1000000.;
     if(Z_Mb >= (100000. - eslSMALLX1)) { /* Z >= 100 Gb */
       pli->F1 = pli->F1b = 0.05;
       pli->F2 = pli->F2b = 0.04;
@@ -493,21 +493,21 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
    * combinations.
    */
   if((! pli->do_max) && (! pli->do_nohmm) && (! pli->do_mid)) { 
-    if(esl_opt_IsUsed(go, "--F1"))  { pli->do_msv      = TRUE; pli->F1  = esl_opt_GetReal(go, "--F1");  }
-    if(esl_opt_IsUsed(go, "--F1b")) { pli->do_msvbias  = TRUE; pli->F1b = esl_opt_GetReal(go, "--F1b"); }
-    if(esl_opt_IsUsed(go, "--F2"))  { pli->do_vit      = TRUE; pli->F2  = esl_opt_GetReal(go, "--F2");  }
-    if(esl_opt_IsUsed(go, "--F2b")) { pli->do_vitbias  = TRUE; pli->F2b = esl_opt_GetReal(go, "--F2b"); }
+    if(esl_opt_IsOn(go, "--F1"))  { pli->do_msv      = TRUE; pli->F1  = esl_opt_GetReal(go, "--F1");  }
+    if(esl_opt_IsOn(go, "--F1b")) { pli->do_msvbias  = TRUE; pli->F1b = esl_opt_GetReal(go, "--F1b"); }
+    if(esl_opt_IsOn(go, "--F2"))  { pli->do_vit      = TRUE; pli->F2  = esl_opt_GetReal(go, "--F2");  }
+    if(esl_opt_IsOn(go, "--F2b")) { pli->do_vitbias  = TRUE; pli->F2b = esl_opt_GetReal(go, "--F2b"); }
   }
   if((! pli->do_max) && (! pli->do_nohmm)) { 
-    if(esl_opt_IsUsed(go, "--F3"))  { pli->do_fwd        = TRUE; pli->F3  = esl_opt_GetReal(go, "--F3");  }
-    if(esl_opt_IsUsed(go, "--F3b")) { pli->do_fwdbias    = TRUE; pli->F3b = esl_opt_GetReal(go, "--F3b"); }
-    if(esl_opt_IsUsed(go, "--F4"))  { pli->do_gfwd       = TRUE; pli->F4  = esl_opt_GetReal(go, "--F4");  }
-    if(esl_opt_IsUsed(go, "--F4b")) { pli->do_gfwdbias   = TRUE; pli->F4b = esl_opt_GetReal(go, "--F4b"); }
-    if(esl_opt_IsUsed(go, "--F5"))  { pli->do_edef       = TRUE; pli->F5  = esl_opt_GetReal(go, "--F5");  }
-    if(esl_opt_IsUsed(go, "--F5b")) { pli->do_edefbias   = TRUE; pli->F5b = esl_opt_GetReal(go, "--F5b"); }
+    if(esl_opt_IsOn(go, "--F3"))  { pli->do_fwd        = TRUE; pli->F3  = esl_opt_GetReal(go, "--F3");  }
+    if(esl_opt_IsOn(go, "--F3b")) { pli->do_fwdbias    = TRUE; pli->F3b = esl_opt_GetReal(go, "--F3b"); }
+    if(esl_opt_IsOn(go, "--F4"))  { pli->do_gfwd       = TRUE; pli->F4  = esl_opt_GetReal(go, "--F4");  }
+    if(esl_opt_IsOn(go, "--F4b")) { pli->do_gfwdbias   = TRUE; pli->F4b = esl_opt_GetReal(go, "--F4b"); }
+    if(esl_opt_IsOn(go, "--F5"))  { pli->do_edef       = TRUE; pli->F5  = esl_opt_GetReal(go, "--F5");  }
+    if(esl_opt_IsOn(go, "--F5b")) { pli->do_edefbias   = TRUE; pli->F5b = esl_opt_GetReal(go, "--F5b"); }
   }
   if(! pli->do_max) { 
-    if(esl_opt_IsUsed(go, "--F6"))  { pli->do_fcyk     = TRUE; pli->F6  = esl_opt_GetReal(go, "--F6");  }
+    if(esl_opt_IsOn(go, "--F6"))  { pli->do_fcyk     = TRUE; pli->F6  = esl_opt_GetReal(go, "--F6");  }
   }
   
   if(esl_opt_GetBoolean(go, "--noF1"))     pli->do_msv  = FALSE; 
@@ -1060,7 +1060,7 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm)
+cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm)
 {
   int       status;
   int       nwin = 0;     /* number of windows surviving MSV & Vit & lFwd, filled by pli_p7_filter() */
@@ -1197,7 +1197,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #if DEBUGPIPELINE
       printf("\nPIPELINE calling p7_env_def() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-      if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &p7es, &p7ee, &np7env)) != eslOK) return status;
+      if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_hmm, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &p7es, &p7ee, &np7env)) != eslOK) return status;
       if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
 
       if(pli->do_fcyk) { 
@@ -2232,7 +2232,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv)
+pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv)
 {
   int              status;                     
   double           P;                 /* P-value of a hit */
@@ -2299,7 +2299,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
     case PLI_PASS_5P_ONLY_FORCE:   use_Rgm = TRUE; break;
     case PLI_PASS_3P_ONLY_FORCE:   use_Lgm = TRUE; break;
     case PLI_PASS_5P_AND_3P_FORCE: use_Tgm = TRUE; break;
-    default: ESL_FAIL(eslEINVAL, pli->errbuf, "pli_p7_filter() invalid pass index");
+    default: ESL_FAIL(eslEINVAL, pli->errbuf, "pli_p7_env_def() invalid pass index");
     }
   }
 
@@ -2314,14 +2314,16 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
        (use_Rgm == TRUE && (*opt_Rgm) == NULL) || 
        (use_Lgm == TRUE && (*opt_Lgm) == NULL) || 
        (use_Tgm == TRUE && (*opt_Tgm) == NULL))) { 
-    P7_HMM       *hmm = NULL;
-    if (pli->cmfp      == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in pli_p7_env_def()");
-    if (pli->cmfp->hfp == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in pli_p7_env_def()");
-    if((status = cm_p7_hmmfile_Read(pli->cmfp, pli->abc, om->offs[p7_MOFFSET], &hmm)) != eslOK) ESL_FAIL(status, pli->errbuf, "%s", pli->cmfp->errbuf);
-    
+    if((*opt_hmm) == NULL) { 
+      /* read the HMM from the file */
+      if (pli->cmfp      == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in pli_p7_env_def()");
+      if (pli->cmfp->hfp == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in pli_p7_env_def()");
+      if((status = cm_p7_hmmfile_Read(pli->cmfp, pli->abc, om->offs[p7_MOFFSET], opt_hmm)) != eslOK) ESL_FAIL(status, pli->errbuf, "%s", pli->cmfp->errbuf);
+    }
+
     if((*opt_gm) == NULL) { /* we need gm to create Lgm, Rgm or Tgm */
-      *opt_gm = p7_profile_Create(hmm->M, pli->abc);
-      p7_ProfileConfig(hmm, bg, *opt_gm, 100, p7_GLOCAL);
+      *opt_gm = p7_profile_Create((*opt_hmm)->M, pli->abc);
+      p7_ProfileConfig(*opt_hmm, bg, *opt_gm, 100, p7_GLOCAL);
     }
     if(use_Rgm && (*opt_Rgm == NULL)) { 
       *opt_Rgm = p7_profile_Clone(*opt_gm);
@@ -2329,14 +2331,13 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
     }
     if(use_Lgm && (*opt_Lgm == NULL)) { 
       *opt_Lgm = p7_profile_Clone(*opt_gm);
-      p7_ProfileConfig3PrimeTrunc(hmm, *opt_Lgm, 100);
+      p7_ProfileConfig3PrimeTrunc(*opt_hmm, *opt_Lgm, 100);
     }
     if(use_Tgm && (*opt_Tgm == NULL)) { 
       *opt_Tgm = p7_profile_Clone(*opt_gm);
-      p7_ProfileConfig(hmm, bg, *opt_Tgm, 100, p7_LOCAL);
+      p7_ProfileConfig(*opt_hmm, bg, *opt_Tgm, 100, p7_LOCAL);
       p7_ProfileConfig5PrimeAnd3PrimeTrunc(*opt_Tgm, 100);
     }
-    p7_hmm_Destroy(hmm);
   }
   gm  = *opt_gm;
   Rgm = *opt_Rgm;
@@ -2699,6 +2700,7 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     else if(status != eslOK) return status;
     
     P = esl_exp_surv(sc, cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap, cm->expA[pli->fcyk_cm_exp_mode]->lambda);
+
     if (P > pli->F6) continue;
     
     i_surv[i] = TRUE;

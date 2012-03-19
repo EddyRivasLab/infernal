@@ -275,13 +275,12 @@ main(int argc, char **argv)
    */
 #ifdef HAVE_MPI
 
-  /* TEMP */
+#if 0 
   pid_t pid;
-  /* get the process id */
   pid = getpid();
   printf("The process id is %d\n", pid);
   fflush(stdout);
-  /* TEMP */
+#endif
 
   /* pause the execution of the programs execution until the user has a
    * chance to attach with a debugger and send a signal to resume execution
@@ -867,7 +866,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   if (qhstatus == eslOK) {
     /* One-time initializations after alphabet <abc> becomes known */
-    output_header(stdout, go, cfg->cmfile);
+    output_header(stdout, go, cfg->cmfile, 0); /* 0 is 'available_ncpus', irrelevant (only used if --forecast, which is incompatible with --mpi) */
 
     /* master needs to be able to generate sequences only for timing predictions */
     if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
@@ -1888,7 +1887,7 @@ print_summary(const struct cfg_s *cfg)
   printf("#\n");
   printf("# Calibration summary statistics:\n");
   printf("#\n");
-  printf("# %20s  %-31s  %-31s  %-31s\n", "", "   exponential tail fit mu", " exponential tail fit lambda", "     total number of hits");
+  printf("# %20s  %-31s  %-31s  %-31s\n", "", "    exponential tail fit mu", "  exponential tail fit lambda", "     total number of hits");
   printf("# %20s  %31s  %31s  %31s\n", "", "-------------------------------", "-------------------------------", "-------------------------------");
   printf("# %-20s  %7s %7s %7s %7s  %7s %7s %7s %7s  %7s %7s %7s %7s\n", "model name", 
 	 "glc cyk", "glc ins", "loc cyk", "loc ins",

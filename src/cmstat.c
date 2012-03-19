@@ -13,6 +13,7 @@
 #include <time.h>
 
 #include "easel.h"
+#include "esl_exponential.h"
 #include "esl_getopts.h"
 #include "esl_histogram.h"
 #include "esl_random.h"
@@ -26,25 +27,27 @@
 #include "funcs.h"		/* function declarations                */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define OUTOPTS "-E,-T,--cut_ga,--cut_nc,--cut_tc"
+#define OUTOPTS "-E,-P,-T,--cut_ga,--cut_nc,--cut_tc"
 
-#define OUTMODE_DEFAULT   0
-#define OUTMODE_BITSCORES 1
-#define OUTMODE_EVALUES   2
-#define OUTMODE_GA        3
-#define OUTMODE_NC        4
-#define OUTMODE_TC        5
-#define NOUTMODES         6 
+#define OUTMODE_DEFAULT     0
+#define OUTMODE_BITSCORES_E 1
+#define OUTMODE_BITSCORES_P 2
+#define OUTMODE_EVALUES     3
+#define OUTMODE_GA          4
+#define OUTMODE_NC          5
+#define OUTMODE_TC          6
+#define NOUTMODES           7 
 
 static ESL_OPTIONS options[] = {
   /* name           type      default      env  range     toggles      reqs     incomp    help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,       NULL, "show brief help on version and usage",   0 },
-  { "-E",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,       NULL, "print bit scores that correspond to E-value threshold of <x>", 0 },
-  { "-T",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,       NULL, "print E-values that correspond to bit score threshold of <x>", 0 },
-  { "-Z",        eslARG_REAL,   "10",      NULL, "x>0",     NULL,      NULL,       NULL, "set database size in *Mb* to <x> for E-value calculations",    0 },
-  { "--cut_ga",  eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       NULL, "print E-values that correspond to GA bit score thresholds",    0 },
-  { "--cut_nc",  eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       NULL, "print E-values that correspond to NC bit score thresholds",    0 },
-  { "--cut_tc",  eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       NULL, "print E-values that correspond to TC bit score thresholds",    0 },
+  { "-E",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,    OUTOPTS, "print bit scores that correspond to E-value threshold of <x>", 0 },
+  { "-P",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,    OUTOPTS, "print bit scores that correspond to E-value threshold of <x>", 0 },
+  { "-T",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,    OUTOPTS, "print E-values that correspond to bit score threshold of <x>", 0 },
+  { "-Z",        eslARG_REAL,   "10",      NULL, "x>0",     NULL,      NULL,    OUTOPTS, "set database size in *Mb* to <x> for E-value calculations",    0 },
+  { "--cut_ga",  eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,    OUTOPTS, "print E-values that correspond to GA bit score thresholds",    0 },
+  { "--cut_nc",  eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,    OUTOPTS, "print E-values that correspond to NC bit score thresholds",    0 },
+  { "--cut_tc",  eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,    OUTOPTS, "print E-values that correspond to TC bit score thresholds",    0 },
   { "--key",     eslARG_STRING, NULL,      NULL, NULL,      NULL,      NULL,       NULL, "only print statistics for CM with name or accession <s>",      0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -69,7 +72,7 @@ main(int argc, char **argv)
   int              ncm;         /* CM index                  */
   char             errbuf[eslERRBUFSIZE]; /* for error messages */
   int              status;      /* easel status */
-  int              output_mode; /* 0..5: OUTMODE_DEFAULT | OUTMODE_BITSCORES | OUTMODE_EVALUES | OUTMODE_GA | OUTMODE_TC | OUTMODE_NC */
+  int              output_mode; /* 0..5: OUTMODE_DEFAULT | OUTMODE_BITSCORES_E | OUTMODE_BITSCORES_P | OUTMODE_EVALUES | OUTMODE_GA | OUTMODE_TC | OUTMODE_NC */
   char            *key = NULL;  /* <s> from --key, if used */
   /* Process the command line options.
    */
@@ -118,11 +121,12 @@ main(int argc, char **argv)
   /* Determine the output mode and print column headings
    */
   output_mode = OUTMODE_DEFAULT;
-  if     (esl_opt_IsUsed(go, "-E"))       { output_mode = OUTMODE_BITSCORES; }
-  else if(esl_opt_IsUsed(go, "-T"))       { output_mode = OUTMODE_EVALUES;   }
-  else if(esl_opt_IsUsed(go, "--cut_ga")) { output_mode = OUTMODE_GA;        }
-  else if(esl_opt_IsUsed(go, "--cut_tc")) { output_mode = OUTMODE_TC;        }
-  else if(esl_opt_IsUsed(go, "--cut_nc")) { output_mode = OUTMODE_NC;        }
+  if     (esl_opt_IsUsed(go, "-E"))       { output_mode = OUTMODE_BITSCORES_E; }
+  else if(esl_opt_IsUsed(go, "-P"))       { output_mode = OUTMODE_BITSCORES_P; }
+  else if(esl_opt_IsUsed(go, "-T"))       { output_mode = OUTMODE_EVALUES;     }
+  else if(esl_opt_IsUsed(go, "--cut_ga")) { output_mode = OUTMODE_GA;          }
+  else if(esl_opt_IsUsed(go, "--cut_tc")) { output_mode = OUTMODE_TC;          }
+  else if(esl_opt_IsUsed(go, "--cut_nc")) { output_mode = OUTMODE_NC;          }
 
   if(output_mode == OUTMODE_DEFAULT) { /* default mode, general model stats */
     fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %5s  %5s  %4s  %4s  %5s  %12s\n",    "",      "",                     "",             "",         "",         "",     "",      "",      "", "",    "rel entropy");
@@ -131,8 +135,14 @@ main(int argc, char **argv)
     fprintf(stdout, "# %-4s  %-20s  %-9s  %8s  %8s  %5s  %5s  %4s  %4s  %5s  %5s  %5s\n", "----", "--------------------", "---------", "--------", "--------", "-----", "-----", "----",   "----", "-----", "-----", "-----");
   }
   else { 
-    if(output_mode == OUTMODE_BITSCORES) { 
+    if(output_mode == OUTMODE_BITSCORES_E) { 
       fprintf(stdout, "# Printing cmsearch bit scores corresponding to E-value of %g in a database of size %.6f Mb\n", esl_opt_GetReal(go, "-E"), esl_opt_GetReal(go, "-Z"));
+      fprintf(stdout, "#\n");
+      fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s\n", "idx",  "name", "accession", "local-inside", "local-cyk", "glocal-inside", "glocal-cyk");
+      fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s\n", "----", "--------------------", "---------", "-------------", "-------------", "-------------", "-------------");
+    }
+    else if(output_mode == OUTMODE_BITSCORES_P) { 
+      fprintf(stdout, "# Printing bit scores corresponding to P-value of %g", esl_opt_GetReal(go, "-P"));
       fprintf(stdout, "#\n");
       fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s\n", "idx",  "name", "accession", "local-inside", "local-cyk", "glocal-inside", "glocal-cyk");
       fprintf(stdout, "# %-4s  %-20s  %-9s  %13s  %13s  %13s  %13s\n", "----", "--------------------", "---------", "-------------", "-------------", "-------------", "-------------");
@@ -224,8 +234,9 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode)
   float            lcyk;        /*  local CYK    bit score */
   float            gins;        /* glocal inside bit score */
   float            gcyk;        /* glocal CYK    bit score */
-  double           E;           /* E-value threshold */
-  float            T;           /* bit score threshold */
+  double           E;           /* E-value */
+  double           P;           /* P-value */
+  float            T;           /* bit score */
   float            Z;           /* database size */
 
   Z = esl_opt_GetReal(go, "-Z") * 1000000.;
@@ -259,13 +270,25 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, int output_mode)
 	    cp9_MeanMatchRelativeEntropy(cm->cp9));
     
   }
-  else if(output_mode == OUTMODE_BITSCORES) { 
+  else if(output_mode == OUTMODE_BITSCORES_E) { 
     E = esl_opt_GetReal(go, "-E");
     if((status = UpdateExpsForDBSize(cm, errbuf, (long) Z)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
     if((status = E2ScoreGivenExpInfo(cm->expA[EXP_CM_LI], errbuf, E, &lins)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
     if((status = E2ScoreGivenExpInfo(cm->expA[EXP_CM_LC], errbuf, E, &lcyk)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
     if((status = E2ScoreGivenExpInfo(cm->expA[EXP_CM_GI], errbuf, E, &gins)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
     if((status = E2ScoreGivenExpInfo(cm->expA[EXP_CM_GC], errbuf, E, &gcyk)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
+    fprintf(stdout, "%6d  %-20s  %-9s  %13.2f  %13.2f  %13.2f  %13.2f\n",
+	    ncm,
+	    cm->name,
+	    cm->acc == NULL ? "-" : cm->acc,
+	    lins, lcyk, gins, gcyk);
+  }
+  else if(output_mode == OUTMODE_BITSCORES_P) { 
+    P = esl_opt_GetReal(go, "-P");
+    if((status = P2ScoreGivenExpInfo(cm->expA[EXP_CM_LI], errbuf, P, &lins)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
+    if((status = P2ScoreGivenExpInfo(cm->expA[EXP_CM_LC], errbuf, P, &lcyk)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
+    if((status = P2ScoreGivenExpInfo(cm->expA[EXP_CM_GI], errbuf, P, &gins)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
+    if((status = P2ScoreGivenExpInfo(cm->expA[EXP_CM_GC], errbuf, P, &gcyk)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
     fprintf(stdout, "%6d  %-20s  %-9s  %13.2f  %13.2f  %13.2f  %13.2f\n",
 	    ncm,
 	    cm->name,
