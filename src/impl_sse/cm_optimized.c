@@ -1,8 +1,14 @@
-#include "impl_sse.h"
+#include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_hmm.h"
 #include "esl_stack.h"
 #include "esl_vectorops.h"
+
+#include "hmmer.h"
+
+#include "infernal.h"
+
+#include "impl_sse.h"
 
 #define SCALE_W 500.0	/* set a default scaling factor for 16-bit int scores */
 

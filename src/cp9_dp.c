@@ -26,8 +26,9 @@
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
    
 #define CP9TSC(s,k) (tsc[(k) * cp9O_NTRANS + (s)])
 
@@ -1453,9 +1454,10 @@ cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
-#include "funcs.h"		/* function declarations                */
+#include "infernal.h"		/* function declarations                */
+
 #include "old_funcs.h"		/* function declarations for 0.81 versions */
-#include "structs.h"		/* data structures, macros, #define's   */
+
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
@@ -1607,8 +1609,7 @@ main(int argc, char **argv)
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
-#include "funcs.h"		/* function declarations                */
-#include "structs.h"		/* data structures, macros, #define's   */
+#include "infernal.h"
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/

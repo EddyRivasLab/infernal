@@ -18,9 +18,10 @@
 #include <limits.h>
 
 #include "easel.h"
+
 #include "hmmer.h"
-#include "funcs.h"
-#include "structs.h"
+
+#include "infernal.h"
 
 /*****************************************************************
  * 1. The CM_ALNDATA object

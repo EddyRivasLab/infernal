@@ -24,8 +24,9 @@
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
-#include "funcs.h"		/* function declarations                */
-#include "structs.h"		/* data structures, macros, #define's   */
+#include "hmmer.h"
+
+#include "infernal.h"
 
 #define OUTOPTS "-E,-P,-T,--cut_ga,--cut_nc,--cut_tc"
 

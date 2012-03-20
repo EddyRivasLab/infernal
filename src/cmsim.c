@@ -1,7 +1,6 @@
-
-
 /* cmsim: scoring CMs against simulated sequences.
- * 
+ * [INCOMPLETE: NOT CURRENTLY COMPILED EPN, Tue Mar 20 05:45:57 2012]
+ *
  * Main testbed for exploring the statistical behavior of Infernal
  * scores on random sequences, and importance sampling.
  * 
@@ -28,8 +27,7 @@
 
 #include "hmmer.h"
 
-#include "funcs.h"		/* function declarations                */
-#include "structs.h"		/* data structures, macros, #define's   */
+#include "infernal.h"
 
 #define ALPHOPTS "--rna,--dna"                         /* Exclusive options for alphabet choice */
 #define OUTOPTS  "-u,-c,-a,--ahmm,--shmm"              /* Exclusive options for output */

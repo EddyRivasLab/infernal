@@ -49,8 +49,9 @@
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 /* The dividers and conquerors.
  */
@@ -98,14 +99,8 @@ float vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0);
 static int   cyk_deck_count(CM_t *cm, int r, int z);
 static int   cyk_extra_decks(CM_t *cm);
 
-/* The memory management routines are in funcs.h so hbandcyk.c can access them 
+/* The memory management routines are in infernal.h so hmmband.c can access them 
  */
-
-/* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
- * for the do_full? argument to the alignment engines.
- */
-#define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
-#define BE_PARANOID   1		/* setting for do_full: keep whole matrix, perhaps for debugging */
 
 /*******************************************************************************
  * EPN: Banded functions are named *_b() 

@@ -18,8 +18,9 @@
 #include "easel.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 /*****************************************************************
  *   1. CM_TR_PENALTIES data structure functions,

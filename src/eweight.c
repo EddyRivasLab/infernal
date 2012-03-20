@@ -28,8 +28,9 @@
 #include "esl_rootfinder.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 struct ew_param_s {
   CM_t      *cm;		/* ptr to the original count-based CM, cm->t and cm->e be changed, but we have a copy of the original data in t_orig and e_orig */

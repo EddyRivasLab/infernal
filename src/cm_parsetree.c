@@ -33,8 +33,7 @@
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "infernal.h"
 
 static float get_femission_score      (CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
 static float get_femission_score_trunc(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j, char mode);

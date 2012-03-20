@@ -27,8 +27,9 @@
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 
-#include "structs.h"
-#include "funcs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 #define BE_EFFICIENT 0
 #define BE_PARANOID  1

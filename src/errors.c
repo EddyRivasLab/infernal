@@ -22,8 +22,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "funcs.h"
-#include "structs.h"
+#include "easel.h"
+
+#include "hmmer.h"
+
+#include "infernal.h"
 
 /* Function:  cm_Die()
  * Incept:    EPN, Fri Jul 27 14:35:44 2007

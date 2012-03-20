@@ -44,8 +44,8 @@
 #endif /*HMMER_THREADS*/
 
 #include "hmmer.h"
-#include "funcs.h"		/* external functions                   */
-#include "structs.h"		/* data structures, macros, #define's   */
+
+#include "infernal.h"
 
 /* Max number of sequences, residues per tmp alignment, if seq file
  * exceeds either of these, final output alignment will be in 1

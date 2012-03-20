@@ -25,8 +25,7 @@
 
 #include "hmmer.h"
 
-#include "funcs.h"		/* function declarations                */
-#include "structs.h"		/* data structures, macros, #define's   */
+#include "infernal.h"
 
 #define ALPHOPTS "--rna,--dna"  /* Exclusive options for alphabet choice */
 #define OUTOPTS  "-u,-c,-a"     /* Exclusive options for output */

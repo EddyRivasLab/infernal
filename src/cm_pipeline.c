@@ -21,8 +21,8 @@
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
-#include "funcs.h"
-#include "structs.h"
+
+#include "infernal.h"
 
 #define DEBUGPIPELINE  0
 #define DEBUGMSVMERGE  0
@@ -1022,9 +1022,6 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
     p1->acct[p].n_overflow_final += p2->acct[p].n_overflow_final;
     p1->acct[p].n_aln_hb         += p2->acct[p].n_aln_hb;
     p1->acct[p].n_aln_dccyk      += p2->acct[p].n_aln_dccyk;
-  }
-  if (p1->Z_setby == p7_ZSETBY_NTARGETS) { 
-    p1->Z += (p1->mode == p7_SCAN_MODELS) ? p2->nmodels : p2->nseqs;
   }
 
   return eslOK;
@@ -2230,6 +2227,8 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
  *            <ret_es> and <ret_ee>.
  *
  * Throws:    <eslEMEM> on allocation failure.
+ *            <eslENOTFOUND> if we need but don't have an HMM file to read
+ *            <eslESYS> on failure of system call when reading HMM
  */
 int
 pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv)
@@ -2316,8 +2315,8 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
        (use_Tgm == TRUE && (*opt_Tgm) == NULL))) { 
     if((*opt_hmm) == NULL) { 
       /* read the HMM from the file */
-      if (pli->cmfp      == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in pli_p7_env_def()");
-      if (pli->cmfp->hfp == NULL) ESL_FAIL(status, pli->errbuf, "No file available to read HMM from in pli_p7_env_def()");
+      if (pli->cmfp      == NULL) ESL_FAIL(eslENOTFOUND, pli->errbuf, "No file available to read HMM from in pli_p7_env_def()");
+      if (pli->cmfp->hfp == NULL) ESL_FAIL(eslENOTFOUND, pli->errbuf, "No file available to read HMM from in pli_p7_env_def()");
       if((status = cm_p7_hmmfile_Read(pli->cmfp, pli->abc, om->offs[p7_MOFFSET], opt_hmm)) != eslOK) ESL_FAIL(status, pli->errbuf, "%s", pli->cmfp->errbuf);
     }
 
@@ -2823,6 +2822,7 @@ pli_cyk_seq_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **o
   cm = *opt_cm;
 
   cm->search_opts = pli->fcyk_cm_search_opts;
+  save_tau        = cm->tau;
   cm->tau         = pli->fcyk_tau;
   qdbidx          = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB1_TIGHT;
   cutoff          = cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6) / (-1 * cm->expA[pli->fcyk_cm_exp_mode]->lambda));

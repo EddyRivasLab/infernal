@@ -32,8 +32,8 @@
 #endif /*HMMER_THREADS*/
 
 #include "hmmer.h"
-#include "funcs.h"		/* external functions                   */
-#include "structs.h"		/* data structures, macros, #define's   */
+
+#include "infernal.h"
 
 typedef struct {
 #ifdef HMMER_THREADS

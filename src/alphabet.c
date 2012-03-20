@@ -25,8 +25,7 @@
 #include "esl_randomseq.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "infernal.h"
 
 /* Function: PairCount()
  * Date:     SRE, Tue Aug  1 10:34:20 2000 [St. Louis]

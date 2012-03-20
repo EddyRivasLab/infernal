@@ -20,16 +20,15 @@
 #include <string.h>
 #include <time.h>
 
-#include "hmmer.h"
-
 #include "easel.h"
 #include "esl_vectorops.h"
 #include "esl_alphabet.h"
 #include "esl_stack.h"
 #include "esl_stopwatch.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 /* Function: CreateCM(); CreateCMShell(); CreateCMBody()
  * Date:     SRE, Sat Jul 29 09:02:16 2000 [St. Louis]
@@ -895,7 +894,7 @@ CMLogoddsify(CM_t *cm)
   /* Potentially, overwrite transitions with non-probabilistic 
    * RSEARCH transitions. Currently only default transition
    * parameters are allowed, these are defined as DEFAULT_R*
-   * in structs.h */
+   * in infernal.h */
   if(cm->flags & CM_RSEARCHTRANS)
     {
       float           alpha =   DEFAULT_RALPHA; 

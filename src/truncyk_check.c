@@ -15,8 +15,9 @@
 #include "esl_stopwatch.h"
 #include "esl_getopts.h"
 
-#include "structs.h"		/* data structures, macros, #define's   */
-#include "funcs.h"		/* external functions                   */
+#include "hmmer.h"
+
+#include "infernal.h"
 
 static ESL_OPTIONS options[] = {
   { "-h",         eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL, "show help",                                             0}, 

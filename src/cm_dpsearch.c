@@ -50,8 +50,9 @@
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 #define AMX(j,v,d) (alphap[(j * cm->M * (W+1)) + ((v) * (W+1) + d)])
 
@@ -4264,36 +4265,6 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
   return 0.; /* never reached */
 }
 
-/* Function: DetermineSeqChunksize()
- * Date:     EPN, Thu Jan 24 16:32:37 2008
- * Purpose:  Determine the subsequence length (chunk size) to 
- *           send to workers in MPI cmsearch or cmcalibrate.
- *           From RSEARCH, with one change, ideal situation
- *           is considered when we put 1 chunk for each STRAND 
- *           of each seq on each proc.
- *         
- *           Set the chunk size as follows:
- *           1.  Ideally take smallest multiple of cm->W that gives 
- *               result greater than:
- *               (seqlen + (cm->W * (num_procs-2))) / (num_procs-1)
- *               This should put one chunk for EACH STRAND on each proc.
- *           2.  If this is less than MPI_MIN_CHUNK_W_MULTIPLIER * cm->W, 
- *               use that value.
- *           3.  If this is greater than MPI_MAX_CHUNK_SIZE, use that.
- */
-int
-DetermineSeqChunksize(int nproc, int L, int W)
-{
-  int chunksize;
-  chunksize = ((L + (W * (nproc-2))) / (nproc)) + 1;
-  chunksize = ((chunksize / W) + 1) * W;
-  chunksize = ESL_MAX(chunksize, W * MPI_MIN_CHUNK_W_MULTIPLIER); 
-  chunksize = ESL_MIN(chunksize, MPI_MAX_CHUNK_SIZE);
-  /*printf("DetermineSeqChunksize(): returning %d\n", chunksize);*/
-  return chunksize;
-}
-
-
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/
@@ -4320,8 +4291,9 @@ DetermineSeqChunksize(int nproc, int L, int W)
 #include <esl_vectorops.h>
 #include <esl_wuss.h>
 
-#include "funcs.h"		/* function declarations                */
-#include "structs.h"		/* data structures, macros, #define's   */
+#include "hmmer.h"
+
+#include "infernal.h"
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/

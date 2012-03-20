@@ -64,11 +64,12 @@
 #include <math.h>
 #include <assert.h>
 
-#include "funcs.h"
-#include "structs.h"
+#include "easel.h"
 
+#include "hmmer.h"
 
-#if 1
+#include "infernal.h"
+
 static int   ilogsum_lookup[LOGSUM_TBL];
 void 
 init_ilogsum(void)
@@ -166,7 +167,6 @@ FLogsum(float s1, float s2)
 #endif
   return  (min == -eslINFINITY || (max-min) >= 23.f) ? max : max + flogsum_lookup[(int)((max-min)*INTSCALE)];
 } 
-#endif /* USE_NEWLOGSUM*/
 
 #if 0
 /**********************************************************************************
@@ -250,123 +250,5 @@ LogSum2(float p1, float p2)
     return (p2-p1 > 50.) ? p2 : p2 + sreLOG2(1. + pow(2.,(p1-p2)));
 }
 
-#endif /* USE_OLDLOGSUM */
-
-/* EPN, Fri Sep  7 16:57:23 2007 
- * Left in benchmark driver for potential future use, not used now though. 
- */
-/*****************************************************************
- * Benchmark driver.
- *****************************************************************/
-#ifdef p7LOGSUM_BENCHMARK
-/* gcc -o benchmark -g -O2 -I. -L. -I../easel -L../easel -Dp7LOGSUM_BENCHMARK logsum.c -leasel -lm
- * ./benchmark
- */
-/* All times in units of nanoseconds/iteration: cpu time * 10.
- * All times derived from 1e8 iterations (-N 100000000) unless stated.
- * All runs on my workstation, a 3.2GHz Xeon.
- * Times in brackets are difference from baseline.  
- * To get baselines, comment out the appropriate Logsum() call and recompile.
- * 
- * Floating point:   gcc -g -O2
- *                   ---------      
- *   baseline:        274.5
- *   p7_FLogsum()     293.2  [18.7]
- *  
- * Integer version:             
- *   baseline:        269.9                                       
- *   p7_ILogsum()     271.8   [1.9]
- */
-#include "p7_config.h"
-
-#include <math.h>
-
-#include "easel.h"
-#include "esl_getopts.h"
-#include "esl_random.h"
-#include "esl_stopwatch.h"
-
-#include "hmmer.h"
-
-static ESL_OPTIONS options[] = {
-  /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
-  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",    0 },
-  { "-i",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "run the integer version",                 0 },
-  { "-v",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "be verbose: show individual results",     0 },
-  { "-N",        eslARG_INT,"100000000",NULL,"n>0", NULL,  NULL, NULL, "number of trials",                        0 },
-  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-};
-static char usage[]  = "[-options]";
-static char banner[] = "benchmark driver for logsum functions()";
-
-static float 
-naive1(float s1, float p2)
-{
-  return log(exp(s1) + exp(p2));
-}
-
-static float 
-naive2(float s1, float s2)
-{
-  if (s1 > s2) return s1 + log(1 + exp(s2-s1));
-  else         return s2 + log(1 + exp(s1-s2));
-}
-
-int 
-main(int argc, char **argv)
-{
-  ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 0, argc, argv, banner, usage);
-  ESL_RANDOMNESS *r       = esl_randomness_Create(42);
-  ESL_STOPWATCH  *w       = esl_stopwatch_Create();
-  int             N       = esl_opt_GetInteger(go, "-N");
-  int             i;
-
-  if (esl_opt_GetBoolean(go, "-i"))
-    {
-      int  x, z;
-
-      p7_ILogsumInit();
-      esl_stopwatch_Start(w);
-      for (z = 0, i = 0; i < N; i++)
-	{
-	  x = z - esl_random(r) * 7000;
-
-	  if (esl_opt_GetBoolean(go, "-v"))  
-	    printf("%d %d %d \n", z, x, p7_ILogsum(x, z));
-
-	  z = p7_ILogsum(x,z);  
-	  z -= 119;
-	}
-      esl_stopwatch_Stop(w);
-    }
-  else
-    {
-      float  x, z;
-
-      p7_FLogsumInit();
-      esl_stopwatch_Start(w);
-      for (z = 0., i = 0; i < N; i++)
-	{
-	  x = z - esl_random(r) * 7.;
-
-	  if (esl_opt_GetBoolean(go, "-v"))  
-	    printf("%g %g %g %g %g\n", z, x, p7_FLogsum(x, z), naive1(x,z), fabs(p7_FLogsum(x, z) - naive1(x,z)));
-
-	  z  = p7_FLogsum(x, z);       
-	  /* z = naive2(x,y); */
-	  z -= 0.1187;		/* empirically balancing z near 0 */
-	}
-      esl_stopwatch_Stop(w);
-  
-    }
-  esl_stopwatch_Display(stdout, w, "# CPU time: ");
-
-  esl_stopwatch_Destroy(w);
-  esl_randomness_Destroy(r);
-  esl_getopts_Destroy(go);
-  return 0;
-}
-#endif /*p7LOGSUM_BENCHMARK*/
-
-
+#endif  /* #if 0 */
 

@@ -29,14 +29,15 @@
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"		/* external functions                   */
-#include "structs.h"		/* data structures, macros, #define's   */
+#include "hmmer.h"
+
+#include "infernal.h"
 
 /* EPN 10.28.06
  * Function: AllocCP9Bands()
  * 
  * Purpose:  Allocate the arrays needed for creating i and j
- *           bands on a CM based on a CP9 parse. See structs.h
+ *           bands on a CM based on a CP9 parse. See infernal.h
  *           for description of this structure.
  *
  * Args:    
@@ -3045,7 +3046,7 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
   /*printf("TEMP in CMBandsCheckValidParse() i0: %d j0: %d\n", i0, j0);*/
 
   if((cm->flags & CMH_LOCAL_BEGIN) && (! (cm->flags & CMH_LOCAL_END))) ESL_FAIL(eslEINCOMPAT, errbuf, "CMBandsCheckValidParse(), cm flag CMH_LOCAL_BEGIN is up and cm flag CMH_LOCAL_END is down. This is unexpected, we can't deal.");
-  if((! cm->flags & CMH_LOCAL_BEGIN) && ((cm->flags & CMH_LOCAL_END))) ESL_FAIL(eslEINCOMPAT, errbuf, "CMBandsCheckValidParse(), cm flag CMH_LOCAL_BEGIN is down and cm flag CMH_LOCAL_END is up. This is unexpected, we can't deal.");
+  if((! (cm->flags & CMH_LOCAL_BEGIN)) && ((cm->flags & CMH_LOCAL_END))) ESL_FAIL(eslEINCOMPAT, errbuf, "CMBandsCheckValidParse(), cm flag CMH_LOCAL_BEGIN is down and cm flag CMH_LOCAL_END is up. This is unexpected, we can't deal.");
 
   cm_is_localized = ((cm->flags & CMH_LOCAL_BEGIN) && (cm->flags & CMH_LOCAL_END)) ? TRUE : FALSE;
 

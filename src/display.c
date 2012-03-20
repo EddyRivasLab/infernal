@@ -26,8 +26,9 @@
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 static int *createMultifurcationOrderChart(CM_t *cm);
 static int  bp_is_canonical(char lseq, char rseq);
@@ -1066,7 +1067,7 @@ IsCompensatory(const ESL_ALPHABET *abc, float *pij, int symi, int symj)
 
 /* Implementation of CMEmitMap_t structure:
  * map of a CM's nodes onto consensus sequence positions.
- * Structure is declared in structs.h.
+ * Structure is declared in infernal.h.
  * 
  * Used for constructing multiple alignments.
  * 

@@ -21,8 +21,9 @@
 #include "easel.h"
 #include "esl_mpi.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 static int comlog_MPIPackSize(ComLog_t *comlog, MPI_Comm comm, int *ret_n);
 static int comlog_MPIPack(ComLog_t *comlog, char *buf, int n, int *position, MPI_Comm comm);

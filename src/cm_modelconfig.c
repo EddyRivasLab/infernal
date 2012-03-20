@@ -42,8 +42,7 @@
 
 #include "hmmer.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "infernal.h"
 
 static void  cm_localize(CM_t *cm, float p_internal_entry, float p_internal_exit);
 static  int  cp9_sw_config(CP9_t *hmm, float pentry, float pexit, int do_match_local_cm, int first_cm_ndtype);

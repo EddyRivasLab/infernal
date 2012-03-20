@@ -124,8 +124,9 @@
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 #define DEBUG1  0
 #define DEBUG2  0
@@ -8965,8 +8966,9 @@ cm_TrFillFromMode(char mode, int *ret_fill_L, int *ret_fill_R, int *ret_fill_T)
 #include <esl_vectorops.h>
 #include <esl_wuss.h>
 
-#include "funcs.h"		/* function declarations                */
-#include "structs.h"		/* data structures, macros, #define's   */
+#include "hmmer.h"
+
+#include "infernal.h"
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/

@@ -20,8 +20,9 @@
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 static matrix_t *setup_matrix (int size);
 static float simple_identity(const ESL_ALPHABET *abc, char *s1, char *s2);

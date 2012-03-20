@@ -24,10 +24,10 @@
 #include <limits.h>
 
 #include "easel.h"
-#include "hmmer.h"
-#include "funcs.h"
-#include "structs.h"
 
+#include "hmmer.h"
+
+#include "infernal.h"
 
 /*****************************************************************
  * 1. The CM_TOPHITS object
@@ -1821,8 +1821,8 @@ cm_hit_Dump(FILE *fp, const CM_HIT *h)
 #include "esl_random.h"
 
 #include "hmmer.h"
-#include "funcs.h"		/* external functions                   */
-#include "structs.h"		/* data structures, macros, #define's   */
+
+#include "infernal.h"
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
@@ -1993,8 +1993,8 @@ main(int argc, char **argv)
 #include "esl_random.h"
 
 #include "hmmer.h"
-#include "funcs.h"		/* external functions                   */
-#include "structs.h"		/* data structures, macros, #define's   */
+
+#include "infernal.h"
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/

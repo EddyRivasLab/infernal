@@ -25,8 +25,8 @@
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
-#include "funcs.h"
-#include "structs.h"
+
+#include "infernal.h"
 
 static int  bp_is_canonical(char lseq, char rseq);
 
@@ -577,7 +577,7 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
   int status;
 
   ESL_ALLOC(ad2, sizeof(CM_ALIDISPLAY));
-  ad2->model   = ad2->rfline = ad2->nline   = ad2->csline  = ad2->model = ad2->mline = ad2->aseq = ad2->ppline = NULL;
+  ad2->rfline = ad2->nline   = ad2->csline  = ad2->model = ad2->mline = ad2->aseq = ad2->ppline = NULL;
   ad2->cmname  = ad2->cmacc  = ad2->cmdesc  = NULL;
   ad2->sqname  = ad2->sqacc  = ad2->sqdesc  = NULL;
   ad2->mem     = NULL;

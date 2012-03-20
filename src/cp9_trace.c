@@ -25,9 +25,9 @@
 #include "esl_msa.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
 
+#include "infernal.h"
 
 /* Function: CP9AllocTrace(), CP9ReallocTrace(), CP9FreeTrace()
  * 

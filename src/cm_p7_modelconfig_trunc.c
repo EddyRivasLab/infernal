@@ -18,8 +18,8 @@
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
-#include "funcs.h"
-#include "structs.h"
+
+#include "infernal.h"
 
 /*****************************************************************
  * 1. Routines in the exposed API.

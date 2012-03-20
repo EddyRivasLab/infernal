@@ -16,8 +16,8 @@
 #include "esl_getopts.h"
 
 #include "hmmer.h"
-#include "funcs.h"		/* external functions                   */
-#include "structs.h"		/* data structures, macros, #define's   */
+
+#include "infernal.h"
 
 #define OUTOPTS "-a,-b,-1,--mlhmm,--fhmm"
 

@@ -35,8 +35,8 @@
 #endif /*HMMER_THREADS*/
 
 #include "hmmer.h"
-#include "funcs.h"		/* external functions                   */
-#include "structs.h"		/* data structures, macros, #define's   */
+
+#include "infernal.h"
 
 /* set the max residue count to 100Kb when reading a block */
 #define CMSEARCH_MAX_RESIDUE_COUNT 100000 /* differs from HMMER's default which is MAX_RESIDUE_COUNT from esl_sqio_(ascii|ncbi).c */
@@ -1911,7 +1911,7 @@ open_dbfile(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQFILE **ret_d
 
   if (esl_opt_IsOn(go, "--tformat")) {
     dbfmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--tformat"));
-    if (dbfmt == eslSQFILE_UNKNOWN) ESL_FAIL(status, errbuf, "%s is not a recognized sequence database file format\n", esl_opt_GetString(go, "--tformat"));
+    if (dbfmt == eslSQFILE_UNKNOWN) ESL_FAIL(eslEINVAL, errbuf, "%s is not a recognized sequence database file format\n", esl_opt_GetString(go, "--tformat"));
   }
   status = esl_sqfile_Open(cfg->dbfile, dbfmt, p7_SEQDBENV, ret_dbfp);
   if      (status == eslENOTFOUND) ESL_FAIL(status, errbuf, "Failed to open sequence file %s for reading\n",          cfg->dbfile);

@@ -75,8 +75,7 @@ PROGSOBJSS = \
 	trcyk.o\
 	truncyk_check.o\
 
-HDRS =  funcs.h\
-	structs.h
+HDRS =  infernal.h\
 
 OBJS  = cm.o\
 	cm_alidisplay.o\
@@ -107,8 +106,8 @@ OBJS  = cm.o\
 	cp9_trace.o\
 	alphabet.o\
 	display.o\
-	eweight.o\
 	errors.o\
+	eweight.o\
 	hmmband.o\
 	logsum.o\
 	mpisupport.o\

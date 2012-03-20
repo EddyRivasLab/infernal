@@ -25,8 +25,9 @@
 #include "esl_msa.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 /* Functions: AllocCPlan9(), AllocCPlan9Shell(), AllocCPlan9Body(), FreeCPlan9()
  * 
@@ -62,7 +63,7 @@ AllocCPlan9Shell(void)
   hmm->ins    = NULL;
   
   hmm->tsc     = hmm->msc     = hmm->isc     = NULL;
-  hmm->tsc_mem = hmm->msc_mem = hmm->msc_mem = NULL;
+  hmm->tsc_mem = hmm->msc_mem = hmm->isc_mem = NULL;
 
   hmm->begin  = NULL;
   hmm->end    = NULL;
@@ -313,7 +314,7 @@ cp9_Copy(const CP9_t *src, CP9_t *dst)
   int k;
   int src_has_bits = (src->flags & CPLAN9_HASBITS) ? TRUE : FALSE;
 
-  if (src->M != dst->M) return status;
+  if (src->M != dst->M) return eslEINVAL;
   
   dst->abc = src->abc;
   

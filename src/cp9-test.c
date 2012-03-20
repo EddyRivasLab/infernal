@@ -26,8 +26,9 @@
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"		/* function declarations                */
-#include "structs.h"		/* data structures, macros, #define's   */
+#include "hmmer.h"
+
+#include "infernal.h"
 
 static ESL_OPTIONS options[] = {
   /* name        type         default  env  range toggles reqs incomp  help                                            docgroup*/

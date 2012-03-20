@@ -19,8 +19,9 @@
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
-#include "funcs.h"		/* function declarations                */
-#include "structs.h"		/* data structures, macros, #define's   */
+#include "hmmer.h"
+
+#include "infernal.h"
 
 #include "impl_sse.h"
 

@@ -15,8 +15,9 @@
 #include "esl_keyhash.h"
 #include "esl_ssi.h"
 
-#include "funcs.h"		/* function declarations                */
-#include "structs.h"		/* data structures, macros, #define's   */
+#include "hmmer.h"
+
+#include "infernal.h"
 
 static char banner[] = "retrieve CMs from a file";
 static char usage1[] = "[options] <cmfile> <key>         (retrieves CM named <key>)";

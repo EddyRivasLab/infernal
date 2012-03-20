@@ -7,11 +7,16 @@
 #include <xmmintrin.h>
 #include <emmintrin.h>
 
+#include "esl_config.h"
+#include "p7_config.h"
 #include "config.h"
-#include "structs.h"
-#include "funcs.h"
+
 #include "easel.h"
 #include "esl_hmm.h"
+
+#include "hmmer.h"
+
+#include "infernal.h"
 
 #define BYTEMAX 255
 #define WORDMAX 0x7fff

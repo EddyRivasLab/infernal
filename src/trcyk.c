@@ -8,8 +8,9 @@
 #include "esl_msa.h"
 #include "esl_sqio.h"
 
-#include "structs.h"
-#include "funcs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 int
 main(int argc, char **argv)

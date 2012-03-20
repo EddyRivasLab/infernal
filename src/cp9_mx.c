@@ -14,8 +14,9 @@
 #include "easel.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 /*****************************************************************
  *   1. CP9_MX data structure functions,

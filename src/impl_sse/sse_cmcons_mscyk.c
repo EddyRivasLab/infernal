@@ -25,8 +25,9 @@
 #include "esl_vectorops.h"
 #include "esl_sse.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 #include "impl_sse.h"
 

@@ -26,8 +26,9 @@
 #include "esl_stack.h"
 #include "esl_sqio.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 static char *qdbinfo_setby_to_string(int setby);
 

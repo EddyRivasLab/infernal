@@ -28,8 +28,9 @@
 #include "esl_stats.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 static float      cm2hmm_emit_prob(CM_t *cm, CP9Map_t *cp9map, int x, int i, int k);
 static void       cm2hmm_special_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, double *psi, char ***tmap);
@@ -45,7 +46,7 @@ static float      FChiSquareFit(float *f1, float *f2, int N);
  * Function: AllocCP9Map()
  * 
  * Purpose:  Allocate a CP9Map_t object that stores information mapping
- *           a CP9 HMM to a CM and vice versa. See structs.h for
+ *           a CP9 HMM to a CM and vice versa. See infernal.h for
  *           description.
  *
  * Args:    

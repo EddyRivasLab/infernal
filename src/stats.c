@@ -19,7 +19,6 @@
 #include <ctype.h>
 #include <string.h>
 
-
 #include "easel.h"
 #include "esl_exponential.h"
 #include "esl_histogram.h"
@@ -29,8 +28,9 @@
 #include "esl_ssi.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"		/* external functions                   */
-#include "structs.h"		/* data structures, macros, #define's   */
+#include "hmmer.h"
+
+#include "infernal.h"
 
 
 int debug_print_expinfo_array(CM_t *cm, char *errbuf, ExpInfo_t **expA)

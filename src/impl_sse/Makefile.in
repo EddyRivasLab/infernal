@@ -42,8 +42,7 @@ OBJS  = cm_optimized.o\
         sse_cmcons_mscyk.o\
         sse_util.o
 
-HDRS  = ../funcs.h\
-        ../structs.h\
+HDRS  = ../infernal.h\
         impl_sse.h
 
 # Definitions present in HMMER3's Makefile that are not yet necessary in Infernal's

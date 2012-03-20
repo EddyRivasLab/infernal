@@ -21,8 +21,9 @@
 #include "esl_vectorops.h"
 #include "esl_fileparser.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 Prior_t *
 Prior_Create(void)

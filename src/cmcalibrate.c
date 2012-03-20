@@ -45,8 +45,8 @@
 #endif /*HMMER_THREADS*/
 
 #include "hmmer.h"
-#include "funcs.h"		/* external functions                   */
-#include "structs.h"		/* data structures, macros, #define's   */
+
+#include "infernal.h"
 
 #define REALLYSMALLX        1e-20
 #define EXPTAIL_CHUNKLEN    10000 /* sequence chunk length for random sequence searches */

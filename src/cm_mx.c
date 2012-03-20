@@ -59,8 +59,9 @@
 #include "easel.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 static int cm_scan_mx_integerize     (CM_t *cm, CM_SCAN_MX *smx, char *errbuf);
 static int cm_scan_mx_floatize       (CM_t *cm, CM_SCAN_MX *smx, char *errbuf);

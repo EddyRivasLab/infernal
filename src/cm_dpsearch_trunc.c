@@ -36,11 +36,10 @@
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
 
-#define OLDCODE 0
-#define NEWCODE 0
+#include "infernal.h"
+
 #define PRINTFALPHA 0
 #define PRINTIALPHA 0
 
@@ -3585,8 +3584,9 @@ cm_TrFillFromPassIdx(int pass_idx, int *ret_fill_L, int *ret_fill_R, int *ret_fi
 #include <esl_vectorops.h>
 #include <esl_wuss.h>
 
-#include "funcs.h"		/* function declarations                */
-#include "structs.h"		/* data structures, macros, #define's   */
+#include "hmmer.h"
+
+#include "infernal.h"
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/

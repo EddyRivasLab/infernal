@@ -27,8 +27,9 @@
 #include "esl_tree.h"
 #include "esl_vectorops.h"
 
-#include "funcs.h"		/* external functions                   */
-#include "structs.h"		/* data structures, macros, #define's   */
+#include "hmmer.h"
+
+#include "infernal.h"
 
 #define CONOPTS "--fast,--hand,--rsearch"                      /* Exclusive options for model construction                    */
 #define WGTOPTS "--wgsc,--wblosum,--wpb,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
@@ -712,8 +713,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    * If it's not RNA nor DNA, we can't deal with it anyway,
    * so we're hardcoded to RNA.
    */
-  cfg->abc = esl_alphabet_Create(eslRNA);
-  if(cfg->abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for sequence file");
+  if((cfg->abc = esl_alphabet_Create(eslRNA)) == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create alphabet for sequence file");
 
   /* open input alignment file */
   if((status = eslx_msafile_Open(&(cfg->abc), cfg->alifile, NULL, cfg->fmt, NULL, &(cfg->afp))) != eslOK) { 

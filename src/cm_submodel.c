@@ -36,8 +36,9 @@
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
-#include "funcs.h"
-#include "structs.h"
+#include "hmmer.h"
+
+#include "infernal.h"
 
 static void  map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int print_flag);
 static int   map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig_v, int sub_v);
@@ -73,7 +74,7 @@ static void  cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, C
  *           has less structure (less MATP nodes) than the template. Do this
  *           a bit indirectly, first get maps from each CM to a CP9 HMM,
  *           then use these maps to map the CMs to each other.
- *           See structs.h for more info on the submap data structure.
+ *           See infernal.h for more info on the submap data structure.
  *
  * Args
  * CM_t *sub_cm        - the sub CM
@@ -3321,8 +3322,6 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
   int orig_nd2;
   int nodes_used;
   int cm_nd;
-  int emitl;
-  int emitr;
   int i;
   int parent_tr_nd;
   ESL_STACK   *pda;
@@ -3634,7 +3633,7 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
 	  InsertTraceNode(orig_tr, orig_tr->n-1, TRACE_LEFT_CHILD, (ss_emitl[cm_nd] + emitl_flag + il_ct[cm_nd]), (ss_emitr[cm_nd] - emitr_flag - i), ir_used[cm_nd]);
 	  if(print_flag) printf("inserted trace node for orig_cm st %4s | emitl: %d | emitr: %d\n", sttypes[(int) orig_cm->sttype[ir_used[cm_nd]]], orig_tr->emitl[orig_tr->n-1], orig_tr->emitr[orig_tr->n+1]);
 	}
-      if(print_flag) printf("END nd: %4d | emitl: %4d | emitr: %4d\n", cm_nd, emitl, emitr);
+      if(print_flag) printf("END nd: %4d\n", cm_nd);
     }      
   *ret_orig_tr = orig_tr;
 
@@ -3760,7 +3759,7 @@ SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
   /* Potentially, overwrite transitions with non-probabilistic 
    * RSEARCH transitions. Currently only default transition
    * parameters are allowed, these are defined as DEFAULT_R*
-   * in structs.h 
+   * in infernal.h
    * Note: This is untouched from CMLogoddsify(), we don't try
    *       to accelerate it, it's unusual that it will be executed.
    */

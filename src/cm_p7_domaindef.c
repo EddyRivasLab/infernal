@@ -52,8 +52,8 @@
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
-#include "funcs.h"
-#include "structs.h"
+
+#include "infernal.h"
 
 static int is_multidomain_region         (P7_DOMAINDEF *ddef, int i, int j);
 /* Note: is_multidomain_region is *identical* to the function of the same name in p7_domaindef.c*/
