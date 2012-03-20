@@ -229,6 +229,7 @@ static int    set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, 
 static int    set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, const Prior_t *pri);
 static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, CM_t *cm, const Prior_t *prior, float msa_nseq);
 static int    configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int iter);
+static int    set_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int    build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_msa_name(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen);
@@ -882,11 +883,12 @@ process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *err
   if ((status =  esl_msa_Checksum             (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
   if ((status =  set_relative_weights         (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
   if ((status =  build_model                  (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
+  if ((status =  annotate                     (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
   if ((status =  set_model_cutoffs            (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
   if ((status =  set_effective_seqnumber      (go, cfg, errbuf, msa, cm, cfg->pri))                   != eslOK) goto ERROR;
   if ((status =  parameterize                 (go, cfg, errbuf, TRUE, cm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
   if ((status =  configure_model              (go, cfg, errbuf, cm, 1))                               != eslOK) goto ERROR;
-  if ((status =  annotate                     (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
+  if ((status =  set_consensus                (go, cfg, errbuf, cm))                                  != eslOK) goto ERROR;
   if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
 
   cm->checksum = checksum;
@@ -1402,11 +1404,6 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
  * for some inconceivable reason it doesn't 
  * we die.
  *
- * note: This is much simpler than how HMMER3 does
- *       this. The reason is that the --ctarg --cmaxid
- *       cluster options produce N > 1 CM per MSA,
- *       which are named <msa->name>.1 .. <msa->name>.N.
- * 
  */
 static int
 annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm)
@@ -1421,12 +1418,9 @@ annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *
     fflush(stdout);
   }
 
-  if(! (cm->flags & CMH_BITS)) ESL_XFAIL(eslEINVAL, errbuf, "Trying to set cm->consensus before bit scores are valid");
-
   if ((status = cm_SetName       (cm, msa->name))        != eslOK)  ESL_XFAIL(status, errbuf, "Unable to set name for CM");
   if ((status = cm_SetAccession  (cm, msa->acc))         != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA accession");
   if ((status = cm_SetDescription(cm, msa->desc))        != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA description");
-  if ((status = cm_SetConsensus  (cm, cm->cmcons, NULL)) != eslOK) ESL_XFAIL(status, errbuf, "Failed to calculate consensus sequence");
 
   if (cfg->be_verbose) { 
     fprintf(stdout, "done.  ");
@@ -1715,6 +1709,48 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
   if(w != NULL) esl_stopwatch_Destroy(w);
 
   return eslOK;
+}
+
+
+/* set_consensus()
+ * Set CM consensus using cm->cmcons. We have to do this
+ * after configuring the model because bit scores must
+ * be valid.
+ */
+static int
+set_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
+{
+  int status = eslOK;
+  ESL_STOPWATCH *w = NULL;
+
+  if (cfg->be_verbose) {
+    w = esl_stopwatch_Create();
+    esl_stopwatch_Start(w);
+    fprintf(stdout, "%-40s ... ", "Setting CM consensus");
+    fflush(stdout);
+  }
+
+  if(! (cm->flags & CMH_BITS)) ESL_XFAIL(eslEINVAL, errbuf, "Trying to set cm->consensus before bit scores are valid");
+
+  if ((status = cm_SetConsensus  (cm, cm->cmcons, NULL)) != eslOK) ESL_XFAIL(status, errbuf, "Failed to calculate consensus sequence");
+
+  if (cfg->be_verbose) { 
+    fprintf(stdout, "done.  ");
+    esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(stdout, w, "CPU time: ");
+  }
+
+  if(w != NULL) esl_stopwatch_Destroy(w);
+  return eslOK;
+
+ ERROR:
+  if (cfg->be_verbose) { 
+    fprintf(stdout, "FAILED.  ");
+    esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(stdout, w, "CPU time: ");
+  }
+  if(w != NULL) esl_stopwatch_Destroy(w);
+  return status;
 }
 
 /* build_and_calibrate_p7_filter()
