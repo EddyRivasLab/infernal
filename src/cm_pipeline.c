@@ -1877,21 +1877,16 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     status = p7_MSVFilter_longtarget(sq->dsq, sq->n, om, pli->oxf, msvdata, bg, pli->F1, &wlist, TRUE); /* TRUE: force SSV, not MSV */
 
     if(wlist.count > 0) { 
-      if(pli->do_msvbigwin) { 
-	p7_pli_LooseExtendAndMergeWindows(om, &wlist, sq->n);
-      }   
-      else { 
-	/* In scan mode, if at least one window passes the MSV filter, read the rest of the profile */
-	if (pli->mode == CM_SCAN_MODELS && (! have_rest)) {
-	  if (pli->cmfp) p7_oprofile_ReadRest(pli->cmfp->hfp, om);
-	  /* Note: we don't call cm_pli_NewModelThresholds() yet (as p7_pipeline() 
-	   * does at this point), because we don't yet have the CM */
-	  have_rest = TRUE;
-	}
-	p7_hmm_MSVDataComputeRest(om, msvdata);
-	p7_pli_ExtendAndMergeWindows(om, msvdata, &wlist, sq->n);
+      /* In scan mode, if at least one window passes the MSV filter, read the rest of the profile */
+      if (pli->mode == CM_SCAN_MODELS && (! have_rest)) {
+	if (pli->cmfp) p7_oprofile_ReadRest(pli->cmfp->hfp, om);
+	/* Note: we don't call cm_pli_NewModelThresholds() yet (as p7_pipeline() 
+	 * does at this point), because we don't yet have the CM */
+	have_rest = TRUE;
       }
-    }   
+      p7_hmm_MSVDataComputeRest(om, msvdata);
+      p7_pli_ExtendAndMergeWindows(om, msvdata, &wlist, sq->n);
+    }
     ESL_ALLOC(ws, sizeof(int64_t) * wlist.count);
     ESL_ALLOC(we, sizeof(int64_t) * wlist.count);
     nwin = wlist.count;

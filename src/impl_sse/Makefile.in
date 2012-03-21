@@ -23,10 +23,12 @@ RANLIB      = @RANLIB@
 INSTALL     = @INSTALL@
 
 ESLDIR         = @INFERNAL_ESLDIR@
-MYLIBDIRS      = -L../../hmmer/src -L../../${ESLDIR} -L..
-MYINCDIRS      = -I../../hmmer/src \
+HMMERDIR       = @INFERNAL_HMMERDIR@
+MYLIBDIRS      = -L../../${HMMERDIR}/src -L../../${ESLDIR} -L..
+MYINCDIRS      = -I../../${HMMERDIR}/src \
 		 -I../../${ESLDIR} \
 		 -I${top_srcdir}/easel \
+		 -I${top_srcdir}/hmmer \
 		 -I. \
 		 -I.. \
 		 -I${srcdir} \

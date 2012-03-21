@@ -38,11 +38,13 @@ INSTALL   = @INSTALL@
 
 IMPLDIR   = impl_@IMPL_CHOICE@
 ESLDIR    = @INFERNAL_ESLDIR@
+HMMERDIR  = @INFERNAL_HMMERDIR@
 
-MYLIBDIRS = -L../${ESLDIR} -L../hmmer/src/ -L./${IMPLDIR} -L.
+MYLIBDIRS = -L../${ESLDIR} -L../${HMMERDIR}/src -L./${IMPLDIR} -L.
 MYINCDIRS = -I../${ESLDIR} \
+	    -I../${HMMERDIR}/src \
 	    -I${top_srcdir}/easel \
-	    -I../hmmer/src \
+	    -I${top_srcdir}/hmmer/src \
 	    -I. \
 	    -I${srcdir}
 
@@ -122,6 +124,9 @@ BENCHMARKS = \
 UTESTS =\
 	cm_tophits_utest\
 
+ITESTS =\
+	itest_brute
+
 # Definitions present in HMMER3's Makefile that are not yet necessary in Infernal's
 #STATS = 
 #ITESTS = 
@@ -143,11 +148,14 @@ endif
 
 all:   ${PROGS} .FORCE
 
-dev:   ${PROGS} ${UTESTS} ${BENCHMARKS} ${EXAMPLES} .FORCE
+dev:   ${PROGS} ${UTESTS} ${ITESTS} ${BENCHMARKS} ${EXAMPLES} .FORCE
 	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} dev
 
-tests: ${PROGS} ${UTESTS} .FORCE
+tests: ${PROGS} ${UTESTS} ${ITESTS} .FORCE
 	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} tests
+
+check: ${PROGS} ${UTESTS} ${ITESTS} .FORCE
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} check
 
 libinfernal.a: libinfernal-src.stamp .FORCE
 	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} libinfernal-impl.stamp
@@ -163,11 +171,14 @@ libinfernal-src.stamp: ${OBJS}
 ${OBJS}:     ${HDRS} config.h
 ${PROGOBJS}: ${HDRS} config.h
 
-${PROGS}: @EXEC_DEPENDENCY@  libinfernal.a ../hmmer/src/libhmmer.a ../${ESLDIR}/libeasel.a  
+${PROGS}: @EXEC_DEPENDENCY@  libinfernal.a ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a  
 	${QUIET_GEN}${CC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${MPILIBS} ${LIBS}
 
 .c.o:
 	${QUIET_CC}${CC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} ${CPPFLAGS} ${MYINCDIRS} -o $@ -c $<
+
+${ITESTS}: @EXEC_DEPENDENCY@ libinfernal.a ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a ${HDRS} config.h
+	${QUIET_GEN}${CC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${MPILIBS} ${LIBS}
 
 ${UTESTS}: libinfernal.a  ${HDRS} config.h
 	@BASENAME=`echo $@ | sed -e 's/_utest//' | sed -e 's/^cm_//'` ;\

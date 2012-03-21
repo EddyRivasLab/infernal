@@ -23,6 +23,11 @@ SHELL          = /bin/sh
 
 # location of easel
 ESLDIR         = @INFERNAL_ESLDIR@
+
+# location of hmmer
+HMMERDIR       = @INFERNAL_HMMERDIR@
+
+# location of suffix array library
 SADIR          = @INFERNAL_SADIR@
 
 # Package information
@@ -92,40 +97,42 @@ SSEPROGS = sse_cmsearch\
 #      (Excludes test programs.)
 #
 all: 
-	${QUIET_SUBDIR0}${ESLDIR}     ${QUIET_SUBDIR1} all
-	${QUIET_SUBDIR0}${SADIR}      ${QUIET_SUBDIR1} all
-	${QUIET_SUBDIR0}hmmer/src     ${QUIET_SUBDIR1} libhmmer.a
-	${QUIET_SUBDIR0}src           ${QUIET_SUBDIR1} all
-	${QUIET_SUBDIR0}rmark         ${QUIET_SUBDIR1} all
+	${QUIET_SUBDIR0}${ESLDIR}        ${QUIET_SUBDIR1} all
+	${QUIET_SUBDIR0}${SADIR}         ${QUIET_SUBDIR1} all
+	${QUIET_SUBDIR0}${HMMERDIR}      ${QUIET_SUBDIR1} all
+	${QUIET_SUBDIR0}src              ${QUIET_SUBDIR1} all
+	${QUIET_SUBDIR0}rmark            ${QUIET_SUBDIR1} all
 
 # dev: compile all executables, including drivers.
 #
 dev: 
-	${QUIET_SUBDIR0}${ESLDIR}  ${QUIET_SUBDIR1} dev
-	${QUIET_SUBDIR0}${SADIR}   ${QUIET_SUBDIR1} all
-	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} dev
-	${QUIET_SUBDIR0}src        ${QUIET_SUBDIR1} dev
-	${QUIET_SUBDIR0}rmark      ${QUIET_SUBDIR1} all
+	${QUIET_SUBDIR0}${ESLDIR}       ${QUIET_SUBDIR1} dev
+	${QUIET_SUBDIR0}${SADIR}        ${QUIET_SUBDIR1} all
+	${QUIET_SUBDIR0}${HMMERDIR}     ${QUIET_SUBDIR1} dev
+	${QUIET_SUBDIR0}src             ${QUIET_SUBDIR1} dev
+	${QUIET_SUBDIR0}rmark           ${QUIET_SUBDIR1} all
 
 # tests: compile all test drivers for 'make check'
 #
 tests:
-	${QUIET_SUBDIR0}${ESLDIR}  ${QUIET_SUBDIR1} tests
-	${QUIET_SUBDIR0}${SADIR}   ${QUIET_SUBDIR1} all
-	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} libhmmer.a
-	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} tests
-	${QUIET_SUBDIR0}src        ${QUIET_SUBDIR1} tests
+	${QUIET_SUBDIR0}${ESLDIR}       ${QUIET_SUBDIR1} tests
+	${QUIET_SUBDIR0}${SADIR}        ${QUIET_SUBDIR1} all
+	${QUIET_SUBDIR0}${HMMERDIR}     ${QUIET_SUBDIR1} tests
+	${QUIET_SUBDIR0}src             ${QUIET_SUBDIR1} tests
 
 # check: Run test suites.
 #
+# We  do a 'check' in HMMERDIR/testsuite, not 
+# HMMERDIR/  because we don't need to run 
+# the Easel testsuite twice. 
 check:
-	${QUIET_SUBDIR0}${ESLDIR}  ${QUIET_SUBDIR1} tests
-	${QUIET_SUBDIR0}${SADIR}   ${QUIET_SUBDIR1} all
-	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} libhmmer.a
-	${QUIET_SUBDIR0}hmmer/src  ${QUIET_SUBDIR1} tests
-	${QUIET_SUBDIR0}src        ${QUIET_SUBDIR1} tests
-	${QUIET_SUBDIR0}${ESLDIR}  ${QUIET_SUBDIR1} check
-	${QUIET_SUBDIR0}testsuite  ${QUIET_SUBDIR1} check
+	${QUIET_SUBDIR0}${ESLDIR}              ${QUIET_SUBDIR1} tests
+	${QUIET_SUBDIR0}${SADIR}               ${QUIET_SUBDIR1} all
+	${QUIET_SUBDIR0}${HMMERDIR}            ${QUIET_SUBDIR1} tests
+	${QUIET_SUBDIR0}src                    ${QUIET_SUBDIR1} tests
+	${QUIET_SUBDIR0}${ESLDIR}              ${QUIET_SUBDIR1} check
+	${QUIET_SUBDIR0}${HMMERDIR}/testsuite  ${QUIET_SUBDIR1} check
+	${QUIET_SUBDIR0}testsuite              ${QUIET_SUBDIR1} check
 
 # devcheck: Run Infernal developer test suite (slower, but more comprehensive than 'check').
 #
@@ -164,7 +171,7 @@ clean:
 	${QUIET_SUBDIR0}rmark         ${QUIET_SUBDIR1} clean
 	${QUIET_SUBDIR0}testsuite     ${QUIET_SUBDIR1} clean
 	${QUIET_SUBDIR0}documentation ${QUIET_SUBDIR1} clean
-	${QUIET_SUBDIR0}hmmer         ${QUIET_SUBDIR1} clean
+	${QUIET_SUBDIR0}${HMMERDIR}   ${QUIET_SUBDIR1} clean
 	${QUIET_SUBDIR0}${ESLDIR}     ${QUIET_SUBDIR1} clean
 	-rm -f *.o *~ Makefile.bak core TAGS gmon.out
 
@@ -175,7 +182,7 @@ distclean:
 	${QUIET_SUBDIR0}rmark         ${QUIET_SUBDIR1} distclean
 	${QUIET_SUBDIR0}testsuite     ${QUIET_SUBDIR1} distclean
 	${QUIET_SUBDIR0}documentation ${QUIET_SUBDIR1} distclean
-	${QUIET_SUBDIR0}hmmer         ${QUIET_SUBDIR1} distclean
+	${QUIET_SUBDIR0}${HMMERDIR}   ${QUIET_SUBDIR1} distclean
 	${QUIET_SUBDIR0}${ESLDIR}     ${QUIET_SUBDIR1} distclean
 	-rm config.log config.status
 	-rm -rf autom4te.cache

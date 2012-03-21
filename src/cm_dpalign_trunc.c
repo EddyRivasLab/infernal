@@ -5674,7 +5674,6 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   if((status = cm_TrFillFromMode(preset_mode, &fill_L, &fill_R, &fill_T)) != eslOK) ESL_FAIL(status, errbuf, "cm_TrCYKOutsideAlign(), bogus mode: %d", preset_mode);
 
   /* Determine the truncation penalty index, from the pass_idx */
-  printf("pass_idx: %d\n", pass_idx);
   if((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrCYKOussideAlign(), unexpected pass idx: %d", pass_idx);
 
   /* grow the matrices based on the current sequence and bands */
@@ -5987,15 +5986,15 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	    i = j-d+1;
 	    /* i is accounted for by a parse with an optimal score */
 	    optseen[i] = TRUE;
-	    if     (fabs(Jsc) < 0.001) printf("\tResidue %4d possibly accounted for by J matrix Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);
-	    else if(fabs(Lsc) < 0.001) printf("\tResidue %4d possibly accounted for by L matrix Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);
+	    /*if     (fabs(Jsc) < 0.001) printf("\tResidue %4d possibly accounted for by J matrix Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);*/
+	    /*else if(fabs(Lsc) < 0.001) printf("\tResidue %4d possibly accounted for by L matrix Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);*/
 	  }
 	  if((fabs(Jsc) < 0.001 || fabs(Rsc) < 0.001) && 
 	     (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)) { 
 	    /* j is accounted for by a parse with an optimal score */
 	    optseen[j] = TRUE;
-	    if     (fabs(Jsc) < 0.001) printf("\tResidue %4d possibly accounted for by J matrix Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);
-	    else if(fabs(Rsc) < 0.001) printf("\tResidue %4d possibly accounted for by R matrix Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);
+	    /*if     (fabs(Jsc) < 0.001) printf("\tResidue %4d possibly accounted for by J matrix Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);*/
+	    /*else if(fabs(Rsc) < 0.001) printf("\tResidue %4d possibly accounted for by R matrix Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);*/
 	  }
 	}
       }
@@ -6017,7 +6016,7 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   if(do_check) { 
     if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYK Inside/Outside check1 FAILED.");
     else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYK Inside/Outside check2 FAILED.");
-    else                printf("SUCCESS! TrCYK Inside/Outside checks PASSED.\n");
+    /*else                printf("SUCCESS! TrCYK Inside/Outside checks PASSED.\n");*/
   }
 
   if     (preset_mode == TRMODE_J) optsc = Jalpha[0][L][L];
@@ -6704,15 +6703,15 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 	    i = j-d+1;
 	    /* i is accounted for by a parse with an optimal score */
 	    optseen[i] = TRUE;
-	    if     (fabs(Jsc) < 0.001) printf("\tResidue %4d possibly accounted for by J matrix Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);
-	    else if(fabs(Lsc) < 0.001) printf("\tResidue %4d possibly accounted for by L matrix Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);
+	    /*if     (fabs(Jsc) < 0.001) printf("\tResidue %4d possibly accounted for by J matrix Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);*/
+	    /*else if(fabs(Lsc) < 0.001) printf("\tResidue %4d possibly accounted for by L matrix Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);*/
 	  }
 	  if(((do_J_v && fabs(Jsc) < 0.001) || (do_R_v && fabs(Rsc) < 0.001)) && 
 	     (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)) { 
 	    /* j is accounted for by a parse with an optimal score */
 	    optseen[j] = TRUE;
-	    if     (fabs(Jsc) < 0.001) printf("\tResidue %4d possibly accounted for by J matrix Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);
-	    else if(fabs(Rsc) < 0.001) printf("\tResidue %4d possibly accounted for by R matrix Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);
+	    /*if     (fabs(Jsc) < 0.001) printf("\tResidue %4d possibly accounted for by J matrix Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);*/
+	    /*else if(fabs(Rsc) < 0.001) printf("\tResidue %4d possibly accounted for by R matrix Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);*/
 	  }
 	}
       }
@@ -6734,7 +6733,7 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   if(do_check) {
     if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYKHB Inside/Outside check1 FAILED.");
     else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYKHB Inside/Outside check2 FAILED.");
-    else                printf("SUCCESS! TrCYKHB Inside/Outside checks PASSED.\n");
+    ESL_DPRINTF1(("SUCCESS! TrCYKHB Inside/Outside checks PASSED.\n"));
   }
 
   if     (preset_mode == TRMODE_J) optsc = Jalpha[0][jp_0][Lp_0];
@@ -7134,7 +7133,7 @@ cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 
   if(do_check) { 
     if  (fail_flag) ESL_FAIL(eslFAIL, errbuf, "Tr Inside/Outside check FAILED.");
-    else            printf("SUCCESS! Tr Inside/Outside check PASSED.\n");
+    ESL_DPRINTF1(("SUCCESS! Tr Inside/Outside check PASSED.\n"));
   }
 
   if     (preset_mode == TRMODE_J) optsc = Jalpha[0][L][L];
@@ -7800,7 +7799,7 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 
   if(do_check) { 
     if(fail_flag) ESL_FAIL(eslFAIL, errbuf, "Tr Inside/Outside HB check FAILED.");
-    else          printf("SUCCESS! Tr Inside/Outside HB check PASSED.\n");
+    ESL_DPRINTF1(("SUCCESS! Tr Inside/Outside HB check PASSED.\n"));
   }
 
   if     (preset_mode == TRMODE_J) optsc = Jalpha[0][jp_0][Lp_0];

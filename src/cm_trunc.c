@@ -61,6 +61,7 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
   double  *psi      = NULL;  /* [0..v..M-1]  expected occupancy of state v */
   float    m_psi, i1_psi, i2_psi; /* temp psi values */
   float    summed_psi; 
+  CM_TR_PENALTIES *trp = NULL;
 
   /* variables used for calculating global truncation penalties */
   float g_5and3; /* fragment probability if 5' and 3' truncation are allowed */
@@ -75,7 +76,6 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
 
   if(cm == NULL || cm->emap == NULL) goto ERROR;
 
-  CM_TR_PENALTIES *trp = NULL;
   ESL_ALLOC(trp, sizeof(CM_TR_PENALTIES));
 
   trp->M = cm->M;
@@ -444,7 +444,7 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
   if(iexpocc != NULL) free(iexpocc);
   if(psi     != NULL) free(psi);
   if(begin   != NULL) free(begin);
-  if(trp != NULL) cm_tr_penalties_Destroy(trp);
+  if(trp     != NULL) cm_tr_penalties_Destroy(trp);
 
   return NULL;
 }

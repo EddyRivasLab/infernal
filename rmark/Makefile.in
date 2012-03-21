@@ -14,7 +14,7 @@ IMPLDIR  = impl_@IMPL_CHOICE@
 
 SRCDIR   = ../src
 ESLDIR   = @INFERNAL_ESLDIR@
-HMMERDIR = ../hmmer
+HMMERDIR = @INFERNAL_HMMERDIR@
 
 ESLINC   = -I../${ESLDIR} -I${top_srcdir}/easel
 SRCINC   = -I${SRCDIR} -I${top_srcdir}/src
@@ -43,10 +43,10 @@ endif
 all:    ${PROGS}
 dev:    ${PROGS}
 
-${PROGS}: @EXEC_DEPENDENCY@  ${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a 
-	${QUIET_GEN}${CC} ${CFLAGS} ${DEFS} ${LDFLAGS} -L${HMMERDIR}/src -L../${ESLDIR} -L${SRCDIR} -o $@ $@.o ${LIBS}
+${PROGS}: @EXEC_DEPENDENCY@  ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a 
+	${QUIET_GEN}${CC} ${CFLAGS} ${DEFS} ${LDFLAGS} -L../${HMMERDIR}/src -L../${ESLDIR} -L${SRCDIR} -o $@ $@.o ${LIBS}
 
-${PROGOBJS}: ../hmmer/src/hmmer.h ../hmmer/src/p7_config.h
+${PROGOBJS}: ../${HMMERDIR}/src/hmmer.h ../${HMMERDIR}/src/p7_config.h ../src/infernal.h ../src/config.h
 
 .c.o: 
 	${QUIET_CC}${CC} ${ESLINC} ${SRCINC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} -o $@ -c $<		

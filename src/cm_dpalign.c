@@ -3153,7 +3153,6 @@ cm_CYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   fail1_flag = FALSE;
   fail2_flag = FALSE;
   fail3_flag = FALSE;
-  printf("DO CHECK: %d\n", do_check);
   if(do_check) {
     /* Check for consistency between the Inside alpha matrix and the
      * Outside beta matrix. We assume the Inside CYK parse score
@@ -3206,12 +3205,12 @@ cm_CYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st || (cm->sttype[v] == EL_st && d >0)) { 
 	      /* i is accounted for by a parse with an optimal score */
 	      optseen[i] = TRUE;
-	      printf("\tResidue %4d possibly accounted for by Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);
+	      /*printf("\tResidue %4d possibly accounted for by Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);*/
 	    }
 	    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
 	      /* j is accounted for by a parse with an optimal score */
 	      optseen[j] = TRUE;
-	      printf("\tResidue %4d possibly accounted for by Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);
+	      /*printf("\tResidue %4d possibly accounted for by Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);*/
 	    }
 	  }
 	}
@@ -3290,7 +3289,7 @@ cm_CYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
     if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check1 FAILED.");
     else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check2 FAILED.");
     else if(fail3_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check3 FAILED.");
-    else                printf("SUCCESS! CYK Inside/Outside checks PASSED.\n");
+    ESL_DPRINTF1(("SUCCESS! CYK Inside/Outside checks PASSED.\n"));
   }
 
   if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("\tcm_CYKOutsideAlign() sc : %f\n", sc));
@@ -3813,12 +3812,12 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st || (cm->sttype[v] == EL_st && d >0)) { 
 	      /* i is accounted for by a parse with an optimal score */
 	      optseen[i] = TRUE;
-	      printf("\tResidue %4d possibly accounted for by Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);
+	      /*printf("\tResidue %4d possibly accounted for by Left  emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", i, Statetype(cm->sttype[v]), v, j, d);*/
 	    }
 	    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
 	      /* j is accounted for by a parse with an optimal score */
 	      optseen[j] = TRUE;
-	      printf("\tResidue %4d possibly accounted for by Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);
+	      /*printf("\tResidue %4d possibly accounted for by Right emitter %2s cell [v:%4d][j:%4d][d:%4d]\n", j, Statetype(cm->sttype[v]), v, j, d);*/
 	    }
 	  }
 	}
@@ -3906,7 +3905,7 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
     if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check1 FAILED.");
     else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check2 FAILED.");
     else if(fail3_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check3 FAILED.");
-    else                printf("SUCCESS! CYK Inside/Outside HB checks PASSED.\n");
+    ESL_DPRINTF1(("SUCCESS! CYK Inside/Outside HB checks PASSED.\n"));
   }
 
   if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("\tcm_CYKOutsideAlignHB() sc : %f\n", sc));
@@ -4159,7 +4158,9 @@ cm_OutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, i
 	       n, sc, alpha[0][L][L], diff);
       }
     }
-    if(! fail_flag) printf("SUCCESS! all nodes passed error check (cm_OutsideAlign())\n");
+    if(! fail_flag) { 
+      ESL_DPRINTF1(("SUCCESS! all nodes passed error check (cm_OutsideAlign())\n"));
+    }
   }
 
   /* Finally, calculate the optimal score, but this only works if

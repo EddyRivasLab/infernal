@@ -123,6 +123,10 @@ static ESL_OPTIONS options[] = {
   /* name           type         default   env  range toggles   reqs   incomp           help                                                            docgroup*/
   { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not allow truncated hits at sequence terminii",             6 },
   { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"-g,--notrunc",    "allow truncated hits anywhere within sequences",               6 },
+  /* Control of filtering mode/acceleration level */  /* Control of truncated hit detection */
+  /* name           type         default   env  range toggles   reqs   incomp           help                                                                docgroup*/
+  ///  { "--Wx",         eslARG_REAL,   FALSE, NULL, "x>=1.", NULL,  NULL,  "--wincx",       "increase W (expected max hit length) by a factor of <x>",          7 },
+  /// { "--Wcx",        eslARG_REAL,   FALSE, NULL, "x>=1.", NULL,  NULL,  "--winx",        "set W (expected max hit length) as <x> times consensus model len", 7 },
   /* Control of filtering mode/acceleration level */
   /* name           type         default   env  range toggles   reqs   incomp                   help                                                                   docgroup*/
   { "--max",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "turn all heuristic filters off             (power: 1st, speed: 5th)", 7 },
@@ -163,17 +167,17 @@ static ESL_OPTIONS options[] = {
   { "--noF3b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn off the HMM Fwd composition bias filter",               101 },
   { "--noF4b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn off the HMM glocal Fwd composition bias filter",        101 },
   { "--doF5b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn on  the HMM per-envelope composition bias filter",      101 },
-  { "--F1",         eslARG_REAL,  "0.35", NULL, NULL,    NULL,  NULL, "--noF1",         "Stage 1 (MSV) threshold:         promote hits w/ P <= <x>",  101 },
-  { "--F1b",        eslARG_REAL,  "0.35", NULL, NULL,    NULL,"--doF1b", NULL,          "Stage 1 (MSV) bias threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F2",         eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--noF2",         "Stage 2 (Vit) threshold:         promote hits w/ P <= <x>",  101 },
-  { "--F2b",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--noF2b",        "Stage 2 (Vit) bias threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F3",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF3",         "Stage 3 (Fwd) threshold:         promote hits w/ P <= <x>",  101 },
-  { "--F3b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF3b",        "Stage 3 (Fwd) bias threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F4",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF4",         "Stage 4 (gFwd) glocal threshold: promote hits w/ P <= <x>",  101 },
-  { "--F4b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF4b",        "Stage 4 (gFwd) glocal bias thr:  promote hits w/ P <= <x>",  101 },
-  { "--F5",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, NULL,             "Stage 5 (env defn) threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F5b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,"--doF5b", NULL,          "Stage 5 (env defn) bias thr:     promote hits w/ P <= <x>",  101 },
-  { "--F6",         eslARG_REAL,  "1e-4", NULL, NULL,    NULL,  NULL, "--noF6",         "Stage 6 (CYK) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F1",         eslARG_REAL,  "0.35", NULL, "x>0",   NULL,  NULL, "--noF1",         "Stage 1 (MSV) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F1b",        eslARG_REAL,  "0.35", NULL, "x>0",   NULL,"--doF1b", NULL,          "Stage 1 (MSV) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F2",         eslARG_REAL,  "0.20", NULL, "x>0",   NULL,  NULL, "--noF2",         "Stage 2 (Vit) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F2b",        eslARG_REAL,  "0.20", NULL, "x>0",   NULL,  NULL, "--noF2b",        "Stage 2 (Vit) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F3",         eslARG_REAL, "0.003", NULL, "x>0",   NULL,  NULL, "--noF3",         "Stage 3 (Fwd) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F3b",        eslARG_REAL, "0.003", NULL, "x>0",   NULL,  NULL, "--noF3b",        "Stage 3 (Fwd) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F4",         eslARG_REAL, "0.003", NULL, "x>0",   NULL,  NULL, "--noF4",         "Stage 4 (gFwd) glocal threshold: promote hits w/ P <= <x>",  101 },
+  { "--F4b",        eslARG_REAL, "0.003", NULL, "x>0",   NULL,  NULL, "--noF4b",        "Stage 4 (gFwd) glocal bias thr:  promote hits w/ P <= <x>",  101 },
+  { "--F5",         eslARG_REAL, "0.003", NULL, "x>0",   NULL,  NULL, NULL,             "Stage 5 (env defn) threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F5b",        eslARG_REAL, "0.003", NULL, "x>0",   NULL,"--doF5b", NULL,          "Stage 5 (env defn) bias thr:     promote hits w/ P <= <x>",  101 },
+  { "--F6",         eslARG_REAL,  "1e-4", NULL, "x>0",   NULL,  NULL, "--noF6",         "Stage 6 (CYK) threshold:         promote hits w/ P <= <x>",  101 },
   /* Options for precise control of HMM envelope definition */
   /* name           type          default  env range toggles    reqs  incomp            help                                                      docgroup*/
   { "--rt1",        eslARG_REAL,  "0.25", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt1 parameter as <x>",        102 },

@@ -2,7 +2,7 @@ top_srcdir     = @top_srcdir@
 srcdir         = @srcdir@
 VPATH          = @srcdir@ 
 
-SQCLEVEL = 2
+SQCLEVEL = 1
 DEVSQCLEVEL = 4
 
 ESLDIR = @INFERNAL_ESLDIR@
@@ -26,7 +26,7 @@ check:
 	@echo 
 	@echo Running Infernal test suite...
 	@echo
-	@${srcdir}/../${ESLDIR}/devkit/sqc ${SQCLEVEL} ${srcdir}/exercises.sqc .. ${srcdir}/..
+	@${srcdir}/../${ESLDIR}/devkit/sqc ${SQCLEVEL} ${srcdir}/testsuite.sqc .. ${srcdir}/..
 
 devcheck: 
 	@echo 
