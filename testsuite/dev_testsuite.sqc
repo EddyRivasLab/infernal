@@ -1099,6 +1099,14 @@
 1  exercise  scan:3/r1k/cyk      @src/cmscan@  --cyk %3.CM% %R1K%
 1  exercise  scan:t/1k/acyk      @src/cmscan@  --acyk %T.CM% %T1K%
 1  exercise  scan:3/r1k/acyk     @src/cmscan@  --acyk %3.CM% %R1K%
+1  exercise  scan:t/1k/wcx/3     @src/cmscan@  --wcx 3 %T.CM% %T1K%
+1  exercise  scan:t/1k/wcx/5     @src/cmscan@  --wcx 5 %T.CM% %T1K%
+1  fail      scan:t/1k/wcx/0p3   @src/cmscan@  --wcx 0.3 %T.CM% %T1K%
+1  fail      scan:t/1k/wcx/nohmm @src/cmscan@  --wcx 3 --nohmm %T.CM% %T1K%
+1  fail      scan:t/1k/wcx/fqdb  @src/cmscan@  --wcx 3 --fqdb %T.CM% %T1K%
+1  fail      scan:t/1k/wcx/qdb   @src/cmscan@  --wcx 3 --qdb %T.CM% %T1K%
+1  exercise  scan:3/1k/wcx/3     @src/cmscan@  --wcx 3 %3.CM% %R1K%
+1  exercise  scan:3/1k/wcx/5     @src/cmscan@  --wcx 5 %3.CM% %R1K%
 1  exercise  scan:t/1k/top       @src/cmscan@  --toponly %T.CM% %T1K%
 1  exercise  scan:3/r1k/top      @src/cmscan@  --toponly %3.CM% %R1K%
 1  exercise  scan:t/1k/bot       @src/cmscan@  --bottomonly %T.CM% %T1K%
@@ -1263,8 +1271,8 @@
 1  fail      search:t/sq/stdin  cat %TEMIT% | @src/cmsearch@ %T.CM% -
 1  fail      search:3/sq/stdin  cat %3EMIT% | @src/cmsearch@ %3.CM% -
 
-1  exercise  search:t/3trna/A  @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %TRNA.C.CM% !testsuite/3trnas.fa!
-1  exercise  search:3/1k/A     @src/cmsearch@ -Z 1000 -A %3.AMSA% %3.C.CM% !testsuite/1k-3.fa!
+1  exercise  search:t/3trna/A  @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %T.CM% !testsuite/3trnas.fa!
+1  exercise  search:3/1k/A     @src/cmsearch@ -Z 1000 -A %3.AMSA% %3.CM% !testsuite/1k-3.fa!
 
 1  exercise  search:t/10k/g    @src/cmsearch@  -g %T.CM% %T10K%
 1  exercise  search:v/10k/g    @src/cmsearch@  -g %V.CM% %V10K%
@@ -1345,6 +1353,14 @@
 1  exercise  search:3/r1k/cyk      @src/cmsearch@  --cyk %3.CM% %R1K%
 1  exercise  search:t/1k/acyk      @src/cmsearch@  --acyk %T.CM% %T1K%
 1  exercise  search:3/r1k/acyk     @src/cmsearch@  --acyk %3.CM% %R1K%
+1  exercise  search:t/1k/wcx/3     @src/cmsearch@  --wcx 3 %T.CM% %T1K%
+1  exercise  search:t/1k/wcx/5     @src/cmsearch@  --wcx 5 %T.CM% %T1K%
+1  fail      search:t/1k/wcx/0p3   @src/cmsearch@  --wcx 0.3 %T.CM% %T1K%
+1  fail      search:t/1k/wcx/nohmm @src/cmsearch@  --wcx 3 --nohmm %T.CM% %T1K%
+1  fail      search:t/1k/wcx/fqdb  @src/cmsearch@  --wcx 3 --fqdb %T.CM% %T1K%
+1  fail      search:t/1k/wcx/qdb   @src/cmsearch@  --wcx 3 --qdb %T.CM% %T1K%
+1  exercise  search:3/1k/wcx/3     @src/cmsearch@  --wcx 3 %3.CM% %R1K%
+1  exercise  search:3/1k/wcx/5     @src/cmsearch@  --wcx 5 %3.CM% %R1K%
 1  exercise  search:t/1k/top       @src/cmsearch@  --toponly %T.CM% %T1K%
 1  exercise  search:3/r1k/top      @src/cmsearch@  --toponly %3.CM% %R1K%
 1  exercise  search:t/1k/bot       @src/cmsearch@  --bottomonly %T.CM% %T1K%

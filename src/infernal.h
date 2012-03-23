@@ -2181,6 +2181,8 @@ typedef struct cm_pipeline_s {
   int           do_hb_recalc;   /* TRUE to recalculate HMM bands for alignment    */
   double        xtau;           /* multiplier for tau when tightening bands */
   double        maxtau;         /* max tau when tightening bands            */
+  int           do_wcx;         /* TRUE to set cm->W as cm->clen * wcx      */
+  float         wcx;            /* set W as cm->clen * wcx, ignoring W from CM file */
   /* these are all currently hard-coded, in cm_pipeline_Create() */
   float         smult;          /* 2.0;  W multiplier for window splitting */
   float         wmult;          /* 1.0;  maxW will be max of wmult * cm->W and cmult * cm->clen */

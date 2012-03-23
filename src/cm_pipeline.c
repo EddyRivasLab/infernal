@@ -25,7 +25,6 @@
 #include "infernal.h"
 
 #define DEBUGPIPELINE  0
-#define DEBUGMSVMERGE  0
 
 static int  pli_p7_filter         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
 static int  pli_p7_env_def        (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
@@ -74,9 +73,9 @@ static void copy_subseq           (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_
  *            || option      ||            description                     || usually  ||
  *            | -g           |  configure CM for glocal alignment           |   FALSE   |
  *            | -Z           |  database size in Mb                         |    NULL   |
- *            | --allstats   |  verbose statistics output mode              |   FALSE   |
  *            | --acc        |  prefer accessions over names in output      |   FALSE   |
  *            | --noali      |  don't output alignments (smaller output)    |   FALSE   |
+ *            | --allstats   |  verbose statistics output mode              |   FALSE   |
  *            | -E           |  report hits <= this E-value threshold       |    10.0   |
  *            | -T           |  report hits >= this bit score threshold     |    NULL   |
  *            | --incE       |  include hits <= this E-value threshold      |    0.01   |
@@ -84,18 +83,20 @@ static void copy_subseq           (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_
  *            | --cut_ga     |  model-specific thresholding using GA        |   FALSE   |
  *            | --cut_nc     |  model-specific thresholding using NC        |   FALSE   |
  *            | --cut_tc     |  model-specific thresholding using TC        |   FALSE   |
+ *            | --notrunc    |  turn off truncated hit detection            |   FALSE   |
+ *            | --anytrunc   |  allow truncated hits anywhere in the seq    |   FALSE   |
  *            | --max        |  turn all heuristic filters off              |   FALSE   |
  *            | --nohmm      |  turn all HMM filters off                    |   FALSE   |
  *            | --mid        |  turn off MSV and Viterbi filters            |   FALSE   |
+ *            | --default    |  default dbsize-dependent filtering strategy |    TRUE   |
  *            | --rfam       |  set filters to strict Rfam settings         |   FALSE   |
  *            | --FZ <x>     |  set filter thr as if dbsize were <x> Mb     |    NULL   |
  *            | --Fmid <x>   |  with --mid, set fwd filter thresholds to <x>|    NULL   |
- *            | --notrunc    |  turn off truncated hit detection            |   FALSE   |
- *            | --anytrunc   |  allow truncated hits anywhere in the seq    |   FALSE   |
  *            | --nonull3    |  turn off NULL3 correction                   |   FALSE   |
  *            | --mxsize <x> |  set max allowed HMM banded DP mx size to <x>|    128 Mb |
  *            | --cyk        |  set final search stage as CYK, not Inside   |   FALSE   |
- *            | --aln-cyk    |  align hits with CYK, not optimal accuracy   |   FALSE   |
+ *            | --acyk       |  align hits with CYK, not optimal accuracy   |   FALSE   |
+ *            | --wcx <x>    |  set cm->W as <x> * cm->clen                 |   FALSE   |
  *            | --toponly    |  only search top strand                      |   FALSE   |
  *            | --bottomonly |  only search bottom strand                   |   FALSE   |
  * *** all opts below this line are 'developer' options, only visible in cmsearch/cmscan via --devhelp 
@@ -121,13 +122,19 @@ static void copy_subseq           (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_
  *            | --F5         |  Stage 5  (envdef)      P value threshold    |    NULL   |
  *            | --F5b        |  Stage 5b (envdef bias) P value threshold    |    NULL   |
  *            | --F6         |  Stage 6  (CYK)         P value threshold    |    NULL   |
+ *            | --rt1        |  P7_DOMAINDEF rt1 parameter                  |    0.25   |
+ *            | --rt2        |  P7_DOMAINDEF rt2 parameter                  |    0.10   |
+ *            | --rt3        |  P7_DOMAINDEF rt3 parameter                  |    0.20   |
+ *            | --ns         |  number of domain/envelope tracebacks        |     200   |
  *            | --ftau       |  HMM band tail loss prob for CYK filter      |    1e-4   |
  *            | --fsums      |  use sums to get CYK filter HMM bands        |   FALSE   |
+ *            | --fqdb       |  use QDBs not HMM bands in CYK filter        |   FALSE   |
  *            | --fbeta      |  beta for QDBs in CYK filter                 |    1e-7   |
  *            | --fnonbanded |  run CYK filter without bands                |   FALSE   |
  *            | --nocykenv   |  do not redefine envelopes using CYK         |   FALSE   |
  *            | --cykenvx    |  P-value multiplier for CYK envelope redefn  |    NULL   |
  *            | --tau        |  HMM band tail loss prob for final round     |    5e-6   |
+ *            | --qdb        |  use QDBs not HMM bands in final round       |   FALSE   |
  *            | --sums       |  use sums to get final round HMM bands       |   FALSE   |
  *            | --beta       |  beta for QDBs in final round                |   1e-15   |
  *            | --nonbanded  |  run CYK filter without bands                |   FALSE   |
@@ -137,14 +144,9 @@ static void copy_subseq           (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_
  *            | --timeF4     |  abort after F4b stage, for timing expts     |   FALSE   | 
  *            | --timeF5     |  abort after F5b stage, for timing expts     |   FALSE   | 
  *            | --timeF6     |  abort after F6  stage, for timing expts     |   FALSE   | 
- *            | --rt1        |  P7_DOMAINDEF rt1 parameter                  |    0.25   |
- *            | --rt2        |  P7_DOMAINDEF rt2 parameter                  |    0.10   |
- *            | --rt3        |  P7_DOMAINDEF rt3 parameter                  |    0.20   |
- *            | --ns         |  number of domain/envelope tracebacks        |     200   |
  *            | --anonbanded |  do not use bands when aligning hits         |   FALSE   |
  *            | --anewbands  |  calculate new bands for hit alignment       |   FALSE   |
  *            | --nogreedy   |  use optimal CM hit resolution, not greedy   |   FALSE   |
- *            | --filcmW     |  use CM's W not HMM's for all filter stages  |   FALSE   |
  *            | --cp9noel    |  turn off EL state in CP9 HMM                |   FALSE   |
  *            | --cp9gloc    |  configure CP9 HMM in glocal mode            |   FALSE   |
  *            | --null2      |  turn on null2 biased composition model      |   FALSE   |
@@ -218,6 +220,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_hb_recalc    = esl_opt_GetBoolean(go, "--anewbands")  ? TRUE  : FALSE;
   pli->xtau            = esl_opt_GetReal(go, "--xtau");
   pli->maxtau          = esl_opt_GetReal(go, "--maxtau");
+  pli->do_wcx          = esl_opt_IsUsed(go, "--wcx")            ? TRUE  : FALSE;
+  pli->wcx             = esl_opt_IsUsed(go, "--wcx")            ? esl_opt_GetReal(go, "--wcx") : 0.;
   pli->do_time_F1      = esl_opt_GetBoolean(go, "--timeF1")     ? TRUE  : FALSE;
   pli->do_time_F2      = esl_opt_GetBoolean(go, "--timeF2")     ? TRUE  : FALSE;
   pli->do_time_F3      = esl_opt_GetBoolean(go, "--timeF3")     ? TRUE  : FALSE;
@@ -230,8 +234,12 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
    */
   pli->smult           = 2.0;
   pli->wmult           = 1.0;
-  pli->cmult           = 1.25;
   pli->mlmult          = 0.1;
+  pli->cmult           = 1.25; 
+  /* NOTE: pli->cmult is tied to the minimum allowable value for --wcx
+   * in cmsearch.c and cmscan.c (they're both 1.25). If you change
+   * one, change both.
+   */
   
   /* Configure reporting thresholds */
   pli->by_E            = TRUE;
@@ -778,6 +786,15 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            model-specific way (if we're using composition bias
  *            filter HMMs in the pipeline).
  *
+ *            The value of <cm_W> passed in will not be changed. Upon
+ *            exit >pli->cmW> will == <cm_W>. That is, we don't
+ *            potentially set it based on the wcx mechanism within
+ *            this function, the caller must have already done that if
+ *            it should be done. (The wcx mechanism allows the user to
+ *            specify W as a multiple (<x>) of the consensus length of
+ *            the model via the --wcx option, controlled with
+ *            pli->use_wcx and pli->wcx.)
+ *
  * Returns:   <eslOK> on success.
  *
  *            <eslEINCOMPAT> in contract is not met.
@@ -834,9 +851,12 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     /* copy some values from the model */
     pli->cmW  = cm_W;
     pli->clen = cm_clen;
-    /* determine pli->maxW, this will be the number of residues that
-     * must overlap between adjacent windows on a single sequence,
-     * this is MAX of cm->W and pli->cmult * cm->clen.
+    /* determine pli->maxW, this will be one more than the number of
+     * residues that must overlap between adjacent windows on a single
+     * sequence, this is MAX of cm->W and pli->cmult * cm->clen.
+     * wmult is hardcoded as 1.0 and cmult as 1.25 in
+     * cm_pipeline_Create(). (cmult is purposefully equal to the
+     * minimum value for <x> from --wcx so that <x> is always obeyed.)
      */
     pli->maxW = ESL_MAX(pli->wmult * cm_W, pli->cmult * cm_clen);
   }
@@ -3317,6 +3337,7 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, CM_t **ret_cm)
   CM_t *cm = NULL;
   int  check_fcyk_beta;  /* TRUE if we just read a CM and we need to check if its beta1 == pli->fcyk_beta */
   int  check_final_beta; /* TRUE if we just read a CM and we need to check if its beta2 == pli->final_beta */
+  int   W_from_cmdline;     /* -1 (W not set on cmdline) unless pli->use_wcx is TRUE, which means --wcx was enabled */
 
   if (pli->mode != CM_SCAN_MODELS) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "pli_scan_mode_read_cm(), pipeline isn't in SCAN mode");
   if (*ret_cm != NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "pli_scan_mode_read_cm(), *ret_cm != NULL");
@@ -3334,6 +3355,11 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, CM_t **ret_cm)
     if (pthread_mutex_unlock (&pli->cmfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
   }
 #endif    
+
+  /* from here on, this function is very similar to
+   * cmsearch.c:configure_cm() 
+   */
+
   cm->config_opts = pli->cm_config_opts;
   cm->align_opts  = pli->cm_align_opts;
   /* check if we need to recalculate QDBs prior to building the scan matrix in cm_Configure() 
@@ -3348,7 +3374,8 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, CM_t **ret_cm)
   }
   /* else we don't have to change cm->qdbinfo->beta1/beta2 */
   
-  if((status = cm_Configure(cm, pli->errbuf, -1)) != eslOK) goto ERROR;
+  W_from_cmdline = pli->do_wcx ? (int) (cm->clen * pli->wcx) : -1; /* -1: use W from CM file */
+  if((status = cm_Configure(cm, pli->errbuf, W_from_cmdline)) != eslOK) goto ERROR;
   /* update the pipeline about the model */
   if((status = cm_pli_NewModel(pli, CM_NEWMODEL_CM, cm, cm->clen, cm->W, 
 			       NULL, NULL, pli->cur_cm_idx)) /* om, bg */

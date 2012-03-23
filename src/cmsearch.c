@@ -126,8 +126,6 @@ static ESL_OPTIONS options[] = {
   { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"-g,--notrunc",    "allow truncated hits anywhere within sequences",               6 },
   /* Control of filtering mode/acceleration level */  /* Control of truncated hit detection */
   /* name           type         default   env  range toggles   reqs   incomp           help                                                                docgroup*/
-  { "--Wx",         eslARG_REAL,   FALSE, NULL, "x>=1.", NULL,  NULL,  "--Wcx",         "increase W (expected max hit length) by a factor of <x>",              7 },
-  { "--Wcx",        eslARG_REAL,   FALSE, NULL, "x>=1.", NULL,  NULL,  "--Wx",          "set W (expected max hit length) as <x> times the consensus model len", 7 },
   /* Control of filtering mode/acceleration level */
   /* name           type         default   env  range toggles   reqs   incomp                   help                                                                   docgroup*/
   { "--max",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "turn all heuristic filters off             (power: 1st, speed: 5th)", 7 },
@@ -138,15 +136,16 @@ static ESL_OPTIONS options[] = {
   { "--FZ",         eslARG_REAL,    NULL, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "set filters to defaults used for a database of size <x> Mb",          7 },
   { "--Fmid",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--mid", NULL,            "with --mid, set P-value threshold for HMM stages to <x>",                     7 },
   /* Other options */
-  /* name           type         default   env  range toggles   reqs   incomp           help                                                            docgroup*/
-  { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn OFF the NULL3 post hoc additional null model",            8 },
-  { "--mxsize",     eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,            "set max allowed size of alignment DP matrices to <x> Mb",      8 },
-  { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,            "set max allowed size of search DP matrices to <x> Mb",         8 },
-  { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use scanning CM CYK algorithm, not Inside in final stage",     8 },
-  { "--acyk",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "align hits with CYK, not optimal accuracy",                    8 },
-  { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "only search the top strand",                                   8 },
-  { "--bottomonly", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "only search the bottom strand",                                8 },
-  { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert target <seqdb> is in format <s>: no autodetection",     8 },
+  /* name           type         default   env  range toggles   reqs   incomp                help                                                            docgroup*/
+  { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "turn OFF the NULL3 post hoc additional null model",            8 },
+  { "--mxsize",     eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,                 "set max allowed size of alignment DP matrices to <x> Mb",      8 },
+  { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,                 "set max allowed size of search DP matrices to <x> Mb",         8 },
+  { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "use scanning CM CYK algorithm, not Inside in final stage",     8 },
+  { "--acyk",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "align hits with CYK, not optimal accuracy",                    8 },
+  { "--wcx",        eslARG_REAL,   FALSE, NULL, "x>=1.25",NULL, NULL,"--nohmm,--qdb,--fqdb", "set W (expected max hit len) as <x> * cm->clen (model len)",   8 },
+  { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "only search the top strand",                                   8 },
+  { "--bottomonly", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "only search the bottom strand",                                8 },
+  { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                 "assert target <seqdb> is in format <s>: no autodetection",     8 },
 #ifdef HMMER_THREADS 
   { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,      "number of parallel CPU workers to use for multithreads",       8 },
 #endif
@@ -1853,7 +1852,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--nohmm"))      fprintf(ofp, "# CM-only mode:                          on [HMM filters off]\n");
   if (esl_opt_IsUsed(go, "--mid"))        fprintf(ofp, "# HMM MSV and Viterbi filters:           off\n");
   if (esl_opt_IsUsed(go, "--rfam"))       fprintf(ofp, "# Rfam pipeline mode:                    on [strict filtering]\n");
-  //  if (esl_opt_IsUsed(go, "--hmm"))        fprintf(ofp, "# HMM-only mode:                         on [ignoring structure]\n");
   if (esl_opt_IsUsed(go, "--FZ"))         fprintf(ofp, "# Filters set as if DB size in Mb is:    %f\n", esl_opt_GetReal(go, "--FZ"));
   if (esl_opt_IsUsed(go, "--Fmid"))       fprintf(ofp, "# HMM Forward filter thresholds set to:  %g\n", esl_opt_GetReal(go, "--Fmid"));
   if (esl_opt_IsUsed(go, "--notrunc"))    fprintf(ofp, "# truncated sequence detection:          off\n");
@@ -1863,6 +1861,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--smxsize"))    fprintf(ofp, "# maximum DP search matrix size:         %.1f Mb\n", esl_opt_GetReal(go, "--smxsize"));
   if (esl_opt_IsUsed(go, "--cyk"))        fprintf(ofp, "# use CYK for final search stage         on\n");
   if (esl_opt_IsUsed(go, "--acyk"))       fprintf(ofp, "# use CYK to align hits:                 on\n");
+  if (esl_opt_IsUsed(go, "--wcx"))        fprintf(ofp, "# W set as <x> * cm->clen:               <x>=%g\n", esl_opt_GetReal(go, "--wcx"));
   if (esl_opt_IsUsed(go, "--toponly"))    fprintf(ofp, "# search top-strand only:                on\n");
   if (esl_opt_IsUsed(go, "--bottomonly")) fprintf(ofp, "# search bottom-strand only:             on\n");
   if (esl_opt_IsUsed(go, "--tformat"))    fprintf(ofp, "# targ <seqdb> format asserted:          %s\n", esl_opt_GetString(go, "--tformat"));
@@ -1943,8 +1942,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
    * truncated alignment is fixed).
    */
   if(! (esl_opt_IsUsed(go, "--notrunc"))) { 
-    if(esl_opt_IsUsed(go, "--max"))        {  fprintf(ofp, "# truncated hit detection:              off [due to --max]\n"); }
-    if(esl_opt_IsUsed(go, "--nohmm"))      {  fprintf(ofp, "# truncated hit detection:              off [due to --nohmm]\n"); }
+    if(esl_opt_IsUsed(go, "--max"))        {  fprintf(ofp, "# truncated hit detection:               off [due to --max]\n"); }
+    if(esl_opt_IsUsed(go, "--nohmm"))      {  fprintf(ofp, "# truncated hit detection:               off [due to --nohmm]\n"); }
   }
     
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
@@ -2156,6 +2155,7 @@ configure_cm(WORKER_INFO *info)
   float reqMb = 0.;
   int   check_fcyk_beta;    /* TRUE if we need to check if cm's beta1 == info->pli->fcyk_beta */
   int   check_final_beta;   /* TRUE if we need to check if cm's beta2 == info->pli->final_beta */
+  int   W_from_cmdline;     /* -1 (W not set on cmdline) unless pli->use_wcx is TRUE, which means --wcx was enabled */
 
   if(info->pli->cm_config_opts & CM_CONFIG_SCANMX)   reqMb += cm_scan_mx_SizeNeeded(info->cm, TRUE, TRUE);
   if(info->pli->cm_config_opts & CM_CONFIG_TRSCANMX) reqMb += cm_tr_scan_mx_SizeNeeded(info->cm, TRUE, TRUE);
@@ -2177,7 +2177,8 @@ configure_cm(WORKER_INFO *info)
   }
   /* else we don't have to change (*opt_cm)->qdbinfo->beta1/beta2 */
 
-  if((status = cm_Configure(info->cm, info->pli->errbuf, -1)) != eslOK) return status;
+  W_from_cmdline = info->pli->do_wcx ? (int) (info->cm->clen * info->pli->wcx) : -1; /* -1: use W from CM file */
+  if((status = cm_Configure(info->cm, info->pli->errbuf, W_from_cmdline)) != eslOK) return status;
 
   return eslOK;
 }

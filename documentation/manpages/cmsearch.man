@@ -541,6 +541,29 @@ Use the CYK algorithm to align hits. By default, the Durbin/Holmes
 optimal accuracy algorithm is used, which finds the alignment that
 maximizes the expected accuracy of all aligned residues.
 
+.BI --wcx " <x>"
+For each CM, set the W parameter, the expected maximum length of a hit, to 
+.I <x>
+times the consensus length of the model. By default, the W parameter is
+read from the CM file and was calculated based on the transition
+probabilities of the model by
+.B cmbuild.
+You can find out what the default W is for a model using 
+.B cmstat.
+This option should be used with caution as it impacts the filtering
+pipeline at several different stages in nonobvious ways. It
+is only recommended for expert users searching for hits that are much
+longer than any of the homologs used to build the model in
+.B cmbuild, 
+e.g. ones with large introns or other large insertions.
+This option cannot be used in combination with the 
+.B --nohmm,
+.B --fqdb 
+or 
+.B --qdb
+options because in those cases W is limited by 
+query-dependent bands. 
+
 .TP 
 .B --toponly
 Only search the top (Watson) strand of target sequences in

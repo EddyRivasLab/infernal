@@ -121,6 +121,7 @@ static ESL_OPTIONS options[] = {
   { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,            "set max allowed size of search DP matrices to <x> Mb",         8 },
   { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use scanning CM CYK algorithm, not Inside in final stage",     8 },
   { "--acyk",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "align hits with CYK, not optimal accuracy",                    8 },
+  { "--wcx",        eslARG_REAL,   FALSE, NULL, "x>=1.25",NULL, NULL,"--nohmm,--qdb,--fqdb", "set W (expected max hit len) as <x> * cm->clen (model len)",   8 },
   { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "only search the top strand",                                   8 },
   { "--bottomonly", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "only search the bottom strand",                                8 },
   { "--qformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert query <seqfile> is in format <s>: no autodetection",    8 },
@@ -145,17 +146,17 @@ static ESL_OPTIONS options[] = {
   { "--noF3b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn off the HMM Fwd composition bias filter",               101 },
   { "--noF4b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn off the HMM glocal Fwd composition bias filter",        101 },
   { "--doF5b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn on  the HMM per-envelope composition bias filter",      101 },
-  { "--F1",         eslARG_REAL,  "0.35", NULL, NULL,    NULL,  NULL, "--noF1",         "Stage 1 (MSV) threshold:         promote hits w/ P <= <x>",  101 },
-  { "--F1b",        eslARG_REAL,  "0.35", NULL, NULL,    NULL,"--doF1b", NULL,          "Stage 1 (MSV) bias threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F2",         eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--noF2",         "Stage 2 (Vit) threshold:         promote hits w/ P <= <x>",  101 },
-  { "--F2b",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--noF2b",        "Stage 2 (Vit) bias threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F3",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF3",         "Stage 3 (Fwd) threshold:         promote hits w/ P <= <x>",  101 },
-  { "--F3b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF3b",        "Stage 3 (Fwd) bias threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F4",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF4",         "Stage 4 (gFwd) glocal threshold: promote hits w/ P <= <x>",  101 },
-  { "--F4b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, "--noF4b",        "Stage 4 (gFwd) glocal bias thr:  promote hits w/ P <= <x>",  101 },
-  { "--F5",         eslARG_REAL, "0.003", NULL, NULL,    NULL,  NULL, NULL,             "Stage 5 (env defn) threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F5b",        eslARG_REAL, "0.003", NULL, NULL,    NULL,"--doF5b",NULL,           "Stage 5 (env defn) bias thr:     promote hits w/ P <= <x>",  101 },
-  { "--F6",         eslARG_REAL,  "1e-4", NULL, NULL,    NULL,  NULL, "--noF6",         "Stage 6 (CYK) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F1",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF1",         "Stage 1 (MSV) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F1b",        eslARG_REAL,   FALSE, NULL, "x>0",   NULL,"--doF1b", NULL,          "Stage 1 (MSV) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F2",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF2",         "Stage 2 (Vit) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F2b",        eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF2b",        "Stage 2 (Vit) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F3",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF3",         "Stage 3 (Fwd) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F3b",        eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF3b",        "Stage 3 (Fwd) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F4",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF4",         "Stage 4 (gFwd) glocal threshold: promote hits w/ P <= <x>",  101 },
+  { "--F4b",        eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF4b",        "Stage 4 (gFwd) glocal bias thr:  promote hits w/ P <= <x>",  101 },
+  { "--F5",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, NULL,             "Stage 5 (env defn) threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F5b",        eslARG_REAL,   FALSE, NULL, "x>0",   NULL,"--doF5b", NULL,          "Stage 5 (env defn) bias thr:     promote hits w/ P <= <x>",  101 },
+  { "--F6",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF6",         "Stage 6 (CYK) threshold:         promote hits w/ P <= <x>",  101 },
   /* Options for precise control of HMM envelope definition */
   { "--rt1",        eslARG_REAL,  "0.25", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt1 parameter as <x>",        102 },
   { "--rt2",        eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt2 parameter as <x>",        102 },
@@ -262,7 +263,7 @@ typedef struct {
 } BLOCK_LIST;
 
 static void mpi_failure(char *format, ...);
-static int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, MSV_BLOCK *block);
+static int  mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, MSV_BLOCK *block);
 #endif /* HAVE_MPI */
 
 int
@@ -353,6 +354,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
   ESL_STOPWATCH   *mw       = NULL;              /* timing                                          */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
+  int              qZ = 0;                       /* # residues to search in query seq (both strands)*/
   int              seq_idx  = 0;                 /* index of current seq we're working with         */
   int              textw;
   int              status   = eslOK;
@@ -360,7 +362,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              sstatus  = eslOK;
   int              i;
   int              in_rc; 
-
   int              ncpus    = 0;
 
   int              infocnt  = 0;
@@ -470,12 +471,17 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       fprintf(ofp, "Query:       %s  [L=%ld]\n", qsq->name, (long) qsq->n);
       if (qsq->acc[0]  != 0) fprintf(ofp, "Accession:   %s\n", qsq->acc);
       if (qsq->desc[0] != 0) fprintf(ofp, "Description: %s\n", qsq->desc);
+      /* determine sequence length component for Z calculation, 2 *
+       * query length (both strands) unless --toponly or --bottomonly
+       * enabled.
+       */
+      qZ = (esl_opt_GetBoolean(go, "--toponly") || esl_opt_GetBoolean(go, "--bottomonly")) ? qsq->n : qsq->n*2;
 
       for (i = 0; i < infocnt; ++i)
 	{
 	  /* Create processing pipeline and hit list */
 	  info[i].th  = cm_tophits_Create(); 
-	  info[i].pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qsq->n, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
+	  info[i].pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qZ, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
 	  info[i].pli->nseqs++;
 	  info[i].qsq = qsq;
 	}
@@ -649,7 +655,7 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
   off_t             cm_offset;              /* file offset for current CM                   */
   int64_t           cm_idx = 0;             /* index of CM we're currently working with     */
 
-
+  printf("IN SERIAL LOOP\n");
   /* Main loop: */
   while ((status = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &abc, &cm_offset, &cm_clen, &cm_W, &gfmu, &gflambda, &om)) == eslOK)
     {
@@ -664,9 +670,10 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
       Lgm    = NULL; /* ditto */
       Tgm    = NULL; /* ditto */
       cm     = NULL; /* ditto */
+      if(info->pli->do_wcx) cm_W = (int) cm_clen * info->pli->wcx; /* do_wcx == TRUE means --wcx was used */
       if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
-				   cm,                                   /* this is NULL b/c we don't have one yet */
-				   cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
+				   cm,             /* this is NULL b/c we don't have one yet */
+				   cm_clen, cm_W,  /* we read these in cm_p7_oprofile_ReadMSV() */
 				   om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
 
       prv_ntophits = info->th->N;
@@ -808,6 +815,7 @@ pipeline_thread(void *arg)
 	  Lgm    = NULL; /* ditto */
 	  Tgm    = NULL; /* ditto */
 	  cm     = NULL; /* ditto */
+	  if(info->pli->do_wcx) cm_W = (int) cm_clen * info->pli->wcx; /* do_wcx == TRUE means --wcx was used */
 	  if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
 				       cm,                                   /* this is NULL b/c we don't have one yet */
 				       cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
@@ -889,6 +897,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
   ESL_STOPWATCH   *mw       = NULL;              /* timing                                          */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
+  int              qZ = 0;                       /* # residues to search in query seq (both strands)*/
   int              seq_idx   = 0;
   int              textw;
   int              status   = eslOK;
@@ -985,10 +994,15 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       fprintf(ofp, "Query:       %s  [L=%ld]\n", qsq->name, (long) qsq->n);
       if (qsq->acc[0]  != 0) fprintf(ofp, "Accession:   %s\n", qsq->acc);
       if (qsq->desc[0] != 0) fprintf(ofp, "Description: %s\n", qsq->desc);
+      /* determine sequence length component for Z calculation, 2 *
+       * query length (both strands) unless --toponly or --bottomonly
+       * enabled.
+       */
+      qZ = (esl_opt_GetBoolean(go, "--toponly") || esl_opt_GetBoolean(go, "--bottomonly")) ? qsq->n : qsq->n*2;
 
       /* Create processing pipeline and hit list */
       th  = cm_tophits_Create(); 
-      pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qsq->n, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
+      pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qZ, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
 
       /* scan all target CMs twice, once with the top strand of the query and once with the bottom strand */
       for(in_rc = 0; in_rc <= 1; in_rc++) { 
@@ -1201,6 +1215,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
+  int              qZ = 0;                       /* # residues to search in query seq (both strands)*/
   int              status   = eslOK;
   int              hstatus  = eslOK;
   int              sstatus  = eslOK;
@@ -1268,9 +1283,15 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       seq_idx++;
       esl_stopwatch_Start(w);
 
+      /* determine sequence length component for Z calculation, 2 *
+       * query length (both strands) unless --toponly or --bottomonly
+       * enabled.
+       */
+      qZ = (esl_opt_GetBoolean(go, "--toponly") || esl_opt_GetBoolean(go, "--bottomonly")) ? qsq->n : qsq->n*2;
+
       /* Create processing pipeline and hit list */
       th  = cm_tophits_Create(); 
-      pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qsq->n, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
+      pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qZ, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
 
       /* scan all target CMs twice, once with the top strand of the query and once with the bottom strand */
       for(in_rc = 0; in_rc <= 1; in_rc++) { 
@@ -1322,6 +1343,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 		Lgm    = NULL; /* ditto */
 		Tgm    = NULL; /* ditto */
 		cm     = NULL; /* ditto */
+		if(info->pli->do_wcx) cm_W = (int) cm_clen * info->pli->wcx; /* do_wcx == TRUE means --wcx was used */
 		if((status = cm_pli_NewModel(pli, CM_NEWMODEL_MSV, 
 					     cm,                                   /* this is NULL b/c we don't have one yet */
 					     cm_clen, cm_W,                        /* we read these in cm_p7_oprofile_ReadMSV() */
@@ -1706,6 +1728,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--smxsize"))    fprintf(ofp, "# maximum DP search matrix size:         %.1f Mb\n", esl_opt_GetReal(go, "--smxsize"));
   if (esl_opt_IsUsed(go, "--cyk"))        fprintf(ofp, "# use CYK for final search stage         on\n");
   if (esl_opt_IsUsed(go, "--acyk"))       fprintf(ofp, "# use CYK to align hits:                 on\n");
+  if (esl_opt_IsUsed(go, "--wcx"))        fprintf(ofp, "# W set as <x> * cm->clen:               <x>=%g\n", esl_opt_GetReal(go, "--wcx"));
   if (esl_opt_IsUsed(go, "--toponly"))    fprintf(ofp, "# search top-strand only:                on\n");
   if (esl_opt_IsUsed(go, "--bottomonly")) fprintf(ofp, "# search bottom-strand only:             on\n");
   if (esl_opt_IsUsed(go, "--qformat"))    fprintf(ofp, "# query <seqfile> format asserted:       %s\n", esl_opt_GetString(go, "--qformat"));
@@ -1782,8 +1805,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
    * truncated alignment is fixed).
    */
   if(! (esl_opt_IsUsed(go, "--notrunc"))) { 
-    if(esl_opt_IsUsed(go, "--max"))        {  fprintf(ofp, "# truncated hit detection:              off [due to --max]\n"); }
-    if(esl_opt_IsUsed(go, "--nohmm"))      {  fprintf(ofp, "# truncated hit detection:              off [due to --nohmm]\n"); }
+    if(esl_opt_IsUsed(go, "--max"))        {  fprintf(ofp, "# truncated hit detection:               off [due to --max]\n"); }
+    if(esl_opt_IsUsed(go, "--nohmm"))      {  fprintf(ofp, "# truncated hit detection:               off [due to --nohmm]\n"); }
   }
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
   return eslOK;
