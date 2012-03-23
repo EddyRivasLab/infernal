@@ -100,6 +100,7 @@ static ESL_OPTIONS options[] = {
   /* Control of output */
   /* name           type         default   env  range toggles   reqs   incomp           help                                                            docgroup*/
   { "-o",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "direct output to file <f>, not stdout",                        2 },
+  { "-A",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save multiple alignment of all significant hits to file <s>",  2 },
   { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of hits to file <s>",                     2 },
   { "--acc",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "prefer accessions over names in output",                       2 },
   { "--noali",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "don't output alignments, so output is smaller",                2 },
@@ -125,8 +126,8 @@ static ESL_OPTIONS options[] = {
   { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"-g,--notrunc",    "allow truncated hits anywhere within sequences",               6 },
   /* Control of filtering mode/acceleration level */  /* Control of truncated hit detection */
   /* name           type         default   env  range toggles   reqs   incomp           help                                                                docgroup*/
-  ///  { "--Wx",         eslARG_REAL,   FALSE, NULL, "x>=1.", NULL,  NULL,  "--wincx",       "increase W (expected max hit length) by a factor of <x>",          7 },
-  /// { "--Wcx",        eslARG_REAL,   FALSE, NULL, "x>=1.", NULL,  NULL,  "--winx",        "set W (expected max hit length) as <x> times consensus model len", 7 },
+  { "--Wx",         eslARG_REAL,   FALSE, NULL, "x>=1.", NULL,  NULL,  "--Wcx",         "increase W (expected max hit length) by a factor of <x>",              7 },
+  { "--Wcx",        eslARG_REAL,   FALSE, NULL, "x>=1.", NULL,  NULL,  "--Wx",          "set W (expected max hit length) as <x> times the consensus model len", 7 },
   /* Control of filtering mode/acceleration level */
   /* name           type         default   env  range toggles   reqs   incomp                   help                                                                   docgroup*/
   { "--max",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "turn all heuristic filters off             (power: 1st, speed: 5th)", 7 },
@@ -167,17 +168,17 @@ static ESL_OPTIONS options[] = {
   { "--noF3b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn off the HMM Fwd composition bias filter",               101 },
   { "--noF4b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn off the HMM glocal Fwd composition bias filter",        101 },
   { "--doF5b",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,             "turn on  the HMM per-envelope composition bias filter",      101 },
-  { "--F1",         eslARG_REAL,  "0.35", NULL, "x>0",   NULL,  NULL, "--noF1",         "Stage 1 (MSV) threshold:         promote hits w/ P <= <x>",  101 },
-  { "--F1b",        eslARG_REAL,  "0.35", NULL, "x>0",   NULL,"--doF1b", NULL,          "Stage 1 (MSV) bias threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F2",         eslARG_REAL,  "0.20", NULL, "x>0",   NULL,  NULL, "--noF2",         "Stage 2 (Vit) threshold:         promote hits w/ P <= <x>",  101 },
-  { "--F2b",        eslARG_REAL,  "0.20", NULL, "x>0",   NULL,  NULL, "--noF2b",        "Stage 2 (Vit) bias threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F3",         eslARG_REAL, "0.003", NULL, "x>0",   NULL,  NULL, "--noF3",         "Stage 3 (Fwd) threshold:         promote hits w/ P <= <x>",  101 },
-  { "--F3b",        eslARG_REAL, "0.003", NULL, "x>0",   NULL,  NULL, "--noF3b",        "Stage 3 (Fwd) bias threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F4",         eslARG_REAL, "0.003", NULL, "x>0",   NULL,  NULL, "--noF4",         "Stage 4 (gFwd) glocal threshold: promote hits w/ P <= <x>",  101 },
-  { "--F4b",        eslARG_REAL, "0.003", NULL, "x>0",   NULL,  NULL, "--noF4b",        "Stage 4 (gFwd) glocal bias thr:  promote hits w/ P <= <x>",  101 },
-  { "--F5",         eslARG_REAL, "0.003", NULL, "x>0",   NULL,  NULL, NULL,             "Stage 5 (env defn) threshold:    promote hits w/ P <= <x>",  101 },
-  { "--F5b",        eslARG_REAL, "0.003", NULL, "x>0",   NULL,"--doF5b", NULL,          "Stage 5 (env defn) bias thr:     promote hits w/ P <= <x>",  101 },
-  { "--F6",         eslARG_REAL,  "1e-4", NULL, "x>0",   NULL,  NULL, "--noF6",         "Stage 6 (CYK) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F1",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF1",         "Stage 1 (MSV) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F1b",        eslARG_REAL,   FALSE, NULL, "x>0",   NULL,"--doF1b", NULL,          "Stage 1 (MSV) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F2",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF2",         "Stage 2 (Vit) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F2b",        eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF2b",        "Stage 2 (Vit) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F3",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF3",         "Stage 3 (Fwd) threshold:         promote hits w/ P <= <x>",  101 },
+  { "--F3b",        eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF3b",        "Stage 3 (Fwd) bias threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F4",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF4",         "Stage 4 (gFwd) glocal threshold: promote hits w/ P <= <x>",  101 },
+  { "--F4b",        eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF4b",        "Stage 4 (gFwd) glocal bias thr:  promote hits w/ P <= <x>",  101 },
+  { "--F5",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, NULL,             "Stage 5 (env defn) threshold:    promote hits w/ P <= <x>",  101 },
+  { "--F5b",        eslARG_REAL,   FALSE, NULL, "x>0",   NULL,"--doF5b", NULL,          "Stage 5 (env defn) bias thr:     promote hits w/ P <= <x>",  101 },
+  { "--F6",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF6",         "Stage 6 (CYK) threshold:         promote hits w/ P <= <x>",  101 },
   /* Options for precise control of HMM envelope definition */
   /* name           type          default  env range toggles    reqs  incomp            help                                                      docgroup*/
   { "--rt1",        eslARG_REAL,  "0.25", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt1 parameter as <x>",        102 },
@@ -266,7 +267,7 @@ static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *
 /* Functions to avoid code duplication for common tasks */
 static int          open_dbfile(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQFILE **ret_dbfp);
 static int          dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf, int64_t **ret_srcL, int64_t *ret_nseqs);
-static WORKER_INFO *create_info();
+static WORKER_INFO *create_info(const ESL_GETOPTS *go);
 static int          clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int dest_infocnt, char *errbuf);
 static void         free_info(WORKER_INFO *info);
 static int          configure_cm(WORKER_INFO *info);
@@ -373,6 +374,7 @@ main(int argc, char **argv)
    */
 #ifdef HAVE_MPI
 
+#if 0
   /* TEMP */
   pid_t pid;
   /* get the process id */
@@ -380,6 +382,7 @@ main(int argc, char **argv)
   printf("The process id is %d\n", pid);
   fflush(stdout);
   /* TEMP */
+#endif
 
   /* pause the execution of the programs execution until the user has a
    * chance to attach with a debugger and send a signal to resume execution
@@ -421,6 +424,7 @@ static int
 serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   FILE            *ofp      = stdout;            /* results output file (-o)                                  */
+  FILE            *afp      = NULL;              /* alignment output file (-A)                                */
   FILE            *tblfp    = NULL;              /* output stream for tabular hits (--tblout)                 */
   CM_FILE         *cmfp;		         /* open input CM file stream                                 */
   CM_t            *cm       = NULL;              /* covariance model                                          */
@@ -463,13 +467,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Open the results output files */
   if (esl_opt_IsOn(go, "-o"))           { if ((ofp       = fopen(esl_opt_GetString(go, "-o"),          "w")) == NULL) cm_Fail("Failed to open output file %s for writing\n",         esl_opt_GetString(go, "-o")); }
+  if (esl_opt_IsOn(go, "-A"))           { if ((afp       = fopen(esl_opt_GetString(go, "-A"),          "w")) == NULL) cm_Fail("Failed to open alignment file %s for writing\n", esl_opt_GetString(go, "-A")); }
   if (esl_opt_IsOn(go, "--tblout"))     { if ((tblfp     = fopen(esl_opt_GetString(go, "--tblout"),    "w")) == NULL) cm_Fail("Failed to open tabular output file %s for writing\n", esl_opt_GetString(go, "--tblout")); }
 
 #ifdef HMMER_THREADS
   /* initialize thread data */
   if (esl_opt_IsOn(go, "--cpu")) ncpus = esl_opt_GetInteger(go, "--cpu");
   else                                   esl_threads_CPUCount(&ncpus);
-  printf("NCPUS: %d\n", ncpus);
   if (ncpus > 0) {
     threadObj = esl_threads_Create(&pipeline_thread);
     queue = esl_workqueue_Create(ncpus * 2);
@@ -644,6 +648,25 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     esl_stopwatch_Stop(w);
     cm_pli_Statistics(ofp, info[0].pli, w);
 
+    /* Output the results in an MSA (-A option) */
+    if (afp) {
+      ESL_MSA *msa = NULL;
+      if((status = cm_tophits_Alignment(info[0].cm, info[0].th, errbuf, &msa)) == eslOK) { 
+	if(msa != NULL) { 
+	  if (textw > 0) eslx_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);
+	  else           eslx_msafile_Write(afp, msa, eslMSAFILE_PFAM);
+	  fprintf(ofp, "# Alignment of %d hits satisfying inclusion thresholds saved to: %s\n", msa->nseq, esl_opt_GetString(go, "-A"));
+	}
+	else { 
+	  fprintf(ofp, "# No hits satisfy inclusion thresholds; no alignment saved\n");
+	}
+	esl_msa_Destroy(msa);
+      }
+      else { /* status != eslOK */
+	cm_Fail(errbuf);
+      }
+    }
+
     free_info(tinfo);
     free(tinfo);
     free_info(&(info[0]));
@@ -659,8 +682,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Terminate outputs... any last words?
    */
-  if (tblfp)    cm_tophits_TabularTail(tblfp,    "cmsearch", CM_SEARCH_SEQS, cfg->cmfile, cfg->dbfile, go);
-  if (ofp)      fprintf(ofp, "[ok]\n");
+  if (tblfp)         cm_tophits_TabularTail(tblfp,    "cmsearch", CM_SEARCH_SEQS, cfg->cmfile, cfg->dbfile, go);
+  if (ofp != stdout) fprintf(ofp, "[ok]\n");
 
 #ifdef HMMER_THREADS
   if (ncpus > 0) {
@@ -682,6 +705,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   esl_stopwatch_Destroy(w);
 
   if (ofp != stdout) fclose(ofp);
+  if (afp)           fclose(afp);
   if (tblfp)         fclose(tblfp);
 
   return eslOK;
@@ -981,6 +1005,7 @@ static int
 mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   FILE            *ofp      = stdout;            /* results output file (-o)                        */
+  FILE            *afp      = NULL;              /* alignment output file (-A)                                */
   FILE            *tblfp    = NULL;              /* output stream for tabular per-seq (--tblout)    */
 
   CM_FILE         *cmfp;		         /* open input CM file stream                       */
@@ -1029,11 +1054,16 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if (esl_opt_IsOn(go, "-o") && (ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL)
     mpi_failure("Failed to open output file %s for writing\n",    esl_opt_GetString(go, "-o"));
 
+  if (esl_opt_IsOn(go, "-A")) { 
+    if ((afp = fopen(esl_opt_GetString(go, "-A"), "w")) == NULL) 
+      mpi_failure("Failed to open alignment file %s for writing\n", esl_opt_GetString(go, "-A")); 
+  }
+
   if (esl_opt_IsOn(go, "--tblout") && (tblfp = fopen(esl_opt_GetString(go, "--tblout"), "w")) == NULL)
     mpi_failure("Failed to open tabular per-seq output file %s for writing\n", esl_opt_GetString(go, "--tblout"));
 
   /* allocate and initialize <info> which will hold the CMs, HMMs, etc. */
-  if((info = create_info()) == NULL) mpi_failure("Out of memory");
+  if((info = create_info(go)) == NULL) mpi_failure("Out of memory");
 
   /* <abc> is not known 'til first CM is read. */
   hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
@@ -1057,7 +1087,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       esl_stopwatch_Start(w);
       if((status = mpi_dbsize_using_ssi(go, cfg, dbfp, errbuf)) != eslOK) mpi_failure(errbuf); 
       esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(ofp, w, "# MPI Determining Z CPU time: ");
+      if(esl_opt_GetBoolean(go, "--allstats")) esl_stopwatch_Display(ofp, w, "# MPI Determining Z CPU time: ");
     }
     /* Broadcast the database size to all workers */
     MPI_Bcast(&(cfg->Z), 1, MPI_LONG_LONG_INT, 0, MPI_COMM_WORLD);
@@ -1120,7 +1150,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	mpi_failure("with --sidx <n1> --eidx <n2>, <n2> must be >= <n1>");
       }
     }
-    printf("searching seqs %ld to %ld\n", pkey_idx, final_pkey_idx);
+    /*printf("searching seqs %ld to %ld\n", pkey_idx, final_pkey_idx);*/
 #endif
     /* Main loop: */
     while((pkey_idx <= final_pkey_idx) && 
@@ -1252,15 +1282,35 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     esl_stopwatch_Stop(w);
     cm_pli_Statistics(ofp, info->pli, w);
 
+
+    /* Output the results in an MSA (-A option) */
+    if (afp) {
+      ESL_MSA *msa = NULL;
+      if((status = cm_tophits_Alignment(info->cm, info->th, errbuf, &msa)) == eslOK) { 
+	if(msa != NULL) { 
+	  if (textw > 0) eslx_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);
+	  else           eslx_msafile_Write(afp, msa, eslMSAFILE_PFAM);
+	  fprintf(ofp, "# Alignment of %d hits satisfying inclusion thresholds saved to: %s\n", msa->nseq, esl_opt_GetString(go, "-A"));
+	}
+	else { 
+	  fprintf(ofp, "# No hits satisfy inclusion thresholds; no alignment saved\n");
+	}
+	esl_msa_Destroy(msa);
+      }
+      else { /* status != eslOK */
+	mpi_failure(errbuf);
+      }
+    }
+
     free_info(info);
     free(info);
     free_mpi_block_list(block_list);
     block_list = NULL;
     
+    if((info = create_info(go)) == NULL) mpi_failure("Out of memory"); /* for the next model */
+
     hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
-    if(hstatus == eslOK) { 
-      if((info = create_info()) == NULL) mpi_failure("Out of memory"); /* for the next model */
-    }
+    if(hstatus == eslOK) { free_info(info); free(info); }
   } /* end outer loop over query CMs */
   
   switch(hstatus) {
@@ -1308,6 +1358,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   esl_stopwatch_Destroy(w);
 
   if (ofp != stdout) fclose(ofp);
+  if (afp)           fclose(afp);
   if (tblfp)         fclose(tblfp);
 
   return eslOK;
@@ -1358,7 +1409,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if((status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) mpi_failure(errbuf);
 
   /* allocate and initialize <info> which will hold the CMs, HMMs, etc. */
-  if((info = create_info()) == NULL) mpi_failure("Out of memory");
+  if((info = create_info(go)) == NULL) mpi_failure("Out of memory");
 
   /* <abc> is not known 'til first CM is read. */
   hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
@@ -1493,10 +1544,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     free_info(info);
     free(info);
       
+    if((info = create_info(go)) == NULL) mpi_failure("Out of memory"); /* info is for the next model */
+
     hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
-    if(hstatus == eslOK) { 
-      if((info = create_info()) == NULL) mpi_failure("Out of memory"); /* info is for the next model */
-    }
+    if(hstatus != eslOK) { free_info(info); free(info); }
   } /* end outer loop over query CMs */
   
   switch(hstatus) {
@@ -1782,9 +1833,10 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   fprintf(ofp, "# query CM file:                         %s\n", cmfile);
   fprintf(ofp, "# target sequence database:              %s\n", seqfile);
   if (esl_opt_IsUsed(go, "-g"))           fprintf(ofp, "# CM configuration:                      glocal\n");
-  if (esl_opt_IsUsed(go, "-Z"))           fprintf(ofp, "# database size is set to:               %.1f Mb\n",    esl_opt_GetReal(go, "-Z"));
-  if (esl_opt_IsUsed(go, "-o"))           fprintf(ofp, "# output directed to file:               %s\n",      esl_opt_GetString(go, "-o"));
-  if (esl_opt_IsUsed(go, "--tblout"))     fprintf(ofp, "# tabular output of hits:                %s\n",      esl_opt_GetString(go, "--tblout"));
+  if (esl_opt_IsUsed(go, "-Z"))           fprintf(ofp, "# database size is set to:               %.1f Mb\n",        esl_opt_GetReal(go, "-Z"));
+  if (esl_opt_IsUsed(go, "-o"))           fprintf(ofp, "# output directed to file:               %s\n",             esl_opt_GetString(go, "-o"));
+  if (esl_opt_IsUsed(go, "-A"))           fprintf(ofp, "# MSA of significant hits saved to file: %s\n",             esl_opt_GetString(go, "-A"));
+  if (esl_opt_IsUsed(go, "--tblout"))     fprintf(ofp, "# tabular output of hits:                %s\n",             esl_opt_GetString(go, "--tblout"));
   if (esl_opt_IsUsed(go, "--acc"))        fprintf(ofp, "# prefer accessions over names:          yes\n");
   if (esl_opt_IsUsed(go, "--noali"))      fprintf(ofp, "# show alignments in output:             no\n");
   if (esl_opt_IsUsed(go, "--notextw"))    fprintf(ofp, "# max ASCII text line length:            unlimited\n");
@@ -1951,9 +2003,6 @@ dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, cha
   int       alloc_srcL  = 10000;   /* chunk size to increase allocation by for srcL */
   int64_t   i;                     /* counter */       
 
-  ESL_STOPWATCH *w = esl_stopwatch_Create();
-  esl_stopwatch_Start(w);
-
   sq = esl_sq_Create();
   while ((status = esl_sqio_ReadInfo(dbfp, sq)) == eslOK) { 
     nres += sq->L;
@@ -1974,15 +2023,6 @@ dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, cha
     cfg->Z *= 2; /* we're searching both strands */
   }
   cfg->Z_setby = CM_ZSETBY_FILEREAD;
-
-  printf("Z: %" PRId64 " residues\n", cfg->Z);
-  esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, "# non-SSI DB file read CPU time: ");
-  esl_stopwatch_Destroy(w);
-
-  for(i = 0; i < nseqs; i++) { 
-    ///printf("seq %10" PRId64 " length: %" PRId64 "\n", i, srcL[i]);
-  }
 
   esl_sqfile_Position(dbfp, 0);
   if(sq != NULL) esl_sq_Destroy(sq);
@@ -2015,18 +2055,18 @@ create_info(const ESL_GETOPTS *go)
   WORKER_INFO *info = NULL;
 
   ESL_ALLOC(info, sizeof(WORKER_INFO));
-  info->pli    = NULL;
-  info->th     = NULL;
-  info->cm     = NULL;
-  info->gm     = NULL;
-  info->Rgm    = NULL;
-  info->Lgm    = NULL;
-  info->Tgm    = NULL;
-  info->om     = NULL;
-  info->bg     = NULL;
+  info->pli     = NULL;
+  info->th      = NULL;
+  info->cm      = NULL;
+  info->gm      = NULL;
+  info->Rgm     = NULL;
+  info->Lgm     = NULL;
+  info->Tgm     = NULL;
+  info->om      = NULL;
+  info->bg      = NULL;
+  info->msvdata = NULL;
   ESL_ALLOC(info->p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
   info->smxsize = esl_opt_GetReal(go, "--smxsize");
-
   return info;
 
  ERROR: 
@@ -2328,10 +2368,6 @@ mpi_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char 
     cfg->Z *= 2; /* we're searching both strands */
   }
   cfg->Z_setby = CM_ZSETBY_SSIINFO;
-
-  printf("Z: %" PRId64 " residues\n", cfg->Z);
-
-  printf("DBSIZE determined %ld residues (%ld sequences)\n", cfg->Z, dbfp->data.ascii.ssi->nprimary);
 
   return eslOK;
 }

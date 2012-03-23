@@ -1,6 +1,14 @@
 # Infernal's cmscan crash exercises, in sqc command format.
 # EPN, Thu Jan  3 05:20:12 2008
 # SVN $Id: exercises.sqc 2237 2007-12-01 00:14:41Z nawrockie $
+# 
+# All exercise/prep/fail names must begin with "scan:".
+# 
+# Remember, sqc does three types of file substitution on this file:
+#   @foo@  = executables in the build directory => top_builddir/foo
+#   !foo!  = data files in the source directory => top_srcdir/foo
+#   %FOO%  = tmp files, created, managed, cleaned up by sqc itself
+#
 #
 
 # Exercises of cmscan.
@@ -9,26 +17,26 @@
 1  exercise  scan:help/2        @src/cmscan@  --devhelp
 
 # cmscan requires calibrated and pressed models
-1  prep      copy:tC           cp !testsuite/tRNA.calibrated.cm! %T.CM%
-1  prep      copy:vC           cp !testsuite/Vault.calibrated.cm! %V.CM%
-1  prep      copy:3C           cp !testsuite/3.calibrated.cm! %3.CM%
-1  exercise  press:tC          @src/cmpress@ %T.CM%
-1  exercise  press:vC          @src/cmpress@ %V.CM%
-1  exercise  press:3C          @src/cmpress@ %3.CM%
+1  prep      scan:copy/tC       cp !testsuite/tRNA.calibrated.cm! %T.CM%
+1  prep      scan:copy/vC       cp !testsuite/Vault.calibrated.cm! %V.CM%
+1  prep      scan:copy/3C       cp !testsuite/3.calibrated.cm! %3.CM%
+1  exercise  scan:press/tC      @src/cmpress@ %T.CM%
+1  exercise  scan:press/3C      @src/cmpress@ %V.CM%
+1  exercise  scan:press/3C      @src/cmpress@ %3.CM%
 
 # copy fasta files, only so the names are more convenient in rest of this file
-1  prep      copy:t/fa1k      cp !testsuite/1k-tRNA.fa! %T1K%
-1  prep      copy:t/fa10k     cp !testsuite/10k-tRNA.fa! %T10K%
-1  prep      copy:t/faemit    cp !testsuite/emitted-tRNA.fa! %TEMIT%
-1  prep      copy:v/fa1k      cp !testsuite/1k-Vault.fa! %V1K%
-1  prep      copy:v/fa10k     cp !testsuite/10k-Vault.fa! %V10K%
-1  prep      copy:v/faemit    cp !testsuite/emitted-Vault.fa! %VEMIT%
-1  prep      copy:v/fatremit  cp !testsuite/tremitted-Vault.fa! %VTREMIT%
-1  prep      copy:3/fa1k      cp !testsuite/1k-3.fa! %31K%
-1  prep      copy:3/fa10k     cp !testsuite/10k-3.fa! %310K%
-1  prep      copy:3/fa100k    cp !testsuite/100k-3.fa! %3100K%
-1  prep      copy:3/faemit    cp !testsuite/emitted-3.fa! %3EMIT%
-1  prep      copy:rand/fa1k   cp !testsuite/1k.fa! %R1K%
+1  prep      scan:copy/t/fa1k      cp !testsuite/1k-tRNA.fa! %T1K%
+1  prep      scan:copy/t/fa10k     cp !testsuite/10k-tRNA.fa! %T10K%
+1  prep      scan:copy/t/faemit    cp !testsuite/emitted-tRNA.fa! %TEMIT%
+1  prep      scan:copy/v/fa1k      cp !testsuite/1k-Vault.fa! %V1K%
+1  prep      scan:copy/v/fa10k     cp !testsuite/10k-Vault.fa! %V10K%
+1  prep      scan:copy/v/faemit    cp !testsuite/emitted-Vault.fa! %VEMIT%
+1  prep      scan:copy/v/fatremit  cp !testsuite/tremitted-Vault.fa! %VTREMIT%
+1  prep      scan:copy/3/fa1k      cp !testsuite/1k-3.fa! %31K%
+1  prep      scan:copy/3/fa10k     cp !testsuite/10k-3.fa! %310K%
+1  prep      scan:copy/3/fa100k    cp !testsuite/100k-3.fa! %3100K%
+1  prep      scan:copy/3/faemit    cp !testsuite/emitted-3.fa! %3EMIT%
+1  prep      scan:copy/rand/fa1k   cp !testsuite/1k.fa! %R1K%
 
 1  exercise  scan:t/10k    @src/cmscan@  %T.CM% %T10K%
 1  exercise  scan:v/10k    @src/cmscan@  %V.CM% %V10K%
@@ -239,6 +247,6 @@
 1  exercise  scan:v/1k/seed1      @src/cmscan@  --seed 1 %V.CM% %V1K%
 
 # cleanup, specific to cmscan.sqc (not in cmsearch.sqc)
-1  prep      cleanup/trnaC        rm -f %TRNA.CM%.*
-1  prep      cleanup/vaultC       rm -f %VAULT.CM%.*
-1  prep      cleanup/multiC       rm -f %3.CM%.*
+1  prep      scan:cleanup/tC      rm -f %TRNA.CM%.*
+1  prep      scan:cleanup/vC      rm -f %VAULT.CM%.*
+1  prep      scan:cleanup/3C      rm -f %3.CM%.*

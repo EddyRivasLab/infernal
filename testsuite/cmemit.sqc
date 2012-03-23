@@ -5,9 +5,10 @@
 
 # Exercises of cmemit.
 #
-1  exercise  emit:help/1        @src/cmemit@  -h
+1  prep      emit:build/t    @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
 
-1  prep      model/trna           @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
+1  exercise  emit:help/1     @src/cmemit@  -h
+
 1  exercise  emit:t/df       @src/cmemit@  %TRNA.CM%
 1  exercise  emit:t/stdin    cat %TRNA.CM% | @src/cmemit@ -
 1  exercise  emit:t/u        @src/cmemit@  -u %TRNA.CM%
@@ -43,14 +44,14 @@
 1  exercise  emit:t/exp2     @src/cmemit@  --exp 1.5 %TRNA.CM%
 
 # repeat some exercises runs with a multi-cm file. 
-1  prep       model/multi        @src/cmbuild@ -F %MULTI.CM% !testsuite/se.dbl.sto!
-1  exercise  emit:multi/df       @src/cmemit@  %MULTI.CM%
-1  exercise  emit:multi/u        @src/cmemit@  -u %MULTI.CM%
-1  exercise  emit:multi/u        @src/cmemit@  -o %TMPOUT% %MULTI.CM%
-1  exercise  emit:multi/u        @src/cmemit@  -N 37 %MULTI.CM%
-1  exercise  emit:multi/a        @src/cmemit@  -a %MULTI.CM%
-1  exercise  emit:multi/c        @src/cmemit@  -c %MULTI.CM%
-1  exercise  emit:multi/i        @src/cmemit@  --idx 1000 %MULTI.CM%
+1  prep      emit:build/3    @src/cmbuild@ -F %MULTI.CM% !testsuite/se.dbl.sto!
+1  exercise  emit:multi/df   @src/cmemit@  %MULTI.CM%
+1  exercise  emit:multi/u    @src/cmemit@  -u %MULTI.CM%
+1  exercise  emit:multi/o    @src/cmemit@  -o %TMPOUT% %MULTI.CM%
+1  exercise  emit:multi/N    @src/cmemit@  -N 37 %MULTI.CM%
+1  exercise  emit:multi/a    @src/cmemit@  -a %MULTI.CM%
+1  exercise  emit:multi/c    @src/cmemit@  -c %MULTI.CM%
+1  exercise  emit:multi/i    @src/cmemit@  --idx 1000 %MULTI.CM%
 
 #######################################
 # all the same as above, with -l added
@@ -100,7 +101,7 @@
 #######################################
 # Same as above, with binary model files 
 #######################################
-1  prep      model/trna             @src/cmconvert@ -b %TRNA.CM% > %B.TRNA.CM%
+1  prep      emit:build/trna   @src/cmconvert@ -b %TRNA.CM% > %B.TRNA.CM%
 1  exercise  emit:b/t/df       @src/cmemit@  %B.TRNA.CM%
 1  exercise  emit:b/t/u        @src/cmemit@  -u %B.TRNA.CM%
 1  exercise  emit:b/t/u        @src/cmemit@  -o %TMPOUT% %B.TRNA.CM%
@@ -135,7 +136,7 @@
 1  exercise  emit:b/t/exp2     @src/cmemit@  --exp 1.5 %B.TRNA.CM%
 
 # repeat some exercises runs with a multi-cm file. 
-1  prep      model/multi             @src/cmconvert@ -b %MULTI.CM% > %B.MULTI.CM%
+1  prep      emit:build/multi      @src/cmconvert@ -b %MULTI.CM% > %B.MULTI.CM%
 1  exercise  emit:b/multi/df       @src/cmemit@  %B.MULTI.CM%
 1  exercise  emit:b/multi/u        @src/cmemit@  -u %B.MULTI.CM%
 1  exercise  emit:b/multi/u        @src/cmemit@  -o %TMPOUT% %B.MULTI.CM%

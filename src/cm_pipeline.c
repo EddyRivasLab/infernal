@@ -37,8 +37,6 @@ static int  pli_align_hit         (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq,
 static int  pli_scan_mode_read_cm (CM_PIPELINE *pli, off_t cm_offset, CM_t **ret_cm);
 static void copy_subseq           (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L);
 
-static int p7_pli_LooseExtendAndMergeWindows (P7_OPROFILE *om, FM_WINDOWLIST *windowlist, int L);
-
 /*****************************************************************
  * 1. The CM_PIPELINE object: allocation, initialization, destruction.
  *****************************************************************/
@@ -90,8 +88,6 @@ static int p7_pli_LooseExtendAndMergeWindows (P7_OPROFILE *om, FM_WINDOWLIST *wi
  *            | --nohmm      |  turn all HMM filters off                    |   FALSE   |
  *            | --mid        |  turn off MSV and Viterbi filters            |   FALSE   |
  *            | --rfam       |  set filters to strict Rfam settings         |   FALSE   |
-/// *            | --hmm        |  use only an HMM                             |   FALSE   |
-/// *            | --maxhmm      |  use only an HMM                             |   FALSE   |
  *            | --FZ <x>     |  set filter thr as if dbsize were <x> Mb     |    NULL   |
  *            | --Fmid <x>   |  with --mid, set fwd filter thresholds to <x>|    NULL   |
  *            | --notrunc    |  turn off truncated hit detection            |   FALSE   |
@@ -135,12 +131,12 @@ static int p7_pli_LooseExtendAndMergeWindows (P7_OPROFILE *om, FM_WINDOWLIST *wi
  *            | --sums       |  use sums to get final round HMM bands       |   FALSE   |
  *            | --beta       |  beta for QDBs in final round                |   1e-15   |
  *            | --nonbanded  |  run CYK filter without bands                |   FALSE   |
- *            | --timeF1    |  abort after F1b stage, for timing expts     |   FALSE   | 
- *            | --timeF2    |  abort after F2b stage, for timing expts     |   FALSE   | 
- *            | --timeF3    |  abort after F3b stage, for timing expts     |   FALSE   | 
- *            | --timeF4    |  abort after F4b stage, for timing expts     |   FALSE   | 
- *            | --timeF5    |  abort after F5b stage, for timing expts     |   FALSE   | 
- *            | --timeF6    |  abort after F6  stage, for timing expts     |   FALSE   | 
+ *            | --timeF1     |  abort after F1b stage, for timing expts     |   FALSE   | 
+ *            | --timeF2     |  abort after F2b stage, for timing expts     |   FALSE   | 
+ *            | --timeF3     |  abort after F3b stage, for timing expts     |   FALSE   | 
+ *            | --timeF4     |  abort after F4b stage, for timing expts     |   FALSE   | 
+ *            | --timeF5     |  abort after F5b stage, for timing expts     |   FALSE   | 
+ *            | --timeF6     |  abort after F6  stage, for timing expts     |   FALSE   | 
  *            | --rt1        |  P7_DOMAINDEF rt1 parameter                  |    0.25   |
  *            | --rt2        |  P7_DOMAINDEF rt2 parameter                  |    0.10   |
  *            | --rt3        |  P7_DOMAINDEF rt3 parameter                  |    0.20   |
@@ -364,17 +360,6 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_edef       = TRUE;
   pli->do_edefbias   = FALSE;
   pli->do_fcyk       = TRUE;
-  pli->F1            = esl_opt_GetReal(go, "--F1");
-  pli->F1b           = esl_opt_GetReal(go, "--F1b");
-  pli->F2            = esl_opt_GetReal(go, "--F2");
-  pli->F2b           = esl_opt_GetReal(go, "--F2b");
-  pli->F3            = esl_opt_GetReal(go, "--F3");
-  pli->F3b           = esl_opt_GetReal(go, "--F3b");
-  pli->F4            = esl_opt_GetReal(go, "--F4");
-  pli->F4b           = esl_opt_GetReal(go, "--F4b");
-  pli->F5            = esl_opt_GetReal(go, "--F5");
-  pli->F5b           = esl_opt_GetReal(go, "--F5b");
-  pli->F6            = esl_opt_GetReal(go, "--F6");
 
   if(esl_opt_GetBoolean(go, "--max")) { 
     pli->do_max = TRUE;
@@ -523,7 +508,6 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   if(esl_opt_GetBoolean(go, "--noF3b"))    pli->do_fwdbias  = FALSE;
   if(esl_opt_GetBoolean(go, "--noF4b"))    pli->do_gfwdbias = FALSE;
   if(esl_opt_GetBoolean(go, "--doF5b"))    pli->do_edefbias = TRUE;
-
 
   /* Finished setting filter stage on/off parameters and thresholds */
   /********************************************************************************/
@@ -1400,6 +1384,7 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
 	    pli->F1b * pli->nmodels);
     nwin_fcyk = nwin_final = pli_acct->n_past_msvbias;
   }
+  /* msv bias is off by default, so don't output anything if it's off */
 
   if(pli->do_vit) { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
@@ -1484,9 +1469,7 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
 	    pli->F5b * pli->nmodels);
     nwin_fcyk = nwin_final = pli_acct->n_past_edefbias;
   }
-  else { 
-    fprintf(ofp, "Envelopes passing glocal HMM envelope bias filter: %15s  (off)\n", "");
-  }
+  /* edef bias is off by default, so don't output anything if it's off */
 
   if(pli->do_fcyk) { 
     fprintf(ofp, "Envelopes passing %6s CM  CYK           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
@@ -1522,7 +1505,7 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
   }
   else { 
     fprintf(ofp, "Total hits reported:                               %15d  (%.4g)\n",
-	    (int)pli_acct->n_output,
+	    (int) pli_acct->n_output,
 	    (double) pli_acct->pos_output / pli_acct->nres );
   }
 
@@ -3285,7 +3268,8 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit, int cp9
   /* add null3 correction to sc if nec */
   if(pli->do_null3) { 
     ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, sq2aln->dsq, 1, sq2aln->L, cm->null3_omega, &null3_correction);
-    adata->sc -= null3_correction;
+    adata->sc  -= null3_correction;
+    hit->n3corr = null3_correction;
   }
 
   /* create the CM_ALIDISPLAY object */
@@ -3599,69 +3583,3 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
 /*****************************************************************
  * @LICENSE@
  *****************************************************************/
-
-/* Function:  p7_pli_LooseExtendAndMergeWindows
- * Synopsis:  Turns a list of ssv diagonals into windows, and merges
- *            overlapping windows.
- *
- * Purpose:   Accepts a <windowlist> of SSV diagonals, extends those
- *            to windows based on a combination of the max_length
- *            value from <om> and the prefix and suffix lengths stored
- *            in <msvdata>, then merges overlapping windows in place,
- *            ensuring that windows stay within the bounds of 1..<L>.
- *
- * Returns:   <eslOK>
- */
-static int
-p7_pli_LooseExtendAndMergeWindows (P7_OPROFILE *om, FM_WINDOWLIST *windowlist, int L) 
-{
-  int i;
-  FM_WINDOW        *prev_window;
-  FM_WINDOW        *curr_window;
-  int              window_start;
-  int              window_end;
-  int new_hit_cnt = 0;
-
-  /* extend windows */
-  for (i=0; i<windowlist->count; i++) {
-    curr_window = windowlist->windows+i;
-
-    /* from Travis' p7_pli_ExtendAndMergeWindows() */
-    /* window_start = ESL_MAX( 1,   curr_window->n - ( om->max_length * (0.1 + msvdata->prefix_lengths[curr_window->k - curr_window->length + 1]  )) ) ;
-       window_end   = ESL_MIN( L ,  curr_window->n + curr_window->length + (om->max_length * (0.1 + msvdata->suffix_lengths[curr_window->k] ) ) )   ;
-    */
-
-    window_start = ESL_MAX( 1, (curr_window->n + curr_window->length - 1) - om->max_length + 1);
-    window_end   = ESL_MIN( L, (curr_window->n + curr_window->length - 1) + om->max_length - 1);
-
-    curr_window->n = window_start;
-    curr_window->length = window_end - window_start + 1;
-  }
-
-
-  /* merge overlapping windows, compressing list in place. */
-  for (i=1; i<windowlist->count; i++) {
-    prev_window = windowlist->windows+new_hit_cnt;
-    curr_window = windowlist->windows+i;
-    if (curr_window->n <= prev_window->n + prev_window->length ) {
-      //merge windows
-      if (  curr_window->n + curr_window->length >  prev_window->n + prev_window->length )
-        prev_window->length = curr_window->n + curr_window->length - prev_window->n;
-
-    } else {
-      new_hit_cnt++;
-      windowlist->windows[new_hit_cnt] = windowlist->windows[i];
-    }
-  }
-  windowlist->count = new_hit_cnt+1;
-
-  /* ensure that window start and end are within target sequence bounds */
-  if ( windowlist->windows[0].n  <  1) 
-    windowlist->windows[0].n =  1;
-
-  if ( windowlist->windows[windowlist->count-1].n + windowlist->windows[windowlist->count-1].length - 1  >  L)
-    windowlist->windows[windowlist->count-1].length =  L - windowlist->windows[windowlist->count-1].n + 1;
-
-
-  return eslOK;
-}

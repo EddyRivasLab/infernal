@@ -2296,8 +2296,8 @@ typedef struct cm_pipeline_s {
  * Based on HMMER's P7_ALIDISPLAY.
  *
  * For an alignment of L residues and names C chars long, requires
- * 7L + 2C + 30 bytes; for typical case of L=100,C=10, that's
- * <0.8 Kb.
+ * 9L + 2C + 50 bytes (or so); for typical case of L=100,C=10, that's
+ * about 1 Kb.
  */
 typedef struct cm_alidisplay_s {
   char *rfline;                 /* reference coord info; or NULL        */
@@ -2308,6 +2308,10 @@ typedef struct cm_alidisplay_s {
   char *aseq;                   /* aligned target sequence              */
   char *ppline;			/* posterior prob annotation; or NULL   */
   int   N;			/* length of strings                    */
+
+  char *aseq_el;                /* aligned sequence, including EL emissions */
+  char *ppline_el;              /* posterior probs, including EL emissions */
+  int   N_el;                   /* length of aseq_el, ppline_el         */
   
   char *cmname;	    	        /* name of CM                           */
   char *cmacc;			/* accession of CM; or [0]='\0'         */
@@ -2369,6 +2373,7 @@ typedef struct cm_hit_s {
   int            root;          /* internal state entry point, != 0 if hit involves a local begin */
   int            mode;          /* joint or marginal hit mode: CM_MODE_J | CM_MODE_R | CM_MODE_L | CM_MODE_T */
   float          score;		/* bit score of the hit (with corrections) */
+  float          n3corr;        /* null3 correction, in bits (already subtracted from score) */
   double         pvalue;	/* P-value of the hit   (with corrections) */
   double         evalue;	/* E-value of the hit   (with corrections) */
   CM_ALIDISPLAY *ad;            /* alignment display */
@@ -2557,6 +2562,7 @@ extern int            cm_alidisplay_Is5PAnd3PTrunc(const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Is5PTruncOnly (const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Is3PTruncOnly (const CM_ALIDISPLAY *ad);
 extern char          *cm_alidisplay_TruncString   (const CM_ALIDISPLAY *ad);
+extern int            cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_SQ **ret_sq, Parsetree_t **ret_tr, char **ret_pp);
 extern int            cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2);
 
@@ -2939,6 +2945,7 @@ extern int cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli);
 extern int cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw);
 extern int cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw);
 extern int cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_cyk);
+extern int cm_tophits_Alignment(CM_t *cm, const CM_TOPHITS *th, char *errbuf, ESL_MSA **ret_msa);
 extern int cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 extern int cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipemode, const char *qfile, const char *tfile, const ESL_GETOPTS *go);
 extern int cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th);
@@ -3247,3 +3254,4 @@ float trinside (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int 
 /************************************************************
  * @LICENSE@
  ************************************************************/
+

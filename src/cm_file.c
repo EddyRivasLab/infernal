@@ -2071,8 +2071,8 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 
  ERROR:
   if (*ret_abc == NULL && abc != NULL) esl_alphabet_Destroy(abc);
-  if (cm      != NULL) FreeCM(cm);
-  if (opt_cm != NULL) *opt_cm = NULL;
+  if (cm       != NULL) FreeCM(cm);
+  if (opt_cm   != NULL) *opt_cm = NULL;
   if      (status == eslEMEM || status == eslESYS) return status; 
   else if (status == eslEOF)                       return status;
   else if (status == eslEINCOMPAT)                 return status;

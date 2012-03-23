@@ -153,6 +153,7 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   hit->stop             = 1;
   hit->in_rc            = FALSE;
   hit->score            = 0.0;
+  hit->n3corr           = 0.0;
   hit->pvalue           = 0.0;
   hit->evalue           = 0.0;
 
@@ -624,6 +625,7 @@ cm_tophits_CloneHitMostly(CM_TOPHITS *src_th, int h, CM_TOPHITS *dest_th)
   hit->root     = src_th->hit[h]->root;
   hit->mode     = src_th->hit[h]->mode;
   hit->score    = src_th->hit[h]->score;
+  hit->n3corr   = src_th->hit[h]->n3corr;
   hit->pvalue   = src_th->hit[h]->pvalue;
   hit->evalue   = src_th->hit[h]->evalue;
   hit->srcL     = src_th->hit[h]->srcL;
@@ -978,7 +980,6 @@ cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli)
   return eslOK;
 }
 
-
 /* Function:  cm_tophits_Targets()
  * Synopsis:  Standard output format for a top target hits list.
  * Incept:    EPN, Tue May 24 13:48:29 2011
@@ -1037,15 +1038,15 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   cur_rankstr[rankw] = '\0';
 
   fprintf(ofp, "Hit scores:\n");
-  fprintf(ofp, " %*s  %9s  %6s  %-*s  %*s  %*s  %1s  %5s  %4s  %s\n", rankw, "rank",  "E-value",   " score", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"model"), posw, "start", posw, "end", "", "trunc", "pass", "description");
-  fprintf(ofp, " %*s  %9s  %6s  %-*s  %*s  %*s  %1s  %5s  %4s  %s\n", rankw, rankstr, "---------", "------", namew, namestr, posw, posstr, posw, posstr, "", "-----", "----", "-----------");
+  fprintf(ofp, " %*s %9s %6s %5s  %-*s %*s %*s %1s %5s  %s\n", rankw, "rank",  "E-value",   " score", " bias", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"model"), posw, "start", posw, "end", "", "trunc", "description");
+  fprintf(ofp, " %*s %9s %6s %5s  %-*s %*s %*s %1s %5s  %s\n", rankw, rankstr, "---------", "------", "-----", namew, namestr, posw, posstr, posw, posstr, "", "-----", "-----------");
   
   nprinted = 0;
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED) { 
 
       if (! (th->hit[h]->flags & CM_HIT_IS_INCLUDED) && ! have_printed_incthresh) {
-	fprintf(ofp, "  ------ inclusion threshold ------\n");
+	fprintf(ofp, " ------ inclusion threshold ------\n");
 	have_printed_incthresh = TRUE;
       }
       
@@ -1060,16 +1061,16 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       
       sprintf(cur_rankstr, "(%d)", nprinted+1);
 
-      fprintf(ofp, " %*s  %9.2g  %6.1f  %-*s  %*" PRId64 "  %*" PRId64 "  %c  %5s  %4d  ",
+      fprintf(ofp, " %*s %9.2g %6.1f %5.1f  %-*s %*" PRId64 " %*" PRId64 " %c %5s  ",
 	      rankw, cur_rankstr,
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
+	      th->hit[h]->n3corr,
 	      namew, showname,
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'), 
-	      cm_alidisplay_TruncString(th->hit[h]->ad), 
-	      th->hit[h]->pass_idx);
+	      cm_alidisplay_TruncString(th->hit[h]->ad)); 
       
       if (textw > 0) fprintf(ofp, "%-.*s\n", descw, th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
       else           fprintf(ofp, "%s\n",           th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
@@ -1153,30 +1154,32 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 
       /* The hit info display is 101+rankw char wide:, where rankw is the maximum of 4 and 2 plus the number of digits in th->N. 
        * If (! pli->show_alignments) the width drops to 72+rankw.
-       *     rank  score   E-value cm from   cm to       seq from      seq to      trunc  acc  bands   mx Mb aln secs  
-       *     ---- ------ --------- ------- -------    ----------- -----------      ----- ---- ------ ------- --------
-       *      (1)  123.4    6.8e-9       3      72 []         412         492 + ..       0.98    yes    1.30     0.04  
-       *     (12)  123.4    1.8e-3       1      72 []         180         103 - ..       0.90    yes    0.65     2.23  
-       *    rankw 123456 123456789 1234567 1234567 12 12345678901 12345678901 1 12 12345 1234  12345 1234567 12345678
-       *        0         1         2         3         4         5         6         7         8        9        10
-       *        01234567890123456789012345678901234567890123456789012345678901234567890123456789012345789012345678901
-       * 
-       * In rare cases, when computing posteriors is not feasible in allowable memory, 
-       * the "acc" column will be replaced by a "cyksc" colum which is 6 characters wide 
-       * instead of 4. 
+       *     rank    score  bias   E-value cm from   cm to       seq from      seq to       acc trunc| bands   mx Mb seconds pass
+       *     ----   ------ ----- --------- ------- -------    ----------- -----------      ---- -----|------ ------- ------- ----
+       *      (1) !  123.4   0.3    6.8e-9       3      72 []         412         492 + .. 0.98    no|   yes    1.30    0.04    1
+       *     (12) ?  123.4  12.7    1.8e-3       1      72 []         180         103 - .. 0.90    no|   yes    0.65    2.23    3  
+       *    rankw 1 123456 12345 123456789 1234567 1234567 12 12345678901 12345678901 1 12 1234 12345| 12345 1234567 1234567 1234 
+       *        0         1         2         3         4         5         6         7         8    |   9        10        11
+       *        01234567890123456789012345678901234567890123456789012345678901234567890123456789012345789012345678901234567890123
+       *                                                                                             |-> only shown if pli->do_allstats
+       * In rare cases, when CYK alignment is chosen or when computing
+       * posteriors is not feasible in allowable memory, the "acc"
+       * column will be replaced by a "cyksc" colum which is 6
+       * characters wide instead of 4.
        */
-
-      fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s %5s",  rankw, "rank", "", "score", "E-value", "cm from", "cm to", "", "seq from", "seq to", "", "", "trunc");
-      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %7s %7s", "acc",   "bands", "mx Mb",   "seconds"); }
-      else                       { fprintf(ofp, " %6s %5s %7s %7s", "cyksc", "bands", "mx Mb",   "seconds"); }
-
+      
+      fprintf(ofp, " %*s %1s %6s %5s %9s %7s %7s %2s %11s %11s %1s %2s",  rankw, "rank", "", "score", "bias", "E-value", "cm from", "cm to", "", "seq from", "seq to", "", "");
+      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s", "acc",   "trunc"); }
+      else                       { fprintf(ofp, " %6s %5s", "cyksc", "trunc"); }
+      if(pli->do_allstats)       { fprintf(ofp, " %5s %7s %7s %4s", "bands", "mx Mb", "seconds", "pass"); }
       fprintf(ofp, "\n");
-
-      fprintf(ofp, " %*s %1s %6s %9s %7s %7s %2s %11s %11s %1s %2s %5s",  rankw, rankstr,  "", "------", "---------", "-------", "-------", "", "-----------", "-----------", "", "", "-----");
-      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %7s %7s", "----",   "-----", "-------", "-------"); }
-      else                       { fprintf(ofp, " %6s %5s %7s %7s", "------", "-----", "-------", "-------"); }
+      
+      fprintf(ofp, " %*s %1s %6s %5s %9s %7s %7s %2s %11s %11s %1s %2s",  rankw, rankstr,  "", "------", "-----", "---------", "-------", "-------", "", "-----------", "-----------", "", "");
+      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s", "----",   "-----"); }
+      else                       { fprintf(ofp, " %6s %5s", "------", "-----"); }
+      if(pli->do_allstats)       { fprintf(ofp, " %5s %7s %7s %4s", "-----", "-------", "-------", "----"); }
       fprintf(ofp, "\n");
-
+	
       if(cm_alidisplay_Is5PTrunc(th->hit[h]->ad)) { /* 5' truncated */
 	lmod = '~';
 	if(th->hit[h]->in_rc) { lseq = th->hit[h]->ad->sqfrom == th->hit[h]->srcL ? '{' : '~'; }
@@ -1200,10 +1203,11 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 
       sprintf(cur_rankstr, "(%d)", nprinted+1);
 
-      fprintf(ofp, " %*s %c %6.1f %9.2g %7d %7d %c%c %11" PRId64 " %11" PRId64 " %c %c%c %5s",
+      fprintf(ofp, " %*s %c %6.1f %5.1f %9.2g %7d %7d %c%c %11" PRId64 " %11" PRId64 " %c %c%c",
 	      rankw, cur_rankstr,
 	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? '!' : '?'),
 	      th->hit[h]->score,
+	      th->hit[h]->n3corr,
 	      th->hit[h]->evalue,
 	      th->hit[h]->ad->cfrom_emit,
 	      th->hit[h]->ad->cto_emit,
@@ -1211,14 +1215,18 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      th->hit[h]->start,
 	      th->hit[h]->stop,
 	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'),
-	      lseq, rseq, 
-	      cm_alidisplay_TruncString(th->hit[h]->ad));
-      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f", th->hit[h]->ad->avgpp); }
-      else                       { fprintf(ofp, " %6.2f", th->hit[h]->ad->sc); }
-      fprintf(ofp, " %5s %7.2f %7.2f\n\n",	
-	      (th->hit[h]->ad->used_hbands ? "yes" : "no"),
-	      th->hit[h]->ad->matrix_Mb,
-	      th->hit[h]->ad->elapsed_secs);
+	      lseq, rseq);
+      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f %5s", th->hit[h]->ad->avgpp, cm_alidisplay_TruncString(th->hit[h]->ad)); }
+      else                       { fprintf(ofp, " %6.2f %5s", th->hit[h]->ad->sc,    cm_alidisplay_TruncString(th->hit[h]->ad)); }
+      if(pli->do_allstats) { 
+	fprintf(ofp, " %5s %7.2f %7.2f %4d\n\n",	
+		(th->hit[h]->ad->used_hbands ? "yes" : "no"),
+		th->hit[h]->ad->matrix_Mb,
+		th->hit[h]->ad->elapsed_secs,
+		th->hit[h]->pass_idx);
+      }
+      fprintf(ofp, "\n");
+
       /*cm_alidisplay_Dump(ofp, th->hit[h]->ad);*/
       cm_alidisplay_Print(ofp, th->hit[h]->ad, 40, textw, pli->show_accessions, TRUE);
       fprintf(ofp, "\n");
@@ -1454,6 +1462,91 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_cyk)
     fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n");
   }
   return eslOK;
+}
+
+
+/* Function:  cm_tophits_Alignment()
+ * Incept:    EPN, Wed Mar 21 16:21:21 2012
+ * Synopsis:  Create a multiple alignment of all the included hits.
+ *
+ * Purpose:   Create a multiple alignment of all hits marked
+ *            "includable" in the top hits list <th>, and return it in
+ *            <*ret_msa>.
+ *            
+ * Returns:   <eslOK> on success, if any hits were aligned then 
+ *            <*ret_msa> points to a new MSA that the caller is 
+ *            responsible for freeing, else if there are no 
+ *            reported hits that satisfy inclusion thresholds,
+ *            <eslOK> is still returned but ret_msa is <NULL>.
+ *
+ * Throws:    <eslEINVAL> on contract violation. <eslEMEM> on
+ *            allocation failure; <eslECORRUPT> on unexpected internal
+ *            data corruption.  Potentially other non-eslOK
+ *            values. <errbuf> is filled in all cases.
+ */
+int
+cm_tophits_Alignment(CM_t *cm, const CM_TOPHITS *th, char *errbuf, ESL_MSA **ret_msa)
+{
+  ESL_SQ      **sqarr = NULL; /* [0..ninc-1] array of sequences, one for each hit */
+  Parsetree_t **trarr = NULL; /* [0..ninc-1] array of parsetrees, one for each hit */
+  char        **pparr = NULL; /* [0..ninc-1] array of pp strings, one for each hit */
+  ESL_MSA      *msa   = NULL;
+  int           ninc  = 0;
+  int           h, i, y;
+  int           status;
+
+  if(cm->cmcons == NULL) ESL_FAIL(eslEINVAL, errbuf, "cm_tophits_Alignment(): cm->cmcons is NULL");
+
+  /* How many hits will be included in the new alignment? 
+   */
+  for (h = 0; h < th->N; h++) { 
+    if (th->hit[h]->flags & CM_HIT_IS_INCLUDED) { 
+      ninc++;
+    }
+  }
+
+  if (ninc == 0) { status = eslOK; goto ERROR; /* caller will know that no msa was built b/c ret_msa will be NULL */ }
+
+  /* Allocation */
+  ESL_ALLOC(sqarr, sizeof(ESL_SQ *)      * (ninc));
+  ESL_ALLOC(trarr, sizeof(Parsetree_t *) * (ninc));
+  ESL_ALLOC(pparr, sizeof(char *) * (ninc));
+  for (i = 0; i < ninc; i++) sqarr[i] = NULL;
+  for (i = 0; i < ninc; i++) trarr[i] = NULL;
+  for (i = 0; i < ninc; i++) pparr[i] = NULL;
+
+  /* Make faux sequences, parsetrees from hit list */
+  y = 0;
+  for (h = 0; h < th->N; h++) { 
+    if (th->hit[h]->flags & CM_HIT_IS_INCLUDED) { 
+      if ((status = cm_alidisplay_Backconvert(cm, th->hit[h]->ad, errbuf, &(sqarr[y]), &(trarr[y]), &(pparr[y]))) != eslOK) goto ERROR;
+      y++;
+    }
+  }
+  
+  /* Make the multiple alignment */
+
+  /* create the alignment */
+  if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, sqarr, NULL, trarr, pparr, ninc, NULL, NULL, TRUE, FALSE, &msa)) != eslOK) goto ERROR;
+
+  /* Clean up */
+  for (y = 0; y < ninc; y++) esl_sq_Destroy(sqarr[y]);
+  for (y = 0; y < ninc; y++) FreeParsetree(trarr[y]);
+  for (y = 0; y < ninc; y++) free(pparr[y]);
+  free(sqarr);
+  free(trarr);
+  free(pparr);
+
+  *ret_msa = msa;
+  return eslOK;
+  
+ ERROR:
+  if (sqarr != NULL) { for (y = 0; y < ninc; y++) if (sqarr[y] != NULL) esl_sq_Destroy(sqarr[y]); free(sqarr); }
+  if (trarr != NULL) { for (y = 0; y < ninc; y++) if (trarr[y] != NULL) FreeParsetree(trarr[y]);  free(trarr); }
+  if (pparr != NULL) { for (y = 0; y < ninc; y++) if (pparr[y] != NULL) free(pparr[y]);           free(pparr); }
+  if (msa   != NULL) esl_msa_Destroy(msa);
+  *ret_msa = NULL;
+  return status;
 }
 /*---------------- end, standard output format ------------------*/
 

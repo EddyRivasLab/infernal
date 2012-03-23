@@ -295,6 +295,8 @@ main(int argc, char **argv)
    * we might be an MPI master, an MPI worker, or a serial program.
    */
 #ifdef HAVE_MPI
+
+#if 0
   /* TEMP */
   pid_t pid;
   /* get the process id */
@@ -302,6 +304,7 @@ main(int argc, char **argv)
   printf("The process id is %d\n", pid);
   fflush(stdout);
   /* TEMP */
+#endif
 
   /* pause the execution of the programs execution until the user has a
    * chance to attach with a debugger and send a signal to resume execution

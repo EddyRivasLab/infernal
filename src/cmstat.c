@@ -45,7 +45,7 @@ static ESL_OPTIONS options[] = {
   { "-E",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,    OUTOPTS, "print bit scores that correspond to E-value threshold of <x>", 0 },
   { "-P",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,    OUTOPTS, "print bit scores that correspond to E-value threshold of <x>", 0 },
   { "-T",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,    OUTOPTS, "print E-values that correspond to bit score threshold of <x>", 0 },
-  { "-Z",        eslARG_REAL,   "10",      NULL, "x>0",     NULL,      NULL,    OUTOPTS, "set database size in *Mb* to <x> for E-value calculations",    0 },
+  { "-Z",        eslARG_REAL,   "10",      NULL, "x>0",     NULL,      NULL,       NULL, "set database size in *Mb* to <x> for E-value calculations",    0 },
   { "--cut_ga",  eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,    OUTOPTS, "print E-values that correspond to GA bit score thresholds",    0 },
   { "--cut_nc",  eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,    OUTOPTS, "print E-values that correspond to NC bit score thresholds",    0 },
   { "--cut_tc",  eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,    OUTOPTS, "print E-values that correspond to TC bit score thresholds",    0 },

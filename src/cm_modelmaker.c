@@ -1,5 +1,5 @@
 /* cm_modelmaker.c
- * SRE, 28 Feb 2000
+ * SRE, 28 Feb 2000 
  * SVN $Id$
  *
  * Construct a model from an alignment. 
@@ -95,27 +95,28 @@ static int check_for_pknots(char *cs, int alen);
 int
 HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
-  int             status;
-  CM_t           *cm;		/* new covariance model                       */
-  Parsetree_t    *gtr;		/* guide tree for alignment                   */
-  ESL_STACK      *pda;		/* pushdown stack used in building gtr        */
-  int            *matassign;	/* 1..alen   array; 0=insert col, 1=match col */
-  int            *ct;		/* 0..alen-1 base pair partners array         */
-  int             apos;		/* counter over columns of alignment          */
-  int             idx;		/* counter over sequences in the alignment    */
-  int             v;		/* index of current node                      */
-  int             i,j,k;	/* subsequence indices                        */
-  int  type;			/* type of node we're working on              */
-  int  diff, bestdiff, bestk;   /* used while finding optimal split points    */   
-  int  nnodes;			/* number of nodes in CM                      */
-  int  nstates;			/* number of states in CM                     */
-  int  clen;                    /* consensus length of the model              */
-  int *c2a_map;                 /* [1..clen]      map from consensus (match) positions to alignment positions */
-  int *a2c_map;                 /* [1..msa->alen] map from alignment positions to consensus (match) positions, insert alignment positions = 0 */
-  int  cpos;                    /* consensus position counter */
-  int  k_cpos, i_cpos, j_cpos;  /* consensus position that k, i, j (alignment positions) correspond to */
-  int  kp;                      /* k prime, closest alignment position that is consensus to the right of k (that is kp >= k) */
-  float gaps = 0.;              /* counter over gaps */
+  int          status;
+  CM_t        *cm        = NULL; /* new covariance model                       */
+  Parsetree_t *gtr       = NULL; /* guide tree for alignment                   */
+  ESL_STACK   *pda       = NULL; /* pushdown stack used in building gtr        */
+  int         *matassign = NULL; /* 1..alen   array; 0=insert col, 1=match col */
+  int         *ct        = NULL; /* 0..alen-1 base pair partners array         */
+  int          apos;		 /* counter over columns of alignment          */
+  int          idx;		 /* counter over sequences in the alignment    */
+  int          v;		 /* index of current node                      */
+  int          i,j,k;	         /* subsequence indices                        */
+  int  type;			 /* type of node we're working on              */
+  int  diff, bestdiff, bestk;    /* used while finding optimal split points    */   
+  int  nnodes;			 /* number of nodes in CM                      */
+  int  nstates;			 /* number of states in CM                     */
+  int  clen;                     /* consensus length of the model              */
+  int *c2a_map = NULL;           /* [1..clen]      map from consensus (match) positions to alignment positions */
+  int *a2c_map = NULL;           /* [1..msa->alen] map from alignment positions to consensus (match) positions, 
+				  * insert alignment positions = 0 */
+  int  cpos;                     /* consensus position counter */
+  int  k_cpos, i_cpos, j_cpos;   /* consensus position that k, i, j (alignment positions) correspond to */
+  int  kp;                       /* k prime, closest alignment position that is consensus to the right of k (that is kp >= k) */
+  float gaps = 0.;               /* counter over gaps */
 
   /* Contract check */
   if (msa->ss_cons == NULL)            ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): No consensus structure annotation available for that alignment.");
@@ -419,38 +420,42 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float gapthr
   esl_stack_Destroy(pda);
   free(ct);
 
-  /* OK, we've converted ct into gtr -- gtr is a tree structure telling us the
-   * arrangement of consensus nodes. Now do the drill for constructing a full model 
-   * using this guide tree.
+  /* OK, we've converted ct into gtr -- gtr is a tree structure
+   * telling us the arrangement of consensus nodes. Now do the drill
+   * for constructing a full model using this guide tree. We only have
+   * to do this step if we're returning a CM though. (Sometimes caller
+   * may only way gtr.)
    */
-  cm = CreateCM(nnodes, nstates, clen, msa->abc);
-  if((status = cm_from_guide(cm, errbuf, gtr, FALSE)) != eslOK) return status; /* FALSE says, we're not building a sub CM that will never be localized */
-  CMZero(cm);
-  cm->clen = clen;
+  if(ret_cm != NULL) { 
+    cm = CreateCM(nnodes, nstates, clen, msa->abc);
+    if((status = cm_from_guide(cm, errbuf, gtr, FALSE)) != eslOK) return status; /* FALSE says, we're not building a sub CM that will never be localized */
+    CMZero(cm);
+    cm->clen = clen;
 
-  /* post v1.0.2: introduced cm->map and now we fill cm->rf */
-  /* cm->map is identical to c2a_map, copy it */
-  if(cm->map != NULL) free(cm->map); /* this is paranoid, it will be NULL */
-  ESL_ALLOC(cm->map, sizeof(int) * (cm->clen+1));
-  esl_vec_ICopy(c2a_map, (cm->clen+1), cm->map);
-  cm->flags |= CMH_MAP;
-
-  /* cm->rf is copied from the msa, from consensus positions */
-  if(msa->rf != NULL) { 
-    if(cm->rf != NULL) free(cm->rf); /* this is paranoid, it will be NULL */
-    ESL_ALLOC(cm->rf, sizeof(char) * (cm->clen+2));
-    cm->rf[0] = ' ';
-    for(cpos = 1; cpos <= cm->clen; cpos++) 
-      cm->rf[cpos] = msa->rf[c2a_map[cpos]-1]; /* watch off-by-one in msa's rf */
-    cm->rf[cm->clen+1] = '\0';
-    cm->flags |= CMH_RF;
+    /* post v1.0.2: introduced cm->map and now we fill cm->rf */
+    /* cm->map is identical to c2a_map, copy it */
+    if(cm->map != NULL) free(cm->map); /* this is paranoid, it will be NULL */
+    ESL_ALLOC(cm->map, sizeof(int) * (cm->clen+1));
+    esl_vec_ICopy(c2a_map, (cm->clen+1), cm->map);
+    cm->flags |= CMH_MAP;
+    
+    /* cm->rf is copied from the msa, from consensus positions */
+    if(msa->rf != NULL) { 
+      if(cm->rf != NULL) free(cm->rf); /* this is paranoid, it will be NULL */
+      ESL_ALLOC(cm->rf, sizeof(char) * (cm->clen+2));
+      cm->rf[0] = ' ';
+      for(cpos = 1; cpos <= cm->clen; cpos++) 
+	cm->rf[cpos] = msa->rf[c2a_map[cpos]-1]; /* watch off-by-one in msa's rf */
+      cm->rf[cm->clen+1] = '\0';
+      cm->flags |= CMH_RF;
+    }
   }
 
   free(matassign);
   free(c2a_map);
   free(a2c_map);
-  if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
-  if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
+  if (ret_cm  != NULL) *ret_cm  = cm;  else if(cm  != NULL) FreeCM(cm);
+  if (ret_gtr != NULL) *ret_gtr = gtr; else if(gtr != NULL) FreeParsetree(gtr);
   return eslOK;
 
  ERROR:
@@ -1187,10 +1192,10 @@ int
 ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int clen, int building_sub_model, CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   int             status;
-  CM_t           *cm;		/* new covariance model                       */
-  Parsetree_t    *gtr;		/* guide tree for alignment                   */
-  ESL_STACK      *pda;		/* pushdown stack used in building gtr        */
-  int            *ct;		/* 0..alen-1 base pair partners array         */
+  CM_t           *cm  = NULL;   /* new covariance model                       */
+  Parsetree_t    *gtr = NULL;	/* guide tree for alignment                   */
+  ESL_STACK      *pda = NULL;	/* pushdown stack used in building gtr        */
+  int            *ct  = NULL;	/* 0..alen-1 base pair partners array         */
   int             v;		/* index of current node                      */
   int             i,j,k;	/* subsequence indices                        */
   int  type;			/* type of node we're working on              */
@@ -1402,20 +1407,23 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int cl
   esl_stack_Destroy(pda);
   free(ct);
 
-  /* OK, we've converted ct into gtr -- gtr is a tree structure telling us the
-   * arrangement of consensus nodes. Now do the drill for constructing a full model 
-   * using this guide tree.
+  /* OK, we've converted ct into gtr -- gtr is a tree structure
+   * telling us the arrangement of consensus nodes. Now do the drill
+   * for constructing a full model using this guide tree. We only have
+   * to do this step if we're returning a CM though. (Sometimes caller
+   * may only want gtr.)
    */
-  cm = CreateCM(nnodes, nstates, clen, abc);
-  if((status = cm_from_guide(cm, errbuf, gtr, building_sub_model)) != eslOK) return status;
-  CMZero(cm);
-  cm->clen = clen;
+  if(ret_cm != NULL) { 
+    cm = CreateCM(nnodes, nstates, clen, abc);
+    if((status = cm_from_guide(cm, errbuf, gtr, building_sub_model)) != eslOK) return status;
+    CMZero(cm);
+    cm->clen = clen;
+    /* note map and rf stay NULL (invalid) we could copy them from their mother, 
+     * but not in this function (because we don't have the mother CM here) */
+  }
 
-  /* note map and rf stay NULL (invalid) we could copy them from their mother, 
-   * but not in this function (because we don't have the mother CM here) */
-
-  if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
-  if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
+  if (ret_cm  != NULL) *ret_cm  = cm;  else if(cm  != NULL) FreeCM(cm);
+  if (ret_gtr != NULL) *ret_gtr = gtr; else if(gtr != NULL) FreeParsetree(gtr);
   return eslOK;
 
  ERROR:

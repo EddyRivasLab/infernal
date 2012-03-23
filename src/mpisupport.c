@@ -1536,7 +1536,7 @@ cm_hit_MPIPackSize(CM_HIT *hit, MPI_Comm comm, int *ret_n)
   /* CM_HIT data */
   if (MPI_Pack_size(5,            MPI_LONG,   comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* start, stop, seq_idx, cm_idx, srcL */
   if (MPI_Pack_size(4,            MPI_INT,    comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* in_rc, root, mode, pass_idx */
-  if (MPI_Pack_size(1,            MPI_FLOAT,  comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* score                   */
+  if (MPI_Pack_size(2,            MPI_FLOAT,  comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* score, n3corr           */
   if (MPI_Pack_size(2,            MPI_DOUBLE, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* pvalue, evalue          */
   if (MPI_Pack_size(1,            MPI_INT,    comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* flags                   */
 
@@ -1545,8 +1545,8 @@ cm_hit_MPIPackSize(CM_HIT *hit, MPI_Comm comm, int *ret_n)
   if ((status = esl_mpi_PackOptSize(hit->desc, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR;  n += sz; 
 
   /* CM_ALIDISPLAY data */
-  if (MPI_Pack_size(13,          MPI_INT,     comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* offset info             */
-  if (MPI_Pack_size(6,           MPI_INT,     comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* N, cfrom_emit, cto_emit, cfrom_span, cto_span, clen */
+  if (MPI_Pack_size(15,          MPI_INT,     comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* offset info             */
+  if (MPI_Pack_size(7,           MPI_INT,     comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* N, N_el, cfrom_emit, cto_emit, cfrom_span, cto_span, clen */
   if (MPI_Pack_size(2,           MPI_LONG,    comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* sequence info           */
   if (MPI_Pack_size(1,           MPI_INT,     comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* used_hbands*/
   if (MPI_Pack_size(3,           MPI_FLOAT,   comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* sc, avgpp, matrix_Mb       */
@@ -1605,6 +1605,7 @@ cm_hit_MPIPack(CM_HIT *hit, char *buf, int n, int *pos, MPI_Comm comm)
   if (MPI_Pack(&hit->seq_idx,        1, MPI_LONG,     buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&hit->pass_idx,       1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&hit->score,          1, MPI_FLOAT,    buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
+  if (MPI_Pack(&hit->n3corr,         1, MPI_FLOAT,    buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&hit->pvalue,         1, MPI_DOUBLE,   buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&hit->evalue,         1, MPI_DOUBLE,   buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&hit->flags,          1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
@@ -1614,26 +1615,31 @@ cm_hit_MPIPack(CM_HIT *hit, char *buf, int n, int *pos, MPI_Comm comm)
   if ((status = esl_mpi_PackOpt(hit->acc,         -1,      MPI_CHAR,  buf, n, pos, comm)) != eslOK) return status; 
   if ((status = esl_mpi_PackOpt(hit->desc,        -1,      MPI_CHAR,  buf, n, pos, comm)) != eslOK) return status; 
 
-  offset = (ad->rfline  == NULL)  ? -1 : ad->rfline - ad->mem;
+  offset = (ad->rfline    == NULL) ? -1 : ad->rfline - ad->mem;
   if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
-  offset = (ad->nline  == NULL)   ? -1 : ad->nline - ad->mem;
+  offset = (ad->nline     == NULL) ? -1 : ad->nline - ad->mem;
   if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
-  offset = (ad->csline  == NULL)  ? -1 : ad->csline - ad->mem;
+  offset = (ad->csline    == NULL) ? -1 : ad->csline - ad->mem;
   if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
-  offset = (ad->model   == NULL)  ? -1 : ad->model - ad->mem;
+  offset = (ad->model     == NULL) ? -1 : ad->model - ad->mem;
   if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
-  offset = (ad->mline   == NULL)  ? -1 : ad->mline - ad->mem;
+  offset = (ad->mline     == NULL) ? -1 : ad->mline - ad->mem;
   if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
-  offset = (ad->aseq    == NULL)     ? -1 : ad->aseq - ad->mem;
+  offset = (ad->aseq      == NULL) ? -1 : ad->aseq - ad->mem;
   if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
-  offset = (ad->ppline  == NULL)  ? -1 : ad->ppline - ad->mem;
+  offset = (ad->ppline    == NULL) ? -1 : ad->ppline - ad->mem;
+  if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
+  offset = (ad->aseq_el   == NULL) ? -1 : ad->aseq_el - ad->mem;
+  if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
+  offset = (ad->ppline_el == NULL) ? -1 : ad->ppline_el - ad->mem;
   if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&ad->N,               1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
-  offset = (ad->cmname == NULL)   ? -1 : ad->cmname - ad->mem;
+  if (MPI_Pack(&ad->N_el,            1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
+  offset = (ad->cmname    == NULL) ? -1 : ad->cmname - ad->mem;
   if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
-  offset = (ad->cmacc  == NULL)   ? -1 : ad->cmacc - ad->mem;
+  offset = (ad->cmacc     == NULL) ? -1 : ad->cmacc - ad->mem;
   if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
-  offset = (ad->cmdesc == NULL)   ? -1 : ad->cmdesc - ad->mem;
+  offset = (ad->cmdesc    == NULL) ? -1 : ad->cmdesc - ad->mem;
   if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
 
   if (MPI_Pack(&ad->cfrom_emit,      1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
@@ -1688,7 +1694,7 @@ int
 cm_hit_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CM_HIT *hit)
 {
   int  status;
-  int  rfline, nline, csline, model, mline, aseq, ppline;
+  int  rfline, nline, csline, model, mline, aseq, ppline, aseq_el, ppline_el;
   int  cmname, cmacc, cmdesc;
   int  sqname, sqacc, sqdesc;
 
@@ -1704,6 +1710,7 @@ cm_hit_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CM_HIT *hit)
   if (MPI_Unpack(buf, n, pos, &hit->seq_idx,     1, MPI_LONG,   comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
   if (MPI_Unpack(buf, n, pos, &hit->pass_idx,    1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
   if (MPI_Unpack(buf, n, pos, &hit->score,       1, MPI_FLOAT,  comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
+  if (MPI_Unpack(buf, n, pos, &hit->n3corr,      1, MPI_FLOAT,  comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
   if (MPI_Unpack(buf, n, pos, &hit->pvalue,      1, MPI_DOUBLE, comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
   if (MPI_Unpack(buf, n, pos, &hit->evalue,      1, MPI_DOUBLE, comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
   if (MPI_Unpack(buf, n, pos, &hit->flags,       1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
@@ -1720,7 +1727,10 @@ cm_hit_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CM_HIT *hit)
   if (MPI_Unpack(buf, n, pos, &mline,              1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &aseq,               1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &ppline,             1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (MPI_Unpack(buf, n, pos, &aseq_el,            1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (MPI_Unpack(buf, n, pos, &ppline_el,          1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &ad->N,              1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (MPI_Unpack(buf, n, pos, &ad->N_el,           1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &cmname,             1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &cmacc,              1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &cmdesc,             1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
@@ -1747,13 +1757,15 @@ cm_hit_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CM_HIT *hit)
   ESL_ALLOC(ad->mem, ad->memsize);
   if (MPI_Unpack(buf, n, pos,  ad->mem,  ad->memsize, MPI_CHAR,   comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
 
-  ad->rfline  = (rfline == -1)  ? NULL : ad->mem + rfline;
-  ad->nline   = (nline == -1)   ? NULL : ad->mem + nline;
-  ad->csline  = (csline == -1)  ? NULL : ad->mem + csline;
-  ad->model   = (model == -1)   ? NULL : ad->mem + model;
-  ad->mline   = (mline == -1)   ? NULL : ad->mem + mline;
-  ad->aseq    = (aseq == -1)    ? NULL : ad->mem + aseq;
-  ad->ppline  = (ppline == -1)  ? NULL : ad->mem + ppline;
+  ad->rfline    = (rfline == -1)  ? NULL : ad->mem + rfline;
+  ad->nline     = (nline == -1)   ? NULL : ad->mem + nline;
+  ad->csline    = (csline == -1)  ? NULL : ad->mem + csline;
+  ad->model     = (model == -1)   ? NULL : ad->mem + model;
+  ad->mline     = (mline == -1)   ? NULL : ad->mem + mline;
+  ad->aseq      = (aseq == -1)    ? NULL : ad->mem + aseq;
+  ad->ppline    = (ppline == -1)  ? NULL : ad->mem + ppline;
+  ad->aseq_el   = (aseq == -1)    ? NULL : ad->mem + aseq_el;
+  ad->ppline_el = (ppline == -1)  ? NULL : ad->mem + ppline_el;
 
   ad->cmname  = (cmname == -1)  ? NULL : ad->mem + cmname;
   ad->cmacc   = (cmacc == -1)   ? NULL : ad->mem + cmacc;

@@ -103,6 +103,13 @@ Direct the main human-readable output to a file
 .I <f> 
 instead of the default stdout.
 
+.TP
+.BI -A " <f>"
+Save a multiple alignment of all significant hits (those satisfying
+.I inclusion thresholds)
+to the file 
+.I <f>.
+
 .TP 
 .BI --tblout " <f>"
 Save a simple tabular (space-delimited) file summarizing the
@@ -167,14 +174,9 @@ report target sequences with a bit score of >=
 
 Inclusion thresholds are stricter than reporting thresholds.
 Inclusion thresholds control which hits are considered to be reliable
-enough to be included in a possible subsequent search round. However, 
-unlike 
-.B jackhmmer 
-of the HMMER package, no INFERNAL application yet exists for
-automating iterative search (mainly due to the currently high computational
-burden of CM calibration), so any subsequent searches would need to be
-manually performed by the user by extracting reliable hits and
-rebuilding, recalibrating and researching.
+enough to be included in an output alignment or in a possible
+subsequent search round, or marked as significant ("!") as opposed to
+questionable ("?") in hit output.
 
 .TP
 .BI --incE " <x>"

@@ -4,11 +4,10 @@
 #
 
 # Exercises of cmcalibrate.
+1  prep        calibrate:/build/se  @src/cmbuild@ -F %SE.CM% !testsuite/se.sto!
+1  prep        calibrate:/build/t   @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
 
-1  exercise  calibrate:help/1          @src/cmcalibrate@  -h
-
-1  prep        model/se                  @src/cmbuild@ -F %SE.CM% !testsuite/se.sto!
-1  prep        model/trna                @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
+1  exercise    calibrate:help/1     @src/cmcalibrate@  -h
 
 # --forecast or --memreq (doesn't do an actual calibration)
 1  exercise    calibrate:t/fc       @src/cmcalibrate@ --forecast %TRNA.CM%
@@ -32,7 +31,7 @@
 1  exercise    calibrate:se/gc      @src/cmcalibrate@ -L 0.1 --gc !testsuite/3trnas.fa! %SE.CM%
 
 # repeat some exercises runs with a multi-cm file. 
-1  prep        model/multi         @src/cmbuild@ -F %SE.DBL.CM% !testsuite/se.dbl.sto!
-1  exercise    calibrate:3/fc      @src/cmcalibrate@ --forecast %SE.DBL.CM%
-1  exercise    calibrate:3/memreq  @src/cmcalibrate@ --memreq %SE.DBL.CM%
-1  exercise    calibrate:3         @src/cmcalibrate@ -L 0.1 %SE.DBL.CM%
+1  prep        calibrate:build/3    @src/cmbuild@ -F %SE.DBL.CM% !testsuite/se.dbl.sto!
+1  exercise    calibrate:3/fc       @src/cmcalibrate@ --forecast %SE.DBL.CM%
+1  exercise    calibrate:3/memreq   @src/cmcalibrate@ --memreq %SE.DBL.CM%
+1  exercise    calibrate:3          @src/cmcalibrate@ -L 0.1 %SE.DBL.CM%

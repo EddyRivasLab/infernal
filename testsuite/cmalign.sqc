@@ -2,17 +2,17 @@
 # EPN, Thu Jan  3 05:20:12 2008
 # EPN, Mon Mar  5 15:24:44 2012 [Updated for 1.1 release]
 #
-1  exercise  align:help/1        @src/cmalign@  -h
+1  exercise  align:help/1         @src/cmalign@  -h
 
-1  prep      model/trna          @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
-1  exercise  align:t/df          @src/cmalign@  %TRNA.CM% 3trnas.fa
-1  exercise  align:t/stdin/cm    cat %TRNA.CM% | @src/cmalign@  - !testsuite/3trnas.fa!
-1  exercise  align:t/stdin/seq   cat !testsuite/3trnas.fa! | @src/cmalign@  %TRNA.CM% -
-1  fail      align:t/stdin/both  cat !testsuite/3trnas.fa! | @src/cmalign@  - -
-1  exercise  align:t/o           @src/cmalign@  -o %TMPOUT% %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/l           @src/cmalign@  -l %TRNA.CM% !testsuite/3trnas.fa!
+1  prep      align:build/trna     @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
+1  exercise  align:t/df           @src/cmalign@  %TRNA.CM% 3trnas.fa
+1  exercise  align:t/stdin/cm     cat %TRNA.CM% | @src/cmalign@  - !testsuite/3trnas.fa!
+1  exercise  align:t/stdin/seq    cat !testsuite/3trnas.fa! | @src/cmalign@  %TRNA.CM% -
+1  fail      align:t/stdin/both   cat !testsuite/3trnas.fa! | @src/cmalign@  - -
+1  exercise  align:t/o            @src/cmalign@  -o %TMPOUT% %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align:t/l            @src/cmalign@  -l %TRNA.CM% !testsuite/3trnas.fa!
 
-1  exercise  model/pkhav          @src/cmbuild@ -F --wnone %PKHAV.CM% !testsuite/PK-HAV.rfam10p1.seed.sto!
+1  exercise  align:build/pkhav    @src/cmbuild@ -F --wnone %PKHAV.CM% !testsuite/PK-HAV.rfam10p1.seed.sto!
 1  exercise  align:pkhav          @src/cmalign@  %PKHAV.CM% !testsuite/3pkhavs.fa!
 1  exercise  align:pkhav/map      @src/cmalign@  --mapali !testsuite/PK-HAV.rfam10p1.seed.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!
 1  exercise  align:pkhav/mapstr   @src/cmalign@  --mapstr --mapali !testsuite/PK-HAV.rfam10p1.seed.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!

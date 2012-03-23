@@ -3,120 +3,120 @@
 # EPN, Fri May 23 11:07:09 2008
 #
 # Exercises of cmstat.
-1  exercise  build/t/a       @src/cmbuild@ -F %A.TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
-1  exercise  build/3/a      @src/cmbuild@ -F %A.3.CM% !testsuite/3.rfam10p1.seed.sto!
+1  exercise  stat:build/t/a     @src/cmbuild@ -F %A.TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
+1  exercise  stat:build/3/a     @src/cmbuild@ -F %A.3.CM% !testsuite/3.rfam10p1.seed.sto!
 
-1  prep      copy/trnaC/a       cp !testsuite/tRNA.calibrated.cm! %A.TRNA.C.CM%
-1  prep      copy/3C/a          cp !testsuite/3.calibrated.cm! %A.3.C.CM%
+1  prep      stat:copy/tC/a     cp !testsuite/tRNA.calibrated.cm! %A.TRNA.C.CM%
+1  prep      stat:copy/3C/a     cp !testsuite/3.calibrated.cm! %A.3.C.CM%
 
-1  exercise  convert/t/b     @src/cmconvert@ -b %A.TRNA.CM% > %B.TRNA.CM%
-1  exercise  convert/3/b    @src/cmconvert@ -b %A.3.CM% > %B.3.CM%
+1  exercise  stat:convert/t/b   @src/cmconvert@ -b %A.TRNA.CM% > %B.TRNA.CM%
+1  exercise  stat:convert/3/b   @src/cmconvert@ -b %A.3.CM% > %B.3.CM%
 
-1  exercise  convert/tC/b       @src/cmconvert@ -b %A.TRNA.C.CM% > %B.TRNA.C.CM%
-1  exercise  convert/3C/b       @src/cmconvert@ -b %A.3.C.CM% > %B.3.C.CM%
+1  exercise  stat:convert/tC/b  @src/cmconvert@ -b %A.TRNA.C.CM% > %B.TRNA.C.CM%
+1  exercise  stat:convert/3C/b  @src/cmconvert@ -b %A.3.C.CM% > %B.3.C.CM%
 
-1  exercise  cmstat:help/1      @src/cmstat@ -h
+1  exercise  stat:help/1        @src/cmstat@ -h
 
-1  exercise  t/a/stat           @src/cmstat@   %A.TRNA.CM% 
-1  exercise  3/a/stat           @src/cmstat@   %A.3.CM% 
+1  exercise  stat:t/a           @src/cmstat@   %A.TRNA.CM% 
+1  exercise  stat:3/a           @src/cmstat@   %A.3.CM% 
 
-1  exercise  tC/a/stat          @src/cmstat@   %A.TRNA.C.CM% 
-1  exercise  3C/a/stat          @src/cmstat@   %A.3.C.CM% 
+1  exercise  stat:tC/a          @src/cmstat@   %A.TRNA.C.CM% 
+1  exercise  stat:3C/a          @src/cmstat@   %A.3.C.CM% 
 
-1  exercise  t/a/stat/stdin     cat %A.TRNA.CM%   | @src/cmstat@ -
-1  exercise  3/a/stat/stdin     cat %A.3.CM%      | @src/cmstat@ -
+1  exercise  stat:t/a/stdin     cat %A.TRNA.CM%   | @src/cmstat@ -
+1  exercise  stat:3/a/stdin     cat %A.3.CM%      | @src/cmstat@ -
 
-1  exercise  tC/a/stat/stdin    cat %A.TRNA.C.CM% | @src/cmstat@ -
-1  exercise  3C/a/stat/stdin    cat %A.3.C.CM%    | @src/cmstat@ -
+1  exercise  stat:tC/a/stdin    cat %A.TRNA.C.CM% | @src/cmstat@ -
+1  exercise  stat:3C/a/stdin    cat %A.3.C.CM%    | @src/cmstat@ -
 
-1  exercise  t/b/stat           @src/cmstat@   %B.TRNA.CM% 
-1  exercise  3/b/stat           @src/cmstat@   %B.3.CM% 
+1  exercise  stat:t/b           @src/cmstat@   %B.TRNA.CM% 
+1  exercise  stat:3/b           @src/cmstat@   %B.3.CM% 
 
-1  exercise  tC/b/stat          @src/cmstat@   %B.TRNA.C.CM% 
-1  exercise  3C/b/stat          @src/cmstat@   %B.3.C.CM% 
+1  exercise  stat:tC/b          @src/cmstat@   %B.TRNA.C.CM% 
+1  exercise  stat:3C/b          @src/cmstat@   %B.3.C.CM% 
 
-1  exercise  t/b/stat/stdin     cat %B.TRNA.CM%   | @src/cmstat@ -
-1  exercise  3/b/stat/stdin     cat %B.3.CM%      | @src/cmstat@ -
+1  exercise  stat:t/b/stdin     cat %B.TRNA.CM%   | @src/cmstat@ -
+1  exercise  stat:3/b/stdin     cat %B.3.CM%      | @src/cmstat@ -
 
-1  exercise  tC/b/stat/stdin    cat %B.TRNA.C.CM% | @src/cmstat@ -
-1  exercise  3C/b/stat/stdin    cat %B.3.C.CM%    | @src/cmstat@ -
+1  exercise  stat:tC/b/stdin    cat %B.TRNA.C.CM% | @src/cmstat@ -
+1  exercise  stat:3C/b/stdin    cat %B.3.C.CM%    | @src/cmstat@ -
 
 # --key (works with calibrated or non-calibrated files)
-1  exercise  t/a/stat/key1      @src/cmstat@   --key tRNA %A.TRNA.CM% 
-1  exercise  t/a/stat/key2      @src/cmstat@   --key RF00005 %A.TRNA.CM% 
-1  exercise  3/a/stat/key1      @src/cmstat@   --key Vault %A.3.CM% 
-1  exercise  3/a/stat/key2      @src/cmstat@   --key RF00006 %A.3.CM% 
+1  exercise  stat:t/a/key1      @src/cmstat@   --key tRNA %A.TRNA.CM% 
+1  exercise  stat:t/a/key2      @src/cmstat@   --key RF00005 %A.TRNA.CM% 
+1  exercise  stat:3/a/key1      @src/cmstat@   --key Vault %A.3.CM% 
+1  exercise  stat:3/a/key2      @src/cmstat@   --key RF00006 %A.3.CM% 
 
-1  exercise  tC/a/stat/key1     @src/cmstat@   --key tRNA %A.TRNA.C.CM% 
-1  exercise  tC/a/stat/key2     @src/cmstat@   --key RF00005 %A.TRNA.C.CM% 
-1  exercise  3C/a/stat/key1     @src/cmstat@   --key Vault %A.3.C.CM% 
-1  exercise  3C/a/stat/key2     @src/cmstat@   --key RF00006 %A.3.C.CM% 
+1  exercise  stat:tC/a/key1     @src/cmstat@   --key tRNA %A.TRNA.C.CM% 
+1  exercise  stat:tC/a/key2     @src/cmstat@   --key RF00005 %A.TRNA.C.CM% 
+1  exercise  stat:3C/a/key1     @src/cmstat@   --key Vault %A.3.C.CM% 
+1  exercise  stat:3C/a/key2     @src/cmstat@   --key RF00006 %A.3.C.CM% 
 
 
-1  exercise  t/b/stat/key1      @src/cmstat@   --key tRNA %B.TRNA.CM% 
-1  exercise  t/b/stat/key2      @src/cmstat@   --key RF00005 %B.TRNA.CM% 
-1  exercise  3/b/stat/key1      @src/cmstat@   --key Vault %B.3.CM% 
-1  exercise  3/b/stat/key2      @src/cmstat@   --key RF00006 %B.3.CM% 
+1  exercise  stat:t/b/key1      @src/cmstat@   --key tRNA %B.TRNA.CM% 
+1  exercise  stat:t/b/key2      @src/cmstat@   --key RF00005 %B.TRNA.CM% 
+1  exercise  stat:3/b/key1      @src/cmstat@   --key Vault %B.3.CM% 
+1  exercise  stat:3/b/key2      @src/cmstat@   --key RF00006 %B.3.CM% 
 
-1  exercise  tC/b/stat/key1     @src/cmstat@   --key tRNA %B.TRNA.C.CM% 
-1  exercise  tC/b/stat/key2     @src/cmstat@   --key RF00005 %B.TRNA.C.CM% 
-1  exercise  3C/b/stat/key1     @src/cmstat@   --key Vault %B.3.C.CM% 
-1  exercise  3C/b/stat/key2     @src/cmstat@   --key RF00006 %B.3.C.CM% 
+1  exercise  stat:tC/b/key1     @src/cmstat@   --key tRNA %B.TRNA.C.CM% 
+1  exercise  stat:tC/b/key2     @src/cmstat@   --key RF00005 %B.TRNA.C.CM% 
+1  exercise  stat:3C/b/key1     @src/cmstat@   --key Vault %B.3.C.CM% 
+1  exercise  stat:3C/b/key2     @src/cmstat@   --key RF00006 %B.3.C.CM% 
 
 ###################
 # Remaining options tested only work with calibrated models
 #
 # -E 
-1  exercise  tC/a/stat/E1    @src/cmstat@   -E 0.01  %A.TRNA.C.CM% 
-1  exercise  tC/a/stat/E2    @src/cmstat@   -E 100   %A.TRNA.C.CM% 
-1  exercise  3C/a/stat/E1    @src/cmstat@   -E 1E-12 %A.3.C.CM% 
-1  exercise  3C/a/stat/E2    @src/cmstat@   -E 10000 %A.3.C.CM% 
+1  exercise  stat:tC/a/E1    @src/cmstat@   -E 0.01  %A.TRNA.C.CM% 
+1  exercise  stat:tC/a/E2    @src/cmstat@   -E 100   %A.TRNA.C.CM% 
+1  exercise  stat:3C/a/E1    @src/cmstat@   -E 1E-12 %A.3.C.CM% 
+1  exercise  stat:3C/a/E2    @src/cmstat@   -E 10000 %A.3.C.CM% 
 
-1  exercise  tC/b/stat/E1    @src/cmstat@   -E 0.01  %B.TRNA.C.CM% 
-1  exercise  tC/b/stat/E2    @src/cmstat@   -E 100   %B.TRNA.C.CM% 
-1  exercise  3C/b/stat/E1    @src/cmstat@   -E 1E-12 %B.3.C.CM% 
-1  exercise  3C/b/stat/E2    @src/cmstat@   -E 10000 %B.3.C.CM% 
+1  exercise  stat:tC/b/E1    @src/cmstat@   -E 0.01  %B.TRNA.C.CM% 
+1  exercise  stat:tC/b/E2    @src/cmstat@   -E 100   %B.TRNA.C.CM% 
+1  exercise  stat:3C/b/E1    @src/cmstat@   -E 1E-12 %B.3.C.CM% 
+1  exercise  stat:3C/b/E2    @src/cmstat@   -E 10000 %B.3.C.CM% 
 
 # -Z 
-1  exercise  tC/a/stat/Z1    @src/cmstat@   -Z 10 -E 0.01  %A.TRNA.C.CM% 
-1  exercise  tC/a/stat/Z2    @src/cmstat@   -Z 1000 -E 100   %A.TRNA.C.CM% 
-1  exercise  3C/a/stat/Z1    @src/cmstat@   -Z 0.3 -E 1E-12 %A.3.C.CM% 
-1  exercise  3C/a/stat/Z2    @src/cmstat@   -Z 10000 -E 10000 %A.3.C.CM% 
+1  exercise  stat:tC/a/Z1    @src/cmstat@   -Z 10 -E 0.01  %A.TRNA.C.CM% 
+1  exercise  stat:tC/a/Z2    @src/cmstat@   -Z 1000 -E 100   %A.TRNA.C.CM% 
+1  exercise  stat:3C/a/Z1    @src/cmstat@   -Z 0.3 -E 1E-12 %A.3.C.CM% 
+1  exercise  stat:3C/a/Z2    @src/cmstat@   -Z 10000 -E 10000 %A.3.C.CM% 
 
-1  exercise  tC/b/stat/Z1    @src/cmstat@   -Z 11 -E 0.01 %B.TRNA.C.CM% 
-1  exercise  tC/b/stat/Z2    @src/cmstat@   -Z 0.01 -E 100  %B.TRNA.C.CM% 
-1  exercise  3C/b/stat/Z1    @src/cmstat@   -Z 33 -E 1E-12 %B.3.C.CM% 
-1  exercise  3C/b/stat/Z2    @src/cmstat@   -Z 1002 -E 10000 %B.3.C.CM% 
+1  exercise  stat:tC/b/Z1    @src/cmstat@   -Z 11 -E 0.01 %B.TRNA.C.CM% 
+1  exercise  stat:tC/b/Z2    @src/cmstat@   -Z 0.01 -E 100  %B.TRNA.C.CM% 
+1  exercise  stat:3C/b/Z1    @src/cmstat@   -Z 33 -E 1E-12 %B.3.C.CM% 
+1  exercise  stat:3C/b/Z2    @src/cmstat@   -Z 1002 -E 10000 %B.3.C.CM% 
 
 # --cut_ga
-1  exercise  tC/a/stat/ga    @src/cmstat@   --cut_ga  %A.TRNA.C.CM% 
-1  exercise  tC/a/stat/gaZ   @src/cmstat@   -Z 1000 --cut_ga  %A.TRNA.C.CM% 
-1  exercise  3C/a/stat/ga    @src/cmstat@   --cut_ga %A.3.C.CM% 
-1  exercise  3C/a/stat/ga    @src/cmstat@   -Z 3 --cut_ga %A.3.C.CM% 
+1  exercise  stat:tC/a/ga    @src/cmstat@   --cut_ga  %A.TRNA.C.CM% 
+1  exercise  stat:tC/a/gaZ   @src/cmstat@   -Z 1000 --cut_ga  %A.TRNA.C.CM% 
+1  exercise  stat:3C/a/ga    @src/cmstat@   --cut_ga %A.3.C.CM% 
+1  exercise  stat:3C/a/ga    @src/cmstat@   -Z 3 --cut_ga %A.3.C.CM% 
  
-1  exercise  tC/b/stat/ga    @src/cmstat@   --cut_ga  %B.TRNA.C.CM% 
-1  exercise  tC/b/stat/gaZ   @src/cmstat@   -Z 1000 --cut_ga  %B.TRNA.C.CM% 
-1  exercise  3C/b/stat/ga    @src/cmstat@   --cut_ga %B.3.C.CM% 
-1  exercise  3C/b/stat/ga    @src/cmstat@   -Z 3 --cut_ga %B.3.C.CM% 
+1  exercise  stat:tC/b/ga    @src/cmstat@   --cut_ga  %B.TRNA.C.CM% 
+1  exercise  stat:tC/b/gaZ   @src/cmstat@   -Z 1000 --cut_ga  %B.TRNA.C.CM% 
+1  exercise  stat:3C/b/ga    @src/cmstat@   --cut_ga %B.3.C.CM% 
+1  exercise  stat:3C/b/ga    @src/cmstat@   -Z 3 --cut_ga %B.3.C.CM% 
 
 # --cut_nc
-1  exercise  tC/a/stat/nc    @src/cmstat@   --cut_nc  %A.TRNA.C.CM% 
-1  exercise  tC/a/stat/ncZ   @src/cmstat@   -Z 1000 --cut_nc  %A.TRNA.C.CM% 
-1  exercise  3C/a/stat/nc    @src/cmstat@   --cut_nc %A.3.C.CM% 
-1  exercise  3C/a/stat/nc    @src/cmstat@   -Z 3 --cut_nc %A.3.C.CM% 
+1  exercise  stat:tC/a/nc    @src/cmstat@   --cut_nc  %A.TRNA.C.CM% 
+1  exercise  stat:tC/a/ncZ   @src/cmstat@   -Z 1000 --cut_nc  %A.TRNA.C.CM% 
+1  exercise  stat:3C/a/nc    @src/cmstat@   --cut_nc %A.3.C.CM% 
+1  exercise  stat:3C/a/nc    @src/cmstat@   -Z 3 --cut_nc %A.3.C.CM% 
 
-1  exercise  tC/b/stat/nc    @src/cmstat@   --cut_nc  %B.TRNA.C.CM% 
-1  exercise  tC/b/stat/ncZ   @src/cmstat@   -Z 1000 --cut_nc  %B.TRNA.C.CM% 
-1  exercise  3C/b/stat/nc    @src/cmstat@   --cut_nc %B.3.C.CM% 
-1  exercise  3C/b/stat/nc    @src/cmstat@   -Z 3 --cut_nc %B.3.C.CM% 
+1  exercise  stat:tC/b/nc    @src/cmstat@   --cut_nc  %B.TRNA.C.CM% 
+1  exercise  stat:tC/b/ncZ   @src/cmstat@   -Z 1000 --cut_nc  %B.TRNA.C.CM% 
+1  exercise  stat:3C/b/nc    @src/cmstat@   --cut_nc %B.3.C.CM% 
+1  exercise  stat:3C/b/nc    @src/cmstat@   -Z 3 --cut_nc %B.3.C.CM% 
 
 # --cut_tc
-1  exercise  tC/a/stat/tc    @src/cmstat@   --cut_tc  %A.TRNA.C.CM% 
-1  exercise  tC/a/stat/tcZ   @src/cmstat@   -Z 1000 --cut_tc  %A.TRNA.C.CM% 
-1  exercise  3C/a/stat/tc    @src/cmstat@   --cut_tc %A.3.C.CM% 
-1  exercise  3C/a/stat/tc    @src/cmstat@   -Z 3 --cut_tc %A.3.C.CM% 
+1  exercise  stat:tC/a/tc    @src/cmstat@   --cut_tc  %A.TRNA.C.CM% 
+1  exercise  stat:tC/a/tcZ   @src/cmstat@   -Z 1000 --cut_tc  %A.TRNA.C.CM% 
+1  exercise  stat:3C/a/tc    @src/cmstat@   --cut_tc %A.3.C.CM% 
+1  exercise  stat:3C/a/tc    @src/cmstat@   -Z 3 --cut_tc %A.3.C.CM% 
 
-1  exercise  tC/b/stat/tc    @src/cmstat@   --cut_tc  %B.TRNA.C.CM% 
-1  exercise  tC/b/stat/tcZ   @src/cmstat@   -Z 1000 --cut_tc  %B.TRNA.C.CM% 
-1  exercise  3C/b/stat/tc    @src/cmstat@   --cut_tc %B.3.C.CM% 
-1  exercise  3C/b/stat/tc    @src/cmstat@   -Z 3 --cut_tc %B.3.C.CM% 
+1  exercise  stat:tC/b/tc    @src/cmstat@   --cut_tc  %B.TRNA.C.CM% 
+1  exercise  stat:tC/b/tcZ   @src/cmstat@   -Z 1000 --cut_tc  %B.TRNA.C.CM% 
+1  exercise  stat:3C/b/tc    @src/cmstat@   --cut_tc %B.3.C.CM% 
+1  exercise  stat:3C/b/tc    @src/cmstat@   -Z 3 --cut_tc %B.3.C.CM% 

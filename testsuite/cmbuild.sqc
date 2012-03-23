@@ -2,7 +2,6 @@
 # EPN, Fri Dec 28 15:54:44 2007
 #
 
-
 # Exercises of cmbuild.
 #
 1  exercise  build:help/1        @src/cmbuild@  -h

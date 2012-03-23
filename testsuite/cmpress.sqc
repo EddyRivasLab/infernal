@@ -9,17 +9,17 @@
 # cmpress.sqc.
 #
 #
-1  prep      copy/trnaC           cp !testsuite/tRNA.calibrated.cm! %TRNA.C.CM%
-1  prep      copy/vaultC          cp !testsuite/Vault.calibrated.cm! %VAULT.C.CM%
-1  prep      copy/srpC            cp !testsuite/Plant_SRP.calibrated.cm! %SRP.C.CM%
-1  prep      copy/3C              cp !testsuite/3.calibrated.cm! %3.C.CM%
+1  prep      press:copy/tC     cp !testsuite/tRNA.calibrated.cm! %TRNA.C.CM%
+1  prep      press:copy/vC     cp !testsuite/Vault.calibrated.cm! %VAULT.C.CM%
+1  prep      press:copy/sC     cp !testsuite/Plant_SRP.calibrated.cm! %SRP.C.CM%
+1  prep      press:copy/3C     cp !testsuite/3.calibrated.cm! %3.C.CM%
 
-1  exercise  trnaC/press          @src/cmpress@ %TRNA.C.CM%
-1  exercise  vaultC/press         @src/cmpress@ %VAULT.C.CM%
-1  exercise  srpC/press           @src/cmpress@ %SRP.C.CM%
-1  exercise  multiC/press         @src/cmpress@ %3.C.CM%
+1  exercise  press:tC          @src/cmpress@ %TRNA.C.CM%
+1  exercise  press:vC          @src/cmpress@ %VAULT.C.CM%
+1  exercise  press:sC          @src/cmpress@ %SRP.C.CM%
+1  exercise  press:3C          @src/cmpress@ %3.C.CM%
 
-1  prep      cleanup/trnaC        rm -f %TRNA.C.CM%.*
-1  prep      cleanup/vaultC       rm -f %VAULT.C.CM%.*
-1  prep      cleanup/srpC         rm -f %SRP.C.CM%.*
-1  prep      cleanup/multiC       rm -f %3.C.CM%.*
+1  prep      press:cleanup/tC  rm -f %TRNA.C.CM%.*
+1  prep      press:cleanup/vC  rm -f %VAULT.C.CM%.*
+1  prep      press:cleanup/sC  rm -f %SRP.C.CM%.*
+1  prep      press:/cleanup:3C rm -f %3.C.CM%.*

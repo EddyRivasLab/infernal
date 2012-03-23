@@ -277,7 +277,7 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
      * inserts allowed.
      */
     if((cm->trp = cm_tr_penalties_Create(cm, FALSE, errbuf)) == NULL) ESL_FAIL(eslFAIL, errbuf, "couldn't create truncation penalties for the CM");
-    cm_tr_penalties_Dump(stdout, cm, cm->trp); 
+    /* cm_tr_penalties_Dump(stdout, cm, cm->trp); */
 
     /* (2) Setup Lcp9, Rcp9, Tcp9 CP9 HMMs 
      * Clone the globally configured CP9 HMM cm->cp9 before its put

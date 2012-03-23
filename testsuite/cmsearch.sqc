@@ -6,23 +6,23 @@
 1  exercise  search:help/2        @src/cmsearch@  --devhelp
 
 # cmsearch requires calibrated models
-1  prep      copy:tC/a        cp !testsuite/tRNA.calibrated.cm! %T.CM%
-1  prep      copy:vC/a        cp !testsuite/Vault.calibrated.cm! %V.CM%
-1  prep      copy:3C/a        cp !testsuite/3.calibrated.cm! %3.CM%
+1  prep      search:copy/tC/a        cp !testsuite/tRNA.calibrated.cm! %T.CM%
+1  prep      search:copy/vC/a        cp !testsuite/Vault.calibrated.cm! %V.CM%
+1  prep      search:copy/3C/a        cp !testsuite/3.calibrated.cm! %3.CM%
 
 # copy fasta files, only so the names are more convenient in rest of this file
-1  prep      copy:t/fa1k      cp !testsuite/1k-tRNA.fa! %T1K%
-1  prep      copy:t/fa10k     cp !testsuite/10k-tRNA.fa! %T10K%
-1  prep      copy:t/faemit    cp !testsuite/emitted-tRNA.fa! %TEMIT%
-1  prep      copy:v/fa1k      cp !testsuite/1k-Vault.fa! %V1K%
-1  prep      copy:v/fa10k     cp !testsuite/10k-Vault.fa! %V10K%
-1  prep      copy:v/faemit    cp !testsuite/emitted-Vault.fa! %VEMIT%
-1  prep      copy:v/fatremit  cp !testsuite/tremitted-Vault.fa! %VTREMIT%
-1  prep      copy:3/fa1k      cp !testsuite/1k-3.fa! %31K%
-1  prep      copy:3/fa10k     cp !testsuite/10k-3.fa! %310K%
-1  prep      copy:3/fa100k    cp !testsuite/100k-3.fa! %3100K%
-1  prep      copy:3/faemit    cp !testsuite/emitted-3.fa! %3EMIT%
-1  prep      copy:rand/fa1k   cp !testsuite/1k.fa! %R1K%
+1  prep      search:copy/t/fa1k      cp !testsuite/1k-tRNA.fa! %T1K%
+1  prep      search:copy/t/fa10k     cp !testsuite/10k-tRNA.fa! %T10K%
+1  prep      search:copy/t/faemit    cp !testsuite/emitted-tRNA.fa! %TEMIT%
+1  prep      search:copy/v/fa1k      cp !testsuite/1k-Vault.fa! %V1K%
+1  prep      search:copy/v/fa10k     cp !testsuite/10k-Vault.fa! %V10K%
+1  prep      search:copy/v/faemit    cp !testsuite/emitted-Vault.fa! %VEMIT%
+1  prep      search:copy/v/fatremit  cp !testsuite/tremitted-Vault.fa! %VTREMIT%
+1  prep      search:copy/3/fa1k      cp !testsuite/1k-3.fa! %31K%
+1  prep      search:copy/3/fa10k     cp !testsuite/10k-3.fa! %310K%
+1  prep      search:copy/3/fa100k    cp !testsuite/100k-3.fa! %3100K%
+1  prep      search:copy/3/faemit    cp !testsuite/emitted-3.fa! %3EMIT%
+1  prep      search:copy/rand/fa1k   cp !testsuite/1k.fa! %R1K%
 
 1  exercise  search:t/10k    @src/cmsearch@  %T.CM% %T10K%
 1  exercise  search:v/10k    @src/cmsearch@  %V.CM% %V10K%
@@ -35,6 +35,9 @@
 1  exercise  search:3/cm/stdin  cat %3.CM% | @src/cmsearch@ - %3EMIT%
 1  fail      search:t/sq/stdin  cat %TEMIT% | @src/cmsearch@ %T.CM% -
 1  fail      search:3/sq/stdin  cat %3EMIT% | @src/cmsearch@ %3.CM% -
+
+1  exercise  search:t/3trna/A  @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %TRNA.C.CM% !testsuite/3trnas.fa!
+1  exercise  search:3/1k/A     @src/cmsearch@ -Z 1000 -A %3.AMSA% %3.C.CM% !testsuite/1k-3.fa!
 
 1  exercise  search:t/10k/g    @src/cmsearch@  -g %T.CM% %T10K%
 1  exercise  search:v/10k/g    @src/cmsearch@  -g %V.CM% %V10K%

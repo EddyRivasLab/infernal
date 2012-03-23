@@ -848,7 +848,7 @@ cm_TrAlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
   if (ret_shmxmb != NULL) *ret_shmxmb  = shmxmb;
   if (ret_totmb  != NULL) *ret_totmb   = totmb;
 
-  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "non-banded truncated alignment will require matrices totalling %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", totmb, (float) size_limit);
+  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "non-banded truncated alignment mxes need %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", totmb, (float) size_limit);
 
   return eslOK;
 }
@@ -917,7 +917,7 @@ cm_TrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_s
   if (ret_shmxmb != NULL) *ret_shmxmb  = shmxmb;
   if (ret_totmb  != NULL) *ret_totmb   = totmb;
 
-  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded truncated alignment will require matrices totalling %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", totmb, (float) size_limit);
+  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded truncated alignment mxes need %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", totmb, (float) size_limit);
 
   return eslOK;
 }

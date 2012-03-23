@@ -7,34 +7,33 @@
 #
 # 3.rfam10p1.seed.sto: tRNA, Vault, Plant_SRP seeds from Rfam 10.1
 
-1  exercise  model/multi            @src/cmbuild@ -F %3.CM% !testsuite/3.rfam10p1.seed.sto!
+1  exercise  fetch:build/3        @src/cmbuild@ -F %3.CM% !testsuite/3.rfam10p1.seed.sto!
 
 # First, test without indexing
-1  exercise  cmfetch:ni/df1         @src/cmfetch@ %3.CM% Vault
-1  exercise  cmfetch:ni/df2         @src/cmfetch@ %3.CM% RF00006
-1  exercise  cmfetch:ni/f1          @src/cmfetch@ -f %3.CM% !testsuite/2.list!
-1  exercise  cmfetch:ni/f2          @src/cmfetch@ -f %3.CM% !testsuite/2name.list!
-1  exercise  cmfetch:ni/f3          @src/cmfetch@ -f %3.CM% !testsuite/2accn.list!
-1  exercise  cmfetch:ni/o           @src/cmfetch@ -o %TMP.CM% %3.CM% tRNA
-1  exercise  cmfetch:ni/O           @src/cmfetch@ -O %3.CM% RF00006
-1  exercise  cmfetch:ni/stdin/cm    cat %3.CM% | @src/cmfetch@ - Vault
-1  exercise  cmfetch:ni/stdin/key   cat !testsuite/2.list! | @src/cmfetch@ -f %3.CM% -
-1  fail      cmfetch:ni/stdin/bth   cat %3.CM% | @src/cmfetch@ -f - -
-1  prep      cleanup/ni1            rm !testsuite/RF00006!
+1  exercise  fetch:ni/df1         @src/cmfetch@ %3.CM% Vault
+1  exercise  fetch:ni/df2         @src/cmfetch@ %3.CM% RF00006
+1  exercise  fetch:ni/f1          @src/cmfetch@ -f %3.CM% !testsuite/2.list!
+1  exercise  fetch:ni/f2          @src/cmfetch@ -f %3.CM% !testsuite/2name.list!
+1  exercise  fetch:ni/f3          @src/cmfetch@ -f %3.CM% !testsuite/2accn.list!
+1  exercise  fetch:ni/o           @src/cmfetch@ -o %TMP.CM% %3.CM% tRNA
+1  exercise  fetch:ni/O           @src/cmfetch@ -O %3.CM% RF00006
+1  exercise  fetch:ni/stdin/cm    cat %3.CM% | @src/cmfetch@ - Vault
+1  exercise  fetch:ni/stdin/key   cat !testsuite/2.list! | @src/cmfetch@ -f %3.CM% -
+1  fail      fetch:ni/stdin/bth   cat %3.CM% | @src/cmfetch@ -f - -
+1  prep      fetch:cleanup/ni1    rm !testsuite/RF00006!
 
 # And again, this time after indexing
-1  exercise  cmfetch:index          @src/cmfetch@ --index %3.CM% 
-1  exercise  cmfetch:yi/df1         @src/cmfetch@ %3.CM% Vault
-1  exercise  cmfetch:yi/df2         @src/cmfetch@ %3.CM% RF00006
-1  exercise  cmfetch:yi/f1          @src/cmfetch@ -f %3.CM% !testsuite/2.list!
-1  exercise  cmfetch:yi/f2          @src/cmfetch@ -f %3.CM% !testsuite/2name.list!
-1  exercise  cmfetch:yi/f3          @src/cmfetch@ -f %3.CM% !testsuite/2accn.list!
-1  exercise  cmfetch:yi/o           @src/cmfetch@ -o %TMP.CM% %3.CM% tRNA
-1  exercise  cmfetch:yi/O           @src/cmfetch@ -O %3.CM% RF00006
-1  exercise  cmfetch:yi/stdin/cm    cat %3.CM% | @src/cmfetch@ - Vault
-1  exercise  cmfetch:yi/stdin/key   cat !testsuite/2.list! | @src/cmfetch@ -f %3.CM% -
-1  fail      cmfetch:yi/stdin/bth   cat %3.CM% | @src/cmfetch@ -f - -
-1  prep      cleanup/yi1            rm !testsuite/RF00006!
-
-1  prep      cleanup/yi2            rm %3.CM%.ssi 
+1  exercise  fetch:index          @src/cmfetch@ --index %3.CM% 
+1  exercise  fetch:yi/df1         @src/cmfetch@ %3.CM% Vault
+1  exercise  fetch:yi/df2         @src/cmfetch@ %3.CM% RF00006
+1  exercise  fetch:yi/f1          @src/cmfetch@ -f %3.CM% !testsuite/2.list!
+1  exercise  fetch:yi/f2          @src/cmfetch@ -f %3.CM% !testsuite/2name.list!
+1  exercise  fetch:yi/f3          @src/cmfetch@ -f %3.CM% !testsuite/2accn.list!
+1  exercise  fetch:yi/o           @src/cmfetch@ -o %TMP.CM% %3.CM% tRNA
+1  exercise  fetch:yi/O           @src/cmfetch@ -O %3.CM% RF00006
+1  exercise  fetch:yi/stdin/cm    cat %3.CM% | @src/cmfetch@ - Vault
+1  exercise  fetch:yi/stdin/key   cat !testsuite/2.list! | @src/cmfetch@ -f %3.CM% -
+1  fail      fetch:yi/stdin/bth   cat %3.CM% | @src/cmfetch@ -f - -
+1  prep      fetch:cleanup:yi1    rm !testsuite/RF00006!
+1  prep      fetch:cleanup:yi2    rm %3.CM%.ssi 
 

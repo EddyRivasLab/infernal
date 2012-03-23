@@ -23,6 +23,8 @@
 
 #include "infernal.h"
 
+#define DEBUGPIPELINE  0
+
 /*****************************************************************
  * 1. The CM_ALNDATA object
  *****************************************************************/
@@ -248,7 +250,7 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
  *           errbuf     - char buffer for reporting errors
  *           sq         - sequence to align
  *           idx        - index of sequence (may be used to reorder data later)
- *           mxsize     - max size in Mb of allowable DP mx
+ *           mxsize     - max size in Mb of allowable DP mx 
  *           mode       - preset mode of alignment (TRMODE_UNKNOWN if unknown)
  *           pass_idx   - pipeline pass index, determines trunc penalty
  *           cp9b_valid - TRUE if cm->cp9b are valid, don't compute HMM bands
@@ -287,6 +289,17 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   int do_small     = (cm->align_opts & CM_ALIGN_SMALL)     ? TRUE : FALSE;
   int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)     ? TRUE : FALSE;
   int doing_search = FALSE;
+#if DEBUGPIPELINE
+  printf("in DispatchSqAlignment()\n");
+  printf("\tdo_nonbanded: %d\n", do_nonbanded);
+  printf("\tdo_optacc:    %d\n", do_optacc);
+  printf("\tdo_sample:    %d\n", do_sample);
+  printf("\tdo_post:      %d\n", do_post);
+  printf("\tdo_sub:       %d\n", do_sub);
+  printf("\tdo_small:     %d\n", do_small);
+  printf("\tdo_trunc:     %d\n", do_trunc);
+  printf("\tdoing_search: %d\n", doing_search);
+#endif
   
   /* sub-mode specific variables (wouldn't be needed if sub mode were not supported) */
   CM_t        *orig_cm = cm;      /* pointer to the original CM */
@@ -413,6 +426,9 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   return eslOK;
 
  ERROR: 
+#if DEBUGPIPELINE
+  if(status == eslERANGE) printf("Returning eslERANGE, errbuf: %s\n", errbuf);
+#endif
   if(data != NULL) cm_alndata_Destroy(data, FALSE);
   *ret_data = NULL;
 

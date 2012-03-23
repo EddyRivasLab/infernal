@@ -87,6 +87,17 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   int         cm_namelen, cm_acclen, cm_desclen;
   int         sq_namelen, sq_acclen, sq_desclen;
   int         len, n;
+  int         len_el; /* lengths for ad->aseq_el and ad->ppline_el vars */
+
+  /* variables for constructing a single sequence MSA from passed-in
+   * <tr> so we can copy it's aseq[0] to ad->aseq_el (we only need
+   * this in case we output an alignment of all hits later with
+   * cm_tophits_Alignment()).
+   */
+  ESL_SQ      **tmpsqA = NULL;
+  Parsetree_t **tmptrA = NULL;
+  char        **tmpppA = NULL;
+  ESL_MSA      *tmpmsa = NULL;
 
   /* convenience ptrs */
   Parsetree_t *tr    = adata->tr;   
@@ -121,7 +132,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
    * ParsetreeDump(stdout, tr, cm, sq->dsq+seqoffset-1);
    */
 
-  /* Calculate length of the alignment display (len).
+  /* Calculate length of the alignment display (len):
    *                    :  J    L    R  (alignment mode)
    *   MATP node        : +2   +1   +1   
    *   MATL node        : +1   +1   +0
@@ -204,13 +215,36 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   printf("cto_emit:   %4d\n", cto_emit);
   printf("cto_span:   %4d\n", cto_span);
 #endif
+  
+  /* Create strings of the full model and sequence used in an output
+   * alignment. We use Parsetrees2Alignment() for this to get a 1 seq MSA.
+   * This seems like it may be expensive, but it's trival compared to
+   * time required for other steps of pipeline (i.e. CM DP functions).
+   */
+  ESL_ALLOC(tmpsqA, sizeof(ESL_SQ *) * 1);
+  if((tmpsqA[0] = esl_sq_CreateDigitalFrom(cm->abc, "i", sq->dsq + seqoffset - 1, tr->emitr[0] - tr->emitl[0] + 1, NULL, NULL, NULL)) == NULL) { 
+    goto ERROR;
+  }
+  ESL_ALLOC(tmptrA, sizeof(Parsetree_t *) * 1);
+  tmptrA[0] = tr;
+  if(adata->ppstr) { 
+    ESL_ALLOC(tmpppA, sizeof(char *) * 1);
+    tmpppA[0] = adata->ppstr;
+  }
+  if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, tmpsqA, NULL, tmptrA, tmpppA, 1, NULL, NULL, TRUE, FALSE, &tmpmsa)) != eslOK) goto ERROR;
+  esl_sq_Destroy(tmpsqA[0]);
+  free(tmpsqA); tmpsqA = NULL; 
+  free(tmptrA); tmptrA = NULL; /* don't free tmptrA[0], it was just used as a pointer */
+  if(adata->ppstr) { free(tmpppA); tmpppA = NULL; } /* don't free tmpppA[0], it was just meant as a pointer */
+  len_el = tmpmsa->alen;
 
   /* Now we know the length of all arrays (len), determine total amount of memory required, and allocate it */
   /* Allocate the char arrays */
 
-  n = (len+1) * 5; /* model, csline, mline, aseq, nline mandatory */
-  if(adata->ppstr  != NULL) n += len+1;
-  if(cm->rf != NULL) n += len+1;
+  n  = (len+1) * 5;    /* model, csline, mline, aseq, nline mandatory */
+  n += (len_el+1);     /* aseq_el (includes EL emits) */
+  if(adata->ppstr  != NULL) n += len+1 + len_el+1; /* ppline and ppline_el */
+  if(cm->rf        != NULL) n += len+1;
   cm_namelen = strlen(cm->name);                           n += cm_namelen + 1;
   cm_acclen  = (cm->acc  != NULL ? strlen(cm->acc)  : 0);  n += cm_acclen  + 1; 
   cm_desclen = (cm->desc != NULL ? strlen(cm->desc) : 0);  n += cm_desclen + 1; 
@@ -227,22 +261,29 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   ad->matrix_Mb    = adata->mb_tot;
   ad->elapsed_secs = elapsed_secs;
   ad->N            = len;
+  ad->N_el         = len_el;
+
+  /* and finally, space for the unaligned sequence (only nec b/c the 
+   * aseq will not include the residues from EL emissions).
+   */
 
   pos = 0;
   ESL_ALLOC(ad->mem, ad->memsize);
   if (cm->rf != NULL) { ad->rfline = ad->mem + pos;  pos += len+1;} else { ad->rfline = NULL; }
-  ad->nline   = ad->mem + pos;  pos += len+1;
-  ad->csline  = ad->mem + pos;  pos += len+1;
-  ad->model   = ad->mem + pos;  pos += len+1;
-  ad->mline   = ad->mem + pos;  pos += len+1;
-  ad->aseq    = ad->mem + pos;  pos += len+1;
-  if (adata->ppstr  != NULL) { ad->ppline = ad->mem + pos;  pos += len+1;} else { ad->ppline = NULL; }
-  ad->cmname  = ad->mem + pos;  pos += cm_namelen +1;
-  ad->cmacc   = ad->mem + pos;  pos += cm_acclen +1;
-  ad->cmdesc  = ad->mem + pos;  pos += cm_desclen +1;
-  ad->sqname  = ad->mem + pos;  pos += sq_namelen +1;
-  ad->sqacc   = ad->mem + pos;  pos += sq_acclen +1;  
-  ad->sqdesc  = ad->mem + pos;  pos += sq_desclen +1; 
+  ad->nline      = ad->mem + pos;  pos += len+1;
+  ad->csline     = ad->mem + pos;  pos += len+1;
+  ad->model      = ad->mem + pos;  pos += len+1;
+  ad->mline      = ad->mem + pos;  pos += len+1;
+  ad->aseq       = ad->mem + pos;  pos += len+1;
+  if (adata->ppstr  != NULL) { ad->ppline    = ad->mem + pos;  pos += len+1;}    else { ad->ppline    = NULL; }
+  ad->aseq_el    = ad->mem + pos;  pos += len_el+1;
+  if (adata->ppstr  != NULL) { ad->ppline_el = ad->mem + pos;  pos += len_el+1;} else { ad->ppline_el = NULL; }
+  ad->cmname     = ad->mem + pos;  pos += cm_namelen +1;
+  ad->cmacc      = ad->mem + pos;  pos += cm_acclen  +1;
+  ad->cmdesc     = ad->mem + pos;  pos += cm_desclen +1;
+  ad->sqname     = ad->mem + pos;  pos += sq_namelen +1;
+  ad->sqacc      = ad->mem + pos;  pos += sq_acclen  +1;  
+  ad->sqdesc     = ad->mem + pos;  pos += sq_desclen +1; 
 
   /* Set name, acc, desc char arrays */
   strcpy(ad->cmname, cm->name);
@@ -252,6 +293,15 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   strcpy(ad->sqacc,   sq->acc);
   strcpy(ad->sqdesc,  sq->desc);
 
+  /* Set aseq_el and possibly ppline_el */
+  strcpy(ad->aseq_el, tmpmsa->aseq[0]);
+  if(adata->ppstr) strcpy(ad->ppline_el, tmpmsa->pp[0]);
+#if 0 
+  printf("ad->aseq_el:   %s\n", ad->aseq_el);
+  printf("ad->ppline_el: %s\n", ad->ppline_el);
+#endif 
+
+  /* Set clen */
   ad->clen = cm->clen;
 
   /* Allocate and initialize.
@@ -546,8 +596,9 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   ad->cto_emit    = cto_emit;
   ad->cfrom_span  = cfrom_span;
   ad->cto_span    = cto_span;
-
+  
   esl_stack_Destroy(pda);
+  if(tmpmsa != NULL) esl_msa_Destroy(tmpmsa);
 
   if(ret_ad != NULL) *ret_ad = ad;
   return eslOK;
@@ -556,7 +607,8 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   if(pda != NULL)    esl_stack_Destroy(pda);
   if(ad != NULL)     cm_alidisplay_Destroy(ad);
   if(ret_ad != NULL) *ret_ad = NULL;
-  ESL_FAIL(status, errbuf, "cm_alidisplay_Create() out of memory");
+  if(status == eslEMEM) ESL_FAIL(status, errbuf, "cm_alidisplay_Create() out of memory");
+  return status; /*  errbuf filled some other way */
 }
 
 /* Function:  cm_alidisplay_Clone()
@@ -812,19 +864,21 @@ cm_alidisplay_Destroy(CM_ALIDISPLAY *ad)
     }
   else
     {	/* deserialized form */
-      if (ad->rfline)  free(ad->rfline);
-      if (ad->nline)   free(ad->nline);
-      if (ad->csline)  free(ad->csline);
-      if (ad->model)   free(ad->model);
-      if (ad->mline)   free(ad->mline);
-      if (ad->aseq)    free(ad->aseq);
-      if (ad->ppline)  free(ad->ppline);
-      if (ad->cmname)  free(ad->cmname);
-      if (ad->cmacc)   free(ad->cmacc);
-      if (ad->cmdesc)  free(ad->cmdesc);
-      if (ad->sqname)  free(ad->sqname);
-      if (ad->sqacc)   free(ad->sqacc);
-      if (ad->sqdesc)  free(ad->sqdesc);
+      if (ad->rfline)    free(ad->rfline);
+      if (ad->nline)     free(ad->nline);
+      if (ad->csline)    free(ad->csline);
+      if (ad->model)     free(ad->model);
+      if (ad->mline)     free(ad->mline);
+      if (ad->aseq)      free(ad->aseq);
+      if (ad->ppline)    free(ad->ppline);
+      if (ad->aseq_el)   free(ad->aseq_el);
+      if (ad->ppline_el) free(ad->ppline_el);
+      if (ad->cmname)    free(ad->cmname);
+      if (ad->cmacc)     free(ad->cmacc);
+      if (ad->cmdesc)    free(ad->cmdesc);
+      if (ad->sqname)    free(ad->sqname);
+      if (ad->sqacc)     free(ad->sqacc);
+      if (ad->sqdesc)    free(ad->sqdesc);
     }
   free(ad);
 }
@@ -1157,6 +1211,142 @@ cm_alidisplay_TruncString(const CM_ALIDISPLAY *ad)
   else if(cm_alidisplay_Is5PTruncOnly(ad))  return "5'";
   else if(cm_alidisplay_Is3PTruncOnly(ad))  return "3'";
   else return "no";
+}
+
+/* Function:  cm_alidisplay_Backconvert()
+ * Synopsis:  Convert an alidisplay to a parsetree and subsequence.
+ *
+ * Purpose:   Convert alignment display object <ad> to a faux subsequence
+ *            and faux subsequence parsetree, returning them in <ret_sq> and
+ *            <ret_tr>. 
+ *            
+ *            The subsequence <*ret_sq> is digital; ascii residues in
+ *            <ad> are digitized using digital alphabet <abc>.
+ *            
+ *            The subsequence and trace are suitable for passing as
+ *            array elements to <p7_tracealign_Seqs>. This is the
+ *            main purpose of backconversion. Results of a profile
+ *            search are stored in a hit list as a processed
+ *            <P7_ALIDISPLAY>, not as a <P7_TRACE> and <ESL_SQ>, to
+ *            reduce space and to reduce communication overhead in
+ *            parallelized search implementations. After reduction
+ *            to a final hit list, a master may want to construct a
+ *            multiple alignment of all the significant hits. 
+ *
+ * Returns:   <eslOK> on success.
+ *
+ * Throws:    <eslEMEM> on allocation failures. <eslECORRUPT> on unexpected internal
+ *            data corruption. On any exception, <*ret_sq> and <*ret_tr> are
+ *            <NULL>.
+ *
+ * Xref:      SRE:J4/29.
+ */
+int
+cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_SQ **ret_sq, Parsetree_t **ret_tr, char **ret_pp)
+{
+  int          status;
+  ESL_SQ      *sq   = NULL;	/* RETURN: faux subsequence          */
+  Parsetree_t *tr   = NULL;	/* RETURN: faux parsetree            */
+  char        *pp   = NULL;	/* RETURN: post prob annotation      */
+  Parsetree_t *mtr  = NULL;	/* guide tree for the CM, unfortunately we need to create this */
+  ESL_MSA     *msa  = NULL;     /* we'll build an MSA from the single seq ad pertains to */
+  char        *aseq = NULL;     /* an aligned string, a text sequence */
+  int          apos, upos;      /* counter over aligned, unaligned positions */
+  int         *a2u_map = NULL;  /* map of aligned to unaligned positions for updating tr->emitl, tr->emitr */
+  int          x, ulen; 
+
+  if(cm->cmcons == NULL) ESL_FAIL(eslEINVAL, errbuf, "cm_alidisplay_BackConvert(): cm->cmcons is NULL");
+
+  msa = esl_msa_Create(1, ad->N_el);
+  if((status = esl_strdup(ad->aseq_el, msa->alen, &(msa->aseq[0]))) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_BackConvert() out of memory");
+  if(ad->ppline_el) { 
+    ESL_ALLOC(msa->pp, sizeof(char *) * 1);
+    if((status = esl_strdup(ad->ppline_el, msa->alen, &(msa->pp[0]))) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_BackConvert() out of memory");
+  }
+  ESL_ALLOC(msa->ss_cons, sizeof(char) * (msa->alen+1));
+  ESL_ALLOC(msa->rf,      sizeof(char) * (msa->alen+1));
+
+  upos = 0;
+  for(apos = 0; apos < msa->alen; apos++) { 
+    msa->ss_cons[apos] = (isupper(msa->aseq[0][apos]) || msa->aseq[0][apos] == '-') ? cm->cmcons->cstr[upos++] : '.'; 
+    msa->rf[apos]      = (isupper(msa->aseq[0][apos]) || msa->aseq[0][apos] == '-') ? 'x' : '.';
+  }
+  msa->ss_cons[msa->alen] = '\0';
+  msa->rf[msa->alen]      = '\0';
+  if(upos != cm->clen) ESL_XFAIL(eslERANGE, errbuf, "cm_alidisplay_BackConvert() failed to create temporary msa");
+#if 0 
+  printf("upos: %d cm->clen: %d\n", upos, cm->clen);
+#endif
+  
+  esl_msa_FormatSeqName(msa, 0, "%s/%ld-%ld", ad->sqname, ad->sqfrom, ad->sqto);
+  /*esl_msa_SetSeqName(msa, 0, ad->sqname, -1);*/
+  if(ad->sqacc)  esl_msa_SetSeqAccession  (msa, 0, ad->sqacc,  -1);
+  if(ad->sqdesc) esl_msa_SetSeqDescription(msa, 0, ad->sqdesc, -1);
+
+#if 0 
+  printf("ad->aseq_el:\n%s\n", ad->aseq_el);
+  printf("msa->aseq[0]:\n%s\n", msa->aseq[0]);
+  printf("msa->rf:\n%s\n", msa->rf);
+  printf("msa->ss_cons:\n%s\n", msa->ss_cons);
+
+  printf("ad->aseq_el:\n%s\n", ad->aseq_el);
+  printf("msa->aseq[0]:\n%s\n", msa->aseq[0]);
+  printf("msa->rf:\n%s\n", msa->rf);
+  printf("msa->ss_cons:\n%s\n", msa->ss_cons);
+#endif
+
+  if((status = esl_msa_Digitize(cm->abc, msa, errbuf)) != eslOK) goto ERROR;
+
+                                       /* use_rf? */
+  if((status = HandModelmaker(msa, errbuf, TRUE, FALSE, 1.0, NULL, &mtr)) != eslOK) goto ERROR;
+
+  ESL_ALLOC(aseq, (msa->alen+1) * sizeof(char));
+  esl_abc_Textize(cm->abc, msa->ax[0], msa->alen, aseq);
+  tr = Transmogrify(cm, mtr, msa->ax[0], aseq, msa->alen);
+  /* tr is in alignment coords, convert it to unaligned coords.
+   * First we construct a map of aligned to unaligned coords, then
+   * we use it to convert. 
+   */
+  ESL_ALLOC(a2u_map, sizeof(int)  * (msa->alen+1));
+  a2u_map[0] = -1; /* invalid */
+  upos = 1;
+  for(apos = 1; apos <= msa->alen; apos++) { 
+    a2u_map[apos] = (esl_abc_XIsGap(msa->abc, msa->ax[0][apos])) ? -1 : upos++; 
+  }
+  ulen = upos;
+  for(x = 0; x < tr->n; x++) { 
+    if(tr->emitl[x] != -1) tr->emitl[x] = a2u_map[tr->emitl[x]];
+    if(tr->emitr[x] != -1) tr->emitr[x] = a2u_map[tr->emitr[x]];
+  }
+  if((status = esl_sq_FetchFromMSA(msa, 0, &sq)) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_BackConvert() unable to fetch seq from msa");
+  if(msa->pp) ESL_ALLOC(pp, sizeof(char) * (ulen+1));
+  upos = 0;
+  for(apos = 0; apos < msa->alen; apos++) { 
+    if(a2u_map[apos+1] != -1) pp[upos++] = msa->pp[0][apos]; 
+  }
+  if(upos+1 != ulen) ESL_XFAIL(eslERANGE, errbuf, "cm_alidisplay_BackConvert() failed to create temporary msa");
+
+  esl_msa_Destroy(msa);
+  free(a2u_map);
+  FreeParsetree(mtr);
+  free(aseq);
+
+  *ret_sq = sq;
+  *ret_tr = tr;
+  *ret_pp = pp;
+  return eslOK;
+
+ ERROR:
+  if (msa     != NULL) esl_msa_Destroy(msa);
+  if (mtr     != NULL) FreeParsetree(mtr);
+  if (aseq    != NULL) free(aseq);
+  if (a2u_map != NULL) free(a2u_map);
+  if (sq      != NULL) esl_sq_Destroy(sq);
+  if (tr      != NULL) FreeParsetree(tr);
+  if (pp      != NULL) free(pp);
+  *ret_sq      = NULL;
+  *ret_tr      = NULL;
+  return status;
 }
 
 /*------------------- end, alidisplay API -----------------------*/

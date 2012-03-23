@@ -212,6 +212,7 @@ main(int argc, char **argv)
 	/* Do analytical and/or sampling HMM tests */
 	if(do_atest || do_stest) {
 	  subinfo = AllocSubInfo(submap->epos-submap->spos+1);
+	  if((status = cm_ConfigureSub(sub_cm, errbuf, -1, cm, submap)) != eslOK) cm_Fail(errbuf);
 	  if(do_atest) { 
 	    if((status = check_sub_cm(cm, sub_cm, errbuf, submap, subinfo, pthresh, print_flag)) != eslOK) {
 	      printf("\nSub CM construction for sstruct: %4d estruct: %4d failed analytical HMM test.\n", sstruct, estruct);
