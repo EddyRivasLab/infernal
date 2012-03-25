@@ -48,7 +48,7 @@ static int  bp_is_canonical(char lseq, char rseq);
  *            aln_data     - CM_ALNDATA, includes parsetree, score etc.
  *            sq           - the sequence, parsetree corresponds to subseq beginning at seqoffset
  *            seqoffset    - position in sq which corresponds to first position in tr
- *            used_hbands  - TRUE if HMM bands were used for alignment
+ *            tau          - tau used to calc HMM bands, -1.0 if bands not used
  *            elapsed_secs - time (seconds) required for alignment
  *            ret_ad       - RETURN: CM_ALIDISPLAY, allocated and filled here.
  *
@@ -59,7 +59,7 @@ static int  bp_is_canonical(char lseq, char rseq);
  */
 int
 cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq, int64_t seqoffset, 
-		     int used_hbands, double elapsed_secs, CM_ALIDISPLAY **ret_ad)
+		     double tau, double elapsed_secs, CM_ALIDISPLAY **ret_ad)
 {
   int         status;
   CM_ALIDISPLAY *ad = NULL;      /* alidisplay structure we're building       */
@@ -257,7 +257,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   ad->memsize      = sizeof(char) * n;
   ad->sc           = adata->sc;
   ad->avgpp        = adata->pp;
-  ad->used_hbands  = used_hbands;
+  ad->tau          = tau;
   ad->matrix_Mb    = adata->mb_tot;
   ad->elapsed_secs = elapsed_secs;
   ad->N            = len;
@@ -1402,7 +1402,7 @@ cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad)
 
   fprintf(fp, "sc         = %.2f\n",ad->sc);
   fprintf(fp, "avgpp      = %.2f\n",ad->avgpp);
-  fprintf(fp, "hbanded    = %s\n",  ad->used_hbands ? "TRUE" : "FALSE");
+  fprintf(fp, "tau        = %g\n",  ad->tau);
   fprintf(fp, "mx Mb      = %.6f\n",ad->matrix_Mb);
   fprintf(fp, "seconds    = %.6f\n",ad->elapsed_secs);
   fprintf(fp, "\n");

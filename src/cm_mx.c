@@ -281,7 +281,7 @@ cm_mx_Destroy(CM_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_mx_Dump(FILE *ofp, CM_MX *mx)
+cm_mx_Dump(FILE *ofp, CM_MX *mx, int print_mx)
 {
   int v, j, d;
 
@@ -289,26 +289,28 @@ cm_mx_Dump(FILE *ofp, CM_MX *mx)
   fprintf(ofp, "L: %d\n", mx->L);
   fprintf(ofp, "ncells_alloc: %" PRId64 "\nncells_valid: %" PRId64 "\n", mx->ncells_alloc, mx->ncells_valid);
   
-  /* DP matrix data */
-  for (v = 0; v < mx->M; v++) {
-    for(j = 0; j <= mx->L; j++) { 
-      for(d = 0; d <= j; d++) { 
-	if(mx->dp[v]) fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][j][d]);
+  if(print_mx) { 
+    /* DP matrix data */
+    for (v = 0; v < mx->M; v++) {
+      for(j = 0; j <= mx->L; j++) { 
+	for(d = 0; d <= j; d++) { 
+	  if(mx->dp[v]) fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][j][d]);
+	}
+	fprintf(ofp, "\n");
       }
-      fprintf(ofp, "\n");
+      fprintf(ofp, "\n\n");
     }
-    fprintf(ofp, "\n\n");
-  }
-  /* print EL deck, if it's valid */
-  v = mx->M;
-  if(mx->dp[v]) { 
-    for(j = 0; j <= mx->L; j++) {
-      for(d = 0; d <= j; d++) {
-	fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][j][d]);
+    /* print EL deck, if it's valid */
+    v = mx->M;
+    if(mx->dp[v]) { 
+      for(j = 0; j <= mx->L; j++) {
+	for(d = 0; d <= j; d++) {
+	  fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][j][d]);
+	}
+	fprintf(ofp, "\n");
       }
-      fprintf(ofp, "\n");
+      fprintf(ofp, "\n\n");
     }
-    fprintf(ofp, "\n\n");
   }
   return eslOK;
 }
@@ -712,7 +714,7 @@ cm_tr_mx_Destroy(CM_TR_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_mx_Dump(FILE *ofp, CM_TR_MX *mx, char mode)
+cm_tr_mx_Dump(FILE *ofp, CM_TR_MX *mx, char mode, int print_mx)
 {
   int status;
   int v, j, d;
@@ -729,29 +731,31 @@ cm_tr_mx_Dump(FILE *ofp, CM_TR_MX *mx, char mode)
   
   if((status = cm_TrFillFromMode(mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
-  /* DP matrix data */
-  for (v = 0; v < mx->M; v++) {
-    for(j = 0; j <= mx->L; j++) { 
-      for(d = 0; d <= j; d++) { 
-	if(mx->Jdp[v])           fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
-	if(fill_L && mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][j][d]);
-	if(fill_R && mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][j][d]);
-	if(fill_T && mx->Tdp[v]) fprintf(ofp, "Tdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Tdp[v][j][d]);
+  if(print_mx) { 
+    /* DP matrix data */
+    for (v = 0; v < mx->M; v++) {
+      for(j = 0; j <= mx->L; j++) { 
+	for(d = 0; d <= j; d++) { 
+	  if(mx->Jdp[v])           fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
+	  if(fill_L && mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][j][d]);
+	  if(fill_R && mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][j][d]);
+	  if(fill_T && mx->Tdp[v]) fprintf(ofp, "Tdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Tdp[v][j][d]);
+	}
+	fprintf(ofp, "\n");
       }
-      fprintf(ofp, "\n");
+      fprintf(ofp, "\n\n");
     }
-    fprintf(ofp, "\n\n");
-  }
-  /* print EL deck, if it's valid */
-  v = mx->M;
-  if(mx->Jdp[v]) { 
-    for(j = 0; j <= mx->L; j++) {
-      for(d = 0; d <= j; d++) {
-	fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
+    /* print EL deck, if it's valid */
+    v = mx->M;
+    if(mx->Jdp[v]) { 
+      for(j = 0; j <= mx->L; j++) {
+	for(d = 0; d <= j; d++) {
+	  fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
+	}
+	fprintf(ofp, "\n");
       }
-      fprintf(ofp, "\n");
+      fprintf(ofp, "\n\n");
     }
-    fprintf(ofp, "\n\n");
   }
   return eslOK;
 }
@@ -1057,34 +1061,36 @@ cm_hb_mx_Destroy(CM_HB_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
+cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx, int print_mx)
 {
   int v, jp, j, dp, d;
 
   fprintf(ofp, "M: %d\nL: %d\ncells_alloc: %" PRId64 "\nncells_valid: %" PRId64 "\n", mx->M, mx->L, mx->ncells_alloc, mx->ncells_valid);
   
-  /* DP matrix data */
-  for (v = 0; v < mx->M; v++) {
-    for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
-      j = jp + mx->cp9b->jmin[v];
-      for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	d = dp + mx->cp9b->hdmin[v][jp];
-	fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][jp][dp]);
+  if(print_mx) { 
+    /* DP matrix data */
+    for (v = 0; v < mx->M; v++) {
+      for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
+	j = jp + mx->cp9b->jmin[v];
+	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
+	  d = dp + mx->cp9b->hdmin[v][jp];
+	  fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][jp][dp]);
+	}
+	fprintf(ofp, "\n");
       }
-      fprintf(ofp, "\n");
+      fprintf(ofp, "\n\n");
     }
-    fprintf(ofp, "\n\n");
-  }
-  /* print EL deck, if it's valid */
-  v = mx->M;
-  if(mx->nrowsA[mx->M] == (mx->L+1)) {
-    for(j = 0; j <= mx->L; j++) {
-      for(d = 0; d <= j; d++) {
-	fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][j][d]);
+    /* print EL deck, if it's valid */
+    v = mx->M;
+    if(mx->nrowsA[mx->M] == (mx->L+1)) {
+      for(j = 0; j <= mx->L; j++) {
+	for(d = 0; d <= j; d++) {
+	  fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][j][d]);
+	}
+	fprintf(ofp, "\n");
       }
-      fprintf(ofp, "\n");
+      fprintf(ofp, "\n\n");
     }
-    fprintf(ofp, "\n\n");
   }
   return eslOK;
 }
@@ -1599,7 +1605,7 @@ cm_tr_hb_mx_Destroy(CM_TR_HB_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char mode)
+cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char mode, int print_mx)
 {
   int status;
   int v, jp, j, dp, d;
@@ -1617,30 +1623,32 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char mode)
   if((status = cm_TrFillFromMode(mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
   /* DP matrix data */
-  for (v = 0; v < mx->M; v++) {
-    for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
-      j = jp + mx->cp9b->jmin[v];
-      for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	d = dp + mx->cp9b->hdmin[v][jp];
-	if(mx->Jdp[v])           fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][jp][dp]);
-	if(fill_L && mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][jp][dp]);
-	if(fill_R && mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][jp][dp]);
-	if(fill_T && mx->Tdp[v]) fprintf(ofp, "Tdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Tdp[v][jp][dp]);
+  if(print_mx) { 
+    for (v = 0; v < mx->M; v++) {
+      for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
+	j = jp + mx->cp9b->jmin[v];
+	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
+	  d = dp + mx->cp9b->hdmin[v][jp];
+	  if(mx->Jdp[v])           fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][jp][dp]);
+	  if(fill_L && mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][jp][dp]);
+	  if(fill_R && mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][jp][dp]);
+	  if(fill_T && mx->Tdp[v]) fprintf(ofp, "Tdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Tdp[v][jp][dp]);
+	}
+	fprintf(ofp, "\n");
       }
-      fprintf(ofp, "\n");
+      fprintf(ofp, "\n\n");
     }
-    fprintf(ofp, "\n\n");
-  }
-  /* print EL deck, if it's valid */
-  v = mx->M;
-  if(mx->JnrowsA[v] == (mx->L+1)) {
-    for(j = 0; j <= mx->L; j++) {
-      for(d = 0; d <= j; d++) {
-	if(mx->Jdp[v]) fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
+    /* print EL deck, if it's valid */
+    v = mx->M;
+    if(mx->JnrowsA[v] == (mx->L+1)) {
+      for(j = 0; j <= mx->L; j++) {
+	for(d = 0; d <= j; d++) {
+	  if(mx->Jdp[v]) fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
+	}
+	fprintf(ofp, "\n");
       }
-      fprintf(ofp, "\n");
+      fprintf(ofp, "\n\n");
     }
-    fprintf(ofp, "\n\n");
   }
   return eslOK;
 }
@@ -1995,35 +2003,37 @@ cm_shadow_mx_Destroy(CM_SHADOW_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_SHADOW_MX *mx)
+cm_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_SHADOW_MX *mx, int print_mx)
 {
   int v, j, d;
-
+  
   fprintf(ofp, "M: %d\n", mx->M);
   fprintf(ofp, "B: %d\n", mx->B);
   fprintf(ofp, "L: %d\n", mx->L);
   fprintf(ofp, "y_ncells_alloc: %" PRId64 "\ny_ncells_valid: %" PRId64 "\n", mx->y_ncells_alloc, mx->y_ncells_valid);
   fprintf(ofp, "k_ncells_alloc: %" PRId64 "\nk_ncells_valid: %" PRId64 "\n", mx->k_ncells_alloc, mx->k_ncells_valid);
-
+  
   /* yshadow/kshadow matrix data */
-  for (v = 0; v < mx->M; v++) {
-    if(cm->sttype[v] == B_st) { 
-      for(j = 0; j <= mx->L; j++) { 
-	for(d = 0; d <= j; d++) { 
-	  if(mx->kshadow[v]) fprintf(ofp, "kshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->kshadow[v][j][d]);
-	}
-	fprintf(ofp, "\n");
+  if(print_mx) { 
+    for(v = 0; v < mx->M; v++) {
+      if(cm->sttype[v] == B_st) { 
+        for(j = 0; j <= mx->L; j++) { 
+	  for(d = 0; d <= j; d++) { 
+	    if(mx->kshadow[v]) fprintf(ofp, "kshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->kshadow[v][j][d]);
+	  }
+	  fprintf(ofp, "\n");
+        }
+        fprintf(ofp, "\n\n");
       }
-      fprintf(ofp, "\n\n");
-    }
-    else { /* ! B_st */
-      for(j = 0; j <= mx->L; j++) { 
-	for(d = 0; d <= j; d++) { 
-	  if(mx->yshadow[v]) fprintf(ofp, "yshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->yshadow[v][j][d]);
-	}
-	fprintf(ofp, "\n");
+      else { /* ! B_st */
+        for(j = 0; j <= mx->L; j++) { 
+	  for(d = 0; d <= j; d++) { 
+	    if(mx->yshadow[v]) fprintf(ofp, "yshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->yshadow[v][j][d]);
+ 	  }  
+	  fprintf(ofp, "\n");
+        }
+        fprintf(ofp, "\n\n");
       }
-      fprintf(ofp, "\n\n");
     }
   }
   return eslOK;
@@ -2581,7 +2591,7 @@ cm_tr_shadow_mx_Destroy(CM_TR_SHADOW_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx, char mode)
+cm_tr_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx, char mode, int print_mx)
 {
   int status;
   int v, j, d;
@@ -2601,30 +2611,32 @@ cm_tr_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx, char mode)
 
   if((status = cm_TrFillFromMode(mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
-  /* yshadow/kshadow matrix data */
-  for (v = 0; v < mx->M; v++) {
-    if(cm->sttype[v] == B_st) { 
-      for(j = 0; j <= mx->L; j++) { 
-	for(d = 0; d <= j; d++) { 
-	  if(mx->Jkshadow[v])           fprintf(ofp, "Jkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jkshadow[v][j][d]);
-	  if(mx->Lkshadow[v] && fill_L) fprintf(ofp, "Lkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lkshadow[v][j][d]);
-	  if(mx->Rkshadow[v] && fill_R) fprintf(ofp, "Rkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Rkshadow[v][j][d]);
-	  if(mx->Tkshadow[v] && fill_T) fprintf(ofp, "Tkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Tkshadow[v][j][d]);
+  if(print_mx) { 
+    /* yshadow/kshadow matrix data */
+    for (v = 0; v < mx->M; v++) {
+      if(cm->sttype[v] == B_st) { 
+	for(j = 0; j <= mx->L; j++) { 
+	  for(d = 0; d <= j; d++) { 
+	    if(mx->Jkshadow[v])           fprintf(ofp, "Jkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jkshadow[v][j][d]);
+	    if(mx->Lkshadow[v] && fill_L) fprintf(ofp, "Lkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lkshadow[v][j][d]);
+	    if(mx->Rkshadow[v] && fill_R) fprintf(ofp, "Rkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Rkshadow[v][j][d]);
+	    if(mx->Tkshadow[v] && fill_T) fprintf(ofp, "Tkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Tkshadow[v][j][d]);
+	  }
+	  fprintf(ofp, "\n");
 	}
-	fprintf(ofp, "\n");
+	fprintf(ofp, "\n\n");
       }
-      fprintf(ofp, "\n\n");
-    }
-    else { /* ! B_st */
-      for(j = 0; j <= mx->L; j++) { 
-	for(d = 0; d <= j; d++) { 
-	  if(mx->Jyshadow[v])           fprintf(ofp, "Jyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jyshadow[v][j][d]);
-	  if(mx->Lyshadow[v] && fill_L) fprintf(ofp, "Lyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lyshadow[v][j][d]);
-	  if(mx->Ryshadow[v] && fill_R) fprintf(ofp, "Ryshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Ryshadow[v][j][d]);
+      else { /* ! B_st */
+	for(j = 0; j <= mx->L; j++) { 
+	  for(d = 0; d <= j; d++) { 
+	    if(mx->Jyshadow[v])           fprintf(ofp, "Jyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jyshadow[v][j][d]);
+	    if(mx->Lyshadow[v] && fill_L) fprintf(ofp, "Lyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lyshadow[v][j][d]);
+	    if(mx->Ryshadow[v] && fill_R) fprintf(ofp, "Ryshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Ryshadow[v][j][d]);
+	  }
+	  fprintf(ofp, "\n");
 	}
-	fprintf(ofp, "\n");
+	fprintf(ofp, "\n\n");
       }
-      fprintf(ofp, "\n\n");
     }
   }
   return eslOK;
@@ -3023,35 +3035,37 @@ cm_hb_shadow_mx_Destroy(CM_HB_SHADOW_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx)
+cm_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx, int print_mx)
 {
   int v, jp, j, dp, d;
 
   fprintf(ofp, "M: %d\nnbifs: %d\nL: %d\ny_ncells_alloc: %" PRId64 "\ny_ncells_valid: %" PRId64 "\nk_ncells_alloc: %" PRId64 "\nk_ncells_valid: %" PRId64 "\n", mx->M, mx->B, mx->L, mx->y_ncells_alloc, mx->y_ncells_valid, mx->k_ncells_alloc, mx->k_ncells_valid);
   
-  /* yshadow/kshadow matrix data */
-  for (v = 0; v < mx->M; v++) {
-    if(cm->sttype[v] == B_st) { 
-      for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
-	j = jp + mx->cp9b->jmin[v];
-	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	  d = dp + mx->cp9b->hdmin[v][jp];
-	  fprintf(ofp, "kshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->kshadow[v][jp][dp]);
+  if(print_mx) { 
+    /* yshadow/kshadow matrix data */
+    for (v = 0; v < mx->M; v++) {
+      if(cm->sttype[v] == B_st) { 
+	for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
+	  j = jp + mx->cp9b->jmin[v];
+	  for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
+	    d = dp + mx->cp9b->hdmin[v][jp];
+	    fprintf(ofp, "kshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->kshadow[v][jp][dp]);
+	  }
+	  fprintf(ofp, "\n");
 	}
-	fprintf(ofp, "\n");
+	fprintf(ofp, "\n\n");
       }
-      fprintf(ofp, "\n\n");
-    }
-    else { 
-      for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
-	j = jp + mx->cp9b->jmin[v];
-	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	  d = dp + mx->cp9b->hdmin[v][jp];
-	  fprintf(ofp, "yshad[v:%5d][j:%5d][d:%5d] %8c\n", v, j, d, mx->yshadow[v][jp][dp]);
+      else { 
+	for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
+	  j = jp + mx->cp9b->jmin[v];
+	  for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
+	    d = dp + mx->cp9b->hdmin[v][jp];
+	    fprintf(ofp, "yshad[v:%5d][j:%5d][d:%5d] %8c\n", v, j, d, mx->yshadow[v][jp][dp]);
+	  }
+	  fprintf(ofp, "\n");
 	}
-	fprintf(ofp, "\n");
+	fprintf(ofp, "\n\n");
       }
-      fprintf(ofp, "\n\n");
     }
   }
   return eslOK;
@@ -3788,7 +3802,7 @@ cm_tr_hb_shadow_mx_Destroy(CM_TR_HB_SHADOW_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char mode)
+cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char mode, int print_mx)
 {
   int status;
   int v, jp, j, dp, d;
@@ -3807,34 +3821,36 @@ cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char mode)
 
   if((status = cm_TrFillFromMode(mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
-  /* yshadow/kshadow matrix data */
-  for (v = 0; v < mx->M; v++) {
-    if(cm->sttype[v] == B_st) { 
-      for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
-	j = jp + mx->cp9b->jmin[v];
-	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	  d = dp + mx->cp9b->hdmin[v][jp];
-	  if(mx->Jkshadow[v])           fprintf(ofp, "Jkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jkshadow[v][jp][dp]);
-	  if(mx->Lkshadow[v] && fill_L) fprintf(ofp, "Lkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lkshadow[v][jp][dp]);
-	  if(mx->Rkshadow[v] && fill_R) fprintf(ofp, "Rkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Rkshadow[v][jp][dp]);
-	  if(mx->Tkshadow[v] && fill_T) fprintf(ofp, "Tkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Tkshadow[v][jp][dp]);
+  if(print_mx) { 
+    /* yshadow/kshadow matrix data */
+    for (v = 0; v < mx->M; v++) {
+      if(cm->sttype[v] == B_st) { 
+	for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
+	  j = jp + mx->cp9b->jmin[v];
+	  for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
+	    d = dp + mx->cp9b->hdmin[v][jp];
+	    if(mx->Jkshadow[v])           fprintf(ofp, "Jkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jkshadow[v][jp][dp]);
+	    if(mx->Lkshadow[v] && fill_L) fprintf(ofp, "Lkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lkshadow[v][jp][dp]);
+	    if(mx->Rkshadow[v] && fill_R) fprintf(ofp, "Rkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Rkshadow[v][jp][dp]);
+	    if(mx->Tkshadow[v] && fill_T) fprintf(ofp, "Tkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Tkshadow[v][jp][dp]);
+	  }
+	  fprintf(ofp, "\n");
 	}
-	fprintf(ofp, "\n");
+	fprintf(ofp, "\n\n");
       }
-      fprintf(ofp, "\n\n");
-    }
-    else { 
-      for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
-	j = jp + mx->cp9b->jmin[v];
-	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	  d = dp + mx->cp9b->hdmin[v][jp];
-	  if(mx->Jyshadow[v])           fprintf(ofp, "Jyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jyshadow[v][jp][dp]);
-	  if(mx->Lyshadow[v] && fill_L) fprintf(ofp, "Lyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lyshadow[v][jp][dp]);
-	  if(mx->Ryshadow[v] && fill_R) fprintf(ofp, "Ryshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Ryshadow[v][jp][dp]);
+      else { 
+	for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
+	  j = jp + mx->cp9b->jmin[v];
+	  for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
+	    d = dp + mx->cp9b->hdmin[v][jp];
+	    if(mx->Jyshadow[v])           fprintf(ofp, "Jyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jyshadow[v][jp][dp]);
+	    if(mx->Lyshadow[v] && fill_L) fprintf(ofp, "Lyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lyshadow[v][jp][dp]);
+	    if(mx->Ryshadow[v] && fill_R) fprintf(ofp, "Ryshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Ryshadow[v][jp][dp]);
+	  }
+	  fprintf(ofp, "\n");
 	}
-	fprintf(ofp, "\n");
+	fprintf(ofp, "\n\n");
       }
-      fprintf(ofp, "\n\n");
     }
   }
   return eslOK;
@@ -4245,7 +4261,7 @@ cm_emit_mx_Destroy(CM_EMIT_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_EMIT_MX *mx)
+cm_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_EMIT_MX *mx, int print_mx)
 {
   int v, i;
 
@@ -4255,12 +4271,14 @@ cm_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_EMIT_MX *mx)
   fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
   
   /* l_pp and r_pp matrix data */
-  for (v = 0; v <= mx->M; v++) {
-    for(i = 0; i <= mx->L; i++) { 
-      if(mx->l_pp[v]) fprintf(ofp, "l_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->l_pp[v][i]), mx->l_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
-      if(mx->r_pp[v]) fprintf(ofp, "r_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->r_pp[v][i]), mx->r_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+  if(print_mx) { 
+    for (v = 0; v <= mx->M; v++) {
+      for(i = 0; i <= mx->L; i++) { 
+	if(mx->l_pp[v]) fprintf(ofp, "l_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->l_pp[v][i]), mx->l_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+	if(mx->r_pp[v]) fprintf(ofp, "r_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->r_pp[v][i]), mx->r_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      }
+      fprintf(ofp, "\n");
     }
-    fprintf(ofp, "\n");
   }
   return eslOK;
 }
@@ -4653,7 +4671,7 @@ cm_tr_emit_mx_Destroy(CM_TR_EMIT_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char mode)
+cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char mode, int print_mx)
 {
   int status;
   int v, i;
@@ -4667,19 +4685,21 @@ cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char mode)
   
   if((status = cm_TrFillFromMode(mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
-  /* l_pp and r_pp matrix data */
-  for (v = 0; v < mx->M; v++) {
-    for(i = 0; i <= mx->L; i++) { 
-      if(mx->Jl_pp[v])           fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jl_pp[v][i]), mx->Jl_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
-      if(mx->Ll_pp[v] && fill_L) fprintf(ofp, "Ll_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Ll_pp[v][i]), mx->Ll_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
-      if(mx->Jr_pp[v])           fprintf(ofp, "Jr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jr_pp[v][i]), mx->Jr_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
-      if(mx->Rr_pp[v] && fill_R) fprintf(ofp, "Rr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Rr_pp[v][i]), mx->Rr_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+  if(print_mx) { 
+    /* l_pp and r_pp matrix data */
+    for (v = 0; v < mx->M; v++) {
+      for(i = 0; i <= mx->L; i++) { 
+	if(mx->Jl_pp[v])           fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jl_pp[v][i]), mx->Jl_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+	if(mx->Ll_pp[v] && fill_L) fprintf(ofp, "Ll_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Ll_pp[v][i]), mx->Ll_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+	if(mx->Jr_pp[v])           fprintf(ofp, "Jr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jr_pp[v][i]), mx->Jr_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+	if(mx->Rr_pp[v] && fill_R) fprintf(ofp, "Rr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Rr_pp[v][i]), mx->Rr_pp[v][i], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      }
+      fprintf(ofp, "\n");
     }
-    fprintf(ofp, "\n");
-  }
-  /* EL state */
-  for(i = 0; i <= mx->L; i++) { 
-    if(mx->Jl_pp[cm->M]) fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Jl_pp[cm->M][i]), mx->Jl_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
+    /* EL state */
+    for(i = 0; i <= mx->L; i++) { 
+      if(mx->Jl_pp[cm->M]) fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Jl_pp[cm->M][i]), mx->Jl_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
+    }
   }
   return eslOK;
 }
@@ -5026,7 +5046,7 @@ cm_hb_emit_mx_Destroy(CM_HB_EMIT_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_EMIT_MX *mx)
+cm_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_EMIT_MX *mx, int print_mx)
 {
   int v, i, j, ip_v, jp_v;
 
@@ -5035,25 +5055,27 @@ cm_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_EMIT_MX *mx)
   fprintf(ofp, "l_ncells_alloc: %" PRId64 "\nl_ncells_valid: %" PRId64 "\n", mx->l_ncells_alloc, mx->l_ncells_valid);
   fprintf(ofp, "r_ncells_alloc: %" PRId64 "\nr_ncells_valid: %" PRId64 "\n", mx->r_ncells_alloc, mx->r_ncells_valid);
   
-  /* l_pp and r_pp matrix data */
-  for (v = 0; v < mx->M; v++) {
-    if(mx->l_pp[v]) { 
-      for(i = mx->cp9b->imin[v]; i <= mx->cp9b->imax[v]; i++) { 
-	ip_v = i - mx->cp9b->imin[v];
-	fprintf(ofp, "l_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->l_pp[v][ip_v]), mx->l_pp[v][ip_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+  if(print_mx) { 
+    /* l_pp and r_pp matrix data */
+    for (v = 0; v < mx->M; v++) {
+      if(mx->l_pp[v]) { 
+	for(i = mx->cp9b->imin[v]; i <= mx->cp9b->imax[v]; i++) { 
+	  ip_v = i - mx->cp9b->imin[v];
+	  fprintf(ofp, "l_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->l_pp[v][ip_v]), mx->l_pp[v][ip_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+	}
       }
-    }
-    if(mx->r_pp[v]) { 
-      for(j = mx->cp9b->jmin[v]; j <= mx->cp9b->jmax[v]; j++) { 
-	jp_v = j - mx->cp9b->jmin[v];
-	fprintf(ofp, "r_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, j, sreEXP2(mx->r_pp[v][jp_v]), mx->r_pp[v][jp_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      if(mx->r_pp[v]) { 
+	for(j = mx->cp9b->jmin[v]; j <= mx->cp9b->jmax[v]; j++) { 
+	  jp_v = j - mx->cp9b->jmin[v];
+	  fprintf(ofp, "r_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, j, sreEXP2(mx->r_pp[v][jp_v]), mx->r_pp[v][jp_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+	}
       }
+      fprintf(ofp, "\n");
     }
-    fprintf(ofp, "\n");
-  }
-  /* EL state */
-  for(i = 0; i <= mx->L; i++) { 
-    if(mx->l_pp[cm->M]) fprintf(ofp, "l_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->l_pp[cm->M][i]), mx->l_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
+    /* EL state */
+    for(i = 0; i <= mx->L; i++) { 
+      if(mx->l_pp[cm->M]) fprintf(ofp, "l_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->l_pp[cm->M][i]), mx->l_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
+    }
   }
   return eslOK;
 }
@@ -5435,7 +5457,7 @@ cm_tr_hb_emit_mx_Destroy(CM_TR_HB_EMIT_MX *mx)
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char mode)
+cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char mode, int print_mx)
 {
   int status;
   int v, i, j, ip_v, jp_v;
@@ -5449,38 +5471,40 @@ cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char mode)
   
   if((status = cm_TrFillFromMode(mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
 
-  /* l_pp and r_pp matrix data */
-  for (v = 0; v < mx->M; v++) {
-    if(mx->Jl_pp[v]) { 
-      for(i = mx->cp9b->imin[v]; i <= mx->cp9b->imax[v]; i++) { 
-	ip_v = i - mx->cp9b->imin[v];
-	fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jl_pp[v][ip_v]), mx->Jl_pp[v][ip_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+  if(print_mx) { 
+    /* l_pp and r_pp matrix data */
+    for (v = 0; v < mx->M; v++) {
+      if(mx->Jl_pp[v]) { 
+	for(i = mx->cp9b->imin[v]; i <= mx->cp9b->imax[v]; i++) { 
+	  ip_v = i - mx->cp9b->imin[v];
+	  fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Jl_pp[v][ip_v]), mx->Jl_pp[v][ip_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+	}
       }
-    }
-    if(mx->Ll_pp[v] && fill_L) { 
-      for(i = mx->cp9b->imin[v]; i <= mx->cp9b->imax[v]; i++) { 
-	ip_v = i - mx->cp9b->imin[v];
-	fprintf(ofp, "Ll_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Ll_pp[v][ip_v]), mx->Ll_pp[v][ip_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      if(mx->Ll_pp[v] && fill_L) { 
+	for(i = mx->cp9b->imin[v]; i <= mx->cp9b->imax[v]; i++) { 
+	  ip_v = i - mx->cp9b->imin[v];
+	  fprintf(ofp, "Ll_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, i, sreEXP2(mx->Ll_pp[v][ip_v]), mx->Ll_pp[v][ip_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+	}
       }
-    }
-    if(mx->Jr_pp[v]) { 
-      for(j = mx->cp9b->jmin[v]; j <= mx->cp9b->jmax[v]; j++) { 
-	jp_v = j - mx->cp9b->jmin[v];
-	fprintf(ofp, "Jr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, j, sreEXP2(mx->Jr_pp[v][jp_v]), mx->Jr_pp[v][jp_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      if(mx->Jr_pp[v]) { 
+	for(j = mx->cp9b->jmin[v]; j <= mx->cp9b->jmax[v]; j++) { 
+	  jp_v = j - mx->cp9b->jmin[v];
+	  fprintf(ofp, "Jr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, j, sreEXP2(mx->Jr_pp[v][jp_v]), mx->Jr_pp[v][jp_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+	}
       }
-    }
-    if(mx->Rr_pp[v] && fill_R) { 
-      for(j = mx->cp9b->jmin[v]; j <= mx->cp9b->jmax[v]; j++) { 
-	jp_v = j - mx->cp9b->jmin[v];
-	fprintf(ofp, "Rr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, j, sreEXP2(mx->Rr_pp[v][jp_v]), mx->Rr_pp[v][jp_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+      if(mx->Rr_pp[v] && fill_R) { 
+	for(j = mx->cp9b->jmin[v]; j <= mx->cp9b->jmax[v]; j++) { 
+	  jp_v = j - mx->cp9b->jmin[v];
+	  fprintf(ofp, "Rr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", v, j, sreEXP2(mx->Rr_pp[v][jp_v]), mx->Rr_pp[v][jp_v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]));
+	}
       }
+      fprintf(ofp, "\n");
     }
-    fprintf(ofp, "\n");
-  }
-
-  /* EL state */
-  for(i = 0; i <= mx->L; i++) { 
-    if(mx->Jl_pp[cm->M]) fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Jl_pp[cm->M][i]), mx->Jl_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
+    
+    /* EL state */
+    for(i = 0; i <= mx->L; i++) { 
+      if(mx->Jl_pp[cm->M]) fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Jl_pp[cm->M][i]), mx->Jl_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
+    }
   }
   return eslOK;
 }

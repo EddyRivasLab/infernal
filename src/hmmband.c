@@ -33,6 +33,21 @@
 
 #include "infernal.h"
 
+static int          cp9_FB2HMMBands        (CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
+				            int i0, int j0, int M, double p_thresh, int did_fwd_scan, int did_bck_scan, int do_old_hmm2ij, int debug_level);
+static int          cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
+					    int i0, int j0, int M, double p_thresh, int did_fwd_scan, int did_bck_scan, int do_old_hmm2ij, int debug_level);
+static void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *mx, int did_fwd_scan);
+static void         cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9, int i0, int j0);
+static int          HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *errbuf, int i0, int j0, int doing_search, int *ret_did_expand, 
+					      int **ret_r_mn, int **ret_r_mx, int **ret_r_in,  int **ret_r_ix, int **ret_r_dn, int **ret_r_dx,
+					      int **ret_r_nn_i, int **ret_r_nx_i, int **ret_r_nn_j, int **ret_r_nx_j);
+static int          HMMBandsFixUnreachable(CP9Bands_t *cp9b, char *errbuf, int k, int r_prv_min, int r_prv_max, int r_insert_prv_min);
+static int          HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int min2, int max2, int prv_nd_r_mn, int prv_nd_r_dn);
+#if eslDEBUGLEVEL >= 1
+static int          CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0, int doing_search);
+#endif
+
 /* EPN 10.28.06
  * Function: AllocCP9Bands()
  * 
@@ -84,7 +99,7 @@ AllocCP9Bands(int cm_M, int hmm_M)
   ESL_ALLOC(cp9bands->pn_max_d, sizeof(int) * (cp9bands->hmm_M+1));
   ESL_ALLOC(cp9bands->isum_pn_m,sizeof(int) * (cp9bands->hmm_M+1));
   ESL_ALLOC(cp9bands->isum_pn_i,sizeof(int) * (cp9bands->hmm_M+1));
-  ESL_ALLOC(cp9bands->isum_pn_d, sizeof(int) * (cp9bands->hmm_M+1));
+  ESL_ALLOC(cp9bands->isum_pn_d,sizeof(int) * (cp9bands->hmm_M+1));
 
   ESL_ALLOC(cp9bands->imin,       sizeof(int)   * cp9bands->cm_M);
   ESL_ALLOC(cp9bands->imax,       sizeof(int)   * cp9bands->cm_M);
@@ -103,6 +118,7 @@ AllocCP9Bands(int cm_M, int hmm_M)
   cp9bands->hd_needed  = 0;
   cp9bands->hd_alloced = 0;
 
+  cp9bands->tau        = -1.; /* invalid, reset each time bands are calculated */
   return cp9bands;
 
  ERROR:
@@ -187,19 +203,6 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
 
   free(cp9bands);
 }
-
-/* Function: DScore2Prob()
- * 
- * Purpose:  Convert an integer log_2 odds score back to a probability;
- *           needs the null model probability, if any, to do the conversion.
- */
-double 
-DScore2Prob(int sc, float null)
-{
-  if (sc == -INFTY) return 0.;
-  else              return (null * sreEXP2((double) sc / INTSCALE));
-}
-
 
 /* Function: cp9_Seq2Bands
  * Date    : EPN, Mon Jan  8 07:23:34 2007
@@ -324,6 +327,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 				 (1.-cm->tau), do_fwd_scan, do_bck_scan, do_old_hmm2ij, debug_level)) != eslOK) return status;
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
+  cp9b->tau = cm->tau;
 
   /* Step 3: (only if truncated alignments are possible)
    * Calculate occupancy and candidate states for marginal alignments 
@@ -412,7 +416,6 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
     else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
     if(hbmx_Mb <  size_limit)          break; /* our matrix will be small enough, break out of while(1) */
     if(cm->tau >= (maxtau-eslSMALLX1)) break; /* our bands have gotten too tight, break out of while(1) */
-    /* printf("ARC 0 tau: %10g  hbmx_Mb: %10.2f\n", cm->tau, hbmx_Mb); */
     cm->tau = ESL_MIN(maxtau, cm->tau * xtau);
   }
 
@@ -1397,49 +1400,6 @@ ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
     }
   }
 }
-
-/*****************************************************************************
- * EPN 11.04.05
- * Function: hd2safe_hd_bands
- *
- * Purpose:  HMMERNAL milestone 4 function. Given 
- *           hdmin and hdmax 2D arrays, simply
- *           fill safe_hdmin and safe_hdmax (1D arrays):
- *           safe_hdmin[v] = min_d (hdmin[v][jp])
- *           safe_hdmax[v] = max_d (hdmax[v][jp])
- * 
- * arguments:
- * int M            num states in the CM.
- * int *jmin        jmin[v] = first position in band on j for state v
- * int *jmax        jmax[v] = last position in band on j for state v
- * int **hdmin      hdmin[v][jp] = first position in band on d for state v
- *                                 and j position: j = jp+jmin[v].
- * int **hdmax      hdmax[v][jp] = last position in band on d for state v
- *                                 and j position: j = jp+jmin[v].
- * int *safe_hdmin  safe_hdmin[v] = min_d (hdmin[v][jp]) (over all valid jp)
- *                  filled in this function.
- * int *safe_hdmax  safe_hdmax[v] = max_d (hdmax[v][jp]) (over all valid jp)
- *                  filled in this function.
- *****************************************************************************/
-void
-hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
-		 int *safe_hdmin, int *safe_hdmax)
-
-{
-  int v;            /* counter over states of the CM */
-  int jp;           /* counter over valid j's, but offset. jp+jmin[v] = actual j */
-
-  for(v = 0; v < M; v++) {
-    safe_hdmin[v] = hdmin[v][0];
-    safe_hdmax[v] = hdmax[v][0];
-    /*printf("jp: %2d | j: %2d | v: %3d | smin %d | smax : %d\n", 0, (jmin[v]), v, safe_hdmin[v], safe_hdmax[v]);*/
-    for(jp = 1; jp <= (jmax[v]-jmin[v]); jp++) { 
-      safe_hdmin[v] = ESL_MIN(safe_hdmin[v], hdmin[v][jp]);
-      safe_hdmax[v] = ESL_MAX(safe_hdmax[v], hdmax[v][jp]);
-    }
-  }
-}  
-
 
 /* Function: cp9_HMM2ijBands()
  * Synopsis: Derive bands on i and j for all CM states given HMM bands.	
@@ -3003,6 +2963,7 @@ HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int m
   return eslOK;
 }
 
+#if eslDEBUGLEVEL >= 1
 /* Function: CMBandsCheckValidParse()
  * Incept:   EPN, Tue Feb  5 07:59:48 2008
  * 
@@ -3250,565 +3211,7 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
   ESL_FAIL(status, errbuf, "CMBandsCheckValidParse(), memory allocation error.");
   return status; /* NEVER REACHED */
 }
-
-
-/****************************************************************************
- * Debugging print functions
- *
- * cp9_DebugPrintHMMBands()
- * ijBandedTraceInfoDump()
- * ijdBandedTraceInfoDump()
- * debug_print_hd_bands()
- * debug_print_ij_bands()
- * PrintDPCellsSaved_jd()
- * debug_print_parsetree_and_ij_bands()
- *		     
- */
-
-/* EPN 12.18.05
- * cp9_DebugPrintHMMBands()
- * based loosely on: cmbuild.c's
- * Function: model_trace_info_dump
- *
- * Purpose:  Print out the bands derived from the posteriors for the
- *           insert and match states of each HMM node.
- * 
- * Args:    
- * FILE *ofp      - filehandle to print to (can by STDOUT)
- * int L          - length of sequence
- * CP9Bands_t     - the CP9 bands data structure
- * double hmm_bandp - fraction of probability mass allowed outside each band.
- * int debug_level  [0..3] tells the function what level of debugging print
- *                  statements to print.
- * Returns: (void) 
- */
-
-void
-cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level)
-{
-  int M;
-  int k;
-  int cells_in_bands_m; /* number of cells within all the bands for match states*/
-  int cells_in_bands_i; /* number of cells within all the bands for insert states*/
-  int cells_in_bands_d; /* number of cells within all the bands for delete states*/
-  int cells_in_bands_all; /* number of cells within all the bands for match and insert states*/
-  int bw;               /* band width of current band */
-
-  M = cp9b->hmm_M;
-  cells_in_bands_m = cells_in_bands_i = cells_in_bands_d = cells_in_bands_all = 0;
-
-  /* first print the bands on the match states */
-  fprintf(ofp, "***********************************************************\n");
-  if(debug_level > 0)
-    fprintf(ofp, "printing hmm bands\n");
-  fprintf(ofp, "hmm_bandp: %f\n", hmm_bandp);
-  if(debug_level > 0)
-    {    
-      fprintf(ofp, "\n");
-      fprintf(ofp, "match states\n");
-    }
-  for(k = 0; k <= cp9b->hmm_M; k++)
-    {
-      bw = (cp9b->pn_min_m[k] == -1) ? 0 : cp9b->pn_max_m[k] - cp9b->pn_min_m[k] + 1;
-      if(debug_level > 0 || debug_level == -1)
-	fprintf(ofp, "M node: %3d | min %3d | max %3d | w %3d \n", k, cp9b->pn_min_m[k], cp9b->pn_max_m[k], bw);
-      cells_in_bands_m += bw;
-    }
-  if(debug_level > 0)
-    fprintf(ofp, "\n");
-  if(debug_level > 0)
-    fprintf(ofp, "insert states\n");
-  for(k = 0; k <= cp9b->hmm_M; k++)
-    {
-      bw = (cp9b->pn_min_i[k] == -1) ? 0 : cp9b->pn_max_i[k] - cp9b->pn_min_i[k] + 1;
-      if(debug_level > 0 || debug_level == -1)
-	fprintf(ofp, "I node: %3d | min %3d | max %3d | w %3d\n", k, cp9b->pn_min_i[k], cp9b->pn_max_i[k], bw);
-      cells_in_bands_i += bw;
-    }
-  if(debug_level > 0)
-    fprintf(ofp, "\n");
-  if(debug_level > 0)
-    fprintf(ofp, "delete states\n");
-  for(k = 1; k <= cp9b->hmm_M; k++)
-    {
-      bw = (cp9b->pn_min_d[k] == -1) ? 0 : cp9b->pn_max_d[k] - cp9b->pn_min_d[k] + 1;
-      if(debug_level > 0 || debug_level == -1)
-	fprintf(ofp, "D node: %3d | min %3d | max %3d | w %3d\n", k, cp9b->pn_min_d[k], cp9b->pn_max_d[k], bw);
-      cells_in_bands_d += bw;
-    }
-  if(debug_level > 0)
-    {
-      fprintf(ofp, "\n");
-      printf("cells_in_bands_m : %d\n", cells_in_bands_m);
-      printf("cells_in_bands_i : %d\n", cells_in_bands_i);
-      printf("cells_in_bands_d : %d\n", cells_in_bands_d);
-    }
-
-  cells_in_bands_all = cells_in_bands_m + cells_in_bands_i + cells_in_bands_d;
-  printf("fraction match excluded  : %f\n", (1 - ((float) cells_in_bands_m / (M * L))));
-  printf("fraction insert excluded : %f\n", (1 - ((float) cells_in_bands_i / ((M-1) * L))));
-  printf("fraction delete excluded : %f\n", (1 - ((float) cells_in_bands_d / ((M-1) * L))));
-  printf("fraction total excluded  : %f\n", (1 - ((float) (cells_in_bands_all) / (((M-1) * L) + ((M-1) * L) + (M *L)))));
-  fprintf(ofp, "***********************************************************\n");
-	 
-}
-
-/* cp9_compare_bands()
- * based loosely on: cmbuild.c's
- * Function: model_trace_info_dump
- *
- * Purpose:  Compare 2 CP9Bands_t objects, die if they're at all different.
- * 
- * Returns: (void) 
- */
-void
-cp9_compare_bands(CP9Bands_t *cp9b1, CP9Bands_t *cp9b2)
-{
-  int k, v, d;
-
-  if(cp9b1->hmm_M != cp9b2->hmm_M) cm_Fail("cp9_compare_bands(): cp9b1->hmm_M: %d != cp9b2->hmm_M: %d\n", cp9b1->hmm_M, cp9b2->hmm_M);
-  if(cp9b1->cm_M  != cp9b2->cm_M)  cm_Fail("cp9_compare_bands(): cp9b1->cm_M: %d != cp9b2->cm_M: %d\n", cp9b1->cm_M, cp9b2->cm_M);
-  for(k = 0; k <= cp9b1->hmm_M; k++)
-    {
-      if(cp9b1->pn_min_m[k] != cp9b2->pn_min_m[k]) cm_Fail("cp9_compare_bands(): cp9b1->pn_min_m[%d]: %d != cp9b2->pn_min_m[%d]: %d\n", k, cp9b1->pn_min_m[k], k, cp9b2->pn_min_m[k]);
-      if(cp9b1->pn_min_i[k] != cp9b2->pn_min_i[k]) cm_Fail("cp9_compare_bands(): cp9b1->pn_min_i[%d]: %d != cp9b2->pn_min_i[%d]: %d\n", k, cp9b1->pn_min_i[k], k, cp9b2->pn_min_i[k]);
-      if(cp9b1->pn_min_d[k] != cp9b2->pn_min_d[k]) cm_Fail("cp9_compare_bands(): cp9b1->pn_min_d[%d]: %d != cp9b2->pn_min_d[%d]: %d\n", k, cp9b1->pn_min_d[k], k, cp9b2->pn_min_d[k]);
-
-      if(cp9b1->pn_max_m[k] != cp9b2->pn_max_m[k]) cm_Fail("cp9_compare_bands(): cp9b1->pn_max_m[%d]: %d != cp9b2->pn_max_m[%d]: %d\n", k, cp9b1->pn_max_m[k], k, cp9b2->pn_max_m[k]);
-      if(cp9b1->pn_max_i[k] != cp9b2->pn_max_i[k]) cm_Fail("cp9_compare_bands(): cp9b1->pn_max_i[%d]: %d != cp9b2->pn_max_i[%d]: %d\n", k, cp9b1->pn_max_i[k], k, cp9b2->pn_max_i[k]);
-      if(cp9b1->pn_max_d[k] != cp9b2->pn_max_d[k]) cm_Fail("cp9_compare_bands(): cp9b1->pn_max_d[%d]: %d != cp9b2->pn_max_d[%d]: %d\n", k, cp9b1->pn_max_d[k], k, cp9b2->pn_max_d[k]);
-    }
-  for(v = 0; v < cp9b1->cm_M; v++)
-    {
-      if(cp9b1->imin[v] != cp9b2->imin[v]) cm_Fail("cp9_compare_bands(): cp9b1->imin[%d]: %d != cp9b2->imin[%d]: %d\n", v, cp9b1->imin[v], v, cp9b2->imin[v]);
-      if(cp9b1->imax[v] != cp9b2->imax[v]) cm_Fail("cp9_compare_bands(): cp9b1->imax[%d]: %d != cp9b2->imax[%d]: %d\n", v, cp9b1->imax[v], v, cp9b2->imax[v]);
-
-      if(cp9b1->jmin[v] != cp9b2->jmin[v]) cm_Fail("cp9_compare_bands(): cp9b1->jmin[%d]: %d != cp9b2->jmin[%d]: %d\n", v, cp9b1->jmin[v], v, cp9b2->jmin[v]);
-      if(cp9b1->jmax[v] != cp9b2->jmax[v]) cm_Fail("cp9_compare_bands(): cp9b1->jmax[%d]: %d != cp9b2->jmax[%d]: %d\n", v, cp9b1->jmax[v], v, cp9b2->jmax[v]);
-
-      for(d = 0; d <= (cp9b1->jmax[v] - cp9b1->jmin[v]); d++) {
-	if(cp9b1->hdmin[v][d] != cp9b2->hdmin[v][d]) cm_Fail("cp9_compare_bands(): cp9b1->hdmin[%d][%d]: %d != cp9b2->hdmin[%d][%d]: %d\n", v, d, cp9b1->hdmin[v][d], v, d, cp9b2->hdmin[v][d]);
-	if(cp9b1->hdmax[v][d] != cp9b2->hdmax[v][d]) cm_Fail("cp9_compare_bands(): cp9b1->hdmax[%d][%d]: %d != cp9b2->hdmax[%d][%d]: %d\n", v, d, cp9b1->hdmax[v][d], v, d, cp9b2->hdmax[v][d]);
-      }
-      /* don't compare safe_hdmin, safe_hdmax, b/c we want to be able to compare cp9bands objects
-       * before safe_hdmin, safe_hdmax are calced
-       */
-    }
-}      
-
-/* EPN 11.03.05
- * Function: ijBandedTraceInfoDump()
- *
- * Purpose:  Experimental HMMERNAL function used in development.
- *           This function determines how close the
- *           trace was to the bands for i and j at each state in the trace,
- *           and prints out that information in differing levels
- *           of verbosity depending on an input parameter 
- *           (debug_level).
- * 
- * Args:    cm       - the CM (useful for determining which states are E states)
- *          tr       - the parsetree (trace)
- *          imin     - minimum i bound for each state v; [0..v..M-1]
- *          imax     - maximum i bound for each state v; [0..v..M-1]
- *          jmin     - minimum j bound for each state v; [0..v..M-1]
- *          jmax     - maximum j bound for each state v; [0..v..M-1]
- *          debug_level - level of verbosity
- * Returns: (void) 
- */
-
-void
-ijBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
-		      int *jmin, int *jmax, int debug_level)
-{
-  int v, i, j, d, tpos;
-  int imindiff;            /* i - imin[v] */
-  int imaxdiff;            /* imax[v] - i */
-  int jmindiff;            /* j - jmin[v] */
-  int jmaxdiff;            /* jmax[v] - j */
-  int imin_out;
-  int imax_out;
-  int jmin_out;
-  int jmax_out;
-
-  imin_out = 0;
-  imax_out = 0;
-  jmin_out = 0;
-  jmax_out = 0;
-
-  debug_level = 2;
-
-  for (tpos = 0; tpos < tr->n; tpos++)
-    {
-      v  = tr->state[tpos];
-      i = tr->emitl[tpos];
-      j = tr->emitr[tpos];
-      d = j-i+1;
-      imindiff = i-imin[v];
-      imaxdiff = imax[v]-i;
-      jmindiff = j-jmin[v];
-      jmaxdiff = jmax[v]-j;
-      if(cm->sttype[v] != E_st)
-	{
-	  if(imindiff < 0)
-	    imin_out++;
-	  if(imaxdiff < 0)
-	    imax_out++;
-	  if(jmindiff < 0)
-	    jmin_out++;
-	  if(jmaxdiff < 0)
-	    jmax_out++;
-	  
-	  if(debug_level > 1 || ((imindiff < 0) || (imaxdiff < 0) || (jmindiff < 0) || (jmaxdiff < 0)))
-	    {
-	      printf("v: %4d %-4s %-2s | d: %4d | i: %4d | in: %4d | ix: %4d | %3d | %3d |\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), d, i, imin[v], imax[v], imindiff, imaxdiff);
-	      printf("                          | j: %4d | jn: %4d | jx: %4d | %3d | %3d |\n", j, jmin[v], jmax[v], jmindiff, jmaxdiff);
-
-	    }
-	}
-      else if(cm->sttype[v] == E_st)
-	{
-	  if(debug_level > 1)
-	    {
-	      printf("v: %4d %-4s %-2s | d: %4d | i: %4d | in: %4d | ix: %4d | %3d | %3d |\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), d, i, imin[v], imax[v], imindiff, imaxdiff);
-	      printf("                          | j: %4d | jn: %4d | jx: %4d | %3d | %3d |\n", j, jmin[v], jmax[v], jmindiff, jmaxdiff);
-	    }
-	}
-    }
-  printf("\nimin out: %d\n", imin_out);
-  printf("imax out: %d\n", imax_out);
-  printf("jmin out: %d\n", jmin_out);
-  printf("jmax out: %d\n", jmax_out);
-  
-  if((imin_out + imax_out + jmin_out + jmax_out) > 0)
-    {
-      printf("ERROR, some of the i and j bands are going to prevent optimal alignment. Sorry.\n");
-    }
-
-  return;
-}
-
-
-/* EPN 11.03.05
- * Function: ijdBandedTraceInfoDump()
- *
- * Purpose:  Experimental HMMERNAL function used in development.
- *           This function determines how close the
- *           trace was to the bands for i and j and d at each state in the trace,
- *           and prints out that information in differing levels
- *           of verbosity depending on an input parameter 
- *           (debug_level).
- * 
- * Args:    cm       - the CM (useful for determining which states are E states)
- *          tr       - the parsetree (trace)
- *          imin     - minimum i bound for each state v; [0..v..M-1]
- *          imax     - maximum i bound for each state v; [0..v..M-1]
- *          jmin     - minimum j bound for each state v; [0..v..M-1]
- *          jmax     - maximum j bound for each state v; [0..v..M-1]
- *          hdmin    - minimum d bound for each state v and offset j;
- *                     [0..v..M-1][0..(jmax[v]-jmin[v])]
- *          hdmax    - maximum d bound for each state v and offset j; 
- *                     [0..v..M-1][0..(jmax[v]-jmin[v])]
- *          debug_level - level of verbosity
- * Returns: (void) 
- */
-
-void
-ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
-		       int *jmin, int *jmax, int **hdmin, int **hdmax, int debug_level)
-{
-  int v, i, j, d, tpos;
-  int imindiff;            /* i - imin[v] */
-  int imaxdiff;            /* imax[v] - i */
-  int jmindiff;            /* j - jmin[v] */
-  int jmaxdiff;            /* jmax[v] - j */
-  int hdmindiff;           /* d - hdmin[v][j] */
-  int hdmaxdiff;           /* hdmax[v][j] - d */
-
-  int imin_out;
-  int imax_out;
-  int jmin_out;
-  int jmax_out;
-  int hdmin_out;
-  int hdmax_out;
-  int local_used;
-
-  imin_out = 0;
-  imax_out = 0;
-  jmin_out = 0;
-  jmax_out = 0;
-  hdmin_out = 0;
-  hdmax_out = 0;
-  local_used = 0;
-
-  debug_level = 2;
-
-  for (tpos = 0; tpos < tr->n; tpos++)
-    {
-      v  = tr->state[tpos];
-      i = tr->emitl[tpos];
-      j = tr->emitr[tpos];
-      d = j-i+1;
-      if(cm->sttype[v] == EL_st) /*END LOCAL state*/
-	{
-	  if(debug_level > 1)
-	    {
-	      printf("v: %4d NA   %-2s (  NA) | d: %4d | i: %4d | in: NA    | ix: NA   | NA  | NA  |\n", v, Statetype(cm->sttype[v]), d, i);
-	      printf("                                 | j: %4d | jn: NA   | jx: NA  | NA  | NA  |\n", j);
-	      printf("                                 | d: %4d | dn: NA   | dx: NA   | NA  | NA  |\n", d);
-	      
-	      local_used++;
-	    }
-	}
-      else
-	{
-	  imindiff = i-imin[v];
-	  imaxdiff = imax[v]-i;
-	  jmindiff = j-jmin[v];
-	  jmaxdiff = jmax[v]-j;
-	  if(j >= jmin[v] && j <= jmax[v])
-	    {
-	      hdmindiff = d - hdmin[v][j-jmin[v]];
-	      hdmaxdiff = hdmax[v][j-jmin[v]] - d;
-	    }  
-	  else
-	    {
-	      hdmindiff = -1000;
-	      hdmaxdiff = -1000;
-	    }
-	  if(imindiff < 0)
-	    imin_out++;
-	  if(imaxdiff < 0)
-	    imax_out++;
-	  if(jmindiff < 0)
-	    jmin_out++;
-	  if(jmaxdiff < 0)
-	    jmax_out++;
-	  if(hdmindiff < 0)
-	    hdmin_out++;
-	  if(hdmaxdiff < 0)
-	    hdmax_out++;
-	  
-	  if(debug_level > 1 || ((imindiff < 0) || (imaxdiff < 0) || (jmindiff < 0) || (jmaxdiff < 0) || 
-				 (hdmindiff < 0) || (hdmaxdiff < 0)))
-	    {
-	      printf("v: %4d %-4s %-2s (%4d) | d: %4d | i: %4d | in: %4d | ix: %4d | %3d | %3d |\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), cm->ndidx[v], d, i, imin[v], imax[v], imindiff, imaxdiff);
-	      printf("                                 | j: %4d | jn: %4d | jx: %4d | %3d | %3d |\n", j, jmin[v], jmax[v], jmindiff, jmaxdiff);
-	      if(j >= jmin[v] && j <= jmax[v])
-		{
-		  printf("                                 | d: %4d | dn: %4d | dx: %4d | %3d | %3d |\n", d, hdmin[v][j-jmin[v]], hdmax[v][j-jmin[v]], hdmindiff, hdmaxdiff);
-		}	  
-	      else
-		{
-		  printf("                                 | d: %4d | dn: jout | dx: jout | %3d | %3d |\n", d, hdmindiff, hdmaxdiff);
-		}
-	    }
-	}
-    }
-  printf("\nimin out  : %d\n", imin_out);
-  printf("imax out  : %d\n", imax_out);
-  printf("jmin out  : %d\n", jmin_out);
-  printf("jmax out  : %d\n", jmax_out);
-  printf("hdmin out : %d\n", hdmin_out);
-  printf("hdmax out : %d\n", hdmax_out);
-  printf("local used: %d\n", local_used);
-  
-  if((imin_out + imax_out + jmin_out + jmax_out) > 0)
-    {
-      printf("ERROR, some of the i and j bands are going to prevent optimal alignment. Sorry.\n");
-    }
-
-  return;
-}
-
-/* EPN 01.18.06
- * Function: debug_print_hd_bands
- *
- * Purpose:  Print out the v and j dependent hd bands.
- */
-void
-debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
-{
-  int v, j;
-
-  printf("\nPrinting hd bands :\n");
-  printf("****************\n");
-  for(v = 0; v < cm->M; v++)
-   {
-     for(j = jmin[v]; j <= jmax[v]; j++) 
-       {
-	 printf("band v:%d j:%d n:%d %-4s %-2s min:%d max:%d\n", v, j, cm->ndidx[v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), hdmin[v][j-jmin[v]], hdmax[v][j-jmin[v]]);
-       }
-     printf("\n");
-   }
-  printf("****************\n\n");
-
-  return;
-}
-/* Function: debug_print_ij_bands
- *
- * Purpose:  Print out i and j bands for all states v.
- * 
- */
-void
-debug_print_ij_bands(CM_t *cm)
-{
-  int v;
-  printf("%5s  %-7s    %5s  %5s    %5s  %5s  %4s\n", "v",     "type",    "imin",  "imax",  "jmin",  "jmax", "JLRT");
-  printf("%5s  %-7s    %5s  %5s    %5s  %5s  %4s\n", "-----", "-------", "-----", "-----", "-----", "-----", "----");
-  for(v = 0; v < cm->M; v++)
-    printf("%5d  %-7s    %5d  %5d    %5d  %5d  %d%d%d%d\n", v, CMStateid(cm->stid[v]), cm->cp9b->imin[v], cm->cp9b->imax[v], cm->cp9b->jmin[v], cm->cp9b->jmax[v], 
-	   cm->cp9b->Jvalid[v], cm->cp9b->Lvalid[v], cm->cp9b->Rvalid[v], cm->cp9b->Tvalid[v]);
-  return;
-}
-
-
-/* Function: PrintDPCellsSaved_jd()
- * Prints out an estimate of the speed up due to j and d bands */
-void
-PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
-		     int W)
-{
-  int v;
-  int j;
-  int max;
-  int64_t after, before;
-
-  printf("Printing DP cells saved using j and d bands:\n");
-  before = after = 0;
-  for (v = 0; v < cm->M; v++) 
-    {
-      for(j = 0; j <= W; j++)
-	if (cm->sttype[v] != E_st) 
-	  before += j + 1;
-      for(j = jmin[v]; j <= jmax[v]; j++)
-	if (cm->sttype[v] != E_st) 
-	  {
-	    max = (j < hdmax[v][j-jmin[v]]) ? j : hdmax[v][j-jmin[v]];
-	    after += max - hdmin[v][j-jmin[v]] + 1;
-	  }
-    }
-  printf("Before:  something like %" PRId64 "\n", before);
-  printf("After:   something like %" PRId64 "\n", after);
-  printf("Speedup: maybe %.2f fold\n\n", (double) before / (double) after);
-}
-
-
-/* Function: debug_print_parsetree_and_ij_bands()
- * Date:     EPN, Sun Jan 27 16:38:14 2008
- *
- * Purpose:  Print a parsetree a la ParseTreeDump() but supplement it
- *           with details on where the parsetree violates i and j bands
- *           (if at all) from a cp9bands data structure.
- *
- * Args:    fp    - FILE to write output to.
- *          tr    - parsetree to examine.
- *          cm    - model that was aligned to dsq to generate the parsetree
- *          dsq   - digitized sequence that was aligned to cm to generate the parsetree
- *          gamma - cumulative subsequence length probability distributions
- *                  used to generate the bands; from BandDistribution(); [0..v..M-1][0..W]
- *          W     - maximum window length W (gamma distributions range up to this)        
- *          cp9b  - CP9 bands object with i and j bands
- *
- * Returns:  (void)
- */
-void
-debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, CP9Bands_t *cp9b)
-{
-  int   x;
-  char  syml, symr;
-  float tsc;
-  float esc;
-  int   v,y;
-  char  mode;
-
-  /* Contract check */
-  if(dsq == NULL)  cm_Fail("In debug_print_parsetree_and_ij_bands(), dsq is NULL");
-
-  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s   %5s %5s %5s    %5s %5s %5s\n",
-	  " idx ", "emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " tsc ", " esc ", 
-	  " imin", " imax", "idiff", "jmin", "jmax", "jdiff");
-  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s   %5s %5s %5s    %5s %5s %5s\n",
-	  "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
-	  "-----", "-----", "-----", "-----", "-----", "-----");
-  for (x = 0; x < tr->n; x++)
-    {
-      v = tr->state[x];
-      mode = tr->mode[x];
-
-      /* Set syml, symr: one char representation of what we emit, or ' '.
-       * Set esc:        emission score, or 0.
-       * Only P, L, R states have emissions.
-       */
-      syml = symr = ' ';
-      esc = 0.;
-      if (cm->sttype[v] == MP_st) {
-	if (mode == TRMODE_J || mode == TRMODE_L) syml = cm->abc->sym[dsq[tr->emitl[x]]]; 
-	if (mode == TRMODE_J || mode == TRMODE_R) symr = cm->abc->sym[dsq[tr->emitr[x]]];
-	if      (mode == TRMODE_J) esc = DegeneratePairScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
-        else if (mode == TRMODE_L) esc = cm->lmesc[v][dsq[tr->emitl[x]]];
-        else if (mode == TRMODE_R) esc = cm->rmesc[v][dsq[tr->emitr[x]]];
-      } else if ( (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) && (mode == TRMODE_J || mode == TRMODE_L) ) {
-	syml = cm->abc->sym[dsq[tr->emitl[x]]];
-	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitl[x]], cm->esc[v]);
-      } else if ( (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) && (mode == TRMODE_J || mode == TRMODE_R) ) {
-	symr = cm->abc->sym[dsq[tr->emitr[x]]];
-	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitr[x]], cm->esc[v]);
-      }
-
-      /* Set tsc: transition score, or 0.
-       * B, E, and the special EL state (M, local end) have no transitions.
-       */
-      tsc = 0.;
-      if (v != cm->M && cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
-	y = tr->state[tr->nxtl[x]];
-
-        if (tr->nxtl[x] == -1)
-          ;
-	else if (v == 0 && (cm->flags & CMH_LOCAL_BEGIN))
-	  tsc = cm->beginsc[y];
-	else if (y == cm->M) /* CMH_LOCAL_END is presumably set, else this wouldn't happen */
-	  tsc = cm->endsc[v] + (cm->el_selfsc * (tr->emitr[x] - tr->emitl[x] + 1 - StateDelta(cm->sttype[v])));
-	else 		/* y - cm->first[v] gives us the offset in the transition vector */
-	  tsc = cm->tsc[v][y - cm->cfirst[v]];
-      }
-
-      /* Print the info line for this state
-       */
-      fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f ",
-	      x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
-	      Statetype(cm->sttype[v]), tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
-      if(tr->emitl[x] < cp9b->imin[tr->state[x]]) { 
-	fprintf(fp, "%5d %5d %5d   ", 
-		cp9b->imin[tr->state[x]], cp9b->imax[tr->state[x]], (tr->emitl[x] - cp9b->imin[tr->state[x]]));
-      }
-      else if(tr->emitl[x] > cp9b->imax[tr->state[x]]) { 
-	fprintf(fp, "%5d %5d %5d   ", 
-		cp9b->imin[tr->state[x]], cp9b->imax[tr->state[x]], (tr->emitl[x] - cp9b->imax[tr->state[x]]));
-      }
-      else { 
-	fprintf(fp, "%5d %5d %5s   ", 
-		cp9b->imin[tr->state[x]], cp9b->imax[tr->state[x]], "");
-      }
-      if(tr->emitr[x] < cp9b->jmin[tr->state[x]]) { 
-	fprintf(fp, "%5d %5d %5d\n", 
-		cp9b->jmin[tr->state[x]], cp9b->jmax[tr->state[x]], (tr->emitr[x] - cp9b->jmin[tr->state[x]]));
-      }
-      else if(tr->emitr[x] > cp9b->jmax[tr->state[x]]) { 
-	fprintf(fp, "%5d %5d %5d\n", 
-		cp9b->jmin[tr->state[x]], cp9b->jmax[tr->state[x]], (tr->emitr[x] - cp9b->jmax[tr->state[x]]));
-      }
-      else { 
-	fprintf(fp, "%5d %5d %5s\n", 
-		cp9b->jmin[tr->state[x]], cp9b->jmax[tr->state[x]], "");
-      }
-    }
-
-  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s %5s    %5s %5s %5s\n",
-	  "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
-	  "-----", "-----", "-----", "-----", "-----", "-----", "-----");
-
-  fflush(fp);
-} 
+#endif
   
 /**************************************************************************
  * cp9_HMM2ijBands_OLD() and helper functions.
@@ -5178,7 +4581,6 @@ cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc)
   return;
 }
 
-
 /* Function: cp9_CloneBands()
  *
  * Description: Clone a CP9Bands_t *cp9b object and return it.
@@ -5216,6 +4618,8 @@ cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf)
     esl_vec_ICopy(src_cp9b->hdmin_mem, dest_cp9b->hd_alloced, dest_cp9b->hdmin_mem);
     esl_vec_ICopy(src_cp9b->hdmax_mem, dest_cp9b->hd_alloced, dest_cp9b->hdmax_mem);
   }
+
+  dest_cp9b->tau = src_cp9b->tau;
 
   return dest_cp9b;
 
@@ -5501,7 +4905,535 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass
   return eslOK;
 }
 
+
+
+/****************************************************************************
+ * Debugging print functions
+ *
+ * cp9_DebugPrintHMMBands()
+ * PrintDPCellsSaved_jd()
+ *
+ * Currently not compiled (#if 0'ed out) but saved for ref: 
+ * ijBandedTraceInfoDump()
+ * ijdBandedTraceInfoDump()
+ * debug_print_hd_bands()
+ * debug_print_ij_bands()
+ * debug_print_parsetree_and_ij_bands()
+ *		     
+ */
+#if 0 
+static void         ijBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
+					  int *jmin, int *jmax, int debug_level);
+static void         ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
+					   int *jmin, int *jmax, int **hdmin, int **hdmax, 
+					   int debug_level);
+static void         debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
+static void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, CP9Bands_t *cp9b);
+static void         cp9_RelaxRootBandsForSearch(CM_t *cm, int i0, int j0, int *imin, int *imax, int *jmin, int *jmax);
+#endif
+
+/* EPN 12.18.05
+ * cp9_DebugPrintHMMBands()
+ * based loosely on: cmbuild.c's
+ * Function: model_trace_info_dump
+ *
+ * Purpose:  Print out the bands derived from the posteriors for the
+ *           insert and match states of each HMM node.
+ * 
+ * Args:    
+ * FILE *ofp      - filehandle to print to (can by STDOUT)
+ * int L          - length of sequence
+ * CP9Bands_t     - the CP9 bands data structure
+ * double hmm_bandp - fraction of probability mass allowed outside each band.
+ * int debug_level  [0..3] tells the function what level of debugging print
+ *                  statements to print.
+ * Returns: (void) 
+ */
+
+void
+cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level)
+{
+  int M;
+  int k;
+  int cells_in_bands_m; /* number of cells within all the bands for match states*/
+  int cells_in_bands_i; /* number of cells within all the bands for insert states*/
+  int cells_in_bands_d; /* number of cells within all the bands for delete states*/
+  int cells_in_bands_all; /* number of cells within all the bands for match and insert states*/
+  int bw;               /* band width of current band */
+
+  M = cp9b->hmm_M;
+  cells_in_bands_m = cells_in_bands_i = cells_in_bands_d = cells_in_bands_all = 0;
+
+  /* first print the bands on the match states */
+  fprintf(ofp, "***********************************************************\n");
+  if(debug_level > 0)
+    fprintf(ofp, "printing hmm bands\n");
+  fprintf(ofp, "hmm_bandp: %f\n", hmm_bandp);
+  if(debug_level > 0)
+    {    
+      fprintf(ofp, "\n");
+      fprintf(ofp, "match states\n");
+    }
+  for(k = 0; k <= cp9b->hmm_M; k++)
+    {
+      bw = (cp9b->pn_min_m[k] == -1) ? 0 : cp9b->pn_max_m[k] - cp9b->pn_min_m[k] + 1;
+      if(debug_level > 0 || debug_level == -1)
+	fprintf(ofp, "M node: %3d | min %3d | max %3d | w %3d \n", k, cp9b->pn_min_m[k], cp9b->pn_max_m[k], bw);
+      cells_in_bands_m += bw;
+    }
+  if(debug_level > 0)
+    fprintf(ofp, "\n");
+  if(debug_level > 0)
+    fprintf(ofp, "insert states\n");
+  for(k = 0; k <= cp9b->hmm_M; k++)
+    {
+      bw = (cp9b->pn_min_i[k] == -1) ? 0 : cp9b->pn_max_i[k] - cp9b->pn_min_i[k] + 1;
+      if(debug_level > 0 || debug_level == -1)
+	fprintf(ofp, "I node: %3d | min %3d | max %3d | w %3d\n", k, cp9b->pn_min_i[k], cp9b->pn_max_i[k], bw);
+      cells_in_bands_i += bw;
+    }
+  if(debug_level > 0)
+    fprintf(ofp, "\n");
+  if(debug_level > 0)
+    fprintf(ofp, "delete states\n");
+  for(k = 1; k <= cp9b->hmm_M; k++)
+    {
+      bw = (cp9b->pn_min_d[k] == -1) ? 0 : cp9b->pn_max_d[k] - cp9b->pn_min_d[k] + 1;
+      if(debug_level > 0 || debug_level == -1)
+	fprintf(ofp, "D node: %3d | min %3d | max %3d | w %3d\n", k, cp9b->pn_min_d[k], cp9b->pn_max_d[k], bw);
+      cells_in_bands_d += bw;
+    }
+  if(debug_level > 0)
+    {
+      fprintf(ofp, "\n");
+      printf("cells_in_bands_m : %d\n", cells_in_bands_m);
+      printf("cells_in_bands_i : %d\n", cells_in_bands_i);
+      printf("cells_in_bands_d : %d\n", cells_in_bands_d);
+    }
+
+  cells_in_bands_all = cells_in_bands_m + cells_in_bands_i + cells_in_bands_d;
+  printf("fraction match excluded  : %f\n", (1 - ((float) cells_in_bands_m / (M * L))));
+  printf("fraction insert excluded : %f\n", (1 - ((float) cells_in_bands_i / ((M-1) * L))));
+  printf("fraction delete excluded : %f\n", (1 - ((float) cells_in_bands_d / ((M-1) * L))));
+  printf("fraction total excluded  : %f\n", (1 - ((float) (cells_in_bands_all) / (((M-1) * L) + ((M-1) * L) + (M *L)))));
+  fprintf(ofp, "***********************************************************\n");
+	 
+}
+
+/* Function: PrintDPCellsSaved_jd()
+ * Prints out an estimate of the speed up due to j and d bands */
+void
+PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
+		     int W)
+{
+  int v;
+  int j;
+  int max;
+  int64_t after, before;
+
+  printf("Printing DP cells saved using j and d bands:\n");
+  before = after = 0;
+  for (v = 0; v < cm->M; v++) 
+    {
+      for(j = 0; j <= W; j++)
+	if (cm->sttype[v] != E_st) 
+	  before += j + 1;
+      for(j = jmin[v]; j <= jmax[v]; j++)
+	if (cm->sttype[v] != E_st) 
+	  {
+	    max = (j < hdmax[v][j-jmin[v]]) ? j : hdmax[v][j-jmin[v]];
+	    after += max - hdmin[v][j-jmin[v]] + 1;
+	  }
+    }
+  printf("Before:  something like %" PRId64 "\n", before);
+  printf("After:   something like %" PRId64 "\n", after);
+  printf("Speedup: maybe %.2f fold\n\n", (double) before / (double) after);
+}
+
+/* Function: debug_print_ij_bands
+ *
+ * Purpose:  Print out i and j bands for all states v.
+ * 
+ */
+void
+debug_print_ij_bands(CM_t *cm)
+{
+  int v;
+  printf("%5s  %-7s    %5s  %5s    %5s  %5s  %4s\n", "v",     "type",    "imin",  "imax",  "jmin",  "jmax", "JLRT");
+  printf("%5s  %-7s    %5s  %5s    %5s  %5s  %4s\n", "-----", "-------", "-----", "-----", "-----", "-----", "----");
+  for(v = 0; v < cm->M; v++)
+    printf("%5d  %-7s    %5d  %5d    %5d  %5d  %d%d%d%d\n", v, CMStateid(cm->stid[v]), cm->cp9b->imin[v], cm->cp9b->imax[v], cm->cp9b->jmin[v], cm->cp9b->jmax[v], 
+	   cm->cp9b->Jvalid[v], cm->cp9b->Lvalid[v], cm->cp9b->Rvalid[v], cm->cp9b->Tvalid[v]);
+  return;
+}
+
+
 #if 0
+/* EPN 11.03.05
+ * Function: ijBandedTraceInfoDump()
+ *
+ * Purpose:  Experimental HMMERNAL function used in development.
+ *           This function determines how close the
+ *           trace was to the bands for i and j at each state in the trace,
+ *           and prints out that information in differing levels
+ *           of verbosity depending on an input parameter 
+ *           (debug_level).
+ * 
+ * Args:    cm       - the CM (useful for determining which states are E states)
+ *          tr       - the parsetree (trace)
+ *          imin     - minimum i bound for each state v; [0..v..M-1]
+ *          imax     - maximum i bound for each state v; [0..v..M-1]
+ *          jmin     - minimum j bound for each state v; [0..v..M-1]
+ *          jmax     - maximum j bound for each state v; [0..v..M-1]
+ *          debug_level - level of verbosity
+ * Returns: (void) 
+ */
+
+void
+ijBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
+		      int *jmin, int *jmax, int debug_level)
+{
+  int v, i, j, d, tpos;
+  int imindiff;            /* i - imin[v] */
+  int imaxdiff;            /* imax[v] - i */
+  int jmindiff;            /* j - jmin[v] */
+  int jmaxdiff;            /* jmax[v] - j */
+  int imin_out;
+  int imax_out;
+  int jmin_out;
+  int jmax_out;
+
+  imin_out = 0;
+  imax_out = 0;
+  jmin_out = 0;
+  jmax_out = 0;
+
+  debug_level = 2;
+
+  for (tpos = 0; tpos < tr->n; tpos++)
+    {
+      v  = tr->state[tpos];
+      i = tr->emitl[tpos];
+      j = tr->emitr[tpos];
+      d = j-i+1;
+      imindiff = i-imin[v];
+      imaxdiff = imax[v]-i;
+      jmindiff = j-jmin[v];
+      jmaxdiff = jmax[v]-j;
+      if(cm->sttype[v] != E_st)
+	{
+	  if(imindiff < 0)
+	    imin_out++;
+	  if(imaxdiff < 0)
+	    imax_out++;
+	  if(jmindiff < 0)
+	    jmin_out++;
+	  if(jmaxdiff < 0)
+	    jmax_out++;
+	  
+	  if(debug_level > 1 || ((imindiff < 0) || (imaxdiff < 0) || (jmindiff < 0) || (jmaxdiff < 0)))
+	    {
+	      printf("v: %4d %-4s %-2s | d: %4d | i: %4d | in: %4d | ix: %4d | %3d | %3d |\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), d, i, imin[v], imax[v], imindiff, imaxdiff);
+	      printf("                          | j: %4d | jn: %4d | jx: %4d | %3d | %3d |\n", j, jmin[v], jmax[v], jmindiff, jmaxdiff);
+
+	    }
+	}
+      else if(cm->sttype[v] == E_st)
+	{
+	  if(debug_level > 1)
+	    {
+	      printf("v: %4d %-4s %-2s | d: %4d | i: %4d | in: %4d | ix: %4d | %3d | %3d |\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), d, i, imin[v], imax[v], imindiff, imaxdiff);
+	      printf("                          | j: %4d | jn: %4d | jx: %4d | %3d | %3d |\n", j, jmin[v], jmax[v], jmindiff, jmaxdiff);
+	    }
+	}
+    }
+  printf("\nimin out: %d\n", imin_out);
+  printf("imax out: %d\n", imax_out);
+  printf("jmin out: %d\n", jmin_out);
+  printf("jmax out: %d\n", jmax_out);
+  
+  if((imin_out + imax_out + jmin_out + jmax_out) > 0)
+    {
+      printf("ERROR, some of the i and j bands are going to prevent optimal alignment. Sorry.\n");
+    }
+
+  return;
+}
+
+
+/* EPN 11.03.05
+ * Function: ijdBandedTraceInfoDump()
+ *
+ * Purpose:  Experimental HMMERNAL function used in development.
+ *           This function determines how close the
+ *           trace was to the bands for i and j and d at each state in the trace,
+ *           and prints out that information in differing levels
+ *           of verbosity depending on an input parameter 
+ *           (debug_level).
+ * 
+ * Args:    cm       - the CM (useful for determining which states are E states)
+ *          tr       - the parsetree (trace)
+ *          imin     - minimum i bound for each state v; [0..v..M-1]
+ *          imax     - maximum i bound for each state v; [0..v..M-1]
+ *          jmin     - minimum j bound for each state v; [0..v..M-1]
+ *          jmax     - maximum j bound for each state v; [0..v..M-1]
+ *          hdmin    - minimum d bound for each state v and offset j;
+ *                     [0..v..M-1][0..(jmax[v]-jmin[v])]
+ *          hdmax    - maximum d bound for each state v and offset j; 
+ *                     [0..v..M-1][0..(jmax[v]-jmin[v])]
+ *          debug_level - level of verbosity
+ * Returns: (void) 
+ */
+
+void
+ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
+		       int *jmin, int *jmax, int **hdmin, int **hdmax, int debug_level)
+{
+  int v, i, j, d, tpos;
+  int imindiff;            /* i - imin[v] */
+  int imaxdiff;            /* imax[v] - i */
+  int jmindiff;            /* j - jmin[v] */
+  int jmaxdiff;            /* jmax[v] - j */
+  int hdmindiff;           /* d - hdmin[v][j] */
+  int hdmaxdiff;           /* hdmax[v][j] - d */
+
+  int imin_out;
+  int imax_out;
+  int jmin_out;
+  int jmax_out;
+  int hdmin_out;
+  int hdmax_out;
+  int local_used;
+
+  imin_out = 0;
+  imax_out = 0;
+  jmin_out = 0;
+  jmax_out = 0;
+  hdmin_out = 0;
+  hdmax_out = 0;
+  local_used = 0;
+
+  debug_level = 2;
+
+  for (tpos = 0; tpos < tr->n; tpos++)
+    {
+      v  = tr->state[tpos];
+      i = tr->emitl[tpos];
+      j = tr->emitr[tpos];
+      d = j-i+1;
+      if(cm->sttype[v] == EL_st) /*END LOCAL state*/
+	{
+	  if(debug_level > 1)
+	    {
+	      printf("v: %4d NA   %-2s (  NA) | d: %4d | i: %4d | in: NA    | ix: NA   | NA  | NA  |\n", v, Statetype(cm->sttype[v]), d, i);
+	      printf("                                 | j: %4d | jn: NA   | jx: NA  | NA  | NA  |\n", j);
+	      printf("                                 | d: %4d | dn: NA   | dx: NA   | NA  | NA  |\n", d);
+	      
+	      local_used++;
+	    }
+	}
+      else
+	{
+	  imindiff = i-imin[v];
+	  imaxdiff = imax[v]-i;
+	  jmindiff = j-jmin[v];
+	  jmaxdiff = jmax[v]-j;
+	  if(j >= jmin[v] && j <= jmax[v])
+	    {
+	      hdmindiff = d - hdmin[v][j-jmin[v]];
+	      hdmaxdiff = hdmax[v][j-jmin[v]] - d;
+	    }  
+	  else
+	    {
+	      hdmindiff = -1000;
+	      hdmaxdiff = -1000;
+	    }
+	  if(imindiff < 0)
+	    imin_out++;
+	  if(imaxdiff < 0)
+	    imax_out++;
+	  if(jmindiff < 0)
+	    jmin_out++;
+	  if(jmaxdiff < 0)
+	    jmax_out++;
+	  if(hdmindiff < 0)
+	    hdmin_out++;
+	  if(hdmaxdiff < 0)
+	    hdmax_out++;
+	  
+	  if(debug_level > 1 || ((imindiff < 0) || (imaxdiff < 0) || (jmindiff < 0) || (jmaxdiff < 0) || 
+				 (hdmindiff < 0) || (hdmaxdiff < 0)))
+	    {
+	      printf("v: %4d %-4s %-2s (%4d) | d: %4d | i: %4d | in: %4d | ix: %4d | %3d | %3d |\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), cm->ndidx[v], d, i, imin[v], imax[v], imindiff, imaxdiff);
+	      printf("                                 | j: %4d | jn: %4d | jx: %4d | %3d | %3d |\n", j, jmin[v], jmax[v], jmindiff, jmaxdiff);
+	      if(j >= jmin[v] && j <= jmax[v])
+		{
+		  printf("                                 | d: %4d | dn: %4d | dx: %4d | %3d | %3d |\n", d, hdmin[v][j-jmin[v]], hdmax[v][j-jmin[v]], hdmindiff, hdmaxdiff);
+		}	  
+	      else
+		{
+		  printf("                                 | d: %4d | dn: jout | dx: jout | %3d | %3d |\n", d, hdmindiff, hdmaxdiff);
+		}
+	    }
+	}
+    }
+  printf("\nimin out  : %d\n", imin_out);
+  printf("imax out  : %d\n", imax_out);
+  printf("jmin out  : %d\n", jmin_out);
+  printf("jmax out  : %d\n", jmax_out);
+  printf("hdmin out : %d\n", hdmin_out);
+  printf("hdmax out : %d\n", hdmax_out);
+  printf("local used: %d\n", local_used);
+  
+  if((imin_out + imax_out + jmin_out + jmax_out) > 0)
+    {
+      printf("ERROR, some of the i and j bands are going to prevent optimal alignment. Sorry.\n");
+    }
+
+  return;
+}
+
+/* EPN 01.18.06
+ * Function: debug_print_hd_bands
+ *
+ * Purpose:  Print out the v and j dependent hd bands.
+ */
+void
+debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
+{
+  int v, j;
+
+  printf("\nPrinting hd bands :\n");
+  printf("****************\n");
+  for(v = 0; v < cm->M; v++)
+   {
+     for(j = jmin[v]; j <= jmax[v]; j++) 
+       {
+	 printf("band v:%d j:%d n:%d %-4s %-2s min:%d max:%d\n", v, j, cm->ndidx[v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), hdmin[v][j-jmin[v]], hdmax[v][j-jmin[v]]);
+       }
+     printf("\n");
+   }
+  printf("****************\n\n");
+
+  return;
+}
+
+/* Function: debug_print_parsetree_and_ij_bands()
+ * Date:     EPN, Sun Jan 27 16:38:14 2008
+ *
+ * Purpose:  Print a parsetree a la ParseTreeDump() but supplement it
+ *           with details on where the parsetree violates i and j bands
+ *           (if at all) from a cp9bands data structure.
+ *
+ * Args:    fp    - FILE to write output to.
+ *          tr    - parsetree to examine.
+ *          cm    - model that was aligned to dsq to generate the parsetree
+ *          dsq   - digitized sequence that was aligned to cm to generate the parsetree
+ *          gamma - cumulative subsequence length probability distributions
+ *                  used to generate the bands; from BandDistribution(); [0..v..M-1][0..W]
+ *          W     - maximum window length W (gamma distributions range up to this)        
+ *          cp9b  - CP9 bands object with i and j bands
+ *
+ * Returns:  (void)
+ */
+void
+debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, CP9Bands_t *cp9b)
+{
+  int   x;
+  char  syml, symr;
+  float tsc;
+  float esc;
+  int   v,y;
+  char  mode;
+
+  /* Contract check */
+  if(dsq == NULL)  cm_Fail("In debug_print_parsetree_and_ij_bands(), dsq is NULL");
+
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s   %5s %5s %5s    %5s %5s %5s\n",
+	  " idx ", "emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " tsc ", " esc ", 
+	  " imin", " imax", "idiff", "jmin", "jmax", "jdiff");
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s   %5s %5s %5s    %5s %5s %5s\n",
+	  "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
+	  "-----", "-----", "-----", "-----", "-----", "-----");
+  for (x = 0; x < tr->n; x++)
+    {
+      v = tr->state[x];
+      mode = tr->mode[x];
+
+      /* Set syml, symr: one char representation of what we emit, or ' '.
+       * Set esc:        emission score, or 0.
+       * Only P, L, R states have emissions.
+       */
+      syml = symr = ' ';
+      esc = 0.;
+      if (cm->sttype[v] == MP_st) {
+	if (mode == TRMODE_J || mode == TRMODE_L) syml = cm->abc->sym[dsq[tr->emitl[x]]]; 
+	if (mode == TRMODE_J || mode == TRMODE_R) symr = cm->abc->sym[dsq[tr->emitr[x]]];
+	if      (mode == TRMODE_J) esc = DegeneratePairScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
+        else if (mode == TRMODE_L) esc = cm->lmesc[v][dsq[tr->emitl[x]]];
+        else if (mode == TRMODE_R) esc = cm->rmesc[v][dsq[tr->emitr[x]]];
+      } else if ( (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) && (mode == TRMODE_J || mode == TRMODE_L) ) {
+	syml = cm->abc->sym[dsq[tr->emitl[x]]];
+	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitl[x]], cm->esc[v]);
+      } else if ( (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) && (mode == TRMODE_J || mode == TRMODE_R) ) {
+	symr = cm->abc->sym[dsq[tr->emitr[x]]];
+	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitr[x]], cm->esc[v]);
+      }
+
+      /* Set tsc: transition score, or 0.
+       * B, E, and the special EL state (M, local end) have no transitions.
+       */
+      tsc = 0.;
+      if (v != cm->M && cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
+	y = tr->state[tr->nxtl[x]];
+
+        if (tr->nxtl[x] == -1)
+          ;
+	else if (v == 0 && (cm->flags & CMH_LOCAL_BEGIN))
+	  tsc = cm->beginsc[y];
+	else if (y == cm->M) /* CMH_LOCAL_END is presumably set, else this wouldn't happen */
+	  tsc = cm->endsc[v] + (cm->el_selfsc * (tr->emitr[x] - tr->emitl[x] + 1 - StateDelta(cm->sttype[v])));
+	else 		/* y - cm->first[v] gives us the offset in the transition vector */
+	  tsc = cm->tsc[v][y - cm->cfirst[v]];
+      }
+
+      /* Print the info line for this state
+       */
+      fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f ",
+	      x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
+	      Statetype(cm->sttype[v]), tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
+      if(tr->emitl[x] < cp9b->imin[tr->state[x]]) { 
+	fprintf(fp, "%5d %5d %5d   ", 
+		cp9b->imin[tr->state[x]], cp9b->imax[tr->state[x]], (tr->emitl[x] - cp9b->imin[tr->state[x]]));
+      }
+      else if(tr->emitl[x] > cp9b->imax[tr->state[x]]) { 
+	fprintf(fp, "%5d %5d %5d   ", 
+		cp9b->imin[tr->state[x]], cp9b->imax[tr->state[x]], (tr->emitl[x] - cp9b->imax[tr->state[x]]));
+      }
+      else { 
+	fprintf(fp, "%5d %5d %5s   ", 
+		cp9b->imin[tr->state[x]], cp9b->imax[tr->state[x]], "");
+      }
+      if(tr->emitr[x] < cp9b->jmin[tr->state[x]]) { 
+	fprintf(fp, "%5d %5d %5d\n", 
+		cp9b->jmin[tr->state[x]], cp9b->jmax[tr->state[x]], (tr->emitr[x] - cp9b->jmin[tr->state[x]]));
+      }
+      else if(tr->emitr[x] > cp9b->jmax[tr->state[x]]) { 
+	fprintf(fp, "%5d %5d %5d\n", 
+		cp9b->jmin[tr->state[x]], cp9b->jmax[tr->state[x]], (tr->emitr[x] - cp9b->jmax[tr->state[x]]));
+      }
+      else { 
+	fprintf(fp, "%5d %5d %5s\n", 
+		cp9b->jmin[tr->state[x]], cp9b->jmax[tr->state[x]], "");
+      }
+    }
+
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s %5s    %5s %5s %5s\n",
+	  "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
+	  "-----", "-----", "-----", "-----", "-----", "-----", "-----");
+
+  fflush(fp);
+} 
 
 /*********************************************************************
  * Function: cp9_RelaxRootBandsForSearch()

@@ -281,13 +281,15 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   int           epos       = -1;   /* end   posn: final non-gap CM consensus position */
 
   /* alignment options */
-  int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE : FALSE;
-  int do_optacc    = (cm->align_opts & CM_ALIGN_OPTACC)    ? TRUE : FALSE;
-  int do_sample    = (cm->align_opts & CM_ALIGN_SAMPLE)    ? TRUE : FALSE;
-  int do_post      = (cm->align_opts & CM_ALIGN_POST)      ? TRUE : FALSE;
-  int do_sub       = (cm->align_opts & CM_ALIGN_SUB)       ? TRUE : FALSE;
-  int do_small     = (cm->align_opts & CM_ALIGN_SMALL)     ? TRUE : FALSE;
-  int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)     ? TRUE : FALSE;
+  int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE  : FALSE;
+  int do_qdb       = (cm->align_opts & CM_ALIGN_QDB)       ? TRUE  : FALSE;
+  int do_hbanded   = (do_nonbanded || do_qdb)              ? FALSE : TRUE;
+  int do_optacc    = (cm->align_opts & CM_ALIGN_OPTACC)    ? TRUE  : FALSE;
+  int do_sample    = (cm->align_opts & CM_ALIGN_SAMPLE)    ? TRUE  : FALSE;
+  int do_post      = (cm->align_opts & CM_ALIGN_POST)      ? TRUE  : FALSE;
+  int do_sub       = (cm->align_opts & CM_ALIGN_SUB)       ? TRUE  : FALSE;
+  int do_small     = (cm->align_opts & CM_ALIGN_SMALL)     ? TRUE  : FALSE;
+  int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)     ? TRUE  : FALSE;
   int doing_search = FALSE;
 #if DEBUGPIPELINE
   printf("in DispatchSqAlignment()\n");
@@ -298,6 +300,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   printf("\tdo_sub:       %d\n", do_sub);
   printf("\tdo_small:     %d\n", do_small);
   printf("\tdo_trunc:     %d\n", do_trunc);
+  printf("\tdo_qdb:       %d\n", do_qdb);
   printf("\tdoing_search: %d\n", doing_search);
 #endif
   
@@ -308,16 +311,30 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   Parsetree_t *full_tr = NULL;    /* converted parsetree to full CM */
 
   /* contract check */
-  if(do_small  && (! do_nonbanded)) ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do small and HMM banded alignment");
+  if(do_small  && do_hbanded)       ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do small and HMM banded alignment");
+  if(do_small  && do_optacc)        ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do small and opt acc alignment");
   if(do_post   && do_small)         ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do PP and small alignment");
   if(do_optacc && do_sample)        ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to sample and do optacc alignment");
   if(do_sub    && do_small)         ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do sub and small alignment");
   if(do_sub    && do_trunc)         ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do sub and truncated alignment");
   if(do_sample && r == NULL)        ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to sample but RNG r == NULL");
-
-  if(do_trunc && (! cm_pli_PassAllowsTruncation(pass_idx))) ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do truncated alignment, but pass_idx doesn't allow truncation (PLI_PASS_STD_ANY)");
-  if(pass_idx == PLI_PASS_STD_ANY && 
-     (mode == TRMODE_L || mode == TRMODE_R || mode == TRMODE_T)) ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() mode is L, R, or T, but pass_idx is PLI_PASS_STD_ANY");
+  if(do_qdb    && do_nonbanded)     ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do qdb and nonbanded alignment");
+  if(do_qdb    && do_trunc)         ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to use qdbs and truncated alignment");
+  /* qdb + trunc combo disallowed only b/c no function exists for it yet */
+  if(do_qdb    && (! do_small))     ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to use qdbs but not divide and conquer");
+  /* qdb + small combo disallowed b/c only non-HMM banded non-small alignment functions are not set up to use QDBs */
+  if(do_qdb && cm->qdbinfo == NULL) { 
+    ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to use qdbs but cm->qdbinfo is NULL");
+  }
+  if(do_qdb && (cm->qdbinfo->dmin2 == NULL || cm->qdbinfo->dmax2 == NULL)) { 
+    ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to use qdbs but cm->qdbinfo is NULL");
+  }
+  if(do_trunc && (! cm_pli_PassAllowsTruncation(pass_idx))) { 
+    ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do truncated alignment, but pass_idx doesn't allow truncation (PLI_PASS_STD_ANY)");
+  }
+  if(pass_idx == PLI_PASS_STD_ANY && (mode == TRMODE_L || mode == TRMODE_R || mode == TRMODE_T)) { 
+    ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() mode is L, R, or T, but pass_idx is PLI_PASS_STD_ANY");
+  }
 
   if(w_tot != NULL) esl_stopwatch_Start(w_tot);
 
@@ -335,24 +352,27 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       mb_tot = 4. * CYKNonQDBSmallMbNeeded(cm, sq->L); /* not sure how accurate this is */
     }
     else { 
-      sc = CYKDivideAndConquer(cm, sq->dsq, sq->L, 0, 1, sq->L, &tr, NULL, NULL);
+      /* with QDB, always use dmin2/dmax2, the looser of the two sets of QDBs in cm->qdbinfo */
+      sc = CYKDivideAndConquer(cm, sq->dsq, sq->L, 0, 1, sq->L, &tr, 
+			       (do_qdb) ? cm->qdbinfo->dmin2 : NULL, 
+			       (do_qdb) ? cm->qdbinfo->dmax2 : NULL);
       mb_tot = CYKNonQDBSmallMbNeeded(cm, sq->L);
     }
   }
   else { /* do_small is FALSE */
-    if(do_nonbanded) { /* do not use HMM bands */
+    if(do_nonbanded || do_qdb) { /* do not use HMM bands */
       if(do_trunc) { 
 	if((status = cm_TrAlignSizeNeeded(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
 					  NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
 	if((status = cm_TrAlign(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx, 
 				do_optacc, do_sample, cm->trnb_mx, cm->trnb_shmx, cm->trnb_omx, 
-				cm->trnb_emx, r, &ppstr, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
+				cm->trnb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
       }
       else {
 	if((status = cm_AlignSizeNeeded(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
 					NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
-	if((status = cm_Align(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, 
-			      cm->nb_mx, cm->nb_shmx, cm->nb_omx, cm->nb_emx, r, &ppstr, &tr, &pp, &sc)) != eslOK) goto ERROR;
+	if((status = cm_Align(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->nb_mx, cm->nb_shmx, 
+			      cm->nb_omx, cm->nb_emx, r, do_post ? &ppstr : NULL, &tr, &pp, &sc)) != eslOK) goto ERROR;
       }
     }
     else { /* use HMM bands */
@@ -369,13 +389,13 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 					    NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
 	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx, 
 				  do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, 
-				  cm->trhb_emx, r, &ppstr, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
+				  cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
       }
       else { 
 	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
 					  NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
-	if((status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, 
-				cm->hb_mx, cm->hb_shmx, cm->hb_omx, cm->hb_emx, r, &ppstr, &tr, &pp, &sc)) != eslOK) goto ERROR;
+	if((status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->hb_mx, cm->hb_shmx, 
+				cm->hb_omx, cm->hb_emx, r, do_post ? &ppstr : NULL, &tr, &pp, &sc)) != eslOK) goto ERROR;
       }
       /* add size of CP9 matrices used for calculating bands */
       mb_tot += ((float) cm->cp9_mx->ncells_valid  * sizeof(int)) / 1000000.;

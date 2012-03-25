@@ -532,15 +532,18 @@ matrix of up to size
 .I <x>
 Mb at any given time.
 
+.TP
 .B --cyk
 Use the CYK algorithm, not Inside, to determine the final score of all
 hits.
 
+.TP
 .B --acyk
 Use the CYK algorithm to align hits. By default, the Durbin/Holmes
 optimal accuracy algorithm is used, which finds the alignment that
 maximizes the expected accuracy of all aligned residues.
 
+.TP
 .BI --wcx " <x>"
 For each CM, set the W parameter, the expected maximum length of a hit, to 
 .I <x>

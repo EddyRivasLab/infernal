@@ -1822,6 +1822,7 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
 #if PRINTNOW
     fprintf(stdout, "FB2bands        %11s\n", time_buf);
 #endif
+    cp9b->tau = cm->tau;
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, L, cp9b, cm->tau, 1);
 

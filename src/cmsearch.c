@@ -75,8 +75,8 @@ typedef struct {
  * options which are actually incompatible with a lot of other
  * options. 
  *
- * #define ICWMAX   "--nohmm,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--noF6,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--F6,--ftau,--fsums,--fqdb,--fbeta,--fnonbanded,--nocykenv,--cykenvx,--tau,--sums,--nonbanded,--rt1,--rt2,--rt3,--ns,--anonbanded,--anewbands,--xtau,--maxtau,--anytrunc"
- * #define ICWNOHMM "--max,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--ftau,--fsums,--tau,--sums,--rt1,--rt2,--rt3,--ns,--anonbanded,--anewbands,--xtau,--maxtau,--anytrunc"
+ * #define ICWMAX   "--nohmm,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--noF6,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--F6,--ftau,--fsums,--fqdb,--fbeta,--fnonbanded,--nocykenv,--cykenvx,--tau,--sums,--nonbanded,--rt1,--rt2,--rt3,--ns,--xtau,--maxtau,--anytrunc"
+ * #define ICWNOHMM "--max,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--ftau,--fsums,--tau,--sums,--rt1,--rt2,--rt3,--ns,--xtau,--maxtau,--anytrunc"
  * #define ICWMID   "--max,--nohmm,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--doF1b,--noF2b,--F1,--F1b,--F2,--F2b"
  * #define ICWDF    "--max,--nohmm,--mid,--rfam,--FZ"
  * #define ICWRFAM  "--max,--nohmm,--mid,--default,--FZ"
@@ -106,7 +106,7 @@ static ESL_OPTIONS options[] = {
   { "--noali",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "don't output alignments, so output is smaller",                2 },
   { "--notextw",    eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL, "--textw",        "unlimit ASCII text output line width",                         2 },
   { "--textw",      eslARG_INT,    "120", NULL, "n>=120",NULL,  NULL, "--notextw",      "set max width of ASCII text output lines",                     2 },
-  { "--allstats",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "print all pipeline statistics",                                2 },
+  { "--verbose",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "report extra information; mainly useful for debugging",        2 },
   /* Control of reporting thresholds */
   /* name           type         default   env  range toggles   reqs   incomp           help                                                            docgroup*/
   { "-E",           eslARG_REAL,  "10.0", NULL, "x>0",   NULL,  NULL,  REPOPTS,         "report sequences <= this E-value threshold in output",         3 },
@@ -210,13 +210,11 @@ static ESL_OPTIONS options[] = {
   { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          105 },
   /* Other expert options */
   /* name          type          default   env  range toggles   reqs  incomp            help                                                             docgroup*/
-  { "--anonbanded", eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--notrunc",NULL,         "do not use HMM bands when aligning hits",                       106 },
-  { "--anewbands",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "recalculate HMM bands for alignment, don't use scan bands",     106 },
   { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    106 },
   { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g",            "turn off local ends in cp9 HMMs",                               106 },
   { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",  "configure cp9 HMM in glocal mode",                              106 },
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition score corrections",           106 },
-  { "--xtau",       eslARG_REAL,    "2.", NULL, "x>1.1", NULL,  NULL,  NULL,            "set multiplier for tau to <x> when tightening HMM bands",       106 },
+  { "--xtau",       eslARG_REAL,    "2.", NULL, "x>=2.", NULL,  NULL,  NULL,            "set multiplier for tau to <x> when tightening HMM bands",       106 },
   { "--maxtau",     eslARG_REAL,  "0.01", NULL,"0<x<0.5",NULL,  NULL,  NULL,            "set max tau <x> when tightening HMM bands",                     106 },
   { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",           106 },
 #ifdef HAVE_MPI
@@ -634,8 +632,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if(info[0].pli->show_alignments) {
       if((status = cm_tophits_HitAlignments(ofp, info[0].th, info[0].pli, textw)) != eslOK) cm_Fail("Out of memory");
       fprintf(ofp, "\n\n");
-      if(info[0].pli->do_allstats) { 
-	cm_tophits_HitAlignmentStatistics(ofp, info[0].th, (info[0].pli->cm_align_opts & CM_ALIGN_CYK));
+      if(info[0].pli->be_verbose) { 
+	cm_tophits_HitAlignmentStatistics(ofp, info[0].th, 
+					  (info[0].pli->cm_align_opts & CM_ALIGN_HBANDED), 
+					  (info[0].pli->cm_align_opts & CM_ALIGN_CYK),
+					  info[0].pli->final_tau);
 	fprintf(ofp, "\n\n");
       }
     }
@@ -1086,7 +1087,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       esl_stopwatch_Start(w);
       if((status = mpi_dbsize_using_ssi(go, cfg, dbfp, errbuf)) != eslOK) mpi_failure(errbuf); 
       esl_stopwatch_Stop(w);
-      if(esl_opt_GetBoolean(go, "--allstats")) esl_stopwatch_Display(ofp, w, "# MPI Determining Z CPU time: ");
+      if(esl_opt_GetBoolean(go, "--verbose")) esl_stopwatch_Display(ofp, w, "# MPI Determining Z CPU time: ");
     }
     /* Broadcast the database size to all workers */
     MPI_Bcast(&(cfg->Z), 1, MPI_LONG_LONG_INT, 0, MPI_COMM_WORLD);
@@ -1270,8 +1271,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if(info->pli->show_alignments) {
       if((status = cm_tophits_HitAlignments(ofp, info->th, info->pli, textw)) != eslOK) mpi_failure("Out of memory");
       fprintf(ofp, "\n\n");
-      if(info->pli->do_allstats) { 
-	cm_tophits_HitAlignmentStatistics(ofp, info->th, (info->pli->cm_align_opts & CM_ALIGN_CYK));
+      if(info->pli->be_verbose) { 
+	cm_tophits_HitAlignmentStatistics(ofp, info->th, 
+					  (info->pli->cm_align_opts & CM_ALIGN_HBANDED), 
+					  (info->pli->cm_align_opts & CM_ALIGN_CYK),
+					  info->pli->final_tau);
 	fprintf(ofp, "\n\n");
       }
     }
@@ -1280,7 +1284,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
     esl_stopwatch_Stop(w);
     cm_pli_Statistics(ofp, info->pli, w);
-
+    fflush(ofp);
 
     /* Output the results in an MSA (-A option) */
     if (afp) {
@@ -1736,8 +1740,6 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--rt2"))        { puts("Failed to parse command line: Option --max is incompatible with option --rt2");        goto ERROR; }
     if(esl_opt_IsUsed(go, "--rt3"))        { puts("Failed to parse command line: Option --max is incompatible with option --rt3");        goto ERROR; }
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --max is incompatible with option --ns");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--anonbanded")) { puts("Failed to parse command line: Option --max is incompatible with option --anonbanded"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--anewbands"))  { puts("Failed to parse command line: Option --max is incompatible with option --anewbands");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--xtau"))       { puts("Failed to parse command line: Option --max is incompatible with option --xtau");       goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --max is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --max is incompatible with option --anytrunc");   goto ERROR; }
@@ -1773,8 +1775,6 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--rt2"))        { puts("Failed to parse command line: Option --nohmm is incompatible with option --rt2");        goto ERROR; }
     if(esl_opt_IsUsed(go, "--rt3"))        { puts("Failed to parse command line: Option --nohmm is incompatible with option --rt3");        goto ERROR; }
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --ns");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--anonbanded")) { puts("Failed to parse command line: Option --nohmm is incompatible with option --anonbanded"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--anewbands"))  { puts("Failed to parse command line: Option --nohmm is incompatible with option --anewbands");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--xtau"))       { puts("Failed to parse command line: Option --nohmm is incompatible with option --xtau");       goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --nohmm is incompatible with option --anytrunc");   goto ERROR; }
@@ -1840,7 +1840,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--noali"))      fprintf(ofp, "# show alignments in output:             no\n");
   if (esl_opt_IsUsed(go, "--notextw"))    fprintf(ofp, "# max ASCII text line length:            unlimited\n");
   if (esl_opt_IsUsed(go, "--textw"))      fprintf(ofp, "# max ASCII text line length:            %d\n",             esl_opt_GetInteger(go, "--textw"));
-  if (esl_opt_IsUsed(go, "--allstats"))   fprintf(ofp, "# verbose pipeline statistics mode:      on\n");
+  if (esl_opt_IsUsed(go, "--verbose"))    fprintf(ofp, "# verbose output mode:                   on\n");
   if (esl_opt_IsUsed(go, "-E"))           fprintf(ofp, "# sequence reporting threshold:          E-value <= %g\n",  esl_opt_GetReal(go, "-E"));
   if (esl_opt_IsUsed(go, "-T"))           fprintf(ofp, "# sequence reporting threshold:          score >= %g\n",    esl_opt_GetReal(go, "-T"));
   if (esl_opt_IsUsed(go, "--incE"))       fprintf(ofp, "# sequence inclusion threshold:          E-value <= %g\n",  esl_opt_GetReal(go, "--incE"));
@@ -1921,8 +1921,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--timeF5"))     fprintf(ofp, "# abort after Stage 5 env defn (for timing) on\n");
   if (esl_opt_IsUsed(go, "--timeF6"))     fprintf(ofp, "# abort after Stage 6 CYK (for timing)   on\n");
 
-  if (esl_opt_IsUsed(go, "--anonbanded")) fprintf(ofp, "# no bands (hit alignment)               on\n");
-  if (esl_opt_IsUsed(go, "--anewbands"))  fprintf(ofp, "# new bands (hit alignment)              on\n");
   if (esl_opt_IsUsed(go, "--nogreedy"))   fprintf(ofp, "# greedy CM hit resolution:              off\n");
   if (esl_opt_IsUsed(go, "--cp9noel"))    fprintf(ofp, "# CP9 HMM local ends:                    off\n");
   if (esl_opt_IsUsed(go, "--cp9gloc"))    fprintf(ofp, "# CP9 HMM configuration:                 glocal\n");

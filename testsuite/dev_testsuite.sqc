@@ -1044,8 +1044,8 @@
 1  exercise  scan:3/1k/notextw   @src/cmscan@  --notextw %3.CM% %31K%
 1  exercise  scan:t/1k/textw     @src/cmscan@  --textw 150 %T.CM% %T1K%
 1  exercise  scan:3/1k/textw     @src/cmscan@  --textw 150 %3.CM% %31K%
-1  exercise  scan:t/1k/all       @src/cmscan@  --allstats %T.CM% %T1K%
-1  exercise  scan:3/1k/all       @src/cmscan@  --allstats %3.CM% %31K%
+1  exercise  scan:t/1k/verbose   @src/cmscan@  --verbose %T.CM% %T1K%
+1  exercise  scan:3/1k/verbose   @src/cmscan@  --verbose %3.CM% %31K%
 
 1  exercise  scan:t/1k/E   @src/cmscan@  -E 0.001 %T.CM% %T1K%
 1  exercise  scan:3/1k/E   @src/cmscan@  -E 1000 %3.CM% %31K%
@@ -1213,8 +1213,6 @@
 1  exercise  scan:v/1k/timeF6     @src/cmscan@  --timeF6 -Z 100 %V.CM% %V1K%
 
 # other developer options
-1  exercise  scan:v/1k/anb        @src/cmscan@  --anonbanded --notrunc %V.CM% %V1K%
-1  exercise  scan:v/1k/anwb       @src/cmscan@  --anewbands %V.CM% %V1K%
 1  exercise  scan:v/1k/ng         @src/cmscan@  --nogreedy %V.CM% %V1K%
 1  exercise  scan:v/1k/cp9noel    @src/cmscan@  --cp9noel %V.CM% %V1K%
 1  exercise  scan:v/1k/cp9gloc    @src/cmscan@  --cp9gloc %V.CM% %V1K%
@@ -1298,8 +1296,8 @@
 1  exercise  search:3/1k/notextw   @src/cmsearch@  --notextw %3.CM% %31K%
 1  exercise  search:t/1k/textw     @src/cmsearch@  --textw 150 %T.CM% %T1K%
 1  exercise  search:3/1k/textw     @src/cmsearch@  --textw 150 %3.CM% %31K%
-1  exercise  search:t/1k/all       @src/cmsearch@  --allstats %T.CM% %T1K%
-1  exercise  search:3/1k/all       @src/cmsearch@  --allstats %3.CM% %31K%
+1  exercise  search:t/1k/verbose   @src/cmsearch@  --verbose %T.CM% %T1K%
+1  exercise  search:3/1k/verbose   @src/cmsearch@  --verbose %3.CM% %31K%
 
 1  exercise  search:t/1k/E   @src/cmsearch@  -E 0.001 %T.CM% %T1K%
 1  exercise  search:3/1k/E   @src/cmsearch@  -E 1000 %3.CM% %31K%
@@ -1467,8 +1465,6 @@
 1  exercise  search:v/1k/timeF6     @src/cmsearch@  --timeF6 -Z 100 %V.CM% %V1K%
 
 # other developer options
-1  exercise  search:v/1k/anb        @src/cmsearch@  --anonbanded --notrunc %V.CM% %V1K%
-1  exercise  search:v/1k/anwb       @src/cmsearch@  --anewbands %V.CM% %V1K%
 1  exercise  search:v/1k/ng         @src/cmsearch@  --nogreedy %V.CM% %V1K%
 1  exercise  search:v/1k/cp9noel    @src/cmsearch@  --cp9noel %V.CM% %V1K%
 1  exercise  search:v/1k/cp9gloc    @src/cmsearch@  --cp9gloc %V.CM% %V1K%

@@ -31,8 +31,8 @@ static int  pli_p7_env_def        (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg,
 static int  pli_cyk_env_filter    (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *p7es, int64_t *p7ee, int np7env, CM_t **opt_cm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 static int  pli_cyk_seq_filter    (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **opt_cm, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
 static int  pli_final_stage       (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm);
-static int  pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t start, int64_t stop, CM_TOPHITS *hitlist, float cutoff, float env_cutoff, int qdbidx, float *ret_sc, int *opt_used_hb, int64_t *opt_envi, int64_t *opt_envj);
-static int  pli_align_hit         (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit, int cp9b_valid);
+static int  pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t start, int64_t stop, CM_TOPHITS *hitlist, float cutoff, float env_cutoff, int qdbidx, float *ret_sc, int64_t *opt_envi, int64_t *opt_envj);
+static int  pli_align_hit         (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit);
 static int  pli_scan_mode_read_cm (CM_PIPELINE *pli, off_t cm_offset, CM_t **ret_cm);
 static void copy_subseq           (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L);
 
@@ -75,7 +75,7 @@ static void copy_subseq           (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_
  *            | -Z           |  database size in Mb                         |    NULL   |
  *            | --acc        |  prefer accessions over names in output      |   FALSE   |
  *            | --noali      |  don't output alignments (smaller output)    |   FALSE   |
- *            | --allstats   |  verbose statistics output mode              |   FALSE   |
+ *            | --verbose    |  verbose output mode                         |   FALSE   |
  *            | -E           |  report hits <= this E-value threshold       |    10.0   |
  *            | -T           |  report hits >= this bit score threshold     |    NULL   |
  *            | --incE       |  include hits <= this E-value threshold      |    0.01   |
@@ -144,8 +144,6 @@ static void copy_subseq           (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_
  *            | --timeF4     |  abort after F4b stage, for timing expts     |   FALSE   | 
  *            | --timeF5     |  abort after F5b stage, for timing expts     |   FALSE   | 
  *            | --timeF6     |  abort after F6  stage, for timing expts     |   FALSE   | 
- *            | --anonbanded |  do not use bands when aligning hits         |   FALSE   |
- *            | --anewbands  |  calculate new bands for hit alignment       |   FALSE   |
  *            | --nogreedy   |  use optimal CM hit resolution, not greedy   |   FALSE   |
  *            | --cp9noel    |  turn off EL state in CP9 HMM                |   FALSE   |
  *            | --cp9gloc    |  configure CP9 HMM in glocal mode            |   FALSE   |
@@ -214,14 +212,13 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->hb_size_limit   = esl_opt_GetReal   (go, "--mxsize");
   pli->do_top          = esl_opt_GetBoolean(go, "--bottomonly") ? FALSE : TRUE;
   pli->do_bot          = esl_opt_GetBoolean(go, "--toponly")    ? FALSE : TRUE;
-  pli->do_allstats     = esl_opt_GetBoolean(go, "--allstats")   ? TRUE  : FALSE;
+  pli->be_verbose      = esl_opt_GetBoolean(go, "--verbose")    ? TRUE  : FALSE;
   pli->show_accessions = esl_opt_GetBoolean(go, "--acc")        ? TRUE  : FALSE;
   pli->show_alignments = esl_opt_GetBoolean(go, "--noali")      ? FALSE : TRUE;
-  pli->do_hb_recalc    = esl_opt_GetBoolean(go, "--anewbands")  ? TRUE  : FALSE;
-  pli->xtau            = esl_opt_GetReal(go, "--xtau");
-  pli->maxtau          = esl_opt_GetReal(go, "--maxtau");
-  pli->do_wcx          = esl_opt_IsUsed(go, "--wcx")            ? TRUE  : FALSE;
-  pli->wcx             = esl_opt_IsUsed(go, "--wcx")            ? esl_opt_GetReal(go, "--wcx") : 0.;
+  pli->xtau            = esl_opt_GetReal   (go, "--xtau");
+  pli->maxtau          = esl_opt_GetReal   (go, "--maxtau");
+  pli->do_wcx          = esl_opt_IsUsed    (go, "--wcx")        ? TRUE  : FALSE;
+  pli->wcx             = esl_opt_IsUsed    (go, "--wcx")        ? esl_opt_GetReal(go, "--wcx") : 0.;
   pli->do_time_F1      = esl_opt_GetBoolean(go, "--timeF1")     ? TRUE  : FALSE;
   pli->do_time_F2      = esl_opt_GetBoolean(go, "--timeF2")     ? TRUE  : FALSE;
   pli->do_time_F3      = esl_opt_GetBoolean(go, "--timeF3")     ? TRUE  : FALSE;
@@ -385,6 +382,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->do_msvbias = pli->do_vitbias = pli->do_fwdbias = pli->do_gfwdbias = pli->do_edefbias = FALSE;
     pli->F1  = pli->F2  = pli->F3  = pli->F4  = pli->F5  = 1.0;
     pli->F1b = pli->F2b = pli->F3b = pli->F4b = pli->F5b = 1.0;
+    pli->F6  = 0.0001; /* default F6, we'll change this below if --F6 was used */
     /* D&C truncated alignment is not robust, so we don't allow it */
     pli->do_trunc_ends = FALSE;
     pli->do_trunc_any  = FALSE;
@@ -396,6 +394,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->F1  = pli->F2  = 1.0;
     pli->F1b = pli->F2b = 1.0;
     pli->F3  = pli->F3b = pli->F4 = pli->F4b = pli->F5 = pli->F5b = esl_opt_GetReal(go, "--Fmid");
+    pli->F6  = 0.0001; /* default F6, we'll change this below if --F6 was used */
   }
   else if(esl_opt_GetBoolean(go, "--rfam")) { 
     pli->do_rfam = TRUE;
@@ -624,11 +623,13 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     if(pli->do_trunc_ends || pli->do_trunc_any) pli->cm_config_opts |= CM_CONFIG_TRSCANMX;
   }
   /* will we be requiring non-banded alignment matrices? */
-  if(esl_opt_GetBoolean(go, "--anonbanded") || pli->do_max || pli->do_nohmm) { 
-    pli->cm_config_opts |= CM_CONFIG_NONBANDEDMX;
-    pli->cm_align_opts |= CM_ALIGN_NONBANDED;
+  if(pli->do_max ||                     /* max mode, no filters, hit alignment will be nonbanded */
+     pli->do_nohmm ||                   /* nohmm mode, no HMM filters, hit alignment will be nonbanded */
+     esl_opt_GetBoolean(go, "--qdb")) { /* using QDBs in final Inside stage, only safe way to go is nonbanded alignment */
     pli->cm_align_opts |= CM_ALIGN_SMALL;
     pli->cm_align_opts |= CM_ALIGN_CYK;
+    if(pli->do_max) pli->cm_align_opts |= CM_ALIGN_NONBANDED;
+    else            pli->cm_align_opts |= CM_ALIGN_QDB;       /* --nohmm, --qdb */
     /* D&C truncated alignment is not robust, so we don't allow it */
     pli->do_trunc_ends = FALSE;
     pli->do_trunc_any  = FALSE;
@@ -636,12 +637,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   else { 
     pli->cm_align_opts |= CM_ALIGN_HBANDED;
     pli->cm_align_opts |= CM_ALIGN_POST; 
-  }
-  if(esl_opt_GetBoolean(go, "--acyk")) { 
-    pli->cm_align_opts |= CM_ALIGN_CYK;
-  }
-  else { 
-    pli->cm_align_opts |= CM_ALIGN_OPTACC;
+    if(esl_opt_GetBoolean(go, "--acyk")) pli->cm_align_opts |= CM_ALIGN_CYK;
+    else                                 pli->cm_align_opts |= CM_ALIGN_OPTACC;
   }
 
   /* Determine statistics modes for CM stages */
@@ -1221,7 +1218,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     else if(pli->do_fcyk) { 
       /* Defining envelopes with CYK */
 #if DEBUGPIPELINE
-      printf("\nPIPELINE calling pli_cyk_seq_filterf() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+      printf("\nPIPELINE calling pli_cyk_seq_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
       if((status = pli_cyk_seq_filter(pli, cm_offset, sq2search, opt_cm, &es, &ee, &nenv)) != eslOK) return status;
     }
@@ -1289,7 +1286,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
  *
  * Purpose:   Print a standardized report of the internal statistics of
  *            a finished processing pipeline <pli> to stream <ofp>.
- *            If pli->do_allstats, print statistics for each pass, 
+ *            If pli->be_verbose, print statistics for each pass, 
  *            else only print statistics for the standard pass.
  *
  *            Actual work is done by repeated calls to 
@@ -1300,7 +1297,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 int
 cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 {
-  if(! pli->do_allstats) { /* not in verbose mode, only print standard pass statistics */
+  if(! pli->be_verbose) { /* not in verbose mode, only print standard pass statistics */
     cm_pli_PassStatistics(ofp, pli, PLI_PASS_STD_ANY, w); fprintf(ofp, "//\n");
   }
   else { 
@@ -1351,7 +1348,7 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
 
   CM_PLI_ACCT *pli_acct = &(pli->acct[pass_idx]);
 
-  if(pli->do_allstats) { 
+  if(pli->be_verbose) { 
     fprintf(ofp, "Internal pipeline statistics summary: %s\n", cm_pli_DescribePass(pass_idx));
   }
   else { 
@@ -1505,7 +1502,7 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
 	    "");
   }
 
-  if(pass_idx == PLI_PASS_STD_ANY && (! pli->do_allstats)) { 
+  if(pass_idx == PLI_PASS_STD_ANY && (! pli->be_verbose)) { 
     if(pli->do_trunc_ends) { 
       n_output_trunc   = pli->acct[PLI_PASS_5P_ONLY_FORCE].n_output   + pli->acct[PLI_PASS_3P_ONLY_FORCE].n_output   + pli->acct[PLI_PASS_5P_AND_3P_FORCE].n_output;
       pos_output_trunc = pli->acct[PLI_PASS_5P_ONLY_FORCE].pos_output + pli->acct[PLI_PASS_3P_ONLY_FORCE].pos_output + pli->acct[PLI_PASS_5P_AND_3P_FORCE].pos_output;
@@ -1530,7 +1527,7 @@ cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *
   }
 
 
-  if(pli->do_allstats) { 
+  if(pli->be_verbose) { 
      fprintf(ofp, "\n");
      if(nwin_fcyk > 0) { 
        fprintf(ofp, "%-6s filter stage scan matrix overflows:         %15" PRId64 "  (%.4g)\n", 
@@ -2686,9 +2683,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     cm->search_opts  = pli->fcyk_cm_search_opts;
     cm->tau          = pli->fcyk_tau;
     qdbidx           = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB1_TIGHT;
-    status = pli_dispatch_cm_search(pli, cm, sq->dsq, p7es[i], p7ee[i], NULL, 0., cyk_env_cutoff, qdbidx, &sc, NULL,
-				       (pli->do_fcykenv) ? &cyk_envi : NULL, 
-				       (pli->do_fcykenv) ? &cyk_envj : NULL);
+    status = pli_dispatch_cm_search(pli, cm, sq->dsq, p7es[i], p7ee[i], NULL, 0., cyk_env_cutoff, qdbidx, &sc, 
+				    (pli->do_fcykenv) ? &cyk_envi : NULL, 
+				    (pli->do_fcykenv) ? &cyk_envj : NULL);
 
     if(status == eslERANGE) {
       pli->acct[pli->cur_pass_idx].n_overflow_fcyk++;
@@ -2825,7 +2822,7 @@ pli_cyk_seq_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **o
   qdbidx          = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB1_TIGHT;
   cutoff          = cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6) / (-1 * cm->expA[pli->fcyk_cm_exp_mode]->lambda));
   sq_hitlist      = cm_tophits_Create();
-  status = pli_dispatch_cm_search(pli, cm, sq->dsq, 1, sq->n, sq_hitlist, cutoff, 0., qdbidx, &sc, NULL, NULL, NULL);
+  status = pli_dispatch_cm_search(pli, cm, sq->dsq, 1, sq->n, sq_hitlist, cutoff, 0., qdbidx, &sc, NULL, NULL);
   if(status == eslERANGE) ESL_FAIL(status, pli->errbuf, "pli_cyk_seq_filter(), internal error, trying to use a HMM banded matrix");
   else if(status != eslOK) return status;
 
@@ -2937,7 +2934,7 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
   CM_t            *cm = NULL;         /* ptr to *opt_cm, for convenience only */
   CP9Bands_t      *scan_cp9b = NULL;  /* a copy of the HMM bands derived in the final CM search stage, if its HMM banded */
   int              qdbidx;            /* scan matrix qdb idx, defined differently for filter and final round */
-  int              used_hb;           /* TRUE if HMM bands used to scan current envelope (cm->cp9b valid) */
+
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nenv == 0)  return eslOK;    /* if there's no envelopes to search in, return */
 
@@ -2959,15 +2956,17 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
     cm->search_opts  = pli->final_cm_search_opts;
     cm->tau          = pli->final_tau;
     qdbidx           = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB2_LOOSE;
-    status = pli_dispatch_cm_search(pli, cm, sq->dsq, es[i], ee[i], hitlist, pli->T, 0., qdbidx, &sc, &used_hb, NULL, NULL);
+    status = pli_dispatch_cm_search(pli, cm, sq->dsq, es[i], ee[i], hitlist, pli->T, 0., qdbidx, &sc, NULL, NULL);
     if(status == eslERANGE) {
       pli->acct[pli->cur_pass_idx].n_overflow_final++;
       continue; /* skip envelopes that would require too big a HMM banded matrix */
     }
     else if(status != eslOK) return status;
 
-    /* save a copy of the bands we calculated for the final search stage */
-    if(used_hb && (! pli->do_hb_recalc)) { 
+    /* if we used HMM bands during the final search stage, save a copy
+     * of them, we'll use it to align any hits above threshold below.
+     */
+    if(cm->search_opts & CM_SEARCH_HBANDED) { 
       scan_cp9b = cp9_CloneBands(cm->cp9b, pli->errbuf);
       if(scan_cp9b == NULL) return eslEMEM;
 #if eslDEBUGLEVEL >= 1
@@ -3019,7 +3018,23 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
 	if(cm->cp9b == NULL) return status;
       }
       /*cm_hit_Dump(stdout, hit);*/
-      if((status = pli_align_hit(pli, cm, sq, hit, used_hb)) != eslOK) return status;
+
+      /* Before we create the hit alignment, we do a sanity check. If
+       * we used HMM bands in the final search stage, the hit
+       * alignment pli_align_hit() is about to do is expected to use
+       * those bands (they're in cm->cp9b). This should be true based
+       * on how the cm_pipeline_Create() function created the pipeline
+       * object. But since that's a complicated function thanks to the
+       * litany of command-line options that affect it, we do a check
+       * here to make sure.
+       */
+      if(scan_cp9b != NULL && (! (pli->cm_align_opts & CM_ALIGN_HBANDED))) { 
+	ESL_FAIL(eslEINVAL, pli->errbuf, "used HMM bands for Inside search stage, but won't for hit alignment, this shouldn't happen");
+      }
+      if(scan_cp9b == NULL && (pli->cm_align_opts & CM_ALIGN_HBANDED)) { 
+	ESL_FAIL(eslEINVAL, pli->errbuf, "did not use HMM bands for Inside search stage, but will for hit alignment, this shouldn't happen");
+      }
+      if((status = pli_align_hit(pli, cm, sq, hit)) != eslOK) return status;
       
       /* Finally, if we're using model-specific bit score thresholds,
        * determine if the significance of the hit (is it reported
@@ -3090,7 +3105,6 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
  *                          irrelevant if opt_envi, opt_envj are NULL
  *            qdbidx      - index 
  *            ret_sc      - RETURN: score returned by scanner
- *            opt_used_hb - OPT RETURN: TRUE if HMM banded scanner used, FALSE if not
  *            opt_envi    - OPT RETURN: redefined envelope start (can be NULL)
  *            opt_envj    - OPT RETURN: redefined envelope stop  (can be NULL)
  *
@@ -3098,24 +3112,36 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
  *          eslERANGE if we wanted to do HMM banded, but couldn't.
  */
 int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t start, int64_t stop, CM_TOPHITS *hitlist, float cutoff, 
-			   float env_cutoff, int qdbidx, float *ret_sc, int *opt_used_hb, int64_t *opt_envi, int64_t *opt_envj)
+			   float env_cutoff, int qdbidx, float *ret_sc, int64_t *opt_envi, int64_t *opt_envj)
 {
   int status;   
   int do_trunc            = cm_pli_PassAllowsTruncation(pli->cur_pass_idx);
   int do_inside           = (cm->search_opts & CM_SEARCH_INSIDE) ? TRUE : FALSE;
   int do_hbanded          = (cm->search_opts & CM_SEARCH_HBANDED) ? TRUE : FALSE;
-  int do_qdb_or_nonbanded = (do_hbanded) ? FALSE : TRUE; /* will get set to TRUE later if do_hbanded and mx too big */
+  int do_qdb_or_nonbanded = (do_hbanded) ? FALSE : TRUE; 
   double save_tau         = cm->tau;
   float  hbmx_Mb = 0.;     /* approximate size in Mb for HMM banded matrix for this sequence */
   float  sc;               /* score returned from DP scanner */
-  int    used_hb = FALSE;  /* TRUE if HMM banded scanner was used, FALSE if not */
-
-  /*printf("in pli_dispatch_cm_search(): do_trunc: %d do_inside: %d cutoff: %.1f env_cutoff: %.1f do_hbanded: %d hitlist?: %d opt_envi/j?: %d start: %" PRId64 " stop: %" PRId64 "\n", 
-    do_trunc, do_inside, cutoff, env_cutoff, do_hbanded, (hitlist == NULL) ? 0 : 1, (opt_envi == NULL && opt_envj == NULL) ? 0 : 1, start, stop); */
+  
+  /* printf("in pli_dispatch_cm_search(): do_trunc: %d do_inside: %d cutoff: %.1f env_cutoff: %.1f do_hbanded: %d hitlist?: %d opt_envi/j?: %d start: %" PRId64 " stop: %" PRId64 "\n", 
+     do_trunc, do_inside, cutoff, env_cutoff, do_hbanded, (hitlist == NULL) ? 0 : 1, (opt_envi == NULL && opt_envj == NULL) ? 0 : 1, start, stop); */
 
   if(do_hbanded) { 
     status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, pli->hb_size_limit, TRUE, pli->maxtau, pli->xtau, &hbmx_Mb);
-    if(status == eslOK) { /* bands imply a matrix or size pli->hb_size_limit or smaller with tau == cm->tau <= pli->maxtau */
+    if(status == eslERANGE) { 
+      /* HMM banded matrix exceeded pli->hb_size_limit with tau of
+       * pli->maxtau. We kill this potential hit. The memory limit
+       * is acting as a filter. This is the only filter that is 
+       * used differently for different sized models. The bigger
+       * a model, the more likely it is to have a hit killed here.
+       */
+      goto ERROR; /* we'll return eslERANGE, and caller will increment pli->n_overflow_* */
+    }
+    else if(status != eslOK) { 
+      printf("pli_dispatch_cm_search(), error: %s\n", pli->errbuf); goto ERROR; 
+    }
+    else if(status == eslOK) { 
+      /* bands imply a matrix or size pli->hb_size_limit or smaller with tau == cm->tau <= pli->maxtau */
       if(do_trunc) { /* HMM banded, truncated */
 	if(do_inside) { 
 	  status = FTrInsideScanHB(cm, pli->errbuf, cm->trhb_mx, pli->hb_size_limit, pli->cur_pass_idx, dsq, start, stop,
@@ -3136,15 +3162,11 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 				 cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, &sc);
 	}
       }
-      used_hb = TRUE;
     }
-    if     (status == eslERANGE) { do_qdb_or_nonbanded = TRUE; }
-    else if(status != eslOK)     { printf("pli_dispatch_cm_search(), error: %s\n", pli->errbuf); goto ERROR; }
   }
-  
-  if(do_qdb_or_nonbanded) { /* careful, different from just an 'else', b/c we may have just set this as true if status == eslERANGE */
+  else if(do_qdb_or_nonbanded) { 
     if(do_trunc) { 
-      if(cm->trsmx == NULL) { printf("FIX ME! round, cm->trsmx is NULL, probably overflow sized hb mx (do_inside: %d, tau: %g, hbmx_Mb: %g Mb \n", do_inside, cm->tau, hbmx_Mb); goto ERROR; } 
+      if(cm->trsmx == NULL) ESL_XFAIL(eslEINVAL, pli->errbuf, "pli_dispatch_cm_search(), need truncated scan mx but don't have one");
       if(do_inside) { /* not HMM banded, truncated */
 	status = RefITrInsideScan(cm, pli->errbuf, cm->trsmx, qdbidx, pli->cur_pass_idx, dsq, start, stop, 
 				  cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, NULL, NULL, &sc);
@@ -3155,7 +3177,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
       }
     }
     else { /* not HMM banded, not truncated */
-      if(cm->smx == NULL) { printf("FIX ME! round, cm->smx is NULL, probably overflow sized hb mx (do_inside: %d, tau: %g, hbmx_Mb: %g Mb)\n", do_inside, cm->tau, hbmx_Mb); goto ERROR; } 
+      if(cm->smx == NULL) ESL_XFAIL(eslEINVAL, pli->errbuf, "pli_dispatch_cm_search(), need standard scan mx but don't have one");
       if(do_inside) { 
 	status = FastIInsideScan(cm, pli->errbuf, cm->smx, qdbidx, dsq, start, stop, 
 				 cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, NULL, &sc);
@@ -3165,22 +3187,19 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 			     cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, NULL, &sc);
       }
     }
-    if(status != eslOK) { printf("cm_pli_Dispatch_SqCMSearch(), error: %s\n", pli->errbuf); goto ERROR; }
-    used_hb = FALSE;
+    if(status != eslOK) { printf("pli_dispatch_cm_search(), error: %s\n", pli->errbuf); goto ERROR; }
   }
 
   /* revert to original parameters */
   cm->tau = save_tau;
 
   *ret_sc = sc;
-  if(opt_used_hb != NULL) *opt_used_hb = used_hb;
 
   return eslOK;
   
  ERROR: 
   cm->tau = save_tau;
   *ret_sc      = IMPOSSIBLE;
-  if(opt_used_hb != NULL) *opt_used_hb = FALSE;
   if(opt_envi    != NULL) *opt_envi = start;
   if(opt_envj    != NULL) *opt_envi = stop;
   return eslERANGE;
@@ -3196,26 +3215,31 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
  *            CM_ALIDISPLAY object and store it in <hit->ad>. 
  *
  *            The algorithm used is dictated by pli->cm_align_opts.
- *            But if we wanted HMM banded alignment but it required
- *            too much memory, we failover to small D&C CYK.
+ *            There's one important special case, if we want HMM
+ *            banded optimal accuracy alignment with posteriors (which
+ *            is TRUE in the default pipeline) and it will require too
+ *            much memory, we failover to HMM banded CYK (NOT small
+ *            D&C CYK as that would take a long long time for a big
+ *            alignment). HMM banded CYK should never exceed our limit
+ *            because we must have used HMM banded Inside in the final
+ *            search stage (using the same bands we'll use here, those 
+ *            in cm->cp9b). 
  *
  * Returns: eslOK on success, alidisplay in hit->ad.
  *          ! eslOK on an error, pli->errbuf is filled, hit->ad is NULL.
  */
 int
-pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit, int cp9b_valid)
+pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
 {
   int            status;           /* Easel status code */
   CM_ALNDATA    *adata  = NULL;    /* alignment data */
   ESL_SQ        *sq2aln = NULL;    /* copy of the hit, req'd by DispatchSqAlignment() */
   ESL_STOPWATCH *watch  = NULL;    /* stopwatch for timing alignment step */
   float          null3_correction; /* null 3 bit score penalty, for CYK score */
-  float          hbmx_Mb;          /* size of required HB mx */
-  int            used_hbands;      /* TRUE if HMM bands used to compute aln */
 
   if(cm->cmcons == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "pli_align_hit() cm->cmcons is NULL");
 
-  if((watch = esl_stopwatch_Create()) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "out of memory");
+  if((watch = esl_stopwatch_Create()) == NULL) ESL_XFAIL(eslEMEM, pli->errbuf, "out of memory");
   esl_stopwatch_Start(watch);  
 
   /* make new sq object, b/c DispatchSqAlignment() requires one */
@@ -3224,63 +3248,57 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit, int cp9
   cm->align_opts = pli->cm_align_opts;
   if(pli->cur_pass_idx != PLI_PASS_STD_ANY) cm->align_opts |= CM_ALIGN_TRUNC;
 
-  /* 1. Do HMM banded alignment, if we want one.  
-   * 2. Do D&C CYK alignment, if we want one or we wanted HMM banded
-   *    alignment but it wasn't possible b/c the mx was too big.
-   */
-  if(cm->align_opts & CM_ALIGN_HBANDED) { 
-    /* Align with HMM bands, if we can do it in the allowed amount of memory */
-    if((! cp9b_valid) || pli->do_hb_recalc) { 
-      /* Calculate HMM bands. We'll increase tau and recalculate bands until 
-       * the resulting HMM banded matrix is under our size limit or we
-       * reach maximum allowed tau (pli->maxtau).
-       */
-      cm->tau = pli->final_tau;
-      status = cp9_IterateSeq2Bands(cm, pli->errbuf, sq2aln->dsq, 1, sq2aln->L, pli->cur_pass_idx, pli->hb_size_limit, FALSE, pli->maxtau, pli->xtau, &hbmx_Mb);
-      if(status != eslOK && status != eslERANGE) goto ERROR;
-      /* eslERANGE is okay, mx is too big, we'll failover to D&C aln
-       * below.  But only after we redetermine mx size in
-       * DispatchSqAlignment(), which is slightly wasteful...
-       */
-    }
-    else { 
-      /* we have existing CP9 HMM bands from the final search stage,
-       * shift them by a fixed offset, this guarantees our alignment
-       * will be the same hit our search found. (After this cm->cp9b
-       * bands would fail a cp9_ValidateBands() check..., but they'll
-       * work for our purposes here.
-       */
-      cp9_ShiftCMBands(cm, hit->start, hit->stop, (cm->align_opts & CM_ALIGN_TRUNC) ? TRUE : FALSE);
-    }
-  
+  /* do HMM banded aln, if nec */
+  if(cm->align_opts & CM_ALIGN_HBANDED) { /* align with HMM bands */
+    /* we have existing CP9 HMM bands from the final search stage, in
+     * cm->cp9b (caller should have verified this). Shift them by a
+     * fixed offset, this guarantees our alignment will be the same
+     * hit our search found. (After this cm->cp9b bands would fail a
+     * cp9_ValidateBands() check..., but don't worry about
+     * that... they'll work for our purposes here.
+     */
+    cp9_ShiftCMBands(cm, hit->start, hit->stop, (cm->align_opts & CM_ALIGN_TRUNC) ? TRUE : FALSE);
+
+    /* sanity check */
+    if(! (cm->align_opts & CM_ALIGN_POST)) ESL_XFAIL(eslEINVAL, pli->errbuf, "pli_align_hit() using HMM bands but CM_ALIGN_POST is down"); 
+
     /* compute the HMM banded alignment */
     status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, pli->hb_size_limit, hit->mode, pli->cur_pass_idx,
 				 TRUE, /* TRUE: cp9b bands are valid, don't recalc them */
 				 NULL, NULL, NULL, &adata);
-    if(status == eslOK) {
-      pli->acct[pli->cur_pass_idx].n_aln_hb++;
-      used_hbands = TRUE;
+    if(status != eslOK && status != eslERANGE) { 
+      goto ERROR;
     }
     else if(status == eslERANGE) { 
-      /* matrix was too big, alignment not computed, failover to small CYK */
-      cm->align_opts &= ~CM_ALIGN_HBANDED;
+      /* matrix was too big, alignment not computed, failover to HMM banded CYK with no posteriors */
       cm->align_opts &= ~CM_ALIGN_OPTACC;
       cm->align_opts &= ~CM_ALIGN_POST;
-      cm->align_opts |= CM_ALIGN_NONBANDED;
-      cm->align_opts |= CM_ALIGN_SMALL;
       cm->align_opts |= CM_ALIGN_CYK;
+      /* Note that we double max matrix size in next call to be safe,
+       * this should be overkill because we know that our Inside
+       * search stage using the same bands was able to use a matrix
+       * less than pli->hb_size_limit. If we can't do it now in twice
+       * that, something has gone horribly wrong. (Note that the
+       * required matrix size will be bigger than for an Inside scan,
+       * because of the required shadow matrix, but that's roughly 25%
+       * the size of the DP matrix, so the total size required for
+       * alignment should never exceed twice what the Inside scan
+       * required.
+       */
+      status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, 2*pli->hb_size_limit, hit->mode, pli->cur_pass_idx,
+				   TRUE, /* TRUE: cp9b bands are valid, don't recalc them */
+				   NULL, NULL, NULL, &adata);
+      if (status == eslERANGE) ESL_XFAIL(eslEINVAL, pli->errbuf, "pli_align_hit() alignment HB retry mx too big, this shouldn't happen");
+      else if(status != eslOK) goto ERROR;
     }
-    else goto ERROR;
+    pli->acct[pli->cur_pass_idx].n_aln_hb++;
     esl_stopwatch_Stop(watch); /* we started it above before we calc'ed the CP9 bands */ 
   }
-
-  if(! (cm->align_opts & CM_ALIGN_HBANDED)) { 
-    /* careful, not just an else, we may have just turned off CM_ALIGN_HBANDED bc mx was too big */
+  else { /* do non-HMM-banded alignment (! (cm->align_opts & CM_ALIGN_HBANDED)) */
     esl_stopwatch_Start(watch);
     if((status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, pli->hb_size_limit, hit->mode, pli->cur_pass_idx,
 				     FALSE, NULL, NULL, NULL, &adata)) != eslOK) goto ERROR;
     pli->acct[pli->cur_pass_idx].n_aln_dccyk++;
-    used_hbands = FALSE;
     esl_stopwatch_Stop(watch);
   }
   /* ParsetreeDump(stdout, tr, cm, sq2aln->dsq); */
@@ -3293,7 +3311,9 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit, int cp9
   }
 
   /* create the CM_ALIDISPLAY object */
-  if((status = cm_alidisplay_Create(cm, pli->errbuf, adata, sq, hit->start, used_hbands, watch->elapsed, &(hit->ad))) != eslOK) goto ERROR;
+  if((status = cm_alidisplay_Create(cm, pli->errbuf, adata, sq, hit->start, 
+				    (cm->align_opts & CM_ALIGN_HBANDED) ? cm->cp9b->tau : -1., /* what was tau, if we used HMM bands */
+				    watch->elapsed, &(hit->ad))) != eslOK) goto ERROR;
 
   /* clean up and return */
   cm->align_opts = pli->cm_align_opts; /* restore these */

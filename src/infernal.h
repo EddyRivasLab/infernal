@@ -810,6 +810,8 @@ typedef struct cp9bands_s {
   int hd_needed;              /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed */
   int hd_alloced;             /* number of hd arrays currently alloc'ed */
 
+  double   tau;               /* tau used to calculate current bands */
+
 } CP9Bands_t;
 
 /*************************************************************************************
@@ -2165,7 +2167,6 @@ typedef struct cm_pipeline_s {
   uint64_t      nseqs;	           /* # of sequences searched               */
   uint64_t      nnodes;	           /* # of model nodes searched             */
   CM_PLI_ACCT   acct[NPLI_PASSES]; 
-  int           do_allstats;       /* TRUE for verbose statistics mode      */
 
   /* Domain/envelope postprocessing                                         */
   ESL_RANDOMNESS *r;		/* random number generator                  */
@@ -2174,11 +2175,11 @@ typedef struct cm_pipeline_s {
 
   /* miscellaneous parameters */
   float         hb_size_limit;  /* maximum size in Mb allowed for HB alignment    */
-  int           do_top;         /* TRUE to do top    strand (usually TRUE)   */
-  int           do_bot;         /* TRUE to do bottom strand (usually TRUE)   */
+  int           be_verbose;     /* TRUE for verbose reporting mode          */
+  int           do_top;         /* TRUE to do top    strand (usually TRUE)  */
+  int           do_bot;         /* TRUE to do bottom strand (usually TRUE)  */
   int           show_accessions;/* TRUE to output accessions not names      */
   int           show_alignments;/* TRUE to compute and output alignments (default)*/
-  int           do_hb_recalc;   /* TRUE to recalculate HMM bands for alignment    */
   double        xtau;           /* multiplier for tau when tightening bands */
   double        maxtau;         /* max tau when tightening bands            */
   int           do_wcx;         /* TRUE to set cm->W as cm->clen * wcx      */
@@ -2332,7 +2333,7 @@ typedef struct cm_alidisplay_s {
 
   float  sc;		        /* alignment score */
   float  avgpp;		        /* average PP of all aligned residues, 0.0 if no PPs available */
-  int    used_hbands;           /* TRUE if aln used HMM bands, FALSE if not */
+  double tau;                   /* tau used to calc HMM bands, -1.0 if HMM bands not used */
   float  matrix_Mb;             /* size of DP matrix used in Mb, either HMM banded CYK/OA or D&C CYK */
   double elapsed_secs;          /* number of seconds required for alignment */
 
@@ -2549,7 +2550,7 @@ extern void    InsertsGivenNodeIndex(CM_t *cm, int nd, int *ret_i1, int *ret_2);
 
 /* cm_alidisplay.c */
 extern int            cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq, int64_t seqoffset, 
-					   int used_hbands, double elapsed_secs, CM_ALIDISPLAY **ret_ad);
+					   double tau, double elapsed_secs, CM_ALIDISPLAY **ret_ad);
 extern CM_ALIDISPLAY *cm_alidisplay_Clone(const CM_ALIDISPLAY *ad);
 extern size_t         cm_alidisplay_Sizeof(const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Serialize(CM_ALIDISPLAY *ad);
@@ -2732,76 +2733,76 @@ extern int  clean_cs(char *cs, int alen, int be_quiet);
 /* from cm_mx.c */
 extern CM_MX           *cm_mx_Create                  (int M);
 extern int              cm_mx_GrowTo                  (CM_t *cm, CM_MX *mx, char *errbuf, int L, float size_limit);
-extern int              cm_mx_Dump                    (FILE *ofp, CM_MX *mx);
+extern int              cm_mx_Dump                    (FILE *ofp, CM_MX *mx, int print_mx);
 extern void             cm_mx_Destroy                 (CM_MX *mx);
 extern int              cm_mx_SizeNeeded              (CM_t *cm, char *errbuf, int L, int64_t *ret_ncells, float *ret_Mb);
 
 extern CM_TR_MX        *cm_tr_mx_Create               (CM_t *cm);
 extern int              cm_tr_mx_GrowTo               (CM_t *cm, CM_TR_MX *mx, char *errbuf, int L, float size_limit);
-extern int              cm_tr_mx_Dump                 (FILE *ofp, CM_TR_MX *mx, char mode);
+extern int              cm_tr_mx_Dump                 (FILE *ofp, CM_TR_MX *mx, char mode, int print_mx);
 extern void             cm_tr_mx_Destroy              (CM_TR_MX *mx);
 extern int              cm_tr_mx_SizeNeeded           (CM_t *cm, char *errbuf, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb);
 
 extern CM_HB_MX        *cm_hb_mx_Create               (int M);
 extern int              cm_hb_mx_GrowTo               (CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
-extern int              cm_hb_mx_Dump                 (FILE *ofp, CM_HB_MX *mx);
+extern int              cm_hb_mx_Dump                 (FILE *ofp, CM_HB_MX *mx, int print_mx);
 extern void             cm_hb_mx_Destroy              (CM_HB_MX *mx);
 extern int              cm_hb_mx_SizeNeeded           (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb);
 
 extern CM_TR_HB_MX     *cm_tr_hb_mx_Create            (CM_t *cm);
 extern int              cm_tr_hb_mx_GrowTo            (CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
-extern int              cm_tr_hb_mx_Dump              (FILE *ofp, CM_TR_HB_MX *mx, char mode);
+extern int              cm_tr_hb_mx_Dump              (FILE *ofp, CM_TR_HB_MX *mx, char mode, int print_mx);
 extern void             cm_tr_hb_mx_Destroy           (CM_TR_HB_MX *mx);
 extern int              cm_tr_hb_mx_SizeNeeded        (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, 
 						       int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb);
 
 extern CM_SHADOW_MX    *cm_shadow_mx_Create           (CM_t *cm);
 extern int              cm_shadow_mx_GrowTo           (CM_t *cm, CM_SHADOW_MX *mx, char *errbuf, int L, float size_limit);
-extern int              cm_shadow_mx_Dump             (FILE *ofp, CM_t *cm, CM_SHADOW_MX *mx);
+extern int              cm_shadow_mx_Dump             (FILE *ofp, CM_t *cm, CM_SHADOW_MX *mx, int print_mx);
 extern void             cm_shadow_mx_Destroy          (CM_SHADOW_MX *mx);
 extern int              cm_shadow_mx_SizeNeeded       (CM_t *cm, char *errbuf, int L, int64_t *ret_ny_cells, int64_t *ret_nk_cells, float *ret_Mb);
 
 extern CM_TR_SHADOW_MX *cm_tr_shadow_mx_Create        (CM_t *cm);
 extern int              cm_tr_shadow_mx_GrowTo        (CM_t *cm, CM_TR_SHADOW_MX *mx, char *errbuf, int L, float size_limit);
-extern int              cm_tr_shadow_mx_Dump          (FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx, char mode);
+extern int              cm_tr_shadow_mx_Dump          (FILE *ofp, CM_t *cm, CM_TR_SHADOW_MX *mx, char mode, int print_mx);
 extern void             cm_tr_shadow_mx_Destroy       (CM_TR_SHADOW_MX *mx);
 extern int              cm_tr_shadow_mx_SizeNeeded    (CM_t *cm, char *errbuf, int L, int64_t *ret_Jny_cells, int64_t *ret_Lny_cells, int64_t *ret_Rny_cells, 
 						       int64_t *ret_Jnk_cells, int64_t *ret_Lnk_cells, int64_t *ret_Rnk_cells, int64_t *ret_Tnk_cells, float *ret_Mb);
 
 extern CM_HB_SHADOW_MX *cm_hb_shadow_mx_Create        (CM_t *cm);
 extern int              cm_hb_shadow_mx_GrowTo        (CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
-extern int              cm_hb_shadow_mx_Dump          (FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx);
+extern int              cm_hb_shadow_mx_Dump          (FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx, int print_mx);
 extern void             cm_hb_shadow_mx_Destroy       (CM_HB_SHADOW_MX *mx);
 extern int              cm_hb_shadow_mx_SizeNeeded    (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *ret_ny_cells, int64_t *ret_nk_cells, float *ret_Mb);
 
 extern CM_TR_HB_SHADOW_MX *cm_tr_hb_shadow_mx_Create  (CM_t *cm);
 extern int              cm_tr_hb_shadow_mx_GrowTo     (CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
-extern int              cm_tr_hb_shadow_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char mode);
+extern int              cm_tr_hb_shadow_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char mode, int print_mx);
 extern void             cm_tr_hb_shadow_mx_Destroy    (CM_TR_HB_SHADOW_MX *mx);
 extern int              cm_tr_hb_shadow_mx_SizeNeeded (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *ret_Jny_cells, int64_t *ret_Lny_cells, int64_t *ret_Rny_cells, 
 						       int64_t *ret_Jnk_cells, int64_t *ret_Lnk_cells, int64_t *ret_Rnk_cells, int64_t *ret_Tnk_cells, float *ret_Mb);
 
 extern CM_EMIT_MX      *cm_emit_mx_Create     (CM_t *cm);
 extern int              cm_emit_mx_GrowTo     (CM_t *cm, CM_EMIT_MX *mx, char *errbuf, int L, float size_limit);
-extern int              cm_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_EMIT_MX *mx);
+extern int              cm_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_EMIT_MX *mx, int print_mx);
 extern void             cm_emit_mx_Destroy    (CM_EMIT_MX *mx);
 extern int              cm_emit_mx_SizeNeeded (CM_t *cm, char *errbuf, int L, int64_t *ret_l_ncells, int64_t *ret_r_ncells, float *ret_Mb);
 
 extern CM_TR_EMIT_MX   *cm_tr_emit_mx_Create     (CM_t *cm);
 extern int              cm_tr_emit_mx_GrowTo     (CM_t *cm, CM_TR_EMIT_MX *mx, char *errbuf, int L, float size_limit);
-extern int              cm_tr_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char mode);
+extern int              cm_tr_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char mode, int print_mx);
 extern void             cm_tr_emit_mx_Destroy    (CM_TR_EMIT_MX *mx);
 extern int              cm_tr_emit_mx_SizeNeeded (CM_t *cm, char *errbuf, int L, int64_t *ret_l_ncells, int64_t *ret_r_ncells, float *ret_Mb);
 
 extern CM_HB_EMIT_MX   *cm_hb_emit_mx_Create     (CM_t *cm);
 extern int              cm_hb_emit_mx_GrowTo     (CM_t *cm, CM_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
-extern int              cm_hb_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_HB_EMIT_MX *mx);
+extern int              cm_hb_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_HB_EMIT_MX *mx, int print_mx);
 extern void             cm_hb_emit_mx_Destroy    (CM_HB_EMIT_MX *mx);
 extern int              cm_hb_emit_mx_SizeNeeded (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_l_ncells, int64_t *ret_r_ncells, float *ret_Mb);
 
 extern CM_TR_HB_EMIT_MX *cm_tr_hb_emit_mx_Create     (CM_t *cm);
 extern int               cm_tr_hb_emit_mx_GrowTo     (CM_t *cm, CM_TR_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
-extern int               cm_tr_hb_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char mode);
+extern int               cm_tr_hb_emit_mx_Dump       (FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char mode, int print_mx);
 extern void              cm_tr_hb_emit_mx_Destroy    (CM_TR_HB_EMIT_MX *mx);
 extern int               cm_tr_hb_emit_mx_SizeNeeded (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_l_ncells, int64_t *ret_r_ncells, float *ret_Mb);
 
@@ -2946,7 +2947,7 @@ extern int         cm_tophits_SetSourceLengths(CM_TOPHITS *th, int64_t *srcL, ui
 extern int cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli);
 extern int cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw);
 extern int cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw);
-extern int cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_cyk);
+extern int cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_cyk, int used_hb, double default_tau);
 extern int cm_tophits_Alignment(CM_t *cm, const CM_TOPHITS *th, char *errbuf, ESL_MSA **ret_msa);
 extern int cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 extern int cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipemode, const char *qfile, const char *tfile, const ESL_GETOPTS *go);
@@ -3124,51 +3125,25 @@ extern double cp9_MeanMatchEntropy(const CP9_t *cp9);
 extern double cp9_MeanMatchRelativeEntropy(const CP9_t *cp9);
 
 /* from hmmband.c */
-extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int do_trunc, int debug_level);
-extern int          cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
 extern CP9Bands_t  *AllocCP9Bands(int cm_M, int hmm_M);
 extern float        SizeofCP9Bands(CP9Bands_t *cp9b);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
+extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int do_trunc, int debug_level);
+extern int          cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int pass_idx, int debug_level);
 extern int          cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, double maxtau, double xtau, float *ret_Mb);
 extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
-extern void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *mx, int did_fwd_scan);
-extern void         cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9, int i0, int j0);
-extern double       DScore2Prob(int sc, float null);
-extern int          cp9_FB2HMMBands        (CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
-				            int i0, int j0, int M, double p_thresh, int did_fwd_scan, int did_bck_scan, int do_old_hmm2ij, int debug_level);
-extern int          cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
-					    int i0, int j0, int M, double p_thresh, int did_fwd_scan, int did_bck_scan, int do_old_hmm2ij, int debug_level);
-extern int          HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *errbuf, int i0, int j0, int doing_search, int *ret_did_expand, 
-					      int **ret_r_mn, int **ret_r_mx, int **ret_r_in,  int **ret_r_ix, int **ret_r_dn, int **ret_r_dx,
-					      int **ret_r_nn_i, int **ret_r_nx_i, int **ret_r_nn_j, int **ret_r_nx_j);
-extern int          HMMBandsFixUnreachable(CP9Bands_t *cp9b, char *errbuf, int k, int r_prv_min, int r_prv_max, int r_insert_prv_min);
-extern int          HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int min2, int max2, int prv_nd_r_mn, int prv_nd_r_dn);
-extern int          CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0, int doing_search);
-/*extern void         cp9_RelaxRootBandsForSearch(CM_t *cm, int i0, int j0, int *imin, int *imax, int *jmin, int *jmax);*/
 extern void         cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
-extern void         cp9_CompareBands(CP9Bands_t *cp9b1, CP9Bands_t *cp9b2);
 extern int          cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf);
-extern void         ijBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
-					  int *jmin, int *jmax, int debug_level);
-extern void         ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
-					   int *jmin, int *jmax, int **hdmin, int **hdmax, 
-					   int debug_level);
 extern int          cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0);
-extern void         ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jmax,
-			       int **hdmin, int **hdmax, int do_trunc, int debug_level);
-extern void         combine_qdb_hmm_d_bands(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax);
-extern void         hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
-				     int *safe_hdmin, int *safe_hdmax);
-extern void         debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
-extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
-extern void         debug_print_ij_bands(CM_t *cm);
-extern void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, CP9Bands_t *cp9b);
 extern void         cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc);
 extern CP9Bands_t  *cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf);
 extern void         cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0);
 extern int          cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass_idx, char *errbuf);
-
+extern void         ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jmax,
+			       int **hdmin, int **hdmax, int do_trunc, int debug_level);
+extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
+extern void         debug_print_ij_bands(CM_t *cm);
 
 /* from logsum.c */
 extern void  init_ilogsum(void);

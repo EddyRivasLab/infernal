@@ -1154,14 +1154,14 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 
       /* The hit info display is 101+rankw char wide:, where rankw is the maximum of 4 and 2 plus the number of digits in th->N. 
        * If (! pli->show_alignments) the width drops to 72+rankw.
-       *     rank    score  bias   E-value cm from   cm to       seq from      seq to       acc trunc| bands   mx Mb seconds pass
-       *     ----   ------ ----- --------- ------- -------    ----------- -----------      ---- -----|------ ------- ------- ----
-       *      (1) !  123.4   0.3    6.8e-9       3      72 []         412         492 + .. 0.98    no|   yes    1.30    0.04    1
-       *     (12) ?  123.4  12.7    1.8e-3       1      72 []         180         103 - .. 0.90    no|   yes    0.65    2.23    3  
-       *    rankw 1 123456 12345 123456789 1234567 1234567 12 12345678901 12345678901 1 12 1234 12345| 12345 1234567 1234567 1234 
-       *        0         1         2         3         4         5         6         7         8    |   9        10        11
-       *        01234567890123456789012345678901234567890123456789012345678901234567890123456789012345789012345678901234567890123
-       *                                                                                             |-> only shown if pli->do_allstats
+       *     rank    score  bias   E-value cm from   cm to       seq from      seq to       acc trunc| bands     tau   mx Mb seconds pass
+       *     ----   ------ ----- --------- ------- -------    ----------- -----------      ---- -----|------ ------- ------- ------- ----
+       *      (1) !  123.4   0.3    6.8e-9       3      72 []         412         492 + .. 0.98    no|   hmm    5e-6    1.30    0.04    1
+       *     (12) ?  123.4  12.7    1.8e-3       1      72 []         180         103 - .. 0.90    no|   hmm    0.01    0.65    2.23    3  
+       *    rankw 1 123456 12345 123456789 1234567 1234567 12 12345678901 12345678901 1 12 1234 12345| 12345 1234567 1234567 1234567 1234 
+       *        0         1         2         3         4         5         6         7         8    |   9        10        11        12
+       *        0123456789012345678901234567890123456789012345678901234567890123456789012345678901234578901234567890123456789012345678901
+       *                                                                                             |-> only shown if pli->be_verbose
        * In rare cases, when CYK alignment is chosen or when computing
        * posteriors is not feasible in allowable memory, the "acc"
        * column will be replaced by a "cyksc" colum which is 6
@@ -1171,13 +1171,13 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       fprintf(ofp, " %*s %1s %6s %5s %9s %7s %7s %2s %11s %11s %1s %2s",  rankw, "rank", "", "score", "bias", "E-value", "cm from", "cm to", "", "seq from", "seq to", "", "");
       if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s", "acc",   "trunc"); }
       else                       { fprintf(ofp, " %6s %5s", "cyksc", "trunc"); }
-      if(pli->do_allstats)       { fprintf(ofp, " %5s %7s %7s %4s", "bands", "mx Mb", "seconds", "pass"); }
+      if(pli->be_verbose)        { fprintf(ofp, " %5s %7s %7s %7s %4s", "bands", "tau", "mx Mb", "seconds", "pass"); }
       fprintf(ofp, "\n");
       
       fprintf(ofp, " %*s %1s %6s %5s %9s %7s %7s %2s %11s %11s %1s %2s",  rankw, rankstr,  "", "------", "-----", "---------", "-------", "-------", "", "-----------", "-----------", "", "");
       if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s", "----",   "-----"); }
       else                       { fprintf(ofp, " %6s %5s", "------", "-----"); }
-      if(pli->do_allstats)       { fprintf(ofp, " %5s %7s %7s %4s", "-----", "-------", "-------", "----"); }
+      if(pli->be_verbose)        { fprintf(ofp, " %5s %7s %7s %7s %4s", "-----", "-------", "-------", "-------", "----"); }
       fprintf(ofp, "\n");
 	
       if(cm_alidisplay_Is5PTrunc(th->hit[h]->ad)) { /* 5' truncated */
@@ -1218,9 +1218,14 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      lseq, rseq);
       if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f %5s", th->hit[h]->ad->avgpp, cm_alidisplay_TruncString(th->hit[h]->ad)); }
       else                       { fprintf(ofp, " %6.2f %5s", th->hit[h]->ad->sc,    cm_alidisplay_TruncString(th->hit[h]->ad)); }
-      if(pli->do_allstats) { 
-	fprintf(ofp, " %5s %7.2f %7.2f %4d\n\n",	
-		(th->hit[h]->ad->used_hbands ? "yes" : "no"),
+      if(pli->be_verbose) { 
+	if(th->hit[h]->ad->tau > -0.5) { /* tau is -1. if aln did not use HMM bands */
+	  fprintf(ofp, " %5s %7g", "hmm", th->hit[h]->ad->tau);
+	}
+	else { 
+	  fprintf(ofp, " %5s %7s", (pli->final_cm_search_opts & CM_SEARCH_QDB) ? "qdb" : "no", "-");
+	}
+	fprintf(ofp, " %7.2f %7.2f %4d\n\n",	
 		th->hit[h]->ad->matrix_Mb,
 		th->hit[h]->ad->elapsed_secs,
 		th->hit[h]->pass_idx);
@@ -1247,223 +1252,291 @@ ERROR:
   return status;
 
 }
-  
+
 /* Function:  cm_tophits_HitAlignmentStatistics()
  * Synopsis:  Final alignment statistics output from a list of hits.
  * Incept:    EPN, Thu Jun 16 04:22:11 2011
  *
  * Purpose:   Print summary statistics on alignments performed 
  *            for all hits in tophits object <th> to stream <ofp>.
- *            Statistics are compiled and reported for all 
- *            reported and included hits as well as for each
- *            type independently.
+ *            Statistics are compiled and reported for all hits, 
+ *            as well as for reported, included and removed duplicate
+ *            hits independently.
  * 
- *            <used_cyk> is TRUE if pli->align_cyk was TRUE, if 
- *            HMM banded CYK was used instead of HMM banded 
- *            optimal accuracy for alignment.
- *
  * Returns:   <eslOK> on success.
  */
 int
-cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_cyk)
+cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int used_cyk, double default_tau)
 {
   uint64_t h;
   int is_reported;
   int is_included;
+  int is_removed_duplicate;
 
-  int64_t rep_naln_hb, rep_naln_dccyk;
-  double  tot_rep_matrix_Mb_hb, tot_rep_matrix_Mb_dccyk;
-  double  min_rep_matrix_Mb_hb, min_rep_matrix_Mb_dccyk;
-  double  max_rep_matrix_Mb_hb, max_rep_matrix_Mb_dccyk;
-  double  avg_rep_matrix_Mb_hb, avg_rep_matrix_Mb_dccyk;
-  double  tot_rep_elapsed_secs_hb, tot_rep_elapsed_secs_dccyk;
-  double  min_rep_elapsed_secs_hb, min_rep_elapsed_secs_dccyk;
-  double  max_rep_elapsed_secs_hb, max_rep_elapsed_secs_dccyk;
-  double  avg_rep_elapsed_secs_hb, avg_rep_elapsed_secs_dccyk;
+  /* variables for alignments for all hits */
+  int64_t all_naln = 0;                        /* total number alignments */
+  int64_t all_noverflow_hb = 0;                /* # HMM banded alns PPs couldn't be calc'ed for due to mx size */
+  int64_t all_ntau_mod_hb = 0;                 /* # HMM banded alns for which was increased due to mx size */
+  double  all_tot_matrix_Mb = 0.;              /* summed Mb req'd for matrices used for alignments */
+  double  all_min_matrix_Mb = eslINFINITY;     /* min Mb req'd over all alns */
+  double  all_max_matrix_Mb = 0.;              /* max Mb req'd over all alns */
+  double  all_avg_matrix_Mb = 0.;              /* avg Mb req'd over all alns */
+  double  all_tot_elapsed_secs = 0.;           /* summed seconds for alignments */
+  double  all_min_elapsed_secs = eslINFINITY;  /* min seconds over all alns */
+  double  all_max_elapsed_secs = 0.;           /* max seconds over all alns */
+  double  all_avg_elapsed_secs = 0.;           /* avg seconds over all alns */
 
-  int64_t inc_naln_hb, inc_naln_dccyk;
-  double  tot_inc_matrix_Mb_hb, tot_inc_matrix_Mb_dccyk;
-  double  min_inc_matrix_Mb_hb, min_inc_matrix_Mb_dccyk;
-  double  max_inc_matrix_Mb_hb, max_inc_matrix_Mb_dccyk;
-  double  avg_inc_matrix_Mb_hb, avg_inc_matrix_Mb_dccyk;
-  double  tot_inc_elapsed_secs_hb, tot_inc_elapsed_secs_dccyk;
-  double  min_inc_elapsed_secs_hb, min_inc_elapsed_secs_dccyk;
-  double  max_inc_elapsed_secs_hb, max_inc_elapsed_secs_dccyk;
-  double  avg_inc_elapsed_secs_hb, avg_inc_elapsed_secs_dccyk;
+  /* variables for alignments for reported hits */
+  int64_t rep_naln = 0;                        /* total number alignments */
+  int64_t rep_noverflow_hb = 0;                /* # HMM banded alns PPs couldn't be calc'ed for due to mx size */
+  int64_t rep_ntau_mod_hb = 0;                 /* # HMM banded alns for which was increased due to mx size */
+  double  rep_tot_matrix_Mb = 0.;              /* summed Mb req'd for matrices used for alignments */
+  double  rep_min_matrix_Mb = eslINFINITY;     /* min Mb req'd over all alns */
+  double  rep_max_matrix_Mb = 0.;              /* max Mb req'd over all alns */
+  double  rep_avg_matrix_Mb = 0.;              /* avg Mb req'd over all alns */
+  double  rep_tot_elapsed_secs = 0.;           /* summed seconds for alignments */
+  double  rep_min_elapsed_secs = eslINFINITY;  /* min seconds over all alns */
+  double  rep_max_elapsed_secs = 0.;           /* max seconds over all alns */
+  double  rep_avg_elapsed_secs = 0.;           /* avg seconds over all alns */
 
-  /* initalize */
-  rep_naln_hb = rep_naln_dccyk = 0;
-  tot_rep_matrix_Mb_hb = tot_rep_matrix_Mb_dccyk = 0.;
-  min_rep_matrix_Mb_hb = min_rep_matrix_Mb_dccyk = 0.;
-  max_rep_matrix_Mb_hb = max_rep_matrix_Mb_dccyk = 0.;
-  tot_rep_elapsed_secs_hb = tot_rep_elapsed_secs_dccyk = 0.;
-  min_rep_elapsed_secs_hb = min_rep_elapsed_secs_dccyk = 0.;
-  max_rep_elapsed_secs_hb = max_rep_elapsed_secs_dccyk = 0.;
+  /* variables for alignments for included hits */
+  int64_t inc_naln = 0;                        /* total number alignments */
+  int64_t inc_noverflow_hb = 0;                /* # HMM banded alns PPs couldn't be calc'ed for due to mx size */
+  int64_t inc_ntau_mod_hb = 0;                 /* # HMM banded alns for which was increased due to mx size */
+  double  inc_tot_matrix_Mb = 0.;              /* summed Mb req'd for matrices used for alignments */
+  double  inc_min_matrix_Mb = eslINFINITY;     /* min Mb req'd over all alns */
+  double  inc_max_matrix_Mb = 0.;              /* max Mb req'd over all alns */
+  double  inc_avg_matrix_Mb = 0.;              /* avg Mb req'd over all alns */
+  double  inc_tot_elapsed_secs = 0.;           /* summed seconds for alignments */
+  double  inc_min_elapsed_secs = eslINFINITY;  /* min seconds over all alns */
+  double  inc_max_elapsed_secs = 0.;           /* max seconds over all alns */
+  double  inc_avg_elapsed_secs = 0.;           /* avg seconds over all alns */
 
-  inc_naln_hb = inc_naln_dccyk = 0;
-  tot_inc_matrix_Mb_hb = tot_inc_matrix_Mb_dccyk = 0.;
-  min_inc_matrix_Mb_hb = min_inc_matrix_Mb_dccyk = 0.;
-  max_inc_matrix_Mb_hb = max_inc_matrix_Mb_dccyk = 0.;
-  tot_inc_elapsed_secs_hb = tot_inc_elapsed_secs_dccyk = 0.;
-  min_inc_elapsed_secs_hb = min_inc_elapsed_secs_dccyk = 0.;
-  max_inc_elapsed_secs_hb = max_inc_elapsed_secs_dccyk = 0.;
- 
+  /* variables for alignments for removed duplicate hits */
+  int64_t dup_naln = 0;                        /* total number alignments */
+  int64_t dup_noverflow_hb = 0;                /* # HMM banded alns PPs couldn't be calc'ed for due to mx size */
+  int64_t dup_ntau_mod_hb = 0;                 /* # HMM banded alns for which was increased due to mx size */
+  double  dup_tot_matrix_Mb = 0.;              /* summed Mb req'd for matrices used for alignments */
+  double  dup_min_matrix_Mb = eslINFINITY;     /* min Mb req'd over all alns */
+  double  dup_max_matrix_Mb = 0.;              /* max Mb req'd over all alns */
+  double  dup_avg_matrix_Mb = 0.;              /* avg Mb req'd over all alns */
+  double  dup_tot_elapsed_secs = 0.;           /* summed seconds for alignments */
+  double  dup_min_elapsed_secs = eslINFINITY;  /* min seconds over all alns */
+  double  dup_max_elapsed_secs = 0.;           /* max seconds over all alns */
+  double  dup_avg_elapsed_secs = 0.;           /* avg seconds over all alns */
+
   for(h = 0; h < th->N; h++) { 
-    is_reported = (th->unsrt[h].flags & CM_HIT_IS_REPORTED) ? TRUE : FALSE;
-    is_included = (th->unsrt[h].flags & CM_HIT_IS_INCLUDED) ? TRUE : FALSE;
+    is_reported          = (th->unsrt[h].flags & CM_HIT_IS_REPORTED) ?          TRUE : FALSE;
+    is_included          = (th->unsrt[h].flags & CM_HIT_IS_INCLUDED) ?          TRUE : FALSE;
+    is_removed_duplicate = (th->unsrt[h].flags & CM_HIT_IS_REMOVED_DUPLICATE) ? TRUE : FALSE;
     if(th->unsrt[h].ad != NULL) { 
+      all_naln++;
+      all_tot_matrix_Mb    += th->unsrt[h].ad->matrix_Mb;
+      all_tot_elapsed_secs += th->unsrt[h].ad->elapsed_secs;
+      all_min_matrix_Mb     = ESL_MIN(all_min_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+      all_max_matrix_Mb     = ESL_MAX(all_max_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+      all_min_elapsed_secs  = ESL_MIN(all_min_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+      all_max_elapsed_secs  = ESL_MAX(all_max_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+      if(used_hb) { 
+	if(fabs(default_tau - th->unsrt[h].ad->tau) > eslSMALLX1) all_ntau_mod_hb++;
+      }
+      if(used_hb && (! used_cyk)) { 
+	if(th->unsrt[h].ad->ppline == NULL) all_noverflow_hb++; 
+      }
+
       /* update reported stats */
       if(is_reported) { 
-	if(th->unsrt[h].ad->used_hbands) { 
-	  rep_naln_hb++;
-	  tot_rep_matrix_Mb_hb    += th->unsrt[h].ad->matrix_Mb;
-	  tot_rep_elapsed_secs_hb += th->unsrt[h].ad->elapsed_secs;
-	  if(rep_naln_hb == 1) { 
-	    min_rep_matrix_Mb_hb    = th->unsrt[h].ad->matrix_Mb;
-	    max_rep_matrix_Mb_hb    = th->unsrt[h].ad->matrix_Mb;
-	    min_rep_elapsed_secs_hb = th->unsrt[h].ad->elapsed_secs;
-	    max_rep_elapsed_secs_hb = th->unsrt[h].ad->elapsed_secs;
-	  }
-	  else { 
-	    min_rep_matrix_Mb_hb    = ESL_MIN(min_rep_matrix_Mb_hb,    th->unsrt[h].ad->matrix_Mb);
-	    max_rep_matrix_Mb_hb    = ESL_MAX(max_rep_matrix_Mb_hb,    th->unsrt[h].ad->matrix_Mb);
-	    min_rep_elapsed_secs_hb = ESL_MIN(min_rep_elapsed_secs_hb, th->unsrt[h].ad->elapsed_secs);
-	    max_rep_elapsed_secs_hb = ESL_MAX(max_rep_elapsed_secs_hb, th->unsrt[h].ad->elapsed_secs);
-	  }
+	rep_naln++;
+	rep_tot_matrix_Mb    += th->unsrt[h].ad->matrix_Mb;
+	rep_tot_elapsed_secs += th->unsrt[h].ad->elapsed_secs;
+	rep_min_matrix_Mb     = ESL_MIN(rep_min_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	rep_max_matrix_Mb     = ESL_MAX(rep_max_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	rep_min_elapsed_secs  = ESL_MIN(rep_min_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+	rep_max_elapsed_secs  = ESL_MAX(rep_max_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+	if(used_hb) { 
+	  if(fabs(default_tau - th->unsrt[h].ad->tau) > eslSMALLX1) rep_ntau_mod_hb++;
 	}
-	else { 
-	  rep_naln_dccyk++;
-	  tot_rep_matrix_Mb_dccyk    += th->unsrt[h].ad->matrix_Mb;
-	  tot_rep_elapsed_secs_dccyk += th->unsrt[h].ad->elapsed_secs;
-	  if(rep_naln_dccyk == 1) { 
-	    min_rep_matrix_Mb_dccyk    = th->unsrt[h].ad->matrix_Mb;
-	    max_rep_matrix_Mb_dccyk    = th->unsrt[h].ad->matrix_Mb;
-	    min_rep_elapsed_secs_dccyk = th->unsrt[h].ad->elapsed_secs;
-	    max_rep_elapsed_secs_dccyk = th->unsrt[h].ad->elapsed_secs;
-	  }
-	  else { 
-	    min_rep_matrix_Mb_dccyk    = ESL_MIN(min_rep_matrix_Mb_dccyk,    th->unsrt[h].ad->matrix_Mb);
-	    max_rep_matrix_Mb_dccyk    = ESL_MAX(max_rep_matrix_Mb_dccyk,    th->unsrt[h].ad->matrix_Mb);
-	    min_rep_elapsed_secs_dccyk = ESL_MIN(min_rep_elapsed_secs_dccyk, th->unsrt[h].ad->elapsed_secs);
-	    max_rep_elapsed_secs_dccyk = ESL_MAX(max_rep_elapsed_secs_dccyk, th->unsrt[h].ad->elapsed_secs);
-	  }
+	if(used_hb && (! used_cyk)) { 
+	  if(th->unsrt[h].ad->ppline == NULL) rep_noverflow_hb++; 
 	}
       }
+
       /* update included stats */
       if(is_included) { 
-	if(th->unsrt[h].ad->used_hbands) { 
-	  inc_naln_hb++;
-	  tot_inc_matrix_Mb_hb    += th->unsrt[h].ad->matrix_Mb;
-	  tot_inc_elapsed_secs_hb += th->unsrt[h].ad->elapsed_secs;
-	  if(inc_naln_hb == 1) { 
-	    min_inc_matrix_Mb_hb    = th->unsrt[h].ad->matrix_Mb;
-	    max_inc_matrix_Mb_hb    = th->unsrt[h].ad->matrix_Mb;
-	    min_inc_elapsed_secs_hb = th->unsrt[h].ad->elapsed_secs;
-	    max_inc_elapsed_secs_hb = th->unsrt[h].ad->elapsed_secs;
-	  }
-	  else { 
-	    min_inc_matrix_Mb_hb    = ESL_MIN(min_inc_matrix_Mb_hb,    th->unsrt[h].ad->matrix_Mb);
-	    max_inc_matrix_Mb_hb    = ESL_MAX(max_inc_matrix_Mb_hb,    th->unsrt[h].ad->matrix_Mb);
-	    min_inc_elapsed_secs_hb = ESL_MIN(min_inc_elapsed_secs_hb, th->unsrt[h].ad->elapsed_secs);
-	    max_inc_elapsed_secs_hb = ESL_MAX(max_inc_elapsed_secs_hb, th->unsrt[h].ad->elapsed_secs);
-	  }
+	inc_naln++;
+	inc_tot_matrix_Mb    += th->unsrt[h].ad->matrix_Mb;
+	inc_tot_elapsed_secs += th->unsrt[h].ad->elapsed_secs;
+	inc_min_matrix_Mb     = ESL_MIN(inc_min_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	inc_max_matrix_Mb     = ESL_MAX(inc_max_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	inc_min_elapsed_secs  = ESL_MIN(inc_min_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+	inc_max_elapsed_secs  = ESL_MAX(inc_max_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+	if(used_hb) { 
+	  if(fabs(default_tau - th->unsrt[h].ad->tau) > eslSMALLX1) inc_ntau_mod_hb++;
 	}
-	else { 
-	  inc_naln_dccyk++;
-	  tot_inc_matrix_Mb_dccyk    += th->unsrt[h].ad->matrix_Mb;
-	  tot_inc_elapsed_secs_dccyk += th->unsrt[h].ad->elapsed_secs;
-	  if(inc_naln_dccyk == 1) { 
-	    min_inc_matrix_Mb_dccyk    = th->unsrt[h].ad->matrix_Mb;
-	    max_inc_matrix_Mb_dccyk    = th->unsrt[h].ad->matrix_Mb;
-	    min_inc_elapsed_secs_dccyk = th->unsrt[h].ad->elapsed_secs;
-	    max_inc_elapsed_secs_dccyk = th->unsrt[h].ad->elapsed_secs;
-	  }
-	  else { 
-	    min_inc_matrix_Mb_dccyk    = ESL_MIN(min_inc_matrix_Mb_dccyk,    th->unsrt[h].ad->matrix_Mb);
-	    max_inc_matrix_Mb_dccyk    = ESL_MAX(max_inc_matrix_Mb_dccyk,    th->unsrt[h].ad->matrix_Mb);
-	    min_inc_elapsed_secs_dccyk = ESL_MIN(min_inc_elapsed_secs_dccyk, th->unsrt[h].ad->elapsed_secs);
-	    max_inc_elapsed_secs_dccyk = ESL_MAX(max_inc_elapsed_secs_dccyk, th->unsrt[h].ad->elapsed_secs);
-	  }
+	if(used_hb && (! used_cyk)) { 
+	  if(th->unsrt[h].ad->ppline == NULL) inc_noverflow_hb++; 
+	}
+      }
+
+      /* update removed duplicate stats */
+      if(is_removed_duplicate) { 
+	dup_naln++;
+	dup_tot_matrix_Mb    += th->unsrt[h].ad->matrix_Mb;
+	dup_tot_elapsed_secs += th->unsrt[h].ad->elapsed_secs;
+	dup_min_matrix_Mb     = ESL_MIN(dup_min_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	dup_max_matrix_Mb     = ESL_MAX(dup_max_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	dup_min_elapsed_secs  = ESL_MIN(dup_min_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+	dup_max_elapsed_secs  = ESL_MAX(dup_max_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+	if(used_hb) { 
+	  if(fabs(default_tau - th->unsrt[h].ad->tau) > eslSMALLX1) dup_ntau_mod_hb++;
+	}
+	if(used_hb && (! used_cyk)) { 
+	  if(th->unsrt[h].ad->ppline == NULL) dup_noverflow_hb++; 
 	}
       }
     }
   }
   /* Output */
-  if(rep_naln_hb > 0) { 
-    avg_rep_matrix_Mb_hb    = tot_rep_matrix_Mb_hb    / (double) rep_naln_hb;
-    avg_rep_elapsed_secs_hb = tot_rep_elapsed_secs_hb / (double) rep_naln_hb;
+  if(all_naln > 0) { 
+    all_avg_matrix_Mb    = all_tot_matrix_Mb    / (double) all_naln;
+    all_avg_elapsed_secs = all_tot_elapsed_secs / (double) all_naln;
   }
-  if(rep_naln_dccyk > 0) { 
-    avg_rep_matrix_Mb_dccyk    = tot_rep_matrix_Mb_dccyk    / (double) rep_naln_dccyk;
-    avg_rep_elapsed_secs_dccyk = tot_rep_elapsed_secs_dccyk / (double) rep_naln_dccyk;
+  if(rep_naln > 0) { 
+    rep_avg_matrix_Mb    = rep_tot_matrix_Mb    / (double) rep_naln;
+    rep_avg_elapsed_secs = rep_tot_elapsed_secs / (double) rep_naln;
   }
-  if(inc_naln_hb > 0) { 
-    avg_inc_matrix_Mb_hb    = tot_inc_matrix_Mb_hb    / (double) inc_naln_hb;
-    avg_inc_elapsed_secs_hb = tot_inc_elapsed_secs_hb / (double) inc_naln_hb;
+  if(inc_naln > 0) { 
+    inc_avg_matrix_Mb    = inc_tot_matrix_Mb    / (double) inc_naln;
+    inc_avg_elapsed_secs = inc_tot_elapsed_secs / (double) inc_naln;
   }
-  if(inc_naln_dccyk > 0) { 
-    avg_inc_matrix_Mb_dccyk    = tot_inc_matrix_Mb_dccyk    / (double) inc_naln_dccyk;
-    avg_inc_elapsed_secs_dccyk = tot_inc_elapsed_secs_dccyk / (double) inc_naln_dccyk;
+  if(dup_naln > 0) { 
+    dup_avg_matrix_Mb    = dup_tot_matrix_Mb    / (double) dup_naln;
+    dup_avg_elapsed_secs = dup_tot_elapsed_secs / (double) dup_naln;
   }
 
   fprintf(ofp, "Hit alignment statistics summary:\n");
   fprintf(ofp, "---------------------------------\n");
-  //fprintf(ofp, "Query:       %s  [CLEN=%d]\n", cm->name, cm->clen);
-  //if (cm->acc)  fprintf(ofp, "Accession:   %s\n", cm->acc);
-  //if (cm->desc) fprintf(ofp, "Description: %s\n", cm->desc);
-  //fprintf(ofp, "\n");
-  if((rep_naln_hb + rep_naln_dccyk) > 0) { 
-    fprintf(ofp, "%8s  %-22s  %9s  %25s  %34s\n", "", "", "", "    matrix size (Mb)     ", "      alignment time (secs)       ");
-    fprintf(ofp, "%8s  %-22s  %9s  %25s  %34s\n", "", "", "", "-------------------------", "----------------------------------");
-    fprintf(ofp, "%8s  %-22s  %9s  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "category", "      algorithm       ", "# alns", "minimum", "average", "maximum", "minimum", "average", "maximum", "total");
-    fprintf(ofp, "%8s  %-22s  %9s  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "--------", "----------------------", "---------", "-------", "-------", "-------", "-------", "-------", "-------", "-------");
+  if(all_naln > 0) { 
+    fprintf(ofp, "%18s  %9s  %25s  %34s\n", "", "", "    matrix size (Mb)     ", "      alignment time (secs)       ");
+    fprintf(ofp, "%18s  %9s  %25s  %34s\n", "", "", "-------------------------", "----------------------------------");
+    fprintf(ofp, "%-18s  %9s  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "category", "# alns", "minimum", "average", "maximum", "minimum", "average", "maximum", "total");
+    if(used_hb) { 
+      fprintf(ofp, "  %7s", "ntaumod");
+      if(! used_cyk) { 
+	fprintf(ofp, "  %7s", "novrflw");
+      }
+    }
+    fprintf(ofp, "\n");
+    fprintf(ofp, "%18s  %9s  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "------------------", "---------", "-------", "-------", "-------", "-------", "-------", "-------", "-------");
+    if(used_hb) { 
+      fprintf(ofp, "  %7s", "-------");
+      if(! used_cyk) { 
+	fprintf(ofp, "  %7s", "-------");
+      }
+    }
+    fprintf(ofp, "\n");
+    
     /* reported */
-    if(rep_naln_hb > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", 
-	      (used_cyk) ? "HMM banded CYK" : "HMM banded optimal acc", 
-	      rep_naln_hb, min_rep_matrix_Mb_hb, avg_rep_matrix_Mb_hb, max_rep_matrix_Mb_hb, 
-	      min_rep_elapsed_secs_hb, avg_rep_elapsed_secs_hb, max_rep_elapsed_secs_hb, tot_rep_elapsed_secs_hb);
+    if(rep_naln > 0) { 
+      fprintf(ofp, "%-18s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f", "reported", 
+	      rep_naln, rep_min_matrix_Mb, rep_avg_matrix_Mb, rep_max_matrix_Mb, 
+	      rep_min_elapsed_secs, rep_avg_elapsed_secs, rep_max_elapsed_secs, rep_tot_elapsed_secs);
+      if(used_hb) { 
+	fprintf(ofp, "  %7" PRId64 "", rep_ntau_mod_hb);
+	if(! used_cyk) { 
+	  fprintf(ofp, "  %7" PRId64 "", rep_noverflow_hb);
+	}
+      }
     }
     else {
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", 
-	      (used_cyk) ? "HMM banded CYK" : "HMM banded optimal acc", 
-	      rep_naln_hb, "-", "-", "-", "-", "-", "-", "-");
+      fprintf(ofp, "%-18s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "reported", 
+	      rep_naln, "-", "-", "-", "-", "-", "-", "-");
+      if(used_hb) { 
+	fprintf(ofp, "  %7s", "-");
+	if(! used_cyk) { 
+	  fprintf(ofp, "  %7s", "-");
+	}
+      }
     }
-    if(rep_naln_dccyk > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "reported", "nonbanded D&C CYK", rep_naln_dccyk, 
-	      min_rep_matrix_Mb_dccyk,    avg_rep_matrix_Mb_dccyk,    max_rep_matrix_Mb_dccyk, 
-	      min_rep_elapsed_secs_dccyk, avg_rep_elapsed_secs_dccyk, max_rep_elapsed_secs_dccyk, tot_rep_elapsed_secs_dccyk);
-    }
-    else {
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "reported", "nonbanded D&C CYK", rep_naln_dccyk, "-", "-", "-", "-", "-", "-", "-");
-    }
+    fprintf(ofp, "\n");
+    
     /* included */
-    if(inc_naln_hb > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", 
-	      (used_cyk) ? "HMM banded CYK" : "HMM banded optimal acc", 
-	      inc_naln_hb, min_inc_matrix_Mb_hb,    avg_inc_matrix_Mb_hb,    max_inc_matrix_Mb_hb, 
-	      min_inc_elapsed_secs_hb, avg_inc_elapsed_secs_hb, max_inc_elapsed_secs_hb, tot_inc_elapsed_secs_hb);
+    if(inc_naln > 0) { 
+      fprintf(ofp, "%-18s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f", "included", 
+	      inc_naln, inc_min_matrix_Mb,    inc_avg_matrix_Mb,    inc_max_matrix_Mb, 
+	      inc_min_elapsed_secs, inc_avg_elapsed_secs, inc_max_elapsed_secs, inc_tot_elapsed_secs);
+      if(used_hb) { 
+	fprintf(ofp, "  %7" PRId64 "", inc_ntau_mod_hb);
+	if(! used_cyk) { 
+	  fprintf(ofp, "  %7" PRId64 "", inc_noverflow_hb);
+	}
+      }
     }
     else {
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", 
-	      (used_cyk) ? "HMM banded CYK" : "HMM banded optimal acc", 
-	      inc_naln_hb, "-", "-", "-", "-", "-", "-", "-");
+      fprintf(ofp, "%-18s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "included", 
+	      inc_naln, "-", "-", "-", "-", "-", "-", "-");
+      if(used_hb) { 
+	fprintf(ofp, "  %7s", "-");
+	if(! used_cyk) { 
+	  fprintf(ofp, "  %7s", "-");
+	}
+      }
     }
-    if(inc_naln_dccyk > 0) { 
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f\n", "included", "nonbanded D&C CYK", inc_naln_dccyk, 
-	      min_inc_matrix_Mb_dccyk,    avg_inc_matrix_Mb_dccyk,    max_inc_matrix_Mb_dccyk, 
-	      min_inc_elapsed_secs_dccyk, avg_inc_elapsed_secs_dccyk, max_inc_elapsed_secs_dccyk, tot_inc_elapsed_secs_dccyk);
+    fprintf(ofp, "\n");
+    
+    /* removed duplicates */
+    if(dup_naln > 0) { 
+      fprintf(ofp, "%-18s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f", "removed duplicates", 
+	      dup_naln, dup_min_matrix_Mb, dup_avg_matrix_Mb, dup_max_matrix_Mb, 
+	      dup_min_elapsed_secs, dup_avg_elapsed_secs, dup_max_elapsed_secs, dup_tot_elapsed_secs);
+      if(used_hb) { 
+	fprintf(ofp, "  %7" PRId64 "", dup_ntau_mod_hb);
+	if(! used_cyk) { 
+	  fprintf(ofp, "  %7" PRId64 "", dup_noverflow_hb);
+	}
+      }
     }
     else {
-      fprintf(ofp, "%8s  %-22s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s\n", "included", "nonbanded D&C CYK", inc_naln_dccyk, "-", "-", "-", "-", "-", "-", "-");
+      fprintf(ofp, "%-18s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "removed duplicates", 
+	      dup_naln, "-", "-", "-", "-", "-", "-", "-");
+      if(used_hb) { 
+	fprintf(ofp, "  %7s", "-");
+	if(! used_cyk) { 
+	  fprintf(ofp, "  %7s", "-");
+	}
+      }
     }
+    fprintf(ofp, "\n");
+    
+    /* all */
+    if(all_naln > 0) { 
+      fprintf(ofp, "%-18s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f", "all", 
+	      all_naln, all_min_matrix_Mb, all_avg_matrix_Mb, all_max_matrix_Mb, 
+	      all_min_elapsed_secs, all_avg_elapsed_secs, all_max_elapsed_secs, all_tot_elapsed_secs);
+      if(used_hb) { 
+	fprintf(ofp, "  %7" PRId64 "", all_ntau_mod_hb);
+	if(! used_cyk) { 
+	  fprintf(ofp, "  %7" PRId64 "", all_noverflow_hb);
+	}
+      }
+    }
+    else {
+      fprintf(ofp, "%-18s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "included", 
+	      all_naln, "-", "-", "-", "-", "-", "-", "-");
+      if(used_hb) { 
+	fprintf(ofp, "  %7s", "-");
+	if(! used_cyk) { 
+	  fprintf(ofp, "  %7s", "-");
+	}
+      }
+    }
+    fprintf(ofp, "\n");
   }
   else { 
-    fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n");
+    fprintf(ofp, "\n   [No hits detected]\n");
   }
   return eslOK;
 }
-
 
 /* Function:  cm_tophits_Alignment()
  * Incept:    EPN, Wed Mar 21 16:21:21 2012
@@ -2270,8 +2343,4 @@ main(int argc, char **argv)
 /*****************************************************************
  * @LICENSE@
  *****************************************************************/
-
-
-
-
 
