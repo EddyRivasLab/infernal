@@ -398,13 +398,13 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   }
   else if(esl_opt_GetBoolean(go, "--rfam")) { 
     pli->do_rfam = TRUE;
-    pli->F1 = pli->F1b = 0.05;
-    pli->F2 = pli->F2b = 0.04;
-    pli->F3 = pli->F3b = 0.0004;
-    pli->F4 = pli->F4b = 0.0004;
-    pli->F5 = pli->F5b = 0.0004;
+    pli->F1 = 0.06;
+    pli->F2 = pli->F2b = 0.02;
+    pli->F3 = pli->F3b = 0.0002;
+    pli->F4 = pli->F4b = 0.0002;
+    pli->F5 = pli->F5b = 0.0002;
     pli->F6 = 0.0001;
-    /* these are the same as the defaults for a 100 Gb database or larger */
+    /* these are the same as the defaults for a 20 Gb database or larger */
   }
   else { 
     /* None of --max, --nohmm, --mid, --rfam enabled, use default
@@ -414,58 +414,64 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
      * xref: ~nawrockie/notebook/11_0513_inf_dcmsearch_thresholds/00LOG
      */
     Z_Mb = esl_opt_IsOn(go, "--FZ") ? esl_opt_GetReal(go, "--FZ") : pli->Z / 1000000.;
-    if(Z_Mb >= (100000. - eslSMALLX1)) { /* Z >= 100 Gb */
-      pli->F1 = pli->F1b = 0.05;
-      pli->F2 = pli->F2b = 0.04;
-      pli->F3 = pli->F3b = 0.0004;
-      pli->F4 = pli->F4b = 0.0004;
-      pli->F5 = pli->F5b = 0.0004;
+    /* None of --max, --nohmm, --mid, --rfam enabled, use default
+     * strategy, set filter thresholds dependent on Z, which was set
+     * above. These default thresholds are hard-coded and were determined
+     * by a systematic search over possible filter threshold combinations.
+     * xref: ~nawrockie/notebook/12_0319_inf_finalize_filter_thresholds/00LOG
+     */
+    Z_Mb = esl_opt_IsUsed(go, "--FZ") ? esl_opt_GetReal(go, "--FZ") : pli->Z / 1000000.;
+
+    /* turn off MSV bias filter and env def bias filter */
+    pli->do_msvbias = pli->do_edefbias = FALSE;
+    pli->F1b = pli->F5b = 1.0; /* these are irrelevant */
+
+    /* set all other thresholds to db size defaults */
+    if(Z_Mb >= (20000. - eslSMALLX1)) { /* Z >= 20 Gb */
+      pli->F1 = 0.06;
+      pli->F2 = pli->F2b = 0.02;
+      pli->F3 = pli->F3b = 0.0002;
+      pli->F4 = pli->F4b = 0.0002;
+      pli->F5 = pli->F5b = 0.0002;
       pli->F6 = 0.0001;
     }
-    else if(Z_Mb >= (10000. - eslSMALLX1)) { /* 100 Gb > Z >= 10 Gb */
-      pli->F1 = pli->F1b = 0.06;
-      pli->F2 = pli->F2b = 0.05;
-      pli->F3 = pli->F3b = 0.0005;
-      pli->F4 = pli->F4b = 0.0005;
-      pli->F5 = pli->F5b = 0.0005;
-      pli->F6 = 0.0001;
-    }
-    else if(Z_Mb >= (1000. - eslSMALLX1)) { /* 10 Gb > Z >= 1 Gb */
-      pli->F1 = pli->F1b = 0.06;
+    else if(Z_Mb >= (2000. - eslSMALLX1)) { /* 20 Gb > Z >= 2 Gb */
+      pli->F1 = 0.15;
       pli->F2 = pli->F2b = 0.15;
-      pli->F3 = pli->F3b = 0.0005;
-      pli->F4 = pli->F4b = 0.0005;
-      pli->F5 = pli->F5b = 0.0005;
+      pli->F3 = pli->F3b = 0.0002;
+      pli->F4 = pli->F4b = 0.0002;
+      pli->F5 = pli->F5b = 0.0002;
       pli->F6 = 0.0001;
     }
-    else if(Z_Mb >= (100. - eslSMALLX1)) { /* 1 Gb  > Z >= 100 Mb */
+    else if(Z_Mb >= (200. - eslSMALLX1)) { /* 2 Gb > Z >= 200 Mb */
+      pli->F1 = 0.15;
+      pli->F2 = pli->F2b = 0.15;
+      pli->F3 = pli->F3b = 0.008;
+      pli->F4 = pli->F4b = 0.008;
+      pli->F5 = pli->F5b = 0.008;
+      pli->F6 = 0.0001;
+    }
+    else if(Z_Mb >= (20. - eslSMALLX1)) { /* 200 Mb  > Z >= 20 Mb */
       pli->F1 = pli->F1b = 0.30;
-      pli->F2 = pli->F2b = 0.15;
-      pli->F3 = pli->F3b = 0.002;
-      pli->F4 = pli->F4b = 0.002;
-      pli->F5 = pli->F5b = 0.002;
-      pli->F6 = 0.0001;
-    }
-    else if(Z_Mb >= (10. - eslSMALLX1)) { /* 100 Mb  > Z >= 10 Mb */
-      pli->F1 = pli->F1b = 0.35;
       pli->F2 = pli->F2b = 0.20;
       pli->F3 = pli->F3b = 0.003;
       pli->F4 = pli->F4b = 0.003;
       pli->F5 = pli->F5b = 0.003;
       pli->F6 = 0.0001;
     }
-    else if(Z_Mb >= (1. - eslSMALLX1)) { /* 10 Mb  > Z >= 1 Mb */
-      pli->F1 = pli->F1b = 0.35;
-      pli->F2 = pli->F2b = 0.20;
-      pli->F3 = pli->F3b = 0.015;
-      pli->F4 = pli->F4b = 0.015;
-      pli->F5 = pli->F5b = 0.015;
+    else if(Z_Mb >= (2. - eslSMALLX1)) { /* 20 Mb  > Z >= 2 Mb */
+      pli->F1 = 0.35;
+      pli->do_vit = pli->do_vitbias = FALSE;
+      pli->F2 = pli->F2b = 1.00; /* these are irrelevant */
+      pli->F3 = pli->F3b = 0.005;
+      pli->F4 = pli->F4b = 0.005;
+      pli->F5 = pli->F5b = 0.005;
       pli->F6 = 0.0001;
     }
-    else { /* 1 Mb  > Z */
-      pli->do_msv = FALSE;
-      pli->F1 = pli->F1b = 1.00; /* this is irrelevant */
-      pli->F2 = pli->F2b = 0.25;
+    else { /* 2 Mb  > Z */
+      pli->F1 = 0.35;
+      pli->do_vit = pli->do_vitbias = FALSE;
+      pli->F2 = pli->F2b = 1.00; /* these are irrelevant */
       pli->F3 = pli->F3b = 0.02;
       pli->F4 = pli->F4b = 0.02;
       pli->F5 = pli->F5b = 0.02;
