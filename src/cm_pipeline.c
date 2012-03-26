@@ -452,8 +452,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
       pli->F6 = 0.0001;
     }
     else if(Z_Mb >= (20. - eslSMALLX1)) { /* 200 Mb  > Z >= 20 Mb */
-      pli->F1 = pli->F1b = 0.30;
-      pli->F2 = pli->F2b = 0.20;
+      pli->F1 = pli->F1b = 0.35;
+      pli->F2 = pli->F2b = 0.15;
       pli->F3 = pli->F3b = 0.003;
       pli->F4 = pli->F4b = 0.003;
       pli->F5 = pli->F5b = 0.003;

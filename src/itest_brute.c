@@ -230,7 +230,7 @@ main(int argc, char **argv)
 	    
 	    if(do_cyk) { 
 	      if ((status = cm_CYKInsideAlign(cm, errbuf, dsq, L, 128., mx, shmx, NULL, &(Scyk_sc[L])))  != eslOK) esl_fatal("CYK failed: %s", errbuf);
-	      if (esl_opt_GetBoolean(go, "--ev")) cm_mx_Dump(stdout, mx);
+	      if (esl_opt_GetBoolean(go, "--ev")) cm_mx_Dump(stdout, mx, TRUE);
 	      
 	      /* run CYKOutside and enforce a consistency check of the CYKInside/CYKOutside matrices */
 	      if ((status = cm_CYKOutsideAlign(cm, errbuf, dsq, L, 128., TRUE, out_mx, mx, NULL)) != eslOK)  esl_fatal("CYKOutside failed: %s", errbuf);
@@ -238,7 +238,7 @@ main(int argc, char **argv)
 	    
 	    if(do_inside) { 
 	      if ((status = cm_InsideAlign(cm, errbuf, dsq, L, 128., mx, &(Sins_sc[L]))) != eslOK)  esl_fatal("Inside failed: %s", errbuf);
-	      if (esl_opt_GetBoolean(go, "--ev")) cm_mx_Dump(stdout, mx);
+	      if (esl_opt_GetBoolean(go, "--ev")) cm_mx_Dump(stdout, mx, TRUE);
 	      
 	      /* run Outside and enforce a consistency check of the Inside/Outside matrices */
 	      if ((status = cm_OutsideAlign(cm, errbuf, dsq, L, 128., TRUE, out_mx, mx, NULL)) != eslOK)  esl_fatal("Outside failed: %s", errbuf);
@@ -248,7 +248,7 @@ main(int argc, char **argv)
 	    if(L > 0) { 
 	      if(do_cyk) { 
 		if ((status = cm_TrCYKInsideAlign(cm, errbuf, dsq, L, 128., TRMODE_UNKNOWN, PLI_PASS_5P_AND_3P_FORCE, trmx, trshmx, NULL, &mode, NULL))  != eslOK) esl_fatal("TrCYK failed: %s", errbuf);
-		if (esl_opt_GetBoolean(go, "--ev")) cm_tr_mx_Dump(stdout, trmx, TRMODE_UNKNOWN);
+		if (esl_opt_GetBoolean(go, "--ev")) cm_tr_mx_Dump(stdout, trmx, TRMODE_UNKNOWN, TRUE);
 		Jcyk_sc[L] = trmx->Jdp[0][L][L];
 		Lcyk_sc[L] = trmx->Ldp[0][L][L];
 		Rcyk_sc[L] = trmx->Rdp[0][L][L];
@@ -259,7 +259,7 @@ main(int argc, char **argv)
 	      
 	      if(do_inside) { 
 		if ((status = cm_TrInsideAlign (cm, errbuf, dsq, L, 128., TRMODE_UNKNOWN, PLI_PASS_5P_AND_3P_FORCE, trmx, &mode, NULL))  != eslOK) esl_fatal("TrInside failed: %s", errbuf);
-		if (esl_opt_GetBoolean(go, "--ev")) cm_tr_mx_Dump(stdout, trmx, TRMODE_UNKNOWN);
+		if (esl_opt_GetBoolean(go, "--ev")) cm_tr_mx_Dump(stdout, trmx, TRMODE_UNKNOWN, TRUE);
 		Jins_sc[L] = trmx->Jdp[0][L][L];
 		Lins_sc[L] = trmx->Ldp[0][L][L];
 		Rins_sc[L] = trmx->Rdp[0][L][L];
