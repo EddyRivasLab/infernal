@@ -230,7 +230,7 @@
 # sub_cm-test exercises (sub CM construction validation) 
 1  exercise  sub/trna1           @src/sub_cm-test@ %TRNA.CM%
 1  exercise  sub/rp              @src/sub_cm-test@ %RP.CM%
-1  exercise  sub/ssu             @src/sub_cm-test@ %SSU.CM%
+2  exercise  sub/ssu             @src/sub_cm-test@ %SSU.CM%
 1  exercise  sub/trna2           @src/sub_cm-test@ --exhaust %TRNA.CM%
 
 # trcyk (truncated CYK, D&C version, non D&C version is tested in cmalign) 
@@ -751,9 +751,12 @@
 1  exercise  emit:t/tfile    @src/cmemit@  --tfile %TMPOUT%  %TRNA.CM%
 1  exercise  emit:t/tfile/a  @src/cmemit@  -a --tfile %TMPOUT%  %TRNA.CM%
 
-1  exercise  emit:t/embed    @src/cmemit@  -e 300 --seed 181 %TRNA.CM%
-1  exercise  emit:t/embed/5t @src/cmemit@  --u5p -e 300 --seed 181 %TRNA.CM%
-1  exercise  emit:t/embed/3t @src/cmemit@  --u3p -e 300 --seed 181 %TRNA.CM%
+1  exercise  emit:t/ebd      @src/cmemit@  -e 300 --seed 181 %TRNA.CM%
+1  exercise  emit:t/ebd/i    @src/cmemit@  -e 300 --iid --seed 181 %TRNA.CM%
+1  exercise  emit:t/ebd/5t   @src/cmemit@  --u5p -e 300 --seed 181 %TRNA.CM%
+1  exercise  emit:t/ebd/5t/i @src/cmemit@  --u5p -e --iid 300 --seed 181 %TRNA.CM%
+1  exercise  emit:t/ebd/3t   @src/cmemit@  --u3p -e 300 --seed 181 %TRNA.CM%
+1  exercise  emit:t/ebd/3t/i @src/cmemit@  --u3p -e --iid 300 --seed 181 %TRNA.CM%
 1  exercise  emit:t/begend0  @src/cmemit@  -a --a5p 0 --a3p 0 %TRNA.CM%
 1  exercise  emit:t/begend1  @src/cmemit@  -a --a5p 10 --a3p 50 %TRNA.CM%
 1  exercise  emit:t/begend2  @src/cmemit@  -a --a5p 40 --a3p 45 %TRNA.CM%
@@ -1102,7 +1105,7 @@
 1  exercise  scan:t/1k/wcx/3     @src/cmscan@  --wcx 3 %T.CM% %T1K%
 1  exercise  scan:t/1k/wcx/5     @src/cmscan@  --wcx 5 %T.CM% %T1K%
 1  fail      scan:t/1k/wcx/0p3   @src/cmscan@  --wcx 0.3 %T.CM% %T1K%
-1  fail      scan:t/1k/wcx/nohmm @src/cmscan@  --wcx 3 --nohmm %T.CM% %T1K%
+1  fail      scan:t/1k/wcx/nhmm  @src/cmscan@  --wcx 3 --nohmm %T.CM% %T1K%
 1  fail      scan:t/1k/wcx/fqdb  @src/cmscan@  --wcx 3 --fqdb %T.CM% %T1K%
 1  fail      scan:t/1k/wcx/qdb   @src/cmscan@  --wcx 3 --qdb %T.CM% %T1K%
 1  exercise  scan:3/1k/wcx/3     @src/cmscan@  --wcx 3 %3.CM% %R1K%
