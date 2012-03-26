@@ -63,11 +63,13 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 {
   int         status;
   CM_ALIDISPLAY *ad = NULL;      /* alidisplay structure we're building       */
-  ESL_STACK  *pda = NULL;        /* pushdown automaton used to traverse trace */
+  ESL_STACK    *pda = NULL;      /* pushdown automaton used to traverse trace */
+  float        *act = NULL;      /* [0..cm->abc->K-1], count of residue in hit */
   int         type;		 /* type of pda move: PDA_RESIDUE, PDA_STATE  */
   int         v;		 /* state index       */
   int         nd;		 /* node index        */
   int         ti;		 /* position in trace */
+  int         x;                 /* position in sequence */
   int         qinset, tinset;	 /* # consensus nt skipped by an EL, or in an EL */
   int         ninset;		 /* max # nt in an EL     */
   int         pos;		 /* position in growing ali */
@@ -380,9 +382,9 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 
       /* Fetch some info into tmp variables, for "clarity"
        */
-      nd   = cm->ndidx[v];	  /* what CM node we're in */
-      lc   = cm->cmcons->lpos[nd];	  /* where CM node aligns to in consensus (left) */
-      rc   = cm->cmcons->rpos[nd];      /* where CM node aligns to in consensus (right) */
+      nd   = cm->ndidx[v];	                      /* what CM node we're in */
+      lc   = cm->cmcons->lpos[nd];	              /* where CM node aligns to in consensus (left) */
+      rc   = cm->cmcons->rpos[nd];                    /* where CM node aligns to in consensus (right) */
       symi = sq->dsq[tr->emitl[ti] + (seqoffset-1)];  /* residue indices that node is aligned to (left) */
       symj = sq->dsq[tr->emitr[ti] + (seqoffset-1)];  /* residue indices that node is aligned to (right) */
       if(ppstr != NULL) { /* posterior codes are indexed 0..alen-1, off-by-one w.r.t dsq */
@@ -582,7 +584,18 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
     /* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
     pos += wtrunc_L; 
   }
-	 
+
+  /* Truly final step, calculate GC frequency, we could do this
+   * inside the parstree traversal, but this is easier and can't
+   * be much slower given that we'd need to check if we were an
+   * emitter before calling, or count gaps as well.
+   */
+  ESL_ALLOC(act, sizeof(float) * cm->abc->K);
+  esl_vec_FSet(act, cm->abc->K, 0.);
+  for(x = tr->emitl[0] + seqoffset - 1; x <= tr->emitr[0] + seqoffset - 1; x++) {
+    esl_abc_FCount(cm->abc, act, sq->dsq[x], 1.0);
+  }
+
   if(cm->rf != NULL) ad->rfline[ad->N] = '\0';
   ad->nline[ad->N]  = '\0';
   ad->csline[ad->N] = '\0';
@@ -596,16 +609,18 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   ad->cto_emit    = cto_emit;
   ad->cfrom_span  = cfrom_span;
   ad->cto_span    = cto_span;
+  ad->gc          = (act[1] + act[2]) / (float) (tr->emitr[0]- tr->emitl[0] + 1);
   
   esl_stack_Destroy(pda);
-  if(tmpmsa != NULL) esl_msa_Destroy(tmpmsa);
-
+  if(tmpmsa != NULL)  esl_msa_Destroy(tmpmsa);
+  if(act    != NULL)  free(act);
   if(ret_ad != NULL) *ret_ad = ad;
   return eslOK;
 
  ERROR:
-  if(pda != NULL)    esl_stack_Destroy(pda);
-  if(ad != NULL)     cm_alidisplay_Destroy(ad);
+  if(pda    != NULL)  esl_stack_Destroy(pda);
+  if(ad     != NULL)  cm_alidisplay_Destroy(ad);
+  if(act    != NULL)  free(act);
   if(ret_ad != NULL) *ret_ad = NULL;
   if(status == eslEMEM) ESL_FAIL(status, errbuf, "cm_alidisplay_Create() out of memory");
   return status; /*  errbuf filled some other way */
@@ -632,6 +647,7 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
   ad2->rfline = ad2->nline   = ad2->csline  = ad2->model = ad2->mline = ad2->aseq = ad2->ppline = NULL;
   ad2->cmname  = ad2->cmacc  = ad2->cmdesc  = NULL;
   ad2->sqname  = ad2->sqacc  = ad2->sqdesc  = NULL;
+  ad2->aseq_el = ad2->ppline_el = NULL;
   ad2->mem     = NULL;
   ad2->memsize = 0;
 
@@ -641,14 +657,17 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
       ad2->memsize = ad->memsize;
       memcpy(ad2->mem, ad->mem, ad->memsize);
 
-      ad2->rfline = (ad->rfline ? ad2->mem + (ad->rfline - ad->mem) : NULL );
-      ad2->nline  = (ad->nline  ? ad2->mem + (ad->nline - ad->mem)  : NULL );
-      ad2->csline = ad2->mem + (ad->csline - ad->mem);
-      ad2->model  = ad2->mem + (ad->model  - ad->mem);
-      ad2->mline  = ad2->mem + (ad->mline  - ad->mem);
-      ad2->aseq   = ad2->mem + (ad->aseq   - ad->mem);
-      ad2->ppline = (ad->ppline ? ad2->mem + (ad->ppline - ad->mem) : NULL );
-      ad2->N      = ad->N;
+      ad2->rfline    = (ad->rfline ? ad2->mem + (ad->rfline - ad->mem) : NULL );
+      ad2->nline     = (ad->nline  ? ad2->mem + (ad->nline - ad->mem)  : NULL );
+      ad2->csline    = ad2->mem + (ad->csline - ad->mem);
+      ad2->model     = ad2->mem + (ad->model  - ad->mem);
+      ad2->mline     = ad2->mem + (ad->mline  - ad->mem);
+      ad2->aseq      = ad2->mem + (ad->aseq   - ad->mem);
+      ad2->ppline    = (ad->ppline ? ad2->mem + (ad->ppline - ad->mem) : NULL );
+      ad2->aseq_el   = ad2->mem + (ad->aseq_el- ad->mem);
+      ad2->ppline_el = (ad->ppline_el ? ad2->mem + (ad->ppline_el - ad->mem) : NULL );
+      ad2->N         = ad->N;
+      ad2->N_el      = ad->N_el;
 
       ad2->cmname     = ad2->mem + (ad->cmname - ad->mem);
       ad2->cmacc      = ad2->mem + (ad->cmacc  - ad->mem);
@@ -667,14 +686,17 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
     }
   else				/* deserialized */
     {
-      if ( esl_strdup(ad->rfline, -1, &(ad2->rfline)) != eslOK) goto ERROR;
-      if ( esl_strdup(ad->nline,  -1, &(ad2->nline))  != eslOK) goto ERROR;
-      if ( esl_strdup(ad->csline, -1, &(ad2->csline)) != eslOK) goto ERROR;
-      if ( esl_strdup(ad->model,  -1, &(ad2->model))  != eslOK) goto ERROR;
-      if ( esl_strdup(ad->mline,  -1, &(ad2->mline))  != eslOK) goto ERROR;
-      if ( esl_strdup(ad->aseq,   -1, &(ad2->aseq))   != eslOK) goto ERROR;
-      if ( esl_strdup(ad->ppline, -1, &(ad2->ppline)) != eslOK) goto ERROR;
-      ad2->N = ad->N;
+      if ( esl_strdup(ad->rfline,    -1, &(ad2->rfline))    != eslOK) goto ERROR;
+      if ( esl_strdup(ad->nline,     -1, &(ad2->nline))     != eslOK) goto ERROR;
+      if ( esl_strdup(ad->csline,    -1, &(ad2->csline))    != eslOK) goto ERROR;
+      if ( esl_strdup(ad->model,     -1, &(ad2->model))     != eslOK) goto ERROR;
+      if ( esl_strdup(ad->mline,     -1, &(ad2->mline))     != eslOK) goto ERROR;
+      if ( esl_strdup(ad->aseq,      -1, &(ad2->aseq))      != eslOK) goto ERROR;
+      if ( esl_strdup(ad->ppline,    -1, &(ad2->ppline))    != eslOK) goto ERROR;
+      if ( esl_strdup(ad->aseq_el,   -1, &(ad2->aseq_el))   != eslOK) goto ERROR;
+      if ( esl_strdup(ad->ppline_el, -1, &(ad2->ppline_el)) != eslOK) goto ERROR;
+      ad2->N    = ad->N;
+      ad2->N_el = ad->N_el;
 
       if ( esl_strdup(ad->cmname, -1, &(ad2->cmname)) != eslOK) goto ERROR;
       if ( esl_strdup(ad->cmacc,  -1, &(ad2->cmacc))  != eslOK) goto ERROR;
@@ -691,6 +713,14 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
       ad2->sqfrom  = ad->sqfrom;
       ad2->sqto    = ad->sqto;
     }
+
+  /* other data */
+  ad2->sc           = ad->sc;
+  ad2->avgpp        = ad->avgpp;
+  ad2->gc           = ad->gc;
+  ad2->tau          = ad->tau;
+  ad2->matrix_Mb    = ad->matrix_Mb;
+  ad2->elapsed_secs = ad->elapsed_secs;
 
   return ad2;
 
@@ -1402,6 +1432,7 @@ cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad)
 
   fprintf(fp, "sc         = %.2f\n",ad->sc);
   fprintf(fp, "avgpp      = %.2f\n",ad->avgpp);
+  fprintf(fp, "gc         = %.2f\n",ad->gc);
   fprintf(fp, "tau        = %g\n",  ad->tau);
   fprintf(fp, "mx Mb      = %.6f\n",ad->matrix_Mb);
   fprintf(fp, "seconds    = %.6f\n",ad->elapsed_secs);

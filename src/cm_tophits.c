@@ -1040,8 +1040,8 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   cur_rankstr[rankw] = '\0';
 
   fprintf(ofp, "Hit scores:\n");
-  fprintf(ofp, " %*s %9s %6s %5s  %-*s %*s %*s %1s %5s  %s\n", rankw, "rank",  "E-value",   " score", " bias", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"model"), posw, "start", posw, "end", "", "trunc", "description");
-  fprintf(ofp, " %*s %9s %6s %5s  %-*s %*s %*s %1s %5s  %s\n", rankw, rankstr, "---------", "------", "-----", namew, namestr, posw, posstr, posw, posstr, "", "-----", "-----------");
+  fprintf(ofp, " %*s %9s %6s %5s  %-*s %*s %*s %1s %5s %4s  %s\n", rankw, "rank",  "E-value",   " score", " bias", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"model"), posw, "start", posw, "end", "", "trunc", "gc", "description");
+  fprintf(ofp, " %*s %9s %6s %5s  %-*s %*s %*s %1s %5s %4s  %s\n", rankw, rankstr, "---------", "------", "-----", namew, namestr, posw, posstr, posw, posstr, "", "-----", "----", "-----------");
   
   nprinted = 0;
   for (h = 0; h < th->N; h++) { 
@@ -1063,7 +1063,7 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       
       sprintf(cur_rankstr, "(%d)", nprinted+1);
 
-      fprintf(ofp, " %*s %9.2g %6.1f %5.1f  %-*s %*" PRId64 " %*" PRId64 " %c %5s  ",
+      fprintf(ofp, " %*s %9.2g %6.1f %5.1f  %-*s %*" PRId64 " %*" PRId64 " %c %5s %4.2f  ",
 	      rankw, cur_rankstr,
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
@@ -1072,6 +1072,7 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'), 
+	      th->hit[h]->ad->gc,
 	      cm_alidisplay_TruncString(th->hit[h]->ad)); 
       
       if (textw > 0) fprintf(ofp, "%-.*s\n", descw, th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
@@ -1156,14 +1157,14 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 
       /* The hit info display is 101+rankw char wide:, where rankw is the maximum of 4 and 2 plus the number of digits in th->N. 
        * If (! pli->show_alignments) the width drops to 72+rankw.
-       *     rank    score  bias   E-value cm from   cm to       seq from      seq to       acc trunc| bands     tau   mx Mb seconds pass
-       *     ----   ------ ----- --------- ------- -------    ----------- -----------      ---- -----|------ ------- ------- ------- ----
-       *      (1) !  123.4   0.3    6.8e-9       3      72 []         412         492 + .. 0.98    no|   hmm    5e-6    1.30    0.04    1
-       *     (12) ?  123.4  12.7    1.8e-3       1      72 []         180         103 - .. 0.90    no|   hmm    0.01    0.65    2.23    3  
-       *    rankw 1 123456 12345 123456789 1234567 1234567 12 12345678901 12345678901 1 12 1234 12345| 12345 1234567 1234567 1234567 1234 
-       *        0         1         2         3         4         5         6         7         8    |   9        10        11        12
+       *     rank    score  bias   E-value cm from   cm to       seq from      seq to       acc trunc   gc| bands     tau   mx Mb seconds pass
+       *     ----   ------ ----- --------- ------- -------    ----------- -----------      ---- ----- ----|------ ------- ------- ------- ----
+       *      (1) !  123.4   0.3    6.8e-9       3      72 []         412         492 + .. 0.98    no 0.48|   hmm    5e-6    1.30    0.04    1
+       *     (12) ?  123.4  12.7    1.8e-3       1      72 []         180         103 - .. 0.90    no 0.60|   hmm    0.01    0.65    2.23    3  
+       *    rankw 1 123456 12345 123456789 1234567 1234567 12 12345678901 12345678901 1 12 1234 12345 1234| 12345 1234567 1234567 1234567 1234 
+       *        0         1         2         3         4         5         6         7         8        9|       10        11        12
        *        0123456789012345678901234567890123456789012345678901234567890123456789012345678901234578901234567890123456789012345678901
-       *                                                                                             |-> only shown if pli->be_verbose
+       *                                                                                                  |-> only shown if pli->be_verbose
        * In rare cases, when CYK alignment is chosen or when computing
        * posteriors is not feasible in allowable memory, the "acc"
        * column will be replaced by a "cyksc" colum which is 6
@@ -1171,14 +1172,14 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
        */
       
       fprintf(ofp, " %*s %1s %6s %5s %9s %7s %7s %2s %11s %11s %1s %2s",  rankw, "rank", "", "score", "bias", "E-value", "cm from", "cm to", "", "seq from", "seq to", "", "");
-      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s", "acc",   "trunc"); }
-      else                       { fprintf(ofp, " %6s %5s", "cyksc", "trunc"); }
+      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %4s", "acc",   "trunc", "gc"); }
+      else                       { fprintf(ofp, " %6s %5s %4s", "cyksc", "trunc", "gc"); }
       if(pli->be_verbose)        { fprintf(ofp, " %5s %7s %7s %7s %4s", "bands", "tau", "mx Mb", "seconds", "pass"); }
       fprintf(ofp, "\n");
       
       fprintf(ofp, " %*s %1s %6s %5s %9s %7s %7s %2s %11s %11s %1s %2s",  rankw, rankstr,  "", "------", "-----", "---------", "-------", "-------", "", "-----------", "-----------", "", "");
-      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s", "----",   "-----"); }
-      else                       { fprintf(ofp, " %6s %5s", "------", "-----"); }
+      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %4s", "----",   "-----", "----"); }
+      else                       { fprintf(ofp, " %6s %5s %4s", "------", "-----", "----"); }
       if(pli->be_verbose)        { fprintf(ofp, " %5s %7s %7s %7s %4s", "-----", "-------", "-------", "-------", "----"); }
       fprintf(ofp, "\n");
 	
@@ -1218,8 +1219,8 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      th->hit[h]->stop,
 	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'),
 	      lseq, rseq);
-      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f %5s", th->hit[h]->ad->avgpp, cm_alidisplay_TruncString(th->hit[h]->ad)); }
-      else                       { fprintf(ofp, " %6.2f %5s", th->hit[h]->ad->sc,    cm_alidisplay_TruncString(th->hit[h]->ad)); }
+      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f %5s %4.2f", th->hit[h]->ad->avgpp, cm_alidisplay_TruncString(th->hit[h]->ad), th->hit[h]->ad->gc); }
+      else                       { fprintf(ofp, " %6.2f %5s %4.2f", th->hit[h]->ad->sc,    cm_alidisplay_TruncString(th->hit[h]->ad), th->hit[h]->ad->gc); }
       if(pli->be_verbose) { 
 	if(th->hit[h]->ad->tau > -0.5) { /* tau is -1. if aln did not use HMM bands */
 	  fprintf(ofp, " %5s %7g", "hmm", th->hit[h]->ad->tau);
@@ -1227,16 +1228,16 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	else { 
 	  fprintf(ofp, " %5s %7s", (pli->final_cm_search_opts & CM_SEARCH_QDB) ? "qdb" : "no", "-");
 	}
-	fprintf(ofp, " %7.2f %7.2f %4d\n\n",	
+	fprintf(ofp, " %7.2f %7.2f %4d",	
 		th->hit[h]->ad->matrix_Mb,
 		th->hit[h]->ad->elapsed_secs,
 		th->hit[h]->pass_idx);
       }
-      fprintf(ofp, "\n");
+      fputs("\n\n", ofp);
 
       /*cm_alidisplay_Dump(ofp, th->hit[h]->ad);*/
       cm_alidisplay_Print(ofp, th->hit[h]->ad, 40, textw, pli->show_accessions, TRUE);
-      fprintf(ofp, "\n");
+      fputs("\n", ofp);
       nprinted++;
     }
   }

@@ -2333,6 +2333,7 @@ typedef struct cm_alidisplay_s {
 
   float  sc;		        /* alignment score */
   float  avgpp;		        /* average PP of all aligned residues, 0.0 if no PPs available */
+  float  gc;                    /* GC content of all aligned residues [0..1] */
   double tau;                   /* tau used to calc HMM bands, -1.0 if HMM bands not used */
   float  matrix_Mb;             /* size of DP matrix used in Mb, either HMM banded CYK/OA or D&C CYK */
   double elapsed_secs;          /* number of seconds required for alignment */

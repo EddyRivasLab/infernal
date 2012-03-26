@@ -32,27 +32,28 @@
 
 static ESL_OPTIONS options[] = {
   /* name          type            default       env   range   toggles       reqs  incomp   help                                     docgroup*/
-  { "-h",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,    "show brief help on version and usage",                            1 },
-  { "-o",          eslARG_OUTFILE, FALSE,        NULL, NULL,   NULL,         NULL, NULL,    "send sequence output to file <f>, not stdout",                    1 },
-  { "-N",          eslARG_INT,      "10",        NULL, "n>0",  NULL,         NULL, NULL,    "generate <n> sequences",                                          1 },
-  { "-u",          eslARG_NONE, "default",       NULL, NULL,   OUTOPTS,      NULL, NULL,    "write generated sequences as unaligned FASTA [default]",          1 },
-  { "-a",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,    "write generated sequences as an alignment",                       1 },
-  { "-c",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,    "generate a single \"consensus\" sequence only",                   1 },
-  { "-e",          eslARG_INT,      NULL,        NULL, "n>0",  NULL,         NULL, "-a,-c", "embed emitted sequences in random (iid) sequences of length <n>", 1 },
-  { "-l",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,    "local; emit from a locally configured model [default: global]",   1 },
+  { "-h",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,    "show brief help on version and usage",                                 1 },
+  { "-o",          eslARG_OUTFILE, FALSE,        NULL, NULL,   NULL,         NULL, NULL,    "send sequence output to file <f>, not stdout",                         1 },
+  { "-N",          eslARG_INT,      "10",        NULL, "n>0",  NULL,         NULL, NULL,    "generate <n> sequences",                                               1 },
+  { "-u",          eslARG_NONE, "default",       NULL, NULL,   OUTOPTS,      NULL, NULL,    "write generated sequences as unaligned FASTA [default]",               1 },
+  { "-a",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,    "write generated sequences as an alignment",                            1 },
+  { "-c",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,    "generate a single \"consensus\" sequence only",                        1, },
+  { "-e",          eslARG_INT,      NULL,        NULL, "n>0",  NULL,         NULL, "-a,-c", "embed emitted sequences within larger random sequences of length <n>", 1 },
+  { "-l",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,    "local; emit from a locally configured model [default: global]",        1 },
   /* options for truncating emitted sequences */
   { "--u5p",       eslARG_NONE,     NULL,        NULL, NULL,   NULL,         NULL, "-a,-c", "truncate unaligned sequences 5', choosing a random start posn",      2 },
   { "--u3p",       eslARG_NONE,     NULL,        NULL, NULL,   NULL,         NULL, "-a,-c", "truncate unaligned sequences 3', choosing a random end   posn",      2 },
   { "--a5p",       eslARG_INT,      NULL,        NULL, "n>=0", NULL,   "--a3p,-a", NULL,    "truncate aln 5', start at match column <n> (use 0 for random posn)", 2 },
   { "--a3p",       eslARG_INT,      NULL,        NULL, "n>=0", NULL,   "--a5p,-a", NULL,    "truncate aln 3', end   at match column <n> (use 0 for random posn)", 2 },
   /* other options */
-  { "--seed",      eslARG_INT,      "0",         NULL, "n>=0", NULL,         NULL, NULL,    "set RNG seed to <n> [default: one-time arbitrary seed]",          3 },
-  { "--rna",       eslARG_NONE,     "default",   NULL, NULL,   ALPHOPTS,     NULL, NULL,    "output as RNA sequence data",                                     3 },
-  { "--dna",       eslARG_NONE,     FALSE,       NULL, NULL,   ALPHOPTS,     NULL, NULL,    "output as DNA sequence data",                                     3 },
-  { "--idx",       eslARG_INT,      "1",         NULL, "n>0",  NULL,         NULL, NULL,    "start sequence numbering at <n>",                                 3 },
-  { "--outformat", eslARG_STRING,   "Stockholm", NULL, NULL,   NULL,         "-a", NULL,    "w/-a output alignment in format <s>",                             3 },
-  { "--tfile",     eslARG_OUTFILE,  NULL,        NULL, NULL,   NULL,         NULL, "-c",    "dump parsetrees to file <f>",                                     3 },
-  { "--exp",       eslARG_REAL,     NULL,        NULL, "x>0",  NULL,         NULL, NULL,    "exponentiate CM probabilities by <x> before emitting",            3 },
+  { "--seed",      eslARG_INT,      "0",         NULL, "n>=0", NULL,         NULL, NULL,    "set RNG seed to <n> [default: one-time arbitrary seed]", 3 },
+  { "--iid",       eslARG_NONE,     FALSE,       NULL, NULL,   NULL,         "-e", NULL,    "with -e, generate larger sequences as 25% ACGU (iid) ",  3 },
+  { "--rna",       eslARG_NONE,     "default",   NULL, NULL,   ALPHOPTS,     NULL, NULL,    "output as RNA sequence data",                            3 },
+  { "--dna",       eslARG_NONE,     FALSE,       NULL, NULL,   ALPHOPTS,     NULL, NULL,    "output as DNA sequence data",                            3 },
+  { "--idx",       eslARG_INT,      "1",         NULL, "n>0",  NULL,         NULL, NULL,    "start sequence numbering at <n>",                        3 },
+  { "--outformat", eslARG_STRING,   "Stockholm", NULL, NULL,   NULL,         "-a", NULL,    "w/-a output alignment in format <s>",                    3 },
+  { "--tfile",     eslARG_OUTFILE,  NULL,        NULL, NULL,   NULL,         NULL, "-c",    "dump parsetrees to file <f>",                            3 },
+  { "--exp",       eslARG_REAL,     NULL,        NULL, "x>0",  NULL,         NULL, NULL,    "exponentiate CM probabilities by <x> before emitting",   3 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -312,7 +313,13 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   float sc, struct_sc;      /* parsetree score, structure score */
   int offset = esl_opt_GetInteger(go, "--idx"); /* seq index to start naming at */
   int start, end, swap;     /* for truncating sequences */
-  double *fq = NULL;        /* double vec for esl_rsq_XIID */
+
+  /* the HMM that generates background sequences */
+  int      ghmm_nstates = 0; /* number of states in the HMM */
+  double  *ghmm_sA  = NULL;  /* start probabilities [0..ghmm_nstates-1] */
+  double **ghmm_tAA = NULL;  /* transition probabilities [0..nstates-1][0..nstates-1] */
+  double **ghmm_eAA = NULL;  /* emission probabilities   [0..nstates-1][0..abc->K-1] */
+  double  *fq       = NULL;  /* double vec for esl_rsq_XIID, only used if --iid */
 
   /* Contract check, output alphabet must be identical to CM alphabet
    * with sole exception that CM alphabet can be eslRNA with output
@@ -334,8 +341,16 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 
   if(esl_opt_IsOn(go, "-e")) { 
     embedL = esl_opt_GetInteger(go, "-e");
-    ESL_ALLOC(fq, sizeof(double) * cfg->abc_out->K); /* iid, currently only option */
-    esl_vec_DSet(fq, cfg->abc_out->K, 1.0 / (double) cfg->abc_out->K); 
+    /* if --iid we'll generate iid seqs, else we'll use our generative
+     * HMM for 'realistic' genome like background.
+     */
+    if(esl_opt_GetBoolean(go, "--iid")) { 
+      ESL_ALLOC(fq, sizeof(double) * cfg->abc_out->K); /* iid, currently only option */
+      esl_vec_DSet(fq, cfg->abc_out->K, 1.0 / (double) cfg->abc_out->K); 
+    }
+    else { 
+      if((status = CreateGenomicHMM(cfg->abc_out, errbuf, &ghmm_sA, &ghmm_tAA, &ghmm_eAA, &ghmm_nstates)) != eslOK) ESL_FAIL(status, errbuf, "unable to create generative HMM\n%s", errbuf);
+    }
   }
 
   for(i = 0; i < esl_opt_GetInteger(go, "-N"); i++)
@@ -362,14 +377,24 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       /* generate sequence to embed in, and embed in it if nec  */
       if(esl_opt_IsOn(go, "-e")) { 
 	if(sq2print->n > embedL) ESL_FAIL(eslEINCOMPAT, errbuf, "<n>=%d from -eL <n> too small for emitted seq of length %" PRId64 ", increase <n> and rerun", embedL, sq2print->n);
+
 	gsq = esl_sq_CreateDigital(cfg->abc_out);
 	if((status = esl_sq_GrowTo(gsq, embedL)) != eslOK) ESL_FAIL(status, errbuf, "out of memory");
-	esl_rsq_xIID(cfg->r, fq, cfg->abc_out->K, embedL, gsq->dsq);
+	if(esl_opt_GetBoolean(go, "--iid")) { 
+	  esl_rsq_xIID(cfg->r, fq, cfg->abc_out->K, embedL, gsq->dsq);
+	}
+	else { 
+	  free(gsq->dsq); /* slightly wasteful */
+	  if((status = SampleGenomicSequenceFromHMM(cfg->r, cfg->abc_out, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, embedL, &(gsq->dsq))) != eslOK) { 
+	    ESL_FAIL(status, errbuf, "failed to generate random background sequence to embed in");
+	  }
+	}
 	gsq->n = embedL;
+
 	/* embed (contract enforced at least one of --u5p and --u3p is not on) */
 	if     (esl_opt_IsOn(go, "--u5p")) { start = 1; }
 	else if(esl_opt_IsOn(go, "--u3p")) { start = embedL - sq2print->n + 1; }
-	else                                { start = esl_rnd_Roll(cfg->r, embedL - sq2print->n + 1) + 1; }
+	else                               { start = esl_rnd_Roll(cfg->r, embedL - sq2print->n + 1) + 1; }
 	for(x = start; x < start + sq2print->n; x++) gsq->dsq[x] = sq2print->dsq[x - start + 1];
 	/* set name */
 	esl_sq_FormatName(gsq, "%s/%d-%d", sq2print->name, start, start + sq2print->n - 1);
@@ -395,6 +420,15 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
     }
   free(name);
   if(fq != NULL) free(fq);
+  if(ghmm_eAA != NULL) { 
+    for(i = 0; i < ghmm_nstates; i++) free(ghmm_eAA[i]); 
+    free(ghmm_eAA);
+  }
+  if(ghmm_tAA != NULL) { 
+    for(i = 0; i < ghmm_nstates; i++) free(ghmm_tAA[i]); 
+    free(ghmm_tAA);
+  }
+  if(ghmm_sA != NULL) free(ghmm_sA);
 
   return eslOK;
 

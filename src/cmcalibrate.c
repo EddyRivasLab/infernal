@@ -65,8 +65,8 @@ typedef struct {
 } WORKER_INFO;
 
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
-#define CPUOPTS     "--mpi,--forecast,--memreq"
-#define MPIOPTS     "--cpu,--forecast,--memreq"
+#define CPUOPTS "--mpi,--forecast,--memreq"
+#define MPIOPTS "--cpu,--forecast,--memreq"
 #else
 #define CPUOPTS "--forecast,--memreq"
 #define MPIOPTS "--forecast,--memreq"
