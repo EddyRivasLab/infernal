@@ -394,6 +394,8 @@ main(int argc, char **argv)
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
       MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
 
+      if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you execute mpirun?)");
+
       if (cfg.my_rank > 0)  status = mpi_worker(go, &cfg);
       else 		    status = mpi_master(go, &cfg);
 
