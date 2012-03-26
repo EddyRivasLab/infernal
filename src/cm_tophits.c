@@ -695,7 +695,8 @@ int remove_overlaps_one_seq_fast(CM_TOPHITS *th, int64_t idx1, int64_t idx2, cha
   int     in_rc   = th->hit[idx1]->in_rc;
   int64_t pos, min, max; /* position indices in the sequence */
 
-  /*printf("in remove_overlaps_one_seq_fast() i: %" PRId64 " j: %" PRId64 "\n", idx1, idx2);*/
+  /*printf("in remove_overlaps_one_seq_fast() i: %" PRId64 " j: %" PRId64 "\n", idx1, idx2);
+    cm_tophits_Dump(stdout, th);*/
 
   ESL_ALLOC(covered, sizeof(char) * (srcL+1));
   for(i = 0; i <= srcL; i++) covered[i] = FALSE;
@@ -746,7 +747,8 @@ int remove_overlaps_one_seq_memeff(CM_TOPHITS *th, int64_t idx1, int64_t idx2, c
   int64_t seq_idx = th->hit[idx1]->seq_idx;
   int     in_rc   = th->hit[idx1]->in_rc;
 
-  /*printf("in remove_overlaps_one_seq_memeff() i: %" PRId64 " j: %" PRId64 "\n", idx1, idx2);*/
+  /*printf("in remove_overlaps_one_seq_memeff() i: %" PRId64 " j: %" PRId64 "\n", idx1, idx2);
+    cm_tophits_Dump(stdout, th);*/
 
   for(i = idx1; i <= idx2; i++) { 
     /* verify that what we think is true is true */

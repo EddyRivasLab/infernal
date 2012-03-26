@@ -1822,31 +1822,31 @@ cm_pli_PassAllowsTruncation(int pass_idx)
 int
 pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin)
 {
-  int              status;
-  float            mfsc, vfsc, fwdsc;/* filter scores          */
-  float            filtersc;         /* HMM null filter score  */
-  int              have_filtersc;    /* TRUE if filtersc has been calc'ed for current window */
-  float            nullsc;           /* null model score */
-  float            wsc;              /* the corrected bit score for a window */
-  double           P;                /* P-value of a hit */
-  int              i, i2;            /* counters */
-  int              wlen;             /* length of current window */
-  void            *p;                /* for ESL_RALLOC */
-  int             *useme = NULL;     /* used when merging overlapping windows */
-  int              overlap;          /* number of overlapping positions b/t 2 adjacent windows */
-  int            **survAA = NULL;    /* [0..s..Np7_SURV-1][0..i..nwin-1] TRUE if window i survived stage s */
-  int              nalloc;           /* currently allocated size for ws, we */
-  int64_t         *ws = NULL;        /* [0..nwin-1] window start positions */
-  int64_t         *we = NULL;        /* [0..nwin-1] window end   positions */
-  double          *wp = NULL;        /* [0..nwin-1] window P-values, P-value of furthest-reached filter algorithm */
-  int              nwin;             /* number of windows */
-  int64_t         *new_ws = NULL;    /* used when copying/modifying ws */
-  int64_t         *new_we = NULL;    /* used when copying/modifying we */
-  int              nsurv_fwd;        /* number of windows that survive fwd filter */
-  int              new_nsurv_fwd;    /* used when merging fwd survivors */
-  ESL_DSQ         *subdsq;           /* a ptr to the first position of a window */
-  int              have_rest;        /* do we have the full <om> read in? */
-  FM_WINDOWLIST    wlist;            /* list of windows, structure taken by p7_MSVFilter_longtarget() */
+  int               status;
+  float             mfsc, vfsc, fwdsc;/* filter scores          */
+  float             filtersc;         /* HMM null filter score  */
+  int               have_filtersc;    /* TRUE if filtersc has been calc'ed for current window */
+  float             nullsc;           /* null model score */
+  float             wsc;              /* the corrected bit score for a window */
+  double            P;                /* P-value of a hit */
+  int               i, i2;            /* counters */
+  int               wlen;             /* length of current window */
+  void             *p;                /* for ESL_RALLOC */
+  int              *useme = NULL;     /* used when merging overlapping windows */
+  int               overlap;          /* number of overlapping positions b/t 2 adjacent windows */
+  int             **survAA = NULL;    /* [0..s..Np7_SURV-1][0..i..nwin-1] TRUE if window i survived stage s */
+  int               nalloc;           /* currently allocated size for ws, we */
+  int64_t          *ws = NULL;        /* [0..nwin-1] window start positions */
+  int64_t          *we = NULL;        /* [0..nwin-1] window end   positions */
+  double           *wp = NULL;        /* [0..nwin-1] window P-values, P-value of furthest-reached filter algorithm */
+  int               nwin;             /* number of windows */
+  int64_t          *new_ws = NULL;    /* used when copying/modifying ws */
+  int64_t           *new_we = NULL;    /* used when copying/modifying we */
+  int               nsurv_fwd;        /* number of windows that survive fwd filter */
+  int               new_nsurv_fwd;    /* used when merging fwd survivors */
+  ESL_DSQ          *subdsq;           /* a ptr to the first position of a window */
+  int               have_rest;        /* do we have the full <om> read in? */
+  P7_MSV_WINDOWLIST wlist;           /* list of windows, structure taken by p7_MSVFilter_longtarget() */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   p7_omx_GrowTo(pli->oxf, om->M, 0, sq->n);    /* expand the one-row omx if needed */
