@@ -446,9 +446,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     else if(Z_Mb >= (200. - eslSMALLX1)) { /* 2 Gb > Z >= 200 Mb */
       pli->F1 = 0.15;
       pli->F2 = pli->F2b = 0.15;
-      pli->F3 = pli->F3b = 0.008;
-      pli->F4 = pli->F4b = 0.008;
-      pli->F5 = pli->F5b = 0.008;
+      pli->F3 = pli->F3b = 0.0008;
+      pli->F4 = pli->F4b = 0.0008;
+      pli->F5 = pli->F5b = 0.0008;
       pli->F6 = 0.0001;
     }
     else if(Z_Mb >= (20. - eslSMALLX1)) { /* 200 Mb  > Z >= 20 Mb */
