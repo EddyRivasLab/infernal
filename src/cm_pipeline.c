@@ -1890,7 +1890,12 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
 	 * does at this point), because we don't yet have the CM */
 	have_rest = TRUE;
       }
-      p7_hmm_MSVDataComputeRest(om, msvdata);
+      if(msvdata->prefix_lengths == NULL && msvdata->suffix_lengths == NULL) { 
+	p7_hmm_MSVDataComputeRest(om, msvdata);
+	/* only call *ComputeRest() if we haven't already (we may have 
+	 * already in a previous pipeline pass).
+	 */
+      }
       p7_pli_ExtendAndMergeWindows(om, msvdata, &wlist, sq->n);
     }
     ESL_ALLOC(ws, sizeof(int64_t) * wlist.count);
@@ -2729,9 +2734,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
 	si++;
       }
     }
-    free(i_surv);
   }
   cm->tau = save_tau;
+  if(i_surv != NULL) free(i_surv);
   *ret_es   = es;
   *ret_ee   = ee;
   *ret_nenv = nenv;
