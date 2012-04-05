@@ -59,9 +59,9 @@
 1  exercise    build/help/1   @src/cmbuild@ -h
 1  exercise    build/help/2   @src/cmbuild@ --devhelp
 1  exercise    build/t        @src/cmbuild@ -F %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
-1  exercise    build/v        @src/cmbuild@ -F %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto!
-1  exercise    build/s        @src/cmbuild@ -F %SRP.CM% !testsuite/Plant_SRP.rfam10p1.seed.sto!
-1  exercise    build/3        @src/cmbuild@ -F %3.CM% !testsuite/3.rfam10p1.seed.sto!
+1  exercise    build/v/o      @src/cmbuild@ -F -o %VAULT.OUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto!
+1  exercise    build/s/O      @src/cmbuild@ -F -O %SRP.STK% %SRP.CM% !testsuite/Plant_SRP.rfam10p1.seed.sto!
+1  exercise    build/3/O      @src/cmbuild@ -F -O %3.STK% %3.CM% !testsuite/3.rfam10p1.seed.sto!
 
 # cmsearch exercises (CM must be calibrated)
 1  prep        copy/tC        cp !testsuite/tRNA.calibrated.cm! %TRNA.C.CM%

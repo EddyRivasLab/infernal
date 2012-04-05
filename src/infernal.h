@@ -2729,6 +2729,7 @@ extern int  cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr, int will_nev
 extern int  cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach);
 extern int  cm_check_before_detaching(CM_t *cm, int insert1, int insert2);
 extern int  cm_detach_state(CM_t *cm, int insert1, int insert2);
+extern int  cm_zero_flanking_insert_counts(CM_t *cm, char *errbuf);
 extern int  clean_cs(char *cs, int alen, int be_quiet);
 
 /* from cm_mx.c */

@@ -424,7 +424,7 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float gapthr
    * telling us the arrangement of consensus nodes. Now do the drill
    * for constructing a full model using this guide tree. We only have
    * to do this step if we're returning a CM though. (Sometimes caller
-   * may only way gtr.)
+   * may only want gtr.)
    */
   if(ret_cm != NULL) { 
     cm = CreateCM(nnodes, nstates, clen, msa->abc);
@@ -1816,4 +1816,79 @@ check_for_pknots(char *cs, int alen)
   return FALSE;
 }
 
+
+/* Function:  cm_zero_flanking_insert_counts()
+ * Synopsis:  Zero transition counts involved with ROOT_IL and ROOT_IR.
+ * Incept:    EPN, Tue Apr  3 14:16:46 2012
+ *
+ * Purpose:   Given a CM in counts form (in the process of being built)
+ *            zero the transitions into and out of the ROOT_IL and
+ *            ROOT_IR emissions. Currently only called by cmbuild.
+ *            Goal is to ignore any residues in the input MSA that 
+ *            occur before the first or after the last consensus
+ *            column. That is, after this function is finished the CM 
+ *            should be identical to one in counts form that was built 
+ *            from an identical MSA with zero residues before the first
+ *            consensus position and after the last.
+ * 
+ * Returns:   eslOK on success;
+ * Throws:    eslFAIL if CM does not seem to be in counts form, errbuf filled.
+ */
+int
+cm_zero_flanking_insert_counts(CM_t *cm, char *errbuf)
+{
+  int status; 
+
+  /* verify model is not yet configured */
+  if((status = cm_nonconfigured_Verify(cm, errbuf)) != eslOK) return status;
+
+  /* There are four possible node types for node 1 (node following the
+   * ROOT node), BIF, MATP, MATL and MATR. We add the counts from ROOT_IL
+   * and ROOT_IR into each non-insert state in node 1 to the count from
+   * ROOT_S into that non-insert state. After doing this, the counts
+   * will be as if the ROOT_IL and ROOT_IR emissions did not exist
+   * in the input MSA the counts were collected from.
+   */
+
+  /* For all cases, first set counts from ROOT_S -> ROOT_IL and 
+   * ROOT_S -> ROOT_IR to zero 
+   */
+  cm->t[0][0] = 0.; /* ROOT_S -> ROOT_IL */
+  cm->t[0][1] = 0.; /* ROOT_S -> ROOT_IR */
+
+  if(cm->ndtype[1] == BIF_nd) { 
+    cm->t[0][2] += cm->t[1][2]; /* ROOT_S->BIF_B += ROOT_IL->BIF_B */
+    cm->t[0][2] += cm->t[2][1]; /* ROOT_S->BIF_B += ROOT_IR->BIF_B */
+  }
+  else if(cm->ndtype[1] == MATP_nd) { 
+    cm->t[0][2] += cm->t[1][2]; /* ROOT_S->MATP_MP += ROOT_IL->MATP_MP */
+    cm->t[0][2] += cm->t[2][1]; /* ROOT_S->MATP_MP += ROOT_IR->MATP_MP */
+
+    cm->t[0][3] += cm->t[1][3]; /* ROOT_S->MATP_ML += ROOT_IL->MATP_ML */
+    cm->t[0][3] += cm->t[2][2]; /* ROOT_S->MATP_ML += ROOT_IR->MATP_ML */
+
+    cm->t[0][4] += cm->t[1][4]; /* ROOT_S->MATP_MR += ROOT_IL->MATP_MR */
+    cm->t[0][4] += cm->t[2][3]; /* ROOT_S->MATP_MR += ROOT_IR->MATP_MR */
+
+    cm->t[0][5] += cm->t[1][5]; /* ROOT_S->MATP_D  += ROOT_IL->MATP_D  */
+    cm->t[0][5] += cm->t[2][4]; /* ROOT_S->MATP_D  += ROOT_IR->MATP_D  */
+  }
+  else { /* MATL_nd or MATR_nd */ 
+    cm->t[0][2] += cm->t[1][2]; /* ROOT_S->MAT{L,R}_M{L,R} += ROOT_IL->MAT{L,R}_M{L,R} */
+    cm->t[0][2] += cm->t[2][1]; /* ROOT_S->MAT{L,R}_M{L,R} += ROOT_IR->MAT{L,R}_M{L,R} */
+
+    cm->t[0][3] += cm->t[1][3]; /* ROOT_S->MAT{L,R}_D      += ROOT_IL->MAT{L,R}_D */
+    cm->t[0][3] += cm->t[2][2]; /* ROOT_S->MAT{L,R}_D      += ROOT_IR->MAT{L,R}_D */
+  }
+
+  /* Final step: zero transition counts out of ROOT_IL and ROOT_IR.
+   * These will be completely determined by the prior. We have to 
+   * do this as a final step because we needed these counts 
+   * above.
+   */
+  esl_vec_FSet(cm->t[1], MAXCONNECT, 0.);
+  esl_vec_FSet(cm->t[2], MAXCONNECT, 0.);
+
+  return eslOK;
+}
 

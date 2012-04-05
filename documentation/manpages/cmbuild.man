@@ -106,6 +106,27 @@ already exists,
 exits with an error.
 
 .TP
+.BI -o " <f>"
+Direct the summary output to file
+.I <f>,
+rather than to
+.I stdout.
+
+.TP
+.BI -O " <f>"
+After each model is constructed, resave annotated
+source alignments to a file
+.I <f>
+in Stockholm format.  Sequences are annoted with what relative
+sequence weights were assigned.  The alignments are also annotated
+with a reference annotation line indicating which columns were
+assigned as consensus. If the source alignment had reference
+annotation it will be unchanged with two exceptions: positions
+corresponding to insert columns will have been set as '.' and
+positions corresponding to consensus columns which were '.' in the
+input annotation will have been changed to 'x'.
+
+.TP
 .B --devhelp
 Print help, as with  
 .B "-h",

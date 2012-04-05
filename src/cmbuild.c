@@ -38,10 +38,12 @@
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",                   1 },
-  { "-n",        eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "name the CM(s) <s>, (only if single aln in file)",       1 },
-  { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow overwriting of <cmfile_out>",               1 },
-  { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of otherwise hidden developer/expert options", 1 },
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",                     1 },
+  { "-n",        eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "name the CM(s) <s>, (only if single aln in file)",         1 },
+  { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow overwriting of <cmfile_out>",                 1 },
+  { "-o",        eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "direct summary output to file <f>, not stdout",            1 },
+  { "-O",        eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "resave consensus/insert column annotated MSA to file <f>", 1 },
+  { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of otherwise hidden developer/expert options",   1 },
 
   /* Expert model construction options */
   /* name          type            default  env  range       toggles       reqs        incomp  help  docgroup*/
@@ -63,6 +65,7 @@ static ESL_OPTIONS options[] = {
   { "--v1p0",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL,  "parameterize CM using methods from Infernal v1.0.2",          103 },
   { "--p56",       eslARG_NONE,    NULL,    NULL, NULL,         NULL,      NULL,    "--prior", "use the default prior from Infernal v0.56 through v1.0.2",     103 },
   { "--iins",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "allow informative insert emissions, do not zero them",         103 },
+  { "--iflank",    eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "learn ROOT_IL/ROOT_IR transitions for 5'/3' flanking residues",103 },
   { "--nobalance", eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "don't rebalance the CM; number in strict preorder",            103 },
   { "--nodetach",  eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "do not 'detach' one of two inserts that model same column",    103 },
   { "--elself",    eslARG_REAL,    "0.94",  NULL, "0<=x<=1",    NULL,      NULL,         NULL, "set EL self transition prob to <x>",                           103 },
@@ -171,6 +174,8 @@ static ESL_OPTIONS options[] = {
  * yet exist! 
  */
 struct cfg_s {
+  FILE         *ofp;		/* output file (default is stdout) */
+
   char         *alifile;	/* name of the alignment file we're building CMs from  */
   int           fmt;		/* format code for alifile */
   ESLX_MSAFILE *afp;            /* open alifile  */
@@ -178,6 +183,9 @@ struct cfg_s {
 
   char         *cmfile;         /* file to write CM to                    */
   FILE         *cmoutfp;        /* CM output file handle                  */
+
+  char         *postmsafile;	/* optional file to resave annotated MSAs to  */
+  FILE         *postmsafp;	/* open <postmsafile>, or NULL */
 
   float        *null;		/* null model                              */
   Prior_t      *pri;		/* mixture Dirichlet prior for the HMM     */
@@ -268,10 +276,13 @@ main(int argc, char **argv)
   /* Initialize what we can in the config structure (without knowing the alphabet yet).
    * We could assume RNA, but this HMMER3 based approach is more general.
    */
+  cfg.ofp        = NULL;	           
   cfg.fmt        = eslMSAFILE_UNKNOWN;     /* possibly reset below */
   cfg.afp        = NULL;	           /* created in init_cfg() */
   cfg.abc        = NULL;	           /* created in init_cfg() */
   cfg.cmoutfp    = NULL;	           /* opened in init_cfg() */
+  cfg.postmsafile= esl_opt_GetString(go, "-O"); /* NULL by default */
+  cfg.postmsafp  = NULL;                  
   cfg.null       = NULL;	           /* created in init_cfg() */
   cfg.pri        = NULL;                   /* created in init_cfg() */
   cfg.fullmat    = NULL;                   /* read (possibly) in init_cfg() */
@@ -311,52 +322,56 @@ main(int argc, char **argv)
   /* do work */
   master(go, &cfg);
 
-  /* Clean up the cfg. 
-   */
+  /* Clean up the cfg. */
   /* close all output files */
-  if (cfg.cfp || cfg.escfp || cfg.tblfp || cfg.efp || cfg.gfp || cfg.gtblfp || cfg.tfp || cfg.cdfp || cfg.refinefp || cfg.rdfp) { 
-    printf("#\n");
+  if (cfg.postmsafp || cfg.cfp || cfg.escfp || cfg.tblfp || cfg.efp || cfg.gfp || cfg.gtblfp || cfg.tfp || cfg.cdfp || cfg.refinefp || cfg.rdfp) { 
+    fprintf(cfg.ofp, "#\n");
+  }
+  if (cfg.postmsafp != NULL) {
+    fprintf(cfg.ofp, "# Processed and annotated MSAs saved to file %s.\n", esl_opt_GetString(go, "-O")); 
+    fclose(cfg.postmsafp); 
   }
   if (cfg.cfp != NULL) {
-    printf("# Count vectors saved in file %s.\n", esl_opt_GetString(go, "--cfile"));
+    fprintf(cfg.ofp, "# Count vectors saved in file %s.\n", esl_opt_GetString(go, "--cfile"));
     fclose(cfg.cfp); 
   }
   if (cfg.escfp != NULL) {
-    printf("# Emission score information saved in file %s.\n", esl_opt_GetString(go, "--efile"));
+    fprintf(cfg.ofp, "# Emission score information saved in file %s.\n", esl_opt_GetString(go, "--efile"));
     fclose(cfg.escfp); 
   }
   if (cfg.tblfp != NULL) {
-    printf("# CM topology description saved in file %s.\n", esl_opt_GetString(go, "--cmtbl"));
+    fprintf(cfg.ofp, "# CM topology description saved in file %s.\n", esl_opt_GetString(go, "--cmtbl"));
     fclose(cfg.tblfp); 
   }
   if (cfg.efp != NULL) {
-    printf("# CM emit map saved in file %s.\n", esl_opt_GetString(go, "--emap"));
+    fprintf(cfg.ofp, "# CM emit map saved in file %s.\n", esl_opt_GetString(go, "--emap"));
     fclose(cfg.efp); 
   }
   if (cfg.gfp != NULL) {
-    printf("# Guide tree description saved in file %s.\n", esl_opt_GetString(go, "--gtree"));
+    fprintf(cfg.ofp, "# Guide tree description saved in file %s.\n", esl_opt_GetString(go, "--gtree"));
     fclose(cfg.gfp); 
   }
   if (cfg.gtblfp != NULL) {
-    printf("# Guide tree tabular description saved in file %s.\n", esl_opt_GetString(go, "--gtbl"));
+    fprintf(cfg.ofp, "# Guide tree tabular description saved in file %s.\n", esl_opt_GetString(go, "--gtbl"));
     fclose(cfg.gtblfp); 
   }
   if (cfg.tfp != NULL) {
-    printf("# Implicit parsetrees of seqs from input alignment saved in file %s.\n", esl_opt_GetString(go, "--tfile"));
+    fprintf(cfg.ofp, "# Implicit parsetrees of seqs from input alignment saved in file %s.\n", esl_opt_GetString(go, "--tfile"));
     fclose(cfg.tfp); 
   }
   if (cfg.cdfp != NULL) {
-    printf("# Alignments for each cluster saved in file %s.\n", esl_opt_GetString(go, "--cdump"));
+    fprintf(cfg.ofp, "# Alignments for each cluster saved in file %s.\n", esl_opt_GetString(go, "--cdump"));
     fclose(cfg.cdfp); 
   }
   if (cfg.refinefp != NULL) {
-    printf("# Refined alignments used to build CMs saved in file %s.\n", esl_opt_GetString(go, "--refine"));
+    fprintf(cfg.ofp, "# Refined alignments used to build CMs saved in file %s.\n", esl_opt_GetString(go, "--refine"));
     fclose(cfg.refinefp); 
   }
   if (cfg.rdfp != NULL) {
-    printf("# Intermediate alignments from MSA refinement saved in file %s.\n", esl_opt_GetString(go, "--rdump"));
+    fprintf(cfg.ofp, "# Intermediate alignments from MSA refinement saved in file %s.\n", esl_opt_GetString(go, "--rdump"));
     fclose(cfg.rdfp); 
   }
+
   if (cfg.afp     != NULL) eslx_msafile_Close(cfg.afp);
   if (cfg.abc     != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.cmoutfp != NULL) fclose(cfg.cmoutfp);
@@ -367,11 +382,13 @@ main(int argc, char **argv)
   if (cfg.fp7_bg  != NULL) p7_bg_Destroy(cfg.fp7_bg);
   if (cfg.fp7_bld != NULL) p7_builder_Destroy(cfg.fp7_bld);
 
-  esl_getopts_Destroy(go);
   esl_stopwatch_Stop(w);
-  printf("#\n");
-  esl_stopwatch_Display(stdout, w, "# CPU time: ");
+  fprintf(cfg.ofp, "#\n");
+  esl_stopwatch_Display(cfg.ofp, w, "# CPU time: ");
   esl_stopwatch_Destroy(w);
+
+  if (esl_opt_IsOn(go, "-o")) { fclose(cfg.ofp); }
+  esl_getopts_Destroy(go);
   return 0;
 }
 
@@ -403,7 +420,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_MSA    **cmsa;       /* pointer to cluster MSAs to build CMs from */
 
   if ((status = init_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-  output_header(stdout, go, cfg->cmfile, cfg->alifile);
+  output_header(cfg->ofp, go, cfg->cmfile, cfg->alifile);
 
   cfg->nali = 0;
   cfg->ncm_total = 0;
@@ -446,21 +463,21 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* if being verbose, print some stuff about what we're about to do.
 	   */
 	  if (cfg->be_verbose) {
-	    fprintf(stdout, "Alignment:           %s\n",           msa->name);
-	    fprintf(stdout, "Number of sequences: %d\n",           msa->nseq);
-	    fprintf(stdout, "Number of columns:   %" PRId64 "\n",  msa->alen);
+	    fprintf(cfg->ofp, "Alignment:           %s\n",           msa->name);
+	    fprintf(cfg->ofp, "Number of sequences: %d\n",           msa->nseq);
+	    fprintf(cfg->ofp, "Number of columns:   %" PRId64 "\n",  msa->alen);
 	    if(esl_opt_GetString(go, "--rsearch") != NULL)
 	      printf ("RIBOSUM Matrix:      %s\n",  cfg->fullmat->name);
-	    fputs("", stdout);
-	    fflush(stdout);
+	    fputs("", cfg->ofp);
+	    fflush(cfg->ofp);
 	  }
 
 	  /* msa -> cm */
 	  if ((status = process_build_workunit(go, cfg, errbuf, msa, &cm, &mtr, &tr)) != eslOK) cm_Fail(errbuf);
 	  /* optionally, iterate over cm -> parsetrees -> msa -> cm ... until convergence, via EM or Gibbs */
 	  if ( esl_opt_IsOn(go, "--refine")) {
-	    fprintf(stdout, "#\n");
-	    fprintf(stdout, "# Refining MSA for CM: %s (aln: %4d cm: %6d)\n", cm->name, cfg->nali, cfg->ncm_total);
+	    fprintf(cfg->ofp, "#\n");
+	    fprintf(cfg->ofp, "# Refining MSA for CM: %s (aln: %4d cm: %6d)\n", cm->name, cfg->nali, cfg->ncm_total);
 	    if ((status = refine_msa(go, cfg, errbuf, cm, msa, tr, &new_cm, &new_msa, &new_mtr, &new_tr, &niter)) != eslOK) cm_Fail(errbuf);
 	    if(cm != new_cm) FreeCM(cm); 
 	    cm = new_cm; 
@@ -477,9 +494,9 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm, mtr, tr)) != eslOK) cm_Fail(errbuf);
 	  
 	  if(cfg->be_verbose) { 
-	    fprintf(stdout, "\n");
-	    SummarizeCM(stdout, cm);  
-	    fprintf(stdout, "//\n");
+	    fprintf(cfg->ofp, "\n");
+	    SummarizeCM(cfg->ofp, cm);  
+	    fprintf(cfg->ofp, "//\n");
 	  }
 
 	  FreeCM(cm);
@@ -593,6 +610,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
 			                    fprintf(ofp, "# alignment file:                                     %s\n", alifile);
  if (esl_opt_IsUsed(go, "-n"))            { fprintf(ofp, "# name (the single) CM:                               %s\n", esl_opt_GetString(go, "-n")); }
  if (esl_opt_IsUsed(go, "-F"))            { fprintf(ofp, "# overwrite CM file if necessary:                     yes\n"); }
+ if (esl_opt_IsUsed(go, "-o"))            { fprintf(ofp, "# output directed to file:                            %s\n", esl_opt_GetString(go, "-o")); }
+ if (esl_opt_IsUsed(go, "-O"))            { fprintf(ofp, "# processed alignment resaved to:                     %s\n", esl_opt_GetString(go, "-O")); }
  if (esl_opt_IsUsed(go, "--symfrac"))     { fprintf(ofp, "# minimum symbol fraction in a consensus column:      %g\n", esl_opt_GetReal(go, "--symfrac")); }
  if (esl_opt_IsUsed(go, "--hand"))        { fprintf(ofp, "# use #=GC RF annotation to define consensus columns: yes\n"); }
  if (esl_opt_IsUsed(go, "--null"))        { fprintf(ofp, "# read null model from file:                          %s\n", esl_opt_GetString(go, "--null")); }
@@ -606,6 +625,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
  if (esl_opt_IsUsed(go, "--v1p0"))        { fprintf(ofp, "# v1.0 parameterization mode:                         on\n"); }
  if (esl_opt_IsUsed(go, "--p56"))         { fprintf(ofp, "# use default priors from v0.56 through v1.0.2:       yes\n"); }
  if (esl_opt_IsUsed(go, "--iins"))        { fprintf(ofp, "# allowing informative insert emission probabilities: yes\n"); }
+ if (esl_opt_IsUsed(go, "--iflank"))      { fprintf(ofp, "# allowing informative ROOT_IL/IR transition probs:   yes\n"); }
  if (esl_opt_IsUsed(go, "--nobalance"))   { fprintf(ofp, "# do default rebalancing of CM:                       no\n"); }
  if (esl_opt_IsUsed(go, "--nodetach"))    { fprintf(ofp, "# do default detachment of flawed ambiguous inserts:  no\n"); }
  if (esl_opt_IsUsed(go, "--elself"))      { fprintf(ofp, "# local end (EL) self loop probability:               %g\n", esl_opt_GetReal(go, "--elself")); }        
@@ -722,7 +742,19 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   }
 
   /* open CM file for writing */
-  if ((cfg->cmoutfp = fopen(cfg->cmfile, "w")) == NULL) ESL_FAIL(status, errbuf, "Failed to open CM file %s for writing", cfg->cmfile);
+  if ((cfg->cmoutfp = fopen(cfg->cmfile, "w")) == NULL) ESL_FAIL(eslFAIL, errbuf, "Failed to open CM file %s for writing", cfg->cmfile);
+
+  if (esl_opt_IsUsed(go, "-o")) { 
+    cfg->ofp = fopen(esl_opt_GetString(go, "-o"), "w");
+    if (cfg->ofp == NULL) ESL_FAIL(eslFAIL, errbuf, "Failed to open -o output file %s\n", esl_opt_GetString(go, "-o"));
+  } 
+  else cfg->ofp = stdout;
+
+  if (cfg->postmsafile) { 
+    cfg->postmsafp = fopen(cfg->postmsafile, "w");
+    if (cfg->postmsafp == NULL) ESL_FAIL(eslFAIL, errbuf, "Failed to MSA resave file %s for writing", cfg->postmsafile);
+  } 
+  else cfg->postmsafp = NULL;
 
   /* Set up the prior */
   if (esl_opt_GetString(go, "--prior") != NULL)
@@ -987,7 +1019,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
    * don't do that yet.
    */
   if(! do_trunc) { 
-    fprintf(stdout, "  %5d %13.2f %10s\n", iter, oldscore, "-");
+    fprintf(cfg->ofp, "  %5d %13.2f %10s\n", iter, oldscore, "-");
   }
   /* print initial alignment to --rdump file, if --rdump was enabled */
   if(cfg->rdfp != NULL) { 
@@ -1012,8 +1044,8 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       for(i = 0; i < nseq; i++) totscore += dataA[i]->sc;
       delta    = (totscore - oldscore) / fabs(totscore);
       if(esl_opt_GetBoolean(go, "--indi")) print_refine_column_headings(go, cfg);
-      if(iter > 1 || (! do_trunc)) { fprintf(stdout, "  %5d %13.2f %10.3f\n", iter, totscore, delta); }
-      else                         { fprintf(stdout, "  %5d %13.2f %10s\n",   iter, totscore, "-"); }
+      if(iter > 1 || (! do_trunc)) { fprintf(cfg->ofp, "  %5d %13.2f %10.3f\n", iter, totscore, delta); }
+      else                         { fprintf(cfg->ofp, "  %5d %13.2f %10s\n",   iter, totscore, "-"); }
       if(delta <= threshold && delta > (-1. * eslSMALLX1)) break; /* break out of loop before max number of iterations are reached */
       oldscore = totscore;
 
@@ -1119,10 +1151,10 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
 static int
 print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
 {
-  fprintf(stdout, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %11s\n",       "",       "",                     "",         "",         "",       "",      "",    "",      "rel entropy");
-  fprintf(stdout, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %11s\n",       "",       "",                     "",         "",         "",       "",      "",    "",      "-----------");
-  fprintf(stdout, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %5s %5s %s\n", "idx",    "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "bps", "bifs",  "CM",    "HMM",   "description");
-  fprintf(stdout, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %5s %5s %s\n", "------", "--------------------", "--------", "--------", "------", "-----", "----", "----", "-----", "-----", "-----------");
+  fprintf(cfg->ofp, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %11s\n",       "",       "",                     "",         "",         "",       "",      "",    "",      "rel entropy");
+  fprintf(cfg->ofp, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %11s\n",       "",       "",                     "",         "",         "",       "",      "",    "",      "-----------");
+  fprintf(cfg->ofp, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %5s %5s %s\n", "idx",    "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "bps", "bifs",  "CM",    "HMM",   "description");
+  fprintf(cfg->ofp, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %5s %5s %s\n", "------", "--------------------", "--------", "--------", "------", "-----", "----", "----", "-----", "-----", "-----------");
 
   return eslOK;
 }
@@ -1144,7 +1176,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
 
   if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
 
-  fprintf(stdout, "%8d %-20s %8d %8.2f %6" PRId64 " %5d %4d %4d %5.3f %5.3f %s\n",
+  fprintf(cfg->ofp, "%8d %-20s %8d %8.2f %6" PRId64 " %5d %4d %4d %5.3f %5.3f %s\n",
 	  cmidx,
 	  cm->name, 
 	  msa->nseq,
@@ -1186,7 +1218,53 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
       fprintf(cfg->tfp, "//\n");
     }
   }
+
+  /* If nec, output MSA with WT annotation and RF annotation (after we
+   * define RF).  RF is defined differently depending on whether the
+   * input alignment had RF annotation or not. If it did not we use
+   * the consensus sequence as the RF line, with inserts annotated as
+   * '.'. If it did already have RF, we only change positions
+   * corresponding to insert columns as '.', leaving the rest of the
+   * original annotation, the motivation is for users trying to define
+   * special RF annotation to be output in cmsearch hit alignments,
+   * which can use -O as a way of testing their RF annotation to see
+   * which columns will be kept as consensus.
+   * 
+   * Note: this will not modify placement of inserted residues
+   * relative to input msa, they won't be right and/or left justified.
+   */
+  if (cfg->postmsafp != NULL && msa != NULL) {
+    int apos, cpos;
+    if(msa->rf == NULL) { 
+      /* input MSA did not have RF annotation, set it as cm->cmcons->cseq with gaps added */
+      ESL_ALLOC(msa->rf, sizeof(char) * (msa->alen+1));
+      for (apos = 0; apos < msa->alen; apos++) msa->rf[apos] = '.';
+      for (cpos = 1; cpos <= cm->clen; cpos++) msa->rf[cm->map[cpos]-1] = cm->cmcons->cseq[cpos-1];
+    }
+    else { 
+      /* input MSA did have RF annotation, change two types of positions:
+       *  1. input MSA RF positions that are consensus and '.', change to 'x'
+       *  2. input MSA RF positions that are inserts, change to '.'
+       */
+      cpos = 1;
+      for (apos = 1; apos <= msa->alen; apos++) { 
+	if(cm->map[cpos] == apos) { /* a consensus position */
+	  cpos++;
+	  if(msa->rf[apos-1] == '.') msa->rf[apos-1] = 'x'; /* this is '1.' above */
+	}
+	else { /* not a consensus position, set as gap */
+	  msa->rf[apos-1] = '.';  /* this is '2.' above */
+	}
+      }
+    }
+    eslx_msafile_Write(cfg->postmsafp, msa, eslMSAFILE_STOCKHOLM);
+  }
+
   return eslOK;
+
+ ERROR: 
+  cm_Fail("in output_result(), out of memory");
+  return status; /* NEVERREACHED */
 }
 
 /* check_and_clean_msa
@@ -1201,8 +1279,8 @@ check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf
   if (cfg->be_verbose) {
     w = esl_stopwatch_Create();
     esl_stopwatch_Start(w);
-    fprintf(stdout, "%-40s ... ", "Checking MSA");  
-    fflush(stdout); 
+    fprintf(cfg->ofp, "%-40s ... ", "Checking MSA");  
+    fflush(cfg->ofp); 
   }
 
   if (esl_opt_GetBoolean(go, "--hand") && msa->rf == NULL)        ESL_FAIL(eslFAIL, errbuf, "Alignment has no reference coord annotation.\n");
@@ -1223,9 +1301,9 @@ check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf
   if(msa->name == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "MSA is nameless, (we thought we named it...) shouldn't happen");
 
   if (cfg->be_verbose) { 
-    fprintf(stdout, "done.  ");
+    fprintf(cfg->ofp, "done.  ");
     esl_stopwatch_Stop(w);
-    esl_stopwatch_Display(stdout, w, "CPU time: ");
+    esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
   }
   if(w != NULL) esl_stopwatch_Destroy(w);
   return eslOK;
@@ -1242,8 +1320,8 @@ set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbu
   if (cfg->be_verbose) {
     w = esl_stopwatch_Create();
     esl_stopwatch_Start(w);
-    fprintf(stdout, "%-40s ... ", "Relative sequence weighting");  
-    fflush(stdout); 
+    fprintf(cfg->ofp, "%-40s ... ", "Relative sequence weighting");  
+    fflush(cfg->ofp); 
   }
 
   if      (esl_opt_GetBoolean(go, "--wnone"))                  esl_vec_DSet(msa->wgt, msa->nseq, 1.);
@@ -1254,9 +1332,9 @@ set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbu
   else if (esl_opt_GetBoolean(go, "--wblosum"))                esl_msaweight_BLOSUM(msa, esl_opt_GetReal(go, "--wid"));
 
   if (cfg->be_verbose) { 
-    fprintf(stdout, "done.  ");
+    fprintf(cfg->ofp, "done.  ");
     esl_stopwatch_Stop(w);
-    esl_stopwatch_Display(stdout, w, "CPU time: ");
+    esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
   }
 
   if(w != NULL) esl_stopwatch_Destroy(w);
@@ -1287,8 +1365,8 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
   if (cfg->be_verbose && do_print) {
     w = esl_stopwatch_Create();
     esl_stopwatch_Start(w);
-    fprintf(stdout, "%-40s ... ", "Constructing model "); 
-    fflush(stdout);
+    fprintf(cfg->ofp, "%-40s ... ", "Constructing model "); 
+    fflush(cfg->ofp);
   }
 
   use_rf  = (esl_opt_GetBoolean(go, "--hand")) ? TRUE : FALSE;
@@ -1317,16 +1395,26 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
     esl_abc_Textize(msa->abc, msa->ax[idx], msa->alen, aseq);
     tr[idx] = Transmogrify(cm, mtr, msa->ax[idx], aseq, msa->alen);
     ParsetreeCount(cm, tr[idx], msa->ax[idx], msa->wgt[idx]);
-    /*ParsetreeDump(stdout, tr[idx], cm, msa->ax[idx], NULL, NULL); */
+    /*ParsetreeDump(cfg->ofp, tr[idx], cm, msa->ax[idx], NULL, NULL); */
     free(aseq);
   }
   cm->nseq     = msa->nseq;
   cm->eff_nseq = msa->nseq;
 
   if(cfg->be_verbose && do_print) { 
-    fprintf(stdout, "done.  ");
+    fprintf(cfg->ofp, "done.  ");
     esl_stopwatch_Stop(w);
-    esl_stopwatch_Display(stdout, w, "CPU time: ");
+    esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
+  }
+
+  /* Set transition counts into ROOT_IL and ROOT_IR to 0, we don't
+   * learn those counts from the alignment, unless --v1p0 (b/c we used
+   * to in versions up to v1.0.2) or --iflank (which turns this
+   * specific behavior off). The emission scores for these states will
+   * be zeroed later so we don't touch them.
+   */
+  if((! esl_opt_GetBoolean(go, "--v1p0")) && (! esl_opt_GetBoolean(go, "--iflank"))) { 
+    if((status = cm_zero_flanking_insert_counts(cm, errbuf)) != eslOK) return status;
   }
 
   /* ensure the dual insert states we will detach were populated with 0 counts */
@@ -1334,15 +1422,15 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
     {
       if(cfg->be_verbose && do_print) { 
 	esl_stopwatch_Start(w);
-	fprintf(stdout, "%-40s ... ", "Finding and checking dual inserts");
+	fprintf(cfg->ofp, "%-40s ... ", "Finding and checking dual inserts");
       }
       cm_find_and_detach_dual_inserts(cm, 
 				      TRUE,   /* Do check (END_E-1) insert states have 0 counts */
 				      FALSE); /* Don't detach the states yet, wait til CM is priorified */
       if (cfg->be_verbose && do_print) {
-	fprintf(stdout, "done.  ");
+	fprintf(cfg->ofp, "done.  ");
 	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, "CPU time: ");
+	esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
       }
     }
 
@@ -1414,8 +1502,8 @@ annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *
   if (cfg->be_verbose) {
     w = esl_stopwatch_Create();
     esl_stopwatch_Start(w);
-    fprintf(stdout, "%-40s ... ", "Transferring MSA annotation");
-    fflush(stdout);
+    fprintf(cfg->ofp, "%-40s ... ", "Transferring MSA annotation");
+    fflush(cfg->ofp);
   }
 
   if ((status = cm_SetName       (cm, msa->name))        != eslOK)  ESL_XFAIL(status, errbuf, "Unable to set name for CM");
@@ -1423,9 +1511,9 @@ annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *
   if ((status = cm_SetDescription(cm, msa->desc))        != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA description");
 
   if (cfg->be_verbose) { 
-    fprintf(stdout, "done.  ");
+    fprintf(cfg->ofp, "done.  ");
     esl_stopwatch_Stop(w);
-    esl_stopwatch_Display(stdout, w, "CPU time: ");
+    esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
   }
 
   if(w != NULL) esl_stopwatch_Destroy(w);
@@ -1433,9 +1521,9 @@ annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *
 
  ERROR:
   if (cfg->be_verbose) { 
-    fprintf(stdout, "FAILED.  ");
+    fprintf(cfg->ofp, "FAILED.  ");
     esl_stopwatch_Stop(w);
-    esl_stopwatch_Display(stdout, w, "CPU time: ");
+    esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
   }
   if(w != NULL) esl_stopwatch_Destroy(w);
   return status;
@@ -1494,19 +1582,19 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
   if(cfg->be_verbose) { 
     w = esl_stopwatch_Create();
     esl_stopwatch_Start(w);
-    fprintf(stdout, "%-40s ... ", "Set effective sequence number");
-    fflush(stdout);
+    fprintf(cfg->ofp, "%-40s ... ", "Set effective sequence number");
+    fflush(cfg->ofp);
   }
 
   if((esl_opt_GetBoolean(go, "--enone")) || ( esl_opt_IsOn(go, "--rsearch")))
     {
       neff = msa->nseq;
-      if(cfg->be_verbose) fprintf(stdout, "done.  ");
+      if(cfg->be_verbose) fprintf(cfg->ofp, "done.  ");
     }
   else if(esl_opt_IsOn(go, "--eset")) 
     {
       neff = esl_opt_GetReal(go, "--eset");
-      if(cfg->be_verbose) fprintf(stdout, "done.  ");
+      if(cfg->be_verbose) fprintf(cfg->ofp, "done.  ");
       cm->eff_nseq = neff;
       cm_Rescale(cm, neff / (float) msa->nseq);
     }
@@ -1549,10 +1637,10 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
       cm_Rescale(cm, neff / (float) msa->nseq);
 
       if(cfg->be_verbose) { 
-	if(used_hmm_etarget) fprintf(stdout, "done.  ");
-	else                 fprintf(stdout, "done.  ");
+	if(used_hmm_etarget) fprintf(cfg->ofp, "done.  ");
+	else                 fprintf(cfg->ofp, "done.  ");
 	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, "CPU time: ");
+	esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
       }
     }
   if(w != NULL) esl_stopwatch_Destroy(w);
@@ -1572,8 +1660,8 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int d
   if (cfg->be_verbose && do_print){
     w = esl_stopwatch_Create();
     esl_stopwatch_Start(w);
-    fprintf(stdout, "%-40s ... ", "Converting counts to probabilities"); 
-    fflush(stdout);
+    fprintf(cfg->ofp, "%-40s ... ", "Converting counts to probabilities"); 
+    fflush(cfg->ofp);
   }
   PriorifyCM(cm, prior); 
 
@@ -1602,9 +1690,9 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int d
   /* don't CMLogoddsify() here, that will come when we configure with cm_Configure() */
 
   if (cfg->be_verbose && do_print) { 
-    fprintf(stdout, "done.  ");
+    fprintf(cfg->ofp, "done.  ");
     esl_stopwatch_Stop(w);
-    esl_stopwatch_Display(stdout, w, "CPU time: ");
+    esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
   }
   if(w != NULL) esl_stopwatch_Destroy(w);
 
@@ -1626,8 +1714,8 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
   if (iter == 1 && cfg->be_verbose){
     w = esl_stopwatch_Create();
     esl_stopwatch_Start(w);
-    fprintf(stdout, "%-40s ... ", "Configuring model"); 
-    fflush(stdout);
+    fprintf(cfg->ofp, "%-40s ... ", "Configuring model"); 
+    fflush(cfg->ofp);
   }
 
   /* potentially redefine pbegin, pend based on command line options */
@@ -1701,9 +1789,9 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
   if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
 
   if (iter == 1 && cfg->be_verbose) { 
-    fprintf(stdout, "done.  ");
+    fprintf(cfg->ofp, "done.  ");
     esl_stopwatch_Stop(w);
-    esl_stopwatch_Display(stdout, w, "CPU time: ");
+    esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
   }
 
   if(w != NULL) esl_stopwatch_Destroy(w);
@@ -1726,8 +1814,8 @@ set_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   if (cfg->be_verbose) {
     w = esl_stopwatch_Create();
     esl_stopwatch_Start(w);
-    fprintf(stdout, "%-40s ... ", "Setting CM consensus");
-    fflush(stdout);
+    fprintf(cfg->ofp, "%-40s ... ", "Setting CM consensus");
+    fflush(cfg->ofp);
   }
 
   if(! (cm->flags & CMH_BITS)) ESL_XFAIL(eslEINVAL, errbuf, "Trying to set cm->consensus before bit scores are valid");
@@ -1735,9 +1823,9 @@ set_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   if ((status = cm_SetConsensus  (cm, cm->cmcons, NULL)) != eslOK) ESL_XFAIL(status, errbuf, "Failed to calculate consensus sequence");
 
   if (cfg->be_verbose) { 
-    fprintf(stdout, "done.  ");
+    fprintf(cfg->ofp, "done.  ");
     esl_stopwatch_Stop(w);
-    esl_stopwatch_Display(stdout, w, "CPU time: ");
+    esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
   }
 
   if(w != NULL) esl_stopwatch_Destroy(w);
@@ -1745,9 +1833,9 @@ set_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
 
  ERROR:
   if (cfg->be_verbose) { 
-    fprintf(stdout, "FAILED.  ");
+    fprintf(cfg->ofp, "FAILED.  ");
     esl_stopwatch_Stop(w);
-    esl_stopwatch_Display(stdout, w, "CPU time: ");
+    esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
   }
   if(w != NULL) esl_stopwatch_Destroy(w);
   return status;
@@ -1776,8 +1864,8 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
   if (cfg->be_verbose){
     w = esl_stopwatch_Create();
     esl_stopwatch_Start(w);
-    fprintf(stdout, "%-40s ... ", "Calibrating p7 HMM filter"); 
-    fflush(stdout);
+    fprintf(cfg->ofp, "%-40s ... ", "Calibrating p7 HMM filter"); 
+    fflush(cfg->ofp);
   }
 
   /* calibrate p7 HMM */
@@ -1919,9 +2007,9 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
   if((status = cm_SetFilterHMM(cm, fhmm, agfmu, agflambda)) != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter for the CM");
 
   if (cfg->be_verbose) { 
-    fprintf(stdout, "done.  ");
+    fprintf(cfg->ofp, "done.  ");
     esl_stopwatch_Stop(w);
-    esl_stopwatch_Display(stdout, w, "CPU time: ");
+    esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
   }
   if(w != NULL) esl_stopwatch_Destroy(w);
 
@@ -2329,7 +2417,7 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
     if((status = esl_dst_XDiffMx(mmsa->abc, mmsa->ax, mmsa->nseq, &D)) != eslOK) ESL_FAIL(status, errbuf, "esl_dst_XDiffMx() error, status: %d", status);
     if((status = esl_tree_SingleLinkage(D, &T)) != eslOK)                        ESL_FAIL(status, errbuf, "esl_tree_SingleLinkage() error, status: %d", status);
     if((status = esl_tree_SetTaxaParents(T)) != eslOK)                           ESL_FAIL(status, errbuf, "esl_tree_SetTaxaParentse() error, status: %d", status);
-    /*esl_tree_WriteNewick(stdout, T);*/
+    /*esl_tree_WriteNewick(cfg->ofp, T);*/
     if((status = esl_tree_Validate(T, errbuf) != eslOK)) return status;
     
     /* determine the diff values: 
@@ -2385,7 +2473,7 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
       csize[clust[i]]++;
     
     /*printf("Distance matrix:\n");
-      esl_dmatrix_Dump(stdout, D, NULL, NULL);*/
+      esl_dmatrix_Dump(cfg->ofp, D, NULL, NULL);*/
   }
   
   /* Create one new MSA for each cluster,
@@ -2730,7 +2818,7 @@ flatten_insert_emissions(CM_t *cm)
   esl_vec_FNorm(cm->null, cm->abc->K);
   for (v = 0; v < cm->M; v++) {
     if(cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
-      esl_vec_FSet(cm->e[v],    (cm->abc->K * cm->abc->K), 0.); /* zero them out */
+      esl_vec_FSet(cm->e[v], (cm->abc->K * cm->abc->K), 0.); /* zero them out */
       esl_vec_FCopy(cm->null, cm->abc->K, cm->e[v]); /* overwrite first cm->abc->K values (rest are irrelevant for non-MP states) with cm->null */
     }
   }
@@ -2748,9 +2836,9 @@ flatten_insert_emissions(CM_t *cm)
 static void
 print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
 {
-  fprintf(stdout, "#\n");
-  fprintf(stdout, "# %-5s %-13s %10s\n", "iter",  "bit score sum", "fract diff");
-  fprintf(stdout, "# %-5s %-13s %10s\n", "-----", "-------------", "----------");
+  fprintf(cfg->ofp, "#\n");
+  fprintf(cfg->ofp, "# %-5s %-13s %10s\n", "iter",  "bit score sum", "fract diff");
+  fprintf(cfg->ofp, "# %-5s %-13s %10s\n", "-----", "-------------", "----------");
   return;
 }
 
@@ -2991,3 +3079,4 @@ P7_PRIOR *cm_p7_prior_CreateNucleic(void)
 /*****************************************************************
  * @LICENSE@
  *****************************************************************/
+

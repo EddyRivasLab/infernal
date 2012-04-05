@@ -1063,7 +1063,7 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       
       sprintf(cur_rankstr, "(%d)", nprinted+1);
 
-      fprintf(ofp, " %*s %9.2g %6.1f %5.1f  %-*s %*" PRId64 " %*" PRId64 " %c %5s %4.2f  ",
+      fprintf(ofp, " %*s %9.2g %6.1f %5.1f  %-*s %*" PRId64 " %*" PRId64 " %c %4.2f %5s  ",
 	      rankw, cur_rankstr,
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
