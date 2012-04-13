@@ -106,7 +106,7 @@ main(int argc, char **argv)
       if ((om->offs[p7_FOFFSET] = ftello(ffp)) == -1) cm_Fail("Failed to ftello() current disk position of MSV db file");
       if ((om->offs[p7_POFFSET] = ftello(pfp)) == -1) cm_Fail("Failed to ftello() current disk position of profile db file");
       om->offs[p7_MOFFSET] = fp7_offset;
-      cm_p7_oprofile_Write(ffp, pfp, cm_offset, cm->clen, cm->W, cm->fp7_evparam[CM_p7_GFMU], cm->fp7_evparam[CM_p7_GFLAMBDA], om); 
+      cm_p7_oprofile_Write(ffp, pfp, cm_offset, cm->clen, cm->W, CMCountNodetype(cm, MATP_nd), cm->fp7_evparam[CM_p7_GFMU], cm->fp7_evparam[CM_p7_GFLAMBDA], om); 
 
       p7_profile_Destroy(gm);
       p7_oprofile_Destroy(om);

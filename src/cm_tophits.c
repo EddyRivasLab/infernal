@@ -153,7 +153,7 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   hit->stop             = 1;
   hit->in_rc            = FALSE;
   hit->score            = 0.0;
-  hit->n3corr           = 0.0;
+  hit->bias             = 0.0;
   hit->pvalue           = 0.0;
   hit->evalue           = 0.0;
 
@@ -162,6 +162,7 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   hit->pass_idx         = -1;
 
   hit->srcL             = -1;
+  hit->hmmonly          = FALSE;
 
   hit->ad               = NULL;
   hit->flags            = CM_HIT_FLAGS_DEFAULT;
@@ -625,10 +626,11 @@ cm_tophits_CloneHitMostly(CM_TOPHITS *src_th, int h, CM_TOPHITS *dest_th)
   hit->root     = src_th->hit[h]->root;
   hit->mode     = src_th->hit[h]->mode;
   hit->score    = src_th->hit[h]->score;
-  hit->n3corr   = src_th->hit[h]->n3corr;
+  hit->bias     = src_th->hit[h]->bias;
   hit->pvalue   = src_th->hit[h]->pvalue;
   hit->evalue   = src_th->hit[h]->evalue;
   hit->srcL     = src_th->hit[h]->srcL;
+  hit->hmmonly  = src_th->hit[h]->hmmonly;
   hit->flags    = src_th->hit[h]->flags;
   hit->ad       = NULL;
 
@@ -644,7 +646,16 @@ cm_tophits_CloneHitMostly(CM_TOPHITS *src_th, int h, CM_TOPHITS *dest_th)
  *
  * Purpose:   After the cm pipeline has completed, the CM_TOPHITS object
  *            contains objects with p-values that haven't yet been
- *            converted to e-values.
+ *            converted to e-values. Compute E-values here based
+ *            on the effective database size <eZ>. 
+ *
+ *            Normally the effective database size is calculated based
+ *            on the number of expected hits in the database, as determined
+ *            for a set database size in cmcalibrate and scaled up for
+ *            current database size. However, if the pipeline was run in
+ *            HMM only mode we use nhmmer's convention of defining
+ *            the effective database size as the total database size 
+ *            divided by a window length, usually om->max_length.
  *
  * Returns:   <eslOK> on success.
  */
@@ -1019,8 +1030,8 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   char *cur_rankstr = NULL;
 
   /* when --acc is on, we'll show accession if available, and fall back to name */
-  if (pli->show_accessions) namew = ESL_MAX(8, cm_tophits_GetMaxShownLength(th));
-  else                      namew = ESL_MAX(8, cm_tophits_GetMaxNameLength(th));
+  if (pli->show_accessions) namew = ESL_MAX((pli->mode == CM_SEARCH_SEQS ? 8 : 9), cm_tophits_GetMaxShownLength(th));
+  else                      namew = ESL_MAX((pli->mode == CM_SEARCH_SEQS ? 8 : 9), cm_tophits_GetMaxNameLength(th));
 
   posw = ESL_MAX(6, cm_tophits_GetMaxPositionLength(th));
 
@@ -1040,8 +1051,8 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   cur_rankstr[rankw] = '\0';
 
   fprintf(ofp, "Hit scores:\n");
-  fprintf(ofp, " %*s %9s %6s %5s  %-*s %*s %*s %1s %5s %4s  %s\n", rankw, "rank",  "E-value",   " score", " bias", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"model"), posw, "start", posw, "end", "", "trunc", "gc", "description");
-  fprintf(ofp, " %*s %9s %6s %5s  %-*s %*s %*s %1s %5s %4s  %s\n", rankw, rankstr, "---------", "------", "-----", namew, namestr, posw, posstr, posw, posstr, "", "-----", "----", "-----------");
+  fprintf(ofp, " %*s %9s %6s %5s  %-*s %*s %*s %1s %3s %5s %4s  %s\n", rankw, "rank",  "E-value",   " score", " bias", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"modelname"), posw, "start", posw, "end", "", "mdl", "trunc", "gc", "description");
+  fprintf(ofp, " %*s %9s %6s %5s  %-*s %*s %*s %1s %3s %5s %4s  %s\n", rankw, rankstr, "---------", "------", "-----", namew, namestr, posw, posstr, posw, posstr, "", "---", "-----", "----", "-----------");
   
   nprinted = 0;
   for (h = 0; h < th->N; h++) { 
@@ -1063,17 +1074,18 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       
       sprintf(cur_rankstr, "(%d)", nprinted+1);
 
-      fprintf(ofp, " %*s %9.2g %6.1f %5.1f  %-*s %*" PRId64 " %*" PRId64 " %c %4.2f %5s  ",
+      fprintf(ofp, " %*s %9.2g %6.1f %5.1f  %-*s %*" PRId64 " %*" PRId64 " %c %-3s %5s %4.2f  ",
 	      rankw, cur_rankstr,
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
-	      th->hit[h]->n3corr,
+	      th->hit[h]->bias,
 	      namew, showname,
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'), 
-	      th->hit[h]->ad->gc,
-	      cm_alidisplay_TruncString(th->hit[h]->ad)); 
+	      (th->hit[h]->hmmonly) ? "hmm" : "cm",
+	      cm_alidisplay_TruncString(th->hit[h]->ad),
+	      th->hit[h]->ad->gc);
       
       if (textw > 0) fprintf(ofp, "%-.*s\n", descw, th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
       else           fprintf(ofp, "%s\n",           th->hit[h]->desc == NULL ? "" : th->hit[h]->desc);
@@ -1155,29 +1167,29 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	fprintf(ofp, ">> %s  %s\n",    showname,        (th->hit[h]->desc == NULL ? "" : th->hit[h]->desc));
       }
 
-      /* The hit info display is 101+rankw char wide:, where rankw is the maximum of 4 and 2 plus the number of digits in th->N. 
-       * If (! pli->show_alignments) the width drops to 72+rankw.
-       *     rank    score  bias   E-value cm from   cm to       seq from      seq to       acc trunc   gc| bands     tau   mx Mb seconds pass
-       *     ----   ------ ----- --------- ------- -------    ----------- -----------      ---- ----- ----|------ ------- ------- ------- ----
-       *      (1) !  123.4   0.3    6.8e-9       3      72 []         412         492 + .. 0.98    no 0.48|   hmm    5e-6    1.30    0.04    1
-       *     (12) ?  123.4  12.7    1.8e-3       1      72 []         180         103 - .. 0.90    no 0.60|   hmm    0.01    0.65    2.23    3  
-       *    rankw 1 123456 12345 123456789 1234567 1234567 12 12345678901 12345678901 1 12 1234 12345 1234| 12345 1234567 1234567 1234567 1234 
-       *        0         1         2         3         4         5         6         7         8        9|       10        11        12
-       *        0123456789012345678901234567890123456789012345678901234567890123456789012345678901234578901234567890123456789012345678901
-       *                                                                                                  |-> only shown if pli->be_verbose
+      /* The hit info display is 97+rankw char wide:, where rankw is the maximum of 4 and 2 plus the number of digits in th->N. 
+       * If (pli->be_verbose), the width grows by 35 chars.
+       *     rank    score  bias    Evalue mdl mdl from   mdl to       seq from      seq to       acc trunc   gc| bands     tau   mx Mb seconds pass
+       *     ----   ------ ----- --------- --- -------- --------    ----------- -----------      ---- ----- ----|------ ------- ------- ------- ----
+       *      (1) !  123.4   0.3    6.8e-9  CM        3       72 []         412         492 + .. 0.98    no 0.48|   hmm    5e-6    1.30    0.04    1
+       *     (12) ?  123.4  12.7    1.8e-3 HMM        1       72 []         180         103 - .. 0.90    no 0.60|   hmm    0.01    0.65    2.23    3  
+       *    rankw 1 123456 12345 123456789 123 12345678 12345678 12 12345678901 12345678901 1 12 1234 12345 1234| 12345 1234567 1234567 1234567 1234 
+       *        0         1         2         3         4         5         6         7         8        9      | 10        11        12        13
+       *        012345678901234567890123456789012345678901234567890123456789012345678901234567890123457890123456789012345678901234567890123456789012
+       *                                                                                                        |-> only shown if pli->be_verbose
        * In rare cases, when CYK alignment is chosen or when computing
        * posteriors is not feasible in allowable memory, the "acc"
        * column will be replaced by a "cyksc" colum which is 6
        * characters wide instead of 4.
        */
       
-      fprintf(ofp, " %*s %1s %6s %5s %9s %7s %7s %2s %11s %11s %1s %2s",  rankw, "rank", "", "score", "bias", "E-value", "cm from", "cm to", "", "seq from", "seq to", "", "");
+      fprintf(ofp, " %*s %1s %6s %5s %9s %-3s %8s %8s %2s %11s %11s %1s %2s",  rankw, "rank", "", "score", "bias", "Evalue", "mdl", "mdl from", "mdl to", "", "seq from", "seq to", "", "");
       if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %4s", "acc",   "trunc", "gc"); }
       else                       { fprintf(ofp, " %6s %5s %4s", "cyksc", "trunc", "gc"); }
       if(pli->be_verbose)        { fprintf(ofp, " %5s %7s %7s %7s %4s", "bands", "tau", "mx Mb", "seconds", "pass"); }
       fprintf(ofp, "\n");
       
-      fprintf(ofp, " %*s %1s %6s %5s %9s %7s %7s %2s %11s %11s %1s %2s",  rankw, rankstr,  "", "------", "-----", "---------", "-------", "-------", "", "-----------", "-----------", "", "");
+      fprintf(ofp, " %*s %1s %6s %5s %9s %-3s %8s %8s %2s %11s %11s %1s %2s",  rankw, rankstr,  "", "------", "-----", "---------", "---", "--------", "--------", "", "-----------", "-----------", "", "");
       if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %4s", "----",   "-----", "----"); }
       else                       { fprintf(ofp, " %6s %5s %4s", "------", "-----", "----"); }
       if(pli->be_verbose)        { fprintf(ofp, " %5s %7s %7s %7s %4s", "-----", "-------", "-------", "-------", "----"); }
@@ -1206,12 +1218,13 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 
       sprintf(cur_rankstr, "(%d)", nprinted+1);
 
-      fprintf(ofp, " %*s %c %6.1f %5.1f %9.2g %7d %7d %c%c %11" PRId64 " %11" PRId64 " %c %c%c",
+      fprintf(ofp, " %*s %c %6.1f %5.1f %9.2g %-3s %8d %8d %c%c %11" PRId64 " %11" PRId64 " %c %c%c",
 	      rankw, cur_rankstr,
 	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? '!' : '?'),
 	      th->hit[h]->score,
-	      th->hit[h]->n3corr,
+	      th->hit[h]->bias,
 	      th->hit[h]->evalue,
+	      (th->hit[h]->hmmonly) ? "hmm" : "cm",
 	      th->hit[h]->ad->cfrom_emit,
 	      th->hit[h]->ad->cto_emit,
 	      lmod, rmod, 
@@ -1236,7 +1249,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       fputs("\n\n", ofp);
 
       /*cm_alidisplay_Dump(ofp, th->hit[h]->ad);*/
-      cm_alidisplay_Print(ofp, th->hit[h]->ad, 40, textw, pli->show_accessions, TRUE);
+      cm_alidisplay_Print(ofp, th->hit[h]->ad, 40, textw, pli->show_accessions);
       fputs("\n", ofp);
       nprinted++;
     }
@@ -1328,73 +1341,82 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
   double  dup_max_elapsed_secs = 0.;           /* max seconds over all alns */
   double  dup_avg_elapsed_secs = 0.;           /* avg seconds over all alns */
 
+  /* variables for alignments for hmm only hits */
+  int64_t hmmonly_naln = 0;                        /* total number alignments */
+
   for(h = 0; h < th->N; h++) { 
-    is_reported          = (th->unsrt[h].flags & CM_HIT_IS_REPORTED) ?          TRUE : FALSE;
-    is_included          = (th->unsrt[h].flags & CM_HIT_IS_INCLUDED) ?          TRUE : FALSE;
-    is_removed_duplicate = (th->unsrt[h].flags & CM_HIT_IS_REMOVED_DUPLICATE) ? TRUE : FALSE;
-    if(th->unsrt[h].ad != NULL) { 
-      all_naln++;
-      all_tot_matrix_Mb    += th->unsrt[h].ad->matrix_Mb;
-      all_tot_elapsed_secs += th->unsrt[h].ad->elapsed_secs;
-      all_min_matrix_Mb     = ESL_MIN(all_min_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
-      all_max_matrix_Mb     = ESL_MAX(all_max_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
-      all_min_elapsed_secs  = ESL_MIN(all_min_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
-      all_max_elapsed_secs  = ESL_MAX(all_max_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
-      if(used_hb) { 
-	if(fabs(default_tau - th->unsrt[h].ad->tau) > eslSMALLX1) all_ntau_mod_hb++;
-      }
-      if(used_hb && (! used_cyk)) { 
-	if(th->unsrt[h].ad->ppline == NULL) all_noverflow_hb++; 
-      }
-
-      /* update reported stats */
-      if(is_reported) { 
-	rep_naln++;
-	rep_tot_matrix_Mb    += th->unsrt[h].ad->matrix_Mb;
-	rep_tot_elapsed_secs += th->unsrt[h].ad->elapsed_secs;
-	rep_min_matrix_Mb     = ESL_MIN(rep_min_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
-	rep_max_matrix_Mb     = ESL_MAX(rep_max_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
-	rep_min_elapsed_secs  = ESL_MIN(rep_min_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
-	rep_max_elapsed_secs  = ESL_MAX(rep_max_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+    if(th->unsrt[h].ad->hmmonly) { 
+      hmmonly_naln++;
+      /* we don't have stats on time, Mb used, so we can't summarize them */
+    }
+    else { 
+      is_reported          = (th->unsrt[h].flags & CM_HIT_IS_REPORTED) ?          TRUE : FALSE;
+      is_included          = (th->unsrt[h].flags & CM_HIT_IS_INCLUDED) ?          TRUE : FALSE;
+      is_removed_duplicate = (th->unsrt[h].flags & CM_HIT_IS_REMOVED_DUPLICATE) ? TRUE : FALSE;
+      if(th->unsrt[h].ad != NULL) { 
+	all_naln++;
+	all_tot_matrix_Mb    += th->unsrt[h].ad->matrix_Mb;
+	all_tot_elapsed_secs += th->unsrt[h].ad->elapsed_secs;
+	all_min_matrix_Mb     = ESL_MIN(all_min_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	all_max_matrix_Mb     = ESL_MAX(all_max_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	all_min_elapsed_secs  = ESL_MIN(all_min_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+	all_max_elapsed_secs  = ESL_MAX(all_max_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
 	if(used_hb) { 
-	  if(fabs(default_tau - th->unsrt[h].ad->tau) > eslSMALLX1) rep_ntau_mod_hb++;
+	  if(fabs(default_tau - th->unsrt[h].ad->tau) > eslSMALLX1) all_ntau_mod_hb++;
 	}
 	if(used_hb && (! used_cyk)) { 
-	  if(th->unsrt[h].ad->ppline == NULL) rep_noverflow_hb++; 
+	  if(th->unsrt[h].ad->ppline == NULL) all_noverflow_hb++; 
 	}
-      }
-
-      /* update included stats */
-      if(is_included) { 
-	inc_naln++;
-	inc_tot_matrix_Mb    += th->unsrt[h].ad->matrix_Mb;
-	inc_tot_elapsed_secs += th->unsrt[h].ad->elapsed_secs;
-	inc_min_matrix_Mb     = ESL_MIN(inc_min_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
-	inc_max_matrix_Mb     = ESL_MAX(inc_max_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
-	inc_min_elapsed_secs  = ESL_MIN(inc_min_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
-	inc_max_elapsed_secs  = ESL_MAX(inc_max_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
-	if(used_hb) { 
-	  if(fabs(default_tau - th->unsrt[h].ad->tau) > eslSMALLX1) inc_ntau_mod_hb++;
+	
+	/* update reported stats */
+	if(is_reported) { 
+	  rep_naln++;
+	  rep_tot_matrix_Mb    += th->unsrt[h].ad->matrix_Mb;
+	  rep_tot_elapsed_secs += th->unsrt[h].ad->elapsed_secs;
+	  rep_min_matrix_Mb     = ESL_MIN(rep_min_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	  rep_max_matrix_Mb     = ESL_MAX(rep_max_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	  rep_min_elapsed_secs  = ESL_MIN(rep_min_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+	  rep_max_elapsed_secs  = ESL_MAX(rep_max_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+	  if(used_hb && (! th->unsrt[h].ad->hmmonly)) {
+	    if(fabs(default_tau - th->unsrt[h].ad->tau) > eslSMALLX1) rep_ntau_mod_hb++;
+	  }
+	  if(used_hb && (! used_cyk)) { 
+	    if(th->unsrt[h].ad->ppline == NULL) rep_noverflow_hb++; 
+	  }
 	}
-	if(used_hb && (! used_cyk)) { 
-	  if(th->unsrt[h].ad->ppline == NULL) inc_noverflow_hb++; 
+	
+	/* update included stats */
+	if(is_included) { 
+	  inc_naln++;
+	  inc_tot_matrix_Mb    += th->unsrt[h].ad->matrix_Mb;
+	  inc_tot_elapsed_secs += th->unsrt[h].ad->elapsed_secs;
+	  inc_min_matrix_Mb     = ESL_MIN(inc_min_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	  inc_max_matrix_Mb     = ESL_MAX(inc_max_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	  inc_min_elapsed_secs  = ESL_MIN(inc_min_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+	  inc_max_elapsed_secs  = ESL_MAX(inc_max_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+	  if(used_hb && (! th->unsrt[h].ad->hmmonly)) {
+	    if(fabs(default_tau - th->unsrt[h].ad->tau) > eslSMALLX1) inc_ntau_mod_hb++;
+	  }
+	  if(used_hb && (! used_cyk)) { 
+	    if(th->unsrt[h].ad->ppline == NULL) inc_noverflow_hb++; 
+	  }
 	}
-      }
-
-      /* update removed duplicate stats */
-      if(is_removed_duplicate) { 
-	dup_naln++;
-	dup_tot_matrix_Mb    += th->unsrt[h].ad->matrix_Mb;
-	dup_tot_elapsed_secs += th->unsrt[h].ad->elapsed_secs;
-	dup_min_matrix_Mb     = ESL_MIN(dup_min_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
-	dup_max_matrix_Mb     = ESL_MAX(dup_max_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
-	dup_min_elapsed_secs  = ESL_MIN(dup_min_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
-	dup_max_elapsed_secs  = ESL_MAX(dup_max_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
-	if(used_hb) { 
-	  if(fabs(default_tau - th->unsrt[h].ad->tau) > eslSMALLX1) dup_ntau_mod_hb++;
+	
+	/* update removed duplicate stats */
+	if(is_removed_duplicate) { 
+	  dup_naln++;
+	  dup_tot_matrix_Mb    += th->unsrt[h].ad->matrix_Mb;
+	  dup_tot_elapsed_secs += th->unsrt[h].ad->elapsed_secs;
+	  dup_min_matrix_Mb     = ESL_MIN(dup_min_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	  dup_max_matrix_Mb     = ESL_MAX(dup_max_matrix_Mb,    th->unsrt[h].ad->matrix_Mb);
+	  dup_min_elapsed_secs  = ESL_MIN(dup_min_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+	  dup_max_elapsed_secs  = ESL_MAX(dup_max_elapsed_secs, th->unsrt[h].ad->elapsed_secs);
+	  if(used_hb) { 
+	    if(fabs(default_tau - th->unsrt[h].ad->tau) > eslSMALLX1) dup_ntau_mod_hb++;
 	}
-	if(used_hb && (! used_cyk)) { 
-	  if(th->unsrt[h].ad->ppline == NULL) dup_noverflow_hb++; 
+	  if(used_hb && (! used_cyk)) { 
+	    if(th->unsrt[h].ad->ppline == NULL) dup_noverflow_hb++; 
+	  }
 	}
       }
     }
@@ -1419,10 +1441,10 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
 
   fprintf(ofp, "Hit alignment statistics summary:\n");
   fprintf(ofp, "---------------------------------\n");
-  if(all_naln > 0) { 
-    fprintf(ofp, "%18s  %9s  %25s  %34s\n", "", "", "    matrix size (Mb)     ", "      alignment time (secs)       ");
-    fprintf(ofp, "%18s  %9s  %25s  %34s\n", "", "", "-------------------------", "----------------------------------");
-    fprintf(ofp, "%-18s  %9s  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "category", "# alns", "minimum", "average", "maximum", "minimum", "average", "maximum", "total");
+  if(all_naln > 0 || hmmonly_naln > 0) { 
+    fprintf(ofp, "%21s  %9s  %25s  %34s\n", "", "", "    matrix size (Mb)     ", "      alignment time (secs)       ");
+    fprintf(ofp, "%21s  %9s  %25s  %34s\n", "", "", "-------------------------", "----------------------------------");
+    fprintf(ofp, "%-21s  %9s  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "category", "# alns", "minimum", "average", "maximum", "minimum", "average", "maximum", "total");
     if(used_hb) { 
       fprintf(ofp, "  %7s", "ntaumod");
       if(! used_cyk) { 
@@ -1430,7 +1452,7 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
       }
     }
     fprintf(ofp, "\n");
-    fprintf(ofp, "%18s  %9s  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "------------------", "---------", "-------", "-------", "-------", "-------", "-------", "-------", "-------");
+    fprintf(ofp, "%21s  %9s  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "---------------------", "---------", "-------", "-------", "-------", "-------", "-------", "-------", "-------");
     if(used_hb) { 
       fprintf(ofp, "  %7s", "-------");
       if(! used_cyk) { 
@@ -1441,7 +1463,7 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
     
     /* reported */
     if(rep_naln > 0) { 
-      fprintf(ofp, "%-18s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f", "reported", 
+      fprintf(ofp, "%-21s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f", "reported", 
 	      rep_naln, rep_min_matrix_Mb, rep_avg_matrix_Mb, rep_max_matrix_Mb, 
 	      rep_min_elapsed_secs, rep_avg_elapsed_secs, rep_max_elapsed_secs, rep_tot_elapsed_secs);
       if(used_hb) { 
@@ -1452,7 +1474,7 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
       }
     }
     else {
-      fprintf(ofp, "%-18s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "reported", 
+      fprintf(ofp, "%-21s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "reported", 
 	      rep_naln, "-", "-", "-", "-", "-", "-", "-");
       if(used_hb) { 
 	fprintf(ofp, "  %7s", "-");
@@ -1465,7 +1487,7 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
     
     /* included */
     if(inc_naln > 0) { 
-      fprintf(ofp, "%-18s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f", "included", 
+      fprintf(ofp, "%-21s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f", "included", 
 	      inc_naln, inc_min_matrix_Mb,    inc_avg_matrix_Mb,    inc_max_matrix_Mb, 
 	      inc_min_elapsed_secs, inc_avg_elapsed_secs, inc_max_elapsed_secs, inc_tot_elapsed_secs);
       if(used_hb) { 
@@ -1476,7 +1498,7 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
       }
     }
     else {
-      fprintf(ofp, "%-18s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "included", 
+      fprintf(ofp, "%-21s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "included", 
 	      inc_naln, "-", "-", "-", "-", "-", "-", "-");
       if(used_hb) { 
 	fprintf(ofp, "  %7s", "-");
@@ -1489,7 +1511,7 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
     
     /* removed duplicates */
     if(dup_naln > 0) { 
-      fprintf(ofp, "%-18s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f", "removed duplicates", 
+      fprintf(ofp, "%-21s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f", "removed duplicates", 
 	      dup_naln, dup_min_matrix_Mb, dup_avg_matrix_Mb, dup_max_matrix_Mb, 
 	      dup_min_elapsed_secs, dup_avg_elapsed_secs, dup_max_elapsed_secs, dup_tot_elapsed_secs);
       if(used_hb) { 
@@ -1500,7 +1522,7 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
       }
     }
     else {
-      fprintf(ofp, "%-18s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "removed duplicates", 
+      fprintf(ofp, "%-21s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "removed duplicates", 
 	      dup_naln, "-", "-", "-", "-", "-", "-", "-");
       if(used_hb) { 
 	fprintf(ofp, "  %7s", "-");
@@ -1511,9 +1533,9 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
     }
     fprintf(ofp, "\n");
     
-    /* all */
+    /* all except hmm only */
     if(all_naln > 0) { 
-      fprintf(ofp, "%-18s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f", "all", 
+      fprintf(ofp, "%-21s  %9" PRId64 "  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f  %7.2f", "all (except HMM only)", 
 	      all_naln, all_min_matrix_Mb, all_avg_matrix_Mb, all_max_matrix_Mb, 
 	      all_min_elapsed_secs, all_avg_elapsed_secs, all_max_elapsed_secs, all_tot_elapsed_secs);
       if(used_hb) { 
@@ -1524,13 +1546,30 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
       }
     }
     else {
-      fprintf(ofp, "%-18s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "included", 
+      fprintf(ofp, "%-21s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "all (except HMM only)", 
 	      all_naln, "-", "-", "-", "-", "-", "-", "-");
       if(used_hb) { 
 	fprintf(ofp, "  %7s", "-");
 	if(! used_cyk) { 
 	  fprintf(ofp, "  %7s", "-");
 	}
+      }
+    }
+    fprintf(ofp, "\n");
+
+    /* hmm only */
+    if(hmmonly_naln > 0) { 
+      fprintf(ofp, "%-21s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "HMM only", 
+	      hmmonly_naln, "?", "?", "?", "?", "?", "?", "?");
+    }
+    else { 
+      fprintf(ofp, "%-21s  %9" PRId64 "  %7s  %7s  %7s  %7s  %7s  %7s  %7s", "HMM only", 
+	      hmmonly_naln, "-", "-", "-", "-", "-", "-", "-");
+    }
+    if(used_hb) { 
+      fprintf(ofp, "  %7s", "-");
+      if(! used_cyk) { 
+	fprintf(ofp, "  %7s", "-");
       }
     }
     fprintf(ofp, "\n");
@@ -1677,32 +1716,29 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
   int h;
 
   if (show_header) { 
-    fprintf(ofp, "#%-*s %-*s %-*s %-*s %7s %7s %*s %*s %6s %5s %4s %9s %6s %-s\n",
+    fprintf(ofp, "#%-*s %-*s %-*s %-*s %3s %8s %8s %*s %*s %6s %5s %4s %4s %9s %6s %-s\n",
 	    tnamew-1, "target name", taccw, "accession",  qnamew, "query name", qaccw, "accession", 
-	    "cm from", "cm to", 
-	    posw, "hit from", posw, "hit to", "strand", "trunc", "pass", "E-value", "score", "description of target");
-    fprintf(ofp, "#%-*s %-*s %-*s %-*s %-7s %-7s %*s %*s %6s %5s %4s %9s %6s %s\n",
+	    "mdl", "mdl from", "mdl to", 
+	    posw, "hit from", posw, "hit to", "strand", "trunc", "gc", "pass", "E-value", "score", "description of target");
+    fprintf(ofp, "#%-*s %-*s %-*s %-*s %-3s %-7s %-7s %*s %*s %6s %5s %4s %4s %9s %6s %s\n",
 	    tnamew-1, tnamestr, taccw, taccstr, qnamew, qnamestr, qaccw, qaccstr, 
-	    "-------", "-------", 
-	    posw, posstr, posw, posstr, "------", "-----", "----", "---------", "-----", "---------------------");
+	    "---", "--------", "--------", 
+	    posw, posstr, posw, posstr, "------", "-----", "----", "----", "---------", "-----", "---------------------");
   }
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED)    {
-      /* print occurs in three statements, b/c cfrom/cto can only be printed if we have a alignment display computed */
-      fprintf(ofp, "%-*s %-*s %-*s %-*s ",
+      fprintf(ofp, "%-*s %-*s %-*s %-*s %-3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4.2f %4d %9.2g %6.1f %s\n",
 	      tnamew, th->hit[h]->name,
 	      taccw,  ((th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') ? th->hit[h]->acc : "-"),
 	      qnamew, qname,
-	      qaccw,  ((qacc != NULL && qacc[0] != '\0') ? qacc : "-"));
-
-      if(th->hit[h]->ad == NULL) { fprintf(ofp, "%7s %7s ", "-", "-"); }
-      else                       { fprintf(ofp, "%7d %7d ", th->hit[h]->ad->cfrom_emit, th->hit[h]->ad->cto_emit); }
-
-      fprintf(ofp, "%*" PRId64 " %*" PRId64 " %6s %5s %4d %9.2g %6.1f %s\n",
+	      qaccw,  ((qacc != NULL && qacc[0] != '\0') ? qacc : "-"),
+	      th->hit[h]->hmmonly ? "hmm" : "cm",
+	      th->hit[h]->ad->cfrom_emit, th->hit[h]->ad->cto_emit,
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->in_rc == TRUE) ? "-" : "+",
 	      cm_alidisplay_TruncString(th->hit[h]->ad), 
+	      th->hit[h]->ad->gc,
 	      th->hit[h]->pass_idx, 
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
@@ -1861,7 +1897,7 @@ cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th)
  * Args:      cm       - the model, we need its emitmap and clen
  *            pass_idx - pass index hit was found in, if 
  *                       PLI_PASS_STD_ANY or PLI_PASS_5P_AND_3P_ANY
- *                       we allow all hits.
+ *                       or PLI_PASS_HMM_ONLY_ANY, we allow all hits.
  *            start    - start position of the hit
  *            stop     - end position of the hit
  *            i0       - start position of source sequence
@@ -1880,7 +1916,7 @@ cm_hit_AllowTruncation(CM_t *cm, int pass_idx, int64_t start, int64_t stop, int6
   int rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) ? cm->emap->rpos[nd] : cm->emap->rpos[nd] - 1;
 
   /* if our pass index allows 'any' hit, return TRUE */
-  if(pass_idx == PLI_PASS_STD_ANY || pass_idx == PLI_PASS_5P_AND_3P_ANY) return TRUE;
+  if(pass_idx == PLI_PASS_STD_ANY || pass_idx == PLI_PASS_5P_AND_3P_ANY || pass_idx == PLI_PASS_HMM_ONLY_ANY) return TRUE;
 
   /* always allow full sequence hits i0..j0 */
   if(start == i0 && stop == j0) return TRUE; 

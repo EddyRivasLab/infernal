@@ -111,12 +111,14 @@ while (<TABLE>)
     while (<OUTPUT>)
     {
 	if (/^\#/) { next; }
-	@fields   = split(' ', $_, 12);
+# example: rmark4               -          Lysine               RF00168          5     158  255326  255495  255322  255516  255329  255489    +     1.8e-11   46.5   0.4  -
+
+	@fields   = split(' ', $_, 15);
 	$target      = $fields[0];
 	$target_from = $fields[6];
 	$target_to   = $fields[7];
-	$pval        = $fields[10];
-	$bitscore    = $fields[11];
+	$pval        = $fields[13];
+	$bitscore    = $fields[14];
 	printf TMPOUTFILE "%10g %10.1f %10d %10d %20s %35s\n", $pval, $bitscore, $target_from, $target_to, $target, $msaname;
     }
 

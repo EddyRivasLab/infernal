@@ -2062,17 +2062,19 @@ typedef struct cm_file_s {
  * 
  * Not all passes are performed in a pipeline. If pli->do_trunc_ends,
  * passes 1,2,3,4 are performed. If pli->do_trunc_any, passes 1 and 5
- * are performed. If neither of these flags is TRUE only pass 1 is
- * performed.
+ * are performed. If pli->do_hmmonly_cur, only pass 6 is performed. If
+ * none of these flags is TRUE only pass 1 is performed.
  *
  * These values have two interrelated but different roles:
  *
- * 1. [1..5] are flags indicating which type of truncated alignment
- * is/was allowed in/by a DP scanner/alignment function. Each pass of
+ * 1. [1..6] are flags indicating which type of truncated alignment
+ * is/was allowed in/by a CM DP scanner/alignment function. Each pass of
  * the pipeline allows a different combination of 5' and/or 3'
  * truncated alignment and differs in whether it enforces the 
  * first and/or final residue be included (_FORCE suffixed) or 
- * not (_ANY suffixed). 
+ * not (_ANY suffixed). For the PLI_PASS_HMM_ONLY_ANY no CM
+ * algorithms will be called but _ANY is used as a suffix because
+ * HMM local alignment algorithms allow 5' and 3' truncation.
  *
  * A wrinkle is that these indices used for DP truncated alignment
  * functions called for 'cmalign' (either PLI_PASS_5P_AND_3P_FORCE or
@@ -2081,21 +2083,23 @@ typedef struct cm_file_s {
  * still relevant in informing the alignment function which truncation
  * penalty score to apply to any resulting alignment score.
  *
- * 2. [0..5] are indices in cm->pli->acct[], accounting states for each 
+ * 2. [0..6] are indices in cm->pli->acct[], accounting states for each 
  * pass of the pipeline.
  */
-#define PLI_PASS_SUMMED          0
+#define PLI_PASS_CM_SUMMED       0  
 #define PLI_PASS_STD_ANY         1  /* only standard alns allowed, no truncated ones, any subseq */
 #define PLI_PASS_5P_ONLY_FORCE   2  /* only 5' truncated alns allowed, first (i0) residue must be included */
 #define PLI_PASS_3P_ONLY_FORCE   3  /* only 3' truncated alns allowed, final (j0) residue must be included */
 #define PLI_PASS_5P_AND_3P_FORCE 4  /* 5' and 3' truncated alns allowed, first & final (i0 & j0) residue must be included */
 #define PLI_PASS_5P_AND_3P_ANY   5  /* 5' and 3' truncated alns allowed, any subseq can comprise hit */
-#define NPLI_PASSES              6
+#define PLI_PASS_HMM_ONLY_ANY    6  /* HMM only pass, all types of truncated hits are allowed in local HMM algs */
+#define NPLI_PASSES              7
 
 typedef struct cm_pipeline_accounting_s {
   /* CM_PIPELINE accounting. (reduceable in threaded/MPI parallel version)     */
 
-  uint64_t      nres;	           /* # of residues searched                   */
+  uint64_t      nres_top;	   /* # of residues searched on top strand     */
+  uint64_t      nres_bot;	   /* # of residues searched on bottom strand  */
   uint64_t      n_past_msv;	   /* # windows that pass MSVFilter()          */
   uint64_t      n_past_vit;	   /* # windows that pass ViterbiFilter()      */
   uint64_t      n_past_fwd;	   /* # windows that pass ForwardFilter()      */
@@ -2163,9 +2167,11 @@ typedef struct cm_pipeline_s {
   int64_t       cur_pass_idx;   /* pipeline pass index currently underway */
 
   /* Accounting. (reduceable in threaded/MPI parallel version)              */
-  uint64_t      nmodels;           /* # of models searched                  */
   uint64_t      nseqs;	           /* # of sequences searched               */
-  uint64_t      nnodes;	           /* # of model nodes searched             */
+  uint64_t      nmodels;           /* # of models searched, CM mode         */
+  uint64_t      nnodes;	           /* # of model nodes searched, CM mode    */
+  uint64_t      nmodels_hmmonly;   /* # of models searched, HMM only mode   */
+  uint64_t      nnodes_hmmonly;	   /* # of model nodes, HMM only mode       */
   CM_PLI_ACCT   acct[NPLI_PASSES]; 
 
   /* Domain/envelope postprocessing                                         */
@@ -2233,7 +2239,7 @@ typedef struct cm_pipeline_s {
   double  F1b;		        /* bias-corrected MSV filter threshold      */
   double  F2b;		        /* bias-corrected Viterbi filter threshold  */
   double  F3b;		        /* bias-corrected Forward filter threshold  */
-  double  F4b;		        /* bias-corrected gloc Forward filter threshold  */
+  double  F4b;		        /* bias-corrected gloc Forward filter threshold */
   double  F5b;		        /* bias-corrected env def filter threshold  */
   /* on/off parameters for each stage */
   int     do_msv;		/* TRUE to filter with MSV, FALSE not to    */
@@ -2273,6 +2279,19 @@ typedef struct cm_pipeline_s {
   double  fcyk_tau;             /* HMM bands tau for CYK filter stage       */
   double  final_tau;            /* HMM bands tau for final stage            */
 
+  /* Threshold settings for HMM-only pipeline                               */
+  int     do_hmmonly_cur;	/* TRUE to only use filter HMM for current model */
+  int     do_hmmonly_always;	/* TRUE to only use filter HMM for all models */
+  int     do_hmmonly_never;	/* TRUE to never only use filter HMM for any model */
+  int     do_max_hmmonly;       /* TRUE to skip all filters in HMM only mode  */
+  /* filter thresholds, HMM only mode */
+  double  F1_hmmonly;	        /* MSV filter threshold, HMM only mode      */
+  double  F2_hmmonly;	        /* Viterbi filter threshold, HMM only mode  */
+  double  F3_hmmonly;	        /* Forward filter threshold, HMM only mode  */
+  /* on/off parameters, HMM only mode */
+  int     do_bias_hmmonly;      /* TRUE to use bias filter, HMM only mode   */
+  int     do_null2_hmmonly;     /* TRUE to use null2, HMM only mode         */
+
   /* configure/alignment options for all CMs we'll use in the pipeline */
   int     cm_config_opts;
   int     cm_align_opts;
@@ -2304,7 +2323,7 @@ typedef struct cm_pipeline_s {
  */
 typedef struct cm_alidisplay_s {
   char *rfline;                 /* reference coord info; or NULL        */
-  char *nline;                  /* negative scoring noncanonical bps    */
+  char *ncline;                 /* negative scoring noncanonical bps    */
   char *csline;                 /* consensus structure info             */
   char *model;                  /* aligned query consensus sequence     */
   char *mline;                  /* "identities", conservation +'s, etc. */
@@ -2321,8 +2340,8 @@ typedef struct cm_alidisplay_s {
   char *cmdesc;		        /* description of CM; or [0]='\0'       */
   int   cfrom_emit;             /* min consensus pos, start posn in CM  */
   int   cto_emit;		/* max consensus pos, end posn in CM    */
-  int   cfrom_span;             /* min cons pos in predicted non-truncated hit, == cfrom unless hit is 5' truncated */
-  int   cto_span;               /* max cons pos in predicted non-truncated hit, == cto   unless hit is 3' truncated */
+  int   cfrom_span;             /* min cons pos in predicted non-truncated hit, == cfrom_emit unless hit is 5' truncated */
+  int   cto_span;               /* max cons pos in predicted non-truncated hit, == cto_emit   unless hit is 3' truncated */
   int   clen;			/* consensus length of model            */
   
   char *sqname;			/* name of target sequence              */
@@ -2337,6 +2356,11 @@ typedef struct cm_alidisplay_s {
   double tau;                   /* tau used to calc HMM bands, -1.0 if HMM bands not used */
   float  matrix_Mb;             /* size of DP matrix used in Mb, either HMM banded CYK/OA or D&C CYK */
   double elapsed_secs;          /* number of seconds required for alignment */
+
+  int    hmmonly;               /* TRUE if this CM_ALIDISPLAY was
+				 * converted from a P7_ALIDISPLAY
+				 * during an HMM only pipeline run.
+				 */
 
   int   memsize;                /* size of allocated block of char memory */
   char *mem;		        /* memory used for the char data above  */
@@ -2377,9 +2401,10 @@ typedef struct cm_hit_s {
   int            root;          /* internal state entry point, != 0 if hit involves a local begin */
   int            mode;          /* joint or marginal hit mode: CM_MODE_J | CM_MODE_R | CM_MODE_L | CM_MODE_T */
   float          score;		/* bit score of the hit (with corrections) */
-  float          n3corr;        /* null3 correction, in bits (already subtracted from score) */
+  float          bias;          /* null{2,3} (2 if hmmonly, 3 if not) correction, in bits (already subtracted from score) */
   double         pvalue;	/* P-value of the hit   (with corrections) */
   double         evalue;	/* E-value of the hit   (with corrections) */
+  int            hmmonly;       /* TRUE if hit was found during HMM only pipeline run, FALSE if not */
   CM_ALIDISPLAY *ad;            /* alignment display */
   uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_REMOVED_DUPLICATE */
 
@@ -2421,6 +2446,7 @@ typedef struct {
   off_t         *cm_offsetA;  /* file offsets for CMs */
   int           *cm_clenA;    /* consensus length of CMs */
   int           *cm_WA;       /* window length of CMs */
+  int           *cm_nbpA;     /* number of basepairs in CMs */
   float         *gfmuA;       /* glocal forward mu parameter for HMM */
   float         *gflambdaA;   /* glocal forward lambda parameter for HMM */
 } CM_P7_OM_BLOCK;
@@ -2552,14 +2578,13 @@ extern void    InsertsGivenNodeIndex(CM_t *cm, int nd, int *ret_i1, int *ret_2);
 /* cm_alidisplay.c */
 extern int            cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq, int64_t seqoffset, 
 					   double tau, double elapsed_secs, CM_ALIDISPLAY **ret_ad);
+extern int            cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seqoffset, float p7sc, float p7pp, P7_ALIDISPLAY *p7ad, CM_ALIDISPLAY **ret_ad);
 extern CM_ALIDISPLAY *cm_alidisplay_Clone(const CM_ALIDISPLAY *ad);
 extern size_t         cm_alidisplay_Sizeof(const CM_ALIDISPLAY *ad);
-extern int            cm_alidisplay_Serialize(CM_ALIDISPLAY *ad);
-extern int            cm_alidisplay_Deserialize(CM_ALIDISPLAY *ad);
 extern void           cm_alidisplay_Destroy(CM_ALIDISPLAY *ad);
 extern char           cm_alidisplay_EncodePostProb(float p);
 extern float          cm_alidisplay_DecodePostProb(char pc);
-extern int            cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth, int show_accessions, int do_noncanonicals);
+extern int            cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth, int show_accessions);
 extern int            cm_alidisplay_Is5PTrunc     (const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Is3PTrunc     (const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Is5PAnd3PTrunc(const CM_ALIDISPLAY *ad);
@@ -2709,8 +2734,8 @@ extern int     cm_file_Read(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc,
 extern int     cm_file_PositionByKey(CM_FILE *cmfp, const char *key);
 extern int     cm_file_Position(CM_FILE *cmfp, const off_t offset);
 extern int     cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_hmm);
-extern int     cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int cm_len, int cm_W, float gfmu, float gflambda, P7_OPROFILE *om);
-extern int     cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om);
+extern int     cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int cm_len, int cm_W, int cm_nbp, float gfmu, float gflambda, P7_OPROFILE *om);
+extern int     cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, int *ret_cm_nbp, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om);
 extern int     cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOCK *hmmBlock);
 extern int     cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset);
 extern int     cm_file_Write1p0ASCII(FILE *fp, CM_t *cm);
@@ -2872,13 +2897,11 @@ extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
 
 extern int   cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
 extern int   cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
-extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, P7_OPROFILE *om, P7_BG *bg, int64_t cur_cm_idx);
+extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, int64_t cur_cm_idx);
 extern int   cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
 extern int   cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
-extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
+extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, int in_rc, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
 extern int   cm_pli_Statistics    (FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
-extern int   cm_pli_PassStatistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx, ESL_STOPWATCH *w);
-extern int   cm_pli_SumStatistics (CM_PIPELINE *pli);
 extern int   cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct);
 extern char *cm_pli_DescribePass(int pass_idx);
 extern int   cm_pli_PassEnforcesFirstRes(int pass_idx);

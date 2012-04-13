@@ -1192,22 +1192,26 @@ cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_
  *            file at which the CM corresponding to the optimized
  *            profile can be found. 
  *            
- *            2. <cm_clen>: consensus length of the CM this p7 is a 
+ *            2. <cm_clen>:  consensus length of the CM this p7 is a 
  *            filter for. 
  *
- *            3. <cm_W>:    window length of the CM this p7 is a 
+ *            3. <cm_W>:     window length of the CM this p7 is a 
  *            filter for. 
  * 
- *            4. <gfmu>:     glocal forward mu for this <om>
+ *            4. <cm_nbp>:   number of base pairs in CM (if 0, pipeline
+ *            will be run in HMM only mode.
  *
- *            5. <gflambda>: glocal forward lambda for this <om>
+ *            5. <gfmu>:     glocal forward mu for this <om>
+ *
+ *            6. <gflambda>: glocal forward lambda for this <om>
  *
  * Args:      ffp            - open binary stream for saving MSV filter part
  *            pfp            - open binary stream for saving rest of profile
  *            cm_offset      - disk offset for CM in <.i1m> file that corresponds 
  *                             to this profile
  *            cm_clen        - consensus length of CM corresponding to this om (usually om->M)
- *            cm_W           - window length for this CM 
+ *            cm_W           - window length for the CM 
+ *            cm_nbp         - number of basepairs in the CM
  *            gfmu           - E value mu param for glocal forward for this om
  *            gflambda       - E value lambda param for glocal forward for this om
  *            om             - optimized profile to save
@@ -1220,13 +1224,14 @@ cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_
  * Throws:    (no abnormal error conditions)
  */
 int
-cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int cm_clen, int cm_W, float gfmu, float gflambda, P7_OPROFILE *om)
+cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int cm_clen, int cm_W, int cm_nbp, float gfmu, float gflambda, P7_OPROFILE *om)
 {
   /* <ffp> is the part of the oprofile that MSVFilter() needs */
   if (fwrite((char *) &(v1a_fmagic),     sizeof(uint32_t), 1,  ffp) != 1) return eslFAIL;
   if (fwrite((char *) &(cm_offset),      sizeof(off_t),    1,  ffp) != 1) return eslFAIL;
   if (fwrite((char *) &(cm_clen),        sizeof(int),      1,  ffp) != 1) return eslFAIL;
   if (fwrite((char *) &(cm_W),           sizeof(int),      1,  ffp) != 1) return eslFAIL;
+  if (fwrite((char *) &(cm_nbp),         sizeof(int),      1,  ffp) != 1) return eslFAIL;
   if (fwrite((char *) &(gfmu),           sizeof(float),    1,  ffp) != 1) return eslFAIL;
   if (fwrite((char *) &(gflambda),       sizeof(float),    1,  ffp) != 1) return eslFAIL;
 
@@ -1311,6 +1316,7 @@ cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset)
  *            ret_cm_offset   - RETURN: offset of CM  each om corresponds to
  *            ret_cm_clen     - RETURN: clen of CM each om corresponds to
  *            ret_cm_W        - RETURN: W of CM each om corresponds to
+ *            ret_cm_nbp      - RETURN: number of bps in CM each om corresponds to
  *            ret_gfmu        - RETURN: glocal fwd mu the om
  *            ret_gflambda    - RETURN: glocal forward lambda the om
  *            ret_om          - RETURN: the read <om> with MSV filter
@@ -1333,13 +1339,14 @@ cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset)
  * Throws:    <eslEMEM> on allocation error.
  */
 int
-cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om)
+cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, int *ret_cm_nbp, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om)
 {
   int status         = eslOK;      /* return status */
   uint32_t magic;                  /* magic number used to verify format */
   off_t cm_offset;                 /* offset of the corresponding CM  in cmfp->mfp */
   int   cm_clen;                   /* CM consensus length (will likely be om->M) */
   int   cm_W;                      /* CM window length (will likely differ from om->max_length) */
+  int   cm_nbp;                    /* number of basepairs in CM (if 0 pipeline will be run in HMM only mode) */
   float gfmu;                      /* glocal fwd mu parameter for current hmm */
   float gflambda;                  /* glocal fwd lambda parameter for current hmm */
   P7_OPROFILE *om = NULL;          /* the om we've read */
@@ -1354,6 +1361,7 @@ cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, o
   if (! fread( (char *) &cm_offset,       sizeof(off_t),    1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM offset");
   if (! fread( (char *) &cm_clen,         sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM consensus length");
   if (! fread( (char *) &cm_W,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM window length (W)");
+  if (! fread( (char *) &cm_nbp,          sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM number of bps");
   if (! fread( (char *) &gfmu,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read glocal fwd mu parameter");
   if (! fread( (char *) &gflambda,        sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read glocal fwd lambda parameter");
   
@@ -1371,6 +1379,7 @@ cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, o
   if(ret_cm_offset != NULL) *ret_cm_offset  = cm_offset; 
   if(ret_cm_clen   != NULL) *ret_cm_clen    = cm_clen; 
   if(ret_cm_W      != NULL) *ret_cm_W       = cm_W; 
+  if(ret_cm_nbp    != NULL) *ret_cm_nbp     = cm_nbp;
   if(ret_gfmu      != NULL) *ret_gfmu       = gfmu;
   if(ret_gflambda  != NULL) *ret_gflambda   = gflambda;
   if(ret_om        != NULL) *ret_om         = om;         
@@ -1425,6 +1434,7 @@ cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOC
 				      &(hmmBlock->cm_offsetA[i]), 
 				      &(hmmBlock->cm_clenA[i]), 
 				      &(hmmBlock->cm_WA[i]), 
+				      &(hmmBlock->cm_nbpA[i]), 
 				      &(hmmBlock->gfmuA[i]), 
 				      &(hmmBlock->gflambdaA[i]), 
 				      &(hmmBlock->list[i]));
@@ -3007,13 +3017,13 @@ read_asc30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm)
 	if (hmm->flags & p7H_CONS) hmm->consensus[k] = *tok1;
       }
 
+      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Missing RF field on match line for node %d: should at least be -",  k);
+      if (hmm->flags & p7H_RF) hmm->rf[k]   = *tok1;
+
       if (hfp->format >= p7_HMMFILE_3f) {
         if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Missing MM field on match line for node %d: should at least be -", k);
         if (hmm->flags & p7H_MMASK) hmm->mm[k] = *tok1;
       }
-      
-      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Missing RF field on match line for node %d: should at least be -",  k);
-      if (hmm->flags & p7H_RF) hmm->rf[k]   = *tok1;
 
       if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Missing CS field on match line for node %d: should at least be -",  k);
       if (hmm->flags & p7H_CS) hmm->cs[k]   = *tok1;

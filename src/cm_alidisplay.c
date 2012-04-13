@@ -243,7 +243,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   /* Now we know the length of all arrays (len), determine total amount of memory required, and allocate it */
   /* Allocate the char arrays */
 
-  n  = (len+1) * 5;    /* model, csline, mline, aseq, nline mandatory */
+  n  = (len+1) * 5;    /* model, csline, mline, aseq, ncline */
   n += (len_el+1);     /* aseq_el (includes EL emits) */
   if(adata->ppstr  != NULL) n += len+1 + len_el+1; /* ppline and ppline_el */
   if(cm->rf        != NULL) n += len+1;
@@ -262,6 +262,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   ad->tau          = tau;
   ad->matrix_Mb    = adata->mb_tot;
   ad->elapsed_secs = elapsed_secs;
+  ad->hmmonly      = FALSE;
   ad->N            = len;
   ad->N_el         = len_el;
 
@@ -272,7 +273,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   pos = 0;
   ESL_ALLOC(ad->mem, ad->memsize);
   if (cm->rf != NULL) { ad->rfline = ad->mem + pos;  pos += len+1;} else { ad->rfline = NULL; }
-  ad->nline      = ad->mem + pos;  pos += len+1;
+  ad->ncline     = ad->mem + pos;  pos += len+1;
   ad->csline     = ad->mem + pos;  pos += len+1;
   ad->model      = ad->mem + pos;  pos += len+1;
   ad->mline      = ad->mem + pos;  pos += len+1;
@@ -311,7 +312,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
    * because of the way we deal w/ EL. 
    */
   if (cm->rf != NULL) memset(ad->rfline, ' ', ad->N);
-  memset(ad->nline,   ' ', ad->N);
+  memset(ad->ncline,  ' ', ad->N);
   memset(ad->csline,  ' ', ad->N);
   memset(ad->model,   ' ', ad->N);
   memset(ad->mline,   ' ', ad->N);
@@ -345,7 +346,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	  esl_stack_IPop(pda, &rrf); 
 	  ad->rfline[pos] = rrf;
 	}
-	esl_stack_IPop(pda, &rnnc);	  ad->nline[pos]  = rnnc;
+	esl_stack_IPop(pda, &rnnc);	  ad->ncline[pos] = rnnc;
 	esl_stack_IPop(pda, &rstr); 	  ad->csline[pos] = rstr;
 	esl_stack_IPop(pda, &rcons);	  ad->model[pos]  = rcons;
 	esl_stack_IPop(pda, &rmid);	  ad->mline[pos]  = rmid;
@@ -520,7 +521,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
        */
       if (do_left) {
 	if (cm->rf != NULL) ad->rfline[pos] = lrf;
-	ad->nline[pos]   = lnnc;
+	ad->ncline[pos]  = lnnc;
 	ad->csline[pos]  = lstr;
 	ad->model[pos]   = lcons;
 	ad->mline[pos]   = lmid;
@@ -597,7 +598,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   }
 
   if(cm->rf != NULL) ad->rfline[ad->N] = '\0';
-  ad->nline[ad->N]  = '\0';
+  ad->ncline[ad->N] = '\0';
   ad->csline[ad->N] = '\0';
   ad->model[ad->N]  = '\0';
   ad->mline[ad->N]  = '\0';
@@ -626,6 +627,179 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   return status; /*  errbuf filled some other way */
 }
 
+/* Function:  cm_alidisplay_CreateFromP7()
+ * Synopsis:  Create a CM_ALIDISPLAY from a P7_ALIDISPLAY.
+ * Incept:    EPN, Mon Apr  9 12:46:07 2012
+ *            SRE, Thu May 23 13:46:09 2002 [St. Louis] (display.c:CreateFancyAli())
+ *
+ * Purpose:   Given a P7_ALIDISPLAY, create a CM_ALIDISPLAY from it.
+ *            A copy of all relevant strings is made. This function
+ *            was written for special pipeline runs which use an 
+ *            HMM only. 
+ *
+ * Args:      cm           - model
+ *            errbuf       - for error messages
+ *            sq           - the sequence, parsetree corresponds to subseq beginning at seqoffset
+ *            seqoffset    - position in sq which corresponds to first position in tr
+ *            p7sc         - score of envelope p7ad was derived from
+ *            p7pp         - avg pp of all aligned residues in envelope P7_ALIDISPLAY was derived from
+ *            p7ad         - P7_ALIDISPLAY to convert 
+ *            ret_ad       - RETURN: CM_ALIDISPLAY, allocated and filled here.
+ *
+ * Returns:   eslOK on success.
+ *            eslFAIL on error, errbuf is filled.
+ *
+ * Xref:      STL6 p.58
+ */
+int
+cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seqoffset, float p7sc, float p7pp, P7_ALIDISPLAY *p7ad, CM_ALIDISPLAY **ret_ad)
+{
+  int            status;
+  CM_ALIDISPLAY *ad = NULL;      /* alidisplay structure we're building       */
+  int            n;
+  int            cm_namelen, cm_acclen, cm_desclen;
+  int            sq_namelen, sq_acclen, sq_desclen;
+  int            len;
+  int            len_el;
+  int            pos;		  /* position in ad->mem */
+  int            x; 		  /* residue position */
+  float         *act = NULL;      /* [0..cm->abc->K-1], count of residue in hit */
+  int            n5p_skipped = 0; /* number of 5' match positions skipped (p7ad->hmmfrom-1) */
+  int            n3p_skipped = 0; /* number of 3' match positions skipped (p7ad->M - p7ad->hmmto) */
+
+  len = p7ad->N;
+  n5p_skipped = p7ad->hmmfrom -1;
+  n3p_skipped = p7ad->M - p7ad->hmmto;
+  len_el = len + n5p_skipped + n3p_skipped;
+
+  /* Allocate the char arrays, we copy aseq into aseq_el and ppline into ppline_el for consistency with cm_alidisplay_Create() */
+  n  = (len+1) * 4;    /* model, csline, mline, aseq (ncline will remain NULL) */
+  n += len_el+1;       /* aseq_el mandatory */
+  if(p7ad->ppline  != NULL) n += len+1 + len_el+1; /* ppline and ppline_el */
+  if(p7ad->rfline  != NULL) n += len+1;
+  cm_namelen = strlen(cm->name);                           n += cm_namelen + 1;
+  cm_acclen  = (cm->acc  != NULL ? strlen(cm->acc)  : 0);  n += cm_acclen  + 1; 
+  cm_desclen = (cm->desc != NULL ? strlen(cm->desc) : 0);  n += cm_desclen + 1; 
+  sq_namelen = strlen(sq->name);                           n += sq_namelen + 1;
+  sq_acclen  = strlen(sq->acc);                            n += sq_acclen  + 1; /* sq->acc is "\0" when unset */
+  sq_desclen = strlen(sq->desc);                           n += sq_desclen + 1; /* sq->desc is "\0" when unset */
+
+  ESL_ALLOC(ad, sizeof(CM_ALIDISPLAY));
+  ad->mem          = NULL;
+  ad->memsize      = sizeof(char) * n;
+  ad->sc           = p7sc;
+  ad->avgpp        = p7pp;
+  ad->tau          = -1.0;
+  ad->matrix_Mb    = 0.0;  /* unknown */
+  ad->elapsed_secs = 0.0;  /* unknown */
+  ad->hmmonly      = TRUE; 
+  ad->N            = len;
+  ad->N_el         = len + n5p_skipped + n3p_skipped;
+
+  ad->clen = cm->clen;
+
+  ad->sqfrom     = p7ad->sqfrom;
+  ad->sqto       = p7ad->sqto;
+  ad->cfrom_emit = p7ad->hmmfrom;
+  ad->cto_emit   = p7ad->hmmto;
+  ad->cfrom_span = p7ad->hmmfrom;
+  ad->cto_span   = p7ad->hmmto;
+
+  /* calculate GC frequency */
+  ESL_ALLOC(act, sizeof(float) * cm->abc->K);
+  esl_vec_FSet(act, cm->abc->K, 0.);
+  for(x = p7ad->sqfrom; x <= p7ad->sqto; x++) esl_abc_FCount(cm->abc, act, sq->dsq[x], 1.0);
+  ad->gc = (act[1] + act[2]) / (float) (p7ad->sqto - p7ad->sqfrom + 1);
+
+  pos = 0;
+  ESL_ALLOC(ad->mem, ad->memsize);
+  if (p7ad->rfline != NULL) { ad->rfline = ad->mem + pos;  pos += len+1;} else { ad->rfline = NULL; }
+  ad->ncline     = NULL; /* not printed in HMM hits */
+  ad->csline     = ad->mem + pos;  pos += len+1;
+  ad->model      = ad->mem + pos;  pos += len+1;
+  ad->mline      = ad->mem + pos;  pos += len+1;
+  ad->aseq       = ad->mem + pos;  pos += len+1;
+  if (p7ad->ppline  != NULL) { ad->ppline    = ad->mem + pos;  pos += len+1;}    else { ad->ppline    = NULL; }
+  ad->aseq_el    = ad->mem + pos;  pos += len_el+1;
+  if (p7ad->ppline  != NULL) { ad->ppline_el = ad->mem + pos;  pos += len_el+1;} else { ad->ppline_el = NULL; }
+  ad->cmname     = ad->mem + pos;  pos += cm_namelen +1;
+  ad->cmacc      = ad->mem + pos;  pos += cm_acclen  +1;
+  ad->cmdesc     = ad->mem + pos;  pos += cm_desclen +1;
+  ad->sqname     = ad->mem + pos;  pos += sq_namelen +1;
+  ad->sqacc      = ad->mem + pos;  pos += sq_acclen  +1;  
+  ad->sqdesc     = ad->mem + pos;  pos += sq_desclen +1; 
+
+  /* Set name, acc, desc char arrays */
+  strcpy(ad->cmname, cm->name);
+  if (cm->acc  != NULL) strcpy(ad->cmacc,  cm->acc);  else ad->cmacc[0]  = 0;
+  if (cm->desc != NULL) strcpy(ad->cmdesc, cm->desc); else ad->cmdesc[0] = 0;
+  strcpy(ad->sqname,  sq->name);
+  strcpy(ad->sqacc,   sq->acc);
+  strcpy(ad->sqdesc,  sq->desc);
+
+  /* Copy strings from p7ad */
+  if(p7ad->rfline) strcpy(ad->rfline,  p7ad->rfline);
+  strcpy(ad->csline,  p7ad->csline);
+  strcpy(ad->model,   p7ad->model);
+  strcpy(ad->mline,   p7ad->mline);
+  strcpy(ad->aseq,    p7ad->aseq);
+  if(p7ad->ppline) strcpy(ad->ppline,  p7ad->ppline);
+
+  /* Create aseq_el and ppline_el, these are copies of p7->aseq and
+   * p7->ppline with n5p_skipped '-' characters prepended and
+   * n3p_skipped '-' characters appended.
+   */
+  for(x = 0; x < n5p_skipped; x++) ad->aseq_el[x] = '-';
+  memcpy(ad->aseq_el + n5p_skipped, p7ad->aseq, ad->N);
+  for(x = ad->N + n5p_skipped; x < ad->N_el; x++) ad->aseq_el[x] = '-';
+  ad->aseq_el[ad->N_el] = '\0';
+
+  if(p7ad->ppline) { 
+    for(x = 0; x < n5p_skipped; x++) ad->ppline_el[x] = '-';
+    memcpy(ad->ppline_el + n5p_skipped, p7ad->ppline, ad->N);
+    for(x = ad->N + n5p_skipped; x < ad->N_el; x++) ad->ppline_el[x] = '-';
+    ad->ppline_el[ad->N_el] = '\0';
+  }
+  else { 
+    ad->ppline_el[0] = '\0';
+  }
+
+#if 0
+  /* If I change my mind and want NC annotation in HMM hits, 
+   * the following code will set all bps to '?', but make
+   * sure you allocate for ncline above and set it's ptr.
+   */
+  /* set ncline to "?" for all basepairs, when using an HMM we
+   * can't tell if they're negative scoring non-canonicals or 
+   * not.
+   */
+  memset(ad->ncline,   ' ', ad->N);
+  ad->ncline[ad->N]  = '\0';
+  for(x = 0; x < ad->N; x++) { 
+    if(ad->csline[x] == '<' || 
+       ad->csline[x] == '>' || 
+       ad->csline[x] == '(' || 
+       ad->csline[x] == ')' || 
+       ad->csline[x] == '[' || 
+       ad->csline[x] == ']' || 
+       ad->csline[x] == '{' || 
+       ad->csline[x] == '}') { 
+      ad->ncline[x] = '?';
+    }
+  }
+#endif
+
+  if(act    != NULL)  free(act);
+  if(ret_ad != NULL) *ret_ad = ad;
+  return eslOK;
+
+ ERROR:
+  if(act    != NULL)  free(act);
+  if(ret_ad != NULL) *ret_ad = NULL;
+  if(status == eslEMEM) ESL_FAIL(status, errbuf, "cm_alidisplay_CreateFromP7() out of memory");
+  return status; /*  errbuf filled some other way */
+}
+
 /* Function:  cm_alidisplay_Clone()
  * Synopsis:  Make a duplicate of an ALIDISPLAY.
  *
@@ -644,7 +818,7 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
   int status;
 
   ESL_ALLOC(ad2, sizeof(CM_ALIDISPLAY));
-  ad2->rfline = ad2->nline   = ad2->csline  = ad2->model = ad2->mline = ad2->aseq = ad2->ppline = NULL;
+  ad2->rfline  = ad2->ncline = ad2->csline  = ad2->model = ad2->mline = ad2->aseq = ad2->ppline = NULL;
   ad2->cmname  = ad2->cmacc  = ad2->cmdesc  = NULL;
   ad2->sqname  = ad2->sqacc  = ad2->sqdesc  = NULL;
   ad2->aseq_el = ad2->ppline_el = NULL;
@@ -658,7 +832,7 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
       memcpy(ad2->mem, ad->mem, ad->memsize);
 
       ad2->rfline    = (ad->rfline ? ad2->mem + (ad->rfline - ad->mem) : NULL );
-      ad2->nline     = (ad->nline  ? ad2->mem + (ad->nline - ad->mem)  : NULL );
+      ad2->ncline    = (ad->ncline ? ad2->mem + (ad->ncline - ad->mem) : NULL );
       ad2->csline    = ad2->mem + (ad->csline - ad->mem);
       ad2->model     = ad2->mem + (ad->model  - ad->mem);
       ad2->mline     = ad2->mem + (ad->mline  - ad->mem);
@@ -687,7 +861,7 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
   else				/* deserialized */
     {
       if ( esl_strdup(ad->rfline,    -1, &(ad2->rfline))    != eslOK) goto ERROR;
-      if ( esl_strdup(ad->nline,     -1, &(ad2->nline))     != eslOK) goto ERROR;
+      if ( esl_strdup(ad->ncline,    -1, &(ad2->ncline))    != eslOK) goto ERROR;
       if ( esl_strdup(ad->csline,    -1, &(ad2->csline))    != eslOK) goto ERROR;
       if ( esl_strdup(ad->model,     -1, &(ad2->model))     != eslOK) goto ERROR;
       if ( esl_strdup(ad->mline,     -1, &(ad2->mline))     != eslOK) goto ERROR;
@@ -721,6 +895,7 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
   ad2->tau          = ad->tau;
   ad2->matrix_Mb    = ad->matrix_Mb;
   ad2->elapsed_secs = ad->elapsed_secs;
+  ad2->hmmonly      = ad->hmmonly;
 
   return ad2;
 
@@ -749,8 +924,11 @@ cm_alidisplay_Sizeof(const CM_ALIDISPLAY *ad)
   size_t n = sizeof(CM_ALIDISPLAY);
 
   if (ad->rfline) n += ad->N+1; /* +1 for \0 */
-  n += 5 * (ad->N+1);           /* nline, csline, model, mline, aseq */
-  if (ad->ppline) n += ad->N+1; 
+  n += 4 * (ad->N+1);           /* csline, model, mline, aseq */
+  if (ad->ppline)    n += ad->N+1; 
+  if (ad->ncline)    n += ad->N+1; 
+  n += ad->N_el+1;              /* aseq_el */
+  if (ad->ppline_el) n += ad->N_el+1; 
   n += 1 + strlen(ad->cmname);	  
   n += 1 + strlen(ad->cmacc);	/* optional acc, desc fields: when not present, just "" ("\0") */
   n += 1 + strlen(ad->cmdesc);
@@ -760,126 +938,6 @@ cm_alidisplay_Sizeof(const CM_ALIDISPLAY *ad)
  
   return n;
 }
-
-/* Function:  cm_alidisplay_Serialize()
- * Synopsis:  Serialize a CM_ALIDISPLAY, using internal memory.
- *
- * Purpose:   Serialize the <CM_ALIDISPLAY> <ad>, internally converting
- *            all its variable-length allocations to a single
- *            contiguous memory allocation. Serialization aids
- *            interprocess communication.
- *            
- *            If <ad> is already serialized, do nothing.
- *
- * Args:      ad  - alidisplay to serialize
- *
- * Returns:   <eslOK> on success.
- *
- * Throws:    <eslEMEM> on allocation failure, and <ad> is restored to
- *            its original (deserialized) state.
- */
-int
-cm_alidisplay_Serialize(CM_ALIDISPLAY *ad)
-{
-  int pos;
-  int n;
-  int status;
-
-  if (ad->mem) return eslOK;	/* already serialized, so no-op */
-  ad->memsize = cm_alidisplay_Sizeof(ad) - sizeof(CM_ALIDISPLAY);
-  ESL_ALLOC(ad->mem, ad->memsize);
-
-  /* allow no exceptions past this point, because API guarantees restore of original state upon error */
-
-  pos = 0;
-  if (ad->rfline) { memcpy(ad->mem+pos, ad->rfline, ad->N+1); free(ad->rfline); ad->rfline = ad->mem+pos;  pos += ad->N+1; }
-  memcpy(ad->mem+pos, ad->nline,  ad->N+1); free(ad->nline);  ad->nline  = ad->mem+pos; pos += ad->N+1; 
-  memcpy(ad->mem+pos, ad->csline, ad->N+1); free(ad->csline); ad->csline = ad->mem+pos; pos += ad->N+1; 
-  memcpy(ad->mem+pos, ad->model,  ad->N+1); free(ad->model);  ad->model  = ad->mem+pos; pos += ad->N+1; 
-  memcpy(ad->mem+pos, ad->mline,  ad->N+1); free(ad->mline);  ad->mline  = ad->mem+pos; pos += ad->N+1; 
-  memcpy(ad->mem+pos, ad->aseq,   ad->N+1); free(ad->aseq);   ad->aseq   = ad->mem+pos; pos += ad->N+1; 
-  if (ad->ppline) { memcpy(ad->mem+pos, ad->ppline, ad->N+1); free(ad->ppline); ad->ppline = ad->mem+pos;  pos += ad->N+1; }
-  n = 1 + strlen(ad->cmname);   memcpy(ad->mem + pos, ad->cmname, n);  free(ad->cmname);  ad->cmname  = ad->mem+pos; pos += n;
-  n = 1 + strlen(ad->cmacc);    memcpy(ad->mem + pos, ad->cmacc,  n);  free(ad->cmacc);   ad->cmacc   = ad->mem+pos; pos += n;
-  n = 1 + strlen(ad->cmdesc);   memcpy(ad->mem + pos, ad->cmdesc, n);  free(ad->cmdesc);  ad->cmdesc  = ad->mem+pos; pos += n;
-  n = 1 + strlen(ad->sqname);   memcpy(ad->mem + pos, ad->sqname,  n); free(ad->sqname);  ad->sqname  = ad->mem+pos; pos += n;
-  n = 1 + strlen(ad->sqacc);    memcpy(ad->mem + pos, ad->sqacc,   n); free(ad->sqacc);   ad->sqacc   = ad->mem+pos; pos += n;
-  n = 1 + strlen(ad->sqdesc);   memcpy(ad->mem + pos, ad->sqdesc,  n); free(ad->sqdesc);  ad->sqdesc  = ad->mem+pos; pos += n;
-  
-  return eslOK;
-
- ERROR:
-  if (ad->mem) free(ad->mem); ad->mem = NULL;
-  return status;
-}
-
-/* Function:  cm_alidisplay_Deserialize()
- * Synopsis:  Deserialize a CM_ALIDISPLAY, using internal memory.
- *
- * Purpose:   Deserialize the <CM_ALIDISPLAY> <ad>, converting its internal
- *            allocations from a single contiguous memory chunk to individual
- *            variable-length allocations. Deserialization facilitates 
- *            reallocation/editing of individual elements of the display.
- *            
- *            If <ad> is already deserialized, do nothing.
- *
- * Args:      ad - alidisplay to serialize
- *
- * Returns:   <eslOK> on success
- *
- * Throws:    <eslEMEM> on allocation failure, and <ad> is restored to
- *            its original (serialized) state.
- */
-int
-cm_alidisplay_Deserialize(CM_ALIDISPLAY *ad)
-{
-  int pos;
-  int n;
-  int status;
-
-  if (ad->mem == NULL) return eslOK; /* already deserialized, so no-op */
-
-  pos = 0;
-  if (ad->rfline) { ESL_ALLOC(ad->rfline, sizeof(char) * ad->N+1); memcpy(ad->rfline, ad->mem+pos, ad->N+1); pos += ad->N+1; }
-  ESL_ALLOC(ad->nline, sizeof(char) * ad->N+1); memcpy(ad->nline,  ad->mem+pos, ad->N+1); pos += ad->N+1; 
-  ESL_ALLOC(ad->csline,sizeof(char) * ad->N+1); memcpy(ad->csline, ad->mem+pos, ad->N+1); pos += ad->N+1; 
-  ESL_ALLOC(ad->model, sizeof(char) * ad->N+1); memcpy(ad->model,  ad->mem+pos, ad->N+1); pos += ad->N+1; 
-  ESL_ALLOC(ad->mline, sizeof(char) * ad->N+1); memcpy(ad->mline,  ad->mem+pos, ad->N+1); pos += ad->N+1; 
-  ESL_ALLOC(ad->aseq,  sizeof(char) * ad->N+1); memcpy(ad->aseq,   ad->mem+pos, ad->N+1); pos += ad->N+1; 
-  if (ad->ppline) { ESL_ALLOC(ad->ppline, sizeof(char) * ad->N+1); memcpy(ad->ppline, ad->mem+pos, ad->N+1); pos += ad->N+1; }
-  n = 1 + strlen(ad->mem+pos);  ESL_ALLOC(ad->cmname,   sizeof(char) * n); memcpy(ad->cmname,  ad->mem+pos, n); pos += n;
-  n = 1 + strlen(ad->mem+pos);  ESL_ALLOC(ad->cmacc,    sizeof(char) * n); memcpy(ad->cmacc,   ad->mem+pos, n); pos += n;
-  n = 1 + strlen(ad->mem+pos);  ESL_ALLOC(ad->cmdesc,   sizeof(char) * n); memcpy(ad->cmdesc,  ad->mem+pos, n); pos += n;
-  n = 1 + strlen(ad->mem+pos);  ESL_ALLOC(ad->sqname,   sizeof(char) * n); memcpy(ad->sqname,  ad->mem+pos, n); pos += n;
-  n = 1 + strlen(ad->mem+pos);  ESL_ALLOC(ad->sqacc,    sizeof(char) * n); memcpy(ad->sqacc,   ad->mem+pos, n); pos += n;
-  n = 1 + strlen(ad->mem+pos);  ESL_ALLOC(ad->sqdesc,   sizeof(char) * n); memcpy(ad->sqdesc,  ad->mem+pos, n); pos += n;
-
-  free(ad->mem);
-  ad->mem     = NULL;
-  ad->memsize = 0;
-  return eslOK;
-  
- ERROR:
-  /* restore serialized state, if an alloc fails. tedious, if not nontrivial. */
-  /* the pointers are non-NULL whether we just allocated them or if they're pointing into mem, so we have to check against mem+pos */
-  pos = 0;
-  if (ad->rfline) { if (ad->rfline != ad->mem+pos) { free(ad->rfline); ad->rfline = ad->mem+pos; }  pos += ad->N+1; }
-  if (ad->nline  != ad->mem+pos) { free(ad->nline);  ad->nline  = ad->mem+pos; }  pos += ad->N+1; 
-  if (ad->csline != ad->mem+pos) { free(ad->csline); ad->csline = ad->mem+pos; }  pos += ad->N+1; 
-  if (ad->model  != ad->mem+pos) { free(ad->model);  ad->model  = ad->mem+pos; }  pos += ad->N+1; 
-  if (ad->mline  != ad->mem+pos) { free(ad->mline);  ad->mline  = ad->mem+pos; }  pos += ad->N+1; 
-  if (ad->aseq   != ad->mem+pos) { free(ad->aseq);   ad->aseq   = ad->mem+pos; }  pos += ad->N+1; 
-  if (ad->ppline) { if (ad->ppline != ad->mem+pos) { free(ad->ppline); ad->ppline = ad->mem+pos; }  pos += ad->N+1; } 
-
-  n = 1 + strlen(ad->cmname);  if (ad->cmname != ad->mem+pos) { free(ad->cmname); ad->cmname = ad->mem+pos;  }  pos += n;
-  n = 1 + strlen(ad->cmacc);   if (ad->cmacc  != ad->mem+pos) { free(ad->cmacc);  ad->cmacc  = ad->mem+pos;  }  pos += n;
-  n = 1 + strlen(ad->cmname);  if (ad->cmdesc != ad->mem+pos) { free(ad->cmdesc); ad->cmdesc = ad->mem+pos;  }  pos += n;
-  n = 1 + strlen(ad->sqname);  if (ad->sqname != ad->mem+pos) { free(ad->sqname); ad->sqname = ad->mem+pos;  }  pos += n;
-  n = 1 + strlen(ad->sqacc);   if (ad->sqacc  != ad->mem+pos) { free(ad->sqacc);  ad->sqacc  = ad->mem+pos;  }  pos += n;
-  n = 1 + strlen(ad->sqname);  if (ad->sqdesc != ad->mem+pos) { free(ad->sqdesc); ad->sqdesc = ad->mem+pos;  }  pos += n;
-  return status;
-}
-
 
 /* Function:  cm_alidisplay_Destroy()
  * Synopsis:  Frees a <CM_ALIDISPLAY>
@@ -895,7 +953,7 @@ cm_alidisplay_Destroy(CM_ALIDISPLAY *ad)
   else
     {	/* deserialized form */
       if (ad->rfline)    free(ad->rfline);
-      if (ad->nline)     free(ad->nline);
+      if (ad->ncline)    free(ad->ncline);
       if (ad->csline)    free(ad->csline);
       if (ad->model)     free(ad->model);
       if (ad->mline)     free(ad->mline);
@@ -1070,7 +1128,7 @@ cm_alidisplay_DecodePostProb(char pc)
  *            more whitespace characters followed by an integer.
  */
 int
-cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth, int show_accessions, int do_noncanonicals)
+cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth, int show_accessions)
 {
   char *buf          = NULL;
   char *show_cmname  = NULL;
@@ -1156,7 +1214,7 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
       if (ad->sqfrom < ad->sqto) { i2 = i1+ni-1; }
       else                       { i2 = i1-ni+1; }
 
-      if (do_noncanonicals)   { strncpy(buf, ad->nline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s %*sNC\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); }
+      if (ad->ncline != NULL) { strncpy(buf, ad->ncline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s %*sNC\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); }
       strncpy(buf, ad->csline+pos, cur_aliwidth); fprintf(fp, "  %*s %s %*sCS\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, "");
       strncpy(buf, ad->model+pos,  cur_aliwidth); fprintf(fp, "  %*s %*d %s %*s%-*d\n", namewidth,  show_cmname, coordwidth, k1, buf, aliwidth-cur_aliwidth, "", coordwidth, k2);
       strncpy(buf, ad->mline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s\n", namewidth+coordwidth+1, " ", buf);
@@ -1230,14 +1288,16 @@ cm_alidisplay_Is3PTruncOnly(const CM_ALIDISPLAY *ad)
 /* Function:  cm_alidisplay_TruncString()
  * Synopsis:  Determine if an alignment is truncated 5', 3' or both
  *            and return a string summarizing the truncation: "5'&3'",
- *            "5'", "3'", or "no".
+ *            "5'", "3'", or "no". As a special case, if hit was
+ *            found using a HMM only pipeline pass, we return "-".
  *
  * Returns:   informative string
  */
 char *
 cm_alidisplay_TruncString(const CM_ALIDISPLAY *ad) 
 {
-  if     (cm_alidisplay_Is5PAnd3PTrunc(ad)) return "5'&3'";
+  if     (ad->hmmonly)                      return "-";
+  else if(cm_alidisplay_Is5PAnd3PTrunc(ad)) return "5'&3'";
   else if(cm_alidisplay_Is5PTruncOnly(ad))  return "5'";
   else if(cm_alidisplay_Is3PTruncOnly(ad))  return "3'";
   else return "no";
@@ -1295,6 +1355,8 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   }
   ESL_ALLOC(msa->ss_cons, sizeof(char) * (msa->alen+1));
   ESL_ALLOC(msa->rf,      sizeof(char) * (msa->alen+1));
+
+  cm_alidisplay_Dump(stdout, ad);
 
   upos = 0;
   for(apos = 0; apos < msa->alen; apos++) { 
@@ -1404,13 +1466,18 @@ cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad)
   fprintf(fp, "------------------\n");
 
   fprintf(fp, "rfline     = %s\n", ad->rfline ? ad->rfline : "[none]");
-  fprintf(fp, "nline      = %s\n", ad->nline  ? ad->nline : "[none]");
+  fprintf(fp, "ncline     = %s\n", ad->ncline ? ad->ncline : "[none]");
   fprintf(fp, "csline     = %s\n", ad->csline ? ad->csline : "[none]");
   fprintf(fp, "model      = %s\n", ad->model);
   fprintf(fp, "mline      = %s\n", ad->mline);
   fprintf(fp, "ppline     = %s\n", ad->ppline ? ad->ppline : "[none]");
   fprintf(fp, "aseq       = %s\n", ad->aseq);
   fprintf(fp, "N          = %d\n", ad->N);
+  fprintf(fp, "\n");
+
+  fprintf(fp, "aseq_el    = %s\n", ad->aseq_el);
+  fprintf(fp, "ppline_el  = %s\n", ad->ppline_el ? ad->ppline_el : "[none]");
+  fprintf(fp, "N_el       = %d\n", ad->N_el);
   fprintf(fp, "\n");
 
   fprintf(fp, "cmname     = %s\n", ad->cmname);
@@ -1436,6 +1503,8 @@ cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad)
   fprintf(fp, "tau        = %g\n",  ad->tau);
   fprintf(fp, "mx Mb      = %.6f\n",ad->matrix_Mb);
   fprintf(fp, "seconds    = %.6f\n",ad->elapsed_secs);
+  fprintf(fp, "hmmonly    = %s\n",  ad->hmmonly ? "TRUE" : "FALSE");
+
   fprintf(fp, "\n");
 
   fprintf(fp, "size       = %d bytes\n",  (int) cm_alidisplay_Sizeof(ad));

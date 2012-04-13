@@ -188,6 +188,13 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
   }
   else cm->mlp7->comlog = NULL;
 
+  /* copy CM's RF annotation to mlp7 */
+  if(cm->flags & CMH_RF && cm->rf != NULL) { 
+    ESL_ALLOC(cm->mlp7->rf, sizeof(char) * (cm->clen+2));
+    strcpy(cm->mlp7->rf, cm->rf);
+    cm->mlp7->flags |= p7H_RF;
+  }
+
   cm->mlp7->eff_nseq = cm->eff_nseq;
   cm->mlp7->nseq     = cm->nseq;
   cm->mlp7->checksum = 0;

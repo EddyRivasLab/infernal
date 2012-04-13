@@ -397,8 +397,9 @@ strict (fastest but least sensitive):
 .B --mid,
 .B --default,
 (this is the default setting)
-and
 .B --rfam.
+and
+.B --hmmonly.
 With 
 .B --default
 the filter thresholds will be database-size dependent. See the
@@ -439,6 +440,17 @@ to keep the number of displayed options with
 reasonable, and because they are only expected to be useful to a
 minority of users.
 
+As a special case, for any models in 
+.I <cmfile> 
+which have zero basepairs, profile HMM searches are run instead of CM
+searches. HMM algorithms are more efficient than CM algorithms, and
+the benefit of CM algorithms is lost for models with no secondary
+structure (zero basepairs). These profile HMM searches will run
+significantly faster than the CM searches. You can force HMM-only
+searches with the 
+.B --hmmonly 
+option. For more information on HMM-only searches see the user guide. 
+
 .TP
 .B --max
 Turn off all filters, and run non-banded Inside 
@@ -475,6 +487,29 @@ filter thresholds are determined based on the database size.
 Use a strict filtering strategy devised for large databases (more than
 100 Gb). This will accelerate the search at a potential cost to
 sensitivity. 
+
+.TP
+.B --hmmonly
+Only use the filter profile HMM for searches, do not use the CM.
+Only filter stages F1 through F3 will be executed, using strict
+P-value thresholds (0.02 for F1, 0.001 for F2 and 0.00001 for F3).
+Additionally a bias composition filter is used after the F1 stage
+(with P=0.02 survival threshold).
+Any hit that survives all stages and has an HMM E-value or
+bit score above the reporting threshold will be output. 
+The user can change the HMM-only filter thresholds and options with
+.B --hmmF1,
+.B --hmmF2,
+.B --hmmF3,
+.B --hmmnobias,
+.B --hmmnonull2,
+and
+.B --hmmmax.
+By default, searches for any model with zero basepairs will be run in
+HMM-only mode. This can be turned off, forcing CM searches for these
+models with the 
+.B --nohmmonly 
+option.
 
 .TP
 .BI --FZ " <x>"

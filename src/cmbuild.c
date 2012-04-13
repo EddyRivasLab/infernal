@@ -1283,7 +1283,7 @@ check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf
     fflush(cfg->ofp); 
   }
 
-  if (esl_opt_GetBoolean(go, "--hand") && msa->rf == NULL)        ESL_FAIL(eslFAIL, errbuf, "Alignment has no reference coord annotation.\n");
+  if (esl_opt_GetBoolean(go, "--hand") && msa->rf == NULL)      ESL_FAIL(eslFAIL, errbuf, "Alignment has no reference coord annotation.\n");
   if (msa->ss_cons == NULL)                                     ESL_FAIL(eslFAIL, errbuf, "Alignment did not contain consensus structure annotation.\n");
   if (! clean_cs(msa->ss_cons, msa->alen, (! cfg->be_verbose))) ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation\n");
   if (esl_opt_GetBoolean(go, "--ignorant"))                     strip_wuss(msa->ss_cons); /* --ignorant, remove all bp info */
@@ -1943,7 +1943,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
      * also set cfg->fp7_bld->arch_strategy as p7_ARCH_HAND.
      */
     amsa = esl_msa_Clone(msa);
-    if(amsa->rf != NULL) free(amsa->rf); 
+    if(amsa->rf != NULL) free(amsa->rf);
     ESL_ALLOC(amsa->rf, sizeof(char) * (amsa->alen+1));
     if(! (cm->flags & CMH_MAP)) { cm_Fail("Unable to create additional p7 HMM, CM has no map, this shouldn't happen"); }
     /* init to all inserts, then set match states based on cm->map */
@@ -1952,6 +1952,23 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
     cfg->fp7_bld->arch_strategy = p7_ARCH_HAND;
     
     if ((status = p7_Builder(cfg->fp7_bld, amsa, cfg->fp7_bg, &fhmm, NULL, NULL, NULL, NULL)) != eslOK) { strcpy(errbuf, cfg->fp7_bld->errbuf); return status; }
+    /* remove the RF annotation, it only exists because we created amsa->rf above */
+    if(fhmm->rf != NULL) { 
+      free(fhmm->rf);
+      fhmm->rf = NULL;
+      fhmm->flags &= ~p7H_RF;
+    }      
+    if(cm->flags & CMH_RF && cm->rf != NULL) { /* copy CM's rf annotation to fhmm, remember they have same # consensus columns */
+      ESL_ALLOC(fhmm->rf, sizeof(char) * (cm->clen+2));
+      strcpy(fhmm->rf, cm->rf);
+      fhmm->flags |= p7H_RF;
+    }
+    /* overwrite the HMM consensus structure annotation with the CM's it'll be in full WUSS format */
+    if(! (fhmm->flags & p7H_CS)) { cm_Fail("additional p7 HMM unexpectedly does not have consensus structure annotation"); }
+    fhmm->cs[0] = ' ';
+    strcpy(fhmm->cs+1, cm->cmcons->cstr); /* careful: off-by-one */
+    fhmm->cs[cm->clen+1] = '\0';
+
     esl_msa_Destroy(amsa); 
 
     if(! esl_opt_GetBoolean(go, "--p7hemit")) { 

@@ -3411,6 +3411,7 @@ cm_p7_oprofile_CreateBlock(int count)
   block->cm_offsetA   = NULL;
   block->cm_clenA     = NULL;
   block->cm_WA        = NULL;
+  block->cm_nbpA      = NULL;
   block->gfmuA        = NULL;
   block->gflambdaA    = NULL;
 
@@ -3418,6 +3419,7 @@ cm_p7_oprofile_CreateBlock(int count)
   ESL_ALLOC(block->cm_offsetA, sizeof(off_t)         * count);
   ESL_ALLOC(block->cm_clenA,   sizeof(int)           * count);
   ESL_ALLOC(block->cm_WA,      sizeof(int)           * count);
+  ESL_ALLOC(block->cm_nbpA,    sizeof(int)           * count);
   ESL_ALLOC(block->gfmuA,      sizeof(float)         * count);
   ESL_ALLOC(block->gflambdaA,  sizeof(float)         * count);
   block->listSize = count;
@@ -3428,6 +3430,7 @@ cm_p7_oprofile_CreateBlock(int count)
       block->cm_offsetA[i] = 0;
       block->cm_clenA[i]   = 0;
       block->cm_WA[i]      = 0;
+      block->cm_nbpA[i]    = 0;
       block->gfmuA[i]      = 0.;
       block->gflambdaA[i]  = 0.;
     }
@@ -3441,6 +3444,7 @@ cm_p7_oprofile_CreateBlock(int count)
       if (block->cm_offsetA != NULL)  free(block->cm_offsetA);
       if (block->cm_clenA   != NULL)  free(block->cm_clenA);
       if (block->cm_WA      != NULL)  free(block->cm_WA);
+      if (block->cm_nbpA    != NULL)  free(block->cm_clenA);
       if (block->gfmuA      != NULL)  free(block->gfmuA);
       if (block->gflambdaA  != NULL)  free(block->gflambdaA);
       free(block);
@@ -3473,6 +3477,7 @@ cm_p7_oprofile_DestroyBlock(CM_P7_OM_BLOCK *block)
   if (block->cm_offsetA != NULL)  free(block->cm_offsetA);
   if (block->cm_clenA   != NULL)  free(block->cm_clenA);
   if (block->cm_WA      != NULL)  free(block->cm_WA);
+  if (block->cm_nbpA    != NULL)  free(block->cm_nbpA);
   if (block->gfmuA      != NULL)  free(block->gfmuA);
   if (block->gflambdaA  != NULL)  free(block->gflambdaA);
 

@@ -67,9 +67,10 @@ main(int argc, char **argv)
     {
       if(cmfp->format == CM_FILE_1 || esl_opt_GetBoolean(go, "--mlhmm")) { 
 	/* if format == CM_FILE_1, we need to calculate QDBs
-	 * (cm->dmin, cm->dmax), cm->W, cm->consensus; if --mlhmm, we
-	 * need E-value params for the ML p7 HMM. All of this is
-	 * calculated during model configuration.
+	 * (cm->dmin, cm->dmax), cm->W, cm->consensus. These are
+	 * calculated during model configuration. If --mlhmm, we
+	 * need E-value params for the ML p7 HMM, we calc those
+	 * in configure_model().
 	 */
 	if ((status = configure_model(cm, errbuf)) != eslOK) cm_Fail(errbuf);
       }	

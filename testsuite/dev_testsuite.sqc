@@ -1170,6 +1170,20 @@
 1  exercise  scan:v/1k/Fnone     @src/cmscan@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF6 %V.CM% %V1K%
 1  exercise  scan:v/1k/Fnone/FZ  @src/cmscan@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF6 --FZ 1000 %V.CM% %V1K%
 
+# HMM-only pipeline options
+1  exercise  scan:v/1k/ho        @src/cmscan@  --hmmonly %V.CM% %V1K%
+1  exercise  scan:v/1k/hoF1      @src/cmscan@  --hmmonly --hmmF1 0.05 %V.CM% %V1K%
+1  exercise  scan:v/1k/hoF2      @src/cmscan@  --hmmonly --hmmF2 0.05 %V.CM% %V1K%
+1  exercise  scan:v/1k/hoF3      @src/cmscan@  --hmmonly --hmmF2 0.05 --hmmF3 0.05 %V.CM% %V1K%
+1  exercise  scan:v/1k/honb      @src/cmscan@  --hmmonly --hmmnobias %V.CM% %V1K%
+1  exercise  scan:v/1k/honn2     @src/cmscan@  --hmmonly --hmmnonull2 %V.CM% %V1K%
+1  exercise  scan:v/1k/hF1       @src/cmscan@  --hmmF1 0.05 %V.CM% %V1K%
+1  exercise  scan:v/1k/hF2       @src/cmscan@  --hmmF2 0.05 %V.CM% %V1K%
+1  exercise  scan:v/1k/hF3       @src/cmscan@  --hmmF2 0.05 --hmmF3 0.05 %V.CM% %V1K%
+1  exercise  scan:v/1k/hnb       @src/cmscan@  --hmmnobias %V.CM% %V1K%
+1  exercise  scan:v/1k/hnn2      @src/cmscan@  --hmmnonull2 %V.CM% %V1K%
+1  exercise  scan:v/1k/nho       @src/cmscan@  --nohmmonly %V.CM% %V1K%
+
 # envelope defn options
 1  exercise  scan:v/1k/rt1        @src/cmscan@  --rt1 0.15 %V.CM% %V1K%
 1  exercise  scan:v/1k/rt2        @src/cmscan@  --rt1 0.15 %V.CM% %V1K%
@@ -1421,6 +1435,20 @@
 1  exercise  search:v/1k/Fall/FZ   @src/cmsearch@  --F1 0.07 --doF1b --F1b 0.08 --F2 0.10 --F2b 0.01 --F3 0.003 --F3b 0.01 --F4 0.10 --F4b 0.20 --F5 0.00003 --doF5b --F5b 1.0 --F6 1E-3 --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/Fnone     @src/cmsearch@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF6 %V.CM% %V1K%
 1  exercise  search:v/1k/Fnone/FZ  @src/cmsearch@  --noF1 --noF2 --noF2b --noF3 --noF3b --noF4 --noF4b --noF6 --FZ 1000 %V.CM% %V1K%
+
+# HMM-only pipeline options
+1  exercise  search:v/1k/ho        @src/cmsearch@  --hmmonly %V.CM% %V1K%
+1  exercise  search:v/1k/hoF1      @src/cmsearch@  --hmmonly --hmmF1 0.05 %V.CM% %V1K%
+1  exercise  search:v/1k/hoF2      @src/cmsearch@  --hmmonly --hmmF2 0.05 %V.CM% %V1K%
+1  exercise  search:v/1k/hoF3      @src/cmsearch@  --hmmonly --hmmF2 0.05 --hmmF3 0.05 %V.CM% %V1K%
+1  exercise  search:v/1k/honb      @src/cmsearch@  --hmmonly --hmmnobias %V.CM% %V1K%
+1  exercise  search:v/1k/honn2     @src/cmsearch@  --hmmonly --hmmnonull2 %V.CM% %V1K%
+1  exercise  search:v/1k/hF1       @src/cmsearch@  --hmmF1 0.05 %V.CM% %V1K%
+1  exercise  search:v/1k/hF2       @src/cmsearch@  --hmmF2 0.05 %V.CM% %V1K%
+1  exercise  search:v/1k/hF3       @src/cmsearch@  --hmmF2 0.05 --hmmF3 0.05 %V.CM% %V1K%
+1  exercise  search:v/1k/hnb       @src/cmsearch@  --hmmnobias %V.CM% %V1K%
+1  exercise  search:v/1k/hnn2      @src/cmsearch@  --hmmnonull2 %V.CM% %V1K%
+1  exercise  search:v/1k/nho       @src/cmsearch@  --nohmmonly %V.CM% %V1K%
 
 # envelope defn options
 1  exercise  search:v/1k/rt1        @src/cmsearch@  --rt1 0.15 %V.CM% %V1K%

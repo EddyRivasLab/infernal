@@ -7462,11 +7462,12 @@ ReportHitsGreedily(CM_t *cm, char *errbuf, int pass_idx, int j, int dmin, int dm
 	if(do_report_hit) { /* this may have been set to FALSE if we did a null3 sc correction */
 	  /*printf("\t%.3f %.3f i: %d j: %d r: %d mode: %d\n", hit_sc+null3_correction, hit_sc, i, j, bestr[d], mode);*/
 	  cm_tophits_CreateNextHit(hitlist, &hit);
-	  hit->start = i;
-	  hit->stop  = j;
-	  hit->root  = bestr[d];
-	  hit->mode  = mode;
-	  hit->score = hit_sc;
+	  hit->start   = i;
+	  hit->stop    = j;
+	  hit->root    = bestr[d];
+	  hit->mode    = mode;
+	  hit->score   = hit_sc;
+	  hit->hmmonly = FALSE;
 	  max_sc_reported = hit_sc; 
 	} 
       }
@@ -7507,11 +7508,12 @@ TBackGammaHitMx(GammaHitMx_t *gamma, CM_TOPHITS *hitlist, int64_t i0, int64_t j0
 	/* report the hit */
 	/*ReportHit(gamma->gback[jp_g], j, gamma->saver[jp_g], gamma->savesc[jp_g], results);*/
 	cm_tophits_CreateNextHit(hitlist, &hit);
-	hit->start = gamma->gback[jp_g];
-	hit->stop  = j;
-	hit->root  = gamma->saver[jp_g];
-	hit->mode  = gamma->savemode[jp_g];
-	hit->score = gamma->savesc[jp_g];
+	hit->start   = gamma->gback[jp_g];
+	hit->stop    = j;
+	hit->root    = gamma->saver[jp_g];
+	hit->mode    = gamma->savemode[jp_g];
+	hit->score   = gamma->savesc[jp_g];
+	hit->hmmonly = FALSE;
       }
       j = gamma->gback[jp_g]-1;
     }

@@ -62,7 +62,7 @@ typedef struct {
 #define REPOPTS     "-E,-T,--cut_ga,--cut_nc,--cut_tc"
 #define INCOPTS     "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
 #define THRESHOPTS  "-E,-T,--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
-#define FMODEOPTS   "--FZ,--rfam,--mid,--nohmm,--max"
+#define FMODEOPTS   "--FZ,--hmmonly,--rfam,--mid,--nohmm,--max"
 #define TIMINGOPTS  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
 
 /* ** Large sets of options are InCompatible With (ICW) --max, --nohmm,
@@ -133,8 +133,9 @@ static ESL_OPTIONS options[] = {
   { "--mid",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "skip first two HMM filter stages (MSV&Vit) (power: 3rd, speed: 3rd)", 7 },
   { "--default",    eslARG_NONE,"default",NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "default: run seqdb size-dependent pipeline (power: 4th, speed: 2nd)", 7 },
   { "--rfam",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "set heuristic filters at Rfam-level        (power: 5th, speed: 1st)", 7 },
+  { "--hmmonly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "use HMM only, don't use a CM at all        (power: 6th, speed: 1st)", 7 },
   { "--FZ",         eslARG_REAL,    NULL, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "set filters to defaults used for a database of size <x> Mb",          7 },
-  { "--Fmid",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--mid", NULL,            "with --mid, set P-value threshold for HMM stages to <x>",                     7 },
+  { "--Fmid",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--mid", NULL,                    "with --mid, set P-value threshold for HMM stages to <x>",             7 },
   /* Other options */
   /* name           type         default   env  range toggles   reqs   incomp                help                                                            docgroup*/
   { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "turn OFF the NULL3 post hoc additional null model",            8 },
@@ -155,7 +156,7 @@ static ESL_OPTIONS options[] = {
 #endif
 
   /* All options below are developer options, only shown if --devhelp invoked */
-  /* Options for precise control of each stage of the filter pipeline */
+  /* Options for precise control of each stage of the CM filter pipeline */
   /* name           type         default  env   range  toggles  reqs  incomp            help                                                      docgroup*/
   { "--noF1",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--doF1b",        "skip the HMM MSV filter stage",                              101 },
   { "--noF2",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noF2b", NULL,          "skip the HMM Viterbi filter stage",                          101 },
@@ -178,53 +179,61 @@ static ESL_OPTIONS options[] = {
   { "--F5",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, NULL,             "Stage 5 (env defn) threshold:    promote hits w/ P <= <x>",  101 },
   { "--F5b",        eslARG_REAL,   FALSE, NULL, "x>0",   NULL,"--doF5b", NULL,          "Stage 5 (env defn) bias thr:     promote hits w/ P <= <x>",  101 },
   { "--F6",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF6",         "Stage 6 (CYK) threshold:         promote hits w/ P <= <x>",  101 },
+  /* Options for precise control of each stage of the HMM-only filter pipeline */
+  /* name          type         default  env  range  toggles   reqs  incomp            help                                                         docgroup*/
+  { "--hmmmax",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmmF1,--hmmF2,--hmmF3,--hmmnobias", "in HMM-only mode, turn off all filters",  102 },
+  { "--hmmF1",      eslARG_REAL,  "0.02", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 1 (MSV) P value threshold to <x>", 102 },
+  { "--hmmF2",      eslARG_REAL,  "1e-3", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 2 (Vit) P value threshold to <x>", 102 },
+  { "--hmmF3",      eslARG_REAL,  "1e-5", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 3 (Fwd) P value threshold to <x>", 102 },
+  { "--hmmnobias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "in HMM-only mode, turn off the bias composition filter",       102 },
+  { "--hmmnonull2", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "in HMM-only mode, turn off the null2 score correction",        102 },
+  { "--nohmmonly",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmmmax",       "never run HMM-only mode, not even for models with 0 basepairs",102 },
   /* Options for precise control of HMM envelope definition */
   /* name           type          default  env range toggles    reqs  incomp            help                                                      docgroup*/
-  { "--rt1",        eslARG_REAL,  "0.25", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt1 parameter as <x>",        102 },
-  { "--rt2",        eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt2 parameter as <x>",        102 },
-  { "--rt3",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt3 parameter as <x>",        102 },
-  { "--ns",         eslARG_INT,   "200",  NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set number of domain/envelope tracebacks to <n>",            102 },
+  { "--rt1",        eslARG_REAL,  "0.25", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt1 parameter as <x>",        103 },
+  { "--rt2",        eslARG_REAL,  "0.10", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt2 parameter as <x>",        103 },
+  { "--rt3",        eslARG_REAL,  "0.20", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt3 parameter as <x>",        103 },
+  { "--ns",         eslARG_INT,   "200",  NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set number of domain/envelope tracebacks to <n>",            103 },
   /* Options for precise control of the CYK filter round of searching */
   /* name           type          default  env range      toggles     reqs  incomp            help                                                      docgroup*/
-  { "--ftau",       eslARG_REAL, "1e-4",  NULL, "1E-18<x<1", NULL,    NULL, "--fqdb",   "set HMM band tail loss prob for CYK filter to <x>",             103 },
-  { "--fsums",      eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL, "--fqdb",   "w/--fhbanded use posterior sums (widens bands)",                103 },
-  { "--fqdb",       eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,   NULL,     "use QDBs in CYK filter round, not HMM bands",                   103 },
-  { "--fbeta",      eslARG_REAL, "1e-7",  NULL, "1E-18<x<1", NULL,    NULL,   NULL,     "set tail loss prob for CYK filter QDB calculation to <x>",      103 },
-  { "--fnonbanded", eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,"--ftau,--fsums,--fqdb,--fbeta","do not use any bands for CYK filter round", 103 },
-  { "--nocykenv",   eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL, "--max",     "do not redefine envelopes after stage 6 based on CYK hits",     103 },
-  { "--cykenvx",    eslARG_INT,     "10", NULL, "n>=1",      NULL,    NULL, "--max",     "CYK envelope redefinition threshold multiplier, <n> * F6",      103 },
+  { "--ftau",       eslARG_REAL, "1e-4",  NULL, "1E-18<x<1", NULL,    NULL, "--fqdb",   "set HMM band tail loss prob for CYK filter to <x>",             104 },
+  { "--fsums",      eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL, "--fqdb",   "w/--fhbanded use posterior sums (widens bands)",                104 },
+  { "--fqdb",       eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,   NULL,     "use QDBs in CYK filter round, not HMM bands",                   104 },
+  { "--fbeta",      eslARG_REAL, "1e-7",  NULL, "1E-18<x<1", NULL,    NULL,   NULL,     "set tail loss prob for CYK filter QDB calculation to <x>",      104 },
+  { "--fnonbanded", eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,"--ftau,--fsums,--fqdb,--fbeta","do not use any bands for CYK filter round",  104 },
+  { "--nocykenv",   eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL, "--max",     "do not redefine envelopes after stage 6 based on CYK hits",    104 },
+  { "--cykenvx",    eslARG_INT,     "10", NULL, "n>=1",      NULL,    NULL, "--max",     "CYK envelope redefinition threshold multiplier, <n> * F6",     104 },
   /* Options for precise control of the final round of searching */
   /* name           type          default  env range      toggles     reqs  incomp            help                                                      docgroup*/
-  { "--tau",        eslARG_REAL,"5e-6",   NULL, "1E-18<x<1", NULL,    NULL,"--qdb",  "set HMM band tail loss prob for final round to <x>",               104 },
-  { "--sums",       eslARG_NONE, FALSE,   NULL, NULL,        NULL,    NULL,"--qdb",  "w/--hbanded use posterior sums (widens bands)",                    104 },
-  { "--qdb",        eslARG_NONE, FALSE,   NULL, NULL,        NULL,    NULL,   NULL,  "use QDBs (instead of HMM bands) in final Inside round",            104 },
-  { "--beta",       eslARG_REAL,"1e-15",  NULL, "1E-18<x<1", NULL,    NULL,   NULL,  "set tail loss prob for final Inside QDB calculation to <x>",       104 },
-  { "--nonbanded",  eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,"--tau,--sums,--qdb,--beta", "do not use QDBs or HMM bands in final Inside round of CM search", 104 },
+  { "--tau",        eslARG_REAL,"5e-6",   NULL, "1E-18<x<1", NULL,    NULL,"--qdb",  "set HMM band tail loss prob for final round to <x>",               105 },
+  { "--sums",       eslARG_NONE, FALSE,   NULL, NULL,        NULL,    NULL,"--qdb",  "w/--hbanded use posterior sums (widens bands)",                    105 },
+  { "--qdb",        eslARG_NONE, FALSE,   NULL, NULL,        NULL,    NULL,   NULL,  "use QDBs (instead of HMM bands) in final Inside round",            105 },
+  { "--beta",       eslARG_REAL,"1e-15",  NULL, "1E-18<x<1", NULL,    NULL,   NULL,  "set tail loss prob for final Inside QDB calculation to <x>",       105 },
+  { "--nonbanded",  eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,"--tau,--sums,--qdb,--beta", "do not use QDBs or HMM bands in final Inside round of CM search", 105 },
   /* Options for timing individual pipeline stages */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                  docgroup*/
-  { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 1 MSV; for timing expts",          105 },
-  { "--timeF2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 2 Vit; for timing expts",          105 },
-  { "--timeF3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 3 Fwd; for timing expts",          105 },
-  { "--timeF4",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 4 glocal Fwd; for timing expts",   105 },
-  { "--timeF5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 5 envelope def; for timing expts", 105 },
-  { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          105 },
+  { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 1 MSV; for timing expts",          106 },
+  { "--timeF2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 2 Vit; for timing expts",          106 },
+  { "--timeF3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 3 Fwd; for timing expts",          106 },
+  { "--timeF4",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 4 glocal Fwd; for timing expts",   106 },
+  { "--timeF5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 5 envelope def; for timing expts", 106 },
+  { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          106 },
   /* Other expert options */
   /* name          type          default   env  range toggles   reqs  incomp            help                                                             docgroup*/
-  { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    106 },
-  { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g",            "turn off local ends in cp9 HMMs",                               106 },
-  { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",  "configure cp9 HMM in glocal mode",                              106 },
-  { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition score corrections",           106 },
-  { "--xtau",       eslARG_REAL,    "2.", NULL, "x>=2.", NULL,  NULL,  NULL,            "set multiplier for tau to <x> when tightening HMM bands",       106 },
-  { "--maxtau",     eslARG_REAL,  "0.01", NULL,"0<x<0.5",NULL,  NULL,  NULL,            "set max tau <x> when tightening HMM bands",                     106 },
-  { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",           106 },
+  { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    107 },
+  { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g",            "turn off local ends in cp9 HMMs",                               107 },
+  { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",  "configure cp9 HMM in glocal mode",                              107 },
+  { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition HMM score corrections",       107 },
+  { "--xtau",       eslARG_REAL,    "2.", NULL, "x>=2.", NULL,  NULL,  NULL,            "set multiplier for tau to <x> when tightening HMM bands",       107 },
+  { "--maxtau",     eslARG_REAL,  "0.01", NULL,"0<x<0.5",NULL,  NULL,  NULL,            "set max tau <x> when tightening HMM bands",                     107 },
+  { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",           107 },
 #ifdef HAVE_MPI
   /* Searching only a subset of sequences in the target database, currently requires MPI b/c SSI is required */
-  { "--sidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "start searching at sequence index <n> in target db SSI index" , 106 },
-  { "--eidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "stop  searching at sequence index <n> in target db SSI index",  106 },
+  { "--sidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "start searching at sequence index <n> in target db SSI index" , 107 },
+  { "--eidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "stop  searching at sequence index <n> in target db SSI index",  107 },
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
-
 
 /* struct cfg_s : "Global" application configuration shared by all threads/processes
  * 
@@ -269,6 +278,8 @@ static int          clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_IN
 static void         free_info(WORKER_INFO *info);
 static int          configure_cm(WORKER_INFO *info);
 static int          setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info);
+static void         adjust_nres_top_for_overlaps(CM_PIPELINE *pli, int64_t noverlap);
+static void         adjust_nres_bot_for_overlaps(CM_PIPELINE *pli, int64_t noverlap);
 
 #ifdef HAVE_MPI
 
@@ -436,7 +447,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              qhstatus = eslOK;
   int              sstatus  = eslOK;
   int              i;
-  
+
   int              ncpus    = 0;
 
   WORKER_INFO     *tinfo;                        /* the template info, cloned to make the worked info */
@@ -445,6 +456,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   int64_t         *srcL = NULL;                  /* [0..pli->nseqs-1] full length of each target sequence read */
   int64_t          nseqs_expected = 0;           /* nseqs read in first pass, pli->nseqs should equal this at end of function */
+  double           eZ;                           /* effective database size */
 
 #ifdef HMMER_THREADS
   ESL_SQ_BLOCK    *block    = NULL;
@@ -570,7 +582,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     for (i = 0; i < infocnt; ++i) {
       info[i].th   = cm_tophits_Create();
       info[i].pli  = cm_pipeline_Create(go, abc, tinfo->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      if((status = cm_pli_NewModel(info[i].pli, CM_NEWMODEL_CM, info[i].cm, info[i].cm->clen, info[i].cm->W, 
+      if((status = cm_pli_NewModel(info[i].pli, CM_NEWMODEL_CM, info[i].cm, info[i].cm->clen, info[i].cm->W, CMCountNodetype(info[i].cm, MATP_nd),
 				   info[i].om, info[i].bg, cm_idx-1)) != eslOK) { 
 	cm_Fail(info[i].pli->errbuf);
       }
@@ -600,8 +612,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* we need to re-compute e-values before merging (when list will be sorted) */
     for (i = 0; i < infocnt; ++i) { 
-      /* TO DO: compute E-values differently if --hmm (p7_tophits_ComputeNhmmerEvalues?) */
-      cm_tophits_ComputeEvalues(info[i].th, info[0].cm->expA[info[0].pli->final_cm_exp_mode]->cur_eff_dbsize, 0);
+      if(info[i].pli->do_hmmonly_cur) eZ = info[i].pli->Z / (float) info[i].om->max_length;
+      else                 	      eZ = info[i].cm->expA[info[i].pli->final_cm_exp_mode]->cur_eff_dbsize;
+      cm_tophits_ComputeEvalues(info[i].th, eZ, 0);
     }
 
     /* merge the search results */
@@ -646,7 +659,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if (tblfp != NULL) { 
       cm_tophits_TabularTargets(tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1)); 
     }
-      
     esl_stopwatch_Stop(w);
     cm_pli_Statistics(ofp, info[0].pli, w);
 
@@ -685,7 +697,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* Terminate outputs... any last words?
    */
   if (tblfp)         cm_tophits_TabularTail(tblfp,    "cmsearch", CM_SEARCH_SEQS, cfg->cmfile, cfg->dbfile, go);
-  if (ofp != stdout) fprintf(ofp, "[ok]\n");
+  fprintf(ofp, "[ok]\n");
 
 #ifdef HMMER_THREADS
   if (ncpus > 0) {
@@ -741,18 +753,18 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
   while (wstatus == eslOK ) {
     /* if this is the first window for this sequence, set dbsq->L */
     if(dbsq->start == 1) dbsq->L = srcL[seq_idx-1];
-    ///if(srcL == NULL) { printf("srcL is NULL,  dbsq->L is %" PRId64 " start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " name: %s\n", dbsq->L, dbsq->start, dbsq->end, dbsq->n, dbsq->name); }
-    ///else             { printf("srcL not NULL, dbsq->L is %" PRId64 " start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " name: %s\n", dbsq->L, dbsq->start, dbsq->end, dbsq->n, dbsq->name); }
     
     cm_pli_NewSeq(info->pli, dbsq, seq_idx-1);
     prv_seq_ntophits = info->th->N; 
-    info->pli->acct[PLI_PASS_STD_ANY].nres -= dbsq->C; /* to account for overlapping region of windows */
-    if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres -= dbsq->C; /* ditto */
 
     if (info->pli->do_top) { 
       prv_pli_ntophits = info->th->N;
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
+			       NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
+
+      /* subtract overlapping residues from previous window */
+      if(dbsq->C > 0) adjust_nres_top_for_overlaps(info->pli, dbsq->C);
 
       /* modify hit positions to account for the position of the window in the full sequence */
       cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, FALSE);
@@ -762,17 +774,16 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
     if (info->pli->do_bot && dbsq->abc->complement != NULL) { 
       prv_pli_ntophits = info->th->N;
       esl_sq_ReverseComplement(dbsq);
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
+			       NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
+
+      /* subtract overlapping residues from previous window */
+      if(dbsq->C > 0) adjust_nres_bot_for_overlaps(info->pli, dbsq->C);
 
       /* modify hit positions to account for the position of the window in the full sequence */
       cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, TRUE);
 
-      if(info->pli->do_top) { 
-	info->pli->acct[PLI_PASS_STD_ANY].nres += dbsq->W; /* add dbsq->W residues, the number of unique residues on reverse complement that we just searched */
-	if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres += dbsq->W; /* ditto */
-      }
-      
       /* Reverse complement again, to get original sequence back.
        * This is necessary so the C overlapping context residues 
        * from previous window are as they should be (and not the
@@ -788,7 +799,6 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
       info->pli->nseqs++;
       esl_sq_Reuse(dbsq);
       wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
-      /*printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);*/
       seq_idx++; /* because we started reading a new sequence, or reached EOF */
     }
   }
@@ -934,13 +944,15 @@ pipeline_thread(void *arg)
 
       cm_pli_NewSeq(info->pli, dbsq, block->first_seqidx + i);
       prv_seq_ntophits = info->th->N; 
-      info->pli->acct[PLI_PASS_STD_ANY].nres -= dbsq->C; /* to account for overlapping region of windows */
-      if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres -= dbsq->C; /* ditto */
 
       if (info->pli->do_top) { 
 	prv_pli_ntophits = info->th->N;
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
+				 NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
+
+	/* subtract overlapping residues from previous window */
+	if(dbsq->C > 0) adjust_nres_top_for_overlaps(info->pli, dbsq->C);
 
 	/* modify hit positions to account for the position of the window in the full sequence */
 	cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, FALSE);
@@ -950,16 +962,15 @@ pipeline_thread(void *arg)
       if (info->pli->do_bot && dbsq->abc->complement != NULL) {
 	prv_pli_ntophits = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
+				 NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
+
+	/* subtract overlapping residues from previous window */
+	if(dbsq->C > 0) adjust_nres_bot_for_overlaps(info->pli, dbsq->C);
 
 	/* modify hit positions to account for the position of the window in the full sequence */
 	cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, TRUE);
-
-	if(info->pli->do_top) { 
-	  info->pli->acct[PLI_PASS_STD_ANY].nres += dbsq->W; /* add dbsq->W residues, the reverse complement we just searched */
-	  if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres += dbsq->W; /* ditto */
-	}
 
 	/* Reverse complement again, to get original sequence back.
 	 * This is necessary so the C overlapping context residues 
@@ -1120,7 +1131,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Configure the CM and setup the HMM filter */
     if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
     if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
-    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->om, info->bg, cm_idx-1)) != eslOK) { 
+    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, CMCountNodetype(info->cm, MATP_nd), info->om, info->bg, cm_idx-1)) != eslOK) { 
       mpi_failure(info->pli->errbuf);
     }
     
@@ -1247,11 +1258,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
     /* Set number of seqs, and subtract number of overlapping residues searched from total */
     info->pli->nseqs = tot_nseq;
-    if(info->pli->do_top && info->pli->do_bot) tot_noverlap *= 2; /* count overlaps twice on each strand, if nec */
-    /*printf("nres: %ld\nnoverlap: %ld\n", info->pli->acct[PLI_PASS_STD].nres, noverlap);*/
-    info->pli->acct[PLI_PASS_STD_ANY].nres -= tot_noverlap;
-    if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres -= tot_noverlap;
-    /*printf("nres: %ld\n", info->pli->acct[PLI_PASS_STD_ANY].nres);*/
+    if(info->pli->do_top && tot_noverlap > 0) adjust_nres_top_for_overlaps(info->pli, tot_noverlap);
+    if(info->pli->do_bot && tot_noverlap > 0) adjust_nres_bot_for_overlaps(info->pli, tot_noverlap);
     
     /* Sort by sequence index/position and remove duplicates */
     cm_tophits_SortForOverlapRemoval(info->th);
@@ -1349,7 +1357,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* Terminate outputs... any last words?
    */
   if (tblfp)    cm_tophits_TabularTail(tblfp,    "cmsearch", CM_SEARCH_SEQS, cfg->cmfile, cfg->dbfile, go);
-  if (ofp)      fprintf(ofp, "[ok]\n");
+  fprintf(ofp, "[ok]\n");
 
   /* Cleanup - prepare for exit
    */
@@ -1391,6 +1399,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              prv_pli_ntophits;             /* number of top hits before each cm_Pipeline() */
   ESL_SQ          *dbsq        = NULL;           /* one target sequence (digital)                   */
   int64_t          cm_idx   = 0;                 /* index of CM we're currently working with */
+  double           eZ;                           /* effective database size */
 
   WORKER_INFO     *info          = NULL;         /* contains CM, HMMs, p7 profiles, etc. */
 
@@ -1453,7 +1462,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Configure the CM and setup the HMM filter */
     if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
     if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
-    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, info->om, info->bg, cm_idx-1)) != eslOK) { 
+    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, CMCountNodetype(info->cm, MATP_nd), info->om, info->bg, cm_idx-1)) != eslOK) { 
       mpi_failure(info->pli->errbuf);
     }
 
@@ -1498,8 +1507,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* search top strand */
 	  if (info->pli->do_top) { 
 	    prv_pli_ntophits = info->th->N;
-	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
-	      mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
+				     NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
+	      mpi_failure("cm_Pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	    /* If we're a subsequence, update hit positions so they're relative 
@@ -1511,13 +1521,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if(info->pli->do_bot && dbsq->abc->complement != NULL) { 
 	    esl_sq_ReverseComplement(dbsq);
 	    prv_pli_ntophits = info->th->N;
-	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
-	      mpi_failure("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
+				     NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
+	      mpi_failure("cm_Pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
-	    if(info->pli->do_top) { 
-	      info->pli->acct[PLI_PASS_STD_ANY].nres += dbsq->n; /* add dbsq->n residues, the reverse complement we just searched */
-	      if(info->pli->do_trunc_any) info->pli->acct[PLI_PASS_5P_AND_3P_ANY].nres += dbsq->n;
-	    }
 
 	    /* Hit positions will be relative to the reverse-complemented sequence
 	     * (i.e. start > end), which may be a subsequence. Update hit positions 
@@ -1541,7 +1548,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     esl_stopwatch_Stop(w);
       
     /* compute E-values before sending back to master */
-    cm_tophits_ComputeEvalues(info->th, info->cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize, 0);
+    if(info->pli->do_hmmonly_cur) eZ = info->pli->Z / (float) info->om->max_length;
+    else              	          eZ = info->cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize;
+    cm_tophits_ComputeEvalues(info->th, eZ, 0);
       
     cm_tophits_MPISend(info->th,   0, INFERNAL_TOPHITS_TAG,  MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
     cm_pipeline_MPISend(info->pli, 0, INFERNAL_PIPELINE_TAG, MPI_COMM_WORLD,  &mpi_buf, &mpi_size);
@@ -1623,23 +1632,25 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     printf("\nOptions controlling acceleration heuristics%s:\n", do_dev ? "" : devmsg);
     esl_opt_DisplayHelp(stdout, go, 7, 2, 100);
     if(do_dev) { 
-      puts("\nOptions for precise control of the filter pipeline:");
+      puts("\nOptions for precise control of the CM filter pipeline:");
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
-      puts("\nOptions for precise control of HMM envelope definition:");
+      puts("\nOptions controlling the HMM-only filter pipeline (run for models w/0 basepairs):");
       esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
-      puts("\nOptions for precise control of the CYK filter stage:");
+      puts("\nOptions for precise control of HMM envelope definition:");
       esl_opt_DisplayHelp(stdout, go, 103, 2, 80);
-      puts("\nOptions for precise control of the final stage:");
+      puts("\nOptions for precise control of the CYK filter stage:");
       esl_opt_DisplayHelp(stdout, go, 104, 2, 80);
-      puts("\nOptions for timing pipeline stages:");
+      puts("\nOptions for precise control of the final stage:");
       esl_opt_DisplayHelp(stdout, go, 105, 2, 80);
+      puts("\nOptions for timing pipeline stages:");
+      esl_opt_DisplayHelp(stdout, go, 106, 2, 80);
     }
 
     printf("\nOther options%s:\n", do_dev ? "" : devmsg);
     esl_opt_DisplayHelp(stdout, go, 8, 2, 80); 
     if(do_dev) { 
       printf("\nOther expert options%s:\n", do_dev ? "" : devmsg);
-      esl_opt_DisplayHelp(stdout, go, 106, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 107, 2, 80);
     }
     else { 
       puts("\n*Use --devhelp to show additional expert options.");
@@ -1814,6 +1825,59 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--default")) { puts("Failed to parse command line: Option --FZ is incompatible with option --default"); goto ERROR; }
     if(esl_opt_IsUsed(go, "--rfam"))    { puts("Failed to parse command line: Option --FZ is incompatible with option --rfam");    goto ERROR; }
   }
+  if(esl_opt_IsUsed(go, "--hmmonly")) { 
+    if(esl_opt_IsUsed(go, "--max"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --max");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nohmm"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nohmm");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--mid"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --mid");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rfam"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --rfam");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--FZ"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --FZ");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF1"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF1");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF2");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF3"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF3");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF4"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF4");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF6"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF6");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--doF1b"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --doF1b");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2b"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF2b");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF3b"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF3b");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF4b"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF4b");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--doF5b"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --doF5b");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F1");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1b"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F1b");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F2");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2b"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F2b");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F3"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F3");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F3b"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F3b");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F4"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F4");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F4b"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F4b");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F5"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F5");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F6"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F6");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--ftau"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --ftau");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--fsums"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --fsums");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--fqdb"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --fqdb");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--fbeta"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --fbeta");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--fnonbanded")) { puts("Failed to parse command line: Option --hmmonly is incompatible with option --fnonbanded"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nocykenv"))   { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nocykenv");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--cykenvx"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --cykenvx");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--tau"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --tau");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--sums"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --sums");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--qdb"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --qdb");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--beta"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --beta");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nonbanded"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nonbanded");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--xtau"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --xtau");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --maxtau");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --hmmonly is incompatible with option --anytrunc");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--mxsize"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --mxsize");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--smxsize"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --smxsize");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nonull3"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nonull3");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nohmmonly"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nohmmonly");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--timeF4"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --timeF4");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--timeF5"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --timeF5");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--timeF6"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --timeF6");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nogreedy"))   { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nogreedy");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--cp9noel"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --cp9noel");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--cp9gloc"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --cp9gloc");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--null2"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --null2");      goto ERROR; }
+  }
 
   *ret_go = go;
   return;
@@ -1856,6 +1920,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--rfam"))       fprintf(ofp, "# Rfam pipeline mode:                    on [strict filtering]\n");
   if (esl_opt_IsUsed(go, "--FZ"))         fprintf(ofp, "# Filters set as if DB size in Mb is:    %f\n", esl_opt_GetReal(go, "--FZ"));
   if (esl_opt_IsUsed(go, "--Fmid"))       fprintf(ofp, "# HMM Forward filter thresholds set to:  %g\n", esl_opt_GetReal(go, "--Fmid"));
+  if (esl_opt_IsUsed(go, "--hmmonly"))    fprintf(ofp, "# HMM-only mode (for all models):        on [CM will not be used]\n");
   if (esl_opt_IsUsed(go, "--notrunc"))    fprintf(ofp, "# truncated sequence detection:          off\n");
   if (esl_opt_IsUsed(go, "--anytrunc"))   fprintf(ofp, "# allowing truncated sequences anywhere: on\n");
   if (esl_opt_IsUsed(go, "--nonull3"))    fprintf(ofp, "# null3 bias corrections:                off\n");
@@ -1897,6 +1962,14 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--F5b"))        fprintf(ofp, "# HMM env defn bias   P threshold:       <= %g\n", esl_opt_GetReal(go, "--F5b"));
   if (esl_opt_IsUsed(go, "--F6"))         fprintf(ofp, "# CM CYK filter P threshold:             <= %g\n", esl_opt_GetReal(go, "--F6"));
 
+  if (esl_opt_IsUsed(go, "--hmmmax"))     fprintf(ofp, "# max sensitivity mode   (HMM-only):     on [all heuristic filters off]\n");
+  if (esl_opt_IsUsed(go, "--hmmF1"))      fprintf(ofp, "# HMM MSV filter P threshold (HMM-only)  <= %g\n", esl_opt_GetReal(go, "--hmmF1"));
+  if (esl_opt_IsUsed(go, "--hmmF2"))      fprintf(ofp, "# HMM Vit filter P threshold (HMM-only)  <= %g\n", esl_opt_GetReal(go, "--hmmF2"));
+  if (esl_opt_IsUsed(go, "--hmmF3"))      fprintf(ofp, "# HMM Fwd filter P threshold (HMM-only)  <= %g\n", esl_opt_GetReal(go, "--hmmF3"));
+  if (esl_opt_IsUsed(go, "--hmmnobias"))  fprintf(ofp, "# HMM MSV biased comp filter (HMM-only)  off\n");
+  if (esl_opt_IsUsed(go, "--hmmnonull2")) fprintf(ofp, "# null2 bias corrections (HMM-only):     off\n");
+  if (esl_opt_IsUsed(go, "--nohmmonly"))  fprintf(ofp, "# HMM-only mode for 0 basepair models:   no\n");
+
   if (esl_opt_IsUsed(go, "--rt1"))        fprintf(ofp, "# domain definition rt1 parameter        %g\n", esl_opt_GetReal(go, "--rt1"));
   if (esl_opt_IsUsed(go, "--rt2"))        fprintf(ofp, "# domain definition rt2 parameter        %g\n", esl_opt_GetReal(go, "--rt2"));
   if (esl_opt_IsUsed(go, "--rt3"))        fprintf(ofp, "# domain definition rt3 parameter        %g\n", esl_opt_GetReal(go, "--rt3"));
@@ -1934,8 +2007,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
     else                                       fprintf(ofp, "# random number seed set to:             %d\n", esl_opt_GetInteger(go, "--seed"));
   }
 #ifdef HAVE_MPI
-  if (esl_opt_IsUsed(go, "--sidx"))       fprintf(ofp, "# first target sequence to search:       %d\n",             esl_opt_GetInteger(go, "--sidx"));
-  if (esl_opt_IsUsed(go, "--eidx"))       fprintf(ofp, "# final target sequence to search:       %d\n",             esl_opt_GetInteger(go, "--eidx"));
+  if (esl_opt_IsUsed(go, "--sidx"))       fprintf(ofp, "# first target sequence to search:       %d\n", esl_opt_GetInteger(go, "--sidx"));
+  if (esl_opt_IsUsed(go, "--eidx"))       fprintf(ofp, "# final target sequence to search:       %d\n", esl_opt_GetInteger(go, "--eidx"));
 #endif
   /* if --max or --nohmm, truncated ends will be turned off 
    * in cm_pipeline_Create() (hopefully this will go away soon when D&C
@@ -2242,37 +2315,41 @@ setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
 
   return eslOK;
 }
- 
-/* Function:  copy_subseq()
- * Incept:    EPN, Tue Aug  9 11:13:02 2011
+
+/* Function:  adjust_nres_top_for_overlap()
+ * Incept:    EPN, Thu Apr 12 05:44:09 2012
  *
- * Purpose: Copy a subsequence of an existing sequence <src_sq>
- *           starting at position <i>, of length <L> to another
- *           sequence object <dest_sq>. Copy only residues from
- *           <i>..<i>+<L>-1. <dest_sq> must be pre-allocated.
+ * Purpose:  Update <nres_top> values in a CM_PIPELINE <pli> to account
+ *           for overlapping windows from previous pipeline
+ *           passes. Only certain passes are affected, all others can
+ *           never search overlaps.
  *
- * Returns: eslOK on success. 
+ * Returns: void.
  */
 void
-copy_subseq(const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L)
+adjust_nres_top_for_overlaps(CM_PIPELINE *pli, int64_t noverlap)
 { 
-  ESL_DASSERT1((src_sq->start <= src_sq->end));
-  assert(src_sq->start <= src_sq->end);
+  if(! pli->do_hmmonly_cur) pli->acct[PLI_PASS_STD_ANY].nres_top       -= noverlap;
+  else                      pli->acct[PLI_PASS_HMM_ONLY_ANY].nres_top  -= noverlap;
+  if(pli->do_trunc_any)     pli->acct[PLI_PASS_5P_AND_3P_ANY].nres_top -= noverlap;
+}
 
-  esl_sq_Reuse(dest_sq);
-  esl_sq_GrowTo(dest_sq, L);
-  memcpy((void*)(dest_sq->dsq+1), src_sq->dsq+i, L * sizeof(ESL_DSQ));
-  dest_sq->dsq[0] = dest_sq->dsq[L+1] = eslDSQ_SENTINEL;
-  dest_sq->n     = L;
-
-  dest_sq->start = src_sq->start  + i - 1;
-  dest_sq->end   = dest_sq->start + L - 1;
-
-  esl_sq_SetName     (dest_sq, src_sq->name);
-  esl_sq_SetAccession(dest_sq, src_sq->acc);
-  esl_sq_SetDesc     (dest_sq, src_sq->desc);
-
-  return;
+/* Function:  adjust_nres_bot_for_overlap()
+ * Incept:    EPN, Thu Apr 12 05:44:09 2012
+ *
+ * Purpose:  Update <nres_top> values in a CM_PIPELINE <pli> to account
+ *           for overlapping windows from previous pipeline
+ *           passes. Only certain passes are affected, all others can
+ *           never search overlaps.
+ *
+ * Returns: void.
+ */
+void
+adjust_nres_bot_for_overlaps(CM_PIPELINE *pli, int64_t noverlap)
+{ 
+  if(! pli->do_hmmonly_cur) pli->acct[PLI_PASS_STD_ANY].nres_bot       -= noverlap;
+  else                      pli->acct[PLI_PASS_HMM_ONLY_ANY].nres_bot  -= noverlap;
+  if(pli->do_trunc_any)     pli->acct[PLI_PASS_5P_AND_3P_ANY].nres_bot -= noverlap;
 }
 
 #ifdef HAVE_MPI
