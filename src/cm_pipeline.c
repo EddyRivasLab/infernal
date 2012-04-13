@@ -1880,7 +1880,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   /* Filter 1: MSV, long target-variant, with p7 HMM */
   if(pli->do_msv) { 
     fm_initWindows(&wlist);
-    status = p7_MSVFilter_longtarget(sq->dsq, sq->n, om, pli->oxf, msvdata, bg, pli->F1, &wlist, TRUE); /* TRUE: force SSV, not MSV */
+    status = p7_MSVFilter_longtarget(sq->dsq, sq->n, om, pli->oxf, msvdata, bg, pli->F1, &wlist);
 
     if(wlist.count > 0) { 
       /* In scan mode, if at least one window passes the MSV filter, read the rest of the profile */
