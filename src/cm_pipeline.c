@@ -35,7 +35,7 @@ static int  pli_final_stage        (CM_PIPELINE *pli, off_t cm_offset, const ESL
 static int  pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, CM_TOPHITS *hitlist, CM_t **opt_cm);
 static int  pli_dispatch_cm_search (CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t start, int64_t stop, CM_TOPHITS *hitlist, float cutoff, float env_cutoff, int qdbidx, float *ret_sc, int64_t *opt_envi, int64_t *opt_envj);
 static int  pli_align_hit          (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit);
-static int  pli_scan_mode_read_cm  (CM_PIPELINE *pli, off_t cm_offset, CM_t **ret_cm);
+static int  pli_scan_mode_read_cm  (CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, CM_t **ret_cm);
 
 static int  pli_pass_statistics        (FILE *ofp, CM_PIPELINE *pli, int pass_idx);
 static int  pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli);
@@ -846,7 +846,7 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            have the appropriate ones set.
  */
 int
-cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, int64_t cur_cm_idx)
+cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int64_t cur_cm_idx)
 {
   int status = eslOK;
   float T;
@@ -925,14 +925,24 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
   if(pli->mode == CM_SEARCH_SEQS || modmode == CM_NEWMODEL_CM) { 
     /* set B updates: case 1 and 3 do these (they require a valid CM) */
 
-    /* Update the current effective database size so it pertains to the
-     * new model. Also, If we're using an E-value threshold determine
-     * the bit score for this model that pertains to that E-value.
+    /* Update the current effective database size so it pertains to
+     * the new model. Also, If we're using an E-value threshold
+     * determine the bit score for this model that pertains to that
+     * E-value.  We have to do this differently if we're in HMM-only
+     * mode or not. If we're in HMM-only mode we probably don't even
+     * have CM E-value parameters.
      */
-    if((status = UpdateExpsForDBSize(cm, pli->errbuf, (long) pli->Z)) != eslOK) return status;
-    if(pli->by_E) { 
-      if((status = E2ScoreGivenExpInfo(cm->expA[pli->final_cm_exp_mode], pli->errbuf, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
-      pli->T = (double) T;
+    if(pli->do_hmmonly_cur) { 
+      if(pli->by_E) { 
+	pli->T = p7_evparam[CM_p7_LFTAU] + ((log(pli->E/(pli->Z / (float) om->max_length))) / (-1 * p7_evparam[CM_p7_LFLAMBDA]));
+      }
+    }
+    else { /* ! do_hmmonly_cur */
+      if((status = UpdateExpsForDBSize(cm, pli->errbuf, (long) pli->Z)) != eslOK) return status;
+      if(pli->by_E) { 
+	if((status = E2ScoreGivenExpInfo(cm->expA[pli->final_cm_exp_mode], pli->errbuf, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
+	pli->T = (double) T;
+      }
     }
 
     /* if we're using Rfam GA, NC, or TC cutoffs, update them for this model */
@@ -2931,7 +2941,7 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
 
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS && (*opt_cm == NULL)) { 
-    if((status = pli_scan_mode_read_cm(pli, cm_offset, opt_cm)) != eslOK) return status;
+    if((status = pli_scan_mode_read_cm(pli, cm_offset, NULL, opt_cm)) != eslOK) return status;
   }
   else { /* *opt_cm should be valid */
     if(opt_cm == NULL || *opt_cm == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "Entered pli_final_stage() with invalid CM"); 
@@ -3083,7 +3093,7 @@ pli_cyk_seq_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **o
 
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS && (*opt_cm == NULL)) { 
-    if((status = pli_scan_mode_read_cm(pli, cm_offset, opt_cm)) != eslOK) return status;
+    if((status = pli_scan_mode_read_cm(pli, cm_offset, NULL, opt_cm)) != eslOK) return status;
   }
   else { /* *opt_cm should be valid */
     if(opt_cm == NULL || *opt_cm == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "Entered pli_final_stage() with invalid CM"); 
@@ -3214,7 +3224,7 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
 
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS && (*opt_cm == NULL)) { 
-    if((status = pli_scan_mode_read_cm(pli, cm_offset, opt_cm)) != eslOK) return status;
+    if((status = pli_scan_mode_read_cm(pli, cm_offset, NULL, opt_cm)) != eslOK) return status;
   }
   else { /* *opt_cm should be valid */
     if(opt_cm == NULL || *opt_cm == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "Entered pli_final_stage() with invalid CM"); 
@@ -3417,7 +3427,7 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
 
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS && (*opt_cm == NULL)) { 
-    if((status = pli_scan_mode_read_cm(pli, cm_offset, opt_cm)) != eslOK) return status;
+    if((status = pli_scan_mode_read_cm(pli, cm_offset, p7_evparam, opt_cm)) != eslOK) return status;
   }
   else { /* *opt_cm should be valid */
     if(opt_cm == NULL || *opt_cm == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "Entered pli_final_stage() with invalid CM"); 
@@ -3841,6 +3851,9 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
  *            it in <ret_cm>. We also update the pipeline 
  *            regarding the CM we just read.
  *
+ *            <p7_evparam> will be NULL unless pli->do_hmmonly_cur
+ *            is TRUE.
+ *
  * Returns:   <eslOK> on success. <ret_cm> contains the CM.
  *
  * Throws:    <eslEMEM> on allocation failure
@@ -3848,7 +3861,7 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
  *            In both case, *ret_cm set to NULL, pli->errbuf filled.
  */
 int
-pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, CM_t **ret_cm)
+pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, CM_t **ret_cm)
 {
   int status; 
   CM_t *cm = NULL;
@@ -3895,7 +3908,7 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, CM_t **ret_cm)
   if((status = cm_Configure(cm, pli->errbuf, W_from_cmdline)) != eslOK) goto ERROR;
   /* update the pipeline about the model */
   if((status = cm_pli_NewModel(pli, CM_NEWMODEL_CM, cm, cm->clen, cm->W, CMCountNodetype(cm, MATP_nd),
-			       NULL, NULL, pli->cur_cm_idx)) /* om, bg */
+			       NULL, NULL, p7_evparam, pli->cur_cm_idx)) /* om, bg */
      != eslOK) goto ERROR;
   
   *ret_cm = cm;

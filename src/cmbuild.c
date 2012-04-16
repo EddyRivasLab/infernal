@@ -51,6 +51,7 @@ static ESL_OPTIONS options[] = {
   { "--hand",      eslARG_NONE,    FALSE,   NULL, NULL,      CONOPTS,      NULL,         NULL, "use reference coordinate annotation to specify consensus",       2 },
   { "--symfrac",   eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "fraction of non-gaps to require in a consensus column [0..1]",   2 },
   { "--rsearch",   eslARG_INFILE,  NULL,    NULL, NULL,      CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
+  { "--noss",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "ignore secondary structure annotation in input alignment",       2 },
 
   /* Other model construction options */
   /* name          type            default  env  range       toggles       reqs        incomp  help  docgroup*/
@@ -61,7 +62,6 @@ static ESL_OPTIONS options[] = {
   { "--beta1",     eslARG_REAL,    "1E-7",  NULL, "x>1E-18",    NULL,      NULL,         NULL, "set tail loss prob for calc'ing tighter set of QDBs to <x>",   103 },
   { "--beta2",     eslARG_REAL,    "1E-15", NULL, "x>1E-18",    NULL,      NULL,         NULL, "set tail loss prob for calc'ing looser  set of QDBs to <x>",   103 },
   { "--informat",  eslARG_STRING,  NULL,    NULL, NULL,         NULL,      NULL,         NULL, "specify input alignment is in format <s> (Stockholm or Pfam)", 103 },
-  { "--ignorant",  eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL,  "strip the structural info from input alignment",              103 },
   { "--v1p0",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL,  "parameterize CM using methods from Infernal v1.0.2",          103 },
   { "--p56",       eslARG_NONE,    NULL,    NULL, NULL,         NULL,      NULL,    "--prior", "use the default prior from Infernal v0.56 through v1.0.2",     103 },
   { "--iins",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "allow informative insert emissions, do not zero them",         103 },
@@ -94,7 +94,7 @@ static ESL_OPTIONS options[] = {
 
   /* Options controlling filter p7 HMM construction */
   /* name         type           default  env  range toggles  reqs  incomp    help  docgroup*/
-  { "--p7ere",    eslARG_REAL,   "0.38", NULL, NULL, NULL,    NULL, "--p7ml", "for the filter p7 HMM, set minimum rel entropy/posn to <x>",   6 },
+  { "--p7ere",    eslARG_REAL,     NULL, NULL, NULL, NULL,    NULL, "--p7ml", "for the filter p7 HMM, set minimum rel entropy/posn to <x>",   6 },
   { "--p7ml",     eslARG_NONE,    FALSE, NULL, NULL, NULL,    NULL,     NULL, "define the filter p7 HMM as the ML p7 HMM",                    6 },
   /* below are only shown with --devhelp */
   { "--p7prior",  eslARG_INFILE,   NULL, NULL, NULL, NULL,    NULL, "--p7ml", "read p7 prior for the filter HMM from file <f>",             106 },
@@ -188,7 +188,8 @@ struct cfg_s {
   FILE         *postmsafp;	/* open <postmsafile>, or NULL */
 
   float        *null;		/* null model                              */
-  Prior_t      *pri;		/* mixture Dirichlet prior for the HMM     */
+  Prior_t      *pri;		/* mixture Dirichlet prior for the CM     */
+  Prior_t      *pri_zerobp;	/* mixture Dirichlet prior for any CMs with 0 basepairs */
 
   fullmat_t    *fullmat;        /* if --rsearch, the full RIBOSUM matrix */
 
@@ -240,9 +241,8 @@ static int    configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
 static int    set_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int    build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_msa_name(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
-static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen);
+static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen, int nbps);
 static double version_1p0_default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
-static void   strip_wuss(char *ss);
 static int    refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *orig_cm, ESL_MSA *input_msa, Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr, Parsetree_t ***ret_trA, int *ret_niter);
 static int    convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa);
 /* static void   model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq); */
@@ -252,6 +252,7 @@ static float  find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_c
 static int    MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, int target_nc, int do_orig, int *ret_num_msa, ESL_MSA ***ret_cmsa, char *errbuf);
 static int    write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int    flatten_insert_emissions(CM_t *cm);
+static int    zero_insert_delete_transitions(CM_t *cm);
 static int    print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static void   print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
 static int    print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm);
@@ -372,15 +373,16 @@ main(int argc, char **argv)
     fclose(cfg.rdfp); 
   }
 
-  if (cfg.afp     != NULL) eslx_msafile_Close(cfg.afp);
-  if (cfg.abc     != NULL) esl_alphabet_Destroy(cfg.abc);
-  if (cfg.cmoutfp != NULL) fclose(cfg.cmoutfp);
-  if (cfg.pri     != NULL) Prior_Destroy(cfg.pri);
-  if (cfg.null    != NULL) free(cfg.null);
-  if (cfg.r       != NULL) esl_randomness_Destroy(cfg.r);
-  if (cfg.comlog  != NULL) FreeComLog(cfg.comlog);
-  if (cfg.fp7_bg  != NULL) p7_bg_Destroy(cfg.fp7_bg);
-  if (cfg.fp7_bld != NULL) p7_builder_Destroy(cfg.fp7_bld);
+  if (cfg.afp        != NULL) eslx_msafile_Close(cfg.afp);
+  if (cfg.abc        != NULL) esl_alphabet_Destroy(cfg.abc);
+  if (cfg.cmoutfp    != NULL) fclose(cfg.cmoutfp);
+  if (cfg.pri        != NULL) Prior_Destroy(cfg.pri);
+  if (cfg.pri_zerobp != NULL) Prior_Destroy(cfg.pri_zerobp);
+  if (cfg.null       != NULL) free(cfg.null);
+  if (cfg.r          != NULL) esl_randomness_Destroy(cfg.r);
+  if (cfg.comlog     != NULL) FreeComLog(cfg.comlog);
+  if (cfg.fp7_bg     != NULL) p7_bg_Destroy(cfg.fp7_bg);
+  if (cfg.fp7_bld    != NULL) p7_builder_Destroy(cfg.fp7_bld);
 
   esl_stopwatch_Stop(w);
   fprintf(cfg.ofp, "#\n");
@@ -621,7 +623,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
  if (esl_opt_IsUsed(go, "--beta1"))       { fprintf(ofp, "# tail loss probability for defining tight QDBs:      %g\n", esl_opt_GetReal(go, "--beta1")); }
  if (esl_opt_IsUsed(go, "--beta2"))       { fprintf(ofp, "# tail loss probability for defining loose QDBs:      %g\n", esl_opt_GetReal(go, "--beta2")); }
  if (esl_opt_IsUsed(go, "--informat"))    { fprintf(ofp, "# input format specified as:                          %s\n", esl_opt_GetString(go, "--informat")); }
- if (esl_opt_IsUsed(go, "--ignorant"))    { fprintf(ofp, "# ignorant mode; build fully single-stranded CMs:     on\n"); }
+ if (esl_opt_IsUsed(go, "--noss"))        { fprintf(ofp, "# ignore secondary structure, if any:                 yes\n"); }
  if (esl_opt_IsUsed(go, "--v1p0"))        { fprintf(ofp, "# v1.0 parameterization mode:                         on\n"); }
  if (esl_opt_IsUsed(go, "--p56"))         { fprintf(ofp, "# use default priors from v0.56 through v1.0.2:       yes\n"); }
  if (esl_opt_IsUsed(go, "--iins"))        { fprintf(ofp, "# allowing informative insert emission probabilities: yes\n"); }
@@ -767,10 +769,12 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       fclose(pfp);
     }
   else if(esl_opt_GetBoolean(go, "--p56") || esl_opt_GetBoolean(go, "--v1p0")) { 
-    cfg->pri = Prior_Default_v0p56_through_v1p02();
+    cfg->pri        = Prior_Default_v0p56_through_v1p02();
+    cfg->pri_zerobp = Prior_Default_v0p56_through_v1p02();
   }
   else { 
-    cfg->pri = Prior_Default();
+    cfg->pri        = Prior_Default(FALSE);
+    cfg->pri_zerobp = Prior_Default(TRUE);
   }
   /* Set up the null/random seq model */
   if(esl_opt_GetString(go, "--null") != NULL) /* read freqs from a file and overwrite bg->f */
@@ -829,7 +833,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     if (cfg->fp7_bld->prior != NULL) p7_prior_Destroy(cfg->fp7_bld->prior);
     cfg->fp7_bld->prior = cm_p7_prior_CreateNucleic();
   }
-  cfg->fp7_bld->re_target = esl_opt_GetReal(go, "--p7ere");
+  cfg->fp7_bld->re_target = esl_opt_IsOn(go, "--p7ere") ?  esl_opt_GetReal(go, "--p7ere") : DEFAULT_ETARGET_HMMFILTER;
 
   /* open output files */
   /* optionally, open count vector file */
@@ -910,15 +914,17 @@ process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *err
   int      status;
   uint32_t checksum = 0;  /* checksum calculated for the input MSA. cmalign --mapali verifies against this. */
   CM_t    *cm = NULL;     /* the CM */
+  Prior_t *pri2use = NULL; /* cfg->pri or cfg->pri_zerobp (the latter if CM has no basepairs) */
 
   if ((status =  check_and_clean_msa          (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
   if ((status =  esl_msa_Checksum             (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
   if ((status =  set_relative_weights         (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
   if ((status =  build_model                  (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
+  pri2use = (CMCountNodetype(cm, MATP_nd) > 0) ? cfg->pri : cfg->pri_zerobp;
   if ((status =  annotate                     (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
   if ((status =  set_model_cutoffs            (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
-  if ((status =  set_effective_seqnumber      (go, cfg, errbuf, msa, cm, cfg->pri))                   != eslOK) goto ERROR;
-  if ((status =  parameterize                 (go, cfg, errbuf, TRUE, cm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
+  if ((status =  set_effective_seqnumber      (go, cfg, errbuf, msa, cm, pri2use))                    != eslOK) goto ERROR;
+  if ((status =  parameterize                 (go, cfg, errbuf, TRUE, cm, pri2use, msa->nseq))        != eslOK) goto ERROR;
   if ((status =  configure_model              (go, cfg, errbuf, cm, 1))                               != eslOK) goto ERROR;
   if ((status =  set_consensus                (go, cfg, errbuf, cm))                                  != eslOK) goto ERROR;
   if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
@@ -1274,6 +1280,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
 static int
 check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa)
 {
+  int status;
   ESL_STOPWATCH *w = NULL;
 
   if (cfg->be_verbose) {
@@ -1283,10 +1290,13 @@ check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf
     fflush(cfg->ofp); 
   }
 
-  if (esl_opt_GetBoolean(go, "--hand") && msa->rf == NULL)      ESL_FAIL(eslFAIL, errbuf, "Alignment has no reference coord annotation.\n");
-  if (msa->ss_cons == NULL)                                     ESL_FAIL(eslFAIL, errbuf, "Alignment did not contain consensus structure annotation.\n");
-  if (! clean_cs(msa->ss_cons, msa->alen, (! cfg->be_verbose))) ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation\n");
-  if (esl_opt_GetBoolean(go, "--ignorant"))                     strip_wuss(msa->ss_cons); /* --ignorant, remove all bp info */
+  if (esl_opt_GetBoolean(go, "--hand") && msa->rf == NULL)      ESL_FAIL(eslFAIL, errbuf, "--hand used, but alignment #%d has no reference coord annotation", cfg->nali+1);
+  if (esl_opt_GetBoolean(go, "--noss")) { /* --noss: if SS_cons exists, strip all BPs from it; if it doesn't create it with zero bps */
+    if(msa->ss_cons == NULL) { ESL_ALLOC(msa->ss_cons, sizeof(char) * (msa->alen+1)); msa->ss_cons[msa->alen] = '\0'; }
+    memset(msa->ss_cons,  '.', msa->alen);
+  }
+  if (msa->ss_cons == NULL)                                     ESL_FAIL(eslFAIL, errbuf, "Alignment #%d has no consensus structure annotation, and --noss not used.", cfg->nali+1);
+  if (! clean_cs(msa->ss_cons, msa->alen, (! cfg->be_verbose))) ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation in alignment #%d", cfg->nali+1);
 
   if ( esl_opt_IsOn(go, "--rsearch")) { 
     if(msa->nseq != 1) ESL_FAIL(eslEINCOMPAT, errbuf,"with --rsearch option, all of the input alignments must have exactly 1 sequence");
@@ -1307,6 +1317,10 @@ check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf
   }
   if(w != NULL) esl_stopwatch_Destroy(w);
   return eslOK;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "out of memory");
+  return status; /* NOT REACHED */
 }
 
 /* set_relative_weights():
@@ -1405,16 +1419,6 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
     fprintf(cfg->ofp, "done.  ");
     esl_stopwatch_Stop(w);
     esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
-  }
-
-  /* Set transition counts into ROOT_IL and ROOT_IR to 0, we don't
-   * learn those counts from the alignment, unless --v1p0 (b/c we used
-   * to in versions up to v1.0.2) or --iflank (which turns this
-   * specific behavior off). The emission scores for these states will
-   * be zeroed later so we don't touch them.
-   */
-  if((! esl_opt_GetBoolean(go, "--v1p0")) && (! esl_opt_GetBoolean(go, "--iflank"))) { 
-    if((status = cm_zero_flanking_insert_counts(cm, errbuf)) != eslOK) return status;
   }
 
   /* ensure the dual insert states we will detach were populated with 0 counts */
@@ -1615,7 +1619,7 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
 	etarget = version_1p0_default_target_relent(cm->abc, clen, 6.0);
       }
       else { 
-	etarget = set_target_relent(go, cm->abc, clen);
+	etarget = set_target_relent(go, cm->abc, clen, CMCountNodetype(cm, MATP_nd));
       }
 
       status = cm_EntropyWeight(cm, pri, etarget, esl_opt_GetReal(go, "--eminseq"), FALSE, &hmm_re, &neff);
@@ -1670,16 +1674,21 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int d
     /*debug_print_cm_params(cm);*/
   }
   
-  if(!esl_opt_GetBoolean(go, "--nodetach")) /* Detach dual inserts where appropriate, if
-					     * we get here we've already checked these states */
+  if(! esl_opt_GetBoolean(go, "--nodetach")) /* Detach dual inserts where appropriate, if
+					      * we get here we've already checked these states */
     {
       cm_find_and_detach_dual_inserts(cm, 
 				      FALSE, /* Don't check states have 0 counts (they won't due to priors) */
 				      TRUE); /* Detach the states by setting trans probs into them as 0.0   */
     }
+
+  if((CMCountNodetype(cm, MATP_nd) == 0) && (! esl_opt_GetBoolean(go, "--v1p0"))) { 
+    if((status = zero_insert_delete_transitions(cm)) != eslOK) ESL_FAIL(status, errbuf, "zero_insert_delete_transitions() failed"); 
+  }
+
   if(! esl_opt_GetBoolean(go, "--iins")) { 
     /* set all insert emission probabilities equal to the cm->null probabilities */ 
-    if((status = flatten_insert_emissions(cm)) != eslOK) return status; 
+    if((status = flatten_insert_emissions(cm)) != eslOK) ESL_FAIL(status, errbuf, "flatten_insert_emissions() failed");
     /* Note: flatten_insert_emissions() is purposefully a static
      * function local to cmbuild.c b/c once CM files are calibrated no
      * other executable (i.e. cmsearch) should be able to modify the
@@ -2050,7 +2059,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
  *
  */
 static double
-set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen)
+set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen, int nbps)
 {
   double etarget;
   double re_target;
@@ -2061,8 +2070,10 @@ set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen)
   }
   else {
     if(abc->type != eslRNA) cm_Fail("ERROR, alphabet not RNA, user needs to specify target entropy with --ere");
-    re_target = DEFAULT_ETARGET;
+    /* set target differently if we have 0 basepairs or not */
+    re_target = (nbps > 0) ? DEFAULT_ETARGET : DEFAULT_ETARGET_HMMFILTER;
   }
+  /* the defn of etarget below is identical to how hmmer3 does it in hmmer/src/p7_builder.c as of svn rev 3986 (04.16.12) */
   etarget = (esigma - eslCONST_LOG2R * log( 2.0 / ((double) clen * (double) (clen+1)))) / (double) clen; /* HMMER3.0 default, xref J5/36. */
   etarget = ESL_MAX(etarget, re_target);
   
@@ -2101,18 +2112,6 @@ version_1p0_default_target_relent(const ESL_ALPHABET *abc, int clen, double eX)
   default:        cm_Fail("ERROR in default_target_relent(), alphabet not RNA!\n");
   }
   return etarget;
-}
-
-/* strip_wuss() remove all base pair info from a SS string
- */
-void
-strip_wuss(char *ss)
-{
-  char *s;
-  for (s = ss; *s != '\0'; s++)
-    if ((*s != '~') && (*s != '.'))
-      *s = ':';
-  return;
 }
 
 /* set_msa_name() 
@@ -2839,6 +2838,49 @@ flatten_insert_emissions(CM_t *cm)
       esl_vec_FCopy(cm->null, cm->abc->K, cm->e[v]); /* overwrite first cm->abc->K values (rest are irrelevant for non-MP states) with cm->null */
     }
   }
+  return eslOK;
+}
+
+/* Function: zero_insert_delete_transitions()
+ *
+ * Purpose:  Set transition probabilities from insert states to delete
+ *           states and delete states to inserts states to 0.0.  This
+ *           should only be done if our CM is essentially an HMM, it
+ *           has three node types: 1 ROOT node, 1 END node and the
+ *           rest MATL nodes. This step should be done after the prior
+ *           has been added to the CM, but before log-odds scores have
+ *           been calculated (within the 'parameterize()' function of
+ *           cmbuild.c).
+ * 
+ * Returns: eslOK on success.
+ *          eslFAIL if our CM contains a MATR, MATP, BIF, BEGL, or BEGR node.
+ */
+int
+zero_insert_delete_transitions(CM_t *cm) 
+{
+  int nd, x;
+
+  /* start with node 0 the ROOT node */
+  cm->t[1][3] = 0.0; /* ROOT_IL->MATL_D */
+  esl_vec_FNorm(cm->t[1], cm->cnum[1]); /* renormalize transitions out of 1 */
+  cm->t[2][2] = 0.0; /* ROOT_IR->MATL_D */
+  esl_vec_FNorm(cm->t[2], cm->cnum[2]); /* renormalize transitions out of 2 */
+
+  /* remaining nodes until the last one should be MATL */
+  for(nd = 1; nd < (cm->nodes-1); nd++) { 
+    if(cm->ndtype[nd] != MATL_nd) return eslFAIL;
+
+    x = cm->nodemap[nd] + 1; /* x is MATL_D */
+    cm->t[x][0] = 0.0;     /* MATL_D->MATL_IL */
+    esl_vec_FNorm(cm->t[x], cm->cnum[x]); /* renormalize transitions out of x */
+
+    x = cm->nodemap[nd] + 2; /* x is MATL_IL */
+    cm->t[x][2] = 0.0;     /* MATL_IL->MATL_D */
+    esl_vec_FNorm(cm->t[x], cm->cnum[x]); /* renormalize transitions out of x */
+  }
+
+  if(cm->ndtype[cm->nodes-1] != END_nd) return eslFAIL;
+
   return eslOK;
 }
 

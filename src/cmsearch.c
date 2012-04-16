@@ -55,7 +55,7 @@ typedef struct {
   P7_PROFILE       *Lgm;         /* generic   query profile HMM for 3' truncated hits */
   P7_PROFILE       *Tgm;         /* generic   query profile HMM for 5' and 3' truncated hits */
   P7_MSVDATA       *msvdata;     /* MSV/SSV specific data structure */
-  float            *p7_evparam;  /* 0..CM_p7_NEVPARAM] E-value parameters */
+  float            *p7_evparam;  /* [0..CM_p7_NEVPARAM] E-value parameters */
   float             smxsize;     /* max size (Mb) of allowable scan mx (only relevant if --nohmm or --max) */
 } WORKER_INFO;
 
@@ -457,6 +457,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int64_t         *srcL = NULL;                  /* [0..pli->nseqs-1] full length of each target sequence read */
   int64_t          nseqs_expected = 0;           /* nseqs read in first pass, pli->nseqs should equal this at end of function */
   double           eZ;                           /* effective database size */
+  int              nbps;                         /* number of basepairs in current CM */
 
 #ifdef HMMER_THREADS
   ESL_SQ_BLOCK    *block    = NULL;
@@ -553,10 +554,19 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     tinfo = create_info(go);
     tinfo->cm = cm;
 
-    /* Make sure we have E-value stats for both the CM and the p7, if not we can't run the pipeline */
-    if(! (tinfo->cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s\n", tinfo->cm->name);
-    if(! (tinfo->cm->flags & CMH_FP7))           cm_Fail("no filter HMM was read for CM: %s\n", tinfo->cm->name);
-    
+    /* sanity check: we better have a filter HMM */
+    if(! (tinfo->cm->flags & CMH_FP7)) cm_Fail("no filter HMM was read for CM: %s\n", tinfo->cm->name);
+
+    /* check if we have E-value stats for the CM, we require them
+     * *unless* we are going to run the pipeline in HMM-only mode.
+     */
+    nbps = CMCountNodetype(tinfo->cm, MATP_nd);
+    if((   esl_opt_GetBoolean(go, "--nohmmonly"))  || 
+       ((! esl_opt_GetBoolean(go, "--hmmonly"))    && (nbps > 0))) { 
+      /* we're NOT running HMM-only pipeline variant, we need CM E-value stats */
+      if(! (tinfo->cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s\n", tinfo->cm->name);
+    }
+       
     /* seqfile may need to be rewound (multiquery mode) */
     if (cm_idx > 1) {
       if (! esl_sqfile_IsRewindable(dbfp))
@@ -582,8 +592,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     for (i = 0; i < infocnt; ++i) {
       info[i].th   = cm_tophits_Create();
       info[i].pli  = cm_pipeline_Create(go, abc, tinfo->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
-      if((status = cm_pli_NewModel(info[i].pli, CM_NEWMODEL_CM, info[i].cm, info[i].cm->clen, info[i].cm->W, CMCountNodetype(info[i].cm, MATP_nd),
-				   info[i].om, info[i].bg, cm_idx-1)) != eslOK) { 
+      if((status = cm_pli_NewModel(info[i].pli, CM_NEWMODEL_CM, info[i].cm, info[i].cm->clen, info[i].cm->W, nbps,
+				   info[i].om, info[i].bg, info[i].p7_evparam, cm_idx-1)) != eslOK) { 
 	cm_Fail(info[i].pli->errbuf);
       }
 
@@ -1116,9 +1126,18 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     cm_idx++;
     esl_stopwatch_Start(w);
     
-    /* Make sure we have E-value stats for both the CM and the p7, if not we can't run the pipeline */
-    if(! (info->cm->flags & CMH_EXPTAIL_STATS)) mpi_failure("no E-value parameters were read for CM: %s\n", info->cm->name);
-    if(! (info->cm->flags & CMH_FP7))           mpi_failure("no filter HMM was read for CM: %s\n", info->cm->name);
+    /* Sanity check: we better have a filter HMM */
+    if(! (info->cm->flags & CMH_FP7)) mpi_failure("no filter HMM was read for CM: %s\n", info->cm->name);
+
+    /* check if we have E-value stats for the CM, we require them
+     * *unless* we are going to run the pipeline in HMM-only mode.
+     */
+    nbps = CMCountNodetype(info->cm, MATP_nd);
+    if((   esl_opt_GetBoolean(go, "--nohmmonly"))  || 
+       ((! esl_opt_GetBoolean(go, "--hmmonly"))    && (nbps > 0))) { 
+      /* we're NOT running HMM-only pipeline variant, we need CM E-value stats */
+      if(! (info->cm->flags & CMH_EXPTAIL_STATS)) mpi_failure("no E-value parameters were read for CM: %s\n", info->cm->name);
+    }
     
     fprintf(ofp, "Query:       %s  [CLEN=%d]\n", info->cm->name, info->cm->clen);
     if (info->cm->acc)  fprintf(ofp, "Accession:   %s\n", info->cm->acc);
@@ -1131,7 +1150,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Configure the CM and setup the HMM filter */
     if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
     if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
-    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, CMCountNodetype(info->cm, MATP_nd), info->om, info->bg, cm_idx-1)) != eslOK) { 
+    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, CMCountNodetype(info->cm, MATP_nd), info->om, info->bg, info->p7_evaparam, cm_idx-1)) != eslOK) { 
       mpi_failure(info->pli->errbuf);
     }
     

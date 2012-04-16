@@ -49,6 +49,7 @@ main(int argc, char **argv)
   ESL_NEWSSI    *nssi       = NULL;
   uint16_t       fh         = 0;
   int            ncm        = 0;
+  int            nbps       = 0;
   uint64_t       tot_clen   = 0;
   off_t          cm_offset  = 0;
   off_t          fp7_offset = 0;
@@ -74,8 +75,14 @@ main(int argc, char **argv)
   while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) == eslOK)
     {
       if (cm->name == NULL)                  cm_Fail("Every CM must have a name to be indexed. Failed to find name of CM #%d\n", ncm+1);
-      if (! (cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("CMs must have E-value statistics to be press'd. Failed to find stats for CM #%d\n", ncm+1);
       if (! (cm->flags & CMH_FP7))           cm_Fail("Failed to read a p7 HMM filter for CM #%d\n", ncm+1);
+
+      /* check if we have E-value stats for the CM, we require them
+       * *unless* the model has zero basepairs, in that case it will
+       * be run in HMM-only mode.
+       */
+      nbps = CMCountNodetype(cm, MATP_nd);
+      if((nbps > 0) && (! (cm->flags & CMH_EXPTAIL_STATS))) cm_Fail("CMs with at least 1 basepair must have E-value statistics to be press'd. Failed to find stats for CM #%d\n", ncm+1);
 
       if (ncm == 0) { 	/* first time initialization, now that alphabet known */
 	bg = p7_bg_Create(abc);

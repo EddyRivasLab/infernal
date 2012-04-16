@@ -698,7 +698,7 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
       if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
 				   cm,                     /* this is NULL b/c we don't have one yet */
 				   cm_clen, cm_W, cm_nbp,  /* we read these in cm_p7_oprofile_ReadMSV() */
-				   om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
+				   om, info->bg, info->p7_evparam, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
 
       prv_ntophits = info->th->N;
       if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, msvdata, info->qsq, info->th, info->in_rc, &hmm, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
@@ -847,7 +847,7 @@ pipeline_thread(void *arg)
 	  if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
 				       cm,                    /* this is NULL b/c we don't have one yet */
 				       cm_clen, cm_W, cm_nbp, /* we read these in cm_p7_oprofile_ReadMSV() */
-				       om, info->bg, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
+				       om, info->bg, info->p7_evparam, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
 
 	  prv_ntophits = info->th->N;
 	  if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, msvdata, info->qsq, info->th, info->in_rc, &hmm, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
@@ -1385,7 +1385,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 		if((status = cm_pli_NewModel(pli, CM_NEWMODEL_MSV, 
 					     cm,                     /* this is NULL b/c we don't have one yet */
 					     cm_clen, cm_W, cm_nbp,  /* we read these in cm_p7_oprofile_ReadMSV() */
-					     om, bg, cm_idx-1)) != eslOK) mpi_failure(pli->errbuf);
+					     om, bg, p7_evparam, cm_idx-1)) != eslOK) mpi_failure(pli->errbuf);
 		
 		prv_ntophits = th->N;
 

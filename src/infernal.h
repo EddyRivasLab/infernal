@@ -77,21 +77,22 @@
  * 1. Default values for various parameters, and other constant definitions.
  ***********************************************************************************/
 
-#define DEFAULT_MIN_CP9_E_CUTOFF 1.0
-#define DEFAULT_BETA_W           1E-7
-#define DEFAULT_BETA_QDB1        1E-7
-#define DEFAULT_BETA_QDB2        1E-15
-#define DEFAULT_TAU              0.0000001
-#define DEFAULT_PBEGIN           0.05           /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_PEND             0.05           /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_ETARGET          0.59           /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
-#define DEFAULT_NULL2_OMEGA      0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null2 model */
-#define DEFAULT_NULL3_OMEGA      0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
-#define V1P0_NULL2_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null2 model for infernal versions 0.56 through 1.0.2 */
-#define V1P0_NULL3_OMEGA         0.03125        /* 1/(2^5),  the prior probability of the null3 model for infernal versions 0.56 through 1.0.2 */
-#define DEFAULT_CP9BANDS_THRESH1 0.01
-#define DEFAULT_CP9BANDS_THRESH2 0.98
-#define DEFAULT_EL_SELFPROB      0.94
+#define DEFAULT_MIN_CP9_E_CUTOFF   1.0
+#define DEFAULT_BETA_W             1E-7
+#define DEFAULT_BETA_QDB1          1E-7
+#define DEFAULT_BETA_QDB2          1E-15
+#define DEFAULT_TAU                0.0000001
+#define DEFAULT_PBEGIN             0.05           /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_PEND               0.05           /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_ETARGET            0.59           /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
+#define DEFAULT_ETARGET_HMMFILTER  0.38           /* EPN 04.16.12 */
+#define DEFAULT_NULL2_OMEGA        0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null2 model */
+#define DEFAULT_NULL3_OMEGA        0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
+#define V1P0_NULL2_OMEGA           0.03125        /* 1/(2^5),  the prior probability of the null2 model for infernal versions 0.56 through 1.0.2 */
+#define V1P0_NULL3_OMEGA           0.03125        /* 1/(2^5),  the prior probability of the null3 model for infernal versions 0.56 through 1.0.2 */
+#define DEFAULT_CP9BANDS_THRESH1   0.01
+#define DEFAULT_CP9BANDS_THRESH2   0.98
+#define DEFAULT_EL_SELFPROB        0.94
 
 /* number of possible integer GC contents, example 40 = 0.40 GC */
 #define GC_SEGMENTS 101
@@ -2897,7 +2898,7 @@ extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
 
 extern int   cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
 extern int   cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
-extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, int64_t cur_cm_idx);
+extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int64_t cur_cm_idx);
 extern int   cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
 extern int   cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
 extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, int in_rc, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
@@ -3204,7 +3205,7 @@ extern Prior_t *Prior_Create(void);
 extern void     Prior_Destroy(Prior_t *pri);
 extern Prior_t *Prior_Read(FILE *fp);
 extern void     PriorifyCM(CM_t *cm, const Prior_t *pri);
-extern Prior_t *Prior_Default(void);
+extern Prior_t *Prior_Default(int mimic_h3);
 extern Prior_t *Prior_Default_v0p56_through_v1p02(void);
 
 /* from rnamat.c */
