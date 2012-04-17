@@ -1061,6 +1061,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int64_t          tot_nseq = 0;             /* number of sequences in all blocks for one CM */
   int64_t          noverlap = 0;             /* number of overlapping residues in one block */
   int64_t          tot_noverlap = 0;         /* number of overlapping residues in all blocks for one CM */
+  int              nbps;                     /* number of basepairs in current CM */
 
   w = esl_stopwatch_Create();
 
@@ -1150,7 +1151,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Configure the CM and setup the HMM filter */
     if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
     if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
-    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, CMCountNodetype(info->cm, MATP_nd), info->om, info->bg, info->p7_evaparam, cm_idx-1)) != eslOK) { 
+    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, nbps, info->om, info->bg, info->p7_evparam, cm_idx-1)) != eslOK) { 
       mpi_failure(info->pli->errbuf);
     }
     
@@ -1481,7 +1482,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Configure the CM and setup the HMM filter */
     if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
     if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
-    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, CMCountNodetype(info->cm, MATP_nd), info->om, info->bg, cm_idx-1)) != eslOK) { 
+    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, CMCountNodetype(info->cm, MATP_nd), info->om, info->bg, info->p7_evparam, cm_idx-1)) != eslOK) { 
       mpi_failure(info->pli->errbuf);
     }
 

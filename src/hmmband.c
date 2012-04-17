@@ -1613,7 +1613,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
 
 	  if(! do_trunc) { 
 	    /* check for possibility that either child is not reachable, will only possibly happen with local on */
-	    if(imin[w] == -1 || jmin[y] == -1) { 
+	    if(imin[w] == -1 || jmin[w] == -1 || imin[y] == -1 || jmin[y] == -1 || 
+	       imax[w] == -2 || imax[w] == -2 || jmax[y] == -2 || jmax[y] == -2) { 
 	      /* either the left child, or right child is not reachable, make them both unreachable as well as the BIF state */
 	      imin[v] = imin[w] = imin[y] = jmin[v] = jmin[w] = jmin[y] = -1;
 	      imax[v] = imax[w] = imax[y] = jmax[v] = jmax[w] = jmax[y] = -2;
@@ -1992,9 +1993,6 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
    * case immediately below after the if that begins with 'do_trunc'.
    */
   if(hmm_is_localized && (! do_trunc)) { 
-    if(! (cm->flags & CMH_LOCAL_BEGIN)) { 
-      printf("uh\n");
-    }
     assert(cm->flags & CMH_LOCAL_BEGIN); /* asserted in contract too */
     assert(cm->flags & CMH_LOCAL_END);   /* asserted in contract too */
     if(imin[0] == -1) { /* ROOT_S is unreachable, uhh... */
