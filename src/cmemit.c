@@ -31,29 +31,31 @@
 #define OUTOPTS  "-u,-c,-a"     /* Exclusive options for output */
 
 static ESL_OPTIONS options[] = {
-  /* name          type            default       env   range   toggles       reqs  incomp   help                                     docgroup*/
-  { "-h",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,    "show brief help on version and usage",                                 1 },
-  { "-o",          eslARG_OUTFILE, FALSE,        NULL, NULL,   NULL,         NULL, NULL,    "send sequence output to file <f>, not stdout",                         1 },
-  { "-N",          eslARG_INT,      "10",        NULL, "n>0",  NULL,         NULL, NULL,    "generate <n> sequences",                                               1 },
-  { "-u",          eslARG_NONE, "default",       NULL, NULL,   OUTOPTS,      NULL, NULL,    "write generated sequences as unaligned FASTA [default]",               1 },
-  { "-a",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,    "write generated sequences as an alignment",                            1 },
-  { "-c",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,    "generate a single \"consensus\" sequence only",                        1, },
-  { "-e",          eslARG_INT,      NULL,        NULL, "n>0",  NULL,         NULL, "-a,-c", "embed emitted sequences within larger random sequences of length <n>", 1 },
-  { "-l",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,    "local; emit from a locally configured model [default: global]",        1 },
+  /* name          type            default       env   range   toggles       reqs  incomp       help                                     docgroup*/
+  { "-h",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,        "show brief help on version and usage",                                 1 },
+  { "-o",          eslARG_OUTFILE, FALSE,        NULL, NULL,   NULL,         NULL, NULL,        "send sequence output to file <f>, not stdout",                         1 },
+  { "-N",          eslARG_INT,      "10",        NULL, "n>0",  NULL,         NULL, NULL,        "generate <n> sequences",                                               1 },
+  { "-u",          eslARG_NONE, "default",       NULL, NULL,   OUTOPTS,      NULL, NULL,        "write generated sequences as unaligned FASTA [default]",               1 },
+  { "-a",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,        "write generated sequences as an alignment",                            1 },
+  { "-c",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,        "generate a single \"consensus\" sequence only",                        1, },
+  { "-e",          eslARG_INT,      NULL,        NULL, "n>0",  NULL,         NULL, "-a,-c",     "embed emitted sequences within larger random sequences of length <n>", 1 },
+  { "-l",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,        "local; emit from a locally configured model [default: global]",        1 },
   /* options for truncating emitted sequences */
-  { "--u5p",       eslARG_NONE,     NULL,        NULL, NULL,   NULL,         NULL, "-a,-c", "truncate unaligned sequences 5', choosing a random start posn",      2 },
-  { "--u3p",       eslARG_NONE,     NULL,        NULL, NULL,   NULL,         NULL, "-a,-c", "truncate unaligned sequences 3', choosing a random end   posn",      2 },
-  { "--a5p",       eslARG_INT,      NULL,        NULL, "n>=0", NULL,   "--a3p,-a", NULL,    "truncate aln 5', start at match column <n> (use 0 for random posn)", 2 },
-  { "--a3p",       eslARG_INT,      NULL,        NULL, "n>=0", NULL,   "--a5p,-a", NULL,    "truncate aln 3', end   at match column <n> (use 0 for random posn)", 2 },
+  { "--u5p",       eslARG_NONE,     NULL,        NULL, NULL,   NULL,         NULL, "-a,-c",     "truncate unaligned sequences 5', choosing a random start posn",      2 },
+  { "--u3p",       eslARG_NONE,     NULL,        NULL, NULL,   NULL,         NULL, "-a,-c",     "truncate unaligned sequences 3', choosing a random end   posn",      2 },
+  { "--a5p",       eslARG_INT,      NULL,        NULL, "n>=0", NULL,   "--a3p,-a", NULL,        "truncate aln 5', start at match column <n> (use 0 for random posn)", 2 },
+  { "--a3p",       eslARG_INT,      NULL,        NULL, "n>=0", NULL,   "--a5p,-a", NULL,        "truncate aln 3', end   at match column <n> (use 0 for random posn)", 2 },
   /* other options */
-  { "--seed",      eslARG_INT,      "0",         NULL, "n>=0", NULL,         NULL, NULL,    "set RNG seed to <n> [default: one-time arbitrary seed]", 3 },
-  { "--iid",       eslARG_NONE,     FALSE,       NULL, NULL,   NULL,         "-e", NULL,    "with -e, generate larger sequences as 25% ACGU (iid) ",  3 },
-  { "--rna",       eslARG_NONE,     "default",   NULL, NULL,   ALPHOPTS,     NULL, NULL,    "output as RNA sequence data",                            3 },
-  { "--dna",       eslARG_NONE,     FALSE,       NULL, NULL,   ALPHOPTS,     NULL, NULL,    "output as DNA sequence data",                            3 },
-  { "--idx",       eslARG_INT,      "1",         NULL, "n>0",  NULL,         NULL, NULL,    "start sequence numbering at <n>",                        3 },
-  { "--outformat", eslARG_STRING,   "Stockholm", NULL, NULL,   NULL,         "-a", NULL,    "w/-a output alignment in format <s>",                    3 },
-  { "--tfile",     eslARG_OUTFILE,  NULL,        NULL, NULL,   NULL,         NULL, "-c",    "dump parsetrees to file <f>",                            3 },
-  { "--exp",       eslARG_REAL,     NULL,        NULL, "x>0",  NULL,         NULL, NULL,    "exponentiate CM probabilities by <x> before emitting",   3 },
+  { "--seed",      eslARG_INT,      "0",         NULL, "n>=0", NULL,         NULL, NULL,        "set RNG seed to <n> [default: one-time arbitrary seed]", 3 },
+  { "--iid",       eslARG_NONE,     FALSE,       NULL, NULL,   NULL,         "-e", NULL,        "with -e, generate larger sequences as 25% ACGU (iid) ",  3 },
+  { "--rna",       eslARG_NONE,     "default",   NULL, NULL,   ALPHOPTS,     NULL, NULL,        "output as RNA sequence data",                            3 },
+  { "--dna",       eslARG_NONE,     FALSE,       NULL, NULL,   ALPHOPTS,     NULL, NULL,        "output as DNA sequence data",                            3 },
+  { "--idx",       eslARG_INT,      "1",         NULL, "n>0",  NULL,         NULL, NULL,        "start sequence numbering at <n>",                        3 },
+  { "--outformat", eslARG_STRING,   "Stockholm", NULL, NULL,   NULL,         "-a", NULL,        "w/-a output alignment in format <s>",                    3 },
+  { "--tfile",     eslARG_OUTFILE,  NULL,        NULL, NULL,   NULL,         NULL, "-c,-e,--u5p,--u3p", "dump parsetrees to file <f>",                            3 },
+  { "--exp",       eslARG_REAL,     NULL,        NULL, "x>0",  NULL,         NULL, NULL,        "exponentiate CM probabilities by <x> before emitting",   3 },
+  { "--hmmonly",   eslARG_NONE,     NULL,        NULL, NULL,   NULL,         NULL, NULL,        "emit from filter HMM, not from CM",                      3 },
+  { "--nohmmonly", eslARG_NONE,     NULL,        NULL, NULL,   NULL,         NULL, "--hmmonly", "always emit from CM, even for models with 0 basepairs", 3 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -72,11 +74,10 @@ struct cfg_s {
   ESL_ALPHABET *abc;		/* digital alphabet for CM */
   ESL_ALPHABET *abc_out; 	/* digital alphabet for writing */
   FILE         *ofp;		/* output file (default is stdout) */
-  FILE         *pfp;		/* optional output file for parsetrees */
-  FILE         *shmmfp;		/* optional output file for sampled HMM */
-  FILE         *ahmmfp;		/* optional output file for analytically built HMM */
+  FILE         *tfp;		/* optional output file for parsetrees */
   ESL_RANDOMNESS *r;            /* source of randomness */
   int           ncm;            /* number CM we're at in file */
+  int           use_cm;         /* TRUE to emit from CM for current model, FALSE to emit from filter HMM */
 };
 
 static char usage[]  = "[-options] <cmfile>";
@@ -89,7 +90,7 @@ static void master(const ESL_GETOPTS *go, struct cfg_s *cfg);
 static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
 static int emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
 static int emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
-static int emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
+static int emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm);
 static int truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, const ESL_ALPHABET *abc, char *errbuf);
 
 int
@@ -144,9 +145,7 @@ main(int argc, char **argv)
   cfg.ofp        = NULL;                   /* opened in init_cfg() */
   cfg.abc        = NULL;	           /* created in init_cfg() */
   cfg.abc_out    = NULL;	           /* created in init_cfg() */
-  cfg.pfp        = NULL;	           /* opened in init_cfg() */
-  cfg.shmmfp     = NULL;	           /* opened in init_cfg() */
-  cfg.ahmmfp     = NULL;	           /* opened in init_cfg() */
+  cfg.tfp        = NULL;	           /* opened in init_cfg() */
   cfg.r          = NULL;	           /* created in init_cfg() */
 
   /* do work */
@@ -157,19 +156,13 @@ main(int argc, char **argv)
   if(esl_opt_IsOn(go, "-o")) { 
     fclose(cfg.ofp);
   }
-  if (cfg.pfp   != NULL) { 
-    fclose(cfg.pfp);
+  if (cfg.tfp   != NULL) { 
+    fclose(cfg.tfp);
   }
-  if(cfg.shmmfp != NULL) { 
-    fclose(cfg.shmmfp);
-  }
-  if(cfg.ahmmfp != NULL) { 
-    fclose(cfg.ahmmfp);
-  }
-  if (cfg.abc   != NULL) { esl_alphabet_Destroy(cfg.abc); cfg.abc = NULL; }
+  if (cfg.abc     != NULL) { esl_alphabet_Destroy(cfg.abc); cfg.abc = NULL; }
   if (cfg.abc_out != NULL) esl_alphabet_Destroy(cfg.abc_out);
-  if (cfg.cmfp  != NULL) cm_file_Close(cfg.cmfp);
-  if (cfg.r     != NULL) esl_randomness_Destroy(cfg.r);
+  if (cfg.cmfp    != NULL) cm_file_Close(cfg.cmfp);
+  if (cfg.r       != NULL) esl_randomness_Destroy(cfg.r);
 
   esl_getopts_Destroy(go);
   return 0;
@@ -181,9 +174,7 @@ main(int argc, char **argv)
  * Sets: 
  *    cfg->cmfp    - open CM file
  *    cfg->abc_out - digital alphabet for output
- *    cfg->pfp     - optional output file for parsetrees
- *    cfg->shmmfp  - optional output file for sampled HMM
- *    cfg->ahmmfp  - optional output file for analytically built HMM
+ *    cfg->tfp     - optional output file for parsetrees
  *    cfg->r       - source of randomness
  */
 static int
@@ -209,7 +200,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   /* open parsetree output file if necessary */
   if (esl_opt_GetString(go, "--tfile") != NULL) {
-    if ((cfg->pfp = fopen(esl_opt_GetString(go, "--tfile"), "w")) == NULL)
+    if ((cfg->tfp = fopen(esl_opt_GetString(go, "--tfile"), "w")) == NULL)
       ESL_FAIL(eslFAIL, errbuf, "Failed to open --tfile output file %s\n", esl_opt_GetString(go, "--tfile"));
   }
 
@@ -243,11 +234,17 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   {
     if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
     cfg->ncm++;
+
+    /* determine if we'll emit from the CM or the filter HMM for this model */
+    if      (esl_opt_GetBoolean(go, "--nohmmonly")) cfg->use_cm = TRUE;
+    else if (esl_opt_GetBoolean(go, "--hmmonly"))   cfg->use_cm = FALSE;
+    else                                            cfg->use_cm = (CMCountNodetype(cm, MATP_nd) > 0) ? TRUE : FALSE;
+
     if((status = initialize_cm(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
 
     /* Pick 1 of 4 exclusive output options. Output is handled within each function. */
     if(esl_opt_GetBoolean(go, "-c")) {
-      if((status = emit_consensus(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
+      emit_consensus(go, cfg, cm);
     }
     else if(esl_opt_GetBoolean(go, "-a")) {
       if((status = emit_alignment(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
@@ -278,19 +275,13 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
     cm->config_opts |= CM_CONFIG_HMMEL;
   }
 
-  /* exponentiate the CM, if nec. do this before possibly configuring to local alignment in cm_Configure() */
-  if(esl_opt_IsOn(go, "--exp")) ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));
-
+  /* exponentiate the CM of fHMM, if nec, do this before possibly configuring to local alignment in cm_Configure() */
+  if(esl_opt_IsOn(go, "--exp")) { 
+    if(cfg->use_cm) cm_Exponentiate   (cm,      esl_opt_GetReal(go, "--exp"));
+    else            cm_p7_Exponentiate(cm->fp7, esl_opt_GetReal(go, "--exp"));
+  }
   if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
 
-  /* print the CP9 params if nec */
-  if(cfg->ahmmfp != NULL) {
-    if(esl_opt_GetBoolean(go, "-l")) fprintf(cfg->ahmmfp, "# Printing analytically built CP9 HMM parameters (local configuration):\n");
-    else                             fprintf(cfg->ahmmfp, "# Printing analytically built CP9 HMM parameters (global configuration):\n");
-    debug_print_cp9_params(cfg->ahmmfp, cm->cp9, TRUE);
-  }
-
-  
   return eslOK;
 }
 
@@ -321,6 +312,14 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   double **ghmm_eAA = NULL;  /* emission probabilities   [0..nstates-1][0..abc->K-1] */
   double  *fq       = NULL;  /* double vec for esl_rsq_XIID, only used if --iid */
 
+  /* parameters necessary only if cfg->use_cm is FALSE, and we'll be
+   * emitting from the filter p7 HMM.
+   */
+  int         hmm_mode   = esl_opt_GetBoolean(go, "-l") ? p7_UNILOCAL : p7_UNIGLOCAL;
+  P7_TRACE   *p7tr       = NULL;
+  P7_PROFILE *gm         = NULL; 
+  P7_BG      *bg         = NULL; 
+  
   /* Contract check, output alphabet must be identical to CM alphabet
    * with sole exception that CM alphabet can be eslRNA with output
    * alphabet eslDNA. And -e only works with 0 or 1 of --u5p,
@@ -334,10 +333,19 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   if(esl_opt_IsOn(go, "-e") && esl_opt_IsOn(go, "--u5p") && esl_opt_IsOn(go, "--u3p")) { 
     ESL_FAIL(eslFAIL, errbuf, "-e works in combination with --u5p or --u3p but not both");
   }
-
+  
   namelen = IntMaxDigits() + strlen("sample") + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
   if(cm->name != NULL) namelen += strlen(cm->name) + 1;
   ESL_ALLOC(name, sizeof(char) * namelen);
+  
+  if(! cfg->use_cm) { 
+    if ((gm = p7_profile_Create(cm->fp7->M, cm->fp7->abc))               == NULL)  cm_Fail("failed to create profile for filter HMM");
+    if ((bg = p7_bg_Create(cm->fp7->abc))                                == NULL)  cm_Fail("failed to create null model for filter HMM");
+    if (p7_ProfileConfig(cm->fp7, bg, gm, cm->fp7->max_length, hmm_mode) != eslOK) cm_Fail("failed to configure profile for filter HMM");
+    /* set N->N and C->C transitions to IMPOSSIBLE, we don't want them emitting */
+    gm->xsc[p7P_N][p7P_MOVE] = gm->xsc[p7P_C][p7P_MOVE] = 0.0f;
+    gm->xsc[p7P_N][p7P_LOOP] = gm->xsc[p7P_C][p7P_LOOP] = -eslINFINITY;  
+  }
 
   if(esl_opt_IsOn(go, "-e")) { 
     embedL = esl_opt_GetInteger(go, "-e");
@@ -352,15 +360,24 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       if((status = CreateGenomicHMM(cfg->abc_out, errbuf, &ghmm_sA, &ghmm_tAA, &ghmm_eAA, &ghmm_nstates)) != eslOK) ESL_FAIL(status, errbuf, "unable to create generative HMM\n%s", errbuf);
     }
   }
-
+  
   for(i = 0; i < esl_opt_GetInteger(go, "-N"); i++)
     {
       if(cm->name != NULL) sprintf(name, "%s-sample%d", cm->name, i+offset);
       else                 sprintf(name, "%d-sample%d", cfg->ncm, i+offset);
-      if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &tr, &esq, &L)) != eslOK) return status; /* TRUE: make sq digital */
-      esq->abc = cfg->abc_out;
+      if(cfg->use_cm) { 
+	if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &tr, &esq, &L)) != eslOK) return status; /* TRUE: make sq digital */
+	esq->abc = cfg->abc_out;
+      }
+      else { 
+	esq = esl_sq_CreateDigital(cfg->abc_out);
+	if((p7tr = p7_trace_Create()) == NULL)                                     cm_Fail("failed to allocate p7 trace");
+	/*if((status = p7_CoreEmit(cfg->r, cm->fp7, esq, p7tr)) != eslOK) cm_Fail("failed to emit sequence from cm->fp7");*/
+	if((status = p7_ProfileEmit(cfg->r, cm->fp7, gm, bg, esq, p7tr)) != eslOK) cm_Fail("failed to emit sequence from cm->fp7");
+	if((status = esl_sq_SetName(esq, name)) != eslOK)                          cm_Fail("failed to name emitted sequence from cm->fp7");
+      }
       sq2print = esq; /* we may change what sq2print points to below */
-
+      
       /* truncate esq if nec */
       if(esl_opt_IsOn(go, "--u5p") || esl_opt_IsOn(go, "--u3p")) { 
 	start = esl_opt_IsOn(go, "--u5p") ? esl_rnd_Roll(cfg->r, sq2print->n) + 1 : 1;
@@ -405,20 +422,35 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 
       /* output sq2print */
       if((esl_sqio_Write(cfg->ofp, sq2print, eslSQFILE_FASTA, FALSE)) != eslOK) ESL_FAIL(eslFAIL, errbuf, "Error writing unaligned sequences.");
-      if(cfg->pfp != NULL) { 
-	fprintf(cfg->pfp, "> %s\n", esq->name);
-	if((status = ParsetreeScore(cm, NULL, errbuf, tr, esq->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
-	fprintf(cfg->pfp, "  %16s %.2f bits\n", "SCORE:", sc);
-	fprintf(cfg->pfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
-	ParsetreeDump(cfg->pfp, tr, cm, esq->dsq);
-	fprintf(cfg->pfp, "//\n");
-      }
-      FreeParsetree(tr);
 
+      /* output parsetree/trace if nec */
+      if(cfg->tfp != NULL) { /* can only be true if none of -e, --u5p and --u3p were used (thus sq2print == esq) */
+	fprintf(cfg->tfp, "> %s\n", esq->name);
+	if(cfg->use_cm) { 
+	  if((status = ParsetreeScore(cm, NULL, errbuf, tr, sq2print->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
+	  fprintf(cfg->tfp, "  %16s %.2f bits\n", "SCORE:", sc);
+	  fprintf(cfg->tfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
+	  ParsetreeDump(cfg->tfp, tr, cm, sq2print->dsq);
+	}
+	else { 
+	  if((status = p7_trace_Score(p7tr, sq2print->dsq, gm, &sc)) != eslOK) ESL_FAIL(status, errbuf, "unable to score p7 trace");
+	  struct_sc = 0.;
+	  fprintf(cfg->tfp, "  %16s %.2f bits\n", "SCORE:", sc);
+	  fprintf(cfg->tfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
+	  fprintf(cfg->tfp, "HMM trace dump\n");
+	  fprintf(cfg->tfp, "------------------\n");
+	  if((status = p7_trace_Dump(cfg->tfp, p7tr, gm, sq2print->dsq)) != eslOK) ESL_FAIL(status, errbuf, "unable to dump p7 trace");
+	}
+	fprintf(cfg->tfp, "//\n");
+      }
+      if(tr != NULL)   { FreeParsetree(tr);      tr   = NULL; }
+      if(p7tr != NULL) { p7_trace_Destroy(p7tr); p7tr = NULL; }
       esl_sq_Destroy(sq2print); 
       /* we destroyed any other seqs we created due to --u5p, --u3p, -e, above */
     }
   free(name);
+  if(bg != NULL) p7_bg_Destroy(bg);
+  if(gm != NULL) p7_profile_Destroy(gm);
   if(fq != NULL) free(fq);
   if(ghmm_eAA != NULL) { 
     for(i = 0; i < ghmm_nstates; i++) free(ghmm_eAA[i]); 
@@ -443,8 +475,9 @@ static int
 emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
 {
   int status;
-  Parsetree_t **trA = NULL;  /* generated parsetrees */
-  ESL_SQ **sqA = NULL;       /* generated sequences */
+  Parsetree_t **trA   = NULL;  /* generated parsetrees */
+  ESL_SQ      **sqA   = NULL;  /* generated sequences */
+  P7_TRACE    **p7trA = NULL;  /* generated traces (if !cfg->use_cm) */
   char *name;
   int namelen;
   int i, L; 
@@ -475,29 +508,45 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   ESL_ALLOC(name, sizeof(char) * namelen);
 
   ESL_ALLOC(sqA, sizeof(ESL_SQ *) * nseq);
-  ESL_ALLOC(trA, sizeof(Parsetree_t *) * nseq);
-
-  for(i = 0; i < nseq; i++)
-    {
-      if(cm->name != NULL) sprintf(name, "%s-sample%d", cm->name, i+offset);
-      else                 sprintf(name, "%d-sample%d", cfg->ncm, i+offset);
-      if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &(trA[i]), &(sqA[i]), &L)) != eslOK) return status;
-      sqA[i]->abc = cfg->abc_out;
-      if(cfg->pfp != NULL) { 
-	fprintf(cfg->pfp, "> %s\n", sqA[i]->name);
-	ParsetreeDump(cfg->pfp, trA[i], cm, sqA[i]->dsq);
-	fprintf(cfg->pfp, "//\n");
+  if(cfg->use_cm) ESL_ALLOC(trA,   sizeof(Parsetree_t *) * nseq);
+  else            ESL_ALLOC(p7trA, sizeof(P7_TRACE *)    * nseq);
+  if(cfg->use_cm) { 
+    for(i = 0; i < nseq; i++)
+      {
+	if(cm->name != NULL) sprintf(name, "%s-sample%d", cm->name, i+offset);
+	else                 sprintf(name, "%d-sample%d", cfg->ncm, i+offset);
+	if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &(trA[i]), &(sqA[i]), &L)) != eslOK) return status;
+	sqA[i]->abc = cfg->abc_out;
+	if(cfg->tfp != NULL) { 
+	  fprintf(cfg->tfp, "> %s\n", sqA[i]->name);
+	  ParsetreeDump(cfg->tfp, trA[i], cm, sqA[i]->dsq);
+	  fprintf(cfg->tfp, "//\n");
+	}
       }
+    if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, sqA, NULL, trA, NULL, nseq,
+				      NULL, NULL, /* we're not printing to insert, EL info files */
+				      TRUE,  /* we want all match columns */
+				      FALSE, /* we don't want ONLY match columns */
+				      &msa) != eslOK))
+      ESL_XFAIL(eslFAIL, errbuf, "Error generating alignment from parsetrees.");
+  }
+  else { /* cfg->use_cm is FALSE */
+    for (i = 0; i < nseq; i++) {
+      if ((sqA[i]   = esl_sq_CreateDigital(cm->fp7->abc)) == NULL) cm_Fail("failed to allocate seq");
+      if ((p7trA[i] = p7_trace_Create())                  == NULL) cm_Fail("failed to allocate trace");
     }
-  if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, sqA, NULL, trA, NULL, nseq,
-				    NULL, NULL, /* we're not printing to insert, EL info files */
-				    TRUE,  /* we want all match columns */
-				    FALSE, /* we don't want ONLY match columns */
-				    &msa) != eslOK))
-    ESL_XFAIL(eslFAIL, errbuf, "Error generating alignment from parsetrees.");
+    for (i = 0; i < nseq; i++) { 
+      if (p7_CoreEmit(cfg->r, cm->fp7, sqA[i], p7trA[i]) != eslOK) cm_Fail("Failed to emit sequence");
+	if(cm->name != NULL) sprintf(name, "%s-sample%d", cm->name, i+offset);
+	else                 sprintf(name, "%d-sample%d", cfg->ncm, i+offset);
+      if (esl_sq_SetName(sqA[i], name) != eslOK) cm_Fail("Failed to set sequence name\n");
+    }
+    p7_tracealign_Seqs(sqA, p7trA, nseq, cm->fp7->M, p7_ALL_CONSENSUS_COLS, cm->fp7, &msa);
+  }
+
   if(cm->name != NULL) if((status = esl_strdup(cm->name, -1, &(msa->name))) != eslOK) goto ERROR;
-  if((status = esl_strdup("Synthetic sequence alignment generated by cmemit", 
-			  -1, &(msa->desc))) != eslOK)  goto ERROR;
+  if((status = esl_msa_FormatDesc(msa, "%s%s", "Synthetic sequence alignment generated by cmemit", 
+				  (cfg->use_cm ? "" : " [hmm-mode]"))) != eslOK) goto ERROR;
 
   /* Truncate the alignment if nec */
   if(do_truncate)
@@ -520,6 +569,13 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
     }
     free(trA);
   }
+  if(p7trA != NULL) { 
+    for (i = 0; i < nseq; i++) { 
+      if(p7trA[i] != NULL) p7_trace_Destroy(p7trA[i]);
+    }
+    free(p7trA);
+  }
+
   free(name);
   esl_msa_Destroy(msa);
   return eslOK;
@@ -545,27 +601,28 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
  * Given a configured CM, generate and output the consensus sequence.
  */
 static int
-emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
+emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm)
 {
   int status;
   ESL_SQ *csq = NULL;
   char *cseqname = NULL;
 
-  /* Determine consensus sequence */
-  if((status = esl_strdup(cm->name, -1, &cseqname)) != eslOK) goto ERROR;
-  if((status = esl_strcat(&cseqname, -1, "-consensus", -1)) != eslOK) goto ERROR;
-  if((csq = esl_sq_CreateFrom(cseqname, cm->cmcons->cseq, NULL, NULL, NULL)) == NULL) { status = eslEMEM; goto ERROR; }
-  if((esl_sqio_Write(cfg->ofp, csq, eslSQFILE_FASTA, FALSE)) != eslOK) ESL_FAIL(status, errbuf, "Error writing consensus sequence.");
+  if(cfg->use_cm) { 
+    if((status = esl_strdup(cm->name, -1, &cseqname))           != eslOK) cm_Fail("failed to create sequence name");
+    if((status = esl_strcat(&cseqname, -1, "-cmconsensus", -1)) != eslOK) cm_Fail("failed to create sequence name");
+    if((csq = esl_sq_CreateFrom(cseqname, cm->cmcons->cseq, NULL, NULL, NULL)) == NULL) cm_Fail("failed to create consensus sequence");
+  }
+  else { 
+    if ((csq = esl_sq_Create()) == NULL) cm_Fail("Failed to create sequence");
+    if (p7_emit_FancyConsensus(cm->fp7, 0.0, 0.5, csq)       != eslOK) cm_Fail("failed to create HMM consensus seq");
+    if (esl_sq_FormatName(csq, "%s-hmmconsensus", cm->name)  != eslOK) cm_Fail("failed to set sequence name");
+  }
+  if((esl_sqio_Write(cfg->ofp, csq, eslSQFILE_FASTA, FALSE)) != eslOK) cm_Fail("error writing consensus sequence.");
 
   esl_sq_Destroy(csq);
   free(cseqname);
 
   return eslOK;
-
- ERROR:
-  if(csq != NULL) esl_sq_Destroy(csq);
-  if(cseqname != NULL) free(cseqname);
-  return status;
 }
 
 /* truncate_msa

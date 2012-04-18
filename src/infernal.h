@@ -2527,7 +2527,8 @@ extern int   CMRebalance(CM_t *cm, char *errbuf, CM_t **ret_new_cm);
 extern int **IMX2Alloc(int rows, int cols);
 extern void  IMX2Free(int **mx);
 extern float rsearch_calculate_gap_penalty (char from_state, char to_state, int from_node, int to_node, float input_alpha, float input_beta, float input_alphap, float input_betap);
-extern int   ExponentiateCM(CM_t *cm, double z);
+extern int   cm_Exponentiate(CM_t *cm, double z);
+extern int   cm_p7_Exponentiate(P7_HMM *hmm, double z);
 extern void  cm_banner(FILE *fp, char *progname, char *banner);
 extern void  cm_CalcExpSc(CM_t *cm, float **ret_expsc, float **ret_expsc_noss);
 extern int   cm_Validate(CM_t *cm, float tol, char *errbuf);
@@ -2898,7 +2899,7 @@ extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
 
 extern int   cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
 extern int   cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
-extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int64_t cur_cm_idx);
+extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx);
 extern int   cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
 extern int   cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
 extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, int in_rc, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
@@ -3227,6 +3228,8 @@ extern int        GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *err
 extern int        E2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, double E, float *ret_sc);
 extern int        P2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, double P, float *ret_sc);
 extern double     Score2E(float x, double mu, double lambda, double eff_dbsize);
+extern float      cm_p7_E2Score(double E, double Z, int hitlen, float mu, float lambda);
+extern float      cm_p7_P2Score(double P, float mu, float lambda);
 extern int        ExpModeIsLocal(int exp_mode);
 extern int        ExpModeIsInside(int exp_mode);
 extern ExpInfo_t *CreateExpInfo();

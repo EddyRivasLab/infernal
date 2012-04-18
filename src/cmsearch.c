@@ -338,10 +338,13 @@ static int  mpi_inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, in
 						MPI_BLOCK_LIST *block_list, int64_t *ret_noverlap);
 
 static MPI_BLOCK      *create_mpi_block();
-static void            dump_mpi_block(FILE *fp, MPI_BLOCK *block);
 static MPI_BLOCK_LIST *create_mpi_block_list();
-static void            dump_mpi_block_list(FILE *fp, MPI_BLOCK_LIST *list);
 static void            free_mpi_block_list(MPI_BLOCK_LIST *list);
+#if 0 
+/* useful only for debugging */
+static void            dump_mpi_block(FILE *fp, MPI_BLOCK *block);
+static void            dump_mpi_block_list(FILE *fp, MPI_BLOCK_LIST *list);
+#endif
 
 static int  mpi_block_send(MPI_BLOCK *block, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
 static int  mpi_block_recv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, MPI_BLOCK **ret_block);
@@ -593,7 +596,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info[i].th   = cm_tophits_Create();
       info[i].pli  = cm_pipeline_Create(go, abc, tinfo->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
       if((status = cm_pli_NewModel(info[i].pli, CM_NEWMODEL_CM, info[i].cm, info[i].cm->clen, info[i].cm->W, nbps,
-				   info[i].om, info[i].bg, info[i].p7_evparam, cm_idx-1)) != eslOK) { 
+				   info[i].om, info[i].bg, info[i].p7_evparam, info[i].om->max_length, cm_idx-1)) != eslOK) { 
 	cm_Fail(info[i].pli->errbuf);
       }
 
@@ -1151,7 +1154,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Configure the CM and setup the HMM filter */
     if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
     if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
-    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, nbps, info->om, info->bg, info->p7_evparam, cm_idx-1)) != eslOK) { 
+    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, nbps, 
+				 info->om, info->bg, info->p7_evparam, info->om->max_length, cm_idx-1)) != eslOK) { 
       mpi_failure(info->pli->errbuf);
     }
     
@@ -1482,7 +1486,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Configure the CM and setup the HMM filter */
     if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
     if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
-    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, CMCountNodetype(info->cm, MATP_nd), info->om, info->bg, info->p7_evparam, cm_idx-1)) != eslOK) { 
+    if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, CMCountNodetype(info->cm, MATP_nd), 
+				 info->om, info->bg, info->p7_evparam, info->om->max_length, cm_idx-1)) != eslOK) { 
       mpi_failure(info->pli->errbuf);
     }
 
@@ -2716,6 +2721,7 @@ create_mpi_block()
   return NULL;
 }
 
+#if 0
 void
 dump_mpi_block(FILE *fp, MPI_BLOCK *block)
 { 
@@ -2745,6 +2751,7 @@ dump_mpi_block_list(FILE *fp, MPI_BLOCK_LIST *list)
 
   return;
 }
+#endif
  
 MPI_BLOCK_LIST *
 create_mpi_block_list()

@@ -2166,7 +2166,7 @@ float rsearch_calculate_gap_penalty (char from_state, char to_state,
   return (0);
 }
 
-/* Function: ExponentiateCM
+/* Function: cm_Exponentiate
  * Date:     EPN, Sun May 20 13:10:06 2007
  *
  * Purpose:  Exponentiate the emission and transition probabilities 
@@ -2179,15 +2179,14 @@ float rsearch_calculate_gap_penalty (char from_state, char to_state,
  *           z  - factor to exponentiate by
  */
 int
-ExponentiateCM(CM_t *cm, double z)
+cm_Exponentiate(CM_t *cm, double z)
 {
-  /*printf("in ExponentiateCM, z: %f\n", z);*/
   int v;
   int x,y;
 
-  /* If in local mode, configure to global first. */
+  /* If in local mode, fail */
   if(cm->flags & CMH_LOCAL_BEGIN || cm->flags & CMH_LOCAL_END) { 
-    cm_Fail("ExponentiateCM() model is not in global configuration");
+    cm_Fail("cm_Exponentiate() model is not in global configuration");
   }
 
   for(v = 0; v < cm->M; v++)
@@ -2212,6 +2211,37 @@ ExponentiateCM(CM_t *cm, double z)
 
   /* new probs invalidate log odds scores */
   cm->flags &= ~CMH_BITS;
+  return eslOK;
+}
+
+/* Function: cm_p7_Exponentiate
+ * Date:     EPN, Wed Apr 18 05:22:25 2012
+ *
+ * Purpose:  Exponentiate the emission and transition probabilities 
+ *           of a P7_HMM by z. This function complements
+ *           ExponentiateCM().
+ * Args:
+ *           hmm - the covariance model
+ *           z   - factor to exponentiate by
+ */
+int
+cm_p7_Exponentiate(P7_HMM *hmm, double z)
+{
+  int k, i;
+
+  for(k = 0; k <= hmm->M; k++) { 
+    for(i = 0; i < p7H_NTRANSITIONS; i++) { /* transitions out of match */
+      hmm->t[k][i] = pow(hmm->t[k][i], z);
+    }
+  }
+  for(k = 1; k <= hmm->M; k++) { 
+    for(i = 0; i < hmm->abc->K; i++) { /* transitions out of match */
+      hmm->mat[k][i] = pow(hmm->mat[k][i], z);
+      hmm->ins[k][i] = pow(hmm->ins[k][i], z);
+    }
+  }
+  p7_hmm_Renormalize(hmm);
+
   return eslOK;
 }
 

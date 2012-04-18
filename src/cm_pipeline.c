@@ -35,7 +35,7 @@ static int  pli_final_stage        (CM_PIPELINE *pli, off_t cm_offset, const ESL
 static int  pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, CM_TOPHITS *hitlist, CM_t **opt_cm);
 static int  pli_dispatch_cm_search (CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t start, int64_t stop, CM_TOPHITS *hitlist, float cutoff, float env_cutoff, int qdbidx, float *ret_sc, int64_t *opt_envi, int64_t *opt_envj);
 static int  pli_align_hit          (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit);
-static int  pli_scan_mode_read_cm  (CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, CM_t **ret_cm);
+static int  pli_scan_mode_read_cm  (CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, int p7_max_length, CM_t **ret_cm);
 
 static int  pli_pass_statistics        (FILE *ofp, CM_PIPELINE *pli, int pass_idx);
 static int  pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli);
@@ -837,6 +837,13 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            the model via the --wcx option, controlled with
  *            pli->use_wcx and pli->wcx.)
  *
+ *            If pli->do_hmmonly_cur and pli->by_E, we have to set 
+ *            pli->T as the bit score corresponding to an E-value
+ *            of pli->E. This requires <p7_evparam> and <p7_max_length>.
+ *            (If we're in SEARCH mode, <p7_max_length> will likely
+ *            be equal to om->max_length, but in SCAN mode om may
+ *            be NULL).
+ *
  * Returns:   <eslOK> on success.
  *
  *            <eslEINCOMPAT> in contract is not met.
@@ -846,7 +853,7 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            have the appropriate ones set.
  */
 int
-cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int64_t cur_cm_idx)
+cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx)
 {
   int status = eslOK;
   float T;
@@ -934,7 +941,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
      */
     if(pli->do_hmmonly_cur) { 
       if(pli->by_E) { 
-	pli->T = p7_evparam[CM_p7_LFTAU] + ((log(pli->E/(pli->Z / (float) om->max_length))) / (-1 * p7_evparam[CM_p7_LFLAMBDA]));
+	pli->T = cm_p7_E2Score(pli->E, pli->Z, p7_max_length, p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
       }
     }
     else { /* ! do_hmmonly_cur */
@@ -2941,7 +2948,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
 
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS && (*opt_cm == NULL)) { 
-    if((status = pli_scan_mode_read_cm(pli, cm_offset, NULL, opt_cm)) != eslOK) return status;
+    if((status = pli_scan_mode_read_cm(pli, cm_offset, 
+				       NULL, 0, /* p7_evparam, p7_max_length: irrelevant because pli->do_hmmonly_cur is FALSE */
+				       opt_cm)) != eslOK) return status;
   }
   else { /* *opt_cm should be valid */
     if(opt_cm == NULL || *opt_cm == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "Entered pli_final_stage() with invalid CM"); 
@@ -3093,7 +3102,9 @@ pli_cyk_seq_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **o
 
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS && (*opt_cm == NULL)) { 
-    if((status = pli_scan_mode_read_cm(pli, cm_offset, NULL, opt_cm)) != eslOK) return status;
+    if((status = pli_scan_mode_read_cm(pli, cm_offset, 
+				       NULL, 0, /* p7_evparam, p7_max_length: irrelevant because pli->do_hmmonly_cur is FALSE */
+				       opt_cm)) != eslOK) return status;
   }
   else { /* *opt_cm should be valid */
     if(opt_cm == NULL || *opt_cm == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "Entered pli_final_stage() with invalid CM"); 
@@ -3224,7 +3235,9 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
 
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS && (*opt_cm == NULL)) { 
-    if((status = pli_scan_mode_read_cm(pli, cm_offset, NULL, opt_cm)) != eslOK) return status;
+    if((status = pli_scan_mode_read_cm(pli, cm_offset, 
+				       NULL, 0, /* p7_evparam, p7_max_length: irrelevant because pli->do_hmmonly_cur is FALSE */
+				       opt_cm)) != eslOK) return status;
   }
   else { /* *opt_cm should be valid */
     if(opt_cm == NULL || *opt_cm == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "Entered pli_final_stage() with invalid CM"); 
@@ -3427,7 +3440,7 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
 
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS && (*opt_cm == NULL)) { 
-    if((status = pli_scan_mode_read_cm(pli, cm_offset, p7_evparam, opt_cm)) != eslOK) return status;
+    if((status = pli_scan_mode_read_cm(pli, cm_offset, p7_evparam, om->max_length, opt_cm)) != eslOK) return status;
   }
   else { /* *opt_cm should be valid */
     if(opt_cm == NULL || *opt_cm == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "Entered pli_final_stage() with invalid CM"); 
@@ -3843,16 +3856,15 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
  * Synopsis:  Read a CM from the CM file, mid-pipeline.
  * Incept:    EPN, Thu Mar  1 15:00:27 2012
  *
- * Purpose:   When in scan mode, we don't read the CM until 
- *            we know we're going to need it, i.e. at least
- *            one envelope has survived all HMM filters (or
- *            HMM filters are turned off). Here, we read
- *            the CM from the file, configure it and return 
- *            it in <ret_cm>. We also update the pipeline 
+ * Purpose:   When in scan mode, we don't read the CM until we know
+ *            we're going to need it, i.e. at least one envelope has
+ *            survived all HMM filters (or HMM filters are turned
+ *            off). Here, we read the CM from the file, configure it
+ *            and return it in <ret_cm>. We also update the pipeline
  *            regarding the CM we just read.
  *
- *            <p7_evparam> will be NULL unless pli->do_hmmonly_cur
- *            is TRUE.
+ *            <p7_evparam> will be NULL and <p7_max_length> will be 0
+ *            (bot are irrelevant) unless pli->do_hmmonly_cur is TRUE.
  *
  * Returns:   <eslOK> on success. <ret_cm> contains the CM.
  *
@@ -3861,7 +3873,7 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
  *            In both case, *ret_cm set to NULL, pli->errbuf filled.
  */
 int
-pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, CM_t **ret_cm)
+pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, int p7_max_length, CM_t **ret_cm)
 {
   int status; 
   CM_t *cm = NULL;
@@ -3908,7 +3920,7 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, CM_t
   if((status = cm_Configure(cm, pli->errbuf, W_from_cmdline)) != eslOK) goto ERROR;
   /* update the pipeline about the model */
   if((status = cm_pli_NewModel(pli, CM_NEWMODEL_CM, cm, cm->clen, cm->W, CMCountNodetype(cm, MATP_nd),
-			       NULL, NULL, p7_evparam, pli->cur_cm_idx)) /* om, bg */
+			       NULL, NULL, p7_evparam, p7_max_length, pli->cur_cm_idx)) /* NULL: om, bg */
      != eslOK) goto ERROR;
   
   *ret_cm = cm;

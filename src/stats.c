@@ -332,6 +332,36 @@ double Score2E (float x, double mu, double lambda, double eff_dbsize)
   return esl_exp_surv(x, mu, lambda) * eff_dbsize;
 }
 
+/* Function: cm_p7_E2Score()
+ * Date:     EPN, Tue Apr 17 14:46:51 2012
+ *
+ * Purpose:  Given an E-value <E>, a database size in residues <Z>, a
+ *           fixed hit length <hitlen>, and a mu and lambda for a
+ *           P7_HMM, determine the bit score that will give an E-value
+ *           of <E>. This function computes the E-value the same way
+ *           nhmmer does, as of svn r3990.
+ *
+ * Returns:  bit score corresponding to E-value <E>.
+ */
+float cm_p7_E2Score(double E, double Z, int hitlen, float mu, float lambda)
+{
+  return mu + ((log(E/(Z / (float) hitlen))) / (-1 * lambda));
+}
+
+/* Function: cm_p7_P2Score()
+ * Date:     EPN, Tue Apr 17 14:46:51 2012
+ *
+ * Purpose:  Given a P value and a mu and lambda for a
+ *           P7_HMM, determine the bit score that corresponds with 
+ *           that P value.
+ *
+ * Returns:  bit score corresponding to P-value <P>.
+ */
+float cm_p7_P2Score(double P, float mu, float lambda)
+{
+  return mu + (log(P) / (-1 * lambda));
+}
+
 /* Function: ExpModeIsLocal()
  * Date:     EPN, Mon Dec 10 09:07:59 2007
  * Purpose:  Given a exp tail mode, return TRUE if it corresponds to 

@@ -74,8 +74,8 @@ typedef struct {
 
 static ESL_OPTIONS options[] = {
   /* name                  type    default   env             range    toggles         reqs      incomp  help  docgroup*/
-  { "-h",           eslARG_NONE,     FALSE,  NULL,            NULL,      NULL,         NULL,      NULL, "show brief help on version and usage",         1 },
-  { "-L",           eslARG_REAL,     "1.6",  NULL, "0.01<=x<=100.",      NULL,         NULL,      NULL, "set random seq length to search in Mb to <x>", 1 },
+  { "-h",           eslARG_NONE,     FALSE,  NULL,            NULL,      NULL,         NULL,      NULL, "show brief help on version and usage",              1 },
+  { "-L",           eslARG_REAL,     "1.6",  NULL, "0.01<=x<=100.",      NULL,         NULL,      NULL, "set random seq length to search in Mb to <x>",      1 },
   /* Options for predicting running time and memory requirements */
   { "--forecast",   eslARG_NONE,      NULL,  NULL,            NULL,      NULL,         NULL,      NULL, "don't do calibration, predict running time and exit",             2 },
   { "--nforecast",  eslARG_INT,       NULL,  NULL,           "n>0",      NULL, "--forecast",      NULL, "w/--forecast, predict time with <n> processors (maybe for MPI)",  2 },
@@ -97,6 +97,7 @@ static ESL_OPTIONS options[] = {
   { "--nonull3",    eslARG_NONE,      FALSE, NULL,            NULL,      NULL,         NULL,      NULL, "turn OFF the NULL3 post hoc additional null model",           5 },
   { "--random",     eslARG_NONE,       NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content of random null background model of CM",        5 },
   { "--gc",         eslARG_INFILE,     NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content distribution from file <f>",                   5 },
+  { "--nohmmonly",  eslARG_NONE,      FALSE, NULL,            NULL,      NULL,         NULL,      NULL, "calibrate model even if it has 0 basepairs",                  5 },
 #ifdef HMMER_THREADS 
   { "--cpu",        eslARG_INT,     NULL,"INFERNAL_NCPU",   "n>=0",      NULL,         NULL,   CPUOPTS, "number of parallel CPU workers to use for multithreads",            5 },
 #endif
@@ -198,14 +199,14 @@ static int  get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg
 static int  update_comlog(const ESL_GETOPTS *go, char *errbuf, char *ccom, char *cdate, CM_t *cm);
 static int  set_dnull(struct cfg_s *cfg, CM_t *cm, char *errbuf);
 static void print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int available_ncpus);
-static void print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec);
+static void print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec, int skip_cm);
 static void print_total_time(const ESL_GETOPTS *go, double total_asec, double total_psec);
 static void print_summary(const struct cfg_s *cfg);
 static int  expand_exp_and_name_arrays(struct cfg_s *cfg);
 static int  generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block);
 static int  process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, CM_TOPHITS **ret_th);
 static int  forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int available_ncpus, double *ret_psec, int *ret_ins_v_cyk);
-static void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header);
+static void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header, int skip_cm);
 static void print_required_memory_tail(int ncpus);
 
 int
@@ -217,6 +218,7 @@ main(int argc, char **argv)
   struct cfg_s     cfg;           /* configuration data                      */
   char             errbuf[eslERRBUFSIZE];
   int              i;
+  int              nskipped = 0;  /* number of models we skipped calibration for */
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
   esl_stopwatch_Start(w);
@@ -330,16 +332,26 @@ main(int argc, char **argv)
       if ((status = cm_file_Read(cfg.cmfp, TRUE, &(cfg.abc), &cm)) != eslOK) cm_Fail("Ran out of CMs too early in pass 2");
       if (cm == NULL)                                                        cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
 
-      /* update the cm->comlog info */
+      /* update the cm->comlog info, even if we skipped this CM (didn't actually calibrate it) */
       if((status = update_comlog(go, errbuf, cfg.ccom, cfg.cdate, cm)) != eslOK) cm_Fail(errbuf);
-	
-      if(cm->expA != NULL) { 
-	for(i = 0; i < EXP_NMODES; i++)  free(cm->expA[i]); free(cm->expA);
-      }
-      ESL_ALLOC(cm->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
 
-      cm->expA   = cfg.expAA[cmi];
-      cm->flags |= CMH_EXPTAIL_STATS; 
+      if(cfg.expAA[cmi] == NULL) { 
+	/* we didn't calibrate this model, this should only happen if it has 0 bps and --nohmmonly not used */
+	if(! (CMCountNodetype(cm, MATP_nd) == 0 && (! esl_opt_GetBoolean(go, "--nohmmonly")))) { 
+	  cm_Fail("CM %d wasn't calibrated...", cmi+1);
+	}
+	nskipped++;
+      }
+      else { /* cm->expAA[cmi] != NULL */
+	if(cm->expA != NULL) { 
+	  for(i = 0; i < EXP_NMODES; i++)  free(cm->expA[i]); free(cm->expA);
+	}
+	ESL_ALLOC(cm->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
+	
+	cm->expA   = cfg.expAA[cmi];
+	cm->flags |= CMH_EXPTAIL_STATS; /* cfg.expAA[cmi] may be NULL if model had 0 basepairs */
+      }
+
       if(cfg.cmfp->is_binary) { 
 	if ((status = cm_file_WriteBinary(outfp, -1, cm, NULL)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
       }
@@ -401,7 +413,22 @@ main(int argc, char **argv)
   if (cfg.r_est != NULL) esl_randomness_Destroy(cfg.r_est);
   esl_stopwatch_Stop(w);
   if (cfg.my_rank == 0) { 
-    printf("#\n");
+    if(nskipped > 0) { 
+      fprintf(stdout, "#\n");
+      if(nskipped == 1) { 
+	fprintf(stdout, "# Calibration was unnecessary and not performed for a CM because it does not include any basepairs.\n");
+	fprintf(stdout, "# cmsearch and cmscan will use a profile HMM instead of a CM for this model because an HMM will be\n");
+	fprintf(stdout, "# faster, just as powerful as the CM at detecting homologs, and does not require the slow calibration\n");
+	fprintf(stdout, "# step. However, you can force calibration by cmcalibrate with --nohmmonly if you really want to.\n");
+      }
+      else {
+	fprintf(stdout, "# Calibration was unnecessary and not performed for %d CMs because they do not include any basepairs.\n", nskipped);
+	fprintf(stdout, "# cmsearch and cmscan will use a profile HMM instead of a CM for these models because an HMM will be\n");
+	fprintf(stdout, "# faster, just as powerful as the CM at detecting homologs, and does not require the slow calibration\n");
+	fprintf(stdout, "# step. However, you can force calibration by cmcalibrate with --nohmmonly if you really want to.\n");
+      }
+    }
+    fprintf(stdout, "#\n");
     esl_stopwatch_Display(stdout, w, "# CPU time: ");
   }
   if(cfg.ghmm_eAA != NULL) { 
@@ -453,6 +480,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int      tmp_nrandhits;         /* temporary number of rand hits found */
   float    tmp_tailp;             /* temporary tail mass probability fit to an exponential */
   int      available_ncpus = 1;   /* number of CPUs available */
+  int      skip_cm = FALSE;       /* TRUE if we can skip calibration of this CM b/c it has 0 bps */
   ESL_SQ_BLOCK *sq_block  = NULL; /* block of sequences */
 
   /* variables needed for threaded implementation */
@@ -518,97 +546,110 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = expand_exp_and_name_arrays(cfg))                              != eslOK) cm_Fail("out of memory");
     if((status = esl_strdup(cm->name, -1, &(cfg->namesA[cmi])))                != eslOK) cm_Fail("unable to duplicate CM name");
 
-    /* clone the non-configured CM we just read, we'll come back to it when we switch from global to local */
-    if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) cm_Fail("unable to clone CM");
-    if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                    != eslOK) cm_Fail(errbuf);
-
-    if(esl_opt_IsUsed(go, "--memreq")) { /* special case: if --memreq, print required memory and skip to reading next CM */
-      print_required_memory(cm, cfg->L, cfg->N, available_ncpus, (cmi == 0) ? TRUE : FALSE);
+    /* check if we can skip calibration of this CM because it has 0 basepairs (which means we don't need E-values) */
+    skip_cm = ((CMCountNodetype(cm, MATP_nd) == 0) && (! esl_opt_GetBoolean(go, "--nohmmonly"))) ? TRUE : FALSE;
+    if(skip_cm) { 
+      if     (esl_opt_IsUsed(go, "--memreq")) { 
+	print_required_memory(cm, cfg->L, cfg->N, available_ncpus, (cmi == 0) ? TRUE : FALSE, TRUE);
+      }
+      else { 
+	print_forecasted_time(go, cfg, errbuf, cm, 0.0, TRUE);
+      }
+      /* don't perform the calibration, we'll move onto to the next model */
     }
-    else { /* normal case */
-      if((status = initialize_stats(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-      if((status = forecast_time(go, cfg, errbuf, cm, ncpus, available_ncpus, &psec, &ins_v_cyk)) != eslOK) cm_Fail(errbuf); 
-      total_psec += psec;
-      print_forecasted_time(go, cfg, errbuf, cm, psec);
+    else { /* skip_cm is FALSE (normal case) */
+      /* clone the non-configured CM we just read, we'll come back to it when we switch from global to local */
+      if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) cm_Fail("unable to clone CM");
+      if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                    != eslOK) cm_Fail(errbuf);
+
+      if(esl_opt_IsUsed(go, "--memreq")) { /* special case: if --memreq, print required memory and skip to reading next CM */
+	print_required_memory(cm, cfg->L, cfg->N, skip_cm, available_ncpus, (cmi == 0) ? TRUE : FALSE);
+      }
+      else { /* --memreq not used (normal case) */
+	if((status = initialize_stats(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+	if((status = forecast_time(go, cfg, errbuf, cm, ncpus, available_ncpus, &psec, &ins_v_cyk)) != eslOK) cm_Fail(errbuf); 
+	total_psec += psec;
+	print_forecasted_time(go, cfg, errbuf, cm, psec, FALSE);
       
-      if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block))           != eslOK) cm_Fail(errbuf);
+	if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block)) != eslOK) cm_Fail(errbuf);
       
-      if(! esl_opt_IsUsed(go, "--forecast")) { 
-	esl_stopwatch_Start(cfg->w);
-	for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
-	  /* do we need to switch from global configuration to local? */
-	  if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
-	    /* switch from global to local by copying the current exptail stats from <cm>
-	     * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
-	     * way because as a rule we don't allow reconfiguration of CMs (to limit
-	     * execution paths through configuration functions)
-	     */
-	    FreeCM(cm);
-	    cm = nc_cm;
-	    if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) cm_Fail(errbuf);
-	  }
-	  /* set search_opts and determine how many '=' to print to status bar for this mode, 
-	   * there is space for 20 '=' for glocal (cyk + ins) and 20 '=' for local (cyk + ins)
-	   */
-	  if(ExpModeIsInside(exp_mode)) { 
-	    cm->search_opts |= CM_SEARCH_INSIDE; 
-	    nequals = 20 - (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
-	  }
-	  else { 
-	    cm->search_opts &= ~CM_SEARCH_INSIDE; 
-	    nequals = (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
-	  }
-	  fflush(stdout);
-	  
-	  /* clone CM for each thread */
-	  for (i = 0; i < infocnt; ++i) {
-	    if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
-	    info[i].scA     = NULL;
-	    info[i].nhits   = 0;
-	    info[i].cutoff  = cfg->sc_cutoff;
-	    info[i].nequals = nequals;
-#ifdef HMMER_THREADS
-	    if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
-#endif
-	  }
-	  
-#ifdef HMMER_THREADS
-	  if (ncpus > 0)  status = thread_loop(info, errbuf, threadObj, queue, sq_block);
-	  else            status = serial_loop(info, errbuf, sq_block);
-#else
-	  status = serial_loop(info, errbuf, sq_block);
-#endif
-	  if(status != eslOK) cm_Fail(errbuf);
-	  
-	  merged_nhits = 0;
-	  if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
-	  for (i = 0; i < infocnt; ++i) {
-	    if(info[i].nhits > 0) { 
-	      ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + info[i].nhits)); /* this works even if merged_scA == NULL */
-	      for(h = 0; h < info[i].nhits; h++) merged_scA[(merged_nhits+h)] = info[i].scA[h];
-	      merged_nhits += info[i].nhits;
+	if(! esl_opt_IsUsed(go, "--forecast")) { 
+	  esl_stopwatch_Start(cfg->w);
+	  for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
+	    /* do we need to switch from global configuration to local? */
+	    if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
+	      /* switch from global to local by copying the current exptail stats from <cm>
+	       * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
+	       * way because as a rule we don't allow reconfiguration of CMs (to limit
+	       * execution paths through configuration functions)
+	       */
+	      FreeCM(cm);
+	      cm = nc_cm;
+	      if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) cm_Fail(errbuf);
 	    }
-	  }
+	    /* set search_opts and determine how many '=' to print to status bar for this mode, 
+	     * there is space for 20 '=' for glocal (cyk + ins) and 20 '=' for local (cyk + ins)
+	     */
+	    if(ExpModeIsInside(exp_mode)) { 
+	      cm->search_opts |= CM_SEARCH_INSIDE; 
+	      nequals = 20 - (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
+	    }
+	    else { 
+	      cm->search_opts &= ~CM_SEARCH_INSIDE; 
+	      nequals = (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
+	    }
+	    fflush(stdout);
 	  
-	  if(cfg->ffp != NULL) { 
-	    fprintf(cfg->ffp, "# CM: %s\n", cm->name);
-	    fprintf(cfg->ffp, "# mode: %12s\n", DescribeExpMode(exp_mode));
-	  }
-	  if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
-	  SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (long) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
-	} /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
+	    /* clone CM for each thread */
+	    for (i = 0; i < infocnt; ++i) {
+	      if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
+	      info[i].scA     = NULL;
+	      info[i].nhits   = 0;
+	      info[i].cutoff  = cfg->sc_cutoff;
+	      info[i].nequals = nequals;
+#ifdef HMMER_THREADS
+	      if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
+#endif
+	    }
+	  
+#ifdef HMMER_THREADS
+	    if (ncpus > 0)  status = thread_loop(info, errbuf, threadObj, queue, sq_block);
+	    else            status = serial_loop(info, errbuf, sq_block);
+#else
+	    status = serial_loop(info, errbuf, sq_block);
+#endif
+	    if(status != eslOK) cm_Fail(errbuf);
+	  
+	    merged_nhits = 0;
+	    if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
+	    for (i = 0; i < infocnt; ++i) {
+	      if(info[i].nhits > 0) { 
+		ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + info[i].nhits)); /* this works even if merged_scA == NULL */
+		for(h = 0; h < info[i].nhits; h++) merged_scA[(merged_nhits+h)] = info[i].scA[h];
+		merged_nhits += info[i].nhits;
+	      }
+	    }
+	  
+	    if(cfg->ffp != NULL) { 
+	      fprintf(cfg->ffp, "# CM: %s\n", cm->name);
+	      fprintf(cfg->ffp, "# mode: %12s\n", DescribeExpMode(exp_mode));
+	    }
+	    if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
+	    SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (long) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
+	  } /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
 	
-	esl_stopwatch_Stop(cfg->w);
-	FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
-	printf("]  %12s\n", time_buf);
-	fflush(stdout);
-	asec        = cfg->w->elapsed;
-	total_asec += cfg->w->elapsed;
+	  esl_stopwatch_Stop(cfg->w);
+	  FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
+	  printf("]  %12s\n", time_buf);
+	  fflush(stdout);
+	  asec        = cfg->w->elapsed;
+	  total_asec += cfg->w->elapsed;
 	
-      } /* end of if(! esl_opt_IsUsed(go, "--forecast")) */
-    } /* end of else, entered if (! esl_opt_IsUsed(go, "--memreq")) */
+	} /* end of if(! esl_opt_IsUsed(go, "--forecast")) */
+      } /* end of else, entered if (! esl_opt_IsUsed(go, "--memreq")) */
+    } /* end of else, entered if (! skip_cm) */
     FreeCM(cm);
-    if(sq_block != NULL) esl_sq_DestroyBlock(sq_block);
+    if(sq_block != NULL) { esl_sq_DestroyBlock(sq_block); sq_block = NULL; }
 
     fflush(stdout);
 
@@ -850,6 +891,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int      equalcnt;              /* number of sequences that need to be searched to warrant a '=' */
   int      nprinted = 0;          /* number of equals printed thus far */
   int      nready_recd = 0;       /* number of ready signals we've received for this CM/mode pair */
+  int      skip_cm = FALSE;       /* TRUE if we can skip calibration of this CM b/c it has 0 bps */
 
   MPI_Status       mpistatus;       /* the mpi status */
   char            *mpibuf  = NULL;  /* buffer used to pack/unpack structures */
@@ -883,165 +925,178 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     if((status = expand_exp_and_name_arrays(cfg))                                     != eslOK) mpi_failure("out of memory");
     if((status = esl_strdup(cm->name, -1, &(cfg->namesA[cmi])))                       != eslOK) mpi_failure("unable to duplicate CM name");
-    if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                           != eslOK) mpi_failure(errbuf);
-    if((status = initialize_stats(go, cfg, errbuf))                                   != eslOK) mpi_failure(errbuf);
 
-    if(cmi == 0) print_calibration_column_headings(go, cfg, errbuf, cm, 1); /* 1 is irrelevant here, since --forecast can't have been enabled */
-    if((status = forecast_time(go, cfg, errbuf, cm, cfg->nproc-1, 1, &psec, &ins_v_cyk)) != eslOK) mpi_failure(errbuf); 
-    total_psec += psec;
-    print_forecasted_time(go, cfg, errbuf, cm, psec);
+    /* Check if we can skip calibration of this CM because it has 0
+     * basepairs (which means we don't need E-values). We do the
+     * the same check at the same spot in mpi_worker().
+     */
+    skip_cm = ((CMCountNodetype(cm, MATP_nd) == 0) && (! esl_opt_GetBoolean(go, "--nohmmonly"))) ? TRUE : FALSE;
+    if(skip_cm) { 
+      print_forecasted_time(go, cfg, errbuf, cm, 0.0, TRUE);
+      /* don't perform the calibration, we'll move onto to the next model */
+    }
+    else { 
+      if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                           != eslOK) mpi_failure(errbuf);
+      if((status = initialize_stats(go, cfg, errbuf))                                   != eslOK) mpi_failure(errbuf);
 
-    esl_stopwatch_Start(cfg->w);
-    for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
-      /* do we need to switch from global configuration to local? */
-      if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
-	/* switch from global to local by copying the current exptail stats from <cm>
-	 * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
-	 * way because as a rule we don't allow reconfiguration of CMs (to limit
-	 * execution paths through configuration functions)
+      if(cmi == 0) print_calibration_column_headings(go, cfg, errbuf, cm, 1); /* 1 is irrelevant here, since --forecast can't have been enabled */
+      if((status = forecast_time(go, cfg, errbuf, cm, cfg->nproc-1, 1, &psec, &ins_v_cyk)) != eslOK) mpi_failure(errbuf); 
+      total_psec += psec;
+      print_forecasted_time(go, cfg, errbuf, cm, psec, FALSE);
+
+      esl_stopwatch_Start(cfg->w);
+      for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
+	/* do we need to switch from global configuration to local? */
+	if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
+	  /* switch from global to local by copying the current exptail stats from <cm>
+	   * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
+	   * way because as a rule we don't allow reconfiguration of CMs (to limit
+	   * execution paths through configuration functions)
+	   */
+	  FreeCM(cm);
+	  cm = nc_cm;
+	  if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) mpi_failure(errbuf);
+	}
+	/* set search_opts and determine how many '=' to print to status bar for this mode, 
+	 * there is space for 20 '=' for glocal (cyk + ins) and 20 '=' for local (cyk + ins)
 	 */
-	FreeCM(cm);
-	cm = nc_cm;
-	if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) mpi_failure(errbuf);
-      }
-      /* set search_opts and determine how many '=' to print to status bar for this mode, 
-       * there is space for 20 '=' for glocal (cyk + ins) and 20 '=' for local (cyk + ins)
-       */
-      if(ExpModeIsInside(exp_mode)) { 
-	cm->search_opts |= CM_SEARCH_INSIDE; 
-	nequals = 20 - (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
-      }
-      else { 
-	cm->search_opts &= ~CM_SEARCH_INSIDE; 
-	nequals = (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
-      }
-          /* determine how many sequences we need to complete to print a '=' to progress bar */
-      equalcnt = (int) (((float) cfg->N / (float) nequals) + 0.9999999);
-      equalcnt = ESL_MAX(equalcnt, 1);
-      equalidx = equalcnt;
-      nprinted = 0;
-      nready_recd = 0;
+	if(ExpModeIsInside(exp_mode)) { 
+	  cm->search_opts |= CM_SEARCH_INSIDE; 
+	  nequals = 20 - (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
+	}
+	else { 
+	  cm->search_opts &= ~CM_SEARCH_INSIDE; 
+	  nequals = (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
+	}
+	/* determine how many sequences we need to complete to print a '=' to progress bar */
+	equalcnt = (int) (((float) cfg->N / (float) nequals) + 0.9999999);
+	equalcnt = ESL_MAX(equalcnt, 1);
+	equalidx = equalcnt;
+	nprinted = 0;
+	nready_recd = 0;
 
-      /* for each sequence i from 0..N-1, tell the appropriate worker (widx = (i+1) % nworkers) to search it */
-      for(i = 0; i < cfg->N; i++) { 
-	if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
+	/* for each sequence i from 0..N-1, tell the appropriate worker (widx = (i+1) % nworkers) to search it */
+	for(i = 0; i < cfg->N; i++) { 
+	  if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
 	    
-	MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size);
-	if (mpibuf == NULL || buf_size > mpibuf_size) {
-	  ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
-	  mpibuf_size = buf_size; 
-	}
-	dest = mpistatus.MPI_SOURCE;
-	MPI_Recv(mpibuf, buf_size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
-	
-	if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)  mpi_failure("MPI client %d raised error:\n%s\n", dest, mpibuf);
-	if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)  mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
-
-	nready_recd++;
-	if ((nready_recd - (cfg->nproc-1)) == equalidx) { /* ignore the first ready signal from each worker (cfg->nproc-1 of them) */
-	  putchar('='); 
-	  fflush(stdout);
-	  nprinted++;
-	  equalidx += equalcnt; 
-	}
-
-#if DEBUGMPI
-	printf("master rec'd INFERNAL_READY_TAG from worker %d\n", dest);
-#endif
-	
-	/* send the int 'i' to the worker, telling it to search his copy of the i'th sequence for this CM/mode pair */
-	if (MPI_Send(&i, 1, MPI_INT, dest, INFERNAL_SEQIDX_TAG, MPI_COMM_WORLD) != 0) mpi_failure("mpi send failed");
-#if DEBUGMPI
-	printf("master sent i: %d to worker %d\n", i, dest);
-#endif
-      }
-
-      /* wait for all workers to finish up their work blocks */
-      for (i = 1; i < cfg->nproc; ++i) { 
-	if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
-
-	MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size);
-	if (mpibuf == NULL || buf_size > mpibuf_size) {
-	  ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
-	  mpibuf_size = buf_size; 
-	}
-	dest = mpistatus.MPI_SOURCE;
-	MPI_Recv(mpibuf, buf_size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
-
-	if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)  mpi_failure("MPI client %d raised error:\n%s\n", dest, mpibuf);
-	if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)  mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
-#if DEBUGMPI
-	printf("master done sending indices, received INFERNAL_READY_TAG from worker %d\n", dest);
-#endif 
-	nready_recd++;
-	if ((nready_recd - (cfg->nproc-1)) == equalidx) { /* ignore the first ready signal from each worker (cfg->nproc-1 of them) */
-	  putchar('='); 
-	  fflush(stdout);
-	  nprinted++;
-	  equalidx += equalcnt; 
-	}
-      }
-      while(nprinted < nequals) { putchar('='); fflush(stdout); nprinted++; } 
-      
-      /* merge the arrays of scores we get back from the workers */
-      for (dest = 1; dest < cfg->nproc; ++dest) { 
-	/* send -1 to the worker, telling it we're done with this CM/mode pair */
-	i = -1;
-	if (MPI_Send(&i, 1, MPI_INT, dest, INFERNAL_SEQIDX_TAG, MPI_COMM_WORLD) != 0) ESL_EXCEPTION(eslESYS, "mpi send failed");
-#if DEBUGMPI
-	printf("master sent -1 to worker %d\n", dest);
-#endif 
-
-	/* wait for the results */
-	if (MPI_Probe(dest, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
-	MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size);
-	if (mpibuf == NULL || buf_size > mpibuf_size) {
-	  ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
-	  mpibuf_size = buf_size; 
-	}
-
-	/* receive and unpack the array of hit scores */
-	MPI_Recv(mpibuf, buf_size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
-#if DEBUGMPI
-	printf("master received results from worker %d\n", dest);
-#endif 
-
-	if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)  mpi_failure("MPI client %d raised error:\n%s\n", dest, mpibuf);
-	if (mpistatus.MPI_TAG != INFERNAL_SCORES_TAG) mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
-	pos = 0;
-	if (MPI_Unpack(mpibuf, buf_size, &pos, &nhits, 1, MPI_LONG_LONG_INT, MPI_COMM_WORLD) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed");
-	if(nhits > 0) { 
-	  if(merged_nhits == 0) ESL_ALLOC  (merged_scA, sizeof(float) * (merged_nhits + nhits));
-	  else                  ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + nhits));
-	  for(h = 0; h < nhits; h++) { 
-	    if (MPI_Unpack(mpibuf, buf_size, &pos, &(merged_scA[merged_nhits+h]), 1, MPI_FLOAT, MPI_COMM_WORLD) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed");
+	  MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size);
+	  if (mpibuf == NULL || buf_size > mpibuf_size) {
+	    ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
+	    mpibuf_size = buf_size; 
 	  }
-	  merged_nhits += nhits;
+	  dest = mpistatus.MPI_SOURCE;
+	  MPI_Recv(mpibuf, buf_size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
+	
+	  if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)  mpi_failure("MPI client %d raised error:\n%s\n", dest, mpibuf);
+	  if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)  mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
+
+	  nready_recd++;
+	  if ((nready_recd - (cfg->nproc-1)) == equalidx) { /* ignore the first ready signal from each worker (cfg->nproc-1 of them) */
+	    putchar('='); 
+	    fflush(stdout);
+	    nprinted++;
+	    equalidx += equalcnt; 
+	  }
+
 #if DEBUGMPI
-	  printf("master added %" PRId64 " hits to merged_nhits, now %" PRId64 " total\n", nhits, merged_nhits);
-#endif 
+	  printf("master rec'd INFERNAL_READY_TAG from worker %d\n", dest);
+#endif
+	
+	  /* send the int 'i' to the worker, telling it to search his copy of the i'th sequence for this CM/mode pair */
+	  if (MPI_Send(&i, 1, MPI_INT, dest, INFERNAL_SEQIDX_TAG, MPI_COMM_WORLD) != 0) mpi_failure("mpi send failed");
+#if DEBUGMPI
+	  printf("master sent i: %d to worker %d\n", i, dest);
+#endif
 	}
-      }
-      
-      if(cfg->ffp != NULL) { 
-	fprintf(cfg->ffp, "# CM: %s\n", cm->name);
-	fprintf(cfg->ffp, "# mode: %12s\n", DescribeExpMode(exp_mode));
-      }
+
+	/* wait for all workers to finish up their work blocks */
+	for (i = 1; i < cfg->nproc; ++i) { 
+	  if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
+
+	  MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size);
+	  if (mpibuf == NULL || buf_size > mpibuf_size) {
+	    ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
+	    mpibuf_size = buf_size; 
+	  }
+	  dest = mpistatus.MPI_SOURCE;
+	  MPI_Recv(mpibuf, buf_size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
+
+	  if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)  mpi_failure("MPI client %d raised error:\n%s\n", dest, mpibuf);
+	  if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)  mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
 #if DEBUGMPI
-      printf("about to call fit_histogram, %" PRId64 " hits\n", merged_nhits);
+	  printf("master done sending indices, received INFERNAL_READY_TAG from worker %d\n", dest);
 #endif 
-      if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) mpi_failure(errbuf);
-      SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (long) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
+	  nready_recd++;
+	  if ((nready_recd - (cfg->nproc-1)) == equalidx) { /* ignore the first ready signal from each worker (cfg->nproc-1 of them) */
+	    putchar('='); 
+	    fflush(stdout);
+	    nprinted++;
+	    equalidx += equalcnt; 
+	  }
+	}
+	while(nprinted < nequals) { putchar('='); fflush(stdout); nprinted++; } 
       
-      /* clear hits */
-      if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
-      merged_nhits = 0;
-    } /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
-       
+	/* merge the arrays of scores we get back from the workers */
+	for (dest = 1; dest < cfg->nproc; ++dest) { 
+	  /* send -1 to the worker, telling it we're done with this CM/mode pair */
+	  i = -1;
+	  if (MPI_Send(&i, 1, MPI_INT, dest, INFERNAL_SEQIDX_TAG, MPI_COMM_WORLD) != 0) ESL_EXCEPTION(eslESYS, "mpi send failed");
+#if DEBUGMPI
+	  printf("master sent -1 to worker %d\n", dest);
+#endif 
+
+	  /* wait for the results */
+	  if (MPI_Probe(dest, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
+	  MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size);
+	  if (mpibuf == NULL || buf_size > mpibuf_size) {
+	    ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
+	    mpibuf_size = buf_size; 
+	  }
+
+	  /* receive and unpack the array of hit scores */
+	  MPI_Recv(mpibuf, buf_size, MPI_PACKED, dest, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
+#if DEBUGMPI
+	  printf("master received results from worker %d\n", dest);
+#endif 
+
+	  if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)  mpi_failure("MPI client %d raised error:\n%s\n", dest, mpibuf);
+	  if (mpistatus.MPI_TAG != INFERNAL_SCORES_TAG) mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
+	  pos = 0;
+	  if (MPI_Unpack(mpibuf, buf_size, &pos, &nhits, 1, MPI_LONG_LONG_INT, MPI_COMM_WORLD) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed");
+	  if(nhits > 0) { 
+	    if(merged_nhits == 0) ESL_ALLOC  (merged_scA, sizeof(float) * (merged_nhits + nhits));
+	    else                  ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + nhits));
+	    for(h = 0; h < nhits; h++) { 
+	      if (MPI_Unpack(mpibuf, buf_size, &pos, &(merged_scA[merged_nhits+h]), 1, MPI_FLOAT, MPI_COMM_WORLD) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed");
+	    }
+	    merged_nhits += nhits;
+#if DEBUGMPI
+	    printf("master added %" PRId64 " hits to merged_nhits, now %" PRId64 " total\n", nhits, merged_nhits);
+#endif 
+	  }
+	}
+      
+	if(cfg->ffp != NULL) { 
+	  fprintf(cfg->ffp, "# CM: %s\n", cm->name);
+	  fprintf(cfg->ffp, "# mode: %12s\n", DescribeExpMode(exp_mode));
+	}
+#if DEBUGMPI
+	printf("about to call fit_histogram, %" PRId64 " hits\n", merged_nhits);
+#endif 
+	if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) mpi_failure(errbuf);
+	SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (long) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
+      
+	/* clear hits */
+	if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
+	merged_nhits = 0;
+      } /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
+    } /* end of 'else', entered if skip_cm is FALSE */       
     esl_stopwatch_Stop(cfg->w);
-    FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
-    printf("]  %12s\n", time_buf);
-    fflush(stdout);
+    if(! skip_cm) { 
+      FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
+      printf("]  %12s\n", time_buf);
+      fflush(stdout);
+    }
     asec        = cfg->w->elapsed;
     total_asec += cfg->w->elapsed;
        
@@ -1081,6 +1136,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   int      i, h;                  /* counters */
   int      cmi;                   /* CM index, which model we're working on */
   int      exp_mode;              /* ctr over exp tail modes */
+  int      skip_cm = FALSE;       /* TRUE if we can skip calibration of this CM b/c it has 0 bps */
 
   char    *mpibuf  = NULL;        /* buffer used to pack/unpack structures */
   int      mpibuf_size = 0;       /* size of the mpibuf                    */
@@ -1116,101 +1172,108 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     cmi = cfg->ncm-1;
 
     if((status = expand_exp_and_name_arrays(cfg))                    != eslOK) mpi_failure("out of memory");
-    if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))          != eslOK) mpi_failure(errbuf);
-    if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block)) != eslOK) mpi_failure(errbuf);
 
-    for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
-      /* do we need to switch from global configuration to local? */
-      if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
-	/* switch from global to local by copying the current exptail stats from <cm>
-	 * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
-	 * way because as a rule we don't allow reconfiguration of CMs (to limit
-	 * execution paths through configuration functions)
-	 */
-	FreeCM(cm);
-	cm = nc_cm;
-	if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) mpi_failure(errbuf);
-      }
-      /* update search info for round 0 (final round) for exp tail mode */
-      if(ExpModeIsInside(exp_mode)) cm->search_opts |= CM_SEARCH_INSIDE;
-      else                          cm->search_opts &= ~CM_SEARCH_INSIDE;
-      
-      info.cm = cm;
-      ///if((status = cm_Clone(cm, errbuf, &(info.cm))) != eslOK) mpi_failure(errbuf);
+    /* Check if we can skip calibration of this CM because it has 0
+     * basepairs (which means we don't need E-values). We do the
+     * the same check at the same spot in mpi_worker().
+     */
+    skip_cm = ((CMCountNodetype(cm, MATP_nd) == 0) && (! esl_opt_GetBoolean(go, "--nohmmonly"))) ? TRUE : FALSE;
+    if(! skip_cm) { 
+      if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))          != eslOK) mpi_failure(errbuf);
+      if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block)) != eslOK) mpi_failure(errbuf);
 
-      /* inform the master that we're ready for our first index */
-      status = 0;
-      MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
-
-#if DEBUGMPI
-      printf("worker %d waiting for 1st index from master\n", cfg->my_rank);
-#endif 
-      /* receive a sequence index from the master */
-      if((status = MPI_Recv(&i, 1, MPI_INT, 0, INFERNAL_SEQIDX_TAG, MPI_COMM_WORLD, &mpistatus)) != 0) mpi_failure("failed to receive sequence index to search");
-
-      while(i != -1) { 
-#if DEBUGMPI
-	printf("worker %d received i: %d from master\n", cfg->my_rank, i);
-#endif 
-
-	if((status = process_search_workunit(info.cm, errbuf, sq_block->list[i].dsq, sq_block->list[i].L, info.cutoff, &th)) != eslOK) mpi_failure("(worker) %s", errbuf);
-#if DEBUGMPI
-	printf("worker %d finished with i: %d\n", cfg->my_rank, i);
-#endif 
-	/* append copy of hit scores to scA */
-	if(th->N > 0) { 
-	  ESL_REALLOC(info.scA, sizeof(float) * (info.nhits + th->N)); /* this works even if info.scA is NULL */
-	  for(h = 0; h < th->N; h++) info.scA[(info.nhits+h)] = th->unsrt[h].score;
-	  info.nhits += th->N;
+      for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
+	/* do we need to switch from global configuration to local? */
+	if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
+	  /* switch from global to local by copying the current exptail stats from <cm>
+	   * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
+	   * way because as a rule we don't allow reconfiguration of CMs (to limit
+	   * execution paths through configuration functions)
+	   */
+	  FreeCM(cm);
+	  cm = nc_cm;
+	  if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) mpi_failure(errbuf);
 	}
-#if DEBUGMPI
-	printf("worker %d just added %" PRId64" hits to scA, now %" PRId64 " hits\n", cfg->my_rank, th->N, info.nhits);
-#endif 
-	cm_tophits_Destroy(th);
+	/* update search info for round 0 (final round) for exp tail mode */
+	if(ExpModeIsInside(exp_mode)) cm->search_opts |= CM_SEARCH_INSIDE;
+	else                          cm->search_opts &= ~CM_SEARCH_INSIDE;
+      
+	info.cm = cm;
 
-	/* inform the master we need another sequence index */
+	/* inform the master that we're ready for our first index */
 	status = 0;
 	MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
+
+#if DEBUGMPI
+	printf("worker %d waiting for 1st index from master\n", cfg->my_rank);
+#endif 
+	/* receive a sequence index from the master */
+	if((status = MPI_Recv(&i, 1, MPI_INT, 0, INFERNAL_SEQIDX_TAG, MPI_COMM_WORLD, &mpistatus)) != 0) mpi_failure("failed to receive sequence index to search");
+
+	while(i != -1) { 
+#if DEBUGMPI
+	  printf("worker %d received i: %d from master\n", cfg->my_rank, i);
+#endif 
+
+	  if((status = process_search_workunit(info.cm, errbuf, sq_block->list[i].dsq, sq_block->list[i].L, info.cutoff, &th)) != eslOK) mpi_failure("(worker) %s", errbuf);
+#if DEBUGMPI
+	  printf("worker %d finished with i: %d\n", cfg->my_rank, i);
+#endif 
+	  /* append copy of hit scores to scA */
+	  if(th->N > 0) { 
+	    ESL_REALLOC(info.scA, sizeof(float) * (info.nhits + th->N)); /* this works even if info.scA is NULL */
+	    for(h = 0; h < th->N; h++) info.scA[(info.nhits+h)] = th->unsrt[h].score;
+	    info.nhits += th->N;
+	  }
+#if DEBUGMPI
+	  printf("worker %d just added %" PRId64" hits to scA, now %" PRId64 " hits\n", cfg->my_rank, th->N, info.nhits);
+#endif 
+	  cm_tophits_Destroy(th);
+
+	  /* inform the master we need another sequence index */
+	  status = 0;
+	  MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
 	
 #if DEBUGMPI
-	printf("worker %d sent ready tag back to master\n", cfg->my_rank);
+	  printf("worker %d sent ready tag back to master\n", cfg->my_rank);
 #endif 
 
-	/* wait for the next sequence index */
-	if((status = MPI_Recv(&i, 1, MPI_INT, 0, INFERNAL_SEQIDX_TAG, MPI_COMM_WORLD, &mpistatus)) != 0) mpi_failure("failed to receive sequence index to search");
-      }
+	  /* wait for the next sequence index */
+	  if((status = MPI_Recv(&i, 1, MPI_INT, 0, INFERNAL_SEQIDX_TAG, MPI_COMM_WORLD, &mpistatus)) != 0) mpi_failure("failed to receive sequence index to search");
+	}
 
 #if DEBUGMPI
-      printf("worker %d received -1 seq idx from master, about to pack up hits\n", cfg->my_rank);
+	printf("worker %d received -1 seq idx from master, about to pack up hits\n", cfg->my_rank);
 #endif 
 
-      /* done with this CM/mode pair, pack up results */
-      buf_size = 0;
-      status = MPI_Pack_size(1, MPI_LONG_LONG_INT, MPI_COMM_WORLD, &n); buf_size += n; if (status != 0) mpi_failure("pack size failed");
-      for(h = 0; h < info.nhits; h++) { 
-	status = MPI_Pack_size(1, MPI_FLOAT, MPI_COMM_WORLD, &n); buf_size += n; if (status != 0) mpi_failure("pack size failed");
-      }
-      if (mpibuf == NULL || buf_size > mpibuf_size) {
-	ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
-	mpibuf_size = buf_size;
-      }
-      pos = 0;
-      if (MPI_Pack(&(info.nhits),    1, MPI_LONG_LONG_INT, mpibuf, buf_size, &pos, MPI_COMM_WORLD) != 0) mpi_failure("mpi pack failed"); 
-      for(h = 0; h < info.nhits; h++) { 
-	if (MPI_Pack(&(info.scA[h]), 1, MPI_FLOAT,         mpibuf, buf_size, &pos, MPI_COMM_WORLD) != 0) mpi_failure("mpi pack failed"); 
-      }
+	/* done with this CM/mode pair, pack up results */
+	buf_size = 0;
+	status = MPI_Pack_size(1, MPI_LONG_LONG_INT, MPI_COMM_WORLD, &n); buf_size += n; if (status != 0) mpi_failure("pack size failed");
+	for(h = 0; h < info.nhits; h++) { 
+	  status = MPI_Pack_size(1, MPI_FLOAT, MPI_COMM_WORLD, &n); buf_size += n; if (status != 0) mpi_failure("pack size failed");
+	}
+	if (mpibuf == NULL || buf_size > mpibuf_size) {
+	  ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
+	  mpibuf_size = buf_size;
+	}
+	pos = 0;
+	if (MPI_Pack(&(info.nhits),    1, MPI_LONG_LONG_INT, mpibuf, buf_size, &pos, MPI_COMM_WORLD) != 0) mpi_failure("mpi pack failed"); 
+	for(h = 0; h < info.nhits; h++) { 
+	  if (MPI_Pack(&(info.scA[h]), 1, MPI_FLOAT,         mpibuf, buf_size, &pos, MPI_COMM_WORLD) != 0) mpi_failure("mpi pack failed"); 
+	}
 #if DEBUGMPI
-      printf("worker %d about to send %d byte-sized buf back to master\n", cfg->my_rank, n);
+	printf("worker %d about to send %d byte-sized buf back to master\n", cfg->my_rank, n);
 #endif 
 
-      /* send results back to master */
-      if (MPI_Send(mpibuf, buf_size, MPI_PACKED, 0, INFERNAL_SCORES_TAG, MPI_COMM_WORLD)    != 0) mpi_failure("mpi send failed");
+	/* send results back to master */
+	if (MPI_Send(mpibuf, buf_size, MPI_PACKED, 0, INFERNAL_SCORES_TAG, MPI_COMM_WORLD)    != 0) mpi_failure("mpi send failed");
 
-      if(info.scA != NULL) { free(info.scA); info.scA = NULL; }
-      info.nhits = 0;
-    } /* end of for loop over exp_mode */
+	if(info.scA != NULL) { free(info.scA); info.scA = NULL; }
+	info.nhits = 0;
+      } /* end of for loop over exp_mode */
+    } /* end of 'if(! skip_cm)' */
     FreeCM(cm);
-    if(sq_block != NULL) esl_sq_DestroyBlock(sq_block);
+    if(sq_block != NULL) { esl_sq_DestroyBlock(sq_block); sq_block = NULL; }
     /* read the next CM */
     qhstatus = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
   }
@@ -1734,9 +1797,9 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
     temp = seed; 
     seedlen = 1; 
     while(temp > 0) { temp/=10; seedlen++; } /* determine length of stringized version of seed */
-    seedlen += 4; /* strlen(' -s ') */
+    seedlen += 8; /* strlen(' --seed ') */
     ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
-    sprintf(seedstr, " -s %" PRIu32 " ", seed);
+    sprintf(seedstr, "--seed %" PRIu32 " ", seed);
     esl_strcat((&cfg->ccom), -1, seedstr, seedlen);
     free(seedstr);
   }
@@ -1761,7 +1824,7 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
  * Date:     EPN, Mon Dec 31 15:14:26 2007
  *
  * Purpose:  Update the CM's comlog info to reflect the current
- *           cmcalibrate call.
+ *           cmcalibrate call. 
  *
  * Returns:  eslOK on success, eslEINCOMPAT on contract violation.
  */
@@ -1772,8 +1835,9 @@ update_comlog(const ESL_GETOPTS *go, char *errbuf, char *ccom, char *cdate, CM_t
   if(ccom  == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "update_comlog(), ccom  is non-NULL.");
   if(cdate == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "update_comlog(), cdate is non-NULL.");
 
-  /* free all cmcalibrate comlog info, we're about to overwrite any information that any previous cmcalibrate
-   * call could have written to the cm file.
+  /* free all cmcalibrate comlog info, we're about to overwrite any
+   * information that any previous cmcalibrate call could have written
+   * to the cm file.
    */
   if(cm->comlog->ccom  != NULL)  { free(cm->comlog->ccom);  cm->comlog->ccom = NULL;  }
   if(cm->comlog->cdate != NULL)  { free(cm->comlog->cdate); cm->comlog->cdate = NULL; }
@@ -1844,14 +1908,15 @@ print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg
 }
 
 static void
-print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec)
+print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec, int skip_cm)
 {
   char  time_buf[128];	      /* for printing run time */
   FormatTimeString(time_buf, psec, FALSE);
 
   printf("  %-20s  %12s", cm->name, time_buf);
-  if(! esl_opt_IsUsed(go, "--forecast")) fputs("  [", stdout);
-  else                                   fputs("\n",  stdout);
+  if     (skip_cm)                            fprintf(stdout, "  [no basepairs, calibration is unnecessary]  %12s\n", time_buf); 
+  else if(! esl_opt_IsUsed(go, "--forecast")) fputs("  [", stdout);
+  else                                        fputs("\n",  stdout);
   fflush(stdout);
 
   return;
@@ -1899,10 +1964,18 @@ print_summary(const struct cfg_s *cfg)
 	 "-------", "-------", "-------", "-------");
   for(i = 0; i < cfg->ncm; i++) { 
     printf("  %-20s", cfg->namesA[i]);
-    printf("  %7.2f %7.2f %7.2f %7.2f",  cfg->expAA[i][EXP_CM_GC]->mu_orig,   cfg->expAA[i][EXP_CM_GI]->mu_orig,   cfg->expAA[i][EXP_CM_LC]->mu_orig,   cfg->expAA[i][EXP_CM_LI]->mu_orig);
-    printf("  %7.3f %7.3f %7.3f %7.3f",  cfg->expAA[i][EXP_CM_GC]->lambda,    cfg->expAA[i][EXP_CM_GI]->lambda,    cfg->expAA[i][EXP_CM_LC]->lambda,    cfg->expAA[i][EXP_CM_LI]->lambda);
-    printf("  %7d %7d %7d %7d\n",        cfg->expAA[i][EXP_CM_GC]->nrandhits, cfg->expAA[i][EXP_CM_GI]->nrandhits, cfg->expAA[i][EXP_CM_LC]->nrandhits, cfg->expAA[i][EXP_CM_LI]->nrandhits);
+    if(cfg->expAA[i] != NULL) { 
+      printf("  %7.2f %7.2f %7.2f %7.2f",  cfg->expAA[i][EXP_CM_GC]->mu_orig,   cfg->expAA[i][EXP_CM_GI]->mu_orig,   cfg->expAA[i][EXP_CM_LC]->mu_orig,   cfg->expAA[i][EXP_CM_LI]->mu_orig);
+      printf("  %7.3f %7.3f %7.3f %7.3f",  cfg->expAA[i][EXP_CM_GC]->lambda,    cfg->expAA[i][EXP_CM_GI]->lambda,    cfg->expAA[i][EXP_CM_LC]->lambda,    cfg->expAA[i][EXP_CM_LI]->lambda);
+      printf("  %7d %7d %7d %7d\n",        cfg->expAA[i][EXP_CM_GC]->nrandhits, cfg->expAA[i][EXP_CM_GI]->nrandhits, cfg->expAA[i][EXP_CM_LC]->nrandhits, cfg->expAA[i][EXP_CM_LI]->nrandhits);
+    }
+    else { 
+      printf("  %7s %7s %7s %7s",  "-", "-", "-", "-");
+      printf("  %7s %7s %7s %7s",  "-", "-", "-", "-");
+      printf("  %7s %7s %7s %7s\n",  "-", "-", "-", "-");
+    }
   }
+
 
   return;
 } 
@@ -1990,6 +2063,7 @@ generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf,
  ERROR: 
   if(sq_block != NULL) {
     esl_sq_DestroyBlock(sq_block); 
+    sq_block = NULL;
   }
   *ret_sq_block = NULL;
   return status; 
@@ -2186,7 +2260,7 @@ int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
  * Returns:  void
  *
  */
-void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header)
+void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header, int skip_cm)
 {
   float cm_reqmb  = 0.;
   float smx_reqmb = 0.;
@@ -2208,27 +2282,32 @@ void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header)
     }
   }
 
-  /* determine size of the CM (it's already been configured) */
-  cm_reqmb = cm_Sizeof(cm);
-
-  /* if --memreq, we didn't create the scan matrix when we configured the CM (in case it was too big!) */
-  smx_reqmb = cm_scan_mx_SizeNeeded(cm, TRUE, TRUE);
-
-  /* calculate size of digitized sequences we'll search */
-  seq_reqmb  = N * (sizeof(ESL_DSQ) * (L+2));
-  seq_reqmb += N * sizeof(ESL_SQ);
-  seq_reqmb += N * sizeof(char) * strlen("irrelevant");
-  seq_reqmb /= 1000000.;
-
-  /* total up memory requirements */
-  ser_reqmb = cm_reqmb + smx_reqmb + seq_reqmb;
-  thr_reqmb = ((cm_reqmb + smx_reqmb) * ncpus) + seq_reqmb;
-
-  if(ncpus > 1) { 
-    printf("  %-20s  %10.1f  %10.1f\n", cm->name, ser_reqmb, thr_reqmb);
+  if(skip_cm) { 
+    printf("  %-20s  %10s  %10s [%s]\n", cm->name, "-", "-", "model has 0 basepairs, calibration is unnecessary");
   }
-  else {
-    printf("  %-20s  %10.1f\n", cm->name, ser_reqmb);
+  else { 
+    /* determine size of the CM (it's already been configured) */
+    cm_reqmb = cm_Sizeof(cm);
+    
+    /* if --memreq, we didn't create the scan matrix when we configured the CM (in case it was too big!) */
+    smx_reqmb = cm_scan_mx_SizeNeeded(cm, TRUE, TRUE);
+    
+    /* calculate size of digitized sequences we'll search */
+    seq_reqmb  = N * (sizeof(ESL_DSQ) * (L+2));
+    seq_reqmb += N * sizeof(ESL_SQ);
+    seq_reqmb += N * sizeof(char) * strlen("irrelevant");
+    seq_reqmb /= 1000000.;
+    
+    /* total up memory requirements */
+    ser_reqmb = cm_reqmb + smx_reqmb + seq_reqmb;
+    thr_reqmb = ((cm_reqmb + smx_reqmb) * ncpus) + seq_reqmb;
+    
+    if(ncpus > 1) { 
+      printf("  %-20s  %10.1f  %10.1f\n", cm->name, ser_reqmb, thr_reqmb);
+    }
+    else {
+      printf("  %-20s  %10.1f\n", cm->name, ser_reqmb);
+    }
   }
   return;
 }
