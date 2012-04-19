@@ -76,15 +76,17 @@ main(int argc, char **argv)
     {
       if (cm->name == NULL)                  cm_Fail("Every CM must have a name to be indexed. Failed to find name of CM #%d\n", ncm+1);
       if (! (cm->flags & CMH_FP7))           cm_Fail("Failed to read a p7 HMM filter for CM #%d\n", ncm+1);
+      /* Check if we have E-value stats, we need them. We could allow
+       * models with 0 basepairs to be pressed without E-value stats,
+       * (e.g. cmsearch can be run on a 0 basepair noncalibrated
+       * model) but then using -g or --nohmmonly with cmscan would
+       * cause a failure. Also, cmpress is meant to be used with a
+       * stable library of CMs and I think requiring a calibration for
+       * all models in the library is reasonable.
+       */ 
+      if (! (cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("CMs must have E-value statistics to be press'd. Failed to find stats for CM #%d\n", ncm+1);
 
-      /* check if we have E-value stats for the CM, we require them
-       * *unless* the model has zero basepairs, in that case it will
-       * be run in HMM-only mode.
-       */
-      nbps = CMCountNodetype(cm, MATP_nd);
-      if((nbps > 0) && (! (cm->flags & CMH_EXPTAIL_STATS))) cm_Fail("CMs with at least 1 basepair must have E-value statistics to be press'd. Failed to find stats for CM #%d\n", ncm+1);
-
-      if (ncm == 0) { 	/* first time initialization, now that alphabet known */
+      if (ncm == 0) { /* first time initialization, now that alphabet is known */
 	bg = p7_bg_Create(abc);
 	p7_bg_SetLength(bg, 400);
       }
@@ -163,19 +165,19 @@ open_db_files(ESL_GETOPTS *go, char *basename, FILE **ret_mfp, FILE **ret_ffp,  
   if (esl_sprintf(&ssifile, "%s.i1i", basename) != eslOK) cm_Die("esl_sprintf() failed");
   status = esl_newssi_Open(ssifile, allow_overwrite, &nssi);
   if      (status == eslENOTFOUND)   cm_Fail("failed to open SSI index %s", ssifile);
-  else if (status == eslEOVERWRITE)  cm_Fail("Looks like %s is already pressed (.i1i file present, anyway): delete old cmpress indices first", basename);
+  else if (status == eslEOVERWRITE)  cm_Fail("Looks like %s is already pressed (.i1i file present, anyway): delete old cmpress indices first, or use -F", basename);
   else if (status != eslOK)          cm_Fail("failed to create a new SSI index");
 
   if (esl_sprintf(&mfile, "%s.i1m", basename) != eslOK) cm_Die("esl_sprintf() failed");
-  if (! allow_overwrite && esl_FileExists(mfile))       cm_Fail("Binary CM file %s already exists; delete old cmpress indices first", mfile);
+  if (! allow_overwrite && esl_FileExists(mfile))       cm_Fail("Binary CM file %s already exists; delete old cmpress indices first, or use -F", mfile);
   if ((mfp = fopen(mfile, "wb"))              == NULL)  cm_Fail("Failed to open binary CM file %s for writing", mfile);
 
   if (esl_sprintf(&ffile, "%s.i1f", basename) != eslOK) cm_Die("esl_sprintf() failed");
-  if (! allow_overwrite && esl_FileExists(ffile))       cm_Fail("Binary MSV filter file %s already exists; delete old cmpress indices first", ffile);
+  if (! allow_overwrite && esl_FileExists(ffile))       cm_Fail("Binary MSV filter file %s already exists; delete old cmpress indices first, or use -F", ffile);
   if ((ffp = fopen(ffile, "wb"))              == NULL)  cm_Fail("Failed to open binary MSV filter file %s for writing", ffile);
 
   if (esl_sprintf(&pfile, "%s.i1p", basename) != eslOK) cm_Die("esl_sprintf() failed");
-  if (! allow_overwrite && esl_FileExists(pfile))       cm_Fail("Binary optimized profile file %s already exists; delete old cmpress indices first", pfile);
+  if (! allow_overwrite && esl_FileExists(pfile))       cm_Fail("Binary optimized profile file %s already exists; delete old cmpress indices first, or use -F", pfile);
   if ((pfp = fopen(pfile, "wb"))              == NULL)  cm_Fail("Failed to open binary optimized profile file %s for writing", pfile);
 
   free(mfile);     free(ffile);     free(pfile);     free(ssifile);

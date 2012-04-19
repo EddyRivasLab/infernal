@@ -1,7 +1,7 @@
 /* cmsearch: search CM(s) against a nucleotide sequence database,
  *           using profile HMM(s) to prefilter the database.
  * 
- * Based on HMMER 3's nhmmer.c, which was based on hmmsearch.c.
+ * Based on HMMER3's nhmmer.c and hmmsearch.c.
  * EPN, Fri Sep 24 10:58:08 2010
  */
 #include "esl_config.h"
@@ -562,9 +562,14 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* check if we have E-value stats for the CM, we require them
      * *unless* we are going to run the pipeline in HMM-only mode.
+     * We run the pipeline in HMM-only mode if --nohmmonly is 
+     * not used and -g is not used and:
+     * (a) --hmmonly used OR
+     * (b) model has 0 basepairs
      */
     nbps = CMCountNodetype(tinfo->cm, MATP_nd);
     if((   esl_opt_GetBoolean(go, "--nohmmonly"))  || 
+       (   esl_opt_GetBoolean(go, "-g"))           || 
        ((! esl_opt_GetBoolean(go, "--hmmonly"))    && (nbps > 0))) { 
       /* we're NOT running HMM-only pipeline variant, we need CM E-value stats */
       if(! (tinfo->cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s\n", tinfo->cm->name);
@@ -1135,9 +1140,14 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* check if we have E-value stats for the CM, we require them
      * *unless* we are going to run the pipeline in HMM-only mode.
+     * We run the pipeline in HMM-only mode if --nohmmonly is 
+     * not used and -g is not used and:
+     * (a) --hmmonly used OR
+     * (b) model has 0 basepairs
      */
     nbps = CMCountNodetype(info->cm, MATP_nd);
     if((   esl_opt_GetBoolean(go, "--nohmmonly"))  || 
+       (   esl_opt_GetBoolean(go, "-g"))           || 
        ((! esl_opt_GetBoolean(go, "--hmmonly"))    && (nbps > 0))) { 
       /* we're NOT running HMM-only pipeline variant, we need CM E-value stats */
       if(! (info->cm->flags & CMH_EXPTAIL_STATS)) mpi_failure("no E-value parameters were read for CM: %s\n", info->cm->name);
