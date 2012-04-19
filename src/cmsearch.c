@@ -94,7 +94,7 @@ typedef struct {
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles   reqs   incomp            help                                                          docgroup*/
   { "-h",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "show brief help on version and usage",                         1 },
-  { "-g",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "configure CM for glocal alignment [default: local]",           1 },
+  { "-g",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmmonly",     "configure CM for glocal alignment [default: local]",           1 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set database size in *Mb* to <x> for E-value calculations",    1 },
   { "--devhelp",    eslARG_NONE,   NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "show list of otherwise hidden developer/expert options",       1 },
   /* Control of output */
@@ -436,14 +436,15 @@ main(int argc, char **argv)
 static int
 serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 {
-  FILE            *ofp      = stdout;            /* results output file (-o)                                  */
-  FILE            *afp      = NULL;              /* alignment output file (-A)                                */
-  FILE            *tblfp    = NULL;              /* output stream for tabular hits (--tblout)                 */
-  CM_FILE         *cmfp;		         /* open input CM file stream                                 */
-  CM_t            *cm       = NULL;              /* covariance model                                          */
-  ESL_SQFILE      *dbfp     = NULL;              /* open input sequence file                                  */
-  ESL_ALPHABET    *abc      = NULL;              /* digital alphabet                                          */
-  ESL_STOPWATCH   *w;
+  FILE            *ofp      = stdout;            /* results output file (-o)                        */
+  FILE            *afp      = NULL;              /* alignment output file (-A)                      */
+  FILE            *tblfp    = NULL;              /* output stream for tabular hits (--tblout)       */
+  CM_FILE         *cmfp;		         /* open input CM file stream                       */
+  CM_t            *cm       = NULL;              /* covariance model                                */
+  ESL_SQFILE      *dbfp     = NULL;              /* open input sequence file                        */
+  ESL_ALPHABET    *abc      = NULL;              /* digital alphabet                                */
+  ESL_STOPWATCH   *w        = NULL;              /* timing one query model                          */
+  ESL_STOPWATCH   *mw       = NULL;              /* timing all query models                         */
   int              textw    = 0;
   int64_t          cm_idx   = 0;                 /* index of CM we're currently working with */
   int              status   = eslOK;
@@ -469,7 +470,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 #endif
   char             errbuf[eslERRBUFSIZE];
 
-  w = esl_stopwatch_Create();
+  w  = esl_stopwatch_Create();
+  mw = esl_stopwatch_Create();
+  esl_stopwatch_Start(mw);
 
   if (esl_opt_GetBoolean(go, "--notextw")) textw = 0;
   else                                     textw = esl_opt_GetInteger(go, "--textw");
@@ -647,7 +650,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = cm_tophits_RemoveOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
 
     /* Resort by score and enforce threshold */
-    cm_tophits_SortByScore(info[0].th);
+    cm_tophits_SortByEvalue(info[0].th);
     cm_tophits_Threshold(info[0].th, info[0].pli);
 
     /* tally up total number of hits and target coverage */
@@ -712,11 +715,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   default:           cm_Fail("Unexpected error (%d) in reading CMs from %s\n%s", qhstatus, cfg->cmfile, cmfp->errbuf);
   }
 
-  /* Terminate outputs... any last words?
-   */
-  if (tblfp)         cm_tophits_TabularTail(tblfp,    "cmsearch", CM_SEARCH_SEQS, cfg->cmfile, cfg->dbfile, go);
-  fprintf(ofp, "[ok]\n");
-
 #ifdef HMMER_THREADS
   if (ncpus > 0) {
     esl_workqueue_Reset(queue);
@@ -728,13 +726,22 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
 #endif
 
+  /* Terminate outputs... any last words?
+   */
+  if (tblfp)         cm_tophits_TabularTail(tblfp,    "cmsearch", CM_SEARCH_SEQS, cfg->cmfile, cfg->dbfile, go);
+  fprintf(ofp, "[ok]\n");
+
+  esl_stopwatch_Stop(mw);
+  if(esl_opt_GetBoolean(go, "--verbose")) esl_stopwatch_Display(stdout, mw, "Total runtime:");
+
   free(info);
   if(srcL != NULL) free(srcL);
 
   cm_file_Close(cmfp);
   esl_sqfile_Close(dbfp);
   esl_alphabet_Destroy(abc);
-  esl_stopwatch_Destroy(w);
+  if(w  != NULL) esl_stopwatch_Destroy(w);
+  if(mw != NULL) esl_stopwatch_Destroy(mw);
 
   if (ofp != stdout) fclose(ofp);
   if (afp)           fclose(afp);
@@ -1043,7 +1050,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_SQFILE      *dbfp     = NULL;              /* open input sequence file                        */
   ESL_SQ          *dbsq     = NULL;              /* one target sequence (digital)                   */
   ESL_ALPHABET    *abc      = NULL;              /* digital alphabet                                */
-  ESL_STOPWATCH   *w;
+  ESL_STOPWATCH   *w        = NULL;              /* timing one query model                          */
+  ESL_STOPWATCH   *mw       = NULL;              /* timing all query models                         */
   int              textw    = 0;
   int64_t          cm_idx   = 0;                 /* index of CM we're currently working with */
   int              status   = eslOK;
@@ -1071,7 +1079,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int64_t          tot_noverlap = 0;         /* number of overlapping residues in all blocks for one CM */
   int              nbps;                     /* number of basepairs in current CM */
 
-  w = esl_stopwatch_Create();
+  w  = esl_stopwatch_Create();
+  mw = esl_stopwatch_Create();
+  esl_stopwatch_Start(mw);
 
   if (esl_opt_GetBoolean(go, "--notextw")) textw = 0;
   else                                     textw = esl_opt_GetInteger(go, "--textw");
@@ -1299,7 +1309,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     cm_tophits_SortForOverlapRemoval(info->th);
     if((status = cm_tophits_RemoveOverlaps(info->th, errbuf)) != eslOK) mpi_failure(errbuf);
     /* Resort by score and enforce threshold */
-    cm_tophits_SortByScore(info->th);
+    cm_tophits_SortByEvalue(info->th);
     cm_tophits_Threshold(info->th, info->pli);
     
     /* tally up total number of hits and target coverage */
@@ -1393,6 +1403,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if (tblfp)    cm_tophits_TabularTail(tblfp,    "cmsearch", CM_SEARCH_SEQS, cfg->cmfile, cfg->dbfile, go);
   fprintf(ofp, "[ok]\n");
 
+  esl_stopwatch_Stop(mw);
+  if(esl_opt_GetBoolean(go, "--verbose")) esl_stopwatch_Display(stdout, mw, "Total runtime:");
+
   /* Cleanup - prepare for exit
    */
   free(block_list);
@@ -1402,7 +1415,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   esl_sqfile_Close(dbfp);
   esl_alphabet_Destroy(abc);
   esl_sq_Destroy(dbsq);
-  esl_stopwatch_Destroy(w);
+  if(w  != NULL) esl_stopwatch_Destroy(w);
+  if(mw != NULL) esl_stopwatch_Destroy(mw);
 
   if (ofp != stdout) fclose(ofp);
   if (afp)           fclose(afp);

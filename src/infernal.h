@@ -2428,7 +2428,7 @@ typedef struct cm_tophits_s {
   uint64_t N;	  	                  /* number of hits in list now               */
   uint64_t nreported;                     /* number of hits that are reportable       */
   uint64_t nincluded;	                  /* number of hits that are includable       */
-  int      is_sorted_by_score;            /* TRUE when hits sorted by score, length, th->hit valid for all N hits */
+  int      is_sorted_by_evalue;           /* TRUE when hits are sorted by E-value, score, length, th->hit valid for all N hits */
   int      is_sorted_for_overlap_removal; /* TRUE when hits are sorted by cm_idx, seq_idx, strand, score, th->hit valid for all N hits */
   int      is_sorted_by_position;         /* TRUE when hits are sorted by cm_idx, seq_idx, strand, first residue 
 					   * (start if ! in_rc, stop if in_rc), th->hit valid for all N hits 
@@ -2905,7 +2905,6 @@ extern int   cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64
 extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, int in_rc, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
 extern int   cm_pli_Statistics    (FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
 extern int   cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct);
-extern char *cm_pli_DescribePass(int pass_idx);
 extern int   cm_pli_PassEnforcesFirstRes(int pass_idx);
 extern int   cm_pli_PassEnforcesFinalRes(int pass_idx);
 extern int   cm_pli_PassAllowsTruncation(int pass_idx);
@@ -2954,7 +2953,7 @@ extern void  CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int e
 extern CM_TOPHITS *cm_tophits_Create(void);
 extern int         cm_tophits_Grow(CM_TOPHITS *h);
 extern int         cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit);
-extern int         cm_tophits_SortByScore(CM_TOPHITS *h);
+extern int         cm_tophits_SortByEvalue(CM_TOPHITS *h);
 extern int         cm_tophits_SortForOverlapRemoval(CM_TOPHITS *h);
 extern int         cm_tophits_SortByPosition(CM_TOPHITS *h);
 extern int         cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2);

@@ -37,11 +37,12 @@ static int  pli_dispatch_cm_search (CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, in
 static int  pli_align_hit          (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit);
 static int  pli_scan_mode_read_cm  (CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, int p7_max_length, CM_t **ret_cm);
 
-static int  pli_pass_statistics        (FILE *ofp, CM_PIPELINE *pli, int pass_idx);
-static int  pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli);
-static int  pli_sum_statistics         (CM_PIPELINE *pli);
-
-static void copy_subseq            (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L);
+static int   pli_pass_statistics        (FILE *ofp, CM_PIPELINE *pli, int pass_idx);
+static int   pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli);
+static int   pli_sum_statistics         (CM_PIPELINE *pli);
+static void  pli_copy_subseq            (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L);
+static char *pli_describe_pass          (int pass_idx); 
+static char *pli_describe_hits_for_pass (int pass_idx); 
 
 /*****************************************************************
  * 1. The CM_PIPELINE object: allocation, initialization, destruction.
@@ -895,14 +896,15 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     /* set A updates: case 1 and 2 do these */
 
     /* determine if we should use the special HMM only pipeline for this model,
-     * if pli->do_hmmonly_never  == TRUE: we won't,
-     * if pli->do_hmmonly_always == TRUE: we will,
+     * if pli->do_hmmonly_never    == TRUE: we won't,
+     * if pli->do_glocal_cm_stages == TRUE: we won't,
+     * if pli->do_hmmonly_always   == TRUE: we will,
      * else we will only if model has 0 base pairs.
      */
     
-    if     (pli->do_hmmonly_never)                 pli->do_hmmonly_cur = FALSE;
-    else if(pli->do_hmmonly_always || cm_nbp == 0) pli->do_hmmonly_cur = TRUE;
-    else                                           pli->do_hmmonly_cur = FALSE;
+    if     (pli->do_hmmonly_never  || pli->do_glocal_cm_stages) pli->do_hmmonly_cur = FALSE;
+    else if(pli->do_hmmonly_always || cm_nbp == 0)              pli->do_hmmonly_cur = TRUE;
+    else                                                        pli->do_hmmonly_cur = FALSE;
 
     if(pli->do_hmmonly_cur) { 
       pli->nmodels_hmmonly++;
@@ -1268,12 +1270,12 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     }
     else if(p == PLI_PASS_5P_ONLY_FORCE) { /* research first (5') pli->maxW residues */
       term5sq = esl_sq_CreateDigital(bg->abc);
-      copy_subseq(sq, term5sq, 1, pli->maxW);
+      pli_copy_subseq(sq, term5sq, 1, pli->maxW);
       sq2search = term5sq;
     }
     else if(p == PLI_PASS_3P_ONLY_FORCE) { /* research first (5') pli->maxW residues */
       term3sq = esl_sq_CreateDigital(bg->abc);
-      copy_subseq(sq, term3sq, sq->n - pli->maxW + 1, pli->maxW);
+      pli_copy_subseq(sq, term3sq, sq->n - pli->maxW + 1, pli->maxW);
       sq2search = term3sq;
       start_offset = sq->n - pli->maxW;
     }
@@ -1436,9 +1438,14 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
   if(pli->nmodels_hmmonly > 0) { /* HMM only pipeline used for at least one model */
     pli_hmmonly_pass_statistics(ofp, pli); fprintf(ofp, "\n");
   }
-  if(pli->nmodels > 0) { 
+  if(pli->nmodels > 0) { /* CM pipeline was used for at least one model */
     pli_sum_statistics(pli);
     pli_pass_statistics(ofp, pli, PLI_PASS_CM_SUMMED); fprintf(ofp, "\n");
+  }
+  if(pli->nmodels > 0 && pli->nmodels_hmmonly > 0) { 
+    fprintf(ofp, "Total CM and HMM hits reported:                    %15d\n\n",
+	    (int) (pli->acct[PLI_PASS_CM_SUMMED].n_output) + 
+	    (int) (pli->acct[PLI_PASS_HMM_ONLY_ANY].n_output));
   }
   if(w != NULL) esl_stopwatch_Display(ofp, w, "# CPU time: ");
   fprintf(ofp, "//\n");
@@ -1489,7 +1496,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   }
 
   if(pli->be_verbose) { 
-    fprintf(ofp, "Internal CM pipeline statistics summary: %s\n", cm_pli_DescribePass(pass_idx));
+    fprintf(ofp, "Internal CM pipeline statistics summary: %s\n", pli_describe_pass(pass_idx));
   }
   else { 
     fprintf(ofp, "Internal CM pipeline statistics summary:\n");
@@ -1653,13 +1660,14 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
       n_output_trunc   = 0;
       pos_output_trunc = 0;
     }
-    fprintf(ofp, "Total CM hits reported:                            %15d  (%.4g) [includes %d truncated hit%s]\n",
-	    (int) (pli_acct->n_output + n_output_trunc),
+    fprintf(ofp, "Total CM hits reported:                            %15d  (%.4g) [includes %d truncated hit(s)]\n",
+	    (int) pli_acct->n_output,
 	    (double) (pli_acct->pos_output + pos_output_trunc) / nres_searched, 
-	    (int) n_output_trunc, (n_output_trunc == 1) ? "" : "s");
+	    (int) n_output_trunc);
   }
   else { 
-    fprintf(ofp, "Total CM hits reported:                            %15d  (%.4g)\n",
+    fprintf(ofp, "Total %sCM hits reported:                            %15d  (%.4g)\n",
+	    (pli->be_verbose) ? pli_describe_hits_for_pass(pass_idx) : "",
 	    (int) pli_acct->n_output,
 	    (double) pli_acct->pos_output / nres_searched);
   }
@@ -1717,8 +1725,8 @@ pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli)
     fprintf(ofp, "---------------------------------------------------------------\n");
   }
   else { 
-    fprintf(ofp, "Internal HMM-only pipeline statistics summary: (model%s zero basepairs)\n", (pli->nmodels_hmmonly == 1) ? " has" : "s have");
-    fprintf(ofp, "-----------------------------------------------------%s----------------\n", (pli->nmodels_hmmonly == 1) ? "----" : "------");
+    fprintf(ofp, "Internal HMM-only pipeline statistics summary: (run for model(s) with zero basepairs)\n");
+    fprintf(ofp, "--------------------------------------------------------------------------------------\n");
   }
 
   if (pli->mode == CM_SEARCH_SEQS) {
@@ -1910,34 +1918,6 @@ cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct)
   pli_acct->n_aln_dccyk       = 0;
 
   return eslOK;
-}
-
-
-/* Function:  cm_pli_DescribePass()
- * Date:      EPN, Tue Nov 29 04:39:38 2011
- *
- * Purpose:   Translate internal flags for pipeline pass index
- *            into human-readable strings, for clearer output.
- * 
- * Args:      pass_idx - a pipeline pass index
- *                       PLI_PASS_CM_SUMMED, PLI_PASS_STD_ANY, PLI_PASS_5P_ONLY_FORCE, PLI_PASS_3P_ONLY_FORCE, PLI_PASS_5P_AND_3P_FORCE
- *
- * Returns:   the appropriate string
- */
-char *
-cm_pli_DescribePass(int pass_idx) 
-{
-  switch (pass_idx) {
-  case PLI_PASS_CM_SUMMED:       return "(standard and truncated passes)"; break;
-  case PLI_PASS_STD_ANY:         return "(full sequences)";                break;
-  case PLI_PASS_5P_ONLY_FORCE:   return "(5' terminal sequence regions)";  break;
-  case PLI_PASS_3P_ONLY_FORCE:   return "(3' terminal sequence regions)";  break;
-  case PLI_PASS_5P_AND_3P_FORCE: return "(full sequences short enough to contain a 5' and 3' truncated hit)"; break;
-  case PLI_PASS_5P_AND_3P_ANY:   return "(full sequences, allowing truncated hits)"; break;
-  case PLI_PASS_HMM_ONLY_ANY:    return "(HMM only mode: full sequences, allowing truncated hits)"; break;
-  default: cm_Fail("bogus pipeline pass index %d\n", pass_idx); break;
-  }
-  return "";
 }
 
 /* Function:  cm_pli_PassEnforcesFirstRes()
@@ -3932,7 +3912,7 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, int 
   return status;
 }
 
-/* Function:  copy_subseq()
+/* Function:  pli_copy_subseq()
  * Incept:    EPN, Tue Aug  9 11:13:02 2011
  *
  * Purpose: Copy a subsequence of an existing sequence <src_sq>
@@ -3943,9 +3923,9 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, int 
  * Returns: eslOK on success. 
  */
 void
-copy_subseq(const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L)
+pli_copy_subseq(const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L)
 { 
-  /*Printf("entering copy_subseq i: %" PRId64 " j: %" PRId64 " L: %" PRId64 " start-end: %" PRId64 "... %" PRId64 "\n",
+  /*Printf("entering pli_copy_subseq i: %" PRId64 " j: %" PRId64 " L: %" PRId64 " start-end: %" PRId64 "... %" PRId64 "\n",
     i, i+L-1, L, src_sq->start, src_sq->end);
     fflush(stdout);*/
 
@@ -3976,6 +3956,63 @@ copy_subseq(const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L)
   esl_sq_SetDesc     (dest_sq, src_sq->desc);
 
   return;
+}
+
+/* Function:  pli_describe_pass()
+ * Date:      EPN, Tue Nov 29 04:39:38 2011
+ *
+ * Purpose:   Translate internal flags for pipeline pass index
+ *            into human-readable strings, for clearer output.
+ * 
+ * Args:      pass_idx - a pipeline pass index
+ *                       PLI_PASS_CM_SUMMED | PLI_PASS_STD_ANY | PLI_PASS_5P_ONLY_FORCE |
+ *                       PLI_PASS_3P_ONLY_FORCE | PLI_PASS_5P_AND_3P_FORCE | PLI_PASS_HMM_ONLY_ANY
+ *
+ * Returns:   the appropriate string
+ */
+char *
+pli_describe_pass(int pass_idx) 
+{
+  switch (pass_idx) {
+  case PLI_PASS_CM_SUMMED:       return "(standard and truncated passes)"; break;
+  case PLI_PASS_STD_ANY:         return "(full sequences)";                break;
+  case PLI_PASS_5P_ONLY_FORCE:   return "(5' terminal sequence regions)";  break;
+  case PLI_PASS_3P_ONLY_FORCE:   return "(3' terminal sequence regions)";  break;
+  case PLI_PASS_5P_AND_3P_FORCE: return "(full sequences short enough to contain a 5' and 3' truncated hit)"; break;
+  case PLI_PASS_5P_AND_3P_ANY:   return "(full sequences, allowing truncated hits)"; break;
+  case PLI_PASS_HMM_ONLY_ANY:    return "(HMM only mode: full sequences, allowing truncated hits)"; break;
+  default: cm_Fail("bogus pipeline pass index %d\n", pass_idx); break;
+  }
+  return "";
+}
+
+/* Function:  pli_describe_hits_for_pass()
+ * Date:      EPN, Thu Apr 19 05:50:54 2012
+ *
+ * Purpose:   Translate internal flags for pipeline pass index
+ *            into human-readable strings describe types of hits
+ *            found in that pass, for clearer output.
+ * 
+ * Args:      pass_idx - a pipeline pass index
+ *                       PLI_PASS_CM_SUMMED | PLI_PASS_STD_ANY | PLI_PASS_5P_ONLY_FORCE |
+ *                       PLI_PASS_3P_ONLY_FORCE | PLI_PASS_5P_AND_3P_FORCE | PLI_PASS_HMM_ONLY_ANY
+ *
+ * Returns:   the appropriate string
+ */
+char *
+pli_describe_hits_for_pass(int pass_idx) 
+{
+  switch (pass_idx) {
+  case PLI_PASS_CM_SUMMED:       return "";                     break;
+  case PLI_PASS_STD_ANY:         return "non-truncated ";       break;
+  case PLI_PASS_5P_ONLY_FORCE:   return "5' truncated ";        break;
+  case PLI_PASS_3P_ONLY_FORCE:   return "3' truncated ";        break;
+  case PLI_PASS_5P_AND_3P_FORCE: return "5' and 3' truncated "; break;
+  case PLI_PASS_5P_AND_3P_ANY:   return "";                     break;
+  case PLI_PASS_HMM_ONLY_ANY:    return "";                     break;
+  default: cm_Fail("bogus pipeline pass index %d\n", pass_idx); break;
+  }
+  return "";
 }
 
 #if 0

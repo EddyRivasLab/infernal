@@ -60,9 +60,9 @@ cm_tophits_Create(void)
   h->N         = 0;
   h->nreported = 0;
   h->nincluded = 0;
-  h->is_sorted_by_score            = TRUE;  /* but only because there's 0 hits */
+  h->is_sorted_by_evalue           = TRUE;  /* but only because there's 0 hits */
   h->is_sorted_for_overlap_removal = FALSE; /* actually this is true with 0 hits, but for safety, 
-				             * we don't want both sorted_* fields as TRUE */
+				             * we don't want multiple sorted_* fields as TRUE */
   h->is_sorted_by_position         = FALSE; /* ditto */
   h->hit[0]    = h->unsrt;  /* if you're going to call it "sorted" when it contains just one hit, you need this */
   return h;
@@ -102,7 +102,7 @@ cm_tophits_Grow(CM_TOPHITS *h)
   /* If we grow a sorted list, we have to translate the pointers
    * in h->hit, because h->unsrt might have just moved in memory. 
    */
-  if (h->is_sorted_by_score || h->is_sorted_for_overlap_removal || h->is_sorted_by_position) { 
+  if (h->is_sorted_by_evalue || h->is_sorted_for_overlap_removal || h->is_sorted_by_position) { 
     for (i = 0; i < h->N; i++)
       h->hit[i] = h->unsrt + (h->hit[i] - ori);
   }
@@ -140,7 +140,7 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   hit = &(h->unsrt[h->N]);
   h->N++;
   if (h->N >= 2) { 
-    h->is_sorted_by_score            = FALSE;
+    h->is_sorted_by_evalue           = FALSE;
     h->is_sorted_for_overlap_removal = FALSE;
     h->is_sorted_by_position         = FALSE;
   }
@@ -175,22 +175,26 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   return status;
 }
 
-/* hit_sorter_by_score(), hit_sorter_for_overlap_removal and hit_sorter_by_position: qsort's pawns, below */
+/* hit_sorter_by_evalue(), hit_sorter_for_overlap_removal and hit_sorter_by_position: qsort's pawns, below */
 static int
-hit_sorter_by_score(const void *vh1, const void *vh2)
+hit_sorter_by_evalue(const void *vh1, const void *vh2)
 {
   CM_HIT *h1 = *((CM_HIT **) vh1);  /* don't ask. don't change. Don't Panic. */
   CM_HIT *h2 = *((CM_HIT **) vh2);
 
-  if      (h1->score < h2->score) return  1; /* first key, bit score, high to low */
-  else if (h1->score > h2->score) return -1;
-  else {
-    if      (h1->seq_idx > h2->seq_idx) return  1; /* second key, seq_idx (unique id for sequences), low to high */
-    else if (h1->seq_idx < h2->seq_idx) return -1;
+  if      (h1->evalue > h2->evalue) return  1; /* first key, E-value, low to high */
+  else if (h1->evalue < h2->evalue) return -1;
+  else { 
+    if      (h1->score < h2->score) return  1; /* second key, bit score, high to low */
+    else if (h1->score > h2->score) return -1;
     else {
-      if      (h1->start > h2->start) return  1; /* third key, start position, low to high */
-      else if (h1->start < h2->start) return -1;
-      else                            return  (h1->pass_idx < h2->pass_idx ? 1 : -1 ); /* fourth key, pass_idx, high to low */
+      if      (h1->seq_idx > h2->seq_idx) return  1; /* second key, seq_idx (unique id for sequences), low to high */
+      else if (h1->seq_idx < h2->seq_idx) return -1;
+      else {
+	if      (h1->start > h2->start) return  1; /* third key, start position, low to high */
+	else if (h1->start < h2->start) return -1;
+	else                            return  (h1->pass_idx < h2->pass_idx ? 1 : -1 ); /* fourth key, pass_idx, high to low */
+      }
     }
   }
 }
@@ -252,35 +256,35 @@ hit_sorter_by_position(const void *vh1, const void *vh2)
   }
 }
 
-/* Function:  cm_tophits_SortByScore()
- * Synopsis:  Sorts a hit list by bit score.
+/* Function:  cm_tophits_SortByEvalue()
+ * Synopsis:  Sorts a hit list by E-value.
  * Incept:    EPN, Tue May 24 13:30:23 2011
  *            SRE, Fri Dec 28 07:51:56 2007 (p7_tophits_Sort())
  *
- * Purpose:   Sorts a top hit list by score. After this call,
+ * Purpose:   Sorts a top hit list by E-value. After this call,
  *            <h->hit[i]> points to the i'th ranked <CM_HIT> for all
- *            <h->N> hits. First sort key is score (high to low), 
- *            second is seq_idx (low to high), third is 
- *            start position (low to high).
+ *            <h->N> hits. First sort key is E-value (low to high),
+ *            second is score (high to low), third is seq_idx 
+ *            (low to high), fourth is start position (low to high).
 
  * Returns:   <eslOK> on success.
  */
 int
-cm_tophits_SortByScore(CM_TOPHITS *h)
+cm_tophits_SortByEvalue(CM_TOPHITS *h)
 {
   int i;
 
-  if (h->is_sorted_by_score) { 
+  if (h->is_sorted_by_evalue) { 
     h->is_sorted_for_overlap_removal = FALSE;
     h->is_sorted_by_position         = FALSE;
     return eslOK;
   }
   /* initialize hit ptrs, this also unsorts if already sorted by seq_idx */
   for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
-  if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_score);
+  if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_evalue);
   h->is_sorted_for_overlap_removal = FALSE;
   h->is_sorted_by_position         = FALSE;
-  h->is_sorted_by_score            = TRUE;
+  h->is_sorted_by_evalue           = TRUE;
   return eslOK;
 }
 
@@ -303,14 +307,14 @@ cm_tophits_SortForOverlapRemoval(CM_TOPHITS *h)
   int i;
 
   if (h->is_sorted_for_overlap_removal) { 
-    h->is_sorted_by_score    = FALSE;
+    h->is_sorted_by_evalue   = FALSE;
     h->is_sorted_by_position = FALSE;
     return eslOK;
   }
   /* initialize hit ptrs, this also unsorts if already sorted by score */
   for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
   if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_for_overlap_removal);
-  h->is_sorted_by_score            = FALSE;
+  h->is_sorted_by_evalue           = FALSE;
   h->is_sorted_by_position         = FALSE;
   h->is_sorted_for_overlap_removal = TRUE;
 
@@ -339,14 +343,14 @@ cm_tophits_SortByPosition(CM_TOPHITS *h)
   int i;
 
   if (h->is_sorted_by_position) { 
-    h->is_sorted_by_score            = FALSE;
+    h->is_sorted_by_evalue           = FALSE;
     h->is_sorted_for_overlap_removal = FALSE;
     return eslOK;
   }
   /* initialize hit ptrs, this also unsorts if already sorted by score */
   for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
   if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_by_position);
-  h->is_sorted_by_score            = FALSE;
+  h->is_sorted_by_evalue           = FALSE;
   h->is_sorted_for_overlap_removal = FALSE;
   h->is_sorted_by_position         = TRUE;
 
@@ -401,7 +405,7 @@ cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2)
   /* Construct the new grown h1 */
   h1->Nalloc = Nalloc;
   h1->N     += h2->N;
-  h1->is_sorted_by_score            = FALSE;
+  h1->is_sorted_by_evalue           = FALSE;
   h1->is_sorted_for_overlap_removal = FALSE;
   h1->is_sorted_by_position         = FALSE;
 
@@ -563,7 +567,7 @@ cm_tophits_Reuse(CM_TOPHITS *h)
     }
   }
   h->N         = 0;
-  h->is_sorted_by_score            = TRUE;  /* because there's no hits */
+  h->is_sorted_by_evalue           = TRUE;  /* because there's no hits */
   h->is_sorted_for_overlap_removal = FALSE; /* actually this is true with 0 hits, but for safety, 
 			           	     * we don't want multiple sorted_* fields as TRUE */
   h->is_sorted_by_position         = FALSE; /* ditto */
@@ -1074,7 +1078,7 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       
       sprintf(cur_rankstr, "(%d)", nprinted+1);
 
-      fprintf(ofp, " %*s %9.2g %6.1f %5.1f  %-*s %*" PRId64 " %*" PRId64 " %c %-3s %5s %4.2f  ",
+      fprintf(ofp, " %*s %9.2g %6.1f %5.1f  %-*s %*" PRId64 " %*" PRId64 " %c %3s %5s %4.2f  ",
 	      rankw, cur_rankstr,
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
@@ -1169,12 +1173,13 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 
       /* The hit info display is 97+rankw char wide:, where rankw is the maximum of 4 and 2 plus the number of digits in th->N. 
        * If (pli->be_verbose), the width grows by 35 chars.
-       *     rank    score  bias    Evalue mdl mdl from   mdl to       seq from      seq to       acc trunc   gc| bands     tau   mx Mb seconds pass
-       *     ----   ------ ----- --------- --- -------- --------    ----------- -----------      ---- ----- ----|------ ------- ------- ------- ----
-       *      (1) !  123.4   0.3    6.8e-9  CM        3       72 []         412         492 + .. 0.98    no 0.48|   hmm    5e-6    1.30    0.04    1
-       *     (12) ?  123.4  12.7    1.8e-3 HMM        1       72 []         180         103 - .. 0.90    no 0.60|   hmm    0.01    0.65    2.23    3  
-       *    rankw 1 123456 12345 123456789 123 12345678 12345678 12 12345678901 12345678901 1 12 1234 12345 1234| 12345 1234567 1234567 1234567 1234 
-       *        0         1         2         3         4         5         6         7         8        9      | 10        11        12        13
+
+       *     rank     E-value  score  bias mdl mdl from   mdl to       seq from      seq to       acc trunc   gc| bands     tau   mx Mb seconds pass
+       *     ----   --------- ------ ----- --- -------- --------    ----------- -----------      ---- ----- ----|------ ------- ------- ------- ----
+       *      (1) !    6.8e-9  123.4   0.3  CM        3       72 []         412         492 + .. 0.98    no 0.48|   hmm    5e-6    1.30    0.04    1
+       *     (12) ?    1.8e-3  123.4  12.7 HMM        1       72 []         180         103 - .. 0.90    no 0.60|   hmm    0.01    0.65    2.23    3  
+       *    rankw 1 123456789 123456 12345 123 12345678 12345678 12 12345678901 12345678901 1 12 1234 12345 1234| 12345 1234567 1234567 1234567 1234 
+       *        0         1        2        3         4         5         6         7         8        9        | 10        11        12        13
        *        012345678901234567890123456789012345678901234567890123456789012345678901234567890123457890123456789012345678901234567890123456789012
        *                                                                                                        |-> only shown if pli->be_verbose
        * In rare cases, when CYK alignment is chosen or when computing
@@ -1183,13 +1188,13 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
        * characters wide instead of 4.
        */
       
-      fprintf(ofp, " %*s %1s %6s %5s %9s %-3s %8s %8s %2s %11s %11s %1s %2s",  rankw, "rank", "", "score", "bias", "Evalue", "mdl", "mdl from", "mdl to", "", "seq from", "seq to", "", "");
+      fprintf(ofp, " %*s %1s %9s %6s %5s %-3s %8s %8s %2s %11s %11s %1s %2s",  rankw, "rank", "", "E-value", "score", "bias", "mdl", "mdl from", "mdl to", "", "seq from", "seq to", "", "");
       if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %4s", "acc",   "trunc", "gc"); }
       else                       { fprintf(ofp, " %6s %5s %4s", "cyksc", "trunc", "gc"); }
       if(pli->be_verbose)        { fprintf(ofp, " %5s %7s %7s %7s %4s", "bands", "tau", "mx Mb", "seconds", "pass"); }
       fprintf(ofp, "\n");
       
-      fprintf(ofp, " %*s %1s %6s %5s %9s %-3s %8s %8s %2s %11s %11s %1s %2s",  rankw, rankstr,  "", "------", "-----", "---------", "---", "--------", "--------", "", "-----------", "-----------", "", "");
+      fprintf(ofp, " %*s %1s %9s %6s %5s %-3s %8s %8s %2s %11s %11s %1s %2s",  rankw, rankstr,  "", "---------", "------", "-----", "---", "--------", "--------", "", "-----------", "-----------", "", "");
       if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4s %5s %4s", "----",   "-----", "----"); }
       else                       { fprintf(ofp, " %6s %5s %4s", "------", "-----", "----"); }
       if(pli->be_verbose)        { fprintf(ofp, " %5s %7s %7s %7s %4s", "-----", "-------", "-------", "-------", "----"); }
@@ -1218,12 +1223,12 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 
       sprintf(cur_rankstr, "(%d)", nprinted+1);
 
-      fprintf(ofp, " %*s %c %6.1f %5.1f %9.2g %-3s %8d %8d %c%c %11" PRId64 " %11" PRId64 " %c %c%c",
+      fprintf(ofp, " %*s %c %9.2g %6.1f %5.1f %3s %8d %8d %c%c %11" PRId64 " %11" PRId64 " %c %c%c",
 	      rankw, cur_rankstr,
 	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? '!' : '?'),
+	      th->hit[h]->evalue,
 	      th->hit[h]->score,
 	      th->hit[h]->bias,
-	      th->hit[h]->evalue,
 	      (th->hit[h]->hmmonly) ? "hmm" : "cm",
 	      th->hit[h]->ad->cfrom_emit,
 	      th->hit[h]->ad->cto_emit,
@@ -1719,15 +1724,15 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
     fprintf(ofp, "#%-*s %-*s %-*s %-*s %3s %8s %8s %*s %*s %6s %5s %4s %4s %9s %6s %-s\n",
 	    tnamew-1, "target name", taccw, "accession",  qnamew, "query name", qaccw, "accession", 
 	    "mdl", "mdl from", "mdl to", 
-	    posw, "hit from", posw, "hit to", "strand", "trunc", "gc", "pass", "E-value", "score", "description of target");
+	    posw, "hit from", posw, "hit to", "strand", "trunc", "pass", "gc", "E-value", "score", "description of target");
     fprintf(ofp, "#%-*s %-*s %-*s %-*s %-3s %-7s %-7s %*s %*s %6s %5s %4s %4s %9s %6s %s\n",
 	    tnamew-1, tnamestr, taccw, taccstr, qnamew, qnamestr, qaccw, qaccstr, 
 	    "---", "--------", "--------", 
-	    posw, posstr, posw, posstr, "------", "-----", "----", "----", "---------", "-----", "---------------------");
+	    posw, posstr, posw, posstr, "------", "-----", "----", "----", "---------", "------", "---------------------");
   }
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED)    {
-      fprintf(ofp, "%-*s %-*s %-*s %-*s %-3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4.2f %4d %9.2g %6.1f %s\n",
+      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %9.2g %6.1f %s\n",
 	      tnamew, th->hit[h]->name,
 	      taccw,  ((th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') ? th->hit[h]->acc : "-"),
 	      qnamew, qname,
@@ -1738,8 +1743,8 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->in_rc == TRUE) ? "-" : "+",
 	      cm_alidisplay_TruncString(th->hit[h]->ad), 
-	      th->hit[h]->ad->gc,
 	      th->hit[h]->pass_idx, 
+	      th->hit[h]->ad->gc,
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
 	      (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "-");
@@ -1854,12 +1859,12 @@ cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th)
   fprintf(fp, "Nalloc                        = %" PRId64 "\n", th->Nalloc);
   fprintf(fp, "nreported                     = %" PRId64 "\n", th->nreported);
   fprintf(fp, "nincluded                     = %" PRId64 "\n", th->nincluded);
-  fprintf(fp, "is_sorted_by_score            = %s\n",  th->is_sorted_by_score            ? "TRUE" : "FALSE");
+  fprintf(fp, "is_sorted_by_evalue           = %s\n",  th->is_sorted_by_evalue           ? "TRUE" : "FALSE");
   fprintf(fp, "is_sorted_for_overlap_removal = %s\n",  th->is_sorted_for_overlap_removal ? "TRUE" : "FALSE");
   fprintf(fp, "is_sorted_by_position         = %s\n",  th->is_sorted_by_position         ? "TRUE" : "FALSE");
-  if(th->is_sorted_by_score) { 
+  if(th->is_sorted_by_evalue) { 
     for (i = 0; i < th->N; i++) {
-      fprintf(fp, "SCORE SORTED HIT %" PRId64 ":\n", i);
+      fprintf(fp, "E-VALUE SORTED HIT %" PRId64 ":\n", i);
       cm_hit_Dump(fp, th->hit[i]);
     }
   }
@@ -2137,10 +2142,10 @@ main(int argc, char **argv)
   esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_RemoveOverlaps():             ");
   esl_stopwatch_Start(w);
 
-  cm_tophits_SortByScore(h[0]);
+  cm_tophits_SortByEvalue(h[0]);
 
   esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_SortByScore():                ");
+  esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_SortByEvalue():                ");
   
   if(esl_opt_GetBoolean(go, "-v")) cm_tophits_Dump(stdout, h[0]);
 
@@ -2248,7 +2253,8 @@ main(int argc, char **argv)
       esl_strdup(desc, -1, &(hit->desc));
       hit->start   = esl_rnd_Roll(r, L);
       hit->stop    = esl_rnd_Roll(r, L);
-      hit->score   = esl_random(r);
+      hit->score   = esl_random(r); 
+      hit->evalue  = esl_random(r) + 5.0 * (double) (esl_rnd_Roll(r, 10) + 1); /* impt that this greater than 0.1 and less than 200 */
       hit->seq_idx = esl_rnd_Roll(r, X);
       hit->cm_idx  = esl_rnd_Roll(r, Y);
       hit->srcL    = L;
@@ -2260,7 +2266,8 @@ main(int argc, char **argv)
       esl_strdup(desc, -1, &(hit->desc));
       hit->start   = esl_rnd_Roll(r, L);
       hit->stop    = esl_rnd_Roll(r, L);
-      hit->score   = 10.0 * esl_random(r);
+      hit->score   = esl_random(r); 
+      hit->evalue  = esl_random(r) + 1.0 * (double) (esl_rnd_Roll(r, 10) + 1); /* impt that this greater than 0.1 and less than 200 */
       hit->seq_idx = esl_rnd_Roll(r, X);
       hit->cm_idx  = esl_rnd_Roll(r, Y);
       hit->srcL    = L;
@@ -2272,7 +2279,8 @@ main(int argc, char **argv)
       esl_strdup(desc, -1, &(hit->desc));
       hit->start   = esl_rnd_Roll(r, L);
       hit->stop    = esl_rnd_Roll(r, L);
-      hit->score   = 0.1 * esl_random(r);
+      hit->score   = esl_random(r); 
+      hit->evalue  = esl_random(r) + 10.0 * (double) (esl_rnd_Roll(r, 10) + 1); /* impt that this greater than 0.1 and less than 200 */
       hit->seq_idx = esl_rnd_Roll(r, X);
       hit->cm_idx  = esl_rnd_Roll(r, Y);
       hit->srcL    = L;
@@ -2283,7 +2291,8 @@ main(int argc, char **argv)
   esl_strdup("third", -1, &(hit->name));
   hit->start   = L;
   hit->stop    = L;
-  hit->score   = 20.0;
+  hit->score   = 20.0; 
+  hit->evalue  = 0.1; 
   hit->cm_idx  = 0;
   hit->seq_idx = 0;
   hit->srcL    = L+1;
@@ -2293,6 +2302,7 @@ main(int argc, char **argv)
   hit->start   = L;
   hit->stop    = L;
   hit->score   = 30.0;
+  hit->evalue  = 0.01;
   hit->cm_idx  = 0;
   hit->seq_idx = 0;
   hit->srcL    = L+1;
@@ -2302,6 +2312,7 @@ main(int argc, char **argv)
   hit->start   = L;
   hit->stop    = L;
   hit->score   = 40.0;
+  hit->evalue  = 0.001;
   hit->cm_idx  = 0;
   hit->seq_idx = 0;
   hit->srcL    = L+1;
@@ -2311,6 +2322,7 @@ main(int argc, char **argv)
   hit->start   = L+1;
   hit->stop    = L+1;
   hit->score   = -1.0;
+  hit->evalue  = 200.0;
   hit->cm_idx  = 0;
   hit->seq_idx = 0;
   hit->srcL    = L+1;
@@ -2319,7 +2331,8 @@ main(int argc, char **argv)
   esl_strdup("secondtolast", -1, &(hit->name));
   hit->start   = L+1;
   hit->stop    = L+1;
-  hit->score   = -2.0;
+  hit->score   = -11.0;
+  hit->evalue  = 210.0;
   hit->cm_idx  = 0;
   hit->seq_idx = 0;
   hit->srcL    = L+1;
@@ -2328,21 +2341,22 @@ main(int argc, char **argv)
   esl_strdup("last", -1, &(hit->name));
   hit->start   = L+1;
   hit->stop    = L+1;
-  hit->score   = -3.0;
+  hit->score   = -21.0;
+  hit->evalue  = 220.0;
   hit->cm_idx  = 0;
   hit->seq_idx = 0;
   hit->srcL    = L+1;
   
   cm_tophits_SortForOverlapRemoval(h1);
   if((status = cm_tophits_RemoveOverlaps(h1, errbuf)) != eslOK) cm_Fail(errbuf);
-  cm_tophits_SortByScore(h1);
+  cm_tophits_SortByEvalue(h1);
   if (strcmp(h1->hit[0]->name,   "third")        != 0)   esl_fatal("sort 1 failed (top is %s = %f)",  h1->hit[0]->name,   h1->hit[0]->score);
   if (strcmp(h1->hit[N+1]->name, "thirdtolast")  != 0)   esl_fatal("sort 1 failed (last is %s = %f)", h1->hit[N+1]->name, h1->hit[N+1]->score);
 
   cm_tophits_Merge(h1, h2);
   cm_tophits_SortForOverlapRemoval(h1);
   if((status = cm_tophits_RemoveOverlaps(h1, errbuf)) != eslOK) cm_Fail(errbuf);
-  cm_tophits_SortByScore(h1);
+  cm_tophits_SortByEvalue(h1);
   if (strcmp(h1->hit[0]->name,     "second")        != 0)   esl_fatal("sort 2 failed (top is %s = %f)",            h1->hit[0]->name,     h1->hit[0]->score);
   if (strcmp(h1->hit[1]->name,     "third")         != 0)   esl_fatal("sort 2 failed (second is %s = %f)",         h1->hit[1]->name,     h1->hit[1]->score);
   if (strcmp(h1->hit[2*N+2]->name, "thirdtolast")   != 0)   esl_fatal("sort 2 failed (second to last is %s = %f)", h1->hit[2*N+2]->name, h1->hit[2*N+2]->score);
@@ -2355,7 +2369,7 @@ main(int argc, char **argv)
   cm_tophits_Merge(h1, h3);
   cm_tophits_SortForOverlapRemoval(h1);
   if((status = cm_tophits_RemoveOverlaps(h1, errbuf)) != eslOK) cm_Fail(errbuf);
-  cm_tophits_SortByScore(h1);
+  cm_tophits_SortByEvalue(h1);
   if (strcmp(h1->hit[0]->name,     "first")         != 0)   esl_fatal("sort 3 failed (top    is %s = %f)",         h1->hit[0]->name,     h1->hit[0]->score);
   if (strcmp(h1->hit[1]->name,     "second")        != 0)   esl_fatal("sort 3 failed (second is %s = %f)",         h1->hit[1]->name,     h1->hit[1]->score);
   if (strcmp(h1->hit[2]->name,     "third")         != 0)   esl_fatal("sort 3 failed (third  is %s = %f)",         h1->hit[2]->name,     h1->hit[2]->score);

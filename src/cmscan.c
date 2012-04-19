@@ -83,7 +83,7 @@ typedef struct {
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles   reqs   incomp              help                                                      docgroup*/
   { "-h",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "show brief help on version and usage",                         1 },
-  { "-g",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "configure CM for glocal alignment [default: local]",           1 },
+  { "-g",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmmonly",     "configure CM for glocal alignment [default: local]",           1 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set database size in *Mb* to <x> for E-value calculations",    1 },
   { "--devhelp",    eslARG_NONE,   NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "show list of otherwise hidden developer/expert options",       1 },
   /* Control of output */
@@ -365,8 +365,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_SQFILE      *sqfp     = NULL;              /* open seqfile                                    */
   CM_FILE         *cmfp     = NULL;		 /* open CM database file                           */
   ESL_ALPHABET    *abc      = NULL;              /* sequence alphabet                               */
-  ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
-  ESL_STOPWATCH   *mw       = NULL;              /* timing                                          */
+  ESL_STOPWATCH   *w        = NULL;              /* timing one query sequence                       */
+  ESL_STOPWATCH   *mw       = NULL;              /* timing all query sequences                      */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
   int              qZ = 0;                       /* # residues to search in query seq (both strands)*/
   int              seq_idx  = 0;                 /* index of current seq we're working with         */
@@ -389,7 +389,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   w = esl_stopwatch_Create();
   mw = esl_stopwatch_Create();
-
   esl_stopwatch_Start(mw);
 
   if (esl_opt_GetBoolean(go, "--notextw")) textw = 0;
@@ -573,7 +572,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       /* Sort by score and enforce threshold. */
-      cm_tophits_SortByScore(info[0].th);
+      cm_tophits_SortByEvalue(info[0].th);
       cm_tophits_Threshold(info[0].th, info[0].pli);
 
       /* tally up total number of hits and target coverage */
@@ -615,7 +614,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 					    sstatus, sqfp->filename);
 
   esl_stopwatch_Stop(mw);
-  esl_stopwatch_Display(ofp, mw, "# Total runtime:");
+  if(esl_opt_GetBoolean(go, "--verbose")) esl_stopwatch_Display(ofp, mw, "# Total runtime:");
 
   /* Terminate outputs - any last words?
    */
@@ -924,8 +923,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_SQFILE      *sqfp     = NULL;              /* open seqfile                                    */
   CM_FILE         *cmfp     = NULL;		 /* open CMM database file                          */
   ESL_ALPHABET    *abc      = NULL;              /* sequence alphabet                               */
-  ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
-  ESL_STOPWATCH   *mw       = NULL;              /* timing                                          */
+  ESL_STOPWATCH   *w        = NULL;              /* timing one query sequence                       */
+  ESL_STOPWATCH   *mw       = NULL;              /* timing all query sequences                      */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
   int              qZ = 0;                       /* # residues to search in query seq (both strands)*/
   int              seq_idx   = 0;
@@ -1142,7 +1141,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
       
       /* Print the results.  */
-      cm_tophits_SortByScore(th);
+      cm_tophits_SortByEvalue(th);
       cm_tophits_Threshold(th, pli);
 
       /* tally up total number of hits and target coverage */
@@ -1209,7 +1208,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if (ofp)      fprintf(ofp, "[ok]\n");
 
   esl_stopwatch_Stop(mw);
-  esl_stopwatch_Display(stdout, mw, "Total runtime:");
+  if(esl_opt_GetBoolean(go, "--verbose")) esl_stopwatch_Display(stdout, mw, "Total runtime:");
   
   /* Cleanup - prepare for successful exit
    */
@@ -1219,10 +1218,10 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   p7_bg_Destroy(bg);
 
   esl_sq_Destroy(qsq);
-  esl_stopwatch_Destroy(w);
-  esl_stopwatch_Destroy(mw);
   esl_alphabet_Destroy(abc);
   esl_sqfile_Close(sqfp);
+  if(w  != NULL) esl_stopwatch_Destroy(w);
+  if(mw != NULL) esl_stopwatch_Destroy(mw);
 
   if (ofp != stdout) fclose(ofp);
   if (tblfp)         fclose(tblfp);
@@ -1459,9 +1458,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   p7_bg_Destroy(bg);
 
   esl_sq_Destroy(qsq);
-  esl_stopwatch_Destroy(w);
   esl_alphabet_Destroy(abc);
   esl_sqfile_Close(sqfp);
+  if(w  != NULL) esl_stopwatch_Destroy(w);
 
   return eslOK;
 
