@@ -64,6 +64,7 @@ static ESL_OPTIONS options[] = {
   { "--informat",  eslARG_STRING,  NULL,    NULL, NULL,         NULL,      NULL,         NULL, "specify input alignment is in format <s> (Stockholm or Pfam)", 103 },
   { "--v1p0",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL,  "parameterize CM using methods from Infernal v1.0.2",          103 },
   { "--p56",       eslARG_NONE,    NULL,    NULL, NULL,         NULL,      NULL,    "--prior", "use the default prior from Infernal v0.56 through v1.0.2",     103 },
+  { "--noh3pri",   eslARG_NONE,    NULL,    NULL, NULL,         NULL,      NULL,"--v1p0,--p56","do not use the hmmer3 DNA prior for zero basepair models",     103 },
   { "--iins",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "allow informative insert emissions, do not zero them",         103 },
   { "--iflank",    eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "learn ROOT_IL/ROOT_IR transitions for 5'/3' flanking residues",103 },
   { "--nobalance", eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "don't rebalance the CM; number in strict preorder",            103 },
@@ -214,11 +215,6 @@ struct cfg_s {
   FILE         *cdfp;           /* if --cdump, output file handle for dumping clustered MSAs */
   FILE         *refinefp;       /* if --refine, output file handle for dumping refined MSAs */
   FILE         *rdfp;           /* if --rfile, output file handle for dumping intermediate MSAs during iterative refinement */
-
-  ComLog_t      *comlog;       /* the comlog, same for all CMs, cfg.comlog serves as template 
-				 * for all CMs, and is copied to each CM data structure */
-  int           argc;          /* used to create the comlog */
-  char        **argv;          /* used to create the comlog, be careful not to free this though, it's just a ptr */
 };
 
 static char usage[]  = "[-options] <cmfile_out> <msafile>";
@@ -239,7 +235,7 @@ static int    set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s 
 static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, CM_t *cm, const Prior_t *prior, float msa_nseq);
 static int    configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int iter);
 static int    set_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int    build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
+static int    build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, int use_mlp7_as_filter);
 static int    set_msa_name(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen, int nbps);
 static double version_1p0_default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
@@ -250,7 +246,6 @@ static int    convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa)
 static int    select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc, int *ret_best, char *errbuf);
 static float  find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret_nc, float *ret_mindiff, char *errbuf);
 static int    MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, int target_nc, int do_orig, int *ret_num_msa, ESL_MSA ***ret_cmsa, char *errbuf);
-static int    write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int    flatten_insert_emissions(CM_t *cm);
 static int    zero_insert_delete_transitions(CM_t *cm);
 static int    print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
@@ -288,7 +283,6 @@ main(int argc, char **argv)
   cfg.pri        = NULL;                   /* created in init_cfg() */
   cfg.fullmat    = NULL;                   /* read (possibly) in init_cfg() */
   cfg.r          = NULL;	           /* created (possibly) in init_cfg() */
-  cfg.comlog     = NULL;	           /* created in init_cfg() */
   cfg.fp7_bg     = NULL;                   /* created (possibly) in init_cfg() */
   cfg.fp7_bld    = NULL;                   /* created (possibly) in init_cfg() */
   /* optional output files, opened in init_cfg(), if at all */
@@ -380,7 +374,6 @@ main(int argc, char **argv)
   if (cfg.pri_zerobp != NULL) Prior_Destroy(cfg.pri_zerobp);
   if (cfg.null       != NULL) free(cfg.null);
   if (cfg.r          != NULL) esl_randomness_Destroy(cfg.r);
-  if (cfg.comlog     != NULL) FreeComLog(cfg.comlog);
   if (cfg.fp7_bg     != NULL) p7_bg_Destroy(cfg.fp7_bg);
   if (cfg.fp7_bld    != NULL) p7_builder_Destroy(cfg.fp7_bld);
 
@@ -725,7 +718,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
  *    cfg->pri     - prior, used for all models
  *    cfg->fullmat - RIBOSUM matrix used for all models (optional)
  *    cfg->cdfp    - open file to dump MSAs to (optional)
- *    cfg->comlog  - only allocated
  */
 static int
 init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
@@ -891,13 +883,9 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       if ((cfg->cdfp = fopen(esl_opt_GetString(go, "--cdump"), "w")) == NULL)
 	cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--cdump"));
     }
-  /* create the comlog */
-  cfg->comlog = CreateComLog();
-  if((status = write_cmbuild_info_to_comlog(go, cfg, errbuf)) != eslOK) return status;
 
-  if (cfg->pri    == NULL) ESL_FAIL(eslEINVAL, errbuf, "alphabet initialization failed");
-  if (cfg->null   == NULL) ESL_FAIL(eslEINVAL, errbuf, "null model initialization failed");
-  if (cfg->comlog == NULL) ESL_FAIL(eslEINVAL, errbuf, "comlog initialization failed");
+  if (cfg->pri     == NULL) ESL_FAIL(eslEINVAL, errbuf, "alphabet initialization failed");
+  if (cfg->null    == NULL) ESL_FAIL(eslEINVAL, errbuf, "null model initialization failed");
 
   cfg->nali = 0;
   cfg->ncm_total = 0;
@@ -912,23 +900,28 @@ static int
 process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
 {
   int      status;
-  uint32_t checksum = 0;  /* checksum calculated for the input MSA. cmalign --mapali verifies against this. */
-  CM_t    *cm = NULL;     /* the CM */
-  Prior_t *pri2use = NULL; /* cfg->pri or cfg->pri_zerobp (the latter if CM has no basepairs) */
+  uint32_t checksum = 0;      /* checksum calculated for the input MSA. cmalign --mapali verifies against this. */
+  CM_t    *cm = NULL;         /* the CM */
+  int      pretend_cm_is_hmm; /* TRUE if we will use special HMM-like parameterization because this CM has 0 basepairs */
+  Prior_t *pri2use = NULL;    /* cfg->pri or cfg->pri_zerobp (the latter if CM has no basepairs) */
 
   if ((status =  check_and_clean_msa          (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
   if ((status =  esl_msa_Checksum             (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
   if ((status =  set_relative_weights         (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
   if ((status =  build_model                  (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
-  pri2use = (CMCountNodetype(cm, MATP_nd) > 0) ? cfg->pri : cfg->pri_zerobp;
+
+  pretend_cm_is_hmm = ((CMCountNodetype(cm, MATP_nd) > 0) || esl_opt_GetBoolean(go, "--noh3pri")) ? FALSE : TRUE;
+  pri2use = (pretend_cm_is_hmm) ? cfg->pri_zerobp : cfg->pri;
+
   if ((status =  annotate                     (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
   if ((status =  set_model_cutoffs            (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
   if ((status =  set_effective_seqnumber      (go, cfg, errbuf, msa, cm, pri2use))                    != eslOK) goto ERROR;
   if ((status =  parameterize                 (go, cfg, errbuf, TRUE, cm, pri2use, msa->nseq))        != eslOK) goto ERROR;
   if ((status =  configure_model              (go, cfg, errbuf, cm, 1))                               != eslOK) goto ERROR;
   if ((status =  set_consensus                (go, cfg, errbuf, cm))                                  != eslOK) goto ERROR;
-  if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
-
+  /* if <pretend_cm_is_hmm> we'll set the CM's filter p7 HMM as its maximum likelihood HMM */
+  if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, msa, cm, pretend_cm_is_hmm))          != eslOK) goto ERROR;
+  
   cm->checksum = checksum;
   cm->flags   |= CMH_CHKSUM;
 
@@ -1176,8 +1169,6 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
     if((status = print_column_headings(go, cfg, errbuf)) != eslOK) return status;
   }
 
-  /* copy the cmbuild command info to the CM */
-  if ((status = CopyComLog(cfg->comlog, cm->comlog)) != eslOK) ESL_FAIL(eslFAIL, errbuf, "Problem copying com log info to CM. Probably out of memory.");
   if ((status = cm_Validate(cm, 0.0001, errbuf))     != eslOK) return status;
 
   if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
@@ -1510,9 +1501,11 @@ annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *
     fflush(cfg->ofp);
   }
 
-  if ((status = cm_SetName       (cm, msa->name))        != eslOK)  ESL_XFAIL(status, errbuf, "Unable to set name for CM");
-  if ((status = cm_SetAccession  (cm, msa->acc))         != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA accession");
-  if ((status = cm_SetDescription(cm, msa->desc))        != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA description");
+  if ((status = cm_SetName           (cm, msa->name))                    != eslOK)  ESL_XFAIL(status, errbuf, "Unable to set name for CM");
+  if ((status = cm_SetAccession      (cm, msa->acc))                     != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA accession");
+  if ((status = cm_SetDescription    (cm, msa->desc))                    != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record MSA description");
+  if ((status = cm_AppendComlog      (cm, go->argc, go->argv, FALSE, 0)) != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record command log");
+  if ((status = cm_SetCtime          (cm))                               != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record timestamp");
 
   if (cfg->be_verbose) { 
     fprintf(cfg->ofp, "done.  ");
@@ -1853,9 +1846,12 @@ set_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
 /* build_and_calibrate_p7_filter()
  * Build and calibrate the additional p7 HMM filter (differs from the
  * ML p7 HMM filter which was built in configure_model()).  
+ * If <use_mlp7_as_filter>, do just that. This will be true
+ * if --p7ml was used OR if model has zero basepairs and 
+ * --noh3pri was NOT used.
  */
 static int
-build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm)
+build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, int use_mlp7_as_filter)
 {
   int status; 
   CM_t    *acm = NULL; 
@@ -1916,7 +1912,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
   }
 
   /* Build the HMM filter (cm->fp7) */
-  if(esl_opt_GetBoolean(go, "--p7ml")) {
+  if(use_mlp7_as_filter) { 
     /* use the ML p7 HMM as the HMM filter */
     fhmm = cm->mlp7;
   }
@@ -2029,8 +2025,9 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
 			       gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
 			       &agfmu, &agflambda))  
      != eslOK) ESL_FAIL(status, errbuf, "Error calibrating additional p7 HMM");
-  
-  if((status = cm_SetFilterHMM(cm, fhmm, agfmu, agflambda)) != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter for the CM");
+
+  if((status = cm_SetFilterHMM(cm, fhmm, agfmu, agflambda))       != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter for the CM");
+  if((status = p7_hmm_AppendComlog (cm->fp7, go->argc, go->argv)) != eslOK) ESL_FAIL(status, errbuf, "Failed to record command log for filter HMM");
 
   if (cfg->be_verbose) { 
     fprintf(cfg->ofp, "done.  ");
@@ -2743,69 +2740,6 @@ find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret
   return eslOK;
 }
 
-/* Function: write_cmbuild_info_to_comlog
- * Date:     EPN, Mon Dec 31 10:17:21 2007
- *
- * Purpose:  Set the cmbuild command info and creation date info 
- *           in a ComLog_t data structure.
- *           clog->bcom, clog->bdate should be NULL when we enter this function.
- *
- * Returns:  eslOK on success, eslEINCOMPAT on contract violation.
- */
-static int
-write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
-{
-  int status;
-  int i;
-  uint32_t seed;
-  uint32_t temp;
-  int  seedlen;
-  char *seedstr = NULL;
-  time_t date = time(NULL);
-
-  if(cfg->comlog->bcom != NULL)  ESL_FAIL(eslEINCOMPAT, errbuf, "write_cmbuild_info_to_comlog(), cfg->comlog->bcom is non-NULL.");
-  if(cfg->comlog->bdate != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "write_cmbuild_info_to_comlog(), cfg->comlog->bcom is non-NULL.");
-
-  /* Set the cmbuild command info, the cfg->comlog->bcom string */
-  for (i = 0; i < go->optind; i++) { /* copy all command line options, but not the command line args yet, we may need to append '-s ' before the args */
-    esl_strcat(&(cfg->comlog->bcom), -1, go->argv[i], -1);
-    esl_strcat(&(cfg->comlog->bcom), -1, " ", 1);
-  }
-  /* if --gibbs enabled, and -s NOT enabled, we need to append the seed info also */
-  if(esl_opt_GetBoolean(go, "--gibbs")) {
-    if(cfg->r == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r is NULL but --gibbs enabled, shouldn't happen.");
-    seed = esl_randomness_GetSeed(cfg->r);
-    if( esl_opt_IsUsed(go, "--seed")) { /* --seed was enabled with --gibbs, we'll do a sanity check */
-      if(seed != esl_opt_GetInteger(go, "--seed")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r's seed is %" PRIu32 ", but -s was enabled with argument: %" PRIu32 "!, this shouldn't happen.", seed, esl_opt_GetInteger(go, "--seed"));
-    } else {
-      temp = seed; 
-      seedlen = 1; 
-      while(temp > 0) { temp/=10; seedlen++; } /* determine length of stringized version of seed */
-      seedlen += 4; /* strlen(' -s ') */
-      
-      ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
-      sprintf(seedstr, " -s %" PRIu32 " ", seed);
-      esl_strcat((&cfg->comlog->bcom), -1, seedstr, seedlen);
-    }
-  }
-  for (i = go->optind; i < go->argc; i++) { /* copy all command line options, but not the command line args yet, we may need to append '-s ' before the args */
-    esl_strcat(&(cfg->comlog->bcom), -1, go->argv[i], -1);
-    if(i < (go->argc-1)) esl_strcat(&(cfg->comlog->bcom), -1, " ", 1);
-  }
-
-  /* Set the cmbuild creation date, the cfg->comlog->bdate string */
-  if((status = esl_strdup(ctime(&date), -1, &(cfg->comlog->bdate))) != eslOK) goto ERROR;
-  esl_strchop(cfg->comlog->bdate, -1); /* doesn't return anything but eslOK */
-
-  if(seedstr != NULL) free(seedstr);
-  return eslOK;
-
- ERROR:
-  if(seedstr != NULL) free(seedstr);
-  ESL_FAIL(status, errbuf, "write_cmbuild_info_to_comlog() error status: %d, probably out of memory.", status);
-  return status; 
-}
-
 /* Function: flatten_insert_emissions()
  *
  * Purpose:  Set the insert emission *probabilities* of a CM to it's 
@@ -3070,6 +3004,8 @@ p7_prior_Read(FILE *fp)
  *            The match emission priors were trained on Rfam.
  *            This is the 'ss1' prior described in 
  *            ~nawrockie/notebook/10_1116_hmmer_dinuc_priors/00LOG.
+ *            These are very nearly identical to the defaults used 
+ *            by HMMER, but in HMMER they've been rounded.
  *
  *            The insert emission prior is flat, plus-1.
  *
@@ -3082,6 +3018,7 @@ P7_PRIOR *cm_p7_prior_CreateNucleic(void)
   int q;
 
   int num_comp = 4;
+
   static double defmq[5] = { 0.079226, 0.259549, 0.241578, 0.419647 };
   static double defm[4][4] = {
     { 1.294511, 0.400028, 6.579555, 0.509916}, 

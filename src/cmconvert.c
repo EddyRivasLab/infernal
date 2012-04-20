@@ -74,6 +74,17 @@ main(int argc, char **argv)
 	 */
 	if ((status = configure_model(cm, errbuf)) != eslOK) cm_Fail(errbuf);
       }	
+      /* append command line info to the appropriate comlog */
+      if (esl_opt_GetBoolean(go, "--mlhmm")) { 
+	if((status = p7_hmm_AppendComlog (cm->mlp7, go->argc, go->argv)) != eslOK) cm_Fail("Failed to record command log"); 
+      }
+      else if (esl_opt_GetBoolean(go, "--fhmm")) { 
+	if((status = p7_hmm_AppendComlog (cm->fp7,  go->argc, go->argv)) != eslOK) cm_Fail("Failed to record command log");
+      }
+      else { 
+	if((status = cm_AppendComlog (cm, go->argc, go->argv, FALSE , 0)) != eslOK) cm_Fail("Failed to record command log");
+      }
+
       if      (esl_opt_GetBoolean(go, "-a")       == TRUE) cm_file_WriteASCII (ofp, fmtcode, cm);
       else if (esl_opt_GetBoolean(go, "-b")       == TRUE) cm_file_WriteBinary(ofp, fmtcode, cm, NULL);
       else if (esl_opt_GetBoolean(go, "-1")       == TRUE) cm_file_Write1p0ASCII(ofp, cm);

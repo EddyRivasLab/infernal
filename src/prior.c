@@ -1223,21 +1223,18 @@ Prior_Default(int mimic_h3)
 
      /* MATL->MATL transitions, overwrite previously set values for relevant transitions */
      pri->tsetmap[MATL_ML][MATL_nd] = 32;
-     pri->t[32] = esl_mixdchlet_Create(1, 3);
      pri->t[32]->pq[0] = 1.0;
      pri->t[32]->alpha[0][0] = 0.1; /* ML->IL */
      pri->t[32]->alpha[0][1] = 2.0; /* ML->ML */
      pri->t[32]->alpha[0][2] = 0.1; /* ML->D  */
 
      pri->tsetmap[MATL_D][MATL_nd] = 37;
-     pri->t[37] = esl_mixdchlet_Create(1, 3);
      pri->t[37]->pq[0] = 1.0;
      pri->t[37]->alpha[0][0] = 0.0001; /* D->IL (this is irrelevant, D->I transitions are set to IMPOSSIBLE later) */
      pri->t[37]->alpha[0][1] = 0.1;    /* D->ML */
      pri->t[37]->alpha[0][2] = 0.2;    /* D->D  */
 
      pri->tsetmap[MATL_IL][MATL_nd] = 42;
-     pri->t[42] = esl_mixdchlet_Create(1, 3);
      pri->t[42]->pq[0] = 1.0;
      pri->t[42]->alpha[0][0] = 0.02;   /* IL->IL */
      pri->t[42]->alpha[0][1] = 0.006;  /* IL->ML */

@@ -143,10 +143,6 @@ struct cfg_s {
   int              N;        /* number of 10 Kb seqs for  local CM exp tail fitting */
   int              L;        /* the size of seq chunks to search, set as 10,000 (10 Kb) */
 
-  /* info for the comlog we'll add to the cmfiles */
-  char            *ccom;               /* command line used in this execution of cmcalibrate */
-  char            *cdate;              /* date of this execution of cmcalibrate */
-
   /* mpi */
   int              do_mpi;
   int              my_rank;
@@ -194,8 +190,6 @@ static int  initialize_cm   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
 static int  initialize_stats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp);
 static int  get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int L, ESL_RANDOMNESS *r, ESL_DSQ **ret_dsq);
-static int  get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
-static int  update_comlog(const ESL_GETOPTS *go, char *errbuf, char *ccom, char *cdate, CM_t *cm);
 static int  set_dnull(struct cfg_s *cfg, CM_t *cm, char *errbuf);
 static void print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int available_ncpus);
 static void print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec);
@@ -243,8 +237,6 @@ main(int argc, char **argv)
   cfg.ghmm_tAA     = NULL;
   cfg.ghmm_eAA     = NULL;
   cfg.ncm          = 0;
-  cfg.ccom         = NULL; /* created in get_cmcalibrate_comlog_info() for masters, stays NULL in workers */
-  cfg.cdate        = NULL; /* created in get_cmcalibrate_comlog_info() for masters, stays NULL in workers */
   cfg.L            = EXPTAIL_CHUNKLEN; /* 10 Kb chunks are searched */
   cfg.N            = 0;    /* gets set below, after go is setup */
   cfg.cmfp         = NULL; /* remains NULL for mpi workers */
@@ -330,9 +322,6 @@ main(int argc, char **argv)
       if ((status = cm_file_Read(cfg.cmfp, TRUE, &(cfg.abc), &cm)) != eslOK) cm_Fail("Ran out of CMs too early in pass 2");
       if (cm == NULL)                                                        cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
 
-      /* update the cm->comlog info */
-      if((status = update_comlog(go, errbuf, cfg.ccom, cfg.cdate, cm)) != eslOK) cm_Fail(errbuf);
-	
       if(cm->expA != NULL) { 
 	for(i = 0; i < EXP_NMODES; i++)  free(cm->expA[i]); free(cm->expA);
       }
@@ -340,6 +329,9 @@ main(int argc, char **argv)
 
       cm->expA   = cfg.expAA[cmi];
       cm->flags |= CMH_EXPTAIL_STATS; 
+
+      cm_AppendComlog(cm, go->argc, go->argv, FALSE, 0); /* we don't check return status, it should be fine, but if not, we don't want to die now... */
+
       if(cfg.cmfp->is_binary) { 
 	if ((status = cm_file_WriteBinary(outfp, -1, cm, NULL)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
       }
@@ -388,8 +380,6 @@ main(int argc, char **argv)
       printf("# Scores from tail fits saved to file %s.\n", esl_opt_GetString(go, "--xfile"));
     }
 
-    if (cfg.ccom   != NULL) free(cfg.ccom);
-    if (cfg.cdate  != NULL) free(cfg.cdate);
     if (cfg.expAA  != NULL) free(cfg.expAA);
     if (cfg.namesA != NULL) { for(i = 0; i < cfg.ncm; i++) if(cfg.namesA[i] != NULL) free(cfg.namesA[i]); free(cfg.namesA); }
   }
@@ -1359,8 +1349,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpu
  *    cfg->qfp         - optional output file
  *    cfg->w           - stopwatch
  *    cfg->tmpfile     - temp file for rewriting cm file
- *    cfg->ccom        - command log
- *    cfg->cdate       - execution date
  *
  * Errors in the MPI master here are considered to be "recoverable",
  * in the sense that we'll try to delay output of the error message
@@ -1418,9 +1406,6 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (esl_FileExists(cfg->tmpfile)) ESL_FAIL(eslFAIL, errbuf, "temporary file %s already exists; please delete it first", cfg->tmpfile);
   if (cfg->cmfp->is_binary) cfg->mode = "wb";
   else                      cfg->mode = "w"; 
-
-  /* fill cfg->ccom, and cfg->cdate */
-  if((status = get_cmcalibrate_comlog_info(go, cfg, errbuf)) != eslOK) return status;
 
   return eslOK;
 
@@ -1697,94 +1682,6 @@ get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int L, ESL_RANDO
 
  ERROR:
   return status;
-}
-
-/* Function: get_cmcalibrate_comlog_info
- * Date:     EPN, Mon Dec 31 14:59:52 2007
- *
- * Purpose:  Create the cmcalibrate command info and creation date info 
- *           to eventually be set in the CM's ComLog_t data structure.
- *
- * Returns:  eslOK on success, eslEINCOMPAT on contract violation.
- */
-static int
-get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
-{
-  int status;
-  int i;
-  uint32_t seed;
-  int  temp;
-  int  seedlen;
-  char *seedstr;
-  time_t date = time(NULL);
-
-  if(cfg->ccom  != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "get_cmcalibrate_comlog_info(), cfg->ccom  is non-NULL.");
-  if(cfg->cdate != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "get_cmcalibrate_comlog_info(), cfg->cdate is non-NULL.");
-  
-  /* Set the cmcalibrate command info, the cfg->ccom string */
-  for (i = 0; i < go->optind; i++) { /* copy all command line options, but not the command line args yet, we may need to append '-s ' before the args */
-    esl_strcat(&(cfg->ccom),  -1, go->argv[i], -1);
-    esl_strcat(&(cfg->ccom),  -1, " ", 1);
-  }
-  /* if -s NOT enabled, we need to append the seed info also */
-  seed = esl_randomness_GetSeed(cfg->r);
-  if(esl_opt_IsUsed(go, "--seed")) { /* -s was used on command line, we'll do a sanity check */
-    if(seed != esl_opt_GetInteger(go, "--seed")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %" PRIu32 ", but -s was enabled with argument: %" PRIu32 "!, this shouldn't happen.", seed, esl_opt_GetInteger(go, "--seed"));
-  } else {
-    temp = seed; 
-    seedlen = 1; 
-    while(temp > 0) { temp/=10; seedlen++; } /* determine length of stringized version of seed */
-    seedlen += 4; /* strlen(' -s ') */
-    ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
-    sprintf(seedstr, " -s %" PRIu32 " ", seed);
-    esl_strcat((&cfg->ccom), -1, seedstr, seedlen);
-    free(seedstr);
-  }
-
-  for (i = go->optind; i < go->argc; i++) { /* copy command line args yet */
-    esl_strcat(&(cfg->ccom), -1, go->argv[i], -1);
-    if(i < (go->argc-1)) esl_strcat(&(cfg->ccom), -1, " ", 1);
-  }
-  
-  /* Set the cmcalibrate call date, the cfg->cdate string */
-  if((status = esl_strdup(ctime(&date), -1, &(cfg->cdate))) != eslOK) goto ERROR;
-  esl_strchop(cfg->cdate, -1); /* doesn't return anything but eslOK */
-
-  return eslOK;
-
- ERROR:
-  ESL_FAIL(status, errbuf, "get_cmcalibrate_comlog_info() error status: %d, probably out of memory.", status);
-  return status; 
-}
-
-/* Function: update_comlog
- * Date:     EPN, Mon Dec 31 15:14:26 2007
- *
- * Purpose:  Update the CM's comlog info to reflect the current
- *           cmcalibrate call.
- *
- * Returns:  eslOK on success, eslEINCOMPAT on contract violation.
- */
-static int
-update_comlog(const ESL_GETOPTS *go, char *errbuf, char *ccom, char *cdate, CM_t *cm)
-{
-  int status;
-  if(ccom  == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "update_comlog(), ccom  is non-NULL.");
-  if(cdate == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "update_comlog(), cdate is non-NULL.");
-
-  /* free all cmcalibrate comlog info, we're about to overwrite any information that any previous cmcalibrate
-   * call could have written to the cm file.
-   */
-  if(cm->comlog->ccom  != NULL)  { free(cm->comlog->ccom);  cm->comlog->ccom = NULL;  }
-  if(cm->comlog->cdate != NULL)  { free(cm->comlog->cdate); cm->comlog->cdate = NULL; }
-  
-  if((status = esl_strdup(ccom, -1, &(cm->comlog->ccom)))  != eslOK) goto ERROR; 
-  if((status = esl_strdup(cdate,-1, &(cm->comlog->cdate))) != eslOK) goto ERROR; 
-  return eslOK;
-
- ERROR:
-  ESL_FAIL(status, errbuf, "update_comlog() error status: %d, probably out of memory.", status);
-  return status; 
 }
 
 /* Function: set_dnull

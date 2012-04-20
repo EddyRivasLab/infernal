@@ -86,12 +86,12 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, CP9_t *cp9, P7_HMM **ret_p7)
   p7_hmm_SetDescription(hmm, cm->desc);
   p7_hmm_SetCtime(hmm);
   if((status = p7_hmm_SetConsensus(hmm, NULL)) != eslOK) goto ERROR;
-  if(cm->comlog != NULL && cm->comlog->bcom != NULL) { 
-    ESL_ALLOC(hmm->comlog, sizeof(char)* (strlen(cm->comlog->bcom)+1));
-    *(hmm->comlog) = '\0'; /* need this to make strcat work */
-    strcat(hmm->comlog, cm->comlog->bcom);
+  if(cm->comlog != NULL) { 
+    if((status = esl_strdup(cm->comlog, -1, &(hmm->comlog))) != eslOK) goto ERROR;
   }
-  else hmm->comlog = NULL;
+  else { 
+    hmm->comlog = NULL;
+  }
 
   hmm->eff_nseq = cm->eff_nseq;
   hmm->nseq     = cm->nseq;
@@ -181,12 +181,12 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
   p7_hmm_SetDescription(cm->mlp7, cm->desc);
   p7_hmm_SetCtime      (cm->mlp7);
   if((status = p7_hmm_SetConsensus(cm->mlp7, NULL)) != eslOK) ESL_XFAIL(status, errbuf, "out of memory");
-  if(cm->comlog != NULL && cm->comlog->bcom != NULL) { 
-    ESL_ALLOC(cm->mlp7->comlog, sizeof(char)* (strlen(cm->comlog->bcom)+1));
-    *(cm->mlp7->comlog) = '\0'; /* need this to make strcat work */
-    strcat(cm->mlp7->comlog, cm->comlog->bcom);
+  if(cm->comlog != NULL) { 
+    if((status = esl_strdup(cm->comlog, -1, &(cm->mlp7->comlog))) != eslOK) goto ERROR;
   }
-  else cm->mlp7->comlog = NULL;
+  else { 
+    cm->mlp7->comlog = NULL;
+  }
 
   /* copy CM's RF annotation to mlp7 */
   if(cm->flags & CMH_RF && cm->rf != NULL) { 

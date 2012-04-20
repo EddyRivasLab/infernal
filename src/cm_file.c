@@ -564,10 +564,11 @@ cm_file_CreateLock(CM_FILE *cmfp)
 /*----------------- end, CM_FILE object ----------------------*/
 
 
-
 /*****************************************************************
  * 2. Writing CM files.
  *****************************************************************/
+static int multiline(FILE *fp, const char *pfx, char *s);
+
 /* Function:  cm_file_WriteASCII()
  * Synopsis:  Write an Infernal 1.1 ASCII save file.
  * Incept:    EPN, Fri Jun 17 10:07:46 2011
@@ -612,10 +613,8 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
   fprintf(fp, "RF       %s\n", (cm->flags & CMH_RF)   ? "yes" : "no");
   fprintf(fp, "CONS     %s\n", (cm->flags & CMH_CONS) ? "yes" : "no");
   fprintf(fp, "MAP      %s\n", (cm->flags & CMH_MAP)  ? "yes" : "no");
-  fprintf(fp, "BCOM     %s\n",  cm->comlog->bcom);
-  fprintf(fp, "BDATE    %s\n",  cm->comlog->bdate);
-  if(cm->comlog->ccom != NULL) fprintf(fp, "CCOM     %s\n", cm->comlog->ccom);
-  if(cm->comlog->cdate!= NULL) fprintf(fp, "CDATE    %s\n", cm->comlog->cdate);
+  if (cm->ctime   != NULL) fprintf  (fp, "DATE     %s\n", cm->ctime);
+  if (cm->comlog  != NULL) multiline(fp, "COM     ",     cm->comlog);
   fprintf(fp, "PBEGIN   %g\n", cm->pbegin);
   fprintf(fp, "PEND     %g\n", cm->pend);
   fprintf(fp, "WBETA    %g\n", cm->beta_W);
@@ -625,7 +624,7 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
   fprintf(fp, "N3OMEGA  %6g\n",cm->null3_omega);
   fprintf(fp, "ELSELF   %.8f\n",cm->el_selfsc);
   fprintf(fp, "NSEQ     %d\n", cm->nseq);
-  fprintf(fp, "EFFN     %.2f\n",cm->eff_nseq);
+  fprintf(fp, "EFFN     %f\n",cm->eff_nseq);
   if (cm->flags & CMH_CHKSUM)  fprintf(fp, "CKSUM    %u\n", cm->checksum); /* unsigned 32-bit */
   fputs("NULL    ", fp);
   for (x = 0; x < cm->abc->K; x++) { fprintf(fp, "%6s ", prob2ascii(cm->null[x], 1/(float)(cm->abc->K))); }
@@ -635,7 +634,7 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
   if (cm->flags & CMH_NC)  fprintf(fp, "NC       %.2f\n", cm->nc);
 
   if (cm->flags & CMH_FP7) {
-    fprintf(fp, "EFP7GF   %8.4f %8.5f\n", cm->fp7_evparam[CM_p7_GFMU],  cm->fp7_evparam[CM_p7_GFLAMBDA]);
+    fprintf(fp, "EFP7GF   %.4f %.5f\n", cm->fp7_evparam[CM_p7_GFMU],  cm->fp7_evparam[CM_p7_GFLAMBDA]);
   }
   if (cm->flags & CMH_EXPTAIL_STATS)
     {
@@ -820,10 +819,8 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
   if ((cm->flags & CMH_MAP)  && (fwrite((char *) cm->map,         sizeof(int),  cm->clen+1, fp) != cm->clen+1)) return eslFAIL; /* +2: 1..clen and trailing \0 */
   if (fwrite((char *) &(cm->W), sizeof(int),      1,   fp) != 1) return eslFAIL;
 
-  if (write_bin_string(fp, cm->comlog->bcom)  != eslOK) return eslFAIL;
-  if (write_bin_string(fp, cm->comlog->bdate) != eslOK) return eslFAIL;
-  if (write_bin_string(fp, cm->comlog->ccom)  != eslOK) return eslFAIL;
-  if (write_bin_string(fp, cm->comlog->cdate) != eslOK) return eslFAIL;
+  if ((write_bin_string(fp, cm->ctime))  != eslOK) return eslFAIL;
+  if ((write_bin_string(fp, cm->comlog)) != eslOK) return eslFAIL;
 
   if (fwrite((char *) &(cm->pbegin),         sizeof(float),    1,   fp) != 1) return eslFAIL;
   if (fwrite((char *) &(cm->pend),           sizeof(float),    1,   fp) != 1) return eslFAIL;
@@ -1517,10 +1514,6 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   int           read_el_selfsc = FALSE; /* set to true when we read ELSELF line */
 
   /* temporary parameters, for storing values prior to their allocation in the CM */
-  char  *tmp_bcom          = NULL;
-  char  *tmp_bdate         = NULL;
-  char  *tmp_ccom          = NULL;
-  char  *tmp_cdate         = NULL;
   float *tmp_null          = NULL;
   float  tmp_fp7_gfmu;
   float  tmp_fp7_gflambda;
@@ -1628,24 +1621,21 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	else if (strcasecmp(tok1, "no")  != 0)                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "MAP header line must say yes/no, not %s", tok1);
       } 
 
-      else if (strcmp(tag, "BCOM") == 0) {
-	if ((status = esl_fileparser_GetRemainingLine(cmfp->efp, &tok1))       != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "No command found on BCOM line");
-	if (esl_strdup(tok1, -1, &(tmp_bcom))                                  != eslOK)  ESL_XFAIL(eslEMEM,    cmfp->errbuf, "strdup() failed to set build command (BCOM)");
+      else if (strcmp(tag, "DATE") == 0) {
+	if ((status = esl_fileparser_GetRemainingLine(cmfp->efp, &tok1))       != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "No date found on DATE line");
+	if (esl_strdup(tok1, -1, &(cm->ctime))                                 != eslOK)  ESL_XFAIL(eslEMEM,    cmfp->errbuf, "strdup() failed to set date");
       }
 
-      else if (strcmp(tag, "BDATE") == 0) {
-	if ((status = esl_fileparser_GetRemainingLine(cmfp->efp, &tok1))       != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "No date found on BDATE line");
-	if (esl_strdup(tok1, -1, &(tmp_bdate))                                 != eslOK)  ESL_XFAIL(eslEMEM,    cmfp->errbuf, "strdup() failed to set build date (BDATE)");
-      }
-
-      else if (strcmp(tag, "CCOM") == 0) {
-	if ((status = esl_fileparser_GetRemainingLine(cmfp->efp, &tok1))       != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "No command found on CCOM line");
-	if (esl_strdup(tok1, -1, &(tmp_ccom))                                  != eslOK)  ESL_XFAIL(eslEMEM,    cmfp->errbuf, "strdup() failed to set build command (BCOM)");
-      }
-
-      else if (strcmp(tag, "CDATE") == 0) {
-	if ((status = esl_fileparser_GetRemainingLine(cmfp->efp, &tok1))       != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "No date found on CDATE line");
-	if (esl_strdup(tok1, -1, &(tmp_cdate))                                 != eslOK)  ESL_XFAIL(eslEMEM,    cmfp->errbuf, "strdup() failed to set build date (BDATE)");
+      else if (strcmp(tag, "COM") == 0) {
+	/* just skip the first token; it's something like [1], numbering the command lines */
+	if ((status = esl_fileparser_GetTokenOnLine  (cmfp->efp, &tok1, NULL)) != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "No command number on COM line");
+	if ((status = esl_fileparser_GetRemainingLine(cmfp->efp, &tok1))       != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "No command on COM line");
+	if (cm->comlog == NULL) {
+	  if (esl_strdup(tok1, -1, &(cm->comlog))                              != eslOK)  ESL_XFAIL(eslEMEM,    cmfp->errbuf, "esl_strdup() failed");
+	} else {
+	  if (esl_strcat(&(cm->comlog), -1, "\n", -1)                          != eslOK)  ESL_XFAIL(eslEMEM,    cmfp->errbuf, "esl_strcat() failed");
+	  if (esl_strcat(&(cm->comlog), -1, tok1,  -1)                         != eslOK)  ESL_XFAIL(eslEMEM,    cmfp->errbuf, "esl_strcat() failed");
+	}
       }
 
       else if (strcmp(tag, "PBEGIN") == 0) {
@@ -1655,7 +1645,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 
       else if (strcmp(tag, "PEND") == 0) {
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Nothing follows WBETA tag");
-	if ((cm->pend = atof(tok1)) <= 0.0f)                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid beta on WBETA line: should be a positive real number, not %s", tok1);
+	if ((cm->pend = atof(tok1)) <= 0.0f)                                              ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid beta on WBETA line: should be a positive real number, not %s", tok1);
       }
 
       else if (strcmp(tag, "WBETA") == 0) {
@@ -1798,10 +1788,6 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 
   /* Copy values we stored in temp parameters awaiting CM allocation in CreateCMBody() */
   esl_vec_FCopy(tmp_null, abc->K, cm->null); /* cm->null allocated in CreateCMBody */
-  if(esl_strdup(tmp_bdate, -1, &(cm->comlog->bdate)) != eslOK) ESL_XFAIL(eslEMEM, cmfp->errbuf, "strdup() failed to set build date (BDATE)");
-  if(esl_strdup(tmp_bcom, -1,  &(cm->comlog->bcom))  != eslOK) ESL_XFAIL(eslEMEM, cmfp->errbuf, "strdup() failed to set build command (BCOM)");
-  if(tmp_cdate != NULL) if(esl_strdup(tmp_cdate, -1, &(cm->comlog->cdate)) != eslOK) ESL_XFAIL(eslEMEM, cmfp->errbuf, "strdup() failed to set calibration date (CDATE)");
-  if(tmp_ccom  != NULL) if(esl_strdup(tmp_ccom,  -1, &(cm->comlog->ccom))  != eslOK) ESL_XFAIL(eslEMEM, cmfp->errbuf, "strdup() failed to set calibration command (CCOM)");
   cm->qdbinfo->beta1 = tmp_qdbbeta1;
   cm->qdbinfo->beta2 = tmp_qdbbeta2;
     
@@ -2064,10 +2050,6 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
     }
   }
 
-  if(tmp_bcom  != NULL) free(tmp_bcom);
-  if(tmp_bdate != NULL) free(tmp_bdate);
-  if(tmp_ccom  != NULL) free(tmp_ccom);
-  if(tmp_cdate != NULL) free(tmp_cdate);
   if(tmp_null  != NULL) free(tmp_null);
 
   /* these get allocated regardless of flag status, free them */
@@ -2201,10 +2183,8 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   if ((cm->flags & CMH_MAP)  && ! fread((char *) cm->map, sizeof(int), cm->clen+1, cmfp->f))         ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read map");
   if (! fread((char *) &(cm->W),       sizeof(int),   1, cmfp->f))                                   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read nseq");
 
-  if (read_bin_string(cmfp->f, &(cm->comlog->bcom))  != eslOK)                                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read build command");
-  if (read_bin_string(cmfp->f, &(cm->comlog->bdate)) != eslOK)                                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read build date");
-  if (read_bin_string(cmfp->f, &(cm->comlog->ccom))  != eslOK)                                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read calibration command");
-  if (read_bin_string(cmfp->f, &(cm->comlog->cdate)) != eslOK)                                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read calibration date");
+  if (read_bin_string(cmfp->f, &(cm->ctime))  != eslOK)                                              ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read ctime");
+  if (read_bin_string(cmfp->f, &(cm->comlog)) != eslOK)                                              ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read comlog");
 
   if (! fread((char *) &(cm->pbegin),         sizeof(float),    1,          cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read beta_W");
   if (! fread((char *) &(cm->pend),           sizeof(float),    1,          cmfp->f))                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read beta_W");
@@ -2441,34 +2421,45 @@ read_asc_1p0_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	    }
 	  CreateCMBody(cm, N, M, clen, abc);
 	}
-      /* comlog info, careful, we want the full line, so a token becomes a full line */
+      /* comlog and ctime info. Careful, we want the full line, so a token becomes a full line 
+       * Also we stored this data differently in version 1.0, we have to throw out the CDATE
+       * info, we don't store that anymore. 
+       */
       else if (strcmp(tok, "BCOM") == 0) 
 	{
 	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
 	  if ((status = esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No build command found on BCOM line");
-	  if(cm->comlog->bcom != NULL) free(cm->comlog->bcom);
-	  if((status = esl_strdup(tok, toklen, &(cm->comlog->bcom))) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Problem setting build command");
+	  if(cm->comlog == NULL) { 
+	    if((status = esl_strdup(tok, toklen, &(cm->comlog))) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Problem setting build date");
+	  }
+	  else { 
+	    if((status = esl_strcat(&(cm->comlog), -1,"\n",      1)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Problem setting build date");
+	    if((status = esl_strcat(&(cm->comlog), -1, tok, toklen)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Problem setting build date");
+	  }	    
 	}
       else if (strcmp(tok, "BDATE") == 0) 
 	{
 	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
 	  if ((status = esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No date found on BDATE line");
-	  if(cm->comlog->bdate != NULL) free(cm->comlog->bdate);
-	  if((status = esl_strdup(tok, toklen, &(cm->comlog->bdate))) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Problem setting build date");
+	  if (esl_strdup(tok, toklen, &(cm->ctime))                    != eslOK) ESL_XFAIL(eslEMEM,    cmfp->errbuf, "strdup() failed to set date");
 	}
       else if (strcmp(tok, "CCOM") == 0) 
 	{
 	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
 	  if ((status = esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No calibrate command found on CCOM line");
-	  if(cm->comlog->ccom != NULL) free(cm->comlog->ccom);
-	  if((status = esl_strdup(tok, toklen, &(cm->comlog->ccom))) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Problem setting calibrate command");
+	  if(cm->comlog == NULL) { 
+	    if((status = esl_strdup(tok, toklen, &(cm->comlog))) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Problem setting calibrate date");
+	  }
+	  else { 
+	    if((status = esl_strcat(&(cm->comlog), -1,"\n",      1)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Problem setting calibrate date");
+	    if((status = esl_strcat(&(cm->comlog), -1, tok, toklen)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Problem setting calibrate date");
+	  }	    
 	}
       else if (strcmp(tok, "CDATE") == 0) 
 	{
 	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
-	  if ((esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No date found on CDATE line");
-	  if(cm->comlog->cdate != NULL) free(cm->comlog->cdate);
-	  if((status = esl_strdup(tok, toklen, &(cm->comlog->cdate))) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Problem setting calibrate date");
+	  if ((status = esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No date found on CDATE line");
+	  /* we don't store this anymore */
 	}
       else if (strcmp(tok, "NULL") == 0) 
 	{
@@ -3387,8 +3378,10 @@ is_real(char *s)
 int
 cm_file_Write1p0ASCII(FILE *fp, CM_t *cm)
 {
+  int status;
   int v,x,y,nd;
-  
+  char *comlog2print  = NULL;
+
   fprintf(fp, "INFERNAL-1 [converted from %s]\n", INFERNAL_VERSION);
 
   fprintf(fp,                          "NAME     %s\n", cm->name);
@@ -3406,10 +3399,26 @@ cm_file_Write1p0ASCII(FILE *fp, CM_t *cm)
   fprintf(fp, "NSEQ     %d\n",   cm->nseq);
   fprintf(fp, "EFFNSEQ  %.3f\n", cm->eff_nseq);
   fprintf(fp, "CLEN     %d\n",   cm->clen);
-  fprintf(fp, "BCOM     %s\n",   cm->comlog->bcom);
-  fprintf(fp, "BDATE    %s\n",   cm->comlog->bdate);
-  if(cm->comlog->ccom != NULL) fprintf(fp, "CCOM     %s\n", cm->comlog->ccom);
-  if(cm->comlog->cdate!= NULL) fprintf(fp, "CDATE    %s\n", cm->comlog->cdate);
+
+  /* Print out the BCOM line as the cm->comlog string up to the first
+   * '\n' or the end of the string. Print cm->ctime as BDATE. We
+   * don't print CCOM and CDATE. This should be okay because we won't
+   * likely have E-value and HMM filter stats since we're probably
+   * converting from a 1.1 or later file. But it is possible we're
+   * converting from a 1.0 file to a 1.0 file in which case we output
+   * E-value stats and filter threshold stats but no CCOM and CDATE
+   * lines.  This won't affect the parsing of the file by 1.0 though.
+   */ 
+  if(cm->comlog != NULL) { 
+    ESL_ALLOC(comlog2print, sizeof(char) * (strlen(cm->comlog)+1));
+    x = 0;
+    while(x < strlen(cm->comlog) && cm->comlog[x] != '\n') { comlog2print[x] = cm->comlog[x]; x++; }
+    comlog2print[x] = '\0';
+    fprintf(fp, "BCOM     %s\n", comlog2print);
+    free(comlog2print);
+  }
+  if(cm->ctime != NULL) fprintf(fp, "BDATE    %s\n", cm->ctime);
+
   fputs(      "NULL    ", fp);
   for (x = 0; x < cm->abc->K; x++)
     fprintf(fp, "%6s ", prob2ascii(cm->null[x], 1/(float)(cm->abc->K)));
@@ -3460,7 +3469,65 @@ cm_file_Write1p0ASCII(FILE *fp, CM_t *cm)
     }
   fputs("//\n", fp);
   return eslOK;
-} 
+
+ ERROR: 
+  ESL_EXCEPTION(eslEMEM, "out of memory");
+  return status;
+}
+
+/* multiline()
+ * 
+ * Stolen from HMMER3, verbatim.
+ * 
+ * Used to print the command log to ASCII save files.
+ *
+ * Given a record (like the comlog) that contains 
+ * multiple lines, print it as multiple lines with
+ * a given prefix. e.g.:
+ *           
+ * given:   "COM   ", "foo\nbar\nbaz"
+ * print:   COM   1 foo
+ *          COM   2 bar
+ *          COM   3 baz
+ *
+ * If <s> is NULL, no-op. Otherwise <s> must be a <NUL>-terminated
+ * string.  It does not matter if it ends in <\n> or not. <pfx>
+ * must be a valid <NUL>-terminated string; it may be empty.
+ *           
+ * Args:     fp:   FILE to print to
+ *           pfx:  prefix for each line
+ *           s:    line to break up and print; tolerates a NULL
+ *
+ * Returns: <eslOK> on success.
+ *
+ * Throws:  <eslEWRITE> on write error.
+ */
+static int
+multiline(FILE *fp, const char *pfx, char *s)
+{
+  char *sptr  = s;
+  char *end   = NULL;
+  int   n     = 0;
+  int   nline = 1;
+
+  do {
+    end = strchr(sptr, '\n');
+
+    if (end != NULL)                  /* if there's no \n left, end == NULL */
+      {
+  n = end - sptr;                       /* n chars exclusive of \n */
+  if (fprintf(fp, "%s [%d] ", pfx, nline++) < 0) ESL_EXCEPTION_SYS(eslEWRITE, "hmm write failed");
+  if (fwrite(sptr, sizeof(char), n, fp)    != n) ESL_EXCEPTION_SYS(eslEWRITE, "hmm write failed");  /* using fwrite lets us write fixed # of chars   */
+  if (fprintf(fp, "\n")                     < 0) ESL_EXCEPTION_SYS(eslEWRITE, "hmm write failed");  /* while writing \n w/ printf allows newline conversion */
+  sptr += n + 1;                       /* +1 to get past \n */
+      } 
+    else 
+      {
+  if (fprintf(fp, "%s [%d] %s\n", pfx, nline++, sptr) < 0) ESL_EXCEPTION_SYS(eslEWRITE, "hmm write failed"); /* last line */
+      }
+  } while (end != NULL  && *sptr != '\0');   /* *sptr == 0 if <s> terminates with a \n */
+  return eslOK;
+}
 
 
 /*****************************************************************

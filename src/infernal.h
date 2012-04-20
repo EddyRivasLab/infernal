@@ -11,43 +11,42 @@
  *    6. deckpool_s:         divide and conquer DP matrix state deck
  *    7. GammaHitMx_t:       semi-HMM used for optimal hit resolution of a CM scan
  *    8. Prior_t:            Dirichlet priors on all CM parameters
- *    9. ComLog_t:           information on command line execution of cmbuild/cmcalibrate.
- *   10. ExpInfo_t:          exponential tail information for E-values
- *   11. CP9_t:              a CM plan 9 HMM
- *   12. CP9_MX:             a dynamic programming matrix for a CM Plan 9 HMM 
- *   13. CP9Bands_t:         sequence and CM specific HMM bands
- *   14. CP9trace_t:         traceback structure for CP9 HMMs
- *   15. CP9Map_t:           map from a CM to a CP9 HMM and vice versa
- *   16. CMSubMap_t:         map of a template CM to a sub CM and vice versa
- *   17. CMSubInfo_t:        sub CM information, used for validating the sub CM construction procedure
- *   18. RSEARCH constants
- *   19. CM_MX:              CM dynamic programming matrix; non-banded, non-truncated
- *   20. CM_TR_MX:           CM dynamic programming matrix; non-banded, truncated
- *   21. CM_HB_MX:           CM dynamic programming matrix; HMM banded, non-truncated
- *   22. CM_TR_HB_MX:        CM dynamic programming matrix; HMM banded, truncated
- *   23. CM_SHADOW_MX:       CM shadow matrix, for DP tracebacks; non-banded, non-truncated
- *   24. CM_TR_SHADOW_MX:    CM shadow matrix, for DP tracebacks; non-banded, truncated
- *   25. CM_HB_SHADOW_MX:    CM shadow matrix, for DP tracebacks; HMM banded, non-truncated
- *   26. CM_TR_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, truncated
- *   27. CM_EMIT_MX:         CM emit matrix, info on PP of emitted residues; non-banded, non-truncated
- *   28. CM_TR_EMIT_MX:      CM emit matrix, info on PP of emitted residues; non-banded, truncated
- *   29. CM_HB_EMIT_MX:      CM emit matrix, info on PP of emitted residues; HMM banded, non-truncated
- *   30. CM_TR_HB_EMIT_MX:   CM emit matrix, info on PP of emitted residues; HMM banded, truncated
- *   31. CM_QDBINFO:         model specific QDB information, including 2 sets of bands
- *   32. CM_SCAN_MX:         matrices used for scanning CM DP algorithms; non-truncated
- *   33. CM_TR_SCAN_MX:      matrices used for scanning CM DP algorithms; truncated
- *   34. CM_TR_PENALTIES:    pass, state and locality-specific truncated alignment penalties
- *   35. CM_t:               a covariance model
- *   36. CM_FILE:            a CM save file or database, open for reading
- *   37. CM_PLI_ACCT:        pass specific statistics for a search/scan pipeline
- *   38. CM_PIPELINE:        the accelerated seq/profile comparison pipeline 
- *   39. CM_ALIDISPLAY:      an alignment formatted for printing (replaces FancyAli_t)
- *   40. CM_HIT:             a hit between a CM and a sequence
- *   41. CM_TOPHITS:         ranked list of top-scoring hits
- *   42. CM_P7_OM_BLOCK:     block of P7_OPROFILEs and related info, for cmscan
- *   43. CM_ALNDATA:         information for alignment of a sequence to a CM
- *   44. Routines in Infernal's exposed API
- *   45. Copyright and license information
+ *    9. ExpInfo_t:          exponential tail information for E-values
+ *   10. CP9_t:              a CM plan 9 HMM
+ *   11. CP9_MX:             a dynamic programming matrix for a CM Plan 9 HMM 
+ *   12. CP9Bands_t:         sequence and CM specific HMM bands
+ *   13. CP9trace_t:         traceback structure for CP9 HMMs
+ *   14. CP9Map_t:           map from a CM to a CP9 HMM and vice versa
+ *   15. CMSubMap_t:         map of a template CM to a sub CM and vice versa
+ *   16. CMSubInfo_t:        sub CM information, used for validating the sub CM construction procedure
+ *   17. RSEARCH constants
+ *   18. CM_MX:              CM dynamic programming matrix; non-banded, non-truncated
+ *   19. CM_TR_MX:           CM dynamic programming matrix; non-banded, truncated
+ *   20. CM_HB_MX:           CM dynamic programming matrix; HMM banded, non-truncated
+ *   21. CM_TR_HB_MX:        CM dynamic programming matrix; HMM banded, truncated
+ *   22. CM_SHADOW_MX:       CM shadow matrix, for DP tracebacks; non-banded, non-truncated
+ *   23. CM_TR_SHADOW_MX:    CM shadow matrix, for DP tracebacks; non-banded, truncated
+ *   24. CM_HB_SHADOW_MX:    CM shadow matrix, for DP tracebacks; HMM banded, non-truncated
+ *   25. CM_TR_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, truncated
+ *   26. CM_EMIT_MX:         CM emit matrix, info on PP of emitted residues; non-banded, non-truncated
+ *   27. CM_TR_EMIT_MX:      CM emit matrix, info on PP of emitted residues; non-banded, truncated
+ *   28. CM_HB_EMIT_MX:      CM emit matrix, info on PP of emitted residues; HMM banded, non-truncated
+ *   29. CM_TR_HB_EMIT_MX:   CM emit matrix, info on PP of emitted residues; HMM banded, truncated
+ *   30. CM_QDBINFO:         model specific QDB information, including 2 sets of bands
+ *   31. CM_SCAN_MX:         matrices used for scanning CM DP algorithms; non-truncated
+ *   32. CM_TR_SCAN_MX:      matrices used for scanning CM DP algorithms; truncated
+ *   33. CM_TR_PENALTIES:    pass, state and locality-specific truncated alignment penalties
+ *   34. CM_t:               a covariance model
+ *   35. CM_FILE:            a CM save file or database, open for reading
+ *   36. CM_PLI_ACCT:        pass specific statistics for a search/scan pipeline
+ *   37. CM_PIPELINE:        the accelerated seq/profile comparison pipeline 
+ *   38. CM_ALIDISPLAY:      an alignment formatted for printing (replaces FancyAli_t)
+ *   39. CM_HIT:             a hit between a CM and a sequence
+ *   40. CM_TOPHITS:         ranked list of top-scoring hits
+ *   41. CM_P7_OM_BLOCK:     block of P7_OPROFILEs and related info, for cmscan
+ *   42. CM_ALNDATA:         information for alignment of a sequence to a CM
+ *   43. Routines in Infernal's exposed API
+ *   44. Copyright and license information
  *   
  * Also, see impl_{sse,vmx}/impl_{sse,vmx}.h for additional API
  * specific to the acceleration layer.
@@ -465,26 +464,6 @@ typedef struct {
   int  maxnq;			/* maximum # of components in any prior */
   int  maxnalpha;		/* maximum # of parameters in any prior */
 } Prior_t;
-
-
-/*************************************************************************************
- * 9. ComLog_t: information on command line execution of cmbuild/cmcalibrate.
- *************************************************************************************/
-
-/* Structure ComLog_t: command line info used to build/calibrate a CM.
- * 
- * bcom, bdate must be non-NULL. 
- * ccom1, cdate1 is non-NULL only if at least 1 cmcalibrate call was performed for this cm
- * ccom2, cdate2 is non-NULL only if at > 1 cmcalibrate calls were performed for this cm AND
- * the most recent cmcalibrate call had --filonly enabled (meaning only filter thresholds were rewritten).
- * 
- */
-typedef struct comlog_s {
-  char     *bcom;           /* command line used for cmbuild, if --gibbs used w/o --seed, --seed will be artificially appended */
-  char     *bdate;          /* date of cmbuild call */
-  char     *ccom;           /* command line used for first of up to two cmcalibrate calls, if -s not used, -s will be artificially appended */
-  char     *cdate;          /* date of first of up to two cmcalibrate call */
-} ComLog_t;
 
 /*************************************************************************************
  * 10. ExpInfo_t: exponential tail information for E-values
@@ -1759,22 +1738,23 @@ typedef struct cm_tr_penalties_s {
  * 
  */
 typedef struct cm_s {			
-			/* General information about the model:            */
-  char    *name;        /* name of the model                         (mandatory) */ /* String, \0-terminated   */
-  char    *acc;	        /* accession number of model (Rfam)          (CMH_ACC)   */ /* String, \0-terminated   */
-  char    *desc;        /* brief (1-line) description of model       (CMH_DESC)) */ /* String, \0-terminated   */
-  char    *rf;          /* reference line from alignment 1..M        (CMH_RF)    */ /* String; 0=' ', M+1='\0' */
-  char    *consensus;   /* consensus residue line        1..M        (CMH_CONS)  */ /* String; 0=' ', M+1='\0' */
-  uint32_t checksum;    /* checksum of training sequences            (CMH_CHKSUM)*/
-  int     *map;         /* map of alignment cols onto model 1..clen  (CMH_MAP)   */ /* Array; map[0]=0 */
+			/* General information about the model:                          */
+  char    *name;        /* name of the model                            (mandatory)      */ /* String, \0-terminated   */
+  char    *acc;	        /* accession number of model (Rfam)             (CMH_ACC)        */ /* String, \0-terminated   */
+  char    *desc;        /* brief (1-line) description of model          (CMH_DESC))      */ /* String, \0-terminated   */
+  char    *rf;          /* reference line from alignment 1..M           (CMH_RF)         */ /* String; 0=' ', M+1='\0' */
+  char    *consensus;   /* consensus residue line        1..M           (CMH_CONS)       */ /* String; 0=' ', M+1='\0' */
+  uint32_t checksum;    /* checksum of training sequences               (CMH_CHKSUM)     */
+  int     *map;         /* map of alignment cols onto model 1..clen     (CMH_MAP)        */ /* Array; map[0]=0 */
 
   /* new as of v1.0 */
-  ComLog_t *comlog;     /* command line calls and execution times of cmbuild and possibly cmcalibrate */
-  int    nseq;		/*   number of training sequences        (mandatory)     */
-  float  eff_nseq;	/*   effective number of seqs (<= nseq)  (mandatory)     */
-  float  ga;	        /*   per-seq gathering thresholds (bits) (CMH_GA)        */
-  float  tc;            /*   per-seq trusted cutoff (bits)       (CMH_TC)        */
-  float  nc;	        /*   per-seq noise cutoff (bits)         (CMH_NC)        */
+  char  *comlog;        /*   command line(s) that built, modified model (optional: NULL) */ /* String, \0-terminated   */
+  char  *ctime;	        /*   creation date                              (optional: NULL) */
+  int    nseq;		/*   number of training sequences               (mandatory)      */
+  float  eff_nseq;	/*   effective number of seqs (<= nseq)         (mandatory)      */
+  float  ga;	        /*   per-seq gathering thresholds (bits)        (CMH_GA)         */
+  float  tc;            /*   per-seq trusted cutoff (bits)              (CMH_TC)         */
+  float  nc;	        /*   per-seq noise cutoff (bits)                (CMH_NC)         */
 
 			/* Information about the null model:                     */
   float *null;          /*   residue probabilities [0..3]                        */
@@ -2553,15 +2533,14 @@ extern int   cm_SetName(CM_t *cm, char *name);
 extern int   cm_SetAccession(CM_t *cm, char *acc);
 extern int   cm_SetDescription(CM_t *cm, char *desc);
 extern int   cm_SetConsensus(CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq);
+extern int   cm_AppendComlog(CM_t *cm, int argc, char **argv, int add_seed, uint32_t seed);
+extern int   cm_SetCtime(CM_t *cm);
 extern int   DefaultNullModel(const ESL_ALPHABET *abc, float **ret_null);
 extern int   CMAllocNullModel(CM_t *cm);
 extern void  CMSetNullModel(CM_t *cm, float *null);
 extern int   CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null);
 extern int   IntMaxDigits();
 extern int   IntDigits(int i);
-extern ComLog_t * CreateComLog();
-extern void       FreeComLog(ComLog_t *clog);
-extern int        CopyComLog(const ComLog_t *src, ComLog_t *dest);
 extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avgL_loc, float *ret_avgL_glb);
 extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
 extern void       DumpCMFlags(FILE *fp, CM_t *cm);

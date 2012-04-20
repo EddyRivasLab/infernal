@@ -670,6 +670,9 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
   if((status = ConsensusModelmaker(orig_cm->abc, errbuf, sub_cstr, (epos-spos+1), TRUE, &sub_cm, &mtr)) != eslOK) return status;
   /* TRUE in ConsensusModelmaker() call says 'yes, we're building a sub CM, allow invalid CMs in cm_from_guide() (see comments in that function for details)*/
 
+  /* Set creation time */
+  if ((status = cm_SetCtime(sub_cm)) != eslOK)  ESL_FAIL(status, errbuf, "Failed to record timestamp");
+
   /* Rebalance the CM for optimization of D&C */
   CM_t *new;
   if((status = CMRebalance(sub_cm, errbuf, &new)) != eslOK) return status;

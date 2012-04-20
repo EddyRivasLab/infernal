@@ -683,6 +683,7 @@ create_brute_matl_cm(ESL_ALPHABET *abc, char *errbuf, int do_local, struct cm_br
   cm_SetName(cm, "itest-brute");
   cm->W = cm->clen;
   cons = CreateCMConsensus(cm, cm->abc);
+  cm_SetCtime(cm);
   if ((status = cm_SetConsensus(cm, cons, NULL)) != eslOK) cm_Fail("Failed to calculate consensus sequence");
   cm->nseq     = 1;
   cm->eff_nseq = 1;

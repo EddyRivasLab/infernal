@@ -25,9 +25,6 @@
 
 #include "infernal.h"
 
-static int comlog_MPIPackSize(ComLog_t *comlog, MPI_Comm comm, int *ret_n);
-static int comlog_MPIPack(ComLog_t *comlog, char *buf, int n, int *position, MPI_Comm comm);
-static int comlog_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ComLog_t **ret_comlog);
 static int expinfo_MPIPackSize(ExpInfo_t *exp, MPI_Comm comm, int *ret_n);
 static int expinfo_MPIPack(ExpInfo_t *exp, char *buf, int n, int *position, MPI_Comm comm);
 static int expinfo_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ExpInfo_t **ret_exp);
@@ -240,14 +237,12 @@ cm_nonconfigured_MPIUnpack(ESL_ALPHABET **abc, char *errbuf, char *buf, int n, i
   if (MPI_Unpack(buf, n, pos, &(cm->nc),                 1, MPI_FLOAT, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->tc),                 1, MPI_FLOAT, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
 
-  /* free the cm->comlog that was allocated inside the CreateCMBody() call, we'll allocate a new one, a bit messy */
-  FreeComLog(cm->comlog);
-  if((status = comlog_MPIUnpack(buf, n, pos, comm, &(cm->comlog))) != eslOK) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
-
   /* name and all the optional stuff */
-  if ((status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(cm->name), NULL, MPI_CHAR, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
-  if ((status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(cm->acc),  NULL, MPI_CHAR, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
-  if ((status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(cm->desc), NULL, MPI_CHAR, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
+  if ((status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(cm->name),    NULL, MPI_CHAR, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
+  if ((status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(cm->acc),     NULL, MPI_CHAR, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
+  if ((status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(cm->desc),    NULL, MPI_CHAR, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
+  if ((status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(cm->comlog),  NULL, MPI_CHAR, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
+  if ((status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(cm->ctime),   NULL, MPI_CHAR, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
 
   if (cm->flags & CMH_RF)   { if (MPI_Unpack(buf, n, pos, cm->rf,        cm->clen+2, MPI_CHAR, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); }
   if (cm->flags & CMH_CONS) { if (MPI_Unpack(buf, n, pos, cm->consensus, cm->clen+2, MPI_CHAR, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); }
@@ -360,13 +355,12 @@ cm_nonconfigured_MPIPack(CM_t *cm, char *errbuf, char *buf, int n, int *pos, MPI
   if (MPI_Pack(&(cm->nc),                 1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->tc),                 1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_XEXCEPTION(eslESYS, "pack failed");
 
-  /* comlog */
-  if((status = comlog_MPIPack(cm->comlog, buf, n, pos, comm)) != eslOK)               ESL_XEXCEPTION(status, "pack failed");
-
   /* name and all the optional stuff */
-  if ((status = esl_mpi_PackOpt(cm->name,    -1, MPI_CHAR, buf, n, pos, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack failed");
-  if ((status = esl_mpi_PackOpt(cm->acc,     -1, MPI_CHAR, buf, n, pos, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack failed"); 
-  if ((status = esl_mpi_PackOpt(cm->desc,    -1, MPI_CHAR, buf, n, pos, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack failed"); 
+  if ((status = esl_mpi_PackOpt(cm->name,      -1, MPI_CHAR, buf, n, pos, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack failed");
+  if ((status = esl_mpi_PackOpt(cm->acc,       -1, MPI_CHAR, buf, n, pos, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack failed"); 
+  if ((status = esl_mpi_PackOpt(cm->desc,      -1, MPI_CHAR, buf, n, pos, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack failed"); 
+  if ((status = esl_mpi_PackOpt(cm->comlog,    -1, MPI_CHAR, buf, n, pos, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack failed"); 
+  if ((status = esl_mpi_PackOpt(cm->ctime,     -1, MPI_CHAR, buf, n, pos, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack failed");
 
   if (cm->flags & CMH_RF)   { if (MPI_Pack(cm->rf,        cm->clen+2, MPI_CHAR, buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); }
   if (cm->flags & CMH_CONS) { if (MPI_Pack(cm->consensus, cm->clen+2, MPI_CHAR, buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); }
@@ -452,16 +446,16 @@ cm_nonconfigured_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
   if (MPI_Pack_size(1,            MPI_FLOAT,  comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += 3*sz; /* ga, tc, nc */
 
-  if ((status = comlog_MPIPackSize(cm->comlog, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  printf("comlog size: %d\n", sz);
-  n += sz; /* comlog */
-
-  if ((status = esl_mpi_PackOptSize(cm->name, -1, MPI_CHAR, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  if ((status = esl_mpi_PackOptSize(cm->name,    -1, MPI_CHAR, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += sz; /* name */
-  if ((status = esl_mpi_PackOptSize(cm->acc,  -1, MPI_CHAR, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  if ((status = esl_mpi_PackOptSize(cm->acc,     -1, MPI_CHAR, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += sz; /* acc */
-  if ((status = esl_mpi_PackOptSize(cm->desc, -1, MPI_CHAR, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  if ((status = esl_mpi_PackOptSize(cm->desc,    -1, MPI_CHAR, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += sz; /* desc */
+  if ((status = esl_mpi_PackOptSize(cm->comlog,  -1, MPI_CHAR, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += sz; /* comlog */
+  if ((status = esl_mpi_PackOptSize(cm->ctime,   -1, MPI_CHAR, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += sz; /* ctime */
 
   if (cm->flags & CMH_RF)   if (MPI_Pack_size(cm->clen+2,  MPI_CHAR, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += sz; /* rf */
@@ -493,92 +487,6 @@ cm_nonconfigured_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
   return status;
 
 }
-
-
-/* Function:  comlog_MPIPackSize()
- * Synopsis:  Calculates number of bytes needed to pack a 
- *            ComLog_t object. Follows 'Purpose' 
- *            of other *_MPIPackSize() functions above. 
- *
- * Incept:    EPN, Mon Dec 31 14:31:04 2007
- *
- * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
- *
- * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is set to 0. 
- *
- * Note:      The sizing calls here need to stay matched up with
- *            the calls in <comlog_MPIPack()>.
- */
-int
-comlog_MPIPackSize(ComLog_t *comlog, MPI_Comm comm, int *ret_n)
-{
-  int status;
-  int sz;
-  int n = 0;
-
-  status = esl_mpi_PackOptSize(comlog->bcom,  -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  status = esl_mpi_PackOptSize(comlog->bdate, -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  status = esl_mpi_PackOptSize(comlog->ccom,  -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  status = esl_mpi_PackOptSize(comlog->cdate, -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-
-  *ret_n = n;
-  return eslOK;
-
- ERROR:
-  return status;
-}
-
-/* Function:  comlog_MPIPack()
- * Synopsis:  Packs ComLog_t <comlog> into MPI buffer.
- *            See 'Purpose','Returns' and 'Throws'
- *            of other *_MPIPack()'s for more info.
- *
- * Incept:    EPN, Wed Dec 12 05:03:40 2007
- */
-int
-comlog_MPIPack(ComLog_t *comlog, char *buf, int n, int *position, MPI_Comm comm)
-{
-  int status;
-
-  ESL_DPRINTF2(("comlog_MPIPack(): ready.\n"));
-  
-  status = esl_mpi_PackOpt(comlog->bcom,   -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = esl_mpi_PackOpt(comlog->bdate,  -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = esl_mpi_PackOpt(comlog->ccom,   -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = esl_mpi_PackOpt(comlog->cdate,  -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
-  ESL_DPRINTF2(("comlog_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
-
-  if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
-  return eslOK;
-}
-
-/* Function:  comlog_MPIUnpack()
- * Synopsis:  Unpacks ComLog_t<comlog> from an MPI buffer.
- *            Follows 'Purpose', 'Returns', 'Throws' of other
- *            *_MPIUnpack() functions above.
- *
- * Incept:    EPN, Wed Dec 12 05:29:19 2007
- */
-int
-comlog_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ComLog_t **ret_comlog)
-{
-  int status;
-  ComLog_t *comlog;
-
-  comlog = CreateComLog();
-  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->bcom),  NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->bdate), NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->ccom),  NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->cdate), NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  *ret_comlog = comlog;
-  return eslOK;
-
- ERROR:
-  if(comlog != NULL) free(comlog);
-  *ret_comlog = NULL;
-  return status;
-}
-
 
 /* Function:  expinfo_MPIPackSize()
  * Synopsis:  Calculates number of bytes needed to pack a 

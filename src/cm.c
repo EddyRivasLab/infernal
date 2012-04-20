@@ -167,6 +167,7 @@ CreateCMShell(void)
   cm->eff_nseq = 0.;  
   cm->nseq     = 0;
   cm->clen     = 0;
+  cm->ctime    = NULL;
   cm->comlog   = NULL;
   cm->emap     = NULL;
   cm->cmcons   = NULL;
@@ -204,7 +205,6 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
   ESL_ALLOC(cm->nodemap, nnodes  * sizeof(int));
   ESL_ALLOC(cm->ndtype,  nnodes  * sizeof(char));
 
-  if((cm->comlog  = CreateComLog())                 == NULL) goto ERROR;
   if((cm->qdbinfo = CreateCMQDBInfo(nstates, clen)) == NULL) goto ERROR;
 
   /* parameter information */
@@ -440,7 +440,8 @@ FreeCM(CM_t *cm)
   if(cm->ibeginsc   != NULL) free(cm->ibeginsc);
   if(cm->iendsc     != NULL) free(cm->iendsc);
 
-  if(cm->comlog     != NULL) FreeComLog(cm->comlog);
+  if(cm->ctime      != NULL) free(cm->ctime);
+  if(cm->comlog     != NULL) free(cm->comlog);
   if(cm->qdbinfo    != NULL) FreeCMQDBInfo(cm->qdbinfo);
   if(cm->cp9map     != NULL) FreeCP9Map(cm->cp9map);
   if(cm->cp9b       != NULL) FreeCP9Bands(cm->cp9b);
@@ -2736,79 +2737,136 @@ cm_SetConsensus(CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq)
   return status;
 }
 
-/*---------------- end, internal-setting routines ---------------*/
-  
-/* Function: CreateComLog()
- * Date:     EPN, Mon Dec 31 10:51:14 2007
- *
- * Purpose:  Allocate and initialize a ComLog_t data structure.
- * Returns:  Newly allocated ComLog_t object, this is NULL if
- *           there's a memory allocation failure.
- */
-ComLog_t *
-CreateComLog()
-{
-  int status;
-
-  ComLog_t *clog;
-  ESL_ALLOC(clog, sizeof(ComLog_t));
-
-  clog->bcom   = NULL;
-  clog->bdate  = NULL;
-  clog->ccom   = NULL;
-  clog->cdate  = NULL;
-
-  return clog;
-
- ERROR:
-  return NULL;
-}
-
-/* Function: FreeComLog()
- * Date:     EPN, Mon Dec 31 10:53:45 2007
- *
- * Purpose:  Free a ComLog_t data structure.
- *            
- * Returns:  void;
- */
-void
-FreeComLog(ComLog_t *clog)
-{
-  if(clog->bcom   != NULL) free(clog->bcom);
-  if(clog->bdate  != NULL) free(clog->bdate);
-  if(clog->ccom   != NULL) free(clog->ccom);
-  if(clog->cdate  != NULL) free(clog->cdate);
-  free(clog);
-  return;
-}
-
-/* Function: CopyComLog()
- * Date:     EPN, Mon Dec 31 10:53:45 2007
- *
- * Purpose:  Copy all the info in the ComLog_t data structure <src>
- *           into <dest>, any info that was in <dest> is freed.
- *
- * Returns:  eslOK on success; eslEMEM on memory allocation error.
+/* Function: cm_AppendComlog()
+ * Synopsis: Concatenate and append command line to the command line log.
+ * 
+ * Purpose:  Concatenate command line options and append as a new line in the
+ *           command line log. Command line log is multiline, with each line
+ *           ending in newline char, except for last line.
+ *           
+ *           Based on and nearly identical to HMMER's
+ *           p7_hmm_AppendComlog().  One difference is the <add_seed>
+ *           and <seed> parameters, if <use_seed> is TRUE we append
+ *           "--seed <seed>" to the command line string. This is
+ *           necessary to allow a user to reproduce 'cmbuild --refine
+ *           --gibbs' CM files, which use a random (and not recorded)
+ *           seed by default.
+ * 
+ * Returns:  <eslOK> on success.
+ * 
+ * Throws:   <eslEMEM> on allocation failure.          
  */
 int
-CopyComLog(const ComLog_t *src, ComLog_t *dest)
+cm_AppendComlog(CM_t *cm, int argc, char **argv, int add_seed, uint32_t seed)
 {
-  int status;
+  int       status;
+  void     *tmp;
+  int       n;
+  int       i;
+  int       seedlen;
+  uint32_t  temp;
+  char     *seedstr;
 
-  if(dest->bcom   != NULL)  { free(dest->bcom);  dest->bcom = NULL;    }
-  if(dest->bdate  != NULL)  { free(dest->bdate); dest->bdate = NULL;   }
-  if(dest->ccom   != NULL)  { free(dest->ccom);  dest->ccom  = NULL;  }
-  if(dest->cdate  != NULL)  { free(dest->cdate); dest->cdate  = NULL; }
+  /* figure out length of added command line, and (re)allocate comlog */
+  n = argc-1;	/* account for 1 space per arg, except last one */
+  for (i = 0; i < argc; i++) { 
+    n += strlen(argv[i]);
+  }
+  /* we may need to add '--seed <seed>' */
+  if(add_seed) { 
+    temp = seed; 
+    seedlen = 1; 
+    while(temp > 0) { temp/=10; seedlen++; } /* determine length of stringized version of seed */
+    seedlen += 8; /* strlen(' --seed ') */
+    n += seedlen;
+  }
 
-  if(src->bcom   != NULL) { if((status = esl_strdup(src->bcom,  -1, &(dest->bcom)))   != eslOK) goto ERROR; }
-  if(src->bdate  != NULL) { if((status = esl_strdup(src->bdate, -1, &(dest->bdate)))  != eslOK) goto ERROR; }
-  if(src->ccom   != NULL) { if((status = esl_strdup(src->ccom, -1, &(dest->ccom)))  != eslOK) goto ERROR; }
-  if(src->cdate  != NULL) { if((status = esl_strdup(src->cdate,-1, &(dest->cdate))) != eslOK) goto ERROR; }
+  if (cm->comlog != NULL) {
+    n += strlen(cm->comlog) + 1; /* +1 for the \n we're going to add to the old comlog */
+    ESL_RALLOC(cm->comlog, tmp, sizeof(char)* (n+1));
+    strcat(cm->comlog, "\n");
+  } else {
+    ESL_ALLOC(cm->comlog, sizeof(char)* (n+1));
+    *(cm->comlog) = '\0'; /* need this to make strcat work */
+  }
+
+  for (i = 0; i < argc-1; i++)
+    {
+      strcat(cm->comlog, argv[i]);
+      strcat(cm->comlog, " ");
+    }
+  strcat(cm->comlog, argv[argc-1]);
+
+  if(add_seed) { 
+    ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
+    sprintf(seedstr, " --seed %" PRIu32 " ", seed);
+    strcat(cm->comlog, seedstr);
+    free(seedstr);
+  }
+
   return eslOK;
 
  ERROR:
   return status;
 }
+
+/* Function: cm_SetCtime()
+ * Synopsis: Timestamp a CM.
+ * 
+ * Purpose:  Set the <ctime> field in a new CM to the current time.
+ * 
+ * Returns:  <eslOK> on success.
+ * 
+ * Throws:   <eslEMEM> on allocation failure. 
+ *           <eslESYS> if system calls fail to obtain (or format) the time.
+ *
+ * Notes:    This function is based on hmmer's p7_hmm_SetCtime(), 
+ *           All of the following notes are copied from there.
+ *
+ *           This function calls <ctime_r()>, supposedly a part of the
+ *           ISO/IEC 9945-1:1996 (POSIX.1) standard, but not ANSI
+ *           C99, so we have potential portability problems here.
+ *
+ *           A known one: <ctime_r()> is by default a three-argument
+ *           call on Solaris 10 systems. Our autoconf script sets
+ *           -D_POSIX_PTHREAD_SEMANTICS on Solaris systems to fix this
+ *           issue, requesting Solaris to use a compliant version of 
+ *           ctime_r().
+ *
+ *           We might want to use strftime() instead; that's what 
+ *           POSIX 2008 recommends; but we'd still need localtime_r() or
+ *           its equivalent, and that has its own portability issues.
+ *           
+ *           Note to porters: it really doesn't matter what this
+ *           timestamp is. INFERNAL doesn't look at it, it's for human
+ *           notetaking. If you have to, set it to an empty string.
+ *
+ * TODO:     Oi. Time is complicated. Easel should give us an
+ *           easy and portable call to generate time stamps like this;
+ *           an esl_time module, perhaps?
+ */
+int
+cm_SetCtime(CM_t *cm)
+{
+  char    *s = NULL;
+  time_t   date;
+  int      status;
+
+  ESL_ALLOC(s, 32);
+  if ((date = time(NULL)) == -1)               { status = eslESYS; goto ERROR; }
+  if (ctime_r(&date, s) == NULL)               { status = eslESYS; goto ERROR; }
+  if ((status = esl_strchop(s, -1)) != eslOK)  {                   goto ERROR; }
+  
+  if (cm->ctime != NULL) free(cm->ctime);
+  cm->ctime = s;
+  return eslOK;
+
+ ERROR:
+  if (s) free(s);
+  return status;
+}
+
+/*---------------- end, internal-setting routines ---------------*/
 
 /* Function: IntMaxDigits()
  * Date:     EPN, Fri Nov 30 14:51:12 2007
@@ -3004,11 +3062,9 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
     ESL_ALLOC(new->map, sizeof(int) * (new->clen+1));
     esl_vec_ICopy(cm->map, (new->clen+1), new->map);
   }
-  /* new->comlog was allocated in CreateCMBody() */
-  if (esl_strdup(cm->comlog->bcom,  -1, &(new->comlog->bcom))  != eslOK) { status = eslEMEM; goto ERROR;}
-  if (esl_strdup(cm->comlog->bdate, -1, &(new->comlog->bdate)) != eslOK) { status = eslEMEM; goto ERROR;}
-  if (esl_strdup(cm->comlog->ccom,  -1, &(new->comlog->ccom))  != eslOK) { status = eslEMEM; goto ERROR;}
-  if (esl_strdup(cm->comlog->cdate, -1, &(new->comlog->cdate)) != eslOK) { status = eslEMEM; goto ERROR;}
+
+  if ((cm->comlog  != NULL) && (status = esl_strdup(cm->comlog,  -1, &(new->comlog)))  != eslOK) goto ERROR;
+  if ((cm->ctime   != NULL) && (status = esl_strdup(cm->ctime,   -1, &(new->ctime)))   != eslOK) goto ERROR;
 
   new->flags       = cm->flags;
   new->checksum    = cm->checksum;
@@ -3193,7 +3249,8 @@ cm_Sizeof(CM_t *cm)
     bytes += sizeof(int)  *  cm->nodes;  /* cm->nodemap */
     bytes += sizeof(int)  *  cm->nodes;  /* cm->ndtype  */
 
-    if(cm->comlog  != NULL) bytes += sizeof(ComLog_t);
+    if(cm->comlog  != NULL) bytes += sizeof(char) * strlen(cm->comlog);
+    if(cm->ctime   != NULL) bytes += sizeof(char) * strlen(cm->ctime);
     if(cm->qdbinfo != NULL) bytes += (1000000. * SizeofCMQDBInfo(cm->qdbinfo));
     if(cm->null    != NULL) bytes += sizeof(float) * (cm->abc->K);
 
