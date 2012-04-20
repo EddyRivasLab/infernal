@@ -49,7 +49,6 @@ main(int argc, char **argv)
   ESL_NEWSSI    *nssi       = NULL;
   uint16_t       fh         = 0;
   int            ncm        = 0;
-  int            nbps       = 0;
   uint64_t       tot_clen   = 0;
   off_t          cm_offset  = 0;
   off_t          fp7_offset = 0;

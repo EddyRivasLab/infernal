@@ -679,6 +679,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     if (tblfp != NULL) { 
       cm_tophits_TabularTargets(tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1)); 
+      fflush(tblfp);
     }
     esl_stopwatch_Stop(w);
     cm_pli_Statistics(ofp, info[0].pli, w);
@@ -686,6 +687,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Output the results in an MSA (-A option) */
     if (afp) {
       ESL_MSA *msa = NULL;
+      printf("about to call cm_tophits_Alignment()\n"); fflush(stdout);
       if((status = cm_tophits_Alignment(info[0].cm, info[0].th, errbuf, &msa)) == eslOK) { 
 	if(msa != NULL) { 
 	  if (textw > 0) eslx_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);
@@ -1300,6 +1302,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_pipeline_Destroy(mpi_pli, NULL);
       cm_tophits_Destroy(mpi_th);
     }
+    free(cur_block); cur_block = NULL;
+
     /* Set number of seqs, and subtract number of overlapping residues searched from total */
     info->pli->nseqs = tot_nseq;
     if(info->pli->do_top && tot_noverlap > 0) adjust_nres_top_for_overlaps(info->pli, tot_noverlap);
@@ -1335,6 +1339,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
     if (tblfp != NULL) { 
       cm_tophits_TabularTargets(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
+      fflush(tblfp);
     }
     esl_stopwatch_Stop(w);
     cm_pli_Statistics(ofp, info->pli, w);
@@ -1343,6 +1348,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Output the results in an MSA (-A option) */
     if (afp) {
       ESL_MSA *msa = NULL;
+      printf("about to call cm_tophits_Alignment()\n"); fflush(stdout);
       if((status = cm_tophits_Alignment(info->cm, info->th, errbuf, &msa)) == eslOK) { 
 	if(msa != NULL) { 
 	  if (textw > 0) eslx_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);
@@ -1367,7 +1373,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((info = create_info(go)) == NULL) mpi_failure("Out of memory"); /* for the next model */
 
     hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
-    if(hstatus == eslOK) { free_info(info); free(info); }
+    free_info(info); 
+    free(info); 
   } /* end outer loop over query CMs */
   
   switch(hstatus) {
@@ -1548,6 +1555,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    esl_sq_SetName(dbsq, dbsq->source);
 	    /*printf("MPI just fetched seq %d (%40s) %10ld..%10ld\n", pkey_idx, pkey, seq_from, seq_to);*/
 	  }
+	  free(pkey); 
 
 	  /* tell pipeline we've got a new sequence (this updates info->pli->nres) */
 	  cm_pli_NewSeq(info->pli, dbsq, pkey_idx);
@@ -1586,6 +1594,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
       /* sanity check to make sure the blocks are the same */
       if (block->blockL != readL) mpi_failure("Block length mismatch - expected %ld found %ld for block idx:%ld from:%ld\n", block->blockL, readL, block->first_idx, block->first_from);
+      /* free the block we're finished with */
+      free(block); block = NULL;
 
       /* inform the master we need another block of sequences */
       status = 0;
@@ -1595,7 +1605,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = mpi_block_recv(0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpi_buf, &mpi_size, &block)) != eslOK) mpi_failure("Failed to receive sequence block, error status code: %d\n", status); 
     }   
     esl_stopwatch_Stop(w);
-      
+    /* free the final block which was empty */
+    free(block); block = NULL;
+
     /* compute E-values before sending back to master */
     if(info->pli->do_hmmonly_cur) eZ = info->pli->Z / (float) info->om->max_length;
     else              	          eZ = info->cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize;

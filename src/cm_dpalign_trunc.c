@@ -826,19 +826,25 @@ cm_TrAlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
   float        shmxmb   = 0.;  /* Mb required for CM_SHADOW_MX */
 
   /* we pass NULL values to the *_mx_SizeNeeded() functions because we don't care about cell counts */
-  if(do_post || do_sample) { /* we'll need an Inside matrix */
-    if((status = cm_tr_mx_SizeNeeded(cm, errbuf, L, NULL, NULL, NULL, NULL, &mxmb)) != eslOK) return status;
-    totmb += mxmb;
-    if(do_post) { 
-      /* we'll need an Outside matrix (which we'll reuse as the Posterior matrix, 
-       *  so only count it once) and a emit matrix
-       */
-      totmb += mxmb; 
-      if((status = cm_tr_emit_mx_SizeNeeded(cm, errbuf, L, NULL, NULL, &emxmb)) != eslOK) return status;
-      totmb += emxmb;
-    }
+
+  /* we will always need an Inside or CYK matrix */
+  if((status = cm_tr_mx_SizeNeeded(cm, errbuf, L, NULL, NULL, NULL, NULL, &mxmb)) != eslOK) return status;
+  totmb = mxmb;
+
+  /* if calc'ing posteriors, we'll also need an Outside matrix (which
+   * we'll reuse as the Posterior matrix, so only count it once) and
+   * an emit matrix.
+   */
+  if(do_post) { 
+    totmb += mxmb; 
+    if((status = cm_tr_emit_mx_SizeNeeded(cm, errbuf, L, NULL, NULL, &emxmb)) != eslOK) return status;
+    totmb += emxmb;
   }
-  if(! do_sample) { /* if do_sample, we won't need a shadow matrix */
+
+  /* if we're not sampling an alignment, we'll also need a shadow
+   * matrix for the traceback.
+   */
+  if(! do_sample) { 
     if((status = cm_tr_shadow_mx_SizeNeeded(cm, errbuf, L, NULL, NULL, NULL, NULL, NULL, NULL, NULL, &shmxmb)) != eslOK) return status;
     totmb += shmxmb;
   }
@@ -847,6 +853,15 @@ cm_TrAlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
   if (ret_emxmb  != NULL) *ret_emxmb   = emxmb;
   if (ret_shmxmb != NULL) *ret_shmxmb  = shmxmb;
   if (ret_totmb  != NULL) *ret_totmb   = totmb;
+
+#if eslDEBUGLEVEL >= 1  
+  printf("cm_TrAlignSizeNeeded()\n");
+  printf("\t mxmb:  %.2f\n", mxmb);
+  printf("\t emxmb: %.2f\n", emxmb);
+  printf("\t shmxmb:%.2f\n", shmxmb);
+  printf("\t totmb: %.2f\n", totmb);
+  printf("\t limit: %.2f\n", size_limit);
+#endif
 
   if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "non-banded truncated alignment mxes need %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", totmb, (float) size_limit);
 

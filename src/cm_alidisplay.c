@@ -1326,8 +1326,8 @@ cm_alidisplay_TruncString(const CM_ALIDISPLAY *ad)
  * Returns:   <eslOK> on success.
  *
  * Throws:    <eslEMEM> on allocation failures. <eslECORRUPT> on unexpected internal
- *            data corruption. On any exception, <*ret_sq> and <*ret_tr> are
- *            <NULL>.
+ *            data corruption. On any exception, <*ret_sq>, <*ret_tr> and
+ *            <*ret_pp> are <NULL>.
  *
  * Xref:      SRE:J4/29.
  */
@@ -1348,7 +1348,8 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   if(cm->cmcons == NULL) ESL_FAIL(eslEINVAL, errbuf, "cm_alidisplay_BackConvert(): cm->cmcons is NULL");
 
   msa = esl_msa_Create(1, ad->N_el);
-  if((status = esl_strdup(ad->aseq_el, msa->alen, &(msa->aseq[0]))) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_BackConvert() out of memory");
+  memcpy(msa->aseq[0], ad->aseq_el, ad->N_el);
+  /*if((status = esl_strdup(ad->aseq_el, msa->alen, &(msa->aseq[0]))) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_BackConvert() out of memory");*/
   if(ad->ppline_el) { 
     ESL_ALLOC(msa->pp, sizeof(char *) * 1);
     if((status = esl_strdup(ad->ppline_el, msa->alen, &(msa->pp[0]))) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_BackConvert() out of memory");
@@ -1356,7 +1357,7 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   ESL_ALLOC(msa->ss_cons, sizeof(char) * (msa->alen+1));
   ESL_ALLOC(msa->rf,      sizeof(char) * (msa->alen+1));
 
-  cm_alidisplay_Dump(stdout, ad);
+  /*cm_alidisplay_Dump(stdout, ad);*/
 
   upos = 0;
   for(apos = 0; apos < msa->alen; apos++) { 
@@ -1411,12 +1412,14 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
     if(tr->emitr[x] != -1) tr->emitr[x] = a2u_map[tr->emitr[x]];
   }
   if((status = esl_sq_FetchFromMSA(msa, 0, &sq)) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_BackConvert() unable to fetch seq from msa");
-  if(msa->pp) ESL_ALLOC(pp, sizeof(char) * (ulen+1));
-  upos = 0;
-  for(apos = 0; apos < msa->alen; apos++) { 
-    if(a2u_map[apos+1] != -1) pp[upos++] = msa->pp[0][apos]; 
+  if(msa->pp) {
+    ESL_ALLOC(pp, sizeof(char) * (ulen+1));
+    upos = 0;
+    for(apos = 0; apos < msa->alen; apos++) { 
+      if(a2u_map[apos+1] != -1) pp[upos++] = msa->pp[0][apos]; 
+    }
+    if(upos+1 != ulen) ESL_XFAIL(eslERANGE, errbuf, "cm_alidisplay_BackConvert() failed to create temporary msa");
   }
-  if(upos+1 != ulen) ESL_XFAIL(eslERANGE, errbuf, "cm_alidisplay_BackConvert() failed to create temporary msa");
 
   esl_msa_Destroy(msa);
   free(a2u_map);

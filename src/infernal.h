@@ -2097,8 +2097,19 @@ typedef struct cm_file_s {
 #define NPLI_PASSES              7
 
 typedef struct cm_pipeline_accounting_s {
-  /* CM_PIPELINE accounting. (reduceable in threaded/MPI parallel version)     */
-
+  /* CM_PIPELINE accounting. (reduceable in threaded/MPI parallel version)
+   * Each pipeline pass keeps track of its own accounting, so we know how
+   * many residues were searched in each pass. 
+   * 
+   * <npli_top> and <npli_bot> keep track of number of times pipeline
+   * was run for each pass, this is not the same as the number of
+   * sequences searched in *any* pass (that's <pli->nseq>), but is
+   * equal to the number of sequences searched in the
+   * PLI_PASS_5P_AND_3P_FORCE pass, since that pass only takes place
+   * for sequences shorter or equal to <pli->maxW>.
+   */
+  uint64_t      npli_top;          /* # of times pipeline called on top strand */
+  uint64_t      npli_bot;          /* # of times pipeline called on bot strand */
   uint64_t      nres_top;	   /* # of residues searched on top strand     */
   uint64_t      nres_bot;	   /* # of residues searched on bottom strand  */
   uint64_t      n_past_msv;	   /* # windows that pass MSVFilter()          */

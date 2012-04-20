@@ -1061,6 +1061,8 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
   if (p1->mode == CM_SEARCH_SEQS)
     {
       p1->nseqs   += p2->nseqs;
+      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_top += p2->acct[p].npli_top;
+      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_bot += p2->acct[p].npli_bot;
       for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_top += p2->acct[p].nres_top;
       for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_bot += p2->acct[p].nres_bot;
     }
@@ -1073,11 +1075,15 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
       /* If target CM file was small, it's possible that <p1->nseqs>
        * is 0 and <p2->nseqs> is not, also that
        * p1->acct[p].nres_{top,bot} is 0 and
-       * p2->acct[p].nres_{top,bot} is not. We handle that case by
+       * p2->acct[p].nres_{top,bot} is not, or
+       * p1->acct[p].npli_{top,bot} is 0 and
+       * p2->acct[p].npli_{top,bot} is not, or We handle that case by
        * taking the max (usually these p1 and p2 values will be equal
        * in scan mode).
        */
       p1->nseqs = ESL_MAX(p1->nseqs, p2->nseqs);
+      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_top = ESL_MAX(p1->acct[p].npli_top, p2->acct[p].npli_top);
+      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_bot = ESL_MAX(p1->acct[p].npli_bot, p2->acct[p].npli_bot);
       for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_top = ESL_MAX(p1->acct[p].nres_top, p2->acct[p].nres_top);
       for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_bot = ESL_MAX(p1->acct[p].nres_bot, p2->acct[p].nres_bot);
     }
@@ -1246,11 +1252,13 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     if(p == PLI_PASS_5P_AND_3P_ANY   && (! do_pass_5p_and_3p_any))   continue;
     if(p == PLI_PASS_HMM_ONLY_ANY    && (! do_pass_hmm_only_any))    continue;
 
-    /* Update nres_top or nres_bot searched for this pass.  It's
-     * important to do this precisely here, in between the 'continue's
-     * above, but prior to the one below that 'continue's only because
-     * we know no windows pass local Fwd (F3).
+    /* Update npli_{top,bot} run and nres_{top,bot} searched for this
+     * pass. It's important to do this precisely here, in between the
+     * 'continue's above, but prior to the one below that 'continue's
+     * only because we know no windows pass local Fwd (F3).
      */
+    if(in_rc) pli->acct[p].npli_bot++;
+    else      pli->acct[p].npli_top++;
     if(p == PLI_PASS_STD_ANY || p == PLI_PASS_5P_AND_3P_ANY || p == PLI_PASS_HMM_ONLY_ANY) { 
       if(in_rc) pli->acct[p].nres_bot += sq->n;
       else      pli->acct[p].nres_top += sq->n;
@@ -1510,9 +1518,22 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
 	      pli->nseqs, nres_searched - nres_researched);
     }
     if(pass_idx != PLI_PASS_STD_ANY) { 
-      fprintf(ofp,   "Target sequences re-searched for truncated hits:   %15" PRId64 "  (%" PRId64 " residues re-searched)\n",  
-	      (pli->do_trunc_ends || pli->do_trunc_any) ? pli->nseqs : 0, 
-	      nres_researched);
+      if(pass_idx == PLI_PASS_5P_AND_3P_FORCE) { 
+      /* special case, not all sequences get searched by this pass, 
+       * since only seqs < maxW are searched in this pass (so no
+       * sequence is chopped up into overlapping windows) npli
+       * is equal to number of sequences searched (npli_top or
+       * npli_bot).
+       */
+	fprintf(ofp,   "Target sequences re-searched for truncated hits:   %15" PRId64 "  (%" PRId64 " residues re-searched)\n",  
+		(pli->do_trunc_ends) ? ESL_MAX(pli_acct->npli_top, pli_acct->npli_bot) : 0, 
+		nres_researched);
+      }
+      else { 
+	fprintf(ofp,   "Target sequences re-searched for truncated hits:   %15" PRId64 "  (%" PRId64 " residues re-searched)\n",  
+		(pli->do_trunc_ends || pli->do_trunc_any) ? pli->nseqs : 0, 
+		nres_researched);
+      }
     }
   } else { /* SCAN mode */
     if(pass_idx == PLI_PASS_STD_ANY || pass_idx == PLI_PASS_CM_SUMMED) { 
@@ -1531,7 +1552,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   if(pli->do_msv) { 
     fprintf(ofp, "Windows   passing  local HMM MSV           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_msv,
-	    (double) pli_acct->pos_past_msv / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_msv / nres_searched,
 	    pli->F1 * pli->nmodels);
     nwin_fcyk = nwin_final = pli_acct->n_past_msv;
   }
@@ -1542,7 +1563,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   if(pli->do_msvbias) { 
     fprintf(ofp, "Windows   passing  local HMM MSV      bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_msvbias,
-	    (double) pli_acct->pos_past_msvbias / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_msvbias / nres_searched,
 	    pli->F1b * pli->nmodels);
     nwin_fcyk = nwin_final = pli_acct->n_past_msvbias;
   }
@@ -1551,7 +1572,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   if(pli->do_vit) { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_vit,
-	    (double) pli_acct->pos_past_vit / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_vit / nres_searched,
 	    pli->F2 * pli->nmodels);
     nwin_fcyk = nwin_final = pli_acct->n_past_vit;
   }
@@ -1562,7 +1583,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   if(pli->do_vitbias) { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_vitbias,
-	    (double) pli_acct->pos_past_vitbias / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_vitbias / nres_searched,
 	    pli->F2b * pli->nmodels);
     nwin_fcyk = nwin_final = pli_acct->n_past_vitbias;
   }
@@ -1573,7 +1594,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   if(pli->do_fwd) { 
     fprintf(ofp, "Windows   passing  local HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_fwd,
-	    (double) pli_acct->pos_past_fwd / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_fwd / nres_searched,
 	    pli->F3 * pli->nmodels);
     nwin_fcyk = nwin_final = pli_acct->n_past_fwd;
   }
@@ -1584,7 +1605,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   if(pli->do_fwdbias) { 
     fprintf(ofp, "Windows   passing  local HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_fwdbias,
-	    (double) pli_acct->pos_past_fwdbias / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_fwdbias / nres_searched,
 	    pli->F3b * pli->nmodels);
     nwin_fcyk = nwin_final = pli_acct->n_past_fwdbias;
   }
@@ -1595,7 +1616,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   if(pli->do_gfwd) { 
     fprintf(ofp, "Windows   passing glocal HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_gfwd,
-	    (double) pli_acct->pos_past_gfwd / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_gfwd / nres_searched,
 	    pli->F4 * pli->nmodels);
     nwin_fcyk = nwin_final = pli_acct->n_past_gfwd;
   }
@@ -1605,7 +1626,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   if(pli->do_gfwdbias) { 
     fprintf(ofp, "Windows   passing glocal HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_gfwdbias,
-	    (double) pli_acct->pos_past_gfwdbias / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_gfwdbias / nres_searched,
 	    pli->F4b * pli->nmodels);
     nwin_fcyk = nwin_final = pli_acct->n_past_gfwdbias;
   }
@@ -1616,7 +1637,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   if(pli->do_edef) { 
     fprintf(ofp, "Envelopes passing glocal HMM envelope defn filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_edef,
-	    (double) pli_acct->pos_past_edef / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_edef / nres_searched,
 	    pli->F5 * pli->nmodels);
     nwin_fcyk = nwin_final = pli_acct->n_past_edef;
   }
@@ -1627,7 +1648,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   if(pli->do_edefbias) { 
     fprintf(ofp, "Envelopes passing glocal HMM envelope bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_edefbias,
-	    (double) pli_acct->pos_past_edefbias / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_edefbias / nres_searched,
 	    pli->F5b * pli->nmodels);
     nwin_fcyk = nwin_final = pli_acct->n_past_edefbias;
   }
@@ -1637,7 +1658,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     fprintf(ofp, "Envelopes passing %6s CM  CYK           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    (pli->do_glocal_cm_stages) ? "glocal" : "local",
 	    pli_acct->n_past_cyk,
-	    (double) pli_acct->pos_past_cyk / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_cyk / nres_searched,
 	    pli->F6 * pli->nmodels);
     nwin_final = pli_acct->n_past_cyk;
   }
@@ -1660,16 +1681,16 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
       n_output_trunc   = 0;
       pos_output_trunc = 0;
     }
-    fprintf(ofp, "Total CM hits reported:                            %15d  (%.4g) [includes %d truncated hit(s)]\n",
+    fprintf(ofp, "Total CM hits reported:                            %15d  (%.4g); includes %d truncated hit(s)\n",
 	    (int) pli_acct->n_output,
-	    (double) (pli_acct->pos_output + pos_output_trunc) / nres_searched, 
+	    (nres_searched == 0) ? 0.0 : (double) (pli_acct->pos_output + pos_output_trunc) / nres_searched, 
 	    (int) n_output_trunc);
   }
   else { 
-    fprintf(ofp, "Total %sCM hits reported:                            %15d  (%.4g)\n",
+    fprintf(ofp, "Total %37s        %15d  (%.4g)\n",
 	    (pli->be_verbose) ? pli_describe_hits_for_pass(pass_idx) : "",
 	    (int) pli_acct->n_output,
-	    (double) pli_acct->pos_output / nres_searched);
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_output / nres_searched);
   }
 
 
@@ -1750,7 +1771,7 @@ pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli)
 	  match_cm_spacing ? " "      : "",
 	  match_cm_spacing ? "     "  : "",
 	  pli_acct->n_past_msv,
-	  (double) pli_acct->pos_past_msv / nres_searched,
+	  (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_msv / nres_searched,
 	  pli->F1_hmmonly * pli->nmodels_hmmonly);
 
   if(pli->do_bias_hmmonly) { 
@@ -1759,7 +1780,7 @@ pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli)
 	    match_cm_spacing ? " "       : "",
 	    match_cm_spacing ? "     "   : "",
 	    pli_acct->n_past_msvbias,
-	    (double) pli_acct->pos_past_msvbias / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_msvbias / nres_searched,
 	    pli->F1_hmmonly * pli->nmodels);
   }
   else { /* msv bias is off by default, so don't output anything if it's off */
@@ -1776,7 +1797,7 @@ pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli)
 	    match_cm_spacing ? " "      : "",
 	    match_cm_spacing ? "     "  : "",
 	    pli_acct->n_past_vit,
-	    (double) pli_acct->pos_past_vit / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_vit / nres_searched,
 	    pli->F2_hmmonly * pli->nmodels_hmmonly);
   }
   else { 
@@ -1793,7 +1814,7 @@ pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli)
 	    match_cm_spacing ? " "      : "",
 	    match_cm_spacing ? "     "  : "",
 	    pli_acct->n_past_fwd,
-	    (double) pli_acct->pos_past_fwd / nres_searched,
+	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_fwd / nres_searched,
 	    pli->F3_hmmonly * pli->nmodels_hmmonly);
   }
   else { 
@@ -1807,7 +1828,7 @@ pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli)
   fprintf(ofp, "Total HMM hits reported:                   %s%15d  (%.4g)\n",
 	  match_cm_spacing ? "        "  : "",
 	  (int) pli_acct->n_output,
-	  (double) pli_acct->pos_output / nres_searched);
+	  (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_output / nres_searched);
 
   return eslOK;
 }
@@ -1836,6 +1857,8 @@ pli_sum_statistics(CM_PIPELINE *pli)
   for(p = 1; p < NPLI_PASSES; p++) { 
     if(p == PLI_PASS_HMM_ONLY_ANY) continue; /* skip HMM only stage */
     if(pli->acct[p].nres_top > 0 || pli->acct[p].nres_bot > 0) { 
+      pli->acct[PLI_PASS_CM_SUMMED].npli_top          += pli->acct[p].npli_top;
+      pli->acct[PLI_PASS_CM_SUMMED].npli_bot          += pli->acct[p].npli_bot;
       pli->acct[PLI_PASS_CM_SUMMED].nres_top          += pli->acct[p].nres_top;
       pli->acct[PLI_PASS_CM_SUMMED].nres_bot          += pli->acct[p].nres_bot;
       pli->acct[PLI_PASS_CM_SUMMED].n_past_msv        += pli->acct[p].n_past_msv;
@@ -1883,6 +1906,8 @@ pli_sum_statistics(CM_PIPELINE *pli)
 int
 cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct)
 {
+  pli_acct->npli_top          = 0;
+  pli_acct->npli_bot          = 0;
   pli_acct->nres_top          = 0;
   pli_acct->nres_bot          = 0;
   pli_acct->n_past_msv        = 0;
@@ -4003,13 +4028,13 @@ char *
 pli_describe_hits_for_pass(int pass_idx) 
 {
   switch (pass_idx) {
-  case PLI_PASS_CM_SUMMED:       return "";                     break;
-  case PLI_PASS_STD_ANY:         return "non-truncated ";       break;
-  case PLI_PASS_5P_ONLY_FORCE:   return "5' truncated ";        break;
-  case PLI_PASS_3P_ONLY_FORCE:   return "3' truncated ";        break;
-  case PLI_PASS_5P_AND_3P_FORCE: return "5' and 3' truncated "; break;
-  case PLI_PASS_5P_AND_3P_ANY:   return "";                     break;
-  case PLI_PASS_HMM_ONLY_ANY:    return "";                     break;
+  case PLI_PASS_CM_SUMMED:       return "CM hits reported:";                     break;
+  case PLI_PASS_STD_ANY:         return "non-truncated CM hits reported:";       break;
+  case PLI_PASS_5P_ONLY_FORCE:   return "5' truncated CM hits reported:";        break;
+  case PLI_PASS_3P_ONLY_FORCE:   return "3' truncated CM hits reported:";        break;
+  case PLI_PASS_5P_AND_3P_FORCE: return "5' and 3' truncated CM hits reported:"; break;
+  case PLI_PASS_5P_AND_3P_ANY:   return "CM hits reported:";                     break;
+  case PLI_PASS_HMM_ONLY_ANY:    return "HMM hits reported:";                    break;
   default: cm_Fail("bogus pipeline pass index %d\n", pass_idx); break;
   }
   return "";

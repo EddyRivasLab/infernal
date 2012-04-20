@@ -1060,6 +1060,8 @@ cm_pipeline_MPISend(CM_PIPELINE *pli, int dest, int tag, MPI_Comm comm, char **b
   if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* cur_pass_idx */
 
   for(pass_idx = 0; pass_idx < NPLI_PASSES; pass_idx++) { 
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* npli_top */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* npli_bot */
     if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* nres_top */
     if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* nres_bot */
     if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_past_msv */
@@ -1137,6 +1139,8 @@ cm_pipeline_MPISend(CM_PIPELINE *pli, int dest, int tag, MPI_Comm comm, char **b
   if (MPI_Pack(&pli->cur_pass_idx,    1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
 
   for(pass_idx = 0; pass_idx < NPLI_PASSES; pass_idx++) { 
+    if (MPI_Pack(&(pli->acct[pass_idx].npli_top),        1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
+    if (MPI_Pack(&(pli->acct[pass_idx].npli_bot),        1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
     if (MPI_Pack(&(pli->acct[pass_idx].nres_top),        1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
     if (MPI_Pack(&(pli->acct[pass_idx].nres_bot),        1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
     if (MPI_Pack(&(pli->acct[pass_idx].n_past_msv),      1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
@@ -1247,6 +1251,8 @@ cm_pipeline_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc,
   if (MPI_Unpack(*buf, n, &pos, &(pli->cur_pass_idx),    1, MPI_LONG_LONG_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
 
   for(pass_idx = 0; pass_idx < NPLI_PASSES; pass_idx++) { 
+    if (MPI_Unpack(*buf, n, &pos, &(pli->acct[pass_idx].npli_top),        1, MPI_LONG_LONG_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
+    if (MPI_Unpack(*buf, n, &pos, &(pli->acct[pass_idx].npli_bot),        1, MPI_LONG_LONG_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
     if (MPI_Unpack(*buf, n, &pos, &(pli->acct[pass_idx].nres_top),        1, MPI_LONG_LONG_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
     if (MPI_Unpack(*buf, n, &pos, &(pli->acct[pass_idx].nres_bot),        1, MPI_LONG_LONG_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
     if (MPI_Unpack(*buf, n, &pos, &(pli->acct[pass_idx].n_past_msv),      1, MPI_LONG_LONG_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
