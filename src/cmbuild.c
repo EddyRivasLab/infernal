@@ -916,7 +916,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
      pretend_cm_is_hmm = TRUE;
    }
    else { 
-     pretend_cm_is_hmm = TRUE;
+     pretend_cm_is_hmm = FALSE;
    }
    pri2use = (pretend_cm_is_hmm) ? cfg->pri_zerobp : cfg->pri;
 
