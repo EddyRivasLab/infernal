@@ -130,6 +130,7 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
   if(cm->mlp7 != NULL)       ESL_XFAIL(eslEINCOMPAT, errbuf, "trying to create ml p7, but it already exists");
   if(cm->W == 0)             ESL_XFAIL(eslEINCOMPAT, errbuf, "trying to create ml p7, cm->W is 0");
   if(cp9->M != cm->clen)     ESL_XFAIL(eslEINCOMPAT, errbuf, "trying to create ml p7, cm->clen != cp9->M");
+  if(cm->cmcons == NULL)     ESL_XFAIL(eslEINCOMPAT, errbuf, "trying to create ml p7, cm->cmcons is NULL, we need it's structure string");
 
   if ((cm->mlp7 = p7_hmm_Create(cm->clen, cm->abc)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "out of memory");
   p7_hmm_Zero(cm->mlp7);
@@ -194,6 +195,17 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
     strcpy(cm->mlp7->rf, cm->rf);
     cm->mlp7->flags |= p7H_RF;
   }
+
+  /* copy CM's consensus structure annotation to mlp7 */
+  if(cm->cmcons != NULL) { 
+    ESL_ALLOC(cm->mlp7->cs, sizeof(char) * (cm->clen+2));
+    cm->mlp7->cs[0] = ' ';
+    for(k = 1; k <= cm->clen; k++) { 
+      cm->mlp7->cs[k] = cm->cmcons->cstr[k-1]; /* cmcons->cstr is 0..cm->clen-1, mlp7->cs is 1..cm->clen */
+    }
+    cm->mlp7->cs[cm->clen+1] = '\0';
+    cm->mlp7->flags |= p7H_CS;
+  }    
 
   cm->mlp7->eff_nseq = cm->eff_nseq;
   cm->mlp7->nseq     = cm->nseq;

@@ -669,7 +669,7 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
  *
  */
 int
-Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
+Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **sq, double *wgt, 
 		     Parsetree_t **tr, char **postcode, int nseq, 
 		     FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, ESL_MSA **ret_msa)
 {
@@ -1187,6 +1187,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
     }
   msa->ss_cons[alen] = '\0';
   msa->rf[alen] = '\0';
+  if (wgt != NULL) msa->flags |= eslMSA_HASWGTS;
 
   if(tmp_aseq != NULL) free(tmp_aseq);
   if(tmp_apc  != NULL) free(tmp_apc);
@@ -4172,6 +4173,123 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   ESL_FAIL(status, errbuf, "out of memory");
   return status; /* NEVER REACHED */
 }
+
+
+/* Function: cm_parsetree_Doctor()
+ * Incept:   EPN, Mon Apr 23 12:48:32 2012 
+ *           SRE, Thu May 21 08:45:46 2009 [p7_trace_Doctor()]
+ * 
+ * Purpose:  CMs with zero basepairs are parameterized similarly to
+ *           Plan 7 HMMs, so we can use the ML p7 HMM with fast HMM
+ *           algorithms and approximate the CM as closely as
+ *           possible. This means we need to disallow MATL_D->MATL_IL
+ *           and MATL_IL->MATL_D transitions, as explained below in
+ *           the notes from p7_trace_Doctor() from hmmer. Note that we
+ *           won't ever have any other types of D->I or I->D state
+ *           transitions (besides MATL nodes), if we do have any other
+ *           type of nodes we return an error.
+ *
+ *           HMMER's p7_trace_Doctor() notes:
+ *           Plan 7 disallows D->I and I->D "chatter" transitions.
+ *           However, these transitions will be implied by many
+ *           alignments. trace_doctor() arbitrarily collapses I->D or
+ *           D->I into a single M position in the trace.
+ *           
+ *           trace_doctor does not examine any scores when it does
+ *           this. In ambiguous situations (D->I->D) the symbol
+ *           will be pulled arbitrarily to the left, regardless
+ *           of whether that's the best column to put it in or not.
+ *           
+ * Args:     tr      - trace to doctor
+ *           opt_ndi - optRETURN: number of DI transitions doctored
+ *           opt_nid - optRETURN: number of ID transitions doctored
+ * 
+ * Return:   <eslOK> on success, and the parsetree <tr> is modified.
+ *
+ * Throws:   <eslEINVAL> if parsetree has any states other than
+ *           ROOT_S, END_E, MATL_ML, MATL_IL, MATL_D, errbuf filled.
+ */               
+int
+cm_parsetree_Doctor(CM_t *cm, char *errbuf, Parsetree_t *tr, int *opt_ndi, int *opt_nid)
+{
+  int opos;			/* position in old trace                 */
+  int npos;			/* position in new trace (<= opos)       */
+  int x; 
+  int ndi, nid;			/* number of DI, ID transitions doctored */
+
+  /* first, validate the parsetree, should be ROOT_S->[MATL_{M,I,D}]_n->END_E */
+  if(cm->stid[tr->state[0]] != ROOT_S) { 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() parsetree doesn't begin with a ROOT_S state\n");
+  }
+  for(x = 1; x < tr->n-1; x++) { 
+    if((cm->stid[tr->state[x]] != MATL_ML) && 
+       (cm->stid[tr->state[x]] != MATL_IL) && 
+       (cm->stid[tr->state[x]] != MATL_D)) { 
+      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unexpected state id %s at position %d\n", CMStateid(cm->stid[tr->state[x]]), x);
+    }
+  }
+  if(cm->stid[tr->state[tr->n-1]] != END_E) { 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() parsetree doesn't end with an END_E state\n");
+  }
+  /* also validate that the mode is always TRMODE_J */
+  for(x = 0; x < tr->n; x++) { 
+    if(tr->mode[x] != TRMODE_J) ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unexpected non TRMODE_J mode");
+  }
+
+  /* overwrite the trace from left to right */
+  ndi  = nid  = 0;
+  opos = npos = 0;
+  while (opos < tr->n) {
+    /* first set data that is predetermined since we know we're all MATL nodes: 
+     * mode:  always TRMODE_J (we already checked)
+     * nxtl:  always points to next position (unless END_E, which we'll fix at end)
+     * nxtr:  always -1 
+     * prv:   always npos-1
+     * emitr: always == tr->emitr[0] (unless END_E, which we'll fix at end)
+     * at next parsetree node.)
+     */ 
+    tr->mode[npos]  = TRMODE_J;
+    tr->nxtl[npos]  = npos+1;
+    tr->nxtr[npos]  = -1;
+    tr->prv[npos]   = npos-1;  /* even correct for npos == 0 */
+    tr->emitr[npos] = tr->emitr[0];
+
+    /* fix implied D->I transitions; D transforms to M, I pulled in */
+    if (cm->stid[tr->state[opos]] == MATL_D && cm->stid[tr->state[opos+1]] == MATL_IL) {
+      tr->state[npos] = tr->state[opos] - 1; /* MATL_D --> MATL_ML */
+      tr->emitl[npos] = tr->emitl[opos+1];   /* insert char moves back */
+      opos += 2;
+      npos += 1;
+      ndi++;
+    } /* fix implied I->D transitions; D transforms to M, I is pushed in */
+    else if (cm->stid[tr->state[opos]] == MATL_IL && cm->stid[tr->state[opos+1]] == MATL_D) {
+      tr->state[npos] = tr->state[opos+1] - 1; /* MATL_D --> MATL_ML */
+      tr->emitl[npos] = tr->emitl[opos];       /* insert char moves back */
+      opos += 2;
+      npos += 1;
+      nid++; 
+    } /* else, we just copy state and emitl */
+    else {
+      tr->state[npos] = tr->state[opos];
+      tr->emitl[npos] = tr->emitl[opos];
+      opos++;
+      npos++;
+    }
+  }
+  tr->n = npos;
+  /* fix nxtl and emitr for final node */
+  tr->emitr[tr->n-1] = -1;
+  tr->nxtl[tr->n-1]  = -1;
+
+  /* we don't have to worry about changing anything else
+   * (i.e. is_std, nalloc, memblock, pass_idx, trpenalty)
+   */
+
+  if (opt_ndi != NULL) *opt_ndi = ndi;
+  if (opt_nid != NULL) *opt_nid = nid;
+  return eslOK;
+}
+
 
 /* Function: get_femission_score()
  * Incept:   EPN, Thu Nov 15 16:48:56 2007

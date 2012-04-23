@@ -312,11 +312,8 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
      */
   }
   
-  /* build the p7 and profiles from the cp9 */
-  if((status = cm_cp9_to_p7(cm, cm->cp9, errbuf)) != eslOK) return status;
-
   /* Configure the CM and cm->cp9 for local alignment and cm->Lcp9,
-   * cm->Rcp9, cm->Tcp for EL-type local ends, if necessary */
+   * cm->Rcp9, cm->Tcp9 for EL-type local ends, if necessary */
   if(cm->config_opts & CM_CONFIG_LOCAL) { 
     cm_localize(cm, cm->pbegin, cm->pend);
     if(cm->config_opts & CM_CONFIG_HMMLOCAL) { /* contract enforced CM_CONFIG_HMMLOCAL only raised if CM_CONFIG_LOCAL raised */
@@ -352,7 +349,7 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
     cm->iel_selfsc = -INFTY;
   }
 
-  /* Finally, compute log odds scores */
+  /* Compute log odds scores. This will create cm->cmcons as well, which requires scores. */
   if(have_mother) { 
     if((status = SubCMLogoddsify(cm, errbuf, mother_cm, mother_map)) != eslOK) return status; 
   }
@@ -365,6 +362,9 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
     CP9Logoddsify(cm->Rcp9);
     CP9Logoddsify(cm->Tcp9);
   }
+
+  /* Finally, build the ml p7 HMM, which requires cm->cmcons */
+  if((status = cm_cp9_to_p7(cm, cm->cp9, errbuf)) != eslOK) return status;
 
   /*debug_print_cm_params(stdout, cm);
     debug_print_cp9_params(stdout, cm->cp9, TRUE);
