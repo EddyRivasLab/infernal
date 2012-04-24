@@ -4184,10 +4184,18 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
  *           algorithms and approximate the CM as closely as
  *           possible. This means we need to disallow MATL_D->MATL_IL
  *           and MATL_IL->MATL_D transitions, as explained below in
- *           the notes from p7_trace_Doctor() from hmmer. Note that we
- *           won't ever have any other types of D->I or I->D state
- *           transitions (besides MATL nodes), if we do have any other
- *           type of nodes we return an error.
+ *           the notes from p7_trace_Doctor() from hmmer. 
+ *
+ *           We should only enter this function if our CM has zero
+ *           basepairs, in which case we'll only have three types of
+ *           nodes in the CM: MATL nodes, 1 ROOT node and 1 END node.
+ *           The only types of D->I transitions we'll have will be
+ *           MATL_D->MATL_IL. We can have three types of I->D
+ *           transitions, MATL_IL->MATL_D or ROOT_IL->MATL_D or
+ *           ROOT_IR->MATL_D. We only remove the first type
+ *           (MATL_IL->MATL_D). Normally, later on in the build
+ *           process we'll zero out any transitions involving ROOT_IL
+ *           and ROOT_IR states in cm_zero_flanking_insert_counts().
  *
  *           HMMER's p7_trace_Doctor() notes:
  *           Plan 7 disallows D->I and I->D "chatter" transitions.
@@ -4207,29 +4215,39 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
  * Return:   <eslOK> on success, and the parsetree <tr> is modified.
  *
  * Throws:   <eslEINVAL> if parsetree has any states other than
- *           ROOT_S, END_E, MATL_ML, MATL_IL, MATL_D, errbuf filled.
+ *           ROOT_S, ROOT_IL, ROOT_IR, END_E, MATL_ML, MATL_IL, MATL_D;
+ *           errbuf filled.
  */               
 int
 cm_parsetree_Doctor(CM_t *cm, char *errbuf, Parsetree_t *tr, int *opt_ndi, int *opt_nid)
 {
-  int opos;			/* position in old trace                 */
-  int npos;			/* position in new trace (<= opos)       */
-  int x; 
+  int opos;			/* position in old parsetree           */
+  int npos;			/* position in new parsetree (<= opos) */
+  int first_matl = 0;           /* position in old parsetree of first MATL_* state */
+  int x;                        /* position ctr in parsetree */
   int ndi, nid;			/* number of DI, ID transitions doctored */
 
-  /* first, validate the parsetree, should be ROOT_S->[MATL_{M,I,D}]_n->END_E */
+  /* first, validate the parsetree, should be ROOT_S->[ROOT_IL]_n->[ROOT_IR]_n->[MATL_{M,I,D}]_n->END_E */
   if(cm->stid[tr->state[0]] != ROOT_S) { 
     ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() parsetree doesn't begin with a ROOT_S state\n");
   }
-  for(x = 1; x < tr->n-1; x++) { 
+  if(cm->stid[tr->state[tr->n-1]] != END_E) { 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() parsetree doesn't end with an END_E state\n");
+  }
+  /* find first not ROOT_IL/ROOT_IR */
+  x = 1;
+  while(cm->stid[tr->state[x]] == ROOT_IL || cm->stid[tr->state[x]] == ROOT_IR) x++;
+  if(cm->stid[tr->state[x]] != MATL_ML && cm->stid[tr->state[x]] != MATL_IL && cm->stid[tr->state[x]] != MATL_D) { 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unexpected first non-ROOT node state in parsetree %s at position %d\n", CMStateid(cm->stid[tr->state[x]]), x);
+  }
+  first_matl = x;
+  /* verify all states after first not ROOT_IL/ROOT_IR are MATL states until END_E */
+  for(x = first_matl; x < tr->n-1; x++) { 
     if((cm->stid[tr->state[x]] != MATL_ML) && 
        (cm->stid[tr->state[x]] != MATL_IL) && 
        (cm->stid[tr->state[x]] != MATL_D)) { 
       ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unexpected state id %s at position %d\n", CMStateid(cm->stid[tr->state[x]]), x);
     }
-  }
-  if(cm->stid[tr->state[tr->n-1]] != END_E) { 
-    ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() parsetree doesn't end with an END_E state\n");
   }
   /* also validate that the mode is always TRMODE_J */
   for(x = 0; x < tr->n; x++) { 

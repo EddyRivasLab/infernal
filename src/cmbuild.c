@@ -1176,7 +1176,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
      if((status = print_column_headings(go, cfg, errbuf)) != eslOK) return status;
    }
 
-   if ((status = cm_Validate(cm, 0.0001, errbuf))     != eslOK) return status;
+   if ((status = cm_Validate(cm, 0.0001, errbuf)) != eslOK) return status;
 
    if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
 
@@ -1428,6 +1428,16 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
      fprintf(cfg->ofp, "done.  ");
      esl_stopwatch_Stop(w);
      esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
+   }
+
+   /* Set transition counts into ROOT_IL and ROOT_IR to 0, we don't
+    * learn those counts from the alignment, unless --v1p0 (b/c we used
+    * to in versions up to v1.0.2) or --iflank (which turns this
+    * specific behavior off). The emission scores for these states will
+    * be zeroed later so we don't touch them.
+    */
+   if((! esl_opt_GetBoolean(go, "--v1p0")) && (! esl_opt_GetBoolean(go, "--iflank"))) { 
+     if((status = cm_zero_flanking_insert_counts(cm, errbuf)) != eslOK) return status;
    }
 
    /* ensure the dual insert states we will detach were populated with 0 counts */

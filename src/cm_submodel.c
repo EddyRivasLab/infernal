@@ -1960,14 +1960,14 @@ debug_print_cm_params(FILE *fp, CM_t *cm)
     {
       fprintf(fp, "v:%4d:%4d %4s %2s\n", v, cm->ndidx[v], nodetypes[(int) cm->ndtype[cm->ndidx[v]]], sttypes[(int) cm->sttype[v]]);
       if(cm->nodemap[cm->ndidx[v]] == v)
-	fprintf(fp, "beg: %0.3f (%.3f %10d)| end %0.3f (%.3f %10d)\n", 
+	fprintf(fp, "beg: %0.6f (%.6f %10d)| end %0.6f (%.6f %10d)\n", 
 		cm->begin[v], cm->beginsc[v], cm->ibeginsc[v],
 		cm->end[v], cm->endsc[v], cm->iendsc[v]);
       if(cm->sttype[v] == MP_st)
 	{
 	  fprintf(fp, "\tE: ");
 	  for(i = 0; i < cm->abc->K*cm->abc->K; i++)
-	    fprintf(fp, "%0.3f (%.3f %6d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
+	    fprintf(fp, "%0.6f (%.6f %6d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
 	  fprintf(fp, "\n");
 	}
       else if(cm->sttype[v] == ML_st ||
@@ -1977,14 +1977,14 @@ debug_print_cm_params(FILE *fp, CM_t *cm)
 	{	   
 	  fprintf(fp, "\tE: ");
 	  for(i = 0; i < cm->abc->K; i++)
-	    fprintf(fp, "%0.3f (%0.3f %10d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
+	    fprintf(fp, "%0.6f (%0.6f %10d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
 	  fprintf(fp, "\n");
 	}
       if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
 	{
 	  fprintf(fp, "\tT: ");
 	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	    fprintf(fp, "%0.3f (%0.3f %10d) ", cm->t[v][yoffset], cm->tsc[v][yoffset], cm->itsc[v][yoffset]);
+	    fprintf(fp, "%0.6f (%0.6f %10d) ", cm->t[v][yoffset], cm->tsc[v][yoffset], cm->itsc[v][yoffset]);
 	  fprintf(fp, "\n");
 	}	    
       else if(cm->sttype[v] == B_st)
