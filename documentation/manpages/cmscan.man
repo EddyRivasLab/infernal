@@ -72,6 +72,49 @@ option allows redirecting the main output, including throwing it away
 in /dev/null.
 
 
+.B cmscan
+reexamines the 5' and 3' terminii of target sequences using 
+specialized algorithms for detection of 
+.I truncated
+hits, in which part of the 5 and/or 3' end of the actual full length
+homologous sequence is missing in the target sequence file. These
+types of hits will be most common in sequence files consisting of
+unassembled sequencing reads. By default, any 5' truncated hit is
+required to include the first residue of the target sequence it
+derives from in
+.I <seqdb>,
+and any 3' truncated hit is required to include the final residue of
+the target sequence it derives from. Any 5' and 3' truncated hit must
+include the first and final residue of the target sequence it derives
+from. The 
+.B --anytrunc
+option will relax the requirements for hit inclusion of sequence
+endpoints, and truncated hits are allowed to start and stop at any
+positions of target sequences.
+Importantly though, with 
+.B --anytrunc,
+hit E-values will be less accurate because model calibration does not
+consider the possibility of truncated hits, so use it with caution.
+The
+.B --notrunc
+option can be used to turn off truncated hit detection. 
+.B --notrunc
+will reduce the running time of
+.B cmscan,
+most significantly for target
+.I <seqdb>
+files that include many short sequences.
+
+Truncated hit detection is automatically turned off when the 
+.B --max,
+.B --nohmm, 
+.B --qdb, 
+.B --nonbanded,
+or
+.B --anonbanded 
+options are used because it relies on the use of an accelerated HMM
+banded alignment strategy that is turned off by any of those options.
+
 .SH OPTIONS
 
 .TP
@@ -252,57 +295,6 @@ Use the TC (trusted cutoff) bit score thresholds in the model to set
 hit reporting and inclusion thresholds. TC thresholds are generally
 considered to be the score of the lowest-scoring known true positive
 that is above all known false positives.
-
-.SH OPTIONS CONTROLLING DETECTION OF TRUNCATED HITS
-
-.B cmsearch
-reexamines the 5' and 3' terminii of target sequences using 
-specialized algorithms for detection of 
-.I truncated
-hits, in which part of the 5 and/or 3' end of the actual full length
-homologous sequence is missing in the target sequence file. These
-types of hits will be most common in sequence files consisting of
-unassembled sequencing reads. By default, any 5' truncated hit is
-required to include the first residue of the target sequence it
-derives from in
-.I <seqdb>,
-and any 3' truncated hit is required to include the final residue of
-the target sequence it derives from. Any 5' and 3' truncated hit must
-include the first and final residue of the target sequence it derives
-from. The 
-.B --anytrunc
-option will relax the requirements for hit inclusion of sequence
-endpoints, and truncated hits are allowed to start and stop at any
-positions of target sequences. The
-.B --notrunc
-option can be used to turn off truncated hit detection. 
-.B --notrunc
-will reduce the running time of
-.B cmsearch,
-most significantly for target
-.I <seqdb>
-files that include many short sequences.
-
-Truncated hit detection is automatically turned off when the 
-.B --max,
-.B --nohmm, 
-.B --qdb, 
-.B --nonbanded,
-or
-.B --anonbanded 
-options are used because it relies on the use of an accelerated HMM
-banded alignment strategy that is turned off by any of those options.
-
-.B --notrunc
-Turn off truncated hit detection. 
-
-.B --anytrunc
-Allow truncated hits to begin and end at any position in a target
-sequence. By default, 5' truncated hits must include the first residue of
-their target sequence and 3' truncated hits must include the final
-residue of their target sequence. With this option you may observe
-fewer full length hits that extend to the beginning and end of the
-query CM.
 
 .SH OPTIONS CONTROLLING THE ACCELERATION PIPELINE
 
@@ -531,6 +523,18 @@ By default,
 is 0.02. 
 
 .SH OTHER OPTIONS
+
+.B --notrunc
+Turn off truncated hit detection. 
+
+".B --anytrunc
+"Allow truncated hits to begin and end at any position in a target
+"sequence. By default, 5' truncated hits must include the first residue of
+"their target sequence and 3' truncated hits must include the final
+"residue of their target sequence. With this option you may observe
+"fewer full length hits that extend to the beginning and end of the
+"query CM.
+
 
 .B --nonull3
 Turn off the null3 CM score corrections for biased composition. This

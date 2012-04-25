@@ -1216,12 +1216,11 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 	 sq->name, sq->n, sq->start, sq->end, sq->C, sq->W, sq->L, have5term, have3term);
 #endif
 
-  /* determine which passes (besides the mandatory 1st standard pass
-   * PLI_PASS_STD_ANY) we'll need to do for this sequence. The 'do_'
-   * variables indicated which type of truncations are allowed in each
-   * pass; e.g. do_pass_5p_only_force: only 5' truncations are allowed in
-   * that pass - we do this pass if <do_trunc_ends> is TRUE and
-   * have5term is TRUE.
+  /* determine which passes we'll need to do for this sequence. The
+   * 'do_' variables indicated which type of truncations are allowed
+   * in each pass; e.g. do_pass_5p_only_force: only 5' truncations are
+   * allowed in that pass - we do this pass if <do_trunc_ends> is TRUE
+   * and have5term is TRUE.
    */
   if(pli->do_hmmonly_cur) { /* HMM only mode, only PLI_PASS_HMM_ONLY_ANY is performed */
     do_pass_hmm_only_any = TRUE;
