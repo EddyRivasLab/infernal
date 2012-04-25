@@ -6,18 +6,20 @@
 # Format of list file:
 # <series_name> <root> <color>
 #
-# <root>/<root>.xy, <root>/<root>.mer and <root>/<root>.time must exist.
+# <root>/<root>.em<key>.xy, <root>/<root>.em<key>.mer and <root>/<root>.time must exist.
 #
-# Usage:  perl rmark-Rroc.pl <listfile> <name for pdf>
-# Example usage as pipe into R:
-# > perl rmark-Rroc.pl rmark-2.list rmark-2.pdf 1 rmark-ROC
+# <key> is the second command line argument.
+# 
+# Usage:  perl rmark-Rroc.pl <listfile> <key: E-value multiplier (often 1)> <name for pdf> <1/0 yes/no draw error-bars> <plot title>
+# Example usage:
+# > perl rmark-Rroc.pl -R rmark-2.list 1 rmark-2.pdf 0 RMARK3_results
 use Getopt::Std;
 getopts('R');
 if (defined $opt_R) { $replace_underscores = 1; }
 
 my $usage = "Usage: perl rmark-rocR.pl [OPTIONS] <listfile> <key (e.g. 1E04)> <pdfname> <1/0 yes/no draw error-bars> <plot title>\n";
 $usage .= "\nFormat of list file:\n\t<series_name> <root> <color>\n\n";
-$usage .= "\nExample:\n\tinf1p02-df 1E00 r2-i1p02-df.pdf 0 RMARK3\n\n";
+$usage .= "\nExample:\n\tinf1p02-df r2-i1p02 green\n\n";
 $usage .= "<root>/<root>.em$key.xy, <root>/<root>.em$key.mer and <root>/<root>.time must exist\n\n";
 
 if(scalar(@ARGV) != 5) { printf("$usage"); exit(1); }
