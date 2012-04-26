@@ -1721,18 +1721,18 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
   int h;
 
   if (show_header) { 
-    fprintf(ofp, "#%-*s %-*s %-*s %-*s %3s %8s %8s %*s %*s %6s %5s %4s %4s %9s %6s %-s\n",
+    fprintf(ofp, "#%-*s %-*s %-*s %-*s %3s %8s %8s %*s %*s %6s %5s %4s %4s %5s %6s %9s %-s\n",
 	    tnamew-1, "target name", taccw, "accession",  qnamew, "query name", qaccw, "accession", 
 	    "mdl", "mdl from", "mdl to", 
-	    posw, "hit from", posw, "hit to", "strand", "trunc", "pass", "gc", "E-value", "score", "description of target");
-    fprintf(ofp, "#%-*s %-*s %-*s %-*s %-3s %-7s %-7s %*s %*s %6s %5s %4s %4s %9s %6s %s\n",
+	    posw, "seq from", posw, "seq to", "strand", "trunc", "pass", "gc", "bias", "score", "E-value", "description of target");
+    fprintf(ofp, "#%-*s %-*s %-*s %-*s %-3s %-7s %-7s %*s %*s %6s %5s %4s %4s %5s %6s %9s %s\n",
 	    tnamew-1, tnamestr, taccw, taccstr, qnamew, qnamestr, qaccw, qaccstr, 
 	    "---", "--------", "--------", 
-	    posw, posstr, posw, posstr, "------", "-----", "----", "----", "---------", "------", "---------------------");
+	    posw, posstr, posw, posstr, "------", "-----", "----", "----", "-----", "------", "---------", "---------------------");
   }
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED)    {
-      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %9.2g %6.1f %s\n",
+      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %s\n",
 	      tnamew, th->hit[h]->name,
 	      taccw,  ((th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') ? th->hit[h]->acc : "-"),
 	      qnamew, qname,
@@ -1745,8 +1745,9 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
 	      cm_alidisplay_TruncString(th->hit[h]->ad), 
 	      th->hit[h]->pass_idx, 
 	      th->hit[h]->ad->gc,
-	      th->hit[h]->evalue,
+	      th->hit[h]->bias,
 	      th->hit[h]->score,
+	      th->hit[h]->evalue,
 	      (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "-");
     }
   }
