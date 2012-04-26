@@ -1,71 +1,576 @@
 \section{File and output formats}
 
-\subsection{Infernal covariance model files}
+\subsection{Infernal CM files}
 \label{section:savefiles}
 
-The file \prog{tutorial/fn3.hmm} gives an example of a HMMER3 ASCII
-save file. An abridged version is shown here, where (\ldots) mark
+The file \prog{tutorial/Cobalamin.cm} gives an example of an Infernal ASCII
+CM save file. An abridged version is shown here, where (\ldots) mark
 deletions made for clarity and space:
 
 \begin{tinysreoutput}
-HMMER3/e [3.0 | March 2010]
-NAME  fn3
-ACC   PF00041.13
-DESC  Fibronectin type III domain
-LENG  86
-ALPH  amino
-RF    no
+INFERNAL1/a [1.1 | April 2012]
+NAME     Cobalamin
+ACC      RF00174
+DESC     Cobalamin riboswitch
+STATES   592
+NODES    163
+CLEN     191
+W        381
+ALPH     RNA
+RF       yes
+CONS     yes
+MAP      yes
+DATE     Mon Apr 23 10:02:42 2012
+COM      [1] cmbuild Cobalamin.cm Cobalamin.rfam10p1.seed.sto
+COM      [2] cmcalibrate --mpi Cobalamin.cm
+PBEGIN   0.05
+PEND     0.05
+WBETA    1e-07
+QDBBETA1 1e-07
+QDBBETA2 1e-15
+N2OMEGA  1.52588e-05
+N3OMEGA  1.52588e-05
+ELSELF   -0.08926734
+NSEQ     431
+EFFN     6.495564
+CKSUM    2307274568
+NULL     0.000  0.000  0.000  0.000 
+GA       39.00
+TC       39.00
+NC       38.79
+EFP7GF   -9.5021 0.71319
+ECMLC    0.70182    -9.36743    -0.85775     1600000      470885  0.002548
+ECMGC    0.33728   -31.79454   -22.59141     1600000        8915  0.044868
+ECMLI    0.67604    -8.08758     0.24666     1600000      335829  0.003573
+ECMGI    0.36696   -22.71025   -14.19458     1600000        9103  0.043942
+CM
+                                             [ ROOT    0 ]      -      - - - - -
+     S     0    -1 0     1     4     0     1   381   608  -8.148  -8.355  -0.026  -6.436                 
+    IL     1     1 2     1     4    88   135   384   611  -1.686  -2.369  -1.117  -4.855                  0.000  0.000  0.000  0.000 
+    IR     2     2 3     2     3    87   134   383   610  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000 
+                                             [ MATL    1 ]      1      - u - u -
+    ML     3     2 3     5     3    88   134   382   609  -9.101  -0.009  -7.755                          0.108 -0.224 -0.313  0.336 
+     D     4     2 3     5     3    81   129   379   606  -6.240  -1.550  -0.632                         
+    IL     5     5 3     5     3    86   133   382   609  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000 
+                                             [ MATL    2 ]      2      - u - u -
+    ML     6     5 3     8     3    87   133   381   608  -9.104  -0.009  -7.758                          0.219 -0.156 -0.432  0.260 
+     D     7     5 3     8     3    80   128   378   605  -6.174  -1.687  -0.566                         
+    IL     8     8 3     8     3    85   132   381   608  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000 
+(...)
+                                             [ MATL   97 ]    150      - C - C -
+    ML   585   584 3   587     3     1     1    12    31  -9.104  -0.009  -7.758                         -2.793  1.804 -3.077 -2.029 
+     D   586   584 3   587     3     0     0    13    32  -6.174  -1.687  -0.566                         
+    IL   587   587 3   587     3     1     1    18    36  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000 
+                                             [ MATL   98 ]    151      - C - C -
+    ML   588   587 3   590     2     1     1     1     1       *   0.000                                 -3.019  1.832 -3.344 -2.201 
+     D   589   587 3   590     2     0     0     0     0       *   0.000                                 
+    IL   590   590 3   590     2     1     1    13    28  -1.823  -0.479                                  0.000  0.000  0.000  0.000 
+                                             [ END    99 ]      -      - - - - -
+     E   591   590 3    -1     0     0     0     0     0                                                 
+//
+HMMER3/f [i1.1 | April 2012]
+NAME  Cobalamin
+ACC   RF00174
+DESC  Cobalamin riboswitch
+LENG  191
+MAXL  565
+ALPH  RNA
+RF    yes
+MM    no
 CONS  yes
 CS    yes
 MAP   yes
-DATE  Thu Jun 16 11:48:22 2011
-NSEQ  106
-EFFN  11.415833
-CKSUM 3564431818
-GA    8.00 7.20
-TC    8.00 7.20
-NC    7.90 7.90
-STATS LOCAL MSV       -9.4043  0.71847
-STATS LOCAL VITERBI   -9.7737  0.71847
-STATS LOCAL FORWARD   -3.8341  0.71847
-HMM          A        C        D        E        F        G        H        I    (...)    Y   
+DATE  Mon Apr 23 10:02:42 2012
+COM   [1] cmbuild ./Cobalamin.cm Cobalamin.rfam10p1.seed.sto
+NSEQ  431
+EFFN  4.755248
+CKSUM 2307274568
+STATS LOCAL MSV      -10.2587  0.71319
+STATS LOCAL VITERBI  -12.2500  0.71319
+STATS LOCAL FORWARD   -3.9252  0.71319
+HMM          A        C        G        U   
             m->m     m->i     m->d     i->m     i->i     d->m     d->d
-  COMPO   2.70330  4.91262  3.03272  2.64079  3.60307  2.84344  3.74204  3.07942 (...) 3.21526
-          2.68618  4.42225  2.77519  2.73123  3.46354  2.40513  3.72494  3.29354 (...) 3.61503
-          0.00338  6.08833  6.81068  0.61958  0.77255  0.00000        *
-      1   3.16986  5.21447  4.52134  3.29953  4.34285  4.18764  4.30886  3.35801 (...) 3.93889      1 p - -
-          2.68629  4.42236  2.77530  2.73088  3.46365  2.40512  3.72505  3.29365 (...) 3.61514
-          0.09796  2.38361  6.81068  0.10064  2.34607  0.48576  0.95510
-      2   2.70230  5.97353  2.24744  2.62947  5.31433  2.60356  4.43584  4.79731 (...) 4.25623      3 s - -
-          2.68618  4.42225  2.77519  2.73123  3.46354  2.40513  3.72494  3.29354 (...) 3.61503
-          0.00338  6.08833  6.81068  0.61958  0.77255  0.48576  0.95510
+  COMPO   1.37157  1.39386  1.28215  1.51080
+          1.38629  1.38629  1.38629  1.38629
+          0.02747  4.30141  4.30141  1.46634  0.26236  0.00000        *
+      1   1.30044  1.54718  1.61208  1.15433      1 u u - :
+          1.38629  1.38629  1.38629  1.38629
+          0.02747  4.30141  4.30141  1.46634  0.26236  1.09861  0.40547
+      2   1.23217  1.50559  1.68481  1.20072      2 u u - :
+          1.38629  1.38629  1.38629  1.38629
+          0.02743  4.30301  4.30301  1.46634  0.26236  1.09861  0.40547
 (...)
-     85   2.48488  5.72055  3.87501  1.97538  3.04853  3.48010  4.51877  3.51898 (...) 3.43366    120 e - B
-          2.68618  4.42225  2.77519  2.73123  3.46354  2.40513  3.72494  3.29354 (...) 3.61503
-          0.00338  6.08833  6.81068  0.61958  0.77255  0.48576  0.95510
-     86   3.03720  5.94099  3.75455  2.96917  5.26587  2.91682  3.66571  4.11840 (...) 4.99111    121 s - E
-          2.68618  4.42225  2.77519  2.73123  3.46354  2.40513  3.72494  3.29354 (...) 3.61503
-          0.00227  6.08723        *  0.61958  0.77255  0.00000        *
+    190   1.36976  1.24867  1.69389  1.29047    440 c c - :
+          1.38629  1.38629  1.38629  1.38629
+          0.02743  4.30301  4.30301  1.46634  0.26236  1.09861  0.40547
+    191   1.40436  1.26828  1.54714  1.34590    441 c c - :
+          1.38629  1.38629  1.38629  1.38629
+          0.01381  4.28939        *  1.46634  0.26236  0.00000        *
 //
 \end{tinysreoutput}
 
-An HMM file consists of one or more HMMs.  Each HMM starts with a
-format version identifier (here, \prog{HMMER3/e}) and ends with
-\prog{//} on a line by itself.  The format version identifier allows
-backward compatibility as the HMMER software evolves: it tells the
-parser this file is from HMMER3's save file format version
-e.\footnote{HMMER 3.0 used 3/b format. HMMER 3.1 uses 3/e format.
-  Some alpha test versions of 3.0 used 3/a format. Internal
-  development versions of 3.1 used 3/c and 3/d formats.}  The closing
-\prog{//} allows multiple HMMs to be concatenated.
+An CM file consists of one or more CMs and associated filter
+HMMs. Each CM is immediately followed by its filter HMM, this is
+mandatory. Each CM starts with a format version identifier (here,
+\prog{INFERNAL1/a}) and ends with \prog{//} on a line by itself. Each
+HMM also starts with a format version identifier (here,
+\prog{HMMER3/f}) and ends with \prog{//} on a line by itself.  The
+format version identifier allows backward compatibility as the
+Infernal software evolves: it tells the parser this file is from
+Infernal's save file format version a.  The closing \prog{//} allows
+Infernal to determine when a CM ends and its profile HMM begins, and
+allows multiple CM/filter HMM pairs to be concatenated together into a
+single file.
 
-The format is divided into two regions. The first region contains
+The CM format is divided into two regions. The first region contains
 textual information and miscalleneous parameters in a roughly
 tag-value scheme.  This section ends with a line beginning with the
-keyword \prog{HMM}. The second region is a tabular, whitespace-limited
+keyword \prog{CM}. The second region is a tabular, whitespace-limited
 format for the main model parameters.
 
-All probability parameters are all stored as negative natural log
+All emission and transition model parameters are stored as log-odds
+scores in bits with three digits of precision to the right of the
+decimal point, rounded. 
+%For example, a probability of $0.25$ is stored
+%as $\log_2 0.25 = -1.38629$. 
+The special case of a score of infinity, corresponding to an
+impossible emission or transition, is stored as '*'.
+
+Spacing is arranged for human readability, but the parser only cares
+that fields are separated by at least one space character.
+
+The CM format is described in more detail below, followed by a
+description of the HMMER3 HMM format for the CM's mandatory filter HMM
+filter.
+%The HMM format is similar but is not described in detail here. See the
+%HMMER user guide for more information
+%(\url{http://hmmer.janelia.org}{http://hmmer.janelia.org}).
+
+\subsubsection{CM header section}
+
+The header section is parsed line by line in a tag/value format. Each
+line type is either \textbf{mandatory} or \textbf{optional} as
+indicated. 
+
+\begin{sreitems}{QDBBETA1 <f>}
+
+\item [\emprog{INFERNAL1/a}] Unique identifier for the save file format
+  version; the \prog{/a} means that this is INFERNAL1 CM file format
+  version a. When INFERNAL changes its save file format, the revision
+  code advances. This way, parsers may easily remain backwards
+  compatible. The remainder of the line after the \prog{INFERNAL1/a} tag
+  is free text that is ignored by the parser. INFERNAL currently writes
+  its version number and release date in brackets here,
+  e.g. \prog{[1.1 | April 2012]} in this
+  example. \textbf{Mandatory.}
+
+\item [\emprog{NAME <s>}] Model name; \prog{<s>} is a single word
+containing no spaces or tabs. The name is normally picked up from the
+\verb+#=GF ID+ line from a Stockholm alignment file.  If this is not
+present, the name is created from the name of the alignment file by
+removing any file type suffix. For example, an otherwise nameless CM
+built from the alignment file \prog{tRNA.sto} would be named
+\prog{tRNA}.  \textbf{Mandatory.}
+
+\item [\emprog{ACC <s>}] Accession number; \prog{<s>} is a one-word
+accession number. This is picked up from the \verb+#=GF AC+ line in a
+Stockholm format alignment. \textbf{Optional.}
+
+\item [\emprog{DESC <s>}] Description line; \prog{<s>} is a one-line
+free text description. This is picked up from the \verb+#=GF DE+ line
+in a Stockholm alignment file. \textbf{Optional.}
+
+\item [\emprog{STATES <d>}] Number of states; \prog{<d>}, a positive nonzero
+integer, is the number of states in the model.
+\textbf{Mandatory.}
+
+\item [\emprog{CLEN <d>}] Consensus model length; \prog{<d>}, a positive nonzero
+integer, is the number of consensus positions in the model, which
+equals the number of MATL nodes plus the number of MATR nodes plus two
+times the number of MATP nodes.
+\textbf{Mandatory.}
+
+\item [\emprog{W <d>}] Window length; \prog{<d>}, a positive nonzero
+integer, is the length in residues of the maximum expected size of a
+hit to this model. This is calculated based on the transition
+probabilities of the model\footnote{Specifically, \prog{W} is set as
+the \emph{dmax} value for the ROOT\_S state (state 0) from the QDB
+algorithm using $\beta$ equal to the \prog{WBETA} value
+\cite{NawrockiEddy07}.}  \textbf{Mandatory.}
+
+\item [\emprog{ALPH <s>}] Symbol alphabet type. Currently this will
+necessarily be \prog{RNA} for RNA sequence analysis models.
+The symbol alphabet size $K$ is set to 4 and the 
+symbol alphabet to ``ACGU''. \textbf{Mandatory.}
+
+\item [\emprog{RF <s>}] Reference annotation flag; \prog{<s>} is
+either \prog{no} or \prog{yes} (case insensitive). If \prog{yes}, the
+reference annotation character field(s) for each match state in the
+main model (see below) is valid; if \prog{no}, these characters are
+ignored.  Reference column annotation is picked up from a Stockholm
+alignment file's \verb+#=GC RF+ line. by \prog{cmbuild}. It is
+propagated to alignment outputs, and also may optionally be used to
+define consensus match columns in CM 
+construction. \textbf{Optional}; assumed to be no if not present.
+
+\item [\emprog{CONS <s>}] Consensus residue annotation flag;
+  \prog{<s>} is either \prog{no} or \prog{yes} (case insensitive).  If
+  \prog{yes}, the consensus residue field(s) for each match state in
+  the main model (see below) is valid. If \prog{no}, these characters
+  are ignored. Consensus residue annotation is determined when models
+  are built. For models of single sequences, the consensus is the same
+  as the query sequence. For models of multiple alignments, the
+  consensus is the highest scoring residue or basepair for each match
+  state. Upper case MATL\_ML and MATR\_MR (single stranded) residues
+  indicate that the model emission's score for the consensus residue
+  is $\geq$ to 1.0 bit. Upper case MATP\_MP basepairs indicate that
+  the model emission's score for the consensus basepair is $\geq$ to
+  3.0 bits.
+
+\item [\emprog{MAP <s>}] Map annotation flag; \prog{<s>} is either
+\prog{no} or \prog{yes} (case insensitive).  If set to \prog{yes}, the
+map annotation field in the main model (see below) is valid; if
+\prog{no}, that field will be ignored.  The CM/alignment map
+annotates each match state with the index of the alignment column from
+which it came. It can be used for quickly mapping any subsequent
+CM alignment back to the original multiple alignment, via the model.
+\textbf{Optional}; assumed to be no if not present.
+
+\item [\emprog{DATE <s>}] Date the model was constructed; \prog{<s>}
+is a free text date string.  This field is only used for logging
+purposes.\footnote{Infernal does not use dates for any purpose other than
+human-readable annotation, so it is no more prone than you are to Y2K,
+Y2038, or any other date-related eschatology.} \textbf{Optional.}
+
+\item [\emprog{COM [<n>] <s>}] Command line log; \prog{<n>} counts
+command line numbers, and \prog{<s>} is a one-line command. There may
+be more than one \prog{COM} line per save file, each numbered starting
+from $n=1$. These lines record every Infernal command that modified the
+save file. This helps us reproducibly and automatically log how Rfam
+models have been constructed, for example. \textbf{Optional.}
+
+\item [\emprog{PBEGIN <f>}] Local begin probability; The aggregate
+probability of a local begin into any internal entry state is
+\prog{<f>}. The probability of a local begin into any single internal
+entry state is \prog{<f>} divided by the number of internal entry
+states in the model. All MATP\_MP, MATL\_ML, MATR\_MR, and BIF\_B
+states, except for any in the the second node of the model (first
+non-ROOT node), are internal entry states. The local begin probability
+does not affect any of the emission/transition parameters in the CM
+file, which correspond to the CM in \emph{global} search/alignment
+mode, but it does affect the calibration of E-value parameters for
+local search by \prog{cmcalibrate}. \prog{cmsearch} and \prog{cmscan}
+therefore need to read this probability from the CM file in order to
+use the same local begin probabilities used during calibration and
+report appropriate E-values. \textbf{Optional}; assumed to be $0.05$
+if not present.
+
+\item [\emprog{PEND <f>}] Local end probability; The aggregate
+probability of a local end out of any internal exit state is
+\prog{<f>}. The probability of a local end out of any single internal
+entry state is \prog{<f>} divided by the number of internal exit
+states in the model. All MATP\_MP, MATL\_ML, MATR\_MR, BEGL\_S, and
+BEGR\_S states, except for any for which the following node is an END
+node, are internal exit states. The local end probability
+does not affect any of the emission/transition parameters in the CM
+file, which correspond to the CM in \emph{global} search/alignment
+mode, but it does affect the calibration of E-value parameters for
+local search by \prog{cmcalibrate}. \prog{cmsearch} and \prog{cmscan}
+therefore need to read this probability from the CM file in order to
+use the same local end probabilities used during calibration and
+report appropriate E-values. \textbf{Optional}; assumed to be $0.05$
+if not present.
+
+\item [\emprog{WBETA <f>}] Tail loss probability for calculating
+  window length (W); The QDB algorithm \cite{NawrockiEddy07} was used
+  to determine the maximum expected length of a hit (W) using a tail
+  loss probability of <f>, W was set as the \emph{dmax} value for the
+  ROOT\_S state (state 0). \textbf{Mandatory.}
+
+\item [\emprog{QDBBETA1 <f>}] Tail loss probability for calculating
+  the tighter of the two sets of query-dependent bands (QDBs); The QDB
+  algorithm \cite{NawrockiEddy07} was used to determine the minimum
+  and maximum subsequence lengths allowed to align to the subtree
+  rooted at each state of the model, using a tail loss $\beta$
+  probability of <f>. These minimum and maximum values for each state
+  are included in each state line in the main model section, described
+  below.  below. The \prog{<f>} value for \prog{QDBBETA2} will be
+  less than or equal to the \prog{<f>} value for \prog{QDBBETA1}.
+  \textbf{Mandatory.}
+
+\item [\emprog{QDBBETA2 <f>}] Tail loss probability for calculating
+  the looser of the two sets of query-dependent bands (QDBs); The QDB
+  algorithm \cite{NawrockiEddy07} was used to determine the minimum
+  and maximum subsequence lengths allowed to align to the subtree
+  rooted at each state of the model, using a tail loss $\beta$
+  probability of <f>. These minimum and maximum values for each state
+  are included in each state line in the main model section, described
+  below. The \prog{<f>} value for \prog{QDBBETA2} will be less than
+  or equal to the \prog{<f>} value for \prog{QDBBETA1}.
+  \textbf{Mandatory.}
+
+\item [\emprog{N2OMEGA <f>}] The prior probability for the alternative
+  ``null2'' model for biased composition
+  sequences. \textbf{Mandatory}; but only relevant in \prog{cmsearch} and
+  \prog{cmscan} if the \prog{--null2} option is used.
+
+\item [\emprog{N3OMEGA <f>}] The prior probability for the alternative
+  ``null3'' model for biased composition
+  sequences. \textbf{Mandatory}; the null3 model is used by default in 
+  \prog{cmcalibrate}, \prog{cmsearch} and \prog{cmscan}.
+
+\item [\emprog{NSEQ <d>}] Sequence number; \prog{<d>} is a nonzero
+positive integer, the number of sequences that the CM was trained on,
+i.e. the number of sequences in the input alignment used to create the
+CM in \prog{cmbuild}.  This field is only used for logging
+purposes.  \textbf{Optional.}
+
+\item [\emprog{EFFN <f>}] Effective sequence number; \prog{<f>} is a
+nonzero positive real, the effective total number of sequences
+determined by \prog{cmbuild} during sequence weighting, for combining
+observed counts with Dirichlet prior information in parameterizing the
+model. This field is only used for logging purposes.
+\textbf{Optional.}
+
+\item [\emprog{CKSUM <d>}] Training alignment checksum; \prog{<d>} is
+  a nonnegative unsigned 32-bit integer. This number is calculated
+  from the training sequence data, and used in conjunction with the
+  alignment map information to verify that a given alignment is indeed
+  the alignment that the map is for. \textbf{Optional.}
+
+\item [\emprog{NULL <f> <f> <f> <f>}] null model emission scores for
+  each alphabet symbol. By default, these are all \prog{0.0} but may
+  not be if the \prog{--null} option was used in \prog{cmbuild} to
+  define alternative null model scores. Because only RNA CMs can be
+  built by \prog{cmbuild} there will be four values on this line, one
+  each for ``A'', ``C'', ``G'', and ``U''. \textbf{Mandatory.}
+
+\item [\emprog{GA <f>}] Rfam GA gathering threshold bit score.  The GA
+bit score threshold is normally picked up from the \verb+#=GF GA+ line
+from a Stockholm alignment file.  GA thresholds are generally
+considered to be the reliable curated thresholds defining family
+membership; for example, in Rfam, these thresholds define what gets
+included in Rfam Full alignments based on searches with Rfam Seed
+models. \textbf{Optional.}
+
+\item [\emprog{NC <f>}] Rfam NC noise cutoff bit score.
+The NC bit score threshold is normally picked up from the
+\verb+#=GF NC+ line from a Stockholm alignment file.  
+NC thresholds are generally considered to be the
+score of the highest-scoring known false positive found by searches
+during preparation of the Rfam database. \textbf{Optional.}
+
+\item [\emprog{TC <f>}] Rfam TC trusted cutoff bit score.
+The TC bit score threshold is normally picked up from the
+\verb+#=GF TC+ line from a Stockholm alignment file.  
+TC thresholds are generally considered to be the score of the lowest
+scoring believed true positive that is above all known false positives
+found by searches during preparation of the Rfam database.
+\textbf{Optional.}
+
+\item [\emprog{EFP7GF <f1> <f2>}] Statistical parameters for filter HMM
+  E-value calculations in glocal mode for the Forward algorithm. 
+  \prog{<f1>} and \prog{<f2>} are $\tau$ and $\lambda$ for exponential
+  tails for glocal Forward filter HMM scores. This line is necessary
+  in the CM file section rather than the filter HMM file because
+  glocal HMM searches are not normally performed in HMMER3, but are
+  part of the HMM filter pipeline in Infernal. \textbf{Mandatory.}
+
+\item [\emprog{ECMLC <f1> <f2> <f3> <d1> <d2> <f4>}] Statistical
+  parameters needed for E-value calculations for the CM CYK algorithm
+  in local mode. This line, along with the next three, with tags
+  \prog{ECMGC}, \prog{ECMLI}, and \prog{ECMGI}, must either all be
+  present or none of them must be present. If present, the model is
+  considered calibrated for E-value statistics. These lines will not
+  be present in a model after it is created by \prog{cmbuild} but will
+  be added by the \prog{cmcalibrate} program.  \prog{<f1>} and
+  \prog{<f2>} are $\lambda$ and $\tau$, the slope and location
+  parameters for exponential tails for local CYK scores. $\lambda$
+  values must be positive. The remaining values were computed in
+  \prog{cmcalibrate} during model calibration: \prog{<f3>} is a
+  different $\tau$ value computed for the full histogram of all hits;
+  \prog{<d1>} is the database size in residues; \prog{<d2>} is the
+  total number of non-overlapping hits of any score found; \prog{<f4>}
+  is the fraction of the high-scoring histogram tail fit to an
+  exponential tail. Of these parameters, only \prog{<f1>}, \prog{<f2>}
+  and \prog{<d2>} are used, the others are only stored in the CM file
+  for record keeping purposes.
+
+\item [\emprog{ECMGC <f1> <f2> <f3> <d1> <d2> <f4>}] Statistical
+  parameters analogous to those described above in the \prog{ECMLC}
+  line, except that these pertain to CM CYK scores in glocal mode.
+
+\item [\emprog{ECMLI <f1> <f2> <f3> <d1> <d2> <f4>}] Statistical
+  parameters analogous to those described above in the \prog{ECMLC}
+  line, except that these pertain to CM Inside scores in local mode.
+
+\item [\emprog{ECMGI <f1> <f2> <f3> <d1> <d2> <f4>}] Statistical
+  parameters analogous to those described above in the \prog{ECMLC}
+  line, except that these pertain to CM Inside scores in glocal mode.
+
+\item [\emprog{CM}] Flags the start of the main model
+section. \textbf{Mandatory.}
+
+\end{sreitems}
+
+\subsubsection{CM main model section}
+
+All the remaining fields are \textbf{mandatory}.
+
+The model section consistes of two types of lines: node lines and
+state lines. Each node line is immediately followed by one or more
+state lines, one each for each state within the node. 
+
+\begin{sreitems}{\textbf{State line}}
+
+\item [\textbf{Node line}] Each node line begins with 45 spaces, and
+  includes ten fields. 
+
+  The first field is always a \prog{[} character.
+
+  The second is the node type, one of ROOT, MATP, MATL, MATR, BIF,
+  BEGL, BEGR, or END. 
+
+  The next field is the index of the node in the
+  model, greater than or equal to 0. Node indices are not always in
+  increasing order, e.g. node 200 may come on a line before node 100.
+
+  The fourth field is always a \prog{]} character. 
+
+  The next two fields are the \prog{MAP} annotation for this node. If
+  \prog{MAP} was \prog{yes} in the header and the node is a MATP
+  (match pair) node, then these fields will both be positive integers,
+  representing the alignment column indices for the left and right
+  halves of this match pair state, respectively. If \prog{MAP} was
+  \prog{yes} and the node is a MATL (match left) node, then the first
+  field will be the alignment column for this match state and the
+  second field will be '-'. If \prog{MAP} was
+  \prog{yes} and the node is a MATR (match right) node, then the first
+  field will be '-' and the second field will be the alignment column
+  for this match state. If the node is any other type, or if the
+  \prog{MAP} was \prog{no} in the header, then both fields will be '-'.
+
+  The next two fields are the \prog{CONS} consensus residue(s) for
+  this node. If \prog{CONS} was \prog{yes} in the header and the node
+  is a MATP (match pair) node, then these fields will both be
+  characters, the consensus residues for the left and right halves of
+  this match pair state, respectively. If \prog{CONS} was \prog{yes}
+  and the node is a MATL (match left) node, then the first field will
+  be the consensus residue for this state and the second field will be
+  '-'. If \prog{CONS} was \prog{yes} and the node is a MATR (match
+  right) node, then the first field will be '-' and the second field
+  will be the consensus residue for this state. If the node is
+  any other type, or if the \prog{CONS} was \prog{no} in the header,
+  then both fields will be '-'.
+
+  The final two fields are the \prog{RF} annotation for this node.
+  this node. If \prog{RF} was \prog{yes} in the header and the node is
+  a MATP (match pair) node, then these fields will both be characters,
+  the reference annotation character for the left and right halves of
+  this match pair state, respectively. If \prog{RF} was \prog{yes} and
+  the node is a MATL (match left) node, then the first field will be
+  the reference annotation character for this state and the second field
+  will be '-'. If \prog{RF} was \prog{yes} and the node is a MATR
+  (match right) node, then the first field will be '-' and the second
+  field will be the reference annotation character for this state. If
+  the node is any other type, or if the \prog{CONS} was \prog{no} in
+  the header, then both fields will be '-'.
+
+  Each node line is followed by 1 to 6 state
+  lines depending on the node type. ROOT, MATL, and MATR node lines
+  are followed by 3 state lines. BIF, BEGL, and END nodes are followed
+  by 1 state line. BEGLR node lines have 2 state lines after them, and
+  MATP node lines are followed by 6 state lines. 
+
+\item [\textbf{State line}] 
+  The number of fields on a state line is variable depending on the
+  state type and the number of possible transitions from the
+  state. The first field is the state type, either ``MP'', ``ML'',
+  ``MR'', ``IL'', ``IR'', ``D'', ``B'', ``S'', or ``E''.
+
+  The next field is the state index, these are in increasing order
+  starting with 0 (i.e. lower numbered states always occur earlier in the
+  file than higher numbered ones). 
+
+  The next field is the index of the highest numbered ``parent''
+  state for the current state, where state $a$ is a parent of state
+  $b$ if state $a$ can transition to state $b$.
+
+  The next field is the number of parent states for the current
+  state. A set of parent states are always contiguously numbered. For
+  example, if state $a$ is the highest numbered parent state of $b$
+  and $b$ has 3 parent states, then $a-2$, $a-1$, and $a$ are the
+  three parent states of $b$.
+
+  The next field is the index of the lowest numbered ``child'' state
+  for the current state, where state $c$ is a child of state $b$ if
+  $b$ can transition to state $c$. 
+
+  The next field is the number of child states for the current
+  state. A set of child states are always contiguously numbered. For
+  example, if state $c$ is the lowest numbered parent state of $b$ and
+  $b$ has 3 parent states, then $c$, $c+1$, and $c+2$ are the three
+  child states of $b$. As a special case, for ``B'' (bifurcation) states
+  this field is the state index of the ``BEGR\_S'' state to which the
+  ``B'' state necessarily transitions with probability 1.0.
+
+  The next four fields \prog{<n1>}, \prog{<n2>}, \prog{<n3>}, and
+  \prog{<n4>} are query dependent band values for the current
+  state. These are integers. \prog{<n1>} is the minimum expected
+  subsequence length to align at the subtree rooted at this state
+  calculated with the QDB algorithm \cite{NawrockiEddy07} using a
+  $\beta$ tail loss probability value given in the header in the
+  \prog{QDBBETA2} line. \prog{<n2>} is the same, but calculated with
+  $\beta$ equal to the value from the \prog{QDBBETA1} header line. 
+  \prog{<n3>} is the maximum expected
+  subsequence length to align at the subtree rooted at this state
+  calculated with the QDB algorithm \cite{NawrockiEddy07} using a
+  $\beta$ tail loss probability value given in the header in the
+  \prog{QDBBETA1} line. \prog{<n4>} is the same, but calculated with
+  $\beta$ equal to the value from the \prog{QDBBETA2} header line. 
+  These values should be in increasing order: $<n1> \leq <n2> \leq
+  <n3> \leq <n4>$, although Infernal does not enforce this to be
+  true. The QDB values will only be used by \prog{cmsearch} and
+  \prog{cmscan} if certain option combinations are used (see the
+  manual page for those programs); by default they are not used.
+
+  After the four QDB values, the next set of fields are log-odds bit
+  scores for possible transitions out of this state to all child
+  states of the current states. The number of child states is given
+  earlier on the line as the sixth field. It varies depending on the
+  state type and the node type of the \emph{next} node in the model.
+  For a list of all possible sets of transitions for each possible
+  state type/next node combination see Table 1 of
+  \cite{NawrockiEddy07}. As a special case, ``B'' (bifurcation) states
+  have zero transition score fields, they necessarily transition to
+  their child ``BEGL\_S'' and ``BEGR\_S'' states with a probability of
+  $1.0$ (score of $0$ bits).
+
+  After the transition scores are the emission scores. 
+  ``MP'' state lines have 16 emission log-odds bit scores. All other
+  types of emitting states (``ML'', ``MR'', ``IL'', ``IR'') will have
+  four emission scores. All other types of states will have no
+  emission scores. For ``MP'' states, the sixteen scores are for the
+  sixteen possible non-degenerate RNA basepairs: ``AA'', ``AC'',
+  ``AG'', ``AU'', ``CA'', ``CC'', ``CG'', ``CU'', ``GA'', ``GC'',
+  ``GG'', ``GU'', ``UA'', ``UC'', ``UG'', ``UU'', in that order. 
+  For the other emitting states the four scores are for ``A'', ``C'',
+  ``G'', and ``U'', in that order.
+\end{sreitems}
+
+  Finally, the last line of the format is the ``//'' record separator.
+  After the CM comes its associated filter HMM in HMMER3 format,
+  described below.
+
+\subsubsection{HMMER3 filter HMM format}
+
+As with the CM, the HMM format is divided into two regions. The first
+region contains textual information and miscalleneous parameters in a
+roughly tag-value scheme.  This section ends with a line beginning
+with the keyword \prog{HMM}. The second region is a tabular,
+whitespace-limited format for the main model parameters.
+
+All HMM probability parameters are all stored as negative natural log
 probabilities with five digits of precision to the right of the
 decimal point, rounded. For example, a probability of $0.25$ is stored
 as $-\log 0.25 = 1.38629$. The special case of a zero probability is
@@ -76,7 +581,7 @@ that fields are separated by at least one space character.
 
 A more detailed description of the format follows.
 
-\subsubsection{header section}
+\subsubsection{HMM header section}
 
 The header section is parsed line by line in a tag/value format. Each
 line type is either \textbf{mandatory} or \textbf{optional} as
@@ -84,7 +589,7 @@ indicated.
 
 \begin{sreitems}{\emprog{STATS <s1> <s2> <f>}}
 
-\item [\emprog{HMMER3/b}] Unique identifier for the save file format
+\item [\emprog{HMMER3/f}] Unique identifier for the save file format
   version; the \prog{/b} means that this is HMMER3 HMM file format
   version b. When HMMER3 changes its save file format, the revision
   code advances. This way, parsers may easily remain backwards
@@ -240,7 +745,7 @@ order. \textbf{Optional.}
 
 \end{sreitems}
 
-\subsubsection{main model section}
+\subsubsection{HMM main model section}
 
 All the remaining fields are \textbf{mandatory}.
 
@@ -308,7 +813,6 @@ $D_k \rightarrow M_{k+1}$ transition is always 0.0 (probability 1.0).
 \end{sreitems}
 
 Finally, the last line of the format is the ``//'' record separator.
-
 
 \subsection{RNA secondary structures: WUSS notation}
 \label{section:wuss}

@@ -1639,13 +1639,13 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
       }
 
       else if (strcmp(tag, "PBEGIN") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Nothing follows WBETA tag");
-	if ((cm->pbegin = atof(tok1)) <= 0.0f)                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid beta on WBETA line: should be a positive real number, not %s", tok1);
+	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Nothing follows PBEGIN tag");
+	if ((cm->pbegin = atof(tok1)) <= 0.0f)                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid beta on PBEGIN line: should be a positive real number, not %s", tok1);
       }
 
       else if (strcmp(tag, "PEND") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Nothing follows WBETA tag");
-	if ((cm->pend = atof(tok1)) <= 0.0f)                                              ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid beta on WBETA line: should be a positive real number, not %s", tok1);
+	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Nothing follows PEND tag");
+	if ((cm->pend = atof(tok1)) <= 0.0f)                                              ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid beta on PEND line: should be a positive real number, not %s", tok1);
       }
 
       else if (strcmp(tag, "WBETA") == 0) {
