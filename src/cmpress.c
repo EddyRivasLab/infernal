@@ -108,7 +108,6 @@ main(int argc, char **argv)
 #endif
       if((! (cm->flags & CMH_FP7)) || (cm->fp7 == NULL)) cm_Fail("CM %s does not have a p7 filter HMM", cm->name);
       cm_file_WriteBinary(mfp, -1, cm, &fp7_offset);
-      FreeCM(cm);
 
       /* write the oprofile after the CM, because we need to know fp7_offset first */
       if ((om->offs[p7_FOFFSET] = ftello(ffp)) == -1) cm_Fail("Failed to ftello() current disk position of MSV db file");
@@ -116,6 +115,7 @@ main(int argc, char **argv)
       om->offs[p7_MOFFSET] = fp7_offset;
       cm_p7_oprofile_Write(ffp, pfp, cm_offset, cm->clen, cm->W, CMCountNodetype(cm, MATP_nd), cm->fp7_evparam[CM_p7_GFMU], cm->fp7_evparam[CM_p7_GFLAMBDA], om); 
 
+      FreeCM(cm);
       p7_profile_Destroy(gm);
       p7_oprofile_Destroy(om);
     }

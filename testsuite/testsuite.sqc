@@ -32,9 +32,11 @@
 1 exercise cm_tophits         @src/cm_tophits_utest@
 
 ################################################################
-# Integration tests, currently only one 
+# Integration tests
 ################################################################
 
+1 exercise  mapali            !testsuite/i1-cmalign-mapali.pl!     @src/cmalign@   @easel/miniapps/esl-reformat@  !testsuite!  %OUTFILES%
+1 exercise  dup-names         !testsuite/i2-duplicate-names.pl!    @@ !! %OUTFILES%
 1 exercise  brute-itest       @src/itest_brute@  
 
 ################################################################

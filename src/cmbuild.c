@@ -308,6 +308,35 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    cfg.nali       = 0;	        /* this counter is incremented in master */
    cfg.nnamed     = 0;	        /* 0 or 1 if a single MSA; == nali if multiple MSAs */
 
+   /* check if binary files from cmpress for a model with same name as cmfile already exist,
+    * if so we exit and tell user to delete them; if we went ahead and built a model (even 
+    * with -F) then subsequent cmalign/cmsearch/cmscan (others) calls would use the press'd
+    * binary .i1m file instead of the new one we just built, which would be bad. We could
+    * delete the .i1* binary files with -F but that would be the only time any Infernal
+    * programs actually delete files, as opposed to overwrite them. This way is safer I 
+    * think.
+    */
+   char       *mfile           = NULL; /* <cmfile>.i1m file: binary CMs along with their (full) filter p7 HMMs, from cmpress */
+   char       *ffile           = NULL; /* <cmfile>.i1f file: binary optimized filter p7 profiles, MSV filter part only, from cmpress */
+   char       *pfile           = NULL; /* <cmfile>.i1p file: binary optimized filter p7 profiles, remainder (excluding MSV filter), from cmpress */
+   char       *ifile           = NULL; /* <cmfile>.i1i file; ssi file, from cmpress */
+   char       *ssifile         = NULL; /* <cmfile>.ssi file; ssi file, from cmfetch --index */
+   if (esl_sprintf(&mfile,   "%s.i1m",   cfg.cmfile) != eslOK) cm_Fail("esl_sprintf() failed");
+   if (esl_sprintf(&ffile,   "%s.i1f",   cfg.cmfile) != eslOK) cm_Fail("esl_sprintf() failed");
+   if (esl_sprintf(&pfile,   "%s.i1p",   cfg.cmfile) != eslOK) cm_Fail("esl_sprintf() failed");
+   if (esl_sprintf(&ifile,   "%s.i1i",   cfg.cmfile) != eslOK) cm_Fail("esl_sprintf() failed");
+   if (esl_sprintf(&ssifile, "%s.i1ssi", cfg.cmfile) != eslOK) cm_Fail("esl_sprintf() failed");
+   if (esl_FileExists(mfile))   cm_Fail("Binary CM file %s already exists; you must delete old cmpress %s.i1* files first", mfile, cfg.cmfile);
+   if (esl_FileExists(ffile))   cm_Fail("Binary MSV filter file %s already exists; you must delete old cmpress %s.i1* files first", ffile, cfg.cmfile);
+   if (esl_FileExists(pfile))   cm_Fail("Binary optimized profile file %s already exists; you must delete old cmpress %s.i1* files first", pfile, cfg.cmfile);
+   if (esl_FileExists(ifile))   cm_Fail("Binary SSI index file %s already exists; you must delete old cmpress %s.i1* files first", ifile, cfg.cmfile);
+   if (esl_FileExists(ssifile)) cm_Fail("Binary SSI index file %s already exists; you must delete this old cmfetch index file first", ssifile, cfg.cmfile);
+   free(mfile);
+   free(ffile);
+   free(pfile);
+   free(ifile);
+   free(ssifile);
+
    /* check if cmfile already exists, if it does and -F was not enabled then die */
    if ((! esl_opt_GetBoolean(go, "-F")) && esl_FileExists(cfg.cmfile)) { 
      cm_Fail("CM file %s already exists. Either use -F to overwrite it, rename it, or delete it.", cfg.cmfile); 
