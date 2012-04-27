@@ -35,8 +35,9 @@
 # Integration tests
 ################################################################
 
-1 exercise  mapali            !testsuite/i1-cmalign-mapali.pl!     @src/cmalign@   @easel/miniapps/esl-reformat@  !testsuite!  %OUTFILES%
-1 exercise  dup-names         !testsuite/i2-duplicate-names.pl!    @@ !! %OUTFILES%
+1 exercise  mapali            perl !testsuite/i1-cmalign-mapali.pl!     @src/cmalign@   @easel/miniapps/esl-reformat@  !testsuite!  %OUTFILES%
+1 exercise  dup-names         perl !testsuite/i2-duplicate-names.pl!    @@ !! %OUTFILES%
+1 exercise  msa-integrity     perl !testsuite/i3-msa-integrity.pl!      @@ !! %OUTFILES%
 1 exercise  brute-itest       @src/itest_brute@  
 
 ################################################################
@@ -47,16 +48,16 @@
 #
 1  exercise    build/help/1   @src/cmbuild@ -h
 1  exercise    build/help/2   @src/cmbuild@ --devhelp
-1  exercise    build/t        @src/cmbuild@ -F %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
-1  exercise    build/v        @src/cmbuild@ -F %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto!
-1  exercise    build/s        @src/cmbuild@ -F %SRP.CM% !testsuite/Plant_SRP.rfam10p1.seed.sto!
-1  exercise    build/3        @src/cmbuild@ -F %3.CM% !testsuite/3.rfam10p1.seed.sto!
+1  exercise    build/t        @src/cmbuild@ -F %TRNA.CM% !testsuite/tRNA.sto!
+1  exercise    build/v        @src/cmbuild@ -F %VAULT.CM% !testsuite/Vault.sto!
+1  exercise    build/s        @src/cmbuild@ -F %SRP.CM% !testsuite/Plant_SRP.sto!
+1  exercise    build/3        @src/cmbuild@ -F %3.CM% !testsuite/3.sto!
 
 # cmsearch exercises (CM must be calibrated)
-1  prep        copy/tC        cp !testsuite/tRNA.calibrated.cm! %TRNA.C.CM%
-1  prep        copy/vC        cp !testsuite/Vault.calibrated.cm! %VAULT.C.CM%
-1  prep        copy/sC        cp !testsuite/Plant_SRP.calibrated.cm! %SRP.C.CM%
-1  prep        copy/3C        cp !testsuite/3.calibrated.cm! %3.C.CM%
+1  prep        copy/tC        cp !testsuite/tRNA.c.cm! %TRNA.C.CM%
+1  prep        copy/vC        cp !testsuite/Vault.c.cm! %VAULT.C.CM%
+1  prep        copy/sC        cp !testsuite/Plant_SRP.c.cm! %SRP.C.CM%
+1  prep        copy/3C        cp !testsuite/3.c.cm! %3.C.CM%
 1  exercise    search/help/1  @src/cmsearch@ -h
 1  exercise    search/help/2  @src/cmsearch@ --devhelp
 
@@ -148,10 +149,10 @@
 1  exercise  convert-emit/3/b   @src/cmemit@    %1.CONVERTED.3.CM% 
 
 # convert calibrated files
-1  exercise  convertC/t         @src/cmconvert@ !testsuite/tRNA.1p0.calibrated.cm! > %CONVERTED.TRNA.C.CM%
-1  exercise  convertC/v         @src/cmconvert@ !testsuite/Vault.1p0.calibrated.cm! > %CONVERTED.VAULT.C.CM%
-1  exercise  convertC/s         @src/cmconvert@ !testsuite/Plant_SRP.1p0.calibrated.cm! > %CONVERTED.SRP.C.CM%
-1  exercise  convertC/3         @src/cmconvert@ !testsuite/3.1p0.calibrated.cm! > %CONVERTED.3.C.CM%
+1  exercise  convertC/t         @src/cmconvert@ !testsuite/tRNA.1p0.c.cm! > %CONVERTED.TRNA.C.CM%
+1  exercise  convertC/v         @src/cmconvert@ !testsuite/Vault.1p0.c.cm! > %CONVERTED.VAULT.C.CM%
+1  exercise  convertC/s         @src/cmconvert@ !testsuite/Plant_SRP.1p0.c.cm! > %CONVERTED.SRP.C.CM%
+1  exercise  convertC/3         @src/cmconvert@ !testsuite/3.1p0.c.cm! > %CONVERTED.3.C.CM%
 
 1  exercise  convertC-emit/t    @src/cmemit@    %CONVERTED.TRNA.C.CM% 
 1  exercise  convertC-emit/v    @src/cmemit@    %CONVERTED.VAULT.C.CM% 

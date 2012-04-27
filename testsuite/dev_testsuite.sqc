@@ -58,16 +58,16 @@
 #
 1  exercise    build/help/1   @src/cmbuild@ -h
 1  exercise    build/help/2   @src/cmbuild@ --devhelp
-1  exercise    build/t        @src/cmbuild@ -F %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
-1  exercise    build/v/o      @src/cmbuild@ -F -o %VAULT.OUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto!
-1  exercise    build/s/O      @src/cmbuild@ -F -O %SRP.STK% %SRP.CM% !testsuite/Plant_SRP.rfam10p1.seed.sto!
-1  exercise    build/3/O      @src/cmbuild@ -F -O %3.STK% %3.CM% !testsuite/3.rfam10p1.seed.sto!
+1  exercise    build/t        @src/cmbuild@ -F %TRNA.CM% !testsuite/tRNA.sto!
+1  exercise    build/v/o      @src/cmbuild@ -F -o %VAULT.OUT% %VAULT.CM% !testsuite/Vault.sto!
+1  exercise    build/s/O      @src/cmbuild@ -F -O %SRP.STK% %SRP.CM% !testsuite/Plant_SRP.sto!
+1  exercise    build/3/O      @src/cmbuild@ -F -O %3.STK% %3.CM% !testsuite/3.sto!
 
 # cmsearch exercises (CM must be calibrated)
-1  prep        copy/tC        cp !testsuite/tRNA.calibrated.cm! %TRNA.C.CM%
-1  prep        copy/vC        cp !testsuite/Vault.calibrated.cm! %VAULT.C.CM%
-1  prep        copy/sC        cp !testsuite/Plant_SRP.calibrated.cm! %SRP.C.CM%
-1  prep        copy/3C        cp !testsuite/3.calibrated.cm! %3.C.CM%
+1  prep        copy/tC        cp !testsuite/tRNA.c.cm! %TRNA.C.CM%
+1  prep        copy/vC        cp !testsuite/Vault.c.cm! %VAULT.C.CM%
+1  prep        copy/sC        cp !testsuite/Plant_SRP.c.cm! %SRP.C.CM%
+1  prep        copy/3C        cp !testsuite/3.c.cm! %3.C.CM%
 1  exercise    search/help/1  @src/cmsearch@ -h
 1  exercise    search/help/2  @src/cmsearch@ --devhelp
 
@@ -159,10 +159,10 @@
 1  exercise  convert-emit/3/b   @src/cmemit@    %1.CONVERTED.3.CM% 
 
 # convert calibrated files
-1  exercise  convertC/t         @src/cmconvert@ !testsuite/tRNA.1p0.calibrated.cm! > %CONVERTED.TRNA.C.CM%
-1  exercise  convertC/v         @src/cmconvert@ !testsuite/Vault.1p0.calibrated.cm! > %CONVERTED.VAULT.C.CM%
-1  exercise  convertC/s         @src/cmconvert@ !testsuite/Plant_SRP.1p0.calibrated.cm! > %CONVERTED.SRP.C.CM%
-1  exercise  convertC/3         @src/cmconvert@ !testsuite/3.1p0.calibrated.cm! > %CONVERTED.3.C.CM%
+1  exercise  convertC/t         @src/cmconvert@ !testsuite/tRNA.1p0.c.cm! > %CONVERTED.TRNA.C.CM%
+1  exercise  convertC/v         @src/cmconvert@ !testsuite/Vault.1p0.c.cm! > %CONVERTED.VAULT.C.CM%
+1  exercise  convertC/s         @src/cmconvert@ !testsuite/Plant_SRP.1p0.c.cm! > %CONVERTED.SRP.C.CM%
+1  exercise  convertC/3         @src/cmconvert@ !testsuite/3.1p0.c.cm! > %CONVERTED.3.C.CM%
 
 1  exercise  convertC-emit/t    @src/cmemit@    %CONVERTED.TRNA.C.CM% 
 1  exercise  convertC-emit/v    @src/cmemit@    %CONVERTED.VAULT.C.CM% 
@@ -247,7 +247,7 @@
 
 1  exercise  align:help/1         @src/cmalign@  -h
 
-1  prep      align:build/trna     @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
+1  prep      align:build/trna     @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.sto!
 1  exercise  align:t/df           @src/cmalign@  %TRNA.CM% 3trnas.fa
 1  exercise  align:t/stdin/cm     cat %TRNA.CM% | @src/cmalign@  - !testsuite/3trnas.fa!
 1  exercise  align:t/stdin/seq    cat !testsuite/3trnas.fa! | @src/cmalign@  %TRNA.CM% -
@@ -255,13 +255,13 @@
 1  exercise  align:t/o            @src/cmalign@  -o %TMPOUT% %TRNA.CM% !testsuite/3trnas.fa!
 1  exercise  align:t/l            @src/cmalign@  -l %TRNA.CM% !testsuite/3trnas.fa!
 
-1  exercise  align:build/pkhav    @src/cmbuild@ -F --wnone %PKHAV.CM% !testsuite/PK-HAV.rfam10p1.seed.sto!
+1  exercise  align:build/pkhav    @src/cmbuild@ -F --wnone %PKHAV.CM% !testsuite/PK-HAV.sto!
 1  exercise  align:pkhav          @src/cmalign@  %PKHAV.CM% !testsuite/3pkhavs.fa!
-1  exercise  align:pkhav/map      @src/cmalign@  --mapali !testsuite/PK-HAV.rfam10p1.seed.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!
-1  exercise  align:pkhav/mapstr   @src/cmalign@  --mapstr --mapali !testsuite/PK-HAV.rfam10p1.seed.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!
+1  exercise  align:pkhav/map      @src/cmalign@  --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!
+1  exercise  align:pkhav/mapstr   @src/cmalign@  --mapstr --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!
 1  exercise  align:pkhav/l        @src/cmalign@  -l %PKHAV.CM% !testsuite/3pkhavs.fa!
-1  exercise  align:pkhav/l/map    @src/cmalign@  -l --mapali !testsuite/PK-HAV.rfam10p1.seed.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!
-1  exercise  align:pkhav/l/mapstr @src/cmalign@  -l --mapstr --mapali !testsuite/PK-HAV.rfam10p1.seed.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!
+1  exercise  align:pkhav/l/map    @src/cmalign@  -l --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!
+1  exercise  align:pkhav/l/mapstr @src/cmalign@  -l --mapstr --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!
 
 1  exercise  align:t/cpu0         @src/cmalign@  --cpu 0 %TRNA.CM% !testsuite/3trnas.fa!
 
@@ -401,18 +401,18 @@
 
 # eweighting
 1  exercise  build:se/eent       @src/cmbuild@ --eent -F %SE.CM% !testsuite/se.sto! 
-1  exercise  build:vault/enon    @src/cmbuild@ --enone -F %V.CM% !testsuite/Vault.rfam10p1.seed.sto! 
-1  exercise  build:vault/ere     @src/cmbuild@ --ere 0.8 -F %V.CM% !testsuite/Vault.rfam10p1.seed.sto! 
-1  exercise  build:vault/eset    @src/cmbuild@ --eset 10.0  -F %V.CM% !testsuite/Vault.rfam10p1.seed.sto! 
-1  exercise  build:vault/ems     @src/cmbuild@ --eminseq 8.0 -F %V.CM% !testsuite/Vault.rfam10p1.seed.sto! 
-1  exercise  build:trna/esig     @src/cmbuild@ --esig 3.0 -F %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto! 
+1  exercise  build:vault/enon    @src/cmbuild@ --enone -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:vault/ere     @src/cmbuild@ --ere 0.8 -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:vault/eset    @src/cmbuild@ --eset 10.0  -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:vault/ems     @src/cmbuild@ --eminseq 8.0 -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:trna/esig     @src/cmbuild@ --esig 3.0 -F %TRNA.CM% !testsuite/tRNA.sto! 
 
 # --refine
 1  exercise  build:se/rfn        @src/cmbuild@ -F --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
-2  exercise  build:vault/rfn     @src/cmbuild@ -F --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto! 
+2  exercise  build:vault/rfn     @src/cmbuild@ -F --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.sto! 
 1  exercise  build:se/gbs        @src/cmbuild@ -F --gibbs --seed 33 --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
-2  exercise  build:vault/gbs     @src/cmbuild@ -F --gibbs --seed 33 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto! 
-2  exercise  build:vault/cyk     @src/cmbuild@ -F --cyk --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto! 
+2  exercise  build:vault/gbs     @src/cmbuild@ -F --gibbs --seed 33 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.sto! 
+2  exercise  build:vault/cyk     @src/cmbuild@ -F --cyk --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.sto! 
 1  exercise  build:se/nt         @src/cmbuild@ -F --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/sub        @src/cmbuild@ -F --sub --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/nb         @src/cmbuild@ -F --nonbanded --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
@@ -425,16 +425,16 @@
 1  exercise  build:se/fins       @src/cmbuild@ -F --fins --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
 1  exercise  build:se/sub/gbs    @src/cmbuild@ -F --sub --gibbs --seed 33 --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/tau        @src/cmbuild@ -F --tau 1E-3 --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
-1  exercise  build:vault/tau     @src/cmbuild@ -F --tau 1E-3 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto!
+1  exercise  build:vault/tau     @src/cmbuild@ -F --tau 1E-3 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.sto!
 1  exercise  build:se/mxsize     @src/cmbuild@ -F --mxsize 32 --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
 1  exercise  build:se/rdump      @src/cmbuild@ -F --rdump %TMPOUT% --refine %TMP2OUT% %SE.CM% !testsuite/se.sto!
 
 # --refine plus -l
 1  exercise  build:se/l/rfn        @src/cmbuild@ -F -l --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
-2  exercise  build:vault/l/rfn     @src/cmbuild@ -F -l --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto! 
+2  exercise  build:vault/l/rfn     @src/cmbuild@ -F -l --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.sto! 
 1  exercise  build:se/l/gbs        @src/cmbuild@ -F -l --gibbs --seed 33 --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
-2  exercise  build:vault/l/gbs     @src/cmbuild@ -F -l --gibbs --seed 33 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto! 
-2  exercise  build:vault/l/cyk     @src/cmbuild@ -F -l --cyk --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto! 
+2  exercise  build:vault/l/gbs     @src/cmbuild@ -F -l --gibbs --seed 33 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.sto! 
+2  exercise  build:vault/l/cyk     @src/cmbuild@ -F -l --cyk --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.sto! 
 1  exercise  build:se/l/nt         @src/cmbuild@ -F -l --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/l/nb         @src/cmbuild@ -F -l --nonbanded --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/l/nbnt       @src/cmbuild@ -F -l --nonbanded --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
@@ -443,14 +443,14 @@
 1  exercise  build:se/l/nbnt/cyk   @src/cmbuild@ -F -l --cyk --nonbanded --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/l/ndi        @src/cmbuild@ -F -l --refine %TMPOUT% --indi %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/l/fins       @src/cmbuild@ -F -l --fins --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
-1  exercise  build:vault/l/tau     @src/cmbuild@ -F -l --tau 1E-3 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.rfam10p1.seed.sto!
+1  exercise  build:vault/l/tau     @src/cmbuild@ -F -l --tau 1E-3 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.sto!
 1  exercise  build:se/l/tau        @src/cmbuild@ -F -l --tau 1E-3 --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
 1  exercise  build:se/l/mxsize     @src/cmbuild@ -F -l --mxsize 32 --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
 1  exercise  build:se/l/rdump      @src/cmbuild@ -F -l --rdump %TMPOUT% --refine %TMP2OUT% %SE.CM% !testsuite/se.sto!
 
 # filter p7 HMM construction
 1  exercise  build:se/p7ml         @src/cmbuild@ -F --p7ml %SE.CM% !testsuite/se.sto!
-1  exercise  build:vault/p7ere     @src/cmbuild@ -F --p7ere 0.45 %V.CM% !testsuite/Vault.rfam10p1.seed.sto!
+1  exercise  build:vault/p7ere     @src/cmbuild@ -F --p7ere 0.45 %V.CM% !testsuite/Vault.sto!
 1  exercise  build:se/p7pri        @src/cmbuild@ -F --p7prior !testsuite/test.hprior! %SE.CM% !testsuite/se.sto!
 1  exercise  build:se/p7hpri       @src/cmbuild@ -F --p7hprior %SE.CM% !testsuite/se.sto!
 1  exercise  build:se/p7hemt       @src/cmbuild@ -F --p7hemit %SE.CM% !testsuite/se.sto!
@@ -502,7 +502,7 @@
 ##################################################################
 
 1  prep        calibrate:/build/se  @src/cmbuild@ -F %SE.CM% !testsuite/se.sto!
-1  prep        calibrate:/build/t   @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
+1  prep        calibrate:/build/t   @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.sto!
 
 1  exercise    calibrate:help/1     @src/cmcalibrate@  -h
 
@@ -552,15 +552,15 @@
 #
 1  exercise  convert:help/1     @src/cmconvert@ -h
 
-1  exercise  convert:build/t    @src/cmbuild@ -F %A.TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
-1  exercise  convert:build/3    @src/cmbuild@ -F %A.3.CM% !testsuite/3.rfam10p1.seed.sto!
-1  exercise  convert:t/c/b      @src/cmconvert@ -b !testsuite/tRNA.calibrated.cm! > %B.TRNA.C.CM%
-1  exercise  convert:3/c/b      @src/cmconvert@ -b !testsuite/3.calibrated.cm! > %B.3.C.CM%
+1  exercise  convert:build/t    @src/cmbuild@ -F %A.TRNA.CM% !testsuite/tRNA.sto!
+1  exercise  convert:build/3    @src/cmbuild@ -F %A.3.CM% !testsuite/3.sto!
+1  exercise  convert:t/c/b      @src/cmconvert@ -b !testsuite/tRNA.c.cm! > %B.TRNA.C.CM%
+1  exercise  convert:3/c/b      @src/cmconvert@ -b !testsuite/3.c.cm! > %B.3.C.CM%
 
-1  exercise  convert:t/stdin    cat !testsuite/tRNA.calibrated.cm! | @src/cmconvert@ -
-1  exercise  convert:t/stdin/b  cat !testsuite/tRNA.calibrated.cm! | @src/cmconvert@ -b -
-1  exercise  convert:3/stdin    cat !testsuite/3.calibrated.cm! | @src/cmconvert@ -
-1  exercise  convert:3/stdin/b  cat !testsuite/3.calibrated.cm! | @src/cmconvert@ -b -
+1  exercise  convert:t/stdin    cat !testsuite/tRNA.c.cm! | @src/cmconvert@ -
+1  exercise  convert:t/stdin/b  cat !testsuite/tRNA.c.cm! | @src/cmconvert@ -b -
+1  exercise  convert:3/stdin    cat !testsuite/3.c.cm! | @src/cmconvert@ -
+1  exercise  convert:3/stdin/b  cat !testsuite/3.c.cm! | @src/cmconvert@ -b -
 
 #################################################
 # convert 1.1ascii->1.1ascii (non calibrated), output will be identical to input 
@@ -593,8 +593,8 @@
 
 ###############################################
 # convert 1.1ascii->1.1ascii (calibrated), output will be identical to input 
-1  exercise  convert:t/c/aa    @src/cmconvert@ !testsuite/tRNA.calibrated.cm! > %AA.TRNA.C.CM%
-1  exercise  convert:3/c/aa    @src/cmconvert@ !testsuite/3.calibrated.cm!    > %AA.3.C.CM%
+1  exercise  convert:t/c/aa    @src/cmconvert@ !testsuite/tRNA.c.cm! > %AA.TRNA.C.CM%
+1  exercise  convert:3/c/aa    @src/cmconvert@ !testsuite/3.c.cm!    > %AA.3.C.CM%
 
 1  exercise  convert:emit/t/aa         @src/cmemit@    %AA.TRNA.C.CM% 
 1  exercise  convert:emit/3/aa         @src/cmemit@    %AA.3.C.CM% 
@@ -603,8 +603,8 @@
 1  exercise  convert:statE/3/aa        @src/cmstat@  -E 1 %AA.3.C.CM% 
 
 # convert 1.1ascii->1.1binary (calibrated)
-1  exercise  convert:t/c/ab    @src/cmconvert@ -b !testsuite/tRNA.calibrated.cm! > %AB.TRNA.C.CM%
-1  exercise  convert:3/c/ab    @src/cmconvert@ -b !testsuite/3.calibrated.cm!    > %AB.3.C.CM%
+1  exercise  convert:t/c/ab    @src/cmconvert@ -b !testsuite/tRNA.c.cm! > %AB.TRNA.C.CM%
+1  exercise  convert:3/c/ab    @src/cmconvert@ -b !testsuite/3.c.cm!    > %AB.3.C.CM%
 
 1  exercise  convert:emit/t/ab         @src/cmemit@    %AB.TRNA.C.CM% 
 1  exercise  convert:emit/3/ab         @src/cmemit@    %AB.3.C.CM% 
@@ -669,8 +669,8 @@
 1  exercise  convert:emit/3/b1b        @src/cmemit@    %AB1B.3.CM% 
 
 # convert 1.1ascii->1.0->1.1ascii (calibrated); 
-1  exercise  convert:t/c/a1    @src/cmconvert@ -1 !testsuite/tRNA.calibrated.cm! > %A1.TRNA.C.CM%
-1  exercise  convert:3/c/a1    @src/cmconvert@ -1 !testsuite/3.calibrated.cm!    > %A1.3.C.CM%
+1  exercise  convert:t/c/a1    @src/cmconvert@ -1 !testsuite/tRNA.c.cm! > %A1.TRNA.C.CM%
+1  exercise  convert:3/c/a1    @src/cmconvert@ -1 !testsuite/3.c.cm!    > %A1.3.C.CM%
 
 1  exercise  convert:t/c/a1a   @src/cmconvert@ %A1.TRNA.C.CM% > %A1A.TRNA.C.CM%
 1  exercise  convert:3/c/a1a   @src/cmconvert@ %A1.3.C.CM%    > %A1A.3.C.CM%
@@ -695,8 +695,8 @@
 1  exercise  convert:3/b/mlhmm @src/cmconvert@ --mlhmm %AB.3.CM%    > %AB.3.MLHMM%
 
 # ascii --mlhmm (calibrated) 
-1  exercise  convert:t/a/mlhmm/c @src/cmconvert@ --mlhmm !testsuite/tRNA.calibrated.cm! > %A.TRNA.C.MLHMM%
-1  exercise  convert:3/a/mlhmm/c @src/cmconvert@ --mlhmm !testsuite/3.calibrated.cm!    > %A.3.C.MLHMM%
+1  exercise  convert:t/a/mlhmm/c @src/cmconvert@ --mlhmm !testsuite/tRNA.c.cm! > %A.TRNA.C.MLHMM%
+1  exercise  convert:3/a/mlhmm/c @src/cmconvert@ --mlhmm !testsuite/3.c.cm!    > %A.3.C.MLHMM%
 
 # binary --mlhmm (calibrated) 
 1  exercise  convert:t/b/mlhmm/c @src/cmconvert@ --mlhmm %AB.TRNA.C.CM% > %AB.TRNA.C.MLHMM%
@@ -712,8 +712,8 @@
 1  exercise  convert:3/b/fhmm    @src/cmconvert@ --fhmm %AB.3.CM%    > %AB.3.FHMM%
 
 # ascii --fhmm (calibrated) 
-1  exercise  convert:t/a/fhmm/c  @src/cmconvert@ --fhmm !testsuite/tRNA.calibrated.cm! > %A.TRNA.C.FHMM%
-1  exercise  convert:3/a/fhmm/c  @src/cmconvert@ --fhmm !testsuite/3.calibrated.cm!    > %A.3.C.FHMM%
+1  exercise  convert:t/a/fhmm/c  @src/cmconvert@ --fhmm !testsuite/tRNA.c.cm! > %A.TRNA.C.FHMM%
+1  exercise  convert:3/a/fhmm/c  @src/cmconvert@ --fhmm !testsuite/3.c.cm!    > %A.3.C.FHMM%
 
 # binary --fhmm (calibrated) 
 1  exercise  convert:t/b/fhmm/c  @src/cmconvert@ --fhmm %AB.TRNA.C.CM% > %AB.TRNA.C.FHMM%
@@ -726,7 +726,7 @@
 ##################################################################
 ##################################################################
 
-1  prep      emit:build/t    @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
+1  prep      emit:build/t    @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.sto!
 
 1  exercise  emit:help/1     @src/cmemit@  -h
 
@@ -919,9 +919,9 @@
 ##################################################################
 ##################################################################
 
-# 3.rfam10p1.seed.sto: tRNA, Vault, Plant_SRP seeds from Rfam 10.1
+# 3.sto: tRNA, Vault, Plant_SRP seeds from Rfam 10.1
 
-1  exercise  fetch:build/3        @src/cmbuild@ -F %3.CM% !testsuite/3.rfam10p1.seed.sto!
+1  exercise  fetch:build/3        @src/cmbuild@ -F %3.CM% !testsuite/3.sto!
 
 # First, test without indexing
 1  exercise  fetch:ni/df1         @src/cmfetch@ %3.CM% Vault
@@ -963,10 +963,10 @@
 # can do a 'make cmpress' from testsuite/ and pull these 
 # all out and run only them.
 #
-1  prep      press:copy/tC     cp !testsuite/tRNA.calibrated.cm! %TRNA.C.CM%
-1  prep      press:copy/vC     cp !testsuite/Vault.calibrated.cm! %VAULT.C.CM%
-1  prep      press:copy/sC     cp !testsuite/Plant_SRP.calibrated.cm! %SRP.C.CM%
-1  prep      press:copy/3C     cp !testsuite/3.calibrated.cm! %3.C.CM%
+1  prep      press:copy/tC     cp !testsuite/tRNA.c.cm! %TRNA.C.CM%
+1  prep      press:copy/vC     cp !testsuite/Vault.c.cm! %VAULT.C.CM%
+1  prep      press:copy/sC     cp !testsuite/Plant_SRP.c.cm! %SRP.C.CM%
+1  prep      press:copy/3C     cp !testsuite/3.c.cm! %3.C.CM%
 
 1  exercise  press:tC          @src/cmpress@ %TRNA.C.CM%
 1  exercise  press:vC          @src/cmpress@ %VAULT.C.CM%
@@ -990,9 +990,9 @@
 1  exercise  scan:help/2        @src/cmscan@  --devhelp
 
 # cmscan requires calibrated and pressed models
-1  prep      scan:copy/tC       cp !testsuite/tRNA.calibrated.cm! %T.CM%
-1  prep      scan:copy/vC       cp !testsuite/Vault.calibrated.cm! %V.CM%
-1  prep      scan:copy/3C       cp !testsuite/3.calibrated.cm! %3.CM%
+1  prep      scan:copy/tC       cp !testsuite/tRNA.c.cm! %T.CM%
+1  prep      scan:copy/vC       cp !testsuite/Vault.c.cm! %V.CM%
+1  prep      scan:copy/3C       cp !testsuite/3.c.cm! %3.CM%
 1  exercise  scan:press/tC      @src/cmpress@ %T.CM%
 1  exercise  scan:press/3C      @src/cmpress@ %V.CM%
 1  exercise  scan:press/3C      @src/cmpress@ %3.CM%
@@ -1256,9 +1256,9 @@
 1  exercise  search:help/2        @src/cmsearch@  --devhelp
 
 # cmsearch requires calibrated models
-1  prep      search:copy/tC/a        cp !testsuite/tRNA.calibrated.cm! %T.CM%
-1  prep      search:copy/vC/a        cp !testsuite/Vault.calibrated.cm! %V.CM%
-1  prep      search:copy/3C/a        cp !testsuite/3.calibrated.cm! %3.CM%
+1  prep      search:copy/tC/a        cp !testsuite/tRNA.c.cm! %T.CM%
+1  prep      search:copy/vC/a        cp !testsuite/Vault.c.cm! %V.CM%
+1  prep      search:copy/3C/a        cp !testsuite/3.c.cm! %3.CM%
 
 # copy fasta files, only so the names are more convenient in rest of this file
 1  prep      search:copy/t/fa1k      cp !testsuite/1k-tRNA.fa! %T1K%
@@ -1511,11 +1511,11 @@
 ##################################################################
 ##################################################################
 
-1  exercise  stat:build/t/a     @src/cmbuild@ -F %A.TRNA.CM% !testsuite/tRNA.rfam10p1.seed.sto!
-1  exercise  stat:build/3/a     @src/cmbuild@ -F %A.3.CM% !testsuite/3.rfam10p1.seed.sto!
+1  exercise  stat:build/t/a     @src/cmbuild@ -F %A.TRNA.CM% !testsuite/tRNA.sto!
+1  exercise  stat:build/3/a     @src/cmbuild@ -F %A.3.CM% !testsuite/3.sto!
 
-1  prep      stat:copy/tC/a     cp !testsuite/tRNA.calibrated.cm! %A.TRNA.C.CM%
-1  prep      stat:copy/3C/a     cp !testsuite/3.calibrated.cm! %A.3.C.CM%
+1  prep      stat:copy/tC/a     cp !testsuite/tRNA.c.cm! %A.TRNA.C.CM%
+1  prep      stat:copy/3C/a     cp !testsuite/3.c.cm! %A.3.C.CM%
 
 1  exercise  stat:convert/t/b   @src/cmconvert@ -b %A.TRNA.CM% > %B.TRNA.CM%
 1  exercise  stat:convert/3/b   @src/cmconvert@ -b %A.3.CM% > %B.3.CM%

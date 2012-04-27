@@ -3,8 +3,8 @@
 # Check that we can deal with profiles and sequences that contain
 # duplicate names, both as queries and targets. 
 #
-# Usage:    ./i10-duplicate-names.pl <builddir> <srcdir> <tmpfile prefix>
-# Example:  ./i10-duplicate-names.pl ..         ..       tmpfoo
+# Usage:    ./i2-duplicate-names.pl <builddir> <srcdir> <tmpfile prefix>
+# Example:  ./i2-duplicate-names.pl ..         ..       tmpfoo
 #
 # SRE, Sun Dec 13 14:41:31 2009 [Yokohama, Japan]
 # SVN $Id: i10-duplicate-names.pl 3462 2011-01-11 13:52:50Z eddys $
