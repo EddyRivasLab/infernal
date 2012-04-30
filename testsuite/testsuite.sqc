@@ -35,11 +35,11 @@
 # Integration tests
 ################################################################
 
-1 exercise  itest/mapali            perl !testsuite/i1-cmalign-mapali.pl!     @src/cmalign@   @easel/miniapps/esl-reformat@  !testsuite!  %OUTFILES%
-1 exercise  itest/dup-names         perl !testsuite/i2-duplicate-names.pl!    @@ !! %OUTFILES%
-1 exercise  itest/msa-integrity     perl !testsuite/i3-msa-integrity.pl!      @@ !! %OUTFILES%
-1 exercise  itest/stdin-pipes       perl !testsuite/i4-stdin.pl!              @@ !! %OUTFILES%
-1 exercise  itest/pipeline          perl !testsuite/i5-pipeline.pl!           @@ !! %OUTFILES%
+1 exercise  itest/mapali            perl !testsuite/itest1-cmalign-mapali.pl!     @src/cmalign@   @easel/miniapps/esl-reformat@  !testsuite!  %OUTFILES%
+1 exercise  itest/dup-names         perl !testsuite/itest2-duplicate-names.pl!    @@ !! %OUTFILES%
+1 exercise  itest/msa-integrity     perl !testsuite/itest3-msa-integrity.pl!      @@ !! %OUTFILES%
+1 exercise  itest/stdin-pipes       perl !testsuite/itest4-stdin.pl!              @@ !! %OUTFILES%
+1 exercise  itest/pipeline          perl !testsuite/itest5-pipeline.pl!           @@ !! %OUTFILES%
 1 exercise  itest/brute             @src/itest_brute@  
 
 ################################################################
