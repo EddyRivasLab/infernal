@@ -27,9 +27,9 @@
 # more in ~nawrockie/notebook/9_0612_inf_bug_cmalign_enone.
 #
 # 
-# i14.1 =  Brian's training alignment.
-# i14.2 =  Brian's 8 sequences to align, crashes on seq 8, only
-#          crashes if all 8 are present.
+# i14.sto =  Brian's training alignment.
+# i14.fa  =  Brian's 8 sequences to align, crashes on seq 8, only
+#            crashes if all 8 are present.
 
 $usage = "i14 <cmbuild> <cmalign>\n";
 if ($#ARGV != 1) { die "Wrong argument number.\n$usage"; }
@@ -39,11 +39,11 @@ $cmalign  = shift;
 $ok       = 1;
 
 if ($ok) { 
-    system("$cmbuild --wnone --enone -F i14.cm i14.1 > /dev/null 2> /dev/null");
+    system("$cmbuild --wnone --enone -F i14.cm bug-i14.sto > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
-    system("$cmalign i14.cm i14.2 > /dev/null 2> /dev/null");
+    system("$cmalign --notrunc i14.cm bug-i14.fa > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 

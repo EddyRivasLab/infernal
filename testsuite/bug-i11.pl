@@ -42,11 +42,11 @@ END
 close OUT;
 
 if ($ok) { 
-    system("$cmbuild -F --rf i11.cm i11.1 > /dev/null 2> /dev/null");
+    system("$cmbuild -F --hand i11.cm i11.1 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
-    system("$cmalign i11.cm i11.2 > /dev/null 2> /dev/null");
+    system("$cmalign --notrunc i11.cm i11.2 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 

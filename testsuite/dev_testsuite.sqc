@@ -40,15 +40,36 @@
 ################################################################
 ################################################################
 
+
+################################################################
 # Unit test driver, currently only one 
-
-1 exercise cm_tophits         @src/cm_tophits_utest@
-
-################################################################
-# Integration tests, currently only one 
 ################################################################
 
-1 exercise  brute-itest       @src/itest_brute@  
+1 exercise  utest/cm_tophits    @src/cm_tophits_utest@
+
+################################################################
+# Integration tests
+################################################################
+
+1 exercise  itest/mapali            perl !testsuite/i1-cmalign-mapali.pl!     @src/cmalign@   @easel/miniapps/esl-reformat@  !testsuite!  %OUTFILES%
+1 exercise  itest/dup-names         perl !testsuite/i2-duplicate-names.pl!    @@ !! %OUTFILES%
+1 exercise  itest/msa-integrity     perl !testsuite/i3-msa-integrity.pl!      @@ !! %OUTFILES%
+1 exercise  itest/stdin-pipes       perl !testsuite/i4-stdin.pl!              @@ !! %OUTFILES%
+1 exercise  itest/pipeline          perl !testsuite/i5-pipeline.pl!           @@ !! %OUTFILES%
+1 exercise  itest/brute             @src/itest_brute@  
+
+################################################################
+# Fixed bug tests
+################################################################
+
+1 exercise  bug/i1-vault-sscons      perl !testsuite/bug-i1.pl! @src/cmbuild@ @src/cmalign@
+1 prep      bug/i2-cmalign-leak      @src/cmbuild@ -F %CM% !testsuite/bug-i2.sto!
+1 exercise  bug/i2-cmalign-leak      @src/cmalign@ --notrunc %CM% !testsuite/bug-i2.fa!
+1 exercise  bug/i11-bld-detach       perl !testsuite/bug-i11.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i12-aln-outside      perl !testsuite/bug-i12.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i13-aln-sub          perl !testsuite/bug-i13.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i14-aln-oa-zero      perl !testsuite/bug-i14.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i15-aln-bif-imp      perl !testsuite/bug-i15.pl! @src/cmbuild@ @src/cmalign@
 
 ################################################################
 # Option tests

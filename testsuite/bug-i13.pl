@@ -66,11 +66,11 @@ END
 close OUT;
 
 if ($ok) { 
-    system("$cmbuild -F --rf i13.cm i13.1 > /dev/null 2> /dev/null");
+    system("$cmbuild -F --hand i13.cm i13.1 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
-    system("$cmalign --sub i13.cm i13.2 > /dev/null 2> /dev/null");
+    system("$cmalign --sub --notrunc i13.cm i13.2 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 

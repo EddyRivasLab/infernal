@@ -263,13 +263,11 @@ if ($verbose) { print "$tag...\n"; }
 
 unlink <$tmppfx.out*>;
 unlink <$tmppfx.cm*>;
-unlink "$tmppfx.ncm";
 unlink "$tmppfx.sto";
 unlink "$tmppfx.fa1";
 unlink "$tmppfx.fa2";
 unlink "$tmppfx.fa10";
 unlink "$tmppfx.db";
-unlink "$tmppfx.ndb";
 unlink "$tmppfx.key";
 
 print "ok\n";
