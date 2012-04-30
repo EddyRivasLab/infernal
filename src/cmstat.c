@@ -20,7 +20,6 @@
 #include "esl_randomseq.h"
 #include "esl_sqio.h"
 #include "esl_stats.h"
-#include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
@@ -64,9 +63,6 @@ int
 main(int argc, char **argv)
 {
   ESL_GETOPTS     *go = NULL;   /* command line processing   */
-  ESL_STOPWATCH   *w  = esl_stopwatch_Create();
-  if(w == NULL) cm_Fail("Memory error, stopwatch not created.\n");
-  esl_stopwatch_Start(w);
 
   ESL_ALPHABET    *abc = NULL;  /* alphabet                  */
   char            *cmfile;	/* name of input CM file     */ 
@@ -231,9 +227,6 @@ main(int argc, char **argv)
   esl_alphabet_Destroy(abc);
   cm_file_Close(cmfp);
   esl_getopts_Destroy(go);
-  esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, "# CPU time: ");
-  esl_stopwatch_Destroy(w);
   exit(0);
 }
 

@@ -111,12 +111,13 @@ static int open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_asc
  *            <HAVE_POPEN> is defined by the configure script at
  *            compile time. 
  *            
- * Args:      filename - CM file to open; or "-" for <stdin>
- *            env      - list of paths to look for <cmfile> in, in 
- *                       addition to current working dir; or <NULL>
+ * Args:      filename  - CM file to open; or "-" for <stdin>
+ *            env       - list of paths to look for <cmfile> in, in 
+ *                        addition to current working dir; or <NULL>
+ *            allow_1p0 - TRUE to allow 1.0 formatted files 
  *            ret_cmfp  - RETURN: opened <P7_CMFILE>.
- *            errbuf   - error message buffer: <NULL>, or a ptr
- *                       to <eslERRBUFSIZE> chars of allocated space.
+ *            errbuf    - error message buffer: <NULL>, or a ptr
+ *                        to <eslERRBUFSIZE> chars of allocated space.
  *
  * Returns:   <eslOK> on success, and the open <CM_FILE> is returned
  *            in <*ret_cmfp>.
@@ -338,7 +339,7 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
    *    binary press'ed files.)
    *    
    * If we've been asked to open only an ASCII file -- because we're being
-   * called by hmmpress, for example! -- then don't do this.   
+   * called by cmpress, for example! -- then don't do this.   
    */
   if (! do_ascii_only && ! cmfp->do_stdin && ! cmfp->do_gzip)
     {
@@ -429,10 +430,10 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
 
       dbfile[n-1] = 'i';	/* the SSI index for the .i1m file */
       status = esl_ssi_Open(dbfile, &(cmfp->ssi));
-      if      (status == eslENOTFOUND) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed HMM file; but no .i1i file found", cmfp->fname);
-      else if (status == eslEFORMAT)   ESL_XFAIL(eslEFORMAT,   errbuf, "Opened %s, a pressed HMM file; but format of its .i1i file unrecognized", cmfp->fname);
-      else if (status == eslERANGE)    ESL_XFAIL(eslEFORMAT,   errbuf, "Opened %s, a pressed HMM file; but its .i1i file is 64-bit and your system is 32-bit", cmfp->fname);
-      else if (status != eslOK)        ESL_XFAIL(eslEFORMAT,   errbuf, "Opened %s, a pressed HMM file; but failed to open its .i1i file", cmfp->fname);
+      if      (status == eslENOTFOUND) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1i file found", cmfp->fname);
+      else if (status == eslEFORMAT)   ESL_XFAIL(eslEFORMAT,   errbuf, "Opened %s, a pressed CM file; but format of its .i1i file unrecognized", cmfp->fname);
+      else if (status == eslERANGE)    ESL_XFAIL(eslEFORMAT,   errbuf, "Opened %s, a pressed CM file; but its .i1i file is 64-bit and your system is 32-bit", cmfp->fname);
+      else if (status != eslOK)        ESL_XFAIL(eslEFORMAT,   errbuf, "Opened %s, a pressed CM file; but failed to open its .i1i file", cmfp->fname);
 
       free(dbfile); dbfile = NULL;      
     }

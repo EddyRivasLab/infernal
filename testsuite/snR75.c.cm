@@ -10,9 +10,9 @@ ALPH     RNA
 RF       yes
 CONS     yes
 MAP      yes
-DATE     Mon Apr 23 20:19:26 2012
-COM      [1] cmbuild --informat stockholm -F snR75.cm -
-COM      [2] cmcalibrate --cpu 0 indi-serial-files/snR75.cm
+DATE     Mon Apr 30 08:55:03 2012
+COM      [1] /groups/eddy/home/nawrockie/notebook/12_0423_inf_final_stress_tests/wd-infernal/src/cmbuild -F snR75.cm snR75.sto
+COM      [2] /groups/eddy/home/nawrockie/notebook/12_0423_inf_final_stress_tests/wd-infernal/src/cmcalibrate --mpi snR75.cm
 PBEGIN   0.05
 PEND     0.05
 WBETA    1e-07
@@ -405,9 +405,9 @@ MM    no
 CONS  yes
 CS    yes
 MAP   no
-DATE  Mon Apr 23 20:19:26 2012
-COM   [1] /groups/eddy/home/nawrockie/notebook/12_0423_inf_final_stress_tests/wd-infernal/src/cmbuild --informat stockholm -F snR75.cm -
-COM   [2] /groups/eddy/home/nawrockie/notebook/12_0423_inf_final_stress_tests/wd-infernal/src/cmbuild --informat stockholm -F snR75.cm -
+DATE  Mon Apr 30 08:55:03 2012
+COM   [1] /groups/eddy/home/nawrockie/notebook/12_0423_inf_final_stress_tests/wd-infernal/src/cmbuild -F snR75.cm snR75.sto
+COM   [2] /groups/eddy/home/nawrockie/notebook/12_0423_inf_final_stress_tests/wd-infernal/src/cmbuild -F snR75.cm snR75.sto
 NSEQ  62
 EFFN  4.939774
 STATS LOCAL MSV       -8.8346  0.71844

@@ -13,21 +13,21 @@ $eslreformat  = shift;
 $testsuitedir = shift;
 $tmppfx       = shift;
 
-if (! -x "$cmalign")                              { print "FAIL: didn't find cmalign binary $cmalign\n";               exit 1; }  
-if (! -x "$eslreformat")                          { print "FAIL: didn't find esl-reformat binary $eslreformat\n";      exit 1; } 
-if (! -r "$testsuitedir/Vault.calibrated.cm")     { print "FAIL: didn't find $testsuitedir/Vault.calibrated.cm\n";     exit 1; }
-if (! -r "$testsuitedir/Vault.rfam10p1.seed.sto") { print "FAIL: didn't find $testsuitedir/Vault.rfam10p1.seed.sto\n"; exit 1; }
+if (! -x "$cmalign")                 { print "FAIL: didn't find cmalign binary $cmalign\n";               exit 1; }  
+if (! -x "$eslreformat")             { print "FAIL: didn't find esl-reformat binary $eslreformat\n";      exit 1; } 
+if (! -r "$testsuitedir/Vault.c.cm") { print "FAIL: didn't find $testsuitedir/Vault.c.cm\n";     exit 1; }
+if (! -r "$testsuitedir/Vault.sto")  { print "FAIL: didn't find $testsuitedir/Vault.sto\n"; exit 1; }
 
-system("$eslreformat -u --rename foo fasta $testsuitedir/Vault.rfam10p1.seed.sto > $tmppfx.fa");
+system("$eslreformat -u --rename foo fasta $testsuitedir/Vault.sto > $tmppfx.fa");
 if ($? != 0)   { print "FAIL: esl-reformat failed unexpectedly\n"; exit 1; }
 
-system("$cmalign -o $tmppfx.sto --mapali $testsuitedir/Vault.rfam10p1.seed.sto $testsuitedir/Vault.calibrated.cm $tmppfx.fa");
+system("$cmalign -o $tmppfx.sto --mapali $testsuitedir/Vault.sto $testsuitedir/Vault.c.cm $tmppfx.fa");
 if ($? != 0)   { print "FAIL: cmalign failed unexpectedly\n"; exit 1; }
 
 system("$eslreformat -u fasta $tmppfx.sto > $tmppfx.2.fa");
 if ($? != 0)   { print "FAIL: esl-reformat failed unexpectedly\n"; exit 1; }
 
-system("$eslreformat -u fasta $testsuitedir/Vault.rfam10p1.seed.sto > $tmppfx.3.fa");
+system("$eslreformat -u fasta $testsuitedir/Vault.sto > $tmppfx.3.fa");
 if ($? != 0)   { print "FAIL: esl-reformat failed unexpectedly\n"; exit 1; }
 
 system("cat $tmppfx.fa >> $tmppfx.3.fa");

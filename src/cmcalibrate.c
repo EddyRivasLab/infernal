@@ -1860,7 +1860,7 @@ generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf,
   int           namelen = strlen("irrelevant");
 
   /* reseed RNG, unless --seed 0 */
-  if(esl_opt_GetBoolean(go, "--seed") != 0) { 
+  if(esl_opt_GetInteger(go, "--seed") != 0) { 
     esl_randomness_Init(cfg->r, esl_randomness_GetSeed(cfg->r));
   }
 
@@ -2007,7 +2007,7 @@ int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
   if(cm->smx == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "forecast_running_time(), cm->smx is NULL");
 
   /* reseed RNG, unless --seed 0 */
-  if(esl_opt_GetBoolean(go, "--seed") != 0) { 
+  if(esl_opt_GetInteger(go, "--seed") != 0) { 
     esl_randomness_Init(cfg->r_est, esl_randomness_GetSeed(cfg->r_est));
   }
 

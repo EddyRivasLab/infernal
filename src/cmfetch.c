@@ -69,12 +69,12 @@ int
 main(int argc, char **argv)
 {
   int           status;
-  ESL_GETOPTS  *go      = NULL;	/* application configuration      */
-  char         *cmfile  = NULL;	/* CM file name                   */
-  char         *keyfile = NULL;	/* keyfile name                   */
-  char         *keyname = NULL;	/* key name                       */
-  CM_FILE      *cmfp    = NULL;	/* open CM file                   */
-  FILE         *ofp     = NULL;	/* output stream for CMs          */
+  ESL_GETOPTS  *go       = NULL;	/* application configuration        */
+  char         *cmfile   = NULL;	/* CM file name                     */
+  char         *keyfile  = NULL;	/* keyfile name                     */
+  char         *keyname  = NULL;	/* key name                         */
+  CM_FILE      *cmfp     = NULL;	/* open CM file                     */
+  FILE         *ofp      = NULL;	/* output stream for CMs            */
   char          errbuf[eslERRBUFSIZE];
 
   /***********************************************
@@ -126,6 +126,14 @@ main(int argc, char **argv)
   else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
   else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",               status, cmfile, errbuf);  
 
+  /* Die if we're already press'd: SSI index exists and going forward
+   * would create <cmfile>.i1m.ssi which would never be used (<cmfile>.i1i
+   * would always be used instead).
+   */
+  if (cmfp->is_pressed && esl_opt_GetBoolean(go, "--index")) { 
+    cm_Fail("Looks like %s has already been SSI-indexed using cmpress; no need to index again", cmfile);
+  }
+
  /* Open the output file, if any  */
   if (esl_opt_GetBoolean(go, "-O")) 
     {
@@ -162,15 +170,15 @@ main(int argc, char **argv)
 static void
 create_ssi_index(ESL_GETOPTS *go, CM_FILE *cmfp)
 {
-  ESL_NEWSSI   *ns      = NULL;
-  ESL_ALPHABET *abc     = NULL;
-  CM_t         *cm      = NULL;
-  int           ncm     = 0;
-  char         *ssifile = NULL;
+  ESL_NEWSSI   *ns       = NULL;
+  ESL_ALPHABET *abc      = NULL;
+  CM_t         *cm       = NULL;
+  int           ncm      = 0;
+  char         *ssifile  = NULL;
   uint16_t      fh;
   int           status;
 
-  if (esl_sprintf(&ssifile, "%s.ssi", cmfp->fname) != eslOK) cm_Fail("esl_sprintf() failed");
+  if (esl_sprintf(&ssifile,  "%s.ssi", cmfp->fname) != eslOK) cm_Fail("esl_sprintf() failed");
 
   status = esl_newssi_Open(ssifile, FALSE, &ns);
   if      (status == eslENOTFOUND)   cm_Fail("failed to open SSI index %s", ssifile);

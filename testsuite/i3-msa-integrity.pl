@@ -20,8 +20,8 @@ if (! -x "$builddir/easel/miniapps/esl-reformat")   { die "FAIL: didn't find esl
 if (! -x "$builddir/easel/miniapps/esl-shuffle")    { die "FAIL: didn't find esl-reformat binary in $builddir/easel/miniapps";  }
 
 # Verify that we have all the datafiles we need.
-if (! -e "$srcdir/testsuite/tRNA.calibrated.cm")  { die "FAIL: didn't find tRNA.calibrated.cm in $srcdir/testsuite";  }
-$profile = "$srcdir/testsuite/tRNA.calibrated.cm";
+if (! -e "$srcdir/testsuite/tRNA.c.cm")  { die "FAIL: didn't find tRNA.c.cm in $srcdir/testsuite";  }
+$profile = "$srcdir/testsuite/tRNA.c.cm";
 
 foreach $trial (1..5)
 {

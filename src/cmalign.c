@@ -1348,11 +1348,16 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if ((*ret_cmfile = esl_opt_GetArg(go, 1)) == NULL)  { puts("Failed to get <cmfile> argument on command line");  goto ERROR; }
   if ((*ret_sqfile = esl_opt_GetArg(go, 2)) == NULL)  { puts("Failed to get <seqfile> argument on command line"); goto ERROR; }
 
+  if (strcmp(*ret_cmfile, "-") == 0 && strcmp(*ret_sqfile, "-") == 0) { 
+    puts("\nERROR: Either <cmfile> or <seqfile> may be '-' (to read from stdin), but not both.\n");
+    goto ERROR;
+  }
+
   /* If caller declared an input format, decode it */
   if (esl_opt_IsOn(go, "--informat")) {
     infmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--informat"));
     if (infmt == eslSQFILE_UNKNOWN) { 
-      printf("%s is not a recognized input sequence file format\n\n", esl_opt_GetString(go, "--informat"));
+      printf("\nERROR: %s is not a recognized input sequence file format\n\n", esl_opt_GetString(go, "--informat"));
       goto ERROR;
     }
   }
@@ -1360,7 +1365,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   /* Determine output alignment file format */
   outfmt = eslx_msafile_EncodeFormat(esl_opt_GetString(go, "--outformat"));
   if (outfmt == eslMSAFILE_UNKNOWN) {
-    printf("%s is not a recognized output MSA file format\n\n", esl_opt_GetString(go, "--outformat"));
+    printf("\nERROR: %s is not a recognized output MSA file format\n\n", esl_opt_GetString(go, "--outformat"));
     goto ERROR;
   }
 
@@ -1371,7 +1376,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (esl_opt_GetBoolean(go, "--sample")) { 
     if((! esl_opt_IsUsed(go, "--cpu")) || 
        (  esl_opt_IsUsed(go, "--cpu") && (esl_opt_GetInteger(go, "--cpu") != 0))) { 
-      puts("--sample requires --cpu 0\n");
+      puts("\nERROR: --sample requires --cpu 0\n");
       goto ERROR;
     }
   }
@@ -1381,7 +1386,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
    * on number of workers (each of which needs its own (separately seeded) RNG)
    */
   if (esl_opt_GetBoolean(go, "--sample") && esl_opt_IsUsed(go, "--mpi")) {
-    puts("--sample is incompatible with --mpi\n");
+    puts("\nERROR: --sample is incompatible with --mpi\n");
     goto ERROR;
   }	
 #endif /* HAVE_MPI */  
