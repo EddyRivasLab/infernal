@@ -1126,7 +1126,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       else                          cm->search_opts &= ~CM_SEARCH_INSIDE;
       
       info.cm = cm;
-      ///if((status = cm_Clone(cm, errbuf, &(info.cm))) != eslOK) mpi_failure(errbuf);
 
       /* inform the master that we're ready for our first index */
       status = 0;
@@ -1455,7 +1454,7 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     esl_sqfile_Close(dbfp); 
   }
   
-  /* seed RNG */
+  /* create and seed RNG, slightly wasteful in that we reseed before each CM's calibration/estimation, oh well. */
   cfg->r     = esl_randomness_Create(esl_opt_GetInteger(go, "--seed"));
   cfg->r_est = esl_randomness_Create(esl_opt_GetInteger(go, "--seed"));
 
@@ -1839,6 +1838,14 @@ expand_exp_and_name_arrays(struct cfg_s *cfg)
  *           model in a single mode, and return them as a single
  *           ESL_SQ_BLOCK in <*ret_sq_block>.
  *
+ *           By default, we reseed the RNG before we generate
+ *           the sequences, so all models (if we have more than
+ *           one) will be calibrated with the same sequences.
+ *           This eliminates run-to-run variation.
+ *           However, if seed==0 means we chose an arbitrary
+ *           seed and we shut off the reinitialization; 
+ *           this allows run-to-run variation.
+ *
  * Returns:  eslOK on success, filled block is in *ret_sq_block.
  *           eslEMEM if out of memory.
  */
@@ -1851,8 +1858,13 @@ generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf,
   ESL_DSQ      *dsq      = NULL;
   int           i;
   int           namelen = strlen("irrelevant");
-  sq_block = esl_sq_CreateDigitalBlock(cfg->N, cfg->abc);
 
+  /* reseed RNG, unless --seed 0 */
+  if(esl_opt_GetBoolean(go, "--seed") != 0) { 
+    esl_randomness_Init(cfg->r, esl_randomness_GetSeed(cfg->r));
+  }
+
+  sq_block = esl_sq_CreateDigitalBlock(cfg->N, cfg->abc);
   for(i = 0; i < cfg->N; i++) { 
     /* generate the dsq */
     if(esl_opt_GetBoolean(go, "--random") || esl_opt_IsUsed(go, "--gc")) { 
@@ -1993,6 +2005,11 @@ int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
   if(cm->flags & CMH_LOCAL_END)          ESL_FAIL(eslEINCOMPAT, errbuf, "forecast_running_time() CM has local ends on");
   if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "forecast_running_time() CM wants to search with Inside");
   if(cm->smx == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "forecast_running_time(), cm->smx is NULL");
+
+  /* reseed RNG, unless --seed 0 */
+  if(esl_opt_GetBoolean(go, "--seed") != 0) { 
+    esl_randomness_Init(cfg->r_est, esl_randomness_GetSeed(cfg->r_est));
+  }
 
   orig_search_opts = cm->search_opts; /* we'll restore this at end of function */
 
