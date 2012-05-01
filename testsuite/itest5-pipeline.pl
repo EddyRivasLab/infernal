@@ -3,8 +3,8 @@
 # Test of the search/scan pipeline; checks that cmsearch/cmscan
 # finds hits that they should.
 #
-# Usage:   ./i5-pipeline.pl <builddir> <srcdir> <tmpfile prefix>
-# Example: ./i5-pipeline.pl ..         ..       tmpfoo
+# Usage:   ./itest5-pipeline.pl <builddir> <srcdir> <tmpfile prefix>
+# Example: ./itest5-pipeline.pl ..         ..       tmpfoo
 #
 # EPN, Mon Apr 30 13:00:38 2012
 # Based on H3's i18-nhmmer-generic.pl [TJW, Fri Nov 12 11:07:31 EST 2010]
@@ -86,6 +86,16 @@ if ($i1::sto[1]   ne  "99971") { die "FAIL: on seq to, hit 2, cmsearch (multi mo
 if ($i1::hitsc[1] ne "39.4")   { die "FAIL: on hit score, hit 1, cmsearch (multi model)\n"; } 
 
 # press models, for cmscan
+if(-e "$tmppfx.cm.i1m") { unlink "$tmppfx.cm.i1m"; }
+if(-e "$tmppfx.cm.i1p") { unlink "$tmppfx.cm.i1p"; }
+if(-e "$tmppfx.cm.i1f") { unlink "$tmppfx.cm.i1f"; }
+if(-e "$tmppfx.cm.i1i") { unlink "$tmppfx.cm.i1i"; }
+if(-e "$tmppfx.cm.ssi") { unlink "$tmppfx.cm.ssi"; }
+if(-e "$tmppfx.cm2.i1m") { unlink "$tmppfx.cm2.i1m"; }
+if(-e "$tmppfx.cm2.i1p") { unlink "$tmppfx.cm2.i1p"; }
+if(-e "$tmppfx.cm2.i1f") { unlink "$tmppfx.cm2.i1f"; }
+if(-e "$tmppfx.cm2.i1i") { unlink "$tmppfx.cm2.i1i"; }
+if(-e "$tmppfx.cm2.ssi") { unlink "$tmppfx.cm2.ssi"; }
 `$builddir/src/cmpress $tmppfx.cm`;   if ($?) { die "FAIL: cmpress\n"; }
 `$builddir/src/cmpress $tmppfx.cm2`;  if ($?) { die "FAIL: cmpress\n"; }
 

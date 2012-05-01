@@ -2,8 +2,8 @@
 
 # Test the cmalign --mapali option.
 # 
-# Usage:    ./i1-cmalign-mapali.pl  <cmalign binary>     <esl-reformat binary>        <testsuitedir> <tmpfile prefix>
-# Example:  ./i1-cmalign-mapali.pl  ../src/cmalign    ../easel/miniapps/esl-reformat     .               foo
+# Usage:    ./itest1-cmalign-mapali.pl  <cmalign binary>     <esl-reformat binary>        <testsuitedir> <tmpfile prefix>
+# Example:  ./itest1-cmalign-mapali.pl  ../src/cmalign    ../easel/miniapps/esl-reformat     .               foo
 #
 # EPN, Thu Apr 26 14:47:10 2012
 # Based on HMMER3's i6-hmmalign-mapali [SRE, Mon May 25 09:52:48 2009]

@@ -2,8 +2,8 @@
 
 # Look for any problems in cmalign/cmsearch that corrupt the input sequences.
 #
-# Usage:   ./i3-msa-integrity.pl <builddir> <srcdir> <tmpfile prefix>
-# Example: ./i3-msa-integrity.pl ..         ..       tmpfoo
+# Usage:   ./itest3-msa-integrity.pl <builddir> <srcdir> <tmpfile prefix>
+# Example: ./itest3-msa-integrity.pl ..         ..       tmpfoo
 #
 # EPN, Fri Apr 27 14:45:16 2012
 # HMMER3: i13-msa-integrity.pl [SRE, Tue Mar  9 09:19:22 2010 [Janelia]]

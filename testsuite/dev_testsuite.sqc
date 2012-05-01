@@ -56,6 +56,8 @@
 1 exercise  itest/msa-integrity     perl !testsuite/itest3-msa-integrity.pl!      @@ !! %OUTFILES%
 1 exercise  itest/stdin-pipes       perl !testsuite/itest4-stdin.pl!              @@ !! %OUTFILES%
 1 exercise  itest/pipeline          perl !testsuite/itest5-pipeline.pl!           @@ !! %OUTFILES%
+1 exercise  itest/sensitivity       perl !testsuite/itest6-sensitivity.pl!        @@ !! %OUTFILES%
+1 exercise  itest/trunc             perl !testsuite/itest7-trunc.pl!              @@ !! %OUTFILES%
 1 exercise  itest/brute             @src/itest_brute@  
 
 ################################################################
@@ -82,60 +84,71 @@
 1  exercise    build/t        @src/cmbuild@ -F %TRNA.CM% !testsuite/tRNA.sto!
 1  exercise    build/v/o      @src/cmbuild@ -F -o %VAULT.OUT% %VAULT.CM% !testsuite/Vault.sto!
 1  exercise    build/s/O      @src/cmbuild@ -F -O %SRP.STK% %SRP.CM% !testsuite/Plant_SRP.sto!
-1  exercise    build/3/O      @src/cmbuild@ -F -O %3.STK% %3.CM% !testsuite/3.sto!
+1  exercise    build/zbp/O    @src/cmbuild@ -F -O %ZBP.STK% %ZBP.CM% !testsuite/snR75.sto!
+1  exercise    build/4/O      @src/cmbuild@ -F -O %4.STK% %4.CM% !testsuite/4.sto!
 
 # cmsearch exercises (CM must be calibrated)
 1  prep        copy/tC        cp !testsuite/tRNA.c.cm! %TRNA.C.CM%
 1  prep        copy/vC        cp !testsuite/Vault.c.cm! %VAULT.C.CM%
 1  prep        copy/sC        cp !testsuite/Plant_SRP.c.cm! %SRP.C.CM%
-1  prep        copy/3C        cp !testsuite/3.c.cm! %3.C.CM%
+1  prep        copy/zbpC      cp !testsuite/snR75.c.cm! %ZBP.C.CM%
+1  prep        copy/4C        cp !testsuite/4.c.cm! %4.C.CM%
 1  exercise    search/help/1  @src/cmsearch@ -h
 1  exercise    search/help/2  @src/cmsearch@ --devhelp
 
-1  exercise    search/t       @src/cmsearch@ -Z 1000 %TRNA.C.CM% !testsuite/3trnas.fa!
-1  exercise    search/v       @src/cmsearch@ -Z 1000 %VAULT.C.CM% !testsuite/3trnas.fa!
-1  exercise    search/s       @src/cmsearch@ -Z 1000 %SRP.C.CM% !testsuite/3trnas.fa!
-1  exercise    search/3       @src/cmsearch@ -Z 1000 %3.C.CM% !testsuite/3trnas.fa!
-1  exercise    search/t/A     @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %TRNA.C.CM% !testsuite/3trnas.fa!
-1  exercise    search/3/A     @src/cmsearch@ -Z 1000 -A %3.AMSA% %3.C.CM% !testsuite/1k-3.fa!
+1  exercise    search/t       @src/cmsearch@ -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/v       @src/cmsearch@ -Z 1000 %VAULT.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/s       @src/cmsearch@ -Z 1000 %SRP.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/4       @src/cmsearch@ -Z 1000 %4.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/zbp     @src/cmsearch@ -Z 1000 %ZBP.C.CM% !testsuite/emitted-snR75.fa!
+1  exercise    search/t/A     @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/4/A     @src/cmsearch@ -Z 1000 -A %4.AMSA% %4.C.CM% !testsuite/1k-4.fa!
+1  exercise    search/zbp/A   @src/cmsearch@ -Z 1000 -A %ZBP.AMSA% %ZBP.C.CM% !testsuite/1k-snR75.fa!
 
 # cmstat exercises 
 1  exercise    stat/help/1    @src/cmstat@ -h
 1  exercise    stat/t         @src/cmstat@   %TRNA.CM% 
 1  exercise    stat/v         @src/cmstat@   %VAULT.CM% 
-1  exercise    stat/c         @src/cmstat@   %SRP.CM% 
+1  exercise    stat/s         @src/cmstat@   %SRP.CM% 
+1  exercise    stat/z         @src/cmstat@   %ZBP.CM% 
 1  exercise    stat/tC        @src/cmstat@   %TRNA.C.CM% 
 1  exercise    stat/vC        @src/cmstat@   %VAULT.C.CM% 
 1  exercise    stat/sC        @src/cmstat@   %SRP.C.CM% 
+1  exercise    stat/zC        @src/cmstat@   %ZBP.C.CM% 
 
 # cmpress exercises (cmscan requires a press'd CM file with E-values)
 1  exercise    press/tC       @src/cmpress@ %TRNA.C.CM%
 1  exercise    press/vC       @src/cmpress@ %VAULT.C.CM%
 1  exercise    press/sC       @src/cmpress@ %SRP.C.CM%
-1  exercise    press/3C       @src/cmpress@ %3.C.CM%
+1  exercise    press/zC       @src/cmpress@ %ZBP.C.CM%
+1  exercise    press/4C       @src/cmpress@ %4.C.CM%
 
 # cmscan exercises (cmscan requires a press'd CM file with E-values)
 1  exercise    scan/help/1    @src/cmscan@ -h
 1  exercise    scan/help/2    @src/cmscan@ --devhelp
-1  exercise    tC/scan/tC     @src/cmscan@ -Z 1000 %TRNA.C.CM% !testsuite/3trnas.fa!
+1  exercise    scan/tC        @src/cmscan@ -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/tC     rm -f %TRNA.C.CM%.*
-1  exercise    vC/scan/vC     @src/cmscan@ -Z 1000 %VAULT.C.CM% !testsuite/3trnas.fa!
+1  exercise    scan/vC        @src/cmscan@ -Z 1000 %VAULT.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/vC     rm -f %VAULT.C.CM%.*
-1  exercise    sC/scan/sC     @src/cmscan@ -Z 1000 %SRP.C.CM% !testsuite/3trnas.fa!
+1  exercise    scan/sC        @src/cmscan@ -Z 1000 %SRP.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/sC     rm -f %SRP.C.CM%.*
-1  exercise    3C/scan/3C     @src/cmscan@ -Z 1000 %3.C.CM% !testsuite/3trnas.fa!
-1  prep        cleanup/3C     rm -f %3.C.CM%.*
+1  exercise    scan/zC        @src/cmscan@ -Z 1000 %ZBP.C.CM% !testsuite/emitted-snR75.fa!
+1  prep        cleanup/zC     rm -f %ZBP.C.CM%.*
+1  exercise    scan/4C        @src/cmscan@ -Z 1000 %4.C.CM% !testsuite/emitted-tRNA.fa!
+1  prep        cleanup/4C     rm -f %4.C.CM%.*
 
 # cmemit exercises
 1  exercise  emit/help/1      @src/cmemit@ -h
 1  exercise  emit/t           @src/cmemit@   %TRNA.CM% 
 1  exercise  emit/v           @src/cmemit@   %VAULT.CM% 
 1  exercise  emit/s           @src/cmemit@   %SRP.CM% 
-1  exercise  emit/3           @src/cmemit@   %3.CM% 
+1  exercise  emit/4           @src/cmemit@   %4.CM% 
+1  exercise  emit/z           @src/cmemit@   %ZBP.CM% 
 1  exercise  emit/tC          @src/cmemit@   %TRNA.C.CM% 
 1  exercise  emit/vC          @src/cmemit@   %VAULT.C.CM% 
 1  exercise  emit/sC          @src/cmemit@   %SRP.C.CM% 
-1  exercise  emit/3C          @src/cmemit@   %3.C.CM% 
+1  exercise  emit/4C          @src/cmemit@   %4.C.CM% 
+1  exercise  emit/zC          @src/cmemit@   %ZBP.C.CM% 
 
 # cmconvert exercises 
 # (using cmemit to verify the conversion (I would
@@ -144,57 +157,57 @@
 1  exercise  convert/t        @src/cmconvert@ !testsuite/tRNA.1p0.cm! > %CONVERTED.TRNA.CM%
 1  exercise  convert/v        @src/cmconvert@ !testsuite/Vault.1p0.cm! > %CONVERTED.VAULT.CM%
 1  exercise  convert/s        @src/cmconvert@ !testsuite/Plant_SRP.1p0.cm! > %CONVERTED.SRP.CM%
-1  exercise  convert/3        @src/cmconvert@ !testsuite/3.1p0.cm! > %CONVERTED.3.CM%
+1  exercise  convert/4        @src/cmconvert@ !testsuite/4.1p0.cm! > %CONVERTED.4.CM%
 
 1  exercise  convert-emit/t   @src/cmemit@    %CONVERTED.TRNA.CM% 
 1  exercise  convert-emit/v   @src/cmemit@    %CONVERTED.VAULT.CM% 
 1  exercise  convert-emit/s   @src/cmemit@    %CONVERTED.SRP.CM% 
-1  exercise  convert-emit/3   @src/cmemit@    %CONVERTED.3.CM% 
+1  exercise  convert-emit/4   @src/cmemit@    %CONVERTED.4.CM% 
 
 # same thing but binary
 1  exercise  convert/t/b      @src/cmconvert@ -b !testsuite/tRNA.1p0.cm! > %B.CONVERTED.TRNA.CM%
 1  exercise  convert/v/b      @src/cmconvert@ -b !testsuite/Vault.1p0.cm! > %B.CONVERTED.VAULT.CM%
 1  exercise  convert/s/b      @src/cmconvert@ -b !testsuite/Plant_SRP.1p0.cm! > %B.CONVERTED.SRP.CM%
-1  exercise  convert/3/b      @src/cmconvert@ -b !testsuite/3.1p0.cm! > %B.CONVERTED.3.CM%
+1  exercise  convert/4/b      @src/cmconvert@ -b !testsuite/4.1p0.cm! > %B.CONVERTED.4.CM%
 
 1  exercise  convert-emit/t/b   @src/cmemit@    %B.CONVERTED.TRNA.CM% 
 1  exercise  convert-emit/v/b   @src/cmemit@    %B.CONVERTED.VAULT.CM% 
 1  exercise  convert-emit/s/b   @src/cmemit@    %B.CONVERTED.SRP.CM% 
-1  exercise  convert-emit/3/b   @src/cmemit@    %B.CONVERTED.3.CM% 
+1  exercise  convert-emit/4/b   @src/cmemit@    %B.CONVERTED.4.CM% 
 
 # same thing but with -1 (output in 1.0 format)
 1  exercise  convert/t/1        @src/cmconvert@ -1 !testsuite/tRNA.1p0.cm! > %1.TRNA.CM%
 1  exercise  convert/v/1        @src/cmconvert@ -1 !testsuite/Vault.1p0.cm! > %1.VAULT.CM%
 1  exercise  convert/s/1        @src/cmconvert@ -1 !testsuite/Plant_SRP.1p0.cm! > %1.SRP.CM%
-1  exercise  convert/3/1        @src/cmconvert@ -1 !testsuite/3.1p0.cm! > %1.3.CM%
+1  exercise  convert/4/1        @src/cmconvert@ -1 !testsuite/4.1p0.cm! > %1.4.CM%
 
 #convert 1.0 converted file to 1.1
 1  exercise  convert/t/1back    @src/cmconvert@ %1.TRNA.CM%  > %1.CONVERTED.TRNA.CM%
 1  exercise  convert/v/1back    @src/cmconvert@ %1.VAULT.CM% > %1.CONVERTED.VAULT.CM%
 1  exercise  convert/s/1back    @src/cmconvert@ %1.SRP.CM%   > %1.CONVERTED.SRP.CM%
-1  exercise  convert/3/1back    @src/cmconvert@ %1.3.CM% > %1.CONVERTED.3.CM%
+1  exercise  convert/4/1back    @src/cmconvert@ %1.4.CM% > %1.CONVERTED.4.CM%
 
 1  exercise  convert-emit/t/b   @src/cmemit@    %1.CONVERTED.TRNA.CM% 
 1  exercise  convert-emit/v/b   @src/cmemit@    %1.CONVERTED.VAULT.CM% 
 1  exercise  convert-emit/s/b   @src/cmemit@    %1.CONVERTED.SRP.CM% 
-1  exercise  convert-emit/3/b   @src/cmemit@    %1.CONVERTED.3.CM% 
+1  exercise  convert-emit/4/b   @src/cmemit@    %1.CONVERTED.4.CM% 
 
 # convert calibrated files
 1  exercise  convertC/t         @src/cmconvert@ !testsuite/tRNA.1p0.c.cm! > %CONVERTED.TRNA.C.CM%
 1  exercise  convertC/v         @src/cmconvert@ !testsuite/Vault.1p0.c.cm! > %CONVERTED.VAULT.C.CM%
 1  exercise  convertC/s         @src/cmconvert@ !testsuite/Plant_SRP.1p0.c.cm! > %CONVERTED.SRP.C.CM%
-1  exercise  convertC/3         @src/cmconvert@ !testsuite/3.1p0.c.cm! > %CONVERTED.3.C.CM%
+1  exercise  convertC/4         @src/cmconvert@ !testsuite/4.1p0.c.cm! > %CONVERTED.4.C.CM%
 
 1  exercise  convertC-emit/t    @src/cmemit@    %CONVERTED.TRNA.C.CM% 
 1  exercise  convertC-emit/v    @src/cmemit@    %CONVERTED.VAULT.C.CM% 
 1  exercise  convertC-emit/s    @src/cmemit@    %CONVERTED.SRP.C.CM% 
-1  exercise  convertC-emit/3    @src/cmemit@    %CONVERTED.3.C.CM% 
+1  exercise  convertC-emit/4    @src/cmemit@    %CONVERTED.4.C.CM% 
 
 # cmalign exercises
 1  exercise  align/help/1       @src/cmalign@ -h
 
-1  exercise  align/t/1          @src/cmalign@ %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align/t/2          @src/cmalign@ -l %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align/t/1          @src/cmalign@ %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align/t/2          @src/cmalign@ -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 2  exercise  align/v/1          @src/cmalign@ %VAULT.CM% !testsuite/vault.fa!
 2  exercise  align/v/2          @src/cmalign@ -l %VAULT.CM% !testsuite/vault.fa!
@@ -206,21 +219,21 @@
 1  exercise  calibrate/se       @src/cmcalibrate@ -L 0.1 %SE.CM%
 
 # cmfetch exercises
-1  exercise  fetch/3/index      @src/cmfetch@ --index %3.CM% 
-1  exercise  fetch/3/f          @src/cmfetch@ -f %3.CM% !testsuite/2.list!
-1  exercise  fetch/3/o          @src/cmfetch@ -o %TMP.CM% %3.CM% Vault
-1  exercise  fetch/3/O          @src/cmfetch@ -O %3.CM% Vault
-1  exercise  emit/3/O           @src/cmemit@ !testsuite/Vault!
-1  prep      cleanup/3/1        rm !testsuite/Vault!
-1  prep      cleanup/3/2        rm %3.CM%.ssi
+1  exercise  fetch/4/index      @src/cmfetch@ --index %4.CM% 
+1  exercise  fetch/4/f          @src/cmfetch@ -f %4.CM% !testsuite/2.list!
+1  exercise  fetch/4/o          @src/cmfetch@ -o %TMP.CM% %4.CM% Vault
+1  exercise  fetch/4/O          @src/cmfetch@ -O %4.CM% Vault
+1  exercise  emit/4/O           @src/cmemit@ !testsuite/Vault!
+1  prep      cleanup/4/1        rm !testsuite/Vault!
+1  prep      cleanup/4/2        rm %4.CM%.ssi
 
-1  exercise  fetch/3C/index     @src/cmfetch@ --index %3.C.CM% 
-1  exercise  fetch/3C/f         @src/cmfetch@ -f %3.C.CM% !testsuite/2.list!
-1  exercise  fetch/3C/o         @src/cmfetch@ -o %TMP.C.CM% %3.C.CM% Vault
-1  exercise  fetch/3C/O         @src/cmfetch@ -O %3.C.CM% Vault
-1  exercise  emit/3C/O          @src/cmemit@ !testsuite/Vault!
-1  prep      cleanup/3C/1       rm !testsuite/Vault!
-1  prep      cleanup/3C/2       rm %3.C.CM%.ssi
+1  exercise  fetch/4C/index     @src/cmfetch@ --index %4.C.CM% 
+1  exercise  fetch/4C/f         @src/cmfetch@ -f %4.C.CM% !testsuite/2.list!
+1  exercise  fetch/4C/o         @src/cmfetch@ -o %TMP.C.CM% %4.C.CM% Vault
+1  exercise  fetch/4C/O         @src/cmfetch@ -O %4.C.CM% Vault
+1  exercise  emit/4C/O          @src/cmemit@ !testsuite/Vault!
+1  prep      cleanup/4C/1       rm !testsuite/Vault!
+1  prep      cleanup/4C/2       rm %4.C.CM%.ssi
 
 # test program exercises
 #
@@ -235,7 +248,7 @@
 # bandcyk-montecarlo-test exercises (QDB calculation validation)
 1  exercise  bandcykmc/trna      @src/bandcyk-montecarlo-test@ %TRNA.CM%
 2  exercise  bandcykmc/rp        @src/bandcyk-montecarlo-test@ %RP.CM%
-2  exercise  bandcykmc/ssu       @src/bandcyk-montecarlo-test@ -W 2000 %SSU.CM%
+2  exercise  bandcykmc/ssu       @src/bandcyk-montecarlo-test@ -Z 2000 %SSU.CM%
 
 # bandcyk-truncation-test exercises (QDB calculation validation)
 1  exercise  bandcyktrunc/trna   @src/bandcyk-truncation-test@ %TRNA.CM% 160 1000
@@ -255,10 +268,10 @@
 1  exercise  sub/trna2           @src/sub_cm-test@ --exhaust %TRNA.CM%
 
 # trcyk (truncated CYK, D&C version, non D&C version is tested in cmalign) 
-1  exercise  trcyk/trna         @src/trcyk@ %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  trcyk/trna         @src/trcyk@ %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # truncyk_check (truncated CYK check, D&C version, non D&C version is tested in cmalign) 
-1  exercise  trcykcheck/trna    @src/truncyk_check@ %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  trcykcheck/trna    @src/truncyk_check@ %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 ##################################################################
 ##################################################################
@@ -269,36 +282,36 @@
 1  exercise  align:help/1         @src/cmalign@  -h
 
 1  prep      align:build/trna     @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.sto!
-1  exercise  align:t/df           @src/cmalign@  %TRNA.CM% 3trnas.fa
-1  exercise  align:t/stdin/cm     cat %TRNA.CM% | @src/cmalign@  - !testsuite/3trnas.fa!
-1  exercise  align:t/stdin/seq    cat !testsuite/3trnas.fa! | @src/cmalign@  %TRNA.CM% -
-1  fail      align:t/stdin/both   cat !testsuite/3trnas.fa! | @src/cmalign@  - -
-1  exercise  align:t/o            @src/cmalign@  -o %TMPOUT% %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/l            @src/cmalign@  -l %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align:t/df           @src/cmalign@  %TRNA.CM% emitted-tRNA.fa
+1  exercise  align:t/stdin/cm     cat %TRNA.CM% | @src/cmalign@  - !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/stdin/seq    cat !testsuite/emitted-tRNA.fa! | @src/cmalign@  %TRNA.CM% -
+1  fail      align:t/stdin/both   cat !testsuite/emitted-tRNA.fa! | @src/cmalign@  - -
+1  exercise  align:t/o            @src/cmalign@  -o %TMPOUT% %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/l            @src/cmalign@  -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 1  exercise  align:build/pkhav    @src/cmbuild@ -F --wnone %PKHAV.CM% !testsuite/PK-HAV.sto!
-1  exercise  align:pkhav          @src/cmalign@  %PKHAV.CM% !testsuite/3pkhavs.fa!
-1  exercise  align:pkhav/map      @src/cmalign@  --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!
-1  exercise  align:pkhav/mapstr   @src/cmalign@  --mapstr --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!
-1  exercise  align:pkhav/l        @src/cmalign@  -l %PKHAV.CM% !testsuite/3pkhavs.fa!
-1  exercise  align:pkhav/l/map    @src/cmalign@  -l --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!
-1  exercise  align:pkhav/l/mapstr @src/cmalign@  -l --mapstr --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/3pkhavs.fa!
+1  exercise  align:pkhav          @src/cmalign@  %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
+1  exercise  align:pkhav/map      @src/cmalign@  --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
+1  exercise  align:pkhav/mapstr   @src/cmalign@  --mapstr --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
+1  exercise  align:pkhav/l        @src/cmalign@  -l %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
+1  exercise  align:pkhav/l/map    @src/cmalign@  -l --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
+1  exercise  align:pkhav/l/mapstr @src/cmalign@  -l --mapstr --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
 
-1  exercise  align:t/cpu0         @src/cmalign@  --cpu 0 %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align:t/cpu0         @src/cmalign@  --cpu 0 %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
-1  exercise  align:t/tau          @src/cmalign@  --tau 1E-4  %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/tau2         @src/cmalign@  --tau 1E-13 %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align:t/tau          @src/cmalign@  --tau 1E-4  %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/tau2         @src/cmalign@  --tau 1E-13 %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
-1  exercise  align:t/tfile        @src/cmalign@  --tfile  %TMP.FILE% %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/ifile        @src/cmalign@  --ifile  %TMP.FILE% %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/elfile       @src/cmalign@  -l --elfile %TMP.FILE% %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/sfile        @src/cmalign@  --sfile  %TMP.FILE% %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align:t/tfile        @src/cmalign@  --tfile  %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/ifile        @src/cmalign@  --ifile  %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/elfile       @src/cmalign@  -l --elfile %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/sfile        @src/cmalign@  --sfile  %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
-1  exercise  align:t/dnaout       @src/cmalign@  --dnaout    %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/noprob       @src/cmalign@  --noprob    %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/match        @src/cmalign@  --matchonly %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/ileaved      @src/cmalign@  --ileaved   %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/regress      @src/cmalign@  --ileaved --regress %TMP.FILE% %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align:t/dnaout       @src/cmalign@  --dnaout    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/noprob       @src/cmalign@  --noprob    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/match        @src/cmalign@  --matchonly %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/ileaved      @src/cmalign@  --ileaved   %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/regress      @src/cmalign@  --ileaved --regress %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # --informat and --outformat
 1  exercise  align:t/infmt1       @src/cmalign@  %TRNA.CM% 3trnas.gb
@@ -327,52 +340,52 @@
 # 'nb': non-banded
 
 # --optacc (default)
-1  exercise  align:t/oa/g/yt/hb  @src/cmalign@  --optacc                          %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/oa/g/yt/nb  @src/cmalign@  --optacc --nonbanded              %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/oa/g/nt/hb  @src/cmalign@  --optacc             --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/oa/g/nt/nb  @src/cmalign@  --optacc --nonbanded --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/oa/l/yt/hb  @src/cmalign@  --optacc                       -l %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/oa/l/yt/nb  @src/cmalign@  --optacc --nonbanded           -l %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/oa/l/nt/hb  @src/cmalign@  --optacc             --notrunc -l %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/oa/l/nt/nb  @src/cmalign@  --optacc --nonbanded --notrunc -l %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align:t/oa/g/yt/hb  @src/cmalign@  --optacc                          %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/g/yt/nb  @src/cmalign@  --optacc --nonbanded              %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/g/nt/hb  @src/cmalign@  --optacc             --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/g/nt/nb  @src/cmalign@  --optacc --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/l/yt/hb  @src/cmalign@  --optacc                       -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/l/yt/nb  @src/cmalign@  --optacc --nonbanded           -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/l/nt/hb  @src/cmalign@  --optacc             --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/l/nt/nb  @src/cmalign@  --optacc --nonbanded --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # --cyk
-1  exercise  align:t/cyk/g/yt/hb  @src/cmalign@  --cyk                          %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/cyk/g/yt/nb  @src/cmalign@  --cyk --nonbanded              %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/cyk/g/nt/hb  @src/cmalign@  --cyk             --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/cyk/g/nt/nb  @src/cmalign@  --cyk --nonbanded --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/cyk/l/yt/hb  @src/cmalign@  --cyk                       -l %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/cyk/l/yt/nb  @src/cmalign@  --cyk --nonbanded           -l %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/cyk/l/nt/hb  @src/cmalign@  --cyk             --notrunc -l %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/cyk/l/nt/nb  @src/cmalign@  --cyk --nonbanded --notrunc -l %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align:t/cyk/g/yt/hb  @src/cmalign@  --cyk                          %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/g/yt/nb  @src/cmalign@  --cyk --nonbanded              %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/g/nt/hb  @src/cmalign@  --cyk             --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/g/nt/nb  @src/cmalign@  --cyk --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/l/yt/hb  @src/cmalign@  --cyk                       -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/l/yt/nb  @src/cmalign@  --cyk --nonbanded           -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/l/nt/hb  @src/cmalign@  --cyk             --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/l/nt/nb  @src/cmalign@  --cyk --nonbanded --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # --sample (default seed)a
-1  exercise  align:t/smp/g/yt/hb  @src/cmalign@  --sample --cpu 0                           %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp/g/yt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded              %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp/g/nt/hb  @src/cmalign@  --sample --cpu 0              --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp/g/nt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp/l/yt/hb  @src/cmalign@  --sample --cpu 0                        -l %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp/l/yt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded           -l %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp/l/nt/hb  @src/cmalign@  --sample --cpu 0              --notrunc -l %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp/l/nt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded --notrunc -l %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align:t/smp/g/yt/hb  @src/cmalign@  --sample --cpu 0                           %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/g/yt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded              %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/g/nt/hb  @src/cmalign@  --sample --cpu 0              --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/g/nt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/l/yt/hb  @src/cmalign@  --sample --cpu 0                        -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/l/yt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded           -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/l/nt/hb  @src/cmalign@  --sample --cpu 0              --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/l/nt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # --sample (seed 33)
-1  exercise  align:t/smp2/g/yt/hb  @src/cmalign@  --sample --cpu 0 --seed 33                           %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp2/g/yt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded              %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp2/g/nt/hb  @src/cmalign@  --sample --cpu 0 --seed 33              --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp2/g/nt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp2/l/yt/hb  @src/cmalign@  --sample --cpu 0 --seed 33                        -l %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp2/l/yt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded           -l %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp2/l/nt/hb  @src/cmalign@  --sample --cpu 0 --seed 33              --notrunc -l %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/smp2/l/nt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded --notrunc -l %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align:t/smp2/g/yt/hb  @src/cmalign@  --sample --cpu 0 --seed 33                           %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/g/yt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded              %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/g/nt/hb  @src/cmalign@  --sample --cpu 0 --seed 33              --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/g/nt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/l/yt/hb  @src/cmalign@  --sample --cpu 0 --seed 33                        -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/l/yt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded           -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/l/nt/hb  @src/cmalign@  --sample --cpu 0 --seed 33              --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/l/nt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # --sub (requires --notrunc, incompatible with -l)
-1  exercise  align:t/sub/g/nt/hb  @src/cmalign@  --sub             --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/sub/g/nt/nb  @src/cmalign@  --sub --nonbanded --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align:t/sub/g/nt/hb  @src/cmalign@  --sub             --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/sub/g/nt/nb  @src/cmalign@  --sub --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # --small (requires --cyk,--noprob,--nonbanded,--notrunc)
-1  exercise  align:t/sml/g/nt/nb  @src/cmalign@  --small --cyk --noprob --nonbanded --notrunc    %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align:t/sml/l/nt/nb  @src/cmalign@  --small --cyk --noprob --nonbanded --notrunc -l %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align:t/sml/g/nt/nb  @src/cmalign@  --small --cyk --noprob --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/sml/l/nt/nb  @src/cmalign@  --small --cyk --noprob --nonbanded --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 ##################################################################
 ##################################################################
@@ -397,16 +410,20 @@
 1  exercise  build:se/null       @src/cmbuild@ -F --null at4.null %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/pri        @src/cmbuild@ -F --prior plus1.prior %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/rsearch    @src/cmbuild@ --rsearch RIBOSUM85-60.mat -F %SE.CM% !testsuite/se.1.sto!
+1  exercise  build:se/noss       @src/cmbuild@ --noss -F %SE.CM% !testsuite/se.sto!
+
 1  exercise  build:se/betaW      @src/cmbuild@ --betaW 1E-12 -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/beta1      @src/cmbuild@ --beta1 1E-12 -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/beta2      @src/cmbuild@ --beta2 1E-12 -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/beta12     @src/cmbuild@ --beta1 1E-2 --beta2 1E-4 -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/infmt      @src/cmbuild@ --informat stockholm -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/infmt2     @src/cmbuild@ --informat Pfam -F %SE.CM% !testsuite/se.sto! 
-1  exercise  build:se/ig         @src/cmbuild@ --ignorant -F %SE.CM% !testsuite/se.sto! 
+1  exercise  build:se/noss       @src/cmbuild@ --noss -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/v1p0       @src/cmbuild@ --v1p0 -F %SE.CM% !testsuite/se.rf.sto! 
-1  exercise  build:se/p56        @src/cmbuild@ -F --p56 %SE.CM% !testsuite/se.sto! 
+1  exercise  build:se/p56        @src/cmbuild@ --p56 -F %SE.CM% !testsuite/se.sto! 
+1  exercise  build:se/noh3p      @src/cmbuild@ --noss --noh3pri -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/iins       @src/cmbuild@ --iins -F %SE.CM% !testsuite/se.sto! 
+1  exercise  build:se/iflank     @src/cmbuild@ --iflank -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/nobal      @src/cmbuild@ --nobalance -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/nodet      @src/cmbuild@ --nodetach -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/el         @src/cmbuild@ --elself 0.5 -F %SE.CM% !testsuite/se.sto! 
@@ -536,7 +553,7 @@
 1  exercise    calibrate:t/fc/nb    @src/cmcalibrate@ --forecast --nonbanded %TRNA.CM%
 1  exercise    calibrate:t/fc/nn3   @src/cmcalibrate@ --forecast --nonull3 %TRNA.CM%
 1  exercise    calibrate:t/fc/rdm   @src/cmcalibrate@ --forecast --random %TRNA.CM%
-1  exercise    calibrate:t/fc/gc    @src/cmcalibrate@ --forecast --gc !testsuite/3trnas.fa! %TRNA.CM%
+1  exercise    calibrate:t/fc/gc    @src/cmcalibrate@ --forecast --gc !testsuite/emitted-tRNA.fa! %TRNA.CM%
 
 # actual calibrations
 1  exercise    calibrate:se/L       @src/cmcalibrate@ -L 0.1 %SE.CM%
@@ -546,13 +563,13 @@
 1  exercise    calibrate:se/tailp   @src/cmcalibrate@ -L 0.1 --tailp 0.03 --qqfile %TMP.FILE% --ffile %TMP.FFILE% --xfile %TMP.XFILE% %SE.CM%
 1  exercise    calibrate:se/nn3     @src/cmcalibrate@ -L 0.1 --nonull3 %SE.CM%
 1  exercise    calibrate:se/rdm     @src/cmcalibrate@ -L 0.1 --random %SE.CM%
-1  exercise    calibrate:se/gc      @src/cmcalibrate@ -L 0.1 --gc !testsuite/3trnas.fa! %SE.CM%
+1  exercise    calibrate:se/gc      @src/cmcalibrate@ -L 0.1 --gc !testsuite/emitted-tRNA.fa! %SE.CM%
 
 # repeat some exercises runs with a multi-cm file. 
-1  prep        calibrate:build/3    @src/cmbuild@ -F %SE.DBL.CM% !testsuite/se.dbl.sto!
-1  exercise    calibrate:3/fc       @src/cmcalibrate@ --forecast %SE.DBL.CM%
-1  exercise    calibrate:3/memreq   @src/cmcalibrate@ --memreq %SE.DBL.CM%
-1  exercise    calibrate:3          @src/cmcalibrate@ -L 0.1 %SE.DBL.CM%
+1  prep        calibrate:build/m    @src/cmbuild@ -F %SE.DBL.CM% !testsuite/se.dbl.sto!
+1  exercise    calibrate:m/fc       @src/cmcalibrate@ --forecast %SE.DBL.CM%
+1  exercise    calibrate:m/memreq   @src/cmcalibrate@ --memreq %SE.DBL.CM%
+1  exercise    calibrate:m          @src/cmcalibrate@ -L 0.1 %SE.DBL.CM%
 
 
 ##################################################################
@@ -574,171 +591,171 @@
 1  exercise  convert:help/1     @src/cmconvert@ -h
 
 1  exercise  convert:build/t    @src/cmbuild@ -F %A.TRNA.CM% !testsuite/tRNA.sto!
-1  exercise  convert:build/3    @src/cmbuild@ -F %A.3.CM% !testsuite/3.sto!
+1  exercise  convert:build/4    @src/cmbuild@ -F %A.4.CM% !testsuite/4.sto!
 1  exercise  convert:t/c/b      @src/cmconvert@ -b !testsuite/tRNA.c.cm! > %B.TRNA.C.CM%
-1  exercise  convert:3/c/b      @src/cmconvert@ -b !testsuite/3.c.cm! > %B.3.C.CM%
+1  exercise  convert:4/c/b      @src/cmconvert@ -b !testsuite/4.c.cm! > %B.4.C.CM%
 
 1  exercise  convert:t/stdin    cat !testsuite/tRNA.c.cm! | @src/cmconvert@ -
 1  exercise  convert:t/stdin/b  cat !testsuite/tRNA.c.cm! | @src/cmconvert@ -b -
-1  exercise  convert:3/stdin    cat !testsuite/3.c.cm! | @src/cmconvert@ -
-1  exercise  convert:3/stdin/b  cat !testsuite/3.c.cm! | @src/cmconvert@ -b -
+1  exercise  convert:4/stdin    cat !testsuite/4.c.cm! | @src/cmconvert@ -
+1  exercise  convert:4/stdin/b  cat !testsuite/4.c.cm! | @src/cmconvert@ -b -
 
 #################################################
 # convert 1.1ascii->1.1ascii (non calibrated), output will be identical to input 
 1  exercise  convert:t/aa      @src/cmconvert@ %A.TRNA.CM% > %AA.TRNA.CM%
-1  exercise  convert:3/aa      @src/cmconvert@ %A.3.CM%    > %AA.3.CM%
+1  exercise  convert:4/aa      @src/cmconvert@ %A.4.CM%    > %AA.4.CM%
 
 1  exercise  convert:emit/t/aa         @src/cmemit@    %AA.TRNA.CM% 
-1  exercise  convert:emit/3/aa         @src/cmemit@    %AA.3.CM% 
+1  exercise  convert:emit/4/aa         @src/cmemit@    %AA.4.CM% 
 
 # convert 1.1ascii->1.1binary (non calibrated)
 1  exercise  convert:t/ab      @src/cmconvert@ -b %A.TRNA.CM% > %AB.TRNA.CM%
-1  exercise  convert:3/ab      @src/cmconvert@ -b %A.3.CM%    > %AB.3.CM%
+1  exercise  convert:4/ab      @src/cmconvert@ -b %A.4.CM%    > %AB.4.CM%
 
 1  exercise  convert:emit/t/ab         @src/cmemit@    %AB.TRNA.CM% 
-1  exercise  convert:emit/3/ab         @src/cmemit@    %AB.3.CM% 
+1  exercise  convert:emit/4/ab         @src/cmemit@    %AB.4.CM% 
 
 # convert 1.1binary->1.1binary (non calibrated)
 1  exercise  convert:t/bb      @src/cmconvert@ -b %AB.TRNA.CM% > %ABB.TRNA.CM%
-1  exercise  convert:3/bb      @src/cmconvert@ -b %AB.3.CM%    > %ABB.3.CM%
+1  exercise  convert:4/bb      @src/cmconvert@ -b %AB.4.CM%    > %ABB.4.CM%
 
 1  exercise  convert:emit/t/bb         @src/cmemit@    %ABB.TRNA.CM% 
-1  exercise  convert:emit/3/bb         @src/cmemit@    %ABB.3.CM% 
+1  exercise  convert:emit/4/bb         @src/cmemit@    %ABB.4.CM% 
 
 # convert 1.1binary->1.1ascii (non calibrated)
 1  exercise  convert:t/ba      @src/cmconvert@ %AB.TRNA.CM% > %ABA.TRNA.CM%
-1  exercise  convert:3/ba      @src/cmconvert@ %AB.3.CM%    > %ABA.3.CM%
+1  exercise  convert:4/ba      @src/cmconvert@ %AB.4.CM%    > %ABA.4.CM%
 
 1  exercise  convert:emit/t/ba         @src/cmemit@    %ABA.TRNA.CM% 
-1  exercise  convert:emit/3/ba         @src/cmemit@    %ABA.3.CM% 
+1  exercise  convert:emit/4/ba         @src/cmemit@    %ABA.4.CM% 
 
 ###############################################
 # convert 1.1ascii->1.1ascii (calibrated), output will be identical to input 
 1  exercise  convert:t/c/aa    @src/cmconvert@ !testsuite/tRNA.c.cm! > %AA.TRNA.C.CM%
-1  exercise  convert:3/c/aa    @src/cmconvert@ !testsuite/3.c.cm!    > %AA.3.C.CM%
+1  exercise  convert:4/c/aa    @src/cmconvert@ !testsuite/4.c.cm!    > %AA.4.C.CM%
 
 1  exercise  convert:emit/t/aa         @src/cmemit@    %AA.TRNA.C.CM% 
-1  exercise  convert:emit/3/aa         @src/cmemit@    %AA.3.C.CM% 
+1  exercise  convert:emit/4/aa         @src/cmemit@    %AA.4.C.CM% 
 
 1  exercise  convert:statE/t/aa        @src/cmstat@  -E 1 %AA.TRNA.C.CM% 
-1  exercise  convert:statE/3/aa        @src/cmstat@  -E 1 %AA.3.C.CM% 
+1  exercise  convert:statE/4/aa        @src/cmstat@  -E 1 %AA.4.C.CM% 
 
 # convert 1.1ascii->1.1binary (calibrated)
 1  exercise  convert:t/c/ab    @src/cmconvert@ -b !testsuite/tRNA.c.cm! > %AB.TRNA.C.CM%
-1  exercise  convert:3/c/ab    @src/cmconvert@ -b !testsuite/3.c.cm!    > %AB.3.C.CM%
+1  exercise  convert:4/c/ab    @src/cmconvert@ -b !testsuite/4.c.cm!    > %AB.4.C.CM%
 
 1  exercise  convert:emit/t/ab         @src/cmemit@    %AB.TRNA.C.CM% 
-1  exercise  convert:emit/3/ab         @src/cmemit@    %AB.3.C.CM% 
+1  exercise  convert:emit/4/ab         @src/cmemit@    %AB.4.C.CM% 
 
 1  exercise  convert:statE/t/ab        @src/cmstat@  -E 1 %AB.TRNA.C.CM% 
-1  exercise  convert:statE/3/ab        @src/cmstat@  -E 1 %AB.3.C.CM% 
+1  exercise  convert:statE/4/ab        @src/cmstat@  -E 1 %AB.4.C.CM% 
 
 # convert 1.1ascii->1.1binary->1.1ascii (calibrated)
 1  exercise  convert:t/c/aba   @src/cmconvert@ %AB.TRNA.C.CM% > %ABA.TRNA.C.CM%
-1  exercise  convert:3/c/aba   @src/cmconvert@ %AB.3.C.CM%    > %ABA.3.C.CM%
+1  exercise  convert:4/c/aba   @src/cmconvert@ %AB.4.C.CM%    > %ABA.4.C.CM%
 
 1  exercise  convert:emit/t/aba        @src/cmemit@    %ABA.TRNA.C.CM% 
-1  exercise  convert:emit/3/aba        @src/cmemit@    %ABA.3.C.CM% 
+1  exercise  convert:emit/4/aba        @src/cmemit@    %ABA.4.C.CM% 
 
 1  exercise  convert:statE/t/aba       @src/cmstat@  -E 1 %ABA.TRNA.C.CM% 
-1  exercise  convert:statE/3/aba       @src/cmstat@  -E 1 %ABA.3.C.CM% 
+1  exercise  convert:statE/4/aba       @src/cmstat@  -E 1 %ABA.4.C.CM% 
 
 # convert 1.1ascii->1.1binary->1.1binary (calibrated)
 1  exercise  convert:t/c/aba   @src/cmconvert@ -b %AB.TRNA.C.CM% > %ABB.TRNA.C.CM%
-1  exercise  convert:3/c/aba   @src/cmconvert@ -b %AB.3.C.CM%    > %ABB.3.C.CM%
+1  exercise  convert:4/c/aba   @src/cmconvert@ -b %AB.4.C.CM%    > %ABB.4.C.CM%
 
 1  exercise  convert:emit/t/abb        @src/cmemit@    %ABB.TRNA.C.CM% 
-1  exercise  convert:emit/3/abb        @src/cmemit@    %ABB.3.C.CM% 
+1  exercise  convert:emit/4/abb        @src/cmemit@    %ABB.4.C.CM% 
 
 1  exercise  convert:statE/t/abb       @src/cmstat@  -E 1 %ABB.TRNA.C.CM% 
-1  exercise  convert:statE/3/abb       @src/cmstat@  -E 1 %ABB.3.C.CM% 
+1  exercise  convert:statE/4/abb       @src/cmstat@  -E 1 %ABB.4.C.CM% 
 ###############################################
 
 #################################################
 # convert 1.1ascii->1.0->1.1ascii (non calibrated); 
 1  exercise  convert:t/a1      @src/cmconvert@ -1 %A.TRNA.CM% > %A1.TRNA.CM%
-1  exercise  convert:3/a1      @src/cmconvert@ -1 %A.3.CM%    > %A1.3.CM%
+1  exercise  convert:4/a1      @src/cmconvert@ -1 %A.4.CM%    > %A1.4.CM%
 
 1  exercise  convert:t/a1a     @src/cmconvert@ %A1.TRNA.CM% > %A1A.TRNA.CM%
-1  exercise  convert:3/a1a     @src/cmconvert@ %A1.3.CM%    > %A1A.3.CM%
+1  exercise  convert:4/a1a     @src/cmconvert@ %A1.4.CM%    > %A1A.4.CM%
 
 1  exercise  convert:emit/t/a1a        @src/cmemit@    %A1A.TRNA.CM% 
-1  exercise  convert:emit/3/a1a        @src/cmemit@    %A1A.3.CM% 
+1  exercise  convert:emit/4/a1a        @src/cmemit@    %A1A.4.CM% 
 
 # convert 1.1ascii->1.0->1.1binary (non calibrated); 
 1  exercise  convert:t/a1b     @src/cmconvert@ -b %A1.TRNA.CM% > %A1B.TRNA.CM%
-1  exercise  convert:3/a1b     @src/cmconvert@ -b %A1.3.CM%    > %A1B.3.CM%
+1  exercise  convert:4/a1b     @src/cmconvert@ -b %A1.4.CM%    > %A1B.4.CM%
 
 1  exercise  convert:emit/t/a1b        @src/cmemit@    %A1B.TRNA.CM% 
-1  exercise  convert:emit/3/a1b        @src/cmemit@    %A1B.3.CM% 
+1  exercise  convert:emit/4/a1b        @src/cmemit@    %A1B.4.CM% 
 
 # convert 1.1binary->1.0->1.1ascii (non calibrated); 
 1  exercise  convert:t/b1      @src/cmconvert@ -1 %AB.TRNA.CM% > %AB1.TRNA.CM%
-1  exercise  convert:3/b1      @src/cmconvert@ -1 %AB.3.CM%    > %AB1.3.CM%
+1  exercise  convert:4/b1      @src/cmconvert@ -1 %AB.4.CM%    > %AB1.4.CM%
 
 1  exercise  convert:t/b1a     @src/cmconvert@ %AB1.TRNA.CM% > %AB1A.TRNA.CM%
-1  exercise  convert:3/b1a     @src/cmconvert@ %AB1.3.CM%    > %AB1A.3.CM%
+1  exercise  convert:4/b1a     @src/cmconvert@ %AB1.4.CM%    > %AB1A.4.CM%
 
 1  exercise  convert:emit/t/b1a        @src/cmemit@    %AB1A.TRNA.CM% 
-1  exercise  convert:emit/3/b1a        @src/cmemit@    %AB1A.3.CM% 
+1  exercise  convert:emit/4/b1a        @src/cmemit@    %AB1A.4.CM% 
 
 # convert 1.1binary->1.0->1.1binary (non calibrated); 
 1  exercise  convert:t/b1b     @src/cmconvert@ -b %AB1.TRNA.CM% > %AB1B.TRNA.CM%
-1  exercise  convert:3/b1b     @src/cmconvert@ -b %AB1.3.CM%    > %AB1B.3.CM%
+1  exercise  convert:4/b1b     @src/cmconvert@ -b %AB1.4.CM%    > %AB1B.4.CM%
 
 1  exercise  convert:emit/t/b1b        @src/cmemit@    %AB1B.TRNA.CM% 
-1  exercise  convert:emit/3/b1b        @src/cmemit@    %AB1B.3.CM% 
+1  exercise  convert:emit/4/b1b        @src/cmemit@    %AB1B.4.CM% 
 
 # convert 1.1ascii->1.0->1.1ascii (calibrated); 
 1  exercise  convert:t/c/a1    @src/cmconvert@ -1 !testsuite/tRNA.c.cm! > %A1.TRNA.C.CM%
-1  exercise  convert:3/c/a1    @src/cmconvert@ -1 !testsuite/3.c.cm!    > %A1.3.C.CM%
+1  exercise  convert:4/c/a1    @src/cmconvert@ -1 !testsuite/4.c.cm!    > %A1.4.C.CM%
 
 1  exercise  convert:t/c/a1a   @src/cmconvert@ %A1.TRNA.C.CM% > %A1A.TRNA.C.CM%
-1  exercise  convert:3/c/a1a   @src/cmconvert@ %A1.3.C.CM%    > %A1A.3.C.CM%
+1  exercise  convert:4/c/a1a   @src/cmconvert@ %A1.4.C.CM%    > %A1A.4.C.CM%
 
 1  exercise  convert:emit/t/c/a1a      @src/cmemit@    %A1A.TRNA.C.CM% 
-1  exercise  convert:emit/3/c/a1a      @src/cmemit@    %A1A.3.C.CM% 
+1  exercise  convert:emit/4/c/a1a      @src/cmemit@    %A1A.4.C.CM% 
 
 # convert 1.1ascii->1.0->1.1binary (calibrated); 
 1  exercise  convert:t/c/a1b   @src/cmconvert@ -b %A1.TRNA.CM% > %A1B.TRNA.C.CM%
-1  exercise  convert:3/c/a1b   @src/cmconvert@ -b %A1.3.CM%    > %A1B.3.C.CM%
+1  exercise  convert:4/c/a1b   @src/cmconvert@ -b %A1.4.CM%    > %A1B.4.C.CM%
 
 1  exercise  convert:emit/t/c/a1b      @src/cmemit@    %A1B.TRNA.C.CM% 
-1  exercise  convert:emit/3/c/a1b      @src/cmemit@    %A1B.3.C.CM% 
+1  exercise  convert:emit/4/c/a1b      @src/cmemit@    %A1B.4.C.CM% 
 # can't verify E-values with cmstat: new CMs won't have E-values, they're lost when convert to 1.0 
 #############################################
 # ascii --mlhmm (non calibrated) 
 1  exercise  convert:t/a/mlhmm @src/cmconvert@ --mlhmm %A.TRNA.CM% > %A.TRNA.MLHMM%
-1  exercise  convert:3/a/mlhmm @src/cmconvert@ --mlhmm %A.3.CM%    > %A.3.MLHMM%
+1  exercise  convert:4/a/mlhmm @src/cmconvert@ --mlhmm %A.4.CM%    > %A.4.MLHMM%
 
 # binary --mlhmm (non calibrated) 
 1  exercise  convert:t/b/mlhmm @src/cmconvert@ --mlhmm %AB.TRNA.CM% > %AB.TRNA.MLHMM%
-1  exercise  convert:3/b/mlhmm @src/cmconvert@ --mlhmm %AB.3.CM%    > %AB.3.MLHMM%
+1  exercise  convert:4/b/mlhmm @src/cmconvert@ --mlhmm %AB.4.CM%    > %AB.4.MLHMM%
 
 # ascii --mlhmm (calibrated) 
 1  exercise  convert:t/a/mlhmm/c @src/cmconvert@ --mlhmm !testsuite/tRNA.c.cm! > %A.TRNA.C.MLHMM%
-1  exercise  convert:3/a/mlhmm/c @src/cmconvert@ --mlhmm !testsuite/3.c.cm!    > %A.3.C.MLHMM%
+1  exercise  convert:4/a/mlhmm/c @src/cmconvert@ --mlhmm !testsuite/4.c.cm!    > %A.4.C.MLHMM%
 
 # binary --mlhmm (calibrated) 
 1  exercise  convert:t/b/mlhmm/c @src/cmconvert@ --mlhmm %AB.TRNA.C.CM% > %AB.TRNA.C.MLHMM%
-1  exercise  convert:3/b/mlhmm/c @src/cmconvert@ --mlhmm %AB.3.C.CM%    > %AB.3.C.MLHMM%
+1  exercise  convert:4/b/mlhmm/c @src/cmconvert@ --mlhmm %AB.4.C.CM%    > %AB.4.C.MLHMM%
 
 #############################################
 # ascii --fhmm (non calibrated) 
 1  exercise  convert:t/a/fhmm    @src/cmconvert@ --fhmm %A.TRNA.CM% > %A.TRNA.FHMM%
-1  exercise  convert:3/a/fhmm    @src/cmconvert@ --fhmm %A.3.CM%    > %A.3.FHMM%
+1  exercise  convert:4/a/fhmm    @src/cmconvert@ --fhmm %A.4.CM%    > %A.4.FHMM%
 
 # binary --fhmm (non calibrated) 
 1  exercise  convert:t/b/fhmm    @src/cmconvert@ --fhmm %AB.TRNA.CM% > %AB.TRNA.FHMM%
-1  exercise  convert:3/b/fhmm    @src/cmconvert@ --fhmm %AB.3.CM%    > %AB.3.FHMM%
+1  exercise  convert:4/b/fhmm    @src/cmconvert@ --fhmm %AB.4.CM%    > %AB.4.FHMM%
 
 # ascii --fhmm (calibrated) 
 1  exercise  convert:t/a/fhmm/c  @src/cmconvert@ --fhmm !testsuite/tRNA.c.cm! > %A.TRNA.C.FHMM%
-1  exercise  convert:3/a/fhmm/c  @src/cmconvert@ --fhmm !testsuite/3.c.cm!    > %A.3.C.FHMM%
+1  exercise  convert:4/a/fhmm/c  @src/cmconvert@ --fhmm !testsuite/4.c.cm!    > %A.4.C.FHMM%
 
 # binary --fhmm (calibrated) 
 1  exercise  convert:t/b/fhmm/c  @src/cmconvert@ --fhmm %AB.TRNA.C.CM% > %AB.TRNA.C.FHMM%
-1  exercise  convert:3/b/fhmm/c  @src/cmconvert@ --fhmm %AB.3.C.CM%    > %AB.3.C.FHMM%
+1  exercise  convert:4/b/fhmm/c  @src/cmconvert@ --fhmm %AB.4.C.CM%    > %AB.4.C.FHMM%
 #################################################
 
 ##################################################################
@@ -748,6 +765,7 @@
 ##################################################################
 
 1  prep      emit:build/t    @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.sto!
+1  prep      emit:build/t    @src/cmbuild@ -F --wnone %ZBP.CM% !testsuite/snR75.sto!
 
 1  exercise  emit:help/1     @src/cmemit@  -h
 
@@ -775,9 +793,9 @@
 1  exercise  emit:t/ebd      @src/cmemit@  -e 300 --seed 181 %TRNA.CM%
 1  exercise  emit:t/ebd/i    @src/cmemit@  -e 300 --iid --seed 181 %TRNA.CM%
 1  exercise  emit:t/ebd/5t   @src/cmemit@  --u5p -e 300 --seed 181 %TRNA.CM%
-1  exercise  emit:t/ebd/5t/i @src/cmemit@  --u5p -e --iid 300 --seed 181 %TRNA.CM%
+1  exercise  emit:t/ebd/5t/i @src/cmemit@  --u5p -e 300 --iid --seed 181 %TRNA.CM%
 1  exercise  emit:t/ebd/3t   @src/cmemit@  --u3p -e 300 --seed 181 %TRNA.CM%
-1  exercise  emit:t/ebd/3t/i @src/cmemit@  --u3p -e --iid 300 --seed 181 %TRNA.CM%
+1  exercise  emit:t/ebd/3t/i @src/cmemit@  --u3p -e 300 --iid --seed 181 %TRNA.CM%
 1  exercise  emit:t/begend0  @src/cmemit@  -a --a5p 0 --a3p 0 %TRNA.CM%
 1  exercise  emit:t/begend1  @src/cmemit@  -a --a5p 10 --a3p 50 %TRNA.CM%
 1  exercise  emit:t/begend2  @src/cmemit@  -a --a5p 40 --a3p 45 %TRNA.CM%
@@ -788,8 +806,60 @@
 1  exercise  emit:t/exp1     @src/cmemit@  --exp 0.5 %TRNA.CM%
 1  exercise  emit:t/exp2     @src/cmemit@  --exp 1.5 %TRNA.CM%
 
+1  exercise  emit:t/ho      @src/cmemit@  --hmmonly %TRNA.CM%
+1  exercise  emit:t/ho/a    @src/cmemit@  --hmmonly -a %TRNA.CM%
+1  exercise  emit:t/ho/c    @src/cmemit@  --hmmonly -c %TRNA.CM%
+1  exercise  emit:t/nho     @src/cmemit@  --nohmmonly %TRNA.CM%
+1  exercise  emit:t/nho/a   @src/cmemit@  --nohmmonly -a %TRNA.CM%
+1  exercise  emit:t/nho/c   @src/cmemit@  --nohmmonly -c %TRNA.CM%
+
+# same thing with zero bp model (hmmonly)
+1  exercise  emit:z/df       @src/cmemit@  %ZBP.CM%
+1  exercise  emit:z/stdin    cat %ZBP.CM% | @src/cmemit@ -
+1  exercise  emit:z/u        @src/cmemit@  -u %ZBP.CM%
+1  exercise  emit:z/u        @src/cmemit@  -o %TMPOUT% %ZBP.CM%
+1  exercise  emit:z/u        @src/cmemit@  -N 37 %ZBP.CM%
+1  exercise  emit:z/a        @src/cmemit@  -a %ZBP.CM%
+1  exercise  emit:z/c        @src/cmemit@  -c %ZBP.CM%
+1  exercise  emit:z/i        @src/cmemit@  --idx 1000 %ZBP.CM%
+1  exercise  emit:z/seed     @src/cmemit@  --seed 33 %ZBP.CM%
+1  exercise  emit:z/rna      @src/cmemit@  --rna %ZBP.CM%
+1  exercise  emit:z/dna      @src/cmemit@  --dna %ZBP.CM%
+1  exercise  emit:z/fmz/stk  @src/cmemit@  -a --outformat stockholm %ZBP.CM%
+1  exercise  emit:z/fmt/pfm  @src/cmemit@  -a --outformat PFAM %ZBP.CM%
+1  exercise  emit:z/fmt/afa  @src/cmemit@  -a --outformat afa %ZBP.CM%
+1  exercise  emit:z/fmt/a2m  @src/cmemit@  -a --outformat a2m %ZBP.CM%
+1  exercise  emit:z/fmt/clu  @src/cmemit@  -a --outformat Clustal %ZBP.CM%
+1  exercise  emit:z/fmt/phy  @src/cmemit@  -a --outformat PHYLIP %ZBP.CM%
+1  exercise  emit:z/fmt/psi  @src/cmemit@  -a --outformat PsiBlast %ZBP.CM%
+1  exercise  emit:z/tfile    @src/cmemit@  --tfile %TMPOUT%  %ZBP.CM%
+1  exercise  emit:z/tfile/a  @src/cmemit@  -a --tfile %TMPOUT%  %ZBP.CM%
+
+1  exercise  emit:z/ebd      @src/cmemit@  -e 300 --seed 181 %ZBP.CM%
+1  exercise  emit:z/ebd/i    @src/cmemit@  -e 300 --iid --seed 181 %ZBP.CM%
+1  exercise  emit:z/ebd/5t   @src/cmemit@  --u5p -e 300 --seed 181 %ZBP.CM%
+1  exercise  emit:z/ebd/5t/i @src/cmemit@  --u5p -e 300 --iid --seed 181 %ZBP.CM%
+1  exercise  emit:z/ebd/3t   @src/cmemit@  --u3p -e 300 --seed 181 %ZBP.CM%
+1  exercise  emit:z/ebd/3t/i @src/cmemit@  --u3p -e 300 --iid --seed 181 %ZBP.CM%
+1  exercise  emit:z/begend0  @src/cmemit@  -a --a5p 0 --a3p 0 %ZBP.CM%
+1  exercise  emit:z/begend1  @src/cmemit@  -a --a5p 10 --a3p 50 %ZBP.CM%
+1  exercise  emit:z/begend2  @src/cmemit@  -a --a5p 40 --a3p 45 %ZBP.CM%
+
+1  exercise  emit:z/5t       @src/cmemit@  --u5p %ZBP.CM%
+1  exercise  emit:z/3t       @src/cmemit@  --u3p %ZBP.CM%
+1  exercise  emit:z/5t/3t    @src/cmemit@  --u5p --u3p %ZBP.CM%
+1  exercise  emit:z/exp1     @src/cmemit@  --exp 0.5 %ZBP.CM%
+1  exercise  emit:z/exp2     @src/cmemit@  --exp 1.5 %ZBP.CM%
+
+1  exercise  emit:z/ho      @src/cmemit@  --hmmonly %ZBP.CM%
+1  exercise  emit:z/ho/a    @src/cmemit@  --hmmonly -a %ZBP.CM%
+1  exercise  emit:z/ho/c    @src/cmemit@  --hmmonly -c %ZBP.CM%
+1  exercise  emit:z/nho     @src/cmemit@  --nohmmonly %ZBP.CM%
+1  exercise  emit:z/nho/a   @src/cmemit@  --nohmmonly -a %ZBP.CM%
+1  exercise  emit:z/nho/c   @src/cmemit@  --nohmmonly -c %ZBP.CM%
+
 # repeat some exercises runs with a multi-cm file. 
-1  prep      emit:build/3    @src/cmbuild@ -F %MULTI.CM% !testsuite/se.dbl.sto!
+1  prep      emit:build/3    @src/cmbuild@ -F %MULTI.CM% !testsuite/4.sto!
 1  exercise  emit:multi/df   @src/cmemit@  %MULTI.CM%
 1  exercise  emit:multi/u    @src/cmemit@  -u %MULTI.CM%
 1  exercise  emit:multi/o    @src/cmemit@  -o %TMPOUT% %MULTI.CM%
@@ -832,6 +902,53 @@
 1  exercise  emit:l/t/exp1     @src/cmemit@  -l --exp 0.5 %TRNA.CM%
 1  exercise  emit:l/t/exp2     @src/cmemit@  -l --exp 1.5 %TRNA.CM%
 
+1  exercise  emit:l/t/ho      @src/cmemit@  -l --hmmonly %TRNA.CM%
+1  exercise  emit:l/t/ho/a    @src/cmemit@  -l --hmmonly -a %TRNA.CM%
+1  exercise  emit:l/t/ho/c    @src/cmemit@  -l --hmmonly -c %TRNA.CM%
+1  exercise  emit:l/t/nho     @src/cmemit@  -l --nohmmonly %TRNA.CM%
+1  exercise  emit:l/t/nho/a   @src/cmemit@  -l --nohmmonly -a %TRNA.CM%
+1  exercise  emit:l/t/nho/c   @src/cmemit@  -l --nohmmonly -c %TRNA.CM%
+
+# same thing with zero bp model (hmmonly)
+1  exercise  emit:l/z/df       @src/cmemit@  -l %ZBP.CM%
+1  exercise  emit:l/z/u        @src/cmemit@  -l -u %ZBP.CM%
+1  exercise  emit:l/z/u        @src/cmemit@  -l -o %TMPOUT% %ZBP.CM%
+1  exercise  emit:l/z/u        @src/cmemit@  -l -N 37 %ZBP.CM%
+1  exercise  emit:l/z/a        @src/cmemit@  -l -a %ZBP.CM%
+1  exercise  emit:l/z/c        @src/cmemit@  -l -c %ZBP.CM%
+1  exercise  emit:l/z/i        @src/cmemit@  -l --idx 1000 %ZBP.CM%
+1  exercise  emit:l/z/seed     @src/cmemit@  -l --seed 33 %ZBP.CM%
+1  exercise  emit:l/z/rna      @src/cmemit@  -l --rna %ZBP.CM%
+1  exercise  emit:l/z/dna      @src/cmemit@  -l --dna %ZBP.CM%
+1  exercise  emit:l/z/fmt/stk  @src/cmemit@  -l -a --outformat stockholm %ZBP.CM%
+1  exercise  emit:l/z/fmt/pfm  @src/cmemit@  -l -a --outformat PFAM %ZBP.CM%
+1  exercise  emit:l/z/fmt/afa  @src/cmemit@  -l -a --outformat afa %ZBP.CM%
+1  exercise  emit:l/z/fmt/a2m  @src/cmemit@  -l -a --outformat a2m %ZBP.CM%
+1  exercise  emit:l/z/fmt/clu  @src/cmemit@  -l -a --outformat Clustal %ZBP.CM%
+1  exercise  emit:l/z/fmt/phy  @src/cmemit@  -l -a --outformat PHYLIP %ZBP.CM%
+1  exercise  emit:l/z/fmt/psi  @src/cmemit@  -l -a --outformat PsiBlast %ZBP.CM%
+1  exercise  emit:l/z/tfile    @src/cmemit@  -l --tfile %TMPOUT%  %ZBP.CM%
+1  exercise  emit:l/z/tfile/a  @src/cmemit@  -l -a --tfile %TMPOUT%  %ZBP.CM%
+
+1  exercise  emit:l/z/embed    @src/cmemit@  -l -e 300 --seed 181 %ZBP.CM%
+1  exercise  emit:l/z/embed/5t @src/cmemit@  -l --u5p -e 300 --seed 181 %ZBP.CM%
+1  exercise  emit:l/z/embed/3t @src/cmemit@  -l --u3p -e 300 --seed 181 %ZBP.CM%
+1  exercise  emit:l/z/begend1  @src/cmemit@  -l -a --a5p 10 --a3p 50 %ZBP.CM%
+1  exercise  emit:l/z/begend2  @src/cmemit@  -l -a --a5p 40 --a3p 45 %ZBP.CM%
+
+1  exercise  emit:l/z/5t       @src/cmemit@  -l --u5p %ZBP.CM%
+1  exercise  emit:l/z/3t       @src/cmemit@  -l --u3p %ZBP.CM%
+1  exercise  emit:l/z/5t/3t    @src/cmemit@  -l --u5p --u3p %ZBP.CM%
+1  exercise  emit:l/z/exp1     @src/cmemit@  -l --exp 0.5 %ZBP.CM%
+1  exercise  emit:l/z/exp2     @src/cmemit@  -l --exp 1.5 %ZBP.CM%
+
+1  exercise  emit:l/z/ho      @src/cmemit@  -l --hmmonly %ZBP.CM%
+1  exercise  emit:l/z/ho/a    @src/cmemit@  -l --hmmonly -a %ZBP.CM%
+1  exercise  emit:l/z/ho/c    @src/cmemit@  -l --hmmonly -c %ZBP.CM%
+1  exercise  emit:l/z/nho     @src/cmemit@  -l --nohmmonly %ZBP.CM%
+1  exercise  emit:l/z/nho/a   @src/cmemit@  -l --nohmmonly -a %ZBP.CM%
+1  exercise  emit:l/z/nho/c   @src/cmemit@  -l --nohmmonly -c %ZBP.CM%
+
 # repeat some exercises runs with a multi-cm file. 
 1  exercise  emit:l/multi/df       @src/cmemit@  -l %MULTI.CM%
 1  exercise  emit:l/multi/u        @src/cmemit@  -l -u %MULTI.CM%
@@ -842,135 +959,43 @@
 1  exercise  emit:l/multi/i        @src/cmemit@  -l --idx 1000 %MULTI.CM%
 #######################################   
 
-
-#######################################
-# Same as above, with binary model files 
-#######################################
-1  prep      emit:build/trna   @src/cmconvert@ -b %TRNA.CM% > %B.TRNA.CM%
-1  exercise  emit:b/t/df       @src/cmemit@  %B.TRNA.CM%
-1  exercise  emit:b/t/u        @src/cmemit@  -u %B.TRNA.CM%
-1  exercise  emit:b/t/u        @src/cmemit@  -o %TMPOUT% %B.TRNA.CM%
-1  exercise  emit:b/t/u        @src/cmemit@  -N 37 %B.TRNA.CM%
-1  exercise  emit:b/t/a        @src/cmemit@  -a %B.TRNA.CM%
-1  exercise  emit:b/t/c        @src/cmemit@  -c %B.TRNA.CM%
-1  exercise  emit:b/t/i        @src/cmemit@  --idx 1000 %B.TRNA.CM%
-1  exercise  emit:b/t/seed     @src/cmemit@  --seed 33 %B.TRNA.CM%
-1  exercise  emit:b/t/rna      @src/cmemit@  --rna %B.TRNA.CM%
-1  exercise  emit:b/t/dna      @src/cmemit@  --dna %B.TRNA.CM%
-1  exercise  emit:b/t/fmt/stk  @src/cmemit@  -a --outformat stockholm %B.TRNA.CM%
-1  exercise  emit:b/t/fmt/pfm  @src/cmemit@  -a --outformat PFAM %B.TRNA.CM%
-1  exercise  emit:b/t/fmt/afa  @src/cmemit@  -a --outformat afa %B.TRNA.CM%
-1  exercise  emit:b/t/fmt/a2m  @src/cmemit@  -a --outformat a2m %B.TRNA.CM%
-1  exercise  emit:b/t/fmt/clu  @src/cmemit@  -a --outformat Clustal %B.TRNA.CM%
-1  exercise  emit:b/t/fmt/phy  @src/cmemit@  -a --outformat PHYLIP %B.TRNA.CM%
-1  exercise  emit:b/t/fmt/psi  @src/cmemit@  -a --outformat PsiBlast %B.TRNA.CM%
-1  exercise  emit:b/t/tfile    @src/cmemit@  --tfile %TMPOUT%  %B.TRNA.CM%
-1  exercise  emit:b/t/tfile/a  @src/cmemit@  -a --tfile %TMPOUT%  %B.TRNA.CM%
-
-1  exercise  emit:b/t/embed    @src/cmemit@  -e 300 --seed 181 %B.TRNA.CM%
-1  exercise  emit:b/t/embed/5t @src/cmemit@  --u5p -e 300 --seed 181 %B.TRNA.CM%
-1  exercise  emit:b/t/embed/3t @src/cmemit@  --u3p -e 300 --seed 181 %B.TRNA.CM%
-1  exercise  emit:b/t/begend0  @src/cmemit@  -a --a5p 0 --a3p 0 %B.TRNA.CM%
-1  exercise  emit:b/t/begend1  @src/cmemit@  -a --a5p 10 --a3p 50 %B.TRNA.CM%
-1  exercise  emit:b/t/begend2  @src/cmemit@  -a --a5p 40 --a3p 45 %B.TRNA.CM%
-
-1  exercise  emit:b/t/5t       @src/cmemit@  --u5p %B.TRNA.CM%
-1  exercise  emit:b/t/3t       @src/cmemit@  --u3p %B.TRNA.CM%
-1  exercise  emit:b/t/5t/3t    @src/cmemit@  --u5p --u3p %B.TRNA.CM%
-1  exercise  emit:b/t/exp1     @src/cmemit@  --exp 0.5 %B.TRNA.CM%
-1  exercise  emit:b/t/exp2     @src/cmemit@  --exp 1.5 %B.TRNA.CM%
-
-# repeat some exercises runs with a multi-cm file. 
-1  prep      emit:build/multi      @src/cmconvert@ -b %MULTI.CM% > %B.MULTI.CM%
-1  exercise  emit:b/multi/df       @src/cmemit@  %B.MULTI.CM%
-1  exercise  emit:b/multi/u        @src/cmemit@  -u %B.MULTI.CM%
-1  exercise  emit:b/multi/u        @src/cmemit@  -o %TMPOUT% %B.MULTI.CM%
-1  exercise  emit:b/multi/u        @src/cmemit@  -N 37 %B.MULTI.CM%
-1  exercise  emit:b/multi/a        @src/cmemit@  -a %B.MULTI.CM%
-1  exercise  emit:b/multi/c        @src/cmemit@  -c %B.MULTI.CM%
-1  exercise  emit:b/multi/i        @src/cmemit@  --idx 1000 %B.MULTI.CM%
-
-#######################################
-# all the same as above, with -l added
-1  exercise  emit:b/l/t/df       @src/cmemit@  -l %B.TRNA.CM%
-1  exercise  emit:b/l/t/u        @src/cmemit@  -l -u %B.TRNA.CM%
-1  exercise  emit:b/l/t/u        @src/cmemit@  -l -o %TMPOUT% %B.TRNA.CM%
-1  exercise  emit:b/l/t/u        @src/cmemit@  -l -N 37 %B.TRNA.CM%
-1  exercise  emit:b/l/t/a        @src/cmemit@  -l -a %B.TRNA.CM%
-1  exercise  emit:b/l/t/c        @src/cmemit@  -l -c %B.TRNA.CM%
-1  exercise  emit:b/l/t/i        @src/cmemit@  -l --idx 1000 %B.TRNA.CM%
-1  exercise  emit:b/l/t/seed     @src/cmemit@  -l --seed 33 %B.TRNA.CM%
-1  exercise  emit:b/l/t/rna      @src/cmemit@  -l --rna %B.TRNA.CM%
-1  exercise  emit:b/l/t/dna      @src/cmemit@  -l --dna %B.TRNA.CM%
-1  exercise  emit:b/l/t/fmt/stk  @src/cmemit@  -l -a --outformat stockholm %B.TRNA.CM%
-1  exercise  emit:b/l/t/fmt/pfm  @src/cmemit@  -l -a --outformat PFAM %B.TRNA.CM%
-1  exercise  emit:b/l/t/fmt/afa  @src/cmemit@  -l -a --outformat afa %B.TRNA.CM%
-1  exercise  emit:b/l/t/fmt/a2m  @src/cmemit@  -l -a --outformat a2m %B.TRNA.CM%
-1  exercise  emit:b/l/t/fmt/clu  @src/cmemit@  -l -a --outformat Clustal %B.TRNA.CM%
-1  exercise  emit:b/l/t/fmt/phy  @src/cmemit@  -l -a --outformat PHYLIP %B.TRNA.CM%
-1  exercise  emit:b/l/t/fmt/psi  @src/cmemit@  -l -a --outformat PsiBlast %B.TRNA.CM%
-1  exercise  emit:b/l/t/tfile    @src/cmemit@  -l --tfile %TMPOUT%  %B.TRNA.CM%
-1  exercise  emit:b/l/t/tfile/a  @src/cmemit@  -l -a --tfile %TMPOUT%  %B.TRNA.CM%
-
-1  exercise  emit:b/l/t/embed    @src/cmemit@  -l -e 300 --seed 181 %B.TRNA.CM%
-1  exercise  emit:b/l/t/embed/5t @src/cmemit@  -l --u5p -e 300 --seed 181 %B.TRNA.CM%
-1  exercise  emit:b/l/t/embed/3t @src/cmemit@  -l --u3p -e 300 --seed 181 %B.TRNA.CM%
-1  exercise  emit:b/l/t/begend0  @src/cmemit@  -l -a --a5p 0 --a3p 0 %B.TRNA.CM%
-1  exercise  emit:b/l/t/begend1  @src/cmemit@  -l -a --a5p 10 --a3p 50 %B.TRNA.CM%
-1  exercise  emit:b/l/t/begend2  @src/cmemit@  -l -a --a5p 40 --a3p 45 %B.TRNA.CM%
-
-1  exercise  emit:b/l/t/5t       @src/cmemit@  -l --u5p %B.TRNA.CM%
-1  exercise  emit:b/l/t/3t       @src/cmemit@  -l --u3p %B.TRNA.CM%
-1  exercise  emit:b/l/t/5t/3t    @src/cmemit@  -l --u5p --u3p %B.TRNA.CM%
-1  exercise  emit:b/l/t/exp1     @src/cmemit@  -l --exp 0.5 %B.TRNA.CM%
-1  exercise  emit:b/l/t/exp2     @src/cmemit@  -l --exp 1.5 %B.TRNA.CM%
-
-# repeat some exercises runs with a multi-cm file. 
-1  exercise  emit:b/l/multi/df       @src/cmemit@  -l %B.MULTI.CM%
-1  exercise  emit:b/l/multi/u        @src/cmemit@  -l -u %B.MULTI.CM%
-1  exercise  emit:b/l/multi/u        @src/cmemit@  -l -o %TMPOUT% %B.MULTI.CM%
-1  exercise  emit:b/l/multi/u        @src/cmemit@  -l -N 37 %B.MULTI.CM%
-1  exercise  emit:b/l/multi/a        @src/cmemit@  -l -a %B.MULTI.CM%
-1  exercise  emit:b/l/multi/c        @src/cmemit@  -l -c %B.MULTI.CM%
-1  exercise  emit:b/l/multi/i        @src/cmemit@  -l --idx 1000 %B.MULTI.CM%
-
 ##################################################################
 ##################################################################
 #  7. cmfetch option testing, all options tested at least once.
 ##################################################################
 ##################################################################
 
-# 3.sto: tRNA, Vault, Plant_SRP seeds from Rfam 10.1
+# 4.sto: tRNA, Vault, Plant_SRP seeds from Rfam 10.1
 
-1  exercise  fetch:build/3        @src/cmbuild@ -F %3.CM% !testsuite/3.sto!
+1  exercise  fetch:build/4        @src/cmbuild@ -F %4.CM% !testsuite/4.sto!
 
 # First, test without indexing
-1  exercise  fetch:ni/df1         @src/cmfetch@ %3.CM% Vault
-1  exercise  fetch:ni/df2         @src/cmfetch@ %3.CM% RF00006
-1  exercise  fetch:ni/f1          @src/cmfetch@ -f %3.CM% !testsuite/2.list!
-1  exercise  fetch:ni/f2          @src/cmfetch@ -f %3.CM% !testsuite/2name.list!
-1  exercise  fetch:ni/f3          @src/cmfetch@ -f %3.CM% !testsuite/2accn.list!
-1  exercise  fetch:ni/o           @src/cmfetch@ -o %TMP.CM% %3.CM% tRNA
-1  exercise  fetch:ni/O           @src/cmfetch@ -O %3.CM% RF00006
-1  exercise  fetch:ni/stdin/cm    cat %3.CM% | @src/cmfetch@ - Vault
-1  exercise  fetch:ni/stdin/key   cat !testsuite/2.list! | @src/cmfetch@ -f %3.CM% -
-1  fail      fetch:ni/stdin/bth   cat %3.CM% | @src/cmfetch@ -f - -
+1  exercise  fetch:ni/df1         @src/cmfetch@ %4.CM% Vault
+1  exercise  fetch:ni/df2         @src/cmfetch@ %4.CM% RF00006
+1  exercise  fetch:ni/f1          @src/cmfetch@ -f %4.CM% !testsuite/2.list!
+1  exercise  fetch:ni/f2          @src/cmfetch@ -f %4.CM% !testsuite/2name.list!
+1  exercise  fetch:ni/f3          @src/cmfetch@ -f %4.CM% !testsuite/2accn.list!
+1  exercise  fetch:ni/o           @src/cmfetch@ -o %TMP.CM% %4.CM% tRNA
+1  exercise  fetch:ni/O           @src/cmfetch@ -O %4.CM% RF00006
+1  exercise  fetch:ni/stdin/cm    cat %4.CM% | @src/cmfetch@ - Vault
+1  exercise  fetch:ni/stdin/key   cat !testsuite/2.list! | @src/cmfetch@ -f %4.CM% -
+1  fail      fetch:ni/stdin/bth   cat %4.CM% | @src/cmfetch@ -f - -
 1  prep      fetch:cleanup/ni1    rm !testsuite/RF00006!
 
 # And again, this time after indexing
-1  exercise  fetch:index          @src/cmfetch@ --index %3.CM% 
-1  exercise  fetch:yi/df1         @src/cmfetch@ %3.CM% Vault
-1  exercise  fetch:yi/df2         @src/cmfetch@ %3.CM% RF00006
-1  exercise  fetch:yi/f1          @src/cmfetch@ -f %3.CM% !testsuite/2.list!
-1  exercise  fetch:yi/f2          @src/cmfetch@ -f %3.CM% !testsuite/2name.list!
-1  exercise  fetch:yi/f3          @src/cmfetch@ -f %3.CM% !testsuite/2accn.list!
-1  exercise  fetch:yi/o           @src/cmfetch@ -o %TMP.CM% %3.CM% tRNA
-1  exercise  fetch:yi/O           @src/cmfetch@ -O %3.CM% RF00006
-1  exercise  fetch:yi/stdin/cm    cat %3.CM% | @src/cmfetch@ - Vault
-1  exercise  fetch:yi/stdin/key   cat !testsuite/2.list! | @src/cmfetch@ -f %3.CM% -
-1  fail      fetch:yi/stdin/bth   cat %3.CM% | @src/cmfetch@ -f - -
+1  exercise  fetch:index          @src/cmfetch@ --index %4.CM% 
+1  exercise  fetch:yi/df1         @src/cmfetch@ %4.CM% Vault
+1  exercise  fetch:yi/df2         @src/cmfetch@ %4.CM% RF00006
+1  exercise  fetch:yi/f1          @src/cmfetch@ -f %4.CM% !testsuite/2.list!
+1  exercise  fetch:yi/f2          @src/cmfetch@ -f %4.CM% !testsuite/2name.list!
+1  exercise  fetch:yi/f3          @src/cmfetch@ -f %4.CM% !testsuite/2accn.list!
+1  exercise  fetch:yi/o           @src/cmfetch@ -o %TMP.CM% %4.CM% tRNA
+1  exercise  fetch:yi/O           @src/cmfetch@ -O %4.CM% RF00006
+1  exercise  fetch:yi/stdin/cm    cat %4.CM% | @src/cmfetch@ - Vault
+1  exercise  fetch:yi/stdin/key   cat !testsuite/2.list! | @src/cmfetch@ -f %4.CM% -
+1  fail      fetch:yi/stdin/bth   cat %4.CM% | @src/cmfetch@ -f - -
 1  prep      fetch:cleanup:yi1    rm !testsuite/RF00006!
-1  prep      fetch:cleanup:yi2    rm %3.CM%.ssi 
+1  prep      fetch:cleanup:yi2    rm %4.CM%.ssi 
 
 
 ##################################################################
@@ -987,17 +1012,17 @@
 1  prep      press:copy/tC     cp !testsuite/tRNA.c.cm! %TRNA.C.CM%
 1  prep      press:copy/vC     cp !testsuite/Vault.c.cm! %VAULT.C.CM%
 1  prep      press:copy/sC     cp !testsuite/Plant_SRP.c.cm! %SRP.C.CM%
-1  prep      press:copy/3C     cp !testsuite/3.c.cm! %3.C.CM%
+1  prep      press:copy/4C     cp !testsuite/4.c.cm! %4.C.CM%
 
 1  exercise  press:tC          @src/cmpress@ %TRNA.C.CM%
 1  exercise  press:vC          @src/cmpress@ %VAULT.C.CM%
 1  exercise  press:sC          @src/cmpress@ %SRP.C.CM%
-1  exercise  press:3C          @src/cmpress@ %3.C.CM%
+1  exercise  press:4C          @src/cmpress@ %4.C.CM%
 
 1  prep      press:cleanup/tC  rm -f %TRNA.C.CM%.*
 1  prep      press:cleanup/vC  rm -f %VAULT.C.CM%.*
 1  prep      press:cleanup/sC  rm -f %SRP.C.CM%.*
-1  prep      press:/cleanup:3C rm -f %3.C.CM%.*
+1  prep      press:/cleanup:4C rm -f %4.C.CM%.*
 
 ##################################################################
 ##################################################################
@@ -1013,10 +1038,10 @@
 # cmscan requires calibrated and pressed models
 1  prep      scan:copy/tC       cp !testsuite/tRNA.c.cm! %T.CM%
 1  prep      scan:copy/vC       cp !testsuite/Vault.c.cm! %V.CM%
-1  prep      scan:copy/3C       cp !testsuite/3.c.cm! %3.CM%
+1  prep      scan:copy/4C       cp !testsuite/4.c.cm! %4.CM%
 1  exercise  scan:press/tC      @src/cmpress@ %T.CM%
-1  exercise  scan:press/3C      @src/cmpress@ %V.CM%
-1  exercise  scan:press/3C      @src/cmpress@ %3.CM%
+1  exercise  scan:press/vC      @src/cmpress@ %V.CM%
+1  exercise  scan:press/4C      @src/cmpress@ %4.CM%
 
 # copy fasta files, only so the names are more convenient in rest of this file
 1  prep      scan:copy/t/fa1k      cp !testsuite/1k-tRNA.fa! %T1K%
@@ -1026,65 +1051,65 @@
 1  prep      scan:copy/v/fa10k     cp !testsuite/10k-Vault.fa! %V10K%
 1  prep      scan:copy/v/faemit    cp !testsuite/emitted-Vault.fa! %VEMIT%
 1  prep      scan:copy/v/fatremit  cp !testsuite/tremitted-Vault.fa! %VTREMIT%
-1  prep      scan:copy/3/fa1k      cp !testsuite/1k-3.fa! %31K%
-1  prep      scan:copy/3/fa10k     cp !testsuite/10k-3.fa! %310K%
-1  prep      scan:copy/3/fa100k    cp !testsuite/100k-3.fa! %3100K%
-1  prep      scan:copy/3/faemit    cp !testsuite/emitted-3.fa! %3EMIT%
+1  prep      scan:copy/4/fa1k      cp !testsuite/1k-4.fa! %41K%
+1  prep      scan:copy/4/fa10k     cp !testsuite/10k-4.fa! %410K%
+1  prep      scan:copy/4/fa100k    cp !testsuite/100k-4.fa! %4100K%
+1  prep      scan:copy/4/faemit    cp !testsuite/emitted-4.fa! %4EMIT%
 1  prep      scan:copy/rand/fa1k   cp !testsuite/1k.fa! %R1K%
 
 1  exercise  scan:t/10k    @src/cmscan@  %T.CM% %T10K%
 1  exercise  scan:v/10k    @src/cmscan@  %V.CM% %V10K%
-1  exercise  scan:3/10k    @src/cmscan@  %3.CM% %310K%
+1  exercise  scan:4/10k    @src/cmscan@  %4.CM% %410K%
 1  exercise  scan:t/emit   @src/cmscan@  %T.CM% %TEMIT%
 1  exercise  scan:v/emit   @src/cmscan@  %V.CM% %VEMIT%
-1  exercise  scan:3/emit   @src/cmscan@  %3.CM% %3EMIT%
+1  exercise  scan:4/emit   @src/cmscan@  %4.CM% %4EMIT%
 
 1  fail      scan:t/cm/stdin  cat %T.CM%  | @src/cmscan@ - %TEMIT%
-1  fail      scan:3/cm/stdin  cat %3.CM%  | @src/cmscan@ - %3EMIT%
+1  fail      scan:4/cm/stdin  cat %4.CM%  | @src/cmscan@ - %4EMIT%
 1  exercise  scan:t/sq/stdin  cat %TEMIT% | @src/cmscan@ %T.CM% -
-1  exercise  scan:3/sq/stdin  cat %3EMIT% | @src/cmscan@ %3.CM% -
+1  exercise  scan:4/sq/stdin  cat %4EMIT% | @src/cmscan@ %4.CM% -
 
 1  exercise  scan:t/10k/g    @src/cmscan@  -g %T.CM% %T10K%
 1  exercise  scan:v/10k/g    @src/cmscan@  -g %V.CM% %V10K%
-1  exercise  scan:3/10k/g    @src/cmscan@  -g %3.CM% %310K%
+1  exercise  scan:4/10k/g    @src/cmscan@  -g %4.CM% %410K%
 1  exercise  scan:t/emit/g   @src/cmscan@  -g %T.CM% %TEMIT%
 1  exercise  scan:v/emit/g   @src/cmscan@  -g %V.CM% %VEMIT%
-1  exercise  scan:3/emit/g   @src/cmscan@  -g %3.CM% %3EMIT%
+1  exercise  scan:4/emit/g   @src/cmscan@  -g %4.CM% %4EMIT%
 
 1  exercise  scan:t/10k/Z    @src/cmscan@  -Z 100  %T.CM% %T10K%
 1  exercise  scan:t/emit/Z   @src/cmscan@  -Z 1100 %T.CM% %TEMIT%
-1  exercise  scan:3/10k/Z    @src/cmscan@  -Z 100  %3.CM% %310K%
-1  exercise  scan:3/emit/Z   @src/cmscan@  -Z 1100 %3.CM% %3EMIT%
+1  exercise  scan:4/10k/Z    @src/cmscan@  -Z 100  %4.CM% %410K%
+1  exercise  scan:4/emit/Z   @src/cmscan@  -Z 1100 %4.CM% %4EMIT%
 
 1  exercise  scan:t/emit/o       @src/cmscan@  -o %TMPOUT% %T.CM% %TEMIT%
-1  exercise  scan:3/emit/o       @src/cmscan@  -o %TMPOUT% %3.CM% %3EMIT%
+1  exercise  scan:4/emit/o       @src/cmscan@  -o %TMPOUT% %4.CM% %4EMIT%
 1  exercise  scan:t/1k/tbl       @src/cmscan@  --tblout %TMPOUT% %T.CM% %T1K%
-1  exercise  scan:3/1k/tbl       @src/cmscan@  --tblout %TMPOUT% %3.CM% %31K%
+1  exercise  scan:4/1k/tbl       @src/cmscan@  --tblout %TMPOUT% %4.CM% %41K%
 1  exercise  scan:t/1k/tbl       @src/cmscan@  --acc %T.CM% %T1K%
-1  exercise  scan:3/1k/tbl       @src/cmscan@  --acc %3.CM% %31K%
+1  exercise  scan:4/1k/tbl       @src/cmscan@  --acc %4.CM% %41K%
 1  exercise  scan:t/1k/noali     @src/cmscan@  --noali %T.CM% %T1K%
-1  exercise  scan:3/1k/noali     @src/cmscan@  --noali %3.CM% %31K%
+1  exercise  scan:4/1k/noali     @src/cmscan@  --noali %4.CM% %41K%
 1  exercise  scan:t/1k/notextw   @src/cmscan@  --notextw %T.CM% %T1K%
-1  exercise  scan:3/1k/notextw   @src/cmscan@  --notextw %3.CM% %31K%
+1  exercise  scan:4/1k/notextw   @src/cmscan@  --notextw %4.CM% %41K%
 1  exercise  scan:t/1k/textw     @src/cmscan@  --textw 150 %T.CM% %T1K%
-1  exercise  scan:3/1k/textw     @src/cmscan@  --textw 150 %3.CM% %31K%
+1  exercise  scan:4/1k/textw     @src/cmscan@  --textw 150 %4.CM% %41K%
 1  exercise  scan:t/1k/verbose   @src/cmscan@  --verbose %T.CM% %T1K%
-1  exercise  scan:3/1k/verbose   @src/cmscan@  --verbose %3.CM% %31K%
+1  exercise  scan:4/1k/verbose   @src/cmscan@  --verbose %4.CM% %41K%
 
 1  exercise  scan:t/1k/E   @src/cmscan@  -E 0.001 %T.CM% %T1K%
-1  exercise  scan:3/1k/E   @src/cmscan@  -E 1000 %3.CM% %31K%
+1  exercise  scan:4/1k/E   @src/cmscan@  -E 1000 %4.CM% %41K%
 1  exercise  scan:t/1k/T   @src/cmscan@  -T 25 %T.CM% %T1K%
-1  exercise  scan:3/1k/T   @src/cmscan@  -T 12 %3.CM% %31K%
+1  exercise  scan:4/1k/T   @src/cmscan@  -T 12 %4.CM% %41K%
 
 1  exercise  scan:t/1k/incE   @src/cmscan@  --incE 0.001 %T.CM% %T1K%
-1  exercise  scan:3/1k/incE   @src/cmscan@  --incE 1000 %3.CM% %31K%
+1  exercise  scan:4/1k/incE   @src/cmscan@  --incE 1000 %4.CM% %41K%
 1  exercise  scan:t/1k/incT   @src/cmscan@  --incT 25 %T.CM% %T1K%
-1  exercise  scan:3/1k/incT   @src/cmscan@  --incT 12 %3.CM% %31K%
+1  exercise  scan:4/1k/incT   @src/cmscan@  --incT 12 %4.CM% %41K%
 
 1  exercise  scan:t/1k/cutga   @src/cmscan@  --cut_ga %T.CM% %T1K%
-1  exercise  scan:3/1k/cutga   @src/cmscan@  --cut_ga %3.CM% %31K%
+1  exercise  scan:4/1k/cutga   @src/cmscan@  --cut_ga %4.CM% %41K%
 1  exercise  scan:t/1k/cuttc   @src/cmscan@  --cut_tc %T.CM% %T1K%
-1  exercise  scan:3/1k/cuttc   @src/cmscan@  --cut_tc %3.CM% %31K%
+1  exercise  scan:4/1k/cuttc   @src/cmscan@  --cut_tc %4.CM% %41K%
 # tRNA NC cutoff is undefined in Rfam 10.1
 1  exercise  scan:v/1k/cutnc   @src/cmscan@  --cut_nc %V.CM% %V1K%
 
@@ -1114,28 +1139,28 @@
 
 # other options
 1  exercise  scan:t/1k/nn3       @src/cmscan@  --nonull3 %T.CM% %T1K%
-1  exercise  scan:3/r1k/nn3      @src/cmscan@  --nonull3 %3.CM% %R1K%
+1  exercise  scan:4/r1k/nn3      @src/cmscan@  --nonull3 %4.CM% %R1K%
 1  exercise  scan:t/1k/mx        @src/cmscan@  --mxsize 32. %T.CM% %T1K%
-1  exercise  scan:3/r1k/mx       @src/cmscan@  --mxsize 1024. %3.CM% %R1K%
+1  exercise  scan:4/r1k/mx       @src/cmscan@  --mxsize 1024. %4.CM% %R1K%
 1  exercise  scan:t/1k/smx       @src/cmscan@  --smxsize 32. %T.CM% %T1K%
-1  exercise  scan:3/r1k/smx      @src/cmscan@  --smxsize 1024. %3.CM% %R1K%
+1  exercise  scan:4/r1k/smx      @src/cmscan@  --smxsize 1024. %4.CM% %R1K%
 1  exercise  scan:t/1k/cyk       @src/cmscan@  --cyk %T.CM% %T1K%
-1  exercise  scan:3/r1k/cyk      @src/cmscan@  --cyk %3.CM% %R1K%
+1  exercise  scan:4/r1k/cyk      @src/cmscan@  --cyk %4.CM% %R1K%
 1  exercise  scan:t/1k/acyk      @src/cmscan@  --acyk %T.CM% %T1K%
-1  exercise  scan:3/r1k/acyk     @src/cmscan@  --acyk %3.CM% %R1K%
+1  exercise  scan:4/r1k/acyk     @src/cmscan@  --acyk %4.CM% %R1K%
 1  exercise  scan:t/1k/wcx/3     @src/cmscan@  --wcx 3 %T.CM% %T1K%
 1  exercise  scan:t/1k/wcx/5     @src/cmscan@  --wcx 5 %T.CM% %T1K%
 1  fail      scan:t/1k/wcx/0p3   @src/cmscan@  --wcx 0.3 %T.CM% %T1K%
 1  fail      scan:t/1k/wcx/nhmm  @src/cmscan@  --wcx 3 --nohmm %T.CM% %T1K%
 1  fail      scan:t/1k/wcx/fqdb  @src/cmscan@  --wcx 3 --fqdb %T.CM% %T1K%
 1  fail      scan:t/1k/wcx/qdb   @src/cmscan@  --wcx 3 --qdb %T.CM% %T1K%
-1  exercise  scan:3/1k/wcx/3     @src/cmscan@  --wcx 3 %3.CM% %R1K%
-1  exercise  scan:3/1k/wcx/5     @src/cmscan@  --wcx 5 %3.CM% %R1K%
+1  exercise  scan:4/1k/wcx/3     @src/cmscan@  --wcx 3 %4.CM% %R1K%
+1  exercise  scan:4/1k/wcx/5     @src/cmscan@  --wcx 5 %4.CM% %R1K%
 1  exercise  scan:t/1k/top       @src/cmscan@  --toponly %T.CM% %T1K%
-1  exercise  scan:3/r1k/top      @src/cmscan@  --toponly %3.CM% %R1K%
+1  exercise  scan:4/r1k/top      @src/cmscan@  --toponly %4.CM% %R1K%
 1  exercise  scan:t/1k/bot       @src/cmscan@  --bottomonly %T.CM% %T1K%
-1  exercise  scan:3/r1k/bot      @src/cmscan@  --bottomonly %3.CM% %R1K%
-1  exercise  scan:t/1k/qfmt      @src/cmscan@  --qformat fasta %T.CM% !testsuite/3trnas.fa!
+1  exercise  scan:4/r1k/bot      @src/cmscan@  --bottomonly %4.CM% %R1K%
+1  exercise  scan:t/1k/qfmt      @src/cmscan@  --qformat fasta %T.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  scan:t/r1k/qfmt     @src/cmscan@  --qformat Genbank %T.CM% !testsuite/3trnas.gb!
 1  exercise  scan:t/r1k/qfmt     @src/cmscan@  --qformat embL %T.CM% !testsuite/3trnas.embl!
 1  exercise  scan:t/r1k/afmt     @src/cmscan@  %T.CM% !testsuite/3trnas.gb!
@@ -1166,7 +1191,7 @@
 
 1  exercise  scan:v/1k/noF1/FZ     @src/cmscan@  --noF1 --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/noF2/FZ     @src/cmscan@  --noF2 --noF2b --FZ 1000 %V.CM% %V1K%
-1  exercise  scan:v/1k/noF3/FZ     @src/cmscan@  --noF3 --noF3b --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/noF4/FZ     @src/cmscan@  --noF3 --noF3b --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/noF4/FZ     @src/cmscan@  --noF4 --noF4b --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/noF6/FZ     @src/cmscan@  --noF6 --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/doF1b/FZ    @src/cmscan@  --doF1b --FZ 1000 %V.CM% %V1K%
@@ -1178,7 +1203,7 @@
 1  exercise  scan:v/1k/F1b/FZ      @src/cmscan@  --doF1b --F1b 0.01 --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/F2/FZ       @src/cmscan@  --F2 0.001 --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/F2b/FZ      @src/cmscan@  --F2b 0.001 --FZ 1000 %V.CM% %V1K%
-1  exercise  scan:v/1k/F3/FZ       @src/cmscan@  --F3 1E-4 --FZ 1000 %V.CM% %V1K%
+1  exercise  scan:v/1k/F4/FZ       @src/cmscan@  --F3 1E-4 --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/F3b/FZ      @src/cmscan@  --F3b 1E-5 --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/F4/FZ       @src/cmscan@  --F4 0.10 --FZ 1000 %V.CM% %V1K%
 1  exercise  scan:v/1k/F4b/FZ      @src/cmscan@  --F4b 1E-6 --FZ 1000 %V.CM% %V1K%
@@ -1204,6 +1229,19 @@
 1  exercise  scan:v/1k/hnb       @src/cmscan@  --hmmnobias %V.CM% %V1K%
 1  exercise  scan:v/1k/hnn2      @src/cmscan@  --hmmnonull2 %V.CM% %V1K%
 1  exercise  scan:v/1k/nho       @src/cmscan@  --nohmmonly %V.CM% %V1K%
+
+1  exercise  scan:4/1k/ho        @src/cmscan@  --hmmonly %4.CM% %41K%
+1  exercise  scan:4/1k/hoF1      @src/cmscan@  --hmmonly --hmmF1 0.05 %4.CM% %41K%
+1  exercise  scan:4/1k/hoF2      @src/cmscan@  --hmmonly --hmmF2 0.05 %4.CM% %41K%
+1  exercise  scan:4/1k/hoF3      @src/cmscan@  --hmmonly --hmmF2 0.05 --hmmF3 0.05 %4.CM% %41K%
+1  exercise  scan:4/1k/honb      @src/cmscan@  --hmmonly --hmmnobias %4.CM% %41K%
+1  exercise  scan:4/1k/honn2     @src/cmscan@  --hmmonly --hmmnonull2 %4.CM% %41K%
+1  exercise  scan:4/1k/hF1       @src/cmscan@  --hmmF1 0.05 %4.CM% %41K%
+1  exercise  scan:4/1k/hF2       @src/cmscan@  --hmmF2 0.05 %4.CM% %41K%
+1  exercise  scan:4/1k/hF3       @src/cmscan@  --hmmF2 0.05 --hmmF3 0.05 %4.CM% %41K%
+1  exercise  scan:4/1k/hnb       @src/cmscan@  --hmmnobias %4.CM% %41K%
+1  exercise  scan:4/1k/hnn2      @src/cmscan@  --hmmnonull2 %4.CM% %41K%
+1  exercise  scan:4/1k/nho       @src/cmscan@  --nohmmonly %4.CM% %41K%
 
 # envelope defn options
 1  exercise  scan:v/1k/rt1        @src/cmscan@  --rt1 0.15 %V.CM% %V1K%
@@ -1255,15 +1293,15 @@
 1  exercise  scan:v/1k/cp9noel    @src/cmscan@  --cp9noel %V.CM% %V1K%
 1  exercise  scan:v/1k/cp9gloc    @src/cmscan@  --cp9gloc %V.CM% %V1K%
 1  exercise  scan:v/1k/null2      @src/cmscan@  --null2 %V.CM% %V1K%
-1  exercise  scan:3/100k/xtau     @src/cmscan@  --xtau 4 %3.CM% %3100K%
-1  exercise  scan:3/100k/maxtau   @src/cmscan@  --maxtau 0.3 %3.CM% %3100K%
+1  exercise  scan:4/100k/xtau     @src/cmscan@  --xtau 4 %4.CM% %4100K%
+1  exercise  scan:4/100k/maxtau   @src/cmscan@  --maxtau 0.3 %4.CM% %4100K%
 1  exercise  scan:v/1k/seed0      @src/cmscan@  --seed 0 %V.CM% %V1K%
 1  exercise  scan:v/1k/seed1      @src/cmscan@  --seed 1 %V.CM% %V1K%
 
 # cleanup, specific to cmscan.sqc (not in cmsearch.sqc)
 1  prep      scan:cleanup/tC      rm -f %TRNA.CM%.*
 1  prep      scan:cleanup/vC      rm -f %VAULT.CM%.*
-1  prep      scan:cleanup/3C      rm -f %3.CM%.*
+1  prep      scan:cleanup/4C      rm -f %4.CM%.*
 
 ##################################################################
 ##################################################################
@@ -1279,7 +1317,7 @@
 # cmsearch requires calibrated models
 1  prep      search:copy/tC/a        cp !testsuite/tRNA.c.cm! %T.CM%
 1  prep      search:copy/vC/a        cp !testsuite/Vault.c.cm! %V.CM%
-1  prep      search:copy/3C/a        cp !testsuite/3.c.cm! %3.CM%
+1  prep      search:copy/4C/a        cp !testsuite/4.c.cm! %4.CM%
 
 # copy fasta files, only so the names are more convenient in rest of this file
 1  prep      search:copy/t/fa1k      cp !testsuite/1k-tRNA.fa! %T1K%
@@ -1289,68 +1327,68 @@
 1  prep      search:copy/v/fa10k     cp !testsuite/10k-Vault.fa! %V10K%
 1  prep      search:copy/v/faemit    cp !testsuite/emitted-Vault.fa! %VEMIT%
 1  prep      search:copy/v/fatremit  cp !testsuite/tremitted-Vault.fa! %VTREMIT%
-1  prep      search:copy/3/fa1k      cp !testsuite/1k-3.fa! %31K%
-1  prep      search:copy/3/fa10k     cp !testsuite/10k-3.fa! %310K%
-1  prep      search:copy/3/fa100k    cp !testsuite/100k-3.fa! %3100K%
-1  prep      search:copy/3/faemit    cp !testsuite/emitted-3.fa! %3EMIT%
+1  prep      search:copy/4/fa1k      cp !testsuite/1k-4.fa! %41K%
+1  prep      search:copy/4/fa10k     cp !testsuite/10k-4.fa! %410K%
+1  prep      search:copy/4/fa100k    cp !testsuite/100k-4.fa! %4100K%
+1  prep      search:copy/4/faemit    cp !testsuite/emitted-4.fa! %4EMIT%
 1  prep      search:copy/rand/fa1k   cp !testsuite/1k.fa! %R1K%
 
 1  exercise  search:t/10k    @src/cmsearch@  %T.CM% %T10K%
 1  exercise  search:v/10k    @src/cmsearch@  %V.CM% %V10K%
-1  exercise  search:3/10k    @src/cmsearch@  %3.CM% %310K%
+1  exercise  search:4/10k    @src/cmsearch@  %4.CM% %410K%
 1  exercise  search:t/emit   @src/cmsearch@  %T.CM% %TEMIT%
 1  exercise  search:v/emit   @src/cmsearch@  %V.CM% %VEMIT%
-1  exercise  search:3/emit   @src/cmsearch@  %3.CM% %3EMIT%
+1  exercise  search:4/emit   @src/cmsearch@  %4.CM% %4EMIT%
 
 1  exercise  search:t/cm/stdin  cat %T.CM% | @src/cmsearch@ - %TEMIT%
-1  exercise  search:3/cm/stdin  cat %3.CM% | @src/cmsearch@ - %3EMIT%
+1  exercise  search:4/cm/stdin  cat %4.CM% | @src/cmsearch@ - %4EMIT%
 1  fail      search:t/sq/stdin  cat %TEMIT% | @src/cmsearch@ %T.CM% -
-1  fail      search:3/sq/stdin  cat %3EMIT% | @src/cmsearch@ %3.CM% -
+1  fail      search:4/sq/stdin  cat %4EMIT% | @src/cmsearch@ %4.CM% -
 
-1  exercise  search:t/3trna/A  @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %T.CM% !testsuite/3trnas.fa!
-1  exercise  search:3/1k/A     @src/cmsearch@ -Z 1000 -A %3.AMSA% %3.CM% !testsuite/1k-3.fa!
+1  exercise  search:t/A        @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %T.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  search:4/1k/A     @src/cmsearch@ -Z 1000 -A %4.AMSA% %4.CM% !testsuite/1k-4.fa!
 
 1  exercise  search:t/10k/g    @src/cmsearch@  -g %T.CM% %T10K%
 1  exercise  search:v/10k/g    @src/cmsearch@  -g %V.CM% %V10K%
-1  exercise  search:3/10k/g    @src/cmsearch@  -g %3.CM% %310K%
+1  exercise  search:4/10k/g    @src/cmsearch@  -g %4.CM% %410K%
 1  exercise  search:t/emit/g   @src/cmsearch@  -g %T.CM% %TEMIT%
 1  exercise  search:v/emit/g   @src/cmsearch@  -g %V.CM% %VEMIT%
-1  exercise  search:3/emit/g   @src/cmsearch@  -g %3.CM% %3EMIT%
+1  exercise  search:4/emit/g   @src/cmsearch@  -g %4.CM% %4EMIT%
 
 1  exercise  search:t/10k/Z    @src/cmsearch@  -Z 100  %T.CM% %T10K%
 1  exercise  search:t/emit/Z   @src/cmsearch@  -Z 1100 %T.CM% %TEMIT%
-1  exercise  search:3/10k/Z    @src/cmsearch@  -Z 100  %3.CM% %310K%
-1  exercise  search:3/emit/Z   @src/cmsearch@  -Z 1100 %3.CM% %3EMIT%
+1  exercise  search:4/10k/Z    @src/cmsearch@  -Z 100  %4.CM% %410K%
+1  exercise  search:4/emit/Z   @src/cmsearch@  -Z 1100 %4.CM% %4EMIT%
 
 1  exercise  search:t/emit/o       @src/cmsearch@  -o %TMPOUT% %T.CM% %TEMIT%
-1  exercise  search:3/emit/o       @src/cmsearch@  -o %TMPOUT% %3.CM% %3EMIT%
+1  exercise  search:4/emit/o       @src/cmsearch@  -o %TMPOUT% %4.CM% %4EMIT%
 1  exercise  search:t/1k/tbl       @src/cmsearch@  --tblout %TMPOUT% %T.CM% %T1K%
-1  exercise  search:3/1k/tbl       @src/cmsearch@  --tblout %TMPOUT% %3.CM% %31K%
+1  exercise  search:4/1k/tbl       @src/cmsearch@  --tblout %TMPOUT% %4.CM% %41K%
 1  exercise  search:t/1k/tbl       @src/cmsearch@  --acc %T.CM% %T1K%
-1  exercise  search:3/1k/tbl       @src/cmsearch@  --acc %3.CM% %31K%
+1  exercise  search:4/1k/tbl       @src/cmsearch@  --acc %4.CM% %41K%
 1  exercise  search:t/1k/noali     @src/cmsearch@  --noali %T.CM% %T1K%
-1  exercise  search:3/1k/noali     @src/cmsearch@  --noali %3.CM% %31K%
+1  exercise  search:4/1k/noali     @src/cmsearch@  --noali %4.CM% %41K%
 1  exercise  search:t/1k/notextw   @src/cmsearch@  --notextw %T.CM% %T1K%
-1  exercise  search:3/1k/notextw   @src/cmsearch@  --notextw %3.CM% %31K%
+1  exercise  search:4/1k/notextw   @src/cmsearch@  --notextw %4.CM% %41K%
 1  exercise  search:t/1k/textw     @src/cmsearch@  --textw 150 %T.CM% %T1K%
-1  exercise  search:3/1k/textw     @src/cmsearch@  --textw 150 %3.CM% %31K%
+1  exercise  search:4/1k/textw     @src/cmsearch@  --textw 150 %4.CM% %41K%
 1  exercise  search:t/1k/verbose   @src/cmsearch@  --verbose %T.CM% %T1K%
-1  exercise  search:3/1k/verbose   @src/cmsearch@  --verbose %3.CM% %31K%
+1  exercise  search:4/1k/verbose   @src/cmsearch@  --verbose %4.CM% %41K%
 
 1  exercise  search:t/1k/E   @src/cmsearch@  -E 0.001 %T.CM% %T1K%
-1  exercise  search:3/1k/E   @src/cmsearch@  -E 1000 %3.CM% %31K%
+1  exercise  search:4/1k/E   @src/cmsearch@  -E 1000 %4.CM% %41K%
 1  exercise  search:t/1k/T   @src/cmsearch@  -T 25 %T.CM% %T1K%
-1  exercise  search:3/1k/T   @src/cmsearch@  -T 12 %3.CM% %31K%
+1  exercise  search:4/1k/T   @src/cmsearch@  -T 12 %4.CM% %41K%
 
 1  exercise  search:t/1k/incE   @src/cmsearch@  --incE 0.001 %T.CM% %T1K%
-1  exercise  search:3/1k/incE   @src/cmsearch@  --incE 1000 %3.CM% %31K%
+1  exercise  search:4/1k/incE   @src/cmsearch@  --incE 1000 %4.CM% %41K%
 1  exercise  search:t/1k/incT   @src/cmsearch@  --incT 25 %T.CM% %T1K%
-1  exercise  search:3/1k/incT   @src/cmsearch@  --incT 12 %3.CM% %31K%
+1  exercise  search:4/1k/incT   @src/cmsearch@  --incT 12 %4.CM% %41K%
 
 1  exercise  search:t/1k/cutga   @src/cmsearch@  --cut_ga %T.CM% %T1K%
-1  exercise  search:3/1k/cutga   @src/cmsearch@  --cut_ga %3.CM% %31K%
+1  exercise  search:4/1k/cutga   @src/cmsearch@  --cut_ga %4.CM% %41K%
 1  exercise  search:t/1k/cuttc   @src/cmsearch@  --cut_tc %T.CM% %T1K%
-1  exercise  search:3/1k/cuttc   @src/cmsearch@  --cut_tc %3.CM% %31K%
+1  exercise  search:4/1k/cuttc   @src/cmsearch@  --cut_tc %4.CM% %41K%
 # tRNA NC cutoff is undefined in Rfam 10.1
 1  exercise  search:v/1k/cutnc   @src/cmsearch@  --cut_nc %V.CM% %V1K%
 
@@ -1380,28 +1418,28 @@
 
 # other options
 1  exercise  search:t/1k/nn3       @src/cmsearch@  --nonull3 %T.CM% %T1K%
-1  exercise  search:3/r1k/nn3      @src/cmsearch@  --nonull3 %3.CM% %R1K%
+1  exercise  search:4/r1k/nn3      @src/cmsearch@  --nonull3 %4.CM% %R1K%
 1  exercise  search:t/1k/mx        @src/cmsearch@  --mxsize 32. %T.CM% %T1K%
-1  exercise  search:3/r1k/mx       @src/cmsearch@  --mxsize 1024. %3.CM% %R1K%
+1  exercise  search:4/r1k/mx       @src/cmsearch@  --mxsize 1024. %4.CM% %R1K%
 1  exercise  search:t/1k/smx       @src/cmsearch@  --smxsize 32. %T.CM% %T1K%
-1  exercise  search:3/r1k/smx      @src/cmsearch@  --smxsize 1024. %3.CM% %R1K%
+1  exercise  search:4/r1k/smx      @src/cmsearch@  --smxsize 1024. %4.CM% %R1K%
 1  exercise  search:t/1k/cyk       @src/cmsearch@  --cyk %T.CM% %T1K%
-1  exercise  search:3/r1k/cyk      @src/cmsearch@  --cyk %3.CM% %R1K%
+1  exercise  search:4/r1k/cyk      @src/cmsearch@  --cyk %4.CM% %R1K%
 1  exercise  search:t/1k/acyk      @src/cmsearch@  --acyk %T.CM% %T1K%
-1  exercise  search:3/r1k/acyk     @src/cmsearch@  --acyk %3.CM% %R1K%
+1  exercise  search:4/r1k/acyk     @src/cmsearch@  --acyk %4.CM% %R1K%
 1  exercise  search:t/1k/wcx/3     @src/cmsearch@  --wcx 3 %T.CM% %T1K%
 1  exercise  search:t/1k/wcx/5     @src/cmsearch@  --wcx 5 %T.CM% %T1K%
 1  fail      search:t/1k/wcx/0p3   @src/cmsearch@  --wcx 0.3 %T.CM% %T1K%
 1  fail      search:t/1k/wcx/nohmm @src/cmsearch@  --wcx 3 --nohmm %T.CM% %T1K%
 1  fail      search:t/1k/wcx/fqdb  @src/cmsearch@  --wcx 3 --fqdb %T.CM% %T1K%
 1  fail      search:t/1k/wcx/qdb   @src/cmsearch@  --wcx 3 --qdb %T.CM% %T1K%
-1  exercise  search:3/1k/wcx/3     @src/cmsearch@  --wcx 3 %3.CM% %R1K%
-1  exercise  search:3/1k/wcx/5     @src/cmsearch@  --wcx 5 %3.CM% %R1K%
+1  exercise  search:4/1k/wcx/3     @src/cmsearch@  --wcx 3 %4.CM% %R1K%
+1  exercise  search:4/1k/wcx/5     @src/cmsearch@  --wcx 5 %4.CM% %R1K%
 1  exercise  search:t/1k/top       @src/cmsearch@  --toponly %T.CM% %T1K%
-1  exercise  search:3/r1k/top      @src/cmsearch@  --toponly %3.CM% %R1K%
+1  exercise  search:4/r1k/top      @src/cmsearch@  --toponly %4.CM% %R1K%
 1  exercise  search:t/1k/bot       @src/cmsearch@  --bottomonly %T.CM% %T1K%
-1  exercise  search:3/r1k/bot      @src/cmsearch@  --bottomonly %3.CM% %R1K%
-1  exercise  search:t/1k/tfmt      @src/cmsearch@  --tformat fasta %T.CM% !testsuite/3trnas.fa!
+1  exercise  search:4/r1k/bot      @src/cmsearch@  --bottomonly %4.CM% %R1K%
+1  exercise  search:t/1k/tfmt      @src/cmsearch@  --tformat fasta %T.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  search:t/r1k/tfmt     @src/cmsearch@  --tformat Genbank %T.CM% !testsuite/3trnas.gb!
 1  exercise  search:t/r1k/tfmt     @src/cmsearch@  --tformat embL %T.CM% !testsuite/3trnas.embl!
 1  exercise  search:t/r1k/afmt     @src/cmsearch@  %T.CM% !testsuite/3trnas.gb!
@@ -1432,7 +1470,7 @@
 
 1  exercise  search:v/1k/noF1/FZ     @src/cmsearch@  --noF1 --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/noF2/FZ     @src/cmsearch@  --noF2 --noF2b --FZ 1000 %V.CM% %V1K%
-1  exercise  search:v/1k/noF3/FZ     @src/cmsearch@  --noF3 --noF3b --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/noF4/FZ     @src/cmsearch@  --noF3 --noF3b --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/noF4/FZ     @src/cmsearch@  --noF4 --noF4b --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/noF6/FZ     @src/cmsearch@  --noF6 --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/doF1b/FZ    @src/cmsearch@  --doF1b --FZ 1000 %V.CM% %V1K%
@@ -1444,7 +1482,7 @@
 1  exercise  search:v/1k/F1b/FZ      @src/cmsearch@  --doF1b --F1b 0.01 --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/F2/FZ       @src/cmsearch@  --F2 0.001 --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/F2b/FZ      @src/cmsearch@  --F2b 0.001 --FZ 1000 %V.CM% %V1K%
-1  exercise  search:v/1k/F3/FZ       @src/cmsearch@  --F3 1E-4 --FZ 1000 %V.CM% %V1K%
+1  exercise  search:v/1k/F4/FZ       @src/cmsearch@  --F3 1E-4 --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/F3b/FZ      @src/cmsearch@  --F3b 1E-5 --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/F4/FZ       @src/cmsearch@  --F4 0.10 --FZ 1000 %V.CM% %V1K%
 1  exercise  search:v/1k/F4b/FZ      @src/cmsearch@  --F4b 1E-6 --FZ 1000 %V.CM% %V1K%
@@ -1470,6 +1508,19 @@
 1  exercise  search:v/1k/hnb       @src/cmsearch@  --hmmnobias %V.CM% %V1K%
 1  exercise  search:v/1k/hnn2      @src/cmsearch@  --hmmnonull2 %V.CM% %V1K%
 1  exercise  search:v/1k/nho       @src/cmsearch@  --nohmmonly %V.CM% %V1K%
+
+1  exercise  search:4/1k/ho        @src/cmsearch@  --hmmonly %4.CM% %41K%
+1  exercise  search:4/1k/hoF1      @src/cmsearch@  --hmmonly --hmmF1 0.05 %4.CM% %41K%
+1  exercise  search:4/1k/hoF2      @src/cmsearch@  --hmmonly --hmmF2 0.05 %4.CM% %41K%
+1  exercise  search:4/1k/hoF3      @src/cmsearch@  --hmmonly --hmmF2 0.05 --hmmF3 0.05 %4.CM% %41K%
+1  exercise  search:4/1k/honb      @src/cmsearch@  --hmmonly --hmmnobias %4.CM% %41K%
+1  exercise  search:4/1k/honn2     @src/cmsearch@  --hmmonly --hmmnonull2 %4.CM% %41K%
+1  exercise  search:4/1k/hF1       @src/cmsearch@  --hmmF1 0.05 %4.CM% %41K%
+1  exercise  search:4/1k/hF2       @src/cmsearch@  --hmmF2 0.05 %4.CM% %41K%
+1  exercise  search:4/1k/hF3       @src/cmsearch@  --hmmF2 0.05 --hmmF3 0.05 %4.CM% %41K%
+1  exercise  search:4/1k/hnb       @src/cmsearch@  --hmmnobias %4.CM% %41K%
+1  exercise  search:4/1k/hnn2      @src/cmsearch@  --hmmnonull2 %4.CM% %41K%
+1  exercise  search:4/1k/nho       @src/cmsearch@  --nohmmonly %4.CM% %41K%
 
 # envelope defn options
 1  exercise  search:v/1k/rt1        @src/cmsearch@  --rt1 0.15 %V.CM% %V1K%
@@ -1521,8 +1572,8 @@
 1  exercise  search:v/1k/cp9noel    @src/cmsearch@  --cp9noel %V.CM% %V1K%
 1  exercise  search:v/1k/cp9gloc    @src/cmsearch@  --cp9gloc %V.CM% %V1K%
 1  exercise  search:v/1k/null2      @src/cmsearch@  --null2 %V.CM% %V1K%
-1  exercise  search:3/100k/xtau     @src/cmsearch@  --xtau 4 %3.CM% %3100K%
-1  exercise  search:3/100k/maxtau   @src/cmsearch@  --maxtau 0.3 %3.CM% %3100K%
+1  exercise  search:4/100k/xtau     @src/cmsearch@  --xtau 4 %4.CM% %4100K%
+1  exercise  search:4/100k/maxtau   @src/cmsearch@  --maxtau 0.4 %4.CM% %4100K%
 1  exercise  search:v/1k/seed0      @src/cmsearch@  --seed 0 %V.CM% %V1K%
 1  exercise  search:v/1k/seed1      @src/cmsearch@  --seed 1 %V.CM% %V1K%
 
@@ -1533,64 +1584,80 @@
 ##################################################################
 
 1  exercise  stat:build/t/a     @src/cmbuild@ -F %A.TRNA.CM% !testsuite/tRNA.sto!
-1  exercise  stat:build/3/a     @src/cmbuild@ -F %A.3.CM% !testsuite/3.sto!
+1  exercise  stat:build/4/a     @src/cmbuild@ -F %A.4.CM% !testsuite/4.sto!
 
 1  prep      stat:copy/tC/a     cp !testsuite/tRNA.c.cm! %A.TRNA.C.CM%
-1  prep      stat:copy/3C/a     cp !testsuite/3.c.cm! %A.3.C.CM%
+1  prep      stat:copy/4C/a     cp !testsuite/4.c.cm! %A.4.C.CM%
 
 1  exercise  stat:convert/t/b   @src/cmconvert@ -b %A.TRNA.CM% > %B.TRNA.CM%
-1  exercise  stat:convert/3/b   @src/cmconvert@ -b %A.3.CM% > %B.3.CM%
+1  exercise  stat:convert/4/b   @src/cmconvert@ -b %A.4.CM% > %B.4.CM%
 
 1  exercise  stat:convert/tC/b  @src/cmconvert@ -b %A.TRNA.C.CM% > %B.TRNA.C.CM%
-1  exercise  stat:convert/3C/b  @src/cmconvert@ -b %A.3.C.CM% > %B.3.C.CM%
+1  exercise  stat:convert/4C/b  @src/cmconvert@ -b %A.4.C.CM% > %B.4.C.CM%
 
 1  exercise  stat:help/1        @src/cmstat@ -h
 
 1  exercise  stat:t/a           @src/cmstat@   %A.TRNA.CM% 
-1  exercise  stat:3/a           @src/cmstat@   %A.3.CM% 
+1  exercise  stat:t/a/ho        @src/cmstat@   --hmmonly %A.TRNA.CM% 
+1  exercise  stat:t/a/nho       @src/cmstat@   --nohmmonly %A.TRNA.CM% 
+1  exercise  stat:4/a           @src/cmstat@   %A.4.CM% 
+1  exercise  stat:4/a/ho        @src/cmstat@   --hmmonly %A.4.CM% 
+1  exercise  stat:4/a/nho       @src/cmstat@   --nohmmonly %A.4.CM% 
 
 1  exercise  stat:tC/a          @src/cmstat@   %A.TRNA.C.CM% 
-1  exercise  stat:3C/a          @src/cmstat@   %A.3.C.CM% 
+1  exercise  stat:tC/a/ho       @src/cmstat@   --hmmonly %A.TRNA.C.CM% 
+1  exercise  stat:tC/a/nho      @src/cmstat@   --nohmmonly %A.TRNA.C.CM% 
+1  exercise  stat:4C/a          @src/cmstat@   %A.4.C.CM% 
+1  exercise  stat:4C/a/ho       @src/cmstat@   --hmmonly %A.4.C.CM% 
+1  exercise  stat:4C/a/nho      @src/cmstat@   --nohmmonly %A.4.C.CM% 
 
 1  exercise  stat:t/a/stdin     cat %A.TRNA.CM%   | @src/cmstat@ -
-1  exercise  stat:3/a/stdin     cat %A.3.CM%      | @src/cmstat@ -
+1  exercise  stat:4/a/stdin     cat %A.4.CM%      | @src/cmstat@ -
 
 1  exercise  stat:tC/a/stdin    cat %A.TRNA.C.CM% | @src/cmstat@ -
-1  exercise  stat:3C/a/stdin    cat %A.3.C.CM%    | @src/cmstat@ -
+1  exercise  stat:4C/a/stdin    cat %A.4.C.CM%    | @src/cmstat@ -
 
 1  exercise  stat:t/b           @src/cmstat@   %B.TRNA.CM% 
-1  exercise  stat:3/b           @src/cmstat@   %B.3.CM% 
+1  exercise  stat:t/b/ho        @src/cmstat@   --hmmonly %B.TRNA.CM% 
+1  exercise  stat:t/b/nho       @src/cmstat@   --nohmmonly %B.TRNA.CM% 
+1  exercise  stat:4/b           @src/cmstat@   %B.4.CM% 
+1  exercise  stat:4/b/ho        @src/cmstat@   --hmmonly %B.4.CM% 
+1  exercise  stat:4/b/nho       @src/cmstat@   --nohmmonly %B.4.CM% 
 
 1  exercise  stat:tC/b          @src/cmstat@   %B.TRNA.C.CM% 
-1  exercise  stat:3C/b          @src/cmstat@   %B.3.C.CM% 
+1  exercise  stat:tC/b/ho       @src/cmstat@   --hmmonly %B.TRNA.C.CM% 
+1  exercise  stat:tC/b/nho      @src/cmstat@   --nohmmonly %B.TRNA.C.CM% 
+1  exercise  stat:4C/b          @src/cmstat@   %B.4.C.CM% 
+1  exercise  stat:4C/b/ho       @src/cmstat@   --hmmonly %B.4.C.CM% 
+1  exercise  stat:4C/b/nho      @src/cmstat@   --nohmmonly %B.4.C.CM% 
 
 1  exercise  stat:t/b/stdin     cat %B.TRNA.CM%   | @src/cmstat@ -
-1  exercise  stat:3/b/stdin     cat %B.3.CM%      | @src/cmstat@ -
+1  exercise  stat:4/b/stdin     cat %B.4.CM%      | @src/cmstat@ -
 
 1  exercise  stat:tC/b/stdin    cat %B.TRNA.C.CM% | @src/cmstat@ -
-1  exercise  stat:3C/b/stdin    cat %B.3.C.CM%    | @src/cmstat@ -
+1  exercise  stat:4C/b/stdin    cat %B.4.C.CM%    | @src/cmstat@ -
 
 # --key (works with calibrated or non-calibrated files)
 1  exercise  stat:t/a/key1      @src/cmstat@   --key tRNA %A.TRNA.CM% 
 1  exercise  stat:t/a/key2      @src/cmstat@   --key RF00005 %A.TRNA.CM% 
-1  exercise  stat:3/a/key1      @src/cmstat@   --key Vault %A.3.CM% 
-1  exercise  stat:3/a/key2      @src/cmstat@   --key RF00006 %A.3.CM% 
+1  exercise  stat:4/a/key1      @src/cmstat@   --key Vault %A.4.CM% 
+1  exercise  stat:4/a/key2      @src/cmstat@   --key RF00006 %A.4.CM% 
 
 1  exercise  stat:tC/a/key1     @src/cmstat@   --key tRNA %A.TRNA.C.CM% 
 1  exercise  stat:tC/a/key2     @src/cmstat@   --key RF00005 %A.TRNA.C.CM% 
-1  exercise  stat:3C/a/key1     @src/cmstat@   --key Vault %A.3.C.CM% 
-1  exercise  stat:3C/a/key2     @src/cmstat@   --key RF00006 %A.3.C.CM% 
+1  exercise  stat:4C/a/key1     @src/cmstat@   --key Vault %A.4.C.CM% 
+1  exercise  stat:4C/a/key2     @src/cmstat@   --key RF00006 %A.4.C.CM% 
 
 
 1  exercise  stat:t/b/key1      @src/cmstat@   --key tRNA %B.TRNA.CM% 
 1  exercise  stat:t/b/key2      @src/cmstat@   --key RF00005 %B.TRNA.CM% 
-1  exercise  stat:3/b/key1      @src/cmstat@   --key Vault %B.3.CM% 
-1  exercise  stat:3/b/key2      @src/cmstat@   --key RF00006 %B.3.CM% 
+1  exercise  stat:4/b/key1      @src/cmstat@   --key Vault %B.4.CM% 
+1  exercise  stat:4/b/key2      @src/cmstat@   --key RF00006 %B.4.CM% 
 
 1  exercise  stat:tC/b/key1     @src/cmstat@   --key tRNA %B.TRNA.C.CM% 
 1  exercise  stat:tC/b/key2     @src/cmstat@   --key RF00005 %B.TRNA.C.CM% 
-1  exercise  stat:3C/b/key1     @src/cmstat@   --key Vault %B.3.C.CM% 
-1  exercise  stat:3C/b/key2     @src/cmstat@   --key RF00006 %B.3.C.CM% 
+1  exercise  stat:4C/b/key1     @src/cmstat@   --key Vault %B.4.C.CM% 
+1  exercise  stat:4C/b/key2     @src/cmstat@   --key RF00006 %B.4.C.CM% 
 
 ###################
 # Remaining options tested only work with calibrated models
@@ -1598,54 +1665,54 @@
 # -E 
 1  exercise  stat:tC/a/E1    @src/cmstat@   -E 0.01  %A.TRNA.C.CM% 
 1  exercise  stat:tC/a/E2    @src/cmstat@   -E 100   %A.TRNA.C.CM% 
-1  exercise  stat:3C/a/E1    @src/cmstat@   -E 1E-12 %A.3.C.CM% 
-1  exercise  stat:3C/a/E2    @src/cmstat@   -E 10000 %A.3.C.CM% 
+1  exercise  stat:4C/a/E1    @src/cmstat@   -E 1E-12 %A.4.C.CM% 
+1  exercise  stat:4C/a/E2    @src/cmstat@   -E 10000 %A.4.C.CM% 
 
 1  exercise  stat:tC/b/E1    @src/cmstat@   -E 0.01  %B.TRNA.C.CM% 
 1  exercise  stat:tC/b/E2    @src/cmstat@   -E 100   %B.TRNA.C.CM% 
-1  exercise  stat:3C/b/E1    @src/cmstat@   -E 1E-12 %B.3.C.CM% 
-1  exercise  stat:3C/b/E2    @src/cmstat@   -E 10000 %B.3.C.CM% 
+1  exercise  stat:4C/b/E1    @src/cmstat@   -E 1E-12 %B.4.C.CM% 
+1  exercise  stat:4C/b/E2    @src/cmstat@   -E 10000 %B.4.C.CM% 
 
 # -Z 
 1  exercise  stat:tC/a/Z1    @src/cmstat@   -Z 10 -E 0.01  %A.TRNA.C.CM% 
 1  exercise  stat:tC/a/Z2    @src/cmstat@   -Z 1000 -E 100   %A.TRNA.C.CM% 
-1  exercise  stat:3C/a/Z1    @src/cmstat@   -Z 0.3 -E 1E-12 %A.3.C.CM% 
-1  exercise  stat:3C/a/Z2    @src/cmstat@   -Z 10000 -E 10000 %A.3.C.CM% 
+1  exercise  stat:4C/a/Z1    @src/cmstat@   -Z 0.4 -E 1E-12 %A.4.C.CM% 
+1  exercise  stat:4C/a/Z2    @src/cmstat@   -Z 10000 -E 10000 %A.4.C.CM% 
 
 1  exercise  stat:tC/b/Z1    @src/cmstat@   -Z 11 -E 0.01 %B.TRNA.C.CM% 
 1  exercise  stat:tC/b/Z2    @src/cmstat@   -Z 0.01 -E 100  %B.TRNA.C.CM% 
-1  exercise  stat:3C/b/Z1    @src/cmstat@   -Z 33 -E 1E-12 %B.3.C.CM% 
-1  exercise  stat:3C/b/Z2    @src/cmstat@   -Z 1002 -E 10000 %B.3.C.CM% 
+1  exercise  stat:4C/b/Z1    @src/cmstat@   -Z 44 -E 1E-12 %B.4.C.CM% 
+1  exercise  stat:4C/b/Z2    @src/cmstat@   -Z 1002 -E 10000 %B.4.C.CM% 
 
 # --cut_ga
 1  exercise  stat:tC/a/ga    @src/cmstat@   --cut_ga  %A.TRNA.C.CM% 
 1  exercise  stat:tC/a/gaZ   @src/cmstat@   -Z 1000 --cut_ga  %A.TRNA.C.CM% 
-1  exercise  stat:3C/a/ga    @src/cmstat@   --cut_ga %A.3.C.CM% 
-1  exercise  stat:3C/a/ga    @src/cmstat@   -Z 3 --cut_ga %A.3.C.CM% 
+1  exercise  stat:4C/a/ga    @src/cmstat@   --cut_ga %A.4.C.CM% 
+1  exercise  stat:4C/a/ga    @src/cmstat@   -Z 4 --cut_ga %A.4.C.CM% 
  
 1  exercise  stat:tC/b/ga    @src/cmstat@   --cut_ga  %B.TRNA.C.CM% 
 1  exercise  stat:tC/b/gaZ   @src/cmstat@   -Z 1000 --cut_ga  %B.TRNA.C.CM% 
-1  exercise  stat:3C/b/ga    @src/cmstat@   --cut_ga %B.3.C.CM% 
-1  exercise  stat:3C/b/ga    @src/cmstat@   -Z 3 --cut_ga %B.3.C.CM% 
+1  exercise  stat:4C/b/ga    @src/cmstat@   --cut_ga %B.4.C.CM% 
+1  exercise  stat:4C/b/ga    @src/cmstat@   -Z 4 --cut_ga %B.4.C.CM% 
 
 # --cut_nc
 1  exercise  stat:tC/a/nc    @src/cmstat@   --cut_nc  %A.TRNA.C.CM% 
 1  exercise  stat:tC/a/ncZ   @src/cmstat@   -Z 1000 --cut_nc  %A.TRNA.C.CM% 
-1  exercise  stat:3C/a/nc    @src/cmstat@   --cut_nc %A.3.C.CM% 
-1  exercise  stat:3C/a/nc    @src/cmstat@   -Z 3 --cut_nc %A.3.C.CM% 
+1  exercise  stat:4C/a/nc    @src/cmstat@   --cut_nc %A.4.C.CM% 
+1  exercise  stat:4C/a/nc    @src/cmstat@   -Z 4 --cut_nc %A.4.C.CM% 
 
 1  exercise  stat:tC/b/nc    @src/cmstat@   --cut_nc  %B.TRNA.C.CM% 
 1  exercise  stat:tC/b/ncZ   @src/cmstat@   -Z 1000 --cut_nc  %B.TRNA.C.CM% 
-1  exercise  stat:3C/b/nc    @src/cmstat@   --cut_nc %B.3.C.CM% 
-1  exercise  stat:3C/b/nc    @src/cmstat@   -Z 3 --cut_nc %B.3.C.CM% 
+1  exercise  stat:4C/b/nc    @src/cmstat@   --cut_nc %B.4.C.CM% 
+1  exercise  stat:4C/b/nc    @src/cmstat@   -Z 4 --cut_nc %B.4.C.CM% 
 
 # --cut_tc
 1  exercise  stat:tC/a/tc    @src/cmstat@   --cut_tc  %A.TRNA.C.CM% 
 1  exercise  stat:tC/a/tcZ   @src/cmstat@   -Z 1000 --cut_tc  %A.TRNA.C.CM% 
-1  exercise  stat:3C/a/tc    @src/cmstat@   --cut_tc %A.3.C.CM% 
-1  exercise  stat:3C/a/tc    @src/cmstat@   -Z 3 --cut_tc %A.3.C.CM% 
+1  exercise  stat:4C/a/tc    @src/cmstat@   --cut_tc %A.4.C.CM% 
+1  exercise  stat:4C/a/tc    @src/cmstat@   -Z 4 --cut_tc %A.4.C.CM% 
 
 1  exercise  stat:tC/b/tc    @src/cmstat@   --cut_tc  %B.TRNA.C.CM% 
 1  exercise  stat:tC/b/tcZ   @src/cmstat@   -Z 1000 --cut_tc  %B.TRNA.C.CM% 
-1  exercise  stat:3C/b/tc    @src/cmstat@   --cut_tc %B.3.C.CM% 
-1  exercise  stat:3C/b/tc    @src/cmstat@   -Z 3 --cut_tc %B.3.C.CM% 
+1  exercise  stat:4C/b/tc    @src/cmstat@   --cut_tc %B.4.C.CM% 
+1  exercise  stat:4C/b/tc    @src/cmstat@   -Z 4 --cut_tc %B.4.C.CM% 

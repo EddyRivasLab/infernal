@@ -3,8 +3,8 @@
 # Test that programs accept and reject argument of '-' (for reading
 # data from stdin, rather than from files) as they're supposed to.
 #
-# Usage:   ./i4-stdin.pl <builddir> <srcdir> <tmpfile prefix>
-# Example: ./i4-stdin.pl ..         ..       tmpfoo
+# Usage:   ./itest4-stdin.pl <builddir> <srcdir> <tmpfile prefix>
+# Example: ./itest4-stdin.pl ..         ..       tmpfoo
 #
 # SRE, Wed Oct 27 13:05:10 2010 [Janelia]
 # SVN $URL$

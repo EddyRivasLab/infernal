@@ -480,7 +480,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   P7_TRACE    **p7trA = NULL;  /* generated traces (if !cfg->use_cm) */
   char *name;
   int namelen;
-  int i, L; 
+  int i, x, L; 
   ESL_MSA *msa = NULL;      /* the MSA we're building */
   int nseq = esl_opt_GetInteger(go, "-N");
   int do_truncate;
@@ -542,6 +542,13 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       if (esl_sq_SetName(sqA[i], name) != eslOK) cm_Fail("Failed to set sequence name\n");
     }
     p7_tracealign_Seqs(sqA, p7trA, nseq, cm->fp7->M, p7_ALL_CONSENSUS_COLS, cm->fp7, &msa);
+    /* create an SS_cons string for the msa */
+    if(msa->ss_cons == NULL) { 
+      if(msa->rf == NULL) cm_Fail("HMM emitted MSA has no reference annotation");
+      ESL_ALLOC(msa->ss_cons, sizeof(char) * (msa->alen+1));
+      for(x = 0; x < msa->alen; x++) msa->ss_cons[x] = (msa->rf[x] == '.') ? '.' : ':';
+      msa->ss_cons[msa->alen] = '\0';
+    }
   }
 
   if(cm->name != NULL) if((status = esl_strdup(cm->name, -1, &(msa->name))) != eslOK) goto ERROR;
@@ -549,8 +556,9 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 				  (cfg->use_cm ? "" : " [hmm-mode]"))) != eslOK) goto ERROR;
 
   /* Truncate the alignment if nec */
-  if(do_truncate)
+  if(do_truncate) { 
     if((status = truncate_msa(go, cfg, msa, cm->abc, errbuf)) != eslOK) cm_Fail(errbuf);
+  }
 
   /* Output the alignment */
   status = eslx_msafile_Write(cfg->ofp, msa, outfmt);

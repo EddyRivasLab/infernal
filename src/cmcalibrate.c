@@ -50,7 +50,6 @@
 
 #define REALLYSMALLX        1e-20
 #define EXPTAIL_CHUNKLEN    10000 /* sequence chunk length for random sequence searches */
-///#define EXPTAIL_CHUNKLEN    1000 /* sequence chunk length for random sequence searches */
 #define DEBUGMPI 0
 
 typedef struct {

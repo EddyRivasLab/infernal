@@ -40,6 +40,8 @@
 1 exercise  itest/msa-integrity     perl !testsuite/itest3-msa-integrity.pl!      @@ !! %OUTFILES%
 1 exercise  itest/stdin-pipes       perl !testsuite/itest4-stdin.pl!              @@ !! %OUTFILES%
 1 exercise  itest/pipeline          perl !testsuite/itest5-pipeline.pl!           @@ !! %OUTFILES%
+1 exercise  itest/sensitivity       perl !testsuite/itest6-sensitivity.pl!        @@ !! %OUTFILES%
+1 exercise  itest/trunc             perl !testsuite/itest7-trunc.pl!              @@ !! %OUTFILES%
 1 exercise  itest/brute             @src/itest_brute@  
 
 ################################################################
@@ -64,62 +66,73 @@
 1  exercise    build/help/1   @src/cmbuild@ -h
 1  exercise    build/help/2   @src/cmbuild@ --devhelp
 1  exercise    build/t        @src/cmbuild@ -F %TRNA.CM% !testsuite/tRNA.sto!
-1  exercise    build/v        @src/cmbuild@ -F %VAULT.CM% !testsuite/Vault.sto!
-1  exercise    build/s        @src/cmbuild@ -F %SRP.CM% !testsuite/Plant_SRP.sto!
-1  exercise    build/3        @src/cmbuild@ -F %3.CM% !testsuite/3.sto!
+1  exercise    build/v/o      @src/cmbuild@ -F -o %VAULT.OUT% %VAULT.CM% !testsuite/Vault.sto!
+1  exercise    build/s/O      @src/cmbuild@ -F -O %SRP.STK% %SRP.CM% !testsuite/Plant_SRP.sto!
+1  exercise    build/zbp/O    @src/cmbuild@ -F -O %ZBP.STK% %ZBP.CM% !testsuite/snR75.sto!
+1  exercise    build/4/O      @src/cmbuild@ -F -O %4.STK% %4.CM% !testsuite/4.sto!
 
 # cmsearch exercises (CM must be calibrated)
 1  prep        copy/tC        cp !testsuite/tRNA.c.cm! %TRNA.C.CM%
 1  prep        copy/vC        cp !testsuite/Vault.c.cm! %VAULT.C.CM%
 1  prep        copy/sC        cp !testsuite/Plant_SRP.c.cm! %SRP.C.CM%
-1  prep        copy/3C        cp !testsuite/3.c.cm! %3.C.CM%
+1  prep        copy/zbpC      cp !testsuite/snR75.c.cm! %ZBP.C.CM%
+1  prep        copy/4C        cp !testsuite/4.c.cm! %4.C.CM%
 1  exercise    search/help/1  @src/cmsearch@ -h
 1  exercise    search/help/2  @src/cmsearch@ --devhelp
 
-1  exercise    search/t       @src/cmsearch@ -Z 1000 %TRNA.C.CM% !testsuite/3trnas.fa!
-1  exercise    search/v       @src/cmsearch@ -Z 1000 %VAULT.C.CM% !testsuite/3trnas.fa!
-1  exercise    search/s       @src/cmsearch@ -Z 1000 %SRP.C.CM% !testsuite/3trnas.fa!
-1  exercise    search/3       @src/cmsearch@ -Z 1000 %3.C.CM% !testsuite/3trnas.fa!
-1  exercise    search/t/A     @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %TRNA.C.CM% !testsuite/3trnas.fa!
-1  exercise    search/3/A     @src/cmsearch@ -Z 1000 -A %3.AMSA% %3.C.CM% !testsuite/1k-3.fa!
+1  exercise    search/t       @src/cmsearch@ -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/v       @src/cmsearch@ -Z 1000 %VAULT.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/s       @src/cmsearch@ -Z 1000 %SRP.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/4       @src/cmsearch@ -Z 1000 %4.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/zbp     @src/cmsearch@ -Z 1000 %ZBP.C.CM% !testsuite/emitted-snR75.fa!
+1  exercise    search/t/A     @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/4/A     @src/cmsearch@ -Z 1000 -A %4.AMSA% %4.C.CM% !testsuite/1k-4.fa!
+1  exercise    search/zbp/A   @src/cmsearch@ -Z 1000 -A %ZBP.AMSA% %ZBP.C.CM% !testsuite/1k-snR75.fa!
 
 # cmstat exercises 
 1  exercise    stat/help/1    @src/cmstat@ -h
 1  exercise    stat/t         @src/cmstat@   %TRNA.CM% 
 1  exercise    stat/v         @src/cmstat@   %VAULT.CM% 
-1  exercise    stat/c         @src/cmstat@   %SRP.CM% 
+1  exercise    stat/s         @src/cmstat@   %SRP.CM% 
+1  exercise    stat/z         @src/cmstat@   %ZBP.CM% 
 1  exercise    stat/tC        @src/cmstat@   %TRNA.C.CM% 
 1  exercise    stat/vC        @src/cmstat@   %VAULT.C.CM% 
 1  exercise    stat/sC        @src/cmstat@   %SRP.C.CM% 
+1  exercise    stat/zC        @src/cmstat@   %ZBP.C.CM% 
 
 # cmpress exercises (cmscan requires a press'd CM file with E-values)
 1  exercise    press/tC       @src/cmpress@ %TRNA.C.CM%
 1  exercise    press/vC       @src/cmpress@ %VAULT.C.CM%
 1  exercise    press/sC       @src/cmpress@ %SRP.C.CM%
-1  exercise    press/3C       @src/cmpress@ %3.C.CM%
+1  exercise    press/zC       @src/cmpress@ %ZBP.C.CM%
+1  exercise    press/4C       @src/cmpress@ %4.C.CM%
 
 # cmscan exercises (cmscan requires a press'd CM file with E-values)
 1  exercise    scan/help/1    @src/cmscan@ -h
 1  exercise    scan/help/2    @src/cmscan@ --devhelp
-1  exercise    tC/scan/tC     @src/cmscan@ -Z 1000 %TRNA.C.CM% !testsuite/3trnas.fa!
+1  exercise    scan/tC        @src/cmscan@ -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/tC     rm -f %TRNA.C.CM%.*
-1  exercise    vC/scan/vC     @src/cmscan@ -Z 1000 %VAULT.C.CM% !testsuite/3trnas.fa!
+1  exercise    scan/vC        @src/cmscan@ -Z 1000 %VAULT.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/vC     rm -f %VAULT.C.CM%.*
-1  exercise    sC/scan/sC     @src/cmscan@ -Z 1000 %SRP.C.CM% !testsuite/3trnas.fa!
+1  exercise    scan/sC        @src/cmscan@ -Z 1000 %SRP.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/sC     rm -f %SRP.C.CM%.*
-1  exercise    3C/scan/3C     @src/cmscan@ -Z 1000 %3.C.CM% !testsuite/3trnas.fa!
-1  prep        cleanup/3C     rm -f %3.C.CM%.*
+1  exercise    scan/zC        @src/cmscan@ -Z 1000 %ZBP.C.CM% !testsuite/emitted-snR75.fa!
+1  prep        cleanup/zC     rm -f %ZBP.C.CM%.*
+1  exercise    scan/4C        @src/cmscan@ -Z 1000 %4.C.CM% !testsuite/emitted-tRNA.fa!
+1  prep        cleanup/4C     rm -f %4.C.CM%.*
 
 # cmemit exercises
 1  exercise  emit/help/1      @src/cmemit@ -h
 1  exercise  emit/t           @src/cmemit@   %TRNA.CM% 
 1  exercise  emit/v           @src/cmemit@   %VAULT.CM% 
 1  exercise  emit/s           @src/cmemit@   %SRP.CM% 
-1  exercise  emit/3           @src/cmemit@   %3.CM% 
+1  exercise  emit/4           @src/cmemit@   %4.CM% 
+1  exercise  emit/z           @src/cmemit@   %ZBP.CM% 
 1  exercise  emit/tC          @src/cmemit@   %TRNA.C.CM% 
 1  exercise  emit/vC          @src/cmemit@   %VAULT.C.CM% 
 1  exercise  emit/sC          @src/cmemit@   %SRP.C.CM% 
-1  exercise  emit/3C          @src/cmemit@   %3.C.CM% 
+1  exercise  emit/4C          @src/cmemit@   %4.C.CM% 
+1  exercise  emit/zC          @src/cmemit@   %ZBP.C.CM% 
 
 # cmconvert exercises 
 # (using cmemit to verify the conversion (I would
@@ -128,57 +141,57 @@
 1  exercise  convert/t        @src/cmconvert@ !testsuite/tRNA.1p0.cm! > %CONVERTED.TRNA.CM%
 1  exercise  convert/v        @src/cmconvert@ !testsuite/Vault.1p0.cm! > %CONVERTED.VAULT.CM%
 1  exercise  convert/s        @src/cmconvert@ !testsuite/Plant_SRP.1p0.cm! > %CONVERTED.SRP.CM%
-1  exercise  convert/3        @src/cmconvert@ !testsuite/3.1p0.cm! > %CONVERTED.3.CM%
+1  exercise  convert/4        @src/cmconvert@ !testsuite/4.1p0.cm! > %CONVERTED.4.CM%
 
 1  exercise  convert-emit/t   @src/cmemit@    %CONVERTED.TRNA.CM% 
 1  exercise  convert-emit/v   @src/cmemit@    %CONVERTED.VAULT.CM% 
 1  exercise  convert-emit/s   @src/cmemit@    %CONVERTED.SRP.CM% 
-1  exercise  convert-emit/3   @src/cmemit@    %CONVERTED.3.CM% 
+1  exercise  convert-emit/4   @src/cmemit@    %CONVERTED.4.CM% 
 
 # same thing but binary
 1  exercise  convert/t/b      @src/cmconvert@ -b !testsuite/tRNA.1p0.cm! > %B.CONVERTED.TRNA.CM%
 1  exercise  convert/v/b      @src/cmconvert@ -b !testsuite/Vault.1p0.cm! > %B.CONVERTED.VAULT.CM%
 1  exercise  convert/s/b      @src/cmconvert@ -b !testsuite/Plant_SRP.1p0.cm! > %B.CONVERTED.SRP.CM%
-1  exercise  convert/3/b      @src/cmconvert@ -b !testsuite/3.1p0.cm! > %B.CONVERTED.3.CM%
+1  exercise  convert/4/b      @src/cmconvert@ -b !testsuite/4.1p0.cm! > %B.CONVERTED.4.CM%
 
 1  exercise  convert-emit/t/b   @src/cmemit@    %B.CONVERTED.TRNA.CM% 
 1  exercise  convert-emit/v/b   @src/cmemit@    %B.CONVERTED.VAULT.CM% 
 1  exercise  convert-emit/s/b   @src/cmemit@    %B.CONVERTED.SRP.CM% 
-1  exercise  convert-emit/3/b   @src/cmemit@    %B.CONVERTED.3.CM% 
+1  exercise  convert-emit/4/b   @src/cmemit@    %B.CONVERTED.4.CM% 
 
 # same thing but with -1 (output in 1.0 format)
 1  exercise  convert/t/1        @src/cmconvert@ -1 !testsuite/tRNA.1p0.cm! > %1.TRNA.CM%
 1  exercise  convert/v/1        @src/cmconvert@ -1 !testsuite/Vault.1p0.cm! > %1.VAULT.CM%
 1  exercise  convert/s/1        @src/cmconvert@ -1 !testsuite/Plant_SRP.1p0.cm! > %1.SRP.CM%
-1  exercise  convert/3/1        @src/cmconvert@ -1 !testsuite/3.1p0.cm! > %1.3.CM%
+1  exercise  convert/4/1        @src/cmconvert@ -1 !testsuite/4.1p0.cm! > %1.4.CM%
 
 #convert 1.0 converted file to 1.1
 1  exercise  convert/t/1back    @src/cmconvert@ %1.TRNA.CM%  > %1.CONVERTED.TRNA.CM%
 1  exercise  convert/v/1back    @src/cmconvert@ %1.VAULT.CM% > %1.CONVERTED.VAULT.CM%
 1  exercise  convert/s/1back    @src/cmconvert@ %1.SRP.CM%   > %1.CONVERTED.SRP.CM%
-1  exercise  convert/3/1back    @src/cmconvert@ %1.3.CM% > %1.CONVERTED.3.CM%
+1  exercise  convert/4/1back    @src/cmconvert@ %1.4.CM% > %1.CONVERTED.4.CM%
 
 1  exercise  convert-emit/t/b   @src/cmemit@    %1.CONVERTED.TRNA.CM% 
 1  exercise  convert-emit/v/b   @src/cmemit@    %1.CONVERTED.VAULT.CM% 
 1  exercise  convert-emit/s/b   @src/cmemit@    %1.CONVERTED.SRP.CM% 
-1  exercise  convert-emit/3/b   @src/cmemit@    %1.CONVERTED.3.CM% 
+1  exercise  convert-emit/4/b   @src/cmemit@    %1.CONVERTED.4.CM% 
 
 # convert calibrated files
 1  exercise  convertC/t         @src/cmconvert@ !testsuite/tRNA.1p0.c.cm! > %CONVERTED.TRNA.C.CM%
 1  exercise  convertC/v         @src/cmconvert@ !testsuite/Vault.1p0.c.cm! > %CONVERTED.VAULT.C.CM%
 1  exercise  convertC/s         @src/cmconvert@ !testsuite/Plant_SRP.1p0.c.cm! > %CONVERTED.SRP.C.CM%
-1  exercise  convertC/3         @src/cmconvert@ !testsuite/3.1p0.c.cm! > %CONVERTED.3.C.CM%
+1  exercise  convertC/4         @src/cmconvert@ !testsuite/4.1p0.c.cm! > %CONVERTED.4.C.CM%
 
 1  exercise  convertC-emit/t    @src/cmemit@    %CONVERTED.TRNA.C.CM% 
 1  exercise  convertC-emit/v    @src/cmemit@    %CONVERTED.VAULT.C.CM% 
 1  exercise  convertC-emit/s    @src/cmemit@    %CONVERTED.SRP.C.CM% 
-1  exercise  convertC-emit/3    @src/cmemit@    %CONVERTED.3.C.CM% 
+1  exercise  convertC-emit/4    @src/cmemit@    %CONVERTED.4.C.CM% 
 
 # cmalign exercises
 1  exercise  align/help/1       @src/cmalign@ -h
 
-1  exercise  align/t/1          @src/cmalign@ %TRNA.CM% !testsuite/3trnas.fa!
-1  exercise  align/t/2          @src/cmalign@ -l %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  align/t/1          @src/cmalign@ %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align/t/2          @src/cmalign@ -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 2  exercise  align/v/1          @src/cmalign@ %VAULT.CM% !testsuite/vault.fa!
 2  exercise  align/v/2          @src/cmalign@ -l %VAULT.CM% !testsuite/vault.fa!
@@ -190,21 +203,21 @@
 1  exercise  calibrate/se       @src/cmcalibrate@ -L 0.1 %SE.CM%
 
 # cmfetch exercises
-1  exercise  fetch/3/index      @src/cmfetch@ --index %3.CM% 
-1  exercise  fetch/3/f          @src/cmfetch@ -f %3.CM% !testsuite/2.list!
-1  exercise  fetch/3/o          @src/cmfetch@ -o %TMP.CM% %3.CM% Vault
-1  exercise  fetch/3/O          @src/cmfetch@ -O %3.CM% Vault
-1  exercise  emit/3/O           @src/cmemit@ !testsuite/Vault!
-1  prep      cleanup/3/1        rm !testsuite/Vault!
-1  prep      cleanup/3/2        rm %3.CM%.ssi
+1  exercise  fetch/4/index      @src/cmfetch@ --index %4.CM% 
+1  exercise  fetch/4/f          @src/cmfetch@ -f %4.CM% !testsuite/2.list!
+1  exercise  fetch/4/o          @src/cmfetch@ -o %TMP.CM% %4.CM% Vault
+1  exercise  fetch/4/O          @src/cmfetch@ -O %4.CM% Vault
+1  exercise  emit/4/O           @src/cmemit@ !testsuite/Vault!
+1  prep      cleanup/4/1        rm !testsuite/Vault!
+1  prep      cleanup/4/2        rm %4.CM%.ssi
 
-1  exercise  fetch/3C/index     @src/cmfetch@ --index %3.C.CM% 
-1  exercise  fetch/3C/f         @src/cmfetch@ -f %3.C.CM% !testsuite/2.list!
-1  exercise  fetch/3C/o         @src/cmfetch@ -o %TMP.C.CM% %3.C.CM% Vault
-1  exercise  fetch/3C/O         @src/cmfetch@ -O %3.C.CM% Vault
-1  exercise  emit/3C/O          @src/cmemit@ !testsuite/Vault!
-1  prep      cleanup/3C/1       rm !testsuite/Vault!
-1  prep      cleanup/3C/2       rm %3.C.CM%.ssi
+1  exercise  fetch/4C/index     @src/cmfetch@ --index %4.C.CM% 
+1  exercise  fetch/4C/f         @src/cmfetch@ -f %4.C.CM% !testsuite/2.list!
+1  exercise  fetch/4C/o         @src/cmfetch@ -o %TMP.C.CM% %4.C.CM% Vault
+1  exercise  fetch/4C/O         @src/cmfetch@ -O %4.C.CM% Vault
+1  exercise  emit/4C/O          @src/cmemit@ !testsuite/Vault!
+1  prep      cleanup/4C/1       rm !testsuite/Vault!
+1  prep      cleanup/4C/2       rm %4.C.CM%.ssi
 
 # test program exercises
 #
@@ -219,11 +232,11 @@
 # bandcyk-montecarlo-test exercises (QDB calculation validation)
 1  exercise  bandcykmc/trna      @src/bandcyk-montecarlo-test@ %TRNA.CM%
 2  exercise  bandcykmc/rp        @src/bandcyk-montecarlo-test@ %RP.CM%
-2  exercise  bandcykmc/ssu       @src/bandcyk-montecarlo-test@ -W 2000 %SSU.CM%
+2  exercise  bandcykmc/ssu       @src/bandcyk-montecarlo-test@ -Z 2000 %SSU.CM%
 
 # bandcyk-truncation-test exercises (QDB calculation validation)
 1  exercise  bandcyktrunc/trna   @src/bandcyk-truncation-test@ %TRNA.CM% 160 1000
-2  exercise  bandcykrunc/rp      @src/bandcyk-truncation-test@ %RP.CM%  1000 2000
+2  exercise  bandcyktrunc/rp     @src/bandcyk-truncation-test@ %RP.CM%  1000 2000
 2  exercise  bandcyktrunc/ssu    @src/bandcyk-truncation-test@ %SSU.CM% 1687 3000 
 
 # cp9-test exercises (CP9 HMM construction validation)
@@ -236,11 +249,10 @@
 1  exercise  sub/trna1           @src/sub_cm-test@ %TRNA.CM%
 1  exercise  sub/rp              @src/sub_cm-test@ %RP.CM%
 2  exercise  sub/ssu             @src/sub_cm-test@ %SSU.CM%
-2  exercise  sub/trna2           @src/sub_cm-test@ --exhaust %TRNA.CM%
+1  exercise  sub/trna2           @src/sub_cm-test@ --exhaust %TRNA.CM%
 
 # trcyk (truncated CYK, D&C version, non D&C version is tested in cmalign) 
-1  exercise  trcyk/trna         @src/trcyk@ %TRNA.CM% !testsuite/3trnas.fa!
+1  exercise  trcyk/trna         @src/trcyk@ %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # truncyk_check (truncated CYK check, D&C version, non D&C version is tested in cmalign) 
-1  exercise  trcykcheck/trna    @src/truncyk_check@ %TRNA.CM% !testsuite/3trnas.fa!
-
+1  exercise  trcykcheck/trna    @src/truncyk_check@ %TRNA.CM% !testsuite/emitted-tRNA.fa!
