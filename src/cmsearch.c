@@ -2227,7 +2227,7 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
     if((dest_infoA[i].bg  = p7_bg_Create(src_info->bg->abc)) == NULL) goto ERROR;
     if(dest_infoA[i].p7_evparam == NULL) ESL_ALLOC(dest_infoA[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
     esl_vec_FCopy(src_info->cm->fp7_evparam, CM_p7_NEVPARAM, dest_infoA[i].p7_evparam);
-    dest_infoA[i].msvdata = p7_hmm_MSVDataCreate(dest_infoA[i].om, FALSE);
+    dest_infoA[i].msvdata = p7_hmm_MSVDataClone(src_info->msvdata, src_info->om->abc->Kp);
   }
   return eslOK;
   

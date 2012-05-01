@@ -2163,7 +2163,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
 	 * already in a previous pipeline pass).
 	 */
       }
-      p7_pli_ExtendAndMergeWindows(om, msvdata, &wlist, sq->n);
+      p7_pli_ExtendAndMergeWindows(om, msvdata, &wlist, sq->n, 0.0);
     }
     ESL_ALLOC(ws, sizeof(int64_t) * wlist.count);
     ESL_ALLOC(we, sizeof(int64_t) * wlist.count);
