@@ -432,9 +432,9 @@
 
 # seq weighting
 1  exercise  build:se/wgsc       @src/cmbuild@ --wgsc -F %SE.CM% !testsuite/se.sto! 
+1  exercise  build:se/wgsc       @src/cmbuild@ --wpb -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/wblm       @src/cmbuild@ --wblosum -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/wnon       @src/cmbuild@ --wnone -F %SE.CM% !testsuite/se.sto! 
-1  exercise  build:se/pbs        @src/cmbuild@ --pbswitch 1 -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/wid        @src/cmbuild@ --wblosum --wid 0.6 -F %SE.CM% !testsuite/se.sto! 
 
 # eweighting

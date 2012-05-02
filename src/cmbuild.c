@@ -32,7 +32,7 @@
 #include "infernal.h"
 
 #define CONOPTS "--fast,--hand,--rsearch"                      /* Exclusive options for model construction                    */
-#define WGTOPTS "--wgsc,--wblosum,--wpb,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
+#define WGTOPTS "--wpb,--wgsc,--wblosum,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
 #define EFFOPTS "--eent,--enone,--eset"                        /* Exclusive options for effective sequence number calculation */
 #define CLUSTOPTS "--ctarget,--cmaxid,--call,--corig,--cdump"  /* options for clustering the input aln and building a CM from each cluster */
 
@@ -75,13 +75,12 @@ static ESL_OPTIONS options[] = {
 
   /* Alternate relative sequence weighting strategies */
   /* name        type         default   env  range     toggles         reqs  incomp  help  docgroup*/
-  { "--wgsc",    eslARG_NONE,"default", NULL, NULL,    WGTOPTS,        NULL, NULL, "Gerstein/Sonnhammer/Chothia tree weights",          4 },
-  { "--wnone",   eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "don't do any relative weighting; set all to 1",     4 },
-  { "--wpb",     eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "Henikoff position-based weights",                   4 },
-  { "--wgiven",  eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "use weights as given in MSA file",                  4 },
-  { "--wblosum", eslARG_NONE,    FALSE, NULL, NULL,    WGTOPTS,        NULL, NULL, "Henikoff simple filter weights",                    4 },
+  { "--wpb",     eslARG_NONE,"default", NULL, NULL,    WGTOPTS,        NULL, NULL, "Henikoff position-based weights",                   4 },
+  { "--wgsc",    eslARG_NONE,     NULL, NULL, NULL,    WGTOPTS,        NULL, NULL, "Gerstein/Sonnhammer/Chothia tree weights",          4 },
+  { "--wnone",   eslARG_NONE,     NULL, NULL, NULL,    WGTOPTS,        NULL, NULL, "don't do any relative weighting; set all to 1",     4 },
+  { "--wgiven",  eslARG_NONE,     NULL, NULL, NULL,    WGTOPTS,        NULL, NULL, "use weights as given in MSA file",                  4 },
+  { "--wblosum", eslARG_NONE,     NULL, NULL, NULL,    WGTOPTS,        NULL, NULL, "Henikoff simple filter weights",                    4 },
   { "--wid",     eslARG_REAL,   "0.62", NULL,"0<=x<=1",   NULL, "--wblosum", NULL, "for --wblosum: set identity cutoff",                4 },
-  { "--pbswitch",eslARG_INT,    "5000", NULL,"n>0",       NULL,        NULL, NULL, "set failover to efficient PB wgts at > <n> seqs",   4 },
 
   /* Alternate effective sequence weighting strategies */
   /* name        type            default    env     range toggles      reqs   incomp  help  docgroup*/
@@ -654,13 +653,12 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
   if (esl_opt_IsUsed(go, "--elself"))      { fprintf(ofp, "# local end (EL) self loop probability:               %g\n", esl_opt_GetReal(go, "--elself")); }        
   if (esl_opt_IsUsed(go, "--n2omega"))     { fprintf(ofp, "# prior probability of null2 model (if used):         %g\n", esl_opt_GetReal(go, "--n2omega")); }
   if (esl_opt_IsUsed(go, "--n3omega"))     { fprintf(ofp, "# prior probability of null3 model (if used):         %g\n", esl_opt_GetReal(go, "--n3omega")); } 
+  if (esl_opt_IsUsed(go, "--wpb"))         { fprintf(ofp, "# relative weighting scheme:                          Henikoff PB\n"); }
   if (esl_opt_IsUsed(go, "--wgsc"))        { fprintf(ofp, "# relative weighting scheme:                          G/S/C\n"); }
   if (esl_opt_IsUsed(go, "--wnone"))       { fprintf(ofp, "# relative weighting scheme:                          none\n"); }
-  if (esl_opt_IsUsed(go, "--wpb"))         { fprintf(ofp, "# relative weighting scheme:                          Henikoff PB\n"); }
   if (esl_opt_IsUsed(go, "--wgiven"))      { fprintf(ofp, "# relative weighting scheme:                          wts from MSA file\n"); }
   if (esl_opt_IsUsed(go, "--wblosum"))     { fprintf(ofp, "# relative weighting scheme:                          BLOSUM filter\n"); } 
   if (esl_opt_IsUsed(go, "--wid"))         { fprintf(ofp, "# frac id cutoff for BLOSUM wgts:                     %f\n", esl_opt_GetReal(go, "--wid")); }
-  if (esl_opt_IsUsed(go, "--pbswitch"))    { fprintf(ofp, "# PB weight switchover point:                         %d\n", esl_opt_GetInteger(go, "--pbswitch")); }
 
   if (esl_opt_IsUsed(go, "--eent"))        { fprintf(ofp, "# effective seq number scheme:                        entropy weighting\n"); }
   if (esl_opt_IsUsed(go, "--enone"))       { fprintf(ofp, "# effective seq number scheme:                        none\n"); }
@@ -1370,7 +1368,6 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
 
    if      (esl_opt_GetBoolean(go, "--wnone"))                  esl_vec_DSet(msa->wgt, msa->nseq, 1.);
    else if (esl_opt_GetBoolean(go, "--wgiven"))                 ;
-   else if (msa->nseq >= esl_opt_GetInteger(go, "--pbswitch"))  esl_msaweight_PB(msa);
    else if (esl_opt_GetBoolean(go, "--wpb"))                    esl_msaweight_PB(msa);
    else if (esl_opt_GetBoolean(go, "--wgsc"))                   esl_msaweight_GSC(msa);
    else if (esl_opt_GetBoolean(go, "--wblosum"))                esl_msaweight_BLOSUM(msa, esl_opt_GetReal(go, "--wid"));

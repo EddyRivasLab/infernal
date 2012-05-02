@@ -236,29 +236,20 @@ representation. For example, two identical sequences would typically
 each receive half the weight that one sequence would.  These options
 control which algorithm gets used.
 
+.TP
+.B --wpb
+Use the Henikoff position-based sequence weighting scheme [Henikoff
+and Henikoff, J. Mol. Biol. 243:574, 1994].  This is the default.
+
 .TP 
-.B --wgsc
-Use the Gerstein/Sonnhammer/Chothia (GSC) weighting algorithm. This is the
-default unless the number of sequences in the alignment exceeds a
-cutoff (see
-.B --pbswitch),
-in which case the default becomes the faster Henikoff position-based
-weighting scheme.
+.B --wgsc 
+Use the Gerstein/Sonnhammer/Chothia weighting algorithm [Gerstein et
+al, J. Mol. Biol. 235:1067, 1994].
 
 .TP 
 .B --wnone
 Turn sequence weighting off; e.g. explicitly set all
 sequence weights to 1.0.
-
-.TP
-.B --wpb
-Use the Henikoff position-based weighting scheme. This weighting
-scheme is automatically used (overriding 
-.B --wgsc
-and 
-.B --wblosum) 
-if the number of sequences in the alignment exceeds a cutoff (see
-.B --pbswitch).
 
 .TP
 .B --wgiven
@@ -283,18 +274,6 @@ Controls the behavior of the
 weighting option by setting the percent identity for clustering the
 alignment to
 .I <x>.
-
-.TP 
-.BI --pbswitch " <n>"
-Set the cutoff for automatically switching the weighting method to the Henikoff
-position-based weighting scheme to 
-.I <n>.
-If the number of sequences in the alignment exceeds
-.I <n>
-Henikoff weighting is used. 
-By default 
-.I <n>
-is 5000.
 
 .SH OPTIONS CONTROLLING EFFECTIVE SEQUENCE NUMBER
 

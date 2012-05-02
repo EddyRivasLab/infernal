@@ -172,7 +172,7 @@ cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, 
     if (fx > 0.) { 
       if(pretend_cm_is_hmm) { if ((R = esl_rootfinder_Create(hmm_eweight_target_f, &p))    == NULL) {status = eslEMEM; goto ERROR;} }
       else                  { if ((R = esl_rootfinder_Create(cm_eweight_target_f, &p))     == NULL) {status = eslEMEM; goto ERROR;} }
-      esl_rootfinder_SetAbsoluteTolerance(R, 1e-3); /* getting Neff to ~3 sig digits is fine */
+      esl_rootfinder_SetAbsoluteTolerance(R, 0.01); /* getting Neff to ~2 sig digits is fine */
       if ((status = esl_root_Bisection(R, 0., (double) cm->nseq, &Neff)) != eslOK) goto ERROR;
       
       esl_rootfinder_Destroy(R);
