@@ -420,7 +420,7 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float gapthr
   esl_stack_Destroy(pda);
   free(ct);
 
-  /* OK, we've converted ct into gtr -- gtr is a tree structure
+  /* Ok, we've converted ct into gtr -- gtr is a tree structure
    * telling us the arrangement of consensus nodes. Now do the drill
    * for constructing a full model using this guide tree. We only have
    * to do this step if we're returning a CM though. (Sometimes caller
@@ -439,8 +439,8 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float gapthr
     esl_vec_ICopy(c2a_map, (cm->clen+1), cm->map);
     cm->flags |= CMH_MAP;
     
-    /* cm->rf is copied from the msa, from consensus positions */
-    if(msa->rf != NULL) { 
+    /* if <use_rf> == TRUE, msa->rf is transferred to cm->rf, from consensus positions */
+    if(use_rf == TRUE) { /* if use_rf is TRUE, msa->rf is non-NULL */
       if(cm->rf != NULL) free(cm->rf); /* this is paranoid, it will be NULL */
       ESL_ALLOC(cm->rf, sizeof(char) * (cm->clen+2));
       cm->rf[0] = ' ';

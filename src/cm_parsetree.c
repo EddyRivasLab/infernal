@@ -698,7 +698,6 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   int         *elfirst = NULL;  /* first uapos (unaligned position) for an EL following a cpos in cur seq */
   int          tpos;            /* position in a parsetree */
   int          el_len;	        /* length of an EL insertion in residues */
-  CMConsensus_t *con = NULL;    /* consensus information for the CM */
   int          prvnd;	        /* keeps track of previous node for EL */
   int          nins;            /* insert counter used for splitting inserts */
   int          do_post;         /* TRUE if postcode != NULL (we should write at least 1 sequence's posteriors) */
@@ -715,11 +714,13 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
    * resulting MSA in, but it has to make sense (see next few lines). */
   if(cm->abc->type == eslRNA) {  
       if(abc->type != eslRNA && abc->type != eslDNA)
-	ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+	ESL_XFAIL(eslEINVAL, errbuf, "Parsetrees2Alignment(): cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
   }
   else if(cm->abc->K != abc->K) {
-    ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+    ESL_XFAIL(eslEINVAL, errbuf, "Parsetrees2Alignment(): cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
   }
+  /* cm->cmcons must exist */
+  if(cm->cmcons == NULL) ESL_XFAIL(eslEINVAL, errbuf, "Parsetrees2Alignment(): cm-cmcons is NULL");
 
   do_post = (postcode == NULL) ? FALSE : TRUE;
   emap = cm->emap; /* for convenience */
@@ -1124,7 +1125,6 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   /* Gee, wasn't that easy?
    * Add the rest of the ("optional") information to the MSA.
    */
-  if((con = CreateCMConsensus(cm, abc)) == NULL) { status = eslEMEM; goto ERROR; }
   
   /* "author" info */
   ESL_ALLOC(msa->au, sizeof(char) * (strlen(INFERNAL_VERSION)+10));
@@ -1158,12 +1158,12 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  /* bug i1, xref STL7 p.12. Before annotating something as a base pair,
 	   * make sure the paired column is also present.
 	   */
-	  if (con->ct[cpos-1] != -1 && matuse[con->ct[cpos-1]+1] == 0) {
+	  if (cm->cmcons->ct[cpos-1] != -1 && matuse[cm->cmcons->ct[cpos-1]+1] == 0) {
 	    msa->ss_cons[matmap[cpos]] = '.';
-	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
+	    msa->rf[matmap[cpos]]      = (cm->flags & CMH_RF) ? cm->rf[cpos] : cm->cmcons->cseq[cpos-1];
 	  } else {
-	    msa->ss_cons[matmap[cpos]] = con->cstr[cpos-1];	
-	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
+	    msa->ss_cons[matmap[cpos]] = cm->cmcons->cstr[cpos-1];	
+	    msa->rf[matmap[cpos]]      = (cm->flags & CMH_RF) ? cm->rf[cpos] : cm->cmcons->cseq[cpos-1];
 	  }
 	}
       if ((maxil[cpos] > 0) && (! do_matchonly)) 
@@ -1193,7 +1193,6 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   if(tmp_apc  != NULL) free(tmp_apc);
   if(s_cposA  != NULL) free(s_cposA);
   if(e_cposA  != NULL) free(e_cposA);
-  FreeCMConsensus(con);
   free(matuse);
   free(iluse);
   free(eluse);
@@ -1212,7 +1211,6 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   
  ERROR:
   if(tmp_apc != NULL) free(tmp_apc);
-  if(con   != NULL)  FreeCMConsensus(con);
   if(matuse!= NULL)  free(matuse);
   if(iluse != NULL)  free(iluse);
   if(eluse != NULL)  free(eluse);
@@ -1419,8 +1417,7 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_f
   return -1.;
 }
 
-/*
- * Function: Parsetree2CP9trace()
+/* Function: Parsetree2CP9trace()
  * Incept:   EPN, Wed May 30 09:33:01 2007
  *
  * Purpose: Convert a CM parsetree into it's implicit CP9 trace.

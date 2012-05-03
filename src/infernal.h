@@ -1742,8 +1742,8 @@ typedef struct cm_s {
   char    *name;        /* name of the model                            (mandatory)      */ /* String, \0-terminated   */
   char    *acc;	        /* accession number of model (Rfam)             (CMH_ACC)        */ /* String, \0-terminated   */
   char    *desc;        /* brief (1-line) description of model          (CMH_DESC))      */ /* String, \0-terminated   */
-  char    *rf;          /* reference line from alignment 1..M           (CMH_RF)         */ /* String; 0=' ', M+1='\0' */
-  char    *consensus;   /* consensus residue line        1..M           (CMH_CONS)       */ /* String; 0=' ', M+1='\0' */
+  char    *rf;          /* reference line from alignment    1..clen     (CMH_RF)         */ /* String; 0=' ', clen+1='\0' */
+  char    *consensus;   /* consensus residue line           1..clen     (CMH_CONS)       */ /* String; 0=' ', clen+1='\0' */
   uint32_t checksum;    /* checksum of training sequences               (CMH_CHKSUM)     */
   int     *map;         /* map of alignment cols onto model 1..clen     (CMH_MAP)        */ /* Array; map[0]=0 */
 
