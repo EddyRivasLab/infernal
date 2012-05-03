@@ -142,8 +142,18 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float gapthr
 
   /* Watch for off-by-one. rf is [0..alen-1]; matassign is [1..alen] */
   if (use_rf) { 
+    /* Define match based on RF char, if gap or missing ('-_.~')
+     * then insert, else match. 
+     * 
+     * It's impt we don't count '~' as a match column b/c we don't
+     * want a match column to have RF == '~' in a cmalign output
+     * alignment as that would screw the merging of subalignments in
+     * cmalign, which assumes '~' RF columns are EL inserts.
+     */
     for (apos = 1; apos <= msa->alen; apos++)
-      matassign[apos] = (esl_abc_CIsGap(msa->abc, msa->rf[apos-1]) ? FALSE : TRUE);
+      matassign[apos] = ((esl_abc_CIsGap    (msa->abc, msa->rf[apos-1])) || /* CIsGap     returns true for '.', '_' and '-' only (they're equivalent, see create_rna() in esl_alphabet.c()) */
+			 (esl_abc_CIsMissing(msa->abc, msa->rf[apos-1])))   /* CIsMissing returns true for '~' only */
+			  ? FALSE : TRUE;
   }
   else if(! use_wts) { 
     for (apos = 1; apos <= msa->alen; apos++) { 

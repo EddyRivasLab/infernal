@@ -274,13 +274,13 @@ main(int argc, char **argv)
    */
 #ifdef HAVE_MPI
 
-  /* TEMP */
+#if 0 
   pid_t pid;
   /* get the process id */
   pid = getpid();
   printf("The process id is %d\n", pid);
   fflush(stdout);
-  /* TEMP */
+#endif
 
   /* pause the execution of the programs execution until the user has a
    * chance to attach with a debugger and send a signal to resume execution
