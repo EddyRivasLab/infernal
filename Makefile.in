@@ -123,31 +123,37 @@ tests:
 # check: Run test suites.
 #
 # We do a 'check' in HMMERDIR/testsuite, not HMMERDIR/ because we
-# don't need to run the Easel testsuite twice. Also, HMMER's 'make
-# check' requires its own easel subdir, which doesn't exist since
-# HMMER uses Infernal's everywhere else. To get around this we create
-# easel/ in hmmer/ and populate it with all required files, then
-# delete all of it when we're done - ugly, but it works and doesn't
-# require modifying HMMER's testsuite.sqc.
+# don't need to run the Easel testsuite twice.
+#
+# Also, HMMER's 'make check' requires its own easel subdir complete
+# with compiled miniapps. This may or may not exist. In working copies
+# of the trunk it will exist but won't be compiled (infernal/hmmer/
+# will use infernal/easel, not infernal/hmmer/easel). In a released
+# version infernal/hmmer/easel won't even exist since we delete it
+# prior to creating a release.  So, we take care to have the calling
+# of hmmer's testsuite work in either case. If hmmer/easel/ exists we
+# copy the required miniapps into it and run 'make check' from
+# hmmer/testsuite then delete them. If it doesn't, we create a symlink
+# to infernal/easel as infernal/hmmer/easel then we run the testsuite
+# and then we delete the symlink.
+
 check:
 	${QUIET_SUBDIR0}${ESLDIR}              ${QUIET_SUBDIR1} tests
 	${QUIET_SUBDIR0}${SADIR}               ${QUIET_SUBDIR1} all
 	${QUIET_SUBDIR0}${HMMERDIR}            ${QUIET_SUBDIR1} tests
 	${QUIET_SUBDIR0}src                    ${QUIET_SUBDIR1} tests
 	${QUIET_SUBDIR0}${ESLDIR}              ${QUIET_SUBDIR1} check
-#	mkdir -p ${HMMERDIR}/easel/miniapps/ 
-#	mkdir -p ${HMMERDIR}/easel/formats/ 
-#	cp ${ESLDIR}/miniapps/esl-afetch   ${HMMERDIR}/easel/miniapps/
-#	cp ${ESLDIR}/miniapps/esl-reformat ${HMMERDIR}/easel/miniapps/
-#	cp ${ESLDIR}/miniapps/esl-sfetch   ${HMMERDIR}/easel/miniapps/
-#	cp ${ESLDIR}/miniapps/esl-shuffle  ${HMMERDIR}/easel/miniapps/
-#	cp ${ESLDIR}/formats/BLOSUM62      ${HMMERDIR}/easel/formats/
-#	${QUIET_SUBDIR0}${HMMERDIR}/testsuite  ${QUIET_SUBDIR1} check
-#	rm    ${HMMERDIR}/easel/miniapps/*
-#	rm    ${HMMERDIR}/easel/formats/*
-#	rmdir --ignore-fail-on-non-empty ${HMMERDIR}/easel/miniapps
-#	rmdir --ignore-fail-on-non-empty ${HMMERDIR}/easel/formats
-#	rmdir --ignore-fail-on-non-empty ${HMMERDIR}/easel
+	if   test -d ${HMMERDIR}/easel; then cp ${ESLDIR}/miniapps/esl-afetch   ${HMMERDIR}/easel/miniapps; fi
+	if   test -d ${HMMERDIR}/easel; then cp ${ESLDIR}/miniapps/esl-reformat ${HMMERDIR}/easel/miniapps; fi
+	if   test -d ${HMMERDIR}/easel; then cp ${ESLDIR}/miniapps/esl-sfetch   ${HMMERDIR}/easel/miniapps; fi
+	if   test -d ${HMMERDIR}/easel; then cp ${ESLDIR}/miniapps/esl-shuffle  ${HMMERDIR}/easel/miniapps; fi
+	if ! test -d ${HMMERDIR}/easel; then cd ${HMMERDIR}; @LN_S@ ../${ESLDIR} .; cd ..; fi
+	${QUIET_SUBDIR0}${HMMERDIR}/testsuite  ${QUIET_SUBDIR1} check
+	if   test -L ${HMMERDIR}/easel; then rm ${HMMERDIR}/easel; fi
+	if   test -e ${HMMERDIR}/easel/miniapps/esl-afetch;   then rm ${HMMERDIR}/easel/miniapps/esl-afetch;   fi
+	if   test -e ${HMMERDIR}/easel/miniapps/esl-reformat; then rm ${HMMERDIR}/easel/miniapps/esl-reformat; fi
+	if   test -e ${HMMERDIR}/easel/miniapps/esl-sfetch;   then rm ${HMMERDIR}/easel/miniapps/esl-sfetch;   fi
+	if   test -e ${HMMERDIR}/easel/miniapps/esl-shuffle;  then rm ${HMMERDIR}/easel/miniapps/esl-shuffle;  fi
 	${QUIET_SUBDIR0}testsuite              ${QUIET_SUBDIR1} check
 
 # devcheck: Run Infernal developer test suite (slower, but more comprehensive than 'check').

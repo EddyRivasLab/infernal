@@ -393,6 +393,8 @@ if test "$ax_cv_c_compiler_vendor" != "intel"; then
 fi
 AC_PROG_RANLIB
 AC_PATH_PROG([AR], [ar], [:], [$PATH:/usr/ccs/bin:/usr/xpg4/bin])
+# check for ln -s, we'll need this (only) to do hmmer/testsuite/'s 'make check' 
+AC_PROG_LN_S
 CHECK_GNU_MAKE
 
 # Select our optimization level in CFLAGS.
