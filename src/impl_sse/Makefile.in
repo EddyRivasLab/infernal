@@ -24,11 +24,12 @@ INSTALL     = @INSTALL@
 
 ESLDIR         = @INFERNAL_ESLDIR@
 HMMERDIR       = @INFERNAL_HMMERDIR@
-MYLIBDIRS      = -L../../${HMMERDIR}/src -L../../${ESLDIR} -L..
-MYINCDIRS      = -I../../${HMMERDIR}/src \
-		 -I../../${ESLDIR} \
-		 -I${top_srcdir}/easel \
-		 -I${top_srcdir}/hmmer \
+#MYLIBDIRS      = -L../../${HMMERDIR}/src -L../../${ESLDIR} -L..
+MYLIBDIRS      = -L../../${ESLDIR} -L../../${HMMERDIR}/src -L..
+MYINCDIRS      = -I../../${ESLDIR} \
+		 -I{$top_srcdir}/easel \
+		 -I../../${HMMERDIR}/src \
+		 -I${top_srcdir}/hmmer/src \
 		 -I. \
 		 -I.. \
 		 -I${srcdir} \
