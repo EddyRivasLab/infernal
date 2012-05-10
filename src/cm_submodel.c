@@ -779,6 +779,13 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
 
   /*debug_sub_cm_check_all_trans(orig_cm, sub_cm, submap);*/
 
+  /* reset sub_cm->qdbinfo->setby, we don't want to have to calculate QDBs for the sub CM unless we have to */
+  if(sub_cm->qdbinfo->setby == CM_QDBINFO_SETBY_INIT) sub_cm->qdbinfo->setby = CM_QDBINFO_SETBY_SUBINIT;
+  if(sub_cm->W == 0) { 
+    sub_cm->W = orig_cm->W;
+    sub_cm->W_setby = CM_W_SETBY_SUBCOPY;
+  }
+
   /* Finally renormalize the CM */
   CMRenormalize(sub_cm);
   /* DO NOT LOGODDSIFY YET, we'll do this when we call ConfigCM() for this CM, 

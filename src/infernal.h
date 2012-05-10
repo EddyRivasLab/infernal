@@ -92,6 +92,8 @@
 #define DEFAULT_CP9BANDS_THRESH1   0.01
 #define DEFAULT_CP9BANDS_THRESH2   0.98
 #define DEFAULT_EL_SELFPROB        0.94
+#define DEFAULT_MAXTAU             0.1            /* default cm->maxtau, max allowed tau value during HMM band tightening */
+#define DEFAULT_XTAU               2.0            /* default cm->xtau, value to multiply tau by during HMM band tightening */
 
 /* number of possible integer GC contents, example 40 = 0.40 GC */
 #define GC_SEGMENTS 101
@@ -1527,8 +1529,8 @@ typedef struct cm_tr_hb_emit_mx_s {
  * 31. CM_QDBINFO: model specific QDB information, including 2 sets of bands.
  ***********************************************************************************/
 
-enum cm_qdbinfo_setby_e    { CM_QDBINFO_SETBY_INIT = 0, CM_QDBINFO_SETBY_CMFILE = 1, CM_QDBINFO_SETBY_BANDCALC = 2 };
-enum cm_w_setby_e          { CM_W_SETBY_INIT = 0, CM_W_SETBY_CMFILE = 1, CM_W_SETBY_BANDCALC = 2, CM_W_SETBY_CMDLINE = 3 };
+enum cm_qdbinfo_setby_e    { CM_QDBINFO_SETBY_INIT = 0, CM_QDBINFO_SETBY_CMFILE = 1, CM_QDBINFO_SETBY_BANDCALC = 2, CM_QDBINFO_SETBY_SUBINIT };
+enum cm_w_setby_e          { CM_W_SETBY_INIT = 0, CM_W_SETBY_CMFILE = 1, CM_W_SETBY_BANDCALC = 2, CM_W_SETBY_CMDLINE = 3, CM_W_SETBY_SUBCOPY };
 
 /* Structure CM_QDBINFO: Per-model information on QDBs including 
  * two sets of dmin/dmax values and the beta values used to 
@@ -1814,13 +1816,15 @@ typedef struct cm_s {
   int    W;             /* max d: max size of a hit (EPN 08.18.05)                 */
   double beta_W;        /* tail loss probability for QDB calculation used to set W */
   enum cm_w_setby_e W_setby; /* how current W value was set: 
-			      * CM_W_SETBY_INIT | CM_W_SETBY_CMFILE | CM_W_SETBY_BANDCALC | CM_W_SETBY_CMDLINE */
+			      * CM_W_SETBY_INIT | CM_W_SETBY_CMFILE | CM_W_SETBY_BANDCALC | CM_W_SETBY_CMDLINE | CM_W_SETBY_SUBCOPY */
   /* regarding W: if W_setby is CM_W_SETBY_INIT or CM_W_SETBY_CMDLINE, then beta_W does not correspond
    * to a band calculation beta value used to compute W (set as dmax[0]). Otherwise, it does. */
 
   CM_QDBINFO *qdbinfo;  /* two sets of QDBs and the beta values used to calc them  */
 
   double  tau;          /* tail loss probability for HMM target dependent banding             */
+  double  maxtau;       /* maximum allowed tau value for HMM band tightening                  */
+  double  xtau;         /* factor to multiply tau by at each iteration of HMM band tightening */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
@@ -1964,6 +1968,7 @@ typedef struct cm_s {
 #define CM_ALIGN_QDB           (1<<19) /* align with QDBs                          */
 #define CM_ALIGN_INSIDE        (1<<20) /* use Inside algorithm                     */
 #define CM_ALIGN_TRUNC         (1<<21) /* use truncated alignment algorithms       */
+#define CM_ALIGN_XTAU          (1<<22) /* multiply tau until banded mx size < limit*/ 
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_HBANDED      (1<<0)  /* use HMM bands to search (default)        */
@@ -2466,6 +2471,7 @@ typedef struct {
   float             secs_aln;   /* seconds elapsed during alignment calculation */
   float             secs_tot;   /* seconds elapsed for entire processing of this sequence */
   float             mb_tot;     /* total Mb required for all DP matrices for alignment */
+  double            tau;        /* tau used for HMM band calculation, -1 if no hmm bands */
 } CM_ALNDATA;
 
 /*****************************************************************
@@ -2591,8 +2597,8 @@ extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_A
 CM_ALNDATA * cm_alndata_Create(void);
 void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sq);
 int          DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA);
-int          DispatchSqAlignment     (CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx, int cp9b_valid, 
-				      ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data);
+int          DispatchSqAlignment     (CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
+				      int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data);
 
 /* from cm_dpalign.c */
 extern int   cm_AlignSizeNeeded   (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
@@ -3148,7 +3154,7 @@ extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
 extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int do_trunc, int debug_level);
 extern int          cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int pass_idx, int debug_level);
-extern int          cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, double maxtau, double xtau, float *ret_Mb);
+extern int          cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, double xtau, float *ret_Mb);
 extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
 extern void         cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
 extern int          cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf);

@@ -329,32 +329,39 @@ increase the chance of missing the optimal alignment due to the HMM
 bands.
 
 .TP
-.B --nonbanded
-Turns off HMM banding. The returned alignment is guaranteed to be the
-globally optimally accurate one (by default) or the globally optimally
-scoring one (if 
-.B --cyk
-is enabled).
-The 
-.B --small
-option is recommended in combination with this option, because
-standard alignment without HMM banding requires a lot of memory (see
-.B --small
-).
-
-.TP
 .BI --mxsize " <x>"
-Set the maximum allowable DP matrix size to 
+Set the maximum allowable total DP matrix size to 
 .I <x>
-megabytes. By default this size is 256 Mb. 
-This should be large enough for the vast majority of alignments, 
+megabytes. By default this size is 1028 Mb. 
+This should be large enough for the vast majority of alignments,
 however if it is not 
+.B cmalign 
+will attempt to iteratively tighten the HMM bands it uses to constrain the
+alignment by raising the tau parameter and recalculating the bands
+until the total matrix size needed falls below 
+.I <x>
+megabytes or the maximum allowable tau value (0.01 by default, but
+changeable with 
+.B --maxtau)
+is reached. At each iteration of band tightening, tau is multiplied by
+a preset factor (2.0 by default but changeable with
+.B --xtau).
+The band tightening strategy can be turned off with the 
+.B --fixedtau
+option.
+If the maximum tau is reached and the required matrix size still exceeds 
+.I <x>
+or if HMM banding is not being used and the required matrix size exceeds
+.I <x>
+then 
 .B cmalign 
 will exit prematurely and report an error message that 
 the matrix exceeded its maximum allowable size. In this case, the
 .B --mxsize 
-can be used to raise the limit.
-This is most likely to occur when the
+can be used to raise the size limit or the maximum tau
+can be raised with
+.B --maxtau.
+The limit will commonly be exceeded when the 
 .B --nonbanded
 option is used without the
 .B --small 
@@ -369,6 +376,45 @@ have an allocated
 matrix of up to size 
 .I <x>
 Mb at any given time.
+
+.TP
+.B --fixedtau
+Turn off the HMM band tightening strategy described in the explanation
+of the 
+.B --mxsize
+option above.
+
+.TP
+.BI --xtau " <x>"
+Set the factor by which to mulitply tau at each iteration of band
+tightening, described in the explanation of 
+.B --mxsize 
+above, to 
+.I <x>.
+By default this value is 2.0.
+
+.TP
+.BI --maxtau " <x>"
+Set the maximum allowed value for tau during band
+tightening, described in the explanation of 
+.B --mxsize 
+above, to 
+.I <x>.
+By default this value is 0.01.
+
+.TP
+.B --nonbanded
+Turns off HMM banding. The returned alignment is guaranteed to be the
+globally optimally accurate one (by default) or the globally optimally
+scoring one (if 
+.B --cyk
+is enabled).
+The 
+.B --small
+option is recommended in combination with this option, because
+standard alignment without HMM banding requires a lot of memory (see
+.B --small
+).
 
 .TP
 .B --small

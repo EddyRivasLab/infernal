@@ -3651,7 +3651,9 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
      do_trunc, do_inside, cutoff, env_cutoff, do_hbanded, (hitlist == NULL) ? 0 : 1, (opt_envi == NULL && opt_envj == NULL) ? 0 : 1, start, stop); */
 
   if(do_hbanded) { 
-    status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, pli->hb_size_limit, TRUE, pli->maxtau, pli->xtau, &hbmx_Mb);
+    status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, pli->hb_size_limit, 
+				  TRUE, FALSE, FALSE, /* yes we're doing search, no we won't sample from mx, no we don't need posteriors (yet) */
+				  pli->maxtau, pli->xtau, &hbmx_Mb);
     if(status == eslERANGE) { 
       /* HMM banded matrix exceeded pli->hb_size_limit with tau of
        * pli->maxtau. We kill this potential hit. The memory limit
@@ -3807,7 +3809,7 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
        * because of the required shadow matrix, but that's roughly 25%
        * the size of the DP matrix, so the total size required for
        * alignment should never exceed twice what the Inside scan
-       * required.
+       * required.)
        */
       status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, 2*pli->hb_size_limit, hit->mode, pli->cur_pass_idx,
 				   TRUE, /* TRUE: cp9b bands are valid, don't recalc them */

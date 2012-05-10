@@ -25,6 +25,8 @@
 
 #define DEBUGPIPELINE  0
 
+static int sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_submap, CM_t **ret_sub_cm);
+
 /*****************************************************************
  * 1. The CM_ALNDATA object
  *****************************************************************/
@@ -55,6 +57,8 @@ cm_alndata_Create(void)
   data->epos       = -1;
   data->secs_bands = 0.;
   data->secs_aln   = 0.;
+  data->mb_tot     = 0.;
+  data->tau        = -1.;
   
   return data;
 
@@ -117,7 +121,7 @@ sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_sub
   int          epos;              /* HMM node most likely to have emitted posn L of target seq */
   int          epos_state;        /* HMM state type for curr epos 0=match or 1=insert */
 
-  /* sub-specific step 1. predict start and end positions (HMM nodes) from posterior matrix */
+  /* step 1. predict start and end positions (HMM nodes) from posterior matrix */
   if((status = cp9_Seq2Posteriors(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, sq->dsq, 1, sq->L, 0)) != eslOK) return status; 
   CP9NodeForPosn(orig_cm->cp9, 1, sq->L,     1, orig_cm->cp9_bmx, &spos, &spos_state, 0., TRUE,  0);
   CP9NodeForPosn(orig_cm->cp9, 1, sq->L, sq->L, orig_cm->cp9_bmx, &epos, &epos_state, 0., FALSE, 0);
@@ -137,15 +141,15 @@ sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_sub
    */
   if(epos <= spos) { spos = 1; epos = orig_cm->cp9->M; } 
   
-  /* sub-specific step 2. build the sub_cm from the original CM. */
+  /* step 2. build the sub_cm from the original CM. */
   if((status = build_sub_cm(orig_cm, errbuf, &sub_cm, 
 			    spos, epos,                /* first and last col of structure kept in the sub_cm  */
 			    &submap,                   /* this maps from the sub_cm to cm and vice versa      */
 			    0)) != eslOK)              /* don't print debugging info */
     return status;
 
-  /* sub-specific step 3. configure the sub_cm */
-  if((status = cm_ConfigureSub(sub_cm, errbuf, -1, orig_cm, submap)) != eslOK) return status; /* FALSE says: don't calculate W, we won't need it */
+  /* step 3. configure the sub_cm */
+  if((status = cm_ConfigureSub(sub_cm, errbuf, -1, orig_cm, submap)) != eslOK) return status; 
 
   *ret_sub_cm = sub_cm;
   *ret_submap = submap;
@@ -173,6 +177,13 @@ sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_sub
  *           want caller to pass in an array of modes, cp9b_valids and
  *           pass_idx values, one per sq.
  *
+ *           If (cm->flags & CM_ALIGN_XTAU) we'll potentially tighten
+ *           HMM bands until the required DP matrices are below out
+ *           limit (<mxsize>). cm->maxtau is the max allowed tau value
+ *           during this iterative band tightening, and cm->xtau is
+ *           the factor by which we multiply cm->tau at each iteration
+ *           during band tightening.
+ *
  * Args:     cm        - the covariance model
  *           errbuf    - char buffer for reporting errors
  *           sq_block  - block of sequences to align
@@ -188,7 +199,8 @@ sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_sub
  *           <ret_dataA> is alloc'ed and filled with sq_block->count CM_ALNDATA objects.
  */
 int
-DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA)
+DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, 
+			 ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA)
 {
   int           status;          /* easel status */
   int           j;               /* counter over parsetrees */
@@ -246,6 +258,13 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
  *           pipeline we don't care about determining spos/epos so we
  *           don't call ParsetreeToCMBounds().
  *                        
+ *           If (cm->flags & CM_ALIGN_XTAU) we'll potentially tighten
+ *           HMM bands until the required DP matrices are below out
+ *           limit (<mxsize>). cm->maxtau is the max allowed tau value
+ *           during this iterative band tightening, and cm->xtau is
+ *           the factor by which we multiply cm->tau at each iteration
+ *           during band tightening.
+ *
  * Args:     cm         - the covariance model
  *           errbuf     - char buffer for reporting errors
  *           sq         - sequence to align
@@ -265,8 +284,8 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
  *           <ret_data> is alloc'ed and filled.
  */
 int
-DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx, int cp9b_valid, 
-		    ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data)
+DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx, 
+		    int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data)
 {
   int           status;            /* easel status */
   CM_ALNDATA   *data       = NULL; /* CM_ALNDATA we'll create and fill */
@@ -277,8 +296,10 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   float         secs_bands = 0.;   /* seconds elapsed for band calculation */
   float         secs_aln   = 0.;   /* seconds elapsed for alignment calculation */
   float         mb_tot     = 0.;   /* size of all DP matrices used for alignment */
+  double        tau        = -1.;  /* tau used for calculating bands */
   int           spos       = -1;   /* start posn: first non-gap CM consensus position */
   int           epos       = -1;   /* end   posn: final non-gap CM consensus position */
+  double        save_tau   = cm->tau; /* cm->tau upon entrance, we restore before leaving */
 
   /* alignment options */
   int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE  : FALSE;
@@ -290,6 +311,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   int do_sub       = (cm->align_opts & CM_ALIGN_SUB)       ? TRUE  : FALSE;
   int do_small     = (cm->align_opts & CM_ALIGN_SMALL)     ? TRUE  : FALSE;
   int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)     ? TRUE  : FALSE;
+  int do_xtau      = (cm->align_opts & CM_ALIGN_XTAU)      ? TRUE  : FALSE;
   int doing_search = FALSE;
 #if DEBUGPIPELINE
   printf("in DispatchSqAlignment()\n");
@@ -318,6 +340,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   if(do_sub    && do_small)         ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do sub and small alignment");
   if(do_sub    && do_trunc)         ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do sub and truncated alignment");
   if(do_sample && r == NULL)        ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to sample but RNG r == NULL");
+  if(do_xtau   && ! do_hbanded)     ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to multiply tau without HMM banded alignment");
+  if(do_xtau   && cp9b_valid)       ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to multiply tau but HMM bands already valid");
   if(do_qdb    && do_nonbanded)     ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do qdb and nonbanded alignment");
   if(do_qdb    && do_trunc)         ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to use qdbs and truncated alignment");
   /* qdb + trunc combo disallowed only b/c no function exists for it yet */
@@ -377,17 +401,24 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     }
     else { /* use HMM bands */
       if(! cp9b_valid) { 
-	if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, 
-				   1, sq->L, cm->cp9b, doing_search, pass_idx, 0)) != eslOK) goto ERROR;
+	if(do_xtau) { /* multiply tau (if nec) until required mx is below Mb limit (mxsize) */
+	  if((status = cp9_IterateSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 
+					    cm->maxtau, cm->xtau, NULL)) != eslOK) goto ERROR;
+	}
+	else {
+	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, 
+				     1, sq->L, cm->cp9b, doing_search, pass_idx, 0)) != eslOK) goto ERROR;
+	}
 	if(w != NULL) esl_stopwatch_Stop(w);
 	secs_bands = (w == NULL) ? 0. : w->elapsed;
+	tau = cm->tau; /* note: we don't set this if cp9b_valid is TRUE */
       }
       
       if(w != NULL) esl_stopwatch_Start(w);
       if(do_trunc) { 
 	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
 					    NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
-	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx, 
+      	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx, 
 				  do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, 
 				  cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
       }
@@ -438,14 +469,17 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   data->secs_bands = (do_nonbanded) ? 0.     : secs_bands;
   data->secs_aln   = secs_aln;
   data->mb_tot     = mb_tot;
+  data->tau        = tau;
   if(w_tot != NULL) esl_stopwatch_Stop(w_tot);
   data->secs_tot   = (w_tot == NULL) ? 0. : w_tot->elapsed;
 
   *ret_data = data;
 
+  cm->tau = save_tau;
   return eslOK;
 
  ERROR: 
+  cm->tau = save_tau;
 #if DEBUGPIPELINE
   if(status == eslERANGE) printf("Returning eslERANGE, errbuf: %s\n", errbuf);
 #endif
@@ -453,5 +487,6 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   *ret_data = NULL;
 
   if(status == eslEMEM) ESL_FAIL(status, errbuf, "DispatchSqAlignment(), out of memory");
+
   return status; 
 }

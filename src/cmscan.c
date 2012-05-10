@@ -202,7 +202,7 @@ static ESL_OPTIONS options[] = {
   { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g",            "turn off local ends in cp9 HMMs",                               107 },
   { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",  "configure cp9 HMM in glocal mode",                              107 },
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition HMM score corrections",       107 },
-  { "--xtau",       eslARG_REAL,    "2.", NULL, "x>=2.", NULL,  NULL,  NULL,            "set multiplier for tau to <x> when tightening HMM bands",       107 },
+  { "--xtau",       eslARG_REAL,    "2.", NULL,"x>=1.99",NULL,  NULL,  NULL,            "set multiplier for tau to <x> when tightening HMM bands",       107 },
   { "--maxtau",     eslARG_REAL,  "0.01", NULL,"0<x<0.5",NULL,  NULL,  NULL,            "set max tau <x> when tightening HMM bands",                     107 },
   { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",           107 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },

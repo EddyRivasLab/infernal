@@ -500,7 +500,7 @@ cm_AlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sampl
   if (ret_shmxmb != NULL) *ret_shmxmb  = shmxmb;
   if (ret_totmb  != NULL) *ret_totmb   = totmb;
 
-  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "non-banded standard alignment mxes need %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", totmb, (float) size_limit);
+  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "non-banded standard alignment mxes need %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --maxtau or --tau.", totmb, (float) size_limit);
 
   return eslOK;
 }
@@ -579,7 +579,7 @@ cm_AlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
   printf("\t limit: %.2f\n", size_limit);
 #endif
 
-  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded standard alignment mxes need %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", totmb, (float) size_limit);
+  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded standard alignment mxes need %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --maxtau or --tau.", totmb, (float) size_limit);
 
   return eslOK;
 }

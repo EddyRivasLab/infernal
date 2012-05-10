@@ -392,6 +392,8 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
  *            pass_idx     - pipeline pass index
  *            size_limit   - max allowed size of an HB mx, in Mb
  *            doing_search - TRUE if we're going to use these HMM bands for search, not alignment
+ *            do_sample    - TRUE if bands will eventually be used for sampling a parsetree
+ *            do_post      - TRUE if bands will eventually be used for posterior alignment
  *            maxtau       - max value allowed for cm->tau
  *            xtau         - we multiply tau by this at each iteration (must be > 1.1)
  *            ret_Mb       - RETURN: required Mb for HB mx for cm->tau upon exit.
@@ -402,7 +404,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
  *            A different error code upon an error, errbuf is filled.
  */
 int
-cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, double maxtau, double xtau, float *ret_Mb)
+cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, double xtau, float *ret_Mb)
 {
   int   status;
   int   do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
@@ -412,21 +414,28 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
 
   while(1) { 
     if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, doing_search, pass_idx, 0)) != eslOK) goto ERROR;
-    if(do_trunc) { if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
-    else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
+    if(doing_search) { 
+      if(do_trunc) { if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
+      else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
+    }
+    else { 
+      if(do_trunc) { status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &hbmx_Mb); }
+      else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &hbmx_Mb); }
+      if(status != eslOK && status != eslERANGE) return status;
+    }      
     if(hbmx_Mb <  size_limit)          break; /* our matrix will be small enough, break out of while(1) */
     if(cm->tau >= (maxtau-eslSMALLX1)) break; /* our bands have gotten too tight, break out of while(1) */
     cm->tau = ESL_MIN(maxtau, cm->tau * xtau);
   }
 
-  *ret_Mb = hbmx_Mb;
+  if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
 
   if(hbmx_Mb > size_limit) return eslERANGE; 
 
   return eslOK;
 
  ERROR:
-  *ret_Mb = 0.;
+  if(ret_Mb != NULL) *ret_Mb = 0.;
   return status;
 }
 

@@ -1023,6 +1023,7 @@ qdbinfo_setby_to_string(int setby)
   case CM_QDBINFO_SETBY_INIT:     return "CM_QDBINFO_SETBY_INIT";
   case CM_QDBINFO_SETBY_CMFILE:   return "CM_QDBINFO_SETBY_CMFILE";
   case CM_QDBINFO_SETBY_BANDCALC: return "CM_QDBINFO_SETBY_BANDCALC";
+  case CM_QDBINFO_SETBY_SUBINIT:  return "CM_QDBINFO_SETBY_SUBINIT";
   default: cm_Fail("bogus CM_QDBINFO_SETBY type: %d\n", setby);
   }
   return ""; /* NEVERREACHED */
@@ -1076,7 +1077,8 @@ DumpCMQDBInfo(FILE *fp, CM_t *cm, CM_QDBINFO *qdbinfo)
 int
 CheckCMQDBInfo(CM_QDBINFO *qdbinfo, double beta1, int do_check1, double beta2, int do_check2)
 {
-  if(qdbinfo->setby == CM_QDBINFO_SETBY_INIT) return eslFAIL;
+  if(qdbinfo->setby == CM_QDBINFO_SETBY_INIT)    return eslFAIL;
+  if(qdbinfo->setby == CM_QDBINFO_SETBY_SUBINIT) return eslFAIL;
 
   if(do_check1) { 
     if(fabs(qdbinfo->beta1 - beta1) > 1E-20) return eslFAIL;
