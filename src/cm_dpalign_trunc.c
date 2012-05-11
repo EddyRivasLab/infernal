@@ -3343,6 +3343,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
     do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
     do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
 
+#if 0
     /* re-initialize the J, L or R decks if we can do a local end from v */
     if(NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (j = jmin[v]; j <= jmax[v]; j++) { 
@@ -3373,8 +3374,8 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	}
       }
     }
-
-#if 0
+#endif
+#if 1
     /* re-initialize the J deck if we can do a local end from v */
     if(do_J_v) { 
       if(NOT_IMPOSSIBLE(cm->endsc[v])) {
