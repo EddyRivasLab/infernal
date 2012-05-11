@@ -33,6 +33,8 @@
 
 #include "infernal.h"
 
+#define TMPDEBUG 0
+
 static int          cp9_FB2HMMBands        (CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
 				            int i0, int j0, int M, double p_thresh, int did_fwd_scan, int did_bck_scan, int do_old_hmm2ij, int debug_level);
 static int          cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
@@ -74,8 +76,10 @@ AllocCP9Bands(int cm_M, int hmm_M)
   cp9bands->hmm_M = hmm_M;
 
   cp9bands->sp1 = cp9bands->sp2 = cp9bands->ep1 = cp9bands->ep2 = -1;
-  cp9bands->thresh1 = DEFAULT_CP9BANDS_THRESH1;
-  cp9bands->thresh2 = DEFAULT_CP9BANDS_THRESH2;
+  cp9bands->thresh1          = DEFAULT_CP9BANDS_THRESH1;    /* 0.01 */
+  cp9bands->thresh2          = DEFAULT_CP9BANDS_THRESH2;    /* 0.98 */
+  cp9bands->thresh2_failover = DEFAULT_CP9BANDS_THRESH2_FO; /* 0.90 */
+  /* it's important that thresh2 > thresh2_failover */
   cp9bands->Rmarg_imin = cp9bands->Lmarg_jmin = -1;
   cp9bands->Rmarg_imax = cp9bands->Lmarg_jmax = -2;
 
@@ -423,6 +427,7 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
       else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &hbmx_Mb); }
       if(status != eslOK && status != eslERANGE) return status;
     }      
+    /*printf("cm->tau: %g mxsize: %.2f\n", cm->tau, hbmx_Mb);*/
     if(hbmx_Mb <  size_limit)          break; /* our matrix will be small enough, break out of while(1) */
     if(cm->tau >= (maxtau-eslSMALLX1)) break; /* our bands have gotten too tight, break out of while(1) */
     cm->tau = ESL_MIN(maxtau, cm->tau * xtau);
@@ -1564,12 +1569,13 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
 					 &r_mn, &r_mx, &r_in, &r_ix, &r_dn, &r_dx, &r_nn_i, &r_nx_i, &r_nn_j, &r_nx_j)) != eslOK) return status;
 
   /* debugging printf block */
-  /*for(k = 0; k <= cp9b->hmm_M;k ++) { 
+  /*
+    for(k = 0; k <= cp9b->hmm_M;k ++) { 
     printf("k: %4d  %4d %4d  %4d %4d  %4d %4d  %4d %4d  %4d  %4d\n", k, r_mn[k], r_mx[k], r_in[k], r_ix[k], r_dn[k], r_dx[k], r_nn_i[k], r_nx_i[k], r_nn_j[k], r_nx_j[k]);
     }
     cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1); 
   */
- 
+
   /* Step 2: Traverse the CM from left to right in consensus position coordinates. Fill in the 
    *         i and j bands (imin, imax, jmin, jmax) for all states as we go. The CM is traversed
    *         using a stack, each node is visited twice (this is based on Sean's cleaner: 
@@ -1935,7 +1941,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
     }
   }
 
-#if 0
+  #if 0
   if(do_trunc) { 
     for(v = 0; v < cm->M; v++) { 
       printf("dotrunc: %d ijband v: %4d nd: %4d  %4s  %2s  i: %5d - %5d  j: %5d - %5d\n", do_trunc, v, cm->ndidx[v], 
@@ -1944,7 +1950,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
 	     imin[v], imax[v], jmin[v], jmax[v]);
     }
   }
-#endif
+  #endif
 
   /* A final, brutal hack. If the hmm used to derive bands has local
    * begins, ends and ELs on, it's possible (but extremely rare
@@ -4644,10 +4650,30 @@ cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf)
  *          occupied that exceeds <cp9b->thresh1> and <cp9b->thresh2>.
  *          Store these four values in:
  *          <cp9b->sp1>: minimum position that might be used       (p > cp9b->thresh1, typically 0.01)
- *          <cp9b->sp2>: minimum position that will likely be used (p > cp9b->thresh2, typically 0.99)
+ *          <cp9b->sp2>: minimum position that will likely be used (p > cp9b->thresh2, typically 0.98)
  *          <cp9b->ep1>: maximum position that might be used       (p > cp9b->thresh1, typically 0.01)
- *          <cp9b->ep2>: maximum position that will likely be used (p > cp9b->thresh2, typically 0.99)
+ *          <cp9b->ep2>: maximum position that will likely be used (p > cp9b->thresh2, typically 0.98)
  *       
+ *          If no HMM node has an occupancy probability that exceeds 
+ *          <cp9b->thresh2>, use <cp9b->thresh2_failover> (typically 0.90) 
+ *          to define <cp9b->sp2> and <cp9b->ep2>.
+ *
+ *          If no HMM node has an occupancy probability that exceeds
+ *          <cp9b->thresh2> then sp2 and ep2 are set as out-of-bounds
+ *          values M+1 and 0 respectively. 
+ *
+ *          If no HMM node has an occupancy probability that exceeds
+ *          <cp9b->thresh1> then sp1 and ep1 are set as out-of-bounds
+ *          values M+1 and 0 respectively, though this should be 
+ *          very rare. 
+ *    
+ *          Using out-of-bounds values means we can't get any
+ *          information about where the alignment starts and ends from
+ *          the HMM. This has the effect that in a downstream call to
+ *          cp9_MarginalCandidatesFromStartEndPositions() all marginal
+ *          modes will be possible for all states and the eventual
+ *          alignment will essentially mimic a non-banded one.
+ *              
  *          Also determine the CM bands on i and j that 
  *          will be used to allow for marginal alignments,
  *          store these in <cp9b->{L,R}marg{i,j}_{min,max}.
@@ -4669,13 +4695,20 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
   int L = j0-i0+1;                        /* length of sequence */
   int   iocc;       /* occupancy probability, scaled int form */
   float pocc;       /* occupancy probability, probability form */
+  /* *_failover values: min/max posn with occ > cp9b->thresh2_failover, cp9b->{s,e}p2 
+   * are set to this if no posn exists with occ > cp9b->thresh2.
+   */
+  int sp2_failover;
+  int ep2_failover;
 
   /* Calculate minimum start positions: */
   k = 1;
-  cp9b->sp1 = cp9b->sp2 = -1;
-  while(k <= cp9b->hmm_M && (cp9b->sp1 == -1 || cp9b->sp2 == -1)) { 
+  cp9b->sp1 = cp9b->sp2 = sp2_failover = -1;
+  while(k <= cp9b->hmm_M && (cp9b->sp1 == -1 || cp9b->sp2 == -1 || sp2_failover == -1)) { 
     if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) { 
-      /*printf("k: %4d pocc IRRELEVANT (k unreachable, skipping)\n", k);*/
+#if TMPDEBUG
+      printf("k: %4d pocc IRRELEVANT (k unreachable, skipping)\n", k);
+#endif
       k++;
       /* M, I, D states in node k are unreachable (no posterior cells had more than 
        * cm->tau probability mass), k won't be our sp1 or sp2 */
@@ -4686,30 +4719,41 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
 	iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][k], pmx->dmx[i][k]));
       }
       pocc = Score2Prob(iocc, 1.);
-      /*printf("k: %4d pocc: %.4f\n", k, pocc);*/
-      if((cp9b->sp1 == -1) && (pocc > cp9b->thresh1)) cp9b->sp1 = k;
-      if((cp9b->sp2 == -1) && (pocc > cp9b->thresh2)) cp9b->sp2 = k;
+#if TMPDEBUG
+      printf("k: %4d pocc: %.4f\n", k, pocc);
+#endif
+      if((cp9b->sp1    == -1) && (pocc > cp9b->thresh1))          cp9b->sp1 = k;
+      if((cp9b->sp2    == -1) && (pocc > cp9b->thresh2))          cp9b->sp2 = k;
+      if((sp2_failover == -1) && (pocc > cp9b->thresh2_failover)) sp2_failover = k;
       k++;
     }
   }
   if(k == cp9b->hmm_M+1) { 
     if(cp9b->sp1 == -1) { cp9b->sp1 = cp9b->hmm_M+1; } /* no node k has occupancy > thresh1, set as out-of-bounds value M+1 */
-    if(cp9b->sp2 == -1) { cp9b->sp2 = cp9b->hmm_M+1; } /* no node k has occupancy > thresh2,  set as out-of-bounds value M+1 */
+    if(cp9b->sp2 == -1) { 
+      /* failover from thresh2 to thresh2_failover (0.98->0.90) for
+       * determining sp2, if no node k has occ > thresh2_failover
+       * either then set sp2 as out-of-bounds value M+1
+       */
+      cp9b->sp2 = (sp2_failover == -1) ? cp9b->hmm_M+1 : sp2_failover;
+    }      
   }
   
   /* Calculate maximum end positions: */
   if((cp9b->sp1 == cp9b->hmm_M+1) && 
      (cp9b->sp2 == cp9b->hmm_M+1)) { 
-    /* we already know that there's no nodes that satisfy either thresh1 or thresh2, we can save time here */
+    /* we already know that there's no nodes that satisfy either thresh1, thresh2 and thresh2_failover, we can save time here */
     cp9b->ep1 = 0;
     cp9b->ep2 = 0;
   }
   else { 
-    cp9b->ep1 = cp9b->ep2 = -1;
+    cp9b->ep1 = cp9b->ep2 = ep2_failover = -1;
     k = cp9b->hmm_M;
     while(k >= 1 && (cp9b->ep1 == -1 || cp9b->ep2 == -1)) { 
       if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) { 
-	/*printf("k: %4d pocc IRRELEVANT (k unreachable, skipping)\n", k);*/
+#if TMPDEBUG
+	printf("k: %4d pocc IRRELEVANT (k unreachable, skipping)\n", k);
+#endif
 	k--;
 	/* M, I, D states in node k are unreachable (no posterior cells had more than 
 	 * cm->tau probability mass), k won't be our ep1 or ep2 */
@@ -4720,15 +4764,24 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
 	  iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][k], pmx->dmx[i][k]));
 	}
 	pocc = Score2Prob(iocc, 1.);
-	/*printf("k: %4d pocc: %.4f\n", k, pocc);*/
-	if((cp9b->ep1 == -1) && (pocc > cp9b->thresh1)) cp9b->ep1 = k;
-	if((cp9b->ep2 == -1) && (pocc > cp9b->thresh2)) cp9b->ep2 = k;
+#if TMPDEBUG
+	printf("k: %4d pocc: %.4f\n", k, pocc);
+#endif
+	if((cp9b->ep1 == -1)    && (pocc > cp9b->thresh1))          cp9b->ep1 = k;
+	if((cp9b->ep2 == -1)    && (pocc > cp9b->thresh2))          cp9b->ep2 = k;
+	if((ep2_failover == -1) && (pocc > cp9b->thresh2_failover)) ep2_failover = k;
 	k--;
       }
     }
     if(k == 0) { 
       if(cp9b->ep1 == -1) { cp9b->ep1 = 0; } /* no node k has occupancy > thresh1, set as out-of-bounds value 0 */
-      if(cp9b->ep2 == -1) { cp9b->ep2 = 0; } /* no node k has occupancy > thresh2, set as out-of-bounds value 0 */
+      if(cp9b->ep2 == -1) { 
+      /* failover from thresh2 to thresh2_failover (0.98->0.90) for
+       * determining ep2, if no node k has occ > thresh2_failover
+       * either then set ep2 as out-of-bounds 0
+       */
+	cp9b->ep2 = (ep2_failover == -1) ? 0 : ep2_failover;
+      }      
     }
   }
 
@@ -4794,8 +4847,8 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
     cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax); /* j can't be more than j0 */
   }
 
-#if 0
-  printf("HEYA Returning from cp9_PredictStartAndEndPositions():\n\t");
+#if TMPDEBUG
+  printf("Returning from cp9_PredictStartAndEndPositions():\n\t");
     printf("sp1: %4d\n\t", cp9b->sp1);
     printf("sp2: %4d\n\t", cp9b->sp2);
     printf("ep2: %4d\n\t", cp9b->ep2);
@@ -4858,7 +4911,7 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass
     rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) ? cm->emap->rpos[nd] : cm->emap->rpos[nd]-1;
 
     /* below: 'possibly' means probability > cp9b->thresh1 (typically 0.01) */
-    /*        'probably' means probability > cp9b->thresh2 (typically 0.99) */
+    /*        'probably' means probability > cp9b->thresh2 (typically 0.98) */
 
     /* Jvalid if both lpos and rpos are possibly used */
     cp9b->Jvalid[v] = ((lpos >= cp9b->sp1) && (rpos <= cp9b->ep1)) ? TRUE : FALSE;
@@ -4876,8 +4929,10 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass
     else { 
       cp9b->Tvalid[v] = FALSE;
     }
-    /*printf("v: %4d [%4d..%4d] %4s %2s %d%d%d%d\n", v, lpos, rpos, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), 
-      cp9b->Jvalid[v], cp9b->Lvalid[v], cp9b->Rvalid[v], cp9b->Tvalid[v]);*/
+#if TMPDEBUG    
+    printf("v: %4d [%4d..%4d] %4s %2s %d%d%d%d\n", v, lpos, rpos, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), 
+	   cp9b->Jvalid[v], cp9b->Lvalid[v], cp9b->Rvalid[v], cp9b->Tvalid[v]);
+#endif
   }
 
   /* The ROOT_S state is special, all hits are rooted there, if we can do a 

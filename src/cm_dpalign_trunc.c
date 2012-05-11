@@ -863,7 +863,7 @@ cm_TrAlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
   printf("\t limit: %.2f\n", size_limit);
 #endif
 
-  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "non-banded truncated alignment mxes need %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --maxtau or --tau.", totmb, (float) size_limit);
+  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "non-banded truncated alignment mxes need %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", totmb, (float) size_limit);
 
   return eslOK;
 }
@@ -947,7 +947,7 @@ cm_TrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_s
   printf("\t limit: %.2f\n", size_limit);
 #endif
 
-  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded truncated alignment mxes need %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --maxtau or --tau.", totmb, (float) size_limit);
+  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded truncated alignment mxes need %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", totmb, (float) size_limit);
   
   return eslOK;
 }
@@ -3343,6 +3343,38 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
     do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
     do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
 
+    /* re-initialize the J, L or R decks if we can do a local end from v */
+    if(NOT_IMPOSSIBLE(cm->endsc[v])) {
+      for (j = jmin[v]; j <= jmax[v]; j++) { 
+	jp_v  = j - jmin[v];
+	if(hdmin[v][jp_v] >= sd) { 
+	  d    = hdmin[v][jp_v];
+	  dp_v = 0;
+	  }
+	else { 
+	  d    = sd;
+	  dp_v = sd - hdmin[v][jp_v];
+	}
+	
+	if(do_J_v) { 
+	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    Jalpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
+	  }
+	}
+	if(do_L_v) { 
+	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    Lalpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
+	  }
+	}
+	if(do_R_v) { 
+	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    Ralpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
+	  }
+	}
+      }
+    }
+
+#if 0
     /* re-initialize the J deck if we can do a local end from v */
     if(do_J_v) { 
       if(NOT_IMPOSSIBLE(cm->endsc[v])) {
@@ -3356,6 +3388,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	    d    = sd;
 	    dp_v = sd - hdmin[v][jp_v];
 	  }
+	  
 	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
 	    Jalpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
 	    /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
@@ -3363,6 +3396,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	}
       }
     }
+#endif
     /* otherwise this state's deck has already been initialized to IMPOSSIBLE */
 
     if(cm->sttype[v] == E_st) { 

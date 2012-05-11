@@ -76,24 +76,25 @@
  * 1. Default values for various parameters, and other constant definitions.
  ***********************************************************************************/
 
-#define DEFAULT_MIN_CP9_E_CUTOFF   1.0
-#define DEFAULT_BETA_W             1E-7
-#define DEFAULT_BETA_QDB1          1E-7
-#define DEFAULT_BETA_QDB2          1E-15
-#define DEFAULT_TAU                0.0000001
-#define DEFAULT_PBEGIN             0.05           /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_PEND               0.05           /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_ETARGET            0.59           /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
-#define DEFAULT_ETARGET_HMMFILTER  0.38           /* EPN 04.16.12 */
-#define DEFAULT_NULL2_OMEGA        0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null2 model */
-#define DEFAULT_NULL3_OMEGA        0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
-#define V1P0_NULL2_OMEGA           0.03125        /* 1/(2^5),  the prior probability of the null2 model for infernal versions 0.56 through 1.0.2 */
-#define V1P0_NULL3_OMEGA           0.03125        /* 1/(2^5),  the prior probability of the null3 model for infernal versions 0.56 through 1.0.2 */
-#define DEFAULT_CP9BANDS_THRESH1   0.01
-#define DEFAULT_CP9BANDS_THRESH2   0.98
-#define DEFAULT_EL_SELFPROB        0.94
-#define DEFAULT_MAXTAU             0.1            /* default cm->maxtau, max allowed tau value during HMM band tightening */
-#define DEFAULT_XTAU               2.0            /* default cm->xtau, value to multiply tau by during HMM band tightening */
+#define DEFAULT_MIN_CP9_E_CUTOFF    1.0
+#define DEFAULT_BETA_W              1E-7
+#define DEFAULT_BETA_QDB1           1E-7
+#define DEFAULT_BETA_QDB2           1E-15
+#define DEFAULT_TAU                 0.0000001
+#define DEFAULT_PBEGIN              0.05           /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_PEND                0.05           /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_ETARGET             0.59           /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
+#define DEFAULT_ETARGET_HMMFILTER   0.38           /* EPN 04.16.12 */
+#define DEFAULT_NULL2_OMEGA         0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null2 model */
+#define DEFAULT_NULL3_OMEGA         0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
+#define V1P0_NULL2_OMEGA            0.03125        /* 1/(2^5),  the prior probability of the null2 model for infernal versions 0.56 through 1.0.2 */
+#define V1P0_NULL3_OMEGA            0.03125        /* 1/(2^5),  the prior probability of the null3 model for infernal versions 0.56 through 1.0.2 */
+#define DEFAULT_CP9BANDS_THRESH1    0.01           /* default for CP9Bands_t thresh1, if occ[k] > thresh1 HMM posn k 'maybe used'  */
+#define DEFAULT_CP9BANDS_THRESH2    0.98           /* default for CP9Bands_t thresh2, if occ[k] > thresh2 HMM posn k 'likely used' */
+#define DEFAULT_CP9BANDS_THRESH2_FO 0.90           /* default for CP9Bands_t thresh2_failover>, if occ[k] < thresh2 for all k, use thresh2_failover instead of thresh2 */
+#define DEFAULT_EL_SELFPROB         0.94
+#define DEFAULT_MAXTAU              0.1            /* default cm->maxtau, max allowed tau value during HMM band tightening */
+#define DEFAULT_XTAU                2.0            /* default cm->xtau, value to multiply tau by during HMM band tightening */
 
 /* number of possible integer GC contents, example 40 = 0.40 GC */
 #define GC_SEGMENTS 101
@@ -748,18 +749,19 @@ typedef struct cp9bands_s {
   int     *isum_pn_d;         /* [0..k..hmm_M] sum over i of log post probs from post->dmx[i][k]*/
 
   /* Predicted first and final consensus positions that might be
-   * (maybe_-prefixed) and are likely to be (likely_-prefixed) involved
-   * in the parse of the sequence based on the HMM posterior
-   * probabilities. These are used to determine what types of marginal
-   * alignments should be allowed from each state (the {J,L,R,T}valid
-   * arrays) */
-  int sp1;                    /* minimum cpos for which occupancy probability exceeds maybe_thresh */
-  int ep1;                    /* maximum cpos for which occupancy probability exceeds maybe_thresh */
-  int sp2;                    /* minimum cpos for which occupancy probability exceeds likely_thresh */
-  int ep2;                    /* maximum cpos for which occupancy probability exceeds likely_thresh */
+   * (sp1/ep1) and are likely to be (sp2/ep2) involved in the parse of
+   * the sequence based on the HMM posterior probabilities. These are
+   * used to determine what types of marginal alignments should be
+   * allowed from each state (the {J,L,R,T}valid arrays) 
+   */
+  int sp1;                    /* minimum cpos for which occupancy probability exceeds thresh1, first 'maybe used'  */
+  int ep1;                    /* maximum cpos for which occupancy probability exceeds thresh1, final 'maybe used'  */
+  int sp2;                    /* minimum cpos for which occupancy probability exceeds thresh2, first 'likely used' */
+  int ep2;                    /* maximum cpos for which occupancy probability exceeds thresh2, final 'likely used' */
 
-  float thresh1;              /* probability threshold for sp1, ep1 (typically 0.01) */
-  float thresh2;              /* probability threshold for sp2, ep2 (typically 0.99) */
+  float thresh1;              /* probability threshold for sp1, ep1 (typically 0.01), 'maybe used' */
+  float thresh2;              /* probability threshold for sp2, ep2 (typically 0.98), 'likely used' */
+  float thresh2_failover;     /* probability threshold for sp2, ep2 if no cpos reaches thresh2, (typically 0.90), '(almost?) likely used' */
 
   int Rmarg_imin;             /* for Right marginal alignments, minimum target sequence position that can align to CM as i */
   int Rmarg_imax;             /* for Right marginal alignments, maximum target sequence position that can align to CM as i */ 

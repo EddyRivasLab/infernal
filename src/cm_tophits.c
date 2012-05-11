@@ -1238,7 +1238,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'),
 	      lseq, rseq);
       if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f %5s %4.2f", th->hit[h]->ad->avgpp, cm_alidisplay_TruncString(th->hit[h]->ad), th->hit[h]->ad->gc); }
-      else                       { fprintf(ofp, " %6.2f %5s %4.2f", th->hit[h]->ad->sc,    cm_alidisplay_TruncString(th->hit[h]->ad), th->hit[h]->ad->gc); }
+      else                       { fprintf(ofp, " %6.1f %5s %4.2f", th->hit[h]->ad->sc,    cm_alidisplay_TruncString(th->hit[h]->ad), th->hit[h]->ad->gc); }
       if(pli->be_verbose) { 
 	if(th->hit[h]->ad->tau > -0.5) { /* tau is -1. if aln did not use HMM bands */
 	  fprintf(ofp, " %5s %7.2g", "hmm", th->hit[h]->ad->tau);
