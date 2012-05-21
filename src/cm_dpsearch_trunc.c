@@ -292,9 +292,9 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
 	      else { kmin = 0; kmax = d; }
 
 	      Jsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for B_st */
-	      if(fill_L) Lsc = IMPOSSIBLE;
-	      if(fill_R) Rsc = IMPOSSIBLE;
-	      if(fill_T) Tsc = IMPOSSIBLE;
+	      if(fill_L) Lsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for B_st */
+	      if(fill_R) Rsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for B_st */
+	      if(fill_T) Tsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for B_st */
 
 	      /* Careful with Tsc, it isn't updated for k == 0 or  k == d, 
 	       * but Jsc, Lsc, Rsc, are all updated for k == 0 and k == d */
@@ -328,8 +328,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
 	    y = cm->cfirst[v]; 
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for BEGL_S st */
-	      if(fill_L) Lsc = IMPOSSIBLE;
-	      if(fill_R) Rsc = IMPOSSIBLE;
+	      if(fill_L) Lsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for BEGL_S st */
+	      if(fill_R) Rsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for BEGL_S st */
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
 		Jsc =            ESL_MAX(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 		if(fill_L) Lsc = ESL_MAX(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
@@ -349,9 +349,9 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
 	      Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
 	      for (d = dnA[v]; d <= dxA[v]; d++) {
 		Jsc = init_scAA[v][d-sd]; 
-		if(fill_L) Lsc = IMPOSSIBLE;
+		if(fill_L) Lsc = init_scAA[v][d-sd]; 
 		if(fill_R) { 
-		  Rsc = IMPOSSIBLE;
+		  Rsc = init_scAA[v][d]; /* 'd', not 'd-sd', because we won't emit left in R mode */
 		  Ralpha[jp_v][v][d] = Rsc; /* this is important b/c if we're an IL, we'll access this cell in the recursion below for Ralpha */
 		}		
 		/* We need to do separate 'for (yoffset...' loops for J
@@ -387,9 +387,9 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
 	      Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
 	      for (d = dnA[v]; d <= dxA[v]; d++) {
 		           Jsc = init_scAA[v][d-sd]; 
-		if(fill_R) Rsc = IMPOSSIBLE;
+		if(fill_R) Rsc = init_scAA[v][d-sd]; 
 		if(fill_L) { 
-		  Lsc = IMPOSSIBLE;
+		  Lsc = init_scAA[v][d]; /* 'd', not 'd-sd', because we won't emit right in L mode */
 		  Lalpha[jp_v][v][d] = Lsc; /* this is important b/c if we're an IR, we'll access this cell in the recursion below for Lalpha */
 		}
 
@@ -424,8 +424,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
 	    assert(dnA[v] == 1);
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; 
-	      if(fill_L) Lsc = IMPOSSIBLE;
-	      if(fill_R) Rsc = IMPOSSIBLE;
+	      if(fill_L) Lsc = init_scAA[v][d-1]; /* 'd-1', not 'd', because we'll only emit 1 residue in left  mode */
+	      if(fill_R) Rsc = init_scAA[v][d-1]; /* 'd-1', not 'd', because we'll only emit 1 residue in right mode */
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
 		Jsc = ESL_MAX(Jsc,         Jalpha[jp_y][y+yoffset][d - 2] + tsc_v[yoffset]);
 		if(fill_L) { 
@@ -446,9 +446,9 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
 	  else { /* ! B_st && ! BEGL_S st && ! L_st && ! R_st && ! P_st (emitmode == EMITNONE) */
 	    y = cm->cfirst[v]; 
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
-	      Jsc = init_scAA[v][d-sd]; 
-	      if(fill_L) Lsc = IMPOSSIBLE;
-	      if(fill_R) Rsc = IMPOSSIBLE;
+	      Jsc = init_scAA[v][d-sd]; /* sd is 0 */
+	      if(fill_L) Lsc = init_scAA[v][d-sd]; 
+	      if(fill_R) Rsc = init_scAA[v][d-sd]; 
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
 		Jsc            = ESL_MAX(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 		if(fill_L) Lsc = ESL_MAX(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
@@ -948,9 +948,9 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 	      else { kmin = 0; kmax = d; }
 	      
 	      Jsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for B_st */
-	      if(fill_L) Lsc = -INFTY;
-	      if(fill_R) Rsc = -INFTY;
-	      if(fill_T) Tsc = -INFTY;
+	      if(fill_L) Lsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for B_st */
+	      if(fill_R) Rsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for B_st */
+	      if(fill_T) Tsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for B_st */
 
 	      /* Careful with Tsc, it isn't updated for k == 0 or  k == d, 
 	       * but Jsc, Lsc, Rsc, are all updated for k == 0 and k == d */
@@ -984,8 +984,8 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 	    y = cm->cfirst[v]; 
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for BEGL_S st */
-	      if(fill_L) Lsc = -INFTY;
-	      if(fill_R) Rsc = -INFTY;
+	      if(fill_L) Lsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for BEGL_S st */
+	      if(fill_R) Rsc = init_scAA[v][d-sd]; /* state delta (sd) is 0 for BEGL_S st */
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
 		Jsc =            ILogsum(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 		if(fill_L) Lsc = ILogsum(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
@@ -1005,9 +1005,9 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 	      Ryoffset0 = cm->sttype[v] == IL_st ? 1 : 0; /* don't allow IL self transits in R mode */
 	      for (d = dnA[v]; d <= dxA[v]; d++) {
 		Jsc = init_scAA[v][d-sd]; 
-		if(fill_L) Lsc = -INFTY;
+		if(fill_L) Lsc = init_scAA[v][d-sd]; 
 		if(fill_R) { 
-		  Rsc = -INFTY;
+		  Rsc = init_scAA[v][d]; /* 'd', not 'd-sd', because we won't emit left in R mode */
 		  Ralpha[jp_v][v][d] = Rsc; /* this is important b/c if we're an IL, we'll access this cell in the recursion below for Ralpha */
 		}
 
@@ -1044,9 +1044,9 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 	      Lyoffset0 = cm->sttype[v] == IR_st ? 1 : 0; /* don't allow IR self transits in L mode */
 	      for (d = dnA[v]; d <= dxA[v]; d++) {
 		Jsc = init_scAA[v][d-sd]; 
-		if(fill_R) Rsc = -INFTY;
+		if(fill_R) Rsc = init_scAA[v][d-sd]; 
 		if(fill_L) { 
-		  Lsc = -INFTY;
+		  Lsc = init_scAA[v][d]; /* 'd', not 'd-sd', because we won't emit right in L mode */
 		  Lalpha[jp_v][v][d] = Lsc; /* this is important b/c if we're an IR, we'll access this cell in the recursion below for Lalpha */
 		}		
 
@@ -1081,8 +1081,8 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 	    assert(dnA[v] == 1);
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; 
-	      if(fill_L) Lsc = -INFTY;
-	      if(fill_R) Rsc = -INFTY;
+	      if(fill_L) Lsc = init_scAA[v][d-1]; /* 'd-1', not 'd', because we'll only emit 1 residue in left  mode */
+	      if(fill_R) Rsc = init_scAA[v][d-1]; /* 'd-1', not 'd', because we'll only emit 1 residue in right mode */
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
 		Jsc = ILogsum(Jsc,         Jalpha[jp_y][y+yoffset][d - 2] + tsc_v[yoffset]);
 		if(fill_L) { 
@@ -1104,8 +1104,8 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 	    y = cm->cfirst[v]; 
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      Jsc = init_scAA[v][d-sd]; 
-	      if(fill_L) Lsc = -INFTY;
-	      if(fill_R) Rsc = -INFTY;
+	      if(fill_L) Lsc = init_scAA[v][d-sd]; 
+	      if(fill_R) Rsc = init_scAA[v][d-sd]; 
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
 		Jsc            = ILogsum(Jsc, Jalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 		if(fill_L) Lsc = ILogsum(Lsc, Lalpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
@@ -1404,6 +1404,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
   float   *el_scA;             /* [0..d..W-1] probability of local end emissions of length d */
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      sd;                 /* StateDelta(cm->sttype[v]) */
+  int      sdl;                /* StateLeftDelta(cm->sttype[v] */
   int      sdr;                /* StateRightDelta(cm->sttype[v] */
   int      jp_v, jp_y, jp_z;   /* offset j index for states v, y, z */
   int      jp_y_sdr;           /* jp_y - sdr */
@@ -1551,6 +1552,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
     float const *lmesc_v = cm->lmesc[v]; /* marginal left  emission scores for state v */
     float const *rmesc_v = cm->rmesc[v]; /* marginal right emission scores for state v */
     sd     = StateDelta(cm->sttype[v]);
+    sdl    = StateLeftDelta(cm->sttype[v]);
     sdr    = StateRightDelta(cm->sttype[v]);
     jn     = jmin[v];
     jx     = jmax[v];
@@ -1559,11 +1561,11 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
     do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
     do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
 
-    /* re-initialize the J deck if we can do a local end from v */
-    if(do_J_v) { 
-      if(NOT_IMPOSSIBLE(cm->endsc[v])) {
-	for (j = jmin[v]; j <= jmax[v]; j++) { 
-	  jp_v  = j - jmin[v];
+    /* re-initialize the J, L and R decks if we can do a local end from v */
+    if(NOT_IMPOSSIBLE(cm->endsc[v])) {
+      for (j = jmin[v]; j <= jmax[v]; j++) { 
+	jp_v  = j - jmin[v];
+	if(do_J_v) { 
 	  if(hdmin[v][jp_v] >= sd) { 
 	    d    = hdmin[v][jp_v];
 	    dp_v = 0;
@@ -1573,8 +1575,33 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
 	    dp_v = sd - hdmin[v][jp_v];
 	  }
 	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
-	    Jalpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
-	  /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
+	    Jalpha[v][jp_v][dp_v] = el_scA[d-sd]  + cm->endsc[v];
+	  }
+	}
+	if(do_L_v) { 
+	  if(hdmin[v][jp_v] >= sdl) { 
+	    d    = hdmin[v][jp_v];
+	    dp_v = 0;
+	  }
+	  else { 
+	    d    = sdl;
+	    dp_v = sdl - hdmin[v][jp_v];
+	  }
+	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    Lalpha[v][jp_v][dp_v] = el_scA[d-sdl]  + cm->endsc[v];
+	  }
+	}
+	if(do_R_v) { 
+	  if(hdmin[v][jp_v] >= sdr) { 
+	    d    = hdmin[v][jp_v];
+	    dp_v = 0;
+	  }
+	  else { 
+	    d    = sdr;
+	    dp_v = sdr - hdmin[v][jp_v];
+	  }
+	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    Ralpha[v][jp_v][dp_v] = el_scA[d-sdr]  + cm->endsc[v];
 	  }
 	}
       }
@@ -2491,6 +2518,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
   float   *el_scA;             /* [0..d..W-1] probability of local end emissions of length d */
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      sd;                 /* StateDelta(cm->sttype[v]) */
+  int      sdl;                /* StateLeftDelta(cm->sttype[v] */
   int      sdr;                /* StateRightDelta(cm->sttype[v] */
   int      jp_v, jp_y, jp_z;   /* offset j index for states v, y, z */
   int      jp_y_sdr;           /* jp_y - sdr */
@@ -2646,11 +2674,11 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
     do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
     do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
 
-    /* re-initialize the J deck if we can do a local end from v */
-    if(do_J_v) { 
-      if(NOT_IMPOSSIBLE(cm->endsc[v])) {
-	for (j = jmin[v]; j <= jmax[v]; j++) { 
-	  jp_v  = j - jmin[v];
+    /* re-initialize the J, L and R decks if we can do a local end from v */
+    if(NOT_IMPOSSIBLE(cm->endsc[v])) {
+      for (j = jmin[v]; j <= jmax[v]; j++) { 
+	jp_v  = j - jmin[v];
+	if(do_J_v) { 
 	  if(hdmin[v][jp_v] >= sd) { 
 	    d    = hdmin[v][jp_v];
 	    dp_v = 0;
@@ -2660,8 +2688,33 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
 	    dp_v = sd - hdmin[v][jp_v];
 	  }
 	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
-	    Jalpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
-	    /* L,Ralpha[v] remain IMPOSSIBLE, they can't go to EL */
+	    Jalpha[v][jp_v][dp_v] = el_scA[d-sd]  + cm->endsc[v];
+	  }
+	}
+	if(do_L_v) { 
+	  if(hdmin[v][jp_v] >= sdl) { 
+	    d    = hdmin[v][jp_v];
+	    dp_v = 0;
+	  }
+	  else { 
+	    d    = sdl;
+	    dp_v = sdl - hdmin[v][jp_v];
+	  }
+	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    Lalpha[v][jp_v][dp_v] = el_scA[d-sdl]  + cm->endsc[v];
+	  }
+	}
+	if(do_R_v) { 
+	  if(hdmin[v][jp_v] >= sdr) { 
+	    d    = hdmin[v][jp_v];
+	    dp_v = 0;
+	  }
+	  else { 
+	    d    = sdr;
+	    dp_v = sdr - hdmin[v][jp_v];
+	  }
+	  for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    Ralpha[v][jp_v][dp_v] = el_scA[d-sdr]  + cm->endsc[v];
 	  }
 	}
       }
@@ -3635,7 +3688,6 @@ main(int argc, char **argv)
   ESL_SQFILE     *sqfp  = NULL;  /* open sequence input file stream */
   ESL_SQ         *sq    = NULL;  /* a sequence */
   char            errbuf[eslERRBUFSIZE];
-  CMConsensus_t  *cons  = NULL;
   Parsetree_t    *tr    = NULL;
   float           size_limit = esl_opt_GetReal(go, "--sizelimit");
   float           save_tau, save_cp9b_thresh1, save_cp9b_thresh2;
@@ -3686,7 +3738,6 @@ main(int argc, char **argv)
   if(esl_opt_GetBoolean(go, "--i27")) { 
     SetMarginalScores_reproduce_i27(cm);
   }
-  CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &cons);
   
   save_tau = cm->tau;
   save_cp9b_thresh1 = cm->cp9b->thresh1;

@@ -88,11 +88,9 @@ AllocCP9Bands(int cm_M, int hmm_M)
   ESL_ALLOC(cp9bands->Rvalid, sizeof(int) * (cm_M+1));
   ESL_ALLOC(cp9bands->Tvalid, sizeof(int) * (cm_M+1));
   esl_vec_ISet(cp9bands->Jvalid, cm_M+1, TRUE);
-  esl_vec_ISet(cp9bands->Lvalid, cm_M, TRUE);
-  esl_vec_ISet(cp9bands->Rvalid, cm_M, TRUE);
+  esl_vec_ISet(cp9bands->Lvalid, cm_M+1, TRUE);
+  esl_vec_ISet(cp9bands->Rvalid, cm_M+1, TRUE);
   esl_vec_ISet(cp9bands->Tvalid, cm_M, TRUE);
-  cp9bands->Lvalid[cm_M] = FALSE;
-  cp9bands->Rvalid[cm_M] = FALSE;
   cp9bands->Tvalid[cm_M] = FALSE;
 
   ESL_ALLOC(cp9bands->pn_min_m, sizeof(int) * (cp9bands->hmm_M+1));
@@ -1506,7 +1504,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
   int          w;          /* a state index */
   int          lpos, rpos; /* left/right border of subtree for current node */
   int          k;          /* counter of HMM nodes */
-  int hmm_is_localized;    /* TRUE if HMM has local begins, ends or ELs on */
+  int hmm_is_localized;      /* TRUE if HMM has local begins, ends or ELs on */
+  int cm_is_fully_localized; /* TRUE if CM has local begins and ends on */
 
   /* r_* arrays, these are filled in HMMBandsEnforceValidParse(), they are the band on 'reachable'
    * residues for each HMM state as we move from left to right through the HMM. 
@@ -1538,13 +1537,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
   if(i0 < 1) ESL_FAIL(eslEINCOMPAT,  errbuf, "cp9_HMM2ijBands(), i0 < 1: %d\n", i0);
   if(j0 < 1) ESL_FAIL(eslEINCOMPAT,  errbuf, "cp9_HMM2ijBands(), j0 < 1: %d\n", j0);
   if(j0 < i0) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), i0 (%d) < j0 (%d)\n", i0, j0);
-  hmm_is_localized = ((cp9->flags & CPLAN9_LOCAL_BEGIN) || (cp9->flags & CPLAN9_LOCAL_END) || (cp9->flags & CPLAN9_EL)) ? TRUE : FALSE;
-#if 0 
-  if(hmm_is_localized) { 
-    if(!(cm->flags & CMH_LOCAL_BEGIN)) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), HMM is locally configured, but CM's local begins are off.\n");
-    if(!(cm->flags & CMH_LOCAL_END))   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), HMM is locally configured, but CM's local ends are off.\n");
-  }
-#endif
+  hmm_is_localized      = ((cp9->flags & CPLAN9_LOCAL_BEGIN) || (cp9->flags & CPLAN9_LOCAL_END) || (cp9->flags & CPLAN9_EL)) ? TRUE : FALSE;
+  cm_is_fully_localized = ((cm->flags & CMH_LOCAL_BEGIN) && (cm->flags & CMH_LOCAL_END)) ? TRUE : FALSE;
 
   /* ptrs to cp9b arrays, for convenience */
   pn_min_m = cp9b->pn_min_m;
@@ -1955,12 +1949,11 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
   /* A final, brutal hack. If the hmm used to derive bands has local
    * begins, ends and ELs on, it's possible (but extremely rare
    * empirically, even with very high tau values (0.49!)) that no
-   * valid CM parse exists within the i and j bands. To avoid this, we
-   * implement a brutal hack here. We don't do this if do_trunc is
-   * TRUE. In that case it may be possible we don't have a valid
-   * parse and the caller must do something sensible like catching an
-   * IMPOSSIBLE score from one of the aligners and doing a non-banded
-   * alignment.
+   * valid CM parse exists within the i and j bands. To avoid this, if
+   * the CM has local begins and ends on then we use a brutal hack
+   * here to enable at least one valid parse from the ROOT_S to a
+   * state from which the EL can be reached and able to emit all
+   * residues.
    *
    * There's 2 relevant cases. 
    * 
@@ -2002,14 +1995,9 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
    * if v is not reachable (if we're doing search or not), we enforce 1 valid parse, 
    * the BIF must emit the full target, residues i0..j0-1 from its' BEGL_S's EL state, and
    * residue j0 from it's BEGR_S EL state.
-   *
-   * If the HMM is in local mode but the CM does not have local begins or ends on, 
-   * then we must be doing truncated alignment to a glocal CM. We handle this
-   * case immediately below after the if that begins with 'do_trunc'.
    */
-  if(hmm_is_localized && (! do_trunc)) { 
-    assert(cm->flags & CMH_LOCAL_BEGIN); /* asserted in contract too */
-    assert(cm->flags & CMH_LOCAL_END);   /* asserted in contract too */
+  if(hmm_is_localized && cm_is_fully_localized) { 
+    if(do_trunc) cp9b->Jvalid[0] = TRUE;
     if(imin[0] == -1) { /* ROOT_S is unreachable, uhh... */
       imin[0] = imax[0] = i0;
       jmin[0] = jmax[0] = j0;
@@ -2024,9 +2012,12 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
       v = cm->nodemap[nd];
       w = cm->cfirst[v]; /* BEGL_S */
       y = cm->cnum[v];   /* BEGR_S */
-      if(imin[v] != -1) { /* v is reachble, it's children should be also */
-	assert(imin[w] != -1);
-	assert(imin[y] != -1);
+      if(do_trunc) { 
+	cp9b->Jvalid[v] = TRUE;
+	cp9b->Jvalid[w] = TRUE;
+	cp9b->Jvalid[y] = TRUE;
+      }
+      if(imin[v] != -1 && imin[w] != -1 && imin[y] != -1) { /* v and its children w and y are all reachable */
 	if(!doing_search) { /* we need to be able to account for the full sequence */
 	  imin[v] = ESL_MIN(imin[v], i0);
 	  imax[v] = ESL_MAX(imax[v], i0);
@@ -2047,9 +2038,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
 	  imax[y] = ESL_MAX(imin[y], imax[y]);
 	}
       } /* end of if(imin[v] != -1) */
-      else { /* imin[v] == -1, v is unreachable, make it reachable */
-	assert(imin[w] == -1);
-	assert(imin[y] == -1);
+      else { /* v, w or y are unreachable, make them reachable */
 	if(! doing_search) { 
 	  /* if we're doing alignment, we enforce that the full seq must be emittable 
 	   * by BIF and it's children's (BEGL_S and BEGR_S) EL states */
@@ -2089,6 +2078,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
       ESL_DASSERT1((cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd));
       assert(cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd);
       v = cm->nodemap[nd];
+      if(do_trunc) cp9b->Jvalid[v] = TRUE;
       /* we can do a local begin into and local end out of v */
       ESL_DASSERT1((NOT_IMPOSSIBLE(cm->beginsc[v])));
       ESL_DASSERT1((NOT_IMPOSSIBLE(cm->endsc[v])));
@@ -4962,6 +4952,27 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass
       if(cp9b->Rvalid[v]) cp9b->Rvalid[0] = TRUE;
       break;
     }
+    if(cp9b->Jvalid[0] && 
+       cp9b->Lvalid[0] && 
+       cp9b->Rvalid[0] && 
+       cp9b->Tvalid[0]) { 
+      v = cp9b->cm_M; 
+    }
+  }
+
+  /* The EL state is special, if local ends are on, make J, L and R
+   * modes all valid. (We could only make those modes valid for
+   * which there's a local end possible (e.g. make cm->M invalid for
+   * R if R is not valid for any states), but empirically this is 
+   * rare, so I've opted to always allow all types to avoid allowing
+   * the possibility that we turn {J,L,R}valid[cm->M] on and off 
+   * as we process seqs, thus avoiding all the possible complications
+   * of doing that.
+   */
+  if(cm->flags & CMH_LOCAL_END) { 
+    cp9b->Jvalid[cm->M] = TRUE;
+    cp9b->Lvalid[cm->M] = TRUE;
+    cp9b->Rvalid[cm->M] = TRUE;
   }
 
   return eslOK;

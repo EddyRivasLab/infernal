@@ -418,8 +418,8 @@ cm_tr_mx_Create(CM_t *cm)
  
   /* level 3: dp cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
   ESL_ALLOC(mx->Jdp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
-  ESL_ALLOC(mx->Ldp_mem,  sizeof(float) * M     * (allocL) * (allocW));
-  ESL_ALLOC(mx->Rdp_mem,  sizeof(float) * M     * (allocL) * (allocW));
+  ESL_ALLOC(mx->Ldp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
+  ESL_ALLOC(mx->Rdp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
   ESL_ALLOC(mx->Tdp_mem,  sizeof(float) * (B+1) * (allocL) * (allocW)); /* +1 is for the special ROOT_S deck */
 
   b = 0;
@@ -440,19 +440,21 @@ cm_tr_mx_Create(CM_t *cm)
       mx->Tdp[v] = NULL;
     }
   }
-  /* allocate EL deck, but only for J */
+  /* allocate EL deck, for J, L, and R */
   ESL_ALLOC(mx->Jdp[M], sizeof(float *) * (allocL));
+  ESL_ALLOC(mx->Ldp[M], sizeof(float *) * (allocL));
+  ESL_ALLOC(mx->Rdp[M], sizeof(float *) * (allocL));
   mx->Jdp[M][0]  = mx->Jdp_mem + M * (allocL) * (allocW);
+  mx->Ldp[M][0]  = mx->Ldp_mem + M * (allocL) * (allocW);
+  mx->Rdp[M][0]  = mx->Rdp_mem + M * (allocL) * (allocW);
 
-  mx->Ldp[M]  = NULL;
-  mx->Rdp[M]  = NULL;
   mx->Tdp[M]  = NULL;
   
   mx->M               = M;
   mx->B               = B;
   mx->Jncells_alloc   = (M+1)*(allocL)*(allocW);
-  mx->Lncells_alloc   = (M)  *(allocL)*(allocW);
-  mx->Rncells_alloc   = (M)  *(allocL)*(allocW);
+  mx->Lncells_alloc   = (M+1)*(allocL)*(allocW);
+  mx->Rncells_alloc   = (M+1)*(allocL)*(allocW);
   mx->Tncells_alloc   = (B+1)*(allocL)*(allocW);
   mx->Jncells_valid   = 0;
   mx->Lncells_valid   = 0;
@@ -605,11 +607,23 @@ cm_tr_mx_GrowTo(CM_t *cm, CM_TR_MX *mx, char *errbuf, int L, float size_limit)
   }
   if(have_el) {
     ESL_RALLOC(mx->Jdp[mx->M], p, sizeof(float *) * (L+1));
-      /* Ldp, Rdp, Tdp is NULL for cm->M */
+    ESL_RALLOC(mx->Ldp[mx->M], p, sizeof(float *) * (L+1));
+    ESL_RALLOC(mx->Rdp[mx->M], p, sizeof(float *) * (L+1));
+    /* Tdp is NULL for cm->M */
   }
-  else if(mx->Jdp[mx->M] != NULL) { 
-    free(mx->Jdp[mx->M]);
-    mx->Jdp[mx->M] = NULL;
+  else { 
+    if(mx->Jdp[mx->M] != NULL) { 
+      free(mx->Jdp[mx->M]);
+      mx->Jdp[mx->M] = NULL;
+    }
+    if(mx->Ldp[mx->M] != NULL) { 
+      free(mx->Ldp[mx->M]);
+      mx->Ldp[mx->M] = NULL;
+    }
+    if(mx->Rdp[mx->M] != NULL) { 
+      free(mx->Rdp[mx->M]);
+      mx->Rdp[mx->M] = NULL;
+    }
   }
 
   /* reset the pointers, we keep a tally of cur_size as we go 
@@ -636,6 +650,14 @@ cm_tr_mx_GrowTo(CM_t *cm, CM_TR_MX *mx, char *errbuf, int L, float size_limit)
     for(jp = 0; jp <= L; jp++) { 
       mx->Jdp[mx->M][jp] = mx->Jdp_mem + Jcur_size;
       Jcur_size += jp+1;
+    }      
+    for(jp = 0; jp <= L; jp++) { 
+      mx->Ldp[mx->M][jp] = mx->Ldp_mem + Lcur_size;
+      Lcur_size += jp+1;
+    }      
+    for(jp = 0; jp <= L; jp++) { 
+      mx->Rdp[mx->M][jp] = mx->Rdp_mem + Rcur_size;
+      Rcur_size += jp+1;
     }      
   }
   /*printf("J ncells %10" PRId64 " %10" PRId64 "\n", Jcur_size, mx->Jncells_valid);
@@ -747,15 +769,15 @@ cm_tr_mx_Dump(FILE *ofp, CM_TR_MX *mx, char mode, int print_mx)
     }
     /* print EL deck, if it's valid */
     v = mx->M;
-    if(mx->Jdp[v]) { 
-      for(j = 0; j <= mx->L; j++) {
-	for(d = 0; d <= j; d++) {
-	  fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
-	}
-	fprintf(ofp, "\n");
+    for(j = 0; j <= mx->L; j++) {
+      for(d = 0; d <= j; d++) {
+	if(mx->Jdp[v])           fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
+	if(fill_L && mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][j][d]);
+	if(fill_R && mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][j][d]);
       }
-      fprintf(ofp, "\n\n");
+      fprintf(ofp, "\n");
     }
+    fprintf(ofp, "\n\n");
   }
   return eslOK;
 }
@@ -810,7 +832,11 @@ cm_tr_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_Jncells, int64_t
     Rncells += (int) ((L+2) * (L+1) * 0.5); 
     if(cm->sttype[v] == B_st || v == 0) Tncells += (int) ((L+2) * (L+1) * 0.5);
   }
-  if(have_el) Jncells += (int) ((L+2) * (L+1) * 0.5); /* space for EL deck */
+  if(have_el) { /* space for EL deck */
+    Jncells += (int) ((L+2) * (L+1) * 0.5); 
+    Lncells += (int) ((L+2) * (L+1) * 0.5);
+    Rncells += (int) ((L+2) * (L+1) * 0.5);
+  }
 
   Mb_needed += sizeof(float) * Jncells; /* mx->Jdp_mem */
   Mb_needed += sizeof(float) * Lncells; /* mx->Ldp_mem */
@@ -1206,8 +1232,8 @@ cm_tr_hb_mx_Create(CM_t *cm)
  
   /* level 3: dp cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
   ESL_ALLOC(mx->Jdp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
-  ESL_ALLOC(mx->Ldp_mem,  sizeof(float) * M     * (allocL) * (allocW));
-  ESL_ALLOC(mx->Rdp_mem,  sizeof(float) * M     * (allocL) * (allocW));
+  ESL_ALLOC(mx->Ldp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
+  ESL_ALLOC(mx->Rdp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
   ESL_ALLOC(mx->Tdp_mem,  sizeof(float) * (B+1) * (allocL) * (allocW)); /* +1 is for the special ROOT_S deck */
   ESL_ALLOC(mx->JnrowsA,  sizeof(int)   * (M+1));
   ESL_ALLOC(mx->LnrowsA,  sizeof(int)   * (M+1));
@@ -1237,23 +1263,28 @@ cm_tr_hb_mx_Create(CM_t *cm)
     mx->LnrowsA[v] = allocL;
     mx->RnrowsA[v] = allocL;
   }
-  /* allocate EL deck, but only for J */
+  /* allocate EL deck, for J, L, and R */
   ESL_ALLOC(mx->Jdp[M], sizeof(float *) * (allocL));
   mx->Jdp[M][0]  = mx->Jdp_mem + M * (allocL) * (allocW);
   mx->JnrowsA[M] = allocL;
 
-  mx->Ldp[M]  = NULL;
-  mx->Rdp[M]  = NULL;
+  ESL_ALLOC(mx->Ldp[M], sizeof(float *) * (allocL));
+  mx->Ldp[M][0]  = mx->Ldp_mem + M * (allocL) * (allocW);
+  mx->LnrowsA[M] = allocL;
+
+  ESL_ALLOC(mx->Rdp[M], sizeof(float *) * (allocL));
+  mx->Rdp[M][0]  = mx->Rdp_mem + M * (allocL) * (allocW);
+  mx->RnrowsA[M] = allocL;
+
   mx->Tdp[M]  = NULL;
-  mx->LnrowsA[M] = 0;
-  mx->RnrowsA[M] = 0;
+
   mx->TnrowsA[M] = 0;
   
   mx->M               = M;
   mx->B               = B;
   mx->Jncells_alloc   = (M+1)*(allocL)*(allocW);
-  mx->Lncells_alloc   = (M)  *(allocL)*(allocW);
-  mx->Rncells_alloc   = (M)  *(allocL)*(allocW);
+  mx->Lncells_alloc   = (M+1)*(allocL)*(allocW);
+  mx->Rncells_alloc   = (M+1)*(allocL)*(allocW);
   mx->Tncells_alloc   = (B+1)*(allocL)*(allocW);
   mx->Jncells_valid   = 0;
   mx->Lncells_valid   = 0;
@@ -1478,12 +1509,44 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   }
   if(have_el) {
     jbw = L+1;
-    if(jbw > mx->JnrowsA[mx->M]) {
-      ESL_RALLOC(mx->Jdp[mx->M], p, sizeof(float *) * jbw);
-      mx->JnrowsA[mx->M] = jbw;
-      /* Ldp, Rdp, Tdp is NULL for cm->M */
+    if(cp9b->Jvalid[mx->M]) { 
+      if(jbw > mx->JnrowsA[mx->M]) {
+	if(mx->Jdp[mx->M] != NULL) ESL_RALLOC(mx->Jdp[mx->M], p, sizeof(float *) * jbw);
+	else                       ESL_ALLOC (mx->Jdp[mx->M],    sizeof(float *) * jbw);
+	mx->JnrowsA[mx->M] = jbw;
+      }
+    }
+    else { /* cp9b->Jvalid[mx->M] is FALSE */
+      if(mx->Jdp[v] != NULL) free(mx->Jdp[v]);
+      mx->Jdp[v] = NULL;
+      mx->JnrowsA[v] = 0;
+    }
+    if(cp9b->Lvalid[mx->M]) { 
+      if(jbw > mx->LnrowsA[mx->M]) {
+	if(mx->Ldp[mx->M] != NULL) ESL_RALLOC(mx->Ldp[mx->M], p, sizeof(float *) * jbw);
+	else                       ESL_ALLOC (mx->Ldp[mx->M],    sizeof(float *) * jbw);
+	mx->LnrowsA[mx->M] = jbw;
+      }
+    }
+    else { /* cp9b->Lvalid[mx->M] is FALSE */
+      if(mx->Ldp[v] != NULL) free(mx->Ldp[v]);
+      mx->Ldp[v] = NULL;
+      mx->LnrowsA[v] = 0;
+    }
+    if(cp9b->Rvalid[mx->M]) { 
+      if(jbw > mx->RnrowsA[mx->M]) {
+	if(mx->Rdp[mx->M] != NULL) ESL_RALLOC(mx->Rdp[mx->M], p, sizeof(float *) * jbw);
+	else                       ESL_ALLOC (mx->Rdp[mx->M],    sizeof(float *) * jbw);
+	mx->RnrowsA[mx->M] = jbw;
+      }
+    }
+    else { /* cp9b->Rvalid[mx->M] is FALSE */
+      if(mx->Rdp[v] != NULL) free(mx->Rdp[v]);
+      mx->Rdp[v] = NULL;
+      mx->RnrowsA[v] = 0;
     }
   }
+  /* Tdp is NULL for cm->M */
 
   /* reset the pointers, we keep a tally of cur_size as we go 
    */
@@ -1518,11 +1581,26 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
     }
   }
   if(have_el) {
-    for(jp = 0; jp <= L; jp++) { 
-      mx->Jdp[mx->M][jp] = mx->Jdp_mem + Jcur_size;
-      Jcur_size += jp + 1;
+    if(mx->Jdp[mx->M] != NULL) { 
+      for(jp = 0; jp <= L; jp++) { 
+	mx->Jdp[mx->M][jp] = mx->Jdp_mem + Jcur_size;
+	Jcur_size += jp + 1;
+      }
+    }      
+    if(mx->Ldp[mx->M] != NULL) { 
+      for(jp = 0; jp <= L; jp++) { 
+	mx->Ldp[mx->M][jp] = mx->Ldp_mem + Lcur_size;
+	Lcur_size += jp + 1;
+      }
+    }      
+    if(mx->Rdp[mx->M] != NULL) { 
+      for(jp = 0; jp <= L; jp++) { 
+	mx->Rdp[mx->M][jp] = mx->Rdp_mem + Rcur_size;
+	Rcur_size += jp + 1;
+      }
     }      
   }
+
   /*printf("J ncells %10" PRId64 " %10" PRId64 "\n", Jcur_size, mx->Jncells_valid);
     printf("L ncells %10" PRId64 " %10" PRId64 "\n", Lcur_size, mx->Lncells_valid);
     printf("R ncells %10" PRId64 " %10" PRId64 "\n", Rcur_size, mx->Rncells_valid);
@@ -1640,15 +1718,15 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char mode, int print_mx)
     }
     /* print EL deck, if it's valid */
     v = mx->M;
-    if(mx->JnrowsA[v] == (mx->L+1)) {
-      for(j = 0; j <= mx->L; j++) {
-	for(d = 0; d <= j; d++) {
-	  if(mx->Jdp[v]) fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
-	}
-	fprintf(ofp, "\n");
+    for(j = 0; j <= mx->L; j++) {
+      for(d = 0; d <= j; d++) {
+	if(mx->Jdp[v] && mx->JnrowsA[v] == (mx->L+1)) fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
+	if(fill_L && mx->Ldp[v] && mx->LnrowsA[v] == (mx->L+1)) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][j][d]);
+	if(fill_R && mx->Rdp[v] && mx->RnrowsA[v] == (mx->L+1)) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][j][d]);
       }
-      fprintf(ofp, "\n\n");
+      fprintf(ofp, "\n");
     }
+    fprintf(ofp, "\n\n");
   }
   return eslOK;
 }
@@ -1694,7 +1772,7 @@ cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t 
   Jncells = 0;
   Lncells = 0;
   Rncells = 0;
-  Tncells   = 0;
+  Tncells = 0;
   Mb_needed = (float) 
     (sizeof(CM_TR_HB_MX)                 + 
      (4 * (cp9b->cm_M+1) * sizeof(float **))  + /* mx->{J,L,R}dp[] ptrs */
@@ -1727,7 +1805,20 @@ cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t 
       }
     }
   }
-  if(have_el) Jncells += (int) ((L+2) * (L+1) * 0.5); /* space for EL deck */
+  if(have_el) { /* space for EL deck */
+    if(cp9b->Jvalid[cp9b->cm_M]) { 
+      Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Jdp[cm->M][] ptrs */
+      Jncells += (int) ((L+2) * (L+1) * 0.5); 
+    }
+    if(cp9b->Lvalid[cp9b->cm_M]) { 
+      Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Ldp[cm->M][] ptrs */
+      Lncells += (int) ((L+2) * (L+1) * 0.5); 
+    }
+    if(cp9b->Rvalid[cp9b->cm_M]) { 
+      Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Ldp[cm->M][] ptrs */
+      Rncells += (int) ((L+2) * (L+1) * 0.5); 
+    }
+  }
 
   Mb_needed += sizeof(float) * Jncells; /* mx->Jdp_mem */
   Mb_needed += sizeof(float) * Lncells; /* mx->Ldp_mem */
@@ -4357,7 +4448,7 @@ cm_emit_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_l_ncells, int6
  *
  * Purpose:   Allocate a reusable, resizeable <CM_TR_EMIT_MX> for a CM.
  *            
- * Args:      cm:      the model
+ * Args:      cm: the model
  *
  * Returns:   a pointer to the new <CM_TR_EMIT_MX>.
  *
@@ -4400,7 +4491,8 @@ cm_tr_emit_mx_Create(CM_t *cm)
     if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) l_nstates_valid++;
     if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) r_nstates_valid++;
   }
-  l_nstates_valid++; /* add 1 for the special left emitting EL state, cm->M */
+  l_nstates_valid++; /* add 1 for the EL state, cm->M */
+  r_nstates_valid++; /* add 1 for the EL state, cm->M */
 
   ESL_ALLOC(mx->Jl_pp_mem,  sizeof(float) * (l_nstates_valid) * (allocL));
   ESL_ALLOC(mx->Ll_pp_mem,  sizeof(float) * (l_nstates_valid) * (allocL));
@@ -4431,15 +4523,12 @@ cm_tr_emit_mx_Create(CM_t *cm)
     }
   }
     
-  /* setup EL row, only valid in Jl */
+  /* setup EL row, invalid in Jr */
   mx->Jl_pp[M] = mx->Jl_pp_mem + l_n * (allocL);
   mx->Ll_pp[M] = mx->Ll_pp_mem + l_n * (allocL);
-  /* Note that EL emits in left marginal mode are not allowed, but we allocate them so Ll_pp is consistent with
-   * Jl_pp. If we didn't do it this way, we'd need separate Jl_ncells_valid and Ll_ncells_valid parameters.
-   */
+  mx->Rr_pp[M] = mx->Rr_pp_mem + r_n * (allocL);
 
   mx->Jr_pp[M] = NULL;
-  mx->Rr_pp[M] = NULL;
   
   /* finally allocate the sum vector */
   ESL_ALLOC(mx->sum, sizeof(float) * allocL);
@@ -4462,7 +4551,7 @@ cm_tr_emit_mx_Create(CM_t *cm)
      mx->l_ncells_alloc * sizeof(float)     +  /* mx->Ll_pp_mem */
      mx->r_ncells_alloc * sizeof(float)     +  /* mx->Jr_pp_mem */
      mx->r_ncells_alloc * sizeof(float)     +  /* mx->Rr_pp_mem */
-     (mx->L+1) * sizeof(float));                /* mx->sum */
+     (mx->L+1) * sizeof(float));               /* mx->sum */
 
   mx->size_Mb *= 0.000001; /* convert to Mb */
 
@@ -4611,15 +4700,17 @@ cm_tr_emit_mx_GrowTo(CM_t *cm, CM_TR_EMIT_MX *mx, char *errbuf, int L, float siz
   }
   if(have_el) { 
     mx->Jl_pp[mx->M] = mx->Jl_pp_mem + l_cur_size;
-    mx->Ll_pp[mx->M] = mx->Ll_pp_mem + l_cur_size; /* these cells will never be used */
+    mx->Ll_pp[mx->M] = mx->Ll_pp_mem + l_cur_size; 
+    mx->Rr_pp[mx->M] = mx->Rr_pp_mem + r_cur_size; 
     l_cur_size += L+1;
+    r_cur_size += L+1;
   }
   else { 
     mx->Jl_pp[mx->M] = NULL;
     mx->Ll_pp[mx->M] = NULL;
+    mx->Rr_pp[mx->M] = NULL;
   }
   mx->Jr_pp[mx->M] = NULL;
-  mx->Rr_pp[mx->M] = NULL;
     
 #if eslDEBUGLEVEL >= 1
   printf("l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
@@ -4701,7 +4792,9 @@ cm_tr_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_EMIT_MX *mx, char mode, int print_
     }
     /* EL state */
     for(i = 0; i <= mx->L; i++) { 
-      if(mx->Jl_pp[cm->M]) fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Jl_pp[cm->M][i]), mx->Jl_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
+      if(mx->Jl_pp[cm->M])           fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Jl_pp[cm->M][i]), mx->Jl_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
+      if(mx->Ll_pp[cm->M] && fill_L) fprintf(ofp, "Ll_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Ll_pp[cm->M][i]), mx->Ll_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
+      if(mx->Rr_pp[cm->M] && fill_R) fprintf(ofp, "Rr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Rr_pp[cm->M][i]), mx->Rr_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
     }
   }
   return eslOK;
@@ -4756,7 +4849,10 @@ cm_tr_emit_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_l_ncells, i
       r_ncells += L+1;
     }
   }
-  if(have_el) l_ncells += L+1; /* space for EL deck */
+  if(have_el) { 
+    l_ncells += L+1; /* space for EL deck */
+    r_ncells += L+1; /* space for EL deck */
+  }
 
   Mb_needed += sizeof(float) * (l_ncells + l_ncells + r_ncells + r_ncells + (L+1)); 
   /* mx->Jl_pp_mem, mx->Ll_pp_mem, mx->Jr_pp_mem, mx->Rr_pp_mem, mx->sum */
@@ -5199,7 +5295,8 @@ cm_tr_hb_emit_mx_Create(CM_t *cm)
     if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) l_nstates_valid++;
     if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) r_nstates_valid++;
   }
-  l_nstates_valid++; /* add 1 for the special left emitting EL state, cm->M */
+  l_nstates_valid++; /* add 1 for the EL state, cm->M */
+  r_nstates_valid++; /* add 1 for the EL state, cm->M */
 
   ESL_ALLOC(mx->Jl_pp_mem,  sizeof(float) * (l_nstates_valid) * (allocL));
   ESL_ALLOC(mx->Ll_pp_mem,  sizeof(float) * (l_nstates_valid) * (allocL));
@@ -5230,14 +5327,11 @@ cm_tr_hb_emit_mx_Create(CM_t *cm)
     }
   }
     
-  /* allocate EL row, only valid in Jl */
+  /* allocate EL row, invalid in Jr */
   mx->Jl_pp[M] = mx->Jl_pp_mem + l_n * (allocL);
   mx->Ll_pp[M] = mx->Ll_pp_mem + l_n * (allocL);
-  /* Note that EL emits in left marginal mode are not allowed, but we allocate them so Ll_pp is consistent with
-   * Jl_pp. If we didn't do it this way, we'd need separate Jl_ncells_valid and Ll_ncells_valid parameters.
-   */
+  mx->Rr_pp[M] = mx->Ll_pp_mem + l_n * (allocL);
   mx->Jr_pp[M] = NULL;
-  mx->Rr_pp[M] = NULL;
 
   /* finally allocate the sum vector */
   ESL_ALLOC(mx->sum, sizeof(float) * allocL);
@@ -5396,14 +5490,16 @@ cm_tr_hb_emit_mx_GrowTo(CM_t *cm, CM_TR_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t
   if(have_el) { /* EL state is non-banded */
     mx->Jl_pp[mx->M] = mx->Jl_pp_mem + l_cur_size;
     mx->Ll_pp[mx->M] = mx->Ll_pp_mem + l_cur_size;
+    mx->Rr_pp[mx->M] = mx->Rr_pp_mem + r_cur_size;
     l_cur_size += L+1;
+    r_cur_size += L+1;
   }
   else { 
     mx->Jl_pp[mx->M] = NULL;
     mx->Ll_pp[mx->M] = NULL;
+    mx->Rr_pp[mx->M] = NULL;
   }
   mx->Jr_pp[mx->M] = NULL;
-  mx->Rr_pp[mx->M] = NULL;
     
 #if eslDEBUGLEVEL >= 1
   printf("l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
@@ -5506,7 +5602,9 @@ cm_tr_hb_emit_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_EMIT_MX *mx, char mode, int 
     
     /* EL state */
     for(i = 0; i <= mx->L; i++) { 
-      if(mx->Jl_pp[cm->M]) fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Jl_pp[cm->M][i]), mx->Jl_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
+      if(mx->Jl_pp[cm->M])           fprintf(ofp, "Jl_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Jl_pp[cm->M][i]), mx->Jl_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
+      if(mx->Ll_pp[cm->M] && fill_L) fprintf(ofp, "Ll_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Ll_pp[cm->M][i]), mx->Ll_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
+      if(mx->Rr_pp[cm->M] && fill_R) fprintf(ofp, "Rr_pp[v:%5d][i:%5d] %8.4f (2^%8.4f) (%4s %2s)\n", cm->M, i, sreEXP2(mx->Rr_pp[cm->M][i]), mx->Rr_pp[cm->M][i], "EL", Statetype(cm->sttype[v]));
     }
   }
   return eslOK;
@@ -5562,7 +5660,10 @@ cm_tr_hb_emit_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int
       r_ncells += cp9b->jmax[v] - cp9b->jmin[v] + 1;
     }
   }
-  if(have_el) l_ncells += L+1; /* space for EL deck */
+  if(have_el) { 
+    l_ncells += L+1; /* space for EL deck */
+    r_ncells += L+1; /* space for EL deck */
+  }
 
   Mb_needed += sizeof(float) * (l_ncells + l_ncells + r_ncells + r_ncells + (L+1)); 
   /* mx->Jl_pp_mem, mx->Ll_pp_mem, mx->Jr_pp_mem, mx->Rr_pp_mem, mx->sum */

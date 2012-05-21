@@ -330,7 +330,7 @@ main(int argc, char **argv)
 	      if(do_cyk) { 
 		if ((NOT_IMPOSSIBLE(Jcyk_sc[L]) || NOT_IMPOSSIBLE(Jbrute_cyk[L])) && 
 		    (fabs(Jcyk_sc[L] - Jbrute_cyk[L]) > cyk_precision)) {
-		  if((status = cm_TrAlign(cm, errbuf, dsq, L, 128., TRMODE_UNKNOWN, PLI_PASS_5P_AND_3P_FORCE, FALSE, FALSE, trmx, trshmx, NULL, NULL, NULL, NULL, &tr, &mode, NULL, NULL)) != eslOK) cm_Fail("cm_TrAlign() call failed");
+		  if((status = cm_TrAlign(cm, errbuf, dsq, L, 128., TRMODE_J, PLI_PASS_5P_AND_3P_FORCE, FALSE, FALSE, trmx, trshmx, NULL, NULL, NULL, NULL, &tr, &mode, NULL, NULL)) != eslOK) cm_Fail("cm_TrAlign() call failed");
 		  ParsetreeDump(stdout, tr, cm, dsq);
 		  ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
 		  esl_fatal("TrCYK     J scores mismatched: %-6s %s  L=%1d brute=%8.4f cm_TrCYKAlign()=%8.4f (difference %g)",
@@ -355,6 +355,9 @@ main(int argc, char **argv)
 	      if(do_cyk) { 
 		if ((NOT_IMPOSSIBLE(Lcyk_sc[L]) || NOT_IMPOSSIBLE(Lbrute_cyk[L])) && 
 		    (fabs(Lcyk_sc[L] - Lbrute_cyk[L]) > cyk_precision)) {
+		  if((status = cm_TrAlign(cm, errbuf, dsq, L, 128., TRMODE_L, PLI_PASS_5P_AND_3P_FORCE, FALSE, FALSE, trmx, trshmx, NULL, NULL, NULL, NULL, &tr, &mode, NULL, NULL)) != eslOK) cm_Fail("cm_TrAlign() call failed");
+		  ParsetreeDump(stdout, tr, cm, dsq);
+		  ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
 		  esl_fatal("TrCYK     L scores mismatched: %-6s %s  L=%1d brute=%8.4f cm_TrCYKAlign()=%8.4f (difference %g)",
 			    do_local ? "local" : "global",
 			    (j > 0)  ? "random": "fixed",
@@ -376,6 +379,10 @@ main(int argc, char **argv)
 	      if(do_cyk) { 
 		if ((NOT_IMPOSSIBLE(Rcyk_sc[L]) || NOT_IMPOSSIBLE(Rbrute_cyk[L])) && 
 		    (fabs(Rcyk_sc[L] - Rbrute_cyk[L]) > cyk_precision)) {
+		  if((status = cm_TrAlign(cm, errbuf, dsq, L, 128., TRMODE_R, PLI_PASS_5P_AND_3P_FORCE, FALSE, FALSE, trmx, trshmx, NULL, NULL, NULL, NULL, &tr, &mode, NULL, NULL)) != eslOK) cm_Fail("cm_TrAlign() call failed");		  
+		  ParsetreeScore(cm, NULL, NULL, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
+		  printf("Parsetree score: %.2f\n", sc);
+		  ParsetreeDump(stdout, tr, cm, dsq);
 		  esl_fatal("TrCYK     R scores mismatched: %-6s %s  L=%1d brute=%8.4f cm_TrCYKAlign()=%8.4f (difference %g)",
 			    do_local ? "local" : "global",
 			    (j > 0)  ? "random": "fixed",
@@ -713,8 +720,8 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
 
   double Sp[22];		   /* odds of 22 possible standard (non-truncated) paths through the CM */
   double Jp[22];		   /* odds of 22 possible Joint marginal paths through the CM */
-  double Lp[35];		   /* odds of 35 possible Left  marginal paths through the CM */
-  double Rp[39];		   /* odds of 39 possible Right marginal paths through the CM */
+  double Lp[37];		   /* odds of 37 possible Left  marginal paths through the CM */
+  double Rp[45];		   /* odds of 45 possible Right marginal paths through the CM */
 
   double SpL[3];		   /* summed odds of all standard (non-truncated) paths of length 0..2  */
   double JpL[3];		   /* summed odds of all Joint marginal paths of length 0..2  */
@@ -850,12 +857,12 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
      which doesn't exist in this model. */
 
   /* If we switch from L mode to J mode, highest valued L mode state must be a right emitter (there's only one in this CM, the ROOT_IR) */
-  /* 11 Left marginal alignments that emit 1 residue are possible */
+  /* 13 Left marginal alignments that emit 1 residue are possible */
   Lp[0]  = isc;                                                 /* ROOT_IL(1L)                                                (L=1) */
   Lp[1]  = msc;                                                 /* MATL_ML(3L)                                                (L=1) */
   Lp[2]  = isc;                                                 /* MATL_IL(5L)                                                (L=1) */
   Lp[3]  = msc;                                                 /* MATL_ML(6L)                                                (L=1) */
-  /* Next 7 alignments use truncated begin into an R emitting state in
+  /* Next 6 alignments use truncated begin into an R emitting state in
    * L mode (there's only 1, the ROOT_IR). 
    * 
    * These paths are not shown in the notes in ELN3 p3-5. 
@@ -867,9 +874,17 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
   Lp[8]  = isc * prm->t2t4 * prm->t4t5 * prm->t5t7 * prm->t7t9; /* ROOT_IR(2L) MATL_D (4J) MATL_IL(5J) MATL_D (7J) END_E (9J) (L=1) L mode: silent IR; L->J switch at IR */
   Lp[9]  = msc * prm->t2t4 * prm->t4t6 * prm->t6t9;             /* ROOT_IR(2L) MATL_D (4J) MATL_ML(6J) END_E  (9J)            (L=1) L mode: silent IR; L->J switch at IR */
   /* local ends */
+  /* Careful: a Left/Right mode emission in a Left/Right emitting
+   * state v with d == 1 can't then go to any state, including EL
+   * (special case in DP, if d == 1 then we get a free 'truncated
+   * begin' into v (we don't do a Logsum() and a max (CYK) would never
+   * be a better score)). If they could we'd have one additional path:
+   * Lp[XX] = msc * prm->end[3];               MATL_ML(3L) EL (10L)                
+   * Lp[XX] = msc * prm->t2t3 * prm->end[3];   ROOT_IR(2L) MATL_ML(3L) EL    (10L) 
+   */                       
   Lp[10] = msc * prm->t2t3 * prm->end[3];                       /* ROOT_IR(2L) MATL_ML(3J) EL    (10J)                        (L=1) L mode: silent IR; L->J switch at IR */
 
-  /* 24 Left marginal alignments that emit 2 residues are possible */
+  /* 27 Left marginal alignments that emit 2 residues are possible */
   Lp[11] = isc * isc * prm->t1t1;                                                  /* ROOT_IL(1L) ROOT_IL(1L)                                                 (L=2) */
   /* we can use ROOT_IR(2) in L marginal mode without emitting from it */             
   Lp[12] = msc * isc * prm->t1t2 * prm->t2t3;                                      /* ROOT_IL(1L) ROOT_IR(2L) MATL_ML(3L)                                     (L=2); L mode: silent IR */
@@ -887,40 +902,48 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
   Lp[23] = isc * isc * prm->t5t5;                                                  /* MATL_IL(5L) MATL_IL(5L)                                                 (L=2) */
   Lp[24] = isc * msc * prm->t5t6;                                                  /* MATL_IL(5L) MATL_ML(6L)                                                 (L=2) */
   /* local ends */
-  Lp[25] = isc * msc * prm->t1t2 * prm->t2t3 * prm->end[3];                        /* ROOT_IL(1L) ROOT_IR(2L) MATL_ML(3J) EL  (10J)                           (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
+  /* Careful: a Left/Right mode emission in a Left/Right emitting
+   * state v with d == 1 can't then go to any state, including EL
+   * (special case in DP, if d == 1 then we get a free 'truncated
+   * begin' into v (we don't do a Logsum() and a max (CYK) would never
+   * be a better score)). If they could we'd have one additional path:
+   * Lp[XX] = isc * msc * prm->t1t3 * prm->end[3]; MATL_IL(1L)
+   * MATL_ML(3L) EL (10)L
+   */
+  Lp[25] = msc * elsc* prm->end[3] * prm->el_self;                                 /* MATL_ML(3L) EL    (10L) EL    (10L)                                     (L=2) LOCAL END */
+  Lp[26] = isc * msc * prm->t1t2 * prm->t2t3 * prm->end[3];                        /* ROOT_IL(1L) ROOT_IR(2L) MATL_ML(3J) EL  (10J)                           (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
   /* Next 9 alignments use truncated begin into an R emitting state in
-   * L mode (there's only 1, the ROOT_IR). A careful observer will
-   * notice that this list of 6 excludes any paths that use a
-   * ROOT_IR->ROOT_IR self transitions in L mode, that's called an
-   * off-mode self transition, and those are illegal (not counted in
-   * the DP algs).
+   * L mode (there's only 1, the ROOT_IR). Notice that this list of 9
+   * excludes any paths that use a ROOT_IR->ROOT_IR self transitions
+   * in L mode, that's called an off-mode self transition, and those
+   * are illegal (not counted in the DP algs).
    * 
    * These paths are not shown in the notes in ELN3 p3-5.
    */
-  Lp[26] = msc * isc * prm->t2t3 * prm->t3t5;                                     /* ROOT_IR(2L) MATL_ML(3L) MATL_IL(5L)                                      (L=2) LOCAL END; L mode: silent IR; */
-  Lp[27] = msc * msc * prm->t2t3 * prm->t3t6;                                     /* ROOT_IR(2L) MATL_ML(3L) MATL_ML(6L)                                      (L=2) LOCAL END; L mode: silent IR; */
-  Lp[28] = isc * isc * prm->t2t4 * prm->t4t5 * prm->t5t5;                         /* ROOT_IR(2L) MATL_D (4L) MATL_IL(5L) MATL_IL(5L)                          (L=2) LOCAL END; L mode: silent IR; */
-  Lp[29] = isc * msc * prm->t2t4 * prm->t4t5 * prm->t5t6;                         /* ROOT_IR(2L) MATL_D (4L) MATL_IL(5L) MATL_ML(6L)                          (L=2) LOCAL END; L mode: silent IR; */
-  Lp[30] = msc * isc * prm->t2t3 * prm->t3t5 * prm->t5t7 * prm->t7t9;             /* ROOT_IR(2L) MATL_ML(3J) MATL_IL(5J) MATL_D (7J) END_E (9J)               (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
-  Lp[31] = msc * msc * prm->t2t3 * prm->t3t6 * prm->t6t9;                         /* ROOT_IR(2L) MATL_ML(3J) MATL_IL(5J) MATL_D (7J) END_E (9J)               (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
-  Lp[32] = isc * isc * prm->t2t4 * prm->t4t5 * prm->t5t5 * prm->t5t7 * prm->t7t9; /* ROOT_IR(2L) MATL_D (4J) MATL_IL(5J) MATL_IL(5J) MATL_D(7J) END_E (9J)    (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
-  Lp[33] = isc * msc * prm->t2t4 * prm->t4t5 * prm->t5t6 * prm->t6t9;             /* ROOT_IR(2L) MATL_D (4J) MATL_IL(5J) MATL_ML(6J) END_E (9J)               (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
+  Lp[27] = msc * isc * prm->t2t3 * prm->t3t5;                                     /* ROOT_IR(2L) MATL_ML(3L) MATL_IL(5L)                                      (L=2) LOCAL END; L mode: silent IR; */
+  Lp[28] = msc * msc * prm->t2t3 * prm->t3t6;                                     /* ROOT_IR(2L) MATL_ML(3L) MATL_ML(6L)                                      (L=2) LOCAL END; L mode: silent IR; */
+  Lp[29] = isc * isc * prm->t2t4 * prm->t4t5 * prm->t5t5;                         /* ROOT_IR(2L) MATL_D (4L) MATL_IL(5L) MATL_IL(5L)                          (L=2) LOCAL END; L mode: silent IR; */
+  Lp[30] = isc * msc * prm->t2t4 * prm->t4t5 * prm->t5t6;                         /* ROOT_IR(2L) MATL_D (4L) MATL_IL(5L) MATL_ML(6L)                          (L=2) LOCAL END; L mode: silent IR; */
+  Lp[31] = msc * isc * prm->t2t3 * prm->t3t5 * prm->t5t7 * prm->t7t9;             /* ROOT_IR(2L) MATL_ML(3J) MATL_IL(5J) MATL_D (7J) END_E (9J)               (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
+  Lp[32] = msc * msc * prm->t2t3 * prm->t3t6 * prm->t6t9;                         /* ROOT_IR(2L) MATL_ML(3J) MATL_IL(5J) MATL_D (7J) END_E (9J)               (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
+  Lp[33] = isc * isc * prm->t2t4 * prm->t4t5 * prm->t5t5 * prm->t5t7 * prm->t7t9; /* ROOT_IR(2L) MATL_D (4J) MATL_IL(5J) MATL_IL(5J) MATL_D(7J) END_E (9J)    (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
+  Lp[34] = isc * msc * prm->t2t4 * prm->t4t5 * prm->t5t6 * prm->t6t9;             /* ROOT_IR(2L) MATL_D (4J) MATL_IL(5J) MATL_ML(6J) END_E (9J)               (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
   /* local end */
-  Lp[34] = msc * elsc* prm->t2t3 * prm->end[3] * prm->el_self;                    /* ROOT_IR(2L) MATL_ML(3J) EL    (10J) EL    (10J)                          (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
+  Lp[35] = msc * elsc* prm->t2t3 * prm->end[3] * prm->el_self;                    /* ROOT_IR(2L) MATL_ML(3L) EL    (10L) EL    (10L)                          (L=2) LOCAL END */
+  Lp[36] = msc * elsc* prm->t2t3 * prm->end[3] * prm->el_self;                    /* ROOT_IR(2L) MATL_ML(3J) EL    (10J) EL    (10J)                          (L=2) LOCAL END; L mode: silent IR; L->J switch at IR */
 
   /* R alignments */
   /* No truncated alignments emit 0 residues because you have to enter B,
      MP, ML, MR, IL or IR from root, all are emitters except for B
      which doesn't exist in this model. */
 
-  /* 14 Right marginal alignment that emits 1 residue is possible */
+  /* 18 Right marginal alignment that emits 1 residue is possible */
   /* 1 begins into an Right emitting state */
   Rp[0] = isc; /*                                                ROOT_IR(2R) (L=1)                                             (L=1) */
-  /* 13 begin into Left emitting states in R mode. A careful observer
-   * will notice that this list of 14 excludes any paths that use a
-   * IL->IL self transition in R mode (or from R mode to J mode),
-   * that's called an off-mode self transition, and those are illegal
-   * (not counted in the DP algs). 
+  /* 17 begin into Left emitting states in R mode. Notice that this
+   * excludes any paths that use a IL->IL self transition in R mode
+   * (or from R mode to J mode), that's called an off-mode self
+   * transition, and those are illegal (not counted in the DP algs).
    *
    * These paths are not shown in the notes in ELN3 p3-5. 
    */
@@ -939,44 +962,73 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
   Rp[12] = msc * prm->t3t6 * prm->t6t9;                         /* MATL_ML(3R) MATL_ML(6J) END_E  (9J)                         (L=1) R mode: silent IL; R->J switch at ML(3) */
   Rp[13] = msc * prm->t5t6 * prm->t6t9;                         /* MATL_IL(5R) MATL_ML(6J) END_E  (9J)                         (L=1) R mode: silent IL; R->J switch at IL(5) */
   /* local end */
-  Rp[14] = msc * prm->t1t3 * prm->end[3];                       /* ROOT_IL(1R) MATL_ML(3J) EL    (10J)                         (L=1) R mode: silent IL; R->J switch at IL(1) LOCAL END */
+  /* Careful: a Left/Right mode emission in a Left/Right emitting
+   * state v with d == 1 can't then go to any state, including EL
+   * (special case in DP, if d == 1 then we get a free 'truncated
+   * begin' into v (we don't do a Logsum() and a max (CYK) would never
+   * be a better score)). If they could we'd have two additional paths:
+   * Rp[XX] = isc  * prm->t1t2 * prm->t2t3 * prm->end[3]; ROOT_IL(1R) ROOT_IR(2R) MATL_ML(3R) EL    (10R) 
+   * Rp[XX] = isc  * prm->t2t3 * prm->end[3];             ROOT_IR(2R) MATL_ML(3R) EL    (10R)
+   */
+  Rp[14] = elsc * prm->end[3] * prm->el_self;                   /* MATL_ML(3R) EL    (10R) EL    (10R)                         (L=1) R mode: silent ML, emit from EL */
+  Rp[15] = elsc * prm->t1t3 * prm->end[3] * prm->el_self;       /* ROOT_IL(1R) MATL_ML(3R) EL    (10R) EL    (10R)             (L=1) R mode: silent IL, silent ML, emit from EL */
+  Rp[16] = msc  * prm->t1t3 * prm->end[3];                      /* ROOT_IL(1R) MATL_ML(3J) EL    (10J)                         (L=1) R mode: silent IL; R->J switch at IL(1) LOCAL END */
 
-  /* Next 24 Right marginal alignments that emit 2 residue are possible */
+  /* Next 30 Right marginal alignments that emit 2 residue are possible */
   /* If we switch from R mode to J mode, highest valued R mode state must be a left emitter */
-  /* These first 5 of 24 use truncated begin into a R emitter, the ROOT_IR */
-  Rp[15]  = isc * isc * prm->t2t2;                                                 /* ROOT_IR(2R) ROOT_IR(2R)                                                  (L=2) */
-  Rp[16]  = isc * msc * prm->t2t3 * prm->t3t5 * prm->t5t6 * prm->t6t9;             /* ROOT_IR(2R) MATL_ML(3R) MATL_IL(5R) MATL_ML(6J) END_E  (9J)              (L=2) */
-  Rp[17]  = isc * isc * prm->t2t3 * prm->t3t5 * prm->t5t7 * prm->t7t9;             /* ROOT_IR(2R) MATL_ML(3R) MATL_IL(5J) MATL_D (7J) END_E  (9J)              (L=2) */
-  Rp[18]  = isc * msc * prm->t2t3 * prm->t3t6 * prm->t6t9;                         /* ROOT_IR(2R) MATL_ML(3R) MATL_ML(6J) END_E  (9J)                          (L=2) */
-  Rp[19]  = isc * msc * prm->t2t4 * prm->t4t5 * prm->t5t6 * prm->t6t9;             /* ROOT_IR(2R) MATL_D (4R) MATL_IL(5R) MATL_ML(6J) END_E  (9J)              (L=2) */
-  /* Remaining 19 use truncated begin into a L emitter. 
+  /* These first 7 of 30 use truncated begin into a R emitter, the ROOT_IR */
+  Rp[17]  = isc * isc * prm->t2t2;                                                 /* ROOT_IR(2R) ROOT_IR(2R)                                                  (L=2) */
+  Rp[18]  = isc * msc * prm->t2t3 * prm->t3t5 * prm->t5t6 * prm->t6t9;             /* ROOT_IR(2R) MATL_ML(3R) MATL_IL(5R) MATL_ML(6J) END_E  (9J)              (L=2) */
+  Rp[19]  = isc * isc * prm->t2t3 * prm->t3t5 * prm->t5t7 * prm->t7t9;             /* ROOT_IR(2R) MATL_ML(3R) MATL_IL(5J) MATL_D (7J) END_E  (9J)              (L=2) */
+  Rp[20]  = isc * msc * prm->t2t3 * prm->t3t6 * prm->t6t9;                         /* ROOT_IR(2R) MATL_ML(3R) MATL_ML(6J) END_E  (9J)                          (L=2) */
+  Rp[21]  = isc * msc * prm->t2t4 * prm->t4t5 * prm->t5t6 * prm->t6t9;             /* ROOT_IR(2R) MATL_D (4R) MATL_IL(5R) MATL_ML(6J) END_E  (9J)              (L=2) */
+  /* local end */
+  /* Careful: a Left/Right mode emission in a Left/Right emitting
+   * state v with d == 1 can't then go to any state, including EL
+   * (special case in DP, if d == 1 then we get a free 'truncated
+   * begin' into v (we don't do a Logsum() and a max (CYK) would never
+   * be a better score)). If they could we'd have additional paths:
+   * Rp[XX]  = isc * isc * prm->t2t2 * prm->t2t3   * prm->end[3];   ROOT_IR(2R) ROOT_IR(2R) MATL_ML(3R) EL    (10R) 
+   */
+  Rp[22]  = isc * elsc* prm->t2t3   * prm->end[3]  * prm->el_self;                 /* ROOT_IR(2R) MATL_ML(3R) EL    (10R) EL    (10R)                          (L=2) R mode: silent ML, emit 1 from EL */
+  /* Remaining 23 use truncated begin into a L emitter. 
    * These paths are not shown in the notes in ELN3 p3-5. 
    */
-  Rp[20]  = isc * isc * prm->t1t2 * prm->t2t2;                                     /* ROOT_IL(1R) ROOT_IR(2R) ROOT_IR(2R)                                      (L=2) R mode: silent IL; */
-  Rp[21]  = isc * msc * prm->t1t2 * prm->t2t3 * prm->t3t5 * prm->t5t6 * prm->t6t9; /* ROOT_IL(1R) ROOT_IR(2R) MATL_ML(3R) MATL_IL(5R) MATL_ML(6J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at IL(5) */ 
-  Rp[22]  = isc * isc * prm->t1t2 * prm->t2t3 * prm->t3t5 * prm->t5t7 * prm->t7t9; /* ROOT_IL(1R) ROOT_IR(2R) MATL_ML(3R) MATL_IL(5J) MATL_D (7J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at ML(3) */ 
-  Rp[23]  = isc * msc * prm->t1t2 * prm->t2t3 * prm->t3t6 * prm->t6t9;             /* ROOT_IL(1R) ROOT_IR(2R) MATL_ML(3R) MATL_ML(6J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at ML(3) */ 
-  Rp[24]  = isc * msc * prm->t1t2 * prm->t2t4 * prm->t4t5 * prm->t5t6 * prm->t6t9; /* ROOT_IL(1R) ROOT_IR(2R) MATL_D (4R) MATL_IL(5R) MATL_ML(6J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at IL(5) */ 
-  Rp[25]  = isc * isc * prm->t1t2 * prm->t2t2 * prm->t2t4 * prm->t4t7 * prm->t7t9; /* ROOT_IL(1R) ROOT_IR(2J) ROOT_IR(2J) MATL_D (4J) MATL_D (7J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at IL(1) */ 
-  Rp[26]  = isc * msc * prm->t1t2 * prm->t2t3 * prm->t3t7 * prm->t7t9;             /* ROOT_IL(1R) ROOT_IR(2J) MATL_ML(3J) MATL_D (7J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at IL(1) */ 
-  Rp[27]  = isc * isc * prm->t1t2 * prm->t2t4 * prm->t4t5 * prm->t5t7 * prm->t7t9; /* ROOT_IL(1R) ROOT_IR(2J) MATL_D (4J) MATL_IL(5J) MATL_D (7J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at IL(1) */ 
-  Rp[28]  = isc * msc * prm->t1t2 * prm->t2t4 * prm->t4t6 * prm->t6t9;             /* ROOT_IL(1R) ROOT_IR(2J) MATL_D (4J) MATL_ML(6J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at IL(1) */ 
-  Rp[29]  = isc * isc * prm->t1t3 * prm->t3t5 * prm->t5t5 * prm->t5t7 * prm->t7t9; /* ROOT_IL(1R) MATL_ML(3R) MATL_IL(5J) MATL_IL(5J) MATL_D (7J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at ML(3) */ 
-  Rp[30]  = isc * msc * prm->t1t3 * prm->t3t5 * prm->t5t6 * prm->t6t9;             /* ROOT_IL(1R) MATL_ML(3R) MATL_IL(5J) MATL_ML(6J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at ML(3) */ 
-  Rp[31]  = msc * isc * prm->t1t3 * prm->t3t5 * prm->t5t7 * prm->t7t9;             /* ROOT_IL(1R) MATL_ML(3J) MATL_IL(5J) MATL_D (7J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at IL(1) */ 
-  Rp[32]  = msc * msc * prm->t1t3 * prm->t3t6 * prm->t6t9;                         /* ROOT_IL(1R) MATL_ML(3J) MATL_ML(6J) END_E  (9J)                          (L=2) R mode: silent IL; R->J switch at IL(1) */ 
-  Rp[33]  = isc * isc * prm->t1t4 * prm->t4t5 * prm->t5t5 * prm->t5t7 * prm->t7t9; /* ROOT_IL(1R) MATL_D (4J) MATL_IL(5J) MATL_IL(5J) MATL_D (7J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at IL(1) */ 
-  Rp[34]  = isc * msc * prm->t1t4 * prm->t4t5 * prm->t5t6 * prm->t6t9;             /* ROOT_IL(1R) MATL_D (4J) MATL_IL(5J) MATL_ML(6J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at IL(1) */ 
-  Rp[35]  = isc * isc * prm->t3t5 * prm->t5t5 * prm->t5t7 * prm->t7t9;             /* MATL_ML(3R) MATL_IL(5J) MATL_IL(5J) MATL_D (7J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at ML(3) */ 
-  Rp[36]  = isc * msc * prm->t3t5 * prm->t5t6 * prm->t6t9;                         /* MATL_ML(3R) MATL_IL(5J) MATL_ML(6J) END_E  (9J)                          (L=2) R mode: silent IL; R->J switch at ML(3) */ 
+  Rp[23]  = isc * isc * prm->t1t2 * prm->t2t2;                                     /* ROOT_IL(1R) ROOT_IR(2R) ROOT_IR(2R)                                      (L=2) R mode: silent IL; */
+  Rp[24]  = isc * msc * prm->t1t2 * prm->t2t3 * prm->t3t5 * prm->t5t6 * prm->t6t9; /* ROOT_IL(1R) ROOT_IR(2R) MATL_ML(3R) MATL_IL(5R) MATL_ML(6J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at IL(5) */ 
+  Rp[25]  = isc * isc * prm->t1t2 * prm->t2t3 * prm->t3t5 * prm->t5t7 * prm->t7t9; /* ROOT_IL(1R) ROOT_IR(2R) MATL_ML(3R) MATL_IL(5J) MATL_D (7J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at ML(3) */ 
+  Rp[26]  = isc * msc * prm->t1t2 * prm->t2t3 * prm->t3t6 * prm->t6t9;             /* ROOT_IL(1R) ROOT_IR(2R) MATL_ML(3R) MATL_ML(6J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at ML(3) */ 
+  Rp[27]  = isc * msc * prm->t1t2 * prm->t2t4 * prm->t4t5 * prm->t5t6 * prm->t6t9; /* ROOT_IL(1R) ROOT_IR(2R) MATL_D (4R) MATL_IL(5R) MATL_ML(6J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at IL(5) */ 
+  Rp[28]  = isc * isc * prm->t1t2 * prm->t2t2 * prm->t2t4 * prm->t4t7 * prm->t7t9; /* ROOT_IL(1R) ROOT_IR(2J) ROOT_IR(2J) MATL_D (4J) MATL_D (7J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at IL(1) */ 
+  Rp[29]  = isc * msc * prm->t1t2 * prm->t2t3 * prm->t3t7 * prm->t7t9;             /* ROOT_IL(1R) ROOT_IR(2J) MATL_ML(3J) MATL_D (7J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at IL(1) */ 
+  Rp[30]  = isc * isc * prm->t1t2 * prm->t2t4 * prm->t4t5 * prm->t5t7 * prm->t7t9; /* ROOT_IL(1R) ROOT_IR(2J) MATL_D (4J) MATL_IL(5J) MATL_D (7J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at IL(1) */ 
+  Rp[31]  = isc * msc * prm->t1t2 * prm->t2t4 * prm->t4t6 * prm->t6t9;             /* ROOT_IL(1R) ROOT_IR(2J) MATL_D (4J) MATL_ML(6J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at IL(1) */ 
+  Rp[32]  = isc * isc * prm->t1t3 * prm->t3t5 * prm->t5t5 * prm->t5t7 * prm->t7t9; /* ROOT_IL(1R) MATL_ML(3R) MATL_IL(5J) MATL_IL(5J) MATL_D (7J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at ML(3) */ 
+  Rp[33]  = isc * msc * prm->t1t3 * prm->t3t5 * prm->t5t6 * prm->t6t9;             /* ROOT_IL(1R) MATL_ML(3R) MATL_IL(5J) MATL_ML(6J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at ML(3) */ 
+  Rp[34]  = msc * isc * prm->t1t3 * prm->t3t5 * prm->t5t7 * prm->t7t9;             /* ROOT_IL(1R) MATL_ML(3J) MATL_IL(5J) MATL_D (7J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at IL(1) */ 
+  Rp[35]  = msc * msc * prm->t1t3 * prm->t3t6 * prm->t6t9;                         /* ROOT_IL(1R) MATL_ML(3J) MATL_ML(6J) END_E  (9J)                          (L=2) R mode: silent IL; R->J switch at IL(1) */ 
+  Rp[36]  = isc * isc * prm->t1t4 * prm->t4t5 * prm->t5t5 * prm->t5t7 * prm->t7t9; /* ROOT_IL(1R) MATL_D (4J) MATL_IL(5J) MATL_IL(5J) MATL_D (7J) END_E  (9J)  (L=2) R mode: silent IL; R->J switch at IL(1) */ 
+  Rp[37]  = isc * msc * prm->t1t4 * prm->t4t5 * prm->t5t6 * prm->t6t9;             /* ROOT_IL(1R) MATL_D (4J) MATL_IL(5J) MATL_ML(6J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at IL(1) */ 
+  Rp[38]  = isc * isc * prm->t3t5 * prm->t5t5 * prm->t5t7 * prm->t7t9;             /* MATL_ML(3R) MATL_IL(5J) MATL_IL(5J) MATL_D (7J) END_E  (9J)              (L=2) R mode: silent IL; R->J switch at ML(3) */ 
+  Rp[39]  = isc * msc * prm->t3t5 * prm->t5t6 * prm->t6t9;                         /* MATL_ML(3R) MATL_IL(5J) MATL_ML(6J) END_E  (9J)                          (L=2) R mode: silent IL; R->J switch at ML(3) */ 
   /* local ends */
-  Rp[37]  = isc * msc * prm->t1t2 * prm->t2t3 * prm->end[3];                       /* ROOT_IL(1R) ROOT_IR(2J) MATL_ML(3J) EL    (10J)                          (L=2) R mode: silent IL; R->J switch at IL(1) LOCAL END */ 
-  Rp[38]  = msc * elsc* prm->t1t3 * prm->end[3] * prm->el_self;                    /* ROOT_IL(1R) MATL_ML(3J) EL    (10J)                                      (L=2) R mode: silent IL; R->J switch at IL(1) LOCAL END */ 
+  /* Careful: a Left/Right mode emission in a Left/Right emitting
+   * state v with d == 1 can't then go to any state, including EL
+   * (special case in DP, if d == 1 then we get a free 'truncated
+   * begin' into v (we don't do a Logsum() and a max (CYK) would never
+   * be a better score)). If they could we'd have additional paths:
+   * Rp[XX]  = isc * isc * prm->t1t2 * prm->t2t2   * prm->t2t3    * prm->end[3];  ROOT_IL(1R) ROOT_IR(2R) ROOT_IR(2R) MATL_ML(3R) EL    (10R) 
+   */
+  Rp[40]  = isc * elsc* prm->t1t2 * prm->t2t3   * prm->end[3]  * prm->el_self;     /* ROOT_IL(1R) ROOT_IR(2R) MATL_ML(3R) EL    (10R) EL    (10R)              (L=2) R mode: silent IL; silent ML, emit 1 from EL */
+  Rp[41]  = isc * msc * prm->t1t2 * prm->t2t3   * prm->end[3];                     /* ROOT_IL(1R) ROOT_IR(2J) MATL_ML(3J) EL    (10J)                          (L=2) R mode: silent IL; R->J switch at IL(1) LOCAL END */ 
+  Rp[42]  = elsc* elsc* prm->t1t3 * prm->end[3] * prm->el_self * prm->el_self;     /* ROOT_IL(1R) MATL_ML(3R) EL    (10R) EL    (10R) EL    (10R)              (L=2) R mode: silent IL; silent ML, emit 2 from EL */
+  Rp[43]  = msc * elsc* prm->t1t3 * prm->end[3] * prm->el_self;                    /* ROOT_IL(1R) MATL_ML(3J) EL    (10J) EL    (10J)                          (L=2) R mode: silent IL; R->J switch at IL(1) LOCAL END */ 
+  Rp[44]  = elsc* elsc* prm->end[3] * prm->el_self * prm->el_self;                 /* MATL_ML(3R) EL    (10R) EL    (10R) EL    (10R)                          (L=2) R mode: silent ML; emit 2 from EL */
 
   if(be_very_verbose) { 
     for(i = 0;  i <= 21; i++) printf("%s Sp[%2d]: %10.8f  Jp[%2d]: %10.8f  Lp[%2d]: %10.8f  Rp[%2d]: %10.8f\n", do_local ? "L" : "G", i, Sp[i], i, Jp[i], i, Lp[i], i, Rp[i]); 
-    for(i = 22; i <= 34; i++) printf("%s %7s %10s  %7s %10s  Lp[%2d]: %10.8f  Rp[%2d]: %10.8f\n", do_local ? "L" : "G", "", "", "", "", i, Lp[i], i, Rp[i]);
-    for(i = 35; i <= 38; i++) printf("%s %7s %10s  %7s %10s  %7s %10s  Rp[%2d]: %10.8f\n", do_local ? "L" : "G", "", "", "", "", "", "", i, Rp[i]);
+    for(i = 22; i <= 36; i++) printf("%s %7s %10s  %7s %10s  Lp[%2d]: %10.8f  Rp[%2d]: %10.8f\n", do_local ? "L" : "G", "", "", "", "", i, Lp[i], i, Rp[i]);
+    for(i = 37; i <= 44; i++) printf("%s %7s %10s  %7s %10s  %7s %10s  Rp[%2d]: %10.8f\n", do_local ? "L" : "G", "", "", "", "", "", "", i, Rp[i]);
   }
 
   /* 2. Sum or max the total probability of L={0..2} aligned to one pass
@@ -1000,14 +1052,14 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
 
       LpL[0] = 0.0;
       LpL[1] = esl_vec_DMax(Lp,    11);
-      LpL[2] = esl_vec_DMax(Lp+11, 24);
+      LpL[2] = esl_vec_DMax(Lp+11, 26);
       Lsc[0] = LpL[0] == 0.0 ? IMPOSSIBLE : sreLOG2(LpL[0]);
       Lsc[1] = LpL[1] == 0.0 ? IMPOSSIBLE : sreLOG2(LpL[1]);
       Lsc[2] = LpL[2] == 0.0 ? IMPOSSIBLE : sreLOG2(LpL[2]);
 
       RpL[0] = 0.0;
-      RpL[1] = esl_vec_DMax(Rp,    15);
-      RpL[2] = esl_vec_DMax(Rp+15, 24);
+      RpL[1] = esl_vec_DMax(Rp,    17);
+      RpL[2] = esl_vec_DMax(Rp+17, 28);
       Rsc[0] = RpL[0] == 0.0 ? IMPOSSIBLE : sreLOG2(RpL[0]);
       Rsc[1] = RpL[1] == 0.0 ? IMPOSSIBLE : sreLOG2(RpL[1]);
       Rsc[2] = RpL[2] == 0.0 ? IMPOSSIBLE : sreLOG2(RpL[2]);
@@ -1035,14 +1087,14 @@ score_brute_matl_cm(struct cm_brute_matl_param_s *prm, double nullA, int do_cyk,
 
       LpL[0] = 0.0;
       LpL[1] = esl_vec_DSum(Lp,     11);
-      LpL[2] = esl_vec_DSum(Lp+11,  24);
+      LpL[2] = esl_vec_DSum(Lp+11,  26);
       Lsc[0] = LpL[0] == 0.0 ? IMPOSSIBLE : sreLOG2(LpL[0]);
       Lsc[1] = LpL[1] == 0.0 ? IMPOSSIBLE : sreLOG2(LpL[1]);
       Lsc[2] = LpL[2] == 0.0 ? IMPOSSIBLE : sreLOG2(LpL[2]);
 
       RpL[0] = 0.0;
-      RpL[1] = esl_vec_DSum(Rp,    15);
-      RpL[2] = esl_vec_DSum(Rp+15, 24);
+      RpL[1] = esl_vec_DSum(Rp,    17);
+      RpL[2] = esl_vec_DSum(Rp+17, 28);
       Rsc[0] = RpL[0] == 0.0 ? IMPOSSIBLE : sreLOG2(RpL[0]);
       Rsc[1] = RpL[1] == 0.0 ? IMPOSSIBLE : sreLOG2(RpL[1]);
       Rsc[2] = RpL[2] == 0.0 ? IMPOSSIBLE : sreLOG2(RpL[2]);

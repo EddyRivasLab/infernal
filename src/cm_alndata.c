@@ -313,8 +313,10 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)     ? TRUE  : FALSE;
   int do_xtau      = (cm->align_opts & CM_ALIGN_XTAU)      ? TRUE  : FALSE;
   int doing_search = FALSE;
+
+  /*printf("in DispatchSqAlignment() %s\n", sq->name);*/
 #if DEBUGPIPELINE
-  printf("in DispatchSqAlignment()\n");
+  printf("in DispatchSqAlignment() %s\n", sq->name);
   printf("\tdo_nonbanded: %d\n", do_nonbanded);
   printf("\tdo_optacc:    %d\n", do_optacc);
   printf("\tdo_sample:    %d\n", do_sample);

@@ -296,6 +296,7 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
   float primary_sc;             /* contribution of primary sequence emissions to the score */
   float lsc, rsc;
   int   nd;
+  int   sd;
 
   /* contract check */
   if(dsq    == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "ParsetreeScore(): dsq == NULL.");
@@ -313,27 +314,34 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
     if (v == cm->M) continue;      	/* special case: v is EL, local alignment end */
     nd = cm->ndidx[v];
     if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) { /* no scores in B,E */
-      y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
 
       /* add in contribution of transition score */
-      if(v == 0) { 
-	if(! tr->is_std) { 
-	  sc += tr->trpenalty;
+      if(tr->nxtl[tidx] == -1) { 
+	sc += 0.; /* we've done a truncated end: no transition score contribution */
+      }
+      else { /* not a truncated end */
+	y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
+	if(v == 0) { 
+	  if(! tr->is_std) { 
+	    sc += tr->trpenalty;
+	  }
+	  else if(cm->flags & CMH_LOCAL_BEGIN)
+	    sc += cm->beginsc[y];
+	  else
+	    sc += cm->tsc[v][y - cm->cfirst[v]]; /* non-local transition out of ROOT_S */
 	}
-	else if(cm->flags & CMH_LOCAL_BEGIN)
-	  sc += cm->beginsc[y];
-	else
-	  sc += cm->tsc[v][y - cm->cfirst[v]]; /* non-local transition out of ROOT_S */
+	else if (y == cm->M) { 
+	  /* CMH_LOCAL_END is presumably set, else this wouldn't happen */
+	  if     (mode == TRMODE_J) sd = StateDelta(cm->sttype[v]);
+	  else if(mode == TRMODE_L) sd = StateLeftDelta(cm->sttype[v]);
+	  else if(mode == TRMODE_R) sd = StateRightDelta(cm->sttype[v]);
+	  sc += cm->endsc[v] + (cm->el_selfsc * (tr->emitr[tidx] - tr->emitl[tidx] + 1 - sd));
+	}
+	else { 
+	  /* y - cm->first[v] gives us the offset in the transition vector */
+	  sc += cm->tsc[v][y - cm->cfirst[v]];
+	}
       }
-      else if (y == cm->M) { 
-	/* CMH_LOCAL_END is presumably set, else this wouldn't happen */
-	sc += cm->endsc[v] + (cm->el_selfsc * (tr->emitr[tidx] - tr->emitl[tidx] + 1 - StateDelta(cm->sttype[v])));
-      }
-      else if (tr->nxtl[tidx] != -1) { 
-	/* y - cm->first[v] gives us the offset in the transition vector */
-	sc += cm->tsc[v][y - cm->cfirst[v]];
-      }
-      /* else: tr->nxtl[tidx] == -1, we've done a truncated end, no transition score contribution */
 
       /* add in contribution of emission score */
       if (cm->sttype[v] == MP_st) { 
@@ -470,7 +478,7 @@ PrintParsetree(FILE *fp, Parsetree_t *tr)
 void
 ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq)
 {
-  int   x;
+  int   x, sd;
   char  syml, symr;
   float tsc;
   float esc;
@@ -524,15 +532,22 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq)
 	  if(! tr->is_std) { 
 	    tsc = tr->trpenalty;
 	  }
-	  else if(cm->flags & CMH_LOCAL_BEGIN)
+	  else if(cm->flags & CMH_LOCAL_BEGIN) {
 	    tsc = cm->beginsc[y];
-	  else
+	  }
+	  else {
 	    tsc = cm->tsc[v][y - cm->cfirst[v]]; /* non-local transition out of ROOT_S */
+	  }
 	}
-	else if (y == cm->M) /* CMH_LOCAL_END is presumably set, else this wouldn't happen */
-	  tsc = cm->endsc[v] + (cm->el_selfsc * (tr->emitr[x] - tr->emitl[x] + 1 - StateDelta(cm->sttype[v])));
-	else 		/* y - cm->first[v] gives us the offset in the transition vector */
+	else if (y == cm->M) { /* CMH_LOCAL_END is presumably set, else this wouldn't happen */
+	  if     (mode == TRMODE_J) sd = StateDelta(cm->sttype[v]);
+	  else if(mode == TRMODE_L) sd = StateLeftDelta(cm->sttype[v]);
+	  else if(mode == TRMODE_R) sd = StateRightDelta(cm->sttype[v]);
+	  tsc = cm->endsc[v] + (cm->el_selfsc * (tr->emitr[x] - tr->emitl[x] + 1 - sd));
+	}
+	else {		/* y - cm->first[v] gives us the offset in the transition vector */
 	  tsc = cm->tsc[v][y - cm->cfirst[v]];
+	}
       }
 
       /* Print the info line for this state
@@ -3092,7 +3107,9 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   char        *z_modeA   = NULL;   /* z_mode[x] is alignment mode for state z corresponding to pA[x] */
   int         *kA        = NULL;   /* kA[x] is k index corresponding to pA[x], for bifurcs */
   int         *yoffsetA  = NULL;   /* yoffsetA[x] is yoffset index corresponding to yoffsetA[x] */
-  int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
+  int          Jel_is_possible;    /* TRUE if we can jump to EL from current state in J mode (with local ends on), FALSE if not */
+  int          Lel_is_possible;    /* TRUE if we can jump to EL from current state in L mode (with local ends on), FALSE if not */
+  int          Rel_is_possible;    /* TRUE if we can jump to EL from current state in R mode (with local ends on), FALSE if not */
   float        fsc = 0.;           /* score of the parsetree we're sampling */
   int          choice;             /* index represeting sampled choice */
 
@@ -3106,7 +3123,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   int      vms_sd, vms_sdl, vms_sdr;  /* mode-specific state delta, state left delta, state right delta */
   int      do_J, do_L, do_R, do_T;    /* allow transitions to J, L, R modes from current state? */
   int      filled_L, filled_R, filled_T;       /* will we ever use L, R, and T matrices? (determined from <preset_mode>) */
-  int      allow_S_trunc_end;         /* set to true to allow d==0 BEGL_S and BEGR_S truncated ends, even if outside bands */
+  int      allow_S_trunc_end;         /* set to true to allow d==0 BEGL_S and BEGR_S truncated ends */
   int      pty_idx;                   /* index for truncation penalty, determined by pass_idx */
   float    trpenalty;                 /* truncation penalty, differs based on pass_idx and if we're local or global */
 
@@ -3153,7 +3170,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
     pA[2] = Ralpha[0][L][L]; validA[2] = TRUE; 
     pA[3] = Talpha[0][L][L]; validA[3] = TRUE; 
     /* sample mode */
-    if((status = sample_helper(r, pA, validA, cur_vec_size, &choice)) != eslOK) ESL_FAIL(status, errbuf, "cm_StochasticParsetree() no valide alignment modes.");
+    if((status = sample_helper(r, pA, validA, cur_vec_size, &choice)) != eslOK) ESL_FAIL(status, errbuf, "cm_TrStochasticParsetree() no valid alignment modes.");
     if     (choice == 0) parsetree_mode = TRMODE_J;
     else if(choice == 1) parsetree_mode = TRMODE_L;
     else if(choice == 2) parsetree_mode = TRMODE_R;
@@ -3389,7 +3406,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	    vms_sd  = StateLeftDelta(cm->sttype[v]);
 	    vms_sdl = StateLeftDelta(cm->sttype[v]);
 	    vms_sdr = 0;
-	    do_J    = (StateRightDelta(cm->sttype[v]) == 1) ? TRUE : FALSE; /* can transition from L to J mode only a right emitter */
+	    do_J    = (StateRightDelta(cm->sttype[v]) == 1) ? TRUE : FALSE; /* can transition from L to J mode only if a right emitter */
 	    do_L    = TRUE;
 	    do_R    = FALSE;
 	  }
@@ -3397,20 +3414,23 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	    vms_sd  = StateRightDelta(cm->sttype[v]);
 	    vms_sdl = 0;
 	    vms_sdr = StateRightDelta(cm->sttype[v]);
-	    do_J    = (StateLeftDelta(cm->sttype[v]) == 1) ? TRUE : FALSE; /* can transition from R to J mode only a leftt emitter */
+	    do_J    = (StateLeftDelta(cm->sttype[v]) == 1) ? TRUE : FALSE; /* can transition from R to J mode only if a left emitter */
 	    do_L    = FALSE;
 	    do_R    = TRUE;
 	  }
 
 	  /* fill JpA, LpA and RpA with log odds scores for each child we can transit to, 
-	   * add a local end in J mode (if possible) */
+	   * add a local end in any mode (if possible) */
 	  Jntrans = (do_J) ? cm->cnum[v] : 0;
 	  Lntrans = (do_L) ? cm->cnum[v] : 0;
 	  Rntrans = (do_R) ? cm->cnum[v] : 0;
-	  el_is_possible = FALSE;
-	  if(do_J && (cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
-	    el_is_possible = TRUE; 
-	    Jntrans++; 
+	  Jel_is_possible = FALSE;
+	  Lel_is_possible = FALSE;
+	  Rel_is_possible = FALSE;
+	  if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
+	    if(do_J) { Jel_is_possible = TRUE; Jntrans++; }
+	    if(do_L) { Lel_is_possible = TRUE; Lntrans++; }
+	    if(do_R) { Rel_is_possible = TRUE; Rntrans++; }
 	  }
 	  /* init JpA, LpA, RpA */
 	  esl_vec_FSet(JpA, MAXCONNECT+1, IMPOSSIBLE);
@@ -3423,7 +3443,9 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	    if(filled_L && do_L) LpA[yoffset] = cm->tsc[v][yoffset] + Lalpha[y][j-vms_sdr][d-vms_sd];
 	    if(filled_R && do_R) RpA[yoffset] = cm->tsc[v][yoffset] + Ralpha[y][j-vms_sdr][d-vms_sd];
 	  }
-	  if(el_is_possible) JpA[Jntrans-1] = cm->endsc[v] + Jalpha[cm->M][j][d]; /* remember EL deck is non-banded */
+	  if(Jel_is_possible) JpA[Jntrans-1] = cm->endsc[v] + Jalpha[cm->M][j][d]; /* remember EL deck is non-banded */
+	  if(Lel_is_possible) LpA[Lntrans-1] = cm->endsc[v] + Lalpha[cm->M][j][d]; /* remember EL deck is non-banded */
+	  if(Rel_is_possible) RpA[Rntrans-1] = cm->endsc[v] + Ralpha[cm->M][j][d]; /* remember EL deck is non-banded */
 	
 	  /* create one big vector of all possibilities, and for convenience keep track of mode and mode-specific index (q) of each */
 	  cur_vec_size = Jntrans + Lntrans + Rntrans;
@@ -3437,7 +3459,9 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	  if((status = sample_helper(r, pA, validA, cur_vec_size, &choice)) != eslOK) ESL_FAIL(status, errbuf, "cm_StochasticParsetree() number of valid transitions (non B_st) is 0.");
 	  y_mode  = y_modeA[choice];
 	  yoffset = yoffsetA[choice];
-	  if(y_mode == TRMODE_J && el_is_possible && yoffset == (Jntrans-1)) { 
+	  if((y_mode == TRMODE_J && Jel_is_possible && yoffset == (Jntrans-1)) || 
+	     (y_mode == TRMODE_L && Lel_is_possible && yoffset == (Lntrans-1)) || 
+	     (y_mode == TRMODE_R && Rel_is_possible && yoffset == (Rntrans-1))) { 
 	    yoffset = USED_EL; /* we chose EL */
 	    fsc += cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v]))); /* transition to EL plus score of all EL emissions */
 	  }
@@ -3480,8 +3504,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
       
       if (yoffset == USED_EL || yoffset == USED_TRUNC_END) { 
 	/* a local alignment end  or a truncation end */
-	if(v_mode == TRMODE_J) { /* TRMODE_J should be only way USED_EL is possible */
-	  assert(yoffset == USED_EL);
+	if(yoffset == USED_EL) { 
 	  InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M, y_mode);
 	}
 	v = cm->M; /* now we're in EL (if USED_TRUNC_END, we act like we are) */
@@ -3597,7 +3620,9 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   char        *z_modeA   = NULL;   /* z_mode[x] is alignment mode for state z corresponding to pA[x] */
   int         *kA        = NULL;   /* kA[x] is k index corresponding to pA[x], for bifurcs */
   int         *yoffsetA  = NULL;   /* yoffsetA[x] is yoffset index corresponding to yoffsetA[x] */
-  int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
+  int          Jel_is_possible;    /* TRUE if we can jump to EL from current state in J mode (with local ends on), FALSE if not */
+  int          Lel_is_possible;    /* TRUE if we can jump to EL from current state in L mode (with local ends on), FALSE if not */
+  int          Rel_is_possible;    /* TRUE if we can jump to EL from current state in R mode (with local ends on), FALSE if not */
   float        fsc = 0.;           /* score of the parsetree we're sampling */
   int          choice;             /* index represeting sampled choice */
 
@@ -3690,7 +3715,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
     if(cp9b->Rvalid[0]) pA[2] = Ralpha[0][jp_0][Lp_0];
     if(cp9b->Tvalid[0]) pA[3] = Talpha[0][jp_0][Lp_0];
     /* sample mode */
-    if((status = sample_helper(r, pA, validA, cur_vec_size, &choice)) != eslOK) ESL_FAIL(status, errbuf, "cm_StochasticParsetree() no valide alignment modes.");
+    if((status = sample_helper(r, pA, validA, cur_vec_size, &choice)) != eslOK) ESL_FAIL(status, errbuf, "cm_TrStochasticParsetreeHB() no valid alignment modes.");
     if     (choice == 0) parsetree_mode = TRMODE_J;
     else if(choice == 1) parsetree_mode = TRMODE_L;
     else if(choice == 2) parsetree_mode = TRMODE_R;
@@ -4022,10 +4047,13 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	  Jntrans = (do_J) ? cm->cnum[v] : 0;
 	  Lntrans = (do_L) ? cm->cnum[v] : 0;
 	  Rntrans = (do_R) ? cm->cnum[v] : 0;
-	  el_is_possible = FALSE;
-	  if(do_J && (cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
-	    el_is_possible = TRUE; 
-	    Jntrans++; 
+	  Jel_is_possible = FALSE;
+	  Lel_is_possible = FALSE;
+	  Rel_is_possible = FALSE;
+	  if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
+	    if(do_J && cp9b->Jvalid[cm->M]) { Jel_is_possible = TRUE; Jntrans++; }
+	    if(do_L && cp9b->Lvalid[cm->M]) { Lel_is_possible = TRUE; Lntrans++; }
+	    if(do_R && cp9b->Rvalid[cm->M]) { Rel_is_possible = TRUE; Rntrans++; }
 	  }
 	  /* init JpA, LpA, RpA */
 	  esl_vec_FSet(JpA, MAXCONNECT+1, IMPOSSIBLE);
@@ -4044,7 +4072,9 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	      }
 	    }
 	  }
-	  if(el_is_possible) JpA[Jntrans-1] = cm->endsc[v] + Jalpha[cm->M][j][d]; /* remember EL deck is non-banded */
+	  if(Jel_is_possible) JpA[Jntrans-1] = cm->endsc[v] + Jalpha[cm->M][j][d]; /* remember EL deck is non-banded */
+	  if(Lel_is_possible) LpA[Lntrans-1] = cm->endsc[v] + Lalpha[cm->M][j][d]; /* remember EL deck is non-banded */
+	  if(Rel_is_possible) RpA[Rntrans-1] = cm->endsc[v] + Ralpha[cm->M][j][d]; /* remember EL deck is non-banded */
 	
 	  /* create one big vector of all possibilities, and for convenience keep track of mode and mode-specific index (q) of each */
 	  cur_vec_size = Jntrans + Lntrans + Rntrans;
@@ -4055,10 +4085,12 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	  for(yoffset = 0; yoffset < Rntrans; yoffset++) { pA[p] = RpA[yoffset]; y_modeA[p] = TRMODE_R; yoffsetA[p] = yoffset; p++; }
 
 	  /* sample yoffset */
-	  if((status = sample_helper(r, pA, validA, cur_vec_size, &choice)) != eslOK) ESL_FAIL(status, errbuf, "cm_StochasticParsetree() number of transitions (non-B_st) is 0.");
+	  if((status = sample_helper(r, pA, validA, cur_vec_size, &choice)) != eslOK) ESL_FAIL(status, errbuf, "cm_TrStochasticParsetreeHB() number of transitions (non-B_st) is 0.");
 	  y_mode  = y_modeA[choice];
 	  yoffset = yoffsetA[choice];
-	  if(y_mode == TRMODE_J && el_is_possible && yoffset == (Jntrans-1)) { 
+	  if((y_mode == TRMODE_J && Jel_is_possible && yoffset == (Jntrans-1)) || 
+	     (y_mode == TRMODE_L && Lel_is_possible && yoffset == (Lntrans-1)) || 
+	     (y_mode == TRMODE_R && Rel_is_possible && yoffset == (Rntrans-1))) { 
 	    yoffset = USED_EL; /* we chose EL */
 	    fsc += cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v]))); /* transition to EL plus score of all EL emissions */
 	  }
@@ -4101,8 +4133,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
       
       if (yoffset == USED_EL || yoffset == USED_TRUNC_END) { 
 	/* a local alignment end  or a truncation end */
-	if(v_mode == TRMODE_J) { /* TRMODE_J should be only way USED_EL is possible */
-	  assert(yoffset == USED_EL);
+	if(yoffset == USED_EL) { 
 	  InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M, y_mode);
 	}
 	v = cm->M; /* now we're in EL (if USED_TRUNC_END, we act like we are) */
