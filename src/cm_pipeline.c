@@ -156,7 +156,6 @@ static char *pli_describe_hits_for_pass (int pass_idx);
  *            | --cp9noel    |  turn off EL state in CP9 HMM                |   FALSE   |
  *            | --cp9gloc    |  configure CP9 HMM in glocal mode            |   FALSE   |
  *            | --null2      |  turn on null2 biased composition model      |   FALSE   |
- *            | --xtau       |  tau multiplier during band tightening       |     2.0   |
  *            | --maxtau     |  max tau during band tightening              |    0.01   |
  *            | --seed       |  RNG seed (0=use arbitrary seed)             |     181   |
  *
@@ -225,7 +224,6 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->be_verbose      = esl_opt_GetBoolean(go, "--verbose")    ? TRUE  : FALSE;
   pli->show_accessions = esl_opt_GetBoolean(go, "--acc")        ? TRUE  : FALSE;
   pli->show_alignments = esl_opt_GetBoolean(go, "--noali")      ? FALSE : TRUE;
-  pli->xtau            = esl_opt_GetReal   (go, "--xtau");
   pli->maxtau          = esl_opt_GetReal   (go, "--maxtau");
   pli->do_wcx          = esl_opt_IsUsed    (go, "--wcx")        ? TRUE  : FALSE;
   pli->wcx             = esl_opt_IsUsed    (go, "--wcx")        ? esl_opt_GetReal(go, "--wcx") : 0.;
@@ -3644,6 +3642,8 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
   int do_hbanded          = (cm->search_opts & CM_SEARCH_HBANDED) ? TRUE : FALSE;
   int do_qdb_or_nonbanded = (do_hbanded) ? FALSE : TRUE; 
   double save_tau         = cm->tau;
+  float  save_thresh1     = (cm->cp9b == NULL) ? -1. : cm->cp9b->thresh1;
+  float  save_thresh2     = (cm->cp9b == NULL) ? -1. : cm->cp9b->thresh2;
   float  hbmx_Mb = 0.;     /* approximate size in Mb for HMM banded matrix for this sequence */
   float  sc;               /* score returned from DP scanner */
   
@@ -3653,7 +3653,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
   if(do_hbanded) { 
     status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, pli->hb_size_limit, 
 				  TRUE, FALSE, FALSE, /* yes we're doing search, no we won't sample from mx, no we don't need posteriors (yet) */
-				  pli->maxtau, pli->xtau, &hbmx_Mb);
+				  pli->maxtau, &hbmx_Mb);
     if(status == eslERANGE) { 
       /* HMM banded matrix exceeded pli->hb_size_limit with tau of
        * pli->maxtau. We kill this potential hit. The memory limit
@@ -3718,6 +3718,10 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 
   /* revert to original parameters */
   cm->tau = save_tau;
+  if(cm->cp9b != NULL) { 
+    cm->cp9b->thresh1 = save_thresh1;
+    cm->cp9b->thresh2 = save_thresh2;
+  }
 
   *ret_sc = sc;
 

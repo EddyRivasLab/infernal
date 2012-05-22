@@ -1775,6 +1775,8 @@ cm_alndata_MPISend(CM_ALNDATA *data, int include_sq, char *errbuf, int dest, int
   if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* secs_tot */
   if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* mb_tot */
   if (MPI_Pack_size(1, MPI_DOUBLE,        comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* tau */
+  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* thresh1 */
+  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* thresh2 */
   /* now the optional info */
   if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* include_sq */
   if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* has_tr */
@@ -1810,6 +1812,8 @@ cm_alndata_MPISend(CM_ALNDATA *data, int include_sq, char *errbuf, int dest, int
   if (MPI_Pack(&data->secs_tot,       1, MPI_FLOAT,         *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&data->mb_tot,         1, MPI_FLOAT,         *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&data->tau,            1, MPI_DOUBLE,        *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
+  if (MPI_Pack(&data->thresh1,        1, MPI_FLOAT,         *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
+  if (MPI_Pack(&data->thresh2,        1, MPI_FLOAT,         *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   /* optional info */
   if (MPI_Pack(&include_sq,           1, MPI_INT,           *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&has_tr,               1, MPI_INT,           *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
@@ -1877,6 +1881,8 @@ cm_alndata_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ESL_ALPHABET *ab
   if (MPI_Unpack(buf, n, pos, &(data->secs_tot),       1, MPI_FLOAT,         comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
   if (MPI_Unpack(buf, n, pos, &(data->mb_tot),         1, MPI_FLOAT,         comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
   if (MPI_Unpack(buf, n, pos, &(data->tau),            1, MPI_DOUBLE,        comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
+  if (MPI_Unpack(buf, n, pos, &(data->thresh1),        1, MPI_FLOAT,         comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
+  if (MPI_Unpack(buf, n, pos, &(data->thresh2),        1, MPI_FLOAT,         comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
   /* optional stuff */
   if (MPI_Unpack(buf, n, pos, &has_sq,                 1, MPI_INT,           comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
   if (MPI_Unpack(buf, n, pos, &has_tr,                 1, MPI_INT,           comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 

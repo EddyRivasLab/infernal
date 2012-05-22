@@ -108,8 +108,7 @@ static ESL_OPTIONS options[] = {
   { "--tau",         eslARG_REAL,      "1e-7", NULL, "1e-18<x<1",       NULL,        NULL,            "--nonbanded", "set tail loss prob for HMM bands to <x>",                    3 },
   { "--mxsize",      eslARG_REAL,    "1028.0", NULL,      "x>0.",       NULL,        NULL,                     NULL, "set maximum allowable DP matrix size to <x> Mb",             3 },
   { "--fixedtau",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,            "--nonbanded", "do not adjust tau (tighten bands) until mx size is < limit", 3 },
-  { "--xtau",        eslARG_REAL,        "2.", NULL,   "x>=1.99",       NULL,        NULL, "--fixedtau,--nonbanded", "set multiplier for tau to <x> when tightening HMM bands",    3 },
-  { "--maxtau",      eslARG_REAL,      "0.01", NULL,   "0<x<0.5",       NULL,        NULL, "--fixedtau,--nonbanded", "set max tau <x> when tightening HMM bands",                  3 },
+  { "--maxtau",      eslARG_REAL,      "0.05", NULL,   "0<x<0.5",       NULL,        NULL, "--fixedtau,--nonbanded", "set max tau <x> when tightening HMM bands",                  3 },
   { "--nonbanded",   eslARG_NONE,       FALSE, NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "do not use HMM bands for faster alignment",                  3 },
   { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,  REQDWSMALL,                 ICWSMALL, "use small memory divide and conquer (d&c) algorithm",        3 },
   /* options controlling optional output */
@@ -126,7 +125,8 @@ static ESL_OPTIONS options[] = {
   { "--noprob",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not include posterior probabilities in the alignment",    5 },
   { "--matchonly",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "include only match columns in output alignment",             5 },
   { "--ileaved",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--outformat","force output in interleaved Stockholm format",                5 },
-  { "--regress",  eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL, "--ileaved",    "--mapali", "save regression test data to file <f>",                      5}, 
+  { "--regress",  eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL, "--ileaved",    "--mapali", "save regression test data to file <f>",                      5 }, 
+  { "--verbose",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "report extra information; mainly useful for debugging",      5 },
   /*{ "--noannot",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not add cmalign execution annotation to the alignment",   5 },*/
 #ifdef HMMER_THREADS 
   { "--cpu",          eslARG_INT,        NULL, "INFERNAL_NCPU","n>=0",  NULL,        NULL,       CPUOPTS, "number of parallel CPU workers to use for multithreads",     5 },
@@ -147,6 +147,7 @@ struct cfg_s {
   ESL_ALPHABET    *abc_out;     /* alphabet for output */
   int              infmt;       /* input alignment format */
   int              outfmt;      /* output alignment format */
+  int              be_verbose;  /* TRUE if --verbose used */
   int              do_oneblock; /* TRUE to force output of full alignment 
 				 * in one block, if input file is really big.
 				 * we'll fail and tell the user to pick a
@@ -198,7 +199,7 @@ static int  initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
 static int  map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dataA, int *ret_ndata, char **ret_ss);
 static int  output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FILE *ofp, CM_ALNDATA **dataA, int ndata, char *map_sscons);
 static void output_info_file_header(FILE *fp, char *firstline, char *elstring);
-static int  output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, int first_idx);
+static int  output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, int first_idx, int be_verbose);
 /*static int  add_annotation_to_msa(ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa);*/
 
 /* Functions that enable memory efficiency by storing only a fraction
@@ -243,6 +244,7 @@ main(int argc, char **argv)
   cfg.efp         = NULL;	         /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.sfp         = NULL;	         /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.rfp         = NULL;	         /* opened in init_master_cfg() in masters, stays NULL for workers */
+ 
 
   cfg.infmt       = eslSQFILE_UNKNOWN;    /* reset below in process_commandline() */
   cfg.outfmt      = eslMSAFILE_STOCKHOLM; /* reset below in process_commandline() */
@@ -270,7 +272,7 @@ main(int argc, char **argv)
   }
 
   /* update cfg now that we have go */
-  cfg.abc_out = esl_opt_GetBoolean(go, "--dnaout") ? esl_alphabet_Create(eslDNA) : esl_alphabet_Create(eslRNA);
+  cfg.abc_out    = esl_opt_GetBoolean(go, "--dnaout") ? esl_alphabet_Create(eslDNA) : esl_alphabet_Create(eslRNA);
 
   /* Figure out who we are, and send control there: 
    * we might be an MPI master, an MPI worker, or a serial program.
@@ -583,12 +585,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* output scores to stdout, if -o used */
     if(cfg->ofp != stdout) { 
-      if((status =  output_scores(stdout,   cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur)) != eslOK) cm_Fail(errbuf);
+      if((status =  output_scores(stdout,   cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur, cfg->be_verbose)) != eslOK) cm_Fail(errbuf);
     }
     /* output scores to scores file, if --sfp used */
     if(cfg->sfp != NULL) { 
       if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
-      if((status =  output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur)) != eslOK) cm_Fail(errbuf);
+      if((status =  output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur, cfg->be_verbose)) != eslOK) cm_Fail(errbuf);
     }
 
     /* free block and worker data */
@@ -1101,12 +1103,12 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* output scores to stdout, if -o used */
     if(cfg->ofp != stdout) { 
-      if((status =  output_scores(stdout,   cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur)) != eslOK) mpi_failure(errbuf);
+      if((status =  output_scores(stdout,   cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur, cfg->be_verbose)) != eslOK) mpi_failure(errbuf);
     }
     /* output scores to scores file, if --sfp used */
     if(cfg->sfp != NULL) { 
       if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
-      if((status =  output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur)) != eslOK) mpi_failure(errbuf);
+      if((status =  output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur, cfg->be_verbose)) != eslOK) mpi_failure(errbuf);
     }
 
     /* free block and worker data */
@@ -1394,6 +1396,14 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   }	
 #endif /* HAVE_MPI */  
 
+  /* --verbose only makes sense in combination with -o or --sfile, 
+   * because if neither is used, scores are not output.
+   */
+  if (esl_opt_GetBoolean(go, "--verbose") && (! esl_opt_IsUsed(go, "-o")) && (! esl_opt_IsUsed(go, "--sfile"))) {
+    puts("\nERROR: --verbose only makes sense in combination with -o or --sfile\n");
+    goto ERROR;
+  }	
+
   *ret_go     = go;
   *ret_infmt  = infmt;
   *ret_outfmt = outfmt;
@@ -1442,7 +1452,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
   if (esl_opt_IsUsed(go, "--hbanded"))   {  fprintf(ofp, "# using HMM bands for acceleration:            yes\n"); }
   if (esl_opt_IsUsed(go, "--tau"))       {  fprintf(ofp, "# tail loss probability for HMM bands set to:  %g\n", esl_opt_GetReal(go, "--tau")); }
   if (esl_opt_IsUsed(go, "--fixedtau"))  {  fprintf(ofp, "# tighten HMM bands when necessary:            no\n"); }
-  if (esl_opt_IsUsed(go, "--xtau"))      {  fprintf(ofp, "# tau multiplicative factor to tighthen bands: %g\n", esl_opt_GetReal(go, "--xtau")); }
   if (esl_opt_IsUsed(go, "--maxtau"))    {  fprintf(ofp, "# maximum tau allowed during band tightening:  %g\n", esl_opt_GetReal(go, "--maxtau")); }
   if (esl_opt_IsUsed(go, "--nonbanded")) {  fprintf(ofp, "# using HMM bands for acceleration:            no\n"); }
   if (esl_opt_IsUsed(go, "--small"))     {  fprintf(ofp, "# small memory D&C alignment algorithm:        on\n"); }
@@ -1539,6 +1548,8 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else if (status == eslEINVAL && cfg->infmt == eslSQFILE_UNKNOWN) ESL_FAIL(status, errbuf, "Can't autodetect format of a stdin or .gz seqfile");
   else if (status != eslOK)        ESL_FAIL(status, errbuf, "Unexpected error %d opening sequence file %s\n", status, cfg->sqfile);  
 
+  cfg->be_verbose = esl_opt_GetBoolean(go, "--verbose");
+
   return eslOK;
 }
 
@@ -1579,7 +1590,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   
   cm->tau    = esl_opt_GetReal(go, "--tau");
   cm->maxtau = esl_opt_GetReal(go, "--maxtau");
-  cm->xtau   = esl_opt_GetReal(go, "--xtau");
   
   /* configure */
   if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status; 
@@ -1841,7 +1851,7 @@ output_info_file_header(FILE *fp, char *firstline, char *elstring)
  *           eslEMEM if out of memory.
  */
 int
-output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, int first_idx)
+output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, int first_idx, int be_verbose)
 {
   int   status;               /* easel status */
   int   i;                    /* counter */
@@ -1855,6 +1865,7 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, 
   int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE : FALSE;
   int do_post      = (cm->align_opts & CM_ALIGN_POST)      ? TRUE : FALSE;
   int do_sub       = (cm->align_opts & CM_ALIGN_SUB)       ? TRUE : FALSE;
+  int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)     ? TRUE  : FALSE;
 
   for(i = first_idx; i < ndata; i++) namewidth = ESL_MAX(namewidth, strlen(dataA[i]->sq->name));
 
@@ -1870,10 +1881,28 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, 
   idxdashes[idxwidth] = '\0';
   for(i = 0; i < idxwidth; i++) idxdashes[i] = '-';
 
+#if 0
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %-30s  %8s  %7s\n",    idxwidth, "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "       running time (s)",         "", "");
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %30s  %8s  %7s\n",     idxwidth, "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "-------------------------------", "", "");
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s  %8s  %7s\n", idxwidth, "idx",   namewidth, "seq name", "length", "cm from",   "cm to", "trunc",   "bit sc", "avg pp", "band calc", "alignment", "total", "mem (Mb)", "tau");
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s  %8s  %7s\n", idxwidth, idxdashes, namewidth, namedashes, "------", "-------", "-------", "-----", "--------", "------", "---------", "---------", "---------", "--------", "-------");
+#endif
+
+  fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %-30s  %8s",    idxwidth, "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "       running time (s)",         "");
+  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s", "", "", "");
+  fprintf(ofp, "\n");
+
+  fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %30s  %8s",     idxwidth, "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "-------------------------------", "");
+  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s", "", "", "");
+  fprintf(ofp, "\n");
+
+  fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s  %8s", idxwidth, "idx",   namewidth, "seq name", "length", "cm from",   "cm to", "trunc",   "bit sc", "avg pp", "band calc", "alignment", "total", "mem (Mb)");
+  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s", "tau", "thresh1", "thresh2");
+  fprintf(ofp, "\n");
+
+  fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s  %8s", idxwidth, idxdashes, namewidth, namedashes, "------", "-------", "-------", "-----", "--------", "------", "---------", "---------", "---------", "--------");
+  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s", "-------", "-------", "-------");
+  fprintf(ofp, "\n");
 
   for(i = first_idx; i < ndata; i++) { 
     fprintf(ofp, "  %*" PRId64 "  %-*s  %6" PRId64 "  %7d  %7d", idxwidth, dataA[i]->idx+1, namewidth, dataA[i]->sq->name, dataA[i]->sq->n, dataA[i]->spos, dataA[i]->epos);
@@ -1896,8 +1925,13 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, 
     else               fprintf(ofp, "  %9s",   "-");
     fprintf(ofp, "  %9.2f  %9.2f", dataA[i]->secs_aln, dataA[i]->secs_tot);
     fprintf(ofp, "  %8.2f", dataA[i]->mb_tot);
-    if(dataA[i]->tau > -0.5) fprintf(ofp, "  %7.2g\n", dataA[i]->tau); /* tau is -1. if aln did not use HMM bands */
-    else                     fprintf(ofp, "  %7s\n", "-");
+    if(be_verbose) { 
+      if(dataA[i]->tau > -0.5) fprintf(ofp, "  %7.2g", dataA[i]->tau); /* tau is -1. if aln did not use HMM bands */
+      else                     fprintf(ofp, "  %7s", "-");
+      if(do_trunc)             fprintf(ofp, "  %7.2f  %7.2f", dataA[i]->thresh1, dataA[i]->thresh2); 
+      else                     fprintf(ofp, "  %7s  %7s", "-", "-");
+    }
+    fprintf(ofp, "\n");
   }
 
   if(namedashes != NULL) free(namedashes);

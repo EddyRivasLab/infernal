@@ -125,7 +125,6 @@ CreateCMShell(void)
   cm->beta_W       = DEFAULT_BETA_W;     /* will be set when beta_W is read from cmfile */
   cm->tau          = DEFAULT_TAU;        /* 1E-7 the default tau  (tail loss for HMM banding) */
   cm->maxtau       = DEFAULT_MAXTAU;     /* 0.1  the default max tau during HMM band tightening */
-  cm->xtau         = DEFAULT_XTAU;       /* 2.0  the default value to multiply tau by during HMM band tightening */
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
   cm->cp9          = NULL;          
@@ -3088,7 +3087,6 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->iel_selfsc  = cm->iel_selfsc;
   new->tau         = cm->tau;
   new->maxtau      = cm->maxtau;
-  new->xtau        = cm->xtau;
   new->config_opts = cm->config_opts;
   new->align_opts  = cm->align_opts;
   new->search_opts = cm->search_opts;

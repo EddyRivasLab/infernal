@@ -288,18 +288,22 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		    int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data)
 {
   int           status;            /* easel status */
-  CM_ALNDATA   *data       = NULL; /* CM_ALNDATA we'll create and fill */
-  float         sc         = 0.;   /* score from alignment function */
-  float         pp         = 0.;   /* average PP from alignment function */
-  Parsetree_t  *tr         = NULL; /* ptr to a parsetree */
-  char         *ppstr      = NULL; /* ptr to a PP string */
-  float         secs_bands = 0.;   /* seconds elapsed for band calculation */
-  float         secs_aln   = 0.;   /* seconds elapsed for alignment calculation */
-  float         mb_tot     = 0.;   /* size of all DP matrices used for alignment */
-  double        tau        = -1.;  /* tau used for calculating bands */
-  int           spos       = -1;   /* start posn: first non-gap CM consensus position */
-  int           epos       = -1;   /* end   posn: final non-gap CM consensus position */
-  double        save_tau   = cm->tau; /* cm->tau upon entrance, we restore before leaving */
+  CM_ALNDATA   *data         = NULL; /* CM_ALNDATA we'll create and fill */
+  float         sc           = 0.;   /* score from alignment function */
+  float         pp           = 0.;   /* average PP from alignment function */
+  Parsetree_t  *tr           = NULL; /* ptr to a parsetree */
+  char         *ppstr        = NULL; /* ptr to a PP string */
+  float         secs_bands   = 0.;   /* seconds elapsed for band calculation */
+  float         secs_aln     = 0.;   /* seconds elapsed for alignment calculation */
+  float         mb_tot       = 0.;   /* size of all DP matrices used for alignment */
+  double        tau          = -1.;  /* tau used for calculating bands */
+  float         thresh1      = -1.;  /* cp9b->thresh1 used for calculating bands */
+  float         thresh2      = -1.;  /* cp9b->thresh2 used for calculating bands */
+  int           spos         = -1;   /* start posn: first non-gap CM consensus position */
+  int           epos         = -1;   /* end   posn: final non-gap CM consensus position */
+  double        save_tau     = cm->tau; /* cm->tau upon entrance, we restore before leaving */
+  float         save_thresh1 = (cm->cp9b == NULL) ? -1. : cm->cp9b->thresh1;
+  float         save_thresh2 = (cm->cp9b == NULL) ? -1. : cm->cp9b->thresh2;
 
   /* alignment options */
   int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE  : FALSE;
@@ -405,7 +409,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       if(! cp9b_valid) { 
 	if(do_xtau) { /* multiply tau (if nec) until required mx is below Mb limit (mxsize) */
 	  if((status = cp9_IterateSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 
-					    cm->maxtau, cm->xtau, NULL)) != eslOK) goto ERROR;
+					    cm->maxtau, NULL)) != eslOK) goto ERROR;
 	}
 	else {
 	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, 
@@ -413,7 +417,10 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	}
 	if(w != NULL) esl_stopwatch_Stop(w);
 	secs_bands = (w == NULL) ? 0. : w->elapsed;
-	tau = cm->tau; /* note: we don't set this if cp9b_valid is TRUE */
+	tau     = cm->tau; 
+	thresh1 = cm->cp9b->thresh1;
+	thresh2 = cm->cp9b->thresh2;
+	/* note: we don't set these three if cp9b_valid is TRUE */
       }
       
       if(w != NULL) esl_stopwatch_Start(w);
@@ -472,12 +479,18 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   data->secs_aln   = secs_aln;
   data->mb_tot     = mb_tot;
   data->tau        = tau;
+  data->thresh1    = thresh1;
+  data->thresh2    = thresh2;
   if(w_tot != NULL) esl_stopwatch_Stop(w_tot);
   data->secs_tot   = (w_tot == NULL) ? 0. : w_tot->elapsed;
 
   *ret_data = data;
 
   cm->tau = save_tau;
+  if(cm->cp9b != NULL) { 
+    cm->cp9b->thresh1 = save_thresh1;
+    cm->cp9b->thresh2 = save_thresh2;
+  }
   return eslOK;
 
  ERROR: 

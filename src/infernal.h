@@ -87,14 +87,23 @@
 #define DEFAULT_ETARGET_HMMFILTER   0.38           /* EPN 04.16.12 */
 #define DEFAULT_NULL2_OMEGA         0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null2 model */
 #define DEFAULT_NULL3_OMEGA         0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
-#define V1P0_NULL2_OMEGA            0.03125        /* 1/(2^5),  the prior probability of the null2 model for infernal versions 0.56 through 1.0.2 */
-#define V1P0_NULL3_OMEGA            0.03125        /* 1/(2^5),  the prior probability of the null3 model for infernal versions 0.56 through 1.0.2 */
-#define DEFAULT_CP9BANDS_THRESH1    0.01           /* default for CP9Bands_t thresh1, if occ[k] > thresh1 HMM posn k 'maybe used'  */
-#define DEFAULT_CP9BANDS_THRESH2    0.98           /* default for CP9Bands_t thresh2, if occ[k] > thresh2 HMM posn k 'likely used' */
-#define DEFAULT_CP9BANDS_THRESH2_FO 0.90           /* default for CP9Bands_t thresh2_failover>, if occ[k] < thresh2 for all k, use thresh2_failover instead of thresh2 */
+#define V1P0_NULL2_OMEGA            0.03125        /* 1/(2^5),  the prior probability of the null2 model for v0.56->v1.0.2 */
+#define V1P0_NULL3_OMEGA            0.03125        /* 1/(2^5),  the prior probability of the null3 model for v0.56->v1.0.2 */
 #define DEFAULT_EL_SELFPROB         0.94
 #define DEFAULT_MAXTAU              0.1            /* default cm->maxtau, max allowed tau value during HMM band tightening */
-#define DEFAULT_XTAU                2.0            /* default cm->xtau, value to multiply tau by during HMM band tightening */
+#define DEFAULT_CP9BANDS_THRESH1    0.01           /* default for CP9Bands_t thresh1, if occ[k] > thresh1 HMM posn k 'maybe used'  */
+#define DEFAULT_CP9BANDS_THRESH2    0.98           /* default for CP9Bands_t thresh2, if occ[k] > thresh2 HMM posn k 'likely used' */
+
+/* Hard-coded values (not changeable by command-line options). 
+ * All of these are related to HMM band tightening to reduce
+ * the required size of DP matrices for alignments to below 
+ * a maximum limit.
+ */
+#define TAU_MULTIPLIER              2.0            /* value to multiply tau by during HMM band tightening */
+#define MAX_CP9BANDS_THRESH1        0.50           /* maximum value allowed for cp9b->thresh1 during HMM band tightening */
+#define MIN_CP9BANDS_THRESH2        0.75           /* minimum value allowed for cp9b->thresh2 during HMM band tightening */
+#define DELTA_CP9BANDS_THRESH1      0.02           /* value to increment cp9b->thresh1 by during HMM band tightening */
+#define DELTA_CP9BANDS_THRESH2      0.01           /* value to decrement cp9b->thresh2 by during HMM band tightening */
 
 /* number of possible integer GC contents, example 40 = 0.40 GC */
 #define GC_SEGMENTS 101
@@ -761,7 +770,6 @@ typedef struct cp9bands_s {
 
   float thresh1;              /* probability threshold for sp1, ep1 (typically 0.01), 'maybe used' */
   float thresh2;              /* probability threshold for sp2, ep2 (typically 0.98), 'likely used' */
-  float thresh2_failover;     /* probability threshold for sp2, ep2 if no cpos reaches thresh2, (typically 0.90), '(almost?) likely used' */
 
   int Rmarg_imin;             /* for Right marginal alignments, minimum target sequence position that can align to CM as i */
   int Rmarg_imax;             /* for Right marginal alignments, maximum target sequence position that can align to CM as i */ 
@@ -1826,7 +1834,6 @@ typedef struct cm_s {
 
   double  tau;          /* tail loss probability for HMM target dependent banding             */
   double  maxtau;       /* maximum allowed tau value for HMM band tightening                  */
-  double  xtau;         /* factor to multiply tau by at each iteration of HMM band tightening */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
@@ -2185,7 +2192,6 @@ typedef struct cm_pipeline_s {
   int           do_bot;         /* TRUE to do bottom strand (usually TRUE)  */
   int           show_accessions;/* TRUE to output accessions not names      */
   int           show_alignments;/* TRUE to compute and output alignments (default)*/
-  double        xtau;           /* multiplier for tau when tightening bands */
   double        maxtau;         /* max tau when tightening bands            */
   int           do_wcx;         /* TRUE to set cm->W as cm->clen * wcx      */
   float         wcx;            /* set W as cm->clen * wcx, ignoring W from CM file */
@@ -2474,6 +2480,9 @@ typedef struct {
   float             secs_tot;   /* seconds elapsed for entire processing of this sequence */
   float             mb_tot;     /* total Mb required for all DP matrices for alignment */
   double            tau;        /* tau used for HMM band calculation, -1 if no hmm bands */
+  /* thresh1 and thresh2 are only relevant if alignment is truncated */
+  float             thresh1;    /* cp9b->thresh1 used for HMM band calculation */
+  float             thresh2;    /* cp9b->thresh2 used for HMM band calculation */
 } CM_ALNDATA;
 
 /*****************************************************************
@@ -3156,7 +3165,7 @@ extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
 extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int do_trunc, int debug_level);
 extern int          cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int pass_idx, int debug_level);
-extern int          cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, double xtau, float *ret_Mb);
+extern int          cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, float *ret_Mb);
 extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
 extern void         cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
 extern int          cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf);

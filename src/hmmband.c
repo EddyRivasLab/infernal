@@ -78,8 +78,6 @@ AllocCP9Bands(int cm_M, int hmm_M)
   cp9bands->sp1 = cp9bands->sp2 = cp9bands->ep1 = cp9bands->ep2 = -1;
   cp9bands->thresh1          = DEFAULT_CP9BANDS_THRESH1;    /* 0.01 */
   cp9bands->thresh2          = DEFAULT_CP9BANDS_THRESH2;    /* 0.98 */
-  cp9bands->thresh2_failover = DEFAULT_CP9BANDS_THRESH2_FO; /* 0.90 */
-  /* it's important that thresh2 > thresh2_failover */
   cp9bands->Rmarg_imin = cp9bands->Lmarg_jmin = -1;
   cp9bands->Rmarg_imax = cp9bands->Lmarg_jmax = -2;
 
@@ -375,16 +373,24 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
  * Incept:    EPN, Thu Mar  1 17:56:42 2012
  *
  * Purpose:   Increase cm->tau (tighten HMM bands) by multiplying it
- *            by <xtau> until required HMM banded matrix size is below
- *            <size_limit> Mb, or cm->tau is greater than <maxtau>.
+ *            by TAU_MULTIPLIER (2.0) until required HMM banded matrix
+ *            size is below <size_limit> Mb, or cm->tau is greater than
+ *            <maxtau>.
+ *
+ *            If we're doing a truncated alignment (which we can figure
+ *            out based on the value of <pass_idx>) then we also increase
+ *            cp9b->thresh1 and decrease cp9b->thresh2 by a hard-coded
+ *            value into the maximum/minimum is reached for them as 
+ *            wel..
  *
  *            Since we can't determine the required size of a HB
  *            matrix unless we have filled a CP9Bands_t object
- *            (cm->cp9b), we need to recalculate bands each time tau
- *            is increased and then check size of resulting matrix
- *            given the bands.
+ *            (cm->cp9b), we need to recalculate bands each time tau,
+ *            (and possibly thresh1 and thresh2) are modified and then
+ *            check size of resulting matrix given the bands.
  *
- *            Upon returning cm->tau may be changed. 
+ *            Upon returning cm->tau, cm->cp9b->tau, cm->cp9b->thresh1
+ *            and cm->cp9b->thresh2 may have been changed.
  *
  * Args       cm           - the CM
  *            errbuf       - for error messages
@@ -406,13 +412,14 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
  *            A different error code upon an error, errbuf is filled.
  */
 int
-cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, double xtau, float *ret_Mb)
+cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, float *ret_Mb)
 {
   int   status;
   int   do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
   float hbmx_Mb;  /* approximate size in Mb required for HMM banded matrix */
-
-  if(xtau < 1.1) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2Bands() xtau too low: %f < 1.1\n", xtau);
+  int   tau_at_limit     = FALSE;
+  int   thresh1_at_limit = (do_trunc) ? FALSE : TRUE;
+  int   thresh2_at_limit = (do_trunc) ? FALSE : TRUE;
 
   while(1) { 
     if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, doing_search, pass_idx, 0)) != eslOK) goto ERROR;
@@ -425,10 +432,30 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
       else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &hbmx_Mb); }
       if(status != eslOK && status != eslERANGE) return status;
     }      
-    /*printf("cm->tau: %g mxsize: %.2f\n", cm->tau, hbmx_Mb);*/
-    if(hbmx_Mb <  size_limit)          break; /* our matrix will be small enough, break out of while(1) */
-    if(cm->tau >= (maxtau-eslSMALLX1)) break; /* our bands have gotten too tight, break out of while(1) */
-    cm->tau = ESL_MIN(maxtau, cm->tau * xtau);
+    /*printf("cm->tau: %10.2g thresh1: %4.2f thresh2: %4.2f mxsize: %.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, hbmx_Mb);*/
+    /* check if we can stop iterating, three ways we can
+     * case 1: matrix is now smaller than our limit.
+     * case 2: do_trunc == FALSE && tau has reached its limit
+     * case 3: do_trunc == TRUE  && tau, thresh1 and thresh have all reached their limits
+     */
+    if(hbmx_Mb <  size_limit) { 
+      break; /* our matrix will be small enough, break out of while(1) */
+    }
+    if(tau_at_limit && thresh1_at_limit && thresh2_at_limit) { /* if do_trunc is FALSE, thresh{1,2}_at_limit were init'ed as TRUE */
+      break; /* tau, thresh1 and thresh2 have all reached their limits, break out of while (1) */
+    }
+    if(! tau_at_limit) { 
+      cm->tau *= TAU_MULTIPLIER;
+      if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; }
+    }
+    if(! thresh1_at_limit) { 
+      cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; 
+      if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; }
+    }
+    if(! thresh2_at_limit) { 
+      cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; 
+      if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; }
+    }
   }
 
   if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
@@ -4644,10 +4671,6 @@ cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf)
  *          <cp9b->ep1>: maximum position that might be used       (p > cp9b->thresh1, typically 0.01)
  *          <cp9b->ep2>: maximum position that will likely be used (p > cp9b->thresh2, typically 0.98)
  *       
- *          If no HMM node has an occupancy probability that exceeds 
- *          <cp9b->thresh2>, use <cp9b->thresh2_failover> (typically 0.90) 
- *          to define <cp9b->sp2> and <cp9b->ep2>.
- *
  *          If no HMM node has an occupancy probability that exceeds
  *          <cp9b->thresh2> then sp2 and ep2 are set as out-of-bounds
  *          values M+1 and 0 respectively. 
@@ -4685,20 +4708,13 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
   int L = j0-i0+1;                        /* length of sequence */
   int   iocc;       /* occupancy probability, scaled int form */
   float pocc;       /* occupancy probability, probability form */
-  /* *_failover values: min/max posn with occ > cp9b->thresh2_failover, cp9b->{s,e}p2 
-   * are set to this if no posn exists with occ > cp9b->thresh2.
-   */
-  int sp2_failover;
-  int ep2_failover;
 
   /* Calculate minimum start positions: */
   k = 1;
-  cp9b->sp1 = cp9b->sp2 = sp2_failover = -1;
-  while(k <= cp9b->hmm_M && (cp9b->sp1 == -1 || cp9b->sp2 == -1 || sp2_failover == -1)) { 
+  cp9b->sp1 = cp9b->sp2 = -1;
+  while(k <= cp9b->hmm_M && (cp9b->sp1 == -1 || cp9b->sp2 == -1)) { 
     if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) { 
-#if TMPDEBUG
-      printf("k: %4d pocc IRRELEVANT (k unreachable, skipping)\n", k);
-#endif
+      /*printf("k: %4d pocc IRRELEVANT (k unreachable, skipping)\n", k);*/
       k++;
       /* M, I, D states in node k are unreachable (no posterior cells had more than 
        * cm->tau probability mass), k won't be our sp1 or sp2 */
@@ -4709,41 +4725,30 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
 	iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][k], pmx->dmx[i][k]));
       }
       pocc = Score2Prob(iocc, 1.);
-#if TMPDEBUG
-      printf("k: %4d pocc: %.4f\n", k, pocc);
-#endif
-      if((cp9b->sp1    == -1) && (pocc > cp9b->thresh1))          cp9b->sp1 = k;
-      if((cp9b->sp2    == -1) && (pocc > cp9b->thresh2))          cp9b->sp2 = k;
-      if((sp2_failover == -1) && (pocc > cp9b->thresh2_failover)) sp2_failover = k;
+      /*printf("k: %4d pocc: %.4f\n", k, pocc);*/
+      if((cp9b->sp1 == -1) && (pocc > cp9b->thresh1)) cp9b->sp1 = k;
+      if((cp9b->sp2 == -1) && (pocc > cp9b->thresh2)) cp9b->sp2 = k;
       k++;
     }
   }
   if(k == cp9b->hmm_M+1) { 
     if(cp9b->sp1 == -1) { cp9b->sp1 = cp9b->hmm_M+1; } /* no node k has occupancy > thresh1, set as out-of-bounds value M+1 */
-    if(cp9b->sp2 == -1) { 
-      /* failover from thresh2 to thresh2_failover (0.98->0.90) for
-       * determining sp2, if no node k has occ > thresh2_failover
-       * either then set sp2 as out-of-bounds value M+1
-       */
-      cp9b->sp2 = (sp2_failover == -1) ? cp9b->hmm_M+1 : sp2_failover;
-    }      
+    if(cp9b->sp2 == -1) { cp9b->sp2 = cp9b->hmm_M+1; } /* no node k has occupancy > thresh2,  set as out-of-bounds value M+1 */
   }
   
   /* Calculate maximum end positions: */
   if((cp9b->sp1 == cp9b->hmm_M+1) && 
      (cp9b->sp2 == cp9b->hmm_M+1)) { 
-    /* we already know that there's no nodes that satisfy either thresh1, thresh2 and thresh2_failover, we can save time here */
+    /* we already know that there's no nodes that satisfy either thresh1 or thresh2, we can save time here */
     cp9b->ep1 = 0;
     cp9b->ep2 = 0;
   }
   else { 
-    cp9b->ep1 = cp9b->ep2 = ep2_failover = -1;
+    cp9b->ep1 = cp9b->ep2 = -1;
     k = cp9b->hmm_M;
     while(k >= 1 && (cp9b->ep1 == -1 || cp9b->ep2 == -1)) { 
       if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) { 
-#if TMPDEBUG
-	printf("k: %4d pocc IRRELEVANT (k unreachable, skipping)\n", k);
-#endif
+	/*printf("k: %4d pocc IRRELEVANT (k unreachable, skipping)\n", k);*/
 	k--;
 	/* M, I, D states in node k are unreachable (no posterior cells had more than 
 	 * cm->tau probability mass), k won't be our ep1 or ep2 */
@@ -4754,24 +4759,15 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
 	  iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][k], pmx->dmx[i][k]));
 	}
 	pocc = Score2Prob(iocc, 1.);
-#if TMPDEBUG
-	printf("k: %4d pocc: %.4f\n", k, pocc);
-#endif
-	if((cp9b->ep1 == -1)    && (pocc > cp9b->thresh1))          cp9b->ep1 = k;
-	if((cp9b->ep2 == -1)    && (pocc > cp9b->thresh2))          cp9b->ep2 = k;
-	if((ep2_failover == -1) && (pocc > cp9b->thresh2_failover)) ep2_failover = k;
+	/*printf("k: %4d pocc: %.4f\n", k, pocc);*/
+	if((cp9b->ep1 == -1) && (pocc > cp9b->thresh1)) cp9b->ep1 = k;
+	if((cp9b->ep2 == -1) && (pocc > cp9b->thresh2)) cp9b->ep2 = k;
 	k--;
       }
     }
     if(k == 0) { 
       if(cp9b->ep1 == -1) { cp9b->ep1 = 0; } /* no node k has occupancy > thresh1, set as out-of-bounds value 0 */
-      if(cp9b->ep2 == -1) { 
-      /* failover from thresh2 to thresh2_failover (0.98->0.90) for
-       * determining ep2, if no node k has occ > thresh2_failover
-       * either then set ep2 as out-of-bounds 0
-       */
-	cp9b->ep2 = (ep2_failover == -1) ? 0 : ep2_failover;
-      }      
+      if(cp9b->ep2 == -1) { cp9b->ep2 = 0; } /* no node k has occupancy > thresh2, set as out-of-bounds value 0 */
     }
   }
 
@@ -4837,8 +4833,8 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
     cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax); /* j can't be more than j0 */
   }
 
-#if TMPDEBUG
-  printf("Returning from cp9_PredictStartAndEndPositions():\n\t");
+#if 0
+  printf("HEYA Returning from cp9_PredictStartAndEndPositions():\n\t");
     printf("sp1: %4d\n\t", cp9b->sp1);
     printf("sp2: %4d\n\t", cp9b->sp2);
     printf("ep2: %4d\n\t", cp9b->ep2);
