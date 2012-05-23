@@ -2299,7 +2299,7 @@ Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL
     esl_strdealign(uaseq, uaseq, "-_.~", NULL);
     /* Transmogrify the aligned seq to get a parsetree */
     if(ret_tr != NULL) { 
-      tr[i] = Transmogrify(cm, mtr, msa->ax[i], aseq, msa->alen);
+      tr[i] = Transmogrify(cm, mtr, msa->ax[i]);
       /*ParsetreeDump(stdout, tr[i], cm, msa->ax[i]);*/
       /* tr[i] is in alignment coords, convert it to unaligned coords, */
       for(x = 0; x < tr[i]->n; x++) { 

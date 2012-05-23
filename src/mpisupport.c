@@ -1562,6 +1562,8 @@ cm_hit_MPIPack(CM_HIT *hit, char *buf, int n, int *pos, MPI_Comm comm)
   if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
   offset = (ad->aseq_el   == NULL) ? -1 : ad->aseq_el - ad->mem;
   if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
+  offset = (ad->rfline_el == NULL) ? -1 : ad->rfline_el - ad->mem;
+  if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
   offset = (ad->ppline_el == NULL) ? -1 : ad->ppline_el - ad->mem;
   if (MPI_Pack(&offset,              1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&ad->N,               1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
@@ -1627,7 +1629,7 @@ int
 cm_hit_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CM_HIT *hit)
 {
   int  status;
-  int  rfline, ncline, csline, model, mline, aseq, ppline, aseq_el, ppline_el;
+  int  rfline, ncline, csline, model, mline, aseq, ppline, aseq_el, rfline_el, ppline_el;
   int  cmname, cmacc, cmdesc;
   int  sqname, sqacc, sqdesc;
 
@@ -1662,6 +1664,7 @@ cm_hit_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CM_HIT *hit)
   if (MPI_Unpack(buf, n, pos, &aseq,               1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &ppline,             1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &aseq_el,            1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (MPI_Unpack(buf, n, pos, &rfline_el,          1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &ppline_el,          1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &ad->N,              1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &ad->N_el,           1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
@@ -1701,6 +1704,7 @@ cm_hit_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CM_HIT *hit)
   ad->aseq      = (aseq      == -1)  ? NULL : ad->mem + aseq;
   ad->ppline    = (ppline    == -1)  ? NULL : ad->mem + ppline;
   ad->aseq_el   = (aseq_el   == -1)  ? NULL : ad->mem + aseq_el;
+  ad->rfline_el = (rfline_el == -1)  ? NULL : ad->mem + rfline_el;
   ad->ppline_el = (ppline_el == -1)  ? NULL : ad->mem + ppline_el;
 
   ad->cmname  = (cmname == -1)  ? NULL : ad->mem + cmname;

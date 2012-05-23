@@ -1439,7 +1439,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    for (idx = 0; idx < msa->nseq; idx++) {
      ESL_ALLOC(aseq, (msa->alen+1) * sizeof(char));
      esl_abc_Textize(msa->abc, msa->ax[idx], msa->alen, aseq);
-     tr[idx] = Transmogrify(cm, mtr, msa->ax[idx], aseq, msa->alen);
+     tr[idx] = Transmogrify(cm, mtr, msa->ax[idx]);
      if(pretend_cm_is_hmm) { 
        if((status = cm_parsetree_Doctor(cm, errbuf, tr[idx], NULL, NULL)) != eslOK) return status;
      }

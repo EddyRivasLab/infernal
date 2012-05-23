@@ -682,7 +682,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Output the results in an MSA (-A option) */
     if (afp) {
       ESL_MSA *msa = NULL;
-      printf("about to call cm_tophits_Alignment()\n"); fflush(stdout);
       if((status = cm_tophits_Alignment(info[0].cm, info[0].th, errbuf, &msa)) == eslOK) { 
 	if(msa != NULL) { 
 	  if (textw > 0) eslx_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);
@@ -1343,7 +1342,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Output the results in an MSA (-A option) */
     if (afp) {
       ESL_MSA *msa = NULL;
-      printf("about to call cm_tophits_Alignment()\n"); fflush(stdout);
       if((status = cm_tophits_Alignment(info->cm, info->th, errbuf, &msa)) == eslOK) { 
 	if(msa != NULL) { 
 	  if (textw > 0) eslx_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);

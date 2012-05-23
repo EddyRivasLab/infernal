@@ -1075,9 +1075,9 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
        * p1->acct[p].nres_{top,bot} is 0 and
        * p2->acct[p].nres_{top,bot} is not, or
        * p1->acct[p].npli_{top,bot} is 0 and
-       * p2->acct[p].npli_{top,bot} is not, or We handle that case by
-       * taking the max (usually these p1 and p2 values will be equal
-       * in scan mode).
+       * p2->acct[p].npli_{top,bot} is not.
+       * We handle these cases by taking the max (usually these p1 and
+       * p2 values will be equal in scan mode).
        */
       p1->nseqs = ESL_MAX(p1->nseqs, p2->nseqs);
       for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_top = ESL_MAX(p1->acct[p].npli_top, p2->acct[p].npli_top);
@@ -1422,7 +1422,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
  *            else only print statistics for the standard pass.
  *
  *            Actual work is done by repeated calls to 
- *            cm_pli_PassStatistics().
+ *            pli_pass_statistics().
  *            
  * Returns:   <eslOK> on success.
  */

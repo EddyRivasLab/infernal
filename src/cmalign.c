@@ -1671,7 +1671,7 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dat
   for (i = 0; i < msa->nseq; i++) { 
     /* we need a text sequence in addition to the digitized sequence for Transmogrify() */
     esl_abc_Textize(msa->abc, msa->ax[i], msa->alen, aseq);
-    dataA[i]->tr = Transmogrify(cm, mtr, msa->ax[i], aseq, msa->alen);
+    dataA[i]->tr = Transmogrify(cm, mtr, msa->ax[i]);
     /* dataA[i]->tr is in alignment coords, convert it to unaligned coords.
      * First we construct a map of aligned to unaligned coords, then
      * we use it to convert. 

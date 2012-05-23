@@ -91,7 +91,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   int         cm_namelen, cm_acclen, cm_desclen;
   int         sq_namelen, sq_acclen, sq_desclen;
   int         len, n;
-  int         len_el; /* lengths for ad->aseq_el and ad->ppline_el vars */
+  int         len_el; /* lengths for ad->aseq_el, ad->rfline_el and ad->ppline_el vars */
 
   /* variables for constructing a single sequence MSA from passed-in
    * <tr> so we can copy it's aseq[0] to ad->aseq_el (we only need
@@ -246,7 +246,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   /* Allocate the char arrays */
 
   n  = (len+1) * 5;    /* model, csline, mline, aseq, ncline */
-  n += (len_el+1);     /* aseq_el (includes EL emits) */
+  n += 2 * (len_el+1); /* aseq_el, rfline_el (includes EL emits) */
   if(adata->ppstr  != NULL) n += len+1 + len_el+1; /* ppline and ppline_el */
   if(cm->rf        != NULL) n += len+1;
   cm_namelen = strlen(cm->name);                           n += cm_namelen + 1;
@@ -282,6 +282,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   ad->aseq       = ad->mem + pos;  pos += len+1;
   if (adata->ppstr  != NULL) { ad->ppline    = ad->mem + pos;  pos += len+1;}    else { ad->ppline    = NULL; }
   ad->aseq_el    = ad->mem + pos;  pos += len_el+1;
+  ad->rfline_el  = ad->mem + pos;  pos += len_el+1;
   if (adata->ppstr  != NULL) { ad->ppline_el = ad->mem + pos;  pos += len_el+1;} else { ad->ppline_el = NULL; }
   ad->cmname     = ad->mem + pos;  pos += cm_namelen +1;
   ad->cmacc      = ad->mem + pos;  pos += cm_acclen  +1;
@@ -299,11 +300,14 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   strcpy(ad->sqdesc,  sq->desc);
 
   /* Set aseq_el and possibly ppline_el */
-  strcpy(ad->aseq_el, tmpmsa->aseq[0]);
+  strcpy(ad->aseq_el,   tmpmsa->aseq[0]);
+  strcpy(ad->rfline_el, tmpmsa->rf);
   if(adata->ppstr) strcpy(ad->ppline_el, tmpmsa->pp[0]);
-#if 0 
-  printf("ad->aseq_el:   %s\n", ad->aseq_el);
-  printf("ad->ppline_el: %s\n", ad->ppline_el);
+
+#if 1
+  printf("HEYA ad->aseq_el:   %s\n", ad->aseq_el);
+  printf("HEYA ad->rfline_el: %s\n", ad->rfline_el);
+  printf("HEYA ad->ppline_el: %s\n", ad->ppline_el);
 #endif 
 
   /* Set clen */
@@ -395,7 +399,12 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	  ad->ppline[pos]   = '.';
 	  ad->ppline[pos+1] = '.';
 	  for(x = 0; x < (numwidth-1); x++) ad->ppline[pos+2+x] = '.';
-	  ad->ppline[pos+numwidth+1] = (ppavg + 0.05 >= 1.0) ? '*' :  (char) ((ppavg + 0.05) * 10.0) + '0';
+	  if(tr->emitl[ti] <= tr->emitr[ti]) { 
+	    ad->ppline[pos+numwidth+1] = (ppavg + 0.05 >= 1.0) ? '*' :  (char) ((ppavg + 0.05) * 10.0) + '0';
+	  }
+	  else { /* no residues emitted in EL, PP annotation is a gap ('.') */
+	    ad->ppline[pos+numwidth+1] = '.';
+	  }
 	  ad->ppline[pos+numwidth+2] = '.';
 	  ad->ppline[pos+numwidth+3] = '.';
 	}
@@ -621,6 +630,11 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
     esl_abc_FCount(cm->abc, act, sq->dsq[x], 1.0);
   }
 
+#if 1
+  printf("HEYA ad->aseq:      %s\n", ad->aseq);
+  printf("HEYA ad->model:     %s\n", ad->model);
+#endif 
+
   if(cm->rf != NULL) ad->rfline[ad->N] = '\0';
   ad->ncline[ad->N] = '\0';
   ad->csline[ad->N] = '\0';
@@ -696,9 +710,12 @@ cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seq
   n3p_skipped = p7ad->M - p7ad->hmmto;
   len_el = len + n5p_skipped + n3p_skipped;
 
-  /* Allocate the char arrays, we copy aseq into aseq_el and ppline into ppline_el for consistency with cm_alidisplay_Create() */
+  /* Allocate the char arrays, we copy aseq into aseq_el, rf into
+   * rfline_el and ppline into ppline_el for consistency with
+   * cm_alidisplay_Create() 
+   */
   n  = (len+1) * 4;    /* model, csline, mline, aseq (ncline will remain NULL) */
-  n += len_el+1;       /* aseq_el mandatory */
+  n += 2 * (len_el+1); /* aseq_el and rfline_el, mandatory */
   if(p7ad->ppline  != NULL) n += len+1 + len_el+1; /* ppline and ppline_el */
   if(p7ad->rfline  != NULL) n += len+1;
   cm_namelen = strlen(cm->name);                           n += cm_namelen + 1;
@@ -745,6 +762,7 @@ cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seq
   ad->aseq       = ad->mem + pos;  pos += len+1;
   if (p7ad->ppline  != NULL) { ad->ppline    = ad->mem + pos;  pos += len+1;}    else { ad->ppline    = NULL; }
   ad->aseq_el    = ad->mem + pos;  pos += len_el+1;
+  ad->rfline_el  = ad->mem + pos;  pos += len_el+1;
   if (p7ad->ppline  != NULL) { ad->ppline_el = ad->mem + pos;  pos += len_el+1;} else { ad->ppline_el = NULL; }
   ad->cmname     = ad->mem + pos;  pos += cm_namelen +1;
   ad->cmacc      = ad->mem + pos;  pos += cm_acclen  +1;
@@ -769,14 +787,19 @@ cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seq
   strcpy(ad->aseq,    p7ad->aseq);
   if(p7ad->ppline) strcpy(ad->ppline,  p7ad->ppline);
 
-  /* Create aseq_el and ppline_el, these are copies of p7->aseq and
-   * p7->ppline with n5p_skipped '-' characters prepended and
-   * n3p_skipped '-' characters appended.
+  /* Create aseq_el, rfline_el, and ppline_el, these are copies of
+   * p7->aseq and p7->ppline with n5p_skipped '-' characters prepended
+   * and n3p_skipped '-' characters appended.
    */
   for(x = 0; x < n5p_skipped; x++) ad->aseq_el[x] = '-';
   memcpy(ad->aseq_el + n5p_skipped, p7ad->aseq, ad->N);
   for(x = ad->N + n5p_skipped; x < ad->N_el; x++) ad->aseq_el[x] = '-';
   ad->aseq_el[ad->N_el] = '\0';
+
+  for(x = 0; x < n5p_skipped; x++) ad->rfline_el[x] = '-';
+  memcpy(ad->rfline_el + n5p_skipped, p7ad->rfline, ad->N);
+  for(x = ad->N + n5p_skipped; x < ad->N_el; x++) ad->rfline_el[x] = '-';
+  ad->rfline_el[ad->N_el] = '\0';
 
   if(p7ad->ppline) { 
     for(x = 0; x < n5p_skipped; x++) ad->ppline_el[x] = '-';
@@ -845,7 +868,7 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
   ad2->rfline  = ad2->ncline = ad2->csline  = ad2->model = ad2->mline = ad2->aseq = ad2->ppline = NULL;
   ad2->cmname  = ad2->cmacc  = ad2->cmdesc  = NULL;
   ad2->sqname  = ad2->sqacc  = ad2->sqdesc  = NULL;
-  ad2->aseq_el = ad2->ppline_el = NULL;
+  ad2->aseq_el = ad2->rfline_el = ad2->ppline_el = NULL;
   ad2->mem     = NULL;
   ad2->memsize = 0;
 
@@ -862,7 +885,8 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
       ad2->mline     = ad2->mem + (ad->mline  - ad->mem);
       ad2->aseq      = ad2->mem + (ad->aseq   - ad->mem);
       ad2->ppline    = (ad->ppline ? ad2->mem + (ad->ppline - ad->mem) : NULL );
-      ad2->aseq_el   = ad2->mem + (ad->aseq_el- ad->mem);
+      ad2->aseq_el   = ad2->mem + (ad->aseq_el   - ad->mem);
+      ad2->rfline_el = ad2->mem + (ad->rfline_el - ad->mem);
       ad2->ppline_el = (ad->ppline_el ? ad2->mem + (ad->ppline_el - ad->mem) : NULL );
       ad2->N         = ad->N;
       ad2->N_el      = ad->N_el;
@@ -892,6 +916,7 @@ cm_alidisplay_Clone(const CM_ALIDISPLAY *ad)
       if ( esl_strdup(ad->aseq,      -1, &(ad2->aseq))      != eslOK) goto ERROR;
       if ( esl_strdup(ad->ppline,    -1, &(ad2->ppline))    != eslOK) goto ERROR;
       if ( esl_strdup(ad->aseq_el,   -1, &(ad2->aseq_el))   != eslOK) goto ERROR;
+      if ( esl_strdup(ad->rfline_el, -1, &(ad2->rfline_el)) != eslOK) goto ERROR;
       if ( esl_strdup(ad->ppline_el, -1, &(ad2->ppline_el)) != eslOK) goto ERROR;
       ad2->N    = ad->N;
       ad2->N_el = ad->N_el;
@@ -952,6 +977,7 @@ cm_alidisplay_Sizeof(const CM_ALIDISPLAY *ad)
   if (ad->ppline)    n += ad->N+1; 
   if (ad->ncline)    n += ad->N+1; 
   n += ad->N_el+1;              /* aseq_el */
+  n += ad->N_el+1;              /* rfline_el */
   if (ad->ppline_el) n += ad->N_el+1; 
   n += 1 + strlen(ad->cmname);	  
   n += 1 + strlen(ad->cmacc);	/* optional acc, desc fields: when not present, just "" ("\0") */
@@ -984,6 +1010,7 @@ cm_alidisplay_Destroy(CM_ALIDISPLAY *ad)
       if (ad->aseq)      free(ad->aseq);
       if (ad->ppline)    free(ad->ppline);
       if (ad->aseq_el)   free(ad->aseq_el);
+      if (ad->rfline_el) free(ad->rfline_el);
       if (ad->ppline_el) free(ad->ppline_el);
       if (ad->cmname)    free(ad->cmname);
       if (ad->cmacc)     free(ad->cmacc);
@@ -1397,28 +1424,26 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   int         *a2u_map = NULL;  /* map of aligned to unaligned positions for updating tr->emitl, tr->emitr */
   int          x, ulen; 
 
-  if(cm->cmcons == NULL) ESL_FAIL(eslEINVAL, errbuf, "cm_alidisplay_BackConvert(): cm->cmcons is NULL");
+  if(cm->cmcons == NULL) ESL_FAIL(eslEINVAL, errbuf, "cm_alidisplay_Backconvert(): cm->cmcons is NULL");
 
   msa = esl_msa_Create(1, ad->N_el);
   memcpy(msa->aseq[0], ad->aseq_el, ad->N_el);
-  /*if((status = esl_strdup(ad->aseq_el, msa->alen, &(msa->aseq[0]))) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_BackConvert() out of memory");*/
+  if((status = esl_strdup(ad->rfline_el, msa->alen, &(msa->rf))) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_BackConvert() out of memory");
+  /*if((status = esl_strdup(ad->aseq_el, msa->alen, &(msa->aseq[0]))) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_Backconvert() out of memory");*/
   if(ad->ppline_el) { 
     ESL_ALLOC(msa->pp, sizeof(char *) * 1);
-    if((status = esl_strdup(ad->ppline_el, msa->alen, &(msa->pp[0]))) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_BackConvert() out of memory");
+    if((status = esl_strdup(ad->ppline_el, msa->alen, &(msa->pp[0]))) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_Backconvert() out of memory");
   }
   ESL_ALLOC(msa->ss_cons, sizeof(char) * (msa->alen+1));
-  ESL_ALLOC(msa->rf,      sizeof(char) * (msa->alen+1));
 
   /*cm_alidisplay_Dump(stdout, ad);*/
 
   upos = 0;
   for(apos = 0; apos < msa->alen; apos++) { 
     msa->ss_cons[apos] = (isupper(msa->aseq[0][apos]) || msa->aseq[0][apos] == '-') ? cm->cmcons->cstr[upos++] : '.'; 
-    msa->rf[apos]      = (isupper(msa->aseq[0][apos]) || msa->aseq[0][apos] == '-') ? 'x' : '.';
   }
   msa->ss_cons[msa->alen] = '\0';
-  msa->rf[msa->alen]      = '\0';
-  if(upos != cm->clen) ESL_XFAIL(eslERANGE, errbuf, "cm_alidisplay_BackConvert() failed to create temporary msa");
+  if(upos != cm->clen) ESL_XFAIL(eslERANGE, errbuf, "cm_alidisplay_Backconvert() failed to create temporary msa");
 #if 0 
   printf("upos: %d cm->clen: %d\n", upos, cm->clen);
 #endif
@@ -1428,7 +1453,8 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   if(ad->sqacc)  esl_msa_SetSeqAccession  (msa, 0, ad->sqacc,  -1);
   if(ad->sqdesc) esl_msa_SetSeqDescription(msa, 0, ad->sqdesc, -1);
 
-#if 0 
+  ///#if 0
+#if 1
   printf("ad->aseq_el:\n%s\n", ad->aseq_el);
   printf("msa->aseq[0]:\n%s\n", msa->aseq[0]);
   printf("msa->rf:\n%s\n", msa->rf);
@@ -1447,7 +1473,12 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
 
   ESL_ALLOC(aseq, (msa->alen+1) * sizeof(char));
   esl_abc_Textize(cm->abc, msa->ax[0], msa->alen, aseq);
-  tr = Transmogrify(cm, mtr, msa->ax[0], aseq, msa->alen);
+  /* change any EL emissions in aseq to '~' so Transmogrify deals with them appropriately */
+  for(apos = 0; apos < msa->alen; apos++) { 
+    if(msa->rf[apos] == '~') aseq[apos] = '~';
+  }
+
+  tr = Transmogrify(cm, mtr, msa->ax[0]);
   /* tr is in alignment coords, convert it to unaligned coords.
    * First we construct a map of aligned to unaligned coords, then
    * we use it to convert. 
@@ -1463,14 +1494,14 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
     if(tr->emitl[x] != -1) tr->emitl[x] = a2u_map[tr->emitl[x]];
     if(tr->emitr[x] != -1) tr->emitr[x] = a2u_map[tr->emitr[x]];
   }
-  if((status = esl_sq_FetchFromMSA(msa, 0, &sq)) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_BackConvert() unable to fetch seq from msa");
+  if((status = esl_sq_FetchFromMSA(msa, 0, &sq)) != eslOK) ESL_XFAIL(status, errbuf, "cm_alidisplay_Backconvert() unable to fetch seq from msa");
   if(msa->pp) {
     ESL_ALLOC(pp, sizeof(char) * (ulen+1));
     upos = 0;
     for(apos = 0; apos < msa->alen; apos++) { 
       if(a2u_map[apos+1] != -1) pp[upos++] = msa->pp[0][apos]; 
     }
-    if(upos+1 != ulen) ESL_XFAIL(eslERANGE, errbuf, "cm_alidisplay_BackConvert() failed to create temporary msa");
+    if(upos+1 != ulen) ESL_XFAIL(eslERANGE, errbuf, "cm_alidisplay_Backconvert() failed to create temporary msa");
   }
 
   esl_msa_Destroy(msa);

@@ -833,8 +833,159 @@ cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr, int will_never_localize)
 }
 
 
-
 /* Function: Transmogrify()
+ * Date:     SRE, Mon Jul 31 14:30:58 2000 [St. Louis]
+ *
+ * Purpose:  Construct a "fake" parsetree for a given aligned sequence (ax),
+ *           given a new CM structure (cm) and a guide tree (gtr).
+ *
+ * Args:     cm    - the new covariance model
+ *           gtr   - guide tree
+ *           dsq   - a digitized aligned sequence [1..L]
+ *
+ * Returns:  the individual parse tree. 
+ *           Caller is responsible for free'ing this.
+ */
+Parsetree_t *
+Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax)
+{
+  int          status;
+  Parsetree_t *tr;
+  int          node;		/* index of the node in *gtr* we're currently working on */
+  int          state;		/* index of a state in the *CM*                          */
+  int          type;		/* a unique statetype                                    */
+  ESL_STACK   *pda;             /* pushdown automaton for positions in tr  */
+  int          tidx;		/* index *in the parsetree tr* of the state we're supposed to attach to next */
+  int          i,j;		/* coords in aseq */
+
+  tr  = CreateParsetree(25);
+  pda = esl_stack_ICreate();
+
+  /* Because the gtr is already indexed in a preorder traversal,
+   * we can preorder traverse it easily w/ a for loop...
+   */
+  tidx = -1;			/* first state to attach to; -1 is special case for attaching root */
+  for (node = 0; node < cm->nodes; node++)
+    {
+      switch (gtr->state[node]) { /* e.g. switch on node type: */
+
+	/* The root node.
+	 * Assume ROOT_S=0, ROOT_IL=1, ROOT_IR=2.
+	 */
+      case ROOT_nd:
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], 0);
+	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
+	  if (! esl_abc_XIsGap(cm->abc, ax[i])) { 
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1);
+	  }
+	}
+	for (j = gtr->emitr[node]; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
+	  if (! esl_abc_XIsGap(cm->abc, ax[j])) {
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2);	
+	  }
+	}
+	break;
+
+	/* A bifurcation node.
+	 * Assume that we'll process the BEGL node next; push info
+	 * for BEGR onto the PDA.
+	 */
+      case BIF_nd:
+	state = CalculateStateIndex(cm, node, BIF_B);
+	tidx  = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	if((status = esl_stack_IPush(pda, tidx)) != eslOK) goto ERROR;    /* remember index in tr; we pop in BEGR */
+	break;
+
+      case MATP_nd:
+	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) {
+	  if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_D;
+	  else                                               type = MATP_MR;
+	} else {
+	  if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_ML;
+	  else                                               type = MATP_MP;
+	}
+	state = CalculateStateIndex(cm, node, type);
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+
+	state = CalculateStateIndex(cm, node, MATP_IL);
+	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++)
+	  if (! esl_abc_XIsGap(cm->abc, ax[i]))
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node]-1, state);
+
+	state = CalculateStateIndex(cm, node, MATP_IR);
+	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--)
+	  if (! esl_abc_XIsGap(cm->abc, ax[j]))
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);	
+	break;
+
+      case MATL_nd:
+	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) type = MATL_D;
+	else                                               type = MATL_ML;
+
+	state = CalculateStateIndex(cm, node, type);
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+
+	state = CalculateStateIndex(cm, node, MATL_IL);
+	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++)
+	  if (! esl_abc_XIsGap(cm->abc, ax[i]))
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
+	break;
+
+      case MATR_nd:
+	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATR_D;
+	else                                               type = MATR_MR;
+
+	state = CalculateStateIndex(cm, node, type);
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+
+	state = CalculateStateIndex(cm, node, MATR_IR);
+	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
+	  if (! esl_abc_XIsGap(cm->abc, ax[j])) {
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], j, state);
+	  }
+	}
+	break;
+
+      case BEGL_nd:
+	state = CalculateStateIndex(cm, node, BEGL_S);
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+			       gtr->emitl[node], gtr->emitr[node], state);
+	break;
+
+      case BEGR_nd:
+	esl_stack_IPop(pda, &tidx);	  /* recover parent bifurcation's index in trace */
+	
+	state = CalculateStateIndex(cm, node, BEGR_S);
+	tidx = InsertTraceNode(tr, tidx, TRACE_RIGHT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+
+	state = CalculateStateIndex(cm, node, BEGR_IL);
+	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
+	  if (! esl_abc_XIsGap(cm->abc, ax[i])) { 
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
+	  }
+	}
+	break;
+
+      case END_nd:
+	state = CalculateStateIndex(cm, node, END_E);
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, -1, -1, state);
+	break;
+
+      default: 
+	cm_Fail("bogus node type %d in Transmogrify()", gtr->state[node]);
+      }
+    }
+  esl_stack_Destroy(pda);
+  return tr;
+
+ ERROR:
+  FreeParsetree(tr);
+  cm_Fail("Memory allocation error.");
+  return NULL;	/* not reached */
+}
+
+#if 0 
+/* Function: OLD_Transmogrify()
  * Date:     SRE, Thu May 30 15:10:22 2002 [a coffee shop in Madison]
  *
  * Purpose:  Construct a "fake" tree for a given aligned sequence (aseq)
@@ -869,7 +1020,7 @@ cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr, int will_never_localize)
  *           Caller is responsible for free'ing this w/ FreeParsetree().
  */
 Parsetree_t *
-Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
+OLD_Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 {
   int          status;
   Parsetree_t *tr;
@@ -882,9 +1033,6 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
   int          started;		/* TRUE if we've transited out of ROOT     */
   int          ended;		/* TRUE if we've transited to EL and ended */
   int          nstarts;         /* # of local transits out of ROOT: <= 1   */
-  int         *localrun;        /* local alignment gap run lengths         */
-  int          need_leftside;
-  int          need_rightside;
 
   tr  = CreateParsetree(25);
   pda = esl_stack_ICreate();
@@ -893,20 +1041,15 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
   ended   = FALSE;
   nstarts = 0;
 
-  /* We preprocess the aseq to help with local alignment.
-   */
-  ESL_ALLOC(localrun, sizeof(int) * (alen+1));
-  localrun[0] = 0;
-  for (i = 0; i <= alen; i++)
-    if (i > 0 && aseq[i-1] == '~') localrun[i] = localrun[i-1]+1;
-    else                           localrun[i] = 0;
-
   /* Because the gtr is already indexed in a preorder traversal,
    * we can preorder traverse it easily w/ a for loop...
    */
   tidx = -1;	   /* first state to attach to; -1=special case for attaching root */
   for (node = 0; node < cm->nodes; node++)
     {
+      printf("\nHEYA node: %d (%4s)\n", node, Nodetype(cm->ndtype[node]));
+      ParsetreeDump(stdout, tr, cm, ax);
+
       /* A generic sanity check: we can't end if we haven't started.
        */
       if (ended && ! started) goto FAILURE;
@@ -969,18 +1112,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 	if((status = esl_stack_IPush(pda, tidx)) != eslOK) goto ERROR;    /* remember index in tr; we pop in BEGR */
 	break;
 
-	/* A MATP node.
-	 * If we see *,* in the seq, this is a local deletion.
-         *    If we haven't started yet, just skip the node.
-	 *    If we have ended already, just skip the node; 
-         *    If we haven't ended yet, end on an EL.
-         * (* in only one position is invalid input.)
-         * Else, this is a real state: emission or deletion.
-         *    If we thought we ended, that's invalid input.
-         *    Else, attach this guy. If it's a new start, it gets attached
-         *      to ROOT, and we bump nstarts; we should only do this once
-         *      on valid input. 
-	 */
+	/* A MATP node. */
       case MATP_nd:
 	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) {
 	  if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_D;
@@ -989,21 +1121,6 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 	  if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_ML;
 	  else                                               type = MATP_MP;
 	}
-
-	if (type == MATP_D 
-	    && aseq[gtr->emitl[node]-1] == '~' 
-	    && aseq[gtr->emitr[node]-1] == '~')
-	  {
-	    if (! started || ended)  break;
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
-				   gtr->emitl[node], gtr->emitr[node], cm->M);
-	    ended = TRUE;
-	    break;
-	  }
-	if (aseq[gtr->emitl[node]-1] == '~' || aseq[gtr->emitr[node]-1] == '~')
-	  goto FAILURE;
-
-	if (ended) goto FAILURE;
 	state = CalculateStateIndex(cm, node, type);
 	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
 			       gtr->emitl[node], gtr->emitr[node], state);	      
@@ -1041,15 +1158,6 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) type = MATL_D;
 	else                                               type = MATL_ML;
 
-	if (type == MATL_D && aseq[gtr->emitl[node]-1] == '~')
-	  {
-	    if (! started || ended) break;
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
-				   gtr->emitl[node], gtr->emitr[node], cm->M);
-	    ended = TRUE;
-	    break;
-	  }
-
 	if (ended) goto FAILURE;
 	state = CalculateStateIndex(cm, node, type);
 	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
@@ -1073,15 +1181,6 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
       case MATR_nd:
 	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATR_D;
 	else                                               type = MATR_MR;
-
-	if (type == MATR_D && aseq[gtr->emitl[node]-1] == '~')
-	  {
-	    if (! started || ended)  break;
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
-				   gtr->emitl[node], gtr->emitr[node], cm->M);
-	    ended = TRUE;
-	    break;
-	  }
 
 	if (ended) goto FAILURE;	
 	state = CalculateStateIndex(cm, node, type);
@@ -1153,7 +1252,6 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
       }
     }
   if (nstarts > 1) goto FAILURE;
-  free(localrun);
   esl_stack_Destroy(pda);
   return tr;
 
@@ -1169,6 +1267,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
   return NULL;			/* not reached */
 
 }
+#endif
 
 /* Function: ConsensusModelmaker()
  * EPN 08.29.06 based closely on HandModelMaker:
