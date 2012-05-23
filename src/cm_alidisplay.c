@@ -28,7 +28,8 @@
 
 #include "infernal.h"
 
-static int  bp_is_canonical(char lseq, char rseq);
+static int   bp_is_canonical(char lseq, char rseq);
+static float post_code_to_avg_pp(char postcode);
 
 /*****************************************************************
  * 1. The CM_ALIDISPLAY object
@@ -86,6 +87,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   int         lpost, rpost;	 /* chars in aligned posteriors, left, right  */
   int         do_left, do_right; /* flags to generate left, right             */
   float       tmpsc;             /* a temporary score */
+  float       ppavg;             /* average PP for string of contiguous EL emissions */
   int         cm_namelen, cm_acclen, cm_desclen;
   int         sq_namelen, sq_acclen, sq_desclen;
   int         len, n;
@@ -332,7 +334,9 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
     memset(ad->csline+pos,  '~', wtrunc_R);
     sprintf(ad->model+pos, "<[%*d]*", wtrunc_R-4, ntrunc_R);
     sprintf(ad->aseq+pos,  "<[%*s]*", wtrunc_R-4, "0");
-    /* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
+    if(adata->ppstr != NULL) { 
+      for(x = 0; x < wtrunc_R; x++) ad->ppline[pos+x] = '.';
+    }
     pos += wtrunc_R;
   }    
 
@@ -376,7 +380,25 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	memset(ad->csline+pos,  '~', numwidth+4);
 	sprintf(ad->model+pos, "*[%*d]*", numwidth, qinset);
 	sprintf(ad->aseq+pos, "*[%*d]*", numwidth, tinset);
-	/* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
+	if(adata->ppstr != NULL) { 
+	  /* calculate the single character PP code for the average posterior 
+	   * by averaging the average for the PP codes in ppstr (this gives
+	   * the correct PP code (I didn't think it was guaranteed to at first
+	   * but a simulation I performed couldn't produce a counterexample!
+	   * xref: ~nawrockie/notebook/12_0423_inf_final_stress_tests/00LOG; May 22, 2012
+	   */
+	  ppavg = 0.;
+	  for(x = tr->emitl[ti]; x <= tr->emitr[ti]; x++) { 
+	    ppavg += post_code_to_avg_pp(adata->ppstr[x-1]);
+	  }
+	  ppavg /= (float) (tr->emitr[ti]  - tr->emitl[ti]  + 1);
+	  ad->ppline[pos]   = '.';
+	  ad->ppline[pos+1] = '.';
+	  for(x = 0; x < (numwidth-1); x++) ad->ppline[pos+2+x] = '.';
+	  ad->ppline[pos+numwidth+1] = (ppavg + 0.05 >= 1.0) ? '*' :  (char) ((ppavg + 0.05) * 10.0) + '0';
+	  ad->ppline[pos+numwidth+2] = '.';
+	  ad->ppline[pos+numwidth+3] = '.';
+	}
 	pos += 4 + numwidth;
 	continue;
       }
@@ -582,7 +604,9 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
     memset(ad->csline+pos,  '~', wtrunc_L);
     sprintf(ad->model+pos, "*[%*d]>", wtrunc_L-4, ntrunc_L);
     sprintf(ad->aseq+pos,  "*[%*s]>", wtrunc_L-4, "0");
-    /* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
+    if(adata->ppstr != NULL) { 
+      for(x = 0; x < wtrunc_L; x++) ad->ppline[pos+x] = '.';
+    }
     pos += wtrunc_L; 
   }
 
@@ -971,6 +995,34 @@ cm_alidisplay_Destroy(CM_ALIDISPLAY *ad)
   free(ad);
 }
 
+/* Function: post_code_to_avg_pp()
+ * Date:     EPN, Tue May 22 20:43:46 2012
+ *
+ * Purpose:  Return the average posterior probability
+ *           for the given posterior single character
+ *           code <postcode>.
+ *
+ * 
+ */
+float
+post_code_to_avg_pp(char postcode)
+{
+  switch (postcode) { 
+  case '*': return 0.975; break;
+  case '9': return 0.9;   break;
+  case '8': return 0.8;   break;
+  case '7': return 0.7;   break;
+  case '6': return 0.6;   break;
+  case '5': return 0.5;   break;
+  case '4': return 0.4;   break;
+  case '3': return 0.3;   break;
+  case '2': return 0.2;   break;
+  case '1': return 0.1;   break;
+  case '0': return 0.025; break;
+  default:  return 0.0;
+  }
+  return 0.; /* NOT REACHED */
+}
 
 /* Function: bp_is_canonical
  * Date:     EPN, Wed Oct 14 06:17:27 2009

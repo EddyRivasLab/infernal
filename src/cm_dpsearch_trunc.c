@@ -2663,13 +2663,14 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
   for (v = cm->M-1; v > 0; v--) { /* almost down to ROOT_S, we handle that differently */
     float const *esc_v   = cm->oesc[v]; /* emission scores for state v */
     float const *tsc_v   = cm->tsc[v];  /* transition scores for state v */
-    float const *lmesc_v = cm->lmesc[v];
-    float const *rmesc_v = cm->rmesc[v];
+    float const *lmesc_v = cm->lmesc[v]; /* marginal left  emission scores for state v */
+    float const *rmesc_v = cm->rmesc[v]; /* marginal right emission scores for state v */
     sd     = StateDelta(cm->sttype[v]);
+    sdl    = StateLeftDelta(cm->sttype[v]);
     sdr    = StateRightDelta(cm->sttype[v]);
     jn     = jmin[v];
     jx     = jmax[v];
-    do_J_v = cp9b->Jvalid[v];
+    do_J_v = cp9b->Jvalid[v]           ? TRUE : FALSE;
     do_L_v = cp9b->Lvalid[v] && fill_L ? TRUE : FALSE;
     do_R_v = cp9b->Rvalid[v] && fill_R ? TRUE : FALSE;
     do_T_v = cp9b->Tvalid[v] && fill_T ? TRUE : FALSE;
