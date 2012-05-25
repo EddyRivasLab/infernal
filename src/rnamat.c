@@ -950,7 +950,7 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa)
     {
       if (esl_abc_CIsGap(fullmat->abc, msa->aseq[0][apos])) continue; /* we can still have gaps in 1 seq MSA, they'll
 								       * be dealt with (ignored) in 
-								       * modelmaker.c:HandModelMaker() */
+								       * modelmaker.c:HandModelmaker() */
       mate = ct[(apos+1)]; /* apos is 0..alen-1, ct is 1..alen, so mate will be 1..alen now */
       if(mate != 0 && esl_abc_CIsGap(msa_abc, msa->aseq[0][(mate-1)])) mate = 0; 
       /* apos is a base paired res, but mate is a gap, pretend apos is SS for our purposes here */

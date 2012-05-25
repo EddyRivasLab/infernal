@@ -1622,9 +1622,10 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dat
   int            apos, uapos, cpos; /* counter over aligned, unaligned, consensus positions */
   int           *a2u_map   = NULL;  /* map from aligned to unaligned positions */
   Parsetree_t   *mtr       = NULL;  /* the guide tree for mapali */
-  CM_ALNDATA  **dataA     = NULL;  /* includes ptrs to sq and parsetrees */
+  CM_ALNDATA   **dataA     = NULL;  /* includes ptrs to sq and parsetrees */
   char          *aseq      = NULL;  /* aligned sequence, req'd by Transmogrify() */
   char          *ss        = NULL;  /* msa's SS_cons, if there is one, dealigned to length cm->clen */
+  int           *used_el   = NULL;  /* [1..msa->alen] used_el[apos] = TRUE if apos is modeled by EL state, else FALSE */
   
   status = eslx_msafile_Open(&abc, msafile, NULL, eslMSAFILE_UNKNOWN, NULL, &afp);
   if (status != eslOK) eslx_msafile_OpenFailure(afp, status);
@@ -1641,7 +1642,7 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dat
   ESL_ALLOC(dataA, sizeof(CM_ALNDATA *) * msa->nseq);
   for(i = 0; i < msa->nseq; i++) dataA[i] = cm_alndata_Create();
 
-  /* get SS_cons from the msa possibly for --mapstr, important to do it here, before it is potentially deknotted in HandModelMaker() */
+  /* get SS_cons from the msa possibly for --mapstr, important to do it here, before it is potentially deknotted in HandModelmaker() */
   if(msa->ss_cons != NULL) { 
     ESL_ALLOC(ss, sizeof(char) * (cm->clen+1));
     ss[cm->clen] = '\0';
@@ -1658,6 +1659,7 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dat
   /* create a guide tree, which we'll need to convert aligned sequences to parsetrees */
   status = HandModelmaker(msa, errbuf, 
 			  TRUE,  /* use_rf */
+			  FALSE, /* use_el, no */
 			  FALSE, /* use_wts, irrelevant */
 			  0.5,   /* gapthresh, irrelevant */
 			  NULL,  /* returned CM, irrelevant */
@@ -1665,13 +1667,15 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dat
   if(status != eslOK) return status;
 
   /* create a parsetree from each aligned sequence */
-  ESL_ALLOC(aseq,    sizeof(char) * (msa->alen+1));
+  ESL_ALLOC(used_el, sizeof(int)  * (msa->alen+1));
+  used_el[0] = FALSE; /* invalid */
+  for(apos = 0; apos < msa->alen; apos++) { 
+    used_el[apos+1] = (msa->rf[apos] == '~') ? TRUE : FALSE;
+  }
   ESL_ALLOC(a2u_map, sizeof(int)  * (msa->alen+1));
   a2u_map[0] = -1; /* invalid */
   for (i = 0; i < msa->nseq; i++) { 
-    /* we need a text sequence in addition to the digitized sequence for Transmogrify() */
-    esl_abc_Textize(msa->abc, msa->ax[i], msa->alen, aseq);
-    dataA[i]->tr = Transmogrify(cm, mtr, msa->ax[i]);
+    if((status = Transmogrify(cm, errbuf, mtr, msa->ax[i], used_el, msa->alen, &(dataA[i]->tr))) != eslOK) return status;
     /* dataA[i]->tr is in alignment coords, convert it to unaligned coords.
      * First we construct a map of aligned to unaligned coords, then
      * we use it to convert. 
@@ -1684,7 +1688,7 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dat
       if(dataA[i]->tr->emitl[x] != -1) dataA[i]->tr->emitl[x] = a2u_map[dataA[i]->tr->emitl[x]];
       if(dataA[i]->tr->emitr[x] != -1) dataA[i]->tr->emitr[x] = a2u_map[dataA[i]->tr->emitr[x]];
     }
-  }   
+  }
 
   /* get sequences */
   for (i = 0; i < msa->nseq; i++) esl_sq_FetchFromMSA(msa, i, &(dataA[i]->sq));
@@ -1697,7 +1701,7 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dat
   esl_msa_Destroy(msa);
   FreeParsetree(mtr);
   free(a2u_map);
-  free(aseq);
+  free(used_el);
 
   return eslOK;
 

@@ -304,12 +304,6 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   strcpy(ad->rfline_el, tmpmsa->rf);
   if(adata->ppstr) strcpy(ad->ppline_el, tmpmsa->pp[0]);
 
-#if 1
-  printf("HEYA ad->aseq_el:   %s\n", ad->aseq_el);
-  printf("HEYA ad->rfline_el: %s\n", ad->rfline_el);
-  printf("HEYA ad->ppline_el: %s\n", ad->ppline_el);
-#endif 
-
   /* Set clen */
   ad->clen = cm->clen;
 
@@ -629,11 +623,6 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   for(x = tr->emitl[0] + seqoffset - 1; x <= tr->emitr[0] + seqoffset - 1; x++) {
     esl_abc_FCount(cm->abc, act, sq->dsq[x], 1.0);
   }
-
-#if 1
-  printf("HEYA ad->aseq:      %s\n", ad->aseq);
-  printf("HEYA ad->model:     %s\n", ad->model);
-#endif 
 
   if(cm->rf != NULL) ad->rfline[ad->N] = '\0';
   ad->ncline[ad->N] = '\0';
@@ -1422,6 +1411,7 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   char        *aseq = NULL;     /* an aligned string, a text sequence */
   int          apos, upos;      /* counter over aligned, unaligned positions */
   int         *a2u_map = NULL;  /* map of aligned to unaligned positions for updating tr->emitl, tr->emitr */
+  int         *used_el = NULL;  /* [1..msa->alen] used_el[apos] = TRUE if apos is modeled by EL state, else FALSE */
   int          x, ulen; 
 
   if(cm->cmcons == NULL) ESL_FAIL(eslEINVAL, errbuf, "cm_alidisplay_Backconvert(): cm->cmcons is NULL");
@@ -1453,8 +1443,7 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   if(ad->sqacc)  esl_msa_SetSeqAccession  (msa, 0, ad->sqacc,  -1);
   if(ad->sqdesc) esl_msa_SetSeqDescription(msa, 0, ad->sqdesc, -1);
 
-  ///#if 0
-#if 1
+#if 0
   printf("ad->aseq_el:\n%s\n", ad->aseq_el);
   printf("msa->aseq[0]:\n%s\n", msa->aseq[0]);
   printf("msa->rf:\n%s\n", msa->rf);
@@ -1464,21 +1453,23 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   printf("msa->aseq[0]:\n%s\n", msa->aseq[0]);
   printf("msa->rf:\n%s\n", msa->rf);
   printf("msa->ss_cons:\n%s\n", msa->ss_cons);
+
 #endif
 
   if((status = esl_msa_Digitize(cm->abc, msa, errbuf)) != eslOK) goto ERROR;
 
-                                       /* use_rf? */
-  if((status = HandModelmaker(msa, errbuf, TRUE, FALSE, 1.0, NULL, &mtr)) != eslOK) goto ERROR;
+  if((status = HandModelmaker(msa, errbuf, 
+			      TRUE, /* use_rf */ 
+			      TRUE, /* use_el */
+			      FALSE, 1.0, NULL, &mtr)) != eslOK) goto ERROR;
 
-  ESL_ALLOC(aseq, (msa->alen+1) * sizeof(char));
-  esl_abc_Textize(cm->abc, msa->ax[0], msa->alen, aseq);
+  ESL_ALLOC(used_el, (msa->alen+1) * sizeof(int));
   /* change any EL emissions in aseq to '~' so Transmogrify deals with them appropriately */
+  used_el[0] = FALSE; 
   for(apos = 0; apos < msa->alen; apos++) { 
-    if(msa->rf[apos] == '~') aseq[apos] = '~';
+    used_el[apos+1] = (msa->rf[apos] == '~') ? TRUE : FALSE;
   }
-
-  tr = Transmogrify(cm, mtr, msa->ax[0]);
+  if((status = Transmogrify(cm, errbuf, mtr, msa->ax[0], used_el, msa->alen, &tr)) != eslOK) goto ERROR;
   /* tr is in alignment coords, convert it to unaligned coords.
    * First we construct a map of aligned to unaligned coords, then
    * we use it to convert. 
@@ -1505,6 +1496,7 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   }
 
   esl_msa_Destroy(msa);
+  free(used_el);
   free(a2u_map);
   FreeParsetree(mtr);
   free(aseq);

@@ -2261,15 +2261,16 @@ int
 Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr)
 {
   int           status;
-  int           i;	      /* counter over aseqs       */
-  int           apos;         /*   aligned position index */
-  int           uapos;        /* unaligned position index */
-  int           x;            /* counter of parsetree nodes */
-  int          *map   = NULL; /* for current seq, [0..msa->alen] map from aligned posns to unaligned (non-gap) posns */
-  char         *uaseq = NULL; /* current seq, dealigned from the MSA */
-  char         *aseq  = NULL; /* current seq, aligned text */
-  Parsetree_t **tr    = NULL; /* [0..msa->nseq-1] new parsetrees, one per seq in msa */
-  ESL_SQ      **sq    = NULL; /* [0..msa->nseq-1] new ESL_SQ objects, one per seq in msa */
+  int           i;	        /* counter over aseqs       */
+  int           apos;           /*   aligned position index */
+  int           uapos;          /* unaligned position index */
+  int           x;              /* counter of parsetree nodes */
+  int          *map     = NULL; /* for current seq, [0..msa->alen] map from aligned posns to unaligned (non-gap) posns */
+  int          *used_el = NULL; /* [0..msa->alen] used_el[apos] is TRUE if position apos is modeled by EL state, FALSE if not */
+  char         *uaseq   = NULL; /* current seq, dealigned from the MSA */
+  char         *aseq    = NULL; /* current seq, aligned text */
+  Parsetree_t **tr      = NULL; /* [0..msa->nseq-1] new parsetrees, one per seq in msa */
+  ESL_SQ      **sq      = NULL; /* [0..msa->nseq-1] new ESL_SQ objects, one per seq in msa */
 
   /* Contract check */
   if(msa == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "Alignment2Parsetrees() msa is NULL.\n");
@@ -2278,9 +2279,20 @@ Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL
 
   if(ret_tr != NULL) ESL_ALLOC(tr, (sizeof(Parsetree_t *) * msa->nseq));
   if(ret_sq != NULL) ESL_ALLOC(sq, (sizeof(ESL_SQ *)      * msa->nseq));
-  ESL_ALLOC(aseq,  sizeof(char) * (msa->alen+1));
-  ESL_ALLOC(map,   sizeof(int)  * (msa->alen+1));
+  ESL_ALLOC(aseq,    sizeof(char) * (msa->alen+1));
+  ESL_ALLOC(map,     sizeof(int)  * (msa->alen+1));
+  ESL_ALLOC(used_el, sizeof(int)  * (msa->alen+1));
   map[0] = -1; /* invalid */
+  used_el[0] = FALSE; /* invalid */
+  if(msa->rf != NULL) { 
+    for(apos = 0; apos < msa->alen; apos++) { 
+      used_el[apos+1] = (msa->rf[apos] == '~') ? TRUE : FALSE;
+    }
+  }
+  else { 
+    /* no msa->rf, impossible to tell if any columns are EL, assume none are */
+    esl_vec_ISet(used_el, msa->alen+1, FALSE);
+  }
 
   for (i = 0; i < msa->nseq; i++) { 
     uapos = 1;
@@ -2298,8 +2310,8 @@ Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL
     /* dealign seq */
     esl_strdealign(uaseq, uaseq, "-_.~", NULL);
     /* Transmogrify the aligned seq to get a parsetree */
-    if(ret_tr != NULL) { 
-      tr[i] = Transmogrify(cm, mtr, msa->ax[i]);
+   if(ret_tr != NULL) { 
+     if((status = Transmogrify(cm, errbuf, mtr, msa->ax[i], used_el, msa->alen, &(tr[i]))) != eslOK) return status;
       /*ParsetreeDump(stdout, tr[i], cm, msa->ax[i]);*/
       /* tr[i] is in alignment coords, convert it to unaligned coords, */
       for(x = 0; x < tr[i]->n; x++) { 
@@ -2322,6 +2334,7 @@ Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL
   }
   free(aseq);
   free(map);
+  free(used_el);
 
   /* tr and sq are only allocated if ret_tr and ret_sq were non-null */
   if(ret_tr != NULL) *ret_tr = tr;
@@ -2330,9 +2343,10 @@ Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL
   return eslOK;
 
  ERROR:
-  if(map != NULL )  free(map);
-  if(uaseq != NULL) free(uaseq);
-  if(aseq != NULL)  free(aseq);
+  if(map     != NULL) free(map);
+  if(used_el != NULL) free(used_el);
+  if(uaseq   != NULL) free(uaseq);
+  if(aseq    != NULL) free(aseq);
   return status;
 }
 
