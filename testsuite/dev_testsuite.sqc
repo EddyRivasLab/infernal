@@ -207,10 +207,10 @@
 1  exercise  align/help/1       @src/cmalign@ -h
 
 1  exercise  align/t/1          @src/cmalign@ %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align/t/2          @src/cmalign@ -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align/t/2          @src/cmalign@ -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 2  exercise  align/v/1          @src/cmalign@ %VAULT.CM% !testsuite/vault.fa!
-2  exercise  align/v/2          @src/cmalign@ -l %VAULT.CM% !testsuite/vault.fa!
+2  exercise  align/v/2          @src/cmalign@ -g %VAULT.CM% !testsuite/vault.fa!
 
 # cmcalibrate exercises
 1  exercise  calibrate/help/1   @src/cmcalibrate@ -h
@@ -287,31 +287,30 @@
 1  exercise  align:t/stdin/seq    cat !testsuite/emitted-tRNA.fa! | @src/cmalign@  %TRNA.CM% -
 1  fail      align:t/stdin/both   cat !testsuite/emitted-tRNA.fa! | @src/cmalign@  - -
 1  exercise  align:t/o            @src/cmalign@  -o %TMPOUT% %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/l            @src/cmalign@  -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/l            @src/cmalign@  -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 1  exercise  align:build/pkhav    @src/cmbuild@ -F --wnone %PKHAV.CM% !testsuite/PK-HAV.sto!
 1  exercise  align:pkhav          @src/cmalign@  %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
 1  exercise  align:pkhav/map      @src/cmalign@  --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
 1  exercise  align:pkhav/mapstr   @src/cmalign@  --mapstr --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
-1  exercise  align:pkhav/l        @src/cmalign@  -l %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
-1  exercise  align:pkhav/l/map    @src/cmalign@  -l --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
-1  exercise  align:pkhav/l/mapstr @src/cmalign@  -l --mapstr --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
+1  exercise  align:pkhav/l        @src/cmalign@  -g %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
+1  exercise  align:pkhav/l/map    @src/cmalign@  -g --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
+1  exercise  align:pkhav/l/mapstr @src/cmalign@  -g --mapstr --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
 
 1  exercise  align:t/cpu0         @src/cmalign@  --cpu 0 %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 1  exercise  align:t/tau          @src/cmalign@  --tau 1E-4  %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/tau2         @src/cmalign@  --tau 1E-13 %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/mxsize       @src/cmalign@  --mxsize 128. %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/mxsize2      @src/cmalign@  --mxsize 0.10 %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/mxsize2      @src/cmalign@  --mxsize 0.20 %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/fixedtau     @src/cmalign@  --fixedtau %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  fail      align:t/fixedtau     @src/cmalign@  --mxsize 0.10 --fixedtau %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/xtau         @src/cmalign@  --mxsize 0.10 --xtau 5.0 %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/maxtau       @src/cmalign@  --mxsize 0.10 --maxtau 0.001 %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  fail      align:t/maxtau2      @src/cmalign@  --mxsize 0.10 --maxtau 1E-6 %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  fail      align:t/fixedtau     @src/cmalign@  --mxsize 0.20 --fixedtau %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/maxtau       @src/cmalign@  --mxsize 0.20 --maxtau 0.001 %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  fail      align:t/maxtau2      @src/cmalign@  --mxsize 0.20 --maxtau 1E-6 %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 1  exercise  align:t/tfile        @src/cmalign@  --tfile  %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/ifile        @src/cmalign@  --ifile  %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/elfile       @src/cmalign@  -l --elfile %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/elfile       @src/cmalign@  --elfile %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/sfile        @src/cmalign@  --sfile  %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 1  exercise  align:t/dnaout       @src/cmalign@  --dnaout    %TRNA.CM% !testsuite/emitted-tRNA.fa!
@@ -339,60 +338,60 @@
 # Each algorithm option with 8 seperate combinations 
 # of model locality, truncation, and banding:
 #
-# 'g' : global
 # 'l' : local
+# 'g' : global
 # 'yt': truncated
 # 'nt': not truncated
 # 'hb': HMM banded
 # 'nb': non-banded
 
 # --optacc (default)
-1  exercise  align:t/oa/g/yt/hb  @src/cmalign@  --optacc                          %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/oa/g/yt/nb  @src/cmalign@  --optacc --nonbanded              %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/oa/g/nt/hb  @src/cmalign@  --optacc             --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/oa/g/nt/nb  @src/cmalign@  --optacc --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/oa/l/yt/hb  @src/cmalign@  --optacc                       -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/oa/l/yt/nb  @src/cmalign@  --optacc --nonbanded           -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/oa/l/nt/hb  @src/cmalign@  --optacc             --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/oa/l/nt/nb  @src/cmalign@  --optacc --nonbanded --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/l/yt/hb  @src/cmalign@  --optacc                          %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/l/yt/nb  @src/cmalign@  --optacc --nonbanded              %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/l/nt/hb  @src/cmalign@  --optacc             --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/l/nt/nb  @src/cmalign@  --optacc --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/g/yt/hb  @src/cmalign@  --optacc                       -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/g/yt/nb  @src/cmalign@  --optacc --nonbanded           -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/g/nt/hb  @src/cmalign@  --optacc             --notrunc -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/oa/g/nt/nb  @src/cmalign@  --optacc --nonbanded --notrunc -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # --cyk
-1  exercise  align:t/cyk/g/yt/hb  @src/cmalign@  --cyk                          %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/cyk/g/yt/nb  @src/cmalign@  --cyk --nonbanded              %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/cyk/g/nt/hb  @src/cmalign@  --cyk             --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/cyk/g/nt/nb  @src/cmalign@  --cyk --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/cyk/l/yt/hb  @src/cmalign@  --cyk                       -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/cyk/l/yt/nb  @src/cmalign@  --cyk --nonbanded           -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/cyk/l/nt/hb  @src/cmalign@  --cyk             --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/cyk/l/nt/nb  @src/cmalign@  --cyk --nonbanded --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/l/yt/hb  @src/cmalign@  --cyk                          %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/l/yt/nb  @src/cmalign@  --cyk --nonbanded              %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/l/nt/hb  @src/cmalign@  --cyk             --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/l/nt/nb  @src/cmalign@  --cyk --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/g/yt/hb  @src/cmalign@  --cyk                       -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/g/yt/nb  @src/cmalign@  --cyk --nonbanded           -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/g/nt/hb  @src/cmalign@  --cyk             --notrunc -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/cyk/g/nt/nb  @src/cmalign@  --cyk --nonbanded --notrunc -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # --sample (default seed)a
-1  exercise  align:t/smp/g/yt/hb  @src/cmalign@  --sample --cpu 0                           %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp/g/yt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded              %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp/g/nt/hb  @src/cmalign@  --sample --cpu 0              --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp/g/nt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp/l/yt/hb  @src/cmalign@  --sample --cpu 0                        -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp/l/yt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded           -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp/l/nt/hb  @src/cmalign@  --sample --cpu 0              --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp/l/nt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/l/yt/hb  @src/cmalign@  --sample --cpu 0                           %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/l/yt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded              %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/l/nt/hb  @src/cmalign@  --sample --cpu 0              --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/l/nt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/g/yt/hb  @src/cmalign@  --sample --cpu 0                        -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/g/yt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded           -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/g/nt/hb  @src/cmalign@  --sample --cpu 0              --notrunc -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp/g/nt/nb  @src/cmalign@  --sample --cpu 0  --nonbanded --notrunc -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # --sample (seed 33)
-1  exercise  align:t/smp2/g/yt/hb  @src/cmalign@  --sample --cpu 0 --seed 33                           %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp2/g/yt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded              %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp2/g/nt/hb  @src/cmalign@  --sample --cpu 0 --seed 33              --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp2/g/nt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp2/l/yt/hb  @src/cmalign@  --sample --cpu 0 --seed 33                        -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp2/l/yt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded           -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp2/l/nt/hb  @src/cmalign@  --sample --cpu 0 --seed 33              --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/smp2/l/nt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/l/yt/hb  @src/cmalign@  --sample --cpu 0 --seed 33                           %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/l/yt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded              %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/l/nt/hb  @src/cmalign@  --sample --cpu 0 --seed 33              --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/l/nt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/g/yt/hb  @src/cmalign@  --sample --cpu 0 --seed 33                        -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/g/yt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded           -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/g/nt/hb  @src/cmalign@  --sample --cpu 0 --seed 33              --notrunc -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/smp2/g/nt/nb  @src/cmalign@  --sample --cpu 0 --seed 33  --nonbanded --notrunc -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
-# --sub (requires --notrunc, incompatible with -l)
-1  exercise  align:t/sub/g/nt/hb  @src/cmalign@  --sub             --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/sub/g/nt/nb  @src/cmalign@  --sub --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+# --sub (requires --notrunc and -g)
+1  exercise  align:t/sub/l/nt/hb  @src/cmalign@  --sub             --notrunc -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/sub/l/nt/nb  @src/cmalign@  --sub --nonbanded --notrunc -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # --small (requires --cyk,--noprob,--nonbanded,--notrunc)
-1  exercise  align:t/sml/g/nt/nb  @src/cmalign@  --small --cyk --noprob --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/sml/l/nt/nb  @src/cmalign@  --small --cyk --noprob --nonbanded --notrunc -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/sml/l/nt/nb  @src/cmalign@  --small --cyk --noprob --nonbanded --notrunc    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/sml/g/nt/nb  @src/cmalign@  --small --cyk --noprob --nonbanded --notrunc -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 ##################################################################
 ##################################################################
@@ -1300,7 +1299,6 @@
 1  exercise  scan:v/1k/cp9noel    @src/cmscan@  --cp9noel %V.CM% %V1K%
 1  exercise  scan:v/1k/cp9gloc    @src/cmscan@  --cp9gloc %V.CM% %V1K%
 1  exercise  scan:v/1k/null2      @src/cmscan@  --null2 %V.CM% %V1K%
-1  exercise  scan:4/100k/xtau     @src/cmscan@  --xtau 4 %4.CM% %4100K%
 1  exercise  scan:4/100k/maxtau   @src/cmscan@  --maxtau 0.3 %4.CM% %4100K%
 1  exercise  scan:v/1k/seed0      @src/cmscan@  --seed 0 %V.CM% %V1K%
 1  exercise  scan:v/1k/seed1      @src/cmscan@  --seed 1 %V.CM% %V1K%
@@ -1579,7 +1577,6 @@
 1  exercise  search:v/1k/cp9noel    @src/cmsearch@  --cp9noel %V.CM% %V1K%
 1  exercise  search:v/1k/cp9gloc    @src/cmsearch@  --cp9gloc %V.CM% %V1K%
 1  exercise  search:v/1k/null2      @src/cmsearch@  --null2 %V.CM% %V1K%
-1  exercise  search:4/100k/xtau     @src/cmsearch@  --xtau 4 %4.CM% %4100K%
 1  exercise  search:4/100k/maxtau   @src/cmsearch@  --maxtau 0.4 %4.CM% %4100K%
 1  exercise  search:v/1k/seed0      @src/cmsearch@  --seed 0 %V.CM% %V1K%
 1  exercise  search:v/1k/seed1      @src/cmsearch@  --seed 1 %V.CM% %V1K%

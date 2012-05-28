@@ -638,7 +638,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   ad->cfrom_span  = cfrom_span;
   ad->cto_span    = cto_span;
   ad->gc          = (act[1] + act[2]) / (float) (tr->emitr[0]- tr->emitl[0] + 1);
-  
+
   esl_stack_Destroy(pda);
   if(tmpmsa != NULL)  esl_msa_Destroy(tmpmsa);
   if(act    != NULL)  free(act);
@@ -776,18 +776,21 @@ cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seq
   strcpy(ad->aseq,    p7ad->aseq);
   if(p7ad->ppline) strcpy(ad->ppline,  p7ad->ppline);
 
-  /* Create aseq_el, rfline_el, and ppline_el, these are copies of
-   * p7->aseq and p7->ppline with n5p_skipped '-' characters prepended
-   * and n3p_skipped '-' characters appended.
+  /* Create aseq_el, rfline_el, and ppline_el. aseq_el and ppline_el
+   * are copies of p7ad->aseq p7ad->ppline with n5p_skipped '-'
+   * characters prepended and n3p_skipped '-' characters appended.
+   * rfline_el is a copy of p7ad->rfline but with 'x' instead
+   * '-' (to indicate the skipped positions were match positions).
    */
   for(x = 0; x < n5p_skipped; x++) ad->aseq_el[x] = '-';
   memcpy(ad->aseq_el + n5p_skipped, p7ad->aseq, ad->N);
   for(x = ad->N + n5p_skipped; x < ad->N_el; x++) ad->aseq_el[x] = '-';
   ad->aseq_el[ad->N_el] = '\0';
 
-  for(x = 0; x < n5p_skipped; x++) ad->rfline_el[x] = '-';
-  memcpy(ad->rfline_el + n5p_skipped, p7ad->rfline, ad->N);
-  for(x = ad->N + n5p_skipped; x < ad->N_el; x++) ad->rfline_el[x] = '-';
+  for(x = 0; x < n5p_skipped; x++) ad->rfline_el[x] = 'x';
+  /* copy p7ad->model NOT p7ad->rfline into p7ad->rfline_el (p7ad->rfline is not mandatory) */
+  memcpy(ad->rfline_el + n5p_skipped, p7ad->model, ad->N);
+  for(x = ad->N + n5p_skipped; x < ad->N_el; x++) ad->rfline_el[x] = 'x';
   ad->rfline_el[ad->N_el] = '\0';
 
   if(p7ad->ppline) { 
@@ -1169,8 +1172,6 @@ cm_alidisplay_DecodePostProb(char pc)
   else if (pc == '.') return 0.0;
   else                return ((float) (pc - '0') / 10.);
 }
-
-
 
 /* Function:  cm_alidisplay_Print()
  * Synopsis:  Human readable output of <CM_ALIDISPLAY>

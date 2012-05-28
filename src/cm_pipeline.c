@@ -1453,7 +1453,6 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 	    (int) (pli->acct[PLI_PASS_HMM_ONLY_ANY].n_output));
   }
   if(w != NULL) esl_stopwatch_Display(ofp, w, "# CPU time: ");
-  fprintf(ofp, "//\n");
 
   return eslOK;
 }

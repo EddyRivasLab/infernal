@@ -191,10 +191,10 @@
 1  exercise  align/help/1       @src/cmalign@ -h
 
 1  exercise  align/t/1          @src/cmalign@ %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align/t/2          @src/cmalign@ -l %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align/t/2          @src/cmalign@ -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 2  exercise  align/v/1          @src/cmalign@ %VAULT.CM% !testsuite/vault.fa!
-2  exercise  align/v/2          @src/cmalign@ -l %VAULT.CM% !testsuite/vault.fa!
+2  exercise  align/v/2          @src/cmalign@ -g %VAULT.CM% !testsuite/vault.fa!
 
 # cmcalibrate exercises
 1  exercise  calibrate/help/1   @src/cmcalibrate@ -h

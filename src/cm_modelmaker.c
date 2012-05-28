@@ -197,6 +197,7 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
 
   ESL_ALLOC(elassign, sizeof(int) * (msa->alen+1));
   if (use_el) { 
+    elassign[0] = FALSE; /* out of bounds */
     for (apos = 1; apos <= msa->alen; apos++)
       elassign[apos] = (esl_abc_CIsMissing(msa->abc, msa->rf[apos-1])) ? TRUE : FALSE;
     /* sanity check */
@@ -289,10 +290,10 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
       if(use_el) { 
 	el_i = i; 
 	el_j = j; 
-	while(elassign[i] && i <= msa->alen) i++;
-	while(elassign[j] && j >= 1)         j--;
-	if(i > msa->alen) ESL_XFAIL(eslEINVAL, errbuf, "HandModelmaker(): problem with local ends (RF='~') during model construction"); 
-	if(j < 1)         ESL_XFAIL(eslEINVAL, errbuf, "HandModelmaker(): problem with local ends (RF='~') during model construction");
+	while(i <= msa->alen && elassign[i]) i++;
+	while(j >= 1         && elassign[j]) j--;
+	if(i > (msa->alen+1)) ESL_XFAIL(eslEINVAL, errbuf, "HandModelmaker(): problem with local ends (RF='~') during model construction"); 
+	if(j < 0)             ESL_XFAIL(eslEINVAL, errbuf, "HandModelmaker(): problem with local ends (RF='~') during model construction");
       }
       else { 
 	el_i = i;
@@ -512,7 +513,6 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
       cm->flags |= CMH_RF;
     }
   }
-
 
   if(matassign != NULL) free(matassign);
   if(elassign  != NULL) free(elassign);

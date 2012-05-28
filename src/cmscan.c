@@ -600,6 +600,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       esl_stopwatch_Stop(w);
 
       cm_pli_Statistics(ofp, info[0].pli, w);
+      fprintf(ofp, "//\n");
       fflush(ofp);
 
       cm_pipeline_Destroy(info[0].pli, NULL);
@@ -1167,6 +1168,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       
       esl_stopwatch_Stop(w);
       cm_pli_Statistics(ofp, pli, w);
+      fprintf(ofp, "//\n");
 
       cm_file_Close(cmfp);
       cm_pipeline_Destroy(pli, NULL);

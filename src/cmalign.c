@@ -95,14 +95,14 @@ static ESL_OPTIONS options[] = {
   /* name                   type       default env          range    toggles         reqs         incomp  help  docgroup*/
   { "-h",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show brief help on version and usage",               1 },
   { "-o",         eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "output the alignment to file <f>, not stdout",       1 },
-  { "-l",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "configure CM for local alignment [default: global]", 1 },
+  { "-g",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "configure CM for global alignment [default: local]", 1 },
   /* options controlling the alignment algorithm */
   { "--optacc",      eslARG_NONE,   "default", NULL,        NULL,    ALGOPTS,        NULL,     ICWOPTACC, "use the Holmes/Durbin optimal accuracy algorithm  [default]",     2 },
   { "--cyk",         eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,          NULL, "use the CYK algorithm",                                           2 },
   { "--sample",      eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,          NULL, "sample alignment of each seq from posterior distribution",        2 },
   { "--seed",         eslARG_INT,       "181", NULL,      "n>=0",       NULL,  "--sample",          NULL, "w/--sample, set RNG seed to <n> (if 0: one-time arbitrary seed)", 2 },
   { "--notrunc",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not use truncated alignment algorithm",                        2 },
-  { "--sub",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL, "--notrunc",          "-l", "build sub CM for columns b/t HMM predicted start/end points",     2 },
+  { "--sub",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,"--notrunc,-g",        NULL, "build sub CM for columns b/t HMM predicted start/end points",     2 },
   /* options affecting speed and memory */
   { "--hbanded",     eslARG_NONE,   "default", NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "accelerate using CM plan 9 HMM derived bands",               3 },
   { "--tau",         eslARG_REAL,      "1e-7", NULL, "1e-18<x<1",       NULL,        NULL,            "--nonbanded", "set tail loss prob for HMM bands to <x>",                    3 },
@@ -115,7 +115,7 @@ static ESL_OPTIONS options[] = {
   { "--sfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump alignment score information to file <f>",            4 },
   { "--tfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump individual sequence parsetrees to file <f>",         4 },
   { "--ifile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump information on per-sequence inserts to file <f>",    4 },
-  { "--elfile",   eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump information on per-sequence EL inserts to file <f>", 4 },
+  { "--elfile",   eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          "-g", "dump information on per-sequence EL inserts to file <f>", 4 },
   /* other expert options */
   { "--mapali",    eslARG_INFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "include alignment in file <f> (same ali that CM came from)", 5 },
   { "--mapstr",      eslARG_NONE,        NULL, NULL,        NULL,       NULL,  "--mapali",          NULL, "include structure (w/pknots) from <f> from --mapali <f>",    5 },
@@ -1436,7 +1436,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
 			                    fprintf(ofp, "# sequence file:                               %s\n", sqfile);
                                             fprintf(ofp, "# CM name:                                     %s\n", cm->name);
   if (esl_opt_IsUsed(go, "-o"))          {  fprintf(ofp, "# saving alignment to file:                    %s\n", esl_opt_GetString(go, "-o")); }
-  if (esl_opt_IsUsed(go, "-l"))          {  fprintf(ofp, "# model configuration:                         local\n"); }
+  if (esl_opt_IsUsed(go, "-g"))          {  fprintf(ofp, "# model configuration:                         global\n"); }
 
   if (esl_opt_IsUsed(go, "--optacc"))    {  fprintf(ofp, "# alignment algorithm:                         optimal accuracy\n"); }
   if (esl_opt_IsUsed(go, "--cyk"))       {  fprintf(ofp, "# alignment algorithm:                         CYK\n"); }
@@ -1582,7 +1582,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(  esl_opt_GetBoolean(go, "--nonbanded"))   cm->config_opts |= CM_CONFIG_NONBANDEDMX;
   if(! esl_opt_GetBoolean(go, "--notrunc"))     cm->config_opts |= CM_CONFIG_TRUNC;
   if(  esl_opt_GetBoolean(go, "--sub"))         cm->config_opts |= CM_CONFIG_SUB;   /* --sub requires --notrunc */
-  if(esl_opt_GetBoolean(go, "-l")) { 
+  if(! esl_opt_GetBoolean(go, "-g")) { 
     cm->config_opts |= CM_CONFIG_LOCAL;
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
     cm->config_opts |= CM_CONFIG_HMMEL;

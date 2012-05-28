@@ -697,6 +697,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	cm_Fail(errbuf);
       }
     }
+    fprintf(ofp, "//\n");
 
     free_info(tinfo);
     free(tinfo);
@@ -1357,6 +1358,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	mpi_failure(errbuf);
       }
     }
+    fprintf(ofp, "//\n");
 
     free_info(info);
     free(info);

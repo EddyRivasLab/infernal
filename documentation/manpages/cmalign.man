@@ -196,18 +196,21 @@ Save the alignment in Stockholm format to a file
 The default is to write it to standard output.
 
 .TP
-.B -l
-Turn on the local alignment algorithm, which allows the alignment
-to span two or more subsequences if necessary (e.g. if the structures
-of the query model and target sequence are only partially shared),
-allowing certain large insertions and deletions in the structure
-to be penalized differently than normal indels.
-The default is to globally align the query model to the target
-sequences. Local alignment is used by default in
-.B cmsearch 
-when aligning database hits, so 
-.B -l
-may be useful for reproducing those alignments.
+.B -g
+Configure the model for global alignment of the query model to the
+target sequences. By default, the model is configured for local
+alignment. Local alignments can contain large insertions and deletions
+called "local ends" in the structure to be penalized differently than
+normal indels. These are annotated as
+.I ~
+columns in the RF line of the output alignment. The
+.B -g 
+option can be used to disallow these local ends.
+The
+.B -g
+option is required if the 
+.B --sub 
+option is also used.
 
 .SH OPTIONS FOR CONTROLLING THE ALIGNMENT ALGORITHM
 
@@ -464,8 +467,6 @@ option is used.
 
 .TP
 .BI --elfile " <f>"
-Must be used in combination with 
-.B -l. 
 Dump per-sequence EL state (local end) insert information to file
 .I <f>.
 The format of the file is described by "#"-prefixed comment lines
