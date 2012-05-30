@@ -1864,9 +1864,10 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
  *                       
  * Returns:  <eslOK> on success.
  *
- * Throws:   <eslERANGE> if required mx or shmx size exceeds <size_limit>
- *           <eslEINVAL> if the full sequence is not within the bands for state 0
- *           In either case alignment has been aborted, ret_* variables are not valid
+ * Throws:   <eslERANGE>     if required mx or shmx size exceeds <size_limit>
+ *           <eslEINVAL>     if the full sequence is not within the bands for state 0
+ *           <eslEAMBIGUOUS> if no valid alignment is possible due to bands (score of sequence is IMPOSSIBLE)
+ *           In any of these three cases, alignment has been aborted, ret variables are not valid.
  */
 int
 cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx,
@@ -2893,8 +2894,10 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   free(el_scA);
   free(yvalidA);
 
-  /*printf("cm_TrCYKInsideAlignHB return sc: %f\n", sc);*/
   ESL_DPRINTF1(("cm_TrCYKInsideAlignHB return sc: %f\n", sc));
+
+  if(*ret_mode == TRMODE_UNKNOWN) ESL_FAIL(eslEAMBIGUOUS, errbuf, "cm_TrCYKInsideAlignHB() no valid parsetree found");
+
   return eslOK;
 
  ERROR: 
@@ -3401,9 +3404,10 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
  *
  * Returns:  <eslOK> on success.
  *
- * Throws:  <eslERANGE> if required CM_TR_HB_MX size exceeds <size_limit>
- *          <eslEINVAL> if the full sequence is not within the bands for state 0
- *          In either case alignment has been aborted, ret_sc is not valid
+ * Throws:   <eslERANGE>     if required CM_TR_HB_MX size exceeds <size_limit>
+ *           <eslEINVAL>     if the full sequence is not within the bands for state 0
+ *           <eslEAMBIGUOUS> if no valid alignment is possible due to bands (score of sequence is IMPOSSIBLE)
+ *           In any of these three cases, alignment has been aborted, ret variables are not valid.
  */
 int
 cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, 
@@ -4215,6 +4219,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
     }
   }
 
+
 #if eslDEBUGLEVEL >= 2
     FILE *fp1; fp1 = fopen("tmp.tru_ihbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, mode, TRUE); fclose(fp1);
 #endif
@@ -4228,6 +4233,9 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   if(ret_sc != NULL) *ret_sc = sc;
 
   ESL_DPRINTF1(("cm_TrInsideAlignHB() return sc: %f\n", sc));
+
+  if(*ret_mode == TRMODE_UNKNOWN) ESL_FAIL(eslEAMBIGUOUS, errbuf, "cm_TrInsideAlignHB() no valid parsetree found");
+  
   return eslOK;
 
  ERROR: 

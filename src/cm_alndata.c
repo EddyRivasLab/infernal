@@ -495,6 +495,10 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 
  ERROR: 
   cm->tau = save_tau;
+  if(cm->cp9b != NULL) { 
+    cm->cp9b->thresh1 = save_thresh1;
+    cm->cp9b->thresh2 = save_thresh2;
+  }
 #if DEBUGPIPELINE
   if(status == eslERANGE) printf("Returning eslERANGE, errbuf: %s\n", errbuf);
 #endif
