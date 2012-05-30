@@ -2207,6 +2207,7 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   int      j_sdr;       /* j - sdr */
   int      d_sd;        /* d - sd */
   float    tsc;         /* a transition score */
+  int      have_el;     /* TRUE if CM has local ends on, otherwise FALSE */
 
   /* the DP matrices */
   float ***alpha   = mx->dp;       /* pointer to the alpha DP matrix, we'll store optimal parse in  */
@@ -2235,7 +2236,8 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   if((status = cm_InitializeOptAccShadowDZero(cm, errbuf, yshadow, L)) != eslOK) return status;
 
   /* start with the EL state */
-  if(cm->flags & CMH_LOCAL_END && l_pp[cm->M] != NULL) { 
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  if(have_el && l_pp[cm->M] != NULL) { 
     for (j = 0; j <= L; j++) {
       alpha[cm->M][j][0] = l_pp[cm->M][0];
       i = j; 
@@ -2252,7 +2254,7 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
     sdr  = StateRightDelta(cm->sttype[v]);
 
     /* re-initialize if we can do a local end from v */
-    if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
+    if(have_el && NOT_IMPOSSIBLE(cm->endsc[v])) { 
       for (j = 0; j <= L; j++) {
 	/* copy values from saved EL deck */
 	for (d = sd; d <= j; d++) { 
@@ -2282,6 +2284,12 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 	  }
 	  alpha[v][j][d] = FLogsum(alpha[v][j][d], l_pp[v][i]);
 	  alpha[v][j][d] = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+	  /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
+	   * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+	   */
+	  if((! have_el) && yshadow[v][j][d] == USED_EL && d > sd) { 
+	    alpha[v][j][d] = IMPOSSIBLE;
+	  }
 	}
       }
     }
@@ -2300,6 +2308,12 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 	  }
 	  alpha[v][j][d] = FLogsum(alpha[v][j][d], r_pp[v][j]);
 	  alpha[v][j][d] = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+	  /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
+	   * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+	   */
+	  if((! have_el) && yshadow[v][j][d] == USED_EL && d > sd) { 
+	    alpha[v][j][d] = IMPOSSIBLE;
+	  }
 	}
       }
     }
@@ -2356,6 +2370,16 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
       for (j = 0; j <= L; j++) {
 	for (d = 0; d <= j; d++)
 	  alpha[v][j][d] = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+      }
+      /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
+       * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+       */
+      if(! have_el && sd > 0) { /* this is only necessary for emitters (MP, ML, MR in this context) */
+	for (j = 0; j <= L; j++) {
+	  for (d = sd+1; d <= j; d++) {
+	    if(yshadow[v][j][d] == USED_EL) alpha[v][j][d] = IMPOSSIBLE;
+	  }
+	}
       }
     }
     else { /* B_st */ 
@@ -2509,6 +2533,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   int      Lp;          /* L offset in any state v's d band */
   int      sd;          /* StateDelta(cm->sttype[v]) */
   int      sdr;         /* StateRightDelta(cm->sttype[v] */
+  int      have_el;     /* TRUE if CM has local ends on, otherwise FALSE */
 
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      ip_v;               /* offset i index for state v */
@@ -2571,7 +2596,8 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if((status = cm_InitializeOptAccShadowDZeroHB(cm, cp9b, errbuf, yshadow, L)) != eslOK) return status;
 
   /* start with the EL state (remember, cm->M deck is non-banded) */
-  if(cm->flags & CMH_LOCAL_END && l_pp[cm->M] != NULL) { 
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  if(have_el && l_pp[cm->M] != NULL) { 
     for (j = 0; j <= L; j++) {
       alpha[cm->M][j][0] = l_pp[cm->M][0];
       i = j; 
@@ -2592,7 +2618,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
     sdr  = StateRightDelta(cm->sttype[v]);
 
     /* re-initialize if we can do a local end from v */
-    if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
+    if(have_el && NOT_IMPOSSIBLE(cm->endsc[v])) { 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
 	/* copy values from saved EL deck */
@@ -2603,55 +2629,6 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	}
       }
     }
-#if 0 
-    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
-      /* alternative: else if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) { (see comment below) */
-      for (j = jmin[v]; j <= jmax[v]; j++) { 
-	jp_v  = j - jmin[v];
-	/* Check for special initialization case, specific to
-	 * optimal_accuracy alignment, normally (with CYK for example)
-	 * we init shadow matrix to USED_EL for all cells b/c we know
-	 * that will be overwritten for the most likely transition,
-	 * but with optimal accuracy, only emissions add to the score,
-	 * so when d == sd, we know we'll emit sd residues from v, so
-	 * the initialization will NOT be overwritten. We get around
-	 * this for cells for which d == sd and v is a state that has
-	 * a StateDelta=0 child y (DELETE or END) by initializing that
-	 * transition to y is most likely, BUT only after checking
-	 * that it is a valid cell for y (that is, d==0 is within y's
-	 * d band for the current j), if it's not, then leave it as
-	 * USED_EL, b/c the parse should be IMPOSSIBLE.  (Note: NOT
-	 * checking that the cell is valid for y and j was bug i14,
-	 * the first BUGTRAX logged bug found and fixed in the final
-	 * release (rc5) of infernal v1.0 (EPN, Fri Jun 12 14:02:58
-	 * 2009)).
-	 *
-	 * This will remove any zero-length (in the target sequence)
-	 * ELs from an OA parsetree when one is possible (within the
-	 * bands) with all D->D transitions. This makes alignment
-	 * displays look better in most cases. To change preference
-	 * for ELs, change the 'if(cm->sttype[v] != B_st &&
-	 * cm->sttype[v] != E_st) to a 'else if'.
-	 */
-	if(hdmin[v][jp_v] <= hdmax[v][jp_v]) { /* if this if FALSE, no valid d exists for this v and j */
-	  for (d = hdmin[v][jp_v]; d <= sd; d++) { 
-	    dp_v = d-hdmin[v][jp_v];
-	    for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) { 
-	      if(StateDelta(cm->sttype[y]) == 0) { 
-		if((j-sdr) >= jmin[y] && (j-sdr) <= jmax[y]) { 
-		  jp_y = j - sdr - jmin[y];
-		  if(hdmin[y][jp_y] == 0) { 
-		    yoffset = y - cm->cfirst[v];
-		    yshadow[v][jp_v][dp_v] = yoffset;
-		  }
-		}
-	      }
-	    }
-	  }
-	}
-      }
-    }
-#endif
     /* note there's no E state update here, those cells all remain IMPOSSIBLE */
 
     /* we could separate out IL_st and IR_st, but I don't it makes a significant difference in run time */
@@ -2696,6 +2673,12 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	  if(cm->sttype[v] == IL_st) alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], l_pp[v][ip_v]);
 	  else                       alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], r_pp[v][jp_v]);
 	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
+	  /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
+	   * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+	   */
+	  if((! have_el) && yshadow[v][jp_v][dp_v] == USED_EL && d > sd) { 
+	    alpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	  }
 	}
       }
     }
@@ -2778,6 +2761,20 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	jp_v = j - jmin[v];
 	for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
 	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
+      }
+      /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
+       * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+       */
+      if(! have_el && sd > 0) { /* this is only necessary for emitters (MP, ML, MR in this context) */
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v = j - jmin[v];
+	  d = ESL_MIN(sd+1, hdmin[v][jp_v]);
+	  dp_v = d - hdmin[v][jp_v];
+	  for (; d <= hdmax[v][jp_v]; d++) { 
+	    if(yshadow[v][jp_v][dp_v] == USED_EL) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	    dp_v++;
+	  }
+	}
       }
     }
     else { /* B_st */ 

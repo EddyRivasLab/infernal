@@ -4318,6 +4318,7 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   int      d_sd;            /* d - sd */
   int      d_sdl;           /* d - sdl */
   int      d_sdr;           /* d - sdr */
+  int      have_el;         /* TRUE if local ends are on in the CM, otherwise FALSE */
 
   /* other variables used in truncated version, but not standard version (not in cm_OptAccAlign()) */
   int   b = 0;		    /* best truncated entry state */
@@ -4387,7 +4388,8 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if((status = cm_InitializeOptAccShadowDZero(cm, errbuf, Jyshadow, L)) != eslOK) return status;
 
   /* start with the EL state */
-  if(cm->flags & CMH_LOCAL_END) { 
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  if(have_el) { 
     for (j = 0; j <= L; j++) {
       if(Jl_pp[cm->M] != NULL)           Jalpha[cm->M][j][0] = Jl_pp[cm->M][0];
       if(Ll_pp[cm->M] != NULL && fill_L) Lalpha[cm->M][j][0] = Ll_pp[cm->M][0];
@@ -4415,7 +4417,7 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
     nins_v = NumReachableInserts(cm->stid[v]);
 
     /* re-initialize if we can do a local end from v */
-    if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) {
+    if(have_el && NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (j = 0; j <= L; j++) {
 	/* copy values from saved EL deck */
 	for (d = sd;  d <= j; d++) Jalpha[v][j][d] = Jalpha[cm->M][j-sdr][d-sd];
@@ -4461,10 +4463,22 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	    }
 	    Jalpha[v][j][d]  = FLogsum(Jalpha[v][j][d], Jl_pp[v][i]);
 	    Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
+	    /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions
+	     * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+	     */
+	    if((! have_el) && Jyshadow[v][j][d] == USED_EL && d > sd) { 
+	      Jalpha[v][j][d] = IMPOSSIBLE; 
+	    }
 
 	    if(fill_L) { 
 	      if(d >= 2) { 
 		Lalpha[v][j][d]  = FLogsum(Lalpha[v][j][d], Ll_pp[v][i]);
+		/* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions *
+		 * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+		 */
+		if((! have_el) && Lyshadow[v][j][d] == USED_EL) { 
+		  Lalpha[v][j][d] = IMPOSSIBLE; 
+		}
 	      }
 	      else { 
 		Lalpha[v][j][d]   = Ll_pp[v][i]; /* actually I think this will give the same value as d >= 2 case above */
@@ -4530,10 +4544,22 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	    }
 	    Jalpha[v][j][d]  = FLogsum(Jalpha[v][j][d], Jr_pp[v][j]);
 	    Jalpha[v][j][d]  = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
+	    /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
+	     * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+	     */
+	    if((! have_el) && Jyshadow[v][j][d] == USED_EL && d > sd) { 
+	      Jalpha[v][j][d] = IMPOSSIBLE; 
+	    }
 
 	    if(fill_R) { 
 	      if(d >= 2) { 
 		Ralpha[v][j][d]  = FLogsum(Ralpha[v][j][d], Rr_pp[v][j]);
+		/* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
+		* (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+		*/
+		if((! have_el) && Ryshadow[v][j][d] == USED_EL) { 
+		  Ralpha[v][j][d] = IMPOSSIBLE; 
+		}
 	      }
 	      else { 
 		Ralpha[v][j][d]   = Rr_pp[v][j]; /* actually I think this will give the same value as d >= 2 case above */
@@ -4647,6 +4673,26 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	for (d = 1; d <= j; d++) Jalpha[v][j][d] = ESL_MAX(Jalpha[v][j][d], IMPOSSIBLE);
 	if(fill_L) for (d = 1; d <= j; d++) Lalpha[v][j][d] = ESL_MAX(Lalpha[v][j][d], IMPOSSIBLE);
 	if(fill_R) for (d = 1; d <= j; d++) Ralpha[v][j][d] = ESL_MAX(Ralpha[v][j][d], IMPOSSIBLE);
+      }
+      /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
+       * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+       */
+      if(! have_el) { 
+	for (j = 0; j <= L; j++) {
+	  for (d = sd+1; d <= j; d++) {
+	    if(Jyshadow[v][j][d] == USED_EL) Jalpha[v][j][d] = IMPOSSIBLE;
+	  }
+	  if(fill_L) { 
+	    for (d = sdl+1; d <= j; d++) { 
+	      if(Lyshadow[v][j][d] == USED_EL) Lalpha[v][j][d] = IMPOSSIBLE;
+	    }
+	  }
+	  if(fill_R) { 
+	    for (d = sdr+1; d <= j; d++) { 
+	      if(Ryshadow[v][j][d] == USED_EL) Ralpha[v][j][d] = IMPOSSIBLE;
+	    }
+	  }
+	}
       }
     }
     else if(cm->sttype[v] != B_st) { /* entered if state v is D or S */
@@ -4801,7 +4847,7 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
      * to know which states we're allowed to do a truncated
      * begin into.
      */
-    trpenalty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx][v] : cm->trp->g_ptyAA[pty_idx][v];
+    trpenalty = (have_el) ? cm->trp->l_ptyAA[pty_idx][v] : cm->trp->g_ptyAA[pty_idx][v];
     if(NOT_IMPOSSIBLE(trpenalty)) { 
       if(preset_mode == TRMODE_J) { 
 	if(Jalpha[v][L][L] > Jalpha[0][L][L]) { 
@@ -4904,6 +4950,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   int      sdl;             /* StateLeftDelta(cm->sttype[v] */
   int      sdr;             /* StateRightDelta(cm->sttype[v] */
   int      j_sdr;           /* j - sdr */
+  int      have_el;         /* TRUE if local ends are on in the CM, otherwise FALSE */
 
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      ip_v;               /* offset i index for state v */
@@ -5015,7 +5062,8 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   if((status = cm_InitializeOptAccShadowDZeroHB(cm, cp9b, errbuf, Jyshadow, L)) != eslOK) return status;
 
   /* start with the EL state (remember the EL deck is non-banded) */
-  if(cm->flags & CMH_LOCAL_END) { 
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  if(have_el) { 
     do_J_v = (cp9b->Jvalid[cm->M] && Jl_pp[cm->M] != NULL)           ? TRUE : FALSE;
     do_L_v = (cp9b->Lvalid[cm->M] && Ll_pp[cm->M] != NULL && fill_L) ? TRUE : FALSE;
     do_R_v = (cp9b->Rvalid[cm->M] && Rr_pp[cm->M] != NULL && fill_R) ? TRUE : FALSE;
@@ -5059,7 +5107,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
      * copy values from saved EL deck.
      * shadow values remain as initialized: USED_EL 
      */
-    if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
+    if(have_el && NOT_IMPOSSIBLE(cm->endsc[v])) { 
       if(do_J_v && cp9b->Jvalid[cm->M]) { 
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
@@ -5158,10 +5206,22 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		if(do_J_v) { 
 		  Jalpha[v][jp_v][dp_v]  = FLogsum(Jalpha[v][jp_v][dp_v], Jl_pp[v][ip_v]);
 		  Jalpha[v][jp_v][dp_v]  = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
+		  /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions
+		   * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+		   */
+		  if((! have_el) && Jyshadow[v][jp_v][dp_v] == USED_EL && d > sd) { 
+		    Jalpha[v][jp_v][dp_v] = IMPOSSIBLE; 
+		  }
 		}
 		if(do_L_v) {
 		  if(d >= 2) { 
 		    Lalpha[v][jp_v][dp_v] = FLogsum(Lalpha[v][jp_v][dp_v], Ll_pp[v][ip_v]);
+		    /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions *
+		     * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+		     */
+		    if((! have_el) && Lyshadow[v][jp_v][dp_v] == USED_EL) { 
+		      Lalpha[v][jp_v][dp_v] = IMPOSSIBLE; 
+		    }
 		  }
 		  else { 
 		    Lalpha[v][jp_v][dp_v]   = Ll_pp[v][ip_v]; /* actually I think this will give the same value as d >= 2 case above */
@@ -5278,10 +5338,22 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		if(do_J_v) { 
 		  Jalpha[v][jp_v][dp_v]  = FLogsum(Jalpha[v][jp_v][dp_v], Jr_pp[v][jp_v]);
 		  Jalpha[v][jp_v][dp_v]  = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
+		  /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
+		   * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+		   */
+		  if((! have_el) && Jyshadow[v][jp_v][dp_v] == USED_EL && d > sd) { 
+		    Jalpha[v][jp_v][dp_v] = IMPOSSIBLE; 
+		  }
 		}
 		if(do_R_v) { 
 		  if(d >= 2) { 
 		    Ralpha[v][jp_v][dp_v] = FLogsum(Ralpha[v][jp_v][dp_v], Rr_pp[v][jp_v]);
+		    /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
+		     * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+		     */
+		    if((! have_el) && Ryshadow[v][jp_v][dp_v] == USED_EL) { 
+		      Ralpha[v][jp_v][dp_v] = IMPOSSIBLE; 
+		    }
 		  }
 		  else { 
 		    Ralpha[v][jp_v][dp_v]   = Rr_pp[v][jp_v]; /* actually I think this will give the same value as d >= 2 case above */
@@ -5514,8 +5586,18 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
       if(do_J_v) { 
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
+	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++, d++) {
 	    Jalpha[v][jp_v][dp_v] = ESL_MAX(Jalpha[v][jp_v][dp_v], IMPOSSIBLE);
+	  }
+	  /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
+	   * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+	   */
+	  if(! have_el) { 
+	    d = hdmin[v][jp_v];
+	    for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
+	      if(Jyshadow[v][jp_v][dp_v] == USED_EL && d > sd) Jalpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      d++;
+	    }
 	  }
 	}
       }
@@ -5525,6 +5607,16 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
 	    Lalpha[v][jp_v][dp_v] = ESL_MAX(Lalpha[v][jp_v][dp_v], IMPOSSIBLE);
 	  }
+	  /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
+	   * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+	   */
+	  if(! have_el) { 
+	    d = hdmin[v][jp_v];
+	    for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
+	      if(Lyshadow[v][jp_v][dp_v] == USED_EL && d > sdl) Lalpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      d++;
+	    }
+	  }
 	}
       }
       if(do_R_v) { 
@@ -5532,6 +5624,16 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	  jp_v  = j - jmin[v];
 	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
 	    Ralpha[v][jp_v][dp_v] = ESL_MAX(Ralpha[v][jp_v][dp_v], IMPOSSIBLE);
+	  }
+	  /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
+	   * (we do allow an 'illegal' transition to EL in OptAcc but only if no EL emissions are req'd)
+	   */
+	  if(! have_el) { 
+	    d = hdmin[v][jp_v];
+	    for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
+	      if(Ryshadow[v][jp_v][dp_v] == USED_EL && d > sdr) Ralpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      d++;
+	    }
 	  }
 	}
       }
@@ -5872,7 +5974,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	 * (We've already made sure alpha[0][jp_0][Lp_0] was valid 
 	 * at the beginning of the function.)
 	 */
-	trpenalty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx][v] : cm->trp->g_ptyAA[pty_idx][v];
+	trpenalty = have_el ? cm->trp->l_ptyAA[pty_idx][v] : cm->trp->g_ptyAA[pty_idx][v];
 	if(NOT_IMPOSSIBLE(trpenalty)) { 
 	  if(preset_mode == TRMODE_J && do_J_v) {
 	    if(Jalpha[v][jp_v][Lp] > Jalpha[0][jp_0][Lp_0]) { 
@@ -9487,6 +9589,9 @@ cm_TrPostCode(CM_t *cm, char *errbuf, int L, CM_TR_EMIT_MX *emit_mx, Parsetree_t
   float sum_logp;    /* log of summed probability of all residues emitted thus far */
   float cur_log_pp;  /* current log probability of emitting a residue */
   char  mode;        /* marginal mode: TRMODE_J, TRMODE_L or TRMODE_R */
+  int   have_el;     /* TRUE if CM has local ends, otherwise FALSE */
+
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
   ESL_ALLOC(ppstr, (L+1) * sizeof(char)); 
   sum_logp = IMPOSSIBLE;
@@ -9501,9 +9606,9 @@ cm_TrPostCode(CM_t *cm, char *errbuf, int L, CM_TR_EMIT_MX *emit_mx, Parsetree_t
 
     /* Only P, L, R, and EL states have emissions. */
     if(cm->sttype[v] == EL_st) { /* EL state, we have to handle this guy special */
-      if(! (cm->flags & CMH_LOCAL_END)) ESL_FAIL(eslEINVAL, errbuf, "cm_TrPostCode() using EL state to emit residue %d, but ELs are turned off!\n", r);
       if(mode == TRMODE_J || mode == TRMODE_L || mode == TRMODE_R) {
 	for(r = i; r <= j; r++) { /* we have to annotate from residues i..j */
+	  if(! have_el) ESL_FAIL(eslEINVAL, errbuf, "cm_TrPostCode() using EL state to emit residue %d, but ELs are turned off!\n", r);
 	  switch (mode) { 
 	  case TRMODE_J: cur_log_pp = emit_mx->Jl_pp[v][r]; break;
 	  case TRMODE_L: cur_log_pp = emit_mx->Ll_pp[v][r]; break;
@@ -9590,6 +9695,7 @@ cm_TrPostCodeHB(CM_t *cm, char *errbuf, int L, CM_TR_HB_EMIT_MX *emit_mx, Parset
   float sum_logp;    /* log of summed probability of all residues emitted thus far */
   float cur_log_pp;  /* current log probability of emitting a residue */
   char  mode;        /* marginal mode: TRMODE_J, TRMODE_L or TRMODE_R */
+  int   have_el;     /* TRUE if CM has local ends, otherwise FALSE */
 
   /* variables used for HMM bands */
   int ip_v, jp_v; /* i, j offset within bands */
@@ -9599,6 +9705,8 @@ cm_TrPostCodeHB(CM_t *cm, char *errbuf, int L, CM_TR_HB_EMIT_MX *emit_mx, Parset
   int     *imax  = cp9b->imax;  
   int     *jmin  = cp9b->jmin;  
   int     *jmax  = cp9b->jmax;  
+
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
   ESL_ALLOC(ppstr, (L+1) * sizeof(char)); 
   sum_logp = IMPOSSIBLE;
@@ -9624,7 +9732,7 @@ cm_TrPostCodeHB(CM_t *cm, char *errbuf, int L, CM_TR_HB_EMIT_MX *emit_mx, Parset
        */
       if(mode == TRMODE_J || mode == TRMODE_L || mode == TRMODE_R) {
 	for(r = i; r <= j; r++) { /* we have to annotate from residues i..j */
-	  if(! (cm->flags & CMH_LOCAL_END)) ESL_FAIL(eslEINVAL, errbuf, "cm_TrPostCodeHB() using EL state to emit residue %d, but ELs are turned off!\n", r);
+	  if(! have_el) ESL_FAIL(eslEINVAL, errbuf, "cm_TrPostCodeHB() using EL state to emit residue %d, but ELs are turned off!\n", r);
 	  /* remember the EL deck is non-banded */
 	  switch (mode) { 
 	  case TRMODE_J: cur_log_pp = emit_mx->Jl_pp[v][r]; break;
