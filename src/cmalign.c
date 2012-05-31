@@ -69,22 +69,17 @@ typedef struct {
 #ifdef HMMER_THREADS
   ESL_WORK_QUEUE   *queue;
 #endif /*HMMER_THREADS*/
-  CM_t             *cm;       /* a covariance model */
-  CM_ALNDATA      **dataA;    /* array of CM_ALNDATA objects with ptrs to sqs, parsetrees, scores */
-  int               n;        /* size of outdataA   */
-  float             mxsize;   /* max size (Mb) of allowable DP mx */
-  int               pass_idx; /* pipeline pass index, controls truncation bit sc penalty */
-  ESL_STOPWATCH    *w;        /* stopwatch for timing stages (band calc, alignment) */
-  ESL_STOPWATCH    *w_tot;    /* stopwatch for timing total time for processing 1 seq */
-
-  /* Two cases in which we potentially failover to HMM-banded standard
-   * alignment, both require we're trying to do HMM-banded truncated
-   * alignment (which is true by default (no command-line options).
-   */
-  int failover_range; /* TRUE to try HMM banded std alignment if HMM banded truncated mx is too big */
-  int failover_ambig; /* TRUE to try HMM banded std alignment if HMM bands prevent all valid parsetrees
-		       * during HMM banded truncated alignment.
-		       */
+  CM_t             *cm;          /* a covariance model */
+  CM_ALNDATA      **dataA;       /* array of CM_ALNDATA objects with ptrs to sqs, parsetrees, scores */
+  int               n;           /* size of outdataA   */
+  float             mxsize;      /* max size (Mb) of allowable DP mx */
+  int               pass_idx;    /* pipeline pass index, controls truncation bit sc penalty */
+  ESL_STOPWATCH    *w;           /* stopwatch for timing stages (band calc, alignment) */
+  ESL_STOPWATCH    *w_tot;       /* stopwatch for timing total time for processing 1 seq */
+  int               do_failover; /* TRUE if we're trying to do HMM banded truncated alignment,
+				  * and bands obscure all possible alignments (very rare) to
+				  * failover into HMM banded standard alignment.
+				  */
 } WORKER_INFO;
 
 #define ACCOPTS      "--hbanded,--nonbanded"                 /* Exclusive choice for acceleration or not */
@@ -456,31 +451,17 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
 
   for (k = 0; k < infocnt; ++k)    {
-    info[k].cm       = NULL;
-    info[k].dataA    = NULL;
-    info[k].n        = 0;
-    info[k].mxsize   = esl_opt_GetReal(go, "--mxsize");
-    info[k].pass_idx = esl_opt_GetBoolean(go, "--notrunc") ? PLI_PASS_STD_ANY : PLI_PASS_5P_AND_3P_FORCE;
-    info[k].w        = esl_stopwatch_Create();
-    info[k].w_tot    = esl_stopwatch_Create();
+    info[k].cm          = NULL;
+    info[k].dataA       = NULL;
+    info[k].n           = 0;
+    info[k].mxsize      = esl_opt_GetReal(go, "--mxsize");
+    info[k].pass_idx    = esl_opt_GetBoolean(go, "--notrunc") ? PLI_PASS_STD_ANY : PLI_PASS_5P_AND_3P_FORCE;
+    info[k].w           = esl_stopwatch_Create();
+    info[k].w_tot       = esl_stopwatch_Create();
+    info[k].do_failover = (esl_opt_GetBoolean(go, "--hbanded")  && (! esl_opt_GetBoolean(go, "--notrunc"))) ? TRUE : FALSE;
 #ifdef HMMER_THREADS
     info[k].queue  = queue;
 #endif
-    if((  esl_opt_GetBoolean(go, "--hbanded"))  && 
-       (! esl_opt_GetBoolean(go, "--notrunc"))  && 
-       (! esl_opt_GetBoolean(go, "--fixedtau"))) {
-      info[k].failover_range = TRUE;
-    }
-    else { 
-      info[k].failover_range = FALSE;
-    }
-    if((  esl_opt_GetBoolean(go, "--hbanded"))  && 
-       (! esl_opt_GetBoolean(go, "--notrunc"))) {
-      info[k].failover_ambig = TRUE;
-    }
-    else { 
-      info[k].failover_ambig = FALSE;
-    }
   }
   
 #ifdef HMMER_THREADS    
@@ -695,12 +676,11 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
 				 TRMODE_UNKNOWN, info->pass_idx, FALSE, /* FALSE: info->cm->cp9b not valid */
 				 info->w, info->w_tot, r, &(info->dataA[i]));
     /* If alignment failed: potentially retry alignment in HMM banded
-     * std (non- truncated) mode. We will only possibly do this if our
+     * std (non-truncated) mode. We will only possibly do this if our
      * initial try was HMM banded truncated alignment (if not,
-     * info->failover_* will both be FALSE).
+     * info->do_failover will be FALSE).
      */
-    if((status == eslERANGE     && info->failover_range == TRUE) || 
-       (status == eslEAMBIGUOUS && info->failover_ambig == TRUE)) { 
+    if(status == eslEAMBIGUOUS && info->do_failover == TRUE) { 
       assert(info->cm->align_opts & CM_ALIGN_TRUNC);
       info->cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
       status = DispatchSqAlignment(info->cm, errbuf, sq_block->list + i, sq_block->first_seqidx + i, info->mxsize, 
@@ -857,10 +837,9 @@ pipeline_thread(void *arg)
     /* If alignment failed: potentially retry alignment in HMM banded
      * std (non-truncated) mode. We will only possibly do this if our
      * initial try was HMM banded truncated alignment (if not,
-     * info->failover_{range,ambig} will both be FALSE).
+     * info->do_failover will be FALSE).
      */
-    if((status == eslERANGE     && info->failover_range == TRUE) || 
-       (status == eslEAMBIGUOUS && info->failover_ambig == TRUE)) { 
+    if(status == eslEAMBIGUOUS && info->do_failover == TRUE) { 
       assert(info->cm->align_opts & CM_ALIGN_TRUNC);
       info->cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
       status = DispatchSqAlignment(info->cm, errbuf, sq, sq->W, info->mxsize,
@@ -1245,28 +1224,14 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) mpi_failure(errbuf);
 
   /* initialize our worker info */
-  info.cm       = cm;
-  info.dataA    = NULL;
-  info.n        = 0;
-  info.mxsize   = esl_opt_GetReal(go, "--mxsize");
-  info.pass_idx = esl_opt_GetBoolean(go, "--notrunc") ? PLI_PASS_STD_ANY : PLI_PASS_5P_AND_3P_FORCE;
-  info.w        = esl_stopwatch_Create();
-  info.w_tot    = esl_stopwatch_Create();
-  if((  esl_opt_GetBoolean(go, "--hbanded"))  && 
-     (! esl_opt_GetBoolean(go, "--notrunc"))  && 
-     (! esl_opt_GetBoolean(go, "--fixedtau"))) {
-    info.failover_range = TRUE;
-  }
-  else { 
-    info.failover_range = FALSE;
-  }
-  if((  esl_opt_GetBoolean(go, "--hbanded"))  && 
-     (! esl_opt_GetBoolean(go, "--notrunc"))) {
-    info.failover_ambig = TRUE;
-  }
-  else { 
-    info.failover_ambig = FALSE;
-  }
+  info.cm          = cm;
+  info.dataA       = NULL;
+  info.n           = 0;
+  info.mxsize      = esl_opt_GetReal(go, "--mxsize");
+  info.pass_idx    = esl_opt_GetBoolean(go, "--notrunc") ? PLI_PASS_STD_ANY : PLI_PASS_5P_AND_3P_FORCE;
+  info.w           = esl_stopwatch_Create();
+  info.w_tot       = esl_stopwatch_Create();
+  info.do_failover = (esl_opt_GetBoolean(go, "--hbanded")  && (! esl_opt_GetBoolean(go, "--notrunc"))) ? TRUE : FALSE;
 
   /* Main loop: actually two nested while loops, over sequence blocks
    * (while(blocks_remain_in_file)) and over sequences within blocks
@@ -1318,10 +1283,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       /* If alignment failed: potentially retry alignment in HMM banded
        * std (non-truncated) mode. We will only possibly do this if our
        * initial try was HMM banded truncated alignment (if not,
-       * info.failover_{range,ambig} will both be FALSE).
+       * info.do_failover will be FALSE).
        */
-      if((status == eslERANGE     && info.failover_range == TRUE) || 
-	 (status == eslEAMBIGUOUS && info.failover_ambig == TRUE)) { 
+      if(status == eslEAMBIGUOUS && info.do_failover == TRUE) { 
 	assert(info.cm->align_opts & CM_ALIGN_TRUNC);
 	info.cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
 	status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize,
