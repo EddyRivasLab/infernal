@@ -1467,7 +1467,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Open the database file */
   if((status = open_dbfile    (go, cfg, errbuf, &dbfp)) != eslOK) mpi_failure(errbuf); 
-  /* MPI requires SSI indexing */
 
   /* Open the query CM file */
   if((status = cm_file_Open(cfg->cmfile, NULL, FALSE, &(cmfp), errbuf)) != eslOK) mpi_failure(errbuf);
@@ -2084,7 +2083,7 @@ static int
 open_dbfile(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQFILE **ret_dbfp)
 {
   int status;
-  int dbfmt    = eslSQFILE_UNKNOWN; /* format of dbfile                                */
+  int dbfmt = eslSQFILE_UNKNOWN; /* format of dbfile                                */
 
   if (esl_opt_IsOn(go, "--tformat")) {
     dbfmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--tformat"));
@@ -2095,6 +2094,14 @@ open_dbfile(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQFILE **ret_d
   else if (status == eslEFORMAT)   ESL_FAIL(status, errbuf, "Sequence file %s is empty or misformatted\n",            cfg->dbfile);
   else if (status == eslEINVAL)    ESL_FAIL(status, errbuf, "Can't autodetect format of a stdin or .gz seqfile");
   else if (status != eslOK)        ESL_FAIL(status, errbuf, "Unexpected error %d opening sequence file %s\n", status, cfg->dbfile);  
+
+  if (esl_sqio_IsAlignment((*ret_dbfp)->format)) { 
+    /* file is an alignment format, we can't deal with that since it may be interleaved 
+     * and esl_sq_ReadBlock() can't handle that since it uses ReadWindow() to read 
+     * possibly non-full length subsequences and isn't implemented to handle alignments.
+     */
+    cm_Fail("%s autodetected as an alignment file; unaligned sequence file, like FASTA, is required\n", cfg->dbfile);
+  }
 
   return eslOK;
 }

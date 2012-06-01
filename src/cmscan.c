@@ -35,6 +35,9 @@
 
 #include "infernal.h"
 
+/* set the max sequence length to 10Mb, we'll die if we read a sequence longer than this */
+#define CMSCAN_MAX_SEQ_LEN 10000000
+
 typedef struct {
 #ifdef HMMER_THREADS
   ESL_WORK_QUEUE   *queue;
@@ -475,6 +478,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* Outside loop: over each query sequence in <seqfile>. */
   while ((sstatus = esl_sqio_Read(sqfp, qsq)) == eslOK)
     {
+      if(qsq->n > CMSCAN_MAX_SEQ_LEN) cm_Fail("sequence #%d (L=%d) exceeds max length of %d\n", seq_idx+1, qsq->n, CMSCAN_MAX_SEQ_LEN);
       seq_idx++;
       esl_stopwatch_Start(w);	                          
 
@@ -1012,6 +1016,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       CM_PIPELINE     *pli     = NULL;		/* processing pipeline                      */
       CM_TOPHITS      *th      = NULL;        	/* top-scoring sequence hits                */
+
+      if(qsq->n > CMSCAN_MAX_SEQ_LEN) mpi_failure("sequence #%d (L=%d) exceeds max length of %d\n", seq_idx+1, qsq->n, CMSCAN_MAX_SEQ_LEN);
 
       seq_idx++;
       esl_stopwatch_Start(w);	                          

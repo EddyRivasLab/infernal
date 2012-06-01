@@ -542,7 +542,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
    * First set defaults, then change them if nec.
    */
   pli->do_hmmonly_always = (esl_opt_GetBoolean(go, "--hmmonly"))   ? TRUE : FALSE;
-  pli->do_hmmonly_never  = (esl_opt_GetBoolean(go, "--nohmmonly")) ? TRUE : FALSE;
+  pli->do_hmmonly_never  = (esl_opt_GetBoolean(go, "--nohmmonly") || 
+			    esl_opt_GetBoolean(go, "--max")       || 
+			    esl_opt_GetBoolean(go, "--nohmm")) ? TRUE : FALSE;
   /* pli->do_hmmonly_cur is set in cm_pli_NewModel(), stays FALSE until then */
   pli->do_max_hmmonly    = FALSE;
   pli->do_bias_hmmonly   = TRUE;

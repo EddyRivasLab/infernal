@@ -1435,7 +1435,7 @@
 1  exercise  search:t/1k/wcx/3     @src/cmsearch@  --wcx 3 %T.CM% %T1K%
 1  exercise  search:t/1k/wcx/5     @src/cmsearch@  --wcx 5 %T.CM% %T1K%
 1  fail      search:t/1k/wcx/0p3   @src/cmsearch@  --wcx 0.3 %T.CM% %T1K%
-1  fail      search:t/1k/wcx/nohmm @src/cmsearch@  --wcx 3 --nohmm %T.CM% %T1K%
+1  fail      search:t/1k/wcx/nhmm  @src/cmsearch@  --wcx 3 --nohmm %T.CM% %T1K%
 1  fail      search:t/1k/wcx/fqdb  @src/cmsearch@  --wcx 3 --fqdb %T.CM% %T1K%
 1  fail      search:t/1k/wcx/qdb   @src/cmsearch@  --wcx 3 --qdb %T.CM% %T1K%
 1  exercise  search:4/1k/wcx/3     @src/cmsearch@  --wcx 3 %4.CM% %R1K%
@@ -1449,6 +1449,8 @@
 1  exercise  search:t/r1k/tfmt     @src/cmsearch@  --tformat embL %T.CM% !testsuite/3trnas.embl!
 1  exercise  search:t/r1k/afmt     @src/cmsearch@  %T.CM% !testsuite/3trnas.gb!
 1  exercise  search:t/r1k/afmt     @src/cmsearch@  %T.CM% !testsuite/3trnas.embl!
+1  fail      search:t/stk          @src/cmsearch@  %T.CM% !testsuite/tRNA.sto!
+1  fail      search:t/tfmt/stk     @src/cmsearch@  --tformat stockholm %T.CM% !testsuite/tRNA.sto!
 
 # developer filter options
 1  exercise  search:v/1k/noF1        @src/cmsearch@  --noF1 %V.CM% %V1K%
