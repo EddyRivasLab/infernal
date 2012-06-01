@@ -2091,6 +2091,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
 			       &agfmu, &agflambda))  
      != eslOK) ESL_FAIL(status, errbuf, "Error calibrating additional p7 HMM");
 
+  if((status = cm_p7_hmm_SetConsensus(fhmm)) != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter consensus annotation");
   if((status = cm_SetFilterHMM(cm, fhmm, agfmu, agflambda))       != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter for the CM");
   if((status = p7_hmm_AppendComlog (cm->fp7, go->argc, go->argv)) != eslOK) ESL_FAIL(status, errbuf, "Failed to record command log for filter HMM");
 

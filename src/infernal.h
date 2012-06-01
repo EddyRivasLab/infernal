@@ -3040,6 +3040,7 @@ extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, 
 extern int          cm_SetFilterHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda);
 extern int          dump_p7(P7_HMM *hmm, FILE *fp);
 extern float        cm_p7_hmm_Sizeof(P7_HMM *hmm);
+extern int          cm_p7_hmm_SetConsensus(P7_HMM *hmm);
 
 /* from cp9.c */
 extern CP9_t *AllocCPlan9(int M, const ESL_ALPHABET *abc);

@@ -1055,8 +1055,8 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   cur_rankstr[rankw] = '\0';
 
   fprintf(ofp, "Hit scores:\n");
-  fprintf(ofp, " %*s %9s %6s %5s  %-*s %*s %*s %1s %3s %5s %4s  %s\n", rankw, "rank",  "E-value",   " score", " bias", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"modelname"), posw, "start", posw, "end", "", "mdl", "trunc", "gc", "description");
-  fprintf(ofp, " %*s %9s %6s %5s  %-*s %*s %*s %1s %3s %5s %4s  %s\n", rankw, rankstr, "---------", "------", "-----", namew, namestr, posw, posstr, posw, posstr, "", "---", "-----", "----", "-----------");
+  fprintf(ofp, " %*s %1s %9s %6s %5s  %-*s %*s %*s %1s %3s %5s %4s  %s\n", rankw, "rank",  "", "E-value",   " score", " bias", namew, (pli->mode == CM_SEARCH_SEQS ? "sequence":"modelname"), posw, "start", posw, "end", "", "mdl", "trunc", "gc", "description");
+  fprintf(ofp, " %*s %1s %9s %6s %5s  %-*s %*s %*s %1s %3s %5s %4s  %s\n", rankw, rankstr, "", "---------", "------", "-----", namew, namestr, posw, posstr, posw, posstr, "", "---", "-----", "----", "-----------");
   
   nprinted = 0;
   for (h = 0; h < th->N; h++) { 
@@ -1078,8 +1078,9 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       
       sprintf(cur_rankstr, "(%d)", nprinted+1);
 
-      fprintf(ofp, " %*s %9.2g %6.1f %5.1f  %-*s %*" PRId64 " %*" PRId64 " %c %3s %5s %4.2f  ",
+      fprintf(ofp, " %*s %c %9.2g %6.1f %5.1f  %-*s %*" PRId64 " %*" PRId64 " %c %3s %5s %4.2f  ",
 	      rankw, cur_rankstr,
+	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? '!' : '?'),
 	      th->hit[h]->evalue,
 	      th->hit[h]->score,
 	      th->hit[h]->bias,
@@ -1202,8 +1203,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	
       if(cm_alidisplay_Is5PTrunc(th->hit[h]->ad)) { /* 5' truncated */
 	lmod = '~';
-	if(th->hit[h]->in_rc) { lseq = th->hit[h]->ad->sqfrom == th->hit[h]->srcL ? '{' : '~'; }
-	else                  { lseq = th->hit[h]->ad->sqfrom == 1                ? '{' : '~'; }
+	lseq = '~';
       }
       else { /* not 5' truncated */
 	lmod = th->hit[h]->ad->cfrom_emit == 1 ? '[' : '.';
@@ -1212,8 +1212,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
       }
       if(cm_alidisplay_Is3PTrunc(th->hit[h]->ad)) { /* 3' truncated */
 	rmod = '~';
-	if(th->hit[h]->in_rc) { rseq = th->hit[h]->ad->sqto == 1                ? '}' : '~'; }
-	else                  { rseq = th->hit[h]->ad->sqto == th->hit[h]->srcL ? '}' : '~'; }
+	rseq = '~';
       }	
       else { /* not 3' truncated */
 	rmod = th->hit[h]->ad->cto_emit == th->hit[h]->ad->clen ? ']' : '.';
@@ -1644,8 +1643,6 @@ cm_tophits_Alignment(CM_t *cm, const CM_TOPHITS *th, char *errbuf, ESL_MSA **ret
     }
   }
   
-  /* Make the multiple alignment */
-
   /* create the alignment */
   if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, sqarr, NULL, trarr, pparr, ninc, NULL, NULL, TRUE, FALSE, &msa)) != eslOK) goto ERROR;
 
@@ -1721,18 +1718,18 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
   int h;
 
   if (show_header) { 
-    fprintf(ofp, "#%-*s %-*s %-*s %-*s %3s %8s %8s %*s %*s %6s %5s %4s %4s %5s %6s %9s %-s\n",
+    fprintf(ofp, "#%-*s %-*s %-*s %-*s %3s %8s %8s %*s %*s %6s %5s %4s %4s %5s %6s %9s %3s %-s\n",
 	    tnamew-1, "target name", taccw, "accession",  qnamew, "query name", qaccw, "accession", 
 	    "mdl", "mdl from", "mdl to", 
-	    posw, "seq from", posw, "seq to", "strand", "trunc", "pass", "gc", "bias", "score", "E-value", "description of target");
-    fprintf(ofp, "#%-*s %-*s %-*s %-*s %-3s %-7s %-7s %*s %*s %6s %5s %4s %4s %5s %6s %9s %s\n",
+	    posw, "seq from", posw, "seq to", "strand", "trunc", "pass", "gc", "bias", "score", "E-value", "inc", "description of target");
+    fprintf(ofp, "#%-*s %-*s %-*s %-*s %-3s %-7s %-7s %*s %*s %6s %5s %4s %4s %5s %6s %9s %3s %s\n",
 	    tnamew-1, tnamestr, taccw, taccstr, qnamew, qnamestr, qaccw, qaccstr, 
 	    "---", "--------", "--------", 
-	    posw, posstr, posw, posstr, "------", "-----", "----", "----", "-----", "------", "---------", "---------------------");
+	    posw, posstr, posw, posstr, "------", "-----", "----", "----", "-----", "------", "---------", "---", "---------------------");
   }
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED)    {
-      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %s\n",
+      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %-3s %s\n",
 	      tnamew, th->hit[h]->name,
 	      taccw,  ((th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') ? th->hit[h]->acc : "-"),
 	      qnamew, qname,
@@ -1748,6 +1745,7 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
 	      th->hit[h]->bias,
 	      th->hit[h]->score,
 	      th->hit[h]->evalue,
+	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? "!" : "?"),
 	      (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "-");
     }
   }

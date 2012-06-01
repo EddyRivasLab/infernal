@@ -518,3 +518,68 @@ cm_p7_hmm_Sizeof(P7_HMM *hmm)
   return bytes / 1000000.;
 }
 
+/* Function:  cm_p7_hmm_SetConsensus()
+ * Incept:    EPN, Wed May  9 14:13:37 2012 
+ * Synopsis:  Set the consensus residue line of the HMM.
+ *
+ * Purpose:   Sets the consensus annotation line of the model <hmm>.
+ *            
+ *            Based on p7_hmm_SetConsensus() which is flexible to
+ *            setting the consensus as a single sequence or a
+ *            consensus from a multiple sequence alignment.  Here,
+ *            only the latter case is handled, i.e. but in the future,
+ *            we should relax this to allow for single sequence
+ *            models.
+ *
+ *            This function only exists because p7_hmm_SetConsensus()
+ *            uses a threshold probability of 0.9 for setting
+ *            a consensus residue as uppercase, while we want 
+ *            to be able to use 0.5 since that's what we use with
+ *            single stranded CM positions. (Actually we use 1.0 
+ *            bits, which equates to a 0.5 probability for a default
+ *            null1 model (so using 0.5 will be wrong for non-standard
+ *            null models...)).
+ *
+ *            The most likely (highest emission probability) residue
+ *            is the consensus at each position.  If the emission
+ *            probability is $\geq$ certain threshold (0.5), the
+ *            residue is upper cased.
+ *            
+ * Args:      hmm - model with valid probability parameters mat[1..M][x]
+ *           
+ * Returns:   <eslOK> on success. The <p7H_CONS> flag on the <hmm> is raised
+ *            if it wasn't already. The <hmm->consensus> line is set.
+ *
+ * Throws:    <eslEMEM> on allocation error. The <p7H_CONS> is dropped, even
+ *            if it was up to begin with, and the <hmm->consensus> is <NULL>,
+ *            even if we had one to begin with.
+ *
+ */
+int
+cm_p7_hmm_SetConsensus(P7_HMM *hmm)
+{
+  int   k, x;
+  float mthresh = 0.5;
+  int   status;
+  
+  /* allocation, if needed */
+  if (! hmm->consensus) ESL_ALLOC(hmm->consensus, sizeof(char) * (hmm->M+2));
+
+  /* set our arbitrary threshold for upper/lower casing */
+
+  hmm->consensus[0] = ' ';
+  for (k = 1; k <= hmm->M; k++) 
+    {
+      x = esl_vec_FArgMax(hmm->mat[k], hmm->abc->K);
+      hmm->consensus[k] = ((hmm->mat[k][x] >= mthresh) ? toupper(hmm->abc->sym[x]) : tolower(hmm->abc->sym[x]));
+    }
+  hmm->consensus[hmm->M+1] = '\0';
+  hmm->flags  |= p7H_CONS;	
+  return eslOK;
+
+ ERROR:
+  if (hmm->consensus) free(hmm->consensus);
+  hmm->consensus = NULL;
+  hmm->flags    &= (~p7H_CONS);	
+  return status;
+}

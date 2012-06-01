@@ -495,7 +495,7 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
     CMZero(cm);
     cm->clen = clen;
 
-    /* post v1.0.2: introduced cm->map and now we fill cm->rf */
+    /* new in v1.1: fill cm->map (always) and fill cm->rf (if use_rf) */
     /* cm->map is identical to c2a_map, copy it */
     if(cm->map != NULL) free(cm->map); /* this is paranoid, it will be NULL */
     ESL_ALLOC(cm->map, sizeof(int) * (cm->clen+1));

@@ -1065,25 +1065,23 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
       for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_bot += p2->acct[p].nres_bot;
     }
   else
-    {
+    { /* SCAN mode */
       p1->nmodels         += p2->nmodels;
       p1->nnodes          += p2->nnodes;
       p1->nmodels_hmmonly += p2->nmodels_hmmonly;
       p1->nnodes_hmmonly  += p2->nnodes_hmmonly;
+      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_top += p2->acct[p].nres_top;
+      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_bot += p2->acct[p].nres_bot;
       /* If target CM file was small, it's possible that <p1->nseqs>
        * is 0 and <p2->nseqs> is not, also that
-       * p1->acct[p].nres_{top,bot} is 0 and
-       * p2->acct[p].nres_{top,bot} is not, or
        * p1->acct[p].npli_{top,bot} is 0 and
        * p2->acct[p].npli_{top,bot} is not.
-       * We handle these cases by taking the max (usually these p1 and
-       * p2 values will be equal in scan mode).
+       * To deal with these cases, we take the max (usually these p1
+       * and p2 values will be equal in scan mode).
        */
       p1->nseqs = ESL_MAX(p1->nseqs, p2->nseqs);
       for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_top = ESL_MAX(p1->acct[p].npli_top, p2->acct[p].npli_top);
       for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_bot = ESL_MAX(p1->acct[p].npli_bot, p2->acct[p].npli_bot);
-      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_top = ESL_MAX(p1->acct[p].nres_top, p2->acct[p].nres_top);
-      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_bot = ESL_MAX(p1->acct[p].nres_bot, p2->acct[p].nres_bot);
     }
 
   for(p = 0; p < NPLI_PASSES; p++) { 
@@ -1534,33 +1532,33 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   } else { /* SCAN mode */
     if(pass_idx == PLI_PASS_STD_ANY || pass_idx == PLI_PASS_CM_SUMMED) { 
       fprintf(ofp,   "Query sequence(s):                                 %15" PRId64 "  (%" PRId64 " residues searched)\n",  
-	      pli->nseqs, nres_searched - nres_researched);
+	      pli->nseqs, (int) ((nres_searched - nres_researched) / pli->nmodels));
     }
     if(pass_idx != PLI_PASS_STD_ANY) { 
-      fprintf(ofp,   "Query sequences re-searched for truncated hits:    %15" PRId64 "  (%" PRId64 " residues re-searched)\n", 
+      fprintf(ofp,   "Query sequences re-searched for truncated hits:    %15" PRId64 "  (%.1f residues re-searched, avg per model)\n", 
 	      (pli->do_trunc_ends || pli->do_trunc_any) ? pli->nseqs : 0, 
-	      nres_researched);
+	      (float) nres_researched / (float) pli->nmodels);
     }
     fprintf(ofp,   "Target model(s):                                   %15" PRId64 "  (%" PRId64 " consensus positions)\n",     
 	    pli->nmodels, pli->nnodes);
   }
 
   if(pli->do_msv) { 
-    fprintf(ofp, "Windows   passing  local HMM MSV           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
+    fprintf(ofp, "Windows   passing  local HMM SSV           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_msv,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_msv / nres_searched,
-	    pli->F1 * pli->nmodels);
+	    pli->F1);
     nwin_fcyk = nwin_final = pli_acct->n_past_msv;
   }
   else { 
-    fprintf(ofp, "Windows   passing  local HMM MSV           filter: %15s  (off)\n", "");
+    fprintf(ofp, "Windows   passing  local HMM SSV           filter: %15s  (off)\n", "");
   }
 
   if(pli->do_msvbias) { 
     fprintf(ofp, "Windows   passing  local HMM MSV      bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_msvbias,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_msvbias / nres_searched,
-	    pli->F1b * pli->nmodels);
+	    pli->F1b);
     nwin_fcyk = nwin_final = pli_acct->n_past_msvbias;
   }
   /* msv bias is off by default, so don't output anything if it's off */
@@ -1569,7 +1567,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     fprintf(ofp, "Windows   passing  local HMM Viterbi       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_vit,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_vit / nres_searched,
-	    pli->F2 * pli->nmodels);
+	    pli->F2);
     nwin_fcyk = nwin_final = pli_acct->n_past_vit;
   }
   else { 
@@ -1580,7 +1578,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     fprintf(ofp, "Windows   passing  local HMM Viterbi  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_vitbias,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_vitbias / nres_searched,
-	    pli->F2b * pli->nmodels);
+	    pli->F2b);
     nwin_fcyk = nwin_final = pli_acct->n_past_vitbias;
   }
   else { 
@@ -1591,7 +1589,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     fprintf(ofp, "Windows   passing  local HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_fwd,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_fwd / nres_searched,
-	    pli->F3 * pli->nmodels);
+	    pli->F3);
     nwin_fcyk = nwin_final = pli_acct->n_past_fwd;
   }
   else { 
@@ -1602,7 +1600,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     fprintf(ofp, "Windows   passing  local HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_fwdbias,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_fwdbias / nres_searched,
-	    pli->F3b * pli->nmodels);
+	    pli->F3b);
     nwin_fcyk = nwin_final = pli_acct->n_past_fwdbias;
   }
   else { 
@@ -1613,7 +1611,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     fprintf(ofp, "Windows   passing glocal HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_gfwd,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_gfwd / nres_searched,
-	    pli->F4 * pli->nmodels);
+	    pli->F4);
     nwin_fcyk = nwin_final = pli_acct->n_past_gfwd;
   }
   else { 
@@ -1623,7 +1621,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     fprintf(ofp, "Windows   passing glocal HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_gfwdbias,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_gfwdbias / nres_searched,
-	    pli->F4b * pli->nmodels);
+	    pli->F4b);
     nwin_fcyk = nwin_final = pli_acct->n_past_gfwdbias;
   }
   else { 
@@ -1634,7 +1632,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     fprintf(ofp, "Envelopes passing glocal HMM envelope defn filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_edef,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_edef / nres_searched,
-	    pli->F5 * pli->nmodels);
+	    pli->F5);
     nwin_fcyk = nwin_final = pli_acct->n_past_edef;
   }
   else { 
@@ -1645,7 +1643,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     fprintf(ofp, "Envelopes passing glocal HMM envelope bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_edefbias,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_edefbias / nres_searched,
-	    pli->F5b * pli->nmodels);
+	    pli->F5b);
     nwin_fcyk = nwin_final = pli_acct->n_past_edefbias;
   }
   /* edef bias is off by default, so don't output anything if it's off */
@@ -1655,7 +1653,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
 	    (pli->do_glocal_cm_stages) ? "glocal" : "local",
 	    pli_acct->n_past_cyk,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_cyk / nres_searched,
-	    pli->F6 * pli->nmodels);
+	    pli->F6);
     nwin_final = pli_acct->n_past_cyk;
   }
   else { 
@@ -1753,22 +1751,22 @@ pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli)
     fprintf(ofp,   "Target sequences:                          %s%15" PRId64 "  (%" PRId64 " residues searched)\n",  
 	    match_cm_spacing ? "        "  : "",
 	    pli->nseqs, nres_searched);
-  } else {
+  } else { /* SCAN MODE */
     fprintf(ofp,   "Query sequence(s):                         %s%15" PRId64 "  (%" PRId64 " residues searched)\n",  
 	    match_cm_spacing ? "        "  : "",
-	    pli->nseqs,   nres_searched);
+	    pli->nseqs,   (int) nres_searched / pli->nmodels);
     fprintf(ofp,   "Target model(s):                           %s%15" PRId64 "  (%" PRId64 " consensus positions)\n",     
 	    match_cm_spacing ? "        "  : "",
 	    pli->nmodels_hmmonly, pli->nnodes_hmmonly);
   }
 
-  fprintf(ofp, "Windows %spassing %slocal HMM MSV      %sfilter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
+  fprintf(ofp, "Windows %spassing %slocal HMM SSV      %sfilter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	  match_cm_spacing ? "  "     : "",
 	  match_cm_spacing ? " "      : "",
 	  match_cm_spacing ? "     "  : "",
 	  pli_acct->n_past_msv,
 	  (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_msv / nres_searched,
-	  pli->F1_hmmonly * pli->nmodels_hmmonly);
+	  pli->F1_hmmonly);
 
   if(pli->do_bias_hmmonly) { 
     fprintf(ofp, "Windows %spassing %slocal HMM MSV %sbias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
@@ -1777,7 +1775,7 @@ pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli)
 	    match_cm_spacing ? "     "   : "",
 	    pli_acct->n_past_msvbias,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_msvbias / nres_searched,
-	    pli->F1_hmmonly * pli->nmodels);
+	    pli->F1_hmmonly);
   }
   else { /* msv bias is off by default, so don't output anything if it's off */
     fprintf(ofp, "Windows %spassing %slocal HMM MSV %sbias filter: %15s  (off)\n", 
@@ -1794,7 +1792,7 @@ pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli)
 	    match_cm_spacing ? "     "  : "",
 	    pli_acct->n_past_vit,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_vit / nres_searched,
-	    pli->F2_hmmonly * pli->nmodels_hmmonly);
+	    pli->F2_hmmonly);
   }
   else { 
     fprintf(ofp, "Windows %spassing %slocal HMM Viterbi  %sfilter: %15s  (off)\n", 
@@ -1811,7 +1809,7 @@ pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli)
 	    match_cm_spacing ? "     "  : "",
 	    pli_acct->n_past_fwd,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_fwd / nres_searched,
-	    pli->F3_hmmonly * pli->nmodels_hmmonly);
+	    pli->F3_hmmonly);
   }
   else { 
     fprintf(ofp, "Windows %spassing %slocal HMM Forward  %sfilter: %15s  (off)\n", 
@@ -2250,7 +2248,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     p7_bg_NullOne  (bg, subdsq, wlen, &nullsc);
 
 #if DEBUGPIPELINE
-    if(cur_do_msv) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived MSV       %6.2f bits  P %g\n", i, ws[i], we[i], 0., wp[i]);
+    if(cur_do_msv) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived SSV       %6.2f bits  P %g\n", i, ws[i], we[i], 0., wp[i]);
 #endif
     survAA[p7_SURV_F1][i] = TRUE;
     
