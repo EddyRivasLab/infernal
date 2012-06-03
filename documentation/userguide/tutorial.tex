@@ -218,11 +218,11 @@ sequence database of this size.
 
 \emph{Importantly, if you're not going to use a model for database
 search, there is no need to calibrate it.} For example, if you are
-only going to build alignments with a model of a large family like
-small subunit ribosomal RNA, don't waste time calibrating
-it. \prog{cmsearch} and \prog{cmscan} are the only Infernal programs
-that use E-values, so if you're not going to use them, don't
-calibrate your model.
+only going to use a model to create structurally annotated multiple
+alignments of a large family like small subunit ribosomal RNA, don't
+waste time calibrating it. \prog{cmsearch} and \prog{cmscan} are the
+only Infernal programs that use E-values, so if you're not going to
+use them then don't calibrate your model.
 
 Unfortunately, CM calibration takes a long time because fairly long
 random sequences must be searched to determine the expected
@@ -810,6 +810,121 @@ target sequence.
 The annotation of truncated hits in \prog{cmsearch} output is slightly
 different than for standard hits. An example is shown and explained
 in the next section below. 
+
+\subsection{Searching a sequence database for RNAs with unknown or no
+ secondary structure}
+
+Some functional RNAs, including many types of small nucleolar RNAs
+(snoRNAs) do not conserve a secondary structure. It is more
+appropriate to model such RNA families with a profile HMM, because CMs
+only differ from profile HMMs in their modeling of basepairs and
+because profile HMM scoring algorithms are more efficient than CM
+ones. 
+
+Likewise, profile HMMs are more appropriate for modeling RNAs of
+unknown structure. For such RNAs, a profile HMM search may reveal
+additional homologs that can help elucidate the conserved structure
+for the family. After collecting numerous homologs, computer programs
+that try to predict the conserved secondary structure of a set of
+homologous RNAs 
+
+Infernal automatically detects when a model has zero basepairs and
+uses efficient profile HMM algorithms in \prog{cmsearch} and
+\prog{cmscan}. As an example, let's revisit the construction of our
+tRNA model but pretend as if we do not know that tRNA adopts a
+cloverleaf secondary structure. The \ccode{--noss}
+option to \prog{cmbuild} causes it to ignore any secondary structure
+annotation in the input alignment file.\footnote{The \prog{--noss}
+option must be used if the input alignment file has no secondary
+structure annotation.} So to build a structureless tRNA model,
+execute:
+
+\user{cmbuild --noss tRNA5.noss.cm tutorial/tRNA5.sto}
+
+\begin{sreoutput}
+# cmbuild :: covariance model construction from multiple sequence alignments
+# INFERNAL 1.1 (May 2012)
+# Copyright (C) 2012 Howard Hughes Medical Institute.
+# Freely distributed under the GNU General Public License (GPLv3).
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                            tRNA5.noss.cm
+# alignment file:                                     tRNA5.sto
+# ignore secondary structure, if any:                 yes
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                      rel entropy
+#                                                                      -----------
+# idx    name                     nseq eff_nseq   alen  clen  bps bifs    CM   HMM description
+# ------ -------------------- -------- -------- ------ ----- ---- ---- ----- ----- -----------
+       1 tRNA5                       5     5.00     74    72    0    0 0.552 0.552 
+#
+# CPU time: 0.18u 0.00s 00:00:00.18 Elapsed: 00:00:00.19
+\end{sreoutput}
+
+Note in the output that the model has 0 basepairs (``bps'') and that
+the CM and HMM have identical relative entropy. This is because the
+CM can be mirrored nearly identically by a profile HMM.
+
+After we built our normal tRNA CM above, we needed to use \prog{cmcalibrate} to
+calibrate the model before we could perform searches. Importantly,
+zero basepair models need not be calibrated prior to running
+cmsearch, so we can skip that step here. 
+
+Now, let's repeat the search of the \emph{M. ruminantium} genome but
+using our structureless model: 
+
+\user{cmsearch tRNA5.noss.cm mrum-genome.fa}\\
+
+This search is noticeably faster than the first one, because only
+profile HMM algorithms are used. Take a look at list of hits:
+
+\begin{sreoutput}
+Query:       tRNA5  [CLEN=72]
+Hit scores:
+ rank     E-value  score  bias  sequence                        start     end   mdl trunc   gc  description
+ ----   --------- ------ -----  ----------------------------- ------- -------   --- ----- ----  -----------
+  (1) !   3.6e-09   38.2   0.0  gi|288559258|ref|NC_013790.1|  362022  361960 - hmm     - 0.46  Methanobrevibacter ruminantium M1 chromosome, 
+  (2) !     3e-07   32.2   0.0  gi|288559258|ref|NC_013790.1|  762496  762559 + hmm     - 0.64  Methanobrevibacter ruminantium M1 chromosome, 
+  (3) !     3e-07   32.2   0.0  gi|288559258|ref|NC_013790.1| 2041698 2041635 - hmm     - 0.64  Methanobrevibacter ruminantium M1 chromosome, 
+  (4) !     5e-06   28.3   0.0  gi|288559258|ref|NC_013790.1| 2585264 2585203 - hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, 
+  (5) !   6.4e-06   28.0   0.0  gi|288559258|ref|NC_013790.1|  735143  735198 + hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, 
+  (6) !   7.1e-06   27.9   0.0  gi|288559258|ref|NC_013790.1| 2351247 2351188 - hmm     - 0.57  Methanobrevibacter ruminantium M1 chromosome, 
+  (7) !   1.2e-05   27.2   0.0  gi|288559258|ref|NC_013790.1|  662193  662251 + hmm     - 0.64  Methanobrevibacter ruminantium M1 chromosome, 
+  (8) !   1.2e-05   27.1   0.0  gi|288559258|ref|NC_013790.1| 2186009 2185951 - hmm     - 0.51  Methanobrevibacter ruminantium M1 chromosome, 
+  (9) !   4.2e-05   25.4   0.0  gi|288559258|ref|NC_013790.1| 2585183 2585118 - hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, 
+ (10) !   6.4e-05   24.8   0.0  gi|288559258|ref|NC_013790.1| 1873882 1873820 - hmm     - 0.63  Methanobrevibacter ruminantium M1 chromosome, 
+ (11) !   0.00014   23.7   0.0  gi|288559258|ref|NC_013790.1|  360882  360824 - hmm     - 0.51  Methanobrevibacter ruminantium M1 chromosome, 
+ (12) !   0.00059   21.8   0.0  gi|288559258|ref|NC_013790.1|  361910  361851 - hmm     - 0.38  Methanobrevibacter ruminantium M1 chromosome, 
+ (13) !   0.00091   21.2   0.0  gi|288559258|ref|NC_013790.1| 2350586 2350528 - hmm     - 0.58  Methanobrevibacter ruminantium M1 chromosome, 
+ (14) !    0.0018   20.3   0.0  gi|288559258|ref|NC_013790.1|  995341  995267 - hmm     - 0.51  Methanobrevibacter ruminantium M1 chromosome, 
+ (15) !    0.0026   19.7   0.0  gi|288559258|ref|NC_013790.1|   97728   97788 + hmm     - 0.49  Methanobrevibacter ruminantium M1 chromosome, 
+ (16) !    0.0029   19.6   0.0  gi|288559258|ref|NC_013790.1| 2186083 2186024 - hmm     - 0.50  Methanobrevibacter ruminantium M1 chromosome, 
+ (17) !    0.0031   19.5   0.0  gi|288559258|ref|NC_013790.1| 2130421 2130351 - hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, 
+ (18) !    0.0044   19.0   0.0  gi|288559258|ref|NC_013790.1|  360727  360670 - hmm     - 0.43  Methanobrevibacter ruminantium M1 chromosome, 
+ (19) !    0.0057   18.7   0.0  gi|288559258|ref|NC_013790.1| 1160527 1160608 + hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, 
+ (20) !    0.0074   18.3   0.0  gi|288559258|ref|NC_013790.1|  361056  360994 - hmm     - 0.40  Methanobrevibacter ruminantium M1 chromosome, 
+ ------ inclusion threshold ------
+ (21) ?     0.012   17.7   0.0  gi|288559258|ref|NC_013790.1| 2151679 2151737 + hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, 
+ (22) ?     0.012   17.7   0.0  gi|288559258|ref|NC_013790.1|  917729  917784 + hmm     - 0.61  Methanobrevibacter ruminantium M1 chromosome, 
+ (23) ?     0.019   17.1   0.0  gi|288559258|ref|NC_013790.1| 2327123 2327043 - hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, 
+ (24) ?     0.023   16.7   0.0  gi|288559258|ref|NC_013790.1|  360973  360920 - hmm     - 0.54  Methanobrevibacter ruminantium M1 chromosome, 
+ (25) ?     0.037   16.1   0.0  gi|288559258|ref|NC_013790.1| 2350982 2350919 - hmm     - 0.50  Methanobrevibacter ruminantium M1 chromosome, 
+ (26) ?     0.039   16.1   0.0  gi|288559258|ref|NC_013790.1|  361671  361606 - hmm     - 0.50  Methanobrevibacter ruminantium M1 chromosome, 
+ (27) ?     0.039   16.0   0.0  gi|288559258|ref|NC_013790.1| 2680176 2680227 + hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, 
+ (28) ?     0.062   15.4   0.0  gi|288559258|ref|NC_013790.1| 2585067 2585000 - hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, 
+ (29) ?     0.063   15.4   0.0  gi|288559258|ref|NC_013790.1|  362793  362738 - hmm     - 0.46  Methanobrevibacter ruminantium M1 chromosome, 
+ (30) ?     0.063   15.4   0.0  gi|288559258|ref|NC_013790.1| 1064778 1064857 + hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, 
+ (31) ?     0.072   15.2   0.0  gi|288559258|ref|NC_013790.1| 2749938 2749884 - hmm     - 0.47  Methanobrevibacter ruminantium M1 chromosome, 
+ (32) ?     0.073   15.2   0.0  gi|288559258|ref|NC_013790.1| 2749832 2749778 - hmm     - 0.47  Methanobrevibacter ruminantium M1 chromosome, 
+ (33) ?      0.12   14.5   0.0  gi|288559258|ref|NC_013790.1|  361729  361689 - hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, 
+ (34) ?       1.3   11.2   0.0  gi|288559258|ref|NC_013790.1|  361439  361393 - hmm     - 0.49  Methanobrevibacter ruminantium M1 chromosome, 
+ (35) ?       4.4    9.6   0.0  gi|288559258|ref|NC_013790.1| 2583867 2583803 - hmm     - 0.49  Methanobrevibacter ruminantium M1 chromosome, 
+ (36) ?         6    9.1   0.0  gi|288559258|ref|NC_013790.1|  546054  546021 - hmm     - 0.68  Methanobrevibacter ruminantium M1 chromosome, 
+\end{sreoutput}
+
+Note that the highest scoring hits have significantly higher E-values
+than in the original search. For example, the highest scoring hit in
+this HMM search is also the highest scoring 
+
 
 \subsection{Searching a CM database with a query sequence}
 

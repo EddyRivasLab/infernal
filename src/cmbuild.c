@@ -1323,8 +1323,8 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
      if(msa->ss_cons == NULL) { ESL_ALLOC(msa->ss_cons, sizeof(char) * (msa->alen+1)); msa->ss_cons[msa->alen] = '\0'; }
      memset(msa->ss_cons,  '.', msa->alen);
    }
-   if (msa->ss_cons == NULL)                                     ESL_FAIL(eslFAIL, errbuf, "Alignment #%d has no consensus structure annotation, and --noss not used.", cfg->nali+1);
-   if (! clean_cs(msa->ss_cons, msa->alen, (! cfg->be_verbose))) ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation in alignment #%d", cfg->nali+1);
+   if (msa->ss_cons == NULL)                                     ESL_FAIL(eslFAIL, errbuf, "Alignment #%d has no consensus structure annotation, and --noss not used.", cfg->nali);
+   if (! clean_cs(msa->ss_cons, msa->alen, (! cfg->be_verbose))) ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation in alignment #%d", cfg->nali);
 
    if ( esl_opt_IsOn(go, "--rsearch")) { 
      if(msa->nseq != 1) ESL_FAIL(eslEINCOMPAT, errbuf,"with --rsearch option, all of the input alignments must have exactly 1 sequence");

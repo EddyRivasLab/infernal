@@ -1,5 +1,5 @@
 INFERNAL1/a [1.1 | May 2012]
-NAME     trna.5
+NAME     tRNA5
 STATES   230
 NODES    61
 CLEN     72
@@ -9,8 +9,8 @@ RF       no
 CONS     yes
 MAP      yes
 DATE     Thu May  3 14:45:51 2012
-COM      [1] ../src/cmbuild -F my.cm trna.5.sto
-COM      [2] ../src/cmcalibrate --mpi my.cm
+COM      [1] cmbuild tRNA5.cm tRNA5.sto
+COM      [2] cmcalibrate tRNA5.cm
 PBEGIN   0.05
 PEND     0.05
 WBETA    1e-07
@@ -322,7 +322,7 @@ CM
      E   229   228 3    -1     0     0     0     0     0                                                 
 //
 HMMER3/f [i1.1 | May 2012]
-NAME  trna.5
+NAME  tRNA5
 LENG  72
 MAXL  152
 ALPH  RNA
@@ -332,7 +332,7 @@ CONS  yes
 CS    yes
 MAP   yes
 DATE  Thu May  3 14:45:52 2012
-COM   [1] ../src/cmbuild -F my.cm trna.5.sto
+COM   [1] cmbuild tRNA5.cm tRNA5.sto
 NSEQ  5
 EFFN  4.575195
 CKSUM 3535941971

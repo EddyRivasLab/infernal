@@ -663,7 +663,7 @@ support. This is the default, but it may have been turned off at
 compile-time for your site or machine for some reason.
 
 .TP
-.BI --stall
+.B --stall
 For debugging the MPI master/worker version: pause after start, to
 enable the developer to attach debuggers to the running master and
 worker(s) processes. Send SIGCONT signal to release the pause.
@@ -672,9 +672,16 @@ worker(s) processes. Send SIGCONT signal to release the pause.
 (Only available if optional MPI support was enabled at compile-time.)
 
 .TP
-.BI --mpi
+.B --mpi
 Run in MPI master/worker mode, using
 .I mpirun.
+To use 
+.B --mpi,
+the sequence file must have first been 'indexed' using the 
+.B esl-sfetch 
+program, which is included with Infernal, in the 
+.I easel/miniapps/
+subdirectory.
 (Only available if optional MPI support was enabled at compile-time.)
 
 .SH SEE ALSO 

@@ -182,7 +182,7 @@ static void mpi_failure  (char *format, ...);
 
 /* Functions to avoid code duplication for common tasks */
 static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile);
-static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpus);
+static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpus, int ncpus);
 static int  init_master_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  init_shared_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  initialize_cm   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int do_local);
@@ -476,7 +476,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   if (qhstatus == eslOK) {
     /* One-time initializations after alphabet <abc> becomes known */
-    output_header(stdout, go, cfg->cmfile, available_ncpus);
+    output_header(stdout, go, cfg->cmfile, available_ncpus, ncpus);
 
     if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
     if((status = set_dnull(cfg, cm, errbuf)) != eslOK) cm_Fail("unable to create set_dnull\n%s\n", errbuf);
@@ -855,7 +855,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   if (qhstatus == eslOK) {
     /* One-time initializations after alphabet <abc> becomes known */
-    output_header(stdout, go, cfg->cmfile, 0); /* 0 is 'available_ncpus', irrelevant (only used if --forecast, which is incompatible with --mpi) */
+    output_header(stdout, go, cfg->cmfile, 0, cfg->nproc); /* 0 is 'available_ncpus', irrelevant (only used if --forecast, which is incompatible with --mpi) */
 
     /* master needs to be able to generate sequences only for timing predictions */
     if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
@@ -1297,7 +1297,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 }
 
 static int
-output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpus)
+output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpus, int ncpus)
 {
   cm_banner(ofp, go->argv[0], banner);
   
@@ -1326,12 +1326,17 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpu
   if (esl_opt_IsUsed(go, "--nonull3"))   {     fprintf(ofp, "# null3 bias corrections:                      off\n"); }
   if (esl_opt_IsUsed(go, "--random"))    {     fprintf(ofp, "# generating seqs with cm->null (usually iid): yes\n"); }
   if (esl_opt_IsUsed(go, "--gc"))        {     fprintf(ofp, "# nucleotide distribution from file:           %s\n", esl_opt_GetString(go, "--gc")); }
-#ifdef HMMER_THREADS
-  if (esl_opt_IsUsed(go, "--cpu"))       {     fprintf(ofp, "# number of worker threads:                    %d\n", esl_opt_GetInteger(go, "--cpu")); }
-#endif
+  /* output number of processors being used, unless --forecast or --memreq is used */
+  int output_ncpu = FALSE;
+  if ((! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq"))) { 
 #ifdef HAVE_MPI
-  if (esl_opt_IsUsed(go, "--mpi"))       {     fprintf(ofp, "# MPI:                                         on\n"); }
-#endif
+    if (esl_opt_IsUsed(go, "--mpi"))         {  fprintf(ofp, "# MPI:                                         on [%d processors]\n", ncpus); output_ncpu = TRUE; }
+#endif 
+#ifdef HMMER_THREADS
+    if (! output_ncpu)                       {  fprintf(ofp, "# number of worker threads:                    %d%s\n", ncpus, (esl_opt_IsUsed(go, "--cpu") ? " [--cpu]" : "")); output_ncpu = TRUE; }
+#endif 
+    if (! output_ncpu)                       {  fprintf(ofp, "# number of worker threads:                    0 [serial mode; threading unavailable]\n"); }
+  }
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n");
   return eslOK;
 }

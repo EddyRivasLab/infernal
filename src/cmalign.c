@@ -196,7 +196,7 @@ static void mpi_failure  (char *format, ...);
 
 /* Functions to avoid code duplication for common tasks */
 static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_sqfile, int *ret_infmt, int *ret_outfmt);
-static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t *cm);
+static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t *cm, int ncpus);
 static int  init_master_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  init_shared_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
@@ -448,7 +448,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
   if(status != eslEOF) cm_Fail("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
 
-  if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
+  if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, ncpus);
 
   for (k = 0; k < infocnt; ++k)    {
     info[k].cm          = NULL;
@@ -594,7 +594,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
     /* output scores to scores file, if --sfp used */
     if(cfg->sfp != NULL) { 
-      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
+      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, ncpus);
       if((status =  output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur, cfg->be_verbose)) != eslOK) cm_Fail(errbuf);
     }
 
@@ -964,7 +964,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
   if(status != eslEOF) mpi_failure("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
 
-  if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
+  if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, nworkers+1);
 
   /* initialization */
   nali = nseq_cur = nseq_aligned = 0;
@@ -1142,7 +1142,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
     /* output scores to scores file, if --sfp used */
     if(cfg->sfp != NULL) { 
-      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm);
+      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, nworkers+1);
       if((status =  output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur, cfg->be_verbose)) != eslOK) mpi_failure(errbuf);
     }
 
@@ -1469,7 +1469,6 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   exit(1);  
 }
 
-
 /* output_header(): 
  *
  * In contrast with other Infernal applications, which output header
@@ -1480,7 +1479,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
  */
 
 static int
-output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t *cm)
+output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t *cm, int ncpus)
 {
   cm_banner(ofp, go->argv[0], banner);
                                             fprintf(ofp, "# CM file:                                     %s\n", cmfile);
@@ -1521,12 +1520,16 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
   if (esl_opt_IsUsed(go, "--matchonly")) {  fprintf(ofp, "# include alignment insert columns:            no\n"); }
   if (esl_opt_IsUsed(go, "--ileaved"))   {  fprintf(ofp, "# forcing interleaved Stockholm output aln:    yes\n"); }
   if (esl_opt_IsUsed(go, "--regress"))   {  fprintf(ofp, "# saving alignment without author info to:     %s\n", esl_opt_GetString(go, "--regress")); }
-#ifdef HMMER_THREADS
-  if (esl_opt_IsUsed(go, "--cpu"))       {  fprintf(ofp, "# number of worker threads:                    %d\n", esl_opt_GetInteger(go, "--cpu")); }
-#endif
+
+  /* output number of processors being used, always (this differs from H3 which only does this if --cpu) */
+  int output_ncpu = FALSE;
 #ifdef HAVE_MPI
-  if (esl_opt_IsUsed(go, "--mpi"))       {  fprintf(ofp, "# MPI:                                         on\n"); }
-#endif
+  if (esl_opt_IsUsed(go, "--mpi"))       {  fprintf(ofp, "# MPI:                                         on [%d processors]\n", ncpus); output_ncpu = TRUE; }
+#endif 
+#ifdef HMMER_THREADS
+  if (! output_ncpu)                     {  fprintf(ofp, "# number of worker threads:                    %d%s\n", ncpus, (esl_opt_IsUsed(go, "--cpu") ? " [--cpu]" : "")); output_ncpu = TRUE; }
+#endif 
+  if (! output_ncpu)                     {  fprintf(ofp, "# number of worker threads:                    0 [serial mode; threading unavailable]\n"); }
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n");
 
   return eslOK;

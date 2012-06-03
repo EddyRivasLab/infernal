@@ -245,7 +245,7 @@ static int  mpi_worker   (ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif /*HAVE_MPI*/
 
 static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_seqfile);
-static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile);
+static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int ncpus);
 
 #ifdef HAVE_MPI
 /* Define common tags used by the MPI master/slave processes */
@@ -438,8 +438,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if (esl_opt_IsOn(go, "-o"))          { if ((ofp      = fopen(esl_opt_GetString(go, "-o"),          "w")) == NULL)  esl_fatal("Failed to open output file %s for writing\n",                 esl_opt_GetString(go, "-o")); }
   if (esl_opt_IsOn(go, "--tblout"))    { if ((tblfp    = fopen(esl_opt_GetString(go, "--tblout"),    "w")) == NULL)  esl_fatal("Failed to open tabular per-seq output file %s for writing\n", esl_opt_GetString(go, "--tblfp")); }
  
-  output_header(ofp, go, cfg->cmfile, cfg->seqfile);
-
 #ifdef HMMER_THREADS
   /* initialize thread data */
   if (esl_opt_IsOn(go, "--cpu")) ncpus = esl_opt_GetInteger(go, "--cpu");
@@ -450,6 +448,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       queue = esl_workqueue_Create(ncpus * 2);
     }
 #endif
+
+  output_header(ofp, go, cfg->cmfile, cfg->seqfile, ncpus);
 
   infocnt = (ncpus == 0) ? 1 : ncpus;
   ESL_ALLOC(info, sizeof(*info) * infocnt);
@@ -1007,7 +1007,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   list->last     = 0;
   list->blocks   = NULL;
 
-  output_header(ofp, go, cfg->cmfile, cfg->seqfile);
+  output_header(ofp, go, cfg->cmfile, cfg->seqfile, cfg->nproc);
   qsq = esl_sq_CreateDigital(abc);
   bg  = p7_bg_Create(abc);
 
@@ -1782,7 +1782,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 }
 
 static int
-output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
+output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int ncpus)
 {
   cm_banner(ofp, go->argv[0], banner);
   
@@ -1821,12 +1821,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
   if (esl_opt_IsUsed(go, "--toponly"))    fprintf(ofp, "# search top-strand only:                on\n");
   if (esl_opt_IsUsed(go, "--bottomonly")) fprintf(ofp, "# search bottom-strand only:             on\n");
   if (esl_opt_IsUsed(go, "--qformat"))    fprintf(ofp, "# query <seqfile> format asserted:       %s\n", esl_opt_GetString(go, "--qformat"));
-#ifdef HMMER_THREADS
-  if (esl_opt_IsUsed(go, "--cpu"))       fprintf(ofp, "# number of worker threads:              %d\n", esl_opt_GetInteger(go, "--cpu"));  
-#endif
 #ifdef HAVE_MPI
-  if (esl_opt_IsUsed(go, "--stall"))     fprintf(ofp, "# MPI stall mode:                        on\n");
-  if (esl_opt_IsUsed(go, "--mpi"))       fprintf(ofp, "# MPI:                                   on\n");
+  if (esl_opt_IsUsed(go, "--stall"))      fprintf(ofp, "# MPI stall mode:                        on\n");
 #endif
   /* Developer options, only shown to user if --devhelp used */
   if (esl_opt_IsUsed(go, "--noF1"))       fprintf(ofp, "# HMM MSV filter:                        off\n");
@@ -1903,6 +1899,15 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile)
     if(esl_opt_IsUsed(go, "--max"))        {  fprintf(ofp, "# truncated hit detection:               off [due to --max]\n"); }
     if(esl_opt_IsUsed(go, "--nohmm"))      {  fprintf(ofp, "# truncated hit detection:               off [due to --nohmm]\n"); }
   }
+  /* output number of processors being used, always (this differs from H3 which only does this if --cpu) */
+  int output_ncpu = FALSE;
+#ifdef HAVE_MPI
+  if (esl_opt_IsUsed(go, "--mpi"))         {  fprintf(ofp, "# MPI:                                   on [%d processors]\n", ncpus); output_ncpu = TRUE; }
+#endif 
+#ifdef HMMER_THREADS
+  if (! output_ncpu)                       {  fprintf(ofp, "# number of worker threads:              %d%s\n", ncpus, (esl_opt_IsUsed(go, "--cpu") ? " [--cpu]" : "")); output_ncpu = TRUE; }
+#endif 
+  if (! output_ncpu)                       {  fprintf(ofp, "# number of worker threads:              0 [serial mode; threading unavailable]\n"); }
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
   return eslOK;
 }
