@@ -811,121 +811,6 @@ The annotation of truncated hits in \prog{cmsearch} output is slightly
 different than for standard hits. An example is shown and explained
 in the next section below. 
 
-\subsection{Searching a sequence database for RNAs with unknown or no
- secondary structure}
-
-Some functional RNAs, including many types of small nucleolar RNAs
-(snoRNAs) do not conserve a secondary structure. It is more
-appropriate to model such RNA families with a profile HMM, because CMs
-only differ from profile HMMs in their modeling of basepairs and
-because profile HMM scoring algorithms are more efficient than CM
-ones. 
-
-Likewise, profile HMMs are more appropriate for modeling RNAs of
-unknown structure. For such RNAs, a profile HMM search may reveal
-additional homologs that can help elucidate the conserved structure
-for the family. After collecting numerous homologs, computer programs
-that try to predict the conserved secondary structure of a set of
-homologous RNAs 
-
-Infernal automatically detects when a model has zero basepairs and
-uses efficient profile HMM algorithms in \prog{cmsearch} and
-\prog{cmscan}. As an example, let's revisit the construction of our
-tRNA model but pretend as if we do not know that tRNA adopts a
-cloverleaf secondary structure. The \ccode{--noss}
-option to \prog{cmbuild} causes it to ignore any secondary structure
-annotation in the input alignment file.\footnote{The \prog{--noss}
-option must be used if the input alignment file has no secondary
-structure annotation.} So to build a structureless tRNA model,
-execute:
-
-\user{cmbuild --noss tRNA5.noss.cm tutorial/tRNA5.sto}
-
-\begin{sreoutput}
-# cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1 (May 2012)
-# Copyright (C) 2012 Howard Hughes Medical Institute.
-# Freely distributed under the GNU General Public License (GPLv3).
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# CM file:                                            tRNA5.noss.cm
-# alignment file:                                     tRNA5.sto
-# ignore secondary structure, if any:                 yes
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-#                                                                      rel entropy
-#                                                                      -----------
-# idx    name                     nseq eff_nseq   alen  clen  bps bifs    CM   HMM description
-# ------ -------------------- -------- -------- ------ ----- ---- ---- ----- ----- -----------
-       1 tRNA5                       5     5.00     74    72    0    0 0.552 0.552 
-#
-# CPU time: 0.18u 0.00s 00:00:00.18 Elapsed: 00:00:00.19
-\end{sreoutput}
-
-Note in the output that the model has 0 basepairs (``bps'') and that
-the CM and HMM have identical relative entropy. This is because the
-CM can be mirrored nearly identically by a profile HMM.
-
-After we built our normal tRNA CM above, we needed to use \prog{cmcalibrate} to
-calibrate the model before we could perform searches. Importantly,
-zero basepair models need not be calibrated prior to running
-cmsearch, so we can skip that step here. 
-
-Now, let's repeat the search of the \emph{M. ruminantium} genome but
-using our structureless model: 
-
-\user{cmsearch tRNA5.noss.cm mrum-genome.fa}\\
-
-This search is noticeably faster than the first one, because only
-profile HMM algorithms are used. Take a look at list of hits:
-
-\begin{sreoutput}
-Query:       tRNA5  [CLEN=72]
-Hit scores:
- rank     E-value  score  bias  sequence                        start     end   mdl trunc   gc  description
- ----   --------- ------ -----  ----------------------------- ------- -------   --- ----- ----  -----------
-  (1) !   3.6e-09   38.2   0.0  gi|288559258|ref|NC_013790.1|  362022  361960 - hmm     - 0.46  Methanobrevibacter ruminantium M1 chromosome, 
-  (2) !     3e-07   32.2   0.0  gi|288559258|ref|NC_013790.1|  762496  762559 + hmm     - 0.64  Methanobrevibacter ruminantium M1 chromosome, 
-  (3) !     3e-07   32.2   0.0  gi|288559258|ref|NC_013790.1| 2041698 2041635 - hmm     - 0.64  Methanobrevibacter ruminantium M1 chromosome, 
-  (4) !     5e-06   28.3   0.0  gi|288559258|ref|NC_013790.1| 2585264 2585203 - hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, 
-  (5) !   6.4e-06   28.0   0.0  gi|288559258|ref|NC_013790.1|  735143  735198 + hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, 
-  (6) !   7.1e-06   27.9   0.0  gi|288559258|ref|NC_013790.1| 2351247 2351188 - hmm     - 0.57  Methanobrevibacter ruminantium M1 chromosome, 
-  (7) !   1.2e-05   27.2   0.0  gi|288559258|ref|NC_013790.1|  662193  662251 + hmm     - 0.64  Methanobrevibacter ruminantium M1 chromosome, 
-  (8) !   1.2e-05   27.1   0.0  gi|288559258|ref|NC_013790.1| 2186009 2185951 - hmm     - 0.51  Methanobrevibacter ruminantium M1 chromosome, 
-  (9) !   4.2e-05   25.4   0.0  gi|288559258|ref|NC_013790.1| 2585183 2585118 - hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, 
- (10) !   6.4e-05   24.8   0.0  gi|288559258|ref|NC_013790.1| 1873882 1873820 - hmm     - 0.63  Methanobrevibacter ruminantium M1 chromosome, 
- (11) !   0.00014   23.7   0.0  gi|288559258|ref|NC_013790.1|  360882  360824 - hmm     - 0.51  Methanobrevibacter ruminantium M1 chromosome, 
- (12) !   0.00059   21.8   0.0  gi|288559258|ref|NC_013790.1|  361910  361851 - hmm     - 0.38  Methanobrevibacter ruminantium M1 chromosome, 
- (13) !   0.00091   21.2   0.0  gi|288559258|ref|NC_013790.1| 2350586 2350528 - hmm     - 0.58  Methanobrevibacter ruminantium M1 chromosome, 
- (14) !    0.0018   20.3   0.0  gi|288559258|ref|NC_013790.1|  995341  995267 - hmm     - 0.51  Methanobrevibacter ruminantium M1 chromosome, 
- (15) !    0.0026   19.7   0.0  gi|288559258|ref|NC_013790.1|   97728   97788 + hmm     - 0.49  Methanobrevibacter ruminantium M1 chromosome, 
- (16) !    0.0029   19.6   0.0  gi|288559258|ref|NC_013790.1| 2186083 2186024 - hmm     - 0.50  Methanobrevibacter ruminantium M1 chromosome, 
- (17) !    0.0031   19.5   0.0  gi|288559258|ref|NC_013790.1| 2130421 2130351 - hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, 
- (18) !    0.0044   19.0   0.0  gi|288559258|ref|NC_013790.1|  360727  360670 - hmm     - 0.43  Methanobrevibacter ruminantium M1 chromosome, 
- (19) !    0.0057   18.7   0.0  gi|288559258|ref|NC_013790.1| 1160527 1160608 + hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, 
- (20) !    0.0074   18.3   0.0  gi|288559258|ref|NC_013790.1|  361056  360994 - hmm     - 0.40  Methanobrevibacter ruminantium M1 chromosome, 
- ------ inclusion threshold ------
- (21) ?     0.012   17.7   0.0  gi|288559258|ref|NC_013790.1| 2151679 2151737 + hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, 
- (22) ?     0.012   17.7   0.0  gi|288559258|ref|NC_013790.1|  917729  917784 + hmm     - 0.61  Methanobrevibacter ruminantium M1 chromosome, 
- (23) ?     0.019   17.1   0.0  gi|288559258|ref|NC_013790.1| 2327123 2327043 - hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, 
- (24) ?     0.023   16.7   0.0  gi|288559258|ref|NC_013790.1|  360973  360920 - hmm     - 0.54  Methanobrevibacter ruminantium M1 chromosome, 
- (25) ?     0.037   16.1   0.0  gi|288559258|ref|NC_013790.1| 2350982 2350919 - hmm     - 0.50  Methanobrevibacter ruminantium M1 chromosome, 
- (26) ?     0.039   16.1   0.0  gi|288559258|ref|NC_013790.1|  361671  361606 - hmm     - 0.50  Methanobrevibacter ruminantium M1 chromosome, 
- (27) ?     0.039   16.0   0.0  gi|288559258|ref|NC_013790.1| 2680176 2680227 + hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, 
- (28) ?     0.062   15.4   0.0  gi|288559258|ref|NC_013790.1| 2585067 2585000 - hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, 
- (29) ?     0.063   15.4   0.0  gi|288559258|ref|NC_013790.1|  362793  362738 - hmm     - 0.46  Methanobrevibacter ruminantium M1 chromosome, 
- (30) ?     0.063   15.4   0.0  gi|288559258|ref|NC_013790.1| 1064778 1064857 + hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, 
- (31) ?     0.072   15.2   0.0  gi|288559258|ref|NC_013790.1| 2749938 2749884 - hmm     - 0.47  Methanobrevibacter ruminantium M1 chromosome, 
- (32) ?     0.073   15.2   0.0  gi|288559258|ref|NC_013790.1| 2749832 2749778 - hmm     - 0.47  Methanobrevibacter ruminantium M1 chromosome, 
- (33) ?      0.12   14.5   0.0  gi|288559258|ref|NC_013790.1|  361729  361689 - hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, 
- (34) ?       1.3   11.2   0.0  gi|288559258|ref|NC_013790.1|  361439  361393 - hmm     - 0.49  Methanobrevibacter ruminantium M1 chromosome, 
- (35) ?       4.4    9.6   0.0  gi|288559258|ref|NC_013790.1| 2583867 2583803 - hmm     - 0.49  Methanobrevibacter ruminantium M1 chromosome, 
- (36) ?         6    9.1   0.0  gi|288559258|ref|NC_013790.1|  546054  546021 - hmm     - 0.68  Methanobrevibacter ruminantium M1 chromosome, 
-\end{sreoutput}
-
-Note that the highest scoring hits have significantly higher E-values
-than in the original search. For example, the highest scoring hit in
-this HMM search is also the highest scoring 
-
-
 \subsection{Searching a CM database with a query sequence}
 
 The \prog{cmscan} program is for annotating all the different
@@ -1386,16 +1271,371 @@ Cobalamin.1         UCAG-AUACUCUUCUAUUAAGGCGGAAACUAC
 \end{sreoutput}
 
 
-\subsection{Local versus global model configuration ? }
-Write me.
+\subsection{Searching a sequence database for RNAs with unknown or no
+ secondary structure}
 
-\subsection{Extended tutorial: some useful command-line options}
-Write me.
+Some functional RNAs, including many types of small nucleolar RNAs
+(snoRNAs) do not conserve a secondary structure. It is more
+appropriate to model such RNA families with a profile HMM, because CMs
+only differ from profile HMMs in their modeling of basepairs and
+because profile HMM scoring algorithms are more efficient than CM
+ones. 
 
-\subsubsection{cmbuild --hand}
-Write me.
+Likewise, profile HMMs are more appropriate than CMs for modeling RNAs
+of unknown structure. For such RNAs, a profile HMM search may reveal
+additional homologs that can help elucidate the conserved structure
+for the family. Given the multiple homologs, you can use computer
+programs like RNAalifold \cite{} or WAR \cite{Torarinsson08} (a
+webserver that includes implementations of several programs) to try to
+predict the conserved secondary structure of a collection of
+homologous RNAs. Currently, Infernal itself does not have the
+capability of predicting structure, but it's predecessor COVE did with
+the \prog{covet} program, still available at
+\url{ftp://selab.janelia.org/pub/software/cove/cove-2.4.4.tar.Z}.
 
-\subsubsection{cmalign -g ? }
-Write me.
+Infernal automatically detects when a model has zero basepairs and
+uses efficient profile HMM algorithms in \prog{cmsearch} and
+\prog{cmscan}. As an example, let's revisit the construction of our
+tRNA model but pretend that we do not know the conserved cloverlear
+structure of tRNA.
+The file 
+\prog{tutorial/tRNA5.noss.sto} is identical to the file 
+\prog{tutorial/tRNA5.sto} except that it does not contain consensus
+secondary structure annotation. 
+To build a structureless tRNA model from this alignment, execute:
+
+\user{cmbuild --noss tRNA5.noss.cm tutorial/tRNA5.sto}
+
+The \prog{--noss} option is required when the alignment file lacks
+structure annotation. By forcing the use of \prog{--noss} we're
+forcing the user to realize that having no secondary structure is a
+special case for Infernal.
+
+The output will be similar to be the earlier example, but not
+identical:
+
+\begin{sreoutput}
+# cmbuild :: covariance model construction from multiple sequence alignments
+# INFERNAL 1.1 (May 2012)
+# Copyright (C) 2012 Howard Hughes Medical Institute.
+# Freely distributed under the GNU General Public License (GPLv3).
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                            tRNA5.noss.cm
+# alignment file:                                     tRNA5.noss.sto
+# overwrite CM file if necessary:                     yes
+# ignore secondary structure, if any:                 yes
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                      rel entropy
+#                                                                      -----------
+# idx    name                     nseq eff_nseq   alen  clen  bps bifs    CM   HMM description
+# ------ -------------------- -------- -------- ------ ----- ---- ---- ----- ----- -----------
+       1 tRNA5.noss                  5     5.00     74    72    0    0 0.552 0.552 
+#
+# CPU time: 0.11u 0.00s 00:00:00.11 Elapsed: 00:00:00.12
+\end{sreoutput}
+
+Note in the output that the model has 0 basepairs (``bps'') (the
+earlier example had 21) and that the CM and HMM have identical
+relative entropy. This is because the CM can be mirrored nearly
+identically by a profile HMM.
+
+After we built our normal tRNA CM above, we needed to use \prog{cmcalibrate} to
+calibrate the model before we could perform searches. Importantly,
+zero basepair models do not need to be calibrated prior to running
+cmsearch, so we can skip that step here. 
+
+Now, let's repeat the search of the \emph{M. ruminantium} genome but
+using our structureless tRNA model: 
+
+\user{cmsearch tRNA5.noss.cm mrum-genome.fa}\\
+
+This search is noticeably faster than the first one, because only
+profile HMM algorithms are used this time around. Take a look at list
+of hits:
+
+\begin{sreoutput}
+Query:       tRNA5.noss  [CLEN=72]
+Hit scores:
+ rank     E-value  score  bias  sequence                        start     end   mdl trunc   gc  description
+ ----   --------- ------ -----  ----------------------------- ------- -------   --- ----- ----  -----------
+  (1) !   3.6e-09   38.2   0.0  gi|288559258|ref|NC_013790.1|  362022  361960 - hmm     - 0.46  Methanobrevibacter ruminantium M1 chromosome, 
+  (2) !     3e-07   32.2   0.0  gi|288559258|ref|NC_013790.1|  762496  762559 + hmm     - 0.64  Methanobrevibacter ruminantium M1 chromosome, 
+  (3) !     3e-07   32.2   0.0  gi|288559258|ref|NC_013790.1| 2041698 2041635 - hmm     - 0.64  Methanobrevibacter ruminantium M1 chromosome, 
+  (4) !     5e-06   28.3   0.0  gi|288559258|ref|NC_013790.1| 2585264 2585203 - hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, 
+  (5) !   6.4e-06   28.0   0.0  gi|288559258|ref|NC_013790.1|  735143  735198 + hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, 
+  (6) !   7.1e-06   27.9   0.0  gi|288559258|ref|NC_013790.1| 2351247 2351188 - hmm     - 0.57  Methanobrevibacter ruminantium M1 chromosome, 
+  (7) !   1.2e-05   27.2   0.0  gi|288559258|ref|NC_013790.1|  662193  662251 + hmm     - 0.64  Methanobrevibacter ruminantium M1 chromosome, 
+  (8) !   1.2e-05   27.1   0.0  gi|288559258|ref|NC_013790.1| 2186009 2185951 - hmm     - 0.51  Methanobrevibacter ruminantium M1 chromosome, 
+  (9) !   4.2e-05   25.4   0.0  gi|288559258|ref|NC_013790.1| 2585183 2585118 - hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, 
+ (10) !   6.4e-05   24.8   0.0  gi|288559258|ref|NC_013790.1| 1873882 1873820 - hmm     - 0.63  Methanobrevibacter ruminantium M1 chromosome, 
+ (11) !   0.00014   23.7   0.0  gi|288559258|ref|NC_013790.1|  360882  360824 - hmm     - 0.51  Methanobrevibacter ruminantium M1 chromosome, 
+ (12) !   0.00059   21.8   0.0  gi|288559258|ref|NC_013790.1|  361910  361851 - hmm     - 0.38  Methanobrevibacter ruminantium M1 chromosome, 
+ (13) !   0.00091   21.2   0.0  gi|288559258|ref|NC_013790.1| 2350586 2350528 - hmm     - 0.58  Methanobrevibacter ruminantium M1 chromosome, 
+ (14) !    0.0018   20.3   0.0  gi|288559258|ref|NC_013790.1|  995341  995267 - hmm     - 0.51  Methanobrevibacter ruminantium M1 chromosome, 
+ (15) !    0.0026   19.7   0.0  gi|288559258|ref|NC_013790.1|   97728   97788 + hmm     - 0.49  Methanobrevibacter ruminantium M1 chromosome, 
+ (16) !    0.0029   19.6   0.0  gi|288559258|ref|NC_013790.1| 2186083 2186024 - hmm     - 0.50  Methanobrevibacter ruminantium M1 chromosome, 
+ (17) !    0.0031   19.5   0.0  gi|288559258|ref|NC_013790.1| 2130421 2130351 - hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, 
+ (18) !    0.0044   19.0   0.0  gi|288559258|ref|NC_013790.1|  360727  360670 - hmm     - 0.43  Methanobrevibacter ruminantium M1 chromosome, 
+ (19) !    0.0057   18.7   0.0  gi|288559258|ref|NC_013790.1| 1160527 1160608 + hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, 
+ (20) !    0.0074   18.3   0.0  gi|288559258|ref|NC_013790.1|  361056  360994 - hmm     - 0.40  Methanobrevibacter ruminantium M1 chromosome, 
+ ------ inclusion threshold ------
+ (21) ?     0.012   17.7   0.0  gi|288559258|ref|NC_013790.1| 2151679 2151737 + hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, 
+ (22) ?     0.012   17.7   0.0  gi|288559258|ref|NC_013790.1|  917729  917784 + hmm     - 0.61  Methanobrevibacter ruminantium M1 chromosome, 
+ (23) ?     0.019   17.1   0.0  gi|288559258|ref|NC_013790.1| 2327123 2327043 - hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, 
+ (24) ?     0.023   16.7   0.0  gi|288559258|ref|NC_013790.1|  360973  360920 - hmm     - 0.54  Methanobrevibacter ruminantium M1 chromosome, 
+ (25) ?     0.037   16.1   0.0  gi|288559258|ref|NC_013790.1| 2350982 2350919 - hmm     - 0.50  Methanobrevibacter ruminantium M1 chromosome, 
+ (26) ?     0.039   16.1   0.0  gi|288559258|ref|NC_013790.1|  361671  361606 - hmm     - 0.50  Methanobrevibacter ruminantium M1 chromosome, 
+ (27) ?     0.039   16.0   0.0  gi|288559258|ref|NC_013790.1| 2680176 2680227 + hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, 
+ (28) ?     0.062   15.4   0.0  gi|288559258|ref|NC_013790.1| 2585067 2585000 - hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, 
+ (29) ?     0.063   15.4   0.0  gi|288559258|ref|NC_013790.1|  362793  362738 - hmm     - 0.46  Methanobrevibacter ruminantium M1 chromosome, 
+ (30) ?     0.063   15.4   0.0  gi|288559258|ref|NC_013790.1| 1064778 1064857 + hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, 
+ (31) ?     0.072   15.2   0.0  gi|288559258|ref|NC_013790.1| 2749938 2749884 - hmm     - 0.47  Methanobrevibacter ruminantium M1 chromosome, 
+ (32) ?     0.073   15.2   0.0  gi|288559258|ref|NC_013790.1| 2749832 2749778 - hmm     - 0.47  Methanobrevibacter ruminantium M1 chromosome, 
+ (33) ?      0.12   14.5   0.0  gi|288559258|ref|NC_013790.1|  361729  361689 - hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, 
+ (34) ?       1.3   11.2   0.0  gi|288559258|ref|NC_013790.1|  361439  361393 - hmm     - 0.49  Methanobrevibacter ruminantium M1 chromosome, 
+ (35) ?       4.4    9.6   0.0  gi|288559258|ref|NC_013790.1| 2583867 2583803 - hmm     - 0.49  Methanobrevibacter ruminantium M1 chromosome, 
+ (36) ?         6    9.1   0.0  gi|288559258|ref|NC_013790.1|  546054  546021 - hmm     - 0.68  Methanobrevibacter ruminantium M1 chromosome, 
+\end{sreoutput}
+
+Note that we now only find 36 hits (20 with E-values less than the
+inclusion threshold of 0.01) compared to 56 (with 54 less than 0.01)
+in the original search with the CM. The increased sensitivity in the
+CM search exemplifies the additional power that comes with knowledge
+of the conserved secondary structure. Not all RNAs will show such a
+dramatic difference though. In fact, tRNA is an particular strong
+example of the power of CMs versus sequence-only based methods like
+HMMs because about as much statistical signal is present in their
+structure as in their primary sequence. Many structural RNAs contain
+significantly less information in their structure than in sequence
+conservation, however every bit of additional information
+helps\footnote{For a graph depicting of the relative amount of
+information in structure for sequence for many different types of RNAs
+see Figure 1.9 of \cite{Nawrocki09}}.
+
+HMM hit alignments differ slightly from CM hit alignments. Take a look
+at the first alignment:
+
+\begin{sreoutput}
+>> gi|288559258|ref|NC_013790.1|  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ rank     E-value  score  bias mdl mdl from   mdl to       seq from      seq to       acc trunc   gc
+ ----   --------- ------ ----- --- -------- --------    ----------- -----------      ---- ----- ----
+  (1) !   3.6e-09   38.2   0.0 hmm        5       67 ..      362022      361960 - .. 0.93     - 0.46
+
+                                       ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::: CS
+                     tRNA5.noss      5 auAUaGcgcAGUGGuAGcGCGgcagcCUgucaagguggAGGUCCuggGUUCGAUUCccaGUgu 67    
+                                        uAUaGc+cA+UGG AG+GCG  +g CUg ca  +   AGGU  uggGUUCGAUUCcc  U+ 
+  gi|288559258|ref|NC_013790.1| 362022 CUAUAGCUCAAUGGCAGAGCGUUUGGCUGACAUCCAAAAGGUUAUGGGUUCGAUUCCCUUUAG 361960
+                                       689******************************************************988876 PP
+\end{sreoutput}
+
+First, note that the \ccode{mdl} field reads \ccode{hmm} instead of
+\ccode{cm}. Also, because HMMs do not model basepairs, there
+is no
+\ccode{NC} annotation pointing out negative scoring noncanonical
+basepairs. 
+
+Finally, you may notice that HMM hits are more likely to not be full
+length than are CM hits. This hit, for example, begins at model
+position 5 and ends at model position 67, whereas our earlier CM
+search included a full length alignment from model position 1 to
+72. The profile HMMs used in Infernal allow local alignments that
+begin and end at any position in the model, with an equal score given
+for all possible start and end positions (this is the same local
+alignment strategy used in HMMER 3.0 \cite{Eddy08}). In contrast, the
+CM local alignment strategy used by Infernal encourages global
+alignments by enforcing a score penalty for local ones. Partly because
+CM and HMM alignments differ in this way, ``truncated'' HMM hits can
+start and end anywhere in the target sequence (instead of being
+identified only with specialized algorithms only at sequence ends like
+a CM), and so the \ccode{trunc} field is invalid for HMM hits and will
+always read \ccode{-}.
+
+In \prog{cmscan}, HMM algorithms will be used to compute alignments
+for all models in the CM database that contain zero basepairs, and CM
+algorithms will be used for all others. Importantly though, unlike with
+\prog{cmsearch} even models with zero basepairs must be calibrated
+prior to using them with \prog{cmscan}. Hits found with the HMM will
+be annotated like this example above, while CM hits will be annotated
+like the earlier CM examples.
+
+By default, Infernal uses HMM algorithms for models with zero
+basepairs, mainly because they are more efficient. If you'd like, you
+can force the use of CM algorithms for such models with the
+\prog{--nohmmonly} option with \prog{cmsearch} or \prog{cmscan}. Using
+\prog{--nohmmonly} will encourage more full length hits, but will
+cause the program to run a few-fold slower and also requires that the
+CM be calibrated with \prog{cmcalibrate} first.
 
 
+\subsection{Forcing global CM alignment with the -g option}
+
+By default, \prog{cmsearch}, \prog{cmscan} and \prog{cmalign} allow
+local \emph{or} global alignments between the sequence and the
+model. This allows an alignment to use what's called a ``local begin''
+and start at any match position in the model and to use what's called
+a ``local end'' to prematurely exit a section of the model to handle
+large insertions or deletions of the model structure and potentially
+insert nonhomologous residues into the alignment (these were the
+\ccode{~} annotated residues in the \prog{cmscan} and \prog{cmalign}
+examples above). Local alignments are permitted by default, because
+our internal benchmarks suggest this strategy is more sensitive for
+remote homology detection. An example of a local RNase P alignment is
+demonstrated in Figure X (FIX ME) of this guide. However, some users
+may wish to turn off local alignment. This can be done using the
+\ccode{-g} option to \prog{cmsearch}, \prog{cmscan}, and
+\prog{cmalign}. The use of local mode by default in \prog{cmalign} is
+new to version 1.1 - all previous versions used global alignment by
+default. Importantly, using \ccode{-g} does not turn off
+truncated hit detection and alignment; to do that use
+\ccode{--notrunc}. 
+
+\subsection{Specifying and annotating match positions with cmbuild --hand}
+
+When \prog{cmbuild} constructs a model from an input alignment it must
+decide which columns of the input alignment to define as match (or
+consensus) and insert columns. To do this, it firsts computes weights
+for each sequences using an ad hoc algorithm to downweight closely
+related sequences and upweight distantly related ones. to alleviate
+Then, for each position, the sum of the weights of the sequences that
+include a residue at the position is computed. If this sum is at least
+half the total number of sequences then the position is defined as a
+match position, else it is an insert position. If you're curious which
+positions get annotated as match versus insert in your alignment, use
+the \ccode{-O <f>} option with \prog{cmbuild}, which will save a
+annotated version of your input alignment to file \ccode{<f>},
+including the weights of each sequence. In this output alignment,
+positions with residues in the \ccode{\#=GC RF} lines of the alignment
+are match positions, and positions with gap characters are inserts.
+
+Sometimes you may want to override this automated behavior by
+specifying which columns be defined as match/insert, especially if you've
+painstakingly created your alignment by hand. You can do this with the
+\prog{--hand} option. Using this option you can also define a
+character to annotate each match position, which will be propogated to
+alignment output. In this section we'll go through an example of using
+\prog{--hand} with the 5 sequence tRNA alignment from earlier in the
+tutorial.
+
+Take a look at the file \ccode{tutorial/tRNA5.hand.sto}:
+
+\vspace{1em}
+\begin{minipage}{4.7in}
+\begin{sreoutput}[xleftmargin=0em]
+# STOCKHOLM 1.0
+
+tRNA1             GCGGAUUUAGCUCAGUUGGG.AGAGCGCCAGACUGAAGAUCUGGAGGUCC
+tRNA2             UCCGAUAUAGUGUAAC.GGCUAUCACAUCACGCUUUCACCGUGGAGA.CC
+tRNA3             UCCGUGAUAGUUUAAU.GGUCAGAAUGGGCGCUUGUCGCGUGCCAGA.UC
+tRNA4             GCUCGUAUGGCGCAGU.GGU.AGCGCAGCAGAUUGCAAAUCUGUUGGUCC
+tRNA5             GGGCACAUGGCGCAGUUGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCA
+#=GC SS_cons      <<<<<<<..<<<<.........>>>>.<<<<<.......>>>>>.....<
+#=GC RF           [accep]======[=Dloop=]============acd=======[vlp]=
+
+tRNA1             UGUGUUCGAUCCACAGAAUUCGCA
+tRNA2             GGGGUUCGACUCCCCGUAUCGGAG
+tRNA3             GGGGUUCAAUUCCCCGUCGCGGAG
+tRNA4             UUAGUUCGAUCCUGAGUGCGAGCU
+tRNA5             UCGGUUCGAUUCCGGUUGCGUCCA
+#=GC SS_cons      <<<<.......>>>>>>>>>>>>.
+#=GC RF           ====[Tloop]=====[accep]=
+//
+\end{sreoutput}
+\end{minipage}
+\begin{minipage}{1.5in}
+\includegraphics[scale=0.4]{Figures/trna1-DF6280-hand}
+\end{minipage}
+\vspace{1em}
+
+This file is the same as \prog{tRNA5.sto} except for the two
+additional lines beginning with \ccode{\#=GC RF}. This RF (reference)
+annotation is required for using \ccode{--hand}. Any non-gap character
+in the reference annotation will be assigned as a match
+position. Importantly, four different characters are considered gaps: 
+dashes (\ccode{-}), underscores (\ccode{\_}), dots (\ccode{.}) and
+tildes (\ccode{~}). In this alignment, all columns are non-gap
+characters, so all columns will be considered match positions. 
+
+Different regions of the secondary structure have been marked up using
+abbreviations for the names of the regions in the reference
+annotation. For example, \ccode{acd} annotates the three positions of
+the anticodon. I've used \ccode{[} and \ccode{]} to indicate region
+boundaries in some cases. Crucially, I've avoided the use of any gap
+characters for positions between named regions which I still want to
+be considered match positions, and opted to use \ccode{=} (which is
+not considered a gap by \prog{cmbuild}) for these positions.
+
+To build the hand-specified model from this alignment, do:
+
+\user{cmbuild --hand tRNA5.hand.cm tutorial/tRNA5.hand.sto}
+
+The output reports that the model now has 74 match (consensus)
+positions in the \ccode{clen} column. If we had built this model
+without specifying \ccode{--hand} (as we did earlier in this tutorial)
+the resulting model would have had only 72 consensus positions.
+(Note that I've annotated the two extra positions with three gaps in
+\ccode{tRNA5.hand.sto} as match solely to demonstrate how
+\prog{--hand} works, not because I think it's better to model these
+positions as matches than inserts.)
+
+\begin{sreoutput}
+<[tutorial]> ../src/cmbuild -F --hand tRNA5.hand.cm tRNA5.hand.sto
+# cmbuild :: covariance model construction from multiple sequence alignments
+# INFERNAL 1.1 (May 2012)
+# Copyright (C) 2012 Howard Hughes Medical Institute.
+# Freely distributed under the GNU General Public License (GPLv3).
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                            tRNA5.hand.cm
+# alignment file:                                     tRNA5.hand.sto
+# overwrite CM file if necessary:                     yes
+# use #=GC RF annotation to define consensus columns: yes
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                      rel entropy
+#                                                                      -----------
+# idx    name                     nseq eff_nseq   alen  clen  bps bifs    CM   HMM description
+# ------ -------------------- -------- -------- ------ ----- ---- ---- ----- ----- -----------
+       1 tRNA5.hand                  5     3.59     74    74   21    2 0.763 0.476 
+#
+# CPU time: 0.45u 0.00s 00:00:00.45 Elapsed: 00:00:00.46
+\end{sreoutput}
+
+Now, let's use this model to search the \emph{M. ruminantium} genome
+again. First, the model must be calibrated. To save time, a calibrated
+version of the file is in \prog{tutorial/tRNA5.hand.c.cm}. To do the
+search:
+
+\user{cmsearch tutorial/tRNA5.hand.c.cm tutorial/mrum-genomes.fa}
+
+The results are very similar to the earlier search with the
+tRNA model built with default \prog{cmbuild} parameters (though no
+identical since the model now has two additional match positions). The
+important difference involves the hit alignments. Take a look at the
+hit number 46 as an illustrative example:
+
+\begin{sreoutput}
+>> gi|288559258|ref|NC_013790.1|  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ rank     E-value  score  bias mdl mdl from   mdl to       seq from      seq to       acc trunc   gc
+ ----   --------- ------ ----- --- -------- --------    ----------- -----------      ---- ----- ----
+ (46) !   1.6e-09   43.2   0.0  cm        1       74 []      995344      995263 - .. 0.90    no 0.49
+
+                                                   v          v                                                   NC
+                                       (((((((,,<<<<________._>>>>,<<<<<_______>>>>>,,,........,,<<<<<_______>>>> CS
+                     tRNA5.hand      1 gCcggcaUAGcgcAgUUGGuu.AgcgCgccagccUgucAagcuggAGg........UCCgggGUUCGAUUCccc 65    
+                                       :::G:CAUAGCG AG  GGU+ A CGCG:CAG:CU +++A:CUG: G+        UC:GGGGUUCGA UCCCC
+  gi|288559258|ref|NC_013790.1| 995344 AGAGACAUAGCGAAGC-GGUCaAACGCGGCAGACUCAAGAUCUGUUGAuuaguucuUCAGGGGUUCGAAUCCCC 995272
+                                       ************9***.8886258***********************9444444445***************** PP
+                                       [accep]======[=Dloop=.]============acd=======[vl........p]=====[Tloop]==== RF
+
+                                                 NC
+                                       >))))))): CS
+                     tRNA5.hand     66 GugccgGca 74    
+                                       :UG:C:::A
+  gi|288559258|ref|NC_013790.1| 995271 UUGUCUCUA 995263
+                                       ********* PP
+                                       =[accep]= RF
+\end{sreoutput}
+
+The reference annotation from the training alignment to \prog{cmbuild}
+has been propagated to the hit. All inserts in the alignment are
+annotated as \ccode{.} columns in the RF annotation. Note that the
+variable loop (annotated as \ccode{[vlp]} in the training alignment)
+contains 8 inserted residues. 

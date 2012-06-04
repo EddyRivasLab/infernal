@@ -382,7 +382,6 @@ example A, and a target region is composed of an overrepresentation
 of that residue then it will receive a high score simply because it is
 A-rich. 
 
-
 A different null3 model is calculated for every alignment. The 4
 emission probabilities of the null3 model are calculated as 
 simply their occurence within the region of the hit. For example, if
@@ -514,8 +513,15 @@ calculated by optimal alignment of the model to the sequence.
 
 \item [$\pi_2$] The log odds of the priors, $\log P(N_2)/P(N_1)$. 
 Infernal arbitrarily assumes that the null3 model is
-$\frac{1}{32}$ as likely as the main null model, so this factor
-is -5 bits.
+$\frac{1}{65536}$ as likely as the main null model, so this factor
+is -16 bits.\footnote{In versions 1.0 through 1.0.2, the null3 model
+  was assumed to be $\frac{1}{32}$ as likely as the main null model
+  (-5 bit factor instead of -16 bits). The decreased value in version
+  1.1 means that null3 penalties are reduced. We decided to do this
+  based on internal benchmarking results. Version 1.1 uses a new
+  default prior for parameterizing models which apparently alleviates
+  the problem of biased composition, thus allowing us to reduce this
+  value without sacrificing performance.}
 \end{enumerate}
 
 The code that calculates the null3 correction is in 
