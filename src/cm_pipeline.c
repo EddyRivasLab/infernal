@@ -2169,10 +2169,9 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
       ws[i] =         wlist.windows[i].n;
       we[i] = ws[i] + wlist.windows[i].length - 1;
     }
-    /* split up windows > (pli->wmult * pli->cmW) into length 2W,
-     * with W-1 overlapping residues, pli->wmult is 2.0. (So yes, 
-     * if window is 2*W+1 residues we search all but one residue
-     * twice.)
+    /* split up windows > (2 * pli->cmW) into length 2W, with W-1
+     * overlapping residues. (If window is 2*W+1 residues we search
+     * all but one residue twice.)
      */
     nalloc = nwin + 100;
     ESL_ALLOC(new_ws, sizeof(int64_t) * nalloc);
@@ -2184,7 +2183,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
 	ESL_RALLOC(new_ws, p, sizeof(int64_t) * nalloc);
 	ESL_RALLOC(new_we, p, sizeof(int64_t) * nalloc);
       }
-      if(wlen > (pli->wmult * pli->cmW)) { 
+      if(wlen > (2 * pli->cmW)) { 
 	/* split this window */
 	new_ws[i2]   = ws[i]; 
 	new_we[i2]   = ESL_MIN((new_ws[i2] + (2 * pli->cmW) - 1), we[i]);
