@@ -1368,8 +1368,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((info = create_info(go)) == NULL) mpi_failure("Out of memory"); /* for the next model */
 
     hstatus = cm_file_Read(cmfp, TRUE, &abc, &(info->cm));
-    free_info(info); 
-    free(info); 
+    if(hstatus != eslOK) { free_info(info); free(info); }
   } /* end outer loop over query CMs */
   
   switch(hstatus) {
@@ -1377,7 +1376,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   case eslEOF:       /* do nothing. EOF is what we want. */                                               break;
   default:           mpi_failure("Unexpected error (%d) in reading CMs from %s\n%s", hstatus, cfg->cmfile, cmfp->errbuf);
   }
-  
+
   /* monitor all the workers to make sure they have ended */
   for (i = 1; i < cfg->nproc; ++i)
     {

@@ -1952,7 +1952,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
 	if(jmax[v] == (i0-1)) { /* HMM bands implied state must be entered after emitting exactly 0 residues, we know better, make it unreachable */
 	  ESL_DASSERT1((jmin[v] == (i0-1)));
 	  imin[v] = jmin[v] = -1; /* ignore hmm */
-	  jmin[v] = jmax[v] = -2; /* ignore hmm */
+	  imax[v] = jmax[v] = -2; /* ignore hmm */
 	}
 	else if (jmin[v] == (i0-1)) { 
 	  jmin[v] = i0; /* pad 1 onto what the hmm thought */
@@ -4574,7 +4574,10 @@ cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc)
   int Lp = j-i+1;
   int sd, sdl, sdr;
   int min_i, max_i, min_j, max_j;
-  /* printf("cp9_OffsetCMBands(), i: %d j: %d Lp: %d\n", i, j, Lp); */
+
+#if eslDEBUGLEVEL >= 1   
+  printf("cp9_ShiftCMBands(), i: %d j: %d Lp: %d\n", i, j, Lp);
+#endif
 
   for(v = 0; v < cm->M; v++) { 
     sd  = StateDelta(cm->sttype[v]);

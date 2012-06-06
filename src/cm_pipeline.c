@@ -1756,7 +1756,7 @@ pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli)
   } else { /* SCAN MODE */
     fprintf(ofp,   "Query sequence(s):                         %s%15" PRId64 "  (%d residues searched)\n",  
 	    match_cm_spacing ? "        "  : "",
-	    pli->nseqs,   (int) nres_searched / pli->nmodels);
+	    pli->nseqs,   (int) nres_searched / pli->nmodels_hmmonly);
     fprintf(ofp,   "Target model(s):                           %s%15" PRId64 "  (%" PRId64 " consensus positions)\n",     
 	    match_cm_spacing ? "        "  : "",
 	    pli->nmodels_hmmonly, pli->nnodes_hmmonly);
