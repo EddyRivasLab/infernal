@@ -100,12 +100,10 @@ main(int argc, char **argv)
       p7_oprofile_Convert(gm, om);
       
       if ((cm_offset            = ftello(mfp)) == -1) cm_Fail("Failed to ftello() current disk position of CM db file");
-#ifndef p7_IMPL_DUMMY
       if (esl_newssi_AddKey(nssi, cm->name, fh, cm_offset, 0, 0) != eslOK) cm_Fail("Failed to add key %s to SSI index", cm->name);
       if (cm->acc) {
 	if (esl_newssi_AddAlias(nssi, cm->acc, cm->name)         != eslOK) cm_Fail("Failed to add secondary key %s to SSI index", cm->acc);
       }
-#endif
       if((! (cm->flags & CMH_FP7)) || (cm->fp7 == NULL)) cm_Fail("CM %s does not have a p7 filter HMM", cm->name);
       cm_file_WriteBinary(mfp, -1, cm, &fp7_offset);
 

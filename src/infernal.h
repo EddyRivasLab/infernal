@@ -76,11 +76,10 @@
  * 1. Default values for various parameters, and other constant definitions.
  ***********************************************************************************/
 
-#define DEFAULT_MIN_CP9_E_CUTOFF    1.0
 #define DEFAULT_BETA_W              1E-7
 #define DEFAULT_BETA_QDB1           1E-7
 #define DEFAULT_BETA_QDB2           1E-15
-#define DEFAULT_TAU                 0.0000001
+#define DEFAULT_TAU                 1E-7
 #define DEFAULT_PBEGIN              0.05           /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_PEND                0.05           /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_ETARGET             0.59           /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
@@ -111,7 +110,7 @@
 /* P7 HMM E-value parameters, borrowed from HMMER, but with 2 new additions: CM_p7_GMU and CM_p7_GLAMBDA */
 #define CM_p7_NEVPARAM 8  /* number of statistical parameters stored in cm->p7_evparam */
 enum cm_p7_evparams_e {CM_p7_LMMU  = 0, CM_p7_LMLAMBDA = 1, CM_p7_LVMU = 2,  CM_p7_LVLAMBDA = 3, CM_p7_LFTAU = 4, CM_p7_LFLAMBDA = 5, CM_p7_GFMU = 6, CM_p7_GFLAMBDA = 7 };
-#define CM_p7_EVPARAM_UNSET -99999.0f  /* if p7_evparam[0] is unset, then all unset                         */
+#define CM_p7_EVPARAM_UNSET -99999.0f  /* if p7_evparam[0] is unset, then all unset */
 
 /* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
  * for the do_full? argument to the alignment engines.

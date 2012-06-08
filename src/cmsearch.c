@@ -133,7 +133,7 @@ static ESL_OPTIONS options[] = {
   /* Other options */
   /* name           type         default   env  range toggles   reqs   incomp                help                                                            docgroup*/
   { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "do not allow truncated hits at sequence terminii",             7 },
-  { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "turn OFF the NULL3 post hoc additional null model",            7 },
+  { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "turn off the NULL3 post hoc additional null model",            7 },
   { "--mxsize",     eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,                 "set max allowed size of alignment DP matrices to <x> Mb",      7 },
   { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,                 "set max allowed size of search DP matrices to <x> Mb",         7 },
   { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "use scanning CM CYK algorithm, not Inside in final stage",     7 },
@@ -335,7 +335,7 @@ static int  mpi_inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, in
 static MPI_BLOCK      *create_mpi_block();
 static MPI_BLOCK_LIST *create_mpi_block_list();
 static void            free_mpi_block_list(MPI_BLOCK_LIST *list);
-#if 0 
+#if eslDEBUGLEVEL >= 1
 /* useful only for debugging */
 static void            dump_mpi_block(FILE *fp, MPI_BLOCK *block);
 static void            dump_mpi_block_list(FILE *fp, MPI_BLOCK_LIST *list);
@@ -380,14 +380,11 @@ main(int argc, char **argv)
    */
 #ifdef HAVE_MPI
 
-#if 1
-  /* TEMP */
+#if eslDEBUGLEVEL >= 1
   pid_t pid;
-  /* get the process id */
   pid = getpid();
   printf("The process id is %d\n", pid);
   fflush(stdout);
-  /* TEMP */
 #endif
 
   /* pause the execution of the programs execution until the user has a
@@ -2755,7 +2752,7 @@ create_mpi_block()
   return NULL;
 }
 
-#if 0
+#if eslDEBUGLEVEL >= 1
 void
 dump_mpi_block(FILE *fp, MPI_BLOCK *block)
 { 

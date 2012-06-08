@@ -19,7 +19,6 @@
 #include <esl_random.h>
 #include <esl_randomseq.h>
 #include <esl_stats.h>
-#include <esl_stopwatch.h>
 #include <esl_vectorops.h>
 #include <esl_wuss.h>
 

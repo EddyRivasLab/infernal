@@ -118,7 +118,7 @@ static ESL_OPTIONS options[] = {
   { "--Fmid",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--mid", NULL,                    "with --mid, set P-value threshold for HMM stages to <x>",             6 },
   /* Other options */
   { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not allow truncated hits at sequence terminii",             7 },
-  { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn OFF the NULL3 post hoc additional null model",            7 },
+  { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn off the NULL3 post hoc additional null model",            7 },
   { "--mxsize",     eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,            "set max allowed size of alignment DP matrices to <x> Mb",      7 },
   { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,            "set max allowed size of search DP matrices to <x> Mb",         7 },
   { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "use scanning CM CYK algorithm, not Inside in final stage",     7 },
@@ -310,14 +310,12 @@ main(int argc, char **argv)
    */
 #ifdef HAVE_MPI
 
-#if 0
-  /* TEMP */
+#if eslDEBUGLEVEL >= 1
   pid_t pid;
   /* get the process id */
   pid = getpid();
   printf("The process id is %d\n", pid);
   fflush(stdout);
-  /* TEMP */
 #endif
 
   /* pause the execution of the programs execution until the user has a

@@ -23,8 +23,6 @@
 
 #include "infernal.h"
 
-#define DEBUGPIPELINE  0
-
 static int sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_submap, CM_t **ret_sub_cm);
 
 /*****************************************************************
@@ -318,8 +316,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   int do_xtau      = (cm->align_opts & CM_ALIGN_XTAU)      ? TRUE  : FALSE;
   int doing_search = FALSE;
 
-  /*printf("in DispatchSqAlignment() %s\n", sq->name);*/
-#if DEBUGPIPELINE
+#if eslDEBUGLEVEL >= 1
   printf("in DispatchSqAlignment() %s\n", sq->name);
   printf("\tdo_nonbanded: %d\n", do_nonbanded);
   printf("\tdo_optacc:    %d\n", do_optacc);
@@ -499,9 +496,6 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     cm->cp9b->thresh1 = save_thresh1;
     cm->cp9b->thresh2 = save_thresh2;
   }
-#if DEBUGPIPELINE
-  if(status == eslERANGE) printf("Returning eslERANGE, errbuf: %s\n", errbuf);
-#endif
   if(data != NULL) cm_alndata_Destroy(data, FALSE);
   *ret_data = NULL;
 

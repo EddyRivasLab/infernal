@@ -4,11 +4,11 @@
  * fast (optimized) and reference versions. 
  * 
  * All CYK/Inside scanning functions were rewritten between
- * versions 0.81 and 1.0 Here's a list of the 1.0 functions
- * and their 0.81 analogs. All the 1.0 functions listed are in
- * this file (cm_dpsearch.c).
+ * versions 0.81 and 1.0 Here's a list of the 1.x functions
+ * and their 0.81 analogs. All the 1.x functions listed are in
+ * this file.
  *
- * 1.0 fast version    1.0 slow version   0.81 version            
+ * 1.x fast version    1.x slow version   0.81 version            
  * ----------------    ----------------   -------------
  * FastCYKScan()       RefCYKScan()       scancyk.c:CYKScan()
  *                                        bandcyk.c:CYKBandedScan()
@@ -25,7 +25,7 @@
  * is implicit in the cm->smx CM_SCAN_MX data structure,
  * which includes min/max d values for each state.
  *
- * Note: Prior to 1.1 release, removed three experimental Inside
+ * Note: Prior to 1.1 release, I removed three experimental Inside
  * scanners which hadn't been touched since the 1.0 release.
  * [EPN, Fri Nov 4 14:48:41 2011]:
  *   XFastIInsideScan()

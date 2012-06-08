@@ -1,7 +1,7 @@
 /* cm_p7_band.c
  * 
  * Functions for p7 HMM banding.
- * 
+ * BEWARE: only partially implemented.
  */
 
 #include "esl_config.h"
@@ -14,7 +14,6 @@
 
 #include "easel.h"
 #include "esl_sse.h"
-#include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
@@ -1764,10 +1763,6 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   int do_old_hmm2ij;
   CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (this could be Lcp9, Rcp9, Tcp9 if we update this function to possibly handle truncated alignment) */
 
-  ESL_STOPWATCH *watch;
-  watch = esl_stopwatch_Create();
-  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
-
   /* Contract checks */
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, but cm->cp9map is NULL.\n");
   if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, dsq is NULL.");
@@ -1788,20 +1783,8 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
    */
 
   /* Step 1: Get HMM Forward/Backward DP matrices. */
-  esl_stopwatch_Start(watch);  
   if((status = cp9_ForwardP7B (cp9, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
-  esl_stopwatch_Stop(watch); 
-  FormatTimeString(time_buf, watch->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "Forwp7B         %11s\n", time_buf);
-#endif
-  esl_stopwatch_Start(watch);  
   if((status = cp9_BackwardP7B(cp9, errbuf, bmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
-  esl_stopwatch_Stop(watch); 
-  FormatTimeString(time_buf, watch->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "Backp7B         %11s\n", time_buf);
-#endif
 
   if(cm->align_opts & CM_ALIGN_CHECKFB) { 
     if((status = cp9_CheckFBP7B(fmx, bmx, cp9, errbuf, sc, 1, L, dsq, kmin, kmax)) != eslOK) return status;
@@ -1814,14 +1797,8 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
     exit(1);
   }
   else {
-    esl_stopwatch_Start(watch);  
     if((status = cp9_FB2HMMBandsP7B(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, L, cp9b->hmm_M,
 				    (1.-cm->tau), do_old_hmm2ij, kmin, kmax, debug_level)) != eslOK) return status;
-    esl_stopwatch_Stop(watch); 
-    FormatTimeString(time_buf, watch->user, TRUE);
-#if PRINTNOW
-    fprintf(stdout, "FB2bands        %11s\n", time_buf);
-#endif
     cp9b->tau = cm->tau;
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, L, cp9b, cm->tau, 1);
@@ -1831,13 +1808,7 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
     if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, 1, L, FALSE, debug_level)) != eslOK) return status;
   }
   else {
-    esl_stopwatch_Start(watch);  
     if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, 1, L, FALSE, FALSE, debug_level)) != eslOK) return status;
-    esl_stopwatch_Stop(watch); 
-    FormatTimeString(time_buf, watch->user, TRUE);
-#if PRINTNOW
-    fprintf(stdout, "HMM2ij          %11s\n", time_buf);
-#endif
     /* For debugging, uncomment this block:
        if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, FALSE, debug_level)) != eslOK) { 
        ESL_SQ *tmp;
@@ -1864,7 +1835,6 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
 
   if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, L);
 
-  esl_stopwatch_Destroy(watch);
   return eslOK;
 }
 
@@ -1901,12 +1871,6 @@ cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *
   float sc;
   CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (this could be Lcp9, Rcp9, Tcp9 if we update this function to possibly handle truncated alignment) */
 
-  /* TEMP */
-  ESL_STOPWATCH *watch;
-  watch = esl_stopwatch_Create();
-  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
-  /* TEMP */
-
   /* Contract checks */
   if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors(), dsq is NULL.");
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9map is NULL.\n");
@@ -1920,16 +1884,10 @@ cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *
   if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Posteriors, relevant cp9 is NULL.\n");
 
   /* Step 1: Get HMM posteriors.*/
-  esl_stopwatch_Start(watch);  
   if((status = cp9_ForwardP7B (cp9, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
-  esl_stopwatch_Stop(watch); 
-  FormatTimeString(time_buf, watch->user, TRUE);
   if(debug_level > 0) printf("CP9P7B Forward  score : %.4f\n", sc);
 
-  esl_stopwatch_Start(watch);  
   if((status = cp9_BackwardP7B(cp9, errbuf, bmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
-  esl_stopwatch_Stop(watch); 
-  FormatTimeString(time_buf, watch->user, TRUE);
   if(debug_level > 0) printf("CP9 Backward  score : %.4f\n", sc);
 
   if(cm->align_opts & CM_ALIGN_CHECKFB) {
@@ -1940,7 +1898,6 @@ cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *
   /* Get posteriors */
   if((status = cp9_PosteriorP7B(dsq, errbuf, L, cp9, fmx, bmx, pmx, kmin, kmax)) != eslOK) return status;
 
-  esl_stopwatch_Destroy(watch);
   return eslOK;
 }
 
@@ -2363,13 +2320,10 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
 	     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int   status;
-  ESL_STOPWATCH *watch;
-  watch = esl_stopwatch_Create();
   float usc, nullsc;
   int *k2i, *i2k;
   float *isc;
   int *iconflict;
-  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
   int *kmin, *kmax;
   int ncells;
 
@@ -2401,16 +2355,9 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
     fprintf(stdout, "OMSV  %8.2f  %11s\n", ((usc -nullsc) / eslCONST_LOG2), time_buf);
   */
 
-  esl_stopwatch_Start(watch);  
   p7_GMSV(dsq, L, gm, gx, 2.0, &usc);
-  esl_stopwatch_Stop(watch); 
-  FormatTimeString(time_buf, watch->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "GMSV  %8.2f  %11s\n", ((usc -nullsc) / eslCONST_LOG2), time_buf);
-#endif
 
   /* Step 2: traceback MSV */
-  esl_stopwatch_Start(watch);
   status = my_p7_GTraceMSV(dsq, L, gm, gx, p7_tr, &i2k, &k2i, &isc, &iconflict);
 
   /* Step 3: prune pins */
@@ -2425,11 +2372,6 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
 
   /* Step 4: pins -> bands */
   if((status = p7_pins2bands(i2k, errbuf, L, cm->clen, pad7, &kmin, &kmax, &ncells)) != eslOK) return status;
-  esl_stopwatch_Stop(watch); 
-  FormatTimeString(time_buf, watch->user, TRUE);
-#if PRINTNOW
-  fprintf(stdout, "tMSV+           %11s\n", time_buf);
-#endif
   /*DumpP7Bands(stdout, i2k, kmin, kmax, L); */
 
   /* print gmx in heatmap format */ 
@@ -2454,7 +2396,6 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
   free(isc);
   free(k2i);
 
-  esl_stopwatch_Destroy(watch);
   return eslOK;
 }
 

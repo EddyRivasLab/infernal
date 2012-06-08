@@ -7,7 +7,7 @@
  *                  bands. No FastTrCYKScan() exists. I wrote one
  *                  based on FastCYKScan() but it was only about 5%
  *                  faster and three times as many lines of code as
- *                  RefTrCYKScan(), so I scrapped it. Its in the
+ *                  RefTrCYKScan(), so I scrapped it. It's in the
  *                  subversion repository though: r3663.  ref:
  *                  ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG
  *
@@ -39,9 +39,6 @@
 #include "hmmer.h"
 
 #include "infernal.h"
-
-#define PRINTFALPHA 0
-#define PRINTIALPHA 0
 
 /* Function: RefTrCYKScan()
  * Date:     EPN, Tue Aug 16 04:16:03 2011
@@ -479,7 +476,8 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
 	      }
 	    }
 	  }
-#if PRINTFALPHA
+#if eslDEBUGLEVEL >= 3
+	  /* print alpha matrices - caution: these will be big! */
 	  if(cm->stid[v] == BIF_B) { 
 	    for(d = dnA[v]; d <= dxA[v]; d++) { 
 	      printf("R j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
@@ -640,7 +638,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
-#if 0
+#if eslDEBUGLEVEL >= 2
   printf("Best truncated score: %.4f (%.4f) (ANY LENGTH CYK mode: %s)\n",
 	 vsc_root,
 	 vsc_root + sreLOG2(2./(cm->clen * (cm->clen+1))),
@@ -1138,7 +1136,8 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 	    }
 	    vsc[v] = Scorify(ivsc);
 	  }
-	  #if PRINTIALPHA
+#if eslDEBUGLEVEL >= 3
+	  /* print alpha matrices - caution: these will be big! */
 	  if(cm->stid[v] == BIF_B) { 
 	    for(d = dnA[v]; d <= dxA[v]; d++) { 
 	      printf("R j: %3d  v: %3d  d: %3d   J: %10d  L: %10d  R: %10d  T: %10d\n", 
@@ -2159,7 +2158,8 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
 	}
       }
     } /* finished calculating deck v. */
-#if PRINTFALPHA
+#if eslDEBUGLEVEL >= 3
+	  /* print alpha matrices - caution: these will be big! */
 	  if(cm->stid[v] == BIF_B) { 
 	    /* the main j loop */
 	    for (j = jmin[v]; j <= jmax[v]; j++) { 
@@ -3273,7 +3273,8 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
 	}
       }
     } /* finished calculating deck v. */
-#if PRINTFALPHA
+#if eslDEBUGLEVEL >= 3
+	  /* print alpha matrices - caution: these will be big! */
 	  if(cm->stid[v] == BIF_B) { 
 	    /* the main j loop */
 	    for (j = jmin[v]; j <= jmax[v]; j++) { 

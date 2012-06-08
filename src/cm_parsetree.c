@@ -2759,7 +2759,7 @@ cm_StochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, E
   if(pA        != NULL) free(pA);
   if(validA    != NULL) free(validA);
 
-#if 0 
+#if eslDEBUGLEVEL >= 2 
   ParsetreeDump(stdout, tr, cm, dsq);
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
@@ -3047,7 +3047,7 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   if(pA        != NULL) free(pA);
   if(validA    != NULL) free(validA);
 
-#if 0 
+#if eslDEBUGLEVEL >= 2 
   ParsetreeDump(stdout, tr, cm, dsq);
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
@@ -3550,7 +3550,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   if(LpA       != NULL) free(LpA);
   if(RpA       != NULL) free(RpA);
 
-#if 0 
+#if eslDEBUGLEVEL >= 2 
   ParsetreeDump(stdout, tr, cm, dsq);
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
@@ -4179,7 +4179,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   if(LpA       != NULL) free(LpA);
   if(RpA       != NULL) free(RpA);
 
-#if 0
+#if eslDEBUGLEVEL >= 2
   ParsetreeDump(stdout, tr, cm, dsq);
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);

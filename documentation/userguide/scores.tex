@@ -1,4 +1,4 @@
-\section{How \texttt{cmsearch} and \texttt{cmscan} score alignments and determine significance}
+\section{How cmsearch and cmscan score alignments and determine significance}
 
 The \prog{cmsearch} and \prog{cmscan} programs give you a ranked list
 of hits in a sequence or CM database.  Which ones are likely to be
@@ -583,35 +583,34 @@ composition would receive a $3.44$ bit penalty.
 % created basically solely to make this table. 
 % A frozen copy of the version used to make this table
 % (with -l option)  
-% is : /groups/eddy/home/nawrockie/infernal/easel/miniapps/bkups/8_0619-1/esl-null3
+% is: /groups/eddy/home/nawrockie/notebook/12_0503_inf_tutorial/wd-infernal/easel/miniapps/bkups/12_0605-1/
 %
 % raw output:
 % > esl-null3 -l 
 %   GC      A      C      G      U  correction (bits)
 %-----  -----  -----  -----  -----  -----------------
-%100.0    0.0   50.0   50.0    0.0              95.00
-% 90.0    5.0   45.0   45.0    5.0              48.10
-% 80.0   10.0   40.0   40.0   10.0              22.81
-% 70.0   15.0   35.0   35.0   15.0               6.88
-% 65.0   17.5   32.5   32.5   17.5               2.01
-% 60.0   20.0   30.0   30.0   20.0               0.30
-% 55.0   22.5   27.5   27.5   22.5               0.07
-% 50.0   25.0   25.0   25.0   25.0               0.04
-% 45.0   27.5   22.5   22.5   27.5               0.07
-% 40.0   30.0   20.0   20.0   30.0               0.30
-% 35.0   32.5   17.5   17.5   32.5               2.01
-% 30.0   35.0   15.0   15.0   35.0               6.88
-% 20.0   40.0   10.0   10.0   40.0              22.81
-% 10.0   45.0    5.0    5.0   45.0              48.10
-%  0.0   50.0    0.0    0.0   50.0              95.00
+%100.0    0.0   50.0   50.0    0.0           84.00000
+% 90.0    5.0   45.0   45.0    5.0           37.10043
+% 80.0   10.0   40.0   40.0   10.0           11.80760
+% 70.0   15.0   35.0   35.0   15.0            0.08019
+% 65.0   17.5   32.5   32.5   17.5            0.00213
+% 60.0   20.0   30.0   30.0   20.0            0.00016
+% 55.0   22.5   27.5   27.5   22.5            0.00004
+% 50.0   25.0   25.0   25.0   25.0            0.00002
+% 45.0   27.5   22.5   22.5   27.5            0.00004
+% 40.0   30.0   20.0   20.0   30.0            0.00016
+% 35.0   32.5   17.5   17.5   32.5            0.00213
+% 30.0   35.0   15.0   15.0   35.0            0.08019
+% 20.0   40.0   10.0   10.0   40.0           11.80759
+% 10.0   45.0    5.0    5.0   45.0           37.10044
+%  0.0   50.0    0.0    0.0   50.0           84.00000
 
 By default, the null3 score correction is used by \prog{cmcalibrate,
-cmsearch} and \prog{cmalign}. It can be turned off in any of these
-programs by using the \prog{--no-null3} option (which can only be seen
-in the list of options if \prog{--devhelp} is invoked)). However, be careful,
-the E-values for models that are calibrated with \prog{--no-null3} are
-only valid when \prog{--no-null3} is also used with
-\prog{cmsearch}. Likewise, if \prog{--no-null3} is \emph{not} used
-during calibration, it should not be used during search.
+cmsearch} and \prog{cmscan}. It can be turned off in any of these
+programs by using the \prog{--nonull3} option. However, be careful,
+the E-values for models that are calibrated with \prog{--nonull3} are
+only valid when \prog{--nonull3} is also used with \prog{cmsearch} or
+\prog{cmscan}. Likewise, if \prog{--nonull3} is \emph{not} used during
+calibration, it should not be used during searches or scans.
 
 

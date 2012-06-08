@@ -526,8 +526,6 @@ CP9Logoddsify(CP9_t *hmm)
       if(k != 0)
 	{
 	  hmm->bsc[k]   = Prob2Score(hmm->begin[k], 1.0);
-	  //if(hmm->flags & CPLAN9_LOCAL_END) hmm->esc[k]   = 0;
-	  //else hmm->esc[k]   = -INFTY;
 	  hmm->esc[k] = Prob2Score(hmm->end[k], 1.0);
 	}
     }

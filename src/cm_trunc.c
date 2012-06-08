@@ -586,7 +586,6 @@ cm_tr_penalties_Validate(CM_TR_PENALTIES *trp, CM_t *cm, double tol, char *errbu
       if(keep_going == FALSE) { 
 	v = cm->nodemap[nd];
 	sump += sreEXP2(trp->l_ptyAA[TRPENALTY_5P_ONLY][v]);
-	///printf("LONLY  g: %3d h: %3d nd: %3d adding %10.5f  (%10.5f)\n", g, h, nd, trp->l_ptyAA[TRPENALTY_5P_ONLY][v], sump);
       }
     }
   }
@@ -619,7 +618,6 @@ cm_tr_penalties_Validate(CM_TR_PENALTIES *trp, CM_t *cm, double tol, char *errbu
       if(keep_going == FALSE) { 
 	v = cm->nodemap[nd];
 	sump += sreEXP2(trp->l_ptyAA[TRPENALTY_3P_ONLY][v]);
-	///printf("RONLY  a: %3d b: %3d nd: %3d adding %10.5f  (%10.5f)\n", a, b, nd, trp->l_ptyAA[TRPENALTY_3P_ONLY][v], sump);
       }
     }
   }

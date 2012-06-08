@@ -23,7 +23,7 @@
  * forward and backward matrices <fwd>, <bck>.
  * 
  * The function then chews over this data, using posterior
- * probabilities and heuristics to define, score, and obtain
+ * probabilities and heuristics to define, score, and obtain 
  * display-ready alignments for individual domains. When it's done,
  * your <fwd> and <bck> matrices have been effectively destroyed (they
  * get reused for individual domain alignment calculations), and

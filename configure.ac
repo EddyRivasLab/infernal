@@ -73,7 +73,7 @@ fi
 #
 ################################################################
 
-INFERNAL_DATE="May 2012"
+INFERNAL_DATE="June 2012"
 INFERNAL_COPYRIGHT="Copyright (C) 2012 Howard Hughes Medical Institute."
 INFERNAL_LICENSE="Freely distributed under the GNU General Public License (GPLv3)."
 INFERNAL_VERSION=$PACKAGE_VERSION
@@ -82,7 +82,7 @@ INFERNAL_ESLDIR="easel"
 INFERNAL_HMMERDIR="hmmer"
 INFERNAL_SADIR="hmmer/libdivsufsort"
 
-HMMER_DATE="May 2012"
+HMMER_DATE="June 2012"
 HMMER_COPYRIGHT="Copyright (C) 2012 Howard Hughes Medical Institute."
 HMMER_LICENSE="Freely distributed under the GNU General Public License (GPLv3)."
 HMMER_VERSION=i$PACKAGE_VERSION
@@ -90,7 +90,7 @@ HMMER_URL="http://hmmer.org/"
 HMMER_ESLDIR="../easel"
 HMMER_SADIR="libdivsufsort"
 
-EASEL_DATE="May 2012"
+EASEL_DATE="June 2012"
 EASEL_COPYRIGHT="Copyright (C) 2012 HHMI Janelia Farm Research Campus"
 EASEL_LICENSE="Freely distributed under the Janelia Software License."
 EASEL_VERSION="i$PACKAGE_VERSION"

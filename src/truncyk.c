@@ -31,12 +31,6 @@
 
 #include "infernal.h"
 
-#define BE_EFFICIENT 0
-#define BE_PARANOID  1
-
-#define USED_LOCAL_BEGIN 101
-#define USED_EL          102
-
 /*
 struct deckpool_s {
    float ***pool;

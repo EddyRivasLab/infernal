@@ -24,7 +24,6 @@
 #include "esl_vectorops.h"
 #include "esl_alphabet.h"
 #include "esl_stack.h"
-#include "esl_stopwatch.h"
 
 #include "hmmer.h"
 

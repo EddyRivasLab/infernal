@@ -266,7 +266,7 @@ main(int argc, char **argv)
    */
 #ifdef HAVE_MPI
 
-#if 0 
+#if eslDEBUGLEVEL >= 1
   pid_t pid;
   pid = getpid();
   printf("The process id is %d\n", pid);
@@ -392,6 +392,7 @@ main(int argc, char **argv)
   if (cfg.my_rank == 0) { 
     printf("#\n");
     esl_stopwatch_Display(stdout, w, "# CPU time: ");
+    fprintf(ofp, "[ok]\n");
   }
   if(cfg.ghmm_eAA != NULL) { 
     for(i = 0; i < cfg.ghmm_nstates; i++) free(cfg.ghmm_eAA[i]); 

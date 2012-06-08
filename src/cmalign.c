@@ -283,7 +283,7 @@ main(int argc, char **argv)
    */
 #ifdef HAVE_MPI
 
-#if 0 
+#if eslDEBUGLEVEL >= 1
   pid_t pid;
   /* get the process id */
   pid = getpid();
@@ -1831,13 +1831,6 @@ output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FIL
     }
   }
 
-#if 0 
-  /* add GF annotation to MSA with command line, date */
-  if(ofp != cfg->rfp && (! esl_opt_GetBoolean(go, "--noannot"))) { 
-    if((status = add_annotation_to_msa(go, errbuf, msa)) != eslOK) return status;
-  }
-#endif
-
   /* Determine format: if we're printing to a tmpfile we must use
    * Pfam format, so we can go back later and merge all alignments
    * in the tmpfile. If we're not printing to a tmpfile, then we
@@ -2579,39 +2572,6 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
   cm_Fail("Allocation error when creating final alignment RF and SS_cons.");
   return; /* NEVERREACHED */
 }
-
-#if 0 
-/* Function: add_annotation_to_msa()
- * Date:     EPN, Thu Jan 12 06:23:20 2012
- *
- * Purpose:  Print the header section of an insert or EL insert
- *           (--ifile, --elfile) information file.
- *
- * Returns:  void
- */
-int
-add_annotation_to_msa(ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa)
-{
-  int    status;
-  time_t date           = time(NULL);
-  char  *spoof_cmd      = NULL;
-  char   timestamp[32];
-
-  if ((status = esl_opt_SpoofCmdline(go, &spoof_cmd)) != eslOK) ESL_XFAIL(eslFAIL, errbuf, "unable to create spoof cmdline");
-  if (date == -1)                                               ESL_XFAIL(eslESYS, errbuf, "time() failed");
-  if ((ctime_r(&date, timestamp)) == NULL)                      ESL_XFAIL(eslESYS, errbuf, "ctime_r() failed");
-  
-  esl_msa_AddGF(msa, "AM", 2, spoof_cmd, -1);
-  esl_msa_AddGF(msa, "AM", 2, timestamp, -1);
-  
-  free(spoof_cmd);
-  return eslOK;
-  
- ERROR:
-  if (spoof_cmd) free(spoof_cmd);
-  return status;
-}
-#endif
 
 /*****************************************************************
  * @LICENSE@

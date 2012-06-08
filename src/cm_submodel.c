@@ -32,7 +32,6 @@
 #include "esl_alphabet.h"
 #include "esl_random.h"
 #include "esl_stack.h"
-#include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
@@ -3689,7 +3688,7 @@ SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
 	mv = mother_map->s2o_smap[v][0];
 	esl_vec_FCopy(mother_cm->tsc[mv],  cm->cnum[v], cm->tsc[v]);
 	esl_vec_ICopy(mother_cm->itsc[mv], cm->cnum[v], cm->itsc[v]);
-#if 0
+#if eslDEBUGLEVEL >= 1
 	for(x = 0; x < cm->cnum[v]; x++) { 
 	  if(esl_FCompare(mother_cm->t[mv][x], cm->t[v][x], 1E-5) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "You've got it wrong, mother_cm->t[mv:%d][x:%d] %.3f != cm->t[v:%d][x:%d] %.3f\n", mv, x, mother_cm->t[mv][x], v, x, cm->t[v][x]);
 	}
@@ -4075,7 +4074,6 @@ CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd,
 
   return;
 }
-
 
 #if 0
 /* These two functions are not currently used, but could be useful for debugging 

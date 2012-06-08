@@ -781,7 +781,7 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do
     if((status = cm_PostCodeHB(cm, errbuf, L, emit_mx, tr, (have_ppstr) ? &ppstr : NULL, &avgpp)) != eslOK) return status;
   }
 
-#if 0
+#if eslDEBUGLEVEL >= 2
     CMEmitMap_t *emap;
     emap = CreateEmitMap(cm);
     DumpEmitMap(stdout, emap, cm);

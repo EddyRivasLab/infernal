@@ -28,6 +28,11 @@ The query
 .I <cmfile>
 must have been calibrated for E-values with 
 .B cmcalibrate.
+As a special exception, any models in 
+.I <cmfile>
+that have zero basepairs need not be calibrated. For these models,
+profile HMM search algorithms will be used instead of CM ones, as
+discussed further below.
 
 .PP 
 The query
@@ -116,7 +121,9 @@ differently than normal indels. Local mode performs better on
 empirical benchmarks and is significantly more sensitive for remote
 homology detection. Empirically, glocal searches return many fewer
 hits than local searches, so glocal may be desired for some
-applications.
+applications. With
+.B -g,
+all models must be calibrated, even those with zero basepairs. 
 
 .TP
 .BI -Z " <x>"

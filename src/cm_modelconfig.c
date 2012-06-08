@@ -37,7 +37,6 @@
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_stack.h"
-#include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
 #include "hmmer.h"

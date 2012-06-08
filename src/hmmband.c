@@ -26,14 +26,12 @@
 
 #include "easel.h"
 #include "esl_stack.h"
-#include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
 
 #include "infernal.h"
 
-#define TMPDEBUG 0
 
 static int          cp9_FB2HMMBands        (CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
 				            int i0, int j0, int M, double p_thresh, int did_fwd_scan, int did_bck_scan, int do_old_hmm2ij, int debug_level);
@@ -4918,7 +4916,7 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass
     else { 
       cp9b->Tvalid[v] = FALSE;
     }
-#if TMPDEBUG    
+#if eslDEBUGLEVEL >= 1
     printf("v: %4d [%4d..%4d] %4s %2s %d%d%d%d\n", v, lpos, rpos, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), 
 	   cp9b->Jvalid[v], cp9b->Lvalid[v], cp9b->Rvalid[v], cp9b->Tvalid[v]);
 #endif

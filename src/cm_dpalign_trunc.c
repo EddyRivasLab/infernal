@@ -129,12 +129,6 @@
 
 #include "infernal.h"
 
-#define NEVER 0
-#define NOWDEBUG  0
-#define DEBUG1  0
-#define DEBUG2  0
-#define DOTRACE 0
-
 static int   cm_tr_alignT   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, int pass_idx, int do_optacc, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, CM_TR_EMIT_MX    *emit_mx, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc_or_pp);
 static int   cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char optimal_mode, int pass_idx, int do_optacc, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, CM_TR_HB_EMIT_MX *emit_mx, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc_or_pp);
 
@@ -295,8 +289,8 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, mode);
       v = y;
 
-#if DEBUG1
-      printf("KACHOW added BEGL_S, dumping parsetree (prvmode: %d mode: %d:\n", prvmode, mode);
+#if eslDEBUGLEVEL >= 2
+      printf("added BEGL_S, dumping parsetree (prvmode: %d mode: %d:\n", prvmode, mode);
       ParsetreeDump(stdout, tr, cm, dsq);
 #endif
     } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
@@ -316,8 +310,8 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
       i = j-d+1;
 				/* attach the S to the right */
       InsertTraceNodewithMode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y, mode);
-#if DEBUG1
-      printf("KACHOW added E or EL, dumping parsetree:\n");
+#if eslDEBUGLEVEL >= 2
+      printf("added E or EL, dumping parsetree:\n");
       ParsetreeDump(stdout, tr, cm, dsq);
 #endif
 
@@ -336,7 +330,7 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
       else { 
         ESL_FAIL(eslEINVAL, errbuf, "bogus truncation mode %d\n", mode);
       }
-#if DEBUG1
+#if eslDEBUGLEVEL >= 2
       printf("v: %d std mode: %d yoffset: %d ", v, mode, yoffset);
 #endif
       /* determine nxtmode, and correct yoffset */
@@ -347,7 +341,7 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
       else if(yoffset >= TRMODE_L_OFFSET)  { nxtmode = TRMODE_L; yoffset -= TRMODE_L_OFFSET; }
       else if(yoffset >= TRMODE_J_OFFSET)  { nxtmode = TRMODE_J; yoffset -= TRMODE_J_OFFSET; }
       else                                  ESL_FAIL(eslEINVAL, errbuf, "yoffset out of bounds: %d\n", yoffset);
-#if DEBUG1
+#if eslDEBUGLEVEL >= 2
       printf("new yoffset: %d nxtmode: %d\n", yoffset, nxtmode);
       if(mode == TRMODE_J) printf("HEYA J v: %4d j: %4d d: %4d mode: %4d yoffset: %4d nxtmode: %4d\n", v, j, d, mode, yoffset, nxtmode);
       if(mode == TRMODE_L) printf("HEYA L v: %4d j: %4d d: %4d mode: %4d yoffset: %4d nxtmode: %4d\n", v, j, d, mode, yoffset, nxtmode);
@@ -388,8 +382,8 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 	{	/* a local alignment end  or a truncation end */
 	  if(yoffset == USED_EL) { 
 	    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M, mode);
-#if DEBUG1
-	    printf("KACHOW added USED_EL or USED_TRUNC_END, dumping parsetree:\n");
+#if eslDEBUGLEVEL >= 2
+	    printf("added USED_EL or USED_TRUNC_END, dumping parsetree:\n");
 	    ParsetreeDump(stdout, tr, cm, dsq);
 #endif
 	  }
@@ -405,9 +399,9 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 	  mode = nxtmode;
 	  y = cm->cfirst[v] + yoffset;
 	  InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, mode);
-#if DEBUG1
+#if eslDEBUGLEVEL >= 2
 	  printf("STD yoffset: %d\n", yoffset);
-	  printf("KACHOW added standard, dumping parsetree:\n");
+	  printf("added standard, dumping parsetree:\n");
 	  ParsetreeDump(stdout, tr, cm, dsq);
 #endif
 	  v = y;
@@ -642,8 +636,8 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, mode);
       v = y;
 
-#if DEBUG1
-      printf("KACHOW added BEGL_S, dumping parsetree (prvmode: %d mode: %d:\n", prvmode, mode);
+#if eslDEBUGLEVEL >= 2
+      printf("added BEGL_S, dumping parsetree (prvmode: %d mode: %d:\n", prvmode, mode);
       ParsetreeDump(stdout, tr, cm, dsq);
 #endif
     } 
@@ -664,8 +658,8 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
       i = j-d+1;
 				/* attach the S to the right */
       InsertTraceNodewithMode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y, mode);
-#if DEBUG1
-      printf("KACHOW added E or EL, dumping parsetree:\n");
+#if eslDEBUGLEVEL >= 2
+      printf("added E or EL, dumping parsetree:\n");
       ParsetreeDump(stdout, tr, cm, dsq);
 #endif
 
@@ -692,7 +686,7 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
 	  ESL_FAIL(eslEINVAL, errbuf, "bogus truncation mode %d\n", mode);
 	}
       }
-#if DEBUG1
+#if eslDEBUGLEVEL >= 2
       printf("v: %d std mode: %d yoffset: %d ", v, mode, yoffset);
 #endif
       /* determine nxtmode, and correct yoffset */
@@ -703,7 +697,7 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
       else if(yoffset >= TRMODE_L_OFFSET)  { nxtmode = TRMODE_L; yoffset -= TRMODE_L_OFFSET; }
       else if(yoffset >= TRMODE_J_OFFSET)  { nxtmode = TRMODE_J; yoffset -= TRMODE_J_OFFSET; }
       else                                  ESL_FAIL(eslEINVAL, errbuf, "yoffset out of bounds: %d\n", yoffset);
-#if DEBUG1
+#if eslDEBUGLEVEL >= 2
       printf("new yoffset: %d nxtmode: %d\n", yoffset, nxtmode);
       if(mode == TRMODE_J) printf("HEYA J v: %4d j: %4d d: %4d mode: %4d yoffset: %4d nxtmode: %4d\n", v, j, d, mode, yoffset, nxtmode);
       if(mode == TRMODE_L) printf("HEYA L v: %4d j: %4d d: %4d mode: %4d yoffset: %4d nxtmode: %4d\n", v, j, d, mode, yoffset, nxtmode);
@@ -744,8 +738,8 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
 	{	/* a local alignment end  or a truncation end */
 	  if(yoffset == USED_EL) { 
 	    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M, mode);
-#if DEBUG1
-	    printf("KACHOW added USED_EL or USED_TRUNC_END, dumping parsetree:\n");
+#if eslDEBUGLEVEL >= 2
+	    printf("added USED_EL or USED_TRUNC_END, dumping parsetree:\n");
 	    ParsetreeDump(stdout, tr, cm, dsq);
 #endif
 	  }
@@ -761,9 +755,9 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
 	  mode = nxtmode;
 	  y = cm->cfirst[v] + yoffset;
 	  InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, mode);
-#if DEBUG1
+#if eslDEBUGLEVEL >= 2
 	  printf("STD yoffset: %d\n", yoffset);
-	  printf("KACHOW added standard, dumping parsetree:\n");
+	  printf("added standard, dumping parsetree:\n");
 	  ParsetreeDump(stdout, tr, cm, dsq);
 #endif
 	  v    = y;
@@ -1180,7 +1174,7 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
     if((status = cm_TrPostCodeHB(cm, errbuf, L, emit_mx, tr, (have_ppstr) ? &ppstr : NULL, &avgpp)) != eslOK) return status;
   }
 
-#if 0
+#if eslDEBUGLEVEL >= 2
   CMEmitMap_t *emap;
   emap = CreateEmitMap(cm);
   DumpEmitMap(stdout, emap, cm);

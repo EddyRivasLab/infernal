@@ -213,7 +213,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
     wtrunc_L += 4; /* space for '*[]>' */
     len += wtrunc_L;
   }
-#if 0
+#if eslDEBUGLEVEL >= 1
   printf("cfrom_span: %4d\n", cfrom_span);
   printf("cfrom_emit: %4d\n", cfrom_emit);
   printf("cto_emit:   %4d\n", cto_emit);
@@ -366,8 +366,6 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
       v = tr->state[ti];
 
       /* Deal with EL (local ends, state M) as a special case.
-       * We get away with only writing into aseq because we've
-       * memset() the display strings to blank.
        */
       if (v == cm->M) { 
 	nd = 1 + cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
@@ -378,6 +376,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	memset(ad->csline+pos,  '~', numwidth+4);
 	sprintf(ad->model+pos, "*[%*d]*", numwidth, qinset);
 	sprintf(ad->aseq+pos, "*[%*d]*", numwidth, tinset);
+	if(cm->rf != NULL) memset(ad->rfline+pos,  '~', numwidth+4);
 	if(adata->ppstr != NULL) { 
 	  /* calculate the single character PP code for the average posterior 
 	   * by averaging the average for the PP codes in ppstr (this gives
@@ -580,22 +579,6 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
       }
       else if (cm->sttype[v] != E_st) {
 	; /* marginal type local end, do nothing */
-#if 0
-        /* Catch marginal-type local ends, treat like EL for output */
-	int numwidth;		/* number of chars to leave for displaying width numbers */
-
-	nd = 1 + cm->ndidx[tr->state[ti]]; /* calculate node that EL replaced */
-	qinset     = cm->cmcons->rpos[nd] - cm->cmcons->lpos[nd] + 1;
-	tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
-        if (tinset > 0) tinset--;
-	ninset     = ESL_MAX(qinset,tinset);
-	numwidth = 0; do { numwidth++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
-	memset(ad->csline+pos,  '~', numwidth+4);
-	sprintf(ad->model+pos, "*[%*d]*", numwidth, qinset);
-	sprintf(ad->aseq+pos, "*[%*d]*", numwidth, tinset);
-	/* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
-	pos += 4 + numwidth;
-#endif
       }
     } /* end loop over the PDA; PDA now empty */
 
@@ -802,31 +785,6 @@ cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seq
   else { 
     ad->ppline_el[0] = '\0';
   }
-
-#if 0
-  /* If I change my mind and want NC annotation in HMM hits, 
-   * the following code will set all bps to '?', but make
-   * sure you allocate for ncline above and set it's ptr.
-   */
-  /* set ncline to "?" for all basepairs, when using an HMM we
-   * can't tell if they're negative scoring non-canonicals or 
-   * not.
-   */
-  memset(ad->ncline,   ' ', ad->N);
-  ad->ncline[ad->N]  = '\0';
-  for(x = 0; x < ad->N; x++) { 
-    if(ad->csline[x] == '<' || 
-       ad->csline[x] == '>' || 
-       ad->csline[x] == '(' || 
-       ad->csline[x] == ')' || 
-       ad->csline[x] == '[' || 
-       ad->csline[x] == ']' || 
-       ad->csline[x] == '{' || 
-       ad->csline[x] == '}') { 
-      ad->ncline[x] = '?';
-    }
-  }
-#endif
 
   if(act    != NULL)  free(act);
   if(ret_ad != NULL) *ret_ad = ad;
@@ -1435,27 +1393,11 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   }
   msa->ss_cons[msa->alen] = '\0';
   if(upos != cm->clen) ESL_XFAIL(eslERANGE, errbuf, "cm_alidisplay_Backconvert() failed to create temporary msa");
-#if 0 
-  printf("upos: %d cm->clen: %d\n", upos, cm->clen);
-#endif
   
   esl_msa_FormatSeqName(msa, 0, "%s/%ld-%ld", ad->sqname, ad->sqfrom, ad->sqto);
   /*esl_msa_SetSeqName(msa, 0, ad->sqname, -1);*/
   if(ad->sqacc)  esl_msa_SetSeqAccession  (msa, 0, ad->sqacc,  -1);
   if(ad->sqdesc) esl_msa_SetSeqDescription(msa, 0, ad->sqdesc, -1);
-
-#if 0
-  printf("ad->aseq_el:\n%s\n", ad->aseq_el);
-  printf("msa->aseq[0]:\n%s\n", msa->aseq[0]);
-  printf("msa->rf:\n%s\n", msa->rf);
-  printf("msa->ss_cons:\n%s\n", msa->ss_cons);
-
-  printf("ad->aseq_el:\n%s\n", ad->aseq_el);
-  printf("msa->aseq[0]:\n%s\n", msa->aseq[0]);
-  printf("msa->rf:\n%s\n", msa->rf);
-  printf("msa->ss_cons:\n%s\n", msa->ss_cons);
-
-#endif
 
   if((status = esl_msa_Digitize(cm->abc, msa, errbuf)) != eslOK) goto ERROR;
 
