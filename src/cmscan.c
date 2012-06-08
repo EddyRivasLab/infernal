@@ -1114,9 +1114,12 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	      mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
 	  }
 
-	for (dest = 1; dest < cfg->nproc; ++dest)
+	for (dest = 1; dest < cfg->nproc; ++dest) {
 	  /* send an empty block to signal the worker they are done with this strand of this sequence */
 	  MPI_Send(&block, 3, MPI_LONG_LONG_INT, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD);
+	}
+
+	cm_file_Close(cmfp);
       } /* end of (in_rc = 0..1) loop (in top or bottom strand) */
 
       /* receive and merge the results */
@@ -1176,7 +1179,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_pli_Statistics(ofp, pli, w);
       fprintf(ofp, "//\n");
 
-      cm_file_Close(cmfp);
       cm_pipeline_Destroy(pli, NULL);
       cm_tophits_Destroy(th);
       esl_sq_Reuse(qsq);
