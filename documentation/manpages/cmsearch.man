@@ -419,7 +419,7 @@ option is used
 to keep the number of displayed options with 
 .B -h
 reasonable, and because they are only expected to be useful to a
-minority of users.
+small minority of users.
 
 As a special case, for any models in 
 .I <cmfile> 

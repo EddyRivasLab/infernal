@@ -184,6 +184,13 @@ sets of filter thresholds in Table~\ref{tbl:thresholds} were
 determined to achieve what we feel is a good trade-off between
 sensitivity, specificity and speed on that benchmark.
 
+% Source of table:
+% ~nawrockie/notebook/12_0326_talk_xfam/latex/xfam.tex
+% 'Avg relative speed' row calc'ed using relative rmark3 times
+% from 'Avg model per Gb time' row of the version of the
+% table in ~nawrockie/notebook/12_0326_talk_xfam/latex/xfam.tex,
+% and rounding.
+%
 \begin{table}
 \begin{tabular}{ll||r|r|r|r|r|r|}
 filter &               &         & 2Mb     & 20Mb     & 200Mb  & 2Gb     &          \\
@@ -208,13 +215,82 @@ F6 (HMM banded CYK)  & CM & 1E-4 & 1E-4 & 1E-4 & 1E-4 & 1E-4 & 1E-4 \\
 Final (HMM banded Inside)& CM &  & & & & & \\ \hline
 & & & & & & & \\
 & & & & & & & \\
-Avg model per Gb time   & & 3.48h & 1.25h & 0.54h & 0.27h & 0.18h & 0.11h \\
-& & & & & & & \\
-Projected Rfam 10.0 time  & & 99.5y & 35.6y & 15.4y & 7.8y & 5.1y & 3.2y \\
+%Avg model per Gb time   & & 3.48h & 1.25h & 0.54h & 0.27h & 0.18h & 0.11h \\
+Avg relative speed   & & 30.0 & 10.0 & 5.0 & 2.5 & 1.5 & 1.0 \\
 \end{tabular}
 \end{table}
 
+\subsection{Manually setting filter thresholds}
+
+As described above, by default filter thresholds are automatically set
+based on the search space $Z$, but several options exist for
+overriding these defaults. There are six pre-defined sets of
+thresholds, each available via a single command-line option to
+\prog{cmsearch} or \prog{cmscan}. In order from least strict to most
+strict these are: \ccode{--max}, \ccode{--nohmm}, \ccode{--mid}, and
+\ccode{--rfam}. (The default thresholds lie somewhere between
+\ccode{--mid} and \ccode{--rfam}.) Additionally, you can specify that
+the filter thresholds be set as if the search space was \ccode{<x>}
+megabases with the \ccode{--FZ <x>} option. More detail on each of
+these options is provided below. A one-line description of each option
+is printed as part of the \prog{cmsearch} and \prog{cmscan} 'help'
+output that gets displayed with the use of the \ccode{-h}
+option. There's also descriptions of these options in the
+\prog{cmsearch} and \prog{cmscan} manual pages.
+
+\begin{description}
+\item[\ccode{--max}:] Turn off all filters, run Inside on full length
+  target sequences. This option will result in maximum sensitivity but
+  is also the slowest. Using this option will slow down
+  \prog{cmsearch} by about 3 or 4 orders of magnitude.
+\item[\ccode{--nohmm}:] Turn off all profile HMM filters, run only the
+  CYK filter on full length sequences and Inside on surviving
+  envelopes. Searches with this option will often be between 5 and
+  times faster than \ccode{--max} searches.
+\item[\ccode{--mid}:] Set all profile HMM filter thresholds (SSV,
+  local Viterbi, local Forward, glocal Forward and glocal domain
+  definition) to the same, set P-value. By default this P-value is
+  $0.02$, but it is settable to \ccode{<x>} by also using the
+  \ccode{--Fmid <x>} option. These searches will 
+\item[\ccode{--rfam}:] Set all filter thresholds as if the search
+  space were more than 20 Gb. These are the filter thresholds used by
+  a database like Rfam, which annotates RNAs in an EMBL-based sequence
+  dataset that is several hundred Gb. If you're trying to
+  reproduce results in future versions of Rfam that use Infernal 1.1
+  (of course, at the time of writing, no version of Rfam yet exists
+  which has used version 1.1) you probably want to use this option.
+  This option will have no effect if the target search space is more
+  than 20 Gb. 
+\item[\ccode{--FZ <x>}:] Set the filter thresholds as if the search space
+  were \ccode{<x>} Mb instead of its actual size. Importantly, the E-values
+  reported will still correspond to the actual size. (To change the
+  search space size the E-values correspond to, use the \ccode{-Z <x2>}
+  option.\footnote{Note that if you use \ccode{-Z <x2>} without
+  \ccode{--FZ <x>}, the filter thresholds will be set as if the
+  search space size was \ccode{<x2>} Mb.
+\end{description}
+
+For expert users, options also exist to precisely set each individual
+filter stage's threshold. These are \ccode{--F1}, \ccode{--F1b},
+\ccode{--F2}, \ccode{--F2b}, \ccode{--F3}, \ccode{--F3b},
+\ccode{--F4}, \ccode{--F4b}, \ccode{--F5}, \ccode{--F5b}, and
+\ccode{--F6}. Additional options exist for turning on or of each stage
+as well: \ccode{--noF1}, \ccode{--doF1b}, \ccode{--noF2},
+\ccode{--noF2b}, \ccode{--noF3}, \ccode{--noF3b}, \ccode{--noF4},
+\ccode{--noF4b}, \ccode{--noF5}, \ccode{--noF5b}, and
+\ccode{--noF6}. Because these options are only expected to be useful
+to a small minority of users, they are only displayed in the help
+message for \prog{cmsearch} or \prog{cmscan} if the special
+\ccode{--devhelp} option is used.
+
 \subsection{HMM-only filter pipeline:}
+
+As mentioned earlier in the guide (specifically in the tutorial
+section), Infernal uses a special pipeline for models that have zero
+basepairs. For such models, it makes sense to use a profile HMM
+instead of a covariance model for searching because HMM algorithms are
+more efficient than CM ones and CMs are only more powerful than HMMs
+when basepairs are modeled by the CM.
 
 \subsection{In more detail: profile HMM filter stages}
 
@@ -266,7 +342,11 @@ alignment in SSV.
 
 The P-value threshold for what subsequences pass this filter range
 from $0.35$ for small target databases down to $0.06$ for large ones
-(Table~\ref{tbl:thresholds}). For example, when the threshold is set 
+(Table~\ref{tbl:thresholds}). Take as an example, the \prog{cmsearch} for tRNAs
+performed in the tutorial. The database size was roughly 6 Mb, so the
+SSV threshold was set as $0.35$. This means that about $35\%$ of
+nonhomologous sequence is expected to pass. 
+
 
 
 
