@@ -171,9 +171,9 @@ long alignments are split into blocks separated by blank lines.
 \item For residues, any one-letter IUPAC nucleotide code is accepted,
       including ambiguous nucleotides. Case is ignored; residues
       may be either upper or lower case.
-\item Gaps are indicated by the characters \otext{.}, \otext{_}, -, or \otext{~}.
+\item Gaps are indicated by the characters \otext{.}, \otext{\_}, -, or \otext{~}.
       (Blank space is not allowed.)
-\item A special line starting with \otext{#=GC SS_cons} indicates
+\item A special line starting with \otext{\#=GC SS\_cons} indicates
       the secondary structure consensus. Gap characters annotate
       unpaired (single-stranded) columns. Base pairs are indicated
       by any of the following pairs: \otext{<>}, \otext{()}, \otext{[]},
@@ -183,7 +183,7 @@ long alignments are split into blocks separated by blank lines.
       For more on secondary structure annotation see
       section~\ref{section:wuss}.
 \item The alignment begins with the special tag line
-      \otext{# STOCKHOLM 1.0}, and ends with \otext{//}.
+      \otext{\# STOCKHOLM 1.0}, and ends with \otext{//}.
       Stockholm alignments
       can be concatenated to create an alignment database flatfile
       containing many alignments.
@@ -583,17 +583,17 @@ more informative than the simple least-common-denominator format we
 used in the input alignment file. It's designed to make it easier to
 see the secondary structure by eye. The format is described in detail
 later (section~\ref{section:wuss}; for now, here's all you need to
-know. Basepairs in simple stem loops are annotated with \verb+<>+
+know. Basepairs in simple stem loops are annotated with \otext{<>}
 characters. Basepairs enclosing multifurcations (multiple stem loops)
-are annotated with \verb+()+, such as the tRNA acceptor stem in this
-example. In more complicated structures, \verb+[]+ and \verb+{}+
+are annotated with \otext{()}, such as the tRNA acceptor stem in this
+example. In more complicated structures, \otext{[]} and \otext{\{\}}
 annotations also show up, to reflect deeper nestings of
-multifurcations. For single stranded residues, \verb+_+ characters
-mark hairpin loops; \verb+-+ characters mark interior loops and
-bulges; \verb+,+ characters mark single-stranded residues in
-multifurcation loops; and \verb+:+ characters mark single stranded
+multifurcations. For single stranded residues, \otext{\_} characters
+mark hairpin loops; \otext{-} characters mark interior loops and
+bulges; \otext{,} characters mark single-stranded residues in
+multifurcation loops; and \otext{:} characters mark single stranded
 residues external to any secondary structure. Insertions relative to
-this consensus are annotated by a \verb+.+ character.
+this consensus are annotated by a \otext{.} character.
 
 The line above the \otext{CS} line ends with \otext{NC} and marks
 negative scoring non-canonical basepairs in the alignment with a
@@ -628,7 +628,7 @@ contribution of this pair to the alignment score. Note that the
 pairs with a \otext{v}, as discussed above.
 For a single-stranded consensus residue, if the observed residue is
 the highest scoring possibility, the residue is shown in upper case;
-if the observed residue has a score of $\geq 0$, a \verb+++ character
+if the observed residue has a score of $\geq 0$, a \otext{+} character
 is shown; else there is a space, indicating a negative contribution to
 the alignment score. Importantly for HMM hits (``mdl'' column reads
 ``hmm''), \emph{all} positions are considered single stranded, since
@@ -1028,7 +1028,7 @@ total of 1886 residues were searched, since both strands were
 %        ^^^^
 examined. The next line reports that the average number of residues
 re-searched for truncated hits per model was 992.0 (FIX ME, BUG IN
-^^^^^ PIPELINE SUMMARY OUTPUT CODE!). An average is reported here
+PIPELINE SUMMARY OUTPUT CODE!). An average is reported here
 because remember the number of residues re-searched per model depends
 on the expected maximum size of a hit, which varies per model, because
 only sequence terminii are examined for truncated hits (see
@@ -1077,7 +1077,7 @@ at the 5' end. Here is the alignment:
 \end{sreoutput}
 
 This alignment has some important differences with the ones we've seen
-so far because it is for a truncated hit. First, notice that the
+so far because it is of a truncated hit. First, notice that the
 \otext{trunc} column reads \otext{5'} indicating that Infernal
 predicts the 5' end (beginning) of this Cobalamin riboswitch is
 missing. (Note that this hit is on the reverse strand so the Cobalamin
@@ -1265,21 +1265,20 @@ particular column; again, where there's a choice of column for
 inserted residues, that choice is arbitrary. 
 
 \subsubsection{cmalign assumes sequences may be truncated}
-Unlike in all previous versions of Infernal, in version 1.1
-\prog{cmalign} assumes that input sequences may be truncated (missing
-residues on the 5' and/or 3' ends) and uses specialized DP algorithms
-to align them appropriately based on that assumption.\footnote{In
-  versions 1.0 through 1.0.2, the \prog{cmalign} \otext{--sub} option
-  was recommended when the user knew input sequences might be
-  truncated. This option still exists in this version but we believe
-  the new default mode should do a better job of correctly aligning
-  truncated sequences.} Importantly, output alignments from
-\prog{cmalign} do not indicate when sequences have been truncated, as
-those from \prog{cmsearch} and \prog{cmscan} do. As an example, use
-the \otext{tutorial/Cobalamin.c.cm} model to align the truncated
-Cobalamin hit (in the file \otext{tutorial/Cobalamin.fa} from the
-\prog{cmscan} example above (I've split up the alignment below so it
-will fit on the page):
+Unlike in all previous versions of Infernal, \prog{cmalign} in version
+1.1 assumes that input sequences may be truncated and uses specialized
+dynamic programming algorithms to align them appropriately based on
+that assumption.\footnote{In versions 1.0 through 1.0.2, the
+  \prog{cmalign} \ccode{--sub} option was recommended when input
+  sequences may have been truncated. This option still exists in this
+  version but we believe the new default mode should do a better job
+  of correctly aligning truncated sequences.} Importantly, output
+alignments from \prog{cmalign} do not indicate when sequences have
+been truncated, as those from \prog{cmsearch} and \prog{cmscan} do. As
+an example, use the \ccode{tutorial/Cobalamin.c.cm} model to align the
+truncated Cobalamin hit (in the file \ccode{tutorial/Cobalamin.fa}
+from the \prog{cmscan} example above (I've split up the alignment
+below so it will fit on the page):
 
 \user{cmalign tutorial/Cobalamin.c.cm tutorial/Cobalamin.fa}
 

@@ -268,7 +268,7 @@ option. There's also descriptions of these options in the
   search space size the E-values correspond to, use the \ccode{-Z <x2>}
   option.\footnote{Note that if you use \ccode{-Z <x2>} without
   \ccode{--FZ <x>}, the filter thresholds will be set as if the
-  search space size was \ccode{<x2>} Mb.
+  search space size was \ccode{<x2>} Mb}.
 \end{description}
 
 For expert users, options also exist to precisely set each individual
@@ -495,7 +495,7 @@ from the background frequency distribution (same as the null1 model),
 and the other state emits nucleotides from the mean nucleotide composition
 of the profile (i.e. the expected composition of sequences generated
 by the core model, including match and insert states
-[\ccode{hmmer/p7\_hmm.c:p7\_hmm\_SetComposition()}]). Thus if the profile is
+[\ccode{hmmer/src/p7\_hmm.c:p7\_hmm\_SetComposition()}]). Thus if the profile is
 highly biased (A-rich, for example), this composition bias will be captured
 by this second state. This model's transitions are arbitrarily set
 such that state 1 emits an expected length of the size of the current
@@ -1065,8 +1065,8 @@ deal with the case where the left half but not the right half of a
 basepair has been deleted, and vice versa. For details on CM truncated
 alignment, see \cite{KolbeEddy08}. HMM banded, truncated versions of
 CYK and Inside are implemented in Infernal, and are used by the
-truncated pipeline variants (see \ccode{cm_dpsearch_trunc.c} and
-\ccode{cm_dpalign_trunc.c}. These implementations allow either 5'
+truncated pipeline variants (see \ccode{src/cm\_dpsearch\_trunc.c} and
+\ccode{src/cm\_dpalign\_trunc.c}. These implementations allow either 5'
 truncation, 3' truncation, or both, and can require that valid
 alignments begin at the first nucleotide of the sequence or end at the
 final nucleotide of the sequence.  For the 5' truncated pipeline
