@@ -1072,16 +1072,15 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
       p1->nnodes_hmmonly  += p2->nnodes_hmmonly;
       for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_top += p2->acct[p].nres_top;
       for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_bot += p2->acct[p].nres_bot;
+      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_top += p2->acct[p].npli_top;
+      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_bot += p2->acct[p].npli_bot;
       /* If target CM file was small, it's possible that <p1->nseqs>
-       * is 0 and <p2->nseqs> is not, also that
-       * p1->acct[p].npli_{top,bot} is 0 and
-       * p2->acct[p].npli_{top,bot} is not.
-       * To deal with these cases, we take the max (usually these p1
-       * and p2 values will be equal in scan mode).
+       * is 0 and <p2->nseqs> is not, or vice versa. This happens if
+       * we had so few CMs in our database that not all threads got to
+       * actually do a search. To properly handle this case, we take
+       * the max instead of adding.
        */
       p1->nseqs = ESL_MAX(p1->nseqs, p2->nseqs);
-      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_top = ESL_MAX(p1->acct[p].npli_top, p2->acct[p].npli_top);
-      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_bot = ESL_MAX(p1->acct[p].npli_bot, p2->acct[p].npli_bot);
     }
 
   for(p = 0; p < NPLI_PASSES; p++) { 
@@ -1535,12 +1534,38 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
 	      pli->nseqs, (int) ((nres_searched - nres_researched) / pli->nmodels));
     }
     if(pass_idx != PLI_PASS_STD_ANY) { 
-      fprintf(ofp,   "Query sequences re-searched for truncated hits:    %15" PRId64 "  (%.1f residues re-searched, avg per model)\n", 
-	      (pli->do_trunc_ends || pli->do_trunc_any) ? pli->nseqs : 0, 
-	      (float) nres_researched / (float) pli->nmodels);
+      if(pass_idx == PLI_PASS_5P_AND_3P_FORCE) { 
+      /* special case, not all sequences get searched by this pass, 
+       * since only seqs < maxW are searched in this pass, if 
+       * npli_top or npli_bot is greater than 0, then we searched
+       * pli->nseqs (which is always 1) with at least 1 model
+       * (we could also use pli->nres_researched > 0 as an 
+       * indication of whether we searched with any models or not).
+       */
+	fprintf(ofp,   "Query sequences re-searched for truncated hits:    %15" PRId64 "  (%.1f residues re-searched, avg per model)\n",  
+		(pli_acct->npli_top > 0 || pli_acct->npli_bot > 0) ? pli->nseqs : 0, 
+		(pli_acct->npli_top > 0 || pli_acct->npli_bot > 0) ? (float) nres_researched / (float) (ESL_MAX(pli_acct->npli_top, pli_acct->npli_bot)) : 0.);
+      }
+      else { 
+	fprintf(ofp,   "Query sequences re-searched for truncated hits:    %15" PRId64 "  (%.1f residues re-searched, avg per model)\n", 
+		(pli->do_trunc_ends || pli->do_trunc_any) ? pli->nseqs : 0, 
+		(float) nres_researched / (float) pli->nmodels);
+      }
     }
-    fprintf(ofp,   "Target model(s):                                   %15" PRId64 "  (%" PRId64 " consensus positions)\n",     
-	    pli->nmodels, pli->nnodes);
+    if(pass_idx == PLI_PASS_5P_AND_3P_FORCE) { 
+      /* special case, only print number of models with which
+       * we actually searched. It won't necessarily be all models
+       * because only models for which the sequence is < maxW will
+       * be used. And don't print number of nodes - we don't 
+       * keep track of that for this stage.
+       */
+      fprintf(ofp,   "Target model(s):                                   %15" PRId64 "\n", 
+	      ESL_MAX(pli_acct->npli_top, pli_acct->npli_bot));
+    }
+    else { 
+      fprintf(ofp,   "Target model(s):                                   %15" PRId64 "  (%" PRId64 " consensus positions)\n",     
+	      pli->nmodels, pli->nnodes);
+    }
   }
 
   if(pli->do_msv) { 
