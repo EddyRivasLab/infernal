@@ -562,6 +562,7 @@ sse)  AC_MSG_NOTICE([Activating Intel/AMD SSE optimized DP implementation])
       AC_SUBST([DO_IMPL_SSE], ["\${QUIET_SUBDIR0}src/impl_sse     \${QUIET_SUBDIR1} all"])
       AC_SUBST([INSTALL_IMPL_SSE], ["for file in \$(SSEPROGS); do cp src/impl_sse/\$\$file \$(BINDIR)/; done"])
       IMPL_CHOICE="sse"
+      INFERNAL_IMPLDIR="impl_sse"
       ;;
 
 vmx)  AC_MSG_NOTICE([Activating Altivec/VMX optimized DP implementation])
@@ -569,6 +570,7 @@ vmx)  AC_MSG_NOTICE([Activating Altivec/VMX optimized DP implementation])
       AC_DEFINE([p7_IMPL_VMX])
       AC_SUBST([HMMERIMPLLIB], ["impl_vmx/libhmmerimpl.a"])
       IMPL_CHOICE="vmx"
+      INFERNAL_IMPLDIR=""
       ;;
 
 *)    AC_MSG_WARN([Infernal 1.1 requires VMX or SSE capability for parallel instructions.])
@@ -577,6 +579,7 @@ vmx)  AC_MSG_NOTICE([Activating Altivec/VMX optimized DP implementation])
 esac
 AC_SUBST(IMPL_CHOICE)
 AC_SUBST(SIMD_CFLAGS)
+AC_SUBST(INFERNAL_IMPLDIR)
 
 
 # Check if the linker supports library groups for recursive libraries
@@ -679,7 +682,9 @@ if test -d release-notes; then
 fi
 
 AC_CONFIG_FILES([src/Makefile])
-AC_CONFIG_FILES([src/impl_sse/Makefile])
+if test "$impl_choice" = "sse"; then
+  AC_CONFIG_FILES([src/impl_sse/Makefile])
+fi
 AC_CONFIG_FILES([testsuite/Makefile])
 AC_CONFIG_FILES([rmark/Makefile])
 AC_CONFIG_FILES([documentation/Makefile])
