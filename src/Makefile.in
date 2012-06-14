@@ -148,24 +148,24 @@ endif
 all:   ${PROGS} .FORCE
 
 dev:   ${PROGS} ${UTESTS} ${ITESTS} ${BENCHMARKS} ${EXAMPLES} .FORCE
-	if test ${IMPLDIR};\
-	   then ${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} dev;\
-	fi;
+ifdef IMPLDIR
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} dev
+endif
 
 tests: ${PROGS} ${UTESTS} ${ITESTS} .FORCE
-	if test ${IMPLDIR};\
-	   then ${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} tests;\
-	fi;
+ifdef IMPLDIR
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} tests
+endif
 
 check: ${PROGS} ${UTESTS} ${ITESTS} .FORCE
-	if test ${IMPLDIR};\
-	   then ${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} check;\
-	fi;
+ifdef IMPLDIR
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} check
+endif
 
 libinfernal.a: libinfernal-src.stamp .FORCE
-	if test ${IMPLDIR};\
-	   then ${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} libinfernal-impl.stamp;\
-	fi;
+ifdef IMPLDIR
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} libinfernal-impl.stamp
+endif
 
 libinfernal-src.stamp: ${OBJS}
 	${QUIET_AR}${AR} -r libinfernal.a $? > /dev/null 2>&1 
@@ -218,9 +218,9 @@ ${BENCHMARKS}: libinfernal.a  ${HDRS} config.h
 	${CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}
 
 install:
-	if test ${IMPLDIR};\
-	   then ${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} install;\
-	fi;
+ifdef IMPLDIR
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} install
+endif
 	for file in ${PROGS}; do \
 	   ${INSTALL} -m 0755 $$file ${DESTDIR}${bindir}/ ;\
 	done
@@ -231,9 +231,9 @@ install:
 	${INSTALL} -m 0644 config.h ${DESTDIR}${includedir}/ ;\
 
 uninstall:
-	if test ${IMPLDIR};\
-	   then ${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} uninstall;\
-	fi;
+ifdef IMPLDIR
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} uninstall
+endif
 	for file in ${PROGS}; do \
 	   rm -f ${DESTDIR}${bindir}/$$file ;\
 	done
@@ -244,15 +244,15 @@ uninstall:
 	-rm -f ${DESTDIR}${includedir}/config.h
 
 distclean: clean
-	if test ${IMPLDIR};\
-	   then ${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} distclean;\
-	fi;
+ifdef IMPLDIR
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} distclean
+endif
 	-rm -f Makefile config.h
 
 clean:
-	if test ${IMPLDIR};\
-	   then ${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} clean;\
-	fi;
+ifdef IMPLDIR
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} clean
+endif
 	-rm -f *.o *~ Makefile.bak core ${PROGS} TAGS gmon.out
 	-rm -f libinfernal.a libinfernal-src.stamp
 	-rm -f *.gcno
