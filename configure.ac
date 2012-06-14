@@ -222,31 +222,26 @@ fi
 
 # --enable-sse    Enable the SSE implementation.
 # --enable-vmx    Enable the Altivec/VMX implementation.
-# --enable-dummy  Enable the portable implementation.
 #
-# These set $impl_choice to one of sse, vmx, dummy, or none.
+# These set $impl_choice to one of sse, vmx, or none.
+# There is no dummy implementation in Infernal, the
+# accelerated search pipeline requires SSE or VMX.
 # Note that Infernal does not currently have any VMX-specific                                                                                 
 # code, but might still be able to turn on automatic compiler
 # vectorization.                                                                                                                              
 #
 AC_ARG_ENABLE(sse,[AS_HELP_STRING([--enable-sse],[enable SSE implementation])],          enable_sse=$enableval,   enable_sse=check)
 AC_ARG_ENABLE(vmx,[AS_HELP_STRING([--enable-vmx],[enable Altivec/VMX implementation])],  enable_vmx=$enableval,   enable_vmx=check)
-AC_ARG_ENABLE(dummy,[AS_HELP_STRING([--enable-dummy],[enable portable implementation])], enable_dummy=$enableval, enable_dummy=check)
 if test "$enable_sse" = "yes"; then
-   if test "$enable_vmx" = "yes" || test "$enable_dummy" = "yes"; then
-      AC_MSG_ERROR([Select only one implementation of sse, vmx, or dummy])
+   if test "$enable_vmx" = "yes"; then
+      AC_MSG_ERROR([Select only one implementation of sse or vmx])
    fi
    impl_choice=sse
 elif test "$enable_vmx" = "yes"; then
-   if test "$enable_sse" = "yes" || test "$enable_dummy" = "yes"; then
-      AC_MSG_ERROR([Select only one implementation of sse, vmx, or dummy])
+   if test "$enable_sse" = "yes"; then
+      AC_MSG_ERROR([Select only one implementation of sse or vmx])
    fi
    impl_choice=vmx
-elif test "$enable_dummy" = "yes"; then
-   if test "$enable_sse" = "yes" || test "$enable_vmx" = "yes"; then
-      AC_MSG_ERROR([Select only one implementation of sse, vmx, or dummy])
-   fi
-   impl_choice=dummy
 else
    impl_choice=none   	
 fi
@@ -350,25 +345,24 @@ if test "$impl_choice" = "none"; then
     i?86-*-*)      impl_choice=sse;;
     x86*-*-*)      impl_choice=sse;;
     powerpc*-*-*)  impl_choice=vmx;;
-    *)             impl_choice=dummy;;
+    *)             impl_choice=none;;
   esac
 fi
 
-if test "$impl_choice" = "dummy"; then
-  AC_MSG_WARN([It appears your platform will not fully support H3.])
-  AC_MSG_WARN([We'll use the 'dummy' implementation, a slow reference implementation.])
+if test "$impl_choice" = "none"; then
+  AC_MSG_WARN([Infernal 1.1 requires VMX or SSE capability for parallel instructions.])
+  AC_MSG_ERROR([It appears your platform has neither and will not support Infernal.])
 fi
 
 if test "$impl_choice" = "sse" && test "$enable_sse" = "no"; then
-  AC_MSG_WARN([You disabled the SSE implementation: I'll use the dummy impl instead.])
-  impl_choice=dummy
+  AC_MSG_WARN([Infernal 1.1 requires VMX or SSE capability for parallel instructions.])
+  AC_MSG_WARN([Your platform supports only SSE, but you have disabled it.])
+  AC_MSG_ERROR([You must reconfigure without disabling SSE for Infernal to build.])
 fi
 if test "$impl_choice" = "vmx" && test "$enable_vmx" = "no"; then
-  AC_MSG_WARN([You disabled the VMX implementation: I'll use the dummy impl instead.])
-  impl_choice=vmx
-fi
-if test "$impl_choice" = "dummy" && test "$enable_dummy" = "no"; then
-  AC_MSG_ERROR([No vector impl configured; and you disabled the dummy implementation.])
+  AC_MSG_WARN([Infernal 1.1 requires VMX or SSE capability for parallel instructions.])
+  AC_MSG_WARN([Your platform supports only VMX, but you have disabled it.])
+  AC_MSG_ERROR([You must reconfigure without disabling VMX for Infernal to build.])
 fi
 
 
